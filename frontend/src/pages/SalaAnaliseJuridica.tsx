@@ -51,6 +51,8 @@ type Relatorio = {
   riscos?: unknown[];
   documentos_pendentes?: unknown[];
   teses?: unknown[];
+  partes?: unknown[];
+  provas?: unknown[];
   proximos_passos?: unknown[];
   [key: string]: unknown;
 };
@@ -70,12 +72,44 @@ type Analise = {
   updated_at?: string;
 };
 
+type ClientCandidate = {
+  id: string | null;
+  nome: string;
+  cpf?: boolean;
+  cnpj?: boolean;
+  protegido?: boolean;
+};
+
+type CaseCandidate = {
+  id: string | null;
+  titulo: string;
+  numero_processo?: string | null;
+  protegido?: boolean;
+};
+
+type ConflictAlert = {
+  tipo?: string;
+  nome?: string;
+  mensagem?: string;
+  client_id?: string;
+  case_id?: string;
+  protegido?: boolean;
+};
+
 type ConversionPreview = {
   bloqueia?: boolean;
-  alertas_conflito?: unknown[];
-  casos_possivelmente_duplicados?: unknown[];
-  clientes_possivelmente_duplicados?: unknown[];
+  alertas_conflito?: ConflictAlert[];
+  casos_possivelmente_duplicados?: CaseCandidate[];
+  clientes_possivelmente_duplicados?: ClientCandidate[];
   documentos_disponiveis?: Array<{ id: string; nome: string }>;
+};
+
+type ClientSearchResult = {
+  id: string;
+  nome?: string;
+  nome_exibicao?: string;
+  razao_social?: string;
+  tipo?: string;
 };
 
 const AREAS = [
@@ -99,8 +133,9 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 const stringify = (value: unknown): string => {
   if (value == null) return "—";
-  if (typeof value === "string" || typeof value === "number")
+  if (typeof value === "string" || typeof value === "number") {
     return String(value);
+  }
   if (typeof value === "boolean") return value ? "Sim" : "Não";
   if (typeof value === "object") {
     const item = value as Record<string, unknown>;
@@ -121,6 +156,42 @@ const getMessages = (analise: Analise | null): ChatMessage[] => {
   return Array.isArray(raw) ? (raw as ChatMessage[]) : [];
 };
 
+const normalizeClient = (item: ClientSearchResult): ClientCandidate => ({
+  id: item.id,
+  nome:
+    item.nome_exibicao || item.nome || item.razao_social || "Cliente sem nome",
+  protegido: false,
+});
+
+const extractNames = (analise: Analise): string[] => {
+  const names = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === "string") {
+      const clean = value.trim();
+      if (clean.length >= 4 && clean.length <= 255) names.add(clean);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(add);
+      return;
+    }
+    if (value && typeof value === "object") {
+      const object = value as Record<string, unknown>;
+      [
+        object.nome,
+        object.razao_social,
+        object.parte,
+        object.advogado,
+        object.representante,
+        object.testemunha,
+      ].forEach(add);
+    }
+  };
+  add(analise.potencial_cliente);
+  add(analise.relatorio?.partes);
+  return Array.from(names).slice(0, 40);
+};
+
 export default function SalaAnaliseJuridica() {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -138,11 +209,14 @@ export default function SalaAnaliseJuridica() {
   const [newClient, setNewClient] = useState("");
   const [showConvert, setShowConvert] = useState(false);
   const [preview, setPreview] = useState<ConversionPreview | null>(null);
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientOptions, setClientOptions] = useState<ClientCandidate[]>([]);
+  const [searchingClients, setSearchingClients] = useState(false);
   const [conversion, setConversion] = useState({
     clientMode: "novo",
     clientId: "",
     clientName: "",
-    clientCpf: "",
+    clientDocument: "",
     caseTitle: "",
     area: "civil",
     confirmDuplicate: false,
@@ -192,6 +266,42 @@ export default function SalaAnaliseJuridica() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, busy]);
 
+  useEffect(() => {
+    if (!showConvert || conversion.clientMode !== "existente") return;
+    const term = clientSearch.trim();
+    if (term.length < 2) return;
+
+    const timer = window.setTimeout(async () => {
+      setSearchingClients(true);
+      try {
+        const { data } = await api.get("/clients", {
+          params: { search: term, page_size: 20 },
+        });
+        const raw = Array.isArray(data)
+          ? data
+          : data?.data || data?.items || [];
+        const searched = raw.map(normalizeClient);
+        setClientOptions((current) => {
+          const merged = [...current, ...searched];
+          return merged.filter(
+            (item, index) =>
+              item.id &&
+              merged.findIndex((other) => other.id === item.id) === index,
+          );
+        });
+      } catch (err: any) {
+        setError(
+          err?.response?.data?.detail ||
+            "Não foi possível pesquisar clientes autorizados.",
+        );
+      } finally {
+        setSearchingClients(false);
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [clientSearch, conversion.clientMode, showConvert]);
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return items;
@@ -203,6 +313,11 @@ export default function SalaAnaliseJuridica() {
       ),
     );
   }, [items, search]);
+
+  const duplicateCases = preview?.casos_possivelmente_duplicados || [];
+  const conflictAlerts = preview?.alertas_conflito || [];
+  const hasDuplicates = duplicateCases.length > 0;
+  const hasConflicts = conflictAlerts.length > 0;
 
   const createAnalysis = async () => {
     if (newTitle.trim().length < 3) return;
@@ -274,23 +389,28 @@ export default function SalaAnaliseJuridica() {
         documentos: selected.documentos || [],
         conversa: next.slice(-12),
       };
-      const { data } = await api.post("/ai/analisar-caso", {
-        descricao_fatos:
+      const { data } = await api.post("/ai/core/analyze", {
+        domain: selected.area || "civil",
+        mensagem:
           "CONTEXTO DA SALA DE ANÁLISE JURÍDICA:\n" +
           JSON.stringify(context) +
           "\n\nPERGUNTA/INSTRUÇÃO ATUAL DO ADVOGADO:\n" +
           userMessage.content,
-        area: selected.area || "civil",
         case_id: null,
-        nomes_proteger: selected.potencial_cliente
-          ? [selected.potencial_cliente]
-          : [],
+        params: {
+          nomes_proteger: extractNames(selected),
+          origem_raio_x: selected.id,
+        },
+        module_key: "sala-analise-juridica",
+        surface: "sala_analise",
+        usar_rag: true,
+        nivel_inteligencia: "alto",
       });
       const content =
+        data?.conteudo ||
         data?.resposta ||
         data?.analise ||
         data?.texto ||
-        data?.resultado ||
         JSON.stringify(data, null, 2);
       const assistantMessage: ChatMessage = {
         id: uid(),
@@ -344,12 +464,22 @@ export default function SalaAnaliseJuridica() {
         `/raio-x/${selected.id}/conversao/preview`,
       );
       setPreview(data);
-      setConversion((current) => ({
-        ...current,
-        caseTitle: selected.titulo,
+      const authorizedCandidates = (
+        data?.clientes_possivelmente_duplicados || []
+      ).filter((item: ClientCandidate) => item.id && !item.protegido);
+      setClientOptions(authorizedCandidates);
+      setClientSearch(selected.potencial_cliente || "");
+      setConversion({
+        clientMode: authorizedCandidates.length === 1 ? "existente" : "novo",
+        clientId:
+          authorizedCandidates.length === 1 ? authorizedCandidates[0].id : "",
         clientName: selected.potencial_cliente || "",
+        clientDocument: "",
+        caseTitle: selected.titulo,
         area: selected.area || "civil",
-      }));
+        confirmDuplicate: false,
+        confirmConflict: false,
+      });
       setShowConvert(true);
     } catch (err: any) {
       setError(
@@ -366,6 +496,7 @@ export default function SalaAnaliseJuridica() {
     setError(null);
     try {
       const documentIds = (selected.documentos || []).map((doc) => doc.id);
+      const digits = conversion.clientDocument.replace(/\D/g, "").slice(0, 14);
       const payload = {
         cliente:
           conversion.clientMode === "existente"
@@ -373,7 +504,8 @@ export default function SalaAnaliseJuridica() {
             : {
                 modo: "novo",
                 nome: conversion.clientName,
-                cpf: conversion.clientCpf || null,
+                cpf: digits.length > 0 && digits.length <= 11 ? digits : null,
+                cnpj: digits.length > 11 ? digits : null,
               },
         caso: {
           titulo: conversion.caseTitle,
@@ -381,14 +513,16 @@ export default function SalaAnaliseJuridica() {
           prioridade: selected.prazo_urgente ? "critica" : "media",
           descricao_fatos:
             selected.relatorio?.sintese_executiva ||
-            messages.map((m) => `${m.role}: ${m.content}`).join("\n\n"),
+            messages
+              .map((message) => `${message.role}: ${message.content}`)
+              .join("\n\n"),
           case_type: "judicial",
         },
         documento_ids: documentIds,
         transferir_prazos: false,
         transferir_tarefas: true,
-        duplicate_confirmed: conversion.confirmDuplicate,
-        conflict_confirmed: conversion.confirmConflict,
+        duplicate_confirmed: !hasDuplicates || conversion.confirmDuplicate,
+        conflict_confirmed: !hasConflicts || conversion.confirmConflict,
         confirmacao: "TRANSFORMAR EM CASO DO ESCRITÓRIO",
       };
       const { data } = await api.post(
@@ -463,6 +597,7 @@ export default function SalaAnaliseJuridica() {
               <div className="space-y-1">
                 {filtered.map((item) => (
                   <button
+                    type="button"
                     key={item.id}
                     onClick={() => void refreshSelected(item.id)}
                     className={`w-full rounded-xl p-3 text-left transition ${selected?.id === item.id ? "bg-slate-900 text-white" : "hover:bg-white"}`}
@@ -530,7 +665,7 @@ export default function SalaAnaliseJuridica() {
                     type="file"
                     multiple
                     className="hidden"
-                    onChange={(e) => void uploadFiles(e.target.files)}
+                    onChange={(event) => void uploadFiles(event.target.files)}
                   />
                   <Button
                     variant="secondary"
@@ -571,9 +706,7 @@ export default function SalaAnaliseJuridica() {
                             {message.content}
                           </div>
                         )}
-                        <div
-                          className={`mt-2 text-[10px] ${message.role === "user" ? "text-slate-400" : "text-slate-400"}`}
-                        >
+                        <div className="mt-2 text-[10px] text-slate-400">
                           {new Date(message.created_at).toLocaleString("pt-BR")}
                         </div>
                       </div>
@@ -623,9 +756,8 @@ export default function SalaAnaliseJuridica() {
                   </button>
                 </div>
                 <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-slate-400">
-                  Saída preliminar sujeita à revisão do advogado. Hipóteses e
-                  fontes não verificadas devem ser confirmadas antes do uso
-                  externo.
+                  A conversa usa o Núcleo Único de IA, com pseudonimização,
+                  AILog e revisão humana obrigatória.
                 </p>
               </footer>
             </>
@@ -681,14 +813,12 @@ export default function SalaAnaliseJuridica() {
               />
               {!!selected.documentos?.length && (
                 <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                    <FileText size={15} /> Provas anexadas
+                  <div className="mb-2 text-sm font-semibold">
+                    Provas anexadas
                   </div>
                   <ul className="space-y-1 text-xs text-slate-600">
-                    {selected.documentos.map((doc) => (
-                      <li key={doc.id} className="truncate">
-                        • {doc.nome_original}
-                      </li>
+                    {selected.documentos.map((document) => (
+                      <li key={document.id}>• {document.nome_original}</li>
                     ))}
                   </ul>
                 </div>
@@ -696,11 +826,12 @@ export default function SalaAnaliseJuridica() {
               <Button
                 variant="secondary"
                 className="w-full"
-                onClick={() =>
+                disabled={selected.status === "convertido_em_caso"}
+                onClick={() => {
                   void api
                     .post(`/raio-x/${selected.id}/arquivar`)
-                    .then(loadList)
-                }
+                    .then(loadList);
+                }}
               >
                 <Archive size={16} /> Arquivar análise
               </Button>
@@ -718,7 +849,7 @@ export default function SalaAnaliseJuridica() {
           <input
             className="mt-1 w-full rounded-lg border p-2"
             value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
+            onChange={(event) => setNewTitle(event.target.value)}
             placeholder="Ex.: Acidente da Hilux — DF-345"
           />
           <label className="mt-4 block text-sm font-medium">
@@ -727,7 +858,7 @@ export default function SalaAnaliseJuridica() {
           <input
             className="mt-1 w-full rounded-lg border p-2"
             value={newClient}
-            onChange={(e) => setNewClient(e.target.value)}
+            onChange={(event) => setNewClient(event.target.value)}
             placeholder="Opcional"
           />
           <div className="mt-5 flex justify-end gap-2">
@@ -752,70 +883,183 @@ export default function SalaAnaliseJuridica() {
         >
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             Confira os dados antes de criar o cadastro oficial. A conversa
-            original permanecerá preservada para auditoria.
+            original e a inteligência preliminar serão preservadas para
+            auditoria e revisão.
           </div>
-          {preview?.bloqueia && (
-            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-              A prévia identificou impedimentos. Revise conflitos e duplicidades
-              antes de confirmar.
-            </div>
+
+          {hasDuplicates && (
+            <ReviewBlock title="Possíveis casos duplicados" tone="red">
+              {duplicateCases.map((item, index) => (
+                <div
+                  key={`${item.id || "protegido"}-${index}`}
+                  className="rounded-lg bg-white/70 p-2"
+                >
+                  <strong>{item.titulo}</strong>
+                  {item.numero_processo && (
+                    <span> — {item.numero_processo}</span>
+                  )}
+                  {item.protegido && (
+                    <div className="text-xs">
+                      Os dados estão protegidos; solicite revisão à gestão.
+                    </div>
+                  )}
+                </div>
+              ))}
+            </ReviewBlock>
           )}
+
+          {hasConflicts && (
+            <ReviewBlock title="Alertas de conflito" tone="red">
+              {conflictAlerts.map((item, index) => (
+                <div
+                  key={`${item.tipo || "alerta"}-${index}`}
+                  className="rounded-lg bg-white/70 p-2"
+                >
+                  <strong>{item.nome || "Correspondência identificada"}</strong>
+                  <div>
+                    {item.mensagem || "Revisão obrigatória antes da conversão."}
+                  </div>
+                </div>
+              ))}
+            </ReviewBlock>
+          )}
+
+          {!!preview?.clientes_possivelmente_duplicados?.length && (
+            <ReviewBlock
+              title="Possíveis clientes correspondentes"
+              tone="amber"
+            >
+              {preview.clientes_possivelmente_duplicados.map((item, index) => (
+                <div
+                  key={`${item.id || "protegido"}-${index}`}
+                  className="rounded-lg bg-white/70 p-2"
+                >
+                  {item.nome}
+                  {item.protegido && (
+                    <div className="text-xs">
+                      Registro protegido: não é selecionável por esta carteira.
+                    </div>
+                  )}
+                </div>
+              ))}
+            </ReviewBlock>
+          )}
+
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
               <label className="text-sm font-medium">Cliente</label>
               <select
                 className="mt-1 w-full rounded-lg border p-2"
                 value={conversion.clientMode}
-                onChange={(e) =>
-                  setConversion({ ...conversion, clientMode: e.target.value })
+                onChange={(event) =>
+                  setConversion({
+                    ...conversion,
+                    clientMode: event.target.value,
+                    clientId: "",
+                  })
                 }
               >
                 <option value="novo">Criar novo cliente</option>
-                <option value="existente">Usar cliente existente</option>
+                <option value="existente">
+                  Usar cliente existente autorizado
+                </option>
               </select>
             </div>
+
             {conversion.clientMode === "existente" ? (
-              <div>
-                <label className="text-sm font-medium">ID do cliente</label>
-                <input
-                  className="mt-1 w-full rounded-lg border p-2"
+              <div className="sm:col-span-2">
+                <label className="text-sm font-medium">
+                  Pesquisar cliente autorizado
+                </label>
+                <div className="relative mt-1">
+                  <Search
+                    className="absolute left-3 top-3 text-slate-400"
+                    size={16}
+                  />
+                  <input
+                    className="w-full rounded-lg border py-2.5 pl-9 pr-9"
+                    value={clientSearch}
+                    onChange={(event) => setClientSearch(event.target.value)}
+                    placeholder="Digite ao menos 2 caracteres do nome"
+                  />
+                  {searchingClients && (
+                    <Loader2
+                      className="absolute right-3 top-3 animate-spin text-slate-400"
+                      size={16}
+                    />
+                  )}
+                </div>
+                <select
+                  className="mt-2 w-full rounded-lg border p-2"
                   value={conversion.clientId}
-                  onChange={(e) =>
-                    setConversion({ ...conversion, clientId: e.target.value })
+                  onChange={(event) =>
+                    setConversion({
+                      ...conversion,
+                      clientId: event.target.value,
+                    })
                   }
-                />
+                >
+                  <option value="">Selecione um cliente</option>
+                  {clientOptions
+                    .filter((item) => item.id)
+                    .map((item) => (
+                      <option key={item.id as string} value={item.id as string}>
+                        {item.nome}
+                      </option>
+                    ))}
+                </select>
+                {!clientOptions.some((item) => item.id) && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Nenhum cliente autorizado localizado. Pesquise outro nome ou
+                    utilize “Criar novo cliente”.
+                  </p>
+                )}
               </div>
             ) : (
-              <div>
-                <label className="text-sm font-medium">Nome do cliente</label>
-                <input
-                  className="mt-1 w-full rounded-lg border p-2"
-                  value={conversion.clientName}
-                  onChange={(e) =>
-                    setConversion({ ...conversion, clientName: e.target.value })
-                  }
-                />
-              </div>
+              <>
+                <div>
+                  <label className="text-sm font-medium">
+                    Nome ou razão social
+                  </label>
+                  <input
+                    className="mt-1 w-full rounded-lg border p-2"
+                    value={conversion.clientName}
+                    onChange={(event) =>
+                      setConversion({
+                        ...conversion,
+                        clientName: event.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">CPF ou CNPJ</label>
+                  <input
+                    className="mt-1 w-full rounded-lg border p-2"
+                    inputMode="numeric"
+                    value={conversion.clientDocument}
+                    onChange={(event) =>
+                      setConversion({
+                        ...conversion,
+                        clientDocument: event.target.value,
+                      })
+                    }
+                    placeholder="O sistema identifica PF ou PJ pela quantidade de dígitos"
+                  />
+                </div>
+              </>
             )}
-            {conversion.clientMode === "novo" && (
-              <div>
-                <label className="text-sm font-medium">CPF/CNPJ</label>
-                <input
-                  className="mt-1 w-full rounded-lg border p-2"
-                  value={conversion.clientCpf}
-                  onChange={(e) =>
-                    setConversion({ ...conversion, clientCpf: e.target.value })
-                  }
-                />
-              </div>
-            )}
+
             <div>
               <label className="text-sm font-medium">Título do caso</label>
               <input
                 className="mt-1 w-full rounded-lg border p-2"
                 value={conversion.caseTitle}
-                onChange={(e) =>
-                  setConversion({ ...conversion, caseTitle: e.target.value })
+                onChange={(event) =>
+                  setConversion({
+                    ...conversion,
+                    caseTitle: event.target.value,
+                  })
                 }
               />
             </div>
@@ -824,8 +1068,8 @@ export default function SalaAnaliseJuridica() {
               <select
                 className="mt-1 w-full rounded-lg border p-2"
                 value={conversion.area}
-                onChange={(e) =>
-                  setConversion({ ...conversion, area: e.target.value })
+                onChange={(event) =>
+                  setConversion({ ...conversion, area: event.target.value })
                 }
               >
                 {AREAS.map((area) => (
@@ -836,34 +1080,48 @@ export default function SalaAnaliseJuridica() {
               </select>
             </div>
           </div>
+
           <div className="mt-4 space-y-2 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={conversion.confirmDuplicate}
-                onChange={(e) =>
-                  setConversion({
-                    ...conversion,
-                    confirmDuplicate: e.target.checked,
-                  })
-                }
-              />{" "}
-              Conferi possíveis duplicidades.
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={conversion.confirmConflict}
-                onChange={(e) =>
-                  setConversion({
-                    ...conversion,
-                    confirmConflict: e.target.checked,
-                  })
-                }
-              />{" "}
-              Conferi possíveis conflitos de interesse.
-            </label>
+            {hasDuplicates && (
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={conversion.confirmDuplicate}
+                  onChange={(event) =>
+                    setConversion({
+                      ...conversion,
+                      confirmDuplicate: event.target.checked,
+                    })
+                  }
+                />
+                <span>
+                  Li os casos possivelmente duplicados acima e confirmo que a
+                  abertura deve prosseguir.
+                </span>
+              </label>
+            )}
+            {hasConflicts && (
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={conversion.confirmConflict}
+                  onChange={(event) =>
+                    setConversion({
+                      ...conversion,
+                      confirmConflict: event.target.checked,
+                    })
+                  }
+                />
+                <span>
+                  Li os alertas de conflito acima e confirmo que a revisão ética
+                  necessária foi realizada.
+                </span>
+              </label>
+            )}
           </div>
+
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setShowConvert(false)}>
               Cancelar
@@ -875,7 +1133,9 @@ export default function SalaAnaliseJuridica() {
                 !conversion.caseTitle.trim() ||
                 (conversion.clientMode === "novo"
                   ? !conversion.clientName.trim()
-                  : !conversion.clientId.trim())
+                  : !conversion.clientId) ||
+                (hasDuplicates && !conversion.confirmDuplicate) ||
+                (hasConflicts && !conversion.confirmConflict)
               }
             >
               <FolderPlus size={16} /> Confirmar e criar caso
@@ -883,6 +1143,27 @@ export default function SalaAnaliseJuridica() {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+function ReviewBlock({
+  title,
+  tone,
+  children,
+}: {
+  title: string;
+  tone: "red" | "amber";
+  children: ReactNode;
+}) {
+  const classes =
+    tone === "red"
+      ? "border-red-200 bg-red-50 text-red-900"
+      : "border-amber-200 bg-amber-50 text-amber-900";
+  return (
+    <div className={`mt-3 space-y-2 rounded-xl border p-3 text-sm ${classes}`}>
+      <div className="font-semibold">{title}</div>
+      {children}
     </div>
   );
 }
@@ -947,7 +1228,7 @@ function Modal({
         aria-modal="true"
         aria-label={title}
         className={`max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl ${wide ? "max-w-3xl" : "max-w-lg"}`}
-        onMouseDown={(e) => e.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>

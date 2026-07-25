@@ -1,9 +1,10 @@
 """Contratos HTTP do Raio-X do Processo."""
 from __future__ import annotations
 
+import re
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 STATUS_RAIO_X = {
@@ -50,6 +51,38 @@ class ClienteConversao(BaseModel):
     cnpj: Optional[str] = Field(None, max_length=20)
     email: Optional[str] = Field(None, max_length=255)
     telefone: Optional[str] = Field(None, max_length=30)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalizar_documento(cls, data: Any) -> Any:
+        """Aceita o contrato legado CPF/CNPJ sem classificar PJ como PF.
+
+        A interface antiga enviava qualquer documento pelo campo ``cpf``. Quando
+        houver 12 a 14 dígitos e ``cnpj`` estiver vazio, o valor é promovido para
+        CNPJ. A validação de dígitos permanece no domínio de Clientes.
+        """
+        if not isinstance(data, dict):
+            return data
+        result = dict(data)
+        cpf = re.sub(r"\D", "", str(result.get("cpf") or ""))
+        cnpj = re.sub(r"\D", "", str(result.get("cnpj") or ""))
+        if not cnpj and len(cpf) > 11:
+            cnpj, cpf = cpf[:14], ""
+        result["cpf"] = cpf[:11] or None
+        result["cnpj"] = cnpj[:14] or None
+        if isinstance(result.get("client_id"), str):
+            result["client_id"] = result["client_id"].strip() or None
+        if isinstance(result.get("nome"), str):
+            result["nome"] = result["nome"].strip() or None
+        return result
+
+    @model_validator(mode="after")
+    def validar_modo(self):
+        if self.modo == "existente" and not self.client_id:
+            raise ValueError("Selecione um cliente existente")
+        if self.modo == "novo" and not (self.nome or self.cpf or self.cnpj):
+            raise ValueError("Informe os dados mínimos do novo cliente")
+        return self
 
 
 class CasoConversao(BaseModel):
