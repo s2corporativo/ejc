@@ -42,6 +42,72 @@ página nova. Toda entrega é composição, ligação ou remoção.
 
 ---
 
+## Contratos e padrões a respeitar
+
+Nenhuma entrega deste plano define contrato novo. Os quatro contratos exigidos
+já existem no EJC e são de uso obrigatório:
+
+| Contrato | Onde já vive | Regra |
+|---|---|---|
+| **Acesso ao caso** | `core/ownership.py` → `verificar_acesso_caso()` | 404 se inexistente; gestão passa; equipe passa se responsável ou auxiliar; caso órfão só à gestão |
+| **IA** | `services/ai_gateway.py` | Toda chamada passa pelo gateway. Nunca provider direto de router; nunca PII não sanitizada; nunca sem HITL e citation gate |
+| **Documental / proveniência** | `models/rag.py` | `KnowledgeDoc`: fonte, tribunal, `base_rag`, `client_id`, `case_id`, `chave_origem`, `hash_conteudo`, `versao`, `vigente`, revisor. `KnowledgeChunk`: `pagina` |
+| **Auditoria** | `AILog` + `models/audit_log.py` → `criar_audit_log()` | Usuário, ação, entrada/saída, custo, aprovação — sem dado sensível em log |
+
+### Correção de premissa: o EJC é single-tenant
+
+Não existe `organization_id` em nenhum model. O escritório é um só (De Paula
+Teixeira). O eixo de isolamento é `client_id` / `case_id` combinado ao gate de
+ownership — é o que `_FILTRO_ESCOPO_RAG` aplica e o que `test_rag_isolation.py`
+protege.
+
+Introduzir `organization_id` agora criaria um conceito sem lastro no schema —
+exatamente o segundo padrão paralelo que se quer evitar. Multi-escritório, se
+vier, é decisão de produto com migration própria, não premissa de contrato.
+
+### Padrão de feature flag
+
+O repositório já tem convenção estabelecida em `core/config.py`: sufixo
+`_ENABLED`, tipado em pydantic-settings, default `False` para tudo que é
+externo ou incompleto (`WHATSAPP_ENABLED`, `DATAJUD_ENABLED`,
+`LANGFUSE_ENABLED`…).
+
+Novas flags seguem esse padrão — **não** o prefixo `FEATURE_*`, que seria uma
+segunda convenção para a mesma coisa.
+
+## O que já existe (não paralelizar)
+
+Levantamento de 25/07 dos seis itens comumente propostos como "seguros para
+começar agora em paralelo". Cinco já estão construídos:
+
+| Item | Situação | Evidência |
+|---|---|---|
+| Catálogo de ferramentas | Existe | `TabFerramentas`, skill catalog, prompts por área |
+| Formulários guiados | Existe | `GuiadoForm.tsx` + 9 tipos de peça mapeados na doc |
+| Biblioteca de prompts versionada | Existe | `models/prompt_juridico.py` (campo `versao`), routers `prompts.py` e `prompts_juridicos.py` |
+| Modo Molde — núcleo lógico | Existe | `peca_workflow_service.py` + `ConfiguracaoMolde` (preservar/substituir) |
+| Auditor de citações | Existe | `verificador_jurisprudencia.py` — 4 estados + `citation_gate.py` |
+| **Perfil de escrita** | **Não existe** | Nenhuma ocorrência no backend ou frontend |
+
+Construir os cinco primeiros "como serviços isolados em paralelo" produziria a
+duplicação que este plano existe para evitar. O trabalho real neles não é
+construção — é **ligação** (Fase 2).
+
+**Perfil de escrita** é o único item genuinamente novo. Como é tabela nova e não
+toca tabela central, pode correr em paralelo com segurança, atrás de flag
+`PERFIL_ESCRITA_ENABLED=false`, consumido pelo pipeline via `ai_gateway`.
+
+### Não há uma segunda frente
+
+Em 25/07 os PRs abertos são #475 (correção P0 de isolamento na conversão
+Sala/Raio-X → caso) e #476 (este plano). Não existe branch de refatoração
+estrutural concorrente.
+
+A consequência prática é que a coordenação necessária não é entre duas equipes,
+e sim **sequencial dentro de uma só frente**: #475 toca conversão de caso e
+titularidade de cliente, então a Fase 1 deve rebasear sobre ele antes de mexer
+em `CasoDetalhe.tsx`.
+
 ## Fase 1 — O caso abre com a próxima ação
 
 **Objetivo:** o advogado entra no caso e vê o que fazer agora, sem procurar.
@@ -224,3 +290,23 @@ boa e a produção está controlada. A Fase 4 fecha.
 
 **Ordem recomendada:** Fase 2 primeiro se o critério for risco jurídico; Fase 1
 primeiro se o critério for adoção pelo escritório.
+
+**Pré-requisito comum:** rebasear sobre o PR #475 antes de iniciar, porque ele
+altera a conversão Sala/Raio-X → caso e a titularidade de cliente.
+
+## Processo de integração
+
+Cada fase segue o mesmo ciclo:
+
+```
+rebase sobre main  →  implementar atrás de flag  →  testes  →  PR draft
+   →  revisão  →  merge  →  homologação  →  ativar flag gradualmente
+```
+
+Ativação gradual da flag, nesta ordem: administradores → homologação → casos de
+teste → usuários específicos → geral.
+
+Migrations exigem coordenação explícita. Tabela nova é de baixo risco; alterar
+tabela central (`cases`, `clients`, `users`, `legal_docs`, `deadlines`) durante
+outra frente ativa exige que as duas frentes estejam cientes — hoje a única
+frente concorrente é o PR #475.
