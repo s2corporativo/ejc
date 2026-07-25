@@ -7,6 +7,7 @@ RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
 MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
+REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-0}"
 
 cd "$APP_DIR"
 
@@ -114,8 +115,13 @@ log "Verificando pré-requisitos de backup"
 if bash scripts/backup.sh; then
   log "Backup pré-deploy concluído."
 else
+  if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
+    log "ERRO CRÍTICO: backup pré-deploy obrigatório falhou."
+    log "Deploy bloqueado antes de qualquer mutação do runtime."
+    false
+  fi
   log "AVISO: backup pré-deploy não executou (credenciais ou config incompleta)."
-  log "AVISO: o backup diário via cron continua ativo; deploy prossegue."
+  log "AVISO: modo de contingência permissivo; deploy prossegue sem prova nova de backup."
 fi
 
 DEPLOY_MUTATED=1
@@ -154,10 +160,19 @@ if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
   if bash scripts/backup/ativar_backup.sh; then
     log "Backup diário verificado com sucesso."
   else
+    if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
+      log "ERRO CRÍTICO: ativação/verificação obrigatória do backup diário falhou."
+      log "Deploy será revertido para preservar a política de continuidade."
+      false
+    fi
     log "AVISO: ativação/verificação do backup diário falhou; deploy não será revertido."
     log "AVISO: investigue as credenciais BACKUP_GOOGLE_DRIVE_* no .env da VPS."
   fi
 else
+  if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
+    log "ERRO CRÍTICO: ENSURE_DAILY_BACKUP=0 é incompatível com REQUIRE_PREDEPLOY_BACKUP=1."
+    false
+  fi
   log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia diária ignorada por contingência."
 fi
 

@@ -16,11 +16,19 @@ cp "$ROOT/scripts/deploy_vps_safe.sh" "$APP/scripts/deploy_vps_safe.sh"
 cat > "$APP/scripts/backup.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${FAIL_BACKUP:-0}" = "1" ]; then
+  echo backup-failed >&2
+  exit 9
+fi
 echo backup-ok
 EOF
 cat > "$APP/scripts/backup/ativar_backup.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${FAIL_DAILY_BACKUP:-0}" = "1" ]; then
+  echo backup-daily-failed >&2
+  exit 10
+fi
 echo backup-daily-ok
 EOF
 cat > "$APP/scripts/post_deploy_check.sh" <<EOF
@@ -89,11 +97,35 @@ set -e
 grep -q "MIGRATIONS_BACKWARD_COMPATIBLE=1" "$TMP/policy.err" || \
   fail "mensagem da política ausente"
 
-# 2) Migration expand-only é aplicada antes da troca do backend.
+# 2) Backup obrigatório falha fechado antes de qualquer build/mutação do runtime.
+: > "$LOG"
+set +e
+APP_DIR="$APP" PATH="$BIN:$PATH" FAKE_DOCKER_LOG="$LOG" \
+FAIL_BACKUP=1 REQUIRE_PREDEPLOY_BACKUP=1 ENSURE_DAILY_BACKUP=0 \
+bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/backup-strict.out" 2>"$TMP/backup-strict.err"
+backup_strict_rc=$?
+set -e
+[ "$backup_strict_rc" -ne 0 ] || fail "backup obrigatório não bloqueou o deploy"
+! grep -q '^compose build ' "$LOG" || fail "build iniciou após falha de backup obrigatório"
+grep -q 'backup pré-deploy obrigatório falhou' "$TMP/backup-strict.out" || \
+  fail "mensagem fail-closed do backup ausente"
+grep -q 'Falha antes de qualquer mutação do runtime' "$TMP/backup-strict.out" || \
+  fail "não foi comprovado que o runtime permaneceu intacto"
+
+# 3) Modo de contingência explícito continua permitindo deploy sem backup novo.
+: > "$LOG"
+APP_DIR="$APP" PATH="$BIN:$PATH" FAKE_DOCKER_LOG="$LOG" \
+FAIL_BACKUP=1 REQUIRE_PREDEPLOY_BACKUP=0 ENSURE_DAILY_BACKUP=0 \
+bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/backup-contingency.out" 2>"$TMP/backup-contingency.err"
+grep -q '^compose build frontend$' "$LOG" || fail "contingência não prosseguiu para o build"
+grep -q 'modo de contingência permissivo' "$TMP/backup-contingency.out" || \
+  fail "contingência não ficou explicitamente registrada"
+
+# 4) Migration expand-only é aplicada antes da troca do backend.
 : > "$LOG"
 APP_DIR="$APP" PATH="$BIN:$PATH" FAKE_DOCKER_LOG="$LOG" \
 RUN_MIGRATIONS=1 MIGRATIONS_BACKWARD_COMPATIBLE=1 \
-RUN_SEEDS=0 ENSURE_DAILY_BACKUP=0 \
+RUN_SEEDS=0 ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
 bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/order.out" 2>"$TMP/order.err"
 
 migration_line="$(grep -n '^compose run --rm --no-deps -T backend alembic upgrade head$' "$LOG" | cut -d: -f1)"
@@ -107,12 +139,12 @@ worker_line="$(grep -n '^compose up -d --no-deps --force-recreate worker$' "$LOG
 [ "$backend_line" -lt "$worker_line" ] || \
   fail "worker foi trocado antes da validação inicial do backend"
 
-# 3) Falha de build restaura as três imagens anteriores e valida o rollback.
+# 5) Falha de build restaura as três imagens anteriores e valida o rollback.
 : > "$LOG"
 : > "$POST_LOG"
 set +e
 APP_DIR="$APP" PATH="$BIN:$PATH" FAKE_DOCKER_LOG="$LOG" \
-FAIL_FRONTEND_BUILD=1 ENSURE_DAILY_BACKUP=0 \
+FAIL_FRONTEND_BUILD=1 ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
 bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/rollback.out" 2>"$TMP/rollback.err"
 rollback_rc=$?
 set -e
@@ -140,5 +172,12 @@ grep -q 'Rollback confirmado pelo post-deploy check' "$TMP/rollback.out" || \
 grep -q 'Tags de rollback preservadas' "$TMP/rollback.out" || \
   fail "tags forenses não foram preservadas"
 
+# 6) O workflow de produção ativa explicitamente a política fail-closed.
+grep -q 'REQUIRE_PREDEPLOY_BACKUP: "1"' "$ROOT/.github/workflows/deploy-vps.yml" || \
+  fail "workflow de produção não exige backup pré-deploy"
+grep -q 'REQUIRE_PREDEPLOY_BACKUP="$REQUIRE_PREDEPLOY_BACKUP"' \
+  "$ROOT/.github/workflows/deploy-vps.yml" || \
+  fail "workflow não repassa a política ao script"
+
 bash -n "$ROOT/scripts/deploy_vps_safe.sh"
-echo "[rollback-test] OK — migration anterior à troca e rollback de backend/worker/frontend comprovados."
+echo "[rollback-test] OK — backup fail-closed, migration anterior à troca e rollback de backend/worker/frontend comprovados."
