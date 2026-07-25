@@ -277,13 +277,16 @@ export default function SalaAnaliseJuridica() {
         const { data } = await api.get("/clients", {
           params: { search: term, page_size: 20 },
         });
-        const raw = Array.isArray(data) ? data : data?.data || data?.items || [];
+        const raw = Array.isArray(data)
+          ? data
+          : data?.data || data?.items || [];
         const searched = raw.map(normalizeClient);
         setClientOptions((current) => {
           const merged = [...current, ...searched];
           return merged.filter(
             (item, index) =>
-              item.id && merged.findIndex((other) => other.id === item.id) === index,
+              item.id &&
+              merged.findIndex((other) => other.id === item.id) === index,
           );
         });
       } catch (err: any) {
@@ -510,7 +513,9 @@ export default function SalaAnaliseJuridica() {
           prioridade: selected.prazo_urgente ? "critica" : "media",
           descricao_fatos:
             selected.relatorio?.sintese_executiva ||
-            messages.map((message) => `${message.role}: ${message.content}`).join("\n\n"),
+            messages
+              .map((message) => `${message.role}: ${message.content}`)
+              .join("\n\n"),
           case_type: "judicial",
         },
         documento_ids: documentIds,
@@ -548,7 +553,11 @@ export default function SalaAnaliseJuridica() {
       {error && (
         <div className="flex items-start justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <span>{error}</span>
-          <button type="button" onClick={() => setError(null)} aria-label="Fechar">
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            aria-label="Fechar"
+          >
             <X size={16} />
           </button>
         </div>
@@ -561,7 +570,10 @@ export default function SalaAnaliseJuridica() {
               <MessageSquarePlus size={16} /> Nova análise
             </Button>
             <div className="relative">
-              <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+              <Search
+                className="absolute left-3 top-2.5 text-slate-400"
+                size={16}
+              />
               <input
                 className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-400"
                 placeholder="Pesquisar análises"
@@ -572,9 +584,15 @@ export default function SalaAnaliseJuridica() {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {loading ? (
-              <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
+              <div className="flex justify-center p-8">
+                <Loader2 className="animate-spin" />
+              </div>
             ) : !filtered.length ? (
-              <EmptyState icon={Scale} title="Nenhuma análise" message="Crie uma sala para iniciar a investigação jurídica." />
+              <EmptyState
+                icon={Scale}
+                title="Nenhuma análise"
+                message="Crie uma sala para iniciar a investigação jurídica."
+              />
             ) : (
               <div className="space-y-1">
                 {filtered.map((item) => (
@@ -584,12 +602,18 @@ export default function SalaAnaliseJuridica() {
                     onClick={() => void refreshSelected(item.id)}
                     className={`w-full rounded-xl p-3 text-left transition ${selected?.id === item.id ? "bg-slate-900 text-white" : "hover:bg-white"}`}
                   >
-                    <div className="line-clamp-2 text-sm font-semibold">{item.titulo}</div>
-                    <div className={`mt-1 text-xs ${selected?.id === item.id ? "text-slate-300" : "text-slate-500"}`}>
+                    <div className="line-clamp-2 text-sm font-semibold">
+                      {item.titulo}
+                    </div>
+                    <div
+                      className={`mt-1 text-xs ${selected?.id === item.id ? "text-slate-300" : "text-slate-500"}`}
+                    >
                       {item.potencial_cliente || "Sem cliente definido"}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] ${selected?.id === item.id ? "bg-white/10" : "bg-slate-200"}`}>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] ${selected?.id === item.id ? "bg-white/10" : "bg-slate-200"}`}
+                      >
                         {item.status.replace(/_/g, " ")}
                       </span>
                     </div>
@@ -603,18 +627,33 @@ export default function SalaAnaliseJuridica() {
         <main className="flex min-h-0 flex-col bg-white">
           {!selected ? (
             <div className="flex h-full items-center justify-center p-8">
-              <EmptyState icon={Bot} title="Selecione ou crie uma análise" message="A conversa ficará vinculada ao dossiê preliminar e às provas anexadas." />
+              <EmptyState
+                icon={Bot}
+                title="Selecione ou crie uma análise"
+                message="A conversa ficará vinculada ao dossiê preliminar e às provas anexadas."
+              />
             </div>
           ) : (
             <>
               <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
                 <div>
-                  <h2 className="font-semibold text-slate-950">{selected.titulo}</h2>
+                  <h2 className="font-semibold text-slate-950">
+                    {selected.titulo}
+                  </h2>
                   <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                    <span>{selected.potencial_cliente || "Cliente ainda não definido"}</span>
-                    {selected.area && <Badge tone="blue">{selected.area}</Badge>}
+                    <span>
+                      {selected.potencial_cliente ||
+                        "Cliente ainda não definido"}
+                    </span>
+                    {selected.area && (
+                      <Badge tone="blue">{selected.area}</Badge>
+                    )}
                     {selected.risco_nivel && (
-                      <Badge tone={selected.risco_nivel === "critico" ? "red" : "amber"}>
+                      <Badge
+                        tone={
+                          selected.risco_nivel === "critico" ? "red" : "amber"
+                        }
+                      >
                         {selected.risco_nivel}
                       </Badge>
                     )}
@@ -628,10 +667,17 @@ export default function SalaAnaliseJuridica() {
                     className="hidden"
                     onChange={(event) => void uploadFiles(event.target.files)}
                   />
-                  <Button variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
+                  <Button
+                    variant="secondary"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={busy}
+                  >
                     <UploadCloud size={16} /> Provas
                   </Button>
-                  <Button onClick={() => void openConversion()} disabled={busy || selected.status === "convertido_em_caso"}>
+                  <Button
+                    onClick={() => void openConversion()}
+                    disabled={busy || selected.status === "convertido_em_caso"}
+                  >
                     <FolderPlus size={16} /> Transformar em caso
                   </Button>
                 </div>
@@ -641,25 +687,50 @@ export default function SalaAnaliseJuridica() {
                 <div className="mx-auto max-w-3xl space-y-5">
                   {!messages.length && (
                     <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">
-                      Relate os fatos, indique sua dúvida jurídica ou anexe documentos para iniciar.
+                      Relate os fatos, indique sua dúvida jurídica ou anexe
+                      documentos para iniciar.
                     </div>
                   )}
                   {messages.map((message) => (
-                    <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm shadow-sm ${message.role === "user" ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-800"}`}>
-                        {message.role === "assistant" ? <Markdown source={message.content} /> : <div className="whitespace-pre-wrap">{message.content}</div>}
-                        <div className="mt-2 text-[10px] text-slate-400">{new Date(message.created_at).toLocaleString("pt-BR")}</div>
+                    <div
+                      key={message.id}
+                      className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm shadow-sm ${message.role === "user" ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-800"}`}
+                      >
+                        {message.role === "assistant" ? (
+                          <Markdown source={message.content} />
+                        ) : (
+                          <div className="whitespace-pre-wrap">
+                            {message.content}
+                          </div>
+                        )}
+                        <div className="mt-2 text-[10px] text-slate-400">
+                          {new Date(message.created_at).toLocaleString("pt-BR")}
+                        </div>
                       </div>
                     </div>
                   ))}
-                  {busy && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="animate-spin" size={16} /> Analisando fatos e provas…</div>}
+                  {busy && (
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <Loader2 className="animate-spin" size={16} /> Analisando
+                      fatos e provas…
+                    </div>
+                  )}
                   <div ref={bottomRef} />
                 </div>
               </div>
 
               <footer className="border-t border-slate-200 bg-white p-4">
                 <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-slate-300 bg-white p-2 shadow-sm focus-within:border-slate-500">
-                  <button type="button" className="rounded-xl p-2 text-slate-500 hover:bg-slate-100" onClick={() => fileRef.current?.click()} title="Anexar provas" aria-label="Anexar provas">
+                  <button
+                    type="button"
+                    className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
+                    onClick={() => fileRef.current?.click()}
+                    title="Anexar provas"
+                    aria-label="Anexar provas"
+                  >
                     <Paperclip size={19} />
                   </button>
                   <textarea
@@ -674,12 +745,19 @@ export default function SalaAnaliseJuridica() {
                       }
                     }}
                   />
-                  <button className="rounded-xl bg-slate-900 p-3 text-white disabled:opacity-40" onClick={() => void sendMessage()} disabled={!prompt.trim() || busy} title="Enviar" aria-label="Enviar mensagem">
+                  <button
+                    className="rounded-xl bg-slate-900 p-3 text-white disabled:opacity-40"
+                    onClick={() => void sendMessage()}
+                    disabled={!prompt.trim() || busy}
+                    title="Enviar"
+                    aria-label="Enviar mensagem"
+                  >
                     <Send size={17} />
                   </button>
                 </div>
                 <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-slate-400">
-                  A conversa usa o Núcleo Único de IA, com pseudonimização, AILog e revisão humana obrigatória.
+                  A conversa usa o Núcleo Único de IA, com pseudonimização,
+                  AILog e revisão humana obrigatória.
                 </p>
               </footer>
             </>
@@ -687,22 +765,61 @@ export default function SalaAnaliseJuridica() {
         </main>
 
         <aside className="min-h-0 overflow-y-auto border-t border-slate-200 bg-slate-50/70 p-4 xl:border-l xl:border-t-0">
-          <div className="mb-4 flex items-center gap-2"><Sparkles size={18} className="text-slate-700" /><h3 className="font-semibold text-slate-900">Estado atual da análise</h3></div>
+          <div className="mb-4 flex items-center gap-2">
+            <Sparkles size={18} className="text-slate-700" />
+            <h3 className="font-semibold text-slate-900">
+              Estado atual da análise
+            </h3>
+          </div>
           {!selected ? (
-            <p className="text-sm text-slate-500">Selecione uma análise para ver o dossiê estruturado.</p>
+            <p className="text-sm text-slate-500">
+              Selecione uma análise para ver o dossiê estruturado.
+            </p>
           ) : (
             <div className="space-y-4">
-              <Panel title="Síntese" icon={FileText} items={report.sintese_executiva ? [report.sintese_executiva] : []} />
-              <Panel title="Fatos e provas" icon={CheckCircle2} items={report.fatos_provas} />
-              <Panel title="Contradições" icon={AlertTriangle} items={report.contradicoes} tone="amber" />
-              <Panel title="Riscos" icon={ShieldAlert} items={report.riscos} tone="red" />
-              <Panel title="Documentos faltantes" icon={Paperclip} items={report.documentos_pendentes} />
-              <Panel title="Próximos passos" icon={Gavel} items={report.proximos_passos} />
+              <Panel
+                title="Síntese"
+                icon={FileText}
+                items={
+                  report.sintese_executiva ? [report.sintese_executiva] : []
+                }
+              />
+              <Panel
+                title="Fatos e provas"
+                icon={CheckCircle2}
+                items={report.fatos_provas}
+              />
+              <Panel
+                title="Contradições"
+                icon={AlertTriangle}
+                items={report.contradicoes}
+                tone="amber"
+              />
+              <Panel
+                title="Riscos"
+                icon={ShieldAlert}
+                items={report.riscos}
+                tone="red"
+              />
+              <Panel
+                title="Documentos faltantes"
+                icon={Paperclip}
+                items={report.documentos_pendentes}
+              />
+              <Panel
+                title="Próximos passos"
+                icon={Gavel}
+                items={report.proximos_passos}
+              />
               {!!selected.documentos?.length && (
                 <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <div className="mb-2 text-sm font-semibold">Provas anexadas</div>
+                  <div className="mb-2 text-sm font-semibold">
+                    Provas anexadas
+                  </div>
                   <ul className="space-y-1 text-xs text-slate-600">
-                    {selected.documentos.map((document) => <li key={document.id}>• {document.nome_original}</li>)}
+                    {selected.documentos.map((document) => (
+                      <li key={document.id}>• {document.nome_original}</li>
+                    ))}
                   </ul>
                 </div>
               )}
@@ -711,7 +828,9 @@ export default function SalaAnaliseJuridica() {
                 className="w-full"
                 disabled={selected.status === "convertido_em_caso"}
                 onClick={() => {
-                  void api.post(`/raio-x/${selected.id}/arquivar`).then(loadList);
+                  void api
+                    .post(`/raio-x/${selected.id}/arquivar`)
+                    .then(loadList);
                 }}
               >
                 <Archive size={16} /> Arquivar análise
@@ -722,31 +841,68 @@ export default function SalaAnaliseJuridica() {
       </div>
 
       {showCreate && (
-        <Modal title="Nova análise preliminar" onClose={() => setShowCreate(false)}>
+        <Modal
+          title="Nova análise preliminar"
+          onClose={() => setShowCreate(false)}
+        >
           <label className="text-sm font-medium">Título da análise</label>
-          <input className="mt-1 w-full rounded-lg border p-2" value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="Ex.: Acidente da Hilux — DF-345" />
-          <label className="mt-4 block text-sm font-medium">Cliente ou interessado</label>
-          <input className="mt-1 w-full rounded-lg border p-2" value={newClient} onChange={(event) => setNewClient(event.target.value)} placeholder="Opcional" />
+          <input
+            className="mt-1 w-full rounded-lg border p-2"
+            value={newTitle}
+            onChange={(event) => setNewTitle(event.target.value)}
+            placeholder="Ex.: Acidente da Hilux — DF-345"
+          />
+          <label className="mt-4 block text-sm font-medium">
+            Cliente ou interessado
+          </label>
+          <input
+            className="mt-1 w-full rounded-lg border p-2"
+            value={newClient}
+            onChange={(event) => setNewClient(event.target.value)}
+            placeholder="Opcional"
+          />
           <div className="mt-5 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setShowCreate(false)}>Cancelar</Button>
-            <Button onClick={() => void createAnalysis()} disabled={busy || newTitle.trim().length < 3}><Plus size={16} /> Criar sala</Button>
+            <Button variant="secondary" onClick={() => setShowCreate(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => void createAnalysis()}
+              disabled={busy || newTitle.trim().length < 3}
+            >
+              <Plus size={16} /> Criar sala
+            </Button>
           </div>
         </Modal>
       )}
 
       {showConvert && selected && (
-        <Modal title="Transformar análise em caso" onClose={() => setShowConvert(false)} wide>
+        <Modal
+          title="Transformar análise em caso"
+          onClose={() => setShowConvert(false)}
+          wide
+        >
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Confira os dados antes de criar o cadastro oficial. A conversa original e a inteligência preliminar serão preservadas para auditoria e revisão.
+            Confira os dados antes de criar o cadastro oficial. A conversa
+            original e a inteligência preliminar serão preservadas para
+            auditoria e revisão.
           </div>
 
           {hasDuplicates && (
             <ReviewBlock title="Possíveis casos duplicados" tone="red">
               {duplicateCases.map((item, index) => (
-                <div key={`${item.id || "protegido"}-${index}`} className="rounded-lg bg-white/70 p-2">
+                <div
+                  key={`${item.id || "protegido"}-${index}`}
+                  className="rounded-lg bg-white/70 p-2"
+                >
                   <strong>{item.titulo}</strong>
-                  {item.numero_processo && <span> — {item.numero_processo}</span>}
-                  {item.protegido && <div className="text-xs">Os dados estão protegidos; solicite revisão à gestão.</div>}
+                  {item.numero_processo && (
+                    <span> — {item.numero_processo}</span>
+                  )}
+                  {item.protegido && (
+                    <div className="text-xs">
+                      Os dados estão protegidos; solicite revisão à gestão.
+                    </div>
+                  )}
                 </div>
               ))}
             </ReviewBlock>
@@ -755,20 +911,35 @@ export default function SalaAnaliseJuridica() {
           {hasConflicts && (
             <ReviewBlock title="Alertas de conflito" tone="red">
               {conflictAlerts.map((item, index) => (
-                <div key={`${item.tipo || "alerta"}-${index}`} className="rounded-lg bg-white/70 p-2">
+                <div
+                  key={`${item.tipo || "alerta"}-${index}`}
+                  className="rounded-lg bg-white/70 p-2"
+                >
                   <strong>{item.nome || "Correspondência identificada"}</strong>
-                  <div>{item.mensagem || "Revisão obrigatória antes da conversão."}</div>
+                  <div>
+                    {item.mensagem || "Revisão obrigatória antes da conversão."}
+                  </div>
                 </div>
               ))}
             </ReviewBlock>
           )}
 
           {!!preview?.clientes_possivelmente_duplicados?.length && (
-            <ReviewBlock title="Possíveis clientes correspondentes" tone="amber">
+            <ReviewBlock
+              title="Possíveis clientes correspondentes"
+              tone="amber"
+            >
               {preview.clientes_possivelmente_duplicados.map((item, index) => (
-                <div key={`${item.id || "protegido"}-${index}`} className="rounded-lg bg-white/70 p-2">
+                <div
+                  key={`${item.id || "protegido"}-${index}`}
+                  className="rounded-lg bg-white/70 p-2"
+                >
                   {item.nome}
-                  {item.protegido && <div className="text-xs">Registro protegido: não é selecionável por esta carteira.</div>}
+                  {item.protegido && (
+                    <div className="text-xs">
+                      Registro protegido: não é selecionável por esta carteira.
+                    </div>
+                  )}
                 </div>
               ))}
             </ReviewBlock>
@@ -780,61 +951,132 @@ export default function SalaAnaliseJuridica() {
               <select
                 className="mt-1 w-full rounded-lg border p-2"
                 value={conversion.clientMode}
-                onChange={(event) => setConversion({ ...conversion, clientMode: event.target.value, clientId: "" })}
+                onChange={(event) =>
+                  setConversion({
+                    ...conversion,
+                    clientMode: event.target.value,
+                    clientId: "",
+                  })
+                }
               >
                 <option value="novo">Criar novo cliente</option>
-                <option value="existente">Usar cliente existente autorizado</option>
+                <option value="existente">
+                  Usar cliente existente autorizado
+                </option>
               </select>
             </div>
 
             {conversion.clientMode === "existente" ? (
               <div className="sm:col-span-2">
-                <label className="text-sm font-medium">Pesquisar cliente autorizado</label>
+                <label className="text-sm font-medium">
+                  Pesquisar cliente autorizado
+                </label>
                 <div className="relative mt-1">
-                  <Search className="absolute left-3 top-3 text-slate-400" size={16} />
+                  <Search
+                    className="absolute left-3 top-3 text-slate-400"
+                    size={16}
+                  />
                   <input
                     className="w-full rounded-lg border py-2.5 pl-9 pr-9"
                     value={clientSearch}
                     onChange={(event) => setClientSearch(event.target.value)}
                     placeholder="Digite ao menos 2 caracteres do nome"
                   />
-                  {searchingClients && <Loader2 className="absolute right-3 top-3 animate-spin text-slate-400" size={16} />}
+                  {searchingClients && (
+                    <Loader2
+                      className="absolute right-3 top-3 animate-spin text-slate-400"
+                      size={16}
+                    />
+                  )}
                 </div>
                 <select
                   className="mt-2 w-full rounded-lg border p-2"
                   value={conversion.clientId}
-                  onChange={(event) => setConversion({ ...conversion, clientId: event.target.value })}
+                  onChange={(event) =>
+                    setConversion({
+                      ...conversion,
+                      clientId: event.target.value,
+                    })
+                  }
                 >
                   <option value="">Selecione um cliente</option>
-                  {clientOptions.filter((item) => item.id).map((item) => (
-                    <option key={item.id as string} value={item.id as string}>{item.nome}</option>
-                  ))}
+                  {clientOptions
+                    .filter((item) => item.id)
+                    .map((item) => (
+                      <option key={item.id as string} value={item.id as string}>
+                        {item.nome}
+                      </option>
+                    ))}
                 </select>
                 {!clientOptions.some((item) => item.id) && (
-                  <p className="mt-2 text-xs text-slate-500">Nenhum cliente autorizado localizado. Pesquise outro nome ou utilize “Criar novo cliente”.</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Nenhum cliente autorizado localizado. Pesquise outro nome ou
+                    utilize “Criar novo cliente”.
+                  </p>
                 )}
               </div>
             ) : (
               <>
                 <div>
-                  <label className="text-sm font-medium">Nome ou razão social</label>
-                  <input className="mt-1 w-full rounded-lg border p-2" value={conversion.clientName} onChange={(event) => setConversion({ ...conversion, clientName: event.target.value })} />
+                  <label className="text-sm font-medium">
+                    Nome ou razão social
+                  </label>
+                  <input
+                    className="mt-1 w-full rounded-lg border p-2"
+                    value={conversion.clientName}
+                    onChange={(event) =>
+                      setConversion({
+                        ...conversion,
+                        clientName: event.target.value,
+                      })
+                    }
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium">CPF ou CNPJ</label>
-                  <input className="mt-1 w-full rounded-lg border p-2" inputMode="numeric" value={conversion.clientDocument} onChange={(event) => setConversion({ ...conversion, clientDocument: event.target.value })} placeholder="O sistema identifica PF ou PJ pela quantidade de dígitos" />
+                  <input
+                    className="mt-1 w-full rounded-lg border p-2"
+                    inputMode="numeric"
+                    value={conversion.clientDocument}
+                    onChange={(event) =>
+                      setConversion({
+                        ...conversion,
+                        clientDocument: event.target.value,
+                      })
+                    }
+                    placeholder="O sistema identifica PF ou PJ pela quantidade de dígitos"
+                  />
                 </div>
               </>
             )}
 
             <div>
               <label className="text-sm font-medium">Título do caso</label>
-              <input className="mt-1 w-full rounded-lg border p-2" value={conversion.caseTitle} onChange={(event) => setConversion({ ...conversion, caseTitle: event.target.value })} />
+              <input
+                className="mt-1 w-full rounded-lg border p-2"
+                value={conversion.caseTitle}
+                onChange={(event) =>
+                  setConversion({
+                    ...conversion,
+                    caseTitle: event.target.value,
+                  })
+                }
+              />
             </div>
             <div>
               <label className="text-sm font-medium">Área jurídica</label>
-              <select className="mt-1 w-full rounded-lg border p-2" value={conversion.area} onChange={(event) => setConversion({ ...conversion, area: event.target.value })}>
-                {AREAS.map((area) => <option key={area} value={area}>{area.replace(/_/g, " ")}</option>)}
+              <select
+                className="mt-1 w-full rounded-lg border p-2"
+                value={conversion.area}
+                onChange={(event) =>
+                  setConversion({ ...conversion, area: event.target.value })
+                }
+              >
+                {AREAS.map((area) => (
+                  <option key={area} value={area}>
+                    {area.replace(/_/g, " ")}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -842,26 +1084,56 @@ export default function SalaAnaliseJuridica() {
           <div className="mt-4 space-y-2 text-sm">
             {hasDuplicates && (
               <label className="flex items-start gap-2">
-                <input type="checkbox" className="mt-1" checked={conversion.confirmDuplicate} onChange={(event) => setConversion({ ...conversion, confirmDuplicate: event.target.checked })} />
-                <span>Li os casos possivelmente duplicados acima e confirmo que a abertura deve prosseguir.</span>
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={conversion.confirmDuplicate}
+                  onChange={(event) =>
+                    setConversion({
+                      ...conversion,
+                      confirmDuplicate: event.target.checked,
+                    })
+                  }
+                />
+                <span>
+                  Li os casos possivelmente duplicados acima e confirmo que a
+                  abertura deve prosseguir.
+                </span>
               </label>
             )}
             {hasConflicts && (
               <label className="flex items-start gap-2">
-                <input type="checkbox" className="mt-1" checked={conversion.confirmConflict} onChange={(event) => setConversion({ ...conversion, confirmConflict: event.target.checked })} />
-                <span>Li os alertas de conflito acima e confirmo que a revisão ética necessária foi realizada.</span>
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={conversion.confirmConflict}
+                  onChange={(event) =>
+                    setConversion({
+                      ...conversion,
+                      confirmConflict: event.target.checked,
+                    })
+                  }
+                />
+                <span>
+                  Li os alertas de conflito acima e confirmo que a revisão ética
+                  necessária foi realizada.
+                </span>
               </label>
             )}
           </div>
 
           <div className="mt-5 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setShowConvert(false)}>Cancelar</Button>
+            <Button variant="secondary" onClick={() => setShowConvert(false)}>
+              Cancelar
+            </Button>
             <Button
               onClick={() => void convertToCase()}
               disabled={
                 busy ||
                 !conversion.caseTitle.trim() ||
-                (conversion.clientMode === "novo" ? !conversion.clientName.trim() : !conversion.clientId) ||
+                (conversion.clientMode === "novo"
+                  ? !conversion.clientName.trim()
+                  : !conversion.clientId) ||
                 (hasDuplicates && !conversion.confirmDuplicate) ||
                 (hasConflicts && !conversion.confirmConflict)
               }
@@ -884,7 +1156,10 @@ function ReviewBlock({
   tone: "red" | "amber";
   children: ReactNode;
 }) {
-  const classes = tone === "red" ? "border-red-200 bg-red-50 text-red-900" : "border-amber-200 bg-amber-50 text-amber-900";
+  const classes =
+    tone === "red"
+      ? "border-red-200 bg-red-50 text-red-900"
+      : "border-amber-200 bg-amber-50 text-amber-900";
   return (
     <div className={`mt-3 space-y-2 rounded-xl border p-3 text-sm ${classes}`}>
       <div className="font-semibold">{title}</div>
@@ -904,15 +1179,28 @@ function Panel({
   items?: unknown[];
   tone?: "slate" | "amber" | "red";
 }) {
-  const border = tone === "red" ? "border-red-200" : tone === "amber" ? "border-amber-200" : "border-slate-200";
+  const border =
+    tone === "red"
+      ? "border-red-200"
+      : tone === "amber"
+        ? "border-amber-200"
+        : "border-slate-200";
   return (
     <div className={`rounded-xl border ${border} bg-white p-3`}>
-      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900"><Icon size={15} /> {title}</div>
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
+        <Icon size={15} /> {title}
+      </div>
       {!items?.length ? (
-        <p className="text-xs text-slate-400">Nenhum item identificado com segurança.</p>
+        <p className="text-xs text-slate-400">
+          Nenhum item identificado com segurança.
+        </p>
       ) : (
         <ul className="space-y-2 text-xs text-slate-600">
-          {items.slice(0, 8).map((item, index) => <li key={index} className="rounded-lg bg-slate-50 p-2">{stringify(item)}</li>)}
+          {items.slice(0, 8).map((item, index) => (
+            <li key={index} className="rounded-lg bg-slate-50 p-2">
+              {stringify(item)}
+            </li>
+          ))}
         </ul>
       )}
     </div>
@@ -931,11 +1219,22 @@ function Modal({
   wide?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" onMouseDown={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={title} className={`max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl ${wide ? "max-w-3xl" : "max-w-lg"}`} onMouseDown={(event) => event.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+      onMouseDown={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl ${wide ? "max-w-3xl" : "max-w-lg"}`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="Fechar"><X size={20} /></button>
+          <button type="button" onClick={onClose} aria-label="Fechar">
+            <X size={20} />
+          </button>
         </div>
         {children}
       </div>
