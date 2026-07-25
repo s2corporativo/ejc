@@ -34,6 +34,8 @@ from app.services.system_prompts.blocos_condicionais import (
     montar_instrucao_blocos,
 )
 from app.services.advogado_style_service import montar_instrucoes_estilo_para_prompt
+from app.schemas.peca_workflow import ProducaoModoRequest
+from app.services.peca_workflow_service import preparar_modo_producao
 from app.services.deep_research_service import DeepResearchInput, executar_deep_research
 from datetime import date
 from uuid import uuid4
@@ -62,6 +64,11 @@ class GerarPecaRequest(BaseModel):
         default=[],
         description=f"Teses condicionais: {', '.join(sorted(FLAGS_VALIDAS))}",
     )
+    # Modos controlados de produção (Livre/Guiado/Molde/Agente — docs/ai/
+    # PECAS_MODOS_PRODUCAO_CONTROLADOS.md). Opcional: ausente = modo livre
+    # legado. Quando presente, preparar_modo_producao valida ANTES do stream
+    # (409 em bloqueio) e as instruções determinísticas entram no pipeline.
+    modo_producao: Optional[ProducaoModoRequest] = None
 
 
 @router.get("/meta")
@@ -158,9 +165,62 @@ async def gerar_peca(
     flags_teses &= FLAGS_VALIDAS
     bloco_teses = montar_instrucao_blocos(flags_teses)
 
+    # ── Modos controlados (Guiado/Molde/Agente) — contrato ANTES do stream ────
+    # A camada é determinística (sem IA, sem banco). Bloqueio = 409 imediato:
+    # Guiado com campo obrigatório vazio, Molde sem versão/hash ou com campo
+    # simultaneamente preservado e substituído, Agente sem caso autorizado,
+    # sem documento considerado ou sem aprovação explícita do plano.
+    instrucoes_modo = ""
+    if req.modo_producao is not None:
+        modo_req = req.modo_producao.model_copy(update={
+            # Fonte única: o request externo manda; evita divergência de contrato.
+            "case_id": req.case_id,
+            "tipo_peca": req.tipo_peca,
+            "area_direito": req.area_direito,
+        })
+        prep = preparar_modo_producao(modo_req)
+        if prep.bloqueios:
+            raise HTTPException(409, detail={
+                "detail": "Produção bloqueada pelo modo selecionado.",
+                "modo": prep.modo.value,
+                "bloqueios": prep.bloqueios,
+                "alertas": prep.alertas,
+            })
+        instrucoes_modo = prep.instrucoes_pipeline or ""
+        # Auditoria exigida pelo contrato: modo, referência do molde e aprovação
+        # — só IDs/versão/hash, nunca conteúdo (sem dado sensível em log).
+        from app.models.audit_log import criar_audit_log
+        molde_ref = None
+        if prep.molde is not None:
+            molde_ref = {
+                "documento_id": prep.molde.referencia.documento_id,
+                "versao": prep.molde.referencia.versao,
+                "hash_conteudo": prep.molde.referencia.hash_conteudo,
+            }
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "GERAR_PECA_MODO", "pecas",
+            req.case_id or "avulsa",
+            detalhes=f"Modo de produção {prep.modo.value} validado para geração",
+            dados_depois={
+                "modo": prep.modo.value,
+                "molde": molde_ref,
+                "aprovado_para_redacao": modo_req.aprovado_para_redacao,
+                "documentos_considerados": [
+                    d.documento_id for d in prep.documentos_considerados
+                ],
+            },
+        )
+
     async def stream():
         try:
             instrucoes = req.instrucoes_adicionais or ""
+            if instrucoes_modo:
+                # Instruções DETERMINÍSTICAS do modo (preparar_modo_producao):
+                # primeiro bloco, antes de ficha/estilo/teses.
+                bloco_modo = instrucoes_modo[:2500]
+                instrucoes = (
+                    f"{bloco_modo}\n\n{instrucoes}" if instrucoes else bloco_modo
+                )
             if ficha_resumo:
                 # Ancora a peça na triagem confirmada (respeitando o limite).
                 bloco = f"[FICHA DE TRIAGEM CONFIRMADA]\n{ficha_resumo}"[:2000]

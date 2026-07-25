@@ -535,15 +535,18 @@ export default function PecaGeneratorModal({
     setDocumento("");
     abortRef.current = new AbortController();
 
-    const instrucoesComModo = [
-      instrucoes || null,
-      `[modo_producao=${modo}]`,
-      isGuiado
-        ? `[campos_guiados=${Object.keys(respostasGuiadas).filter((k) => (respostasGuiadas[k] || "").trim()).length}]`
-        : null,
-    ]
-      .filter(Boolean)
-      .join(" | ");
+    // Contrato estruturado dos modos (P1 — fim das tags de modo embutidas no
+    // prompt): o backend valida via preparar_modo_producao e devolve 409 com
+    // os bloqueios quando o modo não está pronto para redação.
+    const modoProducao = {
+      modo,
+      tipo_peca: tipoPeca,
+      area_direito: areaDireito,
+      instrucao_livre: instrucoes || null,
+      respostas_guiadas: isGuiado ? respostasGuiadas : {},
+      // Agente: o clique em "Gerar" é a aprovação explícita do plano exibido.
+      aprovado_para_redacao: modo === "agente",
+    };
 
     const body = JSON.stringify({
       tipo_peca: tipoPeca,
@@ -557,7 +560,8 @@ export default function PecaGeneratorModal({
         .map((s) => s.trim())
         .filter(Boolean),
       case_id: caseId ?? null,
-      instrucoes_adicionais: instrucoesComModo || null,
+      instrucoes_adicionais: instrucoes || null,
+      modo_producao: modoProducao,
     });
 
     try {
@@ -583,6 +587,14 @@ export default function PecaGeneratorModal({
         if (res.status === 409 && detailObj?.need_ficha_triagem) {
           setFase("form");
           onNeedFicha?.(detailObj.case_id ?? caseId ?? "");
+          return;
+        }
+        // Bloqueio dos modos controlados: lista objetiva do que falta.
+        if (res.status === 409 && Array.isArray(detailObj?.bloqueios)) {
+          setFase("form");
+          toast.error(
+            `Modo ${detailObj.modo ?? modo}: ${detailObj.bloqueios.join(" · ")}`,
+          );
           return;
         }
         const detail = detailObj
