@@ -108,9 +108,10 @@ _STOPLIST: frozenset[str] = frozenset({
     "excelentíssimo", "excelentissimo", "meritíssimo", "meritissimo", "vossa",
     "excelência", "excelencia", "senhoria", "doutor", "doutora", "egrégio",
     "egregio", "colenda",
-    # Identidade do escritório (controlador — não é PII de titular; nomes próprios
-    # do escritório injetados no system prompt não devem ser pseudonimizados).
-    "paula", "teixeira", "clovis", "soares",
+    # Tipos de via (nunca são pessoa; endereço é tratado pelo sanitizer como
+    # [ENDERECO] — P0-474)
+    "rua", "avenida", "travessa", "alameda", "praça", "praca", "rodovia",
+    "estrada",
     # Lugares / UF (não pessoa)
     "brasil", "brasília", "brasilia", "betim", "contagem", "minas", "gerais",
     "são", "sao", "santo", "santa", "rio", "janeiro", "horizonte", "belo",
@@ -131,11 +132,31 @@ def _tokens(nome: str) -> list[str]:
     return re.findall(_TOKEN, nome)
 
 
+# Identidade do escritório (controlador) por FRASE COMPLETA, não por token
+# solto: antes "paula"/"teixeira"/"clovis"/"soares" na stoplist faziam QUALQUER
+# cliente com esses nomes ("Ana Paula Ferreira") escapar da pseudonimização —
+# vazamento LGPD (corrigido no P0-474). Candidato é descartado só quando é
+# subfrase da identidade do escritório (ou vice-versa).
+_FRASES_ESCRITORIO: tuple[str, ...] = (
+    "de paula teixeira advogados",
+    "de paula teixeira",
+    "clovis josé soares",
+    "clovis jose soares",
+)
+
+
+def _identidade_escritorio(nome: str) -> bool:
+    cand = nome.casefold()
+    return any(cand in frase or frase in cand for frase in _FRASES_ESCRITORIO)
+
+
 def _institucional(nome: str) -> bool:
-    """True se o candidato NÃO é pessoa física: sem tokens, ou QUALQUER token na
-    STOPLIST (institucional/jurídico/lugar/mês/identidade do escritório)."""
+    """True se o candidato NÃO é pessoa física: sem tokens, QUALQUER token na
+    STOPLIST (institucional/jurídico/lugar/mês) ou identidade do escritório."""
     toks = _tokens(nome)
     if not toks:
+        return True
+    if _identidade_escritorio(nome):
         return True
     return any(t.casefold() in _STOPLIST for t in toks)
 
@@ -158,6 +179,37 @@ def detectar_nomes(texto: str, *, incluir_medio: bool = True) -> list[str]:
             nome = m.group(0).strip()
             if nome and not _institucional(nome):
                 achados[nome] = None
+    return sorted(achados, key=len, reverse=True)
+
+
+# ── P0-474: EMPRESAS residuais (sufixo societário obrigatório) ────────────────
+# Detecta razão social em texto livre pela ÚNICA âncora inequívoca: o sufixo
+# societário ("Ltda", "S.A.", "S/A", "EIRELI", "ME", "EPP", "S.S."). Sem sufixo
+# não detecta — empresa citada só pelo nome-fantasia deve vir via `entidades`
+# (cadastro do caso). NÃO aplica a _STOPLIST: razão social frequentemente
+# contém termos institucionais ("Banco", "Comércio") que são legítimos aqui.
+_SUFIXO_EMPRESA = (
+    r"(?:Ltda\.?|S\.?\s?/?\s?A\.?|EIRELI|EPP|MEI?|S\.?S\.?"
+    r"|Sociedade\s+An[ôo]nima|Sociedade\s+Simples)"
+)
+_RE_EMPRESA = re.compile(
+    rf"{_TOKEN}(?:\s+(?:{_CONECTIVO}\s+)?{_TOKEN})*\s+{_SUFIXO_EMPRESA}(?!\w)"
+)
+
+
+def detectar_empresas(texto: str) -> list[str]:
+    """Razões sociais residuais (com sufixo societário) para pseudonimizar.
+
+    Retorna a razão social COMPLETA (incluindo o sufixo) — o marcador substitui
+    o conjunto, preservando a relação no texto. Dedup do mais longo ao mais
+    curto, como em `detectar_nomes`."""
+    if not texto:
+        return []
+    achados: dict[str, None] = {}
+    for m in _RE_EMPRESA.finditer(texto):
+        razao = m.group(0).strip()
+        if razao:
+            achados[razao] = None
     return sorted(achados, key=len, reverse=True)
 
 

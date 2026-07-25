@@ -38,6 +38,8 @@ _TIPO_POR_PLACEHOLDER = {
     "[CEP]": "CEP",
     "[CARTAO]": "CARTAO",
     "[CHAVE_PIX]": "CHAVE_PIX",
+    "[OAB]": "OAB",
+    "[ENDERECO]": "ENDERECO",
 }
 
 # Entidades nomeadas (nomes próprios) → tipo do marcador. As chaves são as
@@ -110,7 +112,16 @@ class _Pseudonimizador:
         marcadores já criados ([CLIENTE_1], [CPF_1]…) são ALL-CAPS entre colchetes
         e nunca são reconhecidos como nome (não há dupla marcação). Cada nome vira
         [PESSOA_n] consistente/reversível; substitui do mais LONGO ao mais curto."""
-        from app.services.ai.ner_local import detectar_nomes
+        from app.services.ai.ner_local import detectar_empresas, detectar_nomes
+        # P0-474: EMPRESAS primeiro (razão social é mais longa e contém tokens
+        # que também casariam como "nome de pessoa"; substituir antes evita
+        # marcação parcial tipo "Transportadora [PESSOA_1] Ltda").
+        for razao in detectar_empresas(texto):
+            padrao = rf"(?<!\w){re.escape(razao)}(?!\w)"
+            if not re.search(padrao, texto):
+                continue
+            marcador = self._marcador("EMPRESA", razao)
+            texto = re.sub(padrao, marcador, texto)
         for nome in detectar_nomes(texto, incluir_medio=True):
             padrao = rf"(?<!\w){re.escape(nome)}(?!\w)"
             if not re.search(padrao, texto):
