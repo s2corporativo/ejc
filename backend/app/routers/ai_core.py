@@ -41,7 +41,7 @@ class CoreChatRequest(BaseModel):
     module_key: Optional[str] = Field(None, max_length=60)
     surface: Optional[str] = Field(None, max_length=80)
     case_id: Optional[str] = None
-    nivel_inteligencia: str = Field("alto", description="padrao | alto | maximo")
+    nivel_inteligencia: str = Field("alto", description="padrao | alto | maximo | executivo")
 
 
 class CoreTaskRequest(BaseModel):

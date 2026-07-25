@@ -161,6 +161,15 @@ async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo,
             "detail": detalhe}
 
 
+def _validar_pdf_upload(raw: bytes, max_mb: int) -> None:
+    """Guarda pura do ingest-pdf (testável sem banco, padrão _validar_avatar):
+    teto de tamanho no app + assinatura %PDF antes do parse/OCR CPU-bound."""
+    if len(raw) > max_mb * 1024 * 1024:
+        raise HTTPException(413, f"PDF excede o limite de {max_mb}MB")
+    if not raw.startswith(b"%PDF-"):
+        raise HTTPException(422, "Arquivo não é um PDF válido (assinatura ausente)")
+
+
 @router.post("/ingest-pdf", status_code=201)
 async def ingerir_pdf(
     background_tasks: BackgroundTasks,
@@ -182,7 +191,12 @@ async def ingerir_pdf(
     from app.services.ocr_service import extrair_texto_pdf
     from app.services.extracao_estruturada import extrair_estruturas
     import asyncio as _asyncio
-    raw = await file.read()
+    # Pente fino 2026-07-25: teto de leitura no app (não confiar só no nginx) e
+    # magic bytes ANTES de entregar o buffer ao parser/OCR (CPU-bound).
+    from app.core.config import get_settings
+    max_mb = get_settings().MAX_UPLOAD_MB
+    raw = await file.read(max_mb * 1024 * 1024 + 1)
+    _validar_pdf_upload(raw, max_mb)
     try:
         # OCR é CPU-bound (renderização + tesseract) → thread para não travar o loop
         res = await _asyncio.to_thread(extrair_texto_pdf, raw)

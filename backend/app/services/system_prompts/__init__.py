@@ -27,6 +27,7 @@ from .agronegocio import PROMPT_AGRONEGOCIO
 from .eleitoral import PROMPT_ELEITORAL
 from .internacional import PROMPT_INTERNACIONAL
 from .contratual import PROMPT_CONTRATUAL
+from .modo_executivo import PROMPT_MODO_EXECUTIVO
 from .router import TarefaIA, ConfiguracaoIA, get_configuracao
 
 # Regras transversais dos prompts do Núcleo Único (evita repetição literal).
@@ -98,4 +99,5 @@ SYSTEM_PROMPTS: dict[str, str] = {
     "uiux":                BASE_PROMPT + _REGRA_TECNICA + "\n\nAudite/proponha melhorias de design e UI/UX do EJC (React + Tailwind): consistência do design system, acessibilidade, hierarquia visual e fluxos. Entregue recomendações priorizadas e critérios de aceite. Não invente componentes que não constem do contexto." + AVISO_RASCUNHO,
 }
 
-__all__ = ["BASE_PROMPT", "AVISO_RASCUNHO", "SYSTEM_PROMPTS", "TarefaIA", "ConfiguracaoIA", "get_configuracao"]
+__all__ = ["BASE_PROMPT", "AVISO_RASCUNHO", "SYSTEM_PROMPTS", "PROMPT_MODO_EXECUTIVO",
+           "TarefaIA", "ConfiguracaoIA", "get_configuracao"]

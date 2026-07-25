@@ -154,6 +154,22 @@ class Settings(BaseSettings):
     # Teto DURO de tokens de saída por chamada (controle de custo).
     # Qualquer max_tokens acima disto é rebaixado no provider.
     ANTHROPIC_MAX_TOKENS: int = 8000
+    # Prompt caching Anthropic: envia o bloco system com
+    # cache_control={"type": "ephemeral"} (leituras repetidas do mesmo prefixo
+    # custam ~10%). True = comportamento atual; False = system como string pura
+    # (sem cache_control). Não afeta os demais providers.
+    AI_PROMPT_CACHING_ENABLED: bool = True
+    # Busca web (verificação ativa) via server-side tool do Anthropic.
+    # Padrão de integrações externas do repo: default OFF + degradação graciosa
+    # (se a API rejeitar o tool, a chamada repete sem ele). O tool só é anexado
+    # no caminho que JÁ passou pela pseudonimização/sanitização do gateway.
+    AI_WEB_SEARCH_ENABLED: bool = False
+    # Máximo de buscas por chamada (max_uses do tool web_search).
+    AI_WEB_SEARCH_MAX_USES: int = 3
+    # Preço da busca web Anthropic (server tool web_search), cobrado À PARTE dos
+    # tokens: US$ 10,00 por 1.000 buscas (tabela oficial Anthropic). Entra no
+    # custo estimado (AILog/governança/alerta de budget) via ai_cost.
+    AI_WEB_SEARCH_CUSTO_USD_POR_1000: float = 10.0
 
     # ── IA — Maritaca (Sabiá) — provider BRASILEIRO, OpenAI-compatible ─────
     # PLUGÁVEL: nasce DESLIGADO (MARITACA_ENABLED=false) → sistema idêntico ao

@@ -28,9 +28,14 @@ def test_sala_nao_pede_uuid_tecnico_do_cliente():
 
 
 def test_sala_classifica_documento_pf_pj():
-    assert "digits.length <= 11 ? digits : null" in SOURCE
-    assert "digits.length > 11 ? digits : null" in SOURCE
+    # P0-473: a classificação usa o validador com DV (utils/documento), que
+    # rejeita comprimento inválido em vez de truncar — nunca voltar ao
+    # fatiamento por comprimento (slice/length ternário).
+    assert "classificarDocumento" in SOURCE
     assert "clientDocument" in SOURCE
+    assert ".slice(0, 14)" not in SOURCE
+    assert 'documento.tipo === "cpf" ? documento.cpf : null' in SOURCE
+    assert 'documento.tipo === "cnpj" ? documento.cnpj : null' in SOURCE
 
 
 def test_sala_exibe_achados_antes_da_confirmacao():

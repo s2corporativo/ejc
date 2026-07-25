@@ -1,0 +1,96 @@
+// ── Navegação canônica do modo caso (Fase 1 do plano de simplificação) ───────
+// Fonte ÚNICA dos cinco destinos do caso: a barra persistente
+// (CaseContextBar), a página do caso (CasoDetalhe/GROUPS) e o dock de ações
+// (CaseCommandDock) derivam TODOS desta lista — os rótulos não podem divergir.
+// As abas (?tab=...) continuam sendo a unidade de deep-link; cada seção apenas
+// agrupa abas existentes. Nenhuma aba é removida — só reagrupada.
+import {
+  Activity,
+  FileStack,
+  LayoutDashboard,
+  Scale,
+  WalletCards,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
+export interface CaseNavSection {
+  /** Rótulo canônico exibido na barra, na página e no dock. */
+  label: string;
+  /** Aba padrão aberta ao navegar para a seção. */
+  tab: string;
+  icon: LucideIcon;
+  /** Descrição curta usada no CaseCommandDock. */
+  descricao: string;
+  /** Todas as abas (?tab=...) agrupadas nesta seção. */
+  tabs: readonly string[];
+  /** Rotas irmãs /casos/:id/* que pertencem à seção (realce na barra). */
+  routeAliases?: readonly string[];
+}
+
+export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
+  {
+    // Superfície de decisão: próxima ação do orquestrador + jornada embutida
+    // + dados do caso. A antiga aba "orquestrador" foi promovida para cá.
+    label: "Visão",
+    tab: "resumo",
+    icon: LayoutDashboard,
+    descricao: "Próxima ação, jornada, alertas e dados do caso.",
+    tabs: ["resumo", "partes", "etiquetas"],
+    routeAliases: ["/jornada", "/entrevista"],
+  },
+  {
+    // "Histórico e encerramento" (memoria) foi absorvido por Atividades.
+    label: "Atividades",
+    tab: "timeline",
+    icon: Activity,
+    descricao: "Linha do tempo, processos, prazos, audiências e memória.",
+    tabs: [
+      "timeline",
+      "processos",
+      "mensagens",
+      "prazos",
+      "audiencias",
+      "checklists",
+      "memoria",
+    ],
+  },
+  {
+    label: "Arquivos",
+    tab: "documentos",
+    icon: FileStack,
+    descricao: "Documentos, provas, contratos e procurações.",
+    tabs: ["documentos", "provas", "contratos", "procuracoes"],
+  },
+  {
+    label: "Estratégia",
+    tab: "teses",
+    icon: Scale,
+    descricao: "Teses, riscos, precedentes e decisão jurídica.",
+    tabs: [
+      "teses",
+      "teses-sugeridas",
+      "jurisprudencia",
+      "precedentes",
+      "risco",
+      "score",
+      "dossie",
+      "iaDefensiva",
+      "ferramentas",
+    ],
+    routeAliases: ["/sala-de-guerra"],
+  },
+  {
+    label: "Financeiro",
+    tab: "financeiro",
+    icon: WalletCards,
+    descricao: "Honorários, custos e liquidez do caso.",
+    tabs: ["financeiro", "custos", "liquidez"],
+  },
+];
+
+// Abas que deixaram de existir como destino próprio. O conteúdo do
+// "orquestrador" foi promovido à Visão (aba resumo) — o deep-link antigo
+// continua resolvendo via redirecionamento em CasoDetalhe.
+export const LEGACY_CASE_TAB_REDIRECTS: Record<string, string> = {
+  orquestrador: "resumo",
+};

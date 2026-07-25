@@ -48,6 +48,12 @@ async def upload(
     # IDOR: análise vinculada a caso exige acesso ao caso ANTES de persistir.
     if case_id:
         await verificar_acesso_caso(db, cu, case_id)
+    # IDOR (pente fino 2026-07-25): client_id do form também exige visibilidade
+    # de carteira — antes era persistido sem checagem, permitindo vincular dado
+    # financeiro sensível a cliente alheio. 404 uniforme (não confirma existência).
+    if client_id:
+        from app.core.client_ownership import obter_cliente_autorizado
+        await obter_cliente_autorizado(db, cu, client_id)
     fmt = (formato or _fmt_de_nome(file.filename or "")).lower()
     if fmt not in ("ofx", "csv", "pdf"):
         raise HTTPException(422, "Formato não suportado (use PDF, OFX ou CSV)")

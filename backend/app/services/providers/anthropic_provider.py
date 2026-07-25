@@ -63,6 +63,108 @@ def _get_client():
     return _client
 
 
+def _system_param(system: str):
+    """Bloco system para a API. Com AI_PROMPT_CACHING_ENABLED (default True),
+    envia como bloco com cache_control ephemeral (prompt caching: leituras
+    repetidas do mesmo prefixo custam ~10%; prefixos curtos apenas não cacheiam,
+    sem erro). Desligado → string pura (formato aceito por qualquer modelo)."""
+    if get_settings().AI_PROMPT_CACHING_ENABLED:
+        return [{
+            "type": "text",
+            "text": system,
+            "cache_control": {"type": "ephemeral"},
+        }]
+    return system
+
+
+def _web_search_tool() -> dict | None:
+    """Tool server-side de busca web (verificação ativa) — opt-in via
+    AI_WEB_SEARCH_ENABLED (default OFF, padrão de integrações do repo).
+
+    LGPD: este provider é invocado EXCLUSIVAMENTE pelo ai_gateway
+    (_chamar_com_barreira → _chamar_provedor), DEPOIS da barreira de
+    pseudonimização/sanitização (_preparar_mensagens_externo). Portanto qualquer
+    query que o modelo derive das mensagens para a busca já está sem PII — o
+    tool nunca vê conteúdo cru."""
+    s = get_settings()
+    if not s.AI_WEB_SEARCH_ENABLED:
+        return None
+    return {
+        "type": "web_search_20250305",
+        "name": "web_search",
+        "max_uses": max(1, int(s.AI_WEB_SEARCH_MAX_USES)),
+    }
+
+
+# pause_turn (busca web longa): nº máximo de CONTINUAÇÕES automáticas por
+# chamada antes de degradar graciosamente (usar o parcial + aviso).
+_MAX_CONTINUACOES_PAUSE_TURN = 3
+_AVISO_BUSCA_PARCIAL = (
+    "\n\n⚠️ Busca web interrompida no limite de continuações — resultado "
+    "parcial; o advogado deve verificar as fontes manualmente."
+)
+
+
+def _coletar_fontes_web(respostas: list) -> list[dict]:
+    """Citações estruturadas da busca web → [{"titulo","url"}] únicos (por URL),
+    na ordem de aparição. Cobre as DUAS origens da API: `citations` dos blocos
+    text (fontes efetivamente citadas) e os resultados dos blocos
+    web_search_tool_result. São URLs públicas — sem PII."""
+    fontes: list[dict] = []
+    vistos: set[str] = set()
+
+    def _add(item) -> None:
+        url = getattr(item, "url", "") or ""
+        if not url or url in vistos:
+            return
+        vistos.add(url)
+        fontes.append({"titulo": getattr(item, "title", "") or url, "url": url})
+
+    for resp in respostas:
+        for b in (getattr(resp, "content", None) or []):
+            btype = getattr(b, "type", "")
+            if btype == "text":
+                for c in (getattr(b, "citations", None) or []):
+                    _add(c)
+            elif btype == "web_search_tool_result":
+                rc = getattr(b, "content", None)
+                # Em erro do tool, `content` é objeto (não lista) — ignorar.
+                if isinstance(rc, list):
+                    for r in rc:
+                        _add(r)
+    return fontes
+
+
+def _render_fontes_web(fontes: list[dict]) -> str:
+    """Seção final de fontes — afirmação jurídica nunca fica sem fonte visível."""
+    linhas = "\n".join(f"- {f['titulo']} — {f['url']}" for f in fontes)
+    return f"\n\nFontes consultadas (busca web):\n{linhas}"
+
+
+def _somar_usage(respostas: list, campo: str) -> int | None:
+    """Soma um campo de usage entre continuações; todos None → None."""
+    valores = [
+        getattr(getattr(r, "usage", None), campo, None) for r in respostas
+    ]
+    presentes = [v for v in valores if v is not None]
+    return sum(presentes) if presentes else None
+
+
+def _contar_buscas_web(resp) -> int:
+    """Quantas buscas web o modelo executou nesta resposta (0 sem o tool).
+    Preferimos o contador oficial usage.server_tool_use.web_search_requests;
+    fallback: conta blocos server_tool_use com name=web_search."""
+    stu = getattr(getattr(resp, "usage", None), "server_tool_use", None)
+    buscas = getattr(stu, "web_search_requests", None)
+    if buscas is None:
+        buscas = sum(
+            1 for b in (getattr(resp, "content", None) or [])
+            if getattr(b, "type", "") == "server_tool_use"
+            and getattr(b, "name", "") == "web_search"
+        )
+    return int(buscas or 0)
+
+
 def _split_system(messages: list[dict]) -> tuple[str, list[dict]]:
     """Separa mensagens 'system' (Anthropic usa param próprio) das demais."""
     system_parts, conv = [], []
@@ -103,16 +205,18 @@ async def chat(messages: list[dict], model: str | None,
     def _call():
         import anthropic  # import tardio (mesmo padrão do _get_client)
         client = _get_client()
-        kwargs = dict(model=mdl, messages=conv)
+        kwargs = dict(model=mdl)
         if system:
-            # Prompt caching: bloco system com cache_control — leituras repetidas
-            # do mesmo prefixo (system prompt + base legal + RAG do caso) custam
-            # ~10% do preço. Prefixos curtos apenas não cacheiam (sem erro).
-            kwargs["system"] = [{
-                "type": "text",
-                "text": system,
-                "cache_control": {"type": "ephemeral"},
-            }]
+            # Prompt caching (AI_PROMPT_CACHING_ENABLED): bloco system com
+            # cache_control — leituras repetidas do mesmo prefixo (system prompt
+            # + base legal + RAG do caso) custam ~10% do preço.
+            kwargs["system"] = _system_param(system)
+        # Busca web (verificação ativa, opt-in): as `messages` recebidas aqui já
+        # passaram pela barreira LGPD do gateway (pseudonimização/sanitização em
+        # _chamar_com_barreira) — ver docstring de _web_search_tool.
+        tool_busca = _web_search_tool()
+        if tool_busca:
+            kwargs["tools"] = [tool_busca]
         if _is_modern(mdl):
             effort = (get_settings().ANTHROPIC_EFFORT or "high").lower()
             # O thinking adaptativo consome o MESMO budget de max_tokens da
@@ -132,33 +236,81 @@ async def chat(messages: list[dict], model: str | None,
             # temperature continua válida; effort não é suportado (erra no Haiku).
             kwargs["max_tokens"] = mt
             kwargs["temperature"] = temperature
-        try:
-            return client.messages.create(**kwargs)
-        except anthropic.APIError as e:
-            # Mensagem CURTA e segura: tipo + status. Sem corpo, sem stack,
-            # sem chave. `from None` corta a cadeia de exceção original.
-            status = getattr(e, "status_code", None)
-            raise RuntimeError(
-                f"Anthropic API falhou ({type(e).__name__}"
-                + (f", HTTP {status}" if status else "") + ")"
-            ) from None
+
+        def _create():
+            try:
+                return client.messages.create(**kwargs)
+            except anthropic.APIError as e:
+                # Mensagem CURTA e segura: tipo + status. Sem corpo, sem stack,
+                # sem chave. `from None` corta a cadeia de exceção original.
+                status = getattr(e, "status_code", None)
+                # Degradação graciosa da busca web: API rejeitou a requisição
+                # COM o tool (400 — modelo/conta sem suporte)? Remove o tool de
+                # `kwargs` (as continuações também seguem sem ele) e repete.
+                if "tools" in kwargs and status == 400:
+                    kwargs.pop("tools", None)
+                    try:
+                        return client.messages.create(**kwargs)
+                    except anthropic.APIError as e2:
+                        status2 = getattr(e2, "status_code", None)
+                        raise RuntimeError(
+                            f"Anthropic API falhou ({type(e2).__name__}"
+                            + (f", HTTP {status2}" if status2 else "") + ")"
+                        ) from None
+                raise RuntimeError(
+                    f"Anthropic API falhou ({type(e).__name__}"
+                    + (f", HTTP {status}" if status else "") + ")"
+                ) from None
+
+        # pause_turn (busca web longa): a API pausa o turno server-side; reenvia
+        # a conversa COM o turno pausado como continuação até stop terminal, com
+        # teto de _MAX_CONTINUACOES_PAUSE_TURN. Ao exceder, o chamador usa o que
+        # tiver (parcial + aviso) — nunca falha a resposta por isso.
+        respostas: list = []
+        msgs = list(conv)
+        for _ in range(1 + _MAX_CONTINUACOES_PAUSE_TURN):
+            kwargs["messages"] = msgs
+            resp = _create()
+            respostas.append(resp)
+            if getattr(resp, "stop_reason", None) != "pause_turn":
+                break
+            msgs = msgs + [{
+                "role": "assistant",
+                "content": getattr(resp, "content", None) or [],
+            }]
+        return respostas
 
     # SDK síncrono → roda em thread para não bloquear o event loop.
-    resp = await asyncio.to_thread(_call)
-    # A resposta pode conter blocos "thinking" antes do texto — nunca ler
-    # content[0] às cegas: concatena apenas os blocos de tipo "text".
+    respostas = await asyncio.to_thread(_call)
+    # As respostas podem conter blocos "thinking"/tool antes do texto — nunca
+    # ler content[0] às cegas: concatena apenas os blocos de tipo "text" de
+    # todas as continuações, na ordem.
     texto = "".join(
-        getattr(b, "text", "") for b in (resp.content or [])
+        getattr(b, "text", "")
+        for resp in respostas
+        for b in (getattr(resp, "content", None) or [])
         if getattr(b, "type", "") == "text"
     )
-    u = getattr(resp, "usage", None)
+    # Citações estruturadas da busca web: renderizadas ao final do texto (fonte
+    # visível para o advogado) E devolvidas no usage para AILog/observabilidade.
+    fontes_web = _coletar_fontes_web(respostas)
+    if fontes_web:
+        texto += _render_fontes_web(fontes_web)
+    if getattr(respostas[-1], "stop_reason", None) == "pause_turn":
+        # Teto de continuações excedido → degradação graciosa com aviso.
+        texto += _AVISO_BUSCA_PARCIAL
     usage = {
         "model": mdl,
-        "input_tokens": getattr(u, "input_tokens", None),
-        "output_tokens": getattr(u, "output_tokens", None),
+        "input_tokens": _somar_usage(respostas, "input_tokens"),
+        "output_tokens": _somar_usage(respostas, "output_tokens"),
         # Transparência de custo do prompt caching (leitura ≈ 10% do preço).
-        "cache_read_input_tokens": getattr(u, "cache_read_input_tokens", None),
-        "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", None),
+        "cache_read_input_tokens": _somar_usage(respostas, "cache_read_input_tokens"),
+        "cache_creation_input_tokens": _somar_usage(respostas, "cache_creation_input_tokens"),
+        # Nº de buscas web executadas (0 quando o tool está OFF/não usado) —
+        # o gateway registra este metadado em AILog/observabilidade e soma o
+        # custo por busca (ai_cost.custo_busca_web_brl) ao custo estimado.
+        "web_search_requests": sum(_contar_buscas_web(r) for r in respostas),
+        "web_search_fontes": fontes_web,
     }
     return texto, usage
 
@@ -197,13 +349,14 @@ async def chat_tools(messages: list[dict], model: str | None,
     def _call():
         import anthropic  # import tardio (mesmo padrão do _get_client)
         client = _get_client()
+        # NOTA: o tool de busca web NÃO é anexado aqui — o loop agêntico
+        # (services/ai/agent/loop.py) gerencia sua própria lista de tools e
+        # executa cada tool_call localmente; um server-side tool intercalado
+        # mudaria o contrato do loop. Busca web opt-in vale só para chat().
         kwargs = dict(model=mdl, messages=conv, tools=tools)
         if system:
-            kwargs["system"] = [{
-                "type": "text",
-                "text": system,
-                "cache_control": {"type": "ephemeral"},
-            }]
+            # Prompt caching condicionado a AI_PROMPT_CACHING_ENABLED (idem chat()).
+            kwargs["system"] = _system_param(system)
         if _is_modern(mdl):
             effort = (get_settings().ANTHROPIC_EFFORT or "high").lower()
             # Achado M3: NÃO forçar o piso de 8192 no caminho de TOOL-USE. Ao

@@ -218,7 +218,74 @@ function AreasCaso({ caso }: { caso: Case }) {
   );
 }
 
-export default function TabResumo({ caso }: { caso: Case }) {
+// Aviso + controle de reabertura de caso encerrado/arquivado. Exportado para a
+// Visão do caso (CasoDetalhe) exibi-lo em destaque no topo — acima do painel do
+// orquestrador — mesmo com a linha "Dados do caso" recolhida (review PR #483).
+export function AvisoCasoEncerrado({ caso }: { caso: Case }) {
+  const [reabrindo, setReabrindo] = useState(false);
+
+  const reabrir = async () => {
+    setReabrindo(true);
+    try {
+      if (caso.status === "arquivado") {
+        await api.post(`/cases/${caso.id}/desarquivar`);
+        toast.success("Caso desarquivado.");
+      } else {
+        await api.patch(`/cases/${caso.id}`, { status: "ativo" });
+        toast.success("Caso reaberto.");
+      }
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao reabrir caso");
+    } finally {
+      setReabrindo(false);
+    }
+  };
+
+  if (caso.status !== "encerrado" && caso.status !== "arquivado") return null;
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+      <p className="text-sm text-amber-800">
+        Este caso está{" "}
+        <strong>
+          {caso.status === "arquivado" ? "arquivado" : "encerrado"}
+        </strong>
+        . Edições e novos lançamentos estão bloqueados enquanto ele não for
+        reaberto.
+      </p>
+      <button
+        onClick={reabrir}
+        disabled={reabrindo}
+        className="btn-secondary flex items-center gap-1 whitespace-nowrap border-amber-300 text-amber-800"
+      >
+        {caso.status === "arquivado" ? (
+          <ArchiveRestore
+            size={14}
+            className={reabrindo ? "animate-spin" : ""}
+          />
+        ) : (
+          <RefreshCw size={14} className={reabrindo ? "animate-spin" : ""} />
+        )}
+        {reabrindo
+          ? "Reabrindo..."
+          : caso.status === "arquivado"
+            ? "Desarquivar caso"
+            : "Reabrir caso"}
+      </button>
+    </div>
+  );
+}
+
+export default function TabResumo({
+  caso,
+  ocultarAvisoEncerramento = false,
+}: {
+  caso: Case;
+  // A Visão já mostra o AvisoCasoEncerrado no topo; evita o banner duplicado
+  // quando a linha "Dados do caso" está expandida.
+  ocultarAvisoEncerramento?: boolean;
+}) {
   const { disponivel: iaDisponivel } = useIaStatus();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -230,7 +297,6 @@ export default function TabResumo({ caso }: { caso: Case }) {
   const [novoMov, setNovoMov] = useState("");
   const [encModal, setEncModal] = useState(false);
   const [encLoading, setEncLoading] = useState(false);
-  const [reabrindo, setReabrindo] = useState(false);
   const [enc, setEnc] = useState({
     resultado: "exito_total",
     motivo_resultado: "",
@@ -333,24 +399,6 @@ export default function TabResumo({ caso }: { caso: Case }) {
     }
   };
 
-  const reabrir = async () => {
-    setReabrindo(true);
-    try {
-      if (caso.status === "arquivado") {
-        await api.post(`/cases/${caso.id}/desarquivar`);
-        toast.success("Caso desarquivado.");
-      } else {
-        await api.patch(`/cases/${caso.id}`, { status: "ativo" });
-        toast.success("Caso reaberto.");
-      }
-      window.location.reload();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao reabrir caso");
-    } finally {
-      setReabrindo(false);
-    }
-  };
-
   const gerarDocs = async () => {
     setGerando(true);
     try {
@@ -441,39 +489,8 @@ export default function TabResumo({ caso }: { caso: Case }) {
 
   return (
     <div className="space-y-5">
-      {casoEncerrado && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-sm text-amber-800">
-            Este caso está{" "}
-            <strong>
-              {caso.status === "arquivado" ? "arquivado" : "encerrado"}
-            </strong>
-            . Edições e novos lançamentos estão bloqueados enquanto ele não for
-            reaberto.
-          </p>
-          <button
-            onClick={reabrir}
-            disabled={reabrindo}
-            className="btn-secondary flex items-center gap-1 whitespace-nowrap border-amber-300 text-amber-800"
-          >
-            {caso.status === "arquivado" ? (
-              <ArchiveRestore
-                size={14}
-                className={reabrindo ? "animate-spin" : ""}
-              />
-            ) : (
-              <RefreshCw
-                size={14}
-                className={reabrindo ? "animate-spin" : ""}
-              />
-            )}
-            {reabrindo
-              ? "Reabrindo..."
-              : caso.status === "arquivado"
-                ? "Desarquivar caso"
-                : "Reabrir caso"}
-          </button>
-        </div>
+      {casoEncerrado && !ocultarAvisoEncerramento && (
+        <AvisoCasoEncerrado caso={caso} />
       )}
       <div className="flex gap-2 flex-wrap">
         <button
@@ -522,12 +539,8 @@ export default function TabResumo({ caso }: { caso: Case }) {
         >
           ⚔️ Sala de Guerra
         </button>
-        <button
-          onClick={() => navigate(`/casos/${caso.id}/jornada`)}
-          className="btn-secondary flex items-center gap-1"
-        >
-          🧭 Jornada do caso
-        </button>
+        {/* Fase 1: o botão "Jornada do caso" saiu daqui — a jornada agora vive
+            embutida na própria Visão (painel do orquestrador acima). */}
         <button
           onClick={() => navigate(`/casos/${caso.id}/entrevista`)}
           className="btn-secondary flex items-center gap-1"
