@@ -29,6 +29,18 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r'\b\d{4}[\s.-]?\d{4}[\s.-]?\d{4}[\s.-]?\d{4}\b'), '[CARTAO]'),
     # PIX chave aleatória (UUID)
     (re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.I), '[CHAVE_PIX]'),
+    # ── P0-474: padrões adicionais (APPEND-ONLY — índices 0-6 são referenciados
+    #    por validar_sem_pii e sanitizar_pii_interno usa [2:]; nunca reordenar) ──
+    # Inscrição OAB: "OAB/MG 123.456", "OAB-SP 123456", "OAB nº 12.345"
+    (re.compile(r'\bOAB[\s/.-]*(?:[A-Z]{2})?[\s.]*(?:n[ºo°]?\.?\s*)?\d{1,3}\.?\d{2,3}\b', re.I), '[OAB]'),
+    # Logradouro: "Rua das Acácias, nº 123" / "Av. Brasil, 500" — exige o tipo
+    # de via seguido de nome Capitalizado; número é opcional. Conservador: para
+    # na vírgula/quebra para não engolir o resto da frase.
+    (re.compile(
+        r'\b(?:Rua|Avenida|Av\.|Travessa|Alameda|Pra[çc]a|Rodovia|Estrada)\s+'
+        r'(?:d[aeo]s?\s+)?[A-ZÀ-Ý][^,\n;]{2,60}'
+        r'(?:,\s*(?:n[ºo°]?\.?\s*)?\d+[-\w]*)?',
+    ), '[ENDERECO]'),
 ]
 
 # Datas de nascimento explícitas (contexto "nascido em", "nascimento")
@@ -127,6 +139,8 @@ def validar_sem_pii(texto: str) -> list[str]:
         'EMAIL': _PATTERNS[4][0],
         'TELEFONE': _PATTERNS[5][0],
         'CEP': _PATTERNS[6][0],
+        'OAB': _PATTERNS[9][0],
+        'ENDERECO': _PATTERNS[10][0],
     }
     for nome, pattern in checks.items():
         if pattern.search(texto):
