@@ -79,7 +79,7 @@ async def test_destino_rclone_chama_subprocess_com_args_corretos(monkeypatch, tm
 
     def _fake_run(cmd, **kwargs):
         # O artefato enviado precisa estar CIFRADO (nunca em claro).
-        with open(cmd[2], "rb") as f:
+        with open(cmd[3], "rb") as f:  # cmd = [rclone, copyto, --, caminho, destino]
             Fernet(CHAVE.encode()).decrypt(f.read())  # levanta se não-Fernet
         chamadas.append({"cmd": cmd, **kwargs})
         return _Retorno()
