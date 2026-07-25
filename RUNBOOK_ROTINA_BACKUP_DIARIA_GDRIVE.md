@@ -318,3 +318,78 @@ A issue somente pode ser encerrada quando houver evidência sanitizada de:
 7. RPO e RTO aprovados;
 8. descarte seguro dos arquivos em claro;
 9. nenhum segredo exposto.
+
+---
+
+## 11. Destino OneDrive via rclone (`BACKUP_DESTINO=rclone`)
+
+Alternativa offsite ao Google Drive quando a service account estiver
+indisponível (contexto da issue #378). O ciclo local é idêntico: `pg_dump` +
+`tar` de uploads, **sempre cifrados com Fernet antes de sair da VPS** —
+`BACKUP_ENCRYPTION_KEY` continua obrigatória e nada é enviado em claro.
+
+### 11.1 Instalar o rclone na VPS (se ausente)
+
+```bash
+command -v rclone || curl https://rclone.org/install.sh | sudo bash
+rclone version
+```
+
+### 11.2 Configurar o remote OneDrive
+
+```bash
+rclone config
+# n) New remote
+# name> onedrive
+# Storage> onedrive   (Microsoft OneDrive)
+# client_id / client_secret: deixar em branco (defaults do rclone)
+# Edit advanced config> n
+# Use auto config> n   ← a VPS é headless, sem navegador
+```
+
+Como a VPS não tem navegador, o rclone pedirá um token. Em uma máquina COM
+navegador (desktop) que também tenha rclone instalado, rode:
+
+```bash
+rclone authorize "onedrive"
+```
+
+Autorize a conta Microsoft no navegador, copie o bloco JSON exibido
+(`config_token`) e cole no prompt `result>` da VPS. Escolha o tipo de conta
+(OneDrive Personal/Business) e conclua com `y`.
+
+### 11.3 Testar o remote
+
+```bash
+rclone lsd onedrive:
+rclone mkdir onedrive:EJC-Backups   # pasta de destino dos artefatos
+```
+
+### 11.4 Ativar no EJC (`/opt/ejc/.env`)
+
+```bash
+BACKUP_DESTINO=rclone
+BACKUP_RCLONE_REMOTE=onedrive:EJC-Backups
+# BACKUP_RCLONE_TIMEOUT=300          # segundos por artefato, se o link for lento
+# BACKUP_OFFSITE_OBRIGATORIO=false   # default: prova local sustenta o deploy
+```
+
+Reinicie o backend (`docker compose up -d backend worker`) e valide com
+`bash scripts/backup.sh` — o JSON final deve trazer `"destino": "rclone"`,
+`"local_ok": true` e `"offsite_ok": true`.
+
+Observações:
+
+- O container do backend precisa enxergar o binário `rclone` e o arquivo de
+  configuração do remote. Se o backup roda dentro do container, monte
+  `~/.config/rclone/rclone.conf` (somente leitura) e instale o rclone na
+  imagem; alternativamente rode `scripts/backup.sh` pelo host.
+- A rotação automática por `BACKUP_RETENCAO_DIAS` aplica-se apenas ao Google
+  Drive. No remote rclone, faça a limpeza periódica manualmente, por exemplo:
+  `rclone delete --min-age 14d --include "ejc_backup_*" onedrive:EJC-Backups`.
+- Semântica do gate de deploy: falha do envio offsite com prova local cifrada
+  presente gera status `parcial` (ok=true) e **AVISO GRAVE** no log/step
+  summary; o deploy só é bloqueado se a prova LOCAL falhar. Para voltar ao
+  comportamento fail-closed, defina `BACKUP_OFFSITE_OBRIGATORIO=true`.
+- `BACKUP_ENCRYPTION_KEY` permanece obrigatória em qualquer destino — perder a
+  chave = perder todos os backups. Custódia fora da VPS, como na seção 2.

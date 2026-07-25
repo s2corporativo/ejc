@@ -681,6 +681,20 @@ class Settings(BaseSettings):
     BACKUP_DB_MAX_MB: int = 2048
     # Timeout (segundos) do pg_dump — bancos maiores podem precisar de mais.
     BACKUP_PG_DUMP_TIMEOUT: int = 600
+    # Destino OFFSITE dos artefatos cifrados: "gdrive" (Google Drive, fluxo
+    # original) ou "rclone" (qualquer remote rclone — ex.: OneDrive). O ciclo
+    # local (pg_dump + tar + Fernet) é idêntico nos dois modos.
+    BACKUP_DESTINO: str = "gdrive"
+    # Remote rclone de destino quando BACKUP_DESTINO=rclone, no formato
+    # "<remote>:<pasta>" (ex.: "onedrive:EJC-Backups"). Requer `rclone config`
+    # feito na VPS e o binário rclone no PATH — ver runbook do backup.
+    BACKUP_RCLONE_REMOTE: str = ""
+    # Timeout (segundos) de CADA `rclone copyto` — links lentos podem exigir mais.
+    BACKUP_RCLONE_TIMEOUT: int = 300
+    # true = falha no envio OFFSITE derruba o backup inteiro (ok=False) e
+    # bloqueia o deploy (fail-closed). false (default) = a prova LOCAL cifrada
+    # sustenta o gate; offsite falho vira status "parcial" com aviso grave.
+    BACKUP_OFFSITE_OBRIGATORIO: bool = False
 
     # ── Automações voltadas ao CLIENTE (jobs opt-in — default False) ──────
     # Sync diário DataJud + notificação de andamentos novos ao cliente

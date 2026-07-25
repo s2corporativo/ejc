@@ -112,9 +112,24 @@ fi
 trap rollback ERR
 
 log "Verificando pré-requisitos de backup"
-if bash scripts/backup.sh; then
+# O gate bloqueia SOMENTE se a prova LOCAL cifrada falhar (backup.sh != 0).
+# Offsite falho com prova local presente → exit 0 + "offsite_ok": false no
+# JSON: o deploy prossegue com AVISO GRAVE no log e no step summary.
+BACKUP_SAIDA=""
+if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
+  [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
   log "Backup pré-deploy concluído."
+  if printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": false'; then
+    BACKUP_OFFSITE_DESTINO="$(printf '%s' "$BACKUP_SAIDA" | sed -n 's/.*"destino": "\([^"]*\)".*/\1/p')"
+    BACKUP_OFFSITE_ERRO="$(printf '%s' "$BACKUP_SAIDA" | sed -n 's/.*"offsite_erro": "\([^"]*\)".*/\1/p')"
+    AVISO_OFFSITE="AVISO GRAVE: backup offsite falhou (destino ${BACKUP_OFFSITE_DESTINO:-desconhecido}): ${BACKUP_OFFSITE_ERRO:-erro não informado} — deploy prossegue com prova local; corrija o destino offsite"
+    log "$AVISO_OFFSITE"
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+      printf '> :warning: %s\n' "$AVISO_OFFSITE" >>"$GITHUB_STEP_SUMMARY"
+    fi
+  fi
 else
+  [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
   if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
     log "ERRO CRÍTICO: backup pré-deploy obrigatório falhou."
     log "Deploy bloqueado antes de qualquer mutação do runtime."
