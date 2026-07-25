@@ -73,7 +73,11 @@ run_case() {
   execute_line="$(grep -n 'executar_backup' "$TMP/stdin.py" | head -1 | cut -d: -f1)"
   [ "$config_line" -lt "$execute_line" ] || \
     fail "backup é iniciado antes do gate de configuração"
-  grep -q 'status.*sucesso' "$TMP/stdin.py" || fail "status integral não é exigido"
+  # Contrato PR #480: prova LOCAL cifrada é sempre exigida; offsite falho vira
+  # "parcial" (aceito), salvo BACKUP_OFFSITE_OBRIGATORIO=true.
+  grep -q 'local_ok' "$TMP/stdin.py" || fail "prova local cifrada não é exigida"
+  grep -q 'BACKUP_OFFSITE_OBRIGATORIO' "$TMP/stdin.py" || \
+    fail "política offsite obrigatório não é respeitada"
   grep -q '_db.dump.enc' "$TMP/stdin.py" || fail "artefato do banco não é exigido"
   grep -q '_uploads.tar.gz.enc' "$TMP/stdin.py" || fail "artefato de uploads não é exigido"
   if grep -q 'drive_file_id\|result.get("erro")' "$TMP/stdin.py"; then
