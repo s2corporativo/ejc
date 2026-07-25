@@ -260,7 +260,8 @@ def _upload_rclone_sync(caminho: str, nome: str, remote: str) -> None:
         )
     destino = f"{remote.rstrip('/')}/{nome}"
     r = subprocess.run(
-        ["rclone", "copyto", caminho, destino],
+        # "--" impede que um remote iniciado em "-" seja lido como flag (auditoria PR #480).
+        ["rclone", "copyto", "--", caminho, destino],
         timeout=settings.BACKUP_RCLONE_TIMEOUT,
         capture_output=True, text=True,
     )
