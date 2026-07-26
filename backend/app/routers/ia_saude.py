@@ -115,7 +115,7 @@ async def estado_operacional(
     )
     return {
         "provedores": {
-            "groq": {"configurado": bool(os.getenv("GROQ_API_KEY")), "modelo": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")},
+            "groq": {"configurado": bool(os.getenv("GROQ_API_KEY")), "modelo": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")},
             "anthropic": {"configurado": bool(os.getenv("ANTHROPIC_API_KEY"))},
             "ollama": {"habilitado": _bool_env("OLLAMA_ENABLED"), "modelo_analise": os.getenv("OLLAMA_MODEL_ANALISE") or None},
             "modo": os.getenv("AI_PROVIDER") or "auto/padrao",

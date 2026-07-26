@@ -49,6 +49,10 @@ export interface RamoConfig {
   ferramentasExternas?: LinkExterno[];
   externo?: boolean; // ramo sem router backend dedicado — usa o sistema geral de casos
   analiseDocumento?: boolean; // habilita o leitor/analisador de documento por área
+  // Área usada pelo ANALISADOR de documento (AI-105): desacoplada de areaCaso,
+  // que existe para filtrar casos (ex.: ramo bancário guarda casos como
+  // "civil", mas a análise deve usar o prompt "bancario").
+  analiseArea?: string;
   comparadorBacen?: boolean; // comparador de juros com a média BACEN
   guiaBancario?: boolean; // guia operacional de direito bancário (referência)
   analiseExtratos?: boolean; // análise de extrato bancário (cobranças abusivas)
@@ -975,6 +979,7 @@ const administrativo: RamoConfig = {
 const bancario: RamoConfig = {
   comparadorBacen: true,
   analiseDocumento: true,
+  analiseArea: "bancario",
   guiaBancario: true,
   analiseExtratos: true,
   bancarioForense: true,
@@ -1923,6 +1928,7 @@ const previdenciario: RamoConfig = {
 };
 const digital_lgpd: RamoConfig = {
   analiseDocumento: true,
+  analiseArea: "digital_lgpd",
   guiaLgpd: true,
   lgpdRegistros: true,
   slug: "digital_lgpd",

@@ -389,6 +389,18 @@ async def gerar_demonstrativo(
     """Converte o resultado de uma calculadora em um Demonstrativo de Cálculo
     salvo como peça (LegalDoc) rascunho — vinculável a um caso. Reusa a esteira
     de peças existente; resultado é MINUTA (revisão humana obrigatória)."""
+    # AI-107/AI-113 (auditoria 2026-07-26): as regras das calculadoras ainda não
+    # foram homologadas (fonte/vigência/revisor) — um demonstrativo dá aparência
+    # DOCUMENTAL a uma regra possivelmente errada e pode ser usado externamente.
+    # Exportação BLOQUEADA por padrão; reabilitar por ambiente somente após a
+    # homologação das regras (padrão do repo: flag default OFF).
+    from app.core.config import get_settings
+    if not getattr(get_settings(), "PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED", False):
+        raise HTTPException(
+            403, "Exportação de demonstrativo bloqueada: as regras das "
+                 "calculadoras estão em revisão (não homologadas — auditoria "
+                 "2026-07-26). O resultado na tela permanece disponível como "
+                 "apoio, com revisão do advogado.")
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         raise HTTPException(403, "Acesso negado")
     if req.case_id:
