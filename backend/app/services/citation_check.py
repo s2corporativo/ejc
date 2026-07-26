@@ -77,13 +77,16 @@ async def _existe_artigo(db, num: str, diploma: str | None = None) -> str | None
         cond = "AND kd.chave_origem = :chave "
         params["chave"] = f"planalto:{_SLUG_POR_DIPLOMA[d]}"
     elif d.startswith("lei"):
-        # "lei nº 8.078/90" → número puro "8078"; casa o título canônico
-        # ("… (Lei 8.078/1990)") com os pontos de milhar removidos.
+        # "lei nº 8.078/90" → número puro "8078"; casa o título com os pontos
+        # de milhar removidos, nos dois formatos usuais: "(Lei 8.078/1990)"
+        # (CATALOGO do planalto) e "Lei 8.078, de 11 de setembro de 1990".
         numeros = re.sub(r"\D", "", d.split("/")[0])
         if not numeros:
             return None
-        cond = "AND replace(kd.titulo, '.', '') ILIKE :lei "
-        params["lei"] = f"%lei {numeros}/%"
+        cond = ("AND (replace(kd.titulo, '.', '') ILIKE :lei_a "
+                "OR replace(kd.titulo, '.', '') ILIKE :lei_b) ")
+        params["lei_a"] = f"%lei {numeros}/%"
+        params["lei_b"] = f"%lei {numeros},%"
     else:
         # Diploma ausente/desconhecido: nunca confirmar contra a lei errada.
         return None

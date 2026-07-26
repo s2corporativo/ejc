@@ -335,13 +335,19 @@ async def rodar_agente(
             await _emitir(on_event, "erro", {
                 "detalhe": "Sessão do agente expirada; reenvie a solicitação."})
             return {"status": "erro", "detalhe": "sessao_expirada"}
+        # Estado de versão antiga (sem chaves de vínculo) não é retomável —
+        # trata como sessão expirada (diagnóstico correto), nunca executa.
+        if not (estado.get("user_id") and estado.get("case_id") and estado.get("role")):
+            await _emitir(on_event, "erro", {
+                "detalhe": "Sessão do agente expirada; reenvie a solicitação."})
+            return {"status": "erro", "detalhe": "sessao_expirada"}
         # AI-031: o token só vale para o MESMO usuário, caso e papel que pausaram.
         # O estado já foi consumido atomicamente (one-shot) — uma tentativa com
         # contexto divergente DESTRÓI o token (fail-closed; o fluxo legítimo
         # recomeça do zero), nunca executa a escrita pendente.
-        if (str(estado.get("user_id") or "") != str(getattr(user, "id", "") or "")
-                or str(estado.get("case_id") or "") != str(case_id)
-                or str(estado.get("role") or "") != role):
+        if (str(estado.get("user_id")) != str(getattr(user, "id", "") or "")
+                or str(estado.get("case_id")) != str(case_id)
+                or str(estado.get("role")) != role):
             logger.warning("[hitl] retomada com contexto divergente do estado — recusada")
             await _emitir(on_event, "erro", {
                 "detalhe": "Sessão de aprovação não corresponde a este usuário/caso; "
