@@ -32,6 +32,10 @@ class AnexoItemIn(BaseModel):
     document_id: Optional[str] = Field(None, description="ID de documento do GED (mesmo caso)")
     titulo: Optional[str] = Field(None, max_length=255, description="Rótulo do índice")
     legenda: Optional[str] = Field(None, max_length=400, description="Síntese manual (pula IA)")
+    obrigatorio: bool = Field(
+        False,
+        description="Se True e o anexo não puder ser incorporado ao PDF, aborta a geração",
+    )
 
 
 class AnexosIn(BaseModel):
@@ -66,6 +70,7 @@ async def _preparar(db: AsyncSession, cu: User, body: AnexosIn):
         case_id=body.case_id,
         itens_in=[i.model_dump() for i in body.itens],
         com_ia=body.gerar_legendas_ia,
+        cu=cu,   # DOC-076: habilita o gate do cofre de confidencialidade por item
     )
     return ctx, itens
 
@@ -111,19 +116,37 @@ async def gerar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Gera o Documento Único de Anexos (PDF) e o devolve para download."""
+    """Gera o Documento Único de Anexos (PDF) e o devolve para download.
+
+    Fail-closed (DOC-077): se um anexo elegível estiver corrompido, ou um item
+    marcado como `obrigatorio` não puder ser incorporado, a geração é abortada
+    (409) com o manifesto de completude — em vez de protocolar um pacote com
+    página faltante. O MANIFESTO de cada item (incorporado/omitido + motivo)
+    viaja no header `X-Anexos-Manifesto`.
+    """
+    import json
+
     ctx, itens = await _preparar(db, cu, body)
     try:
-        pdf = await svc.montar_documento_unico(ctx, itens)
+        pdf, manifesto = await svc.montar_documento_unico_com_manifesto(ctx, itens)
+    except svc.DocumentoUnicoIncompletoError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"erro": str(exc), "manifesto": getattr(exc, "manifesto", [])},
+        )
     except RuntimeError:  # weasyprint ausente / erro de render
         logger.warning("Geração do documento único de anexos indisponível", exc_info=True)
         raise HTTPException(503, "Geração de PDF indisponível no momento")
+
+    omitidos = [m for m in manifesto if not m["incorporado"]]
     filename = f"anexos_{body.case_id[:8]}.pdf"
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        # ensure_ascii=True: header HTTP é latin-1; mantém acentos escapados.
+        "X-Anexos-Manifesto": json.dumps(manifesto, ensure_ascii=True)[:1800],
+        "X-Anexos-Omitidos": str(len(omitidos)),
+    }
+    return Response(content=pdf, media_type="application/pdf", headers=headers)
 
 
 # ── Razões / Fundamentação Jurídica (o texto argumentativo) ───────────────────

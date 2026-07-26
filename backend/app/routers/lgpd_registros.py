@@ -412,16 +412,36 @@ async def gerar_ripd(
     await criar_audit_log(db, cu.id, cu.role.value, "DOWNLOAD", "lgpd_registros_tratamento",
                           client_id, detalhes=f"RIPD gerado ({len(registros)} operações)")
     await db.commit()
-    return {"download_url": f"/lgpd/registros/ripd/{arquivo_id}/download"}
+    # DOC-087: token assinado amarra o artefato ao usuário E ao cliente (o RIPD
+    # carrega o ROPA/PII do titular). O download revalida assinatura + expiração
+    # + binding, além do UUID anti-traversal.
+    token = _vlf.emitir_token(arquivo_id, user_id=cu.id, client_id=client_id)
+    return {"download_url": f"/lgpd/registros/ripd/{arquivo_id}/download?t={token}"}
 
 
 @router.get("/ripd/{arquivo_id}/download",
             dependencies=[Depends(rate_limit("lgpd-ripd-download", 30))])
-async def download_ripd(arquivo_id: str, cu: User = Depends(_req_leitura)):
-    """Download do RIPD gerado. `arquivo_id` validado como UUID (nunca
-    interpolado livre no path — sem traversal)."""
+async def download_ripd(
+    arquivo_id: str,
+    t: str = "",
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_leitura),
+):
+    """Download do RIPD gerado. Exige o token assinado emitido na geração
+    (binding usuário + cliente + expiração) além do UUID anti-traversal, e
+    REAVALIA o vínculo com o cliente no momento do download (DOC-087)."""
     # #27: validação anti-traversal (UUID) centralizada.
     _vlf.validar_uuid(arquivo_id)
+    # DOC-087: token vincula o download ao usuário que o gerou; devolve o
+    # client_id embutido para reavaliação do vínculo.
+    payload = _vlf.validar_token(t, arquivo_id, cu)
+    client_id = payload.get("c") or None
+    if client_id:
+        cli = (await db.execute(
+            select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
+        )).scalar_one_or_none()
+        if not await _cliente_visivel(db, cu, cli):
+            raise HTTPException(404, "Cliente não encontrado")
     path = os.path.join(_ripd_dir(), f"ripd_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "RIPD não encontrado — gere via POST "

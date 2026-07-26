@@ -9,7 +9,11 @@ class LegalDocCreate(BaseModel):
     tipo_peca: str
     conteudo: str
     case_id: Optional[str] = None
-    ai_generated: bool = False
+    # DOC-059: `ai_generated` NÃO é aceito do cliente. A criação manual por este
+    # endpoint nasce sempre ai_generated=False (derivado no servidor); peças de
+    # origem IA são criadas pelos fluxos de geração (services/geracao_documental,
+    # peca_service, ...) que setam ai_generated=True diretamente no model. Confiar
+    # no cliente aqui permitiria burlar o enforcement HITL.
 
     @field_validator("tipo_peca")
     @classmethod
@@ -92,3 +96,22 @@ class LegalDocDetail(LegalDocResponse):
     protocolado_em: Optional[datetime] = None
     protocolo_tribunal: Optional[str] = None
     protocolo_comprovante_doc_id: Optional[str] = None
+
+
+class LegalDocRevisaoItem(BaseModel):
+    # DOC-056: item do histórico imutável de revisões (metadados, sem conteúdo).
+    id: str
+    legal_doc_id: str
+    revisao: int
+    content_hash: Optional[str] = None
+    origem: Optional[str] = None
+    gerado_por: Optional[str] = None
+    criado_em: Optional[datetime] = None
+    imutavel: bool = True
+    class Config:
+        from_attributes = True
+
+
+class LegalDocRevisaoDetalhe(LegalDocRevisaoItem):
+    # Recuperação de uma versão anterior: inclui o conteúdo preservado.
+    conteudo: str

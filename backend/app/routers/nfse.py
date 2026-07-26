@@ -290,6 +290,10 @@ async def _ler_e_validar_upload(upload: UploadFile, ext: str) -> bytes:
     if not conteudo:
         raise HTTPException(status_code=422, detail=f"Arquivo {ext} vazio.")
     _validar_conteudo(ext, conteudo)  # magic bytes (server-side), padrão GED
+    # Antivírus/quarentena (DOC-008/009/010) — mesma barreira do GED, após magic
+    # bytes e antes de gravar. EICAR sempre barrado; ClamAV quando habilitado.
+    from app.routers.documents import _escanear_malware
+    await _escanear_malware(conteudo, upload.filename or f"anexo{ext}")
     # Reforço defensivo além do libmagic:
     if ext == ".pdf" and not conteudo.startswith(b"%PDF-"):
         raise HTTPException(status_code=415, detail="PDF inválido (assinatura %PDF- ausente).")

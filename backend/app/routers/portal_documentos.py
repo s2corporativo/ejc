@@ -39,7 +39,12 @@ from app.models.solicitacao_documento import (
 )
 from app.models.user import User, UserRole
 # Reuso EXATO das validações de upload do GED (não duplicar regra de negócio).
-from app.routers.documents import EXTENSOES_PERMITIDAS, _validar_conteudo
+from app.routers.documents import (
+    EXTENSOES_PERMITIDAS,
+    _validar_conteudo,
+    _escanear_malware,
+    _sha256_hex,
+)
 from app.services.solicitacao_documento_service import recalcular_status
 
 settings = get_settings()
@@ -165,6 +170,10 @@ async def upload_item_solicitacao(
         )
     # Magic bytes server-side — nunca confiar na extensão/content_type.
     mime_real = _validar_conteudo(ext, conteudo)
+    # Antivírus/quarentena (DOC-008/009/010): upload vem de usuário EXTERNO —
+    # varredura logo após magic bytes e antes de gravar. EICAR sempre barrado.
+    await _escanear_malware(conteudo, file.filename or "documento")
+    sha256 = _sha256_hex(conteudo)  # integridade (DOC-022)
 
     # ── Claim atômico do item ANTES de gravar o arquivo: uploads concorrentes
     # no mesmo item disputam o UPDATE condicional (row lock) e só um vence —
@@ -204,7 +213,12 @@ async def upload_item_solicitacao(
         filepath=filepath,
         mimetype=mime_real,
         size_bytes=len(conteudo),
+        sha256=sha256,
         confidencialidade=DocConfidencialidade.normal,
+        # DOC-049/050: documento RECEBIDO do cliente entra como "recebido", NÃO
+        # publicado. A confidencialidade normal não o torna visível no Portal —
+        # publicação é ato explícito do advogado (portal_visible=True).
+        portal_visible=False,
         case_id=sol.case_id,
         client_id=sol.client_id,
         uploaded_by=cu.id,

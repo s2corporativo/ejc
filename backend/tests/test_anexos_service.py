@@ -197,11 +197,22 @@ def test_mesclar_soma_paginas_e_ignora_partes_vazias():
     assert len(PdfReader(io.BytesIO(saida)).pages) == 4
 
 
-def test_mesclar_ignora_bytes_invalidos():
+def test_mesclar_fail_closed_aborta_em_bytes_invalidos():
+    # DOC-077: uma parte corrompida NÃO é mais omitida em silêncio — a mesclagem
+    # aborta (fail-closed) para não gerar um "documento único" com página
+    # faltante. Partes vazias/None seguem sendo puladas (gaps intencionais).
+    import pytest
+
+    partes = [_pdf_de_paginas(1), b"nao-e-pdf", _pdf_de_paginas(1)]
+    with pytest.raises(svc.DocumentoUnicoIncompletoError):
+        svc._mesclar(partes)
+
+
+def test_mesclar_fail_open_explicito_ignora_invalidos():
     from pypdf import PdfReader
 
     partes = [_pdf_de_paginas(1), b"nao-e-pdf", _pdf_de_paginas(1)]
-    saida = svc._mesclar(partes)
+    saida = svc.mesclar_pdfs(partes, fail_closed=False)
     assert len(PdfReader(io.BytesIO(saida)).pages) == 2
 
 

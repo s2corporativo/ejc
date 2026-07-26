@@ -1,6 +1,7 @@
 # ── app/routers/documents.py ─────────────────────────────────────────────────
 # GED: upload/download com controle de confidencialidade (cofre).
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
+import hashlib
 import logging
 import os
 from datetime import date, datetime, time as dtime, timedelta, timezone
@@ -22,13 +23,15 @@ from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.document import Document, DocConfidencialidade
 from app.models.client import Client
-from app.models.case import Case
+from app.models.case import Case, CaseMovimento
 from app.models.redesign import DocumentTypeMaster
 from app.models.legal_doc import LegalDoc
 from app.models.audit_log import criar_audit_log
 from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.core.security import requer_advogado
 from app.schemas.common import MsgResponse
 from app.services.ocr_service import extrair_texto, extrair_xml
+from app.services import malware_scan
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -81,6 +84,31 @@ def _validar_conteudo(ext: str, conteudo: bytes) -> str:
                    f"extensão {ext}.",
         )
     return mime_real
+
+
+async def _escanear_malware(conteudo: bytes, filename: str) -> None:
+    """Antivírus/quarentena (DOC-008/009/010). Deve ser chamado logo APÓS a
+    validação de magic bytes e ANTES de gravar/parsear o conteúdo.
+
+    Padrão do repo: default OFF (MALWARE_SCAN_ENABLED), degradação graciosa —
+    mas a assinatura de teste EICAR é SEMPRE barrada (permite teste E2E). Quando
+    habilitado, falha fechado (422 infectado / 503 scanner indisponível).
+    Helper reusado por portal_documentos, documento_ia e nfse (mesma barreira)."""
+    try:
+        await malware_scan.escanear(conteudo, filename)
+    except malware_scan.ArquivoInfectadoError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except malware_scan.EscaneamentoIndisponivelError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Antivírus exigido está indisponível — upload recusado por "
+                   f"segurança ({e}).",
+        )
+
+
+def _sha256_hex(conteudo: bytes) -> str:
+    """SHA-256 (hex) do conteúdo — integridade do documento na ingestão (DOC-022)."""
+    return hashlib.sha256(conteudo).hexdigest()
 
 
 def _pode_acessar_confidencial(user: User, conf: str) -> bool:
@@ -387,6 +415,13 @@ async def upload(
     # content_type do cliente. Retorna o MIME real, persistido abaixo.
     mime_real = _validar_conteudo(ext, conteudo)
 
+    # Antivírus/quarentena (DOC-008/009/010) — logo após magic bytes e ANTES de
+    # gravar em disco/parsear (nenhum byte suspeito toca o volume).
+    await _escanear_malware(conteudo, file.filename or "upload")
+
+    # Integridade (DOC-022): hash do conteúdo íntegro recém-recebido.
+    sha256 = _sha256_hex(conteudo)
+
     # Salvar no volume (estrutura: uploads/AAAA/MM/uuid.ext)
     agora = datetime.now(timezone.utc)
     subdir = f"{agora.year}/{agora.month:02d}"
@@ -421,7 +456,7 @@ async def upload(
     d = Document(
         id=doc_id, titulo=titulo, tipo=tipo,
         filename=file.filename, filepath=filepath,
-        mimetype=mime_real, size_bytes=len(conteudo),
+        mimetype=mime_real, size_bytes=len(conteudo), sha256=sha256,
         confidencialidade=conf_enum, ocr_text=ocr_text,
         case_id=case_id, client_id=client_id, uploaded_by=cu.id,
     )
@@ -676,6 +711,142 @@ async def remover(
     return MsgResponse(detail="Documento removido")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PUBLICAÇÃO NO PORTAL DO CLIENTE (DOC-049/050/SYS-064)
+# Publicação é ato EXPLÍCITO do advogado — a confidencialidade NÃO é (e nunca
+# deve ser) usada como se fosse publicação. Um documento só aparece no Portal
+# externo quando portal_visible=True. Gate: advogado+ com acesso ao documento.
+# ─────────────────────────────────────────────────────────────────────────────
+async def _doc_para_publicacao(db: AsyncSession, cu: User, doc_id: str) -> Document:
+    """Carrega o documento e aplica os gates de publicação (advogado+ e acesso).
+    Publicar/despublicar é decisão jurídica → exige advogado+ (requer_advogado),
+    além do gate de acesso ao caso/cliente (_verificar_acesso_documento)."""
+    requer_advogado(cu, "Publicação no Portal restrita a advogados")
+    d = (await db.execute(
+        select(Document).where(
+            Document.id == doc_id, Document.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    await _verificar_acesso_documento(db, cu, d)
+    return d
+
+
+@router.post("/{doc_id}/publicar-portal")
+async def publicar_no_portal(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Publica o documento no Portal do Cliente (portal_visible=True).
+
+    Só faz sentido para documento vinculado a um cliente — sem client_id ele
+    nunca apareceria no Portal (o portal filtra por client_id do próprio
+    cliente). Auditoria obrigatória."""
+    d = await _doc_para_publicacao(db, cu, doc_id)
+    if not d.client_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Documento sem cliente vinculado não pode ser publicado no Portal.",
+        )
+    if not d.portal_visible:
+        d.portal_visible = True
+        d.publicado_em = datetime.now(timezone.utc)
+        d.publicado_por = cu.id
+        d.revogado_em = None
+        d.revogado_por = None
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "PORTAL_PUBLICAR", "documents", doc_id,
+            detalhes=d.titulo,
+        )
+        await db.commit()
+    return {"id": d.id, "portal_visible": d.portal_visible,
+            "publicado_em": d.publicado_em, "detail": "Documento publicado no Portal"}
+
+
+@router.post("/{doc_id}/revogar-portal")
+async def revogar_do_portal(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Revoga a publicação do documento no Portal (portal_visible=False)."""
+    d = await _doc_para_publicacao(db, cu, doc_id)
+    if d.portal_visible:
+        d.portal_visible = False
+        d.revogado_em = datetime.now(timezone.utc)
+        d.revogado_por = cu.id
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "PORTAL_REVOGAR", "documents", doc_id,
+            detalhes=d.titulo,
+        )
+        await db.commit()
+    return {"id": d.id, "portal_visible": d.portal_visible,
+            "revogado_em": d.revogado_em, "detail": "Publicação revogada no Portal"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MOVIMENTAÇÕES DO CASO — publicação no Portal (SYS-021/SYS-022)
+# Movimentações internas (petição, decisão, nota, IA) NÃO aparecem no Portal por
+# padrão (fail-closed). Publicar/despublicar é ato explícito do advogado, gated
+# por acesso ao caso (verificar_acesso_caso) — mora aqui por ser o router GED já
+# registrado; a rota é estática ("movimentos/…"), sem conflito com /{doc_id}.
+# ─────────────────────────────────────────────────────────────────────────────
+async def _movimento_para_publicacao(
+    db: AsyncSession, cu: User, mov_id: str
+) -> CaseMovimento:
+    requer_advogado(cu, "Publicação de movimentação restrita a advogados")
+    m = (await db.execute(
+        select(CaseMovimento).where(CaseMovimento.id == mov_id)
+    )).scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="Movimentação não encontrada")
+    # Gate de ownership do caso (IDOR) — só quem tem o caso publica seu andamento.
+    await verificar_acesso_caso(db, cu, m.case_id)
+    return m
+
+
+@router.post("/movimentos/{mov_id}/publicar-portal")
+async def publicar_movimento_portal(
+    mov_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Publica uma movimentação do caso no Portal do Cliente (portal_visible=True)."""
+    m = await _movimento_para_publicacao(db, cu, mov_id)
+    if not m.portal_visible:
+        m.portal_visible = True
+        m.publicado_em = datetime.now(timezone.utc)
+        m.publicado_por = cu.id
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "PORTAL_PUBLICAR", "case_movimentos", mov_id,
+            detalhes=(m.descricao or "")[:200],
+        )
+        await db.commit()
+    return {"id": m.id, "portal_visible": m.portal_visible,
+            "publicado_em": m.publicado_em, "detail": "Movimentação publicada no Portal"}
+
+
+@router.post("/movimentos/{mov_id}/revogar-portal")
+async def revogar_movimento_portal(
+    mov_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Despublica uma movimentação do Portal (portal_visible=False)."""
+    m = await _movimento_para_publicacao(db, cu, mov_id)
+    if m.portal_visible:
+        m.portal_visible = False
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "PORTAL_REVOGAR", "case_movimentos", mov_id,
+            detalhes=(m.descricao or "")[:200],
+        )
+        await db.commit()
+    return {"id": m.id, "portal_visible": m.portal_visible,
+            "detail": "Publicação da movimentação revogada"}
+
+
 class DocumentPatchRequest(BaseModel):
     """Metadados editáveis do GED. filepath/filename/hash NÃO são expostos aqui
     (campos extras no payload são ignorados pelo Pydantic — nunca aplicados)."""
@@ -885,9 +1056,11 @@ async def upload_para_drive(
 ):
     """Upload de documento direto para o Google Drive."""
     # Bloco 2 (Etapa 4) — mesmo fecho de IDOR do /upload: exige acesso ao caso
-    # antes de subir para o Drive e gravar a referência.
+    # antes de subir para o Drive e gravar a referência. O caso é reaproveitado
+    # abaixo para derivar o client_id (#8: nunca confiar em client_id do form).
+    caso = None
     if case_id:
-        await verificar_acesso_caso(db, current_user, case_id)
+        caso = await verificar_acesso_caso(db, current_user, case_id)
 
     # Item 2 (auditoria pré-produção) — MESMA validação do /documents/upload:
     # extensão permitida + magic bytes + MIME derivado do CONTEÚDO no servidor.
@@ -902,13 +1075,19 @@ async def upload_para_drive(
         raise HTTPException(413, "Arquivo muito grande (máx 50 MB)")
 
     mime = _validar_conteudo(ext, content)  # 415 se conteúdo ≠ extensão
-    # Organizar em subpasta do caso se fornecido
-    folder_id = None
-    if case_id:
-        folder_id = await _get_or_create_case_folder(case_id, db)
+    # Antivírus/quarentena (DOC-008/009/010) — antes de tocar o Drive/banco.
+    await _escanear_malware(content, file.filename or "documento")
+    sha256 = _sha256_hex(content)  # integridade (DOC-022)
+
+    # DOC-033: cada caso vai para a SUA subpasta no Drive (casos/<case_id>) —
+    # documentos de casos diferentes não caem mais todos em "geral". Uploads sem
+    # caso seguem no fallback "geral" do serviço.
+    subfolder = f"casos/{case_id}" if case_id else None
 
     try:
-        result = gd.upload_file(content, file.filename or "documento", mime, folder_id)
+        result = gd.upload_file(
+            content, file.filename or "documento", mime, subfolder=subfolder
+        )
     except gd.DriveIndisponivelError:
         # rclone/Google não configurado neste ambiente — 503 controlado
         # (antes o RuntimeError vazava como 500).
@@ -917,6 +1096,10 @@ async def upload_para_drive(
             detail="Google Drive não configurado/indisponível",
         )
 
+    # #8: client_id SEMPRE derivado do caso (nunca do form) — sem isso o doc do
+    # Drive não aparecia no Portal do cliente certo (e nem herdava o vínculo).
+    client_id = caso.client_id if caso else None
+
     # Salvar referência no banco
     from sqlalchemy import text as sql_text
     import uuid
@@ -924,27 +1107,36 @@ async def upload_para_drive(
     # Colunas alinhadas ao schema real de `documents` (titulo/filename/filepath/
     # size_bytes/uploaded_by são NOT NULL ou canônicas; drive_* vieram na migr. 059).
     # filepath guarda um marcador drive:// (o arquivo vive no Drive, não no volume).
+    # portal_visible fica no default (false) — publicação é ato explícito.
     nome_arq = file.filename or "documento"
     await db.execute(sql_text("""
         INSERT INTO documents
-            (id, case_id, titulo, filename, filepath, mimetype, size_bytes,
-             drive_file_id, drive_link, uploaded_by, created_at)
+            (id, case_id, client_id, titulo, filename, filepath, mimetype,
+             size_bytes, sha256, drive_file_id, drive_link, uploaded_by, created_at)
         VALUES
-            (:id, :case_id, :titulo, :filename, :filepath, :mimetype, :size_bytes,
-             :drive_file_id, :drive_link, :uploaded_by, NOW())
+            (:id, :case_id, :client_id, :titulo, :filename, :filepath, :mimetype,
+             :size_bytes, :sha256, :drive_file_id, :drive_link, :uploaded_by, NOW())
         ON CONFLICT DO NOTHING
     """), {
         "id": doc_id,
         "case_id": case_id,
+        "client_id": client_id,
         "titulo": nome_arq,
         "filename": nome_arq,
         "filepath": f"drive://{result['id']}",
         "mimetype": mime,
         "size_bytes": len(content),
+        "sha256": sha256,
         "drive_file_id": result["id"],
         "drive_link": result.get("webViewLink"),
         "uploaded_by": current_user.id,
     })
+    # Auditoria de upload (LGPD) — paridade com o fluxo local, que faltava na via
+    # do Drive (o INSERT bruto não deixava rastro).
+    await criar_audit_log(
+        db, current_user.id, current_user.role.value, "UPLOAD", "documents", doc_id,
+        detalhes=f"Drive: {nome_arq} (case_id={case_id or '—'})",
+    )
     await db.commit()
 
     return {
@@ -1073,28 +1265,47 @@ async def deletar_documento_drive(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Remove documento do Drive e do banco."""
+    """Remove documento do Drive e do banco (soft delete) — ordem correta:
+    só destrói a referência local APÓS confirmação da remoção no Drive."""
     from sqlalchemy import text as sql_text
     import logging as _logging
     # Gate IDOR: exige acesso ao caso (ou gestão/criador) ANTES de tocar o Drive.
     row = await _gate_drive_doc(db, current_user, file_id)
+    # DOC-042: comprovante de protocolo vinculado a peça NÃO pode ser destruído
+    # (mesma proteção do delete local) — 409 antes de qualquer remoção no Drive.
+    await _bloquear_comprovante_protocolo(db, row["id"], "excluído")
     try:
-        gd.delete_file(file_id)
+        gd.delete_file(file_id)   # contrato: RuntimeError se o dado permanece
     except gd.DriveIndisponivelError:
         # Serviço indisponível ≠ "arquivo já não existe": apagar só o registro
         # local deixaria o dado órfão no Drive (LGPD art. 18, V) — 503 e o
-        # cliente tenta de novo quando o Drive voltar.
+        # cliente tenta de novo quando o Drive voltar. Referência preservada.
         raise HTTPException(503, "Google Drive não configurado/indisponível")
-    except Exception:
-        # Pode já ter sido removido do Drive — registra para diagnóstico.
-        _logging.getLogger(__name__).warning(
-            "Falha ao remover arquivo %s do Drive (seguindo com remoção local)",
-            file_id, exc_info=True,
+    except Exception as exc:
+        # DOC-041: o delete no Drive FALHOU e o dado permanece lá. NÃO destruir a
+        # referência (viraria órfão/perda de rastreabilidade LGPD): deixa trilha
+        # de pendência e devolve 502 — a linha local segue intacta e íntegra.
+        _logging.getLogger(__name__).error(
+            "Falha ao remover arquivo %s do Drive — referência PRESERVADA: %s",
+            file_id, exc, exc_info=True,
         )
-    # Apaga somente a linha autorizada pelo gate — drive_file_id não é unique,
-    # e apagar pelo file_id removeria duplicatas de outros casos/soft-deleted.
+        await criar_audit_log(
+            db, current_user.id, current_user.role.value,
+            "DELETE_FALHA", "documents", row["id"],
+            detalhes=f"Exclusão no Drive falhou (drive_file_id={file_id}); "
+                     "registro mantido para nova tentativa.",
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível remover o arquivo no Google Drive; o "
+                   "documento foi mantido. Tente novamente.",
+        )
+    # Drive confirmou remoção → soft delete local (consistente com o delete
+    # local /{doc_id}). Apaga só a linha autorizada pelo gate (drive_file_id não
+    # é unique — DELETE por file_id atingiria duplicatas de outros casos).
     await db.execute(
-        sql_text("DELETE FROM documents WHERE id = :id"),
+        sql_text("UPDATE documents SET deleted_at = NOW() WHERE id = :id"),
         {"id": row["id"]},
     )
     await criar_audit_log(

@@ -5,10 +5,12 @@ O rclone deve estar configurado em /root/.config/rclone/rclone.conf
 com o remote [gdrive]. O token é gerenciado pelo rclone.
 """
 import os
+import re
 import json
 import logging
 import tempfile
 import subprocess
+from uuid import uuid4
 from typing import Optional
 
 logger = logging.getLogger("ejc.drive")
@@ -50,6 +52,24 @@ def _subfolder(folder_id: Optional[str]) -> str:
     return "geral"
 
 
+def _sanitizar_segmento(valor: str) -> str:
+    """Higieniza um segmento de path do Drive (sem barras/controles/traversal)."""
+    valor = (valor or "").replace("\\", "/")
+    valor = valor.split("/")[-1]  # nunca deixa navegar para outra pasta
+    valor = re.sub(r"[\x00-\x1f]", "", valor)
+    valor = valor.strip().strip(".") or "arquivo"
+    return valor[:200]
+
+
+def _nome_remoto_imutavel(filename: str) -> str:
+    """DOC-032: nome do arquivo NO DRIVE é imutável e único — prefixado por UUID.
+
+    Dois uploads de mesmo nome original NÃO colidem (antes, rclone `copyto` com o
+    nome original sobrescrevia o arquivo anterior). O nome original é preservado
+    apenas como metadado (Document.filename), nunca como endereço no Drive."""
+    return f"{uuid4().hex}__{_sanitizar_segmento(filename)}"
+
+
 def _rclone_path(subfolder: str, filename: str = "") -> str:
     base = f"{RCLONE_REMOTE}:{BASE_FOLDER}/{subfolder}"
     return f"{base}/{filename}" if filename else base
@@ -64,20 +84,36 @@ def upload_file(
     filename: str,
     mime_type: str,
     folder_id: Optional[str] = None,
+    subfolder: Optional[str] = None,
 ) -> dict:
-    """Faz upload de bytes para o Drive. Retorna {id, name, webViewLink, webContentLink}."""
+    """Faz upload de bytes para o Drive. Retorna {id, name, webViewLink, webContentLink}.
+
+    DOC-033: `subfolder` explícito (ex.: "casos/<case_id>") tem precedência sobre
+    `folder_id` — documentos de casos diferentes vão para pastas distintas, não
+    mais todos para "geral". `folder_id` (mapa de env) permanece como fallback
+    para os fluxos legados (pecas/contratos/comprovantes...).
+
+    DOC-032: o nome NO DRIVE é imutável e prefixado por UUID (não sobrescreve
+    arquivo homônimo). O nome original volta em `name` (metadado)."""
     if not DRIVE_AVAILABLE:
         raise DriveIndisponivelError("rclone não configurado — execute: rclone config create gdrive drive")
 
-    subfolder = _subfolder(folder_id)
-    dest_path  = _rclone_path(subfolder)
-    dest_file  = _rclone_path(subfolder, filename)
+    if subfolder:
+        # Higieniza cada segmento do path do caso (sem traversal).
+        alvo = "/".join(_sanitizar_segmento(seg) for seg in subfolder.split("/") if seg)
+        alvo = alvo or "geral"
+    else:
+        alvo = _subfolder(folder_id)
+
+    remote_name = _nome_remoto_imutavel(filename)
+    dest_path  = _rclone_path(alvo)
+    dest_file  = _rclone_path(alvo, remote_name)
 
     # Garantir que a subpasta existe
     _run(["rclone", "mkdir", dest_path])
 
     # Escrever bytes em arquivo temporário e fazer upload
-    with tempfile.NamedTemporaryFile(delete=False, suffix="_" + filename) as tmp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix="_" + remote_name) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
 
@@ -88,8 +124,8 @@ def upload_file(
     finally:
         os.unlink(tmp_path)
 
-    # Obter ID do arquivo no Drive via lsjson
-    r2 = _run(["rclone", "lsjson", dest_path, "--include", filename])
+    # Obter ID do arquivo no Drive via lsjson (casa pelo nome remoto único)
+    r2 = _run(["rclone", "lsjson", dest_path, "--include", remote_name])
     file_id = ""
     if r2.returncode == 0 and r2.stdout.strip():
         try:
@@ -104,7 +140,8 @@ def upload_file(
 
     return {
         "id": file_id,
-        "name": filename,
+        "name": filename,           # nome ORIGINAL (metadado) — não o remoto
+        "remote_name": remote_name,  # nome imutável efetivamente gravado no Drive
         "webViewLink":    f"https://drive.google.com/file/d/{file_id}/view" if file_id else "",
         "webContentLink": f"https://drive.google.com/uc?id={file_id}" if file_id else "",
     }

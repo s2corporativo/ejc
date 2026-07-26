@@ -54,16 +54,42 @@ def validar_admin_email(email: str) -> str:
         ) from exc
 
 
+def _em_producao() -> bool:
+    """Mesma normalização de APP_ENV usada em app/core/config.py."""
+    return (os.environ.get("APP_ENV", "") or "").strip().lower() == "production"
+
+
+def _gravar_senha_bootstrap(email: str, senha: str) -> str:
+    """SYS-008: fora de produção, grava a senha temporária APENAS num arquivo
+    local com permissão 0600 (nunca em stdout/logs). Retorna o caminho. O
+    arquivo NÃO deve ser versionado — adicione `.admin_bootstrap` ao .gitignore.
+    """
+    caminho = os.path.join(os.getcwd(), ".admin_bootstrap")
+    # Cria/abre com 0600 desde o início (sem janela world-readable).
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(caminho, flags, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(
+                "# EJC — credenciais de bootstrap do admin (NÃO versionar).\n"
+                "# Gerado automaticamente fora de produção. Troque no 1º login.\n"
+                f"ADMIN_EMAIL={email}\n"
+                f"ADMIN_PASSWORD={senha}\n"
+            )
+    finally:
+        # Reforça 0600 mesmo se o umask tiver interferido.
+        try:
+            os.chmod(caminho, 0o600)
+        except OSError:
+            pass
+    return caminho
+
+
 async def seed_admin() -> None:
     email = os.environ.get("ADMIN_EMAIL", "admin@ejc.adv.br").strip().lower()
     # Barreira de go-live: aborta ANTES de criar admin que o login rejeitaria.
     email = validar_admin_email(email)
     nome = os.environ.get("ADMIN_NAME", "Administrador EJC").strip()
-    senha = os.environ.get("ADMIN_PASSWORD", "").strip()
-    senha_gerada = False
-    if not senha:
-        senha = _secrets.token_urlsafe(16)
-        senha_gerada = True
 
     async with AsyncSessionLocal() as db:
         existing = (
@@ -72,6 +98,24 @@ async def seed_admin() -> None:
         if existing:
             print(f"[seed] admin já existe: {email} — nenhuma ação.")
             return
+
+        # Só aqui (admin ausente) precisamos de senha — evita exigir
+        # ADMIN_PASSWORD em todo boot depois que o admin já existe.
+        senha = os.environ.get("ADMIN_PASSWORD", "").strip()
+        senha_gerada = False
+        if not senha:
+            # SYS-008: em produção NÃO geramos/imprimimos senha (ia parar em log).
+            # Falha o boot com mensagem acionável — o operador define ADMIN_PASSWORD.
+            if _em_producao():
+                raise RuntimeError(
+                    "ADMIN_PASSWORD ausente em produção: recuse criar o admin "
+                    "com senha aleatória impressa em log (vazamento). Defina "
+                    "ADMIN_PASSWORD (forte) no .env da VPS e rode o deploy "
+                    "novamente. O admin é criado com must_change_password=True."
+                )
+            # Fora de produção: gera e grava em arquivo 0600 (nunca em stdout).
+            senha = _secrets.token_urlsafe(16)
+            senha_gerada = True
 
         db.add(
             User(
@@ -87,7 +131,12 @@ async def seed_admin() -> None:
         await db.commit()
         print(f"[seed] admin criado: {email} (must_change_password=True)")
         if senha_gerada:
-            print(f"[seed] SENHA TEMPORÁRIA (anote agora; troque no 1º login): {senha}")
+            caminho = _gravar_senha_bootstrap(email, senha)
+            print(
+                "[seed] senha temporária gravada (0600) em "
+                f"{caminho} — leia, troque no 1º login e apague. "
+                "NÃO versione este arquivo."
+            )
 
 
 async def _rodar_seed_sync(nome: str, fn) -> None:

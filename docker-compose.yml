@@ -55,15 +55,16 @@ services:
       UPLOAD_DIR: /app/uploads
       BACKUP_DIR: /app/backups
       # O entrypoint aplica `alembic upgrade head` no boot SOMENTE quando
-      # RUN_MIGRATIONS=1 (ver backend/entrypoint.sh). Default 1 = dev local:
-      # um `docker compose up` cru (sem RUN_MIGRATIONS no ambiente) cria/atualiza
-      # o schema sozinho, como antes.
-      # Em PRODUÇÃO o deploy seguro (scripts/deploy_vps_safe.sh) exporta
-      # RUN_MIGRATIONS (0 por padrão, 1 só no disparo com migração revisada)
-      # ANTES do `docker compose up` e faz backup do banco antes. Assim o boot
-      # herda esse valor gated: sem opt-in explícito, nenhuma migration roda no
-      # boot — a trava do deploy deixa de ser placebo.
-      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-1}"
+      # RUN_MIGRATIONS=1 (ver backend/entrypoint.sh).
+      # SYS-101: default 0 (fail-safe). Com APP_ENV=production fixo neste serviço,
+      # um `docker compose up` MANUAL na VPS (fora do gate de deploy) NÃO deve
+      # aplicar migrations sem backup prévio. Migrations só rodam pelo gate de
+      # deploy (scripts/deploy_vps_safe.sh), que exporta RUN_MIGRATIONS ANTES do
+      # `docker compose up` (0 por padrão; 1 só no disparo com migração revisada
+      # e após backup do banco). O boot herda esse valor gated: sem opt-in
+      # explícito, nenhuma migration roda no boot. Em dev local, exporte
+      # RUN_MIGRATIONS=1 (ou rode `alembic upgrade head`) para criar o schema.
+      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-0}"
       # Fila assíncrona (Fase 3A): worker existe no compose → Celery ligado.
       # Redis fora do ar não quebra nada: o dispatcher cai para BackgroundTasks.
       REDIS_URL: redis://redis:6379/0

@@ -3,8 +3,11 @@
 # Segurança em camadas:
 #   1. Middleware confina cliente_externo a /api/portal/*
 #   2. Cada endpoint filtra por cu.client_id (nunca expõe dados de terceiros)
-#   3. Documentos: apenas confidencialidade=normal
-#   4. Estratégia do caso (tese, pontos fortes/fracos) NUNCA é exposta
+#   3. Documentos: apenas os PUBLICADOS explicitamente (portal_visible=True) —
+#      a confidencialidade NÃO é mais usada como se fosse publicação (DOC-049/050)
+#   4. Movimentações: apenas as publicadas (portal_visible=True) — internas
+#      NÃO vazam (SYS-021/SYS-022, fail-closed)
+#   5. Estratégia do caso (tese, pontos fortes/fracos) NUNCA é exposta
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -17,7 +20,7 @@ from app.models.user import User, UserRole
 from app.models.case import Case, CaseMovimento
 from app.models.deadline import Deadline
 from app.models.fee import Fee
-from app.models.document import Document, DocConfidencialidade
+from app.models.document import Document
 from app.models.audit_log import criar_audit_log
 
 router = APIRouter(prefix="/portal", tags=["Portal do Cliente"])
@@ -55,7 +58,11 @@ async def meus_casos(
         sub = select(
             CaseMovimento.case_id, CaseMovimento.data_evento,
             CaseMovimento.descricao, rn,
-        ).where(CaseMovimento.case_id.in_(case_ids)).subquery()
+        ).where(
+            CaseMovimento.case_id.in_(case_ids),
+            # SYS-021/SYS-022: só movimentações PUBLICADAS aparecem no Portal.
+            CaseMovimento.portal_visible.is_(True),
+        ).subquery()
         movs = (await db.execute(
             select(sub.c.case_id, sub.c.data_evento, sub.c.descricao)
             .where(sub.c.rn == 1)
@@ -91,9 +98,14 @@ async def caso_detalhe(
     if not c:
         raise HTTPException(status_code=404, detail="Caso não encontrado")
 
+    # SYS-021/SYS-022: apenas movimentações PUBLICADAS (portal_visible=True).
+    # Fail-closed — internas (petição, decisão interna, nota, IA) não vazam até
+    # que um advogado as publique explicitamente.
     movs = (await db.execute(
-        select(CaseMovimento).where(CaseMovimento.case_id == case_id)
-        .order_by(CaseMovimento.data_evento.desc()).limit(50)
+        select(CaseMovimento).where(
+            CaseMovimento.case_id == case_id,
+            CaseMovimento.portal_visible.is_(True),
+        ).order_by(CaseMovimento.data_evento.desc()).limit(50)
     )).scalars().all()
 
     prazos = (await db.execute(
@@ -125,13 +137,17 @@ async def documentos(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Apenas docs do cliente com confidencialidade NORMAL (liberados)."""
+    """Apenas docs do cliente PUBLICADOS explicitamente no Portal.
+
+    DOC-049/050/SYS-064: a publicação é ato explícito (portal_visible=True) —
+    a confidencialidade é controle de cofre INTERNO, não de publicação. Assim,
+    documentos recebidos do cliente ou ainda em triagem não vazam."""
     client_id = _exigir_cliente(cu)
     rows = (await db.execute(
         select(Document).where(
             Document.client_id == client_id,
             Document.deleted_at.is_(None),
-            Document.confidencialidade == DocConfidencialidade.normal,
+            Document.portal_visible.is_(True),
         ).order_by(Document.created_at.desc())
     )).scalars().all()
     return {"data": [

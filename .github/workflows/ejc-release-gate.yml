@@ -2,6 +2,16 @@ name: EJC Release Gate
 
 # Gate P0 no runner SELF-HOSTED. Impede conflitos, segredos, CORS inseguro,
 # resíduos críticos, reintrodução de backup em claro e rollback não comprovado.
+#
+# SEGURANÇA (SYS-098): o job roda em [self-hosted, ejc-vps] no host de PRODUÇÃO
+# e executa scripts do checkout (ci_guard.sh, provas de backup/rollback/runner).
+# Executar código de PR não-confiável nesse host é uma superfície de RCE. Por
+# isso o job `p0-guard` é condicionado a `if: github.event_name != 'pull_request'`
+# — só roda em push na main e em workflow_dispatch. Os gatilhos são preservados
+# (o `on:` continua incluindo pull_request), mas em PR o job é PULADO — e um job
+# pulado satisfaz os required checks de branch protection sem executar nada no
+# host de produção. Reintroduzir a validação de PR deve ser feito em runner
+# GitHub-hosted (ubuntu-latest) num follow-up.
 on:
   pull_request:
   push:
@@ -18,6 +28,8 @@ concurrency:
 jobs:
   p0-guard:
     name: P0 guard — conflitos e segredos
+    # SYS-098: nunca executar código de PR no host de produção self-hosted.
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 15
     steps:

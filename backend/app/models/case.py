@@ -174,6 +174,13 @@ class CaseMovimento(Base):
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
     resumo_ia   = Column(Text, nullable=True)   # andamento traduzido p/ linguagem simples (IA, rascunho)
 
+    # Publicação EXPLÍCITA no Portal do Cliente (SYS-021/SYS-022, fail-closed).
+    # Movimentações internas NÃO aparecem no Portal por padrão; só quando um
+    # advogado publica explicitamente (portal_visible=True). Default false.
+    portal_visible = Column(Boolean, nullable=False, server_default="false", index=True)
+    publicado_em   = Column(DateTime(timezone=True), nullable=True)
+    publicado_por  = Column(String(36), ForeignKey("users.id"), nullable=True)
+
     case = relationship("Case", back_populates="movimentos")
 
 

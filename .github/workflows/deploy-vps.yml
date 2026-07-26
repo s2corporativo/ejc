@@ -4,6 +4,12 @@
 # classifica somente as migrations pendentes, sincroniza o checkout aprovado e
 # executa backup → build → migration expand-only → troca → health → rollback.
 # Não usa SSH, senha de root, chave privada ou rsync remoto.
+#
+# SEGURANÇA (SYS-098): este workflow roda em runner self-hosted [self-hosted,
+# ejc-vps] no host de PRODUÇÃO. Ele NUNCA dispara em `pull_request` — os únicos
+# gatilhos são `workflow_dispatch` (na main) e `workflow_run` após a CI de push
+# na main concluir com sucesso. O job `deploy` reforça isso com o `if` abaixo.
+# Assim, código não-confiável de PR jamais é executado neste host.
 name: Deploy VPS
 
 on:
@@ -126,8 +132,11 @@ jobs:
             --exclude 'vps-tools/' --exclude '*.log' \
             ./ /opt/ejc/
 
-      - name: Garantir permissão de leitura do .env
-        run: sudo chmod 644 /opt/ejc/.env
+      - name: Garantir permissão restrita do .env (segredos)
+        # SYS-096: o .env carrega SECRET_KEY, chaves de PII/cofre, senha do
+        # Postgres e tokens de API — 644 tornava tudo world-readable no host.
+        # 600 (dono lê/escreve, mais ninguém) é o mínimo para arquivo de segredos.
+        run: sudo chmod 600 /opt/ejc/.env
 
       - name: Deploy seguro com política calculada
         env:

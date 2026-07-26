@@ -18,6 +18,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
+from app.models.client import Client
 from app.models.fee import Fee, FeePayment, FeeStatus
 from app.models.user import User
 from app.schemas.common import MsgResponse
@@ -155,6 +156,8 @@ async def criar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_req_financeiro_mutacao),
 ):
+    dados = payload.model_dump()
+
     if payload.case_id:
         caso = (
             await db.execute(
@@ -166,8 +169,29 @@ async def criar(
         ).scalar_one_or_none()
         if not caso:
             raise HTTPException(status_code=404, detail="Caso não encontrado")
+        # SYS-084: o dono do honorário é SEMPRE o cliente do caso. Se o payload
+        # trouxer um client_id divergente, rejeita (422) — nunca deixa o
+        # honorário cair no portal de outro cliente por client_id forjado.
+        if payload.client_id and payload.client_id != caso.client_id:
+            raise HTTPException(
+                status_code=422,
+                detail="client_id diverge do cliente do caso informado",
+            )
+        dados["client_id"] = caso.client_id
 
-    fee = Fee(id=str(uuid4()), **payload.model_dump())
+    # Valida que o cliente (derivado do caso ou informado no payload) existe.
+    cliente = (
+        await db.execute(
+            select(Client).where(
+                Client.id == dados["client_id"],
+                Client.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+    fee = Fee(id=str(uuid4()), **dados)
     db.add(fee)
     await criar_audit_log(
         db,
@@ -230,6 +254,13 @@ async def registrar_pagamento(
     cu: User = Depends(_req_financeiro_mutacao),
 ):
     """Registra pagamento parcial e quita quando a soma alcança o valor contratado."""
+    # SYS-082: barreira em profundidade além do schema (condecimal gt=0) —
+    # pagamento de valor <= 0 corromperia o consolidado contábil.
+    if payload.valor is None or payload.valor <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="valor do pagamento deve ser maior que zero",
+        )
     fee = (
         await db.execute(
             select(Fee).where(Fee.id == fee_id, Fee.deleted_at.is_(None))

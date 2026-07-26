@@ -60,6 +60,12 @@ class Deadline(Base):
 
     case_id        = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
     responsavel_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
+    # SYS-034/035/036: ownership de prazos AVULSOS (case_id=NULL). owner_id é o
+    # responsável jurídico/dono; created_by rastreia quem criou (autoria). Ambos
+    # nullable (migration 123, backfill = responsavel_id). Índice em owner_id
+    # sustenta o escopo de listagem/mutação de prazos sem caso.
+    owner_id       = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
+    created_by     = Column(String(36), ForeignKey("users.id"), nullable=True)
     observacoes    = Column(Text, nullable=True)
 
     # BUG-16: origem do prazo e rastreabilidade DataJud.

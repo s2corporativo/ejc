@@ -1,5 +1,12 @@
 name: Architecture Inventory — Phase 0
 
+# SEGURANÇA (SYS-098): o job roda em [self-hosted, ejc-vps] no host de PRODUÇÃO
+# e executa scripts do checkout. Para não executar código de PR não-confiável
+# nesse host, o job `inventory` é condicionado a
+# `if: github.event_name != 'pull_request'` — só roda no push da branch de
+# organização e em workflow_dispatch. Em PR é PULADO (satisfaz required checks
+# sem executar nada no host). Gatilhos preservados; a validação de PR deve ir
+# para runner GitHub-hosted (ubuntu-latest) num follow-up.
 on:
   workflow_dispatch:
   push:
@@ -37,6 +44,8 @@ concurrency:
 jobs:
   inventory:
     name: Generate complete architecture inventory
+    # SYS-098: não executar código de PR no host de produção self-hosted.
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 10
 

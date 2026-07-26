@@ -70,3 +70,6 @@ secrets/
 
 # Artefatos temporários do vps-tools (snapshots/testes manuais de SFTP)
 vps-tools/_*
+
+# Bootstrap de admin (senha temporária local, nunca versionar)
+.admin_bootstrap

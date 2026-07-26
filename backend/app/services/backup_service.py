@@ -329,6 +329,76 @@ def _rotacionar_sync(service, folder_id: str, retencao_dias: int) -> int:
     return removidos
 
 
+# ── Prova local persistente (SYS-099) ───────────────────────────────────────
+
+def _dir_prova_local() -> str:
+    """Diretório PERSISTENTE onde a prova local cifrada é retida quando o offsite
+    falha. Resolve, nesta ordem:
+      1) BACKUP_LOCAL_DIR (override explícito — o que o gate de deploy verifica);
+      2) <dir do UPLOAD_DIR>/backups — irmão dos uploads (volume persistente em
+         produção: /app/uploads → /app/backups; em teste: tmp/uploads → tmp/backups,
+         gravável e isolado);
+      3) BACKUP_DIR como último recurso.
+    A ordem prioriza o caminho relativo ao UPLOAD_DIR para não gravar num
+    /app/backups fixo em ambientes (testes/CI) onde ele não existe/não é gravável.
+    """
+    destino = (getattr(settings, "BACKUP_LOCAL_DIR", "") or "").strip()
+    if not destino:
+        upload_dir = (settings.UPLOAD_DIR or "").strip()
+        if upload_dir:
+            base = os.path.dirname(upload_dir.rstrip("/")) or "/app"
+            destino = os.path.join(base, "backups")
+    if not destino:
+        destino = (getattr(settings, "BACKUP_DIR", "") or "").strip() or "/app/backups"
+    return destino
+
+
+def _rotacionar_prova_local(destino_dir: str, retencao_dias: int) -> int:
+    """Apaga provas locais cifradas (prefixo do EJC) além da retenção. Retorna
+    quantas foram removidas. Nunca levanta — rotação parcial não invalida o
+    ciclo."""
+    removidos = 0
+    corte = time.time() - max(retencao_dias, 0) * 86400
+    try:
+        nomes = os.listdir(destino_dir)
+    except OSError:
+        return 0
+    for nome in nomes:
+        if not (nome.startswith(PREFIXO_BACKUP) and nome.endswith(".enc")):
+            continue  # nunca tocar arquivos alheios
+        caminho = os.path.join(destino_dir, nome)
+        try:
+            if os.path.isfile(caminho) and os.path.getmtime(caminho) < corte:
+                os.unlink(caminho)
+                removidos += 1
+        except OSError as exc:
+            logger.warning("[Backup] rotação local: falha ao apagar %s: %s", nome, exc)
+    return removidos
+
+
+def _reter_prova_local(artefatos_fisicos: list[dict[str, Any]]) -> list[str]:
+    """Move os artefatos cifrados do diretório temporário para o diretório
+    PERSISTENTE (chamada ANTES de o TemporaryDirectory apagar tudo). Atualiza
+    art["caminho"] para o destino retido e aplica rotação. Retorna a lista de
+    caminhos efetivamente persistidos (arquivo não-vazio no disco). Só isto
+    autoriza local_ok=true quando o offsite falhou — nada de prova fantasma."""
+    destino_dir = _dir_prova_local()
+    os.makedirs(destino_dir, exist_ok=True)
+    retidos: list[str] = []
+    for item in artefatos_fisicos:
+        art = item["art"]
+        origem = item.get("arquivo")
+        if not (origem and os.path.isfile(origem)):
+            continue
+        alvo = os.path.join(destino_dir, art["nome"])
+        shutil.move(origem, alvo)
+        art["caminho"] = alvo
+        if os.path.isfile(alvo) and os.path.getsize(alvo) > 0:
+            retidos.append(alvo)
+    _rotacionar_prova_local(destino_dir, settings.BACKUP_RETENCAO_DIAS)
+    return retidos
+
+
 # ── Estado persistido (sem migration — precedente google_drive_sync_state) ───
 
 async def _ensure_state_table(db: AsyncSession) -> None:
@@ -464,6 +534,11 @@ async def executar_backup(
         inicio = time.monotonic()
         ts = datetime.now(timezone.utc)
         artefatos: list[dict[str, Any]] = []
+        # SYS-099: rastreia o caminho FÍSICO de cada artefato no tmp (a chave
+        # "caminho" do dict é removida após upload). Usado para reter a prova
+        # local no disco persistente quando o offsite falha.
+        artefatos_fisicos: list[dict[str, Any]] = []
+        prova_local: dict[str, Any] = {}
         avisos: list[str] = []
         status, erro = "sucesso", None
         # Semântica separada: local_ok = artefatos cifrados gerados (prova
@@ -512,6 +587,7 @@ async def executar_backup(
                     "bytes_original": dump_bytes,
                     "bytes_cifrado": dump_enc_bytes,
                 })
+                artefatos_fisicos.append({"art": artefatos[-1], "arquivo": dump_enc})
 
                 # 3) Uploads (tar.gz) — com teto de tamanho configurável.
                 if os.path.isdir(settings.UPLOAD_DIR):
@@ -538,6 +614,7 @@ async def executar_backup(
                             "bytes_original": tar_bytes,
                             "bytes_cifrado": tar_enc_bytes,
                         })
+                        artefatos_fisicos.append({"art": artefatos[-1], "arquivo": tar_enc})
                 else:
                     avisos.append(f"UPLOAD_DIR inexistente: {settings.UPLOAD_DIR}")
 
@@ -591,20 +668,60 @@ async def executar_backup(
                     if settings.BACKUP_OFFSITE_OBRIGATORIO:
                         raise
                     offsite_erro = f"{type(exc).__name__}: {str(exc)[:400]}"
-                    avisos.append(
-                        f"AVISO GRAVE: backup offsite falhou (destino {destino}): "
-                        f"{offsite_erro} — prova local cifrada gerada; corrija o "
-                        "destino offsite"
-                    )
-                    logger.error(
-                        "[Backup] offsite falhou (destino=%s): %s — artefatos "
-                        "locais cifrados seguem como prova do ciclo",
-                        destino, offsite_erro,
-                    )
+                    # SYS-099: RETÉM a prova local no disco persistente ANTES de o
+                    # TemporaryDirectory apagar tudo. local_ok só permanece true
+                    # se os artefatos realmente persistirem (não mais fantasma).
+                    try:
+                        retidos = await asyncio.to_thread(
+                            _reter_prova_local, artefatos_fisicos
+                        )
+                    except Exception as persist_exc:
+                        retidos = []
+                        logger.error(
+                            "[Backup] falha ao reter prova local: %s", persist_exc
+                        )
+                        avisos.append(
+                            f"prova local NÃO persistida: "
+                            f"{type(persist_exc).__name__}: {str(persist_exc)[:200]}"
+                        )
+                    if retidos:
+                        prova_local = {"dir": _dir_prova_local(), "arquivos": retidos}
+                        avisos.append(
+                            f"AVISO GRAVE: backup offsite falhou (destino {destino}): "
+                            f"{offsite_erro} — prova local cifrada RETIDA em "
+                            f"{_dir_prova_local()}; corrija o destino offsite"
+                        )
+                        logger.error(
+                            "[Backup] offsite falhou (destino=%s): %s — prova local "
+                            "cifrada retida em %s (%d artefato(s))",
+                            destino, offsite_erro, _dir_prova_local(), len(retidos),
+                        )
+                    else:
+                        # Sem offsite e sem prova local persistida = SEM prova.
+                        local_ok = False
+                        avisos.append(
+                            f"AVISO CRÍTICO: backup offsite falhou (destino {destino}) "
+                            f"e a prova local não persistiu — ciclo SEM prova de backup"
+                        )
+                        logger.error(
+                            "[Backup] offsite falhou (destino=%s): %s — e a prova "
+                            "local NÃO persistiu: ciclo sem prova",
+                            destino, offsite_erro,
+                        )
 
             if avisos:
                 status = "parcial"
-            resultado_extra: dict[str, Any] = {"rotacao_removidos": removidos}
+            # SYS-099: sem NENHUMA prova (nem local persistida nem offsite) o
+            # ciclo é uma FALHA, não "parcial" — evita ok=true enganoso.
+            if not local_ok and not offsite_ok:
+                status = "erro"
+                erro = erro or (
+                    "backup sem prova: offsite falhou e a prova local não persistiu"
+                )
+            resultado_extra: dict[str, Any] = {
+                "rotacao_removidos": removidos,
+                "prova_local": prova_local,
+            }
         except Exception as exc:
             status = "erro"
             # str(exc) de subprocess/googleapiclient não carrega segredos

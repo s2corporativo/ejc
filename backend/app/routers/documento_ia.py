@@ -127,8 +127,11 @@ async def analisar(
     # pelo fallback e ainda assim têm o MIME real detectado; .pdf/.docx/.png/.jpg
     # ganham verificação estrita de conteúdo.
     sufixo = os.path.splitext(file.filename or "doc")[1] or ".bin"
-    from app.routers.documents import _validar_conteudo
+    from app.routers.documents import _validar_conteudo, _escanear_malware
     mime_real = _validar_conteudo(sufixo.lower(), conteudo)
+    # Antivírus/quarentena (DOC-008/009/010) — antes do parser/OCR tocar o
+    # conteúdo. EICAR sempre barrado; ClamAV quando MALWARE_SCAN_ENABLED.
+    await _escanear_malware(conteudo, file.filename or "documento")
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=sufixo)
     try:
         tmp.write(conteudo)

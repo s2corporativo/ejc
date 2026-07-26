@@ -3,6 +3,7 @@
 # ai_generated=True NÃO avança para aprovada/final sem human_reviewed=True.
 # Bloqueio em nível de código — não apenas UI.
 from __future__ import annotations
+import hashlib
 import logging
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -19,7 +20,7 @@ from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.case import Case
 from app.models.document import Document
 from app.models.user import User
-from app.models.legal_doc import LegalDoc, PecaStatus
+from app.models.legal_doc import LegalDoc, PecaStatus, LegalDocRevisao as LegalDocRevisaoModel
 from app.models.ai_log import AILog
 from app.models.rag import KnowledgeDoc
 from app.models.audit_log import criar_audit_log
@@ -29,6 +30,7 @@ from app.services.validador_juridico_service import ValidacaoInput, validar_rasc
 from app.schemas.legal_doc import (
     LegalDocCreate, LegalDocUpdate, LegalDocRevisao, LegalDocAprovacao,
     LegalDocProtocolo, LegalDocResponse, LegalDocDetail,
+    LegalDocRevisaoItem, LegalDocRevisaoDetalhe,
 )
 from app.schemas.common import MsgResponse
 
@@ -41,7 +43,19 @@ VALIDACAO_SCORE_MINIMO = 75
 # Status "pronto para protocolar" → dispara checklist pré-protocolo (#CHK gatilho 2).
 _STATUS_PRE_PROTOCOLO = {"aprovada", "final"}
 
+# DOC-062: peça em estado final/protocolada fica sob retenção legal (legal hold);
+# soft-delete por rota simples é bloqueado (exige sócio+ com justificativa).
+_STATUS_LEGAL_HOLD = {"protocolada", "final"}
 
+
+def _content_hash(conteudo: str | None) -> str:
+    """sha256 hex do conteúdo — identidade estável de uma versão da peça.
+
+    Usado para: (1) gravar o hash de cada revisão imutável (DOC-056) e (2)
+    amarrar a validação jurídica ao TEXTO exato que foi validado (DOC-068), de
+    modo que validação de versão anterior não seja aceita após edição.
+    """
+    return hashlib.sha256((conteudo or "").encode("utf-8")).hexdigest()
 
 
 def _status_value(status) -> str | None:
@@ -78,7 +92,7 @@ async def _ultima_validacao_peca(db: AsyncSession, doc: LegalDoc) -> dict:
         _VALIDACAO_TIPO_FILTRO,
     ).order_by(AILog.created_at.desc())
     log = (await db.execute(q.limit(1))).scalar_one_or_none()
-    return _montar_validacao(log)
+    return _montar_validacao(log, doc.conteudo)
 
 
 async def _validacoes_por_peca(db: AsyncSession, docs: list[LegalDoc]) -> dict[str, dict]:
@@ -89,6 +103,7 @@ async def _validacoes_por_peca(db: AsyncSession, docs: list[LegalDoc]) -> dict[s
     de cada peça.
     """
     resultado: dict[str, dict] = {d.id: _montar_validacao(None) for d in docs}
+    conteudos: dict[str, str | None] = {d.id: d.conteudo for d in docs}
     doc_ids = [d.id for d in docs]
     if not doc_ids:
         return resultado
@@ -104,7 +119,7 @@ async def _validacoes_por_peca(db: AsyncSession, docs: list[LegalDoc]) -> dict[s
         prompt = log.prompt_sanitizado or ""
         for did in doc_ids:
             if did not in vistos and f"LEGAL_DOC_ID:{did}" in prompt:
-                resultado[did] = _montar_validacao(log)
+                resultado[did] = _montar_validacao(log, conteudos.get(did))
                 vistos.add(did)
                 break
         if len(vistos) == len(doc_ids):
@@ -112,7 +127,7 @@ async def _validacoes_por_peca(db: AsyncSession, docs: list[LegalDoc]) -> dict[s
     return resultado
 
 
-def _montar_validacao(log: AILog | None) -> dict:
+def _montar_validacao(log: AILog | None, conteudo_atual: str | None = None) -> dict:
     if not log:
         return {
             "status": "sem_validacao",
@@ -123,6 +138,26 @@ def _montar_validacao(log: AILog | None) -> dict:
             "hitl": None,
             "motivo": "Execute a validacao juridica da peca e marque o log como revisado ou aplicado.",
         }
+    # DOC-068: a validação vale para o TEXTO validado. Se o log carrega o
+    # CONTENT_HASH da versão validada e ele diverge do conteúdo atual, a peça
+    # foi editada depois — validação obsoleta, não apta ao fluxo. (Logs antigos
+    # sem o marcador preservam o comportamento anterior — mudança aditiva.)
+    if conteudo_atual is not None:
+        import re
+        m = re.search(r"CONTENT_HASH:([0-9a-f]{64})", log.prompt_sanitizado or "")
+        if m and m.group(1) != _content_hash(conteudo_atual):
+            return {
+                "status": "conteudo_alterado",
+                "apto_fluxo": False,
+                "score": None,
+                "veredito": None,
+                "ai_log_id": log.id,
+                "hitl": _status_value(log.status_hitl),
+                "motivo": (
+                    "A validacao registrada refere-se a uma versao anterior do "
+                    "conteudo (o texto foi editado depois). Revalide a peca."
+                ),
+            }
     score = _parse_score(log.prompt_sanitizado)
     veredito = _parse_veredito(log.prompt_sanitizado)
     hitl = _status_value(log.status_hitl)
@@ -329,14 +364,21 @@ async def criar(
     dados = payload.model_dump()
     dados["titulo"] = padronizar_documento_juridico(dados.get("titulo", ""))[:255]
     dados["conteudo"] = padronizar_documento_juridico(dados.get("conteudo", ""))
+    # DOC-059: criação manual por este endpoint NUNCA confia no cliente para
+    # ai_generated (o schema nem expõe o campo). Peça criada aqui nasce
+    # ai_generated=False; peças de origem IA são persistidas pelos fluxos de
+    # geração (services de geração / peca_service) que setam ai_generated=True
+    # no próprio model. Assim o gate HITL não pode ser burlado na entrada.
+    dados.pop("ai_generated", None)
     d = LegalDoc(
         id=str(uuid4()), created_by=cu.id,
+        ai_generated=False,
         **dados,
     )
     db.add(d)
     await criar_audit_log(
         db, cu.id, cu.role.value, "CREATE", "legal_docs", d.id,
-        detalhes=f"IA={payload.ai_generated}",
+        detalhes=f"IA={d.ai_generated}",
     )
     await db.commit()
     await db.refresh(d)
@@ -400,7 +442,12 @@ async def validar_peca_juridica(
         area=None,
         rito=None,
         fase="fluxo_peca_pre_finalizacao",
-        documentos=[f"LEGAL_DOC_ID:{d.id}", f"TITULO:{d.titulo}", f"STATUS_ATUAL:{_status_value(d.status)}"],
+        documentos=[
+            f"LEGAL_DOC_ID:{d.id}", f"TITULO:{d.titulo}",
+            f"STATUS_ATUAL:{_status_value(d.status)}",
+            # DOC-068: amarra a validação ao hash do conteúdo validado.
+            f"CONTENT_HASH:{_content_hash(d.conteudo)}",
+        ],
         case_id=d.case_id,
         nivel_inteligencia="alto",
     )
@@ -433,6 +480,19 @@ async def atualizar(
     if "conteudo" in mudancas and mudancas["conteudo"] is not None:
         mudancas["conteudo"] = padronizar_documento_juridico(mudancas["conteudo"])
 
+    conteudo_anterior = d.conteudo
+    conteudo_mudou = (
+        "conteudo" in mudancas
+        and mudancas["conteudo"] is not None
+        and mudancas["conteudo"] != conteudo_anterior
+    )
+
+    # ── DOC-068: edição MATERIAL de conteúdo invalida a aprovação ───────
+    # Não se edita e aprova no MESMO PATCH: qualquer status enviado junto de uma
+    # mudança de conteúdo é sobrescrito, voltando a peça para revisão/rascunho.
+    if conteudo_mudou:
+        mudancas["status"] = "em_revisao" if d.ai_generated else "rascunho"
+
     # ── BLOQUEIO HITL (em código, não só UI) ───────────────────────────
     novo_status = mudancas.get("status")
     if (novo_status in STATUS_EXIGE_REVISAO
@@ -441,12 +501,45 @@ async def atualizar(
             status_code=422,
             detail="Peca gerada por IA exige revisao humana registrada antes de aprovar (use POST /legal-docs/{id}/revisar). Provimento OAB 205/2021.",
         )
+
+    # ── DOC-057: transição para 'protocolada' NÃO passa pelo PATCH genérico ──
+    # A marcação de protocolada exige que o comprovante (número + data) já tenha
+    # sido registrado pelo endpoint dedicado PATCH /legal-docs/{id}/protocolo.
+    # Sem esses dados a prova de tempestividade não existe — 409.
+    if novo_status == "protocolada" and not (d.numero_protocolo and d.protocolado_em):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Transição para 'protocolada' exige registro prévio do protocolo "
+                "(número + data) via PATCH /legal-docs/{id}/protocolo. Registre o "
+                "comprovante de peticionamento antes de marcar a peça como protocolada."
+            ),
+        )
+
     await _bloquear_sem_validacao(db, d, novo_status)
     await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
 
-    # Edição de conteúdo incrementa versão
-    if "conteudo" in mudancas and mudancas["conteudo"] != d.conteudo:
+    # ── DOC-056: histórico imutável antes de sobrescrever o conteúdo ────
+    if conteudo_mudou:
+        # Snapshot append-only do conteúdo ANTERIOR (revisao = versão vigente,
+        # a que está sendo substituída). Grava também o sha256 para amarrar a
+        # recuperação e a validação (DOC-068).
+        db.add(LegalDocRevisaoModel(
+            id=str(uuid4()),
+            legal_doc_id=d.id,
+            revisao=d.versao,
+            conteudo=conteudo_anterior,
+            content_hash=_content_hash(conteudo_anterior),
+            origem="edicao_manual",
+            gerado_por=cu.id,
+            imutavel=True,
+        ))
         d.versao += 1
+        # DOC-068: reset do selo de revisão/aprovação — a nova versão ainda não
+        # foi revisada; qualquer aprovação anterior deixa de valer.
+        d.human_reviewed = False
+        d.revisor_id = None
+        d.revisado_em = None
 
     status_antigo = d.status.value if hasattr(d.status, "value") else d.status
     for k, v in mudancas.items():
@@ -477,6 +570,62 @@ async def checar_jurisprudencia_peca(
     return await _auditar_jurisprudencia_peca(db, d.conteudo or "")
 
 
+@router.get("/{doc_id}/revisoes")
+async def listar_revisoes(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """DOC-056: histórico imutável de revisões da peça (metadados, sem conteúdo).
+
+    Cada linha é o snapshot de uma versão anterior gravada antes de sobrescrever
+    o conteúdo. Restrito a advogado+ e com acesso ao caso (quando vinculada)."""
+    d = (await db.execute(
+        select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    requer_advogado(cu, detail="Histórico de revisões é restrito a advogados")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+    rows = (await db.execute(
+        select(LegalDocRevisaoModel)
+        .where(LegalDocRevisaoModel.legal_doc_id == doc_id)
+        .order_by(LegalDocRevisaoModel.revisao.desc())
+    )).scalars().all()
+    data = [
+        LegalDocRevisaoItem.model_validate(r).model_dump(mode="json") for r in rows
+    ]
+    return {"data": data, "total": len(data), "versao_atual": d.versao}
+
+
+@router.get("/{doc_id}/revisoes/{revisao}", response_model=LegalDocRevisaoDetalhe)
+async def recuperar_revisao(
+    doc_id: str, revisao: int,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """DOC-056: recupera o CONTEÚDO de uma versão anterior preservada (ex.: v1
+    após a peça ter avançado para v2). Restrito a advogado+ e acesso ao caso."""
+    d = (await db.execute(
+        select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    requer_advogado(cu, detail="Histórico de revisões é restrito a advogados")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+    r = (await db.execute(
+        select(LegalDocRevisaoModel).where(
+            LegalDocRevisaoModel.legal_doc_id == doc_id,
+            LegalDocRevisaoModel.revisao == revisao,
+        )
+    )).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Revisão não encontrada")
+    return r
+
+
 @router.post("/{doc_id}/revisar", response_model=LegalDocDetail)
 async def revisar(
     doc_id: str, payload: LegalDocRevisao,
@@ -485,6 +634,9 @@ async def revisar(
     cu: User = Depends(get_current_user),
 ):
     """Registro de revisão humana — desbloqueia aprovação de peça IA."""
+    # DOC-058: revisão é ato de responsabilidade jurídica — exige advogado+,
+    # inclusive para peça sem caso (case_id=NULL).
+    requer_advogado(cu, detail="Revisão de peça jurídica é restrita a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
@@ -527,6 +679,9 @@ async def aprovar(
     a aprovação é recusada (422). Mantém os gates de qualidade existentes
     (validação jurídica + jurisprudência) coerentes com o fluxo do PATCH.
     """
+    # DOC-058: aprovação é ato de responsabilidade jurídica — exige advogado+,
+    # inclusive para peça sem caso (case_id=NULL).
+    requer_advogado(cu, detail="Aprovação de peça jurídica é restrita a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
@@ -676,6 +831,7 @@ async def registrar_protocolo(
 @router.delete("/{doc_id}", response_model=MsgResponse)
 async def remover(
     doc_id: str,
+    motivo: Optional[str] = Query(None, description="Justificativa formal — obrigatória para excluir peça protocolada/final (legal hold)"),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -688,8 +844,33 @@ async def remover(
         raise HTTPException(status_code=404, detail="Peça não encontrada")
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
+
+    # ── DOC-062: retenção legal (legal hold) de peça final/protocolada ──
+    # Peça protocolada/final integra o processo — não pode ser soft-deletada por
+    # rota simples. Exige perfil sócio+ E justificativa formal (motivo). Caso
+    # contrário, 409 (cancelamento/legal hold formal fora do escopo desta rota).
+    status_atual = _status_value(d.status)
+    detalhes_audit = None
+    if status_atual in _STATUS_LEGAL_HOLD:
+        nivel = ROLE_LEVEL.get(getattr(cu.role, "value", str(cu.role)), 0)
+        motivo_limpo = (motivo or "").strip()
+        if nivel < ROLE_LEVEL["socio"] or not motivo_limpo:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Peça em status '{status_atual}' está sob retenção legal (legal "
+                    "hold): a exclusão exige perfil sócio ou superior e justificativa "
+                    "formal (parâmetro 'motivo'). Peça protocolada/final integra o "
+                    "processo e não pode ser removida por rota simples."
+                ),
+            )
+        detalhes_audit = f"legal_hold status={status_atual} motivo={motivo_limpo[:300]}"
+
     d.deleted_at = datetime.now(timezone.utc)
-    await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "legal_docs", doc_id)
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "DELETE", "legal_docs", doc_id,
+        detalhes=detalhes_audit,
+    )
     await db.commit()
     return MsgResponse(detail="Peça removida")
 

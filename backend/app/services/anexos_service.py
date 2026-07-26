@@ -69,9 +69,21 @@ class ItemAnexo:
     titulo: str              # rótulo curto (linha do índice)
     legenda: str = ""        # síntese probatória (subtítulo do separador)
     document_id: str | None = None
+    obrigatorio: bool = False  # se True e não incorporável → aborta o pacote
     _filepath: str | None = field(default=None, repr=False)
     _mimetype: str | None = field(default=None, repr=False)
     _contexto: str = field(default="", repr=False)   # trecho sanitizado p/ as razões
+
+
+class DocumentoUnicoIncompletoError(RuntimeError):
+    """O "documento único" não pôde ser montado íntegro (anexo corrompido ou item
+    obrigatório não incorporável). Subclasse de RuntimeError de propósito: os
+    chamadores que já tratam RuntimeError (legal_docs) degradam para 503; o
+    router de anexos trata explicitamente para devolver 409 + manifesto."""
+
+    def __init__(self, message: str, manifesto: list | None = None):
+        super().__init__(message)
+        self.manifesto = manifesto or []
 
 
 # ── Contexto do caso ──────────────────────────────────────────────────────────
@@ -279,8 +291,28 @@ def _data_uri(path: str, mimetype: str) -> str:
     return f"data:{mimetype};base64," + base64.b64encode(raw).decode("ascii")
 
 
+def _classificar_formato(item: ItemAnexo, caminho: str | None) -> str:
+    """Classifica o anexo para o manifesto de completude:
+    pdf | imagem (inlineáveis) · nao_inlineavel (docx/xlsx/Drive) · sem_arquivo."""
+    mime = (item._mimetype or "").lower()
+    ref = (caminho or item._filepath or "").lower()
+    if mime in _MIME_PDF or ref.endswith(".pdf"):
+        return "pdf"
+    if mime in _MIME_IMG or ref.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")):
+        return "imagem"
+    if not (item._filepath or item.document_id):
+        return "sem_arquivo"
+    return "nao_inlineavel"
+
+
 async def _anexo_para_pdf(ctx: ContextoAnexos, item: ItemAnexo) -> bytes | None:
-    """Converte o arquivo anexado em páginas PDF (PDF nativo ou imagem embutida)."""
+    """Converte o arquivo anexado em páginas PDF (PDF nativo ou imagem embutida).
+
+    Retorna None quando NÃO há arquivo/formato inlineável (gap legítimo) OU
+    quando o arquivo existe mas está corrompido — o chamador
+    (montar_documento_unico_com_manifesto) distingue os dois casos e decide se
+    aborta (fail-closed) ou apenas sinaliza no manifesto.
+    """
     caminho = _caminho_anexo(item)
     if not caminho:
         return None
@@ -302,8 +334,13 @@ async def _anexo_para_pdf(ctx: ContextoAnexos, item: ItemAnexo) -> bytes | None:
     return None
 
 
-def mesclar_pdfs(partes: list[bytes]) -> bytes:
-    """Mescla PDFs (bytes) em um único documento, tolerando partes corrompidas.
+def mesclar_pdfs(partes: list[bytes], *, fail_closed: bool = True) -> bytes:
+    """Mescla PDFs (bytes) em um único documento.
+
+    FAIL-CLOSED por padrão (DOC-077): se uma parte NÃO-vazia não puder ser
+    incorporada, aborta com DocumentoUnicoIncompletoError em vez de omiti-la em
+    silêncio — protocolar um "documento único" com página faltante é pior que
+    falhar. Partes vazias/None (gaps intencionais) continuam sendo puladas.
 
     Pública de propósito: é a MESMA primitiva usada pelo Documento Único de
     Anexos e pelo "Documento Único de Impressão" (routers/legal_docs.py) —
@@ -318,6 +355,11 @@ def mesclar_pdfs(partes: list[bytes]) -> bytes:
         try:
             writer.append(PdfReader(io.BytesIO(p)))
         except Exception as exc:
+            if fail_closed:
+                raise DocumentoUnicoIncompletoError(
+                    f"Parte PDF ilegível na mesclagem final ({exc}) — pacote "
+                    "abortado para não gerar documento único incompleto."
+                ) from exc
             logger.warning("Parte PDF ignorada na mesclagem: %s", exc)
     saida = io.BytesIO()
     writer.write(saida)
@@ -328,18 +370,76 @@ def mesclar_pdfs(partes: list[bytes]) -> bytes:
 _mesclar = mesclar_pdfs
 
 
-async def montar_documento_unico(ctx: ContextoAnexos, itens: list[ItemAnexo]) -> bytes:
+async def montar_documento_unico_com_manifesto(
+    ctx: ContextoAnexos, itens: list[ItemAnexo]
+) -> tuple[bytes, list[dict]]:
     """
-    Renderiza capa + índice, e para cada item a folha de separação seguida do
-    anexo real (quando existir e for inlineável). Devolve o PDF único mesclado.
+    Renderiza capa + índice e, para cada item, a folha de separação seguida do
+    anexo real (quando existir e for inlineável). Devolve (PDF único, MANIFESTO
+    de completude).
+
+    O manifesto lista, por item, se foi `incorporado` e o `motivo` quando não.
+    Contrato de integridade (DOC-077):
+      - arquivo inlineável (PDF/imagem) que EXISTE mas falha na incorporação →
+        FAIL-CLOSED: aborta com DocumentoUnicoIncompletoError (arquivo corrompido);
+      - item marcado `obrigatorio` que não pôde ser incorporado → aborta;
+      - formatos não inlineáveis (docx/xlsx/Drive) e arquivos ausentes no
+        armazenamento → sinalizados no manifesto, nunca omitidos em silêncio.
     """
     partes: list[bytes] = [await _render_pdf(cover_html(ctx, itens))]
+    manifesto: list[dict] = []
     for item in itens:
         partes.append(await _render_pdf(separador_html(ctx, item)))
-        anexo = await _anexo_para_pdf(ctx, item)
-        if anexo:
+        caminho = _caminho_anexo(item)
+        formato = _classificar_formato(item, caminho)
+        entrada = {
+            "ordem": item.ordem,
+            "titulo": item.titulo,
+            "document_id": item.document_id,
+            "formato": formato,
+            "obrigatorio": bool(getattr(item, "obrigatorio", False)),
+            "incorporado": False,
+            "motivo": None,
+        }
+        if formato in ("pdf", "imagem") and caminho is not None:
+            anexo = await _anexo_para_pdf(ctx, item)
+            if not anexo:
+                entrada["motivo"] = "arquivo corrompido ou ilegível — incorporação falhou"
+                manifesto.append(entrada)
+                raise DocumentoUnicoIncompletoError(
+                    f"Doc. {item.ordem:02d} — '{item.titulo}': {entrada['motivo']}. "
+                    "Pacote abortado para não protocolar documento incompleto.",
+                    manifesto=manifesto,
+                )
             partes.append(anexo)
-    return await asyncio.get_event_loop().run_in_executor(None, _mesclar, partes)
+            entrada["incorporado"] = True
+        else:
+            if formato in ("pdf", "imagem"):
+                # referenciado mas ausente no armazenamento: NÃO é corrupção —
+                # preserva o comportamento do documento único de impressão
+                # (capa "DOC. NN" sem o anexo). Sinalizado, nunca omitido.
+                entrada["motivo"] = "arquivo não localizado no armazenamento"
+            elif formato == "sem_arquivo":
+                entrada["motivo"] = "somente folha de separação (nenhum arquivo anexado)"
+            else:
+                entrada["motivo"] = "formato não incorporável ao PDF (segue no GED/Drive)"
+            if entrada["obrigatorio"]:
+                manifesto.append(entrada)
+                raise DocumentoUnicoIncompletoError(
+                    f"Doc. {item.ordem:02d} — '{item.titulo}': {entrada['motivo']}. "
+                    "Item OBRIGATÓRIO não pôde ser incorporado — pacote abortado.",
+                    manifesto=manifesto,
+                )
+        manifesto.append(entrada)
+    pdf = await asyncio.get_event_loop().run_in_executor(None, _mesclar, partes)
+    return pdf, manifesto
+
+
+async def montar_documento_unico(ctx: ContextoAnexos, itens: list[ItemAnexo]) -> bytes:
+    """Compat: devolve apenas o PDF único (fail-closed). Usado por legal_docs
+    (Documento Único de Impressão). O manifesto é ignorado aqui."""
+    pdf, _manifesto = await montar_documento_unico_com_manifesto(ctx, itens)
+    return pdf
 
 
 # ── Conversão do acervo probatório (Prova) em itens do documento único ────────
@@ -376,15 +476,25 @@ async def resolver_itens(
     case_id: str,
     itens_in: list[dict],
     com_ia: bool = True,
+    cu=None,
 ) -> list[ItemAnexo]:
     """
     Constrói os ItemAnexo a partir da entrada do usuário. Cada entrada pode
     referenciar um documento do GED (document_id) e/ou trazer título/legenda
     manuais. Legenda manual tem prioridade; senão, tenta a IA sobre o ocr_text.
 
-    Segurança: só aceita documentos do PRÓPRIO caso (case_id já checado por
-    ownership no router) — impede juntar peça de caso alheio (EOAB/LGPD).
+    Segurança:
+      - só aceita documentos do PRÓPRIO caso (case_id já checado por ownership
+        no router) — impede juntar peça de caso alheio (EOAB/LGPD);
+      - COFRE de confidencialidade (DOC-076): quando `cu` é informado, documento
+        restrito/confidencial/segredo_justiça só entra no pacote para socio+ —
+        MESMO gate do download direto do GED (documents._pode_acessar_confidencial)
+        e do Documento Único de Impressão (legal_docs). Caso contrário, 403 (o
+        pacote nunca é montado silenciosamente sem o anexo restrito).
     """
+    # Reuso do gate central do cofre (não duplica a regra de papel).
+    from app.routers.documents import _pode_acessar_confidencial
+
     itens: list[ItemAnexo] = []
     for i, entrada in enumerate(itens_in, start=1):
         doc: Document | None = None
@@ -402,6 +512,16 @@ async def resolver_itens(
                 raise HTTPException(
                     404, f"Documento {doc_id} não encontrado neste caso."
                 )
+            if cu is not None:
+                conf = getattr(doc.confidencialidade, "value", str(doc.confidencialidade or "normal"))
+                if not _pode_acessar_confidencial(cu, conf):
+                    from fastapi import HTTPException
+                    raise HTTPException(
+                        403,
+                        f"Documento '{doc.titulo}' está sob confidencialidade "
+                        f"({conf}) e exige perfil sócio ou superior para compor o "
+                        "pacote de anexos.",
+                    )
 
         titulo = (entrada.get("titulo") or (doc.titulo if doc else None) or f"Documento {i}").strip()
         legenda = (entrada.get("legenda") or "").strip()
@@ -416,7 +536,13 @@ async def resolver_itens(
                 ocr_text=doc.ocr_text,
             )
 
-        item = ItemAnexo(ordem=i, titulo=titulo, legenda=legenda, document_id=doc_id)
+        item = ItemAnexo(
+            ordem=i,
+            titulo=titulo,
+            legenda=legenda,
+            document_id=doc_id,
+            obrigatorio=bool(entrada.get("obrigatorio", False)),
+        )
         if doc is not None:
             item._filepath = doc.filepath
             item._mimetype = doc.mimetype

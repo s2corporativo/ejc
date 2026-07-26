@@ -2,6 +2,7 @@
 # Data Room — salas seguras de documentos com links de acesso externo.
 from __future__ import annotations
 
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -29,6 +30,30 @@ from app.models.user import User
 from app.services.security_service import obter_ip_real
 
 router = APIRouter(prefix="/data-rooms", tags=["Data Room"])
+
+# DOC-101: níveis de confidencialidade que NUNCA podem aparecer em link público
+# (espelha a semântica de cofre em documents._pode_acessar_confidencial).
+_CONF_ELEVADA = {"restrito", "confidencial", "segredo_justica"}
+
+
+def _hash_token(token: str) -> str:
+    """sha256(token) em hex — DOC-098: autenticação de link por hash."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _conf_valor(conf) -> str:
+    return conf.value if hasattr(conf, "value") else str(conf)
+
+
+async def _client_do_caso(db: AsyncSession, case_id: str | None) -> str | None:
+    """Deriva o cliente vinculado a um caso (para checagem de vínculo doc↔sala)."""
+    if not case_id:
+        return None
+    return (
+        await db.execute(
+            select(Case.client_id).where(Case.id == case_id)
+        )
+    ).scalar_one_or_none()
 
 
 class DataRoomIn(BaseModel):
@@ -224,9 +249,10 @@ def _out_room(r: DataRoom) -> dict:
 
 
 def _out_link(lk: DataRoomLink) -> dict:
+    # DOC-098: o token em claro NÃO é reexibido em listagens — apenas na
+    # resposta de criação do link (uma única vez).
     return {
         "id": lk.id,
-        "token": lk.token,
         "descricao": lk.descricao,
         "expira_em": lk.expira_em.isoformat() if lk.expira_em else None,
         "max_acessos": lk.max_acessos,
@@ -416,6 +442,34 @@ async def adicionar_arquivo(
     if doc.case_id:
         await verificar_acesso_caso(db, cu, doc.case_id)
 
+    # DOC-097: o documento precisa pertencer ao MESMO vínculo (caso/cliente) da
+    # sala. O cliente da sala é derivado do caso quando não informado direto.
+    sala_case_id = room.case_id
+    sala_client_id = room.client_id or await _client_do_caso(db, room.case_id)
+    doc_client_id = doc.client_id or await _client_do_caso(db, doc.case_id)
+
+    # Sala institucional (sem caso e sem cliente) = triagem compartilhada da
+    # equipe: contrato legado preservado, sem vínculo a comparar.
+    if sala_case_id or sala_client_id:
+        if doc.case_id and sala_case_id and str(doc.case_id) != str(sala_case_id):
+            raise HTTPException(403, "Documento pertence a outro caso")
+        if (
+            doc_client_id
+            and sala_client_id
+            and str(doc_client_id) != str(sala_client_id)
+        ):
+            raise HTTPException(403, "Documento pertence a outro cliente")
+        if not doc.case_id:
+            # Documento sem caso só entra se o cliente casar com o da sala.
+            if not (
+                doc_client_id
+                and sala_client_id
+                and str(doc_client_id) == str(sala_client_id)
+            ):
+                raise HTTPException(
+                    403, "Documento sem vínculo compatível com a sala"
+                )
+
     arq = DataRoomArquivo(
         id=str(uuid4()),
         data_room_id=room_id,
@@ -490,6 +544,7 @@ async def gerar_link(
         id=str(uuid4()),
         data_room_id=room_id,
         token=token,
+        token_hash=_hash_token(token),
         descricao=req.descricao,
         expira_em=expira,
         max_acessos=req.max_acessos,
@@ -497,8 +552,10 @@ async def gerar_link(
     )
     db.add(lk)
     await db.commit()
+    # DOC-098: token em claro devolvido UMA ÚNICA VEZ, aqui na criação.
     return {
         **_out_link(lk),
+        "token": token,
         "url_acesso": f"/api/data-rooms/acesso/{token}",
     }
 
@@ -548,10 +605,11 @@ async def acessar_link_publico(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    # DOC-098: autentica por hash — o token em claro não é armazenado para busca.
     lk = (
         await db.execute(
             select(DataRoomLink).where(
-                DataRoomLink.token == token,
+                DataRoomLink.token_hash == _hash_token(token),
                 DataRoomLink.ativo.is_(True),
             )
         )
@@ -594,18 +652,25 @@ async def acessar_link_publico(
         )
     ).scalars().all()
 
-    ativos: set[str] = set()
+    # DOC-101: reaplica a policy de confidencialidade a CADA acesso — documentos
+    # elevados a restrito/confidencial/segredo_justiça após a inclusão somem do
+    # link público (fail-closed). Só documentos não deletados e não elevados
+    # entram na resposta.
+    permitidos: set[str] = set()
     if arquivos:
-        ativos = set(
-            (
-                await db.execute(
-                    select(Document.id).where(
-                        Document.id.in_([a.document_id for a in arquivos]),
-                        Document.deleted_at.is_(None),
-                    )
+        rows = (
+            await db.execute(
+                select(Document.id, Document.confidencialidade).where(
+                    Document.id.in_([a.document_id for a in arquivos]),
+                    Document.deleted_at.is_(None),
                 )
-            ).scalars().all()
-        )
+            )
+        ).all()
+        permitidos = {
+            did
+            for did, conf in rows
+            if _conf_valor(conf) not in _CONF_ELEVADA
+        }
     await db.commit()
 
     return {
@@ -616,7 +681,7 @@ async def acessar_link_publico(
                 "nome": a.nome_exibicao,
             }
             for a in arquivos
-            if a.document_id in ativos
+            if a.document_id in permitidos
         ],
         "acesso_numero": lk.acessos_realizados,
         "expira_em": lk.expira_em.isoformat() if lk.expira_em else None,

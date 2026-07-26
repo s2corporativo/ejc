@@ -8,6 +8,17 @@ MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
 REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-0}"
+# SYS-100: por padrão o backup OFFSITE é obrigatório no deploy (fail-closed).
+# Sem cópia externa, um incidente no host de produção destrói dado E backup
+# juntos. Override documentado para contingência (ex.: destino offsite em
+# manutenção): REQUIRE_OFFSITE_BACKUP=0 — nesse modo o deploy só prossegue se
+# houver PROVA LOCAL cifrada efetivamente persistida no disco (verificada com
+# `test -s`), nunca apenas pelo exit code do backup.
+REQUIRE_OFFSITE_BACKUP="${REQUIRE_OFFSITE_BACKUP:-1}"
+# Container do backend e diretório persistente da prova local (deve casar com
+# BACKUP_LOCAL_DIR/BACKUP_DIR do backend — volume backups_data → /app/backups).
+BACKEND_CONTAINER="${BACKEND_CONTAINER:-ejc_backend}"
+BACKUP_LOCAL_DIR="${BACKUP_LOCAL_DIR:-/app/backups}"
 
 cd "$APP_DIR"
 
@@ -84,7 +95,13 @@ fi
 
 log "EJC deploy seguro iniciado para ${DOMAIN}"
 [ -f .env ] || { echo "Arquivo .env ausente em ${APP_DIR}" >&2; exit 1; }
-docker compose config >"/tmp/ejc_compose_config_$(timestamp).txt"
+# SYS-097: validar a composição SEM persistir a config expandida. O antigo
+# `docker compose config >/tmp/...txt` gravava TODOS os segredos interpolados
+# (senha do Postgres, chaves, tokens) em claro num arquivo world-readable de
+# /tmp que nunca era removido. `--quiet` valida sintaxe/interpolação e não
+# emite nada. Se um dia for necessário inspecionar a config expandida, use um
+# arquivo temporário com permissão 600 e remoção garantida por `trap`.
+docker compose config --quiet
 
 OLD_BACKEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_backend 2>/dev/null || true)"
 OLD_WORKER_IMAGE="$(docker inspect -f '{{.Image}}' ejc_worker 2>/dev/null || true)"
@@ -111,10 +128,28 @@ fi
 
 trap rollback ERR
 
+# SYS-099/100: confirma que existe PROVA LOCAL cifrada REAL e não-vazia no disco
+# persistente do backend (volume backups_data → BACKUP_LOCAL_DIR), e não apenas
+# um exit code otimista. O backup_service, quando o offsite falha e não é
+# obrigatório, MOVE os artefatos cifrados para esse diretório antes de o
+# TemporaryDirectory apagá-los — aqui verificamos que o dump cifrado mais recente
+# de fato persiste. Funciona com o backend em execução (docker exec) ou parado
+# (container efêmero da imagem via docker compose run).
+verificar_prova_local() {
+  local script='f="$(ls -1t '"$BACKUP_LOCAL_DIR"'/*_db.dump.enc 2>/dev/null | head -1)"; [ -n "$f" ] && [ -s "$f" ]'
+  if docker ps --format '{{.Names}}' | grep -qx "$BACKEND_CONTAINER"; then
+    docker exec "$BACKEND_CONTAINER" sh -lc "$script"
+  else
+    docker compose run --rm --no-deps -T backend sh -lc "$script"
+  fi
+}
+
 log "Verificando pré-requisitos de backup"
-# O gate bloqueia SOMENTE se a prova LOCAL cifrada falhar (backup.sh != 0).
-# Offsite falho com prova local presente → exit 0 + "offsite_ok": false no
-# JSON: o deploy prossegue com AVISO GRAVE no log e no step summary.
+# O gate bloqueia se a prova LOCAL cifrada falhar (backup.sh != 0). Além disso,
+# quando o offsite falha, o comportamento depende de REQUIRE_OFFSITE_BACKUP:
+#   =1 (padrão, fail-closed): offsite obrigatório → deploy BLOQUEADO.
+#   =0 (contingência): exige prova local persistida verificável (`test -s`);
+#      sem ela o deploy também é bloqueado.
 BACKUP_SAIDA=""
 if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
@@ -122,10 +157,23 @@ if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
   if printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": false'; then
     BACKUP_OFFSITE_DESTINO="$(printf '%s' "$BACKUP_SAIDA" | sed -n 's/.*"destino": "\([^"]*\)".*/\1/p')"
     BACKUP_OFFSITE_ERRO="$(printf '%s' "$BACKUP_SAIDA" | sed -n 's/.*"offsite_erro": "\([^"]*\)".*/\1/p')"
-    AVISO_OFFSITE="AVISO GRAVE: backup offsite falhou (destino ${BACKUP_OFFSITE_DESTINO:-desconhecido}): ${BACKUP_OFFSITE_ERRO:-erro não informado} — deploy prossegue com prova local; corrija o destino offsite"
-    log "$AVISO_OFFSITE"
-    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-      printf '> :warning: %s\n' "$AVISO_OFFSITE" >>"$GITHUB_STEP_SUMMARY"
+    if [ "$REQUIRE_OFFSITE_BACKUP" = "1" ]; then
+      log "ERRO CRÍTICO: backup OFFSITE obrigatório falhou (destino ${BACKUP_OFFSITE_DESTINO:-desconhecido}): ${BACKUP_OFFSITE_ERRO:-erro não informado}."
+      log "Deploy bloqueado antes de qualquer mutação do runtime (REQUIRE_OFFSITE_BACKUP=1)."
+      log "Contingência documentada: reexecute com REQUIRE_OFFSITE_BACKUP=0 (exige prova local persistida)."
+      false
+    fi
+    # Modo contingência: offsite não obrigatório → só prossegue com prova local real.
+    if verificar_prova_local; then
+      AVISO_OFFSITE="AVISO GRAVE: backup offsite falhou (destino ${BACKUP_OFFSITE_DESTINO:-desconhecido}): ${BACKUP_OFFSITE_ERRO:-erro não informado} — deploy prossegue com PROVA LOCAL persistida verificada; corrija o destino offsite"
+      log "$AVISO_OFFSITE"
+      if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+        printf '> :warning: %s\n' "$AVISO_OFFSITE" >>"$GITHUB_STEP_SUMMARY"
+      fi
+    else
+      log "ERRO CRÍTICO: offsite falhou E não há prova local cifrada persistida em ${BACKUP_LOCAL_DIR} (test -s falhou)."
+      log "Deploy bloqueado antes de qualquer mutação do runtime — nenhuma prova de backup verificável."
+      false
     fi
   fi
 else

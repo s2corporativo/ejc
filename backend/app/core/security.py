@@ -203,8 +203,17 @@ async def get_current_user(
 
 def require_roles(allowed: List[str]):
     """
-    Dependency factory: exige que o usuário tenha um dos perfis listados,
-    ou nível hierárquico suficiente.
+    Dependency factory HIERÁRQUICA: libera o acesso se o usuário tem um dos
+    perfis listados OU nível hierárquico >= ao menor nível dos perfis listados.
+
+    ATENÇÃO (SYS-009): o fallback por nível deixa papéis de nível SUPERIOR
+    atravessarem gates LATERAIS. Ex.: um gate `require_roles(["financeiro"])`
+    (nível 4) é atravessado por advogado (6)/admin (8), pois o nível deles é
+    maior — mesmo sem pertencerem à área financeira. Use `require_roles` apenas
+    quando a semântica desejada for REALMENTE "este nível ou acima" (gates
+    verticais de senioridade). Para gates de ÁREA/competência lateral (financeiro,
+    auditoria, etc.), use `require_roles_exact()` (allowlist estrita, sem
+    fallback de nível).
     """
     async def checker(current_user=Depends(get_current_user)):
         if current_user.role not in allowed:
@@ -217,6 +226,38 @@ def require_roles(allowed: List[str]):
                 )
         return current_user
     return checker
+
+
+def require_roles_exact(*roles: str):
+    """
+    Dependency factory ESTRITA (allowlist): exige pertencimento EXATO ao conjunto
+    de papéis, SEM fallback hierárquico de nível (SYS-009).
+
+    Diferente de `require_roles`, um papel de nível superior NÃO atravessa o gate
+    só por ter nível maior — precisa estar explicitamente listado. É a forma
+    correta para gates LATERAIS de área/competência (ex.: financeiro, auditoria),
+    onde "mais sênior" não implica "autorizado nesta área".
+
+    Uso: `Depends(require_roles_exact("financeiro", "admin", "superadmin"))`.
+    Liste TODOS os papéis que devem passar (inclua explicitamente os
+    administrativos que precisam de acesso).
+    """
+    permitidos = frozenset(roles)
+
+    async def checker(current_user=Depends(get_current_user)):
+        role = getattr(getattr(current_user, "role", None), "value", None) \
+            or str(getattr(current_user, "role", "") or "")
+        if role not in permitidos:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Acesso negado. Perfis permitidos: {', '.join(sorted(permitidos))}",
+            )
+        return current_user
+    return checker
+
+
+# Alias em português (padrão do repo: requer_advogado/exigir_*).
+exigir_papeis_estritos = require_roles_exact
 
 
 def require_admin(cu=Depends(get_current_user)):

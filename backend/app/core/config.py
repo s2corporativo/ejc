@@ -715,6 +715,14 @@ class Settings(BaseSettings):
     # bloqueia o deploy (fail-closed). false (default) = a prova LOCAL cifrada
     # sustenta o gate; offsite falho vira status "parcial" com aviso grave.
     BACKUP_OFFSITE_OBRIGATORIO: bool = False
+    # SYS-099: diretório PERSISTENTE para reter a prova local cifrada quando o
+    # offsite falha e não é obrigatório. Sem isto os artefatos ficavam no
+    # TemporaryDirectory e eram apagados na saída do bloco, deixando local_ok=true
+    # apontar para arquivos inexistentes ("prova fantasma"). Default vazio →
+    # resolve em runtime para BACKUP_DIR (/app/backups, volume backups_data) ou,
+    # em último caso, <dir de UPLOAD_DIR>/backups. Deve casar com o
+    # BACKUP_LOCAL_DIR usado pelo gate de deploy (scripts/deploy_vps_safe.sh).
+    BACKUP_LOCAL_DIR: str = ""
 
     # ── Automações voltadas ao CLIENTE (jobs opt-in — default False) ──────
     # Sync diário DataJud + notificação de andamentos novos ao cliente

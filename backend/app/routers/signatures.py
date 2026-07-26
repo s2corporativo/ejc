@@ -5,10 +5,12 @@
 # especial (CPC art. 105) — adequado para procurações e contratos.
 from __future__ import annotations
 import hashlib
+import hmac
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +60,13 @@ async def criar_solicitacao(
     if not doc:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
+    # DOC-106/SYS-068: ownership do SOLICITANTE. require_roles garante o papel,
+    # mas não que ESTE advogado tenha acesso ao documento/caso — sem isto, um
+    # advogado de outra carteira que conheça os IDs iniciaria a assinatura.
+    # Reusa o gate único do GED (case ownership OU acesso ao cliente).
+    from app.routers.documents import _verificar_acesso_documento
+    await _verificar_acesso_documento(db, cu, doc)
+
     # Valida que o documento pertence ao cliente (direto via doc.client_id ou pelo
     # caso vinculado) ANTES de notificar o portal — senão notifica-se o cliente
     # sobre um documento de OUTRO cliente (vazamento).
@@ -100,9 +109,18 @@ async def criar_solicitacao(
 
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE",
                           "signature_requests", sr.id,
-                          detalhes=f"Doc: {doc.titulo}")
+                          detalhes=f"Doc: {doc.titulo}; visualizacao_requerida")
     await db.commit()
+    # DOC-107/SYS-069: a visualização do documento é REQUERIDA antes do aceite.
+    # O preview autenticado por solicitação é servido por GET
+    # /signatures/{sig_id}/documento (abaixo). A comprovação PERSISTIDA de que o
+    # cliente visualizou (flag `visualizado_em` no SignatureRequest) depende de
+    # migration — de responsabilidade do outro agente; aqui apenas sinalizamos.
+    # TODO(DOC-107): persistir visualizacao (coluna + gate no /assinar) quando a
+    # migration existir; hoje registramos em audit log a exigência.
     return {"id": sr.id, "hash": h, "detail": "Solicitação criada",
+            "visualizacao_requerida": True,
+            "preview_url": f"/signatures/{sr.id}/documento",
             "signatarios": [_signatario(p, sr) for p in portais]}
 
 
@@ -199,23 +217,111 @@ async def assinar(
     if sr.status != SignatureStatus.pendente:
         raise HTTPException(status_code=409, detail="Já processada")
 
+    # DOC-108: revalidação de integridade NO ACEITE. O hash foi calculado na
+    # criação; se o arquivo físico tiver mudado desde então, o cliente estaria
+    # aceitando conteúdo diferente do que foi solicitado. Reabre o arquivo,
+    # recalcula o SHA-256 e compara; divergência → invalida (cancela) e rejeita.
+    doc = (await db.execute(select(Document).where(
+        Document.id == sr.document_id
+    ))).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=409, detail="Documento da solicitação não localizado")
+    from app.core.config import get_settings as _gs
+    full_path = f"{_gs().UPLOAD_DIR}/{doc.filepath}"
+    try:
+        with open(full_path, "rb") as f:
+            hash_atual = hashlib.sha256(f.read()).hexdigest()
+    except FileNotFoundError:
+        raise HTTPException(status_code=409, detail="Arquivo físico ausente — assinatura invalidada")
+
+    ip = obter_ip_real(request)
+    if not hmac.compare_digest(hash_atual, sr.hash_sha256):
+        sr.status = SignatureStatus.cancelado   # invalida a solicitação
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "ASSINATURA_REJEITADA",
+            "signature_requests", sig_id,
+            detalhes=(f"hash divergente esperado={sr.hash_sha256[:16]} "
+                      f"atual={hash_atual[:16]}"),
+            ip=ip,
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=409,
+            detail=("Documento foi alterado após a solicitação de assinatura "
+                    "(hash divergente). Solicitação invalidada — gere uma nova."),
+        )
+
     sr.status = SignatureStatus.assinado
     sr.assinado_em = datetime.now(timezone.utc)
     sr.assinado_por_user = cu.id
     # IP real do signatário (último salto do X-Forwarded-For), não o loopback do
     # proxy Nginx — este IP é evidência probatória da assinatura (MP 2.200-2).
-    sr.ip = obter_ip_real(request)
+    sr.ip = ip
     sr.user_agent = (request.headers.get("user-agent") or "")[:300]
 
     await criar_audit_log(
         db, cu.id, cu.role.value, "ASSINATURA", "signature_requests", sig_id,
-        detalhes=f"hash={sr.hash_sha256[:16]} ip={sr.ip}",
+        detalhes=f"hash_revalidado={hash_atual[:16]} ip={sr.ip}",
         ip=sr.ip,
     )
     await db.commit()
     return {"detail": "Documento assinado com sucesso",
             "comprovante": {
                 "assinado_em": sr.assinado_em.isoformat(),
-                "hash_documento": sr.hash_sha256,
+                # hash REVALIDADO no aceite (idêntico ao da solicitação — a
+                # divergência já teria abortado acima).
+                "hash_documento": hash_atual,
+                "hash_revalidado": True,
                 "ip": sr.ip,
             }}
+
+
+@router.get("/{sig_id}/documento")
+async def visualizar_documento(
+    sig_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Preview autenticado do documento LIGADO à solicitação de assinatura
+    (DOC-107). Dá ao cliente do portal como VER o que vai assinar, sem depender
+    da infra de portal-download (outro agente). Cliente externo só acessa as
+    suas próprias solicitações (isolamento por client_id); staff exige ownership
+    do documento/caso. Cada acesso é registrado em audit log ('VIEW') — trilha
+    de que a visualização foi disponibilizada antes do aceite."""
+    sr = (await db.execute(select(SignatureRequest).where(
+        SignatureRequest.id == sig_id,
+        SignatureRequest.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not sr:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+
+    if cu.role == UserRole.cliente_externo:
+        if sr.client_id != cu.client_id:
+            raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+
+    doc = (await db.execute(select(Document).where(
+        Document.id == sr.document_id, Document.deleted_at.is_(None)
+    ))).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    if cu.role != UserRole.cliente_externo:
+        # staff: mesmo gate de ownership do GED usado na criação.
+        from app.routers.documents import _verificar_acesso_documento
+        await _verificar_acesso_documento(db, cu, doc)
+
+    from app.core.config import get_settings as _gs
+    full_path = f"{_gs().UPLOAD_DIR}/{doc.filepath}"
+    import os as _os
+    if not _os.path.isfile(full_path):
+        raise HTTPException(status_code=404, detail="Arquivo físico ausente")
+
+    await criar_audit_log(db, cu.id, cu.role.value, "VIEW",
+                          "signature_requests", sr.id,
+                          detalhes="preview do documento para assinatura")
+    await db.commit()
+    return FileResponse(
+        full_path,
+        media_type=doc.mimetype or "application/octet-stream",
+        filename=(doc.titulo or "documento"),
+    )

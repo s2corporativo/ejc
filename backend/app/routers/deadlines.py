@@ -10,12 +10,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import select, func as sqlfunc, or_
+from sqlalchemy import select, func as sqlfunc, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, requer_advogado
-from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.core.security import get_current_user, requer_advogado, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso, is_gestao, role_str
 from app.models.user import User
 from app.models.case import Case
 from app.models.deadline import Deadline
@@ -50,18 +50,53 @@ def _ids_casos_do_usuario(user: User):
     )
 
 
+def _eh_advogado(cu: User) -> bool:
+    """True se o usuário é advogado+ (advogado=6, socio=7, admin=8, superadmin=9).
+    Espelho NÃO-levantador de `requer_advogado` — para decidir fluxo (rascunho vs
+    confirmado, gate de prazo avulso) sem estourar 403 na hora."""
+    return ROLE_LEVEL.get(role_str(cu), 0) >= ROLE_LEVEL["advogado"]
+
+
+def _pode_mutar_prazo_avulso(cu: User, d: Deadline) -> bool:
+    """[SYS-035] Prazo AVULSO (case_id=NULL) não tem gate de caso: só o dono
+    (owner_id), o criador (created_by), o responsável direto (responsavel_id) ou
+    advogado+ podem alterar/confirmar. Fecha a brecha de qualquer interno mexer
+    em prazo avulso alheio."""
+    if _eh_advogado(cu):
+        return True
+    return cu.id in (d.owner_id, d.created_by, d.responsavel_id)
+
+
+def _gate_mutacao_prazo(cu: User, d: Deadline) -> None:
+    """Gate de ESCRITA unificado por prazo já carregado. Prazo COM caso segue o
+    gate canônico de caso (verificar_acesso_caso, chamado pelo handler); prazo
+    SEM caso passa pelo escopo de dono acima."""
+    if d.case_id:
+        return  # handler chama verificar_acesso_caso (async) separadamente
+    if not _pode_mutar_prazo_avulso(cu, d):
+        raise HTTPException(status_code=403, detail="Sem permissão para este prazo")
+
+
 def _filtro_escopo_prazos(q, cu: User):
-    """[A3] Escopo de ownership por DEFAULT para não-gestão: só prazos de casos
-    próprios (responsável/auxiliar), prazos onde é o responsável direto, ou
-    prazos sem caso (avulsos/internos). Gestão (socio+) enxerga tudo.
-    Espelha fees._filtro_fees_lista."""
+    """[A3/SYS-036] Escopo de ownership por DEFAULT para não-gestão: só prazos de
+    casos próprios (responsável/auxiliar), prazos onde é o responsável direto, ou
+    prazos AVULSOS (sem caso) DE QUE É DONO — owner_id/created_by/responsavel_id.
+    Antes o ramo de avulsos (`case_id IS NULL`) era amplo e expunha prazo avulso
+    de qualquer um. Gestão (socio+) enxerga tudo. Espelha fees._filtro_fees_lista."""
     if is_gestao(cu):
         return q
     return q.where(
         or_(
             Deadline.case_id.in_(_ids_casos_do_usuario(cu)),
             Deadline.responsavel_id == cu.id,
-            Deadline.case_id.is_(None),
+            and_(
+                Deadline.case_id.is_(None),
+                or_(
+                    Deadline.owner_id == cu.id,
+                    Deadline.created_by == cu.id,
+                    Deadline.responsavel_id == cu.id,
+                ),
+            ),
         )
     )
 
@@ -214,13 +249,24 @@ async def criar(
 
     if payload.case_id:
         await verificar_acesso_caso(db, cu, payload.case_id)
+
+    # [SYS-034] Prazo JURÍDICO confirmado (fatal) só nasce das mãos de advogado+.
+    # Perfis operacionais (secretaria/estagiário) podem lançar o prazo, mas ele
+    # nasce como RASCUNHO (confirmado=False, "a confirmar") — nunca prazo fatal
+    # confirmado. Um advogado depois valida via PATCH /confirmar. O prazo já
+    # dispara alertas mesmo como rascunho (semântica do Gap C #83).
+    eh_advogado = _eh_advogado(cu)
+    responsavel = payload.responsavel_id or cu.id
     d = Deadline(
         id=str(uuid4()),
         titulo=payload.titulo, tipo=payload.tipo,
         prioridade=payload.prioridade, descricao=payload.descricao,
         data_prazo=data_prazo, data_intimacao=payload.data_intimacao,
         base_legal=base, case_id=payload.case_id,
-        responsavel_id=payload.responsavel_id or cu.id,
+        responsavel_id=responsavel,
+        owner_id=responsavel,          # responsável jurídico = dono do prazo
+        created_by=cu.id,              # autoria (trilha de quem lançou)
+        confirmado=eh_advogado,        # não-advogado → rascunho (a confirmar)
     )
     db.add(d)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "deadlines", d.id)
@@ -244,6 +290,8 @@ async def atualizar(
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
+    else:
+        _gate_mutacao_prazo(cu, d)  # [SYS-035] prazo avulso: só dono/criador/advogado+
 
     mudancas = payload.model_dump(exclude_unset=True)
     # Status ANTES de aplicar mudanças (o loop abaixo sobrescreve d.status):
@@ -289,8 +337,12 @@ async def confirmar(
     Gap C). O prazo já dispara alertas mesmo como rascunho — isto apenas remove
     a marca "a confirmar" e deixa trilha de auditoria (PRAZO_CONFIRMADO).
 
-    Ownership idêntico aos demais endpoints de prazo (verificar_acesso_caso):
-    sem vínculo com o caso → 403/404. Idempotente: reconfirmar não regrava audit."""
+    [SYS-035] A CONFIRMAÇÃO de prazo fatal é ato jurídico: exige advogado+
+    (advogado responsável/sócio), nunca qualquer interno. Prazo COM caso mantém
+    o gate de caso; prazo avulso já é coberto pelo piso de advogado. Idempotente:
+    reconfirmar não regrava audit."""
+    # Piso por NÍVEL (advogado+) — perfis operacionais não confirmam prazo fatal.
+    requer_advogado(cu, detail="Confirmação de prazo exige advogado responsável")
     d = (await db.execute(
         select(Deadline).where(
             Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
@@ -327,6 +379,8 @@ async def confirmar_ciencia(
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
+    else:
+        _gate_mutacao_prazo(cu, d)  # [SYS-035] prazo avulso: só dono/criador/advogado+
 
     d.ciencia_confirmada = True
     d.ciencia_confirmada_em = datetime.now(timezone.utc)

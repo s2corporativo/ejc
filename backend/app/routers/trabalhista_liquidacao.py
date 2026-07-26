@@ -329,17 +329,21 @@ async def planilha_pdf(consolidacao: LiquidacaoOut,
     path = os.path.join(out_dir, f"liquidacao_{arquivo_id}.pdf")
     with open(path, "wb") as fh:
         fh.write(pdf_bytes)
-    return {"download_url": f"/trabalhista/liquidacao/planilha/{arquivo_id}/download"}
+    # DOC-086: token assinado amarra o artefato ao usuário que o gerou.
+    token = _vlf.emitir_token(arquivo_id, user_id=cu.id)
+    return {"download_url": f"/trabalhista/liquidacao/planilha/{arquivo_id}/download?t={token}"}
 
 
 @router.get("/planilha/{arquivo_id}/download",
             dependencies=[Depends(rate_limit("trabalhista-liquidacao-download", 30))])
 async def download_planilha(arquivo_id: str,
+                            t: str = "",
                             cu: User = Depends(require_roles(_EQUIPE))):
-    """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como UUID
-    (nunca interpolado livre no path — sem traversal)."""
+    """Download do PDF gerado pelo POST acima. Exige o token assinado emitido na
+    geração (binding ao usuário + expiração) além do UUID anti-traversal."""
     # #27: validação anti-traversal (UUID) centralizada.
     _vlf.validar_uuid(arquivo_id)
+    _vlf.validar_token(t, arquivo_id, cu)  # DOC-086: binding usuário + expiração
     path = os.path.join(_pdf_dir(), f"liquidacao_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "Planilha não encontrada — gere via POST "

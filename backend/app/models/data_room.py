@@ -44,7 +44,10 @@ class DataRoomLink(Base):
     id                = Column(String(36), primary_key=True)
     data_room_id      = Column(String(36), ForeignKey("data_rooms.id", ondelete="CASCADE"),
                                 nullable=False)
-    token             = Column(String(64), unique=True, nullable=False)    # UUID4 hex
+    token             = Column(String(64), unique=True, nullable=False)    # legado: token em claro
+    # DOC-098: autenticação por hash. sha256(token) em hex (64 chars); o token
+    # em claro só é exibido uma vez, na criação do link.
+    token_hash        = Column(String(64), unique=True, nullable=True, index=True)
     descricao         = Column(String(200))    # para quem / para que foi gerado
     expira_em         = Column(DateTime(timezone=True))
     max_acessos       = Column(Integer)         # None = ilimitado

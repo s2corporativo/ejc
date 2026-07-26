@@ -1,5 +1,8 @@
 # ── app/models/audit_log.py ──────────────────────────────────────────────────
-# Log de auditoria IMUTÁVEL — nunca editar/deletar registros (LGPD art. 37)
+# Log de auditoria IMUTÁVEL — nunca editar/deletar registros (LGPD art. 37).
+# SYS-138: a imutabilidade deixou de ser só convenção — a migration
+# 127_audit_log_worm cria uma trigger BEFORE UPDATE OR DELETE que RECUSA
+# qualquer mutação/exclusão no banco (WORM). INSERT (append-only) segue livre.
 from __future__ import annotations
 from sqlalchemy import Column, String, DateTime, func, Text, ForeignKey
 from sqlalchemy.orm import relationship

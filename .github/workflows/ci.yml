@@ -9,6 +9,15 @@ name: CI
 # CI no runner SELF-HOSTED: roda no VPS do escritório, mantendo checks auditáveis
 # sem consumo de minutos hospedados. Requer o runner registrado e online com os
 # labels `self-hosted` e `ejc-vps` (docs/RUNNER_SELFHOSTED.md).
+#
+# SEGURANÇA (SYS-098): todos os jobs abaixo rodam em [self-hosted, ejc-vps] no
+# host de PRODUÇÃO e executam código do checkout (pytest, npm build, etc.). Rodar
+# código de PR não-confiável nesse host é uma superfície de RCE/exfiltração. Por
+# isso cada job é condicionado a `if: github.event_name != 'pull_request'` — só
+# executa em push na main e em workflow_dispatch. Em PR os jobs são PULADOS (um
+# job pulado satisfaz required checks sem rodar nada no host). Os gatilhos
+# push/dispatch são preservados. A validação de PR deve ser reintroduzida em
+# runner GitHub-hosted (ubuntu-latest) num follow-up.
 on:
   pull_request:
   push:
@@ -25,6 +34,8 @@ concurrency:
 jobs:
   db-validation:
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
+    # SYS-098: não executar código de PR no host de produção self-hosted.
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
     defaults:
@@ -153,6 +164,8 @@ jobs:
 
   eval-smoke:
     name: Eval — smoke dos gold sets (offline, bloqueante)
+    # SYS-098: não executar código de PR no host de produção self-hosted.
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 15
     defaults:
@@ -181,6 +194,8 @@ jobs:
 
   frontend-build:
     name: Frontend — testes + typecheck + build
+    # SYS-098: não executar código de PR no host de produção self-hosted.
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 25
     defaults:

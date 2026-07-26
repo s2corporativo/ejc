@@ -660,7 +660,10 @@ async def gerar_documento_unico(
     await criar_audit_log(db, cu.id, cu.role.value, "DOWNLOAD", "provas",
                           case_id, detalhes=f"documento único: {len(provas)} anexo(s)")
     await db.commit()
-    return {"download_url": f"/casos/{case_id}/provas/documento-unico/{arquivo_id}/download"}
+    # DOC-086: token assinado amarra o artefato ao usuário E ao caso (além do
+    # gate de ownership do caso, já aplicado no download).
+    token = _vlf.emitir_token(arquivo_id, user_id=cu.id, caso_id=case_id)
+    return {"download_url": f"/casos/{case_id}/provas/documento-unico/{arquivo_id}/download?t={token}"}
 
 
 @router.get("/documento-unico/{arquivo_id}/download",
@@ -668,14 +671,16 @@ async def gerar_documento_unico(
 async def download_documento_unico(
     case_id: str,
     arquivo_id: str,
+    t: str = "",
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Download do PDF gerado. `arquivo_id` é validado como UUID (nunca
-    interpolado livre no path — sem traversal). Exige acesso ao caso."""
+    """Download do PDF gerado. `arquivo_id` validado como UUID (anti-traversal),
+    binding via token assinado (usuário + caso) e ownership do caso."""
     await verificar_acesso_caso(db, cu, case_id)
     # #27: validação anti-traversal (UUID) centralizada.
     _vlf.validar_uuid(arquivo_id)
+    _vlf.validar_token(t, arquivo_id, cu, caso_id=case_id)  # DOC-086: binding usuário + caso
     path = os.path.join(_provas_dir(), f"anexos_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "Documento não encontrado — gere via POST "

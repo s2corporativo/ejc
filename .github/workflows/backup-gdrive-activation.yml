@@ -1,9 +1,17 @@
 # EJC — validação e prova manual do backup diário cifrado no Google Drive.
 #
-# Em Pull Request, executa somente testes determinísticos. A prova em produção é
-# deliberadamente manual e limitada à main: o deploy automático já gera backup
-# pré-deploy, portanto um gatilho adicional por push poderia iniciar duas cópias
-# simultâneas e degradar banco, CPU e Drive.
+# A prova em produção é deliberadamente manual e limitada à main: o deploy
+# automático já gera backup pré-deploy, portanto um gatilho adicional por push
+# poderia iniciar duas cópias simultâneas e degradar banco, CPU e Drive.
+#
+# SEGURANÇA (SYS-098): os dois jobs rodam em [self-hosted, ejc-vps] no host de
+# PRODUÇÃO e executam scripts do checkout (provas de backup/rollback com docker).
+# Rodar código de PR não-confiável nesse host é uma superfície de RCE. Por isso o
+# job `validar` é condicionado a `if: github.event_name != 'pull_request'` — em
+# PR é PULADO (satisfaz required checks sem executar nada no host); roda apenas em
+# workflow_dispatch. O job `comprovar-producao` já é restrito a
+# workflow_dispatch+main. A validação determinística de PR deve migrar para
+# runner GitHub-hosted (ubuntu-latest) num follow-up.
 name: Backup Google Drive — validar e comprovar
 
 on:
@@ -30,6 +38,8 @@ concurrency:
 jobs:
   validar:
     name: Validar backup, migration e rollback
+    # SYS-098: não executar código de PR no host de produção self-hosted.
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 12
     steps:

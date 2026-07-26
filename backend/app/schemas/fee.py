@@ -9,6 +9,10 @@ from app.models.fee import FeeTipo, FeeStatus
 
 # Valores monetários nunca negativos (auditoria 2026-06-30, M5).
 ValorNaoNegativo = condecimal(ge=0)
+# Pagamento é sempre estritamente positivo — registrar 0/negativo corromperia o
+# consolidado contábil (SYS-082). Mantido separado do ValorNaoNegativo: um
+# honorário pode ter valor 0 (custas a apurar), mas um pagamento nunca.
+ValorPositivo = condecimal(gt=0)
 PercentualNaoNegativo = condecimal(ge=0, le=100)
 
 # Fonte única de verdade: os valores aceitos em `tipo` na CRIAÇÃO são os da enum
@@ -43,7 +47,7 @@ class FeeCreate(BaseModel):
 
 class FeeUpdate(BaseModel):
     descricao: Optional[str] = None
-    valor: Optional[Decimal] = None
+    valor: Optional[ValorNaoNegativo] = None  # SYS-083: nunca negativo (igual FeeCreate)
     status: Optional[str] = None
     data_vencimento: Optional[date] = None
     observacoes: Optional[str] = None
@@ -62,7 +66,7 @@ class FeeUpdate(BaseModel):
         return v
 
 class FeePaymentCreate(BaseModel):
-    valor: Decimal
+    valor: ValorPositivo  # SYS-082: pagamento estritamente positivo (> 0)
     data_pagamento: date
     forma: Optional[str] = None
 

@@ -231,16 +231,20 @@ async def peca_conversao(payload: PecaConversaoIn,
     path = os.path.join(out_dir, f"requerimento_{arquivo_id}.pdf")
     with open(path, "wb") as fh:
         fh.write(pdf_bytes)
-    return {"download_url": f"/ambiental/estrategia/peca/{arquivo_id}/download"}
+    # DOC-086: token assinado amarra o artefato ao usuário que o gerou.
+    token = _vlf.emitir_token(arquivo_id, user_id=cu.id)
+    return {"download_url": f"/ambiental/estrategia/peca/{arquivo_id}/download?t={token}"}
 
 
 @router.get("/peca/{arquivo_id}/download",
             dependencies=[Depends(rate_limit("ambiental-estrategia-download", 30))])
-async def download_peca(arquivo_id: str, cu: User = Depends(get_current_user)):
-    """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como UUID
-    (nunca interpolado livre no path — sem traversal)."""
+async def download_peca(arquivo_id: str, t: str = "",
+                        cu: User = Depends(get_current_user)):
+    """Download do PDF gerado pelo POST acima. Exige o token assinado emitido na
+    geração (binding ao usuário + expiração) além do UUID anti-traversal."""
     # #27: validação anti-traversal (UUID) centralizada.
     _vlf.validar_uuid(arquivo_id)
+    _vlf.validar_token(t, arquivo_id, cu)  # DOC-086: binding usuário + expiração
     path = os.path.join(_peca_dir(), f"requerimento_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "Peça não encontrada — gere via POST "

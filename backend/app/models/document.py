@@ -1,6 +1,6 @@
 # ── app/models/document.py ───────────────────────────────────────────────────
 from __future__ import annotations
-from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Integer, ForeignKey
+from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Integer, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -29,6 +29,9 @@ class Document(Base):
     mimetype     = Column(String(100), nullable=True)
     size_bytes   = Column(Integer, nullable=True)
     ocr_text     = Column(Text, nullable=True)           # texto extraído (busca)
+    # Integridade (DOC-022): SHA-256 (hex, 64 chars) do conteúdo na ingestão.
+    # Nullable: documentos criados antes da migration 122 ficam NULL.
+    sha256       = Column(String(64), nullable=True, index=True)
 
     confidencialidade = Column(
         SAEnum(DocConfidencialidade), nullable=False,
@@ -38,6 +41,16 @@ class Document(Base):
     case_id   = Column(String(36), ForeignKey("cases.id"),   nullable=True, index=True)
     client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
     uploaded_by = Column(String(36), nullable=True)
+
+    # Publicação EXPLÍCITA no Portal do Cliente (DOC-049/050/SYS-064).
+    # A confidencialidade é controle de COFRE interno, NÃO de publicação: um
+    # documento só aparece no Portal quando portal_visible=True (fail-closed).
+    # Documentos recebidos do cliente entram com portal_visible=False.
+    portal_visible = Column(Boolean, nullable=False, server_default="false", index=True)
+    publicado_em   = Column(DateTime(timezone=True), nullable=True)
+    publicado_por  = Column(String(36), ForeignKey("users.id"), nullable=True)
+    revogado_em    = Column(DateTime(timezone=True), nullable=True)
+    revogado_por   = Column(String(36), ForeignKey("users.id"), nullable=True)
 
     # Versionamento (G3): histórico de revisões do mesmo documento.
     # versao_grupo_id agrupa todas as versões de um mesmo documento original.
