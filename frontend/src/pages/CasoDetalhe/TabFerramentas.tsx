@@ -3,6 +3,7 @@ import { Sparkles } from "lucide-react";
 import { toast } from "../../components/Toast";
 import Markdown from "../../components/Markdown";
 import api from "../../lib/api";
+import { mensagemErroFerramenta } from "../../lib/iaErro";
 import AnaliseEstrategica from "../../components/AnaliseEstrategica";
 import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
@@ -44,7 +45,9 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
       const r = await api.get(f.endpoint, { params: vals });
       setRes(r.data);
     } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha no cálculo");
+      // 503 "ferramenta_nao_homologada" vira mensagem controlada — nunca
+      // erro genérico nem `detail` objeto renderizado cru.
+      setErro(mensagemErroFerramenta(e));
     } finally {
       setLoading(false);
     }
@@ -58,6 +61,14 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
     <div className="card p-3">
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-xs font-semibold text-navy">{f.titulo}</span>
+        {f.homologada === false && (
+          <span
+            className="text-[10px] font-semibold text-warn-800 bg-warn-100 border border-warn-300 px-1.5 rounded-full whitespace-nowrap"
+            title="Não homologada — em revisão jurídica; resultado não deve ser usado profissionalmente."
+          >
+            ⚠️ Não homologada
+          </span>
+        )}
         {f.autoLoad && res && (
           <span className="text-[10px] text-green-600 bg-green-50 px-1 rounded">
             ● ao vivo
@@ -114,8 +125,17 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
       {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
       {res && (
         <div className="mt-2 p-2 bg-gold-50 rounded text-[11px] space-y-0.5 border border-gold-200">
+          {res.homologada === false && (
+            <p className="text-warn-800 font-medium">
+              ⚠️{" "}
+              {res.aviso_homologacao ||
+                "Ferramenta não homologada — em revisão jurídica; resultado não deve ser usado profissionalmente."}
+            </p>
+          )}
           {typeof res === "object" &&
             Object.entries(res as Record<string, any>).map(([k, v]) => {
+              // Exibidos no aviso dedicado de homologação — não na tabela.
+              if (k === "homologada" || k === "aviso_homologacao") return null;
               if (k === "aviso")
                 return (
                   <p

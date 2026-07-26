@@ -25,7 +25,7 @@ import {
   Car,
 } from "lucide-react";
 import api from "../../lib/api";
-import { mensagemErroIA } from "../../lib/iaErro";
+import { mensagemErroFerramenta, mensagemErroIA } from "../../lib/iaErro";
 import { useCaseContext } from "../../stores/caseContext";
 import type { Case } from "../../types";
 import {
@@ -111,13 +111,34 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
   const [docLink, setDocLink] = useState<string | null>(null);
   const casoAtivo = useCaseContext((state) => state.caso);
 
+  // Bloqueio de risco (auditoria Áreas de Atuação — Onda 1): ferramenta não
+  // homologada — pela config OU pela resposta da API — não pode virar
+  // demonstrativo nem minuta; o resultado só aparece com o aviso jurídico.
+  const naoHomologada = f.homologada === false;
+  const bloqueadaParaDocumento = naoHomologada || res?.homologada === false;
+  const MOTIVO_BLOQUEIO =
+    "Bloqueado: ferramenta não homologada — em revisão jurídica; o resultado não deve ser usado profissionalmente.";
+
   // Converte o resultado da calculadora em um Demonstrativo (LegalDoc rascunho).
   const gerarDemonstrativo = async () => {
     if (!res) return;
+    // Guarda dupla: além do botão desabilitado, impede persistir resultado
+    // de ferramenta em revisão jurídica como peça.
+    if (bloqueadaParaDocumento) {
+      setDocMsg(MOTIVO_BLOQUEIO);
+      return;
+    }
     setGerandoDoc(true);
     setDocMsg(null);
     setDocLink(null);
-    const RODAPE = ["aviso", "base", "observacao", "descricao"];
+    const RODAPE = [
+      "aviso",
+      "base",
+      "observacao",
+      "descricao",
+      "homologada",
+      "aviso_homologacao",
+    ];
     const linhas = Object.entries(res)
       .filter(
         ([k, v]) => !RODAPE.includes(k) && v !== null && typeof v !== "object",
@@ -157,7 +178,9 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
       const r = await api.get(f.endpoint, { params: vals });
       setRes(r.data);
     } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha no cálculo");
+      // 503 "ferramenta_nao_homologada" vira mensagem controlada — nunca
+      // lista vazia nem erro genérico/objeto cru.
+      setErro(mensagemErroFerramenta(e));
     } finally {
       setLoading(false);
     }
@@ -179,6 +202,14 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
         <h3 className="font-serif font-semibold text-navy text-sm">
           {f.titulo}
         </h3>
+        {naoHomologada && (
+          <span
+            className="text-[10px] font-semibold text-warn-800 bg-warn-100 border border-warn-300 px-1.5 py-0.5 rounded-full whitespace-nowrap"
+            title={MOTIVO_BLOQUEIO}
+          >
+            ⚠️ Não homologada
+          </span>
+        )}
         {f.autoLoad && res && (
           <span className="ml-auto text-[10px] text-green-600 font-medium bg-green-50 px-1.5 py-0.5 rounded">
             ● ao vivo
@@ -188,6 +219,13 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
       <p className="text-xs text-slate-500 mb-3">
         {f.descricao} · <span className="text-gold-700">{f.baseLegal}</span>
       </p>
+
+      {naoHomologada && (
+        <div className="mb-3 p-2 rounded-lg bg-warn-50 border border-warn-200 text-xs text-warn-800">
+          ⚠️ Não homologada — em revisão jurídica; resultado não deve ser usado
+          profissionalmente.
+        </div>
+      )}
 
       {f.campos.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
@@ -270,17 +308,34 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
           ) : (
             <ResultadoView data={res} />
           )}
+          {/* Aviso de homologação vindo da API acompanha o resultado */}
+          {res.homologada === false && (
+            <div className="mt-2 p-2 rounded bg-warn-50 border border-warn-200 text-xs text-warn-800">
+              ⚠️{" "}
+              {res.aviso_homologacao ||
+                "Ferramenta não homologada — em revisão jurídica; resultado não deve ser usado profissionalmente."}
+            </div>
+          )}
           {!f.autoLoad && (
             <div className="mt-3 pt-2 border-t border-gold-200 flex flex-wrap items-center gap-2">
               <button
-                className="btn-ghost text-xs"
-                disabled={gerandoDoc}
+                className="btn-ghost text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={gerandoDoc || bloqueadaParaDocumento}
+                title={bloqueadaParaDocumento ? MOTIVO_BLOQUEIO : undefined}
                 onClick={gerarDemonstrativo}
               >
                 {gerandoDoc ? "Gerando..." : "📄 Gerar demonstrativo"}
               </button>
+              {bloqueadaParaDocumento && (
+                <span className="text-[11px] text-warn-700">
+                  Demonstrativo e minuta bloqueados — ferramenta em revisão
+                  jurídica.
+                </span>
+              )}
               {docMsg && (
-                <span className="text-xs text-green-700">
+                <span
+                  className={`text-xs ${bloqueadaParaDocumento ? "text-warn-700" : "text-green-700"}`}
+                >
                   {docMsg}{" "}
                   {docLink && (
                     <Link
@@ -414,6 +469,8 @@ function ResultadoView({ data }: { data: any }) {
     return (
       <div className="space-y-1">
         {Object.entries(data).map(([k, v]) => {
+          // Exibidos no aviso dedicado de homologação — não na tabela.
+          if (k === "homologada" || k === "aviso_homologacao") return null;
           if (k === "aviso") {
             return (
               <div

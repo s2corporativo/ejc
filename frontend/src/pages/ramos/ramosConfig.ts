@@ -31,6 +31,10 @@ export interface FerramentaConfig {
   campos: FerramentaCampo[];
   autoLoad?: boolean;
   grupo?: string; // agrupa ferramentas visualmente por sub-área
+  // Homologação jurídica da calculadora (auditoria Áreas de Atuação — Onda 1).
+  // Ausente = true (homologada). `false` = em revisão jurídica: a UI exibe o
+  // aviso, desabilita "Gerar demonstrativo" e bloqueia a geração de minuta.
+  homologada?: boolean;
 }
 
 export interface RamoConfig {
@@ -133,7 +137,9 @@ const empresarial: RamoConfig = {
       nome: "tipo_societario",
       label: "Tipo societário",
       tipo: "select",
-      opcoes: ["LTDA", "SA", "EIRELI", "SLU", "MEI", "outro"],
+      // EIRELI foi extinta (Lei 14.195/2021, conversão em SLU) — removida da
+      // seleção de registros novos; registros históricos não são afetados.
+      opcoes: ["LTDA", "SA", "SLU", "MEI", "outro"],
     },
     { nome: "capital_social", label: "Capital social (R$)", tipo: "number" },
     {
@@ -158,6 +164,7 @@ const empresarial: RamoConfig = {
   ferramentas: [
     {
       id: "prazos-rj",
+      homologada: false,
       titulo: "Prazos de Recuperação Judicial",
       descricao: "Marcos críticos do processo a partir da distribuição.",
       baseLegal: "Lei 11.101/2005",
@@ -172,6 +179,7 @@ const empresarial: RamoConfig = {
     },
     {
       id: "verificar-cade",
+      homologada: false,
       titulo: "Verificar Notificação CADE",
       descricao: "Obrigatoriedade de notificar ato de concentração.",
       baseLegal: "Lei 12.529/2011 art. 88",
@@ -196,6 +204,7 @@ const empresarial: RamoConfig = {
     },
     {
       id: "juros-mora",
+      homologada: false,
       titulo: "Juros de Mora + Multa",
       descricao: "Atualização de débito contratual: juros simples + multa.",
       baseLegal: "CC arts. 395, 406 · CDC art. 52 §1",
@@ -292,6 +301,7 @@ const civel: RamoConfig = {
     // ── PRAZOS ──────────────────────────────────────────────────────────
     {
       id: "prazos-contestacao",
+      homologada: false,
       titulo: "Prazo de Contestação",
       descricao: "Prazo por rito processual (CPC / JEC / Fazenda Pública).",
       baseLegal: "CPC art. 335 · Lei 9.099 art. 30",
@@ -560,6 +570,7 @@ const penal: RamoConfig = {
   ferramentas: [
     {
       id: "prazos",
+      homologada: false,
       titulo: "Prazos Processuais Penais",
       descricao: "Resposta à acusação, ED, RESE e apelação.",
       baseLegal: "CPP arts. 396-A, 586, 593",
@@ -570,6 +581,7 @@ const penal: RamoConfig = {
     },
     {
       id: "anpp",
+      homologada: false,
       titulo: "Verificar ANPP",
       descricao: "Acordo de Não Persecução Penal — elegibilidade e condições.",
       baseLegal: "CPP art. 28-A (Lei 13.964/2019)",
@@ -602,6 +614,7 @@ const penal: RamoConfig = {
     },
     {
       id: "prescricao",
+      homologada: false,
       titulo: "Prescrição Punitiva",
       descricao: "Prescrição em abstrato pela pena máxima (CP art. 109).",
       baseLegal: "CP art. 109",
@@ -617,6 +630,7 @@ const penal: RamoConfig = {
     },
     {
       id: "prescricao-penal",
+      homologada: false,
       titulo: "Prescrição Penal (pena em abstrato)",
       descricao: "Prazo prescricional da pretensão punitiva pela pena máxima.",
       baseLegal: "CP art. 109",
@@ -632,6 +646,7 @@ const penal: RamoConfig = {
     },
     {
       id: "dosimetria",
+      homologada: false,
       titulo: "Dosimetria da Pena (trifásico)",
       descricao: "Cálculo das 3 fases: base, agravantes/atenuantes, causas.",
       baseLegal: "CP arts. 59, 68 · Súmula 231 STJ",
@@ -777,6 +792,7 @@ const trabalhista: RamoConfig = {
     },
     {
       id: "prazos",
+      homologada: false,
       titulo: "Prazos Trabalhistas",
       descricao: "RO, depósito recursal e embargos a partir da sentença.",
       baseLegal: "CLT art. 895",
@@ -801,6 +817,7 @@ const trabalhista: RamoConfig = {
     },
     {
       id: "prescricao",
+      homologada: false,
       titulo: "Prescrição Trabalhista",
       descricao: "Bienal (término do contrato) e quinquenal (crédito).",
       baseLegal: "CLT art. 11 + CF art. 7º XXIX",
@@ -934,6 +951,7 @@ const administrativo: RamoConfig = {
     // ── MULTAS / MS ───────────────────────────────────────────────────────
     {
       id: "multa-transito",
+      homologada: false,
       titulo: "Recurso Multa de Trânsito",
       descricao: "Prazos JARI/CETRAN e 20% de desconto pagamento imediato.",
       baseLegal: "CTB arts. 281-284",
@@ -1635,6 +1653,7 @@ const consumidor: RamoConfig = {
   ferramentas: [
     {
       id: "devolucao-dobro",
+      homologada: false,
       titulo: "Devolução em Dobro (art. 42)",
       descricao: "Repetição do indébito em dobro por cobrança indevida.",
       baseLegal: "CDC art. 42 §ú · STJ EAREsp 676.608",
@@ -1657,6 +1676,7 @@ const consumidor: RamoConfig = {
     },
     {
       id: "prazos-cdc",
+      homologada: false,
       titulo: "Prazos CDC (decadência/prescrição)",
       descricao:
         "Vício (30/90d), fato (5a), cobrança indevida (3a), arrependimento (7d).",
@@ -1834,6 +1854,7 @@ const previdenciario: RamoConfig = {
   ferramentas: [
     {
       id: "prazos-previdenciario",
+      homologada: false,
       titulo: "Prazos Previdenciários",
       descricao:
         "Recurso ao CRPS (30d), decadência de revisão (10a) e prescrição (5a).",
@@ -1996,6 +2017,7 @@ const transito: RamoConfig = {
   ferramentas: [
     {
       id: "prazos-recurso-transito",
+      homologada: false,
       titulo: "Prazos e Desconto de Multa",
       descricao:
         "Defesa prévia, recurso JARI e CETRAN, com descontos (40% SNE / 20%).",
@@ -2020,6 +2042,7 @@ const transito: RamoConfig = {
     },
     {
       id: "pontuacao-cnh",
+      homologada: false,
       titulo: "Pontuação e Suspensão da CNH",
       descricao:
         "Teto de pontos conforme infrações gravíssimas nos últimos 12 meses.",
