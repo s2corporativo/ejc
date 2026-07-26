@@ -376,6 +376,65 @@ def test_protocolo_comprovante_do_mesmo_caso_aceito():
     assert r.json()["protocolo_comprovante_doc_id"] == "doc-1"
 
 
+# ── 4. FLX-070: PATCH genérico não protocola sem protocolo registrado ────────
+
+async def _gate_liberado(*a, **k):
+    return None
+
+
+def _patch_status_protocolada(db: _FakeDB, role: str = "advogado"):
+    """PATCH /legal-docs/{id} com status=protocolada, liberando os gates de
+    validação/jurisprudência (fora do escopo FLX-070, testados em suítes
+    próprias) sem alterá-los no código de produção."""
+    orig_val = legal_docs_router._bloquear_sem_validacao
+    orig_jur = legal_docs_router._bloquear_jurisprudencia_nao_validada
+    legal_docs_router._bloquear_sem_validacao = _gate_liberado
+    legal_docs_router._bloquear_jurisprudencia_nao_validada = _gate_liberado
+    try:
+        client = _montar(db, role=role)
+        return client.patch("/legal-docs/peca-1", json={"status": "protocolada"})
+    finally:
+        legal_docs_router._bloquear_sem_validacao = orig_val
+        legal_docs_router._bloquear_jurisprudencia_nao_validada = orig_jur
+
+
+def test_patch_protocolada_sem_numero_protocolo_422():
+    """FLX-070: peça aprovada SEM numero_protocolo não vira 'protocolada' pelo
+    PATCH genérico — registre antes em PATCH /legal-docs/{id}/protocolo."""
+    db = _FakeDB(results=[_Res(one=_peca(status=PecaStatus.aprovada))])
+    r = _patch_status_protocolada(db)
+    assert r.status_code == 422, r.text
+    assert "protocolo" in r.json()["detail"].lower()
+    assert "/legal-docs/{id}/protocolo" in r.json()["detail"]
+    assert not _audits(db) and db.committed == 0
+
+
+def test_patch_protocolada_sem_advogado_403():
+    """FLX-070: papel abaixo de advogado não marca peça como protocolada,
+    mesmo com protocolo já registrado."""
+    for role in ("estagiario", "secretaria", "advogado_auxiliar"):
+        peca = _peca(status=PecaStatus.aprovada)
+        peca.numero_protocolo = "PROTO-1"
+        db = _FakeDB(results=[_Res(one=peca)])
+        r = _patch_status_protocolada(db, role=role)
+        assert r.status_code == 403, (role, r.text)
+        assert not _audits(db) and db.committed == 0
+
+
+def test_patch_protocolada_com_protocolo_registrado_e_advogado_passa():
+    """FLX-070 fluxo feliz: aprovada → protocolo registrado no endpoint
+    dedicado → PATCH status=protocolada por advogado é aceito."""
+    peca = _peca(status=PecaStatus.aprovada)
+    peca.numero_protocolo = "0801234-56.2026.8.13.0024"
+    db = _FakeDB(results=[_Res(one=peca)])
+    r = _patch_status_protocolada(db)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "protocolada"
+    assert db.committed == 1
+    logs = _audits(db)
+    assert len(logs) == 1 and logs[0].acao == "UPDATE"
+
+
 def test_protocolo_gate_ownership_por_caso():
     """Peça vinculada a caso: sem acesso ao caso → 403 (mesmo gate das demais
     rotas). Verifica que verificar_acesso_caso é acionado antes de gravar."""

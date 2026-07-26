@@ -280,7 +280,9 @@ def _etapa_gestao(caso_fechado: bool, prazos_abertos: int,
     monitorados=em_andamento; sem nenhum prazo cadastrado=pendente. As
     pendências reusam os FATORES do case_health (calcular_score_caso) — só a
     parte determinística/barata: detalhes de dedução já calculados, sem IA."""
-    link = f"/prazos?caso={case_id}"
+    # FLX-029: /prazos é rota legada cujo redirect descarta a query — o destino
+    # real /atividades consome os filtros `caso` e `tipo`.
+    link = f"/atividades?caso={case_id}&tipo=prazo"
     fatores = [f.get("detalhe", f.get("fator", "")) for f in (saude or {}).get("fatores", [])]
     score = (saude or {}).get("score")
     sufixo_saude = f" Saúde do caso: {score}/100." if score is not None else ""

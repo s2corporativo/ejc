@@ -222,7 +222,9 @@ def test_protocolo_concluida_por_fase_alem_da_pre_processual():
 def test_gestao_pendente_sem_prazos():
     e = _etapa_gestao(False, 0, None, "c1")
     assert e.status == "pendente"
-    assert e.link_modulo == "/prazos?caso=c1"
+    # FLX-029: link aponta para /atividades (rota real) com filtros caso+tipo —
+    # /prazos era redirect legado que descartava a query string.
+    assert e.link_modulo == "/atividades?caso=c1&tipo=prazo"
 
 
 def test_gestao_em_andamento_fase_ativa_com_prazos_monitorados():
