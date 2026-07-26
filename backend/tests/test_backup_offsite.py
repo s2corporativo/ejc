@@ -240,4 +240,8 @@ def test_contrato_infra_rclone_no_container():
     compose = (
         Path(__file__).resolve().parents[2] / "docker-compose.yml"
     ).read_text()
-    assert "/root/.config/rclone:ro" in compose
+    assert "/root/.config/rclone" in compose
+    # GRAVÁVEL: o rclone precisa persistir o token OAuth renovado (OneDrive
+    # rotaciona ~1h); mount :ro quebraria o backup diário (review PR #484).
+    linha_mount = next(l for l in compose.splitlines() if "/root/.config/rclone" in l)
+    assert not linha_mount.rstrip().endswith(":ro")
