@@ -21,7 +21,7 @@ WORKDIR /app
 #                      era no-op (pg_dump: command not found).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       build-essential curl libpq-dev postgresql-client \
+       build-essential curl libpq-dev postgresql-client rclone \
        libmagic1 \
        poppler-utils \
        tesseract-ocr tesseract-ocr-por \
