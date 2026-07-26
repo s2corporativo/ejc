@@ -29,8 +29,6 @@ from app.models.audit_log import criar_audit_log
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.schemas.common import MsgResponse
 from app.services.ocr_service import extrair_texto, extrair_xml
-from app.services.case_automacao import gerar_documentos_iniciais_auto
-from app.services.case_intel import triagem_caso
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -455,13 +453,6 @@ async def upload(
     # Hook: análise estratégica automática quando há OCR e case_id
     if case_id and ocr_text:
         background_tasks.add_task(_analisar_doc_bg, case_id, ocr_text, doc_id, cu.id)
-    # FLX-045 — automação após vínculo: caso aberto com `aguardar_documentos`
-    # tem triagem e kit adiados para cá. Ambas as tarefas são idempotentes
-    # (triagem só preenche campos vazios; kit tem `ja_existia`), então
-    # re-agendar num upload de caso já triado é no-op barato.
-    if case_id:
-        background_tasks.add_task(triagem_caso, case_id)
-        background_tasks.add_task(gerar_documentos_iniciais_auto, case_id, cu.id)
     resposta: dict = {"id": doc_id, "detail": "Documento enviado"}
     if nfe_info:
         resposta["nfe"] = nfe_info  # campos fiscais estruturados (NF-e/XML)

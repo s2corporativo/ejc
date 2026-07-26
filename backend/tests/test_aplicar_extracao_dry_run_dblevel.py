@@ -132,16 +132,13 @@ async def test_dry_run_nao_persiste_e_devolve_preview():
         caso = await _criar_caso(db, cli, f"Caso {tok}", resp_id=adv)
         await db.commit()
         try:
-            bg = BackgroundTasks()
             resp = await aplicar_extracao(
-                caso, _payload_req(dry_run=True), bg,
+                caso, _payload_req(dry_run=True), BackgroundTasks(),
                 dry_run=False, db=db, cu=await _carregar_user(db, adv),
             )
             # Contrato da resposta (preview).
             assert resp["dry_run"] is True
             assert resp["aplicado"] is False
-            # FLX-045: preview NÃO re-agenda triagem (nada foi aplicado).
-            assert bg.tasks == []
             assert resp["partes_criadas"] == 3   # autor + reu + 1 advogado
             assert resp["areas_criadas"] == 1
             assert resp["campos_preenchidos"] == [
@@ -196,17 +193,12 @@ async def test_apply_real_persiste_e_grava_audit():
         caso = await _criar_caso(db, cli, f"Caso {tok}", resp_id=adv)
         await db.commit()
         try:
-            bg = BackgroundTasks()
             resp = await aplicar_extracao(
-                caso, _payload_req(dry_run=False), bg,
+                caso, _payload_req(dry_run=False), BackgroundTasks(),
                 dry_run=False, db=db, cu=await _carregar_user(db, adv),
             )
             assert resp["dry_run"] is False
             assert resp["aplicado"] is True
-            # FLX-045: apply real re-agenda a triagem sobre os dados aplicados
-            # (idempotente: só preenche campos vazios).
-            from app.services.case_intel import triagem_caso
-            assert triagem_caso in [t.func for t in bg.tasks]
             assert resp["partes_criadas"] == 3
             assert resp["areas_criadas"] == 1
 
