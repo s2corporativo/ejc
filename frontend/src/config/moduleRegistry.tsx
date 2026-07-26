@@ -1,14 +1,11 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import {
-  Activity,
-  AlarmClock,
   BarChart3,
   Bell,
   BookOpen,
   Bot,
   Briefcase,
   CalendarClock,
-  CheckSquare,
   ClipboardPen,
   FileSignature,
   FileText,
@@ -17,7 +14,6 @@ import {
   Gavel,
   GitBranch,
   HeartPulse,
-  Inbox,
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
@@ -98,10 +94,11 @@ const SalaJuridica = lazy(() => import("../pages/SalaJuridica"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
 );
-const Prazos = lazy(() => import("../pages/Prazos"));
-const Suspensoes = lazy(() => import("../pages/Suspensoes"));
-const Tarefas = lazy(() => import("../pages/Tarefas"));
-const Intimacoes = lazy(() => import("../pages/Intimacoes"));
+// PODA 2026-07 (simplificação de navegação): Prazos, Tarefas, Intimacoes e
+// Suspensoes deixaram de ser roteados e os arquivos de página foram
+// removidos (estavam órfãos, sem outro importador) — a funcionalidade está
+// 100% coberta pela Central de Atividades (/atividades?tipo=prazo|tarefa|
+// intimacao|suspensao). Ver LEGACY_REDIRECTS para os aliases /legado/*.
 const Central = lazy(() => import("../pages/Central"));
 const GestaoDocumental = lazy(() => import("../pages/GestaoDocumental"));
 const Pecas = lazy(() => import("../pages/Pecas"));
@@ -266,7 +263,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "sala-juridica",
     path: "/sala-juridica",
-    label: "Sala Jurídica",
+    label: "Assistente Jurídico (IA)",
     description:
       "Porta de entrada conversacional: área de trabalho livre, chat jurídico com estado probatório e conversão controlada em caso.",
     group: "Pesquisar & IA",
@@ -415,65 +412,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
       "/api/clients",
       "/api/notifications",
     ],
-  },
-  {
-    key: "prazos",
-    path: "/legado/prazos",
-    label: "Prazos",
-    description: "Controle jurídico de prazos e confirmações.",
-    group: "Trabalhar um caso",
-    icon: AlarmClock,
-    component: Prazos,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central "Agenda e Prazos"
-    // (filtro Tipo=Prazo); rota ativa para links diretos/favoritos.
-    status: "hidden",
-    helpKey: "prazos",
-    sensitive: true,
-    backendPrefixes: ["/api/deadlines"],
-  },
-  {
-    key: "tarefas",
-    path: "/legado/tarefas",
-    label: "Tarefas",
-    description: "Execução operacional atribuída à equipe.",
-    group: "Trabalhar um caso",
-    icon: CheckSquare,
-    component: Tarefas,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central (filtro Tipo=Tarefa); rota ativa.
-    status: "hidden",
-    helpKey: "tarefas",
-    sensitive: true,
-    backendPrefixes: ["/api/tasks"],
-  },
-  {
-    key: "intimacoes",
-    path: "/legado/intimacoes",
-    label: "Intimações",
-    description: "Comunicações processuais e conferência jurídica.",
-    group: "Trabalhar um caso",
-    icon: Inbox,
-    component: Intimacoes,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central "Agenda e Prazos"
-    // (filtro Tipo=Intimação); rota ativa para links diretos/favoritos.
-    status: "hidden",
-    helpKey: "intimacoes",
-    sensitive: true,
-    usesAI: true,
-    backendPrefixes: ["/api/intimacoes"],
-  },
-  {
-    key: "suspensoes",
-    path: "/legado/suspensoes",
-    label: "Suspensões",
-    description: "Suspensões processuais e reflexos em prazos.",
-    group: "Trabalhar um caso",
-    icon: Activity,
-    component: Suspensoes,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central (filtro Tipo=Suspensão); rota ativa.
-    status: "hidden",
-    helpKey: "prazos",
-    sensitive: true,
-    backendPrefixes: ["/api/suspensoes"],
   },
   {
     key: "documentos",
@@ -839,6 +777,31 @@ export const STAFF_ROUTES: ModuleRoute[] = [
 
 export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   ...LEGACY_CANONICAL_REDIRECTS,
+  // PODA 2026-07: /legado/prazos, /legado/tarefas, /legado/intimacoes e
+  // /legado/suspensoes deixaram de ser rotas roteáveis (ver comentário acima
+  // de `const Central`); os aliases curtos /prazos, /tarefas, /intimacoes e
+  // /suspensoes já existiam via LEGACY_CANONICAL_REDIRECTS — estes cobrem
+  // links/favoritos que ainda apontem para o caminho /legado/*.
+  {
+    from: "/legado/prazos",
+    to: "/atividades?tipo=prazo",
+    reason: "Prazos foram consolidados na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/legado/tarefas",
+    to: "/atividades?tipo=tarefa",
+    reason: "Tarefas foram consolidadas na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/legado/intimacoes",
+    to: "/atividades?tipo=intimacao",
+    reason: "Intimações foram consolidadas na Central de Agenda e Prazos.",
+  },
+  {
+    from: "/legado/suspensoes",
+    to: "/atividades?tipo=suspensao",
+    reason: "Suspensões foram consolidadas na Central de Agenda e Prazos.",
+  },
   {
     from: "/sala-analise",
     to: "/raio-x",

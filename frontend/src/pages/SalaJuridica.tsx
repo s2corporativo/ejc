@@ -281,7 +281,7 @@ export default function SalaJuridica() {
         const lista = await carregarLista();
         if (lista.length > 0) await abrirSessao(lista[0].id);
       } catch {
-        toast.error("Falha ao carregar a Sala Jurídica");
+        toast.error("Falha ao carregar o Assistente Jurídico");
       } finally {
         setCarregando(false);
       }
@@ -616,8 +616,8 @@ export default function SalaJuridica() {
   if (carregando) {
     return (
       <div className="flex h-64 items-center justify-center text-gray-500">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando a Sala
-        Jurídica…
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando o
+        Assistente Jurídico…
       </div>
     );
   }
@@ -625,7 +625,7 @@ export default function SalaJuridica() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Sala Jurídica"
+        title="Assistente Jurídico (IA)"
         subtitle="Converse livremente — o EJC estrutura fatos, provas e estratégia por trás da tela. Conteúdo de IA é rascunho sujeito a revisão humana (OAB)."
         actions={
           <div className="flex flex-wrap gap-2">
@@ -676,6 +676,8 @@ export default function SalaJuridica() {
           </div>
         }
       />
+
+      <AIFactualityLegend />
 
       <div className="grid gap-4 lg:grid-cols-[280px_1fr_320px]">
         {/* ── Coluna esquerda: sessões ─────────────────────────────────── */}
@@ -796,7 +798,7 @@ export default function SalaJuridica() {
                     <p className="mb-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-500">
                       {m.autor === "user"
                         ? (user?.full_name ?? "Você")
-                        : "Sala Jurídica · IA"}
+                        : "Assistente Jurídico · IA"}
                       <Badge tone="blue">{m.modo.replace(/_/g, " ")}</Badge>
                       {m.autor === "ia" && m.modelo && (
                         <Badge tone="slate">{m.modelo}</Badge>
@@ -926,13 +928,12 @@ export default function SalaJuridica() {
                   </span>
                 </div>
               </div>
-              <AIFactualityLegend />
             </>
           ) : (
             <EmptyState
               icon={Scale}
               title="Selecione ou crie uma análise"
-              message="A Sala Jurídica é a porta de entrada conversacional do EJC."
+              message="O Assistente Jurídico (IA) é a porta de entrada conversacional do EJC."
             />
           )}
         </section>

@@ -93,6 +93,10 @@ describe("moduleRegistry", () => {
     expect(map.get("/tarefas")).toBe("/atividades?tipo=tarefa");
     expect(map.get("/intimacoes")).toBe("/atividades?tipo=intimacao");
     expect(map.get("/suspensoes")).toBe("/atividades?tipo=suspensao");
+    expect(map.get("/legado/prazos")).toBe("/atividades?tipo=prazo");
+    expect(map.get("/legado/tarefas")).toBe("/atividades?tipo=tarefa");
+    expect(map.get("/legado/intimacoes")).toBe("/atividades?tipo=intimacao");
+    expect(map.get("/legado/suspensoes")).toBe("/atividades?tipo=suspensao");
     expect(map.get("/ramos")).toBe("/areas-de-atuacao");
     expect(map.get("/central-relacionamento")).toBe(
       "/atividades?tab=relacionamento",
@@ -125,14 +129,22 @@ describe("moduleRegistry", () => {
     expect(advogado).not.toContain("/casos/novo");
     expect(STAFF_ROUTES.some((m) => m.path === "/casos/novo")).toBe(true);
 
-    // As implementações consolidadas continuam disponíveis para rollback e QA,
-    // mas apenas em caminhos internos; as URLs públicas são aliases canônicos.
+    // PODA 2026-07: Prazos/Tarefas/Intimacoes/Suspensoes deixaram de existir
+    // como rotas (não só hidden) — a Central de Atividades já cobre 100% da
+    // funcionalidade via ?tipo=; /legado/* agora é só alias em LEGACY_REDIRECTS.
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
     for (const path of [
       "/legado/prazos",
       "/legado/intimacoes",
       "/legado/tarefas",
       "/legado/suspensoes",
+    ]) {
+      expect(canonical.has(path)).toBe(false);
+    }
+    // As demais implementações consolidadas continuam disponíveis para
+    // rollback e QA, mas apenas em caminhos internos; as URLs públicas são
+    // aliases canônicos.
+    for (const path of [
       "/crm-leads",
       "/assinaturas",
       "/workflow",

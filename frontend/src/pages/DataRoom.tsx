@@ -100,10 +100,10 @@ export default function DataRoom() {
     <div>
       <PageHeader
         title="Data Room"
-        subtitle="Salas seguras de documentos com links de acesso externo"
+        subtitle="Espaços seguros de compartilhamento de documentos com links de acesso externo"
         actions={
           <button onClick={() => setNovo(true)} className="btn-primary text-sm">
-            + Nova sala
+            + Novo espaço de compartilhamento
           </button>
         }
       />
@@ -114,7 +114,7 @@ export default function DataRoom() {
         </div>
       ) : erro ? (
         <ErrorState
-          message="Não foi possível carregar as salas de documentos. Tente novamente."
+          message="Não foi possível carregar os espaços de compartilhamento. Tente novamente."
           onRetry={carregar}
         />
       ) : (
@@ -137,7 +137,7 @@ export default function DataRoom() {
           ))}
           {rooms.length === 0 && (
             <p className="text-gray-400 text-sm col-span-full text-center py-12">
-              Nenhuma sala criada
+              Nenhum espaço de compartilhamento criado
             </p>
           )}
         </div>
@@ -148,7 +148,7 @@ export default function DataRoom() {
         <Modal
           open={novo}
           onClose={() => setNovo(false)}
-          title="Nova sala de documentos"
+          title="Novo espaço de compartilhamento"
         >
           <form onSubmit={criar} className="space-y-3">
             <div>

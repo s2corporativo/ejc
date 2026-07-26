@@ -199,7 +199,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       },
       {
         id: "sala-juridica",
-        titulo: "Sala Jurídica",
+        titulo: "Assistente Jurídico (IA)",
         rota: "/sala-juridica",
         oQueE:
           "A porta de entrada conversacional do EJC: área de trabalho livre, chat jurídico e estado probatório versionado, sem exigir cadastro prévio de caso.",
