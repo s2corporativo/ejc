@@ -101,6 +101,13 @@ export default function OnboardingTour() {
   // estado salvo "aberto" vira a pílula recolhida "Primeiros passos N/4" —
   // o usuário expande por clique. Isso impede o popover de reabrir a cada
   // navegação e de cobrir botões de ação (auditoria de usabilidade §2.4/2.5).
+  //
+  // Em viewport estreito (< 640px, breakpoint `sm`) o painel expandido ocupa
+  // quase a tela inteira ancorado no rodapé e sobrepõe conteúdo real (ex.:
+  // gráfico de Casos por área, área de chat da Sala Jurídica — achado da
+  // auditoria funcional). Por isso o auto-abrir da primeira visita NUNCA
+  // dispara em mobile: nasce direto na pílula recolhida, disponível por
+  // toque, sem cobrir nada sem o usuário pedir.
   useEffect(() => {
     setFeitas(lerConcluidas());
     const saved = localStorage.getItem(STATE_KEY);
@@ -109,6 +116,14 @@ export default function OnboardingTour() {
       return;
     }
     if (saved === "aberto") {
+      localStorage.setItem(STATE_KEY, "recolhido");
+      setView("recolhido");
+      return;
+    }
+    const telaEstreita =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(max-width: 639px)").matches;
+    if (telaEstreita) {
       localStorage.setItem(STATE_KEY, "recolhido");
       setView("recolhido");
       return;
@@ -222,7 +237,12 @@ export default function OnboardingTour() {
         aria-modal="false"
         aria-labelledby="onboarding-title"
         aria-describedby="onboarding-sub"
-        className="card pointer-events-auto w-full max-w-sm overflow-hidden focus:outline-none"
+        // max-h + overflow-y-auto (em vez de overflow-hidden): em viewport
+        // baixo (mobile deitado, ou o painel aberto manualmente a partir da
+        // pílula) o card não pode crescer além de ~70% da altura da tela e
+        // esconder conteúdo interativo abaixo dele (achado da auditoria:
+        // cobria o gráfico de Casos por área e o chat da Sala Jurídica).
+        className="card pointer-events-auto max-h-[70vh] w-full max-w-sm overflow-y-auto focus:outline-none"
       >
         <div className="h-1 bg-zinc-100">
           <div

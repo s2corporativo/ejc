@@ -274,6 +274,10 @@ export default function Layout() {
             <button
               type="button"
               onClick={() => window.dispatchEvent(new Event("ejc-open-search"))}
+              // Nome acessível próprio (distinto de qualquer "Buscar" local de
+              // formulário/modal) — evita que seletores de teste/acessibilidade
+              // por texto "Buscar" acabem acionando a busca global por engano.
+              aria-label="Abrir busca global do sistema (Ctrl K)"
               className="flex h-10 w-full max-w-xl items-center gap-3 rounded-full bg-slate-900/[0.04] px-4 text-left text-sm text-slate-500 transition-all duration-150 hover:bg-primary-50 dark:bg-white/[0.06] dark:text-slate-400 dark:hover:bg-white/[0.09]"
             >
               <Search className="h-4 w-4 shrink-0" />

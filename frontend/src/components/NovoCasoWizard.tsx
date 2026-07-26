@@ -329,10 +329,17 @@ export default function NovoCasoWizard({
               onKeyDown={(e) => e.key === "Enter" && buscar()}
             />
             <Button
+              type="button"
               variant="secondary"
               disabled={buscando}
               onClick={buscar}
               icon={<Search className="h-4 w-4" />}
+              // Nome acessível específico: evita colisão com o botão de busca
+              // global do header ("Buscar processos por parte, CPF ou
+              // número…"), que também contém a palavra "Buscar" — ambiguidade
+              // que já confundiu seletores automatizados de teste/acessibilidade.
+              aria-label="Buscar cliente pelo CPF/CNPJ informado"
+              title="Buscar cliente pelo CPF/CNPJ informado"
             >
               {buscando ? "Buscando..." : "Buscar"}
             </Button>

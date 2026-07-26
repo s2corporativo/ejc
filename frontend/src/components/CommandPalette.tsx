@@ -163,14 +163,24 @@ export default function CommandPalette() {
   }, [matchingQuickActions, q, quickActions, res, shortcuts]);
 
   useEffect(() => {
+    // Nunca abre a paleta global POR CIMA de um modal/drawer já aberto (ex.:
+    // o wizard de Novo Caso) — mesmo padrão de precedência já usado para o
+    // OnboardingTour (ver `.onboarding-tour` em index.css). Sem esta guarda,
+    // um Ctrl+K/clique perdido no botão de busca do header, ou o disparo do
+    // evento "ejc-open-search", abrem a paleta sobre o modal e o Esc seguinte
+    // fecha os dois de uma vez (perdendo o progresso preenchido no wizard).
+    const outroModalAberto = () =>
+      document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setOpen((value) => !value);
+        setOpen((value) => (value ? false : !outroModalAberto()));
       }
       if (event.key === "Escape") setOpen(false);
     };
-    const onOpen = () => setOpen(true);
+    const onOpen = () => {
+      if (!outroModalAberto()) setOpen(true);
+    };
     window.addEventListener("keydown", onKey);
     window.addEventListener("ejc-open-search", onOpen);
     return () => {
