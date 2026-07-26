@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import itertools
 
-import pytest
 
 from app.services import validador_juridico_service as V
 from app.services.validador_juridico_service import _calcular_metricas, _formatar_metricas
