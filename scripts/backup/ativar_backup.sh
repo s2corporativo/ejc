@@ -218,7 +218,10 @@ async def main() -> int:
     except Exception:
         print("1")
         return 0
-    if not state or state.get("last_status") != "sucesso" or not state.get("last_run_at"):
+    # Contrato PR #480: "parcial" (prova local cifrada, offsite falho e não
+    # obrigatório) também vale como prova recente — o gate é a prova LOCAL.
+    if not state or state.get("last_status") not in ("sucesso", "parcial") \
+            or not state.get("last_run_at"):
         print("1")
         return 0
     details = state.get("detalhes") or []
@@ -267,7 +270,10 @@ async def main() -> int:
     names = [str(item.get("nome") or "") for item in artifacts]
     has_db = any(name.endswith("_db.dump.enc") for name in names)
     has_uploads = any(name.endswith("_uploads.tar.gz.enc") for name in names)
-    complete = result.get("status") == "sucesso" and has_db and has_uploads
+    # Contrato PR #480: o `ok` do serviço já embute a política
+    # BACKUP_OFFSITE_OBRIGATORIO (parcial → ok=True só quando não obrigatório;
+    # falha LOCAL → ok=False sempre). Prova = ok + os dois artefatos cifrados.
+    complete = bool(result.get("ok")) and has_db and has_uploads
     print(json.dumps({
         "ok": complete,
         "status": result.get("status"),
