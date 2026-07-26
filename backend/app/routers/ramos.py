@@ -10,7 +10,7 @@ from uuid import uuid4
 from typing import Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +32,11 @@ from app.models.especializado import (
 from app.services.deadline_calculator import (
     prazo_dias_uteis, prazo_dias_corridos, prazo_defesa_ambiental,
 )
+from app.schemas.areas_atuacao import (
+    EmpresarialUpdate, CivelUpdate, PenalUpdate,
+    TrabalhistaUpdate, AdminUpdate, BancarioUpdate,
+    validar_tipo_societario,
+)
 
 _EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"]
 _ADM    = ["superadmin", "admin", "socio"]
@@ -46,6 +51,95 @@ TETO_DEPOSITO_RO = 12_127.64   # Recurso Ordinário
 TETO_DEPOSITO_RR = 24_255.28   # Recurso de Revista (dobro do RO)
 
 router = APIRouter(tags=["Áreas de Atuação"])
+
+# ════════════════════════════════════════════════════════════════════════════
+# SELO DE HOMOLOGAÇÃO — Onda 1 da auditoria de Áreas de Atuação (matriz P0)
+# Ferramentas com problema jurídico confirmado. As BLOQUEADAS retornam 503 até
+# revisão; as demais continuam calculando, mas a resposta carrega o selo
+# homologada=False + aviso. A correção das REGRAS jurídicas em si é da Onda 2 —
+# aqui apenas bloqueamos o risco de uso profissional de resultado errado.
+# O gate de /pecas/demonstrativo (peca_geracao.py) importa este dicionário.
+# ════════════════════════════════════════════════════════════════════════════
+FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
+    # ── BLOQUEADAS (503 — ver FERRAMENTAS_BLOQUEADAS) ────────────────────────
+    "/empresarial/ferramentas/prazos-rj":
+        "marcos temporais da recuperação judicial incorretos (Lei 11.101/2005)",
+    "/empresarial/ferramentas/juros-mora":
+        "regra de juros obsoleta após a Lei 14.905/2024 (nova redação do CC art. 406)",
+    "/penal/ferramentas/prazos-processuais":
+        "contagem em dias úteis — no processo penal os prazos correm em dias CORRIDOS (CPP art. 798)",
+    "/penal/ferramentas/verificar-anpp":
+        "requisito de ausência de violência doméstica fixado como True no código, sem checagem real (CPP art. 28-A)",
+    # ── COM SELO (respondem, mas o resultado NÃO é homologado) ───────────────
+    "/empresarial/ferramentas/verificar-cade":
+        "prazo de notificação de 30 dias inexistente — o controle de concentrações é PRÉVIO (Lei 12.529/2011 art. 88)",
+    "/civel/ferramentas/prazos-contestacao":
+        "prazo universal de 10 dias para contestação no JEC inexistente na Lei 9.099/95",
+    "/penal/ferramentas/dosimetria":
+        "modelo trifásico excessivamente simplificado — não valida os limites legais de cada fase (CP art. 68)",
+    "/penal/ferramentas/prescricao-punitiva":
+        "duplicada com prescricao-penal e sem considerar marcos interruptivos (CP art. 117)",
+    "/penal/ferramentas/prescricao-penal":
+        "duplicada com prescricao-punitiva e sem considerar marcos interruptivos (CP art. 117)",
+    "/trabalhista-esp/ferramentas/prazos":
+        "prazos contados em dias corridos — a CLT art. 775 determina contagem em dias ÚTEIS",
+    "/trabalhista-esp/ferramentas/prescricao-trabalhista":
+        "marco quinquenal projetado para frente — a contagem é retroativa da data do ajuizamento (Súm. TST 308)",
+    "/transito/ferramentas/prazos-recurso":
+        "defesa prévia com 15 dias — o CTB (red. Lei 14.071/2020) exige prazo mínimo de 30 dias — e marcos incorretos",
+    "/admin-esp/ferramentas/recurso-multa-transito":
+        "marcos temporais incorretos e defesa prévia divergente do CTB (mínimo de 30 dias, red. Lei 14.071/2020)",
+    "/transito/ferramentas/pontuacao-cnh":
+        "limite de 30 pontos para condutor EAR — o correto é 40 pontos (CTB art. 261, red. Lei 14.071/2020)",
+    "/consumidor/ferramentas/devolucao-dobro":
+        "critério de má-fé — o STJ exige apenas conduta contrária à boa-fé objetiva (EAREsp 676.608/RS)",
+    "/consumidor/ferramentas/prazos-cdc":
+        "prescrição genérica de 3 anos para cobrança indevida — o STJ aplica o prazo decenal (EAREsp 738.991/RS)",
+    "/previdenciario/ferramentas/prazos":
+        "marcos de decadência/prescrição inadequados (Lei 8.213/91 art. 103)",
+}
+
+# Subconjunto que fica INDISPONÍVEL (503) até revisão jurídica.
+FERRAMENTAS_BLOQUEADAS: frozenset[str] = frozenset({
+    "/empresarial/ferramentas/prazos-rj",
+    "/empresarial/ferramentas/juros-mora",
+    "/penal/ferramentas/prazos-processuais",
+    "/penal/ferramentas/verificar-anpp",
+})
+
+
+def _bloquear_nao_homologada(caminho: str) -> None:
+    """Indisponibilidade controlada: ferramenta da lista BLOQUEADA responde 503."""
+    raise HTTPException(503, detail={
+        "codigo": "ferramenta_nao_homologada",
+        "motivo": FERRAMENTAS_NAO_HOMOLOGADAS[caminho],
+        "mensagem": "Ferramenta temporariamente indisponível — em revisão jurídica",
+    })
+
+
+def _selo_homologacao(caminho: str, resposta: dict) -> dict:
+    """Anexa o selo homologada=False + aviso quando a ferramenta está na matriz."""
+    motivo = FERRAMENTAS_NAO_HOMOLOGADAS.get(caminho)
+    if motivo:
+        resposta["homologada"] = False
+        resposta["aviso_homologacao"] = (
+            f"{motivo} — resultado não homologado para uso profissional; "
+            "não gere demonstrativo a partir dele"
+        )
+    return resposta
+
+
+# ── Validação sim/não explícita (sem fallback silencioso) ────────────────────
+_SIM_NAO = {"sim": True, "true": True, "1": True,
+            "nao": False, "não": False, "false": False, "0": False}
+
+
+def _parse_sim_nao(valor: str, campo: str) -> bool:
+    """Converte parâmetro sim/não. Valor fora do domínio → 422 (não cai em default)."""
+    v = (valor or "").strip().lower()
+    if v not in _SIM_NAO:
+        raise HTTPException(422, f"Valor inválido para '{campo}': '{valor}'. Use: sim | nao")
+    return _SIM_NAO[v]
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -155,6 +249,9 @@ class EmpresarialIn(BaseModel):
     honorarios_tipo: Optional[str] = None
     observacoes: Optional[str] = None
 
+    # EIRELI extinta (Lei 14.195/2021) — rejeitada em registros novos com 422.
+    _valida_tipo_societario = field_validator("tipo_societario")(validar_tipo_societario)
+
 
 @router.get("/empresarial/tipos")
 async def emp_tipos(cu: User = Depends(get_current_user)):
@@ -187,9 +284,10 @@ async def emp_criar(body: EmpresarialIn, db: AsyncSession = Depends(get_db),
 
 
 @router.patch("/empresarial/{eid}")
-async def emp_atualizar(eid: str, body: dict, db: AsyncSession = Depends(get_db),
+async def emp_atualizar(eid: str, body: EmpresarialUpdate, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(EmpresarialCase, "empresarial_cases", eid, body, db, cu)
+    return await _crud_atualizar(EmpresarialCase, "empresarial_cases", eid,
+                                 body.model_dump(exclude_unset=True), db, cu)
 
 @router.delete("/empresarial/{eid}")
 async def emp_remover(eid: str, db: AsyncSession = Depends(get_db),
@@ -207,6 +305,7 @@ async def emp_prazos_rj(
     Base legal verificada: arts. 36, 53, 55, 61, 73.
     MINUTA — o advogado valida com o juízo da recuperação.
     """
+    _bloquear_nao_homologada("/empresarial/ferramentas/prazos-rj")
     return {
         "data_distribuicao": data_distribuicao,
         "prazos": [
@@ -249,10 +348,16 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
     limiar_grupo_menor = 75_000_000.00    # art. 88, II (atualizado p/ R$ 75 mi)
     segundo_informado = valor_faturamento_outro_grupo is not None
 
+    # Não há "prazo de 30 dias para notificar": o controle é PRÉVIO — a operação
+    # não pode ser consumada antes da decisão do CADE (gun jumping, art. 88 §3º).
+    controle_previo = ("Controle PRÉVIO (Lei 12.529/2011 art. 88): não há prazo de 30 dias "
+                       "para notificar — a operação NÃO pode ser consumada antes da decisão "
+                       "do CADE, sob pena de gun jumping (nulidade e multa, art. 88 §3º).")
+
     if not segundo_informado:
         # Sem o faturamento do 2º grupo é impossível confirmar o inciso II. Em vez
         # de um falso negativo, devolvemos estado pendente (retrocompat. c/ API).
-        return {
+        return _selo_homologacao("/empresarial/ferramentas/verificar-cade", {
             "faturamento_informado": valor_faturamento_br,
             "faturamento_outro_grupo": None,
             "valor_operacao": valor_operacao,
@@ -261,13 +366,13 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
             "segundo_grupo_informado": False,
             "pendente_dado": True,
             "notificacao_obrigatoria": None,
-            "prazo_notificacao": None,
+            "controle_previo": controle_previo,
             "taxa_cade_estimada": "N/A",
-            "base": "Lei 12.529/2011 art. 88, I e II c/c Portaria Interm. MJ/MF 994/2012; §2º (prazo).",
+            "base": "Lei 12.529/2011 art. 88, I-III c/c Portaria Interm. MJ/MF 994/2012.",
             "aviso": ("MINUTA. Informe o faturamento do 2º grupo envolvido para avaliar o "
                       "art. 88 (limiar de R$ 75 mi do inciso II). Análise de enquadramento "
                       "deve ser confirmada por especialista antitruste."),
-        }
+        })
 
     # Cumulativos mas NÃO posicionais: um grupo ≥ 750 mi E outro ≥ 75 mi (art. 88,
     # I e II), avaliando por max/min dos dois faturamentos informados.
@@ -276,7 +381,7 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
     grupo_maior_atinge = maior >= limiar_grupo_maior
     grupo_menor_atinge = menor >= limiar_grupo_menor
     obrigatorio = grupo_maior_atinge and grupo_menor_atinge
-    return {
+    return _selo_homologacao("/empresarial/ferramentas/verificar-cade", {
         "faturamento_informado": valor_faturamento_br,
         "faturamento_outro_grupo": valor_faturamento_outro_grupo,
         "valor_operacao": valor_operacao,
@@ -285,13 +390,13 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
         "segundo_grupo_informado": True,
         "pendente_dado": False,
         "notificacao_obrigatoria": obrigatorio,
-        "prazo_notificacao": "30 dias (art. 88 §2º Lei 12.529/11)" if obrigatorio else None,
+        "controle_previo": controle_previo,
         # Taxa (TFPP) de referência — NÃO é leitura da tabela CADE vigente; valor
         # fixo de orientação, sujeito a reajuste. Confirmar na tabela CADE atual.
         "taxa_cade_estimada": "~R$ 85.000 (estimativa de referência — confirmar tabela CADE vigente)" if obrigatorio else "N/A",
-        "base": "Lei 12.529/2011 art. 88, I e II c/c Portaria Interm. MJ/MF 994/2012; §2º (prazo).",
+        "base": "Lei 12.529/2011 art. 88, I-III c/c Portaria Interm. MJ/MF 994/2012.",
         "aviso": "MINUTA. Análise de enquadramento deve ser confirmada por especialista antitruste.",
-    }
+    })
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -355,9 +460,10 @@ async def civ_criar(body: CivelIn, db: AsyncSession = Depends(get_db),
 
 
 @router.patch("/civel/{cid}")
-async def civ_atualizar(cid: str, body: dict, db: AsyncSession = Depends(get_db),
+async def civ_atualizar(cid: str, body: CivelUpdate, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(CivelCase, "civel_cases", cid, body, db, cu)
+    return await _crud_atualizar(CivelCase, "civel_cases", cid,
+                                 body.model_dump(exclude_unset=True), db, cu)
 
 @router.delete("/civel/{cid}")
 async def civ_remover(cid: str, db: AsyncSession = Depends(get_db),
@@ -385,9 +491,10 @@ async def civ_prazo_contestacao(
     else:
         venc = prazo_dias_uteis(data_citacao, 15)
         base = "CPC art. 335 — 15 dias úteis"
-    return {"data_citacao": data_citacao, "tipo_rito": tipo,
-            "vencimento": venc, "base_legal": base,
-            "aviso": "MINUTA. Verifique suspensões e especificidades do juízo."}
+    return _selo_homologacao("/civel/ferramentas/prazos-contestacao", {
+        "data_citacao": data_citacao, "tipo_rito": tipo,
+        "vencimento": venc, "base_legal": base,
+        "aviso": "MINUTA. Verifique suspensões e especificidades do juízo."})
 
 
 @router.get("/civel/ferramentas/alimentos-calcular")
@@ -500,9 +607,10 @@ async def pen_criar(body: PenalIn, db: AsyncSession = Depends(get_db),
 
 
 @router.patch("/penal/{pid}")
-async def pen_atualizar(pid: str, body: dict, db: AsyncSession = Depends(get_db),
+async def pen_atualizar(pid: str, body: PenalUpdate, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(PenalCase, "penal_cases", pid, body, db, cu)
+    return await _crud_atualizar(PenalCase, "penal_cases", pid,
+                                 body.model_dump(exclude_unset=True), db, cu)
 
 @router.delete("/penal/{pid}")
 async def pen_remover(pid: str, db: AsyncSession = Depends(get_db),
@@ -519,6 +627,7 @@ async def pen_prazos(
     Prazos críticos do processo penal. Base: CPP.
     MINUTA — verificar suspensões e especificidades do caso.
     """
+    _bloquear_nao_homologada("/penal/ferramentas/prazos-processuais")
     return {
         "data_denuncia": data_denuncia,
         "prazos": [
@@ -554,6 +663,7 @@ async def pen_anpp(
     Verifica requisitos do Acordo de Não Persecução Penal (art. 28-A CPP).
     Inserido pelo Pacote Anticrime — Lei 13.964/2019.
     """
+    _bloquear_nao_homologada("/penal/ferramentas/verificar-anpp")
     requisitos = {
         "pena_minima_inferior_4_anos": pena_min_anos < 4,
         "crime_sem_violencia": nao_violento,
@@ -598,7 +708,7 @@ async def pen_prescricao(
     # _add_anos_data trata 29/02 (ValueError em ano não bissexto → 28/02).
     data_prescricao = _add_anos_data(data_fato, prazo)
     prescrito = date.today() > data_prescricao
-    return {
+    return _selo_homologacao("/penal/ferramentas/prescricao-punitiva", {
         "pena_maxima_anos": pena_maxima_anos,
         "data_fato": data_fato,
         "prazo_prescricional_anos": prazo,
@@ -611,7 +721,7 @@ async def pen_prescricao(
             "Crimes imprescritíveis: racismo (CF art. 5º XLII) e ação de grupos armados (XLIV)",
         ],
         "aviso": "MINUTA em abstrato — não considera a prescrição retroativa (CP art. 110 §1º).",
-    }
+    })
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -663,9 +773,10 @@ async def trab_criar(body: TrabalhistaIn, db: AsyncSession = Depends(get_db),
 
 
 @router.patch("/trabalhista-esp/{tid}")
-async def trab_atualizar(tid: str, body: dict, db: AsyncSession = Depends(get_db),
+async def trab_atualizar(tid: str, body: TrabalhistaUpdate, db: AsyncSession = Depends(get_db),
                          cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(TrabalhistaCase, "trabalhista_cases", tid, body, db, cu)
+    return await _crud_atualizar(TrabalhistaCase, "trabalhista_cases", tid,
+                                 body.model_dump(exclude_unset=True), db, cu)
 
 @router.delete("/trabalhista-esp/{tid}")
 async def trab_remover(tid: str, db: AsyncSession = Depends(get_db),
@@ -678,7 +789,7 @@ async def trab_prazos(data_sentenca: date, cu: User = Depends(require_roles(_EQU
     """
     Prazos críticos trabalhistas a partir da sentença. MINUTA.
     """
-    return {
+    return _selo_homologacao("/trabalhista-esp/ferramentas/prazos", {
         "data_sentenca": data_sentenca,
         "prazos": [
             {"evento": "Recurso Ordinário (RO)",
@@ -692,7 +803,7 @@ async def trab_prazos(data_sentenca: date, cu: User = Depends(require_roles(_EQU
              "base": "CLT art. 897-A — 5 dias"},
         ],
         "aviso": "MINUTA. Marco: publicação da sentença ou intimação pessoal. Verificar com o juízo.",
-    }
+    })
 
 
 @router.get("/trabalhista-esp/ferramentas/prescricao-trabalhista")
@@ -723,7 +834,7 @@ async def trab_prescricao(
             "obs": "Súm. TST 308: conta-se retroativamente da data do ajuizamento",
         }
     result["aviso"] = "MINUTA. Verificar causas suspensivas (doença, MS) e interruptivas."
-    return result
+    return _selo_homologacao("/trabalhista-esp/ferramentas/prescricao-trabalhista", result)
 
 
 @router.get("/trabalhista-esp/ferramentas/deposito-recursal")
@@ -808,9 +919,10 @@ async def adm_criar(body: AdminIn, db: AsyncSession = Depends(get_db),
 
 
 @router.patch("/admin-esp/{aid}")
-async def adm_atualizar(aid: str, body: dict, db: AsyncSession = Depends(get_db),
+async def adm_atualizar(aid: str, body: AdminUpdate, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(AdminCase, "admin_cases", aid, body, db, cu)
+    return await _crud_atualizar(AdminCase, "admin_cases", aid,
+                                 body.model_dump(exclude_unset=True), db, cu)
 
 @router.delete("/admin-esp/{aid}")
 async def adm_remover(aid: str, db: AsyncSession = Depends(get_db),
@@ -832,7 +944,7 @@ async def adm_multa_transito(
     prazo_1a = prazo_dias_corridos(data_notificacao, 30)   # JARI — CTB art. 281 §2º
     prazo_2a = prazo_dias_corridos(prazo_1a, 30)            # CETRAN/DENATRAN
     desconto_pagamento = round(valor_multa * 0.80, 2)       # 20% desconto pag. imediato CTB art. 284-A
-    return {
+    return _selo_homologacao("/admin-esp/ferramentas/recurso-multa-transito", {
         "data_notificacao": data_notificacao,
         "prazo_recurso_1a_inst_jari": prazo_1a,
         "prazo_recurso_2a_inst_cetran": prazo_2a,
@@ -842,7 +954,7 @@ async def adm_multa_transito(
         "risco_suspensao": pontos_cnh >= 20,   # CTB art. 261
         "base": "CTB arts. 281-284 + Res. CONTRAN 619/2016",
         "aviso": "MINUTA. Prazo 1ª instância conta da notificação da autuação; 2ª da decisão da JARI.",
-    }
+    })
 
 
 # ── Ferramentas Trânsito (ramo próprio) ───────────────────────────────────────
@@ -859,12 +971,14 @@ async def transito_prazos_recurso(
     Recurso à JARI: 30 dias da notificação da PENALIDADE (art. 285).
     Recurso ao CETRAN: 30 dias da decisão da JARI (art. 288).
     """
+    if fase not in ("autuacao", "penalidade"):
+        raise HTTPException(422, f"Fase inválida: '{fase}'. Use: autuacao | penalidade")
     defesa_previa = prazo_dias_corridos(data_notificacao, 15)
     jari = prazo_dias_corridos(data_notificacao, 30)
     cetran = prazo_dias_corridos(jari, 30)
     alvo = jari if fase == "penalidade" else defesa_previa
     dias_restantes = (alvo - date.today()).days
-    return {
+    return _selo_homologacao("/transito/ferramentas/prazos-recurso", {
         "data_notificacao": data_notificacao,
         "fase": fase,
         "prazo_defesa_previa": defesa_previa,
@@ -877,7 +991,7 @@ async def transito_prazos_recurso(
         "valor_desconto_20pct": round(valor_multa * 0.80, 2),       # -20% pagto até venc. (art. 284)
         "base": "CTB Lei 9.503/97 arts. 281, 284, 285, 288 + Lei 14.071/2020",
         "aviso": "MINUTA — revisão humana obrigatória. Confira o prazo indicado na própria notificação.",
-    }
+    })
 
 
 @router.get("/transito/ferramentas/pontuacao-cnh")
@@ -891,7 +1005,7 @@ async def transito_pontuacao_cnh(
     Limite de pontos para suspensão da CNH (Lei 14.071/2020 — CTB art. 261).
     O teto varia com o nº de infrações GRAVÍSSIMAS nos últimos 12 meses.
     """
-    eh_prof = categoria_profissional.lower() in ("sim", "true", "1")
+    eh_prof = _parse_sim_nao(categoria_profissional, "categoria_profissional")
     if eh_prof:
         limite, regra = 30, "Condutor com atividade remunerada (EAR): teto de 30 pontos."
     elif infracoes_gravissimas_12m >= 2:
@@ -901,7 +1015,7 @@ async def transito_pontuacao_cnh(
     else:
         limite, regra = 40, "Nenhuma infração gravíssima em 12 meses: teto de 40 pontos."
     excedeu = pontos_total >= limite
-    return {
+    return _selo_homologacao("/transito/ferramentas/pontuacao-cnh", {
         "pontos_total": pontos_total,
         "infracoes_gravissimas_12m": infracoes_gravissimas_12m,
         "condutor_profissional": eh_prof,
@@ -913,7 +1027,7 @@ async def transito_pontuacao_cnh(
                         if excedeu else "Dentro do limite — monitorar.",
         "base": "CTB art. 261 c/c Lei 14.071/2020; condutor EAR: art. 261.",
         "aviso": "MINUTA — revisão humana obrigatória.",
-    }
+    })
 
 
 # ── Helper: soma de anos a uma data (trata 29/02) ─────────────────────────────
@@ -932,8 +1046,8 @@ async def consumidor_devolucao_dobro(
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Repetição em dobro do indébito (CDC art. 42 §ú)."""
-    ma_fe = houve_ma_fe.lower() in ("sim", "true", "1")
-    return {
+    ma_fe = _parse_sim_nao(houve_ma_fe, "houve_ma_fe")
+    return _selo_homologacao("/consumidor/ferramentas/devolucao-dobro", {
         "valor_cobrado": valor_cobrado,
         "restituicao": round(valor_cobrado * 2, 2) if ma_fe else round(valor_cobrado, 2),
         "aplica_dobro": ma_fe,
@@ -941,7 +1055,7 @@ async def consumidor_devolucao_dobro(
                       else "Engano justificável afasta o dobro (restituição simples) — STJ.",
         "base": "CDC art. 42 §ú; STJ EAREsp 676.608 (modulação 30/03/2021).",
         "aviso": "MINUTA — revisão humana obrigatória.",
-    }
+    })
 
 
 @router.get("/consumidor/ferramentas/prazos-cdc")
@@ -958,14 +1072,16 @@ async def consumidor_prazos_cdc(
         "fato":              (5,  "anos", "Prescrição — fato do produto/serviço (art. 27)."),
         "cobranca_indevida": (3,  "anos", "Prescrição — cobrança indevida (CC art. 206 §3)."),
     }
-    n, unid, desc = mapa.get(tipo, mapa["vicio_duravel"])
+    if tipo not in mapa:
+        raise HTTPException(422, f"Tipo de prazo inválido: '{tipo}'. Use: {list(mapa)}")
+    n, unid, desc = mapa[tipo]
     prazo = prazo_dias_corridos(data_fato, n) if unid == "dias" else _add_anos_data(data_fato, n)
     dias_rest = (prazo - date.today()).days
-    return {
+    return _selo_homologacao("/consumidor/ferramentas/prazos-cdc", {
         "tipo": tipo, "descricao": desc, "data_fato": data_fato, "prazo_final": prazo,
         "dias_restantes": dias_rest, "expirado": dias_rest < 0, "urgente": 0 <= dias_rest <= 15,
         "base": "CDC arts. 26, 27, 49.", "aviso": "MINUTA — revisão humana obrigatória.",
-    }
+    })
 
 
 # ── Ferramentas Família ───────────────────────────────────────────────────────
@@ -1018,11 +1134,13 @@ async def imobiliario_prazos_despejo(
         "denuncia_vazia":  "Denúncia vazia — desocupação em 15 dias após sentença (art. 63).",
         "infracao":        "Infração contratual/legal (art. 9).",
     }
+    if fundamento not in mapa:
+        raise HTTPException(422, f"Fundamento inválido: '{fundamento}'. Use: {list(mapa)}")
     return {
         "data_citacao": data_citacao, "fundamento": fundamento,
         "prazo_contestacao": prazo_dias_uteis(data_citacao, 15),
         "prazo_purga_mora": prazo_dias_corridos(data_citacao, 15) if fundamento == "falta_pagamento" else None,
-        "descricao": mapa.get(fundamento, ""),
+        "descricao": mapa[fundamento],
         "base": "Lei 8.245/91 arts. 9, 59-63; CPC art. 335.",
         "aviso": "MINUTA — revisão humana obrigatória.",
     }
@@ -1041,14 +1159,16 @@ async def previdenciario_prazos(
         "decadencia_revisao":     (10, "anos", "Decadência para revisão do ato de concessão (Lei 8.213/91 art. 103)."),
         "prescricao_parcelas":    (5,  "anos", "Prescrição das parcelas vencidas (art. 103 §ú)."),
     }
-    n, unid, desc = mapa.get(tipo, mapa["recurso_administrativo"])
+    if tipo not in mapa:
+        raise HTTPException(422, f"Tipo de prazo inválido: '{tipo}'. Use: {list(mapa)}")
+    n, unid, desc = mapa[tipo]
     prazo = prazo_dias_corridos(data_indeferimento, n) if unid == "dias" else _add_anos_data(data_indeferimento, n)
     dias_rest = (prazo - date.today()).days
-    return {
+    return _selo_homologacao("/previdenciario/ferramentas/prazos", {
         "tipo": tipo, "descricao": desc, "data_base": data_indeferimento, "prazo_final": prazo,
         "dias_restantes": dias_rest, "expirado": dias_rest < 0,
         "base": "Lei 8.213/91 art. 103; Dec. 3.048/99.", "aviso": "MINUTA — revisão humana obrigatória.",
-    }
+    })
 
 
 # ── Ferramentas Digital / LGPD ────────────────────────────────────────────────
@@ -1080,7 +1200,9 @@ async def lgpd_prazos(
         "resposta_titular": (15, False, "Resposta ao titular sobre tratamento (LGPD art. 19 II)."),
         "incidente_anpd":   (3,  True,  "Comunicação de incidente à ANPD (Res. ANPD CD/15 2024: 3 dias úteis)."),
     }
-    n, uteis, desc = mapa.get(tipo, mapa["resposta_titular"])
+    if tipo not in mapa:
+        raise HTTPException(422, f"Tipo de prazo inválido: '{tipo}'. Use: {list(mapa)}")
+    n, uteis, desc = mapa[tipo]
     prazo = prazo_dias_uteis(data_evento, n) if uteis else prazo_dias_corridos(data_evento, n)
     dias_rest = (prazo - date.today()).days
     return {
@@ -1100,7 +1222,10 @@ async def previdenciario_tempo_contribuicao(
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Regra de transição por pontos (EC 103/2019 art. 15). Pontos = idade + tempo."""
-    homem = sexo.upper().startswith("M")
+    s = (sexo or "").strip().upper()
+    if s not in ("M", "F", "MASCULINO", "FEMININO"):
+        raise HTTPException(422, f"Sexo inválido: '{sexo}'. Use: M | F")
+    homem = s.startswith("M")
     # 2019: H 96 / M 86, +1 ponto por ano. Teto H 105 (2028), M 100 (2033).
     base = 96 if homem else 86
     teto = 105 if homem else 100
@@ -1134,7 +1259,9 @@ async def previdenciario_carencia(
         "auxilio_acidente":     (0,   "Independe de carência (art. 26 I)."),
         "pensao_morte":         (0,   "Independe de carência (art. 26 I)."),
     }
-    exigida, desc = mapa.get(beneficio, mapa["aposentadoria"])
+    if beneficio not in mapa:
+        raise HTTPException(422, f"Benefício inválido: '{beneficio}'. Use: {list(mapa)}")
+    exigida, desc = mapa[beneficio]
     return {
         "beneficio": beneficio, "descricao": desc,
         "meses_contribuicao": meses_contribuicao, "carencia_exigida": exigida,
@@ -1175,11 +1302,11 @@ async def penal_prescricao(
     elif p > 2:  prazo, faixa = 8,  "de 2 a 4 anos"
     elif p >= 1: prazo, faixa = 4,  "de 1 a 2 anos"
     else:        prazo, faixa = 3,  "inferior a 1 ano"
-    return {
+    return _selo_homologacao("/penal/ferramentas/prescricao-penal", {
         "pena_maxima_anos": p, "faixa": faixa, "prazo_prescricional_anos": prazo,
         "observacao": "Prescrição da pretensão punitiva em abstrato. Reduz pela metade se réu <21 na data do fato ou >70 na sentença (art. 115).",
         "base": "CP art. 109.", "aviso": "MINUTA — revisão humana obrigatória.",
-    }
+    })
 
 
 @router.get("/penal/ferramentas/dosimetria")
@@ -1193,13 +1320,13 @@ async def penal_dosimetria(
     """Cálculo trifásico simplificado da pena (CP art. 68)."""
     fase2 = pena_base_anos * (1 + fracao_agravantes_pct / 100)
     fase3 = fase2 * (1 + fracao_aumento_pct / 100) * (1 - fracao_diminuicao_pct / 100)
-    return {
+    return _selo_homologacao("/penal/ferramentas/dosimetria", {
         "pena_base_anos": round(pena_base_anos, 2),
         "apos_agravantes_atenuantes": round(fase2, 2),
         "pena_definitiva_anos": round(fase3, 2),
         "observacao": "Cálculo trifásico simplificado (art. 68). 2ª fase não pode ir abaixo do mínimo nem acima do máximo legal (Súmula 231 STJ).",
         "base": "CP arts. 59, 68.", "aviso": "MINUTA — revisão humana obrigatória.",
-    }
+    })
 
 
 # ── Trabalhista: horas extras + reflexos ──────────────────────────────────────
@@ -1240,6 +1367,7 @@ async def empresarial_juros_mora(
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Juros de mora (simples) + multa sobre débito contratual."""
+    _bloquear_nao_homologada("/empresarial/ferramentas/juros-mora")
     juros = valor_principal * (taxa_juros_mensal_pct / 100) * meses_atraso
     multa = valor_principal * (multa_pct / 100)
     return {
@@ -1302,7 +1430,7 @@ async def imobiliario_distrato(
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Retenção em distrato de imóvel na planta (Lei do Distrato 13.786/18)."""
-    afetacao = tem_patrimonio_afetacao.lower() in ("sim", "true", "1")
+    afetacao = _parse_sim_nao(tem_patrimonio_afetacao, "tem_patrimonio_afetacao")
     pct_retencao = 50.0 if afetacao else 25.0
     retencao = round(valor_pago * pct_retencao / 100, 2)
     return {
@@ -1332,7 +1460,9 @@ async def transito_valor_multa(
         "grave":      (195.23, 5, "Grave — 5 pontos."),
         "gravissima": (293.47, 7, "Gravíssima — 7 pontos (multiplicador conforme infração)."),
     }
-    valor, pontos, desc = tabela.get(gravidade, tabela["media"])
+    if gravidade not in tabela:
+        raise HTTPException(422, f"Gravidade inválida: '{gravidade}'. Use: {list(tabela)}")
+    valor, pontos, desc = tabela[gravidade]
     total = round(valor * max(1, multiplicador), 2)
     return {
         "gravidade": gravidade, "descricao": desc,
@@ -1351,7 +1481,8 @@ async def consumidor_negativacao(
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Triagem de dano moral por negativação indevida (Súmula 385 STJ)."""
-    tem_anterior = existe_inscricao_anterior_legitima.lower() in ("sim", "true", "1")
+    tem_anterior = _parse_sim_nao(existe_inscricao_anterior_legitima,
+                                  "existe_inscricao_anterior_legitima")
     return {
         "existe_inscricao_anterior_legitima": tem_anterior,
         "cabe_dano_moral": not tem_anterior,
@@ -1447,9 +1578,10 @@ async def ban_criar(body: BancarioIn, db: AsyncSession = Depends(get_db),
 
 
 @router.patch("/bancario/{bid}")
-async def ban_atualizar(bid: str, body: dict, db: AsyncSession = Depends(get_db),
+async def ban_atualizar(bid: str, body: BancarioUpdate, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(BancarioCase, "bancario_cases", bid, body, db, cu)
+    return await _crud_atualizar(BancarioCase, "bancario_cases", bid,
+                                 body.model_dump(exclude_unset=True), db, cu)
 
 @router.delete("/bancario/{bid}")
 async def ban_remover(bid: str, db: AsyncSession = Depends(get_db),
@@ -1663,7 +1795,9 @@ async def civ_dano_moral(
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Faixas ORIENTATIVAS de dano moral por tipo de caso (sem tabelamento legal)."""
-    minimo, maximo, nota = _FAIXAS_DANO_MORAL.get(tipo_caso, _FAIXAS_DANO_MORAL["outro"])
+    if tipo_caso not in _FAIXAS_DANO_MORAL:
+        raise HTTPException(422, f"Tipo de caso inválido: '{tipo_caso}'. Use: {list(_FAIXAS_DANO_MORAL)}")
+    minimo, maximo, nota = _FAIXAS_DANO_MORAL[tipo_caso]
     pedido = round(salarios_minimos_pedido * _sm_vigente(), 2)
     posicao = ("dentro da faixa usual" if minimo <= pedido <= maximo
                else "abaixo da faixa usual" if pedido < minimo

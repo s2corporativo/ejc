@@ -281,7 +281,9 @@ async def test_cade_dois_grupos_acima_dos_limiares_obriga():
     assert r["grupo_maior_atinge_750mi"] is True
     assert r["grupo_menor_atinge_75mi"] is True
     assert r["notificacao_obrigatoria"] is True
-    assert r["prazo_notificacao"] is not None
+    # Onda 1: o falso "prazo de 30 dias" foi removido — controle é PRÉVIO.
+    assert "prazo_notificacao" not in r
+    assert "PRÉVIO" in r["controle_previo"]
 
 
 async def test_cade_ordem_nao_importa_800mais100_obriga():
