@@ -4,7 +4,6 @@
 # main.py importa `app.routers` antes de incluir explicitamente os routers.
 # Estes imports registram sub-rotas complementares sem exigir nova entrada no
 # grande inventário de imports do main.py.
-from app.routers import google_drive_knowledge  # noqa: F401
 
 # Entrada Universal e Defesas/Revisões são anexados ao router `novos_modulos`,
 # que já é montado pelo main.py sob /api. Os prefixos próprios são preservados.

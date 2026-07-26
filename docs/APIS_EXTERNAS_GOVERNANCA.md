@@ -1,6 +1,6 @@
 # Governança das APIs externas do EJC
 
-Atualizado em 18/07/2026. Este documento registra o que pode ser ativado no
+Atualizado em 26/07/2026. Este documento registra o que pode ser ativado no
 EJC, o modo de autenticação e o que **não** deve ser implementado sem
 credenciamento. A regra é uma política por fonte; não existe um cliente de
 autenticação universal.
@@ -10,7 +10,7 @@ autenticação universal.
 | Fonte | Acesso | Decisão no EJC |
 |---|---|---|
 | DataJud/CNJ | Header `Authorization: APIKey ...`; chave pública rotativa divulgada pelo CNJ | Integrado. Opt-in por `DATAJUD_ENABLED` e `DATAJUD_API_KEY`. A chave fica somente no ambiente e nunca no Git. |
-| PNCP — consultas | Público, anônimo | Integrado e ligado por padrão. Somente leitura, com cache, rate limit, timeout e retries transitórios. |
+| PNCP — consultas | Público, anônimo | REMOVIDO (2026-07). A integração de consulta foi retirada junto com o módulo de licitações; variáveis `PNCP_*` são ignoradas. |
 | PNCP — manutenção | JWT para plataformas de órgãos públicos credenciadas | Fora de escopo. O EJC não publica, altera ou exclui dados no PNCP. |
 | BrasilAPI/OpenCNPJ/ViaCEP | Público, anônimo | Integrado para CEP, CNPJ e feriados. As rotas exigem usuário autenticado e têm rate limit. |
 | ReceitaWS pública | Anônima, com limite divulgado pelo fornecedor | Último fallback de CNPJ. Não é tratada como fonte oficial nem como ilimitada. |
@@ -28,10 +28,9 @@ autenticação universal.
   filtros validados, reduzindo risco de SSRF.
 - Segredos ficam em variáveis de ambiente. Status de integração retorna apenas
   booleanos e o modo de acesso.
-- DataJud e PNCP repetem somente falhas de transporte, HTTP 429 e HTTP 5xx.
+- DataJud repete somente falhas de transporte, HTTP 429 e HTTP 5xx.
   Erros 4xx de contrato ou credencial não são multiplicados.
 - Logs não contêm API key, corpo de resposta, número CNJ, CNPJ ou CEP.
-- PNCP interpreta HTTP 204 como resultado vazio, sem tentar decodificar JSON.
 - DataJud distingue processo ausente de flag/chave ausente e indisponibilidade
   da fonte; esses estados não podem virar falso HTTP 404.
 - Consultas de CEP/CNPJ exigem autenticação do EJC e possuem rate limit por
@@ -55,15 +54,10 @@ para atualização no ambiente, sem commit de código.
 
 ### PNCP consulta
 
-```env
-PNCP_ENABLED=true
-PNCP_BASE_URL=https://pncp.gov.br/api/consulta/v1
-PNCP_TIMEOUT_SECONDS=25
-```
-
-Não configurar login/JWT do PNCP no EJC: essas credenciais pertencem ao fluxo
-de manutenção de plataformas públicas, que não é necessário para pesquisar
-contratações.
+Integração REMOVIDA em 2026-07 (faxina do módulo de licitações). Variáveis
+`PNCP_*` remanescentes em `.env` são ignoradas e podem ser apagadas. Se a
+consulta de contratações voltar a ser necessária, reintroduzir seguindo o
+padrão do repo (flag de env default OFF + fallback gracioso).
 
 ## Fontes oficiais consultadas
 

@@ -4,8 +4,8 @@ Cliente de integração com a BrasilAPI (brasilapi.com.br).
 Projeto comunitário (não é API oficial do governo), gratuito, sem
 necessidade de chave/autenticação. Útil para validação rápida de CNPJ/CEP
 no cadastro de clientes do EJC, como complemento — não substituto — da
-fonte oficial quando exigida fundamentação formal (nesse caso, usar Conecta
-gov.br, ver conecta_gov_client.py).
+fonte oficial quando exigida fundamentação formal (nesse caso, usar o
+Conecta gov.br, integração ainda pendente de credenciamento institucional).
 
 Documentação: https://brasilapi.com.br/docs
 """

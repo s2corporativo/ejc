@@ -8,6 +8,3 @@
 #   • datajud_client.py       — DataJud/CNJ, consulta crua por nº de processo
 #   • djen_comunica_client.py — DJEN/Comunica, intimações por OAB/processo
 #   • brasilapi_client.py     — BrasilAPI, CNPJ e CEP
-#   • conecta_gov_client.py   — Conecta gov.br (SCAFFOLD, inativo até
-#                               credenciamento institucional — router NÃO
-#                               registrado em main.py)
