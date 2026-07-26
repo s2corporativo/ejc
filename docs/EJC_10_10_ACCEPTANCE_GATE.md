@@ -57,7 +57,9 @@ A classificação 10/10 não decorre da quantidade de módulos. Ela exige, cumul
 As seguintes ondas ainda precisam ser reaplicadas semanticamente sobre a `main` vigente, uma por PR e com revalidação integral:
 
 - Onda 3 — consolidação de Data Room e Teses v4;
-- Onda 4 — Sala de Guerra canônica por caso;
+- ~~Onda 4 — Sala de Guerra canônica por caso~~ — substituída: o PR #489
+  removeu as Salas de Guerra e consolidou a superfície na Sala Jurídica
+  (`/sala-juridica`);
 - Onda 5 — timeline única e saúde operacional do caso;
 - Onda 6 — painel contextual de saúde/timeline no frontend;
 - Onda 7 — saúde operacional da carteira no Dashboard.
@@ -160,7 +162,8 @@ Devem existir testes automatizados e ata de homologação humana, no mínimo, pa
 - [x] separação canônica entre Caso e Processo integrada pela Onda 2;
 - [ ] uma única fonte de verdade por entidade em todos os domínios;
 - [ ] Data Room e Teses consolidados pela Onda 3;
-- [ ] Sala de Guerra consolidada pela Onda 4;
+- [x] Sala de Guerra consolidada — concluído de outra forma: substituída pela
+      Sala Jurídica no PR #489 (superfícies antigas removidas, redirects ativos);
 - [ ] timeline e saúde operacional consolidadas pelas Ondas 5 a 7;
 - [ ] módulos legados restritos a adaptadores temporários com telemetria;
 - [ ] ausência de dupla escrita não controlada;
