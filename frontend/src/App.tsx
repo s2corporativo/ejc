@@ -51,6 +51,11 @@ function ClienteDossieRedirect() {
   return <Navigate to={`/clientes/${clientId}`} replace />;
 }
 
+function SalaDeGuerraLegacyRedirect() {
+  const { caseId } = useParams();
+  return <Navigate to={`/casos/${caseId}?tab=teses`} replace />;
+}
+
 function AreaAtuacaoLegacyRedirect() {
   const { slug } = useParams();
   return <Navigate to={`/areas-de-atuacao/${slug}`} replace />;
@@ -170,6 +175,10 @@ export default function App() {
               <Route
                 path="/clientes/:clientId/dossie"
                 element={<ClienteDossieRedirect />}
+              />
+              <Route
+                path="/casos/:caseId/sala-de-guerra"
+                element={<SalaDeGuerraLegacyRedirect />}
               />
               <Route
                 path="/ramos/:slug"

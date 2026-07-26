@@ -151,8 +151,6 @@ from app.routers import ramos
 from app.routers import previdenciario_beneficio
 from app.routers import relatorio
 from app.routers import relatorio_cliente
-from app.routers import sala_de_guerra
-from app.routers import sala_de_guerra_v3
 from app.routers import lgpd_registros
 from app.routers import score_juridico
 from app.routers import search
@@ -412,8 +410,6 @@ app.include_router(ramos.router, prefix=API)
 app.include_router(previdenciario_beneficio.router, prefix=API)  # vertical Previdenciário — regras de transição EC 103/2019 + RMI
 app.include_router(relatorio.router, prefix=API)
 app.include_router(relatorio_cliente.router, prefix=API)
-app.include_router(sala_de_guerra.router, prefix=API)
-app.include_router(sala_de_guerra_v3.router, prefix=API)
 app.include_router(score_juridico.router, prefix=API)
 app.include_router(search.router, prefix=API)
 app.include_router(signatures.router, prefix=API)

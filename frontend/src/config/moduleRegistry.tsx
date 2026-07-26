@@ -94,8 +94,6 @@ const DossieCliente = lazy(() => import("../pages/DossieCliente"));
 const Casos = lazy(() => import("../pages/Casos"));
 const CasoDetalhe = lazy(() => import("../pages/CasoDetalhe"));
 const RaioXProcesso = lazy(() => import("../pages/RaioXProcesso"));
-const SalaAnaliseJuridica = lazy(() => import("../pages/SalaAnaliseJuridica"));
-const SalaDeGuerra = lazy(() => import("../pages/SalaDeGuerra"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
 );
@@ -265,36 +263,18 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: true,
   },
   {
-    key: "sala-analise-juridica",
-    path: "/sala-analise",
-    label: "Sala de Análise Jurídica",
-    description:
-      "Conversa jurídica preliminar com provas, contradições, riscos e conversão validada em caso.",
-    group: "Pesquisar & IA",
-    icon: Sparkles,
-    component: SalaAnaliseJuridica,
-    roles: ROLES.juridico,
-    showInNav: true,
-    essential: true,
-    order: 5,
-    helpKey: "inteligencia",
-    usesAI: true,
-    sensitive: true,
-    backendPrefixes: ["/api/raio-x", "/api/ai"],
-  },
-  {
     key: "raio-x-processo",
     path: "/raio-x",
     label: "Triagem e Raio-X",
     description:
       "Análise preliminar autônoma de documentos antes da abertura de um caso.",
-    group: "Trabalhar um caso",
+    group: "Pesquisar & IA",
     icon: ScanSearch,
     component: RaioXProcesso,
     roles: ROLES.juridico,
-    showInNav: false,
-    essential: false,
-    order: 15,
+    showInNav: true,
+    essential: true,
+    order: 5,
     helpKey: "inteligencia",
     usesAI: true,
     sensitive: true,
@@ -329,7 +309,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: true,
   },
   // Rota-detalhe (padrão /casos/:id): jornada guiada das 9 etapas do caso.
-  // status hidden = fora do menu, igual a caso-detalhe e sala-de-guerra.
+  // status hidden = fora do menu, igual a caso-detalhe.
   {
     key: "caso-jornada",
     path: "/casos/:id/jornada",
@@ -362,19 +342,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     // até a tela e só viam o 403 ao clicar em "Analisar".
     roles: ROLES.compliance,
     backendPrefixes: ["/api/triagem"],
-  },
-  {
-    key: "sala-de-guerra",
-    path: "/casos/:caseId/sala-de-guerra",
-    label: "Sala de Guerra",
-    description: "Estratégia vinculada a um caso específico.",
-    group: "Trabalhar um caso",
-    icon: ShieldAlert,
-    component: SalaDeGuerra,
-    helpKey: "casos",
-    status: "hidden",
-    sensitive: true,
-    usesAI: true,
   },
   {
     key: "ramos",
@@ -853,6 +820,12 @@ export const STAFF_ROUTES: ModuleRoute[] = [
 
 export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   ...LEGACY_CANONICAL_REDIRECTS,
+  {
+    from: "/sala-analise",
+    to: "/raio-x",
+    reason:
+      "A Sala de Análise foi absorvida pelo Raio-X (mesmo backend); a nova porta de entrada conversacional é a Sala Jurídica.",
+  },
   {
     from: "/central-relacionamento",
     to: "/atividades?tab=relacionamento",

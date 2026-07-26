@@ -141,7 +141,7 @@ def _etapa_inteligencia(status_dossies: list[str], case_id: str) -> EtapaJornada
     """Heurística: existência de DossieEstrategico do caso (registro persistido
     — nunca gera IA aqui). Nenhum=pendente; só rascunho=em_andamento; algum
     aprovado=concluida (aprovação é o gate humano do dossiê)."""
-    link = f"/casos/{case_id}/sala-de-guerra"
+    link = f"/casos/{case_id}?tab=dossie"
     ativos = [s for s in status_dossies if s != "arquivado"]
     if not ativos:
         return EtapaJornada(
@@ -167,7 +167,7 @@ def _etapa_estrategia(tem_tese_principal: bool, teses_vinculadas: int,
     """Heurística determinística: Case.tese_principal preenchida = decisão
     estratégica tomada (concluida); só teses vinculadas (TeseCasoLink, N:N com
     o Banco de Teses) = estratégia em construção (em_andamento); nada=pendente."""
-    link = f"/casos/{case_id}/sala-de-guerra"
+    link = f"/casos/{case_id}?tab=teses"
     if tem_tese_principal:
         extra = f" · {teses_vinculadas} tese(s) do banco vinculada(s)" if teses_vinculadas else ""
         return EtapaJornada(

@@ -313,7 +313,7 @@ def _html_planilha(c: LiquidacaoOut) -> str:
 async def planilha_pdf(consolidacao: LiquidacaoOut,
                        cu: User = Depends(require_roles(_EQUIPE))):
     """Gera o PDF Visual Law da planilha a partir da consolidação devolvida pelo
-    frontend e retorna a URL de download (padrão sala_de_guerra_v3)."""
+    frontend e retorna a URL de download (padrão POST → download_url → blob)."""
     try:
         from weasyprint import HTML as WP_HTML
     except ImportError as exc:

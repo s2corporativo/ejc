@@ -141,7 +141,6 @@ const GROUP_LINKS: Record<
     },
   ],
   Estratégia: [
-    { label: "⚔️ Sala de Guerra", to: (id) => `/casos/${id}/sala-de-guerra` },
   ],
 };
 

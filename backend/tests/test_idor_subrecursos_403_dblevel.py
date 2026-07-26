@@ -4,7 +4,7 @@ Trava contra regressão o isolamento entre advogados nos handlers que passaram a
 chamar verificar_acesso_caso: um advogado SEM vínculo com o caso recebe 403,
 enquanto o responsável e a gestão (socio) passam.
 
-Cobre uma amostra dos endpoints corrigidos (timesheet, sala-de-guerra,
+Cobre uma amostra dos endpoints corrigidos (timesheet,
 caso_areas, centro-custos). Postgres é OBRIGATÓRIO (mesmo padrão dos demais
 *_dblevel.py: chama o handler direto com AsyncSessionLocal). Sem RUN_DB_TESTS=1,
 pula.

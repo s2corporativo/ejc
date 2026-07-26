@@ -141,7 +141,7 @@ def test_inteligencia_dossie_arquivado_nao_conta():
 def test_inteligencia_em_andamento_so_rascunho():
     e = _etapa_inteligencia(["rascunho"], "c1")
     assert e.status == "em_andamento"
-    assert e.link_modulo == "/casos/c1/sala-de-guerra"
+    assert e.link_modulo == "/casos/c1?tab=dossie"
 
 
 def test_inteligencia_concluida_com_aprovado():
@@ -157,7 +157,7 @@ def test_estrategia_pendente_sem_nada():
 def test_estrategia_em_andamento_com_teses_vinculadas():
     e = _etapa_estrategia(False, 2, "c1")
     assert e.status == "em_andamento"
-    assert e.link_modulo == "/casos/c1/sala-de-guerra"
+    assert e.link_modulo == "/casos/c1?tab=teses"
 
 
 def test_estrategia_concluida_com_tese_principal():

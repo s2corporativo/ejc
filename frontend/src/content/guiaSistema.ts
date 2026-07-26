@@ -124,7 +124,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
           "Preencha os dados básicos do caso (área, parte contrária, tribunal, valor da causa).",
           "Conclua o assistente — o caso já nasce pronto para receber prazos, documentos e honorários.",
         ],
-        dica: "Preencha a Prioridade (urgente/alta/média/baixa) já na abertura — ela aparece destacada na Sala de Guerra.",
+        dica: "Preencha a Prioridade (urgente/alta/média/baixa) já na abertura — ela aparece destacada na visão do caso.",
         perfil: "advogado",
       },
       {
@@ -156,7 +156,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
           "Em Casos e Processos, clique no caso desejado.",
           "Navegue pelas abas: Resumo, Timeline, Partes, Documentos, Checklists, Teses.",
           "Na aba Resumo, use as ações rápidas: Análise IA, Sincronizar DataJud, lançar horas, encerrar caso.",
-          "Abra a Jornada ou a Sala de Guerra a partir dos botões do próprio caso.",
+          "Abra a Jornada e a aba Estratégia a partir do próprio caso.",
         ],
         dica: "Registre o campo Resultado ao encerrar o caso — ele alimenta os desfechos reais da Jurimetria.",
         perfil: "advogado",
@@ -197,23 +197,6 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         perfil: "advogado",
         badge: "IA",
       },
-      {
-        id: "sala-de-guerra",
-        titulo: "Sala de Guerra",
-        rota: "/casos/:caseId/sala-de-guerra",
-        oQueE:
-          "A visão estratégica consolidada de um caso complexo, com alertas, teses e horas da equipe.",
-        paraQueServe:
-          "Concentra o que importa para decidir a estratégia de um caso relevante — prazos críticos, pontos fortes/fracos e esforço da equipe — especialmente antes de audiências.",
-        comoUsar: [
-          "No detalhe de um caso, clique no botão Sala de Guerra.",
-          "Confira o banner de alertas (prazos vencidos ou com menos de 7 dias).",
-          "Clique em Editar para preencher Tese Principal, Pontos Fortes, Pontos Fracos e Observações.",
-          "Acompanhe as horas por profissional e as teses vinculadas com taxa de sucesso histórica.",
-        ],
-        dica: "Preencha a análise estratégica antes de audiências — esses campos alimentam a Análise IA do caso.",
-        perfil: "advogado",
-      },
     ],
   },
   {
@@ -251,9 +234,9 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
           "Abra Prazos no menu Gestão para ver todos os prazos ordenados por urgência.",
           "Adicione um prazo pela aba Prazos do caso: descrição, data, tipo e responsável.",
           "Marque como concluído ao cumprir — ele sai automaticamente dos alertas.",
-          "Acompanhe os próximos 30 dias e os vencidos também pela Sala de Guerra.",
+          "Acompanhe os próximos 30 dias e os vencidos também pela visão do caso.",
         ],
-        dica: "Prazos urgentes (vencidos ou em até 7 dias) aparecem em banner vermelho na Sala de Guerra do caso.",
+        dica: "Prazos urgentes (vencidos ou em até 7 dias) aparecem em destaque na visão do caso.",
         perfil: "todos",
       },
       {
@@ -376,7 +359,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
           "Abra Checklists ou vincule um pela aba Checklists do caso.",
           "Escolha o template da área (trabalhista, cível, empresarial, tributário...).",
           "Marque cada item ao concluir — a barra de progresso atualiza sozinha.",
-          "Acompanhe o progresso na Sala de Guerra e no health score do caso.",
+          "Acompanhe o progresso na aba Estratégia e no health score do caso.",
         ],
         dica: "Cada template traz 8-10 itens com referências legais — revise e adapte ao caso concreto.",
         perfil: "advogado",

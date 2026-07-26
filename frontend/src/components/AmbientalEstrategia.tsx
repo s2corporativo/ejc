@@ -241,7 +241,7 @@ function PecaConversaoModal({
     onClose();
   };
 
-  // Mesmo padrão dos demais PDFs Visual Law (TributarioFiscal/SalaDeGuerra):
+  // Mesmo padrão dos demais PDFs Visual Law (TributarioFiscal):
   // POST → download_url → blob (baseURL do client é /api → remove o prefixo).
   const gerar = async () => {
     if (!simulacao) return;
