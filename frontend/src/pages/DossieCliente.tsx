@@ -850,7 +850,8 @@ export default function DossieCliente() {
     "prazos",
     "financeiro",
     "documentos",
-    "ia_cliente",
+    // "ia_cliente" sai dos deep-links enquanto a aba está oculta do seletor
+    // (painel "Em breve" preservado no código para reativação futura).
   ];
   const [data, setData] = useState<DossieData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1101,7 +1102,9 @@ export default function DossieCliente() {
     { id: "prazos", label: "Prazos", icon: Calendar },
     { id: "financeiro", label: "Financeiro", icon: DollarSign },
     { id: "documentos", label: "Documentos", icon: FileText },
-    { id: "ia_cliente", label: "IA do Cliente", icon: Bot },
+    // PENTE FINO 2026-07 (onda 2): a aba "IA do Cliente" fica FORA do seletor
+    // até existir implementação real — o painel abaixo (abaAtiva ===
+    // "ia_cliente") é mantido para reativação futura sem retrabalho.
   ];
 
   return (
