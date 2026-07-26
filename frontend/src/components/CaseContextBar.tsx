@@ -1,73 +1,11 @@
 import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import {
-  Activity,
-  FileStack,
-  FolderOpen,
-  LayoutDashboard,
-  Scale,
-  WalletCards,
-  X,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { FolderOpen, X } from "lucide-react";
+import { CASE_NAV_SECTIONS } from "../config/caseNav";
 import { useCaseContext } from "../stores/caseContext";
 
 // Rotas /casos/:id/* ativam o modo caso; /casos/novo é o wizard (não é caso).
 const CASE_ROUTE = /^\/casos\/([^/]+)/;
-
-interface CaseNavItem {
-  label: string;
-  tab: string;
-  icon: LucideIcon;
-  aliases: string[];
-  routeAliases?: string[];
-}
-
-const CASE_NAV: CaseNavItem[] = [
-  {
-    label: "Visão",
-    tab: "resumo",
-    icon: LayoutDashboard,
-    aliases: ["resumo", "orquestrador", "processos", "partes", "etiquetas"],
-    routeAliases: ["/jornada", "/entrevista"],
-  },
-  {
-    label: "Atividades",
-    tab: "timeline",
-    icon: Activity,
-    aliases: ["timeline", "mensagens", "prazos", "audiencias", "checklists"],
-  },
-  {
-    label: "Arquivos",
-    tab: "documentos",
-    icon: FileStack,
-    aliases: ["documentos", "provas", "contratos", "procuracoes"],
-  },
-  {
-    label: "Estratégia",
-    tab: "teses",
-    icon: Scale,
-    aliases: [
-      "teses",
-      "teses-sugeridas",
-      "jurisprudencia",
-      "precedentes",
-      "score",
-      "risco",
-      "memoria",
-      "dossie",
-      "iaDefensiva",
-      "ferramentas",
-    ],
-    routeAliases: ["/sala-de-guerra"],
-  },
-  {
-    label: "Financeiro",
-    tab: "financeiro",
-    icon: WalletCards,
-    aliases: ["financeiro", "custos", "liquidez"],
-  },
-];
 
 /**
  * Faixa persistente do "Modo Caso".
@@ -136,9 +74,9 @@ export default function CaseContextBar() {
           aria-label="Navegação principal do caso"
           className="flex gap-1 overflow-x-auto pb-2 scrollbar-thin"
         >
-          {CASE_NAV.map((item) => {
+          {CASE_NAV_SECTIONS.map((item) => {
             const Icon = item.icon;
-            const ativaPorTab = item.aliases.includes(tabAtiva);
+            const ativaPorTab = item.tabs.includes(tabAtiva);
             const ativaPorRota = item.routeAliases?.some((rota) =>
               pathname.startsWith(`${baseCaso}${rota}`),
             );

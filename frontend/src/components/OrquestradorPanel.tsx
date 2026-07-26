@@ -40,6 +40,12 @@ import {
   SectionCard,
   Spinner,
 } from "./UI";
+import { useAuth } from "../stores/auth";
+
+// Mesmo limiar do backend (routers/orquestrador.py::_pode_avancar — advogado+).
+// Abaixo disso o painel fica em MODO LEITURA: próximo passo e jornada visíveis,
+// execução desabilitada (o /avancar devolveria 403 de qualquer forma).
+const ROLES_EXECUCAO = ["superadmin", "admin", "socio", "advogado"];
 
 // Rótulos pt-BR das ações da whitelist do backend (ACOES_VALIDAS).
 const ROTULO_ACAO: Record<string, string> = {
@@ -200,7 +206,16 @@ function PendenciaItem({ p }: { p: OrquestradorPendencia }) {
   );
 }
 
-export default function OrquestradorPanel({ caseId }: { caseId: string }) {
+export default function OrquestradorPanel({
+  caseId,
+  casoStatus,
+}: {
+  caseId: string;
+  /** Status do caso — encerrado/arquivado bloqueia a execução de ações
+   *  (espelha a guarda 409 do backend em /orquestrador/avancar). */
+  casoStatus?: string;
+}) {
+  const { user } = useAuth();
   const [visao, setVisao] = useState<OrquestradorVisao | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erroCarga, setErroCarga] = useState(false);
@@ -286,6 +301,16 @@ export default function OrquestradorPanel({ caseId }: { caseId: string }) {
   const pendencias = prox.pendencias_bloqueantes ?? [];
   const acoes = prox.acoes_disponiveis ?? [];
   const posicao = Math.max(0, visao.estados.indexOf(visao.estado)) + 1;
+
+  // Modo leitura (review PR #483): informação sempre visível, execução não.
+  const casoBloqueado =
+    casoStatus === "encerrado" || casoStatus === "arquivado";
+  const podeExecutar = ROLES_EXECUCAO.includes(user?.role || "");
+  const motivoBloqueio = casoBloqueado
+    ? "Reabra o caso para executar ações"
+    : !podeExecutar
+      ? "Ação disponível para advogados"
+      : null;
 
   return (
     <div className="space-y-4">
@@ -405,7 +430,8 @@ export default function OrquestradorPanel({ caseId }: { caseId: string }) {
                             size="sm"
                             variant="ai"
                             onClick={() => setConfirmando(a)}
-                            disabled={executando}
+                            disabled={executando || motivoBloqueio !== null}
+                            title={motivoBloqueio ?? undefined}
                           >
                             Executar
                           </Button>

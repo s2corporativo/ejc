@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import {
   Sparkles,
+  ChevronDown,
   ChevronLeft,
   RefreshCw,
   ShieldCheck,
@@ -51,13 +52,17 @@ import {
   Empty,
 } from "../components/UI";
 import { useAuth } from "../stores/auth";
+import {
+  CASE_NAV_SECTIONS,
+  LEGACY_CASE_TAB_REDIRECTS,
+} from "../config/caseNav";
 import { RAMOS } from "./ramos/ramosConfig";
 import type { FerramentaConfig } from "./ramos/ramosConfig";
 import TabRisco from "./CasoDetalhe/TabRisco";
 import TabScore from "./CasoDetalhe/TabScore";
 import TabPartes from "./CasoDetalhe/TabPartes";
 import TabFerramentas from "./CasoDetalhe/TabFerramentas";
-import TabResumo from "./CasoDetalhe/TabResumo";
+import TabResumo, { AvisoCasoEncerrado } from "./CasoDetalhe/TabResumo";
 import IaDefensivaCaso from "./CasoDetalhe/IaDefensivaCaso";
 import TabMemoria from "./CasoDetalhe/TabMemoria";
 import TabProcessos from "./CasoDetalhe/TabProcessos";
@@ -80,9 +85,11 @@ async function baixarDoc(docId: string, filename: string) {
   }
 }
 
-const TABS = [
+export const TABS = [
+  // Fase 1 (plano de simplificação): a antiga aba "orquestrador" deixou de
+  // existir como destino — seu conteúdo foi promovido à Visão (aba resumo).
+  // O deep-link ?tab=orquestrador segue resolvendo via LEGACY_CASE_TAB_REDIRECTS.
   { key: "resumo", label: "Resumo" },
-  { key: "orquestrador", label: "Orquestrador" },
   { key: "processos", label: "Processos" },
   { key: "timeline", label: "Timeline" },
   { key: "mensagens", label: "Mensagens" },
@@ -113,70 +120,40 @@ const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
-// P1 (proposta de melhorias): as ~26 abas do workspace do caso são organizadas
-// em SEIS seções internas. Cada aba mantém a mesma key e o mesmo conteúdo —
-// só muda o agrupamento; deep-links (?tab=...) antigos continuam funcionando
-// porque a seção ativa é derivada da aba (GROUPS.find abaixo).
+// Fase 1 (plano de simplificação): as ~25 abas do workspace são organizadas
+// nas CINCO seções canônicas de config/caseNav.ts — os MESMOS rótulos da
+// barra persistente (CaseContextBar) e do dock (CaseCommandDock). Cada aba
+// mantém a mesma key e o mesmo conteúdo — só muda o agrupamento; deep-links
+// (?tab=...) antigos continuam funcionando porque a seção ativa é derivada da
+// aba (GROUPS.find abaixo). O antigo grupo "Histórico e encerramento"
+// (memoria) foi absorvido por Atividades.
 // `links` são rotas irmãs do caso (páginas próprias) expostas na seção
-// pertinente para não parecerem sistemas separados.
-const GROUPS: {
+// pertinente para não parecerem sistemas separados. A rota /casos/:id/jornada
+// deixou de ser link porque a jornada agora vive embutida na Visão.
+const GROUP_LINKS: Record<
+  string,
+  { label: string; to: (caseId: string) => string }[]
+> = {
+  Visão: [
+    {
+      label: "🎤 Entrevista inteligente",
+      to: (id) => `/casos/${id}/entrevista`,
+    },
+  ],
+  Estratégia: [
+    { label: "⚔️ Sala de Guerra", to: (id) => `/casos/${id}/sala-de-guerra` },
+  ],
+};
+
+export const GROUPS: {
   label: string;
   tabs: TabKey[];
   links?: { label: string; to: (caseId: string) => string }[];
-}[] = [
-  {
-    // Informações principais, cliente e partes, etiquetas, pendências.
-    label: "Resumo",
-    tabs: ["resumo", "orquestrador", "partes", "etiquetas"],
-    links: [
-      { label: "🧭 Jornada do caso", to: (id) => `/casos/${id}/jornada` },
-      {
-        label: "🎤 Entrevista inteligente",
-        to: (id) => `/casos/${id}/entrevista`,
-      },
-    ],
-  },
-  {
-    // Timeline, processos, mensagens, prazos, audiências, checklists.
-    label: "Andamentos",
-    tabs: [
-      "timeline",
-      "processos",
-      "mensagens",
-      "prazos",
-      "audiencias",
-      "checklists",
-    ],
-  },
-  {
-    label: "Documentos e provas",
-    tabs: ["documentos", "provas", "contratos", "procuracoes"],
-  },
-  {
-    // Teses, precedentes, jurisprudência, risco, score, dossiê, IA.
-    label: "Estratégia",
-    tabs: [
-      "teses",
-      "teses-sugeridas",
-      "jurisprudencia",
-      "precedentes",
-      "risco",
-      "score",
-      "dossie",
-      "iaDefensiva",
-      "ferramentas",
-    ],
-    links: [
-      { label: "⚔️ Sala de Guerra", to: (id) => `/casos/${id}/sala-de-guerra` },
-    ],
-  },
-  { label: "Financeiro", tabs: ["financeiro", "custos", "liquidez"] },
-  {
-    // Memória do caso, resultado, lições aprendidas, pós-mortem.
-    label: "Histórico e encerramento",
-    tabs: ["memoria"],
-  },
-];
+}[] = CASE_NAV_SECTIONS.map((secao) => ({
+  label: secao.label,
+  tabs: secao.tabs.filter((t): t is TabKey => TABS.some((x) => x.key === t)),
+  links: GROUP_LINKS[secao.label],
+}));
 
 // Pendência retornada pelo DELETE /cases/{id} em 422 (bloqueio condicional R2)
 // detail pode vir como string ou como objeto { mensagem, pendencias } — nunca
@@ -902,13 +879,72 @@ function TabTesesSugeridas({ caseId }: { caseId: string }) {
   );
 }
 
+// Fase 1 — "Dados do caso" numa linha recolhível: o conteúdo clássico do
+// Resumo (TabResumo, com todas as ações) permanece integral, mas recolhido
+// para que a próxima ação do orquestrador domine a Visão sem clique adicional.
+function DadosDoCasoRecolhivel({
+  caso,
+  abertoInicial = false,
+}: {
+  caso: Case;
+  abertoInicial?: boolean;
+}) {
+  const [aberto, setAberto] = useState(abertoInicial);
+  const numeroProcesso =
+    caso.processo_principal?.numero_cnj ?? (caso as any).numero_processo;
+  return (
+    <div className="card">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-left"
+      >
+        <span className="text-sm font-semibold text-slate-700">
+          Dados do caso
+        </span>
+        <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+          {numeroProcesso && <span>Processo {numeroProcesso}</span>}
+          {caso.area && <span className="capitalize">Área: {caso.area}</span>}
+          {caso.valor_causa != null && (
+            <span>Valor: {fmtMoney(caso.valor_causa)}</span>
+          )}
+          {caso.created_at && <span>Abertura: {fmtDate(caso.created_at)}</span>}
+        </span>
+        <ChevronDown
+          size={16}
+          className={`ml-auto shrink-0 text-slate-400 transition-transform ${aberto ? "rotate-180" : ""}`}
+        />
+      </button>
+      {aberto && (
+        <div className="border-t border-slate-100 p-4">
+          {/* O aviso de encerramento já aparece no topo da Visão. */}
+          <TabResumo caso={caso} ocultarAvisoEncerramento />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CasoDetalhe() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [caso, setCaso] = useState<Case | null>(null);
 
-  const activeTab = (searchParams.get("tab") as TabKey) || "resumo";
+  // Abas legadas (?tab=orquestrador) são normalizadas de forma síncrona para a
+  // aba nova — nenhum deep-link antigo quebra nem mostra tela vazia.
+  const rawTab = searchParams.get("tab");
+  const tabRedirecionada = rawTab
+    ? LEGACY_CASE_TAB_REDIRECTS[rawTab]
+    : undefined;
+  const activeTab = ((tabRedirecionada ?? rawTab) as TabKey) || "resumo";
+
+  useEffect(() => {
+    if (tabRedirecionada) {
+      setSearchParams({ tab: tabRedirecionada }, { replace: true });
+    }
+  }, [tabRedirecionada, setSearchParams]);
 
   useEffect(() => {
     if (!id) return;
@@ -929,10 +965,22 @@ export default function CasoDetalhe() {
   const renderTab = () => {
     if (!id) return null;
     switch (activeTab) {
-      case "resumo":
-        return <TabResumo caso={caso} />;
-      case "orquestrador":
-        return <OrquestradorPanel caseId={id} />;
+      case "resumo": {
+        // Fase 1 — o caso abre com a próxima ação: o painel do orquestrador
+        // (próximo passo, ações disponíveis, pendências e jornada embutida)
+        // vem primeiro; os dados do caso ficam numa linha recolhível abaixo.
+        // Caso encerrado/arquivado: aviso + controle de reabertura em destaque
+        // no topo, painel em modo leitura e "Dados do caso" já aberto.
+        const casoBloqueado =
+          caso.status === "encerrado" || caso.status === "arquivado";
+        return (
+          <div className="space-y-5">
+            {casoBloqueado && <AvisoCasoEncerrado caso={caso} />}
+            <OrquestradorPanel caseId={id} casoStatus={caso.status} />
+            <DadosDoCasoRecolhivel caso={caso} abertoInicial={casoBloqueado} />
+          </div>
+        );
+      }
       case "processos":
         return <TabProcessos caseId={id} />;
       case "timeline":

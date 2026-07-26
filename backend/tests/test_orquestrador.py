@@ -425,6 +425,50 @@ async def test_avancar_falha_do_service_nao_corrompe_estado(monkeypatch):
     assert db.added == [] and db.commits == 0
 
 
+# ── avancar (router) — guarda de status do caso (review PR #483) ─────────────
+
+async def test_avancar_router_caso_encerrado_ou_arquivado_409(monkeypatch):
+    """Caso encerrado/arquivado → 409 no router, SEM executar nenhuma ação
+    (o backend não confiava só na UI; agora a guarda existe nas duas pontas)."""
+    from app.routers import orquestrador as router_mod
+
+    chamadas = {"n": 0}
+
+    async def _nunca(*a, **k):
+        chamadas["n"] += 1
+
+    monkeypatch.setattr(router_mod.lco, "avancar", _nunca)
+    for status in ("encerrado", "arquivado"):
+        async def _acesso(db, cu, case_id, _s=status):
+            return _case(status=_s)
+
+        monkeypatch.setattr(router_mod, "verificar_acesso_caso", _acesso)
+        with pytest.raises(HTTPException) as exc:
+            await router_mod.avancar(
+                "case1", router_mod.AvancarIn(acao="montar_matriz"),
+                db=_FakeDB([]), cu=_user())
+        assert exc.value.status_code == 409
+        assert "reabra o caso" in str(exc.value.detail).lower()
+    assert chamadas["n"] == 0
+
+
+async def test_avancar_router_caso_ativo_passa_pela_guarda(monkeypatch):
+    from app.routers import orquestrador as router_mod
+
+    async def _acesso(db, cu, case_id):
+        return _case(status="ativo")
+
+    async def _stub(db, case_id, cu, acao, params, case=None):
+        return {"executado": True}
+
+    monkeypatch.setattr(router_mod, "verificar_acesso_caso", _acesso)
+    monkeypatch.setattr(router_mod.lco, "avancar", _stub)
+    out = await router_mod.avancar(
+        "case1", router_mod.AvancarIn(acao="montar_matriz"),
+        db=_FakeDB([]), cu=_user())
+    assert out == {"executado": True}
+
+
 # ── Jornada resumida (UI) ────────────────────────────────────────────────────
 
 async def test_jornada_rotulos_e_status():

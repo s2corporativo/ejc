@@ -38,7 +38,7 @@ describe("CaseCommandDock", () => {
     remove.mockResolvedValue({ data: { ok: true } });
   });
 
-  it("oferece a navegação simples do caso sem retirar o modo avançado", () => {
+  it("navega pelos MESMOS cinco destinos canônicos da barra do caso", () => {
     render(
       <MemoryRouter>
         <CaseCommandDock caseId="case-1" />
@@ -50,10 +50,21 @@ describe("CaseCommandDock", () => {
     );
 
     expect(screen.getByText("Modo simples")).toBeTruthy();
-    expect(screen.getByText("Jornada e próxima ação")).toBeTruthy();
-    expect(screen.getByText("Documentos e provas")).toBeTruthy();
-    expect(screen.getByText("Peças")).toBeTruthy();
-    expect(screen.getByText("Financeiro")).toBeTruthy();
+    // Fase 1: os destinos de navegação são exatamente os cinco rótulos
+    // canônicos (config/caseNav) — os mesmos da CaseContextBar e da página.
+    for (const rotulo of [
+      "Visão",
+      "Atividades",
+      "Arquivos",
+      "Estratégia",
+      "Financeiro",
+    ]) {
+      expect(screen.getByText(rotulo)).toBeTruthy();
+    }
+    // "Peças" deixou de ser um sexto destino de navegação: virou ação de
+    // produção, ao lado de Áreas do caso e Anexar documento.
+    expect(screen.queryByText("Jornada e próxima ação")).toBeNull();
+    expect(screen.getByRole("button", { name: /Peças do caso/ })).toBeTruthy();
   });
 
   it("usa a taxonomia canônica e vincula uma área ao caso", async () => {

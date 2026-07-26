@@ -74,4 +74,14 @@ async def avancar(
     if not _pode_avancar(cu):
         raise HTTPException(403, "Orquestrador restrito a advogados")
     case = await verificar_acesso_caso(db, cu, case_id)
+    # Guarda mínima (review PR #483): caso encerrado/arquivado não executa
+    # nenhuma ação — o advogado precisa reabrir/desarquivar antes (fluxo
+    # próprio em /cases/{id}). Espelha o bloqueio de edição do restante do EJC.
+    status_caso = getattr(case.status, "value", case.status)
+    if status_caso in ("encerrado", "arquivado"):
+        raise HTTPException(
+            409,
+            f"Caso {status_caso} — reabra o caso para executar ações "
+            "do orquestrador.",
+        )
     return await lco.avancar(db, case_id, cu, body.acao, body.params, case=case)
