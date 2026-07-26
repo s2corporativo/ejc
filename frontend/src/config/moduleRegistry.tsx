@@ -1,11 +1,14 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import {
+  Activity,
+  AlarmClock,
   BarChart3,
   Bell,
   BookOpen,
   Bot,
   Briefcase,
   CalendarClock,
+  CheckSquare,
   ClipboardPen,
   FileSignature,
   FileText,
@@ -14,6 +17,7 @@ import {
   Gavel,
   GitBranch,
   HeartPulse,
+  Inbox,
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
@@ -94,6 +98,10 @@ const SalaJuridica = lazy(() => import("../pages/SalaJuridica"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
 );
+const Prazos = lazy(() => import("../pages/Prazos"));
+const Suspensoes = lazy(() => import("../pages/Suspensoes"));
+const Tarefas = lazy(() => import("../pages/Tarefas"));
+const Intimacoes = lazy(() => import("../pages/Intimacoes"));
 const Central = lazy(() => import("../pages/Central"));
 const GestaoDocumental = lazy(() => import("../pages/GestaoDocumental"));
 const Pecas = lazy(() => import("../pages/Pecas"));
@@ -408,11 +416,65 @@ export const STAFF_ROUTES: ModuleRoute[] = [
       "/api/notifications",
     ],
   },
-  // PENTE FINO 2026-07 (onda 2): as quatro rotas /legado/prazos|tarefas|
-  // intimacoes|suspensoes eram inalcançáveis (os links públicos redirecionam
-  // para /atividades?tipo=...) e foram removidas junto com as páginas
-  // Prazos/Tarefas/Intimacoes/Suspensoes — a Central "Agenda e Prazos" é a
-  // única superfície dessas atividades.
+  {
+    key: "prazos",
+    path: "/legado/prazos",
+    label: "Prazos",
+    description: "Controle jurídico de prazos e confirmações.",
+    group: "Trabalhar um caso",
+    icon: AlarmClock,
+    component: Prazos,
+    // CONSOLIDAÇÃO 2026-07: coberto pela Central "Agenda e Prazos"
+    // (filtro Tipo=Prazo); rota ativa para links diretos/favoritos.
+    status: "hidden",
+    helpKey: "prazos",
+    sensitive: true,
+    backendPrefixes: ["/api/deadlines"],
+  },
+  {
+    key: "tarefas",
+    path: "/legado/tarefas",
+    label: "Tarefas",
+    description: "Execução operacional atribuída à equipe.",
+    group: "Trabalhar um caso",
+    icon: CheckSquare,
+    component: Tarefas,
+    // CONSOLIDAÇÃO 2026-07: coberto pela Central (filtro Tipo=Tarefa); rota ativa.
+    status: "hidden",
+    helpKey: "tarefas",
+    sensitive: true,
+    backendPrefixes: ["/api/tasks"],
+  },
+  {
+    key: "intimacoes",
+    path: "/legado/intimacoes",
+    label: "Intimações",
+    description: "Comunicações processuais e conferência jurídica.",
+    group: "Trabalhar um caso",
+    icon: Inbox,
+    component: Intimacoes,
+    // CONSOLIDAÇÃO 2026-07: coberto pela Central "Agenda e Prazos"
+    // (filtro Tipo=Intimação); rota ativa para links diretos/favoritos.
+    status: "hidden",
+    helpKey: "intimacoes",
+    sensitive: true,
+    usesAI: true,
+    backendPrefixes: ["/api/intimacoes"],
+  },
+  {
+    key: "suspensoes",
+    path: "/legado/suspensoes",
+    label: "Suspensões",
+    description: "Suspensões processuais e reflexos em prazos.",
+    group: "Trabalhar um caso",
+    icon: Activity,
+    component: Suspensoes,
+    // CONSOLIDAÇÃO 2026-07: coberto pela Central (filtro Tipo=Suspensão); rota ativa.
+    status: "hidden",
+    helpKey: "prazos",
+    sensitive: true,
+    backendPrefixes: ["/api/suspensoes"],
+  },
   {
     key: "documentos",
     path: "/documentos",
