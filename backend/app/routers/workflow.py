@@ -412,15 +412,20 @@ async def avancar_etapa(
 
     # FLX-062: avanço PARA FRENTE não pode pular etapa obrigatória jamais
     # cumprida (histórico ∪ etapa atual). Retroceder (ordem menor) é permitido.
-    if atual and proxima.ordem > atual.ordem:
+    # Sem etapa atual válida (etapa_atual_id nulo ou órfão), tratamos como
+    # início do fluxo: toda obrigatória anterior à próxima precisa ter sido
+    # visitada — antes, a guarda era pulada em silêncio nesse cenário.
+    if atual is None or proxima.ordem > atual.ordem:
         visitadas = await _etapas_visitadas(db, cw)
+        cond = [
+            WorkflowEtapa.template_id == cw.template_id,
+            WorkflowEtapa.obrigatoria.is_(True),
+            WorkflowEtapa.ordem < proxima.ordem,
+        ]
+        if atual is not None:
+            cond.append(WorkflowEtapa.ordem > atual.ordem)
         intermediarias = (await db.execute(
-            select(WorkflowEtapa).where(
-                WorkflowEtapa.template_id == cw.template_id,
-                WorkflowEtapa.obrigatoria.is_(True),
-                WorkflowEtapa.ordem > atual.ordem,
-                WorkflowEtapa.ordem < proxima.ordem,
-            ).order_by(WorkflowEtapa.ordem)
+            select(WorkflowEtapa).where(*cond).order_by(WorkflowEtapa.ordem)
         )).scalars().all()
         pendentes = [e.nome for e in intermediarias if e.id not in visitadas]
         if pendentes:

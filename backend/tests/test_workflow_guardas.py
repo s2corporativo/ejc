@@ -7,6 +7,8 @@ Cobre, sem depender de Postgres (fakes no padrão de test_legal_doc_protocolo.py
     - etapa inexistente → 404;
     - avançar para a própria etapa atual → 422;
     - pular etapa obrigatória nunca visitada → 422;
+    - etapa_atual nula (ou órfã) tratada como início do fluxo: pular
+      obrigatória anterior → 422; próxima sem obrigatórias antes → 200;
     - obrigatória intermediária JÁ visitada → avanço permitido;
     - retroceder (ordem menor) → permitido.
 
@@ -180,6 +182,42 @@ def test_avancar_com_obrigatoria_intermediaria_ja_visitada_passa(monkeypatch):
                          json={"proxima_etapa_id": "e3"})
     assert r.status_code == 200, r.text
     assert r.json()["etapa_atual"]["id"] == "e3"
+    assert db.committed == 1
+
+
+def test_avancar_com_etapa_atual_nula_pulando_obrigatoria_422(monkeypatch):
+    """etapa_atual_id nulo NÃO desliga a guarda: início do fluxo → toda
+    obrigatória anterior à próxima precisa ter sido visitada."""
+    _liberar_caso(monkeypatch)
+    db = _FakeDB(results=[
+        _Res(one=_cw(etapa_atual=None)),
+        _Res(one=_etapa("e3", 3)),                 # próxima (escopada)
+        _Res(many=[]),                             # histórico vazio
+        _Res(many=[_etapa("e1", 1), _etapa("e2", 2)]),  # obrigatórias < 3
+    ])
+    r = _montar(db).post("/workflow/casos/caso-1/avancar",
+                         json={"proxima_etapa_id": "e3"})
+    assert r.status_code == 422, r.text
+    assert "obrigatória" in r.json()["detail"]
+    assert "Etapa 1" in r.json()["detail"]
+    assert "Etapa 2" in r.json()["detail"]
+    assert db.committed == 0 and not db.added
+
+
+def test_avancar_com_etapa_atual_nula_para_primeira_etapa_passa(monkeypatch):
+    """etapa_atual_id nulo + próxima sem obrigatórias anteriores → 200."""
+    _liberar_caso(monkeypatch)
+    db = _FakeDB(results=[
+        _Res(one=_cw(etapa_atual=None)),
+        _Res(one=_etapa("e1", 1)),                 # próxima = primeira
+        _Res(many=[]),                             # histórico vazio
+        _Res(many=[]),                             # nenhuma obrigatória < 1
+        _Res(one=None),                            # histórico aberto da atual
+    ])
+    r = _montar(db).post("/workflow/casos/caso-1/avancar",
+                         json={"proxima_etapa_id": "e1"})
+    assert r.status_code == 200, r.text
+    assert r.json()["etapa_atual"]["id"] == "e1"
     assert db.committed == 1
 
 
