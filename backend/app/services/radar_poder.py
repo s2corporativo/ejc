@@ -6,7 +6,7 @@ import httpx
 import logging
 from datetime import datetime
 
-logger = logging.getLogger("radar_poder")
+logger = logging.getLogger("ejc.radar_poder")
 
 class RadarPoder:
     def __init__(self):
