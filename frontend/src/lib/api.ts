@@ -424,6 +424,10 @@ export function logout(redirectTo?: unknown) {
   axios.post("/api/auth/logout", {}, { withCredentials: true }).catch(() => {});
   localStorage.removeItem("ejc_access");
   localStorage.removeItem("ejc_user");
+  // Rascunho de intake carrega dados pessoais extraídos de documentos — não
+  // pode sobreviver ao fim da sessão (LGPD). Limpa pela CHAVE para não criar
+  // ciclo de import em runtime (intakeRascunho importa apenas types daqui).
+  localStorage.removeItem("ejc_intake_rascunho");
   window.location.href =
     typeof redirectTo === "string" && redirectTo.startsWith("/login?")
       ? redirectTo

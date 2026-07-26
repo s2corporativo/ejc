@@ -581,11 +581,15 @@ export default function Casos() {
       (typeof extracao?.batch_id === "string" ? extracao.batch_id : undefined);
     // Rascunho recuperável: persistido ANTES de criar. Se qualquer passo falhar
     // (ou a aba fechar), o trabalho analisado não se perde. Limpo só no sucesso.
-    if (arquivoOriginal) {
+    // Cobre TAMBÉM o fluxo de lote (batchId sem File local) e a extração avulsa
+    // — sem isso, o F5 durante a revisão (?revisao=) perdia tudo em silêncio.
+    const intakeDocumental = !!(arquivoOriginal || batchId || extracao);
+    if (intakeDocumental) {
       salvarRascunho({
         form: snapshotForm(form),
         extracao: extracao ?? null,
-        arquivoNome: arquivoOriginal.name,
+        arquivoNome: arquivoOriginal?.name ?? null,
+        batchId: batchId ?? null,
         arquivoTipo: tipoDoc ?? null,
         clientId: form.client_id || null,
         caseId: null,
@@ -610,7 +614,7 @@ export default function Casos() {
       const { data: novo } = await api.post("/cases/", payload);
       const tituloDoc =
         (payload.titulo as string) || novo?.titulo || "Documento importado";
-      if (arquivoOriginal)
+      if (intakeDocumental)
         atualizarRascunho({ caseId: novo?.id ?? null, clientId });
 
       // VINCULA/ANEXA os documentos ANTES de navegar: uma falha não deixa mais

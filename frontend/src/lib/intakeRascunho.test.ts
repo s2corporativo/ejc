@@ -1,12 +1,20 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   RASCUNHO_KEY,
+  RASCUNHO_TTL_MS,
   snapshotForm,
   salvarRascunho,
   carregarRascunho,
   atualizarRascunho,
   limparRascunho,
 } from "./intakeRascunho";
+
+/** Reescreve o `salvoEm` do rascunho persistido (simula passagem de tempo). */
+function envelhecerRascunho(salvoEm: number) {
+  const raw = JSON.parse(localStorage.getItem(RASCUNHO_KEY)!);
+  raw.salvoEm = salvoEm;
+  localStorage.setItem(RASCUNHO_KEY, JSON.stringify(raw));
+}
 
 describe("intakeRascunho", () => {
   beforeEach(() => {
@@ -111,6 +119,43 @@ describe("intakeRascunho", () => {
     it("não cria rascunho do nada quando não existe base", () => {
       expect(atualizarRascunho({ caseId: "c9" })).toBeNull();
       expect(carregarRascunho()).toBeNull();
+    });
+  });
+
+  describe("TTL de 48h (LGPD — dados pessoais não residem indefinidamente)", () => {
+    it("rascunho dentro do TTL continua recuperável", () => {
+      salvarRascunho({ form: { titulo: "X" }, caseId: "c1" });
+      envelhecerRascunho(Date.now() - (RASCUNHO_TTL_MS - 60_000));
+      expect(carregarRascunho()).not.toBeNull();
+    });
+
+    it("rascunho mais velho que 48h é descartado E a chave é limpa", () => {
+      salvarRascunho({ form: { titulo: "X" }, caseId: "c1" });
+      envelhecerRascunho(Date.now() - RASCUNHO_TTL_MS - 1);
+      expect(carregarRascunho()).toBeNull();
+      expect(localStorage.getItem(RASCUNHO_KEY)).toBeNull();
+    });
+
+    it("rascunho legado sem batchId carrega com batchId null (compat)", () => {
+      salvarRascunho({ form: { titulo: "X" }, caseId: "c1" });
+      const raw = JSON.parse(localStorage.getItem(RASCUNHO_KEY)!);
+      delete raw.batchId;
+      localStorage.setItem(RASCUNHO_KEY, JSON.stringify(raw));
+      expect(carregarRascunho()!.batchId).toBeNull();
+    });
+
+    it("rascunho de lote (sem File) faz roundtrip com batchId", () => {
+      salvarRascunho({
+        form: { titulo: "Lote" },
+        extracao: { batch_id: "b1" } as any,
+        arquivoNome: null,
+        batchId: "b1",
+        caseId: "c9",
+      });
+      const lido = carregarRascunho()!;
+      expect(lido.batchId).toBe("b1");
+      expect(lido.arquivoNome).toBeNull();
+      expect(lido.caseId).toBe("c9");
     });
   });
 
