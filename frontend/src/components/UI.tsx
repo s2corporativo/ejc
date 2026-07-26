@@ -1404,13 +1404,6 @@ export function VisualLawDocument({
   );
 }
 
-export function fmtMoney(v?: number | null) {
-  if (v == null) return "—";
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-export function fmtDate(d?: string | null) {
-  if (!d) return "—";
-  const date = new Date(d.includes("T") ? d : d + "T12:00:00");
-  return date.toLocaleDateString("pt-BR");
-}
+// Formatadores canônicos pt-BR — implementação única em utils/formato.ts
+// (re-export mantido aqui porque ~20 telas já importam de components/UI).
+export { fmtMoney, fmtDate, fmtDateTime } from "../utils/formato";

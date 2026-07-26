@@ -9,6 +9,7 @@ import {
   PageHeader,
   Spinner,
   Badge,
+  fmtDate,
 } from "../components/UI";
 import type {
   DiarioOficialKeyword as Keyword,
@@ -141,13 +142,6 @@ export default function DiarioOficial() {
     }
   };
 
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-8">
       <PageHeader
@@ -220,7 +214,7 @@ export default function DiarioOficial() {
                         {alerta.keyword}
                       </span>
                       <span className="text-xs text-gray-400">
-                        {formatDate(alerta.data_publicacao)}
+                        {fmtDate(alerta.data_publicacao)}
                       </span>
                       <span className="text-xs text-gray-400">
                         · {alerta.fonte}
