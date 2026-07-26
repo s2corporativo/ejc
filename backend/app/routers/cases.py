@@ -250,8 +250,12 @@ async def criar(
                 detail="Já existe caso ativo para este cliente e número processual",
             )
 
-    # `honorarios` (FASE 2) NÃO é coluna de Case — vira proposta vigente abaixo.
-    data = payload.model_dump(exclude={"data_fato_prescricao", "honorarios"})
+    # `honorarios` (FASE 2) e `aguardar_documentos` (FLX-045) NÃO são colunas
+    # de Case — o primeiro vira proposta vigente abaixo; o segundo só controla
+    # o agendamento das automações de background.
+    data = payload.model_dump(
+        exclude={"data_fato_prescricao", "honorarios", "aguardar_documentos"}
+    )
     c = Case(
         id=str(uuid4()),
         numero_interno=await _proximo_numero_interno(db),
@@ -288,14 +292,22 @@ async def criar(
     # NÚCLEO COGNITIVO — ETAPA 1: triagem jurídica automática (IA invisível).
     # Roda em background; preenche tese/pontos (se vazios) sem travar a resposta.
     background.add_task(automacao_caso, c.id)
-    background.add_task(triagem_caso, c.id)
-    # Kit documental inicial (procuração PODERES GERAIS + contrato) gerado em
-    # BACKGROUND: o titular pediu geração automática na abertura de cada caso, sem
-    # bloquear a resposta do POST. É idempotente e fail-safe (reusa
-    # geracao_documental.gerar_kit_inicial via case_automacao). Engate feito só
-    # aqui em criar() para a v1 — a conversão de lead poderia assinar
-    # "caso.criado" no event_bus, mas o gatilho central da abertura é este.
-    background.add_task(gerar_documentos_iniciais_auto, c.id, getattr(cu, "id", None))
+    # FLX-045 — abertura por documento: com `aguardar_documentos=True`, a
+    # triagem e o kit documental são ADIADOS para os pontos de vínculo da fonte
+    # (POST /documents/upload e /entrada-universal/{batch}/vincular-caso), onde
+    # são re-agendados de forma idempotente. Assim a triagem roda sobre
+    # `descricao_fatos` já enriquecida pelo documento, e não antes dele existir.
+    # `automacao_caso` (kanban/checklist/processo canônico) e o evento de criação
+    # não dependem de documento — sempre rodam.
+    if not payload.aguardar_documentos:
+        background.add_task(triagem_caso, c.id)
+        # Kit documental inicial (procuração PODERES GERAIS + contrato) gerado em
+        # BACKGROUND: o titular pediu geração automática na abertura de cada caso,
+        # sem bloquear a resposta do POST. É idempotente e fail-safe (reusa
+        # geracao_documental.gerar_kit_inicial via case_automacao). Engate feito só
+        # aqui em criar() para a v1 — a conversão de lead poderia assinar
+        # "caso.criado" no event_bus, mas o gatilho central da abertura é este.
+        background.add_task(gerar_documentos_iniciais_auto, c.id, getattr(cu, "id", None))
     background.add_task(event_bus.emitir_caso_criado, c.id, getattr(cu, 'id', None))
     return c
 
@@ -1171,6 +1183,10 @@ async def aplicar_extracao(
         {"partes": n_partes, "areas": n_areas, "campos": preenchidos,
          "prazos": n_prazos}, cu.id,
     )
+    # FLX-045: re-triagem após materializar a extração — roda sobre a
+    # `descricao_fatos` enriquecida e, como só preenche campos VAZIOS, nunca
+    # sobrescreve revisão humana (idempotente; no-op se nada a fazer).
+    background.add_task(triagem_caso, case_id)
     return {
         "aplicado": True,
         "dry_run": False,

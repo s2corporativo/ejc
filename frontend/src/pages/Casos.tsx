@@ -611,6 +611,9 @@ export default function Casos() {
         if (v !== "" && v !== null && v !== undefined) payload[k] = v;
       }
       payload.client_id = clientId;
+      // FLX-045: abertura por documento/lote adia triagem e kit no backend até
+      // o vínculo da fonte (upload/vincular-caso re-agendam as automações).
+      if (intakeDocumental) payload.aguardar_documentos = true;
       const { data: novo } = await api.post("/cases/", payload);
       const tituloDoc =
         (payload.titulo as string) || novo?.titulo || "Documento importado";

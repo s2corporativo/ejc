@@ -8,7 +8,7 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,8 @@ from app.models.document import Document
 from app.models.document_intake import DocumentIntakeItem
 from app.models.user import User
 from app.routers.entrada_universal import _acesso_batch
+from app.services.case_automacao import gerar_documentos_iniciais_auto
+from app.services.case_intel import triagem_caso
 
 router = APIRouter(prefix="/entrada-universal", tags=["Entrada Universal de Documentos"])
 settings = get_settings()
@@ -96,6 +98,7 @@ def _clonar_documento_local(documento: Document, caso_id: str, client_id: str | 
 async def vincular_lote_ao_caso(
     batch_id: str,
     req: VincularCasoRequest,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -190,6 +193,13 @@ async def vincular_lote_ao_caso(
             created_by=cu.id,
         ))
     await db.commit()
+
+    # FLX-045 — automação após vínculo: caso aberto com `aguardar_documentos`
+    # tem triagem e kit adiados para cá (fonte documental agora existe no caso).
+    # Idempotentes (triagem só preenche campos vazios; kit tem `ja_existia`),
+    # então re-vincular um lote a caso já triado é no-op barato.
+    background.add_task(triagem_caso, caso.id)
+    background.add_task(gerar_documentos_iniciais_auto, caso.id, cu.id)
 
     return {
         "ok": True,

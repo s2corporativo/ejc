@@ -434,6 +434,40 @@ async def test_abertura_de_caso_agenda_gerar_documentos_iniciais_auto():
                  if t[0] is cases_router.gerar_documentos_iniciais_auto), None)
     assert task is not None, "criar() deve agendar gerar_documentos_iniciais_auto"
     assert task[1] == (case_obj.id, "u1")   # (case_id, user_id do criador)
+    # Comportamento padrão (sem aguardar_documentos): as 4 automações agendadas.
+    fns = [t[0] for t in bg.tasks]
+    assert cases_router.automacao_caso in fns
+    assert cases_router.triagem_caso in fns
+    assert cases_router.event_bus.emitir_caso_criado in fns
+    assert len(bg.tasks) == 4
+
+
+async def test_abertura_com_aguardar_documentos_adia_triagem_e_kit():
+    """FLX-045: `aguardar_documentos=True` (abertura por documento) NÃO agenda
+    triagem nem kit na criação — ambos são re-agendados nos pontos de vínculo
+    (upload/vincular-caso). `automacao_caso` e o evento de criação, que não
+    dependem de documento, continuam agendados."""
+    from app.routers import cases as cases_router
+    from app.schemas.case import CaseCreate
+
+    cu = _user(UserRole.advogado, "u1")
+    payload = CaseCreate(titulo="Guarda dos Filhos", area="familia", client_id="cli1",
+                         proxima_acao="Analisar documento importado",
+                         aguardar_documentos=True)
+    db = _FakeDB([_cli(), None, None])
+    bg = _FakeBackground()
+
+    await cases_router.criar(payload=payload, background=bg, db=db, cu=cu)
+
+    fns = [t[0] for t in bg.tasks]
+    assert cases_router.triagem_caso not in fns
+    assert cases_router.gerar_documentos_iniciais_auto not in fns
+    assert cases_router.automacao_caso in fns
+    assert cases_router.event_bus.emitir_caso_criado in fns
+    assert len(bg.tasks) == 2
+    # Retrocompatibilidade: o campo NÃO pode vazar para o INSERT de Case.
+    case_obj = next(o for o in db.added if isinstance(o, Case))
+    assert not hasattr(type(case_obj), "aguardar_documentos")
 
 
 # ── FASE 2: honorários do cadastro na abertura do caso ───────────────────────

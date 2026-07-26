@@ -104,6 +104,9 @@ class CaseCreate(BaseModel):
     has_judicial_process: Optional[bool] = False
     # FASE 2 (opcional): honorários do cadastro → contrato do kit preenchido.
     honorarios: Optional[HonorariosCreate] = None
+    # FLX-045 — abertura por documento: True adia triagem e kit documental até
+    # o vínculo da fonte (upload/lote), em vez de rodar na criação do caso.
+    aguardar_documentos: bool = False
 
     @field_validator("area")
     @classmethod

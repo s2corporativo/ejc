@@ -83,8 +83,9 @@ async def test_upload_com_case_id_vincula_documento_ao_caso(monkeypatch, tmp_pat
                 cu = User(id=uid, role=UserRole.socio)
 
                 # ── Ação: reenvio do arquivo à GED com o case_id (o que o front faz) ──
+                bg = BackgroundTasks()
                 resp = await documents.upload(
-                    background_tasks=BackgroundTasks(),
+                    background_tasks=bg,
                     file=_upload_pdf(),
                     titulo="Peticao importada (IA)",
                     tipo=None,
@@ -96,6 +97,13 @@ async def test_upload_com_case_id_vincula_documento_ao_caso(monkeypatch, tmp_pat
                 )
                 assert resp["detail"] == "Documento enviado"
                 doc_id = resp["id"]
+
+                # FLX-045: upload com case_id re-agenda a automação diferida
+                # (triagem + kit), idempotente — cobre caso aberto com
+                # `aguardar_documentos=True` sem custo extra no fluxo manual.
+                bg_fns = [t.func for t in bg.tasks]
+                assert documents.triagem_caso in bg_fns
+                assert documents.gerar_documentos_iniciais_auto in bg_fns
 
                 # ── Verificação: Document persistido e VINCULADO ao caso ─────
                 doc = (await db.execute(
