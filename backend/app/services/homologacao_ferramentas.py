@@ -22,18 +22,15 @@ FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
     #   /trabalhista-esp/ferramentas/prazos · /trabalhista-esp/ferramentas/prescricao-trabalhista
     #   /transito/ferramentas/prazos-recurso · /transito/ferramentas/pontuacao-cnh
     #   /admin-esp/ferramentas/recurso-multa-transito (delegada à rota canônica de trânsito)
-    # ── COM SELO (respondem, mas o resultado NÃO é homologado) ───────────────
-    "/empresarial/ferramentas/verificar-cade":
-        "prazo de notificação de 30 dias inexistente — o controle de concentrações é PRÉVIO (Lei 12.529/2011 art. 88)",
+    # Onda 2 — Fase C (2026-07): corrigidas e REMOVIDAS da matriz:
+    #   /consumidor/ferramentas/devolucao-dobro · /consumidor/ferramentas/prazos-cdc
+    #   /previdenciario/ferramentas/prazos
+    #   /empresarial/ferramentas/verificar-cade (resposta já corrigida na Onda 1 —
+    #   controle prévio, sem prazo fictício; considerada juridicamente correta)
+    # ── COM SELO (responde, mas o resultado NÃO é homologado) ────────────────
     "/penal/ferramentas/dosimetria":
         "simulador assistido — as frações padrão são referencial jurisprudencial; "
         "conferência e fundamentação pelo advogado são obrigatórias",
-    "/consumidor/ferramentas/devolucao-dobro":
-        "critério de má-fé — o STJ exige apenas conduta contrária à boa-fé objetiva (EAREsp 676.608/RS)",
-    "/consumidor/ferramentas/prazos-cdc":
-        "prescrição genérica de 3 anos para cobrança indevida — o STJ aplica o prazo decenal (EAREsp 738.991/RS)",
-    "/previdenciario/ferramentas/prazos":
-        "marcos de decadência/prescrição inadequados (Lei 8.213/91 art. 103)",
 }
 
 # Subconjunto que fica INDISPONÍVEL (503) até revisão jurídica.

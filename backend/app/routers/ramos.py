@@ -363,10 +363,15 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
                        "para notificar — a operação NÃO pode ser consumada antes da decisão "
                        "do CADE, sob pena de gun jumping (nulidade e multa, art. 88 §3º).")
 
+    fontes_cade = [
+        "Lei 12.529/2011 art. 88, I-III e §§2º-3º",
+        "Portaria Interministerial MJ/MF nº 994/2012 (atualização dos limiares)",
+    ]
+    vigencia_cade = "Lei 12.529/2011 · limiares da Portaria 994/2012, vigentes desde 30/05/2012"
     if not segundo_informado:
         # Sem o faturamento do 2º grupo é impossível confirmar o inciso II. Em vez
         # de um falso negativo, devolvemos estado pendente (retrocompat. c/ API).
-        return _selo_homologacao("/empresarial/ferramentas/verificar-cade", {
+        return {
             "faturamento_informado": valor_faturamento_br,
             "faturamento_outro_grupo": None,
             "valor_operacao": valor_operacao,
@@ -377,11 +382,13 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
             "notificacao_obrigatoria": None,
             "controle_previo": controle_previo,
             "taxa_cade_estimada": "N/A",
-            "base": "Lei 12.529/2011 art. 88, I-III c/c Portaria Interm. MJ/MF 994/2012.",
+            "fontes": fontes_cade,
+            "vigencia_regra": vigencia_cade,
+            "versao_regra": _VERSAO_REGRA,
             "aviso": ("MINUTA. Informe o faturamento do 2º grupo envolvido para avaliar o "
                       "art. 88 (limiar de R$ 75 mi do inciso II). Análise de enquadramento "
                       "deve ser confirmada por especialista antitruste."),
-        })
+        }
 
     # Cumulativos mas NÃO posicionais: um grupo ≥ 750 mi E outro ≥ 75 mi (art. 88,
     # I e II), avaliando por max/min dos dois faturamentos informados.
@@ -390,7 +397,7 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
     grupo_maior_atinge = maior >= limiar_grupo_maior
     grupo_menor_atinge = menor >= limiar_grupo_menor
     obrigatorio = grupo_maior_atinge and grupo_menor_atinge
-    return _selo_homologacao("/empresarial/ferramentas/verificar-cade", {
+    return {
         "faturamento_informado": valor_faturamento_br,
         "faturamento_outro_grupo": valor_faturamento_outro_grupo,
         "valor_operacao": valor_operacao,
@@ -403,9 +410,11 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
         # Taxa (TFPP) de referência — NÃO é leitura da tabela CADE vigente; valor
         # fixo de orientação, sujeito a reajuste. Confirmar na tabela CADE atual.
         "taxa_cade_estimada": "~R$ 85.000 (estimativa de referência — confirmar tabela CADE vigente)" if obrigatorio else "N/A",
-        "base": "Lei 12.529/2011 art. 88, I-III c/c Portaria Interm. MJ/MF 994/2012.",
+        "fontes": fontes_cade,
+        "vigencia_regra": vigencia_cade,
+        "versao_regra": _VERSAO_REGRA,
         "aviso": "MINUTA. Análise de enquadramento deve ser confirmada por especialista antitruste.",
-    })
+    }
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1421,67 +1430,220 @@ def _prescricao_penal_consolidada(
 # ── Ferramentas Consumidor ────────────────────────────────────────────────────
 @router.get("/consumidor/ferramentas/devolucao-dobro")
 async def consumidor_devolucao_dobro(
-    valor_cobrado: float,
-    houve_ma_fe: str = "sim",
+    valor_cobrado_indevidamente: float = Query(..., gt=0),
+    houve_pagamento: str = Query(..., description="sim | nao — a repetição pressupõe PAGAMENTO"),
+    cobranca_contraria_boa_fe_objetiva: str = Query(..., description="sim | nao"),
+    engano_justificavel: str = Query(..., description="sim | nao"),
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Repetição em dobro do indébito (CDC art. 42 §ú)."""
-    ma_fe = _parse_sim_nao(houve_ma_fe, "houve_ma_fe")
-    return _selo_homologacao("/consumidor/ferramentas/devolucao-dobro", {
-        "valor_cobrado": valor_cobrado,
-        "restituicao": round(valor_cobrado * 2, 2) if ma_fe else round(valor_cobrado, 2),
-        "aplica_dobro": ma_fe,
-        "observacao": "Dobro do valor pago indevidamente (+ correção e juros)." if ma_fe
-                      else "Engano justificável afasta o dobro (restituição simples) — STJ.",
-        "base": "CDC art. 42 §ú; STJ EAREsp 676.608 (modulação 30/03/2021).",
-        "aviso": "MINUTA — revisão humana obrigatória.",
-    })
+    """
+    Repetição em dobro do indébito — CDC art. 42 §ún. c/c STJ EAREsp 676.608/RS:
+    o dobro NÃO exige má-fé; basta a cobrança indevida contrária à boa-fé OBJETIVA,
+    salvo engano justificável (restituição simples). Sem pagamento não há repetição
+    (apenas discussão da cobrança/dano). MINUTA — revisão humana obrigatória.
+    """
+    if valor_cobrado_indevidamente <= 0:
+        raise HTTPException(422, "valor_cobrado_indevidamente deve ser maior que zero.")
+    pagou = _parse_sim_nao(houve_pagamento, "houve_pagamento")
+    contraria = _parse_sim_nao(cobranca_contraria_boa_fe_objetiva, "cobranca_contraria_boa_fe_objetiva")
+    engano = _parse_sim_nao(engano_justificavel, "engano_justificavel")
+    analise = [
+        {"requisito": "Pagamento do valor cobrado (a repetição pressupõe quantia PAGA em excesso)",
+         "base": "CDC art. 42 §ún. — 'cobrado em quantia indevida ... o que pagou em excesso'",
+         "atendido": pagou},
+        {"requisito": "Cobrança contrária à boa-fé OBJETIVA (não se exige má-fé subjetiva)",
+         "base": "STJ EAREsp 676.608/RS (Corte Especial)",
+         "atendido": contraria},
+        {"requisito": "Ausência de engano justificável",
+         "base": "CDC art. 42 §ún., parte final",
+         "atendido": not engano},
+    ]
+    if not pagou:
+        resultado, restituicao = "sem_repeticao", 0.0
+        conclusao = ("Sem pagamento não há repetição de indébito (simples ou em dobro): "
+                     "cabe discutir a cobrança indevida e eventuais danos (CDC arts. 6º VI e 71).")
+    elif contraria and not engano:
+        resultado, restituicao = "dobro", round(valor_cobrado_indevidamente * 2, 2)
+        conclusao = ("Restituição em DOBRO do que foi pago em excesso (+ correção monetária e "
+                     "juros): cobrança contrária à boa-fé objetiva sem engano justificável — "
+                     "independe de má-fé (EAREsp 676.608/RS).")
+    else:
+        resultado, restituicao = "simples", round(valor_cobrado_indevidamente, 2)
+        conclusao = ("Restituição SIMPLES: o engano justificável (ou a ausência de contrariedade "
+                     "à boa-fé objetiva) afasta o dobro (CDC art. 42 §ún., parte final).")
+    return {
+        "valor_cobrado_indevidamente": valor_cobrado_indevidamente,
+        "analise_requisitos": analise,
+        "resultado": resultado,
+        "restituicao_estimada": restituicao,
+        "conclusao": conclusao,
+        "nota_modulacao_temporal": ("EAREsp 676.608/RS (modulação): a dispensa de má-fé vale para "
+                                    "cobranças POSTERIORES a 30/03/2021; para pagamentos "
+                                    "anteriores, a jurisprudência então vigente exigia má-fé."),
+        "fontes": [
+            "CDC (Lei 8.078/90) art. 42 §ún.",
+            "STJ EAREsp 676.608/RS (Corte Especial, j. 21/10/2020 — modulação 30/03/2021)",
+        ],
+        "vigencia_regra": "CDC art. 42 §ún. · tese do EAREsp 676.608/RS para cobranças após 30/03/2021",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": "MINUTA — revisão humana obrigatória. Valores sem correção monetária e juros.",
+    }
+
+
+_PRETENSOES_CDC = {
+    "vicio_aparente_nao_duravel": {
+        "instituto": "decadência", "dias": 30, "anos": None,
+        "termo_inicial": "entrega efetiva do produto ou término da execução do serviço",
+        "base": "CDC art. 26 I e §1º",
+    },
+    "vicio_aparente_duravel": {
+        "instituto": "decadência", "dias": 90, "anos": None,
+        "termo_inicial": "entrega efetiva do produto ou término da execução do serviço",
+        "base": "CDC art. 26 II e §1º",
+    },
+    "vicio_oculto": {
+        "instituto": "decadência", "dias": None, "anos": None,   # 30/90 conforme durabilidade
+        "termo_inicial": "momento em que o defeito ficar EVIDENCIADO (aparecimento do vício)",
+        "base": "CDC art. 26 §3º",
+    },
+    "acidente_de_consumo": {
+        "instituto": "prescrição", "dias": None, "anos": 5,
+        "termo_inicial": "conhecimento do DANO e de sua AUTORIA (fato do produto/serviço)",
+        "base": "CDC art. 27",
+    },
+    "repeticao_indebito_contratual": {
+        "instituto": "prescrição", "dias": None, "anos": 10,
+        "termo_inicial": "pagamento indevido (cada parcela paga)",
+        "base": "CC art. 205 — prazo DECENAL (STJ EAREsp 738.991/RS, Corte Especial)",
+    },
+}
 
 
 @router.get("/consumidor/ferramentas/prazos-cdc")
 async def consumidor_prazos_cdc(
-    data_fato: date,
-    tipo: str = "vicio_duravel",
+    pretensao: Literal["vicio_aparente_nao_duravel", "vicio_aparente_duravel",
+                       "vicio_oculto", "acidente_de_consumo",
+                       "repeticao_indebito_contratual"],
+    data_marco: date = Query(..., description="Data do TERMO INICIAL correto da pretensão"),
+    bem_duravel: Optional[str] = None,   # sim|nao — obrigatório para vicio_oculto (30 ou 90 dias)
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Decadência/prescrição e arrependimento no CDC."""
-    mapa = {
-        "vicio_duravel":     (90, "dias", "Decadência — vício de produto durável (CDC art. 26 II)."),
-        "vicio_nao_duravel": (30, "dias", "Decadência — não durável (art. 26 I)."),
-        "arrependimento":    (7,  "dias", "Arrependimento — compra fora do estabelecimento (art. 49)."),
-        "fato":              (5,  "anos", "Prescrição — fato do produto/serviço (art. 27)."),
-        "cobranca_indevida": (3,  "anos", "Prescrição — cobrança indevida (CC art. 206 §3)."),
+    """
+    Decadência/prescrição do consumidor — a PRETENSÃO define instituto, prazo e
+    termo inicial: vício aparente 30/90 dias da entrega (CDC art. 26 I-II e §1º);
+    vício oculto conta do APARECIMENTO do defeito (art. 26 §3º); acidente de
+    consumo 5 anos do conhecimento do dano e da autoria (art. 27); repetição de
+    indébito contratual: prescrição DECENAL (CC art. 205 — EAREsp 738.991/RS).
+    MINUTA — revisão humana obrigatória.
+    """
+    if pretensao not in _PRETENSOES_CDC:
+        raise HTTPException(422, f"Pretensão inválida: '{pretensao}'. Use: {list(_PRETENSOES_CDC)}")
+    regra = dict(_PRETENSOES_CDC[pretensao])
+    if pretensao == "vicio_oculto":
+        if bem_duravel is None:
+            raise HTTPException(422, (
+                "Para vício OCULTO informe bem_duravel=sim|nao — a decadência é de 90 dias "
+                "(durável) ou 30 dias (não durável), contada do aparecimento do defeito "
+                "(CDC art. 26 §3º)."))
+        regra["dias"] = 90 if _parse_sim_nao(bem_duravel, "bem_duravel") else 30
+    # Prazos materiais (decadência/prescrição): contagem simples, SEM prorrogação
+    # automática para dia útil.
+    if regra["dias"] is not None:
+        data_limite = data_marco + timedelta(days=regra["dias"])
+        prazo_desc = f"{regra['dias']} dias"
+    else:
+        data_limite = _add_anos_data(data_marco, regra["anos"])
+        prazo_desc = f"{regra['anos']} anos"
+    dias_rest = (data_limite - date.today()).days
+    return {
+        "pretensao": pretensao,
+        "instituto": regra["instituto"],
+        "prazo": prazo_desc,
+        "termo_inicial_correto": regra["termo_inicial"],
+        "data_marco": data_marco,
+        "data_limite": data_limite,
+        "dias_restantes": dias_rest,
+        "expirado": dias_rest < 0,
+        "urgente": 0 <= dias_rest <= 15,
+        "base_legal": regra["base"],
+        "nota_causas_obstativas": ("Obstam a DECADÊNCIA do art. 26 (§2º): a reclamação "
+                                   "comprovada ao fornecedor, até resposta negativa transmitida "
+                                   "de forma inequívoca (I), e a instauração de inquérito civil, "
+                                   "até seu encerramento (III)."),
+        "fontes": [
+            "CDC (Lei 8.078/90) arts. 26 (I-III, §§1º-3º) e 27",
+            "CC art. 205 · STJ EAREsp 738.991/RS (repetição de indébito contratual — decenal)",
+        ],
+        "vigencia_regra": "CDC arts. 26-27 · tese do EAREsp 738.991/RS (Corte Especial, 2023)",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Confirme o termo inicial no caso "
+                  "concreto e eventuais causas obstativas/suspensivas."),
     }
-    if tipo not in mapa:
-        raise HTTPException(422, f"Tipo de prazo inválido: '{tipo}'. Use: {list(mapa)}")
-    n, unid, desc = mapa[tipo]
-    prazo = prazo_dias_corridos(data_fato, n) if unid == "dias" else _add_anos_data(data_fato, n)
-    dias_rest = (prazo - date.today()).days
-    return _selo_homologacao("/consumidor/ferramentas/prazos-cdc", {
-        "tipo": tipo, "descricao": desc, "data_fato": data_fato, "prazo_final": prazo,
-        "dias_restantes": dias_rest, "expirado": dias_rest < 0, "urgente": 0 <= dias_rest <= 15,
-        "base": "CDC arts. 26, 27, 49.", "aviso": "MINUTA — revisão humana obrigatória.",
-    })
 
 
 # ── Ferramentas Família ───────────────────────────────────────────────────────
 @router.get("/familia/ferramentas/debito-alimentos")
 async def familia_debito_alimentos(
-    valor_mensal: float,
-    meses_atraso: int,
+    datas_vencimento_em_aberto: str = Query(
+        ..., description="Datas ISO de vencimento das parcelas em aberto, separadas por vírgula"),
+    data_ajuizamento_execucao: date = Query(...),
+    valor_parcela: Optional[float] = None,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Débito de pensão e rito de execução (prisão civil x penhora)."""
-    return {
-        "valor_mensal": valor_mensal, "meses_atraso": meses_atraso,
-        "debito_total": round(valor_mensal * meses_atraso, 2),
-        "rito_prisao_civil_3_ultimas": round(valor_mensal * min(meses_atraso, 3), 2),
-        "cabe_prisao": meses_atraso >= 1,
-        "observacao": "Prisão civil (CPC art. 528 §3) cabe sobre as 3 últimas parcelas + vincendas "
-                      "(Súmula 309 STJ); demais parcelas seguem rito de penhora (art. 528 §8).",
-        "base": "CPC art. 528 §3 e §8; Súmula 309 STJ.",
-        "aviso": "MINUTA — revisão humana obrigatória. Não inclui correção/juros.",
+    """
+    Rito da execução de alimentos (CPC art. 528 §7º; Súm. 309 STJ): autorizam a
+    PRISÃO civil as 3 prestações ANTERIORES ao ajuizamento e as que VENCEREM no
+    curso do processo; parcelas mais antigas seguem o rito da EXPROPRIAÇÃO
+    (penhora — art. 528 §8º). MINUTA — revisão humana obrigatória.
+    """
+    parcelas: list[date] = []
+    for token in (datas_vencimento_em_aberto or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            parcelas.append(date.fromisoformat(token))
+        except ValueError:
+            raise HTTPException(422, (
+                f"Data de vencimento inválida: '{token}'. Use datas ISO (AAAA-MM-DD) "
+                "separadas por vírgula — ex.: 2026-03-05,2026-04-05."))
+    if not parcelas:
+        raise HTTPException(422, "Informe ao menos uma data de vencimento em datas_vencimento_em_aberto.")
+    if valor_parcela is not None and valor_parcela <= 0:
+        raise HTTPException(422, "valor_parcela deve ser maior que zero.")
+    parcelas.sort()
+    corte = _add_meses_data(data_ajuizamento_execucao, -3)
+    rito_prisao = [p for p in parcelas if p >= corte]        # 3 meses anteriores + vincendas
+    rito_expropriacao = [p for p in parcelas if p < corte]
+    out: dict = {
+        "data_ajuizamento_execucao": data_ajuizamento_execucao,
+        "marco_corte_3_meses": corte,
+        "parcelas_rito_prisao": rito_prisao,
+        "parcelas_rito_expropriacao": rito_expropriacao,
+        "descricao_ritos": {
+            "prisao": ("Parcelas vencidas nos 3 meses anteriores ao ajuizamento + as vencidas no "
+                       "curso do processo — cumprimento sob pena de prisão (CPC art. 528 §§3º e "
+                       "7º; Súm. 309 STJ)."),
+            "expropriacao": ("Parcelas anteriores ao trimestre que precede o ajuizamento — "
+                             "execução por penhora/expropriação (CPC art. 528 §8º c/c art. 831)."),
+        },
+        "fontes": [
+            "CPC (Lei 13.105/2015) art. 528 §§3º, 7º e 8º",
+            "Súmula 309 STJ",
+        ],
+        "vigencia_regra": "CPC/2015 art. 528 · Súm. 309 STJ (redação de 2006)",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Valores sem correção monetária e juros; "
+                  "as parcelas vincendas no curso do processo também autorizam a prisão."),
     }
+    if valor_parcela is not None:
+        out["valores"] = {
+            "valor_parcela": valor_parcela,
+            "debito_rito_prisao": round(valor_parcela * len(rito_prisao), 2),
+            "debito_rito_expropriacao": round(valor_parcela * len(rito_expropriacao), 2),
+            "debito_total": round(valor_parcela * len(parcelas), 2),
+        }
+    return out
 
 
 # ── Ferramentas Imobiliário ───────────────────────────────────────────────────
@@ -1505,23 +1667,34 @@ async def imobiliario_reajuste_aluguel(
 @router.get("/imobiliario/ferramentas/prazos-despejo")
 async def imobiliario_prazos_despejo(
     data_citacao: date,
+    forma_comunicacao: Literal["citacao_pessoal", "citacao_ficta"],
     fundamento: str = "falta_pagamento",
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Prazos da ação de despejo e purga da mora (Lei 8.245/91)."""
+    """Prazos da ação de despejo e purga da mora (Lei 8.245/91 art. 62 II:
+    15 dias contados da CITAÇÃO para purga)."""
     mapa = {
-        "falta_pagamento": "Falta de pagamento — purga da mora em 15 dias (art. 62 II).",
+        "falta_pagamento": "Falta de pagamento — purga da mora em 15 dias da citação (art. 62 II).",
         "denuncia_vazia":  "Denúncia vazia — desocupação em 15 dias após sentença (art. 63).",
         "infracao":        "Infração contratual/legal (art. 9).",
     }
     if fundamento not in mapa:
         raise HTTPException(422, f"Fundamento inválido: '{fundamento}'. Use: {list(mapa)}")
+    if forma_comunicacao not in ("citacao_pessoal", "citacao_ficta"):
+        raise HTTPException(422, "forma_comunicacao inválida. Use: citacao_pessoal | citacao_ficta")
     return {
         "data_citacao": data_citacao, "fundamento": fundamento,
+        "forma_comunicacao": forma_comunicacao,
         "prazo_contestacao": prazo_dias_uteis(data_citacao, 15),
         "prazo_purga_mora": prazo_dias_corridos(data_citacao, 15) if fundamento == "falta_pagamento" else None,
         "descricao": mapa[fundamento],
-        "base": "Lei 8.245/91 arts. 9, 59-63; CPC art. 335.",
+        "nota_termo_inicial": ("O prazo de purga conta da CITAÇÃO efetivada no caso concreto "
+                               "(Lei 8.245/91 art. 62 II). Em citação FICTA (edital/hora certa), "
+                               "atenção ao aperfeiçoamento do ato e à atuação do curador especial "
+                               "(CPC arts. 72 II, 252-259) — o dies a quo depende da efetivação."),
+        "fontes": ["Lei 8.245/91 arts. 9º, 59-63", "CPC arts. 72 II, 231, 252-259 e 335"],
+        "vigencia_regra": "Lei 8.245/91 art. 62 (red. Lei 12.112/2009) · CPC/2015",
+        "versao_regra": _VERSAO_REGRA,
         "aviso": "MINUTA — revisão humana obrigatória.",
     }
 
@@ -1529,26 +1702,93 @@ async def imobiliario_prazos_despejo(
 # ── Ferramentas Previdenciário ────────────────────────────────────────────────
 @router.get("/previdenciario/ferramentas/prazos")
 async def previdenciario_prazos(
-    data_indeferimento: date,
-    tipo: str = "recurso_administrativo",
+    natureza: Literal["revisao_ato_concessao", "recurso_administrativo", "parcelas_atrasadas"],
+    data_primeiro_pagamento: Optional[date] = None,   # revisão: 1º pagamento do benefício
+    data_ciencia_decisao: Optional[date] = None,      # recurso: ciência da decisão do INSS
+    data_ajuizamento: Optional[date] = None,          # parcelas: default hoje
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Prazos previdenciários (recurso CRPS, decadência e prescrição)."""
-    mapa = {
-        "recurso_administrativo": (30, "dias", "Recurso ao CRPS contra indeferimento (Dec. 3.048/99)."),
-        "decadencia_revisao":     (10, "anos", "Decadência para revisão do ato de concessão (Lei 8.213/91 art. 103)."),
-        "prescricao_parcelas":    (5,  "anos", "Prescrição das parcelas vencidas (art. 103 §ú)."),
+    """
+    Motor de marcos previdenciários — cada natureza tem marco PRÓPRIO:
+    • revisão do ato de concessão: DECADÊNCIA de 10 anos do dia 1º do mês seguinte
+      ao PRIMEIRO PAGAMENTO (Lei 8.213/91 art. 103, red. Lei 13.846/2019);
+    • recurso administrativo: 30 dias da CIÊNCIA da decisão (Dec. 3.048/99 art. 305);
+    • parcelas atrasadas: prescrição quinquenal MÓVEL — prescritas as parcelas
+      anteriores aos 5 anos do ajuizamento (art. 103 §ún.; Súm. 85 STJ) — não há
+      "data final única". MINUTA — revisão humana obrigatória.
+    """
+    datas = {
+        "revisao_ato_concessao": ("data_primeiro_pagamento", data_primeiro_pagamento),
+        "recurso_administrativo": ("data_ciencia_decisao", data_ciencia_decisao),
+        "parcelas_atrasadas": ("data_ajuizamento", data_ajuizamento),
     }
-    if tipo not in mapa:
-        raise HTTPException(422, f"Tipo de prazo inválido: '{tipo}'. Use: {list(mapa)}")
-    n, unid, desc = mapa[tipo]
-    prazo = prazo_dias_corridos(data_indeferimento, n) if unid == "dias" else _add_anos_data(data_indeferimento, n)
-    dias_rest = (prazo - date.today()).days
-    return _selo_homologacao("/previdenciario/ferramentas/prazos", {
-        "tipo": tipo, "descricao": desc, "data_base": data_indeferimento, "prazo_final": prazo,
-        "dias_restantes": dias_rest, "expirado": dias_rest < 0,
-        "base": "Lei 8.213/91 art. 103; Dec. 3.048/99.", "aviso": "MINUTA — revisão humana obrigatória.",
-    })
+    if natureza not in datas:
+        raise HTTPException(422, f"Natureza inválida: '{natureza}'. Use: {list(datas)}")
+    incompativeis = [nome for nat, (nome, valor) in datas.items()
+                     if valor is not None and nat != natureza]
+    if incompativeis:
+        raise HTTPException(422, (
+            f"Data(s) incompatível(is) com a natureza '{natureza}': {', '.join(incompativeis)}. "
+            f"Esta natureza usa apenas {datas[natureza][0]}."))
+    comuns = {
+        "natureza": natureza,
+        "fontes": [
+            "Lei 8.213/91 art. 103, caput (red. Lei 13.846/2019) e §ún.",
+            "Decreto 3.048/99 art. 305 (recurso ao CRPS)",
+            "Súmula 85 STJ (relação de trato sucessivo — prescrição do fundo não ocorre)",
+        ],
+        "vigencia_regra": "Lei 8.213/91 art. 103 com a redação da Lei 13.846/2019 (vigente desde 18/06/2019)",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Verificar suspensões, menoridade "
+                  "(prescrição não corre — CC art. 198 I) e o caso concreto."),
+    }
+    if natureza == "revisao_ato_concessao":
+        if data_primeiro_pagamento is None:
+            raise HTTPException(422, ("A revisão do ato de concessão exige data_primeiro_pagamento "
+                                      "(Lei 8.213/91 art. 103: decadência de 10 anos do dia 1º do "
+                                      "mês seguinte ao primeiro pagamento)."))
+        ano = data_primeiro_pagamento.year + (1 if data_primeiro_pagamento.month == 12 else 0)
+        mes = 1 if data_primeiro_pagamento.month == 12 else data_primeiro_pagamento.month + 1
+        marco = date(ano, mes, 1)
+        limite = _add_anos_data(marco, 10)
+        return {
+            "instituto": "decadência (10 anos)",
+            "marco_inicial": f"dia 1º do mês seguinte ao primeiro pagamento ({marco.isoformat()})",
+            "data_limite": limite,
+            "dias_restantes": max((limite - date.today()).days, 0),
+            "expirado": date.today() > limite,
+            "base": "Lei 8.213/91 art. 103 caput (red. Lei 13.846/2019)",
+            **comuns,
+        }
+    if natureza == "recurso_administrativo":
+        if data_ciencia_decisao is None:
+            raise HTTPException(422, ("O recurso administrativo exige data_ciencia_decisao "
+                                      "(30 dias da ciência — Dec. 3.048/99 art. 305)."))
+        limite = prazo_dias_corridos(data_ciencia_decisao, 30)
+        return {
+            "instituto": "prazo recursal administrativo (30 dias)",
+            "marco_inicial": "ciência da decisão do INSS",
+            "data_limite": limite,
+            "dias_restantes": max((limite - date.today()).days, 0),
+            "expirado": date.today() > limite,
+            "base": "Decreto 3.048/99 art. 305 · Lei 9.784/99 art. 66 §1º (prorrogação p/ dia útil)",
+            **comuns,
+        }
+    # parcelas_atrasadas — prescrição quinquenal MÓVEL
+    ajuizamento = data_ajuizamento or date.today()
+    limite_retroativo = _add_anos_data(ajuizamento, -5)
+    return {
+        "instituto": "prescrição quinquenal MÓVEL das parcelas",
+        "data_ajuizamento": ajuizamento,
+        "data_ajuizamento_presumida_hoje": data_ajuizamento is None,
+        "limite_retroativo": limite_retroativo,
+        "descricao": (f"Ajuizando em {ajuizamento.isoformat()}, são exigíveis as parcelas vencidas "
+                      f"a partir de {limite_retroativo.isoformat()}; as anteriores estão prescritas. "
+                      "NÃO há data final única: a janela de 5 anos se move com a data do "
+                      "ajuizamento (trato sucessivo — Súm. 85 STJ)."),
+        "base": "Lei 8.213/91 art. 103 §ún. · Súm. 85 STJ",
+        **comuns,
+    }
 
 
 # ── Ferramentas Digital / LGPD ────────────────────────────────────────────────
@@ -1571,24 +1811,39 @@ async def lgpd_multa(
 
 @router.get("/digital_lgpd/ferramentas/prazos-lgpd")
 async def lgpd_prazos(
-    data_evento: date,
-    tipo: str = "resposta_titular",
+    tipo: Literal["resposta_titular", "incidente_anpd"] = "resposta_titular",
+    data_evento: Optional[date] = None,          # resposta_titular: data do requerimento do titular
+    data_conhecimento: Optional[date] = None,    # incidente: data do CONHECIMENTO do incidente
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Prazos da LGPD (resposta ao titular e comunicação de incidente à ANPD)."""
-    mapa = {
-        "resposta_titular": (15, False, "Resposta ao titular sobre tratamento (LGPD art. 19 II)."),
-        "incidente_anpd":   (3,  True,  "Comunicação de incidente à ANPD (Res. ANPD CD/15 2024: 3 dias úteis)."),
-    }
-    if tipo not in mapa:
-        raise HTTPException(422, f"Tipo de prazo inválido: '{tipo}'. Use: {list(mapa)}")
-    n, uteis, desc = mapa[tipo]
-    prazo = prazo_dias_uteis(data_evento, n) if uteis else prazo_dias_corridos(data_evento, n)
+    """Prazos da LGPD: resposta ao titular (15 dias — art. 19 II) e comunicação de
+    incidente à ANPD em 3 dias ÚTEIS do CONHECIMENTO (Res. CD/ANPD nº 15/2024)."""
+    if tipo not in ("resposta_titular", "incidente_anpd"):
+        raise HTTPException(422, "Tipo inválido. Use: resposta_titular | incidente_anpd")
+    if tipo == "incidente_anpd":
+        if data_conhecimento is None:
+            raise HTTPException(422, ("Para incidente informe data_conhecimento — o prazo de 3 "
+                                      "dias ÚTEIS conta do CONHECIMENTO do incidente pelo "
+                                      "controlador (Res. CD/ANPD nº 15/2024 art. 6º)."))
+        marco, prazo = data_conhecimento, prazo_dias_uteis(data_conhecimento, 3)
+        desc = "Comunicação de incidente de segurança à ANPD e ao titular — 3 dias úteis do conhecimento."
+        base = "LGPD art. 48 · Res. CD/ANPD nº 15/2024"
+    else:
+        if data_evento is None:
+            raise HTTPException(422, "Para resposta ao titular informe data_evento (data do requerimento).")
+        marco, prazo = data_evento, prazo_dias_corridos(data_evento, 15)
+        desc = "Resposta ao titular sobre o tratamento de dados — 15 dias do requerimento."
+        base = "LGPD art. 19 II"
     dias_rest = (prazo - date.today()).days
     return {
-        "tipo": tipo, "descricao": desc, "data_evento": data_evento, "prazo_final": prazo,
+        "tipo": tipo, "descricao": desc, "data_marco": marco, "prazo_final": prazo,
         "dias_restantes": dias_rest, "expirado": dias_rest < 0,
-        "base": "LGPD art. 19; Resolução ANPD CD/15 2024.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "base": base,
+        "versao_norma": "Resolução CD/ANPD nº 15, de 24/04/2024 (comunicação de incidentes)",
+        "fontes": ["LGPD (Lei 13.709/2018) arts. 19 II e 48", "Res. CD/ANPD nº 15/2024"],
+        "vigencia_regra": "LGPD arts. 19/48 · Res. CD/ANPD nº 15/2024 (vigente desde 30/04/2024)",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": "MINUTA — revisão humana obrigatória.",
     }
 
 
@@ -1597,15 +1852,15 @@ async def lgpd_prazos(
 async def previdenciario_tempo_contribuicao(
     idade: int,
     tempo_contribuicao_anos: float,
-    sexo: str = "M",
+    sexo: Literal["F", "M"] = "M",
     ano: int = 2026,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Regra de transição por pontos (EC 103/2019 art. 15). Pontos = idade + tempo."""
-    s = (sexo or "").strip().upper()
-    if s not in ("M", "F", "MASCULINO", "FEMININO"):
-        raise HTTPException(422, f"Sexo inválido: '{sexo}'. Use: M | F")
-    homem = s.startswith("M")
+    # Fim do startswith("M") — "Mulher" era tratado como masculino. Domínio fechado F|M.
+    if sexo not in ("F", "M"):
+        raise HTTPException(422, f"Sexo inválido: '{sexo}'. Use exatamente: F | M")
+    homem = sexo == "M"
     # 2019: H 96 / M 86, +1 ponto por ano. Teto H 105 (2028), M 100 (2033).
     base = 96 if homem else 86
     teto = 105 if homem else 100
@@ -1626,45 +1881,119 @@ async def previdenciario_tempo_contribuicao(
 
 @router.get("/previdenciario/ferramentas/carencia")
 async def previdenciario_carencia(
-    meses_contribuicao: int,
-    beneficio: str = "aposentadoria",
+    beneficio: Literal["aposentadoria_idade_tc", "auxilio_incapacidade", "salario_maternidade"],
+    categoria: Literal["empregada", "contribuinte_individual_facultativa", "segurada_especial"],
+    meses_contribuicao: int = Query(..., ge=0),
+    decorre_acidente_ou_doenca_isenta: str = Query(
+        ..., description="sim | nao — acidente de qualquer natureza ou doença da lista (art. 26 II)"),
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Carência exigida por benefício (Lei 8.213/91 art. 25-26)."""
-    mapa = {
-        "aposentadoria":        (180, "Aposentadoria por idade/tempo (art. 25 II)."),
-        "auxilio_doenca":       (12,  "Auxílio por incapacidade temporária (art. 25 I)."),
-        "aposentadoria_invalidez": (12, "Aposentadoria por incapacidade permanente (art. 25 I)."),
-        "salario_maternidade":  (10,  "Salário-maternidade — contribuinte individual/facultativa (art. 25 III)."),
-        "auxilio_acidente":     (0,   "Independe de carência (art. 26 I)."),
-        "pensao_morte":         (0,   "Independe de carência (art. 26 I)."),
-    }
-    if beneficio not in mapa:
-        raise HTTPException(422, f"Benefício inválido: '{beneficio}'. Use: {list(mapa)}")
-    exigida, desc = mapa[beneficio]
+    """
+    Carência por benefício e categoria (Lei 8.213/91 arts. 24-27):
+    aposentadorias 180 contribuições (art. 25 II); auxílio por incapacidade 12
+    (art. 25 I), ISENTO se decorrente de acidente de qualquer natureza ou doença
+    da lista (art. 26 II); salário-maternidade: ISENTO para empregada (art. 26 VI)
+    e 10 contribuições para CI/facultativa/segurada especial (art. 25 III).
+    MINUTA — revisão humana obrigatória.
+    """
+    beneficios_validos = ("aposentadoria_idade_tc", "auxilio_incapacidade", "salario_maternidade")
+    categorias_validas = ("empregada", "contribuinte_individual_facultativa", "segurada_especial")
+    if beneficio not in beneficios_validos:
+        raise HTTPException(422, f"Benefício inválido: '{beneficio}'. Use: {list(beneficios_validos)}")
+    if categoria not in categorias_validas:
+        raise HTTPException(422, f"Categoria inválida: '{categoria}'. Use: {list(categorias_validas)}")
+    if meses_contribuicao < 0:
+        raise HTTPException(422, "meses_contribuicao deve ser ≥ 0.")
+    isenta_acidente = _parse_sim_nao(decorre_acidente_ou_doenca_isenta,
+                                     "decorre_acidente_ou_doenca_isenta")
+    if beneficio == "aposentadoria_idade_tc":
+        exigida, base = 180, "Lei 8.213/91 art. 25 II — 180 contribuições mensais"
+        desc = "Aposentadoria por idade/tempo de contribuição."
+    elif beneficio == "auxilio_incapacidade":
+        if isenta_acidente:
+            exigida, base = 0, "Lei 8.213/91 art. 26 II — ISENTO (acidente de qualquer natureza ou doença da lista)"
+            desc = "Auxílio por incapacidade — carência dispensada."
+        else:
+            exigida, base = 12, "Lei 8.213/91 art. 25 I — 12 contribuições mensais"
+            desc = "Auxílio por incapacidade temporária/permanente."
+    else:   # salario_maternidade
+        if categoria == "empregada":
+            exigida, base = 0, "Lei 8.213/91 art. 26 VI — ISENTO para empregada (e trab. avulsa/doméstica)"
+            desc = "Salário-maternidade — segurada empregada."
+        else:
+            exigida, base = 10, "Lei 8.213/91 art. 25 III — 10 contribuições mensais"
+            desc = "Salário-maternidade — CI/facultativa/segurada especial (comprovação de atividade p/ especial)."
     return {
-        "beneficio": beneficio, "descricao": desc,
-        "meses_contribuicao": meses_contribuicao, "carencia_exigida": exigida,
+        "beneficio": beneficio,
+        "categoria": categoria,
+        "descricao": desc,
+        "meses_contribuicao": meses_contribuicao,
+        "carencia_exigida": exigida,
         "carencia_cumprida": meses_contribuicao >= exigida,
         "faltam_meses": max(0, exigida - meses_contribuicao),
-        "base": "Lei 8.213/91 arts. 25 e 26.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "base_legal": base,
+        "nota_perda_qualidade": ("Perda da qualidade de segurado: para recontagem, exige-se METADE "
+                                 "da carência do benefício após a nova filiação (Lei 8.213/91 "
+                                 "art. 27-A, red. Lei 13.846/2019)."),
+        "fontes": [
+            "Lei 8.213/91 arts. 24-27 (carência) e 27-A (red. Lei 13.846/2019)",
+        ],
+        "vigencia_regra": "Lei 8.213/91 arts. 24-27-A com a redação da Lei 13.846/2019",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Conferir CNIS, qualidade de segurado na "
+                  "DER e a lista de doenças isentas (Portaria interministerial vigente)."),
     }
 
 
-# ── Família: ITCMD no inventário ──────────────────────────────────────────────
+# ── Família: ITCMD no inventário (sem tabela hardcoded por UF) ────────────────
 @router.get("/familia/ferramentas/itcmd-inventario")
 async def familia_itcmd(
-    valor_monte: float,
-    aliquota_percentual: float = 5.0,
+    valor_monte: float = Query(..., gt=0),
+    uf: str = Query(..., min_length=2, max_length=2, description="UF do fato gerador (2 letras)"),
+    aliquota_percent: float = Query(..., ge=0, le=8,
+                                    description="Alíquota da LEI ESTADUAL da UF na data do fato gerador"),
+    data_fato_gerador: date = Query(..., description="Óbito (causa mortis) ou doação"),
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """ITCMD sobre o monte partilhável (MG: 5% — Lei est. 14.941/03)."""
-    imposto = round(valor_monte * aliquota_percentual / 100, 2)
+    """
+    ITCMD sobre o monte partilhável — SEM alíquota default: a alíquota é a da LEI
+    ESTADUAL da UF vigente na data do fato gerador (Súm. 112 STF: alíquota do tempo
+    da abertura da sucessão), limitada a 8% (Res. Senado 9/1992).
+    MINUTA — revisão humana obrigatória.
+    """
+    uf_norm = (uf or "").strip().upper()
+    if len(uf_norm) != 2 or not uf_norm.isalpha():
+        raise HTTPException(422, "UF inválida — informe a sigla de 2 letras (ex.: MG, SP).")
+    if valor_monte <= 0:
+        raise HTTPException(422, "valor_monte deve ser maior que zero.")
+    if not 0 <= aliquota_percent <= 8:
+        raise HTTPException(422, ("aliquota_percent fora do intervalo 0-8%: o teto nacional do "
+                                  "ITCMD é 8% (Resolução do Senado nº 9/1992). Confira a lei "
+                                  "estadual da UF."))
+    imposto = round(valor_monte * aliquota_percent / 100, 2)
     return {
-        "valor_monte": valor_monte, "aliquota_percentual": aliquota_percentual,
-        "itcmd_devido": imposto, "liquido_herdeiros": round(valor_monte - imposto, 2),
-        "observacao": "Alíquota varia por estado (MG 5%; SP 4%; RJ progressiva). Conferir lei estadual e isenções.",
-        "base": "CTN art. 35; MG Lei 14.941/03.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "uf": uf_norm,
+        "data_fato_gerador": data_fato_gerador,
+        "valor_monte": valor_monte,
+        "aliquota_percent": aliquota_percent,
+        "itcmd_estimado": imposto,
+        "liquido_herdeiros": round(valor_monte - imposto, 2),
+        "nota_aliquota": ("Alíquota INFORMADA pelo usuário — confira a lei estadual da UF "
+                          f"({uf_norm}) vigente em {data_fato_gerador.isoformat()} (Súm. 112 STF: "
+                          "aplica-se a alíquota vigente ao tempo da abertura da sucessão; "
+                          "Súm. 114 STF: exigível só após a homologação do cálculo)."),
+        "nota_base_calculo": ("Base de cálculo, progressividade, isenções e descontos dependem da "
+                              "legislação estadual e da AVALIAÇÃO dos bens — o cálculo real é "
+                              "apurado na declaração do ITCMD do estado."),
+        "fontes": [
+            "CF art. 155 I e §1º · CTN arts. 35-42",
+            "Resolução do Senado Federal nº 9/1992 (teto de 8%)",
+            "Súmulas 112 e 114 STF",
+            "Legislação estadual da UF informada (conferência obrigatória)",
+        ],
+        "vigencia_regra": "Regras gerais CF/CTN · alíquota conforme lei estadual na data do fato gerador",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": "MINUTA — revisão humana obrigatória.",
     }
 
 
@@ -2026,14 +2355,38 @@ async def empresarial_juros_mora(
     }
 
 
-# ── Tributário: multa de mora + atraso ────────────────────────────────────────
+# ── Tributário: multa de mora (regra federal SÓ para ente federal) ────────────
 @router.get("/tributario/ferramentas/multa-mora")
 async def tributario_multa_mora(
-    valor_tributo: float,
-    dias_atraso: int,
+    ente: Literal["federal", "estadual", "municipal"],
+    valor_tributo: float = Query(..., gt=0),
+    dias_atraso: int = Query(..., ge=0),
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Multa de mora 0,33%/dia limitada a 20% (tributos federais — Lei 9.430/96 art. 61)."""
+    """Multa de mora de tributos: FEDERAL = 0,33%/dia limitada a 20% (Lei 9.430/96
+    art. 61). Estadual/municipal: a multa é a da LEI DO ENTE — sem cálculo com a
+    regra federal."""
+    if ente not in ("federal", "estadual", "municipal"):
+        raise HTTPException(422, "Ente inválido. Use: federal | estadual | municipal")
+    if valor_tributo <= 0 or dias_atraso < 0:
+        raise HTTPException(422, "valor_tributo deve ser > 0 e dias_atraso ≥ 0.")
+    comuns = {
+        "ente": ente,
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+    if ente != "federal":
+        return {
+            "calculo": None,
+            "orientacao": (f"Tributo {ente}: a multa de mora é definida pela legislação do "
+                           "PRÓPRIO ente (ex.: MG — Lei 6.763/75; municípios — código tributário "
+                           "municipal). A regra federal de 0,33%/dia (Lei 9.430/96 art. 61) NÃO "
+                           "se aplica. Confira a lei indicada na guia/auto e recalcule."),
+            "fontes": ["Legislação tributária do ente competente (conferência obrigatória)",
+                       "CTN art. 161 (juros de mora — norma geral)"],
+            "vigencia_regra": "Multa conforme a lei do ente na data do vencimento",
+            **comuns,
+        }
     pct = min(0.33 * dias_atraso, 20.0)
     multa = round(valor_tributo * pct / 100, 2)
     return {
@@ -2041,55 +2394,142 @@ async def tributario_multa_mora(
         "percentual_multa": round(pct, 2), "multa_mora": multa,
         "atingiu_teto_20pct": pct >= 20.0,
         "total_sem_juros": round(valor_tributo + multa, 2),
-        "observacao": "Multa de mora de 0,33% por dia de atraso, limitada a 20%. Acrescer juros Selic acumulada (não incluídos).",
-        "base": "Lei 9.430/96 art. 61.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "observacao": ("Multa de mora federal: 0,33% por dia de atraso, limitada a 20%. Acrescer "
+                       "juros Selic acumulada (não incluídos)."),
+        "fontes": ["Lei 9.430/96 art. 61 §§1º-2º"],
+        "vigencia_regra": "Lei 9.430/96 art. 61 — tributos federais, vigente",
+        **comuns,
     }
 
 
-# ── Bancário: juros abusivos (contratada vs média de mercado) ─────────────────
+# ── Bancário: taxa contratada × média BACEN (classificação INDICATIVA) ────────
+# Sem booleano "abusivo sim/não": o STJ afere abusividade caso a caso, tendo a
+# taxa média de mercado como parâmetro (REsp 1.061.530/RS) e 1,5× como
+# REFERENCIAL jurisprudencial, não vinculante.
+_LIMIARES_TAXA_MEDIA = {
+    "abaixo_da_media": "razão < 0,95 (mais de 5% abaixo da média)",
+    "na_media": "razão entre 0,95 e 1,10 (até 10% acima da média)",
+    "acima_da_media": "razão entre 1,10 e 1,50",
+    "substancialmente_acima": "razão > 1,50 — REFERENCIAL jurisprudencial (REsp 1.061.530/RS), não vinculante",
+}
+_COMPARABILIDADE_REQUISITOS = [
+    "mesma MODALIDADE de crédito (série BCB específica)",
+    "mesma DATA/mês de contratação",
+    "perfil do tomador (PF/PJ, risco de crédito)",
+    "garantias oferecidas (consignação, alienação fiduciária etc.)",
+    "prazo da operação",
+    "CET — custo efetivo total (Res. CMN 3.517/2007), não apenas a taxa nominal",
+]
+
+
+def _classificar_taxa_vs_media(contratada: float, media: float) -> dict:
+    if media <= 0 or contratada < 0:
+        raise HTTPException(422, "Taxas inválidas: a média deve ser > 0 e a contratada ≥ 0.")
+    razao = contratada / media
+    if razao < 0.95:
+        classificacao = "abaixo_da_media"
+    elif razao <= 1.10:
+        classificacao = "na_media"
+    elif razao <= 1.50:
+        classificacao = "acima_da_media"
+    else:
+        classificacao = "substancialmente_acima"
+    return {
+        "razao_sobre_media": round(razao, 4),
+        "distancia_percentual": round((razao - 1) * 100, 2),
+        "classificacao_indicativa": classificacao,
+        "limiares_classificacao": _LIMIARES_TAXA_MEDIA,
+        "comparabilidade_requisitos": _COMPARABILIDADE_REQUISITOS,
+    }
+
+
 @router.get("/bancario/ferramentas/juros-abusivos")
 async def bancario_juros_abusivos(
     taxa_contratada_mensal_pct: float,
     taxa_media_bacen_mensal_pct: float,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Compara a taxa contratada com a média de mercado (BACEN) p/ tese revisional."""
-    limite = round(taxa_media_bacen_mensal_pct * 1.5, 4)  # parâmetro usual STJ (1,5x a média)
-    abusiva = taxa_contratada_mensal_pct > limite
-    excesso = round(taxa_contratada_mensal_pct - taxa_media_bacen_mensal_pct, 4)
+    """Compara a taxa contratada com a média de mercado (BACEN) p/ tese revisional —
+    classificação INDICATIVA, sem veredito de abusividade (aferição é casuística)."""
+    comp = _classificar_taxa_vs_media(taxa_contratada_mensal_pct, taxa_media_bacen_mensal_pct)
     return {
         "taxa_contratada": taxa_contratada_mensal_pct,
         "taxa_media_bacen": taxa_media_bacen_mensal_pct,
-        "limite_referencia_1_5x": limite,
-        "indicio_abusividade": abusiva,
-        "excesso_pontos_pct": excesso,
-        "observacao": "STJ não fixa teto rígido; abusividade aferida caso a caso, sendo a taxa média do BACEN o parâmetro (REsp 1.061.530). 1,5x é referência usual, não regra absoluta.",
-        "base": "STJ REsp 1.061.530 (repetitivo); Súmula 530 STJ.",
-        "aviso": "MINUTA — revisão humana obrigatória. Consultar a taxa média BACEN da modalidade/data.",
+        **comp,
+        "observacao": ("O STJ NÃO fixa teto rígido: a abusividade é aferida caso a caso, com a "
+                       "taxa média do BACEN como parâmetro (REsp 1.061.530/RS); 1,5× a média é "
+                       "referencial usual, não regra. A comparação só é válida se atendidos os "
+                       "requisitos de comparabilidade listados."),
+        "fontes": [
+            "STJ REsp 1.061.530/RS (recurso repetitivo)",
+            "Súmula 530 STJ",
+            "Res. CMN 3.517/2007 (CET)",
+            "BCB — séries de taxas médias por modalidade",
+        ],
+        "vigencia_regra": "Jurisprudência consolidada do STJ (REsp 1.061.530/RS · Súm. 530)",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Laudo pericial e a série BCB exata da "
+                  "modalidade/data são indispensáveis para a tese revisional."),
     }
 
 
-# ── Imobiliário: distrato (Lei 13.786/2018) ───────────────────────────────────
+# ── Imobiliário: distrato (Lei 13.786/2018 — art. 67-A da Lei 4.591/64) ───────
 @router.get("/imobiliario/ferramentas/distrato")
 async def imobiliario_distrato(
-    valor_pago: float,
-    tem_patrimonio_afetacao: str = "nao",
+    valor_pago: float = Query(..., gt=0),
+    regime_patrimonio_afetacao: str = Query(..., description="sim | nao"),
+    percentual_retencao: Optional[float] = None,   # dentro do teto do regime; default = teto
+    comissao_corretagem: float = 0.0,              # dedutível (art. 67-A §2º)
+    meses_fruicao: int = 0,
+    valor_fruicao_mensal: float = 0.0,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Retenção em distrato de imóvel na planta (Lei do Distrato 13.786/18)."""
-    afetacao = _parse_sim_nao(tem_patrimonio_afetacao, "tem_patrimonio_afetacao")
-    pct_retencao = 50.0 if afetacao else 25.0
-    retencao = round(valor_pago * pct_retencao / 100, 2)
+    """
+    Distrato de imóvel na planta (Lei 13.786/2018): pena convencional de ATÉ 25%
+    da quantia paga — ou ATÉ 50% quando a incorporação estiver submetida a
+    patrimônio de AFETAÇÃO (art. 67-A caput e §5º) — além das deduções do §2º
+    (corretagem, fruição etc.). MINUTA — revisão humana obrigatória.
+    """
+    if valor_pago <= 0:
+        raise HTTPException(422, "valor_pago deve ser maior que zero.")
+    if comissao_corretagem < 0 or meses_fruicao < 0 or valor_fruicao_mensal < 0:
+        raise HTTPException(422, "Deduções (corretagem/fruição) não podem ser negativas.")
+    afetacao = _parse_sim_nao(regime_patrimonio_afetacao, "regime_patrimonio_afetacao")
+    teto = 50.0 if afetacao else 25.0
+    pct = teto if percentual_retencao is None else percentual_retencao
+    if not 0 <= pct <= teto:
+        raise HTTPException(422, (
+            f"percentual_retencao fora do teto do regime: máximo de {teto:.0f}% "
+            f"({'com' if afetacao else 'sem'} patrimônio de afetação — Lei 13.786/2018, "
+            "art. 67-A caput/§5º da Lei 4.591/64)."))
+    pena = round(valor_pago * pct / 100, 2)
+    fruicao = round(meses_fruicao * valor_fruicao_mensal, 2)
+    a_restituir = round(max(valor_pago - pena - comissao_corretagem - fruicao, 0.0), 2)
     return {
-        "valor_pago": valor_pago,
-        "patrimonio_de_afetacao": afetacao,
-        "percentual_retencao": pct_retencao,
-        "valor_retido_incorporadora": retencao,
-        "valor_a_restituir": round(valor_pago - retencao, 2),
-        "observacao": "Retenção de até 25% dos valores pagos (50% se houver patrimônio de afetação). "
-                      "Cláusulas que retêm mais podem ser revistas judicialmente.",
-        "base": "Lei 13.786/2018 (art. 67-A da Lei 4.591/64).",
-        "aviso": "MINUTA — revisão humana obrigatória.",
+        "regime_patrimonio_afetacao": afetacao,
+        "teto_legal_retencao_pct": teto,
+        "percentual_retencao_aplicado": pct,
+        "memoria_calculo": {
+            "valor_pago": valor_pago,
+            "pena_convencional": pena,
+            "comissao_corretagem_deduzida": round(comissao_corretagem, 2),
+            "deducao_fruicao": fruicao,
+            "formula": (f"restituir = {valor_pago:.2f} − pena {pct}% ({pena:.2f}) − corretagem "
+                        f"({comissao_corretagem:.2f}) − fruição ({fruicao:.2f})"),
+        },
+        "valor_a_restituir": a_restituir,
+        "prazo_devolucao": ("SEM patrimônio de afetação: restituição em parcela única em até 180 "
+                            "dias do desfazimento; COM afetação: em até 30 dias após o habite-se "
+                            "(Lei 4.591/64, art. 67-A §§5º-6º, incl. Lei 13.786/2018). CONFIRA a "
+                            "cláusula do contrato — condições contratuais mais favoráveis prevalecem."),
+        "fontes": [
+            "Lei 4.591/64 art. 67-A (incluído pela Lei 13.786/2018), caput e §§2º, 5º-6º",
+        ],
+        "vigencia_regra": "Lei 13.786/2018, vigente desde 28/12/2018 (contratos posteriores; "
+                          "anteriores seguem a jurisprudência do STJ — retenção usual de 10-25%)",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Deduções de impostos e taxas condominiais "
+                  "fruídos (art. 67-A §2º) não computadas; cláusulas acima do teto são revisáveis."),
     }
 
 
@@ -2121,24 +2561,72 @@ async def transito_valor_multa(
     }
 
 
-# ── Consumidor: negativação indevida (dano moral) ─────────────────────────────
+# ── Consumidor: negativação indevida — checklist de análise (Súm. 385 STJ) ────
 @router.get("/consumidor/ferramentas/negativacao-indevida")
 async def consumidor_negativacao(
-    existe_inscricao_anterior_legitima: str = "nao",
+    existe_inscricao_anterior: str = Query(..., description="sim | nao"),
+    inscricao_anterior_legitima_e_ativa: Optional[str] = None,   # sim|nao — obrigatório se anterior=sim
+    origem_verificada: Optional[str] = None,                     # sim|nao — obrigatório se anterior=sim
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Triagem de dano moral por negativação indevida (Súmula 385 STJ)."""
-    tem_anterior = _parse_sim_nao(existe_inscricao_anterior_legitima,
-                                  "existe_inscricao_anterior_legitima")
+    """
+    Checklist de análise da negativação indevida — a Súmula 385 STJ só afasta o
+    dano moral se a inscrição ANTERIOR for LEGÍTIMA, CONTEMPORÂNEA e ATIVA; a
+    resposta estrutura o que precisa ser verificado, nunca um sim/não seco.
+    MINUTA — revisão humana obrigatória.
+    """
+    tem_anterior = _parse_sim_nao(existe_inscricao_anterior, "existe_inscricao_anterior")
+    verificacoes = [
+        "Contemporaneidade: a inscrição anterior estava ATIVA à época da nova anotação?",
+        "Baixa/quitação: a anotação anterior já havia sido baixada ou paga quando da nova inscrição?",
+        "Impugnação: a inscrição anterior é objeto de questionamento judicial/administrativo?",
+    ]
+    if not tem_anterior:
+        return {
+            "existe_inscricao_anterior": False,
+            "sumula_385_aplicavel": False,
+            "conclusao_indicativa": ("Sem inscrição preexistente, o dano moral pela negativação "
+                                     "indevida é presumido (in re ipsa — STJ REsp 1.059.663); a "
+                                     "Súm. 385 não incide."),
+            "verificacoes_pendentes": [
+                "Confirmar nos 3 birôs (SPC/Serasa/SCR-BCB) a inexistência de outras anotações "
+                "contemporâneas à inscrição impugnada.",
+            ],
+            "fontes": ["Súmula 385 STJ", "STJ REsp 1.059.663", "CDC arts. 6º VI e 43"],
+            "vigencia_regra": "Súm. 385 STJ (2009) e jurisprudência consolidada do STJ",
+            "versao_regra": _VERSAO_REGRA,
+            "aviso": "MINUTA — revisão humana obrigatória.",
+        }
+    if inscricao_anterior_legitima_e_ativa is None or origem_verificada is None:
+        raise HTTPException(422, (
+            "Havendo inscrição anterior, informe inscricao_anterior_legitima_e_ativa=sim|nao e "
+            "origem_verificada=sim|nao — a Súm. 385 STJ só incide se a anotação preexistente for "
+            "legítima, contemporânea e ativa."))
+    legitima = _parse_sim_nao(inscricao_anterior_legitima_e_ativa, "inscricao_anterior_legitima_e_ativa")
+    origem_ok = _parse_sim_nao(origem_verificada, "origem_verificada")
+    pendentes = list(verificacoes)
+    if not origem_ok:
+        pendentes.insert(0, "ORIGEM não verificada: confirmar junto ao credor/órgão a validade e "
+                            "a origem do débito da inscrição anterior.")
+    if legitima and origem_ok:
+        conclusao = ("Indicativo de INCIDÊNCIA da Súm. 385 STJ: inscrição anterior legítima e "
+                     "ativa afasta a indenização pela nova anotação irregular — cabe apenas o "
+                     "cancelamento. Concluir somente após as verificações pendentes.")
+    else:
+        conclusao = ("Indicativo de NÃO incidência da Súm. 385 STJ: sem legitimidade/atividade "
+                     "comprovada da anotação anterior (ou origem não verificada), o dano moral "
+                     "pela nova inscrição permanece discutível. Concluir após as verificações.")
     return {
-        "existe_inscricao_anterior_legitima": tem_anterior,
-        "cabe_dano_moral": not tem_anterior,
-        "parametro_valor": "R$ 0 (Súmula 385 — só cabe cancelamento)" if tem_anterior
-                           else "Faixa usual: R$ 5.000 a R$ 15.000 (varia por comarca/reincidência).",
-        "dano_moral_in_re_ipsa": not tem_anterior,
-        "observacao": "Súmula 385 STJ: havendo inscrição legítima preexistente, não cabe indenização por nova "
-                      "anotação irregular, apenas o cancelamento. Sem preexistência, dano moral é in re ipsa.",
-        "base": "Súmula 385 STJ; CDC art. 6 VI.",
+        "existe_inscricao_anterior": True,
+        "inscricao_anterior_legitima_e_ativa": legitima,
+        "origem_verificada": origem_ok,
+        "sumula_385_aplicavel": ("somente se a inscrição anterior for legítima, contemporânea e "
+                                 "ativa — ver verificações pendentes"),
+        "conclusao_indicativa": conclusao,
+        "verificacoes_pendentes": pendentes,
+        "fontes": ["Súmula 385 STJ", "STJ REsp 1.059.663", "CDC arts. 6º VI e 43"],
+        "vigencia_regra": "Súm. 385 STJ (2009) e jurisprudência consolidada do STJ",
+        "versao_regra": _VERSAO_REGRA,
         "aviso": "MINUTA — revisão humana obrigatória.",
     }
 
@@ -2257,6 +2745,7 @@ async def ban_juros(
     montante_contrat = valor_contratado * ((1 + taxa_mensal_contratada/100) ** 12)
     montante_ref     = valor_contratado * ((1 + taxa_mensal_referencia/100) ** 12)
     excesso_12m = round(montante_contrat - montante_ref, 2)
+    comp = _classificar_taxa_vs_media(taxa_mensal_contratada, taxa_mensal_referencia)
     return {
         "taxa_mensal_contratada_pct": taxa_mensal_contratada,
         "taxa_anual_efetiva_contratada_pct": round(taxa_anual_contrat, 4),
@@ -2265,14 +2754,17 @@ async def ban_juros(
         "spread_absoluto_pct_mes": round(spread_pct, 4),
         "spread_relativo_pct": round(spread_relativo, 2),
         "excesso_estimado_12_meses": excesso_12m,
-        "indicio_abusividade": spread_relativo > 50,   # > 50% acima da média de mercado
-        "base_legal": [
+        **comp,
+        "fontes": [
             "STJ Súm. 530 (2015): pactuação livre, exige prova de abusividade",
-            "STJ REsp 1.061.530 (recurso repetitivo): parâmetros de revisão",
+            "STJ REsp 1.061.530/RS (recurso repetitivo): parâmetros de revisão",
             "Res. CMN 3.517/2007: obrigatoriedade de informação do CET",
             "CDC art. 52: informação clara e prévia do custo total",
         ],
-        "aviso": "MINUTA. Laudo pericial contábil é indispensável para demonstrar abusividade em juízo.",
+        "vigencia_regra": "Jurisprudência consolidada do STJ (REsp 1.061.530/RS · Súm. 530)",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — classificação INDICATIVA (sem veredito de abusividade). Laudo "
+                  "pericial contábil é indispensável para demonstrar abusividade em juízo."),
     }
 
 
@@ -2416,55 +2908,73 @@ async def civ_prescricao_consumidor(
     }
 
 
-# ── Cível: parâmetros ORIENTATIVOS de dano moral ──────────────────────────────
-# Não há tabelamento legal de dano moral (tarifação é vedada — cf. ADPF 130).
-# Faixas extraídas de precedentes usuais STJ/TJs, meramente indicativas.
-_FAIXAS_DANO_MORAL = {
-    "negativacao_indevida": (5_000.0, 15_000.0,
-                             "Negativação indevida — dano in re ipsa (STJ REsp 1.059.663)."),
-    "extravio_bagagem":     (5_000.0, 15_000.0,
-                             "Extravio de bagagem — CDC prevalece sobre tarifação de convenções internacionais no dano moral."),
-    "produto_defeituoso":   (3_000.0, 10_000.0,
-                             "Produto defeituoso sem risco à saúde — mero vício, sem outros transtornos, pode não gerar dano moral."),
-    "acidente_consumo":     (10_000.0, 50_000.0,
-                             "Fato do produto/serviço com lesão à saúde — gravidade e sequelas elevam o quantum."),
-    "cobranca_abusiva":     (3_000.0, 12_000.0,
-                             "Cobrança vexatória/abusiva (CDC arts. 42 e 71)."),
-    "outro":                (5_000.0, 20_000.0,
-                             "Faixa genérica — pesquisar precedentes específicos do tema e da comarca."),
+# ── Cível: dano moral — SEM faixas fixas (tarifação vedada) ───────────────────
+# Qualificadores DESCRITIVOS por tipo de caso; nenhum valor absoluto hardcoded.
+_TIPOS_DANO_MORAL = {
+    "negativacao_indevida": "Negativação indevida — dano in re ipsa (STJ REsp 1.059.663); verificar Súm. 385 STJ.",
+    "extravio_bagagem":     "Extravio de bagagem — CDC prevalece sobre a tarifação de convenções internacionais quanto ao dano moral.",
+    "produto_defeituoso":   "Produto defeituoso sem risco à saúde — mero vício, sem outros transtornos, pode não gerar dano moral.",
+    "acidente_consumo":     "Fato do produto/serviço com lesão à saúde — gravidade e sequelas elevam o quantum.",
+    "cobranca_abusiva":     "Cobrança vexatória/abusiva (CDC arts. 42 e 71).",
+    "outro":                "Hipótese genérica — pesquisar precedentes específicos do tema, tribunal e período.",
 }
 
 
 @router.get("/civel/ferramentas/calculo-dano-moral")
 async def civ_dano_moral(
     tipo_caso: str = "negativacao_indevida",
-    salarios_minimos_pedido: float = Query(10.0, ge=0),
+    salarios_minimos_pedido: float = Query(0.0, ge=0, description="Opcional — pedido pretendido, em SM, apenas para contextualização"),
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Faixas ORIENTATIVAS de dano moral por tipo de caso (sem tabelamento legal)."""
-    if tipo_caso not in _FAIXAS_DANO_MORAL:
-        raise HTTPException(422, f"Tipo de caso inválido: '{tipo_caso}'. Use: {list(_FAIXAS_DANO_MORAL)}")
-    minimo, maximo, nota = _FAIXAS_DANO_MORAL[tipo_caso]
-    pedido = round(salarios_minimos_pedido * _sm_vigente(), 2)
-    posicao = ("dentro da faixa usual" if minimo <= pedido <= maximo
-               else "abaixo da faixa usual" if pedido < minimo
-               else "acima da faixa usual")
-    return {
+    """
+    Estruturação metodológica do dano moral — SEM valor sugerido automático:
+    não há tabelamento legal (tarifação vedada) e o quantum é arbitrado caso a
+    caso pelo método BIFÁSICO do STJ (REsp 1.152.541). A ferramenta orienta a
+    pesquisa jurimétrica contextual em vez de faixas fixas.
+    """
+    if tipo_caso not in _TIPOS_DANO_MORAL:
+        raise HTTPException(422, f"Tipo de caso inválido: '{tipo_caso}'. Use: {list(_TIPOS_DANO_MORAL)}")
+    out: dict = {
         "tipo_caso": tipo_caso,
-        "faixa_orientativa_min": minimo,
-        "faixa_orientativa_max": maximo,
-        "quantum_pedido": pedido,
-        "pedido_em_sm": salarios_minimos_pedido,
-        "posicao_do_pedido": posicao,
-        "nota_jurisprudencial": nota,
-        "metodo_bifasico_stj": "1ª fase: valor-base pelo interesse jurídico lesado (grupo de "
-                               "precedentes); 2ª fase: ajuste às circunstâncias do caso "
-                               "(STJ REsp 1.152.541).",
-        "observacao": "Valores MERAMENTE ORIENTATIVOS — NÃO há tabelamento legal de dano "
-                      "moral; o quantum é arbitrado judicialmente caso a caso.",
-        "base": "CC arts. 186 e 944 · CDC art. 6º VI · STJ REsp 1.152.541 (método bifásico).",
-        "aviso": "MINUTA — revisão humana obrigatória.",
+        "qualificador_descritivo": _TIPOS_DANO_MORAL[tipo_caso],
+        "sem_valor_sugerido": True,
+        "metodologia": {
+            "metodo": "bifásico (STJ REsp 1.152.541)",
+            "fase_1": "valor-BASE conforme o interesse jurídico lesado, a partir do GRUPO de "
+                      "precedentes sobre o mesmo tema no tribunal competente",
+            "fase_2": "ajuste do valor-base às circunstâncias do CASO CONCRETO (para mais ou para menos)",
+        },
+        "fatores": [
+            "gravidade do fato e extensão do dano (CC art. 944)",
+            "condições pessoais e econômicas do ofendido e do ofensor",
+            "grau de culpa/dolo e reprovabilidade da conduta",
+            "reincidência/contumácia do ofensor",
+            "caráter pedagógico-punitivo sem enriquecimento sem causa",
+            "duração e repercussão da lesão",
+        ],
+        "orientacao_jurimetrica": ("Pesquisar precedentes CONTEXTUAIS: mesmo tema e tribunal "
+                                   "(TJMG/TRF/STJ), período recente (24-36 meses) e amostra "
+                                   "razoável de acórdãos, anotando valores mínimo/mediano/máximo — "
+                                   "use o módulo de jurisprudência/Deep Research do EJC. Faixas "
+                                   "fixas descontextualizadas não são parâmetro válido."),
+        "fontes": [
+            "CC arts. 186 e 944 · CDC art. 6º VI",
+            "STJ REsp 1.152.541 (método bifásico)",
+            "STF RE 447.584 e ADPF 130 (vedação de tarifação)",
+        ],
+        "vigencia_regra": "Método bifásico consolidado no STJ — sem tabelamento legal",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. O quantum é arbitrado judicialmente; "
+                  "esta ferramenta NÃO sugere valor."),
     }
+    if salarios_minimos_pedido > 0:
+        out["quantum_pedido_contextual"] = {
+            "pedido_em_sm": salarios_minimos_pedido,
+            "pedido_em_reais": round(salarios_minimos_pedido * _sm_vigente(), 2),
+            "nota": "Valor informado pelo usuário, apenas para contextualização do pedido — "
+                    "não é sugestão da ferramenta.",
+        }
+    return out
 
 
 # ── Cível: partilha no divórcio por regime de bens ────────────────────────────
@@ -2886,6 +3396,9 @@ async def trib_parcelamento(
                                         "dependem da composição do débito e das regras do programa."},
         "memoria_calculo": f"parcela = R$ {valor_total_debito:.2f} ÷ {parcelas_ef} (sem Selic futura)",
         "observacao": m["nota"],
+        "vigencia_tabela": "Parâmetros consolidados em 2026-07 — PERT/REFIS encerrados (referência histórica); via atual: transação tributária (Lei 13.988/2020)",
+        "fonte": m["rotulo"],
+        "versao_regra": _VERSAO_REGRA,
         "base": "CTN art. 151 VI e 155-A · Lei 10.522/02 · LC 123/06 · Lei 13.988/20 (transação).",
         "aviso": "SIMULAÇÃO SIMPLIFICADA — não aplica Selic futura nem consolida o débito; "
                  "o valor real é apurado no sistema do órgão (e-CAC/PGFN/PGE).",
@@ -2952,6 +3465,9 @@ async def trib_simples_nacional(
         "das_mensal_estimado": das_mensal_estimado,
         "memoria_calculo": (f"efetiva = (RBT12 {receita_bruta_12m:.2f} × {aliq}% − PD {pd:.2f}) "
                             f"÷ RBT12 = {efetiva:.4f}%"),
+        "vigencia_tabela": "Anexos I-V na redação da LC 155/2016 — vigentes desde 01/01/2018, sem alteração até 2026",
+        "fonte": "LC 123/2006, Anexos I-V (red. LC 155/2016) · Res. CGSN 140/2018",
+        "versao_regra": _VERSAO_REGRA,
         "base": "LC 123/2006 art. 18 e Anexos I-V (red. LC 155/2016) · Res. CGSN 140/2018.",
         "aviso": "MINUTA — DAS estimado sobre a receita média mensal (RBT12/12); o cálculo real "
                  "usa a receita do MÊS. Verificar segregação de receitas e ICMS/ISS no sublimite.",
@@ -3305,15 +3821,28 @@ _FASES_LICENCA = {
 
 @router.get("/ambiental/ferramentas/licenciamento")
 async def amb_licenciamento(
+    uf: str = Query(..., min_length=2, max_length=2, description="UF do empreendimento"),
     fase: Literal["lp", "li", "lo"] = "lp",
     porte: Literal["pequeno", "medio", "grande"] = "medio",
+    orgao: Optional[str] = Query(None, description="Órgão licenciador (IBAMA/SEMAD/municipal), se conhecido"),
     data_protocolo: Optional[date] = None,
     com_eia_rima: bool = False,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Fases, documentos mínimos e prazos do licenciamento ambiental."""
+    """Fases, documentos mínimos e prazos do licenciamento ambiental — classes,
+    modalidades e prazos CONCRETOS dependem da UF e da norma do órgão licenciador."""
+    uf_norm = (uf or "").strip().upper()
+    if len(uf_norm) != 2 or not uf_norm.isalpha():
+        raise HTTPException(422, "UF inválida — informe a sigla de 2 letras (ex.: MG).")
+    if fase not in _FASES_LICENCA:
+        raise HTTPException(422, f"Fase inválida. Use: {list(_FASES_LICENCA)}")
     f = _FASES_LICENCA[fase]
     out: dict = {
+        "uf": uf_norm,
+        "orgao_licenciador_informado": orgao,
+        "nota_localizacao": (f"Procedimento, classes e prazos CONCRETOS dependem da norma do "
+                             f"ente licenciador em {uf_norm} (LC 140/2011 define a competência; "
+                             "em MG: DN COPAM 217/2017 e SLA/SEMAD). Confira a norma do órgão."),
         "licenca": f["nome"],
         "para_que_serve": f["fase"],
         "validade": f["validade"],
@@ -3356,17 +3885,32 @@ _RESERVA_LEGAL_PCT = {
 @router.get("/ambiental/ferramentas/reserva-legal")
 async def amb_reserva_legal(
     area_imovel_ha: float = Query(..., gt=0),
+    uf: str = Query(..., min_length=2, max_length=2, description="UF do imóvel rural"),
     bioma: str = "cerrado",
     inscrito_car: bool = False,
+    municipio: Optional[str] = None,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Percentual e área de Reserva Legal por bioma/localização (Código Florestal)."""
+    """Percentual e área de Reserva Legal por bioma/localização — percentuais do
+    art. 12 da Lei 12.651/2012 como REGRA FEDERAL GERAL; o enquadramento concreto
+    depende da localização (Amazônia Legal, zoneamento estadual)."""
+    uf_norm = (uf or "").strip().upper()
+    if len(uf_norm) != 2 or not uf_norm.isalpha():
+        raise HTTPException(422, "UF inválida — informe a sigla de 2 letras (ex.: MG).")
     regra = _RESERVA_LEGAL_PCT.get(bioma)
     if not regra:
         raise HTTPException(422, f"Bioma inválido. Use: {list(_RESERVA_LEGAL_PCT)}")
     pct, desc = regra
     area_rl = round(area_imovel_ha * pct / 100, 4)
     out: dict = {
+        "uf": uf_norm,
+        "municipio": municipio,
+        "nota_localizacao": ("Percentuais do art. 12 da LF 12.651/2012 são a REGRA FEDERAL "
+                             "GERAL: os incisos de 80%/35% valem apenas DENTRO da Amazônia "
+                             f"Legal; confirme se o imóvel em {uf_norm}"
+                             + (f"/{municipio}" if municipio else "")
+                             + " integra a Amazônia Legal, o ZEE estadual (reduções/ampliações "
+                               "do art. 12 §§4º-5º e art. 13) e os módulos fiscais no CAR."),
         "bioma": bioma,
         "percentual_reserva_legal": pct,
         "regra_aplicada": desc,

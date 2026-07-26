@@ -113,16 +113,15 @@ def test_ferramentas_corrigidas_na_onda2_sairam_da_matriz():
         "/transito/ferramentas/prazos-recurso",
         "/transito/ferramentas/pontuacao-cnh",
         "/admin-esp/ferramentas/recurso-multa-transito",
-    }
-    assert corrigidas.isdisjoint(FERRAMENTAS_NAO_HOMOLOGADAS)
-    # Estado final pós-Fase B: 5 ferramentas seguem na matriz.
-    assert set(FERRAMENTAS_NAO_HOMOLOGADAS) == {
-        "/empresarial/ferramentas/verificar-cade",
-        "/penal/ferramentas/dosimetria",
+        # Fase C
         "/consumidor/ferramentas/devolucao-dobro",
         "/consumidor/ferramentas/prazos-cdc",
         "/previdenciario/ferramentas/prazos",
+        "/empresarial/ferramentas/verificar-cade",
     }
+    assert corrigidas.isdisjoint(FERRAMENTAS_NAO_HOMOLOGADAS)
+    # Estado final pós-Fase C: APENAS a dosimetria segue selada.
+    assert set(FERRAMENTAS_NAO_HOMOLOGADAS) == {"/penal/ferramentas/dosimetria"}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -134,32 +133,27 @@ def _assert_selo(r: dict):
     assert "não gere demonstrativo" in r["aviso_homologacao"]
 
 
-async def test_selo_verificar_cade_sem_prazo_ficticio():
+async def test_verificar_cade_sem_prazo_ficticio_e_sem_selo():
+    """Onda 2 Fase C: o CADE saiu da matriz (resposta corrigida na Onda 1 —
+    controle prévio, sem prazo fictício) e ganhou metadados de regra."""
     r = await ramos.emp_cade(
         valor_faturamento_br=800_000_000.0, valor_operacao=100_000_000.0,
         valor_faturamento_outro_grupo=90_000_000.0, cu=None,
     )
-    _assert_selo(r)
+    assert "homologada" not in r and "aviso_homologacao" not in r
     assert "prazo_notificacao" not in r
     assert "pode ser consumada antes da decisão" in r["controle_previo"]
-    # Ramo pendente (sem 2º grupo) também sem o prazo fictício e com selo.
+    assert r["versao_regra"] == "2026-07" and r["fontes"]
+    # Ramo pendente (sem 2º grupo) também sem o prazo fictício.
     p = await ramos.emp_cade(valor_faturamento_br=800_000_000.0,
                              valor_operacao=100_000_000.0, cu=None)
-    _assert_selo(p)
-    assert "prazo_notificacao" not in p
+    assert "prazo_notificacao" not in p and "homologada" not in p
 
 
 async def test_selo_demais_ferramentas_da_matriz():
-    resultados = [
-        # Dosimetria: corrigida na Onda 2, mas PERMANECE com selo (simulador assistido).
-        await ramos.penal_dosimetria(pena_minima_meses=24, pena_maxima_meses=96, cu=None),
-        await ramos.consumidor_devolucao_dobro(valor_cobrado=100.0, houve_ma_fe="sim", cu=None),
-        await ramos.consumidor_prazos_cdc(data_fato=date(2026, 6, 1), tipo="fato", cu=None),
-        await ramos.previdenciario_prazos(data_indeferimento=date(2026, 6, 1),
-                                          tipo="recurso_administrativo", cu=None),
-    ]
-    for r in resultados:
-        _assert_selo(r)
+    # Após a Fase C, só a dosimetria permanece com selo (simulador assistido).
+    r = await ramos.penal_dosimetria(pena_minima_meses=24, pena_maxima_meses=96, cu=None)
+    _assert_selo(r)
 
 
 async def test_ferramenta_fora_da_matriz_nao_ganha_selo():
@@ -172,23 +166,28 @@ async def test_ferramenta_fora_da_matriz_nao_ganha_selo():
 # (d) Classificação jurídica inválida → 422, sem cair em default
 # ══════════════════════════════════════════════════════════════════════════
 @pytest.mark.parametrize("chamada", [
-    lambda: ramos.consumidor_prazos_cdc(data_fato=date(2026, 1, 1), tipo="inexistente", cu=None),
-    lambda: ramos.previdenciario_prazos(data_indeferimento=date(2026, 1, 1),
-                                        tipo="inexistente", cu=None),
-    lambda: ramos.previdenciario_carencia(meses_contribuicao=100, beneficio="inexistente", cu=None),
+    lambda: ramos.consumidor_prazos_cdc(pretensao="inexistente",
+                                        data_marco=date(2026, 1, 1), cu=None),
+    lambda: ramos.previdenciario_prazos(natureza="inexistente", cu=None),
+    lambda: ramos.previdenciario_carencia(
+        beneficio="inexistente", categoria="empregada", meses_contribuicao=100,
+        decorre_acidente_ou_doenca_isenta="nao", cu=None),
     lambda: ramos.lgpd_prazos(data_evento=date(2026, 1, 1), tipo="inexistente", cu=None),
     lambda: ramos.transito_valor_multa(gravidade="inexistente", cu=None),
     lambda: ramos.civ_dano_moral(tipo_caso="inexistente", salarios_minimos_pedido=10.0, cu=None),
     lambda: ramos.imobiliario_prazos_despejo(data_citacao=date(2026, 1, 1),
+                                             forma_comunicacao="citacao_pessoal",
                                              fundamento="inexistente", cu=None),
     lambda: ramos.transito_prazos_recurso(
         fase="inexistente", data_notificacao_autuacao=date(2026, 1, 1), cu=None),
     lambda: ramos.transito_pontuacao_cnh(pontos_total=10, qtd_gravissimas=0,
                                          exerce_atividade_remunerada="talvez", cu=None),
-    lambda: ramos.consumidor_devolucao_dobro(valor_cobrado=100.0, houve_ma_fe="talvez", cu=None),
+    lambda: ramos.consumidor_devolucao_dobro(
+        valor_cobrado_indevidamente=100.0, houve_pagamento="sim",
+        cobranca_contraria_boa_fe_objetiva="sim", engano_justificavel="talvez", cu=None),
     lambda: ramos.imobiliario_distrato(valor_pago=1_000.0,
-                                       tem_patrimonio_afetacao="talvez", cu=None),
-    lambda: ramos.consumidor_negativacao(existe_inscricao_anterior_legitima="talvez", cu=None),
+                                       regime_patrimonio_afetacao="talvez", cu=None),
+    lambda: ramos.consumidor_negativacao(existe_inscricao_anterior="talvez", cu=None),
     lambda: ramos.previdenciario_tempo_contribuicao(idade=60, tempo_contribuicao_anos=35.0,
                                                     sexo="X", cu=None),
 ])
@@ -199,8 +198,9 @@ async def test_classificacao_invalida_retorna_422(chamada):
 
 
 async def test_classificacao_valida_continua_funcionando():
-    r = await ramos.previdenciario_carencia(meses_contribuicao=200,
-                                            beneficio="aposentadoria", cu=None)
+    r = await ramos.previdenciario_carencia(
+        beneficio="aposentadoria_idade_tc", categoria="empregada",
+        meses_contribuicao=200, decorre_acidente_ou_doenca_isenta="nao", cu=None)
     assert r["carencia_cumprida"] is True
     r2 = await ramos.lgpd_prazos(data_evento=date(2026, 3, 2), tipo="resposta_titular", cu=None)
     assert r2["prazo_final"]
@@ -239,12 +239,11 @@ def _cu_advogado():
 
 @pytest.mark.parametrize("ferramenta", [
     "/penal/ferramentas/dosimetria",                     # selo (simulador assistido)
-    "/consumidor/ferramentas/devolucao-dobro",           # selo
-    "/api/consumidor/ferramentas/devolucao-dobro",       # com prefixo /api
-    "/consumidor/ferramentas/prazos-cdc?tipo=fato",      # com querystring
-    "/Consumidor/Ferramentas/Devolucao-Dobro",           # casing
-    "//consumidor//ferramentas//devolucao-dobro",        # barras duplicadas
-    "/consumidor/ferramentas/devolucao%2Ddobro",         # percent-encoding
+    "/api/penal/ferramentas/dosimetria",                 # com prefixo /api
+    "/penal/ferramentas/dosimetria?pena_minima_meses=24",  # com querystring
+    "/Penal/Ferramentas/Dosimetria",                     # casing
+    "//penal//ferramentas//dosimetria",                  # barras duplicadas
+    "/penal/ferramentas/dosimetri%61",                   # percent-encoding
     "/api//Penal/ferramentas/dosimetria/",               # combinação
 ])
 async def test_demonstrativo_rejeita_ferramenta_nao_homologada(ferramenta):

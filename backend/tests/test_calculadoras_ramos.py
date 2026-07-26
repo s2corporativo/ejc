@@ -141,13 +141,14 @@ async def test_auto_infracao_ambiental_prazo_20_dias_prorrogado():
 
 async def test_reserva_legal_percentual_por_bioma():
     r = await ramos.amb_reserva_legal(
-        area_imovel_ha=100.0, bioma="amazonia", inscrito_car=True, cu=None,
+        area_imovel_ha=100.0, uf="PA", bioma="amazonia", inscrito_car=True, cu=None,
     )
     assert r["percentual_reserva_legal"] == 80
     assert r["area_reserva_legal_ha"] == 80.0
+    assert "Amazônia" in r["nota_localizacao"]
 
     r20 = await ramos.amb_reserva_legal(
-        area_imovel_ha=100.0, bioma="mata_atlantica", inscrito_car=False, cu=None,
+        area_imovel_ha=100.0, uf="MG", bioma="mata_atlantica", inscrito_car=False, cu=None,
     )
     assert r20["percentual_reserva_legal"] == 20
     assert "OBRIGATÓRIA" in r20["car"]

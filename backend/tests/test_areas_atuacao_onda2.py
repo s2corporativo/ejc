@@ -664,3 +664,319 @@ async def test_pontuacao_cnh_entradas_invalidas_422(kwargs):
     with pytest.raises(HTTPException) as e:
         await ramos.transito_pontuacao_cnh(**{**base, **kwargs})
     assert e.value.status_code == 422
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE C — 14. Consumidor: devolução em dobro (boa-fé objetiva, sem má-fé)
+# ══════════════════════════════════════════════════════════════════════════
+_DOBRO_OK = dict(valor_cobrado_indevidamente=100.0, houve_pagamento="sim",
+                 cobranca_contraria_boa_fe_objetiva="sim", engano_justificavel="nao")
+
+
+async def test_devolucao_dobro_boa_fe_objetiva_sem_ma_fe():
+    r = await ramos.consumidor_devolucao_dobro(**_DOBRO_OK, cu=None)
+    assert r["resultado"] == "dobro" and r["restituicao_estimada"] == 200.0
+    assert len(r["analise_requisitos"]) == 3
+    assert "30/03/2021" in r["nota_modulacao_temporal"]
+    assert "má-fé" not in str([q["requisito"] for q in r["analise_requisitos"]]).lower() \
+        or "não se exige má-fé" in r["analise_requisitos"][1]["requisito"]
+    _assert_metadados_regra(r)
+    _assert_sem_selo(r)
+
+
+async def test_devolucao_dobro_engano_justificavel_simples():
+    r = await ramos.consumidor_devolucao_dobro(
+        **{**_DOBRO_OK, "engano_justificavel": "sim"}, cu=None)
+    assert r["resultado"] == "simples" and r["restituicao_estimada"] == 100.0
+
+
+async def test_devolucao_dobro_sem_pagamento_sem_repeticao():
+    r = await ramos.consumidor_devolucao_dobro(
+        **{**_DOBRO_OK, "houve_pagamento": "nao"}, cu=None)
+    assert r["resultado"] == "sem_repeticao" and r["restituicao_estimada"] == 0.0
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE C — 15. Consumidor: prazos por pretensão (termo inicial correto)
+# ══════════════════════════════════════════════════════════════════════════
+async def test_prazos_cdc_repeticao_indebito_decenal():
+    r = await ramos.consumidor_prazos_cdc(
+        pretensao="repeticao_indebito_contratual", data_marco=date(2020, 6, 15), cu=None)
+    assert r["instituto"] == "prescrição" and r["prazo"] == "10 anos"
+    assert r["data_limite"] == date(2030, 6, 15)
+    assert "738.991" in r["base_legal"]
+    _assert_metadados_regra(r)
+    _assert_sem_selo(r)
+
+
+async def test_prazos_cdc_vicio_oculto_conta_do_aparecimento():
+    with pytest.raises(HTTPException) as e:   # marco ausente do qualificador
+        await ramos.consumidor_prazos_cdc(
+            pretensao="vicio_oculto", data_marco=date(2026, 6, 1), cu=None)
+    assert e.value.status_code == 422 and "bem_duravel" in e.value.detail
+    r = await ramos.consumidor_prazos_cdc(
+        pretensao="vicio_oculto", data_marco=date(2026, 6, 1), bem_duravel="sim", cu=None)
+    assert r["prazo"] == "90 dias"
+    assert r["data_limite"] == date(2026, 8, 30)          # sem prorrogação (decadência)
+    assert "APARECIMENTO" in r["termo_inicial_correto"].upper() \
+        or "evidenciado" in r["termo_inicial_correto"].lower()
+
+
+async def test_prazos_cdc_acidente_de_consumo_5_anos():
+    r = await ramos.consumidor_prazos_cdc(
+        pretensao="acidente_de_consumo", data_marco=date(2024, 2, 29), cu=None)
+    assert r["data_limite"] == date(2029, 2, 28)          # bissexto tratado
+    assert "conhecimento do DANO" in r["termo_inicial_correto"]
+    assert "§2º" in r["nota_causas_obstativas"]           # causas obstativas do art. 26
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE C — 16. Consumidor: negativação — checklist (Súm. 385 STJ)
+# ══════════════════════════════════════════════════════════════════════════
+async def test_negativacao_sem_anterior_in_re_ipsa():
+    r = await ramos.consumidor_negativacao(existe_inscricao_anterior="nao", cu=None)
+    assert r["sumula_385_aplicavel"] is False
+    assert "in re ipsa" in r["conclusao_indicativa"]
+    assert r["verificacoes_pendentes"]
+    _assert_sem_selo(r)
+
+
+async def test_negativacao_com_anterior_exige_qualificadores_422():
+    with pytest.raises(HTTPException) as e:
+        await ramos.consumidor_negativacao(existe_inscricao_anterior="sim", cu=None)
+    assert e.value.status_code == 422
+
+
+async def test_negativacao_com_anterior_legitima_checklist_nao_binario():
+    r = await ramos.consumidor_negativacao(
+        existe_inscricao_anterior="sim", inscricao_anterior_legitima_e_ativa="sim",
+        origem_verificada="nao", cu=None)
+    assert isinstance(r["sumula_385_aplicavel"], str)     # nunca sim/não seco
+    assert any("ORIGEM" in v for v in r["verificacoes_pendentes"])
+    assert "NÃO incidência" in r["conclusao_indicativa"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE C — 17. Dano moral sem faixas fixas (método bifásico)
+# ══════════════════════════════════════════════════════════════════════════
+async def test_dano_moral_sem_valores_hardcoded():
+    r = await ramos.civ_dano_moral(tipo_caso="negativacao_indevida",
+                                   salarios_minimos_pedido=10.0, cu=None)
+    assert r["sem_valor_sugerido"] is True
+    assert "faixa_orientativa_min" not in r and "faixa_orientativa_max" not in r
+    assert "bifásico" in r["metodologia"]["metodo"]
+    assert len(r["fatores"]) >= 5
+    assert "tribunal" in r["orientacao_jurimetrica"]
+    assert r["quantum_pedido_contextual"]["pedido_em_sm"] == 10.0
+    _assert_metadados_regra(r)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE C — 18. Previdenciário: sexo F|M e motor de marcos
+# ══════════════════════════════════════════════════════════════════════════
+async def test_tempo_contribuicao_sexo_f_regras_femininas():
+    r = await ramos.previdenciario_tempo_contribuicao(
+        idade=60, tempo_contribuicao_anos=32.0, sexo="F", ano=2026, cu=None)
+    assert r["sexo"] == "feminino" and r["tempo_minimo_anos"] == 30
+
+
+async def test_tempo_contribuicao_mulher_por_extenso_422():
+    # Regressão do startswith("M"): "Mulher" era tratado como masculino.
+    with pytest.raises(HTTPException) as e:
+        await ramos.previdenciario_tempo_contribuicao(
+            idade=60, tempo_contribuicao_anos=32.0, sexo="Mulher", cu=None)
+    assert e.value.status_code == 422
+
+
+async def test_prev_prazos_revisao_decadencia_10_anos_do_mes_seguinte():
+    r = await ramos.previdenciario_prazos(
+        natureza="revisao_ato_concessao", data_primeiro_pagamento=date(2025, 12, 15), cu=None)
+    assert "2026-01-01" in r["marco_inicial"]             # dia 1º do mês seguinte (vira o ano)
+    assert r["data_limite"] == date(2036, 1, 1)
+    assert "13.846" in r["base"]
+    _assert_metadados_regra(r)
+    _assert_sem_selo(r)
+
+
+async def test_prev_prazos_parcelas_prescricao_movel():
+    r = await ramos.previdenciario_prazos(
+        natureza="parcelas_atrasadas", data_ajuizamento=date(2026, 3, 10), cu=None)
+    assert r["limite_retroativo"] == date(2021, 3, 10)
+    assert "NÃO há data final única" in r["descricao"]
+
+
+async def test_prev_prazos_marco_ausente_e_incompativel_422():
+    with pytest.raises(HTTPException) as e1:
+        await ramos.previdenciario_prazos(natureza="revisao_ato_concessao", cu=None)
+    assert e1.value.status_code == 422
+    with pytest.raises(HTTPException) as e2:
+        await ramos.previdenciario_prazos(
+            natureza="recurso_administrativo", data_ciencia_decisao=date(2026, 3, 2),
+            data_primeiro_pagamento=date(2020, 1, 1), cu=None)
+    assert e2.value.status_code == 422 and "incompatível" in e2.value.detail
+
+
+async def test_prev_carencia_maternidade_empregada_isenta_ci_10():
+    empregada = await ramos.previdenciario_carencia(
+        beneficio="salario_maternidade", categoria="empregada", meses_contribuicao=0,
+        decorre_acidente_ou_doenca_isenta="nao", cu=None)
+    assert empregada["carencia_exigida"] == 0 and empregada["carencia_cumprida"] is True
+    ci = await ramos.previdenciario_carencia(
+        beneficio="salario_maternidade", categoria="contribuinte_individual_facultativa",
+        meses_contribuicao=8, decorre_acidente_ou_doenca_isenta="nao", cu=None)
+    assert ci["carencia_exigida"] == 10 and ci["faltam_meses"] == 2
+    assert "27-A" in ci["nota_perda_qualidade"]
+    _assert_metadados_regra(ci)
+
+
+async def test_prev_carencia_auxilio_isento_por_acidente():
+    r = await ramos.previdenciario_carencia(
+        beneficio="auxilio_incapacidade", categoria="empregada", meses_contribuicao=1,
+        decorre_acidente_ou_doenca_isenta="sim", cu=None)
+    assert r["carencia_exigida"] == 0 and "26 II" in r["base_legal"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE C — 19. Bancário: classificação indicativa (sem "abusivo sim/não")
+# ══════════════════════════════════════════════════════════════════════════
+async def test_juros_abusivos_classificacao_indicativa():
+    r = await ramos.bancario_juros_abusivos(
+        taxa_contratada_mensal_pct=6.0, taxa_media_bacen_mensal_pct=3.0, cu=None)
+    assert "indicio_abusividade" not in r
+    assert r["razao_sobre_media"] == 2.0
+    assert r["distancia_percentual"] == 100.0
+    assert r["classificacao_indicativa"] == "substancialmente_acima"
+    assert "não vinculante" in r["limiares_classificacao"]["substancialmente_acima"]
+    assert len(r["comparabilidade_requisitos"]) == 6
+    _assert_metadados_regra(r)
+
+
+async def test_juros_abusivos_na_media_e_media_invalida():
+    r = await ramos.bancario_juros_abusivos(
+        taxa_contratada_mensal_pct=3.1, taxa_media_bacen_mensal_pct=3.0, cu=None)
+    assert r["classificacao_indicativa"] == "na_media"
+    with pytest.raises(HTTPException) as e:
+        await ramos.bancario_juros_abusivos(
+            taxa_contratada_mensal_pct=3.0, taxa_media_bacen_mensal_pct=0.0, cu=None)
+    assert e.value.status_code == 422
+
+
+async def test_analise_juros_sem_booleano_de_abusividade():
+    r = await ramos.ban_juros(taxa_mensal_contratada=5.0, taxa_mensal_referencia=4.0,
+                              valor_contratado=10_000.0, cu=None)
+    assert "indicio_abusividade" not in r
+    assert r["classificacao_indicativa"] == "acima_da_media"   # razão 1,25
+    assert r["comparabilidade_requisitos"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE C — 20. Família: débito de alimentos por parcela (rito CPC 528 §7º)
+# ══════════════════════════════════════════════════════════════════════════
+async def test_debito_alimentos_separa_ritos():
+    r = await ramos.familia_debito_alimentos(
+        datas_vencimento_em_aberto="2025-08-05,2026-01-05,2026-02-05,2026-04-05",
+        data_ajuizamento_execucao=date(2026, 3, 10), valor_parcela=1_000.0, cu=None)
+    assert r["marco_corte_3_meses"] == date(2025, 12, 10)
+    assert r["parcelas_rito_prisao"] == [date(2026, 1, 5), date(2026, 2, 5), date(2026, 4, 5)]
+    assert r["parcelas_rito_expropriacao"] == [date(2025, 8, 5)]
+    assert r["valores"]["debito_rito_prisao"] == 3_000.0
+    assert r["valores"]["debito_rito_expropriacao"] == 1_000.0
+    _assert_metadados_regra(r)
+
+
+@pytest.mark.parametrize("datas", ["", "nao-e-data", "2026-15-99"])
+async def test_debito_alimentos_datas_invalidas_422(datas):
+    with pytest.raises(HTTPException) as e:
+        await ramos.familia_debito_alimentos(
+            datas_vencimento_em_aberto=datas,
+            data_ajuizamento_execucao=date(2026, 3, 10), cu=None)
+    assert e.value.status_code == 422
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE C — 21. ITCMD sem default de UF/alíquota
+# ══════════════════════════════════════════════════════════════════════════
+async def test_itcmd_exige_uf_e_aliquota_da_lei_estadual():
+    r = await ramos.familia_itcmd(valor_monte=100_000.0, uf="mg", aliquota_percent=5.0,
+                                  data_fato_gerador=date(2026, 2, 1), cu=None)
+    assert r["uf"] == "MG" and r["itcmd_estimado"] == 5_000.0
+    assert "Súm. 112 STF" in r["nota_aliquota"]
+    _assert_metadados_regra(r)
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"aliquota_percent": 9.0},                            # acima do teto do Senado (8%)
+    {"uf": "M1"},                                         # UF inválida
+])
+async def test_itcmd_entradas_invalidas_422(kwargs):
+    base = dict(valor_monte=100_000.0, uf="MG", aliquota_percent=5.0,
+                data_fato_gerador=date(2026, 2, 1), cu=None)
+    with pytest.raises(HTTPException) as e:
+        await ramos.familia_itcmd(**{**base, **kwargs})
+    assert e.value.status_code == 422
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE C — 22. Distrato (Lei 13.786/2018) com deduções e tetos por regime
+# ══════════════════════════════════════════════════════════════════════════
+async def test_distrato_deducoes_e_teto_por_regime():
+    r = await ramos.imobiliario_distrato(
+        valor_pago=100_000.0, regime_patrimonio_afetacao="sim",
+        comissao_corretagem=5_000.0, meses_fruicao=10, valor_fruicao_mensal=500.0, cu=None)
+    assert r["teto_legal_retencao_pct"] == 50.0
+    assert r["memoria_calculo"]["pena_convencional"] == 50_000.0
+    assert r["memoria_calculo"]["deducao_fruicao"] == 5_000.0
+    assert r["valor_a_restituir"] == 40_000.0             # 100k − 50k − 5k − 5k
+    assert "180" in r["prazo_devolucao"] and "30 dias" in r["prazo_devolucao"]
+    _assert_metadados_regra(r)
+
+
+async def test_distrato_percentual_acima_do_teto_422():
+    with pytest.raises(HTTPException) as e:
+        await ramos.imobiliario_distrato(
+            valor_pago=100_000.0, regime_patrimonio_afetacao="nao",
+            percentual_retencao=30.0, cu=None)            # teto sem afetação = 25%
+    assert e.value.status_code == 422 and "25%" in e.value.detail
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE C — 23. Inputs mínimos: multa-mora por ente, LGPD, ambiental, tabelas
+# ══════════════════════════════════════════════════════════════════════════
+async def test_multa_mora_federal_calcula_estadual_orienta():
+    fed = await ramos.tributario_multa_mora(ente="federal", valor_tributo=1_000.0,
+                                            dias_atraso=100, cu=None)
+    assert fed["percentual_multa"] == 20.0                # teto
+    est = await ramos.tributario_multa_mora(ente="estadual", valor_tributo=1_000.0,
+                                            dias_atraso=100, cu=None)
+    assert est["calculo"] is None
+    assert "NÃO se aplica" in est["orientacao"]
+    with pytest.raises(HTTPException) as e:
+        await ramos.tributario_multa_mora(ente="distrital", valor_tributo=1_000.0,
+                                          dias_atraso=10, cu=None)
+    assert e.value.status_code == 422
+
+
+async def test_lgpd_incidente_exige_data_conhecimento():
+    with pytest.raises(HTTPException) as e:
+        await ramos.lgpd_prazos(tipo="incidente_anpd", data_evento=date(2026, 3, 2), cu=None)
+    assert e.value.status_code == 422 and "data_conhecimento" in e.value.detail
+    r = await ramos.lgpd_prazos(tipo="incidente_anpd",
+                                data_conhecimento=date(2026, 3, 2), cu=None)
+    assert r["prazo_final"] == date(2026, 3, 5)           # seg + 3 dias úteis
+    assert "15" in r["versao_norma"]
+
+
+async def test_simples_e_parcelamento_com_vigencia_tabela():
+    s = await ramos.trib_simples_nacional(receita_bruta_12m=300_000.0, anexo="III", cu=None)
+    assert "LC 155/2016" in s["vigencia_tabela"] and s["fonte"]
+    p = await ramos.trib_parcelamento(valor_total_debito=60_000.0, parcelas=60,
+                                      modalidade="parcelamento_comum", cu=None)
+    assert p["vigencia_tabela"] and p["fonte"]
+
+
+async def test_ambiental_exige_uf():
+    with pytest.raises(HTTPException) as e:
+        await ramos.amb_reserva_legal(area_imovel_ha=100.0, uf="XYZ", bioma="cerrado", cu=None)
+    assert e.value.status_code == 422
+    lic = await ramos.amb_licenciamento(uf="mg", fase="lp", porte="medio", cu=None)
+    assert lic["uf"] == "MG" and "licenciador" in lic["nota_localizacao"]
