@@ -14,8 +14,10 @@
 #   • Gate de citações (response_validator) no texto FINAL (anti-alucinação).
 #   • Orçamento (AgentBudget): teto de passos + tokens + CUSTO R$ (nunca infinito).
 #   • HITL RETOMÁVEL: tools de ESCRITA pausam e exigem aprovação vinculada aos
-#     ARGS exatos (achado H1) — estado persistido em Redis (token) ou, sem Redis,
-#     aprovação por hash de (nome+args); nunca executa args diferentes dos vistos.
+#     ARGS exatos (achado H1) — estado persistido em Redis (token) e VINCULADO a
+#     usuário/caso/papel (auditoria 2026-07-26, AI-031). Sem Redis, FALHA FECHADO
+#     (AI-030): não existe fallback client-side; nenhuma escrita executa sem
+#     aprovação registrada servidor-side.
 #
 # Tudo atrás de AI_AGENT_ENABLED (checado no router): com a flag OFF, este
 # módulo nunca é acionado e o sistema é idêntico ao atual.
@@ -151,15 +153,16 @@ def _redigir_tool_results(messages: list[dict]) -> int:
     return n
 
 
-async def _processar_tool_calls(tool_calls, *, ctx, messages, aprovacoes_hash,
+async def _processar_tool_calls(tool_calls, *, ctx, messages,
                                 on_event, apenas_leitura: bool = False) -> dict | None:
     """Executa `tool_calls` em ordem, anexando cada tool_result a `messages`.
       • LEITURA (requer_confirmacao=False) → executa sempre.
-      • ESCRITA (requer_confirmacao=True) → só executa se o HASH de (nome+args)
-        estiver em `aprovacoes_hash` (aprovação vinculada aos ARGS exatos, H1).
-        A aprovação é ONE-SHOT: o hash é CONSUMIDO na primeira execução —
-        chamada repetida idêntica pausa DE NOVO (nova aprovação humana).
-        Senão PAUSA: devolve {"pending": <write>, "restantes": <após o write>}.
+      • ESCRITA (requer_confirmacao=True) → NUNCA executa aqui: PAUSA sempre,
+        devolvendo {"pending": <write>, "restantes": <após o write>}. A execução
+        aprovada acontece EXCLUSIVAMENTE na retomada por token (rodar_agente),
+        contra o estado servidor-side — o antigo atalho por `aprovacoes_hash`
+        vindo do cliente foi eliminado (auditoria 2026-07-26, AI-030: hash de
+        dados públicos prova integridade, não autorização).
       • `apenas_leitura=True` (defense-in-depth): a write-tool nem foi exposta ao
         modelo por `schemas(role, apenas_leitura=True)`; se ainda assim for pedida,
         NÃO pausa em HITL — devolve erro como tool_result e SEGUE (fluxo de
@@ -175,13 +178,8 @@ async def _processar_tool_calls(tool_calls, *, ctx, messages, aprovacoes_hash,
                     tc.get("id", ""),
                     {"erro": "ferramenta_de_escrita_indisponivel_em_modo_leitura"}))
                 continue
-            h = hitl_state.hash_tool_call(nome, args)
-            if h not in aprovacoes_hash:
-                # HITL: write não aprovada (por args) PAUSA o loop.
-                return {"pending": tc, "restantes": list(tool_calls[i + 1:])}
-            # ONE-SHOT: consome a aprovação — uma aprovação humana autoriza UMA
-            # execução; repetição idêntica volta a pausar (HITL).
-            aprovacoes_hash.discard(h)
+            # HITL: write-tool SEMPRE pausa o loop para aprovação humana.
+            return {"pending": tc, "restantes": list(tool_calls[i + 1:])}
         await _emitir(on_event, "ferramenta", {"ferramenta": nome, "args": args})
         try:
             resultado = await REGISTRY.executar(nome, args, ctx)
@@ -195,14 +193,21 @@ async def _processar_tool_calls(tool_calls, *, ctx, messages, aprovacoes_hash,
 
 async def _persistir_e_pausar(*, pending, restantes, messages, passos, budget,
                               custo_total, prompt_log_base, pii_removida,
-                              on_event) -> dict:
+                              user, case_id, role, on_event) -> dict:
     """HITL: persiste o estado RETOMÁVEL (Redis, PII em espaço real — nunca logado)
-    e devolve o status pendente. Sem Redis, `token` vem None e o cliente retoma
-    pelo `args_hash` (fallback: re-run só executa se o tool_call casar o hash)."""
+    e devolve o status pendente. Sem Redis, FALHA FECHADO (AI-030): a operação de
+    escrita NÃO executa e o chamador recebe erro — não existe fallback
+    client-side. O estado carrega usuário/caso/papel (AI-031) para a retomada
+    validar que o contexto é o MESMO da pausa."""
     nome = pending.get("name", "")
     args = pending.get("input", {}) or {}
     args_hash = hitl_state.hash_tool_call(nome, args)
     estado = {
+        # Vínculo de contexto (AI-031): a retomada só vale para o MESMO usuário,
+        # caso e papel que pausaram — comparados em rodar_agente.
+        "user_id": str(getattr(user, "id", "") or ""),
+        "case_id": str(case_id),
+        "role": role,
         "messages": messages,
         "passos": passos,
         "custo_total": custo_total,
@@ -214,6 +219,14 @@ async def _persistir_e_pausar(*, pending, restantes, messages, passos, budget,
         "restantes": restantes,
     }
     token = await hitl_state.salvar(estado)
+    if token is None:
+        # AI-030 (fail-closed): sem estado servidor-side não há como registrar
+        # uma aprovação genuína — a escrita não executa.
+        await _emitir(on_event, "erro", {
+            "detalhe": "Aprovação humana indisponível no momento (estado HITL não "
+                       "pôde ser persistido); a operação de escrita NÃO foi "
+                       "executada. Tente novamente em instantes."})
+        return {"status": "erro", "detalhe": "hitl_indisponivel"}
     dados = {
         "token": token, "args_hash": args_hash,
         "ferramenta": nome, "args": args, "tool_use_id": pending.get("id"),
@@ -236,7 +249,6 @@ async def rodar_agente(
     case_id: str,
     mensagem: str | None = None,
     historico: list[dict] | None = None,
-    aprovacoes_hash: set[str] | None = None,
     retomar_token: str | None = None,
     decisao: str | None = None,
     apenas_leitura: bool = False,
@@ -245,14 +257,12 @@ async def rodar_agente(
     """Executa (ou RETOMA) o loop agêntico para `mensagem` no `case_id`.
 
     Início (sem `retomar_token`): roda desde a instrução do advogado.
-    Retomada (`retomar_token` + `decisao`): carrega o estado do Redis e, se
-    `decisao=="aprovar"`, executa EXATAMENTE o tool_call pendente (mesmos args) e
-    CONTINUA de onde parou; `decisao=="recusar"` registra a recusa e segue.
-
-    `aprovacoes_hash`: hashes de (nome+args) já aprovados — usado como FALLBACK
-    quando o Redis está indisponível (o loop re-roda e só executa a write-tool se
-    o tool_call recém-gerado casar o hash). Aprovação é ONE-SHOT: cada hash é
-    consumido na primeira execução; nova chamada idêntica pausa de novo.
+    Retomada (`retomar_token` + `decisao`): carrega o estado do Redis (consumo
+    atômico one-shot), VALIDA que usuário/caso/papel são os MESMOS que pausaram
+    (AI-031) e, se `decisao=="aprovar"`, executa EXATAMENTE o tool_call pendente
+    (mesmos args) e CONTINUA de onde parou; `decisao=="recusar"` registra a
+    recusa e segue. Este é o ÚNICO caminho de aprovação de write-tools: sem
+    estado servidor-side (Redis indisponível), a escrita falha fechada (AI-030).
 
     `apenas_leitura`: quando True, expõe ao modelo SOMENTE tools de leitura
     (`schemas(role, apenas_leitura=True)`) e nunca pausa em HITL — para fluxos de
@@ -267,7 +277,6 @@ async def rodar_agente(
       • {"status":"erro", "detalhe"} — falha segura (sem vazar PII/detalhe cru).
     """
     settings = get_settings()
-    aprovacoes_hash = set(aprovacoes_hash or [])
 
     from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
     from app.services.ai.entidades_caso import entidades_do_caso
@@ -326,6 +335,18 @@ async def rodar_agente(
             await _emitir(on_event, "erro", {
                 "detalhe": "Sessão do agente expirada; reenvie a solicitação."})
             return {"status": "erro", "detalhe": "sessao_expirada"}
+        # AI-031: o token só vale para o MESMO usuário, caso e papel que pausaram.
+        # O estado já foi consumido atomicamente (one-shot) — uma tentativa com
+        # contexto divergente DESTRÓI o token (fail-closed; o fluxo legítimo
+        # recomeça do zero), nunca executa a escrita pendente.
+        if (str(estado.get("user_id") or "") != str(getattr(user, "id", "") or "")
+                or str(estado.get("case_id") or "") != str(case_id)
+                or str(estado.get("role") or "") != role):
+            logger.warning("[hitl] retomada com contexto divergente do estado — recusada")
+            await _emitir(on_event, "erro", {
+                "detalhe": "Sessão de aprovação não corresponde a este usuário/caso; "
+                           "reenvie a solicitação."})
+            return {"status": "erro", "detalhe": "sessao_nao_corresponde"}
         messages = estado.get("messages") or []
         passos = estado.get("passos") or []
         custo_total = float(estado.get("custo_total") or 0.0)
@@ -359,15 +380,15 @@ async def rodar_agente(
         # Resolve tool_calls remanescentes do MESMO turno (se houver).
         if restantes:
             pausa = await _processar_tool_calls(
-                restantes, ctx=ctx, messages=messages,
-                aprovacoes_hash=aprovacoes_hash, on_event=on_event,
+                restantes, ctx=ctx, messages=messages, on_event=on_event,
                 apenas_leitura=apenas_leitura)
             if pausa is not None:
                 return await _persistir_e_pausar(
                     pending=pausa["pending"], restantes=pausa["restantes"],
                     messages=messages, passos=passos, budget=budget,
                     custo_total=custo_total, prompt_log_base=prompt_log_base,
-                    pii_removida=pii_removida, on_event=on_event)
+                    pii_removida=pii_removida, user=user, case_id=case_id,
+                    role=role, on_event=on_event)
     else:
         messages = [{"role": "system", "content": _SYSTEM_AGENTE}]
         if historico:
@@ -479,15 +500,15 @@ async def rodar_agente(
         # Anexa o turno assistant (text + tool_use) e processa as tool_calls.
         messages.append(_assistant_turn(resp.get("text", "") or "", tool_calls))
         pausa = await _processar_tool_calls(
-            tool_calls, ctx=ctx, messages=messages,
-            aprovacoes_hash=aprovacoes_hash, on_event=on_event,
+            tool_calls, ctx=ctx, messages=messages, on_event=on_event,
             apenas_leitura=apenas_leitura)
         if pausa is not None:
             return await _persistir_e_pausar(
                 pending=pausa["pending"], restantes=pausa["restantes"],
                 messages=messages, passos=passos, budget=budget,
                 custo_total=custo_total, prompt_log_base=prompt_log_base,
-                pii_removida=pii_removida, on_event=on_event)
+                pii_removida=pii_removida, user=user, case_id=case_id,
+                role=role, on_event=on_event)
 
     if final is None:
         # Laço encerrado por ORÇAMENTO (passos/tokens/custo) sem resposta natural.

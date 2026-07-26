@@ -90,7 +90,11 @@ def _extra_base(case: Case) -> dict[str, Any]:
         "deadline_source": False,
         "requires_human_review": True,
         "human_reviewed": False,
-        "rag_status": "aprovado",
+        # Auditoria 2026-07-26 (AI-079): documento cognitivo do DataJud NÃO nasce
+        # 'aprovado' — exige revisão humana (requires_human_review acima). Como
+        # 'pendente', o gate RAG_EXIGIR_APROVADO o mantém FORA da recuperação até
+        # a promoção explícita pela governança (ia_governanca/knowledge review).
+        "rag_status": "pendente",
         "confidence_level": "media",
         "client_id": str(case.client_id),
         "case_id": str(case.id),

@@ -93,8 +93,14 @@ async def _crud_listar(Model, db: AsyncSession, tipo: Optional[str],
     return {"data": [_serialize(r) for r in rows]}
 
 
+# Colunas de CONTROLE nunca editáveis via PATCH (auditoria 2026-07-26, AI-121:
+# derivar a whitelist de TODAS as colunas da tabela permitia mass assignment de
+# soft-delete/timestamps).
+_COLUNAS_CONTROLE = frozenset({"id", "case_id", "created_at", "updated_at", "deleted_at"})
+
+
 async def _crud_atualizar(Model, table: str, item_id: str, body: dict,
-                          db: AsyncSession, cu: User) -> dict:
+                          db: AsyncSession, cu: User, *, schema) -> dict:
     obj = (await db.execute(
         select(Model).where(Model.id == item_id, Model.deleted_at.is_(None))
     )).scalar_one_or_none()
@@ -102,8 +108,12 @@ async def _crud_atualizar(Model, table: str, item_id: str, body: dict,
         raise HTTPException(404, "Registro não encontrado")
     # Ownership por caso (IDOR): só edita registros de casos a que tem acesso.
     await verificar_acesso_caso(db, cu, obj.case_id)
-    allowed = {c.key for c in Model.__table__.columns
-               if c.key not in ("id", "case_id", "created_at")}
+    # Whitelist FECHADA (AI-121): somente campos de NEGÓCIO declarados no schema
+    # de entrada do ramo (ex.: EmpresarialIn) que também são colunas reais —
+    # nunca colunas de controle. `schema` é OBRIGATÓRIO: um endpoint novo sem
+    # schema não compila a chamada (evita reabrir o mass assignment por engano).
+    colunas = {c.key for c in Model.__table__.columns}
+    allowed = (set(schema.model_fields) & colunas) - _COLUNAS_CONTROLE
     for k, v in body.items():
         if k in allowed:
             setattr(obj, k, v)
@@ -189,7 +199,8 @@ async def emp_criar(body: EmpresarialIn, db: AsyncSession = Depends(get_db),
 @router.patch("/empresarial/{eid}")
 async def emp_atualizar(eid: str, body: dict, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(EmpresarialCase, "empresarial_cases", eid, body, db, cu)
+    return await _crud_atualizar(EmpresarialCase, "empresarial_cases", eid, body, db, cu,
+                                 schema=EmpresarialIn)
 
 @router.delete("/empresarial/{eid}")
 async def emp_remover(eid: str, db: AsyncSession = Depends(get_db),
@@ -357,7 +368,8 @@ async def civ_criar(body: CivelIn, db: AsyncSession = Depends(get_db),
 @router.patch("/civel/{cid}")
 async def civ_atualizar(cid: str, body: dict, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(CivelCase, "civel_cases", cid, body, db, cu)
+    return await _crud_atualizar(CivelCase, "civel_cases", cid, body, db, cu,
+                                 schema=CivelIn)
 
 @router.delete("/civel/{cid}")
 async def civ_remover(cid: str, db: AsyncSession = Depends(get_db),
@@ -502,7 +514,8 @@ async def pen_criar(body: PenalIn, db: AsyncSession = Depends(get_db),
 @router.patch("/penal/{pid}")
 async def pen_atualizar(pid: str, body: dict, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(PenalCase, "penal_cases", pid, body, db, cu)
+    return await _crud_atualizar(PenalCase, "penal_cases", pid, body, db, cu,
+                                 schema=PenalIn)
 
 @router.delete("/penal/{pid}")
 async def pen_remover(pid: str, db: AsyncSession = Depends(get_db),
@@ -665,7 +678,8 @@ async def trab_criar(body: TrabalhistaIn, db: AsyncSession = Depends(get_db),
 @router.patch("/trabalhista-esp/{tid}")
 async def trab_atualizar(tid: str, body: dict, db: AsyncSession = Depends(get_db),
                          cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(TrabalhistaCase, "trabalhista_cases", tid, body, db, cu)
+    return await _crud_atualizar(TrabalhistaCase, "trabalhista_cases", tid, body, db, cu,
+                                 schema=TrabalhistaIn)
 
 @router.delete("/trabalhista-esp/{tid}")
 async def trab_remover(tid: str, db: AsyncSession = Depends(get_db),
@@ -810,7 +824,8 @@ async def adm_criar(body: AdminIn, db: AsyncSession = Depends(get_db),
 @router.patch("/admin-esp/{aid}")
 async def adm_atualizar(aid: str, body: dict, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(AdminCase, "admin_cases", aid, body, db, cu)
+    return await _crud_atualizar(AdminCase, "admin_cases", aid, body, db, cu,
+                                 schema=AdminIn)
 
 @router.delete("/admin-esp/{aid}")
 async def adm_remover(aid: str, db: AsyncSession = Depends(get_db),
@@ -1449,7 +1464,8 @@ async def ban_criar(body: BancarioIn, db: AsyncSession = Depends(get_db),
 @router.patch("/bancario/{bid}")
 async def ban_atualizar(bid: str, body: dict, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(require_roles(_EQUIPE))):
-    return await _crud_atualizar(BancarioCase, "bancario_cases", bid, body, db, cu)
+    return await _crud_atualizar(BancarioCase, "bancario_cases", bid, body, db, cu,
+                                 schema=BancarioIn)
 
 @router.delete("/bancario/{bid}")
 async def ban_remover(bid: str, db: AsyncSession = Depends(get_db),

@@ -1,9 +1,16 @@
-"""Política permanente de aprovação automática da Base de Conhecimento.
+"""Política de aprovação automática da Base de Conhecimento.
 
-Todo ``KnowledgeDoc`` criado ou alterado pelo EJC fica disponível para o RAG
-com ``rag_status=aprovado``. A regra é aplicada no nível ORM, portanto alcança
+``KnowledgeDoc`` criado ou alterado pelo EJC fica disponível para o RAG com
+``rag_status=aprovado``. A regra é aplicada no nível ORM, portanto alcança
 importações manuais, PDF, URL, fontes oficiais, seeds e demais ingestores que
 usam o modelo nativo do EJC.
+
+EXCEÇÃO OBRIGATÓRIA (auditoria 2026-07-26, achado AI-079): documento marcado
+``requires_human_review=True`` que ainda não foi revisado
+(``human_reviewed`` falsy) NUNCA é auto-aprovado — o rag_status explícito do
+ingestor (ex.: ``pendente`` no feed cognitivo do DataJud) é preservado, e a
+promoção a ``aprovado`` só acontece por ato explícito da governança
+(ia_governanca / revisão de conhecimento).
 
 A aprovação significa autorização para recuperação pela inteligência jurídica;
 não transforma uma fonte não oficial em fonte oficial e não remove as regras de
@@ -21,6 +28,8 @@ from app.models.rag import KnowledgeDoc
 from app.services.knowledge_governance import inferir_autoridade
 
 POLITICA = "knowledge_module_always_approved"
+# AI-079: docs aguardando revisão humana ficam FORA da auto-aprovação.
+POLITICA_REVISAO_PENDENTE = "human_review_required_not_auto_approved"
 _CONFIANCAS_VALIDAS = {"alta", "media", "baixa"}
 
 
@@ -64,7 +73,19 @@ def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
     if "legisl" in _texto(documento.categoria):
         extra.setdefault("legal_status", "vigencia_nao_verificada")
 
-    extra["rag_status"] = "aprovado"
+    # AI-079: pendência de revisão humana BLOQUEIA a auto-aprovação. 'aprovado'
+    # sem human_reviewed é rebaixado a 'pendente' (nenhum ingestor pode gravar
+    # aprovação junto com requires_human_review); status explícitos não-aprovados
+    # (ex.: 'disponivel_informativo') são preservados. A promoção acontece só
+    # pela curadoria da governança, que grava human_reviewed=True.
+    requer_revisao_humana = bool(extra.get("requires_human_review")) and \
+        not bool(extra.get("human_reviewed"))
+    if requer_revisao_humana:
+        if _texto(extra.get("rag_status")) in ("", "aprovado"):
+            extra["rag_status"] = "pendente"
+        auditoria["policy"] = POLITICA_REVISAO_PENDENTE
+    else:
+        extra["rag_status"] = "aprovado"
     extra["confidence_level"] = confianca
     extra["auto_approval"] = auditoria
     documento.extra = extra

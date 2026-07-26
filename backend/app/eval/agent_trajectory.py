@@ -161,7 +161,6 @@ async def avaliar_cenario(cenario: dict) -> CenarioMetrica:
     import app.services.ai.core.response_validator as rv
     import app.services.ai.agent.hitl_state as hitl
     from app.services.ai.agent.tools.registry import REGISTRY
-    from app.services.ai.agent.hitl_state import hash_tool_call
     from app.core.config import get_settings
 
     cid = str(cenario.get("id") or "?")
@@ -217,15 +216,11 @@ async def avaliar_cenario(cenario: dict) -> CenarioMetrica:
         def on_event(tipo, dados):
             eventos.append((tipo, dados))
 
-        # Pré-aprovação por hash (cenário "escrita_aprovada"): aprova os ARGS
-        # EXATOS das write-tools do roteiro — a write executa sem pausar (H1).
-        aprovacoes: set[str] = set()
-        if cenario.get("aprovar_escrita"):
-            for t in turnos:
-                for tl in (t.get("tools") or []):
-                    nome = tl.get("name", "")
-                    if REGISTRY.requer_confirmacao(nome):
-                        aprovacoes.add(hash_tool_call(nome, tl.get("input") or {}))
+        # Aprovação de escrita (cenário "escrita_aprovada"): desde a auditoria
+        # 2026-07-26 (AI-030) NÃO existe pré-aprovação por hash — o único caminho
+        # é o fluxo real de HITL: rodar → pausar com token → retomar aprovando.
+        # O harness exercita exatamente esse fluxo (fake_salvar/fake_carregar).
+        aprovar_escrita = bool(cenario.get("aprovar_escrita"))
 
         st = get_settings()
         with ExitStack() as stack:
@@ -247,15 +242,30 @@ async def avaliar_cenario(cenario: dict) -> CenarioMetrica:
                     patch.object(st, "AI_AGENT_MAX_CUSTO_BRL", float(orc_override["max_custo_brl"])))
 
             max_steps = int(getattr(st, "AI_AGENT_MAX_STEPS", 8))
+            usuario = SimpleNamespace(id="u1", role=SimpleNamespace(value=role))
             r = await loop.rodar_agente(
                 db=None,
-                user=SimpleNamespace(id="u1", role=SimpleNamespace(value=role)),
+                user=usuario,
                 case_id="c1",
                 mensagem=cenario.get("mensagem") or "",
                 apenas_leitura=bool(cenario.get("apenas_leitura")),
-                aprovacoes_hash=aprovacoes or None,
                 on_event=on_event,
             )
+            # Fluxo real de HITL: cada pausa de write-tool é retomada com
+            # aprovação humana simulada (mesmo usuário/caso/papel — AI-031).
+            retomadas = 0
+            while (aprovar_escrita and r.get("status") == "pendente_confirmacao"
+                   and r.get("token") and retomadas < max_steps):
+                retomadas += 1
+                r = await loop.rodar_agente(
+                    db=None,
+                    user=usuario,
+                    case_id="c1",
+                    retomar_token=r["token"],
+                    decisao="aprovar",
+                    apenas_leitura=bool(cenario.get("apenas_leitura")),
+                    on_event=on_event,
+                )
 
         # ── Extração da trajetória ────────────────────────────────────────────
         passos = r.get("passos") or []

@@ -438,6 +438,10 @@ async def atualizar_curadoria(
     extra = dict(d.extra or {})
     extra["confidence_level"] = req.confidence_level
     extra["rag_status"] = req.rag_status
+    # AI-079: a curadoria É a revisão humana — registra human_reviewed para que
+    # docs com requires_human_review (ex.: DataJud cognitivo) possam ser
+    # promovidos e não voltem a 'pendente' pela política de auto-aprovação.
+    extra["human_reviewed"] = True
     extra["curadoria"] = {
         "reviewed_by": cu.id,
         "reviewed_at": datetime.now(timezone.utc).isoformat(),

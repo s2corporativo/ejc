@@ -44,9 +44,9 @@ async def agente_stream(
     Eventos: `passo`, `ferramenta`, `resultado`, `confirmacao_requerida`,
     `degradacao`, `recusado`, `final`, `erro`. Escritas pausam com
     `confirmacao_requerida` devolvendo `{token, args_hash, ferramenta, args}`; o
-    cliente retoma re-invocando com `retomar_token` + `decisao` (aprovar/recusar),
-    ou — se o Redis estiver indisponível (token=None) — reenviando `mensagem` com
-    o `aprovacoes_hash` do tool_call aprovado (HITL vinculado aos ARGS, achado H1).
+    cliente retoma re-invocando com `retomar_token` + `decisao` (aprovar/recusar)
+    — ÚNICO caminho de aprovação (estado servidor-side vinculado a usuário/caso/
+    papel; auditoria 2026-07-26 AI-030/031). Sem Redis, a escrita falha fechada.
     """
     settings = get_settings()
     if not settings.AI_AGENT_ENABLED:
@@ -76,7 +76,6 @@ async def agente_stream(
             async with AsyncSessionLocal() as agente_db:
                 resultado = await rodar_agente(
                     db=agente_db, user=cu, case_id=req.case_id, mensagem=req.mensagem,
-                    aprovacoes_hash=set(req.aprovacoes_hash or []),
                     retomar_token=req.retomar_token, decisao=req.decisao,
                     on_event=on_event,
                 )

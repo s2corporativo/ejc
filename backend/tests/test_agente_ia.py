@@ -578,22 +578,20 @@ class TestLoopHITL:
             retomar_token="inexistente", decisao="aprovar")
         assert r == {"status": "erro", "detalhe": "sessao_expirada"}
 
-    async def test_fallback_hash_casa_executa(self, loop_env):
-        """Sem Redis (salvar→None), a aprovação por HASH (nome+args) permite a
-        re-execução: o loop re-roda e só executa se o tool_call casar o hash."""
+    async def test_sem_redis_falha_fechado_nao_executa(self, loop_env):
+        """AI-030 (auditoria 2026-07-26): sem estado servidor-side (Redis
+        indisponível → salvar None), a write-tool NÃO executa e o loop devolve
+        erro — o fallback por hash enviado pelo cliente foi ELIMINADO."""
         async def salvar_none(estado, ttl=None):
             return None
 
         loop_env.monkeypatch.setattr(loop_env.hitl, "salvar", salvar_none)
-        args = {"descricao": "nota aprovada"}
-        # write → write → conclusão (1ª chamada pausa; no re-run executa e conclui).
-        turnos = iter([
-            _turno("Nota?", [{"id": "n1", "name": "registrar_nota_caso", "input": args}], "tool_use"),
-            _turno("Nota?", [{"id": "n1", "name": "registrar_nota_caso", "input": args}], "tool_use"),
-            _turno("Nota registrada (rascunho).", [], "end_turn"),
-        ])
+        args = {"descricao": "nota"}
         loop_env.monkeypatch.setattr(
-            loop_env.gw, "chat_agentico", lambda *a, **k: _async(next(turnos)))
+            loop_env.gw, "chat_agentico",
+            lambda *a, **k: _async(_turno(
+                "Nota?", [{"id": "n1", "name": "registrar_nota_caso", "input": args}],
+                "tool_use")))
         executadas: list[tuple] = []
 
         async def spy_exec(name, a, ctx):
@@ -602,26 +600,18 @@ class TestLoopHITL:
 
         loop_env.monkeypatch.setattr(loop_env.registry, "executar", spy_exec)
 
-        # 1) pausa (Redis down → token None, mas devolve args_hash).
-        r1 = await loop_env.loop.rodar_agente(
-            db=None, user=_user(), case_id="c1", mensagem="Registre a nota")
-        assert r1["status"] == "pendente_confirmacao" and r1["token"] is None
-        h = r1["args_hash"]
-        assert h == _hash("registrar_nota_caso", args)
-        assert executadas == []
-        # 2) re-roda enviando o hash aprovado → executa (casou) e conclui.
-        r2 = await loop_env.loop.rodar_agente(
+        eventos, on_event = _coletor()
+        r = await loop_env.loop.rodar_agente(
             db=None, user=_user(), case_id="c1", mensagem="Registre a nota",
-            aprovacoes_hash={h})
-        assert r2["status"] == "ok"
-        assert executadas == [("registrar_nota_caso", args)]
+            on_event=on_event)
+        assert r == {"status": "erro", "detalhe": "hitl_indisponivel"}
+        assert executadas == []                       # NUNCA executou a write
+        assert any(t == "erro" for t, _ in eventos)
 
-    async def test_aprovacao_hash_e_one_shot_repeticao_pausa_de_novo(self, loop_env):
-        """Item 7 (auditoria): a aprovação por hash vale para UMA execução — o
-        hash é CONSUMIDO na primeira write executada; chamada repetida IDÊNTICA
-        pausa DE NOVO (nova aprovação humana), nunca executa em série."""
+    async def test_aprovacao_e_one_shot_repeticao_pausa_de_novo(self, loop_env):
+        """A aprovação (via token) vale para UMA execução: aprovada a 1ª write,
+        uma chamada repetida IDÊNTICA pausa DE NOVO — nunca executa em série."""
         args = {"descricao": "nota aprovada"}
-        h = _hash("registrar_nota_caso", args)
         turnos = iter([
             _turno("Nota 1", [{"id": "n1", "name": "registrar_nota_caso",
                                "input": args}], "tool_use"),
@@ -638,25 +628,28 @@ class TestLoopHITL:
 
         loop_env.monkeypatch.setattr(loop_env.registry, "executar", spy_exec)
 
-        r = await loop_env.loop.rodar_agente(
-            db=None, user=_user(), case_id="c1", mensagem="Registre duas vezes",
-            aprovacoes_hash={h})
-        # 1ª execução consumiu o hash; a repetição idêntica PAUSOU de novo.
+        r1 = await loop_env.loop.rodar_agente(
+            db=None, user=_user(), case_id="c1", mensagem="Registre duas vezes")
+        assert r1["status"] == "pendente_confirmacao" and r1["token"]
+        r2 = await loop_env.loop.rodar_agente(
+            db=None, user=_user(), case_id="c1",
+            retomar_token=r1["token"], decisao="aprovar")
+        # 1ª execução aprovada; a repetição idêntica PAUSOU de novo (novo token).
         assert executadas == [("registrar_nota_caso", args)]
-        assert r["status"] == "pendente_confirmacao"
-        assert r["args_hash"] == h
+        assert r2["status"] == "pendente_confirmacao"
+        assert r2["token"]
+        assert r2["args_hash"] == _hash("registrar_nota_caso", args)
 
-    async def test_fallback_hash_diverge_recusa(self, loop_env):
-        """H1: se o modelo gerar ARGS diferentes dos aprovados, o hash não casa →
-        NÃO executa (recusa segura), mesmo com um hash aprovado presente."""
+    async def test_retomada_de_outro_usuario_recusada_e_token_consumido(self, loop_env):
+        """AI-031: o token é VINCULADO a usuário/caso/papel — retomada por OUTRO
+        usuário é recusada sem executar nada; o consumo one-shot destrói o token
+        (fail-closed: o fluxo legítimo recomeça do zero)."""
+        args = {"descricao": "nota"}
         loop_env.monkeypatch.setattr(
             loop_env.gw, "chat_agentico",
             lambda *a, **k: _async(_turno(
-                "Nota?",
-                [{"id": "n1", "name": "registrar_nota_caso",
-                  "input": {"descricao": "OUTRA nota não aprovada"}}],
-                "tool_use")),
-        )
+                "Nota?", [{"id": "n1", "name": "registrar_nota_caso", "input": args}],
+                "tool_use")))
         executadas: list[str] = []
 
         async def spy_exec(name, a, ctx):
@@ -665,13 +658,48 @@ class TestLoopHITL:
 
         loop_env.monkeypatch.setattr(loop_env.registry, "executar", spy_exec)
 
-        # Hash aprovado é de OUTROS args → não casa com o que o modelo gerou.
-        h_aprovado = _hash("registrar_nota_caso", {"descricao": "nota aprovada"})
-        r = await loop_env.loop.rodar_agente(
-            db=None, user=_user(), case_id="c1", mensagem="Registre",
-            aprovacoes_hash={h_aprovado})
-        assert r["status"] == "pendente_confirmacao"   # pausou de novo
-        assert executadas == []                        # args divergentes → não executou
+        r1 = await loop_env.loop.rodar_agente(
+            db=None, user=_user(), case_id="c1", mensagem="Registre")
+        assert r1["status"] == "pendente_confirmacao" and r1["token"]
+
+        intruso = SimpleNamespace(id="u2", role=SimpleNamespace(value="advogado"))
+        r2 = await loop_env.loop.rodar_agente(
+            db=None, user=intruso, case_id="c1",
+            retomar_token=r1["token"], decisao="aprovar")
+        assert r2 == {"status": "erro", "detalhe": "sessao_nao_corresponde"}
+        assert executadas == []
+
+        # Token foi consumido (one-shot) na tentativa indevida → expirado.
+        r3 = await loop_env.loop.rodar_agente(
+            db=None, user=_user(), case_id="c1",
+            retomar_token=r1["token"], decisao="aprovar")
+        assert r3 == {"status": "erro", "detalhe": "sessao_expirada"}
+        assert executadas == []
+
+    async def test_retomada_com_caso_divergente_recusada(self, loop_env):
+        """AI-031: token pausado no caso c1 não vale para retomar no caso c2."""
+        args = {"descricao": "nota"}
+        loop_env.monkeypatch.setattr(
+            loop_env.gw, "chat_agentico",
+            lambda *a, **k: _async(_turno(
+                "Nota?", [{"id": "n1", "name": "registrar_nota_caso", "input": args}],
+                "tool_use")))
+        executadas: list[str] = []
+
+        async def spy_exec(name, a, ctx):
+            executadas.append(name)
+            return {"registrado": True}
+
+        loop_env.monkeypatch.setattr(loop_env.registry, "executar", spy_exec)
+
+        r1 = await loop_env.loop.rodar_agente(
+            db=None, user=_user(), case_id="c1", mensagem="Registre")
+        assert r1["status"] == "pendente_confirmacao"
+        r2 = await loop_env.loop.rodar_agente(
+            db=None, user=_user(), case_id="c2",
+            retomar_token=r1["token"], decisao="aprovar")
+        assert r2 == {"status": "erro", "detalhe": "sessao_nao_corresponde"}
+        assert executadas == []
 
 
 class TestLoopConclusao:

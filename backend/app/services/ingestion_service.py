@@ -307,7 +307,14 @@ async def upsert_documento(
             anterior = dict(existente.extra or {})
             mesclado = {**anterior, **extra}
             if anterior.get("rag_status") == "aprovado" and extra.get("rag_status") == "pendente":
-                mesclado["rag_status"] = "aprovado"
+                # AI-079 (auditoria 2026-07-26): doc que EXIGE revisão humana ainda
+                # não revisada NÃO re-promove 'pendente'→'aprovado' no re-feed —
+                # senão o estoque DataJud aprovado antes do fix nunca seria
+                # rebaixado. Sem pendência de revisão, preserva a aprovação.
+                requer_revisao = bool(mesclado.get("requires_human_review")) and \
+                    not bool(mesclado.get("human_reviewed"))
+                if not requer_revisao:
+                    mesclado["rag_status"] = "aprovado"
             existente.extra = mesclado
         existente.titulo = titulo
         existente.categoria = categoria

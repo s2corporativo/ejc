@@ -292,12 +292,14 @@ class Settings(BaseSettings):
     ROTEAMENTO_LIMIAR_PESADO: int = 6
 
     # ── MÓDULO AGÊNTICO DE IA (loop de tool-use, igual ao Claude Code) ────
-    # ATIVADO por default (decisão do titular, 2026-07-18): a IA opera como
-    # agente (decide → chama ferramenta → lê resultado → decide), reusando o
-    # núcleo e TODOS os guardrails (barreira LGPD, RBAC, AILog, gate de
-    # citações, HITL). Nesta fase só provedores com tool-use (Anthropic).
-    # Desligar num ambiente específico: AI_AGENT_ENABLED=false no .env.
-    AI_AGENT_ENABLED: bool = True
+    # DESATIVADO por default (auditoria máxima 2026-07-26, achado AI-033/AI-034):
+    # o agente com write-tools (nota, prazo fatal, kit documental) só deve ser
+    # habilitado por decisão EXPLÍCITA do ambiente (AI_AGENT_ENABLED=true no
+    # .env), após homologação do HITL. Isso também alinha o default ao que o
+    # router (ia_agente.py) sempre documentou. A IA opera como agente (decide →
+    # chama ferramenta → lê resultado → decide), reusando o núcleo e TODOS os
+    # guardrails (barreira LGPD, RBAC, AILog, gate de citações, HITL).
+    AI_AGENT_ENABLED: bool = False
     # Teto de PASSOS do loop (nunca infinito).
     AI_AGENT_MAX_STEPS: int = 8
     # Teto de TOKENS acumulados (input+output de TODOS os turnos) por execução do
