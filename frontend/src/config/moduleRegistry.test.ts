@@ -47,11 +47,11 @@ describe("moduleRegistry", () => {
     expect(canRoleAccessPath("estagiario", "/financeiro")).toBe(false);
   });
 
-  it("destaca o Raio-X e o Financeiro apenas para os perfis autorizados", () => {
+  it("destaca a Sala Jurídica e o Financeiro apenas para os perfis autorizados", () => {
     const advogado = getProductionNavigation("advogado");
     const socio = getProductionNavigation("socio");
     expect(
-      advogado.find((item) => item.path === "/raio-x")?.essential,
+      advogado.find((item) => item.path === "/sala-juridica")?.essential,
     ).toBe(true);
     expect(advogado.some((item) => item.path === "/financeiro")).toBe(false);
     expect(socio.find((item) => item.path === "/financeiro")?.essential).toBe(
@@ -59,11 +59,12 @@ describe("moduleRegistry", () => {
     );
   });
 
-  it("mantém o Raio-X como porta única de triagem no menu (a Sala de Análise foi absorvida)", () => {
+  it("mantém o Raio-X acessível no menu como apoio da Sala Jurídica", () => {
     const advogado = getProductionNavigation("advogado");
     const raioX = STAFF_ROUTES.find((item) => item.path === "/raio-x");
     expect(canRoleAccessPath("advogado", "/raio-x")).toBe(true);
     expect(raioX?.showInNav).toBe(true);
+    expect(raioX?.essential).toBe(false);
     expect(advogado.some((item) => item.path === "/raio-x")).toBe(true);
     expect(STAFF_ROUTES.some((item) => item.path === "/sala-analise")).toBe(false);
   });
@@ -116,7 +117,7 @@ describe("moduleRegistry", () => {
       "/clientes",
       "/documentos",
       "/pecas",
-      "/raio-x",
+      "/sala-juridica",
       "/inteligencia",
     ]);
     expect(advogado).not.toContain("/casos/novo");

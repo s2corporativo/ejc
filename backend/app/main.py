@@ -73,6 +73,7 @@ from app.routers import diario_oficial
 from app.routers import diplomacia_v3
 from app.routers import documento_ia
 from app.routers import raio_x
+from app.routers import legal_chat
 from app.routers import documents
 from app.routers import dossie_cliente
 from app.routers import dossie_estrategico
@@ -331,6 +332,7 @@ app.include_router(diario_oficial.router, prefix=API)
 app.include_router(diplomacia_v3.router, prefix=API)
 app.include_router(documento_ia.router, prefix=API)
 app.include_router(raio_x.router, prefix=API)
+app.include_router(legal_chat.router, prefix=API)
 app.include_router(documents.router, prefix=API)
 app.include_router(dossie_cliente.router, prefix=API)
 app.include_router(dossie_estrategico.router, prefix=API)

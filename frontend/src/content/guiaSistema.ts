@@ -197,6 +197,25 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         perfil: "advogado",
         badge: "IA",
       },
+      {
+        id: "sala-juridica",
+        titulo: "Sala Jurídica",
+        rota: "/sala-juridica",
+        oQueE:
+          "A porta de entrada conversacional do EJC: área de trabalho livre, chat jurídico e estado probatório versionado, sem exigir cadastro prévio de caso.",
+        paraQueServe:
+          "Permite colar fatos e documentos, conversar com a IA em modos de atuação (organizar fatos, analisar provas, simular defesa) e só depois decidir se a análise vira caso, consulta ou arquivo.",
+        comoUsar: [
+          "Crie uma Nova análise e cole a narrativa na área de trabalho livre.",
+          "Anexe documentos — a extração identifica partes, datas e valores.",
+          "Converse com a IA escolhendo o modo de atuação adequado.",
+          "Acompanhe fatos, provas e riscos no painel de estado jurídico.",
+          "Converta em caso apenas após a conferência de cliente e conflito.",
+        ],
+        dica: "Toda resposta é rascunho sujeito a revisão humana (HITL); a conversão congela a análise para auditoria.",
+        perfil: "advogado",
+        badge: "IA",
+      },
     ],
   },
   {

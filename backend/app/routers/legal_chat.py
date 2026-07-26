@@ -1,0 +1,334 @@
+"""Sala Jurídica Conversacional — endpoints (V1).
+
+Prefixo /sala-juridica. Toda IA passa pelo núcleo único (orchestrator →
+ai_gateway): sanitização LGPD, RAG, AILog, HITL e crítica adversarial não
+são contornados por esta superfície.
+"""
+from __future__ import annotations
+
+import hashlib
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+
+import aiofiles
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.config import get_settings
+from app.core.database import get_db
+from app.core.rate_limit import rate_limit
+from app.core.security import get_current_user, requer_advogado
+from app.models.audit_log import criar_audit_log
+from app.models.legal_chat import LegalChatAttachment, LegalChatSession, SESSION_STATUS
+from app.models.user import User
+from app.schemas.legal_chat import (
+    ConverterRequest,
+    EstadoUpdate,
+    MensagemCreate,
+    SaidaAlternativaRequest,
+    SessaoCreate,
+    SessaoUpdate,
+)
+from app.services import legal_chat_service as svc
+from app.services import documento_service
+
+router = APIRouter(prefix="/sala-juridica", tags=["Sala Jurídica Conversacional"])
+settings = get_settings()
+
+MAX_ARQUIVOS = 10
+EXTENSOES = {
+    ".pdf", ".docx", ".doc", ".txt", ".xml", ".xlsx", ".csv",
+    ".png", ".jpg", ".jpeg", ".tiff", ".webp",
+}
+
+
+@router.post("", dependencies=[Depends(rate_limit("sala-juridica-criar", 20))])
+async def criar_sessao(
+    payload: SessaoCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    sessao = LegalChatSession(
+        id=str(uuid4()),
+        titulo=payload.titulo,
+        cliente_potencial=payload.cliente_potencial,
+        area_sugerida=payload.area_sugerida,
+        workspace_texto=payload.workspace_texto,
+        advogado_responsavel_id=user.id,
+        created_by=user.id,
+    )
+    db.add(sessao)
+    await db.commit()
+    await db.refresh(sessao)
+    return svc.serializar_sessao(sessao)
+
+
+@router.get("")
+async def listar_sessoes(
+    status: str | None = Query(default=None),
+    favorita: bool | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if status is not None and status not in SESSION_STATUS:
+        raise HTTPException(422, f"status inválido; use um de: {sorted(SESSION_STATUS)}")
+    stmt = select(LegalChatSession).where(LegalChatSession.deleted_at.is_(None))
+    if svc._role(user) not in svc._GESTAO:
+        stmt = stmt.where(
+            (LegalChatSession.created_by == user.id)
+            | (LegalChatSession.advogado_responsavel_id == user.id)
+        )
+    if status:
+        stmt = stmt.where(LegalChatSession.status == status)
+    if favorita is not None:
+        stmt = stmt.where(LegalChatSession.favorita.is_(favorita))
+    if q:
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(
+            LegalChatSession.titulo.ilike(like)
+            | LegalChatSession.cliente_potencial.ilike(like)
+        )
+    stmt = stmt.order_by(LegalChatSession.updated_at.desc()).limit(limit)
+    res = await db.execute(stmt)
+    return [svc.serializar_sessao(s) for s in res.scalars().all()]
+
+
+@router.get("/{session_id}")
+async def detalhar_sessao(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    sessao = await svc.obter_sessao(db, session_id, user)
+    res = await db.execute(
+        select(LegalChatSession)
+        .options(
+            selectinload(LegalChatSession.mensagens),
+            selectinload(LegalChatSession.anexos),
+        )
+        .where(LegalChatSession.id == sessao.id)
+    )
+    sessao = res.scalar_one()
+    estado = await svc.ultima_versao_estado(db, sessao.id)
+    return svc.serializar_sessao(sessao, incluir_relacionados=True, estado=estado)
+
+
+@router.patch("/{session_id}")
+async def atualizar_sessao(
+    session_id: str,
+    payload: SessaoUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    sessao = await svc.obter_sessao(db, session_id, user)
+    svc.exigir_nao_congelada(sessao)
+    dados = payload.model_dump(exclude_unset=True)
+    if "workspace_texto" in dados:
+        sessao.workspace_versao = (sessao.workspace_versao or 0) + 1
+    for campo, valor in dados.items():
+        setattr(sessao, campo, valor)
+    await db.commit()
+    await db.refresh(sessao)
+    return svc.serializar_sessao(sessao)
+
+
+@router.post(
+    "/{session_id}/mensagens",
+    dependencies=[Depends(rate_limit("sala-juridica-mensagem", 15))],
+)
+async def enviar_mensagem(
+    session_id: str,
+    payload: MensagemCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # Atos de análise/elaboração jurídica exigem advogado+ (padrão do núcleo).
+    requer_advogado(user, "Somente advogados podem usar a análise jurídica de IA")
+    sessao = await svc.obter_sessao(db, session_id, user)
+    resultado = await svc.enviar_mensagem(db, sessao, payload, user)
+    await db.commit()
+    return resultado
+
+
+@router.patch("/{session_id}/estado")
+async def atualizar_estado(
+    session_id: str,
+    payload: EstadoUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    requer_advogado(user, "A curadoria do estado jurídico é ato privativo de advogado")
+    sessao = await svc.obter_sessao(db, session_id, user)
+    svc.exigir_nao_congelada(sessao)
+    versao = await svc.gravar_versao_estado(
+        db, sessao,
+        estado=payload.estado,
+        resumo=payload.resumo,
+        origem="advogado",
+        created_by=user.id,
+    )
+    await db.commit()
+    return {"versao": versao.versao}
+
+
+@router.get("/{session_id}/estado")
+async def obter_estado(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    sessao = await svc.obter_sessao(db, session_id, user)
+    estado = await svc.ultima_versao_estado(db, sessao.id)
+    if estado is None:
+        return {"versao": 0, "resumo": None, "estado": {}, "origem": None}
+    return {
+        "versao": estado.versao,
+        "resumo": estado.resumo,
+        "estado": estado.estado,
+        "origem": estado.origem,
+        "created_at": estado.created_at.isoformat() if estado.created_at else None,
+    }
+
+
+@router.post(
+    "/{session_id}/anexos",
+    dependencies=[Depends(rate_limit("sala-juridica-upload", 10))],
+)
+async def anexar_documentos(
+    session_id: str,
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    sessao = await svc.obter_sessao(db, session_id, user)
+    svc.exigir_nao_congelada(sessao)
+    if not files or len(files) > MAX_ARQUIVOS:
+        raise HTTPException(422, f"Envie de 1 a {MAX_ARQUIVOS} arquivos por lote")
+
+    res = await db.execute(
+        select(LegalChatAttachment.sha256).where(
+            LegalChatAttachment.session_id == sessao.id
+        )
+    )
+    existentes = {row[0] for row in res.all()}
+    novos, duplicados, erros = [], [], []
+    from app.routers.documents import _validar_conteudo
+
+    for upload in files:
+        filename = Path(upload.filename or "documento").name[:255]
+        ext = Path(filename).suffix.lower()
+        if ext not in EXTENSOES:
+            erros.append({"arquivo": filename, "erro": "Formato não suportado"})
+            continue
+        content = await upload.read()
+        if not content:
+            erros.append({"arquivo": filename, "erro": "Arquivo vazio"})
+            continue
+        if len(content) > settings.MAX_UPLOAD_MB * 1024 * 1024:
+            erros.append({"arquivo": filename, "erro": f"Excede {settings.MAX_UPLOAD_MB} MB"})
+            continue
+        digest = hashlib.sha256(content).hexdigest()
+        if digest in existentes:
+            duplicados.append(filename)
+            continue
+        try:
+            mime_real = _validar_conteudo(ext, content)
+        except HTTPException as exc:
+            erros.append({"arquivo": filename, "erro": str(exc.detail)[:300]})
+            continue
+        now = datetime.now(timezone.utc)
+        rel = Path("sala-juridica") / f"{now.year}" / f"{now.month:02d}" / sessao.id / f"{uuid4()}{ext}"
+        full = Path(settings.UPLOAD_DIR) / rel
+        full.parent.mkdir(parents=True, exist_ok=True)
+        async with aiofiles.open(full, "wb") as target:
+            await target.write(content)
+        resultado: dict = {}
+        ocr = ext in {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".webp"}
+        try:
+            extraido = await documento_service.extrair_e_analisar(
+                str(full),
+                mime_real or upload.content_type,
+                db=db,
+                enriquecer_rag=False,
+                user_id=user.id,
+            )
+            extraido.pop("_texto_sanitizado", None)
+            resultado = jsonable_encoder(extraido)
+        except Exception as exc:  # extração nunca bloqueia o anexo em si
+            resultado = {"ok": False, "erro": str(exc)[:300]}
+        anexo = LegalChatAttachment(
+            id=str(uuid4()),
+            session_id=sessao.id,
+            nome_original=filename,
+            filepath=str(rel),
+            mimetype=mime_real,
+            size_bytes=len(content),
+            sha256=digest,
+            ocr_utilizado=ocr,
+            resultado_analise=resultado,
+            uploaded_by=user.id,
+        )
+        db.add(anexo)
+        existentes.add(digest)
+        novos.append(anexo)
+
+    await db.commit()
+    return {
+        "anexados": [svc.serializar_anexo(a) for a in novos],
+        "duplicados": duplicados,
+        "erros": erros,
+    }
+
+
+@router.post(
+    "/{session_id}/converter",
+    dependencies=[Depends(rate_limit("sala-juridica-converter", 5))],
+)
+async def converter(
+    session_id: str,
+    payload: ConverterRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    requer_advogado(user, "A criação de caso oficial é ato privativo de advogado")
+    sessao = await svc.obter_sessao(db, session_id, user)
+    resultado = await svc.converter_em_caso(db, sessao, payload, user)
+    await criar_audit_log(
+        db, user_id=user.id, user_role=svc._role(user),
+        acao="sala_juridica_converter", entidade="legal_chat_sessions",
+        registro_id=sessao.id,
+        detalhes=f"case_id={resultado.get('case_id')}",
+    )
+    await db.commit()
+    return resultado
+
+
+@router.post("/{session_id}/saida")
+async def saida_alternativa(
+    session_id: str,
+    payload: SaidaAlternativaRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Saídas que não geram processo: consulta, arquivamento ou descarte."""
+    sessao = await svc.obter_sessao(db, session_id, user)
+    svc.exigir_nao_congelada(sessao)
+    if payload.acao == "descartar":
+        sessao.deleted_at = datetime.now(timezone.utc)
+        sessao.status = "arquivada"
+    else:
+        sessao.status = "arquivada"
+    await criar_audit_log(
+        db, user_id=user.id, user_role=svc._role(user),
+        acao=f"sala_juridica_{payload.acao}", entidade="legal_chat_sessions",
+        registro_id=sessao.id,
+        detalhes=(payload.justificativa or "")[:500] or None,
+    )
+    await db.commit()
+    return {"ok": True, "status": sessao.status}
