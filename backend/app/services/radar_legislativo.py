@@ -25,7 +25,7 @@ from typing import Any, Awaitable, Callable
 
 from app.core.config import get_settings
 
-logger = logging.getLogger("radar_legislativo")
+logger = logging.getLogger("ejc.radar_legislativo")
 
 # ── Constantes de API ─────────────────────────────────────────────────────────
 CAMARA_API = "https://dadosabertos.camara.leg.br/api/v2"

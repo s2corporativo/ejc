@@ -5,7 +5,7 @@ Simula o "Advogado da Parte Contrária" para blindagem de teses.
 import logging
 from app.core.ai_brain import ai_brain
 
-logger = logging.getLogger("war_room")
+logger = logging.getLogger("ejc.war_room")
 
 class WarRoom:
     def __init__(self):

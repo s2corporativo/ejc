@@ -19,7 +19,7 @@ import logging
 import re
 from typing import Any
 
-logger = logging.getLogger("crawler_precedentes")
+logger = logging.getLogger("ejc.crawler_precedentes")
 
 _FONTES_VALIDAS = {"lexml", "tjmg", "datajud", "stj", "stf"}
 _FONTES_DEFAULT = ["lexml", "tjmg"]
