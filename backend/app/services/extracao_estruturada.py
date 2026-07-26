@@ -29,38 +29,13 @@ class Ocorrencia(TypedDict):
 
 
 # ── Validação de dígito verificador (CPF/CNPJ) ───────────────────────────────
-
-def validar_cpf(cpf: str) -> bool:
-    """Valida CPF pelo algoritmo oficial de dígitos verificadores."""
-    digitos = re.sub(r"\D", "", cpf)
-    if len(digitos) != 11 or digitos == digitos[0] * 11:
-        return False
-    nums = [int(d) for d in digitos]
-    for pos in (9, 10):
-        soma = sum(n * p for n, p in zip(nums[:pos], range(pos + 1, 1, -1)))
-        dv = (soma * 10) % 11
-        if dv == 10:
-            dv = 0
-        if dv != nums[pos]:
-            return False
-    return True
-
-
-def validar_cnpj(cnpj: str) -> bool:
-    """Valida CNPJ pelo algoritmo oficial de dígitos verificadores."""
-    digitos = re.sub(r"\D", "", cnpj)
-    if len(digitos) != 14 or digitos == digitos[0] * 14:
-        return False
-    nums = [int(d) for d in digitos]
-    pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
-    pesos2 = [6] + pesos1
-    for pos, pesos in ((12, pesos1), (13, pesos2)):
-        soma = sum(n * p for n, p in zip(nums[:pos], pesos))
-        resto = soma % 11
-        dv = 0 if resto < 2 else 11 - resto
-        if dv != nums[pos]:
-            return False
-    return True
+# Reutiliza a implementação canônica do projeto (validators_service) — o
+# re-export preserva o contrato público deste módulo (validar_cpf/validar_cnpj
+# continuam importáveis daqui).
+from app.services.validators_service import (  # noqa: E402
+    validar_cnpj,
+    validar_cpf,
+)
 
 
 # ── Padrões ──────────────────────────────────────────────────────────────────

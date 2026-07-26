@@ -113,7 +113,6 @@ async def test_chat_roteamento_on_respeita_kill_switch(monkeypatch):
 
 async def test_chat_calcula_custo_estimado(monkeypatch):
     _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=False)
-    cap = {}
     async def _fake(provider, model, messages, temperature, max_tokens):
         return "r", {"model": "claude-opus-4-8", "input_tokens": 1_000_000, "output_tokens": 0}
     monkeypatch.setattr(g, "_chamar_provedor", _fake)

@@ -16,7 +16,7 @@ import logging
 
 from app.services import visual_law_theme as vlt
 
-logger = logging.getLogger("visual_law_pdf")
+logger = logging.getLogger("ejc.visual_law_pdf")
 
 _CSS_TIMELINE = f"""
   .conteudo {{ padding: 2mm 2mm 0 2mm; }}

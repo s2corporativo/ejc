@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from app.models.ai_log import AILog
 from app.models.audit_log import AuditLog
 from app.models.matriz_teses import (
-    AuthorityRecord, EvidenceLink, LegalIssue, ThesisCandidate,
+    AuthorityRecord, LegalIssue, ThesisCandidate,
 )
 from app.models.tese import Tese, TeseStatus, TeseTipo
 from app.models.user import User, UserRole
