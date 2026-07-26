@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import Markdown from "../components/Markdown";
 import { useParams, useNavigate } from "react-router-dom";
-import { Button, EmptyState, PageHeader, Spinner } from "../components/UI";
+import {
+  Button,
+  EmptyState,
+  PageHeader,
+  Spinner,
+  fmtMoney,
+} from "../components/UI";
 import { toast } from "../components/Toast";
 import {
   AlertTriangle,
@@ -220,14 +226,6 @@ function Section({
       <div className="p-5">{children}</div>
     </div>
   );
-}
-
-function formatBRL(v: number | null | undefined) {
-  if (v == null || isNaN(Number(v))) return "—";
-  return Number(v).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
 }
 
 /** Aviso HITL padrão: toda saída de IA é rascunho com revisão obrigatória. */
@@ -756,7 +754,7 @@ function AcordoTab({
                     VPL do processo
                   </div>
                   <div className="text-lg font-light text-zinc-800">
-                    {formatBRL(res.valor_presente_liquido)}
+                    {fmtMoney(res.valor_presente_liquido)}
                   </div>
                 </div>
                 <div className="rounded-lg border border-bronze/30 bg-bronze/5 px-4 py-3">
@@ -764,7 +762,7 @@ function AcordoTab({
                     Acordo racional sugerido
                   </div>
                   <div className="text-lg font-medium text-bronze">
-                    {formatBRL(res.sugestao_acordo_ideal)}
+                    {fmtMoney(res.sugestao_acordo_ideal)}
                   </div>
                 </div>
                 <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3">
@@ -772,7 +770,7 @@ function AcordoTab({
                     Custo de oportunidade
                   </div>
                   <div className="text-lg font-light text-zinc-800">
-                    {formatBRL(res.custo_oportunidade_perda)}
+                    {fmtMoney(res.custo_oportunidade_perda)}
                   </div>
                 </div>
               </div>
@@ -790,7 +788,7 @@ function AcordoTab({
                   <span>
                     Custos estimados:{" "}
                     <b className="text-zinc-600">
-                      {formatBRL(res.custos_estimados)}
+                      {fmtMoney(res.custos_estimados)}
                     </b>
                   </span>
                 )}

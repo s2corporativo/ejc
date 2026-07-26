@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import axios from "axios";
+import api from "../lib/api";
 
 export default function RecuperarSenha() {
   const [email, setEmail] = useState("");
   const [ok, setOk] = useState(false);
 
   const enviar = async () => {
-    await axios.post("/api/auth/recuperar-senha", { email }).catch(() => {});
+    await api.post("/auth/recuperar-senha", { email }).catch(() => {});
     setOk(true); // sempre sucesso (não revela se e-mail existe)
   };
 

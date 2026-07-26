@@ -11,13 +11,14 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Spinner, fmtDate } from "../components/UI";
+import { PageHeader, Spinner, fmtDate, fmtMoney } from "../components/UI";
 
 type Tab =
   "visao" | "curadoria" | "mgjec" | "prompts" | "fontes" | "guardrails";
 
-const brl = (v?: number | null) =>
-  (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+// Custo zero/ausente aparece como R$ 0,00 (dashboards de custo somam a partir
+// do zero) — por isso o `?? 0` antes do formatador canônico.
+const brl = (v?: number | null) => fmtMoney(v ?? 0);
 
 function Kpi({
   label,
