@@ -96,6 +96,10 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
+      # Backup offsite via rclone (PR #480): o upload roda DENTRO do container,
+      # então a config do rclone (token OAuth) do host é montada read-only.
+      # Configure o remote no HOST (`rclone config`); o container só consome.
+      - ${RCLONE_CONFIG_DIR:-/root/.config/rclone}:/root/.config/rclone:ro
     depends_on:
       db:
         condition: service_healthy
