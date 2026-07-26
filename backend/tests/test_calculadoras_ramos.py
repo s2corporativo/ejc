@@ -21,14 +21,15 @@ from app.routers import ramos
 # Administrativo — reajuste de contrato administrativo (anualidade, Lei 14.133 art. 92)
 # ══════════════════════════════════════════════════════════════════════════
 async def test_reajuste_contrato_respeita_anualidade():
+    kw = dict(indice_nome="IPCA/IBGE", data_base=date(2025, 1, 10), cu=None)
     ainda_nao = await ramos.adm_reajuste_contrato(
-        valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=10, cu=None,
+        valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=10, **kw,
     )
     assert ainda_nao["elegivel_para_reajuste"] is False
     assert ainda_nao["novo_valor_do_contrato"] == 100_000.0
 
     ok = await ramos.adm_reajuste_contrato(
-        valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=12, cu=None,
+        valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=12, **kw,
     )
     assert ok["elegivel_para_reajuste"] is True
     assert ok["valor_do_reajuste"] == 5_000.0

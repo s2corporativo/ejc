@@ -399,7 +399,13 @@ async def gerar_demonstrativo(
         raise HTTPException(403, "Acesso negado")
 
     # Gate de homologação (Onda 1): cálculo de ferramenta não homologada não
-    # pode ser convertido em demonstrativo/peça.
+    # pode ser convertido em demonstrativo/peça. O campo é OPT-IN por
+    # retrocompatibilidade — quando ausente, registramos o bypass para dar
+    # visibilidade (a obrigatoriedade fica para a Onda 3, com telemetria).
+    if not req.ferramenta:
+        logger.warning(
+            "demonstrativo_sem_ferramenta: gate de homologação não aplicado "
+            "(user_id=%s, case_id=%s, titulo=%r)", cu.id, req.case_id, req.titulo[:80])
     if req.ferramenta:
         motivo = motivo_nao_homologada(req.ferramenta)
         if motivo:

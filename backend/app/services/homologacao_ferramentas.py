@@ -40,9 +40,11 @@ FERRAMENTAS_BLOQUEADAS: frozenset[str] = frozenset()
 
 
 def normalizar_caminho_ferramenta(caminho: str) -> str:
-    """Normaliza o caminho declarado antes do lookup na matriz: percent-encoding,
-    casing, barras duplicadas, querystring, barra final e prefixo /api."""
-    c = unquote(caminho or "").split("?")[0].casefold()
+    """Normaliza o caminho declarado antes do lookup na matriz: espaços,
+    percent-encoding, casing, barras duplicadas, querystring, barra final e /api.
+    É a ÚNICA porta de entrada do lookup — selo, bloqueio e gate usam esta função,
+    para que as três semânticas nunca divirjam."""
+    c = unquote(caminho or "").strip().split("?")[0].strip().casefold()
     while "//" in c:
         c = c.replace("//", "/")
     c = c.rstrip("/")
@@ -57,17 +59,22 @@ def motivo_nao_homologada(caminho: str) -> str | None:
 
 
 def bloquear_nao_homologada(caminho: str) -> None:
-    """Indisponibilidade controlada: ferramenta da lista BLOQUEADA responde 503."""
+    """Indisponibilidade controlada: ferramenta da lista BLOQUEADA responde 503.
+    Usa a MESMA normalização do selo e do gate do demonstrativo."""
+    motivo = motivo_nao_homologada(caminho)
+    if motivo is None:
+        raise KeyError(f"Ferramenta fora da matriz de não homologadas: {caminho!r}")
     raise HTTPException(503, detail={
         "codigo": "ferramenta_nao_homologada",
-        "motivo": FERRAMENTAS_NAO_HOMOLOGADAS[caminho],
+        "motivo": motivo,
         "mensagem": "Ferramenta temporariamente indisponível — em revisão jurídica",
     })
 
 
 def selo_homologacao(caminho: str, resposta: dict) -> dict:
-    """Anexa o selo homologada=False + aviso quando a ferramenta está na matriz."""
-    motivo = FERRAMENTAS_NAO_HOMOLOGADAS.get(caminho)
+    """Anexa o selo homologada=False + aviso quando a ferramenta está na matriz.
+    Usa a MESMA normalização do gate do demonstrativo (semântica única)."""
+    motivo = motivo_nao_homologada(caminho)
     if motivo:
         resposta["homologada"] = False
         resposta["aviso_homologacao"] = (

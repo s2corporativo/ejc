@@ -124,7 +124,8 @@ async def test_juros_mora_inicio_antes_da_vigencia_exige_opcao():
 
 
 async def test_juros_mora_segmentacao_1pct_ate_29_08_2024():
-    # Mora desde 31/07/2024: 30 dias sob a regra antiga (1 mês × 1%) + regra nova.
+    # Mora desde 31/07/2024: regra antiga vai ATÉ 29/08/2024 (inclusive) — a nova
+    # vigora a partir de 30/08. São 29 dias → 0,9667 mês × 1%.
     r = await ramos.empresarial_juros_mora(
         regime="legal", valor_principal=1_000.0,
         data_inicio_mora=date(2024, 7, 31), data_fim=date(2025, 7, 31),
@@ -134,9 +135,25 @@ async def test_juros_mora_segmentacao_1pct_ate_29_08_2024():
     assert len(r["componentes"]) == 2
     antigo, novo = r["componentes"]
     assert "1% a.m." in antigo["parcela"]
-    assert antigo["valor"] == 10.0                # 1000 × 1% × 1 mês
-    assert novo["valor"] == 60.0                  # 1000 × (10% − 4%)
-    assert r["juros_mora_total"] == 70.0
+    assert antigo["periodo"].endswith("2024-08-29")   # sem off-by-one no rótulo
+    assert antigo["valor"] == 9.67                    # 1000 × 1% × 29/30 mês
+    assert novo["valor"] == 60.0                      # 1000 × (10% − 4%)
+    assert r["juros_mora_total"] == 69.67
+
+
+async def test_juros_mora_periodo_todo_anterior_a_vigencia_sem_indices():
+    """Mora encerrada ANTES de 30/08/2024: só a regra antiga incide — sem exigir
+    Selic/IPCA e sem componente fantasma de período invertido."""
+    r = await ramos.empresarial_juros_mora(
+        regime="legal", valor_principal=1_000.0,
+        data_inicio_mora=date(2024, 1, 1), data_fim=date(2024, 6, 30), cu=None,
+    )
+    assert len(r["componentes"]) == 1
+    comp = r["componentes"][0]
+    assert comp["periodo"] == "2024-01-01 a 2024-06-30"   # período NÃO invertido
+    assert comp["valor"] > 0
+    assert "INTEGRALMENTE anterior" in r["nota_regime"]
+    _assert_metadados_regra(r)
 
 
 async def test_juros_mora_convencionada():
@@ -980,3 +997,332 @@ async def test_ambiental_exige_uf():
     assert e.value.status_code == 422
     lic = await ramos.amb_licenciamento(uf="mg", fase="lp", porte="medio", cu=None)
     assert lic["uf"] == "MG" and "licenciador" in lic["nota_localizacao"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE D — invariante GLOBAL: nenhuma ferramenta sem metadados de regra
+# ══════════════════════════════════════════════════════════════════════════
+def test_invariante_toda_ferramenta_tem_metadados_ou_selo():
+    """Toda rota /ferramentas/ de ramos.py deve responder com `versao_regra`
+    (metadados de regra) OU estar na matriz de não homologadas. Impede que a
+    lacuna das 25 ferramentas sem fonte/vigência volte a existir."""
+    import inspect
+    import re as _re
+    from app.services.homologacao_ferramentas import FERRAMENTAS_NAO_HOMOLOGADAS
+
+    src = inspect.getsource(ramos)
+    blocos = _re.split(r'(@router\.get\("(/[^"]*ferramentas/[^"]*)"\))', src)
+    faltando, total = [], 0
+    pendentes: list[str] = []          # rotas empilhadas sobre o mesmo handler
+    i = 1
+    while i < len(blocos):
+        caminho, corpo = blocos[i + 1], blocos[i + 2].split("@router.")[0]
+        pendentes.append(caminho)
+        i += 3
+        if "async def" not in corpo:   # decorator de rota empilhado — segue p/ o próximo
+            continue
+        tem_meta = ("versao_regra" in corpo or "_com_regra(" in corpo
+                    or "_prescricao_penal_consolidada(" in corpo
+                    or "_prazos_recurso_transito(" in corpo)
+        for rota in pendentes:
+            total += 1
+            if not (tem_meta or rota in FERRAMENTAS_NAO_HOMOLOGADAS):
+                faltando.append(rota)
+        pendentes = []
+    assert total > 50, f"extração suspeita ({total} ferramentas)"
+    assert not faltando, (
+        f"{len(faltando)} ferramenta(s) sem `fontes`/`vigencia_regra`/`versao_regra` e fora da "
+        "matriz de não homologadas:\n  " + "\n  ".join(faltando)
+        + "\nAdicione os metadados de regra (ou @_com_regra) ou registre o selo na matriz.")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE D — suspensão legal (recesso) nos prazos processuais
+# ══════════════════════════════════════════════════════════════════════════
+async def test_recesso_cpc_contestacao_20_12_a_20_01():
+    """CPC art. 220: citação em 10/12/2025 → 15 dias úteis com suspensão de
+    20/12 a 20/01. Antes do fix: 16/01/2026 (14 dias a MENOS)."""
+    r = await ramos.civ_prazo_contestacao(
+        rito="comum", marco="juntada_citacao", data_marco=date(2025, 12, 10), cu=None)
+    assert r["suspensao_aplicada"]["aplicada"] is True
+    assert r["suspensao_aplicada"]["vencimento_sem_suspensao"] == date(2026, 1, 16)
+    assert r["vencimento"] == date(2026, 1, 30)
+    assert r["suspensao_aplicada"]["dias_prorrogados"] == 14
+    assert "220" in r["suspensao_aplicada"]["base"]
+
+
+async def test_recesso_clt_775a_prazos_trabalhistas():
+    r = await ramos.trab_prazos(data_ciencia=date(2025, 12, 10),
+                                tipo_prazo="recurso_ordinario", cu=None)
+    prazo = r["prazos"][0]
+    assert prazo["suspensao_aplicada"]["aplicada"] is True
+    # Sem a suspensão o RO vencia em 07/01/2026 (dentro do recesso) — 14 dias a menos.
+    assert prazo["suspensao_aplicada"]["vencimento_sem_suspensao"] == date(2026, 1, 7)
+    assert prazo["data"] > date(2026, 1, 20)
+    assert prazo["suspensao_aplicada"]["dias_prorrogados"] > 0
+    assert "775-A" in prazo["suspensao_aplicada"]["base"]
+
+
+async def test_recesso_cpp_798a_prazo_penal():
+    r = await ramos.pen_prazos(data_citacao=date(2025, 12, 15), cu=None)
+    resposta = r["prazos"][0]
+    assert resposta["suspensao_aplicada"]["aplicada"] is True
+    assert resposta["suspensao_aplicada"]["vencimento_sem_suspensao"] == date(2025, 12, 26)
+    assert resposta["data"] > date(2026, 1, 20)     # 5 dias já corridos + 5 após o recesso
+    assert "798-A" in resposta["suspensao_aplicada"]["base"]
+
+
+async def test_sem_recesso_nao_altera_prazo():
+    r = await ramos.civ_prazo_contestacao(
+        rito="comum", marco="juntada_citacao", data_marco=date(2026, 3, 2), cu=None)
+    assert r["suspensao_aplicada"]["aplicada"] is False
+    assert r["vencimento"] == date(2026, 3, 23)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE D — datas de fim de mês (helpers) e efeitos no rito de alimentos
+# ══════════════════════════════════════════════════════════════════════════
+@pytest.mark.parametrize("origem,meses,esperado", [
+    (date(2026, 7, 31), -3, date(2026, 4, 30)),   # antes: 2026-04-28
+    (date(2020, 1, 31), 18, date(2021, 7, 31)),   # antes: 2021-07-28
+    (date(2026, 3, 31), -1, date(2026, 2, 28)),   # dia inexistente → último do mês
+    (date(2024, 3, 31), -1, date(2024, 2, 29)),   # bissexto
+    (date(2026, 1, 15), 6, date(2026, 7, 15)),
+])
+def test_add_meses_preserva_dia_ou_usa_ultimo_do_mes(origem, meses, esperado):
+    assert ramos._add_meses_data(origem, meses) == esperado
+
+
+async def test_alimentos_corte_fim_de_mes_nao_infla_rito_prisao():
+    """Ajuizamento em 31/07/2026 → corte 30/04/2026. A parcela de 29/04 é
+    ANTERIOR ao corte: vai para expropriação (antes ia para prisão civil)."""
+    r = await ramos.familia_debito_alimentos(
+        datas_vencimento_em_aberto="2026-04-29,2026-05-05,2026-06-05",
+        data_ajuizamento_execucao=date(2026, 7, 31), cu=None)
+    assert r["marco_corte_3_meses"] == date(2026, 4, 30)
+    assert date(2026, 4, 29) in r["parcelas_rito_expropriacao"]
+    assert date(2026, 4, 29) not in r["parcelas_rito_prisao"]
+
+
+async def test_prescricao_penal_data_estimada_coerente_com_intervalo():
+    """Prescrito no 1º intervalo → data estimada é a da CONSUMAÇÃO, não uma data
+    futura projetada do último marco."""
+    r = await ramos.penal_prescricao(
+        data_fato=date(2010, 1, 10), pena_maxima_anos=1.5,
+        marcos_interruptivos="2015-01-01", cu=None)
+    assert r["prescrito"] is True and r["intervalo_prescrito"] == 1
+    assert r["data_prescricao_estimada"] == date(2014, 1, 10)
+    assert r["data_prescricao_estimada"] < date.today()
+    assert r["prazo_prescricional_base_anos"] == 4
+
+
+async def test_prescricao_penal_expoe_prazo_base_e_reduzido():
+    r = await ramos.penal_prescricao(
+        data_fato=date(2025, 1, 10), pena_maxima_anos=0.5,
+        menor_21_na_data_fato="sim", cu=None)
+    assert r["prazo_prescricional_base_anos"] == 3        # tabela do art. 109
+    assert r["prazo_prescricional_anos"] == 1.5           # após o art. 115
+    assert r["prazo_prescricional_meses"] == 18
+    assert "art. 115" in r["memoria_prazo"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE D — matriz: semântica única de casamento de caminho
+# ══════════════════════════════════════════════════════════════════════════
+@pytest.mark.parametrize("caminho", [
+    "/penal/ferramentas/dosimetria",
+    "/API/penal/ferramentas/dosimetria/",
+    "  /penal/ferramentas/dosimetria  ",
+    "//Penal//Ferramentas//Dosimetria",
+])
+def test_selo_e_gate_usam_a_mesma_normalizacao(caminho):
+    from app.services import homologacao_ferramentas as hf
+    assert hf.motivo_nao_homologada(caminho)
+    assert hf.selo_homologacao(caminho, {})["homologada"] is False
+
+
+def test_bloqueio_fora_da_matriz_nao_devolve_503_silencioso():
+    from app.services import homologacao_ferramentas as hf
+    with pytest.raises(KeyError):
+        hf.bloquear_nao_homologada("/ferramenta/que/nao/existe")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE D — ferramentas antes sem metadados: caso feliz + 422 + exceção legal
+# ══════════════════════════════════════════════════════════════════════════
+async def test_lgpd_multa_teto_e_rejeita_negativo():
+    r = await ramos.lgpd_multa(faturamento_anual=10_000_000.0, cu=None)
+    assert r["multa_2pct"] == 200_000.0 and r["e_apenas_teto"] is True
+    grande = await ramos.lgpd_multa(faturamento_anual=10_000_000_000.0, cu=None)
+    assert grande["teto_por_infracao"] == 50_000_000.0        # teto por infração
+    assert grande["limitada_ao_teto_50mi"] is True
+    with pytest.raises(HTTPException) as e:
+        await ramos.lgpd_multa(faturamento_anual=-1.0, cu=None)
+    assert e.value.status_code == 422
+    _assert_metadados_regra(r)
+
+
+async def test_lgpd_prazos_incidente_valor_canonico_e_alias():
+    novo = await ramos.lgpd_prazos(tipo="incidente", data_conhecimento=date(2026, 3, 2), cu=None)
+    legado = await ramos.lgpd_prazos(tipo="incidente_anpd",
+                                     data_conhecimento=date(2026, 3, 2), cu=None)
+    assert novo["tipo"] == legado["tipo"] == "incidente"      # alias normalizado
+    assert novo["prazo_final"] == date(2026, 3, 5)
+
+
+async def test_alimentos_calcular_sem_percentual_sugerido():
+    r = await ramos.civ_alimentos(salario_devedor=5_000.0, percentual=30.0, filhos=2, cu=None)
+    assert r["valor_mensal"] == 1_500.0
+    assert r["sem_percentual_sugerido"] is True
+    assert len(r["binomio_necessidade_possibilidade"]) == 3
+    with pytest.raises(HTTPException) as e:
+        await ramos.civ_alimentos(salario_devedor=-1.0, percentual=30.0, cu=None)
+    assert e.value.status_code == 422
+    _assert_metadados_regra(r)
+
+
+async def test_usucapiao_prazos_por_modalidade_e_reducoes():
+    r = await ramos.civ_usucapiao(tipo="extraordinaria", anos_posse=16.0, cu=None)
+    assert r["prazo_minimo_anos"] == 15 and r["viavel_preliminarmente"] is True
+    assert "10 anos" in r["requisitos"]["prazo_reduzido"]
+    fam = await ramos.civ_usucapiao(tipo="familiar", anos_posse=1.0, cu=None)
+    assert fam["prazo_minimo_anos"] == 2 and fam["preenche_prazo"] is False
+    with pytest.raises(HTTPException) as e:
+        await ramos.civ_usucapiao(tipo="extraordinaria", anos_posse=-1.0, cu=None)
+    assert e.value.status_code == 422
+    _assert_metadados_regra(r)
+
+
+async def test_reajuste_aluguel_exige_indice_e_respeita_anualidade():
+    r = await ramos.imobiliario_reajuste_aluguel(
+        valor_atual=2_000.0, indice_percentual=5.0, indice_nome="IGP-M/FGV",
+        data_base=date(2024, 1, 10), cu=None)
+    assert r["valor_reajustado"] == 2_100.0 and r["periodicidade_anual_cumprida"] is True
+    cedo = await ramos.imobiliario_reajuste_aluguel(
+        valor_atual=2_000.0, indice_percentual=5.0, indice_nome="IPCA/IBGE",
+        data_base=date(2026, 6, 1), cu=None)
+    assert cedo["periodicidade_anual_cumprida"] is False
+    assert cedo["valor_reajustado"] == 2_000.0        # exceção legal: anualidade
+    with pytest.raises(HTTPException) as e:
+        await ramos.imobiliario_reajuste_aluguel(
+            valor_atual=2_000.0, indice_percentual=5.0, indice_nome="  ",
+            data_base=date(2024, 1, 10), cu=None)
+    assert e.value.status_code == 422
+
+
+async def test_mandado_seguranca_120_dias_e_vencido():
+    r = await ramos.adm_ms(data_ato_coator=date(2026, 6, 1), cu=None)
+    assert r["prazo_impetracao"] == date(2026, 9, 29)
+    assert r["vencido"] is False and "DECADENCIAL" in r["natureza_do_prazo"]
+    velho = await ramos.adm_ms(data_ato_coator=date(2020, 1, 1), cu=None)
+    assert velho["vencido"] is True and velho["dias_desde_o_vencimento"] > 0
+    assert velho["urgente"] is False                  # vencido ≠ urgente
+    _assert_metadados_regra(r)
+
+
+async def test_superendividamento_minimo_existencial_25pct_sm():
+    r = await ramos.ban_superendiv(renda_mensal=3_000.0, total_parcelas_mes=2_900.0, cu=None)
+    esperado = round(ramos._sm_vigente() * 0.25, 2)
+    assert r["minimo_existencial_referencia"] == esperado
+    assert "25%" in r["criterio_minimo_existencial"]
+    assert r["compromete_minimo_existencial"] is True
+    assert "não há percentual legal" in r["nota_criterio"].lower()
+    with pytest.raises(HTTPException) as e:
+        await ramos.ban_superendiv(renda_mensal=0.0, total_parcelas_mes=100.0, cu=None)
+    assert e.value.status_code == 422
+    _assert_metadados_regra(r)
+
+
+async def test_valor_multa_transito_multiplicador_valido():
+    r = await ramos.transito_valor_multa(gravidade="gravissima", multiplicador=3, cu=None)
+    assert r["valor_total"] == round(293.47 * 3, 2)
+    assert r["vigencia_tabela"] and r["fonte"]
+    with pytest.raises(HTTPException) as e:
+        await ramos.transito_valor_multa(gravidade="leve", multiplicador=3, cu=None)
+    assert e.value.status_code == 422                 # multiplicador só p/ gravíssima
+    _assert_metadados_regra(r)
+
+
+async def test_reajuste_contrato_administrativo_exige_indice_e_data_base():
+    r = await ramos.adm_reajuste_contrato(
+        valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=12,
+        indice_nome="IPCA/IBGE", data_base=date(2025, 1, 10), cu=None)
+    assert r["valor_do_reajuste"] == 5_000.0
+    assert r["indice_nome"] == "IPCA/IBGE"
+    assert r["proximo_aniversario_data_base"] == date(2026, 1, 10)
+    with pytest.raises(HTTPException) as e:
+        await ramos.adm_reajuste_contrato(
+            valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=12,
+            indice_nome="", data_base=date(2025, 1, 10), cu=None)
+    assert e.value.status_code == 422
+    _assert_metadados_regra(r)
+
+
+async def test_taxas_bacen_degrada_graciosamente(monkeypatch):
+    from app.services import bcb_service
+
+    async def falha():
+        raise RuntimeError("SGS fora do ar")
+
+    monkeypatch.setattr(bcb_service, "painel_taxas", falha)
+    r = await ramos.bancario_taxas_bacen(cu=None)
+    assert r["dados_disponiveis"] is False
+    assert r["indisponibilidade"]
+    assert r["taxas"] == {}
+    _assert_metadados_regra(r)
+
+
+async def test_reforma_tributaria_estimativa_nao_vinculante():
+    r = await ramos.trib_reforma_tributaria(
+        receita_bruta_anual=1_000_000.0, regime_atual="simples",
+        atividade="servicos", ano_analise="2026", cu=None)
+    assert r["estimativa_nao_vinculante"] is True
+    assert "NÃO VINCULANTE" in r["estimativa_informativa_iva_pleno"]["carater"]
+    # Ferramenta INFORMATIVA (não é minuta de cálculo): valida só os metadados.
+    assert r["fontes"] and r["vigencia_regra"] and r["versao_regra"] == "2026-07"
+    assert "Revisão humana obrigatória" in r["aviso"]
+
+
+async def test_auto_infracao_ambiental_prescricao_dec_6514():
+    r = await ramos.amb_auto_infracao(
+        data_ciencia=date(2026, 3, 2), valor_multa=10_000.0,
+        tipo_infracao="degradacao", cu=None)
+    assert "art. 21" in r["prescricao_administrativa"]
+    assert "3 anos" in r["prescricao_administrativa"]     # intercorrente
+    _assert_metadados_regra(r)
+
+
+@pytest.mark.parametrize("chamada", [
+    lambda: ramos.civ_partilha_divorcio(regime_bens="comunhao_parcial", cu=None),
+    lambda: ramos.civ_prescricao_consumidor(data_fato=date(2024, 6, 15),
+                                            tipo_vicio="fato_produto", cu=None),
+    lambda: ramos.civ_rescisao_locacao(
+        data_inicio=date(2025, 1, 10), data_rescisao_pretendida=date(2026, 1, 10),
+        valor_aluguel=2_000.0, prazo_contrato_meses=30,
+        multa_contratual_alugueis=3.0, cu=None),
+    lambda: ramos.trib_prescricao_decadencia(data_fato_gerador=date(2024, 3, 10),
+                                             tipo="homologacao", cu=None),
+    lambda: ramos.trib_auto_infracao_prazos(data_ciencia=date(2026, 3, 2),
+                                            valor_multa=1_000.0, cu=None),
+    lambda: ramos.trib_regime_tributario(receita_bruta_anual=1_000_000.0,
+                                         lucro_estimado_pct=20.0, cu=None),
+    lambda: ramos.amb_crimes_ambientais(tipo_crime="poluicao", cu=None),
+    lambda: ramos.amb_tac(tipo_dano="desmatamento", cu=None),
+    lambda: ramos.amb_licenciamento(uf="MG", cu=None),
+    lambda: ramos.amb_reserva_legal(area_imovel_ha=100.0, uf="MG", cu=None),
+    lambda: ramos.previdenciario_tempo_contribuicao(idade=62, tempo_contribuicao_anos=35.0,
+                                                    sexo="M", cu=None),
+    lambda: ramos.ban_ba(data_notificacao=date(2026, 3, 2), valor_divida=10_000.0,
+                         bem_descricao="veículo", cu=None),
+    lambda: ramos.trab_verbas_rescisorias(
+        salario=3_000.0, data_admissao=date(2024, 1, 5), data_demissao=date(2026, 1, 20),
+        saldo_fgts=6_000.0, cu=None),
+])
+async def test_fase_d_ferramentas_carimbam_metadados(chamada):
+    r = await chamada()
+    assert r["fontes"] and isinstance(r["fontes"], list)
+    assert r["vigencia_regra"] and r["versao_regra"] == "2026-07"
+    # Disclaimer HITL: "MINUTA" nas calculadoras; ferramentas informativas usam
+    # "ESTIMATIVA/INFORMATIVO" + revisão humana obrigatória.
+    aviso = r.get("aviso", "")
+    assert "MINUTA" in aviso or "Revisão humana obrigatória" in aviso
