@@ -4,6 +4,7 @@
 # Cada ramo tem: listar / criar / atualizar / remover (soft-delete) + ferramentas.
 # HITL: todas as saídas de cálculo são minutas — revisão humana obrigatória.
 from __future__ import annotations
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -73,6 +74,11 @@ def _parse_sim_nao(valor: str, campo: str) -> bool:
     if v not in _SIM_NAO:
         raise HTTPException(422, f"Valor inválido para '{campo}': '{valor}'. Use: sim | nao")
     return _SIM_NAO[v]
+
+
+# Versão do conjunto de regras jurídicas embarcadas nas ferramentas corrigidas
+# na Onda 2 — carimbada em toda resposta (campo `versao_regra`).
+_VERSAO_REGRA = "2026-07"
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -233,31 +239,79 @@ async def emp_remover(eid: str, db: AsyncSession = Depends(get_db),
 # ── Ferramentas Empresariais ──────────────────────────────────────────────────
 @router.get("/empresarial/ferramentas/prazos-rj")
 async def emp_prazos_rj(
-    data_distribuicao: date,
+    data_publicacao_deferimento: Optional[date] = None,
+    data_deferimento: Optional[date] = None,
+    data_concessao: Optional[date] = None,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
-    Prazos críticos de recuperação judicial — Lei 11.101/2005.
-    Base legal verificada: arts. 36, 53, 55, 61, 73.
-    MINUTA — o advogado valida com o juízo da recuperação.
+    Marcos temporais da recuperação judicial — Lei 11.101/2005 (red. Lei 14.112/2020).
+    NENHUM marco conta da distribuição; cada um tem termo inicial próprio:
+      • plano (art. 53): 60 dias da PUBLICAÇÃO da decisão que defere o processamento;
+      • stay period (art. 6º §4º): 180 dias do deferimento, prorrogável 1x por igual período;
+      • AGC para deliberar o plano, havendo objeção (art. 56 §1º): até 150 dias do deferimento;
+      • supervisão judicial (art. 61): até 2 anos da CONCESSÃO da recuperação.
+    Informe a(s) data(s) de que dispõe — só os marcos correspondentes são calculados.
+    MINUTA — o advogado valida com o juízo e o administrador judicial.
     """
-    _bloquear_nao_homologada("/empresarial/ferramentas/prazos-rj")
+    if not any((data_publicacao_deferimento, data_deferimento, data_concessao)):
+        raise HTTPException(422, (
+            "Informe ao menos um termo inicial: data_publicacao_deferimento (plano, art. 53), "
+            "data_deferimento (stay period art. 6º §4º e AGC art. 56 §1º) ou "
+            "data_concessao (supervisão judicial, art. 61)."))
+    marcos: list[dict] = []
+    marcos_nao_calculados: list[str] = []
+    if data_publicacao_deferimento:
+        marcos.append({
+            "evento": "Apresentação do plano de recuperação",
+            "marco_inicial": "publicação da decisão que defere o processamento",
+            "data": prazo_dias_corridos(data_publicacao_deferimento, 60, prorrogar_fim=False),
+            "prazo": "60 dias corridos, improrrogável — sob pena de convolação em falência (art. 73 II)",
+            "base": "Lei 11.101/2005 art. 53",
+        })
+    else:
+        marcos_nao_calculados.append("plano de recuperação (art. 53) — falta data_publicacao_deferimento")
+    if data_deferimento:
+        marcos.append({
+            "evento": "Fim do stay period (suspensão das execuções)",
+            "marco_inicial": "decisão que defere o processamento",
+            "data": prazo_dias_corridos(data_deferimento, 180, prorrogar_fim=False),
+            "data_com_prorrogacao_maxima": prazo_dias_corridos(data_deferimento, 360, prorrogar_fim=False),
+            "prazo": "180 dias, prorrogável UMA única vez por igual período (excepcionalmente)",
+            "base": "Lei 11.101/2005 art. 6º §4º (red. Lei 14.112/2020)",
+        })
+        marcos.append({
+            "evento": "AGC para deliberar sobre o plano (se houver objeção de credor)",
+            "marco_inicial": "decisão que defere o processamento",
+            "data": prazo_dias_corridos(data_deferimento, 150, prorrogar_fim=False),
+            "prazo": "até 150 dias",
+            "base": "Lei 11.101/2005 art. 56 §1º",
+        })
+    else:
+        marcos_nao_calculados.append(
+            "stay period (art. 6º §4º) e AGC (art. 56 §1º) — falta data_deferimento")
+    if data_concessao:
+        marcos.append({
+            "evento": "Fim da supervisão judicial",
+            "marco_inicial": "decisão que CONCEDE a recuperação judicial (art. 58)",
+            "data": _add_anos_data(data_concessao, 2),
+            "prazo": "até 2 anos",
+            "base": "Lei 11.101/2005 art. 61 (red. Lei 14.112/2020)",
+        })
+    else:
+        marcos_nao_calculados.append("supervisão judicial (art. 61) — falta data_concessao")
     return {
-        "data_distribuicao": data_distribuicao,
-        "prazos": [
-            {"evento": "Deferimento do processamento", "prazo": None,
-             "descricao": "Juiz decide em até 5 dias (art. 52)", "base": "Lei 11.101/05 art. 52"},
-            {"evento": "Apresentação do plano de recuperação",
-             "data": prazo_dias_corridos(data_distribuicao, 60),
-             "base": "Lei 11.101/05 art. 53", "tipo": "corridos"},
-            {"evento": "Assembleia de credores delibera plano",
-             "data": prazo_dias_corridos(data_distribuicao, 150),
-             "base": "Lei 11.101/05 art. 56 + Súm. 555 STJ", "tipo": "corridos"},
-            {"evento": "Prazo de supervisão judicial",
-             "data": prazo_dias_corridos(data_distribuicao, 730),
-             "base": "Lei 11.101/05 art. 61 §1º — 2 anos", "tipo": "corridos"},
+        "marcos": marcos,
+        "marcos_nao_calculados": marcos_nao_calculados,
+        "fontes": [
+            "Lei 11.101/2005 arts. 6º §4º, 53, 56 §1º, 58, 61 e 73 II",
+            "Lei 14.112/2020 (reforma da Lei de Recuperação e Falência)",
         ],
-        "aviso": "MINUTA de cálculo. Confirmar com o juízo e o administrador judicial.",
+        "vigencia_regra": "Lei 11.101/2005 com a redação da Lei 14.112/2020, vigente desde 23/01/2021",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Datas em dias corridos, sem prorrogação "
+                  "automática para dia útil: confirme a contagem aplicada pelo juízo da recuperação "
+                  "e eventuais suspensões com o administrador judicial."),
     }
 
 
@@ -407,30 +461,77 @@ async def civ_remover(cid: str, db: AsyncSession = Depends(get_db),
     return await _crud_remover(CivelCase, "civel_cases", cid, db, cu)
 
 # ── Ferramentas Cível ─────────────────────────────────────────────────────────
+_MARCOS_CONTESTACAO = {
+    "audiencia_conciliacao": "audiência de conciliação/mediação — CPC art. 335 I",
+    "juntada_citacao": "juntada aos autos do comprovante de citação — CPC art. 335 III c/c art. 231",
+}
+
+
 @router.get("/civel/ferramentas/prazos-contestacao")
 async def civ_prazo_contestacao(
-    data_citacao: date,
-    tipo: Literal["cpc","jec","fazenda_publica"] = "cpc",
+    rito: Literal["comum", "jec", "fazenda_publica"],
+    marco: Optional[Literal["audiencia_conciliacao", "juntada_citacao"]] = None,
+    data_marco: Optional[date] = None,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
     Prazo de contestação por rito.
-    CPC art. 335: 15 dias úteis | JEC Lei 9.099/95 art. 30: 10 dias corridos
-    Fazenda Pública CPC art. 183: prazo em quádruplo = 60 dias úteis (Súm. STJ 116 — só se autorizado).
+    • Rito comum: 15 dias ÚTEIS (CPC arts. 335 e 219), contados do marco do art. 335
+      (audiência de conciliação ou juntada do comprovante de citação).
+    • Fazenda Pública: prazo em DOBRO = 30 dias úteis (CPC art. 183). O antigo
+      "quádruplo para contestar" (CPC/1973 art. 188) NÃO existe no CPC/2015.
+    • JEC: NÃO há prazo universal em dias — a resposta é apresentada até a audiência
+      de instrução, conforme o rito concentrado (Lei 9.099/95 arts. 28 e 30); prazos
+      que o juiz fixar em dias contam-se em dias ÚTEIS (art. 12-A, Lei 13.728/2018).
+    MINUTA — revisão humana obrigatória.
     """
-    if tipo == "jec":
-        venc = prazo_dias_corridos(data_citacao, 10)
-        base = "Lei 9.099/95 art. 30 — 10 dias corridos"
-    elif tipo == "fazenda_publica":
-        venc = prazo_dias_uteis(data_citacao, 30)   # em dobro (Lei 9.469/97 + CPC art. 183)
-        base = "CPC art. 183 — 30 dias úteis (prazo em dobro)"
-    else:
-        venc = prazo_dias_uteis(data_citacao, 15)
-        base = "CPC art. 335 — 15 dias úteis"
-    return _selo_homologacao("/civel/ferramentas/prazos-contestacao", {
-        "data_citacao": data_citacao, "tipo_rito": tipo,
-        "vencimento": venc, "base_legal": base,
-        "aviso": "MINUTA. Verifique suspensões e especificidades do juízo."})
+    fontes = [
+        "CPC (Lei 13.105/2015) arts. 219, 231, 335 e 183",
+        "Lei 9.099/95 arts. 12-A, 28 e 30",
+        "Lei 13.728/2018 (dias úteis nos Juizados — art. 12-A)",
+    ]
+    comuns = {
+        "fontes": fontes,
+        "vigencia_regra": "CPC/2015 (vigente desde 18/03/2016) · Lei 9.099/95 com art. 12-A "
+                          "incluído pela Lei 13.728/2018 (vigente desde 31/10/2018)",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": "MINUTA — revisão humana obrigatória. Verifique suspensões, recesso (CPC art. 220) "
+                 "e especificidades do juízo.",
+    }
+    if rito == "jec":
+        return {
+            "rito": "jec",
+            "prazo_calculado": None,
+            "exige_ato_judicial_concreto": True,
+            "orientacao": ("No JEC não existe prazo universal de contestação em dias: a resposta "
+                           "(escrita ou oral) é apresentada até a audiência de instrução e "
+                           "julgamento, conforme o rito concentrado dos arts. 28 e 30 da Lei "
+                           "9.099/95. Quando o juiz fixar prazo em dias, a contagem é em dias "
+                           "ÚTEIS (art. 12-A, incluído pela Lei 13.728/2018). Verifique a data da "
+                           "audiência e eventual prazo fixado no ato judicial concreto."),
+            **comuns,
+        }
+    if rito not in ("comum", "fazenda_publica"):
+        raise HTTPException(422, "Rito inválido. Use: comum | jec | fazenda_publica")
+    if marco is None or data_marco is None:
+        raise HTTPException(422, (
+            "Para o rito comum/fazenda pública informe `marco` (audiencia_conciliacao | "
+            "juntada_citacao — CPC art. 335) e `data_marco` (data do marco)."))
+    if marco not in _MARCOS_CONTESTACAO:
+        raise HTTPException(422, f"Marco inválido. Use: {list(_MARCOS_CONTESTACAO)}")
+    em_dobro = rito == "fazenda_publica"
+    venc = prazo_dias_uteis(data_marco, 15, em_dobro=em_dobro)
+    return {
+        "rito": rito,
+        "marco": marco,
+        "marco_descricao": _MARCOS_CONTESTACAO[marco],
+        "data_marco": data_marco,
+        "prazo": "30 dias úteis (15 em dobro — CPC art. 183)" if em_dobro else "15 dias úteis",
+        "vencimento": venc,
+        "base_legal": ("CPC art. 335 c/c arts. 219 e 183 (prazo em dobro da Fazenda Pública)"
+                       if em_dobro else "CPC art. 335 c/c art. 219 (contagem em dias úteis)"),
+        **comuns,
+    }
 
 
 @router.get("/civel/ferramentas/alimentos-calcular")
@@ -556,108 +657,151 @@ async def pen_remover(pid: str, db: AsyncSession = Depends(get_db),
 # ── Ferramentas Penais ────────────────────────────────────────────────────────
 @router.get("/penal/ferramentas/prazos-processuais")
 async def pen_prazos(
-    data_denuncia: date,
+    data_citacao: date,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
-    Prazos críticos do processo penal. Base: CPP.
+    Prazos do processo penal — contagem em dias CORRIDOS (CPP art. 798: exclui-se
+    o dia do começo e inclui-se o do vencimento; §3º: vencimento em domingo/feriado
+    prorroga ao primeiro dia útil seguinte). A contagem em dias úteis do CPC NÃO
+    se aplica ao processo penal.
+    Marco calculado: resposta à acusação — 10 dias da CITAÇÃO (CPP art. 396).
     MINUTA — verificar suspensões e especificidades do caso.
     """
-    _bloquear_nao_homologada("/penal/ferramentas/prazos-processuais")
+    # prazo_dias_corridos: vencimento = início + N dias (exclui o dia do começo,
+    # inclui o do vencimento) com prorrogação para o 1º dia útil (CPP art. 798 §3º).
     return {
-        "data_denuncia": data_denuncia,
+        "data_citacao": data_citacao,
+        "contagem": ("Dias CORRIDOS (CPP art. 798 caput e §1º): exclui-se o dia do começo e "
+                     "inclui-se o do vencimento; vencimento em domingo ou feriado prorroga "
+                     "para o dia útil seguinte (§3º)."),
         "prazos": [
             {"evento": "Resposta à acusação",
-             "data": prazo_dias_uteis(data_denuncia, 10),
-             "base": "CPP art. 396-A — 10 dias úteis"},
-            {"evento": "Alegações finais (prazo máximo)",
+             "data": prazo_dias_corridos(data_citacao, 10),
+             "base": "CPP art. 396 — 10 dias corridos da citação"},
+            {"evento": "Alegações finais por memoriais (quando convertidas)",
              "data": None,
-             "base": "CPP art. 403 — 10 dias após instrução (data depende do juízo)"},
+             "base": "CPP art. 403 §3º — 5 dias sucessivos (marco fixado pelo juízo)"},
             {"evento": "RESE (Recurso em Sentido Estrito)",
              "data": None,
-             "base": "CPP art. 586 — 5 dias da decisão (marco da intimação)"},
+             "base": "CPP art. 586 — 5 dias corridos da intimação da decisão"},
             {"evento": "Apelação criminal",
              "data": None,
-             "base": "CPP art. 593 §4º — 5 dias da publicação da sentença"},
+             "base": "CPP art. 593 — 5 dias corridos da intimação da sentença"},
             {"evento": "Embargos de declaração (criminal)",
              "data": None,
-             "base": "CPP art. 620 — 2 dias"},
+             "base": "CPP art. 619 — 2 dias corridos da publicação do acórdão"},
         ],
-        "aviso": "MINUTA. Prazos a partir da intimação/publicação — verificar exato marco.",
+        "nota_suspensao_798a": ("CPP art. 798-A (Lei 14.365/2022): a contagem dos prazos "
+                                "processuais penais fica SUSPENSA de 20/12 a 20/01 — exceção "
+                                "que deve ser verificada quando o prazo atravessar o período."),
+        "fontes": [
+            "CPP (Decreto-Lei 3.689/1941) arts. 396, 403 §3º, 586, 593, 619, 798 e 798-A",
+            "Lei 14.365/2022 (inclusão do art. 798-A — suspensão de fim de ano)",
+        ],
+        "vigencia_regra": "CPP art. 798 (contagem corrida) · art. 798-A vigente desde 09/06/2022",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Prazos sem data dependem do marco da "
+                  "intimação/publicação; confirme o dies a quo e feriados locais no juízo."),
     }
 
 
 @router.get("/penal/ferramentas/verificar-anpp")
 async def pen_anpp(
-    pena_min_anos: float,
-    confessou: bool,
-    nao_violento: bool,
-    primario: bool,
+    pena_minima_anos: float = Query(..., ge=0),
+    sem_violencia_grave_ameaca: str = Query(...),
+    confissao_formal_circunstanciada: str = Query(...),
+    reincidente: str = Query(...),
+    conduta_criminal_habitual_reiterada_profissional: str = Query(...),
+    beneficiado_anpp_transacao_sursis_5anos: str = Query(...),
+    violencia_domestica_familiar_ou_razao_genero: str = Query(...),
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
-    Verifica requisitos do Acordo de Não Persecução Penal (art. 28-A CPP).
-    Inserido pelo Pacote Anticrime — Lei 13.964/2019.
+    Verifica requisitos do Acordo de Não Persecução Penal — CPP art. 28-A
+    (incluído pela Lei 13.964/2019). TODOS os requisitos e impeditivos legais são
+    informados pelo advogado (sim | nao) — nada é presumido pelo sistema.
+    `pena_minima_anos`: pena MÍNIMA cominada, consideradas as causas de aumento e
+    de diminuição aplicáveis (entendimento consolidado — cf. Enunciados CNPG).
     """
-    _bloquear_nao_homologada("/penal/ferramentas/verificar-anpp")
-    requisitos = {
-        "pena_minima_inferior_4_anos": pena_min_anos < 4,
-        "crime_sem_violencia": nao_violento,
-        "confissao_formal": confessou,
-        "nao_reincidente": primario,
-        "crime_sem_viol_dom_familiar": True,  # verificar per case
-    }
-    elegivel = all(requisitos.values())
+    if pena_minima_anos < 0:
+        raise HTTPException(422, "pena_minima_anos deve ser ≥ 0")
+    sem_viol = _parse_sim_nao(sem_violencia_grave_ameaca, "sem_violencia_grave_ameaca")
+    confessou = _parse_sim_nao(confissao_formal_circunstanciada, "confissao_formal_circunstanciada")
+    eh_reincidente = _parse_sim_nao(reincidente, "reincidente")
+    habitual = _parse_sim_nao(conduta_criminal_habitual_reiterada_profissional,
+                              "conduta_criminal_habitual_reiterada_profissional")
+    ja_beneficiado = _parse_sim_nao(beneficiado_anpp_transacao_sursis_5anos,
+                                    "beneficiado_anpp_transacao_sursis_5anos")
+    viol_domestica = _parse_sim_nao(violencia_domestica_familiar_ou_razao_genero,
+                                    "violencia_domestica_familiar_ou_razao_genero")
+    requisitos = [
+        {"requisito": "Pena mínima inferior a 4 anos (consideradas causas de aumento/diminuição)",
+         "base": "CPP art. 28-A caput", "tipo": "requisito",
+         "atendido": pena_minima_anos < 4},
+        {"requisito": "Infração sem violência ou grave ameaça",
+         "base": "CPP art. 28-A caput", "tipo": "requisito",
+         "atendido": sem_viol},
+        {"requisito": "Confissão formal e circunstanciada",
+         "base": "CPP art. 28-A caput", "tipo": "requisito",
+         "atendido": confessou},
+        {"requisito": "Não ser reincidente",
+         "base": "CPP art. 28-A §2º II", "tipo": "impeditivo",
+         "atendido": not eh_reincidente},
+        {"requisito": "Ausência de conduta criminal habitual, reiterada ou profissional",
+         "base": "CPP art. 28-A §2º II", "tipo": "impeditivo",
+         "atendido": not habitual},
+        {"requisito": "Não beneficiado com ANPP, transação penal ou sursis processual nos 5 anos anteriores",
+         "base": "CPP art. 28-A §2º III", "tipo": "impeditivo",
+         "atendido": not ja_beneficiado},
+        {"requisito": "Crime sem violência doméstica/familiar nem contra a mulher por razões da condição de sexo feminino",
+         "base": "CPP art. 28-A §2º IV", "tipo": "impeditivo",
+         "atendido": not viol_domestica},
+    ]
+    for r in requisitos:
+        r["situacao"] = ("atendido" if r["atendido"]
+                         else ("impeditivo presente" if r["tipo"] == "impeditivo" else "não atendido"))
+    elegivel = all(r["atendido"] for r in requisitos)
     return {
         "elegivel_anpp": elegivel,
+        "pena_minima_anos": pena_minima_anos,
         "requisitos": requisitos,
-        "base_legal": "CPP art. 28-A (red. Lei 13.964/2019)",
         "condicoes_possiveis": [
-            "Reparação do dano (salvo impossibilidade)",
-            "Renúncia a bens ou direitos (confisco)",
-            "Prestação de serviço à comunidade",
-            "Prestação pecuniária",
-            "Cumprimento de outra condição fixada pelo MP",
+            "Reparação do dano (salvo impossibilidade — inc. I)",
+            "Renúncia a bens e direitos indicados como instrumentos/produto do crime (inc. II)",
+            "Prestação de serviço à comunidade (inc. III)",
+            "Prestação pecuniária (inc. IV)",
+            "Outra condição indicada pelo MP, proporcional e compatível (inc. V)",
         ] if elegivel else [],
-        "aviso": "MINUTA. O MP propõe; o juízo homologa. Análise definitiva exige verificação dos antecedentes e tipo penal completo.",
+        "fontes": [
+            "CPP art. 28-A, caput, §§1º-2º (incluído pela Lei 13.964/2019 — Pacote Anticrime)",
+        ],
+        "vigencia_regra": "CPP art. 28-A vigente desde 23/01/2020 (Lei 13.964/2019)",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. O ANPP é proposto pelo MP e homologado "
+                  "pelo juízo (§§4º-6º): a ferramenta indica elegibilidade objetiva, não "
+                  "substitui a análise do caso, dos antecedentes e da suficiência da medida."),
     }
 
 
 @router.get("/penal/ferramentas/prescricao-punitiva")
 async def pen_prescricao(
-    pena_maxima_anos: float,
     data_fato: date,
+    pena_maxima_anos: Optional[float] = None,
+    pena_concreta_anos: Optional[float] = None,
+    marcos_interruptivos: Optional[str] = None,   # datas ISO separadas por vírgula (CP art. 117)
+    menor_21_na_data_fato: str = "nao",
+    maior_70_na_sentenca: str = "nao",
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """
-    Verifica prescrição da pretensão punitiva em abstrato.
-    Base: CP art. 109 (prazos) + art. 115 (redução p/ menores/maiores de 70).
-    MINUTA — verificar causas interruptivas (CP art. 117).
-    """
-    # Tabela CP art. 109
-    if pena_maxima_anos > 12:    prazo = 20
-    elif pena_maxima_anos > 8:   prazo = 16
-    elif pena_maxima_anos > 4:   prazo = 12
-    elif pena_maxima_anos > 2:   prazo = 8
-    elif pena_maxima_anos > 1:   prazo = 4
-    else:                        prazo = 3
-    # _add_anos_data trata 29/02 (ValueError em ano não bissexto → 28/02).
-    data_prescricao = _add_anos_data(data_fato, prazo)
-    prescrito = date.today() > data_prescricao
-    return _selo_homologacao("/penal/ferramentas/prescricao-punitiva", {
-        "pena_maxima_anos": pena_maxima_anos,
-        "data_fato": data_fato,
-        "prazo_prescricional_anos": prazo,
-        "data_prescricao_estimada": data_prescricao,
-        "prescrito_em_abstrato": prescrito,
-        "base_legal": "CP art. 109",
-        "ressalvas": [
-            "Causa interruptiva pela denúncia zera o prazo (CP art. 117 I)",
-            "Redução pela metade se réu < 21 ou > 70 anos na data do fato/sentença (CP art. 115)",
-            "Crimes imprescritíveis: racismo (CF art. 5º XLII) e ação de grupos armados (XLIV)",
-        ],
-        "aviso": "MINUTA em abstrato — não considera a prescrição retroativa (CP art. 110 §1º).",
-    })
+    """Prescrição penal — implementação ÚNICA compartilhada com
+    /penal/ferramentas/prescricao-penal (rota canônica). Ver _prescricao_penal_consolidada."""
+    return _prescricao_penal_consolidada(
+        rota_consultada="/penal/ferramentas/prescricao-punitiva",
+        data_fato=data_fato, pena_maxima_anos=pena_maxima_anos,
+        pena_concreta_anos=pena_concreta_anos, marcos_interruptivos=marcos_interruptivos,
+        menor_21_na_data_fato=menor_21_na_data_fato, maior_70_na_sentenca=maior_70_na_sentenca,
+    )
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -974,6 +1118,130 @@ def _add_anos_data(d: date, anos: int) -> date:
         return d.replace(month=2, day=28, year=d.year + anos)
 
 
+def _add_meses_data(d: date, meses: int) -> date:
+    """Soma meses a uma data. Múltiplos de 12 delegam a _add_anos_data (preserva
+    29/02 em ano bissexto); demais casos fazem clamp do dia para 28 (segurança)."""
+    if meses % 12 == 0:
+        return _add_anos_data(d, meses // 12)
+    total = d.month - 1 + meses
+    ano, mes = d.year + total // 12, total % 12 + 1
+    return date(ano, mes, min(d.day, 28))
+
+
+# ── Prescrição penal consolidada (CP arts. 109, 110, 115 e 117) ───────────────
+def _prescricao_prazo_anos(pena_anos: float) -> int:
+    """Tabela do CP art. 109 (red. Lei 12.234/2010)."""
+    if pena_anos > 12:
+        return 20
+    if pena_anos > 8:
+        return 16
+    if pena_anos > 4:
+        return 12
+    if pena_anos > 2:
+        return 8
+    if pena_anos >= 1:
+        return 4
+    return 3   # inferior a 1 ano — 3 anos (art. 109 VI, red. Lei 12.234/2010)
+
+
+def _prescricao_penal_consolidada(
+    rota_consultada: str,
+    data_fato: date,
+    pena_maxima_anos: Optional[float],
+    pena_concreta_anos: Optional[float],
+    marcos_interruptivos: Optional[str],
+    menor_21_na_data_fato: str,
+    maior_70_na_sentenca: str,
+) -> dict:
+    """Implementação ÚNICA das rotas /penal/ferramentas/prescricao-penal (canônica)
+    e /penal/ferramentas/prescricao-punitiva (duplicata mantida até a Onda 3).
+    Base: tabela do CP art. 109; pena concreta → art. 110 (retroativa/intercorrente);
+    marcos interruptivos do art. 117 reiniciam a contagem intervalo a intervalo;
+    art. 115 reduz o prazo à metade."""
+    if pena_maxima_anos is None and pena_concreta_anos is None:
+        raise HTTPException(422, (
+            "Informe pena_maxima_anos (prescrição em abstrato, CP art. 109) OU "
+            "pena_concreta_anos (prescrição retroativa/intercorrente, CP art. 110)."))
+    usa_concreta = pena_concreta_anos is not None
+    pena_base = pena_concreta_anos if usa_concreta else pena_maxima_anos
+    if pena_base <= 0:
+        raise HTTPException(422, "A pena informada deve ser maior que zero.")
+    prazo_anos = _prescricao_prazo_anos(pena_base)
+    reduzido = (_parse_sim_nao(menor_21_na_data_fato, "menor_21_na_data_fato")
+                or _parse_sim_nao(maior_70_na_sentenca, "maior_70_na_sentenca"))
+    prazo_meses = prazo_anos * 12 // (2 if reduzido else 1)
+
+    marcos: list[date] = [data_fato]
+    for token in (marcos_interruptivos or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            marco = date.fromisoformat(token)
+        except ValueError:
+            raise HTTPException(422, (
+                f"Marco interruptivo inválido: '{token}'. Use datas ISO (AAAA-MM-DD) "
+                "separadas por vírgula — ex.: 2021-03-10,2024-05-02."))
+        if marco < data_fato:
+            raise HTTPException(422, f"Marco interruptivo '{token}' anterior à data do fato.")
+        marcos.append(marco)
+    marcos.sort()
+
+    hoje = date.today()
+    analise: list[dict] = []
+    intervalo_prescrito: Optional[int] = None
+    for i, inicio in enumerate(marcos):
+        ultimo = i + 1 == len(marcos)
+        fim = hoje if ultimo else marcos[i + 1]
+        limite = _add_meses_data(inicio, prazo_meses)
+        estourou = fim > limite
+        analise.append({
+            "intervalo": i + 1,
+            "inicio": inicio,
+            "fim": None if ultimo else fim,
+            "fim_descricao": "em aberto (contagem corrente até hoje)" if ultimo
+                             else "marco interruptivo seguinte (CP art. 117 — reinicia a contagem)",
+            "limite_prescricional": limite,
+            "prescrito_no_intervalo": estourou,
+        })
+        if estourou and intervalo_prescrito is None:
+            intervalo_prescrito = i + 1
+    data_estimada = _add_meses_data(marcos[-1], prazo_meses)
+
+    return _selo_homologacao(rota_consultada, {
+        "rota_consultada": rota_consultada,
+        "rota_canonica": "/penal/ferramentas/prescricao-penal",
+        "base_de_calculo": "pena_concreta (CP art. 110 — retroativa/intercorrente)"
+                           if usa_concreta else "pena_maxima_abstrata (CP art. 109)",
+        "pena_considerada_anos": pena_base,
+        "prazo_prescricional_anos": prazo_meses / 12 if prazo_meses % 12 else prazo_meses // 12,
+        "reducao_metade_art_115": reduzido,
+        "data_fato": data_fato,
+        "marcos_interruptivos_considerados": marcos[1:],
+        "analise_intervalos": analise,
+        "prescrito": intervalo_prescrito is not None,
+        "intervalo_prescrito": intervalo_prescrito,
+        "data_prescricao_estimada": data_estimada,
+        "fontes": [
+            "CP art. 109 (red. Lei 12.234/2010) — tabela de prazos",
+            "CP art. 110 — prescrição pela pena concreta (retroativa/intercorrente)",
+            "CP art. 115 — redução à metade (<21 na data do fato / >70 na sentença)",
+            "CP art. 117 — causas interruptivas (reiniciam a contagem)",
+        ],
+        "vigencia_regra": "CP arts. 109-117 com a redação da Lei 12.234/2010 (vigente desde 06/05/2010)",
+        "versao_regra": _VERSAO_REGRA,
+        "ressalvas": [
+            "Termo inicial pode divergir da data do fato (CP art. 111 — ex.: crimes permanentes, "
+            "crimes contra a dignidade sexual de menores).",
+            "Causas suspensivas (CP art. 116) NÃO estão computadas.",
+            "Prescrição retroativa não pode ter termo inicial anterior à denúncia/queixa "
+            "(CP art. 110 §1º, red. Lei 12.234/2010).",
+            "Crimes imprescritíveis: racismo (CF art. 5º XLII) e ação de grupos armados (XLIV).",
+        ],
+        "aviso": "MINUTA — revisão humana obrigatória; conferir marcos e certidões nos autos.",
+    })
+
+
 # ── Ferramentas Consumidor ────────────────────────────────────────────────────
 @router.get("/consumidor/ferramentas/devolucao-dobro")
 async def consumidor_devolucao_dobro(
@@ -1224,44 +1492,165 @@ async def familia_itcmd(
     }
 
 
-# ── Penal: prescrição pela pena máxima (art. 109 CP) ──────────────────────────
+# ── Penal: prescrição (rota CANÔNICA — implementação única) ───────────────────
 @router.get("/penal/ferramentas/prescricao-penal")
 async def penal_prescricao(
-    pena_maxima_anos: float,
+    data_fato: date,
+    pena_maxima_anos: Optional[float] = None,
+    pena_concreta_anos: Optional[float] = None,
+    marcos_interruptivos: Optional[str] = None,   # datas ISO separadas por vírgula (CP art. 117)
+    menor_21_na_data_fato: str = "nao",
+    maior_70_na_sentenca: str = "nao",
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Prescrição da pretensão punitiva pela pena em abstrato (CP art. 109)."""
-    p = pena_maxima_anos
-    if p > 12:   prazo, faixa = 20, "superior a 12 anos"
-    elif p > 8:  prazo, faixa = 16, "de 8 a 12 anos"
-    elif p > 4:  prazo, faixa = 12, "de 4 a 8 anos"
-    elif p > 2:  prazo, faixa = 8,  "de 2 a 4 anos"
-    elif p >= 1: prazo, faixa = 4,  "de 1 a 2 anos"
-    else:        prazo, faixa = 3,  "inferior a 1 ano"
-    return _selo_homologacao("/penal/ferramentas/prescricao-penal", {
-        "pena_maxima_anos": p, "faixa": faixa, "prazo_prescricional_anos": prazo,
-        "observacao": "Prescrição da pretensão punitiva em abstrato. Reduz pela metade se réu <21 na data do fato ou >70 na sentença (art. 115).",
-        "base": "CP art. 109.", "aviso": "MINUTA — revisão humana obrigatória.",
-    })
+    """Prescrição penal (CP arts. 109, 110, 115 e 117) — rota canônica. A rota
+    /penal/ferramentas/prescricao-punitiva usa a MESMA implementação e será
+    removida na Onda 3 (após telemetria). Ver _prescricao_penal_consolidada."""
+    return _prescricao_penal_consolidada(
+        rota_consultada="/penal/ferramentas/prescricao-penal",
+        data_fato=data_fato, pena_maxima_anos=pena_maxima_anos,
+        pena_concreta_anos=pena_concreta_anos, marcos_interruptivos=marcos_interruptivos,
+        menor_21_na_data_fato=menor_21_na_data_fato, maior_70_na_sentenca=maior_70_na_sentenca,
+    )
+
+
+_RE_FRACAO = re.compile(r"^(\d+)\s*/\s*(\d+)$")
+
+
+def _parse_fracoes(csv: Optional[str], campo: str) -> list[dict]:
+    """Parse de frações explícitas ("1/3,1/6") para as causas da 3ª fase.
+    Fração fora do formato ou inválida → 422."""
+    out: list[dict] = []
+    for token in (csv or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        m = _RE_FRACAO.match(token)
+        if not m:
+            raise HTTPException(422, (
+                f"Fração inválida em {campo}: '{token}'. Use frações num/den separadas "
+                "por vírgula — ex.: 1/3,1/6."))
+        num, den = int(m.group(1)), int(m.group(2))
+        if num == 0 or den == 0:
+            raise HTTPException(422, f"Fração inválida em {campo}: '{token}' "
+                                     "(numerador e denominador devem ser maiores que zero).")
+        fracao = num / den
+        if campo == "causas_diminuicao" and fracao >= 1:
+            raise HTTPException(422, (
+                f"Causa de diminuição '{token}' inválida: a fração deve ser menor que 1 "
+                "(a pena não pode ser zerada ou negativa)."))
+        out.append({"fracao": token, "valor": fracao})
+    return out
+
+
+def _meses_para_anos_meses(meses: float) -> dict:
+    total = int(round(meses))
+    return {"anos": total // 12, "meses": total % 12, "total_meses": round(meses, 1)}
 
 
 @router.get("/penal/ferramentas/dosimetria")
 async def penal_dosimetria(
-    pena_base_anos: float,
-    fracao_agravantes_pct: float = 0.0,
-    fracao_aumento_pct: float = 0.0,
-    fracao_diminuicao_pct: float = 0.0,
+    pena_minima_meses: int = Query(..., gt=0, description="Pena mínima cominada, em meses"),
+    pena_maxima_meses: int = Query(..., gt=0, description="Pena máxima cominada, em meses"),
+    circunstancias_judiciais_desfavoraveis: int = 0,
+    n_agravantes: int = 0,
+    n_atenuantes: int = 0,
+    causas_aumento: Optional[str] = None,      # frações, ex.: "1/3,1/6"
+    causas_diminuicao: Optional[str] = None,   # frações, ex.: "1/2,1/6"
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Cálculo trifásico simplificado da pena (CP art. 68)."""
-    fase2 = pena_base_anos * (1 + fracao_agravantes_pct / 100)
-    fase3 = fase2 * (1 + fracao_aumento_pct / 100) * (1 - fracao_diminuicao_pct / 100)
+    """
+    Simulador ASSISTIDO do cálculo trifásico da pena (CP art. 68), em MESES.
+    1ª fase (art. 59): pena-base = mínimo + 1/8 do intervalo (máx−mín) por circunstância
+      judicial desfavorável (fração referencial consolidada no STJ) — sempre DENTRO dos limites.
+    2ª fase: agravantes/atenuantes a 1/6 da pena-base cada (referencial jurisprudencial);
+      o resultado não desce abaixo do mínimo (Súmula 231 STJ) nem sobe acima do máximo.
+    3ª fase: causas de aumento e de diminuição como FRAÇÕES explícitas, aplicadas em
+      cascata — podem ultrapassar os limites cominados.
+    """
+    if pena_minima_meses <= 0 or pena_maxima_meses <= 0:
+        raise HTTPException(422, "pena_minima_meses e pena_maxima_meses devem ser maiores que zero.")
+    if pena_maxima_meses < pena_minima_meses:
+        raise HTTPException(422, "pena_maxima_meses deve ser ≥ pena_minima_meses.")
+    if not 0 <= circunstancias_judiciais_desfavoraveis <= 8:
+        raise HTTPException(422, "circunstancias_judiciais_desfavoraveis deve estar entre 0 e 8 (CP art. 59).")
+    if n_agravantes < 0 or n_atenuantes < 0:
+        raise HTTPException(422, "n_agravantes e n_atenuantes devem ser ≥ 0.")
+    aumentos = _parse_fracoes(causas_aumento, "causas_aumento")
+    diminuicoes = _parse_fracoes(causas_diminuicao, "causas_diminuicao")
+
+    # 1ª fase — pena-base (dentro dos limites por construção: 8/8 = máximo)
+    intervalo = pena_maxima_meses - pena_minima_meses
+    pena_base = pena_minima_meses + intervalo * circunstancias_judiciais_desfavoraveis / 8
+
+    # 2ª fase — agravantes/atenuantes (1/6 da pena-base cada), com trava legal
+    pena_2a_bruta = pena_base + (pena_base / 6) * (n_agravantes - n_atenuantes)
+    pena_2a = min(max(pena_2a_bruta, pena_minima_meses), pena_maxima_meses)
+    travada_no_minimo = pena_2a_bruta < pena_minima_meses
+    travada_no_maximo = pena_2a_bruta > pena_maxima_meses
+
+    # 3ª fase — causas em cascata (podem ultrapassar os limites cominados)
+    pena_3a = pena_2a
+    cascata: list[dict] = []
+    for c in aumentos:
+        antes = pena_3a
+        pena_3a *= (1 + c["valor"])
+        cascata.append({"operacao": f"aumento de {c['fracao']}", "de_meses": round(antes, 1),
+                        "para_meses": round(pena_3a, 1)})
+    for c in diminuicoes:
+        antes = pena_3a
+        pena_3a *= (1 - c["valor"])
+        cascata.append({"operacao": f"diminuição de {c['fracao']}", "de_meses": round(antes, 1),
+                        "para_meses": round(pena_3a, 1)})
+
+    anos_definitivos = pena_3a / 12
+    if anos_definitivos > 8:
+        regime = "fechado"
+    elif anos_definitivos > 4:
+        regime = "semiaberto (não reincidente)"
+    else:
+        regime = "aberto (não reincidente)"
+
     return _selo_homologacao("/penal/ferramentas/dosimetria", {
-        "pena_base_anos": round(pena_base_anos, 2),
-        "apos_agravantes_atenuantes": round(fase2, 2),
-        "pena_definitiva_anos": round(fase3, 2),
-        "observacao": "Cálculo trifásico simplificado (art. 68). 2ª fase não pode ir abaixo do mínimo nem acima do máximo legal (Súmula 231 STJ).",
-        "base": "CP arts. 59, 68.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "pena_cominada": {"minima_meses": pena_minima_meses, "maxima_meses": pena_maxima_meses},
+        "fase_1": {
+            "circunstancias_judiciais_desfavoraveis": circunstancias_judiciais_desfavoraveis,
+            "fracao_por_circunstancia": "1/8 do intervalo (máx − mín) — referencial STJ",
+            "pena_base": _meses_para_anos_meses(pena_base),
+        },
+        "fase_2": {
+            "n_agravantes": n_agravantes,
+            "n_atenuantes": n_atenuantes,
+            "fracao_por_circunstancia": "1/6 da pena-base — referencial jurisprudencial",
+            "resultado_bruto_meses": round(pena_2a_bruta, 1),
+            "limitada_ao_minimo_sum_231_stj": travada_no_minimo,
+            "limitada_ao_maximo_legal": travada_no_maximo,
+            "pena_intermediaria": _meses_para_anos_meses(pena_2a),
+        },
+        "fase_3": {
+            "causas_aumento": [c["fracao"] for c in aumentos],
+            "causas_diminuicao": [c["fracao"] for c in diminuicoes],
+            "aplicacao": "em cascata (incidência sucessiva) — pode ultrapassar os limites cominados",
+            "cascata": cascata,
+            "pena_definitiva": _meses_para_anos_meses(pena_3a),
+        },
+        "regime_inicial_indicativo": {
+            "regime": regime,
+            "ressalva": ("Indicativo pelo CP art. 33 §2º para condenado NÃO reincidente, sem "
+                         "considerar detração (CPP art. 387 §2º) nem as circunstâncias do art. "
+                         "33 §3º — reincidência e circunstâncias desfavoráveis podem agravar o regime."),
+        },
+        "fontes": [
+            "CP arts. 59, 61-67 e 68 (critério trifásico)",
+            "Súmula 231 STJ (atenuante não reduz abaixo do mínimo)",
+            "CP art. 33 §§2º-3º (regime inicial)",
+            "STJ — referencial de 1/8 do intervalo por circunstância judicial (jurisprudência consolidada)",
+        ],
+        "vigencia_regra": "CP, Parte Geral, red. Lei 7.209/1984 (critério trifásico) — vigente",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — simulador assistido: as frações de 1/8 e 1/6 são REFERENCIAIS "
+                  "jurisprudenciais, não vinculantes; o juiz fundamenta cada fase. Conferência "
+                  "e fundamentação pelo advogado são obrigatórias."),
     })
 
 
@@ -1293,25 +1682,133 @@ async def trabalhista_horas_extras(
     }
 
 
-# ── Empresarial: juros de mora + multa ────────────────────────────────────────
+# ── Empresarial: juros de mora (CC art. 406, red. Lei 14.905/2024) ────────────
+_VIGENCIA_LEI_14905 = date(2024, 8, 30)   # nova taxa legal em vigor desde 30/08/2024
+
+
 @router.get("/empresarial/ferramentas/juros-mora")
 async def empresarial_juros_mora(
-    valor_principal: float,
-    meses_atraso: int,
-    taxa_juros_mensal_pct: float = 1.0,
-    multa_pct: float = 2.0,
+    regime: Literal["legal", "convencionada"],
+    valor_principal: float = Query(..., gt=0),
+    data_inicio_mora: date = Query(...),
+    # Defaults planos (não Query): as calculadoras também são exercitadas por
+    # chamada direta nos testes; validação explícita cobre o caminho HTTP e o direto.
+    data_fim: Optional[date] = None,                      # data de apuração (default: hoje)
+    selic_acumulada_percent: Optional[float] = None,      # Selic ACUMULADA do período novo (BCB)
+    ipca_acumulado_percent: Optional[float] = None,       # IPCA ACUMULADO do mesmo período (IBGE)
+    aplicar_regra_anterior: Optional[str] = None,         # sim|nao — mora iniciada antes de 30/08/2024
+    taxa_mensal_percent: Optional[float] = None,          # taxa convencionada, % a.m.
+    multa_pct: float = 0.0,                               # multa moratória pactuada, %
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Juros de mora (simples) + multa sobre débito contratual."""
-    _bloquear_nao_homologada("/empresarial/ferramentas/juros-mora")
-    juros = valor_principal * (taxa_juros_mensal_pct / 100) * meses_atraso
-    multa = valor_principal * (multa_pct / 100)
+    """
+    Juros de mora sobre débito contratual — CC art. 406, red. Lei 14.905/2024.
+    Desde 30/08/2024 NÃO existe mais o default de 1% a.m.: sem taxa convencionada,
+    a taxa legal é a Selic DEDUZIDO o IPCA do período (art. 406 §1º); se o resultado
+    for negativo, considera-se ZERO (§3º). Mora iniciada antes de 30/08/2024 pode ser
+    segmentada: 1% a.m. (CC art. 406 na redação original c/c CTN art. 161 §1º) até
+    29/08/2024 e regra nova em diante. MINUTA — revisão humana obrigatória.
+    """
+    fim = data_fim or date.today()
+    if fim < data_inicio_mora:
+        raise HTTPException(422, "data_fim anterior a data_inicio_mora.")
+    if regime not in ("legal", "convencionada"):
+        raise HTTPException(422, "Regime inválido. Use: legal | convencionada")
+    if valor_principal <= 0:
+        raise HTTPException(422, "valor_principal deve ser maior que zero.")
+    if multa_pct < 0 or (taxa_mensal_percent is not None and taxa_mensal_percent < 0) \
+            or (selic_acumulada_percent is not None and selic_acumulada_percent < 0):
+        raise HTTPException(422, "Percentuais não podem ser negativos.")
+
+    componentes: list[dict] = []
+    if regime == "convencionada":
+        if taxa_mensal_percent is None:
+            raise HTTPException(422, (
+                "Regime 'convencionada' exige taxa_mensal_percent (taxa de juros pactuada, "
+                "% ao mês — CC art. 406 caput)."))
+        meses = round((fim - data_inicio_mora).days / 30, 4)
+        juros = valor_principal * (taxa_mensal_percent / 100) * meses
+        componentes.append({
+            "parcela": "juros convencionados (simples)",
+            "periodo": f"{data_inicio_mora.isoformat()} a {fim.isoformat()}",
+            "memoria": f"R$ {valor_principal:.2f} × {taxa_mensal_percent}% a.m. × {meses} meses (pro rata 30 dias)",
+            "valor": round(juros, 2),
+            "base": "CC art. 406 caput (taxa convencionada)",
+        })
+        nota_regime = ("Entre particulares não integrantes do SFN, a taxa convencionada não pode "
+                       "exceder o DOBRO da taxa legal (Lei da Usura — Decreto 22.626/1933 art. 1º).")
+    else:
+        if selic_acumulada_percent is None or ipca_acumulado_percent is None:
+            raise HTTPException(422, (
+                "Regime 'legal' exige selic_acumulada_percent e ipca_acumulado_percent, "
+                "ACUMULADOS do período sob a regra nova (de "
+                f"{max(data_inicio_mora, _VIGENCIA_LEI_14905).isoformat()} a {fim.isoformat()}). "
+                "Obtenha a Selic acumulada no BCB (SGS/Calculadora do Cidadão) e o IPCA "
+                "acumulado no IBGE/SIDRA para o período exato."))
+        if data_inicio_mora < _VIGENCIA_LEI_14905:
+            if aplicar_regra_anterior is None:
+                raise HTTPException(422, (
+                    "A mora inicia antes de 30/08/2024 (vigência da Lei 14.905/2024): informe "
+                    "aplicar_regra_anterior=sim para segmentar (1% a.m. até 29/08/2024 + taxa "
+                    "legal nova em diante) ou aplicar_regra_anterior=nao para computar apenas "
+                    "o período sob a regra nova."))
+            if _parse_sim_nao(aplicar_regra_anterior, "aplicar_regra_anterior"):
+                meses_ant = round((_VIGENCIA_LEI_14905 - data_inicio_mora).days / 30, 4)
+                juros_ant = valor_principal * 0.01 * meses_ant
+                componentes.append({
+                    "parcela": "juros do período sob a regra anterior (1% a.m.)",
+                    "periodo": f"{data_inicio_mora.isoformat()} a 2024-08-29",
+                    "memoria": f"R$ {valor_principal:.2f} × 1% a.m. × {meses_ant} meses (pro rata 30 dias)",
+                    "valor": round(juros_ant, 2),
+                    "base": "CC art. 406 (redação original) c/c CTN art. 161 §1º — até 29/08/2024",
+                })
+            else:
+                componentes.append({
+                    "parcela": "período anterior a 30/08/2024 NÃO computado (por opção)",
+                    "periodo": f"{data_inicio_mora.isoformat()} a 2024-08-29",
+                    "valor": 0.0,
+                    "base": "aplicar_regra_anterior=nao",
+                })
+        taxa_legal = max(selic_acumulada_percent - ipca_acumulado_percent, 0.0)
+        zerada = (selic_acumulada_percent - ipca_acumulado_percent) < 0
+        juros_novo = valor_principal * taxa_legal / 100
+        componentes.append({
+            "parcela": "juros legais (Selic − IPCA acumulados do período)",
+            "periodo": f"{max(data_inicio_mora, _VIGENCIA_LEI_14905).isoformat()} a {fim.isoformat()}",
+            "memoria": (f"R$ {valor_principal:.2f} × max({selic_acumulada_percent}% − "
+                        f"{ipca_acumulado_percent}%, 0) = R$ {valor_principal:.2f} × {taxa_legal:.4f}%"),
+            "valor": round(juros_novo, 2),
+            "taxa_zerada_art_406_p3": zerada,
+            "base": "CC art. 406 §§1º-3º (red. Lei 14.905/2024) — desde 30/08/2024",
+        })
+        nota_regime = ("Selic e IPCA acumulados devem ser apurados para o PERÍODO EXATO no "
+                       "BCB e no IBGE; se Selic − IPCA for negativo, a taxa é ZERO (art. 406 §3º).")
+
+    juros_total = round(sum(c["valor"] for c in componentes), 2)
+    multa = round(valor_principal * multa_pct / 100, 2)
     return {
-        "valor_principal": valor_principal, "meses_atraso": meses_atraso,
-        "juros_mora": round(juros, 2), "multa": round(multa, 2),
-        "total_devido": round(valor_principal + juros + multa, 2),
-        "observacao": "Juros de mora 1% a.m. salvo pactuação (CC art. 406); multa contratual limitada a 2% em relações de consumo (CDC art. 52 §1).",
-        "base": "CC arts. 395, 406; CDC art. 52 §1.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "regime": regime,
+        "valor_principal": valor_principal,
+        "data_inicio_mora": data_inicio_mora,
+        "data_fim": fim,
+        "componentes": componentes,
+        "juros_mora_total": juros_total,
+        "multa": multa,
+        "nota_multa": "Multa apenas se pactuada; em relação de consumo, limitada a 2% (CDC art. 52 §1º).",
+        "total_devido": round(valor_principal + juros_total + multa, 2),
+        "nota_regime": nota_regime,
+        "fontes": [
+            "CC art. 406, §§1º-3º (red. Lei 14.905/2024)",
+            "CC art. 395 (efeitos da mora)",
+            "Decreto 22.626/1933 art. 1º (Lei da Usura — limite da taxa convencionada)",
+            "CDC art. 52 §1º (multa de 2% em relações de consumo)",
+            "BCB (Selic acumulada) e IBGE (IPCA) — índices informados pelo usuário",
+        ],
+        "vigencia_regra": "Lei 14.905/2024 em vigor desde 30/08/2024; período anterior segmentado a 1% a.m.",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Cálculo SEM correção monetária do "
+                  "principal (CC art. 389 §ú: IPCA salvo pactuação) e sem capitalização; "
+                  "conferir índices oficiais do período no BCB/IBGE."),
     }
 
 

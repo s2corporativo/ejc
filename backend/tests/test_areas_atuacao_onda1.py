@@ -71,7 +71,9 @@ def test_handlers_patch_usam_schema_tipado():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# (b) Ferramentas BLOQUEADAS → 503 com payload estruturado
+# (b) Mecanismo de bloqueio (503) — Onda 2 Fase A desbloqueou as 4 ferramentas
+# originalmente bloqueadas (corrigidas em test_areas_atuacao_onda2.py); aqui
+# permanece a garantia de que o MECANISMO segue funcional para bloqueios futuros.
 # ══════════════════════════════════════════════════════════════════════════
 def _assert_503(exc: HTTPException):
     assert exc.status_code == 503
@@ -80,34 +82,32 @@ def _assert_503(exc: HTTPException):
     assert "indisponível" in exc.detail["mensagem"]
 
 
-async def test_prazos_rj_bloqueada_503():
+def test_mecanismo_de_bloqueio_503_segue_funcional(monkeypatch):
+    from app.services import homologacao_ferramentas as hf
+    monkeypatch.setitem(hf.FERRAMENTAS_NAO_HOMOLOGADAS,
+                        "/teste/ferramentas/bloqueada", "motivo de teste")
     with pytest.raises(HTTPException) as e:
-        await ramos.emp_prazos_rj(data_distribuicao=date(2026, 1, 5), cu=None)
-    _assert_503(e.value)
-
-
-async def test_juros_mora_empresarial_bloqueada_503():
-    with pytest.raises(HTTPException) as e:
-        await ramos.empresarial_juros_mora(valor_principal=1_000.0, meses_atraso=3, cu=None)
-    _assert_503(e.value)
-
-
-async def test_prazos_processuais_penais_bloqueada_503():
-    with pytest.raises(HTTPException) as e:
-        await ramos.pen_prazos(data_denuncia=date(2026, 1, 5), cu=None)
-    _assert_503(e.value)
-
-
-async def test_verificar_anpp_bloqueada_503():
-    with pytest.raises(HTTPException) as e:
-        await ramos.pen_anpp(pena_min_anos=2.0, confessou=True,
-                             nao_violento=True, primario=True, cu=None)
+        hf.bloquear_nao_homologada("/teste/ferramentas/bloqueada")
     _assert_503(e.value)
 
 
 def test_bloqueadas_sao_subconjunto_da_matriz():
     assert FERRAMENTAS_BLOQUEADAS <= set(FERRAMENTAS_NAO_HOMOLOGADAS)
-    assert len(FERRAMENTAS_BLOQUEADAS) == 4
+    # Onda 2 — Fase A: as 4 bloqueadas da Onda 1 foram corrigidas e desbloqueadas.
+    assert len(FERRAMENTAS_BLOQUEADAS) == 0
+
+
+def test_ferramentas_corrigidas_na_onda2_sairam_da_matriz():
+    corrigidas = {
+        "/empresarial/ferramentas/prazos-rj",
+        "/empresarial/ferramentas/juros-mora",
+        "/penal/ferramentas/prazos-processuais",
+        "/penal/ferramentas/verificar-anpp",
+        "/civel/ferramentas/prazos-contestacao",
+        "/penal/ferramentas/prescricao-punitiva",
+        "/penal/ferramentas/prescricao-penal",
+    }
+    assert corrigidas.isdisjoint(FERRAMENTAS_NAO_HOMOLOGADAS)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -117,12 +117,6 @@ def _assert_selo(r: dict):
     assert r["homologada"] is False
     assert "não homologado para uso profissional" in r["aviso_homologacao"]
     assert "não gere demonstrativo" in r["aviso_homologacao"]
-
-
-async def test_selo_prazos_contestacao_civel():
-    r = await ramos.civ_prazo_contestacao(data_citacao=date(2026, 3, 2), tipo="cpc", cu=None)
-    _assert_selo(r)
-    assert r["vencimento"]  # continua calculando
 
 
 async def test_selo_verificar_cade_sem_prazo_ficticio():
@@ -142,9 +136,8 @@ async def test_selo_verificar_cade_sem_prazo_ficticio():
 
 async def test_selo_demais_ferramentas_da_matriz():
     resultados = [
-        await ramos.penal_dosimetria(pena_base_anos=4.0, cu=None),
-        await ramos.pen_prescricao(pena_maxima_anos=4.0, data_fato=date(2020, 5, 1), cu=None),
-        await ramos.penal_prescricao(pena_maxima_anos=4.0, cu=None),
+        # Dosimetria: corrigida na Onda 2, mas PERMANECE com selo (simulador assistido).
+        await ramos.penal_dosimetria(pena_minima_meses=24, pena_maxima_meses=96, cu=None),
         await ramos.trab_prazos(data_sentenca=date(2026, 3, 2), cu=None),
         await ramos.trab_prescricao(data_demissao=date(2025, 1, 10), cu=None),
         await ramos.transito_prazos_recurso(data_notificacao=date(2026, 3, 2),
@@ -236,14 +229,14 @@ def _cu_advogado():
 
 
 @pytest.mark.parametrize("ferramenta", [
-    "/penal/ferramentas/prazos-processuais",             # bloqueada
+    "/penal/ferramentas/dosimetria",                     # selo (simulador assistido)
     "/consumidor/ferramentas/devolucao-dobro",           # selo
     "/api/consumidor/ferramentas/devolucao-dobro",       # com prefixo /api
     "/consumidor/ferramentas/prazos-cdc?tipo=fato",      # com querystring
     "/Consumidor/Ferramentas/Devolucao-Dobro",           # casing
     "//consumidor//ferramentas//devolucao-dobro",        # barras duplicadas
     "/consumidor/ferramentas/devolucao%2Ddobro",         # percent-encoding
-    "/api//Penal/ferramentas/prazos-processuais/",       # combinação
+    "/api//Penal/ferramentas/dosimetria/",               # combinação
 ])
 async def test_demonstrativo_rejeita_ferramenta_nao_homologada(ferramenta):
     from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo

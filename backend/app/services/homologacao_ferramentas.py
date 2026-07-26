@@ -13,26 +13,17 @@ from urllib.parse import unquote
 from fastapi import HTTPException
 
 FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
-    # ── BLOQUEADAS (503 — ver FERRAMENTAS_BLOQUEADAS) ────────────────────────
-    "/empresarial/ferramentas/prazos-rj":
-        "marcos temporais da recuperação judicial incorretos (Lei 11.101/2005)",
-    "/empresarial/ferramentas/juros-mora":
-        "regra de juros obsoleta após a Lei 14.905/2024 (nova redação do CC art. 406)",
-    "/penal/ferramentas/prazos-processuais":
-        "contagem em dias úteis — no processo penal os prazos correm em dias CORRIDOS (CPP art. 798)",
-    "/penal/ferramentas/verificar-anpp":
-        "requisito de ausência de violência doméstica fixado como True no código, sem checagem real (CPP art. 28-A)",
+    # Onda 2 — Fase A (2026-07): corrigidas e REMOVIDAS da matriz:
+    #   /empresarial/ferramentas/prazos-rj · /empresarial/ferramentas/juros-mora
+    #   /penal/ferramentas/prazos-processuais · /penal/ferramentas/verificar-anpp
+    #   /civel/ferramentas/prazos-contestacao
+    #   /penal/ferramentas/prescricao-punitiva · /penal/ferramentas/prescricao-penal
     # ── COM SELO (respondem, mas o resultado NÃO é homologado) ───────────────
     "/empresarial/ferramentas/verificar-cade":
         "prazo de notificação de 30 dias inexistente — o controle de concentrações é PRÉVIO (Lei 12.529/2011 art. 88)",
-    "/civel/ferramentas/prazos-contestacao":
-        "prazo universal de 10 dias para contestação no JEC inexistente na Lei 9.099/95",
     "/penal/ferramentas/dosimetria":
-        "modelo trifásico excessivamente simplificado — não valida os limites legais de cada fase (CP art. 68)",
-    "/penal/ferramentas/prescricao-punitiva":
-        "duplicada com prescricao-penal e sem considerar marcos interruptivos (CP art. 117)",
-    "/penal/ferramentas/prescricao-penal":
-        "duplicada com prescricao-punitiva e sem considerar marcos interruptivos (CP art. 117)",
+        "simulador assistido — as frações padrão são referencial jurisprudencial; "
+        "conferência e fundamentação pelo advogado são obrigatórias",
     "/trabalhista-esp/ferramentas/prazos":
         "prazos contados em dias corridos — a CLT art. 775 determina contagem em dias ÚTEIS",
     "/trabalhista-esp/ferramentas/prescricao-trabalhista":
@@ -52,12 +43,9 @@ FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
 }
 
 # Subconjunto que fica INDISPONÍVEL (503) até revisão jurídica.
-FERRAMENTAS_BLOQUEADAS: frozenset[str] = frozenset({
-    "/empresarial/ferramentas/prazos-rj",
-    "/empresarial/ferramentas/juros-mora",
-    "/penal/ferramentas/prazos-processuais",
-    "/penal/ferramentas/verificar-anpp",
-})
+# Onda 2 — Fase A: as 4 ferramentas bloqueadas na Onda 1 foram corrigidas e
+# desbloqueadas; o mecanismo permanece para bloqueios futuros.
+FERRAMENTAS_BLOQUEADAS: frozenset[str] = frozenset()
 
 
 def normalizar_caminho_ferramenta(caminho: str) -> str:
