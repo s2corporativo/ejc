@@ -3,7 +3,7 @@ import { fmtDate, fmtDateTime, fmtMoney } from "./formato";
 
 // toLocaleString pt-BR separa "R$" do número com NBSP (ou NNBSP conforme a
 // versão do ICU) — normaliza para espaço comum antes de comparar.
-const plain = (s: string) => s.replace(/[  ]/g, " ");
+const plain = (s: string) => s.replace(/[\u00a0\u202f]/g, " ");
 
 describe("fmtMoney", () => {
   it("formata em Reais com 2 casas por padrão", () => {
