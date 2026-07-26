@@ -1,8 +1,8 @@
 # ── app/routers/google_drive_knowledge.py ────────────────────────────────────
 # Endpoints Google Drive → RAG.
 #
-# Este módulo é carregado por app/routers/__init__.py e registra suas rotas como
-# sub-rotas do router RAG existente. Rotas finais: /api/rag/google-drive/*
+# Registrado explicitamente em main.py (padrão dos demais routers), sob o
+# prefixo /api. Rotas finais: /api/rag/google-drive/*
 from __future__ import annotations
 
 import logging
@@ -15,7 +15,6 @@ from app.core.database import get_db
 from app.core.security import require_roles
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
-from app.routers.rag import router as rag_router
 from app.schemas.google_drive_knowledge import (
     GoogleDriveCuradoriaApplyRequest,
     GoogleDriveCuradoriaPreviewRequest,
@@ -26,7 +25,7 @@ from app.services.rag_drive_reclassifier import reclassificar_docs_drive
 
 logger = logging.getLogger("ejc.rag.google_drive")
 
-router = APIRouter(prefix="/google-drive", tags=["Base de Conhecimento / Google Drive"])
+router = APIRouter(prefix="/rag/google-drive", tags=["Base de Conhecimento / Google Drive"])
 
 
 @router.get("/status")
@@ -204,7 +203,3 @@ async def reindexar_arquivo_google_drive(
             status_code=500,
             detail=f"Falha ao reindexar arquivo Google Drive: {type(exc).__name__}: {str(exc)[:300]}",
         ) from exc
-
-
-# main.py inclui rag_router com prefixo /api.
-rag_router.include_router(router)

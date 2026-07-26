@@ -315,17 +315,18 @@ class TestRegistryGlobal:
 
     def test_leitura_sem_confirmacao_escrita_com_hitl(self):
         from app.services.ai.agent.tools import leitura, escrita, motores  # noqa: F401
-        from app.services.ai.agent.permissions import requer_confirmacao, pode_ver_tool
-        # LEITURA → automática.
+        from app.services.ai.agent.tools.registry import REGISTRY
+        # LEITURA → automática (fonte de verdade: o próprio REGISTRY,
+        # consultado direto pelo loop — a fachada permissions.py foi removida).
         for nome in _TOOLS_LEITURA:
-            assert requer_confirmacao(nome) is False, nome
+            assert REGISTRY.requer_confirmacao(nome) is False, nome
         # ESCRITA → HITL (confirmação humana).
         for nome in _TOOLS_ESCRITA:
-            assert requer_confirmacao(nome) is True, nome
-        # Facade de visibilidade.
-        assert pode_ver_tool("buscar_precedentes", "advogado") is True
+            assert REGISTRY.requer_confirmacao(nome) is True, nome
+        # Visibilidade por papel.
+        assert "buscar_precedentes" in REGISTRY.nomes_visiveis("advogado")
         # Tool inexistente nunca requer confirmação (fail-safe).
-        assert requer_confirmacao("inexistente") is False
+        assert REGISTRY.requer_confirmacao("inexistente") is False
 
 
 class TestRegistryFiltroPorPapel:

@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from app.core.config import Settings, get_settings
-from app.services import datajud_service, pncp_service
+from app.services import datajud_service
 from app.services.integration_status import build_integration_status
 
 
@@ -29,39 +29,6 @@ def test_datajud_nao_repete_erro_de_contrato_ou_credencial(status):
 @pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
 def test_datajud_repete_apenas_rate_limit_e_5xx(status):
     assert datajud_service._erro_datajud_transitorio(_status_error(status)) is True
-
-
-@pytest.mark.parametrize("status", [400, 401, 403, 404, 422])
-def test_pncp_nao_repete_erro_de_contrato(status):
-    assert pncp_service._erro_pncp_transitorio(_status_error(status)) is False
-
-
-@pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
-def test_pncp_repete_apenas_rate_limit_e_5xx(status):
-    assert pncp_service._erro_pncp_transitorio(_status_error(status)) is True
-
-
-async def test_pncp_204_retorna_resultado_vazio_sem_json(monkeypatch):
-    class _Client:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-        async def get(self, url, params=None):
-            request = httpx.Request("GET", url)
-            return httpx.Response(204, request=request)
-
-    monkeypatch.setattr(pncp_service.httpx, "AsyncClient", _Client)
-    assert await pncp_service._get_json(
-        "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao",
-        {"pagina": 1},
-        1.0,
-    ) == {}
 
 
 async def test_datajud_desligado_nao_vira_processo_ausente(monkeypatch):
