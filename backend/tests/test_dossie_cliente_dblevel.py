@@ -83,14 +83,19 @@ async def test_dossie_nao_quebra_com_coluna_cpf_inexistente_e_decifra_documento(
     from app.routers.dossie_cliente import dossie_cliente
 
     tok = f"Zdc{uuid4().hex[:6]}"
+    # CPF sintético derivado do token do teste (só precisa ser 11 dígitos
+    # únicos por execução — ux_clients_cpf_hash é UNIQUE — não precisa ser um
+    # CPF matematicamente válido, o cadastro aqui é via SQL cru, sem o
+    # validador do schema Pydantic).
+    cpf_sintetico = "9" + str(abs(hash(tok)) % 10_000_000_000).zfill(10)
     async with AsyncSessionLocal() as db:
         socio = await _criar_user(db, "socio")
-        cli = await _criar_cliente_pf_com_cpf(db, f"Cliente Dossie {tok}", "111.444.777-35")
+        cli = await _criar_cliente_pf_com_cpf(db, f"Cliente Dossie {tok}", cpf_sintetico)
         await db.commit()
         try:
             resp = await dossie_cliente(cli, db, await _carregar_user(db, socio))
             assert resp["cliente"]["id"] == cli
-            assert resp["cliente"]["cpf_cnpj"] == "11144477735"
+            assert resp["cliente"]["cpf_cnpj"] == cpf_sintetico
             assert resp["resumo"]["total_casos"] == 0
         finally:
             await _limpar(db, user_ids=[socio], client_ids=[cli])
@@ -115,9 +120,10 @@ async def test_dossie_acesso_negado_para_nao_gestao():
     from app.routers.dossie_cliente import dossie_cliente
 
     tok = f"Zde{uuid4().hex[:6]}"
+    cpf_sintetico = "8" + str(abs(hash(tok)) % 10_000_000_000).zfill(10)
     async with AsyncSessionLocal() as db:
         adv = await _criar_user(db, "advogado")
-        cli = await _criar_cliente_pf_com_cpf(db, f"Cliente Dossie Nego {tok}", "111.444.777-35")
+        cli = await _criar_cliente_pf_com_cpf(db, f"Cliente Dossie Nego {tok}", cpf_sintetico)
         await db.commit()
         try:
             with pytest.raises(HTTPException) as exc:
