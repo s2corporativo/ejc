@@ -446,7 +446,7 @@ async def test_download_pdf_manual_serve_arquivo_e_audita(upload_dir):
     assert resp.media_type == "application/pdf"
     with open(resp.path, "rb") as f:
         assert f.read() == PDF_MINIMO
-    assert f'filename="nfse-101.pdf"' in resp.headers["content-disposition"]
+    assert 'filename="nfse-101.pdf"' in resp.headers["content-disposition"]
     acoes = [o.acao for o in db2.added if o.__class__.__name__ == "AuditLog"]
     assert acoes == ["NFSE_ARQUIVO_BAIXADO"]
     assert db2.commits == 1     # audit de download COMMITADO

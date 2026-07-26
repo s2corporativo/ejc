@@ -135,7 +135,7 @@ class TestBarreiraAgenticaPseudonimiza:
             capturado["tools"] = tools
             # O modelo raciocina SÓ sobre os marcadores e devolve marcadores.
             return {
-                "text": f"Minuta para [CLIENTE_1] (CPF [CPF_1]).",
+                "text": "Minuta para [CLIENTE_1] (CPF [CPF_1]).",
                 "tool_calls": [{
                     "id": "z", "name": "gerar_minuta_peca",
                     "input": {"tipo": "peça", "instrucoes": "defesa de [CLIENTE_1]"},
@@ -371,7 +371,7 @@ class TestRegistryFiltroPorPapel:
             await reg.executar("inexistente", {}, ctx_adv)
 
     def test_registro_idempotente_mantem_primeira_definicao(self):
-        from app.services.ai.agent.tools.registry import _Registry, ToolSpec
+        from app.services.ai.agent.tools.registry import ToolSpec
         reg = self._reg()
 
         async def h2(args, ctx):
