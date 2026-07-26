@@ -26,6 +26,11 @@ export const MENSAGEM_FERRAMENTA_NAO_HOMOLOGADA =
   "Ferramenta temporariamente indisponível — em revisão jurídica. " +
   "Nenhum resultado é exibido até a homologação.";
 
+/** Texto único do selo/aviso de ferramenta não homologada (badge, tooltip,
+ * fallback do aviso da API) — evita divergência entre as telas. */
+export const AVISO_FERRAMENTA_NAO_HOMOLOGADA =
+  "Ferramenta não homologada — em revisão jurídica; resultado não deve ser usado profissionalmente.";
+
 /**
  * Extrai mensagem amigável de erro das calculadoras de ramo.
  * Trata o bloqueio 503 `detail.codigo === "ferramenta_nao_homologada"` com

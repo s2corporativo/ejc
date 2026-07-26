@@ -3,7 +3,10 @@ import { Sparkles } from "lucide-react";
 import { toast } from "../../components/Toast";
 import Markdown from "../../components/Markdown";
 import api from "../../lib/api";
-import { mensagemErroFerramenta } from "../../lib/iaErro";
+import {
+  AVISO_FERRAMENTA_NAO_HOMOLOGADA,
+  mensagemErroFerramenta,
+} from "../../lib/iaErro";
 import AnaliseEstrategica from "../../components/AnaliseEstrategica";
 import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
@@ -64,7 +67,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
         {f.homologada === false && (
           <span
             className="text-[10px] font-semibold text-warn-800 bg-warn-100 border border-warn-300 px-1.5 rounded-full whitespace-nowrap"
-            title="Não homologada — em revisão jurídica; resultado não deve ser usado profissionalmente."
+            title={AVISO_FERRAMENTA_NAO_HOMOLOGADA}
           >
             ⚠️ Não homologada
           </span>
@@ -128,8 +131,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
           {res.homologada === false && (
             <p className="text-warn-800 font-medium">
               ⚠️{" "}
-              {res.aviso_homologacao ||
-                "Ferramenta não homologada — em revisão jurídica; resultado não deve ser usado profissionalmente."}
+              {res.aviso_homologacao || AVISO_FERRAMENTA_NAO_HOMOLOGADA}
             </p>
           )}
           {typeof res === "object" &&

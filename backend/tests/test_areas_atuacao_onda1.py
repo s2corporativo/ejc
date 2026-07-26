@@ -240,6 +240,10 @@ def _cu_advogado():
     "/consumidor/ferramentas/devolucao-dobro",           # selo
     "/api/consumidor/ferramentas/devolucao-dobro",       # com prefixo /api
     "/consumidor/ferramentas/prazos-cdc?tipo=fato",      # com querystring
+    "/Consumidor/Ferramentas/Devolucao-Dobro",           # casing
+    "//consumidor//ferramentas//devolucao-dobro",        # barras duplicadas
+    "/consumidor/ferramentas/devolucao%2Ddobro",         # percent-encoding
+    "/api//Penal/ferramentas/prazos-processuais/",       # combinação
 ])
 async def test_demonstrativo_rejeita_ferramenta_nao_homologada(ferramenta):
     from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo

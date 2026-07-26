@@ -25,7 +25,11 @@ import {
   Car,
 } from "lucide-react";
 import api from "../../lib/api";
-import { mensagemErroFerramenta, mensagemErroIA } from "../../lib/iaErro";
+import {
+  AVISO_FERRAMENTA_NAO_HOMOLOGADA,
+  mensagemErroFerramenta,
+  mensagemErroIA,
+} from "../../lib/iaErro";
 import { useCaseContext } from "../../stores/caseContext";
 import type { Case } from "../../types";
 import {
@@ -116,8 +120,7 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
   // demonstrativo nem minuta; o resultado só aparece com o aviso jurídico.
   const naoHomologada = f.homologada === false;
   const bloqueadaParaDocumento = naoHomologada || res?.homologada === false;
-  const MOTIVO_BLOQUEIO =
-    "Bloqueado: ferramenta não homologada — em revisão jurídica; o resultado não deve ser usado profissionalmente.";
+  const MOTIVO_BLOQUEIO = `Bloqueado: ${AVISO_FERRAMENTA_NAO_HOMOLOGADA}`;
 
   // Converte o resultado da calculadora em um Demonstrativo (LegalDoc rascunho).
   const gerarDemonstrativo = async () => {
@@ -154,6 +157,9 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
         linhas,
         rodape: rodape || undefined,
         case_id: casoAtivo?.id || undefined,
+        // Origem do cálculo — permite ao backend aplicar o gate de
+        // homologação server-side (não só o bloqueio de UI).
+        ferramenta: f.endpoint,
       });
       setDocMsg(
         casoAtivo
@@ -162,8 +168,10 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
       );
       setDocLink(casoAtivo ? `/pecas?caso=${casoAtivo.id}` : "/pecas");
     } catch (e: any) {
+      // `detail` pode ser objeto (gate de homologação) ou array (Pydantic):
+      // nunca renderizar cru — sempre string via helper.
       setDocMsg(
-        e.response?.data?.detail || "Falha ao salvar o demonstrativo em Peças.",
+        mensagemErroFerramenta(e, "Falha ao salvar o demonstrativo em Peças."),
       );
     } finally {
       setGerandoDoc(false);
@@ -222,8 +230,7 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
 
       {naoHomologada && (
         <div className="mb-3 p-2 rounded-lg bg-warn-50 border border-warn-200 text-xs text-warn-800">
-          ⚠️ Não homologada — em revisão jurídica; resultado não deve ser usado
-          profissionalmente.
+          ⚠️ {AVISO_FERRAMENTA_NAO_HOMOLOGADA}
         </div>
       )}
 
@@ -312,8 +319,7 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
           {res.homologada === false && (
             <div className="mt-2 p-2 rounded bg-warn-50 border border-warn-200 text-xs text-warn-800">
               ⚠️{" "}
-              {res.aviso_homologacao ||
-                "Ferramenta não homologada — em revisão jurídica; resultado não deve ser usado profissionalmente."}
+              {res.aviso_homologacao || AVISO_FERRAMENTA_NAO_HOMOLOGADA}
             </div>
           )}
           {!f.autoLoad && (

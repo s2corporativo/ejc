@@ -34,7 +34,7 @@ from app.services.system_prompts.blocos_condicionais import (
     montar_instrucao_blocos,
 )
 from app.services.advogado_style_service import montar_instrucoes_estilo_para_prompt
-from app.routers.ramos import FERRAMENTAS_NAO_HOMOLOGADAS
+from app.services.homologacao_ferramentas import motivo_nao_homologada
 from app.schemas.peca_workflow import ProducaoModoRequest
 from app.services.peca_workflow_service import preparar_modo_producao
 from app.services.deep_research_service import DeepResearchInput, executar_deep_research
@@ -401,10 +401,7 @@ async def gerar_demonstrativo(
     # Gate de homologação (Onda 1): cálculo de ferramenta não homologada não
     # pode ser convertido em demonstrativo/peça.
     if req.ferramenta:
-        caminho = req.ferramenta.split("?")[0].rstrip("/")
-        if caminho.startswith("/api/"):
-            caminho = caminho[len("/api"):]
-        motivo = FERRAMENTAS_NAO_HOMOLOGADAS.get(caminho)
+        motivo = motivo_nao_homologada(req.ferramenta)
         if motivo:
             raise HTTPException(422, detail={
                 "codigo": "ferramenta_nao_homologada",
