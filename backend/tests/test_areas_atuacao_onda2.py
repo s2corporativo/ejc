@@ -431,3 +431,236 @@ async def test_dosimetria_entradas_invalidas_422(kwargs):
     with pytest.raises(HTTPException) as e:
         await ramos.penal_dosimetria(**{**base, **kwargs})
     assert e.value.status_code == 422
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE B — 8. /trabalhista-esp/ferramentas/prazos (CLT art. 775 — dias ÚTEIS)
+# ══════════════════════════════════════════════════════════════════════════
+async def test_trab_prazos_dias_uteis():
+    r = await ramos.trab_prazos(data_ciencia=date(2026, 3, 2), tipo_prazo="todos", cu=None)
+    por_tipo = {p["tipo"]: p for p in r["prazos"]}
+    # Seg 02/03 + 8 ÚTEIS = qui 12/03; + 5 ÚTEIS = seg 09/03 (não mais corridos).
+    assert por_tipo["recurso_ordinario"]["data"] == prazo_dias_uteis(date(2026, 3, 2), 8)
+    assert por_tipo["recurso_ordinario"]["data"] == date(2026, 3, 12)
+    assert por_tipo["embargos_declaracao"]["data"] == date(2026, 3, 9)
+    assert por_tipo["recurso_de_revista"]["data"] == date(2026, 3, 12)
+    assert all(p["tipo_contagem"] == "úteis" for p in r["prazos"])
+    assert "899 §1º" in r["nota_deposito_recursal"]      # recolhimento no prazo do recurso
+    _assert_metadados_regra(r)
+    _assert_sem_selo(r)
+
+
+async def test_trab_prazos_filtra_por_tipo():
+    r = await ramos.trab_prazos(data_ciencia=date(2026, 3, 2),
+                                tipo_prazo="embargos_declaracao", cu=None)
+    assert len(r["prazos"]) == 1
+    assert r["prazos"][0]["tipo"] == "embargos_declaracao"
+
+
+async def test_trab_prazos_tipo_invalido_422():
+    with pytest.raises(HTTPException) as e:
+        await ramos.trab_prazos(data_ciencia=date(2026, 3, 2), tipo_prazo="apelacao", cu=None)
+    assert e.value.status_code == 422
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE B — 9. /trabalhista-esp/ferramentas/prescricao-trabalhista (Súm. 308 TST)
+# ══════════════════════════════════════════════════════════════════════════
+async def test_prescricao_trabalhista_quinquenal_retroativa():
+    r = await ramos.trab_prescricao(
+        data_extincao_contrato=date(2025, 1, 10),
+        data_ajuizamento=date(2026, 3, 2), cu=None,
+    )
+    assert r["prescricao_bienal"]["limite_para_ajuizar"] == date(2027, 1, 10)
+    assert r["prescricao_bienal"]["acao_dentro_da_bienal"] is True
+    # RETROATIVA: ajuizamento − 5 anos (nada projetado para frente).
+    assert r["prescricao_quinquenal"]["limite_retroativo"] == date(2021, 3, 2)
+    _assert_metadados_regra(r)
+    _assert_sem_selo(r)
+
+
+async def test_prescricao_trabalhista_bienal_consumada():
+    # Exceção legal: ajuizar após 2 anos da extinção fulmina a pretensão.
+    r = await ramos.trab_prescricao(
+        data_extincao_contrato=date(2023, 1, 10),
+        data_ajuizamento=date(2026, 3, 2), cu=None,
+    )
+    assert r["prescricao_bienal"]["acao_dentro_da_bienal"] is False
+    assert "CONSUMADA" in r["sintese"]
+
+
+async def test_prescricao_trabalhista_ajuizamento_presumido_hoje():
+    r = await ramos.trab_prescricao(data_extincao_contrato=date(2026, 1, 10), cu=None)
+    assert r["data_ajuizamento"] == date.today()
+    assert r["data_ajuizamento_presumida_hoje"] is True
+
+
+async def test_prescricao_trabalhista_bienal_bissexto():
+    # Extinção em 29/02/2024 + 2 anos → 2026 não é bissexto → 28/02/2026.
+    r = await ramos.trab_prescricao(
+        data_extincao_contrato=date(2024, 2, 29),
+        data_ajuizamento=date(2026, 2, 27), cu=None,
+    )
+    assert r["prescricao_bienal"]["limite_para_ajuizar"] == date(2026, 2, 28)
+    assert r["prescricao_bienal"]["acao_dentro_da_bienal"] is True
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE B — 10. Depósito recursal com tabela versionada por vigência
+# ══════════════════════════════════════════════════════════════════════════
+async def test_deposito_recursal_tabela_versionada():
+    r = await ramos.trab_deposito(valor_condenacao=50_000.0,
+                                  data_referencia=date(2026, 7, 1), cu=None)
+    assert r["deposito_ro"] == ramos.TETO_DEPOSITO_RO    # condenação > teto → teto
+    assert r["teto_ro"] == 12_127.64 and r["teto_rr"] == 24_255.28
+    assert "323/2025" in r["fonte"]
+    assert r["vigencia_tabela"].startswith("2025-08-01")
+    _assert_metadados_regra(r)
+
+
+async def test_deposito_recursal_periodo_sem_tabela_422():
+    with pytest.raises(HTTPException) as e:
+        await ramos.trab_deposito(valor_condenacao=1_000.0,
+                                  data_referencia=date(2020, 1, 1), cu=None)
+    assert e.value.status_code == 422
+    assert "tetos" in e.value.detail
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE B — 11. Horas extras parametrizada + rota canônica /trabalhista-esp
+# ══════════════════════════════════════════════════════════════════════════
+async def test_horas_extras_componentes_discriminados():
+    r = await ramos.trabalhista_horas_extras(
+        salario_mensal=2_200.0, horas_extras_mes=10.0, divisor=220,
+        percentual_he=50.0, incluir_dsr="sim", incluir_reflexo_fgts="sim", cu=None,
+    )
+    c = r["componentes"]
+    assert c["valor_hora_normal"] == 10.0
+    assert c["valor_horas_extras"] == 150.0              # 10 × 1,5 × 10
+    assert c["dsr_sobre_he"] == 25.0                     # 150 ÷ 6
+    assert c["fgts_8pct_sobre_he_dsr"] == 14.0           # 8% × 175
+    assert r["total_mes_estimado"] == 189.0
+    assert r["rota_canonica"] == "/trabalhista-esp/ferramentas/horas-extras"
+    _assert_metadados_regra(r)
+
+
+async def test_horas_extras_sem_dsr_e_sem_fgts():
+    r = await ramos.trabalhista_horas_extras(
+        salario_mensal=2_000.0, horas_extras_mes=10.0, divisor=200,
+        percentual_he=60.0, incluir_dsr="nao", incluir_reflexo_fgts="nao", cu=None,
+    )
+    assert r["componentes"]["dsr_sobre_he"] == 0.0
+    assert r["componentes"]["fgts_8pct_sobre_he_dsr"] == 0.0
+    assert r["componentes"]["valor_horas_extras"] == 160.0   # 10 × 1,6 × 10
+    assert r["total_mes_estimado"] == 160.0
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"percentual_he": 40.0},                             # abaixo do mínimo constitucional
+    {"divisor": 0},                                      # divisor inválido
+    {"incluir_dsr": "talvez"},                           # sim/nao inválido
+])
+async def test_horas_extras_entradas_invalidas_422(kwargs):
+    base = dict(salario_mensal=2_200.0, horas_extras_mes=10.0, divisor=220,
+                incluir_dsr="sim", incluir_reflexo_fgts="sim", cu=None)
+    with pytest.raises(HTTPException) as e:
+        await ramos.trabalhista_horas_extras(**{**base, **kwargs})
+    assert e.value.status_code == 422
+
+
+def test_horas_extras_registrada_nas_duas_rotas():
+    from app.main import app
+    rotas = {(getattr(r, "path", "") or "") for r in app.routes}
+    assert "/api/trabalhista-esp/ferramentas/horas-extras" in rotas   # canônica
+    assert "/api/trabalhista/ferramentas/horas-extras" in rotas       # alias legado
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE B — 12. /transito/ferramentas/prazos-recurso (CTB 281-A/285/288) +
+#              delegação de /admin-esp/ferramentas/recurso-multa-transito
+# ══════════════════════════════════════════════════════════════════════════
+async def test_transito_prazos_marcos_independentes_por_fase():
+    defesa = await ramos.transito_prazos_recurso(
+        fase="defesa_previa", data_notificacao_autuacao=date(2026, 3, 2), cu=None)
+    jari = await ramos.transito_prazos_recurso(
+        fase="jari", data_notificacao_penalidade=date(2026, 3, 2), cu=None)
+    cetran = await ramos.transito_prazos_recurso(
+        fase="cetran", data_ciencia_decisao_jari=date(2026, 3, 2), cu=None)
+    # Todos: 30 dias do PRÓPRIO marco (nunca encadeado ao prazo anterior).
+    assert defesa["vencimento"] == jari["vencimento"] == cetran["vencimento"]
+    assert defesa["prazo"].startswith("prazo MÍNIMO de 30 dias")
+    assert "281-A" in defesa["prazo"]
+    assert "285" in jari["prazo"] and "288" in cetran["prazo"]
+    assert "619" not in str(defesa)                      # sem resolução CONTRAN antiga
+    _assert_metadados_regra(defesa)
+    _assert_sem_selo(defesa)
+
+
+async def test_transito_prazos_marco_ausente_422():
+    with pytest.raises(HTTPException) as e:
+        await ramos.transito_prazos_recurso(fase="jari", cu=None)
+    assert e.value.status_code == 422
+    assert "data_notificacao_penalidade" in e.value.detail
+
+
+async def test_transito_prazos_data_errada_para_fase_422():
+    with pytest.raises(HTTPException) as e:
+        await ramos.transito_prazos_recurso(
+            fase="jari", data_notificacao_penalidade=date(2026, 3, 2),
+            data_notificacao_autuacao=date(2026, 3, 2), cu=None)
+    assert e.value.status_code == 422
+    assert "incompatível" in e.value.detail
+
+
+async def test_admin_recurso_multa_delega_a_rota_canonica():
+    kw = dict(fase="defesa_previa", data_notificacao_autuacao=date(2026, 3, 2),
+              valor_multa=293.47, cu=None)
+    admin = await ramos.adm_multa_transito(**kw)
+    transito = await ramos.transito_prazos_recurso(**kw)
+    assert admin["rota_canonica"] == "/transito/ferramentas/prazos-recurso"
+    admin.pop("rota_consultada"), transito.pop("rota_consultada")
+    assert admin == transito                             # fonte única
+    assert admin["descontos"]["desconto_40pct_sne"] == 176.08
+    _assert_sem_selo(admin)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FASE B — 13. /transito/ferramentas/pontuacao-cnh — sistema 20/30/40
+# ══════════════════════════════════════════════════════════════════════════
+@pytest.mark.parametrize("gravissimas,limite", [(0, 40), (1, 30), (2, 20), (3, 20)])
+async def test_pontuacao_cnh_sistema_20_30_40(gravissimas, limite):
+    r = await ramos.transito_pontuacao_cnh(
+        pontos_total=19, qtd_gravissimas=gravissimas,
+        exerce_atividade_remunerada="nao", cu=None)
+    assert r["limite_aplicavel"] == limite
+    _assert_metadados_regra(r)
+    _assert_sem_selo(r)
+
+
+async def test_pontuacao_cnh_ear_limite_unico_40():
+    # Regressão do "30 p/ EAR": condutor EAR tem limite ÚNICO de 40, mesmo com gravíssimas.
+    r = await ramos.transito_pontuacao_cnh(
+        pontos_total=35, qtd_gravissimas=2, exerce_atividade_remunerada="sim", cu=None)
+    assert r["limite_aplicavel"] == 40
+    assert r["atingiu_limite"] is False
+    assert "curso preventivo" in r["nota_curso_preventivo_ear"]
+
+
+async def test_pontuacao_cnh_atinge_limite():
+    r = await ramos.transito_pontuacao_cnh(
+        pontos_total=20, qtd_gravissimas=2, exerce_atividade_remunerada="nao", cu=None)
+    assert r["atingiu_limite"] is True
+    assert "suspensão" in r["situacao"]
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"exerce_atividade_remunerada": "talvez"},
+    {"pontos_total": -1},
+    {"qtd_gravissimas": -2},
+])
+async def test_pontuacao_cnh_entradas_invalidas_422(kwargs):
+    base = dict(pontos_total=10, qtd_gravissimas=0,
+                exerce_atividade_remunerada="nao", cu=None)
+    with pytest.raises(HTTPException) as e:
+        await ramos.transito_pontuacao_cnh(**{**base, **kwargs})
+    assert e.value.status_code == 422

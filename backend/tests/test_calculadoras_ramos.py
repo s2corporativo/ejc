@@ -211,8 +211,9 @@ async def test_deposito_recursal_condenacao_abaixo_do_teto_recolhe_condenacao():
     r = await ramos.trab_deposito(valor_condenacao=8_000.0, cu=None)
     assert r["deposito_ro"] == 8_000.0
     assert r["deposito_rr"] == 8_000.0
-    assert r["teto_ro_2026"] == ramos.TETO_DEPOSITO_RO
-    assert r["teto_rr_2026"] == ramos.TETO_DEPOSITO_RR
+    assert r["teto_ro"] == ramos.TETO_DEPOSITO_RO
+    assert r["teto_rr"] == ramos.TETO_DEPOSITO_RR
+    assert r["vigencia_tabela"] and r["fonte"]
 
 
 async def test_deposito_recursal_condenacao_1_5x_teto_recolhe_o_teto():

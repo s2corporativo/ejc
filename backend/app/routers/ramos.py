@@ -50,12 +50,31 @@ _ADM    = ["superadmin", "admin", "socio"]
 _CENT   = Decimal("0.01")
 
 # ── Tetos do depósito recursal trabalhista (CLT art. 899 §§1º-4º) ─────────────
-# ATENÇÃO — ATUALIZAÇÃO ANUAL OBRIGATÓRIA: o TST reajusta estes tetos pelo IPCA-E
-# e publica novo Ato de GP (jan/ago de cada ano). Valores abaixo = 2026
-# (Ato TST GP 323/2025 — referência). Conferir a portaria vigente na data do
-# recurso antes de usar em produção; NÃO deixar defasar.
-TETO_DEPOSITO_RO = 12_127.64   # Recurso Ordinário
-TETO_DEPOSITO_RR = 24_255.28   # Recurso de Revista (dobro do RO)
+# Tabela VERSIONADA por período de vigência. ATUALIZAÇÃO ANUAL OBRIGATÓRIA: o TST
+# reajusta os tetos pelo IPCA-E e publica novo Ato de GP com vigência em agosto.
+# Para atualizar: ADICIONE uma nova faixa no INÍCIO da lista (mais recente
+# primeiro) e feche o `fim` da faixa anterior — nunca edite valores históricos.
+TETOS_DEPOSITO_RECURSAL: list[dict] = [
+    {"rotulo": "2025-2026",
+     "inicio": date(2025, 8, 1), "fim": None,   # None = vigente (em aberto)
+     "ro": 12_127.64, "rr": 24_255.28,
+     "fonte": "Ato TST GP 323/2025 (reajuste anual pelo IPCA-E)"},
+]
+
+# Compatibilidade: constantes apontam para a faixa mais recente da tabela.
+TETO_DEPOSITO_RO = TETOS_DEPOSITO_RECURSAL[0]["ro"]   # Recurso Ordinário
+TETO_DEPOSITO_RR = TETOS_DEPOSITO_RECURSAL[0]["rr"]   # Recurso de Revista
+
+
+def _teto_deposito_para(referencia: date) -> dict:
+    """Faixa de tetos vigente na data de referência; sem tabela p/ o período → 422."""
+    for faixa in TETOS_DEPOSITO_RECURSAL:
+        if referencia >= faixa["inicio"] and (faixa["fim"] is None or referencia <= faixa["fim"]):
+            return faixa
+    raise HTTPException(422, (
+        f"Não há tabela de tetos de depósito recursal cadastrada para "
+        f"{referencia.isoformat()}. Cadastre o Ato TST GP do período em "
+        "TETOS_DEPOSITO_RECURSAL ou informe uma data_referencia coberta."))
 
 router = APIRouter(tags=["Áreas de Atuação"])
 
@@ -864,85 +883,150 @@ async def trab_remover(tid: str, db: AsyncSession = Depends(get_db),
     return await _crud_remover(TrabalhistaCase, "trabalhista_cases", tid, db, cu)
 
 # ── Ferramentas Trabalhistas ───────────────────────────────────────────────────
+_PRAZOS_TRABALHISTAS = {
+    "recurso_ordinario":   (8, "Recurso Ordinário (RO)", "CLT art. 895 I — 8 dias ÚTEIS"),
+    "embargos_declaracao": (5, "Embargos de declaração", "CLT art. 897-A — 5 dias ÚTEIS"),
+    "recurso_de_revista":  (8, "Recurso de Revista (RR)", "CLT art. 896 — 8 dias ÚTEIS"),
+}
+
+
 @router.get("/trabalhista-esp/ferramentas/prazos")
-async def trab_prazos(data_sentenca: date, cu: User = Depends(require_roles(_EQUIPE))):
+async def trab_prazos(
+    data_ciencia: date,
+    tipo_prazo: Literal["recurso_ordinario", "embargos_declaracao",
+                        "recurso_de_revista", "todos"] = "todos",
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
     """
-    Prazos críticos trabalhistas a partir da sentença. MINUTA.
+    Prazos recursais trabalhistas a partir da CIÊNCIA da decisão — TODOS em dias
+    ÚTEIS (CLT art. 775, red. Lei 13.467/2017). O depósito recursal e as custas
+    são comprovados dentro do próprio prazo do recurso (CLT art. 899 §1º; Súm. 245
+    TST) — não há prazo autônomo. MINUTA — revisão humana obrigatória.
     """
-    return _selo_homologacao("/trabalhista-esp/ferramentas/prazos", {
-        "data_sentenca": data_sentenca,
+    if tipo_prazo != "todos" and tipo_prazo not in _PRAZOS_TRABALHISTAS:
+        raise HTTPException(422, f"Tipo de prazo inválido: '{tipo_prazo}'. "
+                                 f"Use: {list(_PRAZOS_TRABALHISTAS) + ['todos']}")
+    selecionados = (_PRAZOS_TRABALHISTAS if tipo_prazo == "todos"
+                    else {tipo_prazo: _PRAZOS_TRABALHISTAS[tipo_prazo]})
+    return {
+        "data_ciencia": data_ciencia,
+        "contagem": "Dias ÚTEIS (CLT art. 775, red. Lei 13.467/2017), excluído o dia do começo.",
         "prazos": [
-            {"evento": "Recurso Ordinário (RO)",
-             "data": prazo_dias_corridos(data_sentenca, 8),
-             "base": "CLT art. 895 I — 8 dias corridos"},
-            {"evento": "Depósito recursal (simultâneo ao RO)",
-             "data": prazo_dias_corridos(data_sentenca, 8),
-             "base": "CLT art. 899 + Súm. TST 245"},
-            {"evento": "Embargos de declaração",
-             "data": prazo_dias_corridos(data_sentenca, 5),
-             "base": "CLT art. 897-A — 5 dias"},
+            {"tipo": chave, "evento": rotulo,
+             "data": prazo_dias_uteis(data_ciencia, dias),
+             "base": base, "tipo_contagem": "úteis"}
+            for chave, (dias, rotulo, base) in selecionados.items()
         ],
-        "aviso": "MINUTA. Marco: publicação da sentença ou intimação pessoal. Verificar com o juízo.",
-    })
+        "nota_deposito_recursal": ("Depósito recursal e custas: comprovação DENTRO do prazo do "
+                                   "recurso a que se referem (CLT art. 899 §1º; Súm. 245 TST) — "
+                                   "o recolhimento acompanha o prazo recursal."),
+        "fontes": [
+            "CLT art. 775 (red. Lei 13.467/2017 — contagem em dias úteis)",
+            "CLT arts. 895 I, 896, 897-A e 899 §1º",
+            "Súmula 245 TST",
+        ],
+        "vigencia_regra": "CLT art. 775 com a redação da Lei 13.467/2017, vigente desde 11/11/2017",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Marco: ciência da decisão (publicação/"
+                  "intimação); verificar feriados locais e suspensões (CLT art. 775-A) no juízo."),
+    }
 
 
 @router.get("/trabalhista-esp/ferramentas/prescricao-trabalhista")
 async def trab_prescricao(
-    data_demissao: Optional[date] = None,
-    data_fato: Optional[date] = None,
+    data_extincao_contrato: date,
+    data_ajuizamento: Optional[date] = None,   # data (real ou prevista) do ajuizamento; default hoje
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
-    Prescrição trabalhista: 2 anos do término do contrato + 5 anos do crédito.
-    Base: CLT art. 11 + CF art. 7º XXIX + Súm. TST 308.
+    Prescrição trabalhista — CF art. 7º XXIX c/c CLT art. 11 e Súm. 308 TST.
+    • BIENAL: a ação deve ser ajuizada até 2 anos após a extinção do contrato.
+    • QUINQUENAL RETROATIVA: são exigíveis as parcelas dos 5 anos ANTERIORES ao
+      AJUIZAMENTO (Súm. 308 TST) — a contagem NUNCA é projetada para frente.
+    MINUTA — revisão humana obrigatória.
     """
-    hoje = date.today()
-    result = {}
-    if data_demissao:
-        prescricao_bienal = date(data_demissao.year + 2, data_demissao.month, data_demissao.day)
-        result["prescricao_bienal"] = {
-            "data": prescricao_bienal,
-            "prescrito": hoje > prescricao_bienal,
-            "base": "CLT art. 11 caput + CF art. 7º XXIX — 2 anos do término do contrato",
-        }
-    if data_fato:
-        prescricao_quinquenal = date(data_fato.year + 5, data_fato.month, data_fato.day)
-        result["prescricao_quinquenal"] = {
-            "data": prescricao_quinquenal,
-            "prescrito": hoje > prescricao_quinquenal,
-            "base": "CLT art. 11 caput — 5 anos do fato gerador (dentro do contrato)",
-            "obs": "Súm. TST 308: conta-se retroativamente da data do ajuizamento",
-        }
-    result["aviso"] = "MINUTA. Verificar causas suspensivas (doença, MS) e interruptivas."
-    return _selo_homologacao("/trabalhista-esp/ferramentas/prescricao-trabalhista", result)
+    ajuizamento = data_ajuizamento or date.today()
+    limite_bienal = _add_anos_data(data_extincao_contrato, 2)
+    limite_retroativo = _add_anos_data(ajuizamento, -5)
+    dentro_bienal = ajuizamento <= limite_bienal
+    return {
+        "data_extincao_contrato": data_extincao_contrato,
+        "data_ajuizamento": ajuizamento,
+        "data_ajuizamento_presumida_hoje": data_ajuizamento is None,
+        "prescricao_bienal": {
+            "limite_para_ajuizar": limite_bienal,
+            "acao_dentro_da_bienal": dentro_bienal,
+            "base": "CF art. 7º XXIX c/c CLT art. 11 — 2 anos da extinção do contrato",
+        },
+        "prescricao_quinquenal": {
+            "limite_retroativo": limite_retroativo,
+            "descricao": (f"Ajuizando em {ajuizamento.isoformat()}, são exigíveis as parcelas "
+                          f"vencidas a partir de {limite_retroativo.isoformat()} (5 anos "
+                          "RETROATIVOS do ajuizamento — Súm. 308 TST). Parcelas anteriores "
+                          "estão prescritas."),
+            "base": "CF art. 7º XXIX c/c CLT art. 11 · Súm. 308 I TST (contagem retroativa)",
+        },
+        "sintese": ("Ação dentro da bienal — parcelas exigíveis desde o limite retroativo."
+                    if dentro_bienal else
+                    "PRESCRIÇÃO BIENAL CONSUMADA: ajuizamento posterior a 2 anos da extinção "
+                    "do contrato fulmina a pretensão (ressalvadas hipóteses de suspensão/"
+                    "interrupção e parcelas de FGTS com regime próprio — STF ARE 709.212)."),
+        "fontes": [
+            "CF art. 7º XXIX",
+            "CLT art. 11 (red. Lei 13.467/2017)",
+            "Súmula 308 TST (quinquenal retroativa do ajuizamento)",
+            "STF ARE 709.212 (prescrição do FGTS — regime próprio)",
+        ],
+        "vigencia_regra": "CF/88 art. 7º XXIX · CLT art. 11 red. Lei 13.467/2017 · Súm. 308 TST",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Verificar causas suspensivas/"
+                  "interruptivas (protesto, ação anterior arquivada — Súm. 268 TST) e a data "
+                  "exata da extinção (projeção do aviso prévio, OJ 83 SDI-1)."),
+    }
 
 
 @router.get("/trabalhista-esp/ferramentas/deposito-recursal")
 async def trab_deposito(
     valor_condenacao: float,
+    data_referencia: Optional[date] = None,   # data do recurso; default hoje
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
     Calcula depósito recursal para Recurso Ordinário e Recurso de Revista.
     Metodologia (CLT art. 899 §1º): o depósito recursal corresponde ao VALOR DA
     CONDENAÇÃO, limitado ao teto legal do recurso — NÃO a um percentual dela.
-    Se a condenação < teto, recolhe-se o valor da condenação; se ≥ teto, recolhe-se
-    o teto. Tetos 2026 (Ato TST GP 323/2025 — referência, atualização anual).
+    Tetos lidos da tabela VERSIONADA (TETOS_DEPOSITO_RECURSAL) pela data de
+    referência; sem tabela para o período → 422.
     MINUTA — confirmar teto vigente na data do recurso.
     """
+    if valor_condenacao < 0:
+        raise HTTPException(422, "valor_condenacao não pode ser negativo.")
+    ref = data_referencia or date.today()
+    faixa = _teto_deposito_para(ref)
     # Depósito = condenação limitada ao teto do recurso (art. 899 §1º).
     # Entre 1x e 2x o teto, recolher só metade tornaria o recurso DESERTO.
-    dep_ro  = min(valor_condenacao, TETO_DEPOSITO_RO)
-    dep_rr  = min(valor_condenacao, TETO_DEPOSITO_RR)
+    dep_ro = min(valor_condenacao, faixa["ro"])
+    dep_rr = min(valor_condenacao, faixa["rr"])
     return {
         "valor_condenacao": valor_condenacao,
+        "data_referencia": ref,
         "deposito_ro": round(dep_ro, 2),
         "deposito_rr": round(dep_rr, 2),
-        "teto_ro_2026": TETO_DEPOSITO_RO,
-        "teto_rr_2026": TETO_DEPOSITO_RR,
+        "teto_ro": faixa["ro"],
+        "teto_rr": faixa["rr"],
+        "vigencia_tabela": (f"{faixa['inicio'].isoformat()} a "
+                            f"{faixa['fim'].isoformat() if faixa['fim'] else 'vigente'}"),
+        "fonte": faixa["fonte"],
         "metodologia": "Recolhimento = valor da condenação, limitado ao teto do recurso (CLT art. 899 §1º). Não é percentual da condenação.",
-        "base": "CLT art. 899 §§1º-4º + Ato TST GP (atualização anual IPCA-E)",
-        "aviso": "MINUTA. Confirmar teto vigente na data do recurso. Empresas em recuperação judicial têm tratamento específico.",
+        "fontes": [
+            "CLT art. 899 §§1º-4º",
+            faixa["fonte"],
+        ],
+        "vigencia_regra": f"Tetos do período {faixa['rotulo']} — {faixa['fonte']}",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Confirmar o Ato TST GP vigente na data "
+                  "do recurso; entidades sem fins lucrativos, MEI/EPP e empresas em recuperação "
+                  "judicial recolhem METADE (CLT art. 899 §9º) ou são isentas (§10)."),
     }
 
 
@@ -1009,105 +1093,197 @@ async def adm_remover(aid: str, db: AsyncSession = Depends(get_db),
                       cu: User = Depends(require_roles(_ADM))):
     return await _crud_remover(AdminCase, "admin_cases", aid, db, cu)
 
+# ── Trânsito: prazos de defesa/recurso (fonte ÚNICA — CTB red. Lei 14.071/2020)
+_FASES_RECURSO_TRANSITO = {
+    "defesa_previa": {
+        "campo": "data_notificacao_autuacao",
+        "marco": "notificação da AUTUAÇÃO",
+        "prazo_desc": "prazo MÍNIMO de 30 dias",
+        "base": "CTB art. 281-A (red. Lei 14.071/2020)",
+    },
+    "jari": {
+        "campo": "data_notificacao_penalidade",
+        "marco": "notificação da PENALIDADE",
+        "prazo_desc": "30 dias",
+        "base": "CTB art. 285",
+    },
+    "cetran": {
+        "campo": "data_ciencia_decisao_jari",
+        "marco": "ciência da decisão da JARI",
+        "prazo_desc": "30 dias",
+        "base": "CTB art. 288",
+    },
+}
+
+
+def _prazos_recurso_transito(
+    rota_consultada: str,
+    fase: str,
+    data_notificacao_autuacao: Optional[date],
+    data_notificacao_penalidade: Optional[date],
+    data_ciencia_decisao_jari: Optional[date],
+    valor_multa: Optional[float],
+) -> dict:
+    """Implementação ÚNICA de /transito/ferramentas/prazos-recurso (canônica) e
+    /admin-esp/ferramentas/recurso-multa-transito (alias até a Onda 3).
+    Cada fase tem marco PRÓPRIO — nunca se encadeia um prazo ao fim do anterior."""
+    if fase not in _FASES_RECURSO_TRANSITO:
+        raise HTTPException(422, f"Fase inválida: '{fase}'. Use: {list(_FASES_RECURSO_TRANSITO)}")
+    datas = {
+        "data_notificacao_autuacao": data_notificacao_autuacao,
+        "data_notificacao_penalidade": data_notificacao_penalidade,
+        "data_ciencia_decisao_jari": data_ciencia_decisao_jari,
+    }
+    cfg = _FASES_RECURSO_TRANSITO[fase]
+    data_marco = datas[cfg["campo"]]
+    if data_marco is None:
+        raise HTTPException(422, (
+            f"A fase '{fase}' conta da {cfg['marco']} ({cfg['base']}): informe {cfg['campo']}."))
+    incompativeis = [nome for nome, valor in datas.items()
+                     if valor is not None and nome != cfg["campo"]]
+    if incompativeis:
+        raise HTTPException(422, (
+            f"Data(s) incompatível(is) com a fase '{fase}': {', '.join(incompativeis)}. "
+            f"Esta fase usa apenas {cfg['campo']} ({cfg['marco']} — {cfg['base']})."))
+    vencimento = prazo_dias_corridos(data_marco, 30)
+    dias_restantes = (vencimento - date.today()).days
+    out: dict = {
+        "rota_consultada": rota_consultada,
+        "rota_canonica": "/transito/ferramentas/prazos-recurso",
+        "fase": fase,
+        "marco": cfg["marco"],
+        "data_marco": data_marco,
+        "prazo": f"{cfg['prazo_desc']} — {cfg['base']}",
+        "vencimento": vencimento,
+        "dias_restantes": dias_restantes,
+        "urgente": dias_restantes <= 5,
+        "nota_marco": ("Cada fase tem marco INDEPENDENTE (autuação → defesa prévia; penalidade → "
+                       "JARI; decisão da JARI → CETRAN); os prazos NÃO se encadeiam entre si. "
+                       "Prevalece a data-limite impressa na própria notificação, se maior "
+                       "(o art. 281-A fixa MÍNIMO de 30 dias para a defesa prévia)."),
+        "fontes": [
+            "CTB (Lei 9.503/97) arts. 281-A, 285 e 288, red. Lei 14.071/2020",
+            "Regulamentação CONTRAN vigente (notificações e julgamento)",
+        ],
+        "vigencia_regra": "CTB com a redação da Lei 14.071/2020, vigente desde 12/04/2021",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Confira o prazo e o meio de notificação "
+                  "indicados no próprio documento do órgão autuador."),
+    }
+    if valor_multa is not None:
+        if valor_multa < 0:
+            raise HTTPException(422, "valor_multa não pode ser negativo.")
+        out["descontos"] = {
+            "valor_multa": valor_multa,
+            "desconto_40pct_sne": round(valor_multa * 0.60, 2),
+            "desconto_20pct_ate_vencimento": round(valor_multa * 0.80, 2),
+            "base": "CTB art. 284 §1º (20%) · art. 284 §4º c/c SNE (40%, red. Lei 14.071/2020)",
+            "nota": "Pagamento com desconto de 40% pelo SNE implica renúncia a defesa/recurso.",
+        }
+    return out
+
+
 # ── Ferramentas Administrativo ────────────────────────────────────────────────
 @router.get("/admin-esp/ferramentas/recurso-multa-transito")
 async def adm_multa_transito(
-    data_notificacao: date,
-    valor_multa: float,
-    pontos_cnh: int = 0,
+    fase: Literal["defesa_previa", "jari", "cetran"],
+    data_notificacao_autuacao: Optional[date] = None,
+    data_notificacao_penalidade: Optional[date] = None,
+    data_ciencia_decisao_jari: Optional[date] = None,
+    valor_multa: Optional[float] = None,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """
-    Prazos e estratégias para recursos de multas de trânsito.
-    Base: CTB Lei 9.503/97 arts. 281-284.
-    """
-    prazo_1a = prazo_dias_corridos(data_notificacao, 30)   # JARI — CTB art. 281 §2º
-    prazo_2a = prazo_dias_corridos(prazo_1a, 30)            # CETRAN/DENATRAN
-    desconto_pagamento = round(valor_multa * 0.80, 2)       # 20% desconto pag. imediato CTB art. 284-A
-    return _selo_homologacao("/admin-esp/ferramentas/recurso-multa-transito", {
-        "data_notificacao": data_notificacao,
-        "prazo_recurso_1a_inst_jari": prazo_1a,
-        "prazo_recurso_2a_inst_cetran": prazo_2a,
-        "valor_multa_original": valor_multa,
-        "valor_com_desconto_20pct": desconto_pagamento,
-        "pontos_cnh": pontos_cnh,
-        "risco_suspensao": pontos_cnh >= 20,   # CTB art. 261
-        "base": "CTB arts. 281-284 + Res. CONTRAN 619/2016",
-        "aviso": "MINUTA. Prazo 1ª instância conta da notificação da autuação; 2ª da decisão da JARI.",
-    })
+    """Alias mantido por compatibilidade — delega à implementação ÚNICA de
+    /transito/ferramentas/prazos-recurso (rota canônica; retirada na Onda 3)."""
+    return _prazos_recurso_transito(
+        rota_consultada="/admin-esp/ferramentas/recurso-multa-transito",
+        fase=fase, data_notificacao_autuacao=data_notificacao_autuacao,
+        data_notificacao_penalidade=data_notificacao_penalidade,
+        data_ciencia_decisao_jari=data_ciencia_decisao_jari, valor_multa=valor_multa,
+    )
 
 
 # ── Ferramentas Trânsito (ramo próprio) ───────────────────────────────────────
 @router.get("/transito/ferramentas/prazos-recurso")
 async def transito_prazos_recurso(
-    data_notificacao: date,
-    valor_multa: float,
-    fase: str = "autuacao",   # autuacao (defesa prévia) | penalidade (JARI)
+    fase: Literal["defesa_previa", "jari", "cetran"],
+    data_notificacao_autuacao: Optional[date] = None,
+    data_notificacao_penalidade: Optional[date] = None,
+    data_ciencia_decisao_jari: Optional[date] = None,
+    valor_multa: Optional[float] = None,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
-    Prazos de defesa/recurso de multa e descontos (CTB Lei 9.503/97).
-    Defesa prévia: a partir da notificação da AUTUAÇÃO (mín. 15 dias, CTB art. 281 §ú).
-    Recurso à JARI: 30 dias da notificação da PENALIDADE (art. 285).
-    Recurso ao CETRAN: 30 dias da decisão da JARI (art. 288).
+    Prazos de defesa/recurso de multa de trânsito (CTB red. Lei 14.071/2020).
+    • Defesa prévia: MÍNIMO 30 dias da notificação da AUTUAÇÃO (art. 281-A);
+    • JARI: 30 dias da notificação da PENALIDADE (art. 285);
+    • CETRAN/2ª instância: 30 dias da CIÊNCIA da decisão da JARI (art. 288).
+    Informe a data do marco DA FASE escolhida — data de outra fase → 422.
     """
-    if fase not in ("autuacao", "penalidade"):
-        raise HTTPException(422, f"Fase inválida: '{fase}'. Use: autuacao | penalidade")
-    defesa_previa = prazo_dias_corridos(data_notificacao, 15)
-    jari = prazo_dias_corridos(data_notificacao, 30)
-    cetran = prazo_dias_corridos(jari, 30)
-    alvo = jari if fase == "penalidade" else defesa_previa
-    dias_restantes = (alvo - date.today()).days
-    return _selo_homologacao("/transito/ferramentas/prazos-recurso", {
-        "data_notificacao": data_notificacao,
-        "fase": fase,
-        "prazo_defesa_previa": defesa_previa,
-        "prazo_recurso_jari": jari,
-        "prazo_recurso_cetran": cetran,
-        "dias_restantes": dias_restantes,
-        "urgente": dias_restantes <= 5,
-        "valor_multa": valor_multa,
-        "valor_desconto_40pct_sne": round(valor_multa * 0.60, 2),   # -40% adesão SNE (Lei 14.071/20)
-        "valor_desconto_20pct": round(valor_multa * 0.80, 2),       # -20% pagto até venc. (art. 284)
-        "base": "CTB Lei 9.503/97 arts. 281, 284, 285, 288 + Lei 14.071/2020",
-        "aviso": "MINUTA — revisão humana obrigatória. Confira o prazo indicado na própria notificação.",
-    })
+    return _prazos_recurso_transito(
+        rota_consultada="/transito/ferramentas/prazos-recurso",
+        fase=fase, data_notificacao_autuacao=data_notificacao_autuacao,
+        data_notificacao_penalidade=data_notificacao_penalidade,
+        data_ciencia_decisao_jari=data_ciencia_decisao_jari, valor_multa=valor_multa,
+    )
 
 
 @router.get("/transito/ferramentas/pontuacao-cnh")
 async def transito_pontuacao_cnh(
     pontos_total: int,
-    infracoes_gravissimas_12m: int = 0,
-    categoria_profissional: str = "nao",
+    qtd_gravissimas: int = Query(..., ge=0, description="Infrações gravíssimas no período de 12 meses"),
+    exerce_atividade_remunerada: str = Query(..., description="sim | nao (EAR na CNH)"),
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
-    Limite de pontos para suspensão da CNH (Lei 14.071/2020 — CTB art. 261).
-    O teto varia com o nº de infrações GRAVÍSSIMAS nos últimos 12 meses.
+    Sistema 20/30/40 de pontos da CNH — CTB art. 261 (red. Lei 14.071/2020):
+    40 pontos sem infração gravíssima; 30 com UMA gravíssima; 20 com DUAS ou mais.
+    Condutor que exerce atividade remunerada (EAR): limite ÚNICO de 40 pontos,
+    independentemente da gravidade, com opção de curso preventivo de reciclagem
+    ao atingir 30 pontos (nota informativa — não altera o limite).
     """
-    eh_prof = _parse_sim_nao(categoria_profissional, "categoria_profissional")
-    if eh_prof:
-        limite, regra = 30, "Condutor com atividade remunerada (EAR): teto de 30 pontos."
-    elif infracoes_gravissimas_12m >= 2:
-        limite, regra = 20, "2+ infrações gravíssimas em 12 meses: teto de 20 pontos."
-    elif infracoes_gravissimas_12m == 1:
-        limite, regra = 30, "1 infração gravíssima em 12 meses: teto de 30 pontos."
+    if pontos_total < 0 or qtd_gravissimas < 0:
+        raise HTTPException(422, "pontos_total e qtd_gravissimas devem ser ≥ 0.")
+    ear = _parse_sim_nao(exerce_atividade_remunerada, "exerce_atividade_remunerada")
+    if ear:
+        limite = 40
+        regra = ("Condutor com EAR: limite ÚNICO de 40 pontos, independentemente da "
+                 "natureza das infrações (CTB art. 261 §ú, red. Lei 14.071/2020).")
+    elif qtd_gravissimas >= 2:
+        limite = 20
+        regra = "Duas ou mais infrações gravíssimas em 12 meses: limite de 20 pontos."
+    elif qtd_gravissimas == 1:
+        limite = 30
+        regra = "Uma infração gravíssima em 12 meses: limite de 30 pontos."
     else:
-        limite, regra = 40, "Nenhuma infração gravíssima em 12 meses: teto de 40 pontos."
-    excedeu = pontos_total >= limite
-    return _selo_homologacao("/transito/ferramentas/pontuacao-cnh", {
+        limite = 40
+        regra = "Nenhuma infração gravíssima em 12 meses: limite de 40 pontos."
+    atingiu = pontos_total >= limite
+    out: dict = {
         "pontos_total": pontos_total,
-        "infracoes_gravissimas_12m": infracoes_gravissimas_12m,
-        "condutor_profissional": eh_prof,
+        "qtd_gravissimas": qtd_gravissimas,
+        "exerce_atividade_remunerada": ear,
         "limite_aplicavel": limite,
         "regra_aplicada": regra,
-        "atingiu_limite": excedeu,
-        "pontos_para_suspensao": max(limite - pontos_total, 0),
-        "consequencia": "Instauração de processo de suspensão do direito de dirigir (CTB art. 261)."
-                        if excedeu else "Dentro do limite — monitorar.",
-        "base": "CTB art. 261 c/c Lei 14.071/2020; condutor EAR: art. 261.",
-        "aviso": "MINUTA — revisão humana obrigatória.",
-    })
+        "atingiu_limite": atingiu,
+        "margem_pontos": max(limite - pontos_total, 0),
+        "situacao": ("Limite ATINGIDO — instauração de processo de suspensão do direito de "
+                     "dirigir (CTB art. 261)." if atingiu else "Dentro do limite — monitorar."),
+        "fontes": [
+            "CTB (Lei 9.503/97) art. 261, red. Lei 14.071/2020 — sistema 20/30/40",
+            "Regulamentação CONTRAN vigente (curso preventivo de reciclagem)",
+        ],
+        "vigencia_regra": "CTB art. 261 com a redação da Lei 14.071/2020, vigente desde 12/04/2021",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": "MINUTA — revisão humana obrigatória. Conferir o prontuário no DETRAN.",
+    }
+    if ear:
+        out["nota_curso_preventivo_ear"] = (
+            "Ao atingir 30 pontos, o condutor com EAR pode OPTAR pelo curso preventivo de "
+            "reciclagem (CTB art. 261, red. Lei 14.071/2020, c/c regulamentação CONTRAN "
+            "vigente); concluído o curso, os pontos são zerados no prontuário. É opção "
+            "informativa — o limite de suspensão permanece 40 pontos.")
+    return out
 
 
 # ── Helper: soma de anos a uma data (trata 29/02) ─────────────────────────────
@@ -1654,31 +1830,69 @@ async def penal_dosimetria(
     })
 
 
-# ── Trabalhista: horas extras + reflexos ──────────────────────────────────────
-@router.get("/trabalhista/ferramentas/horas-extras")
+# ── Trabalhista: horas extras (divisor explícito + componentes opcionais) ─────
+@router.get("/trabalhista-esp/ferramentas/horas-extras")   # rota CANÔNICA
+@router.get("/trabalhista/ferramentas/horas-extras")       # alias legado (compat vitrine)
 async def trabalhista_horas_extras(
-    salario_mensal: float,
-    horas_extras_mes: float,
-    adicional_percentual: float = 50.0,
+    salario_mensal: float = Query(..., gt=0),
+    horas_extras_mes: float = Query(..., ge=0),
+    divisor: int = Query(..., description="Divisor de horas: 220 (44h/sem), 200 (40h — Súm. 431 TST), 180 (36h) ou o da norma coletiva"),
+    percentual_he: float = 50.0,
+    incluir_dsr: str = Query(..., description="sim | nao — DSR de 1/6 sobre as HE"),
+    incluir_reflexo_fgts: str = Query(..., description="sim | nao — FGTS de 8% sobre HE+DSR"),
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Valor de horas extras + reflexos (jornada base 220h)."""
-    valor_hora = salario_mensal / 220
-    valor_he = valor_hora * (1 + adicional_percentual / 100) * horas_extras_mes
-    # Reflexos estimados: DSR (~1/6), 13º (1/12), férias+1/3 (1/12*1.333), FGTS (8%)
-    dsr = valor_he / 6
-    base_reflexo = valor_he + dsr
-    reflexos = base_reflexo * (1/12) + base_reflexo * (1/12) * (4/3)
-    fgts = (base_reflexo + reflexos) * 0.08
+    """
+    Valor mensal de horas extras com DIVISOR explícito (220/200/180 ou o previsto
+    em norma coletiva) e componentes opcionais discriminados (DSR 1/6; FGTS 8%).
+    Adicional mínimo de 50% (CF art. 7º XVI); norma coletiva pode fixar percentual
+    superior. MINUTA — revisão humana obrigatória.
+    """
+    if salario_mensal <= 0 or horas_extras_mes < 0:
+        raise HTTPException(422, "salario_mensal deve ser > 0 e horas_extras_mes ≥ 0.")
+    if divisor <= 0:
+        raise HTTPException(422, "Divisor inválido — use 220, 200, 180 ou o divisor da norma coletiva (> 0).")
+    if percentual_he < 50:
+        raise HTTPException(422, "percentual_he abaixo do mínimo constitucional de 50% (CF art. 7º XVI).")
+    com_dsr = _parse_sim_nao(incluir_dsr, "incluir_dsr")
+    com_fgts = _parse_sim_nao(incluir_reflexo_fgts, "incluir_reflexo_fgts")
+
+    valor_hora = salario_mensal / divisor
+    valor_he = valor_hora * (1 + percentual_he / 100) * horas_extras_mes
+    dsr = valor_he / 6 if com_dsr else 0.0
+    fgts = (valor_he + dsr) * 0.08 if com_fgts else 0.0
     return {
-        "valor_hora_normal": round(valor_hora, 2),
-        "valor_horas_extras": round(valor_he, 2),
-        "dsr_sobre_he": round(dsr, 2),
-        "reflexos_13_ferias": round(reflexos, 2),
-        "fgts_8pct": round(fgts, 2),
-        "total_mes_estimado": round(valor_he + dsr + reflexos + fgts, 2),
-        "observacao": "Estimativa mensal. Adicional mínimo 50% (CF art. 7 XVI); base de cálculo conforme Súmula 264 TST.",
-        "base": "CF art. 7 XVI; CLT art. 59; Súmula 264 TST.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "rota_canonica": "/trabalhista-esp/ferramentas/horas-extras",
+        "parametros": {"salario_mensal": salario_mensal, "divisor": divisor,
+                       "percentual_he": percentual_he, "horas_extras_mes": horas_extras_mes,
+                       "incluir_dsr": com_dsr, "incluir_reflexo_fgts": com_fgts},
+        "componentes": {
+            "valor_hora_normal": round(valor_hora, 2),
+            "valor_horas_extras": round(valor_he, 2),
+            "dsr_sobre_he": round(dsr, 2),
+            "fgts_8pct_sobre_he_dsr": round(fgts, 2),
+        },
+        "total_mes_estimado": round(valor_he + dsr + fgts, 2),
+        "memoria_calculo": (f"hora = {salario_mensal:.2f} ÷ {divisor}; HE = hora × "
+                            f"(1 + {percentual_he}%) × {horas_extras_mes}"
+                            + ("; DSR = HE ÷ 6" if com_dsr else "")
+                            + ("; FGTS = 8% × (HE + DSR)" if com_fgts else "")),
+        "nota_divisor": ("Divisores usuais: 220 (jornada 44h/sem), 200 (40h/sem — Súm. 431 TST), "
+                         "180 (36h/sem). Prevalece o divisor da norma coletiva, se houver."),
+        "nota_reflexos": ("Reflexos em 13º, férias+1/3 e aviso prévio NÃO estão incluídos — "
+                          "apurar em liquidação (Súm. 264 TST: base = globalidade salarial; "
+                          "OJ 394 SDI-1, nova redação 2023: repercussão do DSR majorado nas "
+                          "demais parcelas para HE a partir de 20/03/2023)."),
+        "fontes": [
+            "CF art. 7º XVI (adicional mínimo de 50%)",
+            "CLT art. 59 e art. 64 (valor da hora)",
+            "Súmula 264 TST (base de cálculo) · Súmula 431 TST (divisor 200)",
+            "Lei 605/49 art. 7º (DSR) · OJ 394 SDI-1/TST (red. 2023)",
+        ],
+        "vigencia_regra": "CF/88 art. 7º XVI · Súm. 264/431 TST · OJ 394 SDI-1 red. 2023 (modulação 20/03/2023)",
+        "versao_regra": _VERSAO_REGRA,
+        "aviso": ("MINUTA — revisão humana obrigatória. Estimativa mensal simples; conferir "
+                  "norma coletiva (divisor, percentual e base) e verbas habituais integrantes."),
     }
 
 

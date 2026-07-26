@@ -99,6 +99,7 @@ def test_bloqueadas_sao_subconjunto_da_matriz():
 
 def test_ferramentas_corrigidas_na_onda2_sairam_da_matriz():
     corrigidas = {
+        # Fase A
         "/empresarial/ferramentas/prazos-rj",
         "/empresarial/ferramentas/juros-mora",
         "/penal/ferramentas/prazos-processuais",
@@ -106,8 +107,22 @@ def test_ferramentas_corrigidas_na_onda2_sairam_da_matriz():
         "/civel/ferramentas/prazos-contestacao",
         "/penal/ferramentas/prescricao-punitiva",
         "/penal/ferramentas/prescricao-penal",
+        # Fase B
+        "/trabalhista-esp/ferramentas/prazos",
+        "/trabalhista-esp/ferramentas/prescricao-trabalhista",
+        "/transito/ferramentas/prazos-recurso",
+        "/transito/ferramentas/pontuacao-cnh",
+        "/admin-esp/ferramentas/recurso-multa-transito",
     }
     assert corrigidas.isdisjoint(FERRAMENTAS_NAO_HOMOLOGADAS)
+    # Estado final pós-Fase B: 5 ferramentas seguem na matriz.
+    assert set(FERRAMENTAS_NAO_HOMOLOGADAS) == {
+        "/empresarial/ferramentas/verificar-cade",
+        "/penal/ferramentas/dosimetria",
+        "/consumidor/ferramentas/devolucao-dobro",
+        "/consumidor/ferramentas/prazos-cdc",
+        "/previdenciario/ferramentas/prazos",
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -138,13 +153,6 @@ async def test_selo_demais_ferramentas_da_matriz():
     resultados = [
         # Dosimetria: corrigida na Onda 2, mas PERMANECE com selo (simulador assistido).
         await ramos.penal_dosimetria(pena_minima_meses=24, pena_maxima_meses=96, cu=None),
-        await ramos.trab_prazos(data_sentenca=date(2026, 3, 2), cu=None),
-        await ramos.trab_prescricao(data_demissao=date(2025, 1, 10), cu=None),
-        await ramos.transito_prazos_recurso(data_notificacao=date(2026, 3, 2),
-                                            valor_multa=293.47, fase="autuacao", cu=None),
-        await ramos.adm_multa_transito(data_notificacao=date(2026, 3, 2),
-                                       valor_multa=293.47, cu=None),
-        await ramos.transito_pontuacao_cnh(pontos_total=25, categoria_profissional="sim", cu=None),
         await ramos.consumidor_devolucao_dobro(valor_cobrado=100.0, houve_ma_fe="sim", cu=None),
         await ramos.consumidor_prazos_cdc(data_fato=date(2026, 6, 1), tipo="fato", cu=None),
         await ramos.previdenciario_prazos(data_indeferimento=date(2026, 6, 1),
@@ -173,9 +181,10 @@ async def test_ferramenta_fora_da_matriz_nao_ganha_selo():
     lambda: ramos.civ_dano_moral(tipo_caso="inexistente", salarios_minimos_pedido=10.0, cu=None),
     lambda: ramos.imobiliario_prazos_despejo(data_citacao=date(2026, 1, 1),
                                              fundamento="inexistente", cu=None),
-    lambda: ramos.transito_prazos_recurso(data_notificacao=date(2026, 1, 1),
-                                          valor_multa=100.0, fase="inexistente", cu=None),
-    lambda: ramos.transito_pontuacao_cnh(pontos_total=10, categoria_profissional="talvez", cu=None),
+    lambda: ramos.transito_prazos_recurso(
+        fase="inexistente", data_notificacao_autuacao=date(2026, 1, 1), cu=None),
+    lambda: ramos.transito_pontuacao_cnh(pontos_total=10, qtd_gravissimas=0,
+                                         exerce_atividade_remunerada="talvez", cu=None),
     lambda: ramos.consumidor_devolucao_dobro(valor_cobrado=100.0, houve_ma_fe="talvez", cu=None),
     lambda: ramos.imobiliario_distrato(valor_pago=1_000.0,
                                        tem_patrimonio_afetacao="talvez", cu=None),

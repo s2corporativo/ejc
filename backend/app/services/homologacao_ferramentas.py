@@ -18,22 +18,16 @@ FERRAMENTAS_NAO_HOMOLOGADAS: dict[str, str] = {
     #   /penal/ferramentas/prazos-processuais · /penal/ferramentas/verificar-anpp
     #   /civel/ferramentas/prazos-contestacao
     #   /penal/ferramentas/prescricao-punitiva · /penal/ferramentas/prescricao-penal
+    # Onda 2 — Fase B (2026-07): corrigidas e REMOVIDAS da matriz:
+    #   /trabalhista-esp/ferramentas/prazos · /trabalhista-esp/ferramentas/prescricao-trabalhista
+    #   /transito/ferramentas/prazos-recurso · /transito/ferramentas/pontuacao-cnh
+    #   /admin-esp/ferramentas/recurso-multa-transito (delegada à rota canônica de trânsito)
     # ── COM SELO (respondem, mas o resultado NÃO é homologado) ───────────────
     "/empresarial/ferramentas/verificar-cade":
         "prazo de notificação de 30 dias inexistente — o controle de concentrações é PRÉVIO (Lei 12.529/2011 art. 88)",
     "/penal/ferramentas/dosimetria":
         "simulador assistido — as frações padrão são referencial jurisprudencial; "
         "conferência e fundamentação pelo advogado são obrigatórias",
-    "/trabalhista-esp/ferramentas/prazos":
-        "prazos contados em dias corridos — a CLT art. 775 determina contagem em dias ÚTEIS",
-    "/trabalhista-esp/ferramentas/prescricao-trabalhista":
-        "marco quinquenal projetado para frente — a contagem é retroativa da data do ajuizamento (Súm. TST 308)",
-    "/transito/ferramentas/prazos-recurso":
-        "defesa prévia com 15 dias — o CTB (red. Lei 14.071/2020) exige prazo mínimo de 30 dias — e marcos incorretos",
-    "/admin-esp/ferramentas/recurso-multa-transito":
-        "marcos temporais incorretos e defesa prévia divergente do CTB (mínimo de 30 dias, red. Lei 14.071/2020)",
-    "/transito/ferramentas/pontuacao-cnh":
-        "limite de 30 pontos para condutor EAR — o correto é 40 pontos (CTB art. 261, red. Lei 14.071/2020)",
     "/consumidor/ferramentas/devolucao-dobro":
         "critério de má-fé — o STJ exige apenas conduta contrária à boa-fé objetiva (EAREsp 676.608/RS)",
     "/consumidor/ferramentas/prazos-cdc":
