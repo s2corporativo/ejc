@@ -44,7 +44,7 @@ class DataRoomLink(Base):
     id                = Column(String(36), primary_key=True)
     data_room_id      = Column(String(36), ForeignKey("data_rooms.id", ondelete="CASCADE"),
                                 nullable=False)
-    token             = Column(String(64), unique=True, nullable=False)    # UUID4 hex
+    token             = Column(String(64), unique=True, nullable=False)    # SHA-256 hex do segredo (nunca em claro)
     descricao         = Column(String(200))    # para quem / para que foi gerado
     expira_em         = Column(DateTime(timezone=True))
     max_acessos       = Column(Integer)         # None = ilimitado

@@ -52,7 +52,7 @@ APP_DIR = BACKEND_DIR / "app"
 
 # Head canônico — atualizar no MESMO PR que adicionar migration nova
 # (mesma regra de test_alembic_single_head.py).
-HEAD_REVISION = "121_sala_juridica_chat"
+HEAD_REVISION = "122_data_room_token_hash"
 
 # Inventário MÍNIMO de tabelas 100% raw-SQL (sem model ORM) que o código
 # consulta e que a cadeia de migrations PRECISA criar (levantadas na auditoria
