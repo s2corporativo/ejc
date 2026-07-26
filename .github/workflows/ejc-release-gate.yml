@@ -5,13 +5,14 @@ name: EJC Release Gate
 #
 # SEGURANÇA (SYS-098): o job roda em [self-hosted, ejc-vps] no host de PRODUÇÃO
 # e executa scripts do checkout (ci_guard.sh, provas de backup/rollback/runner).
-# Executar código de PR não-confiável nesse host é uma superfície de RCE. Por
-# isso o job `p0-guard` é condicionado a `if: github.event_name != 'pull_request'`
-# — só roda em push na main e em workflow_dispatch. Os gatilhos são preservados
-# (o `on:` continua incluindo pull_request), mas em PR o job é PULADO — e um job
-# pulado satisfaz os required checks de branch protection sem executar nada no
-# host de produção. Reintroduzir a validação de PR deve ser feito em runner
-# GitHub-hosted (ubuntu-latest) num follow-up.
+#
+# Este é um GATE DE RELEASE, não de PR: além do ci_guard.sh (P0), roda provas
+# pesadas de continuidade (backup cifrado, rollback de deploy, recuperação do
+# runner) que mutam o host e comprovam prontidão de release. Por isso segue só em
+# push na main e workflow_dispatch (`if: github.event_name != 'pull_request'`) —
+# em PR o job é PULADO (satisfaz required checks sem rodar nada no host). O gate de
+# correção por PR (testes/build/typecheck) vive no ci.yml, que roda em PRs do
+# próprio repo com guarda anti-fork.
 on:
   pull_request:
   push:

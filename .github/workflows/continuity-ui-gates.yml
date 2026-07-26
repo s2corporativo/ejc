@@ -1,12 +1,15 @@
 name: Continuity and UI Gates
 
 # SEGURANÇA (SYS-098): os jobs rodam em [self-hosted, ejc-vps] no host de
-# PRODUÇÃO e executam código do checkout (restore drill, build, Playwright). Para
-# não executar código de PR não-confiável nesse host, cada job é condicionado a
-# `if: github.event_name != 'pull_request'` — só roda em push na main e em
-# workflow_dispatch. Em PR os jobs são PULADOS (satisfaz required checks sem
-# executar nada no host). Gatilhos push/dispatch preservados; a validação de PR
-# deve ser reintroduzida em runner GitHub-hosted (ubuntu-latest) num follow-up.
+# PRODUÇÃO e executam código do checkout (restore drill, build, Playwright).
+#
+# Estes são GATES DE RELEASE/CONTINUIDADE, não de PR: o restore drill restaura um
+# dump cifrado em banco vazio e o smoke responsivo sobe Chromium real — provas
+# pesadas e que mutam o host, próprias de prontidão de release. Por isso seguem só
+# em push na main e workflow_dispatch (`if: github.event_name != 'pull_request'`) —
+# em PR os jobs são PULADOS (satisfaz required checks sem rodar nada no host). O
+# gate de correção por PR (testes/build/typecheck) vive no ci.yml, que roda em PRs
+# do próprio repo com guarda anti-fork.
 on:
   pull_request:
   push:
