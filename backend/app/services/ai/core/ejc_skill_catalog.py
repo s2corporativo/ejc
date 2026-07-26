@@ -174,16 +174,15 @@ MODULE_METHODS: dict[str, str] = {
     "jurimetria": "Defina pergunta, unidade, coorte, período, desfecho, denominadores, qualidade, vieses, incerteza e reprodutibilidade; não converter taxa histórica em chance do caso.",
     "victory-vault": "Registre resultado confirmado, tese, contexto, prova, decisão, fatores de sucesso, limites de reutilização, anonimização e aprovador. Não transformar correlação em causa.",
     "radar-regulatorio": "Monitore fontes oficiais, data de publicação/vigência, área afetada, impacto, urgência e responsável. Mudança normativa não altera caso automaticamente.",
-    "biblioteca": "Catalogue conteúdo, edição, autoria, tema, jurisdição, direitos de acesso, resumo, citação, relação com a base RAG e atualização.",
+    "sala-juridica": "Conduza a análise conversacional com estado probatório versionado: fatos, provas, riscos e modos de atuação. Toda resposta é rascunho sob HITL; a conversão em caso exige conferência de cliente e conflito.",
     "diario-oficial": "Colete fonte oficial, disponibilidade, publicação, destinatário, processo, texto, retificação e efeito; encaminhe atos relevantes à triagem de intimações.",
     "noticias": "Selecione notícias jurídicas atuais por fonte, data do fato e publicação, relevância e área. Diferencie notícia de norma, decisão ou orientação oficial.",
     "portal": "Exiba ao cliente apenas dados autorizados do próprio caso, em linguagem clara, com documentos, mensagens, assinaturas e status revisados. O cliente externo não acessa o núcleo interno.",
-    "whatsapp": "Prepare rascunho, verifique destinatário, finalidade, consentimento, janela, anexo e sigilo. Não enviar automaticamente nem reativar integração descontinuada sem decisão técnica.",
     "auditoria": "Registre ator, data/hora, recurso, ação, estado anterior/posterior, justificativa, origem e correlação. Preserve imutabilidade e acesso proporcional.",
     "produtividade": "Meça trabalho com definições transparentes, período, denominador e contexto. Evite vigilância excessiva, ranking enganoso e exposição de dados sensíveis.",
     "usuarios": "Aplique menor privilégio, segregação de funções, MFA quando disponível, ciclo de acesso, revogação, sessões, chaves e auditoria. Nunca revelar credenciais.",
     "mapa-modulos": "Compare registro canônico, rotas, endpoints, ajuda, status, dependências, IA e cobertura de skills; destaque divergências sem criar módulo duplicado.",
-    "autofix": "Diagnostique com evidência técnica, proponha plano, testes e rollback. Não aplicar patch automaticamente nem acessar segredos.",
+    "central-diagnostico": "Diagnostique com evidência técnica, proponha plano, testes e rollback. Não aplicar patch automaticamente nem acessar segredos.",
 }
 
 
@@ -194,8 +193,11 @@ def _module_area(group: str) -> str:
         "juridico": "juridico",
         "producao": "juridico",
         "financeiro": "financeiro",
+        # Nota: diario-oficial e noticias migraram do extinto grupo
+        # "Biblioteca" para "Inteligência" na onda 2 — a área das skills
+        # deles passa de "juridico" para "estrategia" por consequência
+        # (monitoramento/radar é leitura estratégica, escolha consciente).
         "inteligencia": "estrategia",
-        "biblioteca": "juridico",
         "portal": "operacional",
         "atendimento": "operacional",
         "administracao": "administrativo",
@@ -226,6 +228,10 @@ _MODULE_BY_KEY = {str(item["module_key"]): item for item in MODULE_REGISTRY}
 
 # Aliases canônicos derivados do próprio registro de módulos. O frontend pode
 # informar a chave, o nome visível ou a rota; todos convergem para module_key.
+# PRIMEIRO VENCE: módulos podem compartilhar frontend_route (ex.: conhecimento
+# e victory-vault vivem ambos em /inteligencia?tab=conhecimento após a
+# consolidação) — a rota resolve para o módulo CANÔNICO, que vem antes na
+# lista do MODULE_REGISTRY; module_key e nome seguem únicos por construção.
 MODULE_ALIASES: dict[str, str] = {}
 for _module_key, _module in _MODULE_BY_KEY.items():
     for _alias in (
@@ -234,7 +240,7 @@ for _module_key, _module in _MODULE_BY_KEY.items():
         str(_module.get("frontend_route") or ""),
     ):
         if _normalize(_alias):
-            MODULE_ALIASES[_normalize(_alias)] = _module_key
+            MODULE_ALIASES.setdefault(_normalize(_alias), _module_key)
 MODULE_ALIASES.update({
     "processo": "casos",
     "processos": "casos",

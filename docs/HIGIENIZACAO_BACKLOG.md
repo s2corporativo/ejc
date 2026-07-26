@@ -54,3 +54,18 @@ prazos"), não marcadores de pendência.
   confirmação explícita exigida pela política de privacidade.
 - Histórico navegável de versões do workspace: hoje `workspace_versao` é
   contador (auditoria); guardar diffs/conteúdo por versão se houver demanda.
+
+## Consolidação da Central de Atividades (2026-07-26, review do #491)
+
+As 4 páginas ocultas /legado/* (Prazos, Tarefas, Intimacoes, Suspensoes) foram
+MANTIDAS: são a única UI de ações vivas que a CentralAtividades ainda não
+absorveu. Remover SOMENTE depois de migrar para a Central:
+- Prazos: confirmação/ciência de prazos gerados (HITL — /deadlines/{id}/ciencia),
+  calculadora determinística (/deadlines/calcular), export CSV.
+- Intimações: prazo sugerido + aceitar/recusar (cria Deadline), captura manual
+  (/intimacoes/capturar-agora).
+- Tarefas: edição de título/descrição e exclusão (DELETE /tasks/{id}).
+- Suspensões: criar/excluir/simular (alimentam o cálculo de prazos).
+- Bônus: teste de integridade validando cada rota de guiaSistema.ts contra
+  STAFF_ROUTES + LEGACY_REDIRECTS + validadores de aba (hoje o guia quebra
+  silencioso a cada consolidação de rota).

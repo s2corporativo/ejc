@@ -1,5 +1,13 @@
 # ── app/models/wiki.py ───────────────────────────────────────────────────────
 # Wiki interna do escritório (#93): procedimentos, tabela de honorários, contatos.
+#
+# LEGADO SEM SUPERFÍCIE (pente fino 2026-07): o router da Wiki foi removido na
+# onda 1 e a tela /wiki foi unificada na aba Conhecimento de /inteligencia —
+# a tabela `wiki_paginas` não tem mais leitura/escrita pela aplicação. O model
+# é MANTIDO de propósito: sem ele, o autogenerate do Alembic sugeriria um
+# drop_table espúrio (ver guarda include_name() em alembic/env.py). A remoção
+# definitiva aguarda decisão de migração destrutiva com backup prévio
+# (scripts/backup.sh) e migration explícita — não remover este arquivo antes.
 from __future__ import annotations
 from sqlalchemy import Column, String, Text, DateTime, func
 from app.core.database import Base

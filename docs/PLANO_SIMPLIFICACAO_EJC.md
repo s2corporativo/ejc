@@ -225,10 +225,11 @@ Todos · Provas · Peças · Contratos · Procurações · Do cliente · Process
 Estratégia atual · Riscos e cenários · Fundamentos e precedentes · Próximos passos
 ```
 
-**Sala de Guerra** vira painel dentro de Estratégia, não rota. Nesse movimento,
-`sala_de_guerra_v3` é consolidada em `sala_de_guerra` — a duplicação real (não é
-shim, são endpoints distintos coexistindo). `/sala-analise` é avaliada para
-absorção pelo Raio-X, com o qual já se integra.
+**Sala de Guerra** — CONCLUÍDO/SUBSTITUÍDO (PR #489, 2026-07): as três
+superfícies (`sala_de_guerra`, `sala_de_guerra_v3` e `/sala-analise`) foram
+removidas; `/sala-analise` foi absorvida pelo Raio-X e a porta de entrada
+conversacional passou a ser a **Sala Jurídica** (`/sala-juridica`), com estado
+probatório versionado e conversão controlada em caso.
 
 **IA Defensiva** deixa de ser aba: `ContextualAIAssistant` já é persistente e
 muda de comportamento conforme a seção.
@@ -237,7 +238,9 @@ muda de comportamento conforme a seção.
 
 - [ ] Nenhuma capacidade removida — só reagrupada
 - [ ] Rotas antigas redirecionam, não retornam 404
-- [ ] Um único prefixo de Sala de Guerra montado no `main.py`
+- [x] Um único prefixo de Sala montado no `main.py` — resolvido pelo PR #489:
+      as Salas de Guerra foram removidas e substituídas pela Sala Jurídica
+      (`/api/sala-juridica`)
 - [ ] Testes de rota/link do `moduleRegistry` verdes
 
 **Risco:** médio — mexe em rota. **Rollback:** reverter o PR; sem migration.

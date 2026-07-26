@@ -86,7 +86,7 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 - **Rotas**: a fonte da verdade é `src/config/moduleRegistry.tsx` (`STAFF_ROUTES`, `LEGACY_REDIRECTS`, RBAC por rota via `canRoleAccessPath`). `App.tsx` só consome o registry; páginas são lazy-loaded. Área staff sob `Layout` + `StaffOnly`; portal do cliente sob `/portal` (`PortalLayout` + `PortalOnly`). Para módulo novo, registre no registry — não adicione rota solta no App.tsx.
 - **API client**: `src/lib/api.ts` — axios com `baseURL: "/api"`. Access token em `localStorage` (`ejc_access`) injetado por interceptor; refresh token em cookie httpOnly gerenciado pelo backend; 401 dispara refresh single-flight com retry; 403 `must_change_password` redireciona para `/trocar-senha`.
 - **Estado**: stores Zustand em `src/stores/` (`auth.ts`/`useAuth` com `bootstrap()`, `caseContext.ts`, `moduleLifecycle.ts`, `preferences.ts`, `theme.ts`).
-- **Layout de src/**: `pages/` (~70 páginas; `pages/portal/` e `pages/ramos/`), `components/`, `lib/` (api, aiCore, SSE em `stream.ts`), `config/`, `stores/`, `contexts/`, `types/`, `utils/`. Testes co-localizados (`*.test.ts(x)`).
+- **Layout de src/**: `pages/` (~70 páginas; `pages/portal/` e `pages/ramos/`), `components/`, `lib/` (api, SSE em `stream.ts`), `config/`, `stores/`, `contexts/`, `types/`, `utils/`. Testes co-localizados (`*.test.ts(x)`).
 
 ## Comandos essenciais
 

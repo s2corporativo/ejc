@@ -49,15 +49,15 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
     ferramentas: [
       {
         id: "dashboard",
-        titulo: "Dashboard",
+        titulo: "Início",
         rota: "/",
         oQueE: "A tela inicial com a visão executiva da operação jurídica.",
         paraQueServe:
           "Concentra os números do escritório e os atalhos do dia — prazos próximos, casos ativos, pendências e blocos administrativos — para você saber por onde começar sem procurar.",
         comoUsar: [
-          "Ao entrar no sistema você já cai no Dashboard (menu Dashboard, no topo).",
+          "Ao entrar no sistema você já cai no Início (primeiro item do menu).",
           "Leia os cartões de indicadores no topo para o retrato imediato da operação.",
-          "Use os atalhos rápidos para pular direto ao módulo que precisa (Novo Caso, Prazos, Financeiro...).",
+          "Use os atalhos rápidos para pular direto ao módulo que precisa (Novo Caso, Agenda e Prazos, Financeiro...).",
         ],
         dica: "Vários módulos administrativos (Auditoria, Governança da IA, Produtividade) são alcançados pelos atalhos do Dashboard, mesmo estando fora do menu lateral.",
         perfil: "todos",
@@ -129,14 +129,14 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       },
       {
         id: "casos",
-        titulo: "Casos e Processos",
+        titulo: "Casos",
         rota: "/casos",
         oQueE:
           "A gestão central de todos os casos e processos, em lista ou em quadro visual (Kanban).",
         paraQueServe:
           "Coloca todos os casos do escritório em um só lugar — judiciais, extrajudiciais e consultivos — com andamento visível, para nada se perder e a equipe enxergar o mesmo panorama.",
         comoUsar: [
-          "Abra Casos e Processos no menu Principal.",
+          "Abra Casos no menu principal.",
           "Alterne entre Lista (tabela) e Quadro (Kanban) no topo.",
           "No Quadro, arraste o cartão do caso entre as etapas para atualizar o andamento.",
           "Filtre por tipo (Judicial / Extrajudicial / Consultoria) e clique num caso para abrir o detalhe.",
@@ -153,7 +153,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         paraQueServe:
           "Reúne tudo de um caso em um único ambiente de trabalho, para você não pular entre telas ao tocar um processo do início ao fim.",
         comoUsar: [
-          "Em Casos e Processos, clique no caso desejado.",
+          "Em Casos, clique no caso desejado.",
           "Navegue pelas abas: Resumo, Timeline, Partes, Documentos, Checklists, Teses.",
           "Na aba Resumo, use as ações rápidas: Análise IA, Sincronizar DataJud, lançar horas, encerrar caso.",
           "Abra a Jornada e a aba Estratégia a partir do próprio caso.",
@@ -226,14 +226,14 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
     ferramentas: [
       {
         id: "atividades",
-        titulo: "Central",
+        titulo: "Agenda e Prazos",
         rota: "/atividades",
         oQueE:
           "A tela única que reúne agenda, prazos, tarefas e intimações, mais o relacionamento com clientes.",
         paraQueServe:
           "Evita abrir várias telas para ver o dia: junta em um só lugar tudo o que tem data e o funil de relacionamento, com visões de lista, calendário e timeline.",
         comoUsar: [
-          "Abra Central no menu Gestão.",
+          "Abra Agenda e Prazos no menu principal.",
           "Escolha a forma de ver no topo: Lista (por urgência), Calendário (mês) ou Timeline (Vencidos → Hoje → 7 dias → Depois).",
           "Use os cartões coloridos para filtrar por urgência (vermelho = vencido, laranja = até 3 dias, amarelo = até 7 dias).",
           "Filtre por tipo (Prazo / Tarefa / Suspensão / Intimação) ou vá à aba de relacionamento.",
@@ -244,13 +244,13 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       {
         id: "prazos",
         titulo: "Prazos",
-        rota: "/prazos",
+        rota: "/atividades?tipo=prazo",
         oQueE:
-          "O painel de controle de prazos processuais do escritório, ordenados por urgência.",
+          "A visão de prazos processuais dentro de Agenda e Prazos, ordenados por urgência.",
         paraQueServe:
           "Garante que nenhum prazo passe despercebido, com confirmação de cumprimento e destaque para os vencimentos mais próximos — o risco número um de qualquer escritório.",
         comoUsar: [
-          "Abra Prazos no menu Gestão para ver todos os prazos ordenados por urgência.",
+          "Abra Agenda e Prazos e filtre por Tipo = Prazo para ver todos os prazos ordenados por urgência.",
           "Adicione um prazo pela aba Prazos do caso: descrição, data, tipo e responsável.",
           "Marque como concluído ao cumprir — ele sai automaticamente dos alertas.",
           "Acompanhe os próximos 30 dias e os vencidos também pela visão do caso.",
@@ -261,13 +261,13 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       {
         id: "intimacoes",
         titulo: "Intimações",
-        rota: "/intimacoes",
+        rota: "/atividades?tipo=intimacao",
         oQueE:
           "A conferência das comunicações processuais recebidas, com apoio da IA na leitura.",
         paraQueServe:
           "Centraliza as intimações para que a equipe confira, classifique e transforme em prazos e tarefas, reduzindo o risco de uma comunicação importante escapar.",
         comoUsar: [
-          "Abra Intimações no menu Gestão.",
+          "Abra Agenda e Prazos e filtre por Tipo = Intimação.",
           "Revise cada comunicação recebida e confira a leitura sugerida pela IA.",
           "Confirme, classifique e gere o prazo ou a tarefa correspondente.",
           "Marque como conferida para manter a caixa organizada.",
@@ -279,28 +279,28 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       {
         id: "tarefas",
         titulo: "Tarefas",
-        rota: "/tarefas",
+        rota: "/atividades?tipo=tarefa",
         oQueE: "A lista de tarefas operacionais atribuídas à equipe.",
         paraQueServe:
           "Organiza o que precisa ser feito e por quem, dando visibilidade da carga de trabalho e evitando combinações verbais que se perdem.",
         comoUsar: [
-          "Acesse as tarefas pela Central (filtro Tipo = Tarefa) ou diretamente em Tarefas.",
+          "Acesse as tarefas por Agenda e Prazos (filtro Tipo = Tarefa).",
           "Crie a tarefa com descrição, responsável e data.",
           "Acompanhe o andamento e marque como concluída.",
         ],
-        dica: "A Central mostra as tarefas junto com prazos e intimações — use-a para o panorama do dia.",
+        dica: "Agenda e Prazos mostra as tarefas junto com prazos e intimações — use-a para o panorama do dia.",
         perfil: "todos",
       },
       {
         id: "suspensoes",
         titulo: "Suspensões",
-        rota: "/suspensoes",
+        rota: "/atividades?tipo=suspensao",
         oQueE:
           "O registro de suspensões processuais e seus reflexos sobre os prazos.",
         paraQueServe:
           "Controla períodos em que os prazos ficam suspensos (recessos, suspensões decretadas) para o cálculo de vencimentos não induzir a erro.",
         comoUsar: [
-          "Acesse pela Central (filtro Tipo = Suspensão) ou diretamente em Suspensões.",
+          "Acesse por Agenda e Prazos (filtro Tipo = Suspensão).",
           "Registre o período de suspensão e o caso afetado.",
           "Confira como os prazos relacionados são recalculados.",
         ],
@@ -316,14 +316,14 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
     ferramentas: [
       {
         id: "pecas",
-        titulo: "Peças Jurídicas",
+        titulo: "Peças",
         rota: "/pecas",
         oQueE:
           "O ambiente de produção, validação, revisão e aprovação de peças, com apoio da IA e identidade Visual Law.",
         paraQueServe:
           "Acelera a redação de peças a partir de modelos e da IA, mantendo um fluxo claro de revisão e aprovação para nada sair sem conferência — com apresentação em Visual Law quando útil.",
         comoUsar: [
-          "Abra Peças Jurídicas no menu Produção.",
+          "Abra Peças no menu principal.",
           "Gere uma nova peça a partir de um modelo ou com apoio da IA.",
           "Revise o conteúdo — a IA é rascunho e exige conferência humana.",
           "Envie para aprovação e acompanhe o histórico de versões.",
@@ -334,14 +334,14 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       },
       {
         id: "documentos",
-        titulo: "Documentos e Data Room",
+        titulo: "Documentos",
         rota: "/documentos",
         oQueE:
           "A gestão documental do escritório, incluindo o Data Room para compartilhamento controlado.",
         paraQueServe:
           "Guarda os documentos ligados a cada caso e cliente em um repositório seguro, com o Data Room para compartilhar arquivos com terceiros de forma controlada e rastreável.",
         comoUsar: [
-          "Abra Documentos e Data Room no menu Produção.",
+          "Abra Documentos no menu principal.",
           "Visualize e baixe os documentos vinculados a cada caso.",
           "Gere minutas a partir do caso (procuração, contrato de honorários, relatório inicial).",
           "Use o Data Room para disponibilizar documentos a um cliente ou parte de forma controlada.",
@@ -409,14 +409,14 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
     ferramentas: [
       {
         id: "inteligencia",
-        titulo: "Inteligência Jurídica",
+        titulo: "Pesquisa e IA",
         rota: "/inteligencia",
         oQueE:
           "O workspace que reúne agentes de IA, análise, validação, jurimetria e conhecimento em abas.",
         paraQueServe:
           "Concentra as ferramentas de IA e análise em um só lugar — assistente, ferramentas, jurimetria e saúde da IA — para pesquisar, analisar e medir sem trocar de tela.",
         comoUsar: [
-          "Abra Inteligência Jurídica no menu (visível para perfis jurídicos).",
+          "Abra Pesquisa e IA no menu (visível para perfis jurídicos).",
           "Use a aba Assistente para perguntas em linguagem natural, com apoio da base de conhecimento.",
           "Explore a aba Jurimetria para taxa de sucesso, desfechos reais e desempenho por tribunal.",
           "Consulte as demais abas (ferramentas, conteúdo, saúde da IA) conforme a necessidade.",
@@ -428,13 +428,13 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       {
         id: "knowledge-hub",
         titulo: "Conhecimento Jurídico",
-        rota: "/knowledge-hub",
+        rota: "/inteligencia?tab=conhecimento",
         oQueE:
-          "A busca unificada em RAG, teses, jurisprudência e memória institucional.",
+          "A aba Conhecimento de Pesquisa e IA: busca unificada em RAG, teses, jurisprudência e memória institucional.",
         paraQueServe:
-          "Encontra em uma só busca o que o escritório já sabe — teses, precedentes, memória e documentos indexados — evitando reinventar a roda a cada novo caso.",
+          "Encontra em uma só busca o que o escritório já sabe — teses, precedentes, memória e documentos indexados — evitando reinventar a roda a cada novo caso. Unifica as antigas telas de Conhecimento, Biblioteca e Memória Institucional.",
         comoUsar: [
-          "Abra Conhecimento Jurídico no menu Inteligência.",
+          "Abra Pesquisa e IA e vá à aba Conhecimento.",
           "Digite o tema ou a pergunta na busca unificada.",
           "Percorra os resultados de RAG, teses, jurisprudência e memória.",
           "Abra um resultado para reaproveitar no caso em andamento.",
@@ -444,34 +444,18 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         badge: "IA",
       },
       {
-        id: "biblioteca",
-        titulo: "Biblioteca Jurídica",
-        rota: "/biblioteca",
-        oQueE:
-          "O acervo de teses, peças de referência e memória institucional do escritório.",
-        paraQueServe:
-          "Guarda as teses e peças de referência com sua taxa de sucesso, para a equipe reaproveitar argumentos que já funcionaram.",
-        comoUsar: [
-          "Abra Biblioteca Jurídica.",
-          "Busque teses por área, tribunal, tipo ou palavra-chave.",
-          "Use os filtros (área, tribunal, taxa de sucesso mínima) para refinar.",
-          "Vincule a tese ao caso para acompanhar seu desempenho na Jurimetria.",
-        ],
-        perfil: "advogado",
-      },
-      {
         id: "memoria",
-        titulo: "Memória Institucional",
-        rota: "/memoria",
+        titulo: "Memória do Caso",
+        rota: "/casos/:id?tab=memoria",
         oQueE:
-          "O registro de resultados, aprendizados e precedentes internos do escritório.",
+          "A aba Memória do caso: registro de resultados, aprendizados e precedentes ligados àquele caso.",
         paraQueServe:
-          "Preserva o conhecimento de acordos vencedores, pareceres e estratégias consolidadas para que não se percam com a rotatividade da equipe.",
+          "Preserva o conhecimento de acordos vencedores, pareceres e estratégias consolidadas no contexto do próprio caso, para que não se percam com a rotatividade da equipe.",
         comoUsar: [
-          "Abra Memória Institucional.",
+          "No detalhe do caso, abra a seção Atividades e escolha a aba Memória.",
           "Registre acordos vencedores, pareceres e estratégias que deram certo.",
           "Categorize para facilitar a recuperação depois.",
-          "Consulte a memória ao montar a estratégia de casos parecidos.",
+          "Consulte também a aba Conhecimento de Pesquisa e IA para a memória institucional consolidada.",
         ],
         perfil: "advogado",
       },
@@ -606,13 +590,13 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       {
         id: "ramos",
         titulo: "Áreas de Atuação",
-        rota: "/ramos",
+        rota: "/areas-de-atuacao",
         oQueE:
           "O hub das áreas jurídicas, cada uma com suas subáreas, guias e ferramentas oficiais.",
         paraQueServe:
           "Organiza por área (trabalhista, bancário, ambiental, tributário, previdenciário...) as subáreas atendidas, os links oficiais e as calculadoras, para orientar o atendimento e agilizar cálculos.",
         comoUsar: [
-          "Abra Áreas de Atuação no menu Inteligência Jurídica.",
+          "Abra Áreas de Atuação no menu principal (grupo Pesquisar & IA).",
           "Clique na área desejada para ver as subáreas de atuação.",
           "Use os links de ferramentas públicas oficiais (PJe-Calc, Registrato/BACEN, Meu INSS, e-CAC, Consumidor.gov...).",
           "Aproveite as calculadoras embutidas de cada ramo (juros, prazos, liquidação...).",
@@ -623,8 +607,8 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       },
       {
         id: "ramo-detalhe",
-        titulo: "Núcleo Jurídico do Ramo",
-        rota: "/ramos/:slug",
+        titulo: "Núcleo Jurídico",
+        rota: "/areas-de-atuacao/:slug",
         oQueE:
           "A página especializada de um ramo, com seus guias e ferramentas específicas.",
         paraQueServe:
@@ -678,7 +662,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         paraQueServe:
           "Acompanha os interessados desde o primeiro contato até virarem clientes, para nenhuma oportunidade esfriar por falta de acompanhamento.",
         comoUsar: [
-          "Acesse o funil pela Central (aba de relacionamento) ou por Funil de Leads.",
+          "Acesse o funil por Agenda e Prazos (aba de relacionamento) ou por Funil de Leads.",
           "Cadastre o lead e mova-o pelas etapas de qualificação.",
           "Registre os contatos e o histórico de cada oportunidade.",
           "Converta o lead em cliente e abra o caso quando fechar.",

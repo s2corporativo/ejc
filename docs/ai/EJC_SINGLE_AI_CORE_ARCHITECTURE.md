@@ -7,7 +7,8 @@ Princípio: **existe UMA IA no EJC**. Nenhuma tela chama modelo; nenhum módulo 
 ## 1. Fluxo ponta a ponta
 
 ```
-frontend (lib/aiCore.ts — só intenção/IDs/pergunta)
+frontend (superfícies existentes — Sala Jurídica, assistentes, workspaces —
+          enviam só intenção/IDs/pergunta via lib/api.ts)
   │ POST /api/ai/core/{chat,task,analyze,generate,report}
   ▼
 routers/ai_core.py  ── _staff_only (cliente_externo → 403, ai_core.py:28)
@@ -69,7 +70,7 @@ Dict de resposta padronizado (orchestrator.py:172-193 + hitl_policy.aplicar):
 | `custo_estimado_brl`, `tokens_input`, `tokens_output`, `log_id` | Custo/auditoria |
 | `is_rascunho` (sempre True), `requer_revisao`, `status_hitl`="gerado", `aviso_hitl` | Carimbo HITL |
 
-Endpoints (routers/ai_core.py, prefixo `/api/ai/core`): `POST /chat|/task|/analyze|/generate|/report` + introspecção `GET /agents|/skills|/status` (só metadados/booleans — nunca chaves, ai_core.py:179). Client frontend: `frontend/src/lib/aiCore.ts` (aiChat/aiTask/aiAnalyze/aiGenerate/aiReport/aiStatus).
+Endpoints (routers/ai_core.py, prefixo `/api/ai/core`): `POST /chat|/task|/analyze|/generate|/report` + introspecção `GET /agents|/skills|/status` (só metadados/booleans — nunca chaves, ai_core.py:179). Nota (pente fino 2026-07, onda 2): não existe client frontend dedicado — o antigo `frontend/src/lib/aiCore.ts` ficou sem consumidores e foi removido; o acesso ao núcleo se dá pelas superfícies existentes (Sala Jurídica, assistentes, workspaces), que chamam `/api/ai/...` diretamente via `lib/api.ts`.
 
 ## 4. Como estender SEM criar IA paralela
 

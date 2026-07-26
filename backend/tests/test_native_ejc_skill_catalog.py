@@ -55,12 +55,14 @@ def test_catalogo_cobre_todos_os_ramos_e_modulos() -> None:
     assert set(LEGAL_AREA_SPECS) == EXPECTED_LEGAL_AREAS
     assert set(MODULE_SKILL_SPECS) == module_keys
     assert len(LEGAL_AREA_SPECS) == 14
-    assert len(MODULE_SKILL_SPECS) == 35
-    assert len(native_skill_specs()) == 49
+    # 34 módulos = 35 anteriores - biblioteca - whatsapp + sala-juridica
+    # (pente fino 2026-07, onda 2 — paridade com o moduleRegistry do frontend).
+    assert len(MODULE_SKILL_SPECS) == 34
+    assert len(native_skill_specs()) == 48
 
     coverage = native_skill_coverage()
     assert coverage["complete"] is True
-    assert coverage["total_native_skills"] == 49
+    assert coverage["total_native_skills"] == 48
     assert coverage["legal_areas"]["missing"] == []
     assert coverage["modules"]["missing"] == []
 
@@ -105,7 +107,7 @@ def test_prompts_nativos_preservam_regras_juridicas_e_operacionais() -> None:
         assert spec.oab_restricted is False
 
 
-def test_registry_central_inclui_as_49_skills_nativas() -> None:
+def test_registry_central_inclui_todas_as_skills_nativas() -> None:
     expected_names = {spec.name for spec in native_skill_specs()}
 
     assert expected_names <= set(SKILL_REGISTRY)
@@ -128,3 +130,14 @@ def test_roteamento_dedica_ambiental_digital_e_transito() -> None:
     assert classify_intent("chat", "digital_lgpd", "").agente == "DigitalLGPDAgent"
     assert classify_intent("chat", "transito", "").agente == "TrafficLawAgent"
     assert classify_intent("modulo", None, "Abrir o módulo").agente == "EJCCoordinatorAgent"
+
+
+def test_rota_compartilhada_resolve_para_modulo_canonico() -> None:
+    """Regressão da onda 2: conhecimento e victory-vault compartilham a rota
+    /inteligencia?tab=conhecimento — o alias de rota deve resolver para o
+    módulo CANÔNICO (primeiro no MODULE_REGISTRY), nunca para o carona."""
+    from app.services.ai.core.ejc_skill_catalog import MODULE_ALIASES, _normalize
+
+    assert MODULE_ALIASES[_normalize("/inteligencia?tab=conhecimento")] == "conhecimento"
+    # Chaves e nomes continuam resolvendo para si mesmos.
+    assert MODULE_ALIASES["victory_vault"] == "victory-vault"

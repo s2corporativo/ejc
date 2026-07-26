@@ -1,8 +1,9 @@
 """Numeração interna canônica de casos (DPT-AAAA-NNNN).
 
 Fonte única do alocador de número interno: usada pelo cadastro de casos
-(routers/cases.py) e pela conversão da Sala Jurídica — evita formatos
-divergentes e números duplicados entre superfícies.
+(routers/cases.py), pela conversão da Sala Jurídica e pela conversão do
+Raio-X (services/raio_x_service.py) — evita formatos divergentes e números
+duplicados entre superfícies.
 """
 from __future__ import annotations
 
