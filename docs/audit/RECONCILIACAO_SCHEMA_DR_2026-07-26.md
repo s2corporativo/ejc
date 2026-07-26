@@ -82,14 +82,68 @@ Criam-se sozinhas em runtime via `CREATE TABLE IF NOT EXISTS` no service:
 | `indices_bcb_cache` | `app/services/indices_service.py` |
 | `indices_bcb_cache_meta` | `app/services/indices_service.py` |
 | `infosimples_uso` | `app/services/infosimples_service.py` |
+| `pncp_cache` | `app/services/pncp_service.py` |
 | `radar_legislativo_visto` | `app/services/radar_legislativo.py` |
 | `transparencia_cache` | `app/services/transparencia_service.py` |
+
+Nota (revisão do PR #485): `pncp_cache` foi adicionada nesta lista após o
+review — o scan inicial rodou sobre uma árvore de trabalho em que outro branch
+havia removido `pncp_service.py` temporariamente. No teste de paridade a lista
+de auto-bootstrap é DESCOBERTA dinamicamente (varredura AST de `backend/app` +
+`seeds` por `CREATE TABLE IF NOT EXISTS`, incluindo evolução runtime via
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, ex. `backup_drive_state.offsite_ok`),
+justamente para não depender de allowlist congelada.
 
 ### Falsos positivos descartados na varredura raw-SQL
 
 `alembic_version` (tabela do próprio Alembic) e `created_at`/`current_date`/
 `data_conclusao`/`data_encerramento`/`data_pagamento` (colunas capturadas pelo
 regex em `EXTRACT(EPOCH FROM <coluna>)` — não são tabelas).
+
+## Refinamentos após o review do PR #485
+
+O teste de paridade foi endurecido em cinco pontos (apontamentos do Codex):
+
+1. **Descoberta dinâmica de tabelas raw-SQL**: além do inventário mínimo
+   explícito, o teste varre por AST todas as strings SQL de `backend/app`
+   (`FROM`/`JOIN`/`INSERT INTO`/`UPDATE ... SET`/`DELETE FROM`) e exige que
+   TODA tabela referenciada esteja classificada (migration, model,
+   auto-bootstrap ou falso positivo documentado). Allowlist congelada deixou
+   de ser o mecanismo de cobertura.
+2. **Semântica Postgres no parser**: `CREATE TABLE IF NOT EXISTS` repetido é
+   tratado como no-op (primeira definição vence; coluna nova só via
+   `ADD COLUMN` explícito) — espelha o comportamento real num upgrade limpo
+   (caso 017 vs 052, tabelas de workflow).
+3. **Metadata do app completo**: o coletor importa `app.main` (não só
+   `app.models`), registrando models definidos em routers
+   (`dataroom_salas`, `teses_juridicas_v4` — criadas pela 067; a 114
+   consolida dados sem dropá-las). Mesmo racional do `test_schema_sync`.
+4. **Paridade parcial de colunas raw-SQL**: colunas nomeadas em
+   `INSERT INTO tabela (col, ...)` são extraídas deterministicamente e
+   conferidas contra a definição criada pela cadeia (ou o DDL runtime, para
+   auto-bootstrap).
+5. **Prova em banco realmente vazio**: o teste DB-gated provisiona um banco
+   novo (`CREATE DATABASE ejc_dr_parity_check`), roda `alembic upgrade head`
+   nele (a própria cadeia cria `vector`/`pg_trgm` — 001/009), valida via
+   inspector e dropa o banco — independente do estado do banco do CI, que já
+   chega migrado no passo anterior ao pytest.
+
+O GAP permaneceu **vazio** após todos os refinamentos.
+
+## Limitações conhecidas
+
+- **Colunas de tabelas raw-SQL em SELECT/WHERE**: a paridade de coluna para
+  tabelas sem model cobre apenas o caminho de escrita (`INSERT INTO t (...)`),
+  que é parseável de forma determinística. Extrair colunas de
+  SELECT/WHERE/expressões arbitrárias exigiria um parser SQL completo, com
+  alto custo e risco de falso positivo; o risco residual de `UndefinedColumn`
+  nessas leituras é mitigado por (a) a superfície raw-SQL ser legada e
+  congelada (guardas da Etapa 6 no `alembic/env.py`), (b) os testes
+  `*_dblevel.py` exercitarem essas consultas contra Postgres real no CI, e
+  (c) o teste DB-gated validar a existência das tabelas após upgrade em banco
+  vazio.
+- **SQL montado dinamicamente** (nomes de tabela em f-strings/variáveis) não é
+  capturado pelo scanner — não há ocorrência conhecida no código atual.
 
 ## Decisão
 
