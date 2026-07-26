@@ -21,9 +21,17 @@ name: CI (PR — GitHub-hosted)
 #   - Env do backend espelha o ci.yml: APP_ENV=development desliga o gate de boot
 #     de produção, então nenhum SECRET_KEY / chave PII real é necessário aqui.
 
+# NOTA OPERACIONAL (2026-07-26): este ambiente NÃO dispõe de runners
+# GitHub-hosted (org com minutos desabilitados/cap $0 — por isso todo o CI do EJC
+# roda no self-hosted `ejc-vps`). Enquanto os runners hosted não forem habilitados
+# pela administração da org, jobs em `ubuntu-latest` falham na inicialização
+# (startup_failure, sem logs). Mantido como `workflow_dispatch` para não deixar
+# checks vermelhos permanentes nos PRs; troque para `pull_request` assim que
+# runners hosted estiverem disponíveis.
 on:
-  pull_request:
-    branches: [main]
+  workflow_dispatch: {}
+  # pull_request:
+  #   branches: [main]
 
 permissions:
   contents: read
