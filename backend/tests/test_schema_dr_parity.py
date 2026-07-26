@@ -310,9 +310,11 @@ def _conjunto_a() -> tuple[dict[str, frozenset[str]], frozenset[str]]:
 @functools.lru_cache(maxsize=1)
 def _metadata_dos_models() -> dict[str, frozenset[str]]:
     """Importa o APP COMPLETO (não só app.models): routers montados em main.py
-    definem models inline (ex.: DataRoomSala/dataroom_salas em data_room_v4,
-    TeseJuridica/teses_juridicas_v4 em teses_v4) — mesmo racional do
-    test_schema_sync._metadata()."""
+    definem models inline (ex.: TeseJuridica/teses_juridicas_v4 em teses_v4) —
+    mesmo racional do test_schema_sync._metadata(). (O router `data_room_v4`,
+    que também definia um model inline — DataRoomSala/dataroom_salas —, foi
+    removido; a tabela permanece no banco só como origem do backfill da
+    migration 114, agora sem model ORM/raw-SQL associado no app.)"""
     from app.core.database import Base
     import app.main  # noqa: F401 — registra TODOS os models no metadata
 

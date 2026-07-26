@@ -64,7 +64,6 @@ from app.routers import credential_vault  # Cofre de Credenciais (superadmin)
 from app.routers import curadoria_renomada
 from app.routers import dashboard
 from app.routers import data_room
-from app.routers import data_room_v4
 from app.routers import datajud
 from app.routers import deadlines
 from app.routers import despesas
@@ -323,7 +322,6 @@ app.include_router(credential_vault.router, prefix=API)  # cofre de credenciais 
 app.include_router(curadoria_renomada.router, prefix=API)
 app.include_router(dashboard.router, prefix=API)
 app.include_router(data_room.router, prefix=API)
-app.include_router(data_room_v4.router, prefix=API)
 app.include_router(datajud.router, prefix=API)
 app.include_router(deadlines.router, prefix=API)
 app.include_router(despesas.router, prefix=API)

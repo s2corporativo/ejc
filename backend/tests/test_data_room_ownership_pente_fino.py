@@ -3,15 +3,19 @@
 Cobre o vazamento residual identificado após o hardening A4:
 - listagem geral sem escopo;
 - criação vinculada a caso/cliente alheio;
-- preservação do contrato das salas institucionais sem vínculo;
-- rota legado v4 sem segregação de carteira.
+- preservação do contrato das salas institucionais sem vínculo.
+
+O router legado `data_room_v4` (shim de compatibilidade `/api/data-room-v4`)
+foi removido por completo: investigação de uso confirmou ausência de
+chamadores reais (frontend, integrações documentadas ou scripts). Os testes
+que cobriam apenas esse router morto foram removidos junto.
 """
 from __future__ import annotations
 
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException, Response
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.models.case import Case
@@ -24,12 +28,6 @@ from app.routers.data_room import (
     _validar_vinculos_room,
     criar_data_room,
     listar_data_rooms,
-)
-from app.routers.data_room_v4 import (
-    SalaCreate,
-    _validar_cliente_v4,
-    criar_sala,
-    listar_salas,
 )
 
 
@@ -212,54 +210,3 @@ async def test_criacao_canonica_valida_vinculos_antes_de_gravar(monkeypatch):
     assert db.committed is True
     assert db.refreshed is True
     assert out["created_by"] == "u1"
-
-
-@pytest.mark.asyncio
-async def test_v4_listagem_advogado_filtra_clientes_visiveis():
-    db = _DB([_Res(all=[])])
-    response = Response()
-    await listar_salas(
-        response=response,
-        db=db,
-        cu=_user("advogado", "u1"),
-    )
-    sql = _sql(db.executed[0])
-    assert "client_id IS NOT NULL" in sql
-    assert "clients.id" in sql
-    assert response.headers["deprecation"] == "true"
-
-
-@pytest.mark.asyncio
-async def test_v4_rejeita_sala_avulsa_para_nao_gestao():
-    with pytest.raises(HTTPException) as exc:
-        await _validar_cliente_v4(
-            _DB(),
-            _user("advogado", "u1"),
-            None,
-        )
-    assert exc.value.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_v4_criacao_chama_validacao_de_carteira(monkeypatch):
-    chamado = False
-
-    async def _validar(*args, **kwargs):
-        nonlocal chamado
-        chamado = True
-
-    monkeypatch.setattr(
-        "app.routers.data_room_v4._validar_cliente_v4",
-        _validar,
-    )
-    db = _DB()
-    response = Response()
-    await criar_sala(
-        SalaCreate(nome="Sala legado", client_id="cl1"),
-        response=response,
-        db=db,
-        cu=_user("advogado", "u1"),
-    )
-    assert chamado is True
-    assert db.committed is True
-    assert response.headers["deprecation"] == "true"

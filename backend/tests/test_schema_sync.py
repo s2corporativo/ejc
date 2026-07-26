@@ -36,7 +36,7 @@ _TABELAS_NUCLEO = {
 
 def _metadata():
     # Importa o APP COMPLETO (não só app.models): alguns routers montados em
-    # main.py definem models inline (ex.: data_room_v4, teses_v4). Sem carregar
+    # main.py definem models inline (ex.: teses_v4). Sem carregar
     # o app, esses models entrariam em Base.metadata só por poluição de ordem de
     # testes (quem importar app.main primeiro), tornando a checagem de drift
     # dependente da ordem. Carregar o app aqui torna a verificação determinística
@@ -117,6 +117,14 @@ _SEM_MODEL_INTENCIONAL = {
     # ferramenta. Só apareceu agora porque esta é a 1ª vez que a Camada 2
     # (comparação com banco real) roda de fato, contra Postgres no CI.
     "alembic_version",
+    # Criada pela migration 067 para o model inline DataRoomSala do router
+    # `data_room_v4`. O router foi removido por completo (investigação de uso
+    # não achou chamador real — nem frontend, nem integração documentada) e
+    # levou o model junto. A tabela permanece no banco só como origem
+    # histórica do backfill idempotente da migration 114 (dataroom_salas ->
+    # data_rooms); a docstring da 114 condiciona a exclusão física a
+    # telemetria de uso, backup e homologação prévios — não feita aqui.
+    "dataroom_salas",
 }
 
 

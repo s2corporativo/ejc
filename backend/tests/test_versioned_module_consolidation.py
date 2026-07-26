@@ -10,15 +10,15 @@ def _read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_data_room_v4_is_only_a_compatibility_adapter():
-    source = _read("app/routers/data_room_v4.py")
-    assert "deprecated=True" in source
-    assert "DataRoom(" in source
-    assert "client_id=payload.client_id" in source
-    assert "db.add(room)" in source
-    assert "db.add(sala)" not in source
-    assert "DataRoomSala(" not in source.split("async def criar_sala", 1)[1]
-    assert "successor-version" in source
+def test_data_room_v4_router_foi_removido():
+    """O shim de compatibilidade `data_room_v4` (`/api/data-room-v4`) foi
+    removido por completo: investigação de uso (frontend, backend, docs,
+    integrações) não encontrou nenhum chamador real, só o próprio comentário
+    genérico "para favoritos e integrações históricas" sem exemplo concreto.
+    A tabela `dataroom_salas` permanece no banco apenas como origem histórica
+    do backfill da migration 114 — não é dropada aqui (ver docstring da 114:
+    retirada física exige telemetria/backup/homologação prévios)."""
+    assert not (ROOT / "app/routers/data_room_v4.py").exists()
 
 
 def test_teses_v4_is_only_a_compatibility_adapter():
@@ -52,9 +52,9 @@ def test_orphan_legacy_client_does_not_break_data_room_backfill():
 
 
 def test_legacy_tables_are_read_only_after_backfill():
-    data_room = _read("app/routers/data_room_v4.py")
+    """Teses v4 segue como adaptador de compatibilidade somente leitura. Data
+    Room v4 foi removido por completo (ver test_data_room_v4_router_foi_removido),
+    o que é uma garantia ainda mais forte do que "somente leitura"."""
     teses = _read("app/routers/teses_v4.py")
-    assert "toda nova leitura e escrita" in data_room
     assert "sem receber novas gravações" in teses
-    assert "select(DataRoomSala)" not in data_room
     assert "select(TeseJuridica)" not in teses
