@@ -140,9 +140,7 @@ const GROUP_LINKS: Record<
       to: (id) => `/casos/${id}/entrevista`,
     },
   ],
-  Estratégia: [
-    { label: "⚔️ Sala de Guerra", to: (id) => `/casos/${id}/sala-de-guerra` },
-  ],
+  Estratégia: [],
 };
 
 export const GROUPS: {

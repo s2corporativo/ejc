@@ -77,7 +77,6 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
       "iaDefensiva",
       "ferramentas",
     ],
-    routeAliases: ["/sala-de-guerra"],
   },
   {
     label: "Financeiro",

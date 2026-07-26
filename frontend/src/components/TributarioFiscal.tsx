@@ -213,7 +213,7 @@ export default function TributarioFiscal() {
     }
   };
 
-  // Mesmo padrão dos demais PDFs Visual Law (SalaDeGuerra.tsx): POST → download_url → blob
+  // Mesmo padrão dos demais PDFs Visual Law: POST → download_url → blob
   const gerarPdf = async () => {
     if (!res) return;
     setGerandoPdf(true);

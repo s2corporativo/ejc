@@ -7,7 +7,7 @@
 #   GET  /tributario/fiscal/relatorio/{id}/download → FileResponse (PDF)
 #
 # Padrões seguidos: upload (MAX_UPLOAD_MB + magic bytes) de routers/documents.py;
-# download_url de routers/sala_de_guerra_v3.py; Visual Law central
+# download_url (POST → download_url → blob); Visual Law central
 # (services/visual_law_theme.py) como dossie_estrategico.py.
 from __future__ import annotations
 
@@ -306,7 +306,7 @@ async def relatorio_pdf(
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Gera o PDF Visual Law do diagnóstico a partir da consolidação devolvida
-    pelo frontend e retorna a URL de download (padrão sala_de_guerra_v3)."""
+    pelo frontend e retorna a URL de download (padrão POST → download_url → blob)."""
     try:
         from weasyprint import HTML as WP_HTML
     except ImportError as exc:

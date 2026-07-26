@@ -36,9 +36,6 @@ describe("moduleRegistry", () => {
     const advogado = getProductionNavigation("advogado");
     expect(advogado.some((module) => module.path === "/usuarios")).toBe(false);
     expect(advogado.some((module) => module.path === "/whatsapp")).toBe(false);
-    expect(
-      advogado.some((module) => module.path.includes("sala-de-guerra")),
-    ).toBe(false);
     expect(advogado.some((module) => module.key === "knowledge-hub")).toBe(
       false,
     );
@@ -50,11 +47,11 @@ describe("moduleRegistry", () => {
     expect(canRoleAccessPath("estagiario", "/financeiro")).toBe(false);
   });
 
-  it("destaca Sala de Análise e Financeiro apenas para os perfis autorizados", () => {
+  it("destaca a Sala Jurídica e o Financeiro apenas para os perfis autorizados", () => {
     const advogado = getProductionNavigation("advogado");
     const socio = getProductionNavigation("socio");
     expect(
-      advogado.find((item) => item.path === "/sala-analise")?.essential,
+      advogado.find((item) => item.path === "/sala-juridica")?.essential,
     ).toBe(true);
     expect(advogado.some((item) => item.path === "/financeiro")).toBe(false);
     expect(socio.find((item) => item.path === "/financeiro")?.essential).toBe(
@@ -62,13 +59,16 @@ describe("moduleRegistry", () => {
     );
   });
 
-  it("mantém o Raio-X acessível sem duplicar a entrada da Sala no menu", () => {
+  it("mantém o Raio-X acessível no menu como apoio da Sala Jurídica", () => {
     const advogado = getProductionNavigation("advogado");
     const raioX = STAFF_ROUTES.find((item) => item.path === "/raio-x");
     expect(canRoleAccessPath("advogado", "/raio-x")).toBe(true);
-    expect(raioX?.showInNav).toBe(false);
-    expect(advogado.some((item) => item.path === "/raio-x")).toBe(false);
-    expect(advogado.some((item) => item.path === "/sala-analise")).toBe(true);
+    expect(raioX?.showInNav).toBe(true);
+    expect(raioX?.essential).toBe(false);
+    expect(advogado.some((item) => item.path === "/raio-x")).toBe(true);
+    expect(STAFF_ROUTES.some((item) => item.path === "/sala-analise")).toBe(
+      false,
+    );
   });
 
   it("mantém preferências pessoais acessíveis a qualquer usuário interno", () => {
@@ -119,7 +119,7 @@ describe("moduleRegistry", () => {
       "/clientes",
       "/documentos",
       "/pecas",
-      "/sala-analise",
+      "/sala-juridica",
       "/inteligencia",
     ]);
     expect(advogado).not.toContain("/casos/novo");

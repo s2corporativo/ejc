@@ -75,11 +75,3 @@ async def test_whatsapp_send_barra_cliente_externo():
     assert (await checker(_user(UserRole.secretaria))).role == UserRole.secretaria
 
 
-# ── sala_de_guerra_v3: auditoria sentinela restrita à gestão ───────────────────
-
-async def test_sentinela_barra_advogado():
-    from app.routers.sala_de_guerra_v3 import auditoria_sentinela
-    # is_gestao(advogado) é False → 403 antes de tocar o banco (db não usado).
-    with pytest.raises(HTTPException) as exc:
-        await auditoria_sentinela(db=None, cu=_user(UserRole.advogado))
-    assert exc.value.status_code == 403

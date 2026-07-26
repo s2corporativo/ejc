@@ -210,6 +210,10 @@ class Settings(BaseSettings):
     AI_ACCEPT_EXTERNAL_WITHOUT_SANITIZATION: bool = False
     # True = toda saída de IA é rascunho com revisão humana obrigatória (OAB).
     AI_REQUIRE_HITL: bool = True
+    # Sala Jurídica: extração automática do estado jurídico consolidado após
+    # cada resposta (roda no provider LOCAL via task_type "resumo" — custo
+    # zero; falha degrada para o merge de fontes, nunca bloqueia a resposta).
+    SALA_JURIDICA_AUTO_ESTADO: bool = True
     # Gate anti-alucinação de citações (Fase 4 — citation_gate.py):
     #   "bloquear"  → saída de IA com citação bloqueante (suspeita de alucinação,
     #                 menção genérica ou julgado sem tribunal+data) NÃO pode ser

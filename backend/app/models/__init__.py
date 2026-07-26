@@ -72,6 +72,7 @@ from app.models import data_room           # noqa
 from app.models import diario_oficial      # noqa
 from app.models import dossie_estrategico  # noqa
 from app.models import jurisprudencia_interna  # noqa
+from app.models import legal_chat            # noqa
 from app.models import prompt_juridico     # noqa
 from app.models import socio               # noqa
 from app.models import sociedade_cliente   # noqa

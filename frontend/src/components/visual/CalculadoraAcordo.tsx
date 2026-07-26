@@ -657,6 +657,34 @@ export default function CalculadoraAcordo({
   const [sucumbenciaPct, setSucumbenciaPct] = useState("");
   const [calculando, setCalculando] = useState(false);
   const [resultado, setResultado] = useState<BreakevenResponse | null>(null);
+  const [gerandoDossie, setGerandoDossie] = useState(false);
+  const [dossie, setDossie] = useState<string | null>(null);
+
+  // Dossiê de Pressão (diplomacia_v3) — rehospedado aqui após a remoção da
+  // Sala de Guerra (era seu único consumidor). Saída é RASCUNHO (HITL/OAB).
+  const gerarDossie = async () => {
+    if (!resultado || gerandoDossie) return;
+    setGerandoDossie(true);
+    setDossie(null);
+    try {
+      const r = await api.post("/diplomacia-v3/dossie-pressao", {
+        case_id: caseId,
+        valor_causa: Number(valorCausa),
+        prob_exito: probExito / 100,
+        tempo_anos: resultado.parametros.tempo_anos,
+      });
+      const d = r.data;
+      setDossie(
+        typeof d === "string"
+          ? d
+          : (d?.argumentacao ?? d?.dossie ?? d?.texto ?? ""),
+      );
+    } catch (err) {
+      toast.error(detalheErro(err, "Falha ao gerar o dossiê de pressão"));
+    } finally {
+      setGerandoDossie(false);
+    }
+  };
 
   const calcular = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -877,6 +905,34 @@ export default function CalculadoraAcordo({
                   relação a receber um acordo hoje.
                 </p>
               </div>
+            </div>
+
+            {/* Dossiê de Pressão (diplomacia_v3) */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm">
+                  <span className="font-semibold text-slate-800">
+                    Dossiê de Pressão
+                  </span>
+                  <p className="text-xs text-slate-500">
+                    Argumentação de negociação gerada por IA a partir do ponto
+                    de equilíbrio — rascunho sujeito a revisão humana (OAB).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={gerarDossie}
+                  disabled={gerandoDossie}
+                  className="btn-secondary shrink-0 text-sm"
+                >
+                  {gerandoDossie ? "Gerando…" : "Gerar dossiê"}
+                </button>
+              </div>
+              {dossie && (
+                <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
+                  <Markdown source={dossie} />
+                </div>
+              )}
             </div>
 
             {/* Memória de cálculo */}

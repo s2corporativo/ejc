@@ -64,6 +64,7 @@ export const CONTEXTUAL_STAFF_APP_ROUTES = [
 export const DYNAMIC_LEGACY_APP_ROUTES = [
   "/clientes/:clientId/dossie", // alias removido de STAFF_ROUTES; redireciona para /clientes/:clientId
   "/ramos/:slug", // alias legado de /areas-de-atuacao/:slug; AreaAtuacaoLegacyRedirect
+  "/casos/:caseId/sala-de-guerra", // módulo removido; SalaDeGuerraLegacyRedirect → /casos/:caseId?tab=teses
 ] as const;
 
 // Literais relativos esperados DENTRO do bloco /portal do App.tsx.

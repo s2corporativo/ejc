@@ -165,6 +165,13 @@ class SingleAICoreOrchestrator:
                 "\n\n## MÉTODOS NATIVOS ATIVOS DO EJC\n"
                 + "\n\n".join(native_plan.prompt_blocks)
             )
+        # Bloco aditivo por superfície (ex.: padrão obrigatório da Sala
+        # Jurídica). Opt-in via params["prompt_extra"]; chave desconhecida é
+        # ignorada — jamais derruba a chamada.
+        from app.services.system_prompts import PROMPT_EXTRAS
+        extra = PROMPT_EXTRAS.get((params or {}).get("prompt_extra") or "")
+        if extra:
+            system_prompt += extra
         if agente.nome == "SystemHealthAgent" or agente.nome == "RepairAgent":
             # Contexto técnico (grafo de código) — nunca contém segredos.
             from app.services.ai.core.skill_registry import SKILL_REGISTRY

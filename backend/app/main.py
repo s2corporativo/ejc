@@ -73,6 +73,7 @@ from app.routers import diario_oficial
 from app.routers import diplomacia_v3
 from app.routers import documento_ia
 from app.routers import raio_x
+from app.routers import legal_chat
 from app.routers import documents
 from app.routers import dossie_cliente
 from app.routers import dossie_estrategico
@@ -152,8 +153,6 @@ from app.routers import ramos
 from app.routers import previdenciario_beneficio
 from app.routers import relatorio
 from app.routers import relatorio_cliente
-from app.routers import sala_de_guerra
-from app.routers import sala_de_guerra_v3
 from app.routers import lgpd_registros
 from app.routers import score_juridico
 from app.routers import search
@@ -332,6 +331,7 @@ app.include_router(diario_oficial.router, prefix=API)
 app.include_router(diplomacia_v3.router, prefix=API)
 app.include_router(documento_ia.router, prefix=API)
 app.include_router(raio_x.router, prefix=API)
+app.include_router(legal_chat.router, prefix=API)
 app.include_router(documents.router, prefix=API)
 app.include_router(dossie_cliente.router, prefix=API)
 app.include_router(dossie_estrategico.router, prefix=API)
@@ -412,8 +412,6 @@ app.include_router(ramos.router, prefix=API)
 app.include_router(previdenciario_beneficio.router, prefix=API)  # vertical Previdenciário — regras de transição EC 103/2019 + RMI
 app.include_router(relatorio.router, prefix=API)
 app.include_router(relatorio_cliente.router, prefix=API)
-app.include_router(sala_de_guerra.router, prefix=API)
-app.include_router(sala_de_guerra_v3.router, prefix=API)
 app.include_router(score_juridico.router, prefix=API)
 app.include_router(search.router, prefix=API)
 app.include_router(signatures.router, prefix=API)

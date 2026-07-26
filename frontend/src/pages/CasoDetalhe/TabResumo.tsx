@@ -533,12 +533,6 @@ export default function TabResumo({
         >
           🔎 Raio-X do processo
         </Link>
-        <button
-          onClick={() => navigate(`/casos/${caso.id}/sala-de-guerra`)}
-          className="btn-secondary flex items-center gap-1"
-        >
-          ⚔️ Sala de Guerra
-        </button>
         {/* Fase 1: o botão "Jornada do caso" saiu daqui — a jornada agora vive
             embutida na própria Visão (painel do orquestrador acima). */}
         <button

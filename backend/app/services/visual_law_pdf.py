@@ -8,7 +8,7 @@
 #     seguinte saía com as cronologias anteriores dentro. Agora cada chamada
 #     de gerar_cronologia monta um HTML novo e renderiza um PDF independente;
 #     a classe é stateless e a instância de módulo existe só por
-#     compatibilidade com os consumidores (routers/sala_de_guerra_v3.py,
+#     compatibilidade com os consumidores (routers/tributario_fiscal.py,
 #     services/geracao_documental.py).
 from __future__ import annotations
 

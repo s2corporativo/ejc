@@ -3,7 +3,7 @@
 // LGPD art. 37) por cliente + gerador de RIPD (art. 38) em PDF Visual Law.
 // Padrão client-scoped espelhado de SociedadesCliente.tsx: seletor de cliente,
 // header de resumo, tabela do ROPA com linha expansível, forms de criar/editar
-// e download de PDF via blob (padrão TributarioFiscal.tsx / SalaDeGuerra.tsx).
+// e download de PDF via blob (padrão TributarioFiscal.tsx).
 //
 // O registro guarda apenas METADADOS da operação (categorias de dados e de
 // titulares), nunca dados pessoais de titulares reais.

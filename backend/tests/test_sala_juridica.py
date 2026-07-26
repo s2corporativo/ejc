@@ -1,0 +1,532 @@
+"""Sala Jurídica Conversacional — contratos de payload e invariantes (V1).
+
+Sem chamadas de IA nem banco: valida os schemas Pydantic (barreira 422 antes
+do gateway) e as invariantes do service (mapeamento modo→task_type completo,
+congelamento pós-conversão).
+"""
+from __future__ import annotations
+
+import pytest
+from fastapi import HTTPException
+from pydantic import ValidationError
+
+from app.models.legal_chat import CHAT_MODOS, SESSION_STATUS
+from app.schemas.legal_chat import (
+    MAX_MENSAGEM_CHARS,
+    ConverterRequest,
+    EstadoUpdate,
+    MensagemCreate,
+    SaidaAlternativaRequest,
+    SessaoUpdate,
+)
+from app.services.legal_chat_service import MODO_INSTRUCAO, MODO_TASK_TYPE
+
+
+# ── mensagens ────────────────────────────────────────────────────────────────
+
+def test_mensagem_modo_invalido_422():
+    with pytest.raises(ValidationError):
+        MensagemCreate(conteudo="analise", modo="modo_inexistente")
+
+
+def test_mensagem_acima_do_teto_422():
+    with pytest.raises(ValidationError):
+        MensagemCreate(conteudo="x" * (MAX_MENSAGEM_CHARS + 1))
+
+
+def test_mensagem_vazia_422():
+    with pytest.raises(ValidationError):
+        MensagemCreate(conteudo="")
+
+
+def test_todos_os_modos_roteiam_para_task_type():
+    # Nenhum modo do seletor pode ficar sem rota no gateway (KeyError em prod).
+    assert set(MODO_TASK_TYPE) == CHAT_MODOS
+    assert set(MODO_INSTRUCAO) == CHAT_MODOS
+
+
+# ── estado jurídico ──────────────────────────────────────────────────────────
+
+def test_estado_chave_desconhecida_422():
+    with pytest.raises(ValidationError):
+        EstadoUpdate(estado={"achismos": []})
+
+
+def test_estado_valor_nao_lista_422():
+    with pytest.raises(ValidationError):
+        EstadoUpdate(estado={"fatos": "não é lista"})
+
+
+def test_estado_valido_passa():
+    e = EstadoUpdate(estado={"fatos": [{"texto": "x", "classificacao": "alegado"}]})
+    assert e.estado["fatos"][0]["classificacao"] == "alegado"
+
+
+# ── sessão ───────────────────────────────────────────────────────────────────
+
+def test_sessao_status_invalido_422():
+    with pytest.raises(ValidationError):
+        SessaoUpdate(status="status_inexistente")
+
+
+def test_sessao_status_livres_aceitos():
+    # Somente os status "livres" são setáveis via PATCH; os derivados têm
+    # fluxos dedicados (/converter, /vincular-caso, /saida).
+    livres = SESSION_STATUS - {"convertida_em_caso", "arquivada"}
+    assert livres == {"em_analise", "aguardando_documentos", "pronta_para_caso"}
+    for status in livres:
+        assert SessaoUpdate(status=status).status == status
+
+
+def test_sessao_status_derivados_rejeitados_no_patch():
+    for status in ("convertida_em_caso", "arquivada"):
+        with pytest.raises(ValidationError):
+            SessaoUpdate(status=status)
+
+
+def test_sessao_null_explicito_rejeitado():
+    # {"campo": null} viraria 500 na coluna non-nullable — 422 na borda.
+    for campo in ("titulo", "status", "favorita"):
+        with pytest.raises(ValidationError):
+            SessaoUpdate(**{campo: None})
+    # Omitido continua válido (PATCH parcial).
+    assert SessaoUpdate().titulo is None
+
+
+# ── conversão em caso ────────────────────────────────────────────────────────
+
+def test_converter_exige_confirmacoes_explicitas():
+    with pytest.raises(ValidationError):
+        ConverterRequest(
+            novo_cliente_nome="Fulano", area="civel", titulo_caso="Caso X",
+            advogado_responsavel_id="u1",
+            confirmo_conflito_verificado=False,
+            confirmo_dados_revisados=True,
+        )
+
+
+def test_congelamento_bloqueia_escrita():
+    from datetime import datetime, timezone
+    from app.models.legal_chat import LegalChatSession
+    from app.services.legal_chat_service import exigir_nao_congelada
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    exigir_nao_congelada(sessao)  # sem congelamento: passa
+    sessao.frozen_at = datetime.now(timezone.utc)
+    with pytest.raises(HTTPException) as exc:
+        exigir_nao_congelada(sessao)
+    assert exc.value.status_code == 409
+
+
+# ── saídas alternativas ──────────────────────────────────────────────────────
+
+def test_descartar_sem_justificativa_422():
+    with pytest.raises(ValidationError):
+        SaidaAlternativaRequest(acao="descartar", justificativa="  ")
+
+
+def test_descartar_justificativa_omitida_422():
+    # model_validator: field_validator não roda com o campo OMITIDO do payload.
+    with pytest.raises(ValidationError):
+        SaidaAlternativaRequest(acao="descartar")
+
+
+def test_arquivar_sem_justificativa_ok():
+    assert SaidaAlternativaRequest(acao="arquivar").acao == "arquivar"
+
+
+# ── vínculo a caso existente ─────────────────────────────────────────────────
+
+def test_vincular_exige_confirmacao_explicita():
+    from app.schemas.legal_chat import VincularCasoRequest
+
+    with pytest.raises(ValidationError):
+        VincularCasoRequest(case_id="c1", confirmo_dados_revisados=False)
+    assert VincularCasoRequest(
+        case_id="c1", confirmo_dados_revisados=True
+    ).case_id == "c1"
+
+
+# ── padrão obrigatório da Sala (system prompt aditivo) ───────────────────────
+
+def test_prompt_extra_sala_registrado():
+    # O bloco institucional precisa estar registrado E ser o que o service pede;
+    # sem isto o orchestrator ignora a chave e a Sala perde o padrão de resposta.
+    import inspect
+
+    from app.services import legal_chat_service as svc
+    from app.services.system_prompts import PROMPT_EXTRAS
+
+    assert "sala_juridica" in PROMPT_EXTRAS
+    corpo = PROMPT_EXTRAS["sala_juridica"]
+    for exigencia in ("[A PREENCHER", "prescrição", "teses favoráveis E contrárias"):
+        assert exigencia in corpo
+    assert '"prompt_extra": "sala_juridica"' in inspect.getsource(svc.enviar_mensagem)
+
+
+# ── exportação (DOCX/PDF) ────────────────────────────────────────────────────
+
+def _sessao_exporta():
+    from app.models.legal_chat import LegalChatMessage, LegalChatSession
+
+    sessao = LegalChatSession(
+        id="s1", titulo="Análise Teste", created_by="u1",
+        workspace_texto="Fatos colados pelo advogado.",
+    )
+    msgs = [
+        LegalChatMessage(id="m1", session_id="s1", autor="user",
+                         modo="conversa_livre", conteudo="Analise o caso."),
+        LegalChatMessage(id="m2", session_id="s1", autor="ia",
+                         modo="conversa_livre", conteudo="## Resumo executivo\nX."),
+    ]
+    return sessao, msgs
+
+
+def test_exportar_docx_gera_documento_com_conteudo():
+    import io
+
+    from docx import Document
+
+    from app.services.legal_chat_service import exportar_docx
+
+    sessao, msgs = _sessao_exporta()
+    conteudo = exportar_docx(sessao, msgs, None)
+    doc = Document(io.BytesIO(conteudo))
+    textos = "\n".join(p.text for p in doc.paragraphs)
+    assert "Fatos colados pelo advogado." in textos
+    assert "Resumo executivo" in textos
+    assert "rascunho" in textos  # aviso HITL sempre presente
+
+
+def test_exportar_pdf_gera_bytes_pdf():
+    from app.services.legal_chat_service import exportar_pdf
+
+    sessao, msgs = _sessao_exporta()
+    conteudo = exportar_pdf(sessao, msgs, None)
+    assert conteudo.startswith(b"%PDF-")
+
+
+# ── extração automática de estado (V2) ───────────────────────────────────────
+
+async def _rodar_extracao(monkeypatch, conteudo_llm: str, custo: float = 0.0):
+    from app.services import legal_chat_service as svc
+
+    async def fake_run_ai_task(**kwargs):
+        return {"conteudo": conteudo_llm, "custo_estimado_brl": custo}
+
+    import app.services.ai.core.orchestrator as orch
+    monkeypatch.setattr(orch, "run_ai_task", fake_run_ai_task)
+    return await svc._extrair_estado_automatico(
+        None, None, estado_atual={"fontes": []},
+        pergunta="p", resposta="r",
+    )
+
+
+@pytest.mark.anyio
+async def test_extracao_estado_json_valido(monkeypatch):
+    saida, custo = await _rodar_extracao(
+        monkeypatch,
+        '{"fatos": [{"texto": "x", "classificacao": "alegado"}], "_resumo": "ok"}',
+    )
+    assert saida is not None
+    assert saida["fatos"][0]["classificacao"] == "alegado"
+    assert saida["_resumo"] == "ok"
+    assert custo == 0
+
+
+@pytest.mark.anyio
+async def test_extracao_estado_json_invalido_fail_soft(monkeypatch):
+    saida, _ = await _rodar_extracao(monkeypatch, "não sei responder em JSON")
+    assert saida is None
+
+
+@pytest.mark.anyio
+async def test_extracao_estado_chave_desconhecida_fail_soft(monkeypatch):
+    saida, _ = await _rodar_extracao(monkeypatch, '{"achismos": []}')
+    assert saida is None
+
+
+@pytest.mark.anyio
+async def test_extracao_estado_devolve_custo_mesmo_em_falha(monkeypatch):
+    # A 2ª chamada de IA pode cair em fallback pago: o custo nunca é perdido,
+    # mesmo quando o JSON devolvido é inválido (fail-soft do estado apenas).
+    from decimal import Decimal
+
+    saida, custo = await _rodar_extracao(
+        monkeypatch, "resposta sem JSON", custo=0.37
+    )
+    assert saida is None
+    assert custo == Decimal("0.37")
+
+
+# ── fakes de banco (padrão do arquivo: sem DB real) ──────────────────────────
+
+class _Result:
+    def __init__(self, itens):
+        self._itens = list(itens)
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._itens
+
+    def scalar_one_or_none(self):
+        return self._itens[0] if self._itens else None
+
+    def scalar_one(self):
+        return self._itens[0]
+
+    def scalar(self):
+        return self._itens[0] if self._itens else None
+
+
+class _FakeDB:
+    """Fake mínimo de AsyncSession: roteia selects pela entidade mapeada."""
+
+    def __init__(self, sessao=None, mensagens=(), anexos=(), estado_atual=None):
+        self.sessao = sessao
+        self.mensagens = list(mensagens)  # ordem cronológica
+        self.anexos = list(anexos)
+        self.estado_atual = estado_atual
+        self.added = []
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def flush(self):
+        pass
+
+    async def execute(self, stmt, params=None):
+        from app.models.legal_chat import (
+            LegalChatAttachment,
+            LegalChatMessage,
+            LegalChatSession,
+            LegalChatStateVersion,
+        )
+
+        descr = getattr(stmt, "column_descriptions", None)
+        if not descr:  # SQL bruto (advisory lock / numeração canônica)
+            return _Result([])
+        entity = descr[0]["entity"]
+        if entity is LegalChatMessage:
+            return _Result(reversed(self.mensagens))  # created_at desc
+        if entity is LegalChatAttachment:
+            return _Result(self.anexos)
+        if entity is LegalChatStateVersion:
+            return _Result([self.estado_atual] if self.estado_atual else [])
+        if entity is LegalChatSession:
+            return _Result([self.sessao] if self.sessao else [])
+        return _Result([])
+
+
+def _user(role: str = "advogado"):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id="u1", role=role)
+
+
+# ── histórico + anexos entram na mensagem ao núcleo ──────────────────────────
+
+@pytest.mark.anyio
+async def test_enviar_mensagem_inclui_historico_e_anexos(monkeypatch):
+    from app.models.legal_chat import (
+        LegalChatAttachment,
+        LegalChatMessage,
+        LegalChatSession,
+    )
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    mensagens = [
+        LegalChatMessage(id="m1", session_id="s1", autor="user",
+                         modo="conversa_livre", conteudo="pergunta anterior"),
+        LegalChatMessage(id="m2", session_id="s1", autor="ia",
+                         modo="conversa_livre", conteudo="resposta anterior"),
+    ]
+    anexos = [
+        LegalChatAttachment(
+            id="a1", session_id="s1", nome_original="contrato.pdf",
+            filepath="x", size_bytes=1, sha256="h", uploaded_by="u1",
+            resultado_analise={"partes": ["Fulano", "Banco X"]},
+        ),
+    ]
+    db = _FakeDB(sessao=sessao, mensagens=mensagens, anexos=anexos)
+
+    chamadas = []
+
+    async def fake_run_ai_task(**kwargs):
+        chamadas.append(kwargs)
+        return {"conteudo": "ok", "custo_estimado_brl": 0}
+
+    import app.services.ai.core.orchestrator as orch
+    monkeypatch.setattr(orch, "run_ai_task", fake_run_ai_task)
+
+    payload = MensagemCreate(conteudo="qual o próximo passo?")
+    await svc.enviar_mensagem(db, sessao, payload, _user())
+
+    prompt = chamadas[0]["mensagem"]  # 1ª chamada = análise principal
+    assert "[HISTÓRICO DA CONVERSA]" in prompt
+    assert "Advogado: pergunta anterior" in prompt
+    assert "IA: resposta anterior" in prompt
+    assert "[DOCUMENTOS ANEXADOS]" in prompt
+    assert "contrato.pdf" in prompt
+    assert "Banco X" in prompt
+    # A própria pergunta nova não entra duplicada no histórico.
+    assert prompt.count("qual o próximo passo?") == 1
+
+
+# ── merge parcial do estado extraído ─────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_extracao_parcial_preserva_chaves_omitidas(monkeypatch):
+    from decimal import Decimal
+
+    from app.models.legal_chat import LegalChatSession, LegalChatStateVersion
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    estado_atual = LegalChatStateVersion(
+        id="v3", session_id="s1", versao=3,
+        estado={
+            "provas": [{"nome": "contrato", "forca": "alta"}],
+            "riscos": [{"descricao": "prescrição", "nivel": "alto"}],
+            "fontes": [],
+        },
+    )
+    db = _FakeDB(sessao=sessao, estado_atual=estado_atual)
+
+    async def fake_run_ai_task(**kwargs):
+        return {"conteudo": "ok", "custo_estimado_brl": 0.05}
+
+    async def fake_extracao(*args, **kwargs):
+        # Extração devolve SÓ "fatos": provas/riscos anteriores não podem sumir.
+        return (
+            {"fatos": [{"texto": "x", "classificacao": "alegado"}]},
+            Decimal("0.10"),
+        )
+
+    import app.services.ai.core.orchestrator as orch
+    from app.core.config import get_settings
+    monkeypatch.setattr(orch, "run_ai_task", fake_run_ai_task)
+    monkeypatch.setattr(svc, "_extrair_estado_automatico", fake_extracao)
+    monkeypatch.setattr(get_settings(), "SALA_JURIDICA_AUTO_ESTADO", True)
+
+    payload = MensagemCreate(conteudo="analise")
+    await svc.enviar_mensagem(db, sessao, payload, _user())
+
+    versoes = [o for o in db.added if isinstance(o, LegalChatStateVersion)]
+    assert len(versoes) == 1
+    novo = versoes[0].estado
+    assert novo["fatos"][0]["texto"] == "x"
+    assert novo["provas"] == [{"nome": "contrato", "forca": "alta"}]
+    assert novo["riscos"] == [{"descricao": "prescrição", "nivel": "alto"}]
+    # Custo da extração somado ao total da sessão (item de auditoria de gasto).
+    assert sessao.custo_ia_total == Decimal("0.15")
+
+
+# ── gate de equipe jurídica (router) ─────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_gate_equipe_juridica_403_para_papeis_administrativos():
+    from app.routers.legal_chat import exigir_equipe_juridica
+
+    for role in ("financeiro", "secretaria", "cliente_externo"):
+        with pytest.raises(HTTPException) as exc:
+            await exigir_equipe_juridica(_user(role))
+        assert exc.value.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_gate_equipe_juridica_aceita_equipe():
+    from app.routers.legal_chat import exigir_equipe_juridica
+
+    for role in ("advogado", "estagiario", "advogado_auxiliar", "socio"):
+        user = await exigir_equipe_juridica(_user(role))
+        assert user.role == role
+
+
+# ── idempotência do vínculo/conversão sob lock ───────────────────────────────
+
+@pytest.mark.anyio
+async def test_vincular_sessao_ja_convertida_retorna_ja_convertido():
+    from datetime import datetime, timezone
+
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    # Sessão já convertida E congelada: repetir o vínculo é idempotente
+    # (ja_convertido=True), não 409 de congelamento.
+    sessao = LegalChatSession(
+        id="s1", titulo="t", created_by="u1",
+        convertido_case_id="case-antigo",
+        frozen_at=datetime.now(timezone.utc),
+    )
+    db = _FakeDB(sessao=sessao)
+    resultado = await svc.vincular_caso_existente(db, sessao, "case-novo", _user())
+    assert resultado == {"case_id": "case-antigo", "ja_convertido": True}
+    assert db.added == []  # nenhum registro novo
+
+
+@pytest.mark.anyio
+async def test_converter_sessao_ja_convertida_retorna_ja_convertido():
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(
+        id="s1", titulo="t", created_by="u1", convertido_case_id="case-antigo",
+    )
+    db = _FakeDB(sessao=sessao)
+    payload = ConverterRequest(
+        novo_cliente_nome="Fulano", area="civil", titulo_caso="Caso X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    resultado = await svc.converter_em_caso(db, sessao, payload, _user())
+    assert resultado == {"case_id": "case-antigo", "ja_convertido": True}
+    assert db.added == []
+
+
+# ── conversão popula proxima_acao (guarda G1 do caminho canônico) ────────────
+
+@pytest.mark.anyio
+async def test_converter_popula_proxima_acao_default():
+    from app.models.case import Case
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    db = _FakeDB(sessao=sessao)
+    payload = ConverterRequest(
+        novo_cliente_nome="Fulano", area="civil", titulo_caso="Caso X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    resultado = await svc.converter_em_caso(db, sessao, payload, _user())
+    assert resultado["ja_convertido"] is False
+    casos = [o for o in db.added if isinstance(o, Case)]
+    assert len(casos) == 1
+    assert casos[0].proxima_acao == (
+        "Revisar a análise convertida da Sala Jurídica e definir a próxima providência"
+    )
+    # Numeração no formato canônico DPT-AAAA-NNNN (alocador compartilhado).
+    assert casos[0].numero_interno.startswith("DPT-")
+
+
+@pytest.mark.anyio
+async def test_converter_respeita_proxima_acao_informada():
+    from app.models.case import Case
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    db = _FakeDB(sessao=sessao)
+    payload = ConverterRequest(
+        novo_cliente_nome="Fulano", area="civil", titulo_caso="Caso X",
+        proxima_acao="Notificar a parte contrária",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    await svc.converter_em_caso(db, sessao, payload, _user())
+    caso = next(o for o in db.added if isinstance(o, Case))
+    assert caso.proxima_acao == "Notificar a parte contrária"
