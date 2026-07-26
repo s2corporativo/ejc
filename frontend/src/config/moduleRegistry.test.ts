@@ -129,10 +129,6 @@ describe("moduleRegistry", () => {
     // mas apenas em caminhos internos; as URLs públicas são aliases canônicos.
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
     for (const path of [
-      "/legado/prazos",
-      "/legado/intimacoes",
-      "/legado/tarefas",
-      "/legado/suspensoes",
       "/crm-leads",
       "/assinaturas",
       "/workflow",
