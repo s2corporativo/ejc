@@ -37,9 +37,6 @@ const FILES = [
   'src/pages/Pecas.tsx',
   'src/pages/Prompts.tsx',
   'src/pages/ConteudoJuridico.tsx',
-  'src/pages/Biblioteca.tsx',
-  'src/pages/SalaDeGuerra.tsx',
-  'src/pages/Wiki.tsx',
   'src/pages/CasoDetalhe.tsx',
   'src/pages/ramos/RamoBase.tsx',
 ];

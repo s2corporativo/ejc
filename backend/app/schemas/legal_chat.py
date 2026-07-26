@@ -96,6 +96,20 @@ class ConverterRequest(BaseModel):
         return v
 
 
+class VincularCasoRequest(BaseModel):
+    """Vincula a análise a um CASO JÁ EXISTENTE (alternativa à conversão)."""
+
+    case_id: str = Field(min_length=1, max_length=36)
+    confirmo_dados_revisados: bool
+
+    @field_validator("confirmo_dados_revisados")
+    @classmethod
+    def _confirmacao_obrigatoria(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError("o vínculo exige confirmação explícita do advogado")
+        return v
+
+
 class SaidaAlternativaRequest(BaseModel):
     """Saídas que não geram processo (arquivar/descartar exigem justificativa)."""
 

@@ -43,3 +43,14 @@ prazos"), não marcadores de pendência.
 - Nenhum `.pyc`/`__pycache__`/artefato versionado por engano.
 - Nenhum `pdb.set_trace()`/`breakpoint()` em `app/` ou `tests/`.
 - `ruff check app` e `ruff check tests` 100% limpos após esta passada.
+
+## Sala Jurídica (2026-07-26)
+
+- Streaming SSE com botão "parar geração": a Sala usa POST síncrono via
+  orchestrator; portar o padrão de `src/lib/stream.ts` exige endpoint de
+  streaming no núcleo único (fazer junto com a próxima evolução do gateway).
+- Anexos de áudio (transcrição Groq) na Sala: pipeline existe
+  (`AUDIO_TRANSCRIPTION_ENABLED`), falta ligar na rota de anexos com a
+  confirmação explícita exigida pela política de privacidade.
+- Histórico navegável de versões do workspace: hoje `workspace_versao` é
+  contador (auditoria); guardar diffs/conteúdo por versão se houver demanda.

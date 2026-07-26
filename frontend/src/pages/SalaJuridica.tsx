@@ -9,11 +9,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
+  Copy,
+  Download,
   FolderInput,
+  Link2,
   Loader2,
   MessageSquareText,
   Paperclip,
+  PenLine,
   Plus,
+  RefreshCw,
   Scale,
   Send,
   Star,
@@ -103,6 +108,84 @@ const MODOS: Array<{ valor: string; rotulo: string }> = [
   { valor: "revisar_documento", rotulo: "Revisar documento" },
 ];
 
+// Ações rápidas: preenchem modo + comando prontos; o advogado revisa/edita o
+// texto antes de enviar (nada dispara IA sem clique explícito em Enviar).
+const ACOES_RAPIDAS: Array<{ rotulo: string; modo: string; comando: string }> =
+  [
+    {
+      rotulo: "Analisar caso",
+      modo: "organizar_fatos",
+      comando:
+        "Analise juridicamente este caso: identifique os fatos relevantes, os pontos controvertidos, a área do Direito e o procedimento aplicável.",
+    },
+    {
+      rotulo: "Criar estratégia",
+      modo: "estrategia_da_parte",
+      comando:
+        "Crie a estratégia para a parte que representamos: teses favoráveis e contrárias, fragilidades, provas faltantes e próximos passos.",
+    },
+    {
+      rotulo: "Elaborar defesa",
+      modo: "elaborar_documento",
+      comando:
+        "Elabore a contestação/defesa completa. Antes de redigir, confirme o que não estiver evidente (polo, objetivo, fase, prazo, juízo).",
+    },
+    {
+      rotulo: "Criar petição",
+      modo: "elaborar_documento",
+      comando:
+        "Transforme esta análise em uma petição completa, com endereçamento, qualificação, fatos, fundamentos, pedidos e valor da causa. Lacunas viram campos [A PREENCHER].",
+    },
+    {
+      rotulo: "Revisar peça",
+      modo: "revisar_documento",
+      comando:
+        "Revise tecnicamente a peça colada na área de trabalho: coerência, fatos, pedidos, fundamentação, competência, valores e contradições.",
+    },
+    {
+      rotulo: "Resumir documentos",
+      modo: "organizar_fatos",
+      comando:
+        "Resuma os documentos anexados, indicando partes, datas, valores, pedidos, prazos e o que está faltando.",
+    },
+    {
+      rotulo: "Criar cronologia",
+      modo: "organizar_fatos",
+      comando:
+        "Monte a cronologia dos fatos, distinguindo comprovado, alegado, inferido e controvertido.",
+    },
+    {
+      rotulo: "Identificar riscos",
+      modo: "detectar_contradicoes",
+      comando:
+        "Localize inconsistências, riscos e fragilidades do caso (processuais, probatórios e financeiros).",
+    },
+    {
+      rotulo: "Listar provas",
+      modo: "analisar_provas",
+      comando:
+        "Liste as provas disponíveis e as provas necessárias, relacionando cada fato à respectiva prova.",
+    },
+    {
+      rotulo: "Pesquisar fundamentos",
+      modo: "pesquisar_direito",
+      comando:
+        "Pesquise os fundamentos jurídicos aplicáveis (legislação e precedentes com fonte verificável).",
+    },
+    {
+      rotulo: "Calcular valores",
+      modo: "organizar_fatos",
+      comando:
+        "Calcule os pedidos e valores envolvidos, explicitando premissas, índices e o que depende de perícia ou confirmação.",
+    },
+    {
+      rotulo: "Perguntas do caso",
+      modo: "conversa_livre",
+      comando:
+        "Faça as perguntas necessárias para completar as informações do caso antes de qualquer peça.",
+    },
+  ];
+
 const ABAS_ESTADO = [
   "fatos",
   "provas",
@@ -132,7 +215,8 @@ export default function SalaJuridica() {
   const [texto, setTexto] = useState("");
   const [modo, setModo] = useState("conversa_livre");
   const [workspace, setWorkspace] = useState("");
-  const [abaEstado, setAbaEstado] = useState<(typeof ABAS_ESTADO)[number]>("fatos");
+  const [abaEstado, setAbaEstado] =
+    useState<(typeof ABAS_ESTADO)[number]>("fatos");
   const [busca, setBusca] = useState("");
   const [wizardAberto, setWizardAberto] = useState(false);
   const [convClienteBusca, setConvClienteBusca] = useState("");
@@ -146,6 +230,15 @@ export default function SalaJuridica() {
   const [convConflito, setConvConflito] = useState(false);
   const [convRevisado, setConvRevisado] = useState(false);
   const [convertendo, setConvertendo] = useState(false);
+  const [vincAberto, setVincAberto] = useState(false);
+  const [vincBusca, setVincBusca] = useState("");
+  const [vincCasos, setVincCasos] = useState<
+    Array<{ id: string; titulo?: string; numero_interno?: string }>
+  >([]);
+  const [vincCaseId, setVincCaseId] = useState<string | null>(null);
+  const [vincRevisado, setVincRevisado] = useState(false);
+  const [vinculando, setVinculando] = useState(false);
+  const [exportando, setExportando] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const autosaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -194,7 +287,9 @@ export default function SalaJuridica() {
     if (autosaveRef.current) clearTimeout(autosaveRef.current);
     autosaveRef.current = setTimeout(async () => {
       try {
-        await api.patch(`/sala-juridica/${ativa.id}`, { workspace_texto: valor });
+        await api.patch(`/sala-juridica/${ativa.id}`, {
+          workspace_texto: valor,
+        });
       } catch {
         toast.error("Falha no salvamento automático");
       }
@@ -225,7 +320,10 @@ export default function SalaJuridica() {
         : s,
     );
     try {
-      await api.post(`/sala-juridica/${ativa.id}/mensagens`, { conteudo, modo });
+      await api.post(`/sala-juridica/${ativa.id}/mensagens`, {
+        conteudo,
+        modo,
+      });
       await abrirSessao(ativa.id);
       await carregarLista();
     } catch (err: unknown) {
@@ -244,9 +342,13 @@ export default function SalaJuridica() {
     const form = new FormData();
     Array.from(files).forEach((f) => form.append("files", f));
     try {
-      const { data } = await api.post(`/sala-juridica/${ativa.id}/anexos`, form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const { data } = await api.post(
+        `/sala-juridica/${ativa.id}/anexos`,
+        form,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      );
       const anexados = (data?.anexados ?? []).length;
       toast.success(`${anexados} documento(s) anexado(s) e extraído(s)`);
       await abrirSessao(ativa.id);
@@ -299,7 +401,9 @@ export default function SalaJuridica() {
     try {
       const { data } = await api.post(`/sala-juridica/${ativa.id}/converter`, {
         client_id: convClienteId,
-        novo_cliente_nome: convClienteId ? null : convNovoCliente.trim() || null,
+        novo_cliente_nome: convClienteId
+          ? null
+          : convNovoCliente.trim() || null,
         area: convArea,
         titulo_caso: convTitulo.trim(),
         advogado_responsavel_id: user?.id,
@@ -321,6 +425,89 @@ export default function SalaJuridica() {
       toast.error(String(detail));
     } finally {
       setConvertendo(false);
+    }
+  };
+
+  const exportarSessao = async (formato: "pdf" | "docx") => {
+    if (!ativa || exportando) return;
+    setExportando(true);
+    try {
+      const { data } = await api.get(`/sala-juridica/${ativa.id}/exportar`, {
+        params: { formato },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sala-juridica-${ativa.id.slice(0, 8)}.${formato}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Falha na exportação");
+    } finally {
+      setExportando(false);
+    }
+  };
+
+  const copiarMensagem = async (conteudo: string) => {
+    await navigator.clipboard.writeText(conteudo);
+    toast.success("Copiado");
+  };
+
+  // Leva o texto gerado para a área livre — de lá o advogado edita à vontade
+  // (o autosave versiona a alteração como qualquer edição manual).
+  const levarParaEditor = (conteudo: string) => {
+    const novo = workspace.trim() ? `${workspace}\n\n${conteudo}` : conteudo;
+    aoEditarWorkspace(novo);
+    toast.success("Enviado para a área de trabalho");
+  };
+
+  const regenerar = async () => {
+    if (!ativa || enviando) return;
+    const ultima = [...(ativa.mensagens ?? [])]
+      .reverse()
+      .find((m) => m.autor === "user");
+    if (!ultima) return;
+    setModo(ultima.modo);
+    setTexto(ultima.conteudo);
+    toast.info("Comando recuperado — ajuste se quiser e clique em Enviar");
+  };
+
+  const buscarCasos = async (termo: string) => {
+    setVincBusca(termo);
+    if (termo.trim().length < 2) {
+      setVincCasos([]);
+      return;
+    }
+    try {
+      const { data } = await api.get("/cases", {
+        params: { search: termo.trim(), page_size: 10 },
+      });
+      setVincCasos(data?.items ?? data ?? []);
+    } catch {
+      setVincCasos([]);
+    }
+  };
+
+  const vincularCaso = async () => {
+    if (!ativa || !vincCaseId || vinculando) return;
+    setVinculando(true);
+    try {
+      await api.post(`/sala-juridica/${ativa.id}/vincular-caso`, {
+        case_id: vincCaseId,
+        confirmo_dados_revisados: vincRevisado,
+      });
+      toast.success("Análise vinculada ao caso — congelada para auditoria");
+      setVincAberto(false);
+      await abrirSessao(ativa.id);
+      await carregarLista();
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "Falha ao vincular";
+      toast.error(String(detail));
+    } finally {
+      setVinculando(false);
     }
   };
 
@@ -355,7 +542,8 @@ export default function SalaJuridica() {
   if (carregando) {
     return (
       <div className="flex h-64 items-center justify-center text-gray-500">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando a Sala Jurídica…
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando a Sala
+        Jurídica…
       </div>
     );
   }
@@ -366,9 +554,40 @@ export default function SalaJuridica() {
         title="Sala Jurídica"
         subtitle="Converse livremente — o EJC estrutura fatos, provas e estratégia por trás da tela. Conteúdo de IA é rascunho sujeito a revisão humana (OAB)."
         actions={
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={arquivar} disabled={!ativa || ativa.frozen}>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              disabled={!ativa || exportando}
+              onClick={() => void exportarSessao("pdf")}
+            >
+              <Download className="h-4 w-4" /> PDF
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!ativa || exportando}
+              onClick={() => void exportarSessao("docx")}
+            >
+              <Download className="h-4 w-4" /> DOCX
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={arquivar}
+              disabled={!ativa || ativa.frozen}
+            >
               <Archive className="h-4 w-4" /> Arquivar
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!ativa || ativa.frozen}
+              onClick={() => {
+                setVincCaseId(null);
+                setVincRevisado(false);
+                setVincBusca("");
+                setVincCasos([]);
+                setVincAberto(true);
+              }}
+            >
+              <Link2 className="h-4 w-4" /> Vincular a caso
             </Button>
             <Button
               variant="secondary"
@@ -416,11 +635,15 @@ export default function SalaJuridica() {
                   )}
                 >
                   <span className="flex items-start justify-between gap-1">
-                    <span className="font-medium leading-tight">{s.titulo}</span>
+                    <span className="font-medium leading-tight">
+                      {s.titulo}
+                    </span>
                     <Star
                       className={cn(
                         "h-4 w-4 shrink-0",
-                        s.favorita ? "fill-amber-400 text-amber-400" : "text-gray-300",
+                        s.favorita
+                          ? "fill-amber-400 text-amber-400"
+                          : "text-gray-300",
                       )}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -431,7 +654,9 @@ export default function SalaJuridica() {
                   <span className="mt-1 flex flex-wrap gap-1">
                     <Badge tone="blue">{s.area_sugerida ?? "sem área"}</Badge>
                     {s.custo_ia_total > 0 && (
-                      <Badge tone="slate">R$ {s.custo_ia_total.toFixed(2)}</Badge>
+                      <Badge tone="slate">
+                        R$ {s.custo_ia_total.toFixed(2)}
+                      </Badge>
                     )}
                     {s.frozen && <Badge tone="amber">congelada</Badge>}
                   </span>
@@ -486,9 +711,13 @@ export default function SalaJuridica() {
                     )}
                   >
                     <p className="mb-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-500">
-                      {m.autor === "user" ? user?.full_name ?? "Você" : "Sala Jurídica · IA"}
+                      {m.autor === "user"
+                        ? (user?.full_name ?? "Você")
+                        : "Sala Jurídica · IA"}
                       <Badge tone="blue">{m.modo.replace(/_/g, " ")}</Badge>
-                      {m.autor === "ia" && m.modelo && <Badge tone="slate">{m.modelo}</Badge>}
+                      {m.autor === "ia" && m.modelo && (
+                        <Badge tone="slate">{m.modelo}</Badge>
+                      )}
                       {m.estado_versao != null && (
                         <Badge tone="green">estado v{m.estado_versao}</Badge>
                       )}
@@ -514,17 +743,57 @@ export default function SalaJuridica() {
                         ))}
                       </ul>
                     )}
+                    {m.autor === "ia" && (
+                      <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                        <button
+                          className="flex items-center gap-1 text-gray-500 hover:text-gray-800"
+                          onClick={() => void copiarMensagem(m.conteudo)}
+                        >
+                          <Copy className="h-3 w-3" /> Copiar
+                        </button>
+                        <button
+                          className="flex items-center gap-1 text-gray-500 hover:text-gray-800"
+                          disabled={ativa.frozen}
+                          onClick={() => levarParaEditor(m.conteudo)}
+                        >
+                          <PenLine className="h-3 w-3" /> Levar para o editor
+                        </button>
+                        <button
+                          className="flex items-center gap-1 text-gray-500 hover:text-gray-800"
+                          disabled={ativa.frozen || enviando}
+                          onClick={() => void regenerar()}
+                        >
+                          <RefreshCw className="h-3 w-3" /> Regenerar
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {enviando && (
                   <p className="flex items-center gap-2 text-sm text-gray-500">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Analisando (sanitização →
-                    RAG → validação → AILog)…
+                    <Loader2 className="h-4 w-4 animate-spin" /> Analisando
+                    (sanitização → RAG → validação → AILog)…
                   </p>
                 )}
               </div>
 
               <div className="rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
+                <div className="mb-1 flex flex-wrap gap-1">
+                  {ACOES_RAPIDAS.map((a) => (
+                    <button
+                      key={a.rotulo}
+                      disabled={ativa.frozen || enviando}
+                      onClick={() => {
+                        setModo(a.modo);
+                        setTexto(a.comando);
+                      }}
+                      className="rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-800 hover:bg-primary-100 disabled:opacity-50"
+                      title={a.comando}
+                    >
+                      {a.rotulo}
+                    </button>
+                  ))}
+                </div>
                 <Textarea
                   className="min-h-[56px] w-full resize-none border-0 focus:ring-0"
                   placeholder="Converse livremente ou dê um comando jurídico…"
@@ -565,7 +834,10 @@ export default function SalaJuridica() {
                     ))}
                   </Select>
                   <span className="ml-auto">
-                    <Button onClick={() => void enviar()} disabled={ativa.frozen || enviando}>
+                    <Button
+                      onClick={() => void enviar()}
+                      disabled={ativa.frozen || enviando}
+                    >
                       <Send className="h-4 w-4" /> Enviar
                     </Button>
                   </span>
@@ -586,10 +858,14 @@ export default function SalaJuridica() {
         <aside className="space-y-3">
           <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
             <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
-              <UploadCloud className="h-4 w-4" /> Documentos ({ativa?.anexos?.length ?? 0})
+              <UploadCloud className="h-4 w-4" /> Documentos (
+              {ativa?.anexos?.length ?? 0})
             </p>
             {(ativa?.anexos ?? []).map((a) => (
-              <p key={a.id} className="mb-1 flex items-center justify-between text-xs">
+              <p
+                key={a.id}
+                className="mb-1 flex items-center justify-between text-xs"
+              >
                 <span className="truncate">{a.nome_original}</span>
                 <Badge tone={a.ocr_utilizado ? "green" : "slate"}>
                   {a.ocr_utilizado ? "OCR" : "texto"}
@@ -628,12 +904,16 @@ export default function SalaJuridica() {
             </div>
             {(estadoAtual[abaEstado] ?? []).length === 0 ? (
               <p className="text-xs text-gray-400">
-                Sem itens em “{abaEstado}”. A curadoria fina é do advogado (PATCH
-                /estado); fontes acumulam automaticamente a cada resposta.
+                Sem itens em “{abaEstado}”. A curadoria fina é do advogado
+                (PATCH /estado); fontes acumulam automaticamente a cada
+                resposta.
               </p>
             ) : (
               (estadoAtual[abaEstado] ?? []).map((item, i) => (
-                <div key={i} className="mb-1 rounded border border-gray-100 p-2 text-xs">
+                <div
+                  key={i}
+                  className="mb-1 rounded border border-gray-100 p-2 text-xs"
+                >
                   <span
                     className={cn(
                       "mr-1 rounded px-1.5 py-0.5 text-[10px] font-bold",
@@ -641,10 +921,20 @@ export default function SalaJuridica() {
                         "bg-gray-100 text-gray-600",
                     )}
                   >
-                    {String(item.classificacao ?? item.nivel ?? item.tipo ?? abaEstado)}
+                    {String(
+                      item.classificacao ??
+                        item.nivel ??
+                        item.tipo ??
+                        abaEstado,
+                    )}
                   </span>
                   {String(
-                    item.texto ?? item.descricao ?? item.nome ?? item.titulo ?? item.evento ?? "",
+                    item.texto ??
+                      item.descricao ??
+                      item.nome ??
+                      item.titulo ??
+                      item.evento ??
+                      "",
                   )}
                 </div>
               ))
@@ -652,6 +942,68 @@ export default function SalaJuridica() {
           </div>
         </aside>
       </div>
+
+      {/* ── Modal: vincular a caso EXISTENTE ──────────────────────────── */}
+      {vincAberto && ativa && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="mb-1 text-lg font-bold text-primary-900">
+              Vincular a caso existente
+            </h2>
+            <p className="mb-4 text-xs text-slate-500">
+              A análise será congelada para auditoria e passa a integrar o
+              histórico do caso selecionado (cliente herdado do caso).
+            </p>
+            <Input
+              placeholder="Buscar caso por título ou número…"
+              value={vincBusca}
+              onChange={(e) => void buscarCasos(e.target.value)}
+            />
+            {vincCasos.length > 0 && (
+              <div className="mt-1 max-h-56 overflow-y-auto rounded border border-slate-200">
+                {vincCasos.map((c) => (
+                  <button
+                    key={c.id}
+                    className={cn(
+                      "block w-full px-3 py-1.5 text-left text-sm hover:bg-slate-50",
+                      vincCaseId === c.id && "bg-primary-50 font-semibold",
+                    )}
+                    onClick={() => setVincCaseId(c.id)}
+                  >
+                    {c.numero_interno ? `${c.numero_interno} · ` : ""}
+                    {c.titulo ?? c.id}
+                  </button>
+                ))}
+              </div>
+            )}
+            <label className="mt-4 flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={vincRevisado}
+                onChange={(e) => setVincRevisado(e.target.checked)}
+              />
+              Revisei fatos, provas e documentos desta análise antes do vínculo.
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setVincAberto(false)}>
+                Cancelar
+              </Button>
+              <Button
+                disabled={vinculando || !vincCaseId || !vincRevisado}
+                onClick={() => void vincularCaso()}
+              >
+                {vinculando ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Link2 className="h-4 w-4" />
+                )}
+                Confirmar vínculo
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Wizard de conversão em caso (conferência obrigatória) ─────── */}
       {wizardAberto && ativa && (
@@ -716,11 +1068,23 @@ export default function SalaJuridica() {
                 value={convTitulo}
                 onChange={(e) => setConvTitulo(e.target.value)}
               />
-              <Select value={convArea} onChange={(e) => setConvArea(e.target.value)}>
+              <Select
+                value={convArea}
+                onChange={(e) => setConvArea(e.target.value)}
+              >
                 {[
-                  "civil", "trabalhista", "consumidor", "familia", "ambiental",
-                  "criminal", "previdenciario", "empresarial", "tributario",
-                  "administrativo", "bancario", "imobiliario",
+                  "civil",
+                  "trabalhista",
+                  "consumidor",
+                  "familia",
+                  "ambiental",
+                  "criminal",
+                  "previdenciario",
+                  "empresarial",
+                  "tributario",
+                  "administrativo",
+                  "bancario",
+                  "imobiliario",
                 ].map((a) => (
                   <option key={a} value={a}>
                     {a}
@@ -755,7 +1119,10 @@ export default function SalaJuridica() {
             </label>
 
             <div className="mt-5 flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setWizardAberto(false)}>
+              <Button
+                variant="secondary"
+                onClick={() => setWizardAberto(false)}
+              >
                 Cancelar
               </Button>
               <Button

@@ -193,7 +193,13 @@ async def enviar_mensagem(
         task_type=MODO_TASK_TYPE[payload.modo],
         mensagem=_montar_mensagem_ia(payload, sessao),
         case_id=sessao.convertido_case_id,
-        params={"module_key": "sala-juridica", "surface": "sala_juridica"},
+        params={
+            "module_key": "sala-juridica",
+            "surface": "sala_juridica",
+            # Anexa o padrão obrigatório da Sala ao system prompt do agente
+            # (system_prompts/sala_juridica.py) — nunca via mensagem do usuário.
+            "prompt_extra": "sala_juridica",
+        },
         usar_rag=payload.usar_rag,
     )
 
@@ -398,6 +404,109 @@ async def converter_em_caso(
     sessao.status = "convertida_em_caso"
     await db.flush()
     return {"case_id": case.id, "client_id": client.id, "ja_convertido": False}
+
+
+async def vincular_caso_existente(
+    db: AsyncSession,
+    sessao: LegalChatSession,
+    case_id: str,
+    user: User,
+) -> dict[str, Any]:
+    """Vincula a análise a um caso JÁ EXISTENTE (sem criar caso novo).
+
+    Mesmo desfecho de auditoria da conversão: sessão congelada e imutável.
+    Ownership do caso é fail-closed (verificar_acesso_caso → 403/404).
+    """
+    if _role(user) not in _CONVERSION_ROLES:
+        raise HTTPException(
+            403, "Seu perfil não possui autorização para vincular a casos oficiais"
+        )
+    exigir_nao_congelada(sessao)
+    if sessao.convertido_case_id:
+        return {"case_id": sessao.convertido_case_id, "ja_convertido": True}
+
+    from app.core.ownership import verificar_acesso_caso
+
+    await verificar_acesso_caso(db, user, case_id)
+    case = await db.get(Case, case_id)
+    if case is None:
+        raise HTTPException(404, "Caso não encontrado")
+
+    agora = datetime.now(timezone.utc)
+    sessao.client_id = case.client_id
+    sessao.convertido_case_id = case.id
+    sessao.converted_at = agora
+    sessao.frozen_at = agora
+    sessao.status = "convertida_em_caso"
+    await db.flush()
+    return {"case_id": case.id, "client_id": case.client_id, "ja_convertido": False}
+
+
+# ── Exportação (DOCX/PDF) ────────────────────────────────────────────────────
+
+_AVISO_EXPORT = (
+    "Documento de trabalho gerado pela Sala Jurídica do EJC com apoio de IA. "
+    "Conteúdo em rascunho, sujeito a revisão do advogado responsável (HITL)."
+)
+
+
+def _blocos_exportacao(
+    sessao: LegalChatSession,
+    mensagens: list[LegalChatMessage],
+    estado: LegalChatStateVersion | None,
+) -> list[tuple[str, str]]:
+    """Blocos (título, corpo) comuns aos dois formatos de exportação."""
+    blocos: list[tuple[str, str]] = []
+    if (sessao.workspace_texto or "").strip():
+        blocos.append(("Área de trabalho do advogado", sessao.workspace_texto.strip()))
+    if estado is not None and estado.resumo:
+        blocos.append((f"Síntese do estado jurídico (v{estado.versao})", estado.resumo))
+    for m in mensagens:
+        autor = "Advogado" if m.autor == "user" else f"Análise da IA ({m.modo})"
+        blocos.append((autor, m.conteudo or ""))
+    return blocos
+
+
+def exportar_docx(
+    sessao: LegalChatSession,
+    mensagens: list[LegalChatMessage],
+    estado: LegalChatStateVersion | None,
+) -> bytes:
+    import io
+
+    from docx import Document
+
+    doc = Document()
+    doc.add_heading(sessao.titulo or "Sala Jurídica", level=0)
+    doc.add_paragraph(_AVISO_EXPORT)
+    for titulo, corpo in _blocos_exportacao(sessao, mensagens, estado):
+        doc.add_heading(titulo, level=2)
+        for par in corpo.split("\n\n"):
+            doc.add_paragraph(par)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def exportar_pdf(
+    sessao: LegalChatSession,
+    mensagens: list[LegalChatMessage],
+    estado: LegalChatStateVersion | None,
+) -> bytes:
+    from html import escape
+
+    from weasyprint import HTML
+
+    partes = [
+        "<style>body{font-family:sans-serif;font-size:11pt;margin:2cm}"
+        "h1{font-size:16pt}h2{font-size:12pt;margin-top:14pt;color:#7a5c14}"
+        "p{white-space:pre-wrap;line-height:1.4}.aviso{font-size:8pt;color:#666}</style>",
+        f"<h1>{escape(sessao.titulo or 'Sala Jurídica')}</h1>",
+        f"<p class='aviso'>{escape(_AVISO_EXPORT)}</p>",
+    ]
+    for titulo, corpo in _blocos_exportacao(sessao, mensagens, estado):
+        partes.append(f"<h2>{escape(titulo)}</h2><p>{escape(corpo)}</p>")
+    return HTML(string="".join(partes)).write_pdf()
 
 
 async def _proximo_numero_interno(db: AsyncSession) -> str:

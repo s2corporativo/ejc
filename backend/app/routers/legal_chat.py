@@ -32,6 +32,7 @@ from app.schemas.legal_chat import (
     SaidaAlternativaRequest,
     SessaoCreate,
     SessaoUpdate,
+    VincularCasoRequest,
 )
 from app.services import legal_chat_service as svc
 from app.services import documento_service
@@ -307,6 +308,69 @@ async def converter(
     )
     await db.commit()
     return resultado
+
+
+@router.post(
+    "/{session_id}/vincular-caso",
+    dependencies=[Depends(rate_limit("sala-juridica-vincular", 5))],
+)
+async def vincular_caso(
+    session_id: str,
+    payload: VincularCasoRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Vincula a análise a um caso já existente (alternativa a criar caso novo)."""
+    requer_advogado(user, "O vínculo a caso oficial é ato privativo de advogado")
+    sessao = await svc.obter_sessao(db, session_id, user)
+    resultado = await svc.vincular_caso_existente(db, sessao, payload.case_id, user)
+    await criar_audit_log(
+        db, user_id=user.id, user_role=svc._role(user),
+        acao="sala_juridica_vincular_caso", entidade="legal_chat_sessions",
+        registro_id=sessao.id,
+        detalhes=f"case_id={resultado.get('case_id')}",
+    )
+    await db.commit()
+    return resultado
+
+
+@router.get("/{session_id}/exportar")
+async def exportar(
+    session_id: str,
+    formato: str = Query(default="pdf", pattern="^(pdf|docx)$"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Exporta a análise (workspace + estado + conversa) em PDF ou DOCX."""
+    from fastapi.responses import Response
+
+    sessao = await svc.obter_sessao(db, session_id, user)
+    res = await db.execute(
+        select(LegalChatSession)
+        .options(selectinload(LegalChatSession.mensagens))
+        .where(LegalChatSession.id == sessao.id)
+    )
+    sessao = res.scalar_one()
+    estado = await svc.ultima_versao_estado(db, sessao.id)
+    if formato == "docx":
+        conteudo = svc.exportar_docx(sessao, list(sessao.mensagens), estado)
+        media = ("application/vnd.openxmlformats-officedocument"
+                 ".wordprocessingml.document")
+    else:
+        conteudo = svc.exportar_pdf(sessao, list(sessao.mensagens), estado)
+        media = "application/pdf"
+    await criar_audit_log(
+        db, user_id=user.id, user_role=svc._role(user),
+        acao="sala_juridica_exportar", entidade="legal_chat_sessions",
+        registro_id=sessao.id, detalhes=f"formato={formato}",
+    )
+    await db.commit()
+    nome = f"sala-juridica-{sessao.id[:8]}.{formato}"
+    return Response(
+        content=conteudo,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'},
+    )
 
 
 @router.post("/{session_id}/saida")

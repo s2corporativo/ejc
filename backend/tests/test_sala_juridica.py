@@ -110,6 +110,77 @@ def test_arquivar_sem_justificativa_ok():
     assert SaidaAlternativaRequest(acao="arquivar").acao == "arquivar"
 
 
+# ── vínculo a caso existente ─────────────────────────────────────────────────
+
+def test_vincular_exige_confirmacao_explicita():
+    from app.schemas.legal_chat import VincularCasoRequest
+
+    with pytest.raises(ValidationError):
+        VincularCasoRequest(case_id="c1", confirmo_dados_revisados=False)
+    assert VincularCasoRequest(
+        case_id="c1", confirmo_dados_revisados=True
+    ).case_id == "c1"
+
+
+# ── padrão obrigatório da Sala (system prompt aditivo) ───────────────────────
+
+def test_prompt_extra_sala_registrado():
+    # O bloco institucional precisa estar registrado E ser o que o service pede;
+    # sem isto o orchestrator ignora a chave e a Sala perde o padrão de resposta.
+    import inspect
+
+    from app.services import legal_chat_service as svc
+    from app.services.system_prompts import PROMPT_EXTRAS
+
+    assert "sala_juridica" in PROMPT_EXTRAS
+    corpo = PROMPT_EXTRAS["sala_juridica"]
+    for exigencia in ("[A PREENCHER", "prescrição", "teses favoráveis E contrárias"):
+        assert exigencia in corpo
+    assert '"prompt_extra": "sala_juridica"' in inspect.getsource(svc.enviar_mensagem)
+
+
+# ── exportação (DOCX/PDF) ────────────────────────────────────────────────────
+
+def _sessao_exporta():
+    from app.models.legal_chat import LegalChatMessage, LegalChatSession
+
+    sessao = LegalChatSession(
+        id="s1", titulo="Análise Teste", created_by="u1",
+        workspace_texto="Fatos colados pelo advogado.",
+    )
+    msgs = [
+        LegalChatMessage(id="m1", session_id="s1", autor="user",
+                         modo="conversa_livre", conteudo="Analise o caso."),
+        LegalChatMessage(id="m2", session_id="s1", autor="ia",
+                         modo="conversa_livre", conteudo="## Resumo executivo\nX."),
+    ]
+    return sessao, msgs
+
+
+def test_exportar_docx_gera_documento_com_conteudo():
+    import io
+
+    from docx import Document
+
+    from app.services.legal_chat_service import exportar_docx
+
+    sessao, msgs = _sessao_exporta()
+    conteudo = exportar_docx(sessao, msgs, None)
+    doc = Document(io.BytesIO(conteudo))
+    textos = "\n".join(p.text for p in doc.paragraphs)
+    assert "Fatos colados pelo advogado." in textos
+    assert "Resumo executivo" in textos
+    assert "rascunho" in textos  # aviso HITL sempre presente
+
+
+def test_exportar_pdf_gera_bytes_pdf():
+    from app.services.legal_chat_service import exportar_pdf
+
+    sessao, msgs = _sessao_exporta()
+    conteudo = exportar_pdf(sessao, msgs, None)
+    assert conteudo.startswith(b"%PDF-")
+
+
 # ── extração automática de estado (V2) ───────────────────────────────────────
 
 async def _rodar_extracao(monkeypatch, conteudo_llm: str):
