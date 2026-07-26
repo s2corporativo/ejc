@@ -15,7 +15,7 @@ from typing import Any, Iterable
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import or_, select, text
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.client_ownership import (
@@ -35,6 +35,7 @@ from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.schemas.raio_x import RaioXConverterRequest
 from app.services.case_intelligence_service import compactar_payload
+from app.services.case_numeracao import proximo_numero_interno as _proximo_numero_interno
 from app.services.raio_x_enrichment import (
     data_iso,
     enriquecer_relatorio,
@@ -223,23 +224,6 @@ def serializar_analise(analise: RaioXAnalise, incluir_documentos: bool = True) -
             for documento in analise.documentos
         ]
     return result
-
-
-async def _proximo_numero_interno(db: AsyncSession) -> str:
-    ano = date.today().year
-    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:chave))"), {"chave": f"numero_interno_{ano}"})
-    result = await db.execute(
-        text(
-            r"""
-            SELECT numero_interno FROM cases WHERE numero_interno LIKE :pref
-            ORDER BY CAST(substring(numero_interno FROM '\d+$') AS INTEGER) DESC LIMIT 1
-            """
-        ),
-        {"pref": f"DPT-{ano}-%"},
-    )
-    ultimo = result.scalar()
-    seq = int(ultimo.split("-")[-1]) + 1 if ultimo else 1
-    return f"DPT-{ano}-{seq:04d}"
 
 
 async def _usuario_escopo(
