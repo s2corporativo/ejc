@@ -225,3 +225,23 @@ async def test_destino_invalido_falha_cedo(monkeypatch, tmp_path):
     assert resultado["ok"] is False and resultado["status"] == "erro"
     assert "BACKUP_DESTINO" in (resultado["erro"] or "")
     assert resultado["local_ok"] is False
+
+
+def test_contrato_infra_rclone_no_container():
+    # O upload offsite roda DENTRO do container (backup.sh → docker exec):
+    # a imagem precisa do binário rclone e o compose precisa montar a config
+    # OAuth do host (read-only). Regressão real observada em produção
+    # (2026-07-26): host com rclone configurado, container sem o binário.
+    from pathlib import Path
+
+    dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
+    assert "rclone" in dockerfile
+
+    compose = (
+        Path(__file__).resolve().parents[2] / "docker-compose.yml"
+    ).read_text()
+    assert "/root/.config/rclone" in compose
+    # GRAVÁVEL: o rclone precisa persistir o token OAuth renovado (OneDrive
+    # rotaciona ~1h); mount :ro quebraria o backup diário (review PR #484).
+    linha_mount = next(l for l in compose.splitlines() if "/root/.config/rclone" in l)
+    assert not linha_mount.rstrip().endswith(":ro")
