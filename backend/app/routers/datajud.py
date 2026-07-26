@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/datajud", tags=["datajud"])
 
-# [B4] Proxy de consulta CNJ arbitrária → piso advogado+ (espelha pncp._ADVOGADO_MAIS).
+# [B4] Proxy de consulta CNJ arbitrária → piso advogado+.
 _ADVOGADO_MAIS = require_roles(["advogado"])
 
 

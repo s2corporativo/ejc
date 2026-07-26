@@ -20,9 +20,10 @@
 # e auditada, e funciona out-of-the-box com a chave pública do CNJ
 # (settings.DATAJUD_API_KEY, se configurada, tem precedência sobre o fallback).
 #
-# O router do Conecta gov.br NÃO existe aqui de propósito: integração pendente
-# de credenciamento institucional (ver conecta_gov_client.py) — só ganha
-# endpoint quando CONECTA_CLIENT_ID/CONECTA_CLIENT_SECRET existirem de verdade.
+# O Conecta gov.br NÃO existe aqui de propósito: integração pendente de
+# credenciamento institucional — o scaffold antigo (conecta_gov_client.py) foi
+# removido na faxina 2026-07; recriar só quando CONECTA_CLIENT_ID/
+# CONECTA_CLIENT_SECRET existirem de verdade.
 # SEM `from __future__ import annotations`: o wrapper do slowapi faz o FastAPI
 # resolver anotações string fora deste módulo → Optional[date] quebraria.
 import logging
