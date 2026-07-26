@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { toast } from "../components/Toast";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import axios from "axios";
+import { isAxiosError } from "axios";
+import api from "../lib/api";
 
 export default function RedefinirSenha() {
   const [params] = useSearchParams();
@@ -22,14 +23,18 @@ export default function RedefinirSenha() {
       return;
     }
     try {
-      await axios.post("/api/auth/redefinir-senha", {
+      await api.post("/auth/redefinir-senha", {
         token,
         nova_senha: senha,
       });
       toast.success("Senha redefinida! Faça login.");
       nav("/login");
-    } catch (e: any) {
-      setErro(e.response?.data?.detail || "Link inválido ou expirado");
+    } catch (e: unknown) {
+      const detalhe =
+        isAxiosError(e) && typeof e.response?.data?.detail === "string"
+          ? e.response.data.detail
+          : "";
+      setErro(detalhe || "Link inválido ou expirado");
     }
   };
 
