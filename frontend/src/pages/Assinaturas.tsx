@@ -2,7 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
-import { EmptyState, PageHeader, Spinner, Modal } from "../components/UI";
+import {
+  EmptyState,
+  PageHeader,
+  Spinner,
+  Modal,
+  fmtDate,
+} from "../components/UI";
 import { toast } from "../components/Toast";
 import type { Client } from "../types";
 import { FileSignature, Plus, Info, CheckCircle, Circle } from "lucide-react";
@@ -181,15 +187,6 @@ export default function Assinaturas() {
         )
       : false;
 
-  const formatDate = (iso?: string | null) =>
-    iso
-      ? new Date(iso).toLocaleDateString("pt-BR", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        })
-      : "—";
-
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -231,10 +228,10 @@ export default function Assinaturas() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-400 mb-3">
-                      Criado em {formatDate(sol.created_at)}
+                      Criado em {fmtDate(sol.created_at)}
                       {sol.assinado_em && (
                         <span className="ml-2 text-gray-400">
-                          · Assinado em {formatDate(sol.assinado_em)}
+                          · Assinado em {fmtDate(sol.assinado_em)}
                         </span>
                       )}
                     </p>

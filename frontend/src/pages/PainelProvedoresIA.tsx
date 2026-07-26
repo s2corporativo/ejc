@@ -15,7 +15,7 @@ import {
   Zap,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Spinner } from "../components/UI";
+import { PageHeader, Spinner, fmtMoney } from "../components/UI";
 import { toast } from "../components/Toast";
 
 type ProviderRow = {
@@ -90,13 +90,8 @@ type DashboardData = {
   observacao: string;
 };
 
-const brl = (valor?: number | null, casas = 4) =>
-  (valor ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: casas,
-  });
+// Custos de tokens usam 4 casas; ausente vira R$ 0,00 (painel soma custos).
+const brl = (valor?: number | null) => fmtMoney(valor ?? 0, 4);
 
 const inteiro = (valor?: number | null) => (valor ?? 0).toLocaleString("pt-BR");
 
