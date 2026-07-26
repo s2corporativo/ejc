@@ -12,12 +12,20 @@ name: CI
 #
 # SEGURANÇA (SYS-098): todos os jobs abaixo rodam em [self-hosted, ejc-vps] no
 # host de PRODUÇÃO e executam código do checkout (pytest, npm build, etc.). Rodar
-# código de PR não-confiável nesse host é uma superfície de RCE/exfiltração. Por
-# isso cada job é condicionado a `if: github.event_name != 'pull_request'` — só
-# executa em push na main e em workflow_dispatch. Em PR os jobs são PULADOS (um
-# job pulado satisfaz required checks sem rodar nada no host). Os gatilhos
-# push/dispatch são preservados. A validação de PR deve ser reintroduzida em
-# runner GitHub-hosted (ubuntu-latest) num follow-up.
+# código de PR NÃO-CONFIÁVEL (fork) nesse host é uma superfície de RCE/exfiltração.
+#
+# Este é o GATE DE PR do EJC: testes backend com Postgres/pgvector real, evals
+# offline e frontend typecheck/build. Como esta org não dispõe de runners
+# GitHub-hosted (minutos desabilitados), a validação de PR volta ao próprio
+# self-hosted, mas restrita a PRs do MESMO repositório — branches internas, mesmo
+# nível de confiança de um push na main. A guarda por job é:
+#   github.event_name != 'pull_request'                                  (push/dispatch)
+#   || github.event.pull_request.head.repo.full_name == github.repository (PR interno)
+# PRs de FORK caem fora de ambas as cláusulas e são PULADOS — nenhum código
+# não-confiável executa no host (um job pulado satisfaz required checks sem rodar).
+#
+# Os gates PESADOS de release/continuidade (restore drill, rollback, runner proof)
+# permanecem só em push/dispatch — ver ejc-release-gate.yml e continuity-ui-gates.yml.
 on:
   pull_request:
   push:
@@ -34,8 +42,11 @@ concurrency:
 jobs:
   db-validation:
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
-    # SYS-098: não executar código de PR no host de produção self-hosted.
-    if: github.event_name != 'pull_request'
+    # SYS-098: roda em push/dispatch e em PRs do MESMO repo (internos); PRs de fork
+    # são pulados para não executar código não-confiável no host de produção.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
     defaults:
@@ -164,8 +175,11 @@ jobs:
 
   eval-smoke:
     name: Eval — smoke dos gold sets (offline, bloqueante)
-    # SYS-098: não executar código de PR no host de produção self-hosted.
-    if: github.event_name != 'pull_request'
+    # SYS-098: roda em push/dispatch e em PRs do MESMO repo (internos); PRs de fork
+    # são pulados para não executar código não-confiável no host de produção.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 15
     defaults:
@@ -194,8 +208,11 @@ jobs:
 
   frontend-build:
     name: Frontend — testes + typecheck + build
-    # SYS-098: não executar código de PR no host de produção self-hosted.
-    if: github.event_name != 'pull_request'
+    # SYS-098: roda em push/dispatch e em PRs do MESMO repo (internos); PRs de fork
+    # são pulados para não executar código não-confiável no host de produção.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 25
     defaults:
