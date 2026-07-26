@@ -47,9 +47,7 @@ export function mensagemErroFerramenta(
       | undefined
   )?.response;
   const detail = resp?.data?.detail as
-    | { codigo?: unknown; mensagem?: unknown }
-    | string
-    | undefined;
+    { codigo?: unknown; mensagem?: unknown } | string | undefined;
   if (
     resp?.status === 503 &&
     detail &&

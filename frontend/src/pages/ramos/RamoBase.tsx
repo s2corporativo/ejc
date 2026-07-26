@@ -318,8 +318,7 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
           {/* Aviso de homologação vindo da API acompanha o resultado */}
           {res.homologada === false && (
             <div className="mt-2 p-2 rounded bg-warn-50 border border-warn-200 text-xs text-warn-800">
-              ⚠️{" "}
-              {res.aviso_homologacao || AVISO_FERRAMENTA_NAO_HOMOLOGADA}
+              ⚠️ {res.aviso_homologacao || AVISO_FERRAMENTA_NAO_HOMOLOGADA}
             </div>
           )}
           {!f.autoLoad && (

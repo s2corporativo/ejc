@@ -130,8 +130,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
         <div className="mt-2 p-2 bg-gold-50 rounded text-[11px] space-y-0.5 border border-gold-200">
           {res.homologada === false && (
             <p className="text-warn-800 font-medium">
-              ⚠️{" "}
-              {res.aviso_homologacao || AVISO_FERRAMENTA_NAO_HOMOLOGADA}
+              ⚠️ {res.aviso_homologacao || AVISO_FERRAMENTA_NAO_HOMOLOGADA}
             </p>
           )}
           {typeof res === "object" &&
