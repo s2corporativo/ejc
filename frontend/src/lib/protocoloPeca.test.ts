@@ -18,7 +18,11 @@ describe("protocoloPeca — FLX-070", () => {
 
     it("só o número → payload mínimo, sem campos opcionais vazios", () => {
       expect(
-        montarPayloadProtocolo({ numero: " 2026.01.99 ", tribunal: "", data: "" }),
+        montarPayloadProtocolo({
+          numero: " 2026.01.99 ",
+          tribunal: "",
+          data: "",
+        }),
       ).toEqual({ numero_protocolo: "2026.01.99" });
     });
 
@@ -60,9 +64,9 @@ describe("protocoloPeca — FLX-070", () => {
       ).toBe("Número de protocolo é obrigatório");
     });
     it("detail objeto {mensagem} → usa a mensagem", () => {
-      expect(mensagemErroProtocolo(422, { mensagem: "peça não aprovada" })).toBe(
-        "peça não aprovada",
-      );
+      expect(
+        mensagemErroProtocolo(422, { mensagem: "peça não aprovada" }),
+      ).toBe("peça não aprovada");
     });
     it("sem detail → fallback", () => {
       expect(mensagemErroProtocolo(500, undefined)).toBe(
