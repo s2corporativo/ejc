@@ -1,0 +1,178 @@
+name: CI (PR — GitHub-hosted)
+
+# Validação de Pull Request isolada do host de produção (SYS-098).
+#
+# CONTEXTO: o workflow `ci.yml` roda em [self-hosted, ejc-vps], que é o HOST DE
+# PRODUÇÃO. Rodar código de PR não-confiável nesse host é superfície de
+# RCE/exfiltração, então os jobs de `ci.yml` são pulados em `pull_request`
+# (`if: github.event_name != 'pull_request'`) — deixando PRs sem validação.
+#
+# Este workflow reintroduz a validação de PR em runner GitHub-hosted efêmero e
+# isolado (`ubuntu-latest`), espelhando os jobs de teste do `ci.yml` (backend com
+# Postgres pgvector real + frontend typecheck/build) SEM tocar o host de produção
+# nem exigir segredos de produção. Deploy, backup/restore drill e provas na VPS
+# permanecem exclusivamente no self-hosted (ci.yml/continuity/deploy) e fora de PR.
+#
+# Nota de fidelidade ao ci.yml:
+#   - ruff e pip-audit são mantidos INFORMATIVOS aqui (continue-on-error) —
+#     diagnóstico de PR, não bloqueio; o gate bloqueante segue no self-hosted.
+#   - Passos puramente diagnósticos (upload-artifact / step-summary) do ci.yml
+#     foram omitidos: não alteram o resultado do gate de PR.
+#   - Env do backend espelha o ci.yml: APP_ENV=development desliga o gate de boot
+#     de produção, então nenhum SECRET_KEY / chave PII real é necessário aqui.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-pr-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — suíte completa + schema/RAG (Postgres pgvector)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ejc_user
+          POSTGRES_PASSWORD: ejc_pass
+          POSTGRES_DB: ejc_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ejc_user -d ejc_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:5432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      APP_ENV: development
+      RUN_DB_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validar sintaxe dos scripts críticos de produção
+        working-directory: .
+        run: bash -n scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh
+
+      - name: Instalar Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      # Deps nativas exigidas pelas libs Python (CLAUDE.md):
+      #   libmagic1        -> python-magic
+      #   poppler-utils    -> pdf2image
+      #   tesseract-ocr    -> pytesseract
+      #   libpango/cairo/  -> weasyprint
+      #   postgresql-client-> psql (extensões + healthcheck)
+      # http-ece é sdist puro-Python (sem C), instala sem lib de sistema extra.
+      - name: Dependências nativas e cliente PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            postgresql-client \
+            libmagic1 \
+            poppler-utils \
+            tesseract-ocr \
+            libpango-1.0-0 \
+            libpangoft2-1.0-0 \
+            libcairo2 \
+            libgdk-pixbuf-2.0-0
+
+      - name: Instalar dependências Python
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Gate de compatibilidade dos modelos RAG (sem download de pesos)
+        run: |
+          python -c "from app.services.embedding_service import validar_modelo_local; ok,msg=validar_modelo_local(); print(msg); raise SystemExit(0 if ok else 1)"
+          python -c "from app.core.config import get_settings; from fastembed.rerank.cross_encoder import TextCrossEncoder; s=get_settings(); nomes={m['model'] for m in TextCrossEncoder.list_supported_models()}; assert s.RAG_RERANK_MODEL in nomes, s.RAG_RERANK_MODEL; print(s.RAG_RERANK_MODEL)"
+
+      - name: Criar extensões (vector, pg_trgm, pgcrypto)
+        run: |
+          PGPASSWORD=ejc_pass psql -h localhost -U ejc_user -d ejc_db \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;" \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
+            -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+      # Informativo em PR (bloqueante fica no self-hosted / ci.yml).
+      - name: Lint informativo (ruff)
+        continue-on-error: true
+        run: python -m ruff check app --output-format=concise
+
+      # Informativo em PR (bloqueante fica no self-hosted / ci.yml).
+      - name: Auditoria informativa de dependências Python (pip-audit)
+        continue-on-error: true
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.txt --desc
+
+      - name: Aplicar migrations (alembic upgrade head)
+        run: python -m alembic upgrade head
+
+      - name: Testes com banco real
+        run: python -m pytest tests -v
+
+  frontend:
+    name: Frontend — testes + typecheck + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Instalar Node 20
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Formatação (prettier)
+        run: npm run format:check
+
+      - name: Testes (Vitest)
+        run: npm run test
+
+      - name: Auditoria de dependências Node (crítico)
+        run: npm audit --audit-level=critical
+
+      # `npm run build` = `tsc --noEmit && vite build` (typecheck + build).
+      - name: Typecheck + build
+        run: npm run build
+
+  p0-guard:
+    name: P0 — release guard (marcadores de merge, segredos, CORS wildcard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Instalar Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Guarda P0 (scripts/ci_guard.sh)
+        run: bash scripts/ci_guard.sh
