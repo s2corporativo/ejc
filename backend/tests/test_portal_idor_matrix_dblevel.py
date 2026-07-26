@@ -87,14 +87,17 @@ async def _criar_caso(db, client_id: str, titulo: str, resp_id: str | None = Non
     return case_id
 
 
-async def _criar_documento(db, client_id: str, case_id: str | None, titulo: str, confid: str = "normal") -> str:
+async def _criar_documento(
+    db, client_id: str, case_id: str | None, titulo: str,
+    confid: str = "normal", portal_visible: bool = False,
+) -> str:
     doc_id = str(uuid4())
     await db.execute(
         text(
             "INSERT INTO documents (id, titulo, filename, filepath, client_id, "
-            "case_id, confidencialidade) VALUES "
+            "case_id, confidencialidade, portal_visible) VALUES "
             "(:id, :titulo, :fn, :fp, :cid, :case, "
-            " CAST(:conf AS docconfidencialidade))"
+            " CAST(:conf AS docconfidencialidade), :pv)"
         ),
         {
             "id": doc_id,
@@ -104,6 +107,8 @@ async def _criar_documento(db, client_id: str, case_id: str | None, titulo: str,
             "cid": client_id,
             "case": case_id,
             "conf": confid,
+            # publicação é ato explícito (DOC-049/050): default fail-closed.
+            "pv": portal_visible,
         },
     )
     return doc_id
@@ -121,14 +126,22 @@ async def _criar_fee(db, client_id: str, descricao: str) -> str:
     return fee_id
 
 
-async def _criar_signature(db, client_id: str, document_id: str, status: str = "pendente") -> str:
+async def _criar_signature(
+    db, client_id: str, document_id: str, status: str = "pendente",
+    hash_sha256: str | None = None,
+) -> str:
     sig_id = str(uuid4())
     await db.execute(
         text(
             "INSERT INTO signature_requests (id, document_id, client_id, "
             "hash_sha256, status) VALUES (:id, :doc, :cid, :h, :st)"
         ),
-        {"id": sig_id, "doc": document_id, "cid": client_id, "h": uuid4().hex + uuid4().hex, "st": status},
+        {
+            "id": sig_id, "doc": document_id, "cid": client_id,
+            # hash real do arquivo quando o teste vai exercitar o aceite (DOC-108);
+            # caso contrário um valor sintético (basta ser 64 hex).
+            "h": hash_sha256 or (uuid4().hex + uuid4().hex), "st": status,
+        },
     )
     return sig_id
 
@@ -238,10 +251,11 @@ async def test_caso_detalhe_e_meus_casos_isolam_por_cliente():
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-async def test_documentos_portal_apenas_normais_do_proprio_cliente():
-    """Prova: A recebe só o próprio documento NORMAL. Não recebe: (a) o próprio
-    documento CONFIDENCIAL (filtro de confidencialidade) nem (b) o documento
-    normal de B (isolamento por client_id)."""
+async def test_documentos_portal_apenas_publicados_do_proprio_cliente():
+    """Prova (DOC-049/050/SYS-064 — publicação explícita, fail-closed): A recebe
+    só o próprio documento PUBLICADO (portal_visible=True). Não recebe: (a) o
+    próprio documento NÃO publicado (fail-closed — recebidos/em triagem não
+    vazam) nem (b) o documento publicado de B (isolamento por client_id)."""
     from app.core.database import AsyncSessionLocal
     from app.routers.portal import documentos
 
@@ -250,16 +264,16 @@ async def test_documentos_portal_apenas_normais_do_proprio_cliente():
         cli_a = await _criar_cliente(db, f"Cliente A {tok}")
         cli_b = await _criar_cliente(db, f"Cliente B {tok}")
         ua = await _criar_portal_user(db, cli_a)
-        doc_a_normal = await _criar_documento(db, cli_a, None, f"A-normal-{tok}", "normal")
-        doc_a_conf = await _criar_documento(db, cli_a, None, f"A-conf-{tok}", "confidencial")
-        doc_b_normal = await _criar_documento(db, cli_b, None, f"B-normal-{tok}", "normal")
+        doc_a_pub = await _criar_documento(db, cli_a, None, f"A-pub-{tok}", "normal", portal_visible=True)
+        doc_a_naopub = await _criar_documento(db, cli_a, None, f"A-naopub-{tok}", "normal", portal_visible=False)
+        doc_b_pub = await _criar_documento(db, cli_b, None, f"B-pub-{tok}", "normal", portal_visible=True)
         await db.commit()
         try:
             user_a = await _carregar_user(db, ua)
             ids = {d["id"] for d in (await documentos(db=db, cu=user_a))["data"]}
-            assert doc_a_normal in ids  # POSITIVO
-            assert doc_a_conf not in ids  # confidencial não vaza p/ portal
-            assert doc_b_normal not in ids  # doc de terceiro não vaza
+            assert doc_a_pub in ids  # POSITIVO (publicado, do próprio cliente)
+            assert doc_a_naopub not in ids  # não publicado não vaza (fail-closed)
+            assert doc_b_pub not in ids  # doc de terceiro não vaza, mesmo publicado
         finally:
             await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
 
@@ -343,13 +357,21 @@ async def test_mensagens_portal_isola_caso_por_cliente():
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-async def test_signatures_listar_e_assinar_isolam_por_cliente():
+async def test_signatures_listar_e_assinar_isolam_por_cliente(tmp_path, monkeypatch):
     """Prova: em /signatures (rota que o middleware libera ao cliente_externo):
     • listar → A vê só a própria solicitação, nunca a de B;
     • assinar → A assina a PRÓPRIA pendente (200); forjar o id da de B → 404.
     """
+    import hashlib
+    import os
+
+    from app.core.config import get_settings
     from app.core.database import AsyncSessionLocal
     from app.routers.signatures import assinar, listar
+
+    # DOC-108: o aceite revalida o SHA-256 do arquivo físico. Isola UPLOAD_DIR
+    # num tmp gravável (o padrão /app/uploads não existe fora do container).
+    monkeypatch.setattr(get_settings(), "UPLOAD_DIR", str(tmp_path))
 
     tok = uuid4().hex[:6]
     async with AsyncSessionLocal() as db:
@@ -358,7 +380,16 @@ async def test_signatures_listar_e_assinar_isolam_por_cliente():
         ua = await _criar_portal_user(db, cli_a)
         doc_a = await _criar_documento(db, cli_a, None, f"proc-A-{tok}", "normal")
         doc_b = await _criar_documento(db, cli_b, None, f"proc-B-{tok}", "normal")
-        sig_a = await _criar_signature(db, cli_a, doc_a, "pendente")
+        # arquivo físico do doc de A + hash coincidente para o aceite passar;
+        # o filepath segue o mesmo padrão gerado por _criar_documento.
+        conteudo = f"assinavel-A-{tok}".encode()
+        rel = f"2026/07/{doc_a}.pdf"
+        full = os.path.join(str(tmp_path), rel)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as fh:
+            fh.write(conteudo)
+        h = hashlib.sha256(conteudo).hexdigest()
+        sig_a = await _criar_signature(db, cli_a, doc_a, "pendente", hash_sha256=h)
         sig_b = await _criar_signature(db, cli_b, doc_b, "pendente")
         await db.commit()
         try:
@@ -368,16 +399,16 @@ async def test_signatures_listar_e_assinar_isolam_por_cliente():
             ids = {s["id"] for s in (await listar(db=db, cu=user_a))["data"]}
             assert sig_a in ids and sig_b not in ids
 
-            # assinar IDOR: A forjando a solicitação de B → 404 (antes de tocar
-            # qualquer evidência; request nem é usado nesse caminho).
-            req = types.SimpleNamespace(headers={}, client=None)
+            # assinar IDOR: A forjando a solicitação de B → 404 (isolamento por
+            # client_id, antes de tocar qualquer arquivo/evidência).
+            req = types.SimpleNamespace(headers={}, client=types.SimpleNamespace(host="10.0.0.1"))
             with pytest.raises(HTTPException) as exc:
                 await assinar(sig_id=sig_b, request=req, db=db, cu=user_a)
             assert exc.value.status_code == 404
 
             # assinar POSITIVO: A assina a própria pendente → 200 + comprovante.
             out = await assinar(sig_id=sig_a, request=req, db=db, cu=user_a)
-            assert out["comprovante"]["hash_documento"]
+            assert out["comprovante"]["hash_documento"] == h
         finally:
             await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
 

@@ -348,7 +348,8 @@ async def test_drive_upload_persiste_mime_do_servidor(monkeypatch):
 
     monkeypatch.setattr(
         docs_mod.gd, "upload_file",
-        lambda content, nome, mime, folder: {"id": "drv1", "webViewLink": "http://x"},
+        # assinatura real: upload_file(content, filename, mime_type, folder_id=None, subfolder=None)
+        lambda content, nome, mime, folder_id=None, subfolder=None: {"id": "drv1", "webViewLink": "http://x"},
     )
 
     class _DB(_FakeDB):

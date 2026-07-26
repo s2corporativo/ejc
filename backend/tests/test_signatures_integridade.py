@@ -69,10 +69,13 @@ async def test_criar_solicitacao_barra_advogado_de_outra_carteira():
 
 # ── DOC-108: revalidação de hash no aceite ────────────────────────────────────
 
-async def test_assinar_hash_divergente_barra_e_invalida():
+async def test_assinar_hash_divergente_barra_e_invalida(tmp_path, monkeypatch):
     from app.routers.signatures import assinar
 
     settings = get_settings()
+    # UPLOAD_DIR isolado em tmp gravável (o padrão /app/uploads não existe fora
+    # do container). `assinar` lê o mesmo get_settings() cacheado.
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
     rel = f"teste_sig_{uuid4().hex}.pdf"
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     full = os.path.join(settings.UPLOAD_DIR, rel)
@@ -94,10 +97,12 @@ async def test_assinar_hash_divergente_barra_e_invalida():
         os.remove(full)
 
 
-async def test_assinar_hash_coincidente_registra_revalidado():
+async def test_assinar_hash_coincidente_registra_revalidado(tmp_path, monkeypatch):
     from app.routers.signatures import assinar
 
     settings = get_settings()
+    # UPLOAD_DIR isolado em tmp gravável (idem ao teste acima).
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
     rel = f"teste_sig_ok_{uuid4().hex}.pdf"
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     full = os.path.join(settings.UPLOAD_DIR, rel)
