@@ -514,7 +514,8 @@ async def test_signatures_listar_inclui_signatarios():
         _Res(lista=[("d1", "Procuração (teste)")]),  # títulos dos docs
         _Res(lista=[portal]),                      # logins do portal
     ])
-    cu = SimpleNamespace(role=UserRole.advogado, client_id=None)
+    cu = SimpleNamespace(id="adv1", role=UserRole.advogado, client_id=None)
+    # `id` necessário: staff não-gestão agora filtra por carteira (subquery)
 
     r = await listar(db=db, cu=cu)
     item = r["data"][0]
@@ -539,7 +540,8 @@ async def test_signatures_listar_sem_login_de_portal_lista_vazia():
         _Res(lista=[("d2", "Contrato (teste)")]),
         _Res(lista=[]),                            # cliente sem login de portal
     ])
-    cu = SimpleNamespace(role=UserRole.advogado, client_id=None)
+    cu = SimpleNamespace(id="adv1", role=UserRole.advogado, client_id=None)
+    # `id` necessário: staff não-gestão agora filtra por carteira (subquery)
 
     r = await listar(db=db, cu=cu)
     assert r["data"][0]["signatarios"] == []       # campo sempre presente

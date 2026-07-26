@@ -13,8 +13,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_ownership import ids_clientes_visiveis, visao_total_clientes
 from app.core.database import get_db
-from app.core.security import get_current_user, require_roles
+from app.core.ownership import role_str
+from app.core.security import ROLE_LEVEL, get_current_user, require_roles
 from app.models.user import User, UserRole
 from app.models.case import Case
 from app.models.document import Document
@@ -109,10 +111,18 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Staff: todas. Cliente do portal: apenas as suas (pendentes primeiro)."""
+    """Gestão/secretaria: todas. Demais staff: só as da própria carteira.
+    Cliente do portal: apenas as suas (pendentes primeiro)."""
     q = select(SignatureRequest).where(SignatureRequest.deleted_at.is_(None))
     if cu.role == UserRole.cliente_externo:
         q = q.where(SignatureRequest.client_id == cu.client_id)
+    elif not visao_total_clientes(cu):
+        # Pente fino 2026-07-26: antes QUALQUER papel staff (estagiario/
+        # financeiro incluídos) listava TODAS as solicitações. Agora staff
+        # não-gestão vê só as de clientes da sua carteira — mesmo padrão de
+        # visibilidade de centro_custos/compliance/bank_analysis, via subquery
+        # única de client_ownership (sem N+1).
+        q = q.where(SignatureRequest.client_id.in_(ids_clientes_visiveis(cu)))
     rows = (await db.execute(
         q.order_by(SignatureRequest.status, SignatureRequest.created_at.desc())
     )).scalars().all()
@@ -141,6 +151,14 @@ async def listar(
         for u in portais:
             por_cliente.setdefault(u.client_id, []).append(u)
 
+    # `hash_completo` (conferência de integridade) só para quem tem interesse
+    # legítimo: o próprio cliente (a query já filtra por client_id acima) e
+    # advogado+ (advogado, socio, admin, superadmin). Papéis de apoio
+    # (estagiario/secretaria/financeiro) ficam com o `hash` abreviado.
+    ve_hash_completo = (
+        cu.role == UserRole.cliente_externo
+        or ROLE_LEVEL.get(role_str(cu), 0) >= ROLE_LEVEL["advogado"]
+    )
     out = []
     for s in rows:
         out.append({
@@ -150,11 +168,9 @@ async def listar(
             "signatarios": [_signatario(u, s)
                             for u in por_cliente.get(s.client_id, [])],
             "status": s.status.value,
-            # `hash` abreviado mantido por compatibilidade; `hash_completo`
-            # permite conferência de integridade. Sem risco novo: para
-            # cliente_externo a query já filtra por client_id acima.
+            # `hash` abreviado mantido por compatibilidade.
             "hash": s.hash_sha256[:16] + "…",
-            "hash_completo": s.hash_sha256,
+            "hash_completo": s.hash_sha256 if ve_hash_completo else None,
             "assinado_em": s.assinado_em, "created_at": s.created_at,
         })
     return {"data": out}
