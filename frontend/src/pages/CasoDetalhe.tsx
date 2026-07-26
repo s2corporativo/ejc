@@ -140,8 +140,7 @@ const GROUP_LINKS: Record<
       to: (id) => `/casos/${id}/entrevista`,
     },
   ],
-  Estratégia: [
-  ],
+  Estratégia: [],
 };
 
 export const GROUPS: {

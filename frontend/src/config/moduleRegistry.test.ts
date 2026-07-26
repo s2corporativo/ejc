@@ -66,7 +66,9 @@ describe("moduleRegistry", () => {
     expect(raioX?.showInNav).toBe(true);
     expect(raioX?.essential).toBe(false);
     expect(advogado.some((item) => item.path === "/raio-x")).toBe(true);
-    expect(STAFF_ROUTES.some((item) => item.path === "/sala-analise")).toBe(false);
+    expect(STAFF_ROUTES.some((item) => item.path === "/sala-analise")).toBe(
+      false,
+    );
   });
 
   it("mantém preferências pessoais acessíveis a qualquer usuário interno", () => {
