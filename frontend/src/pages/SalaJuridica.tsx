@@ -134,6 +134,18 @@ export default function SalaJuridica() {
   const [workspace, setWorkspace] = useState("");
   const [abaEstado, setAbaEstado] = useState<(typeof ABAS_ESTADO)[number]>("fatos");
   const [busca, setBusca] = useState("");
+  const [wizardAberto, setWizardAberto] = useState(false);
+  const [convClienteBusca, setConvClienteBusca] = useState("");
+  const [convClientes, setConvClientes] = useState<
+    Array<{ id: string; nome?: string | null; razao_social?: string | null }>
+  >([]);
+  const [convClienteId, setConvClienteId] = useState<string | null>(null);
+  const [convNovoCliente, setConvNovoCliente] = useState("");
+  const [convArea, setConvArea] = useState("civil");
+  const [convTitulo, setConvTitulo] = useState("");
+  const [convConflito, setConvConflito] = useState(false);
+  const [convRevisado, setConvRevisado] = useState(false);
+  const [convertendo, setConvertendo] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const autosaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -255,6 +267,63 @@ export default function SalaJuridica() {
     await carregarLista();
   };
 
+  const abrirWizard = () => {
+    if (!ativa) return;
+    setConvTitulo(ativa.titulo);
+    setConvNovoCliente(ativa.cliente_potencial ?? "");
+    setConvClienteId(null);
+    setConvConflito(false);
+    setConvRevisado(false);
+    setWizardAberto(true);
+  };
+
+  const buscarClientes = async (termo: string) => {
+    setConvClienteBusca(termo);
+    if (termo.trim().length < 2) {
+      setConvClientes([]);
+      return;
+    }
+    try {
+      const { data } = await api.get("/clients", {
+        params: { search: termo.trim(), page_size: 8 },
+      });
+      setConvClientes(data?.items ?? data ?? []);
+    } catch {
+      setConvClientes([]);
+    }
+  };
+
+  const converterEmCaso = async () => {
+    if (!ativa || convertendo) return;
+    setConvertendo(true);
+    try {
+      const { data } = await api.post(`/sala-juridica/${ativa.id}/converter`, {
+        client_id: convClienteId,
+        novo_cliente_nome: convClienteId ? null : convNovoCliente.trim() || null,
+        area: convArea,
+        titulo_caso: convTitulo.trim(),
+        advogado_responsavel_id: user?.id,
+        confirmo_conflito_verificado: convConflito,
+        confirmo_dados_revisados: convRevisado,
+      });
+      toast.success(
+        data?.ja_convertido
+          ? "Análise já estava convertida"
+          : "Caso criado — análise congelada para auditoria",
+      );
+      setWizardAberto(false);
+      await abrirSessao(ativa.id);
+      await carregarLista();
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "Falha na conversão";
+      toast.error(String(detail));
+    } finally {
+      setConvertendo(false);
+    }
+  };
+
   const sessoesFiltradas = useMemo(() => {
     const q = busca.trim().toLowerCase();
     if (!q) return sessoes;
@@ -304,11 +373,7 @@ export default function SalaJuridica() {
             <Button
               variant="secondary"
               disabled={!ativa || ativa.frozen}
-              onClick={() =>
-                toast.info(
-                  "Conversão em caso: confira cliente, conflito, área e responsável na próxima etapa (POST /converter)",
-                )
-              }
+              onClick={abrirWizard}
             >
               <FolderInput className="h-4 w-4" /> Transformar em caso
             </Button>
@@ -587,6 +652,133 @@ export default function SalaJuridica() {
           </div>
         </aside>
       </div>
+
+      {/* ── Wizard de conversão em caso (conferência obrigatória) ─────── */}
+      {wizardAberto && ativa && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="mb-1 text-lg font-bold text-primary-900">
+              Transformar em caso — conferência obrigatória
+            </h2>
+            <p className="mb-4 text-xs text-slate-500">
+              Após a conversão, a análise é congelada para auditoria e o caso
+              recebe cliente, documentos, estado probatório e histórico.
+            </p>
+
+            <p className="mb-1 text-xs font-bold uppercase text-slate-500">
+              1 · Cliente
+            </p>
+            <Input
+              placeholder="Buscar cliente por nome, CPF ou CNPJ…"
+              value={convClienteBusca}
+              onChange={(e) => void buscarClientes(e.target.value)}
+            />
+            {convClientes.length > 0 && (
+              <div className="mt-1 rounded border border-slate-200">
+                {convClientes.map((c) => (
+                  <button
+                    key={c.id}
+                    className={cn(
+                      "block w-full px-3 py-1.5 text-left text-sm hover:bg-slate-50",
+                      convClienteId === c.id && "bg-primary-50 font-semibold",
+                    )}
+                    onClick={() => setConvClienteId(c.id)}
+                  >
+                    {c.nome ?? c.razao_social ?? c.id}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="my-2 text-center text-[11px] text-slate-400">
+              — ou criar novo cliente —
+            </p>
+            <Input
+              placeholder="Nome do novo cliente"
+              value={convNovoCliente}
+              disabled={convClienteId != null}
+              onChange={(e) => setConvNovoCliente(e.target.value)}
+            />
+            {convClienteId != null && (
+              <button
+                className="mt-1 text-xs text-primary-700 underline"
+                onClick={() => setConvClienteId(null)}
+              >
+                limpar seleção e criar novo cliente
+              </button>
+            )}
+
+            <p className="mb-1 mt-4 text-xs font-bold uppercase text-slate-500">
+              2 · Caso
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input
+                placeholder="Título do caso"
+                value={convTitulo}
+                onChange={(e) => setConvTitulo(e.target.value)}
+              />
+              <Select value={convArea} onChange={(e) => setConvArea(e.target.value)}>
+                {[
+                  "civil", "trabalhista", "consumidor", "familia", "ambiental",
+                  "criminal", "previdenciario", "empresarial", "tributario",
+                  "administrativo", "bancario", "imobiliario",
+                ].map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Responsável: {user?.full_name} (você)
+            </p>
+
+            <p className="mb-1 mt-4 text-xs font-bold uppercase text-slate-500">
+              3 · Confirmações
+            </p>
+            <label className="mb-1 flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={convConflito}
+                onChange={(e) => setConvConflito(e.target.checked)}
+              />
+              Verifiquei conflito de interesses e duplicidade de casos.
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={convRevisado}
+                onChange={(e) => setConvRevisado(e.target.checked)}
+              />
+              Revisei fatos, provas, pendências e documentos desta análise.
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setWizardAberto(false)}>
+                Cancelar
+              </Button>
+              <Button
+                disabled={
+                  convertendo ||
+                  !convConflito ||
+                  !convRevisado ||
+                  !convTitulo.trim() ||
+                  (convClienteId == null && !convNovoCliente.trim())
+                }
+                onClick={() => void converterEmCaso()}
+              >
+                {convertendo ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FolderInput className="h-4 w-4" />
+                )}
+                Confirmar conversão
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

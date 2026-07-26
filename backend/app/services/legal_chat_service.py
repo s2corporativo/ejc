@@ -217,19 +217,36 @@ async def enviar_mensagem(
     )
     db.add(msg_ia)
 
-    # Estado: V1 acumula fontes/alertas automaticamente; a curadoria fina
-    # (fatos/teses/riscos) é do advogado via PATCH /estado.
+    # Estado: merge automático de fontes + (V2) extração estruturada pela IA
+    # local. A extração NUNCA bloqueia a resposta: qualquer falha degrada para
+    # o merge de fontes, e a curadoria fina segue disponível via PATCH /estado.
     atual = await ultima_versao_estado(db, sessao.id)
     estado = dict((atual.estado if atual else {}) or {})
     fontes = {(f.get("titulo"), f.get("fonte")): f for f in estado.get("fontes", [])}
     for f in resultado.get("fontes") or []:
         fontes.setdefault((f.get("titulo"), f.get("fonte")), f)
     estado["fontes"] = list(fontes.values())
+
+    origem_estado = "ia"
+    resumo_estado: str | None = None
+    from app.core.config import get_settings
+    if get_settings().SALA_JURIDICA_AUTO_ESTADO:
+        extraido = await _extrair_estado_automatico(
+            db, user, estado_atual=estado,
+            pergunta=payload.conteudo,
+            resposta=resultado.get("conteudo") or "",
+        )
+        if extraido is not None:
+            resumo_estado = extraido.pop("_resumo", None)
+            extraido["fontes"] = estado["fontes"]  # fontes vêm do RAG, não do LLM
+            estado = extraido
+            origem_estado = "ia_extracao"
+
     versao = await gravar_versao_estado(
         db, sessao,
         estado=estado,
-        resumo=None,
-        origem="ia",
+        resumo=resumo_estado,
+        origem=origem_estado,
         created_by=None,
     )
     msg_ia.estado_versao = versao.versao
@@ -244,6 +261,87 @@ async def enviar_mensagem(
         "aviso_hitl": resultado.get("aviso_hitl"),
         "critica_adversarial": resultado.get("critica_adversarial"),
     }
+
+
+_CHAVES_ESTADO = {
+    "fatos", "provas", "contradicoes", "questoes", "teses",
+    "riscos", "pendencias", "cronologia", "fontes",
+}
+
+_PROMPT_EXTRACAO = """Você é o extrator de estado jurídico da Sala Jurídica.
+Atualize o ESTADO CONSOLIDADO abaixo com base na última interação, e responda
+SOMENTE com um objeto JSON válido (sem markdown, sem comentários) com as chaves:
+fatos, provas, contradicoes, questoes, teses, riscos, pendencias, cronologia,
+_resumo (string de até 3 frases com a síntese atual).
+
+Regras invioláveis:
+- cada fato tem {{"texto": ..., "classificacao": "comprovado"|"alegado"|"inferido"|"controvertido"|"ausente"|"superado"}};
+- NUNCA promova um fato a "comprovado" sem prova documental mencionada;
+- fato substituído por informação posterior vira "superado" (não é apagado);
+- riscos têm {{"descricao": ..., "nivel": "baixo"|"medio"|"alto"}};
+- não invente fatos, provas nem fontes que não constem da interação/estado.
+
+ESTADO CONSOLIDADO ATUAL:
+{estado}
+
+PERGUNTA DO ADVOGADO:
+{pergunta}
+
+RESPOSTA DA ANÁLISE:
+{resposta}"""
+
+
+async def _extrair_estado_automatico(
+    db,
+    user,
+    *,
+    estado_atual: dict,
+    pergunta: str,
+    resposta: str,
+) -> dict | None:
+    """Extração estruturada do estado via provider local (task_type "resumo").
+
+    Retorna o novo estado validado, ou None em qualquer falha (fail-soft):
+    JSON inválido, chaves desconhecidas, provider indisponível.
+    """
+    import json
+
+    from app.services.ai.core.orchestrator import run_ai_task
+
+    try:
+        mensagem = _PROMPT_EXTRACAO.format(
+            estado=json.dumps(
+                {k: v for k, v in estado_atual.items() if k != "fontes"},
+                ensure_ascii=False,
+            )[:12_000],
+            pergunta=pergunta[:4_000],
+            resposta=resposta[:12_000],
+        )
+        r = await run_ai_task(
+            db=db,
+            user=user,
+            task_type="resumo",
+            mensagem=mensagem,
+            params={"module_key": "sala-juridica", "surface": "sala_juridica_estado"},
+            usar_rag=False,
+        )
+        bruto = r.get("conteudo") or ""
+        inicio, fim = bruto.find("{"), bruto.rfind("}")
+        if inicio < 0 or fim <= inicio:
+            return None
+        dados = json.loads(bruto[inicio : fim + 1])
+        if not isinstance(dados, dict):
+            return None
+        resumo = dados.pop("_resumo", None)
+        if set(dados) - _CHAVES_ESTADO:
+            return None
+        if not all(isinstance(v, list) for v in dados.values()):
+            return None
+        if resumo is not None:
+            dados["_resumo"] = str(resumo)[:2_000]
+        return dados
+    except Exception:  # fail-soft deliberado: extração jamais bloqueia a resposta
+        return None
 
 
 async def converter_em_caso(

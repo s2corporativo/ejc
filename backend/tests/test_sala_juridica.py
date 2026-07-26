@@ -108,3 +108,40 @@ def test_descartar_sem_justificativa_422():
 
 def test_arquivar_sem_justificativa_ok():
     assert SaidaAlternativaRequest(acao="arquivar").acao == "arquivar"
+
+
+# ── extração automática de estado (V2) ───────────────────────────────────────
+
+async def _rodar_extracao(monkeypatch, conteudo_llm: str):
+    from app.services import legal_chat_service as svc
+
+    async def fake_run_ai_task(**kwargs):
+        return {"conteudo": conteudo_llm}
+
+    import app.services.ai.core.orchestrator as orch
+    monkeypatch.setattr(orch, "run_ai_task", fake_run_ai_task)
+    return await svc._extrair_estado_automatico(
+        None, None, estado_atual={"fontes": []},
+        pergunta="p", resposta="r",
+    )
+
+
+@pytest.mark.anyio
+async def test_extracao_estado_json_valido(monkeypatch):
+    saida = await _rodar_extracao(
+        monkeypatch,
+        '{"fatos": [{"texto": "x", "classificacao": "alegado"}], "_resumo": "ok"}',
+    )
+    assert saida is not None
+    assert saida["fatos"][0]["classificacao"] == "alegado"
+    assert saida["_resumo"] == "ok"
+
+
+@pytest.mark.anyio
+async def test_extracao_estado_json_invalido_fail_soft(monkeypatch):
+    assert await _rodar_extracao(monkeypatch, "não sei responder em JSON") is None
+
+
+@pytest.mark.anyio
+async def test_extracao_estado_chave_desconhecida_fail_soft(monkeypatch):
+    assert await _rodar_extracao(monkeypatch, '{"achismos": []}') is None
