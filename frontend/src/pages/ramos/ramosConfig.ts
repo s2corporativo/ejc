@@ -189,7 +189,6 @@ const empresarial: RamoConfig = {
     },
     {
       id: "verificar-cade",
-      homologada: false,
       titulo: "Verificar Notificação CADE",
       descricao: "Obrigatoriedade de notificar ato de concentração.",
       baseLegal: "Lei 12.529/2011 art. 88",
@@ -384,14 +383,14 @@ const civel: RamoConfig = {
       id: "dano-moral",
       titulo: "Parâmetros de Dano Moral",
       descricao:
-        "Faixas STJ por tipo de caso — negativação, extravio, produto defeituoso etc.",
+        "Critérios de arbitramento (CC art. 944) — não sugere valor nem faixa; a fixação é judicial.",
       baseLegal: "CC art. 944 + STJ",
       grupo: "Consumidor",
       endpoint: "/civel/ferramentas/calculo-dano-moral",
       campos: [
         {
           nome: "tipo_caso",
-          label: "Tipo de caso",
+          label: "Tipo de caso (opcional, qualificador)",
           tipo: "select",
           opcoes: [
             "negativacao_indevida",
@@ -401,13 +400,12 @@ const civel: RamoConfig = {
             "cobranca_abusiva",
             "outro",
           ],
-          default: "negativacao_indevida",
         },
         {
           nome: "salarios_minimos_pedido",
-          label: "Quantum pedido (SMs)",
+          label: "Quantum pedido (SMs) — opcional",
           tipo: "number",
-          default: 10,
+          default: 0,
         },
       ],
     },
@@ -1255,7 +1253,7 @@ const bancario: RamoConfig = {
       id: "analise-juros",
       titulo: "Análise de Juros e Spread",
       descricao:
-        "Spread contratado vs. referência BCB — indício de abusividade.",
+        "Spread contratado vs. referência BCB — classificação indicativa; abusividade é decisão judicial.",
       baseLegal: "Súm. STJ 530 · REsp 1.061.530",
       endpoint: "/bancario/ferramentas/analise-juros",
       campos: [
@@ -1310,8 +1308,9 @@ const bancario: RamoConfig = {
     },
     {
       id: "juros-abusivos",
-      titulo: "Juros Abusivos (revisional)",
-      descricao: "Compara a taxa contratada com a média de mercado (BACEN).",
+      titulo: "Comparativo de Juros (revisional)",
+      descricao:
+        "Compara a taxa contratada com a média de mercado (BACEN) — classificação indicativa, não declara abusividade.",
       baseLegal: "STJ REsp 1.061.530 · Súmula 530 STJ",
       grupo: "Revisional",
       endpoint: "/bancario/ferramentas/juros-abusivos",
@@ -1564,12 +1563,19 @@ const tributario: RamoConfig = {
     },
     {
       id: "multa-mora",
-      titulo: "Multa de Mora (tributo federal)",
-      descricao: "0,33%/dia limitada a 20% (+ Selic, não incluída).",
+      titulo: "Multa de Mora",
+      descricao:
+        "Federal: 0,33%/dia limitada a 20% (+ Selic, não incluída). Estadual/municipal: orientação, sem cálculo.",
       baseLegal: "Lei 9.430/96 art. 61",
       grupo: "Cálculos",
       endpoint: "/tributario/ferramentas/multa-mora",
       campos: [
+        {
+          nome: "ente",
+          label: "Ente tributante",
+          tipo: "select",
+          opcoes: ["federal", "estadual", "municipal"],
+        },
         {
           nome: "valor_tributo",
           label: "Valor do tributo (R$)",
@@ -1747,6 +1753,12 @@ const ambiental: RamoConfig = {
       grupo: "Licenciamento",
       endpoint: "/ambiental/ferramentas/licenciamento",
       campos: [
+        { nome: "uf", label: "UF (2 letras)", tipo: "text" },
+        {
+          nome: "orgao",
+          label: "Órgão licenciador (opcional)",
+          tipo: "text",
+        },
         {
           nome: "fase",
           label: "Fase da licença",
@@ -1777,6 +1789,8 @@ const ambiental: RamoConfig = {
       grupo: "Propriedade Rural",
       endpoint: "/ambiental/ferramentas/reserva-legal",
       campos: [
+        { nome: "uf", label: "UF (2 letras)", tipo: "text" },
+        { nome: "municipio", label: "Município (opcional)", tipo: "text" },
         {
           nome: "area_imovel_ha",
           label: "Área total do imóvel (hectares)",
@@ -1832,7 +1846,6 @@ const consumidor: RamoConfig = {
   ferramentas: [
     {
       id: "devolucao-dobro",
-      homologada: false,
       titulo: "Devolução em Dobro (art. 42)",
       descricao: "Repetição do indébito em dobro por cobrança indevida.",
       baseLegal: "CDC art. 42 §ú · STJ EAREsp 676.608",
@@ -1840,42 +1853,57 @@ const consumidor: RamoConfig = {
       endpoint: "/consumidor/ferramentas/devolucao-dobro",
       campos: [
         {
-          nome: "valor_cobrado",
+          nome: "valor_cobrado_indevidamente",
           label: "Valor cobrado indevidamente (R$)",
           tipo: "number",
         },
         {
-          nome: "houve_ma_fe",
-          label: "Cobrança sem engano justificável?",
+          nome: "houve_pagamento",
+          label: "Houve pagamento pelo consumidor?",
           tipo: "select",
           opcoes: ["sim", "nao"],
-          default: "sim",
+        },
+        {
+          nome: "cobranca_contraria_boa_fe_objetiva",
+          label: "Cobrança contrária à boa-fé objetiva?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "engano_justificavel",
+          label: "Houve engano justificável?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
         },
       ],
     },
     {
       id: "prazos-cdc",
-      homologada: false,
       titulo: "Prazos CDC (decadência/prescrição)",
       descricao:
-        "Vício (30/90d), fato (5a), cobrança indevida (3a), arrependimento (7d).",
-      baseLegal: "CDC arts. 26, 27, 49",
+        "Vício aparente (30/90d), vício oculto, acidente de consumo (5a) e repetição do indébito (3a).",
+      baseLegal: "CDC arts. 26, 27",
       grupo: "Prazos",
       endpoint: "/consumidor/ferramentas/prazos-cdc",
       campos: [
-        { nome: "data_fato", label: "Data do fato / entrega", tipo: "date" },
         {
-          nome: "tipo",
-          label: "Tipo de pretensão",
+          nome: "pretensao",
+          label: "Pretensão",
           tipo: "select",
           opcoes: [
-            "vicio_duravel",
-            "vicio_nao_duravel",
-            "arrependimento",
-            "fato",
-            "cobranca_indevida",
+            "vicio_aparente_nao_duravel",
+            "vicio_aparente_duravel",
+            "vicio_oculto",
+            "acidente_de_consumo",
+            "repeticao_indebito_contratual",
           ],
-          default: "vicio_duravel",
+        },
+        { nome: "data_marco", label: "Data do marco inicial", tipo: "date" },
+        {
+          nome: "bem_duravel",
+          label: "Bem durável? (obrigatório em vício oculto)",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
         },
       ],
     },
@@ -1888,11 +1916,22 @@ const consumidor: RamoConfig = {
       endpoint: "/consumidor/ferramentas/negativacao-indevida",
       campos: [
         {
-          nome: "existe_inscricao_anterior_legitima",
-          label: "Há inscrição anterior legítima?",
+          nome: "existe_inscricao_anterior",
+          label: "Há inscrição anterior?",
           tipo: "select",
-          opcoes: ["nao", "sim"],
-          default: "nao",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "inscricao_anterior_legitima_e_ativa",
+          label: "Inscrição anterior legítima e ativa? (se houver anterior)",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "origem_verificada",
+          label: "Origem do débito verificada? (se houver anterior)",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
         },
       ],
     },
@@ -1921,11 +1960,20 @@ const familia: RamoConfig = {
       endpoint: "/familia/ferramentas/debito-alimentos",
       campos: [
         {
-          nome: "valor_mensal",
-          label: "Valor mensal da pensão (R$)",
+          nome: "datas_vencimento_em_aberto",
+          label: "Vencimentos em aberto (datas AAAA-MM-DD, por vírgula)",
+          tipo: "text",
+        },
+        {
+          nome: "data_ajuizamento_execucao",
+          label: "Ajuizamento da execução",
+          tipo: "date",
+        },
+        {
+          nome: "valor_parcela",
+          label: "Valor da parcela (R$) — opcional",
           tipo: "number",
         },
-        { nome: "meses_atraso", label: "Meses em atraso", tipo: "number" },
       ],
     },
     {
@@ -1938,11 +1986,16 @@ const familia: RamoConfig = {
       endpoint: "/familia/ferramentas/itcmd-inventario",
       campos: [
         { nome: "valor_monte", label: "Valor do monte (R$)", tipo: "number" },
+        { nome: "uf", label: "UF (2 letras)", tipo: "text" },
         {
-          nome: "aliquota_percentual",
-          label: "Alíquota ITCMD (%)",
+          nome: "aliquota_percent",
+          label: "Alíquota ITCMD (%) — 0 a 8",
           tipo: "number",
-          default: 5,
+        },
+        {
+          nome: "data_fato_gerador",
+          label: "Data do fato gerador",
+          tipo: "date",
         },
       ],
     },
@@ -1988,6 +2041,12 @@ const imobiliario: RamoConfig = {
       campos: [
         { nome: "data_citacao", label: "Data da citação", tipo: "date" },
         {
+          nome: "forma_comunicacao",
+          label: "Forma de comunicação",
+          tipo: "select",
+          opcoes: ["citacao_pessoal", "citacao_ficta"],
+        },
+        {
           nome: "fundamento",
           label: "Fundamento",
           tipo: "select",
@@ -2006,11 +2065,30 @@ const imobiliario: RamoConfig = {
       campos: [
         { nome: "valor_pago", label: "Valor já pago (R$)", tipo: "number" },
         {
-          nome: "tem_patrimonio_afetacao",
-          label: "Há patrimônio de afetação?",
+          nome: "regime_patrimonio_afetacao",
+          label: "Regime de patrimônio de afetação?",
           tipo: "select",
-          opcoes: ["nao", "sim"],
-          default: "nao",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "percentual_retencao",
+          label: "Retenção (%) — teto 50 com afetação / 25 sem",
+          tipo: "number",
+        },
+        {
+          nome: "comissao_corretagem",
+          label: "Comissão de corretagem (R$) — opcional",
+          tipo: "number",
+        },
+        {
+          nome: "meses_fruicao",
+          label: "Meses de fruição — opcional",
+          tipo: "number",
+        },
+        {
+          nome: "valor_fruicao_mensal",
+          label: "Fruição mensal (R$) — opcional",
+          tipo: "number",
         },
       ],
     },
@@ -2033,7 +2111,6 @@ const previdenciario: RamoConfig = {
   ferramentas: [
     {
       id: "prazos-previdenciario",
-      homologada: false,
       titulo: "Prazos Previdenciários",
       descricao:
         "Recurso ao CRPS (30d), decadência de revisão (10a) e prescrição (5a).",
@@ -2042,20 +2119,29 @@ const previdenciario: RamoConfig = {
       endpoint: "/previdenciario/ferramentas/prazos",
       campos: [
         {
-          nome: "data_indeferimento",
-          label: "Data do indeferimento / concessão",
+          nome: "natureza",
+          label: "Natureza do prazo",
+          tipo: "select",
+          opcoes: [
+            "revisao_ato_concessao",
+            "recurso_administrativo",
+            "parcelas_atrasadas",
+          ],
+        },
+        {
+          nome: "data_primeiro_pagamento",
+          label: "1º pagamento do benefício (revisão)",
           tipo: "date",
         },
         {
-          nome: "tipo",
-          label: "Tipo de prazo",
-          tipo: "select",
-          opcoes: [
-            "recurso_administrativo",
-            "decadencia_revisao",
-            "prescricao_parcelas",
-          ],
-          default: "recurso_administrativo",
+          nome: "data_ciencia_decisao",
+          label: "Ciência da decisão (recurso)",
+          tipo: "date",
+        },
+        {
+          nome: "data_ajuizamento",
+          label: "Ajuizamento (parcelas) — opcional",
+          tipo: "date",
         },
       ],
     },
@@ -2075,11 +2161,12 @@ const previdenciario: RamoConfig = {
           tipo: "number",
         },
         {
+          // O backend aceita apenas "F"/"M" (outro valor → 422); o significado
+          // vai no rótulo porque `opcoes` não suporta par valor/label.
           nome: "sexo",
-          label: "Sexo",
+          label: "Sexo (F = feminino · M = masculino)",
           tipo: "select",
-          opcoes: ["M", "F"],
-          default: "M",
+          opcoes: ["F", "M"],
         },
         {
           nome: "ano",
@@ -2098,23 +2185,35 @@ const previdenciario: RamoConfig = {
       endpoint: "/previdenciario/ferramentas/carencia",
       campos: [
         {
+          nome: "beneficio",
+          label: "Benefício",
+          tipo: "select",
+          opcoes: [
+            "aposentadoria_idade_tc",
+            "auxilio_incapacidade",
+            "salario_maternidade",
+          ],
+        },
+        {
+          nome: "categoria",
+          label: "Categoria da segurada(o)",
+          tipo: "select",
+          opcoes: [
+            "empregada",
+            "contribuinte_individual_facultativa",
+            "segurada_especial",
+          ],
+        },
+        {
           nome: "meses_contribuicao",
           label: "Meses de contribuição",
           tipo: "number",
         },
         {
-          nome: "beneficio",
-          label: "Benefício",
+          nome: "decorre_acidente_ou_doenca_isenta",
+          label: "Decorre de acidente ou doença isenta de carência?",
           tipo: "select",
-          opcoes: [
-            "aposentadoria",
-            "auxilio_doenca",
-            "aposentadoria_invalidez",
-            "salario_maternidade",
-            "auxilio_acidente",
-            "pensao_morte",
-          ],
-          default: "aposentadoria",
+          opcoes: ["sim", "nao"],
         },
       ],
     },
@@ -2163,16 +2262,20 @@ const digital_lgpd: RamoConfig = {
       endpoint: "/digital_lgpd/ferramentas/prazos-lgpd",
       campos: [
         {
-          nome: "data_evento",
-          label: "Data do pedido / incidente",
-          tipo: "date",
-        },
-        {
           nome: "tipo",
           label: "Tipo",
           tipo: "select",
-          opcoes: ["resposta_titular", "incidente_anpd"],
-          default: "resposta_titular",
+          opcoes: ["resposta_titular", "incidente"],
+        },
+        {
+          nome: "data_evento",
+          label: "Data do pedido do titular (resposta ao titular)",
+          tipo: "date",
+        },
+        {
+          nome: "data_conhecimento",
+          label: "Data de conhecimento do incidente (incidente)",
+          tipo: "date",
         },
       ],
     },

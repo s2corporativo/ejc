@@ -7,7 +7,7 @@ import {
   AVISO_FERRAMENTA_NAO_HOMOLOGADA,
   mensagemErroFerramenta,
 } from "../../lib/iaErro";
-import RodapeRegra from "../../components/RodapeRegra";
+import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
 import AnaliseEstrategica from "../../components/AnaliseEstrategica";
 import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
@@ -139,12 +139,9 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
               // Exibidos no aviso dedicado de homologação — não na tabela.
               if (k === "homologada" || k === "aviso_homologacao") return null;
               // Metadados de regra vão para o rodapé <RodapeRegra />.
-              if (
-                k === "fontes" ||
-                k === "vigencia_regra" ||
-                k === "versao_regra"
-              )
-                return null;
+              if (METADADOS_REGRA.includes(k)) return null;
+              // Nulos são omitidos — imprimiriam "null" na tela.
+              if (v === null || v === undefined) return null;
               if (k === "aviso")
                 return (
                   <p
