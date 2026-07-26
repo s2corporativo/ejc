@@ -82,6 +82,6 @@
     {"module_key": "produtividade", "kind": "smoke", "frontend_route": "/produtividade", "api_checks": [{"method": "GET", "path": "/api/produtividade/", "expected": [200, 404]}]},
     {"module_key": "usuarios", "kind": "security", "frontend_route": "/usuarios", "api_checks": [{"method": "GET", "path": "/api/users/me", "expected": [200]}]},
     {"module_key": "mapa-modulos", "kind": "governance", "frontend_route": "/mapa-modulos", "api_checks": [{"method": "GET", "path": "/api/system-modules/mapa", "expected": [200]}]},
-    {"module_key": "autofix", "kind": "governance", "frontend_route": "/diagnostico", "api_checks": [{"method": "GET", "path": "/api/module-help/diagnostico-sistema", "expected": [200, 403]}]}
+    {"module_key": "central-diagnostico", "kind": "governance", "frontend_route": "/diagnostico", "api_checks": [{"method": "GET", "path": "/api/diagnostico/central", "expected": [200, 403]}]}
   ]
 }

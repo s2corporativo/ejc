@@ -182,7 +182,7 @@ MODULE_METHODS: dict[str, str] = {
     "produtividade": "Meça trabalho com definições transparentes, período, denominador e contexto. Evite vigilância excessiva, ranking enganoso e exposição de dados sensíveis.",
     "usuarios": "Aplique menor privilégio, segregação de funções, MFA quando disponível, ciclo de acesso, revogação, sessões, chaves e auditoria. Nunca revelar credenciais.",
     "mapa-modulos": "Compare registro canônico, rotas, endpoints, ajuda, status, dependências, IA e cobertura de skills; destaque divergências sem criar módulo duplicado.",
-    "autofix": "Diagnostique com evidência técnica, proponha plano, testes e rollback. Não aplicar patch automaticamente nem acessar segredos.",
+    "central-diagnostico": "Diagnostique com evidência técnica, proponha plano, testes e rollback. Não aplicar patch automaticamente nem acessar segredos.",
 }
 
 

@@ -409,11 +409,11 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         responsavel_operacional="gestao",
     ),
     _mod(
-        "autofix",
+        "central-diagnostico",
         "Central de Diagnóstico",
         "Administração",
         "/diagnostico",
-        ["/api/module-help/diagnostico-sistema"],
+        ["/api/diagnostico"],
         status="beta",
         perfis=PERFIS_GESTAO,
         dependencias=["module_help", "module_registry"],
