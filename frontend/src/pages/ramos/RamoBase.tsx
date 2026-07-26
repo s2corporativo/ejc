@@ -41,6 +41,12 @@ import {
   fmtMoney,
 } from "../../components/UI";
 import { RAMOS, type RamoConfig, type FerramentaConfig } from "./ramosConfig";
+import {
+  camposVisiveis,
+  chavesObsoletas,
+  paramsVisiveis,
+} from "./camposCondicionais";
+import { linhasDoResultado, rodapeDoResultado } from "./demonstrativo";
 import GuiaBancario from "../../components/GuiaBancario";
 import AnaliseExtratos from "../../components/AnaliseExtratos";
 import BancarioForense from "../../components/BancarioForense";
@@ -135,21 +141,12 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
     setGerandoDoc(true);
     setDocMsg(null);
     setDocLink(null);
-    const RODAPE = [
-      "aviso",
-      "base",
-      "observacao",
-      "descricao",
-      "homologada",
-      "aviso_homologacao",
-      ...METADADOS_REGRA,
-    ];
-    const linhas = Object.entries(res)
-      .filter(
-        ([k, v]) => !RODAPE.includes(k) && v !== null && typeof v !== "object",
-      )
-      .map(([k, v]) => ({ label: k.replace(/_/g, " "), valor: String(v) }));
-    const rodape = [res.observacao, res.descricao].filter(Boolean).join("\n");
+    // Achata a resposta inteira (objetos e arrays aninhados) — o filtro antigo
+    // só aceitava escalares de 1º nível e produzia peças vazias depois que a
+    // Onda 2 moveu o conteúdo para `marcos[]`, `componentes[]`, `fase_1{}`…
+    const linhas = linhasDoResultado(res);
+    // O rodapé carrega a fundamentação (fontes, vigência, versão da regra).
+    const rodape = rodapeDoResultado(res);
     try {
       // Modo Caso: vincula o demonstrativo ao caso ativo para ele aparecer
       // na listagem de Peças (que filtra pelo caso ativo por padrão).
@@ -180,12 +177,30 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
     }
   };
 
+  // Campos condicionais: só existem para a opção escolhida (ex.: cada fase do
+  // recurso de multa tem a SUA data). Renderizar e enviar os demais gera 422.
+  const visiveis = camposVisiveis(f.campos, vals);
+
+  // Trocar a opção condicionante apaga o que ficou órfão — sem isso o valor
+  // continuaria no estado e voltaria a viajar se o campo reaparecesse.
+  useEffect(() => {
+    const obsoletas = chavesObsoletas(f.campos, vals);
+    if (obsoletas.length === 0) return;
+    setVals((atuais) => {
+      const copia = { ...atuais };
+      obsoletas.forEach((nome) => delete copia[nome]);
+      return copia;
+    });
+  }, [f.campos, vals]);
+
   const calcular = async () => {
     setLoading(true);
     setErro(null);
     setRes(null);
     try {
-      const r = await api.get(f.endpoint, { params: vals });
+      const r = await api.get(f.endpoint, {
+        params: paramsVisiveis(f.campos, vals),
+      });
       setRes(r.data);
     } catch (e: any) {
       // 503 "ferramenta_nao_homologada" vira mensagem controlada — nunca
@@ -236,9 +251,9 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
         </div>
       )}
 
-      {f.campos.length > 0 && (
+      {visiveis.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
-          {f.campos.map((c) => (
+          {visiveis.map((c) => (
             <div
               key={c.nome}
               className={c.tipo === "select" ? "col-span-2 sm:col-span-1" : ""}
@@ -276,7 +291,7 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
       )}
 
       {/* Só mostra botão "Calcular" se não for autoLoad OU se houver campos */}
-      {(!f.autoLoad || f.campos.length > 0) && (
+      {(!f.autoLoad || visiveis.length > 0) && (
         <button
           className="btn-gold text-sm mt-3"
           disabled={loading}

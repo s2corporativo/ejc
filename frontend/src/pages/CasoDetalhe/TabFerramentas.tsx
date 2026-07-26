@@ -13,6 +13,11 @@ import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
 import { RAMOS } from "../ramos/ramosConfig";
 import type { FerramentaConfig } from "../ramos/ramosConfig";
+import {
+  camposVisiveis,
+  chavesObsoletas,
+  paramsVisiveis,
+} from "../ramos/camposCondicionais";
 
 const AREA_PARA_RAMO: Record<string, string[]> = {
   empresarial: ["empresarial"],
@@ -41,12 +46,28 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
   const [loading, setLoading] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
 
+  // Campos condicionais: só a opção escolhida existe para o backend (enviar os
+  // demais devolve 422). Ver camposCondicionais.ts.
+  const visiveis = camposVisiveis(f.campos, vals);
+
+  React.useEffect(() => {
+    const obsoletas = chavesObsoletas(f.campos, vals);
+    if (obsoletas.length === 0) return;
+    setVals((atuais) => {
+      const copia = { ...atuais };
+      obsoletas.forEach((nome) => delete copia[nome]);
+      return copia;
+    });
+  }, [f.campos, vals]);
+
   const calcular = async () => {
     setLoading(true);
     setErro(null);
     setRes(null);
     try {
-      const r = await api.get(f.endpoint, { params: vals });
+      const r = await api.get(f.endpoint, {
+        params: paramsVisiveis(f.campos, vals),
+      });
       setRes(r.data);
     } catch (e: any) {
       // 503 "ferramenta_nao_homologada" vira mensagem controlada — nunca
@@ -80,9 +101,9 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
         )}
       </div>
       <p className="text-[11px] text-slate-400 mb-2">{f.baseLegal}</p>
-      {f.campos.length > 0 && (
+      {visiveis.length > 0 && (
         <div className="grid grid-cols-2 gap-1.5 mb-2">
-          {f.campos.map((c) => (
+          {visiveis.map((c) => (
             <div key={c.nome}>
               <label className="text-[10px] text-slate-500 block mb-0.5">
                 {c.label}
@@ -117,7 +138,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
           ))}
         </div>
       )}
-      {(!f.autoLoad || f.campos.length > 0) && (
+      {(!f.autoLoad || visiveis.length > 0) && (
         <button
           className="btn-gold text-xs py-1 px-3 mt-1"
           disabled={loading}

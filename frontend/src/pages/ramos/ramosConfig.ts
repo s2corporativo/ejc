@@ -19,6 +19,10 @@ export interface FerramentaCampo {
   tipo: "number" | "date" | "select" | "text";
   opcoes?: string[];
   default?: string | number;
+  // Exibe o campo somente quando outro campo do formulário está em um dos
+  // valores listados. Campos escondidos não são enviados — vários endpoints
+  // rejeitam (422) o parâmetro que não corresponde à opção escolhida.
+  mostrarSe?: { campo: string; valores: string[] };
 }
 
 export interface FerramentaConfig {
@@ -235,24 +239,28 @@ const empresarial: RamoConfig = {
         { nome: "data_fim", label: "Data final (opcional)", tipo: "date" },
         {
           nome: "selic_acumulada_percent",
-          label: "SELIC acumulada % (regime legal)",
+          label: "SELIC acumulada no período (%)",
           tipo: "number",
+          mostrarSe: { campo: "regime", valores: ["legal"] },
         },
         {
           nome: "ipca_acumulado_percent",
-          label: "IPCA acumulado % (regime legal)",
+          label: "IPCA acumulado no período (%)",
           tipo: "number",
+          mostrarSe: { campo: "regime", valores: ["legal"] },
         },
         {
           nome: "aplicar_regra_anterior",
-          label: "Regra anterior? (legal, mora antes de 30/08/2024)",
+          label: "Aplicar regra anterior (mora antes de 30/08/2024)?",
           tipo: "select",
           opcoes: ["sim", "nao"],
+          mostrarSe: { campo: "regime", valores: ["legal"] },
         },
         {
           nome: "taxa_mensal_percent",
-          label: "Taxa ao mês % (convencionada)",
+          label: "Taxa pactuada ao mês (%)",
           tipo: "number",
+          mostrarSe: { campo: "regime", valores: ["convencionada"] },
         },
         { nome: "multa_pct", label: "Multa (%) — opcional", tipo: "number" },
       ],
@@ -350,8 +358,15 @@ const civel: RamoConfig = {
           label: "Marco inicial",
           tipo: "select",
           opcoes: ["audiencia_conciliacao", "juntada_citacao"],
+          // No JEC não há prazo em dias contado de marco (Lei 9.099 arts. 28 e 30).
+          mostrarSe: { campo: "rito", valores: ["comum", "fazenda_publica"] },
         },
-        { nome: "data_marco", label: "Data do marco", tipo: "date" },
+        {
+          nome: "data_marco",
+          label: "Data do marco",
+          tipo: "date",
+          mostrarSe: { campo: "rito", valores: ["comum", "fazenda_publica"] },
+        },
       ],
     },
     // ── CONSUMIDOR ───────────────────────────────────────────────────────
@@ -485,6 +500,14 @@ const civel: RamoConfig = {
           ],
         },
         { nome: "anos_posse", label: "Anos de posse", tipo: "number" },
+        {
+          // Query param booleano do FastAPI: aceita true/false (não sim/não).
+          nome: "posse_mansa",
+          label: "Posse mansa e pacífica?",
+          tipo: "select",
+          opcoes: ["true", "false"],
+          default: "true",
+        },
       ],
     },
     {
@@ -519,6 +542,18 @@ const civel: RamoConfig = {
           tipo: "select",
           opcoes: ["locatario", "locador"],
           default: "locatario",
+        },
+        {
+          nome: "prazo_contrato_meses",
+          label: "Prazo do contrato (meses)",
+          tipo: "number",
+          default: 30,
+        },
+        {
+          nome: "multa_contratual_alugueis",
+          label: "Multa pactuada (nº de aluguéis)",
+          tipo: "number",
+          default: 3,
         },
       ],
     },
@@ -1025,20 +1060,24 @@ const _camposRecursoMultaTransito: FerramentaCampo[] = [
     tipo: "select",
     opcoes: ["defesa_previa", "jari", "cetran"],
   },
+  // Cada fase tem marco PRÓPRIO e o backend recusa (422) data de outra fase.
   {
     nome: "data_notificacao_autuacao",
-    label: "Notificação da autuação (defesa prévia)",
+    label: "Notificação da autuação",
     tipo: "date",
+    mostrarSe: { campo: "fase", valores: ["defesa_previa"] },
   },
   {
     nome: "data_notificacao_penalidade",
-    label: "Notificação da penalidade (fase JARI)",
+    label: "Notificação da penalidade",
     tipo: "date",
+    mostrarSe: { campo: "fase", valores: ["jari"] },
   },
   {
     nome: "data_ciencia_decisao_jari",
-    label: "Ciência da decisão da JARI (fase CETRAN)",
+    label: "Ciência da decisão da JARI",
     tipo: "date",
+    mostrarSe: { campo: "fase", valores: ["cetran"] },
   },
   {
     nome: "valor_multa",
@@ -1778,6 +1817,14 @@ const ambiental: RamoConfig = {
           label: "Data do protocolo (se houver)",
           tipo: "date",
         },
+        {
+          // Query param booleano do FastAPI: aceita true/false (não sim/não).
+          nome: "com_eia_rima",
+          label: "Exige EIA/RIMA?",
+          tipo: "select",
+          opcoes: ["true", "false"],
+          default: "false",
+        },
       ],
     },
     {
@@ -1901,9 +1948,10 @@ const consumidor: RamoConfig = {
         { nome: "data_marco", label: "Data do marco inicial", tipo: "date" },
         {
           nome: "bem_duravel",
-          label: "Bem durável? (obrigatório em vício oculto)",
+          label: "Bem durável? (90 dias) ou não durável? (30 dias)",
           tipo: "select",
           opcoes: ["sim", "nao"],
+          mostrarSe: { campo: "pretensao", valores: ["vicio_oculto"] },
         },
       ],
     },
@@ -1923,15 +1971,17 @@ const consumidor: RamoConfig = {
         },
         {
           nome: "inscricao_anterior_legitima_e_ativa",
-          label: "Inscrição anterior legítima e ativa? (se houver anterior)",
+          label: "Inscrição anterior legítima e ativa?",
           tipo: "select",
           opcoes: ["sim", "nao"],
+          mostrarSe: { campo: "existe_inscricao_anterior", valores: ["sim"] },
         },
         {
           nome: "origem_verificada",
-          label: "Origem do débito verificada? (se houver anterior)",
+          label: "Origem do débito verificada?",
           tipo: "select",
           opcoes: ["sim", "nao"],
+          mostrarSe: { campo: "existe_inscricao_anterior", valores: ["sim"] },
         },
       ],
     },
@@ -2128,20 +2178,24 @@ const previdenciario: RamoConfig = {
             "parcelas_atrasadas",
           ],
         },
+        // Cada natureza usa APENAS a sua data — o backend recusa (422) as demais.
         {
           nome: "data_primeiro_pagamento",
-          label: "1º pagamento do benefício (revisão)",
+          label: "1º pagamento do benefício",
           tipo: "date",
+          mostrarSe: { campo: "natureza", valores: ["revisao_ato_concessao"] },
         },
         {
           nome: "data_ciencia_decisao",
-          label: "Ciência da decisão (recurso)",
+          label: "Ciência da decisão do INSS",
           tipo: "date",
+          mostrarSe: { campo: "natureza", valores: ["recurso_administrativo"] },
         },
         {
           nome: "data_ajuizamento",
-          label: "Ajuizamento (parcelas) — opcional",
+          label: "Ajuizamento (opcional — default hoje)",
           tipo: "date",
+          mostrarSe: { campo: "natureza", valores: ["parcelas_atrasadas"] },
         },
       ],
     },
@@ -2269,13 +2323,15 @@ const digital_lgpd: RamoConfig = {
         },
         {
           nome: "data_evento",
-          label: "Data do pedido do titular (resposta ao titular)",
+          label: "Data do requerimento do titular",
           tipo: "date",
+          mostrarSe: { campo: "tipo", valores: ["resposta_titular"] },
         },
         {
           nome: "data_conhecimento",
-          label: "Data de conhecimento do incidente (incidente)",
+          label: "Data de conhecimento do incidente",
           tipo: "date",
+          mostrarSe: { campo: "tipo", valores: ["incidente"] },
         },
       ],
     },

@@ -36,6 +36,26 @@ describe("mensagemErroFerramenta", () => {
       "Informe a data.",
     );
   });
+
+  it("traduz o array de validação do Pydantic apontando o campo", () => {
+    const err = erroCom(
+      [{ loc: ["query", "data_marco"], msg: "Field required" }],
+      422,
+    );
+    expect(mensagemErroFerramenta(err)).toBe(
+      "Verifique o campo data marco: Field required",
+    );
+  });
+
+  it("cai no genérico quando o array de validação não tem campo legível", () => {
+    const generica = "Verifique os dados informados e tente novamente.";
+    expect(mensagemErroFerramenta(erroCom([{ loc: ["query"] }], 422))).toBe(
+      generica,
+    );
+    expect(mensagemErroFerramenta(erroCom(["texto solto"], 422))).toBe(
+      generica,
+    );
+  });
 });
 
 describe("mensagemErroIA", () => {
