@@ -2,11 +2,12 @@
    Alimenta a página DossieCliente.tsx (cliente, resumo, casos, prazos, documentos)."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import select, text
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ownership import is_gestao
 from app.models.user import User
+from app.models.client import Client
 
 router = APIRouter(prefix="/clients/{client_id}/dossie", tags=["Dossiê do Cliente"])
 
@@ -23,13 +24,25 @@ async def dossie_cliente(
     # Escolha: restringir à gestão (sócio+), que já enxerga todos os casos.
     if not is_gestao(cu):
         raise HTTPException(403, "Acesso restrito à gestão (sócio+)")
-    cli = (await db.execute(text("""
-        SELECT id, nome, email, telefone, whatsapp, tipo, created_at,
-               COALESCE(cpf, cnpj) AS cpf_cnpj
-        FROM clients WHERE id = :cid AND deleted_at IS NULL
-    """), {"cid": client_id})).mappings().first()
-    if not cli:
+    # cpf/cnpj em texto puro foram DROPADOS da tabela clients (cutover C6/LGPD,
+    # migration 112) — só existem cifrados (cpf_enc/cnpj_enc). Carrega via ORM
+    # e usa a property documento_plain (decrypt sob demanda, PF-first), mesmo
+    # padrão já usado em routers/clients.py (linhas 796/861).
+    cli_obj = (await db.execute(
+        select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not cli_obj:
         raise HTTPException(404, "Cliente não encontrado")
+    cli = {
+        "id": cli_obj.id,
+        "nome": cli_obj.nome,
+        "email": cli_obj.email,
+        "telefone": cli_obj.telefone,
+        "whatsapp": cli_obj.whatsapp,
+        "tipo": cli_obj.tipo.value if cli_obj.tipo else None,
+        "created_at": cli_obj.created_at,
+        "cpf_cnpj": cli_obj.documento_plain,
+    }
 
     # Casos
     casos_rows = (await db.execute(text("""
@@ -87,7 +100,7 @@ async def dossie_cliente(
     """), {"cid": client_id})).mappings().first()
 
     return {
-        "cliente": dict(cli),
+        "cliente": cli,
         "resumo": {
             "total_casos": len(casos),
             "casos_ativos": ativos,

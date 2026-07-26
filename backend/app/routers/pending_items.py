@@ -8,7 +8,17 @@ from app.core.security import get_current_user
 from app.core.ownership import is_gestao
 from app.models.user import User
 
-router = APIRouter(prefix="/v1/clients", tags=["pending-items"])
+# Prefixo SEM "/v1": o compat middleware (api_version_middleware.py) já expõe
+# automaticamente todo /api/X também em /api/v1/X reescrevendo o path — não
+# declarar "/v1" aqui. Causa raiz do bug (auditoria 2026-07-26): este router
+# nascia com prefix="/v1/clients", então a ÚNICA rota registrada já era
+# /api/v1/clients/.../pending-items. O middleware trata QUALQUER caminho que
+# comece com /api/v1/ como "canônico" e o reescreve removendo o "/v1" antes de
+# rotear — vira /api/clients/.../pending-items, que NUNCA existiu como rota
+# (o app só tinha a versão com /v1 embutido), 404. Mesmo padrão de
+# dossie_cliente.py/clients.py: declare o prefixo "real" sem /v1 e deixe o
+# middleware sintetizar o alias canônico.
+router = APIRouter(prefix="/clients", tags=["pending-items"])
 
 
 async def _exigir_cliente_visivel(db: AsyncSession, cu: User, client_id: str) -> None:
