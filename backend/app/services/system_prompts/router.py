@@ -58,12 +58,17 @@ def _claude(prompt_key, model, mt, temp, just):
 
 
 CONFIGURACOES: dict[TarefaIA, ConfiguracaoIA] = {
-    TarefaIA.TRIAGEM: _groq("triagem", 1200, 0.1, "Classificação estruturada — rota econômica"),
-    TarefaIA.RESUMO: _groq("resumo", 900, 0.2, "Sumarização simples — rota econômica"),
-    TarefaIA.PRAZOS: _claude("prazos", _RAPIDO, 1200, 0.0, "Prazo fatal — precisão (temp 0)"),
-    TarefaIA.HONORARIOS: _claude("honorarios", _RAPIDO, 1800, 0.1, "Honorários OAB/MG"),
-    TarefaIA.AUDIENCIA: _claude("audiencia", _RAPIDO, 2000, 0.2, "Preparação de audiência"),
-    TarefaIA.RAG_QUERY: _claude("rag_query", _RAPIDO, 1500, 0.1, "Síntese de RAG"),
+    # TRIAGEM/RESUMO: até 2026-07-26 roteavam para Groq por custo ("rota
+    # econômica"). Decisão do escritório (qualidade acima de custo, ver
+    # docs/ai/EJC_AI_PROVIDER_POLICY.md): agora priorizam Anthropic/_COMPLEXO
+    # como toda outra tarefa; Groq/Ollama seguem só como fallback (composição
+    # da cadeia em ai_gateway.executar_tarefa_ia).
+    TarefaIA.TRIAGEM: _claude("triagem", _COMPLEXO, 1200, 0.1, "Classificação estruturada — qualidade acima de custo"),
+    TarefaIA.RESUMO: _claude("resumo", _COMPLEXO, 900, 0.2, "Sumarização — qualidade acima de custo"),
+    TarefaIA.PRAZOS: _claude("prazos", _COMPLEXO, 1200, 0.0, "Prazo fatal — precisão (temp 0) e qualidade acima de custo"),
+    TarefaIA.HONORARIOS: _claude("honorarios", _COMPLEXO, 1800, 0.1, "Honorários OAB/MG — qualidade acima de custo"),
+    TarefaIA.AUDIENCIA: _claude("audiencia", _COMPLEXO, 2000, 0.2, "Preparação de audiência — qualidade acima de custo"),
+    TarefaIA.RAG_QUERY: _claude("rag_query", _COMPLEXO, 1500, 0.1, "Síntese de RAG — qualidade acima de custo"),
     TarefaIA.ANALISE_CASO: _claude("analise_caso", _COMPLEXO, 4000, 0.1, "Análise estratégica"),
     TarefaIA.DOSSIE: _claude("analise_caso", _COMPLEXO, 5000, 0.1, "Dossiê completo"),
     TarefaIA.MINUTAS: _claude("minutas", _COMPLEXO, 6000, 0.15, "Redação de peças"),
@@ -78,7 +83,7 @@ CONFIGURACOES: dict[TarefaIA, ConfiguracaoIA] = {
     TarefaIA.JUIZADOS: _claude("juizados", _COMPLEXO, 3000, 0.1, "JEC, JEF e JEFP"),
     TarefaIA.CIVEL: _claude("civel", _COMPLEXO, 3500, 0.1, "Responsabilidade, prescrição e tutelas"),
     TarefaIA.PESQUISA_JURIDICA: _claude("pesquisa_juridica", _COMPLEXO, 3000, 0.2, "Pesquisa jurídica"),
-    TarefaIA.DEFAULT: _claude("default", _RAPIDO, 2000, 0.2, "Fallback configurável"),
+    TarefaIA.DEFAULT: _claude("default", _COMPLEXO, 2000, 0.2, "Fallback configurável — qualidade acima de custo"),
 }
 
 

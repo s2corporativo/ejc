@@ -60,13 +60,26 @@ def test_cadeia_ignora_preferido_inelegivel(monkeypatch):
 
 
 def test_cadeia_preferido_fora_do_task_routing_e_ignorado(monkeypatch):
-    # 'resumo' não tem anthropic no TASK_ROUTING → não inventa provedor.
+    # Política 2026-07-26 (qualidade acima de custo): 'resumo' passou a incluir
+    # "anthropic" no TASK_ROUTING (antes só ollama→groq) — o preferido promovido
+    # pelo roteamento inteligente É aceito normalmente.
     _prep(monkeypatch)
     cadeia = g._resolver_cadeia(
         "resumo", provider_force=None, model_override=None,
         provider_preferido="anthropic", model_preferido="claude-opus-4-8",
     )
-    assert all(p != "anthropic" for p, _ in cadeia)
+    assert cadeia[0] == ("anthropic", "claude-opus-4-8")
+
+
+def test_cadeia_preferido_provider_desconhecido_e_ignorado(monkeypatch):
+    # Um provider fora do vocabulário reconhecido (groq/ollama/anthropic/
+    # maritaca) nunca é inventado/promovido — cadeia normal por task_type.
+    _prep(monkeypatch)
+    cadeia = g._resolver_cadeia(
+        "resumo", provider_force=None, model_override=None,
+        provider_preferido="openai", model_preferido="gpt-5",
+    )
+    assert all(p != "openai" for p, _ in cadeia)
 
 
 # ── chat() on/off ─────────────────────────────────────────────────────────────

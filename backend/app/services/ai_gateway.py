@@ -115,11 +115,15 @@ def _aplicar_nivel(
     return [extra] + messages
 
 
-# Cadeias: Ollama (local, custo zero) → Anthropic (qualidade, se houver chave)
-# → Groq (grátis, último recurso). Tarefas simples (resumo/chat) pulam o
-# Anthropic — Groq grátis basta e mantém o custo baixo.
+# Cadeias: TODA tarefa inclui "anthropic" como candidato (Núcleo Único) —
+# decisão do escritório (2026-07-26): qualidade acima de custo, sem exceção
+# para tarefas antes classificadas como "simples" (resumo/chat rápido). Ollama
+# (local) e Groq permanecem nas cadeias apenas como FALLBACK (indisponibilidade
+# do Anthropic ou kill-switch AI_EXTERNAL_PROVIDERS_ALLOWED/ANTHROPIC_ENABLED);
+# ver _resolver_cadeia e app/services/ai/model_router.py para a promoção do
+# Anthropic à frente da cadeia.
 TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
-    # Tarefas COMPLEXAS incluem "anthropic" na cadeia (Núcleo Único): entra na
+    # Todas as tarefas incluem "anthropic" na cadeia (Núcleo Único): entra na
     # ordem de AI_PROVIDER_PRIORITY quando elegível (chave + ENABLED +
     # AI_EXTERNAL_PROVIDERS_ALLOWED) — ver _resolver_cadeia.
     "analise_juridica": [
@@ -135,14 +139,16 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
         ("groq",      None),
     ],
     "resumo": [
-        ("ollama", None),    # OLLAMA_MODEL_RESUMO
-        ("maritaca", None),  # MARITACA_MODEL_RAPIDO (só se ENABLED+chave)
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_RESUMO (fallback local)
+        ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO — qualidade acima de custo
+        ("maritaca",  None),  # MARITACA_MODEL_RAPIDO (só se ENABLED+chave)
+        ("groq",      None),
     ],
     "chat_rapido": [
-        ("ollama", None),    # OLLAMA_MODEL_CHAT
-        ("maritaca", None),  # MARITACA_MODEL_RAPIDO (só se ENABLED+chave)
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_CHAT (fallback local)
+        ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO — qualidade acima de custo
+        ("maritaca",  None),  # MARITACA_MODEL_RAPIDO (só se ENABLED+chave)
+        ("groq",      None),
     ],
     "analise_contrato": [
         ("ollama",    None),  # OLLAMA_MODEL_CONTRATO
@@ -195,12 +201,15 @@ _OLLAMA_MODEL_BY_TASK = {
     "critica_adversarial": lambda: settings.OLLAMA_MODEL_ANALISE,
 }
 
-# Modelo Claude por tarefa: complexas → COMPLEXO (qualidade); simples → RAPIDO.
+# Modelo Claude por tarefa: SEMPRE o COMPLEXO (qualidade acima de custo, TODA
+# tarefa — política do escritório 2026-07-26, ver docs/ai/EJC_AI_PROVIDER_POLICY.md).
+# Mantido por task_type (em vez de uma constante única) para não perder o ponto
+# de customização por tarefa caso o escritório volte a diferenciar no futuro.
 _ANTHROPIC_MODEL_BY_TASK = {
     "analise_juridica": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "elaboracao_peca":  lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
-    "resumo":           lambda: settings.ANTHROPIC_MODEL_RAPIDO,
-    "chat_rapido":      lambda: settings.ANTHROPIC_MODEL_RAPIDO,
+    "resumo":           lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "chat_rapido":      lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "analise_contrato": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "estrategia":       lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "auditoria_peca":   lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
@@ -690,7 +699,8 @@ def _resolver_modelo(provider: str, task_type: str, model_override: str | None) 
     if provider == "ollama":
         return _OLLAMA_MODEL_BY_TASK.get(task_type, lambda: settings.OLLAMA_MODEL_ANALISE)()
     if provider == "anthropic":
-        # Tarefas roteadas para Anthropic aqui são as complexas → modelo COMPLEXO.
+        # Qualidade acima de custo em TODA tarefa (política do escritório,
+        # 2026-07-26) → sempre o modelo COMPLEXO, independente do task_type.
         return settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO
     if provider == "maritaca":
         # Redação/volume por default; tarefas simples → modelo rápido/barato.

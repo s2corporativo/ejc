@@ -51,10 +51,12 @@ Toda interação do núcleo grava, via `audit_logger.registrar` → `ai_guard.re
 
 ## 5. Procedimento em custo anômalo
 
-1. **Conter**: `ANTHROPIC_ENABLED=false` (para o gasto na hora, cadeia cai para Ollama/Groq) e/ou reduzir `ANTHROPIC_MAX_TOKENS`; alternativa branda: `ANTHROPIC_MODEL_COMPLEXO=claude-haiku-4-5-20251001`.
+**Atualização 2026-07-26**: o escritório decidiu explicitamente priorizar qualidade acima de custo em TODA tarefa de IA (ver `docs/ai/EJC_AI_PROVIDER_POLICY.md`) — Anthropic/COMPLEXO agora é o provedor/modelo padrão inclusive para tarefas antes "econômicas" (resumo/triagem/chat rápido/prazos/honorários/audiência/RAG). Isso eleva o custo operacional de IA POR DESENHO; um gasto maior que o histórico anterior não é, por si só, uma anomalia — compare contra o novo baseline, não contra o padrão de custo pré-2026-07-26. O procedimento abaixo continua válido para detectar gasto *além* do esperado por essa nova política (ex.: laço de reprocessamento, contexto inflado).
+
+1. **Conter**: `ANTHROPIC_ENABLED=false` (para o gasto na hora, cadeia cai para Ollama/Groq — kill-switch continua funcionando, mas suspende a política de qualidade-acima-de-custo) e/ou reduzir `ANTHROPIC_MAX_TOKENS`.
 2. **Diagnosticar**: consultar `ai_logs` por `custo_estimado`/`tokens_output` desc — identificar user_id, case_id, tipo_uso, modelo e horário; conferir `fontes_rag`/`prompt_sanitizado` para contexto inflado; usar `/ia-saude/dashboard` para a série por período.
-3. **Verificar configuração**: `USD_BRL_RATE` correto; `_PRICING_USD_MM` atualizado para os modelos em uso; `AI_PROVIDER_PRIORITY` ainda com `ollama` à frente; `TAREFAS_ECONOMICAS` não roteando para Anthropic.
-4. **Corrigir a causa**: endpoint/agente que envia contexto além do orçamento, laço de reprocessamento, ou tarefa simples mapeada como complexa (`_TAREFA_PARA_GATEWAY`/`TAREFAS_COMPLEXAS`).
+3. **Verificar configuração**: `USD_BRL_RATE` correto; `_PRICING_USD_MM` atualizado para os modelos em uso; `ROTEAMENTO_PROVIDER_LEVE/MEDIO/PESADO` ainda apontando para `anthropic` (política vigente) e não revertido sem decisão explícita do escritório.
+4. **Corrigir a causa**: endpoint/agente que envia contexto além do orçamento, laço de reprocessamento — NÃO reverter a priorização de Anthropic para "corrigir custo" sem decisão explícita do escritório (isso desfaria a política de 2026-07-26).
 5. **Registrar**: decisão e ajuste documentados; o AILog é a fonte de verdade da reconstrução do gasto (nunca apagar registros).
 
 ## 6. Limitações conhecidas

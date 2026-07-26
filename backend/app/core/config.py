@@ -279,12 +279,16 @@ class Settings(BaseSettings):
     ROTEAMENTO_INTELIGENTE_ENABLED: bool = True
     # Provedor preferido por TIER de complexidade (o roteador só PROPÕE; se
     # inelegível, o gateway ignora e usa a cadeia normal por prioridade).
-    ROTEAMENTO_PROVIDER_LEVE: str = "groq"       # rápido/barato p/ tarefas leves
+    # Política do escritório (2026-07-26, qualidade acima de custo): os TRÊS
+    # tiers propõem Anthropic por padrão — não há mais tier "leve" apontando
+    # para um provedor barato (Groq) por classificação de tarefa. Groq/Ollama
+    # seguem disponíveis como FALLBACK via elegibilidade normal do gateway
+    # (kill-switch/indisponibilidade), nunca mais como proposta primária.
+    ROTEAMENTO_PROVIDER_LEVE: str = "anthropic"
     # médio = anthropic: o stack de produção não sobe ollama (compose:
     # OLLAMA_ENABLED=false) — apontar o tier médio para provider morto só gerava
-    # tentativa-e-fallback a cada tarefa. O MODELO do tier médio é COMPLEXO
-    # (Opus), NÃO Haiku — ver model_router._model_do_provider (anti-rebaixamento
-    # P1: só o tier LEVE usa o modelo rápido).
+    # tentativa-e-fallback a cada tarefa. O MODELO de Anthropic é SEMPRE
+    # COMPLEXO (Opus) em qualquer tier — ver model_router._model_do_provider.
     ROTEAMENTO_PROVIDER_MEDIO: str = "anthropic"
     ROTEAMENTO_PROVIDER_PESADO: str = "anthropic"  # modelo forte p/ raciocínio
     # Limiares (score inteiro) que separam os tiers leve|medio|pesado.

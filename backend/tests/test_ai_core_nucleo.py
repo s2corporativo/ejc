@@ -105,16 +105,19 @@ class TestAIProviderPolicy:
         d = AIProviderPolicy().avaliar("texto limpo", "analise_juridica")
         assert _providers(d)[0] == "anthropic"
 
-    def test_tarefa_economica_prioriza_local_barato(self, s, monkeypatch):
+    def test_tarefa_antes_economica_tambem_prioriza_anthropic(self, s, monkeypatch):
+        # Política do escritório (2026-07-26): qualidade acima de custo em TODA
+        # tarefa — "resumo" (antes roteada para Ollama/Groq por custo) agora
+        # prioriza Anthropic igual a qualquer outra tarefa.
         from app.services.ai.provider_policy import AIProviderPolicy
         monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
         d = AIProviderPolicy().avaliar("texto limpo", "resumo")
-        assert _providers(d)[0] in ("ollama", "groq")
-        assert _providers(d)[0] == "ollama"  # prioridade ollama,anthropic,groq
-        # Sem Ollama, cai no Groq (custo ~zero) antes do Anthropic.
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
+        assert _providers(d)[0] == "anthropic"
+        # Sem Anthropic elegível, Ollama/Groq seguem como FALLBACK (nunca mais
+        # como escolha primária por classificação de tarefa "barata").
+        monkeypatch.setattr(s, "ANTHROPIC_API_KEY", "")
         d2 = AIProviderPolicy().avaliar("texto limpo", "resumo")
-        assert _providers(d2)[0] == "groq"
+        assert _providers(d2)[0] == "ollama"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -18,15 +18,22 @@ from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 # Provedores que processam dados FORA do VPS (LGPD: exigem sanitização).
 PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 
-# Tarefas complexas (raciocínio jurídico profundo) → priorizam Anthropic
-# quando elegível. Aceita tanto nomes de TarefaIA quanto task_types do gateway.
+# Política do escritório (decisão explícita de Dr. Clovis/De Paula Teixeira,
+# 2026-07-26): qualidade acima de custo em TODA tarefa, sem exceção — inclusive
+# as que antes eram classificadas como "econômicas" (resumo, triagem, chat
+# rápido). Anthropic é sempre o provedor priorizado quando elegível; Ollama e
+# Groq deixam de ser escolha primária por classificação de tarefa "barata" e
+# passam a existir só como FALLBACK (Anthropic indisponível/kill-switch). Ver
+# docs/ai/EJC_AI_PROVIDER_POLICY.md para o registro completo da decisão e do
+# aumento de custo operacional que ela implica.
+#
+# TAREFAS_COMPLEXAS listado apenas para referência/documentação (vocabulário de
+# TarefaIA/task_types do gateway) — NÃO participa mais da priorização abaixo,
+# que agora é uniforme para qualquer task_type.
 TAREFAS_COMPLEXAS = {
     "analise_caso", "minutas", "dossie", "pesquisa_juridica",
     "estrategia", "analise_juridica", "elaboracao_peca",
 }
-
-# Tarefas simples/econômicas → preferem Ollama/Groq (custo ~zero).
-TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido"}
 
 
 @dataclass
@@ -92,10 +99,14 @@ class AIProviderPolicy:
              sanitiza e checa residual; PII residual → remove externos.
           3. Cadeia vazia → permitido=False com motivo SEGURO (tipos de PII,
              nunca os valores — o conteúdo jamais é ecoado).
-          4. Tarefas complexas priorizam Anthropic; econômicas, Ollama/Groq.
+          4. TODA tarefa prioriza o provedor mais capaz elegível (Anthropic;
+             Maritaca/Sabiá entre os externos se Anthropic não estiver
+             elegível) — decisão do escritório de qualidade acima de custo.
+             Ollama/Groq só permanecem como fallback (indisponibilidade/
+             kill-switch), nunca mais como escolha primária por "tarefa
+             barata".
         """
         s = get_settings()
-        task = (task_type or "").strip().lower()
         motivos: list[str] = []
 
         elegiveis = [p for p in self._ordem_prioridade() if self._elegivel(p)]
@@ -117,11 +128,16 @@ class AIProviderPolicy:
                     + ") — provedores externos removidos da cadeia (LGPD)"
                 )
 
-        # ── Priorização por perfil da tarefa ─────────────────────────────────
-        if task in TAREFAS_COMPLEXAS and "anthropic" in elegiveis:
+        # ── Priorização: sempre o provedor mais capaz elegível (TODA tarefa) ──
+        # Decisão do escritório (2026-07-26): qualidade acima de custo — não há
+        # mais distinção entre tarefa "complexa" e "econômica" para efeito de
+        # escolha de provedor (task_type segue no parâmetro por compatibilidade
+        # de assinatura/telemetria dos chamadores, mas não influencia mais a
+        # ordem de provedores aqui).
+        if "anthropic" in elegiveis:
             elegiveis = ["anthropic"] + [p for p in elegiveis if p != "anthropic"]
-            motivos.append("tarefa complexa — Anthropic priorizado")
-        elif task in TAREFAS_COMPLEXAS and "maritaca" in elegiveis:
+            motivos.append("Anthropic priorizado — política do escritório (qualidade acima de custo)")
+        elif "maritaca" in elegiveis:
             # Sem Anthropic elegível, o melhor raciocínio jurídico PT-BR
             # EXTERNO é o Sabiá (Maritaca) — priorizado à frente do groq, mas
             # NUNCA à frente de provider LOCAL elegível (minimização LGPD: o
@@ -130,11 +146,7 @@ class AIProviderPolicy:
             externos = [p for p in elegiveis
                         if p in PROVIDERS_EXTERNOS and p != "maritaca"]
             elegiveis = locais + ["maritaca"] + externos
-            motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada entre externos")
-        elif task in TAREFAS_ECONOMICAS:
-            econ = [p for p in elegiveis if p in ("ollama", "groq")]
-            elegiveis = econ + [p for p in elegiveis if p not in econ]
-            motivos.append("tarefa econômica — Ollama/Groq priorizados")
+            motivos.append("Anthropic indisponível — Maritaca (Sabiá) priorizada entre externos")
 
         requer_hitl = bool(s.AI_REQUIRE_HITL)
 

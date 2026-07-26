@@ -11,9 +11,10 @@
 #
 # LIGADO por padrão (ROTEAMENTO_INTELIGENTE_ENABLED=true) — ver config.py. Com
 # ROTEAMENTO_INTELIGENTE_ENABLED=false via .env, o gateway usa a lógica por
-# task_type intacta. O roteador nunca REBAIXA o modelo Anthropic abaixo do que
-# o mapa por-tarefa do gateway (_ANTHROPIC_MODEL_BY_TASK) determina: tarefa
-# jurídica séria (tier médio/pesado) sempre parte do modelo COMPLEXO (Opus).
+# task_type intacta. Política do escritório (2026-07-26, qualidade acima de
+# custo): o Anthropic proposto por este roteador é SEMPRE o modelo COMPLEXO
+# (Opus), em qualquer tier — não há mais tier "leve" rebaixado para RAPIDO
+# (Haiku); ver _model_do_provider e docs/ai/EJC_AI_PROVIDER_POLICY.md.
 from __future__ import annotations
 
 import re
@@ -131,19 +132,19 @@ def _provider_do_tier(tier: str) -> str:
 
 
 def _model_do_provider(provider: str, tier: str) -> str | None:
-    """Modelo sugerido. Anthropic e Maritaca diferenciam por tier; ollama/groq
+    """Modelo sugerido. Maritaca ainda diferencia por tier; ollama/groq
     resolvem o modelo default por tarefa no gateway.
 
-    Anthropic (correção P1 anti-rebaixamento): SÓ o tier LEVE usa RAPIDO (Haiku).
-    Tier MÉDIO e PESADO usam COMPLEXO (Opus) — antes o médio caía em Haiku,
-    rebaixando tarefas jurídicas sérias (analise_contrato/auditoria_peca/
-    jurimetria, ou analise_juridica/elaboracao_peca com input curto). Toda tarefa
-    séria tem peso >=3 → nunca é "leve"; assim o tier é um proxy fiel da
-    seriedade e o roteador nunca propõe modelo abaixo de _ANTHROPIC_MODEL_BY_TASK
-    (que também é COMPLEXO para essas tarefas)."""
+    Anthropic (política do escritório, 2026-07-26 — qualidade acima de custo):
+    SEMPRE COMPLEXO (Opus), em QUALQUER tier — inclusive "leve". Antes desta
+    decisão só o tier leve usava RAPIDO (Haiku); o escritório optou
+    explicitamente por abrir mão dessa economia em favor do nível mais capaz
+    disponível em toda tarefa. `tier` fica no parâmetro por compatibilidade de
+    assinatura (usado por Maritaca logo abaixo), mas não influencia mais o
+    modelo Anthropic escolhido."""
     s = get_settings()
     if provider == "anthropic":
-        return s.ANTHROPIC_MODEL_RAPIDO if tier == "leve" else s.ANTHROPIC_MODEL_COMPLEXO
+        return s.ANTHROPIC_MODEL_COMPLEXO or s.ANTHROPIC_MODEL_RAPIDO
     if provider == "maritaca":
         # Anti-rebaixamento (espelha a regra do anthropic): só o tier LEVE usa o
         # modelo rápido; médio e pesado usam o de qualidade — não rebaixa tarefa

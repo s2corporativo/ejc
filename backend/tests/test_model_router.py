@@ -3,7 +3,9 @@
 Contrato:
   - score determinístico por task_type + tamanho + contexto + citações;
   - score → tier (leve/medio/pesado) pelos limiares configuráveis;
-  - tier → provedor configurável; Anthropic diferencia RAPIDO vs COMPLEXO;
+  - tier → provedor configurável; Anthropic é SEMPRE o modelo COMPLEXO,
+    qualquer tier (política do escritório 2026-07-26 — qualidade acima de
+    custo; não há mais distinção RAPIDO/COMPLEXO por tier para Anthropic);
   - roteador só PROPÕE (elegibilidade/PII ficam no gateway).
 """
 from __future__ import annotations
@@ -90,11 +92,15 @@ def test_limiares_configuraveis(monkeypatch):
 
 # ── Anthropic RAPIDO vs COMPLEXO por tier ─────────────────────────────────────
 
-def test_anthropic_leve_usa_rapido(monkeypatch):
+def test_anthropic_leve_tambem_usa_complexo(monkeypatch):
+    # Política do escritório (2026-07-26, qualidade acima de custo): o Anthropic
+    # proposto pelo roteador é SEMPRE o modelo COMPLEXO (Opus), em qualquer
+    # tier — inclusive "leve". Antes desta decisão só o tier leve usava RAPIDO
+    # (Haiku); essa distinção foi removida.
     _cfg(monkeypatch, ROTEAMENTO_PROVIDER_LEVE="anthropic")
     d = mr.escolher_modelo("resumo", "curto")
     assert d.tier == "leve"
-    assert d.model == "claude-haiku-4-5-20251001"  # leve → RAPIDO
+    assert d.model == "claude-opus-4-8"  # leve → COMPLEXO (não rebaixa mais)
 
 
 def test_anthropic_medio_nao_rebaixa_para_haiku(monkeypatch):

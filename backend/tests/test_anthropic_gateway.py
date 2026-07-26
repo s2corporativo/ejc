@@ -155,10 +155,14 @@ def test_gateway_pula_claude_sem_chave(monkeypatch):
     assert any(p == "groq" for p, _ in cadeia)
 
 
-def test_gateway_tarefa_simples_nao_usa_claude(monkeypatch):
-    _prep(monkeypatch, tem_chave=True)
+def test_gateway_tarefa_antes_simples_agora_usa_claude(monkeypatch):
+    # Política do escritório (2026-07-26, qualidade acima de custo — ver
+    # docs/ai/EJC_AI_PROVIDER_POLICY.md): "resumo" deixou de excluir o Anthropic
+    # do TASK_ROUTING. Sem Ollama (soberania local) à frente, Claude assume.
+    _prep(monkeypatch, tem_chave=True, ollama=False)
     cadeia = g._resolver_cadeia("resumo", provider_force=None, model_override=None)
-    assert all(p != "anthropic" for p, _ in cadeia)        # Groq grátis basta
+    assert cadeia[0] == ("anthropic", g.settings.ANTHROPIC_MODEL_COMPLEXO)
+    assert any(p == "groq" for p, _ in cadeia)              # fallback preservado
 
 
 def test_gateway_force_anthropic_com_chave(monkeypatch):
