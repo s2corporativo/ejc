@@ -130,3 +130,14 @@ def test_roteamento_dedica_ambiental_digital_e_transito() -> None:
     assert classify_intent("chat", "digital_lgpd", "").agente == "DigitalLGPDAgent"
     assert classify_intent("chat", "transito", "").agente == "TrafficLawAgent"
     assert classify_intent("modulo", None, "Abrir o módulo").agente == "EJCCoordinatorAgent"
+
+
+def test_rota_compartilhada_resolve_para_modulo_canonico() -> None:
+    """Regressão da onda 2: conhecimento e victory-vault compartilham a rota
+    /inteligencia?tab=conhecimento — o alias de rota deve resolver para o
+    módulo CANÔNICO (primeiro no MODULE_REGISTRY), nunca para o carona."""
+    from app.services.ai.core.ejc_skill_catalog import MODULE_ALIASES, _normalize
+
+    assert MODULE_ALIASES[_normalize("/inteligencia?tab=conhecimento")] == "conhecimento"
+    # Chaves e nomes continuam resolvendo para si mesmos.
+    assert MODULE_ALIASES["victory_vault"] == "victory-vault"

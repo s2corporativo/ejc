@@ -193,8 +193,11 @@ def _module_area(group: str) -> str:
         "juridico": "juridico",
         "producao": "juridico",
         "financeiro": "financeiro",
+        # Nota: diario-oficial e noticias migraram do extinto grupo
+        # "Biblioteca" para "Inteligência" na onda 2 — a área das skills
+        # deles passa de "juridico" para "estrategia" por consequência
+        # (monitoramento/radar é leitura estratégica, escolha consciente).
         "inteligencia": "estrategia",
-        "biblioteca": "juridico",
         "portal": "operacional",
         "atendimento": "operacional",
         "administracao": "administrativo",
@@ -225,6 +228,10 @@ _MODULE_BY_KEY = {str(item["module_key"]): item for item in MODULE_REGISTRY}
 
 # Aliases canônicos derivados do próprio registro de módulos. O frontend pode
 # informar a chave, o nome visível ou a rota; todos convergem para module_key.
+# PRIMEIRO VENCE: módulos podem compartilhar frontend_route (ex.: conhecimento
+# e victory-vault vivem ambos em /inteligencia?tab=conhecimento após a
+# consolidação) — a rota resolve para o módulo CANÔNICO, que vem antes na
+# lista do MODULE_REGISTRY; module_key e nome seguem únicos por construção.
 MODULE_ALIASES: dict[str, str] = {}
 for _module_key, _module in _MODULE_BY_KEY.items():
     for _alias in (
@@ -233,7 +240,7 @@ for _module_key, _module in _MODULE_BY_KEY.items():
         str(_module.get("frontend_route") or ""),
     ):
         if _normalize(_alias):
-            MODULE_ALIASES[_normalize(_alias)] = _module_key
+            MODULE_ALIASES.setdefault(_normalize(_alias), _module_key)
 MODULE_ALIASES.update({
     "processo": "casos",
     "processos": "casos",
