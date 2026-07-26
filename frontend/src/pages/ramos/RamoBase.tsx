@@ -64,6 +64,7 @@ import GuiaEmpresarial from "../../components/GuiaEmpresarial";
 import SociedadesCliente from "../../components/SociedadesCliente";
 import LgpdRegistros from "../../components/LgpdRegistros";
 import GuiaLgpd from "../../components/GuiaLgpd";
+import RodapeRegra from "../../components/RodapeRegra";
 import { RamoStats } from "../../components/Dashboards";
 
 // Mapa de ícones por nome (evita importar a lib inteira)
@@ -141,6 +142,9 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
       "descricao",
       "homologada",
       "aviso_homologacao",
+      "fontes",
+      "vigencia_regra",
+      "versao_regra",
     ];
     const linhas = Object.entries(res)
       .filter(
@@ -315,6 +319,8 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
           ) : (
             <ResultadoView data={res} />
           )}
+          {/* Metadados de regra (fontes/vigência/versão) em linha discreta */}
+          <RodapeRegra data={res} />
           {/* Aviso de homologação vindo da API acompanha o resultado */}
           {res.homologada === false && (
             <div className="mt-2 p-2 rounded bg-warn-50 border border-warn-200 text-xs text-warn-800">
@@ -476,6 +482,9 @@ function ResultadoView({ data }: { data: any }) {
         {Object.entries(data).map(([k, v]) => {
           // Exibidos no aviso dedicado de homologação — não na tabela.
           if (k === "homologada" || k === "aviso_homologacao") return null;
+          // Metadados de regra vão para o rodapé <RodapeRegra /> — não na tabela.
+          if (k === "fontes" || k === "vigencia_regra" || k === "versao_regra")
+            return null;
           if (k === "aviso") {
             return (
               <div

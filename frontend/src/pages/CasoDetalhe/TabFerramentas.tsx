@@ -7,6 +7,7 @@ import {
   AVISO_FERRAMENTA_NAO_HOMOLOGADA,
   mensagemErroFerramenta,
 } from "../../lib/iaErro";
+import RodapeRegra from "../../components/RodapeRegra";
 import AnaliseEstrategica from "../../components/AnaliseEstrategica";
 import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
@@ -137,6 +138,13 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
             Object.entries(res as Record<string, any>).map(([k, v]) => {
               // Exibidos no aviso dedicado de homologação — não na tabela.
               if (k === "homologada" || k === "aviso_homologacao") return null;
+              // Metadados de regra vão para o rodapé <RodapeRegra />.
+              if (
+                k === "fontes" ||
+                k === "vigencia_regra" ||
+                k === "versao_regra"
+              )
+                return null;
               if (k === "aviso")
                 return (
                   <p
@@ -146,6 +154,31 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
                     {String(v)}
                   </p>
                 );
+              // Arrays estruturados (marcos, componentes, requisitos...) em
+              // sublista compacta — só os campos escalares de cada item.
+              if (Array.isArray(v)) {
+                if (v.length === 0) return null;
+                return (
+                  <div key={k} className="pt-1">
+                    <p className="text-slate-500">{rotulo(k)}</p>
+                    <ul className="pl-2 space-y-0.5">
+                      {v.map((item, i) => (
+                        <li key={i} className="text-navy">
+                          {typeof item === "object" && item !== null
+                            ? Object.entries(item)
+                                .filter(
+                                  ([, iv]) =>
+                                    iv !== null && typeof iv !== "object",
+                                )
+                                .map(([ik, iv]) => `${rotulo(ik)}: ${iv}`)
+                                .join(" · ")
+                            : String(item)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              }
               if (typeof v === "object" && v !== null) return null;
               return (
                 <div key={k} className="flex justify-between gap-1">
@@ -160,6 +193,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
                 </div>
               );
             })}
+          <RodapeRegra data={res} />
         </div>
       )}
     </div>

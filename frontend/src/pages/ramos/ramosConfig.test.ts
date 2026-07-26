@@ -4,16 +4,22 @@
 import { describe, expect, it } from "vitest";
 import { RAMOS } from "./ramosConfig";
 
-// Matriz P0 do relatório de auditoria: ramo → ids de ferramentas em revisão.
+// Matriz de não homologação (Onda 2, Fases A/B): ramo → ids ainda em revisão.
 const MATRIZ_P0: Record<string, string[]> = {
-  empresarial: ["prazos-rj", "juros-mora", "verificar-cade"],
+  empresarial: ["verificar-cade"],
+  penal: ["dosimetria"],
+  consumidor: ["devolucao-dobro", "prazos-cdc"],
+  previdenciario: ["prazos-previdenciario"],
+};
+
+// Ferramentas corrigidas na Onda 2 — o selo deve ter sido retirado.
+const LIBERADAS: Record<string, string[]> = {
+  empresarial: ["prazos-rj", "juros-mora"],
   civel: ["prazos-contestacao"],
-  penal: ["prazos", "anpp", "prescricao", "prescricao-penal", "dosimetria"],
+  penal: ["prazos", "anpp", "prescricao", "prescricao-penal"],
   trabalhista: ["prazos", "prescricao"],
   transito: ["prazos-recurso-transito", "pontuacao-cnh"],
   administrativo: ["multa-transito"],
-  consumidor: ["devolucao-dobro", "prazos-cdc"],
-  previdenciario: ["prazos-previdenciario"],
 };
 
 describe("ramosConfig — homologação (Onda 1)", () => {
@@ -40,6 +46,29 @@ describe("ramosConfig — homologação (Onda 1)", () => {
       (f) => f.id === "negativacao-indevida",
     );
     expect(negativacao?.homologada).toBeUndefined();
+  });
+
+  for (const [ramo, ids] of Object.entries(LIBERADAS)) {
+    it(`ferramentas corrigidas do ramo "${ramo}" não carregam mais o selo`, () => {
+      for (const id of ids) {
+        const ferramenta = RAMOS[ramo].ferramentas.find((f) => f.id === id);
+        expect(
+          ferramenta,
+          `ferramenta "${id}" deve existir no ramo "${ramo}"`,
+        ).toBeTruthy();
+        expect(
+          ferramenta?.homologada,
+          `ferramenta "${ramo}/${id}" não deve mais ter homologada: false`,
+        ).toBeUndefined();
+      }
+    });
+  }
+
+  it("horas-extras usa a rota canônica /trabalhista-esp", () => {
+    const he = RAMOS.trabalhista.ferramentas.find(
+      (f) => f.id === "horas-extras",
+    );
+    expect(he?.endpoint).toBe("/trabalhista-esp/ferramentas/horas-extras");
   });
 });
 
