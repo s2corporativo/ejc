@@ -15,6 +15,7 @@ from app.models.user import User
 from app.services import ai_gateway, abusividade_service
 from app.services.calc import cet as cet_calc
 from app.core.rate_limit import rate_limit
+from app.core.upload_guard import validar_upload
 
 router = APIRouter(prefix="/analise-bancaria", tags=["Análise de Documento"])
 
@@ -117,6 +118,9 @@ async def analisar_documento(
     conteudo = (texto or "").strip()
     if file is not None:
         raw = await file.read()
+        # Pente fino 2026-07-26: era o único upload sem guarda — lia o arquivo
+        # inteiro e jogava direto no fitz. Teto + magic bytes ANTES do parse.
+        validar_upload(raw, exigir_pdf=True)
         try:
             import fitz
             with fitz.open(stream=raw, filetype="pdf") as pdf:

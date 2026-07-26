@@ -80,6 +80,38 @@ async def obter_cliente_autorizado(
     return client
 
 
+def visao_total_clientes(user: User) -> bool:
+    """Mesmo limiar de ``pode_ver_cliente``: gestão (socio+) e secretaria (CRM
+    institucional, decisão de produto) enxergam a carteira completa."""
+    return is_gestao(user) or role_str(user) in _CLIENTES_VISAO_TOTAL
+
+
+def ids_clientes_visiveis(user: User):
+    """Subquery com os IDs de clientes da carteira do usuário — espelho SQL de
+    ``pode_ver_cliente`` para filtrar LISTAGENS em uma única query (mesmo padrão
+    de centro_custos._ids_casos_visiveis): responsável direto pelo cliente OU
+    responsável/auxiliar de ao menos um caso não excluído do cliente."""
+    return (
+        select(Client.id)
+        .where(
+            Client.deleted_at.is_(None),
+            or_(
+                Client.responsavel_id == user.id,
+                Client.id.in_(
+                    select(Case.client_id).where(
+                        Case.deleted_at.is_(None),
+                        or_(
+                            Case.advogado_responsavel_id == user.id,
+                            Case.advogado_auxiliar_id == user.id,
+                        ),
+                    )
+                ),
+            ),
+        )
+        .scalar_subquery()
+    )
+
+
 def pode_ver_caso_resumido(user: User, case: Case) -> bool:
     """Gate sem nova consulta para resultados de busca/preview de casos."""
     if is_gestao(user):

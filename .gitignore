@@ -67,3 +67,6 @@ frontend/.claude/
 
 # Segredos aplicados direto na VPS (OAuth Google Drive etc.) — nunca versionar
 secrets/
+
+# Artefatos temporários do vps-tools (snapshots/testes manuais de SFTP)
+vps-tools/_*
