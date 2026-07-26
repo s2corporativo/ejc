@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-import { Empty, SectionCard, cn } from "./UI";
+import { Empty, SectionCard, cn, fmtDateTime } from "./UI";
 
 type ChannelAvailability = {
   push: boolean;
@@ -95,14 +95,6 @@ const CATEGORIES = [
   ["financeiro_enabled", "Financeiro"],
   ["diario_oficial_enabled", "Diário Oficial"],
 ] as const;
-
-function formatDate(value?: string | null) {
-  if (!value) return "Data indisponível";
-  return new Date(value).toLocaleString("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
 
 function urlBase64ToUint8Array(value: string) {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
@@ -496,7 +488,8 @@ export default function NotificationPreferences() {
                   Dispositivo inscrito
                 </div>
                 <div className="text-xs text-slate-500">
-                  Criado em {formatDate(device.created_at)}
+                  Criado em{" "}
+                  {fmtDateTime(device.created_at, "Data indisponível")}
                 </div>
               </div>
               <button
@@ -535,7 +528,8 @@ export default function NotificationPreferences() {
 
       <div className="card flex items-center justify-between gap-3 p-4">
         <div className="text-xs text-slate-500">
-          Última atualização: {formatDate(form.updated_at)}
+          Última atualização:{" "}
+          {fmtDateTime(form.updated_at, "Data indisponível")}
         </div>
         <button
           type="button"
