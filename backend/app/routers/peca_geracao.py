@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
+from app.core.homologacao_ferramentas import mapa_status, status_ferramenta
 from app.models.user import User
 from app.models.ai_log import AILog
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
@@ -367,6 +368,16 @@ async def deep_research_juridica(
     return await executar_deep_research(db, entrada, user_id=cu.id)
 
 
+@router.get("/ferramentas/homologacao")
+async def listar_homologacao_ferramentas(cu: User = Depends(get_current_user)):
+    """Status de homologação por ferramenta (endpoint → status).
+
+    A UI usa isto para sinalizar cada calculadora e desabilitar a geração de
+    demonstrativo. Ferramenta ausente do mapa é NÃO homologada (fail-closed).
+    """
+    return {"status": mapa_status(), "default": "em_revisao"}
+
+
 class LinhaDemonstrativo(BaseModel):
     label: str
     valor: str
@@ -378,6 +389,9 @@ class DemonstrativoRequest(BaseModel):
     linhas: list[LinhaDemonstrativo] = Field(default=[])
     rodape: Optional[str] = Field(None, max_length=2000)
     case_id: Optional[str] = None
+    # Endpoint da calculadora de origem — chave do registro de homologação.
+    # Obrigatório: sem ele não há como saber QUAL regra produziu o número.
+    ferramenta_endpoint: str = Field(..., min_length=3, max_length=200)
 
 
 @router.post("/demonstrativo", status_code=201)
@@ -391,6 +405,18 @@ async def gerar_demonstrativo(
     de peças existente; resultado é MINUTA (revisão humana obrigatória)."""
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         raise HTTPException(403, "Acesso negado")
+    # GATE DE HOMOLOGAÇÃO (auditoria 2026-07-26): calculadora não homologada
+    # calcula, mas NÃO vira documento formal — corta o caminho
+    # "regra errada → resultado plausível → peça → uso externo".
+    hom = status_ferramenta(req.ferramenta_endpoint)
+    if hom.status != "homologada":
+        raise HTTPException(
+            409,
+            f"Ferramenta não homologada ({hom.status}): o cálculo serve como apoio, "
+            f"mas não pode virar documento formal. "
+            + (f"Motivo: {hom.nota} " if hom.nota else "")
+            + "A liberação depende de homologação do advogado responsável pela área.",
+        )
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)
 

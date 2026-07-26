@@ -92,6 +92,32 @@ function rotulo(v: string) {
 }
 
 // ── Bloco de uma ferramenta/calculadora ──────────────────────────────────────
+// Status de homologação das ferramentas (endpoint → status), servido pelo
+// backend. Fail-closed: ferramenta ausente do mapa é tratada como NÃO
+// homologada — calcula, mas não materializa documento formal.
+let _homologacaoCache: Record<string, string> | null = null;
+
+function useHomologacao(endpoint: string): string {
+  const [mapa, setMapa] = useState<Record<string, string> | null>(
+    _homologacaoCache,
+  );
+  useEffect(() => {
+    if (_homologacaoCache) return;
+    api
+      .get("/pecas/ferramentas/homologacao")
+      .then((r) => {
+        _homologacaoCache = r.data?.status ?? {};
+        setMapa(_homologacaoCache);
+      })
+      .catch(() => {
+        // Falha de rede não pode liberar o que o gate do backend bloqueia.
+        _homologacaoCache = {};
+        setMapa({});
+      });
+  }, []);
+  return mapa?.[endpoint] ?? "em_revisao";
+}
+
 function Ferramenta({ f }: { f: FerramentaConfig }) {
   const [vals, setVals] = useState<Record<string, any>>(() => {
     const init: Record<string, any> = {};
@@ -110,6 +136,8 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
   // invisível e o usuário concluía que "sumiu").
   const [docLink, setDocLink] = useState<string | null>(null);
   const casoAtivo = useCaseContext((state) => state.caso);
+  const homologacao = useHomologacao(f.endpoint);
+  const homologada = homologacao === "homologada";
 
   // Converte o resultado da calculadora em um Demonstrativo (LegalDoc rascunho).
   const gerarDemonstrativo = async () => {
@@ -133,6 +161,8 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
         linhas,
         rodape: rodape || undefined,
         case_id: casoAtivo?.id || undefined,
+        // Identifica QUAL regra produziu o número — chave do gate de homologação.
+        ferramenta_endpoint: f.endpoint,
       });
       setDocMsg(
         casoAtivo
@@ -283,11 +313,23 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
             <div className="mt-3 pt-2 border-t border-gold-200 flex flex-wrap items-center gap-2">
               <button
                 className="btn-ghost text-xs"
-                disabled={gerandoDoc}
+                disabled={gerandoDoc || !homologada}
                 onClick={gerarDemonstrativo}
+                title={
+                  homologada
+                    ? "Salva o cálculo como rascunho em Peças"
+                    : "Ferramenta ainda não homologada — o cálculo serve como apoio, mas não vira documento formal"
+                }
               >
                 {gerandoDoc ? "Gerando..." : "📄 Gerar demonstrativo"}
               </button>
+              {!homologada && (
+                <span className="text-[11px] text-warn-700">
+                  {homologacao === "bloqueada"
+                    ? "⛔ Regra com pendência jurídica — geração de documento bloqueada."
+                    : "⏳ Aguardando homologação do advogado responsável para virar documento."}
+                </span>
+              )}
               {docMsg && (
                 <span className="text-xs text-green-700">
                   {docMsg}{" "}
