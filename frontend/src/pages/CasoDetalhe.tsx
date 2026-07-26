@@ -931,18 +931,22 @@ export default function CasoDetalhe() {
   const [caso, setCaso] = useState<Case | null>(null);
 
   // Abas legadas (?tab=orquestrador) são normalizadas de forma síncrona para a
-  // aba nova — nenhum deep-link antigo quebra nem mostra tela vazia.
+  // aba nova — nenhum deep-link antigo quebra nem mostra tela vazia. Abas
+  // desconhecidas (?tab=qualquer-coisa) caem honestamente no Resumo, com a
+  // URL normalizada, em vez de exibir uma tela vazia de "em desenvolvimento".
   const rawTab = searchParams.get("tab");
   const tabRedirecionada = rawTab
     ? LEGACY_CASE_TAB_REDIRECTS[rawTab]
     : undefined;
-  const activeTab = ((tabRedirecionada ?? rawTab) as TabKey) || "resumo";
+  const tabCandidata = tabRedirecionada ?? rawTab;
+  const tabConhecida = TABS.some((t) => t.key === tabCandidata);
+  const activeTab: TabKey = tabConhecida ? (tabCandidata as TabKey) : "resumo";
 
   useEffect(() => {
-    if (tabRedirecionada) {
-      setSearchParams({ tab: tabRedirecionada }, { replace: true });
+    if (rawTab && rawTab !== activeTab) {
+      setSearchParams({ tab: activeTab }, { replace: true });
     }
-  }, [tabRedirecionada, setSearchParams]);
+  }, [rawTab, activeTab, setSearchParams]);
 
   useEffect(() => {
     if (!id) return;
@@ -1241,11 +1245,9 @@ export default function CasoDetalhe() {
       case "ferramentas":
         return <TabFerramentas caso={caso} />;
       default:
-        return (
-          <div className="text-center py-8 text-gray-400">
-            Aba em desenvolvimento
-          </div>
-        );
+        // Inalcançável: activeTab é normalizado para "resumo" quando a aba
+        // não existe (ver derivação acima). Mantido apenas como guarda.
+        return null;
     }
   };
 
