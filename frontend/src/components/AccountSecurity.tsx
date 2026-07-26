@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-import { SectionCard } from "./UI";
+import { SectionCard, fmtDateTime } from "./UI";
 import { useAuth } from "../stores/auth";
 
 type SecurityStatus = {
@@ -34,13 +34,6 @@ type SetupResponse = {
   uri: string;
   aviso?: string;
 };
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
 
 export default function AccountSecurity() {
   const updateUser = useAuth((state) => state.updateUser);
@@ -405,13 +398,13 @@ export default function AccountSecurity() {
                 <KeyRound className="h-4 w-4 text-slate-400" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
-                    Sessão iniciada em {formatDateTime(session.created_at)}
+                    Sessão iniciada em {fmtDateTime(session.created_at)}
                     {session.current && (
                       <span className="badge badge-success">Atual</span>
                     )}
                   </div>
                   <div className="mt-0.5 text-xs text-slate-400">
-                    Expira em {formatDateTime(session.expires_at)}
+                    Expira em {fmtDateTime(session.expires_at)}
                   </div>
                 </div>
                 {!session.current && (

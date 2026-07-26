@@ -74,7 +74,7 @@
     {"module_key": "jurimetria", "kind": "smoke", "frontend_route": "/jurimetria", "api_checks": [{"method": "GET", "path": "/api/jurimetria/", "expected": [200, 404]}]},
     {"module_key": "victory-vault", "kind": "smoke", "frontend_route": "/victory-vault", "api_checks": [{"method": "GET", "path": "/api/victory-vault/", "expected": [200, 404]}]},
     {"module_key": "radar-regulatorio", "kind": "smoke", "frontend_route": "/radar-regulatorio", "api_checks": [{"method": "GET", "path": "/api/regulatorio/", "expected": [200, 404]}]},
-    {"module_key": "biblioteca", "kind": "smoke", "frontend_route": "/biblioteca", "api_checks": [{"method": "GET", "path": "/api/wiki/", "expected": [200, 404]}]},
+    {"module_key": "biblioteca", "kind": "smoke", "frontend_route": "/biblioteca", "api_checks": [{"method": "GET", "path": "/api/memoria-institucional", "expected": [200, 404]}]},
     {"module_key": "diario-oficial", "kind": "smoke", "frontend_route": "/diario-oficial", "api_checks": [{"method": "GET", "path": "/api/diario-oficial/", "expected": [200, 404]}]},
     {"module_key": "noticias", "kind": "smoke", "frontend_route": "/noticias", "api_checks": [{"method": "GET", "path": "/api/noticias/", "expected": [200, 404]}]},
     {"module_key": "portal", "kind": "security", "frontend_route": "/portal", "api_checks": [{"method": "GET", "path": "/api/portal", "expected": [200, 403, 404]}]},

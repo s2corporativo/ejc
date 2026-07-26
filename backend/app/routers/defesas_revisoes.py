@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
+from app.core.upload_guard import validar_upload
 from app.models.document_intake import DocumentIntakeBatch
 from app.models.user import User
 from app.services.ai.core.orchestrator import orchestrator
@@ -205,8 +206,11 @@ def _normalizar_resultado(modalidade: str, data: Optional[dict], bruto: str) -> 
 
 async def _texto_upload(file: UploadFile) -> str:
     raw = await file.read()
-    if not raw:
-        raise HTTPException(422, "Arquivo vazio")
+    # Pente fino 2026-07-26: só se validava o mínimo (texto < 80 no chamador),
+    # nunca o máximo. Teto compartilhado ANTES do expandir/OCR CPU-bound —
+    # cobre também defesas_revisoes_avancado (arquivo_base/comparado/decisao),
+    # que importa este helper.
+    validar_upload(raw)
     try:
         virtuais = expandir_arquivo(file.filename or "documento", raw, file.content_type)
     except ValueError as exc:

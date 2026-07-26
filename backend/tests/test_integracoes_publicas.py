@@ -1,6 +1,6 @@
 # ── tests/test_integracoes_publicas.py ───────────────────────────────────────
-# Cobertura do pacote app/integrations/ (DataJud, DJEN/Comunica, BrasilAPI,
-# Conecta gov.br) e dos routers /api/integracoes/*.
+# Cobertura do pacote app/integrations/ (DataJud, DJEN/Comunica, BrasilAPI)
+# e dos routers /api/integracoes/*.
 #
 # Rede é SEMPRE mockada (httpx.MockTransport) — CI não tem egress para as
 # APIs públicas. O teste real (curl) contra DataJud/DJEN/BrasilAPI roda no
@@ -18,7 +18,6 @@ import app.integrations.datajud_client as datajud_mod
 import app.integrations.djen_comunica_client as djen_mod
 from app.integrations import routers as integ_routers
 from app.integrations.brasilapi_client import BrasilApiClient, BrasilApiError
-from app.integrations.conecta_gov_client import ConectaGovClient, ConectaGovError
 from app.integrations.datajud_client import (
     TRIBUNAL_ALIASES,
     DataJudClient,
@@ -127,16 +126,6 @@ async def test_brasilapi_404_vira_brasilapierror(monkeypatch):
     _mock_async_client(monkeypatch, brasilapi_mod, lambda r: httpx.Response(404))
     with pytest.raises(BrasilApiError):
         await BrasilApiClient().consultar_cep("00000000")
-
-
-# ── Conecta gov.br (scaffold — sem credenciais deve falhar SEM rede) ─────────
-
-async def test_conecta_sem_credenciais_erro_claro(monkeypatch):
-    monkeypatch.delenv("CONECTA_CLIENT_ID", raising=False)
-    monkeypatch.delenv("CONECTA_CLIENT_SECRET", raising=False)
-    cli = ConectaGovClient()
-    with pytest.raises(ConectaGovError, match="credenciamento"):
-        await cli.consultar_cpf("11111111111")
 
 
 # ── Routers /api/integracoes/* ────────────────────────────────────────────────

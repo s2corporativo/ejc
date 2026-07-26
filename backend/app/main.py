@@ -86,6 +86,7 @@ from app.routers import extratos
 from app.routers import fees
 from app.routers import financeiro_consolidado
 from app.routers import gestao_societaria
+from app.routers import google_drive_knowledge
 from app.routers import honorarios_calc
 from app.routers import ia_adversarial
 from app.routers import ia_agente
@@ -176,11 +177,9 @@ from app.routers import users
 from app.routers import utils
 from app.routers import validador_juridico
 from app.routers import veredito_ia_router
-from app.routers import verse
 from app.routers import victory_vault_router
 from app.routers import visual_law
 from app.routers import whatsapp
-from app.routers import wiki
 from app.routers import workflow
 from app.routers import architecture
 from app.integrations import routers as integracoes
@@ -345,6 +344,7 @@ app.include_router(extratos.router, prefix=API)
 app.include_router(fees.router, prefix=API)
 app.include_router(financeiro_consolidado.router, prefix=API)
 app.include_router(gestao_societaria.router, prefix=API)
+app.include_router(google_drive_knowledge.router, prefix=API)  # /api/rag/google-drive/* (curadoria da base, piso admin/socio)
 app.include_router(honorarios_calc.router, prefix=API)
 app.include_router(ia_adversarial.router, prefix=API)
 app.include_router(ia_agente.router, prefix=API)
@@ -437,11 +437,9 @@ app.include_router(users.router, prefix=API)
 app.include_router(utils.router, prefix=API)
 app.include_router(validador_juridico.router, prefix=API)
 app.include_router(veredito_ia_router.router, prefix=API)
-app.include_router(verse.router, prefix=API)
 app.include_router(victory_vault_router.router, prefix=API)
 app.include_router(visual_law.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
-app.include_router(wiki.router, prefix=API)
 app.include_router(workflow.router, prefix=API)
 app.include_router(architecture.router, prefix=API)
 # Integrações externas públicas (app/integrations/) — Conecta gov.br fica de
