@@ -55,12 +55,14 @@ def test_catalogo_cobre_todos_os_ramos_e_modulos() -> None:
     assert set(LEGAL_AREA_SPECS) == EXPECTED_LEGAL_AREAS
     assert set(MODULE_SKILL_SPECS) == module_keys
     assert len(LEGAL_AREA_SPECS) == 14
-    assert len(MODULE_SKILL_SPECS) == 35
-    assert len(native_skill_specs()) == 49
+    # 34 módulos = 35 anteriores - biblioteca - whatsapp + sala-juridica
+    # (pente fino 2026-07, onda 2 — paridade com o moduleRegistry do frontend).
+    assert len(MODULE_SKILL_SPECS) == 34
+    assert len(native_skill_specs()) == 48
 
     coverage = native_skill_coverage()
     assert coverage["complete"] is True
-    assert coverage["total_native_skills"] == 49
+    assert coverage["total_native_skills"] == 48
     assert coverage["legal_areas"]["missing"] == []
     assert coverage["modules"]["missing"] == []
 
@@ -105,7 +107,7 @@ def test_prompts_nativos_preservam_regras_juridicas_e_operacionais() -> None:
         assert spec.oab_restricted is False
 
 
-def test_registry_central_inclui_as_49_skills_nativas() -> None:
+def test_registry_central_inclui_todas_as_skills_nativas() -> None:
     expected_names = {spec.name for spec in native_skill_specs()}
 
     assert expected_names <= set(SKILL_REGISTRY)

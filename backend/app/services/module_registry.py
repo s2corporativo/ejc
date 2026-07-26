@@ -1,3 +1,12 @@
+"""Catálogo canônico de módulos do EJC (backend).
+
+Sincronizado com frontend/src/config/moduleRegistry.tsx: `frontend_route`
+usa SEMPRE a rota canônica atual (incluindo abas por query, ex.:
+/atividades?tipo=prazo, /inteligencia?tab=conhecimento) — nunca um alias de
+LEGACY_REDIRECTS nem rota inexistente. Ao consolidar/renomear rotas no
+frontend, atualize aqui e em qa/e2e/fictitious_matrix.json (o teste
+test_e2e_fictitious_matrix exige paridade com este registro).
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -66,7 +75,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "atendimento",
         "Atendimento",
         "Operação",
-        "/central-relacionamento",
+        "/atividades?tab=relacionamento",
         ["/api/atendimentos", "/api/cases/{case_id}/mensagens", "/api/notifications"],
         perfis=PERFIS_GESTAO,
         dependencias=["clients", "notifications"],
@@ -107,7 +116,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "prazos",
         "Prazos",
         "Jurídico",
-        "/prazos",
+        "/atividades?tipo=prazo",
         ["/api/deadlines", "/api/suspensoes", "/api/calendar"],
         perfis=PERFIS_JURIDICO + ["secretaria"],
         dependencias=["cases", "notifications"],
@@ -117,7 +126,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "intimacoes",
         "Intimações",
         "Jurídico",
-        "/intimacoes",
+        "/atividades?tipo=intimacao",
         ["/api/intimacoes", "/api/diario-oficial"],
         perfis=PERFIS_JURIDICO,
         dependencias=["cases", "deadlines"],
@@ -128,7 +137,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "tarefas",
         "Tarefas",
         "Jurídico",
-        "/tarefas",
+        "/atividades?tipo=tarefa",
         ["/api/tasks", "/api/atividades"],
         perfis=PERFIS_JURIDICO + ["secretaria"],
         dependencias=["cases", "notifications"],
@@ -138,7 +147,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "ramos",
         "Áreas de Atuação",
         "Jurídico",
-        "/ramos",
+        "/areas-de-atuacao",
         ["/api/empresarial", "/api/civel", "/api/penal", "/api/areas", "/api/ambiental/estrategia", "/api/trabalhista/liquidacao", "/api/tributario/fiscal"],
         perfis=PERFIS_JURIDICO,
         dependencias=["cases", "ai_gateway"],
@@ -212,7 +221,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "honorarios",
         "Honorários",
         "Financeiro",
-        "/honorarios",
+        "/financeiro?tab=honorarios",
         ["/api/honorarios-calc", "/api/honorarios-oab", "/api/honorarios-exito"],
         perfis=PERFIS_FINANCEIRO + ["advogado"],
         dependencias=["cases", "clients", "financeiro"],
@@ -223,17 +232,28 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "sociedade",
         "Sociedade",
         "Financeiro",
-        "/sociedade",
+        "/financeiro?tab=societaria",
         ["/api/sociedade", "/api/v1/office-contracts", "/api/v1/partner-withdrawals"],
         perfis=PERFIS_GESTAO,
         dependencias=["financeiro", "audit"],
         responsavel_operacional="gestao",
     ),
     _mod(
+        "sala-juridica",
+        "Sala Jurídica",
+        "Inteligência",
+        "/sala-juridica",
+        ["/api/sala-juridica", "/api/ai"],
+        perfis=PERFIS_JURIDICO,
+        dependencias=["ai_gateway", "cases", "rag", "audit"],
+        usa_ia=True,
+        responsavel_operacional="juridico",
+    ),
+    _mod(
         "ia",
         "Núcleo de IA",
         "Inteligência",
-        "/ia",
+        "/inteligencia?tab=ia",
         ["/api/ai", "/api/ai/core", "/api/ia-governanca", "/api/ia-saude", "/api/ai/skills"],
         perfis=PERFIS_JURIDICO,
         dependencias=["ai_gateway", "rag", "audit", "pii_sanitizer"],
@@ -255,7 +275,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "ferramentas-ia",
         "Ferramentas IA",
         "Inteligência",
-        "/ferramentas-ia",
+        "/inteligencia?tab=ferramentas",
         ["/api/ai", "/api/ia-especializada", "/api/ia-defensiva", "/api/ia/critica-adversarial", "/api/ia/validar-citacoes"],
         perfis=PERFIS_JURIDICO,
         dependencias=["ai_gateway", "documents", "cases"],
@@ -266,7 +286,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "conhecimento",
         "Base de Conhecimento e RAG",
         "Inteligência",
-        "/conhecimento",
+        "/inteligencia?tab=conhecimento",
         ["/api/rag", "/api/rag/knowledge-base", "/api/teses", "/api/teses-v4", "/api/sumulas", "/api/jurisprudencias", "/api/jurisprudencia-externa"],
         perfis=PERFIS_GESTAO + ["advogado"],
         dependencias=["database", "pgvector", "embedding_service", "storage"],
@@ -277,7 +297,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "jurimetria",
         "Jurimetria",
         "Inteligência",
-        "/jurimetria",
+        "/inteligencia?tab=jurimetria",
         ["/api/jurimetria", "/api/analytics"],
         perfis=PERFIS_JURIDICO,
         dependencias=["cases", "teses", "analytics"],
@@ -288,7 +308,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "victory-vault",
         "Victory Vault",
         "Inteligência",
-        "/victory-vault",
+        "/inteligencia?tab=conhecimento",
         ["/api/victory_vault", "/api/teses", "/api/casos/{case_id}/provas"],
         perfis=PERFIS_JURIDICO,
         dependencias=["cases", "documents", "teses"],
@@ -306,21 +326,14 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         usa_ia=True,
         responsavel_operacional="juridico",
     ),
-    _mod(
-        "biblioteca",
-        "Biblioteca Jurídica",
-        "Biblioteca",
-        "/biblioteca",
-        ["/api/conteudo", "/api/wiki", "/api/memoria-institucional"],
-        perfis=PERFIS_JURIDICO + ["secretaria"],
-        dependencias=["documents", "rag"],
-        usa_ia=True,
-        responsavel_operacional="juridico",
-    ),
+    # PENTE FINO 2026-07 (onda 2): a entrada "biblioteca" foi removida — a
+    # tela /biblioteca não existe mais (unificada na aba Conhecimento de
+    # /inteligencia, coberta pelo módulo "conhecimento"). O grupo "Biblioteca"
+    # foi extinto; diario-oficial e noticias vivem em "Inteligência".
     _mod(
         "diario-oficial",
         "Diário Oficial",
-        "Biblioteca",
+        "Inteligência",
         "/diario-oficial",
         ["/api/diario-oficial", "/api/intimacoes"],
         perfis=PERFIS_JURIDICO,
@@ -331,7 +344,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
     _mod(
         "noticias",
         "Notícias",
-        "Biblioteca",
+        "Inteligência",
         "/noticias",
         ["/api/noticias"],
         perfis=PERFIS_JURIDICO + ["secretaria"],
@@ -349,16 +362,9 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         dependencias=["clients", "cases", "documents", "signatures"],
         responsavel_operacional="atendimento",
     ),
-    _mod(
-        "whatsapp",
-        "WhatsApp e Webhooks",
-        "Atendimento",
-        "/whatsapp",
-        ["/api/v1/whatsapp", "/api/webhooks", "/api/webhooks/evolution"],
-        perfis=PERFIS_OPERACAO,
-        dependencias=["clients", "messages", "evolution_api"],
-        responsavel_operacional="atendimento",
-    ),
+    # PENTE FINO 2026-07 (onda 2): a entrada "whatsapp" foi removida — não há
+    # superfície /whatsapp no frontend; os webhooks (/api/webhooks/evolution)
+    # são integração de backend, não um módulo navegável.
     _mod(
         "auditoria",
         "Auditoria e Conformidade",
@@ -404,9 +410,9 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
     ),
     _mod(
         "autofix",
-        "Diagnóstico do Sistema",
+        "Central de Diagnóstico",
         "Administração",
-        "/autofix",
+        "/diagnostico",
         ["/api/module-help/diagnostico-sistema"],
         status="beta",
         perfis=PERFIS_GESTAO,
