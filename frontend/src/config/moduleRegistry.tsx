@@ -806,7 +806,7 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     from: "/sala-analise",
     to: "/raio-x",
     reason:
-      "A Sala de Análise foi absorvida pelo Raio-X (mesmo backend); a nova porta de entrada conversacional é a Sala Jurídica.",
+      "A Sala de Análise foi absorvida pelo Raio-X (mesmo backend); a nova porta de entrada conversacional é o Assistente Jurídico (IA).",
   },
   {
     from: "/central-relacionamento",

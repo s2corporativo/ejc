@@ -12,7 +12,6 @@ from app.core.config import get_settings
 _settings = get_settings()
 _RAPIDO = _settings.ANTHROPIC_MODEL_RAPIDO
 _COMPLEXO = _settings.ANTHROPIC_MODEL_COMPLEXO or _RAPIDO
-_GROQ = _settings.GROQ_MODEL
 
 
 class TarefaIA(str, Enum):
@@ -47,10 +46,6 @@ class ConfiguracaoIA:
     max_tokens: int
     temperature: float
     justificativa: str
-
-
-def _groq(prompt_key, mt=1000, temp=0.1, just=""):
-    return ConfiguracaoIA("groq", _GROQ, prompt_key, mt, temp, just)
 
 
 def _claude(prompt_key, model, mt, temp, just):
