@@ -2,7 +2,7 @@
 # Gestão de casos: CRUD + numeração DPT-AAAA-NNNN + prescrição automática
 # + movimentos (timeline) + endpoint de análise IA integrado.
 from __future__ import annotations
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional
 
@@ -17,6 +17,10 @@ from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.client import Client
 from app.models.audit_log import criar_audit_log
+# Alocador canônico de numero_interno extraído para service compartilhado
+# (fonte única com a conversão da Sala Jurídica). Alias fino preserva os
+# chamadores internos deste router.
+from app.services.case_numeracao import proximo_numero_interno as _proximo_numero_interno
 from app.services.deadline_calculator import calcular_prescricao
 from app.services.case_intel import triagem_caso, aprendizado_encerramento
 from app.services.case_automacao import automacao_caso, gerar_documentos_iniciais_auto
@@ -59,28 +63,6 @@ def _validar_proxima_acao(payload, status_atual: str | None = None):
             status_code=422,
             detail="Campo 'proxima_acao' é obrigatório para casos com status triagem/ativo/suspenso/acordo",
         )
-
-
-async def _proximo_numero_interno(db: AsyncSession) -> str:
-    """Numeração automática DPT-2026-0001 (sequencial por ano).
-
-    Lock consultivo transacional (pg_advisory_xact_lock) serializa criações
-    concorrentes no mesmo ano — evita numero_interno duplicado. Ordenação pelo
-    sufixo NUMÉRICO (não lexicográfica: 'DPT-2026-10000' < 'DPT-2026-9999')."""
-    ano = date.today().year
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
-        {"chave": f"numero_interno_{ano}"},
-    )
-    result = await db.execute(text(r"""
-        SELECT numero_interno FROM cases
-        WHERE numero_interno LIKE :pref
-        ORDER BY CAST(substring(numero_interno FROM '\d+$') AS INTEGER) DESC
-        LIMIT 1
-    """), {"pref": f"DPT-{ano}-%"})
-    ultimo = result.scalar()
-    seq = int(ultimo.split("-")[-1]) + 1 if ultimo else 1
-    return f"DPT-{ano}-{seq:04d}"
 
 
 def _filtro_visibilidade(q, user: User):

@@ -25,6 +25,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import api from "../lib/api";
+import { AREAS_FALLBACK } from "../lib/areaCatalog";
 import Markdown from "../components/Markdown";
 import { useAuth } from "../stores/auth";
 import { toast } from "../components/Toast";
@@ -218,6 +219,7 @@ export default function SalaJuridica() {
   const [abaEstado, setAbaEstado] =
     useState<(typeof ABAS_ESTADO)[number]>("fatos");
   const [busca, setBusca] = useState("");
+  const [limite, setLimite] = useState(50);
   const [wizardAberto, setWizardAberto] = useState(false);
   const [convClienteBusca, setConvClienteBusca] = useState("");
   const [convClientes, setConvClientes] = useState<
@@ -241,13 +243,31 @@ export default function SalaJuridica() {
   const [exportando, setExportando] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const autosaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Última edição da área livre ainda não persistida pelo autosave — usada
+  // para descarregar o texto pendente antes de enviar mensagem à IA.
+  const autosavePendenteRef = useRef<{
+    sessaoId: string;
+    valor: string;
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Espelhos de busca/limite para o carregarLista manter identidade estável.
+  const buscaRef = useRef("");
+  const limiteRef = useRef(50);
+  const buscaInicialRef = useRef(true);
 
-  const carregarLista = useCallback(async () => {
-    const { data } = await api.get<Sessao[]>("/sala-juridica");
-    setSessoes(data);
-    return data;
-  }, []);
+  const carregarLista = useCallback(
+    async (opts?: { q?: string; limit?: number }) => {
+      // Backend aceita q (máx. 200 chars) e limit (1..200) em GET /sala-juridica.
+      const q = (opts?.q ?? buscaRef.current).trim().slice(0, 200);
+      const limit = opts?.limit ?? limiteRef.current;
+      const params: Record<string, string | number> = { limit };
+      if (q) params.q = q;
+      const { data } = await api.get<Sessao[]>("/sala-juridica", { params });
+      setSessoes(data);
+      return data;
+    },
+    [],
+  );
 
   const abrirSessao = useCallback(async (id: string) => {
     const { data } = await api.get<Sessao>(`/sala-juridica/${id}`);
@@ -272,6 +292,31 @@ export default function SalaJuridica() {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
   }, [ativa?.mensagens?.length]);
 
+  // Busca server-side com debounce — complementa o filtro em memória
+  // (resposta instantânea) trazendo sessões fora da página carregada.
+  useEffect(() => {
+    buscaRef.current = busca;
+    if (buscaInicialRef.current) {
+      buscaInicialRef.current = false;
+      return;
+    }
+    const t = setTimeout(() => {
+      carregarLista().catch(() => toast.error("Falha ao pesquisar análises"));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [busca, carregarLista]);
+
+  const carregarMais = async () => {
+    const novoLimite = Math.min(limite + 50, 200); // teto do backend
+    setLimite(novoLimite);
+    limiteRef.current = novoLimite;
+    try {
+      await carregarLista({ limit: novoLimite });
+    } catch {
+      toast.error("Falha ao carregar mais análises");
+    }
+  };
+
   const novaSessao = async () => {
     const { data } = await api.post<Sessao>("/sala-juridica", {
       titulo: `Nova análise — ${new Date().toLocaleDateString("pt-BR")}`,
@@ -284,16 +329,40 @@ export default function SalaJuridica() {
   const aoEditarWorkspace = (valor: string) => {
     setWorkspace(valor);
     if (!ativa || ativa.frozen) return;
+    autosavePendenteRef.current = { sessaoId: ativa.id, valor };
     if (autosaveRef.current) clearTimeout(autosaveRef.current);
     autosaveRef.current = setTimeout(async () => {
       try {
         await api.patch(`/sala-juridica/${ativa.id}`, {
           workspace_texto: valor,
         });
+        // Só limpa a pendência se nenhuma edição mais nova chegou no meio.
+        if (
+          autosavePendenteRef.current?.sessaoId === ativa.id &&
+          autosavePendenteRef.current.valor === valor
+        ) {
+          autosavePendenteRef.current = null;
+        }
       } catch {
         toast.error("Falha no salvamento automático");
       }
     }, 1200);
+  };
+
+  // Descarrega o autosave pendente imediatamente, para o backend responder
+  // com o workspace_texto atual (e não a versão anterior ao debounce).
+  const descarregarAutosave = async (sessao: Sessao) => {
+    const pendente = autosavePendenteRef.current;
+    if (!pendente || pendente.sessaoId !== sessao.id || sessao.frozen) return;
+    if (autosaveRef.current) clearTimeout(autosaveRef.current);
+    autosavePendenteRef.current = null;
+    try {
+      await api.patch(`/sala-juridica/${sessao.id}`, {
+        workspace_texto: pendente.valor,
+      });
+    } catch {
+      toast.error("Falha no salvamento automático");
+    }
   };
 
   const enviar = async () => {
@@ -301,6 +370,7 @@ export default function SalaJuridica() {
     const conteudo = texto.trim();
     setTexto("");
     setEnviando(true);
+    await descarregarAutosave(ativa);
     setAtiva((s) =>
       s
         ? {
@@ -389,7 +459,9 @@ export default function SalaJuridica() {
       const { data } = await api.get("/clients", {
         params: { search: termo.trim(), page_size: 8 },
       });
-      setConvClientes(data?.items ?? data ?? []);
+      // GET /clients responde paginado: { data: [...], total, page, page_size }.
+      const lista = data?.data ?? data?.items ?? data;
+      setConvClientes(Array.isArray(lista) ? lista : []);
     } catch {
       setConvClientes([]);
     }
@@ -483,7 +555,9 @@ export default function SalaJuridica() {
       const { data } = await api.get("/cases", {
         params: { search: termo.trim(), page_size: 10 },
       });
-      setVincCasos(data?.items ?? data ?? []);
+      // GET /cases responde paginado: { data: [...], total, page, page_size }.
+      const lista = data?.data ?? data?.items ?? data;
+      setVincCasos(Array.isArray(lista) ? lista : []);
     } catch {
       setVincCasos([]);
     }
@@ -664,6 +738,15 @@ export default function SalaJuridica() {
               ))}
             </div>
           ))}
+          {sessoes.length >= limite && limite < 200 && (
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={() => void carregarMais()}
+            >
+              Carregar mais
+            </Button>
+          )}
         </aside>
 
         {/* ── Centro: área livre + chat ────────────────────────────────── */}
@@ -1072,22 +1155,10 @@ export default function SalaJuridica() {
                 value={convArea}
                 onChange={(e) => setConvArea(e.target.value)}
               >
-                {[
-                  "civil",
-                  "trabalhista",
-                  "consumidor",
-                  "familia",
-                  "ambiental",
-                  "criminal",
-                  "previdenciario",
-                  "empresarial",
-                  "tributario",
-                  "administrativo",
-                  "bancario",
-                  "imobiliario",
-                ].map((a) => (
-                  <option key={a} value={a}>
-                    {a}
+                {/* AREAS_FALLBACK espelha o enum CaseArea do backend. */}
+                {AREAS_FALLBACK.map((a) => (
+                  <option key={a.slug} value={a.slug}>
+                    {a.nome}
                   </option>
                 ))}
               </Select>

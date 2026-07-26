@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.legal_chat import CHAT_MODOS, SESSION_STATUS
 
@@ -20,6 +20,11 @@ class SessaoCreate(BaseModel):
     workspace_texto: str | None = Field(default=None, max_length=MAX_WORKSPACE_CHARS)
 
 
+# Status derivados de fluxos dedicados (com audit log/congelamento próprios)
+# — jamais setáveis via PATCH livre.
+_STATUS_FLUXO_DEDICADO = {"convertida_em_caso", "arquivada"}
+
+
 class SessaoUpdate(BaseModel):
     """PATCH parcial — inclui o autosave da área de trabalho livre."""
 
@@ -34,9 +39,25 @@ class SessaoUpdate(BaseModel):
     @field_validator("status")
     @classmethod
     def _status_valido(cls, v: str | None) -> str | None:
-        if v is not None and v not in SESSION_STATUS:
+        if v is None:
+            return v
+        if v in _STATUS_FLUXO_DEDICADO:
+            raise ValueError(
+                "status derivado de fluxo dedicado; use POST /converter, "
+                "POST /vincular-caso ou POST /saida"
+            )
+        if v not in SESSION_STATUS:
             raise ValueError(f"status inválido; use um de: {sorted(SESSION_STATUS)}")
         return v
+
+    @model_validator(mode="after")
+    def _sem_null_explicito(self):
+        # {"titulo": null} passa no tipo Optional mas estouraria 500 na coluna
+        # non-nullable; None só é aceitável quando o campo foi OMITIDO do PATCH.
+        for campo in ("titulo", "status", "favorita"):
+            if campo in self.model_fields_set and getattr(self, campo) is None:
+                raise ValueError(f"'{campo}' não aceita null explícito")
+        return self
 
 
 class MensagemCreate(BaseModel):
@@ -84,6 +105,9 @@ class ConverterRequest(BaseModel):
     area: str = Field(min_length=1, max_length=50)
     titulo_caso: str = Field(min_length=1, max_length=255)
     descricao: str | None = Field(default=None, max_length=10_000)
+    # Guarda G1 do caminho canônico (cases.py): caso em triagem sempre nasce
+    # com "o que fazer agora". Omitido → default preenchido na conversão.
+    proxima_acao: str | None = Field(default=None, max_length=500)
     advogado_responsavel_id: str = Field(min_length=1, max_length=36)
     confirmo_conflito_verificado: bool
     confirmo_dados_revisados: bool
@@ -116,9 +140,10 @@ class SaidaAlternativaRequest(BaseModel):
     acao: Literal["encerrar_consulta", "arquivar", "descartar"]
     justificativa: str | None = Field(default=None, max_length=2_000)
 
-    @field_validator("justificativa")
-    @classmethod
-    def _justificativa_no_descarte(cls, v: str | None, info) -> str | None:
-        if info.data.get("acao") == "descartar" and not (v or "").strip():
+    @model_validator(mode="after")
+    def _justificativa_no_descarte(self) -> "SaidaAlternativaRequest":
+        # model_validator: field_validator NÃO roda quando o campo é omitido
+        # do payload — descarte sem justificativa passava despercebido.
+        if self.acao == "descartar" and not (self.justificativa or "").strip():
             raise ValueError("descartar exige justificativa registrada")
-        return v
+        return self

@@ -40,6 +40,21 @@ from app.services import documento_service
 router = APIRouter(prefix="/sala-juridica", tags=["Sala Jurídica Conversacional"])
 settings = get_settings()
 
+# Mesma matriz do módulo no frontend (moduleRegistry ROLES.juridico) e do
+# Raio-X (_permitido): papéis administrativos (financeiro, secretaria) não
+# criam sessões nem disparam IA/análise de documentos da Sala.
+_EQUIPE_JURIDICA = {
+    "superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario",
+}
+
+
+async def exigir_equipe_juridica(user: User = Depends(get_current_user)) -> User:
+    """Gate de módulo da Sala Jurídica — 403 fora da equipe jurídica."""
+    if svc._role(user) not in _EQUIPE_JURIDICA:
+        raise HTTPException(403, "A Sala Jurídica é restrita à equipe jurídica")
+    return user
+
+
 MAX_ARQUIVOS = 10
 EXTENSOES = {
     ".pdf", ".docx", ".doc", ".txt", ".xml", ".xlsx", ".csv",
@@ -51,7 +66,7 @@ EXTENSOES = {
 async def criar_sessao(
     payload: SessaoCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     sessao = LegalChatSession(
         id=str(uuid4()),
@@ -75,7 +90,7 @@ async def listar_sessoes(
     q: str | None = Query(default=None, max_length=200),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     if status is not None and status not in SESSION_STATUS:
         raise HTTPException(422, f"status inválido; use um de: {sorted(SESSION_STATUS)}")
@@ -104,7 +119,7 @@ async def listar_sessoes(
 async def detalhar_sessao(
     session_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     sessao = await svc.obter_sessao(db, session_id, user)
     res = await db.execute(
@@ -125,7 +140,7 @@ async def atualizar_sessao(
     session_id: str,
     payload: SessaoUpdate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     sessao = await svc.obter_sessao(db, session_id, user)
     svc.exigir_nao_congelada(sessao)
@@ -147,7 +162,7 @@ async def enviar_mensagem(
     session_id: str,
     payload: MensagemCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     # Atos de análise/elaboração jurídica exigem advogado+ (padrão do núcleo).
     requer_advogado(user, "Somente advogados podem usar a análise jurídica de IA")
@@ -162,7 +177,7 @@ async def atualizar_estado(
     session_id: str,
     payload: EstadoUpdate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     requer_advogado(user, "A curadoria do estado jurídico é ato privativo de advogado")
     sessao = await svc.obter_sessao(db, session_id, user)
@@ -182,7 +197,7 @@ async def atualizar_estado(
 async def obter_estado(
     session_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     sessao = await svc.obter_sessao(db, session_id, user)
     estado = await svc.ultima_versao_estado(db, sessao.id)
@@ -205,7 +220,7 @@ async def anexar_documentos(
     session_id: str,
     files: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     sessao = await svc.obter_sessao(db, session_id, user)
     svc.exigir_nao_congelada(sessao)
@@ -295,7 +310,7 @@ async def converter(
     session_id: str,
     payload: ConverterRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     requer_advogado(user, "A criação de caso oficial é ato privativo de advogado")
     sessao = await svc.obter_sessao(db, session_id, user)
@@ -318,7 +333,7 @@ async def vincular_caso(
     session_id: str,
     payload: VincularCasoRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     """Vincula a análise a um caso já existente (alternativa a criar caso novo)."""
     requer_advogado(user, "O vínculo a caso oficial é ato privativo de advogado")
@@ -339,7 +354,7 @@ async def exportar(
     session_id: str,
     formato: str = Query(default="pdf", pattern="^(pdf|docx)$"),
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     """Exporta a análise (workspace + estado + conversa) em PDF ou DOCX."""
     from fastapi.responses import Response
@@ -378,7 +393,7 @@ async def saida_alternativa(
     session_id: str,
     payload: SaidaAlternativaRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(exigir_equipe_juridica),
 ):
     """Saídas que não geram processo: consulta, arquivamento ou descarte."""
     sessao = await svc.obter_sessao(db, session_id, user)

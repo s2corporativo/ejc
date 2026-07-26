@@ -12,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.case import Case, CaseArea
@@ -25,6 +25,7 @@ from app.models.legal_chat import (
 )
 from app.models.user import User
 from app.schemas.legal_chat import ConverterRequest, MensagemCreate
+from app.services.case_numeracao import proximo_numero_interno
 
 # Modo do seletor → task_type do gateway (roteamento econômico: conversa
 # livre fica no provider local; elaboração/estratégia sobem de tier).
@@ -134,6 +135,21 @@ async def gravar_versao_estado(
     origem: str,
     created_by: str | None,
 ) -> LegalChatStateVersion:
+    # Lock da linha da sessão: serializa mensagens/edições CONCORRENTES da
+    # mesma sessão. Sem ele, duas transações leem a mesma última versão e a
+    # segunda viola uq_legal_chat_estado_versao (500 em vez de enfileirar).
+    # populate_existing: força a releitura dos atributos sob o lock (o objeto
+    # do identity map pode estar stale) — fecha o TOCTOU de congelamento com
+    # uma conversão concorrente que congelou a sessão durante a chamada de IA.
+    res = await db.execute(
+        select(LegalChatSession)
+        .where(LegalChatSession.id == sessao.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    travada = res.scalar_one_or_none()
+    if travada is not None:
+        exigir_nao_congelada(travada)
     atual = await ultima_versao_estado(db, sessao.id)
     versao = (atual.versao if atual else 0) + 1
     nova = LegalChatStateVersion(
@@ -149,8 +165,29 @@ async def gravar_versao_estado(
     return nova
 
 
-def _montar_mensagem_ia(payload: MensagemCreate, sessao: LegalChatSession) -> str:
-    """Mensagem efetiva enviada ao núcleo: instrução do modo + workspace + texto."""
+# Tetos conservadores dos blocos de contexto conversacional — protegem a
+# janela de tokens do provider em sessões longas/com muitos anexos.
+_HISTORICO_MAX_MENSAGENS = 10
+_HISTORICO_MAX_CHARS_MSG = 1_500
+_HISTORICO_MAX_CHARS_TOTAL = 12_000
+_ANEXO_MAX_CHARS = 3_000
+_ANEXOS_MAX_CHARS_TOTAL = 12_000
+
+
+def _montar_mensagem_ia(
+    payload: MensagemCreate,
+    sessao: LegalChatSession,
+    historico: list[LegalChatMessage] | None = None,
+    anexos: list[LegalChatAttachment] | None = None,
+) -> str:
+    """Mensagem efetiva enviada ao núcleo: instrução do modo + workspace +
+    histórico recente + síntese dos anexos + texto do advogado.
+
+    Sem o histórico, cada mensagem chegava ao núcleo sem memória da conversa;
+    sem os anexos, os documentos enviados nunca entravam no contexto da IA.
+    """
+    import json
+
     partes: list[str] = []
     instrucao = MODO_INSTRUCAO.get(payload.modo) or ""
     if instrucao:
@@ -160,6 +197,37 @@ def _montar_mensagem_ia(payload: MensagemCreate, sessao: LegalChatSession) -> st
             "[ÁREA DE TRABALHO DO ADVOGADO — fatos, anotações e rascunhos]\n"
             + sessao.workspace_texto.strip()
         )
+
+    # Histórico (cronológico): truncagem por mensagem + teto total, cortando
+    # as MAIS ANTIGAS primeiro (itera das novas para as velhas e reverte).
+    linhas: list[str] = []
+    total = 0
+    for m in reversed(historico or []):
+        autor = "Advogado" if m.autor == "user" else "IA"
+        linha = f"{autor}: {(m.conteudo or '')[:_HISTORICO_MAX_CHARS_MSG]}"
+        if total + len(linha) > _HISTORICO_MAX_CHARS_TOTAL:
+            break
+        linhas.append(linha)
+        total += len(linha)
+    if linhas:
+        partes.append("[HISTÓRICO DA CONVERSA]\n" + "\n\n".join(reversed(linhas)))
+
+    # Anexos: nome + síntese compacta da extração estruturada, com teto por
+    # anexo e teto total.
+    blocos_anexos: list[str] = []
+    total = 0
+    for a in anexos or []:
+        sintese = json.dumps(
+            a.resultado_analise or {}, ensure_ascii=False, separators=(",", ":")
+        )[:_ANEXO_MAX_CHARS]
+        bloco = f"- {a.nome_original}: {sintese}"
+        if total + len(bloco) > _ANEXOS_MAX_CHARS_TOTAL:
+            break
+        blocos_anexos.append(bloco)
+        total += len(bloco)
+    if blocos_anexos:
+        partes.append("[DOCUMENTOS ANEXADOS]\n" + "\n".join(blocos_anexos))
+
     partes.append(payload.conteudo)
     return "\n\n".join(partes)
 
@@ -172,6 +240,22 @@ async def enviar_mensagem(
 ) -> dict[str, Any]:
     """Persiste a pergunta, roda o núcleo único de IA e persiste a resposta."""
     exigir_nao_congelada(sessao)
+
+    # Contexto conversacional carregado ANTES de persistir a nova pergunta —
+    # assim a própria mensagem não entra duplicada no histórico enviado à IA.
+    res_hist = await db.execute(
+        select(LegalChatMessage)
+        .where(LegalChatMessage.session_id == sessao.id)
+        .order_by(LegalChatMessage.created_at.desc())
+        .limit(_HISTORICO_MAX_MENSAGENS)
+    )
+    historico = list(reversed(res_hist.scalars().all()))  # ordem cronológica
+    res_anexos = await db.execute(
+        select(LegalChatAttachment)
+        .where(LegalChatAttachment.session_id == sessao.id)
+        .order_by(LegalChatAttachment.created_at)
+    )
+    anexos = list(res_anexos.scalars().all())
 
     msg_user = LegalChatMessage(
         id=str(uuid4()),
@@ -191,7 +275,7 @@ async def enviar_mensagem(
         db=db,
         user=user,
         task_type=MODO_TASK_TYPE[payload.modo],
-        mensagem=_montar_mensagem_ia(payload, sessao),
+        mensagem=_montar_mensagem_ia(payload, sessao, historico, anexos),
         case_id=sessao.convertido_case_id,
         params={
             "module_key": "sala-juridica",
@@ -235,9 +319,10 @@ async def enviar_mensagem(
 
     origem_estado = "ia"
     resumo_estado: str | None = None
+    custo_extracao = Decimal("0")
     from app.core.config import get_settings
     if get_settings().SALA_JURIDICA_AUTO_ESTADO:
-        extraido = await _extrair_estado_automatico(
+        extraido, custo_extracao = await _extrair_estado_automatico(
             db, user, estado_atual=estado,
             pergunta=payload.conteudo,
             resposta=resultado.get("conteudo") or "",
@@ -245,7 +330,11 @@ async def enviar_mensagem(
         if extraido is not None:
             resumo_estado = extraido.pop("_resumo", None)
             extraido["fontes"] = estado["fontes"]  # fontes vêm do RAG, não do LLM
-            estado = extraido
+            # Merge PARCIAL: o extrator pode devolver só algumas chaves (ex.:
+            # apenas "fatos"). As omitidas herdam do estado atual — substituir
+            # o dicionário inteiro apagaria provas/riscos/cronologia já
+            # consolidados em versões anteriores.
+            estado = {**estado, **extraido}
             origem_estado = "ia_extracao"
 
     versao = await gravar_versao_estado(
@@ -256,7 +345,11 @@ async def enviar_mensagem(
         created_by=None,
     )
     msg_ia.estado_versao = versao.versao
-    sessao.custo_ia_total = (sessao.custo_ia_total or Decimal("0")) + custo
+    # Custo total da sessão inclui TAMBÉM a chamada de extração de estado —
+    # ela pode cair em fallback externo pago e não pode sumir da contabilidade.
+    sessao.custo_ia_total = (
+        (sessao.custo_ia_total or Decimal("0")) + custo + custo_extracao
+    )
     await db.flush()
 
     return {
@@ -304,16 +397,22 @@ async def _extrair_estado_automatico(
     estado_atual: dict,
     pergunta: str,
     resposta: str,
-) -> dict | None:
-    """Extração estruturada do estado via provider local (task_type "resumo").
+) -> tuple[dict | None, Decimal]:
+    """Extração estruturada do estado via task_type "resumo".
 
-    Retorna o novo estado validado, ou None em qualquer falha (fail-soft):
-    JSON inválido, chaves desconhecidas, provider indisponível.
+    Retorna (novo estado validado | None, custo estimado em BRL). O estado é
+    None em qualquer falha (fail-soft): JSON inválido, chaves desconhecidas,
+    provider indisponível. O custo já incorrido é SEMPRE devolvido: a cadeia
+    do task_type "resumo" prioriza o provider local (ollama), mas pode cair
+    em fallback externo pago (maritaca/groq) e o orchestrator não expõe uma
+    forma de forçar rota local-only por chamada — então o gasto é
+    contabilizado em custo_ia_total pelo chamador.
     """
     import json
 
     from app.services.ai.core.orchestrator import run_ai_task
 
+    custo = Decimal("0")
     try:
         mensagem = _PROMPT_EXTRACAO.format(
             estado=json.dumps(
@@ -331,23 +430,24 @@ async def _extrair_estado_automatico(
             params={"module_key": "sala-juridica", "surface": "sala_juridica_estado"},
             usar_rag=False,
         )
+        custo = Decimal(str(r.get("custo_estimado_brl") or 0))
         bruto = r.get("conteudo") or ""
         inicio, fim = bruto.find("{"), bruto.rfind("}")
         if inicio < 0 or fim <= inicio:
-            return None
+            return None, custo
         dados = json.loads(bruto[inicio : fim + 1])
         if not isinstance(dados, dict):
-            return None
+            return None, custo
         resumo = dados.pop("_resumo", None)
         if set(dados) - _CHAVES_ESTADO:
-            return None
+            return None, custo
         if not all(isinstance(v, list) for v in dados.values()):
-            return None
+            return None, custo
         if resumo is not None:
             dados["_resumo"] = str(resumo)[:2_000]
-        return dados
+        return dados, custo
     except Exception:  # fail-soft deliberado: extração jamais bloqueia a resposta
-        return None
+        return None, custo
 
 
 async def converter_em_caso(
@@ -361,6 +461,17 @@ async def converter_em_caso(
         raise HTTPException(
             403, "Seu perfil não possui autorização para criar casos oficiais"
         )
+    # Lock pessimista da sessão + recheck: duas conversões simultâneas da
+    # mesma análise não podem criar dois casos/clientes — a segunda transação
+    # espera o lock e cai na idempotência abaixo. populate_existing garante
+    # que o recheck lê os atributos recomprometidos, não o identity map stale.
+    res = await db.execute(
+        select(LegalChatSession)
+        .where(LegalChatSession.id == sessao.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    sessao = res.scalar_one()
     if sessao.convertido_case_id:
         return {"case_id": sessao.convertido_case_id, "ja_convertido": True}
     if payload.area not in {a.value for a in CaseArea}:
@@ -383,7 +494,7 @@ async def converter_em_caso(
         db.add(client)
         await db.flush()
 
-    numero = await _proximo_numero_interno(db)
+    numero = await proximo_numero_interno(db)
     case = Case(
         id=str(uuid4()),
         numero_interno=numero,
@@ -392,6 +503,10 @@ async def converter_em_caso(
         descricao_fatos=payload.descricao,
         client_id=client.id,
         advogado_responsavel_id=payload.advogado_responsavel_id,
+        # G1 (mesma guarda de cases.py): caso em triagem nunca nasce sem
+        # "o que fazer agora" — default aponta a revisão da análise convertida.
+        proxima_acao=payload.proxima_acao
+        or "Revisar a análise convertida da Sala Jurídica e definir a próxima providência",
     )
     db.add(case)
     await db.flush()
@@ -421,9 +536,20 @@ async def vincular_caso_existente(
         raise HTTPException(
             403, "Seu perfil não possui autorização para vincular a casos oficiais"
         )
-    exigir_nao_congelada(sessao)
+    # Lock pessimista da sessão + recheck ANTES do gate de congelamento: a
+    # repetição do vínculo já consumado é idempotente (ja_convertido=True em
+    # vez de 409), e dois vínculos simultâneos não gravam case_ids distintos.
+    # populate_existing garante recheck sobre atributos recomprometidos.
+    res = await db.execute(
+        select(LegalChatSession)
+        .where(LegalChatSession.id == sessao.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    sessao = res.scalar_one()
     if sessao.convertido_case_id:
         return {"case_id": sessao.convertido_case_id, "ja_convertido": True}
+    exigir_nao_congelada(sessao)
 
     from app.core.ownership import verificar_acesso_caso
 
@@ -507,17 +633,6 @@ def exportar_pdf(
     for titulo, corpo in _blocos_exportacao(sessao, mensagens, estado):
         partes.append(f"<h2>{escape(titulo)}</h2><p>{escape(corpo)}</p>")
     return HTML(string="".join(partes)).write_pdf()
-
-
-async def _proximo_numero_interno(db: AsyncSession) -> str:
-    ano = datetime.now(timezone.utc).year
-    res = await db.execute(
-        select(func.count()).select_from(Case).where(
-            Case.numero_interno.like(f"{ano}-%")
-        )
-    )
-    seq = (res.scalar() or 0) + 1
-    return f"{ano}-{seq:04d}"
 
 
 def serializar_mensagem(m: LegalChatMessage) -> dict[str, Any]:
