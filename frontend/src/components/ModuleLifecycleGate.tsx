@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Route } from "lucide-react";
 import { lifecycleForPath, safeReplacementRoute } from "../lib/moduleLifecycle";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
+import { Spinner } from "./UI";
 
 export default function ModuleLifecycleGate({
   children,
@@ -16,7 +17,17 @@ export default function ModuleLifecycleGate({
     void load();
   }, [load]);
 
-  if (!loaded) return <>{children}</>;
+  if (!loaded) {
+    // FLX-023: enquanto o lifecycle não carrega, NÃO monta a página — sem
+    // isso, um módulo desabilitado montava e disparava requests antes do
+    // bloqueio. O load() do store é fail-open (termina com loaded=true mesmo
+    // em erro de rede), então este placeholder nunca fica preso.
+    return (
+      <div className="grid min-h-[40vh] place-items-center">
+        <Spinner />
+      </div>
+    );
+  }
 
   const lifecycle = lifecycleForPath(location.pathname, settings);
   if (!lifecycle || (lifecycle.enabled && lifecycle.status !== "disabled")) {

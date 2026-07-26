@@ -77,6 +77,11 @@ import {
   NOVO_CASO_MANUAL_PATH,
   resolverModoNovoCaso,
 } from "../lib/novoCaso";
+import {
+  rascunhoCobreRevisao,
+  urlRevisaoPendente,
+  urlSemParamRevisao,
+} from "../lib/revisaoExtracao";
 import Kanban from "./Kanban";
 import { List } from "lucide-react";
 
@@ -376,6 +381,49 @@ export default function Casos() {
     }
   }, [novoCasoModo]);
 
+  // FLX-048 — recuperação pós-refresh da revisão da extração: se a URL marca
+  // ?revisao=<caseId> e o rascunho persistido cobre esse caso, refaz o preview
+  // (dry-run) e reabre o modal de decisão. Sem rascunho compatível, remove o
+  // param silenciosamente (não há o que recuperar).
+  useEffect(() => {
+    const revisaoCaseId = new URLSearchParams(location.search).get("revisao");
+    if (!revisaoCaseId || preview) return;
+    const rascunho = carregarRascunho();
+    if (!rascunhoCobreRevisao(rascunho, revisaoCaseId)) {
+      nav(urlSemParamRevisao(location.pathname, location.search), {
+        replace: true,
+      });
+      return;
+    }
+    let cancelado = false;
+    (async () => {
+      try {
+        const result = await aplicarExtracao(revisaoCaseId, rascunho.extracao, {
+          dryRun: true,
+        });
+        if (cancelado) return;
+        setPreview({
+          caseId: revisaoCaseId,
+          caseTitulo: (rascunho.form.titulo as string) || "caso",
+          extracao: rascunho.extracao,
+          result,
+        });
+      } catch {
+        if (!cancelado)
+          toast.error(
+            "Não foi possível recuperar a revisão dos dados extraídos. " +
+              "Abra o caso pela lista para continuar — o rascunho segue salvo.",
+          );
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+    // `preview` fica fora das deps de propósito: o guard acima já impede
+    // reexecução com o modal aberto, e o objetivo é rodar só quando a URL muda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, location.search]);
+
   const fecharCadastroCompleto = () => {
     setModal(false);
     if (location.pathname === "/casos/novo") {
@@ -629,15 +677,20 @@ export default function Casos() {
       }
 
       // Sucesso: segue direto para a jornada. Quando há preview de extração,
-      // mantém apenas o modal de confirmação e abre a jornada logo após a
-      // decisão do usuário (aplicar ou pular), sem abandonar o fluxo na lista.
-      limparRascunho();
+      // mantém o modal de confirmação e — FLX-048 — PRESERVA o rascunho e
+      // marca ?revisao=<caseId> na URL: um refresh nesse momento recupera a
+      // decisão pendente. O rascunho só é limpo nos desfechos da decisão
+      // (aplicar ou pular), em aplicarPreviewNoCaso/abrirJornadaSemAplicar.
       setPendencia(null);
       setRascunhoSalvo(null);
       setModal(false);
-      if (previewPreparado) nav("/casos", { replace: true });
-      else if (novo?.id) nav(caseJourneyPath(novo.id), { replace: true });
-      else nav("/casos", { replace: true });
+      if (previewPreparado && novo?.id) {
+        nav(urlRevisaoPendente(novo.id), { replace: true });
+      } else {
+        limparRascunho();
+        if (novo?.id) nav(caseJourneyPath(novo.id), { replace: true });
+        else nav("/casos", { replace: true });
+      }
       setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
       load();
     } catch (e: any) {
@@ -735,10 +788,15 @@ export default function Casos() {
       toast.success(
         `Dados aplicados ao caso: ${r.partes_criadas} parte(s), ${r.areas_criadas} área(s)${campos}${prazos}.`,
       );
+      // Desfecho da decisão (FLX-048): agora sim o rascunho pode ser limpo; a
+      // navegação com replace tira o marcador ?revisao da URL/histórico.
+      limparRascunho();
+      setRascunhoSalvo(null);
       setPreview(null);
       load();
-      nav(caseJourneyPath(caseId));
+      nav(caseJourneyPath(caseId), { replace: true });
     } catch (e: any) {
+      // Falha ao aplicar: rascunho e ?revisao permanecem — segue recuperável.
       toast.error(
         e.response?.data?.detail || "Erro ao aplicar os dados ao caso.",
       );
@@ -750,8 +808,19 @@ export default function Casos() {
   const abrirJornadaSemAplicar = () => {
     if (!preview) return;
     const caseId = preview.caseId;
+    // Desfecho explícito ("pular") — FLX-048: limpa o rascunho e sai do
+    // estado de revisão (o replace remove ?revisao da URL/histórico).
+    limparRascunho();
+    setRascunhoSalvo(null);
     setPreview(null);
-    nav(caseJourneyPath(caseId));
+    nav(caseJourneyPath(caseId), { replace: true });
+  };
+
+  // Fechar o modal SEM decidir (X/backdrop) — FLX-048: mantém o rascunho e o
+  // ?revisao na URL; a revisão continua recuperável (um F5 reabre o preview).
+  // Os desfechos reais são aplicarPreviewNoCaso e abrirJornadaSemAplicar.
+  const fecharPreviewSemDecidir = () => {
+    setPreview(null);
   };
 
   return (
@@ -1517,7 +1586,7 @@ export default function Casos() {
           O usuário vê o que SERÁ aplicado e confirma ou pula. */}
       <Modal
         open={!!preview}
-        onClose={abrirJornadaSemAplicar}
+        onClose={fecharPreviewSemDecidir}
         title="Aplicar dados extraídos ao caso"
         footer={
           <>
