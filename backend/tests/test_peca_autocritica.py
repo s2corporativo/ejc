@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-import pytest
 
 import app.services.peca_service as ps
 import app.services.ai.adversarial as adversarial

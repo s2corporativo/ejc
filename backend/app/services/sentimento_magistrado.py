@@ -5,7 +5,7 @@ Identifica tendências e "humor" decisório em tempo real.
 import logging
 from app.core.ai_brain import ai_brain
 
-logger = logging.getLogger("sentimento_magistrado")
+logger = logging.getLogger("ejc.sentimento_magistrado")
 
 class SentimentoMagistrado:
     def __init__(self):

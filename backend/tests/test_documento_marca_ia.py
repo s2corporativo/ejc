@@ -13,7 +13,6 @@ from __future__ import annotations
 import io
 
 from app.core.config import Settings, get_settings
-from app.services.document_format import marca_minuta_ia
 from app.services.docx_service import gerar_docx
 from app.services.pdf_service import _texto_peca_para_html
 

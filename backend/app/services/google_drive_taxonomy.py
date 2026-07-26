@@ -174,35 +174,12 @@ _PROCESSO_MARCADOR_RE = re.compile(r"\b(processo|proc|autos)\s+n[o]?\b")
 _CLIENTE_PASTA_TERMOS = ("clientes", "cliente", "casos", "processos")
 
 
-def _so_digitos(valor: str) -> str:
-    return re.sub(r"\D", "", valor)
-
-
-def _cpf_valido(valor: str) -> bool:
-    cpf = _so_digitos(valor)
-    if len(cpf) != 11 or cpf == cpf[0] * 11:
-        return False
-    for corte in (9, 10):
-        soma = sum(int(cpf[i]) * ((corte + 1) - i) for i in range(corte))
-        dig = (soma * 10) % 11 % 10
-        if dig != int(cpf[corte]):
-            return False
-    return True
-
-
-def _cnpj_valido(valor: str) -> bool:
-    cnpj = _so_digitos(valor)
-    if len(cnpj) != 14 or cnpj == cnpj[0] * 14:
-        return False
-    pesos1 = (5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
-    pesos2 = (6,) + pesos1
-    for pesos, corte in ((pesos1, 12), (pesos2, 13)):
-        soma = sum(int(cnpj[i]) * pesos[i] for i in range(corte))
-        resto = soma % 11
-        dig = 0 if resto < 2 else 11 - resto
-        if dig != int(cnpj[corte]):
-            return False
-    return True
+# Dígito verificador de CPF/CNPJ: reutiliza a implementação canônica do projeto
+# (app/services/validators_service.py) em vez de manter uma cópia local.
+from app.services.validators_service import (  # noqa: E402
+    validar_cnpj as _cnpj_valido,
+    validar_cpf as _cpf_valido,
+)
 
 
 def _detectar_peca_cliente(nome: str, caminho: str | None, texto_norm: str) -> list[str]:

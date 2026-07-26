@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import text, select, func
 
-logger = logging.getLogger("ia_sentinela")
+logger = logging.getLogger("ejc.ia_sentinela")
 
 class IASentinela:
     def __init__(self, db_session):

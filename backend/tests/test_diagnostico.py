@@ -233,7 +233,8 @@ async def test_probe_scheduler_desligado(monkeypatch):
 async def test_probe_disco_baixo():
     s = get_settings()
     # 5% livre → alerta
-    fn = lambda _p: _Usage(total=100, used=95, free=5)
+    def fn(_p):
+        return _Usage(total=100, used=95, free=5)
     r = await dg._probe_disco(s, disk_usage_fn=fn, path="/")
     assert r["status"] == "alerta"
     assert r["percentual_livre"] == 5.0
@@ -241,7 +242,8 @@ async def test_probe_disco_baixo():
 
 async def test_probe_disco_ok():
     s = get_settings()
-    fn = lambda _p: _Usage(total=100, used=40, free=60)
+    def fn(_p):
+        return _Usage(total=100, used=40, free=60)
     r = await dg._probe_disco(s, disk_usage_fn=fn, path="/")
     assert r["status"] == "ok"
     assert r["percentual_livre"] == 60.0
@@ -251,7 +253,8 @@ async def test_probe_disco_caminho_nao_expoe_path_absoluto(tmp_path):
     """Regressão: extras['caminho'] deve ser o rótulo do MOUNT, nunca o path
     absoluto do host (vazamento de layout interno de disco)."""
     s = get_settings()
-    fn = lambda _p: _Usage(total=100, used=40, free=60)
+    def fn(_p):
+        return _Usage(total=100, used=40, free=60)
     r = await dg._probe_disco(s, disk_usage_fn=fn, path=str(tmp_path))
     assert r["caminho"] != str(tmp_path)          # não é o path absoluto
     assert str(tmp_path) not in r["caminho"]       # nem o contém

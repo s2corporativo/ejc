@@ -4,7 +4,7 @@ Identifica o ramo do direito do caso e aciona a Skill correspondente automaticam
 """
 import logging
 
-logger = logging.getLogger("skill_router")
+logger = logging.getLogger("ejc.skill_router")
 
 class SkillRouter:
     def __init__(self):

@@ -538,8 +538,6 @@ class _FakeAnthropicClient:
     """Cliente fake que captura kwargs de messages.create — zero rede."""
 
     def __init__(self, box: dict):
-        outer = self
-
         class _Messages:
             def create(self, **kwargs):
                 box.update(kwargs)

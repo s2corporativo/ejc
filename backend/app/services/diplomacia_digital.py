@@ -5,7 +5,7 @@ Gestão de Ativos Financeiros Judiciais e Estratégia de Liquidez.
 import logging
 from math import pow
 
-logger = logging.getLogger("diplomacia_digital")
+logger = logging.getLogger("ejc.diplomacia_digital")
 
 class DiplomaciaDigital:
     def __init__(self, selic_atual: float = 0.1075):

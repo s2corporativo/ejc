@@ -14,7 +14,6 @@ import pytest
 from fastapi import FastAPI
 
 import app.integrations.brasilapi_client as brasilapi_mod
-import app.integrations.conecta_gov_client as conecta_mod
 import app.integrations.datajud_client as datajud_mod
 import app.integrations.djen_comunica_client as djen_mod
 from app.integrations import routers as integ_routers
