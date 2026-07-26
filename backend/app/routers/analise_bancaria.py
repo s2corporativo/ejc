@@ -57,6 +57,12 @@ AREA_PROMPTS = {
         "licença buscando: vícios formais, ausência de fundamentação técnica, desproporcionalidade da multa, "
         "prazos e nulidades, e caminhos (defesa, conversão de multa, TAC). " + REGRAS
     ),
+    "digital_lgpd": (
+        "Você é analista de DIREITO DIGITAL e PROTEÇÃO DE DADOS (LGPD). Analise o contrato/documento buscando: "
+        "base legal do tratamento (LGPD arts. 7º e 11), consentimento e finalidade, compartilhamento e "
+        "transferência internacional, direitos do titular (art. 18), papéis controlador/operador e cláusulas de "
+        "responsabilidade, segurança e incidentes (arts. 46-48), retenção/eliminação e cláusulas abusivas. " + REGRAS
+    ),
     "default": (
         "Você é analista jurídico. Analise o contrato/documento buscando riscos, cláusulas questionáveis e "
         "lacunas. " + REGRAS

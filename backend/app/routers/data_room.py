@@ -224,9 +224,11 @@ def _out_room(r: DataRoom) -> dict:
 
 
 def _out_link(lk: DataRoomLink) -> dict:
+    # SEGURANÇA: o token NÃO é relistado — segredo de acesso público exposto
+    # uma única vez, na criação do link (ver gerar_link). Para recuperar acesso,
+    # revogue e gere um novo link.
     return {
         "id": lk.id,
-        "token": lk.token,
         "descricao": lk.descricao,
         "expira_em": lk.expira_em.isoformat() if lk.expira_em else None,
         "max_acessos": lk.max_acessos,
@@ -497,8 +499,10 @@ async def gerar_link(
     )
     db.add(lk)
     await db.commit()
+    # Única exibição do segredo: na resposta de criação (não é relistado).
     return {
         **_out_link(lk),
+        "token": token,
         "url_acesso": f"/api/data-rooms/acesso/{token}",
     }
 

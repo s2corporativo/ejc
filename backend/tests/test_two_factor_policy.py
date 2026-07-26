@@ -20,9 +20,18 @@ def _user_with_totp() -> User:
     )
 
 
-def test_2fa_nasce_temporariamente_desativado(monkeypatch):
+def test_2fa_nasce_ligado_fail_closed(monkeypatch):
+    # FAIL-CLOSED: sem a variável no ambiente, o 2FA fica LIGADO — um deploy
+    # que esqueça a flag nunca roda silenciosamente sem 2FA.
     monkeypatch.delenv("TWO_FACTOR_AUTH_ENABLED", raising=False)
+    assert two_factor_enabled() is True
+
+
+def test_2fa_so_desliga_com_false_explicito(monkeypatch):
+    monkeypatch.setenv("TWO_FACTOR_AUTH_ENABLED", "false")
     assert two_factor_enabled() is False
+    monkeypatch.setenv("TWO_FACTOR_AUTH_ENABLED", "qualquer-coisa")
+    assert two_factor_enabled() is True
 
 
 def test_politica_suprime_flag_apenas_no_objeto_e_preserva_segredo(monkeypatch):
@@ -43,10 +52,10 @@ def test_reativacao_respeita_valor_persistido(monkeypatch):
     assert user.totp_secret == "SEGREDO_PRESERVADO"
 
 
-def test_papeis_obrigatorios_ficam_vazios_no_modo_temporario():
-    # O módulo de política ajusta o mesmo Settings cacheado usado por login e
-    # refresh, impedindo emissão de token limitado ao setup obrigatório.
-    assert get_settings().require_2fa_roles_list == []
+def test_papeis_obrigatorios_preservados_com_2fa_ligado():
+    # Com a política fail-closed e a flag ausente no import, o Settings cacheado
+    # mantém a lista de papéis obrigados a configurar 2FA (não é esvaziada).
+    assert get_settings().require_2fa_roles_list != []
 
 
 def test_gestao_totp_fica_bloqueada_sem_alterar_login(monkeypatch):

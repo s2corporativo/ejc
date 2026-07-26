@@ -19,6 +19,7 @@ export interface FerramentaCampo {
   tipo: "number" | "date" | "select" | "text";
   opcoes?: string[];
   default?: string | number;
+  ajuda?: string;
 }
 
 export interface FerramentaConfig {
@@ -133,7 +134,7 @@ const empresarial: RamoConfig = {
       nome: "tipo_societario",
       label: "Tipo societário",
       tipo: "select",
-      opcoes: ["LTDA", "SA", "EIRELI", "SLU", "MEI", "outro"],
+      opcoes: ["LTDA", "SA", "SLU", "MEI", "outro"], // EIRELI extinta (Lei 14.382/2022)
     },
     { nome: "capital_social", label: "Capital social (R$)", tipo: "number" },
     {
@@ -159,13 +160,19 @@ const empresarial: RamoConfig = {
     {
       id: "prazos-rj",
       titulo: "Prazos de Recuperação Judicial",
-      descricao: "Marcos críticos do processo a partir da distribuição.",
-      baseLegal: "Lei 11.101/2005",
+      descricao:
+        "Plano, stay period e AGC a partir do DEFERIMENTO do processamento.",
+      baseLegal: "Lei 11.101/2005 arts. 6º, 52-53, 56, 61",
       endpoint: "/empresarial/ferramentas/prazos-rj",
       campos: [
         {
-          nome: "data_distribuicao",
-          label: "Data da distribuição",
+          nome: "data_deferimento_processamento",
+          label: "Deferimento do processamento (publicação)",
+          tipo: "date",
+        },
+        {
+          nome: "data_concessao",
+          label: "Concessão da RJ (se houver — p/ supervisão)",
           tipo: "date",
         },
       ],
@@ -210,9 +217,8 @@ const empresarial: RamoConfig = {
         { nome: "meses_atraso", label: "Meses em atraso", tipo: "number" },
         {
           nome: "taxa_juros_mensal_pct",
-          label: "Juros ao mês (%)",
+          label: "Juros pactuados ao mês (%) — vazio = orientação da taxa legal",
           tipo: "number",
-          default: 1,
         },
         { nome: "multa_pct", label: "Multa (%)", tipo: "number", default: 2 },
       ],
@@ -293,8 +299,9 @@ const civel: RamoConfig = {
     {
       id: "prazos-contestacao",
       titulo: "Prazo de Contestação",
-      descricao: "Prazo por rito processual (CPC / JEC / Fazenda Pública).",
-      baseLegal: "CPC art. 335 · Lei 9.099 art. 30",
+      descricao:
+        "CPC 15 úteis · Fazenda em dobro · JEC: até a audiência (sem prazo em dias).",
+      baseLegal: "CPC arts. 335 e 183 · Lei 9.099/95 arts. 28-30 e 12-A",
       grupo: "Prazos",
       endpoint: "/civel/ferramentas/prazos-contestacao",
       campos: [
@@ -313,7 +320,7 @@ const civel: RamoConfig = {
       id: "prescricao-consumidor",
       titulo: "Prescrição / Decadência CDC",
       descricao:
-        "Vícios (30/90 dias), fato do produto/serviço (5 anos), cobrança indevida (3 anos).",
+        "Vícios (30/90 dias), fato do produto/serviço (5 anos), cobrança indevida (10 anos — STJ).",
       baseLegal: "CDC arts. 26-27",
       grupo: "Consumidor",
       endpoint: "/civel/ferramentas/prescricao-consumidor",
@@ -553,7 +560,7 @@ const penal: RamoConfig = {
       label: "Data da denúncia",
       tipo: "date",
       ajuda:
-        "Calcula o prazo de resposta à acusação (CPP art. 396-A — 10 dias)",
+        "Registro. O prazo de resposta à acusação conta da CITAÇÃO (CPP arts. 396 e 798) — use a ferramenta de prazos",
     },
     { nome: "observacoes", label: "Observações", tipo: "textarea", col: 2 },
   ],
@@ -565,7 +572,11 @@ const penal: RamoConfig = {
       baseLegal: "CPP arts. 396-A, 586, 593",
       endpoint: "/penal/ferramentas/prazos-processuais",
       campos: [
-        { nome: "data_denuncia", label: "Data da denúncia", tipo: "date" },
+        {
+          nome: "data_citacao",
+          label: "Data da citação do réu",
+          tipo: "date",
+        },
       ],
     },
     {
@@ -778,11 +789,16 @@ const trabalhista: RamoConfig = {
     {
       id: "prazos",
       titulo: "Prazos Trabalhistas",
-      descricao: "RO, depósito recursal e embargos a partir da sentença.",
-      baseLegal: "CLT art. 895",
+      descricao:
+        "RO, depósito recursal e embargos — dias ÚTEIS a partir da intimação.",
+      baseLegal: "CLT arts. 775, 895, 897-A, 899",
       endpoint: "/trabalhista-esp/ferramentas/prazos",
       campos: [
-        { nome: "data_sentenca", label: "Data da sentença", tipo: "date" },
+        {
+          nome: "data_intimacao",
+          label: "Data da intimação/publicação da sentença",
+          tipo: "date",
+        },
       ],
     },
     {
@@ -935,14 +951,25 @@ const administrativo: RamoConfig = {
     {
       id: "multa-transito",
       titulo: "Recurso Multa de Trânsito",
-      descricao: "Prazos JARI/CETRAN e 20% de desconto pagamento imediato.",
-      baseLegal: "CTB arts. 281-284",
+      descricao:
+        "Defesa prévia (30d), JARI e CETRAN — cada prazo com seu marco próprio.",
+      baseLegal: "CTB arts. 281-288 (Lei 14.071/2020)",
       grupo: "Recursos de Multas",
       endpoint: "/admin-esp/ferramentas/recurso-multa-transito",
       campos: [
         {
           nome: "data_notificacao",
-          label: "Data da notificação",
+          label: "Notificação da AUTUAÇÃO",
+          tipo: "date",
+        },
+        {
+          nome: "data_notificacao_penalidade",
+          label: "Notificação da PENALIDADE (p/ JARI)",
+          tipo: "date",
+        },
+        {
+          nome: "data_ciencia_decisao_jari",
+          label: "Ciência da decisão da JARI (p/ CETRAN)",
           tipo: "date",
         },
         { nome: "valor_multa", label: "Valor da multa (R$)", tipo: "number" },
@@ -1647,11 +1674,13 @@ const consumidor: RamoConfig = {
           tipo: "number",
         },
         {
-          nome: "houve_ma_fe",
-          label: "Cobrança sem engano justificável?",
+          nome: "engano_justificavel",
+          label: "Houve engano justificável do fornecedor?",
           tipo: "select",
-          opcoes: ["sim", "nao"],
-          default: "sim",
+          opcoes: ["nao", "sim"],
+          default: "nao",
+          ajuda:
+            "STJ EAREsp 676.608: o dobro não exige má-fé — só o engano justificável o afasta",
         },
       ],
     },
@@ -1659,7 +1688,7 @@ const consumidor: RamoConfig = {
       id: "prazos-cdc",
       titulo: "Prazos CDC (decadência/prescrição)",
       descricao:
-        "Vício (30/90d), fato (5a), cobrança indevida (3a), arrependimento (7d).",
+        "Vício (30/90d), fato (5a), cobrança indevida (10a — STJ), arrependimento (7d).",
       baseLegal: "CDC arts. 26, 27, 49",
       grupo: "Prazos",
       endpoint: "/consumidor/ferramentas/prazos-cdc",
@@ -1842,9 +1871,11 @@ const previdenciario: RamoConfig = {
       endpoint: "/previdenciario/ferramentas/prazos",
       campos: [
         {
-          nome: "data_indeferimento",
-          label: "Data do indeferimento / concessão",
+          nome: "data_marco",
+          label: "Data-marco (conforme o tipo)",
           tipo: "date",
+          ajuda:
+            "Recurso: ciência do indeferimento · Decadência: 1º dia do mês seguinte à 1ª prestação · Prescrição: data do ajuizamento",
         },
         {
           nome: "tipo",
@@ -1915,6 +1946,22 @@ const previdenciario: RamoConfig = {
             "pensao_morte",
           ],
           default: "aposentadoria",
+        },
+        {
+          nome: "categoria",
+          label: "Categoria do segurado",
+          tipo: "select",
+          opcoes: [
+            "empregado",
+            "avulso",
+            "domestico",
+            "contribuinte_individual",
+            "facultativo",
+            "segurado_especial",
+          ],
+          default: "empregado",
+          ajuda:
+            "Empregada/avulsa/doméstica: salário-maternidade SEM carência (art. 26 VI)",
         },
       ],
     },
@@ -1998,14 +2045,24 @@ const transito: RamoConfig = {
       id: "prazos-recurso-transito",
       titulo: "Prazos e Desconto de Multa",
       descricao:
-        "Defesa prévia, recurso JARI e CETRAN, com descontos (40% SNE / 20%).",
-      baseLegal: "CTB arts. 281, 284, 285, 288 · Lei 14.071/20",
+        "Defesa prévia (30d), JARI e CETRAN — cada um com seu marco — e descontos (40% SNE / 20%).",
+      baseLegal: "CTB arts. 281-288 · Lei 14.071/20",
       grupo: "Multas",
       endpoint: "/transito/ferramentas/prazos-recurso",
       campos: [
         {
           nome: "data_notificacao",
-          label: "Data da notificação",
+          label: "Notificação da AUTUAÇÃO",
+          tipo: "date",
+        },
+        {
+          nome: "data_notificacao_penalidade",
+          label: "Notificação da PENALIDADE (p/ JARI)",
+          tipo: "date",
+        },
+        {
+          nome: "data_ciencia_decisao_jari",
+          label: "Ciência da decisão da JARI (p/ CETRAN)",
           tipo: "date",
         },
         { nome: "valor_multa", label: "Valor da multa (R$)", tipo: "number" },

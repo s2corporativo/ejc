@@ -24,9 +24,10 @@ interface Arquivo {
   nome_exibicao?: string;
   added_at?: string;
 }
+// O token do link NÃO é relistado pelo backend (segurança): a URL completa só
+// é exibida uma vez, na resposta da criação do link.
 interface Link {
   id: string;
-  token: string;
   descricao?: string;
   expira_em?: string;
   max_acessos?: number;
@@ -86,14 +87,16 @@ export default function DataRoom() {
   };
 
   const gerarLink = async () => {
-    await api.post(`/data-rooms/${aberta.id}/links`, { expira_horas: 72 });
+    const { data } = await api.post(`/data-rooms/${aberta.id}/links`, {
+      expira_horas: 72,
+    });
+    // Única chance de copiar: o token não é relistado depois da criação.
+    if (data?.token) {
+      const url = `${location.origin}/api/data-rooms/acesso/${data.token}`;
+      navigator.clipboard?.writeText(url);
+      toast.info("Link copiado (guarde-o — não será exibido de novo):\n" + url);
+    }
     abrir(aberta.id);
-  };
-
-  const copiar = (token: string) => {
-    const url = `${location.origin}/api/data-rooms/acesso/${token}`;
-    navigator.clipboard?.writeText(url);
-    toast.info("Link copiado:\n" + url);
   };
 
   return (
@@ -260,19 +263,16 @@ export default function DataRoom() {
                   >
                     <div>
                       <span className="font-mono text-xs">
-                        …{lk.token.slice(-8)}
+                        link …{lk.id.slice(-6)}
                       </span>
                       <span className="text-gray-400 text-xs ml-2">
                         {lk.acessos_realizados} acessos · expira{" "}
                         {fmtDate(lk.expira_em)}
                       </span>
                     </div>
-                    <button
-                      onClick={() => copiar(lk.token)}
-                      className="text-primary-600 hover:underline text-xs"
-                    >
-                      Copiar URL
-                    </button>
+                    <span className="text-gray-400 text-xs">
+                      URL exibida só na criação
+                    </span>
                   </div>
                 ))}
                 {(aberta.links?.length ?? 0) === 0 && (

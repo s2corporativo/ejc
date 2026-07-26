@@ -47,8 +47,10 @@ class EmpresarialStatus(str, enum.Enum):
 class EmpresarialCase(Base):
     """
     Satélite de caso empresarial. Captura dados específicos do ramo.
-    Prazo chave: RJ — 60 dias p/ apresentar plano (Lei 11.101/05 art. 53);
-                  CADE — 30 dias para notificação de ato de concentração (art. 88 §2º Lei 12.529/11).
+    Prazo chave: RJ — 60 dias p/ apresentar plano, contados da publicação da
+                  decisão que deferir o processamento (Lei 11.101/05 art. 53);
+                  CADE — notificação PRÉVIA obrigatória: o ato não pode ser
+                  consumado antes da decisão (Lei 12.529/11 art. 88 §3º).
     """
     __tablename__ = "empresarial_cases"
 
@@ -243,7 +245,7 @@ class PenalCase(Base):
     """
     Satélite de caso penal.
     Prazos críticos:
-      - Resposta à acusação: 10 dias (CPP art. 396-A)
+      - Resposta à acusação: 10 dias CONTÍNUOS da citação (CPP arts. 396, 396-A e 798)
       - RESE: 5 dias (CPP art. 586)
       - Apelação: 5 dias (CPP art. 593 §4º)
       - Alegações finais: 10 dias (CPP art. 403)
@@ -287,7 +289,7 @@ class PenalCase(Base):
 
     # Prazos críticos
     data_denuncia          = Column(Date, nullable=True)
-    prazo_resposta_acusacao = Column(Date, nullable=True)  # +10 dias úteis
+    prazo_resposta_acusacao = Column(Date, nullable=True)  # 10 dias CONTÍNUOS da citação (CPP 396/798)
     data_audiencia          = Column(Date, nullable=True)
 
     resultado        = Column(Text, nullable=True)  # absolvido/condenado/extinção punibilidade

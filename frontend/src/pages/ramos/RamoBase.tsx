@@ -154,7 +154,13 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
     setErro(null);
     setRes(null);
     try {
-      const r = await api.get(f.endpoint, { params: vals });
+      // Campos opcionais em branco não vão na query ("" quebra Optional[date]).
+      const params = Object.fromEntries(
+        Object.entries(vals).filter(
+          ([, v]) => v !== "" && v !== null && v !== undefined,
+        ),
+      );
+      const r = await api.get(f.endpoint, { params });
       setRes(r.data);
     } catch (e: any) {
       setErro(e.response?.data?.detail || "Falha no cálculo");
@@ -222,6 +228,9 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
                     setVals({ ...vals, [c.nome]: e.target.value })
                   }
                 />
+              )}
+              {c.ajuda && (
+                <p className="text-[10px] text-slate-400 mt-0.5">{c.ajuda}</p>
               )}
             </div>
           ))}
@@ -439,7 +448,13 @@ function ResultadoView({ data }: { data: any }) {
             <div key={k} className="flex justify-between gap-2 text-xs">
               <span className="text-slate-500">{label}</span>
               <span className="font-medium text-navy text-right">
-                {typeof v === "boolean" ? (v ? "✓ Sim" : "✗ Não") : String(v)}
+                {v === null || v === undefined
+                  ? "—"
+                  : typeof v === "boolean"
+                    ? v
+                      ? "✓ Sim"
+                      : "✗ Não"
+                    : String(v)}
               </span>
             </div>
           );
@@ -607,9 +622,20 @@ function ComparadorBacen() {
   );
 }
 
+const TIPOS_PECA_MINUTA = [
+  "petição inicial",
+  "contestação",
+  "recurso",
+  "defesa administrativa",
+  "manifestação",
+  "notificação extrajudicial",
+  "parecer",
+];
+
 function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
   const [casoSel, setCasoSel] = useState("");
   const [acao, setAcao] = useState("");
+  const [tipoPeca, setTipoPeca] = useState(TIPOS_PECA_MINUTA[0]);
   const [minuta, setMinuta] = useState<string>("");
   const [texto, setTexto] = useState("");
   const [loading, setLoading] = useState(false);
@@ -678,9 +704,11 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
     setAcao("Gerando minuta…");
     setMinuta("");
     try {
+      // Tipo de peça escolhido pelo advogado — antes era fixo em "petição
+      // inicial" com tema "ação revisional", errado fora do contencioso ativo.
       const { data } = await api.post("/ai/gerar-minuta", {
-        tema: "Ação revisional/defesa com base na análise do documento",
-        tipo_peca: "petição inicial",
+        tema: `${tipoPeca} com base na análise do documento`,
+        tipo_peca: tipoPeca,
         area,
         fatos: resumoTexto().slice(0, 3000),
       });
@@ -705,8 +733,9 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
         {_ANALISE_TITULO[area] || "📄 Análise de Documento"}
       </h2>
       <p className="text-xs text-slate-500 mb-3">
-        Lê o contrato (PDF ou texto) e aponta juros, capitalização, tarifas e
-        cláusulas questionáveis — como apoio, sempre com revisão do advogado.
+        {area === "bancario"
+          ? "Lê o contrato (PDF ou texto) e aponta juros, capitalização, tarifas e cláusulas questionáveis — como apoio, sempre com revisão do advogado."
+          : "Lê o documento (PDF ou texto) e aponta riscos, encargos e cláusulas questionáveis da área — como apoio, sempre com revisão do advogado."}
       </p>
       <div className="flex flex-wrap gap-2 mb-2">
         <input
@@ -838,6 +867,18 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
             <button onClick={salvarNoCaso} className="btn-secondary text-xs">
               💾 Salvar no caso
             </button>
+            <select
+              className="input text-xs"
+              value={tipoPeca}
+              onChange={(e) => setTipoPeca(e.target.value)}
+              title="Tipo de peça da minuta"
+            >
+              {TIPOS_PECA_MINUTA.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
             <button onClick={gerarMinuta} className="btn-gold text-xs">
               ✍️ Gerar minuta
             </button>
@@ -957,7 +998,9 @@ export default function RamoBase() {
 
       {cfg.comparadorBacen && <ComparadorBacen />}
       {cfg.analiseDocumento && (
-        <AnaliseBancaria area={cfg.areaCaso} casos={casos} />
+        // cfg.slug (não areaCaso): areaCaso mandava "civil" no ramo bancário e
+        // "empresarial" no LGPD, perdendo o prompt especializado do backend.
+        <AnaliseBancaria area={cfg.slug} casos={casos} />
       )}
       {cfg.guiaBancario && <GuiaBancario />}
       {cfg.analiseExtratos && <AnaliseExtratos />}

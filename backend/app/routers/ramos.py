@@ -5,7 +5,7 @@
 # HITL: todas as saídas de cálculo são minutas — revisão humana obrigatória.
 from __future__ import annotations
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 from typing import Optional, Literal
 
@@ -36,6 +36,11 @@ from app.services.deadline_calculator import (
 _EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"]
 _ADM    = ["superadmin", "admin", "socio"]
 _CENT   = Decimal("0.01")
+
+
+def _dinheiro(x) -> float:
+    """Arredondamento monetário em Decimal (ROUND_HALF_UP), nunca em float binário."""
+    return float(Decimal(str(x)).quantize(_CENT, rounding=ROUND_HALF_UP))
 
 # ── Tetos do depósito recursal trabalhista (CLT art. 899 §§1º-4º) ─────────────
 # ATENÇÃO — ATUALIZAÇÃO ANUAL OBRIGATÓRIA: o TST reajusta estes tetos pelo IPCA-E
@@ -102,8 +107,11 @@ async def _crud_atualizar(Model, table: str, item_id: str, body: dict,
         raise HTTPException(404, "Registro não encontrado")
     # Ownership por caso (IDOR): só edita registros de casos a que tem acesso.
     await verificar_acesso_caso(db, cu, obj.case_id)
-    allowed = {c.key for c in Model.__table__.columns
-               if c.key not in ("id", "case_id", "created_at")}
+    # Anti mass-assignment: campos de identidade, auditoria e soft-delete NUNCA
+    # entram no PATCH (deleted_at editável permitia ressuscitar/apagar via API).
+    _PROTEGIDOS = ("id", "case_id", "created_at", "updated_at",
+                   "deleted_at", "created_by", "criado_por")
+    allowed = {c.key for c in Model.__table__.columns if c.key not in _PROTEGIDOS}
     for k, v in body.items():
         if k in allowed:
             setattr(obj, k, v)
@@ -199,30 +207,40 @@ async def emp_remover(eid: str, db: AsyncSession = Depends(get_db),
 # ── Ferramentas Empresariais ──────────────────────────────────────────────────
 @router.get("/empresarial/ferramentas/prazos-rj")
 async def emp_prazos_rj(
-    data_distribuicao: date,
+    data_deferimento_processamento: date,
+    data_concessao: Optional[date] = None,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
     Prazos críticos de recuperação judicial — Lei 11.101/2005.
-    Base legal verificada: arts. 36, 53, 55, 61, 73.
+    MARCO dos prazos do devedor é o DEFERIMENTO DO PROCESSAMENTO (art. 52),
+    não a distribuição (a distribuição só inicia o prazo de 5 dias do juiz).
+    Supervisão judicial: 2 anos da CONCESSÃO da recuperação (art. 61).
     MINUTA — o advogado valida com o juízo da recuperação.
     """
     return {
-        "data_distribuicao": data_distribuicao,
+        "data_deferimento_processamento": data_deferimento_processamento,
         "prazos": [
-            {"evento": "Deferimento do processamento", "prazo": None,
-             "descricao": "Juiz decide em até 5 dias (art. 52)", "base": "Lei 11.101/05 art. 52"},
             {"evento": "Apresentação do plano de recuperação",
-             "data": prazo_dias_corridos(data_distribuicao, 60),
-             "base": "Lei 11.101/05 art. 53", "tipo": "corridos"},
-            {"evento": "Assembleia de credores delibera plano",
-             "data": prazo_dias_corridos(data_distribuicao, 150),
-             "base": "Lei 11.101/05 art. 56 + Súm. 555 STJ", "tipo": "corridos"},
+             "data": prazo_dias_corridos(data_deferimento_processamento, 60),
+             "base": "Lei 11.101/05 art. 53 — 60 dias da publicação da decisão que "
+                     "deferir o processamento", "tipo": "corridos"},
+            {"evento": "Stay period (suspensão das execuções)",
+             "data": prazo_dias_corridos(data_deferimento_processamento, 180),
+             "base": "Lei 11.101/05 art. 6º §4º — 180 dias do deferimento, "
+                     "prorrogável uma vez", "tipo": "corridos"},
+            {"evento": "Assembleia de credores delibera o plano",
+             "data": prazo_dias_corridos(data_deferimento_processamento, 150),
+             "base": "Lei 11.101/05 art. 56 §1º — até 150 dias do deferimento do "
+                     "processamento", "tipo": "corridos"},
             {"evento": "Prazo de supervisão judicial",
-             "data": prazo_dias_corridos(data_distribuicao, 730),
-             "base": "Lei 11.101/05 art. 61 §1º — 2 anos", "tipo": "corridos"},
+             "data": prazo_dias_corridos(data_concessao, 730) if data_concessao else None,
+             "base": "Lei 11.101/05 art. 61 — 2 anos da CONCESSÃO da recuperação "
+                     "(informe a data da concessão para calcular)", "tipo": "corridos"},
         ],
-        "aviso": "MINUTA de cálculo. Confirmar com o juízo e o administrador judicial.",
+        "aviso": ("MINUTA de cálculo. O marco do art. 53 é a PUBLICAÇÃO da decisão de "
+                  "deferimento — confirme a data no diário. Validar com o juízo e o "
+                  "administrador judicial."),
     }
 
 
@@ -285,7 +303,9 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
         "segundo_grupo_informado": True,
         "pendente_dado": False,
         "notificacao_obrigatoria": obrigatorio,
-        "prazo_notificacao": "30 dias (art. 88 §2º Lei 12.529/11)" if obrigatorio else None,
+        "prazo_notificacao": ("Notificação PRÉVIA obrigatória — o ato não pode ser consumado "
+                              "antes da decisão do CADE (art. 88 §3º, gun jumping); análise em "
+                              "até 240 dias (art. 88 §2º)") if obrigatorio else None,
         # Taxa (TFPP) de referência — NÃO é leitura da tabela CADE vigente; valor
         # fixo de orientação, sujeito a reajuste. Confirmar na tabela CADE atual.
         "taxa_cade_estimada": "~R$ 85.000 (estimativa de referência — confirmar tabela CADE vigente)" if obrigatorio else "N/A",
@@ -339,13 +359,14 @@ async def civ_criar(body: CivelIn, db: AsyncSession = Depends(get_db),
                     cu: User = Depends(require_roles(_EQUIPE))):
     await _get_case(db, body.case_id, cu)
     data = body.model_dump()
-    # Auto-calcular prazos de contestação e audiência se data_citacao fornecida
+    # Auto-calcular prazo de contestação se data_citacao fornecida.
+    # JEC: NÃO existe prazo universal de contestação na Lei 9.099/95 — ela é
+    # apresentada até a audiência de instrução (arts. 28-30), cuja data o
+    # sistema não conhece; não gravar data inventada (era 10 corridos — errado).
     if data.get("data_citacao"):
         cit = data["data_citacao"]
         tipo = data["tipo"]
-        if tipo == "jec":
-            data["data_contestacao"] = prazo_dias_corridos(cit, 10)   # Lei 9.099 art. 30
-        else:
+        if tipo != "jec":
             data["data_contestacao"] = prazo_dias_uteis(cit, 15)      # CPC art. 335
     c = CivelCase(id=str(uuid4()), **data)
     db.add(c)
@@ -373,21 +394,26 @@ async def civ_prazo_contestacao(
 ):
     """
     Prazo de contestação por rito.
-    CPC art. 335: 15 dias úteis | JEC Lei 9.099/95 art. 30: 10 dias corridos
-    Fazenda Pública CPC art. 183: prazo em quádruplo = 60 dias úteis (Súm. STJ 116 — só se autorizado).
+    CPC art. 335: 15 dias úteis | Fazenda Pública: em dobro (CPC art. 183) = 30 úteis.
+    JEC: SEM prazo universal — contestação até a audiência de instrução (Lei
+    9.099/95 arts. 28-30); prazos em dias no JEC contam-se em dias úteis (art.
+    12-A, incluído pela Lei 13.728/2018).
     """
     if tipo == "jec":
-        venc = prazo_dias_corridos(data_citacao, 10)
-        base = "Lei 9.099/95 art. 30 — 10 dias corridos"
+        venc = None
+        base = ("Lei 9.099/95 arts. 28-30 — a contestação é apresentada até a "
+                "audiência de instrução e julgamento (não há prazo universal em dias); "
+                "prazos do JEC contam-se em dias úteis (art. 12-A).")
     elif tipo == "fazenda_publica":
-        venc = prazo_dias_uteis(data_citacao, 30)   # em dobro (Lei 9.469/97 + CPC art. 183)
-        base = "CPC art. 183 — 30 dias úteis (prazo em dobro)"
+        venc = prazo_dias_uteis(data_citacao, 30)   # em dobro (CPC art. 183 c/c 335)
+        base = "CPC art. 183 c/c art. 335 — 30 dias úteis (prazo em dobro)"
     else:
         venc = prazo_dias_uteis(data_citacao, 15)
         base = "CPC art. 335 — 15 dias úteis"
     return {"data_citacao": data_citacao, "tipo_rito": tipo,
             "vencimento": venc, "base_legal": base,
-            "aviso": "MINUTA. Verifique suspensões e especificidades do juízo."}
+            "aviso": ("MINUTA. No JEC, use a data da audiência designada como marco. "
+                      "Verifique suspensões e especificidades do juízo.")}
 
 
 @router.get("/civel/ferramentas/alimentos-calcular")
@@ -489,9 +515,10 @@ async def pen_criar(body: PenalIn, db: AsyncSession = Depends(get_db),
                     cu: User = Depends(require_roles(_EQUIPE))):
     await _get_case(db, body.case_id, cu)
     data = body.model_dump()
-    # Auto-calcular prazo de resposta à acusação
-    if data.get("data_denuncia"):
-        data["prazo_resposta_acusacao"] = prazo_dias_uteis(data["data_denuncia"], 10)
+    # NÃO auto-calcular prazo_resposta_acusacao a partir da denúncia: o marco
+    # legal é a CITAÇÃO do réu (CPP art. 396), em dias CONTÍNUOS (art. 798) —
+    # o cálculo antigo (denúncia + 10 úteis) gravava data errada no satélite.
+    # Use a ferramenta "Prazos Processuais Penais" com a data da citação.
     p = PenalCase(id=str(uuid4()), **data)
     db.add(p)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "penal_cases", p.id)
@@ -512,19 +539,22 @@ async def pen_remover(pid: str, db: AsyncSession = Depends(get_db),
 # ── Ferramentas Penais ────────────────────────────────────────────────────────
 @router.get("/penal/ferramentas/prazos-processuais")
 async def pen_prazos(
-    data_denuncia: date,
+    data_citacao: date,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
     Prazos críticos do processo penal. Base: CPP.
-    MINUTA — verificar suspensões e especificidades do caso.
+    Contagem CONTÍNUA (CPP art. 798 — não há dias úteis no processo penal);
+    prazo que termina em fim de semana/feriado prorroga (art. 798 §3º).
+    Marco da resposta à acusação: CITAÇÃO do réu (art. 396), não a denúncia.
+    MINUTA — verificar suspensões (inclusive art. 798-A, 20/dez-20/jan).
     """
     return {
-        "data_denuncia": data_denuncia,
+        "data_citacao": data_citacao,
         "prazos": [
             {"evento": "Resposta à acusação",
-             "data": prazo_dias_uteis(data_denuncia, 10),
-             "base": "CPP art. 396-A — 10 dias úteis"},
+             "data": prazo_dias_corridos(data_citacao, 10),
+             "base": "CPP arts. 396 e 396-A — 10 dias CONTÍNUOS da citação (art. 798)"},
             {"evento": "Alegações finais (prazo máximo)",
              "data": None,
              "base": "CPP art. 403 — 10 dias após instrução (data depende do juízo)"},
@@ -538,7 +568,8 @@ async def pen_prazos(
              "data": None,
              "base": "CPP art. 620 — 2 dias"},
         ],
-        "aviso": "MINUTA. Prazos a partir da intimação/publicação — verificar exato marco.",
+        "aviso": ("MINUTA. Prazos penais são contínuos (CPP art. 798) e suspensos de "
+                  "20/dez a 20/jan (art. 798-A). Verificar o marco exato de cada ato."),
     }
 
 
@@ -674,24 +705,27 @@ async def trab_remover(tid: str, db: AsyncSession = Depends(get_db),
 
 # ── Ferramentas Trabalhistas ───────────────────────────────────────────────────
 @router.get("/trabalhista-esp/ferramentas/prazos")
-async def trab_prazos(data_sentenca: date, cu: User = Depends(require_roles(_EQUIPE))):
+async def trab_prazos(data_intimacao: date, cu: User = Depends(require_roles(_EQUIPE))):
     """
-    Prazos críticos trabalhistas a partir da sentença. MINUTA.
+    Prazos críticos trabalhistas a partir da INTIMAÇÃO/publicação da sentença.
+    Contagem em DIAS ÚTEIS (CLT art. 775, red. Lei 13.467/2017). MINUTA.
     """
     return {
-        "data_sentenca": data_sentenca,
+        "data_intimacao": data_intimacao,
         "prazos": [
             {"evento": "Recurso Ordinário (RO)",
-             "data": prazo_dias_corridos(data_sentenca, 8),
-             "base": "CLT art. 895 I — 8 dias corridos"},
-            {"evento": "Depósito recursal (simultâneo ao RO)",
-             "data": prazo_dias_corridos(data_sentenca, 8),
-             "base": "CLT art. 899 + Súm. TST 245"},
+             "data": prazo_dias_uteis(data_intimacao, 8),
+             "base": "CLT art. 895 I c/c art. 775 — 8 dias ÚTEIS da intimação"},
+            {"evento": "Depósito recursal + custas (no prazo do RO)",
+             "data": prazo_dias_uteis(data_intimacao, 8),
+             "base": "CLT art. 899 §1º + Súm. TST 245 — comprovação no prazo recursal"},
             {"evento": "Embargos de declaração",
-             "data": prazo_dias_corridos(data_sentenca, 5),
-             "base": "CLT art. 897-A — 5 dias"},
+             "data": prazo_dias_uteis(data_intimacao, 5),
+             "base": "CLT art. 897-A c/c art. 775 — 5 dias ÚTEIS"},
         ],
-        "aviso": "MINUTA. Marco: publicação da sentença ou intimação pessoal. Verificar com o juízo.",
+        "aviso": ("MINUTA. Marco legal: ciência da decisão (intimação/publicação no "
+                  "DEJT), NÃO a data da sentença. Feriados locais podem alterar a "
+                  "contagem — confira no PJe."),
     }
 
 
@@ -817,32 +851,65 @@ async def adm_remover(aid: str, db: AsyncSession = Depends(get_db),
                       cu: User = Depends(require_roles(_ADM))):
     return await _crud_remover(AdminCase, "admin_cases", aid, db, cu)
 
+# ── Multas de trânsito: LÓGICA ÚNICA (usada por Administrativo e Trânsito) ────
+# Antes havia duas calculadoras divergentes para a mesma pergunta (defesa
+# prévia ignorada numa; suspensão em 20 pontos fixos noutra). Marcos corretos:
+#   Defesa prévia: 30 dias da notificação da AUTUAÇÃO (mín. legal desde a Lei
+#     14.071/2020; antes eram 15 — confira a data-limite impressa na notificação).
+#   Recurso à JARI: 30 dias da notificação da PENALIDADE (CTB art. 285 §4º) —
+#     NÃO se deriva da data da autuação.
+#   Recurso ao CETRAN: 30 dias da CIÊNCIA da decisão da JARI (art. 288) —
+#     NÃO se deriva do fim do prazo da JARI.
+def _prazos_multa_transito(
+    data_notificacao_autuacao: date,
+    valor_multa: float,
+    fase: str = "autuacao",
+    data_notificacao_penalidade: Optional[date] = None,
+    data_ciencia_decisao_jari: Optional[date] = None,
+) -> dict:
+    defesa_previa = prazo_dias_corridos(data_notificacao_autuacao, 30)
+    jari = (prazo_dias_corridos(data_notificacao_penalidade, 30)
+            if data_notificacao_penalidade else None)
+    cetran = (prazo_dias_corridos(data_ciencia_decisao_jari, 30)
+              if data_ciencia_decisao_jari else None)
+    alvo = jari if fase == "penalidade" else defesa_previa
+    dias_restantes = (alvo - date.today()).days if alvo else None
+    return {
+        "data_notificacao_autuacao": data_notificacao_autuacao,
+        "fase": fase,
+        "prazo_defesa_previa": defesa_previa,
+        "prazo_recurso_jari": jari or "Informe a data da notificação da PENALIDADE (marco do art. 285)",
+        "prazo_recurso_cetran": cetran or "Informe a data da ciência da decisão da JARI (marco do art. 288)",
+        "dias_restantes": dias_restantes,
+        "urgente": dias_restantes is not None and dias_restantes <= 5,
+        "valor_multa": valor_multa,
+        "valor_desconto_40pct_sne": _dinheiro(Decimal(str(valor_multa)) * Decimal("0.60")),  # SNE (Lei 14.071/20)
+        "valor_desconto_20pct": _dinheiro(Decimal(str(valor_multa)) * Decimal("0.80")),      # art. 284
+        "base": "CTB arts. 281-288 (red. Lei 14.071/2020)",
+        "aviso": ("MINUTA — revisão humana obrigatória. Cada prazo tem marco próprio; "
+                  "confira SEMPRE a data-limite impressa na respectiva notificação."),
+    }
+
+
 # ── Ferramentas Administrativo ────────────────────────────────────────────────
 @router.get("/admin-esp/ferramentas/recurso-multa-transito")
 async def adm_multa_transito(
     data_notificacao: date,
     valor_multa: float,
     pontos_cnh: int = 0,
+    data_notificacao_penalidade: Optional[date] = None,
+    data_ciencia_decisao_jari: Optional[date] = None,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """
-    Prazos e estratégias para recursos de multas de trânsito.
-    Base: CTB Lei 9.503/97 arts. 281-284.
-    """
-    prazo_1a = prazo_dias_corridos(data_notificacao, 30)   # JARI — CTB art. 281 §2º
-    prazo_2a = prazo_dias_corridos(prazo_1a, 30)            # CETRAN/DENATRAN
-    desconto_pagamento = round(valor_multa * 0.80, 2)       # 20% desconto pag. imediato CTB art. 284-A
-    return {
-        "data_notificacao": data_notificacao,
-        "prazo_recurso_1a_inst_jari": prazo_1a,
-        "prazo_recurso_2a_inst_cetran": prazo_2a,
-        "valor_multa_original": valor_multa,
-        "valor_com_desconto_20pct": desconto_pagamento,
-        "pontos_cnh": pontos_cnh,
-        "risco_suspensao": pontos_cnh >= 20,   # CTB art. 261
-        "base": "CTB arts. 281-284 + Res. CONTRAN 619/2016",
-        "aviso": "MINUTA. Prazo 1ª instância conta da notificação da autuação; 2ª da decisão da JARI.",
-    }
+    """Recursos de multa de trânsito — mesma lógica da ferramenta do ramo Trânsito."""
+    out = _prazos_multa_transito(
+        data_notificacao, valor_multa, "autuacao",
+        data_notificacao_penalidade, data_ciencia_decisao_jari,
+    )
+    out["pontos_cnh"] = pontos_cnh
+    out["suspensao"] = ("Teto varia (20/30/40 pontos; EAR: 40) — use a ferramenta "
+                        "'Pontuação e Suspensão da CNH' do ramo Trânsito.")
+    return out
 
 
 # ── Ferramentas Trânsito (ramo próprio) ───────────────────────────────────────
@@ -851,33 +918,15 @@ async def transito_prazos_recurso(
     data_notificacao: date,
     valor_multa: float,
     fase: str = "autuacao",   # autuacao (defesa prévia) | penalidade (JARI)
+    data_notificacao_penalidade: Optional[date] = None,
+    data_ciencia_decisao_jari: Optional[date] = None,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """
-    Prazos de defesa/recurso de multa e descontos (CTB Lei 9.503/97).
-    Defesa prévia: a partir da notificação da AUTUAÇÃO (mín. 15 dias, CTB art. 281 §ú).
-    Recurso à JARI: 30 dias da notificação da PENALIDADE (art. 285).
-    Recurso ao CETRAN: 30 dias da decisão da JARI (art. 288).
-    """
-    defesa_previa = prazo_dias_corridos(data_notificacao, 15)
-    jari = prazo_dias_corridos(data_notificacao, 30)
-    cetran = prazo_dias_corridos(jari, 30)
-    alvo = jari if fase == "penalidade" else defesa_previa
-    dias_restantes = (alvo - date.today()).days
-    return {
-        "data_notificacao": data_notificacao,
-        "fase": fase,
-        "prazo_defesa_previa": defesa_previa,
-        "prazo_recurso_jari": jari,
-        "prazo_recurso_cetran": cetran,
-        "dias_restantes": dias_restantes,
-        "urgente": dias_restantes <= 5,
-        "valor_multa": valor_multa,
-        "valor_desconto_40pct_sne": round(valor_multa * 0.60, 2),   # -40% adesão SNE (Lei 14.071/20)
-        "valor_desconto_20pct": round(valor_multa * 0.80, 2),       # -20% pagto até venc. (art. 284)
-        "base": "CTB Lei 9.503/97 arts. 281, 284, 285, 288 + Lei 14.071/2020",
-        "aviso": "MINUTA — revisão humana obrigatória. Confira o prazo indicado na própria notificação.",
-    }
+    """Prazos de defesa/recurso de multa e descontos (CTB) — ver _prazos_multa_transito."""
+    return _prazos_multa_transito(
+        data_notificacao, valor_multa, fase,
+        data_notificacao_penalidade, data_ciencia_decisao_jari,
+    )
 
 
 @router.get("/transito/ferramentas/pontuacao-cnh")
@@ -893,7 +942,11 @@ async def transito_pontuacao_cnh(
     """
     eh_prof = categoria_profissional.lower() in ("sim", "true", "1")
     if eh_prof:
-        limite, regra = 30, "Condutor com atividade remunerada (EAR): teto de 30 pontos."
+        # CTB art. 261 (red. Lei 14.071/2020): condutor que exerce atividade
+        # remunerada (EAR) suspende apenas com 40 pontos, INDEPENDENTEMENTE da
+        # natureza das infrações (era 30 aqui — errado).
+        limite, regra = 40, ("Condutor com atividade remunerada (EAR): teto de 40 pontos, "
+                             "independentemente da natureza das infrações.")
     elif infracoes_gravissimas_12m >= 2:
         limite, regra = 20, "2+ infrações gravíssimas em 12 meses: teto de 20 pontos."
     elif infracoes_gravissimas_12m == 1:
@@ -928,19 +981,28 @@ def _add_anos_data(d: date, anos: int) -> date:
 @router.get("/consumidor/ferramentas/devolucao-dobro")
 async def consumidor_devolucao_dobro(
     valor_cobrado: float,
-    houve_ma_fe: str = "sim",
+    engano_justificavel: str = "nao",
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Repetição em dobro do indébito (CDC art. 42 §ú)."""
-    ma_fe = houve_ma_fe.lower() in ("sim", "true", "1")
+    """
+    Repetição em dobro do indébito (CDC art. 42 §ú).
+    STJ EAREsp 676.608/RS: para cobranças posteriores a 30/03/2021 o dobro NÃO
+    exige má-fé — basta a cobrança contrariar a boa-fé objetiva; a ÚNICA
+    excludente é o engano justificável do fornecedor (o parâmetro antigo
+    `houve_ma_fe` invertia a regra e foi substituído).
+    """
+    justificavel = engano_justificavel.lower() in ("sim", "true", "1")
+    dobro = not justificavel
+    valor = Decimal(str(valor_cobrado))
     return {
-        "valor_cobrado": valor_cobrado,
-        "restituicao": round(valor_cobrado * 2, 2) if ma_fe else round(valor_cobrado, 2),
-        "aplica_dobro": ma_fe,
-        "observacao": "Dobro do valor pago indevidamente (+ correção e juros)." if ma_fe
-                      else "Engano justificável afasta o dobro (restituição simples) — STJ.",
-        "base": "CDC art. 42 §ú; STJ EAREsp 676.608 (modulação 30/03/2021).",
-        "aviso": "MINUTA — revisão humana obrigatória.",
+        "valor_cobrado": _dinheiro(valor),
+        "restituicao": _dinheiro(valor * 2) if dobro else _dinheiro(valor),
+        "aplica_dobro": dobro,
+        "observacao": ("Dobro do valor pago indevidamente (+ correção e juros) — não se "
+                       "exige má-fé (EAREsp 676.608, cobranças pós 30/03/2021)." if dobro
+                       else "Engano justificável comprovado afasta o dobro (restituição simples)."),
+        "base": "CDC art. 42 §ú; STJ EAREsp 676.608/RS (modulação 30/03/2021).",
+        "aviso": "MINUTA — revisão humana obrigatória. O ônus de provar o engano justificável é do fornecedor.",
     }
 
 
@@ -956,7 +1018,11 @@ async def consumidor_prazos_cdc(
         "vicio_nao_duravel": (30, "dias", "Decadência — não durável (art. 26 I)."),
         "arrependimento":    (7,  "dias", "Arrependimento — compra fora do estabelecimento (art. 49)."),
         "fato":              (5,  "anos", "Prescrição — fato do produto/serviço (art. 27)."),
-        "cobranca_indevida": (3,  "anos", "Prescrição — cobrança indevida (CC art. 206 §3)."),
+        # Decenal: STJ EAREsp 738.991/RS (Corte Especial) — CC art. 205. A tese
+        # dos 3 anos (art. 206 §3º IV) é corrente minoritária; alinhado ao
+        # endpoint civ_prescricao_consumidor (antes este mapa dizia 3 anos).
+        "cobranca_indevida": (10, "anos", "Prescrição — repetição de indébito: 10 anos "
+                                          "(CC art. 205; STJ EAREsp 738.991/RS)."),
     }
     n, unid, desc = mapa.get(tipo, mapa["vicio_duravel"])
     prazo = prazo_dias_corridos(data_fato, n) if unid == "dias" else _add_anos_data(data_fato, n)
@@ -964,7 +1030,7 @@ async def consumidor_prazos_cdc(
     return {
         "tipo": tipo, "descricao": desc, "data_fato": data_fato, "prazo_final": prazo,
         "dias_restantes": dias_rest, "expirado": dias_rest < 0, "urgente": 0 <= dias_rest <= 15,
-        "base": "CDC arts. 26, 27, 49.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "base": "CDC arts. 26, 27, 49; CC art. 205 (repetição de indébito).", "aviso": "MINUTA — revisão humana obrigatória.",
     }
 
 
@@ -1031,23 +1097,49 @@ async def imobiliario_prazos_despejo(
 # ── Ferramentas Previdenciário ────────────────────────────────────────────────
 @router.get("/previdenciario/ferramentas/prazos")
 async def previdenciario_prazos(
-    data_indeferimento: date,
+    data_marco: date,
     tipo: str = "recurso_administrativo",
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Prazos previdenciários (recurso CRPS, decadência e prescrição)."""
+    """
+    Prazos previdenciários — cada tipo tem MARCO PRÓPRIO (antes tudo era
+    calculado genericamente "desde o indeferimento", o que só vale p/ recurso):
+      recurso_administrativo → data da CIÊNCIA do indeferimento (30 dias);
+      decadencia_revisao → 1º dia do mês seguinte ao RECEBIMENTO DA 1ª PRESTAÇÃO
+        (Lei 8.213/91 art. 103), não o indeferimento;
+      prescricao_parcelas → informe a data (prevista) do AJUIZAMENTO: parcelas
+        anteriores a 5 anos dela estão prescritas (art. 103 §ú — janela móvel).
+    """
     mapa = {
-        "recurso_administrativo": (30, "dias", "Recurso ao CRPS contra indeferimento (Dec. 3.048/99)."),
-        "decadencia_revisao":     (10, "anos", "Decadência para revisão do ato de concessão (Lei 8.213/91 art. 103)."),
-        "prescricao_parcelas":    (5,  "anos", "Prescrição das parcelas vencidas (art. 103 §ú)."),
+        "recurso_administrativo": ("Recurso ao CRPS contra indeferimento (Dec. 3.048/99 art. 305).",
+                                   "data da ciência da decisão do INSS"),
+        "decadencia_revisao":     ("Decadência para revisão do ato de concessão (Lei 8.213/91 art. 103).",
+                                   "1º dia do mês seguinte ao recebimento da 1ª prestação"),
+        "prescricao_parcelas":    ("Prescrição quinquenal das parcelas (art. 103 §ú).",
+                                   "data (prevista) do ajuizamento da ação"),
     }
-    n, unid, desc = mapa.get(tipo, mapa["recurso_administrativo"])
-    prazo = prazo_dias_corridos(data_indeferimento, n) if unid == "dias" else _add_anos_data(data_indeferimento, n)
+    desc, marco_esperado = mapa.get(tipo, mapa["recurso_administrativo"])
+    if tipo == "prescricao_parcelas":
+        corte = _add_anos_data(data_marco, -5)
+        return {
+            "tipo": tipo, "descricao": desc, "marco_esperado": marco_esperado,
+            "data_marco": data_marco, "parcelas_prescritas_anteriores_a": corte,
+            "observacao": ("Janela móvel: prescrevem as parcelas vencidas há mais de 5 anos "
+                           "contados retroativamente do ajuizamento — não há 'data final' única."),
+            "base": "Lei 8.213/91 art. 103 §ú.", "aviso": "MINUTA — revisão humana obrigatória.",
+        }
+    if tipo == "decadencia_revisao":
+        prazo = _add_anos_data(data_marco, 10)
+    else:
+        prazo = prazo_dias_corridos(data_marco, 30)
     dias_rest = (prazo - date.today()).days
     return {
-        "tipo": tipo, "descricao": desc, "data_base": data_indeferimento, "prazo_final": prazo,
+        "tipo": tipo, "descricao": desc, "marco_esperado": marco_esperado,
+        "data_marco": data_marco, "prazo_final": prazo,
         "dias_restantes": dias_rest, "expirado": dias_rest < 0,
-        "base": "Lei 8.213/91 art. 103; Dec. 3.048/99.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "base": "Lei 8.213/91 art. 103; Dec. 3.048/99.",
+        "aviso": ("MINUTA — revisão humana obrigatória. Confira se a data informada "
+                  f"corresponde ao marco correto deste prazo: {marco_esperado}."),
     }
 
 
@@ -1100,7 +1192,14 @@ async def previdenciario_tempo_contribuicao(
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Regra de transição por pontos (EC 103/2019 art. 15). Pontos = idade + tempo."""
-    homem = sexo.upper().startswith("M")
+    # Comparação estrita: startswith("M") classificava "Mulher" como homem.
+    s = sexo.strip().lower()
+    if s in ("m", "masculino", "homem"):
+        homem = True
+    elif s in ("f", "feminino", "mulher"):
+        homem = False
+    else:
+        raise HTTPException(422, "Parâmetro 'sexo' deve ser 'M' ou 'F'.")
     # 2019: H 96 / M 86, +1 ponto por ano. Teto H 105 (2028), M 100 (2033).
     base = 96 if homem else 86
     teto = 105 if homem else 100
@@ -1123,24 +1222,39 @@ async def previdenciario_tempo_contribuicao(
 async def previdenciario_carencia(
     meses_contribuicao: int,
     beneficio: str = "aposentadoria",
+    categoria: str = "empregado",
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Carência exigida por benefício (Lei 8.213/91 art. 25-26)."""
+    """
+    Carência exigida por benefício (Lei 8.213/91 arts. 25-26), considerando a
+    CATEGORIA do segurado — antes o cálculo ignorava a categoria e aplicava os
+    10 meses do salário-maternidade a todas (empregada/avulsa/doméstica são
+    ISENTAS, art. 26 VI).
+    """
     mapa = {
         "aposentadoria":        (180, "Aposentadoria por idade/tempo (art. 25 II)."),
         "auxilio_doenca":       (12,  "Auxílio por incapacidade temporária (art. 25 I)."),
         "aposentadoria_invalidez": (12, "Aposentadoria por incapacidade permanente (art. 25 I)."),
-        "salario_maternidade":  (10,  "Salário-maternidade — contribuinte individual/facultativa (art. 25 III)."),
+        "salario_maternidade":  (10,  "Salário-maternidade — CI/facultativa/segurada especial (art. 25 III)."),
         "auxilio_acidente":     (0,   "Independe de carência (art. 26 I)."),
         "pensao_morte":         (0,   "Independe de carência (art. 26 I)."),
     }
     exigida, desc = mapa.get(beneficio, mapa["aposentadoria"])
+    obs = ("Exceções do art. 26 (independem de carência): acidente de qualquer natureza, "
+           "doenças graves listadas, e benefícios do art. 26 I.")
+    if beneficio == "salario_maternidade" and categoria in ("empregado", "avulso", "domestico"):
+        exigida = 0
+        desc = "Salário-maternidade — SEM carência para empregada, avulsa e doméstica (art. 26 VI)."
+    if categoria == "segurado_especial":
+        obs += (" SEGURADO ESPECIAL: comprova MESES DE ATIVIDADE rural/pesqueira no período "
+                "(art. 39), não contribuições — informe meses de atividade comprovada.")
     return {
-        "beneficio": beneficio, "descricao": desc,
+        "beneficio": beneficio, "categoria": categoria, "descricao": desc,
         "meses_contribuicao": meses_contribuicao, "carencia_exigida": exigida,
         "carencia_cumprida": meses_contribuicao >= exigida,
         "faltam_meses": max(0, exigida - meses_contribuicao),
-        "base": "Lei 8.213/91 arts. 25 e 26.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "observacao": obs,
+        "base": "Lei 8.213/91 arts. 25, 26 e 39.", "aviso": "MINUTA — revisão humana obrigatória.",
     }
 
 
@@ -1235,19 +1349,40 @@ async def trabalhista_horas_extras(
 async def empresarial_juros_mora(
     valor_principal: float,
     meses_atraso: int,
-    taxa_juros_mensal_pct: float = 1.0,
+    taxa_juros_mensal_pct: Optional[float] = None,
     multa_pct: float = 2.0,
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Juros de mora (simples) + multa sobre débito contratual."""
-    juros = valor_principal * (taxa_juros_mensal_pct / 100) * meses_atraso
-    multa = valor_principal * (multa_pct / 100)
+    """
+    Juros de mora (simples) + multa sobre débito contratual. Aritmética em Decimal.
+    SEM taxa pactuada NÃO se presume 1% a.m.: desde a Lei 14.905/2024 a taxa
+    legal (CC art. 406) é a SELIC deduzido o IPCA, apurada mensalmente pelo BCB
+    — por variar mês a mês, este cálculo exige taxa explícita.
+    """
+    principal = Decimal(str(valor_principal))
+    multa = principal * Decimal(str(multa_pct)) / Decimal("100")
+    if taxa_juros_mensal_pct is None:
+        return {
+            "valor_principal": _dinheiro(principal), "meses_atraso": meses_atraso,
+            "juros_mora": None, "multa": _dinheiro(multa), "total_devido": None,
+            "observacao": ("Informe a taxa pactuada no contrato. Sem pactuação, aplica-se a "
+                           "TAXA LEGAL do CC art. 406 (red. Lei 14.905/2024): Selic − IPCA, "
+                           "divulgada mensalmente pelo Banco Central — o antigo default de "
+                           "1% a.m. NÃO vale mais como regra geral."),
+            "base": "CC arts. 395, 406 e 406-A (Lei 14.905/2024); CDC art. 52 §1º.",
+            "aviso": "MINUTA — revisão humana obrigatória.",
+        }
+    juros = principal * Decimal(str(taxa_juros_mensal_pct)) / Decimal("100") * meses_atraso
     return {
-        "valor_principal": valor_principal, "meses_atraso": meses_atraso,
-        "juros_mora": round(juros, 2), "multa": round(multa, 2),
-        "total_devido": round(valor_principal + juros + multa, 2),
-        "observacao": "Juros de mora 1% a.m. salvo pactuação (CC art. 406); multa contratual limitada a 2% em relações de consumo (CDC art. 52 §1).",
-        "base": "CC arts. 395, 406; CDC art. 52 §1.", "aviso": "MINUTA — revisão humana obrigatória.",
+        "valor_principal": _dinheiro(principal), "meses_atraso": meses_atraso,
+        "taxa_juros_mensal_pct": taxa_juros_mensal_pct,
+        "juros_mora": _dinheiro(juros), "multa": _dinheiro(multa),
+        "total_devido": _dinheiro(principal + juros + multa),
+        "observacao": ("Juros simples pela taxa PACTUADA informada. Sem pactuação, a taxa "
+                       "legal é Selic − IPCA (CC art. 406, red. Lei 14.905/2024). Multa "
+                       "contratual limitada a 2% em relações de consumo (CDC art. 52 §1º)."),
+        "base": "CC arts. 395, 406 (Lei 14.905/2024); CDC art. 52 §1º.",
+        "aviso": "MINUTA — revisão humana obrigatória.",
     }
 
 
