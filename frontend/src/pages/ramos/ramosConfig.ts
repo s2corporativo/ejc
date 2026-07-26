@@ -217,7 +217,8 @@ const empresarial: RamoConfig = {
         { nome: "meses_atraso", label: "Meses em atraso", tipo: "number" },
         {
           nome: "taxa_juros_mensal_pct",
-          label: "Juros pactuados ao mês (%) — vazio = orientação da taxa legal",
+          label:
+            "Juros pactuados ao mês (%) — vazio = orientação da taxa legal",
           tipo: "number",
         },
         { nome: "multa_pct", label: "Multa (%)", tipo: "number", default: 2 },
