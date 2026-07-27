@@ -279,7 +279,12 @@ def conexao_falsa(monkeypatch):
     conn = _FakeConn(linhas)
     monkeypatch.setattr(casca, "conectar", lambda url: conn)
     monkeypatch.setenv("DATABASE_URL_SYNC", "postgresql://u:p@localhost:5432/ejc_db")
-    monkeypatch.delenv("APP_ENV", raising=False)
+    # Onda 5 / auditoria P2-5: o script passou a assumir PRODUÇÃO por padrão.
+    # Estes testes exercitam banco de desenvolvimento — declaram isso, como o
+    # operador faria com --nao-e-producao.
+    monkeypatch.setenv("APP_ENV", "development")
+    # P2-6: rollback é assinado; sem chave o script recusa gravar.
+    monkeypatch.setenv("EJC_ROLLBACK_HMAC_KEY", "chave-de-teste-com-16-mais")
     return conn
 
 
@@ -352,11 +357,14 @@ def test_limite_reduz_o_que_e_aplicado(conexao_falsa, monkeypatch, tmp_path):
 
 def test_reverter_restaura_exatamente_o_arquivo(conexao_falsa, monkeypatch, tmp_path):
     arquivo = tmp_path / "rb.json"
-    arquivo.write_text(json.dumps({
+    # P2-6: o arquivo precisa ser ASSINADO e ter case_id UUID + áreas do enum —
+    # gravamos pelo próprio script, que é como o operador o obtém.
+    casca.gravar_rollback(arquivo, {
         "versao": 1, "tipo": "reclassificacao_area_cases", "status": "aplicado",
-        "itens": [{"case_id": "c1", "area_anterior": "civil",
-                   "area_nova": "bancario", "regra": "satelite_bancario"}],
-    }), encoding="utf-8")
+        "itens": [{"case_id": "6f1b0f6e-1f5a-4c2e-9a6a-2b7c8d9e0f11",
+                   "area_anterior": "civil", "area_nova": "bancario",
+                   "regra": "satelite_bancario"}],
+    })
     monkeypatch.setattr(casca, "confirmar_interativo", lambda *a, **k: True)
     assert casca.main(["--reverter", str(arquivo)]) == 0
     assert json.loads(arquivo.read_text(encoding="utf-8"))["status"] == "revertido"
@@ -372,17 +380,31 @@ def test_reverter_recusa_arquivo_estranho(conexao_falsa, monkeypatch, tmp_path):
 
 # ── Guarda de produção ───────────────────────────────────────────────────────
 @pytest.mark.parametrize("url,esperado", [
-    ("postgresql://u:p@localhost:5432/ejc_db", False),
-    ("postgresql://u:p@db:5432/ejc_db", False),
+    # P2-5: sem declaração explícita de ambiente, TUDO é tratado como produção —
+    # inclusive o cenário do runbook (localhost + ejc_db), que antes escapava.
+    ("postgresql://u:p@localhost:5432/ejc_db", True),
+    ("postgresql://u:p@db:5432/ejc_db", True),
     ("postgresql://u:p@10.0.0.9:5432/ejc_db", True),
     ("postgresql://u:p@localhost:5432/ejc_prod", True),
 ])
 def test_deteccao_de_producao(url, esperado, monkeypatch):
     monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("EJC_NAO_E_PRODUCAO", raising=False)
     assert casca.parece_producao(url)[0] is esperado
 
 
+@pytest.mark.parametrize("url", [
+    "postgresql://u:p@localhost:5432/ejc_db",
+    "postgresql://u:p@db:5432/ejc_db",
+])
+def test_ambiente_de_desenvolvimento_declarado_nao_e_producao(url, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "development")
+    assert casca.parece_producao(url)[0] is False
+
+
 def test_producao_bloqueia_aplicar_sem_flag_explicita(monkeypatch):
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("EJC_NAO_E_PRODUCAO", raising=False)
     monkeypatch.setenv("DATABASE_URL_SYNC", "postgresql://u:p@10.0.0.9:5432/ejc_db")
     monkeypatch.setattr(casca, "conectar", lambda url: pytest.fail("não deve conectar"))
     with pytest.raises(SystemExit) as exc:

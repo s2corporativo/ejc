@@ -53,6 +53,18 @@ contados) · **confirmado** (satélite prova que a área atual está certa).
    (Em máquina de desenvolvimento, ou contra uma **cópia restaurada** do dump,
    basta `python3 scripts/reclassificar_areas_casos.py` com `DATABASE_URL_SYNC`
    exportada ou `--database-url`. Ensaiar na cópia antes é o caminho mais seguro.)
+
+   > **O script assume PRODUÇÃO por padrão.** Antes, o modo acima (host local,
+   > banco `ejc_db`, sem `APP_ENV` no shell) driblava os três sinais de detecção
+   > ao mesmo tempo e, com `--sem-interacao --confirmo-backup`, a proteção
+   > desaparecia. Agora, para rodar contra banco que **não** é de produção,
+   > declare: `--nao-e-producao` (ou `APP_ENV=development`). Sem essa declaração,
+   > qualquer operação de escrita exige `--confirmo-producao`.
+
+   > **Assinatura do rollback.** O arquivo de rollback é assinado com HMAC. Defina
+   > `EJC_ROLLBACK_HMAC_KEY` (ou tenha `SECRET_KEY` no ambiente, ≥ 16 caracteres);
+   > sem isso o script recusa gravar — rollback sem integridade seria pior que
+   > rollback nenhum.
 3. **Conferência humana da amostra.** Um advogado abre os casos do bloco 6
    ("AMOSTRA — ELEGÍVEIS") e confirma que a evidência corresponde à realidade.
    Se algum estiver errado, **pare** e reporte — o critério é que precisa mudar,
@@ -99,6 +111,26 @@ Cada reclassificação grava uma linha em `audit_logs`
 `dados_antes`/`dados_depois`). O helper `criar_audit_log()` é async e depende do
 contexto de request, então o script insere direto na tabela. O arquivo de
 rollback é o segundo registro, e o log do processo vai para stderr.
+
+## Depois do procedimento — expurgo do arquivo de rollback
+
+O arquivo em `/app/backups` contém o mapa `case_id → área` e **dirige `UPDATE`s
+em `cases`** quando usado com `--reverter`. Ele é gravado com `0600` (diretório
+`0700`) e assinado, mas continua sendo material sensível fora do versionamento:
+o `.gitignore var/` **não** cobre `/app/backups`.
+
+Concluída a janela de reversão (recomendado: 7 dias após a aplicação, com a
+reclassificação já validada pelo escritório), remova o arquivo:
+
+```bash
+docker exec -it ejc_backend sh -lc 'ls -l /app/backups/rollback_*.json'
+docker exec -it ejc_backend sh -lc 'shred -u /app/backups/rollback_<ts>.json 2>/dev/null \
+  || rm -f /app/backups/rollback_<ts>.json'
+```
+
+Se precisar guardar o registro histórico, mova para o cofre de backups do
+escritório — não deixe no diretório onde o próprio script procura arquivos para
+reverter.
 
 ## Manutenção
 

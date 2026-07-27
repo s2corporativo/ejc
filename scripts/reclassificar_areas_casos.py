@@ -36,6 +36,8 @@ Exemplos:
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -60,6 +62,33 @@ from reclassificacao_areas import (  # noqa: E402
     resumir,
     selecionar_para_aplicar,
 )
+
+# Domínio do enum nativo `casearea`. DERIVADO da fonte da verdade
+# (backend/app/models/case.py) — nunca duplicado à mão: uma lista transcrita
+# diverge do enum e a validação passaria a rejeitar área legítima (ou aceitar
+# inexistente). Fallback consulta o próprio banco quando o backend não está no
+# path (ex.: script rodando isolado no host).
+def _carregar_areas_casearea() -> frozenset[str]:
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+        from app.models.case import CaseArea  # type: ignore
+        return frozenset(e.value for e in CaseArea)
+    except Exception:
+        return frozenset()
+
+
+AREAS_CASEAREA = _carregar_areas_casearea()
+
+
+def _areas_validas(conn=None) -> frozenset[str]:
+    """Domínio de `casearea`: do enum Python e, em último caso, do próprio banco."""
+    if AREAS_CASEAREA:
+        return AREAS_CASEAREA
+    if conn is not None:
+        with conn.cursor() as cur:
+            cur.execute("SELECT unnest(enum_range(NULL::casearea))::text")
+            return frozenset(r[0] for r in cur.fetchall())
+    return frozenset()
 
 log = logging.getLogger("reclassificar_areas")
 
@@ -145,17 +174,37 @@ def descrever_banco(url: str) -> str:
 
 
 def parece_producao(url: str) -> tuple[bool, str]:
+    """Assume PRODUÇÃO por padrão (auditoria P2-5).
+
+    O default anterior era 'não é produção', e os três sinais (APP_ENV, host
+    remoto, nome com 'prod') falhavam JUNTOS exatamente no modo que o runbook
+    oferece: rodar no host, com DATABASE_URL_SYNC exportada — sem APP_ENV no
+    shell, host localhost e banco `ejc_db`. Combinado com
+    `--sem-interacao --confirmo-backup`, a proteção sumia no cenário real.
+
+    Agora o ônus é invertido: só NÃO é produção quando há negação explícita —
+    `APP_ENV` de desenvolvimento/teste ou `--nao-e-producao` (via
+    EJC_NAO_E_PRODUCAO=1). Rodar em produção legítima segue possível, mas exige
+    a confirmação de produção, que é o comportamento desejado.
+    """
+    app_env = os.environ.get("APP_ENV", "").lower()
+    if app_env == "production":
+        return True, "APP_ENV=production"
+    if app_env in ("development", "dev", "local", "test", "testing"):
+        return False, ""
+    if os.environ.get("EJC_NAO_E_PRODUCAO", "").lower() in ("1", "true", "sim"):
+        return False, ""
     p = urlparse(url)
     host = (p.hostname or "").lower()
     banco = unquote((p.path or "").lstrip("/")).lower()
-    if os.environ.get("APP_ENV", "").lower() == "production":
-        return True, "APP_ENV=production"
     if host and host not in HOSTS_LOCAIS:
         return True, f"host remoto '{host}'"
     for marca in ("prod", "producao", "production"):
         if marca in banco:
             return True, f"nome do banco contém '{marca}'"
-    return False, ""
+    return True, ("assumido como produção por precaução — nenhum sinal explícito de "
+                  "ambiente de desenvolvimento (defina APP_ENV=development ou use "
+                  "--nao-e-producao se este banco NÃO for de produção)")
 
 
 def conectar(url: str):
@@ -305,14 +354,59 @@ def _agora() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _canonico(itens: list[dict[str, Any]]) -> bytes:
+    """Serialização estável do bloco `itens` para assinatura."""
+    return json.dumps(itens, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":")).encode("utf-8")
+
+
+def _chave_hmac() -> bytes:
+    """Chave da assinatura do rollback.
+
+    Usa EJC_ROLLBACK_HMAC_KEY se definida; senão deriva de SECRET_KEY (mesmo
+    segredo do backend, já obrigatório em produção). Sem nenhuma das duas, o
+    script recusa gravar — arquivo sem integridade seria pior que arquivo nenhum.
+    """
+    chave = os.environ.get("EJC_ROLLBACK_HMAC_KEY") or os.environ.get("SECRET_KEY") or ""
+    if len(chave.strip()) < 16:
+        raise SystemExit(
+            "Assinatura do rollback indisponível: defina EJC_ROLLBACK_HMAC_KEY "
+            "(ou SECRET_KEY) com pelo menos 16 caracteres. O arquivo de rollback "
+            "dirige UPDATEs em cases e precisa ser autenticado."
+        )
+    return chave.encode("utf-8")
+
+
+def assinar_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    payload["assinatura"] = {
+        "alg": "HMAC-SHA256",
+        "campo": "itens",
+        "valor": hmac.new(_chave_hmac(), _canonico(payload.get("itens", [])),
+                          hashlib.sha256).hexdigest(),
+    }
+    return payload
+
+
 def gravar_rollback(caminho: Path, payload: dict[str, Any]) -> None:
+    """Grava o rollback assinado, com permissões restritas (auditoria P2-6).
+
+    O arquivo dirige `UPDATE cases SET area = ...`; sem assinatura e com
+    permissão de leitura geral, quem escrevesse em /app/backups plantaria um
+    JSON e o operador aplicaria alterações escolhidas por terceiro — com
+    audit_logs legitimando. Diretório 0700, arquivo 0600, conteúdo assinado.
+    """
+    assinar_payload(payload)
     caminho.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(caminho.parent, 0o700)
     tmp = caminho.with_suffix(caminho.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
         fh.flush()
         os.fsync(fh.fileno())
+    os.chmod(tmp, 0o600)
     tmp.replace(caminho)
+    os.chmod(caminho, 0o600)
 
 
 def _registrar_auditoria(cur, case_id: str, de: str, para: str, detalhes: str) -> None:
@@ -401,7 +495,47 @@ def ler_rollback(caminho: Path) -> dict[str, Any]:
         raise SystemExit(f"Arquivo de rollback ilegível ({caminho}): {e}") from None
     if payload.get("tipo") != "reclassificacao_area_cases":
         raise SystemExit(f"{caminho} não é um arquivo de rollback deste script.")
+
+    # Integridade (P2-6): sem assinatura válida, NÃO se toca no banco.
+    assinatura = (payload.get("assinatura") or {}).get("valor")
+    if not assinatura:
+        raise SystemExit(
+            f"{caminho} não tem assinatura de integridade. Arquivos gerados por "
+            "versões anteriores devem ser reaplicados manualmente após conferência "
+            "— este script não executa rollback não autenticado."
+        )
+    esperado = hmac.new(_chave_hmac(), _canonico(payload.get("itens", [])),
+                        hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(esperado, str(assinatura)):
+        raise SystemExit(
+            f"Assinatura INVÁLIDA em {caminho}: o conteúdo foi alterado desde a "
+            "gravação (ou a chave HMAC mudou). Rollback abortado."
+        )
+    _validar_itens_rollback(payload.get("itens", []), caminho)
     return payload
+
+
+def _validar_itens_rollback(itens: list[dict[str, Any]], caminho: Path) -> None:
+    """Valida o conteúdo antes de virar UPDATE: case_id é UUID e as áreas
+    pertencem ao enum `casearea`. Impede que um arquivo adulterado (ou de outra
+    origem) dirija a escrita para valores arbitrários."""
+    for pos, item in enumerate(itens, start=1):
+        case_id = str(item.get("case_id", ""))
+        try:
+            uuid.UUID(case_id)
+        except (ValueError, AttributeError, TypeError):
+            raise SystemExit(
+                f"{caminho}: item {pos} tem case_id inválido ({case_id!r}); "
+                "esperado UUID. Rollback abortado."
+            ) from None
+        dominio = _areas_validas()
+        for campo in ("area_anterior", "area_nova"):
+            valor = item.get(campo)
+            if valor is not None and dominio and valor not in dominio:
+                raise SystemExit(
+                    f"{caminho}: item {pos} tem {campo}={valor!r}, que não pertence "
+                    f"ao enum casearea. Rollback abortado."
+                )
 
 
 def reverter(conn, caminho: Path, payload: dict[str, Any], *, lote: int) -> dict[str, Any]:
@@ -469,6 +603,10 @@ def construir_parser() -> argparse.ArgumentParser:
                    help="ESCREVE no banco. Sem esta flag o script só relata.")
     p.add_argument("--confirmo-producao", action="store_true",
                    help="Autoriza rodar contra um banco que parece de produção.")
+    p.add_argument("--nao-e-producao", action="store_true",
+                   help="Declara explicitamente que o banco NÃO é de produção. "
+                        "Sem esta flag (ou APP_ENV de desenvolvimento), o script "
+                        "assume produção por precaução.")
     p.add_argument("--sem-interacao", action="store_true",
                    help="Pula a confirmação digitada. Exige --confirmo-backup.")
     p.add_argument("--confirmo-backup", metavar="REF",
@@ -517,6 +655,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     url = resolver_url(args.database_url)
     banco = descrever_banco(url)
+    if getattr(args, "nao_e_producao", False):
+        os.environ["EJC_NAO_E_PRODUCAO"] = "1"
     prod, motivo = parece_producao(url)
     escreve = bool(args.aplicar or args.reverter)
     if prod and escreve and not args.confirmo_producao:

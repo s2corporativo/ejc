@@ -35,17 +35,25 @@ Para separar origem seria preciso um cabeçalho de origem enviado pelo frontend
 (ex.: ``X-EJC-Origem: central|legado``) ou analytics de navegação. Enquanto isso
 não existir, o contador prova apenas que a AÇÃO é (ou não) usada.
 
-Privacidade (LGPD)
-------------------
+Privacidade (LGPD) — sem identificadores DIRETOS
+------------------------------------------------
 Grava apenas: TEMPLATE da rota (``/api/casos/{case_id}``, nunca o path com id),
-método, papel do usuário (``advogado``, ``admin``…) e a hora truncada.
-NUNCA: user_id, IP, querystring, corpo, número de caso ou qualquer dado pessoal.
+método, PAPEL do usuário (``advogado``, ``admin``…) e a hora truncada.
+NUNCA: user_id, IP, querystring, corpo, número de caso.
+
+O que NÃO se pode afirmar (auditoria P2-3): isto não é anonimização. Em papel
+com titular único — tipicamente ``superadmin`` —, a tupla (papel, rota, hora) é
+registro de comportamento de pessoa identificável POR ASSOCIAÇÃO (LGPD art. 5º
+I). Mitigações aplicadas: k-anonimato no recorte por papel (ver
+``_K_ANONIMATO``) e expurgo automático acima de ``RETENCAO_DIAS``.
+Decisão registrada em docs/LGPD_TELEMETRIA_ROTAS.md.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("ejc.route_usage")
 
@@ -81,6 +89,12 @@ ROTAS_MONITORADAS: dict[str, str] = {
 }
 
 _MAX_ENTRADAS = 4096          # teto de segurança do dict (espelha rate_limit)
+# k-anonimato do recorte por papel: papéis com menos de _K_ANONIMATO eventos na
+# janela são colapsados em "outros". Preserva o dado que a Onda 5 precisa (o
+# TOTAL por rota, intacto) e derruba o recorte que permitiria singularizar um
+# titular único (ex.: o superadmin).
+_K_ANONIMATO = 5
+RETENCAO_DIAS = 90            # janela declarada é de 30-60 dias; expurgo acima disso
 _lock = threading.Lock()
 # {(rota, metodo, papel, hora_iso): contagem}
 _contadores: dict[tuple[str, str, str, str], int] = {}
@@ -147,6 +161,15 @@ def _montar_agregado(linhas: list[dict], desde_iso: str | None) -> dict:
             alvo["primeira_chamada"] = x["hora"]
         if alvo["ultima_chamada"] is None or x["hora"] > alvo["ultima_chamada"]:
             alvo["ultima_chamada"] = x["hora"]
+    # k-anonimato (P2-3): o total por rota é preservado; só o RECORTE por papel
+    # é generalizado, colapsando papéis raros em "outros".
+    for alvo in por_rota.values():
+        raros = {papel: n for papel, n in alvo["por_papel"].items() if n < _K_ANONIMATO}
+        if raros:
+            for papel in raros:
+                del alvo["por_papel"][papel]
+            alvo["por_papel"]["outros"] = alvo["por_papel"].get("outros", 0) + sum(raros.values())
+            alvo["papeis_generalizados"] = True
     dados = sorted(por_rota.values(), key=lambda d: (-d["total"], d["rota"]))
     return {
         "desde": desde_iso,
@@ -155,8 +178,11 @@ def _montar_agregado(linhas: list[dict], desde_iso: str | None) -> dict:
         "observacao": ("Contadores em MEMÓRIA do processo (premissa de worker único do EJC): "
                        "reiniciar o backend zera a janela. Para a decisão da Onda 5, considere "
                        "apenas períodos sem restart — o campo `desde` delimita a janela."),
-        "privacidade": ("Sem PII: apenas template da rota, método, papel do usuário e hora. "
-                        "Nunca user_id, IP, querystring ou dados do caso."),
+        "privacidade": (f"Sem identificadores diretos: apenas template da rota, método, papel "
+                        f"e hora — nunca user_id, IP, querystring ou dados do caso. O recorte "
+                        f"por papel aplica k-anonimato (k={_K_ANONIMATO}: papéis com menos "
+                        f"eventos entram em 'outros'); registros acima de {RETENCAO_DIAS} dias "
+                        f"são expurgados. Não é anonimização — ver docs/LGPD_TELEMETRIA_ROTAS.md."),
     }
 
 
@@ -174,6 +200,13 @@ async def flush() -> dict:
     Fail-open: qualquer erro de banco devolve os contadores para a memória e
     apenas loga — telemetria nunca derruba o app nem perde a janela por um
     hiccup do banco.
+
+    LIMITE CONHECIDO (auditoria P2-4): se a conexão cair DEPOIS de o COMMIT ter
+    sido efetivado no servidor, o restore devolve buckets já persistidos e a
+    rodada seguinte soma de novo (o UPSERT é incremental, não idempotente).
+    Isso INFLA a contagem — nunca a reduz —, então não gera falso "sem uso", que
+    é o risco que importa aqui. Aceitável para telemetria; corrigir exigiria
+    idempotência por token de rodada.
     """
     itens = _drenar()
     if not itens:
@@ -199,17 +232,52 @@ async def flush() -> dict:
         logger.info("Telemetria de rotas: %d bucket(s), %d evento(s) persistidos",
                     len(itens), eventos)
         return {"buckets": len(itens), "eventos": eventos}
-    except Exception as exc:   # pragma: no cover — fail-open
+    except BaseException as exc:
+        # BaseException (P2-4): com scheduler.shutdown(wait=False), um flush em
+        # voo recebe CancelledError — que NÃO é Exception no 3.11. Capturando só
+        # Exception, a janela drenada evaporava em silêncio. Restauramos primeiro
+        # e só então repropagamos o cancelamento.
+        descartados = 0
         with _lock:            # devolve para a memória: nada se perde
             for chave, contagem in itens:
+                if len(_contadores) >= _MAX_ENTRADAS and chave not in _contadores:
+                    descartados += contagem   # P2-2: teto vale também no restore
+                    continue
                 _contadores[chave] = _contadores.get(chave, 0) + contagem
+        if descartados:
+            logger.warning("Telemetria: teto de %d buckets atingido no restore — %d "
+                           "evento(s) descartado(s)", _MAX_ENTRADAS, descartados)
         logger.warning("Flush da telemetria de rotas falhou (%s): contadores mantidos "
                        "em memória para a próxima tentativa", type(exc).__name__)
-        return {"buckets": 0, "eventos": 0, "erro": type(exc).__name__}
+        if isinstance(exc, asyncio.CancelledError):
+            raise
+        return {"buckets": 0, "eventos": 0, "erro": type(exc).__name__,
+                "eventos_descartados_por_teto": descartados}
 
 
-async def _persistidos(desde_iso: str | None) -> list[dict]:
-    """Lê o histórico já persistido (vazio se a tabela ainda não existir)."""
+class HistoricoIndisponivel(RuntimeError):
+    """O histórico persistido não pôde ser lido (banco fora, erro de consulta).
+
+    Distinta de "tabela ainda não criada": ali o vazio é a verdade (nunca houve
+    flush); aqui o vazio seria uma MENTIRA perigosa — leria-se `total: 0` como
+    "rota sem uso" e a Onda 5 removeria endpoint em uso diário (P1-1).
+    """
+
+
+def _tabela_ausente(exc: BaseException) -> bool:
+    """True quando o erro é 'relação não existe' — migration 122 ainda não aplicada."""
+    texto = f"{type(exc).__name__}: {exc}".lower()
+    return ("undefinedtable" in texto or "does not exist" in texto
+            or "no such table" in texto or "relation" in texto and "not exist" in texto)
+
+
+async def _persistidos(desde: datetime | None) -> list[dict]:
+    """Lê o histórico persistido.
+
+    Devolve [] APENAS quando a tabela ainda não existe (fail-open legítimo).
+    Qualquer outra falha levanta ``HistoricoIndisponivel`` — o chamador marca o
+    payload como incompleto em vez de exibir zeros.
+    """
     try:
         from sqlalchemy import select
 
@@ -220,27 +288,50 @@ async def _persistidos(desde_iso: str | None) -> list[dict]:
             q = select(RouteUsageMetric.rota, RouteUsageMetric.metodo,
                        RouteUsageMetric.papel, RouteUsageMetric.hora,
                        RouteUsageMetric.contagem)
-            if desde_iso:
-                q = q.where(RouteUsageMetric.hora >= datetime.fromisoformat(desde_iso))
+            if desde is not None:
+                q = q.where(RouteUsageMetric.hora >= desde)
             linhas = (await db.execute(q)).all()
         return [{"rota": r, "metodo": m, "papel": p, "hora": h.isoformat(),
                  "contagem": n, "motivo": ROTAS_MONITORADAS.get(r, "")}
                 for r, m, p, h, n in linhas]
-    except Exception as exc:   # pragma: no cover — leitura best-effort
-        logger.warning("Histórico persistido indisponível (%s): usando só a memória",
-                       type(exc).__name__)
-        return []
+    except Exception as exc:
+        if _tabela_ausente(exc):
+            logger.info("route_usage_metrics ainda não existe (migration 122 pendente): "
+                        "histórico vazio é o estado real")
+            return []
+        logger.error("Histórico de telemetria INDISPONÍVEL (%s) — resposta será marcada "
+                     "como incompleta", type(exc).__name__)
+        raise HistoricoIndisponivel(type(exc).__name__) from exc
 
 
-async def agregado_persistido(desde_iso: str | None = None) -> dict:
+async def agregado_persistido(desde: datetime | None = None) -> dict:
     """Agregado COMPLETO: histórico persistido + o que ainda está em memória.
 
     É o que o endpoint administrativo devolve — a janela sobrevive a restarts.
+    `desde` já chega validado como datetime (o contrato do endpoint rejeita
+    string inválida com 422); nunca se faz parsing tolerante aqui.
     """
-    linhas = await _persistidos(desde_iso) + [
+    desde_iso = desde.isoformat() if desde is not None else None
+    historico_indisponivel = False
+    try:
+        historico = await _persistidos(desde)
+    except HistoricoIndisponivel:
+        historico, historico_indisponivel = [], True
+
+    linhas = historico + [
         x for x in snapshot() if not desde_iso or x["hora"] >= desde_iso
     ]
     out = _montar_agregado(linhas, desde_iso)
+    if historico_indisponivel:
+        # NUNCA deixar total: 0 ser lido como "sem uso" (P1-1): o consumidor
+        # precisa saber que o histórico não entrou na conta.
+        out["historico_indisponivel"] = True
+        out.pop("sem_uso_no_periodo", None)
+        out["fonte"] = "APENAS memória — histórico persistido indisponível"
+        out["alerta"] = ("Histórico persistido NÃO pôde ser lido: os totais abaixo refletem "
+                         "somente a memória do processo. NÃO use este resultado para decidir "
+                         "remoção de rota.")
+        return out
     out["fonte"] = "banco (histórico) + memória (janela corrente ainda não persistida)"
     out["observacao"] = ("Contagens persistidas em route_usage_metrics por flush periódico; "
                          "o bloco ainda em memória é somado aqui. A janela sobrevive a "
@@ -252,3 +343,29 @@ def resetar() -> None:
     """Zera os contadores (uso administrativo/teste)."""
     with _lock:
         _contadores.clear()
+
+
+async def expurgar_antigos(dias: int = RETENCAO_DIAS) -> dict:
+    """Remove buckets acima da janela de retenção (LGPD art. 15-16: dado deixa de
+    ser necessário à finalidade). Chamado pelo job do APScheduler."""
+    try:
+        from sqlalchemy import delete
+
+        from app.core.database import AsyncSessionLocal
+        from app.models.route_usage_metric import RouteUsageMetric
+
+        corte = datetime.now(timezone.utc) - timedelta(days=dias)
+        async with AsyncSessionLocal() as db:
+            res = await db.execute(
+                delete(RouteUsageMetric).where(RouteUsageMetric.hora < corte))
+            await db.commit()
+        removidos = getattr(res, "rowcount", 0) or 0
+        if removidos:
+            logger.info("Telemetria de rotas: %d bucket(s) acima de %d dias expurgados",
+                        removidos, dias)
+        return {"removidos": removidos, "corte": corte.isoformat()}
+    except Exception as exc:
+        if _tabela_ausente(exc):
+            return {"removidos": 0, "corte": None}
+        logger.warning("Expurgo da telemetria falhou (%s)", type(exc).__name__)
+        return {"removidos": 0, "erro": type(exc).__name__}

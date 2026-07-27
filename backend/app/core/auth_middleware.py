@@ -78,19 +78,30 @@ def _totp_management_temporarily_disabled(path: str) -> bool:
     )
 
 
-def _registrar_uso_de_rota(request) -> None:
+def _registrar_uso_de_rota(request, status_code: int) -> None:
     """Telemetria de uso das rotas candidatas à remoção (Onda 3 §4.5).
 
-    Roda DEPOIS da resposta, fora do caminho crítico. Usa o TEMPLATE da rota
-    (``/api/casos/{case_id}``) — nunca o path concreto — e o papel já decodificado
-    do JWT: sem user_id, sem IP, sem querystring. Falha aqui jamais afeta a
+    Roda DEPOIS da resposta, fora do caminho crítico. Falha aqui jamais afeta a
     requisição (best-effort; ver services/route_usage.py).
+
+    INTEGRIDADE DO CONTADOR (P2-1): só registra quando o roteamento REALMENTE
+    casou uma rota (``request.scope["route"]``) e quando a resposta foi
+    bem-sucedida (< 400). Sem isso, qualquer usuário autenticado forjaria uso:
+    ``GET /api/tasks/%7Btask_id%7D`` cairia no fallback para o path concreto e
+    um 404 contaria como chamada da rota-template; e um 403/405 numa rota
+    monitorada faria uma tela morta parecer viva. Não há fallback para
+    ``request.url.path`` — path concreto nunca é registrado.
     """
     try:
+        if status_code >= 400:
+            return
+        rota = request.scope.get("route")
+        template = getattr(rota, "path", None)
+        if not template:            # nenhuma rota casou (404): não é uso real
+            return
+
         from app.services import route_usage
 
-        rota = request.scope.get("route")
-        template = getattr(rota, "path", None) or request.url.path
         route_usage.registrar(template, request.method, getattr(request.state, "role", None))
     except Exception:  # pragma: no cover — telemetria nunca quebra o request
         pass
@@ -193,5 +204,5 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
 
         resposta = await call_next(request)
-        _registrar_uso_de_rota(request)
+        _registrar_uso_de_rota(request, getattr(resposta, "status_code", 500))
         return resposta

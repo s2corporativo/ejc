@@ -459,6 +459,12 @@ async def _flush_telemetria_rotas() -> None:
     await route_usage.flush()
 
 
+async def _expurgar_telemetria_rotas() -> None:
+    """Expurgo LGPD: remove telemetria de rota acima da janela de retenção."""
+    from app.services import route_usage
+    await route_usage.expurgar_antigos()
+
+
 async def _alertar_prescricao():
     """Casos com prescrição ≤90 dias → alerta semanal ao responsável."""
     from app.core.database import AsyncSessionLocal
@@ -1203,6 +1209,9 @@ def start_scheduler():
     # agregado em memória a cada 15 min — sem INSERT por request.
     s.add_job(_flush_telemetria_rotas, IntervalTrigger(minutes=15),
               id="telemetria_rotas", replace_existing=True, max_instances=1, coalesce=True)
+    # Expurgo LGPD da telemetria (retenção de 90 dias; janela declarada 30-60).
+    s.add_job(_expurgar_telemetria_rotas, CronTrigger(hour=3, minute=40),
+              id="telemetria_rotas_expurgo", replace_existing=True, max_instances=1, coalesce=True)
 
     # Jobs v3.x — integrações oficiais (guardas internas pulam se não configurado)
     s.add_job(job_djen_intimacoes,  CronTrigger(hour=6,  minute=30), id="djen",        replace_existing=True)

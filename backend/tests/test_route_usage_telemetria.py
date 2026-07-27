@@ -66,13 +66,15 @@ def test_nao_grava_pii():
 
 
 def test_agrega_por_rota_e_papel():
-    for _ in range(3):
+    """Total por rota é exato; o recorte por papel passa pelo k-anonimato
+    (P2-3): papéis abaixo de k entram em 'outros'."""
+    for _ in range(6):
         route_usage.registrar("/api/deadlines/calcular", "POST", "advogado")
     route_usage.registrar("/api/deadlines/calcular", "POST", "admin")
     agregado = route_usage.agregado()
     prazos = [r for r in agregado["rotas"] if r["rota"] == "/deadlines/calcular"][0]
-    assert prazos["total"] == 4
-    assert prazos["por_papel"] == {"advogado": 3, "admin": 1}
+    assert prazos["total"] == 7                          # total intacto
+    assert prazos["por_papel"] == {"advogado": 6, "outros": 1}
 
 
 def test_lista_rotas_sem_uso_para_decisao_da_onda5():
