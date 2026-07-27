@@ -17,8 +17,13 @@ from fastapi import HTTPException
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.client_ownership import pode_ver_caso_resumido, pode_ver_cliente
+from app.core.client_ownership import (
+    obter_cliente_autorizado,
+    pode_ver_caso_resumido,
+    pode_ver_cliente,
+)
 from app.core.config import get_settings
+from app.core.security import ROLE_LEVEL
 from app.models.case import Case, CaseArea, CaseStatus
 from app.models.case_intelligence import CaseIntelligenceSnapshot
 from app.models.client import Client
@@ -541,9 +546,11 @@ async def preview_conversao(
     # Cliente EXISTENTE selecionado: o nome canônico dele é o candidato — sem
     # isso, sessões sem cliente_potencial pulavam a checagem de o cliente ser
     # parte contrária em outro caso do escritório (apontamento Codex P1).
-    if client_id and not candidato:
-        cli = await db.get(Client, client_id)
-        if cli is not None and cli.deleted_at is None:
+    # Sob o gate canônico: UUID de outra carteira devolve 404 aqui, em vez de
+    # virar sonda de identidade/contagem de casos alheios.
+    if client_id:
+        cli = await obter_cliente_autorizado(db, user, client_id)
+        if not candidato:
             candidato = (cli.nome_exibicao or "").strip()
     candidato_lower = candidato.lower()
 
@@ -598,21 +605,28 @@ async def preview_conversao(
             unicos.append(a)
 
     # Clientes possivelmente duplicados (só relevante ao CRIAR cliente novo).
+    # Os protegidos colapsam numa ÚNICA entrada: a contagem de correspondências
+    # em carteira alheia também é informação (mesma doutrina de alertas_conflito).
     clientes_dup: list[dict[str, Any]] = []
     if candidato and not client_id:
+        houve_protegido = False
         for c in await _clientes_por_nome(db, candidato, limit=10):
             if await pode_ver_cliente(db, user, c):
                 clientes_dup.append({
                     "id": c.id, "nome": c.nome_exibicao, "protegido": False,
                 })
             else:
-                clientes_dup.append({
-                    "id": None,
-                    "nome": "Cliente protegido na base do escritório",
-                    "protegido": True,
-                })
+                houve_protegido = True
+        if houve_protegido:
+            clientes_dup.append({
+                "id": None,
+                "nome": "Cliente protegido na base do escritório",
+                "protegido": True,
+            })
 
     # Casos ATIVOS do cliente escolhido — sinal de caso possivelmente duplicado.
+    # Só roda com client_id JÁ autorizado (obter_cliente_autorizado acima);
+    # protegidos colapsam numa entrada para não vazar a contagem.
     casos_ativos: list[dict[str, Any]] = []
     if client_id:
         rows = (await db.execute(
@@ -622,6 +636,7 @@ async def preview_conversao(
                 Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
             ).limit(10)
         )).scalars().all()
+        houve_protegido = False
         for caso in rows:
             if pode_ver_caso_resumido(user, caso):
                 casos_ativos.append({
@@ -631,10 +646,12 @@ async def preview_conversao(
                     "protegido": False,
                 })
             else:
-                casos_ativos.append({
-                    "id": None, "titulo": "Caso protegido", "numero_interno": None,
-                    "protegido": True,
-                })
+                houve_protegido = True
+        if houve_protegido:
+            casos_ativos.append({
+                "id": None, "titulo": "Caso protegido", "numero_interno": None,
+                "protegido": True,
+            })
 
     return {
         "session_id": sessao.id,
@@ -852,10 +869,26 @@ async def converter_em_caso(
             "casos_ativos_do_cliente": preview["casos_ativos_do_cliente"],
         })
 
+    # Responsável: UUID livre no payload ia direto para o modelo — id
+    # inexistente virava IntegrityError (500) e qualquer id permitia atribuir
+    # caso/cliente a terceiro. Exige usuário ativo com piso de advogado.
+    responsavel = await db.get(User, payload.advogado_responsavel_id)
+    if (
+        responsavel is None
+        or not getattr(responsavel, "is_active", True)
+        or ROLE_LEVEL.get(_role(responsavel), 0) < ROLE_LEVEL["advogado"]
+    ):
+        raise HTTPException(
+            422, "Responsável inválido: informe um advogado ativo do escritório"
+        )
+
     if payload.client_id:
-        client = await db.get(Client, payload.client_id)
-        if client is None or client.deleted_at is not None:
-            raise HTTPException(404, "Cliente não encontrado")
+        # Gate canônico (mesmo do Raio-X): 404 uniforme quando o UUID pertence
+        # a outra carteira. Sem ele, converter com client_id alheio criava um
+        # Case com o requisitante como responsável — e `pode_ver_cliente` passa
+        # a conceder acesso permanente ao cliente por esse próprio vínculo
+        # (escalonamento de carteira, não só escrita indevida).
+        client = await obter_cliente_autorizado(db, user, payload.client_id)
     else:
         client = Client(
             id=str(uuid4()),
@@ -1084,7 +1117,13 @@ def serializar_anexo(a: LegalChatAttachment) -> dict[str, Any]:
         "sha256": a.sha256,
         "tipo_documento": a.tipo_documento,
         "ocr_utilizado": a.ocr_utilizado,
-        "resultado_analise": a.resultado_analise or {},
+        # Chaves `_`-prefixadas são internas por convenção do repo (o texto
+        # sanitizado é retido só para virar Document.ocr_text na conversão) —
+        # nunca saem na API, aqui como no caminho gêmeo de documentos.
+        "resultado_analise": {
+            k: v for k, v in (a.resultado_analise or {}).items()
+            if not str(k).startswith("_")
+        },
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
 

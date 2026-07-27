@@ -307,7 +307,12 @@ async def anexar_documentos(
     }
 
 
-@router.get("/{session_id}/conversao/preview")
+@router.get(
+    "/{session_id}/conversao/preview",
+    # Único endpoint de busca por nome livre do router: sem teto, sustenta
+    # varredura da base (ILIKE com curinga à esquerda = seq scan) a cada tecla.
+    dependencies=[Depends(rate_limit("sala-juridica-preview", 30))],
+)
 async def conversao_preview(
     session_id: str,
     nome_cliente: str | None = Query(default=None, max_length=255),

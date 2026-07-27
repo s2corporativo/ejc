@@ -418,10 +418,18 @@ async def ficha_confirmada(db: AsyncSession, case_id: str) -> Optional[FichaTria
 
 
 async def salvar(db: AsyncSession, case_id: str, dados: dict, *,
-                 confirmar: bool, user_id: str, user_role: str) -> FichaTriagem:
+                 confirmar: bool, user_id: str, user_role: str,
+                 preservar_confirmada: bool = False) -> FichaTriagem:
     """UPSERT da ficha do caso. confirmar=True → status 'confirmada' (abre o gate
-    de geração de peça). Audit FICHA_TRIAGEM_SALVA / FICHA_TRIAGEM_CONFIRMADA."""
+    de geração de peça). Audit FICHA_TRIAGEM_SALVA / FICHA_TRIAGEM_CONFIRMADA.
+
+    preservar_confirmada: escritas AUTOMÁTICAS (pré-preenchimento por IA) não
+    podem rebaixar para 'rascunho' uma ficha que um humano confirmou entre a
+    decisão do chamador e esta gravação — fechando o gate da peça sem que
+    ninguém tenha pedido."""
     ficha = await obter(db, case_id)
+    if preservar_confirmada and ficha is not None and ficha.status == "confirmada":
+        return ficha
     novo = ficha is None
     if novo:
         ficha = FichaTriagem(id=str(uuid4()), case_id=case_id, created_by=user_id)

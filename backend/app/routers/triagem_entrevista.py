@@ -262,5 +262,6 @@ async def _alimentar_ficha(db: AsyncSession, case_id: str,
     if conf:
         campos["confianca"] = conf
     await fts.salvar(db, case_id, campos, confirmar=False,
-                     user_id=cu.id, user_role=cu.role.value)
+                     user_id=cu.id, user_role=cu.role.value,
+                     preservar_confirmada=True)
     return True
