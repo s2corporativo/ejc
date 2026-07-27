@@ -54,6 +54,14 @@ services:
       DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_DIR: /app/uploads
       BACKUP_DIR: /app/backups
+      # 2FA (TOTP): DESLIGADO por decisão operacional do escritório — o login
+      # exige apenas senha. O código é fail-closed (ver app/core/two_factor_policy.py),
+      # então esta desativação é EXPLÍCITA e fica versionada aqui, em vez de
+      # depender da ausência de uma variável. Os segredos TOTP já cadastrados são
+      # preservados no banco: para exigir 2FA, basta TWO_FACTOR_AUTH_ENABLED=true
+      # no .env (ou remover esta linha) e reiniciar — sem migration nem recadastro.
+      # Procedimento completo: docs/SECURITY_2FA_TEMPORARY_DISABLE.md
+      TWO_FACTOR_AUTH_ENABLED: "${TWO_FACTOR_AUTH_ENABLED:-false}"
       # O entrypoint aplica `alembic upgrade head` no boot SOMENTE quando
       # RUN_MIGRATIONS=1 (ver backend/entrypoint.sh). Default 1 = dev local:
       # um `docker compose up` cru (sem RUN_MIGRATIONS no ambiente) cria/atualiza

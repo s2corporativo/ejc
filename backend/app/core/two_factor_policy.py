@@ -47,7 +47,8 @@ if not two_factor_enabled():
     get_settings().REQUIRE_2FA_ROLES = ""
     logger.warning(
         "2FA DESATIVADO por TWO_FACTOR_AUTH_ENABLED=false — decisão operacional "
-        "temporária; login passa a aceitar apenas senha. Reative o quanto antes."
+        "declarada; o login aceita apenas senha. Para exigir o autenticador, "
+        "defina TWO_FACTOR_AUTH_ENABLED=true (ver docs/SECURITY_2FA_TEMPORARY_DISABLE.md)."
     )
 
 
