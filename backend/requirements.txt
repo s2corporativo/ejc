@@ -38,7 +38,7 @@ python-dateutil==2.9.0
 # nenhum import em app/ (o código usa PyJWT p/ JWT e bcrypt puro p/ senha,
 # ver core/security.py). A remoção também elimina `ecdsa` (transitiva do
 # python-jose, sem correção para CVE-2024-23342/Minerva) do ambiente.
-slowapi==0.1.9
+slowapi==0.1.10
 bcrypt==4.0.1
 pyotp==2.9.0
 PyJWT==2.13.0
