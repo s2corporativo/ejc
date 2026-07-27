@@ -1,14 +1,19 @@
 /**
  * Sala Jurídica Conversacional (V1) — porta de entrada da IA no EJC.
  *
- * Layout em 3 colunas (validado em protótipo): sessões à esquerda, área de
- * trabalho livre + chat ao centro, estado jurídico consolidado à direita.
+ * Layout chat-first (V1.1): a conversa domina a tela numa coluna ampla e
+ * centralizada (estilo chat de fronteira); sessões (esquerda) e estado
+ * jurídico (direita) são painéis RECOLHÍVEIS; a área de trabalho livre é
+ * colapsável e abre automaticamente quando tem conteúdo.
  * Toda IA passa pelo backend (/api/sala-juridica/*), que roda o núcleo único
  * (sanitização LGPD → RAG → AILog → HITL) — esta tela nunca chama modelo.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   Archive,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   FolderInput,
@@ -16,6 +21,10 @@ import {
   Loader2,
   MessageSquareText,
   Paperclip,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   PenLine,
   Plus,
   RefreshCw,
@@ -68,6 +77,29 @@ type Estado = {
   resumo?: string | null;
   estado: Record<string, Array<Record<string, unknown>>>;
   origem?: string | null;
+};
+
+// Conferência prévia da conversão (GET /sala-juridica/{id}/conversao/preview):
+// alertas de conflito EOAB + duplicados, sem expor carteira não autorizada.
+type PreviewConversao = {
+  alertas_conflito: Array<{
+    tipo: string;
+    nome?: string | null;
+    mensagem: string;
+    protegido: boolean;
+  }>;
+  clientes_possivelmente_duplicados: Array<{
+    id: string | null;
+    nome: string;
+    protegido: boolean;
+  }>;
+  casos_ativos_do_cliente: Array<{
+    id: string | null;
+    titulo: string;
+    numero_interno?: string | null;
+    protegido: boolean;
+  }>;
+  bloqueia: boolean;
 };
 
 type Sessao = {
@@ -241,6 +273,13 @@ export default function SalaJuridica() {
   const [vincRevisado, setVincRevisado] = useState(false);
   const [vinculando, setVinculando] = useState(false);
   const [exportando, setExportando] = useState(false);
+  // Layout chat-first: painéis laterais recolhíveis + workspace colapsável.
+  const [painelSessoes, setPainelSessoes] = useState(true);
+  const [painelEstado, setPainelEstado] = useState(true);
+  const [workspaceAberto, setWorkspaceAberto] = useState(false);
+  // Conferência prévia da conversão (conflitos/duplicados detectados).
+  const [convPreview, setConvPreview] = useState<PreviewConversao | null>(null);
+  const [convDuplicado, setConvDuplicado] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const autosaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Última edição da área livre ainda não persistida pelo autosave — usada
@@ -273,6 +312,8 @@ export default function SalaJuridica() {
     const { data } = await api.get<Sessao>(`/sala-juridica/${id}`);
     setAtiva(data);
     setWorkspace(data.workspace_texto ?? "");
+    // Workspace abre sozinho quando já tem conteúdo; senão o chat domina.
+    setWorkspaceAberto(Boolean(data.workspace_texto?.trim()));
   }, []);
 
   useEffect(() => {
@@ -439,14 +480,31 @@ export default function SalaJuridica() {
     await carregarLista();
   };
 
-  const abrirWizard = () => {
+  const abrirWizard = async () => {
     if (!ativa) return;
     setConvTitulo(ativa.titulo);
     setConvNovoCliente(ativa.cliente_potencial ?? "");
     setConvClienteId(null);
     setConvConflito(false);
     setConvRevisado(false);
+    setConvDuplicado(false);
+    setConvPreview(null);
     setWizardAberto(true);
+    // Conferência automática de conflito/duplicado — o servidor revalida na
+    // conversão de qualquer forma (o preview é apoio visual, não o gate).
+    try {
+      const { data } = await api.get<PreviewConversao>(
+        `/sala-juridica/${ativa.id}/conversao/preview`,
+        {
+          params: ativa.cliente_potencial
+            ? { nome_cliente: ativa.cliente_potencial }
+            : {},
+        },
+      );
+      setConvPreview(data);
+    } catch {
+      /* preview indisponível não impede o wizard; servidor ainda barra */
+    }
   };
 
   const buscarClientes = async (termo: string) => {
@@ -481,20 +539,33 @@ export default function SalaJuridica() {
         advogado_responsavel_id: user?.id,
         confirmo_conflito_verificado: convConflito,
         confirmo_dados_revisados: convRevisado,
+        // Gates do servidor: reconhecimento dos achados detectados no preview.
+        conflict_confirmed: convConflito,
+        duplicate_confirmed: convDuplicado,
       });
+      const docs = (data?.documentos_transferidos ?? []).length;
       toast.success(
         data?.ja_convertido
           ? "Análise já estava convertida"
-          : "Caso criado — análise congelada para auditoria",
+          : `Caso criado${docs ? ` com ${docs} documento(s)` : ""} — análise congelada para auditoria`,
       );
       setWizardAberto(false);
       await abrirSessao(ativa.id);
       await carregarLista();
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? "Falha na conversão";
-      toast.error(String(detail));
+      // 409 dos gates devolve detail OBJETO {mensagem, alertas…}.
+      const detail = (
+        err as {
+          response?: {
+            data?: { detail?: string | { mensagem?: string } };
+          };
+        }
+      )?.response?.data?.detail;
+      const msg =
+        typeof detail === "string"
+          ? detail
+          : (detail?.mensagem ?? "Falha na conversão");
+      toast.error(String(msg));
     } finally {
       setConvertendo(false);
     }
@@ -677,8 +748,20 @@ export default function SalaJuridica() {
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr_320px]">
-        {/* ── Coluna esquerda: sessões ─────────────────────────────────── */}
+      <div
+        className={cn(
+          "grid gap-4",
+          painelSessoes && painelEstado &&
+            "lg:grid-cols-[260px_minmax(0,1fr)_320px]",
+          painelSessoes && !painelEstado &&
+            "lg:grid-cols-[260px_minmax(0,1fr)]",
+          !painelSessoes && painelEstado &&
+            "lg:grid-cols-[minmax(0,1fr)_320px]",
+          !painelSessoes && !painelEstado && "lg:grid-cols-1",
+        )}
+      >
+        {/* ── Coluna esquerda: sessões (recolhível) ────────────────────── */}
+        {painelSessoes && (
         <aside className="space-y-3">
           <Input
             placeholder="Pesquisar análises…"
@@ -748,34 +831,83 @@ export default function SalaJuridica() {
             </Button>
           )}
         </aside>
+        )}
 
-        {/* ── Centro: área livre + chat ────────────────────────────────── */}
-        <section className="flex min-h-[70vh] flex-col gap-3">
+        {/* ── Centro: chat amplo + área livre colapsável ───────────────── */}
+        <section className="flex min-h-[78vh] flex-col gap-3">
+          {/* Barra do chat: toggles dos painéis laterais + título da sessão */}
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <button
+              className="rounded p-1 hover:bg-gray-100"
+              title={painelSessoes ? "Ocultar análises" : "Mostrar análises"}
+              onClick={() => setPainelSessoes((v) => !v)}
+            >
+              {painelSessoes ? (
+                <PanelLeftClose className="h-4 w-4" />
+              ) : (
+                <PanelLeftOpen className="h-4 w-4" />
+              )}
+            </button>
+            <span className="truncate font-semibold text-gray-700">
+              {ativa?.titulo ?? "Sala Jurídica"}
+            </span>
+            {ativa?.frozen && <Badge tone="amber">congelada</Badge>}
+            <button
+              className="ml-auto rounded p-1 hover:bg-gray-100"
+              title={
+                painelEstado
+                  ? "Ocultar estado jurídico"
+                  : "Mostrar estado jurídico"
+              }
+              onClick={() => setPainelEstado((v) => !v)}
+            >
+              {painelEstado ? (
+                <PanelRightClose className="h-4 w-4" />
+              ) : (
+                <PanelRightOpen className="h-4 w-4" />
+              )}
+            </button>
+          </div>
           {ativa ? (
             <>
               <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-                <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2 text-xs text-gray-500">
-                  <span className="font-semibold text-gray-700">
+                <button
+                  className="flex w-full items-center justify-between px-3 py-2 text-xs text-gray-500"
+                  onClick={() => setWorkspaceAberto((v) => !v)}
+                >
+                  <span className="flex items-center gap-1 font-semibold text-gray-700">
+                    {workspaceAberto ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )}
                     Área de trabalho livre
+                    {!workspaceAberto && workspace.trim() && (
+                      <Badge tone="slate">com conteúdo</Badge>
+                    )}
                   </span>
                   <span>
                     v{ativa.workspace_versao} · salvamento automático
                     {ativa.frozen && " · congelada (auditoria)"}
                   </span>
-                </div>
-                <Textarea
-                  className="min-h-[160px] w-full resize-y border-0 focus:ring-0"
-                  placeholder="Cole fatos, narrativas do cliente, rascunhos, trechos de peças…"
-                  value={workspace}
-                  disabled={ativa.frozen}
-                  onChange={(e) => aoEditarWorkspace(e.target.value)}
-                />
+                </button>
+                {workspaceAberto && (
+                  <Textarea
+                    className="min-h-[160px] w-full resize-y border-0 border-t border-gray-100 focus:ring-0"
+                    placeholder="Cole fatos, narrativas do cliente, rascunhos, trechos de peças…"
+                    value={workspace}
+                    disabled={ativa.frozen}
+                    onChange={(e) => aoEditarWorkspace(e.target.value)}
+                  />
+                )}
               </div>
 
               <div
                 ref={chatRef}
-                className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3"
+                className="flex-1 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3"
               >
+               {/* Coluna de leitura centralizada (estilo chat de fronteira) */}
+               <div className="mx-auto w-full max-w-3xl space-y-3">
                 {(ativa.mensagens ?? []).length === 0 && (
                   <EmptyState
                     icon={MessageSquareText}
@@ -789,7 +921,7 @@ export default function SalaJuridica() {
                     className={cn(
                       "rounded-lg border p-3 text-sm",
                       m.autor === "user"
-                        ? "border-blue-100 bg-blue-50"
+                        ? "ml-auto w-fit max-w-[88%] border-blue-100 bg-blue-50"
                         : "border-gray-200 bg-white shadow-sm",
                     )}
                   >
@@ -858,9 +990,10 @@ export default function SalaJuridica() {
                     (sanitização → RAG → validação → AILog)…
                   </p>
                 )}
+               </div>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
+              <div className="mx-auto w-full max-w-3xl rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
                 <div className="mb-1 flex flex-wrap gap-1">
                   {ACOES_RAPIDAS.map((a) => (
                     <button
@@ -937,7 +1070,8 @@ export default function SalaJuridica() {
           )}
         </section>
 
-        {/* ── Direita: anexos + estado jurídico ────────────────────────── */}
+        {/* ── Direita: anexos + estado jurídico (recolhível) ───────────── */}
+        {painelEstado && (
         <aside className="space-y-3">
           <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
             <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
@@ -1024,6 +1158,7 @@ export default function SalaJuridica() {
             )}
           </div>
         </aside>
+        )}
       </div>
 
       {/* ── Modal: vincular a caso EXISTENTE ──────────────────────────── */}
@@ -1100,6 +1235,25 @@ export default function SalaJuridica() {
               recebe cliente, documentos, estado probatório e histórico.
             </p>
 
+            {/* Conferência automática: conflitos EOAB detectados na base */}
+            {convPreview && convPreview.alertas_conflito.length > 0 && (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                <p className="mb-1 flex items-center gap-1 text-xs font-bold text-red-800">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Alertas de conflito de interesses (
+                  {convPreview.alertas_conflito.length})
+                </p>
+                <ul className="list-disc pl-4 text-xs text-red-700">
+                  {convPreview.alertas_conflito.map((a, i) => (
+                    <li key={i}>
+                      <span className="font-semibold">{a.nome ?? "—"}</span>:{" "}
+                      {a.mensagem}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <p className="mb-1 text-xs font-bold uppercase text-slate-500">
               1 · Cliente
             </p>
@@ -1141,6 +1295,31 @@ export default function SalaJuridica() {
                 limpar seleção e criar novo cliente
               </button>
             )}
+            {/* Clientes possivelmente duplicados (só ao criar cliente novo) */}
+            {convPreview &&
+              convClienteId == null &&
+              convPreview.clientes_possivelmente_duplicados.length > 0 && (
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="mb-1 text-xs font-bold text-amber-800">
+                    Cliente possivelmente já cadastrado
+                  </p>
+                  {convPreview.clientes_possivelmente_duplicados.map((c, i) =>
+                    c.id ? (
+                      <button
+                        key={i}
+                        className="block text-xs text-amber-800 underline"
+                        onClick={() => setConvClienteId(c.id)}
+                      >
+                        usar “{c.nome}” em vez de criar novo
+                      </button>
+                    ) : (
+                      <p key={i} className="text-xs text-amber-700">
+                        {c.nome} (revisão da gestão necessária)
+                      </p>
+                    ),
+                  )}
+                </div>
+              )}
 
             <p className="mb-1 mt-4 text-xs font-bold uppercase text-slate-500">
               2 · Caso
@@ -1188,6 +1367,20 @@ export default function SalaJuridica() {
               />
               Revisei fatos, provas, pendências e documentos desta análise.
             </label>
+            {convPreview &&
+              convClienteId == null &&
+              convPreview.clientes_possivelmente_duplicados.length > 0 && (
+                <label className="mt-1 flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={convDuplicado}
+                    onChange={(e) => setConvDuplicado(e.target.checked)}
+                  />
+                  Conferi os possíveis duplicados e confirmo a criação de um
+                  novo cliente.
+                </label>
+              )}
 
             <div className="mt-5 flex justify-end gap-2">
               <Button
@@ -1202,7 +1395,11 @@ export default function SalaJuridica() {
                   !convConflito ||
                   !convRevisado ||
                   !convTitulo.trim() ||
-                  (convClienteId == null && !convNovoCliente.trim())
+                  (convClienteId == null && !convNovoCliente.trim()) ||
+                  (convPreview != null &&
+                    convClienteId == null &&
+                    convPreview.clientes_possivelmente_duplicados.length > 0 &&
+                    !convDuplicado)
                 }
                 onClick={() => void converterEmCaso()}
               >

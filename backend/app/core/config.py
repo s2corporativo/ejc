@@ -214,6 +214,11 @@ class Settings(BaseSettings):
     # cada resposta (roda no provider LOCAL via task_type "resumo" — custo
     # zero; falha degrada para o merge de fontes, nunca bloqueia a resposta).
     SALA_JURIDICA_AUTO_ESTADO: bool = True
+    # Qualidade nível chat na Sala Jurídica: conversa livre sobe do tier
+    # econômico (chat_rapido/provider local) para o tier de estratégia
+    # (CaseAgent → Anthropic Opus quando elegível). Desligue para voltar ao
+    # roteamento econômico.
+    SALA_JURIDICA_QUALIDADE_ALTA: bool = True
     # Gate anti-alucinação de citações (Fase 4 — citation_gate.py):
     #   "bloquear"  → saída de IA com citação bloqueante (suspeita de alucinação,
     #                 menção genérica ou julgado sem tribunal+data) NÃO pode ser

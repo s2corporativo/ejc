@@ -111,6 +111,13 @@ class ConverterRequest(BaseModel):
     advogado_responsavel_id: str = Field(min_length=1, max_length=36)
     confirmo_conflito_verificado: bool
     confirmo_dados_revisados: bool
+    # Gates SERVIDOR (paridade com o Raio-X): quando a detecção automática
+    # encontra conflito/duplicado, a conversão exige o reconhecimento explícito
+    # do achado — o checkbox genérico acima não basta (409 sem estes flags).
+    conflict_confirmed: bool = False
+    duplicate_confirmed: bool = False
+    # Anexos da sessão viram Document oficiais do caso (padrão Raio-X).
+    transferir_anexos: bool = True
 
     @field_validator("confirmo_conflito_verificado", "confirmo_dados_revisados")
     @classmethod
@@ -125,6 +132,8 @@ class VincularCasoRequest(BaseModel):
 
     case_id: str = Field(min_length=1, max_length=36)
     confirmo_dados_revisados: bool
+    # Anexos da sessão viram Document oficiais do caso vinculado.
+    transferir_anexos: bool = True
 
     @field_validator("confirmo_dados_revisados")
     @classmethod

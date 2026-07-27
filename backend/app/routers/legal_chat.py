@@ -302,6 +302,23 @@ async def anexar_documentos(
     }
 
 
+@router.get("/{session_id}/conversao/preview")
+async def conversao_preview(
+    session_id: str,
+    nome_cliente: str | None = Query(default=None, max_length=255),
+    client_id: str | None = Query(default=None, max_length=36),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(exigir_equipe_juridica),
+):
+    """Conferência PRÉVIA da conversão: alertas de conflito (EOAB), clientes
+    possivelmente duplicados e casos ativos do cliente — sem expor carteira
+    não autorizada (achado protegido vira alerta genérico)."""
+    sessao = await svc.obter_sessao(db, session_id, user)
+    return await svc.preview_conversao(
+        db, sessao, user, nome_cliente=nome_cliente, client_id=client_id
+    )
+
+
 @router.post(
     "/{session_id}/converter",
     dependencies=[Depends(rate_limit("sala-juridica-converter", 5))],
@@ -338,7 +355,10 @@ async def vincular_caso(
     """Vincula a análise a um caso já existente (alternativa a criar caso novo)."""
     requer_advogado(user, "O vínculo a caso oficial é ato privativo de advogado")
     sessao = await svc.obter_sessao(db, session_id, user)
-    resultado = await svc.vincular_caso_existente(db, sessao, payload.case_id, user)
+    resultado = await svc.vincular_caso_existente(
+        db, sessao, payload.case_id, user,
+        transferir_anexos=payload.transferir_anexos,
+    )
     await criar_audit_log(
         db, user_id=user.id, user_role=svc._role(user),
         acao="sala_juridica_vincular_caso", entidade="legal_chat_sessions",

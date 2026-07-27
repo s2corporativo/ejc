@@ -30,7 +30,9 @@ from app.models.client import Client
 from app.models.deadline import Deadline, DeadlineStatus
 from app.models.document import Document
 from app.models.dossie_estrategico import DossieEstrategico
+from app.models.legal_chat import LegalChatSession
 from app.models.legal_doc import LegalDoc
+from app.models.raio_x import RaioXAnalise
 from app.models.tese import TeseCasoLink
 from app.models.user import User
 from app.schemas.jornada_caso import EtapaJornada, JornadaCasoOut
@@ -346,10 +348,24 @@ async def jornada_do_caso(
                              Client.deleted_at.is_(None))
     )).scalar_one_or_none()
 
+    # Triagem = AILog de análise + análises CONVERTIDAS/VINCULADAS ao caso.
+    # Sala Jurídica e Raio-X gravam AILog SEM case_id durante a análise (o
+    # caso ainda não existe) — contar só AILog fazia todo caso nascido dessas
+    # portas abrir com a etapa Triagem "pendente", mesmo após triagem completa.
     total_analises = (await db.execute(
         select(func.count()).select_from(AILog).where(
             AILog.case_id == case_id,
             AILog.tipo_uso == AITipoUso.analise_caso)
+    )).scalar() or 0
+    total_analises += (await db.execute(
+        select(func.count()).select_from(LegalChatSession).where(
+            LegalChatSession.convertido_case_id == case_id,
+            LegalChatSession.deleted_at.is_(None))
+    )).scalar() or 0
+    total_analises += (await db.execute(
+        select(func.count()).select_from(RaioXAnalise).where(
+            RaioXAnalise.convertido_case_id == case_id,
+            RaioXAnalise.deleted_at.is_(None))
     )).scalar() or 0
 
     total_docs = (await db.execute(
