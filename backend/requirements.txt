@@ -97,7 +97,7 @@ jinja2==3.1.6  # core/document_template_engine.py (import direto). Antes vinha
                # não a arrasta mais — dependência direta declarada aqui.
 weasyprint==69.0
 pydyf==0.11.0
-reportlab==4.2.0  # relatorio_visual_law.py, visual_law_templates.py
+reportlab==5.0.0  # relatorio_visual_law.py, visual_law_templates.py
 
 # AI/RAG
 # Item pós-auditoria (2026-07-12): langchain/-community/-core/-groq/-text-splitters
