@@ -1,0 +1,2 @@
+origem:  /prazos?caso=dc36b63e-fbba-4c2a-92fc-8951e03f5f2f
+destino: http://localhost:5173/atividades?tipo=prazo&caso=dc36b63e-fbba-4c2a-92fc-8951e03f5f2f

@@ -1,0 +1,10 @@
+FLX-070 — guarda do backend
+Peça: 1fccba78-cdf7-4085-8f8d-dc793ea6aaa6 ("Contestacao - QA PR494 (guarda 422 sem protocolo)") — status "aprovada", SEM numero_protocolo
+
+PATCH /api/legal-docs/1fccba78-cdf7-4085-8f8d-dc793ea6aaa6
+Authorization: Bearer <token do admin/superadmin logado>
+Content-Type: application/json
+{"status":"protocolada"}
+
+--> HTTP 422
+{"detail":"Registre o protocolo antes de mudar o status: PATCH /legal-docs/{id}/protocolo (número/tribunal/data). A peça ainda não possui numero_protocolo."}
