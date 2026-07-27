@@ -63,6 +63,8 @@ graphify-out/
 # Worktrees efêmeros de subagentes (Claude Code)
 .claude/worktrees/
 .claude/launch.json
+# Permissões locais do agente (por máquina/sessão) — nunca versionar
+.claude/settings.local.json
 frontend/.claude/
 
 # Segredos aplicados direto na VPS (OAuth Google Drive etc.) — nunca versionar
