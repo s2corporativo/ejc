@@ -32,7 +32,8 @@ section "Uso de disco pelo Docker (docker system df)"
 docker system df -v 2>/dev/null || echo "(docker indisponível)"
 
 section "Imagens Docker dangling (<none>)"
-docker images -f "dangling=true" -q | wc -l | xargs echo "quantidade:"
+dangling_count="$(docker images -f "dangling=true" -q 2>/dev/null | wc -l)" \
+  && echo "quantidade: $dangling_count" || echo "(docker indisponível)"
 
 section "Containers parados (exited/dead)"
 docker ps -a --filter "status=exited" --filter "status=dead" --format '{{.Names}} ({{.Status}})' || true

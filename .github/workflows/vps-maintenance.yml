@@ -22,11 +22,18 @@ concurrency:
 
 jobs:
   maintenance:
+    # Disparo manual só é aceito a partir de main: workflow_dispatch permite
+    # escolher qualquer ref, e sem essa guarda uma branch/push arbitrário
+    # poderia trocar scripts/vps_maintenance.sh e rodar como root na VPS
+    # mesmo em modo auditoria (mesmo padrão de deploy-vps.yml).
+    if: github.ref_name == 'main'
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: main
 
       - name: Rodar auditoria/limpeza
         id: run

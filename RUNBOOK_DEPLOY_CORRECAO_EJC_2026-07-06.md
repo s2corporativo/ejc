@@ -115,7 +115,7 @@ os uploads, e volte o `git` ao commit anterior.
 - **Responsividade:** `cd frontend && npm run build && npm run test:responsive`
   (requer `npm i --no-save playwright` e um Chromium; no ambiente Claude web o
   navegador já está pré-instalado). Ou QA manual pelo checklist do
-  `RELATORIO_EXECUCAO_BLOCO6_TESTES_EJC_2026-07-06.md`.
+  `docs/historico/RELATORIO_EXECUCAO_BLOCO6_TESTES_EJC_2026-07-06.md`.
 
 ## 8. Decisões com default reversível (aplicadas; confirmar se quiser mudar)
 
