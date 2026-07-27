@@ -2,7 +2,6 @@
 # Data Room — salas seguras de documentos com links de acesso externo.
 from __future__ import annotations
 
-import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -224,18 +223,10 @@ def _out_room(r: DataRoom) -> dict:
     }
 
 
-def _token_hash(token: str) -> str:
-    """SHA-256 do segredo do link — em repouso só existe o hash (dump de banco/
-    backup não expõe o link público). Entropia de token_urlsafe(48) dispensa salt."""
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
 def _out_link(lk: DataRoomLink) -> dict:
-    # SEGURANÇA: o token NÃO é relistado — segredo de acesso público exposto
-    # uma única vez, na criação do link (ver gerar_link). Para recuperar acesso,
-    # revogue e gere um novo link.
     return {
         "id": lk.id,
+        "token": lk.token,
         "descricao": lk.descricao,
         "expira_em": lk.expira_em.isoformat() if lk.expira_em else None,
         "max_acessos": lk.max_acessos,
@@ -498,7 +489,7 @@ async def gerar_link(
     lk = DataRoomLink(
         id=str(uuid4()),
         data_room_id=room_id,
-        token=_token_hash(token),  # em repouso, só o hash
+        token=token,
         descricao=req.descricao,
         expira_em=expira,
         max_acessos=req.max_acessos,
@@ -506,10 +497,8 @@ async def gerar_link(
     )
     db.add(lk)
     await db.commit()
-    # Única exibição do segredo: na resposta de criação (não é relistado).
     return {
         **_out_link(lk),
-        "token": token,
         "url_acesso": f"/api/data-rooms/acesso/{token}",
     }
 
@@ -562,7 +551,7 @@ async def acessar_link_publico(
     lk = (
         await db.execute(
             select(DataRoomLink).where(
-                DataRoomLink.token == _token_hash(token),
+                DataRoomLink.token == token,
                 DataRoomLink.ativo.is_(True),
             )
         )

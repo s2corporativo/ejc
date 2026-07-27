@@ -2,9 +2,8 @@
 
 Rota PÚBLICA (Evolution chama de fora) — protegida por secret: valida um
 token e recusa se não configurado.
-O secret é enviado pela Evolution EXCLUSIVAMENTE via header
-`apikey`/`X-Webhook-Token`. Query string (`?token=`) não é aceita: URLs vazam
-em access logs do Nginx, proxies e histórico do painel (LGPD/segurança).
+O secret é enviado pela Evolution como header `apikey`/`X-Webhook-Token`
+ou via query `?token=` na URL do webhook configurada no painel.
 """
 import hmac
 import logging
@@ -23,6 +22,7 @@ def _autorizado(request: Request) -> bool:
     recebido = (
         request.headers.get("x-webhook-token")
         or request.headers.get("apikey")
+        or request.query_params.get("token")
         or ""
     )
     return bool(recebido) and hmac.compare_digest(recebido, WEBHOOK_SECRET)
@@ -43,10 +43,7 @@ async def _processar_mensagem(data: dict):
             texto = msgs.get("message", {}).get("conversation", "") or \
                     msgs.get("message", {}).get("extendedTextMessage", {}).get("text", "")
             if numero and texto and not msgs.get("key", {}).get("fromMe"):
-                # LGPD: NUNCA logar conteúdo da mensagem (segredo profissional,
-                # saúde, CPF...) nem o telefone completo — só metadados.
-                mascarado = f"***{numero[-4:]}" if len(numero) >= 4 else "***"
-                logger.info(f"Mensagem recebida de {mascarado} ({len(texto)} chars)")
+                logger.info(f"Mensagem de {numero}: {texto[:100]}")
                 # TODO: integrar com fluxo de CRM/casos se necessário
 
         elif evento == "connection.update":
@@ -54,7 +51,7 @@ async def _processar_mensagem(data: dict):
             logger.info(f"WhatsApp conexão: {status}")
 
     except Exception as e:
-        logger.error(f"Erro ao processar webhook WhatsApp: {type(e).__name__}")
+        logger.error(f"Erro ao processar webhook WhatsApp: {e}")
 
 
 @router.post("/evolution")
@@ -74,5 +71,5 @@ async def evolution_webhook(request: Request, bg: BackgroundTasks):
         bg.add_task(_processar_mensagem, body)
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"Webhook parse error: {type(e).__name__}")
+        logger.error(f"Webhook parse error: {e}")
         return {"status": "error"}
