@@ -1,0 +1,62 @@
+# Manutenção de limpeza da VPS (disco, Docker, pacotes, logs de sistema).
+#
+# Roda no runner self-hosted instalado na própria VPS, sem SSH/senha.
+# Por padrão executa apenas em modo auditoria (relata, não apaga nada);
+# marque "apply" para executar a limpeza de fato.
+name: Manutenção VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Executar a limpeza de fato (senão só audita)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintenance:
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Rodar auditoria/limpeza
+        id: run
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            sudo bash scripts/vps_maintenance.sh --apply | tee maintenance-report.txt
+          else
+            sudo bash scripts/vps_maintenance.sh | tee maintenance-report.txt
+          fi
+
+      - name: Anexar relatório
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vps-maintenance-report
+          path: maintenance-report.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Resumo no step summary
+        if: always()
+        run: |
+          {
+            echo "## Manutenção VPS"
+            echo
+            echo "- Modo: \`${{ inputs.apply == true && 'apply (limpeza real)' || 'auditoria (dry-run)' }}\`"
+            echo
+            echo '```'
+            cat maintenance-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
