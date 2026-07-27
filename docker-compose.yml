@@ -10,6 +10,11 @@ services:
     # "No such container".
     container_name: ejc_db
     restart: unless-stopped
+    # Teto de memória (contenção 2026-07-27) — Postgres+pgvector: shared_buffers
+    # e índices vetoriais crescem com o RAG.
+    # Estouro → OOM-kill SÓ deste container, nunca da VPS — que hospeda
+    # outras 5 stacks de produção. Ajuste por env sem editar o compose.
+    mem_limit: ${EJC_DB_MEM_LIMIT:-1500m}
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -27,6 +32,11 @@ services:
     image: redis:7-alpine
     container_name: ejc_redis
     restart: unless-stopped
+    # Teto de memória (contenção 2026-07-27) — broker Celery com AOF; o uso real
+    # é de poucos MB.
+    # Estouro → OOM-kill SÓ deste container, nunca da VPS — que hospeda
+    # outras 5 stacks de produção. Ajuste por env sem editar o compose.
+    mem_limit: ${EJC_REDIS_MEM_LIMIT:-256m}
     # AOF ligado: tasks enfileiradas sobrevivem a restart do container.
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -42,6 +52,11 @@ services:
       context: ./backend
     container_name: ejc_backend
     restart: unless-stopped
+    # Teto de memória (contenção 2026-07-27) — uvicorn + OCR/PDF + chamadas de IA;
+    # é o maior consumidor sob carga.
+    # Estouro → OOM-kill SÓ deste container, nunca da VPS — que hospeda
+    # outras 5 stacks de produção. Ajuste por env sem editar o compose.
+    mem_limit: ${EJC_BACKEND_MEM_LIMIT:-1500m}
     ports:
       # Publica só no loopback do host; o Nginx do host faz proxy_pass para 127.0.0.1:8000.
       - "127.0.0.1:8000:8000"
@@ -135,6 +150,11 @@ services:
       context: ./backend
     container_name: ejc_worker
     restart: unless-stopped
+    # Teto de memória (contenção 2026-07-27) — Celery concurrency=2 com OCR e
+    # embeddings.
+    # Estouro → OOM-kill SÓ deste container, nunca da VPS — que hospeda
+    # outras 5 stacks de produção. Ajuste por env sem editar o compose.
+    mem_limit: ${EJC_WORKER_MEM_LIMIT:-1g}
     networks: [default, ia]
     command: celery -A app.core.celery_app.celery_app worker --loglevel=INFO --concurrency=2
     env_file:
@@ -177,6 +197,10 @@ services:
       context: ./frontend
     container_name: ejc_frontend
     restart: unless-stopped
+    # Teto de memória (contenção 2026-07-27) — Nginx servindo build estático.
+    # Estouro → OOM-kill SÓ deste container, nunca da VPS — que hospeda
+    # outras 5 stacks de produção. Ajuste por env sem editar o compose.
+    mem_limit: ${EJC_FRONTEND_MEM_LIMIT:-128m}
     ports:
       # Publica SÓ no loopback do host, atrás do Nginx do host (nginx/ejc.conf
       # faz o TLS/HSTS/CSP e o proxy_pass para 127.0.0.1:8080). Expor 0.0.0.0:80
