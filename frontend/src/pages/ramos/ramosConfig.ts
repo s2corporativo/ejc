@@ -1176,6 +1176,16 @@ const administrativo: RamoConfig = {
           tipo: "number",
         },
         { nome: "meses_contrato", label: "Meses de contrato", tipo: "number" },
+        {
+          nome: "indice_nome",
+          label: "Índice previsto no contrato (ex.: IPCA/IBGE)",
+          tipo: "text",
+        },
+        {
+          nome: "data_base",
+          label: "Data-base (orçamento estimado ou proposta)",
+          tipo: "date",
+        },
       ],
     },
     // ── MULTAS / MS ───────────────────────────────────────────────────────
@@ -2076,8 +2086,18 @@ const imobiliario: RamoConfig = {
         { nome: "valor_atual", label: "Aluguel atual (R$)", tipo: "number" },
         {
           nome: "indice_percentual",
-          label: "Índice de reajuste (%)",
+          label: "Índice de reajuste acumulado (%)",
           tipo: "number",
+        },
+        {
+          nome: "indice_nome",
+          label: "Índice pactuado no contrato (ex.: IGP-M/FGV)",
+          tipo: "text",
+        },
+        {
+          nome: "data_base",
+          label: "Data-base (último reajuste ou início do contrato)",
+          tipo: "date",
         },
       ],
     },
