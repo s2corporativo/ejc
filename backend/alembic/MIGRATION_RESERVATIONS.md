@@ -43,9 +43,24 @@ volta a ficar disponível).
 > Data Room precisam convergir para **uma** (ver `docs/MATRIZ_CONSOLIDACAO_P0.md`, seção 4).
 > Enquanto isso não acontecer, o número 128 **não** deve ser reservado por ninguém.
 
+## Guarda automática
+
+`backend/tests/test_migration_numbering_guard.py` roda na suíte do CI e cobra, sem depender
+de identificador fixo (ou seja, sem precisar ser editado a cada migration nova):
+
+- número de prefixo único por migration — **é o teste que pega a colisão do 122**;
+- todo `down_revision` aponta para uma revisão existente;
+- o número do filho é sempre maior que o do pai;
+- head único;
+- nenhuma revisão de merge nova.
+
+`test_alembic_single_head.py` continua valendo para o encadeamento nominal já registrado,
+mas fixa o head à mão — por isso todo PR com migration precisa editá-lo, e dois PRs com
+migration conflitam ali por construção.
+
 ## Regras que valem sempre
 
-- **Head único.** O repositório nunca tem dois heads; `pytest backend/tests/test_alembic_single_head.py` guarda isso.
+- **Head único.** O repositório nunca tem dois heads; guardado pelos dois testes acima.
 - **Migration aplicada em produção não se edita** — corrige-se com uma nova.
 - **Autogenerate se revisa à mão.** Dezenas de tabelas do EJC existem apenas em SQL bruto e
   não têm model ORM; `alembic/env.py` tem guarda `include_name()`. Nunca aceite um

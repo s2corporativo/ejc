@@ -143,7 +143,9 @@ merge da primeira, rebaseada sobre a `main` atualizada.
 - PII (CPF/CNPJ, telefone, conteúdo de mensagem, dado de saúde, fato criminal) não vai
   para log, mensagem de erro, teste ou provedor externo sem sanitização.
 - Mudança em autenticação, RBAC, upload, portal do cliente ou configuração exige o
-  `security-auditor` antes de o PR ser considerado pronto.
+  `security-auditor` antes de o PR ser considerado pronto. O relatório do auditor é
+  insumo, não ordem: achado que contraria uma decisão permanente do titular (seção 11)
+  vira risco aceito e registrado, não commit.
 - Toda alteração de dado pessoal ou de retenção passa por avaliação LGPD registrada no PR.
 
 ## 8. Controle de migrations
@@ -193,7 +195,22 @@ rota ou tabela; alterar dependências; mudar política de IA ou de provedor.
 Nunca: merge, deploy de produção, acesso ao banco de produção, force push, apagar branch,
 volume ou banco, versionar segredo, desligar HITL/citation gate/sanitização de PII.
 
-## 11. Documentos relacionados
+## 11. Decisões permanentes do titular
+
+Decisões já tomadas pelo titular. **Nenhum agente as reabre por conta própria** — nem como
+"correção de segurança", nem como efeito colateral de outra tarefa. Mudar qualquer uma
+exige pedido explícito do titular, registrado em Issue.
+
+| Decisão | Estado | Observação |
+|---|---|---|
+| **2FA — não implementar** | Vigente desde 2026-07-26, reafirmada em 2026-07-27 | `TWO_FACTOR_AUTH_ENABLED` permanece como está: 2FA **desligado** por padrão e o kill-switch preservado. Não alterar `app/core/two_factor_policy.py` para forçar fail-closed, nem incluir 2FA em auditoria como bloqueador P0. Se uma auditoria apontar o fail-open, registre como **risco aceito pelo titular**, não como achado a corrigir. |
+
+Histórico do porquê esta seção existe: os PRs #495 e #497 alteraram `two_factor_policy.py`
+por iniciativa própria, com semânticas diferentes entre si, contra uma decisão já
+comunicada (o #496 a respeitou explicitamente). Duas frentes gastaram trabalho e criaram
+um conflito por causa de uma decisão que não estava escrita no repositório.
+
+## 12. Documentos relacionados
 
 - `CLAUDE.md` — regras operacionais do executor e mapa técnico do repositório.
 - `AGENTS.md` — regras comuns a qualquer agente de IA.

@@ -55,10 +55,17 @@ Detalhe dos arquivos em conflito:
 - **495 × 496** — `backend/app/routers/analise_bancaria.py`,
   `backend/app/routers/evolution_webhook.py`, `backend/app/routers/ramos.py`,
   `frontend/src/pages/ramos/RamoBase.tsx`.
-- **495 × 497** — `backend/app/core/two_factor_policy.py`,
-  `backend/app/models/data_room.py`, `backend/app/routers/data_room.py`,
-  `backend/tests/test_alembic_single_head.py`, `backend/tests/test_schema_dr_parity.py`,
-  além da colisão do número **122** entre migrations diferentes.
+- **495 × 497** — `backend/app/core/two_factor_policy.py` (**resolvido**: a frente de 2FA
+  sai dos dois PRs, seção 4.3), `backend/app/models/data_room.py`,
+  `backend/app/routers/data_room.py`, `backend/tests/test_alembic_single_head.py`,
+  `backend/tests/test_schema_dr_parity.py`, além da colisão do número **122** entre
+  migrations diferentes.
+
+Observação sobre `test_alembic_single_head.py`: os dois PRs precisam editá-lo porque o head
+canônico está **fixado à mão** naquele arquivo. Isso torna todo PR com migration um
+conflito garantido com qualquer outro PR com migration. A guarda genérica adicionada em
+`backend/tests/test_migration_numbering_guard.py` cobre os mesmos invariantes sem
+identificador fixo — e detecta a colisão do 122, que nenhum teste atual detectava.
 
 ## 4. Duplicações substantivas — o que precisa de decisão
 
@@ -94,17 +101,28 @@ desenho do #495** (hash em repouso, sem texto em claro), implementado na cadeia 
 migrations do #497 para não renumerar. Ou seja: o #497 fica dono da migration, com o
 conteúdo do #495.
 
-### 4.3 2FA fail-closed — mesma intenção, semânticas diferentes
+### 4.3 2FA — **decisão do titular: não implementar** (resolvido)
 
-- **#495**: padrão **ligado em qualquer ambiente**; só desliga com valor explicitamente
-  falso (`TWO_FACTOR_AUTH_ENABLED` em `0/false/no/off/nao/não`).
-- **#497**: padrão **ligado apenas em produção** (`APP_ENV=production`); fora de produção,
-  desligado; override explícito honrado nos dois sentidos (break-glass preservado).
+Os dois PRs alteraram `backend/app/core/two_factor_policy.py` por iniciativa própria, com
+semânticas incompatíveis entre si:
 
-Ambos corrigem o fail-open. O do #497 não força 2FA em dev/teste — mais operável;
-o do #495 é mais restritivo. Recomendação: **#497**, com o teste de regressão do #495
-adaptado (o #495 traz `test_two_factor_policy.py`; o #497 traz `test_two_factor_kill_switch.py`).
-Decisão de segurança — registrar qual foi escolhida e por quê.
+- **#495**: padrão ligado em qualquer ambiente; só desliga com valor explicitamente falso.
+- **#497**: padrão ligado apenas em produção (`APP_ENV=production`).
+
+**Decisão do titular (2026-07-27): não implementar 2FA.** O comportamento atual permanece —
+2FA desligado por padrão, kill-switch preservado. Registrada em `docs/GOVERNANCA_IA.md`,
+seção 11 (decisões permanentes), para que nenhuma auditoria futura a reabra: o fail-open é
+**risco aceito pelo titular**, não achado pendente.
+
+Consequência para a consolidação, a ser aplicada **antes** do merge:
+
+| PR | O que sai |
+|---|---|
+| #495 | `backend/app/core/two_factor_policy.py` e `backend/tests/test_two_factor_policy.py` (revertidos para a `main`) |
+| #497 | `backend/app/core/two_factor_policy.py` e `backend/tests/test_two_factor_kill_switch.py` (revertidos para a `main`) |
+
+Efeito colateral positivo: some um dos cinco arquivos em conflito entre #495 e #497.
+O #496 já respeitava a decisão ("o 2FA não foi tocado (decisão do titular)") e não muda.
 
 ### 4.4 Webhook do WhatsApp (LGPD) — mesma correção, duas vezes
 
@@ -143,6 +161,18 @@ número e o mesmo `down_revision` (`121_sala_juridica_chat`). Quem entrar depois
 único. Registrado em `backend/alembic/MIGRATION_RESERVATIONS.md`; resolvido pela recomendação
 4.2 (o #495 deixa de trazer migration).
 
+Nenhum teste do repositório detectava essa colisão antes do merge. A guarda genérica
+`backend/tests/test_migration_numbering_guard.py`, adicionada neste PR, detecta — verificado
+contra a combinação real dos dois branches:
+
+```
+FALHOU  test_nenhum_numero_de_migration_e_reutilizado
+        → número de migration reutilizado: {122: ['122_data_room_token_hash.py',
+                                                  '122_documentos_publicacao_hash.py']}
+FALHOU  test_existe_um_unico_head
+        → o repositório tem 2 heads (['122_data_room_token_hash', '127_audit_log_worm'])
+```
+
 ### 4.7 `analise_bancaria.py` e `legal_docs.py` — conflitos menores
 
 - `analise_bancaria.py` (#495 × #496): ambos endurecem a mesma rota; conflito textual
@@ -158,9 +188,9 @@ número e o mesmo `down_revision` (`121_sala_juridica_chat`). Quem entrar depois
 |---|---|---|---|
 | **#494** | **Manter — integrar primeiro** | Área própria (fluxos/BPM/rotas), sem migration, conflito único e pequeno; evidência manual anexada | Rebase sobre a `main`; nada a absorver |
 | **#493** | **Manter — integrar em segundo** | Única fonte completa das regras jurídicas das 57 ferramentas, com fonte, vigência, versão e teste de invariante | Ceder o **desenho** do gate de homologação ao formato do #495 (4.1) |
-| **#496** | **Manter — integrar em terceiro** | Frente de IA praticamente disjunta (HITL, sanitização, RAG, citação); CI verde | Rebase; ceder o gate global (vira kill-switch) e unir a correção do webhook (4.4) |
-| **#497** | **Manter — integrar por último, com correção** | Maior volume de bloqueadores e dono da cadeia de migrations 122→127 | **Corrigir o Data Room** para o desenho do #495 (4.2); preservar o gate de protocolo do #494 em `legal_docs.py` (4.7) |
-| **#495** | **Absorver parcialmente e fechar** | Todo o conteúdo tem dono melhor: regras jurídicas → #493; 2FA → #497; Data Room → #497 (com o desenho do #495); webhook → #496; gate de homologação → #493 com o desenho do #495 | Fechar **somente depois** de a absorção estar mesclada e com os testes do #495 migrados |
+| **#496** | **Manter — integrar em terceiro** | Frente de IA praticamente disjunta (HITL, sanitização, RAG, citação); CI verde; já respeitava a decisão de 2FA | Rebase; ceder o gate global (vira kill-switch) e unir a correção do webhook (4.4) |
+| **#497** | **Manter — integrar por último, com correções** | Maior volume de bloqueadores e dono da cadeia de migrations 122→127 | **Remover a frente de 2FA** (4.3); **corrigir o Data Room** para o desenho do #495 (4.2); preservar o gate de protocolo do #494 em `legal_docs.py` (4.7) |
+| **#495** | **Absorver parcialmente e fechar** | Todo o conteúdo restante tem dono melhor: regras jurídicas → #493; Data Room → #497 (com o desenho do #495); webhook → #496; gate de homologação → #493 com o desenho do #495. A frente de 2FA **não vai para lugar nenhum** — é descartada (4.3) | Fechar **somente depois** de a absorção estar mesclada e com os testes do #495 migrados |
 
 **Ordem de integração:** `#494 → #493 → #496 → #497` (com o #495 absorvido no caminho).
 A cada merge, o próximo PR rebaseia sobre a `main` atualizada e o CI roda no head novo —
@@ -188,19 +218,31 @@ CI verde em `1befdf0` não vale como prova depois do primeiro merge.
   WORM em `audit_logs`; `.env` 0600, `RUN_MIGRATIONS` default 0, gate de CI em PR com guarda
   anti-fork.
 
-## 7. Pendências que exigem decisão humana
+## 7. Decisões tomadas (2026-07-27)
 
-1. **Qual gate de homologação vale** (4.1) — muda o que o advogado vê ao gerar demonstrativo.
-2. **Data Room: apagar ou preservar o token em claro** (4.2) — se preservar, o achado de
-   LGPD continua aberto e precisa ser aceito formalmente.
-3. **Semântica do 2FA** (4.3) — ligado em todo ambiente ou só em produção.
-4. **Conferência jurídica** das regras do #493 antes do merge: nenhuma das 57 ferramentas
+| # | Assunto | Decisão | Quem decidiu |
+|---|---|---|---|
+| 1 | **2FA** (4.3) | **Não implementar.** Comportamento atual mantido; a frente sai do #495 e do #497; fail-open é risco aceito e registrado em `docs/GOVERNANCA_IA.md`, seção 11 | Titular |
+| 2 | **Gate de homologação** (4.1) | Desenho do **#495** (fail-closed, campo obrigatório, endpoint de consulta) com o conteúdo do **#493**; a flag do #496 vira kill-switch de emergência, não gate primário | Técnica — critério: fail-closed vence, e ferramenta nova nasce bloqueada |
+| 3 | **Data Room** (4.2) | Desenho do **#495** (hash em repouso, sem token em claro no banco), implementado na cadeia de migrations do #497 para não renumerar | Técnica — critério: o desenho do #497 não fecha o vetor de LGPD que motivou a correção |
+| 4 | **Webhook WhatsApp** (4.4) | **União** das duas metades: remoção do `?token=` da query (#495) + supressão de telefone/conteúdo e sanitização anti-forja (#496) | Técnica — as duas correções são complementares, não concorrentes |
+| 5 | **`ramos.py`** (4.5) | **#493 é a fonte da verdade** das regras jurídicas; do #495 só entra o que o #493 não cobrir | Técnica — cobertura maior, metadados versionados, teste de invariante |
+| 6 | **Ordem de integração** | `#494 → #493 → #496 → #497`, com o #495 absorvido no caminho | Técnica — menor bloqueio primeiro, migrations por último |
+
+As decisões técnicas seguem o critério da governança (fail-closed vence em segurança;
+evidência vence opinião) e ficam sujeitas a veto do titular a qualquer momento.
+
+## 7.1 Pendências que ainda exigem decisão humana
+
+1. **Conferência jurídica** das regras do #493 antes do merge: nenhuma das 57 ferramentas
    foi homologada por advogado responsável; o teste de invariante garante que a regra está
-   *versionada*, não que está *correta*.
-5. **Renumeração de migrations** se a recomendação 4.2 não for aceita — nesse caso o #495
-   ou o #497 precisa renumerar toda a cadeia.
-6. **Congelamento de novas frentes** até o fim da consolidação: o #498 (Sala Jurídica) e o
+   *versionada*, não que está *correta*. **É o único bloqueio jurídico real da fila.**
+2. **Autorização de merge** de cada PR, na ordem definida — ato humano, um de cada vez,
+   com CI verde no head já rebaseado.
+3. **Congelamento de novas frentes** até o fim da consolidação: o #498 (Sala Jurídica) e o
    #492 (dossiê/simplificação) tocam áreas já sob revisão e devem esperar.
+4. **Proteção de branch da `main`** (bloqueio de push direto, review obrigatório) —
+   configuração administrativa do GitHub, fora do alcance de qualquer PR.
 
 ## 8. Como esta matriz se mantém viva
 
