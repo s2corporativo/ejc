@@ -309,9 +309,14 @@ async def test_anpp_entrada_invalida_422():
 # 6. Prescrição penal consolidada (CP arts. 109, 110, 115, 117)
 # ══════════════════════════════════════════════════════════════════════════
 async def test_prescricao_rotas_compartilham_implementacao():
+    from fastapi import Response
+
     kw = dict(data_fato=date(2022, 5, 1), pena_maxima_anos=4.0, cu=None)
     canonica = await ramos.penal_prescricao(**kw)
-    duplicata = await ramos.pen_prescricao(**kw)
+    duplicata = await ramos.pen_prescricao(response=Response(), **kw)
+    # A duplicata carrega o selo de depreciação (Onda 3) — resultado idêntico.
+    for campo in ("deprecated", "sunset", "aviso_deprecacao"):
+        duplicata.pop(campo)
     assert canonica["rota_canonica"] == "/penal/ferramentas/prescricao-penal"
     assert duplicata["rota_canonica"] == "/penal/ferramentas/prescricao-penal"
     # Mesmo resultado, só muda a rota consultada.
@@ -632,8 +637,12 @@ async def test_transito_prazos_data_errada_para_fase_422():
 async def test_admin_recurso_multa_delega_a_rota_canonica():
     kw = dict(fase="defesa_previa", data_notificacao_autuacao=date(2026, 3, 2),
               valor_multa=293.47, cu=None)
-    admin = await ramos.adm_multa_transito(**kw)
+    from fastapi import Response
+
+    admin = await ramos.adm_multa_transito(response=Response(), **kw)
     transito = await ramos.transito_prazos_recurso(**kw)
+    for campo in ("deprecated", "sunset", "aviso_deprecacao"):
+        admin.pop(campo)
     assert admin["rota_canonica"] == "/transito/ferramentas/prazos-recurso"
     admin.pop("rota_consultada"), transito.pop("rota_consultada")
     assert admin == transito                             # fonte única
@@ -1326,3 +1335,52 @@ async def test_fase_d_ferramentas_carimbam_metadados(chamada):
     # "ESTIMATIVA/INFORMATIVO" + revisão humana obrigatória.
     aviso = r.get("aviso", "")
     assert "MINUTA" in aviso or "Revisão humana obrigatória" in aviso
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ONDA 3 §4.5 — duplicatas anunciam depreciação (sem mudar o resultado)
+# ══════════════════════════════════════════════════════════════════════════
+def test_duplicatas_marcadas_deprecated_no_openapi():
+    from app.main import app
+
+    esperado = {
+        "/api/penal/ferramentas/prescricao-punitiva",
+        "/api/admin-esp/ferramentas/recurso-multa-transito",
+        "/api/trabalhista/ferramentas/horas-extras",
+    }
+    depreciadas = {getattr(r, "path", "") for r in app.routes if getattr(r, "deprecated", False)}
+    assert esperado <= depreciadas, f"faltam marcadas: {esperado - depreciadas}"
+    # As canônicas NÃO podem estar depreciadas.
+    for canonica in ("/api/penal/ferramentas/prescricao-penal",
+                     "/api/transito/ferramentas/prazos-recurso",
+                     "/api/trabalhista-esp/ferramentas/horas-extras"):
+        assert canonica not in depreciadas
+
+
+async def test_duplicata_penal_carimba_cabecalhos_e_campos():
+    from fastapi import Response
+
+    resp = Response()
+    r = await ramos.pen_prescricao(response=resp, data_fato=date(2022, 5, 1),
+                                   pena_maxima_anos=4.0, cu=None)
+    assert resp.headers["Deprecation"] == "true"
+    assert resp.headers["Sunset"] == ramos._SUNSET_DUPLICATAS
+    assert 'rel="successor-version"' in resp.headers["Link"]
+    assert r["deprecated"] is True
+    assert r["rota_canonica"] == "/penal/ferramentas/prescricao-penal"
+    assert "DEPRECIADA" in r["aviso_deprecacao"]
+
+
+async def test_duplicata_transito_carimba_e_mantem_resultado():
+    from fastapi import Response
+
+    kw = dict(fase="defesa_previa", data_notificacao_autuacao=date(2026, 3, 2), cu=None)
+    resp = Response()
+    dup = await ramos.adm_multa_transito(response=resp, **kw)
+    canonica = await ramos.transito_prazos_recurso(**kw)
+    assert resp.headers["Deprecation"] == "true"
+    assert dup["deprecated"] is True
+    assert dup["rota_canonica"] == "/transito/ferramentas/prazos-recurso"
+    # Resultado jurídico permanece idêntico ao da canônica.
+    assert dup["vencimento"] == canonica["vencimento"]
+    assert dup["prazo"] == canonica["prazo"]

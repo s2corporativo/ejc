@@ -13,7 +13,7 @@ from decimal import Decimal
 from uuid import uuid4
 from typing import Optional, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,6 +106,35 @@ def _parse_sim_nao(valor: str, campo: str) -> bool:
 # Versão do conjunto de regras jurídicas embarcadas nas ferramentas corrigidas
 # na Onda 2 — carimbada em toda resposta (campo `versao_regra`).
 _VERSAO_REGRA = "2026-07"
+
+# ── Rotas DUPLICADAS mantidas por compatibilidade (Onda 3 §4.5) ──────────────
+# Cada uma delega à implementação da rota canônica. Aqui elas passam a se
+# ANUNCIAR como depreciadas: `deprecated=True` no decorator (visível no
+# OpenAPI/Swagger) + cabeçalhos RFC 8594 (`Deprecation`/`Sunset`/`Link`) e
+# campos na resposta. A remoção física é da Onda 5 e depende da telemetria de
+# uso (services/route_usage.py) apontar 30-60 dias sem chamadas.
+_SUNSET_DUPLICATAS = "Tue, 30 Jun 2026 23:59:59 GMT"
+_DUPLICATAS_DEPRECIADAS: dict[str, str] = {
+    "/penal/ferramentas/prescricao-punitiva": "/penal/ferramentas/prescricao-penal",
+    "/admin-esp/ferramentas/recurso-multa-transito": "/transito/ferramentas/prazos-recurso",
+    "/trabalhista/ferramentas/horas-extras": "/trabalhista-esp/ferramentas/horas-extras",
+}
+
+
+def _marcar_depreciada(rota: str, resposta: dict, response: Response) -> dict:
+    """Carimba cabeçalhos RFC 8594 + campos de aviso na resposta da duplicata."""
+    canonica = _DUPLICATAS_DEPRECIADAS[rota]
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = _SUNSET_DUPLICATAS
+    response.headers["Link"] = f'<{canonica}>; rel="successor-version"'
+    if isinstance(resposta, dict):
+        resposta["deprecated"] = True
+        resposta["rota_canonica"] = canonica
+        resposta["sunset"] = _SUNSET_DUPLICATAS
+        resposta["aviso_deprecacao"] = (
+            f"Rota DEPRECIADA — migre para {canonica}. Esta rota continua respondendo "
+            "com o mesmo resultado (implementação compartilhada) até a remoção prevista.")
+    return resposta
 
 # ── Metadados de regra por ferramenta (Onda 2 — Fase D) ──────────────────────
 # Tabela ÚNICA e auditável: cada entrada carimba `fontes`, `vigencia_regra` e
@@ -996,8 +1025,9 @@ async def pen_anpp(
     }
 
 
-@router.get("/penal/ferramentas/prescricao-punitiva")
+@router.get("/penal/ferramentas/prescricao-punitiva", deprecated=True)
 async def pen_prescricao(
+    response: Response,
     data_fato: date,
     pena_maxima_anos: Optional[float] = None,
     pena_concreta_anos: Optional[float] = None,
@@ -1008,12 +1038,12 @@ async def pen_prescricao(
 ):
     """Prescrição penal — implementação ÚNICA compartilhada com
     /penal/ferramentas/prescricao-penal (rota canônica). Ver _prescricao_penal_consolidada."""
-    return _prescricao_penal_consolidada(
+    return _marcar_depreciada("/penal/ferramentas/prescricao-punitiva", _prescricao_penal_consolidada(
         rota_consultada="/penal/ferramentas/prescricao-punitiva",
         data_fato=data_fato, pena_maxima_anos=pena_maxima_anos,
         pena_concreta_anos=pena_concreta_anos, marcos_interruptivos=marcos_interruptivos,
         menor_21_na_data_fato=menor_21_na_data_fato, maior_70_na_sentenca=maior_70_na_sentenca,
-    )
+    ), response)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1383,8 +1413,9 @@ def _prazos_recurso_transito(
 
 
 # ── Ferramentas Administrativo ────────────────────────────────────────────────
-@router.get("/admin-esp/ferramentas/recurso-multa-transito")
+@router.get("/admin-esp/ferramentas/recurso-multa-transito", deprecated=True)
 async def adm_multa_transito(
+    response: Response,
     fase: Literal["defesa_previa", "jari", "cetran"],
     data_notificacao_autuacao: Optional[date] = None,
     data_notificacao_penalidade: Optional[date] = None,
@@ -1394,12 +1425,12 @@ async def adm_multa_transito(
 ):
     """Alias mantido por compatibilidade — delega à implementação ÚNICA de
     /transito/ferramentas/prazos-recurso (rota canônica; retirada na Onda 3)."""
-    return _prazos_recurso_transito(
+    return _marcar_depreciada("/admin-esp/ferramentas/recurso-multa-transito", _prazos_recurso_transito(
         rota_consultada="/admin-esp/ferramentas/recurso-multa-transito",
         fase=fase, data_notificacao_autuacao=data_notificacao_autuacao,
         data_notificacao_penalidade=data_notificacao_penalidade,
         data_ciencia_decisao_jari=data_ciencia_decisao_jari, valor_multa=valor_multa,
-    )
+    ), response)
 
 
 # ── Ferramentas Trânsito (ramo próprio) ───────────────────────────────────────
@@ -2505,7 +2536,7 @@ async def penal_dosimetria(
 
 # ── Trabalhista: horas extras (divisor explícito + componentes opcionais) ─────
 @router.get("/trabalhista-esp/ferramentas/horas-extras")   # rota CANÔNICA
-@router.get("/trabalhista/ferramentas/horas-extras")       # alias legado (compat vitrine)
+@router.get("/trabalhista/ferramentas/horas-extras", deprecated=True)   # alias legado (compat vitrine)
 async def trabalhista_horas_extras(
     salario_mensal: float = Query(..., gt=0),
     horas_extras_mes: float = Query(..., ge=0),

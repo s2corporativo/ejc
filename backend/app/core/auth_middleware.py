@@ -78,6 +78,24 @@ def _totp_management_temporarily_disabled(path: str) -> bool:
     )
 
 
+def _registrar_uso_de_rota(request) -> None:
+    """Telemetria de uso das rotas candidatas à remoção (Onda 3 §4.5).
+
+    Roda DEPOIS da resposta, fora do caminho crítico. Usa o TEMPLATE da rota
+    (``/api/casos/{case_id}``) — nunca o path concreto — e o papel já decodificado
+    do JWT: sem user_id, sem IP, sem querystring. Falha aqui jamais afeta a
+    requisição (best-effort; ver services/route_usage.py).
+    """
+    try:
+        from app.services import route_usage
+
+        rota = request.scope.get("route")
+        template = getattr(rota, "path", None) or request.url.path
+        route_usage.registrar(template, request.method, getattr(request.state, "role", None))
+    except Exception:  # pragma: no cover — telemetria nunca quebra o request
+        pass
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Valida JWT globalmente e aplica isolamento adicional do portal."""
 
@@ -174,4 +192,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     content={"detail": "Acesso restrito ao Portal do Cliente"},
                 )
 
-        return await call_next(request)
+        resposta = await call_next(request)
+        _registrar_uso_de_rota(request)
+        return resposta

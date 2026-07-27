@@ -235,8 +235,9 @@ async def test_deposito_recursal_condenacao_1_5x_teto_recolhe_o_teto():
 async def test_prescricao_punitiva_fato_29_02_nao_quebra():
     # pena 0.5 → prazo 3 anos; 29/02/2020 + 3 = 2023 (NÃO bissexto). A rotina antiga
     # fazia date(2023, 2, 29) e estourava ValueError; o helper corrige → 28/02/2023.
+    from fastapi import Response
     r = await ramos.pen_prescricao(
-        pena_maxima_anos=0.5, data_fato=date(2020, 2, 29), cu=None,
+        response=Response(), pena_maxima_anos=0.5, data_fato=date(2020, 2, 29), cu=None,
     )
     assert r["prazo_prescricional_anos"] == 3
     assert r["data_prescricao_estimada"] == date(2023, 2, 28)
@@ -245,8 +246,9 @@ async def test_prescricao_punitiva_fato_29_02_nao_quebra():
 async def test_prescricao_punitiva_29_02_para_ano_bissexto():
     # pena 2.0 → prazo 4 anos (tabela: não é > 2, mas é > 1); 29/02/2020 + 4 = 2024
     # (bissexto) → mantém 29/02/2024, sem estourar.
+    from fastapi import Response
     r = await ramos.pen_prescricao(
-        pena_maxima_anos=2.0, data_fato=date(2020, 2, 29), cu=None,
+        response=Response(), pena_maxima_anos=2.0, data_fato=date(2020, 2, 29), cu=None,
     )
     assert r["prazo_prescricional_anos"] == 4
     assert r["data_prescricao_estimada"] == date(2024, 2, 29)

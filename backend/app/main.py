@@ -37,6 +37,7 @@ from app.routers import ai_skills
 from app.routers import ai_tools
 from app.routers import analise_bancaria
 from app.routers import analytics
+from app.routers import advogado_estilo
 from app.routers import andamentos
 from app.routers import areas
 from app.routers import atendimentos
@@ -95,6 +96,7 @@ from app.routers import ia_defensiva
 from app.routers import ia_especializada
 from app.routers import ia_extra
 from app.routers import ia_governanca
+from app.routers import ia_provider_metrics
 from app.routers import ia_saude
 from app.routers import indice_risco
 from app.routers import indices
@@ -109,6 +111,7 @@ from app.routers import intimacoes
 from app.routers import jurimetria
 from app.routers import jurimetria_extra
 from app.routers import juris_import
+from app.routers import datajud_intelligence
 from app.routers import jurisprudencia_externa
 from app.routers import honorarios_oab
 from app.routers import intake
@@ -132,6 +135,7 @@ from app.routers import observabilidade
 from app.routers import office_contracts
 from app.routers import partner_withdrawals
 from app.routers import peca_geracao
+from app.routers import precedentes_jurisprudencia
 from app.routers import peca_geracao_router
 from app.routers import pending_items
 from app.routers import pix
@@ -145,6 +149,7 @@ from app.routers import prompts
 from app.routers import prompts_juridicos
 from app.routers import qualidade
 from app.routers import rag
+from app.routers import rag_governance
 from app.routers import rag_public
 from app.routers import api_keys as api_keys_router
 from app.routers import regulatorio
@@ -405,6 +410,24 @@ app.include_router(prompts_juridicos.router, prefix=API)
 app.include_router(qualidade.router, prefix=API)
 app.include_router(rag.router, prefix=API)
 app.include_router(rag_public.router, prefix=API)      # API pública (X-API-Key)
+
+# ── Routers antes montados por SIDE EFFECT (Onda 3 §4.1) ─────────────────────
+# Estes cinco grupos eram anexados aos routers "pais" por patch, no import de
+# app.services.event_subscribers / datajud_cognitive_patch / provider_metrics_
+# runtime — o que tornava as rotas dependentes da ORDEM de import e invisíveis
+# aqui. Agora são registrados EXPLICITAMENTE, com o mesmo path final de antes:
+# o prefixo reproduz o do router-pai em que eram embutidos.
+# Paridade travada por tests/test_rotas_registro_explicito.py.
+app.include_router(                       # antes: jurisprudencia_externa.include_router(...)
+    precedentes_jurisprudencia.router, prefix=API + "/jurisprudencia-externa")
+app.include_router(                       # antes: peca_geracao.include_router(...)
+    advogado_estilo.router, prefix=API + "/pecas")
+app.include_router(                       # antes: append em rag.router.routes (prefixo absoluto)
+    rag_governance.router, prefix=API)
+app.include_router(                       # antes: andamentos.include_router(...)
+    datajud_intelligence.router, prefix=API + "/casos")
+app.include_router(                       # antes: append em ia_governanca.router.routes
+    ia_provider_metrics.router, prefix=API)
 app.include_router(api_keys_router.router, prefix=API) # admin de chaves (JWT admin)
 app.include_router(regulatorio.router, prefix=API)
 app.include_router(radar_legislativo.router, prefix=API)  # Câmara+Senado+ALMG
