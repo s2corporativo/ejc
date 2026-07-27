@@ -2,7 +2,7 @@
 #
 # REPRODUTIBILIDADE DO INSTALL (relatório de melhoria 2026-07-22): `pip install`
 # deve completar limpo num venv novo (Debian/Python 3.11). Pin sensível a isso:
-#   * pywebpush==1.14.1 (NÃO 2.0.0) — ver o bloco "Web Push" abaixo: o 2.0.0
+#   * pywebpush==2.3.0 (NÃO 2.0.0) — ver o bloco "Web Push" abaixo: o 2.0.0
 #     arrasta `aiohttp` (C-extension) como dependência DURA, único pacote do
 #     conjunto a puxar aiohttp sem `extra`; compila do zero onde não há wheel e
 #     era a causa provável do "pip install não completa em Debian limpo por
@@ -67,7 +67,7 @@ google-auth==2.55.1
 # funcionalidade. http-ece (sdist puro-Python, sem C) segue como dep-núcleo do
 # pywebpush em qualquer versão. NÃO subir para 2.x sem migrar para o caminho
 # assíncrono E revalidar o install num venv limpo.
-pywebpush==1.14.1
+pywebpush==2.3.0
 py-vapid==1.9.2
 
 # Documents and exports
