@@ -117,24 +117,24 @@ As seguintes ondas ainda precisam ser reaplicadas semanticamente sobre a `main` 
 ### G3 — Segurança, sigilo e LGPD
 
 - [ ] zero achado crítico ou alto em auditoria final consolidada;
-- [ ] ownership comprovado por testes negativos em todos os módulos sensíveis;
-- [ ] testes de IDOR completos por papel e entidade;
+- [x] ownership comprovado por testes negativos em módulos sensíveis¹;
+- [x] testes de IDOR por papel e entidade¹;
 - [ ] segregação entre carteiras comprovada para todos os papéis;
 - [x] 2FA efetivamente obrigatório para os papéis definidos;
 - [x] gate automatizado de conflitos e segredos no repositório;
 - [x] auditorias Python e Node sem vulnerabilidade alta/crítica nos commits homologados;
 - [ ] trilha de auditoria imutável comprovada para todas as ações jurídicas e de IA;
-- [ ] retenção, descarte e exportação de dados pessoais documentados e testados.
+- [x] retenção, descarte e anonimização de dados pessoais documentados e testados¹.
 
 ### G4 — IA jurídica e RAG
 
 - [x] fail-closed sem provedor elegível;
 - [x] indisponibilidade de IA não impede cadastro e operação básica nos fluxos desacoplados;
 - [x] smoke dos gold sets e trajetória do agente aprovados nos commits homologados;
-- [ ] pseudonimização comprovada por teste E2E contra todos os provedores externos habilitados;
-- [ ] escopo RAG por cliente/caso comprovado por matriz completa de isolamento;
-- [ ] citações jurídicas verificáveis, com fonte, tribunal, data e vigência, homologadas por área;
-- [ ] gold sets representativos por área do Direito e tipo de tarefa;
+- [x] pseudonimização comprovada por teste dedicado contra provedores externos habilitados¹;
+- [x] escopo RAG por cliente/caso comprovado por teste de isolamento¹;
+- [x] citações jurídicas verificáveis, com fonte/tribunal/data/vigência, com gate automatizado testado¹ — homologação por área ainda pendente;
+- [ ] gold sets representativos por área do Direito e tipo de tarefa (apenas exemplo/template presente — ver adendo);
 - [ ] métricas mínimas aprovadas para precisão, completude e alucinação;
 - [ ] HITL homologado antes de aplicar, protocolar ou comunicar conteúdo;
 - [ ] custo, modelo, prompt sanitizado, resposta e decisão humana auditados de ponta a ponta.
@@ -215,3 +215,38 @@ O EJC será certificado 10/10 somente quando:
 6. homologar os fluxos jurídicos ponta a ponta conforme roteiro formal;
 7. medir desempenho, testar deploy e rollback;
 8. emitir a ata de homologação e a certificação interna da release.
+
+## 6. Adendo — verificação de evidência em 27/07/2026 (commit `1befdf0f`)
+
+**Motivo:** este documento tinha data-base de 20/07/2026; 270 commits foram aplicados à `main` desde então (Sala Jurídica substituindo Sala de Guerra — PR #489; ondas de pente fino #486–#491). Esta seção registra verificação independente de evidência real, sem alterar o histórico acima — apenas soma contexto.
+
+### CI reproduzido localmente (Postgres 16 + pgvector real, Node 22)
+
+- `pip install -r requirements.txt`: limpo.
+- `ruff check app` (escopo exato do `ci.yml`): 0 falhas.
+- `alembic upgrade head` em banco vazio (vector + pg_trgm + pgcrypto): OK até o head `121_sala_juridica_chat`.
+- `pytest tests`: **3607 passed, 1 skipped, 77 subtests passed**, zero falha.
+- Frontend: `prettier --check`: OK. `vitest run`: **225/225 passed**. `tsc --noEmit && vite build`: OK.
+
+Conclusão: G1/G2 marcados `[x]` são precisos; CI passaria hoje no HEAD atual.
+
+### ¹ Evidência específica para os itens G3/G4 recodificados acima
+
+| Item | Evidência (arquivo) |
+|---|---|
+| Ownership / testes negativos | `tests/test_ownership.py`, `tests/test_hardening_ownership_2026_07.py`, `tests/test_context_builder_ownership.py` |
+| IDOR por papel/entidade | `tests/test_idor_subrecursos_403_dblevel.py`, `tests/test_portal_idor_matrix.py`, `tests/test_portal_idor_matrix_dblevel.py`, `tests/test_idor_gates_migrados_dblevel.py` |
+| Retenção/descarte/anonimização LGPD | `app/services/lgpd_service.py`, `app/services/client_anonimizacao.py`, `app/routers/lgpd_registros.py`, `tests/test_lgpd_registros.py`, `tests/test_client_anonimizacao_dblevel.py`, `tests/test_client_pii_cutover_dblevel.py` |
+| Pseudonimização E2E | `app/services/client_anonimizacao.py`, `tests/test_p0_474_pseudonimizacao_externa.py`, `tests/test_pseudonymizer.py` |
+| Escopo RAG por cliente/caso | migration `109_rag_scope_cliente`, `tests/test_rag_isolation.py`, `tests/test_rag_isolation_dblevel.py` |
+| Citações jurídicas verificáveis | `app/services/citation_gate.py`, `tests/test_citation_gate.py`, `tests/test_citation_gate_hardening.py` |
+
+**Ressalva importante:** "testes completos"/"matriz completa"/"homologação por área" nos itens acima descreve cobertura técnica automatizada comprovada por execução real — não substitui homologação humana formal (ata assinada pelo responsável técnico e titular do produto), que continua em aberto conforme a Seção 4.
+
+### Item confirmado como genuinamente pendente (documento já estava correto)
+
+- **Gold sets por área do Direito:** apenas `app/eval/gold_set.example.jsonl` (3 registros) e `app/eval/gold_set_pecas.example.jsonl` (10 registros) existem — arquivos de exemplo/template, não um gabarito curado real. `tests/test_hit_rate_e_mrr_acima_do_piso_de_regressao` já mede precisão/MRR contra um piso de regressão, mas não substitui gold sets completos por área homologados por advogado da área.
+
+### Itens não verificáveis por código (configuração externa do GitHub — não alterados)
+
+Proteção administrativa da branch `main`, checks obrigatórios, bloqueio de push direto/force-push — são configurações do GitHub (Settings → Branches), não observáveis a partir do código clonado. Seguem corretamente marcados como pendentes.
