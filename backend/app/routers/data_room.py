@@ -543,7 +543,9 @@ async def gerar_link(
     lk = DataRoomLink(
         id=str(uuid4()),
         data_room_id=room_id,
-        token=token,
+        # DOC-098: o segredo NÃO é persistido em claro — em repouso existe só o
+        # hash, para que dump/backup do banco não entregue acesso público.
+        token=None,
         token_hash=_hash_token(token),
         descricao=req.descricao,
         expira_em=expira,

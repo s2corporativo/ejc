@@ -1,16 +1,12 @@
-"""Política central e reversível para (des)ativação do 2FA (kill-switch).
+"""Política central e reversível para desativação temporária do 2FA.
 
 A decisão não apaga `totp_secret` nem altera permanentemente `totp_enabled` no
-banco. Enquanto o 2FA estiver desligado, usuários carregados pelo SQLAlchemy são
-tratados como sem TOTP apenas na sessão corrente e a lista de papéis obrigados a
-configurar 2FA é esvaziada no objeto de configurações em uso.
+banco. Enquanto `TWO_FACTOR_AUTH_ENABLED` não for verdadeiro, usuários carregados
+pelo SQLAlchemy são tratados como sem TOTP apenas na sessão corrente e a lista de
+papéis obrigados a configurar 2FA é esvaziada no objeto de configurações em uso.
 
-SYS-007: o padrão agora é fail-secure — LIGADO em produção (APP_ENV=production)
-e desligado fora de produção. O kill-switch break-glass continua intacto:
-definir `TWO_FACTOR_AUTH_ENABLED=false` DESLIGA mesmo em produção; `=true` LIGA
-em qualquer ambiente. Reativação após break-glass: remover/`=true` a flag e
-reiniciar — os valores persistidos voltam a ser observados sem migration.
-`REQUIRE_2FA_ROLES` (config.py) segue definindo QUEM é obrigado quando ligado.
+Reativação: definir `TWO_FACTOR_AUTH_ENABLED=true` e reiniciar a aplicação. Os
+valores persistidos voltam a ser observados sem migration ou recadastro.
 """
 from __future__ import annotations
 
@@ -26,18 +22,8 @@ _TRUE_VALUES = frozenset({"1", "true", "yes", "on", "sim"})
 
 
 def two_factor_enabled() -> bool:
-    """Decisão operacional global do 2FA (kill-switch).
-
-    - `TWO_FACTOR_AUTH_ENABLED` definido explicitamente: honrado
-      (true/1/yes/on/sim → ligado; qualquer outro valor → desligado). É o
-      break-glass — permite DESLIGAR até em produção sem tocar em código.
-    - Sem override explícito: LIGADO em produção (fail-secure), desligado fora
-      de produção (dev/testes não são forçados a 2FA).
-    """
-    raw = os.getenv("TWO_FACTOR_AUTH_ENABLED")
-    if raw is not None and raw.strip() != "":
-        return raw.strip().lower() in _TRUE_VALUES
-    return (os.getenv("APP_ENV", "") or "").strip().lower() == "production"
+    """Retorna a decisão operacional global; o padrão temporário é desligado."""
+    return os.getenv("TWO_FACTOR_AUTH_ENABLED", "false").strip().lower() in _TRUE_VALUES
 
 
 def apply_runtime_policy(user: User) -> None:

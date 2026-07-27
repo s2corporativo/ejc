@@ -175,7 +175,8 @@ async def test_doc098_gerar_link_armazena_hash_e_retorna_token_uma_vez():
     assert "token" in out and out["token"]
     assert out["url_acesso"].endswith(out["token"])
     lk = db.added[0]
-    # token gravado em claro (legado) + hash para autenticação
+    # Em repouso existe SÓ o hash: dump/backup do banco não entrega o link.
+    assert lk.token is None
     assert lk.token_hash == _hash_token(out["token"])
     assert lk.token_hash != out["token"]
 

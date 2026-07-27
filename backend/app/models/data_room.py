@@ -44,9 +44,12 @@ class DataRoomLink(Base):
     id                = Column(String(36), primary_key=True)
     data_room_id      = Column(String(36), ForeignKey("data_rooms.id", ondelete="CASCADE"),
                                 nullable=False)
-    token             = Column(String(64), unique=True, nullable=False)    # legado: token em claro
+    # DOC-098: coluna LEGADA, sempre nula. O segredo em claro não é mais
+    # persistido (migration 124 apagou os existentes); permanece só para
+    # compatibilidade de leitura de código antigo.
+    token             = Column(String(64), unique=True, nullable=True)
     # DOC-098: autenticação por hash. sha256(token) em hex (64 chars); o token
-    # em claro só é exibido uma vez, na criação do link.
+    # em claro só é exibido uma vez, na criação do link, e nunca é gravado.
     token_hash        = Column(String(64), unique=True, nullable=True, index=True)
     descricao         = Column(String(200))    # para quem / para que foi gerado
     expira_em         = Column(DateTime(timezone=True))
