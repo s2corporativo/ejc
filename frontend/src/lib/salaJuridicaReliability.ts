@@ -4,11 +4,11 @@ import { toast } from "../components/Toast";
 export const DOCUMENT_SESSION_READY_EVENT =
   "ejc:sala-juridica-document-session-created";
 
-const INSTALL_KEY = Symbol.for("ejc.sala-juridica.reliability-installed");
+const INSTALL_KEY = "__ejcSalaJuridicaReliabilityInstalled";
 const WORKSPACE_CACHE_PREFIX = "ejc:sala-juridica:workspace:";
 
 type RequestFn = (...args: any[]) => Promise<any>;
-type PatchableApi = typeof api & { [INSTALL_KEY]?: boolean };
+type PatchableApi = typeof api & Record<string, unknown>;
 
 function workspaceSessionId(url: unknown): string | null {
   if (typeof url !== "string") return null;
@@ -62,7 +62,7 @@ export function installSalaJuridicaReliabilityPatches() {
   if (typeof window === "undefined" || typeof document === "undefined") return;
 
   const patchableApi = api as PatchableApi;
-  if (patchableApi[INSTALL_KEY]) return;
+  if (patchableApi[INSTALL_KEY] === true) return;
   patchableApi[INSTALL_KEY] = true;
 
   const originalGet = api.get.bind(api) as RequestFn;
@@ -138,7 +138,7 @@ export function installSalaJuridicaReliabilityPatches() {
     "click",
     (event) => {
       const target = event.target instanceof Element ? event.target : null;
-      const button = target?.closest("button");
+      const button = target?.closest("button") as HTMLButtonElement | null;
       const root = button?.closest("[data-sala-juridica-root]");
       if (
         !button ||
