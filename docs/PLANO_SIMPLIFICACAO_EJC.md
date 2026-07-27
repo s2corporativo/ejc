@@ -259,9 +259,18 @@ muda de comportamento conforme a seção.
 
 **Objetivo:** fechar o que impede a certificação. Não é UI.
 
-- **Vigência na citação** — cruzar `KnowledgeDoc.vigente`/`versao` com o
-  verificador, acrescentando o estado "possivelmente desatualizada" aos quatro
-  existentes (`verificada`/`identificada`/`suspeita`/`generica`)
+- [x] **Vigência na citação** — CONCLUÍDO. Os lookups oficiais
+  (`_existe_sumula`/`_existe_artigo`) filtram `vigente = TRUE`, então citar
+  norma SUPERADA era indistinguível de citar algo nunca ingerido — o advogado
+  recebia "confirme manualmente" quando deveria receber "esta redação foi
+  substituída". Agora, quando o lookup vigente não acha, um segundo lookup
+  procura a versão superada (`_sumula_superada`/`_artigo_superado`) e a citação
+  recebe o 5º estado `possivelmente_desatualizada`, com a versão no aviso.
+  Efeitos: pesa 0 no score; entra em `contagem_status`; vira
+  `revisao_obrigatoria` no `response_validator`; e, em modo estrito, BLOQUEIA
+  no `citation_gate` — coerência com a regra que já bloqueia súmula/artigo
+  "não encontrada" (senão a redação revogada passaria enquanto a norma
+  meramente desconhecida é barrada, invertendo a gravidade)
 - **E2E dos fluxos jurídicos** — intimação → prazo → tarefa → agenda → conclusão
   (P0: erro aqui gera preclusão) e documento → estratégia → tese → peça → revisão
 - **IDOR e segregação** — testes negativos por entidade, sobre o isolamento já

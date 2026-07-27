@@ -166,7 +166,14 @@ interface ResiduoAchado {
 // Shape emitido pelo backend no evento SSE `concluido` (verificacao_citacoes),
 // produzido por verificador_jurisprudencia. Cada citação vem com um `status`
 // e, quando aplicável, um `aviso` explicando o motivo.
-type CitacaoStatus = "verificada" | "identificada" | "suspeita" | "generica";
+type CitacaoStatus =
+  | "verificada"
+  | "identificada"
+  | "suspeita"
+  | "generica"
+  // Existe na base interna, mas só em versão SUPERADA: a redação vigente pode
+  // ter mudado. Citar redação revogada em peça é erro profissional.
+  | "possivelmente_desatualizada";
 
 interface CitacaoVerificada {
   citacao?: string;
@@ -196,6 +203,11 @@ const CIT_STATUS_CFG: Record<
     row: "bg-danger-50 border-danger-200",
     chip: "bg-danger-100 text-danger-800",
   },
+  possivelmente_desatualizada: {
+    label: "Desatualizada",
+    row: "bg-orange-50 border-orange-200",
+    chip: "bg-orange-100 text-orange-800",
+  },
   generica: {
     label: "Genérica",
     row: "bg-warn-50 border-warn-200",
@@ -213,10 +225,12 @@ const CIT_STATUS_CFG: Record<
   },
 };
 
-// Ordem de exibição: primeiro o que exige conferência (suspeita → genérica →
-// identificada → verificada). Suspeita e genérica precisam saltar aos olhos.
+// Ordem de exibição: primeiro o que exige conferência. "Desatualizada" vem
+// logo após "suspeita" — é achado ACIONÁVEL (a norma existe, mas a redação
+// mudou), mais urgente que uma menção apenas genérica.
 const CIT_ORDEM: CitacaoStatus[] = [
   "suspeita",
+  "possivelmente_desatualizada",
   "generica",
   "identificada",
   "verificada",
