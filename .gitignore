@@ -18,6 +18,8 @@ vps-tools/.env
 *-service-account*.json
 credentials*.json
 
+docker-compose.override.yml
+
 # ── Dependências / builds ────────────────────────────────────────────
 node_modules/
 **/node_modules/

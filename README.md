@@ -11,7 +11,7 @@ Fontes canônicas:
 - `docs/EJC_10_10_ACCEPTANCE_GATE.md` — critérios oficiais de certificação;
 - `docs/EJC_ROTEIRO_HOMOLOGACAO_FINAL.md` — cenários de homologação;
 - `docs/audit/INVENTARIO_ARQUITETURAL_FASE_0.md` — inventário gerado do código;
-- `RELATORIO_ESTADO_PRODUTO.md` — estado funcional consolidado;
+- `docs/historico/RELATORIO_ESTADO_PRODUTO.md` — estado funcional consolidado;
 - `docs/BACKUP_RESTORE_RUNBOOK.md` — continuidade, backup e restauração.
 
 Não mantenha contagens manuais de routers, services, páginas ou tabelas neste README. Esses números mudam com frequência e devem ser obtidos pelo workflow **Architecture Inventory — Phase 0**.

@@ -59,7 +59,7 @@ graphify-out/       Grafo de conhecimento do código (ver seção graphify)
 .claude/            Agentes, skills e hooks do Claude Code
 docker-compose.yml  Stack de produção completa
 RUNBOOK_*.md        Procedimentos operacionais (deploy, backup, monitoramento)
-RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura, não procedimento
+docs/historico/     Relatórios históricos de auditoria/execução — leitura, não procedimento
 ```
 
 ## Backend (backend/app)
@@ -143,4 +143,4 @@ Stack completa: `docker compose up -d --build` (serviços: db pgvector/pg16, red
 - `docs/ai/` — arquitetura do núcleo único de IA, política de provedores, roteamento de tarefas, LGPD/segurança de IA, HITL.
 - `docs/CATALOGO_APIS_EJC.md` — catálogo de APIs; `docs/DESIGN_SYSTEM_EJC.md` e `docs/VISUAL_LAW_EJC.md` — design.
 - `graphify-out/GRAPH_REPORT.md` — mapa arquitetural gerado (apenas para revisão ampla).
-- `RELATORIO_*.md` na raiz — histórico de auditorias/estabilização; contexto, não procedimento.
+- `docs/historico/` — relatórios históricos de auditorias/estabilização; contexto, não procedimento.
