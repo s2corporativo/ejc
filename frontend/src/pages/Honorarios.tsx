@@ -18,7 +18,8 @@ import type { Fee, Client, Paged } from "../types";
 import {
   StatusBadge,
   Modal,
-  Empty,
+  Button,
+  EmptyState,
   ErrorState,
   Spinner,
   fmtDate,
@@ -263,7 +264,24 @@ export default function Honorarios() {
       ) : !data ? (
         <Spinner />
       ) : data.data.length === 0 ? (
-        <Empty message="Nenhum lançamento" />
+        <EmptyState
+          icon={DollarSign}
+          title={
+            statusF
+              ? `Nenhum lançamento com status "${statusF}"`
+              : "Nenhum lançamento de honorários"
+          }
+          message={
+            statusF
+              ? "Ajuste o filtro de status acima ou registre um novo lançamento."
+              : "Registre o primeiro lançamento para acompanhar cobranças, vencimentos e recebimentos do escritório."
+          }
+          action={
+            <Button onClick={() => setModal(true)}>
+              <Plus size={15} /> Novo lançamento
+            </Button>
+          }
+        />
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">

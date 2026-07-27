@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Ban,
@@ -11,6 +11,8 @@ import {
   Wrench,
 } from "lucide-react";
 import Markdown from "../components/Markdown";
+import api from "../lib/api";
+import { asList } from "../lib/list";
 import { streamSSE, SSEHttpError, type SSEEvent } from "../lib/stream";
 import { toast } from "../components/Toast";
 import { Badge, Button, PageHeader, SectionCard } from "../components/UI";
@@ -77,6 +79,7 @@ const pretty = (v: unknown) => {
 
 export default function AgenteIA() {
   const [caseId, setCaseId] = useState("");
+  const [casos, setCasos] = useState<any[]>([]);
   const [mensagem, setMensagem] = useState("");
   const [running, setRunning] = useState(false);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
@@ -88,6 +91,15 @@ export default function AgenteIA() {
   const seqRef = useRef(0);
   // Mensagem enviada na execução em curso — congelada para a retomada HITL.
   const mensagemRunRef = useRef("");
+
+  // Seletor de casos (mesmo padrão de IA.tsx): o advogado escolhe pelo
+  // número interno/título em vez de digitar o UUID do caso à mão.
+  useEffect(() => {
+    api
+      .get("/cases/", { params: { page_size: 100 } })
+      .then((r) => setCasos(asList(r.data)))
+      .catch(() => setCasos([]));
+  }, []);
 
   const push = <T extends Omit<TimelineItem, "id">>(item: T) =>
     setTimeline((prev) => [
@@ -160,8 +172,8 @@ export default function AgenteIA() {
         if (e?.name === "AbortError") return;
         if (e instanceof SSEHttpError && e.status === 404) {
           setErro(
-            "Módulo agêntico de IA desativado no servidor (AI_AGENT_ENABLED). " +
-              "Solicite a ativação à administração.",
+            "O modo agente está desativado neste ambiente — " +
+              "fale com o administrador do sistema para ativá-lo.",
           );
         } else if (e instanceof SSEHttpError && e.status === 403) {
           setErro("Seu perfil não tem acesso ao agente neste caso.");
@@ -178,7 +190,7 @@ export default function AgenteIA() {
   const iniciar = () => {
     if (!caseId.trim()) {
       toast.error(
-        "Informe o ID do caso (o agente opera sempre no contexto de um caso).",
+        "Selecione o caso (o agente opera sempre no contexto de um caso).",
       );
       return;
     }
@@ -248,14 +260,27 @@ export default function AgenteIA() {
         <SectionCard title="Solicitação ao agente">
           <div className="space-y-3">
             <div>
-              <label className="label">ID do caso (obrigatório)</label>
-              <input
+              <label className="label">Caso (obrigatório)</label>
+              <select
                 value={caseId}
                 onChange={(e) => setCaseId(e.target.value)}
                 className="input w-full"
-                placeholder="Caso em que o agente vai operar (RBAC checado)"
                 disabled={running}
-              />
+              >
+                <option value="">
+                  Selecione o caso em que o agente vai operar
+                </option>
+                {casos.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.numero_interno} — {c.titulo}
+                  </option>
+                ))}
+              </select>
+              {casos.length === 0 && (
+                <p className="mt-1 text-xs text-slate-400">
+                  Nenhum caso disponível — cadastre um caso primeiro em Casos.
+                </p>
+              )}
             </div>
             <div>
               <label className="label">O que o agente deve fazer?</label>

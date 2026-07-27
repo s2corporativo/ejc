@@ -15,6 +15,7 @@ import { isFinanceTab } from "../pages/FinanceiroWorkspace";
 import { isInteligenciaTab } from "../pages/InteligenciaWorkspace";
 import { isCentralTab } from "../pages/Central";
 import { isActivityView } from "../pages/CentralAtividades";
+import { isCasosView } from "../pages/Casos";
 
 // Fonte de verdade das abas/visões navegáveis por deep-link (?tab=/?view=) dos
 // workspaces com sub-navegação por query param. Um LEGACY_REDIRECT que aponte
@@ -29,6 +30,7 @@ const WORKSPACE_DEEP_LINKS: Record<string, DeepLinkValidators> = {
   "/financeiro": { tab: isFinanceTab },
   "/inteligencia": { tab: isInteligenciaTab },
   "/atividades": { tab: isCentralTab, view: isActivityView },
+  "/casos": { view: isCasosView },
 };
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");

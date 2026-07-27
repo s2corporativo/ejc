@@ -8,10 +8,11 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Badge, EmptyState, PageHeader } from "../components/UI";
+import { canRoleAccessPath } from "../config/moduleRegistry";
+import { useAuth } from "../stores/auth";
 import {
   GUIA_SISTEMA,
   PERFIL_LABEL,
-  TOTAL_FERRAMENTAS,
   type FerramentaGuia,
   type GrupoGuia,
 } from "../content/guiaSistema";
@@ -155,6 +156,7 @@ function CardFerramenta({
 }
 
 export default function Ajuda() {
+  const role = useAuth((state) => state.user?.role);
   const [q, setQ] = useState("");
   const [grupoAtivo, setGrupoAtivo] = useState<string | null>(null);
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
@@ -167,20 +169,41 @@ export default function Ajuda() {
       return next;
     });
 
+  // O guia só exibe ferramentas que o PERFIL do usuário pode de fato abrir
+  // (mesma matriz RBAC das rotas: canRoleAccessPath/moduleRegistry) — sem
+  // isso, um financeiro via verbetes de telas que devolveriam "sem acesso".
+  const gruposDoPerfil = useMemo<GrupoGuia[]>(
+    () =>
+      GUIA_SISTEMA.map((grupo) => ({
+        ...grupo,
+        ferramentas: grupo.ferramentas.filter((f) =>
+          canRoleAccessPath(role, f.rota),
+        ),
+      })).filter((grupo) => grupo.ferramentas.length > 0),
+    [role],
+  );
+
+  const totalDoPerfil = useMemo(
+    () => gruposDoPerfil.reduce((soma, g) => soma + g.ferramentas.length, 0),
+    [gruposDoPerfil],
+  );
+
   // Grupos filtrados por busca (título/conteúdo) e pelo grupo ativo.
   const gruposFiltrados = useMemo<GrupoGuia[]>(() => {
     const termo = q.trim().toLowerCase();
-    return GUIA_SISTEMA.map((grupo) => {
-      if (grupoAtivo && grupo.id !== grupoAtivo) {
-        return { ...grupo, ferramentas: [] };
-      }
-      if (!termo) return grupo;
-      const ferramentas = grupo.ferramentas.filter((f) =>
-        texto(f).includes(termo),
-      );
-      return { ...grupo, ferramentas };
-    }).filter((grupo) => grupo.ferramentas.length > 0);
-  }, [q, grupoAtivo]);
+    return gruposDoPerfil
+      .map((grupo) => {
+        if (grupoAtivo && grupo.id !== grupoAtivo) {
+          return { ...grupo, ferramentas: [] };
+        }
+        if (!termo) return grupo;
+        const ferramentas = grupo.ferramentas.filter((f) =>
+          texto(f).includes(termo),
+        );
+        return { ...grupo, ferramentas };
+      })
+      .filter((grupo) => grupo.ferramentas.length > 0);
+  }, [q, grupoAtivo, gruposDoPerfil]);
 
   const totalEncontrado = gruposFiltrados.reduce(
     (soma, g) => soma + g.ferramentas.length,
@@ -195,11 +218,11 @@ export default function Ajuda() {
       <PageHeader
         eyebrow="Central de Ajuda"
         title="Guia do Sistema"
-        subtitle={`Aprenda para que serve e como usar cada uma das ${TOTAL_FERRAMENTAS} ferramentas do EJC. Busque um tema ou navegue pelos grupos, na ordem em que você trabalha.`}
+        subtitle={`Aprenda para que serve e como usar cada uma das ${totalDoPerfil} ferramentas disponíveis para o seu perfil. Busque um tema ou navegue pelos grupos, na ordem em que você trabalha.`}
         actions={
           <span className="badge-info inline-flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5" />
-            {TOTAL_FERRAMENTAS} ferramentas
+            {totalDoPerfil} ferramentas
           </span>
         }
       />
@@ -229,7 +252,7 @@ export default function Ajuda() {
         >
           Todos
         </button>
-        {GUIA_SISTEMA.map((grupo) => (
+        {gruposDoPerfil.map((grupo) => (
           <button
             key={grupo.id}
             type="button"

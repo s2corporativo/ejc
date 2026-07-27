@@ -296,6 +296,15 @@ function montarResumoRevisao(
   return { principais, aplicar, ausentes, alertas };
 }
 
+/**
+ * Fonte de verdade das visões navegáveis por deep-link (?view=) da Central de
+ * Casos. Usada pelos testes de integridade de rota para validar o
+ * LEGACY_REDIRECT `/kanban → /casos?view=kanban`.
+ */
+export function isCasosView(value: string | null): boolean {
+  return value === "lista" || value === "kanban";
+}
+
 export default function Casos() {
   const areas = useAreas();
   const [data, setData] = useState<Paged<Case> | null>(null);
@@ -319,12 +328,20 @@ export default function Casos() {
   const [delCaso, setDelCaso] = useState<Case | null>(null);
   const [delMotivo, setDelMotivo] = useState("");
   const [delLoading, setDelLoading] = useState(false);
-  const [view, setView] = useState<"lista" | "kanban">("lista");
-  const [modal, setModal] = useState(false);
   // A mesma rota mantém dois caminhos explícitos, sem criar módulo paralelo:
   // documento (IA + revisão) ou cadastro rápido manual (sem IA).
   const location = useLocation();
   const nav = useNavigate();
+  // Deep-link ?view=kanban|lista (usado pelo alias legado /kanban →
+  // /casos?view=kanban); sem o param, a visão padrão é a lista.
+  const viewParam = new URLSearchParams(location.search).get("view");
+  const [view, setView] = useState<"lista" | "kanban">(() =>
+    isCasosView(viewParam) ? (viewParam as "lista" | "kanban") : "lista",
+  );
+  useEffect(() => {
+    if (isCasosView(viewParam)) setView(viewParam as "lista" | "kanban");
+  }, [viewParam]);
+  const [modal, setModal] = useState(false);
   const novoCasoModo = resolverModoNovoCaso(location.pathname, location.search);
   const wizardAberto = novoCasoModo === "manual";
   const [form, setForm] = useState<any>({

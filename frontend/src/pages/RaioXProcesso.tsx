@@ -1294,9 +1294,9 @@ export default function RaioXProcesso() {
                   )}
                   {advResult && advResult.status === "indisponivel" && (
                     <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-                      Recurso de IA do agente desativado no servidor
-                      (AI_AGENT_ENABLED). Solicite a ativação à administração.
+                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />O modo
+                      agente está desativado neste ambiente — fale com o
+                      administrador do sistema para ativá-lo.
                     </div>
                   )}
                   {advResult &&

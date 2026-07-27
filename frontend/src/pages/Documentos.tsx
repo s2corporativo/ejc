@@ -16,7 +16,6 @@ import api from "../lib/api";
 import {
   PageHeader,
   Modal,
-  Empty,
   EmptyState,
   Spinner,
   Button,
@@ -846,7 +845,23 @@ export default function Documentos() {
       ) : !data ? (
         <Spinner />
       ) : data.data.length === 0 ? (
-        <Empty message="Nenhum documento" />
+        <EmptyState
+          icon={Upload}
+          title="Nenhum documento encontrado"
+          message="Envie o primeiro documento do escritório ou ajuste a busca e os filtros para localizar o que procura."
+          action={
+            <Button
+              onClick={() => {
+                if (casoFiltro && !form.case_id) {
+                  setForm((f: any) => ({ ...f, case_id: casoFiltro }));
+                }
+                setModal(true);
+              }}
+            >
+              <Upload size={15} /> Enviar documentos
+            </Button>
+          }
+        />
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">

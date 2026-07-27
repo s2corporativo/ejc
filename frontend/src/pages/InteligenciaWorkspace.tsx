@@ -17,7 +17,8 @@ import AssistenteIA from "./AssistenteIA";
 import FerramentasIA from "./FerramentasIA";
 import ConteudoJuridico from "./ConteudoJuridico";
 import Jurimetria from "./Jurimetria";
-import ConhecimentoGovernado from "./ConhecimentoGovernado";
+import KnowledgeGovernancePanel from "../components/KnowledgeGovernancePanel";
+import Conhecimento from "./Conhecimento";
 import DashboardIA from "./DashboardIA";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { AIFactualityLegend, IANotice, PageHeader } from "../components/UI";
@@ -51,7 +52,7 @@ const TABS = [
   // CONSOLIDAÇÃO CONHECIMENTO 2026-07: superfície canônica única de
   // Conhecimento. "Pesquisar e validar fontes" (ConteudoJuridico, aberto a
   // toda a equipe jurídica) e "Administrar base de conhecimento"
-  // (ConhecimentoGovernado, restrito a gestores) passaram a ser sub-abas
+  // (KnowledgeGovernancePanel + Conhecimento, restrito a gestores) passaram a ser sub-abas
   // desta aba — antes eram as abas separadas `pesquisa` e `conhecimento`.
   {
     k: "conhecimento",
@@ -229,7 +230,10 @@ export default function InteligenciaWorkspace() {
           {tab === "jurimetria" && <Jurimetria />}
           {tab === "conhecimento" && sub === "pesquisa" && <ConteudoJuridico />}
           {tab === "conhecimento" && sub === "curadoria" && (
-            <ConhecimentoGovernado />
+            <div className="space-y-6">
+              <KnowledgeGovernancePanel />
+              <Conhecimento />
+            </div>
           )}
           {tab === "saude" && <DashboardIA />}
         </ErrorBoundary>

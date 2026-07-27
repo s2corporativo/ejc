@@ -49,7 +49,16 @@ const CATEGORIES: { title: string; description: string; keys: string[] }[] = [
   {
     title: "Produtividade e operações",
     description: "Fluxos, indicadores e apoio operacional do dia a dia.",
-    keys: ["produtividade", "workflow", "checklists", "assinaturas", "crm"],
+    // "ajuda": Central de Ajuda (Guia do Sistema) — descobrível também por
+    // aqui, não só pelo grupo Administrar do menu.
+    keys: [
+      "produtividade",
+      "workflow",
+      "checklists",
+      "assinaturas",
+      "crm",
+      "ajuda",
+    ],
   },
 ];
 

@@ -85,7 +85,7 @@ describe("moduleRegistry", () => {
     );
     expect(map.get("/office-contracts")).toContain("contratos");
     expect(map.get("/agenda")).toBe("/atividades?view=calendario");
-    expect(map.get("/kanban")).toBe("/atividades?view=kanban");
+    expect(map.get("/kanban")).toBe("/casos?view=kanban");
     expect(map.get("/assistente-ia")).toContain("/inteligencia");
     expect(map.get("/victory-vault")).toBe("/inteligencia?tab=conhecimento");
     expect(map.get("/knowledge-hub")).toBe("/inteligencia?tab=conhecimento");
@@ -127,12 +127,10 @@ describe("moduleRegistry", () => {
 
     // As implementações consolidadas continuam disponíveis para rollback e QA,
     // mas apenas em caminhos internos; as URLs públicas são aliases canônicos.
+    // (As telas legadas /legado/prazos|tarefas|intimacoes|suspensoes foram
+    // EXCLUÍDAS — os aliases canônicos redirecionam para /atividades.)
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
     for (const path of [
-      "/legado/prazos",
-      "/legado/intimacoes",
-      "/legado/tarefas",
-      "/legado/suspensoes",
       "/crm-leads",
       "/assinaturas",
       "/workflow",

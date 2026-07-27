@@ -1,10 +1,20 @@
 import { useEffect, useState, useCallback } from "react";
 import Markdown from "../components/Markdown";
-import { Sparkles, FileText, History, Eye, ShieldCheck } from "lucide-react";
-import api from "../lib/api";
 import {
+  Sparkles,
+  FileText,
+  History,
+  Eye,
+  ShieldAlert,
+  ShieldCheck,
+} from "lucide-react";
+import api from "../lib/api";
+import { toast } from "../components/Toast";
+import {
+  Button,
   EmptyState,
   ErrorState,
+  Modal,
   PageHeader,
   Spinner,
   fmtDate,
@@ -28,6 +38,23 @@ const AREAS = [
 
 type Tab = "analise" | "resumo" | "validacao" | "logs";
 
+// Citação barrada pelo gate antialucinação (409 de PATCH /ai/logs/{id}/hitl).
+type CitacaoBloqueante = {
+  citacao: string;
+  tipo: string;
+  status: string;
+  motivo: string;
+};
+
+type GatePendente = {
+  logId: string;
+  status: string;
+  motivos: string[];
+  bloqueantes: CitacaoBloqueante[];
+};
+
+const JUSTIFICATIVA_MIN = 10;
+
 export default function IA() {
   const { disponivel: iaDisponivel, mensagem: iaMensagem } = useIaStatus();
   const [tab, setTab] = useState<Tab>("analise");
@@ -50,6 +77,11 @@ export default function IA() {
   const [casos, setCasos] = useState<any[]>([]);
   const [dossie, setDossie] = useState<string | null>(null);
   const [loadingDossie, setLoadingDossie] = useState(false);
+  // Gate antialucinação de citações: 409 ao aprovar → painel com as citações
+  // bloqueantes e opção de aprovar com justificativa (auditada).
+  const [gate, setGate] = useState<GatePendente | null>(null);
+  const [justificativa, setJustificativa] = useState("");
+  const [gateEnviando, setGateEnviando] = useState(false);
 
   const carregarLogs = useCallback(async () => {
     setLoadingLogs(true);
@@ -153,11 +185,56 @@ export default function IA() {
     }
   };
 
-  const marcarHitl = async (id: string, status: string) => {
-    await api.patch(`/ai/logs/${id}/hitl`, { status });
-    api
-      .get("/ai/logs", { params: { page_size: 30 } })
-      .then((r) => setLogs(asList(r.data)));
+  const marcarHitl = async (
+    id: string,
+    status: string,
+    override?: { justificativa: string },
+  ) => {
+    if (override) setGateEnviando(true);
+    try {
+      await api.patch(`/ai/logs/${id}/hitl`, {
+        status,
+        ...(override
+          ? {
+              override_citacoes: true,
+              justificativa_override: override.justificativa,
+            }
+          : {}),
+      });
+      setGate(null);
+      setJustificativa("");
+      toast.success(
+        status === "descartado"
+          ? "Resposta descartada."
+          : `Revisão registrada: ${status}.`,
+      );
+      await carregarLogs();
+    } catch (e: any) {
+      const resp = e?.response;
+      const detail = resp?.data?.detail;
+      if (resp?.status === 409 && detail?.erro === "citacoes_nao_verificadas") {
+        // O gate barrou a aprovação: mostramos as citações em linguagem de
+        // advogado, com a opção de aprovar mesmo assim mediante justificativa.
+        setGate({
+          logId: id,
+          status,
+          motivos: Array.isArray(detail.motivos) ? detail.motivos : [],
+          bloqueantes: Array.isArray(detail.bloqueantes)
+            ? detail.bloqueantes
+            : [],
+        });
+        setJustificativa("");
+      } else {
+        toast.error(
+          mensagemErroIA(
+            e,
+            "Não foi possível registrar a revisão. Tente novamente.",
+          ),
+        );
+      }
+    } finally {
+      setGateEnviando(false);
+    }
   };
 
   const tabs = [
@@ -527,6 +604,106 @@ export default function IA() {
           <Markdown source={resp.resposta} className="text-sm text-slate-700" />
         </div>
       )}
+
+      {/* Gate antialucinação: a aprovação foi suspensa por citações não
+          confirmadas. O advogado corrige o texto OU aprova com justificativa
+          (registrada em auditoria). */}
+      <Modal
+        open={!!gate}
+        onClose={() => {
+          setGate(null);
+          setJustificativa("");
+        }}
+        title="Citações que precisam da sua conferência"
+        wide
+        footer={
+          gate && (
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setGate(null);
+                  setJustificativa("");
+                }}
+              >
+                Voltar e corrigir o texto
+              </Button>
+              <Button
+                disabled={
+                  gateEnviando ||
+                  justificativa.trim().length < JUSTIFICATIVA_MIN
+                }
+                onClick={() =>
+                  marcarHitl(gate.logId, gate.status, {
+                    justificativa: justificativa.trim(),
+                  })
+                }
+              >
+                {gateEnviando
+                  ? "Registrando..."
+                  : "Aprovar mesmo assim (com justificativa)"}
+              </Button>
+            </>
+          )
+        }
+      >
+        {gate && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-2 rounded-lg bg-warn-50 p-3 text-sm text-warn-800">
+              <ShieldAlert size={18} className="mt-0.5 shrink-0" />
+              <p>
+                O sistema conferiu as citações desta resposta e encontrou
+                referências que <b>não puderam ser confirmadas</b> nas fontes
+                oficiais. Para proteger a peça contra jurisprudência ou
+                dispositivo inexistente, a aprovação foi suspensa até a sua
+                conferência.
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Citações a conferir
+              </p>
+              <ul className="space-y-2">
+                {gate.bloqueantes.map((b, i) => (
+                  <li
+                    key={i}
+                    className="rounded-lg border border-danger-200 bg-danger-50/50 p-3"
+                  >
+                    <p className="text-sm font-medium text-navy">
+                      “{b.citacao}”
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">{b.motivo}</p>
+                  </li>
+                ))}
+                {gate.bloqueantes.length === 0 && (
+                  <li className="text-sm text-slate-500">
+                    {gate.motivos.join(" ") ||
+                      "Há citações não confirmadas na resposta."}
+                  </li>
+                )}
+              </ul>
+            </div>
+
+            <div>
+              <label className="label">
+                Justificativa para aprovar mesmo assim (obrigatória, mín.{" "}
+                {JUSTIFICATIVA_MIN} caracteres)
+              </label>
+              <textarea
+                className="input min-h-[80px] w-full"
+                placeholder="Ex.: conferi o inteiro teor da súmula no site do tribunal — a citação está correta."
+                value={justificativa}
+                onChange={(e) => setJustificativa(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                A justificativa fica registrada na trilha de auditoria do
+                escritório junto com o seu nome.
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

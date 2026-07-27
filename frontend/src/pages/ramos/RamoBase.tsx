@@ -953,7 +953,26 @@ export default function RamoBase() {
         lista={lista}
         cor={cfg.cor}
         area={cfg.areaCaso}
+        externo={cfg.externo}
       />
+
+      {/* Ramo "externo": não há registro especializado próprio — os casos da
+          área vivem no fluxo geral. Dizemos isso explicitamente para a lista
+          vazia e as estatísticas zeradas não parecerem defeito. */}
+      {cfg.externo && (
+        <div className="card mb-4 flex flex-wrap items-center justify-between gap-3 border-l-4 border-gold-500 p-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Esta área utiliza o fluxo geral de casos do EJC — os registros
+            aparecem em <b>Casos</b>, filtrados pela área.
+          </p>
+          <Link
+            to={`/casos?area=${encodeURIComponent(cfg.areaCaso)}`}
+            className="btn-secondary text-xs"
+          >
+            Ver casos da área
+          </Link>
+        </div>
+      )}
 
       {cfg.comparadorBacen && <ComparadorBacen />}
       {cfg.analiseDocumento && (
@@ -1038,11 +1057,14 @@ export default function RamoBase() {
         </div>
       )}
 
-      {/* Listagem */}
-      <h2 className="font-serif font-semibold text-navy mb-3 flex items-center gap-2">
-        <Icone size={18} className="text-gold-600" /> Casos registrados
-      </h2>
-      {lista === null ? (
+      {/* Listagem — apenas para ramos com registro especializado próprio;
+          nos ramos "externos" o aviso acima já aponta para /casos. */}
+      {!cfg.externo && (
+        <h2 className="font-serif font-semibold text-navy mb-3 flex items-center gap-2">
+          <Icone size={18} className="text-gold-600" /> Casos registrados
+        </h2>
+      )}
+      {cfg.externo ? null : lista === null ? (
         <Spinner />
       ) : lista.length === 0 ? (
         <Empty message="Nenhum caso especializado registrado neste ramo" />

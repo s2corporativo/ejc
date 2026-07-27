@@ -281,11 +281,15 @@ export function RamoStats({
   lista,
   cor = "blue",
   area,
+  externo = false,
 }: {
   casos: any[];
   lista: any[] | null;
   cor?: string;
   area?: string;
+  /** Ramo sem registro especializado próprio (usa o fluxo geral de casos):
+   *  oculta o KPI "Registros especializados", que ficaria sempre zerado. */
+  externo?: boolean;
 }) {
   const accent = RAMO_ACCENT[cor] ?? "blue";
   const areaLabel = area ? (AREA_LABEL[area] ?? area) : "";
@@ -328,13 +332,15 @@ export function RamoStats({
             total ? `${Math.round((ativos / total) * 100)}% da área` : undefined
           }
         />
-        <Kpi
-          label="Registros especializados"
-          value={especializados}
-          icon={Scale}
-          accent="purple"
-          sub="Próprios deste ramo"
-        />
+        {!externo && (
+          <Kpi
+            label="Registros especializados"
+            value={especializados}
+            icon={Scale}
+            accent="purple"
+            sub="Próprios deste ramo"
+          />
+        )}
         <Kpi
           label="Valor em causa"
           value={fmtMoney(valor)}

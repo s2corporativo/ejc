@@ -33,8 +33,9 @@ import { useAuth } from "../stores/auth";
 import { RAMOS } from "./ramos/ramosConfig";
 import { Badge, Button, Card, PageHeader } from "../components/UI";
 
-// Área (taxonomia de casos) → slug do hub de ferramentas em /ramos/<slug>.
-// A maioria coincide; "civil" e "criminal" têm hubs com nome próprio.
+// Área (taxonomia de casos) → slug do hub de ferramentas na rota canônica
+// /areas-de-atuacao/<slug>. A maioria coincide; "civil" e "criminal" têm
+// hubs com nome próprio.
 const AREA_PARA_HUB: Record<string, string> = {
   civil: "civel",
   criminal: "penal",
@@ -43,7 +44,7 @@ const AREA_PARA_HUB: Record<string, string> = {
 /** Caminho do hub do ramo para uma área, ou null quando não há hub. */
 function hubDoRamo(areaSlug: string): string | null {
   const slug = AREA_PARA_HUB[areaSlug] ?? areaSlug;
-  return RAMOS[slug] ? `/ramos/${slug}` : null;
+  return RAMOS[slug] ? `/areas-de-atuacao/${slug}` : null;
 }
 
 type Area = {
@@ -318,8 +319,10 @@ export default function RamosHub() {
                   </div>
                   <div className="mt-auto space-y-2 pt-2">
                     {/* Ação primária: abre o hub do ramo (calculadoras, guias
-                        e súmulas) — antes só alcançável digitando a URL. */}
-                    {hub && (
+                        e súmulas) — antes só alcançável digitando a URL.
+                        Sem hub, dizemos isso explicitamente em vez de omitir
+                        o botão em silêncio. */}
+                    {hub ? (
                       <Button
                         size="sm"
                         className="w-full"
@@ -328,6 +331,11 @@ export default function RamosHub() {
                         <Wrench className="h-3.5 w-3.5" /> Abrir ferramentas do
                         ramo
                       </Button>
+                    ) : (
+                      <p className="rounded-lg bg-slate-900/[0.04] px-2.5 py-2 text-[11px] leading-4 text-slate-500 dark:bg-white/[0.06] dark:text-slate-400">
+                        Ferramentas especializadas ainda não disponíveis para
+                        esta área — use o fluxo geral de casos.
+                      </p>
                     )}
                     <div className="grid grid-cols-2 gap-2">
                       <Button

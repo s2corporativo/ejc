@@ -1,14 +1,11 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import {
-  Activity,
-  AlarmClock,
   BarChart3,
   Bell,
   BookOpen,
   Bot,
   Briefcase,
   CalendarClock,
-  CheckSquare,
   ClipboardPen,
   FileSignature,
   FileText,
@@ -17,7 +14,6 @@ import {
   Gavel,
   GitBranch,
   HeartPulse,
-  Inbox,
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
@@ -67,8 +63,9 @@ export type ModuleRoute = {
   component: LazyExoticComponent<ComponentType>;
   roles?: readonly string[];
   showInNav?: boolean;
-  // Modo Essencial: marca os 7 destinos do dia a dia do advogado que ficam
-  // sempre visíveis no topo da barra lateral (campo aditivo — não altera
+  // Modo Essencial: marca os destinos do dia a dia do advogado (hoje 9 rotas
+  // com essential:true — ver moduleRegistry.test.ts) que ficam sempre
+  // visíveis no topo da barra lateral (campo aditivo — não altera
   // rota/RBAC nem a ordenação de getNavigationModules).
   essential?: boolean;
   end?: boolean;
@@ -87,7 +84,7 @@ export type LegacyRedirect = {
   reason: string;
 };
 
-const Dashboard = lazy(() => import("../pages/Dashboard"));
+const Dashboard = lazy(() => import("../pages/DashboardModern"));
 const Clientes = lazy(() => import("../pages/Clientes"));
 const CadastroManual = lazy(() => import("../pages/CadastroManual"));
 const DossieCliente = lazy(() => import("../pages/DossieCliente"));
@@ -98,10 +95,6 @@ const SalaJuridica = lazy(() => import("../pages/SalaJuridica"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
 );
-const Prazos = lazy(() => import("../pages/Prazos"));
-const Suspensoes = lazy(() => import("../pages/Suspensoes"));
-const Tarefas = lazy(() => import("../pages/Tarefas"));
-const Intimacoes = lazy(() => import("../pages/Intimacoes"));
 const Central = lazy(() => import("../pages/Central"));
 const GestaoDocumental = lazy(() => import("../pages/GestaoDocumental"));
 const Pecas = lazy(() => import("../pages/Pecas"));
@@ -416,65 +409,10 @@ export const STAFF_ROUTES: ModuleRoute[] = [
       "/api/notifications",
     ],
   },
-  {
-    key: "prazos",
-    path: "/legado/prazos",
-    label: "Prazos",
-    description: "Controle jurídico de prazos e confirmações.",
-    group: "Trabalhar um caso",
-    icon: AlarmClock,
-    component: Prazos,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central "Agenda e Prazos"
-    // (filtro Tipo=Prazo); rota ativa para links diretos/favoritos.
-    status: "hidden",
-    helpKey: "prazos",
-    sensitive: true,
-    backendPrefixes: ["/api/deadlines"],
-  },
-  {
-    key: "tarefas",
-    path: "/legado/tarefas",
-    label: "Tarefas",
-    description: "Execução operacional atribuída à equipe.",
-    group: "Trabalhar um caso",
-    icon: CheckSquare,
-    component: Tarefas,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central (filtro Tipo=Tarefa); rota ativa.
-    status: "hidden",
-    helpKey: "tarefas",
-    sensitive: true,
-    backendPrefixes: ["/api/tasks"],
-  },
-  {
-    key: "intimacoes",
-    path: "/legado/intimacoes",
-    label: "Intimações",
-    description: "Comunicações processuais e conferência jurídica.",
-    group: "Trabalhar um caso",
-    icon: Inbox,
-    component: Intimacoes,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central "Agenda e Prazos"
-    // (filtro Tipo=Intimação); rota ativa para links diretos/favoritos.
-    status: "hidden",
-    helpKey: "intimacoes",
-    sensitive: true,
-    usesAI: true,
-    backendPrefixes: ["/api/intimacoes"],
-  },
-  {
-    key: "suspensoes",
-    path: "/legado/suspensoes",
-    label: "Suspensões",
-    description: "Suspensões processuais e reflexos em prazos.",
-    group: "Trabalhar um caso",
-    icon: Activity,
-    component: Suspensoes,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central (filtro Tipo=Suspensão); rota ativa.
-    status: "hidden",
-    helpKey: "prazos",
-    sensitive: true,
-    backendPrefixes: ["/api/suspensoes"],
-  },
+  // REMOÇÃO 2026-07: as implementações legadas de Prazos/Tarefas/Intimações/
+  // Suspensões (/legado/*) foram excluídas — a Central "Agenda e Prazos"
+  // (/atividades?tipo=...) é a única superfície; os aliases canônicos
+  // (/prazos, /tarefas, /intimacoes, /suspensoes) seguem em LEGACY_REDIRECTS.
   {
     key: "documentos",
     path: "/documentos",
@@ -902,8 +840,8 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   },
   {
     from: "/kanban",
-    to: "/atividades?view=kanban",
-    reason: "Kanban de atividades foi incorporado à Central de Atividades.",
+    to: "/casos?view=kanban",
+    reason: "O quadro Kanban de casos vive dentro da Central de Casos.",
   },
   {
     from: "/assistente-ia",

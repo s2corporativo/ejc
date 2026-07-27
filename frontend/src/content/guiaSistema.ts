@@ -164,18 +164,18 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       {
         id: "caso-jornada",
         titulo: "Jornada do Caso",
-        rota: "/casos/:id/jornada",
+        rota: "/casos/:id",
         oQueE:
-          "A linha das 9 etapas do caso, do cliente à gestão contínua, com o que já foi feito e o que falta.",
+          "O acompanhamento guiado do caso, embutido no workspace do próprio caso (aba Resumo), do cliente à gestão contínua.",
         paraQueServe:
-          "Mostra em que ponto o caso está e qual o próximo passo, guiando advogados e equipe de apoio por um fluxo padronizado sem depender de memória.",
+          "Mostra em que ponto o caso está e qual o próximo passo sugerido, guiando advogados e equipe de apoio sem depender de memória — tudo dentro do mesmo ambiente de trabalho do caso, sem tela separada.",
         comoUsar: [
-          "No detalhe de um caso, clique em Jornada do Caso.",
-          "Percorra as etapas: Cliente, Triagem, Documentos, Inteligência, Estratégia, Produção, Revisão, Protocolo e Gestão.",
-          "Veja as pendências de cada etapa e clique para abrir a ferramenta correspondente.",
-          "Conclua as etapas na ordem para acompanhar o progresso do caso.",
+          "Em Casos, abra o caso desejado — todo o trabalho acontece no workspace do caso.",
+          "Na aba Resumo, acompanhe o estágio atual e a próxima ação sugerida para o caso.",
+          "Use as seções do workspace (Resumo, Timeline, Partes, Documentos, Checklists, Teses) para executar cada passo.",
+          "O endereço antigo /casos/:id/jornada continua válido e leva ao mesmo lugar (aba Resumo).",
         ],
-        dica: "A etapa de Triagem leva direto à Entrevista Inteligente, com relato livre e apoio da IA.",
+        dica: "A triagem com apoio de IA continua disponível pela Entrevista Inteligente, acessível de dentro do caso.",
         perfil: "advogado",
         badge: "Jornada",
       },
