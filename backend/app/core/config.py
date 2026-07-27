@@ -30,7 +30,13 @@ class Settings(BaseSettings):
     # fluxo longo depende do access token sobreviver além de 2h. Override por
     # env var ACCESS_TOKEN_EXPIRE_HOURS (ver .env.example).
     ACCESS_TOKEN_EXPIRE_HOURS: int = 2
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    # 30 dias (era 7): o EJC é operado por um grupo pequeno e estável de sócios,
+    # em máquinas próprias — pedir senha a cada semana era fricção sem ganho
+    # proporcional. Com a rotação a cada refresh, a detecção de replay e o
+    # recarregamento do usuário do banco a cada request (get_current_user filtra
+    # is_active/deleted_at), desativar uma conta continua tendo efeito IMEDIATO,
+    # independentemente deste prazo. Override por env var.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # ── 2FA (TOTP) — enforcement organizacional por papel ─────────────────
     # CSV de papéis (UserRole: superadmin, admin, socio, advogado,
