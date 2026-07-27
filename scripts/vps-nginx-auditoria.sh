@@ -28,7 +28,7 @@ titulo "server_name declarados mais de uma vez (CONFLITO)"
 # Um mesmo nome pode aparecer legitimamente 2x (porta 80 + 443). Acima disso,
 # ou repetido no mesmo arquivo, é sinal de vhost duplicado.
 printf '%s\n' "$CONF" \
-  | awk '/server_name/ {for(i=2;i<=NF;i++){gsub(/;/,"",$i); if($i!="_" && $i!="") print $i}}' \
+  | sed 's/#.*//' | awk '$1=="server_name" {for(i=2;i<=NF;i++){gsub(/;/,"",$i); if($i!="_" && $i!="") print $i}}' \
   | sort | uniq -c | sort -rn \
   | awk '$1>2 {printf "  %s vezes: %s\n", $1, $2; achou=1} END {if(!achou) print "  nenhum conflito evidente"}'
 
@@ -36,20 +36,20 @@ titulo "Arquivos habilitados"
 for f in /etc/nginx/sites-enabled/*; do
   [ -e "$f" ] || continue
   alvo="$(readlink -f "$f" 2>/dev/null || echo "$f")"
-  nomes="$(awk '/server_name/ {for(i=2;i<=NF;i++){gsub(/;/,"",$i); if($i!="") printf "%s ", $i}}' "$alvo" 2>/dev/null | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+  nomes="$(sed 's/#.*//' "$alvo" 2>/dev/null | awk '$1=="server_name" {for(i=2;i<=NF;i++){gsub(/;/,"",$i); if($i!="") printf "%s ", $i}}' | tr ' ' '\n' | sort -u | tr '\n' ' ')"
   printf '  %-24s → %s\n' "$(basename "$f")" "${nomes:-(sem server_name)}"
 done
 
 titulo "Destinos de proxy_pass (para onde cada vhost aponta)"
-printf '%s\n' "$CONF" | awk '
-  /server_name/ {for(i=2;i<=NF;i++){gsub(/;/,"",$i); if($i!="" && $i!="_") nome=$i}}
-  /proxy_pass/  {gsub(/;/,"",$2); printf "  %-42s → %s\n", nome, $2}
+printf '%s\n' "$CONF" | sed 's/#.*//' | awk '
+  $1=="server_name" {for(i=2;i<=NF;i++){gsub(/;/,"",$i); if($i!="" && $i!="_") nome=$i}}
+  $1=="proxy_pass"  {gsub(/;/,"",$2); printf "  %-42s → %s\n", nome, $2}
 ' | sort -u
 
 titulo "Vhosts sem certificado TLS"
 nomes_tls="$(certbot certificates 2>/dev/null | awk '/Domains:/ {for(i=2;i<=NF;i++) print $i}' | sort -u)"
 printf '%s\n' "$CONF" \
-  | awk '/server_name/ {for(i=2;i<=NF;i++){gsub(/;/,"",$i); if($i!="" && $i!="_" && $i !~ /^[0-9.]+$/) print $i}}' \
+  | sed 's/#.*//' | awk '$1=="server_name" {for(i=2;i<=NF;i++){gsub(/;/,"",$i); if($i!="" && $i!="_" && $i !~ /^[0-9.]+$/) print $i}}' \
   | sort -u | while read -r nome; do
       printf '%s\n' "$nomes_tls" | grep -qx "$nome" || echo "  sem cert: $nome"
     done
