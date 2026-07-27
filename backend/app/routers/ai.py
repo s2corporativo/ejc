@@ -768,11 +768,12 @@ async def visual_law(
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         raise HTTPException(403)
 
-    caso = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    )).scalar_one_or_none()
-    if not caso:
-        raise HTTPException(404, "Caso não encontrado")
+    # Ownership (gate canônico): o diagrama materializa o dossiê — partes,
+    # cronologia, prazos e valores. Sem isto, qualquer perfil de estagiário+
+    # lia o caso de OUTRA carteira; os endpoints irmãos deste arquivo
+    # (assistente_estrategico, motor_estrategia) já checavam o vínculo.
+    from app.core.ownership import verificar_acesso_caso
+    await verificar_acesso_caso(db, cu, case_id)
 
     dossie = await montar_dossie(db, case_id, incluir_pecas=False, sanitizar=True)
     dossie_txt = dossie["texto"] if dossie else f"Caso {case_id}."
