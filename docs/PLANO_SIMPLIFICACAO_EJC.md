@@ -193,12 +193,20 @@ Consequências diretas:
 
 ### Critérios de aceite
 
-- [ ] Modo Agente recusa redigir sem plano aprovado (teste negativo)
-- [ ] Modo Molde recusa molde sem `hash_conteudo` (teste negativo)
-- [ ] Detector de resíduos barra nome/CPF/nº de processo do caso de origem
-- [ ] Modo, molde e aprovação registrados em `AILog` sem dado sensível
-- [ ] Nenhum endpoint público paralelo de geração criado
-- [ ] HITL e citation gate preservados
+- [x] Modo Agente recusa redigir sem plano aprovado (teste negativo)
+- [x] Modo Molde recusa molde sem `hash_conteudo` (teste negativo)
+- [x] Detector de resíduos barra nome/CPF/nº de processo do caso de origem —
+      `services/peca_residuos.py` (determinístico, sem IA): coleta os
+      identificadores do caso de ORIGEM do molde, varre o texto final e ignora
+      o que também pertence ao caso de destino (mesmo cliente = legítimo).
+      Achados sobem no evento SSE `residuos` e o modal os exibe em alerta
+      bloqueante-visual antes da aprovação. Fail-soft: falha do detector nunca
+      derruba a entrega da peça.
+- [x] Modo, molde e aprovação registrados em `AILog` sem dado sensível — o
+      audit `PECA_RESIDUOS_DETECTADOS` registra apenas categorias e contagem,
+      nunca o termo encontrado
+- [x] Nenhum endpoint público paralelo de geração criado
+- [x] HITL e citation gate preservados
 
 **Risco:** médio — toca o caminho de geração. **Rollback:** o service é aditivo;
 reverter a integração restaura o comportamento atual.
