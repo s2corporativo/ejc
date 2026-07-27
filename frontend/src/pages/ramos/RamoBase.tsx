@@ -983,9 +983,24 @@ export default function RamoBase() {
     setLista(null);
     setForm({});
     load();
-    api
-      .get("/cases/", { params: { area: cfg.areaCaso, page_size: 100 } })
-      .then((r) => setCasos(r.data.data))
+    // Casos novos nascem na área canônica do hub, mas os históricos ficaram
+    // gravados na área achatada (ex.: bancário como "civil"). O backend filtra
+    // por UMA área só, então buscamos a canônica + as legadas e unimos —
+    // é leitura pura, nenhum registro é reclassificado.
+    const areas = [cfg.areaCaso, ...(cfg.areasLegadas ?? [])];
+    Promise.all(
+      areas.map((area) =>
+        api
+          .get("/cases/", { params: { area, page_size: 100 } })
+          .then((r) => (r.data.data ?? []) as Case[])
+          .catch(() => [] as Case[]),
+      ),
+    )
+      .then((listas) => {
+        const porId = new Map<string, Case>();
+        listas.flat().forEach((caso) => porId.set(caso.id, caso));
+        setCasos([...porId.values()]);
+      })
       .catch(() => setCasos([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);

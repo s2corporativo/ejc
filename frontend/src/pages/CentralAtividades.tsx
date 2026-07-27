@@ -9,11 +9,13 @@ import {
 } from "../components/UI";
 import { toast } from "../components/Toast";
 import {
+  BadgeCheck,
   Calendar,
   CalendarClock,
   ChevronDown,
   Clock,
   CheckCircle,
+  Download,
   ExternalLink,
   Filter,
   List,
@@ -23,6 +25,7 @@ import {
   Gavel,
   Pause,
   ClipboardList,
+  Trash2,
   Users,
   UserPlus,
   User as UserIcon,
@@ -31,10 +34,10 @@ import {
   AlertTriangle,
   X,
 } from "lucide-react";
-import api from "../lib/api";
+import api, { confirmarPrazo } from "../lib/api";
 import { asList } from "../lib/list";
 import { addCaseContext, readCaseContext } from "../lib/caseContext";
-import { Modal } from "../components/UI";
+import { ConfirmModal, Modal } from "../components/UI";
 
 type ItemType =
   | "prazo"
@@ -145,6 +148,11 @@ interface Activity {
   hora?: string;
   local?: string;
   origem: string;
+  /** Só para fonte "prazo" e só quando o enriquecimento de /deadlines/
+   *  respondeu — a view vw_atividades não expõe estes campos. `undefined`
+   *  significa DESCONHECIDO (não "false"). */
+  confirmado?: boolean;
+  ciencia_confirmada?: boolean;
 }
 
 interface Responsavel {
@@ -246,6 +254,14 @@ function ActivityMeta({
       {resp && (
         <span className="inline-flex items-center gap-1 text-xs text-slate-500">
           <UserIcon className="w-3 h-3" /> {resp}
+        </span>
+      )}
+      {item.ciencia_confirmada && (
+        <span
+          className="inline-flex items-center gap-1 text-xs text-success-700"
+          title="Ciência do prazo já confirmada"
+        >
+          <BadgeCheck className="w-3 h-3" /> Ciência
         </span>
       )}
       {item.prioridade && (

@@ -44,7 +44,15 @@ export interface FerramentaConfig {
 export interface RamoConfig {
   slug: string;
   endpoint: string;
+  // Área com que o caso NASCE neste hub. Deve ser um valor do enum CaseArea
+  // (backend/app/models/case.py) — achatar aqui contamina métricas, jurimetria
+  // e o roteamento de skills de IA, que classificam por área.
   areaCaso: string;
+  // Áreas que este hub também LISTA, além da canônica. Existem porque casos
+  // históricos foram gravados com a área achatada (ex.: bancário salvo como
+  // "civil" antes da correção de taxonomia): sem isso, o hub apareceria vazio.
+  // Só afeta leitura — nada aqui reclassifica registro existente.
+  areasLegadas?: string[];
   titulo: string;
   subtitulo: string;
   icone: string;
@@ -1093,7 +1101,8 @@ const administrativo: RamoConfig = {
   guiaAdministrativo: true,
   slug: "administrativo",
   endpoint: "/admin-esp",
-  areaCaso: "tributario",
+  areaCaso: "administrativo",
+  areasLegadas: ["tributario"],
   titulo: "Direito Administrativo",
   subtitulo:
     "Recursos de Multas · MS · Prefeituras · Improbidade · Contratos Administrativos",
@@ -1224,7 +1233,8 @@ const bancario: RamoConfig = {
   bancarioForense: true,
   slug: "bancario",
   endpoint: "/bancario",
-  areaCaso: "civil",
+  areaCaso: "bancario",
+  areasLegadas: ["civil"],
   titulo: "Direito Bancário e Financeiro",
   subtitulo:
     "Revisão de juros · Negativação · Superendividamento · Busca e apreensão · Pix",
@@ -2066,7 +2076,8 @@ const imobiliario: RamoConfig = {
   guiaImobiliario: true,
   slug: "imobiliario",
   endpoint: "/cases/?area=civil",
-  areaCaso: "civil",
+  areaCaso: "imobiliario",
+  areasLegadas: ["civil"],
   titulo: "Direito Imobiliário",
   subtitulo: "Compra e Venda · Locação · Usucapião · Incorporação · Distrato",
   icone: "Building2",
@@ -2300,7 +2311,8 @@ const digital_lgpd: RamoConfig = {
   lgpdRegistros: true,
   slug: "digital_lgpd",
   endpoint: "/cases/?area=empresarial",
-  areaCaso: "empresarial",
+  areaCaso: "digital_lgpd",
+  areasLegadas: ["empresarial"],
   titulo: "Direito Digital e LGPD",
   subtitulo:
     "Adequação LGPD · DPO · Contratos SaaS · Startups · Incidentes de Dados",
@@ -2363,7 +2375,8 @@ const transito: RamoConfig = {
   guiaTransito: true,
   slug: "transito",
   endpoint: "/cases/?area=civil",
-  areaCaso: "civil",
+  areaCaso: "transito",
+  areasLegadas: ["civil"],
   titulo: "Direito de Trânsito",
   subtitulo:
     "Multas \u00b7 Recursos JARI/CETRAN \u00b7 Suspens\u00e3o de CNH \u00b7 Crimes de tr\u00e2nsito",
