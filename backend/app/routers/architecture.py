@@ -29,7 +29,7 @@ async def uso_de_rotas(
     """
     from app.services import route_usage
 
-    return route_usage.agregado(desde)
+    return await route_usage.agregado_persistido(desde)
 
 
 @router.get("/contracts")

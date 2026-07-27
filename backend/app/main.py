@@ -252,6 +252,14 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     stop_scheduler()
+    # Telemetria de uso de rotas (Onda 5): descarrega o que ainda está em
+    # memória antes de encerrar, para a janela não perder o último intervalo.
+    try:
+        from app.services import route_usage
+        await route_usage.flush()
+    except Exception as e:      # pragma: no cover — nunca bloqueia o shutdown
+        logger.warning("[EJC] Flush final da telemetria de rotas falhou",
+                       extra=safe_exception_log(e))
     logger.info("[EJC] Encerrado.")
 
 

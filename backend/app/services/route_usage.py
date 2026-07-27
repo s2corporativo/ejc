@@ -16,9 +16,24 @@ Decisões de reuso (inventário da Onda 3)
 * Agregação em MEMÓRIA no padrão do rate-limit em memória
   (app/core/rate_limit.py): dict sob lock, com teto de entradas. Custo por
   request = um incremento de contador; zero I/O no caminho quente.
+* PERSISTÊNCIA por FLUSH periódico (job do APScheduler + shutdown do app) em
+  ``route_usage_metrics``: UPSERT somando a contagem do bucket. Nunca há INSERT
+  por request. Postgres foi escolhido em vez de Redis porque o Redis do stack é
+  OPT-IN (``RATE_LIMIT_REDIS_ENABLED`` default False) e serve de cache com
+  evicção — não sustenta a janela de 30-60 dias que a Onda 5 exige; e em vez de
+  arquivo porque o container é recriado a cada deploy.
 * Persistência no padrão de ``services/ai/provider_metrics_runtime._persistir``:
   sessão isolada, fail-open e circuit breaker — telemetria NUNCA derruba
   requisição nem transação de negócio.
+
+Limite conhecido da medição
+---------------------------
+Quando uma ação passa a existir TAMBÉM na Central (ex.: exportação CSV, exclusão
+de tarefa e ciência de prazo, migradas na Onda 5), o contador do endpoint deixa
+de provar que a TELA legada está ociosa — ele passa a somar as duas origens.
+Para separar origem seria preciso um cabeçalho de origem enviado pelo frontend
+(ex.: ``X-EJC-Origem: central|legado``) ou analytics de navegação. Enquanto isso
+não existir, o contador prova apenas que a AÇÃO é (ou não) usada.
 
 Privacidade (LGPD)
 ------------------
@@ -37,17 +52,32 @@ logger = logging.getLogger("ejc.route_usage")
 # Rotas monitoradas — só elas entram no contador (custo ~zero nas demais).
 # Chave: template do path SEM o prefixo /api. Valor: motivo do monitoramento.
 ROTAS_MONITORADAS: dict[str, str] = {
-    # Legados (candidatos a remoção na Onda 5)
-    "/legado/prazos": "legado",
-    "/legado/tarefas": "legado",
-    "/legado/intimacoes": "legado",
-    "/legado/suspensoes": "legado",
-    # Duplicatas depreciadas (Onda 3 §4.5) — canônica em ramos._DUPLICATAS_DEPRECIADAS
+    # ── AÇÕES EXCLUSIVAS DAS TELAS LEGADAS ───────────────────────────────────
+    # As rotas /legado/* são de FRONTEND (moduleRegistry.tsx): o backend nunca
+    # as recebe, então monitorá-las nunca contaria nada. O proxy correto para a
+    # decisão de remoção é o ENDPOINT que só a tela legada aciona: zero chamadas
+    # em 30-60 dias = ninguém usa aquela ação, em nenhuma tela.
+    # Prazos (tela /legado/prazos → pages/Prazos.tsx)
+    "/deadlines/{deadline_id}/ciencia": "legado:prazos:ciencia",
+    "/deadlines/{deadline_id}/confirmar": "legado:prazos:confirmar",
+    "/deadlines/calcular": "legado:prazos:calculo",
+    "/deadlines/export.csv": "legado:prazos:export_csv",
+    # Intimações (tela /legado/intimacoes → pages/Intimacoes.tsx)
+    "/intimacoes/{com_id}/sugerir-prazo": "legado:intimacoes:sugerir",
+    "/intimacoes/{com_id}/prazo-sugerido": "legado:intimacoes:sugestao",
+    "/intimacoes/{com_id}/aceitar-prazo": "legado:intimacoes:aceitar",
+    "/intimacoes/{com_id}/recusar-prazo": "legado:intimacoes:recusar",
+    "/intimacoes/capturar-agora": "legado:intimacoes:captura_manual",
+    # Tarefas (tela /legado/tarefas → pages/Tarefas.tsx)
+    "/tasks/{task_id}": "legado:tarefas:editar_excluir",
+    # Suspensões (tela /legado/suspensoes → pages/Suspensoes.tsx)
+    "/suspensoes/": "legado:suspensoes:crud",
+    "/suspensoes/{suspensao_id}": "legado:suspensoes:excluir",
+    "/suspensoes/simular": "legado:suspensoes:simular",
+    # ── Duplicatas depreciadas (Onda 3 §4.5) ─────────────────────────────────
     "/penal/ferramentas/prescricao-punitiva": "duplicata",
     "/admin-esp/ferramentas/recurso-multa-transito": "duplicata",
     "/trabalhista/ferramentas/horas-extras": "duplicata",
-    # Alias de vitrine dos ramos
-    "/ramos/{slug}": "alias",
 }
 
 _MAX_ENTRADAS = 4096          # teto de segurança do dict (espelha rate_limit)
@@ -93,11 +123,16 @@ def snapshot() -> list[dict]:
 
 
 def agregado(desde_iso: str | None = None) -> dict:
-    """Agregado por rota (e por papel), opcionalmente a partir de uma hora ISO.
-    É o insumo da decisão da Onda 5: rota com total 0 no período pode sair."""
+    """Agregado APENAS do que está em memória (janela corrente).
+    Para a decisão da Onda 5 use `agregado_persistido`, que soma o histórico."""
     linhas = snapshot()
     if desde_iso:
         linhas = [x for x in linhas if x["hora"] >= desde_iso]
+    return _montar_agregado(linhas, desde_iso)
+
+
+def _montar_agregado(linhas: list[dict], desde_iso: str | None) -> dict:
+    """Agrega linhas (de memória e/ou banco) por rota e papel."""
     por_rota: dict[str, dict] = {}
     for rota, motivo in ROTAS_MONITORADAS.items():
         por_rota[rota] = {"rota": rota, "motivo": motivo, "total": 0,
@@ -123,6 +158,94 @@ def agregado(desde_iso: str | None = None) -> dict:
         "privacidade": ("Sem PII: apenas template da rota, método, papel do usuário e hora. "
                         "Nunca user_id, IP, querystring ou dados do caso."),
     }
+
+
+def _drenar() -> list[tuple[tuple[str, str, str, str], int]]:
+    """Retira os contadores da memória para persistir (operação atômica)."""
+    with _lock:
+        itens = list(_contadores.items())
+        _contadores.clear()
+    return itens
+
+
+async def flush() -> dict:
+    """Persiste o agregado em memória em ``route_usage_metrics`` (UPSERT somando).
+
+    Fail-open: qualquer erro de banco devolve os contadores para a memória e
+    apenas loga — telemetria nunca derruba o app nem perde a janela por um
+    hiccup do banco.
+    """
+    itens = _drenar()
+    if not itens:
+        return {"buckets": 0, "eventos": 0}
+    try:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        from app.core.database import AsyncSessionLocal
+        from app.models.route_usage_metric import RouteUsageMetric
+
+        async with AsyncSessionLocal() as db:
+            for (rota, metodo, papel, hora_iso), contagem in itens:
+                stmt = pg_insert(RouteUsageMetric).values(
+                    rota=rota, metodo=metodo, papel=papel,
+                    hora=datetime.fromisoformat(hora_iso), contagem=contagem,
+                ).on_conflict_do_update(
+                    constraint="uq_route_usage_bucket",
+                    set_={"contagem": RouteUsageMetric.__table__.c.contagem + contagem},
+                )
+                await db.execute(stmt)
+            await db.commit()
+        eventos = sum(n for _, n in itens)
+        logger.info("Telemetria de rotas: %d bucket(s), %d evento(s) persistidos",
+                    len(itens), eventos)
+        return {"buckets": len(itens), "eventos": eventos}
+    except Exception as exc:   # pragma: no cover — fail-open
+        with _lock:            # devolve para a memória: nada se perde
+            for chave, contagem in itens:
+                _contadores[chave] = _contadores.get(chave, 0) + contagem
+        logger.warning("Flush da telemetria de rotas falhou (%s): contadores mantidos "
+                       "em memória para a próxima tentativa", type(exc).__name__)
+        return {"buckets": 0, "eventos": 0, "erro": type(exc).__name__}
+
+
+async def _persistidos(desde_iso: str | None) -> list[dict]:
+    """Lê o histórico já persistido (vazio se a tabela ainda não existir)."""
+    try:
+        from sqlalchemy import select
+
+        from app.core.database import AsyncSessionLocal
+        from app.models.route_usage_metric import RouteUsageMetric
+
+        async with AsyncSessionLocal() as db:
+            q = select(RouteUsageMetric.rota, RouteUsageMetric.metodo,
+                       RouteUsageMetric.papel, RouteUsageMetric.hora,
+                       RouteUsageMetric.contagem)
+            if desde_iso:
+                q = q.where(RouteUsageMetric.hora >= datetime.fromisoformat(desde_iso))
+            linhas = (await db.execute(q)).all()
+        return [{"rota": r, "metodo": m, "papel": p, "hora": h.isoformat(),
+                 "contagem": n, "motivo": ROTAS_MONITORADAS.get(r, "")}
+                for r, m, p, h, n in linhas]
+    except Exception as exc:   # pragma: no cover — leitura best-effort
+        logger.warning("Histórico persistido indisponível (%s): usando só a memória",
+                       type(exc).__name__)
+        return []
+
+
+async def agregado_persistido(desde_iso: str | None = None) -> dict:
+    """Agregado COMPLETO: histórico persistido + o que ainda está em memória.
+
+    É o que o endpoint administrativo devolve — a janela sobrevive a restarts.
+    """
+    linhas = await _persistidos(desde_iso) + [
+        x for x in snapshot() if not desde_iso or x["hora"] >= desde_iso
+    ]
+    out = _montar_agregado(linhas, desde_iso)
+    out["fonte"] = "banco (histórico) + memória (janela corrente ainda não persistida)"
+    out["observacao"] = ("Contagens persistidas em route_usage_metrics por flush periódico; "
+                         "o bloco ainda em memória é somado aqui. A janela sobrevive a "
+                         "restarts — se o flush falhar, os contadores voltam para a memória.")
+    return out
 
 
 def resetar() -> None:

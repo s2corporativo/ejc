@@ -283,21 +283,36 @@ function ActivityMeta({
   );
 }
 
+/** Ações de linha compartilhadas pelas visões de lista e de calendário. */
+interface RowActions {
+  nomeDe: (id?: string) => string | undefined;
+  onConcluir: (item: Activity) => void;
+  onReagendar: (item: Activity) => void;
+  onAtribuir: (item: Activity) => void;
+  /** POST /deadlines/{id}/ciencia — rastro de ciência, ≠ concluir. */
+  onCiencia: (item: Activity) => void;
+  /** PATCH /deadlines/{id}/confirmar — tira a marca "a confirmar" do
+   *  rascunho de IA. ≠ ciência e ≠ concluir. */
+  onConfirmarPrazo: (item: Activity) => void;
+  /** DELETE /tasks/{id} — passa por confirmação explícita antes. */
+  onExcluir: (item: Activity) => void;
+  podeAtribuir: boolean;
+  /** Id do prazo cuja confirmação está em curso (desabilita o botão). */
+  confirmandoId: string | null;
+}
+
 function ActivityRow({
   item,
   nomeDe,
   onConcluir,
   onReagendar,
   onAtribuir,
+  onCiencia,
+  onConfirmarPrazo,
+  onExcluir,
   podeAtribuir,
-}: {
-  item: Activity;
-  nomeDe: (id?: string) => string | undefined;
-  onConcluir: (item: Activity) => void;
-  onReagendar: (item: Activity) => void;
-  onAtribuir: (item: Activity) => void;
-  podeAtribuir: boolean;
-}) {
+  confirmandoId,
+}: RowActions & { item: Activity }) {
   const cfg = tipoCfg(item.tipo);
   const Icon = cfg.icon;
   const urg = item.urgencia ?? "normal";
@@ -309,6 +324,14 @@ function ActivityRow({
     !finalizado &&
     ["prazo", "tarefa", "agenda", "intimacao"].includes(item.fonte);
   const podeReagendar = ["prazo", "tarefa", "agenda"].includes(item.fonte);
+  // Ciência: só prazo em aberto e só enquanto NÃO se souber que já há ciência
+  // (o campo pode não ter vindo — nesse caso o botão continua disponível e o
+  // endpoint é idempotente).
+  const podeCiencia =
+    item.fonte === "prazo" && !finalizado && item.ciencia_confirmada !== true;
+  // Confirmar: exclusivo do prazo sabidamente rascunho (confirmado === false).
+  const podeConfirmar = item.fonte === "prazo" && item.confirmado === false;
+  const podeExcluir = item.fonte === "tarefa";
   const btn =
     "p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors";
   return (
@@ -355,6 +378,26 @@ function ActivityRow({
         <div className="flex items-center justify-between mt-1">
           <p className="text-[10px] text-slate-400">{fmtDate(item.date)}</p>
           <div className="flex items-center gap-0.5">
+            {podeConfirmar && (
+              <button
+                onClick={() => onConfirmarPrazo(item)}
+                disabled={confirmandoId === item.id}
+                className="text-[11px] font-semibold px-2 py-0.5 mr-1 rounded-lg border border-warn-300 text-warn-700 hover:bg-warn-50 disabled:opacity-60"
+                title="Confirmar este prazo sugerido (rascunho de IA)"
+              >
+                {confirmandoId === item.id ? "Confirmando..." : "Confirmar"}
+              </button>
+            )}
+            {podeCiencia && (
+              <button
+                onClick={() => onCiencia(item)}
+                className={`${btn} hover:text-success-700`}
+                title="Dar ciência do prazo"
+                aria-label="Dar ciência do prazo"
+              >
+                <BadgeCheck className="w-3.5 h-3.5" />
+              </button>
+            )}
             {item.case_id && (
               <Link
                 to={`/casos/${item.case_id}`}
@@ -401,6 +444,16 @@ function ActivityRow({
                 }
               >
                 <CheckCircle className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {podeExcluir && (
+              <button
+                onClick={() => onExcluir(item)}
+                className={`${btn} hover:text-danger-700`}
+                title="Excluir tarefa"
+                aria-label="Excluir tarefa"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -826,6 +879,11 @@ export default function CentralAtividades() {
   } | null>(null);
   // Conflito de horário devolvido ao criar/editar evento — aviso não silencioso.
   const [conflitos, setConflitos] = useState<ConflitoEvento[]>([]);
+  // Exclusão de tarefa: nunca direta — passa pelo ConfirmModal do design system.
+  const [excluir, setExcluir] = useState<Activity | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const [confirmandoPrazo, setConfirmandoPrazo] = useState<string | null>(null);
+  const [exportando, setExportando] = useState(false);
   const [filterUrgencia, setFilterUrgencia] = useState<string>("todos");
   const [filterSituacao, setFilterSituacao] = useState<
     SituacaoColuna | "todos"
@@ -838,12 +896,17 @@ export default function CentralAtividades() {
       // Fonte primária: GET /atividades (vw_atividades) — já entrega
       // responsavel_id, prioridade e subtipo por item, para TODOS os itens
       // visíveis (sem o corte de responsável do /deadlines/ nem o limite de
-      // página do /agenda-eventos/). Único enriquecimento restante:
-      // hora/local dos eventos de agenda, que a view não expõe. É
-      // best-effort: se falhar, a central continua funcionando com o feed.
-      const [ativ, agendaR] = await Promise.allSettled([
+      // página do /agenda-eventos/). Dois enriquecimentos best-effort sobre
+      // campos que a view NÃO expõe — se qualquer um falhar, a central segue
+      // funcionando com o feed:
+      //   1. hora/local dos eventos de agenda;
+      //   2. `confirmado`/`ciencia_confirmada` dos prazos (status="" = todos
+      //      os status). Sem (2) a central só não mostra "Confirmar" e mantém
+      //      "Dar ciência" disponível (o endpoint é idempotente).
+      const [ativ, agendaR, prazosR] = await Promise.allSettled([
         api.get("/atividades", { params: { apenas_pendentes: false } }),
         api.get("/agenda-eventos/", { params: { page_size: 500 } }),
+        api.get("/deadlines/", { params: { status: "", page_size: 200 } }),
       ]);
       if (ativ.status !== "fulfilled") {
         setError(true);
@@ -852,11 +915,15 @@ export default function CentralAtividades() {
       const agendaMap: Record<string, any> = {};
       if (agendaR.status === "fulfilled")
         asList(agendaR.value.data).forEach((a: any) => (agendaMap[a.id] = a));
+      const prazoMap: Record<string, any> = {};
+      if (prazosR.status === "fulfilled")
+        asList(prazosR.value.data).forEach((p: any) => (prazoMap[p.id] = p));
 
       const all: Activity[] = asList(ativ.value.data).map((a: any) => {
         const bruto: string = a.tipo;
         const fonte: Fonte = bruto === "agenda" ? "agenda" : (bruto as Fonte);
         const evento = fonte === "agenda" ? agendaMap[a.id] : undefined;
+        const prazo = fonte === "prazo" ? prazoMap[a.id] : undefined;
         const origem =
           fonte === "prazo"
             ? "Prazos"
@@ -887,6 +954,8 @@ export default function CentralAtividades() {
           hora: evento?.hora ?? undefined,
           local: evento?.local ?? undefined,
           origem,
+          confirmado: prazo?.confirmado,
+          ciencia_confirmada: prazo?.ciencia_confirmada,
         };
       });
       setItems(all);
@@ -938,6 +1007,75 @@ export default function CentralAtividades() {
       load();
     } catch (e) {
       toast.error(apiErro(e, "Erro ao concluir o item"));
+    }
+  };
+
+  // Ciência ≠ concluir: apenas registra que o responsável tomou conhecimento
+  // do prazo (rastro LGPD/responsabilidade). O prazo segue pendente.
+  const darCiencia = async (item: Activity) => {
+    try {
+      await api.post(`/deadlines/${item.id}/ciencia`);
+      toast.success("Ciência confirmada");
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Erro ao dar ciência do prazo"));
+    }
+  };
+
+  // Confirmar ≠ ciência ≠ concluir: tira a marca "a confirmar" do prazo que
+  // nasceu como rascunho de IA (ele já alertava mesmo sem confirmação).
+  const confirmarRascunho = async (item: Activity) => {
+    setConfirmandoPrazo(item.id);
+    try {
+      await confirmarPrazo(item.id);
+      toast.success("Prazo confirmado.");
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Falha ao confirmar o prazo."));
+    } finally {
+      setConfirmandoPrazo(null);
+    }
+  };
+
+  const excluirTarefa = async () => {
+    if (!excluir) return;
+    setExcluindo(true);
+    try {
+      await api.delete(`/tasks/${excluir.id}`);
+      toast.success("Tarefa excluída");
+      setExcluir(null);
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Erro ao excluir a tarefa"));
+    } finally {
+      setExcluindo(false);
+    }
+  };
+
+  // Exporta PRAZOS (o endpoint é o do módulo de prazos). Dos filtros da central
+  // só há equivalente no endpoint para o caso em contexto e para a situação
+  // "Concluído"; os demais (tipo/urgência) não têm query param — nesses casos
+  // exporta todos os status em vez de inventar parâmetro.
+  const exportarCsv = async () => {
+    setExportando(true);
+    try {
+      const r = await api.get("/deadlines/export.csv", {
+        params: {
+          status: filterSituacao === "concluido" ? "concluido" : "",
+          case_id: contextCaseId,
+        },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "prazos.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Falha ao exportar o CSV.");
+    } finally {
+      setExportando(false);
     }
   };
 
@@ -1140,6 +1278,21 @@ export default function CentralAtividades() {
     }
   };
 
+  // Mesmo conjunto de ações nas visões de lista e de calendário.
+  const rowActions: RowActions = {
+    nomeDe,
+    onConcluir: concluir,
+    onReagendar: (it) =>
+      setReag({ item: it, data: it.date?.slice(0, 10) ?? "" }),
+    onAtribuir: (it) =>
+      setAtrib({ item: it, responsavel_id: it.responsavel_id ?? "" }),
+    onCiencia: darCiencia,
+    onConfirmarPrazo: confirmarRascunho,
+    onExcluir: (it) => setExcluir(it),
+    podeAtribuir: responsaveis.length > 0,
+    confirmandoId: confirmandoPrazo,
+  };
+
   const filtered = items.filter((item) => {
     if (contextCaseId && item.case_id !== contextCaseId) return false;
     if (filterTipo !== "todos" && item.tipo !== filterTipo) return false;
@@ -1217,6 +1370,16 @@ export default function CentralAtividades() {
               className={`p-2 rounded-lg transition-colors ${view === "kanban" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
             >
               <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={exportarCsv}
+              disabled={exportando}
+              title="Exportar os prazos em CSV"
+              aria-label="Exportar prazos em CSV"
+              className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] disabled:opacity-60 dark:bg-white/[0.07] dark:text-slate-300"
+            >
+              <Download className="w-4 h-4" />
+              {exportando ? "Exportando..." : "Exportar CSV"}
             </button>
             <div className="relative">
               <button
@@ -1412,18 +1575,7 @@ export default function CentralAtividades() {
                 <ActivityRow
                   key={`${item.fonte}-${item.id}`}
                   item={item}
-                  nomeDe={nomeDe}
-                  onConcluir={concluir}
-                  onReagendar={(it) =>
-                    setReag({ item: it, data: it.date?.slice(0, 10) ?? "" })
-                  }
-                  onAtribuir={(it) =>
-                    setAtrib({
-                      item: it,
-                      responsavel_id: it.responsavel_id ?? "",
-                    })
-                  }
-                  podeAtribuir={responsaveis.length > 0}
+                  {...rowActions}
                 />
               ))}
             </div>
@@ -1454,18 +1606,7 @@ export default function CentralAtividades() {
               <ActivityRow
                 key={`${item.fonte}-${item.id}`}
                 item={item}
-                nomeDe={nomeDe}
-                onConcluir={concluir}
-                onReagendar={(it) =>
-                  setReag({ item: it, data: it.date?.slice(0, 10) ?? "" })
-                }
-                onAtribuir={(it) =>
-                  setAtrib({
-                    item: it,
-                    responsavel_id: it.responsavel_id ?? "",
-                  })
-                }
-                podeAtribuir={responsaveis.length > 0}
+                {...rowActions}
               />
             ))
           )}
@@ -1656,6 +1797,21 @@ export default function CentralAtividades() {
           </div>
         )}
       </Modal>
+
+      {/* ── Excluir tarefa (confirmação explícita — ação irreversível) ── */}
+      <ConfirmModal
+        open={excluir !== null}
+        onClose={() => setExcluir(null)}
+        onConfirm={excluirTarefa}
+        title="Excluir tarefa"
+        message={
+          excluir
+            ? `A tarefa “${excluir.titulo}” será excluída. Esta ação não pode ser desfeita.`
+            : undefined
+        }
+        confirmLabel="Excluir"
+        loading={excluindo}
+      />
     </div>
   );
 }
