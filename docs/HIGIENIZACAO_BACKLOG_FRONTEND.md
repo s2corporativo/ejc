@@ -14,20 +14,50 @@ resolvidos naquela passada — cada um com o motivo.
   propósito — evita recursão com o interceptor de response que refaz refresh
   em 401. Comentado no código.
 
-## Módulos sem consumidores (catalogados, não removidos)
+## Módulos sem consumidores — RESOLVIDO (2026-07-27)
 
-- `src/lib/aiCore.ts` — nenhum import em `src/` hoje, mas é o contrato de
-  frontend do Núcleo Único de IA documentado em `docs/ai/` (ex.:
-  `EJC_SINGLE_AI_CORE_ARCHITECTURE.md`). Mantido; decidir entre religar
-  consumidores ou remover junto com uma revisão das docs de IA.
-- `src/config/domainContracts.ts` — constantes de status de ciclo de vida
-  (caso/tarefa/documento) espelhando o backend; nenhum import em `src/`.
-  Candidato a remoção ou a virar a fonte dos unions de status em
-  `src/types` — decisão de arquitetura, não de faxina.
+Todos os itens desta seção foram removidos; ficam registrados com o destino:
+
+- `src/lib/aiCore.ts` — **removido em 1befdf0**. Nunca teve um único call site
+  em `src/`. Recriá-lo sem migrar as telas só recriaria o órfão: a decisão real
+  está na pendência "Núcleo de IA sem consumidor no frontend" (abaixo).
+- `src/config/domainContracts.ts` — **removido em 1befdf0**. Duplicava à mão os
+  literais de `backend/app/core/domain_contracts.py` sem replicar a lógica
+  associada (`canonical_case_status`) e sem nenhum import. Se o frontend
+  precisar desses unions, gerar a partir do OpenAPI em vez de copiar — a
+  geração automática que recriava o arquivo foi retirada de
+  `scripts/apply_architecture_refactor_wave1.py`.
 - `src/pages/Biblioteca.tsx`, `KnowledgeHub.tsx`, `MemoriaInstitucional.tsx`,
-  `Wiki.tsx` e `src/components/AssistedWritingMode.tsx` — órfãos após a
-  consolidação "Conhecimento" (comentário em `moduleRegistry.tsx`); remoção
-  já em andamento por outra frente, fora do escopo desta passada.
+  `Wiki.tsx` e `src/components/AssistedWritingMode.tsx` — **removidos em
+  69e2799** após a consolidação "Conhecimento". As rotas antigas seguem vivas
+  como redirects para `/inteligencia?tab=conhecimento` (`LEGACY_REDIRECTS` em
+  `moduleRegistry.tsx` e `canonicalRoutes.ts`), e `src/config/lazyModules.test.ts`
+  trava lazy import apontando para arquivo inexistente.
+
+## Pendências de arquitetura (dono a definir)
+
+### Núcleo de IA sem consumidor no frontend
+
+**Situação.** O Núcleo Único de IA existe, está governado e é servido em
+`/api/ai/core/*` (orchestrator em `backend/app/services/ai/core/`, HITL
+carimbado por `hitl_policy.aplicar()`, política de provider e barreira final de
+PII no `ai_gateway`). Nenhuma tela do frontend o consome: as superfícies de IA
+seguem nos endpoints legados — `/ai/analisar-caso`, `/ai/skills/execute`,
+`/ai/gerar-minuta`, `/ai/analisar-contrato`, entre outros — que hoje funcionam
+como wrappers.
+
+**Consequência.** O contrato do núcleo não tem verificação de ponta a ponta
+pelo cliente real, e a documentação de IA descrevia um client de frontend
+(`lib/aiCore.ts`) que nunca teve consumidor e foi removido em 1befdf0 — as
+referências foram corrigidas em 2026-07-27, mas o descompasso de fato
+permanece.
+
+**Encaminhamento sugerido (não decidido).** Tratar como item de arquitetura
+próprio — "migrar as superfícies de IA do frontend para o núcleo único" — com
+migração incremental tela a tela, o client tipado nascendo junto do primeiro
+consumidor real e não antes. Alternativa legítima: assumir os wrappers legados
+como contrato público estável e ajustar a documentação de IA para refletir
+isso. **Não é uma decisão de faxina** e precisa de dono definido.
 
 ## Formatadores locais NÃO consolidados (semântica própria)
 
