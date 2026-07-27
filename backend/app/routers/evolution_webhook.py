@@ -2,8 +2,9 @@
 
 Rota PÚBLICA (Evolution chama de fora) — protegida por secret: valida um
 token e recusa se não configurado.
-O secret é enviado pela Evolution como header `apikey`/`X-Webhook-Token`
-ou via query `?token=` na URL do webhook configurada no painel.
+O secret é enviado pela Evolution EXCLUSIVAMENTE via header
+`apikey`/`X-Webhook-Token`. Query string (`?token=`) NÃO é aceita: URL vaza em
+access log do Nginx, em proxy e no histórico do painel (LGPD/segurança).
 """
 import hmac
 import logging
@@ -22,7 +23,7 @@ def _autorizado(request: Request) -> bool:
     recebido = (
         request.headers.get("x-webhook-token")
         or request.headers.get("apikey")
-        or request.query_params.get("token")
+        # Sem fallback por query string: segredo em URL vaza em log de acesso.
         or ""
     )
     return bool(recebido) and hmac.compare_digest(recebido, WEBHOOK_SECRET)
