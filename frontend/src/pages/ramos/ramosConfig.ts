@@ -973,6 +973,15 @@ const administrativo: RamoConfig = {
           label: "Ciência da decisão da JARI (p/ CETRAN)",
           tipo: "date",
         },
+        {
+          nome: "fase",
+          label: "Fase avaliada",
+          tipo: "select",
+          opcoes: ["autuacao", "penalidade", "cetran"],
+          default: "autuacao",
+          ajuda:
+            "Define qual prazo entra em 'dias restantes'; informe a data-marco da fase escolhida",
+        },
         { nome: "valor_multa", label: "Valor da multa (R$)", tipo: "number" },
         {
           nome: "pontos_cnh",
@@ -2069,10 +2078,12 @@ const transito: RamoConfig = {
         { nome: "valor_multa", label: "Valor da multa (R$)", tipo: "number" },
         {
           nome: "fase",
-          label: "Fase",
+          label: "Fase avaliada",
           tipo: "select",
-          opcoes: ["autuacao", "penalidade"],
+          opcoes: ["autuacao", "penalidade", "cetran"],
           default: "autuacao",
+          ajuda:
+            "Define qual prazo entra em 'dias restantes'; informe a data-marco da fase escolhida",
         },
       ],
     },

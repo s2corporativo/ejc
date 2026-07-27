@@ -9,11 +9,17 @@ from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 from typing import Optional, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import calculo_recibo
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
@@ -50,7 +56,39 @@ def _dinheiro(x) -> float:
 TETO_DEPOSITO_RO = 12_127.64   # Recurso Ordinário
 TETO_DEPOSITO_RR = 24_255.28   # Recurso de Revista (dobro do RO)
 
-router = APIRouter(tags=["Áreas de Atuação"])
+class _ReciboRoute(APIRoute):
+    """Assina a resposta das calculadoras (`/ferramentas/`) com um recibo.
+
+    O recibo é a prova de que aquele número saiu DESTA ferramenta, no servidor.
+    `POST /pecas/demonstrativo` só materializa documento formal a partir dele —
+    ver app/core/calculo_recibo.py. Feito no route_class para valer em todas as
+    ferramentas (inclusive as futuras) sem depender de cada endpoint lembrar.
+    """
+
+    def get_route_handler(self):
+        handler_original = super().get_route_handler()
+
+        async def handler(request: Request) -> Response:
+            resposta = await handler_original(request)
+            if (
+                "/ferramentas/" not in request.url.path
+                or resposta.status_code != 200
+                or not isinstance(resposta, JSONResponse)
+            ):
+                return resposta
+            try:
+                dados = json.loads(resposta.body)
+            except Exception:
+                return resposta
+            if not isinstance(dados, dict):
+                return resposta
+            dados["_recibo"] = calculo_recibo.emitir(request.url.path, dados)
+            return JSONResponse(content=jsonable_encoder(dados))
+
+        return handler
+
+
+router = APIRouter(tags=["Áreas de Atuação"], route_class=_ReciboRoute)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -367,7 +405,7 @@ async def civ_criar(body: CivelIn, db: AsyncSession = Depends(get_db),
         cit = data["data_citacao"]
         tipo = data["tipo"]
         if tipo != "jec":
-            data["data_contestacao"] = prazo_dias_uteis(cit, 15)      # CPC art. 335
+            data["data_contestacao"] = prazo_dias_uteis(cit, 15, aplicar_recesso=True)  # CPC 335
     c = CivelCase(id=str(uuid4()), **data)
     db.add(c)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "civel_cases", c.id)
@@ -405,15 +443,16 @@ async def civ_prazo_contestacao(
                 "audiência de instrução e julgamento (não há prazo universal em dias); "
                 "prazos do JEC contam-se em dias úteis (art. 12-A).")
     elif tipo == "fazenda_publica":
-        venc = prazo_dias_uteis(data_citacao, 30)   # em dobro (CPC art. 183 c/c 335)
+        venc = prazo_dias_uteis(data_citacao, 30, aplicar_recesso=True)  # dobro (CPC 183 c/c 335)
         base = "CPC art. 183 c/c art. 335 — 30 dias úteis (prazo em dobro)"
     else:
-        venc = prazo_dias_uteis(data_citacao, 15)
+        venc = prazo_dias_uteis(data_citacao, 15, aplicar_recesso=True)
         base = "CPC art. 335 — 15 dias úteis"
     return {"data_citacao": data_citacao, "tipo_rito": tipo,
             "vencimento": venc, "base_legal": base,
-            "aviso": ("MINUTA. No JEC, use a data da audiência designada como marco. "
-                      "Verifique suspensões e especificidades do juízo.")}
+            "aviso": ("MINUTA. Contagem já considera a suspensão de 20/12 a 20/01 "
+                      "(CPC art. 220). No JEC, use a data da audiência designada como "
+                      "marco. Verifique suspensões e especificidades do juízo.")}
 
 
 @router.get("/civel/ferramentas/alimentos-calcular")
@@ -553,8 +592,9 @@ async def pen_prazos(
         "data_citacao": data_citacao,
         "prazos": [
             {"evento": "Resposta à acusação",
-             "data": prazo_dias_corridos(data_citacao, 10),
-             "base": "CPP arts. 396 e 396-A — 10 dias CONTÍNUOS da citação (art. 798)"},
+             "data": prazo_dias_corridos(data_citacao, 10, suspender_recesso=True),
+             "base": "CPP arts. 396 e 396-A — 10 dias CONTÍNUOS da citação (art. 798), "
+                     "suspensos no recesso de 20/12 a 20/01 (art. 798-A)"},
             {"evento": "Alegações finais (prazo máximo)",
              "data": None,
              "base": "CPP art. 403 — 10 dias após instrução (data depende do juízo)"},
@@ -714,17 +754,18 @@ async def trab_prazos(data_intimacao: date, cu: User = Depends(require_roles(_EQ
         "data_intimacao": data_intimacao,
         "prazos": [
             {"evento": "Recurso Ordinário (RO)",
-             "data": prazo_dias_uteis(data_intimacao, 8),
+             "data": prazo_dias_uteis(data_intimacao, 8, aplicar_recesso=True),
              "base": "CLT art. 895 I c/c art. 775 — 8 dias ÚTEIS da intimação"},
             {"evento": "Depósito recursal + custas (no prazo do RO)",
-             "data": prazo_dias_uteis(data_intimacao, 8),
+             "data": prazo_dias_uteis(data_intimacao, 8, aplicar_recesso=True),
              "base": "CLT art. 899 §1º + Súm. TST 245 — comprovação no prazo recursal"},
             {"evento": "Embargos de declaração",
-             "data": prazo_dias_uteis(data_intimacao, 5),
+             "data": prazo_dias_uteis(data_intimacao, 5, aplicar_recesso=True),
              "base": "CLT art. 897-A c/c art. 775 — 5 dias ÚTEIS"},
         ],
         "aviso": ("MINUTA. Marco legal: ciência da decisão (intimação/publicação no "
-                  "DEJT), NÃO a data da sentença. Feriados locais podem alterar a "
+                  "DEJT), NÃO a data da sentença. Contagem já considera a suspensão "
+                  "de 20/12 a 20/01 (CLT art. 775-A). Feriados locais podem alterar a "
                   "contagem — confira no PJe."),
     }
 
@@ -860,28 +901,48 @@ async def adm_remover(aid: str, db: AsyncSession = Depends(get_db),
 #     NÃO se deriva da data da autuação.
 #   Recurso ao CETRAN: 30 dias da CIÊNCIA da decisão da JARI (art. 288) —
 #     NÃO se deriva do fim do prazo da JARI.
+#   Cada fase exige APENAS o seu próprio marco: quem já está na fase de recurso
+#   pode não ter (ou não precisar de) a data da autuação.
+_MARCO_POR_FASE = {
+    "autuacao": ("data_notificacao", "notificação da AUTUAÇÃO"),
+    "penalidade": ("data_notificacao_penalidade", "notificação da PENALIDADE (art. 285)"),
+    "cetran": ("data_ciencia_decisao_jari", "ciência da decisão da JARI (art. 288)"),
+}
+
+
 def _prazos_multa_transito(
-    data_notificacao_autuacao: date,
+    data_notificacao_autuacao: Optional[date],
     valor_multa: float,
     fase: str = "autuacao",
     data_notificacao_penalidade: Optional[date] = None,
     data_ciencia_decisao_jari: Optional[date] = None,
 ) -> dict:
-    defesa_previa = prazo_dias_corridos(data_notificacao_autuacao, 30)
+    if fase not in _MARCO_POR_FASE:
+        raise HTTPException(422, f"Fase inválida: use {', '.join(_MARCO_POR_FASE)}.")
+    defesa_previa = (prazo_dias_corridos(data_notificacao_autuacao, 30)
+                     if data_notificacao_autuacao else None)
     jari = (prazo_dias_corridos(data_notificacao_penalidade, 30)
             if data_notificacao_penalidade else None)
     cetran = (prazo_dias_corridos(data_ciencia_decisao_jari, 30)
               if data_ciencia_decisao_jari else None)
-    alvo = jari if fase == "penalidade" else defesa_previa
-    dias_restantes = (alvo - date.today()).days if alvo else None
+    alvo = {"autuacao": defesa_previa, "penalidade": jari, "cetran": cetran}[fase]
+    if alvo is None:
+        campo, descricao = _MARCO_POR_FASE[fase]
+        raise HTTPException(
+            422,
+            f"Para a fase '{fase}' informe '{campo}' — a data da {descricao}. "
+            "Cada fase tem marco próprio e não se deriva das demais.",
+        )
+    dias_restantes = (alvo - date.today()).days
     return {
         "data_notificacao_autuacao": data_notificacao_autuacao,
         "fase": fase,
-        "prazo_defesa_previa": defesa_previa,
+        "prazo_avaliado": alvo,
+        "prazo_defesa_previa": defesa_previa or "Informe a data da notificação da AUTUAÇÃO (marco do art. 281)",
         "prazo_recurso_jari": jari or "Informe a data da notificação da PENALIDADE (marco do art. 285)",
         "prazo_recurso_cetran": cetran or "Informe a data da ciência da decisão da JARI (marco do art. 288)",
         "dias_restantes": dias_restantes,
-        "urgente": dias_restantes is not None and dias_restantes <= 5,
+        "urgente": dias_restantes <= 5,
         "valor_multa": valor_multa,
         "valor_desconto_40pct_sne": _dinheiro(Decimal(str(valor_multa)) * Decimal("0.60")),  # SNE (Lei 14.071/20)
         "valor_desconto_20pct": _dinheiro(Decimal(str(valor_multa)) * Decimal("0.80")),      # art. 284
@@ -894,8 +955,9 @@ def _prazos_multa_transito(
 # ── Ferramentas Administrativo ────────────────────────────────────────────────
 @router.get("/admin-esp/ferramentas/recurso-multa-transito")
 async def adm_multa_transito(
-    data_notificacao: date,
     valor_multa: float,
+    data_notificacao: Optional[date] = None,
+    fase: str = "autuacao",   # autuacao | penalidade (JARI) | cetran
     pontos_cnh: int = 0,
     data_notificacao_penalidade: Optional[date] = None,
     data_ciencia_decisao_jari: Optional[date] = None,
@@ -903,7 +965,7 @@ async def adm_multa_transito(
 ):
     """Recursos de multa de trânsito — mesma lógica da ferramenta do ramo Trânsito."""
     out = _prazos_multa_transito(
-        data_notificacao, valor_multa, "autuacao",
+        data_notificacao, valor_multa, fase,
         data_notificacao_penalidade, data_ciencia_decisao_jari,
     )
     out["pontos_cnh"] = pontos_cnh
@@ -915,9 +977,9 @@ async def adm_multa_transito(
 # ── Ferramentas Trânsito (ramo próprio) ───────────────────────────────────────
 @router.get("/transito/ferramentas/prazos-recurso")
 async def transito_prazos_recurso(
-    data_notificacao: date,
     valor_multa: float,
-    fase: str = "autuacao",   # autuacao (defesa prévia) | penalidade (JARI)
+    data_notificacao: Optional[date] = None,
+    fase: str = "autuacao",   # autuacao (defesa prévia) | penalidade (JARI) | cetran
     data_notificacao_penalidade: Optional[date] = None,
     data_ciencia_decisao_jari: Optional[date] = None,
     cu: User = Depends(require_roles(_EQUIPE)),

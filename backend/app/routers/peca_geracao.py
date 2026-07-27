@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
+from app.core import calculo_recibo
 from app.core.homologacao_ferramentas import mapa_status, status_ferramenta
 from app.models.user import User
 from app.models.ai_log import AILog
@@ -378,20 +379,14 @@ async def listar_homologacao_ferramentas(cu: User = Depends(get_current_user)):
     return {"status": mapa_status(), "default": "em_revisao"}
 
 
-class LinhaDemonstrativo(BaseModel):
-    label: str
-    valor: str
-
-
 class DemonstrativoRequest(BaseModel):
     titulo: str = Field(..., min_length=2, max_length=200)
     base_legal: Optional[str] = Field(None, max_length=300)
-    linhas: list[LinhaDemonstrativo] = Field(default=[])
-    rodape: Optional[str] = Field(None, max_length=2000)
     case_id: Optional[str] = None
-    # Endpoint da calculadora de origem — chave do registro de homologação.
-    # Obrigatório: sem ele não há como saber QUAL regra produziu o número.
-    ferramenta_endpoint: str = Field(..., min_length=3, max_length=200)
+    # Recibo assinado pelo servidor na execução da calculadora. É a ÚNICA fonte
+    # do endpoint de origem e dos números da memória de cálculo: rótulos podem
+    # vir do cliente, valores não. Ver app/core/calculo_recibo.py.
+    recibo: str = Field(..., min_length=16, max_length=20000)
 
 
 @router.post("/demonstrativo", status_code=201)
@@ -405,10 +400,20 @@ async def gerar_demonstrativo(
     de peças existente; resultado é MINUTA (revisão humana obrigatória)."""
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         raise HTTPException(403, "Acesso negado")
+    # PROVENIÊNCIA: o endpoint e os números vêm do recibo assinado na execução da
+    # calculadora — não do corpo da requisição. Sem isso, bastaria alegar uma
+    # ferramenta homologada para materializar qualquer número (review do PR #495).
+    assinado = calculo_recibo.validar(req.recibo)
+    if assinado is None:
+        raise HTTPException(
+            422,
+            "Recibo de cálculo ausente, inválido ou expirado. Execute a calculadora "
+            "novamente e gere o demonstrativo a partir do resultado exibido.",
+        )
     # GATE DE HOMOLOGAÇÃO (auditoria 2026-07-26): calculadora não homologada
     # calcula, mas NÃO vira documento formal — corta o caminho
     # "regra errada → resultado plausível → peça → uso externo".
-    hom = status_ferramenta(req.ferramenta_endpoint)
+    hom = status_ferramenta(assinado["endpoint"])
     if hom.status != "homologada":
         raise HTTPException(
             409,
@@ -420,7 +425,9 @@ async def gerar_demonstrativo(
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)
 
-    linhas_txt = "\n".join(f"  • {l.label}: {l.valor}" for l in req.linhas) or "  (sem itens)"
+    # Memória de cálculo derivada do RESULTADO ASSINADO (não do corpo enviado).
+    linhas = calculo_recibo.linhas_do_resultado(assinado["resultado"])
+    linhas_txt = "\n".join(f"  • {label}: {valor}" for label, valor in linhas) or "  (sem itens)"
     partes = [
         f"DEMONSTRATIVO DE CÁLCULO — {req.titulo}",
         f"\nElaborado em {date.today().strftime('%d/%m/%Y')} por {cu.full_name}"
@@ -429,8 +436,9 @@ async def gerar_demonstrativo(
     ]
     if req.base_legal:
         partes.append(f"\nFUNDAMENTO: {req.base_legal}")
-    if req.rodape:
-        partes.append(f"\n{req.rodape}")
+    rodape = calculo_recibo.rodape_do_resultado(assinado["resultado"])
+    if rodape:
+        partes.append(f"\n{rodape}")
     partes.append(
         "\n____________________________________________________________\n"
         "MINUTA gerada a partir de calculadora — revisão humana obrigatória. "

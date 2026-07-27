@@ -44,6 +44,8 @@ export default function DataRoom() {
   const [aberta, setAberta] = useState<any>(null); // detalhe da sala
   const [docs, setDocs] = useState<any[]>([]);
   const [docSel, setDocSel] = useState("");
+  // URL de uso único recém-gerada — exibida até o usuário confirmar que guardou.
+  const [linkNovo, setLinkNovo] = useState<string | null>(null);
 
   const carregar = () => {
     setLoading(true);
@@ -90,13 +92,32 @@ export default function DataRoom() {
     const { data } = await api.post(`/data-rooms/${aberta.id}/links`, {
       expira_horas: 72,
     });
-    // Única chance de copiar: o token não é relistado depois da criação.
+    // Única chance de obter a URL: o token não é relistado depois da criação.
+    // Por isso ela fica VISÍVEL e selecionável na tela até o usuário dispensar —
+    // a cópia automática pode falhar (HTTP sem TLS, permissão negada, navegador
+    // sem Clipboard API) e um toast de 4s não é lugar para um segredo de uso único.
     if (data?.token) {
       const url = `${location.origin}/api/data-rooms/acesso/${data.token}`;
-      navigator.clipboard?.writeText(url);
-      toast.info("Link copiado (guarde-o — não será exibido de novo):\n" + url);
+      setLinkNovo(url);
+      const ok = await copiar(url);
+      toast.info(
+        ok
+          ? "Link copiado — guarde-o agora, não será exibido de novo."
+          : "Link gerado — copie da caixa abaixo, não será exibido de novo.",
+      );
     }
     abrir(aberta.id);
+  };
+
+  /** Copia para a área de transferência; devolve se realmente conseguiu. */
+  const copiar = async (texto: string): Promise<boolean> => {
+    try {
+      if (!navigator.clipboard?.writeText) return false;
+      await navigator.clipboard.writeText(texto);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   return (
@@ -255,6 +276,41 @@ export default function DataRoom() {
                   + Gerar link (72h)
                 </button>
               </div>
+              {linkNovo && (
+                <div className="mb-2 rounded-lg border border-warn-300 bg-warn-50 p-2">
+                  <p className="text-[11px] font-medium text-warn-800 mb-1">
+                    ⚠ Copie agora — esta URL não será exibida novamente. Se
+                    perder, revogue o link e gere outro.
+                  </p>
+                  <div className="flex gap-1">
+                    <input
+                      readOnly
+                      value={linkNovo}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="input text-[11px] font-mono flex-1"
+                    />
+                    <button
+                      onClick={async () => {
+                        const ok = await copiar(linkNovo);
+                        toast.info(
+                          ok
+                            ? "Copiado."
+                            : "Não foi possível copiar automaticamente — selecione o texto e copie.",
+                        );
+                      }}
+                      className="btn-secondary text-xs whitespace-nowrap"
+                    >
+                      Copiar
+                    </button>
+                    <button
+                      onClick={() => setLinkNovo(null)}
+                      className="text-xs text-slate-500 hover:underline whitespace-nowrap px-1"
+                    >
+                      Já guardei
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="space-y-1">
                 {(aberta.links ?? []).map((lk: Link) => (
                   <div

@@ -145,24 +145,19 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
     setGerandoDoc(true);
     setDocMsg(null);
     setDocLink(null);
-    const RODAPE = ["aviso", "base", "observacao", "descricao"];
-    const linhas = Object.entries(res)
-      .filter(
-        ([k, v]) => !RODAPE.includes(k) && v !== null && typeof v !== "object",
-      )
-      .map(([k, v]) => ({ label: k.replace(/_/g, " "), valor: String(v) }));
-    const rodape = [res.observacao, res.descricao].filter(Boolean).join("\n");
+    // A memória de cálculo NÃO é montada aqui: o backend a deriva do resultado
+    // assinado (_recibo) para que o documento formal só contenha números que
+    // saíram de fato da execução da calculadora homologada.
     try {
       // Modo Caso: vincula o demonstrativo ao caso ativo para ele aparecer
       // na listagem de Peças (que filtra pelo caso ativo por padrão).
       await api.post("/pecas/demonstrativo", {
         titulo: f.titulo,
         base_legal: f.baseLegal,
-        linhas,
-        rodape: rodape || undefined,
         case_id: casoAtivo?.id || undefined,
-        // Identifica QUAL regra produziu o número — chave do gate de homologação.
-        ferramenta_endpoint: f.endpoint,
+        // Prova de proveniência assinada pelo servidor na execução da calculadora:
+        // identifica a ferramenta (gate de homologação) e carrega os números.
+        recibo: res._recibo,
       });
       setDocMsg(
         casoAtivo
@@ -465,6 +460,9 @@ function ResultadoView({ data }: { data: any }) {
     return (
       <div className="space-y-1">
         {Object.entries(data).map(([k, v]) => {
+          // Campos técnicos (ex.: _recibo, a prova de proveniência assinada)
+          // não fazem parte da leitura do resultado.
+          if (k.startsWith("_")) return null;
           if (k === "aviso") {
             return (
               <div

@@ -238,13 +238,29 @@ def prazo_dias_uteis(data_inicio: date, dias: int, tribunal: str | None = None,
 
 def prazo_dias_corridos(data_inicio: date, dias: int,
                         prorrogar_fim: bool = True,
-                        tribunal: str | None = None) -> date:
+                        tribunal: str | None = None,
+                        suspender_recesso: bool = False) -> date:
     """
     Prazo administrativo em dias CORRIDOS (ex: defesa IBAMA, 20 dias).
     Lei 9.784/99 art. 66 §1º: se o vencimento cair em dia não útil,
     prorroga para o primeiro dia útil seguinte (considerando o tribunal).
+
+    suspender_recesso=True SUSPENDE a contagem durante o recesso (20/12 a 20/01,
+    inclusive) — os dias da janela não são computados e o prazo retoma depois.
+    Use em PRAZOS PROCESSUAIS contínuos, como os do processo penal (CPP art. 798
+    conta em dias corridos, e o art. 798-A, incluído pela Lei 13.964/2019,
+    suspende o curso no recesso). O default False preserva o comportamento
+    histórico: prazos administrativos e decadenciais NÃO se suspendem.
     """
-    vencimento = data_inicio + timedelta(days=dias)
+    if suspender_recesso:
+        vencimento = data_inicio
+        contados = 0
+        while contados < dias:
+            vencimento += timedelta(days=1)
+            if not _cal.em_recesso_art220(vencimento):
+                contados += 1
+    else:
+        vencimento = data_inicio + timedelta(days=dias)
     if prorrogar_fim:
         vencimento = proximo_dia_util(vencimento, forense=False, tribunal=tribunal)
     return vencimento
