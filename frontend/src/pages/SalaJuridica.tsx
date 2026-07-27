@@ -9,6 +9,7 @@
  * (sanitização LGPD → RAG → AILog → HITL) — esta tela nunca chama modelo.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   Archive,
@@ -241,6 +242,7 @@ const CLASSIFICACAO_COR: Record<string, string> = {
 
 export default function SalaJuridica() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [sessoes, setSessoes] = useState<Sessao[]>([]);
   const [ativa, setAtiva] = useState<Sessao | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -550,6 +552,12 @@ export default function SalaJuridica() {
           : `Caso criado${docs ? ` com ${docs} documento(s)` : ""} — análise congelada para auditoria`,
       );
       setWizardAberto(false);
+      // Próximo passo óbvio: trabalhar o caso recém-criado (paridade com o
+      // Raio-X, que também redireciona após a conversão).
+      if (data?.case_id) {
+        navigate(`/casos/${data.case_id}`);
+        return;
+      }
       await abrirSessao(ativa.id);
       await carregarLista();
     } catch (err: unknown) {
@@ -644,8 +652,8 @@ export default function SalaJuridica() {
       });
       toast.success("Análise vinculada ao caso — congelada para auditoria");
       setVincAberto(false);
-      await abrirSessao(ativa.id);
-      await carregarLista();
+      navigate(`/casos/${vincCaseId}`);
+      return;
     } catch (err: unknown) {
       const detail =
         (err as { response?: { data?: { detail?: string } } })?.response?.data
@@ -870,6 +878,22 @@ export default function SalaJuridica() {
           </div>
           {ativa ? (
             <>
+              {/* Sessão já convertida: o destino natural é o caso oficial. */}
+              {ativa.frozen && ativa.convertido_case_id && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                  <FolderInput className="h-4 w-4 shrink-0" />
+                  <span>
+                    Esta análise foi convertida em caso e está congelada para
+                    auditoria.
+                  </span>
+                  <Link
+                    to={`/casos/${ativa.convertido_case_id}`}
+                    className="font-semibold underline underline-offset-2"
+                  >
+                    Abrir o caso →
+                  </Link>
+                </div>
+              )}
               <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
                 <button
                   className="flex w-full items-center justify-between px-3 py-2 text-xs text-gray-500"
@@ -1049,7 +1073,10 @@ export default function SalaJuridica() {
                       </option>
                     ))}
                   </Select>
-                  <span className="ml-auto">
+                  <span className="ml-auto flex items-center gap-2">
+                    <span className="hidden text-[11px] text-gray-400 sm:inline">
+                      Enter envia · Shift+Enter quebra linha
+                    </span>
                     <Button
                       onClick={() => void enviar()}
                       disabled={ativa.frozen || enviando}
@@ -1065,7 +1092,17 @@ export default function SalaJuridica() {
             <EmptyState
               icon={Scale}
               title="Selecione ou crie uma análise"
-              message="A Sala Jurídica é a porta de entrada conversacional do EJC."
+              message="A Sala Jurídica é a porta de entrada conversacional do EJC: converse sobre o caso, anexe documentos e converta em caso quando estiver madura. Tem só um lote de documentos para ler? Use o Raio-X."
+              action={
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button onClick={() => void novaSessao()}>
+                    <Plus className="h-4 w-4" /> Nova análise
+                  </Button>
+                  <Link to="/raio-x">
+                    <Button variant="secondary">Ir para o Raio-X</Button>
+                  </Link>
+                </div>
+              }
             />
           )}
         </section>
