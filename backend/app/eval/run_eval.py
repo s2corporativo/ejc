@@ -165,23 +165,48 @@ class Agregado:
     mrr: float = 0.0
     taxa_alucinacao: float | None = None
     groundedness: float | None = None
+    # AI-087 (auditoria máxima 2026-07-26): a média GLOBAL esconde a área ruim —
+    # uma média boa puxada por cível não prova nada sobre penal ou trabalhista.
+    # Métricas segmentadas pela `area` do gold set, com gate próprio no CI.
+    por_area: dict[str, dict] = field(default_factory=dict)
     por_caso: list[dict] = field(default_factory=list)
+
+
+def _metricas_de(validos: list[CasoMetrica]) -> dict:
+    """Bloco de métricas de um conjunto de casos (global ou de uma área)."""
+    n = len(validos) or 1
+    bloco = {
+        "n": len(validos),
+        "hit": round(sum(1 for m in validos if m.hit) / n, 4),
+        "precision": round(sum(m.precision for m in validos) / n, 4),
+        "recall": round(sum(m.recall for m in validos) / n, 4),
+        "mrr": round(sum(m.rr for m in validos) / n, 4),
+    }
+    tot_cit = sum(m.citacoes_total for m in validos)
+    if tot_cit:
+        bloco["taxa_alucinacao"] = round(
+            sum(m.citacoes_nao_confirmadas for m in validos) / tot_cit, 4)
+    grs = [m.groundedness for m in validos if m.groundedness is not None]
+    if grs:
+        bloco["groundedness"] = round(sum(grs) / len(grs), 4)
+    return bloco
 
 
 def _agregar(metricas: list[CasoMetrica]) -> Agregado:
     validos = [m for m in metricas if m.erro is None]
-    n = len(validos) or 1
-    ag = Agregado(n=len(validos))
-    ag.hit = round(sum(1 for m in validos if m.hit) / n, 4)
-    ag.precision = round(sum(m.precision for m in validos) / n, 4)
-    ag.recall = round(sum(m.recall for m in validos) / n, 4)
-    ag.mrr = round(sum(m.rr for m in validos) / n, 4)
-    tot_cit = sum(m.citacoes_total for m in validos)
-    if tot_cit:
-        ag.taxa_alucinacao = round(sum(m.citacoes_nao_confirmadas for m in validos) / tot_cit, 4)
-    grs = [m.groundedness for m in validos if m.groundedness is not None]
-    if grs:
-        ag.groundedness = round(sum(grs) / len(grs), 4)
+    glob_ = _metricas_de(validos)
+    ag = Agregado(
+        n=glob_["n"], hit=glob_["hit"], precision=glob_["precision"],
+        recall=glob_["recall"], mrr=glob_["mrr"],
+        taxa_alucinacao=glob_.get("taxa_alucinacao"),
+        groundedness=glob_.get("groundedness"),
+    )
+    # AI-087: segmentação por área (caso sem `area` cai em "(sem_area)" — e
+    # aparece no relatório, em vez de sumir na média).
+    areas: dict[str, list[CasoMetrica]] = {}
+    for m in validos:
+        areas.setdefault((m.area or "").strip().lower() or "(sem_area)", []).append(m)
+    ag.por_area = {a: _metricas_de(ms) for a, ms in sorted(areas.items())}
     ag.por_caso = [vars(m) for m in metricas]
     return ag
 
@@ -210,13 +235,44 @@ async def _main(args) -> int:
         print(f"taxa de citações NÃO confirmadas (alucinação)={ag.taxa_alucinacao}")
     if ag.groundedness is not None:
         print(f"groundedness média (LLM-judge)={ag.groundedness}")
+
+    # AI-087: relatório POR ÁREA — a régua que importa para dizer se a IA é
+    # confiável em penal, trabalhista, ambiental… uma a uma.
+    if ag.por_area:
+        print("\n== POR ÁREA ==")
+        for area, b in ag.por_area.items():
+            print(f"  {area:22} n={b['n']:3}  hit@{args.k}={b['hit']:<6} "
+                  f"recall@{args.k}={b['recall']:<6} MRR={b['mrr']}")
+
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
             json.dump(vars(ag), fh, ensure_ascii=False, indent=2)
         print(f"\nresultados → {args.out}")
-    # Gate de regressão opcional (para CI): falha se recall cair abaixo do piso.
+
+    falhas: list[str] = []
+    # Gate global (legado): falha se o recall MÉDIO cair abaixo do piso.
     if args.min_recall is not None and ag.recall < args.min_recall:
-        print(f"\nFALHA: recall@{args.k}={ag.recall} < piso {args.min_recall}", file=sys.stderr)
+        falhas.append(f"recall@{args.k} global={ag.recall} < piso {args.min_recall}")
+
+    # AI-087 — gate POR ÁREA: nenhuma área crítica pode ficar abaixo do piso, e
+    # área crítica AUSENTE do gold set é falha (cobertura zero não é aprovação).
+    obrigatorias = [a.strip().lower() for a in (args.areas_obrigatorias or "").split(",") if a.strip()]
+    for area in obrigatorias:
+        if area not in ag.por_area:
+            falhas.append(f"área crítica SEM casos no gold set: {area}")
+    if args.min_recall_area is not None:
+        alvo = set(obrigatorias) or set(ag.por_area)
+        for area in sorted(alvo):
+            bloco = ag.por_area.get(area)
+            if bloco and bloco["recall"] < args.min_recall_area:
+                falhas.append(
+                    f"área '{area}': recall@{args.k}={bloco['recall']} "
+                    f"< piso {args.min_recall_area} (n={bloco['n']})")
+
+    if falhas:
+        print("\nFALHA no gate de qualidade jurídica:", file=sys.stderr)
+        for f in falhas:
+            print(f"  - {f}", file=sys.stderr)
         return 1
     return 0
 
@@ -299,15 +355,19 @@ def _validar_caso_smoke(caso: dict, arquivo: str) -> list[str]:
     return erros
 
 
-def _smoke() -> int:
+def _smoke(areas_obrigatorias: str | None = None, min_casos_area: int = 0) -> int:
     base = os.path.dirname(os.path.abspath(__file__))
     arquivos = sorted(glob.glob(os.path.join(base, "*.jsonl")))
     if not arquivos:
         print("SMOKE: nenhum gold set *.jsonl encontrado", file=sys.stderr)
         return 2
     falhas = 0
+    # AI-087: cobertura por área, contada só sobre gold sets REAIS (os
+    # *.example.* são amostras de formato — não provam cobertura de nada).
+    cobertura: dict[str, int] = {}
     for arq in arquivos:
         casos = _carregar_gold(arq)
+        eh_exemplo = ".example." in os.path.basename(arq)
         ids_vistos: set[str] = set()
         erros_arq: list[str] = []
         for i, caso in enumerate(casos, 1):
@@ -318,15 +378,39 @@ def _smoke() -> int:
                 if cid in ids_vistos:
                     erros_arq.append(f"caso {i}: id duplicado: {cid}")
                 ids_vistos.add(cid)
+            # Cobertura conta só GOLD SET (RAG: `query`; peças: `fatos`) —
+            # cenários de trajetória do agente (`intencao`) medem outra coisa.
+            if not eh_exemplo and ("query" in caso or "fatos" in caso):
+                area = str(caso.get("area") or "").strip().lower() or "(sem_area)"
+                cobertura[area] = cobertura.get(area, 0) + 1
         status = "OK " if not erros_arq else "ERRO"
-        print(f"[{status}] {os.path.basename(arq)}: {len(casos)} caso(s)")
+        print(f"[{status}] {os.path.basename(arq)}: {len(casos)} caso(s)"
+              + ("  (exemplo — não conta como cobertura)" if eh_exemplo else ""))
         for e in erros_arq:
             print(f"       - {e}")
         falhas += len(erros_arq)
+
+    print("\n== COBERTURA POR ÁREA (gold sets reais) ==")
+    if cobertura:
+        for area, n in sorted(cobertura.items()):
+            print(f"  {area:22} {n} caso(s)")
+    else:
+        print("  (nenhum gold set real — só exemplos de formato)")
+
+    # Gate de cobertura: área crítica exigida precisa existir com um mínimo de
+    # casos. Sem isso, "smoke verde" seguiria significando apenas JSON válido.
+    obrigatorias = [a.strip().lower() for a in (areas_obrigatorias or "").split(",") if a.strip()]
+    for area in obrigatorias:
+        n = cobertura.get(area, 0)
+        if n < max(1, min_casos_area):
+            print(f"       - cobertura insuficiente na área crítica '{area}': "
+                  f"{n} caso(s) (mínimo {max(1, min_casos_area)})")
+            falhas += 1
+
     if falhas:
-        print(f"\nSMOKE FALHOU: {falhas} erro(s) de formato.", file=sys.stderr)
+        print(f"\nSMOKE FALHOU: {falhas} problema(s).", file=sys.stderr)
         return 1
-    print("\nSMOKE OK: todos os gold sets com formato válido.")
+    print("\nSMOKE OK: gold sets com formato válido e cobertura exigida atendida.")
     return 0
 
 
@@ -337,12 +421,20 @@ def main() -> None:
     p.add_argument("--full", action="store_true", help="roda a IA e mede citações (mais lento/caro)")
     p.add_argument("--judge", action="store_true", help="groundedness via LLM-judge (requer --full)")
     p.add_argument("--out", default=None, help="grava métricas agregadas em JSON (baseline p/ diff)")
-    p.add_argument("--min-recall", type=float, default=None, help="piso de recall@k p/ CI (falha abaixo)")
+    p.add_argument("--min-recall", type=float, default=None, help="piso de recall@k GLOBAL p/ CI (falha abaixo)")
+    # AI-087 — gate por área (a média global esconde a área ruim).
+    p.add_argument("--min-recall-area", type=float, default=None,
+                   help="piso de recall@k aplicado a CADA área (falha se qualquer uma cair abaixo)")
+    p.add_argument("--areas-obrigatorias", default=None,
+                   help="áreas críticas separadas por vírgula (ex.: penal,trabalhista,consumidor). "
+                        "Área ausente do gold set é FALHA — cobertura zero não é aprovação.")
     p.add_argument("--smoke", action="store_true",
                    help="só valida o FORMATO dos gold sets *.jsonl (offline: sem banco/LLM; p/ CI)")
+    p.add_argument("--min-casos-area", type=int, default=0,
+                   help="no --smoke: mínimo de casos por área crítica (usa --areas-obrigatorias)")
     args = p.parse_args()
     if args.smoke:
-        raise SystemExit(_smoke())
+        raise SystemExit(_smoke(args.areas_obrigatorias, args.min_casos_area))
     raise SystemExit(asyncio.run(_main(args)))
 
 
