@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.client_ownership import pode_ver_caso_resumido, pode_ver_cliente
@@ -41,11 +41,11 @@ from app.services.conflito_service import (
     _clientes_por_nome,
 )
 
-# Modo do seletor → task_type do gateway. Com SALA_JURIDICA_QUALIDADE_ALTA
-# (default), a conversa livre também sobe para o tier de estratégia — a Sala é
-# a porta de entrada jurídica do escritório e a resposta precisa ter o nível
-# de um parecer de chat de fronteira, não de um provider econômico. Desligar a
-# flag devolve o roteamento econômico (conversa livre no provider local).
+# Modo do seletor → task_type do gateway. "chat_rapido" NÃO consta no mapa do
+# intent_classifier de propósito: a conversa livre cai no fallback por
+# keywords (agente ESPECIALISTA por área) ou no CaseAgent — ambos com
+# tarefa_padrao séria (→ gateway "estrategia", tier alto). Não substituir por
+# um task_type mapeado: isso pularia a seleção de especialista sem ganhar tier.
 MODO_TASK_TYPE: dict[str, str] = {
     "conversa_livre": "chat_rapido",
     "organizar_fatos": "analise_juridica",
@@ -302,17 +302,10 @@ async def enviar_mensagem(
     # Import tardio: mantém o service importável em testes sem stack de IA.
     from app.services.ai.core.orchestrator import run_ai_task
 
-    # Qualidade nível chat (default ON): conversa livre sobe de "chat_rapido"
-    # (tier econômico/local) para "analise_caso" (CaseAgent → gateway
-    # "estrategia", tier pesado). Os demais modos já roteiam alto por natureza.
-    task_type = MODO_TASK_TYPE[payload.modo]
-    if task_type == "chat_rapido" and get_settings().SALA_JURIDICA_QUALIDADE_ALTA:
-        task_type = "analise_caso"
-
     resultado = await run_ai_task(
         db=db,
         user=user,
-        task_type=task_type,
+        task_type=MODO_TASK_TYPE[payload.modo],
         mensagem=_montar_mensagem_ia(payload, sessao, historico, anexos),
         case_id=sessao.convertido_case_id,
         params={
@@ -545,6 +538,13 @@ async def preview_conversao(
     anexos = list(res.scalars().all())
     partes = _nomes_partes_anexos(anexos)
     candidato = (nome_cliente or sessao.cliente_potencial or "").strip()
+    # Cliente EXISTENTE selecionado: o nome canônico dele é o candidato — sem
+    # isso, sessões sem cliente_potencial pulavam a checagem de o cliente ser
+    # parte contrária em outro caso do escritório (apontamento Codex P1).
+    if client_id and not candidato:
+        cli = await db.get(Client, client_id)
+        if cli is not None and cli.deleted_at is None:
+            candidato = (cli.nome_exibicao or "").strip()
     candidato_lower = candidato.lower()
 
     alertas: list[dict[str, Any]] = []
@@ -651,18 +651,21 @@ async def preview_conversao(
 
 def _copiar_anexo(
     anexo: LegalChatAttachment, case_id: str, client_id: str, user: User,
-) -> Document:
-    """Copia o arquivo físico do anexo e devolve o Document oficial do caso.
-    Levanta ValueError se o arquivo físico não existir (chamador decide)."""
+) -> tuple[Document, Path]:
+    """Copia o arquivo físico do anexo e devolve (Document oficial, caminho
+    copiado — para limpeza em caso de rollback)."""
     settings = get_settings()
     origem = Path(settings.UPLOAD_DIR) / anexo.filepath
-    if not origem.exists() or not origem.is_file():
-        raise ValueError(f"Arquivo físico indisponível: {anexo.nome_original}")
     rel = Path("sala-juridica-convertidos") / case_id / f"{uuid4()}{origem.suffix}"
     destino = Path(settings.UPLOAD_DIR) / rel
     destino.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(origem, destino)
-    return Document(
+    # Texto extraído/sanitizado preservado no upload → Document pesquisável no
+    # GED e disponível ao context builder (apontamento Codex P2). Anexos
+    # antigos (antes da mudança no upload) seguem sem texto — fail-soft.
+    ra = anexo.resultado_analise if isinstance(anexo.resultado_analise, dict) else {}
+    texto = ra.get("_texto_sanitizado")
+    doc = Document(
         id=str(uuid4()),
         titulo=anexo.nome_original[:255],
         descricao="Documento transferido da análise da Sala Jurídica.",
@@ -671,54 +674,90 @@ def _copiar_anexo(
         filepath=str(rel),
         mimetype=anexo.mimetype,
         size_bytes=anexo.size_bytes,
+        ocr_text=(str(texto)[:200_000]
+                  if isinstance(texto, str) and texto.strip() else None),
         confidencialidade=DocConfidencialidade.interno,
         case_id=case_id,
         client_id=client_id,
         uploaded_by=user.id,
     )
+    return doc, destino
 
 
 async def _transferir_anexos(
     db: AsyncSession, sessao: LegalChatSession, case_id: str, client_id: str, user: User,
-) -> tuple[list[str], list[str]]:
-    """Todos os anexos da sessão → Document do caso. Fail-soft por arquivo:
-    anexo com arquivo físico ausente NÃO aborta a conversão (é reportado)."""
+) -> tuple[list[str], list[Path]]:
+    """Todos os anexos da sessão → Document do caso.
+
+    FAIL-CLOSED (apontamento Codex P1): arquivo físico ausente ABORTA a
+    conversão ANTES do congelamento — a sessão fica retryável e o caso nunca
+    nasce sem documento fundante. Retorna também os caminhos copiados, para o
+    chamador limpar em caso de falha posterior na transação."""
     res = await db.execute(
         select(LegalChatAttachment)
         .where(LegalChatAttachment.session_id == sessao.id)
         .order_by(LegalChatAttachment.created_at)
     )
+    anexos = list(res.scalars().all())
+    settings = get_settings()
+    faltantes = [
+        a.nome_original for a in anexos
+        if not (Path(settings.UPLOAD_DIR) / a.filepath).is_file()
+    ]
+    if faltantes:
+        raise HTTPException(422, {
+            "mensagem": ("Arquivo físico indisponível para transferência. "
+                         "Restaure o storage e tente novamente, ou converta "
+                         "sem transferir anexos."),
+            "anexos_indisponiveis": faltantes,
+        })
     transferidos: list[str] = []
-    indisponiveis: list[str] = []
-    for anexo in res.scalars().all():
-        try:
-            doc = _copiar_anexo(anexo, case_id, client_id, user)
-        except ValueError:
-            indisponiveis.append(anexo.nome_original)
-            continue
+    copiados: list[Path] = []
+    for anexo in anexos:
+        doc, caminho = _copiar_anexo(anexo, case_id, client_id, user)
         db.add(doc)
         transferidos.append(doc.id)
-    return transferidos, indisponiveis
+        copiados.append(caminho)
+    return transferidos, copiados
+
+
+def _limpar_copias(copiados: list[Path]) -> None:
+    """Best-effort: remove cópias físicas órfãs quando a transação falha."""
+    for caminho in copiados:
+        try:
+            caminho.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 async def _criar_snapshot_sala(
     db: AsyncSession, sessao: LegalChatSession, case_id: str, area: str, user: User,
 ) -> int:
     """CaseIntelligenceSnapshot origem 'sala_juridica' com o estado consolidado.
-    Versão = max(versao do caso)+1 (o índice único uq_cis_case_versao blinda
-    contra corrida). Retorna a versão criada."""
+    Versão = max(versao do caso)+1, serializado por advisory lock transacional
+    por caso — dois vínculos concorrentes de sessões DIFERENTES ao mesmo caso
+    não leem o mesmo max (o índice único uq_cis_case_versao segue como última
+    linha de defesa). Retorna a versão criada."""
     estado_v = await ultima_versao_estado(db, sessao.id)
     estado = dict((estado_v.estado if estado_v else {}) or {})
+    # Rastreabilidade: os logs mais RECENTES formaram o estado consolidado —
+    # em sessões longas, cortar os antigos, nunca os novos (Codex P2).
     res_logs = await db.execute(
         select(LegalChatMessage.ai_log_id)
         .where(
             LegalChatMessage.session_id == sessao.id,
             LegalChatMessage.ai_log_id.isnot(None),
         )
-        .order_by(LegalChatMessage.created_at)
+        .order_by(LegalChatMessage.created_at.desc())
         .limit(100)
     )
-    ai_log_ids = [v for v in res_logs.scalars().all() if isinstance(v, str)]
+    ai_log_ids = list(reversed(
+        [v for v in res_logs.scalars().all() if isinstance(v, str)]
+    ))
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
+        {"chave": f"cis:{case_id}"},
+    )
     proxima = (
         await db.scalar(
             select(func.coalesce(func.max(CaseIntelligenceSnapshot.versao), 0))
@@ -804,6 +843,14 @@ async def converter_em_caso(
             "mensagem": "Há cliente possivelmente duplicado; selecione o existente ou confirme a criação.",
             "clientes_possivelmente_duplicados": preview["clientes_possivelmente_duplicados"],
         })
+    # Cliente EXISTENTE com caso ativo: possível caso duplicado — o gate vale
+    # para os dois caminhos, não só para cliente novo (apontamento Codex P1).
+    if payload.client_id and preview["casos_ativos_do_cliente"] \
+            and not payload.duplicate_confirmed:
+        raise HTTPException(409, {
+            "mensagem": "O cliente possui caso ativo; confirme que não se trata de caso duplicado antes de criar outro.",
+            "casos_ativos_do_cliente": preview["casos_ativos_do_cliente"],
+        })
 
     if payload.client_id:
         client = await db.get(Client, payload.client_id)
@@ -837,29 +884,34 @@ async def converter_em_caso(
 
     # A inteligência preliminar acompanha o caso oficial (paridade Raio-X):
     # anexos viram Document e o estado consolidado vira snapshot versionado.
+    # Falha em QUALQUER passo → cópias físicas removidas antes de propagar
+    # (o banco faz rollback; arquivo órfão em disco não — Codex P2).
     transferidos: list[str] = []
-    indisponiveis: list[str] = []
-    if payload.transferir_anexos:
-        transferidos, indisponiveis = await _transferir_anexos(
-            db, sessao, case.id, client.id, user
+    copiados: list[Path] = []
+    try:
+        if payload.transferir_anexos:
+            transferidos, copiados = await _transferir_anexos(
+                db, sessao, case.id, client.id, user
+            )
+        snapshot_versao = await _criar_snapshot_sala(
+            db, sessao, case.id, payload.area, user
         )
-    snapshot_versao = await _criar_snapshot_sala(
-        db, sessao, case.id, payload.area, user
-    )
 
-    agora = datetime.now(timezone.utc)
-    sessao.client_id = client.id
-    sessao.convertido_case_id = case.id
-    sessao.converted_at = agora
-    sessao.frozen_at = agora  # congelada para auditoria — imutável daqui em diante
-    sessao.status = "convertida_em_caso"
-    await db.flush()
+        agora = datetime.now(timezone.utc)
+        sessao.client_id = client.id
+        sessao.convertido_case_id = case.id
+        sessao.converted_at = agora
+        sessao.frozen_at = agora  # congelada para auditoria — imutável daqui em diante
+        sessao.status = "convertida_em_caso"
+        await db.flush()
+    except Exception:
+        _limpar_copias(copiados)
+        raise
     return {
         "case_id": case.id,
         "client_id": client.id,
         "ja_convertido": False,
         "documentos_transferidos": transferidos,
-        "anexos_indisponiveis": indisponiveis,
         "snapshot_versao": snapshot_versao,
     }
 
@@ -903,30 +955,34 @@ async def vincular_caso_existente(
     if case is None:
         raise HTTPException(404, "Caso não encontrado")
 
-    # Mesmos efeitos da conversão: anexos → Document e estado → snapshot.
+    # Mesmos efeitos da conversão: anexos → Document e estado → snapshot,
+    # com a mesma limpeza de cópias físicas em falha.
     transferidos: list[str] = []
-    indisponiveis: list[str] = []
-    if transferir_anexos:
-        transferidos, indisponiveis = await _transferir_anexos(
-            db, sessao, case.id, case.client_id, user
+    copiados: list[Path] = []
+    try:
+        if transferir_anexos:
+            transferidos, copiados = await _transferir_anexos(
+                db, sessao, case.id, case.client_id, user
+            )
+        snapshot_versao = await _criar_snapshot_sala(
+            db, sessao, case.id, getattr(case.area, "value", str(case.area)), user
         )
-    snapshot_versao = await _criar_snapshot_sala(
-        db, sessao, case.id, getattr(case.area, "value", str(case.area)), user
-    )
 
-    agora = datetime.now(timezone.utc)
-    sessao.client_id = case.client_id
-    sessao.convertido_case_id = case.id
-    sessao.converted_at = agora
-    sessao.frozen_at = agora
-    sessao.status = "convertida_em_caso"
-    await db.flush()
+        agora = datetime.now(timezone.utc)
+        sessao.client_id = case.client_id
+        sessao.convertido_case_id = case.id
+        sessao.converted_at = agora
+        sessao.frozen_at = agora
+        sessao.status = "convertida_em_caso"
+        await db.flush()
+    except Exception:
+        _limpar_copias(copiados)
+        raise
     return {
         "case_id": case.id,
         "client_id": case.client_id,
         "ja_convertido": False,
         "documentos_transferidos": transferidos,
-        "anexos_indisponiveis": indisponiveis,
         "snapshot_versao": snapshot_versao,
     }
 

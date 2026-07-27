@@ -274,8 +274,13 @@ async def anexar_documentos(
                 enriquecer_rag=False,
                 user_id=user.id,
             )
-            extraido.pop("_texto_sanitizado", None)
+            # Texto SANITIZADO retido (truncado): é o que permite ao Document
+            # transferido na conversão nascer pesquisável no GED (ocr_text) em
+            # vez de "sem texto extraído".
+            texto_sana = extraido.pop("_texto_sanitizado", None)
             resultado = jsonable_encoder(extraido)
+            if isinstance(texto_sana, str) and texto_sana.strip():
+                resultado["_texto_sanitizado"] = texto_sana[:200_000]
         except Exception as exc:  # extração nunca bloqueia o anexo em si
             resultado = {"ok": False, "erro": str(exc)[:300]}
         anexo = LegalChatAttachment(

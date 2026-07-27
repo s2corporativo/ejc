@@ -30,7 +30,7 @@ from app.models.client import Client
 from app.models.deadline import Deadline, DeadlineStatus
 from app.models.document import Document
 from app.models.dossie_estrategico import DossieEstrategico
-from app.models.legal_chat import LegalChatSession
+from app.models.legal_chat import LegalChatMessage, LegalChatSession
 from app.models.legal_doc import LegalDoc
 from app.models.raio_x import RaioXAnalise
 from app.models.tese import TeseCasoLink
@@ -357,10 +357,16 @@ async def jornada_do_caso(
             AILog.case_id == case_id,
             AILog.tipo_uso == AITipoUso.analise_caso)
     )).scalar() or 0
+    # Só sessões com análise REAL (≥1 resposta de IA): vínculo de sessão vazia
+    # não pode concluir a etapa de triagem sozinho.
     total_analises += (await db.execute(
         select(func.count()).select_from(LegalChatSession).where(
             LegalChatSession.convertido_case_id == case_id,
-            LegalChatSession.deleted_at.is_(None))
+            LegalChatSession.deleted_at.is_(None),
+            select(LegalChatMessage.id).where(
+                LegalChatMessage.session_id == LegalChatSession.id,
+                LegalChatMessage.autor == "ia",
+            ).exists())
     )).scalar() or 0
     total_analises += (await db.execute(
         select(func.count()).select_from(RaioXAnalise).where(

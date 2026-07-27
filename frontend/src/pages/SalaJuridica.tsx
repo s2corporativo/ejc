@@ -482,7 +482,7 @@ export default function SalaJuridica() {
     await carregarLista();
   };
 
-  const abrirWizard = async () => {
+  const abrirWizard = () => {
     if (!ativa) return;
     setConvTitulo(ativa.titulo);
     setConvNovoCliente(ativa.cliente_potencial ?? "");
@@ -492,22 +492,43 @@ export default function SalaJuridica() {
     setConvDuplicado(false);
     setConvPreview(null);
     setWizardAberto(true);
-    // Conferência automática de conflito/duplicado — o servidor revalida na
-    // conversão de qualquer forma (o preview é apoio visual, não o gate).
-    try {
-      const { data } = await api.get<PreviewConversao>(
-        `/sala-juridica/${ativa.id}/conversao/preview`,
-        {
-          params: ativa.cliente_potencial
-            ? { nome_cliente: ativa.cliente_potencial }
-            : {},
-        },
-      );
-      setConvPreview(data);
-    } catch {
-      /* preview indisponível não impede o wizard; servidor ainda barra */
-    }
   };
+
+  // Conferência de conflito/duplicado SEMPRE para a seleção atual do wizard
+  // (nome digitado ou cliente existente), com debounce — preview estático na
+  // abertura deixava passar conflito de nome novo e escondia o checkbox de
+  // duplicado. O servidor revalida na conversão de qualquer forma.
+  useEffect(() => {
+    if (!wizardAberto || !ativa) return;
+    const sessaoId = ativa.id;
+    const nome = convClienteId ? null : convNovoCliente.trim() || null;
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get<PreviewConversao>(
+          `/sala-juridica/${sessaoId}/conversao/preview`,
+          {
+            params: {
+              ...(nome ? { nome_cliente: nome } : {}),
+              ...(convClienteId ? { client_id: convClienteId } : {}),
+            },
+          },
+        );
+        setConvPreview(data);
+      } catch {
+        /* preview indisponível não impede o wizard; servidor ainda barra */
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [wizardAberto, ativa, convClienteId, convNovoCliente]);
+
+  // Há achado de duplicidade pendente de reconhecimento explícito? (cliente
+  // novo → homônimos na base; cliente existente → casos ativos dele)
+  const temDuplicidade = Boolean(
+    convPreview &&
+      (convClienteId == null
+        ? convPreview.clientes_possivelmente_duplicados.length > 0
+        : convPreview.casos_ativos_do_cliente.length > 0),
+  );
 
   const buscarClientes = async (termo: string) => {
     setConvClienteBusca(termo);
@@ -561,14 +582,35 @@ export default function SalaJuridica() {
       await abrirSessao(ativa.id);
       await carregarLista();
     } catch (err: unknown) {
-      // 409 dos gates devolve detail OBJETO {mensagem, alertas…}.
+      // 409 dos gates devolve detail OBJETO {mensagem, alertas…} — além do
+      // toast, os achados entram no preview para a UI exibir os painéis e o
+      // checkbox de reconhecimento (senão o 409 vira beco sem saída).
       const detail = (
         err as {
           response?: {
-            data?: { detail?: string | { mensagem?: string } };
+            data?: {
+              detail?:
+                | string
+                | ({ mensagem?: string } & Partial<PreviewConversao>);
+            };
           };
         }
       )?.response?.data?.detail;
+      if (detail && typeof detail === "object") {
+        setConvPreview((prev) => ({
+          alertas_conflito:
+            detail.alertas_conflito ?? prev?.alertas_conflito ?? [],
+          clientes_possivelmente_duplicados:
+            detail.clientes_possivelmente_duplicados ??
+            prev?.clientes_possivelmente_duplicados ??
+            [],
+          casos_ativos_do_cliente:
+            detail.casos_ativos_do_cliente ??
+            prev?.casos_ativos_do_cliente ??
+            [],
+          bloqueia: true,
+        }));
+      }
       const msg =
         typeof detail === "string"
           ? detail
@@ -646,19 +688,34 @@ export default function SalaJuridica() {
     if (!ativa || !vincCaseId || vinculando) return;
     setVinculando(true);
     try {
-      await api.post(`/sala-juridica/${ativa.id}/vincular-caso`, {
-        case_id: vincCaseId,
-        confirmo_dados_revisados: vincRevisado,
-      });
-      toast.success("Análise vinculada ao caso — congelada para auditoria");
+      const { data } = await api.post(
+        `/sala-juridica/${ativa.id}/vincular-caso`,
+        {
+          case_id: vincCaseId,
+          confirmo_dados_revisados: vincRevisado,
+        },
+      );
+      toast.success(
+        data?.ja_convertido
+          ? "Análise já estava vinculada a um caso — abrindo o caso vinculado"
+          : "Análise vinculada ao caso — congelada para auditoria",
+      );
       setVincAberto(false);
-      navigate(`/casos/${vincCaseId}`);
+      // Idempotência: em corrida, o backend devolve o case_id JÁ vinculado —
+      // navegar para o selecionado localmente abriria o caso errado.
+      navigate(`/casos/${data?.case_id ?? vincCaseId}`);
       return;
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? "Falha ao vincular";
-      toast.error(String(detail));
+      const detail = (
+        err as {
+          response?: { data?: { detail?: string | { mensagem?: string } } };
+        }
+      )?.response?.data?.detail;
+      const msg =
+        typeof detail === "string"
+          ? detail
+          : (detail?.mensagem ?? "Falha ao vincular");
+      toast.error(String(msg));
     } finally {
       setVinculando(false);
     }
@@ -1357,6 +1414,27 @@ export default function SalaJuridica() {
                   )}
                 </div>
               )}
+            {/* Casos ATIVOS do cliente existente: possível caso duplicado */}
+            {convPreview &&
+              convClienteId != null &&
+              convPreview.casos_ativos_do_cliente.length > 0 && (
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="mb-1 text-xs font-bold text-amber-800">
+                    Este cliente já possui caso ativo — confira se não é o
+                    mesmo assunto
+                  </p>
+                  {convPreview.casos_ativos_do_cliente.map((c, i) => (
+                    <p key={i} className="text-xs text-amber-700">
+                      {c.numero_interno ? `${c.numero_interno} · ` : ""}
+                      {c.titulo}
+                    </p>
+                  ))}
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    Se for o mesmo assunto, prefira “Vincular a caso” em vez de
+                    criar um caso novo.
+                  </p>
+                </div>
+              )}
 
             <p className="mb-1 mt-4 text-xs font-bold uppercase text-slate-500">
               2 · Caso
@@ -1404,20 +1482,19 @@ export default function SalaJuridica() {
               />
               Revisei fatos, provas, pendências e documentos desta análise.
             </label>
-            {convPreview &&
-              convClienteId == null &&
-              convPreview.clientes_possivelmente_duplicados.length > 0 && (
-                <label className="mt-1 flex items-start gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
-                    checked={convDuplicado}
-                    onChange={(e) => setConvDuplicado(e.target.checked)}
-                  />
-                  Conferi os possíveis duplicados e confirmo a criação de um
-                  novo cliente.
-                </label>
-              )}
+            {temDuplicidade && (
+              <label className="mt-1 flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={convDuplicado}
+                  onChange={(e) => setConvDuplicado(e.target.checked)}
+                />
+                {convClienteId == null
+                  ? "Conferi os possíveis duplicados e confirmo a criação de um novo cliente."
+                  : "Conferi os casos ativos do cliente e confirmo que este é um caso NOVO."}
+              </label>
+            )}
 
             <div className="mt-5 flex justify-end gap-2">
               <Button
@@ -1433,10 +1510,7 @@ export default function SalaJuridica() {
                   !convRevisado ||
                   !convTitulo.trim() ||
                   (convClienteId == null && !convNovoCliente.trim()) ||
-                  (convPreview != null &&
-                    convClienteId == null &&
-                    convPreview.clientes_possivelmente_duplicados.length > 0 &&
-                    !convDuplicado)
+                  (temDuplicidade && !convDuplicado)
                 }
                 onClick={() => void converterEmCaso()}
               >

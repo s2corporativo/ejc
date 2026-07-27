@@ -665,3 +665,59 @@ async def test_converter_409_cliente_duplicado_sem_reconhecimento(monkeypatch):
         await svc.converter_em_caso(_FakeDB(sessao=sessao), sessao, payload, _user())
     assert ei.value.status_code == 409
     assert "clientes_possivelmente_duplicados" in ei.value.detail
+
+
+@pytest.mark.anyio
+async def test_converter_409_caso_ativo_de_cliente_existente(monkeypatch):
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    async def fake_preview(db, sessao, user, **kw):
+        return {
+            "alertas_conflito": [],
+            "clientes_possivelmente_duplicados": [],
+            "casos_ativos_do_cliente": [
+                {"id": "k1", "titulo": "Caso em curso",
+                 "numero_interno": "DPT-2026-0001", "protegido": False},
+            ],
+            "anexos_disponiveis": [],
+            "bloqueia": False,
+        }
+
+    monkeypatch.setattr(svc, "preview_conversao", fake_preview)
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    payload = ConverterRequest(
+        client_id="c9", area="civil", titulo_caso="X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    with pytest.raises(HTTPException) as ei:
+        await svc.converter_em_caso(_FakeDB(sessao=sessao), sessao, payload, _user())
+    assert ei.value.status_code == 409
+    assert "casos_ativos_do_cliente" in ei.value.detail
+
+
+@pytest.mark.anyio
+async def test_converter_422_anexo_sem_arquivo_fisico_nao_congela():
+    from app.models.legal_chat import LegalChatAttachment, LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    anexo = LegalChatAttachment(
+        id="a1", session_id="s1", nome_original="contrato.pdf",
+        filepath="sala-juridica/inexistente/x.pdf", size_bytes=10,
+        sha256="0" * 64, uploaded_by="u1", resultado_analise={},
+    )
+    db = _FakeDB(sessao=sessao, anexos=[anexo])
+    payload = ConverterRequest(
+        novo_cliente_nome="Fulano de Tal", area="civil", titulo_caso="X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    with pytest.raises(HTTPException) as ei:
+        await svc.converter_em_caso(db, sessao, payload, _user())
+    assert ei.value.status_code == 422
+    assert "contrato.pdf" in str(ei.value.detail)
+    # A sessão NÃO pode ter sido congelada/convertida (fica retryável).
+    assert sessao.frozen_at is None
+    assert sessao.convertido_case_id is None
