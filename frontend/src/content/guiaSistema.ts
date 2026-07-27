@@ -805,12 +805,6 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
   },
 ];
 
-/** Total de ferramentas cobertas pelo guia (para exibição/relatório). */
-export const TOTAL_FERRAMENTAS = GUIA_SISTEMA.reduce(
-  (soma, grupo) => soma + grupo.ferramentas.length,
-  0,
-);
-
 /** Rótulo curto de cada perfil, para exibir nos cards. */
 export const PERFIL_LABEL: Record<PerfilGuia, string> = {
   todos: "Todos",

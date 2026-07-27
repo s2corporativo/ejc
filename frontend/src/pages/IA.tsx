@@ -82,6 +82,13 @@ export default function IA() {
   const [gate, setGate] = useState<GatePendente | null>(null);
   const [justificativa, setJustificativa] = useState("");
   const [gateEnviando, setGateEnviando] = useState(false);
+  // Espelha a sanitização do backend (citation_gate.sanitizar_justificativa_
+  // override): o mínimo é medido com o whitespace interno colapsado, e o
+  // marcador reservado "[override_citacoes]" é rejeitado (422).
+  const justificativaNormalizada = justificativa.replace(/\s+/g, " ").trim();
+  const justificativaTemMarcador = justificativaNormalizada
+    .toLowerCase()
+    .includes("[override_citacoes]");
 
   const carregarLogs = useCallback(async () => {
     setLoadingLogs(true);
@@ -224,6 +231,10 @@ export default function IA() {
             : [],
         });
         setJustificativa("");
+      } else if (resp?.status === 422 && typeof detail === "string") {
+        // 422 da justificativa de override (mínimo/marcador reservado):
+        // o detail do backend já vem em linguagem clara — exibimos direto.
+        toast.error(detail);
       } else {
         toast.error(
           mensagemErroIA(
@@ -631,11 +642,12 @@ export default function IA() {
               <Button
                 disabled={
                   gateEnviando ||
-                  justificativa.trim().length < JUSTIFICATIVA_MIN
+                  justificativaTemMarcador ||
+                  justificativaNormalizada.length < JUSTIFICATIVA_MIN
                 }
                 onClick={() =>
                   marcarHitl(gate.logId, gate.status, {
-                    justificativa: justificativa.trim(),
+                    justificativa: justificativaNormalizada,
                   })
                 }
               >
@@ -678,11 +690,19 @@ export default function IA() {
                 ))}
                 {gate.bloqueantes.length === 0 && (
                   <li className="text-sm text-slate-500">
-                    {gate.motivos.join(" ") ||
-                      "Há citações não confirmadas na resposta."}
+                    Há citações não confirmadas na resposta.
                   </li>
                 )}
               </ul>
+              {/* O backend limita a lista acima a 10 itens; os motivos trazem
+                  o quadro completo (contagens totais e verificação parcial). */}
+              {gate.motivos.length > 0 && (
+                <ul className="mt-2 space-y-1 text-xs text-slate-500">
+                  {gate.motivos.map((m, i) => (
+                    <li key={i}>• {m}</li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div>
@@ -696,6 +716,12 @@ export default function IA() {
                 value={justificativa}
                 onChange={(e) => setJustificativa(e.target.value)}
               />
+              {justificativaTemMarcador && (
+                <p className="mt-1 text-xs font-medium text-danger-600">
+                  A justificativa não pode conter o texto reservado
+                  “[override_citacoes]” — remova-o para prosseguir.
+                </p>
+              )}
               <p className="mt-1 text-xs text-slate-400">
                 A justificativa fica registrada na trilha de auditoria do
                 escritório junto com o seu nome.

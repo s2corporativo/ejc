@@ -341,6 +341,23 @@ export default function Casos() {
   useEffect(() => {
     if (isCasosView(viewParam)) setView(viewParam as "lista" | "kanban");
   }, [viewParam]);
+  // Toggle lista/quadro também grava ?view= na URL (replace, sem empilhar
+  // histórico) para F5/compartilhamento preservarem a escolha.
+  const mudarView = (proxima: "lista" | "kanban") => {
+    setView(proxima);
+    const params = new URLSearchParams(location.search);
+    if (proxima === "lista") params.delete("view");
+    else params.set("view", proxima);
+    const search = params.toString();
+    nav({ search: search ? `?${search}` : "" }, { replace: true });
+  };
+  // Deep-link ?area=<slug> (RamosHub "Ver casos" e aviso dos ramos externos):
+  // sincroniza o filtro de área a partir da URL (URL → estado, sem loop —
+  // mudar o select localmente não reescreve a URL).
+  const areaParam = new URLSearchParams(location.search).get("area");
+  useEffect(() => {
+    if (areaParam !== null) setAreaF(areaParam);
+  }, [areaParam]);
   const [modal, setModal] = useState(false);
   const novoCasoModo = resolverModoNovoCaso(location.pathname, location.search);
   const wizardAberto = novoCasoModo === "manual";
@@ -780,13 +797,13 @@ export default function Casos() {
           <div className="flex gap-2 items-center">
             <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
               <button
-                onClick={() => setView("lista")}
+                onClick={() => mudarView("lista")}
                 className={`flex items-center gap-1 px-3 py-1.5 text-sm ${view === "lista" ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
               >
                 <List size={15} /> Lista
               </button>
               <button
-                onClick={() => setView("kanban")}
+                onClick={() => mudarView("kanban")}
                 className={`flex items-center gap-1 px-3 py-1.5 text-sm ${view === "kanban" ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
               >
                 <LayoutGrid size={15} /> Quadro

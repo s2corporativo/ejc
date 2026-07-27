@@ -80,6 +80,8 @@ const pretty = (v: unknown) => {
 export default function AgenteIA() {
   const [caseId, setCaseId] = useState("");
   const [casos, setCasos] = useState<any[]>([]);
+  const [casosLoading, setCasosLoading] = useState(true);
+  const [casosErro, setCasosErro] = useState(false);
   const [mensagem, setMensagem] = useState("");
   const [running, setRunning] = useState(false);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
@@ -94,11 +96,13 @@ export default function AgenteIA() {
 
   // Seletor de casos (mesmo padrão de IA.tsx): o advogado escolhe pelo
   // número interno/título em vez de digitar o UUID do caso à mão.
+  // page_size=500 é o teto do backend (GET /cases/, Query le=500).
   useEffect(() => {
     api
-      .get("/cases/", { params: { page_size: 100 } })
+      .get("/cases/", { params: { page_size: 500 } })
       .then((r) => setCasos(asList(r.data)))
-      .catch(() => setCasos([]));
+      .catch(() => setCasosErro(true))
+      .finally(() => setCasosLoading(false));
   }, []);
 
   const push = <T extends Omit<TimelineItem, "id">>(item: T) =>
@@ -276,7 +280,16 @@ export default function AgenteIA() {
                   </option>
                 ))}
               </select>
-              {casos.length === 0 && (
+              {casosLoading && (
+                <p className="mt-1 text-xs text-slate-400">Carregando casos…</p>
+              )}
+              {!casosLoading && casosErro && (
+                <p className="mt-1 text-xs font-medium text-danger-600">
+                  Não foi possível carregar a lista de casos — recarregue a
+                  página ou tente novamente mais tarde.
+                </p>
+              )}
+              {!casosLoading && !casosErro && casos.length === 0 && (
                 <p className="mt-1 text-xs text-slate-400">
                   Nenhum caso disponível — cadastre um caso primeiro em Casos.
                 </p>
