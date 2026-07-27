@@ -91,6 +91,17 @@ cp -f "$APP_DIR/nginx/ejc.conf" /etc/nginx/sites-available/ejc.conf
 # Desabilitar default se existir
 rm -f /etc/nginx/sites-enabled/default
 
+# Vhost duplicado (consolidação 2026-07-27): um `ejc` criado à mão na VPS
+# declarava o MESMO server_name deste arquivo. Como o Nginx carrega
+# sites-enabled em ordem alfabética, `ejc` vencia e `ejc.conf` era ignorado em
+# silêncio — o versionado nunca valia. O conteúdo bom foi incorporado a
+# nginx/ejc.conf; aqui apenas garantimos que o duplicado não volte a ser
+# habilitado. O arquivo em sites-available é preservado como backup.
+if [ -e /etc/nginx/sites-enabled/ejc ]; then
+    echo "  · removendo vhost duplicado sites-enabled/ejc (consolidado em ejc.conf)"
+    rm -f /etc/nginx/sites-enabled/ejc
+fi
+
 # Habilitar EJC
 ln -sf /etc/nginx/sites-available/ejc.conf /etc/nginx/sites-enabled/ejc.conf
 
