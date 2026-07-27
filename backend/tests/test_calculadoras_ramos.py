@@ -213,17 +213,20 @@ async def test_deposito_recursal_condenacao_abaixo_do_teto_recolhe_condenacao():
     r = await ramos.trab_deposito(valor_condenacao=8_000.0, cu=None)
     assert r["deposito_ro"] == 8_000.0
     assert r["deposito_rr"] == 8_000.0
-    assert r["teto_ro"] == ramos.TETO_DEPOSITO_RO
-    assert r["teto_rr"] == ramos.TETO_DEPOSITO_RR
+    # Tetos vêm da faixa vigente na data do recurso (tabela versionada por Ato).
+    vigente = ramos._teto_deposito_para(date.today())
+    assert r["teto_ro"] == vigente["ro"]
+    assert r["teto_rr"] == vigente["rr"]
     assert r["vigencia_tabela"] and r["fonte"]
 
 
 async def test_deposito_recursal_condenacao_1_5x_teto_recolhe_o_teto():
     # Condenação = 1,5× teto RO → depósito do RO é o TETO (não 50% = 0,75× teto,
     # que geraria recurso deserto). RR ainda tem folga (1,5×teto_RO < teto_RR).
-    valor = round(ramos.TETO_DEPOSITO_RO * 1.5, 2)   # 18.191,46
+    teto_ro = ramos._teto_deposito_para(date.today())["ro"]
+    valor = round(teto_ro * 1.5, 2)
     r = await ramos.trab_deposito(valor_condenacao=valor, cu=None)
-    assert r["deposito_ro"] == ramos.TETO_DEPOSITO_RO           # limitado ao teto
+    assert r["deposito_ro"] == teto_ro                          # limitado ao teto
     assert r["deposito_rr"] == round(valor, 2)                  # abaixo do teto RR
     # Regressão: com a lógica antiga (50%) daria metade do valor → deserto.
     assert r["deposito_ro"] != round(valor * 0.50, 2)

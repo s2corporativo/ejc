@@ -531,13 +531,45 @@ async def test_prescricao_trabalhista_bienal_bissexto():
 # FASE B — 10. Depósito recursal com tabela versionada por vigência
 # ══════════════════════════════════════════════════════════════════════════
 async def test_deposito_recursal_tabela_versionada():
+    # 01/07/2026 cai na faixa do Ato 391/2025 (vigente de 01/08/2025 a 31/07/2026).
     r = await ramos.trab_deposito(valor_condenacao=50_000.0,
                                   data_referencia=date(2026, 7, 1), cu=None)
-    assert r["deposito_ro"] == ramos.TETO_DEPOSITO_RO    # condenação > teto → teto
-    assert r["teto_ro"] == 12_127.64 and r["teto_rr"] == 24_255.28
-    assert "323/2025" in r["fonte"]
+    assert r["deposito_ro"] == 13_813.83    # condenação > teto → teto da faixa
+    assert r["teto_ro"] == 13_813.83 and r["teto_rr"] == 27_627.66
+    assert "391/2025" in r["fonte"]
     assert r["vigencia_tabela"].startswith("2025-08-01")
     _assert_metadados_regra(r)
+
+
+async def test_deposito_recursal_serie_historica_por_data_do_recurso():
+    """Cada Ato do TST vale para o seu período — recurso antigo usa o teto da época.
+
+    Antes desta correção a tabela só tinha uma faixa (com valor que não
+    correspondia a Ato nenhum), então recurso anterior a ago/2025 era recusado.
+    """
+    esperado = [
+        (date(2022, 9, 1), 12_296.38, 24_592.76, "430/2022"),
+        (date(2023, 9, 1), 12_665.14, 25_330.28, "414/2023"),
+        (date(2024, 9, 1), 13_133.46, 26_266.92, "366/2024"),
+        (date(2025, 9, 1), 13_813.83, 27_627.66, "391/2025"),
+        (date(2026, 8, 1), 14_411.57, 28_823.14, "381/2026"),
+    ]
+    for referencia, ro, rr, ato in esperado:
+        r = await ramos.trab_deposito(valor_condenacao=999_999.0,
+                                      data_referencia=referencia, cu=None)
+        assert r["teto_ro"] == ro, f"{referencia}: teto RO divergente"
+        assert r["teto_rr"] == rr, f"{referencia}: teto RR divergente"
+        assert ato in r["fonte"], f"{referencia}: Ato esperado {ato}"
+
+
+async def test_deposito_recursal_virada_de_vigencia_em_1o_de_agosto():
+    """31/07 e 01/08 pertencem a Atos diferentes — a virada não pode escorregar."""
+    vespera = await ramos.trab_deposito(valor_condenacao=999_999.0,
+                                        data_referencia=date(2026, 7, 31), cu=None)
+    virada = await ramos.trab_deposito(valor_condenacao=999_999.0,
+                                       data_referencia=date(2026, 8, 1), cu=None)
+    assert vespera["teto_ro"] == 13_813.83 and "391/2025" in vespera["fonte"]
+    assert virada["teto_ro"] == 14_411.57 and "381/2026" in virada["fonte"]
 
 
 async def test_deposito_recursal_periodo_sem_tabela_422():

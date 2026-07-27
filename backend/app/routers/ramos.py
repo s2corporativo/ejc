@@ -61,17 +61,39 @@ _CENT   = Decimal("0.01")
 # Para atualizar: ADICIONE uma nova faixa no INÍCIO da lista (mais recente
 # primeiro) e feche o `fim` da faixa anterior — nunca edite valores históricos.
 TETOS_DEPOSITO_RECURSAL: list[dict] = [
+    # ATENÇÃO — ATUALIZAÇÃO ANUAL OBRIGATÓRIA: o TST reajusta os limites pela
+    # variação acumulada do INPC/IBGE (julho a junho) e publica um Ato SEGJUD.GP
+    # em meados de julho, com vigência a partir de 1º de agosto. Ao sair o Ato
+    # novo: feche o `fim` da faixa vigente em 31/07 e acrescente a nova faixa
+    # NO TOPO da lista. Conferir sempre em https://www.tst.jus.br/valores-vigentes
+    # (histórico em https://www.tst.jus.br/historico-valores).
+    # Ordem: da mais recente para a mais antiga.
+    {"rotulo": "2026-2027",
+     "inicio": date(2026, 8, 1), "fim": None,   # None = vigente (em aberto)
+     "ro": 14_411.57, "rr": 28_823.14,
+     "fonte": "Ato SEGJUD.GP 381/2026 (INPC/IBGE jul-2025 a jun-2026)"},
     {"rotulo": "2025-2026",
-     "inicio": date(2025, 8, 1), "fim": None,   # None = vigente (em aberto)
-     "ro": 12_127.64, "rr": 24_255.28,
-     "fonte": "Ato TST GP 323/2025 (reajuste anual pelo IPCA-E)"},
+     "inicio": date(2025, 8, 1), "fim": date(2026, 7, 31),
+     "ro": 13_813.83, "rr": 27_627.66,
+     "fonte": "Ato SEGJUD.GP 391/2025 (INPC/IBGE jul-2024 a jun-2025)"},
+    {"rotulo": "2024-2025",
+     "inicio": date(2024, 8, 1), "fim": date(2025, 7, 31),
+     "ro": 13_133.46, "rr": 26_266.92,
+     "fonte": "Ato SEGJUD.GP 366/2024"},
+    {"rotulo": "2023-2024",
+     "inicio": date(2023, 8, 1), "fim": date(2024, 7, 31),
+     "ro": 12_665.14, "rr": 25_330.28,
+     "fonte": "Ato SEGJUD.GP 414/2023"},
+    {"rotulo": "2022-2023",
+     "inicio": date(2022, 8, 1), "fim": date(2023, 7, 31),
+     "ro": 12_296.38, "rr": 24_592.76,
+     "fonte": "Ato SEGJUD.GP 430/2022"},
 ]
 
-# Compatibilidade: constantes apontam para a faixa mais recente da tabela.
-TETO_DEPOSITO_RO = TETOS_DEPOSITO_RECURSAL[0]["ro"]   # Recurso Ordinário
-TETO_DEPOSITO_RR = TETOS_DEPOSITO_RECURSAL[0]["rr"]   # Recurso de Revista
-
-
+# NÃO reintroduzir constantes TETO_DEPOSITO_RO/RR apontando para a faixa mais
+# recente da lista: a faixa nova é cadastrada ANTES de entrar em vigor (o Ato sai
+# em julho e vale a partir de 1º de agosto), então "mais recente" ≠ "vigente" por
+# várias semanas ao ano. Use sempre _teto_deposito_para(<data do recurso>).
 def _teto_deposito_para(referencia: date) -> dict:
     """Faixa de tetos vigente na data de referência; sem tabela p/ o período → 422."""
     for faixa in TETOS_DEPOSITO_RECURSAL:
