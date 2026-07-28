@@ -87,15 +87,13 @@ async def dossie_caso(
     Transparência (HITL): o advogado vê o que será enviado à IA antes de analisar.
     Visibilidade por perfil: advogado comum só acessa seus próprios casos.
     """
-    caso = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    )).scalar_one_or_none()
-    if not caso:
-        raise HTTPException(404, "Caso não encontrado")
-    # Controle de acesso: abaixo de 'socio' só vê o próprio caso
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        if caso.advogado_responsavel_id != cu.id:
-            raise HTTPException(403, "Sem permissão para este caso")
+    # Gate canônico. O gate anterior era artesanal e MAIS ESTRITO que o do
+    # resto do sistema: checava só `advogado_responsavel_id`, então o advogado
+    # AUXILIAR do próprio caso levava 403 no dossiê enquanto acessava todos os
+    # demais endpoints do caso. `verificar_acesso_caso` cobre responsável,
+    # auxiliar e gestão — e trata caso órfão/soft-deleted.
+    from app.core.ownership import verificar_acesso_caso
+    await verificar_acesso_caso(db, cu, case_id)
 
     dossie = await montar_dossie(db, case_id, incluir_pecas=True, sanitizar=True)
     if not dossie:
