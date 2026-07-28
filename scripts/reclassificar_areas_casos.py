@@ -539,7 +539,20 @@ def _validar_itens_rollback(itens: list[dict[str, Any]], caminho: Path) -> None:
 
 
 def reverter(conn, caminho: Path, payload: dict[str, Any], *, lote: int) -> dict[str, Any]:
-    itens = [i for i in payload.get("itens", []) if i.get("area_anterior") and i.get("area_nova")]
+    """Reverte APENAS os itens efetivamente aplicados (`aplicado_em` preenchido).
+
+    Antes, o rollback percorria todos os itens PLANEJADOS. Quando o UPDATE de um
+    item afetava 0 linhas — porque outra transação alterou a área entre a
+    simulação e a aplicação —, ele era contado como ignorado, mas o rollback
+    ainda assim tentava devolvê-lo à área antiga, DESFAZENDO alteração legítima
+    de terceiro. O filtro por `aplicado_em` fecha essa janela.
+    """
+    planejados = [i for i in payload.get("itens", []) if i.get("area_anterior") and i.get("area_nova")]
+    itens = [i for i in planejados if i.get("aplicado_em")]
+    nao_aplicados = len(planejados) - len(itens)
+    if nao_aplicados:
+        _linha(f"  {nao_aplicados} item(ns) planejado(s) mas NÃO aplicado(s) — fora do rollback "
+               f"(a área pode ter sido alterada por outra operação).")
 
     revertidos = ignorados = 0
     with conn.cursor() as cur:
@@ -587,6 +600,22 @@ def confirmar_interativo(quantidade: int, banco: str) -> bool:
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
+def _inteiro_nao_negativo(valor: str) -> int:
+    """`--limite` só aceita inteiro >= 0.
+
+    Sem isso, `--limite -1` virava `elegiveis[:-1]` e AUTORIZAVA quase todo o
+    conjunto em vez de restringi-lo — perigoso combinado com `--sem-interacao`.
+    """
+    try:
+        n = int(valor)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"esperado um inteiro, recebido {valor!r}") from None
+    if n < 0:
+        raise argparse.ArgumentTypeError(
+            f"--limite não pode ser negativo (recebido {n}). Use 0 para não aplicar nada.")
+    return n
+
+
 def construir_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="reclassificar_areas_casos.py",
@@ -612,7 +641,7 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("--confirmo-backup", metavar="REF",
                    help="Referência do backup já verificado (arquivo/ID). "
                         "Vai para o log e para o arquivo de rollback.")
-    p.add_argument("--limite", type=int, metavar="N",
+    p.add_argument("--limite", type=_inteiro_nao_negativo, metavar="N",
                    help="Aplica no máximo N casos (os demais ficam para depois).")
     p.add_argument("--lote", type=int, default=200, metavar="N",
                    help="Commit a cada N casos (padrão: 200).")

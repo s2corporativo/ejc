@@ -135,7 +135,12 @@ _VERSAO_REGRA = "2026-07"
 # OpenAPI/Swagger) + cabeçalhos RFC 8594 (`Deprecation`/`Sunset`/`Link`) e
 # campos na resposta. A remoção física é da Onda 5 e depende da telemetria de
 # uso (services/route_usage.py) apontar 30-60 dias sem chamadas.
-_SUNSET_DUPLICATAS = "Tue, 30 Jun 2026 23:59:59 GMT"
+# Data-alvo do desligamento anunciado nos cabeçalhos RFC 8594. DEVE SER FUTURA:
+# um Sunset no passado diz ao cliente que a rota já saiu, enquanto ela segue no
+# ar aguardando a janela de telemetria — anúncio incoerente e ignorado.
+# REVISAR quando a telemetria (services/route_usage.py) autorizar a remoção:
+# a data deve acompanhar a janela real de 30-60 dias de uso zero, não ficar fixa.
+_SUNSET_DUPLICATAS = "Thu, 31 Dec 2026 23:59:59 GMT"
 _DUPLICATAS_DEPRECIADAS: dict[str, str] = {
     "/penal/ferramentas/prescricao-punitiva": "/penal/ferramentas/prescricao-penal",
     "/admin-esp/ferramentas/recurso-multa-transito": "/transito/ferramentas/prazos-recurso",
@@ -1929,20 +1934,31 @@ async def familia_debito_alimentos(
     if valor_parcela is not None and valor_parcela <= 0:
         raise HTTPException(422, "valor_parcela deve ser maior que zero.")
     parcelas.sort()
-    corte = _add_meses_data(data_ajuizamento_execucao, -3)
-    rito_prisao = [p for p in parcelas if p >= corte]        # 3 meses anteriores + vincendas
-    rito_expropriacao = [p for p in parcelas if p < corte]
+    # Súm. 309 STJ + CPC art. 528 §7º: são as TRÊS PRESTAÇÕES anteriores ao
+    # ajuizamento — contagem por PARCELA, não por intervalo de calendário. O
+    # corte por "-3 meses" errava nos dois sentidos: com vencimento dia 05 e
+    # ajuizamento em 31/07, a parcela de 05/04 (a terceira anterior, coberta)
+    # caía em expropriação; e em cronogramas não mensais (quinzenal, trimestral)
+    # a janela de 3 meses captura mais ou menos de 3 prestações.
+    vencidas = [p for p in parcelas if p <= data_ajuizamento_execucao]
+    vincendas = [p for p in parcelas if p > data_ajuizamento_execucao]
+    tres_ultimas = vencidas[-3:]                 # as 3 mais recentes ANTES do ajuizamento
+    rito_prisao = sorted(tres_ultimas + vincendas)
+    rito_expropriacao = vencidas[:-3]            # as demais, mais antigas
     out: dict = {
         "data_ajuizamento_execucao": data_ajuizamento_execucao,
-        "marco_corte_3_meses": corte,
+        "criterio_selecao": ("as 3 PRESTAÇÕES vencidas mais recentes na data do ajuizamento "
+                             "(Súm. 309 STJ), somadas às vincendas — não é janela de 3 meses"),
+        "parcelas_vencidas_no_ajuizamento": len(vencidas),
+        "parcelas_vincendas": len(vincendas),
         "parcelas_rito_prisao": rito_prisao,
         "parcelas_rito_expropriacao": rito_expropriacao,
         "descricao_ritos": {
-            "prisao": ("Parcelas vencidas nos 3 meses anteriores ao ajuizamento + as vencidas no "
-                       "curso do processo — cumprimento sob pena de prisão (CPC art. 528 §§3º e "
-                       "7º; Súm. 309 STJ)."),
-            "expropriacao": ("Parcelas anteriores ao trimestre que precede o ajuizamento — "
-                             "execução por penhora/expropriação (CPC art. 528 §8º c/c art. 831)."),
+            "prisao": ("As 3 últimas prestações vencidas antes do ajuizamento + as que "
+                       "vencerem no curso do processo — cumprimento sob pena de prisão "
+                       "(CPC art. 528 §§3º e 7º; Súm. 309 STJ)."),
+            "expropriacao": ("Prestações anteriores a essas três — execução por penhora/"
+                             "expropriação (CPC art. 528 §8º c/c art. 831)."),
         },
         "fontes": [
             "CPC (Lei 13.105/2015) art. 528 §§3º, 7º e 8º",
@@ -2558,7 +2574,6 @@ async def penal_dosimetria(
 
 # ── Trabalhista: horas extras (divisor explícito + componentes opcionais) ─────
 @router.get("/trabalhista-esp/ferramentas/horas-extras")   # rota CANÔNICA
-@router.get("/trabalhista/ferramentas/horas-extras", deprecated=True)   # alias legado (compat vitrine)
 async def trabalhista_horas_extras(
     salario_mensal: float = Query(..., gt=0),
     horas_extras_mes: float = Query(..., ge=0),
@@ -2620,6 +2635,37 @@ async def trabalhista_horas_extras(
         "aviso": ("MINUTA — revisão humana obrigatória. Estimativa mensal simples; conferir "
                   "norma coletiva (divisor, percentual e base) e verbas habituais integrantes."),
     }
+
+
+@router.get("/trabalhista/ferramentas/horas-extras", deprecated=True)
+async def trabalhista_horas_extras_alias(
+    response: Response,
+    salario_mensal: float = Query(..., gt=0),
+    horas_extras_mes: float = Query(..., ge=0),
+    divisor: int = Query(..., description="Divisor de horas: 220 (44h/sem), 200 (40h — Súm. 431 TST), 180 (36h) ou o da norma coletiva"),
+    percentual_he: float = 50.0,
+    incluir_dsr: str = Query(..., description="sim | nao — DSR de 1/6 sobre as HE"),
+    incluir_reflexo_fgts: str = Query(..., description="sim | nao — FGTS de 8% sobre HE+DSR"),
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Alias DEPRECIADO de /trabalhista-esp/ferramentas/horas-extras.
+
+    Handler próprio (e não decorator empilhado) porque o alias precisa do
+    ``Response`` para emitir os cabeçalhos RFC 8594 — empilhado, o mesmo handler
+    servia os dois paths sem distinguir a origem e o alias saía sem
+    ``Deprecation``/``Sunset``/``Link``, diferente das outras duas duplicatas.
+    O cálculo é o da rota canônica: delega, não duplica.
+    """
+    return _marcar_depreciada(
+        "/trabalhista/ferramentas/horas-extras",
+        await trabalhista_horas_extras(
+            salario_mensal=salario_mensal, horas_extras_mes=horas_extras_mes,
+            divisor=divisor, percentual_he=percentual_he, incluir_dsr=incluir_dsr,
+            incluir_reflexo_fgts=incluir_reflexo_fgts, cu=cu,
+        ),
+        response,
+    )
+
 
 
 # ── Empresarial: juros de mora (CC art. 406, red. Lei 14.905/2024) ────────────

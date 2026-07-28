@@ -931,14 +931,22 @@ async def test_analise_juros_sem_booleano_de_abusividade():
 # FASE C — 20. Família: débito de alimentos por parcela (rito CPC 528 §7º)
 # ══════════════════════════════════════════════════════════════════════════
 async def test_debito_alimentos_separa_ritos():
+    """Revisão do Codex (P1-A): a seleção é das 3 PRESTAÇÕES anteriores ao
+    ajuizamento (Súm. 309 STJ), não de uma janela de 3 meses de calendário.
+    Aqui: vencidas em 05/08/25, 05/01/26 e 05/02/26 (ajuizamento 10/03/26) — as
+    três mais recentes são 05/08? não: são as 3 últimas vencidas, e 05/04/26 é
+    VINCENDA, sempre no rito de prisão."""
     r = await ramos.familia_debito_alimentos(
         datas_vencimento_em_aberto="2025-08-05,2026-01-05,2026-02-05,2026-04-05",
         data_ajuizamento_execucao=date(2026, 3, 10), valor_parcela=1_000.0, cu=None)
-    assert r["marco_corte_3_meses"] == date(2025, 12, 10)
-    assert r["parcelas_rito_prisao"] == [date(2026, 1, 5), date(2026, 2, 5), date(2026, 4, 5)]
-    assert r["parcelas_rito_expropriacao"] == [date(2025, 8, 5)]
-    assert r["valores"]["debito_rito_prisao"] == 3_000.0
-    assert r["valores"]["debito_rito_expropriacao"] == 1_000.0
+    assert "marco_corte_3_meses" not in r
+    # 3 vencidas (todas elas) + 1 vincenda → nada sobra para expropriação.
+    assert r["parcelas_rito_prisao"] == [date(2025, 8, 5), date(2026, 1, 5),
+                                         date(2026, 2, 5), date(2026, 4, 5)]
+    assert r["parcelas_rito_expropriacao"] == []
+    assert r["parcelas_vincendas"] == 1
+    assert r["valores"]["debito_rito_prisao"] == 4_000.0
+    assert r["valores"]["debito_rito_expropriacao"] == 0.0
     _assert_metadados_regra(r)
 
 
@@ -1134,15 +1142,18 @@ def test_add_meses_preserva_dia_ou_usa_ultimo_do_mes(origem, meses, esperado):
     assert ramos._add_meses_data(origem, meses) == esperado
 
 
-async def test_alimentos_corte_fim_de_mes_nao_infla_rito_prisao():
-    """Ajuizamento em 31/07/2026 → corte 30/04/2026. A parcela de 29/04 é
-    ANTERIOR ao corte: vai para expropriação (antes ia para prisão civil)."""
+async def test_alimentos_selecao_independe_do_calendario():
+    """Este teste nasceu do fix de datas (fim de mês) e assumia o corte por
+    -3 meses. Com a regra correta (P1-A) o calendário deixa de importar: com
+    apenas 3 parcelas vencidas, TODAS são as três anteriores ao ajuizamento e
+    vão para o rito de prisão — inclusive a de 29/04, que o corte por 30/04
+    empurrava indevidamente para expropriação."""
     r = await ramos.familia_debito_alimentos(
         datas_vencimento_em_aberto="2026-04-29,2026-05-05,2026-06-05",
         data_ajuizamento_execucao=date(2026, 7, 31), cu=None)
-    assert r["marco_corte_3_meses"] == date(2026, 4, 30)
-    assert date(2026, 4, 29) in r["parcelas_rito_expropriacao"]
-    assert date(2026, 4, 29) not in r["parcelas_rito_prisao"]
+    assert "marco_corte_3_meses" not in r
+    assert date(2026, 4, 29) in r["parcelas_rito_prisao"]
+    assert r["parcelas_rito_expropriacao"] == []
 
 
 async def test_prescricao_penal_data_estimada_coerente_com_intervalo():

@@ -98,6 +98,12 @@ RETENCAO_DIAS = 90            # janela declarada é de 30-60 dias; expurgo acima
 _lock = threading.Lock()
 # {(rota, metodo, papel, hora_iso): contagem}
 _contadores: dict[tuple[str, str, str, str], int] = {}
+# Lote DRENADO e ainda não commitado. Fica visível para `snapshot()` até o COMMIT
+# (P2-F): entre `_drenar()` e o commit, o bucket não está mais na memória nem
+# ainda no banco — uma leitura nessa janela reportaria `sem_uso_no_periodo` para
+# rota realmente usada, que é justamente o falso zero que autoriza remoção
+# indevida. Some-se, nunca se perca.
+_em_voo: dict[tuple[str, str, str, str], int] = {}
 
 
 def _normalizar(path: str) -> str:
@@ -126,9 +132,16 @@ def registrar(path_template: str, metodo: str, papel: str | None) -> None:
 
 
 def snapshot() -> list[dict]:
-    """Fotografia dos contadores acumulados (sem zerar)."""
+    """Fotografia dos contadores acumulados (sem zerar).
+
+    Soma o dict corrente e o lote "em voo" (drenado, aguardando commit), para
+    que nenhuma leitura caia na janela de falso zero do flush (P2-F).
+    """
     with _lock:
-        itens = sorted(_contadores.items())
+        combinado: dict[tuple[str, str, str, str], int] = dict(_contadores)
+        for chave, contagem in _em_voo.items():
+            combinado[chave] = combinado.get(chave, 0) + contagem
+        itens = sorted(combinado.items())
     return [
         {"rota": r, "metodo": m, "papel": p, "hora": h, "contagem": n,
          "motivo": ROTAS_MONITORADAS.get(r, "")}
@@ -187,11 +200,28 @@ def _montar_agregado(linhas: list[dict], desde_iso: str | None) -> dict:
 
 
 def _drenar() -> list[tuple[tuple[str, str, str, str], int]]:
-    """Retira os contadores da memória para persistir (operação atômica)."""
+    """Move os contadores para o buffer "em voo" (atômico).
+
+    Não os torna invisíveis: `snapshot()` soma memória + em voo, de modo que a
+    leitura concorrente nunca enxergue zero para uma rota com uso registrado.
+    """
     with _lock:
         itens = list(_contadores.items())
+        for chave, contagem in itens:
+            _em_voo[chave] = _em_voo.get(chave, 0) + contagem
         _contadores.clear()
     return itens
+
+
+def _descartar_em_voo(itens: list[tuple[tuple[str, str, str, str], int]]) -> None:
+    """Retira do buffer o lote já COMMITADO (a partir daí o banco é a fonte)."""
+    with _lock:
+        for chave, contagem in itens:
+            restante = _em_voo.get(chave, 0) - contagem
+            if restante > 0:
+                _em_voo[chave] = restante
+            else:
+                _em_voo.pop(chave, None)
 
 
 async def flush() -> dict:
@@ -228,6 +258,8 @@ async def flush() -> dict:
                 )
                 await db.execute(stmt)
             await db.commit()
+        # Commit efetivado: a partir daqui o banco responde por estes buckets.
+        _descartar_em_voo(itens)
         eventos = sum(n for _, n in itens)
         logger.info("Telemetria de rotas: %d bucket(s), %d evento(s) persistidos",
                     len(itens), eventos)
@@ -238,6 +270,7 @@ async def flush() -> dict:
         # Exception, a janela drenada evaporava em silêncio. Restauramos primeiro
         # e só então repropagamos o cancelamento.
         descartados = 0
+        _descartar_em_voo(itens)   # sai do buffer; volta para o dict logo abaixo
         with _lock:            # devolve para a memória: nada se perde
             for chave, contagem in itens:
                 if len(_contadores) >= _MAX_ENTRADAS and chave not in _contadores:
@@ -340,9 +373,13 @@ async def agregado_persistido(desde: datetime | None = None) -> dict:
 
 
 def resetar() -> None:
-    """Zera os contadores (uso administrativo/teste)."""
+    """Zera os contadores E o buffer em voo (uso administrativo/teste).
+
+    Limpar só `_contadores` deixaria lote em voo vazando entre testes.
+    """
     with _lock:
         _contadores.clear()
+        _em_voo.clear()
 
 
 async def expurgar_antigos(dias: int = RETENCAO_DIAS) -> dict:
