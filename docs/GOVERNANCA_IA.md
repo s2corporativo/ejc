@@ -14,7 +14,15 @@ operacional existe se não estiver em uma Issue, em um Pull Request, em um comen
 review ou em um documento versionado do repositório. Conversas de chat não são registro:
 são rascunho até virarem um desses quatro artefatos.
 
-Não há comunicação direta entre agentes de IA. Toda troca acontece por meio do GitHub.
+**Não há comunicação direta entre os papéis de governança.** ChatGPT, Claude Code e Codex
+trocam informação exclusivamente por Issue, Pull Request, comentário de review e documento
+versionado — nunca por canal privado entre si.
+
+Isso **não** se aplica aos subagentes internos do repositório (`ejc`, `backend-fastapi`,
+`frontend-react`, `db-migrations`, `security-auditor`, `qa-tests`, `code-reviewer`,
+`verifier`, `simplifier`, listados em `CLAUDE.md`). Eles são **ferramentas do executor**, não
+papéis de governança: o executor os aciona diretamente, e o resultado deles entra no PR sob a
+responsabilidade do executor — quem responde pelo trabalho continua sendo um só.
 
 ## 2. Papéis
 
@@ -90,10 +98,23 @@ ChatGPT  → autoriza o merge (com o titular)
 Duas frentes só podem correr em paralelo quando **todas** as condições valem:
 
 1. os conjuntos de arquivos são disjuntos (conferido por `git diff --name-only`);
-2. nenhuma das duas cria migration, ou as migrations estão reservadas em ordem em
-   `backend/alembic/MIGRATION_RESERVATIONS.md`;
+2. **nenhuma das duas cria migration** — frente com migration é sempre sequencial (ver abaixo);
 3. não compartilham contrato de API (schema, rota, nome de campo);
 4. não compartilham a mesma regra jurídica.
+
+### Migration: uma frente por vez, sem exceção
+
+Só uma frente com migration corre por vez. Não é preferência de processo — é o que o CI
+permite: o job de backend roda `alembic upgrade head` antes dos testes, e uma migration que
+aponta para uma revisão ainda não mesclada não encontra o arquivo do pai numa branch tirada
+da `main`. O PR simplesmente não fica verde. A guarda
+`backend/tests/test_migration_numbering_guard.py` recusa `down_revision` inexistente pela
+mesma razão.
+
+Na prática: reservar o número em `MIGRATION_RESERVATIONS.md` **garante o lugar na fila**, não
+o direito de desenvolver em paralelo. A segunda frente espera o merge da primeira e rebaseia
+sobre a `main` atualizada. Branch empilhada (partir da branch da primeira em vez da `main`)
+não é suportada hoje e não deve ser improvisada.
 
 Se qualquer condição falhar, as frentes são **sequenciais** — a segunda começa depois do
 merge da primeira, rebaseada sobre a `main` atualizada.

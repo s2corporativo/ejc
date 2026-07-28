@@ -36,10 +36,22 @@ Aplicável a cada merge na `main` e a cada deploy em produção. Regras canônic
 
 ## 3. Durante o deploy
 
-- [ ] `scripts/deploy_vps_safe.sh` (backup → build → health-poll → migrations/seeds →
-      rollback automático em erro).
-- [ ] Health check da API e do frontend respondendo.
+Ordem real do `scripts/deploy_vps_safe.sh`:
+
+```
+backup (prova local cifrada + offsite) → build das imagens → alembic upgrade head
+  → sobe o backend novo → health-poll em /api/health → worker → seeds
+```
+
+- [ ] `scripts/deploy_vps_safe.sh` executado (não fazer as etapas à mão).
 - [ ] Migrations aplicadas sem erro; head confere com o esperado.
+- [ ] Health check da API e do frontend respondendo.
+
+> **A migration roda ANTES do health-poll.** Se o health check falhar, o rollback automático
+> restaura as **imagens**, não o **schema** — o banco já está migrado. É por isso que toda
+> migration precisa ser retrocompatível com a versão anterior do código: é a única coisa que
+> torna o rollback seguro. Migration destrutiva ou incompatível transforma um rollback de
+> rotina em restauração de backup.
 
 ## 4. Depois do deploy
 

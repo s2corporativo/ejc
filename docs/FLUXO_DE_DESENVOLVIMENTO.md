@@ -66,7 +66,8 @@ Critérios de aceite:
 1. `git checkout main && git pull --ff-only`
 2. Listar PRs abertos e verificar sobreposição de arquivos:
    `git diff --name-only origin/main...origin/<branch-do-PR>`
-3. Se a tarefa mexe em banco: conferir o head (`python -m alembic heads`) e reservar o
+3. Se a tarefa mexe em banco: conferir o head (`cd backend && python -m alembic heads` —
+   o `alembic.ini` está em `backend/`, o comando falha a partir da raiz) e reservar o
    número em `backend/alembic/MIGRATION_RESERVATIONS.md`.
 4. Reproduzir o problema e registrar o diagnóstico na Issue.
 5. Criar a branch: `git checkout -b fix/014-prazo-trabalhista`.
@@ -84,8 +85,9 @@ do outro, ou o titular decide qual das duas frentes segue (`docs/GOVERNANCA_IA.m
 Validações locais mínimas:
 
 ```bash
-cd backend  && pytest && ruff check app
-cd frontend && npm run lint && npm test && npm run build
+# Cada grupo em um subshell — sem isso o segundo `cd` parte de dentro de backend/.
+( cd backend  && pytest && ruff check app )
+( cd frontend && npm run lint && npm test && npm run build )
 ```
 
 ## Etapa 4 — Pull Request
@@ -121,12 +123,20 @@ titular. Merge e deploy são atos humanos.
 
 ## Ambientes
 
-```
-/opt/ejc/
-├── production/    produção — nenhum agente trabalha aqui
-├── staging/       homologação
-└── development/   trabalho do agente
-```
+**`/opt/ejc` na VPS é a produção.** Não existe subdiretório `production/`: o
+`deploy-vps.yml` sincroniza o checkout aprovado direto em `/opt/ejc` e o
+`scripts/deploy_vps_safe.sh` roda ali mesmo, assim como os scripts de backup e os runbooks.
+Qualquer comando executado nesse caminho toca produção.
 
-O agente nunca opera no diretório de produção, contra o banco de produção nem com `.env`
-real desnecessariamente disponível.
+| Caminho | O que é | Quem opera |
+|---|---|---|
+| `/opt/ejc` (VPS) | **produção** — código, `.env` real, banco e uploads | somente o deploy automatizado, autorizado pelo titular |
+| clone próprio do agente (máquina de dev, ou outro diretório da VPS) | desenvolvimento | o agente |
+| stack local via `docker compose` com massa fictícia | homologação | o agente |
+
+Não há hoje um diretório de staging permanente na VPS. Enquanto não houver, a homologação
+acontece em stack local com dados fictícios — e isso precisa ser dito no PR, para que ninguém
+leia "homologado" como "testado em ambiente equivalente ao de produção".
+
+O agente nunca opera em `/opt/ejc`, nunca aponta para o banco de produção e não mantém `.env`
+real disponível sem necessidade.
