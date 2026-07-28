@@ -231,6 +231,11 @@ function tipoCfg(tipo: ItemType) {
   return TIPO_CONFIG[tipo] ?? TIPO_CONFIG.compromisso;
 }
 
+/** Teto do endpoint /deadlines/ (Query(le=200) no backend). */
+const PRAZOS_PAGE_SIZE = 200;
+/** Teto de páginas do enriquecimento de prazos (200 × 10 = 2.000 prazos). */
+const PRAZOS_MAX_PAGINAS = 10;
+
 function apiErro(e: unknown, fallback: string): string {
   const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
     ?.data?.detail;
@@ -966,7 +971,9 @@ export default function CentralAtividades() {
       const [ativ, agendaR, prazosR] = await Promise.allSettled([
         api.get("/atividades", { params: { apenas_pendentes: false } }),
         api.get("/agenda-eventos/", { params: { page_size: 500 } }),
-        api.get("/deadlines/", { params: { status: "", page_size: 200 } }),
+        api.get("/deadlines/", {
+          params: { status: "", page: 1, page_size: PRAZOS_PAGE_SIZE },
+        }),
       ]);
       if (ativ.status !== "fulfilled") {
         setError(true);
@@ -976,8 +983,42 @@ export default function CentralAtividades() {
       if (agendaR.status === "fulfilled")
         asList(agendaR.value.data).forEach((a: any) => (agendaMap[a.id] = a));
       const prazoMap: Record<string, any> = {};
-      if (prazosR.status === "fulfilled")
+      if (prazosR.status === "fulfilled") {
         asList(prazosR.value.data).forEach((p: any) => (prazoMap[p.id] = p));
+        // /deadlines/ pagina em no máximo 200 por página e ordena pelo prazo
+        // mais antigo: com mais de uma página, os prazos recentes ficariam sem
+        // `confirmado` e o botão "Confirmar" sumiria justo nos rascunhos de IA
+        // novos. Busca as páginas restantes EM PARALELO e para assim que todos
+        // os prazos do feed estiverem cobertos (ou no teto de páginas).
+        const total = Number(prazosR.value.data?.total ?? 0);
+        const idsFeed = new Set<string>(
+          asList(ativ.value.data)
+            .filter((a: any) => a.tipo === "prazo")
+            .map((a: any) => a.id),
+        );
+        const faltam = [...idsFeed].some((id) => !prazoMap[id]);
+        const paginas = Math.min(
+          Math.ceil(total / PRAZOS_PAGE_SIZE),
+          PRAZOS_MAX_PAGINAS,
+        );
+        if (faltam && paginas > 1) {
+          const extras = await Promise.allSettled(
+            Array.from({ length: paginas - 1 }, (_, i) =>
+              api.get("/deadlines/", {
+                params: {
+                  status: "",
+                  page: i + 2,
+                  page_size: PRAZOS_PAGE_SIZE,
+                },
+              }),
+            ),
+          );
+          extras.forEach((r) => {
+            if (r.status === "fulfilled")
+              asList(r.value.data).forEach((p: any) => (prazoMap[p.id] = p));
+          });
+        }
+      }
 
       const all: Activity[] = asList(ativ.value.data).map((a: any) => {
         const bruto: string = a.tipo;

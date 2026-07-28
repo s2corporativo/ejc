@@ -3215,3 +3215,28 @@ for (const slug of Object.keys(RAMOS)) {
 }
 
 export const RAMOS_LISTA_FINAL = Object.values(RAMOS);
+
+/**
+ * Ramos que oferecem ferramentas para a área de um caso.
+ *
+ * DERIVADO de `RAMOS` (`areaCaso` + `areasLegadas`) de propósito: manter uma
+ * segunda lista à mão foi o que quebrou a aba de ferramentas do caso quando a
+ * área canônica deixou de ser achatada — o mapa manual só conhecia as áreas
+ * antigas e o caso bancário novo (`area: "bancario"`) não casava com nada.
+ *
+ * Ordem: primeiro os ramos cuja área canônica é esta; depois os que a atendem
+ * como área legada (casos históricos gravados antes da correção de taxonomia).
+ * Ramos sem ferramentas ficam de fora — não têm o que renderizar.
+ */
+export function ramosDaArea(area?: string | null): RamoConfig[] {
+  if (!area) return [];
+  const comFerramentas = RAMOS_LISTA_FINAL.filter(
+    (cfg) => cfg.ferramentas.length > 0,
+  );
+  return [
+    ...comFerramentas.filter((cfg) => cfg.areaCaso === area),
+    ...comFerramentas.filter(
+      (cfg) => cfg.areaCaso !== area && (cfg.areasLegadas ?? []).includes(area),
+    ),
+  ];
+}

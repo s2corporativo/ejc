@@ -11,7 +11,7 @@ import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
 import AnaliseEstrategica from "../../components/AnaliseEstrategica";
 import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
-import { RAMOS } from "../ramos/ramosConfig";
+import { ramosDaArea } from "../ramos/ramosConfig";
 import type { FerramentaConfig } from "../ramos/ramosConfig";
 import {
   camposVisiveis,
@@ -19,17 +19,9 @@ import {
   paramsVisiveis,
 } from "../ramos/camposCondicionais";
 
-const AREA_PARA_RAMO: Record<string, string[]> = {
-  empresarial: ["empresarial"],
-  civil: ["civel", "bancario"],
-  criminal: ["penal"],
-  trabalhista: ["trabalhista"],
-  tributario: ["administrativo"],
-  ambiental: ["administrativo"],
-  consumidor: ["civel"],
-  familia: ["civel"],
-  previdenciario: [],
-};
+// O mapa área → ramos vem de `ramosDaArea()` (derivado de RAMOS). A lista
+// manual que existia aqui só conhecia as áreas antigas e deixava a aba vazia
+// para casos criados nos hubs cuja área deixou de ser achatada.
 
 function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
   function rotulo(v: string) {
@@ -455,9 +447,8 @@ function ResultadoContratoIA({ data }: { data: any }) {
 }
 
 export default function TabFerramentas({ caso }: { caso: Case }) {
-  const slugs = AREA_PARA_RAMO[caso.area] ?? [];
-  const configs = slugs.map((s) => RAMOS[s]).filter(Boolean);
-  const [ramoAtivo, setRamoAtivo] = React.useState(slugs[0] ?? "");
+  const configs = React.useMemo(() => ramosDaArea(caso.area), [caso.area]);
+  const [ramoAtivo, setRamoAtivo] = React.useState("");
   const cfg = configs.find((c) => c.slug === ramoAtivo) ?? configs[0];
 
   // Agrupar ferramentas por grupo
