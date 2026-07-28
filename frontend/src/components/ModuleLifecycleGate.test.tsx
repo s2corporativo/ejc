@@ -10,18 +10,25 @@ const estado = {
   settings: {} as Record<string, ModuleLifecycleOverride>,
   loaded: false,
   load: vi.fn(async () => {}),
+  liberarPorTimeout: vi.fn(),
 };
+
+const TIMEOUT_MS = 8000;
 
 vi.mock("../stores/moduleLifecycle", () => ({
   useModuleLifecycleStore: () => estado,
+  MODULE_LIFECYCLE_TIMEOUT_MS: 8000,
 }));
 
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   estado.loaded = false;
   estado.settings = {};
+  estado.load.mockClear();
+  estado.liberarPorTimeout.mockClear();
 });
 
 function renderGate() {
@@ -47,5 +54,25 @@ describe("ModuleLifecycleGate — FLX-023 (não montar página antes do lifecycl
     estado.loaded = true;
     renderGate();
     expect(screen.getByTestId("pagina")).toBeTruthy();
+  });
+
+  it("libera pelo fallback quando o request fica pendente além do teto", () => {
+    vi.useFakeTimers();
+    renderGate();
+    expect(estado.liberarPorTimeout).not.toHaveBeenCalled();
+    // Request nunca respondeu: o gate não pode segurar o <Outlet/> global.
+    vi.advanceTimersByTime(TIMEOUT_MS);
+    expect(estado.liberarPorTimeout).toHaveBeenCalledTimes(1);
+    // Sem loop: passado o limite, nada mais é reagendado.
+    vi.advanceTimersByTime(TIMEOUT_MS * 3);
+    expect(estado.liberarPorTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it("não agenda fallback quando o lifecycle já carregou", () => {
+    vi.useFakeTimers();
+    estado.loaded = true;
+    renderGate();
+    vi.advanceTimersByTime(TIMEOUT_MS * 2);
+    expect(estado.liberarPorTimeout).not.toHaveBeenCalled();
   });
 });

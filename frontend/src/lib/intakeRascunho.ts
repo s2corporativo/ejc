@@ -49,6 +49,51 @@ export interface IntakeRascunho {
   salvoEm: number;
 }
 
+/**
+ * Pendência de um caso JÁ criado cujo vínculo/anexo dos documentos falhou.
+ * O `File` não sobrevive ao reload — quando ausente, só o vínculo por lote
+ * (`batchId`) pode ser refeito; o arquivo único é reanexado pela GED.
+ */
+export interface IntakePendencia {
+  caseId: string;
+  caseTitulo: string;
+  arquivo?: File;
+  tituloDoc: string;
+  tipoDoc?: string;
+  clientId?: string;
+  batchId?: string;
+}
+
+/**
+ * Reconstrói a pendência a partir do rascunho restaurado — é o que impede a
+ * retomada de recriar o caso: com `caseId` gravado, o caso EXISTE e o fluxo
+ * precisa seguir do vínculo/anexo em diante, nunca de um novo POST /cases/.
+ *
+ * Retorna null quando não há o que retomar: sem `caseId` (nada foi criado),
+ * com `uploadFeito` (vínculo já concluído — ex.: revisão de extração pendente)
+ * ou sem documento algum a vincular (lote/arquivo), caso em que a recuperação
+ * cabe ao fluxo de `?revisao=`.
+ */
+export function pendenciaDeRascunho(
+  rascunho: IntakeRascunho | null,
+): IntakePendencia | null {
+  if (!rascunho?.caseId) return null;
+  if (rascunho.uploadFeito) return null;
+  if (!rascunho.batchId && !rascunho.arquivoNome) return null;
+  const titulo =
+    (typeof rascunho.form?.titulo === "string" && rascunho.form.titulo) ||
+    rascunho.tituloDoc ||
+    "caso";
+  return {
+    caseId: rascunho.caseId,
+    caseTitulo: titulo,
+    tituloDoc: rascunho.tituloDoc || rascunho.arquivoNome || titulo,
+    tipoDoc: rascunho.arquivoTipo ?? undefined,
+    clientId: rascunho.clientId ?? undefined,
+    batchId: rascunho.batchId ?? undefined,
+  };
+}
+
 /** localStorage de forma tolerante (modo privado/SSR podem lançar). */
 function storage(): Storage | null {
   try {

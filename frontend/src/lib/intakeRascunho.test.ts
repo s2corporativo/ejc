@@ -7,6 +7,7 @@ import {
   carregarRascunho,
   atualizarRascunho,
   limparRascunho,
+  pendenciaDeRascunho,
 } from "./intakeRascunho";
 
 /** Reescreve o `salvoEm` do rascunho persistido (simula passagem de tempo). */
@@ -156,6 +157,76 @@ describe("intakeRascunho", () => {
       expect(lido.batchId).toBe("b1");
       expect(lido.arquivoNome).toBeNull();
       expect(lido.caseId).toBe("c9");
+    });
+  });
+
+  describe("pendenciaDeRascunho (retomar × recriar)", () => {
+    it("com caseId e lote: retoma o caso existente (nunca recria)", () => {
+      salvarRascunho({
+        form: { titulo: "Lote da Silva" },
+        batchId: "b1",
+        caseId: "c1",
+        clientId: "cli-1",
+        uploadFeito: false,
+      });
+      const p = pendenciaDeRascunho(carregarRascunho());
+      expect(p).toEqual({
+        caseId: "c1",
+        caseTitulo: "Lote da Silva",
+        tituloDoc: "Lote da Silva",
+        tipoDoc: undefined,
+        clientId: "cli-1",
+        batchId: "b1",
+      });
+    });
+
+    it("com caseId e arquivo único: retoma sem o File (perdido no reload)", () => {
+      salvarRascunho({
+        form: { titulo: "Ação X" },
+        arquivoNome: "peticao.pdf",
+        arquivoTipo: "peticao",
+        tituloDoc: "Ação X",
+        caseId: "c2",
+        uploadFeito: false,
+      });
+      const p = pendenciaDeRascunho(carregarRascunho())!;
+      expect(p.caseId).toBe("c2");
+      expect(p.batchId).toBeUndefined();
+      expect(p.arquivo).toBeUndefined();
+      expect(p.tipoDoc).toBe("peticao");
+    });
+
+    it("sem caseId (caso ainda não criado) não vira pendência — cria normalmente", () => {
+      salvarRascunho({
+        form: { titulo: "Ação Y" },
+        batchId: "b2",
+        caseId: null,
+      });
+      expect(pendenciaDeRascunho(carregarRascunho())).toBeNull();
+    });
+
+    it("com uploadFeito (vínculo concluído) não vira pendência", () => {
+      salvarRascunho({
+        form: { titulo: "Ação Z" },
+        batchId: "b3",
+        caseId: "c3",
+        uploadFeito: true,
+      });
+      expect(pendenciaDeRascunho(carregarRascunho())).toBeNull();
+    });
+
+    it("sem documento a vincular (só extração) fica com o fluxo de ?revisao=", () => {
+      salvarRascunho({
+        form: { titulo: "Ação W" },
+        extracao: { partes: { autor: "Fulano" } },
+        caseId: "c4",
+        uploadFeito: false,
+      });
+      expect(pendenciaDeRascunho(carregarRascunho())).toBeNull();
+    });
+
+    it("tolera rascunho ausente", () => {
+      expect(pendenciaDeRascunho(null)).toBeNull();
     });
   });
 

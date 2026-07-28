@@ -2,7 +2,10 @@ import { useEffect } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Route } from "lucide-react";
 import { lifecycleForPath, safeReplacementRoute } from "../lib/moduleLifecycle";
-import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
+import {
+  MODULE_LIFECYCLE_TIMEOUT_MS,
+  useModuleLifecycleStore,
+} from "../stores/moduleLifecycle";
 import { Spinner } from "./UI";
 
 export default function ModuleLifecycleGate({
@@ -11,17 +14,30 @@ export default function ModuleLifecycleGate({
   children: React.ReactNode;
 }) {
   const location = useLocation();
-  const { settings, loaded, load } = useModuleLifecycleStore();
+  const { settings, loaded, load, liberarPorTimeout } =
+    useModuleLifecycleStore();
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  // Teto de bloqueio: os children do gate são o <Outlet/> global, então um
+  // request pendente para sempre inutilizaria a aplicação inteira. Esgotado o
+  // limite, libera pelo mesmo caminho do catch do store (manifesto local).
+  // Dispara uma única vez — `liberarPorTimeout` é idempotente e o efeito só
+  // reagenda quando `loaded` muda, sem loop de re-render.
+  useEffect(() => {
+    if (loaded) return;
+    const t = setTimeout(liberarPorTimeout, MODULE_LIFECYCLE_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [loaded, liberarPorTimeout]);
+
   if (!loaded) {
     // FLX-023: enquanto o lifecycle não carrega, NÃO monta a página — sem
     // isso, um módulo desabilitado montava e disparava requests antes do
     // bloqueio. O load() do store é fail-open (termina com loaded=true mesmo
-    // em erro de rede), então este placeholder nunca fica preso.
+    // em erro de rede) e o timeout acima cobre o request pendente, então este
+    // placeholder nunca fica preso.
     return (
       <div className="grid min-h-[40vh] place-items-center">
         <Spinner />

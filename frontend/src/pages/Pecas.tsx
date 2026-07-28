@@ -36,6 +36,7 @@ import {
   montarPayloadProtocolo,
   temProtocoloRegistrado,
   mensagemErroProtocolo,
+  dataLocalISO,
 } from "../lib/protocoloPeca";
 import { useIaStatus } from "../lib/iaStatus";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
@@ -1232,7 +1233,7 @@ export default function Pecas() {
               <input
                 type="date"
                 className="input"
-                max={new Date().toISOString().slice(0, 10)}
+                max={dataLocalISO()}
                 value={protocolo?.data || ""}
                 onChange={(e) =>
                   protocolo &&

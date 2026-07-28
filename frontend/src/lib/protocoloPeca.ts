@@ -39,6 +39,18 @@ export function montarPayloadProtocolo(
   return payload;
 }
 
+/**
+ * "Hoje" no calendário LOCAL do usuário, em yyyy-mm-dd — para o `max` do
+ * <input type="date">, que também representa dia local. `toISOString()` daria o
+ * dia UTC: em fuso positivo bloquearia a data real de hoje e em negativo
+ * liberaria amanhã — inaceitável num campo que é prova de tempestividade.
+ */
+export function dataLocalISO(ref: Date = new Date()): string {
+  const mes = String(ref.getMonth() + 1).padStart(2, "0");
+  const dia = String(ref.getDate()).padStart(2, "0");
+  return `${ref.getFullYear()}-${mes}-${dia}`;
+}
+
 /** A peça já tem comprovante registrado? (o modal pode ser pulado) */
 export function temProtocoloRegistrado(
   doc: Pick<LegalDoc, "numero_protocolo">,

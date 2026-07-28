@@ -3,6 +3,7 @@ import {
   montarPayloadProtocolo,
   temProtocoloRegistrado,
   mensagemErroProtocolo,
+  dataLocalISO,
 } from "./protocoloPeca";
 
 describe("protocoloPeca — FLX-070", () => {
@@ -73,6 +74,26 @@ describe("protocoloPeca — FLX-070", () => {
         "Falha ao registrar o protocolo",
       );
       expect(mensagemErroProtocolo(undefined, null, "custom")).toBe("custom");
+    });
+  });
+  describe("dataLocalISO (max do input de data — tempestividade)", () => {
+    it("usa o dia LOCAL, não o dia UTC", () => {
+      // 2026-03-10 22:30 local: em fuso positivo o UTC ainda seria 03-10, mas
+      // em fuso negativo o UTC já seria 03-11 — o max precisa seguir o local.
+      const d = new Date(2026, 2, 10, 22, 30, 0);
+      expect(dataLocalISO(d)).toBe("2026-03-10");
+    });
+    it("madrugada local não retrocede para o dia anterior", () => {
+      const d = new Date(2026, 0, 1, 0, 15, 0);
+      expect(dataLocalISO(d)).toBe("2026-01-01");
+    });
+    it("zera à esquerda mês e dia", () => {
+      expect(dataLocalISO(new Date(2026, 8, 7, 12, 0, 0))).toBe("2026-09-07");
+    });
+    it('sem argumento usa o "hoje" local do usuário', () => {
+      const hoje = new Date();
+      expect(dataLocalISO()).toBe(dataLocalISO(hoje));
+      expect(dataLocalISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
   });
 });
