@@ -1,10 +1,9 @@
 name: Production Backup Monitor
 
 on:
-  schedule:
-    # Backup padrão: 05:00 UTC. A sonda roda 3h30 depois e aceita até 30h
-    # desde o último sucesso para absorver indisponibilidade breve do Drive.
-    - cron: "30 8 * * *"
+  # Agendamento automático desativado: a rotina de backup diário foi
+  # cancelada, então a sonda não teria o que verificar. Mantido como
+  # workflow_dispatch para permitir checagem manual se o backup voltar.
   workflow_dispatch:
 
 permissions:
