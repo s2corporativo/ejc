@@ -174,10 +174,10 @@ describe("Sala Jurídica — wizard de conversão", () => {
     await abrirWizard();
 
     await waitFor(() => {
-      expect(screen.getByText(/Alertas de conflito de interesses/i)).toBeTruthy();
       expect(
-        screen.getByText(/figura como PARTE CONTRÁRIA/i),
+        screen.getByText(/Alertas de conflito de interesses/i),
       ).toBeTruthy();
+      expect(screen.getByText(/figura como PARTE CONTRÁRIA/i)).toBeTruthy();
     });
   });
 
@@ -206,7 +206,8 @@ describe("Sala Jurídica — wizard de conversão", () => {
     const checks = screen.getAllByRole("checkbox");
     fireEvent.click(checks[0]);
     fireEvent.click(checks[1]);
-    fireEvent.click(screen.getByRole("button", { name: /Confirmar conversão/i }),
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar conversão/i }),
     );
 
     // O achado do 409 entra no estado: painel + checkbox de reconhecimento.
@@ -238,7 +239,9 @@ describe("Sala Jurídica — wizard de conversão", () => {
     renderizar();
 
     await waitFor(() => {
-      expect(screen.getAllByText("Análise preliminar").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Análise preliminar").length).toBeGreaterThan(
+        0,
+      );
     });
     fireEvent.click(screen.getByRole("button", { name: /Vincular a caso/i }));
     fireEvent.change(screen.getByPlaceholderText(/Buscar caso por título/i), {
@@ -249,11 +252,12 @@ describe("Sala Jurídica — wizard de conversão", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Caso A/i }));
     fireEvent.click(screen.getAllByRole("checkbox")[0]);
-    fireEvent.click(screen.getByRole("button", { name: /Confirmar vínculo/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Confirmar vínculo/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("URL_ATUAL:/casos/caso-ja-vinculado")).toBeTruthy();
+      expect(
+        screen.getByText("URL_ATUAL:/casos/caso-ja-vinculado"),
+      ).toBeTruthy();
     });
   });
 });

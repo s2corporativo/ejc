@@ -525,9 +525,9 @@ export default function SalaJuridica() {
   // novo → homônimos na base; cliente existente → casos ativos dele)
   const temDuplicidade = Boolean(
     convPreview &&
-      (convClienteId == null
-        ? convPreview.clientes_possivelmente_duplicados.length > 0
-        : convPreview.casos_ativos_do_cliente.length > 0),
+    (convClienteId == null
+      ? convPreview.clientes_possivelmente_duplicados.length > 0
+      : convPreview.casos_ativos_do_cliente.length > 0),
   );
 
   const buscarClientes = async (termo: string) => {
@@ -590,8 +590,7 @@ export default function SalaJuridica() {
           response?: {
             data?: {
               detail?:
-                | string
-                | ({ mensagem?: string } & Partial<PreviewConversao>);
+                string | ({ mensagem?: string } & Partial<PreviewConversao>);
             };
           };
         }
@@ -816,86 +815,89 @@ export default function SalaJuridica() {
       <div
         className={cn(
           "grid gap-4",
-          painelSessoes && painelEstado &&
+          painelSessoes &&
+            painelEstado &&
             "lg:grid-cols-[260px_minmax(0,1fr)_320px]",
-          painelSessoes && !painelEstado &&
+          painelSessoes &&
+            !painelEstado &&
             "lg:grid-cols-[260px_minmax(0,1fr)]",
-          !painelSessoes && painelEstado &&
+          !painelSessoes &&
+            painelEstado &&
             "lg:grid-cols-[minmax(0,1fr)_320px]",
           !painelSessoes && !painelEstado && "lg:grid-cols-1",
         )}
       >
         {/* ── Coluna esquerda: sessões (recolhível) ────────────────────── */}
         {painelSessoes && (
-        <aside className="space-y-3">
-          <Input
-            placeholder="Pesquisar análises…"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-          />
-          {grupos.length === 0 && (
-            <EmptyState
-              icon={MessageSquareText}
-              title="Nenhuma análise"
-              message="Crie uma nova análise para começar."
+          <aside className="space-y-3">
+            <Input
+              placeholder="Pesquisar análises…"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
             />
-          )}
-          {grupos.map((g) => (
-            <div key={g.status}>
-              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-gray-500">
-                {STATUS_LABEL[g.status]} · {g.itens.length}
-              </p>
-              {g.itens.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => abrirSessao(s.id)}
-                  className={cn(
-                    "mb-1 w-full rounded-lg border p-2 text-left text-sm transition",
-                    ativa?.id === s.id
-                      ? "border-primary-300 bg-primary-50"
-                      : "border-gray-200 bg-white hover:border-gray-300",
-                  )}
-                >
-                  <span className="flex items-start justify-between gap-1">
-                    <span className="font-medium leading-tight">
-                      {s.titulo}
-                    </span>
-                    <Star
-                      className={cn(
-                        "h-4 w-4 shrink-0",
-                        s.favorita
-                          ? "fill-amber-400 text-amber-400"
-                          : "text-gray-300",
-                      )}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void alternarFavorita(s);
-                      }}
-                    />
-                  </span>
-                  <span className="mt-1 flex flex-wrap gap-1">
-                    <Badge tone="blue">{s.area_sugerida ?? "sem área"}</Badge>
-                    {s.custo_ia_total > 0 && (
-                      <Badge tone="slate">
-                        R$ {s.custo_ia_total.toFixed(2)}
-                      </Badge>
+            {grupos.length === 0 && (
+              <EmptyState
+                icon={MessageSquareText}
+                title="Nenhuma análise"
+                message="Crie uma nova análise para começar."
+              />
+            )}
+            {grupos.map((g) => (
+              <div key={g.status}>
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                  {STATUS_LABEL[g.status]} · {g.itens.length}
+                </p>
+                {g.itens.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => abrirSessao(s.id)}
+                    className={cn(
+                      "mb-1 w-full rounded-lg border p-2 text-left text-sm transition",
+                      ativa?.id === s.id
+                        ? "border-primary-300 bg-primary-50"
+                        : "border-gray-200 bg-white hover:border-gray-300",
                     )}
-                    {s.frozen && <Badge tone="amber">congelada</Badge>}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ))}
-          {sessoes.length >= limite && limite < 200 && (
-            <Button
-              variant="secondary"
-              className="w-full"
-              onClick={() => void carregarMais()}
-            >
-              Carregar mais
-            </Button>
-          )}
-        </aside>
+                  >
+                    <span className="flex items-start justify-between gap-1">
+                      <span className="font-medium leading-tight">
+                        {s.titulo}
+                      </span>
+                      <Star
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          s.favorita
+                            ? "fill-amber-400 text-amber-400"
+                            : "text-gray-300",
+                        )}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void alternarFavorita(s);
+                        }}
+                      />
+                    </span>
+                    <span className="mt-1 flex flex-wrap gap-1">
+                      <Badge tone="blue">{s.area_sugerida ?? "sem área"}</Badge>
+                      {s.custo_ia_total > 0 && (
+                        <Badge tone="slate">
+                          R$ {s.custo_ia_total.toFixed(2)}
+                        </Badge>
+                      )}
+                      {s.frozen && <Badge tone="amber">congelada</Badge>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ))}
+            {sessoes.length >= limite && limite < 200 && (
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => void carregarMais()}
+              >
+                Carregar mais
+              </Button>
+            )}
+          </aside>
         )}
 
         {/* ── Centro: chat amplo + área livre colapsável ───────────────── */}
@@ -987,91 +989,91 @@ export default function SalaJuridica() {
                 ref={chatRef}
                 className="flex-1 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3"
               >
-               {/* Coluna de leitura centralizada (estilo chat de fronteira) */}
-               <div className="mx-auto w-full max-w-3xl space-y-3">
-                {(ativa.mensagens ?? []).length === 0 && (
-                  <EmptyState
-                    icon={MessageSquareText}
-                    title="Comece a conversa"
-                    message='Ex.: "Analise juridicamente este caso. Represento a ré."'
-                  />
-                )}
-                {(ativa.mensagens ?? []).map((m) => (
-                  <div
-                    key={m.id}
-                    className={cn(
-                      "rounded-lg border p-3 text-sm",
-                      m.autor === "user"
-                        ? "ml-auto w-fit max-w-[88%] border-blue-100 bg-blue-50"
-                        : "border-gray-200 bg-white shadow-sm",
-                    )}
-                  >
-                    <p className="mb-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-500">
-                      {m.autor === "user"
-                        ? (user?.full_name ?? "Você")
-                        : "Sala Jurídica · IA"}
-                      <Badge tone="blue">{m.modo.replace(/_/g, " ")}</Badge>
-                      {m.autor === "ia" && m.modelo && (
-                        <Badge tone="slate">{m.modelo}</Badge>
+                {/* Coluna de leitura centralizada (estilo chat de fronteira) */}
+                <div className="mx-auto w-full max-w-3xl space-y-3">
+                  {(ativa.mensagens ?? []).length === 0 && (
+                    <EmptyState
+                      icon={MessageSquareText}
+                      title="Comece a conversa"
+                      message='Ex.: "Analise juridicamente este caso. Represento a ré."'
+                    />
+                  )}
+                  {(ativa.mensagens ?? []).map((m) => (
+                    <div
+                      key={m.id}
+                      className={cn(
+                        "rounded-lg border p-3 text-sm",
+                        m.autor === "user"
+                          ? "ml-auto w-fit max-w-[88%] border-blue-100 bg-blue-50"
+                          : "border-gray-200 bg-white shadow-sm",
                       )}
-                      {m.estado_versao != null && (
-                        <Badge tone="green">estado v{m.estado_versao}</Badge>
-                      )}
-                    </p>
-                    {m.autor === "ia" ? (
-                      <Markdown source={m.conteudo} />
-                    ) : (
-                      <p className="whitespace-pre-wrap">{m.conteudo}</p>
-                    )}
-                    {m.autor === "ia" && m.fontes.length > 0 && (
-                      <p className="mt-2 flex flex-wrap gap-1">
-                        {m.fontes.map((f, i) => (
-                          <Badge key={i} tone="amber">
-                            {f.titulo ?? f.fonte ?? "fonte"}
-                          </Badge>
-                        ))}
+                    >
+                      <p className="mb-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-500">
+                        {m.autor === "user"
+                          ? (user?.full_name ?? "Você")
+                          : "Sala Jurídica · IA"}
+                        <Badge tone="blue">{m.modo.replace(/_/g, " ")}</Badge>
+                        {m.autor === "ia" && m.modelo && (
+                          <Badge tone="slate">{m.modelo}</Badge>
+                        )}
+                        {m.estado_versao != null && (
+                          <Badge tone="green">estado v{m.estado_versao}</Badge>
+                        )}
                       </p>
-                    )}
-                    {m.autor === "ia" && m.alertas.length > 0 && (
-                      <ul className="mt-2 list-disc pl-5 text-xs text-amber-700">
-                        {m.alertas.map((a, i) => (
-                          <li key={i}>{a}</li>
-                        ))}
-                      </ul>
-                    )}
-                    {m.autor === "ia" && (
-                      <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                        <button
-                          className="flex items-center gap-1 text-gray-500 hover:text-gray-800"
-                          onClick={() => void copiarMensagem(m.conteudo)}
-                        >
-                          <Copy className="h-3 w-3" /> Copiar
-                        </button>
-                        <button
-                          className="flex items-center gap-1 text-gray-500 hover:text-gray-800"
-                          disabled={ativa.frozen}
-                          onClick={() => levarParaEditor(m.conteudo)}
-                        >
-                          <PenLine className="h-3 w-3" /> Levar para o editor
-                        </button>
-                        <button
-                          className="flex items-center gap-1 text-gray-500 hover:text-gray-800"
-                          disabled={ativa.frozen || enviando}
-                          onClick={() => void regenerar()}
-                        >
-                          <RefreshCw className="h-3 w-3" /> Regenerar
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {enviando && (
-                  <p className="flex items-center gap-2 text-sm text-gray-500">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Analisando
-                    (sanitização → RAG → validação → AILog)…
-                  </p>
-                )}
-               </div>
+                      {m.autor === "ia" ? (
+                        <Markdown source={m.conteudo} />
+                      ) : (
+                        <p className="whitespace-pre-wrap">{m.conteudo}</p>
+                      )}
+                      {m.autor === "ia" && m.fontes.length > 0 && (
+                        <p className="mt-2 flex flex-wrap gap-1">
+                          {m.fontes.map((f, i) => (
+                            <Badge key={i} tone="amber">
+                              {f.titulo ?? f.fonte ?? "fonte"}
+                            </Badge>
+                          ))}
+                        </p>
+                      )}
+                      {m.autor === "ia" && m.alertas.length > 0 && (
+                        <ul className="mt-2 list-disc pl-5 text-xs text-amber-700">
+                          {m.alertas.map((a, i) => (
+                            <li key={i}>{a}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {m.autor === "ia" && (
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                          <button
+                            className="flex items-center gap-1 text-gray-500 hover:text-gray-800"
+                            onClick={() => void copiarMensagem(m.conteudo)}
+                          >
+                            <Copy className="h-3 w-3" /> Copiar
+                          </button>
+                          <button
+                            className="flex items-center gap-1 text-gray-500 hover:text-gray-800"
+                            disabled={ativa.frozen}
+                            onClick={() => levarParaEditor(m.conteudo)}
+                          >
+                            <PenLine className="h-3 w-3" /> Levar para o editor
+                          </button>
+                          <button
+                            className="flex items-center gap-1 text-gray-500 hover:text-gray-800"
+                            disabled={ativa.frozen || enviando}
+                            onClick={() => void regenerar()}
+                          >
+                            <RefreshCw className="h-3 w-3" /> Regenerar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {enviando && (
+                    <p className="flex items-center gap-2 text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Analisando
+                      (sanitização → RAG → validação → AILog)…
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="mx-auto w-full max-w-3xl rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
@@ -1166,92 +1168,94 @@ export default function SalaJuridica() {
 
         {/* ── Direita: anexos + estado jurídico (recolhível) ───────────── */}
         {painelEstado && (
-        <aside className="space-y-3">
-          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-            <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
-              <UploadCloud className="h-4 w-4" /> Documentos (
-              {ativa?.anexos?.length ?? 0})
-            </p>
-            {(ativa?.anexos ?? []).map((a) => (
-              <p
-                key={a.id}
-                className="mb-1 flex items-center justify-between text-xs"
-              >
-                <span className="truncate">{a.nome_original}</span>
-                <Badge tone={a.ocr_utilizado ? "green" : "slate"}>
-                  {a.ocr_utilizado ? "OCR" : "texto"}
-                </Badge>
+          <aside className="space-y-3">
+            <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+              <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                <UploadCloud className="h-4 w-4" /> Documentos (
+                {ativa?.anexos?.length ?? 0})
               </p>
-            ))}
-            {(ativa?.anexos ?? []).length === 0 && (
-              <p className="text-xs text-gray-400">Nenhum documento anexado.</p>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-            <p className="mb-2 text-sm font-semibold">
-              Estado jurídico{" "}
-              {ativa?.estado ? (
-                <Badge tone="green">v{ativa.estado.versao}</Badge>
-              ) : (
-                <Badge tone="slate">vazio</Badge>
-              )}
-            </p>
-            <div className="mb-2 flex flex-wrap gap-1">
-              {ABAS_ESTADO.map((aba) => (
-                <button
-                  key={aba}
-                  onClick={() => setAbaEstado(aba)}
-                  className={cn(
-                    "rounded px-2 py-0.5 text-[11px] font-semibold",
-                    abaEstado === aba
-                      ? "bg-primary-100 text-primary-800"
-                      : "bg-gray-100 text-gray-500 hover:bg-gray-200",
-                  )}
+              {(ativa?.anexos ?? []).map((a) => (
+                <p
+                  key={a.id}
+                  className="mb-1 flex items-center justify-between text-xs"
                 >
-                  {aba}
-                </button>
+                  <span className="truncate">{a.nome_original}</span>
+                  <Badge tone={a.ocr_utilizado ? "green" : "slate"}>
+                    {a.ocr_utilizado ? "OCR" : "texto"}
+                  </Badge>
+                </p>
               ))}
+              {(ativa?.anexos ?? []).length === 0 && (
+                <p className="text-xs text-gray-400">
+                  Nenhum documento anexado.
+                </p>
+              )}
             </div>
-            {(estadoAtual[abaEstado] ?? []).length === 0 ? (
-              <p className="text-xs text-gray-400">
-                Sem itens em “{abaEstado}”. A curadoria fina é do advogado
-                (PATCH /estado); fontes acumulam automaticamente a cada
-                resposta.
+
+            <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+              <p className="mb-2 text-sm font-semibold">
+                Estado jurídico{" "}
+                {ativa?.estado ? (
+                  <Badge tone="green">v{ativa.estado.versao}</Badge>
+                ) : (
+                  <Badge tone="slate">vazio</Badge>
+                )}
               </p>
-            ) : (
-              (estadoAtual[abaEstado] ?? []).map((item, i) => (
-                <div
-                  key={i}
-                  className="mb-1 rounded border border-gray-100 p-2 text-xs"
-                >
-                  <span
+              <div className="mb-2 flex flex-wrap gap-1">
+                {ABAS_ESTADO.map((aba) => (
+                  <button
+                    key={aba}
+                    onClick={() => setAbaEstado(aba)}
                     className={cn(
-                      "mr-1 rounded px-1.5 py-0.5 text-[10px] font-bold",
-                      CLASSIFICACAO_COR[String(item.classificacao ?? "")] ??
-                        "bg-gray-100 text-gray-600",
+                      "rounded px-2 py-0.5 text-[11px] font-semibold",
+                      abaEstado === aba
+                        ? "bg-primary-100 text-primary-800"
+                        : "bg-gray-100 text-gray-500 hover:bg-gray-200",
                     )}
                   >
+                    {aba}
+                  </button>
+                ))}
+              </div>
+              {(estadoAtual[abaEstado] ?? []).length === 0 ? (
+                <p className="text-xs text-gray-400">
+                  Sem itens em “{abaEstado}”. A curadoria fina é do advogado
+                  (PATCH /estado); fontes acumulam automaticamente a cada
+                  resposta.
+                </p>
+              ) : (
+                (estadoAtual[abaEstado] ?? []).map((item, i) => (
+                  <div
+                    key={i}
+                    className="mb-1 rounded border border-gray-100 p-2 text-xs"
+                  >
+                    <span
+                      className={cn(
+                        "mr-1 rounded px-1.5 py-0.5 text-[10px] font-bold",
+                        CLASSIFICACAO_COR[String(item.classificacao ?? "")] ??
+                          "bg-gray-100 text-gray-600",
+                      )}
+                    >
+                      {String(
+                        item.classificacao ??
+                          item.nivel ??
+                          item.tipo ??
+                          abaEstado,
+                      )}
+                    </span>
                     {String(
-                      item.classificacao ??
-                        item.nivel ??
-                        item.tipo ??
-                        abaEstado,
+                      item.texto ??
+                        item.descricao ??
+                        item.nome ??
+                        item.titulo ??
+                        item.evento ??
+                        "",
                     )}
-                  </span>
-                  {String(
-                    item.texto ??
-                      item.descricao ??
-                      item.nome ??
-                      item.titulo ??
-                      item.evento ??
-                      "",
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </aside>
+                  </div>
+                ))
+              )}
+            </div>
+          </aside>
         )}
       </div>
 
@@ -1420,8 +1424,8 @@ export default function SalaJuridica() {
               convPreview.casos_ativos_do_cliente.length > 0 && (
                 <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
                   <p className="mb-1 text-xs font-bold text-amber-800">
-                    Este cliente já possui caso ativo — confira se não é o
-                    mesmo assunto
+                    Este cliente já possui caso ativo — confira se não é o mesmo
+                    assunto
                   </p>
                   {convPreview.casos_ativos_do_cliente.map((c, i) => (
                     <p key={i} className="text-xs text-amber-700">
