@@ -92,7 +92,7 @@ jobs:
 
       - name: Abrir ou encerrar incidente automático
         if: always()
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           HEALTH_RC: ${{ steps.health.outputs.exit_code }}
         with:

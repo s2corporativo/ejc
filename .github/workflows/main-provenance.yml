@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Validar PR associado e detectar force-push
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const owner = context.repo.owner;
