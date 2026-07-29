@@ -1,5 +1,4 @@
 import json
-from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -105,16 +104,18 @@ def test_resumo_parcial_nao_fica_verde():
 def test_resumo_zero_valido_preserva_sucesso_e_produtividade_zero():
     from app.services.djen_service import DjenCapturaResultado, resumir_execucao
 
-    resumo = resumir_execucao([
-        DjenCapturaResultado(
-            configurada=True,
-            fonte_ok=True,
-            recebidas=0,
-            novas=0,
-            duplicadas=0,
-            ignoradas=0,
-        )
-    ])
+    resumo = resumir_execucao(
+        [
+            DjenCapturaResultado(
+                configurada=True,
+                fonte_ok=True,
+                recebidas=0,
+                novas=0,
+                duplicadas=0,
+                ignoradas=0,
+            )
+        ]
+    )
 
     assert resumo["heartbeat_status"] == "ok"
     assert resumo["resultado"] == "sucesso_sem_resultados"
@@ -134,24 +135,107 @@ def test_captura_sem_oab_e_configuracao_incompleta():
     assert resultado.to_dict()["configurada"] is False
 
 
+def test_resultado_estruturado_preserva_soma_legada_do_scheduler():
+    from app.services.djen_service import DjenCapturaResultado
+
+    resultado = DjenCapturaResultado(
+        configurada=True,
+        fonte_ok=True,
+        recebidas=3,
+        novas=2,
+        duplicadas=1,
+        ignoradas=0,
+    )
+
+    assert 5 + resultado == 7
+
+
+def test_consumir_resumo_limpa_acumulador_da_execucao():
+    from app.services import djen_service
+
+    djen_service.limpar_resultados_execucao()
+    djen_service.registrar_resultado_execucao(
+        djen_service.DjenCapturaResultado(
+            configurada=True,
+            fonte_ok=True,
+            recebidas=0,
+            novas=0,
+            duplicadas=0,
+            ignoradas=0,
+        )
+    )
+
+    primeiro = djen_service.consumir_resumo_execucao()
+    segundo = djen_service.consumir_resumo_execucao()
+
+    assert primeiro["resultado"] == "sucesso_sem_resultados"
+    assert segundo["resultado"] == "configuracao_incompleta"
+
+
 def test_detalhe_heartbeat_e_json_sanitizado():
     from app.services.djen_service import codificar_resumo_heartbeat
 
-    detalhe = codificar_resumo_heartbeat({
-        "heartbeat_status": "erro",
-        "resultado": "parcial",
-        "oabs_elegiveis": 2,
-        "oabs_sucesso": 1,
-        "oabs_falha": 1,
-        "recebidas": 2,
-        "novas": 1,
-        "duplicadas": 1,
-        "ignoradas": 0,
-        "erros": {"http_5xx": 1},
-    })
+    detalhe = codificar_resumo_heartbeat(
+        {
+            "heartbeat_status": "erro",
+            "resultado": "parcial",
+            "oabs_elegiveis": 2,
+            "oabs_sucesso": 1,
+            "oabs_falha": 1,
+            "recebidas": 2,
+            "novas": 1,
+            "duplicadas": 1,
+            "ignoradas": 0,
+            "erros": {"http_5xx": 1},
+        }
+    )
 
     payload = json.loads(detalhe)
     assert payload["resultado"] == "parcial"
     assert payload["erros"] == {"http_5xx": 1}
     assert "email" not in detalhe.lower()
     assert "oab_numero" not in detalhe.lower()
+
+
+class _FakeDB:
+    def __init__(self):
+        self.params = None
+
+    async def execute(self, _query, params):
+        self.params = params
+
+    async def commit(self):
+        return None
+
+    async def rollback(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_djen_substitui_ok_nominal_por_resultado_real(monkeypatch):
+    from app.services import djen_service, heartbeat_service
+
+    resumo = {
+        "heartbeat_status": "erro",
+        "resultado": "parcial",
+        "oabs_elegiveis": 2,
+        "oabs_sucesso": 1,
+        "oabs_falha": 1,
+        "recebidas": 1,
+        "novas": 1,
+        "duplicadas": 0,
+        "ignoradas": 0,
+        "erros": {"timeout": 1},
+    }
+    monkeypatch.setattr(djen_service, "consumir_resumo_execucao", lambda: resumo)
+    db = _FakeDB()
+
+    gravou = await heartbeat_service.registrar_heartbeat(
+        db, heartbeat_service.JOB_DJEN, "ok", None
+    )
+
+    assert gravou is True
+    assert db.params["status"] == "erro"
+    detalhe = json.loads(db.params["detail"])
+    assert detalhe["resultado"] == "parcial"
+    assert detalhe["erros"] == {"timeout": 1}
