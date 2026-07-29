@@ -77,8 +77,6 @@ _SLUG_POR_DIPLOMA = {
 }
 
 
-# Aceita as formas usuais que o parser jurídico já reconhece: nº, n.º, n.o,
-# n° e variações com espaços/pontos antes do número.
 _RE_LEI_CITADA = re.compile(
     r"lei\s*n?(?:[.\s]*[ºo°])?[.\s]*([\d.]+)(?:\s*/\s*(\d{2,4}))?",
     re.IGNORECASE,
@@ -95,11 +93,7 @@ def _dados_lei_citada(diploma: str) -> tuple[str, str | None] | None:
 
 
 def _chave_catalogo_por_lei(numero: str, ano: str | None) -> str | None:
-    """Resolve a lei para uma chave oficial exata do catálogo Planalto.
-
-    Não usa casamento parcial de título. Lei fora do catálogo ingerido falha
-    fechado e exige conferência manual, evitando que 8.078 case 18.078.
-    """
+    """Resolve a lei para uma chave oficial exata do catálogo Planalto."""
     from app.services.ingestors.planalto import CATALOGO
 
     candidatas: list[str] = []
@@ -188,20 +182,18 @@ async def _fonte_artigo(
     """Retorna evidência estrutural do artigo dentro do diploma exato."""
     from app.services.ai_service import _filtros_gate_rag
 
-    params: dict = {
-        "artigo_re": _regex_artigo(num),
-        "vigente": vigente,
-    }
+    params: dict = {"artigo_re": _regex_artigo(num)}
     cond = _restringir_ao_diploma(diploma, params)
     if cond is None:
         return None
+    vigencia_sql = "TRUE" if vigente else "FALSE"
     row = (
         await db.execute(
             text(
                 "SELECT kd.id, kd.titulo, kd.chave_origem, kd.versao, "
                 "kd.vigente, kd.fonte FROM knowledge_chunks kc "
                 "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
-                "WHERE kd.deleted_at IS NULL AND kd.vigente = :vigente "
+                f"WHERE kd.deleted_at IS NULL AND kd.vigente = {vigencia_sql} "
                 "AND kd.categoria LIKE 'legislacao%' "
                 + cond
                 + "AND kc.conteudo ~* :artigo_re "
