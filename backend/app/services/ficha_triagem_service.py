@@ -326,6 +326,84 @@ def _reforcar_faltantes_matriz(valor_ia: Optional[str], case: Optional[Case],
 
 # ── obter / salvar / gate helpers ─────────────────────────────────────────────
 
+def dados_do_painel_entrevista(analise: dict) -> dict:
+    """Converte o painel da Entrevista Inteligente (triagem_entrevista) em
+    dados persistíveis da ficha — função PURA, testável sem banco.
+
+    A entrevista já responde ~70% do que a ficha pergunta depois; sem esta
+    ponte o advogado redigitava tudo e o sistema pagava DUAS chamadas de IA
+    pela mesma inferência. Só produz campos com valor útil; a confiança por
+    item acompanha (chaves de CAMPOS_TRIAGEM)."""
+    def _v(item: object) -> object:
+        return item.get("valor") if isinstance(item, dict) else None
+
+    def _c_item(item: object) -> Optional[int]:
+        return _conf(item.get("confianca")) if isinstance(item, dict) else None
+
+    dados: dict = {}
+    conf: dict = {}
+
+    comp = _v(analise.get("competencia"))
+    if isinstance(comp, str) and comp.strip():
+        dados["competencia"] = comp.strip()
+        if (c := _c_item(analise.get("competencia"))) is not None:
+            conf["competencia"] = c
+
+    presc = analise.get("prescricao") if isinstance(analise.get("prescricao"), dict) else {}
+    if isinstance(presc.get("alerta"), str) and presc["alerta"].strip():
+        dentro = presc.get("dentro_prazo")
+        prefixo = ("Dentro do prazo — " if dentro is True
+                   else "ATENÇÃO: possivelmente fora do prazo — " if dentro is False
+                   else "")
+        dados["prescricao_decadencia"] = (prefixo + presc["alerta"].strip())[:8000]
+        if (c := _conf(presc.get("confianca"))) is not None:
+            conf["prescricao_decadencia"] = c
+
+    tutela = analise.get("tutela_liminar") if isinstance(analise.get("tutela_liminar"), dict) else {}
+    if isinstance(tutela.get("valor"), bool):
+        dados["tutela_urgencia"] = tutela["valor"]
+        if (c := _conf(tutela.get("confianca"))) is not None:
+            conf["tutela_urgencia"] = c
+        just = tutela.get("justificativa")
+        if tutela["valor"] and isinstance(just, str) and just.strip():
+            dados["tutela_fundamento"] = just.strip()
+            if (c := _conf(tutela.get("confianca"))) is not None:
+                conf["tutela_fundamento"] = c
+
+    vc = analise.get("valor_causa") if isinstance(analise.get("valor_causa"), dict) else {}
+    faixa = vc.get("faixa")
+    valor_num = vc.get("valor")
+    if isinstance(faixa, str) and faixa.strip():
+        dados["valor_causa"] = faixa.strip()[:120]  # coluna String(120)
+    elif isinstance(valor_num, (int, float)) and valor_num > 0:
+        dados["valor_causa"] = f"R$ {valor_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")[:120]
+    if "valor_causa" in dados and (c := _conf(vc.get("confianca"))) is not None:
+        conf["valor_causa"] = c
+
+    pedidos = [p for p in (analise.get("pedidos_possiveis") or []) if isinstance(p, str) and p.strip()]
+    if pedidos:
+        dados["pedidos_principais"] = "\n".join(f"- {p.strip()}" for p in pedidos)[:8000]
+
+    riscos = [r for r in (analise.get("riscos") or []) if isinstance(r, str) and r.strip()]
+    exito = analise.get("chance_exito") if isinstance(analise.get("chance_exito"), dict) else {}
+    nota_partes: list[str] = []
+    if riscos:
+        nota_partes.append("Riscos identificados na entrevista:\n" +
+                           "\n".join(f"- {r.strip()}" for r in riscos))
+    if _conf(exito.get("percentual")) is not None:
+        just = exito.get("justificativa")
+        nota_partes.append(
+            f"Estimativa interna de êxito (triagem): {_conf(exito.get('percentual'))}%"
+            + (f" — {str(just).strip()}" if isinstance(just, str) and just.strip() else "")
+        )
+    if nota_partes:
+        dados["risco_nota"] = "\n\n".join(nota_partes)[:8000]
+
+    if conf:
+        dados["confianca"] = conf
+    return dados
+
+
 async def obter(db: AsyncSession, case_id: str) -> Optional[FichaTriagem]:
     """Ficha CORRENTE do caso (uma por caso), ou None."""
     return (await db.execute(
@@ -340,10 +418,18 @@ async def ficha_confirmada(db: AsyncSession, case_id: str) -> Optional[FichaTria
 
 
 async def salvar(db: AsyncSession, case_id: str, dados: dict, *,
-                 confirmar: bool, user_id: str, user_role: str) -> FichaTriagem:
+                 confirmar: bool, user_id: str, user_role: str,
+                 preservar_confirmada: bool = False) -> FichaTriagem:
     """UPSERT da ficha do caso. confirmar=True → status 'confirmada' (abre o gate
-    de geração de peça). Audit FICHA_TRIAGEM_SALVA / FICHA_TRIAGEM_CONFIRMADA."""
+    de geração de peça). Audit FICHA_TRIAGEM_SALVA / FICHA_TRIAGEM_CONFIRMADA.
+
+    preservar_confirmada: escritas AUTOMÁTICAS (pré-preenchimento por IA) não
+    podem rebaixar para 'rascunho' uma ficha que um humano confirmou entre a
+    decisão do chamador e esta gravação — fechando o gate da peça sem que
+    ninguém tenha pedido."""
     ficha = await obter(db, case_id)
+    if preservar_confirmada and ficha is not None and ficha.status == "confirmada":
+        return ficha
     novo = ficha is None
     if novo:
         ficha = FichaTriagem(id=str(uuid4()), case_id=case_id, created_by=user_id)

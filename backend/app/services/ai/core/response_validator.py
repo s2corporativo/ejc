@@ -131,6 +131,17 @@ async def validar(
                         "(grounding ao vivo) — possível alucinação; verificação manual obrigatória."
                     )
                     revisao_obrigatoria = True
+                # Norma localizada só em versão SUPERADA: existe, mas a redação
+                # ingerida foi substituída — citar redação revogada é erro
+                # profissional, então também exige revisão humana.
+                desatualizadas = int(cont.get("possivelmente_desatualizada", 0) or 0)
+                if desatualizadas:
+                    alertas.append(
+                        f"{desatualizadas} citação(ões) localizada(s) apenas em versão "
+                        "SUPERADA na base interna — confirme a redação vigente na fonte "
+                        "oficial antes de protocolar."
+                    )
+                    revisao_obrigatoria = True
                 if isinstance(score, (int, float)) and score < 50:
                     alertas.append(
                         f"Confiabilidade das citações (grounding ao vivo) baixa: {int(score)}/100 "

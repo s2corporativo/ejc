@@ -175,6 +175,16 @@ def avaliar_bloqueantes(
             motivo = (f"{rotulo} citado(a) não encontrado(a) na base curada — "
                       "modo estrito (CITACOES_MODO_ESTRITO): confirme a "
                       "existência na fonte oficial ou remova a citação.")
+        elif (modo_estrito and status == "possivelmente_desatualizada"
+              and tipo in _TIPOS_CONFIRMAVEIS_BASE):
+            # Coerência do modo estrito: se "não encontrada na base" já bloqueia
+            # (acima), "encontrada APENAS em versão superada" também precisa —
+            # senão a citação de redação revogada passaria enquanto a de norma
+            # meramente desconhecida é barrada, o que inverte a gravidade.
+            rotulo = "Súmula" if tipo == "sumula" else "Artigo"
+            motivo = (f"{rotulo} localizado(a) apenas em versão SUPERADA na base "
+                      "curada — modo estrito (CITACOES_MODO_ESTRITO): confirme a "
+                      "redação vigente na fonte oficial antes de protocolar.")
         if motivo:
             bloqueantes.append({
                 "citacao": c.get("citacao") or c.get("trecho") or "",

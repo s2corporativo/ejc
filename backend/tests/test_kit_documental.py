@@ -39,6 +39,20 @@ class _Res:
     def all(self):
         return self._val if isinstance(self._val, list) else []
 
+    def first(self):
+        # `pode_ver_cliente` (gate de carteira em POST /cases) consulta o
+        # vínculo do usuário com o cliente via .first(). Valor-verdade = existe
+        # vínculo → o advogado do teste enxerga o cliente e o fluxo segue.
+        if isinstance(self._val, list):
+            return self._val[0] if self._val else None
+        return (self._val,) if self._val is not None else None
+
+
+def _vinculo():
+    """Resultado do lookup de vínculo usado por `pode_ver_cliente`:
+    truthy = o advogado atua em caso do cliente, logo enxerga o cliente."""
+    return "vinculo-existe"
+
 
 class _FakeDB:
     """Sessão fake: fila de resultados para execute(); registra add/commit.
@@ -423,7 +437,8 @@ async def test_abertura_de_caso_agenda_gerar_documentos_iniciais_auto():
                          proxima_acao="Definir estratégia de guarda")
     # execute #1: validação do cliente (scalar_one_or_none); #2: advisory lock;
     # #3: SELECT numero_interno (scalar → None = primeiro do ano).
-    db = _FakeDB([_cli(), None, None])
+    # [Client, vínculo do gate de carteira, ...executes legados]
+    db = _FakeDB([_cli(), _vinculo(), None, None])
     bg = _FakeBackground()
 
     ret = await cases_router.criar(payload=payload, background=bg, db=db, cu=cu)
@@ -486,7 +501,7 @@ async def test_criar_caso_com_honorarios_semeia_proposta_aprovada_antes_do_kit()
     )
     # execute #1 cliente; #2 advisory lock; #3 numero_interno; então o seed:
     # #4 proposta_aprovada_vigente (idempotência → None); #5 max(versao) → None.
-    db = _FakeDB([_cli(), None, None, None, None])
+    db = _FakeDB([_cli(), _vinculo(), None, None, None, None])
     bg = _FakeBackground()
 
     await cases_router.criar(payload=payload, background=bg, db=db, cu=cu)
@@ -514,7 +529,8 @@ async def test_criar_caso_sem_honorarios_nao_semeia_proposta():
     cu = _user(UserRole.advogado, "u1")
     payload = CaseCreate(titulo="Guarda", area="familia", client_id="cli1",
                          proxima_acao="Aguardar documentos do cliente")
-    db = _FakeDB([_cli(), None, None])   # exatamente os 3 executes legados
+    # 3 executes legados + 1 do gate de carteira (pode_ver_cliente)
+    db = _FakeDB([_cli(), _vinculo(), None, None])
     bg = _FakeBackground()
 
     await cases_router.criar(payload=payload, background=bg, db=db, cu=cu)

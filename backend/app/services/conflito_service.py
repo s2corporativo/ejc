@@ -23,6 +23,17 @@ from app.models.client import Client
 from app.models.case import Case, CaseStatus
 
 
+def _padrao_like(nome: str) -> str:
+    """Padrão ILIKE com wildcards do INPUT escapados.
+
+    Sem isto, um nome contendo `%`/`_` vira curinga: `"____"` casa qualquer
+    registro com 4+ caracteres e `"%Ab%"` transforma a checagem ética num
+    oráculo de substring de 1 caractere (o piso de 4 chars é contornado).
+    Usar sempre com `.ilike(padrao, escape="\\\\")`."""
+    limpo = nome.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{limpo}%"
+
+
 async def _clientes_por_documentos(
     db: AsyncSession,
     docs: list[Optional[str]],
@@ -66,10 +77,11 @@ async def _clientes_por_nome(
     Piso de 4 caracteres para evitar correspondências espúrias."""
     if not nome or len(nome) < 4:
         return []
+    padrao = _padrao_like(nome)
     q = select(Client).where(
         or_(
-            Client.nome.ilike(f"%{nome}%"),
-            Client.razao_social.ilike(f"%{nome}%"),
+            Client.nome.ilike(padrao, escape="\\"),
+            Client.razao_social.ilike(padrao, escape="\\"),
         ),
         Client.deleted_at.is_(None),
     )
@@ -91,7 +103,7 @@ async def _casos_por_parte_contraria(
     if not nome or len(nome) < 4:
         return []
     q = select(Case).where(
-        Case.parte_contraria.ilike(f"%{nome}%"),
+        Case.parte_contraria.ilike(_padrao_like(nome), escape="\\"),
         Case.deleted_at.is_(None),
     )
     if somente_ativos:
