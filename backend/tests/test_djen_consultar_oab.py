@@ -1,7 +1,7 @@
 # ── tests/test_djen_consultar_oab.py ──────────────────────────────────────────
-# Regressão: a API Comunica (DJEN) devolve ora {"items": [...]}, ora um array no
-# topo. O código antigo fazia data.get("items", ...) mesmo quando data era lista
-# → AttributeError engolido pelo except → advogado recebia ZERO intimações.
+# A API Comunica (DJEN) devolve ora {"items": [...]}, ora um array no topo.
+# Ambos são válidos. Falha externa ou payload inválido NÃO podem ser confundidos
+# com consulta válida sem comunicações.
 import app.services.djen_service as djen
 
 
@@ -13,7 +13,9 @@ async def test_consultar_oab_payload_lista_no_topo(monkeypatch):
 
     monkeypatch.setattr(djen, "_djen_get", _fake)
     res = await djen.consultar_oab("123456", "MG")
-    assert res == itens
+    assert res.fonte_ok is True
+    assert res.items == itens
+    assert res.recebidas == 2
 
 
 async def test_consultar_oab_payload_dict_com_items(monkeypatch):
@@ -24,20 +26,28 @@ async def test_consultar_oab_payload_dict_com_items(monkeypatch):
 
     monkeypatch.setattr(djen, "_djen_get", _fake)
     res = await djen.consultar_oab("123456", "MG")
-    assert res == itens
+    assert res.fonte_ok is True
+    assert res.items == itens
+    assert res.recebidas == 1
 
 
-async def test_consultar_oab_dict_sem_items_retorna_vazio(monkeypatch):
+async def test_consultar_oab_dict_sem_items_e_zero_legitimo(monkeypatch):
     async def _fake(params):
         return {"total": 0}
 
     monkeypatch.setattr(djen, "_djen_get", _fake)
-    assert await djen.consultar_oab("123456", "MG") == []
+    res = await djen.consultar_oab("123456", "MG")
+    assert res.fonte_ok is True
+    assert res.items == []
+    assert res.erro is None
 
 
-async def test_consultar_oab_erro_retorna_vazio(monkeypatch):
+async def test_consultar_oab_erro_nao_retorna_zero_com_sucesso(monkeypatch):
     async def _fake(params):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(djen, "_djen_get", _fake)
-    assert await djen.consultar_oab("123456", "MG") == []
+    res = await djen.consultar_oab("123456", "MG")
+    assert res.fonte_ok is False
+    assert res.items == []
+    assert res.erro == "erro_interno"
