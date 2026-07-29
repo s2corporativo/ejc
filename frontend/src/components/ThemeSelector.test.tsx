@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-const get = vi.fn();
-const setTheme = vi.fn();
+const getMock = vi.fn();
+const setThemeMock = vi.fn();
 
 vi.mock("../lib/api", () => ({
-  default: { get },
+  default: {
+    get: (...args: unknown[]) => getMock(...args),
+  },
 }));
 
 vi.mock("../stores/theme", () => ({
@@ -16,21 +18,21 @@ vi.mock("../stores/theme", () => ({
     dark: "Escuro",
     system: "Sistema",
   },
-  useThemeStore: () => ({ theme: "light", setTheme }),
+  useThemeStore: () => ({ theme: "light", setTheme: setThemeMock }),
 }));
 
 import ThemeSelector from "./ThemeSelector";
 
 beforeEach(() => {
-  get.mockReset();
-  setTheme.mockReset();
+  getMock.mockReset();
+  setThemeMock.mockReset();
 });
 
 afterEach(cleanup);
 
 describe("ThemeSelector no Dashboard", () => {
   it("exibe alerta quando o backend informa blocos degradados", async () => {
-    get.mockResolvedValue({
+    getMock.mockResolvedValue({
       data: { degradado: ["casos", "financeiro"] },
     });
 
@@ -44,11 +46,11 @@ describe("ThemeSelector no Dashboard", () => {
     expect(alerta.textContent).toContain("Dados temporariamente indisponíveis");
     expect(alerta.textContent).toContain("Casos");
     expect(alerta.textContent).toContain("Financeiro");
-    expect(get).toHaveBeenCalledWith("/dashboard/");
+    expect(getMock).toHaveBeenCalledWith("/dashboard/");
   });
 
   it("exibe indisponibilidade quando a chamada completa do Dashboard falha", async () => {
-    get.mockRejectedValue(new Error("offline"));
+    getMock.mockRejectedValue(new Error("offline"));
 
     render(
       <MemoryRouter initialEntries={["/dashboard"]}>
@@ -67,7 +69,7 @@ describe("ThemeSelector no Dashboard", () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(get).not.toHaveBeenCalled());
+    await waitFor(() => expect(getMock).not.toHaveBeenCalled());
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
