@@ -1,0 +1,1 @@
+function e(e){return`/casos/${encodeURIComponent(e)}/jornada`}function t(e){return e.get(`caso`)?.trim()||void 0}function n(e,t){let n=t?.trim();return n?{...e,case_id:n}:{...e}}export{e as n,t as r,n as t};

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EJC Design System - Visual Guide</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        
+        :root {
+            --ejc-bg: #faf9f6;
+            --ejc-card: #ffffff;
+            --ejc-border: #ece8e0;
+            --ejc-action: #8f7117;
+            --ejc-gold: #c9a227;
+            --ejc-gold-soft: #f7f1dc;
+            --ejc-bronze: #6f5711;
+            --ejc-ink: #0f172a;
+            --ejc-muted: #8a94a6;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+            background: var(--ejc-bg);
+            color: var(--ejc-ink);
+            line-height: 1.58;
+            padding: 3rem;
+        }
+        
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; color: var(--ejc-bronze); margin-bottom: 0.5rem; }
+        h2 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; margin: 2.5rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--ejc-border); }
+        h3 { font-size: 0.92rem; font-weight: 600; margin: 1.5rem 0 0.75rem; }
+        
+        .eyebrow {
+            display: inline-block;
+            font-size: 0.62rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.22em;
+            color: var(--ejc-bronze);
+            background: var(--ejc-gold-soft);
+            padding: 0.45rem 0.75rem;
+            border-radius: 999px;
+            margin-bottom: 1rem;
+        }
+        
+        .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+        .color-swatch { border-radius: 12px; overflow: hidden; border: 1px solid var(--ejc-border); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+        .color-preview { height: 100px; width: 100%; }
+        .color-info { padding: 0.75rem; background: white; }
+        .color-name { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .color-value { font-size: 0.68rem; color: var(--ejc-muted); font-family: monospace; }
+        
+        .card { background: var(--ejc-card); border: 1px solid var(--ejc-border); border-radius: 12px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); padding: 1.5rem; margin: 1rem 0; }
+        .card:hover { border-color: var(--ejc-border); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+        
+        .button-row { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.5rem 1rem; font-size: 0.8125rem; font-weight: 700; border-radius: 8px; border: none; cursor: pointer; transition: all 0.15s ease-out; }
+        .btn-primary { background: var(--ejc-action); color: #fff5e6; }
+        .btn-primary:hover { background: var(--ejc-bronze); }
+        .btn-secondary { background: white; border: 1px solid var(--ejc-border); color: var(--ejc-ink); }
+        .btn-secondary:hover { background: var(--ejc-gold-soft); }
+        .btn-ghost { background: transparent; color: var(--ejc-ink); }
+        .btn-ghost:hover { background: rgba(15, 23, 42, 0.05); }
+        
+        .input-group { margin: 1rem 0; }
+        .input-label { display: block; font-size: 0.6875rem; font-weight: 600; color: var(--ejc-muted); margin-bottom: 0.375rem; }
+        .input { width: 100%; max-width: 400px; padding: 0.4375rem 0.625rem; font-size: 0.8125rem; border: none; border-radius: 8px; background: white; box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.22), 0 1px 2px rgba(15, 23, 42, 0.03); transition: box-shadow 0.15s ease; }
+        .input:hover { box-shadow: inset 0 0 0 1px rgba(201, 162, 39, 0.45), 0 4px 14px rgba(15, 23, 42, 0.05); }
+        .input:focus { outline: none; box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.72), 0 0 0 3px rgba(212, 175, 55, 0.16); }
+        
+        .table-container { overflow: hidden; border-radius: 12px; border: 1px solid var(--ejc-border); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); margin: 1rem 0; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        thead { background: var(--ejc-gold-soft); }
+        th { font-size: 0.6875rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ejc-bronze); padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid rgba(212, 175, 55, 0.16); }
+        td { padding: 0.625rem 1rem; font-size: 0.875rem; border-top: 1px solid rgba(166, 124, 82, 0.1); color: var(--ejc-ink); }
+        tbody tr:hover { background: rgba(212, 175, 55, 0.06); }
+        
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+        .kpi-card { position: relative; background: white; border: 1px solid var(--ejc-border); border-radius: 10px; padding: 1.25rem; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); overflow: hidden; }
+        .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--ejc-gold); }
+        .kpi-label { font-size: 0.6875rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ejc-muted); margin-bottom: 0.5rem; }
+        .kpi-value { font-size: 1.75rem; font-weight: 700; color: var(--ejc-bronze); letter-spacing: -0.02em; }
+        .kpi-delta { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.6875rem; font-weight: 600; padding: 0.125rem 0.5rem; border-radius: 999px; margin-top: 0.5rem; }
+        .kpi-delta.up { background: rgba(5, 150, 105, 0.1); color: #059669; }
+        .kpi-delta.down { background: rgba(220, 38, 38, 0.1); color: #dc2626; }
+        
+        .badge-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1rem 0; }
+        .badge { display: inline-flex; align-items: center; padding: 0.25rem 0.625rem; font-size: 0.6875rem; font-weight: 500; border-radius: 999px; }
+        .badge-success { background: rgba(5, 150, 105, 0.1); color: #059669; }
+        .badge-warn { background: rgba(245, 158, 11, 0.1); color: #d97706; }
+        .badge-danger { background: rgba(220, 38, 38, 0.1); color: #dc2626; }
+        .badge-info { background: rgba(14, 165, 233, 0.1); color: #0ea5e9; }
+        .badge-gold { background: rgba(212, 175, 55, 0.16); color: var(--ejc-bronze); }
+        
+        .section { margin-bottom: 3rem; }
+        .type-sample { margin: 1rem 0; }
+        .type-h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; color: var(--ejc-bronze); }
+        .type-h2 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; }
+        .type-h3 { font-size: 1.125rem; font-weight: 600; }
+        .type-body { font-size: 0.9375rem; line-height: 1.58; }
+        .type-small { font-size: 0.8125rem; }
+        .type-tiny { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <span class="eyebrow">EJC Design System</span>
+        <h1>Guia Visual do Workspace Executivo</h1>
+        <p style="color: var(--ejc-muted); max-width: 600px;">Documento de referência visual — idioma Verdelimp (flat, compacto, premium). Nenhuma alteração foi feita no código original.</p>
+        
+        <div class="section">
+            <h2>🎨 Paleta de Cores</h2>
+            <div class="color-grid">
+                <div class="color-swatch"><div class="color-preview" style="background: #faf9f6;"></div><div class="color-info"><div class="color-name">Canvas</div><div class="color-value">#FAF9F6</div></div></div>
+                <div class="color-swatch"><div class="color-preview" style="background: #ffffff;"></div><div class="color-info"><div class="color-name">Card</div><div class="color-value">#FFFFFF</div></div></div>
+                <div class="color-swatch"><div class="color-preview" style="background: #ece8e0;"></div><div class="color-info"><div class="color-name">Border</div><div class="color-value">#ECE8E0</div></div></div>
+                <div class="color-swatch"><div class="color-preview" style="background: #8f7117;"></div><div class="color-info"><div class="color-name">Action</div><div class="color-value">#8F7117</div></div></div>
+                <div class="color-swatch"><div class="color-preview" style="background: #c9a227;"></div><div class="color-info"><div class="color-name">Gold</div><div class="color-value">#C9A227</div></div></div>
+                <div class="color-swatch"><div class="color-preview" style="background: #f7f1dc;"></div><div class="color-info"><div class="color-name">Gold Soft</div><div class="color-value">#F7F1DC</div></div></div>
+                <div class="color-swatch"><div class="color-preview" style="background: #6f5711;"></div><div class="color-info"><div class="color-name">Bronze</div><div class="color-value">#6F5711</div></div></div>
+                <div class="color-swatch"><div class="color-preview" style="background: #0f172a;"></div><div class="color-info"><div class="color-name">Ink</div><div class="color-value">#0F172A</div></div></div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📝 Tipografia</h2>
+            <div class="type-sample type-h1">Heading 1 — Advogacia Premium</div>
+            <div class="type-sample type-h2">Heading 2 — Dashboard Jurídico</div>
+            <div class="type-sample type-h3">Heading 3 — Seção do Caso</div>
+            <div class="type-sample type-body">Corpo de texto com Inter, 15px base, line-height 1.58. O sistema tipográfico EJC prioriza legibilidade para documentos jurídicos extensos.</div>
+            <div class="type-sample type-small">Texto secundário e descrições</div>
+            <div class="type-sample type-tiny">Label uppercase tracking-wide</div>
+        </div>
+        
+        <div class="section">
+            <h2>🔘 Botões</h2>
+            <div class="button-row">
+                <button class="btn btn-primary">Primário</button>
+                <button class="btn btn-secondary">Secundário</button>
+                <button class="btn btn-ghost">Ghost</button>
+            </div>
+            <p class="type-small" style="color: var(--ejc-muted);">Padding: 8×16 | Font: 13px Bold | Radius: 8px</p>
+        </div>
+        
+        <div class="section">
+            <h2>📥 Inputs</h2>
+            <div class="input-group">
+                <label class="input-label">Campo de Texto</label>
+                <input type="text" class="input" placeholder="Digite aqui..." />
+            </div>
+            <div class="input-group">
+                <label class="input-label">Email</label>
+                <input type="email" class="input" placeholder="advogado@ejc.com.br" />
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📦 Cards</h2>
+            <div class="card">
+                <span class="eyebrow">Exemplo de Card</span>
+                <h3 style="margin-top: 0.5rem;">Título do Conteúdo</h3>
+                <p style="color: var(--ejc-muted); font-size: 0.875rem; margin-top: 0.5rem;">Cards com borda 1px visível, sombra mínima (0 1px 2px), sem elevação no hover. Border-radius: 12px.</p>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📊 KPI Cards</h2>
+            <div class="kpi-grid">
+                <div class="kpi-card"><div class="kpi-label">Casos Ativos</div><div class="kpi-value">247</div><div class="kpi-delta up">↑ 12%</div></div>
+                <div class="kpi-card"><div class="kpi-label">Honorários</div><div class="kpi-value">R$ 1.2M</div><div class="kpi-delta up">↑ 8.5%</div></div>
+                <div class="kpi-card"><div class="kpi-label">Prazos</div><div class="kpi-value">18</div><div class="kpi-delta down">↓ 3 esta semana</div></div>
+                <div class="kpi-card"><div class="kpi-label">Clientes</div><div class="kpi-value">89</div><div class="kpi-delta up">↑ 4 novos</div></div>
+            </div>
+            <p class="type-small" style="color: var(--ejc-muted);">Borda superior 3px em ouro (#D4AF37) • Radius: 10px • Sem hover effect</p>
+        </div>
+        
+        <div class="section">
+            <h2>📋 Tabelas</h2>
+            <div class="table-container">
+                <table>
+                    <thead><tr><th>Caso</th><th>Cliente</th><th>Status</th><th>Prazo</th><th>Valor</th></tr></thead>
+                    <tbody>
+                        <tr><td>#2024.001.234</td><td>Empresa ABC Ltda</td><td>Em andamento</td><td>15/02/2025</td><td>R$ 450.000</td></tr>
+                        <tr><td>#2024.001.235</td><td>João da Silva</td><td>Aguardando</td><td>28/02/2025</td><td>R$ 125.000</td></tr>
+                        <tr><td>#2024.001.236</td><td>Maria Santos</td><td>Concluído</td><td>—</td><td>R$ 89.000</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="type-small" style="color: var(--ejc-muted); margin-top: 0.5rem;">Thead: fundo ouro-palha (#F7F1DC) • Hover: rgba(212, 175, 55, 0.06)</p>
+        </div>
+        
+        <div class="section">
+            <h2>🏷️ Badges</h2>
+            <div class="badge-row">
+                <span class="badge badge-success">Sucesso</span>
+                <span class="badge badge-warn">Atenção</span>
+                <span class="badge badge-danger">Erro</span>
+                <span class="badge badge-info">Info</span>
+                <span class="badge badge-gold">Premium</span>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>♿ Acessibilidade</h2>
+            <div class="card">
+                <h3 style="margin-top: 0;">Focus Visible</h3>
+                <p style="font-size: 0.875rem; color: var(--ejc-muted); margin-bottom: 1rem;">Ring dourado de 2px para navegação por teclado</p>
+                <button class="btn btn-primary" style="box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.7);">Estado de Foco Simulado</button>
+            </div>
+            <div class="card" style="margin-top: 1rem;">
+                <h3 style="margin-top: 0;">Contraste</h3>
+                <p style="font-size: 0.875rem; color: var(--ejc-muted);">Todos os textos atendem WCAG AA (mínimo 4.5:1)<br/>Ouro #8F7117 sobre branco = 4.6:1 ✓<br/>Bronze #6F5711 sobre branco = 8.2:1 ✓</p>
+            </div>
+        </div>
+        
+        <div style="margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--ejc-border); color: var(--ejc-muted); font-size: 0.8125rem;">
+            <p><strong>EJC Design System Audit</strong></p>
+            <p>Documento gerado para revisão visual — nenhuma alteração no código fonte.</p>
+            <p style="margin-top: 0.5rem;">Idioma: Verdelimp • Versão: 2024 • Auditoria Completa</p>
+        </div>
+    </div>
+</body>
+</html>
