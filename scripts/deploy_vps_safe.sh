@@ -93,7 +93,12 @@ if [ -f scripts/migrar_env_obsoletos.sh ]; then
     log "$linha"
   done
 fi
-docker compose config >"/tmp/ejc_compose_config_$(timestamp).txt"
+# SYS-097 (correção originada no PR #497, adotada aqui): validar a composição
+# SEM persistir a config expandida. O antigo `docker compose config >/tmp/...txt`
+# gravava TODOS os segredos interpolados (senha do Postgres, chaves de API,
+# tokens) em claro num arquivo world-readable de /tmp que nunca era removido —
+# a cada deploy. `--quiet` valida sintaxe e interpolação sem emitir nada.
+docker compose config --quiet
 
 OLD_BACKEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_backend 2>/dev/null || true)"
 OLD_WORKER_IMAGE="$(docker inspect -f '{{.Image}}' ejc_worker 2>/dev/null || true)"
