@@ -9,11 +9,16 @@ import {
 } from "../components/UI";
 import { toast } from "../components/Toast";
 import {
+  BadgeCheck,
+  Calculator,
   Calendar,
   CalendarClock,
+  CalendarPlus,
   ChevronDown,
+  RefreshCw,
   Clock,
   CheckCircle,
+  Download,
   ExternalLink,
   Filter,
   List,
@@ -23,6 +28,7 @@ import {
   Gavel,
   Pause,
   ClipboardList,
+  Trash2,
   Users,
   UserPlus,
   User as UserIcon,
@@ -31,10 +37,18 @@ import {
   AlertTriangle,
   X,
 } from "lucide-react";
-import api from "../lib/api";
+import api, { confirmarPrazo } from "../lib/api";
 import { asList } from "../lib/list";
 import { addCaseContext, readCaseContext } from "../lib/caseContext";
-import { Modal } from "../components/UI";
+import { ConfirmModal, Modal } from "../components/UI";
+import {
+  AvisoCapturaEmCurso,
+  PrazoSugeridoModal,
+  SimularPrazoModal,
+  SuspensaoFormModal,
+  usePodeGerirSuspensoes,
+  type SugestaoAberta,
+} from "./CentralAtividades/acoesLegadas";
 
 type ItemType =
   | "prazo"
@@ -145,6 +159,11 @@ interface Activity {
   hora?: string;
   local?: string;
   origem: string;
+  /** Só para fonte "prazo" e só quando o enriquecimento de /deadlines/
+   *  respondeu — a view vw_atividades não expõe estes campos. `undefined`
+   *  significa DESCONHECIDO (não "false"). */
+  confirmado?: boolean;
+  ciencia_confirmada?: boolean;
 }
 
 interface Responsavel {
@@ -212,6 +231,11 @@ function tipoCfg(tipo: ItemType) {
   return TIPO_CONFIG[tipo] ?? TIPO_CONFIG.compromisso;
 }
 
+/** Teto do endpoint /deadlines/ (Query(le=200) no backend). */
+const PRAZOS_PAGE_SIZE = 200;
+/** Teto de páginas do enriquecimento de prazos (200 × 10 = 2.000 prazos). */
+const PRAZOS_MAX_PAGINAS = 10;
+
 function apiErro(e: unknown, fallback: string): string {
   const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
     ?.data?.detail;
@@ -248,6 +272,14 @@ function ActivityMeta({
           <UserIcon className="w-3 h-3" /> {resp}
         </span>
       )}
+      {item.ciencia_confirmada && (
+        <span
+          className="inline-flex items-center gap-1 text-xs text-success-700"
+          title="Ciência do prazo já confirmada"
+        >
+          <BadgeCheck className="w-3 h-3" /> Ciência
+        </span>
+      )}
       {item.prioridade && (
         <span
           className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${PRIO_COLOR[item.prioridade] ?? PRIO_COLOR.baixa}`}
@@ -267,21 +299,48 @@ function ActivityMeta({
   );
 }
 
+/** Ações de linha compartilhadas pelas visões de lista e de calendário. */
+interface RowActions {
+  nomeDe: (id?: string) => string | undefined;
+  onConcluir: (item: Activity) => void;
+  onReagendar: (item: Activity) => void;
+  onAtribuir: (item: Activity) => void;
+  /** POST /deadlines/{id}/ciencia — rastro de ciência, ≠ concluir. */
+  onCiencia: (item: Activity) => void;
+  /** PATCH /deadlines/{id}/confirmar — tira a marca "a confirmar" do
+   *  rascunho de IA. ≠ ciência e ≠ concluir. */
+  onConfirmarPrazo: (item: Activity) => void;
+  /** DELETE /tasks/{id} — passa por confirmação explícita antes. */
+  onExcluir: (item: Activity) => void;
+  /** GET /intimacoes/{id}/prazo-sugerido — abre o fluxo aceitar/recusar. */
+  onPrazoSugerido: (item: Activity) => void;
+  /** DELETE /suspensoes/{id} — só admin/sócio; passa por confirmação. */
+  onExcluirSuspensao: (item: Activity) => void;
+  podeAtribuir: boolean;
+  /** Papel permite criar/remover suspensão (require_roles do backend). */
+  podeGerirSuspensoes: boolean;
+  /** Id do prazo cuja confirmação está em curso (desabilita o botão). */
+  confirmandoId: string | null;
+  /** Id da intimação cuja sugestão está sendo carregada. */
+  sugerindoId: string | null;
+}
+
 function ActivityRow({
   item,
   nomeDe,
   onConcluir,
   onReagendar,
   onAtribuir,
+  onCiencia,
+  onConfirmarPrazo,
+  onExcluir,
+  onPrazoSugerido,
+  onExcluirSuspensao,
   podeAtribuir,
-}: {
-  item: Activity;
-  nomeDe: (id?: string) => string | undefined;
-  onConcluir: (item: Activity) => void;
-  onReagendar: (item: Activity) => void;
-  onAtribuir: (item: Activity) => void;
-  podeAtribuir: boolean;
-}) {
+  podeGerirSuspensoes,
+  confirmandoId,
+  sugerindoId,
+}: RowActions & { item: Activity }) {
   const cfg = tipoCfg(item.tipo);
   const Icon = cfg.icon;
   const urg = item.urgencia ?? "normal";
@@ -293,6 +352,20 @@ function ActivityRow({
     !finalizado &&
     ["prazo", "tarefa", "agenda", "intimacao"].includes(item.fonte);
   const podeReagendar = ["prazo", "tarefa", "agenda"].includes(item.fonte);
+  // Ciência: só prazo em aberto e só enquanto NÃO se souber que já há ciência
+  // (o campo pode não ter vindo — nesse caso o botão continua disponível e o
+  // endpoint é idempotente).
+  const podeCiencia =
+    item.fonte === "prazo" && !finalizado && item.ciencia_confirmada !== true;
+  // Confirmar: exclusivo do prazo sabidamente rascunho (confirmado === false).
+  const podeConfirmar = item.fonte === "prazo" && item.confirmado === false;
+  const podeExcluir = item.fonte === "tarefa";
+  // Prazo assistido: só intimação em aberto. O status (aceito/recusado) não vem
+  // na vw_atividades — é lido sob demanda no clique, sem custo por linha.
+  const podePrazoSugerido = item.fonte === "intimacao" && !finalizado;
+  // Suspensão é informativa na Central; remover exige admin/sócio no backend.
+  const podeExcluirSuspensao =
+    item.fonte === "suspensao" && podeGerirSuspensoes;
   const btn =
     "p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors";
   return (
@@ -339,6 +412,36 @@ function ActivityRow({
         <div className="flex items-center justify-between mt-1">
           <p className="text-[10px] text-slate-400">{fmtDate(item.date)}</p>
           <div className="flex items-center gap-0.5">
+            {podeConfirmar && (
+              <button
+                onClick={() => onConfirmarPrazo(item)}
+                disabled={confirmandoId === item.id}
+                className="text-[11px] font-semibold px-2 py-0.5 mr-1 rounded-lg border border-warn-300 text-warn-700 hover:bg-warn-50 disabled:opacity-60"
+                title="Confirmar este prazo sugerido (rascunho de IA)"
+              >
+                {confirmandoId === item.id ? "Confirmando..." : "Confirmar"}
+              </button>
+            )}
+            {podePrazoSugerido && (
+              <button
+                onClick={() => onPrazoSugerido(item)}
+                disabled={sugerindoId === item.id}
+                className="text-[11px] font-semibold px-2 py-0.5 mr-1 rounded-lg border border-ai-300 text-ai-700 hover:bg-ai-50 disabled:opacity-60"
+                title="Ver o prazo sugerido para esta intimação (aceitar ou recusar)"
+              >
+                {sugerindoId === item.id ? "Calculando..." : "Prazo sugerido"}
+              </button>
+            )}
+            {podeCiencia && (
+              <button
+                onClick={() => onCiencia(item)}
+                className={`${btn} hover:text-success-700`}
+                title="Dar ciência do prazo"
+                aria-label="Dar ciência do prazo"
+              >
+                <BadgeCheck className="w-3.5 h-3.5" />
+              </button>
+            )}
             {item.case_id && (
               <Link
                 to={`/casos/${item.case_id}`}
@@ -385,6 +488,26 @@ function ActivityRow({
                 }
               >
                 <CheckCircle className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {podeExcluir && (
+              <button
+                onClick={() => onExcluir(item)}
+                className={`${btn} hover:text-danger-700`}
+                title="Excluir tarefa"
+                aria-label="Excluir tarefa"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {podeExcluirSuspensao && (
+              <button
+                onClick={() => onExcluirSuspensao(item)}
+                className={`${btn} hover:text-danger-700`}
+                title="Remover suspensão"
+                aria-label="Remover suspensão"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -810,6 +933,22 @@ export default function CentralAtividades() {
   } | null>(null);
   // Conflito de horário devolvido ao criar/editar evento — aviso não silencioso.
   const [conflitos, setConflitos] = useState<ConflitoEvento[]>([]);
+  // Exclusão de tarefa: nunca direta — passa pelo ConfirmModal do design system.
+  const [excluir, setExcluir] = useState<Activity | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const [confirmandoPrazo, setConfirmandoPrazo] = useState<string | null>(null);
+  const [exportando, setExportando] = useState(false);
+  // Ações trazidas das telas legadas (intimações e suspensões).
+  const podeGerirSuspensoes = usePodeGerirSuspensoes();
+  const [sugestao, setSugestao] = useState<SugestaoAberta | null>(null);
+  const [sugerindo, setSugerindo] = useState<string | null>(null);
+  const [capturando, setCapturando] = useState(false);
+  const [novaSuspensao, setNovaSuspensao] = useState(false);
+  const [simulando, setSimulando] = useState(false);
+  const [excluirSuspensao, setExcluirSuspensao] = useState<Activity | null>(
+    null,
+  );
+  const [excluindoSuspensao, setExcluindoSuspensao] = useState(false);
   const [filterUrgencia, setFilterUrgencia] = useState<string>("todos");
   const [filterSituacao, setFilterSituacao] = useState<
     SituacaoColuna | "todos"
@@ -822,12 +961,19 @@ export default function CentralAtividades() {
       // Fonte primária: GET /atividades (vw_atividades) — já entrega
       // responsavel_id, prioridade e subtipo por item, para TODOS os itens
       // visíveis (sem o corte de responsável do /deadlines/ nem o limite de
-      // página do /agenda-eventos/). Único enriquecimento restante:
-      // hora/local dos eventos de agenda, que a view não expõe. É
-      // best-effort: se falhar, a central continua funcionando com o feed.
-      const [ativ, agendaR] = await Promise.allSettled([
+      // página do /agenda-eventos/). Dois enriquecimentos best-effort sobre
+      // campos que a view NÃO expõe — se qualquer um falhar, a central segue
+      // funcionando com o feed:
+      //   1. hora/local dos eventos de agenda;
+      //   2. `confirmado`/`ciencia_confirmada` dos prazos (status="" = todos
+      //      os status). Sem (2) a central só não mostra "Confirmar" e mantém
+      //      "Dar ciência" disponível (o endpoint é idempotente).
+      const [ativ, agendaR, prazosR] = await Promise.allSettled([
         api.get("/atividades", { params: { apenas_pendentes: false } }),
         api.get("/agenda-eventos/", { params: { page_size: 500 } }),
+        api.get("/deadlines/", {
+          params: { status: "", page: 1, page_size: PRAZOS_PAGE_SIZE },
+        }),
       ]);
       if (ativ.status !== "fulfilled") {
         setError(true);
@@ -836,11 +982,49 @@ export default function CentralAtividades() {
       const agendaMap: Record<string, any> = {};
       if (agendaR.status === "fulfilled")
         asList(agendaR.value.data).forEach((a: any) => (agendaMap[a.id] = a));
+      const prazoMap: Record<string, any> = {};
+      if (prazosR.status === "fulfilled") {
+        asList(prazosR.value.data).forEach((p: any) => (prazoMap[p.id] = p));
+        // /deadlines/ pagina em no máximo 200 por página e ordena pelo prazo
+        // mais antigo: com mais de uma página, os prazos recentes ficariam sem
+        // `confirmado` e o botão "Confirmar" sumiria justo nos rascunhos de IA
+        // novos. Busca as páginas restantes EM PARALELO e para assim que todos
+        // os prazos do feed estiverem cobertos (ou no teto de páginas).
+        const total = Number(prazosR.value.data?.total ?? 0);
+        const idsFeed = new Set<string>(
+          asList(ativ.value.data)
+            .filter((a: any) => a.tipo === "prazo")
+            .map((a: any) => a.id),
+        );
+        const faltam = [...idsFeed].some((id) => !prazoMap[id]);
+        const paginas = Math.min(
+          Math.ceil(total / PRAZOS_PAGE_SIZE),
+          PRAZOS_MAX_PAGINAS,
+        );
+        if (faltam && paginas > 1) {
+          const extras = await Promise.allSettled(
+            Array.from({ length: paginas - 1 }, (_, i) =>
+              api.get("/deadlines/", {
+                params: {
+                  status: "",
+                  page: i + 2,
+                  page_size: PRAZOS_PAGE_SIZE,
+                },
+              }),
+            ),
+          );
+          extras.forEach((r) => {
+            if (r.status === "fulfilled")
+              asList(r.value.data).forEach((p: any) => (prazoMap[p.id] = p));
+          });
+        }
+      }
 
       const all: Activity[] = asList(ativ.value.data).map((a: any) => {
         const bruto: string = a.tipo;
         const fonte: Fonte = bruto === "agenda" ? "agenda" : (bruto as Fonte);
         const evento = fonte === "agenda" ? agendaMap[a.id] : undefined;
+        const prazo = fonte === "prazo" ? prazoMap[a.id] : undefined;
         const origem =
           fonte === "prazo"
             ? "Prazos"
@@ -871,6 +1055,8 @@ export default function CentralAtividades() {
           hora: evento?.hora ?? undefined,
           local: evento?.local ?? undefined,
           origem,
+          confirmado: prazo?.confirmado,
+          ciencia_confirmada: prazo?.ciencia_confirmada,
         };
       });
       setItems(all);
@@ -922,6 +1108,126 @@ export default function CentralAtividades() {
       load();
     } catch (e) {
       toast.error(apiErro(e, "Erro ao concluir o item"));
+    }
+  };
+
+  // Ciência ≠ concluir: apenas registra que o responsável tomou conhecimento
+  // do prazo (rastro LGPD/responsabilidade). O prazo segue pendente.
+  const darCiencia = async (item: Activity) => {
+    try {
+      await api.post(`/deadlines/${item.id}/ciencia`);
+      toast.success("Ciência confirmada");
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Erro ao dar ciência do prazo"));
+    }
+  };
+
+  // Confirmar ≠ ciência ≠ concluir: tira a marca "a confirmar" do prazo que
+  // nasceu como rascunho de IA (ele já alertava mesmo sem confirmação).
+  const confirmarRascunho = async (item: Activity) => {
+    setConfirmandoPrazo(item.id);
+    try {
+      await confirmarPrazo(item.id);
+      toast.success("Prazo confirmado.");
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Falha ao confirmar o prazo."));
+    } finally {
+      setConfirmandoPrazo(null);
+    }
+  };
+
+  // Prazo assistido da intimação — passo 1: buscar a sugestão (modo leitura,
+  // não persiste). Só no clique: a vw_atividades não expõe o status do fluxo e
+  // consultar por linha no load custaria uma requisição por intimação.
+  const abrirPrazoSugerido = async (item: Activity) => {
+    setSugerindo(item.id);
+    try {
+      const { data } = await api.get(`/intimacoes/${item.id}/prazo-sugerido`);
+      setSugestao({ id: item.id, titulo: item.titulo, dados: data });
+    } catch (e) {
+      toast.error(apiErro(e, "Não foi possível calcular a sugestão de prazo."));
+    } finally {
+      setSugerindo(null);
+    }
+  };
+
+  // Captura manual do DJEN: integração externa opt-in — se estiver desligada ou
+  // sem OAB configurada, o backend responde com detalhe próprio (mensagem
+  // controlada, nunca erro cru).
+  const capturarIntimacoes = async () => {
+    setCapturando(true);
+    try {
+      const { data } = await api.post("/intimacoes/capturar-agora");
+      toast.success(data.detail || "Busca de intimações concluída.");
+      load();
+    } catch (e) {
+      toast.error(
+        apiErro(
+          e,
+          "Não foi possível buscar intimações agora. Confirme sua OAB no menu do avatar.",
+        ),
+      );
+    } finally {
+      setCapturando(false);
+    }
+  };
+
+  const removerSuspensao = async () => {
+    if (!excluirSuspensao) return;
+    setExcluindoSuspensao(true);
+    try {
+      await api.delete(`/suspensoes/${excluirSuspensao.id}`);
+      toast.success("Suspensão removida");
+      setExcluirSuspensao(null);
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Erro ao remover a suspensão"));
+    } finally {
+      setExcluindoSuspensao(false);
+    }
+  };
+
+  const excluirTarefa = async () => {
+    if (!excluir) return;
+    setExcluindo(true);
+    try {
+      await api.delete(`/tasks/${excluir.id}`);
+      toast.success("Tarefa excluída");
+      setExcluir(null);
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Erro ao excluir a tarefa"));
+    } finally {
+      setExcluindo(false);
+    }
+  };
+
+  // Exporta PRAZOS (o endpoint é o do módulo de prazos). Dos filtros da central
+  // só há equivalente no endpoint para o caso em contexto e para a situação
+  // "Concluído"; os demais (tipo/urgência) não têm query param — nesses casos
+  // exporta todos os status em vez de inventar parâmetro.
+  const exportarCsv = async () => {
+    setExportando(true);
+    try {
+      const r = await api.get("/deadlines/export.csv", {
+        params: {
+          status: filterSituacao === "concluido" ? "concluido" : "",
+          case_id: contextCaseId,
+        },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "prazos.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Falha ao exportar o CSV.");
+    } finally {
+      setExportando(false);
     }
   };
 
@@ -1124,6 +1430,25 @@ export default function CentralAtividades() {
     }
   };
 
+  // Mesmo conjunto de ações nas visões de lista e de calendário.
+  const rowActions: RowActions = {
+    nomeDe,
+    onConcluir: concluir,
+    onReagendar: (it) =>
+      setReag({ item: it, data: it.date?.slice(0, 10) ?? "" }),
+    onAtribuir: (it) =>
+      setAtrib({ item: it, responsavel_id: it.responsavel_id ?? "" }),
+    onCiencia: darCiencia,
+    onConfirmarPrazo: confirmarRascunho,
+    onExcluir: (it) => setExcluir(it),
+    onPrazoSugerido: abrirPrazoSugerido,
+    onExcluirSuspensao: (it) => setExcluirSuspensao(it),
+    podeAtribuir: responsaveis.length > 0,
+    podeGerirSuspensoes,
+    confirmandoId: confirmandoPrazo,
+    sugerindoId: sugerindo,
+  };
+
   const filtered = items.filter((item) => {
     if (contextCaseId && item.case_id !== contextCaseId) return false;
     if (filterTipo !== "todos" && item.tipo !== filterTipo) return false;
@@ -1202,6 +1527,37 @@ export default function CentralAtividades() {
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
+            <button
+              onClick={() => setSimulando(true)}
+              title="Simular o vencimento de um prazo (feriados e suspensões)"
+              aria-label="Simular vencimento de prazo"
+              className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"
+            >
+              <Calculator className="w-4 h-4" />
+              Simular prazo
+            </button>
+            <button
+              onClick={capturarIntimacoes}
+              disabled={capturando}
+              title="Buscar intimações no DJEN agora (pode levar alguns minutos)"
+              aria-label="Buscar intimações agora"
+              className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] disabled:opacity-60 dark:bg-white/[0.07] dark:text-slate-300"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${capturando ? "animate-spin" : ""}`}
+              />
+              {capturando ? "Buscando..." : "Buscar intimações"}
+            </button>
+            <button
+              onClick={exportarCsv}
+              disabled={exportando}
+              title="Exportar os prazos em CSV"
+              aria-label="Exportar prazos em CSV"
+              className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] disabled:opacity-60 dark:bg-white/[0.07] dark:text-slate-300"
+            >
+              <Download className="w-4 h-4" />
+              {exportando ? "Exportando..." : "Exportar CSV"}
+            </button>
             <div className="relative">
               <button
                 onClick={() => setMenuNovo((v) => !v)}
@@ -1232,6 +1588,20 @@ export default function CentralAtividades() {
                         {op.label}
                       </button>
                     ))}
+                    {/* Suspensão de tribunal: só admin/sócio — o backend exige
+                        require_roles, então a opção nem aparece para os demais. */}
+                    {podeGerirSuspensoes && (
+                      <button
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuNovo(false);
+                          setNovaSuspensao(true);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm text-slate-700 border-t border-slate-100 hover:bg-slate-50 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-700"
+                      >
+                        Suspensão de prazo
+                      </button>
+                    )}
                   </div>
                 </>
               )}
@@ -1239,6 +1609,8 @@ export default function CentralAtividades() {
           </>
         }
       />
+
+      {capturando && <AvisoCapturaEmCurso />}
 
       {/* Aviso de double-booking — não silencioso. O evento já foi criado/
           editado (política do backend: AVISA, não bloqueia). */}
@@ -1396,18 +1768,7 @@ export default function CentralAtividades() {
                 <ActivityRow
                   key={`${item.fonte}-${item.id}`}
                   item={item}
-                  nomeDe={nomeDe}
-                  onConcluir={concluir}
-                  onReagendar={(it) =>
-                    setReag({ item: it, data: it.date?.slice(0, 10) ?? "" })
-                  }
-                  onAtribuir={(it) =>
-                    setAtrib({
-                      item: it,
-                      responsavel_id: it.responsavel_id ?? "",
-                    })
-                  }
-                  podeAtribuir={responsaveis.length > 0}
+                  {...rowActions}
                 />
               ))}
             </div>
@@ -1438,18 +1799,7 @@ export default function CentralAtividades() {
               <ActivityRow
                 key={`${item.fonte}-${item.id}`}
                 item={item}
-                nomeDe={nomeDe}
-                onConcluir={concluir}
-                onReagendar={(it) =>
-                  setReag({ item: it, data: it.date?.slice(0, 10) ?? "" })
-                }
-                onAtribuir={(it) =>
-                  setAtrib({
-                    item: it,
-                    responsavel_id: it.responsavel_id ?? "",
-                  })
-                }
-                podeAtribuir={responsaveis.length > 0}
+                {...rowActions}
               />
             ))
           )}
@@ -1640,6 +1990,47 @@ export default function CentralAtividades() {
           </div>
         )}
       </Modal>
+
+      {/* ── Excluir tarefa (confirmação explícita — ação irreversível) ── */}
+      <ConfirmModal
+        open={excluir !== null}
+        onClose={() => setExcluir(null)}
+        onConfirm={excluirTarefa}
+        title="Excluir tarefa"
+        message={
+          excluir
+            ? `A tarefa “${excluir.titulo}” será excluída. Esta ação não pode ser desfeita.`
+            : undefined
+        }
+        confirmLabel="Excluir"
+        loading={excluindo}
+      />
+
+      {/* ── Ações vindas das telas legadas ── */}
+      <PrazoSugeridoModal
+        sugestao={sugestao}
+        onClose={() => setSugestao(null)}
+        onResolvido={load}
+      />
+      <SuspensaoFormModal
+        open={novaSuspensao}
+        onClose={() => setNovaSuspensao(false)}
+        onCriada={load}
+      />
+      <SimularPrazoModal open={simulando} onClose={() => setSimulando(false)} />
+      <ConfirmModal
+        open={excluirSuspensao !== null}
+        onClose={() => setExcluirSuspensao(null)}
+        onConfirm={removerSuspensao}
+        title="Remover suspensão"
+        message={
+          excluirSuspensao
+            ? `A suspensão “${excluirSuspensao.titulo}” deixará de afetar a contagem de prazos.`
+            : undefined
+        }
+        confirmLabel="Remover"
+        loading={excluindoSuspensao}
+      />
     </div>
   );
 }

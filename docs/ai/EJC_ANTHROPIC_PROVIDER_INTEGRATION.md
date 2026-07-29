@@ -59,7 +59,7 @@ Qualquer outro uso é desvio de arquitetura e deve ser tratado como incidente.
 ## 7. PROIBIDO
 
 - Endpoint exclusivo da Anthropic ou rota que a chame fora de `ai_gateway`/`providers/`.
-- Chave, prompt ou seleção de modelo no frontend (o frontend envia intenção/IDs; `lib/aiCore.ts` não conhece providers).
+- Chave, prompt ou seleção de modelo no frontend (o frontend envia apenas intenção/IDs pelo cliente axios único `lib/api.ts` e não conhece providers).
 - Import de `anthropic` fora de `providers/anthropic_provider.py`.
 - Logar/retornar a chave ou o corpo de erro da API (o provider já reduz o erro a tipo+status).
 - Enviar conteúdo não sanitizado: a barreira final do gateway não é contornável por parâmetro.

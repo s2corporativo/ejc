@@ -36,7 +36,7 @@ Cada transição grava `revisado_por` e `revisado_em` (ai_log.py:67-68).
 - **IA Defensiva**: `GET /api/ia-defensiva/historico` (por caso; não-sócios só veem os próprios logs, ia_defensiva.py:110-112) e `PATCH /api/ia-defensiva/historico/{log_id}/status` (ia_defensiva.py:138-156) — exige ser o autor ou role ≥ socio.
 - **Dashboards**: `/api/ia-saude/dashboard` agrega `por_status_hitl` (ia_saude.py:51-62); `/api/ia-governanca` mede pendências (`status_hitl == "gerado"`, ia_governanca.py:385) e aproveitamento (`revisado/aplicado`, ia_governanca.py:247).
 
-O frontend recebe `is_rascunho/requer_revisao/status_hitl/aviso_hitl/log_id` em toda resposta do núcleo (`AICoreResponse`, frontend/src/lib/aiCore.ts:16-33) e usa `log_id` para a revisão.
+O contrato desses campos é carimbado no backend por `hitl_policy.aplicar()` (services/ai/core/hitl_policy.py:15-26), que injeta `is_rascunho`, `requer_revisao`, `status_hitl` e `aviso_hitl` em toda resposta do núcleo; o `log_id` acompanha a resposta e é o que o cliente usa para a revisão. **Não há client tipado no frontend**: `frontend/src/lib/aiCore.ts` foi removido em 1befdf0 (nunca teve consumidor) e as telas seguem consumindo os endpoints legados de IA — ver a pendência "Núcleo de IA sem consumidor no frontend" em docs/HIGIENIZACAO_BACKLOG_FRONTEND.md.
 
 ## 4. `AI_REQUIRE_HITL` (core/config.py:89)
 

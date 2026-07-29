@@ -72,7 +72,18 @@ async def test_fontes_invalidas_caem_no_default(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_router_de_precedentes_e_registrado_por_patch():
-    source = __import__("pathlib").Path("app/services/event_subscribers.py").read_text(encoding="utf-8")
-    assert "precedentes_jurisprudencia.router" in source
-    assert "jurisprudencia_externa.router.include_router" in source
+async def test_router_de_precedentes_e_registrado_explicitamente():
+    """Onda 3 §4.1: registro explícito em app/main.py no lugar do patch em
+    event_subscribers — mesmo path final."""
+    from pathlib import Path
+
+    from app.main import app
+
+    montadas = {getattr(r, "path", "") for r in app.routes}
+    assert "/api/jurisprudencia-externa/precedentes/buscar" in montadas
+
+    main_src = Path("app/main.py").read_text(encoding="utf-8")
+    assert 'precedentes_jurisprudencia.router, prefix=API + "/jurisprudencia-externa"' in main_src
+
+    subscribers = Path("app/services/event_subscribers.py").read_text(encoding="utf-8")
+    assert "jurisprudencia_externa.router.include_router" not in subscribers

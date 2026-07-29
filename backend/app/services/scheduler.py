@@ -23,6 +23,7 @@ from datetime import date, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import func, text, select
 
 from app.core.config import get_settings
@@ -450,6 +451,18 @@ async def _alertar_audiencias_agenda():
         _hb_status, _hb_detail = "erro", str(e)
         logger.error(f"[Scheduler] alertar_audiencias_agenda: {e}")
     await _bater_ponto(JOB_AUDIENCIAS, _hb_status, _hb_detail)
+
+
+async def _flush_telemetria_rotas() -> None:
+    """Persiste o uso agregado das rotas monitoradas (services/route_usage.py)."""
+    from app.services import route_usage
+    await route_usage.flush()
+
+
+async def _expurgar_telemetria_rotas() -> None:
+    """Expurgo LGPD: remove telemetria de rota acima da janela de retenção."""
+    from app.services import route_usage
+    await route_usage.expurgar_antigos()
 
 
 async def _alertar_prescricao():
@@ -1191,6 +1204,14 @@ def start_scheduler():
     s.add_job(_alertar_procuracoes, CronTrigger(day_of_week="mon", hour=9), id="procuracoes", replace_existing=True)
     s.add_job(_alertar_vencimento_societario, CronTrigger(hour=9, minute=15), id="societario", replace_existing=True)
     s.add_job(_alertar_prescricao,  CronTrigger(day_of_week="mon", hour=9, minute=5), id="prescricao", replace_existing=True)
+
+    # Telemetria de uso das rotas candidatas à remoção (Onda 5): flush do
+    # agregado em memória a cada 15 min — sem INSERT por request.
+    s.add_job(_flush_telemetria_rotas, IntervalTrigger(minutes=15),
+              id="telemetria_rotas", replace_existing=True, max_instances=1, coalesce=True)
+    # Expurgo LGPD da telemetria (retenção de 90 dias; janela declarada 30-60).
+    s.add_job(_expurgar_telemetria_rotas, CronTrigger(hour=3, minute=40),
+              id="telemetria_rotas_expurgo", replace_existing=True, max_instances=1, coalesce=True)
 
     # Jobs v3.x — integrações oficiais (guardas internas pulam se não configurado)
     s.add_job(job_djen_intimacoes,  CronTrigger(hour=6,  minute=30), id="djen",        replace_existing=True)

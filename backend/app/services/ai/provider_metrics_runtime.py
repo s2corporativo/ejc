@@ -197,26 +197,6 @@ def _instalar_instrumentacao(ai_gateway) -> None:
     logger.info("Telemetria técnica dos provedores conectada ao AI Gateway")
 
 
-def _instalar_router() -> None:
-    """Acopla o painel ao router de governança existente, sem novo menu paralelo."""
-    from app.routers import ia_governanca, ia_provider_metrics
-
-    existing = {
-        (getattr(route, "path", None), tuple(sorted(getattr(route, "methods", []) or [])))
-        for route in ia_governanca.router.routes
-    }
-    added = 0
-    for route in ia_provider_metrics.router.routes:
-        key = (
-            getattr(route, "path", None),
-            tuple(sorted(getattr(route, "methods", []) or [])),
-        )
-        if key not in existing:
-            ia_governanca.router.routes.append(route)
-            existing.add(key)
-            added += 1
-    logger.info("Painel de provedores registrado (%d rota(s))", added)
-
 
 def instalar(ai_gateway=None) -> None:
     global _INSTALADO
@@ -227,5 +207,6 @@ def instalar(ai_gateway=None) -> None:
     else:
         gateway = ai_gateway
     _instalar_instrumentacao(gateway)
-    _instalar_router()
+    # Onda 3 §4.1: o router ia_provider_metrics é registrado explicitamente em
+    # app/main.py (antes suas rotas eram anexadas a ia_governanca.router aqui).
     _INSTALADO = True

@@ -1,9 +1,62 @@
 import { describe, expect, it } from "vitest";
-import { MENSAGEM_IA_INDISPONIVEL, mensagemErroIA } from "./iaErro";
+import {
+  MENSAGEM_FERRAMENTA_NAO_HOMOLOGADA,
+  MENSAGEM_IA_INDISPONIVEL,
+  mensagemErroFerramenta,
+  mensagemErroIA,
+} from "./iaErro";
 
-function erroCom(detail: unknown) {
-  return { response: { data: { detail } } };
+function erroCom(detail: unknown, status?: number) {
+  return { response: { status, data: { detail } } };
 }
+
+describe("mensagemErroFerramenta", () => {
+  it("traduz 503 ferramenta_nao_homologada para mensagem controlada", () => {
+    const err = erroCom(
+      { codigo: "ferramenta_nao_homologada", mensagem: "qualquer" },
+      503,
+    );
+    expect(mensagemErroFerramenta(err)).toBe(
+      MENSAGEM_FERRAMENTA_NAO_HOMOLOGADA,
+    );
+  });
+
+  it("nunca devolve objeto cru: extrai detail.mensagem ou usa fallback", () => {
+    expect(
+      mensagemErroFerramenta(erroCom({ mensagem: "Data inválida." }, 400)),
+    ).toBe("Data inválida.");
+    expect(typeof mensagemErroFerramenta(erroCom({ foo: "bar" }, 500))).toBe(
+      "string",
+    );
+    expect(mensagemErroFerramenta(undefined)).toBe("Falha no cálculo");
+  });
+
+  it("deixa passar detail string do backend", () => {
+    expect(mensagemErroFerramenta(erroCom("Informe a data.", 422))).toBe(
+      "Informe a data.",
+    );
+  });
+
+  it("traduz o array de validação do Pydantic apontando o campo", () => {
+    const err = erroCom(
+      [{ loc: ["query", "data_marco"], msg: "Field required" }],
+      422,
+    );
+    expect(mensagemErroFerramenta(err)).toBe(
+      "Verifique o campo data marco: Field required",
+    );
+  });
+
+  it("cai no genérico quando o array de validação não tem campo legível", () => {
+    const generica = "Verifique os dados informados e tente novamente.";
+    expect(mensagemErroFerramenta(erroCom([{ loc: ["query"] }], 422))).toBe(
+      generica,
+    );
+    expect(mensagemErroFerramenta(erroCom(["texto solto"], 422))).toBe(
+      generica,
+    );
+  });
+});
 
 describe("mensagemErroIA", () => {
   it("devolve o texto padrão quando não há detail", () => {

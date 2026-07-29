@@ -172,7 +172,7 @@ AREA_MODULOS = (
     + _area("trabalhista", [{
         "module_key": "ramos/trabalhista",
         "ferramentas": [
-            _f("Horas extras", "/trabalhista/ferramentas/horas-extras"),
+            _f("Horas extras", "/trabalhista-esp/ferramentas/horas-extras"),
             _f("Prazos trabalhistas", "/trabalhista-esp/ferramentas/prazos"),
             _f("Prescrição trabalhista", "/trabalhista-esp/ferramentas/prescricao-trabalhista"),
             _f("Depósito recursal", "/trabalhista-esp/ferramentas/deposito-recursal"),

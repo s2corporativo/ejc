@@ -15,6 +15,80 @@ export const ROTULO_IA_NAO_ATIVADA = "IA não ativada — procure o administrado
 const MARCADORES_TECNICOS =
   /\.env|provider|provedor(es)?\s+falhar|api[_\s-]?key|apikey|ollama|groq|openai|anthropic|task\s*=|errno|traceback|timeout|localhost|https?:\/\/|configure\s|nao configurad|não configurad|indispon[ií]vel:\s*\[/i;
 
+// ── Erros das calculadoras dos ramos (Áreas de Atuação) ──────────────────────
+/** Mensagem controlada para ferramenta bloqueada pelo backend (HTTP 503). */
+export const MENSAGEM_FERRAMENTA_NAO_HOMOLOGADA =
+  "Ferramenta temporariamente indisponível — em revisão jurídica. " +
+  "Nenhum resultado é exibido até a homologação.";
+
+/** Texto único do selo/aviso de ferramenta não homologada (badge, tooltip,
+ * fallback do aviso da API) — evita divergência entre as telas. */
+export const AVISO_FERRAMENTA_NAO_HOMOLOGADA =
+  "Ferramenta não homologada — em revisão jurídica; resultado não deve ser usado profissionalmente.";
+
+/**
+ * Traduz o `detail` array do Pydantic (422 de validação) em orientação útil:
+ * "Verifique o campo X: <msg>". Sem `loc` legível, devolve o texto genérico
+ * de revisão dos dados. Nunca devolve objeto.
+ */
+function mensagemValidacao(detail: unknown[]): string {
+  const generica = "Verifique os dados informados e tente novamente.";
+  const primeiro = detail[0];
+  if (!primeiro || typeof primeiro !== "object") return generica;
+  const { loc, msg } = primeiro as { loc?: unknown; msg?: unknown };
+  // `loc` costuma ser ["query", "data_marco"] — o último item é o campo.
+  const campo = Array.isArray(loc)
+    ? [...loc].reverse().find((p) => typeof p === "string" && p !== "query")
+    : undefined;
+  const texto = typeof msg === "string" && msg.trim() ? msg.trim() : "";
+  if (typeof campo === "string" && campo) {
+    const rotulo = campo.replace(/_/g, " ");
+    return texto ? `Verifique o campo ${rotulo}: ${texto}` : generica;
+  }
+  return texto ? `Verifique os dados informados: ${texto}` : generica;
+}
+
+/**
+ * Extrai mensagem amigável de erro das calculadoras de ramo.
+ * Trata o bloqueio 503 `detail.codigo === "ferramenta_nao_homologada"` com
+ * mensagem controlada (nunca erro genérico), traduz o array de validação do
+ * Pydantic e evita renderizar `detail` objeto como filho React (crash).
+ */
+export function mensagemErroFerramenta(
+  err: unknown,
+  fallback: string = "Falha no cálculo",
+): string {
+  const resp = (
+    err as
+      | { response?: { status?: number; data?: { detail?: unknown } } }
+      | undefined
+  )?.response;
+  const detail = resp?.data?.detail as
+    { codigo?: unknown; mensagem?: unknown } | unknown[] | string | undefined;
+  if (
+    resp?.status === 503 &&
+    detail &&
+    typeof detail === "object" &&
+    !Array.isArray(detail) &&
+    (detail as { codigo?: unknown }).codigo === "ferramenta_nao_homologada"
+  ) {
+    return MENSAGEM_FERRAMENTA_NAO_HOMOLOGADA;
+  }
+  if (typeof detail === "string" && detail.trim()) return detail;
+  // Validação do Pydantic: campo obrigatório ausente/valor inválido.
+  if (Array.isArray(detail) && detail.length > 0) {
+    return mensagemValidacao(detail);
+  }
+  if (
+    detail &&
+    typeof detail === "object" &&
+    typeof (detail as { mensagem?: unknown }).mensagem === "string"
+  ) {
+    return (detail as { mensagem: string }).mensagem;
+  }
+  return fallback;
+}
+
 /**
  * Extrai uma mensagem amigável de um erro de chamada de IA (axios).
  * Usa o `detail` do backend somente quando ele é leigo; senão devolve
