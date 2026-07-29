@@ -50,7 +50,7 @@ export const CASE_STATUS_FECHADOS: readonly CaseStatus[] = [
   "arquivado",
 ];
 
-const FECHADOS = new Set<string>(CASE_STATUS_FECHADOS);
+const ABERTOS = new Set<string>(CASE_STATUS_ABERTOS);
 
 /**
  * "Ativo" como AGREGADO (o KPI), não como o status homônimo.
@@ -58,9 +58,13 @@ const FECHADOS = new Set<string>(CASE_STATUS_FECHADOS);
  * Cuidado: `ativo` é um status real e persistido; "ativos" no Dashboard é o
  * conjunto dos abertos. Confundir os dois foi a causa de o painel mostrar 9
  * ativos enquanto a listagem mostrava 8.
+ *
+ * A classificação usa allowlist e falha fechada: valor novo, ausente ou
+ * inválido não vira ativo por exclusão. Assim o frontend não repete a antiga
+ * regra `total - fechados`, que aceitava estados desconhecidos em silêncio.
  */
 export function isCasoAtivo(status: unknown): boolean {
-  return !FECHADOS.has(String(status ?? "").toLowerCase());
+  return ABERTOS.has(String(status ?? "").toLowerCase());
 }
 
 /** Rótulos em pt-BR. Cobre os SEIS status — sem buracos, sem chave morta. */
