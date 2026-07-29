@@ -297,6 +297,17 @@ class _FakeDB:
     async def flush(self):
         pass
 
+    async def scalar(self, stmt, params=None):
+        # max(versao) do snapshot / agregações — fake devolve 0.
+        return 0
+
+    async def get(self, entidade, pk):
+        # Só o responsável da conversão é buscado por PK: devolve advogado
+        # ativo (o caminho negativo é coberto por teste próprio).
+        from types import SimpleNamespace
+
+        return SimpleNamespace(id=pk, role="advogado", is_active=True)
+
     async def execute(self, stmt, params=None):
         from app.models.legal_chat import (
             LegalChatAttachment,
@@ -530,3 +541,309 @@ async def test_converter_respeita_proxima_acao_informada():
     await svc.converter_em_caso(db, sessao, payload, _user())
     caso = next(o for o in db.added if isinstance(o, Case))
     assert caso.proxima_acao == "Notificar a parte contrária"
+
+
+# ── paridade Raio-X na conversão (gates, snapshot, anexos) ───────────────────
+
+def test_converter_request_gates_default_off():
+    p = ConverterRequest(
+        novo_cliente_nome="Fulano", area="civil", titulo_caso="X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    assert p.conflict_confirmed is False
+    assert p.duplicate_confirmed is False
+    assert p.transferir_anexos is True
+
+
+def test_origem_sala_juridica_valida_no_snapshot():
+    from app.models.case_intelligence import ORIGENS_SNAPSHOT
+    assert "sala_juridica" in ORIGENS_SNAPSHOT
+
+
+def test_nomes_partes_anexos_extrai_dedup_e_piso():
+    from types import SimpleNamespace
+
+    from app.services.legal_chat_service import _nomes_partes_anexos
+
+    anexos = [
+        SimpleNamespace(resultado_analise={"intake_result": {"partes": [
+            "Banco Alfa S/A",
+            {"nome": "João da Silva"},
+            {"valor": "Banco Alfa S/A"},   # duplicado (case-insensitive)
+            "ré",                            # abaixo do piso de 4 chars
+            {"nome": {"valor": "Construtora Beta"}},
+        ]}}),
+        SimpleNamespace(resultado_analise={"partes": ["banco alfa s/a"]}),
+        SimpleNamespace(resultado_analise=None),
+    ]
+    assert _nomes_partes_anexos(anexos) == [
+        "Banco Alfa S/A", "João da Silva", "Construtora Beta",
+    ]
+
+
+@pytest.mark.anyio
+async def test_converter_cria_snapshot_sala_juridica():
+    from app.models.case_intelligence import CaseIntelligenceSnapshot
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    db = _FakeDB(sessao=sessao)
+    payload = ConverterRequest(
+        novo_cliente_nome="Fulano de Tal", area="civil", titulo_caso="Caso X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    resultado = await svc.converter_em_caso(db, sessao, payload, _user())
+    snaps = [o for o in db.added if isinstance(o, CaseIntelligenceSnapshot)]
+    assert len(snaps) == 1
+    assert snaps[0].origem == "sala_juridica"
+    assert snaps[0].versao == 1
+    assert snaps[0].payload["revisao_humana_obrigatoria"] is True
+    assert snaps[0].payload["sala_juridica_session_id"] == "s1"
+    assert resultado["snapshot_versao"] == 1
+    assert resultado["documentos_transferidos"] == []
+
+
+@pytest.mark.anyio
+async def test_converter_409_conflito_detectado_sem_reconhecimento(monkeypatch):
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    async def fake_preview(db, sessao, user, **kw):
+        return {
+            "alertas_conflito": [{
+                "tipo": "parte_corresponde_a_cliente",
+                "nome": "X", "mensagem": "conflito", "protegido": False,
+            }],
+            "clientes_possivelmente_duplicados": [],
+            "casos_ativos_do_cliente": [],
+            "anexos_disponiveis": [],
+            "bloqueia": True,
+        }
+
+    monkeypatch.setattr(svc, "preview_conversao", fake_preview)
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    payload = ConverterRequest(
+        novo_cliente_nome="Fulano", area="civil", titulo_caso="X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    with pytest.raises(HTTPException) as ei:
+        await svc.converter_em_caso(_FakeDB(sessao=sessao), sessao, payload, _user())
+    assert ei.value.status_code == 409
+    assert "alertas_conflito" in ei.value.detail
+
+    # Reconhecido explicitamente → conversão prossegue.
+    payload_ok = payload.model_copy(update={"conflict_confirmed": True})
+    resultado = await svc.converter_em_caso(
+        _FakeDB(sessao=LegalChatSession(id="s2", titulo="t", created_by="u1")),
+        LegalChatSession(id="s2", titulo="t", created_by="u1"),
+        payload_ok, _user(),
+    )
+    assert resultado["ja_convertido"] is False
+
+
+@pytest.mark.anyio
+async def test_converter_409_cliente_duplicado_sem_reconhecimento(monkeypatch):
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    async def fake_preview(db, sessao, user, **kw):
+        return {
+            "alertas_conflito": [],
+            "clientes_possivelmente_duplicados": [
+                {"id": "c9", "nome": "Fulano de Tal", "protegido": False},
+            ],
+            "casos_ativos_do_cliente": [],
+            "anexos_disponiveis": [],
+            "bloqueia": False,
+        }
+
+    monkeypatch.setattr(svc, "preview_conversao", fake_preview)
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    payload = ConverterRequest(
+        novo_cliente_nome="Fulano de Tal", area="civil", titulo_caso="X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    with pytest.raises(HTTPException) as ei:
+        await svc.converter_em_caso(_FakeDB(sessao=sessao), sessao, payload, _user())
+    assert ei.value.status_code == 409
+    assert "clientes_possivelmente_duplicados" in ei.value.detail
+
+
+@pytest.mark.anyio
+async def test_converter_409_caso_ativo_de_cliente_existente(monkeypatch):
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    async def fake_preview(db, sessao, user, **kw):
+        return {
+            "alertas_conflito": [],
+            "clientes_possivelmente_duplicados": [],
+            "casos_ativos_do_cliente": [
+                {"id": "k1", "titulo": "Caso em curso",
+                 "numero_interno": "DPT-2026-0001", "protegido": False},
+            ],
+            "anexos_disponiveis": [],
+            "bloqueia": False,
+        }
+
+    monkeypatch.setattr(svc, "preview_conversao", fake_preview)
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    payload = ConverterRequest(
+        client_id="c9", area="civil", titulo_caso="X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    with pytest.raises(HTTPException) as ei:
+        await svc.converter_em_caso(_FakeDB(sessao=sessao), sessao, payload, _user())
+    assert ei.value.status_code == 409
+    assert "casos_ativos_do_cliente" in ei.value.detail
+
+
+@pytest.mark.anyio
+async def test_converter_422_anexo_sem_arquivo_fisico_nao_congela():
+    from app.models.legal_chat import LegalChatAttachment, LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    anexo = LegalChatAttachment(
+        id="a1", session_id="s1", nome_original="contrato.pdf",
+        filepath="sala-juridica/inexistente/x.pdf", size_bytes=10,
+        sha256="0" * 64, uploaded_by="u1", resultado_analise={},
+    )
+    db = _FakeDB(sessao=sessao, anexos=[anexo])
+    payload = ConverterRequest(
+        novo_cliente_nome="Fulano de Tal", area="civil", titulo_caso="X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    with pytest.raises(HTTPException) as ei:
+        await svc.converter_em_caso(db, sessao, payload, _user())
+    assert ei.value.status_code == 422
+    assert "contrato.pdf" in str(ei.value.detail)
+    # A sessão NÃO pode ter sido congelada/convertida (fica retryável).
+    assert sessao.frozen_at is None
+    assert sessao.convertido_case_id is None
+
+
+# ── auditoria de segurança: gates de carteira e wildcards ────────────────────
+
+def test_padrao_like_escapa_wildcards_do_input():
+    """Nome com % ou _ NÃO pode virar curinga: senão o piso de 4 chars é
+    contornado e a checagem ética vira oráculo de substring da base."""
+    from app.services.conflito_service import _padrao_like
+
+    assert _padrao_like("____") == "%\\_\\_\\_\\_%"
+    assert _padrao_like("%Ab%") == "%\\%Ab\\%%"
+    assert _padrao_like("Silva") == "%Silva%"
+    # Barra invertida do input é escapada ANTES (senão desescaparia os demais).
+    assert _padrao_like("a\\b") == "%a\\\\b%"
+
+
+@pytest.mark.anyio
+async def test_converter_com_client_id_alheio_404(monkeypatch):
+    """IDOR: converter com client_id de outra carteira criaria um Case com o
+    requisitante como responsável — e pode_ver_cliente passaria a conceder
+    acesso permanente ao cliente por esse próprio vínculo."""
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    async def fake_preview(db, sessao, user, **kw):
+        return {
+            "alertas_conflito": [], "clientes_possivelmente_duplicados": [],
+            "casos_ativos_do_cliente": [], "anexos_disponiveis": [],
+            "bloqueia": False,
+        }
+
+    async def nega_cliente(db, user, client_id):
+        raise HTTPException(404, "Cliente não encontrado")
+
+    monkeypatch.setattr(svc, "preview_conversao", fake_preview)
+    monkeypatch.setattr(svc, "obter_cliente_autorizado", nega_cliente)
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    payload = ConverterRequest(
+        client_id="cliente-de-outra-carteira", area="civil", titulo_caso="X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+    with pytest.raises(HTTPException) as ei:
+        await svc.converter_em_caso(_FakeDB(sessao=sessao), sessao, payload, _user())
+    assert ei.value.status_code == 404
+
+
+def test_serializar_anexo_nao_ecoa_chaves_internas():
+    """Chaves `_`-prefixadas (texto sanitizado retido p/ virar ocr_text) são
+    internas por convenção do repo — nunca saem na API."""
+    from app.models.legal_chat import LegalChatAttachment
+    from app.services.legal_chat_service import serializar_anexo
+
+    anexo = LegalChatAttachment(
+        id="a1", session_id="s1", nome_original="x.pdf", filepath="p",
+        size_bytes=1, sha256="0" * 64, uploaded_by="u1",
+        resultado_analise={"tipo_documento": "contrato",
+                           "_texto_sanitizado": "conteúdo integral do documento"},
+    )
+    out = serializar_anexo(anexo)
+    assert out["resultado_analise"] == {"tipo_documento": "contrato"}
+    assert "_texto_sanitizado" not in str(out)
+
+
+@pytest.mark.anyio
+async def test_converter_rejeita_responsavel_invalido(monkeypatch):
+    """advogado_responsavel_id era str livre indo direto ao modelo: id
+    inexistente virava 500 (FK) e qualquer id atribuía caso a terceiro."""
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    async def fake_preview(db, sessao, user, **kw):
+        return {
+            "alertas_conflito": [], "clientes_possivelmente_duplicados": [],
+            "casos_ativos_do_cliente": [], "anexos_disponiveis": [],
+            "bloqueia": False,
+        }
+
+    monkeypatch.setattr(svc, "preview_conversao", fake_preview)
+    payload = ConverterRequest(
+        novo_cliente_nome="Fulano de Tal", area="civil", titulo_caso="X",
+        advogado_responsavel_id="nao-existe",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+
+    class _SemUsuario(_FakeDB):
+        async def get(self, entidade, pk):
+            return None
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    with pytest.raises(HTTPException) as ei:
+        await svc.converter_em_caso(_SemUsuario(sessao=sessao), sessao, payload, _user())
+    assert ei.value.status_code == 422
+
+    # Perfil abaixo de advogado (estagiário) também é recusado.
+    class _Estagiario(_FakeDB):
+        async def get(self, entidade, pk):
+            from types import SimpleNamespace
+            return SimpleNamespace(id=pk, role="estagiario", is_active=True)
+
+    sessao2 = LegalChatSession(id="s2", titulo="t", created_by="u1")
+    with pytest.raises(HTTPException) as ei2:
+        await svc.converter_em_caso(_Estagiario(sessao=sessao2), sessao2, payload, _user())
+    assert ei2.value.status_code == 422
+
+
+def test_ficha_confirmada_nao_e_rebaixada_por_escrita_automatica():
+    """TOCTOU: confirmação humana concorrente não pode ser revertida a
+    'rascunho' pelo pré-preenchimento automático (fecharia o gate da peça)."""
+    import inspect
+
+    from app.services import ficha_triagem_service as fts
+    from app.routers import triagem_entrevista as te
+
+    fonte = inspect.getsource(fts.salvar)
+    assert "preservar_confirmada" in fonte
+    assert 'ficha.status == "confirmada"' in fonte
+    # A ponte Entrevista→Ficha precisa realmente pedir a preservação.
+    assert "preservar_confirmada=True" in inspect.getsource(te._alimentar_ficha)

@@ -35,6 +35,7 @@ from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.schemas.raio_x import RaioXConverterRequest
 from app.services.case_intelligence_service import compactar_payload
+from app.services.conflito_service import _padrao_like
 from app.services.case_numeracao import proximo_numero_interno as _proximo_numero_interno
 from app.services.raio_x_enrichment import (
     data_iso,
@@ -272,8 +273,13 @@ async def _detectar_conflitos(
     if not names:
         return list(analise.alertas_conflito or [])
 
+    # Wildcards do input escapados (núcleo compartilhado): nome com `%`/`_`
+    # transformaria a checagem ética em oráculo de substring da base.
     conditions_clients = [
-        or_(Client.nome.ilike(f"%{name}%"), Client.razao_social.ilike(f"%{name}%"))
+        or_(
+            Client.nome.ilike(_padrao_like(name), escape="\\"),
+            Client.razao_social.ilike(_padrao_like(name), escape="\\"),
+        )
         for name in names
     ]
     clients = (
@@ -284,7 +290,9 @@ async def _detectar_conflitos(
         )
     ).scalars().all()
 
-    conditions_cases = [Case.parte_contraria.ilike(f"%{name}%") for name in names]
+    conditions_cases = [
+        Case.parte_contraria.ilike(_padrao_like(name), escape="\\") for name in names
+    ]
     cases = (
         await db.execute(
             select(Case)
@@ -391,7 +399,10 @@ async def preview_conversao(
     clientes: list[dict[str, Any]] = []
     if nomes:
         conditions = [
-            or_(Client.nome.ilike(f"%{name}%"), Client.razao_social.ilike(f"%{name}%"))
+            or_(
+                Client.nome.ilike(_padrao_like(name), escape="\\"),
+                Client.razao_social.ilike(_padrao_like(name), escape="\\"),
+            )
             for name in nomes
         ]
         rows = (

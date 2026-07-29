@@ -6,17 +6,28 @@ como LegalChatMessage → nova versão do estado jurídico consolidado.
 """
 from __future__ import annotations
 
+import shutil
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.case import Case, CaseArea
+from app.core.client_ownership import (
+    obter_cliente_autorizado,
+    pode_ver_caso_resumido,
+    pode_ver_cliente,
+)
+from app.core.config import get_settings
+from app.core.security import ROLE_LEVEL
+from app.models.case import Case, CaseArea, CaseStatus
+from app.models.case_intelligence import CaseIntelligenceSnapshot
 from app.models.client import Client
+from app.models.document import DocConfidencialidade, Document
 from app.models.legal_chat import (
     LegalChatAttachment,
     LegalChatMessage,
@@ -26,9 +37,20 @@ from app.models.legal_chat import (
 from app.models.user import User
 from app.schemas.legal_chat import ConverterRequest, MensagemCreate
 from app.services.case_numeracao import proximo_numero_interno
+# Núcleo de matching COMPARTILHADO de conflito (EOAB arts. 34-35) — mesma
+# implementação usada por detectar_conflito/verificar_conflito; a Sala só
+# FORMATA os achados no schema carteira-protegido (padrão Raio-X), sem criar
+# uma terceira regra de correspondência.
+from app.services.conflito_service import (
+    _casos_por_parte_contraria,
+    _clientes_por_nome,
+)
 
-# Modo do seletor → task_type do gateway (roteamento econômico: conversa
-# livre fica no provider local; elaboração/estratégia sobem de tier).
+# Modo do seletor → task_type do gateway. "chat_rapido" NÃO consta no mapa do
+# intent_classifier de propósito: a conversa livre cai no fallback por
+# keywords (agente ESPECIALISTA por área) ou no CaseAgent — ambos com
+# tarefa_padrao séria (→ gateway "estrategia", tier alto). Não substituir por
+# um task_type mapeado: isso pularia a seleção de especialista sem ganhar tier.
 MODO_TASK_TYPE: dict[str, str] = {
     "conversa_livre": "chat_rapido",
     "organizar_fatos": "analise_juridica",
@@ -45,7 +67,18 @@ MODO_TASK_TYPE: dict[str, str] = {
 # Instrução de método por modo — complementa (não substitui) os prompts de
 # ramo resolvidos pelo núcleo de IA.
 MODO_INSTRUCAO: dict[str, str] = {
-    "conversa_livre": "",
+    # Conversa livre TAMBÉM tem método: profundidade de análise, estrutura e
+    # honestidade epistêmica — o advogado espera o nível de um chat jurídico
+    # de fronteira, não uma resposta telegráfica.
+    "conversa_livre": (
+        "Responda com profundidade técnica e didática: estruture em seções "
+        "curtas quando a resposta passar de um parágrafo; fundamente cada "
+        "afirmação jurídica (lei, súmula ou precedente VERIFICÁVEL — nunca "
+        "invente); distinga expressamente o que é certo, o que é provável e o "
+        "que depende de fato/documento ausente; aponte riscos e caminhos "
+        "alternativos; termine com os próximos passos práticos quando fizer "
+        "sentido. Se a pergunta for simples, seja direto — sem encher."
+    ),
     "organizar_fatos": (
         "Organize os fatos em cronologia, distinguindo expressamente: "
         "comprovado, alegado, inferido, controvertido, ausente e superado."
@@ -165,13 +198,16 @@ async def gravar_versao_estado(
     return nova
 
 
-# Tetos conservadores dos blocos de contexto conversacional — protegem a
-# janela de tokens do provider em sessões longas/com muitos anexos.
-_HISTORICO_MAX_MENSAGENS = 10
-_HISTORICO_MAX_CHARS_MSG = 1_500
-_HISTORICO_MAX_CHARS_TOTAL = 12_000
-_ANEXO_MAX_CHARS = 3_000
-_ANEXOS_MAX_CHARS_TOTAL = 12_000
+# Tetos dos blocos de contexto conversacional — protegem a janela de tokens
+# do provider em sessões longas/com muitos anexos. Ampliados (2026-07): a Sala
+# roteia para modelos de janela grande (200k tokens) e a memória curta era o
+# principal fator de resposta "rasa" em sessões longas; ~48k chars ≈ 12k tokens
+# continua folgado até para o provider local.
+_HISTORICO_MAX_MENSAGENS = 20
+_HISTORICO_MAX_CHARS_MSG = 3_000
+_HISTORICO_MAX_CHARS_TOTAL = 24_000
+_ANEXO_MAX_CHARS = 6_000
+_ANEXOS_MAX_CHARS_TOTAL = 24_000
 
 
 def _montar_mensagem_ia(
@@ -320,7 +356,6 @@ async def enviar_mensagem(
     origem_estado = "ia"
     resumo_estado: str | None = None
     custo_extracao = Decimal("0")
-    from app.core.config import get_settings
     if get_settings().SALA_JURIDICA_AUTO_ESTADO:
         extraido, custo_extracao = await _extrair_estado_automatico(
             db, user, estado_atual=estado,
@@ -450,6 +485,332 @@ async def _extrair_estado_automatico(
         return None, custo
 
 
+# ── Preview de conversão (paridade com o Raio-X) ────────────────────────────
+# A Sala é a porta de entrada principal do escritório: a conversão em caso não
+# pode depender só da autodeclaração do advogado. O preview cruza a base por
+# dever ético (EOAB arts. 34-35) SEM expor outra carteira (padrão Raio-X:
+# correspondência em carteira não autorizada vira alerta "protegido").
+
+def _alerta_protegido(tipo: str, mensagem: str) -> dict[str, Any]:
+    return {
+        "tipo": tipo,
+        "nome": "Correspondência protegida na base do escritório",
+        "mensagem": mensagem,
+        "protegido": True,
+        "confirmado": False,
+    }
+
+
+def _nomes_partes_anexos(anexos: list[LegalChatAttachment]) -> list[str]:
+    """Nomes de partes extraídos pela análise dos anexos (fail-soft)."""
+    nomes: list[str] = []
+    vistos: set[str] = set()
+    for a in anexos:
+        ra = a.resultado_analise if isinstance(a.resultado_analise, dict) else {}
+        intake = ra.get("intake_result") if isinstance(ra.get("intake_result"), dict) else ra
+        for item in intake.get("partes") or []:
+            if isinstance(item, str):
+                nome = item.strip()
+            elif isinstance(item, dict):
+                bruto = item.get("nome") or item.get("valor") or item.get("parte") or ""
+                if isinstance(bruto, dict):
+                    bruto = bruto.get("valor") or ""
+                nome = str(bruto).strip()
+            else:
+                continue
+            chave = nome.lower()
+            # Piso de 4 chars (mesmo das primitivas de matching) evita ILIKE espúrio.
+            if len(nome) >= 4 and chave not in vistos:
+                vistos.add(chave)
+                nomes.append(nome)
+    return nomes[:20]
+
+
+async def preview_conversao(
+    db: AsyncSession,
+    sessao: LegalChatSession,
+    user: User,
+    *,
+    nome_cliente: str | None = None,
+    client_id: str | None = None,
+) -> dict[str, Any]:
+    """Conflitos + duplicados ANTES da conversão, sem vazar carteira alheia."""
+    res = await db.execute(
+        select(LegalChatAttachment)
+        .where(LegalChatAttachment.session_id == sessao.id)
+        .order_by(LegalChatAttachment.created_at)
+    )
+    anexos = list(res.scalars().all())
+    partes = _nomes_partes_anexos(anexos)
+    candidato = (nome_cliente or sessao.cliente_potencial or "").strip()
+    # Cliente EXISTENTE selecionado: o nome canônico dele é o candidato — sem
+    # isso, sessões sem cliente_potencial pulavam a checagem de o cliente ser
+    # parte contrária em outro caso do escritório (apontamento Codex P1).
+    # Sob o gate canônico: UUID de outra carteira devolve 404 aqui, em vez de
+    # virar sonda de identidade/contagem de casos alheios.
+    if client_id:
+        cli = await obter_cliente_autorizado(db, user, client_id)
+        if not candidato:
+            candidato = (cli.nome_exibicao or "").strip()
+    candidato_lower = candidato.lower()
+
+    alertas: list[dict[str, Any]] = []
+    # 1) Parte dos anexos já é cliente do escritório (atual ou anterior).
+    for nome in partes:
+        if nome.lower() == candidato_lower:
+            continue
+        for c in await _clientes_por_nome(db, nome, limit=5):
+            if await pode_ver_cliente(db, user, c):
+                alertas.append({
+                    "tipo": "parte_corresponde_a_cliente",
+                    "nome": c.nome_exibicao,
+                    "client_id": c.id,
+                    "mensagem": "Parte dos documentos possui nome semelhante a cliente atual ou anterior. Revisar conflito de interesses.",
+                    "protegido": False,
+                    "confirmado": False,
+                })
+            else:
+                alertas.append(_alerta_protegido(
+                    "parte_corresponde_a_cliente_protegido",
+                    "Correspondência em carteira protegida. Solicite revisão de conflito à gestão antes de prosseguir.",
+                ))
+    # 2) Parte dos anexos figura como parte contrária em caso do escritório;
+    # 3) o PRÓPRIO cliente candidato é parte contrária em caso nosso (grave).
+    for nome, grave in [(n, False) for n in partes] + ([(candidato, True)] if len(candidato) >= 4 else []):
+        for caso in await _casos_por_parte_contraria(db, nome, limit=5):
+            if pode_ver_caso_resumido(user, caso):
+                alertas.append({
+                    "tipo": ("CONFLITO_cliente_e_parte_contraria" if grave
+                             else "parte_corresponde_a_parte_contraria"),
+                    "nome": caso.parte_contraria,
+                    "case_id": caso.id,
+                    "mensagem": ("O cliente informado figura como PARTE CONTRÁRIA em caso do escritório — conflito potencial grave (EOAB art. 17/34)."
+                                 if grave else
+                                 "Parte dos documentos possui nome semelhante a parte contrária de caso acessível. Revisar conflito e grupo econômico."),
+                    "protegido": False,
+                    "confirmado": False,
+                })
+            else:
+                alertas.append(_alerta_protegido(
+                    "parte_corresponde_a_caso_protegido",
+                    "Correspondência em caso protegido. Solicite revisão de conflito à gestão antes de prosseguir.",
+                ))
+    # Dedup sem depender de ids protegidos (mesma chave do Raio-X).
+    unicos: list[dict[str, Any]] = []
+    vistos: set[tuple[str, str, str]] = set()
+    for a in alertas:
+        k = (str(a.get("tipo") or ""), str(a.get("nome") or ""), str(a.get("mensagem") or ""))
+        if k not in vistos:
+            vistos.add(k)
+            unicos.append(a)
+
+    # Clientes possivelmente duplicados (só relevante ao CRIAR cliente novo).
+    # Os protegidos colapsam numa ÚNICA entrada: a contagem de correspondências
+    # em carteira alheia também é informação (mesma doutrina de alertas_conflito).
+    clientes_dup: list[dict[str, Any]] = []
+    if candidato and not client_id:
+        houve_protegido = False
+        for c in await _clientes_por_nome(db, candidato, limit=10):
+            if await pode_ver_cliente(db, user, c):
+                clientes_dup.append({
+                    "id": c.id, "nome": c.nome_exibicao, "protegido": False,
+                })
+            else:
+                houve_protegido = True
+        if houve_protegido:
+            clientes_dup.append({
+                "id": None,
+                "nome": "Cliente protegido na base do escritório",
+                "protegido": True,
+            })
+
+    # Casos ATIVOS do cliente escolhido — sinal de caso possivelmente duplicado.
+    # Só roda com client_id JÁ autorizado (obter_cliente_autorizado acima);
+    # protegidos colapsam numa entrada para não vazar a contagem.
+    casos_ativos: list[dict[str, Any]] = []
+    if client_id:
+        rows = (await db.execute(
+            select(Case).where(
+                Case.client_id == client_id,
+                Case.deleted_at.is_(None),
+                Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+            ).limit(10)
+        )).scalars().all()
+        houve_protegido = False
+        for caso in rows:
+            if pode_ver_caso_resumido(user, caso):
+                casos_ativos.append({
+                    "id": caso.id,
+                    "titulo": caso.titulo,
+                    "numero_interno": caso.numero_interno,
+                    "protegido": False,
+                })
+            else:
+                houve_protegido = True
+        if houve_protegido:
+            casos_ativos.append({
+                "id": None, "titulo": "Caso protegido", "numero_interno": None,
+                "protegido": True,
+            })
+
+    return {
+        "session_id": sessao.id,
+        "alertas_conflito": unicos,
+        "clientes_possivelmente_duplicados": clientes_dup,
+        "casos_ativos_do_cliente": casos_ativos,
+        "anexos_disponiveis": [
+            {"id": a.id, "nome": a.nome_original, "tipo": a.tipo_documento}
+            for a in anexos
+        ],
+        "bloqueia": bool(unicos),
+    }
+
+
+def _copiar_anexo(
+    anexo: LegalChatAttachment, case_id: str, client_id: str, user: User,
+) -> tuple[Document, Path]:
+    """Copia o arquivo físico do anexo e devolve (Document oficial, caminho
+    copiado — para limpeza em caso de rollback)."""
+    settings = get_settings()
+    origem = Path(settings.UPLOAD_DIR) / anexo.filepath
+    rel = Path("sala-juridica-convertidos") / case_id / f"{uuid4()}{origem.suffix}"
+    destino = Path(settings.UPLOAD_DIR) / rel
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(origem, destino)
+    # Texto extraído/sanitizado preservado no upload → Document pesquisável no
+    # GED e disponível ao context builder (apontamento Codex P2). Anexos
+    # antigos (antes da mudança no upload) seguem sem texto — fail-soft.
+    ra = anexo.resultado_analise if isinstance(anexo.resultado_analise, dict) else {}
+    texto = ra.get("_texto_sanitizado")
+    doc = Document(
+        id=str(uuid4()),
+        titulo=anexo.nome_original[:255],
+        descricao="Documento transferido da análise da Sala Jurídica.",
+        tipo=anexo.tipo_documento or "outro",
+        filename=anexo.nome_original,
+        filepath=str(rel),
+        mimetype=anexo.mimetype,
+        size_bytes=anexo.size_bytes,
+        ocr_text=(str(texto)[:200_000]
+                  if isinstance(texto, str) and texto.strip() else None),
+        confidencialidade=DocConfidencialidade.interno,
+        case_id=case_id,
+        client_id=client_id,
+        uploaded_by=user.id,
+    )
+    return doc, destino
+
+
+async def _transferir_anexos(
+    db: AsyncSession, sessao: LegalChatSession, case_id: str, client_id: str, user: User,
+) -> tuple[list[str], list[Path]]:
+    """Todos os anexos da sessão → Document do caso.
+
+    FAIL-CLOSED (apontamento Codex P1): arquivo físico ausente ABORTA a
+    conversão ANTES do congelamento — a sessão fica retryável e o caso nunca
+    nasce sem documento fundante. Retorna também os caminhos copiados, para o
+    chamador limpar em caso de falha posterior na transação."""
+    res = await db.execute(
+        select(LegalChatAttachment)
+        .where(LegalChatAttachment.session_id == sessao.id)
+        .order_by(LegalChatAttachment.created_at)
+    )
+    anexos = list(res.scalars().all())
+    settings = get_settings()
+    faltantes = [
+        a.nome_original for a in anexos
+        if not (Path(settings.UPLOAD_DIR) / a.filepath).is_file()
+    ]
+    if faltantes:
+        raise HTTPException(422, {
+            "mensagem": ("Arquivo físico indisponível para transferência. "
+                         "Restaure o storage e tente novamente, ou converta "
+                         "sem transferir anexos."),
+            "anexos_indisponiveis": faltantes,
+        })
+    transferidos: list[str] = []
+    copiados: list[Path] = []
+    for anexo in anexos:
+        doc, caminho = _copiar_anexo(anexo, case_id, client_id, user)
+        db.add(doc)
+        transferidos.append(doc.id)
+        copiados.append(caminho)
+    return transferidos, copiados
+
+
+def _limpar_copias(copiados: list[Path]) -> None:
+    """Best-effort: remove cópias físicas órfãs quando a transação falha."""
+    for caminho in copiados:
+        try:
+            caminho.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+async def _criar_snapshot_sala(
+    db: AsyncSession, sessao: LegalChatSession, case_id: str, area: str, user: User,
+) -> int:
+    """CaseIntelligenceSnapshot origem 'sala_juridica' com o estado consolidado.
+    Versão = max(versao do caso)+1, serializado por advisory lock transacional
+    por caso — dois vínculos concorrentes de sessões DIFERENTES ao mesmo caso
+    não leem o mesmo max (o índice único uq_cis_case_versao segue como última
+    linha de defesa). Retorna a versão criada."""
+    estado_v = await ultima_versao_estado(db, sessao.id)
+    estado = dict((estado_v.estado if estado_v else {}) or {})
+    # Rastreabilidade: os logs mais RECENTES formaram o estado consolidado —
+    # em sessões longas, cortar os antigos, nunca os novos (Codex P2).
+    res_logs = await db.execute(
+        select(LegalChatMessage.ai_log_id)
+        .where(
+            LegalChatMessage.session_id == sessao.id,
+            LegalChatMessage.ai_log_id.isnot(None),
+        )
+        .order_by(LegalChatMessage.created_at.desc())
+        .limit(100)
+    )
+    ai_log_ids = list(reversed(
+        [v for v in res_logs.scalars().all() if isinstance(v, str)]
+    ))
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
+        {"chave": f"cis:{case_id}"},
+    )
+    proxima = (
+        await db.scalar(
+            select(func.coalesce(func.max(CaseIntelligenceSnapshot.versao), 0))
+            .where(CaseIntelligenceSnapshot.case_id == case_id)
+        )
+    ) or 0
+    snap = CaseIntelligenceSnapshot(
+        id=str(uuid4()),
+        case_id=case_id,
+        versao=proxima + 1,
+        origem="sala_juridica",
+        payload={
+            "area": area,
+            "fatos": estado.get("fatos") or [],
+            "provas": estado.get("provas") or [],
+            "contradicoes": estado.get("contradicoes") or [],
+            "questoes": estado.get("questoes") or [],
+            "teses": {"principal": None, "secundarias": estado.get("teses") or []},
+            "riscos": estado.get("riscos") or [],
+            "pendencias": estado.get("pendencias") or [],
+            "cronologia": estado.get("cronologia") or [],
+            "fontes": estado.get("fontes") or [],
+            "sala_juridica_session_id": sessao.id,
+            "revisao_humana_obrigatoria": True,
+        },
+        resumo=((estado_v.resumo if estado_v else None) or None),
+        ai_log_ids=ai_log_ids,
+        criado_por=user.id,
+        congelado=False,
+        aprovado_por=None,
+        aprovado_em=None,
+    )
+    db.add(snap)
+    return snap.versao
+
+
 async def converter_em_caso(
     db: AsyncSession,
     sessao: LegalChatSession,
@@ -481,10 +842,53 @@ async def converter_em_caso(
             422, "Informe client_id OU novo_cliente_nome (exatamente um)"
         )
 
+    # Gates de servidor (paridade Raio-X): conflito/duplicado DETECTADO exige
+    # reconhecimento explícito do achado — o checkbox genérico não basta.
+    preview = await preview_conversao(
+        db, sessao, user,
+        nome_cliente=payload.novo_cliente_nome,
+        client_id=payload.client_id,
+    )
+    if preview["alertas_conflito"] and not payload.conflict_confirmed:
+        raise HTTPException(409, {
+            "mensagem": "Há alertas de conflito de interesses; revise os achados e confirme antes de converter.",
+            "alertas_conflito": preview["alertas_conflito"],
+        })
+    if payload.novo_cliente_nome and preview["clientes_possivelmente_duplicados"] \
+            and not payload.duplicate_confirmed:
+        raise HTTPException(409, {
+            "mensagem": "Há cliente possivelmente duplicado; selecione o existente ou confirme a criação.",
+            "clientes_possivelmente_duplicados": preview["clientes_possivelmente_duplicados"],
+        })
+    # Cliente EXISTENTE com caso ativo: possível caso duplicado — o gate vale
+    # para os dois caminhos, não só para cliente novo (apontamento Codex P1).
+    if payload.client_id and preview["casos_ativos_do_cliente"] \
+            and not payload.duplicate_confirmed:
+        raise HTTPException(409, {
+            "mensagem": "O cliente possui caso ativo; confirme que não se trata de caso duplicado antes de criar outro.",
+            "casos_ativos_do_cliente": preview["casos_ativos_do_cliente"],
+        })
+
+    # Responsável: UUID livre no payload ia direto para o modelo — id
+    # inexistente virava IntegrityError (500) e qualquer id permitia atribuir
+    # caso/cliente a terceiro. Exige usuário ativo com piso de advogado.
+    responsavel = await db.get(User, payload.advogado_responsavel_id)
+    if (
+        responsavel is None
+        or not getattr(responsavel, "is_active", True)
+        or ROLE_LEVEL.get(_role(responsavel), 0) < ROLE_LEVEL["advogado"]
+    ):
+        raise HTTPException(
+            422, "Responsável inválido: informe um advogado ativo do escritório"
+        )
+
     if payload.client_id:
-        client = await db.get(Client, payload.client_id)
-        if client is None or client.deleted_at is not None:
-            raise HTTPException(404, "Cliente não encontrado")
+        # Gate canônico (mesmo do Raio-X): 404 uniforme quando o UUID pertence
+        # a outra carteira. Sem ele, converter com client_id alheio criava um
+        # Case com o requisitante como responsável — e `pode_ver_cliente` passa
+        # a conceder acesso permanente ao cliente por esse próprio vínculo
+        # (escalonamento de carteira, não só escrita indevida).
+        client = await obter_cliente_autorizado(db, user, payload.client_id)
     else:
         client = Client(
             id=str(uuid4()),
@@ -511,14 +915,38 @@ async def converter_em_caso(
     db.add(case)
     await db.flush()
 
-    agora = datetime.now(timezone.utc)
-    sessao.client_id = client.id
-    sessao.convertido_case_id = case.id
-    sessao.converted_at = agora
-    sessao.frozen_at = agora  # congelada para auditoria — imutável daqui em diante
-    sessao.status = "convertida_em_caso"
-    await db.flush()
-    return {"case_id": case.id, "client_id": client.id, "ja_convertido": False}
+    # A inteligência preliminar acompanha o caso oficial (paridade Raio-X):
+    # anexos viram Document e o estado consolidado vira snapshot versionado.
+    # Falha em QUALQUER passo → cópias físicas removidas antes de propagar
+    # (o banco faz rollback; arquivo órfão em disco não — Codex P2).
+    transferidos: list[str] = []
+    copiados: list[Path] = []
+    try:
+        if payload.transferir_anexos:
+            transferidos, copiados = await _transferir_anexos(
+                db, sessao, case.id, client.id, user
+            )
+        snapshot_versao = await _criar_snapshot_sala(
+            db, sessao, case.id, payload.area, user
+        )
+
+        agora = datetime.now(timezone.utc)
+        sessao.client_id = client.id
+        sessao.convertido_case_id = case.id
+        sessao.converted_at = agora
+        sessao.frozen_at = agora  # congelada para auditoria — imutável daqui em diante
+        sessao.status = "convertida_em_caso"
+        await db.flush()
+    except Exception:
+        _limpar_copias(copiados)
+        raise
+    return {
+        "case_id": case.id,
+        "client_id": client.id,
+        "ja_convertido": False,
+        "documentos_transferidos": transferidos,
+        "snapshot_versao": snapshot_versao,
+    }
 
 
 async def vincular_caso_existente(
@@ -526,6 +954,8 @@ async def vincular_caso_existente(
     sessao: LegalChatSession,
     case_id: str,
     user: User,
+    *,
+    transferir_anexos: bool = True,
 ) -> dict[str, Any]:
     """Vincula a análise a um caso JÁ EXISTENTE (sem criar caso novo).
 
@@ -558,14 +988,36 @@ async def vincular_caso_existente(
     if case is None:
         raise HTTPException(404, "Caso não encontrado")
 
-    agora = datetime.now(timezone.utc)
-    sessao.client_id = case.client_id
-    sessao.convertido_case_id = case.id
-    sessao.converted_at = agora
-    sessao.frozen_at = agora
-    sessao.status = "convertida_em_caso"
-    await db.flush()
-    return {"case_id": case.id, "client_id": case.client_id, "ja_convertido": False}
+    # Mesmos efeitos da conversão: anexos → Document e estado → snapshot,
+    # com a mesma limpeza de cópias físicas em falha.
+    transferidos: list[str] = []
+    copiados: list[Path] = []
+    try:
+        if transferir_anexos:
+            transferidos, copiados = await _transferir_anexos(
+                db, sessao, case.id, case.client_id, user
+            )
+        snapshot_versao = await _criar_snapshot_sala(
+            db, sessao, case.id, getattr(case.area, "value", str(case.area)), user
+        )
+
+        agora = datetime.now(timezone.utc)
+        sessao.client_id = case.client_id
+        sessao.convertido_case_id = case.id
+        sessao.converted_at = agora
+        sessao.frozen_at = agora
+        sessao.status = "convertida_em_caso"
+        await db.flush()
+    except Exception:
+        _limpar_copias(copiados)
+        raise
+    return {
+        "case_id": case.id,
+        "client_id": case.client_id,
+        "ja_convertido": False,
+        "documentos_transferidos": transferidos,
+        "snapshot_versao": snapshot_versao,
+    }
 
 
 # ── Exportação (DOCX/PDF) ────────────────────────────────────────────────────
@@ -665,7 +1117,13 @@ def serializar_anexo(a: LegalChatAttachment) -> dict[str, Any]:
         "sha256": a.sha256,
         "tipo_documento": a.tipo_documento,
         "ocr_utilizado": a.ocr_utilizado,
-        "resultado_analise": a.resultado_analise or {},
+        # Chaves `_`-prefixadas são internas por convenção do repo (o texto
+        # sanitizado é retido só para virar Document.ocr_text na conversão) —
+        # nunca saem na API, aqui como no caminho gêmeo de documentos.
+        "resultado_analise": {
+            k: v for k, v in (a.resultado_analise or {}).items()
+            if not str(k).startswith("_")
+        },
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
 

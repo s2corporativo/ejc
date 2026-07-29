@@ -154,10 +154,26 @@ function etapasInit(): Etapa[] {
 }
 
 // ── Verificação de citações (anti-alucinação #46) ──────────────────────────
+// Evento SSE `residuos` (Modo Molde): identificador do caso de ORIGEM que
+// sobreviveu na peça nova. Protocolar assim é quebra de sigilo (EOAB art. 34).
+interface ResiduoAchado {
+  categoria: "cliente" | "parte_contraria" | "documento" | "processo";
+  rotulo: string;
+  termo: string;
+  mensagem: string;
+}
+
 // Shape emitido pelo backend no evento SSE `concluido` (verificacao_citacoes),
 // produzido por verificador_jurisprudencia. Cada citação vem com um `status`
 // e, quando aplicável, um `aviso` explicando o motivo.
-type CitacaoStatus = "verificada" | "identificada" | "suspeita" | "generica";
+type CitacaoStatus =
+  | "verificada"
+  | "identificada"
+  | "suspeita"
+  | "generica"
+  // Existe na base interna, mas só em versão SUPERADA: a redação vigente pode
+  // ter mudado. Citar redação revogada em peça é erro profissional.
+  | "possivelmente_desatualizada";
 
 interface CitacaoVerificada {
   citacao?: string;
@@ -187,6 +203,11 @@ const CIT_STATUS_CFG: Record<
     row: "bg-danger-50 border-danger-200",
     chip: "bg-danger-100 text-danger-800",
   },
+  possivelmente_desatualizada: {
+    label: "Desatualizada",
+    row: "bg-orange-50 border-orange-200",
+    chip: "bg-orange-100 text-orange-800",
+  },
   generica: {
     label: "Genérica",
     row: "bg-warn-50 border-warn-200",
@@ -204,10 +225,12 @@ const CIT_STATUS_CFG: Record<
   },
 };
 
-// Ordem de exibição: primeiro o que exige conferência (suspeita → genérica →
-// identificada → verificada). Suspeita e genérica precisam saltar aos olhos.
+// Ordem de exibição: primeiro o que exige conferência. "Desatualizada" vem
+// logo após "suspeita" — é achado ACIONÁVEL (a norma existe, mas a redação
+// mudou), mais urgente que uma menção apenas genérica.
 const CIT_ORDEM: CitacaoStatus[] = [
   "suspeita",
+  "possivelmente_desatualizada",
   "generica",
   "identificada",
   "verificada",
@@ -388,6 +411,8 @@ export default function PecaGeneratorModal({
   const [verificacao, setVerificacao] = useState<VerificacaoCitacoes | null>(
     null,
   );
+  // Modo Molde: identificadores do caso de ORIGEM encontrados na peça nova.
+  const [residuos, setResiduos] = useState<ResiduoAchado[]>([]);
 
   const [tipoPeca, setTipoPeca] = useState("peticao_inicial");
   const [areaDireito, setAreaDireito] = useState("trabalhista");
@@ -459,6 +484,7 @@ export default function PecaGeneratorModal({
     setCopiado(false);
     setExpandidos(new Set());
     setVerificacao(null);
+    setResiduos([]);
     setModo("livre");
     setRespostasGuiadas({});
   };
@@ -533,6 +559,7 @@ export default function PecaGeneratorModal({
     setFase("gerando");
     setEtapas(etapasInit());
     setDocumento("");
+    setResiduos([]);
     abortRef.current = new AbortController();
 
     // Contrato estruturado dos modos (P1 — fim das tags de modo embutidas no
@@ -646,6 +673,11 @@ export default function PecaGeneratorModal({
             setVerificacao(payload.verificacao_citacoes ?? null);
             setFase("concluido");
             onConcluido?.(payload.ai_log_id, payload.documento);
+          } else if (eventLine === "residuos") {
+            // Modo Molde: identificadores do caso de ORIGEM que sobreviveram
+            // na peça nova (quebra de sigilo se protocolada assim). Chega
+            // DEPOIS do "concluido" — a peça é entregue, mas com o alerta.
+            setResiduos(payload.achados ?? []);
           } else if (eventLine === "erro") {
             throw new Error(payload.detail ?? "Erro na geração");
           }
@@ -1151,6 +1183,33 @@ export default function PecaGeneratorModal({
                   status (suspeita/genérica em vermelho/amarelo, verificadas em
                   verde). Fica junto ao documento para a revisão HITL. */}
               <VerificacaoCitacoesPanel verificacao={verificacao} />
+
+              {/* Detector de resíduos (Modo Molde): identificador do caso de
+                  ORIGEM que sobreviveu na peça. Protocolar assim é quebra de
+                  sigilo — por isso o alerta é vermelho e vem antes do texto. */}
+              {residuos.length > 0 && (
+                <div className="rounded-lg border-2 border-red-300 bg-red-50 p-3">
+                  <div className="mb-1 flex items-center gap-2 text-sm font-bold text-red-800">
+                    <ShieldAlert size={16} />
+                    Resíduos do caso de origem ({residuos.length})
+                  </div>
+                  <p className="mb-2 text-xs text-red-700">
+                    A peça reaproveitou o molde e manteve dados de OUTRO caso.
+                    Remova antes de aprovar — protocolar assim expõe dados de
+                    outro cliente (EOAB art. 34 / LGPD).
+                  </p>
+                  <ul className="space-y-1">
+                    {residuos.map((r, i) => (
+                      <li key={i} className="text-xs text-red-800">
+                        <span className="font-semibold">{r.rotulo}:</span>{" "}
+                        <code className="rounded bg-red-100 px-1">
+                          {r.termo}
+                        </code>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div>
                 <div className="flex items-center justify-between mb-2">
