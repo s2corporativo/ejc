@@ -67,17 +67,20 @@ async def _adicionar_validacao(
 ):
     from app.models.ai_log import AILog, AITipoUso
 
+    marcador = f"LEGAL_DOC_ID:{doc_id}\n" if doc_id else ""
     log = AILog(
         id=str(uuid4()),
         user_id=user_id,
         legal_doc_id=doc_id,
         legal_doc_content_hash=content_hash,
+        legal_doc_validation_current=bool(doc_id),
         tipo_uso=AITipoUso.outro,
         modelo="teste/modelo",
         prompt_sanitizado=(
-            f"score_confianca: {score}\n"
-            "veredito: APROVAR\n"
-            f"{prompt_extra}"
+            marcador
+            + f"score_confianca: {score}\n"
+            + "veredito: APROVAR\n"
+            + prompt_extra
         ),
         resposta="RELATORIO DE VALIDACAO JURIDICA",
         status_hitl=status_hitl,
@@ -90,6 +93,7 @@ async def _adicionar_validacao(
 
 async def _limpar(db, user_id: str):
     from sqlalchemy import delete
+
     from app.models.ai_log import AILog
     from app.models.legal_doc import LegalDoc
     from app.models.user import User
@@ -104,7 +108,8 @@ async def _limpar(db, user_id: str):
 @pytest.mark.asyncio
 async def test_prompt_maior_que_8000_continua_recuperavel_por_vinculo():
     from app.models.ai_log import AIStatusHITL
-    from app.routers.legal_docs import _conteudo_hash, _ultima_validacao_peca
+    from app.routers.legal_docs import _ultima_validacao_peca
+    from app.services.validador_juridico_service import _hash_conteudo
 
     db, user, doc = await _cenario_base("A" * 30_000)
     try:
@@ -112,7 +117,7 @@ async def test_prompt_maior_que_8000_continua_recuperavel_por_vinculo():
             db,
             user_id=user.id,
             doc_id=doc.id,
-            content_hash=_conteudo_hash(doc.conteudo),
+            content_hash=_hash_conteudo(doc.conteudo),
             status_hitl=AIStatusHITL.revisado,
             prompt_extra="X" * 8_500,
         )
@@ -128,19 +133,28 @@ async def test_prompt_maior_que_8000_continua_recuperavel_por_vinculo():
 
 @pytest.mark.asyncio
 async def test_log_legado_com_marcador_textual_nao_e_associado():
-    from app.models.ai_log import AIStatusHITL
+    from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
     from app.routers.legal_docs import _ultima_validacao_peca
 
     db, user, doc = await _cenario_base()
     try:
-        await _adicionar_validacao(
-            db,
+        legado = AILog(
+            id=str(uuid4()),
             user_id=user.id,
-            doc_id=None,
-            content_hash=None,
+            legal_doc_id=None,
+            legal_doc_content_hash=None,
+            legal_doc_validation_current=False,
+            tipo_uso=AITipoUso.outro,
+            modelo="teste/modelo",
+            prompt_sanitizado=(
+                f"LEGAL_DOC_ID:{doc.id}\n"
+                "score_confianca: 90\nveredito: APROVAR"
+            ),
+            resposta="RELATORIO DE VALIDACAO JURIDICA",
             status_hitl=AIStatusHITL.revisado,
-            prompt_extra=f"LEGAL_DOC_ID:{doc.id}",
         )
+        db.add(legado)
+        await db.commit()
 
         resultado = await _ultima_validacao_peca(db, doc)
 
@@ -153,7 +167,8 @@ async def test_log_legado_com_marcador_textual_nao_e_associado():
 @pytest.mark.asyncio
 async def test_edicao_do_conteudo_invalida_validacao_anterior():
     from app.models.ai_log import AIStatusHITL
-    from app.routers.legal_docs import _conteudo_hash, _ultima_validacao_peca
+    from app.routers.legal_docs import _ultima_validacao_peca
+    from app.services.validador_juridico_service import _hash_conteudo
 
     db, user, doc = await _cenario_base()
     try:
@@ -161,7 +176,7 @@ async def test_edicao_do_conteudo_invalida_validacao_anterior():
             db,
             user_id=user.id,
             doc_id=doc.id,
-            content_hash=_conteudo_hash(doc.conteudo),
+            content_hash=_hash_conteudo(doc.conteudo),
             status_hitl=AIStatusHITL.revisado,
         )
         assert (await _ultima_validacao_peca(db, doc))["apto_fluxo"] is True
@@ -179,7 +194,8 @@ async def test_edicao_do_conteudo_invalida_validacao_anterior():
 @pytest.mark.asyncio
 async def test_usa_a_validacao_mais_recente_da_mesma_versao():
     from app.models.ai_log import AIStatusHITL
-    from app.routers.legal_docs import _conteudo_hash, _ultima_validacao_peca
+    from app.routers.legal_docs import _ultima_validacao_peca
+    from app.services.validador_juridico_service import _hash_conteudo
 
     db, user, doc = await _cenario_base()
     try:
@@ -188,7 +204,7 @@ async def test_usa_a_validacao_mais_recente_da_mesma_versao():
             db,
             user_id=user.id,
             doc_id=doc.id,
-            content_hash=_conteudo_hash(doc.conteudo),
+            content_hash=_hash_conteudo(doc.conteudo),
             status_hitl=AIStatusHITL.revisado,
             score=95,
             criado_em=agora - timedelta(minutes=2),
@@ -197,7 +213,7 @@ async def test_usa_a_validacao_mais_recente_da_mesma_versao():
             db,
             user_id=user.id,
             doc_id=doc.id,
-            content_hash=_conteudo_hash(doc.conteudo),
+            content_hash=_hash_conteudo(doc.conteudo),
             status_hitl=AIStatusHITL.revisado,
             score=60,
             criado_em=agora,
@@ -216,7 +232,8 @@ async def test_usa_a_validacao_mais_recente_da_mesma_versao():
 async def test_duas_pecas_do_mesmo_usuario_nao_cruzam_validacoes():
     from app.models.ai_log import AIStatusHITL
     from app.models.legal_doc import LegalDoc, PecaStatus, PecaTipo
-    from app.routers.legal_docs import _conteudo_hash, _validacoes_por_peca
+    from app.routers.legal_docs import _validacoes_por_peca
+    from app.services.validador_juridico_service import _hash_conteudo
 
     db, user, doc_a = await _cenario_base("Conteúdo A " * 100)
     doc_b = LegalDoc(
@@ -235,7 +252,7 @@ async def test_duas_pecas_do_mesmo_usuario_nao_cruzam_validacoes():
             db,
             user_id=user.id,
             doc_id=doc_a.id,
-            content_hash=_conteudo_hash(doc_a.conteudo),
+            content_hash=_hash_conteudo(doc_a.conteudo),
             status_hitl=AIStatusHITL.revisado,
         )
 
@@ -245,6 +262,28 @@ async def test_duas_pecas_do_mesmo_usuario_nao_cruzam_validacoes():
         assert resultado[doc_b.id]["status"] == "sem_validacao"
     finally:
         await _limpar(db, user.id)
+
+
+def test_marcador_legado_compila_para_fk_e_flag_atual():
+    from sqlalchemy import select
+    from sqlalchemy.dialects import postgresql
+
+    from app.models.ai_log import AILog
+
+    doc_id = "11111111-2222-3333-4444-555555555555"
+    stmt = select(AILog.id).where(
+        AILog.prompt_sanitizado.ilike(f"%LEGAL_DOC_ID:{doc_id}%")
+    )
+    sql = str(
+        stmt.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "ai_logs.legal_doc_id" in sql
+    assert "ai_logs.legal_doc_validation_current IS true" in sql
+    assert "prompt_sanitizado ILIKE" not in sql
 
 
 def test_migration_123_e_reversivel_e_indexada():
@@ -258,6 +297,7 @@ def test_migration_123_e_reversivel_e_indexada():
     assert '"legal_doc_id"' in migration
     assert '"legal_doc_content_hash"' in migration
     assert 'ondelete="SET NULL"' in migration
+    assert "CREATE TRIGGER" in migration
     assert "create_index" in migration
     assert "drop_index" in migration
     assert "drop_column" in migration
