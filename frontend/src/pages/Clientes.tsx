@@ -20,8 +20,10 @@ import {
 import { ClientesStats } from "../components/Dashboards";
 import { VerificarReceita } from "../components/Infosimples";
 
-// Resposta de POST /clients/checar-conflito (nome/documento completos —
-// o advogado precisa saber com quem é o conflito; endpoint restrito ao CRM).
+// Resposta de POST /clients/checar-conflito. O NOME vem completo (dever ético:
+// sem ele o alerta é inacionável), mas o CPF/CNPJ vem apenas MASCARADO — o
+// endpoint cruza a base inteira ignorando a segregação de carteira, então não
+// devolve documento em claro de cliente de outro advogado.
 type ConflitoNivel = "nenhum" | "atencao" | "critico";
 interface ConflitoMatch {
   tipo: string;
@@ -29,7 +31,7 @@ interface ConflitoMatch {
   client_id?: string;
   papel: string;
   nome?: string;
-  documento?: string;
+  documento_mascarado?: string | null;
   descricao: string;
 }
 interface ConflitoCheck {
@@ -509,6 +511,13 @@ export default function Clientes() {
                     {m.papel.replace(/_/g, " ")}
                   </Badge>
                   <span>{m.descricao}</span>
+                  {/* Mascarado: só serve para desempatar homônimo quando o
+                      operador já tem o documento em mãos. */}
+                  {m.documento_mascarado && (
+                    <span className="font-mono text-xs opacity-70">
+                      {m.documento_mascarado}
+                    </span>
+                  )}
                   {m.case_id && (
                     <Link
                       to={`/casos/${m.case_id}`}

@@ -34,6 +34,7 @@ from app.services.system_prompts.blocos_condicionais import (
     montar_instrucao_blocos,
 )
 from app.services.advogado_style_service import montar_instrucoes_estilo_para_prompt
+from app.services.homologacao_ferramentas import motivo_nao_homologada
 from app.schemas.peca_workflow import ProducaoModoRequest
 from app.services.peca_workflow_service import preparar_modo_producao
 from app.services.deep_research_service import DeepResearchInput, executar_deep_research
@@ -171,6 +172,8 @@ async def gerar_peca(
     # simultaneamente preservado e substituído, Agente sem caso autorizado,
     # sem documento considerado ou sem aprovação explícita do plano.
     instrucoes_modo = ""
+    # Peça usada como molde (quando houver): habilita o detector de resíduos.
+    documento_molde_id: Optional[str] = None
     if req.modo_producao is not None:
         modo_req = req.modo_producao.model_copy(update={
             # Fonte única: o request externo manda; evita divergência de contrato.
@@ -187,6 +190,8 @@ async def gerar_peca(
                 "alertas": prep.alertas,
             })
         instrucoes_modo = prep.instrucoes_pipeline or ""
+        if prep.molde is not None:
+            documento_molde_id = prep.molde.referencia.documento_id
         # Auditoria exigida pelo contrato: modo, referência do molde e aprovação
         # — só IDs/versão/hash, nunca conteúdo (sem dado sensível em log).
         from app.models.audit_log import criar_audit_log
@@ -210,6 +215,20 @@ async def gerar_peca(
                 ],
             },
         )
+
+    def _documento_do_evento(chunk: str) -> str:
+        """Extrai `documento` do evento SSE 'concluido' (texto final da peça).
+        Fail-soft: formato inesperado devolve "" e o detector simplesmente não
+        roda — jamais derruba a entrega."""
+        import json
+
+        for linha in chunk.splitlines():
+            if linha.startswith("data: "):
+                try:
+                    return str(json.loads(linha[6:]).get("documento") or "")
+                except (ValueError, AttributeError):
+                    return ""
+        return ""
 
     async def stream():
         try:
@@ -240,6 +259,11 @@ async def gerar_peca(
                     else bloco_teses_cap
                 )
 
+            # Modo Molde: captura o texto final do evento "concluido" para o
+            # DETECTOR DE RESÍDUOS (dado do cliente anterior sobrevivendo na
+            # peça nova é quebra de sigilo). Fora do Molde nada é capturado.
+            texto_final = ""
+
             async for chunk in gerar_peca_pipeline(
                 db=db,
                 user_id=cu.id,
@@ -253,7 +277,43 @@ async def gerar_peca(
                 instrucoes_adicionais=instrucoes,
                 nivel_complexidade=req.nivel_complexidade,
             ):
+                if documento_molde_id and "event: concluido" in chunk:
+                    texto_final = _documento_do_evento(chunk)
                 yield chunk
+
+            if documento_molde_id and texto_final:
+                import json
+
+                from app.services.peca_residuos import detectar_residuos_do_molde
+
+                achados = await detectar_residuos_do_molde(
+                    db, texto_final,
+                    documento_molde_id=documento_molde_id,
+                    case_id_destino=req.case_id,
+                )
+                if achados:
+                    # Aviso HITL: não bloqueia a entrega (a peça é rascunho),
+                    # mas o advogado NÃO pode aprovar sem resolver. Só a
+                    # contagem vai ao audit log — nunca o termo encontrado.
+                    from app.models.audit_log import criar_audit_log
+                    await criar_audit_log(
+                        db, cu.id, cu.role.value, "PECA_RESIDUOS_DETECTADOS",
+                        "pecas", req.case_id or "avulsa",
+                        detalhes=(
+                            f"{len(achados)} resíduo(s) do caso de origem "
+                            "detectado(s) na peça gerada em Modo Molde"
+                        ),
+                        dados_depois={
+                            "categorias": sorted({a["categoria"] for a in achados}),
+                            "total": len(achados),
+                        },
+                    )
+                    await db.commit()
+                    yield (
+                        "event: residuos\ndata: "
+                        + json.dumps({"achados": achados}, ensure_ascii=False)
+                        + "\n\n"
+                    )
         except Exception as e:
             import json
             # Detalhe técnico só no log — a UI não deve expor infra interna
@@ -378,6 +438,11 @@ class DemonstrativoRequest(BaseModel):
     linhas: list[LinhaDemonstrativo] = Field(default=[])
     rodape: Optional[str] = Field(None, max_length=2000)
     case_id: Optional[str] = None
+    # Caminho da ferramenta de origem do cálculo (ex.: /civel/ferramentas/
+    # prazos-contestacao). Opcional (retrocompatível); quando informado e a
+    # ferramenta consta na matriz de não homologadas (Onda 1), o demonstrativo
+    # é REJEITADO com 422 — resultado não homologado não vira peça.
+    ferramenta: Optional[str] = Field(None, max_length=200)
 
 
 @router.post("/demonstrativo", status_code=201)
@@ -391,6 +456,25 @@ async def gerar_demonstrativo(
     de peças existente; resultado é MINUTA (revisão humana obrigatória)."""
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         raise HTTPException(403, "Acesso negado")
+
+    # Gate de homologação (Onda 1): cálculo de ferramenta não homologada não
+    # pode ser convertido em demonstrativo/peça. O campo é OPT-IN por
+    # retrocompatibilidade — quando ausente, registramos o bypass para dar
+    # visibilidade (a obrigatoriedade fica para a Onda 3, com telemetria).
+    if not req.ferramenta:
+        logger.warning(
+            "demonstrativo_sem_ferramenta: gate de homologação não aplicado "
+            "(user_id=%s, case_id=%s, titulo=%r)", cu.id, req.case_id, req.titulo[:80])
+    if req.ferramenta:
+        motivo = motivo_nao_homologada(req.ferramenta)
+        if motivo:
+            raise HTTPException(422, detail={
+                "codigo": "ferramenta_nao_homologada",
+                "motivo": motivo,
+                "mensagem": ("Demonstrativo bloqueado: a ferramenta de origem não está "
+                             "homologada para uso profissional — em revisão jurídica"),
+            })
+
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)
 

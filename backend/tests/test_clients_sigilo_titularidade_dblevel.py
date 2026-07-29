@@ -7,7 +7,9 @@ isolamento entre advogados nas rotas IRMÃS que operam sobre UM cliente:
   • POST /clients/resolver        (CPF→id+nome) → advogado não-dono: 404 (não vaza id/nome)
 
 E garante que o que NÃO pode ser restringido continua aberto:
-  • POST /clients/checar-conflito (EOAB 34-35)  → cruza a base INTEIRA, mesmo p/ não-dono.
+  • POST /clients/checar-conflito (EOAB 34-35)  → cruza a base INTEIRA, mesmo p/ não-dono,
+    porém devolvendo o CPF/CNPJ apenas MASCARADO (o nome basta para o dever ético;
+    o documento em claro transformaria a checagem num extrator de PII da base toda).
 
 Regra de titularidade (espelha _filtro_visibilidade_cliente / _pode_ver_cliente):
 gestão (socio/admin/superadmin) e recepção (secretaria) veem tudo; advogado/
@@ -22,6 +24,7 @@ direto com AsyncSessionLocal). Sem RUN_DB_TESTS=1, pula.
 """
 from __future__ import annotations
 
+import json
 import os
 from uuid import uuid4
 
@@ -231,6 +234,15 @@ async def test_conflito_ainda_cruza_base_de_outra_carteira():
             assert res["conflito"] is True
             ids = [m.get("client_id") for m in res["matches"]]
             assert cli in ids
+
+            # ...mas o dever ético para no NOME. O CPF do cliente alheio não
+            # pode sair em claro: este é o único endpoint que ignora a
+            # segregação de carteira, então seria o caminho para colher PII de
+            # toda a base. Vale para QUALQUER string do retorno (descricao
+            # inclusive), não só para o campo do documento.
+            achado = next(m for m in res["matches"] if m.get("client_id") == cli)
+            assert achado["documento_mascarado"] == "***.444.777-**"
+            assert cpf not in json.dumps(res)
         finally:
             await _limpar(db, user_ids=[dono, outro], client_ids=[cli])
 

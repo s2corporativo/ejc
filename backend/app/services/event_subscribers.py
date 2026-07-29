@@ -25,51 +25,7 @@ _TRADUZ_TIPOS = {"intimacao", "decisao", "peticao", "audiencia", "movimento"}
 _TIPOS_PUBLICOS_CLIENTE = {"intimacao", "decisao", "audiencia", "movimento"}
 
 
-def _patch_precedentes_router() -> None:
-    try:
-        from app.routers import jurisprudencia_externa
-        from app.routers import precedentes_jurisprudencia
 
-        jurisprudencia_externa.router.include_router(precedentes_jurisprudencia.router)
-        logger.info("Router de precedentes multifonte registrado")
-    except Exception as exc:  # pragma: no cover
-        logger.warning("Router de precedentes multifonte indisponível: %s", exc)
-
-
-def _patch_advogado_estilo_router() -> None:
-    try:
-        from app.routers import peca_geracao
-        from app.routers import advogado_estilo
-
-        peca_geracao.router.include_router(advogado_estilo.router)
-        logger.info("Router de aprendizado de estilo registrado")
-    except Exception as exc:  # pragma: no cover
-        logger.warning("Router de aprendizado de estilo indisponível: %s", exc)
-
-
-def _patch_rag_governance_router() -> None:
-    """Acopla a governança ao router RAG sem criar nova rota/menu paralelo.
-
-    ``rag_governance`` já possui prefixo absoluto ``/rag/governanca``. Estender a
-    lista de rotas evita que ``APIRouter.include_router`` some novamente o
-    prefixo ``/rag`` do router pai e produza ``/rag/rag/governanca``.
-    """
-    try:
-        from app.routers import rag
-        from app.routers import rag_governance
-
-        existing = {(getattr(route, "path", None), tuple(sorted(getattr(route, "methods", []) or [])))
-                    for route in rag.router.routes}
-        added = 0
-        for route in rag_governance.router.routes:
-            key = (getattr(route, "path", None), tuple(sorted(getattr(route, "methods", []) or [])))
-            if key not in existing:
-                rag.router.routes.append(route)
-                existing.add(key)
-                added += 1
-        logger.info("Governança da Base de Conhecimento registrada (%d rota(s))", added)
-    except Exception as exc:  # pragma: no cover
-        logger.warning("Router de governança RAG indisponível: %s", exc)
 
 
 def _patch_documents_background_analysis() -> None:
@@ -152,9 +108,14 @@ def _install_datajud_cognitive_feed() -> None:
         logger.error("Feed cognitivo DataJud indisponível: %s", exc, exc_info=True)
 
 
-_patch_precedentes_router()
-_patch_advogado_estilo_router()
-_patch_rag_governance_router()
+# ── Onda 3 §4.1: os routers de precedentes, advogado_estilo e rag_governance
+# NÃO são mais anexados aqui por side effect — são registrados explicitamente
+# em app/main.py. Este módulo mantém apenas subscribers de evento e patches de
+# COMPORTAMENTO (não de rota).
+# ── Onda 3 §4.1: os routers de precedentes, advogado_estilo e rag_governance
+# NÃO são mais anexados aqui por side effect — são registrados explicitamente
+# em app/main.py. Este módulo mantém apenas subscribers de evento e patches de
+# COMPORTAMENTO (não de rota).
 _patch_documents_background_analysis()
 _install_ai_core_hardening()
 _install_datajud_cognitive_feed()

@@ -193,12 +193,20 @@ Consequências diretas:
 
 ### Critérios de aceite
 
-- [ ] Modo Agente recusa redigir sem plano aprovado (teste negativo)
-- [ ] Modo Molde recusa molde sem `hash_conteudo` (teste negativo)
-- [ ] Detector de resíduos barra nome/CPF/nº de processo do caso de origem
-- [ ] Modo, molde e aprovação registrados em `AILog` sem dado sensível
-- [ ] Nenhum endpoint público paralelo de geração criado
-- [ ] HITL e citation gate preservados
+- [x] Modo Agente recusa redigir sem plano aprovado (teste negativo)
+- [x] Modo Molde recusa molde sem `hash_conteudo` (teste negativo)
+- [x] Detector de resíduos barra nome/CPF/nº de processo do caso de origem —
+      `services/peca_residuos.py` (determinístico, sem IA): coleta os
+      identificadores do caso de ORIGEM do molde, varre o texto final e ignora
+      o que também pertence ao caso de destino (mesmo cliente = legítimo).
+      Achados sobem no evento SSE `residuos` e o modal os exibe em alerta
+      bloqueante-visual antes da aprovação. Fail-soft: falha do detector nunca
+      derruba a entrega da peça.
+- [x] Modo, molde e aprovação registrados em `AILog` sem dado sensível — o
+      audit `PECA_RESIDUOS_DETECTADOS` registra apenas categorias e contagem,
+      nunca o termo encontrado
+- [x] Nenhum endpoint público paralelo de geração criado
+- [x] HITL e citation gate preservados
 
 **Risco:** médio — toca o caminho de geração. **Rollback:** o service é aditivo;
 reverter a integração restaura o comportamento atual.
@@ -251,9 +259,18 @@ muda de comportamento conforme a seção.
 
 **Objetivo:** fechar o que impede a certificação. Não é UI.
 
-- **Vigência na citação** — cruzar `KnowledgeDoc.vigente`/`versao` com o
-  verificador, acrescentando o estado "possivelmente desatualizada" aos quatro
-  existentes (`verificada`/`identificada`/`suspeita`/`generica`)
+- [x] **Vigência na citação** — CONCLUÍDO. Os lookups oficiais
+  (`_existe_sumula`/`_existe_artigo`) filtram `vigente = TRUE`, então citar
+  norma SUPERADA era indistinguível de citar algo nunca ingerido — o advogado
+  recebia "confirme manualmente" quando deveria receber "esta redação foi
+  substituída". Agora, quando o lookup vigente não acha, um segundo lookup
+  procura a versão superada (`_sumula_superada`/`_artigo_superado`) e a citação
+  recebe o 5º estado `possivelmente_desatualizada`, com a versão no aviso.
+  Efeitos: pesa 0 no score; entra em `contagem_status`; vira
+  `revisao_obrigatoria` no `response_validator`; e, em modo estrito, BLOQUEIA
+  no `citation_gate` — coerência com a regra que já bloqueia súmula/artigo
+  "não encontrada" (senão a redação revogada passaria enquanto a norma
+  meramente desconhecida é barrada, invertendo a gravidade)
 - **E2E dos fluxos jurídicos** — intimação → prazo → tarefa → agenda → conclusão
   (P0: erro aqui gera preclusão) e documento → estratégia → tese → peça → revisão
 - **IDOR e segregação** — testes negativos por entidade, sobre o isolamento já

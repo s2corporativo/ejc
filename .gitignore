@@ -70,3 +70,7 @@ secrets/
 
 # Artefatos temporários do vps-tools (snapshots/testes manuais de SFTP)
 vps-tools/_*
+
+# Arquivos de rollback da reclassificação de área (contêm IDs de casos do
+# escritório) — ver RUNBOOK_RECLASSIFICACAO_AREAS.md. Guardar fora do repo.
+var/

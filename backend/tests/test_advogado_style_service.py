@@ -60,9 +60,20 @@ def test_peca_geracao_injeta_estilo_no_pipeline():
     assert "instrucoes_adicionais=instrucoes" in source
 
 
-def test_router_estilo_registrado_por_patch():
+def test_router_estilo_registrado_explicitamente():
+    """Onda 3 §4.1: o router deixou de ser anexado por side effect em
+    event_subscribers e passou a ser registrado em app/main.py — o path final
+    permanece /api/pecas/advogado-estilo/me."""
     from pathlib import Path
 
-    source = Path("app/services/event_subscribers.py").read_text(encoding="utf-8")
-    assert "_patch_advogado_estilo_router" in source
-    assert "peca_geracao.router.include_router(advogado_estilo.router)" in source
+    from app.main import app
+
+    montadas = {getattr(r, "path", "") for r in app.routes}
+    assert "/api/pecas/advogado-estilo/me" in montadas
+
+    main_src = Path("app/main.py").read_text(encoding="utf-8")
+    assert 'advogado_estilo.router, prefix=API + "/pecas"' in main_src
+
+    subscribers = Path("app/services/event_subscribers.py").read_text(encoding="utf-8")
+    assert "_patch_advogado_estilo_router" not in subscribers
+    assert "include_router" not in subscribers

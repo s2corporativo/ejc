@@ -1,6 +1,8 @@
 """Verificador RIGOROSO de jurisprudência — parser CNJ (DV mód. 97), súmulas em
 faixa, recursos superiores, menções vagas, score e DataJud opt-in (mockado)."""
 
+import pytest
+
 from app.services.verificador_jurisprudencia import (
     MAX_CONSULTAS_DATAJUD,
     SUMULA_TETO,
@@ -237,3 +239,89 @@ def test_parser_extrai_orgao_relator_data():
     assert c["orgao"] and "Corte Especial" in c["orgao"]
     assert c["relator"] and "Herman" in c["relator"]
     assert c["data"] == "03/05/2021"
+
+
+# ── 5º estado: possivelmente desatualizada (Fase 4 — vigência na citação) ────
+# Os lookups oficiais filtram `vigente = TRUE`. Sem este estado, citar norma
+# SUPERADA era indistinguível de citar algo nunca ingerido — o advogado recebia
+# "confirme manualmente" quando deveria receber "esta redação foi substituída".
+
+class _DBVigencia:
+    """Fake: o lookup vigente NÃO acha; o lookup de superada acha."""
+
+    def __init__(self, superada: tuple | None = ("Súmula 7 STJ (redação anterior)", 1)):
+        self.superada = superada
+        self.consultas: list[str] = []
+
+    async def execute(self, stmt, params=None):
+        sql = " ".join(str(stmt).split())
+        self.consultas.append(sql)
+        vigente_false = "kd.vigente = FALSE" in sql
+        linha = self.superada if (vigente_false and self.superada) else None
+
+        class _R:
+            def first(_self):
+                return linha
+        return _R()
+
+
+@pytest.mark.anyio
+async def test_sumula_so_em_versao_superada_vira_desatualizada():
+    from app.services.verificador_jurisprudencia import (
+        STATUS_DESATUALIZADA,
+        verificar_jurisprudencia,
+    )
+
+    db = _DBVigencia()
+    rel = await verificar_jurisprudencia(db, "Aplica-se a Súmula 7 do STJ ao caso.")
+    cit = [c for c in rel["citacoes"] if c["tipo"] == "sumula"]
+    assert len(cit) == 1
+    assert cit[0]["status"] == STATUS_DESATUALIZADA
+    assert "SUPERADA" in cit[0]["aviso"]
+    assert "v1" in cit[0]["aviso"]
+    # Não conta como confirmada — citar redação superada é defeito, não crédito.
+    assert cit[0]["encontrada"] is False
+
+
+@pytest.mark.anyio
+async def test_artigo_so_em_versao_superada_vira_desatualizada():
+    from app.services.verificador_jurisprudencia import (
+        STATUS_DESATUALIZADA,
+        verificar_jurisprudencia,
+    )
+
+    db = _DBVigencia(superada=("CLT — redação anterior à Lei 13.467/2017", 2))
+    rel = await verificar_jurisprudencia(db, "Nos termos do art. 477 da CLT.")
+    cit = [c for c in rel["citacoes"] if c["tipo"] == "artigo"]
+    assert len(cit) == 1
+    assert cit[0]["status"] == STATUS_DESATUALIZADA
+    assert "v2" in cit[0]["aviso"]
+
+
+@pytest.mark.anyio
+async def test_sem_versao_superada_mantem_comportamento_anterior():
+    from app.services.verificador_jurisprudencia import (
+        STATUS_IDENTIFICADA,
+        verificar_jurisprudencia,
+    )
+
+    db = _DBVigencia(superada=None)  # nada na base, nem vigente nem superada
+    rel = await verificar_jurisprudencia(db, "Aplica-se a Súmula 7 do STJ.")
+    cit = [c for c in rel["citacoes"] if c["tipo"] == "sumula"]
+    assert cit[0]["status"] == STATUS_IDENTIFICADA
+
+
+@pytest.mark.anyio
+async def test_desatualizada_entra_na_contagem_e_pesa_zero_no_score():
+    from app.services.verificador_jurisprudencia import (
+        STATUS_DESATUALIZADA,
+        verificar_jurisprudencia,
+    )
+
+    db = _DBVigencia()
+    rel = await verificar_jurisprudencia(db, "Aplica-se a Súmula 7 do STJ.")
+    # A chave nova precisa existir na contagem (dict era fixo em 4 estados —
+    # um 5º status quebraria com KeyError).
+    assert rel["contagem_status"][STATUS_DESATUALIZADA] == 1
+    assert rel["score"] == 0
+    assert any("SUPERADA" in a for a in rel["avisos"])

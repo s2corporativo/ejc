@@ -39,6 +39,7 @@ from app.core.database import Base
 ORIGENS_SNAPSHOT: tuple[str, ...] = (
     "triagem", "intake", "raio_x", "motor_peca", "manual", "matriz_teses",
     "orquestrador",  # FASE 5 — LegalCaseOrchestrator (linha do tempo de estados)
+    "sala_juridica",  # conversão/vínculo da Sala Jurídica → caso oficial
 )
 
 

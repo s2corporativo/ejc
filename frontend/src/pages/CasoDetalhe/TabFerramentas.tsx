@@ -3,23 +3,25 @@ import { Sparkles } from "lucide-react";
 import { toast } from "../../components/Toast";
 import Markdown from "../../components/Markdown";
 import api from "../../lib/api";
+import {
+  AVISO_FERRAMENTA_NAO_HOMOLOGADA,
+  mensagemErroFerramenta,
+} from "../../lib/iaErro";
+import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
 import AnaliseEstrategica from "../../components/AnaliseEstrategica";
 import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
-import { RAMOS } from "../ramos/ramosConfig";
+import { ramosDaArea } from "../ramos/ramosConfig";
 import type { FerramentaConfig } from "../ramos/ramosConfig";
+import {
+  camposVisiveis,
+  chavesObsoletas,
+  paramsVisiveis,
+} from "../ramos/camposCondicionais";
 
-const AREA_PARA_RAMO: Record<string, string[]> = {
-  empresarial: ["empresarial"],
-  civil: ["civel", "bancario"],
-  criminal: ["penal"],
-  trabalhista: ["trabalhista"],
-  tributario: ["administrativo"],
-  ambiental: ["administrativo"],
-  consumidor: ["civel"],
-  familia: ["civel"],
-  previdenciario: [],
-};
+// O mapa área → ramos vem de `ramosDaArea()` (derivado de RAMOS). A lista
+// manual que existia aqui só conhecia as áreas antigas e deixava a aba vazia
+// para casos criados nos hubs cuja área deixou de ser achatada.
 
 function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
   function rotulo(v: string) {
@@ -36,15 +38,33 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
   const [loading, setLoading] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
 
+  // Campos condicionais: só a opção escolhida existe para o backend (enviar os
+  // demais devolve 422). Ver camposCondicionais.ts.
+  const visiveis = camposVisiveis(f.campos, vals);
+
+  React.useEffect(() => {
+    const obsoletas = chavesObsoletas(f.campos, vals);
+    if (obsoletas.length === 0) return;
+    setVals((atuais) => {
+      const copia = { ...atuais };
+      obsoletas.forEach((nome) => delete copia[nome]);
+      return copia;
+    });
+  }, [f.campos, vals]);
+
   const calcular = async () => {
     setLoading(true);
     setErro(null);
     setRes(null);
     try {
-      const r = await api.get(f.endpoint, { params: vals });
+      const r = await api.get(f.endpoint, {
+        params: paramsVisiveis(f.campos, vals),
+      });
       setRes(r.data);
     } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha no cálculo");
+      // 503 "ferramenta_nao_homologada" vira mensagem controlada — nunca
+      // erro genérico nem `detail` objeto renderizado cru.
+      setErro(mensagemErroFerramenta(e));
     } finally {
       setLoading(false);
     }
@@ -58,6 +78,14 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
     <div className="card p-3">
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-xs font-semibold text-navy">{f.titulo}</span>
+        {f.homologada === false && (
+          <span
+            className="text-[10px] font-semibold text-warn-800 bg-warn-100 border border-warn-300 px-1.5 rounded-full whitespace-nowrap"
+            title={AVISO_FERRAMENTA_NAO_HOMOLOGADA}
+          >
+            ⚠️ Não homologada
+          </span>
+        )}
         {f.autoLoad && res && (
           <span className="text-[10px] text-green-600 bg-green-50 px-1 rounded">
             ● ao vivo
@@ -65,9 +93,9 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
         )}
       </div>
       <p className="text-[11px] text-slate-400 mb-2">{f.baseLegal}</p>
-      {f.campos.length > 0 && (
+      {visiveis.length > 0 && (
         <div className="grid grid-cols-2 gap-1.5 mb-2">
-          {f.campos.map((c) => (
+          {visiveis.map((c) => (
             <div key={c.nome}>
               <label className="text-[10px] text-slate-500 block mb-0.5">
                 {c.label}
@@ -102,7 +130,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
           ))}
         </div>
       )}
-      {(!f.autoLoad || f.campos.length > 0) && (
+      {(!f.autoLoad || visiveis.length > 0) && (
         <button
           className="btn-gold text-xs py-1 px-3 mt-1"
           disabled={loading}
@@ -114,8 +142,19 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
       {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
       {res && (
         <div className="mt-2 p-2 bg-gold-50 rounded text-[11px] space-y-0.5 border border-gold-200">
+          {res.homologada === false && (
+            <p className="text-warn-800 font-medium">
+              ⚠️ {res.aviso_homologacao || AVISO_FERRAMENTA_NAO_HOMOLOGADA}
+            </p>
+          )}
           {typeof res === "object" &&
             Object.entries(res as Record<string, any>).map(([k, v]) => {
+              // Exibidos no aviso dedicado de homologação — não na tabela.
+              if (k === "homologada" || k === "aviso_homologacao") return null;
+              // Metadados de regra vão para o rodapé <RodapeRegra />.
+              if (METADADOS_REGRA.includes(k)) return null;
+              // Nulos são omitidos — imprimiriam "null" na tela.
+              if (v === null || v === undefined) return null;
               if (k === "aviso")
                 return (
                   <p
@@ -125,6 +164,31 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
                     {String(v)}
                   </p>
                 );
+              // Arrays estruturados (marcos, componentes, requisitos...) em
+              // sublista compacta — só os campos escalares de cada item.
+              if (Array.isArray(v)) {
+                if (v.length === 0) return null;
+                return (
+                  <div key={k} className="pt-1">
+                    <p className="text-slate-500">{rotulo(k)}</p>
+                    <ul className="pl-2 space-y-0.5">
+                      {v.map((item, i) => (
+                        <li key={i} className="text-navy">
+                          {typeof item === "object" && item !== null
+                            ? Object.entries(item)
+                                .filter(
+                                  ([, iv]) =>
+                                    iv !== null && typeof iv !== "object",
+                                )
+                                .map(([ik, iv]) => `${rotulo(ik)}: ${iv}`)
+                                .join(" · ")
+                            : String(item)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              }
               if (typeof v === "object" && v !== null) return null;
               return (
                 <div key={k} className="flex justify-between gap-1">
@@ -139,6 +203,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
                 </div>
               );
             })}
+          <RodapeRegra data={res} />
         </div>
       )}
     </div>
@@ -382,9 +447,8 @@ function ResultadoContratoIA({ data }: { data: any }) {
 }
 
 export default function TabFerramentas({ caso }: { caso: Case }) {
-  const slugs = AREA_PARA_RAMO[caso.area] ?? [];
-  const configs = slugs.map((s) => RAMOS[s]).filter(Boolean);
-  const [ramoAtivo, setRamoAtivo] = React.useState(slugs[0] ?? "");
+  const configs = React.useMemo(() => ramosDaArea(caso.area), [caso.area]);
+  const [ramoAtivo, setRamoAtivo] = React.useState("");
   const cfg = configs.find((c) => c.slug === ramoAtivo) ?? configs[0];
 
   // Agrupar ferramentas por grupo

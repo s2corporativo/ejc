@@ -25,7 +25,11 @@ import {
   Car,
 } from "lucide-react";
 import api from "../../lib/api";
-import { mensagemErroIA } from "../../lib/iaErro";
+import {
+  AVISO_FERRAMENTA_NAO_HOMOLOGADA,
+  mensagemErroFerramenta,
+  mensagemErroIA,
+} from "../../lib/iaErro";
 import { useCaseContext } from "../../stores/caseContext";
 import type { Case } from "../../types";
 import {
@@ -37,6 +41,12 @@ import {
   fmtMoney,
 } from "../../components/UI";
 import { RAMOS, type RamoConfig, type FerramentaConfig } from "./ramosConfig";
+import {
+  camposVisiveis,
+  chavesObsoletas,
+  paramsVisiveis,
+} from "./camposCondicionais";
+import { linhasDoResultado, rodapeDoResultado } from "./demonstrativo";
 import GuiaBancario from "../../components/GuiaBancario";
 import AnaliseExtratos from "../../components/AnaliseExtratos";
 import BancarioForense from "../../components/BancarioForense";
@@ -60,6 +70,7 @@ import GuiaEmpresarial from "../../components/GuiaEmpresarial";
 import SociedadesCliente from "../../components/SociedadesCliente";
 import LgpdRegistros from "../../components/LgpdRegistros";
 import GuiaLgpd from "../../components/GuiaLgpd";
+import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
 import { RamoStats } from "../../components/Dashboards";
 
 // Mapa de ícones por nome (evita importar a lib inteira)
@@ -111,19 +122,31 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
   const [docLink, setDocLink] = useState<string | null>(null);
   const casoAtivo = useCaseContext((state) => state.caso);
 
+  // Bloqueio de risco (auditoria Áreas de Atuação — Onda 1): ferramenta não
+  // homologada — pela config OU pela resposta da API — não pode virar
+  // demonstrativo nem minuta; o resultado só aparece com o aviso jurídico.
+  const naoHomologada = f.homologada === false;
+  const bloqueadaParaDocumento = naoHomologada || res?.homologada === false;
+  const MOTIVO_BLOQUEIO = `Bloqueado: ${AVISO_FERRAMENTA_NAO_HOMOLOGADA}`;
+
   // Converte o resultado da calculadora em um Demonstrativo (LegalDoc rascunho).
   const gerarDemonstrativo = async () => {
     if (!res) return;
+    // Guarda dupla: além do botão desabilitado, impede persistir resultado
+    // de ferramenta em revisão jurídica como peça.
+    if (bloqueadaParaDocumento) {
+      setDocMsg(MOTIVO_BLOQUEIO);
+      return;
+    }
     setGerandoDoc(true);
     setDocMsg(null);
     setDocLink(null);
-    const RODAPE = ["aviso", "base", "observacao", "descricao"];
-    const linhas = Object.entries(res)
-      .filter(
-        ([k, v]) => !RODAPE.includes(k) && v !== null && typeof v !== "object",
-      )
-      .map(([k, v]) => ({ label: k.replace(/_/g, " "), valor: String(v) }));
-    const rodape = [res.observacao, res.descricao].filter(Boolean).join("\n");
+    // Achata a resposta inteira (objetos e arrays aninhados) — o filtro antigo
+    // só aceitava escalares de 1º nível e produzia peças vazias depois que a
+    // Onda 2 moveu o conteúdo para `marcos[]`, `componentes[]`, `fase_1{}`…
+    const linhas = linhasDoResultado(res);
+    // O rodapé carrega a fundamentação (fontes, vigência, versão da regra).
+    const rodape = rodapeDoResultado(res);
     try {
       // Modo Caso: vincula o demonstrativo ao caso ativo para ele aparecer
       // na listagem de Peças (que filtra pelo caso ativo por padrão).
@@ -133,6 +156,9 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
         linhas,
         rodape: rodape || undefined,
         case_id: casoAtivo?.id || undefined,
+        // Origem do cálculo — permite ao backend aplicar o gate de
+        // homologação server-side (não só o bloqueio de UI).
+        ferramenta: f.endpoint,
       });
       setDocMsg(
         casoAtivo
@@ -141,23 +167,45 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
       );
       setDocLink(casoAtivo ? `/pecas?caso=${casoAtivo.id}` : "/pecas");
     } catch (e: any) {
+      // `detail` pode ser objeto (gate de homologação) ou array (Pydantic):
+      // nunca renderizar cru — sempre string via helper.
       setDocMsg(
-        e.response?.data?.detail || "Falha ao salvar o demonstrativo em Peças.",
+        mensagemErroFerramenta(e, "Falha ao salvar o demonstrativo em Peças."),
       );
     } finally {
       setGerandoDoc(false);
     }
   };
 
+  // Campos condicionais: só existem para a opção escolhida (ex.: cada fase do
+  // recurso de multa tem a SUA data). Renderizar e enviar os demais gera 422.
+  const visiveis = camposVisiveis(f.campos, vals);
+
+  // Trocar a opção condicionante apaga o que ficou órfão — sem isso o valor
+  // continuaria no estado e voltaria a viajar se o campo reaparecesse.
+  useEffect(() => {
+    const obsoletas = chavesObsoletas(f.campos, vals);
+    if (obsoletas.length === 0) return;
+    setVals((atuais) => {
+      const copia = { ...atuais };
+      obsoletas.forEach((nome) => delete copia[nome]);
+      return copia;
+    });
+  }, [f.campos, vals]);
+
   const calcular = async () => {
     setLoading(true);
     setErro(null);
     setRes(null);
     try {
-      const r = await api.get(f.endpoint, { params: vals });
+      const r = await api.get(f.endpoint, {
+        params: paramsVisiveis(f.campos, vals),
+      });
       setRes(r.data);
     } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha no cálculo");
+      // 503 "ferramenta_nao_homologada" vira mensagem controlada — nunca
+      // lista vazia nem erro genérico/objeto cru.
+      setErro(mensagemErroFerramenta(e));
     } finally {
       setLoading(false);
     }
@@ -179,6 +227,14 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
         <h3 className="font-serif font-semibold text-navy text-sm">
           {f.titulo}
         </h3>
+        {naoHomologada && (
+          <span
+            className="text-[10px] font-semibold text-warn-800 bg-warn-100 border border-warn-300 px-1.5 py-0.5 rounded-full whitespace-nowrap"
+            title={MOTIVO_BLOQUEIO}
+          >
+            ⚠️ Não homologada
+          </span>
+        )}
         {f.autoLoad && res && (
           <span className="ml-auto text-[10px] text-green-600 font-medium bg-green-50 px-1.5 py-0.5 rounded">
             ● ao vivo
@@ -189,9 +245,15 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
         {f.descricao} · <span className="text-gold-700">{f.baseLegal}</span>
       </p>
 
-      {f.campos.length > 0 && (
+      {naoHomologada && (
+        <div className="mb-3 p-2 rounded-lg bg-warn-50 border border-warn-200 text-xs text-warn-800">
+          ⚠️ {AVISO_FERRAMENTA_NAO_HOMOLOGADA}
+        </div>
+      )}
+
+      {visiveis.length > 0 && (
         <div className="grid grid-cols-2 gap-2">
-          {f.campos.map((c) => (
+          {visiveis.map((c) => (
             <div
               key={c.nome}
               className={c.tipo === "select" ? "col-span-2 sm:col-span-1" : ""}
@@ -229,7 +291,7 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
       )}
 
       {/* Só mostra botão "Calcular" se não for autoLoad OU se houver campos */}
-      {(!f.autoLoad || f.campos.length > 0) && (
+      {(!f.autoLoad || visiveis.length > 0) && (
         <button
           className="btn-gold text-sm mt-3"
           disabled={loading}
@@ -270,17 +332,34 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
           ) : (
             <ResultadoView data={res} />
           )}
+          {/* Metadados de regra (fontes/vigência/versão) em linha discreta */}
+          <RodapeRegra data={res} />
+          {/* Aviso de homologação vindo da API acompanha o resultado */}
+          {res.homologada === false && (
+            <div className="mt-2 p-2 rounded bg-warn-50 border border-warn-200 text-xs text-warn-800">
+              ⚠️ {res.aviso_homologacao || AVISO_FERRAMENTA_NAO_HOMOLOGADA}
+            </div>
+          )}
           {!f.autoLoad && (
             <div className="mt-3 pt-2 border-t border-gold-200 flex flex-wrap items-center gap-2">
               <button
-                className="btn-ghost text-xs"
-                disabled={gerandoDoc}
+                className="btn-ghost text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={gerandoDoc || bloqueadaParaDocumento}
+                title={bloqueadaParaDocumento ? MOTIVO_BLOQUEIO : undefined}
                 onClick={gerarDemonstrativo}
               >
                 {gerandoDoc ? "Gerando..." : "📄 Gerar demonstrativo"}
               </button>
+              {bloqueadaParaDocumento && (
+                <span className="text-[11px] text-warn-700">
+                  Demonstrativo e minuta bloqueados — ferramenta em revisão
+                  jurídica.
+                </span>
+              )}
               {docMsg && (
-                <span className="text-xs text-green-700">
+                <span
+                  className={`text-xs ${bloqueadaParaDocumento ? "text-warn-700" : "text-green-700"}`}
+                >
                   {docMsg}{" "}
                   {docLink && (
                     <Link
@@ -414,6 +493,13 @@ function ResultadoView({ data }: { data: any }) {
     return (
       <div className="space-y-1">
         {Object.entries(data).map(([k, v]) => {
+          // Exibidos no aviso dedicado de homologação — não na tabela.
+          if (k === "homologada" || k === "aviso_homologacao") return null;
+          // Metadados de regra vão para o rodapé <RodapeRegra /> — não na tabela.
+          if (METADADOS_REGRA.includes(k)) return null;
+          // Campos nulos (ex.: `calculo` quando o ente não tem cálculo próprio)
+          // são omitidos — renderizá-los imprimia "null" na tela.
+          if (v === null || v === undefined) return null;
           if (k === "aviso") {
             return (
               <div
@@ -897,9 +983,24 @@ export default function RamoBase() {
     setLista(null);
     setForm({});
     load();
-    api
-      .get("/cases/", { params: { area: cfg.areaCaso, page_size: 100 } })
-      .then((r) => setCasos(r.data.data))
+    // Casos novos nascem na área canônica do hub, mas os históricos ficaram
+    // gravados na área achatada (ex.: bancário como "civil"). O backend filtra
+    // por UMA área só, então buscamos a canônica + as legadas e unimos —
+    // é leitura pura, nenhum registro é reclassificado.
+    const areas = [cfg.areaCaso, ...(cfg.areasLegadas ?? [])];
+    Promise.all(
+      areas.map((area) =>
+        api
+          .get("/cases/", { params: { area, page_size: 100 } })
+          .then((r) => (r.data.data ?? []) as Case[])
+          .catch(() => [] as Case[]),
+      ),
+    )
+      .then((listas) => {
+        const porId = new Map<string, Case>();
+        listas.flat().forEach((caso) => porId.set(caso.id, caso));
+        setCasos([...porId.values()]);
+      })
       .catch(() => setCasos([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);

@@ -21,14 +21,15 @@ from app.routers import ramos
 # Administrativo — reajuste de contrato administrativo (anualidade, Lei 14.133 art. 92)
 # ══════════════════════════════════════════════════════════════════════════
 async def test_reajuste_contrato_respeita_anualidade():
+    kw = dict(indice_nome="IPCA/IBGE", data_base=date(2025, 1, 10), cu=None)
     ainda_nao = await ramos.adm_reajuste_contrato(
-        valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=10, cu=None,
+        valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=10, **kw,
     )
     assert ainda_nao["elegivel_para_reajuste"] is False
     assert ainda_nao["novo_valor_do_contrato"] == 100_000.0
 
     ok = await ramos.adm_reajuste_contrato(
-        valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=12, cu=None,
+        valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=12, **kw,
     )
     assert ok["elegivel_para_reajuste"] is True
     assert ok["valor_do_reajuste"] == 5_000.0
@@ -141,13 +142,14 @@ async def test_auto_infracao_ambiental_prazo_20_dias_prorrogado():
 
 async def test_reserva_legal_percentual_por_bioma():
     r = await ramos.amb_reserva_legal(
-        area_imovel_ha=100.0, bioma="amazonia", inscrito_car=True, cu=None,
+        area_imovel_ha=100.0, uf="PA", bioma="amazonia", inscrito_car=True, cu=None,
     )
     assert r["percentual_reserva_legal"] == 80
     assert r["area_reserva_legal_ha"] == 80.0
+    assert "Amazônia" in r["nota_localizacao"]
 
     r20 = await ramos.amb_reserva_legal(
-        area_imovel_ha=100.0, bioma="mata_atlantica", inscrito_car=False, cu=None,
+        area_imovel_ha=100.0, uf="MG", bioma="mata_atlantica", inscrito_car=False, cu=None,
     )
     assert r20["percentual_reserva_legal"] == 20
     assert "OBRIGATÓRIA" in r20["car"]
@@ -211,16 +213,20 @@ async def test_deposito_recursal_condenacao_abaixo_do_teto_recolhe_condenacao():
     r = await ramos.trab_deposito(valor_condenacao=8_000.0, cu=None)
     assert r["deposito_ro"] == 8_000.0
     assert r["deposito_rr"] == 8_000.0
-    assert r["teto_ro_2026"] == ramos.TETO_DEPOSITO_RO
-    assert r["teto_rr_2026"] == ramos.TETO_DEPOSITO_RR
+    # Tetos vêm da faixa vigente na data do recurso (tabela versionada por Ato).
+    vigente = ramos._teto_deposito_para(date.today())
+    assert r["teto_ro"] == vigente["ro"]
+    assert r["teto_rr"] == vigente["rr"]
+    assert r["vigencia_tabela"] and r["fonte"]
 
 
 async def test_deposito_recursal_condenacao_1_5x_teto_recolhe_o_teto():
     # Condenação = 1,5× teto RO → depósito do RO é o TETO (não 50% = 0,75× teto,
     # que geraria recurso deserto). RR ainda tem folga (1,5×teto_RO < teto_RR).
-    valor = round(ramos.TETO_DEPOSITO_RO * 1.5, 2)   # 18.191,46
+    teto_ro = ramos._teto_deposito_para(date.today())["ro"]
+    valor = round(teto_ro * 1.5, 2)
     r = await ramos.trab_deposito(valor_condenacao=valor, cu=None)
-    assert r["deposito_ro"] == ramos.TETO_DEPOSITO_RO           # limitado ao teto
+    assert r["deposito_ro"] == teto_ro                          # limitado ao teto
     assert r["deposito_rr"] == round(valor, 2)                  # abaixo do teto RR
     # Regressão: com a lógica antiga (50%) daria metade do valor → deserto.
     assert r["deposito_ro"] != round(valor * 0.50, 2)
@@ -232,8 +238,9 @@ async def test_deposito_recursal_condenacao_1_5x_teto_recolhe_o_teto():
 async def test_prescricao_punitiva_fato_29_02_nao_quebra():
     # pena 0.5 → prazo 3 anos; 29/02/2020 + 3 = 2023 (NÃO bissexto). A rotina antiga
     # fazia date(2023, 2, 29) e estourava ValueError; o helper corrige → 28/02/2023.
+    from fastapi import Response
     r = await ramos.pen_prescricao(
-        pena_maxima_anos=0.5, data_fato=date(2020, 2, 29), cu=None,
+        response=Response(), pena_maxima_anos=0.5, data_fato=date(2020, 2, 29), cu=None,
     )
     assert r["prazo_prescricional_anos"] == 3
     assert r["data_prescricao_estimada"] == date(2023, 2, 28)
@@ -242,8 +249,9 @@ async def test_prescricao_punitiva_fato_29_02_nao_quebra():
 async def test_prescricao_punitiva_29_02_para_ano_bissexto():
     # pena 2.0 → prazo 4 anos (tabela: não é > 2, mas é > 1); 29/02/2020 + 4 = 2024
     # (bissexto) → mantém 29/02/2024, sem estourar.
+    from fastapi import Response
     r = await ramos.pen_prescricao(
-        pena_maxima_anos=2.0, data_fato=date(2020, 2, 29), cu=None,
+        response=Response(), pena_maxima_anos=2.0, data_fato=date(2020, 2, 29), cu=None,
     )
     assert r["prazo_prescricional_anos"] == 4
     assert r["data_prescricao_estimada"] == date(2024, 2, 29)
@@ -281,7 +289,9 @@ async def test_cade_dois_grupos_acima_dos_limiares_obriga():
     assert r["grupo_maior_atinge_750mi"] is True
     assert r["grupo_menor_atinge_75mi"] is True
     assert r["notificacao_obrigatoria"] is True
-    assert r["prazo_notificacao"] is not None
+    # Onda 1: o falso "prazo de 30 dias" foi removido — controle é PRÉVIO.
+    assert "prazo_notificacao" not in r
+    assert "PRÉVIO" in r["controle_previo"]
 
 
 async def test_cade_ordem_nao_importa_800mais100_obriga():

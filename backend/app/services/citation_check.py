@@ -50,6 +50,43 @@ async def _existe_sumula(db, num: str, orgao: str) -> str | None:
     return row[0] if row else None
 
 
+async def _sumula_superada(db, num: str, orgao: str) -> dict | None:
+    """Súmula localizada apenas em versão NÃO vigente (superada por reingestão).
+
+    Espelha `_existe_sumula` invertendo o filtro de vigência. Sem isto, citar
+    uma súmula cuja versão ingerida foi substituída é indistinguível de citar
+    algo que nunca entrou na base — o advogado recebe "confirme manualmente"
+    quando deveria receber "esta versão foi superada"."""
+    from app.services.ai_service import _filtros_gate_rag
+    orgao_norm = (orgao or "").strip().lower()
+    keys = [f"sumula:{orgao_norm}:{num}"] if orgao_norm else \
+           [f"sumula:{t}:{num}" for t in ("stf", "stj", "tst")]
+    row = (await db.execute(text(
+        "SELECT kd.titulo, kd.versao FROM knowledge_docs kd "
+        "WHERE kd.deleted_at IS NULL AND kd.vigente = FALSE "
+        "AND kd.chave_origem = ANY(:k) " + _filtros_gate_rag(False) +
+        " ORDER BY kd.versao DESC LIMIT 1"
+    ), {"k": keys})).first()
+    return {"titulo": row[0], "versao": row[1]} if row else None
+
+
+async def _artigo_superado(db, num: str) -> dict | None:
+    """Artigo localizado apenas em legislação NÃO vigente (versão superada).
+
+    Espelha `_existe_artigo` invertendo o filtro de vigência — citar artigo de
+    redação revogada em petição é erro profissional, e hoje o sistema é mudo."""
+    from app.services.ai_service import _filtros_gate_rag
+    row = (await db.execute(text(
+        "SELECT kd.titulo, kd.versao FROM knowledge_chunks kc "
+        "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
+        "WHERE kd.deleted_at IS NULL AND kd.vigente = FALSE "
+        "AND kd.categoria LIKE 'legislacao%' "
+        "AND (kc.conteudo ILIKE :a1 OR kc.conteudo ILIKE :a2) " +
+        _filtros_gate_rag(False) + " ORDER BY kd.versao DESC LIMIT 1"
+    ), {"a1": f"%Art. {num} %", "a2": f"%Art. {num}º%"})).first()
+    return {"titulo": row[0], "versao": row[1]} if row else None
+
+
 async def _existe_artigo(db, num: str) -> str | None:
     """Procura o artigo no conteúdo da legislação ingerida (códigos no RAG)."""
     from app.services.ai_service import _filtros_gate_rag
