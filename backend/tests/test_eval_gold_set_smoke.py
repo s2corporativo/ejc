@@ -5,11 +5,39 @@
 # caso quebrado / exemplo "fictício" com jurisprudência sem marcador.
 from __future__ import annotations
 
-from app.eval.run_eval import _smoke, _validar_caso_smoke
+from app.eval.run_eval import CasoMetrica, _agregar, _smoke, _validar_caso_smoke
 
 
 def test_gold_sets_do_repo_passam_no_smoke():
     assert _smoke() == 0
+
+
+# ── AI-087 (auditoria máxima 2026-07-26): gate de qualidade POR ÁREA ─────────
+
+def test_smoke_falha_quando_area_critica_nao_tem_cobertura():
+    """Área crítica exigida sem gold set REAL é FALHA — hoje o repo só tem
+    exemplos de formato, então cobertura zero não pode passar como aprovação."""
+    assert _smoke(areas_obrigatorias="penal", min_casos_area=10) == 1
+
+
+def test_agregado_segmenta_metricas_por_area():
+    """A média global esconde a área ruim: `por_area` mede cada uma à parte."""
+    metricas = [
+        CasoMetrica(id="c1", area="civel", hit=True, recall=1.0, precision=0.5, rr=1.0),
+        CasoMetrica(id="c2", area="civel", hit=True, recall=1.0, precision=0.5, rr=1.0),
+        CasoMetrica(id="c3", area="Penal", hit=False, recall=0.0, precision=0.0, rr=0.0),
+    ]
+    ag = _agregar(metricas)
+    assert ag.recall == round(2 / 3, 4)          # média global "boa"
+    assert ag.por_area["civel"]["recall"] == 1.0
+    assert ag.por_area["penal"]["recall"] == 0.0  # área ruim fica exposta
+    assert ag.por_area["penal"]["n"] == 1
+
+
+def test_caso_sem_area_aparece_no_relatorio():
+    """Caso sem `area` não some na média — cai em '(sem_area)' e é visível."""
+    ag = _agregar([CasoMetrica(id="c1", area="", hit=True, recall=1.0)])
+    assert "(sem_area)" in ag.por_area
 
 
 def test_caso_rag_valido_e_invalido():

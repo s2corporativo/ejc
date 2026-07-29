@@ -454,11 +454,24 @@ async def gerar_demonstrativo(
     """Converte o resultado de uma calculadora em um Demonstrativo de Cálculo
     salvo como peça (LegalDoc) rascunho — vinculável a um caso. Reusa a esteira
     de peças existente; resultado é MINUTA (revisão humana obrigatória)."""
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso negado")
+    # DOIS GATES, do mais específico para o mais geral (consolidação 2026-07-29).
+    #
+    # O PR #493 trouxe a matriz por ferramenta (FERRAMENTAS_NAO_HOMOLOGADAS) e o
+    # PR #496 trouxe a trava geral por flag. Eles nasceram em frentes paralelas e
+    # o merge automático deixou a trava geral na frente, o que engolia o 422 da
+    # matriz: toda ferramenta respondia 403 e o motivo específico da não
+    # homologação nunca chegava ao advogado. A matriz roda PRIMEIRO para que o
+    # diagnóstico correto sempre prevaleça.
+    #
+    # ATENÇÃO — a matriz é uma DENYLIST: o que não está nela passa. Ela cobre as
+    # ferramentas já auditadas como não homologadas, não as ainda não revisadas.
+    # Por isso a trava geral CONTINUA valendo depois dela, com default OFF: uma
+    # calculadora que ninguém revisou não vira documento por omissão. Reabrir a
+    # exportação é decisão do titular (PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED),
+    # não consequência silenciosa de um merge.
 
-    # Gate de homologação (Onda 1): cálculo de ferramenta não homologada não
-    # pode ser convertido em demonstrativo/peça. O campo é OPT-IN por
+    # Gate de homologação (Onda 1, PR #493): cálculo de ferramenta não homologada
+    # não pode ser convertido em demonstrativo/peça. O campo é OPT-IN por
     # retrocompatibilidade — quando ausente, registramos o bypass para dar
     # visibilidade (a obrigatoriedade fica para a Onda 3, com telemetria).
     if not req.ferramenta:
@@ -474,6 +487,20 @@ async def gerar_demonstrativo(
                 "mensagem": ("Demonstrativo bloqueado: a ferramenta de origem não está "
                              "homologada para uso profissional — em revisão jurídica"),
             })
+
+    # AI-107/AI-113 (auditoria 2026-07-26, PR #496): trava geral enquanto as
+    # regras das calculadoras não forem homologadas (fonte/vigência/revisor) —
+    # um demonstrativo dá aparência DOCUMENTAL a uma regra possivelmente errada
+    # e pode ser usado externamente.
+    from app.core.config import get_settings
+    if not getattr(get_settings(), "PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED", False):
+        raise HTTPException(
+            403, "Exportação de demonstrativo bloqueada: as regras das "
+                 "calculadoras estão em revisão (não homologadas — auditoria "
+                 "2026-07-26). O resultado na tela permanece disponível como "
+                 "apoio, com revisão do advogado.")
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso negado")
 
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)

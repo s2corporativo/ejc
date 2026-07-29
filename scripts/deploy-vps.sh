@@ -60,6 +60,13 @@ else
   echo "== .env já existe — preservado. Editando manualmente se necessário. =="
 fi
 
+# ── Migrações de valores OBSOLETOS no .env preservado ────────────────────────
+# Implementação única em scripts/migrar_env_obsoletos.sh, compartilhada com o
+# deploy real (deploy_vps_safe.sh). Antes a migração existia só aqui — e este
+# script é um bootstrap MANUAL, fora do caminho do GitHub Actions, então a
+# correção do modelo Groq nunca chegava à VPS.
+bash "$(dirname "$0")/migrar_env_obsoletos.sh" .env
+
 echo "== Subindo os serviços (build + up)... =="
 docker compose up -d --build
 

@@ -8,6 +8,28 @@ EJC (Ecossistema Jurídico Clovis) v3 — sistema de gestão jurídica full-stac
 - **Produção**: VPS Contabo, domínio `https://ejc.depaulateixeira.adv.br`. Deploy via GitHub Actions (`deploy-vps.yml`) ou scripts em `scripts/`.
 - **Idioma**: código, rotas, entidades de banco e documentação são em português brasileiro (vocabulário jurídico: `casos`, `prazos`, `honorarios`, `pecas`, `intimacoes`). Siga esse padrão em código novo e commits.
 
+## Papel e regras de execução (governança)
+
+Você é o **executor técnico** do EJC. A especificação e a auditoria são de outro papel (ChatGPT/revisor); o merge e o deploy são atos humanos do titular. As regras canônicas de governança estão em **`docs/GOVERNANCA_IA.md`** — em qualquer divergência entre este arquivo e ele, o canônico prevalece.
+
+**Regras obrigatórias**
+
+1. Nunca alterar a `main` diretamente (sem commit, push ou force push nela).
+2. Nunca iniciar uma tarefa sem ler a Issue por inteiro e sem verificar os PRs abertos que tocam os mesmos arquivos.
+3. Nunca criar migration sem conferir o head atual e reservar o número em `backend/alembic/MIGRATION_RESERVATIONS.md`.
+4. Nunca modificar arquivos que pertencem a outro PR ativo.
+5. Toda regra jurídica precisa de fonte oficial, vigência e teste.
+6. Toda correção entra com teste de regressão.
+7. Não alterar escopo sem registrar a justificativa no PR — achado fora do escopo vira Issue nova.
+8. Não fazer merge.
+9. Não executar deploy de produção, não acessar o banco de produção, não trabalhar no diretório de produção.
+10. Encerrar cada tarefa com relatório: arquivos, comandos, testes, evidências, riscos residuais, limitações e pontos que exigem decisão humana.
+11. PR sempre em **draft**, vinculado à Issue, com o template preenchido; correções de review vão na mesma branch e no mesmo PR.
+12. Não usar `git push --force`, `git reset --hard`, `git clean -fd`, `rm -rf`, `docker compose down -v`, `docker volume rm`, `dropdb`, `alembic downgrade base` nem `--dangerously-skip-permissions`.
+13. Respeitar LGPD, RBAC, isolamento de dados e revisão humana; jamais enfraquecer HITL, gate de citações, sanitização de PII ou kill-switch de IA.
+
+Leitura de apoio: `AGENTS.md` (regras comuns a qualquer agente), `docs/FLUXO_DE_DESENVOLVIMENTO.md` (ciclo Issue → merge), `docs/CRITERIOS_DE_ACEITE.md` (o que o review cobra), `docs/RELEASE_CHECKLIST.md` (o que trava um release).
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

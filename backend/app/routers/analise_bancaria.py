@@ -123,6 +123,13 @@ async def analisar_documento(
     cu: User = Depends(get_current_user),
 ):
     """Recebe um PDF (file) OU texto (texto) + área, e retorna a análise estruturada."""
+    # AI-105 (auditoria 2026-07-26): área desconhecida NÃO cai em silêncio no
+    # prompt genérico — o usuário receberia uma análise com viés de outra área
+    # acreditando que é da dele. Área inválida → 422 explícito.
+    if area not in AREA_PROMPTS:
+        raise HTTPException(
+            422, f"Área de análise desconhecida: '{area}'. "
+                 f"Válidas: {', '.join(sorted(AREA_PROMPTS))}")
     conteudo = (texto or "").strip()
     if file is not None:
         raw = await file.read()

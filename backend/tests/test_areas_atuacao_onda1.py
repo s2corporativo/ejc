@@ -257,7 +257,28 @@ async def test_demonstrativo_rejeita_ferramenta_nao_homologada(ferramenta):
     assert e.value.detail["motivo"]
 
 
-async def test_demonstrativo_sem_campo_ferramenta_passa_do_gate():
+@pytest.fixture
+def _demonstrativo_liberado(monkeypatch):
+    """Libera a TRAVA GERAL de exportação de demonstrativo (AI-107/AI-113, PR
+    #496) para exercitar isoladamente o gate POR FERRAMENTA (Onda 1, PR #493).
+
+    Os dois gates nasceram em frentes paralelas e coexistem: a matriz por
+    ferramenta é uma DENYLIST (o que não está nela passa), e a trava geral —
+    `PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED`, default OFF — impede que uma
+    calculadora que ninguém revisou vire documento por omissão. Estes dois
+    testes verificam o gate por ferramenta, então precisam da trava aberta;
+    sem a fixture, o 403 da trava responderia antes e o teste não estaria
+    medindo o que o nome diz.
+
+    Se o escritório decidir reabrir a exportação em produção, a mudança é no
+    default de `PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED` — decisão do titular,
+    registrada em config, não efeito colateral de merge."""
+    from app.core.config import get_settings
+    monkeypatch.setattr(
+        get_settings(), "PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED", True)
+
+
+async def test_demonstrativo_sem_campo_ferramenta_passa_do_gate(_demonstrativo_liberado):
     """Retrocompatibilidade: sem `ferramenta`, o gate não interfere (a chamada
     segue até o banco — db=None estoura AttributeError, prova de que NÃO houve
     rejeição 422 nem quebra de contrato para clientes antigos)."""
@@ -267,9 +288,34 @@ async def test_demonstrativo_sem_campo_ferramenta_passa_do_gate():
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
 
 
-async def test_demonstrativo_ferramenta_homologada_passa_do_gate():
+async def test_demonstrativo_ferramenta_homologada_passa_do_gate(_demonstrativo_liberado):
     from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
     req = DemonstrativoRequest(titulo="Cálculo de teste",
                                ferramenta="/trabalhista-esp/ferramentas/deposito-recursal")
     with pytest.raises(AttributeError):   # passou do gate; parou só no db=None
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
+
+
+async def test_trava_geral_bloqueia_mesmo_ferramenta_homologada():
+    """A trava geral continua valendo com a matriz por ferramenta no lugar:
+    ferramenta homologada + trava fechada (default) = 403. Sem este teste, um
+    merge futuro poderia reabrir a exportação sem ninguém perceber."""
+    from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
+    req = DemonstrativoRequest(titulo="Cálculo de teste",
+                               ferramenta="/trabalhista-esp/ferramentas/deposito-recursal")
+    with pytest.raises(HTTPException) as e:
+        await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
+    assert e.value.status_code == 403
+
+
+async def test_ferramenta_nao_homologada_responde_422_mesmo_com_trava_fechada():
+    """Ordem dos gates: o motivo ESPECÍFICO da não homologação precisa chegar ao
+    advogado. Com a trava geral na frente, tudo virava um 403 genérico e o 422
+    da matriz nunca aparecia."""
+    from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
+    req = DemonstrativoRequest(titulo="Cálculo de teste",
+                               ferramenta="/penal/ferramentas/dosimetria")
+    with pytest.raises(HTTPException) as e:
+        await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
+    assert e.value.status_code == 422
+    assert e.value.detail["codigo"] == "ferramenta_nao_homologada"
