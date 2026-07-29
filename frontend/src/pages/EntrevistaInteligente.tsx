@@ -72,6 +72,9 @@ interface EntrevistaResp {
   case_id: string | null;
   analise: EntrevistaAnalise;
   parse_ok: boolean;
+  // Ponte Entrevista→Ficha: true quando o painel virou rascunho da Ficha de
+  // Triagem do caso (só campos vazios; ficha confirmada nunca é tocada).
+  ficha_atualizada?: boolean;
   pii_removida: boolean;
   modelo: string;
   ai_log_id: string;
@@ -151,6 +154,10 @@ export default function EntrevistaInteligente() {
           toast.error(
             "A IA não retornou análise estruturada completa — revise os itens com cautela",
           );
+        } else if (r.data.ficha_atualizada) {
+          toast.success(
+            "Ficha de Triagem pré-preenchida com o painel (rascunho — revise antes de gerar a peça)",
+          );
         }
       })
       .catch((e) => {
@@ -214,6 +221,24 @@ export default function EntrevistaInteligente() {
           )
         }
       />
+
+      {/* Próximo passo concreto: o painel já virou rascunho da ficha — leve o
+          advogado direto para a revisão em vez de deixá-lo procurar. */}
+      {resultado?.ficha_atualizada && id && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+          <Sparkles className="h-4 w-4 shrink-0" />
+          <span>
+            Este painel foi copiado para a <strong>Ficha de Triagem</strong> do
+            caso como rascunho (apenas campos vazios).
+          </span>
+          <Link
+            to={`/pecas?caso=${id}`}
+            className="font-semibold underline underline-offset-2"
+          >
+            Revisar a ficha →
+          </Link>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
         {/* Relato em texto livre */}
