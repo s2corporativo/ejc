@@ -20,7 +20,14 @@ describe("caseStatus", () => {
   });
 
   it("falha fechada para status desconhecido, vazio ou ausente", () => {
-    for (const status of ["cancelado", "inativo", "em_andamento", "", null, undefined]) {
+    for (const status of [
+      "cancelado",
+      "inativo",
+      "em_andamento",
+      "",
+      null,
+      undefined,
+    ]) {
       expect(isCasoAtivo(status)).toBe(false);
     }
   });
@@ -33,7 +40,11 @@ describe("caseStatus", () => {
 
     expect(classificados.size).toBe(CASE_STATUS.length);
     expect([...classificados].sort()).toEqual([...CASE_STATUS].sort());
-    expect(CASE_STATUS_ABERTOS.filter((status) => CASE_STATUS_FECHADOS.includes(status))).toEqual([]);
+    expect(
+      CASE_STATUS_ABERTOS.filter((status) =>
+        CASE_STATUS_FECHADOS.includes(status),
+      ),
+    ).toEqual([]);
   });
 
   it("reconhece somente valores persistidos pelo backend", () => {
