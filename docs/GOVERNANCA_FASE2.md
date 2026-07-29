@@ -37,14 +37,27 @@ Executar **na ordem**. Cada item tem pré-requisito do anterior.
 - PR misturando governança (`CLAUDE.md`, `AGENTS.md`, `.claude/`, `docs/GOVERNANCA_IA.md`) com código funcional (`backend/app/`, `frontend/src/`) → falha
 - PR originado de `main`/`master` → falha
 
-**Exceção de bot na trava de descrição.** PR aberto por bot (`dependabot[bot]` e afins) tem
-descrição gerada pela ferramenta: não traz as seções do template nem Issue vinculada, e não há
-onde acrescentá-las — o dependabot reescreve o corpo a cada rebase. Exigir o template deles
-reprovaria toda atualização de dependência, inclusive as de segurança, e com a proteção de
-branch ativa isso viraria bloqueio de merge. A trava de descrição é pulada quando o autor é
-bot, detectado por dois critérios independentes (`user.type == 'Bot'` ou login terminando em
-`[bot]`). **As demais travas — migration, segredo, escopo e branch de origem — continuam
-valendo para bot exatamente como para humano**, que é onde está o risco real desse tipo de PR.
+**Exceção de bot na trava de descrição.** PR aberto pelo dependabot tem descrição gerada pela
+ferramenta: não traz as seções do template nem Issue vinculada, e não há onde acrescentá-las —
+o corpo é reescrito a cada rebase. Exigir o template dele reprovaria toda atualização de
+dependência, inclusive as de segurança, e com a proteção de branch ativa isso viraria bloqueio
+de merge.
+
+A isenção é uma **allowlist fechada** (`dependabot[bot]`, `dependabot-preview[bot]`), não
+"qualquer bot": um GitHub App arbitrário instalado no repositório não deve conseguir abrir PR
+que escapa do gate de Issue vinculada. Bot fora da lista é cobrado como humano. Acrescentar
+entrada é decisão de governança, não ajuste técnico.
+
+**As demais travas — migration, segredo, escopo e branch de origem — valem para todo PR, bot
+inclusive**, e é nelas que está o risco real de um PR automatizado.
+
+O contrato está fixado em `backend/tests/test_governanca_workflow.py`: os testes falham se a
+isenção for alargada para qualquer bot, se o dependabot sair da allowlist, se alguma trava
+universal ganhar condicional ou se a exigência de Issue e seções desaparecer.
+
+**Pendência registrada:** a exceção precisa ser refletida em `docs/GOVERNANCA_IA.md`, que é a
+fonte canônica — enquanto não for, há divergência entre o documento canônico e o que o CI
+aplica. Não foi feito aqui porque esse arquivo pertence ao PR #499, ainda aberto (regra 4).
 
 Roda no runner self-hosted `ejc-vps`, como os demais workflows (`docs/RUNNER_SELFHOSTED.md`).
 Complementa — não substitui — o `EJC Release Gate` (`scripts/ci_guard.sh`), que cobre

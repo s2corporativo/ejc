@@ -84,17 +84,24 @@ jobs:
           echo "Nenhum segredo detectado."
 
       - name: Descricao do PR preenchida
-        # PR de bot (dependabot e afins) nao preenche template humano: a
-        # descricao e gerada pela ferramenta, sem "Solução", "Riscos residuais"
-        # nem Issue vinculada — e nao ha onde acrescentar. Exigir o template
-        # deles reprovaria toda atualizacao de dependencia, inclusive as de
-        # seguranca. As demais travas (migration, segredo, escopo, branch)
-        # continuam valendo para bot como para humano.
-        # Dois critérios independentes: `user.type` é o campo canônico da API,
-        # e o sufixo `[bot]` no login cobre o caso de o tipo vir diferente.
+        # PR de bot NAO preenche template humano: a descricao e gerada pela
+        # ferramenta, sem "Solução", "Riscos residuais" nem Issue vinculada —
+        # e nao ha onde acrescentar (o dependabot reescreve o corpo a cada
+        # rebase). Exigir o template deles reprovaria toda atualizacao de
+        # dependencia, inclusive as de seguranca.
+        #
+        # A isencao e uma ALLOWLIST FECHADA, nao "qualquer bot": um GitHub App
+        # arbitrario instalado no repositorio nao deve conseguir abrir PR que
+        # escapa do gate de Issue vinculada. Bot fora desta lista e cobrado
+        # como humano. Acrescentar entrada aqui e decisao de governanca.
+        #
+        # As demais travas — migration, segredo, escopo e branch de origem —
+        # valem para TODO PR, bot inclusive.
         if: >-
-          github.event.pull_request.user.type != 'Bot' &&
-          !endsWith(github.event.pull_request.user.login, '[bot]')
+          !contains(
+            fromJSON('["dependabot[bot]","dependabot-preview[bot]"]'),
+            github.event.pull_request.user.login
+          )
         env:
           CORPO: ${{ github.event.pull_request.body }}
         shell: bash
