@@ -1,9 +1,4 @@
-"""P0 — verificação determinística de artigo × diploma.
-
-Reproduz os falsos positivos observados na homologação e trava a evidência da
-fonte usada pelo selo. Usa Postgres real porque os lookups dependem de JSONB,
-ILIKE e do schema RAG migrado.
-"""
+"""P0 — verificação determinística de artigo × diploma com Postgres real."""
 from __future__ import annotations
 
 import os
@@ -37,7 +32,6 @@ async def _inserir_diploma(
     versao: int = 1,
 ) -> str:
     doc_id = str(uuid4())
-    chunk_id = str(uuid4())
     await db.execute(
         text(
             """
@@ -67,7 +61,7 @@ async def _inserir_diploma(
             VALUES (:id, :doc_id, 0, :conteudo)
             """
         ),
-        {"id": chunk_id, "doc_id": doc_id, "conteudo": conteudo},
+        {"id": str(uuid4()), "doc_id": doc_id, "conteudo": conteudo},
     )
     return doc_id
 
@@ -82,18 +76,26 @@ async def _limpar(db, ids: list[str]) -> None:
 
 
 async def _verificar(db, texto_citacao: str) -> dict:
-    from app.services.verificador_jurisprudencia import verificar_jurisprudencia
+    from app.services.citation_check import verificar_citacoes
 
-    relatorio = await verificar_jurisprudencia(db, texto_citacao)
+    relatorio = await verificar_citacoes(db, texto_citacao)
     assert relatorio["total"] == 1
     return relatorio["citacoes"][0]
 
 
 @pytest.mark.parametrize(
-    ("texto_citacao", "chave_correta", "titulo_correto", "chave_errada", "titulo_errado"),
+    (
+        "texto_citacao",
+        "numero",
+        "chave_correta",
+        "titulo_correto",
+        "chave_errada",
+        "titulo_errado",
+    ),
     [
         (
             "Tutela de urgência conforme o art. 300 do CPC.",
+            "300",
             "planalto:cpc",
             "Código de Processo Civil (Lei 13.105/2015)",
             "planalto:cp",
@@ -101,6 +103,7 @@ async def _verificar(db, texto_citacao: str) -> dict:
         ),
         (
             "Garantia fundamental prevista no art. 5º da CF.",
+            "5",
             "planalto:cf88",
             "Constituição Federal de 1988",
             "planalto:cc",
@@ -108,6 +111,7 @@ async def _verificar(db, texto_citacao: str) -> dict:
         ),
         (
             "Direito básico do consumidor previsto no art. 6º do CDC.",
+            "6",
             "planalto:cdc",
             "Código de Defesa do Consumidor (Lei 8.078/1990)",
             "planalto:ctn",
@@ -115,6 +119,7 @@ async def _verificar(db, texto_citacao: str) -> dict:
         ),
         (
             "Responsabilidade civil fundada no art. 927 do CC.",
+            "927",
             "planalto:cc",
             "Código Civil (Lei 10.406/2002)",
             "planalto:cpc",
@@ -124,6 +129,7 @@ async def _verificar(db, texto_citacao: str) -> dict:
 )
 async def test_artigo_so_confirma_no_diploma_citado_e_expoe_fonte(
     texto_citacao,
+    numero,
     chave_correta,
     titulo_correto,
     chave_errada,
@@ -134,7 +140,6 @@ async def test_artigo_so_confirma_no_diploma_citado_e_expoe_fonte(
     ids: list[str] = []
     async with AsyncSessionLocal() as db:
         try:
-            numero = texto_citacao.split("art. ", 1)[1].split()[0].rstrip("º.")
             ids.append(
                 await _inserir_diploma(
                     db,
@@ -143,14 +148,13 @@ async def test_artigo_so_confirma_no_diploma_citado_e_expoe_fonte(
                     conteudo=f"Art. {numero}. Dispositivo homônimo do diploma errado.",
                 )
             )
-            ids.append(
-                await _inserir_diploma(
-                    db,
-                    chave=chave_correta,
-                    titulo=titulo_correto,
-                    conteudo=f"Art. {numero}. Texto vigente do diploma correto.",
-                )
+            id_correto = await _inserir_diploma(
+                db,
+                chave=chave_correta,
+                titulo=titulo_correto,
+                conteudo=f"Art. {numero}. Texto vigente do diploma correto.",
             )
+            ids.append(id_correto)
             await db.commit()
 
             citacao = await _verificar(db, texto_citacao)
@@ -159,7 +163,7 @@ async def test_artigo_so_confirma_no_diploma_citado_e_expoe_fonte(
             assert citacao["encontrada"] is True
             assert citacao["fonte_chave_origem"] == chave_correta
             assert citacao["fonte_titulo"] == titulo_correto
-            assert citacao["fonte_doc_id"] in ids
+            assert citacao["fonte_doc_id"] == id_correto
             assert citacao["fonte_versao"] == 1
             assert citacao["fonte_vigente"] is True
             assert citacao["fonte_chave_origem"] != chave_errada
@@ -192,12 +196,13 @@ async def test_artigo_existente_apenas_em_outro_diploma_nao_recebe_selo_positivo
             await db.commit()
 
             citacao = await _verificar(
-                db, "Tutela de urgência conforme o art. 300 do CPC."
+                db,
+                "Tutela de urgência conforme o art. 300 do CPC.",
             )
 
             assert citacao["status"] != "verificada"
             assert citacao["encontrada"] is False
-            assert citacao.get("fonte_chave_origem") is None
+            assert citacao["fonte_chave_origem"] is None
         finally:
             await _limpar(db, ids)
 
@@ -216,22 +221,23 @@ async def test_lei_por_numero_normalizado_exige_numero_exato():
                     conteudo="Art. 6º. Diploma de número apenas parcialmente parecido.",
                 )
             )
-            ids.append(
-                await _inserir_diploma(
-                    db,
-                    chave="planalto:cdc",
-                    titulo="Código de Defesa do Consumidor (Lei 8.078/1990)",
-                    conteudo="Art. 6º. Direitos básicos do consumidor.",
-                )
+            id_cdc = await _inserir_diploma(
+                db,
+                chave="planalto:cdc",
+                titulo="Código de Defesa do Consumidor (Lei 8.078/1990)",
+                conteudo="Art. 6º. Direitos básicos do consumidor.",
             )
+            ids.append(id_cdc)
             await db.commit()
 
             citacao = await _verificar(
-                db, "Aplicação do art. 6º da Lei nº 8.078/90."
+                db,
+                "Aplicação do art. 6º da Lei nº 8.078/90.",
             )
 
             assert citacao["status"] == "verificada"
             assert citacao["fonte_chave_origem"] == "planalto:cdc"
+            assert citacao["fonte_doc_id"] == id_cdc
             assert "18.078" not in citacao["fonte_titulo"]
         finally:
             await _limpar(db, ids)
@@ -243,35 +249,34 @@ async def test_versao_superada_mantem_o_mesmo_recorte_de_diploma():
     ids: list[str] = []
     async with AsyncSessionLocal() as db:
         try:
-            ids.append(
-                await _inserir_diploma(
-                    db,
-                    chave="planalto:cc",
-                    titulo="Código Civil (Lei 10.406/2002)",
-                    conteudo="Art. 927. Versão histórica do dispositivo.",
-                    vigente=False,
-                    versao=2,
-                )
+            id_cc = await _inserir_diploma(
+                db,
+                chave="planalto:cc",
+                titulo="Código Civil (Lei 10.406/2002)",
+                conteudo="Art. 927. Versão histórica do dispositivo.",
+                vigente=False,
+                versao=2,
             )
+            ids.append(id_cc)
             ids.append(
                 await _inserir_diploma(
                     db,
                     chave="planalto:cpc",
                     titulo="Código de Processo Civil (Lei 13.105/2015)",
                     conteudo="Art. 927. Dispositivo vigente de outro diploma.",
-                    vigente=True,
-                    versao=1,
                 )
             )
             await db.commit()
 
             citacao = await _verificar(
-                db, "Responsabilidade civil fundada no art. 927 do CC."
+                db,
+                "Responsabilidade civil fundada no art. 927 do CC.",
             )
 
             assert citacao["status"] == "possivelmente_desatualizada"
             assert citacao["encontrada"] is False
             assert citacao["fonte_chave_origem"] == "planalto:cc"
+            assert citacao["fonte_doc_id"] == id_cc
             assert citacao["fonte_versao"] == 2
             assert citacao["fonte_vigente"] is False
         finally:
