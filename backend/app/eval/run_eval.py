@@ -429,7 +429,19 @@ def _smoke(areas_obrigatorias: str | None = None, min_casos_area: int = 0) -> in
     if falhas:
         print(f"\nSMOKE FALHOU: {falhas} problema(s).", file=sys.stderr)
         return 1
-    print("\nSMOKE OK: gold sets com formato válido e cobertura exigida atendida.")
+    # O texto de sucesso precisa dizer o que foi REALMENTE verificado. Sem
+    # `--areas-obrigatorias` este comando valida FORMATO, não qualidade — e um
+    # "SMOKE OK" genérico era lido no CI como aprovação da IA jurídica.
+    if not obrigatorias:
+        print("\nSMOKE OK (FORMATO APENAS): JSON dos gold sets válido. "
+              "Nenhuma área exigida via --areas-obrigatorias, portanto este "
+              "resultado NÃO afere a qualidade jurídica de nenhuma área.")
+    elif not cobertura:
+        print("\nSMOKE OK (FORMATO APENAS): não há gold set real no repositório "
+              "— só exemplos de formato. Cobertura jurídica efetiva: ZERO.")
+    else:
+        print(f"\nSMOKE OK: formato válido e cobertura mínima atendida nas áreas "
+              f"exigidas ({', '.join(obrigatorias)}).")
     return 0
 
 

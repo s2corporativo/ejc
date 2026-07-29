@@ -84,6 +84,15 @@ fi
 
 log "EJC deploy seguro iniciado para ${DOMAIN}"
 [ -f .env ] || { echo "Arquivo .env ausente em ${APP_DIR}" >&2; exit 1; }
+
+# Migra valores OBSOLETOS do .env preservado (modelo Groq depreciado etc.).
+# O .env sobrevive ao deploy por desenho, então trocar o default no código não
+# alcança a VPS. Idempotente, com backup 600 e sem imprimir segredos.
+if [ -f scripts/migrar_env_obsoletos.sh ]; then
+  bash scripts/migrar_env_obsoletos.sh .env | while IFS= read -r linha; do
+    log "$linha"
+  done
+fi
 docker compose config >"/tmp/ejc_compose_config_$(timestamp).txt"
 
 OLD_BACKEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_backend 2>/dev/null || true)"

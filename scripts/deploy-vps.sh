@@ -61,26 +61,11 @@ else
 fi
 
 # ── Migrações de valores OBSOLETOS no .env preservado ────────────────────────
-# O .env sobrevive ao deploy (por desenho), então trocar um default no código ou
-# no .env.example NÃO alcança as instalações existentes. Estes ajustes são
-# idempotentes: só agem se o valor antigo ainda estiver lá.
-
-# AI-043: llama-3.3-70b-versatile foi DEPRECIADO pela Groq (deixa de ser servido
-# em ago/2026). Migra para o substituto oficial recomendado.
-if grep -qE '^GROQ_MODEL(_LARGE)?=llama-3\.3-70b-versatile' .env 2>/dev/null; then
-  cp .env ".env.bak.$(date +%Y%m%d%H%M%S)"
-  sed -i 's|^GROQ_MODEL=llama-3\.3-70b-versatile|GROQ_MODEL=openai/gpt-oss-120b|' .env
-  sed -i 's|^GROQ_MODEL_LARGE=llama-3\.3-70b-versatile|GROQ_MODEL_LARGE=openai/gpt-oss-120b|' .env
-  echo "!! .env: modelo Groq depreciado migrado para openai/gpt-oss-120b (backup .env.bak.*)"
-fi
-
-# AI-033/AI-034: agente com write-tools não deve ficar ligado sem decisão
-# explícita. Só AVISA — desligar em produção é decisão do titular, não do script.
-if grep -qE '^AI_AGENT_ENABLED=true' .env 2>/dev/null; then
-  echo "!! ATENÇÃO: AI_AGENT_ENABLED=true neste .env — o agente de IA com"
-  echo "   ferramentas de ESCRITA está habilitado. A auditoria 2026-07-26"
-  echo "   recomenda AI_AGENT_ENABLED=false até a homologação do HITL."
-fi
+# Implementação única em scripts/migrar_env_obsoletos.sh, compartilhada com o
+# deploy real (deploy_vps_safe.sh). Antes a migração existia só aqui — e este
+# script é um bootstrap MANUAL, fora do caminho do GitHub Actions, então a
+# correção do modelo Groq nunca chegava à VPS.
+bash "$(dirname "$0")/migrar_env_obsoletos.sh" .env
 
 echo "== Subindo os serviços (build + up)... =="
 docker compose up -d --build
