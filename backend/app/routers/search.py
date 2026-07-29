@@ -15,7 +15,11 @@ from app.models.legal_doc import LegalDoc
 from app.models.process import Process
 from app.models.user import User
 from app.routers.clients import _CLIENTES
-from app.services.pii_crypto import hash_documento, normalizar_documento
+from app.services.pii_crypto import (
+    hash_documento,
+    mascarar_documento,
+    normalizar_documento,
+)
 
 router = APIRouter(prefix="/search", tags=["Busca global"])
 
@@ -40,12 +44,12 @@ def _so_digitos(coluna):
 
 
 def _mascarar_documento(value: str | None) -> str:
-    digitos = normalizar_documento(value) or ""
-    if len(digitos) == 11:
-        return f"***.{digitos[3:6]}.{digitos[6:9]}-**"
-    if len(digitos) == 14:
-        return f"**.{digitos[2:5]}.{digitos[5:8]}/****-**"
-    return "Documento protegido" if digitos else ""
+    """Máscara canônica (services/pii_crypto) adaptada ao subtítulo da busca:
+    string sempre — vazia quando não há documento, rótulo genérico quando o
+    valor existe mas tem comprimento inesperado (não é CPF nem CNPJ)."""
+    if not normalizar_documento(value):
+        return ""
+    return mascarar_documento(value) or "Documento protegido"
 
 
 def _item_caso(caso: Case, subtitulo: str) -> dict:
