@@ -149,7 +149,15 @@ def gateway_espiao(monkeypatch):
         return "log-fake"
 
     async def fake_chat(messages, **kw):
-        capturado["task_type"] = kw.get("task_type", "")
+        # Registra TODAS as chamadas: a crítica adversarial do Modo Duas IAs
+        # chama o gateway uma segunda vez, e o que interessa aferir é a chamada
+        # de GERAÇÃO (a primeira).
+        capturado.setdefault("chamadas", []).append({
+            "task_type": kw.get("task_type", ""),
+            "modo": kw.get("modo_sanitizacao"),
+        })
+        capturado["task_type"] = capturado["chamadas"][0]["task_type"]
+        capturado["modo"] = capturado["chamadas"][0]["modo"]
         return ai_gateway.GatewayResponse(
             texto="Resposta fictícia para teste.",
             modelo="modelo-fake", provedor="ollama",
@@ -179,34 +187,31 @@ class TestPisoChegaAoGateway:
         """Achado AI-019: TarefaIA.FAMILIA era convertida em "estrategia" e
         perdia o piso. O gateway precisa receber "familia"."""
         await _rodar("familia", "familia")
-        assert gateway_espiao["task_type"] == "familia"
-        assert modo_para_task(gateway_espiao["task_type"]) == (
-            ModoSanitizacao.LOCAL_COMPLETO
-        )
+        assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
+        assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
 
     async def test_dominio_acentuado_nao_escapa_do_piso(self, gateway_espiao):
         """Regressão do bypass por string livre: `domain` vem de campo aberto
         (Field(max_length=60)) e a UI em português manda "Família"."""
         await _rodar("chat", "Família")
-        assert gateway_espiao["task_type"] == "familia"
+        assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
 
     async def test_dominio_em_texto_livre_nao_escapa_do_piso(self, gateway_espiao):
         await _rodar("chat", "Direito de Família")
-        assert gateway_espiao["task_type"] == "familia"
+        assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
 
     async def test_task_type_do_endpoint_analyze_nao_escapa(self, gateway_espiao):
         """/api/ai-core/analyze monta task_type = f"{domain}_analysis"."""
         await _rodar("familia_analysis", "familia")
-        assert gateway_espiao["task_type"] == "familia"
+        assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
 
     async def test_area_comum_mantem_o_roteamento_original(self, gateway_espiao):
         """O piso não pode reescrever o rótulo de área não sensível — isso
         estragaria o roteamento de modelo do TASK_ROUTING."""
         await _rodar("chat", "trabalhista")
         assert gateway_espiao["task_type"] == "estrategia"
-        assert modo_para_task(gateway_espiao["task_type"]) != (
-            ModoSanitizacao.LOCAL_COMPLETO
-        )
+        assert gateway_espiao["modo"] is None
+        assert gateway_espiao["modo"] != ModoSanitizacao.LOCAL_COMPLETO
 
 
 # ── 4. O piso realmente bloqueia a saída externa ─────────────────────────────
@@ -236,3 +241,163 @@ class TestGatewayBloqueiaExternoEmAreaSensivel:
                     [{"role": "user", "content": "Caso fictício de guarda."}],
                     task_type=rotulo,
                 )
+
+
+# ── 5. A ÁREA REAL DO CASO manda, não o rótulo enviado ───────────────────────
+
+class TestAreaDoCasoEAutoritativa:
+    """Achado da auditoria de segurança 2026-07-29: o piso consultava só
+    `task_type`/`domain`/tarefa — todos derivados do CORPO da requisição. Um
+    caso cuja `Case.area` é sensível, consultado sem `domain` (ou com "civel"),
+    escapava do piso e levava dossiê, documentos e RAG ao provider externo. O
+    caminho agêntico (ai/agent/loop.py) já lia `caso.area`; este não."""
+
+    async def test_caso_de_familia_sem_domain_nao_escapa(self, gateway_espiao, monkeypatch):
+        from types import SimpleNamespace as NS
+
+        from app.core import ownership
+        from app.services.ai.core.orchestrator import orchestrator
+
+        async def fake_acesso(db, cu, case_id):
+            return NS(id=case_id, area=NS(value="familia"))
+
+        monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
+        await orchestrator.run(
+            db=object(), user=_advogado(), task_type="chat", domain=None,
+            case_id="caso-ficticio-1",
+            mensagem="Resumo do andamento deste caso fictício.",
+        )
+        assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
+
+    async def test_rotulo_generico_nao_rebaixa_caso_sensivel(self, gateway_espiao, monkeypatch):
+        """Mesmo declarando `domain="civel"`, a área do caso prevalece."""
+        from types import SimpleNamespace as NS
+
+        from app.core import ownership
+        from app.services.ai.core.orchestrator import orchestrator
+
+        async def fake_acesso(db, cu, case_id):
+            return NS(id=case_id, area=NS(value="criminal"))
+
+        monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
+        await orchestrator.run(
+            db=object(), user=_advogado(), task_type="chat", domain="civel",
+            case_id="caso-ficticio-2", mensagem="Analise este caso fictício.",
+        )
+        assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
+
+    async def test_caso_de_area_comum_segue_externo(self, gateway_espiao, monkeypatch):
+        from types import SimpleNamespace as NS
+
+        from app.core import ownership
+        from app.services.ai.core.orchestrator import orchestrator
+
+        async def fake_acesso(db, cu, case_id):
+            return NS(id=case_id, area=NS(value="trabalhista"))
+
+        monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
+        await orchestrator.run(
+            db=object(), user=_advogado(), task_type="chat", domain=None,
+            case_id="caso-ficticio-3", mensagem="Analise este caso fictício.",
+        )
+        assert gateway_espiao["modo"] != ModoSanitizacao.LOCAL_COMPLETO
+
+
+# ── 6. Variantes morfológicas e caracteres invisíveis ────────────────────────
+
+class TestVariantesMorfologicas:
+    @pytest.mark.parametrize("rotulo", [
+        "pericia medica", "perícia médica", "direito familiar",
+        "antecedentes criminais", "habeas corpus", "divorcio consensual",
+        "guarda de menor", "infanto-juvenil", "acao de alimentos",
+        "empregada domestica", "vara criminal", "juizado da infancia",
+    ])
+    def test_variante_de_area_sensivel_e_local(self, rotulo):
+        assert modo_para_task(rotulo) == ModoSanitizacao.LOCAL_COMPLETO
+
+    @pytest.mark.parametrize("rotulo", [
+        "fam​ilia",      # zero-width space
+        "fam­ilia",      # soft hyphen
+        "‎familia",      # left-to-right mark
+    ])
+    def test_caractere_invisivel_nao_contorna_o_piso(self, rotulo):
+        assert modo_para_task(rotulo) == ModoSanitizacao.LOCAL_COMPLETO
+
+    @pytest.mark.parametrize("rotulo", [
+        "trabalhista", "civel", "tributario", "empresarial", "ambiental",
+        "consumidor", "imobiliario", "administrativo",
+    ])
+    def test_area_comum_continua_externa(self, rotulo):
+        assert modo_para_task(rotulo) != ModoSanitizacao.LOCAL_COMPLETO
+
+
+# ── 7. Sigilo não pode sequestrar o ROTEAMENTO ───────────────────────────────
+
+class TestSigiloNaoQuebraRoteamento:
+    """Achado da revisão de código 2026-07-29: o piso sobrescrevia o
+    `task_type`, que também governa a cadeia de modelos (TASK_ROUTING) e a
+    crítica adversarial do Modo Duas IAs (DUAS_IAS_TASK_TYPES). Uma minuta num
+    caso de família virava task_type "familia" e saía da crítica — a peça de
+    maior risco jurídico ficava sem a segunda leitura."""
+
+    async def test_minuta_em_caso_sensivel_mantem_elaboracao_peca(
+            self, gateway_espiao, monkeypatch):
+        from types import SimpleNamespace as NS
+
+        from app.core import ownership
+        from app.services.ai.core.orchestrator import orchestrator
+
+        async def fake_acesso(db, cu, case_id):
+            return NS(id=case_id, area=NS(value="familia"))
+
+        monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
+        await orchestrator.run(
+            db=object(), user=_advogado(), task_type="minutas",
+            case_id="caso-ficticio-4",
+            mensagem="Minuta fictícia para o caso.",
+        )
+        # Roteamento preservado na chamada de geração…
+        assert gateway_espiao["chamadas"][0]["task_type"] == "elaboracao_peca"
+        # …o sigilo aplicado mesmo assim…
+        assert gateway_espiao["chamadas"][0]["modo"] == ModoSanitizacao.LOCAL_COMPLETO
+        # …e a crítica adversarial VOLTOU a rodar (era o efeito colateral).
+        assert any(c["task_type"] == "critica_adversarial"
+                   for c in gateway_espiao["chamadas"])
+
+    async def test_rotulo_de_area_nao_existe_no_task_routing(self):
+        """Prova a razão do achado: "familia" não é chave de roteamento, então
+        sobrescrever o task_type jogava a chamada no fallback genérico."""
+        from app.services.ai_gateway import TASK_ROUTING
+        assert "elaboracao_peca" in TASK_ROUTING
+        assert "familia" not in TASK_ROUTING
+
+    async def test_critica_adversarial_continua_habilitada(self):
+        from app.services.ai import adversarial
+        assert adversarial.critica_automatica_habilitada("elaboracao_peca") is True
+        assert adversarial.critica_automatica_habilitada("familia") is False
+
+
+class TestModoSanitizacaoSoEleva:
+    async def test_parametro_nao_rebaixa_o_piso_do_task_type(self, monkeypatch):
+        """Um chamador não pode usar `modo_sanitizacao` para liberar uma tarefa
+        que o próprio task_type já classifica como LOCAL_COMPLETO."""
+        from app.services import ai_gateway
+
+        st = get_settings()
+        monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
+        monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
+        monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
+        monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+        monkeypatch.setattr(st, "AI_SANITIZATION_MODE_MAP", "")
+
+        async def explode(*a, **k):
+            raise AssertionError("provider externo NÃO pode ser chamado")
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", explode)
+
+        with pytest.raises(RuntimeError):
+            await ai_gateway.chat(
+                [{"role": "user", "content": "Caso fictício."}],
+                task_type="familia",
+                modo_sanitizacao=ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+            )

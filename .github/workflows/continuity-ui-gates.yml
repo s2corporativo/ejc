@@ -29,15 +29,19 @@ jobs:
           POSTGRES_PASSWORD: ejc_pass
           POSTGRES_DB: ejc_db
         ports:
-          - 5432:5432
+          # Porta ALTA e DISTINTA da usada pelo ci.yml (55432): o runner é
+          # self-hosted e divide o VPS com o Postgres de produção, que ocupa a
+          # 5432. Portas diferentes por workflow também evitam que dois jobs
+          # concorrentes no mesmo host colidam entre si.
+          - 55433:5432
         options: >-
           --health-cmd "pg_isready -U ejc_user -d ejc_db"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 15
     env:
-      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:5432/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:55433/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:55433/ejc_db
       APP_ENV: development
       RESTORE_DRILL_ALLOW: "1"
       RESTORE_DRILL_REPORT: ../restore-drill-report.json
@@ -60,7 +64,10 @@ jobs:
 
       - name: Preparar banco migrado
         run: |
-          PGPASSWORD=ejc_pass psql -h localhost -U ejc_user -d ejc_db \
+          # -p obrigatório: o serviço é exposto em 55433 no host (a 5432 é do
+          # Postgres de produção). Sem a porta, o psql usa 5432 e falha com
+          # "Connection refused".
+          PGPASSWORD=ejc_pass psql -h localhost -p 55433 -U ejc_user -d ejc_db \
             -c "CREATE EXTENSION IF NOT EXISTS vector;" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"

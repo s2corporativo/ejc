@@ -140,7 +140,14 @@ def normalizar_rotulo(valor: str | None) -> str:
     """Canoniza um rótulo de tarefa/área: sem acento, minúsculo, separadores
     unificados em `_` e sem sufixos de rotina (`familia_analysis` → `familia`)."""
     texto = unicodedata.normalize("NFKD", str(valor or ""))
-    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    # Remove acentos (Mn) e TAMBÉM caracteres invisíveis de formatação/controle
+    # (Cf/Cc): "fam​ilia" com zero-width space, ou soft hyphen no meio da
+    # palavra, escapavam do piso por não casarem nenhuma chave.
+    texto = "".join(
+        c for c in texto
+        if not unicodedata.combining(c)
+        and unicodedata.category(c) not in ("Cf", "Cc")
+    )
     texto = texto.strip().lower()
     for sep in (" ", "-", "/", ".", ":"):
         texto = texto.replace(sep, "_")
@@ -161,26 +168,42 @@ def normalizar_rotulo(valor: str | None) -> str:
 # "plano_de_saude" — e que um lookup de chave exata jamais alcançaria.
 # Só marcam PARA CIMA: o pior caso de um falso positivo é exigir IA local numa
 # área que aceitaria externo, nunca o contrário.
-_PALAVRAS_SIGILO_REFORCADO: dict[str, str] = {
-    palavra: chave
-    for chave, modo in _MODO_DEFAULT_POR_TASK.items()
-    if modo == ModoSanitizacao.LOCAL_COMPLETO
-    for palavra in chave.split("_")
-    if len(palavra) > 3
-}
+# RADICAIS, não palavras inteiras. Casar palavra exata deixava passar as formas
+# que o vocabulário jurídico brasileiro produz o tempo todo: "perícia médica"
+# (feminino) não casava "medico", "antecedentes criminais" (plural) não casava
+# "criminal", "direito familiar" (adjetivo) não casava "familia". O radical cobre
+# as três de uma vez. Só marcam PARA CIMA: o pior caso de um falso positivo é
+# exigir IA local numa área que aceitaria externo — nunca o contrário.
+_RADICAIS_SIGILO_REFORCADO: tuple[tuple[str, str], ...] = (
+    ("famili", "familia"),          # familia, familiar, familiares
+    ("crimin", "criminal"),         # criminal, criminais, criminalista
+    ("penal", "penal"),             # penal, penais
+    ("saud", "saude"),              # saude, saudes
+    ("medic", "medico"),            # medico, medica, medicas, medicamento
+    ("menor", "menores"),           # menor, menores
+    ("infan", "infancia_juventude"),   # infancia, infantil, infanto
+    ("juven", "infancia_juventude"),   # juventude, juvenil
+    ("violen", "violencia"),        # violencia, violento
+    ("domestic", "violencia_domestica"),
+    ("divorcio", "familia"),        # divórcio é matéria de família
+    ("guarda", "familia"),          # guarda de menor
+    ("alimento", "familia"),        # pensão alimentícia
+    ("habeas", "penal"),            # habeas corpus
+)
 
 
 def _chaves_candidatas(rotulo: str) -> list[str]:
     """Chaves a consultar no mapa, da mais específica para a mais genérica: o
-    rótulo canônico inteiro e, depois, a chave de sigilo de cada palavra que ele
-    contém (`direito_de_familia` → também consulta `familia`)."""
+    rótulo canônico inteiro e, depois, a chave de sigilo de cada palavra cujo
+    RADICAL indique área sensível (`direito_familiar` → consulta `familia`)."""
     if not rotulo:
         return []
     candidatas = [rotulo]
     for palavra in rotulo.split("_"):
-        chave = _PALAVRAS_SIGILO_REFORCADO.get(palavra)
-        if chave and chave not in candidatas:
-            candidatas.append(chave)
+        for radical, chave in _RADICAIS_SIGILO_REFORCADO:
+            if palavra.startswith(radical) and chave not in candidatas:
+                candidatas.append(chave)
+                break
     return candidatas
 
 

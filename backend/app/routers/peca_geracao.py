@@ -34,6 +34,7 @@ from app.services.system_prompts.blocos_condicionais import (
     montar_instrucao_blocos,
 )
 from app.services.advogado_style_service import montar_instrucoes_estilo_para_prompt
+from app.services.homologacao_ferramentas import motivo_nao_homologada
 from app.schemas.peca_workflow import ProducaoModoRequest
 from app.services.peca_workflow_service import preparar_modo_producao
 from app.services.deep_research_service import DeepResearchInput, executar_deep_research
@@ -437,6 +438,11 @@ class DemonstrativoRequest(BaseModel):
     linhas: list[LinhaDemonstrativo] = Field(default=[])
     rodape: Optional[str] = Field(None, max_length=2000)
     case_id: Optional[str] = None
+    # Caminho da ferramenta de origem do cálculo (ex.: /civel/ferramentas/
+    # prazos-contestacao). Opcional (retrocompatível); quando informado e a
+    # ferramenta consta na matriz de não homologadas (Onda 1), o demonstrativo
+    # é REJEITADO com 422 — resultado não homologado não vira peça.
+    ferramenta: Optional[str] = Field(None, max_length=200)
 
 
 @router.post("/demonstrativo", status_code=201)
@@ -448,11 +454,44 @@ async def gerar_demonstrativo(
     """Converte o resultado de uma calculadora em um Demonstrativo de Cálculo
     salvo como peça (LegalDoc) rascunho — vinculável a um caso. Reusa a esteira
     de peças existente; resultado é MINUTA (revisão humana obrigatória)."""
-    # AI-107/AI-113 (auditoria 2026-07-26): as regras das calculadoras ainda não
-    # foram homologadas (fonte/vigência/revisor) — um demonstrativo dá aparência
-    # DOCUMENTAL a uma regra possivelmente errada e pode ser usado externamente.
-    # Exportação BLOQUEADA por padrão; reabilitar por ambiente somente após a
-    # homologação das regras (padrão do repo: flag default OFF).
+    # DOIS GATES, do mais específico para o mais geral (consolidação 2026-07-29).
+    #
+    # O PR #493 trouxe a matriz por ferramenta (FERRAMENTAS_NAO_HOMOLOGADAS) e o
+    # PR #496 trouxe a trava geral por flag. Eles nasceram em frentes paralelas e
+    # o merge automático deixou a trava geral na frente, o que engolia o 422 da
+    # matriz: toda ferramenta respondia 403 e o motivo específico da não
+    # homologação nunca chegava ao advogado. A matriz roda PRIMEIRO para que o
+    # diagnóstico correto sempre prevaleça.
+    #
+    # ATENÇÃO — a matriz é uma DENYLIST: o que não está nela passa. Ela cobre as
+    # ferramentas já auditadas como não homologadas, não as ainda não revisadas.
+    # Por isso a trava geral CONTINUA valendo depois dela, com default OFF: uma
+    # calculadora que ninguém revisou não vira documento por omissão. Reabrir a
+    # exportação é decisão do titular (PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED),
+    # não consequência silenciosa de um merge.
+
+    # Gate de homologação (Onda 1, PR #493): cálculo de ferramenta não homologada
+    # não pode ser convertido em demonstrativo/peça. O campo é OPT-IN por
+    # retrocompatibilidade — quando ausente, registramos o bypass para dar
+    # visibilidade (a obrigatoriedade fica para a Onda 3, com telemetria).
+    if not req.ferramenta:
+        logger.warning(
+            "demonstrativo_sem_ferramenta: gate de homologação não aplicado "
+            "(user_id=%s, case_id=%s, titulo=%r)", cu.id, req.case_id, req.titulo[:80])
+    if req.ferramenta:
+        motivo = motivo_nao_homologada(req.ferramenta)
+        if motivo:
+            raise HTTPException(422, detail={
+                "codigo": "ferramenta_nao_homologada",
+                "motivo": motivo,
+                "mensagem": ("Demonstrativo bloqueado: a ferramenta de origem não está "
+                             "homologada para uso profissional — em revisão jurídica"),
+            })
+
+    # AI-107/AI-113 (auditoria 2026-07-26, PR #496): trava geral enquanto as
+    # regras das calculadoras não forem homologadas (fonte/vigência/revisor) —
+    # um demonstrativo dá aparência DOCUMENTAL a uma regra possivelmente errada
+    # e pode ser usado externamente.
     from app.core.config import get_settings
     if not getattr(get_settings(), "PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED", False):
         raise HTTPException(
@@ -462,6 +501,7 @@ async def gerar_demonstrativo(
                  "apoio, com revisão do advogado.")
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         raise HTTPException(403, "Acesso negado")
+
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)
 

@@ -17,8 +17,12 @@ gh pr list --state open                        # confere quem já reservou núme
 
 1. Atualize a `main` local.
 2. Consulte os PRs abertos (inclusive drafts) e esta tabela.
-3. Verifique o head do Alembic — o `down_revision` da sua migration é o head **ou** a
-   migration imediatamente anterior já reservada e ainda não mesclada.
+3. Verifique o head do Alembic — o `down_revision` da sua migration é **o head da `main`**.
+   Nunca aponte para uma migration que ainda não foi mesclada: numa branch tirada da
+   `main` esse arquivo não existe, o grafo fica órfão e a guarda de numeração reprova
+   (`test_migration_numbering_guard.py`). Se o número anterior está reservado por um PR
+   aberto, **espere o merge** e refaça o `down_revision` sobre o head atualizado —
+   `docs/GOVERNANCA_IA.md` exige frentes sequenciais e não suporta branches empilhadas.
 4. Registre a reserva nesta tabela **no mesmo PR** que cria a migration.
 5. Confirme as dependências: a cadeia precisa ficar linear e com head único.
 

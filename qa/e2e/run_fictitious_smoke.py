@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import uuid
 from dataclasses import dataclass, field
@@ -66,10 +67,18 @@ PROCESSO_MATRIZ = "5000000-83.2026.8.13.0027"
 
 
 def _processo_da_execucao(run_id: str) -> str:
-    """Número CNJ fictício por execução. O backend não valida dígito
-    verificador de CNJ (só compara/armazena), então basta variar o sequencial."""
+    """Número CNJ fictício por execução, com dígito verificador CALCULADO.
+
+    O backend VALIDA o DV (módulo 97, Res. CNJ 65/2008 — schemas/case.py chama
+    validar_cnj sempre que o número tem 20 dígitos). Variar só o sequencial e
+    manter o "-83" do número original produzia DV inválido em ~99% das
+    execuções: `POST /api/cases/` respondia 422, o caso não era criado e toda a
+    metade seguinte da suíte (upload, follow-ups, cleanup) era pulada."""
     seq = int(hashlib.sha256(run_id.encode()).hexdigest()[:6], 16) % 10_000_000
-    return f"{seq:07d}-83.2026.8.13.0027"
+    # NNNNNNN AAAA J TR OOOO, com o DV zerado, e DV = 98 - (resto * 100) % 97.
+    corpo = f"{seq:07d}" + "2026" + "8" + "13" + "0027"
+    dv = 98 - (int(corpo) * 100) % 97
+    return f"{seq:07d}-{dv:02d}.2026.8.13.0027"
 
 
 def _cpf_da_execucao(run_id: str) -> str:
@@ -166,10 +175,34 @@ def _load_matrix() -> dict[str, Any]:
 # e o relatório o reescrevia em texto puro no disco do runner (e em artefato de
 # CI, se publicado).
 _CHAVES_REDIGIDAS = frozenset({
+    # Segredos
     "access_token", "refresh_token", "token", "senha", "password", "secret",
-    "api_key", "authorization", "cpf", "cpf_plain", "cnpj", "cnpj_plain",
+    "api_key", "authorization",
+    # Identificadores do titular
+    "cpf", "cpf_plain", "cnpj", "cnpj_plain", "rg", "cnh",
     "email", "telefone", "whatsapp", "celular",
+    # Demais campos de ClientBase — o relatório podia sair com nome completo,
+    # data de nascimento, endereço e o campo livre `observacoes`, que é onde o
+    # escritório concentra a anotação mais sensível do cliente.
+    "nome", "nome_completo", "full_name", "razao_social", "nome_fantasia",
+    "data_nascimento", "profissao", "observacoes",
+    "cep", "logradouro", "numero", "complemento", "bairro", "endereco",
 })
+
+# Padrões de PII para o corpo NÃO-JSON (erro HTML de proxy, text/plain, CSV):
+# esse caminho devolvia `resp.text` cru, sem passar por redação nenhuma.
+_PADROES_PII = (
+    re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b"),                  # CPF
+    re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b"),           # CNPJ
+    re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"),                          # e-mail
+    re.compile(r"\b(?:\+55\s?)?\(?\d{2}\)?\s?9?\d{4}-?\d{4}\b"),      # telefone
+)
+
+
+def _redigir_texto(bruto: str) -> str:
+    for padrao in _PADROES_PII:
+        bruto = padrao.sub("***", bruto)
+    return bruto
 
 
 def _redigir(valor: Any, profundidade: int = 0) -> Any:
@@ -192,7 +225,8 @@ def _excerpt(resp: httpx.Response) -> Any:
     try:
         data = resp.json()
     except Exception:
-        return resp.text[:800]
+        # Corpo não-JSON também passa pela redação — antes ia cru.
+        return _redigir_texto(resp.text[:800])
     return _redigir(data)
 
 

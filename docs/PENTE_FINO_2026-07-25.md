@@ -45,6 +45,12 @@ de IA passa por ele" — a arquitetura documentada não está ligada. Enquanto
 isso, 3 call sites ainda usam o endpoint legado `/ai/analisar-caso`
 (`IA.tsx:98`, `TabResumo.tsx:391`, `SalaAnaliseJuridica.tsx:277`).
 
+> **Desfecho (2026-07-27):** o arquivo foi removido em 1befdf0 (nunca teve
+> consumidor) e a matriz de migração foi corrigida. O descompasso de fundo
+> permanece: o núcleo `/api/ai/core/*` continua sem consumidor no frontend —
+> registrado como pendência com dono a definir em
+> `docs/HIGIENIZACAO_BACKLOG_FRONTEND.md`.
+
 ### 3. `SalaAnaliseJuridica.tsx:277-285` — contexto serializado dentro do prompt
 
 A Sala empacota título, cliente, relatório documental e 12 mensagens via

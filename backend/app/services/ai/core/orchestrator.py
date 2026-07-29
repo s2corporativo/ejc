@@ -119,9 +119,14 @@ class SingleAICoreOrchestrator:
             raise HTTPException(403, "Funções de IA internas não estão disponíveis no portal do cliente.")
         if agente.roles_permitidos and (user is None or role not in agente.roles_permitidos):
             raise HTTPException(403, f"Agente {agente.nome} restrito a: {', '.join(agente.roles_permitidos)}.")
+        # O caso é CAPTURADO (não descartado): `Case.area` é a fonte autoritativa
+        # do sigilo. Os rótulos da requisição (task_type/domain) vêm do cliente e
+        # podem simplesmente não mencionar a área — o caminho agêntico já fazia
+        # certo em ai/agent/loop.py, este não.
+        caso = None
         if case_id and db is not None and user is not None:
             from app.core.ownership import verificar_acesso_caso
-            await verificar_acesso_caso(db, user, case_id)  # 403/404 se indevido
+            caso = await verificar_acesso_caso(db, user, case_id)  # 403/404 se indevido
 
         # 3) Contexto real (backend monta; frontend só envia IDs) ─────────────
         # `user` repassado ao builder: ownership de document_id/process_id é
@@ -209,18 +214,34 @@ class SingleAICoreOrchestrator:
         # "família"/"Direito de Família"/"familia_analysis" precisam bater com a
         # mesma regra que "familia". Sem `try/except`: se a política não puder
         # ser avaliada, a chamada falha em vez de seguir com o rótulo rebaixado.
+        # A ÁREA REAL DO CASO vem primeiro: é a única fonte que o cliente não
+        # controla. `task_type` e `domain` chegam do corpo da requisição, então
+        # um caso de família consultado sem `domain` (ou com "civel") escapava do
+        # piso e levava dossiê, documentos e RAG do caso ao provider externo.
+        area_do_caso = (getattr(getattr(caso, "area", None), "value", None)
+                        or str(getattr(caso, "area", "") or ""))
         rotulo_sigiloso = rotulo_de_sigilo_reforcado(
+            area_do_caso,
             task_type,
             domain,
             getattr(intent.tarefa, "value", intent.tarefa),
         )
-        if rotulo_sigiloso and gateway_task != rotulo_sigiloso:
+        # O sigilo viaja em PARÂMETRO PRÓPRIO, não no `task_type`. Sobrescrever
+        # o task_type levava junto o roteamento: `gateway_task` também decide a
+        # cadeia de modelos (TASK_ROUTING) e se a crítica adversarial do Modo
+        # Duas IAs roda (DUAS_IAS_TASK_TYPES = elaboracao_peca,auditoria_peca).
+        # Uma minuta num caso de família virava task_type "familia" e saía da
+        # crítica — justamente a peça de maior risco jurídico ficava sem a
+        # segunda leitura. O gateway aplica `reforcar_sigilo`, então o modo aqui
+        # só pode ELEVAR o piso, nunca rebaixá-lo.
+        modo_sigilo = None
+        if rotulo_sigiloso:
+            from app.services.ai.sanitization_policy import modo_para_task
+            modo_sigilo = modo_para_task(rotulo_sigiloso)
             logger.info(
-                "[sigilo] área sensível '%s' preserva o rótulo no gateway "
-                "(era '%s') — LOCAL_COMPLETO não pode ser rebaixado",
-                rotulo_sigiloso, gateway_task,
+                "[sigilo] área sensível '%s' → modo %s no gateway; roteamento "
+                "segue como '%s'", rotulo_sigiloso, modo_sigilo.value, gateway_task,
             )
-        gateway_task = rotulo_sigiloso or gateway_task
 
         # ── Nomes do caso → pseudonimização REVERSÍVEL no gateway (LGPD 2026-07-06)
         # Passa as ENTIDADES NOMEADAS (cliente/empresa/advogado/parte contrária) ao
@@ -250,6 +271,7 @@ class SingleAICoreOrchestrator:
             max_tokens=cfg.max_tokens,
             nivel_inteligencia=nivel_inteligencia,
             entidades=entidades or None,
+            modo_sanitizacao=modo_sigilo,
         )
 
         # 7) Validação da resposta (citações, promessas, base verificável) ────

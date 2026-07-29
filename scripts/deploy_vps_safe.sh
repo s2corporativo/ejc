@@ -57,6 +57,12 @@ rollback() {
   fi
 
   log "Deploy falhou (rc=${original_rc}). Restaurando backend, worker e frontend."
+  # O rollback recria os containers a partir das imagens ANTERIORES, mas o
+  # GIT_SHA exportado ainda é o do deploy que falhou — sem isto, o backend
+  # restaurado anunciaria em /api/health o SHA que NÃO está rodando, que é
+  # exatamente a mentira que esta instrumentação existe para evitar.
+  export GIT_SHA="${OLD_GIT_SHA:-desconhecido}"
+  log "Rollback publica novamente o commit anterior: ${GIT_SHA}"
   _restore_image "$OLD_BACKEND_TAG" "$OLD_BACKEND_IMAGE" "$OLD_BACKEND_REF" "backend"
   _restore_image "$OLD_WORKER_TAG" "$OLD_WORKER_IMAGE" "$OLD_WORKER_REF" "worker"
   _restore_image "$OLD_FRONTEND_TAG" "$OLD_FRONTEND_IMAGE" "$OLD_FRONTEND_REF" "frontend"
@@ -158,8 +164,22 @@ DEPLOY_MUTATED=1
 # conferido no /api/health depois da troca. Sem isso não havia como provar qual
 # código está no ar — a origem do "minha alteração não aparece no sistema".
 GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || echo desconhecido)}"
+if [ "$GIT_SHA" = "desconhecido" ] || [ -z "$GIT_SHA" ]; then
+  # O workflow exclui .git/ do rsync, então numa execução MANUAL na VPS sem
+  # TARGET_SHA não há como saber o commit. Comparar duas incógnitas depois
+  # daria um "confirmado: desconhecido" — falso positivo confiante justamente
+  # no caminho mais sujeito a erro. Melhor exigir o SHA explicitamente.
+  log "ERRO: não foi possível determinar o commit a publicar."
+  log "Informe TARGET_SHA=<sha> ao executar o deploy manualmente."
+  exit 2
+fi
 export GIT_SHA
 log "Commit a publicar: ${GIT_SHA}"
+
+# SHA que está no ar AGORA — usado pelo rollback para republicar a verdade.
+OLD_GIT_SHA="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \
+  ejc_backend 2>/dev/null | sed -n 's/^GIT_SHA=//p' | head -1)"
+log "Commit atualmente publicado: ${OLD_GIT_SHA:-indisponível}"
 
 log "Build frontend"
 docker compose build frontend
@@ -197,9 +217,13 @@ COMMIT_NO_AR="$(curl -fsS http://127.0.0.1:8000/api/health 2>/dev/null \
 if [ "$COMMIT_NO_AR" = "$GIT_SHA" ]; then
   log "Commit publicado confirmado pelo /api/health: ${COMMIT_NO_AR}"
 elif [ -z "$COMMIT_NO_AR" ] || [ "$COMMIT_NO_AR" = "desconhecido" ]; then
-  # Primeiro deploy após esta mudança: a imagem anterior ainda não expõe o
-  # campo. Avisa e segue — no próximo deploy a checagem passa a valer.
-  log "AVISO: /api/health não informou o commit (imagem anterior à instrumentação)."
+  # O backend construído a partir deste commit SEMPRE expõe o campo. Resposta
+  # sem SHA significa container antigo ainda em pé, imagem errada ou build que
+  # não pegou — exatamente o que esta verificação existe para detectar. Falhar
+  # aqui aciona o rollback; aceitar seria declarar sucesso sem prova nenhuma.
+  log "ERRO CRÍTICO: /api/health respondeu sem o commit (valor: '${COMMIT_NO_AR:-vazio}')."
+  log "O container em pé não é o que acabou de ser construído."
+  exit 1
 else
   log "ERRO CRÍTICO: backend no ar declara commit ${COMMIT_NO_AR}, esperado ${GIT_SHA}."
   log "O container não está executando o código recém-construído."

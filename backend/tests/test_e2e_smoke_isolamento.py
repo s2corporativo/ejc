@@ -221,7 +221,22 @@ class TestRedacaoDoRelatorio:
         assert "f@example.test" not in serializado
         assert "31999990001" not in serializado
         assert "token-secreto" not in serializado
-        assert limpo["data"][0]["nome"] == "Fulano"  # não-sensível preservado
+        # `nome` também é redigido: o relatório podia sair com o nome completo
+        # do titular junto do endereço e das observações do escritório.
+        assert limpo["data"][0]["nome"] == "***"
+        # Campo neutro segue legível — a redação não apaga o relatório inteiro.
+        assert smoke._redigir({"status_code": 200})["status_code"] == 200
+
+    def test_corpo_nao_json_tambem_e_redigido(self, smoke):
+        """O fallback `resp.text[:800]` devolvia o corpo CRU: um erro HTML de
+        proxy ou um CSV de exportação entrava íntegro no relatório."""
+        bruto = ("Erro ao processar cliente 529.982.247-25 "
+                 "(contato: fulano@example.test, tel 31999990001)")
+        limpo = smoke._redigir_texto(bruto)
+        assert "529.982.247-25" not in limpo
+        assert "fulano@example.test" not in limpo
+        assert "31999990001" not in limpo
+        assert "Erro ao processar cliente" in limpo
 
     def test_nao_entra_em_loop_com_estrutura_profunda(self, smoke):
         profundo: dict = {"n": {}}

@@ -313,7 +313,13 @@ async def upsert_documento(
             for campo in ("human_reviewed", "curadoria"):
                 if anterior.get(campo):
                     mesclado[campo] = anterior[campo]
-            if anterior.get("rag_status") == "aprovado" and extra.get("rag_status") == "pendente":
+            # RECUSA também é decisão humana (review do Codex no PR #526): o
+            # ingestor manda `rag_status=pendente` por default e o merge
+            # devolvia ao fluxo de pendentes um documento que o curador já
+            # tinha rejeitado — a rejeição sumia a cada atualização periódica.
+            if anterior.get("rag_status") == "recusado":
+                mesclado["rag_status"] = "recusado"
+            elif anterior.get("rag_status") == "aprovado" and extra.get("rag_status") == "pendente":
                 # AI-079 (auditoria 2026-07-26): doc que EXIGE revisão humana ainda
                 # não revisada NÃO re-promove 'pendente'→'aprovado' no re-feed —
                 # senão o estoque DataJud aprovado antes do fix nunca seria

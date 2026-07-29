@@ -151,14 +151,6 @@ def _registrar_categoria_restrita() -> None:
         ai_service._RESTRICTED_CATS.append("andamento_processual")
 
 
-def _registrar_router() -> None:
-    from app.routers import andamentos, datajud_intelligence
-
-    marcador = "_ejc_datajud_intelligence_router_installed"
-    if getattr(andamentos.router, marcador, False):
-        return
-    andamentos.router.include_router(datajud_intelligence.router)
-    setattr(andamentos.router, marcador, True)
 
 
 async def _job_feed_datajud() -> None:
@@ -191,7 +183,8 @@ def instalar() -> None:
         return
     _instalar_wrappers()
     _registrar_categoria_restrita()
-    _registrar_router()
+    # Onda 3 §4.1: o router datajud_intelligence é registrado explicitamente
+    # em app/main.py (antes era anexado a andamentos.router por patch daqui).
     _registrar_job()
     _INSTALADO = True
     logger.info("Feed cognitivo DataJud instalado")
