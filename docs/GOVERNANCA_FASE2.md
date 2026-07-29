@@ -58,7 +58,8 @@ bash scripts/governanca/branch-protection.sh --verificar  # conferir
 ```
 
 Exige `gh` autenticado com permissão de admin. A configuração anterior é salva em
-`branch-protection-anterior.json`.
+`var/branch-protection-anterior.json` — `var/` já é ignorado, então o backup nunca entra
+num commit por engano.
 
 **Ato administrativo humano.** Nenhum agente executa este script sem autorização expressa
 do titular (`CLAUDE.md`, regras 8 e 9).
@@ -72,13 +73,18 @@ Contextos configurados, extraídos dos workflows em 2026-07-29:
 | Workflow | Job | Contexto |
 |---|---|---|
 | `ci.yml` | `db-validation` | `Backend — suíte completa + schema/RAG (Postgres pgvector)` |
+| `ci.yml` | `eval-smoke` | `Eval — smoke dos gold sets (offline, bloqueante)` |
 | `ci.yml` | `frontend-build` | `Frontend — testes + typecheck + build` |
 | `ejc-release-gate.yml` | `p0-guard` | `P0 guard — conflitos e segredos` |
 | `governanca.yml` | `governanca` | `Governança — travas de PR` |
 
-`Eval — smoke dos gold sets (offline, bloqueante)` (`ci.yml`, job `eval-smoke`) ficou fora
-da lista de contextos exigidos por decisão a confirmar pelo titular: incluí-lo torna o
-gate de eval bloqueante para todo PR, inclusive os que não tocam o núcleo de IA.
+`eval-smoke` **entrou** na lista: verificado em 29/07, o job não tem `if:` nem
+`continue-on-error`, então já roda em todo PR de qualquer forma. Exigi-lo não acrescenta
+custo de execução — apenas torna a falha bloqueante, que é o que o próprio nome do job
+declara. Deixá-lo de fora significaria aceitar merge com eval quebrado.
+
+Ficaram **de fora** os gates `skipped` em PR por desenho (continuidade, provas de produção):
+contexto que nunca é reportado impede todo merge.
 
 ## 3. Levantamento dos PRs P0
 
@@ -120,9 +126,9 @@ frontend — chamada sem rota correspondente é defeito P1 e aparece na compara�
 Os três arquivos entram versionados, gerados no commit `abcf2c46` (2026-07-29), com a data e o
 commit de origem no cabeçalho de cada um. São **derivados**: regenere pelo script após alteração
 estrutural em vez de editar as seções automáticas à mão. Só as seções `PREENCHIMENTO HUMANO`
-se editam diretamente — e a regeração as reescreve vazias. Por isso o script salva a versão
-anterior como `<arquivo>.anterior` antes de sobrescrever: recole dali o conteúdo humano e
-apague o `.anterior`.
+se editam diretamente — e a regeração as reescreve vazias. Por isso o script copia a versão
+anterior para `var/inventario-anterior/` antes de sobrescrever: recole dali o conteúdo humano.
+`var/` já é ignorado, então essas cópias não poluem o diff.
 
 Complementa o grafo do `graphify` (`graphify-out/`), que cobre o detalhe de chamada entre
 símbolos; o inventário cobre estrutura e contrato de rota, que a revisão de PR cobra.
@@ -149,9 +155,7 @@ defeito de revisão.
 
 | Pendência | Motivo | Quem resolve |
 |---|---|---|
-| Duas entradas de `.gitignore` — `docs/*.anterior` e `branch-protection-anterior.json` | `.gitignore` pertence ao PR #499, ativo. `CLAUDE.md`, regra 4, veda editar arquivo de outro PR aberto. Sem elas, os dois arquivos transitórios podem ser commitados por engano. | Após o merge do #499, em PR próprio |
-| Incluir ou não `Eval — smoke dos gold sets` nos contextos exigidos | Torna o gate de eval bloqueante para todo PR, inclusive os que não tocam o núcleo de IA | Titular |
-| Executar `branch-protection.sh` | Ato administrativo humano (`CLAUDE.md`, regras 8 e 9) | Titular |
+| Executar `branch-protection.sh` | Ato administrativo humano (`CLAUDE.md`, regras 8 e 9). Exige `gh` com permissão de admin, que o ambiente do executor não tem. | Titular |
 | Preencher `docs/REGRAS_JURIDICAS.md` | Exige verificação de vigência por profissional habilitado | Titular (OAB) |
 | Preencher `docs/FLUXO_CANONICO_EJC.md`, seções 2 a 4 | Decisão de produto | Titular |
 | Seções `PREENCHIMENTO HUMANO` dos três inventários | Não extraíveis do código | Titular |

@@ -33,10 +33,15 @@ REV="$(git rev-parse --short=8 HEAD)"
 # As secoes PREENCHIMENTO HUMANO destes documentos sao reescritas vazias a cada
 # geracao. Guarda-se a versao anterior para que o conteudo humano possa ser
 # recuperado e recolado — sem isto, regenerar destruiria trabalho manual.
+#
+# O destino e var/, ja ignorado pelo .gitignore: copia transitoria nao entra em
+# diff nem e commitada por engano, e nao foi preciso alterar o .gitignore.
+ANTERIOR="var/inventario-anterior"
 preservar() {
   [ -f "$1" ] || return 0
-  cp "$1" "$1.anterior"
-  echo "  [..] versao anterior preservada em $1.anterior"
+  mkdir -p "$ANTERIOR"
+  cp "$1" "$ANTERIOR/$(basename "$1")"
+  echo "  [..] versao anterior preservada em $ANTERIOR/$(basename "$1")"
 }
 for d in docs/MAPA_DE_MODULOS.md docs/MATRIZ_DE_ROTAS.md docs/ARQUITETURA_ATUAL.md; do
   preservar "$d"
@@ -55,10 +60,13 @@ echo "Inventariando repositorio (commit $REV)..."
   echo "## 1. Estrutura de primeiro e segundo nivel"
   echo ""
   echo '```'
+  # `var/` fica de fora: e diretorio transitorio e ignorado, criado por este
+  # proprio script para guardar a copia anterior. Inclui-lo faria o inventario
+  # se auto-contaminar, listando o proprio rastro como estrutura do projeto.
   find . -maxdepth 2 -type d \
     -not -path './.git*' -not -path '*/node_modules*' -not -path '*/.venv*' \
     -not -path '*/__pycache__*' -not -path './dist*' -not -path './build*' \
-    -not -path './graphify-out*' \
+    -not -path './graphify-out*' -not -path './var*' -not -path './evidencias*' \
     | sort | sed 's|^\./||' | sed '/^\.$/d'
   echo '```'
   echo ""

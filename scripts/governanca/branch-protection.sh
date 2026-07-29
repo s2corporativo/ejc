@@ -11,7 +11,8 @@
 #    bash scripts/governanca/branch-protection.sh --verificar  # le a configuracao vigente
 #
 #  Requisitos: gh autenticado com permissao de admin no repositorio.
-#  Reversivel: a configuracao anterior e salva em ./branch-protection-anterior.json
+#  Reversivel: a configuracao anterior e salva em var/branch-protection-anterior.json
+#  (var/ ja e ignorado pelo .gitignore — o backup nunca vai parar num commit).
 #
 #  ATO ADMINISTRATIVO HUMANO. Nenhum agente executa este script sem autorizacao
 #  expressa do titular (CLAUDE.md, regras 8 e 9).
@@ -43,6 +44,13 @@ echo ""
 #   ejc-release-gate.yml   -> p0-guard        : "P0 guard — conflitos e segredos"
 #   governanca.yml         -> governanca      : "Governança — travas de PR"
 #
+# `eval-smoke` esta na lista: nao tem `if:` nem `continue-on-error`, entao ja
+# roda em todo PR de qualquer forma. Exigi-lo nao acrescenta custo de execucao,
+# so torna a falha bloqueante — que e o que o proprio nome do job declara.
+#
+# Ficaram DE FORA os gates que sao `skipped` em PR por desenho (continuidade,
+# provas de producao): contexto que nunca e reportado impede todo merge.
+#
 # Se um contexto exigido nunca for reportado, NENHUM PR sera mesclavel.
 # Rode `--contextos` antes de aplicar e confira os nomes contra a saida real.
 # Renomear um job em .github/workflows/ obriga a reaplicar este script.
@@ -53,6 +61,7 @@ read -r -d '' PAYLOAD <<'JSON' || true
     "strict": true,
     "contexts": [
       "Backend — suíte completa + schema/RAG (Postgres pgvector)",
+      "Eval — smoke dos gold sets (offline, bloqueante)",
       "Frontend — testes + typecheck + build",
       "P0 guard — conflitos e segredos",
       "Governança — travas de PR"
@@ -104,10 +113,12 @@ if [ "$MODO" = "--dry-run" ]; then
 fi
 
 echo "1. Backup da configuracao atual"
-if gh api "repos/$REPO/branches/$BRANCH/protection" > branch-protection-anterior.json 2>/dev/null; then
-  ok "salvo em branch-protection-anterior.json"
+BACKUP="var/branch-protection-anterior.json"
+mkdir -p var
+if gh api "repos/$REPO/branches/$BRANCH/protection" > "$BACKUP" 2>/dev/null; then
+  ok "salvo em $BACKUP"
 else
-  echo "null" > branch-protection-anterior.json
+  echo "null" > "$BACKUP"
   ok "branch nao possuia protecao (backup registrado como null)"
 fi
 

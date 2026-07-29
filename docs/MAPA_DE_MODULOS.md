@@ -1,6 +1,6 @@
 # MAPA DE MODULOS — EJC
 
-> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-07-29, commit `abcf2c46`.
+> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-07-29, commit `eb1ebfb4`.
 > Regenerar apos alteracao estrutural. Nao editar as secoes automaticas a mao.
 
 ## 1. Estrutura de primeiro e segundo nivel

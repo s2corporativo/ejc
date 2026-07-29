@@ -1,6 +1,6 @@
 # ARQUITETURA ATUAL — EJC
 
-> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-07-29, commit `abcf2c46`.
+> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-07-29, commit `eb1ebfb4`.
 > Descreve o estado observado, nao o estado desejado.
 
 ## 1. Dependencias declaradas — backend
