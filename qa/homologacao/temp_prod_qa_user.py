@@ -10,8 +10,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import sys
 from datetime import datetime, timezone
 from uuid import uuid4
+
+# O workflow copia este arquivo para /tmp; o pacote da aplicação vive em /app.
+# Declarar explicitamente evita depender do diretório de execução do container.
+sys.path.insert(0, "/app")
 
 from sqlalchemy import select
 
