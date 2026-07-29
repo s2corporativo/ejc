@@ -73,14 +73,25 @@ jobs:
           --health-timeout 5s
           --health-retries 15
     env:
-      PGPORT: ${{ job.services.postgres.ports['5432'] }}
-      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:${{ job.services.postgres.ports['5432'] }}/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:${{ job.services.postgres.ports['5432'] }}/ejc_db
-      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@localhost:${{ job.services.postgres.ports['5432'] }}/ejc_db
+      # As URLs do banco NÃO ficam aqui: o contexto `job` não é permitido em
+      # `env:` de nível de job (só em contexto de step), e usá-lo aqui invalida
+      # o workflow inteiro — o run falha com ZERO jobs. Elas são exportadas no
+      # primeiro passo, a partir da porta efêmera do serviço.
       APP_ENV: development
       RUN_DB_TESTS: "1"
     steps:
       - uses: actions/checkout@v7
+
+      - name: Exportar endereço do Postgres efêmero
+        working-directory: .
+        run: |
+          PORTA="${{ job.services.postgres.ports['5432'] }}"
+          test -n "$PORTA" || { echo "porta do serviço postgres não resolvida"; exit 1; }
+          echo "PGPORT=$PORTA" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=postgresql+asyncpg://ejc_user:ejc_pass@localhost:$PORTA/ejc_db" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_SYNC=postgresql://ejc_user:ejc_pass@localhost:$PORTA/ejc_db" >> "$GITHUB_ENV"
+          echo "SCHEMA_CHECK_DATABASE_URL=postgresql://ejc_user:ejc_pass@localhost:$PORTA/ejc_db" >> "$GITHUB_ENV"
+          echo "Postgres de teste em localhost:$PORTA"
 
       - name: Validar sintaxe dos scripts críticos de produção
         working-directory: .

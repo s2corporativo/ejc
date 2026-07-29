@@ -52,14 +52,24 @@ jobs:
           --health-timeout 5s
           --health-retries 15
     env:
-      PGPORT: ${{ job.services.postgres.ports['5432'] }}
-      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:${{ job.services.postgres.ports['5432'] }}/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:${{ job.services.postgres.ports['5432'] }}/ejc_db
+      # As URLs do banco são exportadas no primeiro passo — o contexto `job` não
+      # é permitido em `env:` de nível de job (só em step) e invalidaria o
+      # workflow inteiro (run com ZERO jobs). Mesma nota em ci.yml.
       APP_ENV: development
       RESTORE_DRILL_ALLOW: "1"
       RESTORE_DRILL_REPORT: ../restore-drill-report.json
     steps:
       - uses: actions/checkout@v7
+
+      - name: Exportar endereço do Postgres efêmero
+        working-directory: .
+        run: |
+          PORTA="${{ job.services.postgres.ports['5432'] }}"
+          test -n "$PORTA" || { echo "porta do serviço postgres não resolvida"; exit 1; }
+          echo "PGPORT=$PORTA" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=postgresql+asyncpg://ejc_user:ejc_pass@localhost:$PORTA/ejc_db" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_SYNC=postgresql://ejc_user:ejc_pass@localhost:$PORTA/ejc_db" >> "$GITHUB_ENV"
+          echo "Postgres de teste em localhost:$PORTA"
 
       - name: Instalar Python 3.11
         uses: actions/setup-python@v6
