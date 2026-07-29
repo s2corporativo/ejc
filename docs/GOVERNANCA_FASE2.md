@@ -33,8 +33,18 @@ Executar **na ordem**. Cada item tem pré-requisito do anterior.
 - migration em `backend/alembic/versions/` sem atualizar `backend/alembic/MIGRATION_RESERVATIONS.md` no mesmo PR → falha
 - segredo ou `.env` versionado → falha
 - descrição de PR sem Issue vinculada, solução, testes, riscos residuais ou rollback → falha
+  (**exceto PR de bot** — ver abaixo)
 - PR misturando governança (`CLAUDE.md`, `AGENTS.md`, `.claude/`, `docs/GOVERNANCA_IA.md`) com código funcional (`backend/app/`, `frontend/src/`) → falha
 - PR originado de `main`/`master` → falha
+
+**Exceção de bot na trava de descrição.** PR aberto por bot (`dependabot[bot]` e afins) tem
+descrição gerada pela ferramenta: não traz as seções do template nem Issue vinculada, e não há
+onde acrescentá-las — o dependabot reescreve o corpo a cada rebase. Exigir o template deles
+reprovaria toda atualização de dependência, inclusive as de segurança, e com a proteção de
+branch ativa isso viraria bloqueio de merge. A trava de descrição é pulada quando o autor é
+bot, detectado por dois critérios independentes (`user.type == 'Bot'` ou login terminando em
+`[bot]`). **As demais travas — migration, segredo, escopo e branch de origem — continuam
+valendo para bot exatamente como para humano**, que é onde está o risco real desse tipo de PR.
 
 Roda no runner self-hosted `ejc-vps`, como os demais workflows (`docs/RUNNER_SELFHOSTED.md`).
 Complementa — não substitui — o `EJC Release Gate` (`scripts/ci_guard.sh`), que cobre
