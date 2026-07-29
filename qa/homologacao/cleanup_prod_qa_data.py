@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from datetime import datetime, timezone
+
+# O workflow copia este arquivo para /tmp; o pacote da aplicação vive em /app.
+sys.path.insert(0, "/app")
 
 from sqlalchemy import or_, select
 
