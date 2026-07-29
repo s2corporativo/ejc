@@ -297,6 +297,7 @@ async def chat(
     provider_override: str | None = None,
     nivel_inteligencia: str | None = None,
     entidades: dict[str, list[str]] | None = None,
+    modo_sanitizacao=None,
 ) -> GatewayResponse:
     """
     Ponto central de chamada à IA.
@@ -323,8 +324,18 @@ async def chat(
     fallback_ativado = False
     fallback_motivo: str | None = None
 
-    from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
-    modo_sanitizacao = modo_para_task(task_type_original)
+    from app.services.ai.sanitization_policy import (
+        ModoSanitizacao, modo_para_task, reforcar_sigilo,
+    )
+    # S1 (mesmo contrato de chat_agentico): o chamador pode informar o sigilo
+    # REAL do caso — a área, que ele conhece e o gateway não. `reforcar_sigilo`
+    # garante que esse parâmetro só ELEVA o piso: nunca rebaixa o que o
+    # task_type já exigia. Sem isso, o orquestrador era obrigado a sequestrar o
+    # `task_type` para carregar o sigilo, e com ele ia embora o ROTEAMENTO —
+    # uma minuta de caso de família perdia a cadeia de `elaboracao_peca` e,
+    # pior, ficava fora da crítica adversarial do Modo Duas IAs.
+    modo_sanitizacao = reforcar_sigilo(
+        modo_para_task(task_type_original), modo_sanitizacao)
 
     # #8 — injeta a identidade do escritório no system (apenas tarefas de prosa).
     # task_label = vocabulário ORIGINAL da tarefa: modos de prosa (executivo)

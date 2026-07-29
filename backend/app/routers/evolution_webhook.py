@@ -2,8 +2,9 @@
 
 Rota PÚBLICA (Evolution chama de fora) — protegida por secret: valida um
 token e recusa se não configurado.
-O secret é enviado pela Evolution como header `apikey`/`X-Webhook-Token`
-ou via query `?token=` na URL do webhook configurada no painel.
+O secret é enviado pela Evolution EXCLUSIVAMENTE via header
+`apikey`/`X-Webhook-Token`. Query string (`?token=`) NÃO é aceita: URL vaza em
+access log do Nginx, em proxy e no histórico do painel (LGPD/segurança).
 """
 import hmac
 import logging
@@ -22,36 +23,45 @@ def _autorizado(request: Request) -> bool:
     recebido = (
         request.headers.get("x-webhook-token")
         or request.headers.get("apikey")
-        or request.query_params.get("token")
+        # Sem fallback por query string: segredo em URL vaza em log de acesso.
         or ""
     )
     return bool(recebido) and hmac.compare_digest(recebido, WEBHOOK_SECRET)
 
 
+def _log_safe(valor) -> str:
+    """Valor de payload EXTERNO seguro para log: curto e sem quebras de linha
+    (evita forja de linhas de log via \\n injetado no webhook)."""
+    return str(valor or "")[:60].replace("\n", " ").replace("\r", " ")
+
+
 async def _processar_mensagem(data: dict):
     """Processa mensagem recebida do WhatsApp — adaptar conforme necessidade."""
     try:
-        evento = data.get("event", "")
-        instancia = data.get("instance", "")
+        evento = _log_safe(data.get("event", ""))
+        instancia = _log_safe(data.get("instance", ""))
         logger.info(f"WhatsApp [{instancia}] evento: {evento}")
 
         if evento == "messages.upsert":
             msgs = data.get("data", {})
             if isinstance(msgs, list):
                 msgs = msgs[0] if msgs else {}
-            numero = msgs.get("key", {}).get("remoteJid", "").replace("@s.whatsapp.net", "")
-            texto = msgs.get("message", {}).get("conversation", "") or \
-                    msgs.get("message", {}).get("extendedTextMessage", {}).get("text", "")
-            if numero and texto and not msgs.get("key", {}).get("fromMe"):
-                logger.info(f"Mensagem de {numero}: {texto[:100]}")
+            # LGPD (auditoria 2026-07-26, AI-028): NUNCA logar telefone nem
+            # conteúdo da mensagem — podem carregar segredo profissional, saúde,
+            # fatos criminais ou CPF. Log registra apenas o EVENTO; o payload é
+            # processado em memória quando a integração CRM existir.
+            if not msgs.get("key", {}).get("fromMe"):
+                logger.info(f"WhatsApp [{instancia}] mensagem recebida "
+                            "(telefone/conteúdo não logados — LGPD)")
                 # TODO: integrar com fluxo de CRM/casos se necessário
 
         elif evento == "connection.update":
-            status = data.get("data", {}).get("state", "")
+            status = _log_safe(data.get("data", {}).get("state", ""))
             logger.info(f"WhatsApp conexão: {status}")
 
     except Exception as e:
-        logger.error(f"Erro ao processar webhook WhatsApp: {e}")
+        # Só o TIPO da exceção — a mensagem pode carregar fragmento do payload.
+        logger.error(f"Erro ao processar webhook WhatsApp: {type(e).__name__}")
 
 
 @router.post("/evolution")
@@ -71,5 +81,5 @@ async def evolution_webhook(request: Request, bg: BackgroundTasks):
         bg.add_task(_processar_mensagem, body)
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"Webhook parse error: {e}")
+        logger.error(f"Webhook parse error: {type(e).__name__}")
         return {"status": "error"}

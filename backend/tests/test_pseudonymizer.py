@@ -123,18 +123,20 @@ def test_pseudonimizar_mensagens_estado_compartilhado():
 # ── modo_para_task ────────────────────────────────────────────────────────────
 
 def test_modo_default_por_tarefa():
-    # Auditoria de IA (2026-07-17, A-1): `criminal` passou a EXTERNO_PSEUDONIMIZADO —
-    # o NER local do pseudonimizador (vítima/testemunha → [PESSOA_n]) já cobre o
-    # risco de nome não estrutural, então a IA criminal funciona na nuvem apenas
-    # PSEUDONIMIZADA (reforçável de volta a LOCAL_COMPLETO por override).
-    assert modo_para_task("criminal") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
+    # Auditoria máxima (2026-07-26, AI-019): áreas SENSÍVEIS voltam a
+    # LOCAL_COMPLETO por padrão — pseudonimização protege a identidade direta,
+    # mas fatos raros dessas áreas permitem reidentificação.
+    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
+    assert modo_para_task("penal") == ModoSanitizacao.LOCAL_COMPLETO
+    assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO
+    assert modo_para_task("saude") == ModoSanitizacao.LOCAL_COMPLETO
+    assert modo_para_task("CRIMINAL") == ModoSanitizacao.LOCAL_COMPLETO  # case-insensitive
     assert modo_para_task("analise_caso") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
     # Tarefas simples migradas de MASCARAMENTO irreversível → pseudonimização.
     assert modo_para_task("resumo") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
     assert modo_para_task("triagem") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
     # Tarefa desconhecida → fallback reversível e seguro (nunca "sem sanitização").
     assert modo_para_task("tarefa_inexistente") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
-    assert modo_para_task("CRIMINAL") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO  # case-insensitive
     # Extração local segue local (PII extraída no ponto de importação).
     assert modo_para_task("intake") == ModoSanitizacao.EXTRACAO_LOCAL
 
@@ -145,10 +147,22 @@ def test_modo_override_por_config(monkeypatch):
         st, "AI_SANITIZATION_MODE_MAP",
         '{"familia":"local_completo","analise_caso":"mascaramento"}',
     )
-    assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO      # reforço opt-in
+    assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO      # já é o default (AI-019)
     assert modo_para_task("analise_caso") == ModoSanitizacao.MASCARAMENTO   # sobrepõe default
-    # criminal sem override → novo default EXTERNO_PSEUDONIMIZADO (A-1, 2026-07-17).
-    assert modo_para_task("criminal") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
+    # criminal sem override → default LOCAL_COMPLETO (auditoria 2026-07-26, AI-019).
+    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
+
+
+def test_area_sensivel_nao_e_rebaixavel_por_override(monkeypatch):
+    """AI-019: o piso LOCAL_COMPLETO das áreas sensíveis NÃO pode ser rebaixado
+    para provider externo via AI_SANITIZATION_MODE_MAP (fail-closed)."""
+    st = get_settings()
+    monkeypatch.setattr(
+        st, "AI_SANITIZATION_MODE_MAP",
+        '{"criminal":"externo_pseudonimizado","familia":"mascaramento"}',
+    )
+    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
+    assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO
 
 
 def test_modo_override_invalido_cai_no_default(monkeypatch):

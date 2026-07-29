@@ -22,16 +22,23 @@
 # override, vale o default abaixo.
 #
 # DECISÃO DE PRODUTO (2026-07-06, dono do escritório): a IA deve funcionar
-# PLENAMENTE em todas as áreas usando PSEUDONIMIZAÇÃO REVERSÍVEL (não
-# mascaramento irreversível, não bloqueio). Nenhum PII real sai do VPS — o
-# provider externo recebe apenas marcadores consistentes e a resposta é
-# REIDRATADA localmente. Por isso o default de QUALQUER tarefa não mapeada passa
-# a ser EXTERNO_PSEUDONIMIZADO (reversível, seguro), e não mais MASCARAMENTO.
+# PLENAMENTE usando PSEUDONIMIZAÇÃO REVERSÍVEL (não mascaramento irreversível,
+# não bloqueio). Nenhum PII real sai do VPS — o provider externo recebe apenas
+# marcadores consistentes e a resposta é REIDRATADA localmente. O default de
+# tarefa não mapeada é EXTERNO_PSEUDONIMIZADO (reversível), não MASCARAMENTO.
+#
+# ATUALIZAÇÃO (auditoria máxima 2026-07-26, achado AI-019, dono do sistema):
+# áreas SENSÍVEIS (penal/criminal, família, saúde, menores, violência) voltam a
+# LOCAL_COMPLETO por padrão — pseudonimização protege a identidade direta, mas
+# fatos raros e combinações de eventos dessas áreas permitem reidentificação.
+# Esses defaults são um PISO não-rebaixável por override (fail-closed sem IA
+# local); exceção exige mudança de código revisada, não configuração.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
 import json
 import logging
+import unicodedata
 from enum import Enum
 
 from app.core.config import get_settings
@@ -52,21 +59,23 @@ class ModoSanitizacao(str, Enum):
 # receber qualquer um dos dois. Comparação é feita sobre o task_type ORIGINAL
 # (antes da normalização por aliases do gateway).
 _MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
-    # `criminal` — EXTERNO_PSEUDONIMIZADO (auditoria de IA 2026-07-17, achado A-1).
-    # O risco que antes mantinha esta tarefa em LOCAL_COMPLETO — nomes de vítima/
-    # testemunha/terceiro citados SÓ no documento/OCR/RAG (não cadastrados como
-    # parte no Case) indo EM CLARO ao provedor externo — JÁ FOI MITIGADO: o
-    # pseudonimizador tem uma 3ª passada de NER LOCAL (ai/ner_local.detectar_nomes
-    # → [PESSOA_n], issue #102) que pseudonimiza esses nomes ANTES do provider
-    # externo, e a 2ª barreira (validar_sem_pii_pseudonimizado →
-    # contem_nome_alta_confianca) BLOQUEIA o externo se um nome de ALTA confiança
-    # escapar (fail-closed). Só marcadores reversíveis deixam o VPS; a resposta é
-    # reidratada localmente. Manter LOCAL_COMPLETO com o Ollama DESLIGADO em
-    # produção deixava a IA criminal INDISPONÍVEL (cadeia local vazia → erro).
-    # Para sigilo MÁXIMO, o escritório pode REFORÇAR criminal de volta a
-    # LOCAL_COMPLETO via AI_SANITIZATION_MODE_MAP (reforço é sempre permitido) e
-    # subir o Ollama on-prem (scripts/subir-ia-local.sh).
-    "criminal": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    # ── ÁREAS SENSÍVEIS → LOCAL_COMPLETO (auditoria máxima 2026-07-26, AI-019).
+    # Reverte a decisão de 2026-07-17 (achado A-1): mesmo com pseudonimização
+    # forte, em penal/família/saúde/menores/violência a COMBINAÇÃO de fatos
+    # raros e eventos permite reidentificação sem nenhum identificador direto —
+    # o conteúdo dessas áreas NÃO sai do VPS por padrão. Consequência operacional
+    # deliberada (fail-closed): sem Ollama on-prem ativo, a IA dessas áreas fica
+    # INDISPONÍVEL (scripts/subir-ia-local.sh para habilitar IA local). O piso de
+    # segurança em modo_para_task impede rebaixar estes defaults por override.
+    "criminal": ModoSanitizacao.LOCAL_COMPLETO,
+    "penal": ModoSanitizacao.LOCAL_COMPLETO,
+    "familia": ModoSanitizacao.LOCAL_COMPLETO,
+    "saude": ModoSanitizacao.LOCAL_COMPLETO,
+    "medico": ModoSanitizacao.LOCAL_COMPLETO,
+    "menores": ModoSanitizacao.LOCAL_COMPLETO,
+    "infancia_juventude": ModoSanitizacao.LOCAL_COMPLETO,
+    "violencia": ModoSanitizacao.LOCAL_COMPLETO,
+    "violencia_domestica": ModoSanitizacao.LOCAL_COMPLETO,
     # Modo 2+3 — pseudonimização reversível + reidratação (análise/minuta).
     "analise_caso": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "dossie": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
@@ -74,7 +83,6 @@ _MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
     "estrategia": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "pesquisa_juridica": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "trabalhista": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
-    "familia": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "administrativo": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "sucessoes": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "imobiliario": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
@@ -115,6 +123,89 @@ _MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
 # vazar PII: o gateway só envia marcadores ao externo e reidrata a resposta).
 _MODO_FALLBACK = ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
 
+# ── Normalização de rótulo (consolidação 2026-07-29) ─────────────────────────
+# O `task_type`/`domain` chega de campo livre (`Field(max_length=60)` em
+# routers/ai_core.py) e da UI em português. Antes, a resolução era um lookup de
+# chave EXATA sobre `.strip().lower()`: "família" (com acento), "Direito de
+# Família" e "familia_analysis" NÃO batiam com a chave "familia" e caíam no
+# fallback EXTERNO_PSEUDONIMIZADO — ou seja, o conteúdo de uma área de sigilo
+# reforçado saía do VPS. A normalização abaixo (acentos, separadores e sufixos
+# de rotina) fecha esse bypass por alias/string livre num ÚNICO ponto, de modo
+# que todos os chamadores (gateway, orquestrador, agent/loop, ai_cache) herdam a
+# mesma regra — sem cópias divergentes espalhadas pelo código.
+_SUFIXOS_DE_ROTINA = ("_analysis", "_analise", "_analise_juridica", "_ia", "_agent")
+
+
+def normalizar_rotulo(valor: str | None) -> str:
+    """Canoniza um rótulo de tarefa/área: sem acento, minúsculo, separadores
+    unificados em `_` e sem sufixos de rotina (`familia_analysis` → `familia`)."""
+    texto = unicodedata.normalize("NFKD", str(valor or ""))
+    # Remove acentos (Mn) e TAMBÉM caracteres invisíveis de formatação/controle
+    # (Cf/Cc): "fam​ilia" com zero-width space, ou soft hyphen no meio da
+    # palavra, escapavam do piso por não casarem nenhuma chave.
+    texto = "".join(
+        c for c in texto
+        if not unicodedata.combining(c)
+        and unicodedata.category(c) not in ("Cf", "Cc")
+    )
+    texto = texto.strip().lower()
+    for sep in (" ", "-", "/", ".", ":"):
+        texto = texto.replace(sep, "_")
+    while "__" in texto:
+        texto = texto.replace("__", "_")
+    texto = texto.strip("_")
+    for sufixo in _SUFIXOS_DE_ROTINA:
+        if texto.endswith(sufixo) and len(texto) > len(sufixo):
+            texto = texto[: -len(sufixo)]
+            break
+    return texto
+
+
+# Palavras que, sozinhas, caracterizam área de sigilo reforçado. Derivadas das
+# próprias chaves LOCAL_COMPLETO do mapa (inclusive as compostas: de
+# "infancia_juventude" saem "infancia" e "juventude"), para cobrir o rótulo que
+# a UI produz — "direito_de_familia", "vara_da_infancia_e_juventude",
+# "plano_de_saude" — e que um lookup de chave exata jamais alcançaria.
+# Só marcam PARA CIMA: o pior caso de um falso positivo é exigir IA local numa
+# área que aceitaria externo, nunca o contrário.
+# RADICAIS, não palavras inteiras. Casar palavra exata deixava passar as formas
+# que o vocabulário jurídico brasileiro produz o tempo todo: "perícia médica"
+# (feminino) não casava "medico", "antecedentes criminais" (plural) não casava
+# "criminal", "direito familiar" (adjetivo) não casava "familia". O radical cobre
+# as três de uma vez. Só marcam PARA CIMA: o pior caso de um falso positivo é
+# exigir IA local numa área que aceitaria externo — nunca o contrário.
+_RADICAIS_SIGILO_REFORCADO: tuple[tuple[str, str], ...] = (
+    ("famili", "familia"),          # familia, familiar, familiares
+    ("crimin", "criminal"),         # criminal, criminais, criminalista
+    ("penal", "penal"),             # penal, penais
+    ("saud", "saude"),              # saude, saudes
+    ("medic", "medico"),            # medico, medica, medicas, medicamento
+    ("menor", "menores"),           # menor, menores
+    ("infan", "infancia_juventude"),   # infancia, infantil, infanto
+    ("juven", "infancia_juventude"),   # juventude, juvenil
+    ("violen", "violencia"),        # violencia, violento
+    ("domestic", "violencia_domestica"),
+    ("divorcio", "familia"),        # divórcio é matéria de família
+    ("guarda", "familia"),          # guarda de menor
+    ("alimento", "familia"),        # pensão alimentícia
+    ("habeas", "penal"),            # habeas corpus
+)
+
+
+def _chaves_candidatas(rotulo: str) -> list[str]:
+    """Chaves a consultar no mapa, da mais específica para a mais genérica: o
+    rótulo canônico inteiro e, depois, a chave de sigilo de cada palavra cujo
+    RADICAL indique área sensível (`direito_familiar` → consulta `familia`)."""
+    if not rotulo:
+        return []
+    candidatas = [rotulo]
+    for palavra in rotulo.split("_"):
+        for radical, chave in _RADICAIS_SIGILO_REFORCADO:
+            if palavra.startswith(radical) and chave not in candidatas:
+                candidatas.append(chave)
+                break
+    return candidatas
+
 
 def _overrides() -> dict[str, ModoSanitizacao]:
     """Lê Settings.AI_SANITIZATION_MODE_MAP (JSON opcional task_type→modo).
@@ -133,7 +224,7 @@ def _overrides() -> dict[str, ModoSanitizacao]:
     resultado: dict[str, ModoSanitizacao] = {}
     for task, modo in bruto.items():
         try:
-            resultado[str(task).strip().lower()] = ModoSanitizacao(str(modo).strip().lower())
+            resultado[normalizar_rotulo(task)] = ModoSanitizacao(str(modo).strip().lower())
         except ValueError:
             logger.warning(
                 "AI_SANITIZATION_MODE_MAP: modo '%s' desconhecido p/ '%s' — ignorado",
@@ -164,14 +255,18 @@ def modo_para_task(task_type: str) -> ModoSanitizacao:
     IGNORADO (com aviso) — o dado não pode ser rebaixado para externo por
     configuração. Reforçar (qualquer tarefa → LOCAL_COMPLETO) é sempre permitido.
 
-    NOTA (2026-07-06): por decisão de produto NENHUMA tarefa tem mais default
-    LOCAL_COMPLETO (inclusive `criminal`, agora EXTERNO_PSEUDONIMIZADO). O
-    mecanismo do piso permanece intacto e passa a valer quando o escritório
-    REFORÇAR uma tarefa para LOCAL_COMPLETO via override — daí ela não pode ser
-    rebaixada por outro override. Tarefa não mapeada em nenhum dos dois →
-    `_MODO_FALLBACK` (EXTERNO_PSEUDONIMIZADO, reversível e seguro)."""
-    task = (task_type or "").strip().lower()
-    padrao = _MODO_DEFAULT_POR_TASK.get(task, _MODO_FALLBACK)
+    NOTA (auditoria 2026-07-26, AI-019): as áreas sensíveis (criminal/penal,
+    família, saúde, menores, violência) têm default LOCAL_COMPLETO e, pelo piso
+    acima, NÃO podem ser rebaixadas para externo via AI_SANITIZATION_MODE_MAP.
+    Reforçar (qualquer tarefa → LOCAL_COMPLETO) segue sempre permitido. Tarefa
+    não mapeada em nenhum dos dois → `_MODO_FALLBACK` (EXTERNO_PSEUDONIMIZADO,
+    reversível e seguro)."""
+    task = normalizar_rotulo(task_type)
+    padrao = _MODO_FALLBACK
+    for chave in _chaves_candidatas(task):
+        if chave in _MODO_DEFAULT_POR_TASK:
+            padrao = _MODO_DEFAULT_POR_TASK[chave]
+            break
     over = _overrides()
     if task in over:
         escolhido = over[task]
@@ -186,3 +281,32 @@ def modo_para_task(task_type: str) -> ModoSanitizacao:
             return ModoSanitizacao.LOCAL_COMPLETO
         return escolhido
     return padrao
+
+
+def rotulo_de_sigilo_reforcado(*rotulos: str | None) -> str | None:
+    """Primeiro rótulo, na ordem dada, que exige LOCAL_COMPLETO — já CANONIZADO.
+
+    Ponto único da regra "qual rótulo o gateway precisa receber para que o piso
+    de sigilo sobreviva às transformações do orquestrador". O orquestrador mapeia
+    `TarefaIA.FAMILIA` → "estrategia" antes do gateway, e é o gateway que resolve
+    o modo de sanitização pelo `task_type`; sem devolver aqui o rótulo da área, o
+    piso se perde no meio da cadeia (achado AI-019).
+
+    Devolve a CHAVE CANÔNICA do mapa (ex.: "familia" para "Direito de Família"),
+    não o texto cru recebido — assim o gateway reencontra a mesma política. `None`
+    quando nenhum rótulo é de área sensível.
+
+    Não captura exceções de propósito: se a política de sigilo não puder ser
+    avaliada, a chamada de IA deve falhar, e não seguir com o rótulo rebaixado.
+    """
+    for bruto in rotulos:
+        canonico = normalizar_rotulo(bruto)
+        if not canonico or modo_para_task(canonico) != ModoSanitizacao.LOCAL_COMPLETO:
+            continue
+        # Devolve a chave do MAPA, não o rótulo composto: de "direito_de_familia"
+        # sai "familia", que é o que o gateway sabe rotear.
+        for chave in _chaves_candidatas(canonico):
+            if chave in _MODO_DEFAULT_POR_TASK:
+                return chave
+        return canonico
+    return None

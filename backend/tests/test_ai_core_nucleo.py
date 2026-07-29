@@ -215,34 +215,30 @@ class TestModosSanitizacaoGateway:
         assert CPF_FAKE not in str(logados.get("output_text", ""))
         assert CPF_FAKE not in str(logados.get("input_messages", ""))
 
-    async def test_criminal_default_externo_pseudonimizado(self, s, monkeypatch):
-        """Auditoria de IA (2026-07-17, A-1): `criminal` passou de LOCAL_COMPLETO para
-        EXTERNO_PSEUDONIMIZADO por DEFAULT — o NER local do pseudonimizador (vítima/
-        testemunha → [PESSOA_n]) já cobre o risco de nome em texto livre. O provider
-        externo AGORA é chamado, mas SÓ com PII pseudonimizada (CPF → [CPF_1]); o dado
-        real nunca chega ao provider e a resposta é REIDRATADA localmente. Reforçável
-        de volta a LOCAL_COMPLETO por override (ver teste ao lado)."""
+    async def test_criminal_default_local_completo_bloqueia_sem_ollama(self, s, monkeypatch):
+        """Auditoria máxima (2026-07-26, AI-019): `criminal` volta a LOCAL_COMPLETO
+        por DEFAULT — mesmo pseudonimizado, o conteúdo penal permite reidentificação
+        por combinação de fatos raros. Sem Ollama, a tarefa BLOQUEIA (fail-closed) e
+        o provider externo NUNCA é chamado; mensagem de erro não vaza PII."""
         from app.services import ai_gateway
 
-        capturado: dict = {}
+        chamadas: list = []
 
-        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
-            capturado["provider"] = provider
-            capturado["enviado"] = " ".join(m.get("content", "") for m in messages)
-            return ("Resposta sobre [CPF_1].",
-                    {"model": model or "x", "input_tokens": 1, "output_tokens": 1})
+        async def _nao_chamar(*a, **kw):
+            chamadas.append(a)
+            raise AssertionError("provider externo chamado em tarefa LOCAL_COMPLETO")
 
-        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _nao_chamar)
 
-        resp = await ai_gateway.chat(
-            [{"role": "user", "content": f"Defesa criminal do CPF {CPF_FAKE}."}],
-            task_type="criminal",
-        )
-        assert capturado["provider"] in ("anthropic", "groq")  # externo É usado agora
-        assert CPF_FAKE not in capturado["enviado"]            # CPF real nunca sai da VPS
-        assert "[CPF_1]" in capturado["enviado"]               # pseudonimizado antes do externo
-        assert CPF_FAKE in resp.texto                          # resposta reidratada localmente
-        assert "[CPF_1]" not in resp.texto
+        with pytest.raises(RuntimeError) as exc:
+            await ai_gateway.chat(
+                [{"role": "user", "content": f"Defesa criminal do CPF {CPF_FAKE}."}],
+                task_type="criminal",
+            )
+        msg = str(exc.value)
+        assert "local" in msg.lower()
+        assert CPF_FAKE not in msg      # mensagem segura
+        assert chamadas == []           # externo nunca tocado
 
     async def test_local_completo_via_override_bloqueia_sem_ollama(self, s, monkeypatch):
         """O MECANISMO LOCAL_COMPLETO permanece: se o escritório REFORÇAR criminal
@@ -366,30 +362,27 @@ class TestModosSanitizacaoGateway:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestExecutarTarefaIAModos:
-    async def test_criminal_default_externo_pseudonimizado(self, s, monkeypatch):
-        """A-1 (2026-07-17): `criminal` em executar_tarefa_ia agora é
-        EXTERNO_PSEUDONIMIZADO por DEFAULT — o externo É chamado, mas só com PII
-        pseudonimizada (CPF → [CPF_1]) e a resposta é reidratada. Espelha o chat()."""
+    async def test_criminal_default_local_completo_bloqueia_sem_ollama(self, s, monkeypatch):
+        """AI-019 (2026-07-26): `criminal` em executar_tarefa_ia é LOCAL_COMPLETO
+        por DEFAULT — sem Ollama, bloqueia fail-closed e o externo NUNCA é chamado.
+        Espelha o chat()."""
         from app.services import ai_gateway
         from app.services.system_prompts import TarefaIA
 
-        capturado: dict = {}
+        chamadas: list = []
 
-        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
-            capturado["provider"] = provider
-            capturado["enviado"] = " ".join(m.get("content", "") for m in messages)
-            return ("Rascunho sobre [CPF_1].",
-                    {"model": model or "x", "input_tokens": 1, "output_tokens": 1})
+        async def _nao_chamar(*a, **kw):
+            chamadas.append(a)
+            raise AssertionError("provider externo chamado em tarefa LOCAL_COMPLETO")
 
-        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _nao_chamar)
 
-        out = await ai_gateway.executar_tarefa_ia(
-            TarefaIA.CRIMINAL, f"Defesa do CPF {CPF_FAKE}.",
-        )
-        assert capturado["provider"] in ("anthropic", "groq")  # externo É usado
-        assert CPF_FAKE not in capturado["enviado"]            # CPF real nunca sai
-        assert "[CPF_1]" in capturado["enviado"]               # pseudonimizado
-        assert CPF_FAKE in out["conteudo"]                     # resposta reidratada
+        with pytest.raises(RuntimeError) as exc:
+            await ai_gateway.executar_tarefa_ia(
+                TarefaIA.CRIMINAL, f"Defesa do CPF {CPF_FAKE}.",
+            )
+        assert CPF_FAKE not in str(exc.value)   # mensagem segura
+        assert chamadas == []                   # externo nunca tocado
 
     async def test_criminal_local_completo_via_override_usa_ollama(self, s, monkeypatch):
         """Mecanismo LOCAL_COMPLETO preservado em executar_tarefa_ia: reforçado por

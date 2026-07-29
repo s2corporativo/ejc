@@ -527,12 +527,17 @@ async def verificar_jurisprudencia(
 
         elif c["tipo"] == "artigo":
             rotulo = f"art. {c['numero']} {c['diploma']}".strip()
-            fonte = await _existe_artigo(db, c["numero"])
+            # AI-056: o lookup é RESTRITO ao diploma citado — nunca confirma
+            # "art. N" contra uma lei diferente da referida no texto.
+            fonte = await _existe_artigo(db, c["numero"], c.get("diploma"))
             if fonte:
                 status = STATUS_VERIFICADA
                 aviso = _AVISO_VERIFICADA.format(fonte="base oficial interna/RAG")
             else:
-                superado = await _artigo_superado(db, c["numero"])
+                # Mesmo recorte por diploma do lookup vigente (AI-056): avisar
+                # "superado" com base numa lei diferente da citada seria uma
+                # informação errada entregue com ar de certeza.
+                superado = await _artigo_superado(db, c["numero"], c.get("diploma"))
                 if superado:
                     status = STATUS_DESATUALIZADA
                     fonte = superado.get("titulo")
