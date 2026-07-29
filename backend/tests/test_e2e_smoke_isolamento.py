@@ -245,3 +245,98 @@ class TestRedacaoDoRelatorio:
             atual["n"] = {}
             atual = atual["n"]
         assert smoke._redigir(profundo) is not None
+
+
+# ── 5. H-4: guardas que faltavam no motor da matriz e no cleanup ─────────────
+
+class _RespostaConfig:
+    """Cliente falso com resposta programável por (método, prefixo de url)."""
+
+    def __init__(self, regras=None, default=(200, None)):
+        self.regras = regras or {}
+        self.default = default
+        self.chamadas: list[tuple[str, str]] = []
+
+    def request(self, method, url, **kw):
+        self.chamadas.append((method, url))
+        for (m, prefixo), (status, payload) in self.regras.items():
+            if m == method and str(url).startswith(prefixo):
+                return _RespostaFake(status, payload)
+        return _RespostaFake(*self.default)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class TestCleanupProvaRemocao:
+    def test_relê_o_recurso_apos_delete(self, smoke):
+        """404 no DELETE era aceito sem prova. Agora o cleanup RELÊ o recurso."""
+        state = smoke.SuiteState(base_url="http://staging.local")
+        state.client_id = "C1"
+        state.criados_nesta_execucao = {"C1"}
+        cliente = _RespostaConfig(default=(404, None))
+        smoke._cleanup(cliente, state)
+
+        gets = [u for m, u in cliente.chamadas if m == "GET"]
+        assert any("C1" in u for u in gets), "cleanup precisa reler o recurso"
+
+    def test_recurso_que_sobrevive_ao_delete_vira_falha(self, smoke):
+        """DELETE respondeu ok, mas o GET seguinte ainda encontra o registro:
+        o ambiente ficou sujo e o relatório não pode dizer que limpou."""
+        state = smoke.SuiteState(base_url="http://staging.local")
+        state.client_id = "C1"
+        state.criados_nesta_execucao = {"C1"}
+        cliente = _RespostaConfig(default=(200, {"id": "C1"}))
+        smoke._cleanup(cliente, state)
+
+        falhas = [r for r in state.results if not r.ok]
+        assert any("cleanup_nao_removeu" in r.name for r in falhas)
+
+
+class TestMatrizNaoExecutaMetodoDestrutivo:
+    def test_delete_na_matriz_e_recusado(self, smoke):
+        """A guarda de isolamento vive no _cleanup; o motor da matriz executava
+        qualquer método. Um DELETE de path fixo apagaria registro alheio."""
+        state = smoke.SuiteState(base_url="http://staging.local")
+        matriz = {"modules": [{"module_key": "casos", "api_checks": [
+            {"method": "DELETE", "path": "/api/cases/qualquer", "expected": [200]},
+        ]}]}
+        cliente = _RespostaConfig()
+        smoke._matrix_smoke(cliente, state, matriz)
+
+        assert cliente.chamadas == [], "nenhuma requisição pode ter sido emitida"
+        assert any("metodo_destrutivo_na_matriz" in r.name
+                   for r in state.results if not r.ok)
+
+    def test_post_da_matriz_entra_no_rastreio(self, smoke):
+        """POST fora dos fluxos dedicados também cria recurso — sem registrar o
+        id ele nunca entra no cleanup e vira resíduo permanente."""
+        state = smoke.SuiteState(base_url="http://staging.local")
+        matriz = {"modules": [{"module_key": "etiquetas", "api_checks": [
+            {"method": "POST", "path": "/api/etiquetas/", "expected": [200, 201]},
+        ]}]}
+        cliente = _RespostaConfig(default=(201, {"id": "E9"}))
+        smoke._matrix_smoke(cliente, state, matriz)
+
+        assert "E9" in state.criados_nesta_execucao
+        assert ("etiquetas", "/api/etiquetas/", "E9") in state.extras_criados
+
+    def test_residuo_da_matriz_e_declarado_no_relatorio(self, smoke):
+        state = smoke.SuiteState(base_url="http://staging.local")
+        state.extras_criados = [("etiquetas", "/api/etiquetas/", "E9")]
+        smoke._cleanup(_RespostaConfig(), state)
+
+        assert any(item.get("path") == "/api/etiquetas/" and "E9" in item["motivo"]
+                   for item in state.nao_coberto)
+
+    def test_post_sem_id_e_denunciado(self, smoke):
+        state = smoke.SuiteState(base_url="http://staging.local")
+        matriz = {"modules": [{"module_key": "etiquetas", "api_checks": [
+            {"method": "POST", "path": "/api/etiquetas/", "expected": [200, 201]},
+        ]}]}
+        smoke._matrix_smoke(_RespostaConfig(default=(201, {"ok": True})), state, matriz)
+
+        assert any("id_ausente" in r.name for r in state.results if not r.ok)

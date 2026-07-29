@@ -151,6 +151,9 @@ class SuiteState:
     # registro encontrado pelo marcador (reexecução após 409) é de OUTRA
     # execução e apagá-lo destruiria dado alheio no staging compartilhado.
     criados_nesta_execucao: set[str] = field(default_factory=set)
+    # Recursos criados por POSTs da matriz (fora dos três fluxos dedicados).
+    # Sem isto eles não apareciam em lugar nenhum e viravam resíduo silencioso.
+    extras_criados: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 def _env(name: str) -> str:
@@ -551,7 +554,21 @@ def _matrix_smoke(client: httpx.Client, state: SuiteState, matrix: dict[str, Any
                     "motivo": "coberto por fluxo dedicado com assert de efeito",
                 })
                 continue
-            _request(
+            # A guarda de isolamento vive só no _cleanup. Este motor executa
+            # QUALQUER método vindo da matriz, então um DELETE/PATCH/PUT com
+            # path fixo apagaria ou alteraria registro PREEXISTENTE sem passar
+            # por `criados_nesta_execucao`. Recusa explicitamente, em vez de
+            # confiar em que ninguém vá adicioná-los.
+            if check["method"] in ("DELETE", "PATCH", "PUT"):
+                _afirmar(
+                    state, f"{module['module_key']}.metodo_destrutivo_na_matriz",
+                    False,
+                    f"{check['method']} {check['path']}: a matriz não pode conter "
+                    "método que altera/apaga registro — o smoke não tem como saber "
+                    "se o alvo foi criado por esta execução",
+                )
+                continue
+            resp = _request(
                 client,
                 state,
                 name=f"{module['module_key']}.smoke",
@@ -560,6 +577,22 @@ def _matrix_smoke(client: httpx.Client, state: SuiteState, matrix: dict[str, Any
                 expected=check["expected"],
                 json_body=check.get("body"),
             )
+            # POST fora dos fluxos dedicados TAMBÉM cria recurso: sem registrar
+            # o id, ele nunca entra no cleanup e vira resíduo permanente.
+            if check["method"] == "POST" and resp is not None and resp.status_code < 300:
+                try:
+                    ident = (resp.json() or {}).get("id")
+                except Exception:
+                    ident = None
+                if ident:
+                    state.criados_nesta_execucao.add(str(ident))
+                    state.extras_criados.append((module["module_key"], check["path"], str(ident)))
+                else:
+                    _afirmar(
+                        state, f"{module['module_key']}.id_ausente", False,
+                        f"POST {check['path']} respondeu {resp.status_code} sem `id` — "
+                        "recurso criado e NÃO rastreável para o cleanup",
+                    )
 
 
 def _negativas_de_autorizacao(client: httpx.Client, state: SuiteState) -> None:
@@ -602,6 +635,31 @@ def _cleanup(client: httpx.Client, state: SuiteState) -> None:
         _request(client, state, name=f"{rotulo}.cleanup", method="DELETE",
                  path=molde.format(ident), expected=[200, 204, 404],
                  degradado_ok=True)
+        # RELÊ o recurso: 404 no DELETE era aceito como sucesso, mas ele tanto
+        # pode significar "já removido" quanto "rota de DELETE inexistente ou
+        # renomeada" — e nesse segundo caso o registro FICA no ambiente enquanto
+        # o relatório afirma que foi limpo. A releitura desfaz a ambiguidade.
+        verificacao = _request(
+            client, state, name=f"{rotulo}.cleanup_confirmado", method="GET",
+            path=molde.format(ident).split("?")[0],
+            expected=[404, 410], degradado_ok=True,
+        )
+        if verificacao is not None and verificacao.status_code < 300:
+            _afirmar(
+                state, f"{rotulo}.cleanup_nao_removeu", False,
+                f"o registro {ident} ainda responde {verificacao.status_code} após o "
+                "DELETE — resíduo fictício permanece no ambiente",
+            )
+
+    # Recursos criados por POSTs da matriz: sem rota de remoção conhecida, o
+    # honesto é DECLARAR o resíduo no relatório em vez de omiti-lo.
+    for module_key, path, ident in state.extras_criados:
+        state.nao_coberto.append({
+            "module_key": module_key, "method": "DELETE", "path": path,
+            "motivo": f"recurso {ident} criado por POST da matriz — sem rota de "
+                      "cleanup dedicada; remover manualmente do staging",
+        })
+        print(f"[resíduo] {module_key}: {ident} criado e NÃO removido")
 
 
 def _write_report(state: SuiteState, matrix: dict[str, Any]) -> None:
