@@ -35,7 +35,10 @@ jobs:
         id: homologacao
         continue-on-error: true
         shell: bash
-        run: bash qa/homologacao/run_full_v3.sh
+        run: |
+          sed -i 's/run_ia_peca_protocolavel_v2.py/run_ia_peca_protocolavel_v3.py/' qa/homologacao/run_full_v3.sh
+          sed -i 's/homologacao-completa-live-v2.mjs/homologacao-completa-live-v3.mjs/' qa/homologacao/run_full_v3.sh
+          bash qa/homologacao/run_full_v3.sh
 
       - name: Anexar relatórios, peça e evidências visuais
         if: always()
