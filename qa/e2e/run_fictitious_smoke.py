@@ -31,9 +31,11 @@ POSTs da matriz eram PULADOS em silêncio, códigos de módulo ausente
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +48,61 @@ MATRIX_PATH = ROOT / "qa" / "e2e" / "fictitious_matrix.json"
 REPORT_DIR = ROOT / "qa" / "e2e" / "reports"
 REPORT_PATH = REPORT_DIR / "e2e_fictitious_report.json"
 MARKER = "E2E-FICTICIO"
+
+# ── Identidade EXCLUSIVA por execução ────────────────────────────────────────
+# Sem isto, os payloads da matriz são idênticos em toda execução (mesmo CPF,
+# mesmo número de processo): a segunda execução leva 409, cai no fallback "achar
+# pelo marcador" e passa a operar sobre o registro de OUTRA execução. O cleanup
+# recusa apagá-lo (correto), mas o caso e o documento criados ficam pendurados
+# num cliente alheio. Com RUN_ID cada execução cria dados só seus, o 409 deixa de
+# acontecer e o isolamento não depende mais de heurística.
+RUN_ID = (os.getenv("EJC_E2E_RUN_ID") or uuid.uuid4().hex[:8]).strip()
+MARKER_RUN = f"{MARKER}-{RUN_ID}"
+MOTIVO_CLEANUP = f"Limpeza automatica do E2E {MARKER_RUN}"
+
+# Valores literais da matriz que precisam variar por execução.
+CPF_MATRIZ = "52998224725"
+PROCESSO_MATRIZ = "5000000-83.2026.8.13.0027"
+
+
+def _processo_da_execucao(run_id: str) -> str:
+    """Número CNJ fictício por execução. O backend não valida dígito
+    verificador de CNJ (só compara/armazena), então basta variar o sequencial."""
+    seq = int(hashlib.sha256(run_id.encode()).hexdigest()[:6], 16) % 10_000_000
+    return f"{seq:07d}-83.2026.8.13.0027"
+
+
+def _cpf_da_execucao(run_id: str) -> str:
+    """CPF sintético determinístico por execução, com dígitos verificadores
+    válidos (o cadastro de cliente valida — routers/clients.py)."""
+    base = [int(c, 16) % 10 for c in hashlib.sha256(run_id.encode()).hexdigest()[:9]]
+    if len(set(base)) == 1:  # CPFs de dígito repetido são rejeitados
+        base[0] = (base[0] + 1) % 10
+    for _ in range(2):
+        soma = sum(d * p for d, p in zip(base, range(len(base) + 1, 1, -1)))
+        resto = (soma * 10) % 11
+        base.append(0 if resto == 10 else resto)
+    return "".join(str(d) for d in base)
+
+
+def _personalizar(valor: Any) -> Any:
+    """Reescreve os dados fictícios da matriz com a identidade desta execução.
+    Percorre a estrutura inteira: prefixo do marcador nos textos, CPF e número
+    de processo próprios."""
+    if isinstance(valor, dict):
+        return {k: _personalizar(v) for k, v in valor.items()}
+    if isinstance(valor, list):
+        return [_personalizar(v) for v in valor]
+    if isinstance(valor, str):
+        if valor == CPF_MATRIZ:
+            return _cpf_da_execucao(RUN_ID)
+        if valor == PROCESSO_MATRIZ:
+            return _processo_da_execucao(RUN_ID)
+        # Só troca o marcador "puro" — não duplica o sufixo em reprocessamento.
+        if MARKER in valor and MARKER_RUN not in valor:
+            return valor.replace(MARKER, MARKER_RUN)
+    return valor
+
 
 # Códigos que indicam MÓDULO AUSENTE/INDISPONÍVEL. Aceitá-los como sucesso era
 # o defeito central do AI-005 — um router removido passava despercebido.
@@ -95,7 +152,40 @@ def _env(name: str) -> str:
 
 
 def _load_matrix() -> dict[str, Any]:
-    return json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
+    matriz = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
+    # Carimba a identidade desta execução nos dados fictícios — todos os fluxos
+    # leem daqui, então nenhum deles precisa lembrar de personalizar.
+    if "fictional_data" in matriz:
+        matriz["fictional_data"] = _personalizar(matriz["fictional_data"])
+    return matriz
+
+
+# Chaves cujo VALOR nunca pode ir para o relatório em claro. Além de segredos,
+# inclui PII: o relatório grava trechos de `GET /api/clients/`, e ClientResponse
+# devolve o CPF DECIFRADO — o sistema cifra CPF em repouso justamente para isso,
+# e o relatório o reescrevia em texto puro no disco do runner (e em artefato de
+# CI, se publicado).
+_CHAVES_REDIGIDAS = frozenset({
+    "access_token", "refresh_token", "token", "senha", "password", "secret",
+    "api_key", "authorization", "cpf", "cpf_plain", "cnpj", "cnpj_plain",
+    "email", "telefone", "whatsapp", "celular",
+})
+
+
+def _redigir(valor: Any, profundidade: int = 0) -> Any:
+    """Redação RECURSIVA: a versão anterior só olhava o nível superior de um
+    dict, então a lista sob `data` (onde ficam os clientes) passava intacta."""
+    if profundidade > 6:
+        return "..."
+    if isinstance(valor, dict):
+        return {
+            k: ("***" if str(k).lower() in _CHAVES_REDIGIDAS
+                else _redigir(v, profundidade + 1))
+            for k, v in valor.items()
+        }
+    if isinstance(valor, list):
+        return [_redigir(v, profundidade + 1) for v in valor[:20]]
+    return valor
 
 
 def _excerpt(resp: httpx.Response) -> Any:
@@ -103,13 +193,7 @@ def _excerpt(resp: httpx.Response) -> Any:
         data = resp.json()
     except Exception:
         return resp.text[:800]
-    if isinstance(data, dict):
-        redacted = dict(data)
-        for key in ["access_token", "refresh_token", "token", "senha", "password"]:
-            if key in redacted:
-                redacted[key] = "***"
-        return redacted
-    return data
+    return _redigir(data)
 
 
 def _record(state: SuiteState, result: StepResult) -> None:
@@ -247,7 +331,7 @@ def _create_client(client: httpx.Client, state: SuiteState, matrix: dict[str, An
         state,
         name="clientes.buscar_marcador",
         method="GET",
-        path=f"/api/clients/?search={MARKER}",
+        path=f"/api/clients/?search={MARKER_RUN}",
         expected=[200],
     )
     if resp and resp.status_code == 200:
@@ -290,7 +374,7 @@ def _create_case(client: httpx.Client, state: SuiteState, matrix: dict[str, Any]
         state,
         name="casos.buscar_marcador",
         method="GET",
-        path=f"/api/cases/?search={MARKER}",
+        path=f"/api/cases/?search={MARKER_RUN}",
         expected=[200],
     )
     if resp and resp.status_code == 200:
@@ -461,9 +545,12 @@ def _cleanup(client: httpx.Client, state: SuiteState) -> None:
     Registro localizado pelo MARCADOR (reexecução após 409/erro) pertence a
     outra execução e NÃO é apagado: o alvo pode ser um staging compartilhado —
     ou, com EJC_ALLOW_PRODUCTION_E2E, a própria produção."""
+    # DELETE /api/cases/{id} EXIGE `motivo` (min 5 chars, body ou query) e
+    # responde 422 sem ele — routers/cases.py:589. Sem o motivo, o cleanup do
+    # caso falhava em toda execução e o caso fictício ficava no ambiente.
     alvos = [
         ("documentos", state.document_id, "/api/documents/{}"),
-        ("casos", state.case_id, "/api/cases/{}"),
+        ("casos", state.case_id, f"/api/cases/{{}}?motivo={MOTIVO_CLEANUP}"),
         ("clientes", state.client_id, "/api/clients/{}"),
     ]
     for rotulo, ident, molde in alvos:
@@ -492,7 +579,7 @@ def _write_report(state: SuiteState, matrix: dict[str, Any]) -> None:
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "base_url": state.base_url,
-        "marker": MARKER,
+        "marker": MARKER, "marker_run": MARKER_RUN, "run_id": RUN_ID,
         "modo_estrito": STRICT,
         "user": state.user,
         "created_refs": {
@@ -538,20 +625,27 @@ def main() -> None:
     matrix = _load_matrix()
     state = SuiteState(base_url=base_url)
     with httpx.Client(base_url=base_url, follow_redirects=True) as client:
-        _request(client, state, name="health.live", method="GET", path="/api/health", expected=[200])
-        _login(client, state)
-        _negativas_de_autorizacao(client, state)
-        _matrix_smoke(client, state, matrix)
-        _create_client(client, state, matrix)
-        _create_case(client, state, matrix)
-        _upload_document(client, state, matrix)
-        _case_followups(client, state, matrix)
-        _document_followups(client, state)
-        # Cleanup idempotente: a suíte não deixa resíduo fictício no ambiente.
-        if os.getenv("EJC_E2E_CLEANUP", "true").strip().lower() != "false":
-            _cleanup(client, state)
-
-    _write_report(state, matrix)
+        # O cleanup e o relatório vão no `finally`: qualquer exceção no meio do
+        # fluxo (proxy devolvendo HTML, payload inesperado) abortava a execução
+        # ANTES do cleanup e os registros fictícios ficavam no ambiente — sem
+        # sequer deixar no relatório os IDs vazados. Os IDs são registrados
+        # incrementalmente logo após cada criação, então o `finally` sempre
+        # sabe o que remover, inclusive após falha parcial.
+        try:
+            _request(client, state, name="health.live", method="GET", path="/api/health", expected=[200])
+            _login(client, state)
+            _negativas_de_autorizacao(client, state)
+            _matrix_smoke(client, state, matrix)
+            _create_client(client, state, matrix)
+            _create_case(client, state, matrix)
+            _upload_document(client, state, matrix)
+            _case_followups(client, state, matrix)
+            _document_followups(client, state)
+        finally:
+            # Cleanup idempotente: a suíte não deixa resíduo fictício no ambiente.
+            if os.getenv("EJC_E2E_CLEANUP", "true").strip().lower() != "false":
+                _cleanup(client, state)
+            _write_report(state, matrix)
 
 
 if __name__ == "__main__":
