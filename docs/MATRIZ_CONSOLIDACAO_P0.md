@@ -239,7 +239,8 @@ evidência vence opinião) e ficam sujeitas a veto do titular a qualquer momento
 | 2FA fora do #497 | **Aplicado** | `claude/new-session-bhbv06`, commit `e8dc949` — `two_factor_policy.py`, o teste do kill-switch e o bloco do `.env.example` voltaram ao estado da `main` |
 | Data Room com hash em repouso | **Aplicado no #497** | mesmo commit — a migration 124 apaga o `token` em claro depois de popular o `token_hash`; `gerar_link` não persiste mais o segredo; `DataRoom.tsx` do #495 foi junto (sem ele a tela quebrava lendo `lk.token`) |
 | Webhook com as duas metades | **Aplicado no #496** | `claude/new-session-h6j254`, commit `0406358` — cai o fallback `?token=`, com teste de regressão novo (6 casos) |
-| Limpeza do #495 | **Não executada — registrada no PR** | a branch recebeu commits de outra sessão durante a consolidação; editá-la seria a colisão que a seção 5 proíbe. O que precisa sair está descrito em comentário no [#495](https://github.com/s2corporativo/ejc/pull/495) |
+| Limpeza do #495 | **Aplicada** | commit `3d79407` — saíram a migration 122, o Data Room e o webhook, preservando o que outras sessões alteraram na branch. Guarda de migrations rodada sobre a combinação real #495 + #497: 6 passed, head único |
+| **#493 mesclado na `main`** | **Feito pelo titular** (`6914ecf`, 2026-07-29) | 67 arquivos, Ondas 1 a 5 das Áreas de Atuação. Entrou **antes** da conferência jurídica das 57 calculadoras — decisão do titular, registrada aqui para rastreabilidade. O selo de homologação e o gate do demonstrativo passam a valer a partir do que o #493 entregou |
 
 Consequência: a **colisão do número 122 continua aberta** até o #495 abrir mão da sua
 migration. O `test_migration_numbering_guard.py` (PR #499) falha se as duas entrarem.
