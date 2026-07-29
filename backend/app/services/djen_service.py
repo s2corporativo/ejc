@@ -54,7 +54,6 @@ class DjenConsultaResultado:
         return len(self.items)
 
     def to_dict(self) -> dict:
-        # Não inclui conteúdo das comunicações, OAB, e-mail ou exceção bruta.
         return {
             "fonte_ok": self.fonte_ok,
             "recebidas": self.recebidas,
@@ -138,12 +137,7 @@ def _classificar_erro_fonte(exc: Exception) -> str:
 
 
 def resumir_execucao(resultados: list[DjenCapturaResultado]) -> dict:
-    """Agrega uma execução do job em formato próprio para heartbeat/painel.
-
-    Sem migration: o resumo cabe no `SchedulerHeartbeat.detail` já existente.
-    Qualquer falha parcial deixa o heartbeat vermelho; zero legítimo continua
-    verde, mas explicitamente rotulado como `sucesso_sem_resultados`.
-    """
+    """Agrega uma execução em formato próprio para heartbeat/painel."""
     if not resultados:
         return {
             "heartbeat_status": "erro",
@@ -215,45 +209,43 @@ def codificar_resumo_heartbeat(resumo: dict) -> str:
     reraise=True,
 )
 async def _djen_get(params: dict) -> dict | list:
-    async with httpx.AsyncClient(timeout=25) as c:
-        r = await c.get(BASE, params=params)
-        r.raise_for_status()
-        return r.json()
+    async with httpx.AsyncClient(timeout=25) as client:
+        response = await client.get(BASE, params=params)
+        response.raise_for_status()
+        return response.json()
 
 
-# ── Vinculação automática publicação → caso (R10/Seção 12) ────────────────────
-# Padrão CNJ (Res. CNJ 65/2008): NNNNNNN-DD.AAAA.J.TR.OOOO — aceita com ou
-# sem pontuação. A comparação com Case.numero_processo é feita normalizando
-# os dois lados (apenas dígitos).
 CNJ_REGEX = re.compile(r"\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}")
 
 
 def extrair_numero_cnj(texto: str | None) -> str | None:
-    """Extrai o primeiro nº de processo no padrão CNJ do texto (ou None)."""
     if not texto:
         return None
-    m = CNJ_REGEX.search(texto)
-    return m.group(0) if m else None
+    match = CNJ_REGEX.search(texto)
+    return match.group(0) if match else None
 
 
 def normalizar_processo(numero: str | None) -> str:
-    """Remove toda pontuação/máscara — só dígitos, para comparação."""
     return re.sub(r"\D", "", numero or "")
 
 
 def _parse_data_disp(raw: str | None) -> date:
     """Data de disponibilização tolerante a ISO ou DD/MM/YYYY."""
-    s = (raw or "").strip()
-    if not s:
+    valor = (raw or "").strip()
+    if not valor:
         return date.today()
     try:
-        return date.fromisoformat(s[:10])
+        return date.fromisoformat(valor[:10])
     except ValueError:
         pass
-    m = re.match(r"(\d{2})/(\d{2})/(\d{4})", s)
-    if m:
+    match = re.match(r"(\d{2})/(\d{2})/(\d{4})", valor)
+    if match:
         try:
-            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            return date(
+                int(match.group(3)),
+                int(match.group(2)),
+                int(match.group(1)),
+            )
         except ValueError:
             pass
     logger.warning("DJEN: data_disponibilizacao em formato inesperado; usando hoje")
@@ -263,7 +255,6 @@ def _parse_data_disp(raw: str | None) -> date:
 async def buscar_caso_ativo_por_processo(
     db: AsyncSession, numero: str | None
 ) -> Case | None:
-    """Retorna caso operacional cujo número normalizado coincide."""
     alvo = normalizar_processo(numero)
     if not alvo:
         return None
@@ -277,7 +268,7 @@ async def buscar_caso_ativo_por_processo(
         )
     ).scalars().all()
     return next(
-        (c for c in casos if normalizar_processo(c.numero_processo) == alvo),
+        (caso for caso in casos if normalizar_processo(caso.numero_processo) == alvo),
         None,
     )
 
@@ -287,20 +278,20 @@ async def consultar_oab(
 ) -> DjenConsultaResultado:
     """Consulta a fonte distinguindo zero legítimo de indisponibilidade."""
     fim = date.today()
-    ini = fim - timedelta(days=dias)
+    inicio = fim - timedelta(days=dias)
     params = {
         "numeroOab": re.sub(r"\D", "", numero),
         "ufOab": uf.upper(),
-        "dataDisponibilizacaoInicio": ini.isoformat(),
+        "dataDisponibilizacaoInicio": inicio.isoformat(),
         "dataDisponibilizacaoFim": fim.isoformat(),
         "itensPorPagina": 100,
     }
     try:
-        data = await _djen_get(params)
-        if isinstance(data, dict):
-            items = data.get("items", [])
-        elif isinstance(data, list):
-            items = data
+        payload = await _djen_get(params)
+        if isinstance(payload, dict):
+            items = payload.get("items", [])
+        elif isinstance(payload, list):
+            items = payload
         else:
             raise TypeError("payload DJEN sem coleção")
         if not isinstance(items, list) or any(
@@ -316,95 +307,89 @@ async def consultar_oab(
         return DjenConsultaResultado(fonte_ok=False, erro=codigo)
 
 
-async def capturar_para_advogado(
-    db: AsyncSession, adv: User
+async def _capturar_configurado(
+    db: AsyncSession,
+    adv: User,
 ) -> DjenCapturaResultado:
-    """Insere comunicações novas e devolve métricas sanitizadas da captura."""
-    if not adv.djen_oab_numero or not adv.djen_oab_uf:
-        return registrar_resultado_execucao(
-            DjenCapturaResultado.sem_configuracao()
-        )
-
     consulta = await consultar_oab(adv.djen_oab_numero, adv.djen_oab_uf)
     if not consulta.fonte_ok:
-        return registrar_resultado_execucao(
-            DjenCapturaResultado(
-                configurada=True,
-                fonte_ok=False,
-                recebidas=0,
-                novas=0,
-                duplicadas=0,
-                ignoradas=0,
-                erro=consulta.erro,
-            )
+        return DjenCapturaResultado(
+            configurada=True,
+            fonte_ok=False,
+            recebidas=0,
+            novas=0,
+            duplicadas=0,
+            ignoradas=0,
+            erro=consulta.erro,
         )
 
     novas = 0
     duplicadas = 0
     ignoradas = 0
-    for it in consulta.items:
-        ext_id = str(it.get("id") or it.get("hash") or "")
-        if not ext_id:
+    for item in consulta.items:
+        external_id = str(item.get("id") or item.get("hash") or "")
+        if not external_id:
             ignoradas += 1
             continue
-        existe = (
+
+        existente = (
             await db.execute(
                 select(DjenComunicacao).where(
-                    DjenComunicacao.comunicacao_id_externo == ext_id
+                    DjenComunicacao.comunicacao_id_externo == external_id
                 )
             )
         ).scalar_one_or_none()
-        if existe:
+        if existente:
             duplicadas += 1
             continue
 
-        texto = (it.get("texto") or "")[:2000]
-        num_proc = normalizar_processo(
-            it.get("numero_processo")
-            or it.get("numeroprocessocommascara")
+        texto = (item.get("texto") or "")[:2000]
+        numero_processo = normalizar_processo(
+            item.get("numero_processo")
+            or item.get("numeroprocessocommascara")
             or ""
         )
-        if not num_proc:
-            num_proc = normalizar_processo(extrair_numero_cnj(texto))
+        if not numero_processo:
+            numero_processo = normalizar_processo(extrair_numero_cnj(texto))
 
-        case = await buscar_caso_ativo_por_processo(db, num_proc)
-        if case:
+        caso = await buscar_caso_ativo_por_processo(db, numero_processo)
+        if caso:
             marcador = (
                 "\n[vinculação automática ao caso pelo nº do processo "
-                f"{num_proc} — conferir]"
+                f"{numero_processo} — conferir]"
             )
             texto = texto[: 2000 - len(marcador)] + marcador
 
-        com = DjenComunicacao(
+        comunicacao = DjenComunicacao(
             id=str(uuid4()),
-            comunicacao_id_externo=ext_id,
+            comunicacao_id_externo=external_id,
             advogado_id=adv.id,
-            numero_processo=it.get("numero_processo") or num_proc,
-            tribunal=it.get("siglaTribunal") or it.get("sigla_tribunal"),
+            numero_processo=item.get("numero_processo") or numero_processo,
+            tribunal=item.get("siglaTribunal") or item.get("sigla_tribunal"),
             tipo_comunicacao=(
-                it.get("tipoComunicacao")
-                or it.get("tipo_comunicacao")
+                item.get("tipoComunicacao")
+                or item.get("tipo_comunicacao")
                 or ""
             )[:60],
             data_disponibilizacao=_parse_data_disp(
-                it.get("data_disponibilizacao")
-                or it.get("dataDisponibilizacao")
+                item.get("data_disponibilizacao")
+                or item.get("dataDisponibilizacao")
             ),
             texto_resumo=texto,
-            case_id=case.id if case else None,
+            case_id=caso.id if caso else None,
         )
-        db.add(com)
+        db.add(comunicacao)
 
-        if case:
+        if caso:
             db.add(
                 CaseMovimento(
                     id=str(uuid4()),
-                    case_id=case.id,
+                    case_id=caso.id,
                     tipo="intimacao",
                     descricao=(
-                        f"📨 Intimação DJEN ({com.tribunal}): "
-                        f"{com.tipo_comunicacao} — tratar na tela Intimações "
-                        "[vinculação automática pelo nº do processo]"
+                        f"📨 Intimação DJEN ({comunicacao.tribunal}): "
+                        f"{comunicacao.tipo_comunicacao} — tratar na tela "
+                        "Intimações [vinculação automática pelo nº do processo]"
                     ),
                 )
             )
@@ -415,17 +400,18 @@ async def capturar_para_advogado(
         )
 
         destinatario_id = (
-            case.advogado_responsavel_id
-            if case and case.advogado_responsavel_id
+            caso.advogado_responsavel_id
+            if caso and caso.advogado_responsavel_id
             else adv.id
         )
-        titulo_n = "📨 Nova intimação no DJEN"
-        msg_n = (
-            f"{com.tribunal or 'Tribunal'} · proc. "
-            f"{com.numero_processo or '—'} · {com.tipo_comunicacao}"
+        titulo = "📨 Nova intimação no DJEN"
+        mensagem = (
+            f"{comunicacao.tribunal or 'Tribunal'} · proc. "
+            f"{comunicacao.numero_processo or '—'} · "
+            f"{comunicacao.tipo_comunicacao}"
             + (
                 " · vinculada automaticamente ao caso (conferir)"
-                if case
+                if caso
                 else ""
             )
         )
@@ -433,37 +419,64 @@ async def capturar_para_advogado(
             await criar_notificacao_interna(
                 db,
                 destinatario_id,
-                titulo_n,
-                msg_n,
+                titulo,
+                mensagem,
                 tipo="intimacao",
                 link="/intimacoes",
             )
             if destinatario_id == adv.id:
-                email_dest = adv.email
+                email_destino = adv.email
             else:
-                email_dest = (
+                email_destino = (
                     await db.execute(
                         select(User.email).where(User.id == destinatario_id)
                     )
                 ).scalar_one_or_none()
-            if email_dest:
+            if email_destino:
                 await enviar_email(
-                    email_dest,
-                    f"[EJC] {titulo_n}",
-                    f"<p>{msg_n}</p><p>Trate a intimação na tela "
+                    email_destino,
+                    f"[EJC] {titulo}",
+                    f"<p>{mensagem}</p><p>Trate a intimação na tela "
                     "<b>Intimações</b> do EJC.</p>",
                 )
         except Exception:
             logger.warning("DJEN: notificação de item falhou (não fatal)")
         novas += 1
 
-    return registrar_resultado_execucao(
-        DjenCapturaResultado(
-            configurada=True,
-            fonte_ok=True,
-            recebidas=consulta.recebidas,
-            novas=novas,
-            duplicadas=duplicadas,
-            ignoradas=ignoradas,
-        )
+    return DjenCapturaResultado(
+        configurada=True,
+        fonte_ok=True,
+        recebidas=consulta.recebidas,
+        novas=novas,
+        duplicadas=duplicadas,
+        ignoradas=ignoradas,
     )
+
+
+async def capturar_para_advogado(
+    db: AsyncSession, adv: User
+) -> DjenCapturaResultado:
+    """Captura uma inscrição sem permitir que erro por usuário fique invisível."""
+    if not adv.djen_oab_numero or not adv.djen_oab_uf:
+        return registrar_resultado_execucao(
+            DjenCapturaResultado.sem_configuracao()
+        )
+
+    try:
+        resultado = await _capturar_configurado(db, adv)
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        logger.error("DJEN: captura interna falhou; codigo=erro_interno")
+        resultado = DjenCapturaResultado(
+            configurada=True,
+            fonte_ok=False,
+            recebidas=0,
+            novas=0,
+            duplicadas=0,
+            ignoradas=0,
+            erro="erro_interno",
+        )
+    return registrar_resultado_execucao(resultado)
