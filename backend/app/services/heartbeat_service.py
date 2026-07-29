@@ -63,25 +63,60 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
 _STATUS_VALIDOS = {"ok", "erro"}
 
 
+async def _quantidade_oabs_elegiveis(db) -> int | None:
+    """Espelha exatamente o contrato operacional da captura.
+
+    A consulta roda em savepoint. Se o schema mínimo não possuir ``users``, o
+    savepoint é revertido e o UPSERT do heartbeat continua utilizável na mesma
+    sessão, inclusive em PostgreSQL.
+    """
+    try:
+        async with db.begin_nested():
+            resultado = await db.execute(
+                text(
+                    """
+                    SELECT count(*) FROM users
+                    WHERE deleted_at IS NULL
+                      AND is_active = TRUE
+                      AND length(trim(coalesce(djen_oab_numero, ''))) > 0
+                      AND length(trim(coalesce(djen_oab_uf, ''))) > 0
+                    """
+                )
+            )
+            return int(resultado.scalar() or 0)
+    except Exception:
+        return None
+
+
 async def _normalizar_resultado_djen(
+    db,
     status_nominal: str,
     detail_nominal: str | None,
-) -> tuple[str, str]:
-    """Troca o status nominal pela produtividade real da task agendada.
-
-    As métricas são armazenadas em ``ContextVar`` no próprio task do scheduler,
-    portanto capturas manuais ou concorrentes não entram neste resumo.
-    """
+) -> tuple[str, str | None]:
+    """Troca o status nominal pela produtividade real da task agendada."""
     from app.services import djen_service
 
     resultados = djen_service.consumir_resultados_execucao()
-    resumo = djen_service.resumir_execucao(resultados)
-
-    # O scheduler já confirmou a transação antes de chamar o heartbeat; somente
-    # agora e-mails pendentes podem sair sem anunciar registros revertidos.
-    for resultado in resultados:
-        if resultado.fonte_ok:
-            await djen_service.enviar_emails_pendentes(resultado)
+    if resultados:
+        resumo = djen_service.resumir_execucao(resultados)
+        for resultado in resultados:
+            if resultado.fonte_ok:
+                await djen_service.enviar_emails_pendentes(resultado)
+    else:
+        quantidade = await _quantidade_oabs_elegiveis(db)
+        if quantidade is None:
+            # Contrato genérico/ambiente com apenas scheduler_heartbeat.
+            return status_nominal, detail_nominal
+        resumo = djen_service.resumir_execucao([])
+        if quantidade > 0:
+            resumo.update(
+                {
+                    "resultado": "falha_job",
+                    "oabs_elegiveis": quantidade,
+                    "oabs_falha": quantidade,
+                    "erros": {"sem_metricas_da_execucao": 1},
+                }
+            )
 
     if status_nominal == "erro":
         erros = dict(resumo.get("erros") or {})
@@ -110,7 +145,7 @@ async def registrar_heartbeat(
         st = "erro" if st else "ok"
 
     if job_name == JOB_DJEN:
-        st, detalhe = await _normalizar_resultado_djen(st, detail)
+        st, detalhe = await _normalizar_resultado_djen(db, st, detail)
     else:
         detalhe = detail or None
 
