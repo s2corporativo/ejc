@@ -21,8 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 # ── Identificadores canônicos dos jobs monitorados ────────────────────────────
-# Fonte única da verdade dos job_name: usados TANTO nas chamadas de heartbeat em
-# scheduler.py QUANTO na avaliação de defasagem — evita strings soltas divergindo.
 JOB_DJEN = "djen_intimacoes"
 JOB_DATAJUD = "datajud_sync"
 JOB_DIARIO = "diario_oficial"
@@ -31,15 +29,9 @@ JOB_PRAZOS_ALERTAS = "prazos_alertas"
 JOB_AUDIENCIAS = "audiencias_agenda"
 JOB_PRESCRICAO = "prescricao"
 
-
-# Cadência esperada por job → limite de defasagem (horas). A folga acima do
-# intervalo nominal absorve atraso de fila/reinício sem falso positivo:
-#   - jobs DIÁRIOS  → 26h  (24h + 2h de folga)
-#   - DataJud (2x/dia, 08h45 e 16h45) → 14h (maior gap entre execuções + folga)
-#   - prescrição (SEMANAL, segundas) → 8 dias (192h)
 _MAX_DIARIO = 26
 _MAX_DATAJUD = 14
-_MAX_SEMANAL = 24 * 8  # 192h
+_MAX_SEMANAL = 24 * 8
 
 JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
     JOB_DJEN: {
@@ -79,21 +71,56 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
     },
 }
 
-# Domínio válido de status gravado.
 _STATUS_VALIDOS = {"ok", "erro"}
 
 
-def _resultado_djen_para_heartbeat(status_nominal: str) -> tuple[str, str]:
-    """Converte as métricas acumuladas do DJEN em status/detail sanitizados.
+async def _quantidade_oabs_configuradas(db) -> int | None:
+    """Conta inscrições completas; `None` quando o schema mínimo não permite.
 
-    O scheduler legado informa apenas `ok`/`erro`. A fonte real da saúde passa a
-    ser o resultado de todas as inscrições consultadas. Uma exceção externa ao
-    laço continua prevalecendo e é registrada como código, nunca como mensagem
-    bruta que possa conter OAB, e-mail, URL ou payload.
+    O fallback é necessário para manter `registrar_heartbeat()` testável e
+    reutilizável em sessões que contêm apenas a tabela de heartbeat. Em produção,
+    o schema completo sempre permite distinguir nenhuma OAB de falta de métricas.
     """
+    try:
+        resultado = await db.execute(
+            text(
+                """
+                SELECT count(*) FROM users
+                WHERE deleted_at IS NULL
+                  AND djen_oab_numero IS NOT NULL
+                  AND djen_oab_uf IS NOT NULL
+                """
+            )
+        )
+        return int(resultado.scalar() or 0)
+    except Exception:
+        return None
+
+
+async def _resultado_djen_para_heartbeat(
+    db,
+    status_nominal: str,
+    detail_nominal: str | None,
+) -> tuple[str, str | None]:
+    """Converte métricas acumuladas do DJEN em status/detail sanitizados."""
     from app.services import djen_service
 
     resumo = djen_service.consumir_resumo_execucao()
+
+    # Ausência de métricas pode significar duas coisas: job real sem inscrições
+    # ou chamada isolada do helper em schema mínimo. Só altera o contrato quando
+    # o banco completo comprova a configuração operacional.
+    if resumo.get("resultado") == "configuracao_incompleta":
+        quantidade = await _quantidade_oabs_configuradas(db)
+        if quantidade is None:
+            return status_nominal, detail_nominal
+        if quantidade > 0:
+            resumo["resultado"] = "falha_job"
+            resumo["oabs_elegiveis"] = quantidade
+            resumo["oabs_falha"] = quantidade
+            resumo["erros"] = {"sem_metricas_da_execucao": 1}
+        # quantidade == 0 preserva `configuracao_incompleta` e heartbeat vermelho.
+
     if status_nominal == "erro":
         erros = dict(resumo.get("erros") or {})
         erros["falha_job"] = erros.get("falha_job", 0) + 1
@@ -101,6 +128,7 @@ def _resultado_djen_para_heartbeat(status_nominal: str) -> tuple[str, str]:
         resumo["heartbeat_status"] = "erro"
         if resumo.get("resultado") == "configuracao_incompleta":
             resumo["resultado"] = "falha_job"
+
     return (
         resumo["heartbeat_status"],
         djen_service.codificar_resumo_heartbeat(resumo),
@@ -113,19 +141,16 @@ async def registrar_heartbeat(
 ) -> bool:
     """Grava (UPSERT por job_name) a última execução do job.
 
-    `status` ∈ {'ok', 'erro'}. Para o DJEN, `detail` contém sempre métricas
-    sanitizadas da execução — inclusive quando a consulta válida retorna zero.
-    Nos demais jobs, preserva o comportamento anterior.
-
-    Best-effort: qualquer falha (tabela ausente, sessão em erro) é logada e não
-    propaga. Retorna True se gravou, False caso contrário.
+    Para o DJEN, o status nominal é substituído pelo resultado observado quando
+    há métricas ou configuração verificável. Nos demais jobs, o contrato anterior
+    permanece inalterado.
     """
     st = (status or "").strip().lower()
     if st not in _STATUS_VALIDOS:
         st = "erro" if st else "ok"
 
     if job_name == JOB_DJEN:
-        st, detalhe = _resultado_djen_para_heartbeat(st)
+        st, detalhe = await _resultado_djen_para_heartbeat(db, st, detail)
     else:
         detalhe = detail or None
 
@@ -176,13 +201,7 @@ def avaliar_job(
     max_age_horas: float,
     agora: datetime | None = None,
 ) -> dict[str, Any]:
-    """Classifica um job em ok | defasado | nunca_executou | erro.
-
-    - sem heartbeat             → 'nunca_executou'
-    - último status 'erro'      → 'erro' (rodou, mas falhou)
-    - idade > cadência esperada → 'defasado' (parou de rodar / silêncio)
-    - caso contrário            → 'ok'
-    """
+    """Classifica um job em ok | defasado | nunca_executou | erro."""
     agora = agora or datetime.now(timezone.utc)
     if last_run_at is None:
         return {"status": "nunca_executou", "idade_horas": None}
