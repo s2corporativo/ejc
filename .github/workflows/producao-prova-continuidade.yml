@@ -1,0 +1,232 @@
+name: Produção — prova de continuidade
+
+# Sob demanda. Responde a três perguntas que só a VPS pode responder e que
+# nenhum teste de CI cobre, porque CI roda contra banco vazio e .env sintético:
+#
+#   1. As flags EFETIVAS do processo em produção são as que achamos que são?
+#      (EMBEDDINGS_ENABLED em especial: desligado degrada o RAG em silêncio.)
+#   2. O backup restaura os DADOS REAIS — não só o mecanismo? O gate do
+#      `continuity-ui-gates.yml` prova o ciclo com Postgres efêmero e banco
+#      vazio; isso é prova do código, não do acervo.
+#   3. O rollback do deploy tem os insumos de que precisa?
+#
+# Somente leitura sobre produção. O drill cria e derruba um banco DESCARTÁVEL
+# de nome aleatório no mesmo servidor; jamais escreve no banco de origem.
+on:
+  workflow_dispatch:
+    inputs:
+      rodar_drill_restore:
+        description: "Executar o drill de restauração (dump completo; consome CPU/disco)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: producao-prova-continuidade
+  cancel-in-progress: false
+
+jobs:
+  prova:
+    name: Produção — flags efetivas, restauração e rollback
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 30
+    env:
+      APP_CONTAINER: ejc_backend
+    steps:
+      - uses: actions/checkout@v7
+
+      # ── 1. Flags efetivas ────────────────────────────────────────────────
+      - name: Flags efetivas do processo em produção
+        id: flags
+        shell: bash
+        run: |
+          set +e
+          docker exec -i "$APP_CONTAINER" python - \
+            < scripts/check_flags_producao.py \
+            > flags-producao.json
+          rc=$?
+          set -e
+          if ! python3 -m json.tool flags-producao.json >/dev/null 2>&1; then
+            printf '%s\n' \
+              '{"ok":false,"problemas":["sonda não produziu JSON válido"]}' \
+              > flags-producao.json
+            rc=1
+          fi
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          cat flags-producao.json
+
+      # ── 2. Restauração com DADOS REAIS ───────────────────────────────────
+      # `drill_local_backup_restore.py` é somente-leitura na origem: mede,
+      # dá pg_dump, cria banco destino de nome aleatório, restaura, compara
+      # (alembic_version, nº de tabelas, linhas-chave, extensões e um vetor
+      # pgvector byte a byte) e derruba o destino no finally.
+      - name: Drill de restauração contra o acervo de produção
+        id: drill
+        if: inputs.rodar_drill_restore
+        shell: bash
+        run: |
+          set +e
+          docker exec -i -e DRILL_ALLOW=1 -e DRILL_REPORT=/tmp/drill.json \
+            "$APP_CONTAINER" python - \
+            < scripts/backup/drill_local_backup_restore.py \
+            > drill-restauracao.json 2> drill-restauracao.err
+          rc=$?
+          set -e
+          # Em falha o script emite o relatório em stderr — é ele que interessa.
+          if [ "$rc" -ne 0 ] && [ -s drill-restauracao.err ]; then
+            cp drill-restauracao.err drill-restauracao.json
+          fi
+          if ! python3 -m json.tool drill-restauracao.json >/dev/null 2>&1; then
+            printf '%s\n' \
+              '{"status":"erro","falhas":["drill não produziu JSON válido"]}' \
+              > drill-restauracao.json
+            rc=1
+          fi
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          cat drill-restauracao.json
+
+      # Rede de segurança: se o drill morrer entre o createdb e o dropdb (OOM,
+      # runner cancelado), o banco descartável fica ocupando disco na VPS.
+      - name: Varrer bancos de drill órfãos
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          orfaos="$(docker exec -i "$APP_CONTAINER" python - <<'PY' || true
+          import os, re, subprocess
+          from urllib.parse import unquote, urlparse
+
+          # Nomes gerados pelos dois drills do repo: <origem>_drill_<hex12> e
+          # <origem>_restore_<hex12>. O filtro é por REGEX exata, não por LIKE:
+          # dropar banco por prefixo solto é como se perde produção.
+          PADRAO = re.compile(r"^.+_(drill|restore)_[0-9a-f]{12}$")
+
+          u = urlparse(os.environ["DATABASE_URL_SYNC"])
+          env = {**os.environ, "PGPASSWORD": unquote(u.password or "")}
+          base = ["-h", u.hostname or "localhost", "-p", str(u.port or 5432),
+                  "-U", unquote(u.username or "")]
+          origem = unquote((u.path or "/").lstrip("/"))
+          out = subprocess.run(
+              ["psql", *base, "-d", origem, "-tAc",
+               "SELECT datname FROM pg_database"],
+              env=env, capture_output=True, text=True, timeout=60)
+          for nome in (out.stdout or "").split():
+              if nome == origem or not PADRAO.match(nome):
+                  continue
+              subprocess.run(["dropdb", *base, "--if-exists", nome],
+                             env=env, capture_output=True, timeout=120)
+              print(nome)
+          PY
+          )"
+          if [ -n "$orfaos" ]; then
+            echo "Bancos de drill órfãos removidos: $orfaos"
+          else
+            echo "Nenhum banco de drill órfão."
+          fi
+
+      # ── 2b. Impacto de ligar o modo estrito de citações ──────────────────
+      # Informativo: nunca derruba o job. Serve para a decisão de virar
+      # CITACOES_MODO_ESTRITO com número em mãos (docs/ai/DECISAO_CITACOES_MODO_ESTRITO.md).
+      - name: Medir impacto de CITACOES_MODO_ESTRITO
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          docker exec -i "$APP_CONTAINER" python - \
+            < scripts/medir_impacto_modo_estrito.py \
+            > modo-estrito-impacto.json
+          set -e
+          python3 -m json.tool modo-estrito-impacto.json >/dev/null 2>&1 || \
+            printf '%s\n' '{"erro":"medição não produziu JSON válido"}' \
+              > modo-estrito-impacto.json
+          cat modo-estrito-impacto.json
+
+      # ── 3. Insumos do rollback ───────────────────────────────────────────
+      # `deploy_vps_safe.sh` faz rollback re-taggeando a imagem que estava
+      # rodando ANTES do deploy — insumo capturado em tempo de execução, não
+      # persistido. O que dá para afirmar sem derrubar produção é que os três
+      # containers existem com imagem resolvível e que o compose é válido;
+      # sem isso o rollback cairia no "ERRO CRÍTICO: imagem indisponível".
+      - name: Insumos do rollback (sem executar rollback)
+        id: rollback
+        shell: bash
+        run: |
+          set -uo pipefail
+          problemas=()
+          for c in ejc_backend ejc_worker ejc_frontend; do
+            img="$(docker inspect -f '{{.Image}}' "$c" 2>/dev/null || true)"
+            ref="$(docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null || true)"
+            if [ -z "$img" ] || [ -z "$ref" ]; then
+              problemas+=("$c sem imagem/ref resolvível")
+            elif ! docker image inspect "$img" >/dev/null 2>&1; then
+              problemas+=("$c aponta para imagem inexistente localmente")
+            fi
+          done
+          if ! (cd /opt/ejc && docker compose config >/dev/null 2>&1); then
+            problemas+=("docker compose config inválido em /opt/ejc")
+          fi
+          python3 - "${problemas[@]+"${problemas[@]}"}" > rollback-insumos.json <<'PY'
+          import json, sys
+          problemas = sys.argv[1:]
+          print(json.dumps({"ok": not problemas, "problemas": problemas},
+                           ensure_ascii=False, sort_keys=True))
+          PY
+          cat rollback-insumos.json
+          [ ${#problemas[@]} -eq 0 ]
+
+      - name: Anexar evidências
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: producao-prova-continuidade
+          path: |
+            flags-producao.json
+            drill-restauracao.json
+            modo-estrito-impacto.json
+            rollback-insumos.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Resumo
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Prova de continuidade em produção"
+            echo
+            echo "### Flags efetivas (rc=${{ steps.flags.outputs.exit_code }})"
+            echo '```json'
+            cat flags-producao.json 2>/dev/null || echo '{}'
+            echo '```'
+            echo "### Restauração do acervo real (rc=${{ steps.drill.outputs.exit_code || 'não executado' }})"
+            echo '```json'
+            cat drill-restauracao.json 2>/dev/null || echo 'drill não executado'
+            echo '```'
+            echo "### Impacto de ligar CITACOES_MODO_ESTRITO (informativo)"
+            echo '```json'
+            cat modo-estrito-impacto.json 2>/dev/null || echo 'não medido'
+            echo '```'
+            echo "### Insumos do rollback"
+            echo '```json'
+            cat rollback-insumos.json 2>/dev/null || echo '{}'
+            echo '```'
+            echo
+            echo "> O rollback NÃO é exercitado aqui: provar de verdade exige"
+            echo "> derrubar um deploy em produção. Faça isso em janela de"
+            echo "> manutenção, seguindo RUNBOOK_DEPLOY_FASES_1-3.md."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Falhar se houver problema acionável
+        if: always()
+        shell: bash
+        run: |
+          rc_flags="${{ steps.flags.outputs.exit_code }}"
+          rc_drill="${{ steps.drill.outputs.exit_code }}"
+          falhou=0
+          [ "${rc_flags:-1}" = "0" ] || { echo "::error::flags de produção com problema"; falhou=1; }
+          if [ -n "$rc_drill" ] && [ "$rc_drill" != "0" ]; then
+            echo "::error::drill de restauração falhou"; falhou=1
+          fi
+          exit "$falhou"

@@ -85,3 +85,30 @@ def hash_documento(doc_normalizado: str | None) -> str | None:
     return hmac.new(
         settings.PII_HASH_KEY.encode(), doc_normalizado.encode(), hashlib.sha256
     ).hexdigest()
+
+
+def mascarar_documento(doc: str | None) -> str | None:
+    """Máscara canônica de exibição de CPF/CNPJ. None passa direto.
+
+    CPF  (11 díg.): ***.456.789-**
+    CNPJ (14 díg.): **.345.678/****-**
+    Outros tamanhos: None — comprimento inesperado é dado sujo; devolver
+    "parte" dele seria vazar sem saber quanto.
+
+    Serve às respostas que precisam SINALIZAR que existe um documento sem
+    entregá-lo: busca global e checagem de conflito de interesses, que por
+    dever ético (EOAB arts. 34-35) cruzam a base inteira — inclusive carteiras
+    alheias — e portanto não podem devolver PII em claro.
+
+    Não confundir com `sociedades_service.mascarar_documento`, que expõe a raiz
+    do CNPJ de propósito (dado público de PJ, contexto societário). Aqui a
+    política é a mais restritiva.
+    """
+    d = normalizar_documento(doc)
+    if not d:
+        return None
+    if len(d) == 11:
+        return f"***.{d[3:6]}.{d[6:9]}-**"
+    if len(d) == 14:
+        return f"**.{d[2:5]}.{d[5:8]}/****-**"
+    return None

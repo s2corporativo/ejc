@@ -256,14 +256,19 @@ async def checar_conflito(
       • partes de casos (case_partes) e parte contrária livre (cases).
 
     Resposta enxuta p/ intake: {conflito, nivel, matches}. Fail-safe — nunca
-    levanta exceção de regra de negócio. Os matches trazem nome e documento
-    COMPLETOS (decisão de produto: o advogado precisa saber com quem é o
-    conflito; o endpoint já é restrito a papéis do CRM + rate limit).
-    Crítico = mesma pessoa como parte em caso ATIVO / parte contrária que já é
-    nosso cliente.
+    levanta exceção de regra de negócio. Crítico = mesma pessoa como parte em
+    caso ATIVO / parte contrária que já é nosso cliente.
+
+    PII: o NOME sai completo — é o dever ético (o advogado precisa saber com
+    quem é o conflito, e sem o nome o alerta é inacionável). O CPF/CNPJ sai
+    apenas MASCARADO (`documento_mascarado`). O endpoint é o único que cruza a
+    base inteira ignorando a segregação de carteira, então devolver documento
+    em claro entregaria PII de cliente de outro advogado a quem não tem
+    titularidade. Quem precisa do documento completo abre a ficha do cliente —
+    lá o gate de titularidade se aplica normalmente.
     """
     from app.services.conflito_service import detectar_conflito
-    from app.services.pii_crypto import normalizar_documento
+    from app.services.pii_crypto import mascarar_documento, normalizar_documento
     from app.models.case_parte import CaseParte
 
     matches: list[dict] = []
@@ -288,7 +293,7 @@ async def checar_conflito(
                 "papel": "cliente",
                 "client_id": a.get("id"),
                 "nome": a.get("nome"),
-                "documento": a.get("documento"),
+                "documento_mascarado": mascarar_documento(a.get("documento")),
                 "descricao": f"Já cadastrado como cliente ({a.get('nome') or 'N/D'}).",
             })
             _elevar("atencao")
@@ -310,7 +315,7 @@ async def checar_conflito(
                 "papel": "parte_contraria",
                 "client_id": a.get("id"),
                 "nome": a.get("nome"),
-                "documento": a.get("documento"),
+                "documento_mascarado": mascarar_documento(a.get("documento")),
                 "descricao": (
                     f"A parte contrária informada já é cliente do escritório "
                     f"({a.get('nome') or 'N/D'}) — representação vedada (EOAB art. 34, XVII)."
@@ -354,7 +359,7 @@ async def checar_conflito(
                     "case_id": parte.case_id,
                     "papel": papel,
                     "nome": parte.nome,
-                    "documento": parte.cpf_cnpj,
+                    "documento_mascarado": mascarar_documento(parte.cpf_cnpj),
                     "descricao": (
                         f"{parte.nome} já figura como '{papel}' no caso ATIVO "
                         f"\"{titulo}\" (conflito potencial — EOAB arts. 34-35)."
@@ -367,7 +372,7 @@ async def checar_conflito(
                     "case_id": parte.case_id,
                     "papel": papel,
                     "nome": parte.nome,
-                    "documento": parte.cpf_cnpj,
+                    "documento_mascarado": mascarar_documento(parte.cpf_cnpj),
                     "descricao": (
                         f"{parte.nome} figurou como '{papel}' no caso já "
                         f"encerrado/arquivado \"{titulo}\"."
