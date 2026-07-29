@@ -86,6 +86,12 @@ export default function ThemeSelector({
   const blocosRotulados = degradado.map(
     (bloco) => DEGRADED_LABELS[bloco] || bloco,
   );
+  const tituloAlerta = dashboardIndisponivel
+    ? "Painel temporariamente indisponível"
+    : "Dados temporariamente indisponíveis";
+  const detalheAlerta = dashboardIndisponivel
+    ? "Não considere os indicadores atuais como zero. Tente atualizar a página."
+    : `${blocosRotulados.join(", ")}. Os valores exibidos nesses blocos não devem ser interpretados como zero.`;
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -95,18 +101,13 @@ export default function ThemeSelector({
           aria-live="polite"
           className="flex items-start gap-2 rounded-xl border border-warn-200 bg-warn-50 px-3 py-2 text-left text-xs leading-5 text-warn-800 dark:border-warn-500/30 dark:bg-warn-500/10 dark:text-warn-200"
         >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <AlertTriangle
+            className="mt-0.5 h-4 w-4 shrink-0"
+            aria-hidden="true"
+          />
           <div>
-            <strong className="block font-semibold">
-              {dashboardIndisponivel
-                ? "Painel temporariamente indisponível"
-                : "Dados temporariamente indisponíveis"}
-            </strong>
-            <span>
-              {dashboardIndisponivel
-                ? "Não considere os indicadores atuais como zero. Tente atualizar a página."
-                : `${blocosRotulados.join(", ")}. Os valores exibidos nesses blocos não devem ser interpretados como zero.`}
-            </span>
+            <strong className="block font-semibold">{tituloAlerta}</strong>
+            <span>{detalheAlerta}</span>
           </div>
         </div>
       )}
