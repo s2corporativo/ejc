@@ -19,6 +19,10 @@ export interface FerramentaCampo {
   tipo: "number" | "date" | "select" | "text";
   opcoes?: string[];
   default?: string | number;
+  // Exibe o campo somente quando outro campo do formulário está em um dos
+  // valores listados. Campos escondidos não são enviados — vários endpoints
+  // rejeitam (422) o parâmetro que não corresponde à opção escolhida.
+  mostrarSe?: { campo: string; valores: string[] };
 }
 
 export interface FerramentaConfig {
@@ -31,12 +35,24 @@ export interface FerramentaConfig {
   campos: FerramentaCampo[];
   autoLoad?: boolean;
   grupo?: string; // agrupa ferramentas visualmente por sub-área
+  // Homologação jurídica da calculadora (auditoria Áreas de Atuação — Onda 1).
+  // Ausente = true (homologada). `false` = em revisão jurídica: a UI exibe o
+  // aviso, desabilita "Gerar demonstrativo" e bloqueia a geração de minuta.
+  homologada?: boolean;
 }
 
 export interface RamoConfig {
   slug: string;
   endpoint: string;
+  // Área com que o caso NASCE neste hub. Deve ser um valor do enum CaseArea
+  // (backend/app/models/case.py) — achatar aqui contamina métricas, jurimetria
+  // e o roteamento de skills de IA, que classificam por área.
   areaCaso: string;
+  // Áreas que este hub também LISTA, além da canônica. Existem porque casos
+  // históricos foram gravados com a área achatada (ex.: bancário salvo como
+  // "civil" antes da correção de taxonomia): sem isso, o hub apareceria vazio.
+  // Só afeta leitura — nada aqui reclassifica registro existente.
+  areasLegadas?: string[];
   titulo: string;
   subtitulo: string;
   icone: string;
@@ -133,7 +149,9 @@ const empresarial: RamoConfig = {
       nome: "tipo_societario",
       label: "Tipo societário",
       tipo: "select",
-      opcoes: ["LTDA", "SA", "EIRELI", "SLU", "MEI", "outro"],
+      // EIRELI foi extinta (Lei 14.195/2021, conversão em SLU) — removida da
+      // seleção de registros novos; registros históricos não são afetados.
+      opcoes: ["LTDA", "SA", "SLU", "MEI", "outro"],
     },
     { nome: "capital_social", label: "Capital social (R$)", tipo: "number" },
     {
@@ -159,13 +177,24 @@ const empresarial: RamoConfig = {
     {
       id: "prazos-rj",
       titulo: "Prazos de Recuperação Judicial",
-      descricao: "Marcos críticos do processo a partir da distribuição.",
+      descricao:
+        "Marcos críticos — informe ao menos um: publicação do deferimento, deferimento ou concessão.",
       baseLegal: "Lei 11.101/2005",
       endpoint: "/empresarial/ferramentas/prazos-rj",
       campos: [
         {
-          nome: "data_distribuicao",
-          label: "Data da distribuição",
+          nome: "data_publicacao_deferimento",
+          label: "Publicação do deferimento (opcional)",
+          tipo: "date",
+        },
+        {
+          nome: "data_deferimento",
+          label: "Deferimento do processamento (opcional)",
+          tipo: "date",
+        },
+        {
+          nome: "data_concessao",
+          label: "Concessão da recuperação (opcional)",
           tipo: "date",
         },
       ],
@@ -197,24 +226,51 @@ const empresarial: RamoConfig = {
     {
       id: "juros-mora",
       titulo: "Juros de Mora + Multa",
-      descricao: "Atualização de débito contratual: juros simples + multa.",
-      baseLegal: "CC arts. 395, 406 · CDC art. 52 §1",
+      descricao:
+        "Atualização de débito: regime legal (SELIC − IPCA, Lei 14.905/2024) ou taxa convencionada.",
+      baseLegal: "CC arts. 395, 406 · Lei 14.905/2024",
       grupo: "Cálculos",
       endpoint: "/empresarial/ferramentas/juros-mora",
       campos: [
+        {
+          nome: "regime",
+          label: "Regime de juros",
+          tipo: "select",
+          opcoes: ["legal", "convencionada"],
+        },
         {
           nome: "valor_principal",
           label: "Valor principal (R$)",
           tipo: "number",
         },
-        { nome: "meses_atraso", label: "Meses em atraso", tipo: "number" },
+        { nome: "data_inicio_mora", label: "Início da mora", tipo: "date" },
+        { nome: "data_fim", label: "Data final (opcional)", tipo: "date" },
         {
-          nome: "taxa_juros_mensal_pct",
-          label: "Juros ao mês (%)",
+          nome: "selic_acumulada_percent",
+          label: "SELIC acumulada no período (%)",
           tipo: "number",
-          default: 1,
+          mostrarSe: { campo: "regime", valores: ["legal"] },
         },
-        { nome: "multa_pct", label: "Multa (%)", tipo: "number", default: 2 },
+        {
+          nome: "ipca_acumulado_percent",
+          label: "IPCA acumulado no período (%)",
+          tipo: "number",
+          mostrarSe: { campo: "regime", valores: ["legal"] },
+        },
+        {
+          nome: "aplicar_regra_anterior",
+          label: "Aplicar regra anterior (mora antes de 30/08/2024)?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+          mostrarSe: { campo: "regime", valores: ["legal"] },
+        },
+        {
+          nome: "taxa_mensal_percent",
+          label: "Taxa pactuada ao mês (%)",
+          tipo: "number",
+          mostrarSe: { campo: "regime", valores: ["convencionada"] },
+        },
+        { nome: "multa_pct", label: "Multa (%) — opcional", tipo: "number" },
       ],
     },
   ],
@@ -293,18 +349,31 @@ const civel: RamoConfig = {
     {
       id: "prazos-contestacao",
       titulo: "Prazo de Contestação",
-      descricao: "Prazo por rito processual (CPC / JEC / Fazenda Pública).",
+      descricao:
+        "Prazo por rito (comum / JEC / Fazenda Pública), contado do marco escolhido.",
       baseLegal: "CPC art. 335 · Lei 9.099 art. 30",
       grupo: "Prazos",
       endpoint: "/civel/ferramentas/prazos-contestacao",
       campos: [
-        { nome: "data_citacao", label: "Data da citação", tipo: "date" },
         {
-          nome: "tipo",
+          nome: "rito",
           label: "Rito",
           tipo: "select",
-          opcoes: ["cpc", "jec", "fazenda_publica"],
-          default: "cpc",
+          opcoes: ["comum", "jec", "fazenda_publica"],
+        },
+        {
+          nome: "marco",
+          label: "Marco inicial",
+          tipo: "select",
+          opcoes: ["audiencia_conciliacao", "juntada_citacao"],
+          // No JEC não há prazo em dias contado de marco (Lei 9.099 arts. 28 e 30).
+          mostrarSe: { campo: "rito", valores: ["comum", "fazenda_publica"] },
+        },
+        {
+          nome: "data_marco",
+          label: "Data do marco",
+          tipo: "date",
+          mostrarSe: { campo: "rito", valores: ["comum", "fazenda_publica"] },
         },
       ],
     },
@@ -337,14 +406,14 @@ const civel: RamoConfig = {
       id: "dano-moral",
       titulo: "Parâmetros de Dano Moral",
       descricao:
-        "Faixas STJ por tipo de caso — negativação, extravio, produto defeituoso etc.",
+        "Critérios de arbitramento (CC art. 944) — não sugere valor nem faixa; a fixação é judicial.",
       baseLegal: "CC art. 944 + STJ",
       grupo: "Consumidor",
       endpoint: "/civel/ferramentas/calculo-dano-moral",
       campos: [
         {
           nome: "tipo_caso",
-          label: "Tipo de caso",
+          label: "Tipo de caso (opcional, qualificador)",
           tipo: "select",
           opcoes: [
             "negativacao_indevida",
@@ -354,13 +423,12 @@ const civel: RamoConfig = {
             "cobranca_abusiva",
             "outro",
           ],
-          default: "negativacao_indevida",
         },
         {
           nome: "salarios_minimos_pedido",
-          label: "Quantum pedido (SMs)",
+          label: "Quantum pedido (SMs) — opcional",
           tipo: "number",
-          default: 10,
+          default: 0,
         },
       ],
     },
@@ -440,6 +508,14 @@ const civel: RamoConfig = {
           ],
         },
         { nome: "anos_posse", label: "Anos de posse", tipo: "number" },
+        {
+          // Query param booleano do FastAPI: aceita true/false (não sim/não).
+          nome: "posse_mansa",
+          label: "Posse mansa e pacífica?",
+          tipo: "select",
+          opcoes: ["true", "false"],
+          default: "true",
+        },
       ],
     },
     {
@@ -474,6 +550,18 @@ const civel: RamoConfig = {
           tipo: "select",
           opcoes: ["locatario", "locador"],
           default: "locatario",
+        },
+        {
+          nome: "prazo_contrato_meses",
+          label: "Prazo do contrato (meses)",
+          tipo: "number",
+          default: 30,
+        },
+        {
+          nome: "multa_contratual_alugueis",
+          label: "Multa pactuada (nº de aluguéis)",
+          tipo: "number",
+          default: 3,
         },
       ],
     },
@@ -565,7 +653,7 @@ const penal: RamoConfig = {
       baseLegal: "CPP arts. 396-A, 586, 593",
       endpoint: "/penal/ferramentas/prazos-processuais",
       campos: [
-        { nome: "data_denuncia", label: "Data da denúncia", tipo: "date" },
+        { nome: "data_citacao", label: "Data da citação", tipo: "date" },
       ],
     },
     {
@@ -576,86 +664,171 @@ const penal: RamoConfig = {
       endpoint: "/penal/ferramentas/verificar-anpp",
       campos: [
         {
-          nome: "pena_min_anos",
+          nome: "pena_minima_anos",
           label: "Pena mínima do tipo (anos)",
           tipo: "number",
         },
         {
-          nome: "confessou",
-          label: "Confessou?",
+          nome: "sem_violencia_grave_ameaca",
+          label: "Sem violência ou grave ameaça?",
           tipo: "select",
-          opcoes: ["true", "false"],
+          opcoes: ["sim", "nao"],
         },
         {
-          nome: "nao_violento",
-          label: "Sem violência?",
+          nome: "confissao_formal_circunstanciada",
+          label: "Confissão formal e circunstanciada?",
           tipo: "select",
-          opcoes: ["true", "false"],
+          opcoes: ["sim", "nao"],
         },
         {
-          nome: "primario",
-          label: "Primário?",
+          nome: "reincidente",
+          label: "Reincidente?",
           tipo: "select",
-          opcoes: ["true", "false"],
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "conduta_criminal_habitual_reiterada_profissional",
+          label: "Conduta criminal habitual, reiterada ou profissional?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "beneficiado_anpp_transacao_sursis_5anos",
+          label: "ANPP/transação/sursis nos últimos 5 anos?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "violencia_domestica_familiar_ou_razao_genero",
+          label: "Violência doméstica/familiar ou em razão de gênero?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
         },
       ],
     },
     {
       id: "prescricao",
       titulo: "Prescrição Punitiva",
-      descricao: "Prescrição em abstrato pela pena máxima (CP art. 109).",
-      baseLegal: "CP art. 109",
+      descricao:
+        "Prescrição pela pena máxima ou concreta, com marcos interruptivos e redutores etários.",
+      baseLegal: "CP arts. 109-117",
       endpoint: "/penal/ferramentas/prescricao-punitiva",
       campos: [
-        {
-          nome: "pena_maxima_anos",
-          label: "Pena máxima do tipo (anos)",
-          tipo: "number",
-        },
         { nome: "data_fato", label: "Data do fato", tipo: "date" },
-      ],
-    },
-    {
-      id: "prescricao-penal",
-      titulo: "Prescrição Penal (pena em abstrato)",
-      descricao: "Prazo prescricional da pretensão punitiva pela pena máxima.",
-      baseLegal: "CP art. 109",
-      grupo: "Prazos",
-      endpoint: "/penal/ferramentas/prescricao-penal",
-      campos: [
         {
           nome: "pena_maxima_anos",
           label: "Pena máxima cominada (anos)",
           tipo: "number",
         },
+        {
+          nome: "pena_concreta_anos",
+          label: "Pena concreta aplicada (anos)",
+          tipo: "number",
+        },
+        {
+          nome: "marcos_interruptivos",
+          label: "Marcos interruptivos (datas AAAA-MM-DD, por vírgula)",
+          tipo: "text",
+        },
+        {
+          nome: "menor_21_na_data_fato",
+          label: "Menor de 21 anos na data do fato?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "maior_70_na_sentenca",
+          label: "Maior de 70 anos na sentença?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+        },
+      ],
+    },
+    {
+      id: "prescricao-penal",
+      titulo: "Prescrição Penal",
+      descricao:
+        "Prazo prescricional pela pena máxima ou concreta, com marcos interruptivos e redutores.",
+      baseLegal: "CP arts. 109-117",
+      grupo: "Prazos",
+      endpoint: "/penal/ferramentas/prescricao-penal",
+      campos: [
+        { nome: "data_fato", label: "Data do fato", tipo: "date" },
+        {
+          nome: "pena_maxima_anos",
+          label: "Pena máxima cominada (anos)",
+          tipo: "number",
+        },
+        {
+          nome: "pena_concreta_anos",
+          label: "Pena concreta aplicada (anos)",
+          tipo: "number",
+        },
+        {
+          nome: "marcos_interruptivos",
+          label: "Marcos interruptivos (datas AAAA-MM-DD, por vírgula)",
+          tipo: "text",
+        },
+        {
+          nome: "menor_21_na_data_fato",
+          label: "Menor de 21 anos na data do fato?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "maior_70_na_sentenca",
+          label: "Maior de 70 anos na sentença?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+        },
       ],
     },
     {
       id: "dosimetria",
+      homologada: false,
       titulo: "Dosimetria da Pena (trifásico)",
       descricao: "Cálculo das 3 fases: base, agravantes/atenuantes, causas.",
       baseLegal: "CP arts. 59, 68 · Súmula 231 STJ",
       grupo: "Cálculos",
       endpoint: "/penal/ferramentas/dosimetria",
       campos: [
-        { nome: "pena_base_anos", label: "Pena-base (anos)", tipo: "number" },
         {
-          nome: "fracao_agravantes_pct",
-          label: "Agravantes líq. (%)",
+          nome: "pena_minima_meses",
+          label: "Pena mínima do tipo (meses)",
+          tipo: "number",
+        },
+        {
+          nome: "pena_maxima_meses",
+          label: "Pena máxima do tipo (meses)",
+          tipo: "number",
+        },
+        {
+          nome: "circunstancias_judiciais_desfavoraveis",
+          label: "Circunstâncias judiciais desfavoráveis (0–8)",
           tipo: "number",
           default: 0,
         },
         {
-          nome: "fracao_aumento_pct",
-          label: "Causas de aumento (%)",
+          nome: "n_agravantes",
+          label: "Agravantes (qtde)",
           tipo: "number",
           default: 0,
         },
         {
-          nome: "fracao_diminuicao_pct",
-          label: "Causas de diminuição (%)",
+          nome: "n_atenuantes",
+          label: "Atenuantes (qtde)",
           tipo: "number",
           default: 0,
+        },
+        {
+          nome: "causas_aumento",
+          label: "Causas de aumento (frações CSV, ex.: 1/3,1/6)",
+          tipo: "text",
+        },
+        {
+          nome: "causas_diminuicao",
+          label: "Causas de diminuição (frações CSV, ex.: 1/3,1/6)",
+          tipo: "text",
         },
       ],
     },
@@ -778,11 +951,27 @@ const trabalhista: RamoConfig = {
     {
       id: "prazos",
       titulo: "Prazos Trabalhistas",
-      descricao: "RO, depósito recursal e embargos a partir da sentença.",
-      baseLegal: "CLT art. 895",
+      descricao: "RO, ED e RR contados da ciência da decisão.",
+      baseLegal: "CLT arts. 895, 896, 897-A",
       endpoint: "/trabalhista-esp/ferramentas/prazos",
       campos: [
-        { nome: "data_sentenca", label: "Data da sentença", tipo: "date" },
+        {
+          nome: "data_ciencia",
+          label: "Data da ciência/intimação",
+          tipo: "date",
+        },
+        {
+          nome: "tipo_prazo",
+          label: "Tipo de prazo",
+          tipo: "select",
+          opcoes: [
+            "recurso_ordinario",
+            "embargos_declaracao",
+            "recurso_de_revista",
+            "todos",
+          ],
+          default: "todos",
+        },
       ],
     },
     {
@@ -797,6 +986,11 @@ const trabalhista: RamoConfig = {
           label: "Valor da condenação (R$)",
           tipo: "number",
         },
+        {
+          nome: "data_referencia",
+          label: "Data de referência (opcional)",
+          tipo: "date",
+        },
       ],
     },
     {
@@ -806,8 +1000,16 @@ const trabalhista: RamoConfig = {
       baseLegal: "CLT art. 11 + CF art. 7º XXIX",
       endpoint: "/trabalhista-esp/ferramentas/prescricao-trabalhista",
       campos: [
-        { nome: "data_demissao", label: "Data da demissão", tipo: "date" },
-        { nome: "data_fato", label: "Data do fato gerador", tipo: "date" },
+        {
+          nome: "data_extincao_contrato",
+          label: "Extinção do contrato",
+          tipo: "date",
+        },
+        {
+          nome: "data_ajuizamento",
+          label: "Ajuizamento da ação (opcional)",
+          tipo: "date",
+        },
       ],
     },
     {
@@ -816,7 +1018,7 @@ const trabalhista: RamoConfig = {
       descricao: "Valor de HE (jornada 220h) com DSR, 13º, férias e FGTS.",
       baseLegal: "CF art. 7 XVI · CLT art. 59 · Súmula 264 TST",
       grupo: "Cálculos",
-      endpoint: "/trabalhista/ferramentas/horas-extras",
+      endpoint: "/trabalhista-esp/ferramentas/horas-extras",
       campos: [
         {
           nome: "salario_mensal",
@@ -829,15 +1031,68 @@ const trabalhista: RamoConfig = {
           tipo: "number",
         },
         {
-          nome: "adicional_percentual",
-          label: "Adicional (%)",
+          nome: "divisor",
+          label: "Divisor de jornada",
+          tipo: "select",
+          opcoes: ["220", "200", "180"],
+        },
+        {
+          nome: "percentual_he",
+          label: "Adicional de HE (%) — mín. 50",
           tipo: "number",
           default: 50,
+        },
+        {
+          nome: "incluir_dsr",
+          label: "Incluir DSR?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "incluir_reflexo_fgts",
+          label: "Incluir reflexo no FGTS?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
         },
       ],
     },
   ],
 };
+
+// Campos compartilhados entre /transito/ferramentas/prazos-recurso e o alias
+// /admin-esp/ferramentas/recurso-multa-transito (mesma assinatura no backend).
+const _camposRecursoMultaTransito: FerramentaCampo[] = [
+  {
+    nome: "fase",
+    label: "Fase do recurso",
+    tipo: "select",
+    opcoes: ["defesa_previa", "jari", "cetran"],
+  },
+  // Cada fase tem marco PRÓPRIO e o backend recusa (422) data de outra fase.
+  {
+    nome: "data_notificacao_autuacao",
+    label: "Notificação da autuação",
+    tipo: "date",
+    mostrarSe: { campo: "fase", valores: ["defesa_previa"] },
+  },
+  {
+    nome: "data_notificacao_penalidade",
+    label: "Notificação da penalidade",
+    tipo: "date",
+    mostrarSe: { campo: "fase", valores: ["jari"] },
+  },
+  {
+    nome: "data_ciencia_decisao_jari",
+    label: "Ciência da decisão da JARI",
+    tipo: "date",
+    mostrarSe: { campo: "fase", valores: ["cetran"] },
+  },
+  {
+    nome: "valor_multa",
+    label: "Valor da multa (R$) — opcional",
+    tipo: "number",
+  },
+];
 
 // ══════════════════════════════════════════════════════════════════════════
 // 5. ADMINISTRATIVO — Multas · Prefeituras · MS · PAD · Improbidade
@@ -846,7 +1101,8 @@ const administrativo: RamoConfig = {
   guiaAdministrativo: true,
   slug: "administrativo",
   endpoint: "/admin-esp",
-  areaCaso: "tributario",
+  areaCaso: "administrativo",
+  areasLegadas: ["tributario"],
   titulo: "Direito Administrativo",
   subtitulo:
     "Recursos de Multas · MS · Prefeituras · Improbidade · Contratos Administrativos",
@@ -929,30 +1185,27 @@ const administrativo: RamoConfig = {
           tipo: "number",
         },
         { nome: "meses_contrato", label: "Meses de contrato", tipo: "number" },
+        {
+          nome: "indice_nome",
+          label: "Índice previsto no contrato (ex.: IPCA/IBGE)",
+          tipo: "text",
+        },
+        {
+          nome: "data_base",
+          label: "Data-base (orçamento estimado ou proposta)",
+          tipo: "date",
+        },
       ],
     },
     // ── MULTAS / MS ───────────────────────────────────────────────────────
     {
       id: "multa-transito",
       titulo: "Recurso Multa de Trânsito",
-      descricao: "Prazos JARI/CETRAN e 20% de desconto pagamento imediato.",
-      baseLegal: "CTB arts. 281-284",
+      descricao: "Prazos de defesa prévia, JARI e CETRAN, com descontos.",
+      baseLegal: "CTB arts. 281-288",
       grupo: "Recursos de Multas",
       endpoint: "/admin-esp/ferramentas/recurso-multa-transito",
-      campos: [
-        {
-          nome: "data_notificacao",
-          label: "Data da notificação",
-          tipo: "date",
-        },
-        { nome: "valor_multa", label: "Valor da multa (R$)", tipo: "number" },
-        {
-          nome: "pontos_cnh",
-          label: "Pontos na CNH",
-          tipo: "number",
-          default: 0,
-        },
-      ],
+      campos: _camposRecursoMultaTransito,
     },
     {
       id: "ms",
@@ -980,7 +1233,8 @@ const bancario: RamoConfig = {
   bancarioForense: true,
   slug: "bancario",
   endpoint: "/bancario",
-  areaCaso: "civil",
+  areaCaso: "bancario",
+  areasLegadas: ["civil"],
   titulo: "Direito Bancário e Financeiro",
   subtitulo:
     "Revisão de juros · Negativação · Superendividamento · Busca e apreensão · Pix",
@@ -1058,7 +1312,7 @@ const bancario: RamoConfig = {
       id: "analise-juros",
       titulo: "Análise de Juros e Spread",
       descricao:
-        "Spread contratado vs. referência BCB — indício de abusividade.",
+        "Spread contratado vs. referência BCB — classificação indicativa; abusividade é decisão judicial.",
       baseLegal: "Súm. STJ 530 · REsp 1.061.530",
       endpoint: "/bancario/ferramentas/analise-juros",
       campos: [
@@ -1113,8 +1367,9 @@ const bancario: RamoConfig = {
     },
     {
       id: "juros-abusivos",
-      titulo: "Juros Abusivos (revisional)",
-      descricao: "Compara a taxa contratada com a média de mercado (BACEN).",
+      titulo: "Comparativo de Juros (revisional)",
+      descricao:
+        "Compara a taxa contratada com a média de mercado (BACEN) — classificação indicativa, não declara abusividade.",
       baseLegal: "STJ REsp 1.061.530 · Súmula 530 STJ",
       grupo: "Revisional",
       endpoint: "/bancario/ferramentas/juros-abusivos",
@@ -1367,12 +1622,19 @@ const tributario: RamoConfig = {
     },
     {
       id: "multa-mora",
-      titulo: "Multa de Mora (tributo federal)",
-      descricao: "0,33%/dia limitada a 20% (+ Selic, não incluída).",
+      titulo: "Multa de Mora",
+      descricao:
+        "Federal: 0,33%/dia limitada a 20% (+ Selic, não incluída). Estadual/municipal: orientação, sem cálculo.",
       baseLegal: "Lei 9.430/96 art. 61",
       grupo: "Cálculos",
       endpoint: "/tributario/ferramentas/multa-mora",
       campos: [
+        {
+          nome: "ente",
+          label: "Ente tributante",
+          tipo: "select",
+          opcoes: ["federal", "estadual", "municipal"],
+        },
         {
           nome: "valor_tributo",
           label: "Valor do tributo (R$)",
@@ -1550,6 +1812,12 @@ const ambiental: RamoConfig = {
       grupo: "Licenciamento",
       endpoint: "/ambiental/ferramentas/licenciamento",
       campos: [
+        { nome: "uf", label: "UF (2 letras)", tipo: "text" },
+        {
+          nome: "orgao",
+          label: "Órgão licenciador (opcional)",
+          tipo: "text",
+        },
         {
           nome: "fase",
           label: "Fase da licença",
@@ -1569,6 +1837,14 @@ const ambiental: RamoConfig = {
           label: "Data do protocolo (se houver)",
           tipo: "date",
         },
+        {
+          // Query param booleano do FastAPI: aceita true/false (não sim/não).
+          nome: "com_eia_rima",
+          label: "Exige EIA/RIMA?",
+          tipo: "select",
+          opcoes: ["true", "false"],
+          default: "false",
+        },
       ],
     },
     {
@@ -1580,6 +1856,8 @@ const ambiental: RamoConfig = {
       grupo: "Propriedade Rural",
       endpoint: "/ambiental/ferramentas/reserva-legal",
       campos: [
+        { nome: "uf", label: "UF (2 letras)", tipo: "text" },
+        { nome: "municipio", label: "Município (opcional)", tipo: "text" },
         {
           nome: "area_imovel_ha",
           label: "Área total do imóvel (hectares)",
@@ -1642,16 +1920,27 @@ const consumidor: RamoConfig = {
       endpoint: "/consumidor/ferramentas/devolucao-dobro",
       campos: [
         {
-          nome: "valor_cobrado",
+          nome: "valor_cobrado_indevidamente",
           label: "Valor cobrado indevidamente (R$)",
           tipo: "number",
         },
         {
-          nome: "houve_ma_fe",
-          label: "Cobrança sem engano justificável?",
+          nome: "houve_pagamento",
+          label: "Houve pagamento pelo consumidor?",
           tipo: "select",
           opcoes: ["sim", "nao"],
-          default: "sim",
+        },
+        {
+          nome: "cobranca_contraria_boa_fe_objetiva",
+          label: "Cobrança contrária à boa-fé objetiva?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "engano_justificavel",
+          label: "Houve engano justificável?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
         },
       ],
     },
@@ -1659,24 +1948,30 @@ const consumidor: RamoConfig = {
       id: "prazos-cdc",
       titulo: "Prazos CDC (decadência/prescrição)",
       descricao:
-        "Vício (30/90d), fato (5a), cobrança indevida (3a), arrependimento (7d).",
-      baseLegal: "CDC arts. 26, 27, 49",
+        "Vício aparente (30/90d), vício oculto, acidente de consumo (5a) e repetição do indébito (3a).",
+      baseLegal: "CDC arts. 26, 27",
       grupo: "Prazos",
       endpoint: "/consumidor/ferramentas/prazos-cdc",
       campos: [
-        { nome: "data_fato", label: "Data do fato / entrega", tipo: "date" },
         {
-          nome: "tipo",
-          label: "Tipo de pretensão",
+          nome: "pretensao",
+          label: "Pretensão",
           tipo: "select",
           opcoes: [
-            "vicio_duravel",
-            "vicio_nao_duravel",
-            "arrependimento",
-            "fato",
-            "cobranca_indevida",
+            "vicio_aparente_nao_duravel",
+            "vicio_aparente_duravel",
+            "vicio_oculto",
+            "acidente_de_consumo",
+            "repeticao_indebito_contratual",
           ],
-          default: "vicio_duravel",
+        },
+        { nome: "data_marco", label: "Data do marco inicial", tipo: "date" },
+        {
+          nome: "bem_duravel",
+          label: "Bem durável? (90 dias) ou não durável? (30 dias)",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+          mostrarSe: { campo: "pretensao", valores: ["vicio_oculto"] },
         },
       ],
     },
@@ -1689,11 +1984,24 @@ const consumidor: RamoConfig = {
       endpoint: "/consumidor/ferramentas/negativacao-indevida",
       campos: [
         {
-          nome: "existe_inscricao_anterior_legitima",
-          label: "Há inscrição anterior legítima?",
+          nome: "existe_inscricao_anterior",
+          label: "Há inscrição anterior?",
           tipo: "select",
-          opcoes: ["nao", "sim"],
-          default: "nao",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "inscricao_anterior_legitima_e_ativa",
+          label: "Inscrição anterior legítima e ativa?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+          mostrarSe: { campo: "existe_inscricao_anterior", valores: ["sim"] },
+        },
+        {
+          nome: "origem_verificada",
+          label: "Origem do débito verificada?",
+          tipo: "select",
+          opcoes: ["sim", "nao"],
+          mostrarSe: { campo: "existe_inscricao_anterior", valores: ["sim"] },
         },
       ],
     },
@@ -1722,11 +2030,20 @@ const familia: RamoConfig = {
       endpoint: "/familia/ferramentas/debito-alimentos",
       campos: [
         {
-          nome: "valor_mensal",
-          label: "Valor mensal da pensão (R$)",
+          nome: "datas_vencimento_em_aberto",
+          label: "Vencimentos em aberto (datas AAAA-MM-DD, por vírgula)",
+          tipo: "text",
+        },
+        {
+          nome: "data_ajuizamento_execucao",
+          label: "Ajuizamento da execução",
+          tipo: "date",
+        },
+        {
+          nome: "valor_parcela",
+          label: "Valor da parcela (R$) — opcional",
           tipo: "number",
         },
-        { nome: "meses_atraso", label: "Meses em atraso", tipo: "number" },
       ],
     },
     {
@@ -1739,11 +2056,16 @@ const familia: RamoConfig = {
       endpoint: "/familia/ferramentas/itcmd-inventario",
       campos: [
         { nome: "valor_monte", label: "Valor do monte (R$)", tipo: "number" },
+        { nome: "uf", label: "UF (2 letras)", tipo: "text" },
         {
-          nome: "aliquota_percentual",
-          label: "Alíquota ITCMD (%)",
+          nome: "aliquota_percent",
+          label: "Alíquota ITCMD (%) — 0 a 8",
           tipo: "number",
-          default: 5,
+        },
+        {
+          nome: "data_fato_gerador",
+          label: "Data do fato gerador",
+          tipo: "date",
         },
       ],
     },
@@ -1754,7 +2076,8 @@ const imobiliario: RamoConfig = {
   guiaImobiliario: true,
   slug: "imobiliario",
   endpoint: "/cases/?area=civil",
-  areaCaso: "civil",
+  areaCaso: "imobiliario",
+  areasLegadas: ["civil"],
   titulo: "Direito Imobiliário",
   subtitulo: "Compra e Venda · Locação · Usucapião · Incorporação · Distrato",
   icone: "Building2",
@@ -1774,8 +2097,18 @@ const imobiliario: RamoConfig = {
         { nome: "valor_atual", label: "Aluguel atual (R$)", tipo: "number" },
         {
           nome: "indice_percentual",
-          label: "Índice de reajuste (%)",
+          label: "Índice de reajuste acumulado (%)",
           tipo: "number",
+        },
+        {
+          nome: "indice_nome",
+          label: "Índice pactuado no contrato (ex.: IGP-M/FGV)",
+          tipo: "text",
+        },
+        {
+          nome: "data_base",
+          label: "Data-base (último reajuste ou início do contrato)",
+          tipo: "date",
         },
       ],
     },
@@ -1788,6 +2121,12 @@ const imobiliario: RamoConfig = {
       endpoint: "/imobiliario/ferramentas/prazos-despejo",
       campos: [
         { nome: "data_citacao", label: "Data da citação", tipo: "date" },
+        {
+          nome: "forma_comunicacao",
+          label: "Forma de comunicação",
+          tipo: "select",
+          opcoes: ["citacao_pessoal", "citacao_ficta"],
+        },
         {
           nome: "fundamento",
           label: "Fundamento",
@@ -1807,11 +2146,30 @@ const imobiliario: RamoConfig = {
       campos: [
         { nome: "valor_pago", label: "Valor já pago (R$)", tipo: "number" },
         {
-          nome: "tem_patrimonio_afetacao",
-          label: "Há patrimônio de afetação?",
+          nome: "regime_patrimonio_afetacao",
+          label: "Regime de patrimônio de afetação?",
           tipo: "select",
-          opcoes: ["nao", "sim"],
-          default: "nao",
+          opcoes: ["sim", "nao"],
+        },
+        {
+          nome: "percentual_retencao",
+          label: "Retenção (%) — teto 50 com afetação / 25 sem",
+          tipo: "number",
+        },
+        {
+          nome: "comissao_corretagem",
+          label: "Comissão de corretagem (R$) — opcional",
+          tipo: "number",
+        },
+        {
+          nome: "meses_fruicao",
+          label: "Meses de fruição — opcional",
+          tipo: "number",
+        },
+        {
+          nome: "valor_fruicao_mensal",
+          label: "Fruição mensal (R$) — opcional",
+          tipo: "number",
         },
       ],
     },
@@ -1842,20 +2200,33 @@ const previdenciario: RamoConfig = {
       endpoint: "/previdenciario/ferramentas/prazos",
       campos: [
         {
-          nome: "data_indeferimento",
-          label: "Data do indeferimento / concessão",
-          tipo: "date",
-        },
-        {
-          nome: "tipo",
-          label: "Tipo de prazo",
+          nome: "natureza",
+          label: "Natureza do prazo",
           tipo: "select",
           opcoes: [
+            "revisao_ato_concessao",
             "recurso_administrativo",
-            "decadencia_revisao",
-            "prescricao_parcelas",
+            "parcelas_atrasadas",
           ],
-          default: "recurso_administrativo",
+        },
+        // Cada natureza usa APENAS a sua data — o backend recusa (422) as demais.
+        {
+          nome: "data_primeiro_pagamento",
+          label: "1º pagamento do benefício",
+          tipo: "date",
+          mostrarSe: { campo: "natureza", valores: ["revisao_ato_concessao"] },
+        },
+        {
+          nome: "data_ciencia_decisao",
+          label: "Ciência da decisão do INSS",
+          tipo: "date",
+          mostrarSe: { campo: "natureza", valores: ["recurso_administrativo"] },
+        },
+        {
+          nome: "data_ajuizamento",
+          label: "Ajuizamento (opcional — default hoje)",
+          tipo: "date",
+          mostrarSe: { campo: "natureza", valores: ["parcelas_atrasadas"] },
         },
       ],
     },
@@ -1875,11 +2246,12 @@ const previdenciario: RamoConfig = {
           tipo: "number",
         },
         {
+          // O backend aceita apenas "F"/"M" (outro valor → 422); o significado
+          // vai no rótulo porque `opcoes` não suporta par valor/label.
           nome: "sexo",
-          label: "Sexo",
+          label: "Sexo (F = feminino · M = masculino)",
           tipo: "select",
-          opcoes: ["M", "F"],
-          default: "M",
+          opcoes: ["F", "M"],
         },
         {
           nome: "ano",
@@ -1898,23 +2270,35 @@ const previdenciario: RamoConfig = {
       endpoint: "/previdenciario/ferramentas/carencia",
       campos: [
         {
+          nome: "beneficio",
+          label: "Benefício",
+          tipo: "select",
+          opcoes: [
+            "aposentadoria_idade_tc",
+            "auxilio_incapacidade",
+            "salario_maternidade",
+          ],
+        },
+        {
+          nome: "categoria",
+          label: "Categoria da segurada(o)",
+          tipo: "select",
+          opcoes: [
+            "empregada",
+            "contribuinte_individual_facultativa",
+            "segurada_especial",
+          ],
+        },
+        {
           nome: "meses_contribuicao",
           label: "Meses de contribuição",
           tipo: "number",
         },
         {
-          nome: "beneficio",
-          label: "Benefício",
+          nome: "decorre_acidente_ou_doenca_isenta",
+          label: "Decorre de acidente ou doença isenta de carência?",
           tipo: "select",
-          opcoes: [
-            "aposentadoria",
-            "auxilio_doenca",
-            "aposentadoria_invalidez",
-            "salario_maternidade",
-            "auxilio_acidente",
-            "pensao_morte",
-          ],
-          default: "aposentadoria",
+          opcoes: ["sim", "nao"],
         },
       ],
     },
@@ -1927,7 +2311,8 @@ const digital_lgpd: RamoConfig = {
   lgpdRegistros: true,
   slug: "digital_lgpd",
   endpoint: "/cases/?area=empresarial",
-  areaCaso: "empresarial",
+  areaCaso: "digital_lgpd",
+  areasLegadas: ["empresarial"],
   titulo: "Direito Digital e LGPD",
   subtitulo:
     "Adequação LGPD · DPO · Contratos SaaS · Startups · Incidentes de Dados",
@@ -1963,16 +2348,22 @@ const digital_lgpd: RamoConfig = {
       endpoint: "/digital_lgpd/ferramentas/prazos-lgpd",
       campos: [
         {
-          nome: "data_evento",
-          label: "Data do pedido / incidente",
-          tipo: "date",
-        },
-        {
           nome: "tipo",
           label: "Tipo",
           tipo: "select",
-          opcoes: ["resposta_titular", "incidente_anpd"],
-          default: "resposta_titular",
+          opcoes: ["resposta_titular", "incidente"],
+        },
+        {
+          nome: "data_evento",
+          label: "Data do requerimento do titular",
+          tipo: "date",
+          mostrarSe: { campo: "tipo", valores: ["resposta_titular"] },
+        },
+        {
+          nome: "data_conhecimento",
+          label: "Data de conhecimento do incidente",
+          tipo: "date",
+          mostrarSe: { campo: "tipo", valores: ["incidente"] },
         },
       ],
     },
@@ -1984,7 +2375,8 @@ const transito: RamoConfig = {
   guiaTransito: true,
   slug: "transito",
   endpoint: "/cases/?area=civil",
-  areaCaso: "civil",
+  areaCaso: "transito",
+  areasLegadas: ["civil"],
   titulo: "Direito de Trânsito",
   subtitulo:
     "Multas \u00b7 Recursos JARI/CETRAN \u00b7 Suspens\u00e3o de CNH \u00b7 Crimes de tr\u00e2nsito",
@@ -2002,21 +2394,7 @@ const transito: RamoConfig = {
       baseLegal: "CTB arts. 281, 284, 285, 288 · Lei 14.071/20",
       grupo: "Multas",
       endpoint: "/transito/ferramentas/prazos-recurso",
-      campos: [
-        {
-          nome: "data_notificacao",
-          label: "Data da notificação",
-          tipo: "date",
-        },
-        { nome: "valor_multa", label: "Valor da multa (R$)", tipo: "number" },
-        {
-          nome: "fase",
-          label: "Fase",
-          tipo: "select",
-          opcoes: ["autuacao", "penalidade"],
-          default: "autuacao",
-        },
-      ],
+      campos: _camposRecursoMultaTransito,
     },
     {
       id: "pontuacao-cnh",
@@ -2033,17 +2411,15 @@ const transito: RamoConfig = {
           tipo: "number",
         },
         {
-          nome: "infracoes_gravissimas_12m",
+          nome: "qtd_gravissimas",
           label: "Infrações gravíssimas (12m)",
           tipo: "number",
-          default: 0,
         },
         {
-          nome: "categoria_profissional",
-          label: "Condutor profissional (EAR)?",
+          nome: "exerce_atividade_remunerada",
+          label: "Exerce atividade remunerada (EAR)?",
           tipo: "select",
-          opcoes: ["nao", "sim"],
-          default: "nao",
+          opcoes: ["sim", "nao"],
         },
       ],
     },
@@ -2839,3 +3215,28 @@ for (const slug of Object.keys(RAMOS)) {
 }
 
 export const RAMOS_LISTA_FINAL = Object.values(RAMOS);
+
+/**
+ * Ramos que oferecem ferramentas para a área de um caso.
+ *
+ * DERIVADO de `RAMOS` (`areaCaso` + `areasLegadas`) de propósito: manter uma
+ * segunda lista à mão foi o que quebrou a aba de ferramentas do caso quando a
+ * área canônica deixou de ser achatada — o mapa manual só conhecia as áreas
+ * antigas e o caso bancário novo (`area: "bancario"`) não casava com nada.
+ *
+ * Ordem: primeiro os ramos cuja área canônica é esta; depois os que a atendem
+ * como área legada (casos históricos gravados antes da correção de taxonomia).
+ * Ramos sem ferramentas ficam de fora — não têm o que renderizar.
+ */
+export function ramosDaArea(area?: string | null): RamoConfig[] {
+  if (!area) return [];
+  const comFerramentas = RAMOS_LISTA_FINAL.filter(
+    (cfg) => cfg.ferramentas.length > 0,
+  );
+  return [
+    ...comFerramentas.filter((cfg) => cfg.areaCaso === area),
+    ...comFerramentas.filter(
+      (cfg) => cfg.areaCaso !== area && (cfg.areasLegadas ?? []).includes(area),
+    ),
+  ];
+}

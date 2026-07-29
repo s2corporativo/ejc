@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { fmtMoney } from "./UI";
+import { areaLabel as rotuloArea } from "../lib/areaCatalog";
 
 // Acentos por cor — ícone com fundo suave colorido
 export const ACCENTS: Record<
@@ -264,17 +265,9 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const ENCERRADOS = new Set(["encerrado", "arquivado"]);
 
-const AREA_LABEL: Record<string, string> = {
-  civil: "Cível",
-  trabalhista: "Trabalhista",
-  consumidor: "Consumidor",
-  familia: "Família",
-  ambiental: "Ambiental",
-  criminal: "Criminal",
-  previdenciario: "Previdenciário",
-  empresarial: "Empresarial",
-  tributario: "Tributário",
-};
+// Rótulo vem do catálogo único (lib/areaCatalog.ts). O mapa local cobria só as
+// 9 áreas originais e mostrava o slug cru ("digital_lgpd") nas áreas incluídas
+// pelas migrations 083/094 — que os hubs passaram a usar de fato.
 
 export function RamoStats({
   casos,
@@ -288,7 +281,7 @@ export function RamoStats({
   area?: string;
 }) {
   const accent = RAMO_ACCENT[cor] ?? "blue";
-  const areaLabel = area ? (AREA_LABEL[area] ?? area) : "";
+  const areaLabel = area ? rotuloArea(area) : "";
   const total = casos.length;
   const ativos = casos.filter((c) => !ENCERRADOS.has(String(c.status))).length;
   const valor = casos.reduce((s, c) => s + Number(c.valor_causa || 0), 0);
@@ -391,7 +384,7 @@ export function CasosStats() {
 
   const porAreaObj: Record<string, number> = cs?.por_area ?? {};
   const areas = Object.entries(porAreaObj).map(([area, value]) => ({
-    label: AREA_LABEL[area] ?? area,
+    label: rotuloArea(area),
     value,
   }));
   const total = cs?.total ?? "—";

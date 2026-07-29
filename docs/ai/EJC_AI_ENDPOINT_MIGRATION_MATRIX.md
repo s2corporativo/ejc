@@ -15,7 +15,7 @@ Política: **nenhum endpoint legado foi removido** — os que tinham lógica pr�
 | POST `/api/ai/core/report` | relatório executivo por domínio |
 | GET `/api/ai/core/agents` · `/skills` · `/status` | introspecção (staff; sem prompts internos, sem valores de chave) |
 
-Client frontend: `frontend/src/lib/aiCore.ts` (todo consumo novo de IA passa por ele).
+Client frontend: **não existe client tipado do núcleo**. `frontend/src/lib/aiCore.ts` foi removido em 1befdf0 sem nunca ter tido consumidor; hoje todo consumo de IA do frontend passa pelo cliente axios único (`frontend/src/lib/api.ts`) chamando os endpoints legados. Migrar as telas para `/api/ai/core/*` — e só então criar o client tipado, junto do primeiro consumidor real — é pendência registrada em docs/HIGIENIZACAO_BACKLOG_FRONTEND.md.
 
 ## Matriz de migração (legado → núcleo)
 

@@ -86,6 +86,7 @@ from app.models import redesign            # noqa
 from app.models import calendar_feed_credential  # noqa  (feed ICS revogável — migração 113)
 from app.models.system_module_setting import SystemModuleSetting  # noqa
 from app.models.nfse import NotaFiscalServico, NFSeStatus  # noqa
+from app.models.route_usage_metric import RouteUsageMetric  # noqa
 from app.models.scheduler_heartbeat import SchedulerHeartbeat  # noqa
 from app.models.integration_credential import IntegrationCredential  # noqa  (Cofre de Credenciais — migração 108)
 

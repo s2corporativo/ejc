@@ -29,11 +29,13 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { ROLES } from "../config/moduleRegistry";
+import { CANONICAL_ROUTES } from "../config/canonicalRoutes";
 import { useAuth } from "../stores/auth";
 import { RAMOS } from "./ramos/ramosConfig";
 import { Badge, Button, Card, PageHeader } from "../components/UI";
 
-// Área (taxonomia de casos) → slug do hub de ferramentas em /ramos/<slug>.
+// Área (taxonomia de casos) → slug do hub de ferramentas na rota canônica
+// /areas-de-atuacao/<slug> (o alias legado /ramos/<slug> só redireciona).
 // A maioria coincide; "civil" e "criminal" têm hubs com nome próprio.
 const AREA_PARA_HUB: Record<string, string> = {
   civil: "civel",
@@ -41,9 +43,9 @@ const AREA_PARA_HUB: Record<string, string> = {
 };
 
 /** Caminho do hub do ramo para uma área, ou null quando não há hub. */
-function hubDoRamo(areaSlug: string): string | null {
+export function hubDoRamo(areaSlug: string): string | null {
   const slug = AREA_PARA_HUB[areaSlug] ?? areaSlug;
-  return RAMOS[slug] ? `/ramos/${slug}` : null;
+  return RAMOS[slug] ? `${CANONICAL_ROUTES.areasAtuacao}/${slug}` : null;
 }
 
 type Area = {

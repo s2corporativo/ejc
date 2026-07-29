@@ -2,6 +2,8 @@
 
 Data: 2026-07-04 · Branch: `claude/ejc-legal-ai-architecture-s2ctes` · PR: #23
 
+> **Nota de atualização (2026-07-27)** — documento histórico, mantido como registro do que foi entregue no PR #23. Uma referência deste relatório não corresponde mais ao código: `frontend/src/lib/aiCore.ts` (citado nas seções 2, 3 e 6) foi **removido em 1befdf0 sem nunca ter tido um consumidor** — nenhuma tela chegou a importá-lo. O backend do núcleo (`/api/ai/core/*`) segue como descrito aqui; o que não se concretizou foi a migração do frontend, hoje registrada como pendência em `docs/HIGIENIZACAO_BACKLOG_FRONTEND.md`.
+
 ## 1. Situação anterior
 
 - Gateway central legítimo (`services/ai_gateway.py`) coexistindo com um **gateway-sombra** (`core/ai_brain.py`: httpx direto ao Ollama, sem sanitização, sem AILog, sem fallback) consumido por ~16 pontos.
