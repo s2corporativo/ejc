@@ -12,6 +12,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import EntradaUniversalGlobal from "./components/EntradaUniversalGlobal";
 import FlowEnhancements from "./components/FlowEnhancements";
 import Layout from "./components/Layout";
+import LegacyRedirect from "./components/LegacyRedirect";
 import PortalLayout from "./components/PortalLayout";
 import ProviderPanelShortcut from "./components/ProviderPanelShortcut";
 import {
@@ -164,11 +165,13 @@ export default function App() {
                 }
               />
 
+              {/* FLX-029: LegacyRedirect mescla a query/hash de origem com o
+                  destino (params embutidos no destino vencem em conflito). */}
               {LEGACY_REDIRECTS.map((redirect) => (
                 <Route
                   key={redirect.from}
                   path={redirect.from}
-                  element={<Navigate to={redirect.to} replace />}
+                  element={<LegacyRedirect to={redirect.to} />}
                 />
               ))}
 

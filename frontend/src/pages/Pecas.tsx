@@ -13,6 +13,7 @@ import {
   SearchCheck,
   ClipboardCheck,
   FolderOpen,
+  Stamp,
 } from "lucide-react";
 import api from "../lib/api";
 import type { LegalDoc, Paged } from "../types";
@@ -31,6 +32,12 @@ import {
 import PecaGeneratorModal from "../components/PecaGeneratorModal";
 import CaseFilterChip from "../components/CaseFilterChip";
 import { ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import {
+  montarPayloadProtocolo,
+  temProtocoloRegistrado,
+  mensagemErroProtocolo,
+  dataLocalISO,
+} from "../lib/protocoloPeca";
 import { useIaStatus } from "../lib/iaStatus";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
 import FichaTriagem, {
@@ -315,6 +322,12 @@ export default function Pecas() {
   };
 
   const avancarStatus = async (doc: LegalDoc, status: string) => {
+    // FLX-070: "protocolada" exige comprovante registrado ANTES (o backend
+    // devolve 422 no PATCH direto) — desvia para o fluxo de protocolo.
+    if (status === "protocolada") {
+      await iniciarProtocolo(doc);
+      return;
+    }
     try {
       await api.patch(`/legal-docs/${doc.id}`, { status });
       const etapa = FILA.find((s) => s.key === status);
@@ -322,6 +335,78 @@ export default function Pecas() {
       load();
     } catch (e: any) {
       toast.error(errDetail(e, "Falha ao mudar o status da peça"));
+    }
+  };
+
+  // ── FLX-070: registrar protocolo → status "protocolada" ────────────────
+  const [protocolo, setProtocolo] = useState<{
+    doc: LegalDoc;
+    numero: string;
+    tribunal: string;
+    data: string;
+  } | null>(null);
+  const [protocolando, setProtocolando] = useState(false);
+
+  // Se a peça já tem numero_protocolo (a listagem não traz; o detalhe sim),
+  // pula o modal e vai direto ao PATCH de status. Cancelar o modal não move.
+  const iniciarProtocolo = async (doc: LegalDoc) => {
+    try {
+      const { data } = await api.get<LegalDoc>(`/legal-docs/${doc.id}`);
+      if (temProtocoloRegistrado(data)) {
+        await api.patch(`/legal-docs/${doc.id}`, { status: "protocolada" });
+        toast.success('Peça movida para "Protocolada"');
+        load();
+        return;
+      }
+      setProtocolo({ doc, numero: "", tribunal: "", data: "" });
+    } catch (e: any) {
+      toast.error(
+        mensagemErroProtocolo(
+          e?.response?.status,
+          e?.response?.data?.detail,
+          'Falha ao mover a peça para "Protocolada"',
+        ),
+      );
+    }
+  };
+
+  const confirmarProtocolo = async () => {
+    if (!protocolo) return;
+    const payload = montarPayloadProtocolo(protocolo);
+    if (!payload) {
+      toast.error("Informe o número do protocolo");
+      return;
+    }
+    setProtocolando(true);
+    try {
+      // 1) registra o comprovante (número/tribunal/data) na peça
+      await api.patch(`/legal-docs/${protocolo.doc.id}/protocolo`, payload);
+    } catch (e: any) {
+      // Peça segue onde estava — modal aberto para corrigir e tentar de novo.
+      toast.error(
+        mensagemErroProtocolo(e?.response?.status, e?.response?.data?.detail),
+      );
+      setProtocolando(false);
+      return;
+    }
+    try {
+      // 2) só então move o status (gates de HITL/validação continuam valendo)
+      await api.patch(`/legal-docs/${protocolo.doc.id}`, {
+        status: "protocolada",
+      });
+      toast.success('Protocolo registrado — peça movida para "Protocolada"');
+    } catch (e: any) {
+      // Protocolo JÁ registrado: um novo "Protocolar" pula o modal e só move.
+      toast.error(
+        errDetail(
+          e,
+          "Protocolo registrado, mas não foi possível mover o status. Tente novamente.",
+        ),
+      );
+    } finally {
+      setProtocolando(false);
+      setProtocolo(null);
+      load();
     }
   };
 
@@ -519,6 +604,11 @@ export default function Pecas() {
     (p.human_reviewed || !p.ai_generated) &&
     p.status === "corrigida" &&
     p.validacao_juridica?.apto_fluxo;
+
+  // FLX-070: o registro de protocolo aceita peça aprovada/final (backend:
+  // STATUS_EXIGE_REVISAO) — daí o botão nessas duas etapas da fila.
+  const podeProtocolar = (p: LegalDoc) =>
+    p.status === "aprovada" || p.status === "final";
 
   return (
     <div>
@@ -749,6 +839,14 @@ export default function Pecas() {
                           Aprovar
                         </button>
                       )}
+                      {podeProtocolar(p) && (
+                        <button
+                          className="btn-ghost px-2.5 py-1.5 text-xs text-primary-700"
+                          onClick={() => avancarStatus(p, "protocolada")}
+                        >
+                          <Stamp size={14} /> Protocolar
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -886,6 +984,15 @@ export default function Pecas() {
                               onClick={() => avancarStatus(p, "aprovada")}
                             >
                               Aprovar
+                            </button>
+                          )}
+                          {podeProtocolar(p) && (
+                            <button
+                              className="btn-ghost px-2 py-1 text-primary-700 text-xs"
+                              title="Registrar o protocolo e marcar como protocolada"
+                              onClick={() => avancarStatus(p, "protocolada")}
+                            >
+                              <Stamp size={15} /> Protocolar
                             </button>
                           )}
                         </td>
@@ -1080,6 +1187,76 @@ export default function Pecas() {
           >
             <ShieldCheck size={15} />{" "}
             {aprovando ? "Aprovando..." : "Aprovar peça"}
+          </button>
+        </div>
+      </Modal>
+      {/* FLX-070: registrar protocolo antes de mover para "Protocolada".
+        Cancelar/fechar NÃO move a peça — nenhum PATCH acontece sem confirmar. */}
+      <Modal
+        open={!!protocolo}
+        onClose={() => setProtocolo(null)}
+        title="Registrar protocolo"
+      >
+        <p className="text-sm text-slate-600 mb-3">
+          Para mover <strong>{protocolo?.doc.titulo}</strong> para
+          &quot;Protocolada&quot;, registre o comprovante do peticionamento
+          (feito fora do sistema, ex.: PJe/eproc). O número do protocolo é a
+          prova de tempestividade da peça.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="label">Número do protocolo *</label>
+            <input
+              className="input"
+              value={protocolo?.numero || ""}
+              onChange={(e) =>
+                protocolo &&
+                setProtocolo({ ...protocolo, numero: e.target.value })
+              }
+            />
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Tribunal/sistema (opcional)</label>
+              <input
+                className="input"
+                placeholder="Ex.: TJMG — PJe"
+                value={protocolo?.tribunal || ""}
+                onChange={(e) =>
+                  protocolo &&
+                  setProtocolo({ ...protocolo, tribunal: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="label">Data do protocolo (opcional)</label>
+              <input
+                type="date"
+                className="input"
+                max={dataLocalISO()}
+                value={protocolo?.data || ""}
+                onChange={(e) =>
+                  protocolo &&
+                  setProtocolo({ ...protocolo, data: e.target.value })
+                }
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Sem data, o registro assume o momento atual.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="btn-ghost" onClick={() => setProtocolo(null)}>
+            Cancelar
+          </button>
+          <button
+            className="btn-primary"
+            disabled={protocolando || !protocolo?.numero.trim()}
+            onClick={confirmarProtocolo}
+          >
+            <Stamp size={15} />{" "}
+            {protocolando ? "Registrando..." : "Registrar e protocolar"}
           </button>
         </div>
       </Modal>

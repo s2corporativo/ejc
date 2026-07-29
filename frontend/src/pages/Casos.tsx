@@ -52,7 +52,9 @@ import {
   atualizarRascunho,
   limparRascunho,
   snapshotForm,
+  pendenciaDeRascunho,
   type IntakeRascunho,
+  type IntakePendencia,
 } from "../lib/intakeRascunho";
 import type { Case, Client, Paged, User } from "../types";
 import {
@@ -77,6 +79,11 @@ import {
   NOVO_CASO_MANUAL_PATH,
   resolverModoNovoCaso,
 } from "../lib/novoCaso";
+import {
+  rascunhoCobreRevisao,
+  urlRevisaoPendente,
+  urlSemParamRevisao,
+} from "../lib/revisaoExtracao";
 import Kanban from "./Kanban";
 import { List } from "lucide-react";
 
@@ -347,17 +354,7 @@ export default function Casos() {
   const [rascunhoSalvo, setRascunhoSalvo] = useState<IntakeRascunho | null>(
     null,
   );
-  const [pendencia, setPendencia] = useState<{
-    caseId: string;
-    caseTitulo: string;
-    /** Ausente quando o vínculo é por lote (os arquivos já estão no servidor). */
-    arquivo?: File;
-    tituloDoc: string;
-    tipoDoc?: string;
-    clientId?: string;
-    /** Lote da Entrada Universal a vincular (substitui o re-upload do arquivo). */
-    batchId?: string;
-  } | null>(null);
+  const [pendencia, setPendencia] = useState<IntakePendencia | null>(null);
   const [reanexando, setReanexando] = useState(false);
   // Passo de revisão (client-side) antes de confirmar a criação do caso.
   const [revisao, setRevisao] = useState<ResumoRevisao | null>(null);
@@ -370,11 +367,57 @@ export default function Casos() {
     if (novoCasoModo === "documento") {
       setModal(true);
       // Ao (re)abrir o intake, oferece retomar um cadastro por documento não
-      // finalizado (banner) e zera qualquer pendência de anexo obsoleta.
-      setRascunhoSalvo(carregarRascunho());
-      setPendencia(null);
+      // finalizado. Se o rascunho já traz `caseId`, o caso EXISTE: reconstrói a
+      // pendência para que a retomada passe pelo retry de vínculo/anexo (que
+      // nunca recria o caso) em vez de um novo POST /cases/ — evita duplicata.
+      const rascunho = carregarRascunho();
+      setRascunhoSalvo(rascunho);
+      setPendencia(pendenciaDeRascunho(rascunho));
     }
   }, [novoCasoModo]);
+
+  // FLX-048 — recuperação pós-refresh da revisão da extração: se a URL marca
+  // ?revisao=<caseId> e o rascunho persistido cobre esse caso, refaz o preview
+  // (dry-run) e reabre o modal de decisão. Sem rascunho compatível, remove o
+  // param silenciosamente (não há o que recuperar).
+  useEffect(() => {
+    const revisaoCaseId = new URLSearchParams(location.search).get("revisao");
+    if (!revisaoCaseId || preview) return;
+    const rascunho = carregarRascunho();
+    if (!rascunhoCobreRevisao(rascunho, revisaoCaseId)) {
+      nav(urlSemParamRevisao(location.pathname, location.search), {
+        replace: true,
+      });
+      return;
+    }
+    let cancelado = false;
+    (async () => {
+      try {
+        const result = await aplicarExtracao(revisaoCaseId, rascunho.extracao, {
+          dryRun: true,
+        });
+        if (cancelado) return;
+        setPreview({
+          caseId: revisaoCaseId,
+          caseTitulo: (rascunho.form.titulo as string) || "caso",
+          extracao: rascunho.extracao,
+          result,
+        });
+      } catch {
+        if (!cancelado)
+          toast.error(
+            "Não foi possível recuperar a revisão dos dados extraídos. " +
+              "Abra o caso pela lista para continuar — o rascunho segue salvo.",
+          );
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+    // `preview` fica fora das deps de propósito: o guard acima já impede
+    // reexecução com o modal aberto, e o objetivo é rodar só quando a URL muda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, location.search]);
 
   const fecharCadastroCompleto = () => {
     setModal(false);
@@ -528,25 +571,42 @@ export default function Casos() {
     const tipoDoc = form._tipo_documento as string | undefined;
     // Lote da Entrada Universal: quando presente, TODOS os arquivos já estão no
     // GED (órfãos) e o vínculo em lote substitui o re-upload do 1º arquivo.
-    const batchId =
+    const batchIdForm =
       (form._entrada_universal_batch_id as string | undefined) ||
       (typeof extracao?.batch_id === "string" ? extracao.batch_id : undefined);
+    // RETOMADA (arquivo único e lote): havendo pendência — inclusive a
+    // reconstruída do rascunho após um reload — o caso JÁ foi criado. Nesse
+    // estado salvar() NUNCA emite POST /cases/: reaproveita o caso existente e
+    // segue direto para o vínculo/anexo, senão a retomada duplicaria o caso.
+    const casoExistente = pendencia;
+    const batchId = batchIdForm ?? casoExistente?.batchId;
     // Rascunho recuperável: persistido ANTES de criar. Se qualquer passo falhar
     // (ou a aba fechar), o trabalho analisado não se perde. Limpo só no sucesso.
-    if (arquivoOriginal) {
+    // Cobre TAMBÉM o fluxo de lote (batchId sem File local) e a extração avulsa
+    // — sem isso, o F5 durante a revisão (?revisao=) perdia tudo em silêncio.
+    const intakeDocumental = !!(
+      arquivoOriginal ||
+      batchId ||
+      extracao ||
+      casoExistente
+    );
+    if (intakeDocumental) {
       salvarRascunho({
         form: snapshotForm(form),
         extracao: extracao ?? null,
-        arquivoNome: arquivoOriginal.name,
+        arquivoNome: arquivoOriginal?.name ?? null,
+        batchId: batchId ?? null,
         arquivoTipo: tipoDoc ?? null,
-        clientId: form.client_id || null,
-        caseId: null,
+        clientId: form.client_id || casoExistente?.clientId || null,
+        // Preserva o caso já criado: o rascunho não pode "esquecer" o caseId,
+        // sob pena de a próxima retomada recriar o caso.
+        caseId: casoExistente?.caseId ?? null,
         uploadFeito: false,
       });
     }
     try {
       let previewPreparado = false;
-      let clientId = form.client_id;
+      let clientId = form.client_id || casoExistente?.clientId;
       // Importação inteligente: cria/vincula cliente por CPF/CNPJ (dedup no backend)
       if (!clientId && temCandidato) {
         const { data: cli } = await api.post("/clients/resolver", cand);
@@ -559,10 +619,13 @@ export default function Casos() {
         if (v !== "" && v !== null && v !== undefined) payload[k] = v;
       }
       payload.client_id = clientId;
-      const { data: novo } = await api.post("/cases/", payload);
+      // Caso já criado (retomada) → reaproveita; caso novo → cria.
+      const novo = casoExistente
+        ? { id: casoExistente.caseId, titulo: casoExistente.caseTitulo }
+        : (await api.post("/cases/", payload)).data;
       const tituloDoc =
         (payload.titulo as string) || novo?.titulo || "Documento importado";
-      if (arquivoOriginal)
+      if (intakeDocumental)
         atualizarRascunho({ caseId: novo?.id ?? null, clientId });
 
       // VINCULA/ANEXA os documentos ANTES de navegar: uma falha não deixa mais
@@ -629,15 +692,20 @@ export default function Casos() {
       }
 
       // Sucesso: segue direto para a jornada. Quando há preview de extração,
-      // mantém apenas o modal de confirmação e abre a jornada logo após a
-      // decisão do usuário (aplicar ou pular), sem abandonar o fluxo na lista.
-      limparRascunho();
+      // mantém o modal de confirmação e — FLX-048 — PRESERVA o rascunho e
+      // marca ?revisao=<caseId> na URL: um refresh nesse momento recupera a
+      // decisão pendente. O rascunho só é limpo nos desfechos da decisão
+      // (aplicar ou pular), em aplicarPreviewNoCaso/abrirJornadaSemAplicar.
       setPendencia(null);
       setRascunhoSalvo(null);
       setModal(false);
-      if (previewPreparado) nav("/casos", { replace: true });
-      else if (novo?.id) nav(caseJourneyPath(novo.id), { replace: true });
-      else nav("/casos", { replace: true });
+      if (previewPreparado && novo?.id) {
+        nav(urlRevisaoPendente(novo.id), { replace: true });
+      } else {
+        limparRascunho();
+        if (novo?.id) nav(caseJourneyPath(novo.id), { replace: true });
+        else nav("/casos", { replace: true });
+      }
       setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
       load();
     } catch (e: any) {
@@ -735,10 +803,15 @@ export default function Casos() {
       toast.success(
         `Dados aplicados ao caso: ${r.partes_criadas} parte(s), ${r.areas_criadas} área(s)${campos}${prazos}.`,
       );
+      // Desfecho da decisão (FLX-048): agora sim o rascunho pode ser limpo; a
+      // navegação com replace tira o marcador ?revisao da URL/histórico.
+      limparRascunho();
+      setRascunhoSalvo(null);
       setPreview(null);
       load();
-      nav(caseJourneyPath(caseId));
+      nav(caseJourneyPath(caseId), { replace: true });
     } catch (e: any) {
+      // Falha ao aplicar: rascunho e ?revisao permanecem — segue recuperável.
       toast.error(
         e.response?.data?.detail || "Erro ao aplicar os dados ao caso.",
       );
@@ -750,8 +823,19 @@ export default function Casos() {
   const abrirJornadaSemAplicar = () => {
     if (!preview) return;
     const caseId = preview.caseId;
+    // Desfecho explícito ("pular") — FLX-048: limpa o rascunho e sai do
+    // estado de revisão (o replace remove ?revisao da URL/histórico).
+    limparRascunho();
+    setRascunhoSalvo(null);
     setPreview(null);
-    nav(caseJourneyPath(caseId));
+    nav(caseJourneyPath(caseId), { replace: true });
+  };
+
+  // Fechar o modal SEM decidir (X/backdrop) — FLX-048: mantém o rascunho e o
+  // ?revisao na URL; a revisão continua recuperável (um F5 reabre o preview).
+  // Os desfechos reais são aplicarPreviewNoCaso e abrirJornadaSemAplicar.
+  const fecharPreviewSemDecidir = () => {
+    setPreview(null);
   };
 
   return (
@@ -1073,24 +1157,28 @@ export default function Casos() {
                   Nada foi perdido: o caso está salvo (em triagem)
                   {pendencia.batchId
                     ? " e os arquivos do lote importado continuam no servidor. Tente vincular de novo — nenhum arquivo será duplicado."
-                    : ` e o documento “${pendencia.arquivo?.name ?? pendencia.tituloDoc}” continua aqui. Tente anexar de novo — o caso não será duplicado.`}
+                    : pendencia.arquivo
+                      ? ` e o documento “${pendencia.arquivo.name}” continua aqui. Tente anexar de novo — o caso não será duplicado.`
+                      : ` — só falta o documento “${pendencia.tituloDoc}”, que não sobreviveu ao recarregamento da página. Reenvie-o abaixo (o caso não será duplicado) ou anexe-o pela GED do caso.`}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    icon={<RotateCw className="h-3.5 w-3.5" />}
-                    onClick={reanexarDocumento}
-                    disabled={reanexando}
-                  >
-                    {reanexando
-                      ? pendencia.batchId
-                        ? "Vinculando..."
-                        : "Anexando..."
-                      : pendencia.batchId
-                        ? "Tentar vincular novamente"
-                        : "Tentar anexar novamente"}
-                  </Button>
+                  {(pendencia.batchId || pendencia.arquivo) && (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      icon={<RotateCw className="h-3.5 w-3.5" />}
+                      onClick={reanexarDocumento}
+                      disabled={reanexando}
+                    >
+                      {reanexando
+                        ? pendencia.batchId
+                          ? "Vinculando..."
+                          : "Anexando..."
+                        : pendencia.batchId
+                          ? "Tentar vincular novamente"
+                          : "Tentar anexar novamente"}
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="secondary"
@@ -1517,7 +1605,7 @@ export default function Casos() {
           O usuário vê o que SERÁ aplicado e confirma ou pula. */}
       <Modal
         open={!!preview}
-        onClose={abrirJornadaSemAplicar}
+        onClose={fecharPreviewSemDecidir}
         title="Aplicar dados extraídos ao caso"
         footer={
           <>

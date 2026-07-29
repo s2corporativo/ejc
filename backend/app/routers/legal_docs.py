@@ -441,6 +441,24 @@ async def atualizar(
             status_code=422,
             detail="Peca gerada por IA exige revisao humana registrada antes de aprovar (use POST /legal-docs/{id}/revisar). Provimento OAB 205/2021.",
         )
+    # ── FLX-070: status 'protocolada' exige advogado + protocolo registrado ──
+    # O comprovante (número/tribunal/data) é gravado ANTES pelo endpoint
+    # dedicado PATCH /legal-docs/{id}/protocolo (que aceita peça aprovada/
+    # final). Sem esse gate, qualquer usuário com acesso ao caso marcava a
+    # peça como protocolada sem prova de tempestividade.
+    if novo_status == "protocolada" and _status_value(d.status) != "protocolada":
+        requer_advogado(
+            cu, detail="Marcar peça como protocolada é restrito a advogados"
+        )
+        if not (d.numero_protocolo or "").strip():
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Registre o protocolo antes de mudar o status: "
+                    "PATCH /legal-docs/{id}/protocolo (número/tribunal/data). "
+                    "A peça ainda não possui numero_protocolo."
+                ),
+            )
     await _bloquear_sem_validacao(db, d, novo_status)
     await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
 

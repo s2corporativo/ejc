@@ -15,6 +15,13 @@ import type { ExtracaoPayload } from "./api";
 /** Chave única do rascunho de intake documental no localStorage. */
 export const RASCUNHO_KEY = "ejc_intake_rascunho";
 
+/**
+ * Validade do rascunho (48h). O rascunho carrega dados pessoais extraídos de
+ * documentos — não deve viver indefinidamente no localStorage (LGPD). Passado
+ * o TTL, `carregarRascunho()` descarta e limpa a chave.
+ */
+export const RASCUNHO_TTL_MS = 48 * 60 * 60 * 1000;
+
 /** Snapshot serializável do fluxo "novo caso por documento". */
 export interface IntakeRascunho {
   /** Campos do formulário do caso (sem chaves "_" nem o File). */
@@ -23,6 +30,11 @@ export interface IntakeRascunho {
   extracao?: ExtracaoPayload | null;
   /** Nome do arquivo importado (o File em si não sobrevive à serialização). */
   arquivoNome?: string | null;
+  /**
+   * Lote da Entrada Universal (quando o intake veio de lote, sem File local —
+   * os arquivos já estão no GED). Ausente em rascunhos antigos: compatível.
+   */
+  batchId?: string | null;
   /** Tipo do documento importado (tipo_key), quando informado. */
   arquivoTipo?: string | null;
   /** Título usado para o documento na GED. */
@@ -35,6 +47,51 @@ export interface IntakeRascunho {
   uploadFeito?: boolean;
   /** epoch (ms) do último save — para exibir "há X" e ordenar. */
   salvoEm: number;
+}
+
+/**
+ * Pendência de um caso JÁ criado cujo vínculo/anexo dos documentos falhou.
+ * O `File` não sobrevive ao reload — quando ausente, só o vínculo por lote
+ * (`batchId`) pode ser refeito; o arquivo único é reanexado pela GED.
+ */
+export interface IntakePendencia {
+  caseId: string;
+  caseTitulo: string;
+  arquivo?: File;
+  tituloDoc: string;
+  tipoDoc?: string;
+  clientId?: string;
+  batchId?: string;
+}
+
+/**
+ * Reconstrói a pendência a partir do rascunho restaurado — é o que impede a
+ * retomada de recriar o caso: com `caseId` gravado, o caso EXISTE e o fluxo
+ * precisa seguir do vínculo/anexo em diante, nunca de um novo POST /cases/.
+ *
+ * Retorna null quando não há o que retomar: sem `caseId` (nada foi criado),
+ * com `uploadFeito` (vínculo já concluído — ex.: revisão de extração pendente)
+ * ou sem documento algum a vincular (lote/arquivo), caso em que a recuperação
+ * cabe ao fluxo de `?revisao=`.
+ */
+export function pendenciaDeRascunho(
+  rascunho: IntakeRascunho | null,
+): IntakePendencia | null {
+  if (!rascunho?.caseId) return null;
+  if (rascunho.uploadFeito) return null;
+  if (!rascunho.batchId && !rascunho.arquivoNome) return null;
+  const titulo =
+    (typeof rascunho.form?.titulo === "string" && rascunho.form.titulo) ||
+    rascunho.tituloDoc ||
+    "caso";
+  return {
+    caseId: rascunho.caseId,
+    caseTitulo: titulo,
+    tituloDoc: rascunho.tituloDoc || rascunho.arquivoNome || titulo,
+    tipoDoc: rascunho.arquivoTipo ?? undefined,
+    clientId: rascunho.clientId ?? undefined,
+    batchId: rascunho.batchId ?? undefined,
+  };
 }
 
 /** localStorage de forma tolerante (modo privado/SSR podem lançar). */
@@ -83,7 +140,7 @@ export function salvarRascunho(
   }
 }
 
-/** Lê o rascunho salvo; retorna null se ausente ou malformado. */
+/** Lê o rascunho salvo; retorna null se ausente, malformado ou vencido (TTL). */
 export function carregarRascunho(): IntakeRascunho | null {
   const s = storage();
   if (!s) return null;
@@ -94,10 +151,20 @@ export function carregarRascunho(): IntakeRascunho | null {
     if (!parsed || typeof parsed !== "object") return null;
     const obj = parsed as Partial<IntakeRascunho>;
     if (!obj.form || typeof obj.form !== "object") return null;
+    // TTL: rascunho mais velho que 48h é descartado E removido do storage —
+    // dados pessoais não ficam residentes indefinidamente na estação.
+    if (
+      typeof obj.salvoEm === "number" &&
+      Date.now() - obj.salvoEm > RASCUNHO_TTL_MS
+    ) {
+      limparRascunho();
+      return null;
+    }
     return {
       form: obj.form as Record<string, unknown>,
       extracao: (obj.extracao ?? null) as ExtracaoPayload | null,
       arquivoNome: obj.arquivoNome ?? null,
+      batchId: obj.batchId ?? null,
       arquivoTipo: obj.arquivoTipo ?? null,
       tituloDoc: obj.tituloDoc ?? null,
       clientId: obj.clientId ?? null,

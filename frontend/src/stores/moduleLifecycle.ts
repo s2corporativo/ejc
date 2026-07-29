@@ -23,9 +23,18 @@ type ModuleLifecycleState = {
   loaded: boolean;
   loading: boolean;
   load: () => Promise<void>;
+  liberarPorTimeout: () => void;
   upsertLocal: (setting: ModuleLifecycleOverride) => void;
   removeLocal: (moduleKey: string) => void;
 };
+
+/**
+ * Teto de espera do lifecycle (ms). O axios de `lib/api.ts` não define timeout
+ * global: sem este limite, um `GET /system-modules/settings` pendente para
+ * sempre deixaria o gate (e toda a área staff) preso no spinner. Vale para a
+ * própria requisição E como fallback do gate.
+ */
+export const MODULE_LIFECYCLE_TIMEOUT_MS = 8000;
 
 let inFlight: Promise<void> | null = null;
 
@@ -42,7 +51,9 @@ export const useModuleLifecycleStore = create<ModuleLifecycleState>((set) => ({
         const { data } = await api.get<{
           data: ModuleLifecycleOverride[];
           protected_module_keys: string[];
-        }>("/system-modules/settings");
+        }>("/system-modules/settings", {
+          timeout: MODULE_LIFECYCLE_TIMEOUT_MS,
+        });
         set({
           settings: Object.fromEntries(
             (data.data ?? []).map((setting) => [setting.module_key, setting]),
@@ -61,6 +72,11 @@ export const useModuleLifecycleStore = create<ModuleLifecycleState>((set) => ({
     })();
     return inFlight;
   },
+  // Fallback do gate: esgotado o teto de espera, segue com o manifesto local
+  // (mesmo desfecho do catch acima). Idempotente — não mexe em `loading` nem
+  // cancela o request em voo, então uma resposta tardia ainda aplica settings.
+  liberarPorTimeout: () =>
+    set((state) => (state.loaded ? state : { loaded: true })),
   upsertLocal: (setting) =>
     set((state) => ({
       settings: { ...state.settings, [setting.module_key]: setting },

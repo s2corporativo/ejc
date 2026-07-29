@@ -123,6 +123,11 @@ export interface LegalDoc {
   conteudo?: string;
   /** Só no detalhe (LegalDocDetail): observações da revisão humana. */
   notas_revisao?: string | null;
+  /** Só no detalhe (LegalDocDetail): comprovante de protocolo (FLX-070). */
+  numero_protocolo?: string | null;
+  protocolado_em?: string | null;
+  protocolo_tribunal?: string | null;
+  protocolo_comprovante_doc_id?: string | null;
   validacao_juridica?: {
     status: string;
     apto_fluxo: boolean;

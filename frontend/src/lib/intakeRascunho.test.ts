@@ -1,12 +1,21 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   RASCUNHO_KEY,
+  RASCUNHO_TTL_MS,
   snapshotForm,
   salvarRascunho,
   carregarRascunho,
   atualizarRascunho,
   limparRascunho,
+  pendenciaDeRascunho,
 } from "./intakeRascunho";
+
+/** Reescreve o `salvoEm` do rascunho persistido (simula passagem de tempo). */
+function envelhecerRascunho(salvoEm: number) {
+  const raw = JSON.parse(localStorage.getItem(RASCUNHO_KEY)!);
+  raw.salvoEm = salvoEm;
+  localStorage.setItem(RASCUNHO_KEY, JSON.stringify(raw));
+}
 
 describe("intakeRascunho", () => {
   beforeEach(() => {
@@ -111,6 +120,113 @@ describe("intakeRascunho", () => {
     it("não cria rascunho do nada quando não existe base", () => {
       expect(atualizarRascunho({ caseId: "c9" })).toBeNull();
       expect(carregarRascunho()).toBeNull();
+    });
+  });
+
+  describe("TTL de 48h (LGPD — dados pessoais não residem indefinidamente)", () => {
+    it("rascunho dentro do TTL continua recuperável", () => {
+      salvarRascunho({ form: { titulo: "X" }, caseId: "c1" });
+      envelhecerRascunho(Date.now() - (RASCUNHO_TTL_MS - 60_000));
+      expect(carregarRascunho()).not.toBeNull();
+    });
+
+    it("rascunho mais velho que 48h é descartado E a chave é limpa", () => {
+      salvarRascunho({ form: { titulo: "X" }, caseId: "c1" });
+      envelhecerRascunho(Date.now() - RASCUNHO_TTL_MS - 1);
+      expect(carregarRascunho()).toBeNull();
+      expect(localStorage.getItem(RASCUNHO_KEY)).toBeNull();
+    });
+
+    it("rascunho legado sem batchId carrega com batchId null (compat)", () => {
+      salvarRascunho({ form: { titulo: "X" }, caseId: "c1" });
+      const raw = JSON.parse(localStorage.getItem(RASCUNHO_KEY)!);
+      delete raw.batchId;
+      localStorage.setItem(RASCUNHO_KEY, JSON.stringify(raw));
+      expect(carregarRascunho()!.batchId).toBeNull();
+    });
+
+    it("rascunho de lote (sem File) faz roundtrip com batchId", () => {
+      salvarRascunho({
+        form: { titulo: "Lote" },
+        extracao: { batch_id: "b1" } as any,
+        arquivoNome: null,
+        batchId: "b1",
+        caseId: "c9",
+      });
+      const lido = carregarRascunho()!;
+      expect(lido.batchId).toBe("b1");
+      expect(lido.arquivoNome).toBeNull();
+      expect(lido.caseId).toBe("c9");
+    });
+  });
+
+  describe("pendenciaDeRascunho (retomar × recriar)", () => {
+    it("com caseId e lote: retoma o caso existente (nunca recria)", () => {
+      salvarRascunho({
+        form: { titulo: "Lote da Silva" },
+        batchId: "b1",
+        caseId: "c1",
+        clientId: "cli-1",
+        uploadFeito: false,
+      });
+      const p = pendenciaDeRascunho(carregarRascunho());
+      expect(p).toEqual({
+        caseId: "c1",
+        caseTitulo: "Lote da Silva",
+        tituloDoc: "Lote da Silva",
+        tipoDoc: undefined,
+        clientId: "cli-1",
+        batchId: "b1",
+      });
+    });
+
+    it("com caseId e arquivo único: retoma sem o File (perdido no reload)", () => {
+      salvarRascunho({
+        form: { titulo: "Ação X" },
+        arquivoNome: "peticao.pdf",
+        arquivoTipo: "peticao",
+        tituloDoc: "Ação X",
+        caseId: "c2",
+        uploadFeito: false,
+      });
+      const p = pendenciaDeRascunho(carregarRascunho())!;
+      expect(p.caseId).toBe("c2");
+      expect(p.batchId).toBeUndefined();
+      expect(p.arquivo).toBeUndefined();
+      expect(p.tipoDoc).toBe("peticao");
+    });
+
+    it("sem caseId (caso ainda não criado) não vira pendência — cria normalmente", () => {
+      salvarRascunho({
+        form: { titulo: "Ação Y" },
+        batchId: "b2",
+        caseId: null,
+      });
+      expect(pendenciaDeRascunho(carregarRascunho())).toBeNull();
+    });
+
+    it("com uploadFeito (vínculo concluído) não vira pendência", () => {
+      salvarRascunho({
+        form: { titulo: "Ação Z" },
+        batchId: "b3",
+        caseId: "c3",
+        uploadFeito: true,
+      });
+      expect(pendenciaDeRascunho(carregarRascunho())).toBeNull();
+    });
+
+    it("sem documento a vincular (só extração) fica com o fluxo de ?revisao=", () => {
+      salvarRascunho({
+        form: { titulo: "Ação W" },
+        extracao: { partes: { autor: "Fulano" } },
+        caseId: "c4",
+        uploadFeito: false,
+      });
+      expect(pendenciaDeRascunho(carregarRascunho())).toBeNull();
+    });
+
+    it("tolera rascunho ausente", () => {
+      expect(pendenciaDeRascunho(null)).toBeNull();
     });
   });
 

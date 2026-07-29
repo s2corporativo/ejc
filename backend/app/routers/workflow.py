@@ -61,6 +61,26 @@ class IniciarWorkflowReq(BaseModel):
 def _pode_editar(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["advogado"]
 
+def _bloquear_caso_fechado(case) -> None:
+    """FLX-065: caso encerrado/arquivado não movimenta workflow — espelha a
+    guarda do orquestrador (routers/orquestrador.py): o advogado precisa
+    reabrir/desarquivar o caso antes de qualquer mutação."""
+    status_caso = getattr(case.status, "value", case.status)
+    if status_caso in ("encerrado", "arquivado"):
+        raise HTTPException(
+            409, f"Caso {status_caso} — reabra o caso para alterar o workflow."
+        )
+
+async def _etapas_visitadas(db: AsyncSession, cw: CaseWorkflow) -> set:
+    """Ids de etapa que o workflow já visitou (histórico ∪ etapa atual)."""
+    visitadas = set((await db.execute(
+        select(WorkflowHistorico.etapa_id)
+        .where(WorkflowHistorico.case_workflow_id == cw.id)
+    )).scalars().all())
+    if cw.etapa_atual_id:
+        visitadas.add(cw.etapa_atual_id)
+    return visitadas
+
 def _out_etapa(e: WorkflowEtapa) -> dict:
     return {
         "id": e.id, "template_id": e.template_id, "nome": e.nome,
@@ -215,7 +235,8 @@ async def iniciar_workflow(
     """Vincula um template de workflow a um caso e inicia na primeira etapa."""
     if not _pode_editar(cu):
         raise HTTPException(403)
-    await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
+    case = await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
+    _bloquear_caso_fechado(case)
 
     # Verifica template
     t = (await db.execute(
@@ -269,6 +290,7 @@ async def aplicar_workflow_padrao(
     if not _pode_editar(cu):
         raise HTTPException(403)
     case = await verificar_acesso_caso(db, cu, case_id)
+    _bloquear_caso_fechado(case)
 
     # Não empilha workflows: um em andamento por caso.
     existente = (await db.execute(
@@ -352,7 +374,8 @@ async def avancar_etapa(
     """Avança o workflow para a próxima etapa e registra no histórico."""
     if not _pode_editar(cu):
         raise HTTPException(403)
-    await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
+    case = await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
+    _bloquear_caso_fechado(case)
 
     cw = (await db.execute(
         select(CaseWorkflow).where(CaseWorkflow.case_id == case_id,
@@ -361,6 +384,56 @@ async def avancar_etapa(
     )).scalars().first()
     if not cw:
         raise HTTPException(404, "Workflow ativo não encontrado para este caso")
+
+    # FLX-062: a próxima etapa precisa pertencer ao MESMO template do workflow
+    # (mesmo escopo já usado em workflow_do_caso/iniciar/aplicar-padrão) —
+    # sem isso, uma etapa de template alheio corrompia instância e histórico.
+    proxima = (await db.execute(
+        select(WorkflowEtapa).where(
+            WorkflowEtapa.id == req.proxima_etapa_id,
+            WorkflowEtapa.template_id == cw.template_id,
+        )
+    )).scalar_one_or_none()
+    if not proxima:
+        existe = (await db.execute(
+            select(WorkflowEtapa.id).where(WorkflowEtapa.id == req.proxima_etapa_id)
+        )).scalar_one_or_none()
+        if existe:
+            raise HTTPException(422, "Etapa não pertence ao template deste workflow")
+        raise HTTPException(404, "Etapa não encontrada")
+    if proxima.id == cw.etapa_atual_id:
+        raise HTTPException(422, "O workflow já está nesta etapa")
+
+    atual = None
+    if cw.etapa_atual_id:
+        atual = (await db.execute(
+            select(WorkflowEtapa).where(WorkflowEtapa.id == cw.etapa_atual_id)
+        )).scalar_one_or_none()
+
+    # FLX-062: avanço PARA FRENTE não pode pular etapa obrigatória jamais
+    # cumprida (histórico ∪ etapa atual). Retroceder (ordem menor) é permitido.
+    # Sem etapa atual válida (etapa_atual_id nulo ou órfão), tratamos como
+    # início do fluxo: toda obrigatória anterior à próxima precisa ter sido
+    # visitada — antes, a guarda era pulada em silêncio nesse cenário.
+    if atual is None or proxima.ordem > atual.ordem:
+        visitadas = await _etapas_visitadas(db, cw)
+        cond = [
+            WorkflowEtapa.template_id == cw.template_id,
+            WorkflowEtapa.obrigatoria.is_(True),
+            WorkflowEtapa.ordem < proxima.ordem,
+        ]
+        if atual is not None:
+            cond.append(WorkflowEtapa.ordem > atual.ordem)
+        intermediarias = (await db.execute(
+            select(WorkflowEtapa).where(*cond).order_by(WorkflowEtapa.ordem)
+        )).scalars().all()
+        pendentes = [e.nome for e in intermediarias if e.id not in visitadas]
+        if pendentes:
+            raise HTTPException(
+                422,
+                "Não é possível pular etapa(s) obrigatória(s) não cumprida(s): "
+                + ", ".join(pendentes),
+            )
 
     # Conclui etapa atual no histórico
     hist_atual = (await db.execute(
@@ -375,13 +448,6 @@ async def avancar_etapa(
         hist_atual.sla_respeitado = req.sla_respeitado
         if req.observacao:
             hist_atual.observacao = req.observacao
-
-    # Avança para próxima etapa
-    proxima = (await db.execute(
-        select(WorkflowEtapa).where(WorkflowEtapa.id == req.proxima_etapa_id)
-    )).scalar_one_or_none()
-    if not proxima:
-        raise HTTPException(404, "Etapa não encontrada")
 
     cw.etapa_atual_id = proxima.id
     # Sai do estado 'atrasado' ao avançar — o SLA da nova etapa recomeça.
@@ -408,7 +474,8 @@ async def concluir_workflow(
     """Marca o workflow do caso como concluído."""
     if not _pode_editar(cu):
         raise HTTPException(403)
-    await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
+    case = await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
+    _bloquear_caso_fechado(case)
     cw = (await db.execute(
         select(CaseWorkflow).where(CaseWorkflow.case_id == case_id,
                                    CaseWorkflow.status.in_(_STATUS_EM_ANDAMENTO))
@@ -416,6 +483,23 @@ async def concluir_workflow(
     )).scalars().first()
     if not cw:
         raise HTTPException(404)
+
+    # FLX-065: não conclui cedo — TODA etapa obrigatória do template precisa
+    # ter sido visitada (histórico ∪ etapa atual) antes do encerramento.
+    visitadas = await _etapas_visitadas(db, cw)
+    obrigatorias = (await db.execute(
+        select(WorkflowEtapa).where(
+            WorkflowEtapa.template_id == cw.template_id,
+            WorkflowEtapa.obrigatoria.is_(True),
+        ).order_by(WorkflowEtapa.ordem)
+    )).scalars().all()
+    pendentes = [e.nome for e in obrigatorias if e.id not in visitadas]
+    if pendentes:
+        raise HTTPException(
+            422,
+            "Workflow não pode ser concluído — etapa(s) obrigatória(s) não "
+            "visitada(s): " + ", ".join(pendentes),
+        )
 
     agora = datetime.now(timezone.utc)
     # Fecha no histórico a etapa que estava aberta (transição auditável).
