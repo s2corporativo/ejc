@@ -119,33 +119,29 @@ class DjenCapturaResultado:
         return int(other) + self.novas
 
 
-# ContextVar isola métricas por task assíncrona. Uma captura manual executada em
-# outro request não contamina o próximo heartbeat do job agendado.
-_RESULTADOS_EXECUCAO: ContextVar[list[DjenCapturaResultado] | None] = ContextVar(
+# Tupla imutável + copy-on-write: tasks-filhas podem herdar o valor do ContextVar,
+# mas nunca compartilham uma lista mutável. Captura manual e job ficam isolados.
+_RESULTADOS_EXECUCAO: ContextVar[tuple[DjenCapturaResultado, ...]] = ContextVar(
     "djen_resultados_execucao",
-    default=None,
+    default=(),
 )
 
 
 def registrar_resultado_execucao(
     resultado: DjenCapturaResultado,
 ) -> DjenCapturaResultado:
-    atuais = _RESULTADOS_EXECUCAO.get()
-    if atuais is None:
-        atuais = []
-        _RESULTADOS_EXECUCAO.set(atuais)
-    atuais.append(resultado)
+    _RESULTADOS_EXECUCAO.set((*_RESULTADOS_EXECUCAO.get(), resultado))
     return resultado
 
 
 def consumir_resultados_execucao() -> list[DjenCapturaResultado]:
-    resultados = list(_RESULTADOS_EXECUCAO.get() or [])
-    _RESULTADOS_EXECUCAO.set([])
+    resultados = list(_RESULTADOS_EXECUCAO.get())
+    _RESULTADOS_EXECUCAO.set(())
     return resultados
 
 
 def limpar_resultados_execucao() -> None:
-    _RESULTADOS_EXECUCAO.set([])
+    _RESULTADOS_EXECUCAO.set(())
 
 
 def _classificar_erro_fonte(exc: Exception) -> str:
