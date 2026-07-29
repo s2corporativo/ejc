@@ -210,13 +210,58 @@ async def entrevista_inteligente(
     )
 
     dados = _parse_json(resp.texto)
+    analise = _normalizar(dados)
+
+    # Ponte Entrevista → Ficha de Triagem: o painel alimenta a ficha do caso
+    # como RASCUNHO (HITL preservado), preenchendo APENAS campos ainda vazios
+    # e jamais tocando ficha já CONFIRMADA. Fail-soft: falha aqui não derruba
+    # a resposta da entrevista.
+    ficha_atualizada = False
+    if case is not None and dados is not None:
+        try:
+            ficha_atualizada = await _alimentar_ficha(db, case.id, analise, cu)
+        except Exception as e:
+            logger.warning(f"Entrevista→Ficha: falha ao alimentar rascunho: {e}")
+
     return {
         "status": "rascunho",
         "aviso": AVISO_ESTIMATIVA,
         "case_id": case.id if case else None,
-        "analise": _normalizar(dados),
+        "analise": analise,
         "parse_ok": dados is not None,
+        "ficha_atualizada": ficha_atualizada,
         "pii_removida": houve_pii,
         "modelo": f"{resp.provedor}/{resp.modelo}",
         "ai_log_id": ai_log_id,
     }
+
+
+async def _alimentar_ficha(db: AsyncSession, case_id: str,
+                           analise: dict, cu: User) -> bool:
+    """Grava o painel na ficha do caso (rascunho). Regras:
+    • ficha CONFIRMADA nunca é tocada (o gate da peça é do advogado);
+    • em ficha existente, só campos VAZIOS são preenchidos (não sobrescreve
+      trabalho humano); a confiança nova é MESCLADA à existente."""
+    from app.services import ficha_triagem_service as fts
+
+    ficha = await fts.obter(db, case_id)
+    if ficha is not None and ficha.status == "confirmada":
+        return False
+
+    campos = fts.dados_do_painel_entrevista(analise)
+    conf = campos.pop("confianca", {})
+    if ficha is not None:
+        campos = {
+            k: v for k, v in campos.items()
+            if getattr(ficha, k, None) in (None, "")
+        }
+        conf = {k: v for k, v in conf.items() if k in campos}
+        conf = {**(ficha.confianca or {}), **conf}
+    if not campos:
+        return False
+    if conf:
+        campos["confianca"] = conf
+    await fts.salvar(db, case_id, campos, confirmar=False,
+                     user_id=cu.id, user_role=cu.role.value,
+                     preservar_confirmada=True)
+    return True

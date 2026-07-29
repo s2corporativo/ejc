@@ -70,6 +70,18 @@ async def criar_solicitacao(
         raise HTTPException(status_code=400,
                             detail="Documento não pertence a este cliente")
 
+    # Titularidade do REQUISITANTE (defesa em profundidade): a coerência
+    # doc↔cliente acima não diz nada sobre a carteira de quem pede. Sem este
+    # gate, um advogado que conheça o par (document_id, client_id) alheio
+    # recebia título do documento e nome/e-mail dos logins do portal daquele
+    # cliente, e ainda disparava notificação na área dele. `listar` deste mesmo
+    # router já foi endurecido para carteira — aqui faltava.
+    from app.core.client_ownership import obter_cliente_autorizado
+    from app.core.ownership import verificar_acesso_caso
+    if doc.case_id:
+        await verificar_acesso_caso(db, cu, doc.case_id)
+    await obter_cliente_autorizado(db, cu, payload.client_id)
+
     # Hash do arquivo no momento da solicitação (integridade)
     from app.core.config import get_settings as _gs
     full_path = f"{_gs().UPLOAD_DIR}/{doc.filepath}"

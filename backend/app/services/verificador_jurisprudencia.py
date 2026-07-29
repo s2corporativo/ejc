@@ -26,10 +26,15 @@ verificável. Este módulo:
        • `suspeita`    — formato inválido (DV errado, súmula fora de faixa,
                          tribunal inexistente) → possível alucinação;
        • `generica`    — menção vaga sem qualquer referência verificável.
+       • `possivelmente_desatualizada` — localizada na base interna APENAS em
+         versão SUPERADA (`KnowledgeDoc.vigente=False`): existe, mas a redação
+         ingerida foi substituída. Citar redação revogada em peça é erro
+         profissional, e antes disto era indistinguível de "não ingerida".
 
   3. PONTUA a confiabilidade do texto (0-100):
        score = round(100 * (1.0*verificadas + 0.6*identificadas) / total)
-     `suspeita` e `generica` pesam 0. Texto SEM citações → score = None.
+     `suspeita`, `generica` e `possivelmente_desatualizada` pesam 0.
+     Texto SEM citações → score = None.
 
 Retorno RETROCOMPATÍVEL com verificar_citacoes (mesmas chaves total/
 confirmadas/nao_encontradas/citacoes[{citacao,tipo,encontrada,fonte}]/aviso),
@@ -52,6 +57,10 @@ STATUS_VERIFICADA = "verificada"
 STATUS_IDENTIFICADA = "identificada"
 STATUS_SUSPEITA = "suspeita"
 STATUS_GENERICA = "generica"
+# Localizada na base, mas SÓ em versão superada (KnowledgeDoc.vigente=False).
+# Os lookups oficiais filtram vigente=TRUE: sem este estado, citar norma
+# revogada/substituída era indistinguível de citar algo nunca ingerido.
+STATUS_DESATUALIZADA = "possivelmente_desatualizada"
 
 # Teto plausível de número de súmula por tribunal (última súmula editada
 # conhecida; atualizar quando os tribunais editarem novas — número ACIMA do
@@ -410,7 +419,20 @@ async def verificar_jurisprudencia(
     - `consultar_datajud`: confirma nº CNJ com DV válido no DataJud
       (máx. MAX_CONSULTAS_DATAJUD por chamada; falha → `identificada`).
     """
-    from app.services.citation_check import _existe_sumula, _existe_artigo
+    from app.services.citation_check import (
+        _artigo_superado,
+        _existe_artigo,
+        _existe_sumula,
+        _sumula_superada,
+    )
+
+    def _aviso_superada(info: dict, tipo: str) -> str:
+        return (
+            f"Localizada na base interna APENAS em versão SUPERADA "
+            f"(v{info.get('versao')}): “{str(info.get('titulo') or '')[:120]}”. "
+            f"A redação vigente d{tipo} pode ter mudado — confira o texto "
+            "atualizado na fonte oficial ANTES de protocolar."
+        )
 
     achados = analisar_texto(texto)
     resultados: list[dict] = []
@@ -489,7 +511,19 @@ async def verificar_jurisprudencia(
                     status = STATUS_VERIFICADA
                     aviso = _AVISO_VERIFICADA.format(fonte="base oficial interna/RAG")
                 else:
-                    aviso = _AVISO_IDENTIFICADA
+                    # Só então procura em versão superada: a súmula pode existir
+                    # na base, mas numa redação que foi substituída.
+                    superada = await _sumula_superada(
+                        db, c["numero"],
+                        c["tribunal"] if c["tribunal"] in
+                        ("STF", "STJ", "TST", "TJMG") else "",
+                    )
+                    if superada:
+                        status = STATUS_DESATUALIZADA
+                        fonte = superada.get("titulo")
+                        aviso = _aviso_superada(superada, "a súmula")
+                    else:
+                        aviso = _AVISO_IDENTIFICADA
 
         elif c["tipo"] == "artigo":
             rotulo = f"art. {c['numero']} {c['diploma']}".strip()
@@ -500,8 +534,17 @@ async def verificar_jurisprudencia(
                 status = STATUS_VERIFICADA
                 aviso = _AVISO_VERIFICADA.format(fonte="base oficial interna/RAG")
             else:
-                aviso = ("Artigo não localizado na legislação ingerida na base interna — "
-                         "confira o texto legal vigente antes de citar.")
+                # Mesmo recorte por diploma do lookup vigente (AI-056): avisar
+                # "superado" com base numa lei diferente da citada seria uma
+                # informação errada entregue com ar de certeza.
+                superado = await _artigo_superado(db, c["numero"], c.get("diploma"))
+                if superado:
+                    status = STATUS_DESATUALIZADA
+                    fonte = superado.get("titulo")
+                    aviso = _aviso_superada(superado, "o dispositivo")
+                else:
+                    aviso = ("Artigo não localizado na legislação ingerida na base interna — "
+                             "confira o texto legal vigente antes de citar.")
 
         else:  # generica
             status = STATUS_GENERICA
@@ -530,17 +573,21 @@ async def verificar_jurisprudencia(
 
 def _montar_relatorio(resultados: list[dict], datajud_saturado: bool) -> dict:
     contagem = {s: 0 for s in (STATUS_VERIFICADA, STATUS_IDENTIFICADA,
-                               STATUS_SUSPEITA, STATUS_GENERICA)}
+                               STATUS_SUSPEITA, STATUS_GENERICA,
+                               STATUS_DESATUALIZADA)}
     for r in resultados:
         contagem[r["status"]] += 1
 
     total = len(resultados)
     v, i = contagem[STATUS_VERIFICADA], contagem[STATUS_IDENTIFICADA]
     s, g = contagem[STATUS_SUSPEITA], contagem[STATUS_GENERICA]
+    d = contagem[STATUS_DESATUALIZADA]
 
     # Fórmula do score (documentada no docstring do módulo):
     #   score = round(100 * (1.0*verificadas + 0.6*identificadas) / total)
-    # suspeitas e genéricas pesam 0 → puxam o score para baixo.
+    # suspeitas, genéricas e desatualizadas pesam 0 → puxam o score para baixo.
+    # Desatualizada pesa 0 de propósito: a existência na base não redime citar
+    # redação superada — é defeito a corrigir, não crédito parcial.
     score = round(100 * (1.0 * v + 0.6 * i) / total) if total else None
 
     avisos: list[str] = []
@@ -552,6 +599,10 @@ def _montar_relatorio(resultados: list[dict], datajud_saturado: bool) -> dict:
     if g:
         avisos.append(f"{g} menção(ões) genérica(s) a jurisprudência sem referência "
                       "verificável — exija processo, tribunal, órgão julgador e data.")
+    if d:
+        avisos.append(f"{d} citação(ões) localizada(s) APENAS em versão SUPERADA na "
+                      "base interna — a redação vigente pode ter mudado; confira a "
+                      "fonte oficial antes de protocolar.")
     if i:
         avisos.append(f"{i} citação(ões) apenas identificada(s) (não confirmadas em "
                       "fonte externa) — confirme o inteiro teor antes do protocolo.")

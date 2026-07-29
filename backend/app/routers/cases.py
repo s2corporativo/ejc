@@ -15,7 +15,6 @@ from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles, ROLE_LEVEL
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
-from app.models.client import Client
 from app.models.audit_log import criar_audit_log
 # Alocador canônico de numero_interno extraído para service compartilhado
 # (fonte única com a conversão da Sala Jurídica). Alias fino preserva os
@@ -203,14 +202,14 @@ async def criar(
     # G1: casos ativos devem ter proxima_acao
     _validar_proxima_acao(payload)
 
-    # Validar cliente
-    client = (await db.execute(
-        select(Client).where(
-            Client.id == payload.client_id, Client.deleted_at.is_(None)
-        )
-    )).scalar_one_or_none()
-    if not client:
-        raise HTTPException(status_code=422, detail="Cliente não encontrado")
+    # Validar cliente — com GATE DE CARTEIRA (404 uniforme).
+    # Só existência não basta: `advogado_responsavel_id` abaixo cai em `cu.id`
+    # quando omitido, então criar caso com client_id de outra carteira fabricava
+    # o vínculo que faz `pode_ver_cliente` liberar aquele cliente para sempre
+    # (dossiê, CPF/CNPJ, procurações, data room). É a porta da frente da mesma
+    # classe já fechada no Raio-X (`_resolver_cliente`) e na Sala Jurídica.
+    from app.core.client_ownership import obter_cliente_autorizado
+    await obter_cliente_autorizado(db, cu, payload.client_id)
 
     # Idempotência concorrente: o mesmo cliente e número processual não
     # podem criar dois casos ativos. O advisory lock serializa requisições

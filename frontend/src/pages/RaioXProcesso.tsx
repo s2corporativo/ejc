@@ -863,9 +863,16 @@ export default function RaioXProcesso() {
               <Button variant="secondary">Voltar ao caso</Button>
             </Link>
           ) : (
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="h-4 w-4" /> Nova análise
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {/* Rota alternativa de entrada: quem prefere ANALISAR
+                  CONVERSANDO (e não só ler documentos) vai para a Sala. */}
+              <Link to="/sala-juridica">
+                <Button variant="secondary">Analisar conversando</Button>
+              </Link>
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" /> Nova análise
+              </Button>
+            </div>
           )
         }
       />

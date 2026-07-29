@@ -324,3 +324,51 @@ async def test_geracao_avulsa_sem_case_id_nao_gateia(monkeypatch):
     from app.routers import peca_geracao as mod
     resp = await mod.gerar_peca(_req_peca(None), db=_FakeDB([]), cu=_user())
     assert isinstance(resp, StreamingResponse)
+
+
+# ── ponte Entrevista Inteligente → Ficha (função pura) ───────────────────────
+
+def test_dados_do_painel_entrevista_mapeia_campos():
+    analise = {
+        "competencia": {"valor": "JEC", "confianca": 80},
+        "prescricao": {"dentro_prazo": False,
+                       "alerta": "3 anos — art. 206, §3º, CC", "confianca": 70},
+        "tutela_liminar": {"valor": True, "justificativa": "risco de dano",
+                           "confianca": 60},
+        "valor_causa": {"valor": 10000, "faixa": "R$ 8.000 a R$ 12.000",
+                        "confianca": 50},
+        "pedidos_possiveis": ["dano moral", "repetição de indébito"],
+        "riscos": ["prova frágil"],
+        "chance_exito": {"percentual": 65,
+                         "justificativa": "jurisprudência favorável",
+                         "confianca": 55},
+    }
+    dados = svc.dados_do_painel_entrevista(analise)
+    assert dados["competencia"] == "JEC"
+    assert dados["prescricao_decadencia"].startswith("ATENÇÃO")
+    assert "art. 206" in dados["prescricao_decadencia"]
+    assert dados["tutela_urgencia"] is True
+    assert dados["tutela_fundamento"] == "risco de dano"
+    assert dados["valor_causa"] == "R$ 8.000 a R$ 12.000"
+    assert "dano moral" in dados["pedidos_principais"]
+    assert "prova frágil" in dados["risco_nota"]
+    assert "65%" in dados["risco_nota"]
+    conf = dados["confianca"]
+    assert conf["competencia"] == 80
+    assert conf["tutela_urgencia"] == 60
+    assert conf["valor_causa"] == 50
+
+
+def test_dados_do_painel_entrevista_valor_causa_cabe_na_coluna():
+    # Coluna FichaTriagem.valor_causa é String(120) — nunca estourar.
+    dados = svc.dados_do_painel_entrevista(
+        {"valor_causa": {"valor": None, "faixa": "R$ " + "9" * 300}}
+    )
+    assert len(dados["valor_causa"]) <= 120
+
+
+def test_dados_do_painel_entrevista_vazio_sem_lixo():
+    assert svc.dados_do_painel_entrevista({}) == {}
+    assert svc.dados_do_painel_entrevista(
+        {"competencia": {"valor": None, "confianca": 90}}
+    ) == {}

@@ -284,9 +284,11 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "raio-x-processo",
     path: "/raio-x",
-    label: "Triagem e Raio-X",
+    // "Triagem" é nome de ETAPA da jornada, não de módulo — o rótulo antigo
+    // ("Triagem e Raio-X") disputava com a Sala Jurídica como porta de entrada.
+    label: "Raio-X de Documentos",
     description:
-      "Análise preliminar autônoma de documentos antes da abertura de um caso.",
+      "Análise preliminar autônoma de documentos (autos, contratos, provas) antes da abertura de um caso.",
     group: "Pesquisar & IA",
     icon: ScanSearch,
     component: RaioXProcesso,
