@@ -1,0 +1,123 @@
+name: Governanca
+
+# Travas automáticas de governança sobre cada Pull Request, derivadas de
+# docs/GOVERNANCA_IA.md e docs/FLUXO_DE_DESENVOLVIMENTO.md. Sem elas, a
+# governança é declaratória: nada impede migration sem reserva, segredo
+# versionado ou PR sem Issue vinculada.
+#
+# Complementa — não substitui — o "EJC Release Gate" (scripts/ci_guard.sh),
+# que cobre marcadores de merge, CORS wildcard e resíduos de release.
+#
+# Runner SELF-HOSTED `ejc-vps`, como os demais workflows do repositório
+# (docs/RUNNER_SELFHOSTED.md).
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: governanca-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governanca:
+    name: Governança — travas de PR
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Arquivos alterados no PR
+        id: diff
+        shell: bash
+        run: |
+          git fetch --quiet origin "${{ github.base_ref }}"
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > /tmp/alterados.txt
+          echo "--- arquivos alterados ---"
+          cat /tmp/alterados.txt
+
+      - name: Migration exige reserva registrada
+        shell: bash
+        run: |
+          # Caminho real do EJC: backend/alembic/versions/ (numeração sequencial),
+          # com reserva de número em backend/alembic/MIGRATION_RESERVATIONS.md.
+          if grep -Eq '^backend/alembic/versions/' /tmp/alterados.txt; then
+            echo "Migration detectada no PR."
+            if ! grep -q 'backend/alembic/MIGRATION_RESERVATIONS.md' /tmp/alterados.txt; then
+              echo "::error::PR cria ou altera migration sem atualizar backend/alembic/MIGRATION_RESERVATIONS.md. Ver CLAUDE.md, regra 3, e docs/GOVERNANCA_IA.md."
+              exit 1
+            fi
+            echo "Reserva atualizada no mesmo PR."
+          else
+            echo "Nenhuma migration neste PR."
+          fi
+
+      - name: Ausencia de segredo versionado
+        shell: bash
+        run: |
+          PADROES='(AKIA[0-9A-Z]{16})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(sk-[A-Za-z0-9]{20,})|(ghp_[A-Za-z0-9]{30,})|(xox[baprs]-[A-Za-z0-9-]{10,})'
+          ACHOU=0
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              *.lock|*.min.js|*.map|*.svg) continue;;
+              # .env.example versiona NOMES de variável e placeholders, por desenho.
+              *.env.example|.env.example) continue;;
+            esac
+            if grep -EIn "$PADROES" "$f" >/dev/null 2>&1; then
+              echo "::error file=$f::possivel segredo versionado"
+              ACHOU=1
+            fi
+          done < /tmp/alterados.txt
+          if grep -Eq '(^|/)\.env$|(^|/)\.env\.(local|production|prod)$' /tmp/alterados.txt; then
+            echo "::error::arquivo .env versionado no PR"
+            ACHOU=1
+          fi
+          [ "$ACHOU" -eq 0 ] || exit 1
+          echo "Nenhum segredo detectado."
+
+      - name: Descricao do PR preenchida
+        env:
+          CORPO: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          # Seções conforme .github/pull_request_template.md.
+          FALTA=0
+          while IFS= read -r SECAO; do
+            [ -z "$SECAO" ] && continue
+            printf '%s' "$CORPO" | grep -qi -- "$SECAO" \
+              || { echo "::error::secao ausente na descricao do PR: $SECAO"; FALTA=1; }
+          done <<'SECOES'
+          Issue vinculada
+          Solução
+          Testes executados
+          Riscos residuais
+          Rollback
+          SECOES
+          printf '%s' "$CORPO" | grep -Eq '#[0-9]+' \
+            || { echo "::error::PR sem Issue vinculada (referencia #<numero>)"; FALTA=1; }
+          [ "$FALTA" -eq 0 ] || exit 1
+          echo "Descricao do PR completa."
+
+      - name: Alteracao de governanca isolada
+        shell: bash
+        run: |
+          GOV=$(grep -Ec '^(CLAUDE\.md|AGENTS\.md|\.claude/|docs/GOVERNANCA_IA\.md)' /tmp/alterados.txt || true)
+          COD=$(grep -Ec '^(backend/app/|frontend/src/)' /tmp/alterados.txt || true)
+          if [ "$GOV" -gt 0 ] && [ "$COD" -gt 0 ]; then
+            echo "::error::PR mistura alteracao de governanca com alteracao de codigo funcional. Separe em PRs distintos."
+            exit 1
+          fi
+          echo "Escopo coerente."
+
+      - name: Branch nao e main
+        shell: bash
+        run: |
+          if [ "${{ github.head_ref }}" = "main" ] || [ "${{ github.head_ref }}" = "master" ]; then
+            echo "::error::PR originado de branch protegida."
+            exit 1
+          fi
+          echo "Branch de origem: ${{ github.head_ref }}"
