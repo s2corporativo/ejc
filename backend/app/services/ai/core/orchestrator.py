@@ -23,6 +23,7 @@ from fastapi import HTTPException
 
 from app.services.system_prompts import SYSTEM_PROMPTS, TarefaIA, get_configuracao
 from app.services.ai.provider_policy import AIProviderPolicy
+from app.services.ai.sanitization_policy import rotulo_de_sigilo_reforcado
 from app.services.ai.core.intent_classifier import classify_intent
 from app.services.ai.core.agent_registry import AGENT_REGISTRY
 from app.services.ai.core.ejc_skill_catalog import resolve_native_skill_plan
@@ -202,26 +203,24 @@ class SingleAICoreOrchestrator:
         # LOCAL_COMPLETO. Se o rótulo ORIGINAL (task_type recebido, domínio do
         # agente ou tarefa classificada) exigir LOCAL_COMPLETO, ele é o
         # task_type entregue ao gateway — o piso nunca é rebaixado.
-        try:
-            from app.services.ai.sanitization_policy import (
-                ModoSanitizacao, modo_para_task,
+        #
+        # A resolução vive em sanitization_policy (ponto único da política) e
+        # canoniza o rótulo antes de comparar: `domain` chega de campo livre, e
+        # "família"/"Direito de Família"/"familia_analysis" precisam bater com a
+        # mesma regra que "familia". Sem `try/except`: se a política não puder
+        # ser avaliada, a chamada falha em vez de seguir com o rótulo rebaixado.
+        rotulo_sigiloso = rotulo_de_sigilo_reforcado(
+            task_type,
+            domain,
+            getattr(intent.tarefa, "value", intent.tarefa),
+        )
+        if rotulo_sigiloso and gateway_task != rotulo_sigiloso:
+            logger.info(
+                "[sigilo] área sensível '%s' preserva o rótulo no gateway "
+                "(era '%s') — LOCAL_COMPLETO não pode ser rebaixado",
+                rotulo_sigiloso, gateway_task,
             )
-            for rotulo in (
-                str(task_type or ""),
-                str(domain or ""),
-                str(getattr(intent.tarefa, "value", intent.tarefa) or ""),
-            ):
-                if rotulo and modo_para_task(rotulo) == ModoSanitizacao.LOCAL_COMPLETO:
-                    if gateway_task != rotulo:
-                        logger.info(
-                            "[sigilo] área sensível '%s' preserva o rótulo no gateway "
-                            "(era '%s') — LOCAL_COMPLETO não pode ser rebaixado",
-                            rotulo, gateway_task,
-                        )
-                    gateway_task = rotulo
-                    break
-        except Exception as e:  # nunca derruba a chamada por causa do piso
-            logger.warning("[sigilo] piso por área indisponível: %s", type(e).__name__)
+        gateway_task = rotulo_sigiloso or gateway_task
 
         # ── Nomes do caso → pseudonimização REVERSÍVEL no gateway (LGPD 2026-07-06)
         # Passa as ENTIDADES NOMEADAS (cliente/empresa/advogado/parte contrária) ao
