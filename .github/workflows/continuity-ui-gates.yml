@@ -28,21 +28,34 @@ jobs:
           POSTGRES_USER: ejc_user
           POSTGRES_PASSWORD: ejc_pass
           POSTGRES_DB: ejc_db
+        # Porta de host SORTEADA pelo Docker, não fixa: há mais de um runner
+        # self-hosted no mesmo host, e dois jobs com Postgres de serviço
+        # concorrentes brigavam pela 5432 ("port is already allocated").
         ports:
-          - 5432:5432
+          - 5432/tcp
         options: >-
           --health-cmd "pg_isready -U ejc_user -d ejc_db"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 15
     env:
-      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:5432/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
       APP_ENV: development
       RESTORE_DRILL_ALLOW: "1"
       RESTORE_DRILL_REPORT: ../restore-drill-report.json
     steps:
       - uses: actions/checkout@v7
+
+      - name: Resolver a porta do Postgres de serviço
+        working-directory: .
+        env:
+          PGPORT_SERVICO: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          test -n "$PGPORT_SERVICO"
+          {
+            echo "PGPORT_SERVICO=$PGPORT_SERVICO"
+            echo "DATABASE_URL=postgresql+asyncpg://ejc_user:ejc_pass@localhost:${PGPORT_SERVICO}/ejc_db"
+            echo "DATABASE_URL_SYNC=postgresql://ejc_user:ejc_pass@localhost:${PGPORT_SERVICO}/ejc_db"
+          } >> "$GITHUB_ENV"
 
       - name: Instalar Python 3.11
         uses: actions/setup-python@v6
@@ -60,7 +73,7 @@ jobs:
 
       - name: Preparar banco migrado
         run: |
-          PGPASSWORD=ejc_pass psql -h localhost -U ejc_user -d ejc_db \
+          PGPASSWORD=ejc_pass psql -h localhost -p "$PGPORT_SERVICO" -U ejc_user -d ejc_db \
             -c "CREATE EXTENSION IF NOT EXISTS vector;" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
