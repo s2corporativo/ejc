@@ -104,6 +104,7 @@ trabalho.
 | C-7 | **MÉDIA** | `qa/e2e/run_fictitious_smoke.py` | Dados fictícios idênticos a cada execução (mesmo CPF, mesmo nº de processo) forçavam 409 e o fallback "achar pelo marcador", fazendo uma execução operar sobre registro de outra | `RUN_ID` por execução, com CPF sintético válido e nº de processo próprios | idem C-3 | Corrigido |
 | C-8 | **MÉDIA** | `qa/e2e/run_fictitious_smoke.py:163` | Redação do relatório só olhava o nível superior do JSON: a lista de clientes sob `data`, com **CPF decifrado**, ia inteira para o arquivo | Redação recursiva cobrindo CPF, CNPJ, e-mail e telefone | idem C-3 | Corrigido |
 | C-9 | **MÉDIA** | `app/eval/run_eval.py` | `--smoke` imprimia "cobertura exigida atendida" mesmo sem nenhuma área exigida e sem nenhum gold set real; no CI isso era lido como aprovação da qualidade jurídica | Mensagem declara que valida apenas FORMATO | verificado por execução | Corrigido |
+| C-10 | **CRÍTICA** | `scripts/deploy_vps_safe.sh:96` | `docker compose config >"/tmp/ejc_compose_config_*.txt"` gravava todos os valores interpolados — senha do Postgres, chaves de API, tokens — **em claro**, em arquivo world-readable de `/tmp` nunca removido, a cada deploy | `docker compose config --quiet` (correção do PR #497 adotada aqui) | `bash -n` + inspeção | Corrigido |
 
 ### Detalhe do C-1 — reprodução antes e depois
 
@@ -241,6 +242,21 @@ primeiro (cadeia 122–127 entra intacta), depois renumerar a migration do #493
 para `128_route_usage_metrics` com `down_revision = 127_audit_log_worm`. Não criar
 revisão de merge.
 
+**Mitigação já aplicada:** o PR #499 foi consolidado nesta branch, o que traz a
+guarda `test_migration_numbering_guard.py` para a `main` antes dos dois. Confirmei
+empiricamente, num worktree descartável que mergeou #497 e #493 sobre esta
+branch, que a guarda **reprova** a colisão:
+
+```
+FAILED test_nenhum_numero_de_migration_e_reutilizado
+FAILED test_existe_um_unico_head
+AssertionError: o repositório tem 2 heads de migration
+  (['122_route_usage_metrics', '127_audit_log_worm'])
+```
+
+Com esta branch na `main` primeiro, a colisão aparece no CI do PR seguinte em vez
+de quebrar `alembic upgrade head` em produção.
+
 **H-3 — Deploy e validação da aplicação publicada NÃO executados.**
 Sem acesso à VPS. Os itens 1-10 da seção 14 do pedido (checkout na VPS, rebuild,
 janela anônima, versão do bundle, console limpo) permanecem **não validados**.
@@ -284,10 +300,10 @@ Arquivos mais disputados: `.env.example` e `RamoBase.tsx` (4 PRs cada),
 **Ordem sugerida** — do menor para o maior risco, resolvendo conflito a cada passo
 e rodando a suíte entre eles:
 
-1. **#499** (governança/docs) — não toca código de produção nem `versions/`; traz
-   a guarda de numeração de migrations para valer nos PRs seguintes.
-2. **#496 + esta branch de consolidação** — correções P0 de IA já revisadas,
-   testadas e com as falhas desta auditoria corrigidas.
+1. ~~**#499** (governança/docs)~~ — **já consolidado nesta branch.** A guarda de
+   numeração de migrations entra junto com o #526.
+2. **#526 (esta branch)** — consolida #496 + #499, corrige dez defeitos e
+   instrumenta o deploy. Substitui o #496 e o #499 na fila.
 3. **#494** (fluxos) — conflita só com #497, em um arquivo.
 4. **#500** (triagem/IDOR) — resolver `citation_check.py` contra o #496.
 5. **#497** (34 bloqueadores) — entra com a cadeia de migrations 122–127 intacta.
