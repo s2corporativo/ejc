@@ -41,15 +41,20 @@ jobs:
           POSTGRES_PASSWORD: ejc_pass
           POSTGRES_DB: ejc_db
         ports:
-          - 5432:5432
+          # Porta EFÊMERA — ver a mesma nota em ci.yml. Este job e o de backend
+          # rodam no mesmo runner self-hosted e chegaram a colidir com 7 segundos
+          # de diferença (2026-07-29T01:58:22 vs 01:58:29), derrubando este gate
+          # sem que uma linha de teste executasse.
+          - 5432
         options: >-
           --health-cmd "pg_isready -U ejc_user -d ejc_db"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 15
     env:
-      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:5432/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      PGPORT: ${{ job.services.postgres.ports['5432'] }}
+      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:${{ job.services.postgres.ports['5432'] }}/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:${{ job.services.postgres.ports['5432'] }}/ejc_db
       APP_ENV: development
       RESTORE_DRILL_ALLOW: "1"
       RESTORE_DRILL_REPORT: ../restore-drill-report.json

@@ -22,17 +22,18 @@ on:
       - "backend/alembic/versions/**"
       - "frontend/src/**"
       - ".github/workflows/**"
+  # SEM filtro de `paths` em pull_request — deliberado. Este check é OBRIGATÓRIO
+  # na proteção da main, e a guarda `if:` abaixo já garante que nada executa em
+  # PR (o job é pulado). A diferença é sutil e travou um PR de verdade:
+  #   - job PULADO  → o check run existe com conclusão "skipped" e SATISFAZ o
+  #                   required check;
+  #   - workflow NÃO DISPARADO → nenhum check run é criado, e o GitHub espera
+  #                   para sempre por um contexto obrigatório que nunca chega.
+  # Com filtro de paths, todo PR que não tocasse backend/app, frontend/src,
+  # backend/alembic/versions ou .github/workflows ficava IMMERGÍVEL — foi o que
+  # aconteceu com o #499 (só documentação e um teste). Custo de remover: zero,
+  # porque o job continua pulado em PR.
   pull_request:
-    paths:
-      - "scripts/generate_architecture_inventory.py"
-      - "scripts/refine_architecture_inventory.py"
-      - "scripts/tests/test_generate_architecture_inventory.py"
-      - "scripts/tests/test_refine_architecture_inventory.py"
-      - "config/architecture_inventory_overrides.json"
-      - "backend/app/**"
-      - "backend/alembic/versions/**"
-      - "frontend/src/**"
-      - ".github/workflows/**"
 
 permissions:
   contents: read
