@@ -456,9 +456,17 @@ app.include_router(integracoes.brasilapi_router, prefix=API)
 # Dependências (DB, migrations) são checadas em /api/health/ready.
 @app.get("/api/health")
 async def health():
+    # `commit` é a PROVA de qual código está no ar. Sem ele não havia como
+    # distinguir "a alteração não foi publicada" de "a alteração não funciona":
+    # GIT_SHA era lido por app_version() mas ninguém o definia, e produção
+    # respondia sempre "dev". Agora o deploy injeta o SHA e confere a resposta
+    # deste endpoint antes de dar o deploy por concluído. É o SHA do commit,
+    # dado público do repositório — não expõe caminho, segredo nem config.
+    import os
     return {
         "status": "ok",
         "version": app_version(),
+        "commit": os.getenv("GIT_SHA") or "desconhecido",
         "uptime_seconds": uptime_seconds(),
         "environment": settings.APP_ENV,
     }

@@ -149,6 +149,13 @@ else
 fi
 
 DEPLOY_MUTATED=1
+# SHA do commit sendo publicado: entra no container via docker-compose.yml e é
+# conferido no /api/health depois da troca. Sem isso não havia como provar qual
+# código está no ar — a origem do "minha alteração não aparece no sistema".
+GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || echo desconhecido)}"
+export GIT_SHA
+log "Commit a publicar: ${GIT_SHA}"
+
 log "Build frontend"
 docker compose build frontend
 log "Build backend e worker"
@@ -175,6 +182,24 @@ for _ in $(seq 1 12); do
   fi
 done
 [ "$backend_ok" = "1" ] || { log "Backend não respondeu em 60s"; exit 1; }
+
+# PROVA do commit publicado: o backend precisa se identificar com o MESMO SHA
+# que acabou de ser construído. Divergência aqui significa container antigo em
+# pé (imagem reaproveitada, --force-recreate sem rebuild, bind mount apontando
+# para outro diretório) — o deploy responderia "ok" com o código velho no ar.
+COMMIT_NO_AR="$(curl -fsS http://127.0.0.1:8000/api/health 2>/dev/null \
+  | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+if [ "$COMMIT_NO_AR" = "$GIT_SHA" ]; then
+  log "Commit publicado confirmado pelo /api/health: ${COMMIT_NO_AR}"
+elif [ -z "$COMMIT_NO_AR" ] || [ "$COMMIT_NO_AR" = "desconhecido" ]; then
+  # Primeiro deploy após esta mudança: a imagem anterior ainda não expõe o
+  # campo. Avisa e segue — no próximo deploy a checagem passa a valer.
+  log "AVISO: /api/health não informou o commit (imagem anterior à instrumentação)."
+else
+  log "ERRO CRÍTICO: backend no ar declara commit ${COMMIT_NO_AR}, esperado ${GIT_SHA}."
+  log "O container não está executando o código recém-construído."
+  exit 1
+fi
 
 log "Atualizando worker"
 RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate worker
