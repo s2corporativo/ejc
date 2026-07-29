@@ -164,14 +164,16 @@ DEPLOY_MUTATED=1
 # conferido no /api/health depois da troca. Sem isso não havia como provar qual
 # código está no ar — a origem do "minha alteração não aparece no sistema".
 GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || echo desconhecido)}"
-if [ "$GIT_SHA" = "desconhecido" ] || [ -z "$GIT_SHA" ]; then
+[ -z "$GIT_SHA" ] && GIT_SHA="desconhecido"
+if [ "$GIT_SHA" = "desconhecido" ]; then
   # O workflow exclui .git/ do rsync, então numa execução MANUAL na VPS sem
-  # TARGET_SHA não há como saber o commit. Comparar duas incógnitas depois
-  # daria um "confirmado: desconhecido" — falso positivo confiante justamente
-  # no caminho mais sujeito a erro. Melhor exigir o SHA explicitamente.
-  log "ERRO: não foi possível determinar o commit a publicar."
-  log "Informe TARGET_SHA=<sha> ao executar o deploy manualmente."
-  exit 2
+  # TARGET_SHA não há como saber o commit. O deploy continua válido — o que
+  # se perde é a PROVA. Avisa alto e desliga a conferência, em vez de comparar
+  # duas incógnitas e imprimir "confirmado: desconhecido", que seria um falso
+  # positivo justamente no caminho mais sujeito a erro.
+  log "AVISO: commit indeterminado (sem TARGET_SHA e sem .git)."
+  log "AVISO: a conferência do commit publicado fica INDISPONÍVEL neste deploy."
+  log "AVISO: informe TARGET_SHA=<sha> para ter a prova de qual código subiu."
 fi
 export GIT_SHA
 log "Commit a publicar: ${GIT_SHA}"
@@ -214,7 +216,10 @@ done
 # para outro diretório) — o deploy responderia "ok" com o código velho no ar.
 COMMIT_NO_AR="$(curl -fsS http://127.0.0.1:8000/api/health 2>/dev/null \
   | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-if [ "$COMMIT_NO_AR" = "$GIT_SHA" ]; then
+if [ "$GIT_SHA" = "desconhecido" ]; then
+  # Sem SHA de referência não há o que conferir; o aviso já foi dado no início.
+  log "Conferência do commit publicado PULADA (commit de origem indeterminado)."
+elif [ "$COMMIT_NO_AR" = "$GIT_SHA" ]; then
   log "Commit publicado confirmado pelo /api/health: ${COMMIT_NO_AR}"
 elif [ -z "$COMMIT_NO_AR" ] || [ "$COMMIT_NO_AR" = "desconhecido" ]; then
   # O backend construído a partir deste commit SEMPRE expõe o campo. Resposta
