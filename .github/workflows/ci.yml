@@ -38,16 +38,20 @@ jobs:
           POSTGRES_PASSWORD: ejc_pass
           POSTGRES_DB: ejc_db
         ports:
-          - 5432:5432
+          # Porta ALTA no host: o runner é self-hosted e divide o VPS com o
+          # Postgres de produção, que ocupa a 5432 — mapear 5432:5432 falhava com
+          # "Bind for 0.0.0.0:5432 failed: port is already allocated" e o job
+          # morria antes do checkout. Dentro do container segue 5432.
+          - 55432:5432
         options: >-
           --health-cmd "pg_isready -U ejc_user -d ejc_db"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 15
     env:
-      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:5432/ejc_db
-      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
-      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:55432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:55432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@localhost:55432/ejc_db
       APP_ENV: development
       RUN_DB_TESTS: "1"
     steps:
