@@ -55,6 +55,9 @@ ADICOES_INTENCIONAIS = {
     # outro trabalho é adição legítima — o que este teste protege é que nenhuma
     # rota DESAPAREÇA nem mude de dependência de auth.
     ("/api/sala-juridica/{session_id}/conversao/preview", "GET"),
+    # PR #535: diagnóstico de integridade somente leitura, restrito a sócio+ e
+    # coberto por teste de contrato. É uma rota nova deliberada, não side effect.
+    ("/api/diagnostico/integridade", "GET"),
 }
 
 
@@ -99,7 +102,6 @@ def test_paridade_openapi_com_snapshot_anterior():
 def test_rotas_antes_dinamicas_seguem_montadas(caminho, metodo):
     """Uma rota-testemunha de cada um dos cinco grupos."""
     from app.main import app
-
     montadas = {(getattr(r, "path", ""), m)
                 for r in app.routes
                 for m in (getattr(r, "methods", None) or [])}
