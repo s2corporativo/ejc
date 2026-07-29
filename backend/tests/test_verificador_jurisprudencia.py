@@ -145,11 +145,9 @@ async def test_mencao_vaga_com_referencia_proxima_nao_vira_generica():
 # ── Score de confiabilidade ──────────────────────────────────────────────────
 
 async def test_score_pondera_status():
-    # 1 verificada (súmula no RAG mockado)... usar duas verificações separadas:
     r = await verificar_jurisprudencia(
         _FakeDB(),
         f"Processo {CNJ_VALIDO_TJMG} e também {CNJ_DV_ERRADO}.")
-    # 1 identificada (0.6) + 1 suspeita (0) sobre 2 → 30
     assert r["score"] == 30
     assert r["contagem_status"]["identificada"] == 1
     assert r["contagem_status"]["suspeita"] == 1
@@ -191,12 +189,11 @@ async def test_datajud_falha_cai_para_identificada(monkeypatch):
     r = await verificar_jurisprudencia(
         _FakeDB(), f"Processo {CNJ_VALIDO_TJMG}.", consultar_datajud=True)
     (c,) = _por_tipo(r, "processo_cnj")
-    assert c["status"] == "identificada"    # nunca erro
+    assert c["status"] == "identificada"
     assert "indisponível" in c["aviso"]
 
 
 async def test_datajud_suspeita_nao_consome_consulta(monkeypatch):
-    """DV inválido nem chega ao DataJud (economiza o teto de consultas)."""
     from app.services import datajud_service
     chamadas = []
 
@@ -209,7 +206,7 @@ async def test_datajud_suspeita_nao_consome_consulta(monkeypatch):
         _FakeDB(), f"Processos {CNJ_DV_ERRADO} e {CNJ_VALIDO_TJMG}.",
         consultar_datajud=True)
     assert chamadas == [CNJ_VALIDO_TJMG]
-    assert MAX_CONSULTAS_DATAJUD == 5   # teto documentado
+    assert MAX_CONSULTAS_DATAJUD == 5
 
 
 # ── Retrocompatibilidade do shape (call sites legados) ───────────────────────
@@ -217,11 +214,9 @@ async def test_datajud_suspeita_nao_consome_consulta(monkeypatch):
 async def test_shape_legado_preservado():
     r = await verificar_jurisprudencia(
         _FakeDB(), "Aplica-se a Súmula 7 do STJ e o art. 927 do CC ao caso.")
-    # chaves de topo legadas
     for k in ("total", "confirmadas", "nao_encontradas", "citacoes", "aviso"):
         assert k in r
     assert r["total"] == 2 and r["confirmadas"] == 0 and r["nao_encontradas"] == 2
-    # itens legados
     for c in r["citacoes"]:
         for k in ("citacao", "tipo", "encontrada", "fonte", "status", "aviso"):
             assert k in c
@@ -241,13 +236,10 @@ def test_parser_extrai_orgao_relator_data():
     assert c["data"] == "03/05/2021"
 
 
-# ── 5º estado: possivelmente desatualizada (Fase 4 — vigência na citação) ────
-# Os lookups oficiais filtram `vigente = TRUE`. Sem este estado, citar norma
-# SUPERADA era indistinguível de citar algo nunca ingerido — o advogado recebia
-# "confirme manualmente" quando deveria receber "esta redação foi substituída".
+# ── 5º estado: possivelmente desatualizada ───────────────────────────────────
 
 class _DBVigencia:
-    """Fake: o lookup vigente NÃO acha; o lookup de superada acha."""
+    """Fake: lookup vigente não acha; lookup superado devolve o contrato real."""
 
     def __init__(self, superada: tuple | None = ("Súmula 7 STJ (redação anterior)", 1)):
         self.superada = superada
@@ -256,12 +248,30 @@ class _DBVigencia:
     async def execute(self, stmt, params=None):
         sql = " ".join(str(stmt).split())
         self.consultas.append(sql)
-        vigente_false = "kd.vigente = FALSE" in sql
-        linha = self.superada if (vigente_false and self.superada) else None
+        parametros = params or {}
+        vigente_false = (
+            "kd.vigente = FALSE" in sql
+            or parametros.get("vigente") is False
+        )
+        linha = None
+        if vigente_false and self.superada:
+            if "SELECT kd.id, kd.titulo, kd.chave_origem" in sql:
+                titulo, versao = self.superada
+                linha = (
+                    "doc-superado",
+                    titulo,
+                    parametros.get("chave", "planalto:clt"),
+                    versao,
+                    False,
+                    "https://www.planalto.gov.br/",
+                )
+            else:
+                linha = self.superada
 
         class _R:
             def first(_self):
                 return linha
+
         return _R()
 
 
@@ -279,7 +289,6 @@ async def test_sumula_so_em_versao_superada_vira_desatualizada():
     assert cit[0]["status"] == STATUS_DESATUALIZADA
     assert "SUPERADA" in cit[0]["aviso"]
     assert "v1" in cit[0]["aviso"]
-    # Não conta como confirmada — citar redação superada é defeito, não crédito.
     assert cit[0]["encontrada"] is False
 
 
@@ -305,7 +314,7 @@ async def test_sem_versao_superada_mantem_comportamento_anterior():
         verificar_jurisprudencia,
     )
 
-    db = _DBVigencia(superada=None)  # nada na base, nem vigente nem superada
+    db = _DBVigencia(superada=None)
     rel = await verificar_jurisprudencia(db, "Aplica-se a Súmula 7 do STJ.")
     cit = [c for c in rel["citacoes"] if c["tipo"] == "sumula"]
     assert cit[0]["status"] == STATUS_IDENTIFICADA
@@ -320,8 +329,6 @@ async def test_desatualizada_entra_na_contagem_e_pesa_zero_no_score():
 
     db = _DBVigencia()
     rel = await verificar_jurisprudencia(db, "Aplica-se a Súmula 7 do STJ.")
-    # A chave nova precisa existir na contagem (dict era fixo em 4 estados —
-    # um 5º status quebraria com KeyError).
     assert rel["contagem_status"][STATUS_DESATUALIZADA] == 1
     assert rel["score"] == 0
     assert any("SUPERADA" in a for a in rel["avisos"])
