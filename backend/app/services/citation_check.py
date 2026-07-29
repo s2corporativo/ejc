@@ -60,6 +60,78 @@ _SLUG_POR_DIPLOMA = {
 }
 
 
+def _restricao_diploma(diploma: str | None) -> tuple[str, dict] | None:
+    """Cláusula SQL que amarra o lookup de artigo ao diploma citado.
+
+    Retorna None quando o diploma não é identificável — e aí NADA pode ser
+    afirmado sobre o artigo, nem que existe nem que foi superado. Compartilhada
+    por `_existe_artigo` e `_artigo_superado` justamente para que as duas
+    respostas fiquem sujeitas ao mesmo critério (AI-056)."""
+    d = (diploma or "").strip().lower()
+    if d in _SLUG_POR_DIPLOMA:
+        return ("AND kd.chave_origem = :chave ",
+                {"chave": f"planalto:{_SLUG_POR_DIPLOMA[d]}"})
+    if d.startswith("lei"):
+        # "lei nº 8.078/90" → número puro "8078"; casa o título com os pontos
+        # de milhar removidos, nos dois formatos usuais: "(Lei 8.078/1990)"
+        # (CATALOGO do planalto) e "Lei 8.078, de 11 de setembro de 1990".
+        numeros = re.sub(r"\D", "", d.split("/")[0])
+        if not numeros:
+            return None
+        return ("AND (replace(kd.titulo, '.', '') ILIKE :lei_a "
+                "OR replace(kd.titulo, '.', '') ILIKE :lei_b) ",
+                {"lei_a": f"%lei {numeros}/%", "lei_b": f"%lei {numeros},%"})
+    return None
+
+
+async def _sumula_superada(db, num: str, orgao: str) -> dict | None:
+    """Súmula localizada apenas em versão NÃO vigente (superada por reingestão).
+
+    Espelha `_existe_sumula` invertendo o filtro de vigência. Sem isto, citar
+    uma súmula cuja versão ingerida foi substituída é indistinguível de citar
+    algo que nunca entrou na base — o advogado recebe "confirme manualmente"
+    quando deveria receber "esta versão foi superada"."""
+    from app.services.ai_service import _filtros_gate_rag
+    orgao_norm = (orgao or "").strip().lower()
+    keys = [f"sumula:{orgao_norm}:{num}"] if orgao_norm else \
+           [f"sumula:{t}:{num}" for t in ("stf", "stj", "tst")]
+    row = (await db.execute(text(
+        "SELECT kd.titulo, kd.versao FROM knowledge_docs kd "
+        "WHERE kd.deleted_at IS NULL AND kd.vigente = FALSE "
+        "AND kd.chave_origem = ANY(:k) " + _filtros_gate_rag(False) +
+        " ORDER BY kd.versao DESC LIMIT 1"
+    ), {"k": keys})).first()
+    return {"titulo": row[0], "versao": row[1]} if row else None
+
+
+async def _artigo_superado(db, num: str, diploma: str | None = None) -> dict | None:
+    """Artigo localizado apenas em legislação NÃO vigente (versão superada).
+
+    Espelha `_existe_artigo` invertendo o filtro de vigência — citar artigo de
+    redação revogada em petição é erro profissional, e hoje o sistema é mudo.
+
+    RESTRITO ao diploma citado pelo mesmo motivo que `_existe_artigo`: sem a
+    amarra, uma citação que o lookup vigente se recusa a confirmar (por ser de
+    outra lei) voltaria aqui como "versão superada" apontando o título de uma
+    lei revogada qualquer — afirmar o diploma errado é pior que dizer que não
+    encontrou."""
+    from app.services.ai_service import _filtros_gate_rag
+    restricao = _restricao_diploma(diploma)
+    if restricao is None:
+        return None
+    cond, params = restricao
+    params = {**params, "a1": f"%Art. {num} %", "a2": f"%Art. {num}º%"}
+    row = (await db.execute(text(
+        "SELECT kd.titulo, kd.versao FROM knowledge_chunks kc "
+        "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
+        "WHERE kd.deleted_at IS NULL AND kd.vigente = FALSE "
+        "AND kd.categoria LIKE 'legislacao%' " + cond +
+        "AND (kc.conteudo ILIKE :a1 OR kc.conteudo ILIKE :a2) " +
+        _filtros_gate_rag(False) + " ORDER BY kd.versao DESC LIMIT 1"
+    ), params)).first()
+    return {"titulo": row[0], "versao": row[1]} if row else None
+
+
 async def _existe_artigo(db, num: str, diploma: str | None = None) -> str | None:
     """Procura o artigo no conteúdo da legislação ingerida, RESTRITO ao diploma
     citado (auditoria 2026-07-26, AI-056): buscar 'Art. N' em QUALQUER doc de
@@ -70,26 +142,12 @@ async def _existe_artigo(db, num: str, diploma: str | None = None) -> str | None
     Sem diploma identificável, NÃO confirma (None → verificação manual/OAB) —
     fail-closed: confirmação ambígua vale menos que nenhuma."""
     from app.services.ai_service import _filtros_gate_rag
-    d = (diploma or "").strip().lower()
-    cond = ""
-    params: dict = {"a1": f"%Art. {num} %", "a2": f"%Art. {num}º%"}
-    if d in _SLUG_POR_DIPLOMA:
-        cond = "AND kd.chave_origem = :chave "
-        params["chave"] = f"planalto:{_SLUG_POR_DIPLOMA[d]}"
-    elif d.startswith("lei"):
-        # "lei nº 8.078/90" → número puro "8078"; casa o título com os pontos
-        # de milhar removidos, nos dois formatos usuais: "(Lei 8.078/1990)"
-        # (CATALOGO do planalto) e "Lei 8.078, de 11 de setembro de 1990".
-        numeros = re.sub(r"\D", "", d.split("/")[0])
-        if not numeros:
-            return None
-        cond = ("AND (replace(kd.titulo, '.', '') ILIKE :lei_a "
-                "OR replace(kd.titulo, '.', '') ILIKE :lei_b) ")
-        params["lei_a"] = f"%lei {numeros}/%"
-        params["lei_b"] = f"%lei {numeros},%"
-    else:
+    restricao = _restricao_diploma(diploma)
+    if restricao is None:
         # Diploma ausente/desconhecido: nunca confirmar contra a lei errada.
         return None
+    cond, params = restricao
+    params = {**params, "a1": f"%Art. {num} %", "a2": f"%Art. {num}º%"}
     row = (await db.execute(text(
         "SELECT kd.titulo FROM knowledge_chunks kc "
         "JOIN knowledge_docs kd ON kd.id = kc.doc_id "

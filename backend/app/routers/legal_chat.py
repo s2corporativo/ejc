@@ -274,8 +274,13 @@ async def anexar_documentos(
                 enriquecer_rag=False,
                 user_id=user.id,
             )
-            extraido.pop("_texto_sanitizado", None)
+            # Texto SANITIZADO retido (truncado): é o que permite ao Document
+            # transferido na conversão nascer pesquisável no GED (ocr_text) em
+            # vez de "sem texto extraído".
+            texto_sana = extraido.pop("_texto_sanitizado", None)
             resultado = jsonable_encoder(extraido)
+            if isinstance(texto_sana, str) and texto_sana.strip():
+                resultado["_texto_sanitizado"] = texto_sana[:200_000]
         except Exception as exc:  # extração nunca bloqueia o anexo em si
             resultado = {"ok": False, "erro": str(exc)[:300]}
         anexo = LegalChatAttachment(
@@ -300,6 +305,28 @@ async def anexar_documentos(
         "duplicados": duplicados,
         "erros": erros,
     }
+
+
+@router.get(
+    "/{session_id}/conversao/preview",
+    # Único endpoint de busca por nome livre do router: sem teto, sustenta
+    # varredura da base (ILIKE com curinga à esquerda = seq scan) a cada tecla.
+    dependencies=[Depends(rate_limit("sala-juridica-preview", 30))],
+)
+async def conversao_preview(
+    session_id: str,
+    nome_cliente: str | None = Query(default=None, max_length=255),
+    client_id: str | None = Query(default=None, max_length=36),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(exigir_equipe_juridica),
+):
+    """Conferência PRÉVIA da conversão: alertas de conflito (EOAB), clientes
+    possivelmente duplicados e casos ativos do cliente — sem expor carteira
+    não autorizada (achado protegido vira alerta genérico)."""
+    sessao = await svc.obter_sessao(db, session_id, user)
+    return await svc.preview_conversao(
+        db, sessao, user, nome_cliente=nome_cliente, client_id=client_id
+    )
 
 
 @router.post(
@@ -338,7 +365,10 @@ async def vincular_caso(
     """Vincula a análise a um caso já existente (alternativa a criar caso novo)."""
     requer_advogado(user, "O vínculo a caso oficial é ato privativo de advogado")
     sessao = await svc.obter_sessao(db, session_id, user)
-    resultado = await svc.vincular_caso_existente(db, sessao, payload.case_id, user)
+    resultado = await svc.vincular_caso_existente(
+        db, sessao, payload.case_id, user,
+        transferir_anexos=payload.transferir_anexos,
+    )
     await criar_audit_log(
         db, user_id=user.id, user_role=svc._role(user),
         acao="sala_juridica_vincular_caso", entidade="legal_chat_sessions",

@@ -375,7 +375,7 @@ async def _limpar(chave: str):
 @pytestmark_db
 async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html, _engine_isolado):
     from app.core.database import AsyncSessionLocal
-    from app.services.citation_check import _existe_artigo
+    from app.services.citation_check import _artigo_superado, _existe_artigo
 
     slug, chave = "cdcteste", "planalto:cdcteste"
     monkeypatch.setattr(pl, "CATALOGO", [_lei_teste(slug)])
@@ -430,6 +430,15 @@ async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html, _en
             assert [d.versao for d in docs] == [1, 2]
             assert [d.vigente for d in docs] == [False, True]
             assert await _existe_artigo(db, "11", "lei 8.078/90") is not None
+
+            # A v1 agora é NÃO vigente: é o cenário de _artigo_superado. Ele
+            # obedece à MESMA amarra de diploma do _existe_artigo — senão uma
+            # citação recusada pelo lookup vigente (lei errada) reapareceria
+            # aqui como "versão superada" apontando a lei errada.
+            superado = await _artigo_superado(db, "6", "lei 8.078/90")
+            assert superado and superado["titulo"]
+            assert await _artigo_superado(db, "6", "lei 9.999/99") is None
+            assert await _artigo_superado(db, "6") is None
     finally:
         await _limpar(chave)
 
