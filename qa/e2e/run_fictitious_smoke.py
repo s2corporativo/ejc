@@ -81,6 +81,10 @@ class SuiteState:
     # Checks da matriz deliberadamente não executados — vão ao relatório em vez
     # de sumirem num `continue` (AI-005).
     nao_coberto: list[dict[str, Any]] = field(default_factory=list)
+    # IDs REALMENTE criados por esta execução. O cleanup só remove estes: um
+    # registro encontrado pelo marcador (reexecução após 409) é de OUTRA
+    # execução e apagá-lo destruiria dado alheio no staging compartilhado.
+    criados_nesta_execucao: set[str] = field(default_factory=set)
 
 
 def _env(name: str) -> str:
@@ -224,6 +228,8 @@ def _create_client(client: httpx.Client, state: SuiteState, matrix: dict[str, An
     )
     if resp and resp.status_code == 201:
         state.client_id = resp.json().get("id")
+        if state.client_id:
+            state.criados_nesta_execucao.add(str(state.client_id))
         # Assert de efeito: o cliente existe e traz os dados enviados.
         rel = _request(client, state, name="clientes.reler",
                        method="GET", path=f"/api/clients/{state.client_id}",
@@ -267,6 +273,8 @@ def _create_case(client: httpx.Client, state: SuiteState, matrix: dict[str, Any]
     )
     if resp and resp.status_code in {200, 201}:
         state.case_id = resp.json().get("id")
+        if state.case_id:
+            state.criados_nesta_execucao.add(str(state.case_id))
         rel = _request(client, state, name="casos.reler",
                        method="GET", path=f"/api/cases/{state.case_id}",
                        expected=[200])
@@ -321,6 +329,8 @@ def _upload_document(client: httpx.Client, state: SuiteState, matrix: dict[str, 
     )
     if resp and resp.status_code == 201:
         state.document_id = resp.json().get("id")
+        if state.document_id:
+            state.criados_nesta_execucao.add(str(state.document_id))
         rel = _request(client, state, name="documentos.reler",
                        method="GET", path=f"/api/documents/{state.document_id}",
                        expected=[200])
@@ -445,8 +455,12 @@ def _negativas_de_autorizacao(client: httpx.Client, state: SuiteState) -> None:
 
 
 def _cleanup(client: httpx.Client, state: SuiteState) -> None:
-    """Remove (soft-delete) os recursos fictícios criados. Idempotente: 404
-    significa que já não existe — resultado aceitável para reexecução."""
+    """Remove (soft-delete) SOMENTE os recursos criados por ESTA execução.
+    Idempotente: 404 significa que já não existe — aceitável em reexecução.
+
+    Registro localizado pelo MARCADOR (reexecução após 409/erro) pertence a
+    outra execução e NÃO é apagado: o alvo pode ser um staging compartilhado —
+    ou, com EJC_ALLOW_PRODUCTION_E2E, a própria produção."""
     alvos = [
         ("documentos", state.document_id, "/api/documents/{}"),
         ("casos", state.case_id, "/api/cases/{}"),
@@ -454,6 +468,15 @@ def _cleanup(client: httpx.Client, state: SuiteState) -> None:
     ]
     for rotulo, ident, molde in alvos:
         if not ident:
+            continue
+        if str(ident) not in state.criados_nesta_execucao:
+            state.nao_coberto.append({
+                "module_key": rotulo, "method": "DELETE",
+                "path": molde.format(ident),
+                "motivo": "registro preexistente (localizado pelo marcador) — "
+                          "cleanup NÃO remove dado de outra execução",
+            })
+            print(f"[skip] {rotulo}.cleanup — registro preexistente, preservado")
             continue
         _request(client, state, name=f"{rotulo}.cleanup", method="DELETE",
                  path=molde.format(ident), expected=[200, 204, 404],

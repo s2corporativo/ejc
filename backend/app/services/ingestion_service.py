@@ -306,13 +306,20 @@ async def upsert_documento(
         if extra:
             anterior = dict(existente.extra or {})
             mesclado = {**anterior, **extra}
+            # DECISÃO HUMANA sobrevive ao re-feed (review do Codex no PR #496):
+            # o payload do ingestor traz `human_reviewed=False` como DEFAULT e,
+            # sem esta preservação, cada atualização periódica apagava a revisão
+            # já feita pelo curador — tirando do RAG um documento aprovado.
+            for campo in ("human_reviewed", "curadoria"):
+                if anterior.get(campo):
+                    mesclado[campo] = anterior[campo]
             if anterior.get("rag_status") == "aprovado" and extra.get("rag_status") == "pendente":
                 # AI-079 (auditoria 2026-07-26): doc que EXIGE revisão humana ainda
                 # não revisada NÃO re-promove 'pendente'→'aprovado' no re-feed —
                 # senão o estoque DataJud aprovado antes do fix nunca seria
                 # rebaixado. Sem pendência de revisão, preserva a aprovação.
                 requer_revisao = bool(mesclado.get("requires_human_review")) and \
-                    not bool(mesclado.get("human_reviewed"))
+                    not bool(mesclado.get("human_reviewed"))  # já preservado acima
                 if not requer_revisao:
                     mesclado["rag_status"] = "aprovado"
             existente.extra = mesclado

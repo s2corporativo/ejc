@@ -193,6 +193,36 @@ class SingleAICoreOrchestrator:
         gateway_task = _AGENTE_GATEWAY_OVERRIDE.get(agente.nome) or \
             _TAREFA_PARA_GATEWAY.get(intent.tarefa, "analise_juridica")
 
+        # ── PISO DE SIGILO POR ÁREA (AI-019 + review do Codex no PR #496) ────
+        # O mapeamento acima é genérico: família, saúde e médico caem em
+        # "estrategia"/"analise_caso" e PERDEM o rótulo da área antes do
+        # gateway — que resolve o modo de sanitização justamente pelo
+        # `task_type`. Sem esta correção, um caso de família ou saúde seguia
+        # como EXTERNO_PSEUDONIMIZADO e podia deixar o VPS, apesar do default
+        # LOCAL_COMPLETO. Se o rótulo ORIGINAL (task_type recebido, domínio do
+        # agente ou tarefa classificada) exigir LOCAL_COMPLETO, ele é o
+        # task_type entregue ao gateway — o piso nunca é rebaixado.
+        try:
+            from app.services.ai.sanitization_policy import (
+                ModoSanitizacao, modo_para_task,
+            )
+            for rotulo in (
+                str(task_type or ""),
+                str(domain or ""),
+                str(getattr(intent.tarefa, "value", intent.tarefa) or ""),
+            ):
+                if rotulo and modo_para_task(rotulo) == ModoSanitizacao.LOCAL_COMPLETO:
+                    if gateway_task != rotulo:
+                        logger.info(
+                            "[sigilo] área sensível '%s' preserva o rótulo no gateway "
+                            "(era '%s') — LOCAL_COMPLETO não pode ser rebaixado",
+                            rotulo, gateway_task,
+                        )
+                    gateway_task = rotulo
+                    break
+        except Exception as e:  # nunca derruba a chamada por causa do piso
+            logger.warning("[sigilo] piso por área indisponível: %s", type(e).__name__)
+
         # ── Nomes do caso → pseudonimização REVERSÍVEL no gateway (LGPD 2026-07-06)
         # Passa as ENTIDADES NOMEADAS (cliente/empresa/advogado/parte contrária) ao
         # gateway: no modo EXTERNO_PSEUDONIMIZADO ele troca cada nome por um marcador

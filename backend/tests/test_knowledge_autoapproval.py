@@ -74,11 +74,30 @@ def test_revisao_pendente_preserva_status_explicito_e_nao_auto_aprova():
     extra2b = aplicar_aprovacao_automatica(doc2b)
     assert extra2b["rag_status"] == "disponivel_informativo"
 
-    # Revisão humana concluída → auto-aprovação normal volta a valer.
+    # Revisão humana concluída: o status ESCOLHIDO pelo revisor prevalece.
     doc3 = _doc({"requires_human_review": True, "human_reviewed": True,
                  "rag_status": "pendente"})
     extra3 = aplicar_aprovacao_automatica(doc3)
-    assert extra3["rag_status"] == "aprovado"
+    assert extra3["rag_status"] == "pendente"
+
+
+def test_recusa_humana_nao_vira_aprovacao():
+    """Regressão (review Codex no PR #496): com human_reviewed=True o listener
+    caía no `else` e forçava 'aprovado' — transformando uma RECUSA do curador em
+    liberação para o RAG. A decisão humana tem de prevalecer."""
+    doc = _doc({"requires_human_review": True, "human_reviewed": True,
+                "rag_status": "recusado"})
+    extra = aplicar_aprovacao_automatica(doc)
+    assert extra["rag_status"] == "recusado"
+
+    # Revisor aprovou explicitamente → aprovado.
+    doc_ok = _doc({"requires_human_review": True, "human_reviewed": True,
+                   "rag_status": "aprovado"})
+    assert aplicar_aprovacao_automatica(doc_ok)["rag_status"] == "aprovado"
+
+    # Revisado sem status algum → default 'aprovado' (comportamento legado).
+    doc_sem = _doc({"human_reviewed": True})
+    assert aplicar_aprovacao_automatica(doc_sem)["rag_status"] == "aprovado"
 
 
 def test_listener_orm_esta_registrado():

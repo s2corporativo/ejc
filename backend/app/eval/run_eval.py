@@ -260,14 +260,33 @@ async def _main(args) -> int:
     for area in obrigatorias:
         if area not in ag.por_area:
             falhas.append(f"área crítica SEM casos no gold set: {area}")
+    # Áreas cujos casos ERRARAM somem de `por_area` (o agregado só conta casos
+    # válidos). Sem incluí-las no alvo, uma área com 100% de erro — banco fora,
+    # retrieval quebrado — sairia do gate e o resultado ficaria verde (review do
+    # Codex no PR #496). Elas entram no alvo e falham explicitamente.
+    areas_com_erro: dict[str, int] = {}
+    for m in metricas:
+        if m.erro is not None:
+            chave = (m.area or "").strip().lower() or "(sem_area)"
+            areas_com_erro[chave] = areas_com_erro.get(chave, 0) + 1
+
     if args.min_recall_area is not None:
-        alvo = set(obrigatorias) or set(ag.por_area)
+        alvo = set(obrigatorias) or (set(ag.por_area) | set(areas_com_erro))
         for area in sorted(alvo):
             bloco = ag.por_area.get(area)
-            if bloco and bloco["recall"] < args.min_recall_area:
+            if bloco is None:
+                falhas.append(
+                    f"área '{area}': nenhuma avaliação válida "
+                    f"({areas_com_erro.get(area, 0)} caso(s) com erro) — "
+                    "impossível aferir o piso")
+            elif bloco["recall"] < args.min_recall_area:
                 falhas.append(
                     f"área '{area}': recall@{args.k}={bloco['recall']} "
                     f"< piso {args.min_recall_area} (n={bloco['n']})")
+            elif areas_com_erro.get(area):
+                falhas.append(
+                    f"área '{area}': {areas_com_erro[area]} caso(s) com erro na "
+                    "avaliação — resultado parcial não aprova o piso")
 
     if falhas:
         print("\nFALHA no gate de qualidade jurídica:", file=sys.stderr)
