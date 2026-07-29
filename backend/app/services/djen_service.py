@@ -89,6 +89,35 @@ class DjenCapturaResultado:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    def __int__(self) -> int:
+        return self.novas
+
+    def __radd__(self, other: int) -> int:
+        """Compatibilidade com o scheduler legado (`total += resultado`)."""
+        return int(other) + self.novas
+
+
+# O scheduler roda em processo único por regra do EJC. Cada captura registra
+# somente métricas sem identificadores; o heartbeat consome e limpa ao final.
+_RESULTADOS_EXECUCAO: list[DjenCapturaResultado] = []
+
+
+def registrar_resultado_execucao(
+    resultado: DjenCapturaResultado,
+) -> DjenCapturaResultado:
+    _RESULTADOS_EXECUCAO.append(resultado)
+    return resultado
+
+
+def limpar_resultados_execucao() -> None:
+    _RESULTADOS_EXECUCAO.clear()
+
+
+def consumir_resumo_execucao() -> dict:
+    resultados = list(_RESULTADOS_EXECUCAO)
+    _RESULTADOS_EXECUCAO.clear()
+    return resumir_execucao(resultados)
+
 
 def _classificar_erro_fonte(exc: Exception) -> str:
     """Transforma exceção externa em código acionável sem vazar conteúdo."""
@@ -171,7 +200,12 @@ def codificar_resumo_heartbeat(resumo: dict) -> str:
         "erros",
     }
     payload = {k: resumo[k] for k in permitido if k in resumo}
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 @retry(
@@ -208,11 +242,7 @@ def normalizar_processo(numero: str | None) -> str:
 
 
 def _parse_data_disp(raw: str | None) -> date:
-    """Data de disponibilização tolerante a ISO ou DD/MM/YYYY.
-
-    Formato ausente/inesperado continua usando hoje para preservar compatibilidade,
-    mas registra warning sem conteúdo da comunicação.
-    """
+    """Data de disponibilização tolerante a ISO ou DD/MM/YYYY."""
     s = (raw or "").strip()
     if not s:
         return date.today()
@@ -237,11 +267,15 @@ async def buscar_caso_ativo_por_processo(
     alvo = normalizar_processo(numero)
     if not alvo:
         return None
-    casos = (await db.execute(select(Case).where(
-        Case.deleted_at.is_(None),
-        Case.numero_processo.isnot(None),
-        Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
-    ))).scalars().all()
+    casos = (
+        await db.execute(
+            select(Case).where(
+                Case.deleted_at.is_(None),
+                Case.numero_processo.isnot(None),
+                Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+            )
+        )
+    ).scalars().all()
     return next(
         (c for c in casos if normalizar_processo(c.numero_processo) == alvo),
         None,
@@ -269,12 +303,16 @@ async def consultar_oab(
             items = data
         else:
             raise TypeError("payload DJEN sem coleção")
-        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+        if not isinstance(items, list) or any(
+            not isinstance(item, dict) for item in items
+        ):
             raise TypeError("items DJEN inválidos")
         return DjenConsultaResultado(fonte_ok=True, items=items)
     except Exception as exc:
         codigo = _classificar_erro_fonte(exc)
-        logger.warning("DJEN: consulta à fonte falhou após retries; codigo=%s", codigo)
+        logger.warning(
+            "DJEN: consulta à fonte falhou após retries; codigo=%s", codigo
+        )
         return DjenConsultaResultado(fonte_ok=False, erro=codigo)
 
 
@@ -283,18 +321,22 @@ async def capturar_para_advogado(
 ) -> DjenCapturaResultado:
     """Insere comunicações novas e devolve métricas sanitizadas da captura."""
     if not adv.djen_oab_numero or not adv.djen_oab_uf:
-        return DjenCapturaResultado.sem_configuracao()
+        return registrar_resultado_execucao(
+            DjenCapturaResultado.sem_configuracao()
+        )
 
     consulta = await consultar_oab(adv.djen_oab_numero, adv.djen_oab_uf)
     if not consulta.fonte_ok:
-        return DjenCapturaResultado(
-            configurada=True,
-            fonte_ok=False,
-            recebidas=0,
-            novas=0,
-            duplicadas=0,
-            ignoradas=0,
-            erro=consulta.erro,
+        return registrar_resultado_execucao(
+            DjenCapturaResultado(
+                configurada=True,
+                fonte_ok=False,
+                recebidas=0,
+                novas=0,
+                duplicadas=0,
+                ignoradas=0,
+                erro=consulta.erro,
+            )
         )
 
     novas = 0
@@ -305,16 +347,22 @@ async def capturar_para_advogado(
         if not ext_id:
             ignoradas += 1
             continue
-        existe = (await db.execute(select(DjenComunicacao).where(
-            DjenComunicacao.comunicacao_id_externo == ext_id
-        ))).scalar_one_or_none()
+        existe = (
+            await db.execute(
+                select(DjenComunicacao).where(
+                    DjenComunicacao.comunicacao_id_externo == ext_id
+                )
+            )
+        ).scalar_one_or_none()
         if existe:
             duplicadas += 1
             continue
 
         texto = (it.get("texto") or "")[:2000]
         num_proc = normalizar_processo(
-            it.get("numero_processo") or it.get("numeroprocessocommascara") or ""
+            it.get("numero_processo")
+            or it.get("numeroprocessocommascara")
+            or ""
         )
         if not num_proc:
             num_proc = normalizar_processo(extrair_numero_cnj(texto))
@@ -334,10 +382,13 @@ async def capturar_para_advogado(
             numero_processo=it.get("numero_processo") or num_proc,
             tribunal=it.get("siglaTribunal") or it.get("sigla_tribunal"),
             tipo_comunicacao=(
-                it.get("tipoComunicacao") or it.get("tipo_comunicacao") or ""
+                it.get("tipoComunicacao")
+                or it.get("tipo_comunicacao")
+                or ""
             )[:60],
             data_disponibilizacao=_parse_data_disp(
-                it.get("data_disponibilizacao") or it.get("dataDisponibilizacao")
+                it.get("data_disponibilizacao")
+                or it.get("dataDisponibilizacao")
             ),
             texto_resumo=texto,
             case_id=case.id if case else None,
@@ -345,16 +396,18 @@ async def capturar_para_advogado(
         db.add(com)
 
         if case:
-            db.add(CaseMovimento(
-                id=str(uuid4()),
-                case_id=case.id,
-                tipo="intimacao",
-                descricao=(
-                    f"📨 Intimação DJEN ({com.tribunal}): "
-                    f"{com.tipo_comunicacao} — tratar na tela Intimações "
-                    "[vinculação automática pelo nº do processo]"
-                ),
-            ))
+            db.add(
+                CaseMovimento(
+                    id=str(uuid4()),
+                    case_id=case.id,
+                    tipo="intimacao",
+                    descricao=(
+                        f"📨 Intimação DJEN ({com.tribunal}): "
+                        f"{com.tipo_comunicacao} — tratar na tela Intimações "
+                        "[vinculação automática pelo nº do processo]"
+                    ),
+                )
+            )
 
         from app.services.notification_service import (
             criar_notificacao_interna,
@@ -388,9 +441,11 @@ async def capturar_para_advogado(
             if destinatario_id == adv.id:
                 email_dest = adv.email
             else:
-                email_dest = (await db.execute(select(User.email).where(
-                    User.id == destinatario_id
-                ))).scalar_one_or_none()
+                email_dest = (
+                    await db.execute(
+                        select(User.email).where(User.id == destinatario_id)
+                    )
+                ).scalar_one_or_none()
             if email_dest:
                 await enviar_email(
                     email_dest,
@@ -402,11 +457,13 @@ async def capturar_para_advogado(
             logger.warning("DJEN: notificação de item falhou (não fatal)")
         novas += 1
 
-    return DjenCapturaResultado(
-        configurada=True,
-        fonte_ok=True,
-        recebidas=consulta.recebidas,
-        novas=novas,
-        duplicadas=duplicadas,
-        ignoradas=ignoradas,
+    return registrar_resultado_execucao(
+        DjenCapturaResultado(
+            configurada=True,
+            fonte_ok=True,
+            recebidas=consulta.recebidas,
+            novas=novas,
+            duplicadas=duplicadas,
+            ignoradas=ignoradas,
+        )
     )
