@@ -64,7 +64,10 @@ jobs:
 
       - name: Preparar banco migrado
         run: |
-          PGPASSWORD=ejc_pass psql -h localhost -U ejc_user -d ejc_db \
+          # -p obrigatório: o serviço é exposto em 55433 no host (a 5432 é do
+          # Postgres de produção). Sem a porta, o psql usa 5432 e falha com
+          # "Connection refused".
+          PGPASSWORD=ejc_pass psql -h localhost -p 55433 -U ejc_user -d ejc_db \
             -c "CREATE EXTENSION IF NOT EXISTS vector;" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
