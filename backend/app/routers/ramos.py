@@ -93,6 +93,12 @@ async def _crud_listar(Model, db: AsyncSession, tipo: Optional[str],
     return {"data": [_serialize(r) for r in rows]}
 
 
+# Colunas de CONTROLE nunca editáveis via PATCH (auditoria 2026-07-26, AI-121:
+# derivar a whitelist de TODAS as colunas da tabela permitia mass assignment de
+# soft-delete/timestamps).
+_COLUNAS_CONTROLE = frozenset({"id", "case_id", "created_at", "updated_at", "deleted_at"})
+
+
 async def _crud_atualizar(Model, table: str, item_id: str, body: dict,
                           db: AsyncSession, cu: User) -> dict:
     obj = (await db.execute(
@@ -102,11 +108,17 @@ async def _crud_atualizar(Model, table: str, item_id: str, body: dict,
         raise HTTPException(404, "Registro não encontrado")
     # Ownership por caso (IDOR): só edita registros de casos a que tem acesso.
     await verificar_acesso_caso(db, cu, obj.case_id)
-    allowed = {c.key for c in Model.__table__.columns
-               if c.key not in ("id", "case_id", "created_at")}
+    # AI-121 (auditoria 2026-07-26): TODA coluna de negócio é editável, mas
+    # colunas de CONTROLE (id/case_id/timestamps/soft-delete) são bloqueadas e
+    # campo desconhecido/bloqueado responde 422 — nunca ignorado em silêncio
+    # (um PATCH que "não pega" esconderia perda de dado de desfecho/prazo).
+    editaveis = {c.key for c in Model.__table__.columns} - _COLUNAS_CONTROLE
+    rejeitados = sorted(k for k in body if k not in editaveis)
+    if rejeitados:
+        raise HTTPException(
+            422, f"Campos não editáveis neste registro: {', '.join(rejeitados)}")
     for k, v in body.items():
-        if k in allowed:
-            setattr(obj, k, v)
+        setattr(obj, k, v)
     await criar_audit_log(db, cu.id, cu.role.value, "UPDATE", table, item_id)
     await db.commit()
     return _serialize(obj)

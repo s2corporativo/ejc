@@ -104,7 +104,12 @@ class Settings(BaseSettings):
 
     # ── IA — Groq (dados sanitizados antes de envio — LGPD) ──────────────
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"   # 128k (llama3-70b-8192 descomissionado pelo Groq)
+    # AI-043 (auditoria 2026-07-26): llama-3.3-70b-versatile foi DEPRECIADO pela
+    # Groq (anúncio 17/06/2026; deixa de ser servido em ago/2026 nos tiers
+    # free/dev). Migrado ao substituto oficial recomendado (gpt-oss-120b).
+    # Groq é o ÚLTIMO fallback da cadeia (opt-in); rodar regressão jurídica
+    # (eval/run_eval.py) antes de promovê-lo a caminho primário em qualquer área.
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
     GROQ_TIMEOUT: int = 60               # segundos
     # Transcrição de áudio/vídeo é uma operação EXTERNA distinta do chat:
     # nasce desligada, exige confirmação por requisição e respeita o
@@ -292,12 +297,14 @@ class Settings(BaseSettings):
     ROTEAMENTO_LIMIAR_PESADO: int = 6
 
     # ── MÓDULO AGÊNTICO DE IA (loop de tool-use, igual ao Claude Code) ────
-    # ATIVADO por default (decisão do titular, 2026-07-18): a IA opera como
-    # agente (decide → chama ferramenta → lê resultado → decide), reusando o
-    # núcleo e TODOS os guardrails (barreira LGPD, RBAC, AILog, gate de
-    # citações, HITL). Nesta fase só provedores com tool-use (Anthropic).
-    # Desligar num ambiente específico: AI_AGENT_ENABLED=false no .env.
-    AI_AGENT_ENABLED: bool = True
+    # DESATIVADO por default (auditoria máxima 2026-07-26, achado AI-033/AI-034):
+    # o agente com write-tools (nota, prazo fatal, kit documental) só deve ser
+    # habilitado por decisão EXPLÍCITA do ambiente (AI_AGENT_ENABLED=true no
+    # .env), após homologação do HITL. Isso também alinha o default ao que o
+    # router (ia_agente.py) sempre documentou. A IA opera como agente (decide →
+    # chama ferramenta → lê resultado → decide), reusando o núcleo e TODOS os
+    # guardrails (barreira LGPD, RBAC, AILog, gate de citações, HITL).
+    AI_AGENT_ENABLED: bool = False
     # Teto de PASSOS do loop (nunca infinito).
     AI_AGENT_MAX_STEPS: int = 8
     # Teto de TOKENS acumulados (input+output de TODOS os turnos) por execução do
@@ -316,6 +323,13 @@ class Settings(BaseSettings):
     # contém a transcrição em ESPAÇO REAL (PII) — fica no VPS (Redis interno),
     # com TTL curto e NUNCA é logado. Curto para minimizar a janela de retenção.
     AI_AGENT_HITL_TTL_SEGUNDOS: int = 900
+
+    # ── Calculadoras jurídicas — exportação de demonstrativo ──────────────
+    # DESLIGADO por default (auditoria 2026-07-26, AI-107/AI-113): as regras das
+    # calculadoras ainda não são homologadas (fonte/vigência/revisor); o
+    # demonstrativo dá aparência documental a uma regra possivelmente errada.
+    # Religar por ambiente SOMENTE após homologação formal das regras.
+    PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED: bool = False
 
     # ── Fase 6 — Observabilidade de IA (Langfuse SELF-HOSTED) ─────────────
     # Langfuse é SELF-HOSTED (docker-compose, perfil "observability"): dados
@@ -618,9 +632,10 @@ class Settings(BaseSettings):
     PUSH_ENABLED: bool = False
 
     # ── Groq — modelo de contexto longo (fallback para dossiês grandes) ──
-    # llama-3.3-70b-versatile = 128k tokens; usado quando prompt > 20 000 chars.
-    # (llama-3.1-70b-versatile foi DESCOMISSIONADO pelo Groq — não usar.)
-    GROQ_MODEL_LARGE: str = "llama-3.3-70b-versatile"
+    # Usado quando prompt > 20 000 chars. AI-043: llama-3.3-70b-versatile foi
+    # depreciado pela Groq (fim ago/2026) — migrado ao substituto oficial
+    # recomendado, mesmo modelo do GROQ_MODEL (contexto 128k).
+    GROQ_MODEL_LARGE: str = "openai/gpt-oss-120b"
 
     # ── Custo estimado Groq (R$ por 1.000.000 de tokens) — auditoria de gasto ──
     # Valores padrão 0; ajuste via .env conforme a fatura/câmbio.

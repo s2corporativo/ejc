@@ -186,7 +186,12 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
         )}
       </div>
       <p className="text-xs text-slate-500 mb-3">
-        {f.descricao} · <span className="text-gold-700">{f.baseLegal}</span>
+        {f.descricao} · <span className="text-gold-700">{f.baseLegal}</span>{" "}
+        {/* AI-107/AI-113: nenhuma calculadora está homologada — o estado é
+            comunicado como selo operacional, não só aviso genérico. */}
+        <span className="inline-block ml-1 px-1.5 py-0.5 rounded bg-warn-50 text-warn-700 text-[10px] font-medium align-middle">
+          ⚠ regra em revisão — não homologada
+        </span>
       </p>
 
       {f.campos.length > 0 && (
@@ -607,8 +612,22 @@ function ComparadorBacen() {
   );
 }
 
+// Tipos de peça oferecidos ao gerar minuta a partir da análise (AI-106): a
+// escolha é HUMANA e obrigatória — nunca fixada em "petição inicial", que pode
+// ser incompatível com a fase/polo/rito do caso.
+const TIPOS_PECA_MINUTA = [
+  "petição inicial",
+  "contestação",
+  "réplica",
+  "recurso",
+  "defesa administrativa",
+  "notificação extrajudicial",
+  "parecer",
+];
+
 function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
   const [casoSel, setCasoSel] = useState("");
+  const [tipoPeca, setTipoPeca] = useState("");
   const [acao, setAcao] = useState("");
   const [minuta, setMinuta] = useState<string>("");
   const [texto, setTexto] = useState("");
@@ -675,12 +694,17 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
     }
   };
   const gerarMinuta = async () => {
+    // AI-106: o tipo de peça é decisão do advogado — sem seleção, não gera.
+    if (!tipoPeca) {
+      setAcao("Selecione o tipo de peça antes de gerar a minuta.");
+      return;
+    }
     setAcao("Gerando minuta…");
     setMinuta("");
     try {
       const { data } = await api.post("/ai/gerar-minuta", {
         tema: "Ação revisional/defesa com base na análise do documento",
-        tipo_peca: "petição inicial",
+        tipo_peca: tipoPeca,
         area,
         fatos: resumoTexto().slice(0, 3000),
       });
@@ -705,8 +729,8 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
         {_ANALISE_TITULO[area] || "📄 Análise de Documento"}
       </h2>
       <p className="text-xs text-slate-500 mb-3">
-        Lê o contrato (PDF ou texto) e aponta juros, capitalização, tarifas e
-        cláusulas questionáveis — como apoio, sempre com revisão do advogado.
+        Lê o documento (PDF ou texto) e aponta riscos e cláusulas questionáveis
+        conforme a área — como apoio, sempre com revisão do advogado.
       </p>
       <div className="flex flex-wrap gap-2 mb-2">
         <input
@@ -838,7 +862,24 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
             <button onClick={salvarNoCaso} className="btn-secondary text-xs">
               💾 Salvar no caso
             </button>
-            <button onClick={gerarMinuta} className="btn-gold text-xs">
+            <select
+              className="input text-xs min-w-[150px]"
+              value={tipoPeca}
+              onChange={(e) => setTipoPeca(e.target.value)}
+              title="Tipo de peça (escolha do advogado — obrigatório)"
+            >
+              <option value="">Tipo de peça…</option>
+              {TIPOS_PECA_MINUTA.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={gerarMinuta}
+              disabled={!tipoPeca}
+              className="btn-gold text-xs disabled:opacity-50"
+            >
               ✍️ Gerar minuta
             </button>
           </div>
@@ -957,7 +998,10 @@ export default function RamoBase() {
 
       {cfg.comparadorBacen && <ComparadorBacen />}
       {cfg.analiseDocumento && (
-        <AnaliseBancaria area={cfg.areaCaso} casos={casos} />
+        // AI-105: a análise usa a ÁREA DE ANÁLISE do ramo (analiseArea) — não a
+        // areaCaso, que serve para filtrar casos e pode divergir (ex.: ramo
+        // bancário guarda casos como "civil").
+        <AnaliseBancaria area={cfg.analiseArea || cfg.areaCaso} casos={casos} />
       )}
       {cfg.guiaBancario && <GuiaBancario />}
       {cfg.analiseExtratos && <AnaliseExtratos />}

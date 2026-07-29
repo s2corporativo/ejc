@@ -345,8 +345,10 @@ async def _engine_isolado():
 
 
 def _lei_teste(slug: str) -> dict:
+    # Título carrega "(Lei 8.078/1990)" para exercitar o lookup por DIPLOMA do
+    # _existe_artigo (AI-056: artigo só confirma contra a lei citada).
     return {"slug": slug, "area": "consumidor",
-            "titulo": "CDC RECORTE DE TESTE (seed_legislacao)",
+            "titulo": "CDC RECORTE DE TESTE (Lei 8.078/1990)",
             "url": "https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm"}
 
 
@@ -400,9 +402,13 @@ async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html, _en
                 "SELECT count(*) FROM knowledge_chunks WHERE doc_id = :d"),
                 {"d": docs[0].id})).scalar()
             assert n_db == n_chunks_1 > 0
-            # smoke do gate anti-alucinação: "Art. 6" e "Art. 10." do recorte
-            assert await _existe_artigo(db, "6") is not None
-            assert await _existe_artigo(db, "10") is not None
+            # smoke do gate anti-alucinação: "Art. 6" e "Art. 10." do recorte,
+            # confirmados APENAS contra o diploma citado (AI-056).
+            assert await _existe_artigo(db, "6", "lei nº 8.078/90") is not None
+            assert await _existe_artigo(db, "10", "Lei 8.078/1990") is not None
+            # Fail-closed: sem diploma ou com lei DIFERENTE, nunca confirma.
+            assert await _existe_artigo(db, "6") is None
+            assert await _existe_artigo(db, "6", "lei 9.999/99") is None
 
         # 2ª execução, mesmo HTML → inalterado (idempotente, nada duplicado)
         async with AsyncSessionLocal() as db:
@@ -423,7 +429,7 @@ async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html, _en
             docs = await _docs(db, chave)
             assert [d.versao for d in docs] == [1, 2]
             assert [d.vigente for d in docs] == [False, True]
-            assert await _existe_artigo(db, "11") is not None
+            assert await _existe_artigo(db, "11", "lei 8.078/90") is not None
     finally:
         await _limpar(chave)
 

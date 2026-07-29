@@ -18,8 +18,9 @@ import { Badge, Button, PageHeader, SectionCard } from "../components/UI";
 // ── Contrato de eventos (POST /ia/agente/stream → loop de tool-use) ──────────
 // Emitidos por app/services/ai/agent/loop.py. A escrita PAUSA em
 // `confirmacao_requerida` (HITL vinculado aos args); o cliente retoma com
-// `retomar_token` + `decisao` (ou, sem Redis, reenvia a mensagem + o
-// `aprovacoes_hash` da tool aprovada).
+// `retomar_token` + `decisao` — ÚNICO caminho de aprovação (auditoria
+// 2026-07-26, AI-030: o fallback por `aprovacoes_hash` foi eliminado; sem
+// Redis o backend falha fechado e emite `erro`).
 interface PassoEvent {
   passo: number;
   provider?: string;
@@ -43,13 +44,7 @@ interface ConfirmacaoEvent {
   args: Record<string, unknown>;
   tool_use_id?: string;
 }
-/** Confirmação pendente + a mensagem CONGELADA da execução que pausou: o
- *  textarea é reabilitado no `finally` do stream, então o fallback sem Redis
- *  (reenvio de `mensagem` + `aprovacoes_hash`) não pode ler o estado atual —
- *  usa o valor capturado no momento da pausa. */
-interface PendingConfirmacao extends ConfirmacaoEvent {
-  mensagemOriginal: string;
-}
+type PendingConfirmacao = ConfirmacaoEvent;
 interface FinalEvent {
   status: string;
   resposta: string;
@@ -119,10 +114,7 @@ export default function AgenteIA() {
         });
         break;
       case "confirmacao_requerida":
-        setPending({
-          ...(evt.data as ConfirmacaoEvent),
-          mensagemOriginal: mensagemRunRef.current,
-        });
+        setPending(evt.data as ConfirmacaoEvent);
         break;
       case "final":
         setFinal(evt.data as FinalEvent);
@@ -205,26 +197,17 @@ export default function AgenteIA() {
           : `Você RECUSOU a execução de ${p.ferramenta}.`,
     });
     if (p.token) {
-      // Caminho normal: retoma o estado no Redis pelo token.
+      // ÚNICO caminho de aprovação: retoma o estado servidor-side pelo token
+      // (AI-030 — não existe mais fallback por hash enviado pelo cliente).
       void run(
         { case_id: caseId.trim(), retomar_token: p.token, decisao },
         false,
       );
-    } else if (decisao === "aprovar") {
-      // Fallback sem Redis (token=null): reexecuta aprovando pelo hash dos
-      // args. Usa a mensagem CONGELADA da execução que pausou — o textarea
-      // pode ter sido editado para a PRÓXIMA solicitação.
-      void run(
-        {
-          case_id: caseId.trim(),
-          mensagem: p.mensagemOriginal,
-          aprovacoes_hash: [p.args_hash],
-        },
-        false,
-      );
     } else {
+      // Defensivo: o backend atual nunca pausa sem token (sem Redis ele falha
+      // fechado com evento `erro`); pausa sem token = sessão não retomável.
       setErro(
-        "Sem sessão retomável (Redis indisponível); a operação foi recusada. " +
+        "Sem sessão retomável; a operação de escrita não foi executada. " +
           "Reenvie a solicitação para continuar.",
       );
     }

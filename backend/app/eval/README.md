@@ -88,6 +88,37 @@ Adicione ao pipeline um job que roda o gold set e barra queda:
 python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6 --min-recall 0.7
 ```
 
+### 5.1 Gate POR ÁREA (auditoria máxima 2026-07-26, achado AI-087)
+
+Média global esconde a área ruim: um recall alto puxado por cível não diz **nada**
+sobre penal ou trabalhista. Por isso o runner segmenta as métricas pela chave
+`area` do gold set (bloco `== POR ÁREA ==` e campo `por_area` no JSON) e oferece
+dois gates independentes do global:
+
+```bash
+# Falha se QUALQUER área crítica ficar abaixo do piso — ou se estiver ausente
+# do gold set (cobertura zero não é aprovação).
+python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6 \
+  --areas-obrigatorias penal,trabalhista,consumidor,tributario,ambiental \
+  --min-recall-area 0.7
+```
+
+O modo offline (`--smoke`, o que roda hoje no CI) imprime a **cobertura por área**
+dos gold sets reais — exemplos `*.example.*` não contam — e aceita o mesmo gate:
+
+```bash
+python -m app.eval.run_eval --smoke \
+  --areas-obrigatorias penal,trabalhista --min-casos-area 10
+```
+
+> **Estado atual (honesto):** o repositório só tem gold sets de **exemplo**, então
+> a cobertura real por área é **zero** e o gate acima falha de propósito se ligado.
+> O mecanismo está pronto; o que falta é conteúdo — e conteúdo jurídico gold só
+> vale com curadoria humana (owner por área, fonte, vigência, revisor). Ver
+> `GUIA_CURADORIA_GOLD_SET.md`. Ligue o gate no `ci.yml` **na mesma entrega** em
+> que a primeira área crítica ganhar gold set curado; até lá, a linha de cobertura
+> no log do CI mantém a lacuna visível em vez de disfarçada.
+
 > Ferramentas externas complementares: **RAGAS** / **DeepEval** (faithfulness,
 > context precision/recall), **promptfoo** (comparar prompts/modelos), e os
 > benchmarks PT-BR **OAB-Bench** / **Magis-Bench** / **LegalBench-BR** para

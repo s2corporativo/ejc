@@ -493,7 +493,9 @@ async def verificar_jurisprudencia(
 
         elif c["tipo"] == "artigo":
             rotulo = f"art. {c['numero']} {c['diploma']}".strip()
-            fonte = await _existe_artigo(db, c["numero"])
+            # AI-056: o lookup é RESTRITO ao diploma citado — nunca confirma
+            # "art. N" contra uma lei diferente da referida no texto.
+            fonte = await _existe_artigo(db, c["numero"], c.get("diploma"))
             if fonte:
                 status = STATUS_VERIFICADA
                 aviso = _AVISO_VERIFICADA.format(fonte="base oficial interna/RAG")

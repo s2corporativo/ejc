@@ -57,6 +57,12 @@ AREA_PROMPTS = {
         "licença buscando: vícios formais, ausência de fundamentação técnica, desproporcionalidade da multa, "
         "prazos e nulidades, e caminhos (defesa, conversão de multa, TAC). " + REGRAS
     ),
+    "digital_lgpd": (
+        "Você é analista de DIREITO DIGITAL e LGPD. Analise o contrato/política/documento buscando: base legal "
+        "de tratamento (LGPD art. 7º/11), consentimento e finalidade, compartilhamento com terceiros e "
+        "transferência internacional (art. 33), direitos do titular (art. 18), retenção/eliminação, segurança e "
+        "incidentes (art. 46/48), cláusulas de responsabilidade e lacunas de conformidade. " + REGRAS
+    ),
     "default": (
         "Você é analista jurídico. Analise o contrato/documento buscando riscos, cláusulas questionáveis e "
         "lacunas. " + REGRAS
@@ -115,6 +121,13 @@ async def analisar_documento(
     cu: User = Depends(get_current_user),
 ):
     """Recebe um PDF (file) OU texto (texto) + área, e retorna a análise estruturada."""
+    # AI-105 (auditoria 2026-07-26): área desconhecida NÃO cai em silêncio no
+    # prompt genérico — o usuário receberia uma análise com viés de outra área
+    # acreditando que é da dele. Área inválida → 422 explícito.
+    if area not in AREA_PROMPTS:
+        raise HTTPException(
+            422, f"Área de análise desconhecida: '{area}'. "
+                 f"Válidas: {', '.join(sorted(AREA_PROMPTS))}")
     conteudo = (texto or "").strip()
     if file is not None:
         raw = await file.read()
