@@ -43,31 +43,38 @@ _MAX_SEMANAL = 24 * 8  # 192h
 
 JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
     JOB_DJEN: {
-        "label": "Captura DJEN (intimações)", "max_age_horas": _MAX_DIARIO,
+        "label": "Captura DJEN (intimações)",
+        "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 06h30",
     },
     JOB_DATAJUD: {
-        "label": "Sincronização DataJud (movimentos)", "max_age_horas": _MAX_DATAJUD,
+        "label": "Sincronização DataJud (movimentos)",
+        "max_age_horas": _MAX_DATAJUD,
         "cadencia": "2x/dia 08h45 e 16h45",
     },
     JOB_DIARIO: {
-        "label": "Monitor Diário Oficial (DOU)", "max_age_horas": _MAX_DIARIO,
+        "label": "Monitor Diário Oficial (DOU)",
+        "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 06h00",
     },
     JOB_PRAZOS_VENCIDOS: {
-        "label": "Marcação de prazos vencidos", "max_age_horas": _MAX_DIARIO,
+        "label": "Marcação de prazos vencidos",
+        "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 07h10",
     },
     JOB_PRAZOS_ALERTAS: {
-        "label": "Alertas de prazos (7/3/1 dia)", "max_age_horas": _MAX_DIARIO,
+        "label": "Alertas de prazos (7/3/1 dia)",
+        "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 07h15",
     },
     JOB_AUDIENCIAS: {
-        "label": "Alertas de audiências (agenda)", "max_age_horas": _MAX_DIARIO,
+        "label": "Alertas de audiências (agenda)",
+        "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 07h20",
     },
     JOB_PRESCRICAO: {
-        "label": "Alertas de prescrição", "max_age_horas": _MAX_SEMANAL,
+        "label": "Alertas de prescrição",
+        "max_age_horas": _MAX_SEMANAL,
         "cadencia": "semanal (segundas 09h05)",
     },
 }
@@ -76,24 +83,52 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
 _STATUS_VALIDOS = {"ok", "erro"}
 
 
+def _resultado_djen_para_heartbeat(status_nominal: str) -> tuple[str, str]:
+    """Converte as métricas acumuladas do DJEN em status/detail sanitizados.
+
+    O scheduler legado informa apenas `ok`/`erro`. A fonte real da saúde passa a
+    ser o resultado de todas as inscrições consultadas. Uma exceção externa ao
+    laço continua prevalecendo e é registrada como código, nunca como mensagem
+    bruta que possa conter OAB, e-mail, URL ou payload.
+    """
+    from app.services import djen_service
+
+    resumo = djen_service.consumir_resumo_execucao()
+    if status_nominal == "erro":
+        erros = dict(resumo.get("erros") or {})
+        erros["falha_job"] = erros.get("falha_job", 0) + 1
+        resumo["erros"] = erros
+        resumo["heartbeat_status"] = "erro"
+        if resumo.get("resultado") == "configuracao_incompleta":
+            resumo["resultado"] = "falha_job"
+    return (
+        resumo["heartbeat_status"],
+        djen_service.codificar_resumo_heartbeat(resumo),
+    )
+
+
 # ── UPSERT best-effort ────────────────────────────────────────────────────────
 async def registrar_heartbeat(
     db, job_name: str, status: str, detail: str | None = None
 ) -> bool:
     """Grava (UPSERT por job_name) a última execução do job.
 
-    `status` ∈ {'ok', 'erro'}; `detail` é um resumo curto (só para 'erro'). O
-    UPSERT é `INSERT ... ON CONFLICT (job_name) DO UPDATE`, portável entre
-    PostgreSQL e SQLite (mesmo padrão de dedup do radar_legislativo).
+    `status` ∈ {'ok', 'erro'}. Para o DJEN, `detail` contém sempre métricas
+    sanitizadas da execução — inclusive quando a consulta válida retorna zero.
+    Nos demais jobs, preserva o comportamento anterior.
 
-    Best-effort: qualquer falha (tabela ausente, sessão em erro) é logada e NÃO
-    propaga — o heartbeat jamais pode derrubar o job que o chamou. Retorna True
-    se gravou, False caso contrário (útil em teste).
+    Best-effort: qualquer falha (tabela ausente, sessão em erro) é logada e não
+    propaga. Retorna True se gravou, False caso contrário.
     """
     st = (status or "").strip().lower()
     if st not in _STATUS_VALIDOS:
         st = "erro" if st else "ok"
-    detalhe = (detail or None)
+
+    if job_name == JOB_DJEN:
+        st, detalhe = _resultado_djen_para_heartbeat(st)
+    else:
+        detalhe = detail or None
+
     if detalhe is not None:
         detalhe = str(detalhe)[:500]
     agora = datetime.now(timezone.utc)
@@ -143,10 +178,10 @@ def avaliar_job(
 ) -> dict[str, Any]:
     """Classifica um job em ok | defasado | nunca_executou | erro.
 
-    - sem heartbeat            → 'nunca_executou'
-    - último status 'erro'     → 'erro' (rodou, mas falhou)
+    - sem heartbeat             → 'nunca_executou'
+    - último status 'erro'      → 'erro' (rodou, mas falhou)
     - idade > cadência esperada → 'defasado' (parou de rodar / silêncio)
-    - caso contrário           → 'ok'
+    - caso contrário            → 'ok'
     """
     agora = agora or datetime.now(timezone.utc)
     if last_run_at is None:
@@ -154,8 +189,6 @@ def avaliar_job(
     idade = _idade_horas(last_run_at, agora)
     idade_arred = round(idade, 1)
     if idade > max_age_horas:
-        # Defasagem prevalece sobre o status do último run: mesmo que o último
-        # tenha sido 'ok', se faz tempo demais o job está parado (o sinal-alvo).
         return {"status": "defasado", "idade_horas": idade_arred}
     if (last_status or "").strip().lower() == "erro":
         return {"status": "erro", "idade_horas": idade_arred}
@@ -165,29 +198,28 @@ def avaliar_job(
 def avaliar_jobs(
     heartbeats: dict[str, dict[str, Any]], agora: datetime | None = None
 ) -> list[dict[str, Any]]:
-    """Avalia TODOS os jobs monitorados contra os heartbeats lidos do banco.
-
-    `heartbeats`: {job_name: {"last_run_at", "last_status", "detail"}}. Jobs sem
-    heartbeat viram 'nunca_executou'. Retorna uma lista ordenada (ordem do
-    registro) com o diagnóstico por job.
-    """
+    """Avalia todos os jobs monitorados contra os heartbeats lidos do banco."""
     agora = agora or datetime.now(timezone.utc)
     out: list[dict[str, Any]] = []
     for job_name, cfg in JOBS_MONITORADOS.items():
         hb = heartbeats.get(job_name) or {}
         aval = avaliar_job(
-            hb.get("last_run_at"), hb.get("last_status"),
-            max_age_horas=cfg["max_age_horas"], agora=agora,
+            hb.get("last_run_at"),
+            hb.get("last_status"),
+            max_age_horas=cfg["max_age_horas"],
+            agora=agora,
         )
-        out.append({
-            "job_name": job_name,
-            "label": cfg["label"],
-            "cadencia": cfg["cadencia"],
-            "status": aval["status"],
-            "idade_horas": aval["idade_horas"],
-            "max_age_horas": cfg["max_age_horas"],
-            "last_run_at": hb.get("last_run_at"),
-            "last_status": hb.get("last_status"),
-            "detail": hb.get("detail"),
-        })
+        out.append(
+            {
+                "job_name": job_name,
+                "label": cfg["label"],
+                "cadencia": cfg["cadencia"],
+                "status": aval["status"],
+                "idade_horas": aval["idade_horas"],
+                "max_age_horas": cfg["max_age_horas"],
+                "last_run_at": hb.get("last_run_at"),
+                "last_status": hb.get("last_status"),
+                "detail": hb.get("detail"),
+            }
+        )
     return out
