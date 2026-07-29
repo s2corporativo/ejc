@@ -50,6 +50,11 @@ def _extrair_rotas(app) -> list[dict]:
 # pode criar nem remover rota; qualquer outra novidade falha o teste.
 ADICOES_INTENCIONAIS = {
     ("/api/architecture/uso-rotas", "GET"),   # telemetria de uso (Onda 3 §4.5)
+    # Veio da main pelo PR #500 (paridade Sala/Raio-X), não deste PR. O snapshot
+    # é o baseline de ANTES do registro explícito dos routers; rota criada por
+    # outro trabalho é adição legítima — o que este teste protege é que nenhuma
+    # rota DESAPAREÇA nem mude de dependência de auth.
+    ("/api/sala-juridica/{session_id}/conversao/preview", "GET"),
 }
 
 
