@@ -1,0 +1,47 @@
+name: QA — Homologação Completa EJC v3
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-homologacao-completa-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  homologacao-completa-v3:
+    if: github.head_ref == 'qa/ux-render-click-latency-20260729'
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Executar API, Portal, IA, telas, cliques e latência
+        id: homologacao
+        continue-on-error: true
+        shell: bash
+        run: bash qa/homologacao/run_full_v3.sh
+
+      - name: Anexar relatórios, peça e evidências visuais
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: homologacao-completa-ejc-v3
+          path: |
+            qa/homologacao/reports/
+            frontend/tests/__out__/homologacao-live/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Aplicar resultado da homologação
+        if: always()
+        shell: bash
+        run: |
+          if [[ '${{ steps.homologacao.outcome }}' != 'success' ]]; then
+            echo 'Homologação reprovada ou executada com ressalvas; consulte o artefato.'
+            exit 1
+          fi
+          echo 'Homologação aprovada.'
