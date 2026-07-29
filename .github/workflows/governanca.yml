@@ -34,19 +34,23 @@ jobs:
         id: diff
         shell: bash
         run: |
+          # $RUNNER_TEMP, nao /tmp: o runner e self-hosted e divide o VPS. Um
+          # /tmp/alterados.txt deixado por outra execucao (ou por outro usuario)
+          # nao pode ser sobrescrito por causa do sticky bit do /tmp, e o job
+          # morre com "Permission denied". $RUNNER_TEMP e isolado por job.
           git fetch --quiet origin "${{ github.base_ref }}"
-          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > /tmp/alterados.txt
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > "$RUNNER_TEMP/alterados.txt"
           echo "--- arquivos alterados ---"
-          cat /tmp/alterados.txt
+          cat "$RUNNER_TEMP/alterados.txt"
 
       - name: Migration exige reserva registrada
         shell: bash
         run: |
           # Caminho real do EJC: backend/alembic/versions/ (numeração sequencial),
           # com reserva de número em backend/alembic/MIGRATION_RESERVATIONS.md.
-          if grep -Eq '^backend/alembic/versions/' /tmp/alterados.txt; then
+          if grep -Eq '^backend/alembic/versions/' "$RUNNER_TEMP/alterados.txt"; then
             echo "Migration detectada no PR."
-            if ! grep -q 'backend/alembic/MIGRATION_RESERVATIONS.md' /tmp/alterados.txt; then
+            if ! grep -q 'backend/alembic/MIGRATION_RESERVATIONS.md' "$RUNNER_TEMP/alterados.txt"; then
               echo "::error::PR cria ou altera migration sem atualizar backend/alembic/MIGRATION_RESERVATIONS.md. Ver CLAUDE.md, regra 3, e docs/GOVERNANCA_IA.md."
               exit 1
             fi
@@ -71,8 +75,8 @@ jobs:
               echo "::error file=$f::possivel segredo versionado"
               ACHOU=1
             fi
-          done < /tmp/alterados.txt
-          if grep -Eq '(^|/)\.env$|(^|/)\.env\.(local|production|prod)$' /tmp/alterados.txt; then
+          done < "$RUNNER_TEMP/alterados.txt"
+          if grep -Eq '(^|/)\.env$|(^|/)\.env\.(local|production|prod)$' "$RUNNER_TEMP/alterados.txt"; then
             echo "::error::arquivo .env versionado no PR"
             ACHOU=1
           fi
@@ -105,8 +109,8 @@ jobs:
       - name: Alteracao de governanca isolada
         shell: bash
         run: |
-          GOV=$(grep -Ec '^(CLAUDE\.md|AGENTS\.md|\.claude/|docs/GOVERNANCA_IA\.md)' /tmp/alterados.txt || true)
-          COD=$(grep -Ec '^(backend/app/|frontend/src/)' /tmp/alterados.txt || true)
+          GOV=$(grep -Ec '^(CLAUDE\.md|AGENTS\.md|\.claude/|docs/GOVERNANCA_IA\.md)' "$RUNNER_TEMP/alterados.txt" || true)
+          COD=$(grep -Ec '^(backend/app/|frontend/src/)' "$RUNNER_TEMP/alterados.txt" || true)
           if [ "$GOV" -gt 0 ] && [ "$COD" -gt 0 ]; then
             echo "::error::PR mistura alteracao de governanca com alteracao de codigo funcional. Separe em PRs distintos."
             exit 1
