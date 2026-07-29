@@ -24,6 +24,7 @@ import {
   Users,
 } from "lucide-react";
 import api from "../lib/api";
+import { CASE_STATUS_FECHADOS } from "../types/caseStatus";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
 import NoticiasCard from "../components/NoticiasCard";
@@ -68,13 +69,11 @@ const CRM_ROLES = new Set([
   "secretaria",
 ]);
 
-// Fases encerradas não contam como carteira ativa.
-const INACTIVE_CASE_STATUSES = new Set([
-  "arquivado",
-  "encerrado",
-  "cancelado",
-  "inativo",
-]);
+// Fases encerradas não contam como carteira ativa. A definição vem da fonte
+// única (types/caseStatus.ts) — a lista local anterior divergia das outras duas
+// do frontend e ainda trazia `cancelado`/`inativo`, que não existem no enum do
+// backend e portanto nunca casavam.
+const INACTIVE_CASE_STATUSES = new Set<string>(CASE_STATUS_FECHADOS);
 
 // Tons dos chips da faixa "Prioridades de hoje" (cor + ícone + texto).
 const PRIORITY_CHIP_TONE: Record<"red" | "amber" | "blue", string> = {

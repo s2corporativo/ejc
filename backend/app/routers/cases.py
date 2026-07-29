@@ -35,6 +35,11 @@ from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus
 from app.services.extracao_estruturada import parse_data_br
 from app.services.movimento_ia import traduzir_movimento
 from app.core.ownership import verificar_acesso_caso
+from app.core.status_caso import (
+    STATUS_ABERTOS,
+    validar_area_caso,
+    validar_status_caso,
+)
 from app.services.ia_parser import titulo_e_json_bruto
 from app.schemas.case import (
     CaseCreate, CaseUpdate, CaseResponse, CaseDetail, MovimentoCreate,
@@ -109,10 +114,21 @@ async def listar(
             Case.numero_interno.ilike(f"%{search}%"),
             Case.parte_contraria.ilike(f"%{search}%"),
         ))
+    # `area` e `status` são ENUM NATIVO no Postgres: string fora do enum não é
+    # rejeitada pelo bind do SQLAlchemy, chega crua ao banco e estoura
+    # InvalidTextRepresentation -> HTTP 500 (era o caso de `?status=all`).
+    # Validamos aqui e devolvemos 422 dizendo o que é aceito. "Todos" é a
+    # AUSÊNCIA do parâmetro — nenhum valor sentinela vai para a query.
     if area:
-        q = q.where(Case.area == area)
+        try:
+            q = q.where(Case.area == validar_area_caso(area))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from None
     if status_f:
-        q = q.where(Case.status == status_f)
+        try:
+            q = q.where(Case.status == validar_status_caso(status_f))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from None
     q = q.order_by(Case.created_at.desc())
 
     total = (await db.execute(
@@ -165,7 +181,14 @@ async def stats_casos(
         select(sqlfunc.count()).select_from(base)
         .where(base.c.status == CaseStatus.arquivado.value)
     )).scalar() or 0
-    ativos = total - encerrados - arquivados
+    # `ativos` conta EXPLICITAMENTE os status abertos, em vez de subtrair os
+    # fechados do total. Subtração presume que os fechados são só dois: se um
+    # status novo entrar no enum, a subtração o classificaria como ativo em
+    # silêncio. A lista canônica vive em core/status_caso.py.
+    ativos = (await db.execute(
+        select(sqlfunc.count()).select_from(base)
+        .where(base.c.status.in_([s.value for s in STATUS_ABERTOS]))
+    )).scalar() or 0
 
     rows = (await db.execute(
         select(base.c.area, sqlfunc.count())
