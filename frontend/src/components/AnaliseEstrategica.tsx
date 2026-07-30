@@ -527,15 +527,31 @@ export default function AnaliseEstrategica({
                   <div className="text-xl font-bold text-primary-600 mb-1">
                     {analise.jurimetria.chance_sucesso_percent ?? "—"}%
                   </div>
-                  <div className="text-xs text-slate-500">Chance de Êxito</div>
+                  <div className="text-xs text-slate-500">
+                    Chance de êxito (estimativa interna)
+                  </div>
                   <div className="mt-2 h-2 bg-primary-100 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-primary-500 rounded-full"
+                      role="progressbar"
+                      aria-label="Chance de êxito — estimativa interna"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={
+                        analise.jurimetria.chance_sucesso_percent ?? undefined
+                      }
                       style={{
                         width: `${analise.jurimetria.chance_sucesso_percent ?? 0}%`,
                       }}
                     />
                   </div>
+                  <p
+                    className="mt-2 text-[11px] leading-relaxed text-slate-500"
+                    role="note"
+                  >
+                    Estimativa interna, sujeita à revisão humana. Não constitui
+                    promessa ou garantia de resultado.
+                  </p>
                 </div>
                 <div className="bg-ai-50 rounded-xl p-4 border border-ai-100 text-center">
                   <div className="text-xl font-bold text-ai-600 mb-1">
