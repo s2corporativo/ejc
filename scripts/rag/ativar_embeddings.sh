@@ -74,6 +74,22 @@ wait_backend() {
   [ "$backend_ok" = "1" ]
 }
 
+wait_worker() {
+  local status=""
+  for _ in $(seq 1 45); do
+    status="$(
+      docker inspect -f \
+        '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{if .State.Running}}running{{else}}stopped{{end}}{{end}}' \
+        "$WORKER_CONTAINER" 2>/dev/null || true
+    )"
+    case "$status" in
+      healthy|running) return 0 ;;
+    esac
+    sleep 2
+  done
+  return 1
+}
+
 ENV_BAK=""
 ROLLBACK_ARMED=0
 
@@ -86,7 +102,7 @@ rollback_on_exit() {
     cp "$ENV_BAK" "$ENV_FILE"
     chmod 600 "$ENV_FILE" 2>/dev/null || true
     "${DC[@]}" up -d --force-recreate --no-deps backend worker
-    if wait_backend; then
+    if wait_backend && wait_worker; then
       rm -f "$ENV_BAK"
       log "rollback confirmado e cópia transitória removida."
     else
@@ -127,8 +143,7 @@ log "EMBEDDINGS_ENABLED atualizado (valor anterior: ${PREVIOUS_ENABLED:-ausente}
 log "recriando backend e worker para carregar a configuração efetiva..."
 "${DC[@]}" up -d --force-recreate --no-deps backend worker
 wait_backend || die "backend não ficou saudável após a ativação."
-[ "$(docker inspect -f '{{.State.Running}}' "$WORKER_CONTAINER" 2>/dev/null)" = "true" ] || \
-  die "worker não ficou em execução após a ativação."
+wait_worker || die "worker não ficou saudável após a ativação."
 
 log "reindexando lote canário de até ${RAG_CANARY_DOCS} documento(s)..."
 if CANARY_JSON="$(
