@@ -41,7 +41,9 @@ describe("governança da estimativa de êxito", () => {
 
   it("mantém a barra acessível como estimativa interna", () => {
     expect(analiseEstrategica).toContain('role="progressbar"');
-    expect(analiseEstrategica).toContain('aria-label="Chance de êxito — estimativa interna"');
+    expect(analiseEstrategica).toContain(
+      'aria-label="Chance de êxito — estimativa interna"',
+    );
     expect(analiseEstrategica).toContain("aria-valuemin={0}");
     expect(analiseEstrategica).toContain("aria-valuemax={100}");
     expect(analiseEstrategica).toContain("aria-valuenow={");
