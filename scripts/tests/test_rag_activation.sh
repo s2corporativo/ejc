@@ -51,7 +51,7 @@ if [ "${1:-}" = "compose" ]; then
   fi
 fi
 if [ "${1:-}" = "inspect" ]; then
-  printf 'true\n'
+  printf 'healthy\n'
   exit 0
 fi
 if [ "${1:-}" = "exec" ]; then
