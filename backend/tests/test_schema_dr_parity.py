@@ -365,8 +365,8 @@ def test_upgrade_head_reconstroi_banco_vazio_real():
     url = os.environ["SCHEMA_CHECK_DATABASE_URL"]
     parsed = urlsplit(url)
     nome_db = f"ejc_dr_{os.getpid()}"
-    # Força driver sync, o mesmo usado por alembic/env.py.
-    db_url = urlunsplit(("postgresql+psycopg2", parsed.netloc, f"/{nome_db}", "", ""))
+    async_url = urlunsplit(("postgresql+asyncpg", parsed.netloc, f"/{nome_db}", "", ""))
+    sync_url = urlunsplit(("postgresql+psycopg2", parsed.netloc, f"/{nome_db}", "", ""))
 
     def conectar_admin():
         conn = psycopg2.connect(
@@ -390,9 +390,9 @@ def test_upgrade_head_reconstroi_banco_vazio_real():
     try:
         env = {
             **os.environ,
-            "DATABASE_URL": db_url,
-            "DATABASE_URL_SYNC": db_url,
-            "SCHEMA_CHECK_DATABASE_URL": db_url,
+            "DATABASE_URL": async_url,
+            "DATABASE_URL_SYNC": sync_url,
+            "SCHEMA_CHECK_DATABASE_URL": sync_url,
         }
         resultado = subprocess.run(
             ["python", "-m", "alembic", "upgrade", "head"],
@@ -400,7 +400,7 @@ def test_upgrade_head_reconstroi_banco_vazio_real():
         )
         assert resultado.returncode == 0, resultado.stderr or resultado.stdout
 
-        engine = create_engine(db_url)
+        engine = create_engine(sync_url)
         try:
             inspector = inspect(engine)
             tabelas, views = set(inspector.get_table_names()), set(inspector.get_view_names())
