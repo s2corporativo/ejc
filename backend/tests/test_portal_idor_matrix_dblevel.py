@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import types
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -85,6 +86,31 @@ async def _criar_caso(db, client_id: str, titulo: str, resp_id: str | None = Non
         {"id": case_id, "titulo": titulo, "cid": client_id, "resp": resp_id},
     )
     return case_id
+
+
+async def _criar_movimento(
+    db,
+    case_id: str,
+    tipo: str,
+    descricao: str,
+    data_evento: datetime,
+) -> str:
+    movimento_id = str(uuid4())
+    await db.execute(
+        text(
+            "INSERT INTO case_movimentos "
+            "(id, case_id, tipo, descricao, data_evento) "
+            "VALUES (:id, :case_id, :tipo, :descricao, :data_evento)"
+        ),
+        {
+            "id": movimento_id,
+            "case_id": case_id,
+            "tipo": tipo,
+            "descricao": descricao,
+            "data_evento": data_evento,
+        },
+    )
+    return movimento_id
 
 
 async def _criar_documento(db, client_id: str, case_id: str | None, titulo: str, confid: str = "normal") -> str:
@@ -201,8 +227,11 @@ async def _dispose_engine_apos_teste():
 
 
 async def test_caso_detalhe_e_meus_casos_isolam_por_cliente():
-    """Prova: A vê o PRÓPRIO caso (200 com dados); forjar o case_id de B → 404;
-    e /meus-casos de A lista só o caso de A (o de B nunca aparece)."""
+    """Prova: A vê só o próprio caso e apenas movimentos públicos.
+
+    Movimento interno de IA, inclusive com estimativa de êxito, e um tipo futuro
+    desconhecido ficam invisíveis no detalhe e na última movimentação.
+    """
     from app.core.database import AsyncSessionLocal
     from app.routers.portal import caso_detalhe, meus_casos
 
@@ -213,22 +242,59 @@ async def test_caso_detalhe_e_meus_casos_isolam_por_cliente():
         ua = await _criar_portal_user(db, cli_a)
         caso_a = await _criar_caso(db, cli_a, f"Caso A {tok}")
         caso_b = await _criar_caso(db, cli_b, f"Caso B {tok}")
+        await _criar_movimento(
+            db,
+            caso_a,
+            "andamento_oficial",
+            "Decisão publicada [dj:0123456789abcdef]",
+            datetime(2026, 7, 27, 9, tzinfo=timezone.utc),
+        )
+        await _criar_movimento(
+            db,
+            caso_a,
+            "ia",
+            "IA – Triagem automática: chance≈82%. RASCUNHO — revisão por advogado.",
+            datetime(2026, 7, 28, 9, tzinfo=timezone.utc),
+        )
+        await _criar_movimento(
+            db,
+            caso_a,
+            "tipo_futuro_interno",
+            "Estratégia interna futura não classificada",
+            datetime(2026, 7, 29, 9, tzinfo=timezone.utc),
+        )
         await db.commit()
         try:
             user_a = await _carregar_user(db, ua)
 
-            # POSITIVO: A vê o próprio caso.
+            # POSITIVO: A vê o próprio caso e o andamento oficial saneado.
             det = await caso_detalhe(case_id=caso_a, db=db, cu=user_a)
             assert det["caso"]["titulo"] == f"Caso A {tok}"
+            assert det["andamentos"] == [
+                {
+                    "data": datetime(2026, 7, 27, 9, tzinfo=timezone.utc),
+                    "descricao": "Decisão publicada",
+                }
+            ]
+            assert "chance" not in str(det).lower()
+            assert "estratégia interna" not in str(det).lower()
 
             # IDOR: A forjando o id do caso de B → 404 (WHERE client_id = A).
             with pytest.raises(HTTPException) as exc:
                 await caso_detalhe(case_id=caso_b, db=db, cu=user_a)
             assert exc.value.status_code == 404
 
-            # Listagem: só o caso de A.
-            ids = {c["id"] for c in (await meus_casos(db=db, cu=user_a))["data"]}
-            assert caso_a in ids and caso_b not in ids
+            # Listagem: só o caso de A; a última movimentação ignora IA e tipo
+            # futuro mais recentes e conserva o andamento oficial.
+            meus = (await meus_casos(db=db, cu=user_a))["data"]
+            por_id = {c["id"]: c for c in meus}
+            assert caso_a in por_id and caso_b not in por_id
+            assert por_id[caso_a]["ultima_movimentacao"] == {
+                "data": datetime(2026, 7, 27, 9, tzinfo=timezone.utc),
+                "descricao": "Decisão publicada",
+            }
+            assert "chance" not in str(meus).lower()
+            assert "estratégia interna" not in str(meus).lower()
         finally:
             await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
 
