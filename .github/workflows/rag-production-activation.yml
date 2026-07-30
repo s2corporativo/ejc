@@ -1,5 +1,6 @@
 # EJC — validação e acionamento manual da busca semântica do RAG.
 #
+# Governança e critérios de aceite: Issue #563.
 # Pull Requests executam apenas testes determinísticos. A produção só pode ser
 # alterada por workflow_dispatch na main e depois de o mesmo SHA estar implantado.
 name: RAG semântico — validar e ativar
