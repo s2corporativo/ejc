@@ -1,8 +1,9 @@
 """
 honorarios_oab.py — Estimador de honorários ESTRUTURADO (P2.1).
 POST /api/honorarios-oab/estimar  → mínimo / recomendado / estratégico + contrato
-sugerido + memória de cálculo, ANCORADO na tabela OAB/MG (RAG, filtrada contra
-placeholder). GET /api/honorarios-oab/tabela → itens relevantes (transparência).
+sugerido + memória de cálculo, ANCORADO somente em itens estruturados, vigentes
+e com fonte oficial OAB/MG verificável. GET /api/honorarios-oab/tabela expõe os
+itens elegíveis e o critério de fonte (transparência).
 
 REGRAS (CLAUDE.md): nunca inventa item da tabela; nunca promete resultado; tudo
 é referência — o advogado define o valor final.
