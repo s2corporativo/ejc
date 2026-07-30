@@ -64,7 +64,12 @@ _RE_CREATE_VIEW = re.compile(
     r'CREATE\s+(?:OR\s+REPLACE\s+)?(?:MATERIALIZED\s+)?VIEW\s+'
     r'(?:IF\s+NOT\s+EXISTS\s+)?"?([a-zA-Z_]\w*)"?', re.I
 )
-_RE_REF_FROM = re.compile(r'\b(?:FROM|JOIN)\s+"?([a-z_][a-z0-9_]*)"?', re.I)
+# Exige separador de cláusula depois da tabela. Assim `EXTRACT(YEAR FROM
+# created_at)` e `EXTRACT(... FROM d.data_prazo)` não viram tabelas fictícias.
+_RE_REF_FROM = re.compile(
+    r'\b(?:FROM|JOIN)\s+(?:"?[a-z_][a-z0-9_]*"?\.)?'
+    r'"?([a-z_][a-z0-9_]*)"?(?=\s|,|;|$)', re.I
+)
 _RE_REF_INSERT = re.compile(r'\bINSERT\s+INTO\s+"?([a-z_][a-z0-9_]*)"?', re.I)
 _RE_REF_UPDATE = re.compile(r'\bUPDATE\s+"?([a-z_][a-z0-9_]*)"?\s+SET\b', re.I)
 _RE_REF_DELETE = re.compile(r'\bDELETE\s+FROM\s+"?([a-z_][a-z0-9_]*)"?', re.I)
@@ -299,6 +304,8 @@ def _tabelas_referenciadas_raw() -> tuple[set[str], dict[str, set[str]]]:
 def test_scanner_raw_ignora_prosa_com_palavras_sql():
     assert _sql_executavel("texto created_at from d select f") is None
     assert _sql_executavel("SELECT id FROM users") == "SELECT id FROM users"
+    assert not _RE_REF_FROM.search("SELECT EXTRACT(YEAR FROM created_at)")
+    assert not _RE_REF_FROM.search("SELECT EXTRACT(YEAR FROM d.data_prazo)")
 
 
 def test_grafo_alembic_head_unico_e_canonico():
@@ -358,7 +365,8 @@ def test_upgrade_head_reconstroi_banco_vazio_real():
     url = os.environ["SCHEMA_CHECK_DATABASE_URL"]
     parsed = urlsplit(url)
     nome_db = f"ejc_dr_{os.getpid()}"
-    db_url = urlunsplit((parsed.scheme, parsed.netloc, f"/{nome_db}", "", ""))
+    # Força driver sync, o mesmo usado por alembic/env.py.
+    db_url = urlunsplit(("postgresql+psycopg2", parsed.netloc, f"/{nome_db}", "", ""))
 
     def conectar_admin():
         conn = psycopg2.connect(
@@ -380,11 +388,24 @@ def test_upgrade_head_reconstroi_banco_vazio_real():
         conn.close()
 
     try:
-        subprocess.run(
-            ["python", "-m", "alembic", "upgrade", "head"], cwd=BACKEND_DIR,
-            env={**os.environ, "DATABASE_URL": db_url}, check=True,
-            capture_output=True, text=True,
+        env = {
+            **os.environ,
+            "DATABASE_URL": db_url,
+            "DATABASE_URL_SYNC": db_url,
+            "SCHEMA_CHECK_DATABASE_URL": db_url,
+        }
+        resultado = subprocess.run(
+            ["python", "-m", "alembic", "upgrade", "head", "--sql"],
+            cwd=BACKEND_DIR, env=env, capture_output=True, text=True,
         )
+        # Primeiro valida que o grafo pode ser renderizado; depois aplica de fato.
+        assert resultado.returncode == 0, resultado.stderr or resultado.stdout
+        resultado = subprocess.run(
+            ["python", "-m", "alembic", "upgrade", "head"],
+            cwd=BACKEND_DIR, env=env, capture_output=True, text=True,
+        )
+        assert resultado.returncode == 0, resultado.stderr or resultado.stdout
+
         engine = create_engine(db_url)
         try:
             inspector = inspect(engine)
