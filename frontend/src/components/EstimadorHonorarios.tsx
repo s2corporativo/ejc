@@ -2,7 +2,7 @@
 // P2.1 — Estimador de honorários estruturado, ancorado na tabela OAB/MG (RAG).
 // Três cenários (mínimo/recomendado/estratégico) + memória de cálculo + contrato
 // sugerido. Tudo é referência (HITL): o advogado define o valor final.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Calculator, FileSignature, Info } from "lucide-react";
 import api from "../lib/api";
 
@@ -38,12 +38,55 @@ export default function EstimadorHonorarios() {
   const [r, setR] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
+  const [tabelaStatus, setTabelaStatus] = useState<
+    "carregando" | "disponivel" | "indisponivel"
+  >("carregando");
+  const [tabelaMensagem, setTabelaMensagem] = useState("");
 
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    let ativo = true;
+    setTabelaStatus("carregando");
+    setTabelaMensagem("");
+
+    api
+      .get("/honorarios-oab/tabela", { params: { area: form.area } })
+      .then(({ data }) => {
+        if (!ativo) return;
+        if (data?.disponivel) {
+          setTabelaStatus("disponivel");
+          return;
+        }
+        setTabelaStatus("indisponivel");
+        setTabelaMensagem(
+          data?.mensagem ||
+            "Tabela oficial OAB/MG vigente e verificável não disponível.",
+        );
+      })
+      .catch(() => {
+        if (!ativo) return;
+        setTabelaStatus("indisponivel");
+        setTabelaMensagem(
+          "Não foi possível validar a tabela oficial OAB/MG. A estimativa permanece bloqueada.",
+        );
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [form.area]);
 
   const estimar = async () => {
     if (!form.tipo_acao?.trim()) {
       setErro("Informe o tipo de ação.");
+      return;
+    }
+    if (tabelaStatus !== "disponivel") {
+      setErro(
+        tabelaMensagem ||
+          "Valide uma tabela oficial OAB/MG vigente antes de estimar.",
+      );
       return;
     }
     setLoading(true);
@@ -74,10 +117,27 @@ export default function EstimadorHonorarios() {
           aqui apenas a descrição da ferramenta. */}
       <p className="text-sm text-slate-500 mb-5 flex items-start gap-2">
         <Calculator size={16} className="text-bronze mt-0.5 shrink-0" />
-        Calcula três cenários ancorados na tabela OAB/MG, ponderando
-        complexidade, tempo e atos. Referência — o advogado define o valor
-        final.
+        Calcula três cenários somente quando há itens vigentes com fonte oficial
+        OAB/MG verificável. Referência — o advogado define o valor final.
       </p>
+
+      {tabelaStatus === "carregando" && (
+        <p
+          role="status"
+          className="mb-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600"
+        >
+          Validando vigência e fonte oficial da tabela OAB/MG…
+        </p>
+      )}
+      {tabelaStatus === "indisponivel" && (
+        <p
+          role="alert"
+          className="mb-4 flex items-start gap-2 rounded-lg bg-warn-50 p-3 text-xs text-warn-700"
+        >
+          <Info size={14} className="mt-0.5 shrink-0" />
+          <span>{tabelaMensagem}</span>
+        </p>
+      )}
 
       <div className="card p-5 grid sm:grid-cols-2 gap-4">
         <div>
@@ -163,7 +223,11 @@ export default function EstimadorHonorarios() {
           />
         </div>
         <div className="sm:col-span-2">
-          <button className="btn-gold" disabled={loading} onClick={estimar}>
+          <button
+            className="btn-gold"
+            disabled={loading || tabelaStatus !== "disponivel"}
+            onClick={estimar}
+          >
             <Calculator size={15} />{" "}
             {loading ? "Calculando…" : "Estimar honorários"}
           </button>
@@ -216,13 +280,6 @@ export default function EstimadorHonorarios() {
                   <b className="text-slate-600">Contrato sugerido:</b>{" "}
                   {r.contrato_sugerido}
                 </span>
-              </p>
-            )}
-            {r.tabela_oficial_disponivel === false && (
-              <p className="text-xs text-warn-700 bg-warn-50 rounded-lg p-2 flex items-start gap-1">
-                <Info size={13} className="mt-0.5 shrink-0" /> Tabela oficial
-                OAB/MG não está na base — valores são referência genérica de
-                mercado.
               </p>
             )}
             {r._aviso && (
