@@ -2,6 +2,7 @@
 # Data Room — salas seguras de documentos com links de acesso externo.
 from __future__ import annotations
 
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -24,7 +25,7 @@ from app.models.data_room import (
     DataRoomArquivo,
     DataRoomLink,
 )
-from app.models.document import Document
+from app.models.document import DocConfidencialidade, Document
 from app.models.user import User
 from app.services.security_service import obter_ip_real
 
@@ -43,6 +44,10 @@ class AdicionarArquivoReq(BaseModel):
     nome_exibicao: Optional[str] = Field(default=None, max_length=255)
 
 
+class PublicarArquivoReq(BaseModel):
+    publicado: bool
+
+
 class GerarLinkReq(BaseModel):
     descricao: Optional[str] = Field(default=None, max_length=200)
     expira_horas: int = Field(72, ge=1, le=8760)
@@ -51,6 +56,48 @@ class GerarLinkReq(BaseModel):
 
 def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
+
+
+def _hash_token(token: str) -> str:
+    """SHA-256 determinístico do segredo público, sem salt para lookup exato."""
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
+def _confidencialidade(doc: Document) -> str:
+    return str(
+        getattr(doc.confidencialidade, "value", doc.confidencialidade) or ""
+    ).lower()
+
+
+def _pode_publicar_externamente(u: User, doc: Document) -> bool:
+    """Política explícita de publicação, separada do acesso interno ao cofre."""
+    conf = _confidencialidade(doc)
+    nivel = ROLE_LEVEL.get(u.role.value, 0)
+    if conf == DocConfidencialidade.normal.value:
+        return nivel >= ROLE_LEVEL["advogado"]
+    if conf in {
+        DocConfidencialidade.restrito.value,
+        DocConfidencialidade.confidencial.value,
+    }:
+        return nivel >= ROLE_LEVEL["socio"]
+    # Documento interno e segredo de justiça nunca são publicados por link.
+    return False
+
+
+def _arquivo_publicavel(arquivo: DataRoomArquivo, doc: Document) -> bool:
+    """Reavalia a política atual a cada acesso público.
+
+    A aprovação histórica não supera reclassificação posterior para interno ou
+    segredo de justiça. Restrito/confidencial permanecem publicáveis somente se
+    um sócio os publicou explicitamente no passado.
+    """
+    if not bool(arquivo.publicado_externamente):
+        return False
+    return _confidencialidade(doc) in {
+        DocConfidencialidade.normal.value,
+        DocConfidencialidade.restrito.value,
+        DocConfidencialidade.confidencial.value,
+    }
 
 
 def _ids_casos_visiveis(cu: User):
@@ -90,12 +137,7 @@ def _ids_clientes_visiveis(cu: User):
 
 
 def _filtro_escopo_rooms(q, cu: User):
-    """Segrega vínculos de caso/cliente e preserva salas institucionais.
-
-    Salas sem caso e sem cliente são espaços compartilhados de triagem/uso
-    institucional, conforme o contrato legado já coberto por testes. Quando há
-    vínculo, o usuário precisa enxergar todos os vínculos informados.
-    """
+    """Segrega vínculos de caso/cliente e preserva salas institucionais."""
     if is_gestao(cu):
         return q
 
@@ -189,8 +231,7 @@ async def _gate_room(
         except HTTPException:
             raise HTTPException(404)
 
-    # Sem vínculos = sala institucional/triagem compartilhada pela equipe
-    # jurídica. Esta compatibilidade é intencional e coberta por regressão.
+    # Sem vínculos = sala institucional/triagem compartilhada pela equipe.
     return room
 
 
@@ -201,7 +242,7 @@ async def _usuario_ve_documento(
 ) -> bool:
     from app.routers.documents import _pode_acessar_confidencial
 
-    if not _pode_acessar_confidencial(cu, doc.confidencialidade.value):
+    if not _pode_acessar_confidencial(cu, _confidencialidade(doc)):
         return False
     if doc.case_id:
         try:
@@ -224,9 +265,9 @@ def _out_room(r: DataRoom) -> dict:
 
 
 def _out_link(lk: DataRoomLink) -> dict:
+    """Metadados internos do link — nunca inclui segredo ou hash."""
     return {
         "id": lk.id,
-        "token": lk.token,
         "descricao": lk.descricao,
         "expira_em": lk.expira_em.isoformat() if lk.expira_em else None,
         "max_acessos": lk.max_acessos,
@@ -247,6 +288,25 @@ async def _rl_acesso_publico(request: Request) -> None:
 def _user_agent_seguro(request: Request) -> str | None:
     ua = (request.headers.get("user-agent") or "").strip()
     return ua[:500] if ua else None
+
+
+async def _obter_room_interno(
+    db: AsyncSession,
+    cu: User,
+    room_id: str,
+) -> DataRoom:
+    room = (
+        await db.execute(
+            select(DataRoom).where(
+                DataRoom.id == room_id,
+                DataRoom.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not room:
+        raise HTTPException(404)
+    await _gate_room(db, cu, room)
+    return room
 
 
 @router.get("")
@@ -313,17 +373,7 @@ async def obter_data_room(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
-    room = (
-        await db.execute(
-            select(DataRoom).where(
-                DataRoom.id == room_id,
-                DataRoom.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not room:
-        raise HTTPException(404)
-    await _gate_room(db, cu, room)
+    room = await _obter_room_interno(db, cu, room_id)
 
     arquivos = (
         await db.execute(
@@ -368,6 +418,11 @@ async def obter_data_room(
                 "document_id": a.document_id,
                 "nome_exibicao": a.nome_exibicao,
                 "added_at": a.added_at.isoformat() if a.added_at else None,
+                "publicado_externamente": bool(a.publicado_externamente),
+                "publicado_por": a.publicado_por,
+                "publicado_em": (
+                    a.publicado_em.isoformat() if a.publicado_em else None
+                ),
             }
             for a in arquivos_visiveis
         ],
@@ -384,17 +439,7 @@ async def adicionar_arquivo(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
-    room = (
-        await db.execute(
-            select(DataRoom).where(
-                DataRoom.id == room_id,
-                DataRoom.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not room:
-        raise HTTPException(404)
-    await _gate_room(db, cu, room)
+    await _obter_room_interno(db, cu, room_id)
 
     doc = (
         await db.execute(
@@ -408,11 +453,8 @@ async def adicionar_arquivo(
         raise HTTPException(404, "Documento não encontrado")
     from app.routers.documents import _pode_acessar_confidencial
 
-    if not _pode_acessar_confidencial(cu, doc.confidencialidade.value):
-        raise HTTPException(
-            403,
-            "Sem permissão para este documento (cofre)",
-        )
+    if not _pode_acessar_confidencial(cu, _confidencialidade(doc)):
+        raise HTTPException(403, "Sem permissão para este documento (cofre)")
     if doc.case_id:
         await verificar_acesso_caso(db, cu, doc.case_id)
 
@@ -422,10 +464,70 @@ async def adicionar_arquivo(
         document_id=req.document_id,
         nome_exibicao=req.nome_exibicao,
         adicionado_por=cu.id,
+        publicado_externamente=False,
     )
     db.add(arq)
     await db.commit()
-    return {"id": arq.id, "document_id": arq.document_id}
+    return {
+        "id": arq.id,
+        "document_id": arq.document_id,
+        "publicado_externamente": False,
+    }
+
+
+@router.patch("/{room_id}/arquivos/{arquivo_id}/publicacao")
+async def publicar_arquivo(
+    room_id: str,
+    arquivo_id: str,
+    req: PublicarArquivoReq,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    await _obter_room_interno(db, cu, room_id)
+
+    arquivo = (
+        await db.execute(
+            select(DataRoomArquivo).where(
+                DataRoomArquivo.id == arquivo_id,
+                DataRoomArquivo.data_room_id == room_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not arquivo:
+        raise HTTPException(404, "Arquivo da sala não encontrado")
+
+    doc = (
+        await db.execute(
+            select(Document).where(
+                Document.id == arquivo.document_id,
+                Document.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Documento não encontrado")
+
+    if req.publicado and not _pode_publicar_externamente(cu, doc):
+        raise HTTPException(
+            403,
+            "A classificação atual do documento impede publicação externa",
+        )
+
+    arquivo.publicado_externamente = req.publicado
+    arquivo.publicado_por = cu.id if req.publicado else None
+    arquivo.publicado_em = datetime.now(timezone.utc) if req.publicado else None
+    await db.commit()
+    return {
+        "id": arquivo.id,
+        "document_id": arquivo.document_id,
+        "publicado_externamente": bool(arquivo.publicado_externamente),
+        "publicado_por": arquivo.publicado_por,
+        "publicado_em": (
+            arquivo.publicado_em.isoformat() if arquivo.publicado_em else None
+        ),
+    }
 
 
 @router.delete("/{room_id}/arquivos/{arquivo_id}", status_code=204)
@@ -437,17 +539,7 @@ async def remover_arquivo(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
-    room = (
-        await db.execute(
-            select(DataRoom).where(
-                DataRoom.id == room_id,
-                DataRoom.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not room:
-        raise HTTPException(404)
-    await _gate_room(db, cu, room)
+    await _obter_room_interno(db, cu, room_id)
 
     arq = (
         await db.execute(
@@ -472,24 +564,14 @@ async def gerar_link(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
-    room = (
-        await db.execute(
-            select(DataRoom).where(
-                DataRoom.id == room_id,
-                DataRoom.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not room:
-        raise HTTPException(404)
-    await _gate_room(db, cu, room)
+    await _obter_room_interno(db, cu, room_id)
 
     token = secrets.token_urlsafe(48)
     expira = datetime.now(timezone.utc) + timedelta(hours=req.expira_horas)
     lk = DataRoomLink(
         id=str(uuid4()),
         data_room_id=room_id,
-        token=token,
+        token_hash=_hash_token(token),
         descricao=req.descricao,
         expira_em=expira,
         max_acessos=req.max_acessos,
@@ -499,6 +581,7 @@ async def gerar_link(
     await db.commit()
     return {
         **_out_link(lk),
+        "token": token,
         "url_acesso": f"/api/data-rooms/acesso/{token}",
     }
 
@@ -512,17 +595,7 @@ async def revogar_link(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
-    room = (
-        await db.execute(
-            select(DataRoom).where(
-                DataRoom.id == room_id,
-                DataRoom.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not room:
-        raise HTTPException(404)
-    await _gate_room(db, cu, room)
+    await _obter_room_interno(db, cu, room_id)
 
     lk = (
         await db.execute(
@@ -551,7 +624,7 @@ async def acessar_link_publico(
     lk = (
         await db.execute(
             select(DataRoomLink).where(
-                DataRoomLink.token == token,
+                DataRoomLink.token_hash == _hash_token(token),
                 DataRoomLink.ativo.is_(True),
             )
         )
@@ -577,35 +650,43 @@ async def acessar_link_publico(
         raise HTTPException(410, "Sala indisponível")
 
     lk.acessos_realizados = (lk.acessos_realizados or 0) + 1
-    log = DataRoomAcessoLog(
-        id=str(uuid4()),
-        link_id=lk.id,
-        ip=obter_ip_real(request),
-        user_agent=_user_agent_seguro(request),
+    db.add(
+        DataRoomAcessoLog(
+            id=str(uuid4()),
+            link_id=lk.id,
+            ip=obter_ip_real(request),
+            user_agent=_user_agent_seguro(request),
+        )
     )
-    db.add(log)
     await db.flush()
 
     arquivos = (
         await db.execute(
             select(DataRoomArquivo).where(
-                DataRoomArquivo.data_room_id == lk.data_room_id
+                DataRoomArquivo.data_room_id == lk.data_room_id,
+                DataRoomArquivo.publicado_externamente.is_(True),
             )
         )
     ).scalars().all()
 
-    ativos: set[str] = set()
+    docs: dict[str, Document] = {}
     if arquivos:
-        ativos = set(
-            (
-                await db.execute(
-                    select(Document.id).where(
-                        Document.id.in_([a.document_id for a in arquivos]),
-                        Document.deleted_at.is_(None),
-                    )
+        rows = (
+            await db.execute(
+                select(Document).where(
+                    Document.id.in_([a.document_id for a in arquivos]),
+                    Document.deleted_at.is_(None),
                 )
-            ).scalars().all()
-        )
+            )
+        ).scalars().all()
+        docs = {d.id: d for d in rows}
+
+    publicaveis = [
+        a
+        for a in arquivos
+        if (doc := docs.get(a.document_id)) is not None
+        and _arquivo_publicavel(a, doc)
+    ]
     await db.commit()
 
     return {
@@ -615,8 +696,7 @@ async def acessar_link_publico(
                 "document_id": a.document_id,
                 "nome": a.nome_exibicao,
             }
-            for a in arquivos
-            if a.document_id in ativos
+            for a in publicaveis
         ],
         "acesso_numero": lk.acessos_realizados,
         "expira_em": lk.expira_em.isoformat() if lk.expira_em else None,
