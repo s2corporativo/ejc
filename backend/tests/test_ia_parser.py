@@ -123,3 +123,19 @@ def test_guard_detecta_json_bruto():
 
 def test_guard_aceita_titulo_normal():
     assert titulo_e_json_bruto("Ação de Cobrança") is False
+
+
+def test_guard_aceita_rotulos_humanos_entre_colchetes():
+    titulos = (
+        "[TESTE AUDITORIA - EXCLUIR] Caso fictício - civil",
+        "[URGENTE] Recurso administrativo",
+        "  [REVISAR] Contestação",
+        "[SIGILOSO]",
+    )
+    for titulo in titulos:
+        assert titulo_e_json_bruto(titulo) is False
+
+
+def test_guard_rejeita_arrays_json_mesmo_quando_ha_texto_depois():
+    assert titulo_e_json_bruto('[{"titulo": "x"}]') is True
+    assert titulo_e_json_bruto('["URGENTE"] Recurso administrativo') is True
