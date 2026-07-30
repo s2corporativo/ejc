@@ -568,7 +568,7 @@ async def test_descricao_conversao_preserva_estado_e_relato_do_advogado():
         "SAC-556677", "R$ 380,00", "[alegado]",
     ):
         assert trecho in saida
-    assert "não equivale, por si, a comprovação" in saida
+    assert "não equivalem, por si, a comprovação" in saida
     assert "Texto gerado pela IA" not in saida
 
 
