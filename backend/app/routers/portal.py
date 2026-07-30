@@ -22,6 +22,17 @@ from app.models.audit_log import criar_audit_log
 
 router = APIRouter(prefix="/portal", tags=["Portal do Cliente"])
 
+# Política fail-closed: somente andamentos processuais expressamente públicos
+# chegam ao cliente. Tipos internos atuais (como "ia", "nota", "arquivamento"
+# e "encerramento") e qualquer tipo futuro permanecem invisíveis por padrão.
+TIPOS_MOVIMENTO_VISIVEIS_PORTAL: tuple[str, ...] = (
+    "andamento_oficial",
+    "audiencia",
+    "decisao",
+    "intimacao",
+    "peticao",
+)
+
 
 def _exigir_cliente(cu: User) -> str:
     """Garante perfil cliente_externo com vínculo; retorna client_id."""
@@ -55,7 +66,10 @@ async def meus_casos(
         sub = select(
             CaseMovimento.case_id, CaseMovimento.data_evento,
             CaseMovimento.descricao, rn,
-        ).where(CaseMovimento.case_id.in_(case_ids)).subquery()
+        ).where(
+            CaseMovimento.case_id.in_(case_ids),
+            CaseMovimento.tipo.in_(TIPOS_MOVIMENTO_VISIVEIS_PORTAL),
+        ).subquery()
         movs = (await db.execute(
             select(sub.c.case_id, sub.c.data_evento, sub.c.descricao)
             .where(sub.c.rn == 1)
@@ -92,7 +106,10 @@ async def caso_detalhe(
         raise HTTPException(status_code=404, detail="Caso não encontrado")
 
     movs = (await db.execute(
-        select(CaseMovimento).where(CaseMovimento.case_id == case_id)
+        select(CaseMovimento).where(
+            CaseMovimento.case_id == case_id,
+            CaseMovimento.tipo.in_(TIPOS_MOVIMENTO_VISIVEIS_PORTAL),
+        )
         .order_by(CaseMovimento.data_evento.desc()).limit(50)
     )).scalars().all()
 
