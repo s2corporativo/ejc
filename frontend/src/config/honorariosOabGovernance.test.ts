@@ -14,7 +14,7 @@ const source = readFileSync(
 
 describe("governança da tabela OAB/MG", () => {
   it("valida a disponibilidade antes de liberar a estimativa", () => {
-    expect(source).toContain('api.get("/honorarios-oab/tabela"');
+    expect(source).toMatch(/api\s*\.get\(["']\/honorarios-oab\/tabela["']/);
     expect(source).toContain(
       'disabled={loading || tabelaStatus !== "disponivel"}',
     );
