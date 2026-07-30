@@ -498,6 +498,174 @@ async def test_converter_sessao_ja_convertida_retorna_ja_convertido():
     assert db.added == []
 
 
+# ── conversão preserva o contexto da Sala no caso ────────────────────────────
+
+@pytest.mark.anyio
+async def test_descricao_conversao_explicita_prevalece_sem_reprocessar():
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(
+        id="s1", titulo="t", created_by="u1",
+        workspace_texto="Texto que não deve substituir a revisão humana.",
+    )
+    db = _FakeDB(sessao=sessao)
+    descricao = "Descrição final revisada pelo advogado."
+    saida = await svc._descricao_fatos_conversao(db, sessao, descricao)
+    assert saida == descricao
+
+
+@pytest.mark.anyio
+async def test_descricao_conversao_preserva_estado_e_relato_do_advogado():
+    from app.models.legal_chat import (
+        LegalChatMessage,
+        LegalChatSession,
+        LegalChatStateVersion,
+    )
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    estado = LegalChatStateVersion(
+        id="v1", session_id="s1", versao=1,
+        resumo="Possível vício de produto sujeito à conferência documental.",
+        estado={
+            "fatos": [{
+                "texto": "Refrigerador adquirido por R$ 4.200,00 em 10/03/2026.",
+                "classificacao": "alegado",
+            }],
+            "cronologia": [{
+                "data": "15/04/2026",
+                "evento": "Defeito comunicado à assistência.",
+                "comprovado": False,
+            }],
+            "provas": [{"nome": "Protocolo AT-88231"}],
+            "fontes": [],
+        },
+        origem="ia_extracao",
+    )
+    mensagens = [
+        LegalChatMessage(
+            id="m1", session_id="s1", autor="user", modo="conversa_livre",
+            conteudo=(
+                "O SAC registrou o protocolo SAC-556677 e o consumidor gastou "
+                "R$ 380,00 com gelo."
+            ),
+        ),
+        LegalChatMessage(
+            id="m2", session_id="s1", autor="ia", modo="conversa_livre",
+            conteudo="Texto gerado pela IA que não deve virar relato do advogado.",
+        ),
+    ]
+    db = _FakeDB(
+        sessao=sessao, mensagens=mensagens, estado_atual=estado,
+    )
+
+    saida = await svc._descricao_fatos_conversao(db, sessao, None)
+
+    assert saida is not None
+    for trecho in (
+        "10/03/2026", "R$ 4.200,00", "15/04/2026", "AT-88231",
+        "SAC-556677", "R$ 380,00", "[alegado]",
+    ):
+        assert trecho in saida
+    assert "não equivale, por si, a comprovação" in saida
+    assert "Texto gerado pela IA" not in saida
+
+
+@pytest.mark.anyio
+async def test_descricao_conversao_usa_workspace_quando_estado_ausente():
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(
+        id="s1", titulo="t", created_by="u1",
+        workspace_texto="Cronologia revisada e organizada pelo advogado.",
+    )
+    db = _FakeDB(sessao=sessao)
+    saida = await svc._descricao_fatos_conversao(db, sessao, None)
+    assert saida is not None
+    assert "Texto da área de trabalho" in saida
+    assert "Cronologia revisada e organizada pelo advogado." in saida
+
+
+@pytest.mark.anyio
+async def test_descricao_conversao_usa_apenas_mensagens_do_advogado_no_fallback():
+    from app.models.legal_chat import LegalChatMessage, LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    mensagens = [
+        LegalChatMessage(
+            id="m1", session_id="s1", autor="user", modo="conversa_livre",
+            conteudo="Compra realizada em 10/03/2026.",
+        ),
+        LegalChatMessage(
+            id="m2", session_id="s1", autor="ia", modo="conversa_livre",
+            conteudo="Conclusão automática não confirmada.",
+        ),
+    ]
+    db = _FakeDB(sessao=sessao, mensagens=mensagens)
+    saida = await svc._descricao_fatos_conversao(db, sessao, None)
+    assert saida is not None
+    assert "Compra realizada em 10/03/2026." in saida
+    assert "Conclusão automática não confirmada." not in saida
+
+
+@pytest.mark.anyio
+async def test_descricao_conversao_sessao_vazia_nao_inventa_fatos():
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    saida = await svc._descricao_fatos_conversao(
+        _FakeDB(sessao=sessao), sessao, None,
+    )
+    assert saida is None
+
+
+@pytest.mark.anyio
+async def test_descricao_conversao_respeita_limite_de_10_mil_caracteres():
+    from app.models.legal_chat import LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    saida = await svc._descricao_fatos_conversao(
+        _FakeDB(sessao=sessao), sessao, "x" * 12_000,
+    )
+    assert saida == "x" * 10_000
+
+
+@pytest.mark.anyio
+async def test_converter_materializa_relato_no_case_sem_descricao_explicita():
+    from app.models.case import Case
+    from app.models.legal_chat import LegalChatMessage, LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    mensagens = [
+        LegalChatMessage(
+            id="m1", session_id="s1", autor="user", modo="conversa_livre",
+            conteudo=(
+                "Compra em 10/03/2026; assistência AT-88231; "
+                "SAC SAC-556677; prejuízo de R$ 380,00."
+            ),
+        ),
+    ]
+    db = _FakeDB(sessao=sessao, mensagens=mensagens)
+    payload = ConverterRequest(
+        novo_cliente_nome="Fulano", area="civil", titulo_caso="Caso X",
+        advogado_responsavel_id="u1",
+        confirmo_conflito_verificado=True, confirmo_dados_revisados=True,
+    )
+
+    await svc.converter_em_caso(db, sessao, payload, _user())
+
+    caso = next(obj for obj in db.added if isinstance(obj, Case))
+    assert caso.descricao_fatos is not None
+    for trecho in ("10/03/2026", "AT-88231", "SAC-556677", "R$ 380,00"):
+        assert trecho in caso.descricao_fatos
+
+
 # ── conversão popula proxima_acao (guarda G1 do caminho canônico) ────────────
 
 @pytest.mark.anyio
