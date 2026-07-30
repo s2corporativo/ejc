@@ -4,10 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const FRONTEND_DIR = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const robots = readFileSync(
-  join(FRONTEND_DIR, "public/robots.txt"),
-  "utf-8",
-);
+const robots = readFileSync(join(FRONTEND_DIR, "public/robots.txt"), "utf-8");
 const nginx = readFileSync(join(FRONTEND_DIR, "nginx.conf"), "utf-8");
 
 describe("política de indexação do frontend", () => {
