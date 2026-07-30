@@ -33,7 +33,7 @@ class PromptJuridico(Base):
     variaveis        = Column(Text)                          # JSON: ["variavel1", "variavel2"]
     tags             = Column(Text)
     favorito         = Column(Boolean, nullable=False, default=False)
-    publico          = Column(Boolean, nullable=False, default=True)   # visível para todos do escritório
+    publico          = Column(Boolean, nullable=False, default=False)  # compartilhamento é opt-in
 
     # Métricas de uso
     vezes_executado  = Column(Integer, nullable=False, default=0)
