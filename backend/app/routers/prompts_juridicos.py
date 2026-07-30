@@ -32,7 +32,7 @@ class PromptIn(BaseModel):
     descricao: Optional[str] = None
     tags:      Optional[str] = None
     favorito:  bool = False
-    publico:   bool = True
+    publico:   bool = False
 
 
 class PromptPatch(BaseModel):
@@ -67,8 +67,28 @@ def _preencher_variaveis(template: str, variaveis: dict) -> str:
 def _extrair_variaveis(conteudo: str) -> list[str]:
     return sorted(set(_PLACEHOLDER.findall(conteudo)))
 
+def _nivel_role(user: User) -> int:
+    role = getattr(user.role, "value", user.role)
+    return ROLE_LEVEL.get(role, 0)
+
+
 def _pode_editar(user: User) -> bool:
-    return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["advogado"]
+    return _nivel_role(user) >= ROLE_LEVEL["advogado"]
+
+
+def _pode_visualizar_prompt(user: User, prompt: PromptJuridico) -> bool:
+    return bool(
+        prompt.publico
+        or prompt.created_by == user.id
+        or _nivel_role(user) >= ROLE_LEVEL["socio"]
+    )
+
+
+def _pode_gerir_prompt(user: User, prompt: PromptJuridico) -> bool:
+    return bool(
+        prompt.created_by == user.id
+        or _nivel_role(user) >= ROLE_LEVEL["socio"]
+    )
 
 # ── Clamp de task_type (P0.1) ─────────────────────────────────────────────────
 # req.task_type é INPUT LIVRE do request. Não confiamos nele: só passa ao
@@ -86,9 +106,12 @@ def _clamp_task_type(task_type: str | None) -> str:
         return t
     return _TASK_TYPE_DEFAULT
 
-def _out(p: PromptJuridico) -> dict:
+def _out(p: PromptJuridico, user: User | None = None) -> dict:
+    pode_gerir = bool(user and _pode_gerir_prompt(user, p))
     return {
         "id": p.id, "titulo": p.titulo,
+        "created_by": p.created_by,
+        "pode_editar": pode_gerir, "pode_excluir": pode_gerir,
         "categoria": p.categoria.value if hasattr(p.categoria, "value") else p.categoria,
         "conteudo": p.conteudo, "descricao": p.descricao,
         "variaveis": _extrair_variaveis(p.conteudo),
@@ -114,9 +137,13 @@ async def listar_prompts(
 ):
     q = select(PromptJuridico).where(PromptJuridico.deleted_at.is_(None))
 
-    # Usuários não-staff só veem prompts públicos
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        q = q.where(PromptJuridico.publico.is_(True))
+    # Abaixo de sócio, cada usuário vê os prompts públicos e os próprios.
+    # Sócio+ mantém visão institucional para curadoria e governança.
+    if _nivel_role(cu) < ROLE_LEVEL["socio"]:
+        q = q.where(or_(
+            PromptJuridico.publico.is_(True),
+            PromptJuridico.created_by == cu.id,
+        ))
 
     if categoria:
         q = q.where(PromptJuridico.categoria == categoria)
@@ -133,7 +160,7 @@ async def listar_prompts(
     q = q.order_by(PromptJuridico.favorito.desc(), PromptJuridico.vezes_executado.desc())
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
     items = (await db.execute(q.offset((page - 1) * per_page).limit(per_page))).scalars().all()
-    return {"total": total, "page": page, "per_page": per_page, "items": [_out(p) for p in items]}
+    return {"total": total, "page": page, "per_page": per_page, "items": [_out(p, cu) for p in items]}
 
 
 @router.post("", status_code=201)
@@ -153,7 +180,7 @@ async def criar_prompt(
     )
     db.add(p)
     await db.commit()
-    return _out(p)
+    return _out(p, cu)
 
 
 @router.get("/{prompt_id}")
@@ -168,9 +195,9 @@ async def obter_prompt(
             PromptJuridico.deleted_at.is_(None),
         )
     )).scalar_one_or_none()
-    if not p:
+    if not p or not _pode_visualizar_prompt(cu, p):
         raise HTTPException(404, "Prompt não encontrado")
-    return _out(p)
+    return _out(p, cu)
 
 
 @router.patch("/{prompt_id}")
@@ -189,7 +216,11 @@ async def atualizar_prompt(
         )
     )).scalar_one_or_none()
     if not p:
-        raise HTTPException(404)
+        raise HTTPException(404, "Prompt não encontrado")
+    if not _pode_gerir_prompt(cu, p):
+        raise HTTPException(
+            403, "Somente o autor ou sócio pode alterar este prompt"
+        )
 
     dados = req.model_dump(exclude_none=True)
     for campo, valor in dados.items():
@@ -201,7 +232,7 @@ async def atualizar_prompt(
 
     p.updated_at = datetime.now(timezone.utc)
     await db.commit()
-    return _out(p)
+    return _out(p, cu)
 
 
 @router.delete("/{prompt_id}", status_code=204)
@@ -210,8 +241,6 @@ async def remover_prompt(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        raise HTTPException(403, "Apenas sócios podem remover prompts")
     p = (await db.execute(
         select(PromptJuridico).where(
             PromptJuridico.id == prompt_id,
@@ -219,7 +248,11 @@ async def remover_prompt(
         )
     )).scalar_one_or_none()
     if not p:
-        raise HTTPException(404)
+        raise HTTPException(404, "Prompt não encontrado")
+    if not _pode_gerir_prompt(cu, p):
+        raise HTTPException(
+            403, "Somente o autor ou sócio pode remover este prompt"
+        )
     p.deleted_at = datetime.now(timezone.utc)
     await db.commit()
 
@@ -246,7 +279,7 @@ async def executar_prompt(
             PromptJuridico.deleted_at.is_(None),
         )
     )).scalar_one_or_none()
-    if not p:
+    if not p or not _pode_visualizar_prompt(cu, p):
         raise HTTPException(404, "Prompt não encontrado")
 
     # Preenche variáveis
