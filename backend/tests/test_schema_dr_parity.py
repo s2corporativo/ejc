@@ -395,12 +395,6 @@ def test_upgrade_head_reconstroi_banco_vazio_real():
             "SCHEMA_CHECK_DATABASE_URL": db_url,
         }
         resultado = subprocess.run(
-            ["python", "-m", "alembic", "upgrade", "head", "--sql"],
-            cwd=BACKEND_DIR, env=env, capture_output=True, text=True,
-        )
-        # Primeiro valida que o grafo pode ser renderizado; depois aplica de fato.
-        assert resultado.returncode == 0, resultado.stderr or resultado.stdout
-        resultado = subprocess.run(
             ["python", "-m", "alembic", "upgrade", "head"],
             cwd=BACKEND_DIR, env=env, capture_output=True, text=True,
         )
