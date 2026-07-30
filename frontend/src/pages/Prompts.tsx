@@ -189,7 +189,8 @@ export default function Prompts() {
             <span>
               Compartilhar com todo o escritório
               <span className="block text-xs text-slate-400">
-                Desmarcado, o prompt fica visível apenas para você e para sócios.
+                Desmarcado, o prompt fica visível apenas para você e para
+                sócios.
               </span>
             </span>
           </label>
