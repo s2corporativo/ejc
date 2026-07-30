@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Seed da Tabela de Honorários OAB/MG em tabela_oab_honorarios.
+"""Seed legado da Tabela de Honorários OAB/MG — DESATIVADO.
 
-Importado do PDF institucional (Tabela de Honorários Advocatícios OAB/MG).
-Regra: valores VERBATIM da fonte — nada inventado. Só entram itens em que
-o código e o valor estão na MESMA linha física do PDF (associação
-inequívoca); itens em layout intercalado de 2 colunas ficam de fora para
-entrada manual. observacoes guarda o trecho de origem p/ auditoria.
-vigencia_inicio fica NULL (a edição não consta no PDF; ver fonte).
+O conteúdo abaixo foi preservado apenas para auditoria histórica. A extração
+possui descrições truncadas, códigos duplicados, vigência desconhecida e fonte
+sem URL oficial verificável; portanto, não pode gravar dados.
 
-Rodar:  python -m app.seeds.oab_honorarios_seed
-Idempotente por (item_codigo, fonte).
+A carga válida deve usar a gestão versionada de `tabela_oab_honorarios`, com
+vigência informada e URL HTTPS no domínio oficial oabmg.org.br. Nunca inventar
+ou completar valores a partir deste arquivo.
 """
 import asyncio
 import uuid
@@ -336,23 +334,12 @@ ITENS = [
 
 
 async def run():
-    async with AsyncSessionLocal() as db:
-        existentes = set()
-        rows = (await db.execute(select(TabelaOABHonorario.item_codigo).where(
-            TabelaOABHonorario.fonte == FONTE))).scalars().all()
-        existentes = set(rows)
-        novos = 0
-        for codigo, desc, area, valor, pct, origem in ITENS:
-            if codigo in existentes:
-                continue
-            db.add(TabelaOABHonorario(
-                id=str(uuid.uuid4()), item_codigo=codigo, descricao=desc,
-                area_juridica=area, valor_minimo=valor, percentual=pct,
-                unidade="R$", vigencia_inicio=None, fonte=FONTE,
-                observacoes="Origem (PDF): " + origem, ativo=True))
-            novos += 1
-        await db.commit()
-        print(f"OAB honorarios seed: {novos} novos, {len(existentes)} já existiam")
+    # Referências mantêm explícito que o legado não foi apagado silenciosamente.
+    _ = (AsyncSessionLocal, select, TabelaOABHonorario, uuid, FONTE, ITENS)
+    raise RuntimeError(
+        "Seed legado OAB/MG desativado: fonte, vigência e integridade dos itens "
+        "não são verificáveis. Use somente carga oficial versionada."
+    )
 
 if __name__ == "__main__":
     asyncio.run(run())
