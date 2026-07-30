@@ -111,6 +111,65 @@ def _status(
     )
 
 
+def _backup_statuses(settings: Settings) -> list[IntegrationStatus]:
+    """Representa separadamente o backup cifrado atual e o job legado.
+
+    Ambos são metadados de configuração: execução, recência e restauração
+    continuam dependendo das provas operacionais de continuidade.
+    """
+    destino = (settings.BACKUP_DESTINO or "gdrive").strip().lower()
+    if destino == "gdrive":
+        destino_rotulo = "Google Drive"
+        destino_configurado = bool(
+            (settings.BACKUP_DRIVE_FOLDER_ID or "").strip()
+        )
+    elif destino == "rclone":
+        destino_rotulo = "rclone"
+        destino_configurado = bool(
+            (settings.BACKUP_RCLONE_REMOTE or "").strip()
+        )
+    else:
+        destino_rotulo = f"inválido ({destino or 'vazio'})"
+        destino_configurado = False
+
+    atual = _status(
+        key="backup_offsite",
+        label="Backup cifrado offsite",
+        group="Infraestrutura",
+        enabled=bool(settings.BACKUP_ENABLED),
+        configured=bool(
+            (settings.BACKUP_ENCRYPTION_KEY or "").strip()
+        )
+        and destino_configurado,
+        ready_detail=(
+            f"Backup cifrado habilitado com destino {destino_rotulo} "
+            "declarado; execução e recência devem ser confirmadas pela "
+            "prova operacional de continuidade."
+        ),
+        missing_detail=(
+            "Backup cifrado habilitado, mas faltam a chave de criptografia, "
+            "o destino correspondente, ou BACKUP_DESTINO é inválido."
+        ),
+        mode=(
+            f"destino {destino_rotulo}; retenção offsite "
+            f"{settings.BACKUP_RETENCAO_DIAS} dias"
+        ),
+    )
+    legado = _status(
+        key="backup_legacy",
+        label="Backup legado (pg_dump + rclone)",
+        group="Infraestrutura",
+        enabled=bool((settings.BACKUP_REMOTE or "").strip()),
+        configured=bool((settings.BACKUP_REMOTE or "").strip()),
+        ready_detail=(
+            "Destino remoto do job legado declarado; execução e recência "
+            "devem ser confirmadas nos logs específicos."
+        ),
+        mode=f"retenção local {settings.BACKUP_RETENTION_DAYS} dias",
+    )
+    return [atual, legado]
+
+
 def build_integration_status(
     settings: Settings, credential_states: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -333,15 +392,7 @@ def build_integration_status(
             configured=bool(settings.SENTRY_DSN),
             ready_detail="Rastreamento de erros configurado no ambiente.",
         ),
-        _status(
-            key="backup_offsite",
-            label="Backup offsite",
-            group="Infraestrutura",
-            enabled=bool(settings.BACKUP_REMOTE),
-            configured=bool(settings.BACKUP_REMOTE),
-            ready_detail="Destino remoto declarado; a execução deve ser confirmada pelos logs de backup.",
-            mode=f"retenção local {settings.BACKUP_RETENTION_DAYS} dias",
-        ),
+        *_backup_statuses(settings),
     ]
     if credential_states:
         items = _aplicar_estados_credencial(items, credential_states)
