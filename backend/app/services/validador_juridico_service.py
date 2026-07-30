@@ -1,20 +1,24 @@
 # app/services/validador_juridico_service.py
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
+from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
+from app.models.legal_doc import LegalDoc
 from app.services.ai_gateway import chat
 from app.services.ai_service import buscar_contexto_rag
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 
 AVISO_VALIDACAO = (
     "VALIDACAO JURIDICA AUTOMATICA: relatorio interno de controle. "
-    "Nao substitui revisao do advogado responsavel e nao confirma jurisprudencia sem fonte oficial."
+    "Nao substitui revisao do advogado responsavel e nao confirma "
+    "jurisprudencia sem fonte oficial."
 )
 
 SYSTEM_PROMPT = """
@@ -93,17 +97,36 @@ Finalize com: REVISAO HUMANA OBRIGATORIA antes de protocolo, envio ao cliente ou
 """.strip()
 
 _ARTIGO_RE = re.compile(
-    r"\b(?:art\.?|artigo)\s*\d{1,4}(?:[-A-Zº°]*)?(?:\s*,?\s*(?:§|paragrafo)\s*\d+)?(?:\s*(?:do|da|de)\s*(?:CPC|CC|CDC|CLT|CPP|CP|CF|Lei\s*n?[ºo]?\s*\d+[\d./-]*))?",
+    r"\b(?:art\.?|artigo)\s*\d{1,4}(?:[-A-Zº°]*)?"
+    r"(?:\s*,?\s*(?:§|paragrafo)\s*\d+)?"
+    r"(?:\s*(?:do|da|de)\s*(?:CPC|CC|CDC|CLT|CPP|CP|CF|"
+    r"Lei\s*n?[ºo]?\s*\d+[\d./-]*))?",
     re.IGNORECASE,
 )
 _LEI_RE = re.compile(r"\bLei\s*n?[ºo]?\s*\d{1,5}[\d./-]*", re.IGNORECASE)
 _JURIS_RE = re.compile(
-    r"\b(?:STF|STJ|TST|TRT\s*\d*|TJ[A-Z]{2}|TJMG|REsp|AREsp|AgInt|AgRg|Apelacao|Apelação|Agravo|HC|MS|Tema\s*\d+|Sumula|Súmula)\b[^\n]{0,180}",
+    r"\b(?:STF|STJ|TST|TRT\s*\d*|TJ[A-Z]{2}|TJMG|REsp|AREsp|AgInt|AgRg|"
+    r"Apelacao|Apelação|Agravo|HC|MS|Tema\s*\d+|Sumula|Súmula)\b[^\n]{0,180}",
     re.IGNORECASE,
 )
-_NUM_PROC_RE = re.compile(r"\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b|\b\d{4,9}[-./]\d{2,4}\b")
-_PROVA_RE = re.compile(r"\b(documento|contrato|nota fiscal|comprovante|email|e-mail|print|extrato|laudo|pericia|perícia|testemunha|prova|anexo)\b", re.IGNORECASE)
-_PEDIDO_RE = re.compile(r"\b(requer|pede|pedido|condenacao|condenação|procedencia|procedência|improcedencia|improcedência|tutela|liminar)\b", re.IGNORECASE)
+_NUM_PROC_RE = re.compile(
+    r"\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b|"
+    r"\b\d{4,9}[-./]\d{2,4}\b"
+)
+_PROVA_RE = re.compile(
+    r"\b(documento|contrato|nota fiscal|comprovante|email|e-mail|print|"
+    r"extrato|laudo|pericia|perícia|testemunha|prova|anexo)\b",
+    re.IGNORECASE,
+)
+_PEDIDO_RE = re.compile(
+    r"\b(requer|pede|pedido|condenacao|condenação|procedencia|procedência|"
+    r"improcedencia|improcedência|tutela|liminar)\b",
+    re.IGNORECASE,
+)
+_LEGAL_DOC_ID_RE = re.compile(
+    r"^LEGAL_DOC_ID:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+)
 
 
 @dataclass
@@ -132,6 +155,19 @@ def _uniq(matches: list[str], limite: int = 20) -> list[str]:
     return out
 
 
+def _extrair_legal_doc_id(documentos: list[str] | None) -> str | None:
+    """Extrai somente o marcador estrutural exato emitido pelo router."""
+    for documento in documentos or []:
+        match = _LEGAL_DOC_ID_RE.fullmatch((documento or "").strip())
+        if match:
+            return match.group(1).lower()
+    return None
+
+
+def _hash_conteudo(conteudo: str) -> str:
+    return hashlib.sha256((conteudo or "").encode("utf-8")).hexdigest()
+
+
 # ── Rubrica auditavel de controle de qualidade FORMAL ─────────────────────────
 # NATUREZA: esta rubrica e um CONTROLE DE QUALIDADE FORMAL da peca (presenca de
 # secoes obrigatorias, fontes citadas, pedidos, provas, ausencia de marcadores de
@@ -155,8 +191,8 @@ NATUREZA_RUBRICA = (
 RUBRICA_METODO = "rubrica_formal_v1"
 
 _ENDERECAMENTO_RE = re.compile(
-    r"\b(excelent[ií]ssim|merit[ií]ssim|mm\.?\s*ju[ií]z|ju[ií]zo\b|\bvara\b|comarca|"
-    r"\bforo\b|ju[ií]zado|tribunal\s+de\s+justi|dirigid[ao]\s+ao?)\b",
+    r"\b(excelent[ií]ssim|merit[ií]ssim|mm\.?\s*ju[ií]z|ju[ií]zo\b|\bvara\b|"
+    r"comarca|\bforo\b|ju[ií]zado|tribunal\s+de\s+justi|dirigid[ao]\s+ao?)\b",
     re.IGNORECASE,
 )
 _FATOS_RE = re.compile(
@@ -165,13 +201,23 @@ _FATOS_RE = re.compile(
     re.IGNORECASE,
 )
 _VALOR_CAUSA_RE = re.compile(
-    r"(valor\s+da\s+causa|d[áa]-se\s+[àa]\s+causa|d[áa]\s+[àa]\s+causa\s+o\s+valor|R\$\s*[\d.]+)",
+    r"(valor\s+da\s+causa|d[áa]-se\s+[àa]\s+causa|"
+    r"d[áa]\s+[àa]\s+causa\s+o\s+valor|R\$\s*[\d.]+)",
     re.IGNORECASE,
 )
 
 
-def _criterio(criterio: str, rotulo: str, secao: str, peso: int, atendido: bool,
-              deducao: int, observacao: str, *, pontua: bool = True) -> dict:
+def _criterio(
+    criterio: str,
+    rotulo: str,
+    secao: str,
+    peso: int,
+    atendido: bool,
+    deducao: int,
+    observacao: str,
+    *,
+    pontua: bool = True,
+) -> dict:
     """Um item auditavel da rubrica.
 
     - peso: peso NOMINAL documentado do criterio (constante).
@@ -191,9 +237,16 @@ def _criterio(criterio: str, rotulo: str, secao: str, peso: int, atendido: bool,
     }
 
 
-def _montar_rubrica(texto: str, documentos: list[str] | None, *, artigos: list[str],
-                    leis: list[str], provas: list[str], pedidos: list[str],
-                    jur_pendente: list[str]) -> list[dict]:
+def _montar_rubrica(
+    texto: str,
+    documentos: list[str] | None,
+    *,
+    artigos: list[str],
+    leis: list[str],
+    provas: list[str],
+    pedidos: list[str],
+    jur_pendente: list[str],
+) -> list[dict]:
     """Rubrica formal por secao obrigatoria.
 
     Os 7 primeiros criterios PONTUAM e reproduzem exatamente as deducoes da
@@ -209,70 +262,119 @@ def _montar_rubrica(texto: str, documentos: list[str] | None, *, artigos: list[s
     ded_jur = min(20, 6 * len(jur_pendente)) if jur_pendente else 0
 
     return [
-        # ── Criterios PONTUANTES (espelham a heuristica; score identico) ──────
         _criterio(
-            "fatos_desenvolvimento", "Narrativa fatica e desenvolvimento minimos", "fatos",
-            12, not curto, 12 if curto else 0,
+            "fatos_desenvolvimento",
+            "Narrativa fatica e desenvolvimento minimos",
+            "fatos",
+            12,
+            not curto,
+            12 if curto else 0,
             "Proxy por extensao: peca com menos de 1500 caracteres nao desenvolve os fatos."
-            if curto else "Extensao compativel com desenvolvimento minimo dos fatos.",
+            if curto
+            else "Extensao compativel com desenvolvimento minimo dos fatos.",
         ),
         _criterio(
-            "fundamentacao_legal_com_fonte", "Fundamentacao legal com artigos/leis citados",
-            "fundamentacao_legal", 22, tem_fund, 22 if not tem_fund else 0,
+            "fundamentacao_legal_com_fonte",
+            "Fundamentacao legal com artigos/leis citados",
+            "fundamentacao_legal",
+            22,
+            tem_fund,
+            22 if not tem_fund else 0,
             "Nenhum artigo ou lei citado — fundamentacao normativa ausente."
-            if not tem_fund else f"Citados {len(artigos)} artigo(s) e {len(leis)} lei(s).",
+            if not tem_fund
+            else f"Citados {len(artigos)} artigo(s) e {len(leis)} lei(s).",
         ),
         _criterio(
-            "pedidos_explicitos", "Pedidos explicitos", "pedidos",
-            14, bool(pedidos), 14 if not pedidos else 0,
+            "pedidos_explicitos",
+            "Pedidos explicitos",
+            "pedidos",
+            14,
+            bool(pedidos),
+            14 if not pedidos else 0,
             "Nenhum indicador de pedido detectado."
-            if not pedidos else f"{len(pedidos)} indicador(es) de pedido detectado(s).",
+            if not pedidos
+            else f"{len(pedidos)} indicador(es) de pedido detectado(s).",
         ),
         _criterio(
-            "provas_ou_documentos", "Indicacao de provas ou documentos", "provas_documentos",
-            18, tem_prova_ou_doc, 18 if not tem_prova_ou_doc else 0,
+            "provas_ou_documentos",
+            "Indicacao de provas ou documentos",
+            "provas_documentos",
+            18,
+            tem_prova_ou_doc,
+            18 if not tem_prova_ou_doc else 0,
             "Sem indicacao de provas no texto nem documentos informados."
-            if not tem_prova_ou_doc else "Provas indicadas no texto e/ou documentos informados.",
+            if not tem_prova_ou_doc
+            else "Provas indicadas no texto e/ou documentos informados.",
         ),
         _criterio(
-            "citacoes_sem_pendencia", "Citacoes de jurisprudencia sem pendencia de verificacao",
-            "citacoes_validadas", 20, not jur_pendente, ded_jur,
-            f"{len(jur_pendente)} citacao(oes) sem numero CNJ/Tema/Sumula — pendente(s) de verificacao oficial."
-            if jur_pendente else "Sem citacoes de jurisprudencia pendentes de verificacao.",
+            "citacoes_sem_pendencia",
+            "Citacoes de jurisprudencia sem pendencia de verificacao",
+            "citacoes_validadas",
+            20,
+            not jur_pendente,
+            ded_jur,
+            f"{len(jur_pendente)} citacao(oes) sem numero CNJ/Tema/Sumula — "
+            "pendente(s) de verificacao oficial."
+            if jur_pendente
+            else "Sem citacoes de jurisprudencia pendentes de verificacao.",
         ),
         _criterio(
-            "sem_marcador_verificar_fonte", "Ausencia de marcador 'verificar fonte'",
-            "marcadores_qualidade", 8, not tem_verificar_fonte, 8 if tem_verificar_fonte else 0,
+            "sem_marcador_verificar_fonte",
+            "Ausencia de marcador 'verificar fonte'",
+            "marcadores_qualidade",
+            8,
+            not tem_verificar_fonte,
+            8 if tem_verificar_fonte else 0,
             "Texto contem marcador 'verificar fonte' — fonte nao confirmada."
-            if tem_verificar_fonte else "Sem marcador 'verificar fonte'.",
+            if tem_verificar_fonte
+            else "Sem marcador 'verificar fonte'.",
         ),
         _criterio(
-            "sem_marcador_lacuna", "Ausencia de marcadores de lacuna ([verificar]/[dado nao informado])",
-            "marcadores_qualidade", 10, not tem_lacuna, 10 if tem_lacuna else 0,
+            "sem_marcador_lacuna",
+            "Ausencia de marcadores de lacuna ([verificar]/[dado nao informado])",
+            "marcadores_qualidade",
+            10,
+            not tem_lacuna,
+            10 if tem_lacuna else 0,
             "Texto contem marcador de lacuna a preencher antes do uso."
-            if tem_lacuna else "Sem marcadores de lacuna.",
+            if tem_lacuna
+            else "Sem marcadores de lacuna.",
         ),
-        # ── Criterios INFORMATIVOS (pontua=False: nao alteram o gate — follow-up) ─
         _criterio(
-            "enderecamento_competencia", "Enderecamento/competencia identificados",
-            "enderecamento_competencia", 0, bool(_ENDERECAMENTO_RE.search(texto)), 0,
+            "enderecamento_competencia",
+            "Enderecamento/competencia identificados",
+            "enderecamento_competencia",
+            0,
+            bool(_ENDERECAMENTO_RE.search(texto)),
+            0,
             "Nao localizado enderecamento/juizo/competencia — conferir cabecalho."
             if not _ENDERECAMENTO_RE.search(texto)
             else "Enderecamento/competencia localizados no texto.",
             pontua=False,
         ),
         _criterio(
-            "narrativa_fatica_explicita", "Secao explicita de fatos/causa de pedir", "fatos",
-            0, bool(_FATOS_RE.search(texto)), 0,
+            "narrativa_fatica_explicita",
+            "Secao explicita de fatos/causa de pedir",
+            "fatos",
+            0,
+            bool(_FATOS_RE.search(texto)),
+            0,
             "Nao localizada secao explicita 'Dos Fatos'/'Causa de pedir'."
-            if not _FATOS_RE.search(texto) else "Secao de fatos/causa de pedir localizada.",
+            if not _FATOS_RE.search(texto)
+            else "Secao de fatos/causa de pedir localizada.",
             pontua=False,
         ),
         _criterio(
-            "valor_da_causa", "Valor da causa informado (quando aplicavel)", "valor_causa",
-            0, bool(_VALOR_CAUSA_RE.search(texto)), 0,
-            "Valor da causa nao localizado — obrigatorio quando aplicavel (conferir rito)."
-            if not _VALOR_CAUSA_RE.search(texto) else "Valor da causa/pedido economico localizado.",
+            "valor_da_causa",
+            "Valor da causa informado (quando aplicavel)",
+            "valor_causa",
+            0,
+            bool(_VALOR_CAUSA_RE.search(texto)),
+            0,
+            "Valor da causa nao localizado — obrigatorio quando aplicavel "
+            "(conferir rito)."
+            if not _VALOR_CAUSA_RE.search(texto)
+            else "Valor da causa/pedido economico localizado.",
             pontua=False,
         ),
     ]
@@ -284,14 +386,23 @@ def _calcular_metricas(texto: str, documentos: list[str] | None) -> dict:
     jurisprudencia = _uniq(_JURIS_RE.findall(texto))
     provas = _uniq(_PROVA_RE.findall(texto))
     pedidos = _uniq(_PEDIDO_RE.findall(texto))
-    jur_pendente = [j for j in jurisprudencia if not _NUM_PROC_RE.search(j) and "tema" not in j.lower() and "sum" not in j.lower()]
+    jur_pendente = [
+        j
+        for j in jurisprudencia
+        if not _NUM_PROC_RE.search(j)
+        and "tema" not in j.lower()
+        and "sum" not in j.lower()
+    ]
 
     rubrica = _montar_rubrica(
-        texto, documentos, artigos=artigos, leis=leis, provas=provas,
-        pedidos=pedidos, jur_pendente=jur_pendente,
+        texto,
+        documentos,
+        artigos=artigos,
+        leis=leis,
+        provas=provas,
+        pedidos=pedidos,
+        jur_pendente=jur_pendente,
     )
-    # Score = 100 menos as deducoes dos criterios PONTUANTES. Reproduz, de forma
-    # rotulada e auditavel, exatamente a heuristica anterior (invariante <= no teste).
     deducao_total = sum(c["deducao"] for c in rubrica if c["pontua"])
     score = max(0, min(100, 100 - deducao_total))
 
@@ -303,15 +414,15 @@ def _calcular_metricas(texto: str, documentos: list[str] | None) -> dict:
         veredito = "BLOQUEAR ATE CORRIGIR"
 
     return {
-        # score_confianca PERMANECE a 1a chave: o gate (legal_docs._parse_score)
-        # le o 1o "score_confianca: NN" do prompt formatado. Nao reordenar.
         "score_confianca": score,
         "veredito": veredito,
         "score_base": 100,
         "score_metodo": RUBRICA_METODO,
         "natureza": NATUREZA_RUBRICA,
         "rubrica": rubrica,
-        "criterios_reprovados": [c["criterio"] for c in rubrica if c["pontua"] and not c["atendido"]],
+        "criterios_reprovados": [
+            c["criterio"] for c in rubrica if c["pontua"] and not c["atendido"]
+        ],
         "artigos_detectados": artigos,
         "leis_detectadas": leis,
         "jurisprudencia_detectada": jurisprudencia,
@@ -337,13 +448,16 @@ def _formatar_metricas(m: dict) -> str:
         linhas.append(f"- {k}: {v}")
     rubrica = m.get("rubrica") or []
     if rubrica:
-        linhas.append("- rubrica_formal (controle de qualidade FORMAL, nao predicao de exito):")
+        linhas.append(
+            "- rubrica_formal (controle de qualidade FORMAL, nao predicao de exito):"
+        )
         for c in rubrica:
             marca = "OK" if c["atendido"] else "FALHA"
             tag = "" if c["pontua"] else " [informativo]"
             linhas.append(
                 f"    [{marca}] {c['secao']} :: {c['rotulo']} "
-                f"(peso {c['peso']}, deducao {c['deducao']}){tag} — {c['observacao']}"
+                f"(peso {c['peso']}, deducao {c['deducao']}){tag} — "
+                f"{c['observacao']}"
             )
     return "\n".join(linhas)
 
@@ -352,10 +466,11 @@ def _formatar_fontes(fontes: list[dict]) -> str:
     if not fontes:
         return "[SEM FONTES RAG RECUPERADAS]"
     linhas: list[str] = []
-    for i, f in enumerate(fontes, 1):
+    for i, fonte in enumerate(fontes, 1):
         linhas.append(
-            f"[Fonte {i}] {f.get('titulo')} ({f.get('categoria')}) "
-            f"{('- ' + f.get('fonte')) if f.get('fonte') else ''}\n{(f.get('conteudo') or '')[:900]}"
+            f"[Fonte {i}] {fonte.get('titulo')} ({fonte.get('categoria')}) "
+            f"{('- ' + fonte.get('fonte')) if fonte.get('fonte') else ''}\n"
+            f"{(fonte.get('conteudo') or '')[:900]}"
         )
     return "\n\n".join(linhas)
 
@@ -367,28 +482,47 @@ def _formatar_documentos(documentos: list[str] | None) -> str:
 
 
 async def validar_rascunho_juridico(
-    payload: ValidacaoInput, db: AsyncSession, user_id: str,
+    payload: ValidacaoInput,
+    db: AsyncSession,
+    user_id: str,
     scope_client_id: str | None = None,
 ) -> dict:
-    """scope_client_id (Bloco 5): o CHAMADOR já verifica ownership do
-    payload.case_id e deriva o escopo antes de chegar aqui."""
+    """Valida o rascunho e persiste vínculo estrutural quando for uma LegalDoc.
+
+    O chamador já verifica ownership do `case_id`. Para peça jurídica, a linha é
+    bloqueada com `FOR UPDATE` depois da chamada à IA: se o conteúdo mudou durante
+    a validação, o log não é criado como atual.
+    """
     if len((payload.rascunho or "").strip()) < 100:
         raise ValueError("Rascunho muito curto para validacao juridica")
+
+    legal_doc_id = _extrair_legal_doc_id(payload.documentos)
+    legal_doc_hash = _hash_conteudo(payload.rascunho) if legal_doc_id else None
 
     texto_limpo, houve_pii = sanitizar_pii(payload.rascunho)
     residual = validar_sem_pii(texto_limpo)
     if residual:
-        raise ValueError(f"Dados pessoais residuais detectados: {', '.join(residual)}")
+        raise ValueError(
+            f"Dados pessoais residuais detectados: {', '.join(residual)}"
+        )
 
     metricas = _calcular_metricas(texto_limpo, payload.documentos)
-    consulta = " ".join([
-        payload.tipo_documento or "peca juridica",
-        payload.area or "",
-        payload.rito or "",
-        " ".join(metricas.get("artigos_detectados") or [])[:500],
-        texto_limpo[:800],
-    ])
-    fontes = await buscar_contexto_rag(db, consulta, limite=8, modo_or=True, scope_client_id=scope_client_id)
+    consulta = " ".join(
+        [
+            payload.tipo_documento or "peca juridica",
+            payload.area or "",
+            payload.rito or "",
+            " ".join(metricas.get("artigos_detectados") or [])[:500],
+            texto_limpo[:800],
+        ]
+    )
+    fontes = await buscar_contexto_rag(
+        db,
+        consulta,
+        limite=8,
+        modo_or=True,
+        scope_client_id=scope_client_id,
+    )
 
     user_prompt = USER_TEMPLATE.format(
         tipo_documento=payload.tipo_documento or "peca_juridica",
@@ -402,24 +536,62 @@ async def validar_rascunho_juridico(
     )
 
     resp = await chat(
-        messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_prompt}],
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
         task_type="auditoria_peca",
         temperature=0.05,
         max_tokens=3200,
         nivel_inteligencia=payload.nivel_inteligencia or "alto",
     )
 
+    if legal_doc_id:
+        atual = (
+            await db.execute(
+                select(LegalDoc.conteudo)
+                .where(
+                    LegalDoc.id == legal_doc_id,
+                    LegalDoc.deleted_at.is_(None),
+                )
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if atual is None:
+            raise ValueError("Peca juridica nao encontrada ao persistir validacao")
+        if _hash_conteudo(atual) != legal_doc_hash:
+            raise ValueError(
+                "A peca foi alterada durante a validacao; execute a validacao novamente"
+            )
+
+    marcador = ""
+    if legal_doc_id and legal_doc_hash:
+        marcador = (
+            f"LEGAL_DOC_ID:{legal_doc_id}\n"
+            f"CONTENT_HASH:{legal_doc_hash}\n"
+        )
+
     modelo_log = f"{resp.provedor}/{resp.modelo}"
     log = AILog(
         id=str(uuid4()),
         user_id=user_id,
         case_id=payload.case_id,
+        legal_doc_id=legal_doc_id,
+        legal_doc_content_hash=legal_doc_hash,
+        legal_doc_validation_current=bool(legal_doc_id),
         tipo_uso=AITipoUso.outro,
         modelo=modelo_log,
-        prompt_sanitizado=user_prompt[:8000],
+        prompt_sanitizado=(marcador + user_prompt)[:8000],
         pii_removida=houve_pii,
         resposta=resp.texto,
-        fontes_rag="; ".join(str(f.get("chunk_id")) for f in fontes if f.get("chunk_id")) or None,
+        fontes_rag=(
+            "; ".join(
+                str(fonte.get("chunk_id"))
+                for fonte in fontes
+                if fonte.get("chunk_id")
+            )
+            or None
+        ),
         tokens_input=resp.input_tokens,
         tokens_output=resp.output_tokens,
         status_hitl=AIStatusHITL.gerado,

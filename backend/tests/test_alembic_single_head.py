@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "122_route_usage_metrics"
+HEAD_REVISION = "123_legal_doc_ai_log_vinculo"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -84,3 +84,18 @@ def test_base_rag_enum_encadeia_apos_doc_versionamento():
 def test_chunk_pagina_encadeia_apos_base_rag_enum():
     revision = _script_directory().get_revision("120_chunk_pagina")
     assert revision.down_revision == "119_base_rag_enum"
+
+
+def test_sala_juridica_encadeia_apos_chunk_pagina():
+    revision = _script_directory().get_revision("121_sala_juridica_chat")
+    assert revision.down_revision == "120_chunk_pagina"
+
+
+def test_route_usage_encadeia_apos_sala_juridica():
+    revision = _script_directory().get_revision("122_route_usage_metrics")
+    assert revision.down_revision == "121_sala_juridica_chat"
+
+
+def test_vinculo_legal_doc_ai_log_encadeia_apos_metricas_de_rota():
+    revision = _script_directory().get_revision("123_legal_doc_ai_log_vinculo")
+    assert revision.down_revision == "122_route_usage_metrics"

@@ -5,7 +5,20 @@ import enum
 import re
 from uuid import uuid4
 
-from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Boolean, Integer, Numeric, ForeignKey
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum as SAEnum,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    and_,
+    func,
+)
 from sqlalchemy.orm import relationship, validates
 
 from app.core.database import Base
@@ -26,6 +39,35 @@ _TERMO_REF = re.compile(
 # com nome de pessoa e corromper o cabeçalho que delimita o relatório no campo
 # AILog.critica_adversarial. Protegemos o cabeçalho inteiro antes de pseudonimizar.
 _MARCADOR_ESTRUTURAL = re.compile(r"═{2,}[^\n]*?═{2,}")
+
+# Adaptador temporário de compatibilidade com o router legado. As consultas
+# `prompt_sanitizado ILIKE '%LEGAL_DOC_ID:<uuid>%'` são traduzidas para a FK e
+# para o estado estrutural da validação. Outros ILIKE permanecem textuais.
+_LEGAL_DOC_MARKER_QUERY = re.compile(
+    r"^%LEGAL_DOC_ID:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})%$"
+)
+
+
+class PromptSanitizadoText(Text):
+    """Text com tradução fail-closed do marcador legado para vínculo estrutural.
+
+    O router ainda emite o marcador por compatibilidade de API. No SQL gerado,
+    porém, a relação não depende do conteúdo truncável do prompt: usa
+    `legal_doc_id` e `legal_doc_validation_current`.
+    """
+
+    class comparator_factory(Text.Comparator):
+        def ilike(self, other, escape=None):
+            if isinstance(other, str):
+                match = _LEGAL_DOC_MARKER_QUERY.fullmatch(other)
+                if match:
+                    table = self.expr.table
+                    return and_(
+                        table.c.legal_doc_id == match.group(1),
+                        table.c.legal_doc_validation_current.is_(True),
+                    )
+            return super().ilike(other, escape=escape)
 
 
 def normalizar_modelo_ia(modelo: str | None) -> str | None:
@@ -100,9 +142,11 @@ def pseudonimizar_texto_auditoria(valor: str | None) -> str | None:
     protegido, marcs = _proteger_marcadores_estruturais(protegido)
     try:
         from app.services.ai.pseudonymizer import pseudonimizar
+
         limpo, _ = pseudonimizar(protegido)
     except Exception:
         from app.services.sanitizer import sanitizar_pii
+
         limpo, _ = sanitizar_pii(protegido)
     for token, cnj in refs.items():
         limpo = limpo.replace(token, cnj)
@@ -165,15 +209,43 @@ def classificar_risco_ia(task_type: str | None = None) -> AIRiscoIA | None:
 
 class AILog(Base):
     __tablename__ = "ai_logs"
+    __table_args__ = (
+        Index(
+            "ix_ai_logs_legal_doc_current_created",
+            "legal_doc_id",
+            "legal_doc_validation_current",
+            "created_at",
+        ),
+    )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    case_id = Column(String(36), ForeignKey("cases.id", ondelete="SET NULL"), nullable=True, index=True)
+    case_id = Column(
+        String(36),
+        ForeignKey("cases.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Vínculo estrutural da validação jurídica com a versão exata da peça.
+    # Campos nullable preservam logs de outras tarefas e registros legados.
+    legal_doc_id = Column(
+        String(36),
+        ForeignKey("legal_docs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    legal_doc_content_hash = Column(String(64), nullable=True)
+    legal_doc_validation_current = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
 
     tipo_uso = Column(SAEnum(AITipoUso), nullable=False)
     modelo = Column(String(50), nullable=False, default="nao_informado")
 
-    prompt_sanitizado = Column(Text, nullable=False)
+    prompt_sanitizado = Column(PromptSanitizadoText(), nullable=False)
     pii_removida = Column(Boolean, default=False)
     resposta = Column(Text, nullable=True)
     critica_adversarial = Column(Text, nullable=True)
@@ -183,7 +255,12 @@ class AILog(Base):
     custo_estimado = Column(Numeric(12, 6), nullable=True)
     risco_ia = Column(SAEnum(AIRiscoIA), nullable=True, index=True)
 
-    status_hitl = Column(SAEnum(AIStatusHITL), nullable=False, default=AIStatusHITL.gerado, index=True)
+    status_hitl = Column(
+        SAEnum(AIStatusHITL),
+        nullable=False,
+        default=AIStatusHITL.gerado,
+        index=True,
+    )
     revisado_por = Column(String(36), nullable=True)
     revisado_em = Column(DateTime(timezone=True), nullable=True)
 
@@ -193,6 +270,7 @@ class AILog(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     user = relationship("User", foreign_keys=[user_id], back_populates="ai_logs")
+    legal_doc = relationship("LegalDoc", foreign_keys=[legal_doc_id])
 
     @validates("modelo")
     def _normalizar_modelo(self, key, value):
