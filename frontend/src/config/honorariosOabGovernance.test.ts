@@ -23,8 +23,6 @@ describe("governança da tabela OAB/MG", () => {
 
   it("não apresenta valores genéricos de mercado como alternativa", () => {
     expect(source).not.toMatch(/refer[êe]ncia gen[ée]rica de mercado/i);
-    expect(source).toContain(
-      "A estimativa permanece bloqueada.",
-    );
+    expect(source).toContain("A estimativa permanece bloqueada.");
   });
 });
