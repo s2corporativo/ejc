@@ -17,7 +17,7 @@ describe("política de indexação do frontend", () => {
 
   it("serve robots.txt como texto sem cair no fallback da SPA", () => {
     const location = nginx.match(
-      /location = \/robots\.txt\s*\{(?<body>[\s\S]*?)\n    \}/,
+      /location = \/robots\.txt\s*\{(?<body>[\s\S]*?)\n {4}\}/,
     );
 
     expect(location?.groups?.body).toContain("try_files /robots.txt =404;");
