@@ -28,6 +28,7 @@ export default function Prompts() {
     categoria: "peticao",
     conteudo: "",
     descricao: "",
+    publico: false,
   });
   const [exec, setExec] = useState<any>(null); // prompt sendo executado
   const [vars, setVars] = useState<Record<string, string>>({});
@@ -57,7 +58,13 @@ export default function Prompts() {
         ...f,
         descricao: f.descricao || null,
       });
-      setF({ titulo: "", categoria: "peticao", conteudo: "", descricao: "" });
+      setF({
+        titulo: "",
+        categoria: "peticao",
+        conteudo: "",
+        descricao: "",
+        publico: false,
+      });
       setShow(false);
       setLoading(true);
       load();
@@ -172,6 +179,20 @@ export default function Prompts() {
               placeholder="Redija uma petição de {{tipo}} para o cliente {{cliente}} sobre {{assunto}}."
             />
           </div>
+          <label className="flex items-start gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={f.publico}
+              onChange={(e) => setF({ ...f, publico: e.target.checked })}
+              className="mt-0.5"
+            />
+            <span>
+              Compartilhar com todo o escritório
+              <span className="block text-xs text-slate-400">
+                Desmarcado, o prompt fica visível apenas para você e para sócios.
+              </span>
+            </span>
+          </label>
           <button type="submit" disabled={saving} className="btn-primary">
             {saving ? "Salvando…" : "Criar prompt"}
           </button>
@@ -192,16 +213,24 @@ export default function Prompts() {
                 <h3 className="font-serif text-base font-semibold text-navy">
                   {p.titulo}
                 </h3>
-                <button
-                  onClick={() => excluir(p.id)}
-                  className="text-slate-300 hover:text-danger-500"
-                >
-                  <Trash2 size={15} />
-                </button>
+                {p.pode_excluir && (
+                  <button
+                    onClick={() => excluir(p.id)}
+                    className="text-slate-300 hover:text-danger-500"
+                    aria-label="Excluir prompt"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </div>
-              <span className="badge badge-neutral capitalize">
-                {p.categoria}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="badge badge-neutral capitalize">
+                  {p.categoria}
+                </span>
+                <span className="text-xs text-slate-400">
+                  {p.publico ? "Público" : "Privado"}
+                </span>
+              </div>
               {p.descricao && (
                 <p className="text-sm text-slate-500 mt-2">{p.descricao}</p>
               )}
