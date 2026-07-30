@@ -11,6 +11,7 @@ import json
 import re
 from datetime import date
 from typing import Optional
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -26,17 +27,55 @@ from app.models.fee_proposal import FeeProposal
 from app.models.redesign import TabelaOABHonorario
 from app.models.user import User
 from app.services import ai_gateway, fee_proposal_service
-from app.services.ai_service import buscar_contexto_rag
-from app.services.geracao_documental import _area_str, _item_dict
+from app.services.geracao_documental import (
+    _area_str,
+    _item_dict,
+    _itens_oab_vigentes,
+)
 from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/honorarios-oab", tags=["Honorários OAB"])
 
 REGRAS = (
     "REGRAS: (1) Cite SOMENTE itens que aparecem textualmente no contexto da tabela; "
-    "se não houver item específico, diga 'critério usual' — NUNCA invente número de item. "
-    "(2) NUNCA prometa resultado. (3) Tudo é referência; o advogado define o valor final."
+    "se não houver item específico, não preencha valores e registre a insuficiência. "
+    "(2) NUNCA invente número de item ou referência de mercado. "
+    "(3) NUNCA prometa resultado. (4) Tudo é referência; o advogado define o valor final."
 )
+
+_DOMINIO_OFICIAL_OABMG = "oabmg.org.br"
+_FONTE_URL_RE = re.compile(r"https://[^\\s<>()\\[\\]{}]+", re.IGNORECASE)
+MENSAGEM_TABELA_INDISPONIVEL = (
+    "Estimativa indisponível: não há item vigente da tabela oficial OAB/MG "
+    "com vigência informada e fonte HTTPS no domínio oabmg.org.br para esta área. "
+    "Cadastre e valide a fonte oficial antes de calcular valores."
+)
+
+
+def _fonte_oabmg_oficial(fonte: Optional[str]) -> bool:
+    """Aceita somente URL HTTPS hospedada no domínio institucional da OAB/MG."""
+    for candidata in _FONTE_URL_RE.findall(fonte or ""):
+        url = candidata.rstrip(".,;:!?)")
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if (
+            parsed.scheme == "https"
+            and (
+                host == _DOMINIO_OFICIAL_OABMG
+                or host.endswith(f".{_DOMINIO_OFICIAL_OABMG}")
+            )
+        ):
+            return True
+    return False
+
+
+def _item_oab_verificado(item: TabelaOABHonorario) -> bool:
+    """Barreira de uso: origem oficial, vigência conhecida e valor verificável."""
+    return bool(
+        item.vigencia_inicio
+        and _fonte_oabmg_oficial(item.fonte)
+        and (item.valor_minimo is not None or item.percentual is not None)
+    )
 
 
 class EstimativaIn(BaseModel):
@@ -65,41 +104,57 @@ def _parse_json(txt: str) -> Optional[dict]:
     return None
 
 
-async def _contexto_oab(db, area: str, tipo_acao: str) -> tuple[str, bool]:
-    """Busca itens da tabela OAB no RAG, descartando placeholders (lorem ipsum)."""
-    consulta = f"honorários {area} {tipo_acao} tabela OAB Minas Gerais"
-    ctx = await buscar_contexto_rag(db, consulta, limite=8, categorias=["tabela_honorarios_oab"])
-    reais = [c for c in ctx
-             if len((c.get("conteudo") or "").strip()) > 40
-             and "lorem ipsum" not in (c.get("conteudo") or "").lower()]
-    txt = "\n".join(f"- {(c.get('conteudo') or '')[:400]}" for c in reais[:6])
-    return txt, len(reais) > 0
+async def _contexto_oab(
+    db: AsyncSession,
+    area: str,
+    tipo_acao: str,
+) -> tuple[str, list[TabelaOABHonorario]]:
+    """Usa somente itens estruturados, vigentes e com fonte oficial verificável."""
+    _ = tipo_acao  # preservado no contrato da API; seleção é restrita à área
+    itens = await _itens_oab_vigentes(db, area, date.today(), limite=20)
+    verificados = [item for item in itens if _item_oab_verificado(item)]
+    contexto = "\n".join(
+        f"- {json.dumps(_item_dict(item), ensure_ascii=False, sort_keys=True)}"
+        for item in verificados
+    )
+    return contexto, verificados
 
 
 @router.get("/tabela")
-async def itens_tabela(area: str = "", tipo: str = "",
-                       db: AsyncSession = Depends(get_db),
-                       cu: User = Depends(get_current_user)):
-    """Itens relevantes da tabela OAB/MG (transparência da fonte)."""
-    txt, ok = await _contexto_oab(db, area, tipo)
-    return {"disponivel": ok, "itens": txt or "Tabela oficial OAB/MG não disponível na base."}
+async def itens_tabela(
+    area: str = "",
+    tipo: str = "",
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Expõe somente itens vigentes cuja fonte oficial pode ser verificada."""
+    _, itens = await _contexto_oab(db, area, tipo)
+    return {
+        "disponivel": bool(itens),
+        "itens": [_item_dict(item) for item in itens],
+        "criterio_fonte": "HTTPS no domínio oficial oabmg.org.br e vigência informada",
+        "mensagem": None if itens else MENSAGEM_TABELA_INDISPONIVEL,
+    }
 
 
 @router.post("/estimar", dependencies=[Depends(rate_limit("honorarios-estimar", 15))])
-async def estimar(body: EstimativaIn,
-                  db: AsyncSession = Depends(get_db),
-                  cu: User = Depends(get_current_user)):
-    ctx_txt, tabela_ok = await _contexto_oab(db, body.area, body.tipo_acao)
+async def estimar(
+    body: EstimativaIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    ctx_txt, itens = await _contexto_oab(db, body.area, body.tipo_acao)
+    if not itens:
+        # Fail closed: sem fonte oficial vigente, nenhuma IA é chamada e nenhum
+        # valor genérico de mercado é produzido.
+        raise HTTPException(status_code=503, detail=MENSAGEM_TABELA_INDISPONIVEL)
 
-    if tabela_ok:
-        sys = "Você estima honorários ancorado na TABELA OAB/MG do contexto. " + REGRAS
-        ctx_bloco = f"TABELA OAB/MG (itens reais):\n{ctx_txt}"
-        fund = '"fundamento": "<item EXATO do contexto que embasa, ou \'critério usual\' se não houver>"'
-    else:
-        sys = ("A tabela oficial OAB/MG NÃO está na base. Dê referência genérica por percentuais "
-               "usuais de mercado. PROIBIDO citar número de item da tabela. " + REGRAS)
-        ctx_bloco = "TABELA OAB/MG: indisponível — não invente itens."
-        fund = '"fundamento": "Referência de mercado — consultar tabela oficial OAB/MG (indisponível na base)"'
+    sys = "Você estima honorários ancorado na TABELA OAB/MG verificada. " + REGRAS
+    ctx_bloco = f"TABELA OAB/MG (itens estruturados e vigentes):\n{ctx_txt}"
+    fund = (
+        '"fundamento": "<item EXATO do contexto que embasa; '
+        'se insuficiente, explique sem calcular>",'
+    )
 
     fatores = (
         f"Área: {body.area} | Tipo de ação: {body.tipo_acao} | "
@@ -115,19 +170,25 @@ async def estimar(body: EstimativaIn,
         '"minimo": "<valor ou regra>", '
         '"recomendado": "<valor ou faixa>", '
         '"estrategico": "<valor ou faixa>", '
-        + fund + ", "
+        + fund
+        + " "
         '"memoria_calculo": "<como chegou aos valores, em 1-2 frases>", '
-        '"contrato_sugerido": "<ex: 30% de êxito + R$ X de entrada parcelado>", '
-        f'"tabela_oficial_disponivel": {str(tabela_ok).lower()}}}'
+        '"contrato_sugerido": "<estrutura contratual sem promessa de resultado>", '
+        '"tabela_oficial_disponivel": true}'
     )
 
     resp = await ai_gateway.chat(
         messages=[{"role": "system", "content": sys}, {"role": "user", "content": user}],
-        task_type="analise_juridica", temperature=0.2, max_tokens=800,
+        task_type="analise_juridica",
+        temperature=0.2,
+        max_tokens=800,
     )
-    data = _parse_json(resp.texto) or {"_bruto": resp.texto[:800], "tabela_oficial_disponivel": tabela_ok}
-    data["_aviso"] = ("Estimativa de referência (IA) — não vincula. Confira a tabela oficial OAB/MG "
-                      "e ajuste conforme o caso. O advogado define o valor final.")
+    data = _parse_json(resp.texto) or {"_bruto": resp.texto[:800]}
+    data["tabela_oficial_disponivel"] = True
+    data["_aviso"] = (
+        "Estimativa de referência ancorada em itens vigentes com fonte oficial "
+        "verificada. Exige revisão humana; o advogado define o valor final."
+    )
     return data
 
 
@@ -166,21 +227,18 @@ class ItemOABIn(BaseModel):
     valor_minimo: Optional[float] = Field(None, ge=0)
     percentual: Optional[float] = Field(None, ge=0, le=100)
     unidade: Optional[str] = Field(None, max_length=30)
-    # Só preenchida quando INFORMADA pelo usuário (edição/vigência conhecida);
-    # nunca deduzida pelo sistema.
-    vigencia_inicio: Optional[date] = None
+    # Obrigatória: o sistema nunca presume início de vigência.
+    vigencia_inicio: date
     observacoes: Optional[str] = Field(None, max_length=2000)
     fonte: str = Field(min_length=5, max_length=300)  # documento/URL oficial OAB/MG
 
     @field_validator("fonte")
     @classmethod
     def _fonte_identificavel(cls, v: str) -> str:
-        # Barreira mínima contra fonte nominal ("aaaaa"): precisa referenciar a
-        # OAB ou ser um endereço/documento identificável (URL).
         v = v.strip()
-        if "oab" not in v.lower() and not v.lower().startswith(("http://", "https://")):
+        if not _fonte_oabmg_oficial(v):
             raise ValueError(
-                "fonte deve identificar o documento oficial (mencionar OAB ou ser URL)"
+                "fonte deve conter URL HTTPS no domínio oficial oabmg.org.br"
             )
         return v
 
