@@ -14,6 +14,12 @@ updates="$(grep -Ec '^set_env_var [A-Z_]+ ' "$ACTIVATE")"
 [ "$updates" -eq 1 ]
 grep -q '^set_env_var EMBEDDINGS_ENABLED "true"$' "$ACTIVATE"
 
+COMPOSE="$ROOT/docker-compose.yml"
+if [ -f "$COMPOSE" ]; then
+  [ "$(grep -Fc 'fastembed_cache:/tmp/fastembed_cache' "$COMPOSE")" -eq 2 ]
+  [ "$(grep -Ec '^  fastembed_cache:$' "$COMPOSE")" -eq 1 ]
+fi
+
 make_case() {
   local name="$1"
   local app="$TMP/$name"
