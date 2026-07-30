@@ -45,7 +45,7 @@ REGRAS = (
 )
 
 _DOMINIO_OFICIAL_OABMG = "oabmg.org.br"
-_FONTE_URL_RE = re.compile(r"https://[^\\s<>()\\[\\]{}]+", re.IGNORECASE)
+_FONTE_URL_RE = re.compile(r"https://[^\s<>()\[\]{}]+", re.IGNORECASE)
 MENSAGEM_TABELA_INDISPONIVEL = (
     "Estimativa indisponível: não há item vigente da tabela oficial OAB/MG "
     "com vigência informada e fonte HTTPS no domínio oabmg.org.br para esta área. "
