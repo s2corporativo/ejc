@@ -1,0 +1,118 @@
+# EJC — validação e acionamento manual da busca semântica do RAG.
+#
+# Pull Requests executam apenas testes determinísticos. A produção só pode ser
+# alterada por workflow_dispatch na main e depois de o mesmo SHA estar implantado.
+name: RAG semântico — validar e ativar
+
+on:
+  pull_request:
+    paths:
+      - "scripts/rag/ativar_embeddings.sh"
+      - "scripts/rag/provar_ativacao.py"
+      - "scripts/tests/test_rag_activation.sh"
+      - "docker-compose.yml"
+      - ".github/workflows/rag-production-activation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rag-production-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validar:
+    name: Validar ativação e rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validar sintaxe e contrato
+        run: bash scripts/tests/test_rag_activation.sh
+
+  ativar-producao:
+    name: Ativar RAG semântico na VPS
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'main'
+    needs: validar
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Confirmar runtime e SHA implantado
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d /opt/ejc
+          test -f /opt/ejc/.env
+          test -f /opt/ejc/.deployed_sha
+          test "$(tr -d '\r\n' < /opt/ejc/.deployed_sha)" = "$GITHUB_SHA"
+          docker ps --format '{{.Names}}' | grep -qx ejc_backend
+          docker ps --format '{{.Names}}' | grep -qx ejc_worker
+          cd /opt/ejc
+          docker compose config --quiet
+
+      - name: Instalar acionador revisado
+        run: |
+          sudo install -d -m 755 /opt/ejc/scripts/rag
+          sudo install -m 755 \
+            scripts/rag/ativar_embeddings.sh \
+            /opt/ejc/scripts/rag/ativar_embeddings.sh
+          sudo install -m 644 \
+            scripts/rag/provar_ativacao.py \
+            /opt/ejc/scripts/rag/provar_ativacao.py
+
+      - name: Ativar e comprovar RAG semântico
+        env:
+          RAG_REPORT_PATH: ${{ github.workspace }}/rag-activation.json
+          RAG_CANARY_DOCS: "5"
+        shell: bash
+        run: |
+          cd /opt/ejc
+          RAG_REPORT_PATH="$RAG_REPORT_PATH" \
+          RAG_CANARY_DOCS="$RAG_CANARY_DOCS" \
+          bash scripts/rag/ativar_embeddings.sh
+
+      - name: Anexar evidência sem PII
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rag-production-activation
+          path: rag-activation.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Confirmar saúde local e pública
+        run: |
+          curl -fsS http://127.0.0.1:8000/api/health >/dev/null
+          curl -fsS -o /dev/null -w \
+            "EJC público /api/health → HTTP %{http_code}\n" \
+            https://ejc.depaulateixeira.adv.br/api/health
+
+      - name: Resumir ativação
+        if: always()
+        run: |
+          {
+            echo "## Ativação do RAG semântico"
+            echo
+            echo "- SHA exigido: \`$GITHUB_SHA\`"
+            if [ -f rag-activation.json ]; then
+              python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path("rag-activation.json").read_text())
+          print(f"- Resultado: `{'ok' if data.get('ok') else 'falha'}`")
+          print(f"- Provider: `{data.get('EMBEDDINGS_PROVIDER', 'indisponível')}`")
+          print(f"- Dimensão: `{data.get('embedding_dim_configurada', 'indisponível')}`")
+          print(f"- Chunks vetorizados: `{data.get('knowledge_chunks_com_embedding', 'indisponível')}`")
+          print(f"- Chunks vigentes pendentes: `{data.get('knowledge_chunks_vigentes_pendentes', 'indisponível')}`")
+          PY
+            else
+              echo "- Resultado: \`sem artefato; consulte o step de ativação\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
