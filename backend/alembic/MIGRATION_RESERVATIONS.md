@@ -3,7 +3,7 @@
 Controle obrigatório para impedir que dois PRs escolham o mesmo número de migration ou
 partam de heads diferentes. Regra canônica em `docs/GOVERNANCA_IA.md`, seção 8.
 
-**Head da `main` em 2026-07-29:** `122_route_usage_metrics`.
+**Head da `main` em 2026-07-30:** `123_legal_doc_ai_log_vinculo`.
 
 ## Como reservar
 
@@ -35,7 +35,7 @@ número volta a ficar disponível).
 
 | Número | `down_revision` | Branch | PR | Responsável | Estado | Observação |
 |---|---|---|---|---|---|---|
-| 122_route_usage_metrics | 121_sala_juridica_chat | main | mesclada | Claude Code | Mesclada | Head canônico atual; telemetria agregada de uso de rotas. |
+| 122_route_usage_metrics | 121_sala_juridica_chat | main | mesclada | Claude Code | Mesclada | Telemetria agregada de uso de rotas. |
 | 122_data_room_token_hash | 121_sala_juridica_chat | claude/new-session-4tyz91 | [#495](https://github.com/s2corporativo/ejc/pull/495) | Claude Code | Revogada | A `main` já usa o número 122. O conteúdo do PR só pode ser extraído para branch nova e renumerada. |
 | 122_documentos_publicacao_hash | 121_sala_juridica_chat | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Colide com o head canônico e não pode ser integrado no estado atual. |
 | 123_deadline_owner | 122_documentos_publicacao_hash | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Depende de migration inexistente na `main`; eventual extração deve receber nova numeração. |
@@ -43,7 +43,7 @@ número volta a ficar disponível).
 | 125_legal_doc_revisao | 124_data_room_token_hash | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Não resolve a correlação estrutural LegalDoc ↔ AILog; eventual histórico será extraído separadamente. |
 | 126_fee_valor_check | 125_legal_doc_revisao | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Eventual extração deve partir do head vigente e ser renumerada. |
 | 127_audit_log_worm | 126_fee_valor_check | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Eventual extração deve partir do head vigente e ser renumerada. |
-| 123_legal_doc_ai_log_vinculo | 122_route_usage_metrics | fix/legal-doc-ai-log-vinculo | [#538](https://github.com/s2corporativo/ejc/issues/538) | ChatGPT | Reservada | FK + hash do conteúdo + invalidação automática da validação ao editar a peça. |
+| 123_legal_doc_ai_log_vinculo | 122_route_usage_metrics | main | [#544](https://github.com/s2corporativo/ejc/pull/544) | ChatGPT | Mesclada | Head canônico atual; FK + hash do conteúdo + invalidação automática da validação ao editar a peça. |
 
 > **Decisão do titular em 2026-07-29.** A continuidade das correções foi autorizada após
 > a integração dos PRs #535, #542 e #543. As reservas das branches antigas #495/#497
