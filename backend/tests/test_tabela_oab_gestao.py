@@ -95,7 +95,12 @@ def test_item_sem_fonte_rejeitado_no_schema():
     with pytest.raises(ValidationError):
         ItemOABIn(item_codigo="8.3", descricao="Acao de despejo")  # sem fonte
     with pytest.raises(ValidationError):
-        ItemOABIn(item_codigo="8.3", descricao="Acao de despejo", fonte="x")  # curta demais
+        ItemOABIn(
+            item_codigo="8.3",
+            descricao="Acao de despejo",
+            vigencia_inicio=date(2026, 1, 1),
+            fonte="https://oabmg.org.br.evil.example/tabela.pdf",
+        )
 
 
 # ── Criação manual (layout 2 colunas fora do seed) ───────────────────────────
@@ -108,13 +113,13 @@ async def test_criar_item_manual_com_vigencia_informada_e_auditoria():
         body=ItemOABIn(item_codigo="8.3", descricao="Acao de despejo",
                        area_juridica="civel", valor_minimo=5000.0, percentual=20.0,
                        vigencia_inicio=date(2025, 1, 1),
-                       fonte="Tabela de Honorarios OAB/MG ed. 2025 (PDF oficial)"),
+                       fonte="https://www.oabmg.org.br/arquivo/tabela-2025.pdf"),
         db=db, cu=_user(UserRole.socio),
     )
     itens = [o for o in db.added if isinstance(o, TabelaOABHonorario)]
     assert len(itens) == 1
     i = itens[0]
-    assert i.fonte.startswith("Tabela de Honorarios OAB/MG")
+    assert i.fonte == "https://www.oabmg.org.br/arquivo/tabela-2025.pdf"
     assert i.vigencia_inicio == date(2025, 1, 1)   # informada pelo usuário
     assert i.vigencia_fim is None and i.ativo is True
     assert out["item_codigo"] == "8.3" and out["valor_minimo"] == 5000.0
@@ -130,8 +135,12 @@ async def test_criar_item_duplicado_em_vigencia_aberta_409():
     db = _FakeDB([existente])
     with pytest.raises(HTTPException) as exc:
         await criar_item(
-            body=ItemOABIn(item_codigo="8.3", descricao="Acao de despejo",
-                           fonte="Tabela OAB/MG ed. 2025"),
+            body=ItemOABIn(
+                item_codigo="8.3",
+                descricao="Acao de despejo",
+                vigencia_inicio=date(2025, 1, 1),
+                fonte="https://www.oabmg.org.br/arquivo/tabela-2025.pdf",
+            ),
             db=db, cu=_user(UserRole.socio),
         )
     assert exc.value.status_code == 409
@@ -200,7 +209,7 @@ async def test_nova_vigencia_gera_registro_novo_sem_tocar_no_antigo():
     out = await criar_item(
         body=ItemOABIn(item_codigo="4.1", descricao="Consulta",
                        valor_minimo=350.0, vigencia_inicio=date(2026, 1, 1),
-                       fonte="Tabela OAB/MG ed. 2026 (documento oficial)"),
+                       fonte="https://www.oabmg.org.br/arquivo/tabela-2026.pdf"),
         db=db2, cu=_user(UserRole.socio),
     )
     novos = [o for o in db2.added if isinstance(o, TabelaOABHonorario)]
