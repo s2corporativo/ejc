@@ -18,7 +18,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 APP_DIR = BACKEND_DIR / "app"
-HEAD_REVISION = "123_legal_doc_ai_log_vinculo"
+HEAD_REVISION = "124_dataroom_public_hardening"
 
 RAW_SQL_TABLES_ESPERADAS = {
     "agenda_eventos", "areas", "case_ambiental", "case_etiquetas",
@@ -218,6 +218,21 @@ def _conjunto_a() -> tuple[dict[str, frozenset[str]], frozenset[str]]:
                 tabela, coluna = _constante_string(node.args[0]), _constante_string(node.args[1])
                 if tabela and coluna and tabela in tabelas:
                     tabelas[tabela].discard(coluna.lower())
+            elif attr == "alter_column" and len(node.args) >= 2:
+                tabela = _constante_string(node.args[0])
+                coluna_atual = _constante_string(node.args[1])
+                coluna_nova = next(
+                    (
+                        _constante_string(keyword.value)
+                        for keyword in node.keywords
+                        if keyword.arg == "new_column_name"
+                    ),
+                    None,
+                )
+                if tabela and coluna_atual and coluna_nova:
+                    colunas = tabelas.setdefault(tabela, set())
+                    colunas.discard(coluna_atual.lower())
+                    colunas.add(coluna_nova.lower())
             for sql in _strings_do_call(node):
                 for match in _RE_CREATE_TABLE.finditer(sql):
                     tabela = match.group(1).lower()
