@@ -1,0 +1,53 @@
+name: Bootstrap — correção total do pipeline de peças
+
+on:
+  push:
+    branches:
+      - fix/legal-doc-pipeline-total-20260731
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bootstrap-legal-doc-pipeline-total
+  cancel-in-progress: false
+
+jobs:
+  aplicar-correcao:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout da branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: fix/legal-doc-pipeline-total-20260731
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Aplicar correção estrutural
+        run: python .github/scripts/apply_legal_doc_pipeline_fix.py
+
+      - name: Validar sintaxe dos arquivos alterados
+        run: |
+          python -m py_compile \
+            backend/app/routers/legal_docs.py \
+            backend/app/services/validador_juridico_service.py \
+            backend/app/models/ai_log.py \
+            backend/app/services/pdf_service.py \
+            backend/alembic/versions/125_legal_doc_pipeline_integrity.py \
+            backend/tests/test_legal_doc_pipeline_integrity.py
+
+      - name: Commitar correção permanente
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && { echo 'Nenhuma alteração produzida'; exit 1; }
+          git commit -m 'fix(legal-docs): fechar pipeline de validação aprovação e PDF'
+          git push origin HEAD:fix/legal-doc-pipeline-total-20260731
