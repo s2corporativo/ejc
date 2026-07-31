@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - fix/legal-doc-pipeline-total-20260731
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
@@ -15,7 +19,7 @@ concurrency:
 
 jobs:
   aplicar-correcao:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && (github.event_name != 'pull_request' || github.head_ref == 'fix/legal-doc-pipeline-total-20260731')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
