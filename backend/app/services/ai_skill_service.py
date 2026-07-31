@@ -47,6 +47,34 @@ _AREA_TASK = {
 _ROLES_OAB = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
 
 
+_REGRA_PRESCRICAO_DECADENCIA = (
+    "\n\n## REGRA PROCESSUAL OBRIGATÓRIA — PRESCRIÇÃO E DECADÊNCIA\n"
+    "- O reconhecimento de prescrição ou decadência resolve o mérito, nos termos "
+    "do art. 487, II, do CPC. Nunca o descreva como extinção sem resolução ou "
+    "sem julgamento de mérito.\n"
+    "- Em relações de consumo, classifique primeiro a pretensão: o art. 26 do "
+    "CDC disciplina a decadência do direito de reclamar por vício; o art. 27 "
+    "disciplina a prescrição da reparação por danos causados por fato do produto "
+    "ou do serviço. Não trate esses regimes como intercambiáveis.\n"
+    "- Não some automaticamente prazo geral do Código Civil ao regime especial "
+    "do CDC. Só examine prazo concorrente quando houver pretensão autônoma, "
+    "fundamento verificável e explicação expressa da controvérsia. Na dúvida, "
+    "marque o ponto para revisão jurídica especializada, sem conclusão categórica."
+)
+_SKILLS_COM_REGRA_PRESCRICAO_DECADENCIA = frozenset({
+    "simulador-defesa-adversarial",
+    "prescricao-decadencia",
+})
+
+
+def _system_prompt_skill(skill: EjcSkill) -> str:
+    """Aplica regras jurídicas versionadas também às skills já salvas no banco."""
+    prompt = skill.system_prompt or ""
+    if skill.name in _SKILLS_COM_REGRA_PRESCRICAO_DECADENCIA:
+        return prompt + _REGRA_PRESCRICAO_DECADENCIA
+    return prompt
+
+
 async def listar_skills(db: AsyncSession, area: str | None = None) -> list[EjcSkill]:
     q = select(EjcSkill).where(EjcSkill.active == True)
     if area:
@@ -93,7 +121,7 @@ async def executar_skill(
         query_limpa, nomes_entidades
     )
 
-    system_prompt = skill.system_prompt
+    system_prompt = _system_prompt_skill(skill)
     if contexto_rag:
         trechos = "\n\n---\n\n".join(
             f"Trecho {i+1}:\n{c}" for i, c in enumerate(contexto_rag)
@@ -266,7 +294,7 @@ async def executar_skill_documento_longo(
         f"### BLOCO {indice + 1}/{len(blocos)}\n{resposta.texto}"
         for indice, resposta, _ in parciais
     )
-    system_prompt = skill.system_prompt
+    system_prompt = _system_prompt_skill(skill)
     if contexto_rag:
         trechos = "\n\n---\n\n".join(
             f"Trecho RAG {i + 1}:\n{c}" for i, c in enumerate(contexto_rag)

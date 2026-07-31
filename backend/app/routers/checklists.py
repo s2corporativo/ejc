@@ -71,6 +71,17 @@ def _pode_editar(u: User) -> bool:
 def _pode_gerenciar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
 
+
+def _pode_remover_template(u: User, template: ChecklistTemplate) -> bool:
+    nivel = ROLE_LEVEL.get(u.role.value, 0)
+    return bool(
+        nivel >= ROLE_LEVEL["advogado"]
+        and (
+            template.created_by == u.id
+            or nivel >= ROLE_LEVEL["socio"]
+        )
+    )
+
 def _out_template(t: ChecklistTemplate, itens: list = []) -> dict:
     return {
         "id": t.id, "nome": t.nome, "descricao": t.descricao,
@@ -183,13 +194,18 @@ async def remover_template(
     db:  AsyncSession = Depends(get_db),
     cu:  User = Depends(get_current_user),
 ):
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        raise HTTPException(403)
     t = (await db.execute(
-        select(ChecklistTemplate).where(ChecklistTemplate.id == template_id)
+        select(ChecklistTemplate).where(
+            ChecklistTemplate.id == template_id,
+            ChecklistTemplate.deleted_at.is_(None),
+        )
     )).scalar_one_or_none()
     if not t:
-        raise HTTPException(404)
+        raise HTTPException(404, "Template de checklist não encontrado")
+    if not _pode_remover_template(cu, t):
+        raise HTTPException(
+            403, "Somente o autor ou sócio pode remover este template"
+        )
     t.deleted_at = datetime.now(timezone.utc)
     await db.commit()
 
