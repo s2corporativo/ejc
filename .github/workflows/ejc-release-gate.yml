@@ -49,6 +49,17 @@ jobs:
           patcher = Path('scripts/maintenance/apply_legal_doc_flow_fix.py')
           patcher.parent.mkdir(parents=True, exist_ok=True)
           patcher.write_bytes(gzip.decompress(base64.b64decode(match.group(1))))
+
+          # Python 3.12 interpreta barras invertidas da string de reposição em
+          # re.subn(). O patch contém regex literais como \s; usar callable
+          # preserva o texto exatamente e mantém a validação de match único.
+          patcher_source = patcher.read_text(encoding='utf-8')
+          old = "new_text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)"
+          new = "new_text, count = re.subn(pattern, lambda _m: replacement, text, count=1, flags=re.S)"
+          if patcher_source.count(old) != 1:
+              raise SystemExit('Assinatura de replace_regex_once inesperada')
+          patcher.write_text(patcher_source.replace(old, new), encoding='utf-8')
+
           subprocess.run([sys.executable, '-m', 'py_compile', str(patcher)], check=True)
           subprocess.run([sys.executable, str(patcher)], check=True)
           PY
