@@ -384,6 +384,7 @@ async def upsert_documento(
             base_rag=base,
             chave_origem=chave_origem, hash_conteudo=h, atualizado_em=agora,
             status_indexacao=status_novo,
+            vigente=True,
         ))
         await db.flush()   # FK: doc antes dos chunks
         resultado = "novo"

@@ -49,8 +49,8 @@ if [ ! -f "$APP_DIR/.env" ]; then
 fi
 
 # Injetar domínio no .env se ainda genérico
-sed -i "s|CORS_ORIGINS=https://SEU_DOMINIO|CORS_ORIGINS=https://$DOMAIN|g" "$APP_DIR/.env"
-sed -i "s|FRONTEND_URL=https://SEU_DOMINIO|FRONTEND_URL=https://$DOMAIN|g" "$APP_DIR/.env"
+sed -i "s|CORS_ORIGINS=https://ejc.depaulateixeira.adv.br|CORS_ORIGINS=https://$DOMAIN|g" "$APP_DIR/.env"
+sed -i "s|FRONTEND_URL=https://ejc.depaulateixeira.adv.br|FRONTEND_URL=https://$DOMAIN|g" "$APP_DIR/.env"
 
 # ── 4. Build Docker ────────────────────────────────────────────────────────────
 echo "[4/8] Build das imagens Docker..."

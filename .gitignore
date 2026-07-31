@@ -17,6 +17,8 @@ vps-tools/.env
 *.pfx
 *-service-account*.json
 credentials*.json
+config/gdrive_sa.json
+config/rclone.conf
 
 # ── Dependências / builds ────────────────────────────────────────────
 node_modules/
@@ -38,6 +40,9 @@ dist/
 *.tar.gz
 *.zip
 *.dump
+*.db
+*.sqlite
+*.sqlite3
 *.sql
 *.sql.gz
 *.log
@@ -45,14 +50,24 @@ uploads/
 backups/
 frontend/tests/__out__/
 _QUARENTENA/
+_dead_code/
+_deploy_e2e1/
 vps-tools/generated/
 _session_componentes_bronze/
+reports/*.csv
 
 # ── Backups locais de arquivos ───────────────────────────────────────
 *.bak
 *.bak.*
+Dashboard_light_backup.tsx
 *.old
 *.orig
+check_*.py
+chk*.py
+tmp_*.py
+test_s.py
+seed_sumulas.py
+verify_sumulas.py
 
 # temporários de deploy (auditoria 01/07)
 vps-tools/_*

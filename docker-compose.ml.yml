@@ -1,0 +1,5 @@
+# Legacy override kept for reference only.
+# Production now runs semantic embeddings in the separate `embeddings` service
+# declared in docker-compose.yml, while backend remains runtime-base/lightweight.
+# Do not use this file for normal deploy.
+services: {}

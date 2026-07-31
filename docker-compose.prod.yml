@@ -1,0 +1,158 @@
+# ── EJC v3.0 — Docker Compose PRODUÇÃO (Contabo) ─────────────────────────────
+# Backend bound a 127.0.0.1 — acesso externo SOMENTE via Nginx (TLS).
+# Difere do docker-compose.yml base: restart garantido, DEBUG=false, rede nomeada.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: ejc_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ejc_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ejc_db}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ejc_user} -d ${POSTGRES_DB:-ejc_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ejc_net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 2g
+        reservations:
+          memory: 512m
+    # Porta NÃO exposta ao host — apenas rede interna Docker
+
+  backend:
+    build: ./backend
+    container_name: ejc_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ejc_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ejc_db}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-ejc_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ejc_db}
+      DEBUG: "false"
+      RCLONE_CONFIG: /opt/ejc/config/rclone.conf
+    volumes:
+      - uploads:/app/uploads
+      - /opt/ejc/config:/opt/ejc/config:ro
+    ports:
+      - "127.0.0.1:8000:8000"   # só localhost — Nginx faz o proxy
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - ejc_net
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3g
+        reservations:
+          memory: 768m
+
+  frontend:
+    build: ./frontend
+    container_name: ejc_frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"     # Nginx host faz proxy p/ cá
+    depends_on:
+      - backend
+    networks:
+      - ejc_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+
+  # ── Ollama — modelos locais de IA (soberania de dados) ──────────────────────
+  # Habilitado apenas quando OLLAMA_ENABLED=true no .env.
+  # Pull inicial dos modelos (executar UMA VEZ no host):
+  #   docker compose exec ollama ollama pull qwen2.5:14b
+  #   docker compose exec ollama ollama pull deepseek-r1:8b
+  #   docker compose exec ollama ollama pull gemma3:9b
+  #   docker compose exec ollama ollama pull mistral:7b
+  # Hardware mínimo recomendado: 16 GB RAM, 40 GB disco.
+  # Para GPU NVIDIA: adicionar "runtime: nvidia" e "NVIDIA_VISIBLE_DEVICES: all".
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ejc_ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama    # modelos persistidos entre reinicializações
+    # Expor somente na rede interna Docker (backend acessa via http://ollama:11434)
+    # Para acesso externo via Nginx: adicionar 127.0.0.1:11434:11434
+    networks:
+      - ejc_net
+    # Sem GPU: remova ou mantenha sem deploy.resources
+    # Com GPU NVIDIA (opcional):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    deploy:
+      resources:
+        limits:
+          memory: 8g
+        reservations:
+          memory: 2g
+    profiles:
+      - ollama   # ativar: docker compose --profile ollama up -d ollama
+
+  # ── ollama-init — pull automático dos modelos do .env (roda uma vez e sai) ──
+  # Sobe junto com: docker compose --profile ollama up -d
+  # Lê os mesmos OLLAMA_MODEL_* do backend; pulls são idempotentes (no-op se já existem).
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ejc_ollama_init
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"
+      OLLAMA_MODEL_ANALISE: ${OLLAMA_MODEL_ANALISE:-deepseek-r1:8b}
+      OLLAMA_MODEL_PETICAO: ${OLLAMA_MODEL_PETICAO:-qwen2.5:14b}
+      OLLAMA_MODEL_RESUMO: ${OLLAMA_MODEL_RESUMO:-gemma3:9b}
+      OLLAMA_MODEL_CHAT: ${OLLAMA_MODEL_CHAT:-gemma3:9b}
+      OLLAMA_MODEL_CONTRATO: ${OLLAMA_MODEL_CONTRATO:-deepseek-r1:8b}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "[ollama-init] aguardando servidor ollama...";
+        until ollama list >/dev/null 2>&1; do sleep 3; done;
+        for M in "$$OLLAMA_MODEL_ANALISE" "$$OLLAMA_MODEL_PETICAO" "$$OLLAMA_MODEL_RESUMO" "$$OLLAMA_MODEL_CHAT" "$$OLLAMA_MODEL_CONTRATO"; do
+          [ -n "$$M" ] || continue;
+          echo "[ollama-init] pull $$M";
+          ollama pull "$$M" || echo "[ollama-init] falha em $$M (segue)";
+        done;
+        echo "[ollama-init] concluido.";
+    restart: "no"
+    networks:
+      - ejc_net
+    profiles:
+      - ollama
+
+volumes:
+  pgdata:
+  uploads:
+  ollama_data:
+
+networks:
+  ejc_net:
+    name: backend_ejc_net
+    driver: bridge
