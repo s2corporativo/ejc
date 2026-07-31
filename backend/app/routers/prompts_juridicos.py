@@ -210,16 +210,29 @@ async def remover_prompt(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        raise HTTPException(403, "Apenas sócios podem remover prompts")
-    p = (await db.execute(
-        select(PromptJuridico).where(
-            PromptJuridico.id == prompt_id,
-            PromptJuridico.deleted_at.is_(None),
+    if not _pode_editar(cu):
+        raise HTTPException(
+            403, "Apenas advogado ou perfil superior pode remover prompts"
         )
-    )).scalar_one_or_none()
+
+    p = (
+        await db.execute(
+            select(PromptJuridico).where(
+                PromptJuridico.id == prompt_id,
+                PromptJuridico.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
     if not p:
-        raise HTTPException(404)
+        raise HTTPException(404, "Prompt não encontrado")
+
+    nivel = ROLE_LEVEL.get(cu.role.value, 0)
+    eh_autor = bool(p.created_by) and str(p.created_by) == str(cu.id)
+    if nivel < ROLE_LEVEL["socio"] and not eh_autor:
+        raise HTTPException(
+            403, "Apenas o autor do prompt ou um sócio pode removê-lo"
+        )
+
     p.deleted_at = datetime.now(timezone.utc)
     await db.commit()
 
