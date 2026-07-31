@@ -18,7 +18,7 @@ from app.core.security import get_current_user, requer_advogado
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.user import User
 from app.models.case import Case
-from app.models.deadline import Deadline
+from app.models.deadline import Deadline, DeadlineStatus
 from app.models.audit_log import criar_audit_log
 from app.services.deadline_calculator import (
     prazo_dias_uteis, prazo_dias_corridos, dias_uteis_restantes,
@@ -32,6 +32,23 @@ router = APIRouter(prefix="/deadlines", tags=["Prazos"])
 logger = logging.getLogger("ejc.deadlines")
 
 _MAX_EXPORT = 5000  # teto de linhas do CSV (painel de prazos é sempre pequeno)
+
+
+def _normalizar_status_filtro(status_f: Optional[str]) -> DeadlineStatus | None:
+    """Normaliza o filtro público sem delegar valores inválidos ao enum do banco."""
+    if status_f is None:
+        return None
+    valor = status_f.strip().lower()
+    if valor in {"", "all"}:
+        return None
+    try:
+        return DeadlineStatus(valor)
+    except ValueError as exc:
+        permitidos = ", ".join(status.value for status in DeadlineStatus)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Status inválido. Use all ou um de: {permitidos}",
+        ) from exc
 
 
 def _ids_casos_do_usuario(user: User):
@@ -97,8 +114,9 @@ async def listar(
     cu: User = Depends(get_current_user),
 ):
     q = select(Deadline).where(Deadline.deleted_at.is_(None))
-    if status_f:
-        q = q.where(Deadline.status == status_f)
+    status_normalizado = _normalizar_status_filtro(status_f)
+    if status_normalizado is not None:
+        q = q.where(Deadline.status == status_normalizado)
     if case_id:
         q = q.where(Deadline.case_id == case_id)
     if tipo:
@@ -146,8 +164,9 @@ async def exportar_csv(
     acesso do GET /deadlines (painel compartilhado). UTF-8 com BOM p/ o Excel
     abrir acentos corretamente."""
     q = select(Deadline).where(Deadline.deleted_at.is_(None))
-    if status_f:
-        q = q.where(Deadline.status == status_f)
+    status_normalizado = _normalizar_status_filtro(status_f)
+    if status_normalizado is not None:
+        q = q.where(Deadline.status == status_normalizado)
     if case_id:
         q = q.where(Deadline.case_id == case_id)
     if tipo:
