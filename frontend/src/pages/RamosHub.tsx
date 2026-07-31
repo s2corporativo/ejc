@@ -28,6 +28,7 @@ import {
   Wrench,
 } from "lucide-react";
 import api from "../lib/api";
+import { AREAS_FALLBACK } from "../lib/areaCatalog";
 import { ROLES } from "../config/moduleRegistry";
 import { CANONICAL_ROUTES } from "../config/canonicalRoutes";
 import { useAuth } from "../stores/auth";
@@ -197,32 +198,10 @@ const VISUAL: Record<string, AreaVisual> = {
   },
 };
 
-const FALLBACK_AREAS: Area[] = [
-  ["empresarial", "Direito Empresarial"],
-  ["civil", "Direito Cível"],
-  ["criminal", "Direito Penal"],
-  ["trabalhista", "Direito Trabalhista"],
-  ["administrativo", "Direito Administrativo"],
-  ["bancario", "Direito Bancário"],
-  ["tributario", "Direito Tributário"],
-  ["ambiental", "Direito Ambiental"],
-  ["consumidor", "Direito do Consumidor"],
-  ["familia", "Direito de Família"],
-  ["sucessoes", "Direito das Sucessões"],
-  ["imobiliario", "Direito Imobiliário"],
-  ["previdenciario", "Direito Previdenciário"],
-  ["saude", "Direito da Saúde"],
-  ["medico", "Direito Médico"],
-  ["digital_lgpd", "Direito Digital e LGPD"],
-  ["transito", "Direito de Trânsito"],
-  ["constitucional", "Direito Constitucional"],
-  ["agrario", "Direito Agrário"],
-  ["agronegocio", "Direito do Agronegócio"],
-  ["eleitoral", "Direito Eleitoral"],
-  ["internacional", "Direito Internacional"],
-  ["contratual", "Direito Contratual"],
-  ["societario", "Direito Societário"],
-].map(([slug, nome], index) => ({ slug, nome, ordem: (index + 1) * 10 }));
+const FALLBACK_AREAS: Area[] = AREAS_FALLBACK.map((area, index) => ({
+  ...area,
+  ordem: area.ordem ?? (index + 1) * 10,
+}));
 
 export default function RamosHub() {
   const navigate = useNavigate();
