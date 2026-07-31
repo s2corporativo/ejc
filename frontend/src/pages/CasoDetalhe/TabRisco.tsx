@@ -11,6 +11,12 @@ export default function TabRisco({ caseId }: { caseId: string }) {
     string,
     { c: string; bg: string; border: string; bar: string }
   > = {
+    incompleto: {
+      c: "text-gray-700",
+      bg: "bg-gray-50",
+      border: "border-gray-300",
+      bar: "bg-gray-400",
+    },
     baixo: {
       c: "text-green-700",
       bg: "bg-green-50",
@@ -39,7 +45,8 @@ export default function TabRisco({ caseId }: { caseId: string }) {
   const FATORES: Record<string, string> = {
     prazo_vencido: "Prazo Vencido",
     audiencia_perdida: "Audiência Perdida",
-    sem_documentos: "Sem Documentos",
+    sem_documentos: "Sem documentos anexados",
+    triagem_incompleta: "Triagem incompleta",
     valor_alto: "Valor Alto (>500k)",
     valor_medio: "Valor Médio (>100k)",
     processo_antigo: "Processo Antigo (+3 anos)",
@@ -101,7 +108,9 @@ export default function TabRisco({ caseId }: { caseId: string }) {
             <div
               className={`text-xl font-bold ${cfg?.c ?? "text-gray-400"} mb-2 capitalize`}
             >
-              Risco {nivel ?? "—"}
+              {nivel === "incompleto"
+                ? "Triagem incompleta"
+                : `Risco ${nivel ?? "—"}`}
             </div>
             <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
               <div
@@ -109,12 +118,23 @@ export default function TabRisco({ caseId }: { caseId: string }) {
                 style={{ width: `${indice}%` }}
               />
             </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1">
-              <span>Baixo 0–25</span>
-              <span>Médio 26–50</span>
-              <span>Alto 51–75</span>
-              <span>Crítico 76–100</span>
-            </div>
+            {nivel === "incompleto" ? (
+              <p
+                role="status"
+                className="mt-2 text-sm font-medium text-gray-700"
+              >
+                Não há documentos anexados suficientes para uma avaliação
+                conclusiva. Revise a triagem e as evidências antes de usar este
+                índice em uma decisão jurídica.
+              </p>
+            ) : (
+              <div className="flex justify-between text-xs text-gray-400 mt-1">
+                <span>Baixo 0–25</span>
+                <span>Médio 26–50</span>
+                <span>Alto 51–75</span>
+                <span>Crítico 76–100</span>
+              </div>
+            )}
           </div>
         </div>
         {fatores.length > 0 && (
