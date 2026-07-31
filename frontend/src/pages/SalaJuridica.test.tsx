@@ -202,13 +202,30 @@ describe("Sala Jurídica — wizard de conversão", () => {
     fireEvent.change(screen.getByPlaceholderText("Nome do novo cliente"), {
       target: { value: "Construtora Beta" },
     });
-    // Marca as duas confirmações genéricas e converte.
-    const checks = screen.getAllByRole("checkbox");
-    fireEvent.click(checks[0]);
-    fireEvent.click(checks[1]);
+    // Marca as confirmações pelo nome acessível; a página contém outros
+    // checkboxes e a ordem do DOM não faz parte do contrato do wizard.
     fireEvent.click(
-      screen.getByRole("button", { name: /Confirmar conversão/i }),
+      screen.getByRole("checkbox", {
+        name: /Verifiquei conflito de interesses e duplicidade de casos/i,
+      }),
     );
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /Revisei fatos, provas, pendências e documentos/i,
+      }),
+    );
+    const confirmar = screen.getByRole("button", {
+      name: /Confirmar conversão/i,
+    });
+    await waitFor(() => {
+      expect((confirmar as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(confirmar);
+
+    // Prova que o servidor foi consultado antes de esperar o estado do 409.
+    await waitFor(() => {
+      expect(postMock).toHaveBeenCalledTimes(1);
+    });
 
     // O achado do 409 entra no estado: painel + checkbox de reconhecimento.
     await waitFor(() => {

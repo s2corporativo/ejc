@@ -39,7 +39,9 @@ def _extrair_rotas(app) -> list[dict]:
             if metodo in ("HEAD", "OPTIONS"):
                 continue
             rotas.append({
-                "path": path, "method": metodo, "auth_deps": sorted(nomes),
+                "path": path,
+                "method": metodo,
+                "auth_deps": sorted(nomes),
                 "endpoint": getattr(getattr(r, "endpoint", None), "__name__", None),
             })
     rotas.sort(key=lambda x: (x["path"], x["method"]))
@@ -49,21 +51,20 @@ def _extrair_rotas(app) -> list[dict]:
 # Adições INTENCIONAIS posteriores ao snapshot. O registro explícito (§4.1) não
 # pode criar nem remover rota; qualquer outra novidade falha o teste.
 ADICOES_INTENCIONAIS = {
-    ("/api/architecture/uso-rotas", "GET"),   # telemetria de uso (Onda 3 §4.5)
-    # Veio da main pelo PR #500 (paridade Sala/Raio-X), não deste PR. O snapshot
-    # é o baseline de ANTES do registro explícito dos routers; rota criada por
-    # outro trabalho é adição legítima — o que este teste protege é que nenhuma
-    # rota DESAPAREÇA nem mude de dependência de auth.
+    ("/api/architecture/uso-rotas", "GET"),
     ("/api/sala-juridica/{session_id}/conversao/preview", "GET"),
-    # PR #535: diagnóstico de integridade somente leitura, restrito a sócio+ e
-    # coberto por teste de contrato. É uma rota nova deliberada, não side effect.
     ("/api/diagnostico/integridade", "GET"),
+    # PR #547: decisão explícita de publicar/despublicar arquivo no Data Room.
+    ("/api/data-rooms/{room_id}/arquivos/{arquivo_id}/publicacao", "PATCH"),
 }
 
 
 def _baseline() -> list[dict]:
-    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           "snapshots", "openapi_rotas_baseline.json")
+    caminho = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "snapshots",
+        "openapi_rotas_baseline.json",
+    )
     with open(caminho, encoding="utf-8") as fh:
         return json.load(fh)
 
@@ -78,7 +79,9 @@ def test_paridade_openapi_com_snapshot_anterior():
     chaves_atual = {(r["path"], r["method"]): r for r in atual}
 
     sumiram = sorted(set(chaves_base) - set(chaves_atual))
-    surgiram = sorted(set(chaves_atual) - set(chaves_base) - ADICOES_INTENCIONAIS)
+    surgiram = sorted(
+        set(chaves_atual) - set(chaves_base) - ADICOES_INTENCIONAIS
+    )
     assert not sumiram, f"{len(sumiram)} rota(s) DESAPARECERAM: {sumiram[:10]}"
     assert not surgiram, f"{len(surgiram)} rota(s) NOVAS não previstas: {surgiram[:10]}"
 
@@ -92,19 +95,25 @@ def test_paridade_openapi_com_snapshot_anterior():
     assert len(atual) == len(base) + len(ADICOES_INTENCIONAIS)
 
 
-@pytest.mark.parametrize("caminho,metodo", [
-    ("/api/jurisprudencia-externa/precedentes/buscar", "POST"),
-    ("/api/pecas/advogado-estilo/me", "GET"),
-    ("/api/rag/governanca/saude", "GET"),
-    ("/api/casos/{case_id}/andamentos/inteligencia", "GET"),
-    ("/api/ia-governanca/provedores", "GET"),
-])
+@pytest.mark.parametrize(
+    "caminho,metodo",
+    [
+        ("/api/jurisprudencia-externa/precedentes/buscar", "POST"),
+        ("/api/pecas/advogado-estilo/me", "GET"),
+        ("/api/rag/governanca/saude", "GET"),
+        ("/api/casos/{case_id}/andamentos/inteligencia", "GET"),
+        ("/api/ia-governanca/provedores", "GET"),
+    ],
+)
 def test_rotas_antes_dinamicas_seguem_montadas(caminho, metodo):
     """Uma rota-testemunha de cada um dos cinco grupos."""
     from app.main import app
-    montadas = {(getattr(r, "path", ""), m)
-                for r in app.routes
-                for m in (getattr(r, "methods", None) or [])}
+
+    montadas = {
+        (getattr(r, "path", ""), m)
+        for r in app.routes
+        for m in (getattr(r, "methods", None) or [])
+    }
     assert (caminho, metodo) in montadas
 
 
@@ -116,13 +125,19 @@ def test_modulos_de_servico_nao_montam_mais_rotas():
     from app.services import datajud_cognitive_patch
     from app.services.ai import provider_metrics_runtime
 
-    for modulo in (event_subscribers, datajud_cognitive_patch, provider_metrics_runtime):
+    for modulo in (
+        event_subscribers,
+        datajud_cognitive_patch,
+        provider_metrics_runtime,
+    ):
         fonte = inspect.getsource(modulo)
         assert "include_router" not in fonte, (
             f"{modulo.__name__} voltou a montar rota por side effect — "
-            "registre o router explicitamente em app/main.py")
+            "registre o router explicitamente em app/main.py"
+        )
         assert ".router.routes.append(" not in fonte, (
-            f"{modulo.__name__} voltou a anexar rotas diretamente em outro router")
+            f"{modulo.__name__} voltou a anexar rotas diretamente em outro router"
+        )
 
 
 def test_registro_independe_da_ordem_de_import():
@@ -135,23 +150,22 @@ def test_registro_independe_da_ordem_de_import():
 
 
 def test_efeitos_colaterais_nao_de_rota_preservados():
-    """A remoção tocou APENAS a montagem de rota: subscribers de evento e
-    patches de comportamento seguem no lugar."""
+    """A remoção tocou APENAS a montagem de rota: subscribers e patches seguem."""
     import inspect
 
-    from app.services import event_subscribers, datajud_cognitive_patch
+    from app.services import datajud_cognitive_patch, event_subscribers
     from app.services.ai import provider_metrics_runtime
 
     fonte_ev = inspect.getsource(event_subscribers)
-    assert "_patch_documents_background_analysis()" in fonte_ev   # patch de comportamento
-    assert "_install_ai_core_hardening()" in fonte_ev             # gate crítico de IA
+    assert "_patch_documents_background_analysis()" in fonte_ev
+    assert "_install_ai_core_hardening()" in fonte_ev
     assert "_install_datajud_cognitive_feed()" in fonte_ev
-    assert "@on(" in fonte_ev                                     # subscribers de evento
+    assert "@on(" in fonte_ev
 
     fonte_dj = inspect.getsource(datajud_cognitive_patch)
-    assert "_instalar_wrappers()" in fonte_dj                     # wrappers do datajud_service
-    assert "_registrar_job()" in fonte_dj                         # job do scheduler
+    assert "_instalar_wrappers()" in fonte_dj
+    assert "_registrar_job()" in fonte_dj
     assert "_registrar_categoria_restrita()" in fonte_dj
 
     fonte_pm = inspect.getsource(provider_metrics_runtime)
-    assert "_instalar_instrumentacao(gateway)" in fonte_pm        # instrumentação do gateway
+    assert "_instalar_instrumentacao(gateway)" in fonte_pm
