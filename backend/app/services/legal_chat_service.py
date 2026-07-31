@@ -747,6 +747,139 @@ def _limpar_copias(copiados: list[Path]) -> None:
             pass
 
 
+_DESCRICAO_CASO_MAX_CHARS = 10_000
+_DESCRICAO_CASO_MAX_MENSAGENS = 20
+_CLASSIFICACOES_FATO = {
+    "comprovado", "alegado", "inferido", "controvertido", "ausente", "superado",
+}
+
+
+def _valor_textual(item: Any, *chaves: str) -> str:
+    """Extrai texto de estruturas do estado sem presumir formato perfeito."""
+    if isinstance(item, str):
+        return item.strip()
+    if not isinstance(item, dict):
+        return ""
+    for chave in chaves:
+        valor = item.get(chave)
+        if valor is not None and str(valor).strip():
+            return str(valor).strip()
+    return ""
+
+
+async def _descricao_fatos_conversao(
+    db: AsyncSession,
+    sessao: LegalChatSession,
+    descricao_explicita: str | None,
+) -> str | None:
+    """Materializa no caso o contexto já persistido na Sala Jurídica.
+
+    A descrição revisada pelo advogado sempre prevalece. Na ausência dela,
+    compõe uma síntese determinística a partir do estado, workspace e relatos
+    do advogado — sem nova chamada de IA e sem promover alegação a fato
+    comprovado. Sessão vazia continua retornando None.
+    """
+    if isinstance(descricao_explicita, str) and descricao_explicita.strip():
+        return descricao_explicita[:_DESCRICAO_CASO_MAX_CHARS]
+
+    blocos: list[str] = []
+    estado_v = await ultima_versao_estado(db, sessao.id)
+    estado = dict((estado_v.estado if estado_v else {}) or {})
+
+    resumo = (estado_v.resumo if estado_v else None) or ""
+    if isinstance(resumo, str) and resumo.strip():
+        blocos.append(
+            "Síntese consolidada da Sala Jurídica "
+            "(rascunho sujeito à revisão humana):\n"
+            f"{resumo.strip()}"
+        )
+
+    fatos: list[str] = []
+    itens_fatos = estado.get("fatos")
+    if isinstance(itens_fatos, list):
+        for item in itens_fatos:
+            texto_fato = _valor_textual(item, "texto", "descricao", "evento")
+            if not texto_fato:
+                continue
+            classificacao = (
+                str(item.get("classificacao") or "alegado").strip().lower()
+                if isinstance(item, dict)
+                else "alegado"
+            )
+            if classificacao not in _CLASSIFICACOES_FATO:
+                classificacao = "alegado"
+            fatos.append(f"- [{classificacao}] {texto_fato}")
+    if fatos:
+        blocos.append("Fatos consolidados na triagem:\n" + "\n".join(fatos))
+
+    cronologia: list[str] = []
+    itens_cronologia = estado.get("cronologia")
+    if isinstance(itens_cronologia, list):
+        for item in itens_cronologia:
+            evento = _valor_textual(item, "evento", "descricao", "texto")
+            if not evento:
+                continue
+            data = _valor_textual(item, "data")
+            comprovado = (
+                isinstance(item, dict) and item.get("comprovado") is True
+            )
+            rotulo = "comprovação indicada" if comprovado else "alegado"
+            prefixo = f"{data} — " if data else ""
+            cronologia.append(f"- [{rotulo}] {prefixo}{evento}")
+    if cronologia:
+        blocos.append("Cronologia registrada na triagem:\n" + "\n".join(cronologia))
+
+    provas: list[str] = []
+    itens_provas = estado.get("provas")
+    if isinstance(itens_provas, list):
+        for item in itens_provas:
+            nome = _valor_textual(item, "nome", "descricao", "trecho", "origem")
+            if nome:
+                provas.append(f"- {nome}")
+    if provas:
+        blocos.append(
+            "Referências probatórias registradas na triagem "
+            "(existência e força dependem de conferência):\n"
+            + "\n".join(provas)
+        )
+
+    workspace = sessao.workspace_texto or ""
+    if isinstance(workspace, str) and workspace.strip():
+        blocos.append(
+            "Texto da área de trabalho da sessão:\n" + workspace.strip()
+        )
+
+    res_mensagens = await db.execute(
+        select(LegalChatMessage)
+        .where(
+            LegalChatMessage.session_id == sessao.id,
+            LegalChatMessage.autor == "user",
+        )
+        .order_by(LegalChatMessage.created_at.desc())
+        .limit(_DESCRICAO_CASO_MAX_MENSAGENS)
+    )
+    mensagens_recentes = [
+        mensagem
+        for mensagem in res_mensagens.scalars().all()
+        if getattr(mensagem, "autor", None) == "user"
+        and isinstance(getattr(mensagem, "conteudo", None), str)
+        and mensagem.conteudo.strip()
+    ]
+    if mensagens_recentes:
+        relatos = "\n\n".join(
+            mensagem.conteudo.strip()
+            for mensagem in reversed(mensagens_recentes)
+        )
+        blocos.append(
+            "Relato e instruções fornecidos pelo advogado na sessão "
+            "(não equivalem, por si, a comprovação):\n"
+            + relatos
+        )
+
+    descricao = "\n\n".join(blocos).strip()
+    return descricao[:_DESCRICAO_CASO_MAX_CHARS] or None
+
+
 async def _criar_snapshot_sala(
     db: AsyncSession, sessao: LegalChatSession, case_id: str, area: str, user: User,
 ) -> int:
@@ -904,7 +1037,9 @@ async def converter_em_caso(
         numero_interno=numero,
         titulo=payload.titulo_caso,
         area=CaseArea(payload.area),
-        descricao_fatos=payload.descricao,
+        descricao_fatos=await _descricao_fatos_conversao(
+            db, sessao, payload.descricao
+        ),
         client_id=client.id,
         advogado_responsavel_id=payload.advogado_responsavel_id,
         # G1 (mesma guarda de cases.py): caso em triagem nunca nasce sem
