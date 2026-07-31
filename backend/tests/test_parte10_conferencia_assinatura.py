@@ -20,6 +20,7 @@ def test_python_alterado_na_parte10_tem_sintaxe_valida() -> None:
     arquivos = [
         "backend/app/routers/validador_juridico.py",
         "backend/app/routers/ai_tools.py",
+        "backend/app/routers/legal_docs.py",
         "backend/app/services/system_prompts/base.py",
         "backend/app/services/system_prompts/modo_executivo.py",
     ]
@@ -49,19 +50,33 @@ def test_ato_unico_preserva_gates_e_trilha_de_auditoria() -> None:
 
 def test_pdf_minuta_nao_remove_o_gate_do_pdf_de_protocolo() -> None:
     fonte_nova = _texto("backend/app/routers/validador_juridico.py")
-    fonte_principal = _texto("backend/app/routers/legal_docs.py")
+    fonte_legada = _texto("backend/app/routers/legal_docs_legacy.py")
 
     assert "minuta_ia=bool(doc.ai_generated and not doc.human_reviewed)" in fonte_nova
-    assert "_gates_exportacao_protocolo" in fonte_principal
-    assert "await _gates_exportacao_protocolo(db, d)" in fonte_principal
+    assert "_gates_exportacao_protocolo" in fonte_legada
+    assert "await _gates_exportacao_protocolo(db, d)" in fonte_legada
 
 
-def test_status_ia_usa_settings_tipadas_e_expoe_modelos_por_tarefa() -> None:
+def test_fachada_legal_docs_substitui_so_as_rotas_conflitantes() -> None:
+    fachada = _texto("backend/app/routers/legal_docs.py")
+
+    assert "legal_docs_legacy" in fachada
+    assert '"/legal-docs/{doc_id}", "PATCH"' in fachada
+    assert '"/legal-docs/{doc_id}/aprovar", "PATCH"' in fachada
+    assert "aprovar_compativel" in fachada
+    assert "ConferenciaAssinaturaRequest" in fachada
+    assert "Provimento OAB 205/2021" in fachada  # somente detector para remoção
+    assert "replace" in fachada
+
+
+def test_status_ia_espelha_o_resolver_real_do_gateway() -> None:
     fonte = _texto("backend/app/routers/ai_tools.py")
 
     assert "settings = get_settings()" in fonte
     assert "settings.ANTHROPIC_MODEL_COMPLEXO" in fonte
     assert '"modelos_por_tarefa": _modelos_por_tarefa(settings)' in fonte
+    assert '"modelo_resolvido_pelo_gateway"' in fonte
+    assert '"habilitado": bool(settings.OLLAMA_ENABLED)' in fonte
     assert 'os.getenv("ANTHROPIC_MODEL_RAPIDO"' not in fonte
     assert 'os.getenv("ANTHROPIC_MODEL_COMPLEXO"' not in fonte
 
