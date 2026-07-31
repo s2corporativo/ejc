@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-legal-doc-flow-hardening-selfhosted
-  cancel-in-progress: true
+  group: apply-legal-doc-flow-hardening-selfhosted-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   apply:
