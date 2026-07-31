@@ -25,9 +25,10 @@ esac
 [ "$RAG_CANARY_DOCS" -ge 1 ] && [ "$RAG_CANARY_DOCS" -le 50 ] || \
   die "RAG_CANARY_DOCS deve ficar entre 1 e 50."
 
-for command_name in docker curl python3 flock sha256sum; do
+for command_name in docker curl python3 flock sha256sum stat; do
   command -v "$command_name" >/dev/null 2>&1 || die "$command_name não encontrado."
 done
+[ -n "$EXPECTED_GIT_SHA" ] || die "EXPECTED_GIT_SHA é obrigatório."
 [ -d "$APP_DIR" ] || die "APP_DIR inexistente: $APP_DIR"
 cd "$APP_DIR"
 [ -f "$ENV_FILE" ] || die "$ENV_FILE não encontrado."
@@ -61,6 +62,7 @@ PROOF_JSON_FILE="$TMP_DIR/proof.json"
 LAST_JSON_FILE=""
 ENV_BAK=""
 ENV_SHA_BEFORE=""
+ENV_MODE_BEFORE=""
 PREVIOUS_EFFECTIVE_ENABLED="false"
 ROLLBACK_ARMED=0
 MUTATED=0
@@ -376,12 +378,12 @@ on_exit() {
     set +e
     log "falha detectada; restaurando a configuração anterior."
     atomic_restore_env
-    chmod 600 "$ENV_FILE" 2>/dev/null || true
     "${DC[@]}" up -d --force-recreate --no-deps backend worker
     if wait_backend && wait_worker && \
        assert_runtime_enabled "$APP_CONTAINER" "$PREVIOUS_EFFECTIVE_ENABLED" "$RUNTIME_BACKEND_JSON" && \
        assert_runtime_enabled "$WORKER_CONTAINER" "$PREVIOUS_EFFECTIVE_ENABLED" "$RUNTIME_WORKER_JSON" && \
        [ "$(sha256sum "$ENV_FILE" | awk '{print $1}')" = "$ENV_SHA_BEFORE" ] && \
+       [ "$(stat -c '%a' "$ENV_FILE")" = "$ENV_MODE_BEFORE" ] && \
        assert_health_commit "http://127.0.0.1:8000/api/health" "$EXPECTED_GIT_SHA" && \
        assert_health_commit "$PUBLIC_HEALTH_URL" "$EXPECTED_GIT_SHA"; then
       rollback_ok=1
@@ -458,7 +460,7 @@ LAST_JSON_FILE="$BACKUP_JSON_FILE"
 
 ENV_BAK="${ENV_FILE}.bak.rag.$(date +%Y%m%d_%H%M%S)"
 cp -p "$ENV_FILE" "$ENV_BAK"
-chmod 600 "$ENV_BAK" "$ENV_FILE" 2>/dev/null || true
+ENV_MODE_BEFORE="$(stat -c '%a' "$ENV_BAK")"
 ENV_SHA_BEFORE="$(sha256sum "$ENV_BAK" | awk '{print $1}')"
 FINGERPRINT_BEFORE="$(env_fingerprint_without_flag)"
 ROLLBACK_ARMED=1
@@ -466,7 +468,7 @@ ROLLBACK_ARMED=1
 log "alterando atomicamente apenas EMBEDDINGS_ENABLED para true..."
 set_env_enabled_true
 MUTATED=1
-chmod 600 "$ENV_FILE" 2>/dev/null || true
+[ "$(stat -c '%a' "$ENV_FILE")" = "$ENV_MODE_BEFORE" ] || die "permissão do .env foi alterada."
 [ "$(env_state)" = "true" ] || die "a flag não foi persistida como true."
 [ "$(env_fingerprint_without_flag)" = "$FINGERPRINT_BEFORE" ] || \
   die "campo alheio a EMBEDDINGS_ENABLED foi alterado."
