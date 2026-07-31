@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ACTIVATE="$ROOT/scripts/rag/ativar_embeddings.sh"
+PROBE="$ROOT/scripts/rag/provar_ativacao.py"
+WORKFLOW="$ROOT/.github/workflows/rag-production-activation.yml"
+COMPOSE="$ROOT/docker-compose.yml"
+REAL_PYTHON="$(command -v python3)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+fail() { printf 'test_rag_activation: ERRO: %s\n' "$*" >&2; exit 1; }
+assert_file_contains() { grep -Fq -- "$2" "$1" || fail "$1 não contém: $2"; }
+assert_json() {
+  local file="$1" expression="$2"
+  python3 - "$file" "$expression" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if not eval(sys.argv[2], {"__builtins__": {}}, {"d": data}):
+    raise SystemExit(f"asserção JSON falhou: {sys.argv[2]} — {data}")
+PY
+}
+
+bash -n "$ACTIVATE"
+python3 -m py_compile "$PROBE"
+[ -f "$WORKFLOW" ] || fail "workflow ausente"
+
+# Contratos estáticos: mutação única, trava compartilhada com deploy, execução
+# somente na main e código implantado byte a byte igual ao SHA revisado.
+[ "$(grep -Ec '^set_env_enabled_true$' "$ACTIVATE")" -eq 1 ]
+! grep -Eq 'sed[[:space:]]+-i|sudo install' "$ACTIVATE"
+assert_file_contains "$ACTIVATE" 'flock -n 9'
+assert_file_contains "$ACTIVATE" 'validate_backup_json'
+assert_file_contains "$ACTIVATE" 'env_fingerprint_without_flag'
+assert_file_contains "$WORKFLOW" "'deploy-vps'"
+assert_file_contains "$WORKFLOW" "github.ref_name == 'main'"
+assert_file_contains "$WORKFLOW" 'cmp -s scripts/rag/ativar_embeddings.sh /opt/ejc/scripts/rag/ativar_embeddings.sh'
+! grep -Fq 'sudo install' "$WORKFLOW"
+assert_file_contains "$PROBE" 'knowledge_chunks_vigentes_com_embedding'
+assert_file_contains "$PROBE" 'FOR UPDATE OF kd SKIP LOCKED'
+assert_file_contains "$PROBE" '_probe_semantic_search'
+
+if [ -f "$COMPOSE" ]; then
+  [ "$(grep -Fc 'fastembed_cache:/tmp/fastembed_cache' "$COMPOSE")" -eq 2 ] || \
+    fail "cache FastEmbed deve estar montado em backend e worker"
+  [ "$(grep -Ec '^  fastembed_cache:$' "$COMPOSE")" -eq 1 ] || \
+    fail "volume fastembed_cache deve ser declarado uma vez"
+fi
+
+make_case() {
+  local name="$1" enabled="${2:-false}"
+  local app="$TMP/$name"
+  mkdir -p "$app/scripts/rag" "$app/scripts/tests" "$app/scripts" \
+    "$app/bin" "$app/state"
+  cp "$PROBE" "$app/scripts/rag/provar_ativacao.py"
+  cp "$ACTIVATE" "$app/scripts/rag/ativar_embeddings.sh"
+  cp "$0" "$app/scripts/tests/test_rag_activation.sh"
+  printf 'EMBEDDINGS_ENABLED=%s\nUNCHANGED=preservar\n' "$enabled" > "$app/.env"
+  printf 'services: {}\n' > "$app/docker-compose.yml"
+
+  cat > "$app/scripts/backup.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'backup\n' >> "${MOCK_STATE_DIR:?}/backup-called"
+if [ "${MOCK_BACKUP_FAIL:-0}" = "1" ]; then
+  printf '{"ok":false,"local_ok":false,"banco_cifrado":false,"uploads_cifrados":false}\n'
+  exit 1
+fi
+printf '{"ok":true,"local_ok":true,"banco_cifrado":true,"uploads_cifrados":true,"offsite_ok":false}\n'
+EOF
+
+  cat > "$app/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${MOCK_HEALTH_FAIL:-0}" = "1" ]; then
+  exit 22
+fi
+printf '{"status":"ok","commit":"%s"}\n' "${MOCK_GIT_SHA:-test-sha}"
+EOF
+
+  cat > "$app/bin/flock" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+
+  cat > "$app/bin/python3" <<EOF
+#!/usr/bin/env bash
+exec "$REAL_PYTHON" -S "\$@"
+EOF
+
+  cat > "$app/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+state="${MOCK_STATE_DIR:?}"
+app="${MOCK_APP_DIR:?}"
+
+if [ "${1:-}" = "compose" ]; then
+  case "${2:-}" in
+    version|config) exit 0 ;;
+    up)
+      printf 'up\n' >> "$state/compose-up"
+      exit 0
+      ;;
+  esac
+fi
+if [ "${1:-}" = "inspect" ]; then
+  if [ "${MOCK_WORKER_UNHEALTHY:-0}" = "1" ]; then
+    printf 'unhealthy\n'
+  else
+    printf 'healthy\n'
+  fi
+  exit 0
+fi
+if [ "${1:-}" != "exec" ]; then
+  printf 'docker mock: chamada inesperada: %s\n' "$*" >&2
+  exit 2
+fi
+
+# `docker exec CONTAINER true` usado no preflight estrutural.
+for arg in "$@"; do
+  [ "$arg" = "true" ] && exit 0
+done
+
+container=""
+mode=""
+for arg in "$@"; do
+  case "$arg" in
+    ejc_backend|ejc_worker) container="$arg" ;;
+    runtime|preflight|canary|proof) mode="$arg" ;;
+  esac
+done
+[ -n "$container" ] && [ -n "$mode" ] || exit 2
+
+read_enabled() {
+  local value
+  value="$(grep '^EMBEDDINGS_ENABLED=' "$app/.env" | tail -1 | cut -d= -f2-)"
+  case "${value,,}" in
+    true|1|yes|on) printf true ;;
+    *) printf false ;;
+  esac
+}
+
+enabled="$(read_enabled)"
+for arg in "$@"; do
+  [ "$arg" = "EMBEDDINGS_ENABLED=true" ] && enabled=true
+done
+if [ "$mode" = "runtime" ] && [ "$container" = "ejc_worker" ] && \
+   [ "${MOCK_WORKER_STALE_AFTER_UP:-0}" = "1" ] && [ -s "$state/compose-up" ]; then
+  enabled=false
+fi
+
+common='"EMBEDDINGS_PROVIDER":"local","EMBEDDINGS_MODEL":"intfloat/multilingual-e5-large","embedding_dim_configurada":1024,"modelo_valido":true,"ENABLE_SCHEDULER":true,"RAG_AUTO_REEMBED_ENABLED":true'
+case "$mode" in
+  runtime)
+    printf '{"fase":"runtime","ok":true,"EMBEDDINGS_ENABLED":%s,%s,"problemas":[]}\n' "$enabled" "$common"
+    ;;
+  preflight)
+    if [ "${MOCK_PREFLIGHT_FAIL:-0}" = "1" ]; then
+      printf '{"fase":"preflight","ok":false,"problemas":["falha simulada"]}\n'
+      exit 1
+    fi
+    printf '{"fase":"preflight","ok":true,"EMBEDDINGS_ENABLED":true,%s,"embedding_dim_coluna":1024,"probe_vetor_ok":true,"probe_pgvector_ok":true,"problemas":[]}\n' "$common"
+    ;;
+  canary)
+    printf 'canary\n' >> "$state/canary-called"
+    if [ "${MOCK_CANARY_FAIL:-0}" = "1" ]; then
+      printf '{"fase":"canary","ok":false,"problemas":["falha simulada"]}\n'
+      exit 1
+    fi
+    printf '{"fase":"canary","ok":true,"documentos_processados":1,"documentos_ok":1,"documentos_com_erro":0,"knowledge_chunks_vigentes_com_embedding":1,"knowledge_chunks_vigentes_pendentes":0,"problemas":[]}\n'
+    ;;
+  proof)
+    if [ "${MOCK_PROOF_FAIL:-0}" = "1" ]; then
+      printf '{"fase":"proof","ok":false,"problemas":["falha simulada"]}\n'
+      exit 1
+    fi
+    printf '{"fase":"proof","ok":true,"EMBEDDINGS_ENABLED":%s,%s,"knowledge_chunks_vigentes_total":1,"knowledge_chunks_vigentes_com_embedding":1,"knowledge_chunks_vigentes_pendentes":0,"probe_busca_semantica_ok":true,"problemas":[]}\n' "$enabled" "$common"
+    ;;
+esac
+EOF
+  chmod +x "$app/scripts/backup.sh" "$app/bin/curl" "$app/bin/docker" \
+    "$app/bin/flock" "$app/bin/python3"
+  printf '%s\n' "$app"
+}
+
+run_case() {
+  local app="$1"
+  shift
+  env PATH="$app/bin:$PATH" \
+    MOCK_STATE_DIR="$app/state" \
+    MOCK_APP_DIR="$app" \
+    MOCK_GIT_SHA=test-sha \
+    APP_DIR="$app" \
+    RAG_LOCK_FILE="$app/state/rag.lock" \
+    RAG_REPORT_PATH="$app/report.json" \
+    EXPECTED_GIT_SHA=test-sha \
+    PUBLIC_HEALTH_URL=https://example.invalid/api/health \
+    "$@" bash "$ACTIVATE"
+}
+
+# 1. Ativação normal: uma mutação, um recreate, canário e prova final.
+success_app="$(make_case success false)"
+run_case "$success_app" >/dev/null
+grep -qx 'EMBEDDINGS_ENABLED=true' "$success_app/.env"
+grep -qx 'UNCHANGED=preservar' "$success_app/.env"
+[ "$(wc -l < "$success_app/state/compose-up")" -eq 1 ]
+[ "$(wc -l < "$success_app/state/backup-called")" -eq 1 ]
+[ "$(wc -l < "$success_app/state/canary-called")" -eq 1 ]
+! compgen -G "$success_app/.env.bak.rag.*" >/dev/null
+assert_json "$success_app/report.json" 'd["ok"] is True and d["env_mutado"] is True and d["rollback_executado"] is False'
+
+# 2. Falha após mutação: rollback byte a byte e runtime anterior comprovado.
+rollback_app="$(make_case rollback false)"
+set +e
+run_case "$rollback_app" MOCK_PROOF_FAIL=1 >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -ne 0 ]
+grep -qx 'EMBEDDINGS_ENABLED=false' "$rollback_app/.env"
+grep -qx 'UNCHANGED=preservar' "$rollback_app/.env"
+[ "$(wc -l < "$rollback_app/state/compose-up")" -eq 2 ]
+! compgen -G "$rollback_app/.env.bak.rag.*" >/dev/null
+assert_json "$rollback_app/report.json" 'd["ok"] is False and d["rollback_executado"] is True and d["rollback_ok"] is True'
+
+# 3. Preflight falha antes de backup/mutação.
+preflight_app="$(make_case preflight false)"
+set +e
+run_case "$preflight_app" MOCK_PREFLIGHT_FAIL=1 >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -ne 0 ]
+grep -qx 'EMBEDDINGS_ENABLED=false' "$preflight_app/.env"
+[ ! -e "$preflight_app/state/backup-called" ]
+[ ! -e "$preflight_app/state/compose-up" ]
+assert_json "$preflight_app/report.json" 'd["ok"] is False and d["env_mutado"] is False and d["rollback_executado"] is False'
+
+# 4. Backup incompleto/falho bloqueia antes de mutar.
+backup_app="$(make_case backup false)"
+set +e
+run_case "$backup_app" MOCK_BACKUP_FAIL=1 >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -ne 0 ]
+grep -qx 'EMBEDDINGS_ENABLED=false' "$backup_app/.env"
+[ ! -e "$backup_app/state/compose-up" ]
+assert_json "$backup_app/report.json" 'd["ok"] is False and d["env_mutado"] is False'
+
+# 5. Configuração duplicada falha fechada, sem backup nem mutação.
+duplicate_app="$(make_case duplicate false)"
+printf 'EMBEDDINGS_ENABLED=true\n' >> "$duplicate_app/.env"
+set +e
+run_case "$duplicate_app" >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -ne 0 ]
+[ ! -e "$duplicate_app/state/backup-called" ]
+[ ! -e "$duplicate_app/state/compose-up" ]
+
+# 6. Já ativo: prova idempotente, sem backup, recreate ou canário.
+idempotent_app="$(make_case idempotent true)"
+run_case "$idempotent_app" >/dev/null
+[ ! -e "$idempotent_app/state/backup-called" ]
+[ ! -e "$idempotent_app/state/compose-up" ]
+[ ! -e "$idempotent_app/state/canary-called" ]
+assert_json "$idempotent_app/report.json" 'd["ok"] is True and d["idempotente"] is True and d["env_mutado"] is False'
+
+# 7. Worker que não carrega a flag força rollback.
+stale_app="$(make_case stale false)"
+set +e
+run_case "$stale_app" MOCK_WORKER_STALE_AFTER_UP=1 >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -ne 0 ]
+grep -qx 'EMBEDDINGS_ENABLED=false' "$stale_app/.env"
+[ "$(wc -l < "$stale_app/state/compose-up")" -eq 2 ]
+assert_json "$stale_app/report.json" 'd["rollback_executado"] is True and d["rollback_ok"] is True'
+
+printf 'test_rag_activation: ok\n'
