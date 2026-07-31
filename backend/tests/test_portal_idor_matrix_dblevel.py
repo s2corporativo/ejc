@@ -205,6 +205,13 @@ async def _limpar(db, *, client_ids=(), user_ids=()):
         await db.execute(text("DELETE FROM solicitacoes_documentos WHERE client_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM documents WHERE client_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM fees WHERE client_id = :id"), {"id": cid})
+        await db.execute(
+            text(
+                "DELETE FROM case_movimentos WHERE case_id IN "
+                "(SELECT id FROM cases WHERE client_id = :id)"
+            ),
+            {"id": cid},
+        )
         await db.execute(text("DELETE FROM cases WHERE client_id = :id"), {"id": cid})
     for uid in user_ids:
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
