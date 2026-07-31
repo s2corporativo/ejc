@@ -101,14 +101,13 @@ jobs:
         env:
           RAG_REPORT_PATH: ${{ github.workspace }}/rag-activation.json
           RAG_CANARY_DOCS: "5"
-          EXPECTED_GIT_SHA: ${{ env.TARGET_SHA }}
           PUBLIC_HEALTH_URL: https://ejc.depaulateixeira.adv.br/api/health
         shell: bash
         run: |
           cd /opt/ejc
           RAG_REPORT_PATH="$RAG_REPORT_PATH" \
           RAG_CANARY_DOCS="$RAG_CANARY_DOCS" \
-          EXPECTED_GIT_SHA="$EXPECTED_GIT_SHA" \
+          EXPECTED_GIT_SHA="$TARGET_SHA" \
           PUBLIC_HEALTH_URL="$PUBLIC_HEALTH_URL" \
           bash scripts/rag/ativar_embeddings.sh
 
