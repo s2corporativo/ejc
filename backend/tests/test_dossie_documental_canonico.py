@@ -13,16 +13,23 @@ def _item(
     texto: str,
     batch_id: str = "lote-1",
     pagina: int = 1,
+    versao: int = 1,
+    versao_grupo_id: str | None = None,
+    versao_vigente: bool = True,
 ) -> dict:
     return {
         "batch_id": batch_id,
         "batch_created_at": "2026-07-31T10:00:00+00:00",
+        "document_created_at": "2026-07-31T10:00:00+00:00",
         "document_id": document_id,
         "filename": filename,
         "source_order": source_order,
         "sha256": sha256,
         "extraction_status": "concluido",
         "classification": {"tipo": "prova_documental"},
+        "versao": versao,
+        "versao_grupo_id": versao_grupo_id,
+        "versao_vigente": versao_vigente,
         "extraction_meta": {
             "paginas": [
                 {
@@ -84,7 +91,7 @@ def test_selo_canonico_independe_da_ordem_de_entrada():
     assert resultado_a["texto_contexto"] == resultado_b["texto_contexto"]
 
 
-def test_documento_repetido_por_hash_nao_duplica_fato_no_dossie():
+def test_documento_repetido_por_hash_preserva_copia_sem_duplicar_o_fato():
     original = _item(
         document_id="doc-original",
         sha256="f" * 64,
@@ -102,9 +109,42 @@ def test_documento_repetido_por_hash_nao_duplica_fato_no_dossie():
 
     resultado = construir_dossie_documental_canonico([original, duplicado])
 
-    assert resultado["qtd_documentos"] == 1
+    assert resultado["qtd_documentos"] == 2
     assert resultado["duplicados_omitidos"] == 1
+    assert resultado["manifesto"][1]["duplicado_de_documento_id"] == "doc-original"
     assert resultado["texto_contexto"].count("Fato existente em um único original.") == 1
+    assert "CÓPIA DOCUMENTAL" in resultado["texto_contexto"]
+
+
+def test_historico_de_versoes_permanece_no_manifesto():
+    versao_1 = _item(
+        document_id="doc-v1",
+        sha256="d" * 64,
+        filename="contrato-v1.pdf",
+        source_order=1,
+        texto="Redação contratual original.",
+        versao=1,
+        versao_grupo_id="grupo-contrato",
+        versao_vigente=False,
+    )
+    versao_2 = _item(
+        document_id="doc-v2",
+        sha256="e" * 64,
+        filename="contrato-v2.pdf",
+        source_order=2,
+        texto="Redação contratual substitutiva.",
+        versao=2,
+        versao_grupo_id="grupo-contrato",
+        versao_vigente=True,
+    )
+
+    resultado = construir_dossie_documental_canonico([versao_2, versao_1])
+
+    assert [doc["versao"] for doc in resultado["manifesto"]] == [1, 2]
+    assert resultado["manifesto"][0]["versao_vigente"] is False
+    assert resultado["manifesto"][1]["versao_vigente"] is True
+    assert "Redação contratual original." in resultado["texto_contexto"]
+    assert "Redação contratual substitutiva." in resultado["texto_contexto"]
 
 
 def test_interpretacao_de_ia_nao_entra_no_manifesto_canonico():
