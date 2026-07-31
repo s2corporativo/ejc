@@ -16,7 +16,15 @@ log "3/6 Ajustando .env (chaves LGPD exigidas pelas migrations novas)"
 cp .env ".env.bak.pre_consolidacao_$(date +%Y%m%d_%H%M%S)"
 grep -q "^PII_ENCRYPTION_KEY=..*" .env || echo "PII_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr '+/' '-_')" >> .env
 grep -q "^PII_HASH_KEY=..*" .env || echo "PII_HASH_KEY=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')" >> .env
-sed -i 's/^EMBEDDINGS_ENABLED=true/EMBEDDINGS_ENABLED=false/' .env
+
+# Parte 10: o script antigo FORÇAVA EMBEDDINGS_ENABLED=false em todo deploy,
+# anulando qualquer ativação feita no servidor e mantendo o RAG sem busca
+# semântica. A política agora é: preservar a decisão explícita do ambiente;
+# instalações novas recebem o default documentado (true). A sonda pós-deploy
+# verifica modelo, dimensão pgvector e quantidade de chunks vetorizados.
+if ! grep -q "^EMBEDDINGS_ENABLED=" .env; then
+  echo "EMBEDDINGS_ENABLED=true" >> .env
+fi
 
 log "4/6 Atualizando o codigo para a versao consolidada (origin/main)"
 git reset --hard origin/main
@@ -38,3 +46,9 @@ docker ps --filter name=ejc --format "table {{.Names}}\t{{.Status}}"
 echo ""
 echo "Ultimas linhas do log do backend:"
 docker logs --tail 15 ejc_backend
+
+echo ""
+echo "Sonda segura das flags efetivas (sem imprimir segredos):"
+if ! docker exec -i ejc_backend python - < scripts/check_flags_producao.py; then
+  echo "ATENCAO: a sonda encontrou configuração degradada. Consulte o JSON acima."
+fi
