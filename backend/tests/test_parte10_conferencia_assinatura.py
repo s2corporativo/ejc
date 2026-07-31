@@ -9,7 +9,6 @@ import ast
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
-APP = BACKEND / "app"
 REPO = BACKEND.parent
 
 
@@ -76,3 +75,31 @@ def test_prompts_corrigem_o_fundamento_normativo() -> None:
     assert "Lei 8.906/1994" in conjunto
     assert "art. 32" in conjunto
     assert "MINUTA GERADA POR IA" in conjunto
+
+
+def test_frontend_adota_fluxo_unico_sem_perder_ferramentas_anteriores() -> None:
+    novo = _texto("frontend/src/pages/Pecas.tsx")
+    legado = REPO / "frontend/src/pages/PecasLegacy.tsx"
+
+    assert legado.exists()
+    assert 'import PecasLegacy from "./PecasLegacy"' in novo
+    assert "/conferir-assinar" in novo
+    assert "/pdf-minuta" in novo
+    assert "Confirmo a conferência e assino" in novo
+    assert "Ferramentas avançadas preservadas" in novo
+    assert "normalizarLinguagemLegada" in novo
+    assert '{" ""}' not in novo
+    assert "Provimento OAB 205/2021" not in novo
+
+
+def test_frontend_bloqueia_as_acoes_hitl_redundantes_da_tela_legada() -> None:
+    novo = _texto("frontend/src/pages/Pecas.tsx")
+
+    for rotulo in (
+        'rotulo === "Revisar"',
+        'rotulo === "Revisar e Aprovar"',
+        'rotulo === "Aprovar peça"',
+        'rotulo === "Aprovar revisão"',
+    ):
+        assert rotulo in novo
+    assert 'Use a ação única "Conferir e assinar"' in novo
