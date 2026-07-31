@@ -27,6 +27,7 @@ import api, {
   type AnaliseAdvogadoResult,
 } from "../lib/api";
 import Markdown from "../components/Markdown";
+import { AREAS_FALLBACK } from "../lib/areaCatalog";
 import { useAuth } from "../stores/auth";
 import {
   AIFactualityLegend,
@@ -143,33 +144,7 @@ type ReviewFields = {
   sintese: string;
 };
 
-const FALLBACK_AREAS: Area[] = [
-  ["civil", "Direito Cível"],
-  ["trabalhista", "Direito Trabalhista"],
-  ["consumidor", "Direito do Consumidor"],
-  ["familia", "Direito de Família"],
-  ["sucessoes", "Direito das Sucessões"],
-  ["ambiental", "Direito Ambiental"],
-  ["criminal", "Direito Penal"],
-  ["previdenciario", "Direito Previdenciário"],
-  ["empresarial", "Direito Empresarial"],
-  ["tributario", "Direito Tributário"],
-  ["administrativo", "Direito Administrativo"],
-  ["licitacoes", "Licitações e Contratos"],
-  ["bancario", "Direito Bancário"],
-  ["imobiliario", "Direito Imobiliário"],
-  ["constitucional", "Direito Constitucional"],
-  ["digital_lgpd", "Direito Digital e LGPD"],
-  ["transito", "Direito de Trânsito"],
-  ["saude", "Direito da Saúde"],
-  ["medico", "Direito Médico"],
-  ["agrario", "Direito Agrário"],
-  ["agronegocio", "Direito do Agronegócio"],
-  ["eleitoral", "Direito Eleitoral"],
-  ["internacional", "Direito Internacional"],
-  ["contratual", "Direito Contratual"],
-  ["societario", "Direito Societário"],
-].map(([slug, nome]) => ({ slug, nome }));
+const FALLBACK_AREAS: Area[] = AREAS_FALLBACK.map((area) => ({ ...area }));
 
 const CONVERSION_ROLES = new Set([
   "superadmin",
