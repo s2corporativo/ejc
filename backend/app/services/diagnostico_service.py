@@ -648,9 +648,11 @@ async def _probe_erros(settings: Settings) -> dict[str, Any]:
         )
     return _sub(
         "Erros recentes",
-        "ok",
-        "Sem coletor de erros persistido no banco (falhas ficam nos logs do container).",
-        "Considere habilitar Sentry (SENTRY_DSN) para rastreamento de erros centralizado.",
+        "alerta",
+        "Sem coletor de erros persistente; falhas ficam apenas nos logs efêmeros "
+        "do container.",
+        "Configure um coletor centralizado (por exemplo, SENTRY_DSN) e valide a "
+        "retenção e o acesso aos eventos.",
         _ms(inicio),
         coletor=None,
     )
