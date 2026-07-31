@@ -115,10 +115,10 @@ async def atualizar_socio(
     cu: User = Depends(get_current_user),
 ):
     if not _is_socio(cu):
-        raise HTTPException(403)
+        raise HTTPException(403, "Acesso restrito a sócios")
     s = (await db.execute(select(Socio).where(Socio.id == socio_id))).scalar_one_or_none()
     if not s:
-        raise HTTPException(404)
+        raise HTTPException(404, "Sócio não encontrado")
     for campo, valor in req.model_dump(exclude_none=True).items():
         setattr(s, campo, valor)
     s.updated_at = datetime.now(timezone.utc)
@@ -139,7 +139,7 @@ async def calcular_distribuicao(
     com base nas participações percentuais dos sócios ativos.
     """
     if not _is_socio(cu):
-        raise HTTPException(403)
+        raise HTTPException(403, "Acesso restrito a sócios")
 
     socios = (await db.execute(
         select(Socio).where(Socio.ativo.is_(True))
@@ -211,7 +211,7 @@ async def listar_distribuicoes(
     cu:       User = Depends(get_current_user),
 ):
     if not _is_socio(cu):
-        raise HTTPException(403)
+        raise HTTPException(403, "Acesso restrito a sócios")
     q = select(DistribuicaoLucro).order_by(DistribuicaoLucro.mes_referencia.desc())
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
     items = (await db.execute(q.offset((page-1)*per_page).limit(per_page))).scalars().all()
@@ -238,10 +238,12 @@ async def aprovar_distribuicao(
     cu:  User = Depends(get_current_user),
 ):
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["admin"]:
-        raise HTTPException(403)
+        raise HTTPException(
+            403, "Apenas administradores podem aprovar distribuições"
+        )
     d = (await db.execute(select(DistribuicaoLucro).where(DistribuicaoLucro.id == dist_id))).scalar_one_or_none()
     if not d:
-        raise HTTPException(404)
+        raise HTTPException(404, "Distribuição não encontrada")
     if d.status != "calculado":
         raise HTTPException(422, f"Distribuição já está '{d.status}'")
     d.status = "aprovado"
