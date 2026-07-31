@@ -72,6 +72,24 @@ HTML_ANPD_ATO = """
 </body></html>
 """
 
+HTML_ANPD_LAYOUT_2026 = """
+<html><body>
+<div id="content-core">
+  <a href="https://www.in.gov.br/web/dou/-/resolucao-n-32-de-26-de-janeiro-de-2026-683334547">
+    Resolução CD/ANPD nº 32, de 26 de janeiro de 2026
+  </a>
+  <a href="/anpd/pt-br/acesso-a-informacao/institucional/atos-normativos/regulamentacoes_anpd/resolucao-cd-anpd-no-19-de-23-de-agosto-de-2024">
+    Resolução CD/ANPD nº 19, de 23 de agosto de 2024
+  </a>
+  <a href="/anpd/pt-br/centrais-de-conteudo/materiais-educativos-e-publicacoes/guia_orientativo_cookies_e_protecao_de_dados_pessoais">
+    Guia Orientativo Cookies e proteção de dados pessoais
+  </a>
+  <a href="/anpd/pt-br/centrais-de-conteudo">Centrais de Conteúdo</a>
+</div>
+</body></html>
+"""
+
+
 HTML_RFB_RESULTADOS = """
 <html><body>
 <a href="consulta.action?p=2&termoBusca=irpf">2</a>
@@ -123,6 +141,34 @@ def test_extrair_links_anpd_filtra_navegacao_e_externos():
     assert len(links) == 2
     # título com entidades decodificadas
     assert any("Resolução CD/ANPD" in lk["titulo"] for lk in links)
+
+
+def test_paginas_anpd_usam_fontes_canonicas_atuais():
+    assert anpd.PAGINAS == [
+        (
+            "regulamentacoes",
+            "legislacao",
+            "https://www.gov.br/anpd/pt-br/acesso-a-informacao/institucional/"
+            "atos-normativos/regulamentacoes_anpd",
+        ),
+        (
+            "guias_orientativos",
+            "doutrina",
+            "https://www.gov.br/anpd/pt-br/centrais-de-conteudo/"
+            "materiais-educativos-e-publicacoes",
+        ),
+    ]
+
+
+def test_extrair_links_anpd_aceita_layout_oficial_2026():
+    links = anpd.extrair_links(HTML_ANPD_LAYOUT_2026, anpd.PAGINAS[0][2])
+    urls = {link["url"] for link in links}
+
+    assert len(urls) == 3
+    assert any("www.in.gov.br/web/dou/-/resolucao-n-32" in url for url in urls)
+    assert any("/acesso-a-informacao/" in url for url in urls)
+    assert any("/centrais-de-conteudo/" in url and "guia_" in url for url in urls)
+    assert all(not url.endswith("/centrais-de-conteudo") for url in urls)
 
 
 def test_extrair_links_anpd_bloqueia_dominio_lookalike():
