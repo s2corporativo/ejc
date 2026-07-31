@@ -3,7 +3,7 @@
 Controle obrigatório para impedir que dois PRs escolham o mesmo número de migration ou
 partam de heads diferentes. Regra canônica em `docs/GOVERNANCA_IA.md`, seção 8.
 
-**Head da `main` em 2026-07-27:** `121_sala_juridica_chat`.
+**Head da `main` em 2026-07-30:** `123_legal_doc_ai_log_vinculo`.
 
 ## Como reservar
 
@@ -21,38 +21,42 @@ gh pr list --state open                        # confere quem já reservou núme
    Nunca aponte para uma migration que ainda não foi mesclada: numa branch tirada da
    `main` esse arquivo não existe, o grafo fica órfão e a guarda de numeração reprova
    (`test_migration_numbering_guard.py`). Se o número anterior está reservado por um PR
-   aberto, **espere o merge** e refaça o `down_revision` sobre o head atualizado —
+   aberto, resolva ou revogue formalmente a reserva antes de prosseguir —
    `docs/GOVERNANCA_IA.md` exige frentes sequenciais e não suporta branches empilhadas.
 4. Registre a reserva nesta tabela **no mesmo PR** que cria a migration.
 5. Confirme as dependências: a cadeia precisa ficar linear e com head único.
 
 Estados: `Reservada` (número tomado, migration em desenvolvimento) · `Em PR` (aberta,
-aguardando revisão) · `Mesclada` (na `main`) · `Liberada` (PR fechado sem merge — o número
-volta a ficar disponível).
+aguardando revisão) · `Mesclada` (na `main`) · `Revogada` (branch ficou incompatível; a
+migration precisa ser reconstruída e renumerada) · `Liberada` (PR fechado sem merge — o
+número volta a ficar disponível).
 
 ## Tabela de reservas
 
 | Número | `down_revision` | Branch | PR | Responsável | Estado | Observação |
 |---|---|---|---|---|---|---|
-| 122_data_room_token_hash | 121_sala_juridica_chat | claude/new-session-4tyz91 | [#495](https://github.com/s2corporativo/ejc/pull/495) | Claude Code | Em PR | **Colisão com o #497** — mesmo número 122, conteúdo diferente. Converte `data_room_links.token` em hash no lugar (sem coluna nova). |
-| 122_documentos_publicacao_hash | 121_sala_juridica_chat | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Em PR | **Colisão com o #495** — mesmo número 122. Publicação explícita + hash de documento. |
-| 123_deadline_owner | 122_documentos_publicacao_hash | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Em PR | Depende da 122 do próprio #497. |
-| 124_data_room_token_hash | 123_deadline_owner | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Em PR | **Duplica o objetivo da 122 do #495**, com desenho oposto (coluna `token_hash` nova, `token` em claro preservado). Ver `docs/MATRIZ_CONSOLIDACAO_P0.md`. |
-| 125_legal_doc_revisao | 124_data_room_token_hash | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Em PR | Histórico imutável de peças. |
-| 126_fee_valor_check | 125_legal_doc_revisao | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Em PR | CHECK de valores financeiros. |
-| 127_audit_log_worm | 126_fee_valor_check | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Em PR | Trigger WORM em `audit_logs`. |
+| 122_route_usage_metrics | 121_sala_juridica_chat | main | mesclada | Claude Code | Mesclada | Telemetria agregada de uso de rotas. |
+| 122_data_room_token_hash | 121_sala_juridica_chat | claude/new-session-4tyz91 | [#495](https://github.com/s2corporativo/ejc/pull/495) | Claude Code | Revogada | A `main` já usa o número 122. O conteúdo do PR só pode ser extraído para branch nova e renumerada. |
+| 122_documentos_publicacao_hash | 121_sala_juridica_chat | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Colide com o head canônico e não pode ser integrado no estado atual. |
+| 123_deadline_owner | 122_documentos_publicacao_hash | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Depende de migration inexistente na `main`; eventual extração deve receber nova numeração. |
+| 124_data_room_token_hash | 123_deadline_owner | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Desenho antigo e cadeia inexistente; substituído pela reserva linear abaixo. |
+| 125_legal_doc_revisao | 124_data_room_token_hash | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Não resolve a correlação estrutural LegalDoc ↔ AILog; eventual histórico será extraído separadamente. |
+| 126_fee_valor_check | 125_legal_doc_revisao | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Eventual extração deve partir do head vigente e ser renumerada. |
+| 127_audit_log_worm | 126_fee_valor_check | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Eventual extração deve partir do head vigente e ser renumerada. |
+| 123_legal_doc_ai_log_vinculo | 122_route_usage_metrics | main | [#544](https://github.com/s2corporativo/ejc/pull/544) | ChatGPT | Mesclada | Head canônico atual; FK + hash do conteúdo + invalidação automática da validação ao editar a peça. |
+| 124_dataroom_public_hardening | 123_legal_doc_ai_log_vinculo | fix/dataroom-public-link-hardening | [#547](https://github.com/s2corporativo/ejc/issues/547) | ChatGPT | Reservada | Hash de links públicos em repouso e publicação externa explícita por arquivo. |
 
-> **Pendência de decisão humana.** A colisão no número 122 entre os PRs #495 e #497 precisa
-> ser resolvida antes de qualquer merge: um dos dois renumera e as duas abordagens do
-> Data Room precisam convergir para **uma** (ver `docs/MATRIZ_CONSOLIDACAO_P0.md`, seção 4).
-> Enquanto isso não acontecer, o número 128 **não** deve ser reservado por ninguém.
+> **Decisão do titular em 2026-07-29.** A continuidade das correções foi autorizada após
+> a integração dos PRs #535, #542 e #543. As reservas das branches antigas #495/#497
+> foram revogadas porque partem de uma cadeia que não existe mais na `main`. Nenhuma
+> de suas migrations pode ser mesclada ou reutilizada sem reconstrução e nova reserva.
 
 ## Guarda automática
 
 `backend/tests/test_migration_numbering_guard.py` roda na suíte do CI e cobra, sem depender
-de identificador fixo (ou seja, sem precisar ser editado a cada migration nova):
+de identificador fixo:
 
-- número de prefixo único por migration — **é o teste que pega a colisão do 122**;
+- número de prefixo único por migration — **é o teste que impede nova colisão**;
 - todo `down_revision` aponta para uma revisão existente;
 - o número do filho é sempre maior que o do pai;
 - head único;
@@ -71,4 +75,4 @@ migration conflitam ali por construção.
   `drop_table` proposto pelo autogenerate sem conferir a tabela.
 - **Migration destrutiva** exige backup comprovado e plano de rollback aprovados antes.
 - Toda migration precisa de `downgrade()` — ou de uma explicação no cabeçalho de por que é
-  irreversível (ex.: hash) e de qual é o procedimento de recuperação.
+  irreversível e de qual é o procedimento de recuperação.

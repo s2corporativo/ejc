@@ -2,15 +2,12 @@
 citation_check.py — Verificador anti-alucinação de citações (#46).
 
 Extrai súmulas e artigos citados num texto (peça/parecer gerado por IA) e
-confirma CADA UM contra o RAG (base oficial ingerida: súmulas conferidas
-STF/STJ/TST + legislação federal do Planalto; o VOLUME depende dos seeds e dos
-ingestores habilitados — ver base_juridica_seed.py e os ingestores opt-in em
-services/ingestors/). Citações NÃO confirmadas são sinalizadas para verificação
-manual (OAB); com CITACOES_MODO_ESTRITO=true, súmula/artigo ausente da base
-passa a BLOQUEAR.
+confirma CADA UM contra o RAG oficial. Verificação de artigo é determinística:
+número + diploma + versão vigente precisam coincidir no mesmo KnowledgeDoc.
 
-VERIFICAÇÃO = lookup EXATO (chave_origem / título), não busca semântica — porque
-verificar existência exige precisão, não similaridade. 100% local (sem IA externa).
+O campo legado `fonte` continua textual. A fachada `verificar_citacoes()` também
+expõe evidência estrutural (doc_id, chave_origem, versão e vigência), para que o
+selo positivo seja auditável sem depender de similaridade semântica.
 """
 from __future__ import annotations
 
@@ -18,160 +15,295 @@ import re
 
 from sqlalchemy import text
 
-# Os padrões de extração (súmula/artigo/nº CNJ/recursos/menções vagas) vivem em
-# app/services/verificador_jurisprudencia.py — este módulo mantém apenas os
-# lookups exatos no RAG oficial (_existe_sumula/_existe_artigo) e a fachada
-# retrocompatível verificar_citacoes().
-
 
 async def _existe_sumula(db, num: str, orgao: str) -> str | None:
     """Lookup exato por chave_origem (ingestão nova) + fallback por título."""
     from app.services.ai_service import _filtros_gate_rag
+
     orgao_norm = (orgao or "").strip().lower()
-    keys = [f"sumula:{orgao_norm}:{num}"] if orgao_norm else \
-           [f"sumula:{t}:{num}" for t in ("stf", "stj", "tst")]
-    row = (await db.execute(text(
-        "SELECT kd.titulo FROM knowledge_docs kd "
-        "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
-        "AND kd.chave_origem = ANY(:k) " + _filtros_gate_rag(False) + " LIMIT 1"
-    ), {"k": keys})).first()
+    keys = (
+        [f"sumula:{orgao_norm}:{num}"]
+        if orgao_norm
+        else [f"sumula:{tribunal}:{num}" for tribunal in ("stf", "stj", "tst")]
+    )
+    row = (
+        await db.execute(
+            text(
+                "SELECT kd.titulo FROM knowledge_docs kd "
+                "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
+                "AND kd.chave_origem = ANY(:k) "
+                + _filtros_gate_rag(False)
+                + " LIMIT 1"
+            ),
+            {"k": keys},
+        )
+    ).first()
     if row:
         return row[0]
-    # Fallback p/ docs de formato antigo: título "Súmula N ..." (boundary via ' %')
+
     params = {"t": f"Súmula {num} %"}
     cond = ""
     if orgao_norm:
         cond = " AND kd.tribunal = :org"
         params["org"] = orgao_norm.upper()
-    row = (await db.execute(text(
-        "SELECT kd.titulo FROM knowledge_docs kd WHERE kd.deleted_at IS NULL "
-        "AND kd.vigente = TRUE AND (kd.categoria LIKE 'sumula%' "
-        "OR kd.chave_origem LIKE 'sumula:%') AND kd.titulo ILIKE :t" + cond + " " +
-        _filtros_gate_rag(False) + " LIMIT 1"
-    ), params)).first()
+    row = (
+        await db.execute(
+            text(
+                "SELECT kd.titulo FROM knowledge_docs kd "
+                "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
+                "AND (kd.categoria LIKE 'sumula%' "
+                "OR kd.chave_origem LIKE 'sumula:%') "
+                "AND kd.titulo ILIKE :t"
+                + cond
+                + " "
+                + _filtros_gate_rag(False)
+                + " LIMIT 1"
+            ),
+            params,
+        )
+    ).first()
     return row[0] if row else None
 
 
-# Sigla de código → slug do ingestor oficial (planalto.CATALOGO). O lookup de
-# artigo fica RESTRITO ao doc desse diploma via chave_origem.
 _SLUG_POR_DIPLOMA = {
-    "cf": "cf88", "cpc": "cpc", "cc": "cc", "clt": "clt",
-    "cdc": "cdc", "cpp": "cpp", "cp": "cp", "ctn": "ctn",
+    "cf": "cf88",
+    "cpc": "cpc",
+    "cc": "cc",
+    "clt": "clt",
+    "cdc": "cdc",
+    "cpp": "cpp",
+    "cp": "cp",
+    "ctn": "ctn",
 }
 
 
+_RE_LEI_CITADA = re.compile(
+    r"lei\s*n?(?:[.\s]*[ºo°])?[.\s]*([\d.]+)(?:\s*/\s*(\d{2,4}))?",
+    re.IGNORECASE,
+)
+
+
+def _dados_lei_citada(diploma: str) -> tuple[str, str | None] | None:
+    match = _RE_LEI_CITADA.search(diploma)
+    if not match:
+        return None
+    numero = re.sub(r"\D", "", match.group(1))
+    ano = match.group(2)
+    return (numero, ano) if numero else None
+
+
+def _chave_catalogo_por_lei(numero: str, ano: str | None) -> str | None:
+    """Resolve a lei para uma chave oficial exata do catálogo Planalto."""
+    from app.services.ingestors.planalto import CATALOGO
+
+    candidatas: list[str] = []
+    for item in CATALOGO:
+        match = re.search(
+            r"\bLei\s+([\d.]+)/(\d{4})\b",
+            item.get("titulo") or "",
+            re.IGNORECASE,
+        )
+        if not match:
+            continue
+        numero_catalogo = re.sub(r"\D", "", match.group(1))
+        ano_catalogo = match.group(2)
+        if numero_catalogo != numero:
+            continue
+        if ano and not (
+            ano_catalogo == ano or ano_catalogo.endswith(ano.zfill(2))
+        ):
+            continue
+        candidatas.append(f"planalto:{item['slug']}")
+    return candidatas[0] if len(candidatas) == 1 else None
+
+
 def _restringir_ao_diploma(diploma: str | None, params: dict) -> str | None:
-    """Cláusula SQL que prende a busca de artigo ao diploma CITADO (AI-056).
-
-    Devolve `None` quando o diploma é ausente ou irreconhecível — fail-closed:
-    sem saber de qual lei se fala, buscar "Art. N" em qualquer legislação
-    confirmaria a lei ERRADA (o art. 5º existe na CF e em dezenas de leis).
-
-    Fonte única da regra: `_existe_artigo` (vigente) e `_artigo_superado`
-    (não vigente) precisam do MESMO recorte, senão o aviso de "versão superada"
-    apontaria para um diploma diferente do citado.
-    """
-    d = (diploma or "").strip().lower()
-    if d in _SLUG_POR_DIPLOMA:
-        params["chave"] = f"planalto:{_SLUG_POR_DIPLOMA[d]}"
+    """Prende a busca ao diploma citado e falha fechado em ambiguidade."""
+    normalizado = (diploma or "").strip().lower()
+    if normalizado in _SLUG_POR_DIPLOMA:
+        params["chave"] = f"planalto:{_SLUG_POR_DIPLOMA[normalizado]}"
         return "AND kd.chave_origem = :chave "
-    if d.startswith("lei"):
-        # "lei nº 8.078/90" → número puro "8078"; casa o título com os pontos
-        # de milhar removidos, nos dois formatos usuais: "(Lei 8.078/1990)"
-        # (CATALOGO do planalto) e "Lei 8.078, de 11 de setembro de 1990".
-        numeros = re.sub(r"\D", "", d.split("/")[0])
-        if not numeros:
+
+    if normalizado.startswith("lei"):
+        dados = _dados_lei_citada(normalizado)
+        if not dados:
             return None
-        params["lei_a"] = f"%lei {numeros}/%"
-        params["lei_b"] = f"%lei {numeros},%"
-        return ("AND (replace(kd.titulo, '.', '') ILIKE :lei_a "
-                "OR replace(kd.titulo, '.', '') ILIKE :lei_b) ")
+        chave = _chave_catalogo_por_lei(*dados)
+        if not chave:
+            return None
+        params["chave"] = chave
+        return "AND kd.chave_origem = :chave "
     return None
 
 
+def _regex_artigo(num: str) -> str:
+    """Boundary exato: casa `Art. 300.`, mas não `Art. 3000` nem `300-A`."""
+    numero = re.sub(r"\D", "", num)
+    if not numero:
+        return r"a^"
+    return (
+        rf"(^|[^[:alnum:]_])art(igo)?[.]?[[:space:]]*{numero}"
+        r"[º°ªa]?([[:space:].,;:()—]|$)"
+    )
+
+
+def _fonte_da_linha(row, *, vigente_esperada: bool) -> dict | None:
+    """Normaliza linha real (6 colunas) e fakes legados (título, versão)."""
+    if not row:
+        return None
+    if len(row) >= 6:
+        return {
+            "doc_id": row[0],
+            "titulo": row[1],
+            "chave_origem": row[2],
+            "versao": row[3],
+            "vigente": bool(row[4]),
+            "fonte_url": row[5],
+        }
+    if len(row) == 2:
+        return {
+            "doc_id": None,
+            "titulo": row[0],
+            "chave_origem": None,
+            "versao": row[1],
+            "vigente": vigente_esperada,
+            "fonte_url": None,
+        }
+    return None
+
+
+async def _fonte_artigo(
+    db,
+    num: str,
+    diploma: str | None,
+    *,
+    vigente: bool,
+) -> dict | None:
+    """Retorna evidência estrutural do artigo dentro do diploma exato."""
+    from app.services.ai_service import _filtros_gate_rag
+
+    params: dict = {"artigo_re": _regex_artigo(num)}
+    cond = _restringir_ao_diploma(diploma, params)
+    if cond is None:
+        return None
+    vigencia_sql = "TRUE" if vigente else "FALSE"
+    row = (
+        await db.execute(
+            text(
+                "SELECT kd.id, kd.titulo, kd.chave_origem, kd.versao, "
+                "kd.vigente, kd.fonte FROM knowledge_chunks kc "
+                "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
+                f"WHERE kd.deleted_at IS NULL AND kd.vigente = {vigencia_sql} "
+                "AND kd.categoria LIKE 'legislacao%' "
+                + cond
+                + "AND kc.conteudo ~* :artigo_re "
+                + _filtros_gate_rag(False)
+                + " ORDER BY kd.versao DESC LIMIT 1"
+            ),
+            params,
+        )
+    ).first()
+    fonte = _fonte_da_linha(row, vigente_esperada=vigente)
+    if (
+        fonte
+        and fonte["chave_origem"] is not None
+        and fonte["chave_origem"] != params.get("chave")
+    ):
+        return None
+    return fonte
+
+
 async def _sumula_superada(db, num: str, orgao: str) -> dict | None:
-    """Súmula localizada apenas em versão NÃO vigente (superada por reingestão).
-
-    Espelha `_existe_sumula` invertendo o filtro de vigência. Sem isto, citar
-    uma súmula cuja versão ingerida foi substituída é indistinguível de citar
-    algo que nunca entrou na base — o advogado recebe "confirme manualmente"
-    quando deveria receber "esta versão foi superada"."""
     from app.services.ai_service import _filtros_gate_rag
+
     orgao_norm = (orgao or "").strip().lower()
-    keys = [f"sumula:{orgao_norm}:{num}"] if orgao_norm else \
-           [f"sumula:{t}:{num}" for t in ("stf", "stj", "tst")]
-    row = (await db.execute(text(
-        "SELECT kd.titulo, kd.versao FROM knowledge_docs kd "
-        "WHERE kd.deleted_at IS NULL AND kd.vigente = FALSE "
-        "AND kd.chave_origem = ANY(:k) " + _filtros_gate_rag(False) +
-        " ORDER BY kd.versao DESC LIMIT 1"
-    ), {"k": keys})).first()
+    keys = (
+        [f"sumula:{orgao_norm}:{num}"]
+        if orgao_norm
+        else [f"sumula:{tribunal}:{num}" for tribunal in ("stf", "stj", "tst")]
+    )
+    row = (
+        await db.execute(
+            text(
+                "SELECT kd.titulo, kd.versao FROM knowledge_docs kd "
+                "WHERE kd.deleted_at IS NULL AND kd.vigente = FALSE "
+                "AND kd.chave_origem = ANY(:k) "
+                + _filtros_gate_rag(False)
+                + " ORDER BY kd.versao DESC LIMIT 1"
+            ),
+            {"k": keys},
+        )
+    ).first()
     return {"titulo": row[0], "versao": row[1]} if row else None
 
 
-async def _artigo_superado(db, num: str, diploma: str | None = None) -> dict | None:
-    """Artigo localizado apenas em legislação NÃO vigente (versão superada).
-
-    Espelha `_existe_artigo` invertendo o filtro de vigência — citar artigo de
-    redação revogada em petição é erro profissional, e sem isto o sistema é mudo.
-
-    Recebe o `diploma` pelo mesmo motivo que `_existe_artigo` (AI-056): avisar
-    "este artigo foi superado" com base numa lei que não é a citada seria uma
-    informação errada entregue com ar de certeza."""
-    from app.services.ai_service import _filtros_gate_rag
-    params: dict = {"a1": f"%Art. {num} %", "a2": f"%Art. {num}º%"}
-    cond = _restringir_ao_diploma(diploma, params)
-    if cond is None:
-        return None
-    row = (await db.execute(text(
-        "SELECT kd.titulo, kd.versao FROM knowledge_chunks kc "
-        "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
-        "WHERE kd.deleted_at IS NULL AND kd.vigente = FALSE "
-        "AND kd.categoria LIKE 'legislacao%' " + cond +
-        "AND (kc.conteudo ILIKE :a1 OR kc.conteudo ILIKE :a2) " +
-        _filtros_gate_rag(False) + " ORDER BY kd.versao DESC LIMIT 1"
-    ), params)).first()
-    return {"titulo": row[0], "versao": row[1]} if row else None
+async def _artigo_superado(
+    db,
+    num: str,
+    diploma: str | None = None,
+) -> dict | None:
+    return await _fonte_artigo(db, num, diploma, vigente=False)
 
 
-async def _existe_artigo(db, num: str, diploma: str | None = None) -> str | None:
-    """Procura o artigo no conteúdo da legislação ingerida, RESTRITO ao diploma
-    citado (auditoria 2026-07-26, AI-056): buscar 'Art. N' em QUALQUER doc de
-    categoria legislação podia confirmar a lei ERRADA — um "art. 5º da Lei X"
-    era validado porque o art. 5º existe na CF ou em outra lei qualquer.
+async def _existe_artigo(
+    db,
+    num: str,
+    diploma: str | None = None,
+) -> str | None:
+    """Lookup retrocompatível: devolve título, usando evidência estrutural exata."""
+    fonte = await _fonte_artigo(db, num, diploma, vigente=True)
+    return fonte["titulo"] if fonte else None
 
-    `diploma`: sigla de código ("CF", "CPC", "CDC"…) ou "Lei nº 8.078/90".
-    Sem diploma identificável, NÃO confirma (None → verificação manual/OAB) —
-    fail-closed: confirmação ambígua vale menos que nenhuma."""
-    from app.services.ai_service import _filtros_gate_rag
-    params: dict = {"a1": f"%Art. {num} %", "a2": f"%Art. {num}º%"}
-    cond = _restringir_ao_diploma(diploma, params)
-    if cond is None:
-        return None
-    row = (await db.execute(text(
-        "SELECT kd.titulo FROM knowledge_chunks kc "
-        "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
-        "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
-        "AND kd.categoria LIKE 'legislacao%' " + cond +
-        "AND (kc.conteudo ILIKE :a1 OR kc.conteudo ILIKE :a2) " +
-        _filtros_gate_rag(False) + " LIMIT 1"
-    ), params)).first()
-    return row[0] if row else None
+
+def _campos_fonte(fonte: dict | None) -> dict:
+    return {
+        "fonte_doc_id": fonte.get("doc_id") if fonte else None,
+        "fonte_titulo": fonte.get("titulo") if fonte else None,
+        "fonte_chave_origem": fonte.get("chave_origem") if fonte else None,
+        "fonte_versao": fonte.get("versao") if fonte else None,
+        "fonte_vigente": fonte.get("vigente") if fonte else None,
+        "fonte_url": fonte.get("fonte_url") if fonte else None,
+    }
 
 
 async def verificar_citacoes(
-    db, texto: str, *, consultar_datajud: bool = False,
+    db,
+    texto: str,
+    *,
+    consultar_datajud: bool = False,
 ) -> dict:
-    """Relatório de verificação das citações encontradas no texto.
+    """Fachada canônica com shape legado + evidência técnica para artigos."""
+    from app.services.verificador_jurisprudencia import (
+        analisar_texto,
+        verificar_jurisprudencia,
+    )
 
-    Desde a promoção ao VERIFICADOR RIGOROSO (verificador_jurisprudencia),
-    delega ao novo módulo — que mantém o shape legado (total/confirmadas/
-    nao_encontradas/citacoes[{citacao,tipo,encontrada,fonte}]/aviso) e o
-    ESTENDE com status por citação (verificada/identificada/suspeita/generica),
-    score 0-100, avisos e campos estruturados (tribunal/numero/orgao/relator/
-    data). `consultar_datajud=True` confirma números CNJ no DataJud (opt-in,
-    fail-safe, máx. 5 consultas por verificação).
-    """
-    from app.services.verificador_jurisprudencia import verificar_jurisprudencia
-    return await verificar_jurisprudencia(
-        db, texto, consultar_datajud=consultar_datajud)
+    relatorio = await verificar_jurisprudencia(
+        db,
+        texto,
+        consultar_datajud=consultar_datajud,
+    )
+    artigos = iter(
+        achado for achado in analisar_texto(texto) if achado["tipo"] == "artigo"
+    )
+    for citacao in relatorio.get("citacoes", []):
+        if citacao.get("tipo") != "artigo":
+            continue
+        achado = next(artigos, None)
+        fonte = None
+        if achado and citacao.get("status") == "verificada":
+            fonte = await _fonte_artigo(
+                db,
+                achado["numero"],
+                achado.get("diploma"),
+                vigente=True,
+            )
+        elif achado and citacao.get("status") == "possivelmente_desatualizada":
+            fonte = await _fonte_artigo(
+                db,
+                achado["numero"],
+                achado.get("diploma"),
+                vigente=False,
+            )
+        citacao.update(_campos_fonte(fonte))
+    return relatorio

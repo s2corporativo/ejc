@@ -19,7 +19,6 @@ def test_defaults_sao_estritos_e_modelos_suportados():
 
 
 def test_migration_preserva_vetores_legados_para_rollback():
-    # Teste de contrato: migration publicada não pode voltar a DROP destrutivo.
     from pathlib import Path
 
     path = Path(__file__).parents[1] / "alembic/versions/096_rag_embedding_1024.py"
@@ -30,7 +29,6 @@ def test_migration_preserva_vetores_legados_para_rollback():
 
 def test_reindex_usa_paginacao_estavel_sem_offset():
     import scripts.reembedar_chunks_orfaos as reemb
-    import inspect
 
     sql = str(reemb._SQL_DOCS_COM_ORFAO).upper()
     assert "OFFSET" not in sql
@@ -50,17 +48,27 @@ def test_citation_check_reutiliza_gate_central():
     from app.services import citation_check
 
     assert "_filtros_gate_rag" in inspect.getsource(citation_check._existe_sumula)
-    assert "_filtros_gate_rag" in inspect.getsource(citation_check._existe_artigo)
+    assert "_filtros_gate_rag" in inspect.getsource(citation_check._fonte_artigo)
+    assert "_fonte_artigo" in inspect.getsource(citation_check._existe_artigo)
+    assert "_fonte_artigo" in inspect.getsource(citation_check._artigo_superado)
 
 
 def test_trilha_rag_registra_ids_ordem_score_e_versao_sem_conteudo():
     from app.services.ai.core.audit_logger import _fontes_str
 
-    trilha = _fontes_str([{
-        "chunk_id": "chunk-1", "doc_id": "doc-1", "versao": 3,
-        "score": 0.91, "titulo": "Lei X", "categoria": "legislacao",
-        "conteudo": "PII QUE NAO PODE IR PARA O LOG",
-    }])
+    trilha = _fontes_str(
+        [
+            {
+                "chunk_id": "chunk-1",
+                "doc_id": "doc-1",
+                "versao": 3,
+                "score": 0.91,
+                "titulo": "Lei X",
+                "categoria": "legislacao",
+                "conteudo": "PII QUE NAO PODE IR PARA O LOG",
+            }
+        ]
+    )
     assert "rank=1" in trilha
     assert "chunk=chunk-1" in trilha and "doc=doc-1" in trilha
     assert "versao=3" in trilha and "score=0.91" in trilha

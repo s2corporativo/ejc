@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, requer_advogado, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.core.status_caso import filtrar_pecas_visiveis
 from app.models.case import Case
 from app.models.document import Document
 from app.models.user import User
@@ -284,6 +285,12 @@ async def listar(
     cu: User = Depends(get_current_user),
 ):
     q = select(LegalDoc).where(LegalDoc.deleted_at.is_(None))
+    # Visibilidade herdada do caso: peça de caso EXCLUÍDO não aparece em
+    # superfície operacional, para NENHUM perfil. Antes isso só acontecia por
+    # efeito colateral do filtro de ownership abaixo — logo, gestão continuava
+    # vendo peças órfãs e a mesma tela mostrava números diferentes conforme
+    # quem olhava. Peça sem `case_id` (minuta avulsa) segue visível.
+    q = filtrar_pecas_visiveis(q)
     # Ownership por caso (IDOR): não-gestão só vê peças dos seus casos
     # (responsável/auxiliar/sem-dono) ou sem caso vinculado.
     if not is_gestao(cu):
@@ -299,7 +306,19 @@ async def listar(
     if case_id:
         q = q.where(LegalDoc.case_id == case_id)
     if status_f:
-        q = q.where(LegalDoc.status == status_f)
+        # Mesmo defeito de `/cases/?status=`: `legal_docs.status` é ENUM nativo,
+        # valor fora do enum chega cru ao Postgres e vira 500. 422 explícito.
+        try:
+            q = q.where(LegalDoc.status == PecaStatus(status_f))
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Status de peça inválido: {status_f!r}. Valores aceitos: "
+                    f"{', '.join(s.value for s in PecaStatus)}. "
+                    "Para não filtrar por status, omita o parâmetro."
+                ),
+            ) from None
     q = q.order_by(LegalDoc.created_at.desc())
 
     total = (await db.execute(

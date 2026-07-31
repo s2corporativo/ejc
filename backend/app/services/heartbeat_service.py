@@ -1,14 +1,5 @@
 # ── app/services/heartbeat_service.py ────────────────────────────────────────
-# Heartbeat honesto dos jobs do APScheduler (achado nº 1 da auditoria).
-#
-# Duas responsabilidades:
-#   1. `registrar_heartbeat(db, job_name, status, detail=None)` — UPSERT best-effort
-#      da última execução de um job (chamado ao FINAL de cada job crítico).
-#   2. Lógica PURA de defasagem (`avaliar_job` / `avaliar_jobs`) consumida pela
-#      Central de Diagnóstico e pelo painel status-captura para sinalizar jobs
-#      que pararam de rodar (parada silenciosa do scheduler).
-#
-# O registro é best-effort: a falha do heartbeat NUNCA derruba o job — só loga.
+# Heartbeat honesto dos jobs do APScheduler.
 from __future__ import annotations
 
 import logging
@@ -19,10 +10,6 @@ from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
-
-# ── Identificadores canônicos dos jobs monitorados ────────────────────────────
-# Fonte única da verdade dos job_name: usados TANTO nas chamadas de heartbeat em
-# scheduler.py QUANTO na avaliação de defasagem — evita strings soltas divergindo.
 JOB_DJEN = "djen_intimacoes"
 JOB_DATAJUD = "datajud_sync"
 JOB_DIARIO = "diario_oficial"
@@ -31,69 +18,137 @@ JOB_PRAZOS_ALERTAS = "prazos_alertas"
 JOB_AUDIENCIAS = "audiencias_agenda"
 JOB_PRESCRICAO = "prescricao"
 
-
-# Cadência esperada por job → limite de defasagem (horas). A folga acima do
-# intervalo nominal absorve atraso de fila/reinício sem falso positivo:
-#   - jobs DIÁRIOS  → 26h  (24h + 2h de folga)
-#   - DataJud (2x/dia, 08h45 e 16h45) → 14h (maior gap entre execuções + folga)
-#   - prescrição (SEMANAL, segundas) → 8 dias (192h)
 _MAX_DIARIO = 26
 _MAX_DATAJUD = 14
-_MAX_SEMANAL = 24 * 8  # 192h
+_MAX_SEMANAL = 24 * 8
 
 JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
     JOB_DJEN: {
-        "label": "Captura DJEN (intimações)", "max_age_horas": _MAX_DIARIO,
+        "label": "Captura DJEN (intimações)",
+        "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 06h30",
     },
     JOB_DATAJUD: {
-        "label": "Sincronização DataJud (movimentos)", "max_age_horas": _MAX_DATAJUD,
+        "label": "Sincronização DataJud (movimentos)",
+        "max_age_horas": _MAX_DATAJUD,
         "cadencia": "2x/dia 08h45 e 16h45",
     },
     JOB_DIARIO: {
-        "label": "Monitor Diário Oficial (DOU)", "max_age_horas": _MAX_DIARIO,
+        "label": "Monitor Diário Oficial (DOU)",
+        "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 06h00",
     },
     JOB_PRAZOS_VENCIDOS: {
-        "label": "Marcação de prazos vencidos", "max_age_horas": _MAX_DIARIO,
+        "label": "Marcação de prazos vencidos",
+        "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 07h10",
     },
     JOB_PRAZOS_ALERTAS: {
-        "label": "Alertas de prazos (7/3/1 dia)", "max_age_horas": _MAX_DIARIO,
+        "label": "Alertas de prazos (7/3/1 dia)",
+        "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 07h15",
     },
     JOB_AUDIENCIAS: {
-        "label": "Alertas de audiências (agenda)", "max_age_horas": _MAX_DIARIO,
+        "label": "Alertas de audiências (agenda)",
+        "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 07h20",
     },
     JOB_PRESCRICAO: {
-        "label": "Alertas de prescrição", "max_age_horas": _MAX_SEMANAL,
+        "label": "Alertas de prescrição",
+        "max_age_horas": _MAX_SEMANAL,
         "cadencia": "semanal (segundas 09h05)",
     },
 }
 
-# Domínio válido de status gravado.
 _STATUS_VALIDOS = {"ok", "erro"}
 
 
-# ── UPSERT best-effort ────────────────────────────────────────────────────────
-async def registrar_heartbeat(
-    db, job_name: str, status: str, detail: str | None = None
-) -> bool:
-    """Grava (UPSERT por job_name) a última execução do job.
+async def _quantidade_oabs_elegiveis(db) -> int | None:
+    """Espelha exatamente o contrato operacional da captura.
 
-    `status` ∈ {'ok', 'erro'}; `detail` é um resumo curto (só para 'erro'). O
-    UPSERT é `INSERT ... ON CONFLICT (job_name) DO UPDATE`, portável entre
-    PostgreSQL e SQLite (mesmo padrão de dedup do radar_legislativo).
-
-    Best-effort: qualquer falha (tabela ausente, sessão em erro) é logada e NÃO
-    propaga — o heartbeat jamais pode derrubar o job que o chamou. Retorna True
-    se gravou, False caso contrário (útil em teste).
+    A consulta roda em savepoint. Se o schema mínimo não possuir ``users``, o
+    savepoint é revertido e o UPSERT do heartbeat continua utilizável na mesma
+    sessão, inclusive em PostgreSQL.
     """
+    try:
+        async with db.begin_nested():
+            resultado = await db.execute(
+                text(
+                    """
+                    SELECT count(*) FROM users
+                    WHERE deleted_at IS NULL
+                      AND is_active = TRUE
+                      AND length(trim(coalesce(djen_oab_numero, ''))) > 0
+                      AND length(trim(coalesce(djen_oab_uf, ''))) > 0
+                    """
+                )
+            )
+            return int(resultado.scalar() or 0)
+    except Exception:
+        return None
+
+
+async def _normalizar_resultado_djen(
+    db,
+    status_nominal: str,
+    detail_nominal: str | None,
+) -> tuple[str, str | None]:
+    """Troca o status nominal pela produtividade real da task agendada."""
+    from app.services import djen_service
+
+    resultados = djen_service.consumir_resultados_execucao()
+    if resultados:
+        resumo = djen_service.resumir_execucao(resultados)
+        for resultado in resultados:
+            if resultado.fonte_ok:
+                await djen_service.enviar_emails_pendentes(resultado)
+    else:
+        quantidade = await _quantidade_oabs_elegiveis(db)
+        if quantidade is None:
+            # Contrato genérico/ambiente com apenas scheduler_heartbeat.
+            return status_nominal, detail_nominal
+        resumo = djen_service.resumir_execucao([])
+        if quantidade > 0:
+            resumo.update(
+                {
+                    "resultado": "falha_job",
+                    "oabs_elegiveis": quantidade,
+                    "oabs_falha": quantidade,
+                    "erros": {"sem_metricas_da_execucao": 1},
+                }
+            )
+
+    if status_nominal == "erro":
+        erros = dict(resumo.get("erros") or {})
+        erros["falha_job"] = erros.get("falha_job", 0) + 1
+        resumo["erros"] = erros
+        resumo["heartbeat_status"] = "erro"
+        resumo["resultado"] = "falha_job"
+        if detail_nominal:
+            logger.warning("DJEN: job encerrou com falha sanitizada")
+
+    return (
+        resumo["heartbeat_status"],
+        djen_service.codificar_resumo_heartbeat(resumo),
+    )
+
+
+async def registrar_heartbeat(
+    db,
+    job_name: str,
+    status: str,
+    detail: str | None = None,
+) -> bool:
+    """UPSERT best-effort da última execução do job."""
     st = (status or "").strip().lower()
     if st not in _STATUS_VALIDOS:
         st = "erro" if st else "ok"
-    detalhe = (detail or None)
+
+    if job_name == JOB_DJEN:
+        st, detalhe = await _normalizar_resultado_djen(db, st, detail)
+    else:
+        detalhe = detail or None
+
     if detalhe is not None:
         detalhe = str(detalhe)[:500]
     agora = datetime.now(timezone.utc)
@@ -111,22 +166,25 @@ async def registrar_heartbeat(
                     updated_at  = EXCLUDED.updated_at
                 """
             ),
-            {"job": job_name, "agora": agora, "status": st, "detail": detalhe},
+            {
+                "job": job_name,
+                "agora": agora,
+                "status": st,
+                "detail": detalhe,
+            },
         )
         await db.commit()
         return True
-    except Exception as e:  # noqa: BLE001 — best-effort, nunca propaga
+    except Exception as exc:  # noqa: BLE001 — best-effort, nunca propaga
         try:
             await db.rollback()
         except Exception:
             pass
-        logger.warning("[Heartbeat] upsert de '%s' falhou: %s", job_name, e)
+        logger.warning("[Heartbeat] upsert de '%s' falhou: %s", job_name, exc)
         return False
 
 
-# ── Lógica PURA de defasagem ──────────────────────────────────────────────────
 def _idade_horas(last_run_at: datetime, agora: datetime) -> float:
-    """Horas decorridas desde `last_run_at` (tolera datetime naive → assume UTC)."""
     if last_run_at.tzinfo is None:
         last_run_at = last_run_at.replace(tzinfo=timezone.utc)
     if agora.tzinfo is None:
@@ -141,53 +199,43 @@ def avaliar_job(
     max_age_horas: float,
     agora: datetime | None = None,
 ) -> dict[str, Any]:
-    """Classifica um job em ok | defasado | nunca_executou | erro.
-
-    - sem heartbeat            → 'nunca_executou'
-    - último status 'erro'     → 'erro' (rodou, mas falhou)
-    - idade > cadência esperada → 'defasado' (parou de rodar / silêncio)
-    - caso contrário           → 'ok'
-    """
     agora = agora or datetime.now(timezone.utc)
     if last_run_at is None:
         return {"status": "nunca_executou", "idade_horas": None}
     idade = _idade_horas(last_run_at, agora)
-    idade_arred = round(idade, 1)
+    idade_arredondada = round(idade, 1)
     if idade > max_age_horas:
-        # Defasagem prevalece sobre o status do último run: mesmo que o último
-        # tenha sido 'ok', se faz tempo demais o job está parado (o sinal-alvo).
-        return {"status": "defasado", "idade_horas": idade_arred}
+        return {"status": "defasado", "idade_horas": idade_arredondada}
     if (last_status or "").strip().lower() == "erro":
-        return {"status": "erro", "idade_horas": idade_arred}
-    return {"status": "ok", "idade_horas": idade_arred}
+        return {"status": "erro", "idade_horas": idade_arredondada}
+    return {"status": "ok", "idade_horas": idade_arredondada}
 
 
 def avaliar_jobs(
-    heartbeats: dict[str, dict[str, Any]], agora: datetime | None = None
+    heartbeats: dict[str, dict[str, Any]],
+    agora: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """Avalia TODOS os jobs monitorados contra os heartbeats lidos do banco.
-
-    `heartbeats`: {job_name: {"last_run_at", "last_status", "detail"}}. Jobs sem
-    heartbeat viram 'nunca_executou'. Retorna uma lista ordenada (ordem do
-    registro) com o diagnóstico por job.
-    """
     agora = agora or datetime.now(timezone.utc)
-    out: list[dict[str, Any]] = []
-    for job_name, cfg in JOBS_MONITORADOS.items():
-        hb = heartbeats.get(job_name) or {}
-        aval = avaliar_job(
-            hb.get("last_run_at"), hb.get("last_status"),
-            max_age_horas=cfg["max_age_horas"], agora=agora,
+    saida: list[dict[str, Any]] = []
+    for job_name, config in JOBS_MONITORADOS.items():
+        heartbeat = heartbeats.get(job_name) or {}
+        avaliacao = avaliar_job(
+            heartbeat.get("last_run_at"),
+            heartbeat.get("last_status"),
+            max_age_horas=config["max_age_horas"],
+            agora=agora,
         )
-        out.append({
-            "job_name": job_name,
-            "label": cfg["label"],
-            "cadencia": cfg["cadencia"],
-            "status": aval["status"],
-            "idade_horas": aval["idade_horas"],
-            "max_age_horas": cfg["max_age_horas"],
-            "last_run_at": hb.get("last_run_at"),
-            "last_status": hb.get("last_status"),
-            "detail": hb.get("detail"),
-        })
-    return out
+        saida.append(
+            {
+                "job_name": job_name,
+                "label": config["label"],
+                "cadencia": config["cadencia"],
+                "status": avaliacao["status"],
+                "idade_horas": avaliacao["idade_horas"],
+                "max_age_horas": config["max_age_horas"],
+                "last_run_at": heartbeat.get("last_run_at"),
+                "last_status": heartbeat.get("last_status"),
+                "detail": heartbeat.get("detail"),
+            }
+        )
+    return saida

@@ -5,11 +5,14 @@ import time
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import text
+from sqlalchemy import func as sqlfunc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import require_roles
+from app.core.status_caso import contar_ativos, filtrar_aguardando_revisao
+from app.models.case import CaseStatus
+from app.models.legal_doc import LegalDoc
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -62,6 +65,11 @@ async def dashboard(
     amb_criticas = 0
     clientes_ativos = 0
     pecas_hitl = 0
+    # Cada bloco abaixo degrada para zero se a query falhar. Sem sinalização,
+    # "banco fora do ar" fica indistinguível de "escritório sem casos" — um
+    # falso positivo silencioso. `degradado` nomeia os blocos que NÃO puderam
+    # ser calculados, para que a UI possa mostrar "indisponível" em vez de 0.
+    degradado: list[str] = []
 
     try:
         r = await db.execute(text("""
@@ -70,6 +78,7 @@ async def dashboard(
         """))
         casos_status = {row[0]: row[1] for row in r}
     except Exception:
+        degradado.append("casos")
         logger.warning("Dashboard: falha ao carregar casos por status", exc_info=True)
 
     try:
@@ -80,6 +89,7 @@ async def dashboard(
         """))
         casos_area = [{"area": row[0], "total": row[1]} for row in r]
     except Exception:
+        degradado.append("casos_por_area")
         logger.warning("Dashboard: falha ao carregar casos por área", exc_info=True)
 
     try:
@@ -93,6 +103,7 @@ async def dashboard(
         """), {"hoje": hoje, "d3": d3, "d7": d7})
         pv, pc, p7 = r.one()
     except Exception:
+        degradado.append("prazos")
         logger.warning("Dashboard: falha ao carregar prazos", exc_info=True)
 
     try:
@@ -123,6 +134,7 @@ async def dashboard(
             fin_escopo = "meus_casos"
         fin_pend, fin_atras, fin_mes = r.one()
     except Exception:
+        degradado.append("financeiro")
         logger.warning("Dashboard: falha ao carregar financeiro", exc_info=True)
 
     try:
@@ -134,6 +146,7 @@ async def dashboard(
         """), {"d7": d7})
         amb_criticas = r.scalar() or 0
     except Exception:
+        degradado.append("ambiental_criticas")
         logger.warning("Dashboard: falha ao carregar ambiental crítico", exc_info=True)
 
     try:
@@ -143,25 +156,33 @@ async def dashboard(
         """))
         clientes_ativos = r.scalar() or 0
     except Exception:
+        degradado.append("clientes_ativos")
         logger.warning("Dashboard: falha ao carregar clientes ativos", exc_info=True)
 
     try:
-        r = await db.execute(text("""
-            SELECT COUNT(*) FROM legal_docs
-            WHERE deleted_at IS NULL AND ai_generated=true
-              AND human_reviewed=false AND status NOT IN ('rascunho')
-        """))
-        pecas_hitl = r.scalar() or 0
+        # Fila de revisão humana: definição ÚNICA em core/status_caso.py.
+        # Antes: `status NOT IN ('rascunho')` — que excluía justamente o estado
+        # em que a IA entrega a peça, zerando o indicador. E sem vínculo com
+        # `cases`, contava peça de caso já excluído.
+        pecas_hitl = (await db.execute(
+            filtrar_aguardando_revisao(select(sqlfunc.count(LegalDoc.id)))
+        )).scalar() or 0
     except Exception:
+        degradado.append("pecas_aguardando_revisao")
         logger.warning("Dashboard: falha ao carregar peças HITL", exc_info=True)
 
+    # Contagens derivadas da fonte única (core/status_caso.py) — as MESMAS
+    # definições de `GET /cases/stats`. Antes, `ativos` era
+    # `total - encerrado`, o que contava caso ARQUIVADO como ativo e fazia o
+    # Dashboard divergir da listagem (9 vs 8).
     resposta = {
         "casos": {
             "por_status": casos_status,
             "por_area": casos_area,
             "total": sum(casos_status.values()),
-            "encerrados": casos_status.get("encerrado", 0),
-            "ativos": sum(casos_status.values()) - casos_status.get("encerrado", 0),
+            "encerrados": casos_status.get(CaseStatus.encerrado.value, 0),
+            "arquivados": casos_status.get(CaseStatus.arquivado.value, 0),
+            "ativos": contar_ativos(casos_status),
         },
         "prazos": {"vencidos": pv, "criticos_3d": pc, "proximos_7d": p7},
         "financeiro": {
@@ -173,6 +194,9 @@ async def dashboard(
         "ambiental_criticas": amb_criticas,
         "clientes_ativos": clientes_ativos,
         "pecas_aguardando_revisao": pecas_hitl,
+        # Vazio = todos os blocos calculados. Não vazio = os nomeados falharam
+        # e seus números são zero por degradação, não por ausência de dados.
+        "degradado": degradado,
     }
     _cache_set(cache_key, resposta)
     return resposta

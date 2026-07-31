@@ -27,6 +27,7 @@ import {
 import api from "../lib/api";
 import { fmtMoney } from "./UI";
 import { areaLabel as rotuloArea } from "../lib/areaCatalog";
+import { CASE_STATUS_LABEL, isCasoAtivo } from "../types/caseStatus";
 
 // Acentos por cor — ícone com fundo suave colorido
 export const ACCENTS: Record<
@@ -255,15 +256,11 @@ export function Panel({
 }
 
 // ── Dashboard de RAMO ─────────────────────────────────────────────────────────
-const STATUS_LABEL: Record<string, string> = {
-  ativo: "Ativos",
-  em_andamento: "Em andamento",
-  suspenso: "Suspensos",
-  acordo: "Acordo",
-  encerrado: "Encerrados",
-  arquivado: "Arquivados",
-};
-const ENCERRADOS = new Set(["encerrado", "arquivado"]);
+// Rótulos derivados da fonte única (types/caseStatus.ts). O mapa anterior
+// omitia `triagem` — o status DEFAULT de todo caso novo, que caía no fallback e
+// aparecia em minúsculas no gráfico — e trazia `em_andamento`, chave morta que
+// não existe no enum do backend.
+const STATUS_LABEL: Record<string, string> = CASE_STATUS_LABEL;
 
 // Rótulo vem do catálogo único (lib/areaCatalog.ts). O mapa local cobria só as
 // 9 áreas originais e mostrava o slug cru ("digital_lgpd") nas áreas incluídas
@@ -283,7 +280,7 @@ export function RamoStats({
   const accent = RAMO_ACCENT[cor] ?? "blue";
   const areaLabel = area ? rotuloArea(area) : "";
   const total = casos.length;
-  const ativos = casos.filter((c) => !ENCERRADOS.has(String(c.status))).length;
+  const ativos = casos.filter((c) => isCasoAtivo(c.status)).length;
   const valor = casos.reduce((s, c) => s + Number(c.valor_causa || 0), 0);
   const especializados = lista?.length ?? 0;
 
