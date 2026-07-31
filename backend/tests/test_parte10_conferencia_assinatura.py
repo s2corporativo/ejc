@@ -20,6 +20,7 @@ def test_python_alterado_na_parte10_tem_sintaxe_valida() -> None:
     arquivos = [
         "backend/app/routers/validador_juridico.py",
         "backend/app/routers/ai_tools.py",
+        "backend/app/routers/ia_saude.py",
         "backend/app/routers/legal_docs.py",
         "backend/app/services/system_prompts/base.py",
         "backend/app/services/system_prompts/modo_executivo.py",
@@ -77,8 +78,20 @@ def test_status_ia_espelha_o_resolver_real_do_gateway() -> None:
     assert '"modelos_por_tarefa": _modelos_por_tarefa(settings)' in fonte
     assert '"modelo_resolvido_pelo_gateway"' in fonte
     assert '"habilitado": bool(settings.OLLAMA_ENABLED)' in fonte
+    assert '"disponivel": disponivel' in fonte
+    assert '"mensagem": None if disponivel else MSG_IA_NAO_ATIVADA' in fonte
+    assert "ia_disponivel" in fonte
     assert 'os.getenv("ANTHROPIC_MODEL_RAPIDO"' not in fonte
     assert 'os.getenv("ANTHROPIC_MODEL_COMPLEXO"' not in fonte
+
+
+def test_nao_ha_duas_rotas_get_ia_status() -> None:
+    detalhado = _texto("backend/app/routers/ai_tools.py")
+    leigo = _texto("backend/app/routers/ia_saude.py")
+
+    assert '@router.get("/status")' in detalhado
+    assert '@router_status.get("/disponibilidade")' in leigo
+    assert '@router_status.get("/status")' not in leigo
 
 
 def test_prompts_corrigem_o_fundamento_normativo() -> None:
