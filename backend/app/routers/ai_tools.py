@@ -12,12 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ai_errors import MSG_IA_NAO_ATIVADA
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
-from app.services.ai_gateway import executar_tarefa_ia
+from app.services.ai_gateway import executar_tarefa_ia, ia_disponivel
 from app.services.ai_guard import sanitizar_ou_abortar
 from app.services.system_prompts import TarefaIA
 
@@ -140,12 +141,18 @@ def _modelos_por_tarefa(settings) -> dict[str, dict[str, str | None]]:
 
 @router.get("/status")
 async def status_ia(cu: User = Depends(get_current_user)):
+    """Fonte única de status: envelope leigo + diagnóstico auditável."""
     _bloquear_cliente_externo(cu)
     settings = get_settings()
+    disponivel = ia_disponivel()
     modelo_anthropic_gateway = (
         settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO
     )
     return {
+        # Contrato histórico consumido pelo banner global. Mantê-lo no mesmo
+        # payload elimina o antigo fail-open silencioso do frontend.
+        "disponivel": disponivel,
+        "mensagem": None if disponivel else MSG_IA_NAO_ATIVADA,
         "ai_enabled": bool(settings.AI_ENABLED),
         "provedores": {
             "anthropic": {
