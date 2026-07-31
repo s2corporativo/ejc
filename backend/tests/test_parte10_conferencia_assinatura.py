@@ -90,8 +90,8 @@ def test_nao_ha_duas_rotas_get_ia_status() -> None:
     leigo = _texto("backend/app/routers/ia_saude.py")
 
     assert '@router.get("/status")' in detalhado
-    assert '@router_status.get("/disponibilidade")' in leigo
-    assert '@router_status.get("/status")' not in leigo
+    assert "async def ia_status" in leigo  # compatibilidade de import/teste
+    assert "@router_status.get" not in leigo
 
 
 def test_prompts_corrigem_o_fundamento_normativo() -> None:
