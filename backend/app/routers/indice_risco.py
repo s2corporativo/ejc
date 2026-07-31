@@ -13,10 +13,15 @@ from app.models.audit_log import criar_audit_log
 router = APIRouter(prefix="/cases/{case_id}/indice-risco", tags=["Índice de Risco"])
 
 
-def _nivel(indice: int) -> str:
-    if indice <= 25: return "baixo"
-    if indice <= 50: return "medio"
-    if indice <= 75: return "alto"
+def _nivel(indice: int, *, triagem_completa: bool = True) -> str:
+    if not triagem_completa:
+        return "incompleto"
+    if indice <= 25:
+        return "baixo"
+    if indice <= 50:
+        return "medio"
+    if indice <= 75:
+        return "alto"
     return "critico"
 
 
@@ -81,8 +86,10 @@ async def recalcular(
     if prazos > 0:
         fatores["prazo_vencido"] = True
         indice += min(30, prazos * 15)
-    if int(data["total_docs"] or 0) == 0:
+    total_docs = int(data["total_docs"] or 0)
+    if total_docs == 0:
         fatores["sem_documentos"] = True
+        fatores["triagem_incompleta"] = True
         indice += 15
     valor = float(data["valor_causa"] or 0)
     if valor > 500_000:
@@ -95,7 +102,7 @@ async def recalcular(
         fatores["processo_antigo"] = True
         indice += 10
     indice = min(indice, 100)
-    nivel = _nivel(indice)
+    nivel = _nivel(indice, triagem_completa=total_docs > 0)
 
     # Salvar histórico
     await db.execute(
@@ -120,4 +127,9 @@ async def recalcular(
         dados_depois={"indice": indice, "nivel": nivel},
     )
     await db.commit()
-    return {"indice": indice, "nivel": nivel, "fatores": fatores}
+    return {
+        "indice": indice,
+        "nivel": nivel,
+        "fatores": fatores,
+        "avaliacao_conclusiva": nivel != "incompleto",
+    }
