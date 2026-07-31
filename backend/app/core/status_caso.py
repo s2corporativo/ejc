@@ -18,28 +18,28 @@ STATUS_FECHADOS: tuple[CaseStatus, ...] = (
     CaseStatus.arquivado,
 )
 
-# Compatibilidade de transporte. Estes valores representam ausência de filtro e
-# jamais são persistidos nem enviados ao ENUM nativo do PostgreSQL.
-STATUS_SEM_FILTRO = frozenset({"", "all", "todos", "*"})
-
+# Sentinelas aceitos por clientes legados. Eles nunca chegam ao ENUM nativo.
+STATUS_SEM_FILTRO = frozenset({"all", "todos", "*"})
 ERRO_STATUS_INVALIDO = (
     "Status de caso inválido: {valor!r}. Valores aceitos: {aceitos}. "
     "Para não filtrar por status, use 'all'/'todos' ou omita o parâmetro."
 )
 
 
-def validar_status_caso(valor: str | None) -> CaseStatus | None:
+def validar_status_caso(valor: str | None):
     """Normaliza o filtro HTTP e impede valor inválido no ENUM do banco.
 
-    `None`, vazio, `all`, `todos` e `*` significam ausência de filtro. A
-    normalização é case-insensitive e tolera espaços externos. Valores reais do
-    domínio retornam ``CaseStatus``; qualquer outro valor levanta ``ValueError``.
+    O router legado constrói diretamente ``Case.status == retorno``. Portanto,
+    para sentinelas de "todos" retornamos a própria coluna: a expressão gerada
+    é ``cases.status = cases.status`` (neutra para coluna NOT NULL), sem tocar no
+    enum com um literal inválido. Ausência real do parâmetro continua sendo
+    tratada pelo próprio router antes desta função.
     """
     if valor is None:
         return None
     normalizado = valor.strip().lower()
     if normalizado in STATUS_SEM_FILTRO:
-        return None
+        return Case.status
     try:
         return CaseStatus(normalizado)
     except ValueError:
@@ -58,13 +58,13 @@ ERRO_AREA_INVALIDA = (
 )
 
 
-def validar_area_caso(valor: str | None) -> CaseArea | None:
+def validar_area_caso(valor: str | None):
     """Normaliza área com o mesmo contrato de status."""
     if valor is None:
         return None
     normalizado = valor.strip().lower()
     if normalizado in AREA_SEM_FILTRO:
-        return None
+        return Case.area
     try:
         return CaseArea(normalizado)
     except ValueError:
@@ -76,13 +76,13 @@ def validar_area_caso(valor: str | None) -> CaseArea | None:
 
 
 def contar_ativos(por_status: dict[str, int]) -> int:
-    """Calcula casos operacionais em curso sem incluir encerrados/arquivados."""
+    """Calcula casos em curso sem incluir encerrados nem arquivados."""
     return sum(por_status.get(s.value, 0) for s in STATUS_ABERTOS)
 
 
-# Exclusão lógica do pai não destrói o histórico dos dependentes. Nas superfícies
-# operacionais, os filhos herdam a visibilidade do caso; auditoria e diagnóstico
-# podem consultar os registros físicos diretamente.
+# Exclusão lógica do pai preserva histórico. Nas superfícies operacionais, os
+# dependentes herdam a visibilidade do caso; auditoria/diagnóstico podem acessar
+# os registros físicos diretamente.
 CASOS_VIVOS = select(Case.id).where(Case.deleted_at.is_(None))
 SQL_CASO_VISIVEL = (
     "({col} IS NULL OR EXISTS "
