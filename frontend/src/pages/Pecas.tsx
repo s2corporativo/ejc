@@ -75,6 +75,23 @@ function estadoValidacao(doc: LegalDoc) {
   };
 }
 
+/** Corrige apenas textos herdados que continham fundamento normativo inexato. */
+function normalizarLinguagemLegada(root: HTMLElement) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const atual = node.nodeValue ?? "";
+    let corrigido = atual
+      .replace(/\s*\(Provimento OAB 205\/2021\)/g, "")
+      .replace(
+        "Peça gerada por IA — revisão humana obrigatória antes de aprovar",
+        "Minuta gerada por IA — conferência do advogado necessária antes do uso oficial",
+      );
+    if (corrigido !== atual) node.nodeValue = corrigido;
+    node = walker.nextNode();
+  }
+}
+
 /**
  * Entrada principal da Parte 10.
  *
@@ -98,6 +115,7 @@ export default function Pecas() {
   const [baixando, setBaixando] = useState<string | null>(null);
   const [mostrarAvancado, setMostrarAvancado] = useState(false);
   const topoRef = useRef<HTMLDivElement>(null);
+  const legadoRef = useRef<HTMLDivElement>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -118,6 +136,15 @@ export default function Pecas() {
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  useEffect(() => {
+    if (!mostrarAvancado || !legadoRef.current) return;
+    const root = legadoRef.current;
+    normalizarLinguagemLegada(root);
+    const observer = new MutationObserver(() => normalizarLinguagemLegada(root));
+    observer.observe(root, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [mostrarAvancado]);
 
   const documentos = useMemo(
     () => (data && Array.isArray(data.data) ? data.data : []),
@@ -335,9 +362,7 @@ export default function Pecas() {
                     abrindo={abrindo}
                     onAbrir={() => abrirDetalhe(doc)}
                     onBaixar={() => baixarMinuta(doc)}
-                    onConferir={() =>
-                      setAssinatura({ doc, observacoes: "" })
-                    }
+                    onConferir={() => setAssinatura({ doc, observacoes: "" })}
                   />
                 ))}
               </div>
@@ -377,7 +402,11 @@ export default function Pecas() {
             As antigas ações separadas de revisão ficam bloqueadas; use o ato único
             no painel principal.
           </div>
-          <div onClickCapture={bloquearFluxoLegado} data-parte10-legado>
+          <div
+            ref={legadoRef}
+            onClickCapture={bloquearFluxoLegado}
+            data-parte10-legado
+          >
             <PecasLegacy />
           </div>
         </section>
@@ -433,8 +462,8 @@ export default function Pecas() {
         <div className="space-y-4">
           <div className="rounded-lg border border-primary-100 bg-primary-50 p-3 text-sm text-slate-700">
             <p>
-              Ao confirmar, você declara ter conferido a versão{" ""}
-              <strong>v{assinatura?.doc.versao}.0</strong> de{" ""}
+              Ao confirmar, você declara ter conferido a versão{" "}
+              <strong>v{assinatura?.doc.versao}.0</strong> de{" "}
               <strong>{assinatura?.doc.titulo}</strong> e assume a responsabilidade
               profissional pelo seu uso.
             </p>
