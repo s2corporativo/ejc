@@ -183,13 +183,29 @@ async def remover_template(
     db:  AsyncSession = Depends(get_db),
     cu:  User = Depends(get_current_user),
 ):
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        raise HTTPException(403)
-    t = (await db.execute(
-        select(ChecklistTemplate).where(ChecklistTemplate.id == template_id)
-    )).scalar_one_or_none()
+    if not _pode_gerenciar(cu):
+        raise HTTPException(
+            403, "Apenas advogado ou perfil superior pode remover templates"
+        )
+
+    t = (
+        await db.execute(
+            select(ChecklistTemplate).where(
+                ChecklistTemplate.id == template_id,
+                ChecklistTemplate.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
     if not t:
-        raise HTTPException(404)
+        raise HTTPException(404, "Template não encontrado")
+
+    nivel = ROLE_LEVEL.get(cu.role.value, 0)
+    eh_autor = bool(t.created_by) and str(t.created_by) == str(cu.id)
+    if nivel < ROLE_LEVEL["socio"] and not eh_autor:
+        raise HTTPException(
+            403, "Apenas o autor do template ou um sócio pode removê-lo"
+        )
+
     t.deleted_at = datetime.now(timezone.utc)
     await db.commit()
 
