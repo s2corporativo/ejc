@@ -18,13 +18,13 @@ from app.models.ai_log import AILog
 
 router = APIRouter(prefix="/ia-saude", tags=["IA — Saúde (Admin)"])
 
-# Contrato leigo preservado em rota própria. /api/ia/status pertence ao módulo
-# ai_tools e agora devolve o MESMO envelope leigo acrescido do diagnóstico
-# detalhado. Antes havia duas GET /api/ia/status montadas simultaneamente.
+# Mantido para compatibilidade de imports e testes históricos. Não possui rota:
+# /api/ia/status pertence exclusivamente a ai_tools e agora devolve o mesmo
+# envelope leigo acrescido do diagnóstico detalhado. Antes havia duas rotas GET
+# idênticas montadas simultaneamente.
 router_status = APIRouter(prefix="/ia", tags=["IA — Status"])
 
 
-@router_status.get("/disponibilidade")
 async def ia_status(cu: User = Depends(get_current_user)):
     """Estado leigo da IA para banners e botões, sem chamada de rede."""
     from app.core.ai_errors import MSG_IA_NAO_ATIVADA
