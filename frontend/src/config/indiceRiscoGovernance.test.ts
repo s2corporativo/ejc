@@ -11,9 +11,7 @@ const source = readFileSync(
 
 describe("governança do índice de risco", () => {
   it("não apresenta triagem incompleta com semântica verde", () => {
-    const bloco = source.match(
-      /incompleto:\s*\{([\s\S]*?)\},\s*baixo:/,
-    )?.[1];
+    const bloco = source.match(/incompleto:\s*\{([\s\S]*?)\},\s*baixo:/)?.[1];
 
     expect(bloco).toBeDefined();
     expect(bloco).toContain("text-gray");
