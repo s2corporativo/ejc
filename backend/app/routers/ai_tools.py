@@ -23,6 +23,11 @@ from app.services.system_prompts import TarefaIA
 
 router = APIRouter(prefix="/ai", tags=["IA Jurídica Pro"])
 
+_AVISO_MINUTA = (
+    "MINUTA GERADA POR IA — confira e assine antes de protocolar, enviar ao "
+    "cliente ou usar oficialmente."
+)
+
 
 class AiRequest(BaseModel):
     tarefa: TarefaIA = Field(..., description="Tipo de tarefa de IA")
@@ -46,10 +51,7 @@ class AiResponse(BaseModel):
     requer_revisao: bool = True
     tokens_usados: int
     custo_estimado_brl: float
-    aviso: str = (
-        "MINUTA GERADA POR IA — confira e assine antes de protocolar, enviar ao "
-        "cliente ou usar oficialmente."
-    )
+    aviso: str = _AVISO_MINUTA
 
 
 def _ai_enabled() -> bool:
@@ -59,7 +61,10 @@ def _ai_enabled() -> bool:
 
 def _bloquear_cliente_externo(cu: User) -> None:
     """IA interna não é exposta ao portal do cliente (mesma regra do núcleo)."""
-    if str(getattr(cu, "role", "")) == "cliente_externo":
+    papel = getattr(getattr(cu, "role", None), "value", None) or str(
+        getattr(cu, "role", "") or ""
+    )
+    if papel == "cliente_externo":
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Funções de IA internas não estão disponíveis no portal do cliente.",
@@ -67,72 +72,66 @@ def _bloquear_cliente_externo(cu: User) -> None:
 
 
 def _modelos_por_tarefa(settings) -> dict[str, dict[str, str | None]]:
-    """Espelho público e auditável da resolução configurada no ai_gateway.
+    """Espelho público e auditável da resolução atual do ``ai_gateway``.
 
-    Não afirma qual provider responderá uma chamada futura: isso depende de chave,
-    kill-switch, soberania, prioridade e disponibilidade no instante da execução.
-    Expõe corretamente o modelo configurado para cada candidato elegível.
+    O resolver vigente usa ``ANTHROPIC_MODEL_COMPLEXO`` sempre que o candidato
+    Anthropic é selecionado. Portanto, o painel não deve anunciar Haiku para uma
+    tarefa que, na execução real, será encaminhada ao modelo complexo.
     """
-    rapido = settings.ANTHROPIC_MODEL_RAPIDO
-    complexo = settings.ANTHROPIC_MODEL_COMPLEXO
-    ollama_analise = getattr(settings, "OLLAMA_MODEL_ANALISE", None)
-    ollama_peca = getattr(settings, "OLLAMA_MODEL_PETICAO", None)
-    ollama_resumo = getattr(settings, "OLLAMA_MODEL_RESUMO", None)
-    ollama_chat = getattr(settings, "OLLAMA_MODEL_CHAT", None)
-    ollama_contrato = getattr(settings, "OLLAMA_MODEL_CONTRATO", None)
+    complexo = settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO
 
     return {
         "analise_juridica": {
-            "ollama": ollama_analise,
+            "ollama": settings.OLLAMA_MODEL_ANALISE,
             "anthropic": complexo,
             "maritaca": settings.MARITACA_MODEL,
             "groq": settings.GROQ_MODEL,
         },
         "elaboracao_peca": {
-            "ollama": ollama_peca,
+            "ollama": settings.OLLAMA_MODEL_PETICAO,
             "anthropic": complexo,
             "maritaca": settings.MARITACA_MODEL,
             "groq": settings.GROQ_MODEL,
         },
         "analise_contrato": {
-            "ollama": ollama_contrato,
+            "ollama": settings.OLLAMA_MODEL_CONTRATO,
             "anthropic": complexo,
             "maritaca": settings.MARITACA_MODEL,
             "groq": settings.GROQ_MODEL,
         },
         "estrategia": {
-            "ollama": ollama_analise,
+            "ollama": settings.OLLAMA_MODEL_ANALISE,
             "anthropic": complexo,
             "maritaca": settings.MARITACA_MODEL,
             "groq": settings.GROQ_MODEL,
         },
         "auditoria_peca": {
-            "ollama": ollama_peca,
+            "ollama": settings.OLLAMA_MODEL_PETICAO,
             "anthropic": complexo,
             "maritaca": settings.MARITACA_MODEL,
             "groq": settings.GROQ_MODEL,
         },
         "jurimetria": {
-            "ollama": ollama_analise,
+            "ollama": settings.OLLAMA_MODEL_ANALISE,
             "anthropic": complexo,
             "maritaca": settings.MARITACA_MODEL,
             "groq": settings.GROQ_MODEL,
         },
         "critica_adversarial": {
-            "ollama": ollama_analise,
+            "ollama": settings.OLLAMA_MODEL_ANALISE,
             "anthropic": complexo,
             "maritaca": settings.MARITACA_MODEL,
             "groq": settings.GROQ_MODEL,
         },
         "resumo": {
-            "ollama": ollama_resumo,
-            "anthropic": rapido,
+            "ollama": settings.OLLAMA_MODEL_RESUMO,
+            "anthropic": complexo,
             "maritaca": settings.MARITACA_MODEL_RAPIDO,
             "groq": settings.GROQ_MODEL,
         },
         "chat_rapido": {
-            "ollama": ollama_chat,
-            "anthropic": rapido,
+            "ollama": settings.OLLAMA_MODEL_CHAT,
+            "anthropic": complexo,
             "maritaca": settings.MARITACA_MODEL_RAPIDO,
             "groq": settings.GROQ_MODEL,
         },
@@ -143,14 +142,21 @@ def _modelos_por_tarefa(settings) -> dict[str, dict[str, str | None]]:
 async def status_ia(cu: User = Depends(get_current_user)):
     _bloquear_cliente_externo(cu)
     settings = get_settings()
+    modelo_anthropic_gateway = (
+        settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO
+    )
     return {
         "ai_enabled": bool(settings.AI_ENABLED),
         "provedores": {
             "anthropic": {
-                "habilitado": bool(settings.ANTHROPIC_ENABLED),
+                "habilitado": bool(
+                    settings.ANTHROPIC_ENABLED
+                    and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
+                ),
                 "configurado": bool(settings.ANTHROPIC_API_KEY),
-                "modelo_rapido": settings.ANTHROPIC_MODEL_RAPIDO,
-                "modelo_complexo": settings.ANTHROPIC_MODEL_COMPLEXO,
+                "modelo_rapido_configurado": settings.ANTHROPIC_MODEL_RAPIDO,
+                "modelo_complexo_configurado": settings.ANTHROPIC_MODEL_COMPLEXO,
+                "modelo_resolvido_pelo_gateway": modelo_anthropic_gateway,
             },
             "groq": {
                 "habilitado": bool(settings.AI_EXTERNAL_PROVIDERS_ALLOWED),
@@ -158,25 +164,36 @@ async def status_ia(cu: User = Depends(get_current_user)):
                 "modelo": settings.GROQ_MODEL,
             },
             "maritaca": {
-                "habilitado": bool(settings.MARITACA_ENABLED),
+                "habilitado": bool(
+                    settings.MARITACA_ENABLED
+                    and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
+                ),
                 "configurado": bool(settings.MARITACA_API_KEY),
                 "modelo": settings.MARITACA_MODEL,
                 "modelo_rapido": settings.MARITACA_MODEL_RAPIDO,
             },
             "ollama": {
-                "habilitado": True,
-                "configurado": None,
+                "habilitado": bool(settings.OLLAMA_ENABLED),
+                "configurado": bool(settings.OLLAMA_ENABLED),
+                "modelos": {
+                    "analise": settings.OLLAMA_MODEL_ANALISE,
+                    "peticao": settings.OLLAMA_MODEL_PETICAO,
+                    "contrato": settings.OLLAMA_MODEL_CONTRATO,
+                    "resumo": settings.OLLAMA_MODEL_RESUMO,
+                    "chat": settings.OLLAMA_MODEL_CHAT,
+                },
                 "observacao": (
-                    "Disponibilidade efetiva é verificada em runtime pelo gateway/saúde; "
-                    "este endpoint não presume que o serviço local esteja respondendo."
+                    "Configuração não equivale a disponibilidade. O health check "
+                    "do gateway confirma se o serviço e os modelos respondem."
                 ),
             },
         },
-        # Compatibilidade com o painel antigo, agora usando a fonte tipada real.
+        # Compatibilidade com o painel antigo, agora sem confundir modelo rápido
+        # configurado com o modelo efetivamente resolvido pelo gateway.
         "anthropic_configurado": bool(settings.ANTHROPIC_API_KEY),
         "groq_configurado": bool(settings.GROQ_API_KEY),
         "modelo_rapido": settings.ANTHROPIC_MODEL_RAPIDO,
-        "modelo_complexo": settings.ANTHROPIC_MODEL_COMPLEXO,
+        "modelo_complexo": modelo_anthropic_gateway,
         "modelos_por_tarefa": _modelos_por_tarefa(settings),
         "tarefas": [t.value for t in TarefaIA],
         "niveis_inteligencia": ["padrao", "alto", "maximo", "executivo"],
@@ -262,4 +279,10 @@ async def executar_ia(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             contexto="executar_tarefa_ia",
         )
+
+    # Garante linguagem uniforme mesmo que um provider/serviço legado devolva o
+    # aviso antigo no payload. Os campos são mantidos por compatibilidade de API.
+    resultado["is_rascunho"] = True
+    resultado["requer_revisao"] = True
+    resultado["aviso"] = _AVISO_MINUTA
     return AiResponse(**resultado)
