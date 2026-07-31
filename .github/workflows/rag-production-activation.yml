@@ -1,0 +1,177 @@
+# EJC — validação e ativação manual, auditável e reversível do RAG semântico.
+# Governança e critérios de aceite: Issue #563.
+name: RAG semântico — validar e ativar
+
+on:
+  pull_request:
+    paths:
+      - "scripts/rag/ativar_embeddings.sh"
+      - "scripts/rag/provar_ativacao.py"
+      - "scripts/tests/test_rag_activation.sh"
+      - "docker-compose.yml"
+      - ".github/workflows/rag-production-activation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# O acionamento de produção compartilha a mesma trava do deploy. Assim, um
+# deploy não pode trocar o SHA entre o preflight e a mutação do .env.
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-vps' || format('rag-validation-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validar:
+    name: Validar ativação, idempotência e rollback
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validar contrato determinístico
+        run: bash scripts/tests/test_rag_activation.sh
+
+  ativar-producao:
+    name: Ativar RAG semântico na VPS
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'main'
+    needs: validar
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 180
+    environment: production
+    steps:
+      - name: Checkout exato da main acionada
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fixar SHA e provar que o checkout é a main atual
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_sha="$(git rev-parse HEAD)"
+          remote_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test -n "$target_sha"
+          test "$target_sha" = "$remote_main"
+          printf 'TARGET_SHA=%s\n' "$target_sha" >> "$GITHUB_ENV"
+
+      - name: Confirmar runtime e código implantado
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d /opt/ejc
+          test -f /opt/ejc/.env
+          test -f /opt/ejc/.deployed_sha
+          test "$(tr -d '\r\n' < /opt/ejc/.deployed_sha)" = "$TARGET_SHA"
+          docker ps --format '{{.Names}}' | grep -qx ejc_backend
+          docker ps --format '{{.Names}}' | grep -qx ejc_worker
+          cd /opt/ejc
+          docker compose config --quiet
+
+          python3 - "$TARGET_SHA" <<'PY'
+          import json
+          import subprocess
+          import sys
+          import urllib.request
+
+          expected = sys.argv[1]
+          local = json.loads(subprocess.check_output(
+              ["curl", "-fsS", "http://127.0.0.1:8000/api/health"],
+              text=True,
+          ))
+          with urllib.request.urlopen(
+              "https://ejc.depaulateixeira.adv.br/api/health", timeout=15
+          ) as response:
+              public = json.load(response)
+          if local.get("commit") != expected or public.get("commit") != expected:
+              raise SystemExit("health local/público não confirma o SHA implantado")
+          PY
+
+      - name: Confirmar equivalência byte a byte com o código implantado
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmp -s scripts/rag/ativar_embeddings.sh /opt/ejc/scripts/rag/ativar_embeddings.sh
+          cmp -s scripts/rag/provar_ativacao.py /opt/ejc/scripts/rag/provar_ativacao.py
+          cmp -s scripts/tests/test_rag_activation.sh /opt/ejc/scripts/tests/test_rag_activation.sh
+          cmp -s docker-compose.yml /opt/ejc/docker-compose.yml
+
+      - name: Ativar e comprovar RAG semântico
+        env:
+          RAG_REPORT_PATH: ${{ github.workspace }}/rag-activation.json
+          RAG_CANARY_DOCS: "5"
+          EXPECTED_GIT_SHA: ${{ env.TARGET_SHA }}
+          PUBLIC_HEALTH_URL: https://ejc.depaulateixeira.adv.br/api/health
+        shell: bash
+        run: |
+          cd /opt/ejc
+          RAG_REPORT_PATH="$RAG_REPORT_PATH" \
+          RAG_CANARY_DOCS="$RAG_CANARY_DOCS" \
+          EXPECTED_GIT_SHA="$EXPECTED_GIT_SHA" \
+          PUBLIC_HEALTH_URL="$PUBLIC_HEALTH_URL" \
+          bash scripts/rag/ativar_embeddings.sh
+
+      - name: Anexar evidência agregada sem PII
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rag-production-activation
+          path: rag-activation.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Revalidar SHA local e público
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$TARGET_SHA" <<'PY'
+          import json
+          import subprocess
+          import sys
+          import urllib.request
+
+          expected = sys.argv[1]
+          local = json.loads(subprocess.check_output(
+              ["curl", "-fsS", "http://127.0.0.1:8000/api/health"],
+              text=True,
+          ))
+          with urllib.request.urlopen(
+              "https://ejc.depaulateixeira.adv.br/api/health", timeout=15
+          ) as response:
+              public = json.load(response)
+          if local.get("commit") != expected or public.get("commit") != expected:
+              raise SystemExit("SHA divergiu após a ativação")
+          PY
+
+      - name: Resumir ativação
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          path = Path("rag-activation.json")
+          print("## Ativação controlada do RAG")
+          print()
+          if not path.exists():
+              print("- Resultado: `sem artefato; consulte os logs do job`")
+              raise SystemExit(0)
+          try:
+              data = json.loads(path.read_text(encoding="utf-8"))
+          except Exception:
+              print("- Resultado: `artefato inválido; consulte os logs do job`")
+              raise SystemExit(0)
+          print(f"- Resultado: `{'ok' if data.get('ok') else 'falha'}`")
+          print(f"- SHA: `{data.get('target_sha') or 'indisponível'}`")
+          print(f"- Idempotente: `{bool(data.get('idempotente'))}`")
+          print(f"- Ambiente mutado: `{bool(data.get('env_mutado'))}`")
+          print(f"- Provider: `{data.get('EMBEDDINGS_PROVIDER', 'indisponível')}`")
+          print(f"- Dimensão: `{data.get('embedding_dim_configurada', 'indisponível')}`")
+          print(f"- Chunks vigentes vetorizados: `{data.get('knowledge_chunks_vigentes_com_embedding', 'indisponível')}`")
+          print(f"- Chunks vigentes pendentes: `{data.get('knowledge_chunks_vigentes_pendentes', 'indisponível')}`")
+          print(f"- Rollback executado: `{bool(data.get('rollback_executado'))}`")
+          print(f"- Rollback comprovado: `{data.get('rollback_ok')}`")
+          PY
