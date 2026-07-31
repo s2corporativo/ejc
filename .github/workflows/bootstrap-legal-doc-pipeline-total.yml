@@ -20,7 +20,7 @@ concurrency:
 jobs:
   aplicar-correcao:
     if: github.actor != 'github-actions[bot]' && (github.event_name != 'pull_request' || github.head_ref == 'fix/legal-doc-pipeline-total-20260731')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 15
     steps:
       - name: Checkout da branch
@@ -29,17 +29,12 @@ jobs:
           fetch-depth: 0
           ref: fix/legal-doc-pipeline-total-20260731
 
-      - name: Configurar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Aplicar correção estrutural
-        run: python .github/scripts/apply_legal_doc_pipeline_fix.py
+        run: python3 .github/scripts/apply_legal_doc_pipeline_fix.py
 
       - name: Validar sintaxe dos arquivos alterados
         run: |
-          python -m py_compile \
+          python3 -m py_compile \
             backend/app/routers/legal_docs.py \
             backend/app/services/validador_juridico_service.py \
             backend/app/models/ai_log.py \
