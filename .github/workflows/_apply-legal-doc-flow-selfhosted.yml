@@ -1,9 +1,6 @@
 name: Apply legal document flow hardening on EJC runner
 
 on:
-  push:
-    branches:
-      - fix/legal-doc-flow-total
   pull_request:
     types: [synchronize]
     branches: [main]
@@ -13,11 +10,11 @@ permissions:
 
 concurrency:
   group: apply-legal-doc-flow-hardening-selfhosted
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply:
-    if: github.event_name == 'push' || github.head_ref == 'fix/legal-doc-flow-total'
+    if: github.head_ref == 'fix/legal-doc-flow-total'
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 15
     steps:
