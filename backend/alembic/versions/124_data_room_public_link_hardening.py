@@ -9,7 +9,7 @@ O downgrade é estruturalmente reversível, mas não recupera os tokens claros a
 partir do hash. Após downgrade, links existentes devem ser revogados e gerados
 novamente.
 
-Revision ID: 124_data_room_public_link_hardening
+Revision ID: 124_dataroom_public_hardening
 Revises: 123_legal_doc_ai_log_vinculo
 Create Date: 2026-07-30
 """
@@ -17,7 +17,7 @@ Create Date: 2026-07-30
 from alembic import op
 import sqlalchemy as sa
 
-revision = "124_data_room_public_link_hardening"
+revision = "124_dataroom_public_hardening"
 down_revision = "123_legal_doc_ai_log_vinculo"
 branch_labels = None
 depends_on = None
