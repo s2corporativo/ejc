@@ -17,9 +17,7 @@ describe("consumidores do catálogo canônico de áreas", () => {
 
       expect(fonte).toContain('from "../lib/areaCatalog"');
       expect(fonte).toContain("AREAS_FALLBACK");
-      expect(fonte).not.toMatch(
-        /const\s+(?:FALLBACK_AREAS|AREAS)[^=]*=\s*\[/,
-      );
+      expect(fonte).not.toMatch(/const\s+(?:FALLBACK_AREAS|AREAS)[^=]*=\s*\[/);
     });
   }
 });
