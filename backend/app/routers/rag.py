@@ -384,28 +384,52 @@ async def listar_docs(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    q = select(KnowledgeDoc).where(KnowledgeDoc.deleted_at.is_(None))
+    # A listagem pública usa somente estas sete colunas. Hidratar o ORM
+    # completo acoplava a rota a metadados de escopo e enums não exibidos
+    # (por exemplo, base_rag), fazendo uma migration ainda não aplicada durante
+    # um rollout derrubar /rag/docs mesmo sem a coluna ser necessária aqui.
+    filtros = [KnowledgeDoc.deleted_at.is_(None)]
     if categoria:
-        q = q.where(KnowledgeDoc.categoria == categoria)
-    q = q.order_by(KnowledgeDoc.created_at.desc())
+        filtros.append(KnowledgeDoc.categoria == categoria)
 
     total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.subquery())
-    )).scalar()
-    rows = (await db.execute(
-        q.offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
+        select(sqlfunc.count(KnowledgeDoc.id)).where(*filtros)
+    )).scalar() or 0
+    q = (
+        select(
+            KnowledgeDoc.id,
+            KnowledgeDoc.titulo,
+            KnowledgeDoc.categoria,
+            KnowledgeDoc.fonte,
+            KnowledgeDoc.tribunal,
+            KnowledgeDoc.status_indexacao,
+            KnowledgeDoc.created_at,
+        )
+        .where(*filtros)
+        .order_by(KnowledgeDoc.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    rows = (await db.execute(q)).mappings().all()
     return {
         "data": [
             # status_indexacao/tribunal (item 3.1/3.2): sem eles, /conhecimento
             # renderizava "Sem vetor" para TODO doc (campo undefined), divergindo
             # da Curadoria RAG que já expõe o status real do mesmo documento.
-            {"id": d.id, "titulo": d.titulo, "categoria": d.categoria,
-             "fonte": d.fonte, "tribunal": d.tribunal,
-             "status_indexacao": d.status_indexacao, "created_at": d.created_at}
+            {
+                "id": d["id"],
+                "titulo": d["titulo"],
+                "categoria": d["categoria"],
+                "fonte": d["fonte"],
+                "tribunal": d["tribunal"],
+                "status_indexacao": d["status_indexacao"],
+                "created_at": d["created_at"],
+            }
             for d in rows
         ],
-        "total": total, "page": page, "page_size": page_size,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
     }
 
 
