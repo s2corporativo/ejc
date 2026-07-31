@@ -3,9 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.database import get_db
 from app.core.security import require_admin, require_roles
+from app.models.redesign import ModuleHelp
 from app.models.user import User
 from app.services.integration_status import build_integration_status
 from app.services.module_registry import gerar_mapa_modulos, resumir_mapa_modulos
@@ -39,9 +43,25 @@ def _coletar_rotas_api(app: Any | None) -> list[dict[str, Any]]:
 
 
 @router.get("/mapa")
-async def mapa_modulos(request: Request, cu: User = Depends(_gestores)):
+async def mapa_modulos(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_gestores),
+):
     rotas_api = _coletar_rotas_api(request.app)
-    mapa = gerar_mapa_modulos(rotas_api, [])
+    rows = (
+        await db.execute(
+            select(ModuleHelp.module_key).where(ModuleHelp.ativo.is_(True))
+        )
+    ).scalars().all()
+    helps_ativos = sorted(
+        {
+            str(module_key).strip().strip("/").lower()
+            for module_key in rows
+            if module_key
+        }
+    )
+    mapa = gerar_mapa_modulos(rotas_api, helps_ativos)
     return {
         "resumo": resumir_mapa_modulos(mapa),
         "modulos": mapa,
