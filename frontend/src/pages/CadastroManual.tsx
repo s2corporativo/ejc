@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CloudOff, RotateCw, Trash2, Wifi, WifiOff } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { AREAS_FALLBACK } from "../lib/areaCatalog";
 import { toast } from "../components/Toast";
 import { useAuth } from "../stores/auth";
 import type { Client } from "../types";
@@ -28,35 +29,9 @@ import {
   type PostFn,
 } from "../stores/cadastroManual";
 
-// Enum CaseArea do backend (app/models/case.py) — lista COMPLETA, na ordem do
-// modelo. Valor = chave do enum; rótulo em PT-BR.
-const AREAS: { k: string; l: string }[] = [
-  { k: "civil", l: "Cível" },
-  { k: "trabalhista", l: "Trabalhista" },
-  { k: "consumidor", l: "Consumidor" },
-  { k: "familia", l: "Família" },
-  { k: "ambiental", l: "Ambiental" },
-  { k: "criminal", l: "Criminal" },
-  { k: "previdenciario", l: "Previdenciário" },
-  { k: "empresarial", l: "Empresarial" },
-  { k: "tributario", l: "Tributário" },
-  { k: "administrativo", l: "Administrativo" },
-  { k: "bancario", l: "Bancário" },
-  { k: "imobiliario", l: "Imobiliário" },
-  { k: "sucessoes", l: "Sucessões" },
-  { k: "constitucional", l: "Constitucional" },
-  { k: "digital_lgpd", l: "Digital / LGPD" },
-  { k: "transito", l: "Trânsito" },
-  { k: "saude", l: "Saúde" },
-  { k: "medico", l: "Médico" },
-  { k: "agrario", l: "Agrário" },
-  { k: "agronegocio", l: "Agronegócio" },
-  { k: "eleitoral", l: "Eleitoral" },
-  { k: "internacional", l: "Internacional" },
-  { k: "contratual", l: "Contratual" },
-  { k: "societario", l: "Societário" },
-  { k: "licitacoes", l: "Licitações" },
-];
+// Fonte canônica compartilhada do frontend. O backend preserva valores legados
+// no enum, mas novas seleções seguem o catálogo ativo do produto.
+const AREAS = AREAS_FALLBACK.map(({ slug, nome }) => ({ k: slug, l: nome }));
 
 // Enum CasePrioridade do backend (app/models/case.py) — mesmo select de Casos.tsx.
 const PRIORIDADES = [
