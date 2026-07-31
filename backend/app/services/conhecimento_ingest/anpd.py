@@ -36,10 +36,18 @@ logger = logging.getLogger("ejc.conhecimento.anpd")
 # Páginas-índice oficiais (rotulo, categoria RAG, URL). Categorias NÃO
 # restritas (fora de ai_service._RESTRICTED_CATS): conteúdo público/global.
 PAGINAS = [
-    ("regulamentacoes", "legislacao",
-     "https://www.gov.br/anpd/pt-br/assuntos/regulamentacao/regulamentacoes-da-anpd"),
-    ("guias_orientativos", "doutrina",
-     "https://www.gov.br/anpd/pt-br/documentos-e-publicacoes"),
+    (
+        "regulamentacoes",
+        "legislacao",
+        "https://www.gov.br/anpd/pt-br/acesso-a-informacao/institucional/"
+        "atos-normativos/regulamentacoes_anpd",
+    ),
+    (
+        "guias_orientativos",
+        "doutrina",
+        "https://www.gov.br/anpd/pt-br/centrais-de-conteudo/"
+        "materiais-educativos-e-publicacoes",
+    ),
 ]
 
 MAX_DOCS_POR_EXECUCAO = 30      # teto de documentos processados por execução
@@ -55,8 +63,7 @@ _PALAVRAS_DOC = (
 # Trechos de URL que são navegação/institucional — nunca documento:
 _URL_IGNORAR = (
     "mailto:", "javascript:", "/noticias", "/composicao",
-    "/acesso-a-informacao", "/canais_atendimento", "/pt-br/search",
-    "/centrais-de-conteudo", "/@@", "/login",
+    "/canais_atendimento", "/pt-br/search", "/@@", "/login",
 )
 
 
@@ -80,8 +87,9 @@ def extrair_links(html: str, url_base: str) -> list[dict]:
         if not (parte.netloc == "gov.br" or parte.netloc.endswith(".gov.br")):
             continue          # só domínio oficial
         eh_pdf = parte.path.lower().endswith(".pdf")
-        if not eh_pdf and "/anpd/" not in parte.path:
-            continue          # página HTML precisa ser do site da ANPD
+        eh_dou = parte.netloc == "in.gov.br" or parte.netloc.endswith(".in.gov.br")
+        if not eh_pdf and "/anpd/" not in parte.path and not eh_dou:
+            continue          # HTML: página da ANPD ou publicação oficial do DOU
         rot_norm = texto_normalizado(rotulo)
         if len(rot_norm) < 10:
             continue          # breadcrumb/ícone
