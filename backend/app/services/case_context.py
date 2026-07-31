@@ -204,16 +204,16 @@ async def montar_dossie(
         if cliente.profissao:
             L.append(f"Profissão/atividade: {cliente.profissao}")
 
+    # A camada documental é priorizada no contexto para impedir que relato ou
+    # interpretação derivada substituam fatos vinculados aos originais.
+    if dossie_documental:
+        L.append("")
+        L.append(dossie_documental["texto_contexto"])
+
     # Relato editável do caso: preservado, mas não confundido com prova documental.
     if caso.descricao_fatos:
         L.append("")
         L.append(f"[RELATO/FATOS REGISTRADOS — CAMPO EDITÁVEL]\n{caso.descricao_fatos}")
-
-    # A camada documental vem antes das teses e estratégias para impedir que
-    # interpretação derivada substitua os fatos vinculados aos originais.
-    if dossie_documental:
-        L.append("")
-        L.append(dossie_documental["texto_contexto"])
 
     if caso.tese_principal:
         L.append(f"[TESE PRINCIPAL — INTERPRETAÇÃO JURÍDICA]\n{caso.tese_principal}")
@@ -291,7 +291,9 @@ async def montar_dossie(
             "qtd_honorarios": len(honorarios),
             "dossie_documental_versao": dossie_documental.get("versao") if dossie_documental else None,
             "dossie_documental_sha256": dossie_documental.get("sha256_manifesto") if dossie_documental else None,
+            "qtd_documentos_total_ged": dossie_documental.get("qtd_documentos_total_ged", 0) if dossie_documental else 0,
             "qtd_documentos_canonicos": dossie_documental.get("qtd_documentos", 0) if dossie_documental else 0,
+            "qtd_documentos_sigilosos_omitidos": dossie_documental.get("qtd_documentos_sigilosos_omitidos", 0) if dossie_documental else 0,
             "qtd_fontes_documentais": dossie_documental.get("qtd_paginas_com_texto", 0) if dossie_documental else 0,
             "dossie_documental_truncado": dossie_documental.get("truncado", False) if dossie_documental else False,
         },
