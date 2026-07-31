@@ -4,7 +4,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import select, or_, func as sqlfunc, text
@@ -47,6 +47,12 @@ from app.schemas.case import (
 )
 from app.schemas.common import MsgResponse
 from pydantic import BaseModel, Field
+
+_CASE_ID_PATTERN = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+CaseIdPath = Annotated[str, Field(pattern=_CASE_ID_PATTERN)]
 
 router = APIRouter(prefix="/cases", tags=["Casos"])
 _ARQUIVAMENTO_ROLES = ["superadmin", "admin", "socio", "advogado"]
@@ -324,7 +330,7 @@ async def criar(
 
 @router.get("/{case_id}", response_model=CaseDetail)
 async def detalhe(
-    case_id: str,
+    case_id: CaseIdPath,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
