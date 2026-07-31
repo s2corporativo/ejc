@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/legal-doc-flow-total
+  pull_request:
+    types: [synchronize]
+    branches: [main]
 
 permissions:
   contents: write
@@ -14,7 +17,7 @@ concurrency:
 
 jobs:
   apply:
-    if: github.ref_name == 'fix/legal-doc-flow-total' && github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && (github.event_name == 'push' || github.head_ref == 'fix/legal-doc-flow-total')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
