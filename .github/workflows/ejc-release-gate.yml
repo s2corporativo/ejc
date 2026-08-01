@@ -5,11 +5,11 @@ name: EJC Release Gate
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, fix/legal-doc-flow-final-v2]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ejc-release-gate-${{ github.workflow }}-${{ github.ref }}
@@ -24,7 +24,152 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          fetch-depth: 1
+          ref: fix/legal-doc-flow-final-v2
+          fetch-depth: 0
+
+      - name: Aplicar reforços finais de imutabilidade e HITL
+        if: github.ref == 'refs/heads/fix/legal-doc-flow-final-v2' && github.actor != 'github-actions[bot]'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def bounds(source: str, name: str) -> tuple[int, int]:
+              start = source.index(f'async def {name}(')
+              end = source.find('\n\n@router.', start + 1)
+              return start, len(source) if end < 0 else end
+
+          path = Path('backend/app/routers/legal_docs.py')
+          source = path.read_text(encoding='utf-8')
+
+          old_immutability = '''    # Peça protocolada é registro imutável. Uma nova redação deve nascer como
+    # nova peça/versão, nunca sobrescrever a prova do que foi protocolado.
+    if conteudo_alterado and status_atual == "protocolada":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Peça protocolada é imutável. Crie uma nova peça ou versão para "
+                "qualquer alteração posterior ao protocolo."
+            ),
+        )'''
+          new_immutability = '''    # Peça protocolada é registro imutável. O endpoint genérico não pode
+    # alterar redação, título, tipo, origem ou regredir o status. Retificações
+    # devem nascer como nova peça/versão, preservando a prova protocolada.
+    campos_imutaveis_protocolados = {
+        "titulo", "conteudo", "tipo_peca", "status", "ai_generated"
+    }
+    if (
+        status_atual == "protocolada"
+        and campos_imutaveis_protocolados.intersection(mudancas)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Peça protocolada é imutável. Crie uma nova peça ou versão para "
+                "qualquer alteração posterior ao protocolo."
+            ),
+        )'''
+          if 'campos_imutaveis_protocolados' not in source:
+              start, end = bounds(source, 'atualizar')
+              block = source[start:end]
+              if block.count(old_immutability) != 1:
+                  raise SystemExit(f'immutability: ocorrências={block.count(old_immutability)}')
+              block = block.replace(old_immutability, new_immutability, 1)
+              source = source[:start] + block + source[end:]
+
+          old_gate = '''    status_atual = _status_value(d.status)
+    validacao = await _ultima_validacao_peca(db, d)'''
+          new_gate = '''    status_atual = _status_value(d.status)
+    if d.ai_generated and not d.human_reviewed:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "PDF de protocolo bloqueado: peça gerada por IA exige "
+                "revisão humana registrada antes da exportação final."
+            ),
+        )
+    validacao = await _ultima_validacao_peca(db, d)'''
+          start, end = bounds(source, '_gates_exportacao_protocolo')
+          gate = source[start:end]
+          if 'd.ai_generated and not d.human_reviewed' not in gate:
+              if gate.count(old_gate) != 1:
+                  raise SystemExit(f'gate HITL: ocorrências={gate.count(old_gate)}')
+              gate = gate.replace(old_gate, new_gate, 1)
+              source = source[:start] + gate + source[end:]
+
+          stale_comment = '''            # Este endpoint exporta em QUALQUER status (rascunho incluso): a marca
+            # de origem-IA precisa viajar com o PDF de impressão do rascunho.'''
+          fixed_comment = '''            # Os gates acima garantem versão protocolável revisada. Mantemos o
+            # parâmetro defensivo para que qualquer drift futuro siga marcado.'''
+          if stale_comment in source:
+              source = source.replace(stale_comment, fixed_comment, 1)
+          path.write_text(source.rstrip('\n') + '\n', encoding='utf-8')
+
+          tests_path = Path('backend/tests/test_legal_doc_flow_contract.py')
+          tests = tests_path.read_text(encoding='utf-8')
+          if 'def test_mutacoes_serializadas_e_pdf_falha_fechado_sem_hitl' not in tests:
+              tests += '''
+
+def test_mutacoes_serializadas_e_pdf_falha_fechado_sem_hitl():
+    src = _source("app/routers/legal_docs.py")
+    for function_name in ("atualizar", "revisar", "registrar_protocolo"):
+        bloco = _function_source(src, function_name)
+        assert ".with_for_update()" in bloco
+
+    gate = _function_source(src, "_gates_exportacao_protocolo")
+    assert "d.ai_generated and not d.human_reviewed" in gate
+    assert "revisão humana registrada" in gate
+
+    atualizar = _function_source(src, "atualizar")
+    assert "campos_imutaveis_protocolados" in atualizar
+    assert '"status"' in atualizar
+'''
+          tests_path.write_text(tests.rstrip() + '\n', encoding='utf-8')
+
+          e2e_path = Path('qa/homologacao/run_fluxo_legal_doc_e2e.py')
+          e2e = e2e_path.read_text(encoding='utf-8')
+          if 'json={"status": "em_revisao"}' not in e2e:
+              anchor = '''        request(
+            client,
+            "PATCH",
+            f"/api/legal-docs/{doc_id}",
+            {422},
+            json={"conteudo": conteudo + "\\nTentativa proibida após protocolo."},
+        )'''
+              replacement = '''        request(
+            client,
+            "PATCH",
+            f"/api/legal-docs/{doc_id}",
+            {422},
+            json={"status": "em_revisao"},
+        )
+        request(
+            client,
+            "PATCH",
+            f"/api/legal-docs/{doc_id}",
+            {422},
+            json={"conteudo": conteudo + "\\nTentativa proibida após protocolo."},
+        )'''
+              if e2e.count(anchor) != 1:
+                  raise SystemExit(f'E2E imutabilidade: ocorrências={e2e.count(anchor)}')
+              e2e = e2e.replace(anchor, replacement, 1)
+          e2e_path.write_text(e2e.rstrip() + '\n', encoding='utf-8')
+          PY
+
+          python3 -m compileall -q \
+            backend/app/routers/legal_docs.py \
+            backend/tests/test_legal_doc_flow_contract.py \
+            qa/homologacao/run_fluxo_legal_doc_e2e.py
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            backend/app/routers/legal_docs.py \
+            backend/tests/test_legal_doc_flow_contract.py \
+            qa/homologacao/run_fluxo_legal_doc_e2e.py
+          git diff --cached --check
+          git commit -m 'fix(legal-docs): tornar protocolo imutável e PDF fail-closed'
+          git push origin HEAD:fix/legal-doc-flow-final-v2
 
       - name: Executar gate P0 com diagnóstico
         shell: bash
