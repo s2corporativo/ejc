@@ -284,6 +284,7 @@ export default function SalaJuridica() {
   const [convDuplicado, setConvDuplicado] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const autosaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const convBloqueioServidorRef = useRef(false);
   // Última edição da área livre ainda não persistida pelo autosave — usada
   // para descarregar o texto pendente antes de enviar mensagem à IA.
   const autosavePendenteRef = useRef<{
@@ -490,6 +491,7 @@ export default function SalaJuridica() {
     setConvConflito(false);
     setConvRevisado(false);
     setConvDuplicado(false);
+    convBloqueioServidorRef.current = false;
     setConvPreview(null);
     setWizardAberto(true);
   };
@@ -513,7 +515,14 @@ export default function SalaJuridica() {
             },
           },
         );
-        setConvPreview(data);
+        const temAchados =
+          data.alertas_conflito.length > 0 ||
+          data.clientes_possivelmente_duplicados.length > 0 ||
+          data.casos_ativos_do_cliente.length > 0 ||
+          data.bloqueia;
+        setConvPreview((prev) =>
+          convBloqueioServidorRef.current && !temAchados ? prev : data,
+        );
       } catch {
         /* preview indisponível não impede o wizard; servidor ainda barra */
       }
@@ -596,6 +605,7 @@ export default function SalaJuridica() {
         }
       )?.response?.data?.detail;
       if (detail && typeof detail === "object") {
+        convBloqueioServidorRef.current = true;
         setConvPreview((prev) => ({
           alertas_conflito:
             detail.alertas_conflito ?? prev?.alertas_conflito ?? [],
@@ -1369,7 +1379,11 @@ export default function SalaJuridica() {
                       "block w-full px-3 py-1.5 text-left text-sm hover:bg-slate-50",
                       convClienteId === c.id && "bg-primary-50 font-semibold",
                     )}
-                    onClick={() => setConvClienteId(c.id)}
+                    onClick={() => {
+                      convBloqueioServidorRef.current = false;
+                      setConvDuplicado(false);
+                      setConvClienteId(c.id);
+                    }}
                   >
                     {c.nome ?? c.razao_social ?? c.id}
                   </button>
@@ -1383,12 +1397,20 @@ export default function SalaJuridica() {
               placeholder="Nome do novo cliente"
               value={convNovoCliente}
               disabled={convClienteId != null}
-              onChange={(e) => setConvNovoCliente(e.target.value)}
+              onChange={(e) => {
+                convBloqueioServidorRef.current = false;
+                setConvDuplicado(false);
+                setConvNovoCliente(e.target.value);
+              }}
             />
             {convClienteId != null && (
               <button
                 className="mt-1 text-xs text-primary-700 underline"
-                onClick={() => setConvClienteId(null)}
+                onClick={() => {
+                  convBloqueioServidorRef.current = false;
+                  setConvDuplicado(false);
+                  setConvClienteId(null);
+                }}
               >
                 limpar seleção e criar novo cliente
               </button>
