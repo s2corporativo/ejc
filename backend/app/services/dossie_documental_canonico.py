@@ -40,9 +40,19 @@ def _inteiro_seguro(valor: Any, padrao: int = 0) -> int:
         return padrao
 
 
-def _chave_ordenacao(item: dict[str, Any]) -> tuple[str, str, int, str, str]:
+def _chave_ordenacao(
+    item: dict[str, Any],
+) -> tuple[str, str, int, str, int, str, str]:
+    """Ordena pela cronologia e pela posição de ingresso no acervo.
+
+    A ordem de origem antecede identificadores lexicais. Assim, quando duas
+    cópias têm o mesmo hash e timestamp, o primeiro documento recebido permanece
+    como referência canônica, independentemente da ordem da lista de entrada.
+    """
     return (
         str(item.get("document_created_at") or item.get("batch_created_at") or ""),
+        str(item.get("batch_id") or ""),
+        _inteiro_seguro(item.get("source_order")),
         str(item.get("versao_grupo_id") or item.get("document_id") or ""),
         _inteiro_seguro(item.get("versao"), 1),
         str(item.get("filename") or ""),
@@ -57,11 +67,11 @@ def construir_dossie_documental_canonico(
 ) -> dict[str, Any]:
     """Constrói representação determinística, rastreável e sem conteúdo de IA.
 
-    O selo geral é calculado sobre manifesto JSON ordenado contendo os hashes dos
-    originais, quando existentes, e de cada página extraída. Cópias com o mesmo
-    SHA-256 permanecem registradas no manifesto, mas seu texto não é repetido no
-    contexto, evitando que o mesmo fato seja artificialmente superponderado.
+    O selo é calculado sobre manifesto JSON ordenado com hashes dos originais,
+    quando existentes, e de cada página extraída. Cópias com o mesmo SHA-256
+    permanecem no manifesto, mas seu texto não é repetido no contexto.
     """
+    limite_texto = max(_inteiro_seguro(limite_texto), 0)
     ordenados = sorted((dict(item) for item in itens), key=_chave_ordenacao)
     documentos_vistos: set[str] = set()
     conteudos_vistos: dict[str, str] = {}
@@ -101,17 +111,24 @@ def construir_dossie_documental_canonico(
 
         meta = item.get("extraction_meta") or item.get("meta_extracao") or {}
         classificacao = item.get("classification") or item.get("classificacao") or {}
-        paginas_brutas = list(meta.get("paginas") or item.get("paginas") or [])
         paginas = sorted(
-            paginas_brutas,
+            list(meta.get("paginas") or item.get("paginas") or []),
             key=lambda pagina: (
                 _inteiro_seguro(pagina.get("pagina")),
                 _texto_normalizado(pagina.get("texto")),
             ),
         )
-        filename = _texto_normalizado(item.get("filename") or item.get("nome")) or "Documento sem nome"
+        filename = (
+            _texto_normalizado(item.get("filename") or item.get("nome"))
+            or "Documento sem nome"
+        )
         tipo = _texto_normalizado(classificacao.get("tipo")) or "não classificado"
-        status = _texto_normalizado(item.get("extraction_status") or item.get("status_extracao")) or "desconhecido"
+        status = (
+            _texto_normalizado(
+                item.get("extraction_status") or item.get("status_extracao")
+            )
+            or "desconhecido"
+        )
         batch_id = _texto_normalizado(item.get("batch_id"))
         source_order = _inteiro_seguro(item.get("source_order"))
         versao = max(_inteiro_seguro(item.get("versao"), 1), 1)
@@ -119,28 +136,31 @@ def construir_dossie_documental_canonico(
         versao_anterior_id = _texto_normalizado(item.get("versao_anterior_id"))
         versao_vigente = bool(item.get("versao_vigente", True))
 
-        duplicado_de_documento_id = conteudos_vistos.get(sha_original) if sha_original else None
+        duplicado_de_documento_id = (
+            conteudos_vistos.get(sha_original) if sha_original else None
+        )
         if sha_original and not duplicado_de_documento_id and document_id:
             conteudos_vistos[sha_original] = document_id
         if duplicado_de_documento_id:
             duplicados_omitidos += 1
 
-        paginas_manifesto: list[dict[str, Any]] = []
-        paginas_com_texto = 0
         cabecalho = (
             f"[FONTE DOCUMENTAL | documento_id={document_id or 'indisponível'} | "
-            f"sha256_original={sha_original or 'indisponível'} | lote={batch_id or 'GED'} | "
-            f"ordem={source_order} | arquivo={filename} | tipo={tipo} | "
-            f"versao={versao} | vigente={'sim' if versao_vigente else 'não'} | status_extracao={status}]"
+            f"sha256_original={sha_original or 'indisponível'} | "
+            f"lote={batch_id or 'GED'} | ordem={source_order} | "
+            f"arquivo={filename} | tipo={tipo} | versao={versao} | "
+            f"vigente={'sim' if versao_vigente else 'não'} | "
+            f"status_extracao={status}]"
         )
         adicionar_contexto(cabecalho)
-
         if duplicado_de_documento_id:
             adicionar_contexto(
                 "[CÓPIA DOCUMENTAL — conteúdo idêntico ao documento "
                 f"{duplicado_de_documento_id}; texto não repetido no contexto]"
             )
 
+        paginas_manifesto: list[dict[str, Any]] = []
+        paginas_com_texto = 0
         for pagina in paginas:
             numero = _inteiro_seguro(pagina.get("pagina"))
             texto = _texto_normalizado(pagina.get("texto"))
@@ -158,7 +178,8 @@ def construir_dossie_documental_canonico(
                 continue
             paginas_com_texto += 1
             adicionar_contexto(
-                f"[PÁGINA {numero or '?'} | sha256_texto_extraido={hash_pagina}]\n{texto}"
+                f"[PÁGINA {numero or '?'} | "
+                f"sha256_texto_extraido={hash_pagina}]\n{texto}"
             )
             fontes.append(
                 {
@@ -175,8 +196,12 @@ def construir_dossie_documental_canonico(
             )
 
         if paginas_com_texto == 0 and not duplicado_de_documento_id:
-            avisos.append(f"{filename}: original preservado, mas sem texto extraído utilizável.")
-            adicionar_contexto("[SEM TEXTO EXTRAÍDO — consultar o original preservado no GED]")
+            avisos.append(
+                f"{filename}: original preservado, mas sem texto extraído utilizável."
+            )
+            adicionar_contexto(
+                "[SEM TEXTO EXTRAÍDO — consultar o original preservado no GED]"
+            )
 
         manifesto.append(
             {
@@ -207,12 +232,14 @@ def construir_dossie_documental_canonico(
         separators=(",", ":"),
     )
     selo = _hash_texto(serializado)
-
     prefixo = "\n\n".join(
         [
             f"[DOSSIÊ DOCUMENTAL CANÔNICO — {VERSAO_DOSSIE_DOCUMENTAL}]",
             f"Selo SHA-256 do manifesto: {selo}",
-            "Regra de leitura: o conteúdo abaixo é transcrição/OCR vinculado ao original; não é resumo, tese ou conclusão da IA.",
+            (
+                "Regra de leitura: o conteúdo abaixo é transcrição/OCR vinculado "
+                "ao original; não é resumo, tese ou conclusão da IA."
+            ),
         ]
     )
     corpo = "".join(blocos_contexto)
@@ -221,9 +248,18 @@ def construir_dossie_documental_canonico(
         texto_contexto = texto_contexto[:limite_texto]
         truncado = True
     if truncado:
-        marcador = "\n\n[CONTEÚDO DOCUMENTAL TRUNCADO NO CONTEXTO — consultar as fontes e os originais no GED]"
-        texto_contexto = texto_contexto[: max(limite_texto - len(marcador), 0)] + marcador
-        avisos.append("O texto documental excedeu o limite do contexto; o manifesto e os originais permanecem íntegros.")
+        marcador = (
+            "\n\n[CONTEÚDO DOCUMENTAL TRUNCADO NO CONTEXTO — "
+            "consultar as fontes e os originais no GED]"
+        )
+        if limite_texto >= len(marcador):
+            texto_contexto = texto_contexto[: limite_texto - len(marcador)] + marcador
+        else:
+            texto_contexto = marcador[:limite_texto]
+        avisos.append(
+            "O texto documental excedeu o limite do contexto; "
+            "o manifesto e os originais permanecem íntegros."
+        )
 
     return {
         "versao": VERSAO_DOSSIE_DOCUMENTAL,
@@ -257,21 +293,28 @@ async def montar_dossie_documental_canonico(
         return None
 
     sigilosos_omitidos = [
-        doc for doc in documentos
+        doc
+        for doc in documentos
         if doc.confidencialidade not in _CONFIDENCIALIDADES_PERMITIDAS_IA
     ]
     documentos_permitidos = [
-        doc for doc in documentos
+        doc
+        for doc in documentos
         if doc.confidencialidade in _CONFIDENCIALIDADES_PERMITIDAS_IA
     ]
     ids_permitidos = [doc.id for doc in documentos_permitidos]
 
-    intake_por_documento: dict[str, tuple[DocumentIntakeItem, DocumentIntakeBatch]] = {}
+    intake_por_documento: dict[
+        str, tuple[DocumentIntakeItem, DocumentIntakeBatch]
+    ] = {}
     if ids_permitidos:
         intake_rows = (
             await db.execute(
                 select(DocumentIntakeItem, DocumentIntakeBatch)
-                .join(DocumentIntakeBatch, DocumentIntakeBatch.id == DocumentIntakeItem.batch_id)
+                .join(
+                    DocumentIntakeBatch,
+                    DocumentIntakeBatch.id == DocumentIntakeItem.batch_id,
+                )
                 .where(
                     DocumentIntakeItem.document_id.in_(ids_permitidos),
                     DocumentIntakeBatch.status == "concluido",
@@ -291,7 +334,7 @@ async def montar_dossie_documental_canonico(
         grupo = doc.versao_grupo_id or doc.id
         maior_versao_por_grupo[grupo] = max(
             maior_versao_por_grupo.get(grupo, 0),
-            max(int(doc.versao or 1), 1),
+            max(_inteiro_seguro(doc.versao, 1), 1),
         )
 
     itens: list[dict[str, Any]] = []
@@ -307,15 +350,19 @@ async def montar_dossie_documental_canonico(
         else:
             texto_ged = _texto_normalizado(doc.ocr_text)
             extraction_meta = {
-                "paginas": [
-                    {
-                        "pagina": 1,
-                        "texto": texto_ged,
-                        "confianca": None,
-                        "metodo": "ocr_ged_sem_paginacao",
-                        "requer_revisao": True,
-                    }
-                ] if texto_ged else [],
+                "paginas": (
+                    [
+                        {
+                            "pagina": 1,
+                            "texto": texto_ged,
+                            "confianca": None,
+                            "metodo": "ocr_ged_sem_paginacao",
+                            "requer_revisao": True,
+                        }
+                    ]
+                    if texto_ged
+                    else []
+                ),
                 "page_count": 1 if texto_ged else 0,
             }
             extraction_status = "ged_sem_hash" if texto_ged else "ged_sem_texto"
@@ -324,12 +371,18 @@ async def montar_dossie_documental_canonico(
             source_order = ordem
 
         grupo = doc.versao_grupo_id or doc.id
-        versao = max(int(doc.versao or 1), 1)
+        versao = max(_inteiro_seguro(doc.versao, 1), 1)
         itens.append(
             {
                 "batch_id": batch.id if batch else None,
-                "batch_created_at": batch.created_at.isoformat() if batch and batch.created_at else "",
-                "document_created_at": doc.created_at.isoformat() if doc.created_at else "",
+                "batch_created_at": (
+                    batch.created_at.isoformat()
+                    if batch and batch.created_at
+                    else ""
+                ),
+                "document_created_at": (
+                    doc.created_at.isoformat() if doc.created_at else ""
+                ),
                 "document_id": doc.id,
                 "filename": doc.filename,
                 "source_order": source_order,
@@ -344,15 +397,22 @@ async def montar_dossie_documental_canonico(
             }
         )
 
-    resultado = construir_dossie_documental_canonico(itens, limite_texto=limite_texto)
+    resultado = construir_dossie_documental_canonico(
+        itens,
+        limite_texto=limite_texto,
+    )
     resultado["qtd_documentos_total_ged"] = len(documentos)
     resultado["qtd_documentos_sigilosos_omitidos"] = len(sigilosos_omitidos)
     if sigilosos_omitidos:
         aviso = (
-            f"{len(sigilosos_omitidos)} documento(s) em cofre foram omitidos do contexto da IA; "
-            "os originais permanecem preservados e acessíveis somente pelo fluxo autorizado."
+            f"{len(sigilosos_omitidos)} documento(s) em cofre foram omitidos "
+            "do contexto da IA; os originais permanecem preservados e "
+            "acessíveis somente pelo fluxo autorizado."
         )
         resultado["avisos"].insert(0, aviso)
         marcador = f"[AVISO DE SIGILO — {aviso}]\n\n"
-        resultado["texto_contexto"] = (marcador + resultado["texto_contexto"])[:limite_texto]
+        texto_com_aviso = marcador + resultado["texto_contexto"]
+        if len(texto_com_aviso) > limite_texto:
+            resultado["truncado"] = True
+        resultado["texto_contexto"] = texto_com_aviso[:limite_texto]
     return resultado
