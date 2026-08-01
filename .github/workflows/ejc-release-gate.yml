@@ -24,11 +24,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: fix/legal-doc-flow-total
+          ref: fix/legal-doc-flow-final-v2
           fetch-depth: 0
 
       - name: Materializar correção do fluxo de peças
-        if: github.head_ref == 'fix/legal-doc-flow-total' && github.actor != 'github-actions[bot]'
+        if: github.head_ref == 'fix/legal-doc-flow-final-v2' && github.actor != 'github-actions[bot]'
         shell: bash
         run: |
           python3 - <<'PY'
@@ -50,12 +50,9 @@ jobs:
           patcher.parent.mkdir(parents=True, exist_ok=True)
           patcher.write_bytes(gzip.decompress(base64.b64decode(match.group(1))))
 
-          # Python 3.12 interpreta barras invertidas da string de reposição em
-          # re.subn(). O patch contém regex literais como \s; usar callable
-          # preserva o texto exatamente e mantém a validação de match único.
           patcher_source = patcher.read_text(encoding='utf-8')
           old = "new_text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)"
-          new = "new_text, count = re.subn(pattern, lambda _m: replacement, text, count=1, flags=re.S)"
+          new = "new_text, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)"
           if patcher_source.count(old) != 1:
               raise SystemExit('Assinatura de replace_regex_once inesperada')
           patcher.write_text(patcher_source.replace(old, new), encoding='utf-8')
@@ -73,6 +70,8 @@ jobs:
             qa/homologacao/run_fluxo_legal_doc_e2e.py
 
           rm -f scripts/maintenance/apply_legal_doc_flow_fix.py
+          rm -f scripts/maintenance/sitecustomize.py
+          rm -rf scripts/maintenance/__pycache__
           rm -f scripts/maintenance/.trigger-legal-doc-flow
           rmdir scripts/maintenance 2>/dev/null || true
           rm -f .github/workflows/_apply-legal-doc-flow-fix.yml
@@ -85,7 +84,7 @@ jobs:
           git add -A
           git diff --cached --check
           git commit -m 'fix: harden validation approval and PDF flow'
-          git push origin HEAD:fix/legal-doc-flow-total
+          git push origin HEAD:fix/legal-doc-flow-final-v2
 
       - name: Executar gate P0 com diagnóstico
         shell: bash
