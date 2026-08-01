@@ -56,24 +56,70 @@ jobs:
               raise SystemExit('Assinatura de replace_regex_once inesperada')
           patcher_source = patcher_source.replace(regex_old, regex_new)
 
-          # Remove o fallback antigo e redundante do lock do endpoint atualizar.
           patcher_lines = patcher_source.splitlines()
-          labels = [index for index, line in enumerate(patcher_lines) if '"lock atualizar",' in line]
+
+          # Compatibilidade estrita para os locks: a main atual fecha
+          # db.execute com dois parênteses. Somente labels "lock ..." podem
+          # tentar essa segunda assinatura, e ainda exigem ocorrência única.
+          replace_defs = [
+              index
+              for index, line in enumerate(patcher_lines)
+              if line.startswith('def replace_once(')
+          ]
+          if len(replace_defs) != 1:
+              raise SystemExit(f'Definição replace_once inesperada: {len(replace_defs)}')
+          count_index = next(
+              (
+                  index
+                  for index in range(replace_defs[0] + 1, replace_defs[0] + 10)
+                  if patcher_lines[index].strip() == 'count = text.count(old)'
+              ),
+              None,
+          )
+          if count_index is None:
+              raise SystemExit('Contagem de replace_once não encontrada')
+          compat_lines = [
+              '    if count == 0 and label.startswith("lock "):',
+              '        old_variant = old.replace("\\n    ).scalar_one_or_none()", "\\n    )).scalar_one_or_none()")',
+              '        new_variant = new.replace("\\n    ).scalar_one_or_none()", "\\n    )).scalar_one_or_none()")',
+              '        variant_count = text.count(old_variant)',
+              '        if old_variant != old and variant_count == 1:',
+              '            return text.replace(old_variant, new_variant, 1)',
+          ]
+          patcher_lines[count_index + 1 : count_index + 1] = compat_lines
+
+          # O regex imediatamente anterior já corrige o endpoint atualizar;
+          # remove apenas o fallback legado duplicado desse mesmo lock.
+          labels = [
+              index
+              for index, line in enumerate(patcher_lines)
+              if '"lock atualizar",' in line
+          ]
           if len(labels) != 1:
               raise SystemExit(f'Fallback lock atualizar inesperado: {len(labels)}')
           label_index = labels[0]
-          start = next((index for index in range(label_index, max(-1, label_index - 20), -1) if patcher_lines[index].strip() == 'block = replace_once('), None)
-          end = next((index for index in range(label_index + 1, min(len(patcher_lines), label_index + 6)) if patcher_lines[index].strip() == ')'), None)
+          start = next(
+              (
+                  index
+                  for index in range(label_index, max(-1, label_index - 20), -1)
+                  if patcher_lines[index].strip() == 'block = replace_once('
+              ),
+              None,
+          )
+          end = next(
+              (
+                  index
+                  for index in range(label_index + 1, min(len(patcher_lines), label_index + 6))
+                  if patcher_lines[index].strip() == ')'
+              ),
+              None,
+          )
           if start is None or end is None or not start < label_index < end:
-              raise SystemExit(f'Limites do fallback lock atualizar inválidos: start={start}, label={label_index}, end={end}')
+              raise SystemExit(
+                  f'Limites do fallback lock atualizar inválidos: start={start}, label={label_index}, end={end}'
+              )
           del patcher_lines[start : end + 1]
           patcher_source = '\n'.join(patcher_lines) + '\n'
-
-          print('=== APLICADOR: linhas 235-285 ===')
-          for number, line in enumerate(patcher_source.splitlines(), 1):
-              if 235 <= number <= 285:
-                  print(f'{number:04d}: {line}')
-          print('=== FIM DO TRECHO ===')
 
           patcher.write_text(patcher_source, encoding='utf-8')
           subprocess.run([sys.executable, '-m', 'py_compile', str(patcher)], check=True)
