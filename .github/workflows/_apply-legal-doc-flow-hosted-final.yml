@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - fix/legal-doc-flow-final-v2
+  pull_request:
+    branches:
+      - main
+    types: [synchronize]
 
 permissions:
   contents: write
@@ -14,7 +18,7 @@ concurrency:
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && (github.event_name == 'push' || github.head_ref == 'fix/legal-doc-flow-final-v2')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -101,5 +105,3 @@ jobs:
           git diff --cached --check
           git commit -m 'fix: harden validation approval and PDF flow'
           git push origin HEAD:fix/legal-doc-flow-final-v2
-
-# Disparo explícito após o registro inicial do workflow na branch.
