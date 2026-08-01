@@ -1,0 +1,211 @@
+name: Finalize legal document hardening
+
+on:
+  push:
+    branches:
+      - fix/legal-doc-flow-final-v2
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-legal-doc-hardening
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/legal-doc-flow-final-v2
+          fetch-depth: 0
+
+      - name: Apply audited final safeguards
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: esperado 1, encontrado {count}')
+              return text.replace(old, new, 1)
+
+          def replace_in_function(text: str, name: str, old: str, new: str, label: str) -> str:
+              start = text.index(f'async def {name}(')
+              end = text.find('\n\n@router.', start + 1)
+              if end < 0:
+                  end = len(text)
+              block = text[start:end]
+              count = block.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: esperado 1 no bloco {name}, encontrado {count}')
+              block = block.replace(old, new, 1)
+              return text[:start] + block + text[end:]
+
+          path = Path('backend/app/routers/legal_docs.py')
+          src = path.read_text(encoding='utf-8')
+          src = replace_once(
+              src,
+              'from sqlalchemy import and_, select, func as sqlfunc, or_',
+              'from sqlalchemy import and_, select, func as sqlfunc',
+              'import sqlalchemy obsoleto',
+          )
+
+          unlocked = '''        select(LegalDoc).where(
+                      LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+                  )
+              )).scalar_one_or_none()'''.replace('                  ', '    ')
+          locked = '''        select(LegalDoc).where(
+                      LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+                  ).with_for_update()
+              )).scalar_one_or_none()'''.replace('                  ', '    ')
+          for function_name in ('atualizar', 'revisar', 'registrar_protocolo'):
+              src = replace_in_function(
+                  src,
+                  function_name,
+                  unlocked,
+                  locked,
+                  f'lock {function_name}',
+              )
+
+          old_immutability = '''    # Peça protocolada é registro imutável. Uma nova redação deve nascer como
+              # nova peça/versão, nunca sobrescrever a prova do que foi protocolado.
+              if conteudo_alterado and status_atual == "protocolada":
+                  raise HTTPException(
+                      status_code=422,
+                      detail=(
+                          "Peça protocolada é imutável. Crie uma nova peça ou versão para "
+                          "qualquer alteração posterior ao protocolo."
+                      ),
+                  )'''.replace('              ', '    ')
+          new_immutability = '''    # Peça protocolada é registro imutável. O endpoint genérico não pode
+              # alterar redação, título, tipo, origem ou regredir o status. Retificações
+              # devem nascer como nova peça/versão, preservando a prova protocolada.
+              campos_imutaveis_protocolados = {
+                  "titulo", "conteudo", "tipo_peca", "status", "ai_generated"
+              }
+              if (
+                  status_atual == "protocolada"
+                  and campos_imutaveis_protocolados.intersection(mudancas)
+              ):
+                  raise HTTPException(
+                      status_code=422,
+                      detail=(
+                          "Peça protocolada é imutável. Crie uma nova peça ou versão para "
+                          "qualquer alteração posterior ao protocolo."
+                      ),
+                  )'''.replace('              ', '    ')
+          src = replace_in_function(
+              src,
+              'atualizar',
+              old_immutability,
+              new_immutability,
+              'imutabilidade integral protocolada',
+          )
+
+          old_gate = '''    status_atual = _status_value(d.status)
+              validacao = await _ultima_validacao_peca(db, d)'''.replace('              ', '    ')
+          new_gate = '''    status_atual = _status_value(d.status)
+              if d.ai_generated and not d.human_reviewed:
+                  raise HTTPException(
+                      status_code=422,
+                      detail=(
+                          "PDF de protocolo bloqueado: peça gerada por IA exige "
+                          "revisão humana registrada antes da exportação final."
+                      ),
+                  )
+              validacao = await _ultima_validacao_peca(db, d)'''.replace('              ', '    ')
+          src = replace_in_function(
+              src,
+              '_gates_exportacao_protocolo',
+              old_gate,
+              new_gate,
+              'gate HITL explícito do PDF',
+          )
+
+          src = replace_once(
+              src,
+              '''            # Este endpoint exporta em QUALQUER status (rascunho incluso): a marca
+                          # de origem-IA precisa viajar com o PDF de impressão do rascunho.
+                          minuta_ia=bool(d.ai_generated and not d.human_reviewed),'''.replace('                          ', '            '),
+              '''            # Os gates acima garantem versão protocolável revisada. Mantemos o
+                          # parâmetro defensivo para que qualquer drift futuro siga marcado.
+                          minuta_ia=bool(d.ai_generated and not d.human_reviewed),'''.replace('                          ', '            '),
+              'comentário Documento Único',
+          )
+          path.write_text(src, encoding='utf-8')
+
+          test_path = Path('backend/tests/test_legal_doc_flow_contract.py')
+          tests = test_path.read_text(encoding='utf-8')
+          addition = '''
+
+          def test_mutacoes_serializadas_e_pdf_falha_fechado_sem_hitl():
+              src = _source("app/routers/legal_docs.py")
+              for function_name in ("atualizar", "revisar", "registrar_protocolo"):
+                  bloco = _function_source(src, function_name)
+                  assert ".with_for_update()" in bloco
+
+              gate = _function_source(src, "_gates_exportacao_protocolo")
+              assert "d.ai_generated and not d.human_reviewed" in gate
+              assert "revisão humana registrada" in gate
+
+              atualizar = _function_source(src, "atualizar")
+              assert "campos_imutaveis_protocolados" in atualizar
+              assert '"status"' in atualizar
+          '''.replace('\n          ', '\n').rstrip() + '\n'
+          if 'def test_mutacoes_serializadas_e_pdf_falha_fechado_sem_hitl' in tests:
+              raise SystemExit('teste final já presente')
+          test_path.write_text(tests.rstrip() + addition, encoding='utf-8')
+
+          e2e_path = Path('qa/homologacao/run_fluxo_legal_doc_e2e.py')
+          e2e = e2e_path.read_text(encoding='utf-8')
+          anchor = '''        request(
+                      client,
+                      "PATCH",
+                      f"/api/legal-docs/{doc_id}",
+                      {422},
+                      json={"conteudo": conteudo + "\\nTentativa proibida após protocolo."},
+                  )'''.replace('                  ', '    ')
+          replacement = '''        request(
+                      client,
+                      "PATCH",
+                      f"/api/legal-docs/{doc_id}",
+                      {422},
+                      json={"status": "em_revisao"},
+                  )
+                  request(
+                      client,
+                      "PATCH",
+                      f"/api/legal-docs/{doc_id}",
+                      {422},
+                      json={"conteudo": conteudo + "\\nTentativa proibida após protocolo."},
+                  )'''.replace('                  ', '    ')
+          e2e = replace_once(e2e, anchor, replacement, 'E2E imutabilidade de status')
+          e2e_path.write_text(e2e, encoding='utf-8')
+
+      - name: Compile and run focused tests
+        shell: bash
+        run: |
+          python3 -m compileall -q \
+            backend/app/routers/legal_docs.py \
+            backend/tests/test_legal_doc_flow_contract.py \
+            qa/homologacao/run_fluxo_legal_doc_e2e.py
+          cd backend
+          python3 -m pytest -q tests/test_legal_doc_flow_contract.py
+
+      - name: Commit functional safeguards only
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            backend/app/routers/legal_docs.py \
+            backend/tests/test_legal_doc_flow_contract.py \
+            qa/homologacao/run_fluxo_legal_doc_e2e.py
+          git diff --cached --check
+          git commit -m 'fix: serialize legal-doc mutations and enforce PDF HITL'
+          git push origin HEAD:fix/legal-doc-flow-final-v2
