@@ -481,9 +481,16 @@ async def atualizar(
         "conteudo" in mudancas and mudancas["conteudo"] != d.conteudo
     )
 
-    # Peça protocolada é registro imutável. Uma nova redação deve nascer como
-    # nova peça/versão, nunca sobrescrever a prova do que foi protocolado.
-    if conteudo_alterado and status_atual == "protocolada":
+    # Peça protocolada é registro imutável. O endpoint genérico não pode
+    # alterar redação, título, tipo, origem ou regredir o status. Retificações
+    # devem nascer como nova peça/versão, preservando a prova protocolada.
+    campos_imutaveis_protocolados = {
+        "titulo", "conteudo", "tipo_peca", "status", "ai_generated"
+    }
+    if (
+        status_atual == "protocolada"
+        and campos_imutaveis_protocolados.intersection(mudancas)
+    ):
         raise HTTPException(
             status_code=422,
             detail=(
@@ -809,6 +816,14 @@ async def _gates_exportacao_protocolo(db: AsyncSession, d: LegalDoc) -> dict:
     jurídica apta + jurisprudência citada validada na base. Extraído verbatim
     do /pdf — mesmas mensagens e status codes (contrato do frontend/testes)."""
     status_atual = _status_value(d.status)
+    if d.ai_generated and not d.human_reviewed:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "PDF de protocolo bloqueado: peça gerada por IA exige "
+                "revisão humana registrada antes da exportação final."
+            ),
+        )
     validacao = await _ultima_validacao_peca(db, d)
     pronto_protocolo = status_atual in STATUS_EXIGE_VALIDACAO and validacao.get("apto_fluxo")
     if not pronto_protocolo:
@@ -939,8 +954,8 @@ async def documento_unico_impressao(
             titulo, conteudo, pronto_protocolo=True,
             codigo_peca=d.codigo_peca, versao=d.versao,
             status=d.status, revisado_em=d.revisado_em,
-            # Este endpoint exporta em QUALQUER status (rascunho incluso): a marca
-            # de origem-IA precisa viajar com o PDF de impressão do rascunho.
+            # Os gates acima garantem versão protocolável revisada. Mantemos o
+            # parâmetro defensivo para que qualquer drift futuro siga marcado.
             minuta_ia=bool(d.ai_generated and not d.human_reviewed),
         )
     except RuntimeError as e:

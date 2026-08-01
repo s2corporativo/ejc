@@ -175,13 +175,14 @@ async def atualizar_hitl(
     # Validação de peça só pode ser revisada/aplicada se ainda corresponder à
     # versão corrente. Evita falso sucesso ao revisar log que o trigger já
     # invalidou ou cujo hash divergiu após restore/drift operacional.
-    if req.status in ("revisado", "aplicado") and log.legal_doc_id:
+    legal_doc_id = getattr(log, "legal_doc_id", None)
+    if req.status in ("revisado", "aplicado") and legal_doc_id:
         import hashlib
 
         doc = (await db.execute(
             select(LegalDoc)
             .where(
-                LegalDoc.id == log.legal_doc_id,
+                LegalDoc.id == legal_doc_id,
                 LegalDoc.deleted_at.is_(None),
             )
             .with_for_update()

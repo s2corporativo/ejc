@@ -70,3 +70,26 @@ def test_hitl_rejeita_validacao_de_versao_antiga():
     assert "log.legal_doc_validation_current" in bloco
     assert "log.legal_doc_content_hash != hash_atual" in bloco
     assert "Esta validação pertence a uma versão anterior" in bloco
+
+
+
+def test_mutacoes_serializadas_e_pdf_falha_fechado_sem_hitl():
+    src = _source("app/routers/legal_docs.py")
+    for function_name in ("atualizar", "revisar", "registrar_protocolo"):
+        bloco = _function_source(src, function_name)
+        assert ".with_for_update()" in bloco
+
+    gate = _function_source(src, "_gates_exportacao_protocolo")
+    assert "d.ai_generated and not d.human_reviewed" in gate
+    assert "revisão humana registrada" in gate
+
+    atualizar = _function_source(src, "atualizar")
+    assert "campos_imutaveis_protocolados" in atualizar
+    assert '"status"' in atualizar
+
+
+def test_orquestrador_nao_depende_de_filtro_textual_legado():
+    src = _source("app/services/legal_case_orchestrator.py")
+    assert "_VALIDACAO_TIPO_FILTRO" not in src
+    assert "AILog.legal_doc_id" in src
+    assert "AILog.legal_doc_content_hash" in src

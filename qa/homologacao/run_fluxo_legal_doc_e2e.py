@@ -221,6 +221,13 @@ def main() -> None:
             "PATCH",
             f"/api/legal-docs/{doc_id}",
             {422},
+            json={"status": "em_revisao"},
+        )
+        request(
+            client,
+            "PATCH",
+            f"/api/legal-docs/{doc_id}",
+            {422},
             json={"conteudo": conteudo + "\nTentativa proibida após protocolo."},
         )
         report["steps"].append("protocolled_document_is_immutable")
