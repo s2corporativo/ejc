@@ -53,7 +53,14 @@ jobs:
           new = "new_text, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)"
           if patcher_source.count(old) != 1:
               raise SystemExit('Assinatura de replace_regex_once inesperada')
-          patcher.write_text(patcher_source.replace(old, new), encoding='utf-8')
+          patcher_source = patcher_source.replace(old, new)
+          patcher.write_text(patcher_source, encoding='utf-8')
+
+          lines = patcher_source.splitlines()
+          print('=== APLICADOR: linhas 155-215 ===')
+          for number in range(155, min(216, len(lines) + 1)):
+              print(f'{number:04d}: {lines[number - 1]}')
+          print('=== FIM DO TRECHO ===')
 
           subprocess.run([sys.executable, '-m', 'py_compile', str(patcher)], check=True)
           subprocess.run([sys.executable, str(patcher)], check=True)
