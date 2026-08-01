@@ -41,23 +41,23 @@ jobs:
           path = Path('backend/app/routers/legal_docs.py')
           source = path.read_text(encoding='utf-8')
 
-          source = source.replace(
-              'from sqlalchemy import and_, select, func as sqlfunc, or_',
-              'from sqlalchemy import and_, select, func as sqlfunc',
-          )
+          # Não remover `or_`: ele segue necessário na auditoria das fontes
+          # jurisprudenciais (_fonte_juris_validada).
+          if 'from sqlalchemy import and_, select, func as sqlfunc, or_' not in source:
+              raise SystemExit('Import SQLAlchemy esperado não encontrado')
 
-          old_query = "    d = (await db.execute(\n        select(LegalDoc).where(\n            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)\n        )\n    )).scalar_one_or_none()"
-          new_query = "    d = (await db.execute(\n        select(LegalDoc).where(\n            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)\n        ).with_for_update()\n    )).scalar_one_or_none()"
+          query_tail = "            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)\n        )\n    )).scalar_one_or_none()"
+          locked_tail = "            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)\n        ).with_for_update()\n    )).scalar_one_or_none()"
 
           for function_name in ('atualizar', 'revisar', 'registrar_protocolo'):
               start, end = function_bounds(source, function_name)
               block = source[start:end]
               if '.with_for_update()' not in block:
-                  if block.count(old_query) != 1:
+                  if block.count(query_tail) != 1:
                       raise SystemExit(
-                          f'{function_name}: consulta mutável inesperada; ocorrências={block.count(old_query)}'
+                          f'{function_name}: cauda da consulta mutável inesperada; ocorrências={block.count(query_tail)}'
                       )
-                  block = block.replace(old_query, new_query, 1)
+                  block = block.replace(query_tail, locked_tail, 1)
                   source = source[:start] + block + source[end:]
 
           old_immutability = '''    # Peça protocolada é registro imutável. Uma nova redação deve nascer como
