@@ -39,6 +39,13 @@ def test_edicao_invalida_revisao_e_protocolo_e_imutavel():
     assert "Conteúdo alterado exige novo ciclo" in bloco
 
 
+def test_mutacoes_da_peca_usam_lock_pessimista():
+    src = _source("app/routers/legal_docs.py")
+    for nome in ("atualizar", "revisar", "aprovar", "registrar_protocolo"):
+        bloco = _function_source(src, nome)
+        assert ".with_for_update()" in bloco, nome
+
+
 def test_ambos_pdfs_protocolaveis_usam_mesmo_gate():
     src = _source("app/routers/legal_docs.py")
     pdf = _function_source(src, "exportar_pdf")
