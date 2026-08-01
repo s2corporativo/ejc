@@ -56,23 +56,39 @@ jobs:
               raise SystemExit('Assinatura de replace_regex_once inesperada')
           patcher_source = patcher_source.replace(regex_old, regex_new)
 
+          # O replace_regex_once imediatamente anterior já aplica o lock
+          # pessimista ao formato atual do router. O replace_once subsequente
+          # é apenas um fallback para uma sintaxe antiga e deve ser removido.
           patcher_lines = patcher_source.splitlines()
           labels = [
               index for index, line in enumerate(patcher_lines)
               if '"lock atualizar",' in line
           ]
           if len(labels) != 1:
-              raise SystemExit(f'Rótulo lock atualizar inesperado: {len(labels)}')
-          changed = 0
-          for index in range(max(0, labels[0] - 14), labels[0]):
-              if patcher_lines[index].endswith('    ).scalar_one_or_none()"""'):
-                  patcher_lines[index] = patcher_lines[index].replace(
-                      '    ).scalar_one_or_none()"""',
-                      '    )).scalar_one_or_none()"""',
-                  )
-                  changed += 1
-          if changed != 2:
-              raise SystemExit(f'Assinaturas do lock atualizar alteradas: {changed}')
+              raise SystemExit(f'Fallback lock atualizar inesperado: {len(labels)}')
+
+          label_index = labels[0]
+          start = next(
+              (
+                  index
+                  for index in range(label_index, max(-1, label_index - 20), -1)
+                  if patcher_lines[index].strip() == 'block = replace_once('
+              ),
+              None,
+          )
+          end = next(
+              (
+                  index
+                  for index in range(label_index + 1, min(len(patcher_lines), label_index + 6))
+                  if patcher_lines[index].strip() == ')'
+              ),
+              None,
+          )
+          if start is None or end is None or not start < label_index < end:
+              raise SystemExit(
+                  f'Limites do fallback lock atualizar inválidos: start={start}, label={label_index}, end={end}'
+              )
+          del patcher_lines[start : end + 1]
           patcher_source = '\n'.join(patcher_lines) + '\n'
 
           patcher.write_text(patcher_source, encoding='utf-8')
