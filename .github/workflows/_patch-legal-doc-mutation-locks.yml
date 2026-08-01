@@ -1,0 +1,80 @@
+name: Patch legal document mutation locks
+
+on:
+  push:
+    branches:
+      - fix/legal-doc-flow-final-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/legal-doc-flow-final-v2
+          fetch-depth: 0
+
+      - name: Serializar mutações concorrentes da peça
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('backend/app/routers/legal_docs.py')
+          source = path.read_text(encoding='utf-8')
+          old = '''    d = (await db.execute(
+              select(LegalDoc).where(
+                  LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+              )
+          )).scalar_one_or_none()'''
+          new = '''    d = (await db.execute(
+              select(LegalDoc).where(
+                  LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+              ).with_for_update()
+          )).scalar_one_or_none()'''
+
+          for function_name in ('atualizar', 'revisar', 'registrar_protocolo'):
+              start = source.index(f'async def {function_name}(')
+              next_router = source.find('\n\n@router.', start)
+              end = len(source) if next_router < 0 else next_router
+              block = source[start:end]
+              if block.count(old) != 1:
+                  raise SystemExit(
+                      f'{function_name}: consulta mutável inesperada; ocorrências={block.count(old)}'
+                  )
+              block = block.replace(old, new, 1)
+              source = source[:start] + block + source[end:]
+
+          path.write_text(source.rstrip('\n') + '\n', encoding='utf-8')
+          PY
+
+      - name: Validar sintaxe e contrato
+        shell: bash
+        run: |
+          python3 -m py_compile backend/app/routers/legal_docs.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('backend/app/routers/legal_docs.py').read_text(encoding='utf-8')
+          for name in ('atualizar', 'revisar', 'aprovar', 'registrar_protocolo'):
+              start = source.index(f'async def {name}(')
+              next_router = source.find('\n\n@router.', start)
+              block = source[start:] if next_router < 0 else source[start:next_router]
+              if '.with_for_update()' not in block:
+                  raise SystemExit(f'{name}: lock pessimista ausente')
+          PY
+
+      - name: Commitar locks funcionais
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/app/routers/legal_docs.py
+          git diff --cached --check
+          git commit -m 'fix(legal-docs): serializar mutações concorrentes'
+          git push origin HEAD:fix/legal-doc-flow-final-v2
