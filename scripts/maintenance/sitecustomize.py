@@ -1,7 +1,8 @@
 """Compatibilidade temporária do aplicador com Python 3.12.
 
 É carregado apenas pelo processo do patcher em scripts/maintenance e remove a
-si próprio ao terminar. Não integra a aplicação EJC.
+si próprio ao terminar. Não integra a aplicação EJC. O arquivo existe somente
+para materializar o commit funcional e será excluído no mesmo fluxo.
 """
 from __future__ import annotations
 
