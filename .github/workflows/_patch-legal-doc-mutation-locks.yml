@@ -31,16 +31,8 @@ jobs:
 
           path = Path('backend/app/routers/legal_docs.py')
           source = path.read_text(encoding='utf-8')
-          old = '''    d = (await db.execute(
-              select(LegalDoc).where(
-                  LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
-              )
-          )).scalar_one_or_none()'''
-          new = '''    d = (await db.execute(
-              select(LegalDoc).where(
-                  LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
-              ).with_for_update()
-          )).scalar_one_or_none()'''
+          old = "    d = (await db.execute(\n        select(LegalDoc).where(\n            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)\n        )\n    )).scalar_one_or_none()"
+          new = "    d = (await db.execute(\n        select(LegalDoc).where(\n            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)\n        ).with_for_update()\n    )).scalar_one_or_none()"
 
           for function_name in ('atualizar', 'revisar', 'registrar_protocolo'):
               start = source.index(f'async def {function_name}(')
