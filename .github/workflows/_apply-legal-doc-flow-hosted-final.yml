@@ -101,3 +101,5 @@ jobs:
           git diff --cached --check
           git commit -m 'fix: harden validation approval and PDF flow'
           git push origin HEAD:fix/legal-doc-flow-final-v2
+
+# Disparo explícito após o registro inicial do workflow na branch.
