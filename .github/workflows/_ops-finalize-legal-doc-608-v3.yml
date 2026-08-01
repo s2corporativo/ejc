@@ -51,7 +51,7 @@ jobs:
             backend/app/services/validador_juridico_service.py \
             backend/tests/test_legal_doc_flow_contract.py \
             qa/homologacao/run_fluxo_legal_doc_e2e.py
-          python3 -m pip install --disable-pip-version-check -q pytest
+          python3 -m pip install --disable-pip-version-check -q pytest pytest-asyncio
           cd backend
           python3 -m pytest -q tests/test_legal_doc_flow_contract.py
 
