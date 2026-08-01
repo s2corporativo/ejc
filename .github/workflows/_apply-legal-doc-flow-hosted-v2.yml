@@ -49,19 +49,39 @@ jobs:
           patcher.write_bytes(gzip.decompress(base64.b64decode(match.group(1))))
 
           patcher_source = patcher.read_text(encoding='utf-8')
-          old = "new_text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)"
-          new = "new_text, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)"
-          if patcher_source.count(old) != 1:
+
+          regex_old = "new_text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)"
+          regex_new = "new_text, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)"
+          if patcher_source.count(regex_old) != 1:
               raise SystemExit('Assinatura de replace_regex_once inesperada')
-          patcher_source = patcher_source.replace(old, new)
+          patcher_source = patcher_source.replace(regex_old, regex_new)
+
+          lock_old = '''"""        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        )
+    ).scalar_one_or_none()"""'''
+          lock_current = '''"""        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()"""'''
+          lock_replacement_old = '''"""        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        ).with_for_update()
+    ).scalar_one_or_none()"""'''
+          lock_replacement_current = '''"""        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        ).with_for_update()
+    )).scalar_one_or_none()"""'''
+          if patcher_source.count(lock_old) != 1:
+              raise SystemExit('Assinatura antiga do lock atualizar inesperada')
+          if patcher_source.count(lock_replacement_old) != 1:
+              raise SystemExit('Assinatura nova do lock atualizar inesperada')
+          patcher_source = patcher_source.replace(lock_old, lock_current)
+          patcher_source = patcher_source.replace(
+              lock_replacement_old, lock_replacement_current
+          )
+
           patcher.write_text(patcher_source, encoding='utf-8')
-
-          lines = patcher_source.splitlines()
-          print('=== APLICADOR: linhas 155-215 ===')
-          for number in range(155, min(216, len(lines) + 1)):
-              print(f'{number:04d}: {lines[number - 1]}')
-          print('=== FIM DO TRECHO ===')
-
           subprocess.run([sys.executable, '-m', 'py_compile', str(patcher)], check=True)
           subprocess.run([sys.executable, str(patcher)], check=True)
           PY
