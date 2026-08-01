@@ -34,11 +34,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp scripts/maintenance/finalize_legal_doc_608.py /tmp/finalize_legal_doc_608.py
           git fetch origin main fix/legal-doc-flow-final-v2
           git checkout -B fix/legal-doc-flow-final-v2 origin/fix/legal-doc-flow-final-v2
           git merge --no-edit origin/main
-          python3 /tmp/finalize_legal_doc_608.py
+          python3 scripts/maintenance/finalize_legal_doc_608.py
           git checkout origin/main -- .github/workflows/ejc-release-gate.yml
 
       - name: Validate syntax and focused contracts
