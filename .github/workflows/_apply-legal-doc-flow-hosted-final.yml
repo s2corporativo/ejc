@@ -58,10 +58,6 @@ jobs:
 
           patcher_lines = patcher_source.splitlines()
 
-          # Compatibilidade estrita para os locks. O parser legado do aplicador
-          # inclui o exportar_docx no bloco do Documento Único e, por isso,
-          # encontra duas consultas idênticas. A primeira é sempre a consulta
-          # da peça principal do endpoint e é a única que deve receber o lock.
           replace_defs = [
               index
               for index, line in enumerate(patcher_lines)
@@ -91,8 +87,6 @@ jobs:
           ]
           patcher_lines[count_index + 1 : count_index + 1] = compat_lines
 
-          # O regex imediatamente anterior já corrige o endpoint atualizar;
-          # remove apenas o fallback legado duplicado desse mesmo lock.
           labels = [
               index
               for index, line in enumerate(patcher_lines)
@@ -147,6 +141,7 @@ jobs:
           rmdir scripts/maintenance 2>/dev/null || true
           rm -f .github/workflows/_apply-legal-doc-flow-fix.yml
           rm -f .github/workflows/_apply-legal-doc-flow-hosted-final.yml
+          rm -f .github/workflows/qa-legal-doc-flow.yml
           git show origin/main:.github/workflows/ejc-release-gate.yml > .github/workflows/ejc-release-gate.yml
           python3 - <<'PY'
           from pathlib import Path
