@@ -148,6 +148,21 @@ jobs:
           rm -f .github/workflows/_apply-legal-doc-flow-fix.yml
           rm -f .github/workflows/_apply-legal-doc-flow-hosted-final.yml
           git show origin/main:.github/workflows/ejc-release-gate.yml > .github/workflows/ejc-release-gate.yml
+          python3 - <<'PY'
+          from pathlib import Path
+
+          for filename in (
+              'backend/app/routers/legal_docs.py',
+              'backend/app/routers/ai.py',
+              'backend/app/services/validador_juridico_service.py',
+              'backend/tests/test_legal_doc_flow_contract.py',
+              'backend/tests/test_legal_doc_ai_log_vinculo_dblevel.py',
+              'qa/homologacao/run_fluxo_legal_doc_e2e.py',
+          ):
+              path = Path(filename)
+              if path.exists():
+                  path.write_bytes(path.read_bytes().rstrip(b'\n') + b'\n')
+          PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
