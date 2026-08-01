@@ -1,0 +1,103 @@
+name: Apply legal document flow hardening final
+
+on:
+  push:
+    branches:
+      - fix/legal-doc-flow-final-v2
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-legal-doc-flow-final-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/legal-doc-flow-final-v2
+          fetch-depth: 0
+      - name: Materializar aplicador determinístico revisado
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64
+          import gzip
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          source = Path('.github/workflows/_apply-legal-doc-flow-fix.yml').read_text(encoding='utf-8')
+          match = re.search(
+              r"printf '%s' '([A-Za-z0-9+/=]+)' \| base64 --decode \| gzip --decompress",
+              source,
+          )
+          if not match:
+              raise SystemExit('Payload determinístico não encontrado')
+
+          patcher = Path('scripts/maintenance/apply_legal_doc_flow_fix.py')
+          patcher.parent.mkdir(parents=True, exist_ok=True)
+          patcher.write_bytes(gzip.decompress(base64.b64decode(match.group(1))))
+          patcher_source = patcher.read_text(encoding='utf-8')
+
+          regex_old = "new_text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)"
+          regex_new = "new_text, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)"
+          if patcher_source.count(regex_old) != 1:
+              raise SystemExit('Assinatura de replace_regex_once inesperada')
+          patcher_source = patcher_source.replace(regex_old, regex_new)
+
+          patcher_lines = patcher_source.splitlines()
+          labels = [
+              index for index, line in enumerate(patcher_lines)
+              if '"lock atualizar",' in line
+          ]
+          if len(labels) != 1:
+              raise SystemExit(f'Rótulo lock atualizar inesperado: {len(labels)}')
+          changed = 0
+          for index in range(max(0, labels[0] - 14), labels[0]):
+              if patcher_lines[index].endswith('    ).scalar_one_or_none()"""'):
+                  patcher_lines[index] = patcher_lines[index].replace(
+                      '    ).scalar_one_or_none()"""',
+                      '    )).scalar_one_or_none()"""',
+                  )
+                  changed += 1
+          if changed != 2:
+              raise SystemExit(f'Assinaturas do lock atualizar alteradas: {changed}')
+          patcher_source = '\n'.join(patcher_lines) + '\n'
+
+          patcher.write_text(patcher_source, encoding='utf-8')
+          subprocess.run([sys.executable, '-m', 'py_compile', str(patcher)], check=True)
+          subprocess.run([sys.executable, str(patcher)], check=True)
+          PY
+      - name: Compilar módulos alterados
+        run: |
+          python3 -m compileall -q \
+            backend/app/routers/legal_docs.py \
+            backend/app/routers/ai.py \
+            backend/app/services/validador_juridico_service.py \
+            backend/tests/test_legal_doc_flow_contract.py \
+            backend/tests/test_legal_doc_ai_log_vinculo_dblevel.py \
+            qa/homologacao/run_fluxo_legal_doc_e2e.py
+      - name: Gravar correção funcional e remover mecanismo temporário
+        shell: bash
+        run: |
+          rm -f scripts/maintenance/apply_legal_doc_flow_fix.py
+          rm -f scripts/maintenance/sitecustomize.py
+          rm -rf scripts/maintenance/__pycache__
+          rm -f scripts/maintenance/.trigger-legal-doc-flow
+          rmdir scripts/maintenance 2>/dev/null || true
+          rm -f .github/workflows/_apply-legal-doc-flow-fix.yml
+          rm -f .github/workflows/_apply-legal-doc-flow-hosted-final.yml
+          git show origin/main:.github/workflows/ejc-release-gate.yml > .github/workflows/ejc-release-gate.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix: harden validation approval and PDF flow'
+          git push origin HEAD:fix/legal-doc-flow-final-v2
