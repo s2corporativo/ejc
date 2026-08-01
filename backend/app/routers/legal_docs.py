@@ -462,7 +462,7 @@ async def atualizar(
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
-        )
+        ).with_for_update()
     )).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
@@ -578,7 +578,7 @@ async def revisar(
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
-        )
+        ).with_for_update()
     )).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
@@ -687,7 +687,7 @@ async def registrar_protocolo(
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
-        )
+        ).with_for_update()
     )).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
