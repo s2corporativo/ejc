@@ -56,40 +56,24 @@ jobs:
               raise SystemExit('Assinatura de replace_regex_once inesperada')
           patcher_source = patcher_source.replace(regex_old, regex_new)
 
-          # O replace_regex_once imediatamente anterior já aplica o lock
-          # pessimista ao formato atual do router. O replace_once subsequente
-          # é apenas um fallback para uma sintaxe antiga e deve ser removido.
+          # Remove o fallback antigo e redundante do lock do endpoint atualizar.
           patcher_lines = patcher_source.splitlines()
-          labels = [
-              index for index, line in enumerate(patcher_lines)
-              if '"lock atualizar",' in line
-          ]
+          labels = [index for index, line in enumerate(patcher_lines) if '"lock atualizar",' in line]
           if len(labels) != 1:
               raise SystemExit(f'Fallback lock atualizar inesperado: {len(labels)}')
-
           label_index = labels[0]
-          start = next(
-              (
-                  index
-                  for index in range(label_index, max(-1, label_index - 20), -1)
-                  if patcher_lines[index].strip() == 'block = replace_once('
-              ),
-              None,
-          )
-          end = next(
-              (
-                  index
-                  for index in range(label_index + 1, min(len(patcher_lines), label_index + 6))
-                  if patcher_lines[index].strip() == ')'
-              ),
-              None,
-          )
+          start = next((index for index in range(label_index, max(-1, label_index - 20), -1) if patcher_lines[index].strip() == 'block = replace_once('), None)
+          end = next((index for index in range(label_index + 1, min(len(patcher_lines), label_index + 6)) if patcher_lines[index].strip() == ')'), None)
           if start is None or end is None or not start < label_index < end:
-              raise SystemExit(
-                  f'Limites do fallback lock atualizar inválidos: start={start}, label={label_index}, end={end}'
-              )
+              raise SystemExit(f'Limites do fallback lock atualizar inválidos: start={start}, label={label_index}, end={end}')
           del patcher_lines[start : end + 1]
           patcher_source = '\n'.join(patcher_lines) + '\n'
+
+          print('=== APLICADOR: linhas 235-285 ===')
+          for number, line in enumerate(patcher_source.splitlines(), 1):
+              if 235 <= number <= 285:
+                  print(f'{number:04d}: {line}')
+          print('=== FIM DO TRECHO ===')
 
           patcher.write_text(patcher_source, encoding='utf-8')
           subprocess.run([sys.executable, '-m', 'py_compile', str(patcher)], check=True)
