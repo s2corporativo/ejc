@@ -1,27 +1,27 @@
-name: Finalize legal document PR 608 v3
+name: Finalize legal document PR 608 v4
 
 on:
-  push:
-    branches:
-      - ops/finalize-legal-doc-608-v3
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 concurrency:
-  group: finalize-legal-doc-608-v3
+  group: finalize-legal-doc-608-v4
   cancel-in-progress: true
 
 jobs:
   finalize:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event_name == 'pull_request' && github.head_ref == 'ops/run-finalizer-608-v4'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout operational branch
         uses: actions/checkout@v7
         with:
-          ref: ops/finalize-legal-doc-608-v3
+          ref: ops/run-finalizer-608-v4
           fetch-depth: 0
 
       - name: Configure bot identity before merge
