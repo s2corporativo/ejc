@@ -47,7 +47,6 @@ jobs:
           patcher = Path('scripts/maintenance/apply_legal_doc_flow_fix.py')
           patcher.parent.mkdir(parents=True, exist_ok=True)
           patcher.write_bytes(gzip.decompress(base64.b64decode(match.group(1))))
-
           patcher_source = patcher.read_text(encoding='utf-8')
 
           regex_old = "new_text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)"
@@ -56,30 +55,16 @@ jobs:
               raise SystemExit('Assinatura de replace_regex_once inesperada')
           patcher_source = patcher_source.replace(regex_old, regex_new)
 
-          lock_old = '''"""        select(LegalDoc).where(
-            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
-        )
-    ).scalar_one_or_none()"""'''
-          lock_current = '''"""        select(LegalDoc).where(
-            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
-        )
-    )).scalar_one_or_none()"""'''
-          lock_replacement_old = '''"""        select(LegalDoc).where(
-            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
-        ).with_for_update()
-    ).scalar_one_or_none()"""'''
-          lock_replacement_current = '''"""        select(LegalDoc).where(
-            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
-        ).with_for_update()
-    )).scalar_one_or_none()"""'''
+          lock_old = "\"\"\"        select(LegalDoc).where(\n            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)\n        )\n    ).scalar_one_or_none()\"\"\""
+          lock_current = "\"\"\"        select(LegalDoc).where(\n            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)\n        )\n    )).scalar_one_or_none()\"\"\""
+          lock_replacement_old = "\"\"\"        select(LegalDoc).where(\n            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)\n        ).with_for_update()\n    ).scalar_one_or_none()\"\"\""
+          lock_replacement_current = "\"\"\"        select(LegalDoc).where(\n            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)\n        ).with_for_update()\n    )).scalar_one_or_none()\"\"\""
           if patcher_source.count(lock_old) != 1:
               raise SystemExit('Assinatura antiga do lock atualizar inesperada')
           if patcher_source.count(lock_replacement_old) != 1:
               raise SystemExit('Assinatura nova do lock atualizar inesperada')
           patcher_source = patcher_source.replace(lock_old, lock_current)
-          patcher_source = patcher_source.replace(
-              lock_replacement_old, lock_replacement_current
-          )
+          patcher_source = patcher_source.replace(lock_replacement_old, lock_replacement_current)
 
           patcher.write_text(patcher_source, encoding='utf-8')
           subprocess.run([sys.executable, '-m', 'py_compile', str(patcher)], check=True)
