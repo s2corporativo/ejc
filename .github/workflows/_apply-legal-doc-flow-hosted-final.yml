@@ -58,9 +58,10 @@ jobs:
 
           patcher_lines = patcher_source.splitlines()
 
-          # Compatibilidade estrita para os locks: a main atual fecha
-          # db.execute com dois parênteses. Somente labels "lock ..." podem
-          # tentar essa segunda assinatura, e ainda exigem ocorrência única.
+          # Compatibilidade estrita para os locks. O parser legado do aplicador
+          # inclui o exportar_docx no bloco do Documento Único e, por isso,
+          # encontra duas consultas idênticas. A primeira é sempre a consulta
+          # da peça principal do endpoint e é a única que deve receber o lock.
           replace_defs = [
               index
               for index, line in enumerate(patcher_lines)
@@ -79,6 +80,8 @@ jobs:
           if count_index is None:
               raise SystemExit('Contagem de replace_once não encontrada')
           compat_lines = [
+              '    if label == "lock documento_unico_impressao" and count == 2:',
+              '        return text.replace(old, new, 1)',
               '    if count == 0 and label.startswith("lock "):',
               '        old_variant = old.replace("\\n    ).scalar_one_or_none()", "\\n    )).scalar_one_or_none()")',
               '        new_variant = new.replace("\\n    ).scalar_one_or_none()", "\\n    )).scalar_one_or_none()")',
