@@ -43,9 +43,18 @@ jobs:
           )
           if not match:
               raise SystemExit('Payload determinístico não encontrado')
+
           patcher = Path('scripts/maintenance/apply_legal_doc_flow_fix.py')
           patcher.parent.mkdir(parents=True, exist_ok=True)
           patcher.write_bytes(gzip.decompress(base64.b64decode(match.group(1))))
+
+          patcher_source = patcher.read_text(encoding='utf-8')
+          old = "new_text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)"
+          new = "new_text, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)"
+          if patcher_source.count(old) != 1:
+              raise SystemExit('Assinatura de replace_regex_once inesperada')
+          patcher.write_text(patcher_source.replace(old, new), encoding='utf-8')
+
           subprocess.run([sys.executable, '-m', 'py_compile', str(patcher)], check=True)
           subprocess.run([sys.executable, str(patcher)], check=True)
           PY
@@ -62,11 +71,14 @@ jobs:
         shell: bash
         run: |
           rm -f scripts/maintenance/apply_legal_doc_flow_fix.py
+          rm -f scripts/maintenance/sitecustomize.py
+          rm -rf scripts/maintenance/__pycache__
           rm -f scripts/maintenance/.trigger-legal-doc-flow
           rmdir scripts/maintenance 2>/dev/null || true
           rm -f .github/workflows/_apply-legal-doc-flow-fix.yml
           rm -f .github/workflows/_apply-legal-doc-flow-selfhosted.yml
           rm -f .github/workflows/_apply-legal-doc-flow-hosted-v2.yml
+          git show origin/main:.github/workflows/ejc-release-gate.yml > .github/workflows/ejc-release-gate.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
