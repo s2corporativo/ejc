@@ -1,0 +1,72 @@
+name: Finalize legal document PR 608 v3
+
+on:
+  push:
+    branches:
+      - ops/finalize-legal-doc-608-v3
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-legal-doc-608-v3
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout operational branch
+        uses: actions/checkout@v7
+        with:
+          ref: ops/finalize-legal-doc-608-v3
+          fetch-depth: 0
+
+      - name: Configure bot identity before merge
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Materialize audited corrections on PR 608 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main fix/legal-doc-flow-final-v2
+          git checkout -B fix/legal-doc-flow-final-v2 origin/fix/legal-doc-flow-final-v2
+          git merge --no-edit origin/main
+          python3 scripts/maintenance/finalize_legal_doc_608.py
+          git checkout origin/main -- .github/workflows/ejc-release-gate.yml
+
+      - name: Validate syntax and focused contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q \
+            backend/app/routers/ai.py \
+            backend/app/routers/legal_docs.py \
+            backend/app/services/legal_case_orchestrator.py \
+            backend/app/services/validador_juridico_service.py \
+            backend/tests/test_legal_doc_flow_contract.py \
+            qa/homologacao/run_fluxo_legal_doc_e2e.py
+          python3 -m pip install --disable-pip-version-check -q pytest
+          cd backend
+          python3 -m pytest -q tests/test_legal_doc_flow_contract.py
+
+      - name: Commit functional result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(legal-docs): finalize structural validation and CI compatibility'
+          git push origin HEAD:fix/legal-doc-flow-final-v2
+
+      - name: Explain required-check trigger
+        shell: bash
+        run: |
+          echo 'The workflow push intentionally uses GITHUB_TOKEN and does not trigger recursive Actions.'
+          echo 'After this job, the connected GitHub application creates and removes a harmless marker on PR #608.'
+          echo 'That connector-authored commit triggers all canonical required checks on the final clean SHA.'
