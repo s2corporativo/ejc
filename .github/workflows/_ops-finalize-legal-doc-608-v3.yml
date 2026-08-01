@@ -16,7 +16,7 @@ jobs:
   finalize:
     if: github.event_name == 'pull_request' && github.head_ref == 'ops/run-finalizer-608-v4'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout operational branch
         uses: actions/checkout@v7
@@ -51,7 +51,7 @@ jobs:
             backend/app/services/validador_juridico_service.py \
             backend/tests/test_legal_doc_flow_contract.py \
             qa/homologacao/run_fluxo_legal_doc_e2e.py
-          python3 -m pip install --disable-pip-version-check -q pytest pytest-asyncio
+          python3 -m pip install --disable-pip-version-check -q -r backend/requirements.txt
           cd backend
           python3 -m pytest -q tests/test_legal_doc_flow_contract.py
 
