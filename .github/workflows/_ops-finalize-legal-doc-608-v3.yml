@@ -1,0 +1,263 @@
+name: Finalize legal document PR 608 v3
+
+on:
+  push:
+    branches:
+      - ops/finalize-legal-doc-608-v3
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-legal-doc-608-v3
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/legal-doc-flow-final-v2
+          fetch-depth: 0
+
+      - name: Merge main and apply audited corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main fix/legal-doc-flow-final-v2
+          git checkout -B fix/legal-doc-flow-final-v2 origin/fix/legal-doc-flow-final-v2
+          git merge --no-edit origin/main
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def bounds(source: str, name: str) -> tuple[int, int]:
+              marker = f"async def {name}("
+              start = source.index(marker)
+              end = source.find("\n\n@router.", start + len(marker))
+              return start, len(source) if end < 0 else end
+
+          # 1) Compatibilidade dos logs HITL legados/dublês de teste.
+          ai_path = Path("backend/app/routers/ai.py")
+          ai = ai_path.read_text(encoding="utf-8")
+          if 'legal_doc_id = getattr(log, "legal_doc_id", None)' not in ai:
+              old = '    if req.status in ("revisado", "aplicado") and log.legal_doc_id:\n'
+              new = (
+                  '    legal_doc_id = getattr(log, "legal_doc_id", None)\n'
+                  '    if req.status in ("revisado", "aplicado") and legal_doc_id:\n'
+              )
+              if ai.count(old) != 1:
+                  raise SystemExit(f"ai.py HITL anchor mismatch: {ai.count(old)}")
+              ai = ai.replace(old, new, 1)
+              start, end = bounds(ai, "atualizar_hitl")
+              block = ai[start:end]
+              if block.count("LegalDoc.id == log.legal_doc_id") != 1:
+                  raise SystemExit("ai.py legal_doc_id query mismatch")
+              block = block.replace(
+                  "LegalDoc.id == log.legal_doc_id",
+                  "LegalDoc.id == legal_doc_id",
+                  1,
+              )
+              ai = ai[:start] + block + ai[end:]
+          ai_path.write_text(ai.rstrip() + "\n", encoding="utf-8")
+
+          # 2) Orquestrador passa a contar validações pela FK/hash corrente.
+          orch_path = Path("backend/app/services/legal_case_orchestrator.py")
+          orch = orch_path.read_text(encoding="utf-8")
+          if "from sqlalchemy import and_, func, or_, select" not in orch:
+              old_import = "from sqlalchemy import func, or_, select"
+              if orch.count(old_import) != 1:
+                  raise SystemExit("orchestrator sqlalchemy import mismatch")
+              orch = orch.replace(
+                  old_import,
+                  "from sqlalchemy import and_, func, or_, select",
+                  1,
+              )
+          if "_VALIDACAO_TIPO_FILTRO" in orch:
+              start = orch.index('    # (7) CR-15: "Citações verificadas"')
+              end = orch.index("    snaps_conteudo", start)
+              replacement = '''    # (7) "Citações verificadas" usa o mesmo contrato estrutural do
+    # fluxo de peças: FK LegalDoc↔AILog, flag corrente e SHA-256 exato.
+    n_validacoes = 0
+    if pecas:
+        import hashlib
+
+        from app.models.ai_log import AILog
+
+        hashes_por_peca = {
+            d.id: hashlib.sha256((d.conteudo or "").encode("utf-8")).hexdigest()
+            for d in pecas
+        }
+        pares_correntes = or_(*[
+            and_(
+                AILog.legal_doc_id == doc_id,
+                AILog.legal_doc_content_hash == content_hash,
+            )
+            for doc_id, content_hash in hashes_por_peca.items()
+        ])
+        n_validacoes = (await db.execute(
+            select(func.count()).select_from(AILog).where(
+                AILog.legal_doc_id.in_(list(hashes_por_peca)),
+                AILog.legal_doc_validation_current.is_(True),
+                pares_correntes,
+            )
+        )).scalar() or 0
+
+'''
+              orch = orch[:start] + replacement + orch[end:]
+          if "_VALIDACAO_TIPO_FILTRO" in orch:
+              raise SystemExit("orchestrator retained legacy validation filter")
+          orch_path.write_text(orch.rstrip() + "\n", encoding="utf-8")
+
+          # 3) Fechamento fail-closed de imutabilidade e PDF HITL.
+          router_path = Path("backend/app/routers/legal_docs.py")
+          source = router_path.read_text(encoding="utf-8")
+          if "campos_imutaveis_protocolados" not in source:
+              old = '''    # Peça protocolada é registro imutável. Uma nova redação deve nascer como
+    # nova peça/versão, nunca sobrescrever a prova do que foi protocolado.
+    if conteudo_alterado and status_atual == "protocolada":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Peça protocolada é imutável. Crie uma nova peça ou versão para "
+                "qualquer alteração posterior ao protocolo."
+            ),
+        )'''
+              new = '''    # Peça protocolada é registro imutável. O endpoint genérico não pode
+    # alterar redação, título, tipo, origem ou regredir o status. Retificações
+    # devem nascer como nova peça/versão, preservando a prova protocolada.
+    campos_imutaveis_protocolados = {
+        "titulo", "conteudo", "tipo_peca", "status", "ai_generated"
+    }
+    if (
+        status_atual == "protocolada"
+        and campos_imutaveis_protocolados.intersection(mudancas)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Peça protocolada é imutável. Crie uma nova peça ou versão para "
+                "qualquer alteração posterior ao protocolo."
+            ),
+        )'''
+              start, end = bounds(source, "atualizar")
+              block = source[start:end]
+              if block.count(old) != 1:
+                  raise SystemExit(f"immutability contract mismatch: {block.count(old)}")
+              source = source[:start] + block.replace(old, new, 1) + source[end:]
+
+          start, end = bounds(source, "_gates_exportacao_protocolo")
+          gate = source[start:end]
+          if "d.ai_generated and not d.human_reviewed" not in gate:
+              anchor = "    status_atual = _status_value(d.status)\n"
+              guard = '''    if d.ai_generated and not d.human_reviewed:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "PDF de protocolo bloqueado: peça gerada por IA exige "
+                "revisão humana registrada antes da exportação final."
+            ),
+        )
+'''
+              if gate.count(anchor) != 1:
+                  raise SystemExit(f"PDF HITL anchor mismatch: {gate.count(anchor)}")
+              gate = gate.replace(anchor, anchor + guard, 1)
+              source = source[:start] + gate + source[end:]
+
+          stale = '''            # Este endpoint exporta em QUALQUER status (rascunho incluso): a marca
+            # de origem-IA precisa viajar com o PDF de impressão do rascunho.'''
+          fixed = '''            # Os gates acima garantem versão protocolável revisada. Mantemos o
+            # parâmetro defensivo para que qualquer drift futuro siga marcado.'''
+          if stale in source:
+              source = source.replace(stale, fixed, 1)
+          router_path.write_text(source.rstrip() + "\n", encoding="utf-8")
+
+          # 4) Testes contratuais e cenário E2E de regressão de status.
+          test_path = Path("backend/tests/test_legal_doc_flow_contract.py")
+          tests = test_path.read_text(encoding="utf-8")
+          if "def test_mutacoes_serializadas_e_pdf_falha_fechado_sem_hitl" not in tests:
+              tests += '''
+
+
+def test_mutacoes_serializadas_e_pdf_falha_fechado_sem_hitl():
+    src = _source("app/routers/legal_docs.py")
+    for function_name in ("atualizar", "revisar", "registrar_protocolo"):
+        bloco = _function_source(src, function_name)
+        assert ".with_for_update()" in bloco
+
+    gate = _function_source(src, "_gates_exportacao_protocolo")
+    assert "d.ai_generated and not d.human_reviewed" in gate
+    assert "revisão humana registrada" in gate
+
+    atualizar = _function_source(src, "atualizar")
+    assert "campos_imutaveis_protocolados" in atualizar
+    assert '"status"' in atualizar
+
+
+def test_orquestrador_nao_depende_de_filtro_textual_legado():
+    src = _source("app/services/legal_case_orchestrator.py")
+    assert "_VALIDACAO_TIPO_FILTRO" not in src
+    assert "AILog.legal_doc_id" in src
+    assert "AILog.legal_doc_content_hash" in src
+'''
+          test_path.write_text(tests.rstrip() + "\n", encoding="utf-8")
+
+          e2e_path = Path("qa/homologacao/run_fluxo_legal_doc_e2e.py")
+          e2e = e2e_path.read_text(encoding="utf-8")
+          if 'json={"status": "em_revisao"}' not in e2e:
+              anchor = '''        request(
+            client,
+            "PATCH",
+            f"/api/legal-docs/{doc_id}",
+            {422},
+            json={"conteudo": conteudo + "\\nTentativa proibida após protocolo."},
+        )'''
+              replacement = '''        request(
+            client,
+            "PATCH",
+            f"/api/legal-docs/{doc_id}",
+            {422},
+            json={"status": "em_revisao"},
+        )
+        request(
+            client,
+            "PATCH",
+            f"/api/legal-docs/{doc_id}",
+            {422},
+            json={"conteudo": conteudo + "\\nTentativa proibida após protocolo."},
+        )'''
+              if e2e.count(anchor) != 1:
+                  raise SystemExit(f"E2E protocol immutability mismatch: {e2e.count(anchor)}")
+              e2e = e2e.replace(anchor, replacement, 1)
+          e2e_path.write_text(e2e.rstrip() + "\n", encoding="utf-8")
+          PY
+
+          # Restaura governança canônica e remove todos os mecanismos transitórios.
+          git checkout origin/main -- .github/workflows/ejc-release-gate.yml
+          rm -f \
+            .github/workflows/_patch-legal-doc-mutation-locks.yml \
+            .github/workflows/_finalize-legal-doc-hardening.yml \
+            .github/workflows/temporary-legal-doc-finalizer.yml \
+            scripts/maintenance/.trigger-final-legal-doc-hardening \
+            scripts/maintenance/.trigger-final-legal-doc-hardening-v2
+
+          python3 -m compileall -q \
+            backend/app/routers/ai.py \
+            backend/app/routers/legal_docs.py \
+            backend/app/services/legal_case_orchestrator.py \
+            backend/app/services/validador_juridico_service.py \
+            backend/tests/test_legal_doc_flow_contract.py \
+            qa/homologacao/run_fluxo_legal_doc_e2e.py
+
+          python3 -m pip install --disable-pip-version-check -q pytest
+          (cd backend && python3 -m pytest -q tests/test_legal_doc_flow_contract.py)
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(legal-docs): finalize structural validation and CI compatibility'
+          git push origin HEAD:fix/legal-doc-flow-final-v2
