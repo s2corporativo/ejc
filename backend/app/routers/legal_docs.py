@@ -3,6 +3,7 @@
 # ai_generated=True NÃO avança para aprovada/final sem human_reviewed=True.
 # Bloqueio em nível de código — não apenas UI.
 from __future__ import annotations
+import hashlib
 import logging
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -53,7 +54,14 @@ def _status_value(status) -> str | None:
 
 def _parse_score(prompt: str | None) -> int | None:
     import re
-    m = re.search(r"score_confianca\s*[:=]\s*(\d{1,3})", prompt or "", re.I)
+
+    # Logs novos usam marcador estrutural curto no início do prompt; logs já
+    # existentes continuam compatíveis com a chave histórica da rubrica.
+    m = re.search(
+        r"(?:VALIDATION_SCORE|score_confianca)\s*[:=]\s*(\d{1,3})",
+        prompt or "",
+        re.I,
+    )
     if not m:
         return None
     return max(0, min(100, int(m.group(1))))
@@ -61,54 +69,70 @@ def _parse_score(prompt: str | None) -> int | None:
 
 def _parse_veredito(prompt: str | None) -> str | None:
     import re
-    m = re.search(r"veredito\s*[:=]\s*([^\n\r]+)", prompt or "", re.I)
+
+    m = re.search(
+        r"(?:VALIDATION_VERDICT|veredito)\s*[:=]\s*([^\n\r]+)",
+        prompt or "",
+        re.I,
+    )
     return m.group(1).strip()[:80] if m else None
 
 
-_VALIDACAO_TIPO_FILTRO = or_(
-    AILog.resposta.ilike("%RELATORIO DE VALIDACAO JURIDICA%"),
-    AILog.prompt_sanitizado.ilike("%RELATORIO DE VALIDACAO JURIDICA%"),
-    AILog.prompt_sanitizado.ilike("%VALIDACAO JURIDICA%"),
-)
+def _hash_conteudo_validado(conteudo: str | None) -> str:
+    return hashlib.sha256((conteudo or "").encode("utf-8")).hexdigest()
 
 
 async def _ultima_validacao_peca(db: AsyncSession, doc: LegalDoc) -> dict:
-    marcador = f"LEGAL_DOC_ID:{doc.id}"
-    q = select(AILog).where(
-        AILog.prompt_sanitizado.ilike(f"%{marcador}%"),
-        _VALIDACAO_TIPO_FILTRO,
-    ).order_by(AILog.created_at.desc())
+    """Retorna somente validação estrutural da versão corrente da peça.
+
+    Fail-closed: FK, flag de atualidade e SHA-256 precisam coincidir. Nenhum
+    marcador textual é usado para correlacionar LegalDoc e AILog.
+    """
+    content_hash = _hash_conteudo_validado(doc.conteudo)
+    q = (
+        select(AILog)
+        .where(
+            AILog.legal_doc_id == doc.id,
+            AILog.legal_doc_validation_current.is_(True),
+            AILog.legal_doc_content_hash == content_hash,
+        )
+        .order_by(AILog.created_at.desc())
+    )
     log = (await db.execute(q.limit(1))).scalar_one_or_none()
     return _montar_validacao(log)
 
 
 async def _validacoes_por_peca(db: AsyncSession, docs: list[LegalDoc]) -> dict[str, dict]:
-    """Resolve a última validação de VÁRIAS peças em UMA query (evita N+1).
+    """Resolve a validação corrente de várias peças em uma única query.
 
-    Busca todos os AILog de validação que citem qualquer marcador da página e,
-    percorrendo do mais recente ao mais antigo, fica com o primeiro (mais novo)
-    de cada peça.
+    A associação é feita diretamente por ``ai_logs.legal_doc_id``. O hash é
+    conferido por peça para impedir que drift de trigger, restore parcial ou
+    dado legado torne uma validação antiga apta para a versão atual.
     """
     resultado: dict[str, dict] = {d.id: _montar_validacao(None) for d in docs}
-    doc_ids = [d.id for d in docs]
-    if not doc_ids:
+    if not docs:
         return resultado
-    marcadores = or_(*[
-        AILog.prompt_sanitizado.ilike(f"%LEGAL_DOC_ID:{did}%") for did in doc_ids
-    ])
-    q = select(AILog).where(marcadores, _VALIDACAO_TIPO_FILTRO).order_by(
-        AILog.created_at.desc()
+
+    hashes = {d.id: _hash_conteudo_validado(d.conteudo) for d in docs}
+    q = (
+        select(AILog)
+        .where(
+            AILog.legal_doc_id.in_(list(hashes)),
+            AILog.legal_doc_validation_current.is_(True),
+        )
+        .order_by(AILog.created_at.desc())
     )
     logs = (await db.execute(q)).scalars().all()
     vistos: set[str] = set()
     for log in logs:
-        prompt = log.prompt_sanitizado or ""
-        for did in doc_ids:
-            if did not in vistos and f"LEGAL_DOC_ID:{did}" in prompt:
-                resultado[did] = _montar_validacao(log)
-                vistos.add(did)
-                break
-        if len(vistos) == len(doc_ids):
+        doc_id = log.legal_doc_id
+        if not doc_id or doc_id in vistos or doc_id not in hashes:
+            continue
+        if log.legal_doc_content_hash != hashes[doc_id]:
+            continue
+        resultado[doc_id] = _montar_validacao(log)
+        vistos.add(doc_id)
+        if len(vistos) == len(hashes):
             break
     return resultado
 
@@ -154,7 +178,6 @@ def _montar_validacao(log: AILog | None) -> dict:
         "created_at": log.created_at,
         "motivo": motivo,
     }
-
 
 async def _bloquear_sem_validacao(db: AsyncSession, doc: LegalDoc, novo_status: str | None):
     if novo_status not in STATUS_EXIGE_VALIDACAO:
@@ -452,8 +475,35 @@ async def atualizar(
     if "conteudo" in mudancas and mudancas["conteudo"] is not None:
         mudancas["conteudo"] = padronizar_documento_juridico(mudancas["conteudo"])
 
+    novo_status = _status_value(mudancas.get("status"))
+    status_atual = _status_value(d.status)
+    conteudo_alterado = (
+        "conteudo" in mudancas and mudancas["conteudo"] != d.conteudo
+    )
+
+    # Peça protocolada é registro imutável. Uma nova redação deve nascer como
+    # nova peça/versão, nunca sobrescrever a prova do que foi protocolado.
+    if conteudo_alterado and status_atual == "protocolada":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Peça protocolada é imutável. Crie uma nova peça ou versão para "
+                "qualquer alteração posterior ao protocolo."
+            ),
+        )
+
+    # Não é possível editar e simultaneamente promover a mesma requisição com
+    # uma validação calculada sobre o conteúdo anterior.
+    if conteudo_alterado and novo_status in STATUS_EXIGE_VALIDACAO:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Conteúdo alterado exige novo ciclo: salve a edição, valide, "
+                "revise e somente depois aprove/finalize/protocole."
+            ),
+        )
+
     # ── BLOQUEIO HITL (em código, não só UI) ───────────────────────────
-    novo_status = mudancas.get("status")
     if (novo_status in STATUS_EXIGE_REVISAO
             and d.ai_generated and not d.human_reviewed):
         raise HTTPException(
@@ -461,11 +511,7 @@ async def atualizar(
             detail="Peca gerada por IA exige revisao humana registrada antes de aprovar (use POST /legal-docs/{id}/revisar). Provimento OAB 205/2021.",
         )
     # ── FLX-070: status 'protocolada' exige advogado + protocolo registrado ──
-    # O comprovante (número/tribunal/data) é gravado ANTES pelo endpoint
-    # dedicado PATCH /legal-docs/{id}/protocolo (que aceita peça aprovada/
-    # final). Sem esse gate, qualquer usuário com acesso ao caso marcava a
-    # peça como protocolada sem prova de tempestividade.
-    if novo_status == "protocolada" and _status_value(d.status) != "protocolada":
+    if novo_status == "protocolada" and status_atual != "protocolada":
         requer_advogado(
             cu, detail="Marcar peça como protocolada é restrito a advogados"
         )
@@ -481,9 +527,16 @@ async def atualizar(
     await _bloquear_sem_validacao(db, d, novo_status)
     await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
 
-    # Edição de conteúdo incrementa versão
-    if "conteudo" in mudancas and mudancas["conteudo"] != d.conteudo:
+    if conteudo_alterado:
         d.versao += 1
+        d.human_reviewed = False
+        d.revisor_id = None
+        d.revisado_em = None
+        d.notas_revisao = None
+        # Edição de versão já revisada/aprovada retorna explicitamente ao fluxo
+        # de revisão; a validação é invalidada também pelo trigger da migration 123.
+        if status_atual in STATUS_EXIGE_REVISAO or status_atual == "corrigida":
+            mudancas["status"] = PecaStatus.em_revisao
 
     status_antigo = d.status.value if hasattr(d.status, "value") else d.status
     for k, v in mudancas.items():
@@ -567,7 +620,7 @@ async def aprovar(
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
-        )
+        ).with_for_update()
     )).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
@@ -750,7 +803,7 @@ def _slug_arquivo(titulo: str, fallback: str = "documento") -> str:
     return slug or fallback
 
 
-async def _gates_exportacao_protocolo(db: AsyncSession, d: LegalDoc) -> None:
+async def _gates_exportacao_protocolo(db: AsyncSession, d: LegalDoc) -> dict:
     """Gates compartilhados das exportações FINAIS de PDF (/pdf e
     /documento-unico-impressao): peça aprovada/final/protocolada com validação
     jurídica apta + jurisprudência citada validada na base. Extraído verbatim
@@ -779,6 +832,11 @@ async def _gates_exportacao_protocolo(db: AsyncSession, d: LegalDoc) -> None:
             },
         )
 
+    return {
+        "validacao": validacao,
+        "auditoria_jurisprudencia": auditoria_juris,
+    }
+
 
 @router.get("/{doc_id}/pdf")
 async def exportar_pdf(
@@ -787,7 +845,7 @@ async def exportar_pdf(
     cu: User = Depends(get_current_user),
 ):
     d = (await db.execute(
-        select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
+        select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)).with_for_update()
     )).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
@@ -842,12 +900,9 @@ async def documento_unico_impressao(
     seguido, quando o caso tem acervo probatório, do bloco de anexos Visual Law
     (capa + índice + separadores "DOC. NN" + arquivos reais mesclados).
 
-    Decisão de produto: diferente do /pdf (exportação de protocolo, bloqueada
-    até a validação), este endpoint sai em QUALQUER status — a peça é rascunho
-    no fluxo HITL, mas o PDF já tem a forma do documento final protocolável.
-    O controle de revisão permanece no status da LegalDoc (o PATCH continua
-    exigindo revisão humana para aprovar); a auditoria de jurisprudência roda
-    de forma NÃO bloqueante e fica registrada no audit log.
+    Este endpoint gera um pacote com forma protocolável e, por isso, aplica
+    exatamente os mesmos gates do PDF final: aprovação/finalização, validação
+    jurídica corrente, revisão HITL e jurisprudência oficialmente validada.
     Sem caso ou sem provas, devolve só o PDF da peça (ainda é o documento de
     impressão).
     """
@@ -865,7 +920,7 @@ async def documento_unico_impressao(
         raise HTTPException(403, "Acesso restrito a advogado ou superior.")
 
     d = (await db.execute(
-        select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
+        select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)).with_for_update()
     )).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
@@ -874,10 +929,8 @@ async def documento_unico_impressao(
     if d.case_id:
         case = await verificar_acesso_caso(db, cu, d.case_id)
 
-    # Auditoria de jurisprudência NÃO bloqueante (vs. /pdf, onde bloqueia):
-    # o resultado vai para o audit log — rastro de que o rascunho impresso
-    # ainda carregava citação não validada.
-    auditoria_juris = await _auditar_jurisprudencia_peca(db, d.conteudo or "")
+    gate_result = await _gates_exportacao_protocolo(db, d)
+    auditoria_juris = gate_result["auditoria_jurisprudencia"]
 
     titulo = padronizar_documento_juridico(d.titulo)
     conteudo = padronizar_documento_juridico(d.conteudo)
@@ -1018,4 +1071,3 @@ async def exportar_docx(
         media_type=_DOCX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-
