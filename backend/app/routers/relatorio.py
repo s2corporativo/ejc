@@ -4,7 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.status_caso import STATUS_ABERTOS
 from app.models.user import User
+
+# "Ativos" é AGREGADO dos status abertos (migration 126) — nenhum status se
+# chama `ativo`. Interpolado porque a lista é constante do código, nunca
+# entrada de usuário.
+_ABERTOS_SQL = ",".join(f"'{s.value}'" for s in STATUS_ABERTOS)
 from typing import Optional
 
 router = APIRouter(prefix="/relatorio", tags=["Relatório"])
@@ -63,10 +69,10 @@ async def relatorio_mensal(
     desp_data = dict(desp.mappings().first() or {})
 
     # Casos
-    casos = await db.execute(text("""
+    casos = await db.execute(text(f"""
         SELECT
             COUNT(*) AS total,
-            COUNT(*) FILTER (WHERE status = 'ativo') AS ativos,
+            COUNT(*) FILTER (WHERE status IN ({_ABERTOS_SQL})) AS ativos,
             COUNT(*) FILTER (WHERE status = 'encerrado' AND date_trunc('month', updated_at) = date_trunc('month', CAST(:mes AS date))) AS encerrados_mes,
             COUNT(*) FILTER (WHERE date_trunc('month', created_at) = date_trunc('month', CAST(:mes AS date))) AS novos_mes
         FROM cases WHERE deleted_at IS NULL

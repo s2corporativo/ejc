@@ -3,13 +3,17 @@ import { Link } from "react-router-dom";
 import { ChevronRight, Scale, Search } from "lucide-react";
 import api from "../../lib/api";
 import { EmptyState, ErrorState, Spinner, fmtDate } from "../../components/UI";
+import { CASE_STATUS_LABEL, isCasoAtivo } from "../../types/caseStatus";
 
-const STATUS_LABEL: Record<string, [string, string]> = {
-  triagem: ["Em análise", "bg-warn-100 text-warn-700"],
-  ativo: ["Em andamento", "bg-primary-100 text-primary-700"],
-  suspenso: ["Suspenso", "bg-slate-100 text-slate-600"],
-  encerrado: ["Encerrado", "bg-success-100 text-success-700"],
-  arquivado: ["Arquivado", "bg-slate-100 text-slate-500"],
+/** Cor por status; o RÓTULO vem do vocabulário canônico (types/caseStatus.ts),
+ * para o portal do cliente não divergir da área interna. */
+const STATUS_COR: Record<string, string> = {
+  aberto: "bg-warn-100 text-warn-700",
+  em_instrucao: "bg-primary-100 text-primary-700",
+  em_producao: "bg-primary-100 text-primary-700",
+  protocolado: "bg-primary-100 text-primary-700",
+  encerrado: "bg-success-100 text-success-700",
+  arquivado: "bg-slate-100 text-slate-500",
 };
 
 const AREA_ICON: Record<string, string> = {
@@ -58,7 +62,7 @@ export default function PortalCasos() {
       c.numero_interno?.toLowerCase().includes(busca.toLowerCase()),
   );
 
-  const ativos = casos.filter((c) => c.status === "ativo").length;
+  const ativos = casos.filter((c) => isCasoAtivo(c.status)).length;
   const encerrados = casos.filter(
     (c) => c.status === "encerrado" || c.status === "arquivado",
   ).length;
@@ -108,10 +112,10 @@ export default function PortalCasos() {
       ) : (
         <div className="space-y-2">
           {filtered.map((c) => {
-            const [label, cor] = STATUS_LABEL[c.status] ?? [
-              c.status,
-              "bg-slate-100 text-slate-600",
-            ];
+            const label =
+              CASE_STATUS_LABEL[c.status as keyof typeof CASE_STATUS_LABEL] ??
+              c.status;
+            const cor = STATUS_COR[c.status] ?? "bg-slate-100 text-slate-600";
             const areaEmoji = AREA_ICON[c.area?.toLowerCase()] ?? "📁";
             return (
               <Link

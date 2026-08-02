@@ -75,7 +75,7 @@ async def _criar_caso(db, client_id: str, titulo: str,
     await db.execute(
         text("INSERT INTO cases (id, titulo, area, status, client_id, "
              "advogado_responsavel_id, numero_processo) VALUES "
-             "(:id, :titulo, 'civil', 'ativo', :cid, :resp, :np)"),
+             "(:id, :titulo, 'civil', 'em_instrucao', :cid, :resp, :np)"),
         {"id": case_id, "titulo": titulo, "cid": client_id,
          "resp": resp_id, "np": numero_processo},
     )

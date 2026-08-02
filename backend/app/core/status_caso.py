@@ -12,10 +12,10 @@ Regras de ouro deste módulo:
 1. A verdade física é o ENUM `casestatus` do Postgres, refletido em
    `models.case.CaseStatus`. Nada aqui inventa status novo — apenas nomeia
    CONJUNTOS sobre os valores que já existem.
-2. `ativo` é um STATUS REAL e persistido. "Ativos" no Dashboard é um AGREGADO
-   (tudo que não está encerrado nem arquivado). São conceitos diferentes e o
-   código não pode voltar a confundi-los: por isso o agregado se chama
-   `STATUS_ABERTOS`, nunca "ativo".
+2. "Ativos" no Dashboard é um AGREGADO (tudo que não está encerrado nem
+   arquivado), nunca um status persistido — desde a migration 126 nenhum valor
+   do enum se chama `ativo`, justamente para matar essa ambiguidade. O
+   agregado se chama `STATUS_ABERTOS`.
 3. Valor de filtro fora do enum NUNCA chega ao banco. A coluna é ENUM nativo:
    `WHERE status = 'all'` estoura InvalidTextRepresentation e vira HTTP 500.
    `validar_status_caso()` transforma isso em 422 com a lista de aceitos.
@@ -23,10 +23,10 @@ Regras de ouro deste módulo:
    é aceito ou persistido como se fosse status real.
 
 Nota deliberada: `app/core/domain_contracts.py` define um vocabulário paralelo
-(`CaseLifecycleStatus`, 11 valores) que NÃO é persistido e mapeia
-`acordo -> ENCERRADO`. Adotá-lo aqui mudaria silenciosamente a semântica de
-negócio (hoje `acordo` conta como caso ABERTO). Este módulo não o utiliza; a
+(`CaseLifecycleStatus`) que NÃO é persistido. Este módulo não o utiliza; a
 unificação dos dois vocabulários é decisão de produto, não de refatoração.
+Desde a migration 126 o enum persistido são os quatro estados de trabalho
+(aberto/em_instrucao/em_producao/protocolado) + dois terminais.
 """
 from __future__ import annotations
 
@@ -40,12 +40,13 @@ from app.models.legal_doc import LegalDoc, PecaStatus
 #: Todos os valores aceitos pela coluna `cases.status` (ENUM nativo do PG).
 STATUS_CASO_VALIDOS: tuple[str, ...] = tuple(s.value for s in CaseStatus)
 
-#: Caso em curso — o trabalho jurídico ainda acontece.
+#: Caso em curso — o trabalho jurídico ainda acontece. `protocolado` conta
+#: como aberto: a peça foi entregue ao juízo, mas o caso segue em gestão.
 STATUS_ABERTOS: tuple[CaseStatus, ...] = (
-    CaseStatus.triagem,
-    CaseStatus.ativo,
-    CaseStatus.suspenso,
-    CaseStatus.acordo,
+    CaseStatus.aberto,
+    CaseStatus.em_instrucao,
+    CaseStatus.em_producao,
+    CaseStatus.protocolado,
 )
 
 #: Caso fora da operação. `encerrado` é desfecho; `arquivado` é guarda.

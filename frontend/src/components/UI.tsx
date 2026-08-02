@@ -230,6 +230,10 @@ const STATUS_REGISTRY: Record<
   novo: { tone: "blue", icon: PlusCircle, label: "Novo" },
   "em analise": { tone: "blue", icon: ScanSearch, label: "Em análise" },
   triagem: { tone: "blue", icon: ScanSearch, label: "Em análise" },
+  // Migration 126 — estados novos de caso. `aberto` já tinha tom no mapa
+  // legado; `em instrucao` (chave normalizada sem underscore) era buraco.
+  aberto: { tone: "green", icon: PlusCircle, label: "Aberto" },
+  "em instrucao": { tone: "blue", icon: FileClock, label: "Em instrução" },
   "aguardando cliente": {
     tone: "amber",
     icon: Clock,

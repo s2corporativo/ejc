@@ -40,12 +40,19 @@ class CaseArea(str, enum.Enum):
 
 
 class CaseStatus(str, enum.Enum):
-    triagem    = "triagem"
-    ativo      = "ativo"
-    suspenso   = "suspenso"
-    acordo     = "acordo"
-    encerrado  = "encerrado"
-    arquivado  = "arquivado"
+    """Quatro estados de trabalho + dois terminais (migration 126, Bloco 3).
+
+    Os estados descrevem o que MUDA no caso, não marcos de completude — o que
+    era etapa da jornada (triagem, inteligência, estratégia) virou tarefa
+    opcional dentro do estado. `encerrado` é desfecho; `arquivado` é guarda:
+    conceitos distintos, e os endpoints de arquivar/lixeira dependem disso.
+    """
+    aberto       = "aberto"        # existe, tem cliente, tem fatos
+    em_instrucao = "em_instrucao"  # juntando documentos e provas
+    em_producao  = "em_producao"   # peça sendo redigida e conferida
+    protocolado  = "protocolado"   # entregue ao juízo; caso segue em gestão
+    encerrado    = "encerrado"     # desfecho
+    arquivado    = "arquivado"     # guarda
 
 
 class CaseFase(str, enum.Enum):
@@ -77,7 +84,7 @@ class Case(Base):
     numero_interno = Column(String(20), index=True)  # DPT-2026-0001
     titulo    = Column(String(255), nullable=False)
     area      = Column(SAEnum(CaseArea), nullable=False, index=True)
-    status    = Column(SAEnum(CaseStatus), nullable=False, default=CaseStatus.triagem, index=True)
+    status    = Column(SAEnum(CaseStatus), nullable=False, default=CaseStatus.aberto, index=True)
     fase      = Column(SAEnum(CaseFase), nullable=False, default=CaseFase.pre_processual)
     prioridade = Column(SAEnum(CasePrioridade), nullable=False, default=CasePrioridade.media)
     risco     = Column(String(20), nullable=True)   # baixo | medio | alto

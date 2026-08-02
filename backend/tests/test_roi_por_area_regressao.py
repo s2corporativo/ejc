@@ -69,7 +69,7 @@ def _caso(cid: str, area: CaseArea) -> Case:
     c.numero_interno = "DPT-2026-0001"
     c.titulo = "Caso de teste"
     c.area = area
-    c.status = CaseStatus.triagem
+    c.status = CaseStatus.aberto  # ex-"triagem" (migration 126)
     return c
 
 

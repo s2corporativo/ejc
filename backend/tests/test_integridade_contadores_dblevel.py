@@ -21,11 +21,11 @@ as asserções aqui são sobre DELTA (depois - antes), nunca sobre valor absolut
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import HTTPException
 from sqlalchemy import select, text
 
 pytestmark = pytest.mark.skipif(
@@ -60,7 +60,7 @@ async def _criar_admin(db) -> str:
     return uid
 
 
-async def _criar_caso(db, case_id, client_id, status="triagem", deleted=False):
+async def _criar_caso(db, case_id, client_id, status="aberto", deleted=False):
     await db.execute(
         text(
             "INSERT INTO cases (id, titulo, area, status, client_id, deleted_at) "
@@ -147,7 +147,7 @@ async def test_caso_em_triagem_conta_como_ativo():
             antes_dash = (await _dashboard(db, cu))["casos"]["ativos"]
             antes_stats = (await stats_casos(advogado_id=None, db=db, cu=cu))["ativos"]
 
-            await _criar_caso(db, case_id, client_id, status="triagem")
+            await _criar_caso(db, case_id, client_id, status="aberto")
             await db.commit()
 
             depois_dash = (await _dashboard(db, cu))["casos"]["ativos"]
@@ -198,7 +198,7 @@ async def test_caso_excluido_nao_conta_em_lugar_nenhum():
             antes_dash = (await _dashboard(db, cu))["casos"]
             antes_stats = await stats_casos(advogado_id=None, db=db, cu=cu)
 
-            await _criar_caso(db, case_id, client_id, status="triagem", deleted=True)
+            await _criar_caso(db, case_id, client_id, status="aberto", deleted=True)
             await db.commit()
 
             depois_dash = (await _dashboard(db, cu))["casos"]
@@ -228,9 +228,10 @@ async def test_dashboard_e_listagem_usam_a_mesma_definicao_de_ativo():
             d0 = (await _dashboard(db, cu))["casos"]["ativos"]
             s0 = (await stats_casos(advogado_id=None, db=db, cu=cu))["ativos"]
 
-            # Cenário exato da auditoria: 8 em triagem + 1 arquivado.
+            # Cenário exato da auditoria: 8 abertos (ex-"triagem", migration
+            # 126) + 1 arquivado.
             for cid in ids[:8]:
-                await _criar_caso(db, cid, client_id, status="triagem")
+                await _criar_caso(db, cid, client_id, status="aberto")
             await _criar_caso(db, ids[8], client_id, status="arquivado")
             await db.commit()
 
@@ -268,7 +269,7 @@ async def test_status_invalido_retorna_422_e_nao_500():
                 )
             assert exc.value.status_code == 422
             # A mensagem precisa dizer o que é aceito, senão o cliente fica cego.
-            assert "triagem" in str(exc.value.detail)
+            assert "aberto" in str(exc.value.detail)
         finally:
             # A transação abortou no erro do enum: precisa de rollback antes de limpar.
             await db.rollback()
@@ -286,7 +287,7 @@ async def test_filtro_todos_e_a_ausencia_do_parametro():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        for cid, st in zip(ids, ["triagem", "ativo", "arquivado"]):
+        for cid, st in zip(ids, ["aberto", "em_instrucao", "arquivado"]):
             await _criar_caso(db, cid, client_id, status=st)
         await db.commit()
         cu = await _carregar_user(db, uid)
@@ -313,7 +314,7 @@ async def test_status_valido_continua_funcionando():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="suspenso")
+        await _criar_caso(db, case_id, client_id, status="em_producao")
         await db.commit()
         cu = await _carregar_user(db, uid)
         try:
@@ -325,7 +326,7 @@ async def test_status_valido_continua_funcionando():
                 assert isinstance(r["total"], int)
             r = await listar(
                 page=1, page_size=500, search=None, area=None,
-                status_f="suspenso", arquivo="todos", advogado_id=None, db=db, cu=cu,
+                status_f="em_producao", arquivo="todos", advogado_id=None, db=db, cu=cu,
             )
             assert case_id in {c.id for c in r["data"]}
         finally:
@@ -346,7 +347,7 @@ async def test_peca_em_rascunho_conta_como_aguardando_revisao():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="triagem")
+        await _criar_caso(db, case_id, client_id, status="aberto")
         await db.commit()
         cu = await _carregar_user(db, uid)
         try:
@@ -372,7 +373,7 @@ async def test_peca_de_caso_excluido_nao_conta_nas_metricas():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="triagem", deleted=True)
+        await _criar_caso(db, case_id, client_id, status="aberto", deleted=True)
         await db.commit()
         cu = await _carregar_user(db, uid)
         try:
@@ -398,7 +399,7 @@ async def test_peca_de_caso_ativo_aparece_na_listagem_operacional():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="triagem")
+        await _criar_caso(db, case_id, client_id, status="aberto")
         await db.commit()
         cu = await _carregar_user(db, uid)
         try:
@@ -425,7 +426,7 @@ async def test_peca_de_caso_excluido_some_da_listagem_operacional():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="triagem", deleted=True)
+        await _criar_caso(db, case_id, client_id, status="aberto", deleted=True)
         await db.commit()
         cu = await _carregar_user(db, uid)
         try:
@@ -450,7 +451,7 @@ async def test_restauracao_do_caso_restabelece_visibilidade_da_peca():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="triagem", deleted=True)
+        await _criar_caso(db, case_id, client_id, status="aberto", deleted=True)
         await db.commit()
         cu = await _carregar_user(db, uid)
         try:
@@ -487,7 +488,7 @@ async def test_diagnostico_detecta_peca_de_caso_excluido():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="triagem", deleted=True)
+        await _criar_caso(db, case_id, client_id, status="aberto", deleted=True)
         await db.commit()
         try:
             peca_id = await _criar_peca(db, case_id, status="rascunho")
@@ -550,7 +551,7 @@ async def test_diagnostico_nao_altera_dados():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="triagem", deleted=True)
+        await _criar_caso(db, case_id, client_id, status="aberto", deleted=True)
         await db.commit()
         try:
             peca_id = await _criar_peca(db, case_id, status="rascunho")

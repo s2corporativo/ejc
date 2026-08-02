@@ -42,7 +42,7 @@
       "descricao": "E2E-FICTICIO Movimento público de teste para validar timeline e notificação."
     },
     "atualizacao_caso": {
-      "status": "ativo",
+      "status": "em_instrucao",
       "fase": "conhecimento",
       "risco": "medio",
       "observacoes": "E2E-FICTICIO Atualização automática de homologação."

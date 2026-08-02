@@ -4,6 +4,13 @@
 # domain→api: o scheduler (job_relatorio_mensal) precisava desses dados mas
 # importava do router. Agora router e scheduler consomem este serviço.
 from sqlalchemy import text
+
+from app.core.status_caso import STATUS_ABERTOS
+
+# Literais do enum interpolados a partir da fonte canônica — valores controlados
+# pelo servidor, nunca por entrada de usuário. Antes eram strings repetidas
+# ('ativo','triagem') que a migration 126 tornaria inválidas em runtime.
+_ABERTOS_SQL = ",".join(f"'{s.value}'" for s in STATUS_ABERTOS)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -43,7 +50,7 @@ async def coletar_dados_mes(db: AsyncSession, mes: int, ano: int) -> dict:
 
     r = await db.execute(text("""
         SELECT u.full_name,
-          COUNT(DISTINCT c.id) FILTER (WHERE c.status IN ('ativo','triagem')) AS casos,
+          COUNT(DISTINCT c.id) FILTER (WHERE c.status IN ({abertos})) AS casos,
           COUNT(DISTINCT d.id) FILTER (WHERE EXTRACT(MONTH FROM d.data_prazo)=:m
                                          AND EXTRACT(YEAR FROM d.data_prazo)=:a) AS prazos,
           COUNT(DISTINCT d.id) FILTER (WHERE d.status='concluido'
@@ -55,7 +62,7 @@ async def coletar_dados_mes(db: AsyncSession, mes: int, ano: int) -> dict:
         WHERE u.role IN ('socio','advogado','advogado_auxiliar')
           AND u.is_active=true AND u.deleted_at IS NULL
         GROUP BY u.full_name ORDER BY u.full_name
-    """), {"m": mes, "a": ano})
+    """.format(abertos=_ABERTOS_SQL)), {"m": mes, "a": ano})
     advogados = [{"nome": x[0], "casos": x[1], "prazos": x[2], "cumpridos": x[3]}
                  for x in r]
 

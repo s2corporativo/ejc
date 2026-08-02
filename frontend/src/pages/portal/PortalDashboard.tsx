@@ -16,13 +16,16 @@ import api from "../../lib/api";
 import { useAuth } from "../../stores/auth";
 import { asList } from "../../lib/list";
 import { fmtDate } from "../../components/UI";
+import { CASE_STATUS_LABEL, isCasoAtivo } from "../../types/caseStatus";
 
-const STATUS: Record<string, [string, string]> = {
-  triagem: ["Em análise", "bg-warn-100 text-warn-700"],
-  ativo: ["Em andamento", "bg-primary-100 text-primary-700"],
-  suspenso: ["Suspenso", "bg-slate-100 text-slate-600"],
-  encerrado: ["Encerrado", "bg-success-100 text-success-700"],
-  arquivado: ["Arquivado", "bg-slate-100 text-slate-500"],
+/** Cor por status; RÓTULO vem do vocabulário canônico (types/caseStatus.ts). */
+const STATUS_COR: Record<string, string> = {
+  aberto: "bg-warn-100 text-warn-700",
+  em_instrucao: "bg-primary-100 text-primary-700",
+  em_producao: "bg-primary-100 text-primary-700",
+  protocolado: "bg-primary-100 text-primary-700",
+  encerrado: "bg-success-100 text-success-700",
+  arquivado: "bg-slate-100 text-slate-500",
 };
 
 const fmtR$ = (v: number) =>
@@ -67,7 +70,7 @@ export default function PortalDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  const ativos = casos.filter((c) => c.status === "ativo").length;
+  const ativos = casos.filter((c) => isCasoAtivo(c.status)).length;
   // O backend retorna a lista de lançamentos ({data: [...]}) — os totais são
   // derivados aqui no frontend.
   const pendente = fees
@@ -289,10 +292,10 @@ export default function PortalDashboard() {
           </div>
           <div className="space-y-2">
             {casos.slice(0, 5).map((c) => {
-              const [label, cor] = STATUS[c.status] ?? [
-                c.status,
-                "bg-slate-100 text-slate-500",
-              ];
+              const label =
+                CASE_STATUS_LABEL[c.status as keyof typeof CASE_STATUS_LABEL] ??
+                c.status;
+              const cor = STATUS_COR[c.status] ?? "bg-slate-100 text-slate-500";
               return (
                 <Link
                   key={c.id}
