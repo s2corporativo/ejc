@@ -204,7 +204,12 @@ logger = logging.getLogger("ejc")
 # init_sentry() é defensivo: sem SENTRY_DSN é no-op e nunca levanta exceção,
 # então o boot fica idêntico ao de hoje. Com DSN, aplica scrub LGPD (before_send)
 # e send_default_pii=False. Ver app/core/observability.py.
-from app.core.observability import app_version, init_sentry, uptime_seconds
+from app.core.observability import (
+    app_version,
+    coletor_erros_ativo,
+    init_sentry,
+    uptime_seconds,
+)
 init_sentry()
 
 
@@ -559,7 +564,13 @@ async def global_exception_handler(request: Request, exc: Exception):
         # Em dev/staging, mantém stack para diagnóstico técnico.
         exc_info=settings.APP_ENV != "production",
     )
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Erro interno. A equipe foi notificada."},
+    # A mensagem só promete notificação quando existe coletor de erros ativo.
+    # Sem SENTRY_DSN o erro fica apenas no log do container: ninguém é avisado e
+    # não há histórico consultável — afirmar o contrário faz o usuário aguardar
+    # um retorno que não virá.
+    detail = (
+        "Erro interno. A equipe foi notificada."
+        if coletor_erros_ativo()
+        else "Erro interno. Se persistir, informe o horário e o que estava fazendo."
     )
+    return JSONResponse(status_code=500, content={"detail": detail})

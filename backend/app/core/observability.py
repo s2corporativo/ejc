@@ -115,6 +115,24 @@ def init_sentry() -> None:
         logger.warning("Falha ao inicializar Sentry (ignorado): %s", e)
 
 
+def coletor_erros_ativo() -> bool:
+    """Há coletor de erros recebendo os 500 deste processo?
+
+    Existe para que a resposta de erro não AFIRME algo que não acontece. Sem
+    `SENTRY_DSN`, o erro é apenas logado no container: ninguém é notificado e
+    não há registro histórico consultável. Prometer notificação nesse estado faz
+    o usuário esperar por um retorno que nunca vem, e a auditoria de julho/2026
+    registrou exatamente isso em `/analytics/roi-por-area`.
+
+    Espelha a condição de `init_sentry()`. Nunca levanta: na dúvida devolve
+    False, que é a afirmação mais fraca e portanto a segura.
+    """
+    try:
+        return bool((get_settings().SENTRY_DSN or "").strip())
+    except Exception:  # pragma: no cover - defensivo
+        return False
+
+
 async def check_migrations_head() -> bool | None:
     """
     Readiness: True se o alembic_version do banco == head(s) das migrations.
