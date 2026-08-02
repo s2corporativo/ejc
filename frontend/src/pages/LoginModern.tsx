@@ -178,7 +178,7 @@ export default function LoginModern() {
               ].map(([title, desc]) => (
                 <div
                   key={title}
-                  className="rounded-xl border border-border bg-white p-3"
+                  className="rounded-xl border border-border bg-white p-3 shadow-soft transition-shadow duration-150 hover:shadow-card"
                 >
                   <div className="text-sm font-semibold text-slate-950">
                     {title}

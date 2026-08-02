@@ -148,9 +148,9 @@ export default function TabPrazos({ caseId }: { caseId: string }) {
             <span
               className={`font-medium text-xs ${
                 (d.dias_restantes ?? 1) <= 0
-                  ? "text-danger-600"
+                  ? "text-danger-600 dark:text-danger-300"
                   : (d.dias_restantes ?? 99) <= 7
-                    ? "text-orange-600"
+                    ? "text-warn-700 dark:text-warn-300"
                     : "text-gray-500"
               }`}
             >

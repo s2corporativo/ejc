@@ -78,13 +78,19 @@ export function TelaInicial({
           adicionar(e.dataTransfer?.files ?? null);
         }}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors",
+          "flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-all duration-150",
           arrastando
-            ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20"
-            : "border-slate-300 hover:border-primary-400 dark:border-slate-600",
+            ? "border-primary-500 bg-primary-50 shadow-card dark:bg-primary-900/20"
+            : "border-slate-300 hover:border-primary-400 hover:bg-slate-50 hover:shadow-soft dark:border-slate-600",
         )}
       >
-        <Upload className="h-6 w-6 text-slate-400" aria-hidden="true" />
+        <Upload
+          className={cn(
+            "h-6 w-6 transition-colors duration-150",
+            arrastando ? "text-primary-600" : "text-slate-400",
+          )}
+          aria-hidden="true"
+        />
         <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
           Arraste documentos aqui · ou clique para escolher
         </p>
@@ -154,7 +160,10 @@ type EstadoEtapa = "feita" | "andamento" | "pendente";
 function IconeEtapa({ estado }: { estado: EstadoEtapa }) {
   if (estado === "feita") {
     return (
-      <CheckCircle2 className="h-4 w-4 text-green-500" aria-hidden="true" />
+      <CheckCircle2
+        className="h-4 w-4 text-success-600 dark:text-success-300"
+        aria-hidden="true"
+      />
     );
   }
   if (estado === "andamento") {

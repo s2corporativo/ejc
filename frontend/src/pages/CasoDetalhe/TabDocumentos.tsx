@@ -127,10 +127,10 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
             setArrastando(false);
             selecionarArquivo(e.dataTransfer.files?.[0] ?? null);
           }}
-          className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+          className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-all duration-150 ${
             arrastando
-              ? "border-primary-400 bg-primary-50"
-              : "border-slate-200 hover:border-primary-300 hover:bg-slate-50"
+              ? "border-primary-500 bg-primary-50 shadow-card"
+              : "border-slate-200 hover:border-primary-300 hover:bg-slate-50 hover:shadow-soft"
           }`}
         >
           <FileUp className="h-6 w-6 text-primary-600" />
@@ -189,7 +189,7 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
         {docs.map((d, i) => (
           <div
             key={d.id || i}
-            className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
+            className="card p-3 flex justify-between items-center text-sm cursor-pointer transition-colors duration-150 hover:bg-slate-50"
             onClick={() =>
               baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
             }

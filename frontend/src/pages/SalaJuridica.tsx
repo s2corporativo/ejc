@@ -1023,7 +1023,7 @@ export default function SalaJuridica() {
                       className={cn(
                         "rounded-lg border p-3 text-sm",
                         m.autor === "user"
-                          ? "ml-auto w-fit max-w-[88%] border-blue-100 bg-blue-50"
+                          ? "ml-auto w-fit max-w-[88%] border-primary-100 bg-primary-50 dark:border-primary-900 dark:bg-primary-950/40"
                           : "border-gray-200 bg-white shadow-sm",
                       )}
                     >

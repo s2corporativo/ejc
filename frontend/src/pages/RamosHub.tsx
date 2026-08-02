@@ -176,7 +176,7 @@ const VISUAL: Record<string, AreaVisual> = {
   transito: {
     icon: Car,
     description: "Multas, defesa prévia, JARI, CETRAN, suspensão e cassação",
-    tone: "bg-blue-600 text-blue-700",
+    tone: "bg-indigo-600 text-indigo-700",
   },
   constitucional: {
     icon: Scale,

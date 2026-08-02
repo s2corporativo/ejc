@@ -290,18 +290,6 @@
     @apply text-[10px] font-bold uppercase tracking-[0.22em] text-primary-700;
   }
 
-  .hero-blue {
-    color: white;
-    background:
-      radial-gradient(
-        circle at 15% 15%,
-        rgba(255, 255, 255, 0.12),
-        transparent 18rem
-      ),
-      linear-gradient(135deg, #0b1f3a 0%, #1d4ed8 55%, #2563eb 100%);
-    box-shadow: 0 18px 45px rgba(37, 99, 235, 0.18);
-  }
-
   /* ── Degradê OURO metálico (destaques de marca: heros, painéis) ──
      Fundo escuro→ouro; todo texto branco/creme fica sobre trechos
      com ≥4,6:1 (fim #8F7117). O brilho vem do radial claro no topo. */

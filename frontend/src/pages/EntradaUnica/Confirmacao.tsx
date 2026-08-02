@@ -161,7 +161,7 @@ export function Confirmacao({
         <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
           Confira e confirme
         </h2>
-        <span className="text-xs text-slate-400">rascunho</span>
+        <Badge tone="slate">rascunho</Badge>
       </div>
 
       {proposta.degradado && (

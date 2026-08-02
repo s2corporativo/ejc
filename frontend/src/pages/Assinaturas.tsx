@@ -343,7 +343,7 @@ export default function Assinaturas() {
             )}
           </div>
 
-          <div className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-sm text-blue-800">
+          <div className="flex items-start gap-2 rounded-lg bg-info-50 border border-info-100 px-3 py-2.5 text-sm text-info-800 dark:bg-info-950/40 dark:border-info-900 dark:text-info-200">
             <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <p>
               O documento será enviado para assinatura a todos os usuários

@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
+  Archive,
   ArrowDown,
   ArrowUp,
   Bot,
@@ -251,6 +252,10 @@ const STATUS_REGISTRY: Record<
   "em revisao": { tone: "blue", icon: Eye, label: "Em revisão" },
   protocolado: { tone: "teal", icon: Send, label: "Protocolado" },
   concluido: { tone: "green", icon: CheckCircle2, label: "Concluído" },
+  // Estados terminais do ciclo do caso — mesmos ícone+texto em toda tela
+  // (antes caíam no mapa legado, sem ícone).
+  encerrado: { tone: "slate", icon: CheckCircle2, label: "Encerrado" },
+  arquivado: { tone: "slate", icon: Archive, label: "Arquivado" },
   suspenso: { tone: "slate", icon: PauseCircle, label: "Suspenso" },
   critico: { tone: "red", icon: AlertTriangle, label: "Crítico" },
 };
@@ -338,7 +343,7 @@ export function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <label className="mb-1.5 block text-xs font-medium text-slate-600">
+    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
       {children}
       {required && <span className="ml-1 text-danger-500">*</span>}
     </label>
@@ -466,7 +471,7 @@ export function StatCard({
   return (
     <Card
       className={cn(
-        "relative overflow-hidden rounded-[10px] p-4",
+        "relative overflow-hidden rounded-[10px] p-4 hover:shadow-card-hover",
         "before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:content-['']",
         toneBarClasses[tone],
       )}
