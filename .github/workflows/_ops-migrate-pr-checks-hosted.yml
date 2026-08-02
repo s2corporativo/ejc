@@ -1,0 +1,63 @@
+name: Migrate PR checks to hosted runners
+
+on:
+  push:
+    branches:
+      - ci/aumentar-capacidade-runners
+    paths:
+      - scripts/maintenance/migrate_pr_checks_to_hosted.py
+      - .github/workflows/_ops-migrate-pr-checks-hosted.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: migrate-pr-checks-hosted
+  cancel-in-progress: true
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout operational branch
+        uses: actions/checkout@v7
+        with:
+          ref: ci/aumentar-capacidade-runners
+          fetch-depth: 0
+
+      - name: Configure bot identity
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Migrate isolated checks
+        run: python3 scripts/maintenance/migrate_pr_checks_to_hosted.py
+
+      - name: Validate workflow policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            .github/workflows/ci.yml
+            .github/workflows/governanca.yml
+            .github/workflows/ejc-release-gate.yml
+            .github/workflows/continuity-ui-gates.yml
+            .github/workflows/architecture-inventory.yml
+            .github/workflows/main-provenance.yml
+          )
+          ! grep -H 'runs-on: \[self-hosted, ejc-vps\]' "${files[@]}"
+          grep -H 'runs-on: ubuntu-latest' "${files[@]}"
+          git diff --check
+
+      - name: Remove operational bootstrap
+        run: |
+          rm -f scripts/maintenance/migrate_pr_checks_to_hosted.py
+          rm -f .github/workflows/_ops-migrate-pr-checks-hosted.yml
+
+      - name: Commit final workflow changes
+        run: |
+          git add -A
+          git diff --cached --check
+          git commit -m 'ci: paralelizar checks fora da VPS'
+          git push origin HEAD:ci/aumentar-capacidade-runners
