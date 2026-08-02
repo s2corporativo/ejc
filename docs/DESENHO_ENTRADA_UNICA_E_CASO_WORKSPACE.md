@@ -261,3 +261,42 @@ num modelo de estados que ainda vai mudar é retrabalho garantido.
 ---
 
 *Desenho para revisão. Nenhuma linha de implementação foi escrita.*
+
+---
+
+## Decisões do titular — 2026-08-02
+
+As quatro perguntas foram respondidas. O desenho acima passa de proposta a
+especificação aprovada, com estes termos:
+
+1. **Estados**: os quatro, como propostos — Aberto → Em instrução → Em produção
+   → Protocolado, e Encerrado.
+2. **Enum**: **migrar de verdade** (opção b). Migration com conversão dos casos
+   existentes, agora, enquanto a janela está aberta.
+3. **Tela de confirmação**: aprovada como desenhada.
+4. **Primeiro corte do caso-workspace**: **quatro abas** — Documentos, Prazos,
+   Peças e Andamentos. **Financeiro (hora/despesa) fica para depois**, por ser a
+   aba menos ligada ao fluxo caso→protocolo.
+
+### Verificação posterior ao desenho
+
+O pré-requisito nº 1 da ordem de implementação — corrigir a conversão Sala
+Jurídica → Caso — **já está resolvido no código**: `converter_em_caso`
+(`legal_chat_service.py`) grava `descricao_fatos` no caso criado, com gates de
+conflito de interesses, deduplicação e idempotência por lock pessimista. O
+defeito que a auditoria viu em produção não existe mais no repositório.
+
+### Refinamento na migração do enum
+
+O mapeamento da tabela 3.3 agrupava `arquivado` sob *Encerrado* como
+apresentação. Na migração real, `arquivado` **permanece valor próprio** do enum:
+`core/status_caso.py` distingue deliberadamente desfecho (`encerrado`) de guarda
+(`arquivado`), e os endpoints de arquivar/desarquivar e a lixeira dependem dessa
+distinção. O enum final fica com seis valores:
+
+    aberto · em_instrucao · em_producao · protocolado · encerrado · arquivado
+
+`triagem` → `aberto`; `ativo` → `em_instrucao`; `suspenso` → `aberto` (não há
+caso suspenso em produção); `acordo` → `encerrado` (acordo é desfecho; não há
+caso em acordo em produção). Nenhuma linha real é perdida — os 9 casos são
+`triagem` (8) e `arquivado` (1).
