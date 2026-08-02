@@ -112,4 +112,17 @@ class FonteIngestao(Base):
     registros_novos = Column(Integer, nullable=False, server_default="0")
     registros_total = Column(Integer, nullable=False, server_default="0")
     ultimo_erro     = Column(Text, nullable=True)
+    # Quantas execuções seguidas terminaram sem erro E sem trazer nada novo.
+    # `registros_novos` só guarda a última execução, então "rodou 12 vezes sem
+    # produzir" não é derivável do estado — tem de ser contado na hora
+    # (migration 125). É o sinal que distingue job saudável de job morto que
+    # continua reportando "sucesso". Só incrementa quando o run é zerado de
+    # verdade (nada recebido NEM processado): reprocessar um catálogo fixo e
+    # não achar nada novo é ingestão idempotente saudável, não coletor morto.
+    execucoes_zeradas_consecutivas = Column(Integer, nullable=False, server_default="0")
+    # Marcador VITALÍCIO: a fonte já trouxe registro novo alguma vez. Não pode
+    # ser derivado de `registros_total`, que é sobrescrito a cada execução —
+    # uma consulta legítima com zero resultados apagaria o histórico e faria
+    # uma fonte produtiva virar `nunca_produziu` (migration 125, com backfill).
+    ja_produziu = Column(Boolean, nullable=False, server_default="false")
     created_at      = Column(DateTime(timezone=True), server_default=func.now())

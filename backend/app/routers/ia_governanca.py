@@ -472,18 +472,30 @@ async def governanca_prompts(db: AsyncSession = Depends(get_db), cu: User = Depe
 @router.get("/fontes")
 async def fontes_ingestao(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     _require_admin_socio(cu)
+    from app.services.ingestao_saude import avaliar_fontes, resumir
+
     rows = (await db.execute(select(FonteIngestao).order_by(FonteIngestao.slug))).scalars().all()
-    return {"data": [{
-        "slug": f.slug,
-        "descricao": f.descricao,
-        "categoria_rag": f.categoria_rag,
-        "ativo": f.ativo,
-        "ultima_execucao": f.ultima_execucao,
-        "ultimo_status": f.ultimo_status,
-        "registros_novos": f.registros_novos,
-        "registros_total": f.registros_total,
-        "ultimo_erro": f.ultimo_erro,
-    } for f in rows]}
+    # `ultimo_status` responde "o job rodou?"; `saude` responde "o job
+    # entregou?". São perguntas diferentes, e só a segunda teria denunciado a
+    # captura do DJEN reportando sucesso por meses sem registrar nada.
+    saudes = avaliar_fontes(rows)
+    return {
+        "data": [{
+            "slug": f.slug,
+            "descricao": f.descricao,
+            "categoria_rag": f.categoria_rag,
+            "ativo": f.ativo,
+            "ultima_execucao": f.ultima_execucao,
+            "ultimo_status": f.ultimo_status,
+            "registros_novos": f.registros_novos,
+            "registros_total": f.registros_total,
+            "execucoes_zeradas_consecutivas": f.execucoes_zeradas_consecutivas,
+            "ja_produziu": f.ja_produziu,
+            "ultimo_erro": f.ultimo_erro,
+            "saude": saudes[f.slug].to_dict(),
+        } for f in rows],
+        "resumo_saude": resumir(saudes),
+    }
 
 
 @router.post("/fontes/tjmg/coletar", status_code=202)

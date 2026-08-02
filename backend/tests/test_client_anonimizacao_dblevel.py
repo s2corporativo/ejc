@@ -53,7 +53,7 @@ async def _limpar_executor(db, executor_id: str):
     await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": executor_id})
 
 
-async def _criar_caso(db, case_id, client_id, status="ativo"):
+async def _criar_caso(db, case_id, client_id, status="em_instrucao"):
     await db.execute(
         text(
             "INSERT INTO cases (id, titulo, area, status, client_id) "
@@ -119,7 +119,7 @@ async def test_bloqueia_com_caso_ativo_salvo_forcar():
     client_id, case_id = str(uuid4()), str(uuid4())
     async with AsyncSessionLocal() as db:
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="ativo")
+        await _criar_caso(db, case_id, client_id, status="em_instrucao")
         executor = await _criar_executor(db)
         await db.commit()
         try:

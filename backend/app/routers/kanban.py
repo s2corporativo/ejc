@@ -27,16 +27,17 @@ def _status_da_coluna(nome: str) -> Optional[str]:
     if not nome:
         return None
     n = nome.lower()
+    # Migration 126: `acordo` e `suspenso` saíram do enum. Acordo é DESFECHO
+    # (vira encerrado, como na conversão da própria migration); coluna de
+    # espera não é mais um estado do caso — o caso segue aberto.
     if "arquiv" in n:
         return "arquivado"
-    if "sem acordo" in n:
+    if "acordo" in n:                       # com ou sem acordo: o caso acabou
         return "encerrado"
-    if "acordo" in n:
-        return "acordo"
     if "encerrad" in n or "entregue" in n:
         return "encerrado"
     if "aguardando prazo" in n or "suspens" in n:
-        return "suspenso"
+        return "aberto"
     return None
 
 

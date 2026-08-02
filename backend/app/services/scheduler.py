@@ -1696,6 +1696,7 @@ async def job_djen_intimacoes():
 
 async def job_datajud_sync():
     """08h45/16h45 — sincroniza movimentos oficiais dos casos ativos com nº CNJ."""
+    from app.core.status_caso import STATUS_ABERTOS as _STATUS_ABERTOS_CASO
     from app.models.case import Case as _C
     from app.services.datajud_service import sincronizar_caso
     from app.services.heartbeat_service import JOB_DATAJUD
@@ -1705,7 +1706,7 @@ async def job_datajud_sync():
             casos = (await db.execute(select(_C).where(
                 _C.deleted_at.is_(None),
                 _C.numero_processo.isnot(None),
-                _C.status.in_(["ativo", "suspenso"]),
+                _C.status.in_(_STATUS_ABERTOS_CASO),
             ))).scalars().all()
             total = 0
             for c in casos[:80]:   # teto por execução (rate limit amigável)

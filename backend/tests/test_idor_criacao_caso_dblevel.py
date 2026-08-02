@@ -226,7 +226,7 @@ async def test_vinculo_fabricado_concederia_acesso_permanente():
             await db.execute(
                 text("INSERT INTO cases (id, titulo, area, status, client_id, "
                      "advogado_responsavel_id) VALUES "
-                     "(:id, :t, 'civil', 'ativo', :cid, :resp)"),
+                     "(:id, :t, 'civil', 'em_instrucao', :cid, :resp)"),
                 {"id": caso_forjado, "t": f"Forjado {tok}", "cid": cli_b,
                  "resp": adv_a},
             )

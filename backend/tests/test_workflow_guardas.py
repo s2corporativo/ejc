@@ -88,7 +88,7 @@ def _cw(etapa_atual: str | None = "e1") -> CaseWorkflow:
     )
 
 
-def _liberar_caso(monkeypatch, status: str = "ativo"):
+def _liberar_caso(monkeypatch, status: str = "em_instrucao"):
     """Ownership liberado no fake; o caso volta com o status pedido."""
     async def _acesso(db, cu, case_id):
         return SimpleNamespace(id=case_id, status=status)

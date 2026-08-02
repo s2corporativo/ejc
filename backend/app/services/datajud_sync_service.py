@@ -29,6 +29,7 @@ from sqlalchemy import select, text as sqltext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.status_caso import STATUS_ABERTOS
 from app.models.case import Case, CaseMovimento
 from app.services.datajud_service import (
     DataJudDesabilitadoError,
@@ -233,7 +234,7 @@ async def executar_sync_clientes(db: AsyncSession) -> dict:
     """
     casos = (await db.execute(select(Case).where(
         Case.deleted_at.is_(None),
-        Case.status.in_(["ativo", "suspenso"]),
+        Case.status.in_(STATUS_ABERTOS),
         Case.numero_processo.isnot(None),
     ).order_by(Case.last_synced_at.asc().nullsfirst()))).scalars().all()
 
