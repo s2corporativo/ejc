@@ -24,6 +24,9 @@ veredito considera quatro situações que o monitoramento por cadência não vê
   · `erro_sem_diagnostico` — terminou em erro e não gravou a mensagem. Pior que
                          o erro: não há por onde começar a investigar. É o estado
                          em que a fonte `anpd` foi encontrada.
+  · `parcial`          — a execução terminou com falhas no meio do caminho.
+                         Não é `ok` (parte da coleta se perdeu) nem `erro`
+                         (algo chegou): é um nível de atenção próprio.
   · `dormente`         — fonte ativa que parou de ser executada.
 
 Funções puras, sem I/O: recebem o estado da fonte e devolvem o veredito. Isso
@@ -50,6 +53,7 @@ MAX_HORAS_SEM_EXECUTAR = 24 * 8
 SEVERIDADE = {
     "ok": 0,
     "dormente": 1,
+    "parcial": 2,
     "parou_de_produzir": 2,
     "erro_sem_diagnostico": 3,
     "erro": 3,
@@ -99,6 +103,7 @@ def avaliar_saude_fonte(
     registros_novos: int | None,
     registros_total: int | None,
     execucoes_zeradas_consecutivas: int | None,
+    ja_produziu: bool | None = None,
     agora: datetime | None = None,
     limite_zeradas: int = LIMITE_EXECUCOES_ZERADAS,
     max_horas_sem_executar: float = MAX_HORAS_SEM_EXECUTAR,
@@ -117,6 +122,16 @@ def avaliar_saude_fonte(
     zeradas = int(execucoes_zeradas_consecutivas or 0)
     status = (ultimo_status or "").strip().lower()
     ja_executou = ultima_execucao is not None
+    # `registros_total` é SOBRESCRITO a cada execução — uma consulta legítima
+    # com zero resultados zeraria o "histórico" e faria uma fonte produtiva
+    # parecer que nunca funcionou. O marcador vitalício `ja_produziu`
+    # (migration 125) é a memória que não se perde; em linha legada (banco
+    # ainda sem a coluna) caímos no comportamento antigo, derivado do estado
+    # da última execução.
+    if ja_produziu is None:
+        produziu_alguma_vez = total > 0 or novos > 0
+    else:
+        produziu_alguma_vez = bool(ja_produziu) or novos > 0
 
     if not ativo:
         return SaudeFonte(
@@ -150,7 +165,7 @@ def avaliar_saude_fonte(
         )
 
     # 2. Nunca produziu nada. Não é lentidão — é uma fonte que nunca funcionou.
-    if ja_executou and total <= 0 and novos <= 0:
+    if ja_executou and not produziu_alguma_vez:
         return SaudeFonte(
             situacao="nunca_produziu",
             critico=True,
@@ -180,7 +195,27 @@ def avaliar_saude_fonte(
             ),
         )
 
-    # 4. Ativa e parada.
+    # 4. Execução que terminou com falhas no meio do caminho. Vários ingestores
+    #    (knowledge, importador de jurisprudência, DataJud) persistem "parcial"
+    #    quando parte do lote falhou. Não é `ok`: parte da coleta se perdeu e
+    #    alguém precisa olhar — mas também não é o run vazio saudável.
+    if status == "parcial":
+        detalhe = (ultimo_erro or "").strip()[:200]
+        return SaudeFonte(
+            situacao="parcial",
+            critico=False,
+            motivo=(
+                "Última execução terminou PARCIAL — parte do lote falhou"
+                + (f": {detalhe}" if detalhe else ".")
+            ),
+            acao=(
+                "Verifique o erro registrado e reexecute a fonte; coleta "
+                "parcial recorrente costuma indicar origem instável ou "
+                "parser desatualizado."
+            ),
+        )
+
+    # 5. Ativa e parada.
     idade = _idade_horas(ultima_execucao, agora)
     if idade is None:
         return SaudeFonte(
@@ -220,6 +255,7 @@ def avaliar_fontes(fontes, agora: datetime | None = None) -> dict[str, SaudeFont
             execucoes_zeradas_consecutivas=getattr(
                 f, "execucoes_zeradas_consecutivas", 0
             ),
+            ja_produziu=getattr(f, "ja_produziu", None),
             agora=agora,
         )
         for f in fontes

@@ -11,9 +11,18 @@ ter registrado uma única intimação.
 sem trazer nada" não é derivável do estado atual: precisa ser contado no momento
 em que a execução termina. É o que esta coluna faz.
 
-Semântica: incrementa quando a execução termina sem erro e sem registros novos;
-zera assim que uma execução produz algo. Fontes existentes começam em 0 — sem
+Semântica: incrementa quando a execução termina em sucesso pleno sem NADA
+recebido nem processado (run zerado de verdade); zera quando a execução produz
+algo novo OU quando recebe e processa registros ainda que inalterados (ingestão
+idempotente saudável — ex.: reprocessar um catálogo fixo). Execução com status
+`erro` ou `parcial` não mexe no contador. Fontes existentes começam em 0 — sem
 backfill heurístico, porque não há histórico de execuções para reconstruir.
+
+A segunda coluna, `ja_produziu`, é o marcador VITALÍCIO de que a fonte já
+trouxe registro novo alguma vez. `registros_total` é sobrescrito a cada
+execução, então uma consulta legítima com zero resultados apagaria o histórico
+e faria uma fonte produtiva virar `nunca_produziu` no painel. Backfill: fontes
+com registros no estado atual já produziram.
 
 Revision ID: 125_fonte_execucoes_zeradas
 Revises: 124_dataroom_public_hardening
@@ -44,7 +53,25 @@ def upgrade() -> None:
             server_default=sa.text("0"),
         ),
     )
+    op.add_column(
+        "fontes_ingestao",
+        sa.Column(
+            "ja_produziu",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+        ),
+    )
+    # Backfill: o estado atual é a única evidência disponível — fonte com
+    # registros na última execução comprovadamente já produziu. Fonte zerada
+    # hoje mas produtiva no passado não é recuperável (o total é sobrescrito),
+    # e ficará marcada na primeira execução que trouxer algo.
+    op.execute(
+        "UPDATE fontes_ingestao SET ja_produziu = TRUE "
+        "WHERE registros_total > 0 OR registros_novos > 0"
+    )
 
 
 def downgrade() -> None:
+    op.drop_column("fontes_ingestao", "ja_produziu")
     op.drop_column("fontes_ingestao", "execucoes_zeradas_consecutivas")

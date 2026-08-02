@@ -107,6 +107,61 @@ def test_uma_execucao_vazia_isolada_nao_alarma():
     assert s.critico is False
 
 
+# ── Execução parcial: não é ok, não é run vazio ──────────────────────────────
+
+
+def test_execucao_parcial_nao_sai_como_ok():
+    """Parcial persiste em vários ingestores (knowledge, juris, DataJud).
+
+    Parte do lote falhou — reportar 'ok' esconderia exatamente o tipo de perda
+    silenciosa que este módulo existe para denunciar.
+    """
+    s = _fonte(ultimo_status="parcial", ultimo_erro="HTTPError: 503 no lote 2")
+    assert s.situacao == "parcial"
+    assert s.critico is False
+    assert "503" in s.motivo
+    assert s.acao != "Nenhuma."
+
+
+def test_parcial_tem_severidade_propria_acima_de_ok():
+    s = _fonte(ultimo_status="parcial")
+    assert s.to_dict()["severidade"] > 0
+
+
+def test_parcial_nao_mascara_fonte_que_nunca_produziu():
+    """Fonte parcial com acervo eternamente zerado é 'nunca_produziu', pior."""
+    s = _fonte(
+        ultimo_status="parcial",
+        registros_novos=0,
+        registros_total=0,
+        ja_produziu=False,
+    )
+    assert s.situacao == "nunca_produziu"
+
+
+# ── Consulta legítima com zero resultados não apaga o histórico ──────────────
+
+
+def test_fonte_que_ja_produziu_nao_vira_nunca_produziu_apos_consulta_zerada():
+    """`registros_total` é sobrescrito a cada execução.
+
+    Uma consulta legítima com zero resultados zeraria o 'histórico' e faria uma
+    fonte produtiva parecer que nunca funcionou — o marcador vitalício
+    `ja_produziu` é a memória que não se perde.
+    """
+    s = _fonte(registros_novos=0, registros_total=0, ja_produziu=True)
+    assert s.situacao != "nunca_produziu"
+    assert s.situacao == "ok"
+    assert s.critico is False
+
+
+def test_sem_marcador_vitalicio_cai_no_comportamento_legado():
+    """Linha de banco ainda sem a migration 125: deriva do estado da última
+    execução, como antes."""
+    s = _fonte(registros_novos=0, registros_total=0, ja_produziu=None)
+    assert s.situacao == "nunca_produziu"
+
+
 # ── Dormência e desativação ──────────────────────────────────────────────────
 
 
@@ -187,7 +242,7 @@ def test_avaliar_fontes_tolera_linha_sem_a_coluna_nova():
 
 
 class _FonteFake:
-    def __init__(self, zeradas=0):
+    def __init__(self, zeradas=0, ja_produziu=False):
         self.slug = "fonte_x"
         self.ultima_execucao = None
         self.ultimo_status = None
@@ -195,6 +250,7 @@ class _FonteFake:
         self.registros_total = 0
         self.ultimo_erro = None
         self.execucoes_zeradas_consecutivas = zeradas
+        self.ja_produziu = ja_produziu
 
 
 class _DBFake:
@@ -232,6 +288,46 @@ async def test_execucao_com_erro_nao_mexe_no_contador():
     """O problema de uma execução com erro já é o erro — não confundir os sinais."""
     f = await _marcar(_FonteFake(zeradas=2), status="erro", novos=0, total=0, erro="boom")
     assert f.execucoes_zeradas_consecutivas == 2
+
+
+async def test_execucao_parcial_nao_reseta_nem_incrementa_o_contador():
+    """Parcial não é sucesso pleno: não pode apagar o histórico de zeradas.
+
+    Antes deste ajuste, um run parcial com novos>0 resetava o contador como se
+    tudo estivesse bem — e a fonte quebrada ganhava sobrevida no painel.
+    """
+    f = await _marcar(
+        _FonteFake(zeradas=2), status="parcial", novos=4, total=10, erro="boom"
+    )
+    assert f.execucoes_zeradas_consecutivas == 2
+
+    f = await _marcar(_FonteFake(zeradas=2), status="parcial", novos=0, total=0)
+    assert f.execucoes_zeradas_consecutivas == 2
+
+
+async def test_ingestao_idempotente_saudavel_nao_incrementa():
+    """Job semanal do Planalto reprocessa o catálogo fixo: novos=0, total>0.
+
+    Registros RECEBIDOS porém inalterados não são coletor quebrado — três runs
+    assim não podem transformar a fonte em `parou_de_produzir`.
+    """
+    f = await _marcar(_FonteFake(zeradas=2), status="sucesso", novos=0, total=120)
+    assert f.execucoes_zeradas_consecutivas == 0
+
+
+async def test_execucao_produtiva_marca_ja_produziu_para_sempre():
+    """O marcador vitalício que blinda a fonte contra `nunca_produziu`."""
+    f = await _marcar(_FonteFake(), status="sucesso", novos=4, total=10)
+    assert f.ja_produziu is True
+
+    # Consulta legítima zerada em seguida NÃO apaga o marcador.
+    await _marcar(f, status="sucesso", novos=0, total=0)
+    assert f.ja_produziu is True
+
+
+async def test_execucao_zerada_nao_marca_ja_produziu():
+    f = await _marcar(_FonteFake(), status="sucesso", novos=0, total=0)
+    assert f.ja_produziu is False
 
 
 async def test_erro_sem_mensagem_grava_texto_diagnosticavel():

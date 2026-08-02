@@ -490,6 +490,7 @@ async def fontes_ingestao(db: AsyncSession = Depends(get_db), cu: User = Depends
             "registros_novos": f.registros_novos,
             "registros_total": f.registros_total,
             "execucoes_zeradas_consecutivas": f.execucoes_zeradas_consecutivas,
+            "ja_produziu": f.ja_produziu,
             "ultimo_erro": f.ultimo_erro,
             "saude": saudes[f.slug].to_dict(),
         } for f in rows],
