@@ -65,6 +65,19 @@ ADICOES_INTENCIONAIS = {
     ("/api/legal-docs/{doc_id}/pdf-minuta", "GET"),
 }
 
+# Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
+# continua reprovando — sumiço silencioso de endpoint é o defeito que esta trava
+# existe para pegar. Cada entrada precisa da decisão que a justifica.
+REMOCOES_INTENCIONAIS = {
+    # Bloco 4 do plano de lançamento. Decisão do ESCRITÓRIO, não achado técnico:
+    # "dossiê de pressão" e "análise de magistrado" num sistema de advocacia são
+    # risco reputacional e disciplinar indefensável se expostos numa perícia ou
+    # numa representação — independentemente do que o código faça. Nenhuma tela
+    # do sistema chamava os dois. Não reintroduzir sem decisão escrita do titular.
+    ("/api/diplomacia-v3/dossie-pressao", "POST"),
+    ("/api/diplomacia-v3/analisar-magistrado", "POST"),
+}
+
 
 def _baseline() -> list[dict]:
     caminho = os.path.join(
@@ -85,12 +98,19 @@ def test_paridade_openapi_com_snapshot_anterior():
     chaves_base = {(r["path"], r["method"]): r for r in base}
     chaves_atual = {(r["path"], r["method"]): r for r in atual}
 
-    sumiram = sorted(set(chaves_base) - set(chaves_atual))
+    sumiram = sorted(
+        set(chaves_base) - set(chaves_atual) - REMOCOES_INTENCIONAIS
+    )
     surgiram = sorted(
         set(chaves_atual) - set(chaves_base) - ADICOES_INTENCIONAIS
     )
     assert not sumiram, f"{len(sumiram)} rota(s) DESAPARECERAM: {sumiram[:10]}"
     assert not surgiram, f"{len(surgiram)} rota(s) NOVAS não previstas: {surgiram[:10]}"
+
+    ressuscitadas = sorted(REMOCOES_INTENCIONAIS & set(chaves_atual))
+    assert not ressuscitadas, (
+        f"rota(s) removida(s) por decisão do escritório voltaram: {ressuscitadas}"
+    )
 
     divergentes = [
         (k, chaves_base[k]["auth_deps"], chaves_atual[k]["auth_deps"])
@@ -99,7 +119,9 @@ def test_paridade_openapi_com_snapshot_anterior():
     ]
     assert not divergentes, f"dependências de auth alteradas: {divergentes[:5]}"
     assert len(base) == 826
-    assert len(atual) == len(base) + len(ADICOES_INTENCIONAIS)
+    assert len(atual) == (
+        len(base) + len(ADICOES_INTENCIONAIS) - len(REMOCOES_INTENCIONAIS)
+    )
 
 
 @pytest.mark.parametrize(
@@ -153,7 +175,9 @@ def test_registro_independe_da_ordem_de_import():
     from app.services.ai import provider_metrics_runtime  # noqa: F401
     from app.main import app
 
-    assert len(_extrair_rotas(app)) == 826 + len(ADICOES_INTENCIONAIS)
+    assert len(_extrair_rotas(app)) == (
+        826 + len(ADICOES_INTENCIONAIS) - len(REMOCOES_INTENCIONAIS)
+    )
 
 
 def test_efeitos_colaterais_nao_de_rota_preservados():

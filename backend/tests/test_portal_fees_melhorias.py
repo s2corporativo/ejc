@@ -67,7 +67,7 @@ def _cliente(client_id: str = "cli1") -> User:
 
 def _case(**kw) -> Case:
     base = dict(id="case1", titulo="Ação de Cobrança", client_id="cli1",
-                area="civil", status="ativo", numero_interno="DPT-2026-0001",
+                area="civil", status="em_instrucao", numero_interno="DPT-2026-0001",
                 numero_processo=None, comarca="Sete Lagoas",
                 created_at=datetime(2026, 1, 5, tzinfo=timezone.utc),
                 deleted_at=None)

@@ -52,7 +52,9 @@ router = APIRouter(prefix="/cases", tags=["Casos"])
 _ARQUIVAMENTO_ROLES = ["superadmin", "admin", "socio", "advogado"]
 
 # Status que exigem proxima_acao preenchido (G1 — caso sempre tem "o que fazer agora").
-_STATUS_EXIGE_PROXIMA_ACAO = {"triagem", "ativo", "suspenso", "acordo"}
+# Todo caso ABERTO exige próxima ação — inclusive protocolado (ex.: "aguardar
+# citação"). Deriva da lista canônica para não divergir de status_caso.py.
+_STATUS_EXIGE_PROXIMA_ACAO = {s.value for s in STATUS_ABERTOS}
 
 
 def _validar_proxima_acao(payload, status_atual: str | None = None):
@@ -60,12 +62,12 @@ def _validar_proxima_acao(payload, status_atual: str | None = None):
 
     Chamado no criar() e no atualizar(). Não bloqueia encerramento/arquivamento.
     """
-    status = (getattr(payload, "status", None) or status_atual or "triagem")
+    status = (getattr(payload, "status", None) or status_atual or "aberto")
     proxima = getattr(payload, "proxima_acao", None)
     if status in _STATUS_EXIGE_PROXIMA_ACAO and not proxima:
         raise HTTPException(
             status_code=422,
-            detail="Campo 'proxima_acao' é obrigatório para casos com status triagem/ativo/suspenso/acordo",
+            detail="Campo 'proxima_acao' é obrigatório para casos abertos (aberto/em_instrucao/em_producao/protocolado)",
         )
 
 
@@ -441,7 +443,7 @@ async def atualizar(
     if status_novo in _STATUS_EXIGE_PROXIMA_ACAO and not proxima_nova:
         raise HTTPException(
             status_code=422,
-            detail="Campo 'proxima_acao' é obrigatório para casos com status triagem/ativo/suspenso/acordo",
+            detail="Campo 'proxima_acao' é obrigatório para casos abertos (aberto/em_instrucao/em_producao/protocolado)",
         )
 
     for k, v in mudancas.items():
@@ -454,7 +456,7 @@ async def atualizar(
         c.archived_at = None
         c.archive_reason = None
     # Sincroniza coluna Kanban quando o status muda para um estado terminal
-    _status_para_coluna = {"acordo": "Acordo", "encerrado": "Encerrado", "arquivado": "Encerrado"}
+    _status_para_coluna = {"encerrado": "Encerrado", "arquivado": "Encerrado"}
     _alvo = _status_para_coluna.get(mudancas.get("status"))
     if _alvo:
         col = (await db.execute(text("""
@@ -572,7 +574,7 @@ async def desarquivar_caso(
         raise HTTPException(status_code=409, detail="Caso não está arquivado")
 
     motivo_anterior = c.archive_reason
-    c.status = CaseStatus.ativo
+    c.status = CaseStatus.aberto
     c.archived_at = None
     c.archive_reason = None
     db.add(CaseMovimento(
@@ -582,13 +584,13 @@ async def desarquivar_caso(
     ))
     await criar_audit_log(
         db, cu.id, cu.role.value, "UNARCHIVE", "cases", case_id,
-        dados_depois={"status": "ativo", "motivo_anterior": motivo_anterior or ""},
+        dados_depois={"status": "aberto", "motivo_anterior": motivo_anterior or ""},
     )
     await db.commit()
     await db.refresh(c)
     background.add_task(
         event_bus.emitir, "caso.atualizado", "case", case_id,
-        {"mudancas": ["status"], "status": CaseStatus.ativo.value}, cu.id,
+        {"mudancas": ["status"], "status": CaseStatus.aberto.value}, cu.id,
     )
     return c
 

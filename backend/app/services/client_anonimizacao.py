@@ -27,7 +27,7 @@ _MARCADOR = "[ANONIMIZADO — LGPD ART. 17]"
 # escritório tem obrigação de saber quem é o cliente enquanto atua por ele.
 # Anonimizar durante isso comprometeria o próprio dever profissional (EOAB).
 _STATUS_BLOQUEIA_ANONIMIZACAO = {
-    CaseStatus.triagem, CaseStatus.ativo, CaseStatus.suspenso, CaseStatus.acordo,
+    CaseStatus.aberto, CaseStatus.em_instrucao, CaseStatus.em_producao, CaseStatus.protocolado,
 }
 
 

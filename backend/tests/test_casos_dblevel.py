@@ -51,7 +51,7 @@ async def _criar_socio(db) -> str:
     return uid
 
 
-async def _criar_caso(db, case_id, client_id, status="ativo"):
+async def _criar_caso(db, case_id, client_id, status="em_instrucao"):
     await db.execute(
         text(
             "INSERT INTO cases (id, titulo, area, status, client_id) "
@@ -121,11 +121,11 @@ async def test_arquivar_e_desarquivar_caso():
             assert c.archived_at is not None
             assert c.archive_reason == "cliente encerrou o contrato"
 
-            # Desarquiva → volta a ativo, limpa archived_at/archive_reason.
+            # Desarquiva → volta a aberto, limpa archived_at/archive_reason.
             c2 = await desarquivar_caso(
                 case_id=case_id, background=BackgroundTasks(), db=db, cu=cu
             )
-            assert c2.status == CaseStatus.ativo
+            assert c2.status == CaseStatus.aberto
             assert c2.archived_at is None
             assert c2.archive_reason is None
         finally:

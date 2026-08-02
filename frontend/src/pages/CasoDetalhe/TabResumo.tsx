@@ -231,7 +231,7 @@ export function AvisoCasoEncerrado({ caso }: { caso: Case }) {
         await api.post(`/cases/${caso.id}/desarquivar`);
         toast.success("Caso desarquivado.");
       } else {
-        await api.patch(`/cases/${caso.id}`, { status: "ativo" });
+        await api.patch(`/cases/${caso.id}`, { status: "aberto" });
         toast.success("Caso reaberto.");
       }
       window.location.reload();

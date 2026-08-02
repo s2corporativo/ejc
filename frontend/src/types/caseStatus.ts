@@ -18,12 +18,13 @@
  * um status no enum do Python sem atualizar este arquivo, o CI quebra.
  */
 
-/** Os seis valores aceitos pela coluna `cases.status`. Ordem = ciclo de vida. */
+/** Os seis valores aceitos pela coluna `cases.status`. Ordem = ciclo de vida.
+ * Migration 126 (Bloco 3): quatro estados de trabalho + dois terminais. */
 export const CASE_STATUS = [
-  "triagem",
-  "ativo",
-  "suspenso",
-  "acordo",
+  "aberto",
+  "em_instrucao",
+  "em_producao",
+  "protocolado",
   "encerrado",
   "arquivado",
 ] as const;
@@ -35,10 +36,10 @@ export type CaseStatus = (typeof CASE_STATUS)[number];
  * Espelha `STATUS_ABERTOS` de `backend/app/core/status_caso.py`.
  */
 export const CASE_STATUS_ABERTOS: readonly CaseStatus[] = [
-  "triagem",
-  "ativo",
-  "suspenso",
-  "acordo",
+  "aberto",
+  "em_instrucao",
+  "em_producao",
+  "protocolado",
 ];
 
 /**
@@ -55,8 +56,8 @@ const ABERTOS = new Set<string>(CASE_STATUS_ABERTOS);
 /**
  * "Ativo" como AGREGADO (o KPI), não como o status homônimo.
  *
- * Cuidado: `ativo` é um status real e persistido; "ativos" no Dashboard é o
- * conjunto dos abertos. Confundir os dois foi a causa de o painel mostrar 9
+ * Desde a migration 126 nenhum status se chama `ativo` — "ativos" é sempre o
+ * AGREGADO dos abertos. A ambiguidade antiga foi a causa de o painel mostrar 9
  * ativos enquanto a listagem mostrava 8.
  *
  * A classificação usa allowlist e falha fechada: valor novo, ausente ou
@@ -69,10 +70,10 @@ export function isCasoAtivo(status: unknown): boolean {
 
 /** Rótulos em pt-BR. Cobre os SEIS status — sem buracos, sem chave morta. */
 export const CASE_STATUS_LABEL: Record<CaseStatus, string> = {
-  triagem: "Triagem",
-  ativo: "Ativo",
-  suspenso: "Suspenso",
-  acordo: "Acordo",
+  aberto: "Aberto",
+  em_instrucao: "Em instrução",
+  em_producao: "Em produção",
+  protocolado: "Protocolado",
   encerrado: "Encerrado",
   arquivado: "Arquivado",
 };

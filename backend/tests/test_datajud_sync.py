@@ -71,7 +71,7 @@ async def test_sincronizar_caso_zera_sync_pending_sem_prazo(monkeypatch):
         await db.execute(
             text("INSERT INTO cases (id, titulo, area, status, client_id, "
                  "numero_processo, sync_pending) VALUES "
-                 "(:id, :tit, 'civil', 'ativo', :cli, "
+                 "(:id, :tit, 'civil', 'em_instrucao', :cli, "
                  "'0000001-02.2020.8.13.0000', TRUE)"),
             {"id": caso, "tit": f"Caso DJ {tok}", "cli": cli},
         )

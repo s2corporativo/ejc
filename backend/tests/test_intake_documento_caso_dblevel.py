@@ -76,7 +76,7 @@ async def test_upload_com_case_id_vincula_documento_ao_caso(monkeypatch, tmp_pat
                 ), {"id": client_id, "email": f"{client_id[:8]}@teste.local"})
                 await db.execute(text(
                     "INSERT INTO cases (id, titulo, area, status, client_id, advogado_responsavel_id) "
-                    "VALUES (:id, 'Caso Intake 4.2', 'civil', 'triagem', :cid, :uid)"
+                    "VALUES (:id, 'Caso Intake 4.2', 'civil', 'aberto', :cid, :uid)"
                 ), {"id": case_id, "cid": client_id, "uid": uid})
                 await db.commit()
 
