@@ -21,6 +21,11 @@ logger = logging.getLogger("ejc.observability")
 # Marca monotônica do início do processo — base do uptime do liveness.
 _PROCESS_START_MONOTONIC = time.monotonic()
 
+# Estado REAL do coletor: True apenas depois de `sentry_sdk.init()` concluir.
+# Presença de SENTRY_DSN não basta — DSN malformado ou falha de import caem no
+# caminho engolido de init_sentry() e deixam este flag em False.
+_sentry_inicializado = False
+
 # Chaves cujo VALOR deve ser mascarado antes de qualquer evento sair para o
 # Sentry (LGPD). Comparação case-insensitive.
 _SCRUB_KEYS = frozenset({
@@ -86,7 +91,12 @@ def init_sentry() -> None:
     - DSN vazio  → no-op + log info "Sentry desativado (SENTRY_DSN vazio)".
     - DSN setado → sentry_sdk.init(..., send_default_pii=False, before_send=scrub).
     - Qualquer exceção é engolida: observabilidade jamais derruba o boot.
+
+    Registra em `_sentry_inicializado` se o init de fato concluiu — é esse
+    estado (e não a presença de DSN) que `coletor_erros_ativo()` reporta.
     """
+    global _sentry_inicializado
+    _sentry_inicializado = False
     try:
         settings = get_settings()
         dsn = (settings.SENTRY_DSN or "").strip()
@@ -107,6 +117,7 @@ def init_sentry() -> None:
             before_send=_before_send,        # scrub de dados sensíveis
             integrations=[FastApiIntegration(), SqlalchemyIntegration()],
         )
+        _sentry_inicializado = True
         logger.info(
             "Sentry inicializado (environment=%s, traces_sample_rate=%s)",
             environment, settings.SENTRY_TRACES_SAMPLE_RATE,
@@ -124,13 +135,13 @@ def coletor_erros_ativo() -> bool:
     o usuário esperar por um retorno que nunca vem, e a auditoria de julho/2026
     registrou exatamente isso em `/analytics/roi-por-area`.
 
-    Espelha a condição de `init_sentry()`. Nunca levanta: na dúvida devolve
-    False, que é a afirmação mais fraca e portanto a segura.
+    Reporta o ESTADO REAL registrado por `init_sentry()` — não a presença de
+    configuração. Com DSN preenchido mas malformado (ou falha de import), o
+    init cai no caminho engolido, o flag fica False e a resposta de 500 não
+    promete notificação que não acontecerá (review do PR #619). Ler um bool de
+    módulo nunca levanta: na dúvida o default é False, a afirmação segura.
     """
-    try:
-        return bool((get_settings().SENTRY_DSN or "").strip())
-    except Exception:  # pragma: no cover - defensivo
-        return False
+    return _sentry_inicializado
 
 
 async def check_migrations_head() -> bool | None:
