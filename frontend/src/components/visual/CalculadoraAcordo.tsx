@@ -1,19 +1,22 @@
 // ── Visual Law: Calculadora de acordo (breakeven do litígio) ─────────────────
 // POST /visual-law/breakeven — compara VPL do litígio × acordo imediato.
-// Inclui seção opcional "Perfil do julgador" (POST /diplomacia-v3/analisar-magistrado).
-import { useEffect, useMemo, useState } from "react";
+//
+// REMOVIDO em 2026-08-02 (Bloco 4 do plano de lançamento): a seção "Perfil do
+// julgador" e o botão "Dossiê de Pressão", que consumiam
+// /diplomacia-v3/analisar-magistrado e /diplomacia-v3/dossie-pressao. Os dois
+// endpoints saíram do backend por decisão do escritório — risco reputacional e
+// disciplinar indefensável, independentemente do que produzissem.
+// Não reintroduzir sem decisão escrita do titular.
+import { useEffect, useState } from "react";
 import {
   Calculator,
   ChevronDown,
-  Gavel,
   Hourglass,
   Landmark,
   Scale,
-  Sparkles,
   TrendingUp,
 } from "lucide-react";
 import api from "../../lib/api";
-import Markdown from "../Markdown";
 import { toast } from "../Toast";
 import {
   Badge,
@@ -24,7 +27,6 @@ import {
   SectionCard,
   Select,
   Spinner,
-  Textarea,
   cn,
   fmtMoney,
 } from "../UI";
@@ -46,8 +48,6 @@ const SELIC_BADGE = {
   { tone: "green" | "amber" | "slate"; label: string }
 >;
 
-const MAX_DECISOES = 10;
-
 function tribunalInicialNormalizado(tribunal?: string | null): string {
   if (!tribunal) return "TJMG";
   const t = tribunal.trim().toUpperCase();
@@ -60,37 +60,6 @@ function detalheErro(e: unknown, fallback: string): string {
   const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
     ?.data?.detail;
   return typeof detail === "string" ? detail : fallback;
-}
-
-/**
- * O endpoint /diplomacia-v3/analisar-magistrado pode retornar a análise como
- * string pura OU objeto com campo de texto — normaliza defensivamente.
- */
-function extrairTextoAnalise(data: unknown): string {
-  if (typeof data === "string") return data;
-  if (data && typeof data === "object") {
-    const obj = data as Record<string, unknown>;
-    const campos = [
-      "analise",
-      "resultado",
-      "resposta",
-      "texto",
-      "conteudo",
-      "content",
-      "markdown",
-      "output",
-      "message",
-    ];
-    for (const campo of campos) {
-      const v = obj[campo];
-      if (typeof v === "string" && v.trim()) return v;
-    }
-    for (const v of Object.values(obj)) {
-      if (typeof v === "string" && v.trim().length > 40) return v;
-    }
-    return JSON.stringify(data, null, 2);
-  }
-  return "";
 }
 
 function BarraComparativa({ resultado }: { resultado: BreakevenResponse }) {
@@ -132,94 +101,6 @@ function BarraComparativa({ resultado }: { resultado: BreakevenResponse }) {
     </div>
   );
 }
-
-function PerfilJulgador() {
-  const [texto, setTexto] = useState("");
-  const [analisando, setAnalisando] = useState(false);
-  const [analise, setAnalise] = useState<string | null>(null);
-
-  const decisoes = useMemo(
-    () =>
-      texto
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean),
-    [texto],
-  );
-
-  const analisar = async () => {
-    if (decisoes.length === 0) {
-      toast.error("Cole ao menos uma decisão (uma por linha)");
-      return;
-    }
-    setAnalisando(true);
-    try {
-      const r = await api.post("/diplomacia-v3/analisar-magistrado", {
-        decisoes: decisoes.slice(0, MAX_DECISOES),
-      });
-      const textoAnalise = extrairTextoAnalise(r.data);
-      if (!textoAnalise) {
-        toast.error("A análise retornou vazia — tente novamente");
-      } else {
-        setAnalise(textoAnalise);
-      }
-    } catch (e) {
-      toast.error(detalheErro(e, "Falha ao analisar as decisões"));
-    } finally {
-      setAnalisando(false);
-    }
-  };
-
-  return (
-    <details className="card">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
-        <Gavel className="h-4 w-4 text-slate-400" />
-        Perfil do julgador (opcional)
-        <ChevronDown className="ml-auto h-4 w-4 text-slate-400" />
-      </summary>
-      <div className="space-y-3 border-t border-slate-100 p-4">
-        <p className="text-xs text-slate-500">
-          Cole até {MAX_DECISOES} decisões do magistrado (uma por linha) para
-          uma análise de tendência (Rigorosa/Flexível/Neutra), temas sensíveis e
-          tom recomendado.
-        </p>
-        <Textarea
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          rows={6}
-          placeholder={"Decisão 1...\nDecisão 2...\nDecisão 3..."}
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="ai"
-            onClick={analisar}
-            disabled={analisando || decisoes.length === 0}
-            icon={<Sparkles className="h-3.5 w-3.5" />}
-          >
-            {analisando ? "Analisando…" : "Analisar decisões"}
-          </Button>
-          <span className="text-xs text-slate-400">
-            {Math.min(decisoes.length, MAX_DECISOES)}/{MAX_DECISOES} decisões
-          </span>
-        </div>
-        {analisando && <Spinner />}
-        {analise && !analisando && (
-          <div className="space-y-3">
-            <IANotice>
-              Análise gerada por IA — revisão obrigatória do advogado.
-            </IANotice>
-            <div className="card bg-slate-50/70 p-4 text-sm">
-              <Markdown source={analise} />
-            </div>
-          </div>
-        )}
-      </div>
-    </details>
-  );
-}
-
 // ── Correção monetária por índice oficial do BCB ─────────────────────────────
 // GET /indices/series (catálogo + último valor divulgado) ·
 // POST /indices/atualizar-valor (valor final + memória de cálculo mês a mês).
@@ -657,34 +538,6 @@ export default function CalculadoraAcordo({
   const [sucumbenciaPct, setSucumbenciaPct] = useState("");
   const [calculando, setCalculando] = useState(false);
   const [resultado, setResultado] = useState<BreakevenResponse | null>(null);
-  const [gerandoDossie, setGerandoDossie] = useState(false);
-  const [dossie, setDossie] = useState<string | null>(null);
-
-  // Dossiê de Pressão (diplomacia_v3) — rehospedado aqui após a remoção da
-  // Sala de Guerra (era seu único consumidor). Saída é RASCUNHO (HITL/OAB).
-  const gerarDossie = async () => {
-    if (!resultado || gerandoDossie) return;
-    setGerandoDossie(true);
-    setDossie(null);
-    try {
-      const r = await api.post("/diplomacia-v3/dossie-pressao", {
-        case_id: caseId,
-        valor_causa: Number(valorCausa),
-        prob_exito: probExito / 100,
-        tempo_anos: resultado.parametros.tempo_anos,
-      });
-      const d = r.data;
-      setDossie(
-        typeof d === "string"
-          ? d
-          : (d?.argumentacao ?? d?.dossie ?? d?.texto ?? ""),
-      );
-    } catch (err) {
-      toast.error(detalheErro(err, "Falha ao gerar o dossiê de pressão"));
-    } finally {
-      setGerandoDossie(false);
-    }
-  };
 
   const calcular = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -907,34 +760,6 @@ export default function CalculadoraAcordo({
               </div>
             </div>
 
-            {/* Dossiê de Pressão (diplomacia_v3) */}
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm">
-                  <span className="font-semibold text-slate-800">
-                    Dossiê de Pressão
-                  </span>
-                  <p className="text-xs text-slate-500">
-                    Argumentação de negociação gerada por IA a partir do ponto
-                    de equilíbrio — rascunho sujeito a revisão humana (OAB).
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={gerarDossie}
-                  disabled={gerandoDossie}
-                  className="btn-secondary shrink-0 text-sm"
-                >
-                  {gerandoDossie ? "Gerando…" : "Gerar dossiê"}
-                </button>
-              </div>
-              {dossie && (
-                <div className="mt-3 border-t border-slate-100 pt-3 text-sm">
-                  <Markdown source={dossie} />
-                </div>
-              )}
-            </div>
-
             {/* Memória de cálculo */}
             {resultado.memoria_calculo.length > 0 && (
               <details className="card">
@@ -954,8 +779,6 @@ export default function CalculadoraAcordo({
       )}
 
       <CorrecaoMonetariaOficial />
-
-      <PerfilJulgador />
     </div>
   );
 }
