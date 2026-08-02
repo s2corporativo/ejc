@@ -40,12 +40,10 @@ Create Date: 2026-08-02
 from alembic import op
 
 revision = "126_case_status_quatro_estados"
-# NOTA DE COORDENAÇÃO: o head da main é 124. O PR #624 reserva a 125
-# (fonte_execucoes_zeradas) e ainda não foi mesclado — a governança não permite
-# empilhar branches, então esta migration nasce encadeada na 124. Assim que o
-# #624 for mesclado, este down_revision DEVE virar "125_fonte_execucoes_zeradas"
-# (mudança de uma linha, registrada em MIGRATION_RESERVATIONS.md).
-down_revision = "124_dataroom_public_hardening"
+# Nasceu encadeada na 124 (quando a 125 do PR #624 ainda não estava na main);
+# com o merge do #624 o down_revision foi promovido para a 125, conforme
+# planejado em MIGRATION_RESERVATIONS.md.
+down_revision = "125_fonte_execucoes_zeradas"
 branch_labels = None
 depends_on = None
 

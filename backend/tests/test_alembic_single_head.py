@@ -108,9 +108,13 @@ def test_hardening_data_room_encadeia_apos_vinculo_legal_doc():
     assert revision.down_revision == "123_legal_doc_ai_log_vinculo"
 
 
-def test_quatro_estados_encadeia_apos_hardening_data_room():
-    # Provisório até o merge do PR #624: quando a 125 entrar na main, o
-    # down_revision da 126 vira "125_fonte_execucoes_zeradas" e este assert
-    # acompanha (ver MIGRATION_RESERVATIONS.md).
-    revision = _script_directory().get_revision("126_case_status_quatro_estados")
+def test_contador_de_execucoes_zeradas_encadeia_apos_hardening_data_room():
+    revision = _script_directory().get_revision("125_fonte_execucoes_zeradas")
     assert revision.down_revision == "124_dataroom_public_hardening"
+
+
+def test_quatro_estados_encadeia_apos_contador_de_execucoes_zeradas():
+    # O PR #624 (125) foi mesclado antes deste, como planejado em
+    # MIGRATION_RESERVATIONS.md — a cadeia provisória na 124 foi desfeita.
+    revision = _script_directory().get_revision("126_case_status_quatro_estados")
+    assert revision.down_revision == "125_fonte_execucoes_zeradas"

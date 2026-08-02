@@ -141,6 +141,12 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
 
     novos = total = 0
     vistas: set[str] = set()   # dedup intra-execução (mesmo julgado em 2 temas)
+    # Contagem de itens BRUTOS recebidos, antes de qualquer filtro ou parsing.
+    # Sem ela, "nada veio da origem" e "veio e o parser não reconheceu" produzem
+    # exatamente o mesmo resultado — zero, sem erro. Esse é o defeito estrutural
+    # do parser tolerante: ele nunca falha, então nunca avisa. Com o número
+    # bruto no log, um zero passa a ser diagnosticável.
+    brutos = 0
 
     for tema in temas:
         try:
@@ -152,6 +158,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
             logger.warning("TJMG tema %r: %s: %s", tema, type(e).__name__, e)
             continue
 
+        brutos += len(itens or [])
         n_tema = 0
         for it in itens:
             ementa = it.get("ementa") or ""
@@ -199,5 +206,19 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                 n_tema += 1
 
         logger.info("TJMG tema %r: %d novos / %d itens", tema, n_tema, len(itens))
+
+    # A linha que torna um zero diagnosticável: brutos=0 é "a origem não
+    # devolveu nada"; brutos>0 com total=0 é "veio e o parser descartou tudo" —
+    # dois problemas diferentes, com investigações diferentes.
+    logger.info(
+        "TJMG execução: %d itens brutos recebidos → %d processados → %d novos",
+        brutos, total, novos,
+    )
+    if brutos and not total:
+        logger.warning(
+            "TJMG: %d itens vieram da origem e NENHUM passou no parsing — "
+            "provável mudança de layout na origem, não ausência de julgados.",
+            brutos,
+        )
 
     return novos, total
