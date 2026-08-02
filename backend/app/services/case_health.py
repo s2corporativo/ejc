@@ -24,7 +24,7 @@ from app.models.deadline import Deadline, DeadlineStatus
 from app.models.fee import Fee, FeeStatus
 from app.models.procuracao import Procuracao
 
-ABERTOS = [CaseStatus.triagem, CaseStatus.ativo, CaseStatus.suspenso, CaseStatus.acordo]
+ABERTOS = [CaseStatus.aberto, CaseStatus.em_instrucao, CaseStatus.em_producao, CaseStatus.protocolado]
 FECHADOS = [CaseStatus.encerrado, CaseStatus.arquivado]
 
 

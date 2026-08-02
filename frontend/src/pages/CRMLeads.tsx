@@ -149,7 +149,7 @@ export default function CRMLeads() {
       prev.map((l) => (l.id === leadId ? { ...l, etapa_funil: novaEtapa } : l)),
     );
     // If converted, also update status
-    const extraPayload = novaEtapa === "convertido" ? { status: "ativo" } : {};
+    const extraPayload = novaEtapa === "convertido" ? { status: "aberto" } : {};
     try {
       await api.patch(`/clients/${leadId}`, {
         etapa_funil: novaEtapa,

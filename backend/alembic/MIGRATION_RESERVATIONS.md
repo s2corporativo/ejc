@@ -44,7 +44,9 @@ número volta a ficar disponível).
 | 126_fee_valor_check | 125_legal_doc_revisao | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Eventual extração deve partir do head vigente e ser renumerada. |
 | 127_audit_log_worm | 126_fee_valor_check | claude/new-session-bhbv06 | [#497](https://github.com/s2corporativo/ejc/pull/497) | Claude Code | Revogada | Eventual extração deve partir do head vigente e ser renumerada. |
 | 123_legal_doc_ai_log_vinculo | 122_route_usage_metrics | main | [#544](https://github.com/s2corporativo/ejc/pull/544) | ChatGPT | Mesclada | Head canônico atual; FK + hash do conteúdo + invalidação automática da validação ao editar a peça. |
-| 124_dataroom_public_hardening | 123_legal_doc_ai_log_vinculo | fix/dataroom-public-link-hardening | [#547](https://github.com/s2corporativo/ejc/issues/547) | ChatGPT | Reservada | Hash de links públicos em repouso e publicação externa explícita por arquivo. |
+| 124_dataroom_public_hardening | 123_legal_doc_ai_log_vinculo | fix/dataroom-public-link-hardening | [#547](https://github.com/s2corporativo/ejc/issues/547) | ChatGPT | Mesclada | Hash de links públicos em repouso e publicação externa explícita por arquivo. Head da main. |
+| 125_fonte_execucoes_zeradas | 124_dataroom_public_hardening | claude/bloco5-monitorar-resultado | [#624](https://github.com/s2corporativo/ejc/pull/624) | Claude Code | Em PR | Contador de execuções improdutivas por fonte de ingestão (Bloco 5). |
+| 126_case_status_quatro_estados | 124_dataroom_public_hardening → 125 após merge do #624 | claude/bloco3-quatro-estados | — | Claude Code | Em PR | Quatro estados de caso (Bloco 3, decisão do titular 2026-08-02). **Coordenação:** encadeada na 124 porque a 125 ainda não está na main; no merge do #624, o down_revision desta vira `125_fonte_execucoes_zeradas` (uma linha, + os asserts de head nos dois testes). Mesclar #624 antes deste. |
 
 > **Decisão do titular em 2026-07-29.** A continuidade das correções foi autorizada após
 > a integração dos PRs #535, #542 e #543. As reservas das branches antigas #495/#497

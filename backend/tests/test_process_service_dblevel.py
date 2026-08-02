@@ -30,7 +30,7 @@ async def _fixture_case(db) -> tuple[str, str]:
     await db.execute(
         text(
             "INSERT INTO cases (id, titulo, area, status, client_id) "
-            "VALUES (:id, 'Caso Processo', 'civil', 'ativo', :client_id)"
+            "VALUES (:id, 'Caso Processo', 'civil', 'em_instrucao', :client_id)"
         ),
         {"id": case_id, "client_id": client_id},
     )

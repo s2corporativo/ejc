@@ -660,7 +660,7 @@ async def converter_em_caso(
         numero_interno=await _proximo_numero_interno(db),
         titulo=payload.caso.titulo,
         area=CaseArea(payload.caso.area),
-        status=CaseStatus.triagem,
+        status=CaseStatus.aberto,
         fase=_fase_case(report, has_process),
         prioridade=CasePrioridade(priority),
         risco=_risco_case(report.get("risco_nivel")),

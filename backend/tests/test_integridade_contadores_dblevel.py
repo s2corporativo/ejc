@@ -60,7 +60,7 @@ async def _criar_admin(db) -> str:
     return uid
 
 
-async def _criar_caso(db, case_id, client_id, status="triagem", deleted=False):
+async def _criar_caso(db, case_id, client_id, status="aberto", deleted=False):
     await db.execute(
         text(
             "INSERT INTO cases (id, titulo, area, status, client_id, deleted_at) "
@@ -147,7 +147,7 @@ async def test_caso_em_triagem_conta_como_ativo():
             antes_dash = (await _dashboard(db, cu))["casos"]["ativos"]
             antes_stats = (await stats_casos(advogado_id=None, db=db, cu=cu))["ativos"]
 
-            await _criar_caso(db, case_id, client_id, status="triagem")
+            await _criar_caso(db, case_id, client_id, status="aberto")
             await db.commit()
 
             depois_dash = (await _dashboard(db, cu))["casos"]["ativos"]
@@ -268,7 +268,7 @@ async def test_status_invalido_retorna_422_e_nao_500():
                 )
             assert exc.value.status_code == 422
             # A mensagem precisa dizer o que é aceito, senão o cliente fica cego.
-            assert "triagem" in str(exc.value.detail)
+            assert "aberto" in str(exc.value.detail)
         finally:
             # A transação abortou no erro do enum: precisa de rollback antes de limpar.
             await db.rollback()
@@ -286,7 +286,7 @@ async def test_filtro_todos_e_a_ausencia_do_parametro():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        for cid, st in zip(ids, ["triagem", "ativo", "arquivado"]):
+        for cid, st in zip(ids, ["aberto", "em_instrucao", "arquivado"]):
             await _criar_caso(db, cid, client_id, status=st)
         await db.commit()
         cu = await _carregar_user(db, uid)
@@ -313,7 +313,7 @@ async def test_status_valido_continua_funcionando():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="suspenso")
+        await _criar_caso(db, case_id, client_id, status="em_producao")
         await db.commit()
         cu = await _carregar_user(db, uid)
         try:
@@ -325,7 +325,7 @@ async def test_status_valido_continua_funcionando():
                 assert isinstance(r["total"], int)
             r = await listar(
                 page=1, page_size=500, search=None, area=None,
-                status_f="suspenso", arquivo="todos", advogado_id=None, db=db, cu=cu,
+                status_f="em_producao", arquivo="todos", advogado_id=None, db=db, cu=cu,
             )
             assert case_id in {c.id for c in r["data"]}
         finally:
@@ -346,7 +346,7 @@ async def test_peca_em_rascunho_conta_como_aguardando_revisao():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="triagem")
+        await _criar_caso(db, case_id, client_id, status="aberto")
         await db.commit()
         cu = await _carregar_user(db, uid)
         try:
@@ -398,7 +398,7 @@ async def test_peca_de_caso_ativo_aparece_na_listagem_operacional():
     async with AsyncSessionLocal() as db:
         uid = await _criar_admin(db)
         await _criar_cliente(db, client_id)
-        await _criar_caso(db, case_id, client_id, status="triagem")
+        await _criar_caso(db, case_id, client_id, status="aberto")
         await db.commit()
         cu = await _carregar_user(db, uid)
         try:

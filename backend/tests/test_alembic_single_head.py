@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "124_dataroom_public_hardening"
+HEAD_REVISION = "126_case_status_quatro_estados"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -106,3 +106,11 @@ def test_hardening_data_room_encadeia_apos_vinculo_legal_doc():
         "124_dataroom_public_hardening"
     )
     assert revision.down_revision == "123_legal_doc_ai_log_vinculo"
+
+
+def test_quatro_estados_encadeia_apos_hardening_data_room():
+    # Provisório até o merge do PR #624: quando a 125 entrar na main, o
+    # down_revision da 126 vira "125_fonte_execucoes_zeradas" e este assert
+    # acompanha (ver MIGRATION_RESERVATIONS.md).
+    revision = _script_directory().get_revision("126_case_status_quatro_estados")
+    assert revision.down_revision == "124_dataroom_public_hardening"

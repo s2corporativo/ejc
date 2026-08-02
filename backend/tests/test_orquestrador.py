@@ -456,7 +456,7 @@ async def test_avancar_router_caso_ativo_passa_pela_guarda(monkeypatch):
     from app.routers import orquestrador as router_mod
 
     async def _acesso(db, cu, case_id):
-        return _case(status="ativo")
+        return _case(status="em_producao")
 
     async def _stub(db, case_id, cu, acao, params, case=None):
         return {"executado": True}
