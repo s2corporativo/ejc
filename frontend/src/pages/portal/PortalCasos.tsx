@@ -113,9 +113,8 @@ export default function PortalCasos() {
         <div className="space-y-2">
           {filtered.map((c) => {
             const label =
-              CASE_STATUS_LABEL[
-                c.status as keyof typeof CASE_STATUS_LABEL
-              ] ?? c.status;
+              CASE_STATUS_LABEL[c.status as keyof typeof CASE_STATUS_LABEL] ??
+              c.status;
             const cor = STATUS_COR[c.status] ?? "bg-slate-100 text-slate-600";
             const areaEmoji = AREA_ICON[c.area?.toLowerCase()] ?? "📁";
             return (

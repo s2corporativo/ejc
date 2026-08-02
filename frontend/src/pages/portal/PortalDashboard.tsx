@@ -293,11 +293,9 @@ export default function PortalDashboard() {
           <div className="space-y-2">
             {casos.slice(0, 5).map((c) => {
               const label =
-                CASE_STATUS_LABEL[
-                  c.status as keyof typeof CASE_STATUS_LABEL
-                ] ?? c.status;
-              const cor =
-                STATUS_COR[c.status] ?? "bg-slate-100 text-slate-500";
+                CASE_STATUS_LABEL[c.status as keyof typeof CASE_STATUS_LABEL] ??
+                c.status;
+              const cor = STATUS_COR[c.status] ?? "bg-slate-100 text-slate-500";
               return (
                 <Link
                   key={c.id}
