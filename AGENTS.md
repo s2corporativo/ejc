@@ -17,7 +17,8 @@ Leitura obrigatória antes de trabalhar:
 2. `CLAUDE.md` — mapa técnico do repositório e regras do executor;
 3. `docs/FLUXO_DE_DESENVOLVIMENTO.md` — o ciclo da tarefa;
 4. `docs/CRITERIOS_DE_ACEITE.md` — o que será cobrado no review;
-5. a Issue da tarefa, integralmente.
+5. a Issue da tarefa, integralmente — ou, quando a tarefa chega por pedido direto do titular,
+   a mensagem que a originou (`docs/GOVERNANCA_IA.md` §10, "Tarefa que chega sem Issue").
 
 ## Prioridade
 
