@@ -386,4 +386,24 @@ retrabalho.
 
 ---
 
-*Desenho para revisão. Nenhuma linha de implementação foi escrita.*
+## Decisões do titular — 2026-08-02 (segunda rodada)
+
+As quatro perguntas da seção 8 foram respondidas. O desenho passa a
+especificação aprovada, com estes termos:
+
+1. **Gates por exceção**: o titular deixou em aberto ("não sei"); na dúvida,
+   prevalece a recomendação do desenho — **os gates entram** na tela de
+   confirmação. Conflito de interesses é dever do EOAB, não atrito; os blocos
+   só aparecem quando há achado real.
+2. **Aba Peças**: **duplica** o módulo `/pecas` temporariamente. A conversão
+   de `/pecas` em visão transversal fica para depois do primeiro corte.
+3. **Transições de estado**: **movem sozinhas** — sempre para frente, nunca
+   regridem, e o advogado pode corrigir manualmente. Primeiro documento
+   vinculado ⇒ `em_instrucao`; primeira peça ⇒ `em_producao`; protocolo ⇒
+   `protocolado`.
+4. **Ordem**: a proposta da seção 7, confirmada — correção da Sala Jurídica →
+   workspace do caso → entrada única (backend, depois telas) → transições.
+
+---
+
+*Desenho aprovado em duas rodadas. Implementação autorizada nesta branch.*
