@@ -60,6 +60,7 @@ export default function GovernancaIA() {
   const [docs, setDocs] = useState<any[]>([]);
   const [prompts, setPrompts] = useState<any[]>([]);
   const [fontes, setFontes] = useState<any[]>([]);
+  const [resumoSaude, setResumoSaude] = useState<any>(null);
   const [guard, setGuard] = useState<any>(null);
   const [mgjec, setMgjec] = useState<any[]>([]);
   const [geometria, setGeometria] = useState<any>(null);
@@ -93,7 +94,10 @@ export default function GovernancaIA() {
       if (d.status === "fulfilled") setDash(d.value.data);
       if (c.status === "fulfilled") setDocs(c.value.data.data);
       if (p.status === "fulfilled") setPrompts(p.value.data.data);
-      if (f.status === "fulfilled") setFontes(f.value.data.data);
+      if (f.status === "fulfilled") {
+        setFontes(f.value.data.data);
+        setResumoSaude(f.value.data.resumo_saude ?? null);
+      }
       if (g.status === "fulfilled") setGuard(g.value.data);
       if (mg.status === "fulfilled") setMgjec(mg.value.data.data);
       if (geo.status === "fulfilled") setGeometria(geo.value.data);
@@ -651,34 +655,78 @@ export default function GovernancaIA() {
       )}
 
       {tab === "fontes" && (
-        <div className="grid lg:grid-cols-2 gap-4">
-          {fontes.map((f) => (
-            <div key={f.slug} className="card p-4">
-              <div className="flex justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold text-navy">{f.slug}</h3>
-                  <p className="text-sm text-slate-500">{f.descricao}</p>
-                </div>
-                <span
-                  className={`badge ${f.ultimo_status === "sucesso" ? "bg-success-100 text-success-700" : "bg-warn-100 text-warn-700"}`}
-                >
-                  {f.ultimo_status || "sem execução"}
-                </span>
-              </div>
-              <div className="mt-3 text-xs text-slate-500">
-                Categoria: {f.categoria_rag || "—"} · Total: {f.registros_total}{" "}
-                · Novos: {f.registros_novos}
-              </div>
-              <div className="text-xs text-slate-400 mt-1">
-                Última execução: {fmtDate(f.ultima_execucao)}
-              </div>
-              {f.ultimo_erro && (
-                <div className="mt-2 text-xs text-danger-600">
-                  {f.ultimo_erro}
-                </div>
-              )}
+        <div className="space-y-4">
+          {/* Resumo de saúde por RESULTADO: "rodou" não é "entregou". Foi a
+              ausência desta lista que deixou o DJEN verde por meses sem nunca
+              ter registrado uma intimação. */}
+          {resumoSaude?.status_geral === "critico" && (
+            <div className="card p-4 border border-danger-300 bg-danger-100">
+              <p className="text-sm font-semibold text-danger-700">
+                {resumoSaude.total_criticas} de {resumoSaude.total} fonte(s)
+                exigem ação: {(resumoSaude.criticas || []).join(", ")}
+              </p>
             </div>
-          ))}
+          )}
+          <div className="grid lg:grid-cols-2 gap-4">
+            {fontes.map((f) => {
+              // Cor do card pelo VEREDITO de saúde (resultado), não pelo
+              // ultimo_status (execução): fonte com "sucesso" e acervo
+              // eternamente zerado é crítica, não verde.
+              const saude = f.saude;
+              const badgeSaude = saude?.critico
+                ? "bg-danger-100 text-danger-700"
+                : saude?.situacao === "ok"
+                  ? "bg-success-100 text-success-700"
+                  : "bg-warn-100 text-warn-700";
+              return (
+                <div key={f.slug} className="card p-4">
+                  <div className="flex justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold text-navy">{f.slug}</h3>
+                      <p className="text-sm text-slate-500">{f.descricao}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`badge ${badgeSaude}`}>
+                        {saude?.situacao
+                          ? saude.situacao.replace(/_/g, " ")
+                          : f.ultimo_status || "sem execução"}
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        exec.: {f.ultimo_status || "nunca"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-xs text-slate-500">
+                    Categoria: {f.categoria_rag || "—"} · Total:{" "}
+                    {f.registros_total} · Novos: {f.registros_novos}
+                  </div>
+                  <div className="text-xs text-slate-400 mt-1">
+                    Última execução: {fmtDate(f.ultima_execucao)}
+                  </div>
+                  {saude && saude.situacao !== "ok" && (
+                    <div className="mt-2 text-xs">
+                      <p
+                        className={
+                          saude.critico ? "text-danger-600" : "text-warn-700"
+                        }
+                      >
+                        {saude.motivo}
+                      </p>
+                      <p className="text-slate-500 mt-1">
+                        <span className="font-semibold">Ação:</span>{" "}
+                        {saude.acao}
+                      </p>
+                    </div>
+                  )}
+                  {f.ultimo_erro && (
+                    <div className="mt-2 text-xs text-danger-600">
+                      {f.ultimo_erro}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

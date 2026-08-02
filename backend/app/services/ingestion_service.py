@@ -431,6 +431,34 @@ async def marcar_execucao(
     f.registros_total = total
     f.ultimo_erro = (erro or "")[:2000] if erro else None
 
+    # Marcador vitalício: uma vez que a fonte trouxe registro novo, ela
+    # "já produziu" — para sempre. `registros_total` é sobrescrito a cada
+    # execução, então uma consulta legítima com zero resultados apagaria o
+    # histórico e faria uma fonte produtiva virar `nunca_produziu` no painel.
+    if novos > 0:
+        f.ja_produziu = True
+
+    # Contagem de execuções improdutivas consecutivas. `registros_novos` guarda
+    # só a última execução, então "rodou N vezes seguidas sem trazer nada" tem de
+    # ser contado aqui — é o sinal que distingue um coletor quebrado de um
+    # saudável em período vazio, e é o que faltava para o DJEN gritar.
+    # - ERRO não conta: o problema dela já é o erro.
+    # - PARCIAL não conta nem reseta: não é sucesso pleno (parte do lote
+    #   falhou) e o sinal dela é a própria parcialidade, não a improdutividade.
+    # - Sucesso com registros RECEBIDOS porém inalterados (novos=0, total>0)
+    #   é ingestão idempotente saudável — o job semanal do Planalto reprocessa
+    #   o catálogo fixo, o do STJ relê o lote mensal — e RESETA o contador:
+    #   a fonte provou que chega à origem e processa.
+    # - Só o run zerado DE VERDADE (nada recebido nem processado) incrementa.
+    if status in ("erro", "parcial"):
+        pass
+    elif novos > 0 or total > 0:
+        f.execucoes_zeradas_consecutivas = 0
+    else:
+        f.execucoes_zeradas_consecutivas = int(
+            f.execucoes_zeradas_consecutivas or 0
+        ) + 1
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # Wrapper de execução de job (boilerplate único p/ todos os ingestores)
@@ -458,6 +486,16 @@ async def executar_ingestao(slug: str, descricao: str, categoria_rag: str, coro_
         status = "parcial" if novos else "erro"
         logger.error(f"[Ingestao:{slug}] {erro}")
     finally:
+        # Erro sem mensagem é pior que o erro: o painel mostra "erro" e não há
+        # por onde começar a investigar. Foi o estado em que a fonte `anpd` foi
+        # encontrada (`ultimo_erro: null`). Exceção sem texto — ou falha fora do
+        # try — passa a gravar ao menos a origem.
+        if status == "erro" and not (erro or "").strip():
+            erro = (
+                "Falha sem mensagem capturada. A exceção não trouxe texto ou a "
+                "falha ocorreu fora do bloco instrumentado — investigue o "
+                f"ingestor '{slug}' pelos logs do container."
+            )
         try:
             async with AsyncSessionLocal() as db:
                 await marcar_execucao(db, slug, status=status,
