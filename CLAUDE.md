@@ -37,11 +37,11 @@ concreto. Esta seção fecha as três lacunas que mais produzem hesitação ou i
 
 **Tarefa sem Issue.** `docs/FLUXO_DE_DESENVOLVIMENTO.md` diz que nenhum trabalho começa sem
 Issue, e o desenho é esse mesmo. Mas o titular também pede direto por chat, e aí a regra
-literal proibiria executar qualquer pedido dele. O pedido do titular **é** a autorização:
-execute, e o registro da decisão vai no corpo do PR (problema, escopo, o que ficou de fora,
-critério de aceite adotado) — o PR passa a ser o artefato de rastreio no lugar da Issue.
-Quando existir Issue, ela manda e o PR referencia (`Closes #NNN`). O que nunca acontece é
-trabalho sem artefato: ou Issue, ou PR com o escopo escrito.
+literal proibiria executar qualquer pedido dele. O pedido do titular **é** a autorização para
+começar — não espere alguém abrir a Issue. Só que a tarefa precisa terminar registrada: abra
+você mesmo a Issue (problema, escopo, fora do escopo, critérios de aceite) e vincule o PR com
+`Closes #NNN`. Não é burocracia — a trava `.github/workflows/governanca.yml` **reprova PR sem
+`#<numero>` no corpo**, e o CI é quem tem a última palavra. Quando a Issue já existe, ela manda.
 
 **O que decidir sozinho.** Decida e siga, sem perguntar: como implementar dentro do escopo
 pedido; qual arquivo tocar; como testar; nomes, estrutura e refatoração local; corrigir o que

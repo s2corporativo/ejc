@@ -224,10 +224,21 @@ caminho. Na dúvida entre duas leituras do pedido que levam a resultados materia
 diferentes, o agente pergunta antes de gastar trabalho.
 
 **Tarefa que chega sem Issue.** O fluxo canônico continua sendo Issue → branch → PR. Quando o
-titular pede direto, o pedido é a autorização e o **PR passa a ser o artefato de registro**:
-problema, escopo, o que ficou de fora, critério de aceite adotado e suposições assumidas vão
-escritos no corpo. O que a governança não admite é trabalho sem artefato nenhum — não é a
-ausência de Issue que quebra a regra, é a ausência de registro.
+titular pede direto — por chat, sem Issue prévia — o pedido **já é a autorização para começar**:
+o agente não fica parado esperando alguém abrir a Issue. Mas o trabalho precisa terminar
+registrado, e o registro tem duas partes obrigatórias:
+
+1. **Issue de registro**, aberta pelo próprio executor se ninguém a abriu antes, com problema,
+   escopo, fora do escopo e critérios de aceite;
+2. **PR vinculado a ela** (`Closes #NNN`), com as decisões e suposições escritas no corpo.
+
+Isso não é formalidade: a trava `Governança — travas de PR` (`.github/workflows/governanca.yml`)
+reprova PR cujo corpo não referencia `#<numero>`. Documento e automação precisam dizer a mesma
+coisa — regra escrita que o CI contradiz é a origem de metade da confusão que esta seção existe
+para eliminar.
+
+O que a governança não admite é trabalho sem artefato nenhum. Abrir a Issue depois de começar é
+aceitável; terminar sem ela, não.
 
 Nunca: merge, deploy de produção, acesso ao banco de produção, force push, apagar branch,
 volume ou banco, versionar segredo, desligar HITL/citation gate/sanitização de PII.
