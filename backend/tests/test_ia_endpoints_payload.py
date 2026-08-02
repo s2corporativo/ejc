@@ -1,25 +1,29 @@
-"""Validação de payload dos endpoints de IA instrumentados (follow-up PR #308).
+"""Superfície real do router diplomacia-v3 após a remoção do Bloco 4.
 
-Exercita os endpoints REAIS com get_current_user/get_db substituídos (mesma
-abordagem de test_pecas_meta_endpoint.py). NENHUMA chamada de IA acontece:
-todos os cenários são barrados antes do shim ai_brain —
-  • diplomacia-v3 /analisar-magistrado: payload agora é Pydantic
-    (AnalisarMagistradoRequest) → entrada malformada vira 422, nunca 500;
-    tetos por item (4.000 chars) e da lista (50 decisões) contra abuso de
-    tokens no gateway de IA.
+Este arquivo nasceu no follow-up do PR #308 para travar a validação de payload
+de `/diplomacia-v3/analisar-magistrado` — entrada malformada devia virar 422, e
+não 500. O endpoint foi REMOVIDO por decisão do escritório (Bloco 4 do plano de
+lançamento): "dossiê de pressão" e "análise de magistrado" num sistema de
+advocacia são risco reputacional e disciplinar indefensável se expostos numa
+perícia ou numa representação.
+
+Com o endpoint fora, o teste de payload perdeu o objeto. Em vez de apagar o
+arquivo, ele passa a exercer o que de fato importa agora, contra o router real:
+as duas rotas não respondem mais, e a que ficou continua respondendo.
+
+Um teste que roda o router de verdade pega o que a inspeção de fonte não pega —
+por exemplo, alguém reintroduzir o endpoint por outro caminho de registro.
 """
 from __future__ import annotations
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import UserRole
 from app.routers import diplomacia_v3
-from app.routers.diplomacia_v3 import AnalisarMagistradoRequest
 
 
 class _FakeUser:
@@ -32,42 +36,52 @@ async def _fake_db():
     yield None  # nenhum cenário abaixo chega a tocar o banco
 
 
-def _montar(router) -> TestClient:
+@pytest.fixture()
+def cli_diplomacia() -> TestClient:
     app = FastAPI()
-    app.include_router(router)
+    app.include_router(diplomacia_v3.router)
     app.dependency_overrides[get_current_user] = lambda: _FakeUser()
     app.dependency_overrides[get_db] = _fake_db
     return TestClient(app)
 
 
-# ── diplomacia-v3 /analisar-magistrado — payload Pydantic → 422 ──────────────
-
-@pytest.fixture()
-def cli_diplomacia() -> TestClient:
-    return _montar(diplomacia_v3.router)
-
-
 @pytest.mark.parametrize(
-    "payload",
-    [
-        {"decisoes": "não é lista"},                       # tipo errado
-        {"decisoes": [123]},                               # item não-string
-        {"decisoes": ["ok"], "case_id": "x" * 65},         # case_id acima do teto
-        {"decisoes": ["x" * 4001]},                        # item acima do teto
-        {"decisoes": ["d"] * 51},                          # lista acima do teto
-    ],
+    "rota",
+    ["/diplomacia-v3/analisar-magistrado", "/diplomacia-v3/dossie-pressao"],
 )
-def test_analisar_magistrado_payload_invalido_422(cli_diplomacia, payload):
-    r = cli_diplomacia.post("/diplomacia-v3/analisar-magistrado", json=payload)
-    assert r.status_code == 422, r.text
+def test_endpoints_removidos_nao_respondem_mais(cli_diplomacia, rota):
+    """404, não 422: a rota não existe — não é entrada inválida."""
+    r = cli_diplomacia.post(rota, json={"decisoes": ["qualquer coisa"]})
+    assert r.status_code == 404, r.text
 
 
-def test_analisar_magistrado_schema_aceita_os_limites_exatos():
-    # Fronteira superior VÁLIDA (50 × 4.000 + case_id de 64) — o teto barra o
-    # abuso, não o uso legítimo.
-    req = AnalisarMagistradoRequest(
-        decisoes=["x" * 4000] * 50, case_id="a" * 64,
+def test_calculadora_de_acordo_continua_respondendo(cli_diplomacia):
+    """A remoção não podia levar junto o que está em uso.
+
+    `selic_anual` vai no payload de propósito: com ela, `_resolver_selic`
+    curto-circuita e o teste não faz chamada de rede ao BCB.
+    """
+    r = cli_diplomacia.post(
+        "/diplomacia-v3/calcular-acordo",
+        json={
+            "valor_causa": 50000,
+            "prob_exito": 0.6,
+            "tempo_anos": 3,
+            "selic_anual": 10.75,
+        },
     )
-    assert len(req.decisoes) == 50
-    with pytest.raises(ValidationError):
-        AnalisarMagistradoRequest(decisoes=["x" * 4000] * 51)
+    assert r.status_code == 200, r.text
+    assert r.json()["selic_fonte"] == "informada"
+
+
+def test_calculadora_recusa_dados_insuficientes(cli_diplomacia):
+    r = cli_diplomacia.post("/diplomacia-v3/calcular-acordo", json={"valor_causa": 1})
+    assert r.status_code == 400, r.text
+
+
+def test_o_router_expoe_exatamente_uma_rota(cli_diplomacia):
+    """Trava de superfície: qualquer rota nova aqui é decisão, não acidente."""
+    caminhos = {
+        r.path for r in diplomacia_v3.router.routes if hasattr(r, "path")
+    }
+    assert caminhos == {"/diplomacia-v3/calcular-acordo"}

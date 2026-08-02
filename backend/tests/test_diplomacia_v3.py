@@ -3,15 +3,13 @@
 #   1. /calcular-acordo usa a Selic REAL do BCB quando o caller não informa
 #      (fallback 10,75% encapsulado em bcb_service.selic_anualizada).
 #   2. gerar_dossie_pressao chama o gateway central (task "estrategia") em vez
-#      de retornar string fixa; endpoint /dossie-pressao registra AILog e
-#      devolve rascunho (HITL).
+#      de retornar string fixa. O ENDPOINT /dossie-pressao foi removido em
+#      2026-08-02 (Bloco 4); só o serviço, hoje sem chamador, segue coberto.
 # Unitários sem Postgres/HTTP: handlers chamados direto (padrão dos vizinhos).
-from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 
-from app.models.ai_log import AILog, AITipoUso
 from app.routers import diplomacia_v3
 from app.services.ai_gateway import GatewayResponse
 from app.services.diplomacia_digital import DiplomaciaDigital, diplomacia
@@ -76,7 +74,15 @@ async def test_calcular_acordo_dados_insuficientes_400():
     assert exc.value.status_code == 400
 
 
-# ── Dossiê de Pressão (serviço) ───────────────────────────────────────────────
+# ── Dossiê de Pressão (SERVIÇO, sem rota) ────────────────────────────────────
+# O endpoint /diplomacia-v3/dossie-pressao foi removido em 2026-08-02 (Bloco 4
+# do plano de lançamento) por decisão do escritório. Os dois testes que
+# exercitavam o handler saíram junto: não há mais handler.
+#
+# O teste do SERVIÇO permanece de propósito. `gerar_dossie_pressao` continua no
+# repositório, agora sem chamador — e enquanto continuar, precisa ser sabido que
+# ele roteia para o gateway central com task "estrategia" e sem PII no prompt.
+# Se um dia o serviço for apagado de vez, este teste sai com ele.
 async def test_gerar_dossie_pressao_chama_gateway_estrategia(monkeypatch):
     from app.services import ai_gateway
     capturado: dict = {}
@@ -91,41 +97,3 @@ async def test_gerar_dossie_pressao_chama_gateway_estrategia(monkeypatch):
     prompt = capturado["messages"][0]["content"]
     assert "100000.0" in prompt and "0.7" in prompt  # dados numéricos, sem PII
     assert r["prompt"]  # prompt exposto para o AILog do router
-
-
-# ── Endpoint /dossie-pressao ──────────────────────────────────────────────────
-async def test_dossie_pressao_endpoint_gera_rascunho_com_ailog(monkeypatch):
-    from app.services import ai_gateway
-    monkeypatch.setattr(ai_gateway, "chat", _fake_chat())
-
-    db = _FakeDB()
-    cu = SimpleNamespace(id="user-1")
-    # selic_anual informada → não depende do BCB no teste
-    r = await diplomacia_v3.dossie_pressao(
-        {"valor_causa": 100_000.0, "prob_exito": 0.7, "tempo_anos": 2.0,
-         "selic_anual": 0.1075},
-        db=db, cu=cu,
-    )
-
-    assert r["is_rascunho"] is True
-    assert "HITL" in r["aviso_hitl"]
-    assert r["argumentacao"] == "Acordo hoje é a decisão racional."
-    assert r["dados_acordo"]["selic_fonte"] == "informada"
-    assert r["log_id"]
-
-    # AILog registrado (rastro HITL/LGPD obrigatório)
-    logs = [o for o in db.added if isinstance(o, AILog)]
-    assert len(logs) == 1
-    log = logs[0]
-    assert log.user_id == "user-1"
-    assert log.tipo_uso == AITipoUso.analise_caso
-    assert log.resposta == "Acordo hoje é a decisão racional."
-    assert log.modelo == "ollama/modelo-x"
-    assert db.commits >= 1
-
-
-async def test_dossie_pressao_endpoint_valida_payload():
-    with pytest.raises(HTTPException) as exc:
-        await diplomacia_v3.dossie_pressao(
-            {"prob_exito": 0.7}, db=_FakeDB(), cu=SimpleNamespace(id="u"))
-    assert exc.value.status_code == 400
