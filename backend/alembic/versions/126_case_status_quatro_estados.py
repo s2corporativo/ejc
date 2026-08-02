@@ -13,6 +13,15 @@ Conversão:      triagem → aberto        (existe, tem cliente e fatos)
 `encerrado` e `arquivado` permanecem: desfecho e guarda são coisas distintas e
 os endpoints de arquivar/lixeira dependem da distinção.
 
+TÉCNICA — desvio por text, não renomeação de tipos: a primeira versão usava
+ALTER TYPE ... RENAME + conversão direta enum→enum, e o Postgres reprovou com
+"operator does not exist: casestatus = casestatus_old" — com os dois enums
+coexistindo, a coerção no USING resolve para o tipo errado. A receita robusta
+rebaixa a coluna para text, converte os valores como texto, recria o tipo do
+zero e sobe de volta: em nenhum momento dois enums coexistem. `casestatus` é
+usado apenas por cases.status (conferido em 001_inicial e nos models), então o
+DROP TYPE não tem outros dependentes.
+
 Janela: nenhum caso real passou da triagem — 8 casos em `triagem` e 1
 `arquivado` são o custo total da conversão. Depois do lançamento este custo
 muda de ordem de grandeza; é por isso que a migração acontece agora.
@@ -44,43 +53,49 @@ _NOVOS = "'aberto','em_instrucao','em_producao','protocolado','encerrado','arqui
 _ANTIGOS = "'triagem','ativo','suspenso','acordo','encerrado','arquivado'"
 
 
-def upgrade() -> None:
-    op.execute("ALTER TYPE casestatus RENAME TO casestatus_old")
-    op.execute(f"CREATE TYPE casestatus AS ENUM ({_NOVOS})")
+def _trocar_enum(valores_novos: str, conversao_sql: str, default_novo: str) -> None:
+    """Desvio por text: coluna vira text → valores convertidos → tipo recriado."""
     op.execute("ALTER TABLE cases ALTER COLUMN status DROP DEFAULT")
+    op.execute("ALTER TABLE cases ALTER COLUMN status TYPE text USING status::text")
+    op.execute(conversao_sql)
+    op.execute("DROP TYPE casestatus")
+    op.execute(f"CREATE TYPE casestatus AS ENUM ({valores_novos})")
     op.execute(
-        """
-        ALTER TABLE cases ALTER COLUMN status TYPE casestatus USING (
-            CASE status::text
-                WHEN 'triagem'  THEN 'aberto'
-                WHEN 'ativo'    THEN 'em_instrucao'
-                WHEN 'suspenso' THEN 'aberto'
-                WHEN 'acordo'   THEN 'encerrado'
-                ELSE status::text
-            END
-        )::casestatus
-        """
+        "ALTER TABLE cases ALTER COLUMN status TYPE casestatus "
+        "USING status::casestatus"
     )
-    op.execute("ALTER TABLE cases ALTER COLUMN status SET DEFAULT 'aberto'")
-    op.execute("DROP TYPE casestatus_old")
+    op.execute(
+        f"ALTER TABLE cases ALTER COLUMN status SET DEFAULT '{default_novo}'"
+    )
+
+
+def upgrade() -> None:
+    _trocar_enum(
+        _NOVOS,
+        """
+        UPDATE cases SET status = CASE status
+            WHEN 'triagem'  THEN 'aberto'
+            WHEN 'ativo'    THEN 'em_instrucao'
+            WHEN 'suspenso' THEN 'aberto'
+            WHEN 'acordo'   THEN 'encerrado'
+            ELSE status
+        END
+        """,
+        "aberto",
+    )
 
 
 def downgrade() -> None:
-    op.execute("ALTER TYPE casestatus RENAME TO casestatus_old")
-    op.execute(f"CREATE TYPE casestatus AS ENUM ({_ANTIGOS})")
-    op.execute("ALTER TABLE cases ALTER COLUMN status DROP DEFAULT")
-    op.execute(
+    _trocar_enum(
+        _ANTIGOS,
         """
-        ALTER TABLE cases ALTER COLUMN status TYPE casestatus USING (
-            CASE status::text
-                WHEN 'aberto'       THEN 'triagem'
-                WHEN 'em_instrucao' THEN 'ativo'
-                WHEN 'em_producao'  THEN 'ativo'
-                WHEN 'protocolado'  THEN 'ativo'
-                ELSE status::text
-            END
-        )::casestatus
-        """
+        UPDATE cases SET status = CASE status
+            WHEN 'aberto'       THEN 'triagem'
+            WHEN 'em_instrucao' THEN 'ativo'
+            WHEN 'em_producao'  THEN 'ativo'
+            WHEN 'protocolado'  THEN 'ativo'
+            ELSE status
+        END
+        """,
+        "triagem",
     )
-    op.execute("ALTER TABLE cases ALTER COLUMN status SET DEFAULT 'triagem'")
-    op.execute("DROP TYPE casestatus_old")
