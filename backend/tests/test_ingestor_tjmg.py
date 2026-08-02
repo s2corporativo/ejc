@@ -148,6 +148,38 @@ def test_monta_conteudo_inclui_ementa_e_metadados():
     assert "Relator(a): Des. João" in txt
 
 
+def test_monta_conteudo_carrega_numero_do_acordao(monkeypatch):
+    """Issue #635: o trecho recuperado pelo RAG tem de ser autoidentificável —
+    ementa sem o número do acórdão é a condição da citação inventada."""
+    txt = tjmg._monta_conteudo(ITEM_A)
+    assert "Acórdão: 1.0027.23.123456-7/001" in txt
+    assert txt.startswith("Acórdão: ")                 # antes da ementa
+    assert txt.index("Acórdão:") < txt.index("EMENTA:")
+
+
+def test_monta_conteudo_mesma_ementa_numeros_distintos_nao_colide():
+    """Regressão Issue #635: dois julgados com ementa idêntica (temas
+    repetitivos) e números diferentes não podem produzir o mesmo conteúdo —
+    era o que gerava hash_conteudo igual e falso duplicado no painel."""
+    from app.services.ingestion_service import _sha1, normalizar
+
+    a = {**ITEM_A, "numero_acordao": "1.0027.23.123456-7/001"}
+    b = {**ITEM_A, "numero_acordao": "1.0027.23.777888-9/001"}
+    ca, cb = tjmg._monta_conteudo(a), tjmg._monta_conteudo(b)
+    assert ca != cb
+    assert _sha1(normalizar(ca)) != _sha1(normalizar(cb))
+    assert "123456-7/001" in ca and "777888-9/001" in cb
+
+
+def test_monta_conteudo_sem_numero_nao_quebra():
+    """O parser do TJMG é tolerante e pode não extrair o número: ausência
+    apenas omite a linha, sem rótulo vazio e sem exceção."""
+    txt = tjmg._monta_conteudo(ITEM_B)          # numero_acordao == ""
+    assert "Acórdão:" not in txt
+    assert "EMENTA:" in txt and "IRDR" in txt
+    assert tjmg._monta_conteudo({}) == ""
+
+
 def test_temas_default_e_override(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "TJMG_INGEST_TEMAS", "", raising=False)

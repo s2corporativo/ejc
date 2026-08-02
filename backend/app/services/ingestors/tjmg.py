@@ -112,8 +112,19 @@ def _chave(item: dict, tema: str) -> str:
 
 def _monta_conteudo(item: dict) -> str:
     """Concatena as partes juridicamente citáveis de um acórdão do TJMG
-    (mesma estratégia do ingestor STJ: ementa + metadados, não inteiro teor)."""
+    (mesma estratégia do ingestor STJ: ementa + metadados, não inteiro teor).
+
+    O número do acórdão abre o conteúdo pelo mesmo motivo do STJ: sem ele, dois
+    julgados com a mesma ementa (temas repetitivos, decisões em bloco) produzem
+    conteúdo idêntico — mesmo `hash_conteudo`, falso duplicado no painel — e o
+    trecho recuperado pelo RAG chega à IA sem identificação verificável, que é a
+    porta de entrada da citação inventada. Campo ausente é omitido: o parser do
+    TJMG é tolerante e pode não extrair o número.
+    """
     partes: list[str] = []
+    numero = (item.get("numero_acordao") or "").strip()
+    if numero:
+        partes.append(f"Acórdão: {numero}")
     if item.get("classe"):
         partes.append(f"Classe: {item['classe']}")
     if item.get("orgao_julgador"):
