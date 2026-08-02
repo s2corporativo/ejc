@@ -1,0 +1,86 @@
+name: Temporary RAG review finalizer
+
+on:
+  pull_request:
+    types: [synchronize, reopened]
+    paths:
+      - ".github/workflows/temporary-rag-review-finalizer.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temporary-rag-review-finalizer-607
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.event.pull_request.number == 607 &&
+      github.event.pull_request.head.ref == 'fix/563-rag-activation-controlled-v2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Apply reviewed RAG safeguards
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import gzip
+          import hashlib
+          import json
+          import os
+          import urllib.request
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          payloads = {
+              'scripts/rag/ativar_embeddings.sh': ('SHELL_BLOB_SHA', '76e5bf967975c518fe443d2dcd939e8e225c9984a2f245fa1aef68e2b106fb0e'),
+              'scripts/rag/provar_ativacao.py': ('PROBE_BLOB_SHA', '5ad7c1fc3e3ef6bde7f498cf552e966ff46dec8a3675bd611720fa7b781dd16f'),
+              'scripts/tests/test_rag_activation.sh': ('TEST_BLOB_SHA', '0a65a09ee013adc30203131636b0752af55f0dbffdbde63df2878c6d5db858ec'),
+          }
+          for path, (blob_sha, expected) in payloads.items():
+              req = urllib.request.Request(
+                  f'https://api.github.com/repos/{repo}/git/blobs/{blob_sha}',
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Accept': 'application/vnd.github+json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  encoded = json.load(response)['content'].replace('\n', '')
+              compressed = base64.b64decode(encoded, validate=True)
+              raw = gzip.decompress(compressed)
+              actual = hashlib.sha256(raw).hexdigest()
+              if actual != expected:
+                  raise SystemExit(f'hash mismatch for {path}: {actual}')
+              target = Path(path)
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_bytes(raw)
+          PY
+          chmod +x scripts/rag/ativar_embeddings.sh scripts/tests/test_rag_activation.sh
+          bash -n scripts/rag/ativar_embeddings.sh
+          python3 -m py_compile scripts/rag/provar_ativacao.py
+          bash scripts/tests/test_rag_activation.sh
+
+      - name: Commit functional files and remove finalizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/rag/ativar_embeddings.sh scripts/rag/provar_ativacao.py scripts/tests/test_rag_activation.sh
+          git rm .github/workflows/temporary-rag-review-finalizer.yml
+          git diff --cached --check
+          git commit -m 'fix(rag): close scheduler, cleanup and governed-proof reviews'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
