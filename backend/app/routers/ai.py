@@ -17,6 +17,7 @@ from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.case import Case
 from app.models.ai_log import AILog, AIStatusHITL
+from app.models.legal_doc import LegalDoc
 from app.services.ai_service import analisar_caso, extrair_prazos_ia, resumir_documento
 from app.services.case_context import montar_dossie
 from app.schemas.ai import (
@@ -163,12 +164,49 @@ async def atualizar_hitl(
         raise HTTPException(status_code=422, detail="Status HITL inválido")
 
     log = (await db.execute(
-        select(AILog).where(AILog.id == log_id)
+        select(AILog).where(AILog.id == log_id).with_for_update()
     )).scalar_one_or_none()
     if not log:
         raise HTTPException(status_code=404, detail="Log não encontrado")
     if log.user_id != cu.id and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
         raise HTTPException(status_code=403, detail="Sem permissão para revisar este log")
+
+
+    # Validação de peça só pode ser revisada/aplicada se ainda corresponder à
+    # versão corrente. Evita falso sucesso ao revisar log que o trigger já
+    # invalidou ou cujo hash divergiu após restore/drift operacional.
+    legal_doc_id = getattr(log, "legal_doc_id", None)
+    if req.status in ("revisado", "aplicado") and legal_doc_id:
+        import hashlib
+
+        doc = (await db.execute(
+            select(LegalDoc)
+            .where(
+                LegalDoc.id == legal_doc_id,
+                LegalDoc.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )).scalar_one_or_none()
+        hash_atual = (
+            hashlib.sha256((doc.conteudo or "").encode("utf-8")).hexdigest()
+            if doc is not None
+            else None
+        )
+        if (
+            doc is None
+            or not log.legal_doc_validation_current
+            or not log.legal_doc_content_hash
+            or log.legal_doc_content_hash != hash_atual
+        ):
+            log.legal_doc_validation_current = False
+            await db.commit()
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Esta validação pertence a uma versão anterior da peça. "
+                    "Execute nova validação antes de revisar ou aplicar."
+                ),
+            )
 
     # ── Gate antialucinação de citações (Fase 4 — citation_gate) ─────────────
     # Helper compartilhado com PATCH /ia-defensiva/historico/{id}/status:
