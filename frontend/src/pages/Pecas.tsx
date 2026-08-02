@@ -89,7 +89,14 @@ const TIPOS = [
 // rascunho → em_revisao → corrigida → aprovada → final → protocolada.
 // NÃO inventar status aqui — o backend rejeita valores fora do enum.
 const FILA: { key: string; label: string; desc: string }[] = [
-  { key: "rascunho", label: "Rascunho", desc: "Em elaboração" },
+  // O valor `rascunho` é o enum do backend e não muda. O rótulo nomeia a AÇÃO
+  // pendente do advogado, não o grau de acabamento do texto — a peça já está
+  // escrita e o que falta é conferência e assinatura.
+  {
+    key: "rascunho",
+    label: "Minuta final",
+    desc: "Conferir e assinar",
+  },
   {
     key: "em_revisao",
     label: "Em revisão",
@@ -302,20 +309,22 @@ export default function Pecas() {
 
   // BUG-08 (HITL): aprovação humana obrigatória de peças geradas por IA.
   // Único caminho para aprovar peça de IA; exige observações não vazias.
+  // Um só ato no backend (POST /conferir-e-assinar): valida juridicamente se
+  // preciso, registra a revisão HITL e assina — tudo numa transação.
   const aprovarPeca = async () => {
     if (!aprovacao) return;
     const observacoes = aprovacao.observacoes.trim();
     if (!observacoes) return;
     setAprovando(true);
     try {
-      await api.patch(`/legal-docs/${aprovacao.doc.id}/aprovar`, {
+      await api.post(`/legal-docs/${aprovacao.doc.id}/conferir-e-assinar`, {
         observacoes,
       });
       setAprovacao(null);
-      toast.success("Peça aprovada com revisão humana registrada");
+      toast.success("Peça conferida e assinada com revisão humana registrada");
       load();
     } catch (e: any) {
-      toast.error(errDetail(e, "Falha ao aprovar peça"));
+      toast.error(errDetail(e, "Falha ao conferir e assinar a peça"));
     } finally {
       setAprovando(false);
     }
@@ -441,15 +450,21 @@ export default function Pecas() {
     }
   };
 
+  // Peça ainda não aprovada baixa o PDF de LEITURA (/pdf-minuta, marcado como
+  // minuta, sem gate de protocolo) — o advogado precisa ler antes de assinar.
+  // Aprovada/final/protocolada segue no PDF de protocolo (/pdf, com gates).
   const baixarPdf = async (doc: LegalDoc) => {
+    const aprovada = STATUS_POS_APROVACAO.has(doc.status);
     try {
-      const r = await api.get(`/legal-docs/${doc.id}/pdf`, {
-        responseType: "blob",
-      });
+      const r = aprovada
+        ? await api.get(`/legal-docs/${doc.id}/pdf`, { responseType: "blob" })
+        : await api.get(`/legal-docs/${doc.id}/pdf-minuta`, {
+            responseType: "blob",
+          });
       const url = URL.createObjectURL(r.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${doc.titulo}.pdf`;
+      a.download = aprovada ? `${doc.titulo}.pdf` : `${doc.titulo}-minuta.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) {

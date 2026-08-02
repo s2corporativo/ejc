@@ -43,7 +43,12 @@ ABREV_AREA: dict[str, str] = {
 
 # Rótulo legível do status da peça (PecaStatus) para a linha de controle.
 STATUS_LABEL: dict[str, str] = {
-    "rascunho": "Rascunho",
+    # O VALOR persistido continua `rascunho` (é o enum do banco); só o rótulo
+    # muda. "Rascunho" descrevia o estado do ponto de vista da IA que escreveu,
+    # não do advogado que precisa agir: sugeria texto inacabado, a ser reescrito,
+    # quando o que existe é uma minuta pronta esperando conferência e assinatura.
+    # O rótulo passa a nomear a AÇÃO PENDENTE, não o grau de acabamento.
+    "rascunho": "Minuta final — conferir e assinar",
     "em_revisao": "Em revisão",
     "corrigida": "Corrigida",
     "aprovada": "Aprovada",
