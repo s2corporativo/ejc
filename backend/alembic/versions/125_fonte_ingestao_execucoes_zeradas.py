@@ -28,15 +28,17 @@ down_revision = "124_dataroom_public_hardening"
 branch_labels = None
 depends_on = None
 
-_TABELA = "fontes_ingestao"
-_COLUNA = "execucoes_zeradas_consecutivas"
+# Tabela e coluna vão como LITERAIS, não como constantes de módulo:
+# `tests/test_schema_dr_parity.py` confere a paridade ORM × migrations lendo
+# estes arquivos por AST, e só reconhece `ast.Constant`. Um nome de variável é
+# invisível para o scanner, e a coluna apareceria como "sem migration".
 
 
 def upgrade() -> None:
     op.add_column(
-        _TABELA,
+        "fontes_ingestao",
         sa.Column(
-            _COLUNA,
+            "execucoes_zeradas_consecutivas",
             sa.Integer(),
             nullable=False,
             server_default=sa.text("0"),
@@ -45,4 +47,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column(_TABELA, _COLUNA)
+    op.drop_column("fontes_ingestao", "execucoes_zeradas_consecutivas")
