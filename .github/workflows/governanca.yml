@@ -8,8 +8,8 @@ name: Governanca
 # Complementa — não substitui — o "EJC Release Gate" (scripts/ci_guard.sh),
 # que cobre marcadores de merge, CORS wildcard e resíduos de release.
 #
-# Runner SELF-HOSTED `ejc-vps`, como os demais workflows do repositório
-# (docs/RUNNER_SELFHOSTED.md).
+# Executa em runner GitHub-hosted: não depende da disponibilidade da VPS e
+# não acessa produção, secrets operacionais ou dados reais.
 on:
   pull_request:
 
@@ -23,7 +23,7 @@ concurrency:
 jobs:
   governanca:
     name: Governança — travas de PR
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -34,10 +34,7 @@ jobs:
         id: diff
         shell: bash
         run: |
-          # $RUNNER_TEMP, nao /tmp: o runner e self-hosted e divide o VPS. Um
-          # /tmp/alterados.txt deixado por outra execucao (ou por outro usuario)
-          # nao pode ser sobrescrito por causa do sticky bit do /tmp, e o job
-          # morre com "Permission denied". $RUNNER_TEMP e isolado por job.
+          # $RUNNER_TEMP é isolado por job e evita colisões entre execuções.
           git fetch --quiet origin "${{ github.base_ref }}"
           git diff --name-only "origin/${{ github.base_ref }}...HEAD" > "$RUNNER_TEMP/alterados.txt"
           echo "--- arquivos alterados ---"

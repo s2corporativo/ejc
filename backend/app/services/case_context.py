@@ -2,11 +2,12 @@
 # AGREGADOR DE CONTEXTO DO CASO — interliga todos os dados para a IA "entender"
 # o sistema inteiro. Dado um case_id, monta um dossiê consolidado lendo:
 #   Caso base → Cliente → Ramo especializado (1 dos 6 + ambiental) →
-#   Prazos ativos → Honorários → Peças → Movimentações.
+#   Dossiê documental canônico → Prazos → Honorários → Peças → Movimentações.
 #
 # REGRAS:
 #   • Tudo passa pelo sanitizador LGPD antes de ir à IA (nomes, CPF, CNPJ, proc).
 #   • Visibilidade respeita o perfil (advogado só vê seus casos — validado no router).
+#   • Fatos documentais vêm dos originais/hash/páginas; IA não altera essa camada.
 #   • Saída em texto estruturado [DOSSIÊ] pronto para injeção no prompt da IA.
 #   • Nenhum dado inventado: campos vazios são omitidos, não preenchidos.
 from __future__ import annotations
@@ -134,6 +135,11 @@ async def montar_dossie(
         if ban:
             ramo_obj, ramo_label = ban, "Bancário/Financeiro"
 
+    # ── Dossiê documental canônico ───────────────────────────────────────────
+    # Fonte distinta do campo editável de fatos e de qualquer interpretação de IA.
+    from app.services.dossie_documental_canonico import montar_dossie_documental_canonico
+    dossie_documental = await montar_dossie_documental_canonico(db, case_id)
+
     # ── Prazos ativos ─────────────────────────────────────────────────────────
     prazos = (await db.execute(
         select(Deadline).where(
@@ -198,16 +204,23 @@ async def montar_dossie(
         if cliente.profissao:
             L.append(f"Profissão/atividade: {cliente.profissao}")
 
-    # Estratégia já registrada
+    # A camada documental é priorizada no contexto para impedir que relato ou
+    # interpretação derivada substituam fatos vinculados aos originais.
+    if dossie_documental:
+        L.append("")
+        L.append(dossie_documental["texto_contexto"])
+
+    # Relato editável do caso: preservado, mas não confundido com prova documental.
     if caso.descricao_fatos:
         L.append("")
-        L.append(f"[FATOS REGISTRADOS]\n{caso.descricao_fatos}")
+        L.append(f"[RELATO/FATOS REGISTRADOS — CAMPO EDITÁVEL]\n{caso.descricao_fatos}")
+
     if caso.tese_principal:
-        L.append(f"[TESE PRINCIPAL]\n{caso.tese_principal}")
+        L.append(f"[TESE PRINCIPAL — INTERPRETAÇÃO JURÍDICA]\n{caso.tese_principal}")
     if caso.pontos_fortes:
-        L.append(f"[PONTOS FORTES] {caso.pontos_fortes}")
+        L.append(f"[PONTOS FORTES — INTERPRETAÇÃO] {caso.pontos_fortes}")
     if caso.pontos_fracos:
-        L.append(f"[PONTOS FRACOS] {caso.pontos_fracos}")
+        L.append(f"[PONTOS FRACOS — INTERPRETAÇÃO] {caso.pontos_fracos}")
 
     # Prescrição
     if caso.data_prescricao:
@@ -276,5 +289,12 @@ async def montar_dossie(
             "qtd_prazos_ativos": len(prazos),
             "qtd_pecas": len(pecas),
             "qtd_honorarios": len(honorarios),
+            "dossie_documental_versao": dossie_documental.get("versao") if dossie_documental else None,
+            "dossie_documental_sha256": dossie_documental.get("sha256_manifesto") if dossie_documental else None,
+            "qtd_documentos_total_ged": dossie_documental.get("qtd_documentos_total_ged", 0) if dossie_documental else 0,
+            "qtd_documentos_canonicos": dossie_documental.get("qtd_documentos", 0) if dossie_documental else 0,
+            "qtd_documentos_sigilosos_omitidos": dossie_documental.get("qtd_documentos_sigilosos_omitidos", 0) if dossie_documental else 0,
+            "qtd_fontes_documentais": dossie_documental.get("qtd_paginas_com_texto", 0) if dossie_documental else 0,
+            "dossie_documental_truncado": dossie_documental.get("truncado", False) if dossie_documental else False,
         },
     }
