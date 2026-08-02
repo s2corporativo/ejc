@@ -53,8 +53,28 @@ _NOVOS = "'aberto','em_instrucao','em_producao','protocolado','encerrado','arqui
 _ANTIGOS = "'triagem','ativo','suspenso','acordo','encerrado','arquivado'"
 
 
+# O único objeto do schema com literal de casestatus em expressão guardada:
+# índice parcial da migration 115. Precisa cair ANTES da troca de tipo — o
+# Postgres re-valida o predicado durante o ALTER e explode com operador
+# text = casestatus — e renascer DEPOIS, já no vocabulário novo. Se um dia
+# outro índice/constraint citar valores de status, ele entra aqui também.
+_INDICE = "ix_cases_proxima_acao_pendente"
+
+
+def _recriar_indice_proxima_acao(abertos_sql: str) -> None:
+    op.execute(
+        f"""
+        CREATE INDEX {_INDICE} ON cases (proxima_acao_prazo)
+        WHERE deleted_at IS NULL
+          AND status IN ({abertos_sql})
+          AND proxima_acao IS NOT NULL
+        """
+    )
+
+
 def _trocar_enum(valores_novos: str, conversao_sql: str, default_novo: str) -> None:
     """Desvio por text: coluna vira text → valores convertidos → tipo recriado."""
+    op.execute(f"DROP INDEX IF EXISTS {_INDICE}")
     op.execute("ALTER TABLE cases ALTER COLUMN status DROP DEFAULT")
     op.execute("ALTER TABLE cases ALTER COLUMN status TYPE text USING status::text")
     op.execute(conversao_sql)
@@ -83,6 +103,9 @@ def upgrade() -> None:
         """,
         "aberto",
     )
+    _recriar_indice_proxima_acao(
+        "'aberto','em_instrucao','em_producao','protocolado'"
+    )
 
 
 def downgrade() -> None:
@@ -99,3 +122,4 @@ def downgrade() -> None:
         """,
         "triagem",
     )
+    _recriar_indice_proxima_acao("'triagem','ativo','suspenso','acordo'")
