@@ -6,9 +6,9 @@ name: CI
 # os checks deste workflow e do "EJC Release Gate" devem ser obrigatórios na
 # proteção da branch main.
 
-# CI no runner SELF-HOSTED: roda no VPS do escritório, mantendo checks auditáveis
-# sem consumo de minutos hospedados. Requer o runner registrado e online com os
-# labels `self-hosted` e `ejc-vps` (docs/RUNNER_SELFHOSTED.md).
+# CI em runners GitHub-hosted, efêmeros e isolados da produção. Os jobs
+# independentes executam em paralelo; o runner `ejc-vps` fica reservado a
+# deploy, backup real e demais operações do ambiente oficial.
 on:
   pull_request:
   push:
@@ -25,7 +25,7 @@ concurrency:
 jobs:
   db-validation:
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -38,10 +38,8 @@ jobs:
           POSTGRES_PASSWORD: ejc_pass
           POSTGRES_DB: ejc_db
         ports:
-          # Porta ALTA no host: o runner é self-hosted e divide o VPS com o
-          # Postgres de produção, que ocupa a 5432 — mapear 5432:5432 falhava com
-          # "Bind for 0.0.0.0:5432 failed: port is already allocated" e o job
-          # morria antes do checkout. Dentro do container segue 5432.
+          # Porta dedicada do serviço efêmero deste job. O valor alto mantém
+          # compatibilidade com os scripts existentes e evita acoplamento.
           - 55432:5432
         options: >-
           --health-cmd "pg_isready -U ejc_user -d ejc_db"
@@ -93,9 +91,7 @@ jobs:
 
       - name: Criar extensões (vector, pg_trgm, pgcrypto)
         run: |
-          # -p obrigatório: o serviço é exposto em 55432 no host (a 5432 é do
-          # Postgres de produção). Sem a porta, o psql usa 5432 e falha com
-          # "Connection refused".
+          # -p obrigatório porque o serviço efêmero foi publicado em 55432.
           PGPASSWORD=ejc_pass psql -h localhost -p 55432 -U ejc_user -d ejc_db \
             -c "CREATE EXTENSION IF NOT EXISTS vector;" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
@@ -160,7 +156,7 @@ jobs:
 
   eval-smoke:
     name: Eval — smoke dos gold sets (offline, bloqueante)
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
@@ -188,7 +184,7 @@ jobs:
 
   frontend-build:
     name: Frontend — testes + typecheck + build
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
       run:
