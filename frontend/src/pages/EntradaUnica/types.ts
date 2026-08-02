@@ -242,18 +242,27 @@ export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
     advogado_responsavel_id: p.advogadoResponsavelId || undefined,
     confirmo_dados_revisados: true,
   };
-  if (p.prazo?.criar && (p.prazo.descricao || p.prazo.data)) {
+  // O backend exige `data` no PrazoEntrada — prazo detectado sem data
+  // interpretável não vira Deadline (o advogado cria depois, na aba Prazos
+  // do caso). Título tem piso de 3 caracteres no schema.
+  if (p.prazo?.criar && p.prazo.data) {
+    const tituloPrazo = (p.prazo.descricao || "").trim();
     payload.prazo = {
-      titulo: p.prazo.descricao || "Prazo detectado na entrada",
-      data: p.prazo.data || undefined,
+      titulo:
+        tituloPrazo.length >= 3 ? tituloPrazo : "Prazo detectado na entrada",
+      data: p.prazo.data,
       responsavel_id: p.prazo.responsavelId || p.advogadoResponsavelId,
     };
   }
   if (p.conflitoAlertas.length > 0) {
     payload.conflict_confirmed = p.conflictConfirmed;
   }
-  if (p.duplicados.length > 0) {
-    payload.duplicate_confirmed = p.duplicateConfirmed || Boolean(p.clienteId);
+  // NUNCA auto-confirmar duplicidade só porque um cliente existente foi
+  // escolhido: o gate de "cliente com caso ativo" é do servidor — sem o
+  // reconhecimento explícito, o 409 volta com os achados e a tela os
+  // exibe com o checkbox (mesma semântica da conversão da Sala Jurídica).
+  if (p.duplicados.length > 0 || p.duplicateConfirmed) {
+    payload.duplicate_confirmed = p.duplicateConfirmed;
   }
   return payload;
 }
