@@ -44,7 +44,10 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "ai";
 
 const toneClasses: Record<Tone, string> = {
   slate: "bg-slate-100 text-slate-700 ring-slate-200",
-  blue: "bg-primary-50 text-primary-700 ring-primary-200",
+  // "blue" é tom INFORMATIVO de status (novo/em análise/em produção…) e
+  // usa a paleta `info` (azul céu) — o ouro `primary` fica reservado à
+  // marca/ações, para o dourado nunca virar cor de status genérica.
+  blue: "bg-info-50 text-info-700 ring-info-200",
   green: "bg-success-50 text-success-700 ring-success-200",
   amber: "bg-warn-50 text-warn-700 ring-warn-200",
   // Laranja/violeta/verde-azulado usam a paleta padrão do Tailwind (default
@@ -70,7 +73,7 @@ const toneClasses: Record<Tone, string> = {
 // cascata e atropelariam utilities `border-t-*` nos dois temas.
 const toneBarClasses: Record<Tone, string> = {
   slate: "before:bg-slate-400",
-  blue: "before:bg-primary-400",
+  blue: "before:bg-info-500",
   green: "before:bg-success-500",
   amber: "before:bg-warn-500",
   orange: "before:bg-orange-500",
@@ -953,10 +956,11 @@ export function Drawer({
   );
 }
 
-type AlertVariant = "info" | "success" | "warning" | "danger";
+// "error" é alias aditivo de "danger" (compatibilidade com telas novas).
+type AlertVariant = "info" | "success" | "warning" | "danger" | "error";
 
 const alertConfig: Record<
-  AlertVariant,
+  Exclude<AlertVariant, "error">,
   { icon: typeof Info; box: string; iconColor: string; title: string }
 > = {
   info: {
@@ -1002,7 +1006,7 @@ export function Alert({
   children?: ReactNode;
   className?: string;
 }) {
-  const config = alertConfig[variant];
+  const config = alertConfig[variant === "error" ? "danger" : variant];
   const Icon = config.icon;
   return (
     <div

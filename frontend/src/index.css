@@ -15,8 +15,10 @@
     --ejc-muted: #667085;
     --ejc-border: #e5eaf0;
     --ejc-legal: #0b1f3a;
-    --ejc-action: #2563eb;
+    --ejc-action: #8f7117;
     --ejc-ai: #7c3aed;
+    /* Anel de foco acessível (ouro): visível sobre branco e superfícies claras */
+    --ejc-focus-ring: rgba(143, 113, 23, 0.65);
     --ejc-bronze: #6f5711;
     --ejc-gold: #c9a227;
     --ejc-gold-soft: #f7f1dc;
@@ -55,6 +57,8 @@
       0 26px 50px -18px rgba(0, 0, 0, 0.55);
     --ejc-sidebar-top: #191509;
     --ejc-sidebar-bottom: #251d0c;
+    /* No escuro o anel de foco usa o ouro claro (legível sobre grafite) */
+    --ejc-focus-ring: rgba(229, 206, 127, 0.6);
     /* No escuro o ouro near-black some sobre o card — troca com o creme */
     --ejc-chart-1: #e8dfd3;
     --ejc-chart-4: #6f5711;
@@ -96,8 +100,19 @@
   /* Focus ring dourado consistente para navegação por teclado */
   :focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.55);
+    box-shadow: 0 0 0 2px var(--ejc-focus-ring);
     border-radius: 6px;
+  }
+
+  /* Acessibilidade: sem animação para quem prefere movimento reduzido */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-in,
+    .animate-rise,
+    .animate-pop,
+    .animate-slide-in-right,
+    .animate-pulse-soft {
+      animation: none;
+    }
   }
 
   /* Scrollbar fina global */
@@ -136,16 +151,25 @@
         (token border) e raio 12px; sombra mínima, sem elevação ── */
   .card {
     @apply rounded-xl border border-border bg-white;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-    transition: border-color 0.15s ease-out;
+    box-shadow:
+      0 1px 2px rgba(24, 16, 8, 0.03),
+      0 4px 16px -4px rgba(24, 16, 8, 0.05);
+    transition:
+      border-color 0.15s ease-out,
+      box-shadow 0.15s ease-out;
   }
   .card:hover {
-    border-color: rgba(37, 99, 235, 0.24);
+    border-color: rgba(201, 162, 39, 0.35);
+    box-shadow:
+      0 2px 4px rgba(24, 16, 8, 0.04),
+      0 10px 28px -8px rgba(24, 16, 8, 0.09);
   }
 
   .section-card {
     @apply rounded-xl border border-border bg-white;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    box-shadow:
+      0 1px 2px rgba(24, 16, 8, 0.03),
+      0 4px 16px -4px rgba(24, 16, 8, 0.05);
   }
 
   /* ── Buttons ──────────────────────────────────────────────── */
@@ -196,7 +220,7 @@
   /* ── Form inputs — compactos: raio 8px, padding ~7×10, fonte 13 ── */
   .input {
     @apply w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-[13px] text-slate-900
-           placeholder:text-slate-400 transition-all duration-150
+           placeholder:text-slate-400 transition-all duration-150 hover:border-slate-400/70
            focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/25;
   }
   .label {
@@ -357,15 +381,15 @@
     color: rgb(51 65 85); /* slate-700 */
   }
   .sidebar-nav-item:hover {
-    background: #f8fafc;
+    background: #f8f6f0; /* neutro quente */
     color: rgb(15 23 42); /* slate-900 */
   }
   .sidebar-nav-item.is-active {
-    background: #eff6ff;
-    color: #2563eb;
+    background: #f7f1dc; /* ouro palha */
+    color: #6f5711; /* ouro profundo — 6,9:1 sobre a palha (AA) */
   }
   /* Item ativo com "borderLeft" de 3px em toda a altura (idioma
-     Verdelimp), na cor de acento atual do EJC (dourado #D4AF37). */
+     Verdelimp), no dourado da marca (#D4AF37). */
   .sidebar-nav-item.is-active::before {
     content: "";
     position: absolute;
@@ -374,17 +398,18 @@
     height: 100%;
     width: 3px;
     border-radius: 0;
-    background: #2563eb;
+    background: #d4af37;
   }
-  /* Ícones do menu em dourado ouro — acento elegante sobre o fundo branco. */
+  /* Ícones do menu neutros; dourados no hover/ativo — acento cirúrgico. */
   .sidebar-nav-item svg {
     color: #667085;
+    transition: color 0.15s ease-out;
   }
   .sidebar-nav-item:hover svg {
-    color: #2563eb;
+    color: #8f7117;
   }
   .sidebar-nav-item.is-active svg {
-    color: #2563eb;
+    color: #8f7117;
   }
   .sidebar-group-label {
     color: rgb(100 116 139); /* slate-500 */
@@ -396,8 +421,8 @@
     border-color: rgb(226 232 240); /* slate-200 */
   }
   .sidebar-count {
-    background: #dbeafe;
-    color: #2563eb;
+    background: #f7f1dc;
+    color: #6f5711;
   }
 
   /* Tile da logomarca (header) — logo-hd.png tem fundo TRANSPARENTE:

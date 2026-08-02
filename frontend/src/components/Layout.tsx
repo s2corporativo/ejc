@@ -309,7 +309,7 @@ export default function Layout() {
                 <div
                   role="menu"
                   aria-label="Como abrir o novo caso"
-                  className="card absolute right-0 top-full z-50 mt-2 w-72 py-1"
+                  className="card absolute right-0 top-full z-50 mt-2 w-72 py-1 shadow-float animate-pop"
                 >
                   <Link
                     to={NOVO_CASO_DOCUMENTO_PATH}
@@ -408,7 +408,7 @@ export default function Layout() {
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md">
+              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-float animate-pop">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                   <div className="text-sm font-semibold text-slate-950">
                     Notificações
@@ -674,7 +674,7 @@ export default function Layout() {
       {iaDisponivel ? (
         <Link
           to="/inteligencia?tab=assistente"
-          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-xl bg-ai-600 text-white shadow-md hover:bg-ai-700 md:flex"
+          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-2xl bg-ai-600 text-white shadow-float transition-all duration-150 hover:-translate-y-0.5 hover:bg-ai-700 md:flex"
           aria-label="Assistente IA"
         >
           <Bot className="h-5 w-5" />
@@ -685,7 +685,7 @@ export default function Layout() {
           disabled
           title={ROTULO_IA_NAO_ATIVADA}
           aria-label={`Assistente IA — ${ROTULO_IA_NAO_ATIVADA}`}
-          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 cursor-not-allowed items-center justify-center rounded-xl bg-slate-300 text-white shadow-md md:flex dark:bg-slate-700"
+          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 cursor-not-allowed items-center justify-center rounded-2xl bg-slate-300 text-white shadow-md md:flex dark:bg-slate-700"
         >
           <Bot className="h-5 w-5" />
         </button>
