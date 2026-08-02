@@ -324,6 +324,75 @@ def test_preparar_diploma_rejeita_pagina_errada():
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# 4b. Vigência propagada da fonte para extra.legal_status (Issue #636)
+# ══════════════════════════════════════════════════════════════════════════
+
+def _com_marcacao_no_preambulo(html: str, marcacao: str) -> str:
+    """Insere a marcação onde o Planalto a publica: junto da ementa, antes do
+    Art. 1º."""
+    ancora = "<p>O&nbsp;PRESIDENTE DA REPÚBLICA"
+    assert ancora in html
+    return html.replace(ancora, f"<p>{marcacao}</p>\n{ancora}", 1)
+
+
+def test_texto_compilado_sem_marcacao_declara_vigente(blocos):
+    """Ausência de marcação de revogação no preâmbulo de um texto COMPILADO que
+    passou na validação estrutural = o que a fonte publica como em vigor."""
+    assert pl.situacao_juridica(blocos) == "vigente"
+
+
+def test_anotacao_de_artigo_revogado_nao_revoga_o_diploma(texto, blocos):
+    """O corpo do compilado traz '(Revogado pela Lei ...)' por ARTIGO (o § 3º da
+    fixture). Ler isso como revogação do diploma marcaria todo código como
+    revogado — por isso o escopo é o PREÂMBULO."""
+    assert "(Revogado pela Lei nº 99.999, de 2020)" in texto
+    assert pl.situacao_juridica(blocos) == "vigente"
+
+
+@pytest.mark.parametrize("marcacao", [
+    "(Revogada pela Lei nº 14.133, de 2021)",
+    "(Revogado pelo Decreto nº 11.000, de 2022)",
+    "Revogada a partir de 1º de janeiro de 2024",
+    "Vigência encerrada",
+])
+def test_marcacao_no_preambulo_declara_revogada(html, marcacao):
+    blocos = dividir_artigos(
+        extrair_texto_planalto(_com_marcacao_no_preambulo(html, marcacao)))
+    assert pl.situacao_juridica(blocos) == "revogada"
+
+
+def test_ementa_que_revoga_outra_norma_nao_se_declara_revogada(html):
+    """Forma ATIVA ('Revoga a Lei X') é a norma revogando OUTRA — não casa."""
+    blocos = dividir_artigos(extrair_texto_planalto(
+        _com_marcacao_no_preambulo(html, "Revoga a Lei nº 8.666, de 1993.")))
+    assert pl.situacao_juridica(blocos) == "vigente"
+
+
+async def test_ingestao_grava_vigencia_declarada_no_extra(pipeline_mockado):
+    """Sem `extra.legal_status` o documento entra como 'vigencia_nao_verificada'
+    na governança — e o gate de situação jurídica o exclui da recuperação."""
+    from app.services.knowledge_governance import (
+        LEGAL_STATUS_VALUES,
+        inferir_situacao_juridica,
+    )
+    from app.models.rag import KnowledgeDoc
+
+    chamadas, _ = pipeline_mockado
+    await sl.executar_seed_legislacao(_FakeDB(), apenas="cdc")
+    extra = chamadas[-1]["extra"]
+    assert extra["legal_status"] == "vigente"
+    assert extra["legal_status"] in LEGAL_STATUS_VALUES
+    assert extra["legal_status_origem"] == "planalto:texto_compilado"
+    assert extra["legal_status_verificado_em"]
+
+    # ponta a ponta: a governança para de marcar o documento como não conferido
+    doc = KnowledgeDoc(titulo="x", categoria="legislacao", extra=extra, vigente=True)
+    situacao = inferir_situacao_juridica(doc)
+    assert situacao["code"] == "vigente"
+    assert situacao["permite_fundamentacao_atual"] is True
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # 5. Idempotência + versionamento + gate + unificação (Postgres, RUN_DB_TESTS=1)
 # ══════════════════════════════════════════════════════════════════════════
 

@@ -8,7 +8,10 @@ Fecha os bloqueadores P0 apontados na auditoria:
   * corpus FICTÍCIO (extra.ficticio=true) é excluído das buscas amplas e só
     entra com incluir_ficticio=True (geração de peça a partir de modelos);
   * reingerir a MESMA `chave_origem` com conteúdo novo cria nova versão vigente
-    sem colidir com o índice único parcial (antes: IntegrityError).
+    sem colidir com o índice único parcial (antes: IntegrityError);
+  * SITUAÇÃO JURÍDICA (Issue #636): norma REVOGADA nunca é recuperada (com ou
+    sem flag) e legislação com vigência não conferida segue
+    RAG_EXIGIR_VIGENCIA_VERIFICADA — sem alcançar o que não é legislação.
 
 Requer Postgres com pg_trgm + pgvector e migrations aplicadas. Roda só quando
 RUN_DB_TESTS=1 (job de CI `db-validation`); caso contrário, pula. Determinístico:
@@ -163,6 +166,84 @@ async def test_regime_estrito_exclui_documento_legado_sem_aprovacao():
         finally:
             await db.execute(text(
                 "DELETE FROM knowledge_docs WHERE titulo='LEGADO_SEM_CURADORIA'"))
+            await db.commit()
+
+
+async def test_norma_revogada_nao_e_recuperada(monkeypatch):
+    """Issue #636: curadoria e vigência são campos DISTINTOS — um documento
+    'aprovado' e revogado ao mesmo tempo não pode voltar como fundamentação."""
+    from app.core.database import AsyncSessionLocal
+    from app.services import ai_service
+    from app.services.ai_service import buscar_contexto_rag
+
+    # flag OFF de propósito: a exclusão do revogado NÃO depende dela
+    monkeypatch.setattr(ai_service.settings, "RAG_EXIGIR_VIGENCIA_VERIFICADA", False)
+    termo = f"zzrevog{uuid4().hex[:10]}"
+    async with AsyncSessionLocal() as db:
+        await _ins(db, titulo="VIG_VIGENTE", categoria="legislacao",
+                   conteudo=f"norma em vigor {termo}", chave_origem=f"v:{uuid4()}",
+                   extra={"rag_status": "aprovado", "legal_status": "vigente"})
+        await _ins(db, titulo="VIG_REVOGADA", categoria="legislacao",
+                   conteudo=f"norma revogada {termo}", chave_origem=f"rv:{uuid4()}",
+                   extra={"rag_status": "aprovado", "legal_status": "revogada"})
+        await _ins(db, titulo="VIG_REVOGADA_ALIAS", categoria="legislacao",
+                   conteudo=f"norma revogada alias {termo}", chave_origem=f"ra:{uuid4()}",
+                   extra={"rag_status": "aprovado", "situacao_normativa": " REVOGADA "})
+        await db.commit()
+        try:
+            res = await buscar_contexto_rag(db, termo, limite=20, modo_or=True)
+            titulos = {r["titulo"] for r in res}
+            assert "VIG_VIGENTE" in titulos, "norma vigente deveria ser recuperada"
+            assert "VIG_REVOGADA" not in titulos, "VAZAMENTO: norma revogada recuperada"
+            assert "VIG_REVOGADA_ALIAS" not in titulos, (
+                "VAZAMENTO: revogação declarada em situacao_normativa ignorada")
+        finally:
+            await db.execute(text("DELETE FROM knowledge_docs WHERE titulo LIKE 'VIG_%'"))
+            await db.commit()
+
+
+async def test_vigencia_nao_verificada_segue_a_flag_sem_esvaziar_a_base(monkeypatch):
+    """Com RAG_EXIGIR_VIGENCIA_VERIFICADA ligada, legislação sem vigência
+    declarada sai da recuperação; desligada, volta. Em NENHUM dos dois casos o
+    filtro alcança documento que não é legislação (a governança devolve
+    'nao_aplicavel' para esses, que permite fundamentação)."""
+    from app.core.database import AsyncSessionLocal
+    from app.services import ai_service
+    from app.services.ai_service import buscar_contexto_rag
+
+    termo = f"zzverif{uuid4().hex[:10]}"
+    async with AsyncSessionLocal() as db:
+        await _ins(db, titulo="VER_LEG_SEM_STATUS", categoria="legislacao",
+                   conteudo=f"norma sem vigencia declarada {termo}",
+                   chave_origem=f"ns:{uuid4()}", extra={"rag_status": "aprovado"})
+        await _ins(db, titulo="VER_LEG_DECLARADA", categoria="legislacao",
+                   conteudo=f"norma com vigencia declarada {termo}",
+                   chave_origem=f"cd:{uuid4()}",
+                   extra={"rag_status": "aprovado", "legal_status": "vigente"})
+        await _ins(db, titulo="VER_JURIS_COMUM", categoria="jurisprudencia",
+                   conteudo=f"acordao comum sem vigencia {termo}",
+                   chave_origem=f"jc:{uuid4()}", extra={"rag_status": "aprovado"})
+        await db.commit()
+        try:
+            monkeypatch.setattr(
+                ai_service.settings, "RAG_EXIGIR_VIGENCIA_VERIFICADA", True)
+            estrito = {r["titulo"] for r in
+                       await buscar_contexto_rag(db, termo, limite=20, modo_or=True)}
+            assert "VER_LEG_SEM_STATUS" not in estrito, (
+                "VAZAMENTO: legislação com vigência não conferida recuperada")
+            assert "VER_LEG_DECLARADA" in estrito
+            assert "VER_JURIS_COMUM" in estrito, (
+                "efeito colateral: o filtro esvaziou conteúdo que não é legislação")
+
+            monkeypatch.setattr(
+                ai_service.settings, "RAG_EXIGIR_VIGENCIA_VERIFICADA", False)
+            frouxo = {r["titulo"] for r in
+                      await buscar_contexto_rag(db, termo, limite=20, modo_or=True)}
+            assert "VER_LEG_SEM_STATUS" in frouxo, (
+                "com a flag desligada o acervo não conferido deve voltar")
+            assert {"VER_LEG_DECLARADA", "VER_JURIS_COMUM"} <= frouxo
+        finally:
+            await db.execute(text("DELETE FROM knowledge_docs WHERE titulo LIKE 'VER_%'"))
             await db.commit()
 
 

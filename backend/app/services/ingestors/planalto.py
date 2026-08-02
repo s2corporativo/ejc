@@ -12,7 +12,13 @@
 #     "Art. N [· Art. M ...] — <lei>", compatível com o lookup ILIKE de
 #     citation_check._existe_artigo (inclusive grafia oficial "Art. 10.");
 #   • upsert idempotente pelo pipeline oficial (dedup por chave_origem, hash
-#     sobre `conteudo`, versionamento migration 068, chunks pré-computados).
+#     sobre `conteudo`, versionamento migration 068, chunks pré-computados);
+#   • vigência DECLARADA pela fonte gravada em `extra.legal_status`
+#     (Issue #636): sem isso o documento entra como 'vigencia_nao_verificada'
+#     na governança e o gate de situação jurídica do RAG o exclui. Ver
+#     `situacao_juridica` — a marcação vem do PREÂMBULO do texto compilado.
+#     Como o upsert mescla `extra` mesmo no atalho "inalterado", UMA execução
+#     do job/seed já regrava a vigência do acervo existente (sem nova versão).
 #
 # Migração de chunking (deploy único): docs vigentes gravados pelo formato
 # antigo (extra sem divisao='por_artigo') têm o MESMO conteúdo (mesmo hash),
@@ -29,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -215,6 +222,42 @@ def extrair_texto_planalto(html: str) -> str:
     return normalizar("\n".join(linhas))
 
 
+# Revogação do DIPLOMA INTEIRO, como o Planalto a publica no cabeçalho/ementa
+# do texto compilado: "(Revogada pela Lei nº 14.133, de 2021)", "(Revogado pelo
+# Decreto nº ...)", "Revogada a partir de ...", "Vigência encerrada".
+# É a forma PASSIVA — "Revoga a Lei nº X" (a norma que revoga OUTRA) não casa,
+# porque exige o particípio seguido de agente/termo inicial.
+_RE_DIPLOMA_REVOGADO = re.compile(
+    r"(?:revogad[oa]s?\s+(?:integralmente\s+|expressamente\s+|tacitamente\s+|"
+    r"parcialmente\s+)?(?:pel[ao]s?\b|a\s+partir\b|em\s+\d)"
+    r"|vig[êe]ncia\s+encerrada)",
+    re.IGNORECASE,
+)
+
+
+def situacao_juridica(blocos: list[tuple[str | None, str]]) -> str:
+    """Vigência DECLARADA PELA FONTE → valor de `extra.legal_status`
+    (vocabulário de knowledge_governance.LEGAL_STATUS_VALUES).
+
+    O que o Planalto entrega: as URLs do CATALOGO apontam para o texto
+    COMPILADO, que é a consolidação oficial da redação EM VIGOR, e o próprio
+    Planalto anota a revogação do diploma inteiro no cabeçalho/ementa (antes do
+    Art. 1º). É essa marcação — e só ela — que este classificador lê:
+
+      • marcação de revogação no PREÂMBULO → 'revogada';
+      • ausência dela numa página compilada que passou na validação estrutural
+        de `preparar_diploma` (tamanho mínimo + artigos reconhecidos) →
+        'vigente', que é o que a fonte publica ao manter o texto consolidado.
+
+    O escopo é deliberadamente o preâmbulo: o corpo do compilado tem anotações
+    "(Revogado ...)" de ARTIGOS individuais (preservadas por
+    `extrair_texto_planalto`), e lê-las como revogação do diploma marcaria todo
+    código como revogado.
+    """
+    preambulo = next((corpo for rot, corpo in blocos if rot is None), "")
+    return "revogada" if _RE_DIPLOMA_REVOGADO.search(preambulo) else "vigente"
+
+
 def _rotulo(m: re.Match) -> str:
     """Rótulo canônico do artigo ("Art. 6", "Art. 19-A", "Art. 1.022") —
     SEM ordinal, para casar com o ILIKE '%Art. N %' de _existe_artigo."""
@@ -311,7 +354,8 @@ def preparar_diploma(diploma: dict, html: str) -> dict:
     if artigos < MIN_ARTIGOS:
         raise ValueError(f"apenas {artigos} artigos encontrados — parser não reconheceu a página")
     chunks = montar_chunks(diploma["titulo"], blocos)
-    return {"texto": texto, "blocos": blocos, "chunks": chunks, "artigos": artigos}
+    return {"texto": texto, "blocos": blocos, "chunks": chunks, "artigos": artigos,
+            "legal_status": situacao_juridica(blocos)}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -385,6 +429,13 @@ async def ingerir_diploma(
             # Curadoria (governança RAG da main): fonte oficial nasce aprovada
             # e tipada — nunca entra em quarentena.
             "rag_status": "aprovado", "tipo_fonte": "legislacao_oficial",
+            # Vigência DECLARADA PELA FONTE (Issue #636): sem isto o documento
+            # entrava como 'vigencia_nao_verificada' na governança e — com o
+            # gate de situação jurídica — sairia da recuperação. `*_origem`
+            # registra DE ONDE veio a marcação, para auditoria/curadoria.
+            "legal_status": prep["legal_status"],
+            "legal_status_origem": "planalto:texto_compilado",
+            "legal_status_verificado_em": datetime.now(timezone.utc).isoformat(),
         },
         confianca="alta",              # fonte oficial — texto de lei compilado
         embutir_vetores=embutir_vetores,

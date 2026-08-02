@@ -11,6 +11,7 @@ def test_defaults_sao_estritos_e_modelos_suportados():
 
     settings = get_settings()
     assert settings.RAG_EXIGIR_APROVADO is True
+    assert settings.RAG_EXIGIR_VIGENCIA_VERIFICADA is True   # Issue #636
     assert settings.RAG_RERANK_ENABLED is False
     ok, detalhe = validar_modelo_local()
     assert ok, detalhe
