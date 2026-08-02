@@ -99,6 +99,9 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
+      # FastEmbed usa /tmp/fastembed_cache por default; volume evita baixar
+      # novamente o modelo 1024d após recreate/deploy.
+      - fastembed_cache:/tmp/fastembed_cache
       # Backup offsite via rclone (PR #480): o upload roda DENTRO do container,
       # então a config do rclone (token OAuth) do host é montada aqui.
       # GRAVÁVEL de propósito: o OneDrive renova o access token (~1h) e o
@@ -154,6 +157,7 @@ services:
       MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
     volumes:
       - uploads_data:/app/uploads
+      - fastembed_cache:/tmp/fastembed_cache
     depends_on:
       db:
         condition: service_healthy
@@ -338,6 +342,7 @@ volumes:
   postgres_data:
   uploads_data:
   backups_data:
+  fastembed_cache:
   redis_data:
   langfuse_db_data:
   ollama_models:
