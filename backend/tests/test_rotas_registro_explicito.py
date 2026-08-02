@@ -56,6 +56,13 @@ ADICOES_INTENCIONAIS = {
     ("/api/diagnostico/integridade", "GET"),
     # PR #547: decisão explícita de publicar/despublicar arquivo no Data Room.
     ("/api/data-rooms/{room_id}/arquivos/{arquivo_id}/publicacao", "PATCH"),
+    # PR #622 (Bloco 2): conferência e assinatura da peça em um ato só, no lugar
+    # da cadeia validar → marcar HITL → aprovar. Não substitui os endpoints
+    # antigos, que o frontend ainda usa.
+    ("/api/legal-docs/{doc_id}/conferir-e-assinar", "POST"),
+    # PR #622 (Bloco 2): PDF de LEITURA da minuta, sem gate de protocolo — o
+    # advogado precisa ler antes de assinar. O /pdf de protocolo segue intacto.
+    ("/api/legal-docs/{doc_id}/pdf-minuta", "GET"),
 }
 
 
