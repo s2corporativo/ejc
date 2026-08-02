@@ -43,17 +43,18 @@ async def _dispose_engine_apos_teste(monkeypatch):
     await engine.dispose()
 
 
-async def _ins(db, *, titulo, categoria, conteudo, chave_origem, fonte=None, extra=None):
+async def _ins(db, *, titulo, categoria, conteudo, chave_origem, fonte=None, extra=None,
+               vigente=True):
     """Insere doc + 1 chunk textual (caminho ILIKE, sem embeddings)."""
     doc_id = str(uuid4())
     await db.execute(
         text(
             "INSERT INTO knowledge_docs (id, titulo, categoria, fonte, chave_origem, "
             "vigente, status_indexacao, extra) "
-            "VALUES (:id,:t,:c,:f,:k, true, 'indexado', CAST(:e AS jsonb))"
+            "VALUES (:id,:t,:c,:f,:k, :vig, 'indexado', CAST(:e AS jsonb))"
         ),
         {"id": doc_id, "t": titulo, "c": categoria, "f": fonte, "k": chave_origem,
-         "e": json.dumps(extra or {})},
+         "vig": vigente, "e": json.dumps(extra or {})},
     )
     await db.execute(
         text(
@@ -71,9 +72,14 @@ async def test_gate_bloqueado_e_pendente_nao_recuperados():
 
     termo = f"zzgate{uuid4().hex[:10]}"
     async with AsyncSessionLocal() as db:
+        # O documento de CONTROLE é legislação corretamente ingerida no mundo
+        # pós-Issue #636: aprovado na curadoria E com vigência lida da fonte.
+        # Sem `legal_status` ele sairia pelo gate de vigência, e este teste
+        # deixaria de medir o que se propõe (curadoria), medindo outra coisa.
         await _ins(db, titulo="GATE_OK", categoria="legislacao",
                    conteudo=f"norma valida {termo}", chave_origem=f"n:{uuid4()}",
-                   extra={"rag_status": "aprovado"})
+                   extra={"rag_status": "aprovado", "legal_status": "vigente",
+                          "legal_status_origem": "planalto:texto_compilado"})
         await _ins(db, titulo="GATE_BLOQUEADO", categoria="legislacao",
                    conteudo=f"norma bloqueada {termo}", chave_origem=f"b:{uuid4()}",
                    extra={"confidence_level": "bloqueado"})
@@ -247,6 +253,82 @@ async def test_vigencia_nao_verificada_segue_a_flag_sem_esvaziar_a_base(monkeypa
             await db.commit()
 
 
+async def test_proposicao_legislativa_fica_fora_por_decisao_e_nao_por_acidente():
+    """O recorte `categoria LIKE '%legisl%'` também alcança
+    `proposicao_legislativa` (ingestores da Câmara e do Senado), que NÃO grava
+    `legal_status`. A exclusão é INTENCIONAL e PERMANENTE — projeto em
+    tramitação não pode fundamentar peça como lei em vigor — e está registrada
+    no `.env.example` e no comentário do filtro. Este teste existe para que a
+    decisão fique medida: se alguém trocar o recorte por uma lista fechada de
+    categorias, a proposição volta ao RAG e o teste avisa."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.ai_service import buscar_contexto_rag
+
+    termo = f"zzprop{uuid4().hex[:10]}"
+    async with AsyncSessionLocal() as db:
+        await _ins(db, titulo="PROP_TRAMITACAO", categoria="proposicao_legislativa",
+                   conteudo=f"projeto de lei em tramitacao {termo}",
+                   chave_origem=f"pl:{uuid4()}", extra={"rag_status": "aprovado"})
+        await _ins(db, titulo="PROP_JURIS_CONTROLE", categoria="jurisprudencia",
+                   conteudo=f"acordao de controle {termo}",
+                   chave_origem=f"jx:{uuid4()}", extra={"rag_status": "aprovado"})
+        await db.commit()
+        try:
+            titulos = {r["titulo"] for r in
+                       await buscar_contexto_rag(db, termo, limite=20, modo_or=True)}
+            assert "PROP_TRAMITACAO" not in titulos, (
+                "proposição em tramitação não é lei vigente e não pode voltar "
+                "como fundamentação")
+            assert "PROP_JURIS_CONTROLE" in titulos, (
+                "o recorte vazou para fora da faixa de legislação")
+        finally:
+            await db.execute(text("DELETE FROM knowledge_docs WHERE titulo LIKE 'PROP_%'"))
+            await db.commit()
+
+
+async def test_versao_historica_de_legislacao_nao_e_tratada_como_nao_verificada():
+    """`inferir_situacao_juridica` testa `vigente` ANTES do extra e devolve
+    'historica' — situação DECLARADA — para qualquer versão não vigente. O
+    espelho SQL precisa reproduzir esse ramo: sem isso, o acervo histórico de
+    legislação sem `legal_status` sumia, e com ele o aviso "possivelmente
+    desatualizada" de `_artigo_superado`/`_sumula_superada`, que consultam
+    `vigente = FALSE` justamente para produzi-lo."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.ai_service import buscar_contexto_rag
+    from app.services.knowledge_governance import inferir_situacao_juridica
+    from app.models.rag import KnowledgeDoc
+
+    # o que a governança diz sobre este documento — a referência do espelho
+    situacao = inferir_situacao_juridica(
+        KnowledgeDoc(titulo="x", categoria="legislacao", extra={}, vigente=False))
+    assert situacao["code"] == "historica"
+
+    termo = f"zzhist{uuid4().hex[:10]}"
+    async with AsyncSessionLocal() as db:
+        await _ins(db, titulo="HIST_LEG_SEM_STATUS", categoria="legislacao",
+                   conteudo=f"redacao anterior da norma {termo}",
+                   chave_origem=f"h:{uuid4()}", extra={"rag_status": "aprovado"},
+                   vigente=False)
+        await _ins(db, titulo="HIST_LEG_REVOGADA", categoria="legislacao",
+                   conteudo=f"redacao anterior de norma revogada {termo}",
+                   chave_origem=f"hr:{uuid4()}", vigente=False,
+                   extra={"rag_status": "aprovado", "legal_status": "revogada"})
+        await db.commit()
+        try:
+            titulos = {r["titulo"] for r in await buscar_contexto_rag(
+                db, termo, limite=20, modo_or=True, incluir_historico=True)}
+            assert "HIST_LEG_SEM_STATUS" in titulos, (
+                "versão histórica é 'historica' na governança, não "
+                "'vigencia_nao_verificada' — o gate de vigência não pode "
+                "removê-la da auditoria de citações antigas")
+            assert "HIST_LEG_REVOGADA" not in titulos, (
+                "VAZAMENTO: revogação declarada vale também no histórico — o "
+                "filtro do revogado lê o extra INDEPENDENTE de kd.vigente")
+        finally:
+            await db.execute(text("DELETE FROM knowledge_docs WHERE titulo LIKE 'HIST_%'"))
+            await db.commit()
+
+
 async def test_verificador_citacao_usa_mesmos_gates_do_rag():
     from app.core.database import AsyncSessionLocal
     from app.services.citation_check import _existe_sumula
@@ -268,6 +350,70 @@ async def test_verificador_citacao_usa_mesmos_gates_do_rag():
             await db.execute(text(
                 "DELETE FROM knowledge_docs WHERE chave_origem IN "
                 "('sumula:stj:997','sumula:stj:998')"))
+            await db.commit()
+
+
+async def test_refeed_do_ingestor_nao_reverte_vigencia_decidida_por_curador():
+    """Review de segurança do PR #642, provado no banco: o curador marca o
+    diploma como 'revogada' no painel; o job semanal do Planalto reingere o
+    MESMO conteúdo (atalho 'inalterado', que também mescla `extra`) trazendo
+    'vigente'. A decisão humana tem de sobreviver — senão a norma revogada volta
+    à recuperação sozinha, com `governance_updated_by` ainda apontando para o
+    curador, isto é, PARECENDO decisão dele."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.ingestion_service import upsert_documento
+
+    k = f"lei:vigencia:{uuid4()}"
+    txt = ("Texto compilado da norma de teste, com tamanho suficiente para "
+           "ultrapassar o minimo de cinquenta caracteres exigido pelo upsert.")
+    extra_ingestor = {
+        "rag_status": "aprovado",
+        "legal_status": "vigente",
+        "legal_status_origem": "planalto:texto_compilado",
+        "legal_status_inferido_em": "2026-08-02T00:00:00+00:00",
+    }
+    async with AsyncSessionLocal() as db:
+        await upsert_documento(db, titulo="VIGC v1", categoria="legislacao",
+                               conteudo=txt, fonte="http://x", chave_origem=k,
+                               extra=dict(extra_ingestor), embutir_vetores=False)
+        await db.commit()
+
+    # Curador decide pelo painel: mesma gravação de rag_governance.PATCH —
+    # carimba origem/conferência e REMOVE `legal_status_inferido_em`, que
+    # pertencia à leitura automática que ele acaba de substituir.
+    async with AsyncSessionLocal() as db:
+        await db.execute(text(
+            "UPDATE knowledge_docs SET extra = "
+            "(extra - 'legal_status_inferido_em') || CAST(:e AS jsonb) "
+            "WHERE chave_origem = :k"),
+            {"k": k, "e": json.dumps({
+                "legal_status": "revogada",
+                "legal_status_origem": "curadoria:u-teste",
+                "legal_status_verificado_em": "2026-08-02T12:00:00+00:00",
+                "governance_updated_by": "u-teste",
+            })})
+        await db.commit()
+
+    async with AsyncSessionLocal() as db:
+        await upsert_documento(db, titulo="VIGC v1", categoria="legislacao",
+                               conteudo=txt, fonte="http://x", chave_origem=k,
+                               extra=dict(extra_ingestor), embutir_vetores=False)
+        await db.commit()
+
+    async with AsyncSessionLocal() as db:
+        try:
+            extra = (await db.execute(text(
+                "SELECT extra FROM knowledge_docs WHERE chave_origem = :k"),
+                {"k": k})).scalar_one()
+            assert extra["legal_status"] == "revogada", (
+                "o re-feed reverteu a vigência decidida pelo curador")
+            assert extra["legal_status_origem"] == "curadoria:u-teste"
+            assert extra["legal_status_verificado_em"] == "2026-08-02T12:00:00+00:00"
+            assert "legal_status_inferido_em" not in extra, (
+                "carimbo do ingestor sobrando ao lado do status do curador — o "
+                "registro afirmaria uma leitura que não vale para este valor")
+        finally:
+            await db.execute(text("DELETE FROM knowledge_docs WHERE chave_origem=:k"), {"k": k})
             await db.commit()
 
 

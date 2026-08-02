@@ -629,7 +629,10 @@ class Settings(BaseSettings):
     # fundamentação jurídica não validada (mesma escolha de RAG_EXIGIR_APROVADO
     # e RAG_SUMULAS_QUARENTENA). O filtro é recortado por categoria de
     # legislação: súmulas, jurisprudência, doutrina, modelos e peças internas
-    # (para os quais a inferência devolve 'nao_aplicavel') seguem recuperáveis.
+    # (para os quais a inferência devolve 'nao_aplicavel') seguem recuperáveis,
+    # assim como as versões históricas (a inferência devolve 'historica').
+    # `proposicao_legislativa` cai no recorte e não grava vigência: fica fora de
+    # forma PERMANENTE e intencional — projeto em tramitação não é lei vigente.
     # Desligue (false) apenas como medida temporária, enquanto os ingestores não
     # tiverem propagado `extra.legal_status` para o acervo já existente.
     RAG_EXIGIR_VIGENCIA_VERIFICADA: bool = True

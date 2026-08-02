@@ -118,6 +118,16 @@ _FILTRO_FICTICIO_RAG = "AND COALESCE((kd.extra->>'ficticio')::boolean, false) = 
 # knowledge_docs.extra: MESMA precedência de chaves (legal_status →
 # situacao_normativa → vigencia_status) e MESMA normalização (minúsculas,
 # espaços colapsados, aliases com espaço/acento).
+#
+# Onde o espelho é DELIBERADAMENTE mais apertado que a inferência (e por quê):
+#   • a inferência devolve 'historica' — não 'revogada' — para qualquer versão
+#     não vigente, mesmo com extra.legal_status='revogada'. _FILTRO_REVOGADA_RAG
+#     lê o extra INDEPENDENTE de kd.vigente: uma norma declarada revogada não
+#     volta nem como histórico. Erro possível aqui só remove, nunca inclui.
+#   • a governança também nega fundamentação atual a 'suspensa' e
+#     'parcialmente_revogada'; o gate NÃO as exclui, porque continuam citáveis
+#     com ressalva (a peça precisa do texto para discutir a suspensão). Está
+#     registrado como follow-up conhecido no PR — assimetria intencional.
 _SQL_SITUACAO_JURIDICA = (
     "regexp_replace(lower(btrim(COALESCE("
     "NULLIF(btrim(kd.extra->>'legal_status'),''),"
@@ -139,13 +149,30 @@ _SQL_SITUACAO_DECLARADA = (
     "'historica')"
 )
 # Sob RAG_EXIGIR_VIGENCIA_VERIFICADA (default true), documento de LEGISLAÇÃO sem
-# vigência declarada pela fonte também sai da recuperação. O recorte por
-# categoria é essencial e reproduz a inferência: só quem tem 'legisl' na
-# categoria vira 'vigencia_nao_verificada'; para o restante do acervo a
-# inferência devolve 'nao_aplicavel' (que PERMITE fundamentação), então súmulas,
-# jurisprudência, doutrina, modelos e peças internas seguem recuperáveis.
+# vigência declarada pela fonte também sai da recuperação. Três recortes, e cada
+# um reproduz um ramo de inferir_situacao_juridica:
+#
+#   1. kd.vigente — a inferência testa `if not bool(doc.vigente)` ANTES de olhar
+#      o extra e devolve 'historica', que é situação DECLARADA. Sem esta guarda
+#      o espelho divergia do Python e sumia com o acervo histórico: era o que
+#      quebrava _artigo_superado/_sumula_superada em citation_check.py, que
+#      consultam `vigente = FALSE` de propósito para avisar "possivelmente
+#      desatualizada". Coluna NULL vale como não vigente, igual ao bool() do
+#      Python — daí o COALESCE(...,false).
+#   2. categoria LIKE '%legisl%' — só nessa faixa a inferência devolve
+#      'vigencia_nao_verificada'; para o restante do acervo devolve
+#      'nao_aplicavel' (que PERMITE fundamentação), então súmulas,
+#      jurisprudência, doutrina, modelos e peças internas seguem recuperáveis.
+#      ATENÇÃO: o LIKE também alcança 'proposicao_legislativa' (ingestors
+#      camara.py/senado.py), que NÃO grava legal_status. A exclusão desse corpus
+#      é INTENCIONAL e permanente, não transitória: proposição é projeto em
+#      tramitação e não pode fundamentar peça como se fosse lei em vigor. Se um
+#      dia proposição precisar voltar, o caminho é categoria própria fora do
+#      recorte — não afrouxar o filtro.
+#   3. situação não declarada — mesma lista de valores da inferência.
 _FILTRO_VIGENCIA_VERIFICADA_RAG = (
-    "AND NOT (lower(COALESCE(kd.categoria,'')) LIKE '%legisl%' "
+    "AND NOT (COALESCE(kd.vigente, false) = true "
+    "AND lower(COALESCE(kd.categoria,'')) LIKE '%legisl%' "
     f"AND {_SQL_SITUACAO_JURIDICA} NOT IN {_SQL_SITUACAO_DECLARADA})"
 )
 

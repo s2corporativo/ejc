@@ -103,6 +103,91 @@ def test_filtro_de_vigencia_so_alcanca_legislacao():
     assert _FILTRO_VIGENCIA_VERIFICADA_RAG.startswith("AND NOT (")
 
 
+def test_filtro_de_vigencia_respeita_o_ramo_historico_da_inferencia():
+    """`inferir_situacao_juridica` testa `vigente` ANTES do extra e devolve
+    'historica' — situação DECLARADA — para toda versão não vigente. Sem essa
+    guarda no espelho SQL, o histórico de legislação sem `legal_status` sumia da
+    recuperação e levava junto o aviso 'possivelmente desatualizada', que
+    `_artigo_superado`/`_sumula_superada` produzem consultando `vigente=FALSE`.
+    Coluna NULL vale como não vigente, igual ao `bool()` do Python."""
+    from app.models.rag import KnowledgeDoc
+    from app.services.knowledge_governance import inferir_situacao_juridica
+
+    doc = KnowledgeDoc(titulo="x", categoria="legislacao", extra={}, vigente=False)
+    assert inferir_situacao_juridica(doc)["code"] == "historica"
+    assert "COALESCE(kd.vigente, false) = true" in _FILTRO_VIGENCIA_VERIFICADA_RAG
+
+
+def test_recorte_por_categoria_exclui_proposicao_por_decisao_registrada():
+    """`LIKE '%legisl%'` alcança também `proposicao_legislativa` (ingestores da
+    Câmara e do Senado), que não grava vigência. A exclusão é INTENCIONAL e
+    PERMANENTE — proposição é projeto em tramitação, não lei em vigor — e por
+    isso precisa estar escrita onde quem opera a flag vai ler."""
+    from pathlib import Path
+
+    import app.services.ai_service as mod
+
+    fonte = Path(mod.__file__).read_text(encoding="utf-8")
+    assert "proposicao_legislativa" in fonte, (
+        "a captura de proposição pelo recorte precisa estar documentada no "
+        "comentário do filtro, não descoberta em produção")
+    env = Path(__file__).resolve().parents[2] / ".env.example"   # tests → backend → raiz
+    assert "proposicao_legislativa" in env.read_text(encoding="utf-8"), (
+        "quem liga/desliga a flag precisa saber que a exclusão da proposição é "
+        "permanente e não se resolve reingerindo")
+
+
+# ── 3b. Vigência de CURADOR sobrevive ao re-feed do ingestor ──────────────────
+
+def test_decisao_de_curadoria_sobre_vigencia_nao_e_revertida_pelo_ingestor():
+    """Review de segurança do PR #642: o job semanal do Planalto reescreve
+    `legal_status` a cada execução (o merge do upsert deixa o extra do ingestor
+    vencer, inclusive pelo atalho 'inalterado'). Um diploma marcado 'revogada'
+    no painel voltaria sozinho a 'vigente' — e, como `governance_updated_by`
+    continua apontando para o curador, o estado revertido ainda PARECERIA
+    decisão humana."""
+    from app.services.ingestion_service import _vigencia_de_curadoria
+
+    assert _vigencia_de_curadoria({"legal_status": "revogada"}) is True
+    assert _vigencia_de_curadoria(
+        {"legal_status": "revogada", "legal_status_origem": "curadoria:u-1"}) is True
+
+
+def test_leitura_de_ingestor_nao_se_disfarca_de_curadoria():
+    """O que o ingestor gravou é RE-gravável pelo ingestor: a preservação vale
+    só para decisão humana, senão a primeira leitura automática congelaria o
+    documento e nenhuma reingestão poderia corrigi-la."""
+    from app.services.ingestion_service import _vigencia_de_curadoria
+
+    for origem in ("planalto:texto_compilado", "lexml:registro"):
+        assert _vigencia_de_curadoria(
+            {"legal_status": "vigente", "legal_status_origem": origem}) is False
+
+
+def test_vigencia_nao_verificada_nao_conta_como_decisao():
+    """`knowledge_autoapproval` grava 'vigencia_nao_verificada' por setdefault:
+    é a AUSÊNCIA de decisão. Tratá-la como curadoria prenderia o documento fora
+    da recuperação para sempre, já que nenhum re-feed poderia mais corrigi-lo."""
+    from app.services.ingestion_service import _vigencia_de_curadoria
+
+    assert _vigencia_de_curadoria({"legal_status": "vigencia_nao_verificada"}) is False
+    assert _vigencia_de_curadoria({}) is False
+
+
+def test_painel_de_governanca_carimba_a_origem_da_decisao():
+    """Sem o carimbo, `upsert_documento` não distingue a decisão do curador da
+    leitura do ingestor — e a preservação acima não teria como funcionar."""
+    import inspect
+
+    from app.routers import rag_governance
+    from app.services.ingestion_service import ORIGEM_VIGENCIA_CURADORIA
+
+    fonte = inspect.getsource(rag_governance.atualizar_governanca_documento)
+    assert "ORIGEM_VIGENCIA_CURADORIA" in fonte
+    assert 'if "legal_status" in values' in fonte
+    assert ORIGEM_VIGENCIA_CURADORIA == "curadoria"
+
+
 def test_situacao_declarada_espelha_o_vocabulario_da_governanca():
     """O conjunto reconhecido no SQL não pode ser MAIOR que o da inferência —
     senão o gate deixaria passar como declarado algo que a governança considera

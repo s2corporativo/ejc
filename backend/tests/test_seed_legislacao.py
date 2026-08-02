@@ -335,10 +335,16 @@ def _com_marcacao_no_preambulo(html: str, marcacao: str) -> str:
     return html.replace(ancora, f"<p>{marcacao}</p>\n{ancora}", 1)
 
 
-def test_texto_compilado_sem_marcacao_declara_vigente(blocos):
-    """Ausência de marcação de revogação no preâmbulo de um texto COMPILADO que
-    passou na validação estrutural = o que a fonte publica como em vigor."""
-    assert pl.situacao_juridica(blocos) == "vigente"
+def test_texto_compilado_sem_marcacao_infere_vigente(blocos):
+    """Ausência de marcação de revogação num preâmbulo IDENTIFICÁVEL de texto
+    COMPILADO = o que a fonte publica como em vigor. É inferência por AUSÊNCIA,
+    então o carimbo é `legal_status_inferido_em` — não pode se apresentar como
+    conferência que não houve."""
+    vigencia = pl.situacao_juridica(blocos)
+    assert vigencia["legal_status"] == "vigente"
+    assert vigencia["legal_status_origem"] == "planalto:texto_compilado"
+    assert vigencia["legal_status_inferido_em"]
+    assert "legal_status_verificado_em" not in vigencia
 
 
 def test_anotacao_de_artigo_revogado_nao_revoga_o_diploma(texto, blocos):
@@ -346,7 +352,7 @@ def test_anotacao_de_artigo_revogado_nao_revoga_o_diploma(texto, blocos):
     fixture). Ler isso como revogação do diploma marcaria todo código como
     revogado — por isso o escopo é o PREÂMBULO."""
     assert "(Revogado pela Lei nº 99.999, de 2020)" in texto
-    assert pl.situacao_juridica(blocos) == "vigente"
+    assert pl.situacao_juridica(blocos)["legal_status"] == "vigente"
 
 
 @pytest.mark.parametrize("marcacao", [
@@ -354,18 +360,41 @@ def test_anotacao_de_artigo_revogado_nao_revoga_o_diploma(texto, blocos):
     "(Revogado pelo Decreto nº 11.000, de 2022)",
     "Revogada a partir de 1º de janeiro de 2024",
     "Vigência encerrada",
+    # anotação SOLTA, sem agente: no preâmbulo só pode ser do próprio diploma
+    "(Revogada)",
 ])
 def test_marcacao_no_preambulo_declara_revogada(html, marcacao):
     blocos = dividir_artigos(
         extrair_texto_planalto(_com_marcacao_no_preambulo(html, marcacao)))
-    assert pl.situacao_juridica(blocos) == "revogada"
+    vigencia = pl.situacao_juridica(blocos)
+    assert vigencia["legal_status"] == "revogada"
+    # leitura POSITIVA da fonte: aqui o carimbo de conferência é honesto
+    assert vigencia["legal_status_verificado_em"]
+    assert "legal_status_inferido_em" not in vigencia
 
 
 def test_ementa_que_revoga_outra_norma_nao_se_declara_revogada(html):
     """Forma ATIVA ('Revoga a Lei X') é a norma revogando OUTRA — não casa."""
     blocos = dividir_artigos(extrair_texto_planalto(
         _com_marcacao_no_preambulo(html, "Revoga a Lei nº 8.666, de 1993.")))
-    assert pl.situacao_juridica(blocos) == "vigente"
+    assert pl.situacao_juridica(blocos)["legal_status"] == "vigente"
+
+
+@pytest.mark.parametrize("blocos_sem_preambulo", [
+    # página que começa direto no Art. 1º: o primeiro bloco rotulo=None é o
+    # trecho FINAL (assinaturas), e procurar a marcação nele é olhar o lugar
+    # errado — não é preâmbulo.
+    [("Art. 1", "Art. 1º Disposição qualquer."), (None, "Brasília, 11 de setembro.")],
+    # bloco de preâmbulo residual/vazio: buscar revogação nele não significa nada
+    [(None, "LEI Nº 1."), ("Art. 1", "Art. 1º Disposição qualquer.")],
+    [],
+])
+def test_sem_preambulo_identificavel_nao_declara_vigencia(blocos_sem_preambulo):
+    """FAIL-CLOSED (review de segurança do PR #642): antes, falha de detecção
+    caía em 'vigente' — uma página com markup diferente DECLARAVA vigência que
+    ninguém leu. Agora não declara nada, a chave é omitida, a governança marca
+    'vigencia_nao_verificada' e o gate exclui até que alguém confira."""
+    assert pl.situacao_juridica(blocos_sem_preambulo) == {}
 
 
 async def test_ingestao_grava_vigencia_declarada_no_extra(pipeline_mockado):
@@ -383,7 +412,7 @@ async def test_ingestao_grava_vigencia_declarada_no_extra(pipeline_mockado):
     assert extra["legal_status"] == "vigente"
     assert extra["legal_status"] in LEGAL_STATUS_VALUES
     assert extra["legal_status_origem"] == "planalto:texto_compilado"
-    assert extra["legal_status_verificado_em"]
+    assert extra["legal_status_inferido_em"]
 
     # ponta a ponta: a governança para de marcar o documento como não conferido
     doc = KnowledgeDoc(titulo="x", categoria="legislacao", extra=extra, vigente=True)
