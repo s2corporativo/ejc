@@ -22,7 +22,7 @@ from app.models.case import Case
 from app.models.document import Document
 from app.models.user import User
 from app.models.legal_doc import LegalDoc, PecaStatus
-from app.models.ai_log import AILog
+from app.models.ai_log import AILog, AIStatusHITL
 from app.models.rag import KnowledgeDoc
 from app.models.audit_log import criar_audit_log
 from app.services.case_intel import indexar_peca_rag
@@ -666,6 +666,140 @@ async def aprovar(
     return d
 
 
+@router.post("/{doc_id}/conferir-e-assinar")
+async def conferir_e_assinar(
+    doc_id: str, payload: LegalDocAprovacao,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """UM ato de conferência e assinatura, no lugar de quatro chamadas.
+
+    Antes era preciso encadear, à mão, `POST /validar` → `PATCH /ai/logs/{id}/hitl`
+    → `PATCH /aprovar` → `GET /pdf`. Quatro chamadas para um único ato profissional
+    — o advogado conferir a peça e assumi-la como sua. Cada elo era um ponto de
+    parada onde o fluxo morria, e o segundo (marcar o log de IA como revisado) não
+    tem significado nenhum para quem advoga.
+
+    O que este endpoint NÃO faz: dispensar a conferência. Ele consolida ETAPAS,
+    não responsabilidade. Continuam obrigatórios, e todos registrados:
+
+      · observações de revisão quando a peça é de IA (o que o advogado conferiu);
+      · validação jurídica com score mínimo e veredito não bloqueante;
+      · auditoria de jurisprudência citada;
+      · quem assinou, quando, e sobre qual versão do conteúdo.
+
+    Isso é o que evidencia a diligência do advogado sob a Lei 8.906/94, art. 32 —
+    consolidar cliques é o objetivo; apagar o rastro não é.
+
+    Tudo em UMA transação: ou a peça sai assinada e com trilha completa, ou nada
+    é gravado. O padrão oposto — gravar em dois lugares sem transação — é a classe
+    de defeito que a auditoria encontrou repetida cinco vezes neste código.
+    """
+    d = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        ).with_for_update()
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+
+    escopo_cli = None
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+        from app.services.ai_service import _escopo_cliente_do_caso
+        escopo_cli = await _escopo_cliente_do_caso(db, d.case_id)
+
+    observacoes = (payload.observacoes or "").strip()
+    if d.ai_generated and not observacoes:
+        raise HTTPException(
+            status_code=422,
+            detail="Peças geradas por IA exigem observações de revisão humana",
+        )
+
+    # 1) Validação jurídica da versão CORRENTE. Se já existe uma válida para este
+    #    conteúdo, é reaproveitada — reconferir texto idêntico só queima tempo e
+    #    tokens. Qualquer edição muda o hash e força validação nova (a trigger da
+    #    migration 123 invalida a anterior).
+    validacao = await _ultima_validacao_peca(db, d)
+    validou_agora = False
+    if validacao.get("ai_log_id") is None:
+        payload_validacao = ValidacaoInput(
+            rascunho=d.conteudo,
+            tipo_documento=_status_value(d.tipo_peca) or "peca_juridica",
+            area=None,
+            rito=None,
+            fase="fluxo_peca_pre_finalizacao",
+            documentos=[
+                f"LEGAL_DOC_ID:{d.id}",
+                f"TITULO:{d.titulo}",
+                f"STATUS_ATUAL:{_status_value(d.status)}",
+            ],
+            case_id=d.case_id,
+            nivel_inteligencia="alto",
+        )
+        resultado = await validar_rascunho_juridico(
+            payload_validacao, db=db, user_id=cu.id, scope_client_id=escopo_cli
+        )
+        validou_agora = True
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "VALIDACAO_JURIDICA", "legal_docs", doc_id,
+            detalhes=f"score={resultado.get('score_confianca')} (conferir-e-assinar)",
+        )
+        validacao = await _ultima_validacao_peca(db, d)
+
+    # 2) A conferência humana do log de IA deixa de ser uma chamada separada: quem
+    #    assina a peça está, no mesmo ato, declarando que reviu a análise.
+    ai_log_id = validacao.get("ai_log_id")
+    if ai_log_id and validacao.get("hitl") not in ("revisado", "aplicado"):
+        log = (await db.execute(
+            select(AILog).where(AILog.id == ai_log_id).with_for_update()
+        )).scalar_one_or_none()
+        if log is not None:
+            log.status_hitl = AIStatusHITL.revisado
+            await criar_audit_log(
+                db, cu.id, cu.role.value, "REVISAO_HITL", "ai_logs", ai_log_id,
+                detalhes=f"revisado junto da assinatura da peca {doc_id}",
+            )
+            await db.flush()
+            validacao = await _ultima_validacao_peca(db, d)
+
+    # 3) Gates de qualidade — os MESMOS do /aprovar. Se a validação reprovar, a
+    #    transação inteira é abortada: nada de peça meio-assinada.
+    novo_status = PecaStatus.aprovada.value
+    await _bloquear_sem_validacao(db, d, novo_status)
+    await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
+
+    # 4) Assinatura.
+    status_antigo = _status_value(d.status)
+    d.human_reviewed = True
+    d.revisor_id = cu.id
+    d.revisado_em = datetime.now(timezone.utc)
+    d.notas_revisao = observacoes or d.notas_revisao
+    d.status = PecaStatus.aprovada
+
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "APROVAR_HITL", "legal_docs", doc_id,
+        detalhes=(
+            f"conferir-e-assinar; ai_generated={d.ai_generated}; "
+            f"validou_agora={validou_agora}; ai_log_id={ai_log_id}"
+        ),
+    )
+    await db.commit()
+    await db.refresh(d)
+
+    background.add_task(indexar_peca_rag, doc_id)
+    if status_antigo not in _STATUS_PRE_PROTOCOLO and d.case_id:
+        background.add_task(_bg_checklist_protocolo, d.case_id, cu.id)
+
+    return {
+        "peca": LegalDocDetail.model_validate(d).model_dump(mode="json"),
+        "validacao": validacao,
+        "validou_agora": validou_agora,
+        "pdf_protocolo": f"/legal-docs/{doc_id}/pdf",
+    }
+
+
 @router.patch("/{doc_id}/protocolo", response_model=LegalDocDetail)
 async def registrar_protocolo(
     doc_id: str, payload: LegalDocProtocolo,
@@ -851,6 +985,59 @@ async def _gates_exportacao_protocolo(db: AsyncSession, d: LegalDoc) -> dict:
         "validacao": validacao,
         "auditoria_jurisprudencia": auditoria_juris,
     }
+
+
+@router.get("/{doc_id}/pdf-minuta")
+async def exportar_pdf_minuta(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """PDF de LEITURA da minuta — sem gate de protocolo.
+
+    Por que existe: o advogado precisa LER a peça inteira, em papel ou em tela
+    cheia, ANTES de assinar. Até aqui o único PDF era o de protocolo, atrás dos
+    gates de validação — ou seja, era preciso aprovar para poder ler, o que
+    inverte a ordem do ato profissional. O DOCX já permitia isso; o PDF não.
+
+    O que este PDF NÃO é: documento de protocolo. Sai com `pronto_protocolo=False`
+    (marca de rascunho controlado) e, quando a peça é de IA e ainda não foi
+    conferida, com a marca "MINUTA GERADA POR IA" embutida — a salvaguarda viaja
+    com o arquivo baixado, fora do sistema.
+
+    Gate mantido: acesso ao caso. Quem não pode ver o caso não lê a minuta.
+    """
+    d = (await db.execute(
+        select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+
+    titulo = padronizar_documento_juridico(d.titulo)
+    conteudo = padronizar_documento_juridico(d.conteudo)
+
+    try:
+        pdf_bytes = await peca_para_pdf_async(
+            titulo, conteudo, pronto_protocolo=False,
+            codigo_peca=d.codigo_peca, versao=d.versao,
+            status=d.status, revisado_em=d.revisado_em,
+            minuta_ia=bool(d.ai_generated and not d.human_reviewed),
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    await criar_audit_log(db, cu.id, cu.role.value, "DOWNLOAD", "legal_docs",
+                          doc_id, detalhes="Exportacao PDF minuta (leitura)")
+    await db.commit()
+
+    safe_name = _slug_arquivo(titulo, fallback="minuta")
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}-minuta.pdf"'},
+    )
 
 
 @router.get("/{doc_id}/pdf")

@@ -89,7 +89,14 @@ const TIPOS = [
 // rascunho → em_revisao → corrigida → aprovada → final → protocolada.
 // NÃO inventar status aqui — o backend rejeita valores fora do enum.
 const FILA: { key: string; label: string; desc: string }[] = [
-  { key: "rascunho", label: "Rascunho", desc: "Em elaboração" },
+  // O valor `rascunho` é o enum do backend e não muda. O rótulo nomeia a AÇÃO
+  // pendente do advogado, não o grau de acabamento do texto — a peça já está
+  // escrita e o que falta é conferência e assinatura.
+  {
+    key: "rascunho",
+    label: "Minuta final",
+    desc: "Conferir e assinar",
+  },
   {
     key: "em_revisao",
     label: "Em revisão",
