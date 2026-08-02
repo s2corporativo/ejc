@@ -486,12 +486,19 @@ async def validar_rascunho_juridico(
     db: AsyncSession,
     user_id: str,
     scope_client_id: str | None = None,
+    commit: bool = True,
 ) -> dict:
     """Valida o rascunho e persiste vínculo estrutural quando for uma LegalDoc.
 
     O chamador já verifica ownership do `case_id`. Para peça jurídica, a linha é
     bloqueada com `FOR UPDATE` depois da chamada à IA: se o conteúdo mudou durante
     a validação, o log não é criado como atual.
+
+    `commit=False` troca o commit interno por `flush`: o AILog fica visível na
+    MESMA transação, mas quem decide commitar (ou abortar tudo) é o chamador —
+    necessário em fluxos com gates posteriores (ex.: conferir-e-assinar), onde
+    um commit intermediário soltaria o lock e deixaria estado parcial gravado
+    se um gate rejeitasse depois. O default preserva os chamadores existentes.
     """
     if len((payload.rascunho or "").strip()) < 100:
         raise ValueError("Rascunho muito curto para validacao juridica")
@@ -611,7 +618,10 @@ async def validar_rascunho_juridico(
         )
 
     db.add(log)
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
 
     return {
         "ai_log_id": log.id,
