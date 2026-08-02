@@ -135,14 +135,19 @@ async def ranking_por_area(db: AsyncSession, user: User) -> dict:
     )).all()
     area_map: dict[str, str] = {cid: area for cid, area in areas_rows}
 
-    # Casos sem área primária explícita → busca ramo do Case
+    # Casos sem área primária explícita → cai para a área do próprio Case.
+    # `Case.ramo` NÃO existe no modelo: a coluna é `Case.area` (ENUM CaseArea).
+    # Referenciar o atributo inexistente levantava AttributeError já na montagem
+    # do SELECT, e o handler global devolvia 500 em toda chamada de
+    # GET /analytics/roi-por-area — o caminho era percorrido sempre que houvesse
+    # ao menos um caso sem linha principal em `caso_areas` (o caso comum).
     sem_area = [cid for cid in case_ids if cid not in area_map]
     if sem_area:
         ramos = (await db.execute(
-            select(Case.id, Case.ramo).where(Case.id.in_(sem_area), Case.ramo.isnot(None))
+            select(Case.id, Case.area).where(Case.id.in_(sem_area), Case.area.isnot(None))
         )).all()
-        for cid, ramo in ramos:
-            area_map[cid] = ramo
+        for cid, area in ramos:
+            area_map[cid] = area.value if hasattr(area, "value") else area
 
     # Agrupa por área
     grupos: dict[str, dict] = defaultdict(lambda: {
