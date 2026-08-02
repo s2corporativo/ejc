@@ -174,6 +174,11 @@ export default function EntradaUnica() {
       if (status === 409) {
         // Achados do servidor viram blocos na tela (nunca toast de objeto
         // cru): a mensagem entra no banner e os checkboxes reaparecem.
+        // Chaves REAIS do detail do backend (paridade com a conversão da
+        // Sala Jurídica): alertas_conflito, clientes_possivelmente_duplicados
+        // e casos_ativos_do_cliente. Casos ativos entram na mesma lista de
+        // duplicidade — é o que faz o checkbox aparecer também para cliente
+        // EXISTENTE (sem isso o 409 virava beco sem saída).
         const detail =
           (err as { response?: { data?: { detail?: unknown } } }).response?.data
             ?.detail ?? {};
@@ -181,14 +186,51 @@ export default function EntradaUnica() {
           detail && typeof detail === "object"
             ? (detail as Record<string, unknown>)
             : {};
-        const alertas = Array.isArray(d.alertas)
-          ? d.alertas.map(textoDeAchado).filter(Boolean)
-          : [];
-        const dupes = Array.isArray(
-          (d.duplicados as { clientes?: unknown[] } | undefined)?.clientes,
+        const alertas = (
+          Array.isArray(d.alertas_conflito)
+            ? d.alertas_conflito
+            : Array.isArray(d.alertas)
+              ? d.alertas
+              : []
         )
-          ? ((d.duplicados as { clientes: unknown[] }).clientes as unknown[])
+          .map(textoDeAchado)
+          .filter(Boolean);
+        const clientesDup = Array.isArray(d.clientes_possivelmente_duplicados)
+          ? d.clientes_possivelmente_duplicados
+          : Array.isArray(
+                (d.duplicados as { clientes?: unknown[] } | undefined)
+                  ?.clientes,
+              )
+            ? ((d.duplicados as { clientes: unknown[] }).clientes as unknown[])
+            : [];
+        const casosAtivos = Array.isArray(d.casos_ativos_do_cliente)
+          ? d.casos_ativos_do_cliente
           : [];
+        const dupes = [
+          ...clientesDup.map((c) => ({
+            clientId:
+              typeof (c as { client_id?: unknown })?.client_id === "string"
+                ? ((c as { client_id: string }).client_id ?? null)
+                : typeof (c as { id?: unknown })?.id === "string"
+                  ? (c as { id: string }).id
+                  : null,
+            rotulo: textoDeAchado(c) || "Cliente semelhante encontrado",
+          })),
+          ...casosAtivos.map((c) => {
+            const o =
+              c && typeof c === "object" ? (c as Record<string, unknown>) : {};
+            const numero =
+              typeof o.numero_interno === "string" && o.numero_interno
+                ? `${o.numero_interno} · `
+                : "";
+            return {
+              clientId: null,
+              rotulo: `Caso ativo do cliente: ${numero}${
+                textoDeAchado(o.titulo) || "sem título"
+              }`,
+            };
+          }),
+        ];
         setProposta((atual) =>
           atual
             ? {
@@ -196,19 +238,7 @@ export default function EntradaUnica() {
                 conflitoAlertas: alertas.length
                   ? alertas
                   : atual.conflitoAlertas,
-                duplicados: dupes.length
-                  ? dupes.map((c) => ({
-                      clientId:
-                        typeof (c as { client_id?: unknown })?.client_id ===
-                        "string"
-                          ? ((c as { client_id: string }).client_id ?? null)
-                          : typeof (c as { id?: unknown })?.id === "string"
-                            ? (c as { id: string }).id
-                            : null,
-                      rotulo:
-                        textoDeAchado(c) || "Cliente semelhante encontrado",
-                    }))
-                  : atual.duplicados,
+                duplicados: dupes.length ? dupes : atual.duplicados,
                 conflictConfirmed: false,
                 duplicateConfirmed: false,
               }

@@ -132,8 +132,10 @@ export function Confirmacao({
     !AREAS_FALLBACK.some((a) => a.slug === proposta.area);
 
   const precisaConfirmarConflito = proposta.conflitoAlertas.length > 0;
-  const precisaConfirmarDuplicado =
-    proposta.duplicados.length > 0 && !proposta.clienteId;
+  // Vale TAMBÉM para cliente existente: o servidor devolve 409 com os casos
+  // ativos do cliente e exige reconhecimento explícito — restringir a
+  // !clienteId deixava o caminho do cliente recorrente num loop de 409.
+  const precisaConfirmarDuplicado = proposta.duplicados.length > 0;
 
   const podeCriar =
     proposta.confirmoRevisao &&
@@ -241,7 +243,16 @@ export function Confirmacao({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  onChange({ clienteId: null });
+                  // Limpa TODO o contexto do cliente anterior — manter o nome
+                  // criaria um homônimo num clique direto em "Criar caso".
+                  onChange({
+                    clienteId: null,
+                    clienteNome: "",
+                    clienteJaCadastrada: false,
+                    clienteCasosAnteriores: null,
+                    clienteConfianca: null,
+                    duplicateConfirmed: false,
+                  });
                   setBuscandoCliente(true);
                 }}
               >
@@ -288,7 +299,9 @@ export function Confirmacao({
           {proposta.duplicados.length > 0 && (
             <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
               <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-                Cliente possivelmente já cadastrado
+                {proposta.clienteId
+                  ? "Este cliente possui caso ativo — confira se não é o mesmo assunto"
+                  : "Cliente possivelmente já cadastrado"}
               </p>
               <ul className="mt-1 space-y-1">
                 {proposta.duplicados.map((dup, i) => (
@@ -324,7 +337,9 @@ export function Confirmacao({
                       onChange({ duplicateConfirmed: e.target.checked })
                     }
                   />
-                  Não é o mesmo cliente — cadastrar como novo
+                  {proposta.clienteId
+                    ? "Conferi os casos ativos e confirmo que este é um caso NOVO"
+                    : "Não é o mesmo cliente — cadastrar como novo"}
                 </label>
               )}
             </div>

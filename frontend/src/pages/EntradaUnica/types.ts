@@ -68,6 +68,9 @@ export const META_PADRAO: EntradaMeta = {
   maxLoteMb: 120,
 };
 
+/** Data ISO estrita (yyyy-mm-dd) — única forma aceita pelo PrazoEntrada. */
+export const EH_DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
@@ -86,8 +89,16 @@ function lista(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
-/** Normaliza confiança para 0-100 (aceita fração 0-1 ou percentual). */
+/** Normaliza confiança para 0-100 (aceita fração 0-1, percentual, ou os
+ * níveis textuais "alta"/"media"/"baixa" que o backend envia para cliente). */
 export function confiancaPct(v: unknown): number | null {
+  if (typeof v === "string") {
+    const nivel = v.trim().toLowerCase();
+    if (nivel === "alta") return 90;
+    if (nivel === "media" || nivel === "média") return 60;
+    if (nivel === "baixa") return 30;
+    return null;
+  }
   if (typeof v !== "number" || !Number.isFinite(v)) return null;
   const pct = v > 0 && v <= 1 ? v * 100 : v;
   return Math.round(Math.max(0, Math.min(100, pct)));
@@ -99,15 +110,22 @@ export function confiancaPct(v: unknown): number | null {
  */
 export function textoDeAchado(v: unknown): string {
   if (typeof v === "string") return v;
+  // Detail de 422 do FastAPI vem como ARRAY de {msg, loc, ...} — sem isto o
+  // toast virava "[object Object]".
+  if (Array.isArray(v)) {
+    return v.map(textoDeAchado).filter(Boolean).join("; ");
+  }
   if (v && typeof v === "object" && !Array.isArray(v)) {
     const o = v as Record<string, unknown>;
     for (const k of [
       "mensagem",
+      "msg",
       "descricao",
       "detalhe",
       "texto",
       "motivo",
       "alerta",
+      "titulo",
       "nome",
     ]) {
       const val = o[k];
@@ -183,10 +201,16 @@ export function normalizarAnalise(
 
   let prazo: PrazoProposto | null = null;
   const prazoRaw = obj(r.prazo);
-  if (r.prazo && (prazoRaw.descricao || prazoRaw.data)) {
+  if (r.prazo && (prazoRaw.descricao || prazoRaw.data || prazoRaw.data_texto)) {
+    // `data` chega ISO ou null (o backend normaliza); `data_texto` guarda o
+    // texto livre da IA para exibição quando não interpretável.
+    const dataIso = str(prazoRaw.data);
+    const dataTexto = str(prazoRaw.data_texto);
     prazo = {
-      descricao: str(prazoRaw.descricao),
-      data: str(prazoRaw.data),
+      descricao:
+        str(prazoRaw.descricao) +
+        (dataTexto && !dataIso ? ` (data citada: ${dataTexto})` : ""),
+      data: EH_DATA_ISO.test(dataIso) ? dataIso : "",
       origem: strOuNull(prazoRaw.origem),
       requerConfirmacao: prazoRaw.requer_confirmacao_humana !== false,
       criar: true,
@@ -199,7 +223,9 @@ export function normalizarAnalise(
     clienteId: strOuNull(cliente.client_id),
     clienteNome: str(cliente.nome),
     clienteOrigem: strOuNull(cliente.origem),
-    clienteJaCadastrada: cliente.ja_cadastrada === true,
+    // O backend envia `ja_cadastrado`; aceita ambas as grafias por defesa.
+    clienteJaCadastrada:
+      cliente.ja_cadastrado === true || cliente.ja_cadastrada === true,
     clienteCasosAnteriores:
       typeof cliente.casos_anteriores === "number"
         ? cliente.casos_anteriores
@@ -242,10 +268,10 @@ export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
     advogado_responsavel_id: p.advogadoResponsavelId || undefined,
     confirmo_dados_revisados: true,
   };
-  // O backend exige `data` no PrazoEntrada — prazo detectado sem data
+  // O backend exige `data` ISO no PrazoEntrada — prazo detectado sem data
   // interpretável não vira Deadline (o advogado cria depois, na aba Prazos
   // do caso). Título tem piso de 3 caracteres no schema.
-  if (p.prazo?.criar && p.prazo.data) {
+  if (p.prazo?.criar && EH_DATA_ISO.test(p.prazo.data)) {
     const tituloPrazo = (p.prazo.descricao || "").trim();
     payload.prazo = {
       titulo:
@@ -254,7 +280,7 @@ export function montarPayloadCriacao(p: Proposta): Record<string, unknown> {
       responsavel_id: p.prazo.responsavelId || p.advogadoResponsavelId,
     };
   }
-  if (p.conflitoAlertas.length > 0) {
+  if (p.conflitoAlertas.length > 0 || p.conflictConfirmed) {
     payload.conflict_confirmed = p.conflictConfirmed;
   }
   // NUNCA auto-confirmar duplicidade só porque um cliente existente foi

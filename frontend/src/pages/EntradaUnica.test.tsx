@@ -202,8 +202,18 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     // Blocos por exceção: conflito, duplicado e prazo
     expect(screen.getByText(/CONFLITO DE INTERESSES — 1 achado/)).toBeTruthy();
     expect(screen.getByText(/consta como cliente ativo/)).toBeTruthy();
+    // Com cliente EXISTENTE identificado, o bloco de duplicidade fala de
+    // casos ativos (review do Bloco 3) — e o checkbox de reconhecimento
+    // agora renderiza também nesse caminho.
     expect(
-      screen.getByText("Cliente possivelmente já cadastrado"),
+      screen.getByText(
+        "Este cliente possui caso ativo — confira se não é o mesmo assunto",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Conferi os casos ativos e confirmo que este é um caso NOVO",
+      ),
     ).toBeTruthy();
     expect(screen.getByText("criar este prazo")).toBeTruthy();
     expect(screen.getByText(/origem: fls\. 2 da notificação/)).toBeTruthy();
@@ -218,6 +228,14 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     );
     expect(criar.disabled).toBe(true);
     fireEvent.click(screen.getByLabelText("Revisei e não há impedimento"));
+    // Terceiro gate (review do Bloco 3): cliente existente com caso ativo
+    // também exige reconhecimento explícito de duplicidade.
+    expect(criar.disabled).toBe(true);
+    fireEvent.click(
+      screen.getByLabelText(
+        "Conferi os casos ativos e confirmo que este é um caso NOVO",
+      ),
+    );
     expect(criar.disabled).toBe(false);
   });
 
@@ -258,5 +276,117 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     expect(
       (screen.getByLabelText("Título do caso") as HTMLInputElement).value,
     ).toBe("Negativação indevida — Maria S. da Costa");
+  });
+});
+
+// ── Regressão do contrato (code review do Bloco 3) — funções puras ───────────
+import {
+  EH_DATA_ISO,
+  confiancaPct,
+  montarPayloadCriacao,
+  normalizarAnalise,
+  textoDeAchado,
+  type Proposta,
+} from "./EntradaUnica/types";
+
+function propostaBase(extra: Partial<Proposta>): Proposta {
+  const p = normalizarAnalise(
+    { rascunho_id: "b1", cliente: {}, area: {}, documentos: [] },
+    "eu-1",
+  );
+  if (!p) throw new Error("proposta base inválida");
+  return { ...p, titulo: "Caso teste", area: "civil", ...extra };
+}
+
+describe("contrato criar-caso (regressões do review)", () => {
+  it("prazo só entra no payload com data ISO válida", () => {
+    const comIso = montarPayloadCriacao(
+      propostaBase({
+        prazo: {
+          descricao: "Contestar",
+          data: "2026-09-15",
+          origem: null,
+          requerConfirmacao: true,
+          criar: true,
+          responsavelId: "eu-1",
+        },
+      }),
+    );
+    expect((comIso.prazo as { data: string }).data).toBe("2026-09-15");
+
+    const semIso = montarPayloadCriacao(
+      propostaBase({
+        prazo: {
+          descricao: "Contestar",
+          data: "15/09/2026",
+          origem: null,
+          requerConfirmacao: true,
+          criar: true,
+          responsavelId: "eu-1",
+        },
+      }),
+    );
+    expect(semIso.prazo).toBeUndefined();
+  });
+
+  it("escolher cliente existente NÃO auto-confirma duplicidade (gate do servidor)", () => {
+    const payload = montarPayloadCriacao(
+      propostaBase({
+        clienteId: "c-1",
+        duplicados: [{ clientId: "c-1", rotulo: "Maria" }],
+        duplicateConfirmed: false,
+      }),
+    );
+    expect(payload.duplicate_confirmed).toBe(false);
+  });
+
+  it("conflict_confirmed acompanha o reconhecimento mesmo sem achado local", () => {
+    const payload = montarPayloadCriacao(
+      propostaBase({ conflitoAlertas: [], conflictConfirmed: true }),
+    );
+    expect(payload.conflict_confirmed).toBe(true);
+  });
+
+  it("normalizador aceita ja_cadastrado (chave real do backend) e confiança textual", () => {
+    const p = normalizarAnalise(
+      {
+        rascunho_id: "b2",
+        cliente: {
+          client_id: "c-9",
+          nome: "Maria",
+          ja_cadastrado: true,
+          casos_anteriores: 2,
+          confianca: "alta",
+        },
+      },
+      "eu-1",
+    );
+    expect(p?.clienteJaCadastrada).toBe(true);
+    expect(p?.clienteCasosAnteriores).toBe(2);
+    expect(p?.clienteConfianca).toBe(90);
+    expect(confiancaPct("baixa")).toBe(30);
+  });
+
+  it("textoDeAchado trata array de detail 422 sem virar [object Object]", () => {
+    const texto = textoDeAchado([
+      { msg: "data inválida", loc: ["body", "prazo"] },
+      "outro problema",
+    ]);
+    expect(texto).toContain("data inválida");
+    expect(texto).toContain("outro problema");
+    expect(texto).not.toContain("[object Object]");
+  });
+
+  it("prazo com data não-ISO do backend vira campo vazio (não envia lixo)", () => {
+    const p = normalizarAnalise(
+      {
+        rascunho_id: "b3",
+        prazo: { descricao: "Prazo", data: null, data_texto: "15/09/2026" },
+      },
+      "eu-1",
+    );
+    expect(p?.prazo?.data).toBe("");
+    expect(p?.prazo?.descricao).toContain("15/09/2026");
+    expect(EH_DATA_ISO.test("2026-01-02")).toBe(true);
   });
 });
