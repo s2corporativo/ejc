@@ -6,7 +6,13 @@
 //   • HITL inegociável: a assinatura exige observações não vazias e só chama
 //     POST /legal-docs/{id}/conferir-e-assinar após confirmação no modal.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import api from "../../lib/api";
@@ -103,10 +109,9 @@ describe("TabPecas — o caso como espaço de trabalho", () => {
 
     fireEvent.click(confirmar);
     await waitFor(() => {
-      expect(post).toHaveBeenCalledWith(
-        "/legal-docs/p1/conferir-e-assinar",
-        { observacoes: "Conferi fatos, pedidos e jurisprudência." },
-      );
+      expect(post).toHaveBeenCalledWith("/legal-docs/p1/conferir-e-assinar", {
+        observacoes: "Conferi fatos, pedidos e jurisprudência.",
+      });
     });
   });
 

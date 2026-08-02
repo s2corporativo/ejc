@@ -165,8 +165,8 @@ export default function TabPecas({ caseId }: { caseId: string }) {
         <div>
           <h2 className="font-semibold">Peças do caso ({pecas.length})</h2>
           <p className="text-xs text-gray-400">
-            Criação e assinatura acontecem aqui; a redação completa (editor,
-            IA, templates) continua no módulo Peças.
+            Criação e assinatura acontecem aqui; a redação completa (editor, IA,
+            templates) continua no módulo Peças.
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -3,7 +3,13 @@
 // registra via POST /cases/{id}/movimentos (tipo + descricao) e recarrega a
 // linha do tempo (remontagem do componente de timeline).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 vi.mock("../../components/visual/LinhaDoTempoProcessual", () => ({
   default: ({ caseId }: { caseId: string }) => (
@@ -46,7 +52,9 @@ describe("TabTimeline — composer de andamentos", () => {
       screen.getByPlaceholderText(/O que aconteceu neste caso/),
       { target: { value: "Sentença publicada no DJe." } },
     );
-    fireEvent.click(screen.getByRole("button", { name: /Registrar andamento/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Registrar andamento/ }),
+    );
 
     await waitFor(() => {
       expect(post).toHaveBeenCalledWith("/cases/case-1/movimentos", {
