@@ -49,7 +49,7 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 
 from app.core.ownership import role_str as _role_str
 from app.core.rate_limit import consumir
@@ -155,21 +155,31 @@ async def coletar_artefatos(db, case_id: str, case: Case | None = None) -> dict:
 
     pecas = [d for d in docs if _eh_peca_producao(d)]
 
-    # (7) CR-15: "Citações verificadas" deriva do MESMO sinal de
-    # routers/legal_docs._ultima_validacao_peca — AILog de validação jurídica
-    # citando o marcador LEGAL_DOC_ID da peça —, reduzido a um COUNT leve.
-    # Import tardio do router (padrão dos executores _exec_*) evita ciclo.
+    # (7) "Citações verificadas" usa o mesmo contrato estrutural do
+    # fluxo de peças: FK LegalDoc↔AILog, flag corrente e SHA-256 exato.
     n_validacoes = 0
     if pecas:
+        import hashlib
+
         from app.models.ai_log import AILog
-        from app.routers.legal_docs import _VALIDACAO_TIPO_FILTRO
-        marcadores = or_(*[
-            AILog.prompt_sanitizado.ilike(f"%LEGAL_DOC_ID:{d.id}%")
+
+        hashes_por_peca = {
+            d.id: hashlib.sha256((d.conteudo or "").encode("utf-8")).hexdigest()
             for d in pecas
+        }
+        pares_correntes = or_(*[
+            and_(
+                AILog.legal_doc_id == doc_id,
+                AILog.legal_doc_content_hash == content_hash,
+            )
+            for doc_id, content_hash in hashes_por_peca.items()
         ])
         n_validacoes = (await db.execute(
             select(func.count()).select_from(AILog).where(
-                marcadores, _VALIDACAO_TIPO_FILTRO)
+                AILog.legal_doc_id.in_(list(hashes_por_peca)),
+                AILog.legal_doc_validation_current.is_(True),
+                pares_correntes,
+            )
         )).scalar() or 0
 
     snaps_conteudo = [s for s in snaps if s.origem in _ORIGENS_CONTEUDO]

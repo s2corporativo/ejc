@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
@@ -569,6 +569,8 @@ async def validar_rascunho_juridico(
         marcador = (
             f"LEGAL_DOC_ID:{legal_doc_id}\n"
             f"CONTENT_HASH:{legal_doc_hash}\n"
+            f"VALIDATION_SCORE:{metricas['score_confianca']}\n"
+            f"VALIDATION_VERDICT:{metricas['veredito']}\n"
         )
 
     modelo_log = f"{resp.provedor}/{resp.modelo}"
@@ -596,6 +598,18 @@ async def validar_rascunho_juridico(
         tokens_output=resp.output_tokens,
         status_hitl=AIStatusHITL.gerado,
     )
+    if legal_doc_id:
+        # Um novo ciclo substitui semanticamente qualquer validação anterior da
+        # mesma peça. A mais recente nasce pendente de HITL e governa o gate.
+        await db.execute(
+            update(AILog)
+            .where(
+                AILog.legal_doc_id == legal_doc_id,
+                AILog.legal_doc_validation_current.is_(True),
+            )
+            .values(legal_doc_validation_current=False)
+        )
+
     db.add(log)
     await db.commit()
 

@@ -301,3 +301,61 @@ def test_migration_123_e_reversivel_e_indexada():
     assert "create_index" in migration
     assert "drop_index" in migration
     assert "drop_column" in migration
+
+@pytest.mark.asyncio
+async def test_lista_em_lote_usa_fk_mesmo_sem_marcador_no_prompt():
+    from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
+    from app.routers.legal_docs import _validacoes_por_peca
+    from app.services.validador_juridico_service import _hash_conteudo
+
+    db, user, doc = await _cenario_base("Conteúdo estrutural " * 100)
+    try:
+        log = AILog(
+            id=str(uuid4()),
+            user_id=user.id,
+            legal_doc_id=doc.id,
+            legal_doc_content_hash=_hash_conteudo(doc.conteudo),
+            legal_doc_validation_current=True,
+            tipo_uso=AITipoUso.outro,
+            modelo="teste/modelo",
+            prompt_sanitizado=(
+                "VALIDATION_SCORE:91\n"
+                "VALIDATION_VERDICT:APTO PARA REVISAO\n"
+                "Prompt deliberadamente sem LEGAL_DOC_ID"
+            ),
+            resposta="RELATORIO DE VALIDACAO JURIDICA",
+            status_hitl=AIStatusHITL.revisado,
+        )
+        db.add(log)
+        await db.commit()
+
+        resultado = await _validacoes_por_peca(db, [doc])
+
+        assert resultado[doc.id]["status"] == "validada"
+        assert resultado[doc.id]["ai_log_id"] == log.id
+    finally:
+        await _limpar(db, user.id)
+
+
+@pytest.mark.asyncio
+async def test_hash_divergente_falha_fechado_mesmo_com_flag_current():
+    from app.models.ai_log import AIStatusHITL
+    from app.routers.legal_docs import _ultima_validacao_peca
+
+    db, user, doc = await _cenario_base("Conteúdo original " * 100)
+    try:
+        await _adicionar_validacao(
+            db,
+            user_id=user.id,
+            doc_id=doc.id,
+            content_hash="0" * 64,
+            status_hitl=AIStatusHITL.revisado,
+            score=95,
+        )
+
+        resultado = await _ultima_validacao_peca(db, doc)
+
+        assert resultado["status"] == "sem_validacao"
+        assert resultado["apto_fluxo"] is False
+    finally:
+        await _limpar(db, user.id)
