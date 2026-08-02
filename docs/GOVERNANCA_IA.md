@@ -136,8 +136,11 @@ merge da primeira, rebaseada sobre a `main` atualizada.
 1. Nunca alterar a `main` diretamente — nem commit, nem push, nem force push.
 2. Nunca fazer merge. Nunca executar deploy de produção.
 3. Verificar PRs abertos que tocam os mesmos arquivos **antes** de começar.
-4. Uma branch por Issue, nomeada `tipo/NUMERO-descricao` (`fix/`, `feat/`, `chore/`,
-   `docs/`, `test/`).
+4. Uma branch por tarefa, com nome que diga o que ela faz: `tipo/NUMERO-descricao`
+   (`fix/`, `feat/`, `chore/`, `docs/`, `test/`) quando há Issue. Sessões do Claude Code na
+   web recebem a branch pronta, no formato `claude/<descricao>` — esse nome é imposto pela
+   ferramenta e **é aceito**; o vínculo com a tarefa fica no corpo do PR. Regra real: uma
+   tarefa, uma branch, um PR — o padrão do nome é secundário.
 5. Não ampliar o escopo da Issue. Um achado fora do escopo vira uma Issue nova, não um
    commit a mais.
 6. Toda correção de bug entra com **teste de regressão**.
@@ -212,6 +215,19 @@ do review.
 Só com autorização explícita: alterar contrato público de API; criar ou alterar migration;
 mexer em autenticação, RBAC ou permissões; alterar CI/CD, Docker ou deploy; excluir código,
 rota ou tabela; alterar dependências; mudar política de IA ou de provedor.
+
+**O que conta como autorização explícita.** A Issue que descreve a mudança, ou o pedido
+direto do titular — inclusive por chat. Um pedido autoriza o que ele **implica**: "corrija o
+cadastro de cliente" autoriza a migration que a correção exigir, e o PR registra a decisão.
+Não se estende ao vizinho: autoriza o que o pedido pede, nunca o que o agente encontrou pelo
+caminho. Na dúvida entre duas leituras do pedido que levam a resultados materialmente
+diferentes, o agente pergunta antes de gastar trabalho.
+
+**Tarefa que chega sem Issue.** O fluxo canônico continua sendo Issue → branch → PR. Quando o
+titular pede direto, o pedido é a autorização e o **PR passa a ser o artefato de registro**:
+problema, escopo, o que ficou de fora, critério de aceite adotado e suposições assumidas vão
+escritos no corpo. O que a governança não admite é trabalho sem artefato nenhum — não é a
+ausência de Issue que quebra a regra, é a ausência de registro.
 
 Nunca: merge, deploy de produção, acesso ao banco de produção, force push, apagar branch,
 volume ou banco, versionar segredo, desligar HITL/citation gate/sanitização de PII.

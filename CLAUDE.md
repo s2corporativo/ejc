@@ -15,7 +15,7 @@ Você é o **executor técnico** do EJC. A especificação e a auditoria são de
 **Regras obrigatórias**
 
 1. Nunca alterar a `main` diretamente (sem commit, push ou force push nela).
-2. Nunca iniciar uma tarefa sem ler a Issue por inteiro e sem verificar os PRs abertos que tocam os mesmos arquivos.
+2. Nunca iniciar uma tarefa sem ler por inteiro o pedido que a originou — a Issue, quando existe; a mensagem do titular, quando a tarefa chega por chat (ver "Regras de decisão") — e sem verificar os PRs abertos que tocam os mesmos arquivos.
 3. Nunca criar migration sem conferir o head atual e reservar o número em `backend/alembic/MIGRATION_RESERVATIONS.md`.
 4. Nunca modificar arquivos que pertencem a outro PR ativo.
 5. Toda regra jurídica precisa de fonte oficial, vigência e teste.
@@ -30,25 +30,71 @@ Você é o **executor técnico** do EJC. A especificação e a auditoria são de
 
 Leitura de apoio: `AGENTS.md` (regras comuns a qualquer agente), `docs/FLUXO_DE_DESENVOLVIMENTO.md` (ciclo Issue → merge), `docs/CRITERIOS_DE_ACEITE.md` (o que o review cobra), `docs/RELEASE_CHECKLIST.md` (o que trava um release).
 
-## graphify
+## Regras de decisão
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+O que trava trabalho não é a regra restritiva — é a regra que não diz o que fazer no caso
+concreto. Esta seção fecha as três lacunas que mais produzem hesitação ou improviso.
 
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+**Tarefa sem Issue.** `docs/FLUXO_DE_DESENVOLVIMENTO.md` diz que nenhum trabalho começa sem
+Issue, e o desenho é esse mesmo. Mas o titular também pede direto por chat, e aí a regra
+literal proibiria executar qualquer pedido dele. O pedido do titular **é** a autorização:
+execute, e o registro da decisão vai no corpo do PR (problema, escopo, o que ficou de fora,
+critério de aceite adotado) — o PR passa a ser o artefato de rastreio no lugar da Issue.
+Quando existir Issue, ela manda e o PR referencia (`Closes #NNN`). O que nunca acontece é
+trabalho sem artefato: ou Issue, ou PR com o escopo escrito.
 
-Automation (hooks em .claude/settings.json):
-- SessionStart instala o graphify (`pip3 install graphifyy`) e gera `graphify-out/` automaticamente se estiverem ausentes — em ambientes novos (Claude Code web/remoto), apenas aguarde o hook concluir.
-- PostToolUse (Write|Edit em arquivos de código) roda `graphify update .` automaticamente; não é preciso rodar manualmente dentro do Claude Code.
+**O que decidir sozinho.** Decida e siga, sem perguntar: como implementar dentro do escopo
+pedido; qual arquivo tocar; como testar; nomes, estrutura e refatoração local; corrigir o que
+o próprio pedido quebra. `docs/GOVERNANCA_IA.md` §10 exige autorização explícita para migration,
+auth/RBAC, contrato público de API, CI/CD, exclusão de código e troca de dependência — e o
+pedido do titular que **implica** um desses itens já é essa autorização (pedir "corrija o
+cadastro de cliente" autoriza a migration que a correção exige). Autorização não se estende
+ao vizinho: ela cobre o que o pedido implica, não o que você achou pelo caminho.
+
+**Quando parar e perguntar.** Só quando seguir sem resposta produziria trabalho inútil ou
+irreversível: duas leituras plausíveis do pedido levam a resultados materialmente diferentes;
+a mudança apaga dado ou quebra contrato já em uso; o achado contraria uma decisão permanente
+do titular (§11). Nos demais casos, assuma a leitura mais provável, **escreva a suposição no
+PR** e siga. Achado fora do escopo não interrompe a tarefa: termina o que foi pedido e reporta
+o achado no relatório final.
+
+**Quando as regras conflitam.** Ordem de precedência: `docs/GOVERNANCA_IA.md` → este arquivo →
+`AGENTS.md` → skills e agentes. Conflito encontrado não se resolve escolhendo em silêncio:
+corrige-se no mesmo PR, ou vira apontamento no relatório.
+
+## graphify — índice auxiliar, não fonte da verdade
+
+`graphify-out/` guarda um grafo de símbolos do código (nós, comunidades, relações entre
+arquivos). Serve para **localizar** código gastando pouco contexto: `graphify query
+"<pergunta>"`, `graphify explain "<conceito>"`, `graphify path "<A>" "<B>"`.
+`graphify-out/GRAPH_REPORT.md` só para revisão arquitetural ampla.
+
+**O que ele não é.** Não é a fonte da verdade e não substitui ler o arquivo. O grafo é AST,
+indexa símbolo — não indexa prosa, e por isso não ajuda em `.md`. Ele também envelhece: em
+2026-08-02 o grafo versionado estava 6 dias e 147 commits atrás do repositório, e uma consulta
+por "onde fica o registro de rotas do backend" devolveu 294 nós truncados em 51, nenhum deles o
+`backend/app/main.py` que era a resposta. **Confirme no arquivo antes de editar ou concluir** —
+principalmente ao afirmar que algo não existe.
+
+Automação (hooks em `.claude/settings.json`):
+- **SessionStart** instala o graphify (`pip3 install graphifyy`) e roda `graphify update .`
+  (incremental, AST-only, sem custo de API) — antes só gerava o grafo quando ausente, o que
+  deixava o índice envelhecer indefinidamente.
+- **PostToolUse** (`Write|Edit` em arquivo de código) atualiza o grafo; não rode à mão.
+- **PreToolUse** (`.claude/hooks/orienta_graphify.py`) lembra do graphify **uma vez por sessão**,
+  só em arquivo de código, e avisa quando o grafo está mais velho que o último commit.
 
 ## Agentes do projeto (.claude/agents/)
 
-Em toda sessão neste repositório, use o agente `ejc` como PRIMEIRO ponto de contato para qualquer tarefa não trivial — ele já sabe orquestrar os demais agentes e skills abaixo. Não faça o trabalho inteiro na thread principal quando `ejc` (ou um especialista mais específico) puder ser acionado.
+Delegue quando a delegação paga o próprio custo: trabalho que cruza várias áreas, exploração
+ampla de código, ou uma frente que cabe inteira num especialista. Para uma edição pontual,
+uma pergunta sobre o repositório ou uma correção de duas linhas, fazer na thread principal é
+mais rápido e mais rastreável — subagente custa contexto e devolve resumo, não o diff.
 
-SEMPRE delegue trabalho ao agente especialista pertinente em vez de fazer tudo na thread principal. Tarefas que cruzam áreas devem acionar TODOS os agentes pertinentes (em paralelo quando independentes):
+`ejc` é o orquestrador quando a tarefa é grande e ainda não está fatiada; quando já se sabe
+qual é a área, acione o especialista direto. Frentes independentes vão em paralelo, na mesma
+mensagem. Quem responde pelo resultado continua sendo o executor — o relatório do subagente
+é insumo, e achado de subagente que você não conferiu não vira afirmação sua no PR:
 
 - `ejc` — orquestrador principal; ponto de entrada padrão para qualquer tarefa no repo.
 - `backend-fastapi` — qualquer mudança em backend/app (endpoints, services, models, schemas, auth, RAG).
@@ -78,7 +124,7 @@ vps-tools/          Toolkit Node.js de SSH/SFTP para o VPS (credenciais em vps-t
 qa/                 Suíte de smoke E2E de homologação (qa/e2e/run_fictitious_smoke.py)
 docs/               Documentação técnica; docs/ai/ = arquitetura e políticas de IA
 graphify-out/       Grafo de conhecimento do código (ver seção graphify)
-.claude/            Agentes, skills e hooks do Claude Code
+.claude/            Agentes (agents/), skills (skills/) e hooks (hooks/) do Claude Code
 docker-compose.yml  Stack de produção completa
 RUNBOOK_*.md        Procedimentos operacionais (deploy, backup, monitoramento)
 RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura, não procedimento
@@ -86,7 +132,7 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 
 ## Backend (backend/app)
 
-- **Entrypoint**: `backend/app/main.py`. Todos os ~180 routers de `app/routers/` são registrados manualmente com prefixo `API = "/api"`. Docs (`/api/docs`) desabilitadas em produção. Ordem de middlewares importa: `AuthMiddleware` (mais interno) → `ClientIPMiddleware` → GZip → CORS.
+- **Entrypoint**: `backend/app/main.py`. Todos os 163 routers de `app/routers/` são registrados manualmente com prefixo `API = "/api"`. Docs (`/api/docs`) desabilitadas em produção. Ordem de middlewares importa: `AuthMiddleware` (mais interno) → `ClientIPMiddleware` → GZip → CORS.
 - **Camadas**: routers finos → lógica de negócio em `app/services/` (~150 módulos) → models SQLAlchemy em `app/models/` → schemas Pydantic em `app/schemas/` (muitos routers definem schemas inline). Pacotes de feature autocontidos em `app/modules/` (auditoria, case_partes, indice_risco, score_juridico). Tarefas Celery em `app/tasks/`.
 - **Domínios principais**: auth/2FA (`auth.py`, `users.py`), clientes (`clients.py`, `dossie_cliente.py`, `intake.py`), casos (`cases.py`, `processes.py`, `jornada_caso.py`), prazos/agenda (`deadlines.py`, `tasks.py`, `intimacoes.py`), documentos (`documents.py`, `data_room*.py`, `signatures.py`), IA/RAG (`rag.py`, `ai_core.py`, `peca_geracao*.py`, `ia_governanca.py`), financeiro (`fees.py`, `honorarios_*.py`, `nfse.py`), integrações externas (`datajud.py`, `infosimples_*.py`, `whatsapp.py`, `diario_oficial.py`).
 - **Banco**: SQLAlchemy **async** (`asyncpg`) via `app/core/database.py`; dependency `get_db()` fornece `AsyncSession`. Duas URLs: `DATABASE_URL` (async, app) e `DATABASE_URL_SYNC` (psycopg2, Alembic).
@@ -98,7 +144,7 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 
 ### Migrations (Alembic)
 
-- Vivem em `backend/alembic/versions/`, numeradas sequencialmente (`049_totp_2fa.py`, ..., `096_...`). Gerar: `python -m alembic revision --autogenerate -m "..."`; aplicar: `python -m alembic upgrade head` (roda automaticamente no boot do container quando `RUN_MIGRATIONS=1`).
+- Vivem em `backend/alembic/versions/`, numeradas sequencialmente (`049_totp_2fa.py`, ..., `126_case_status_quatro_estados.py`). O head muda a cada merge: **confirme com `cd backend && python -m alembic heads`** em vez de confiar neste número. Gerar: `python -m alembic revision --autogenerate -m "..."`; aplicar: `python -m alembic upgrade head` (roda automaticamente no boot do container quando `RUN_MIGRATIONS=1`).
 - `alembic/env.py` lê `DATABASE_URL_SYNC` e tem guarda `include_name()`: ~30 tabelas existem só em SQL bruto (sem model ORM) — nunca confie apenas em `Base.metadata` para o schema completo, e nunca aceite `drop_table` espúrio do autogenerate.
 - Seeds: `backend/seeds/seed_all.py` (bootstrap idempotente do admin, roda no boot) e `backend/app/seeds/` (conteúdo: skills de IA, templates, checklists). Base de conhecimento em `backend/seeds/biblia_ejc/`.
 
@@ -106,7 +152,7 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 
 - **Stack**: React 19, react-router-dom 7, Vite 8, TypeScript 5, Tailwind 3 (`darkMode: "class"`, design system dourado "De Paula Teixeira" no `tailwind.config.js`), Zustand 4, axios, lucide-react. Sem biblioteca de componentes externa — UI própria em `components/`.
 - **Rotas**: a fonte da verdade é `src/config/moduleRegistry.tsx` (`STAFF_ROUTES`, `LEGACY_REDIRECTS`, RBAC por rota via `canRoleAccessPath`). `App.tsx` só consome o registry; páginas são lazy-loaded. Área staff sob `Layout` + `StaffOnly`; portal do cliente sob `/portal` (`PortalLayout` + `PortalOnly`). Para módulo novo, registre no registry — não adicione rota solta no App.tsx.
-- **API client**: `src/lib/api.ts` — axios com `baseURL: "/api"`. Access token em `localStorage` (`ejc_access`) injetado por interceptor; refresh token em cookie httpOnly gerenciado pelo backend; 401 dispara refresh single-flight com retry; 403 `must_change_password` redireciona para `/trocar-senha`.
+- **API client**: `src/lib/api.ts` — axios com `baseURL: "/api/v1"` (constante `API_BASE_URL`, linha 9). O interceptor de request **remove** prefixo repetido (`/api/v1/`, `/api/`, `/v1/`) do `config.url`, então dentro do cliente `api` os caminhos se escrevem sem prefixo (`/casos`, não `/api/casos`). Quem usa `axios` cru — como `refreshAccessToken` — precisa do path REAL do backend (`/api/auth/refresh`, sem `v1`). Access token em `localStorage` (`ejc_access`) injetado por interceptor; refresh token em cookie httpOnly gerenciado pelo backend; 401 dispara refresh single-flight com retry; 403 `must_change_password` redireciona para `/trocar-senha`.
 - **Estado**: stores Zustand em `src/stores/` (`auth.ts`/`useAuth` com `bootstrap()`, `caseContext.ts`, `moduleLifecycle.ts`, `preferences.ts`, `theme.ts`).
 - **Layout de src/**: `pages/` (~70 páginas; `pages/portal/` e `pages/ramos/`), `components/`, `lib/` (api, SSE em `stream.ts`), `config/`, `stores/`, `contexts/`, `types/`, `utils/`. Testes co-localizados (`*.test.ts(x)`).
 
@@ -142,7 +188,7 @@ Stack completa: `docker compose up -d --build` (serviços: db pgvector/pg16, red
 
 ## CI/CD e deploy
 
-- Workflows em `.github/workflows/`, quase todos **somente `workflow_dispatch`** (para economizar minutos; runner self-hosted `ejc-vps`):
+- Workflows em `.github/workflows/`. **O CI roda automaticamente em todo Pull Request** — `ci.yml`, `ejc-release-gate.yml`, `governanca.yml`, `continuity-ui-gates.yml`, `architecture-inventory.yml`, `backup-gdrive-activation.yml` e `rag-production-activation.yml` disparam em `pull_request`. Só operação de ambiente (`deploy-vps.yml`, `producao-prova-continuidade.yml`, `frontend-ci.yml`) é `workflow_dispatch`, no runner self-hosted `ejc-vps`. Confira com `grep -A4 '^on:' .github/workflows/*.yml` antes de afirmar que algo não roda:
   - `ci.yml` — job `db-validation` (Postgres pgvector de serviço, `alembic upgrade head`, `pytest tests -v`, ruff/pip-audit informativos) + job `frontend-build` (npm ci, test, build).
   - `deploy-vps.yml` — dispara manual ou após CI verde em `main`; rsync para `/opt/ejc` e executa `scripts/deploy_vps_safe.sh` (backup → build → health-poll → migrations/seeds opcionais → rollback automático em erro).
   - `ejc-release-gate.yml` — roda `scripts/ci_guard.sh` (bloqueia marcadores de merge, `.env`/segredos versionados, CORS wildcard).
@@ -165,6 +211,8 @@ Stack completa: `docker compose up -d --build` (serviços: db pgvector/pg16, red
 - `docs/ai/` — arquitetura do núcleo único de IA, política de provedores, roteamento de tarefas, LGPD/segurança de IA, HITL.
 - `docs/CATALOGO_APIS_EJC.md` — catálogo de APIs; `docs/DESIGN_SYSTEM_EJC.md` e `docs/VISUAL_LAW_EJC.md` — design.
 - `graphify-out/GRAPH_REPORT.md` — mapa arquitetural gerado (apenas para revisão ampla).
+- `docs/CLAUDE_CODE_PERMISSOES.md` — lista de permissões proposta para `.claude/settings.json`
+  (reduz aprovação de comando de rotina); aplicação é decisão do titular.
 - `RELATORIO_*.md` na raiz — histórico de auditorias/estabilização; contexto, não procedimento.
 
 ---
@@ -193,8 +241,10 @@ Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real a
 - **Prefixo `/v1/` duplicado.** `/api/v1/v1/despesas` responde 200; `/api/v1/despesas` dá 404.
   Mesmo padrão em `office-contracts`, `partner-withdrawals`, `kanban-columns`,
   `regulatorio/digest-semanal`. O frontend compensa chamando `/v1/x`.
-  *(Nota: este arquivo documenta `baseURL: "/api"` em `src/lib/api.ts`, mas o bundle de produção
-  traz `baseURL: "/api/v1"`. Verificar qual está correto — pode ser a origem da duplicação.)*
+  *(Resolvido em 2026-08-02: `src/lib/api.ts` linha 9 usa `baseURL: "/api/v1"` — o bundle está
+  certo e a descrição antiga neste arquivo (`/api`) é que estava errada. O interceptor de request
+  apara prefixo repetido; a duplicação `/api/v1/v1/` vem de chamada que já traz `/v1` e escapa
+  dessa poda. Ao investigar, comece pelo interceptor, não pelo `baseURL`.)*
 - **Superfície dupla.** Toda rota responde em `/api/` e em `/api/v1/`. Regras por path
   (rate limit, WAF, log, cache) precisam cobrir as duas.
 - **Painéis de diagnóstico divergem entre si.** Sobre provedores/modelos de IA, a fonte de verdade
@@ -213,8 +263,9 @@ Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real a
   `ativo`/`all`. O primeiro retorna vazio, o segundo dá 500.
 - **`qa/e2e/run_fictitious_smoke.py` roda contra produção.** É a origem dos casos
   `HOMOLOG-FICTICIO-*` e da conta `homolog.qa` (perfil superadmin, ativa em produção).
-- **Numeração de migrations desatualizada neste arquivo:** a seção de migrations cita `~096`,
-  mas o head em produção é `122_route_usage_metrics`.
+- **Numeração de migrations envelhece rápido.** A auditoria viu `122_route_usage_metrics`; em
+  2026-08-02 o head do repositório já era `126_case_status_quatro_estados`. Nenhum número escrito
+  em documento é confiável: rode `cd backend && python -m alembic heads`.
 
 ### Critério de lançamento
 

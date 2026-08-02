@@ -25,7 +25,9 @@ Autorização do titular → merge → deploy
 
 ## Etapa 1 — a Issue
 
-Nenhum trabalho começa sem Issue. Ela contém:
+Nenhum trabalho começa sem **artefato de registro**. O normal é a Issue; quando o titular pede
+direto por chat, o pedido é a autorização e o corpo do PR assume o papel de registro
+(`docs/GOVERNANCA_IA.md` §10, "Tarefa que chega sem Issue"). A Issue contém:
 
 - código único (ex.: `EJC-P0-014`) e título;
 - problema e origem (auditoria, relato, incidente);
