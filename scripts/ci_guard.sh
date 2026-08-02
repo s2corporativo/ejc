@@ -46,6 +46,12 @@ SCAN_SUFFIXES = {
     ".sh",
     ".sql",
     ".txt",
+    # Markdown entrou depois: em 2026-08-02 um merge deixou marcadores reais em
+    # backend/alembic/MIGRATION_RESERVATIONS.md e o guarda não viu, porque só
+    # varria código e configuração. O registro de reservas de migration, os
+    # runbooks e o próprio CLAUDE.md são documentos OPERACIONAIS — marcador de
+    # conflito ali corrompe o procedimento que alguém vai seguir.
+    ".md",
 }
 
 SCAN_NAMES = {
