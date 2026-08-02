@@ -37,10 +37,51 @@ ORGAOS = [
 MAX_POR_ORGAO = 800   # teto de acórdãos por órgão/execução (controle de volume)
 
 
+def _txt(rec: dict, *chaves: str) -> str:
+    """Primeiro valor não vazio entre `chaves` (degrada para "" se nenhum existir).
+
+    O espelho do CKAN não garante campo algum: o ingestor nunca pode quebrar
+    por chave ausente nem gravar a string "None" no corpo do documento.
+    """
+    for c in chaves:
+        v = rec.get(c)
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s and s.lower() not in ("none", "null"):
+            return s
+    return ""
+
+
 def _monta_conteudo(rec: dict) -> str:
-    """Concatena as partes juridicamente citáveis de um acórdão."""
+    """Concatena as partes juridicamente citáveis de um acórdão.
+
+    A IDENTIFICAÇÃO do julgado (nº do processo, nº de registro e data de
+    julgamento) abre o conteúdo — e isso não é cosmético:
+
+    1. Sem ela, acórdãos julgados em bloco (mesma classe, relator, órgão e data,
+       com a ementa idêntica que o STJ publica em repetitivos) geram texto byte
+       a byte igual → mesmo SHA-1 em `hash_conteudo` → falso duplicado no painel
+       de governança.
+    2. Pior: o trecho recuperado pelo RAG chegava à IA sem o próprio número do
+       processo — a ementa e a tese sem identificação verificável são a condição
+       clássica da citação inventada, exatamente o que o gate antialucinação
+       existe para barrar.
+
+    Campo ausente é omitido; nenhum campo é obrigatório.
+    """
     partes = []
-    classe = rec.get("descricaoClasse") or rec.get("siglaClasse")
+    sigla = _txt(rec, "siglaClasse")
+    processo = _txt(rec, "numeroProcesso", "numeroUnicoProcesso")
+    if processo:
+        partes.append(f"Processo: {(sigla + ' ' + processo).strip()}")
+    registro = _txt(rec, "numeroRegistro")
+    if registro:
+        partes.append(f"Registro: {registro}")
+    julgamento = _txt(rec, "dataJulgamento", "dataDecisao")
+    if julgamento:
+        partes.append(f"Julgamento: {julgamento}")
+    classe = _txt(rec, "descricaoClasse", "siglaClasse")
     if classe:
         partes.append(f"Classe: {classe}")
     if rec.get("ministroRelator"):
