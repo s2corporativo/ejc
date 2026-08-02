@@ -182,6 +182,72 @@ async def meta(cu: User = Depends(get_current_user)):
             "aviso": "Toda classificação, prazo, tese e peça exige confirmação humana."}
 
 
+async def ingerir_arquivos_lote(
+    db: AsyncSession, cu: User, *, batch: DocumentIntakeBatch,
+    files: list[UploadFile], conf: DocConfidencialidade,
+    modalidade: str | None = None, case_id: str | None = None,
+    client_id: str | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Núcleo do pipeline de arquivos (expandir → limites → persistir original →
+    hash/dedup → OCR → classificar), COMPARTILHADO entre /entrada-universal/
+    processar e /entrada/analisar (Entrada Única). Retorna (processados,
+    total_bytes) no mesmo formato consumido por montar_dossie/resumo_documentos."""
+    total_bytes, virtuais = 0, []
+    for uploaded in files:
+        raw = await uploaded.read()
+        try:
+            expandidos = expandir_arquivo(uploaded.filename or "documento", raw, uploaded.content_type)
+        except ValueError as exc:
+            raise HTTPException(415, str(exc)) from exc
+        for virtual in expandidos:
+            total_bytes += len(virtual["conteudo"])
+            if total_bytes > MAX_BYTES_LOTE:
+                raise HTTPException(413, "Lote excede 120 MB")
+            virtuais.append(virtual)
+    if len(virtuais) > MAX_ARQUIVOS:
+        raise HTTPException(413, f"Lote excede {MAX_ARQUIVOS} documentos")
+
+    processados: list[dict[str, Any]] = []
+    for ordem, virtual in enumerate(virtuais, 1):
+        digest = sha256_bytes(virtual["conteudo"])
+        duplicado = await _buscar_duplicado(db, sha256=digest, case_id=case_id, client_id=client_id, user_id=cu.id)
+        if duplicado:
+            item = DocumentIntakeItem(
+                id=str(uuid4()), batch_id=batch.id, document_id=duplicado.document_id,
+                filename=virtual["nome"][:255], original_filename=virtual["nome_origem"][:500],
+                extension=virtual["extensao"], mimetype=virtual["mimetype"], size_bytes=len(virtual["conteudo"]),
+                sha256=digest, source_order=ordem, duplicate_of_document_id=duplicado.document_id,
+                extraction_status="duplicado", page_count=duplicado.page_count,
+                extraction_meta=duplicado.extraction_meta, classification=duplicado.classification,
+            )
+            db.add(item); await db.commit()
+        else:
+            doc, item = await _salvar_original(db, batch=batch, virtual=virtual, ordem=ordem, conf=conf, cu=cu)
+            try:
+                # OCR em thread (não bloqueia o event loop) — mesmo padrão de documents.upload.
+                meta_extracao = await asyncio.to_thread(
+                    extrair_paginas, virtual["conteudo"], virtual["extensao"], item.mimetype
+                )
+                classificacao = classificar_documento(virtual["nome"], meta_extracao.get("texto", ""), modalidade)
+                item.extraction_status = "concluido" if meta_extracao.get("texto") else "sem_texto"
+                item.page_count = int(meta_extracao.get("page_count") or 0)
+                item.extraction_meta, item.classification = meta_extracao, classificacao
+                doc.ocr_text, doc.tipo = meta_extracao.get("texto") or None, classificacao.get("tipo")
+                doc.descricao = f"Entrada Universal — lote {batch.id}; confiança média {meta_extracao.get('confianca_media', 0):.0%}"
+            except Exception as exc:
+                logger.warning("Extração falhou para %s: %s", virtual["nome"], exc)
+                item.extraction_status = "erro"
+                item.extraction_meta = {"paginas": [], "page_count": 0, "confianca_media": 0, "avisos": [str(exc)[:300]]}
+                item.classification = {"tipo": "outro_documento", "nome": "Não classificado", "confianca": 0, "metodo": "falha_extracao"}
+            await db.commit()
+        processados.append({"id": item.id, "document_id": item.document_id, "filename": item.filename,
+                            "source_order": ordem, "sha256": item.sha256,
+                            "duplicate_of_document_id": item.duplicate_of_document_id,
+                            "extraction_status": item.extraction_status, "page_count": item.page_count,
+                            "extraction_meta": item.extraction_meta or {}, "classification": item.classification or {}})
+    return processados, total_bytes
+
+
 @router.post("/processar", dependencies=[Depends(rate_limit("entrada-universal-processar", 6))])
 async def processar(
     files: list[UploadFile] = File(default=[]), modalidade: Optional[str] = Form(None),
@@ -214,60 +280,11 @@ async def processar(
     batch = DocumentIntakeBatch(id=str(uuid4()), case_id=case_id, client_id=client_id,
                                 modalidade=modalidade, status="processando", created_by=cu.id)
     db.add(batch); await db.commit()
-    total_bytes, virtuais = 0, []
     try:
-        for uploaded in files:
-            raw = await uploaded.read()
-            try:
-                expandidos = expandir_arquivo(uploaded.filename or "documento", raw, uploaded.content_type)
-            except ValueError as exc:
-                raise HTTPException(415, str(exc)) from exc
-            for virtual in expandidos:
-                total_bytes += len(virtual["conteudo"])
-                if total_bytes > MAX_BYTES_LOTE:
-                    raise HTTPException(413, "Lote excede 120 MB")
-                virtuais.append(virtual)
-        if len(virtuais) > MAX_ARQUIVOS:
-            raise HTTPException(413, f"Lote excede {MAX_ARQUIVOS} documentos")
-
-        processados = []
-        for ordem, virtual in enumerate(virtuais, 1):
-            digest = sha256_bytes(virtual["conteudo"])
-            duplicado = await _buscar_duplicado(db, sha256=digest, case_id=case_id, client_id=client_id, user_id=cu.id)
-            if duplicado:
-                item = DocumentIntakeItem(
-                    id=str(uuid4()), batch_id=batch.id, document_id=duplicado.document_id,
-                    filename=virtual["nome"][:255], original_filename=virtual["nome_origem"][:500],
-                    extension=virtual["extensao"], mimetype=virtual["mimetype"], size_bytes=len(virtual["conteudo"]),
-                    sha256=digest, source_order=ordem, duplicate_of_document_id=duplicado.document_id,
-                    extraction_status="duplicado", page_count=duplicado.page_count,
-                    extraction_meta=duplicado.extraction_meta, classification=duplicado.classification,
-                )
-                db.add(item); await db.commit()
-            else:
-                doc, item = await _salvar_original(db, batch=batch, virtual=virtual, ordem=ordem, conf=conf, cu=cu)
-                try:
-                    # OCR em thread (não bloqueia o event loop) — mesmo padrão de documents.upload.
-                    meta_extracao = await asyncio.to_thread(
-                        extrair_paginas, virtual["conteudo"], virtual["extensao"], item.mimetype
-                    )
-                    classificacao = classificar_documento(virtual["nome"], meta_extracao.get("texto", ""), modalidade)
-                    item.extraction_status = "concluido" if meta_extracao.get("texto") else "sem_texto"
-                    item.page_count = int(meta_extracao.get("page_count") or 0)
-                    item.extraction_meta, item.classification = meta_extracao, classificacao
-                    doc.ocr_text, doc.tipo = meta_extracao.get("texto") or None, classificacao.get("tipo")
-                    doc.descricao = f"Entrada Universal — lote {batch.id}; confiança média {meta_extracao.get('confianca_media', 0):.0%}"
-                except Exception as exc:
-                    logger.warning("Extração falhou para %s: %s", virtual["nome"], exc)
-                    item.extraction_status = "erro"
-                    item.extraction_meta = {"paginas": [], "page_count": 0, "confianca_media": 0, "avisos": [str(exc)[:300]]}
-                    item.classification = {"tipo": "outro_documento", "nome": "Não classificado", "confianca": 0, "metodo": "falha_extracao"}
-                await db.commit()
-            processados.append({"id": item.id, "document_id": item.document_id, "filename": item.filename,
-                                "source_order": ordem, "sha256": item.sha256,
-                                "duplicate_of_document_id": item.duplicate_of_document_id,
-                                "extraction_status": item.extraction_status, "page_count": item.page_count,
-                                "extraction_meta": item.extraction_meta or {}, "classification": item.classification or {}})
+        processados, total_bytes = await ingerir_arquivos_lote(
+            db, cu, batch=batch, files=files, conf=conf,
+            modalidade=modalidade, case_id=case_id, client_id=client_id,
+        )
 
         dossie = montar_dossie(processados, texto)
         prontidao = avaliar_prontidao(modalidade, processados)

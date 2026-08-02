@@ -450,6 +450,14 @@ async def upload(
         detalhes=f"{titulo} ({confidencialidade})",
     )
     await db.commit()
+    # Transição automática de estado (Bloco 3): documento vinculado ⇒
+    # em_instrucao. APÓS o commit do upload (fail-safe): falha aqui vira
+    # warning e nunca desfaz o documento já persistido.
+    if case_id:
+        from app.services.status_transicao import avancar_status_pos_commit
+        await avancar_status_pos_commit(
+            db, case_id, "documento_vinculado", user_id=cu.id
+        )
     # Hook: análise estratégica automática quando há OCR e case_id
     if case_id and ocr_text:
         background_tasks.add_task(_analisar_doc_bg, case_id, ocr_text, doc_id, cu.id)
