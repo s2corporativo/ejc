@@ -7,6 +7,12 @@ on:
     paths:
       - scripts/maintenance/migrate_pr_checks_to_hosted.py
       - .github/workflows/_ops-migrate-pr-checks-hosted.yml
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - scripts/maintenance/migrate_pr_checks_to_hosted.py
+      - .github/workflows/_ops-migrate-pr-checks-hosted.yml
 
 permissions:
   contents: write
@@ -17,6 +23,7 @@ concurrency:
 
 jobs:
   migrate:
+    if: github.head_ref == 'ci/aumentar-capacidade-runners' || github.ref_name == 'ci/aumentar-capacidade-runners'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
