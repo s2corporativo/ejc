@@ -149,7 +149,10 @@ export default function CRMLeads() {
       prev.map((l) => (l.id === leadId ? { ...l, etapa_funil: novaEtapa } : l)),
     );
     // If converted, also update status
-    const extraPayload = novaEtapa === "convertido" ? { status: "aberto" } : {};
+    // ATENÇÃO: este PATCH é em /clients — o status aqui é `ClientStatus`
+    // (lead|ativo|inativo|arquivado), NÃO o status de caso da migration 126.
+    // Enviar "aberto" aqui devolve 422 e trava a conversão do lead.
+    const extraPayload = novaEtapa === "convertido" ? { status: "ativo" } : {};
     try {
       await api.patch(`/clients/${leadId}`, {
         etapa_funil: novaEtapa,
