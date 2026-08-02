@@ -112,4 +112,10 @@ class FonteIngestao(Base):
     registros_novos = Column(Integer, nullable=False, server_default="0")
     registros_total = Column(Integer, nullable=False, server_default="0")
     ultimo_erro     = Column(Text, nullable=True)
+    # Quantas execuções seguidas terminaram sem erro E sem trazer nada novo.
+    # `registros_novos` só guarda a última execução, então "rodou 12 vezes sem
+    # produzir" não é derivável do estado — tem de ser contado na hora
+    # (migration 125). É o sinal que distingue job saudável de job morto que
+    # continua reportando "sucesso".
+    execucoes_zeradas_consecutivas = Column(Integer, nullable=False, server_default="0")
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
