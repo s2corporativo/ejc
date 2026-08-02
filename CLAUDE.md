@@ -166,3 +166,58 @@ Stack completa: `docker compose up -d --build` (serviços: db pgvector/pg16, red
 - `docs/CATALOGO_APIS_EJC.md` — catálogo de APIs; `docs/DESIGN_SYSTEM_EJC.md` e `docs/VISUAL_LAW_EJC.md` — design.
 - `graphify-out/GRAPH_REPORT.md` — mapa arquitetural gerado (apenas para revisão ampla).
 - `RELATORIO_*.md` na raiz — histórico de auditorias/estabilização; contexto, não procedimento.
+
+---
+
+## Auditoria externa (julho/2026) — achados e plano
+
+Auditoria técnica de 12 rodadas sobre o ambiente de produção, feita **sem acesso ao código-fonte**
+(apenas chamadas HTTPS à API e análise dos bundles publicados). Documentação em `docs/auditoria/`:
+
+```
+docs/auditoria/README.md                 índice e os 5 achados que não podem se perder
+docs/auditoria/plano-lancamento-v3.md    PLANO ATIVO — 7 blocos, um prompt por bloco
+docs/auditoria/plano-correcao-v2.md      backlog completo (40+ achados, com reprodução)
+docs/auditoria/parecer-arquitetural.md   crítica de produto: o que cortar
+docs/auditoria/reduzir-atrito.md         os 15 passos × 8 módulos do fluxo atual
+docs/auditoria/relatorios/               as 12 rodadas, com evidência bruta
+```
+
+**Leia sob demanda** — apenas o bloco em execução. Itens marcados `[INVESTIGAR]` **não são
+diagnóstico fechado**: a auditoria não viu o código. Confirme antes de agir.
+
+### Armadilhas confirmadas em produção
+
+Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real antes de assumir:
+
+- **Prefixo `/v1/` duplicado.** `/api/v1/v1/despesas` responde 200; `/api/v1/despesas` dá 404.
+  Mesmo padrão em `office-contracts`, `partner-withdrawals`, `kanban-columns`,
+  `regulatorio/digest-semanal`. O frontend compensa chamando `/v1/x`.
+  *(Nota: este arquivo documenta `baseURL: "/api"` em `src/lib/api.ts`, mas o bundle de produção
+  traz `baseURL: "/api/v1"`. Verificar qual está correto — pode ser a origem da duplicação.)*
+- **Superfície dupla.** Toda rota responde em `/api/` e em `/api/v1/`. Regras por path
+  (rate limit, WAF, log, cache) precisam cobrir as duas.
+- **Painéis de diagnóstico divergem entre si.** Sobre provedores/modelos de IA, a fonte de verdade
+  é a telemetria de `GET /ia-governanca/provedores` — não `/ai/status` nem `/diagnostico/central`.
+  O `/diagnostico/central` chega a reportar `backup_offsite` como ligado e desligado na mesma resposta.
+- **`GET /system-modules/mapa` subdetecta rotas** e documenta ao menos 5 caminhos incorretos.
+  Pista, não verdade.
+- **Gravação não transacional entre registros relacionados é uma classe de defeito recorrente:**
+  validação que não vincula ao documento, exclusão de caso que não cascateia para as peças,
+  conversão Sala Jurídica → Caso que perde `descricao_fatos`, chance de êxito que fica no log e
+  não no caso. Ao tocar em fluxo que grava em duas tabelas, verifique a transação.
+- **Monitoramento afere execução, não resultado.** Heartbeats checam `last_run_at`, não se o job
+  produziu algo — por isso a captura DJEN reporta "ok" há meses sem nunca ter capturado nada.
+  Job novo ou corrigido deve monitorar resultado.
+- **Vocabulário de status inconsistente.** Backend usa `triagem`/`arquivado`; a interface oferece
+  `ativo`/`all`. O primeiro retorna vazio, o segundo dá 500.
+- **`qa/e2e/run_fictitious_smoke.py` roda contra produção.** É a origem dos casos
+  `HOMOLOG-FICTICIO-*` e da conta `homolog.qa` (perfil superadmin, ativa em produção).
+- **Numeração de migrations desatualizada neste arquivo:** a seção de migrations cita `~096`,
+  mas o head em produção é `122_route_usage_metrics`.
+
+### Critério de lançamento
+
+Um advogado leva um caso real do início ao protocolo dentro do sistema e considera que foi
+**mais fácil do que fazer fora dele**. Enquanto isso não acontecer, o trabalho não está pronto.
+Nenhum caso, até a data da auditoria, passou da triagem; nenhuma peça foi protocolada.
