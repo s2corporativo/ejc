@@ -18,11 +18,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.client_ownership import (
@@ -62,6 +63,20 @@ AVISO_HITL = (
 )
 
 
+def _data_iso(valor: str | None) -> str | None:
+    """Normaliza data em formato livre (IA) para ISO yyyy-mm-dd; None se não
+    interpretável — o frontend só envia prazo com data válida."""
+    if not valor:
+        return None
+    texto = valor.strip()[:40]
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d-%m-%Y", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(texto, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return None
+
+
 def _role(user: User) -> str:
     return getattr(user.role, "value", str(user.role))
 
@@ -85,10 +100,18 @@ async def identificar_cliente(
     # 1) Documento exato (índice cego) — identificação de confiança alta.
     for c in await _clientes_por_documentos(db, [cpf, cnpj]):
         if await pode_ver_cliente(db, user, c):
+            # Contexto prometido pela tela de confirmação ("já cadastrada ·
+            # N casos anteriores") — contagem simples da própria carteira.
+            n_casos = (await db.execute(
+                select(func.count()).select_from(Case).where(
+                    Case.client_id == c.id, Case.deleted_at.is_(None),
+                )
+            )).scalar_one()
             return (
                 {
                     "client_id": c.id, "nome": c.nome_exibicao,
                     "ja_cadastrado": True,
+                    "casos_anteriores": int(n_casos),
                     "origem": "CPF/CNPJ extraído dos documentos (índice cego)",
                     "confianca": "alta",
                 },
@@ -356,7 +379,11 @@ async def analisar_entrada(
         prazo = {
             "descricao": _s(prazo_docs.get("termo_inicial"), 500)
             or "Prazo identificado na análise dos documentos",
-            "data": _s(prazo_docs.get("data_expressa"), 40),
+            # Data SEMPRE ISO (yyyy-mm-dd) ou null: a IA devolve datas em
+            # formato livre ("15/09/2026") e o schema de criação exige date —
+            # data não interpretável não pode derrubar a criação com 422.
+            "data": _data_iso(_s(prazo_docs.get("data_expressa"), 40)),
+            "data_texto": _s(prazo_docs.get("data_expressa"), 40),
             "origem": "análise dos documentos (IA — rascunho)",
             "requer_confirmacao_humana": True,
         }
@@ -558,19 +585,43 @@ async def criar_caso_do_rascunho(
                 raise HTTPException(
                     422, "documentos_ids contém documento já vinculado a outro caso"
                 )
+            # B5 (auditoria): dedup por SHA pode apontar para documento de
+            # OUTRO cliente da carteira — sobrescrever client_id misturaria
+            # acervos (integridade/LGPD). Recusa explícita, sem sobrescrita.
+            if doc.client_id and doc.client_id != client.id:
+                raise HTTPException(
+                    422, "documentos_ids contém documento pertencente a outro "
+                         "cliente — remova-o da seleção ou anexe uma cópia nova",
+                )
             doc.case_id = case.id
             doc.client_id = client.id
         documentos_vinculados = len(docs)
 
     deadline_id: str | None = None
     if payload.prazo is not None:
+        # B1 (auditoria): o responsável do prazo segue a mesma régua do
+        # responsável do caso — usuário ativo da equipe (piso estagiário);
+        # id inexistente/inativo viraria IntegrityError 500 ou atribuição a
+        # perfil sem acesso.
+        resp_prazo_id = payload.prazo.responsavel_id or payload.advogado_responsavel_id
+        if resp_prazo_id != payload.advogado_responsavel_id:
+            resp_prazo = await db.get(User, resp_prazo_id)
+            if (
+                resp_prazo is None
+                or not getattr(resp_prazo, "is_active", True)
+                or ROLE_LEVEL.get(_role(resp_prazo), 0) < ROLE_LEVEL["estagiario"]
+            ):
+                raise HTTPException(
+                    422, "Responsável do prazo inválido: informe um membro "
+                         "ativo da equipe jurídica",
+                )
         prazo = Deadline(
             id=str(uuid4()),
             titulo=payload.prazo.titulo,
             descricao=payload.prazo.descricao,
             data_prazo=payload.prazo.data,
             case_id=case.id,
-            responsavel_id=payload.prazo.responsavel_id or payload.advogado_responsavel_id,
+            responsavel_id=resp_prazo_id,
             origem="entrada_unica",
         )
         db.add(prazo)

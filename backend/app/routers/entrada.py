@@ -60,6 +60,10 @@ async def analisar(
         raise HTTPException(
             422, "Envie ao menos um arquivo ou um relato com 40+ caracteres"
         )
+    # Teto do relato (paridade com a Entrevista Inteligente, que limita o
+    # payload a 15.000) — sem ele o texto integral iria a batch.resultado.
+    if texto_limpo and len(texto_limpo) > 15_000:
+        raise HTTPException(422, "Relato excede 15.000 caracteres")
 
     # O rascunho persiste também no caminho só-texto (document_count=0):
     # a proposta editável sobrevive ao F5 dentro de batch.resultado.
@@ -86,7 +90,12 @@ async def analisar(
         await db.rollback()  # limpa transação pendente antes de reusar a sessão
         batch.status = "erro"; await db.commit()
         logger.exception("Falha na análise da Entrada Única (lote %s)", batch.id)
-        raise HTTPException(500, f"Falha ao analisar a entrada: {str(exc)[:180]}")
+        # Mensagem genérica: detalhe de exceção interna só no log (achado B4
+        # da auditoria — não expor internals ao cliente).
+        raise HTTPException(
+            500, "Falha ao analisar a entrada. Os originais enviados foram "
+                 "preservados; tente novamente ou contate a gestão.",
+        ) from exc
 
 
 @router.post("/{rascunho_id}/criar-caso",
