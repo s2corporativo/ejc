@@ -16,7 +16,7 @@ concurrency:
 jobs:
   backup-restore-drill:
     name: Continuidade — backup cifrado + restore em banco vazio
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
       run:
@@ -29,10 +29,7 @@ jobs:
           POSTGRES_PASSWORD: ejc_pass
           POSTGRES_DB: ejc_db
         ports:
-          # Porta ALTA e DISTINTA da usada pelo ci.yml (55432): o runner é
-          # self-hosted e divide o VPS com o Postgres de produção, que ocupa a
-          # 5432. Portas diferentes por workflow também evitam que dois jobs
-          # concorrentes no mesmo host colidam entre si.
+          # Porta dedicada do PostgreSQL efêmero usado exclusivamente por este job.
           - 55433:5432
         options: >-
           --health-cmd "pg_isready -U ejc_user -d ejc_db"
@@ -64,9 +61,7 @@ jobs:
 
       - name: Preparar banco migrado
         run: |
-          # -p obrigatório: o serviço é exposto em 55433 no host (a 5432 é do
-          # Postgres de produção). Sem a porta, o psql usa 5432 e falha com
-          # "Connection refused".
+          # -p obrigatório porque o serviço efêmero foi publicado em 55433.
           PGPASSWORD=ejc_pass psql -h localhost -p 55433 -U ejc_user -d ejc_db \
             -c "CREATE EXTENSION IF NOT EXISTS vector;" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
@@ -100,7 +95,7 @@ jobs:
 
   frontend-extra-gates:
     name: Frontend — ESLint + browser responsivo
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
       run:

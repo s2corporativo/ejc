@@ -20,7 +20,7 @@ concurrency:
 jobs:
   verify-main-origin:
     name: Governança — comprovar origem da atualização da main
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Validar PR associado e detectar force-push
