@@ -263,6 +263,7 @@ export default function SalaJuridica() {
   const [convNovoCliente, setConvNovoCliente] = useState("");
   const [convArea, setConvArea] = useState("civil");
   const [convTitulo, setConvTitulo] = useState("");
+  const [convFatos, setConvFatos] = useState("");
   const [convConflito, setConvConflito] = useState(false);
   const [convRevisado, setConvRevisado] = useState(false);
   const [convertendo, setConvertendo] = useState(false);
@@ -486,6 +487,12 @@ export default function SalaJuridica() {
   const abrirWizard = () => {
     if (!ativa) return;
     setConvTitulo(ativa.titulo);
+    // Fatos pré-preenchidos do estado consolidado da conversa — sem isso o
+    // caso nascia com descricao_fatos NULL (o backend aceita `descricao`,
+    // mas o wizard nunca enviava). Limite espelha o schema (max 10_000).
+    setConvFatos(
+      (ativa.estado?.resumo ?? ativa.workspace_texto ?? "").slice(0, 10_000),
+    );
     setConvNovoCliente(ativa.cliente_potencial ?? "");
     setConvClienteId(null);
     setConvConflito(false);
@@ -568,6 +575,8 @@ export default function SalaJuridica() {
           : convNovoCliente.trim() || null,
         area: convArea,
         titulo_caso: convTitulo.trim(),
+        // Fatos estruturados da conversa acompanham o caso (descricao_fatos).
+        descricao: convFatos.trim() || null,
         advogado_responsavel_id: user?.id,
         confirmo_conflito_verificado: convConflito,
         confirmo_dados_revisados: convRevisado,
@@ -1014,7 +1023,7 @@ export default function SalaJuridica() {
                       className={cn(
                         "rounded-lg border p-3 text-sm",
                         m.autor === "user"
-                          ? "ml-auto w-fit max-w-[88%] border-blue-100 bg-blue-50"
+                          ? "ml-auto w-fit max-w-[88%] border-primary-100 bg-primary-50 dark:border-primary-900 dark:bg-primary-950/40"
                           : "border-gray-200 bg-white shadow-sm",
                       )}
                     >
@@ -1483,6 +1492,13 @@ export default function SalaJuridica() {
                 ))}
               </Select>
             </div>
+            <textarea
+              className="input mt-2 h-28 w-full text-sm"
+              placeholder="Fatos do caso (pré-preenchidos da análise — confira e ajuste)"
+              maxLength={10_000}
+              value={convFatos}
+              onChange={(e) => setConvFatos(e.target.value)}
+            />
             <p className="mt-1 text-xs text-slate-500">
               Responsável: {user?.full_name} (você)
             </p>
