@@ -7,8 +7,8 @@ identificador de documento, DSN, segredo ou exceção bruta é emitido.
 Modos:
   runtime   valida a configuração efetiva do processo, sem baixar pesos;
   preflight valida provider, banco e vetor real antes da mutação do .env;
-  canary    reembeda no máximo N documentos vigentes com chunks pendentes;
-  proof     comprova configuração, pgvector, busca semântica e continuidade.
+  canary    reembeda no máximo N documentos elegíveis pela governança;
+  proof     comprova configuração, pgvector, recuperação governada e continuidade.
 """
 from __future__ import annotations
 
@@ -66,9 +66,18 @@ def _config_metrics() -> tuple[dict[str, Any], list[str]]:
     return data, problems
 
 
+def _governance_contract() -> tuple[str, list[str]]:
+    """Retorna o mesmo gate SQL usado pela recuperação real do EJC."""
+    from app.services import ai_service as ai
+
+    return ai._filtros_gate_rag(False), list(ai._RESTRICTED_CATS)
+
+
 async def _db_metrics() -> dict[str, Any]:
     from app.core.database import AsyncSessionLocal
+    from app.services import ai_service as ai
 
+    gate_sql, restricted = _governance_contract()
     async with AsyncSessionLocal() as db:
         column_type = (
             await db.execute(
@@ -84,7 +93,7 @@ async def _db_metrics() -> dict[str, Any]:
                 )
             )
         ).scalar_one_or_none()
-        row = (
+        active = (
             await db.execute(
                 text(
                     "SELECT "
@@ -97,15 +106,37 @@ async def _db_metrics() -> dict[str, Any]:
                 )
             )
         ).one()
+        governed = (
+            await db.execute(
+                text(
+                    "SELECT "
+                    "COUNT(*) AS total, "
+                    "COUNT(*) FILTER (WHERE kc.embedding IS NOT NULL) AS embedded, "
+                    "COUNT(*) FILTER (WHERE kc.embedding IS NULL) AS pending "
+                    "FROM knowledge_chunks kc "
+                    "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
+                    "WHERE kd.deleted_at IS NULL "
+                    "AND (kd.vigente = TRUE OR :incl_hist) "
+                    "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id IS NOT NULL) "
+                    f"{gate_sql}"
+                ),
+                {"incl_hist": False, "restr_cats": restricted},
+            )
+        ).one()
 
     column_text = str(column_type) if column_type is not None else None
     match = _COLUMN_RE.fullmatch(column_text or "")
     return {
         "embedding_tipo_coluna": column_text,
         "embedding_dim_coluna": int(match.group(1)) if match else None,
-        "knowledge_chunks_vigentes_total": int(row.total or 0),
-        "knowledge_chunks_vigentes_com_embedding": int(row.embedded or 0),
-        "knowledge_chunks_vigentes_pendentes": int(row.pending or 0),
+        "knowledge_chunks_vigentes_total": int(active.total or 0),
+        "knowledge_chunks_vigentes_com_embedding": int(active.embedded or 0),
+        "knowledge_chunks_vigentes_pendentes": int(active.pending or 0),
+        "knowledge_chunks_governados_total": int(governed.total or 0),
+        "knowledge_chunks_governados_com_embedding": int(governed.embedded or 0),
+        "knowledge_chunks_governados_pendentes": int(governed.pending or 0),
+        "governanca_recuperacao_espelhada": True,
+        "rag_max_dist": float(ai._rag_max_dist()),
     }
 
 
@@ -144,23 +175,63 @@ async def _probe_pgvector(vector: list[float]) -> bool:
     return abs(float(distance)) < 1e-9
 
 
-async def _probe_semantic_search(vector: list[float]) -> bool:
-    from app.core.database import AsyncSessionLocal
+async def _probe_semantic_search() -> bool:
+    """Exercita os mesmos gates da recuperação real, sem emitir conteúdo/IDs.
 
-    literal = _vector_literal(vector)
+    Primeiro escolhe internamente um chunk já elegível e usa o próprio vetor
+    como consulta controlada. Em seguida repete escopo, vigência, aprovação,
+    quarentena, exclusão de fictícios e limiar máximo de distância usados por
+    ``buscar_contexto_rag``. A distância do próprio vetor é zero, portanto uma
+    falha significa que o caminho governado não está recuperando o corpus.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.services import ai_service as ai
+
+    gate_sql, restricted = _governance_contract()
     async with AsyncSessionLocal() as db:
+        seed = (
+            await db.execute(
+                text(
+                    "SELECT kc.embedding::text AS vector_text, "
+                    "CASE WHEN kd.categoria = ANY(:restr_cats) "
+                    "THEN kd.client_id::text ELSE '' END AS scope_cli "
+                    "FROM knowledge_chunks kc "
+                    "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
+                    "WHERE kd.deleted_at IS NULL "
+                    "AND kc.embedding IS NOT NULL "
+                    "AND (kd.vigente = TRUE OR :incl_hist) "
+                    "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id IS NOT NULL) "
+                    f"{gate_sql} "
+                    "ORDER BY kc.id LIMIT 1"
+                ),
+                {"incl_hist": False, "restr_cats": restricted},
+            )
+        ).first()
+        if seed is None:
+            return False
+
         row = (
             await db.execute(
                 text(
                     "SELECT 1 "
                     "FROM knowledge_chunks kc "
                     "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
-                    "WHERE kd.deleted_at IS NULL AND kd.vigente = true "
+                    "WHERE kd.deleted_at IS NULL "
                     "AND kc.embedding IS NOT NULL "
-                    "ORDER BY kc.embedding <=> CAST(:vector AS vector(1024)) "
+                    "AND (kc.embedding <=> CAST(:vec AS vector(1024))) <= :max_dist "
+                    f"{ai._FILTRO_ESCOPO_RAG} "
+                    f"{ai._FILTRO_VIGENTE_RAG} "
+                    f"{gate_sql} "
+                    "ORDER BY kc.embedding <=> CAST(:vec AS vector(1024)) "
                     "LIMIT 1"
                 ),
-                {"vector": literal},
+                {
+                    "vec": seed.vector_text,
+                    "max_dist": ai._rag_max_dist(),
+                    "restr_cats": restricted,
+                    "scope_cli": seed.scope_cli or "",
+                    "incl_hist": False,
+                },
             )
         ).first()
     return row is not None
@@ -202,26 +273,29 @@ async def preflight() -> int:
 
 async def canary(max_docs: int) -> int:
     from app.core.database import AsyncSessionLocal
+    from app.services import ai_service as ai
     from scripts.reembedar_chunks_orfaos import _reembedar_doc
 
     data, problems = _config_metrics()
     data["max_docs"] = max_docs
+    data["canario_governado"] = True
     if not data["EMBEDDINGS_ENABLED"]:
         problems.append("EMBEDDINGS_ENABLED não está efetivamente ligado")
         return _emit("canary", data, problems)
 
     try:
         before = await _db_metrics()
-        data["vigentes_com_embedding_antes"] = before[
-            "knowledge_chunks_vigentes_com_embedding"
+        data["governados_com_embedding_antes"] = before[
+            "knowledge_chunks_governados_com_embedding"
         ]
-        data["vigentes_pendentes_antes"] = before[
-            "knowledge_chunks_vigentes_pendentes"
+        data["governados_pendentes_antes"] = before[
+            "knowledge_chunks_governados_pendentes"
         ]
     except Exception as exc:
         problems.append(f"sonda pré-canário falhou:{_exception_code(exc)}")
         return _emit("canary", data, problems)
 
+    gate_sql, restricted = _governance_contract()
     processed = succeeded = failed = 0
     try:
         async with AsyncSessionLocal() as db:
@@ -231,7 +305,10 @@ async def canary(max_docs: int) -> int:
                         text(
                             "SELECT kd.id "
                             "FROM knowledge_docs kd "
-                            "WHERE kd.deleted_at IS NULL AND kd.vigente = true "
+                            "WHERE kd.deleted_at IS NULL "
+                            "AND (kd.vigente = TRUE OR :incl_hist) "
+                            "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id IS NOT NULL) "
+                            f"{gate_sql} "
                             "AND EXISTS ("
                             "  SELECT 1 FROM knowledge_chunks kc "
                             "  WHERE kc.doc_id = kd.id AND kc.embedding IS NULL"
@@ -240,7 +317,11 @@ async def canary(max_docs: int) -> int:
                             "LIMIT :limit "
                             "FOR UPDATE OF kd SKIP LOCKED"
                         ),
-                        {"limit": max_docs},
+                        {
+                            "limit": max_docs,
+                            "incl_hist": False,
+                            "restr_cats": restricted,
+                        },
                     )
                 ).scalars().all()
 
@@ -268,10 +349,10 @@ async def canary(max_docs: int) -> int:
     try:
         after = await _db_metrics()
         data.update(after)
-        data["novos_chunks_vigentes_com_embedding"] = max(
+        data["novos_chunks_governados_com_embedding"] = max(
             0,
-            int(after["knowledge_chunks_vigentes_com_embedding"])
-            - int(before["knowledge_chunks_vigentes_com_embedding"]),
+            int(after["knowledge_chunks_governados_com_embedding"])
+            - int(before["knowledge_chunks_governados_com_embedding"]),
         )
     except Exception as exc:
         problems.append(f"sonda pós-canário falhou:{_exception_code(exc)}")
@@ -285,8 +366,9 @@ async def canary(max_docs: int) -> int:
     return _emit("canary", data, problems)
 
 
-async def proof() -> int:
+async def proof(require_continuity: bool = True) -> int:
     data, problems = _config_metrics()
+    data["continuidade_exigida"] = require_continuity
     if not data["EMBEDDINGS_ENABLED"]:
         problems.append("EMBEDDINGS_ENABLED não está efetivamente ligado")
 
@@ -301,12 +383,26 @@ async def proof() -> int:
     total = int(data.get("knowledge_chunks_vigentes_total") or 0)
     embedded = int(data.get("knowledge_chunks_vigentes_com_embedding") or 0)
     pending = int(data.get("knowledge_chunks_vigentes_pendentes") or 0)
+    governed_total = int(data.get("knowledge_chunks_governados_total") or 0)
+    governed_embedded = int(
+        data.get("knowledge_chunks_governados_com_embedding") or 0
+    )
     data["cobertura_vigente_percentual"] = (
         round(embedded * 100 / total, 4) if total else 100.0
     )
+    data["cobertura_governada_percentual"] = (
+        round(governed_embedded * 100 / governed_total, 4)
+        if governed_total
+        else (100.0 if total == 0 else 0.0)
+    )
+
     if total and not embedded:
         problems.append("corpus vigente existe, mas nenhum chunk vigente foi vetorizado")
-    if pending and not (
+    if total and not governed_total:
+        problems.append("corpus vigente existe, mas nenhum chunk é elegível pela governança")
+    if governed_total and not governed_embedded:
+        problems.append("corpus governado existe, mas nenhum chunk elegível foi vetorizado")
+    if require_continuity and pending and not (
         data["ENABLE_SCHEDULER"] and data["RAG_AUTO_REEMBED_ENABLED"]
     ):
         problems.append(
@@ -320,19 +416,27 @@ async def proof() -> int:
         data["probe_pgvector_ok"] = await _probe_pgvector(vector)
         if not data["probe_pgvector_ok"]:
             problems.append("pgvector não aceitou o vetor de consulta")
-        if embedded:
-            data["probe_busca_semantica_ok"] = await _probe_semantic_search(vector)
-            if not data["probe_busca_semantica_ok"]:
-                problems.append("busca semântica sobre o corpus vigente não retornou linha")
+        if governed_embedded:
+            data["probe_busca_semantica_governada_ok"] = (
+                await _probe_semantic_search()
+            )
+            if not data["probe_busca_semantica_governada_ok"]:
+                problems.append(
+                    "recuperação semântica governada não retornou linha elegível"
+                )
         else:
-            data["probe_busca_semantica_ok"] = total == 0
+            data["probe_busca_semantica_governada_ok"] = total == 0
     except Exception as exc:
         data["probe_consulta_ok"] = False
         data["probe_consulta_dim"] = None
         data["probe_pgvector_ok"] = False
-        data["probe_busca_semantica_ok"] = False
+        data["probe_busca_semantica_governada_ok"] = False
         problems.append(f"probe final falhou:{_exception_code(exc)}")
 
+    # Alias agregado mantido para consumidores/relatórios anteriores.
+    data["probe_busca_semantica_ok"] = data.get(
+        "probe_busca_semantica_governada_ok", False
+    )
     return _emit("proof", data, problems)
 
 
@@ -343,7 +447,12 @@ def _parser() -> argparse.ArgumentParser:
     subparsers.add_parser("preflight")
     canary_parser = subparsers.add_parser("canary")
     canary_parser.add_argument("--max-docs", type=int, default=5)
-    subparsers.add_parser("proof")
+    proof_parser = subparsers.add_parser("proof")
+    proof_parser.add_argument(
+        "--skip-continuity",
+        action="store_true",
+        help="prova o caminho governado antes de liberar o scheduler",
+    )
     return parser
 
 
@@ -357,7 +466,7 @@ def main() -> int:
         if not 1 <= args.max_docs <= 50:
             raise SystemExit("--max-docs deve ficar entre 1 e 50")
         return asyncio.run(canary(args.max_docs))
-    return asyncio.run(proof())
+    return asyncio.run(proof(require_continuity=not args.skip_continuity))
 
 
 if __name__ == "__main__":

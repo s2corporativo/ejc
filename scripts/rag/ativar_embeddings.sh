@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # EJC — ativação idempotente, auditável e reversível da busca semântica do RAG.
 # Altera exclusivamente EMBEDDINGS_ENABLED no .env. Provider, modelo, dimensão,
-# backup, runtime e canário são comprovados antes de concluir a operação.
+# backup, runtime, canário governado e continuidade são comprovados.
 set -Eeuo pipefail
 umask 077
 
@@ -15,6 +15,8 @@ EXPECTED_GIT_SHA="${EXPECTED_GIT_SHA:-}"
 PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-https://ejc.depaulateixeira.adv.br/api/health}"
 RAG_LOCK_FILE="${RAG_LOCK_FILE:-/tmp/ejc-rag-activation.lock}"
 PROBE_SCRIPT="scripts/rag/provar_ativacao.py"
+TMP_PARENT="${TMPDIR:-/tmp}"
+TMP_DIR=""
 
 log() { printf '[ativar-rag] %s\n' "$*"; }
 die() { printf '[ativar-rag] ERRO: %s\n' "$*" >&2; exit 1; }
@@ -25,11 +27,12 @@ esac
 [ "$RAG_CANARY_DOCS" -ge 1 ] && [ "$RAG_CANARY_DOCS" -le 50 ] || \
   die "RAG_CANARY_DOCS deve ficar entre 1 e 50."
 
-for command_name in docker curl python3 flock sha256sum stat; do
+for command_name in docker curl python3 flock sha256sum stat mktemp find rmdir dirname basename; do
   command -v "$command_name" >/dev/null 2>&1 || die "$command_name não encontrado."
 done
 [ -n "$EXPECTED_GIT_SHA" ] || die "EXPECTED_GIT_SHA é obrigatório."
 [ -d "$APP_DIR" ] || die "APP_DIR inexistente: $APP_DIR"
+[ -d "$TMP_PARENT" ] || die "diretório temporário inexistente: $TMP_PARENT"
 cd "$APP_DIR"
 [ -f "$ENV_FILE" ] || die "$ENV_FILE não encontrado."
 [ -f "$PROBE_SCRIPT" ] || die "$PROBE_SCRIPT não encontrado."
@@ -52,12 +55,13 @@ docker exec "$APP_CONTAINER" true >/dev/null 2>&1 || \
 docker exec "$WORKER_CONTAINER" true >/dev/null 2>&1 || \
   die "container $WORKER_CONTAINER não está no ar."
 
-TMP_DIR="$(mktemp -d)"
+TMP_DIR="$(mktemp -d "$TMP_PARENT/ejc-rag-activation.XXXXXXXX")"
 RUNTIME_BACKEND_JSON="$TMP_DIR/runtime-backend.json"
 RUNTIME_WORKER_JSON="$TMP_DIR/runtime-worker.json"
 PREFLIGHT_JSON_FILE="$TMP_DIR/preflight.json"
 BACKUP_JSON_FILE="$TMP_DIR/backup.json"
 CANARY_JSON_FILE="$TMP_DIR/canary.json"
+PREPROOF_JSON_FILE="$TMP_DIR/proof-before-scheduler.json"
 PROOF_JSON_FILE="$TMP_DIR/proof.json"
 LAST_JSON_FILE=""
 ENV_BAK=""
@@ -67,6 +71,25 @@ PREVIOUS_EFFECTIVE_ENABLED="false"
 ROLLBACK_ARMED=0
 MUTATED=0
 IDEMPOTENT=0
+
+cleanup_tmp_dir() {
+  local dir="${TMP_DIR:-}" parent="" base=""
+  [ -z "$dir" ] && return 0
+  [ ! -e "$dir" ] && { TMP_DIR=""; return 0; }
+  [ -d "$dir" ] || return 1
+  parent="$(dirname -- "$dir")"
+  base="$(basename -- "$dir")"
+  [ "$parent" = "$TMP_PARENT" ] || return 1
+  case "$base" in
+    ejc-rag-activation.*) ;;
+    *) return 1 ;;
+  esac
+  # Somente arquivos/symlinks diretamente dentro do diretório conhecido.
+  # Subdiretórios ou tipos inesperados fazem rmdir falhar e preservam evidência.
+  find "$dir" -mindepth 1 -maxdepth 1 \( -type f -o -type l \) -delete
+  rmdir -- "$dir"
+  TMP_DIR=""
+}
 
 json_valid() {
   python3 -c 'import json,sys; json.load(sys.stdin)' >/dev/null 2>&1
@@ -115,8 +138,8 @@ import sys
 
 path = Path(sys.argv[1])
 lines = path.read_text(encoding="utf-8").splitlines()
-assignments = []
-ambiguous = []
+assignments: list[str] = []
+ambiguous: list[str] = []
 for line in lines:
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
@@ -148,7 +171,7 @@ import re
 import sys
 
 path = Path(sys.argv[1])
-kept = []
+kept: list[bytes] = []
 for line in path.read_bytes().splitlines(keepends=True):
     text = line.decode("utf-8")
     if re.match(r"^EMBEDDINGS_ENABLED=", text):
@@ -170,7 +193,7 @@ import tempfile
 path = Path(sys.argv[1])
 raw = path.read_text(encoding="utf-8")
 lines = raw.splitlines(keepends=True)
-matches = []
+matches: list[int] = []
 for index, line in enumerate(lines):
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
@@ -292,12 +315,13 @@ raise SystemExit(0 if all(d.get(k) is True for k in required) else 1)
 write_success_report() {
   [ -z "$RAG_REPORT_PATH" ] && return 0
   python3 - "$RAG_REPORT_PATH" "$PROOF_JSON_FILE" "$PREFLIGHT_JSON_FILE" \
-    "$BACKUP_JSON_FILE" "$CANARY_JSON_FILE" "$EXPECTED_GIT_SHA" \
-    "$IDEMPOTENT" "$MUTATED" <<'PY'
+    "$BACKUP_JSON_FILE" "$CANARY_JSON_FILE" "$PREPROOF_JSON_FILE" \
+    "$EXPECTED_GIT_SHA" "$IDEMPOTENT" "$MUTATED" <<'PY'
 from pathlib import Path
 import json
 import os
 import sys
+
 
 def load_optional(path: str):
     p = Path(path)
@@ -305,17 +329,19 @@ def load_optional(path: str):
         return None
     return json.loads(p.read_text(encoding="utf-8"))
 
+
 out = Path(sys.argv[1])
 proof = load_optional(sys.argv[2]) or {}
 preflight = load_optional(sys.argv[3]) or {}
 backup = load_optional(sys.argv[4])
 canary = load_optional(sys.argv[5])
+preproof = load_optional(sys.argv[6])
 proof.update({
     "fase": "ativacao_controlada",
     "ok": True,
-    "target_sha": sys.argv[6] or None,
-    "idempotente": sys.argv[7] == "1",
-    "env_mutado": sys.argv[8] == "1",
+    "target_sha": sys.argv[7] or None,
+    "idempotente": sys.argv[8] == "1",
+    "env_mutado": sys.argv[9] == "1",
     "preflight_ok": preflight.get("ok") is True,
     "backup_cifrado_ok": None if backup is None else all(
         backup.get(k) is True
@@ -323,6 +349,7 @@ proof.update({
     ),
     "canario_executado": canary is not None,
     "canario_documentos_processados": None if canary is None else canary.get("documentos_processados"),
+    "prova_governada_pre_scheduler_ok": None if preproof is None else preproof.get("ok") is True,
     "rollback_executado": False,
     "rollback_ok": None,
 })
@@ -346,10 +373,14 @@ import sys
 
 out = Path(sys.argv[1])
 source = Path(sys.argv[2]) if sys.argv[2] else None
-base = {}
+base: dict = {}
 if source and source.exists():
     try:
-        base = json.loads(source.read_text(encoding="utf-8"))
+        raw = json.loads(source.read_text(encoding="utf-8"))
+        base = {
+            "fase_origem": raw.get("fase"),
+            "problemas": [str(item)[:240] for item in raw.get("problemas", [])[:10]],
+        }
     except Exception:
         base = {"problemas": ["fase operacional não produziu JSON válido"]}
 base.update({
@@ -397,7 +428,7 @@ on_exit() {
   if [ "$rc" -ne 0 ]; then
     write_failure_report "$rollback_executed" "$rollback_ok" || true
   fi
-  rm -rf "$TMP_DIR"
+  cleanup_tmp_dir || log "ALERTA: diretório temporário preservado para inspeção: ${TMP_DIR:-indisponível}"
   exit "$rc"
 }
 trap on_exit EXIT
@@ -441,7 +472,7 @@ if [ "$PREVIOUS_EFFECTIVE_ENABLED" = "true" ]; then
   assert_runtime_enabled "$WORKER_CONTAINER" true "$RUNTIME_WORKER_JSON" || \
     die "worker não confirma embeddings ativos."
   write_success_report
-  rm -rf "$TMP_DIR"
+  cleanup_tmp_dir || die "não foi possível remover o diretório temporário controlado."
   trap - EXIT INT TERM
   log "RAG semântico já estava ativo e foi comprovado sem mutação."
   exit 0
@@ -473,6 +504,17 @@ MUTATED=1
 [ "$(env_fingerprint_without_flag)" = "$FINGERPRINT_BEFORE" ] || \
   die "campo alheio a EMBEDDINGS_ENABLED foi alterado."
 
+# O backend antigo continua com embeddings desativados e, portanto, o scheduler
+# não pode drenar o corpus. O canário roda em um subprocesso isolado do worker,
+# com override somente naquele processo, antes de recriar o backend.
+log "reindexando canário governado de até ${RAG_CANARY_DOCS} documento(s)..."
+capture_probe "$CANARY_JSON_FILE" "$WORKER_CONTAINER" canary 1 \
+  --max-docs "$RAG_CANARY_DOCS" || die "reindexação canário governada falhou."
+
+log "comprovando busca governada antes de liberar o scheduler..."
+capture_probe "$PREPROOF_JSON_FILE" "$WORKER_CONTAINER" proof 1 \
+  --skip-continuity || die "prova governada pré-scheduler falhou."
+
 log "recriando backend e worker com a configuração efetiva..."
 "${DC[@]}" up -d --force-recreate --no-deps backend worker
 wait_backend || die "backend não ficou saudável após a ativação."
@@ -482,11 +524,7 @@ assert_runtime_enabled "$APP_CONTAINER" true "$RUNTIME_BACKEND_JSON" || \
 assert_runtime_enabled "$WORKER_CONTAINER" true "$RUNTIME_WORKER_JSON" || \
   die "worker não carregou EMBEDDINGS_ENABLED=true."
 
-log "reindexando canário de até ${RAG_CANARY_DOCS} documento(s) vigente(s)..."
-capture_probe "$CANARY_JSON_FILE" "$APP_CONTAINER" canary 0 \
-  --max-docs "$RAG_CANARY_DOCS" || die "reindexação canário falhou."
-
-log "comprovando corpus vigente, pgvector, busca semântica e continuidade..."
+log "comprovando corpus, recuperação governada, scheduler e continuidade..."
 capture_probe "$PROOF_JSON_FILE" "$APP_CONTAINER" proof 0 || \
   die "prova final do RAG semântico falhou."
 assert_health_commit "http://127.0.0.1:8000/api/health" "$EXPECTED_GIT_SHA" || \
@@ -497,6 +535,6 @@ assert_health_commit "$PUBLIC_HEALTH_URL" "$EXPECTED_GIT_SHA" || \
 write_success_report
 ROLLBACK_ARMED=0
 rm -f "$ENV_BAK"
-rm -rf "$TMP_DIR"
+cleanup_tmp_dir || die "não foi possível remover o diretório temporário controlado."
 trap - EXIT INT TERM
-log "RAG semântico ATIVO e comprovado; pendências vigentes ficarão a cargo do scheduler."
+log "RAG semântico ATIVO e comprovado; pendências governadas ficarão a cargo do scheduler."
