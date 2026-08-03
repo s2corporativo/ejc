@@ -55,11 +55,15 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
     ],
   },
   {
+    // Tela C (Bloco 3): "pecas" entra aqui — peça é o documento que o caso
+    // produz, e a seção já reúne tudo que o caso guarda e gera em arquivo.
+    // Duplicação temporária com o módulo /pecas aceita pelo titular
+    // (Decisões de 2026-08-02, item 2).
     label: "Arquivos",
     tab: "documentos",
     icon: FileStack,
-    descricao: "Documentos, provas, contratos e procurações.",
-    tabs: ["documentos", "provas", "contratos", "procuracoes"],
+    descricao: "Documentos, peças, provas, contratos e procurações.",
+    tabs: ["documentos", "pecas", "provas", "contratos", "procuracoes"],
   },
   {
     label: "Estratégia",

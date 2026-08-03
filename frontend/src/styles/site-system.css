@@ -127,9 +127,9 @@
 
 /* Faixa clara da marca no thead (ouro palha) + texto escuro da marca */
 .ejc-modern-scope :where(thead th) {
-  background: #f7f9fc;
-  border-bottom: 1px solid rgba(37, 99, 235, 0.22);
-  color: #0b1f3a;
+  background: #faf6e7;
+  border-bottom: 1px solid rgba(143, 113, 23, 0.22);
+  color: #3b2f0b;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -168,12 +168,12 @@
   > .space-y-6
   > .flex.flex-col.gap-4:first-child
   .eyebrow {
-  color: #2563eb;
+  color: #6f5711;
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child h1 {
   /* Título denso na cor escura da marca (idioma compacto) */
-  color: #0b1f3a;
+  color: #3b2f0b;
   font-size: 1.35rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -188,7 +188,7 @@
   > .space-y-6
   > .flex.flex-col.gap-4:first-child
   .btn-primary {
-  background: #2563eb;
+  background: #8f7117;
   color: #ffffff;
   box-shadow: none;
 }
@@ -232,7 +232,7 @@
   position: absolute;
   inset: 0 0 auto 0;
   height: 3px;
-  background: #2563eb;
+  background: #d4af37;
 }
 
 .ejc-modern-scope
@@ -273,12 +273,12 @@
 .dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child {
   /* Cartão flat no escuro (sem gradiente/blob), hairline dourado */
   background: var(--ejc-card);
-  border-color: rgba(37, 99, 235, 0.2);
+  border-color: rgba(212, 175, 55, 0.2);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
 /* Textos e botão secundário do hero — no claro ficaram tinta escura
-   (h1 #0F172A, eyebrow #2563eb, p slate) e botão branco, incondicionais;
+   (h1 near-black ouro, eyebrow ouro profundo, p slate) e botão branco, incondicionais;
    no grafite precisam de creme/ouro para legibilidade (AA). */
 .dark
   .ejc-modern-scope
@@ -286,7 +286,7 @@
   > .space-y-6
   > .flex.flex-col.gap-4:first-child
   .eyebrow {
-  color: #93c5fd;
+  color: #e5ce7f;
 }
 .dark
   .ejc-modern-scope

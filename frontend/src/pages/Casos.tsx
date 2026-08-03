@@ -848,13 +848,13 @@ export default function Casos() {
             <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
               <button
                 onClick={() => setView("lista")}
-                className={`flex items-center gap-1 px-3 py-1.5 text-sm ${view === "lista" ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
+                className={`flex items-center gap-1 px-3 py-1.5 transition-colors duration-150 text-sm ${view === "lista" ? "bg-primary-900 text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
               >
                 <List size={15} /> Lista
               </button>
               <button
                 onClick={() => setView("kanban")}
-                className={`flex items-center gap-1 px-3 py-1.5 text-sm ${view === "kanban" ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
+                className={`flex items-center gap-1 px-3 py-1.5 transition-colors duration-150 text-sm ${view === "kanban" ? "bg-primary-900 text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
               >
                 <LayoutGrid size={15} /> Quadro
               </button>
@@ -916,9 +916,9 @@ export default function Casos() {
                   setAdvogadoF((prev) => (prev === user.id ? "" : user.id))
                 }
                 title="Ver somente os casos em que você é responsável ou auxiliar"
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
+                className={`px-3 py-1.5 transition-colors duration-150 rounded-lg text-sm font-medium whitespace-nowrap ${
                   advogadoF === user.id
-                    ? "bg-gold text-navy"
+                    ? "bg-primary-600 text-white"
                     : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"
                 }`}
               >
@@ -941,7 +941,7 @@ export default function Casos() {
             <div className="flex gap-1">
               <button
                 onClick={() => setTipoF("")}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tipoF === "" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
+                className={`px-3 py-1.5 transition-colors duration-150 rounded-lg text-sm font-medium ${tipoF === "" ? "bg-primary-900 text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
               >
                 Todos
               </button>
@@ -949,7 +949,7 @@ export default function Casos() {
                 <button
                   key={t.k}
                   onClick={() => setTipoF(t.k)}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${tipoF === t.k ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
+                  className={`flex items-center gap-1 px-3 py-1.5 transition-colors duration-150 rounded-lg text-sm font-medium ${tipoF === t.k ? "bg-primary-900 text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
                 >
                   <t.icon size={13} /> {t.l}
                 </button>
@@ -965,7 +965,7 @@ export default function Casos() {
                 <button
                   key={k}
                   onClick={() => setArquivoF(k)}
-                  className={`flex items-center gap-1 px-3 py-1.5 text-sm font-medium ${arquivoF === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
+                  className={`flex items-center gap-1 px-3 py-1.5 transition-colors duration-150 text-sm font-medium ${arquivoF === k ? "bg-primary-900 text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
                 >
                   <Icon size={13} /> {label}
                 </button>
@@ -1013,7 +1013,7 @@ export default function Casos() {
           ) : (
             <div className="card overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-bronze-50/50 text-left">
+                <thead className="bg-primary-50/60 text-left dark:bg-white/[0.04]">
                   <tr>
                     <th className="px-4 py-2.5 label-caps">Nº interno</th>
                     <th className="px-4 py-2.5 label-caps">Título</th>
@@ -1027,7 +1027,7 @@ export default function Casos() {
                     )}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-bronze-pale/40">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
                   {(tipoF
                     ? data.data.filter(
                         (c: any) => (c.case_type || "judicial") === tipoF,
@@ -1036,7 +1036,7 @@ export default function Casos() {
                   ).map((c) => (
                     <tr
                       key={c.id}
-                      className="hover:bg-bronze-50/40 transition-colors"
+                      className="transition-colors duration-150 hover:bg-primary-50/40 dark:hover:bg-white/[0.03]"
                     >
                       <td className="px-4 py-3 font-mono text-xs text-bronze-deep font-medium tracking-tight">
                         <Link to={`/casos/${c.id}`}>{c.numero_interno}</Link>

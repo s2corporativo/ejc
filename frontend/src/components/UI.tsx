@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
+  Archive,
   ArrowDown,
   ArrowUp,
   Bot,
@@ -44,7 +45,10 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "ai";
 
 const toneClasses: Record<Tone, string> = {
   slate: "bg-slate-100 text-slate-700 ring-slate-200",
-  blue: "bg-primary-50 text-primary-700 ring-primary-200",
+  // "blue" é tom INFORMATIVO de status (novo/em análise/em produção…) e
+  // usa a paleta `info` (azul céu) — o ouro `primary` fica reservado à
+  // marca/ações, para o dourado nunca virar cor de status genérica.
+  blue: "bg-info-50 text-info-700 ring-info-200",
   green: "bg-success-50 text-success-700 ring-success-200",
   amber: "bg-warn-50 text-warn-700 ring-warn-200",
   // Laranja/violeta/verde-azulado usam a paleta padrão do Tailwind (default
@@ -70,7 +74,7 @@ const toneClasses: Record<Tone, string> = {
 // cascata e atropelariam utilities `border-t-*` nos dois temas.
 const toneBarClasses: Record<Tone, string> = {
   slate: "before:bg-slate-400",
-  blue: "before:bg-primary-400",
+  blue: "before:bg-info-500",
   green: "before:bg-success-500",
   amber: "before:bg-warn-500",
   orange: "before:bg-orange-500",
@@ -248,6 +252,10 @@ const STATUS_REGISTRY: Record<
   "em revisao": { tone: "blue", icon: Eye, label: "Em revisão" },
   protocolado: { tone: "teal", icon: Send, label: "Protocolado" },
   concluido: { tone: "green", icon: CheckCircle2, label: "Concluído" },
+  // Estados terminais do ciclo do caso — mesmos ícone+texto em toda tela
+  // (antes caíam no mapa legado, sem ícone).
+  encerrado: { tone: "slate", icon: CheckCircle2, label: "Encerrado" },
+  arquivado: { tone: "slate", icon: Archive, label: "Arquivado" },
   suspenso: { tone: "slate", icon: PauseCircle, label: "Suspenso" },
   critico: { tone: "red", icon: AlertTriangle, label: "Crítico" },
 };
@@ -335,7 +343,7 @@ export function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <label className="mb-1.5 block text-xs font-medium text-slate-600">
+    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
       {children}
       {required && <span className="ml-1 text-danger-500">*</span>}
     </label>
@@ -463,7 +471,7 @@ export function StatCard({
   return (
     <Card
       className={cn(
-        "relative overflow-hidden rounded-[10px] p-4",
+        "relative overflow-hidden rounded-[10px] p-4 hover:shadow-card-hover",
         "before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:content-['']",
         toneBarClasses[tone],
       )}
@@ -953,10 +961,11 @@ export function Drawer({
   );
 }
 
-type AlertVariant = "info" | "success" | "warning" | "danger";
+// "error" é alias aditivo de "danger" (compatibilidade com telas novas).
+type AlertVariant = "info" | "success" | "warning" | "danger" | "error";
 
 const alertConfig: Record<
-  AlertVariant,
+  Exclude<AlertVariant, "error">,
   { icon: typeof Info; box: string; iconColor: string; title: string }
 > = {
   info: {
@@ -1002,7 +1011,7 @@ export function Alert({
   children?: ReactNode;
   className?: string;
 }) {
-  const config = alertConfig[variant];
+  const config = alertConfig[variant === "error" ? "danger" : variant];
   const Icon = config.icon;
   return (
     <div
