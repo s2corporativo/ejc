@@ -568,6 +568,11 @@ async def alterar_senha(
 
     user.hashed_password      = get_password_hash(req.nova_senha)
     user.must_change_password = False
+    # Invalida os ACCESS tokens já em circulação (migr. 128). A revogação de
+    # refresh logo abaixo não os alcança: o access é auto-contido e valeria até
+    # `exp`. Truncado ao segundo porque o `iat` do JWT é inteiro em segundos —
+    # sem isso, o access emitido no fim desta própria função nasceria inválido.
+    user.password_changed_at = datetime.now(timezone.utc).replace(microsecond=0)
 
     # Revogar TODAS as outras sessões após a troca.
     await db.execute(

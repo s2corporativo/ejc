@@ -198,6 +198,20 @@ async def get_current_user(
     if not user:
         raise exc
 
+    # Access token emitido ANTES da troca de senha não vale mais (migr. 128).
+    # Trocar a senha já revogava os refresh tokens, mas o access é auto-contido
+    # e validado só por assinatura: sobrevivia até `exp`. Quem troca a senha por
+    # suspeita de comprometimento seguia comprometido pelas horas seguintes —
+    # justamente a janela em que a troca deveria produzir efeito.
+    # Fail-closed: usuário com marca de troca e token SEM `iat` também cai aqui.
+    if user.password_changed_at is not None:
+        iat = payload.get("iat")
+        if iat is None:
+            raise exc
+        emitido_em = datetime.fromtimestamp(int(iat), tz=timezone.utc)
+        if emitido_em < user.password_changed_at:
+            raise exc
+
     return user
 
 

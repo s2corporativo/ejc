@@ -49,6 +49,12 @@ async def test_usuario_desativado_ou_removido_recebe_401():
 
 async def test_usuario_ativo_passa():
     token = create_access_token("user-1", "advogado")
-    user = SimpleNamespace(id="user-1", is_active=True, deleted_at=None, role="advogado")
+    # `password_changed_at` entra aqui porque o dublê representa uma LINHA de
+    # users, e a coluna passou a existir (migr. 128). None = senha nunca
+    # redefinida, que é o caminho em que o token segue valendo.
+    user = SimpleNamespace(
+        id="user-1", is_active=True, deleted_at=None, role="advogado",
+        password_changed_at=None,
+    )
     result = await get_current_user(_cred(token), _FakeDB(user))
     assert result is user

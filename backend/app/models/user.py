@@ -51,6 +51,17 @@ class User(Base):
     custo_hora     = Column(Numeric(10, 2), nullable=True)
     # Segurança: força troca de senha no 1º login (seed define True p/ usuários novos)
     must_change_password = Column(Boolean, default=False, nullable=False)
+    # Momento em que a senha ATUAL foi definida (migr. 128). Trocar a senha já
+    # revogava os refresh tokens, mas o ACCESS token em circulação continuava
+    # válido até expirar (ACCESS_TOKEN_EXPIRE_HOURS) — ou seja, quem troca a
+    # senha por suspeita de comprometimento seguia comprometido pelas horas
+    # seguintes, que é justamente o cenário em que a troca importa.
+    # `get_current_user` recusa access token com `iat` ANTERIOR a esta marca.
+    # Gravado truncado ao segundo, porque o `iat` do JWT é inteiro em segundos:
+    # sem truncar, o token recém-emitido na própria troca teria `iat` menor que
+    # a marca (microssegundos) e nasceria inválido.
+    # NULL = senha nunca redefinida desde a migration; nada é invalidado.
+    password_changed_at = Column(DateTime(timezone=True), nullable=True)
     # Cifrado em repouso (Fernet/pii_crypto — migr. 086): o token Fernet de um
     # segredo base32 tem ~140 chars; 255 dá folga. Legado em claro (<=64) ainda
     # cabe e é re-cifrado oportunisticamente no uso (routers/auth.py).
