@@ -73,11 +73,24 @@ def _so_digitos(v: Any) -> str:
     return re.sub(r"\D", "", str(v or ""))
 
 
-def validar_cnpj(cnpj: str) -> str:
-    """Normaliza para 14 dígitos; levanta ValueError se não tiver 14 dígitos."""
+def normalizar_cnpj(cnpj: str) -> str:
+    """Normaliza para 14 dígitos E confere os dígitos verificadores.
+
+    ARQ-031: este módulo tinha uma `validar_cnpj` PRÓPRIA que só checava o
+    COMPRIMENTO (14 dígitos) — nunca os dígitos verificadores — enquanto
+    `validators_service.validar_cnpj` faz a validação matemática real (módulo
+    11) e é o que o resto do sistema chama sob o MESMO NOME. Um CNPJ com 14
+    dígitos e DV errado passava aqui e ia direto para a API da CGU: consulta
+    perdida contra um identificador que nunca poderia existir. Renomeado para
+    não colidir com o nome já usado (com contrato diferente) em outro módulo,
+    e reforçado com a checagem real.
+    """
     d = _so_digitos(cnpj)
     if len(d) != 14:
         raise ValueError("CNPJ inválido: informe 14 dígitos (com ou sem máscara).")
+    from app.services.validators_service import validar_cnpj as _validar_dv
+    if not _validar_dv(d):
+        raise ValueError("CNPJ inválido: dígito verificador não confere.")
     return d
 
 
@@ -269,7 +282,7 @@ async def consultar_sancoes(
             "(TRANSPARENCIA_ENABLED/TRANSPARENCIA_API_KEY). A ativação é uma "
             "decisão do administrador."
         )
-    cnpj = validar_cnpj(cnpj)
+    cnpj = normalizar_cnpj(cnpj)
     hoje = datetime.now(timezone.utc).date()
 
     await _ensure_tabela(db)

@@ -18,8 +18,8 @@ from app.services import transparencia_service
 from app.services.transparencia_service import (
     IntegracaoDesligadaError,
     consultar_sancoes,
+    normalizar_cnpj,
     normalizar_sancao,
-    validar_cnpj,
 )
 
 CHAVE_TESTE = "chave-cgu-super-secreta-nao-vazar"
@@ -207,10 +207,19 @@ def test_normalizar_tolerante_campos_ausentes():
     assert cepim["fundamentacao"] == "Prestação de contas rejeitada"
 
 
-def test_validar_cnpj():
-    assert validar_cnpj("11.222.333/0001-81") == CNPJ_DIG
+def test_normalizar_cnpj():
+    assert normalizar_cnpj("11.222.333/0001-81") == CNPJ_DIG
     with pytest.raises(ValueError):
-        validar_cnpj("123")
+        normalizar_cnpj("123")
+
+
+def test_normalizar_cnpj_rejeita_digito_verificador_errado():
+    """ARQ-031: esta função só checava o COMPRIMENTO antes — um CNPJ com 14
+    dígitos e DV inválido passava direto para a API da CGU. Mesmo comprimento
+    de CNPJ_DIG, um dígito a mais no final (DV trocado)."""
+    invalido_mas_14_digitos = CNPJ_DIG[:-1] + str((int(CNPJ_DIG[-1]) + 1) % 10)
+    with pytest.raises(ValueError, match="dígito verificador"):
+        normalizar_cnpj(invalido_mas_14_digitos)
 
 
 def test_schema_valida_cnpj():
