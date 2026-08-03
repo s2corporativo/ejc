@@ -172,15 +172,21 @@ def test_ferramenta_get_responde(cli, path, params):
     _assert_smoke(cli.get(path, params=params))
 
 
-def test_calculadora_custas_tjmg_fail_closed_503(cli):
-    """Degradação CONTROLADA por desenho (não é regressão): a tabela de faixas
-    do Anexo I da Lei 14.939/2003 não está carregada de propósito — o serviço
-    falha fechado (503) em vez de inventar valor de custas. A carga da tabela
-    oficial é decisão jurídica (fonte oficial do TJMG), fora do smoke; ver
-    test_calc_custas.py::test_analisar_sem_tabela_oficial_retorna_503."""
+def test_calculadora_custas_tjmg_com_tabela_oficial(cli):
+    """A tabela oficial 2026 do TJMG foi carregada (autorização do titular,
+    2026-08-02; fonte no módulo custas_tjmg). O endpoint responde 200 com os
+    valores impressos da tabela; a exatidão faixa a faixa é coberta por
+    test_calc_custas.py."""
     r = cli.get("/calculadoras/custas-tjmg", params={"valor_causa": 50_000})
-    assert r.status_code == 503, r.text
-    assert "FAIXAS_CUSTAS" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["custas_iniciais"] == 602.15
+    assert corpo["vigencia"] == "2026"
+
+    # Grupos de rubrica fixa (4/5) seguem fail-closed — nunca valor inventado.
+    r45 = cli.get("/calculadoras/custas-tjmg",
+                  params={"valor_causa": 50_000, "grupo": 5})
+    assert r45.status_code == 503, r45.text
 
 
 # ══════════════════════════════════════════════════════════════════════════
