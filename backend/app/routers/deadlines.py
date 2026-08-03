@@ -18,7 +18,7 @@ from app.core.security import get_current_user, requer_advogado
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.user import User
 from app.models.case import Case
-from app.models.deadline import Deadline
+from app.models.deadline import Deadline, DeadlineStatus
 from app.models.audit_log import criar_audit_log
 from app.services.deadline_calculator import (
     prazo_dias_uteis, prazo_dias_corridos, dias_uteis_restantes,
@@ -32,6 +32,39 @@ router = APIRouter(prefix="/deadlines", tags=["Prazos"])
 logger = logging.getLogger("ejc.deadlines")
 
 _MAX_EXPORT = 5000  # teto de linhas do CSV (painel de prazos é sempre pequeno)
+
+#: `Deadline.status` é ENUM NATIVO do Postgres. Comparar a coluna com uma string
+#: fora do enum não devolve vazio: estoura no banco e vira HTTP 500. A interface
+#: oferece "all", que é exatamente um desses valores — `GET /deadlines?status=all`
+#: e o `export.csv` respondiam 500. Mesmo defeito que `core/status_caso.py` já
+#: resolveu para /cases; aqui seguimos o mesmo contrato (422 nomeando os aceitos).
+STATUS_PRAZO_VALIDOS: tuple[str, ...] = tuple(s.value for s in DeadlineStatus)
+
+ERRO_STATUS_PRAZO_INVALIDO = (
+    "Status de prazo inválido: {valor!r}. Valores aceitos: {aceitos}. "
+    "Para não filtrar por status, envie o parâmetro vazio (status=)."
+)
+
+
+def _validar_status_prazo(valor: Optional[str]) -> Optional[DeadlineStatus]:
+    """Converte o filtro no enum, ou levanta 422 nomeando os aceitos.
+
+    Vazio/`None` devolve `None` — sem filtro, todos os status. Espelha o
+    contrato de `core.status_caso.validar_status_caso`, inclusive na mensagem:
+    quem chama /cases e /deadlines com o mesmo `status=all` recebe a mesma
+    explicação, não um 422 num e um 500 no outro.
+    """
+    if not valor:
+        return None
+    try:
+        return DeadlineStatus(valor)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail=ERRO_STATUS_PRAZO_INVALIDO.format(
+                valor=valor, aceitos=", ".join(STATUS_PRAZO_VALIDOS)
+            ),
+        ) from None
 
 
 def _ids_casos_do_usuario(user: User):
@@ -97,8 +130,9 @@ async def listar(
     cu: User = Depends(get_current_user),
 ):
     q = select(Deadline).where(Deadline.deleted_at.is_(None))
-    if status_f:
-        q = q.where(Deadline.status == status_f)
+    status_enum = _validar_status_prazo(status_f)
+    if status_enum is not None:
+        q = q.where(Deadline.status == status_enum)
     if case_id:
         q = q.where(Deadline.case_id == case_id)
     if tipo:
@@ -146,8 +180,9 @@ async def exportar_csv(
     acesso do GET /deadlines (painel compartilhado). UTF-8 com BOM p/ o Excel
     abrir acentos corretamente."""
     q = select(Deadline).where(Deadline.deleted_at.is_(None))
-    if status_f:
-        q = q.where(Deadline.status == status_f)
+    status_enum = _validar_status_prazo(status_f)
+    if status_enum is not None:
+        q = q.where(Deadline.status == status_enum)
     if case_id:
         q = q.where(Deadline.case_id == case_id)
     if tipo:
