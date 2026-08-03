@@ -85,6 +85,20 @@ REMOCOES_INTENCIONAIS = {
 }
 
 
+# Dependências que um ENDURECIMENTO pode ACRESCENTAR à cadeia de auth sem
+# reprovar a paridade. É uma exceção estreita de propósito:
+#
+#   `_dep`            — callable devolvido por core.rate_limit.rate_limit()
+#   `_req_advogado`   — gate de ato jurídico (piso advogado+)
+#
+# Ambas só RESTRINGEM o acesso. Perder qualquer dependência, ou ganhar uma que
+# não esteja nesta lista, continua reprovando — é isso que a trava existe para
+# tornar visível. P1 da auditoria integral (docs/auditoria-ejc/12-seguranca-lgpd.md
+# §6.1 e 08-backend.md §6.3): 14 rotas de IA sem teto de custo, e escrita no
+# cofre institucional aberta a qualquer perfil com JWT.
+DEPS_DE_ENDURECIMENTO: frozenset[str] = frozenset({"_dep", "_req_advogado"})
+
+
 # Mudanças INTENCIONAIS de dependência de auth. Alteração não declarada aqui
 # continua reprovando — mexer na cadeia de auth de uma rota é exatamente o que
 # esta trava existe para tornar visível.
@@ -162,11 +176,18 @@ def test_paridade_openapi_com_snapshot_anterior():
         f"rota(s) removida(s) por decisão do escritório voltaram: {ressuscitadas}"
     )
 
+    def _so_endureceu(antes: list[str], agora: list[str]) -> bool:
+        """True se a cadeia apenas GANHOU dependência de endurecimento."""
+        return set(antes) <= set(agora) and (
+            set(agora) - set(antes)
+        ) <= DEPS_DE_ENDURECIMENTO
+
     divergentes = [
         (k, chaves_base[k]["auth_deps"], chaves_atual[k]["auth_deps"])
         for k in sorted(set(chaves_base) & set(chaves_atual))
         if chaves_base[k]["auth_deps"] != chaves_atual[k]["auth_deps"]
         and chaves_atual[k]["auth_deps"] != DEPS_ALTERADAS_INTENCIONAIS.get(k)
+        and not _so_endureceu(chaves_base[k]["auth_deps"], chaves_atual[k]["auth_deps"])
     ]
     assert not divergentes, f"dependências de auth alteradas: {divergentes[:5]}"
     assert len(base) == 826
