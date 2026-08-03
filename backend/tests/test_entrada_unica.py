@@ -404,8 +404,18 @@ async def test_ingerir_arquivos_lote_mantem_limite_de_bytes(monkeypatch):
         filename = "relato.txt"
         content_type = "text/plain"
 
-        async def read(self):
-            return b"x" * 11
+        def __init__(self):
+            self._restante = b"x" * 11
+
+        async def read(self, size=-1):
+            # Assinatura real de UploadFile.read(size): ler_upload_com_teto lê
+            # em blocos, não de uma vez — o dublê precisa simular o mesmo
+            # contrato (size=-1 devolve tudo, size>0 devolve até esse tanto).
+            if size is None or size < 0:
+                dados, self._restante = self._restante, b""
+                return dados
+            dados, self._restante = self._restante[:size], self._restante[size:]
+            return dados
 
     batch = DocumentIntakeBatch(id="b9", status="processando", created_by="u1")
     with pytest.raises(HTTPException) as ei:

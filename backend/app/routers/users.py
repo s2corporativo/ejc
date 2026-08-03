@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.upload_seguro import ler_upload_com_teto
 from app.core.security import (
     ROLE_LEVEL,
     ROLES_PERMISSOES,
@@ -473,7 +474,12 @@ async def enviar_avatar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    conteudo = await file.read()
+    # DADOS-019: teto durante a leitura. _validar_avatar mantém o restante
+    # (formato, magic bytes) — o teto de tamanho ali vira redundante mas
+    # inofensivo (nunca mais dispara, porque o excesso já parou aqui).
+    conteudo = await ler_upload_com_teto(
+        file, AVATAR_MAX_BYTES, mensagem_413="Avatar excede 2MB",
+    )
     _, extension = _validar_avatar(conteudo, file.content_type)
 
     destino = os.path.join(_avatar_dir(), f"{cu.id}{extension}")

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.config import get_settings
 from app.core.rate_limit import rate_limit
+from app.core.upload_seguro import ler_upload_com_teto
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.document import Document, DocConfidencialidade
@@ -376,12 +377,12 @@ async def upload(
                 detail=f"Tipo de documento inválido: {tipo}. Use GET /documents/tipos.",
             )
 
-    conteudo = await file.read()
-    if len(conteudo) > settings.MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB",
-        )
+    # DADOS-019: teto aplicado DURANTE a leitura — ler tudo antes de checar o
+    # tamanho consome a RAM inteira do arquivo antes de a validação existir.
+    conteudo = await ler_upload_com_teto(
+        file, settings.MAX_UPLOAD_MB * 1024 * 1024,
+        mensagem_413=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB",
+    )
 
     # Validação por magic bytes (server-side) — não confiar na extensão nem no
     # content_type do cliente. Retorna o MIME real, persistido abaixo.
@@ -905,9 +906,10 @@ async def upload_para_drive(
     if ext not in EXTENSOES_PERMITIDAS:
         raise HTTPException(status_code=422, detail=f"Extensão não permitida: {ext}")
 
-    content = await file.read()
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(413, "Arquivo muito grande (máx 50 MB)")
+    # DADOS-019: teto aplicado DURANTE a leitura (ver /upload acima).
+    content = await ler_upload_com_teto(
+        file, 50 * 1024 * 1024, mensagem_413="Arquivo muito grande (máx 50 MB)",
+    )
 
     mime = _validar_conteudo(ext, content)  # 415 se conteúdo ≠ extensão
     # Organizar em subpasta do caso se fornecido
