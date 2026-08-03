@@ -28,7 +28,7 @@
 | Tarefas | `Central` | `/api/tasks` | — | `tasks` | — | — | parcial | ⚠️ |
 | Prazo com contagem correta | `Central`, `Prazos` | `/api/deadlines` | `deadline_calculator` | `deadlines` | `ProcessAgent` | `analyze_deadline` (handler `None`) | `test_deadline_calculator.py`, `test_prazos_vencidos_dblevel.py` | ✅ datas concretas |
 | Intimação → prazo sugerido | `Intimacoes` | `/api/intimacoes/{id}/prazo-sugerido` | `scheduler` (DJEN) | `djen_comunicacoes` | — | — | parcial | ⚠️ heartbeat afere execução, não resultado |
-| **Gerar peça** | `Pecas`, `PecaGeneratorModal` | `POST /api/pecas/gerar`, `/api/document-templates/generate` | `peca_service`, `motor_peca_service` | `legal_docs` | `LegalWritingAgent` | `generate_legal_draft`, `validate_citations` | `test_motor_peca.py` (orquestrador), `test_p1_rbac_e_rate_limit_ia.py` | ❌ **`peca_geracao_router` SEM teste funcional** (T-P0-1) — o gate de advogado do `document-templates` foi corrigido (P1-2), o teste do gerador continua faltando |
+| **Gerar peça** | `Pecas`, `PecaGeneratorModal` | `POST /api/pecas/gerar`, `/api/document-templates/generate` | `peca_service`, `motor_peca_service` | `legal_docs` | `LegalWritingAgent` | `generate_legal_draft`, `validate_citations` | `test_motor_peca.py`, `test_p1_rbac_e_rate_limit_ia.py`, **`test_peca_geracao_router_dblevel.py`** | ✅ **T-P0-1 e P1-2 corrigidos** — gerador com teste funcional contra banco real (render, sandbox anti-SSTI, 404/400, piso de advogado) |
 | Revisar peça | `Pecas` | `POST /api/legal-docs/{id}/revisar` | `legal_docs.py` | `legal_docs.status` | — | — | `test_peca_conferir_assinar.py` | ✅ |
 | **Aprovar peça com gate de citações** | `Pecas` | `POST /api/legal-docs/{id}/aprovar` | **`citation_gate.aplicar_gate_hitl`** (`:794`) | `ai_logs`, `audit_logs` | — | `validate_citations` | `test_citation_gate.py` (281 l.) | ✅ fail-secure, 409/503 |
 | **Protocolar** | `Pecas` (`protocoloPeca.ts`) | **`PATCH /api/legal-docs/{id}/protocolo`** (`:841`) | `_gates_exportacao_protocolo` (`:985`) | `legal_docs.numero_protocolo` | — | — | — | ⚠️ 3 gates cumulativos; **depende da base RAG curada** |
@@ -61,7 +61,7 @@
 |---|---|---|
 | **Endpoint existe, tela não alcança** | 4 módulos (Contratos, DataJud, Despesas, Kanban) + `entrada_universal`, `procuracoes`, `search` | P0-1, `03` §5.2 |
 | **Endpoint quebrado** | `GET /rag/docs` | P0-3 |
-| **Rota sem teste** | 26 routers — destaque `peca_geracao_router`, `pix`, `api_keys` | T-P0-1, T-P0-3 |
+| **Rota sem teste** | 25 routers — `peca_geracao_router` **fechado**; seguem `pix` e `api_keys` (dinheiro e credencial) | T-P0-3 |
 | **Teste que não exercita** | 32 `inspect.getsource` + 14 sem asserção | T-P1-1, T-P2-1/2 |
 | **Skill declarada, handler não executado** | 16 de 17 | `05-skills.md` §B2 |
 | **Agente sem prompt próprio** | `RAGResearchAgent` (exige fonte) | `04-agentes.md` B5.4 |
@@ -70,7 +70,7 @@
 
 ## 4. Como usar esta matriz
 
-1. **Nenhuma linha com ❌ pode ser declarada concluída.** Eram 12 no diagnóstico; sobraram 3 depois das correções deste PR — peça sem teste funcional (T-P0-1), trilha de auditoria sem WORM (P2) e assinatura eletrônica sem teste comportamental (P1 de qualidade).
+1. **Nenhuma linha com ❌ pode ser declarada concluída.** Eram 12 no diagnóstico; sobraram 2 depois das correções deste PR — trilha de auditoria sem WORM (P2) e assinatura eletrônica sem teste comportamental (P1 de qualidade).
 2. **As linhas ⚠️ exigem decisão explícita** — ou se fecha a ressalva, ou se registra como risco
    aceito (com o precedente do 2FA em `GOVERNANCA_IA.md:254`).
 3. **Ao corrigir, atualize a coluna Teste antes da coluna Status.** Os três P0 desta auditoria

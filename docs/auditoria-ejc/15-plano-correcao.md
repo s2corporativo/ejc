@@ -216,11 +216,26 @@ Correção:    teste de integração com rota montada, cobrindo geração, gate 
 
 ID: T-P0-3 · pix.py e api_keys.py sem teste  (dinheiro e credencial)
 
-ID: P1-8 · ramos.py — 4 519 linhas, 82 endpoints, regra jurídica com vigência no router
-Evidência:   ramos.py:63-105 (TETOS_DEPOSITO_RECURSAL, art. 899 §§1º-4º CLT), uso em :1262;
-             o próprio arquivo declara "ATUALIZAÇÃO ANUAL OBRIGATÓRIA" (:57-59)
-Risco:       colide com a regra 5 do CLAUDE.md (fonte oficial, vigência e teste).
-Correção:    extrair as tabelas legais para service com fonte, vigência datada e teste de valor.
+ID: P1-8 · ramos.py — 4 519 linhas, 82 endpoints  [RETIFICADO — o achado jurídico era FALSO]
+Evidência:   ramos.py:63-105 (TETOS_DEPOSITO_RECURSAL, art. 899 §§1º-4º CLT), uso em :1262.
+RETIFICAÇÃO (2026-08-03, conferido no código):
+             Este item afirmava que a tabela colidia com a regra 5 do CLAUDE.md (fonte oficial,
+             vigência e teste). É FALSO nos três requisitos, e a conferência devia ter sido feita
+             antes de escrever o achado:
+               • FONTE — cada faixa traz o Ato SEGJUD.GP com número, ano e índice de reajuste
+                 (ex.: "Ato SEGJUD.GP 391/2025 (INPC/IBGE jul-2024 a jun-2025)");
+               • VIGÊNCIA — a tabela é versionada por período (`inicio`/`fim`), e
+                 `_teto_deposito_para(data)` escolhe a faixa pela DATA DO RECURSO, com 422
+                 explícito para período não coberto. O comentário :95-98 documenta inclusive a
+                 armadilha de "mais recente ≠ vigente" (o Ato sai em julho e vale de 1º/ago);
+               • TESTE — `test_areas_atuacao_onda2.py:533-580` cobre a tabela versionada, a série
+                 histórica de 5 Atos por data, a VIRADA DE VIGÊNCIA em 31/07→01/08 e o 422.
+                 `test_calculadoras_ramos.py:211-230` cobre o cálculo.
+             É um dos trechos mais bem tratados do repositório em matéria jurídica — a regra 5 é
+             cumprida à risca. O que resta é opinião de organização (a tabela vive no router, e
+             `ramos.py` tem 4 519 linhas), não achado de conformidade. Reclassificado para P3.
+Correção:    NENHUMA é necessária para conformidade. Se um dia o arquivo for fatiado, a tabela e
+             `_teto_deposito_para` são candidatas naturais a um service — sem urgência e sem risco.
 
 ID: T-P1-1 · test_signatures_ownership.py é 100% inspect.getsource (3/3), sem par comportamental
 Correção:    teste que EXECUTE sig.listar/sig.assinar com dois clientes distintos.
