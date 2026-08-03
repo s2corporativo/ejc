@@ -64,7 +64,11 @@ import pytest
 from fastapi import HTTPException
 
 from app.models.deadline import DeadlineStatus
-from app.routers.deadlines import STATUS_PRAZO_VALIDOS, _validar_status_prazo
+from app.routers.deadlines import (
+    STATUS_PRAZO_TODOS,
+    STATUS_PRAZO_VALIDOS,
+    _validar_status_prazo,
+)
 
 
 def test_status_valido_vira_enum():
@@ -73,11 +77,11 @@ def test_status_valido_vira_enum():
         assert _validar_status_prazo(valor) is DeadlineStatus(valor)
 
 
-@pytest.mark.parametrize("valor", ["all", "ativo", "concluída", "PENDENTE", "'; DROP"])
-def test_status_fora_do_enum_vira_422_e_nao_chega_ao_banco(valor):
-    """Regressão: `all` e `ativo` são os valores que a interface oferece hoje.
-    Antes chegavam crus ao Postgres (500); agora param aqui, com 422 nomeando
-    os aceitos — mesmo contrato que /cases já dá para o mesmo `status=all`."""
+@pytest.mark.parametrize("valor", ["ativo", "concluída", "PENDENTE", "'; DROP"])
+def test_status_desconhecido_vira_422_e_nao_chega_ao_banco(valor):
+    """Regressão: antes a string crua ia ao Postgres e virava 500. Agora para
+    aqui, com 422 nomeando os aceitos. `ativo` é um dos valores que a interface
+    chegou a oferecer e que NÃO existe no enum."""
     with pytest.raises(HTTPException) as exc:
         _validar_status_prazo(valor)
     assert exc.value.status_code == 422
@@ -86,8 +90,16 @@ def test_status_fora_do_enum_vira_422_e_nao_chega_ao_banco(valor):
         assert aceito in exc.value.detail
 
 
-@pytest.mark.parametrize("vazio", [None, ""])
-def test_status_vazio_nao_filtra(vazio):
-    """Sem filtro = todos os status. É a saída legítima para 'quero ver tudo',
-    e a mensagem do 422 aponta para ela."""
-    assert _validar_status_prazo(vazio) is None
+@pytest.mark.parametrize("sem_filtro", [None, "", STATUS_PRAZO_TODOS])
+def test_all_e_vazio_significam_todos_os_status(sem_filtro):
+    """`all` é a sentinela de "todos", não um status inválido (Issue #573): a
+    interface já a envia, e recusá-la com 422 apenas trocaria um defeito por
+    outro. `None` devolvido = nenhum predicado de status na consulta."""
+    assert _validar_status_prazo(sem_filtro) is None
+
+
+def test_mensagem_do_422_ensina_a_pedir_todos():
+    """Quem erra o valor precisa descobrir como pedir "todos" sem adivinhar."""
+    with pytest.raises(HTTPException) as exc:
+        _validar_status_prazo("ativo")
+    assert f"status={STATUS_PRAZO_TODOS}" in exc.value.detail

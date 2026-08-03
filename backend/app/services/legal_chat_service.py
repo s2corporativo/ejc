@@ -811,6 +811,57 @@ async def _criar_snapshot_sala(
     return snap.versao
 
 
+#: Contrato de `ConverterRequest.descricao` (schemas/legal_chat.py:107). O texto
+#: derivado da sessão não pode nascer maior do que o campo aceita do advogado.
+LIMITE_DESCRICAO_FATOS = 10_000
+
+_MARCA_TRUNCADO = (
+    "\n\n[…] Texto truncado no limite de "
+    f"{LIMITE_DESCRICAO_FATOS} caracteres do contrato de conversão."
+)
+
+
+def _fatos_para_conversao(
+    sessao: LegalChatSession,
+    mensagens: list[LegalChatMessage],
+    estado: LegalChatStateVersion | None,
+) -> str | None:
+    """`descricao_fatos` derivada da sessão, de forma DETERMINÍSTICA.
+
+    Usada só quando o advogado omite `payload.descricao`. Nenhuma chamada de
+    IA acontece aqui: tudo já está persistido na sessão.
+
+    Cada bloco é ROTULADO porque `descricao_fatos` alimenta geração de peça e
+    triagem: sem o rótulo, uma síntese produzida por IA entraria no caso oficial
+    com a mesma autoridade do relato do advogado — alegação virando fato
+    comprovado. Só mensagens do próprio advogado (`autor == "user"`) entram; a
+    análise da IA fica de fora do que se chama "fatos".
+
+    Sessão sem estado, sem área de trabalho e sem relato devolve `None` — não
+    se fabrica conteúdo para preencher o campo.
+    """
+    blocos: list[tuple[str, str]] = []
+    if estado is not None and (estado.resumo or "").strip():
+        blocos.append((
+            f"Síntese do estado jurídico da sessão (v{estado.versao}) — "
+            "produzida com apoio de IA, sujeita a revisão do advogado",
+            estado.resumo.strip(),
+        ))
+    if (sessao.workspace_texto or "").strip():
+        blocos.append(("Área de trabalho do advogado", sessao.workspace_texto.strip()))
+    relatos = [m.conteudo.strip() for m in mensagens
+               if m.autor == "user" and (m.conteudo or "").strip()]
+    if relatos:
+        blocos.append(("Relato registrado pelo advogado na sessão", "\n\n".join(relatos)))
+
+    if not blocos:
+        return None
+    texto = "\n\n".join(f"[{titulo}]\n{corpo}" for titulo, corpo in blocos)
+    if len(texto) <= LIMITE_DESCRICAO_FATOS:
+        return texto
+    return texto[: LIMITE_DESCRICAO_FATOS - len(_MARCA_TRUNCADO)] + _MARCA_TRUNCADO
+
+
 async def converter_em_caso(
     db: AsyncSession,
     sessao: LegalChatSession,
@@ -898,21 +949,32 @@ async def converter_em_caso(
         db.add(client)
         await db.flush()
 
+    # `descricao` é OPCIONAL no payload. Sem fallback, converter sem preenchê-la
+    # criava um caso com os fatos NULOS — enquanto a sessão que originou a
+    # conversão os continha. Não é perda cosmética: `motor_peca_service` e
+    # `case_intel` leem `descricao_fatos` como fonte dos fatos, então o caso
+    # nascia oficial e sem matéria-prima para peça e triagem. Precedência da
+    # Issue #552: o texto revisado pelo advogado manda; a derivação da sessão
+    # só entra na omissão — e só então as consultas extras acontecem.
+    descricao_fatos = payload.descricao
+    if not descricao_fatos:
+        estado_sessao = await ultima_versao_estado(db, sessao.id)
+        mensagens_sessao = (await db.execute(
+            select(LegalChatMessage)
+            .where(LegalChatMessage.session_id == sessao.id)
+            .order_by(LegalChatMessage.created_at)
+        )).scalars().all()
+        descricao_fatos = _fatos_para_conversao(
+            sessao, list(mensagens_sessao), estado_sessao
+        )
+
     numero = await proximo_numero_interno(db)
     case = Case(
         id=str(uuid4()),
         numero_interno=numero,
         titulo=payload.titulo_caso,
         area=CaseArea(payload.area),
-        # `descricao` é OPCIONAL no payload (schemas/legal_chat.py:107). Sem
-        # fallback, converter sem preenchê-la criava um caso com os fatos
-        # NULOS — enquanto a sessão que originou a conversão os continha na
-        # área de trabalho. O relato some no ato de virar caso oficial, e
-        # `motor_peca_service` e `case_intel` leem justamente `descricao_fatos`
-        # como fonte dos fatos: o caso nasce sem matéria-prima para peça e
-        # triagem. Mesmo desenho do `proxima_acao` logo abaixo — o payload
-        # manda quando vem preenchido, e o default cobre a omissão.
-        descricao_fatos=payload.descricao or (sessao.workspace_texto or "").strip() or None,
+        descricao_fatos=descricao_fatos,
         client_id=client.id,
         advogado_responsavel_id=payload.advogado_responsavel_id,
         # G1 (mesma guarda de cases.py): caso em triagem nunca nasce sem

@@ -120,7 +120,10 @@ async def _fatos_do_caso(db, case_id: str) -> str | None:
 
 async def test_conversao_sem_descricao_herda_os_fatos_da_sessao():
     """Regressão: `descricao` omitida NÃO pode zerar os fatos do caso quando a
-    sessão os contém. Antes da correção, `descricao_fatos` ficava NULO aqui."""
+    sessão os contém. Antes da correção, `descricao_fatos` ficava NULO aqui.
+
+    O texto derivado vem ROTULADO por origem (Issue #552, critério 3), então o
+    assert é de conteúdo preservado + rótulo presente, não de igualdade crua."""
     from app.core.database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
@@ -130,7 +133,9 @@ async def test_conversao_sem_descricao_herda_os_fatos_da_sessao():
         resultado = None
         try:
             resultado = await _converter(db, sid, adv, descricao=None)
-            assert await _fatos_do_caso(db, resultado["case_id"]) == FATOS_DA_SESSAO
+            fatos = await _fatos_do_caso(db, resultado["case_id"])
+            assert FATOS_DA_SESSAO in fatos
+            assert "[Área de trabalho do advogado]" in fatos
         finally:
             await _limpar(
                 db,
@@ -155,6 +160,8 @@ async def test_descricao_informada_prevalece_sobre_a_area_de_trabalho():
         resultado = None
         try:
             resultado = await _converter(db, sid, adv, descricao=revisado)
+            # Precedência integral: o texto do advogado entra COMO ESTÁ, sem
+            # rótulo e sem a derivação da sessão colada junto.
             assert await _fatos_do_caso(db, resultado["case_id"]) == revisado
         finally:
             await _limpar(

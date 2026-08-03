@@ -847,3 +847,90 @@ def test_ficha_confirmada_nao_e_rebaixada_por_escrita_automatica():
     assert 'ficha.status == "confirmada"' in fonte
     # A ponte Entrevista→Ficha precisa realmente pedir a preservação.
     assert "preservar_confirmada=True" in inspect.getsource(te._alimentar_ficha)
+
+
+# ── Fatos derivados da sessão na conversão (Issue #552) ──────────────────────
+# `ConverterRequest.descricao` é opcional; omiti-la criava um Case com
+# `descricao_fatos` NULO, embora a sessão contivesse estado, área de trabalho e
+# relato. Aqui a função DETERMINÍSTICA que deriva o texto — sem chamada de IA.
+
+from types import SimpleNamespace  # noqa: E402
+
+from app.services.legal_chat_service import (  # noqa: E402
+    LIMITE_DESCRICAO_FATOS,
+    _fatos_para_conversao,
+)
+
+
+def _sessao_fake(workspace=None):
+    return SimpleNamespace(workspace_texto=workspace)
+
+
+def _msg(autor, conteudo):
+    return SimpleNamespace(autor=autor, conteudo=conteudo)
+
+
+def _estado(resumo, versao=3):
+    return SimpleNamespace(resumo=resumo, versao=versao)
+
+
+def test_fatos_sessao_vazia_nao_fabrica_conteudo():
+    """Critério 5: sessão sem nada devolve None — não string vazia, não
+    placeholder. Preencher o campo com texto inventado seria pior que o NULL."""
+    assert _fatos_para_conversao(_sessao_fake(), [], None) is None
+    assert _fatos_para_conversao(_sessao_fake("   "), [_msg("user", "  ")], None) is None
+
+
+def test_fatos_reunem_estado_workspace_e_relato_do_advogado():
+    """Critério 1: estado, área de trabalho e relato entram — nessa ordem."""
+    texto = _fatos_para_conversao(
+        _sessao_fake("Área: negativação em 03/2026."),
+        [_msg("user", "Protocolo 99887 aberto em 10/03/2026.")],
+        _estado("Consumidor, dano moral presumido."),
+    )
+    assert "Consumidor, dano moral presumido." in texto
+    assert "Área: negativação em 03/2026." in texto
+    assert "Protocolo 99887 aberto em 10/03/2026." in texto
+    # Critério 2: data e protocolo informados continuam localizáveis.
+    assert texto.index("Consumidor") < texto.index("Área:") < texto.index("Protocolo")
+
+
+def test_fatos_rotulam_a_origem_de_cada_bloco():
+    """Critério 3: síntese de IA e relato do advogado não podem entrar no caso
+    oficial com a mesma autoridade — alegação não vira fato comprovado."""
+    texto = _fatos_para_conversao(
+        _sessao_fake("Anotações."),
+        [_msg("user", "Relato do cliente.")],
+        _estado("Síntese automática."),
+    )
+    assert "[Síntese do estado jurídico da sessão (v3)" in texto
+    assert "apoio de IA" in texto
+    assert "[Área de trabalho do advogado]" in texto
+    assert "[Relato registrado pelo advogado na sessão]" in texto
+
+
+def test_fatos_ignoram_a_analise_da_ia_nas_mensagens():
+    """A resposta da IA é análise, não fato. Só a mensagem do advogado entra."""
+    texto = _fatos_para_conversao(
+        _sessao_fake(),
+        [_msg("user", "O contrato foi assinado em 2024."),
+         _msg("ia", "Tese sugerida: revisional com pedido de tutela.")],
+        None,
+    )
+    assert "O contrato foi assinado em 2024." in texto
+    assert "Tese sugerida" not in texto
+
+
+def test_fatos_truncam_no_limite_do_contrato():
+    """Critério 6: o texto derivado não pode nascer maior do que o campo aceita
+    do advogado (10.000), e o corte precisa ser visível."""
+    texto = _fatos_para_conversao(_sessao_fake("x" * 40_000), [], None)
+    assert len(texto) == LIMITE_DESCRICAO_FATOS
+    assert texto.endswith("caracteres do contrato de conversão.")
+
+
+def test_fatos_estado_sem_resumo_nao_quebra():
+    """Critério 4: estado ausente ou sem resumo degrada, não estoura."""
+    assert "Anotações." in _fatos_para_conversao(
+        _sessao_fake("Anotações."), [], _estado(None)
+    )
