@@ -34,27 +34,30 @@ logger = logging.getLogger("ejc.deadlines")
 _MAX_EXPORT = 5000  # teto de linhas do CSV (painel de prazos é sempre pequeno)
 
 #: `Deadline.status` é ENUM NATIVO do Postgres. Comparar a coluna com uma string
-#: fora do enum não devolve vazio: estoura no banco e vira HTTP 500. A interface
-#: oferece "all", que é exatamente um desses valores — `GET /deadlines?status=all`
-#: e o `export.csv` respondiam 500. Mesmo defeito que `core/status_caso.py` já
-#: resolveu para /cases; aqui seguimos o mesmo contrato (422 nomeando os aceitos).
+#: fora do enum não devolve vazio: estoura no banco e vira HTTP 500. E o valor
+#: que a interface manda é justamente um desses — `GET /deadlines?status=all` e
+#: o `export.csv` respondiam 500.
 STATUS_PRAZO_VALIDOS: tuple[str, ...] = tuple(s.value for s in DeadlineStatus)
+
+#: Sentinela de "todos os status", não um status. A interface já a envia; a
+#: Issue #573 a define como ausência de filtro, e não como erro — quem pede
+#: "todos" está pedindo algo legítimo que o contrato precisa atender.
+STATUS_PRAZO_TODOS = "all"
 
 ERRO_STATUS_PRAZO_INVALIDO = (
     "Status de prazo inválido: {valor!r}. Valores aceitos: {aceitos}. "
-    "Para não filtrar por status, envie o parâmetro vazio (status=)."
+    "Para não filtrar por status, use status=all (ou envie o parâmetro vazio)."
 )
 
 
 def _validar_status_prazo(valor: Optional[str]) -> Optional[DeadlineStatus]:
     """Converte o filtro no enum, ou levanta 422 nomeando os aceitos.
 
-    Vazio/`None` devolve `None` — sem filtro, todos os status. Espelha o
-    contrato de `core.status_caso.validar_status_caso`, inclusive na mensagem:
-    quem chama /cases e /deadlines com o mesmo `status=all` recebe a mesma
-    explicação, não um 422 num e um 500 no outro.
+    `None`, vazio e `all` devolvem `None` — sem predicado de status, todos os
+    prazos. Qualquer outro valor fora do enum para AQUI, com 422: é o que
+    impede a string crua de chegar ao Postgres e virar 500.
     """
-    if not valor:
+    if not valor or valor == STATUS_PRAZO_TODOS:
         return None
     try:
         return DeadlineStatus(valor)
