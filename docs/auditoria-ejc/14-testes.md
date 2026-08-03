@@ -7,7 +7,7 @@
 > não cair em silêncio, e é para subir junto com ela.
 >
 > Os números brutos abaixo são os do diagnóstico (4 463 testes). Após as correções deste PR a
-> suíte tem **4 802 testes passando** com `RUN_DB_TESTS=1` contra Postgres 16 real.
+> suíte tem **4 810 testes passando** com `RUN_DB_TESTS=1` contra Postgres 16 real.
 >
 > **T-P0-1 fechado:** `peca_geracao_router` — o gerador de documento, e o achado mais grave desta
 > fase — ganhou teste funcional (`test_peca_geracao_router_dblevel.py`, 9 testes contra banco
@@ -30,7 +30,26 @@
 > lugares para não haver teste tinham, em um deles, exatamente o tipo de defeito que só um teste
 > estrutural pega — nenhuma leitura de código o revelaria, e nenhum erro de servidor o denunciaria.
 >
-> T-P1-1 e T-P2-1/2 (teste que não exercita) **seguem abertos**.
+> **T-P1-1 fechado, e a alegação foi MEDIDA em vez de repetida.**
+> `test_signatures_ownership.py` tem 3 de 3 testes em `inspect.getsource`. Escrevi o par
+> comportamental (`test_signatures_ownership_dblevel.py`, 8 testes com dois clientes reais) e
+> sabotei o `signatures.py` de duas formas para comparar:
+>
+> | Sabotagem em `signatures.py` | `inspect.getsource` | par comportamental |
+> |---|---|---|
+> | apagar as linhas do filtro por `client_id` | 2 de 3 falham | 2 falham |
+> | **manter as linhas e matar o ramo** (`if False and …`; `client_id == client_id`) | **3 de 3 PASSAM** | 2 falham |
+>
+> A segunda linha é o achado, e é a forma **mais provável** do defeito: ninguém apaga um filtro de
+> isolamento de propósito — ele morre por um `if` que deixou de ser alcançado. Nesse cenário o
+> teste de fonte fica inteiramente verde enquanto um cliente do portal lista e assina o documento
+> de outro. Importa mais aqui do que na média porque o `AuthMiddleware` libera TODO
+> `/api/signatures` ao `cliente_externo`: o filtro dentro do router é a única barreira.
+>
+> O arquivo antigo **não foi removido** — ele pega a sabotagem por remoção, que o comportamental
+> também pega, e custa nada. O achado era a ausência do segundo, não a presença do primeiro.
+>
+> T-P2-1/2 (teste que não exercita) **seguem abertos**.
 
 ## 1. Execução real — números brutos
 
