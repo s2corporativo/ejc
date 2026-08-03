@@ -61,7 +61,7 @@
 |---|---|---|
 | **Endpoint existe, tela não alcança** | 4 módulos (Contratos, DataJud, Despesas, Kanban) + `entrada_universal`, `procuracoes`, `search` | P0-1, `03` §5.2 |
 | **Endpoint quebrado** | `GET /rag/docs` | P0-3 |
-| **Rota sem teste** | 25 routers — `peca_geracao_router` **fechado**; seguem `pix` e `api_keys` (dinheiro e credencial) | T-P0-3 |
+| **Rota sem teste** | 23 routers — `peca_geracao_router`, `pix` e `api_keys` **fechados** (T-P0-1 e T-P0-3); o teste do PIX ainda achou um BR Code corrompido em produção | `14-testes.md` |
 | **Teste que não exercita** | 32 `inspect.getsource` + 14 sem asserção | T-P1-1, T-P2-1/2 |
 | **Skill declarada, handler não executado** | 16 de 17 | `05-skills.md` §B2 |
 | **Agente sem prompt próprio** | `RAGResearchAgent` (exige fonte) | `04-agentes.md` B5.4 |
