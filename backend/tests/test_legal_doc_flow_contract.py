@@ -1,4 +1,8 @@
+import types
 from pathlib import Path
+
+import pytest
+from fastapi import HTTPException
 
 
 def _source(path: str) -> str:
@@ -93,3 +97,55 @@ def test_orquestrador_nao_depende_de_filtro_textual_legado():
     assert "_VALIDACAO_TIPO_FILTRO" not in src
     assert "AILog.legal_doc_id" in src
     assert "AILog.legal_doc_content_hash" in src
+
+
+# ── Achado #672 (homologação dinâmica, parte-13 §3.2): sem provedor de IA
+# elegível, /validar deixava o RuntimeError do ai_gateway subir cru como 500
+# genérico — e como a chamada nunca completava, ai_log_id nunca era gravado,
+# travando /aprovar em "sem_validacao" para sempre, sem explicar por quê. ──
+
+class _Res:
+    def __init__(self, one=None):
+        self._one = one
+
+    def scalar_one_or_none(self):
+        return self._one
+
+
+class _FakeDB:
+    def __init__(self, doc):
+        self._doc = doc
+
+    async def execute(self, *a, **k):
+        return _Res(self._doc)
+
+
+def _doc_sem_caso():
+    return types.SimpleNamespace(
+        id="doc-1", deleted_at=None, case_id=None,
+        conteudo="rascunho fictício", tipo_peca=None, titulo="Peça de teste",
+        status=None,
+    )
+
+
+async def test_validar_sem_provedor_de_ia_nao_estoura_500_cru(monkeypatch):
+    from app.routers import legal_docs
+
+    async def fake_validar(*a, **k):
+        raise RuntimeError(
+            "Todos os provedores falharam para task=auditoria_peca. "
+            "Último erro: Nenhum provedor disponível"
+        )
+
+    monkeypatch.setattr(legal_docs, "validar_rascunho_juridico", fake_validar)
+    db = _FakeDB(_doc_sem_caso())
+    cu = types.SimpleNamespace(id="u-1", role=types.SimpleNamespace(value="advogado"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await legal_docs.validar_peca_juridica("doc-1", db=db, cu=cu)
+
+    erro = exc_info.value
+    # Erro tratado (503, mensagem leiga) — não o 500 genérico do handler global.
+    assert erro.status_code == 503
+    for jargao in ("task=", "provedores", "RuntimeError"):
+        assert jargao not in erro.detail
