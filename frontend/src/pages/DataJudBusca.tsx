@@ -51,9 +51,7 @@ export default function DataJudBusca() {
     setSyncMsg(null);
     try {
       const cnj = formatCNJ(numero.trim());
-      const res = await api.get(
-        `/datajud/process/${encodeURIComponent(cnj)}`,
-      );
+      const res = await api.get(`/datajud/process/${encodeURIComponent(cnj)}`);
       setProcesso(res.data);
     } catch (e: any) {
       const msg =

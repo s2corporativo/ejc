@@ -277,9 +277,7 @@ function PendingItemsPanel({
   async function confirmarExclusao() {
     if (!pendenteExcluir) return;
     try {
-      await api.delete(
-        `/clients/${clientId}/pending-items/${pendenteExcluir}`,
-      );
+      await api.delete(`/clients/${clientId}/pending-items/${pendenteExcluir}`);
       setPendenteExcluir(null);
       load();
     } catch (e: any) {
