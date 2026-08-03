@@ -14,6 +14,7 @@ import { CASE_NAV_SECTIONS } from "../config/caseNav";
 import { useAreas } from "../lib/areas";
 import { toast } from "./Toast";
 import { Badge, Button, EmptyState, Modal } from "./UI";
+import { detalheErro } from "../utils/erro";
 
 type View = "menu" | "upload" | "areas" | null;
 
@@ -21,20 +22,6 @@ type CaseAreaLink = {
   area: string;
   principal?: boolean;
 };
-
-function detalheErro(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: { detail?: unknown } } })
-    ?.response?.data?.detail;
-  if (typeof detail === "string" && detail) return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
-}
 
 export default function CaseCommandDock({ caseId }: { caseId: string }) {
   const navigate = useNavigate();

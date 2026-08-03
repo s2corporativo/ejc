@@ -26,6 +26,7 @@ import { toast } from "./Toast";
 import { Modal, Spinner, Empty, ErrorState, ConfirmModal } from "./UI";
 import type { Client } from "../types";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 // ── Tipos do contrato /lgpd/registros ────────────────────────────────────────
 type Risco = "baixo" | "medio" | "alto";
@@ -122,10 +123,6 @@ function truncar(s: string, n = 90) {
 
 function nomeCliente(c: Client) {
   return c.nome || c.razao_social || c.cnpj || c.cpf || c.id;
-}
-
-function detalheErro(e: any, fallback: string) {
-  return e?.response?.data?.detail || fallback;
 }
 
 export default function LgpdRegistros() {
@@ -257,7 +254,7 @@ export default function LgpdRegistros() {
       setForm({ ...FORM_VAZIO });
       setEditId(null);
       carregar();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setErroForm(detalheErro(e, "Erro ao salvar a operação de tratamento."));
     } finally {
       setSalvando(false);
@@ -277,7 +274,7 @@ export default function LgpdRegistros() {
       if (expandido === r.id) setExpandido(null);
       setPendenteExcluir(null);
       carregar();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Erro ao remover a operação."));
     }
   };
@@ -301,7 +298,7 @@ export default function LgpdRegistros() {
       a.click();
       URL.revokeObjectURL(url);
       toast.success("RIPD (Visual Law) gerado.");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Falha ao gerar o RIPD em PDF."));
     } finally {
       setGerandoRipd(false);

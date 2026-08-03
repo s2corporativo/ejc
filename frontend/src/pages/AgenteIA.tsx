@@ -14,6 +14,7 @@ import Markdown from "../components/Markdown";
 import { streamSSE, SSEHttpError, type SSEEvent } from "../lib/stream";
 import { toast } from "../components/Toast";
 import { Badge, Button, PageHeader, SectionCard } from "../components/UI";
+import { mensagemErro, foiAbortado } from "../utils/erro";
 
 // ── Contrato de eventos (POST /ia/agente/stream → loop de tool-use) ──────────
 // Emitidos por app/services/ai/agent/loop.py. A escrita PAUSA em
@@ -148,8 +149,8 @@ export default function AgenteIA() {
           onEvent,
           signal: abortRef.current.signal,
         });
-      } catch (e: any) {
-        if (e?.name === "AbortError") return;
+      } catch (e: unknown) {
+        if (foiAbortado(e)) return;
         if (e instanceof SSEHttpError && e.status === 404) {
           setErro(
             "Módulo agêntico de IA desativado no servidor (AI_AGENT_ENABLED). " +
@@ -158,7 +159,7 @@ export default function AgenteIA() {
         } else if (e instanceof SSEHttpError && e.status === 403) {
           setErro("Seu perfil não tem acesso ao agente neste caso.");
         } else {
-          setErro(e?.message || "Falha ao conectar ao agente.");
+          setErro(mensagemErro(e, "Falha ao conectar ao agente."));
         }
       } finally {
         setRunning(false);

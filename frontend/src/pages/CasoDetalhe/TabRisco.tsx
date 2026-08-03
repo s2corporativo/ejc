@@ -3,6 +3,7 @@ import { toast } from "../../components/Toast";
 import api from "../../lib/api";
 import MatrizRisco from "../../components/visual/MatrizRisco";
 import { fmtDate } from "../../components/UI";
+import { detalheErro } from "../../utils/erro";
 
 export default function TabRisco({ caseId }: { caseId: string }) {
   const [data, setData] = useState<any>(null);
@@ -60,8 +61,8 @@ export default function TabRisco({ caseId }: { caseId: string }) {
         .get(`/cases/${caseId}/indice-risco`)
         .then((r) => setData(r.data))
         .catch(() => {});
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha no recálculo");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha no recálculo"));
     } finally {
       setRecalc(false);
     }

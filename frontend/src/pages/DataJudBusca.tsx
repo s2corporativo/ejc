@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, fmtMoney, fmtDate } from "../components/UI";
+import { detalheErro } from "../utils/erro";
 
 interface Movimento {
   data: string;
@@ -55,9 +56,8 @@ export default function DataJudBusca() {
         `/v1/datajud/process/${encodeURIComponent(cnj)}`,
       );
       setProcesso(res.data);
-    } catch (e: any) {
-      const msg =
-        e.response?.data?.detail ?? "Processo não encontrado no DataJud";
+    } catch (e: unknown) {
+      const msg = detalheErro(e, "Processo não encontrado no DataJud");
       setErro(msg);
     } finally {
       setLoading(false);
@@ -70,10 +70,8 @@ export default function DataJudBusca() {
     try {
       const res = await api.post(`/v1/datajud/cases/${caseId}/sync`);
       setSyncMsg(`Sincronizado: ${res.data.synced} movimentos atualizados`);
-    } catch (e: any) {
-      setSyncMsg(
-        `Erro: ${e.response?.data?.detail ?? "Falha na sincronização"}`,
-      );
+    } catch (e: unknown) {
+      setSyncMsg(`Erro: ${detalheErro(e, "Falha na sincronização")}`);
     } finally {
       setSyncingId(null);
     }

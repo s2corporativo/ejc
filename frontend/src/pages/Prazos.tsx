@@ -23,6 +23,7 @@ import {
 } from "../components/UI";
 import CaseFilterChip from "../components/CaseFilterChip";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
+import { detalheErro } from "../utils/erro";
 
 export default function Prazos() {
   const [data, setData] = useState<Paged<Deadline> | null>(null);
@@ -98,8 +99,8 @@ export default function Prazos() {
       setModal(false);
       setForm({ tipo: "processual", prioridade: "media", dias_uteis: true });
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro"));
     } finally {
       setSalvando(false);
     }
@@ -120,8 +121,8 @@ export default function Prazos() {
       await confirmarPrazo(id);
       toast.success("Prazo confirmado.");
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao confirmar o prazo.");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao confirmar o prazo."));
     } finally {
       setConfirmando(null);
     }

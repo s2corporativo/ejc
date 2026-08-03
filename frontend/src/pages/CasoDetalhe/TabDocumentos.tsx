@@ -9,6 +9,7 @@ import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { Empty } from "../../components/UI";
+import { detalheErro } from "../../utils/erro";
 
 // Mesmo padrão de download já validado (GET /documents/:id/download, blob).
 async function baixarDoc(docId: string, filename: string) {
@@ -25,20 +26,6 @@ async function baixarDoc(docId: string, filename: string) {
   } catch {
     toast.error("Não foi possível baixar o documento.");
   }
-}
-
-function detalheErro(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: { detail?: unknown } } })
-    ?.response?.data?.detail;
-  if (typeof detail === "string" && detail) return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
 }
 
 const TIPOS_DOCUMENTO = [

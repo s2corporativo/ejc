@@ -40,6 +40,7 @@ import {
 } from "../lib/protocoloPeca";
 import { useIaStatus } from "../lib/iaStatus";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
+import { detalheErro } from "../utils/erro";
 import FichaTriagem, {
   type FichaTriagemCampos,
   type FichaStatus,
@@ -484,9 +485,7 @@ export default function Pecas() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Falha ao exportar DOCX. Tente novamente.",
-      );
+      toast.error(detalheErro(e, "Falha ao exportar DOCX. Tente novamente."));
     }
   };
 
@@ -524,9 +523,7 @@ export default function Pecas() {
       const { data } = await api.get(`/legal-docs/${doc.id}`);
       setPrintDoc(data);
     } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Falha ao carregar a peça para impressão.",
-      );
+      toast.error(detalheErro(e, "Falha ao carregar a peça para impressão."));
     }
   };
 

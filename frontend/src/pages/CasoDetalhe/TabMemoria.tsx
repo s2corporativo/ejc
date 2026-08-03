@@ -3,6 +3,7 @@ import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { Empty, fmtDate } from "../../components/UI";
+import { detalheErro } from "../../utils/erro";
 
 export default function TabMemoria({ caseId }: { caseId: string }) {
   const [itens, setItens] = useState<any[]>([]);
@@ -59,8 +60,8 @@ export default function TabMemoria({ caseId }: { caseId: string }) {
     try {
       await api.delete(`/memoria-institucional/${id}`);
       setItens((p) => p.filter((x) => x.id !== id));
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao remover registro");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao remover registro"));
     }
   };
 

@@ -20,6 +20,7 @@ import EntradaUniversalDocumentos, {
   EntradaUniversalResultado,
 } from "./EntradaUniversalDocumentos";
 import { toast } from "./Toast";
+import { detalheErro } from "../utils/erro";
 
 type Modalidade = {
   codigo: string;
@@ -195,10 +196,7 @@ export default function DefesasRevisoesPanel() {
         "Pacote documental transformado em estratégia jurídica revisável.",
       );
     } catch (error: any) {
-      toast.error(
-        error.response?.data?.detail ||
-          "Falha ao montar a estratégia jurídica.",
-      );
+      toast.error(detalheErro(error, "Falha ao montar a estratégia jurídica."));
     } finally {
       setAnalisando(false);
     }
@@ -248,9 +246,7 @@ export default function DefesasRevisoesPanel() {
       }
       toast.success("Dossiê, checklist, tarefas e pacote registrados no caso.");
     } catch (error: any) {
-      toast.error(
-        error.response?.data?.detail || "Falha ao persistir a jornada.",
-      );
+      toast.error(detalheErro(error, "Falha ao persistir a jornada."));
     } finally {
       setSalvando(false);
     }

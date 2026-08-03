@@ -3,6 +3,7 @@ import { toast } from "../components/Toast";
 import { Plus, UserX } from "lucide-react";
 import api from "../lib/api";
 import type { User } from "../types";
+import { detalheErro } from "../utils/erro";
 import {
   PageHeader,
   Modal,
@@ -50,8 +51,8 @@ export default function Usuarios() {
       setModal(false);
       setForm({ role: "advogado" });
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro"));
     } finally {
       setSalvando(false);
     }
@@ -62,8 +63,8 @@ export default function Usuarios() {
     try {
       await api.delete(`/users/${u.id}`);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao desativar usuário");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao desativar usuário"));
     }
   };
 

@@ -18,6 +18,7 @@ import {
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { toast } from "./Toast";
+import { detalheErro } from "../utils/erro";
 import {
   Modal,
   Alert,
@@ -158,12 +159,6 @@ const TIPO_LABEL: Record<ProvaTipo, string> = Object.fromEntries(
   TIPOS.map((t) => [t.key, t.label]),
 ) as Record<ProvaTipo, string>;
 
-function apiDetail(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
-    ?.data?.detail;
-  return typeof detail === "string" ? detail : fallback;
-}
-
 interface FormState {
   tipo: ProvaTipo;
   titulo: string;
@@ -223,7 +218,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
         setProvas(lista);
       })
       .catch((e) =>
-        setErro(apiDetail(e, "Falha ao carregar as provas do caso.")),
+        setErro(detalheErro(e, "Falha ao carregar as provas do caso.")),
       )
       .finally(() => setLoading(false));
   };
@@ -304,7 +299,10 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
     } catch (e) {
       setSugestoes([]);
       setAvisoIa(
-        apiDetail(e, "Falha ao gerar sugestões de provas faltantes com a IA."),
+        detalheErro(
+          e,
+          "Falha ao gerar sugestões de provas faltantes com a IA.",
+        ),
       );
       setSugeriu(true);
     } finally {
@@ -384,7 +382,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
       setFormOpen(false);
       await carregar();
     } catch (e) {
-      setFormErro(apiDetail(e, "Falha ao salvar a prova."));
+      setFormErro(detalheErro(e, "Falha ao salvar a prova."));
     } finally {
       setSalvando(false);
     }
@@ -399,7 +397,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
       setExcluirId(null);
       await carregar();
     } catch (e) {
-      toast.error(apiDetail(e, "Falha ao remover a prova."));
+      toast.error(detalheErro(e, "Falha ao remover a prova."));
     } finally {
       setExcluindo(false);
     }
@@ -423,7 +421,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
       ]);
       await carregar();
     } catch (e) {
-      toast.error(apiDetail(e, "Falha ao reordenar as provas."));
+      toast.error(detalheErro(e, "Falha ao reordenar as provas."));
     } finally {
       setReordenando(false);
     }
@@ -447,7 +445,9 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
       URL.revokeObjectURL(url);
       toast.success("Documento único de anexos (Visual Law) gerado.");
     } catch (e) {
-      toast.error(apiDetail(e, "Falha ao gerar o documento único de anexos."));
+      toast.error(
+        detalheErro(e, "Falha ao gerar o documento único de anexos."),
+      );
     } finally {
       setGerandoPdf(false);
     }

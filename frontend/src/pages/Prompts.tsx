@@ -5,6 +5,7 @@ import { Sparkles, Trash2, Plus, Play } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner, Modal } from "../components/UI";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 const CATS = [
   "peticao",
@@ -61,8 +62,8 @@ export default function Prompts() {
       setShow(false);
       setLoading(true);
       load();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao criar");
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha ao criar"));
     } finally {
       setSaving(false);
     }
@@ -73,8 +74,8 @@ export default function Prompts() {
     try {
       await api.delete(`/prompts-juridicos/${id}`);
       setPrompts((p) => p.filter((x) => x.id !== id));
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao excluir prompt");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao excluir prompt"));
     }
   };
 
@@ -96,8 +97,8 @@ export default function Prompts() {
       setOut(
         data.resultado ?? data.conteudo ?? data.texto ?? JSON.stringify(data),
       );
-    } catch (err: any) {
-      setOut("Erro: " + (err.response?.data?.detail || "falha"));
+    } catch (err: unknown) {
+      setOut("Erro: " + detalheErro(err, "falha"));
     } finally {
       setRunning(false);
     }

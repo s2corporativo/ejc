@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Plus, Check, Trash2, RefreshCw, Filter, Download } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
+import { detalheErro } from "../utils/erro";
 import {
   Modal,
   Button,
@@ -193,8 +194,8 @@ export default function Despesas({
       }
       setShowForm(false);
       load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Erro ao salvar a despesa");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao salvar a despesa"));
     }
   }
 
@@ -205,10 +206,8 @@ export default function Despesas({
         pago_em: new Date().toISOString().split("T")[0],
       });
       load();
-    } catch (e: any) {
-      toast.error(
-        e?.response?.data?.detail || "Erro ao marcar a despesa como paga",
-      );
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao marcar a despesa como paga"));
     }
   }
 
@@ -222,8 +221,8 @@ export default function Despesas({
       await api.delete(`/v1/despesas/${pendenteExcluir}`);
       setPendenteExcluir(null);
       load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Erro ao excluir a despesa");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao excluir a despesa"));
     }
   }
 

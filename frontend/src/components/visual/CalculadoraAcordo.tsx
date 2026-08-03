@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../Toast";
+import { detalheErro } from "../../utils/erro";
 import {
   Badge,
   Button,
@@ -56,11 +57,6 @@ function tribunalInicialNormalizado(tribunal?: string | null): string {
 }
 
 /** detail de erro da API pode ser string ou objeto — nunca renderizar cru. */
-function detalheErro(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
-    ?.data?.detail;
-  return typeof detail === "string" ? detail : fallback;
-}
 
 function BarraComparativa({ resultado }: { resultado: BreakevenResponse }) {
   const litigio = Math.max(0, resultado.comparativo.litigio_vpl);

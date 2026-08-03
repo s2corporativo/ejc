@@ -16,6 +16,7 @@ import api from "../lib/api";
 import ExtratoSocio from "../components/ExtratoSocio";
 import { Empty, Spinner } from "../components/UI";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 const fmtMoney = (v?: number | null) =>
   (Number.isFinite(v) ? (v as number) : 0).toLocaleString("pt-BR", {
@@ -162,8 +163,8 @@ export default function Sociedade() {
       setNovoSocio({ user_id: "", pct: "", data_entrada: "" });
       setShowFormSocio(false);
       load();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao cadastrar sócio");
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha ao cadastrar sócio"));
     }
   };
 
@@ -182,10 +183,8 @@ export default function Sociedade() {
       setNovaDist({ mes_referencia: "", valor_total: "" });
       setShowFormDist(false);
       load();
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.detail || "Falha ao registrar distribuição",
-      );
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha ao registrar distribuição"));
     }
   };
 
@@ -213,8 +212,8 @@ export default function Sociedade() {
       });
       setShowFormSaque(false);
       load();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao registrar saque");
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha ao registrar saque"));
     } finally {
       setSavingSaque(false);
     }
@@ -227,8 +226,8 @@ export default function Sociedade() {
     try {
       await api.patch(`/v1/partner-withdrawals/${id}/${action}`);
       load();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha");
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha"));
     }
   };
 

@@ -19,6 +19,7 @@ import {
 import api from "../lib/api";
 import { Modal, Button } from "./UI";
 import { toast } from "./Toast";
+import { detalheErro } from "../utils/erro";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function fmtBRL(v: number | null | undefined) {
@@ -34,16 +35,6 @@ function parseNum(s: string): number | null {
     return isNaN(n2) ? null : n2;
   }
   return n;
-}
-function apiDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d))
-    return d
-      .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
-      .filter(Boolean)
-      .join("; ");
-  return fallback;
 }
 
 // ── Tipos da resposta (contrato /ambiental/estrategia/simular) ───────────────
@@ -270,8 +261,8 @@ function PecaConversaoModal({
       URL.revokeObjectURL(url);
       toast.success("Requerimento de conversão (Visual Law) gerado.");
       onClose();
-    } catch (e: any) {
-      setErro(apiDetail(e, "Falha ao gerar o requerimento de conversão."));
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao gerar o requerimento de conversão."));
     } finally {
       setGerando(false);
     }
@@ -369,8 +360,8 @@ export default function AmbientalEstrategia() {
         body,
       );
       setRes(data);
-    } catch (e: any) {
-      setErro(apiDetail(e, "Falha ao simular os cenários."));
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao simular os cenários."));
     } finally {
       setLoading(false);
     }

@@ -23,6 +23,7 @@ import {
   fmtDate,
 } from "../components/UI";
 import { toast } from "../components/Toast";
+import { detalheErro, statusErro } from "../utils/erro";
 
 type PrazoStatus = "nenhum" | "sugerido" | "aceito" | "recusado";
 
@@ -109,10 +110,8 @@ export default function Intimacoes() {
       toast.success(data.detail);
       load();
       loadStatus();
-    } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Configure sua OAB no menu do avatar",
-      );
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Configure sua OAB no menu do avatar"));
     } finally {
       setLoading(false);
     }
@@ -138,10 +137,9 @@ export default function Intimacoes() {
         },
       }));
       setSugestao({ com, dados: data });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e.response?.data?.detail ||
-          "Não foi possível calcular a sugestão de prazo.",
+        detalheErro(e, "Não foi possível calcular a sugestão de prazo."),
       );
     } finally {
       setSugerindo(null);
@@ -165,13 +163,15 @@ export default function Intimacoes() {
           : `Prazo cadastrado para ${fmtDate(data.data_prazo)}.`,
       );
       setSugestao(null);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // 422: intimação sem caso vinculado (ou sem base para calcular o prazo).
       const detalhe =
-        e.response?.status === 422
-          ? e.response?.data?.detail ||
-            "Intimação sem caso vinculado — vincule um caso antes de gerar o prazo."
-          : e.response?.data?.detail || "Não foi possível cadastrar o prazo.";
+        statusErro(e) === 422
+          ? detalheErro(
+              e,
+              "Intimação sem caso vinculado — vincule um caso antes de gerar o prazo.",
+            )
+          : detalheErro(e, "Não foi possível cadastrar o prazo.");
       toast.error(detalhe);
     } finally {
       setSalvando(null);
@@ -191,10 +191,8 @@ export default function Intimacoes() {
       }));
       toast.info(data.detail || "Prazo recusado — nenhum prazo será gerado.");
       setSugestao(null);
-    } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Não foi possível recusar o prazo.",
-      );
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Não foi possível recusar o prazo."));
     } finally {
       setSalvando(null);
     }

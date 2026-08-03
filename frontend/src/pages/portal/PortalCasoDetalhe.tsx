@@ -5,6 +5,7 @@ import api from "../../lib/api";
 import { toast } from "../../components/Toast";
 import { ErrorState, Spinner } from "../../components/UI";
 import { asList } from "../../lib/list";
+import { detalheErro } from "../../utils/erro";
 
 function MensagensCliente({ caseId }: { caseId: string }) {
   const [msgs, setMsgs] = useState<any[]>([]);
@@ -25,10 +26,9 @@ function MensagensCliente({ caseId }: { caseId: string }) {
       await api.post(`/portal/casos/${caseId}/mensagens`, { mensagem: txt });
       setTxt("");
       carregar();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e.response?.data?.detail ||
-          "Não foi possível enviar a mensagem. Tente novamente.",
+        detalheErro(e, "Não foi possível enviar a mensagem. Tente novamente."),
       );
     } finally {
       setSending(false);

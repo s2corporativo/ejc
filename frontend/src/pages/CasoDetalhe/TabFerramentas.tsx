@@ -13,6 +13,7 @@ import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
 import { ramosDaArea } from "../ramos/ramosConfig";
 import type { FerramentaConfig } from "../ramos/ramosConfig";
+import { detalheErro } from "../../utils/erro";
 import {
   camposVisiveis,
   chavesObsoletas,
@@ -61,7 +62,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
         params: paramsVisiveis(f.campos, vals),
       });
       setRes(r.data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // 503 "ferramenta_nao_homologada" vira mensagem controlada — nunca
       // erro genérico nem `detail` objeto renderizado cru.
       setErro(mensagemErroFerramenta(e));
@@ -234,8 +235,8 @@ function AnaliseContratoIA({ caseId }: { caseId: string }) {
         case_id: caseId,
       });
       setResultado(data);
-    } catch (e: any) {
-      setResultado({ erro: e.response?.data?.detail || "Falha" });
+    } catch (e: unknown) {
+      setResultado({ erro: detalheErro(e, "Falha") });
     } finally {
       setLoading(false);
     }
@@ -259,8 +260,8 @@ function AnaliseContratoIA({ caseId }: { caseId: string }) {
         case_id: caseId,
       });
       setCompResult(data);
-    } catch (e: any) {
-      setCompResult({ erro: e.response?.data?.detail || "Falha" });
+    } catch (e: unknown) {
+      setCompResult({ erro: detalheErro(e, "Falha") });
     } finally {
       setCompLoading(false);
     }

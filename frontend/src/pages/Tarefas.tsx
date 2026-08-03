@@ -15,6 +15,7 @@ import api from "../lib/api";
 import { toast } from "../components/Toast";
 import { Button, Empty, Modal, PageHeader } from "../components/UI";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 const COLS = [
   {
@@ -129,8 +130,8 @@ export default function Tarefas() {
     try {
       await api.delete(`/tasks/${id}`);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao remover tarefa");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao remover tarefa"));
     }
   };
 

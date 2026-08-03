@@ -20,6 +20,7 @@ import {
 import api from "../lib/api";
 import { toast } from "./Toast";
 import { Spinner } from "./UI";
+import { detalheErro } from "../utils/erro";
 
 type AtendimentoTipo =
   | "reuniao_presencial"
@@ -225,10 +226,9 @@ export default function ClientServiceTimeline({
         setTotal(response.data.total ?? 0);
         setResumoSolicitacoes(response.data.resumo_solicitacoes ?? null);
         setPage(targetPage);
-      } catch (error: any) {
+      } catch (error: unknown) {
         toast.error(
-          error.response?.data?.detail ||
-            "Não foi possível carregar a linha do tempo.",
+          detalheErro(error, "Não foi possível carregar a linha do tempo."),
         );
         if (!append) {
           setItems([]);
@@ -384,11 +384,8 @@ export default function ClientServiceTimeline({
       setForm(emptyForm());
       setShowForm(false);
       await load(1, false);
-    } catch (error: any) {
-      toast.error(
-        error.response?.data?.detail ||
-          "Não foi possível salvar o atendimento.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Não foi possível salvar o atendimento."));
     } finally {
       setSaving(false);
     }
@@ -406,10 +403,9 @@ export default function ClientServiceTimeline({
           : "Solicitação marcada como atendida.",
       );
       await load(1, false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error.response?.data?.detail ||
-          "Não foi possível atualizar a solicitação.",
+        detalheErro(error, "Não foi possível atualizar a solicitação."),
       );
     } finally {
       setUpdatingId(null);
@@ -431,10 +427,8 @@ export default function ClientServiceTimeline({
           : "Contato registrado como não concluído.",
       );
       await load(1, false);
-    } catch (error: any) {
-      toast.error(
-        error.response?.data?.detail || "Não foi possível atualizar o contato.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Não foi possível atualizar o contato."));
     } finally {
       setUpdatingId(null);
     }
@@ -457,10 +451,12 @@ export default function ClientServiceTimeline({
         ...current,
         [itemId]: response.data ?? [],
       }));
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error.response?.data?.detail ||
+        detalheErro(
+          error,
           "Não foi possível carregar o histórico de auditoria.",
+        ),
       );
     } finally {
       setLoadingAuditId(null);

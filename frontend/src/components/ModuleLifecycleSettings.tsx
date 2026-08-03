@@ -18,6 +18,7 @@ import {
 } from "../stores/moduleLifecycle";
 import { toast } from "./Toast";
 import { SectionCard, Spinner, cn } from "./UI";
+import { detalheErro } from "../utils/erro";
 
 const STATUS_OPTIONS: Array<{
   value: ModuleLifecycleStatus;
@@ -161,10 +162,8 @@ export default function ModuleLifecycleSettings() {
       upsertLocal(data);
       setDraft(overrideDraft(data));
       toast.success("Lifecycle do módulo atualizado.");
-    } catch (error: any) {
-      toast.error(
-        error?.response?.data?.detail || "Não foi possível atualizar o módulo.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Não foi possível atualizar o módulo."));
     } finally {
       setSaving(false);
     }
@@ -178,10 +177,8 @@ export default function ModuleLifecycleSettings() {
       removeLocal(selectedKey);
       setDraft(defaultDraft(selected));
       toast.success("Override removido; manifesto local restaurado.");
-    } catch (error: any) {
-      toast.error(
-        error?.response?.data?.detail || "Não foi possível remover o override.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Não foi possível remover o override."));
     } finally {
       setSaving(false);
     }

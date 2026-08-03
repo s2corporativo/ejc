@@ -28,6 +28,7 @@ import { toast } from "./Toast";
 import { Modal, Spinner, Empty, ErrorState, ConfirmModal } from "./UI";
 import type { Client } from "../types";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 // ── Tipos do contrato /empresarial/sociedades ────────────────────────────────
 interface Sociedade {
@@ -197,9 +198,7 @@ export default function SociedadesCliente() {
       .get(`/empresarial/sociedades/${id}`)
       .then((r) => setDetalhe(r.data))
       .catch((e) => {
-        toast.error(
-          e.response?.data?.detail || "Erro ao carregar a sociedade.",
-        );
+        toast.error(detalheErro(e, "Erro ao carregar a sociedade."));
         setDetalhe(null);
         setSelId(null);
       })
@@ -245,8 +244,8 @@ export default function SociedadesCliente() {
       setFormSoc({ ...FORM_SOCIEDADE_VAZIO });
       loadLista();
       if (r.data?.id) setSelId(r.data.id);
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao registrar sociedade.");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao registrar sociedade."));
     } finally {
       setSalvandoSoc(false);
     }
@@ -277,8 +276,8 @@ export default function SociedadesCliente() {
       toast.success("Sócio adicionado.");
       setFormSocio({ ...FORM_SOCIO_VAZIO });
       recarregar();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao adicionar sócio.");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao adicionar sócio."));
     } finally {
       setSalvandoSocio(false);
     }
@@ -295,8 +294,8 @@ export default function SociedadesCliente() {
       toast.success("Sócio removido.");
       setPendenteExcluir(null);
       recarregar();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao remover sócio.");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao remover sócio."));
     }
   };
 
@@ -320,8 +319,8 @@ export default function SociedadesCliente() {
       toast.success("Evento registrado.");
       setFormEvento({ ...FORM_EVENTO_VAZIO });
       recarregar();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao registrar evento.");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao registrar evento."));
     } finally {
       setSalvandoEvento(false);
     }

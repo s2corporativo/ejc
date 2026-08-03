@@ -27,6 +27,7 @@ import {
   fmtDate,
 } from "../components/UI";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
 const CATS: { value: string; label: string; icon: any; cor: string }[] = [
@@ -183,7 +184,7 @@ function ModalIngestao({
       onSalvo();
       onClose();
     } catch (e: any) {
-      setErro(e.response?.data?.detail || "Erro ao ingerir");
+      setErro(detalheErro(e, "Erro ao ingerir"));
     } finally {
       setSalvando(false);
     }
@@ -395,7 +396,7 @@ function ModalIngestPdf({
       }
       onSalvo();
     } catch (e: any) {
-      setErro(e.response?.data?.detail ?? "Erro ao ingerir");
+      setErro(detalheErro(e, "Erro ao ingerir"));
     } finally {
       setSalvando(false);
     }

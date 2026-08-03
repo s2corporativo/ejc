@@ -3,6 +3,7 @@ import { toast } from "../components/Toast";
 import { GitBranch, Trash2, Plus, Clock } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
+import { detalheErro } from "../utils/erro";
 
 type Etapa = {
   id?: string;
@@ -81,8 +82,8 @@ export default function Workflow() {
       setShow(false);
       setLoading(true);
       load();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao criar workflow");
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha ao criar workflow"));
     } finally {
       setSaving(false);
     }

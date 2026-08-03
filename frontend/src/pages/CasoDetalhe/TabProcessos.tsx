@@ -4,6 +4,7 @@ import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { StatusBadge, Modal, Empty, fmtMoney } from "../../components/UI";
 import { ConsultaProfundaTJMG } from "../../components/Infosimples";
+import { detalheErro } from "../../utils/erro";
 
 export default function TabProcessos({ caseId }: { caseId: string }) {
   const [procs, setProcs] = useState<any[]>([]);
@@ -63,8 +64,8 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
       setForm(vazio);
       setShowForm(false);
       carregar();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao criar processo");
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha ao criar processo"));
     } finally {
       setSaving(false);
     }
@@ -74,8 +75,8 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
     try {
       await api.delete(`/processes/${pid}`);
       carregar();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao remover");
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha ao remover"));
     }
   };
   const arquivar = (pid: string) => {
@@ -93,8 +94,8 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
       setArqPid(null);
       setArqMotivo("");
       carregar();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao arquivar");
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha ao arquivar"));
     } finally {
       setArqSaving(false);
     }
@@ -104,8 +105,8 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
       await api.post(`/processes/${pid}/desarquivar`);
       toast.success("Processo desarquivado.");
       carregar();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao desarquivar");
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha ao desarquivar"));
     }
   };
 

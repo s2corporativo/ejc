@@ -4,6 +4,7 @@ import api from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { PageHeader, Spinner, Empty, Modal, fmtDate } from "../components/UI";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 const ADMIN = ["superadmin", "admin", "socio"];
 
@@ -64,8 +65,8 @@ export default function Suspensoes() {
         ato_normativo: "",
       });
       carregar();
-    } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha ao salvar");
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao salvar"));
     }
   };
 
@@ -84,8 +85,8 @@ export default function Suspensoes() {
         tribunal: sim.tribunal || null,
       });
       setSimRes(data);
-    } catch (e: any) {
-      setSimRes({ erro: e.response?.data?.detail || "Falha no cálculo" });
+    } catch (e: unknown) {
+      setSimRes({ erro: detalheErro(e, "Falha no cálculo") });
     } finally {
       setSimLoad(false);
     }

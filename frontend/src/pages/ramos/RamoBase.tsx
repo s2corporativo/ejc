@@ -72,6 +72,7 @@ import LgpdRegistros from "../../components/LgpdRegistros";
 import GuiaLgpd from "../../components/GuiaLgpd";
 import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
 import { RamoStats } from "../../components/Dashboards";
+import { detalheErro } from "../../utils/erro";
 
 // Mapa de ícones por nome (evita importar a lib inteira)
 const ICONES: Record<string, any> = {
@@ -166,7 +167,7 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
           : "✓ Salvo em Peças > Rascunhos (sem vínculo a caso).",
       );
       setDocLink(casoAtivo ? `/pecas?caso=${casoAtivo.id}` : "/pecas");
-    } catch (e: any) {
+    } catch (e: unknown) {
       // `detail` pode ser objeto (gate de homologação) ou array (Pydantic):
       // nunca renderizar cru — sempre string via helper.
       setDocMsg(
@@ -202,7 +203,7 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
         params: paramsVisiveis(f.campos, vals),
       });
       setRes(r.data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // 503 "ferramenta_nao_homologada" vira mensagem controlada — nunca
       // lista vazia nem erro genérico/objeto cru.
       setErro(mensagemErroFerramenta(e));
@@ -600,8 +601,8 @@ function ComparadorBacen() {
         params: { modalidade: sel.modalidade, segmento: sel.segmento, periodo },
       });
       setRes(r.data);
-    } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha ao consultar o BACEN.");
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao consultar o BACEN."));
     } finally {
       setLoading(false);
     }
@@ -740,7 +741,7 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setRes(r.data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setErro(mensagemErroIA(e, "Não foi possível analisar o documento."));
     } finally {
       setLoading(false);
@@ -801,7 +802,7 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
           JSON.stringify(data).slice(0, 2000),
       );
       setAcao("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAcao(mensagemErroIA(e, "Não foi possível gerar a minuta."));
     }
   };
@@ -1064,8 +1065,8 @@ export default function RamoBase() {
       setModal(false);
       setForm({});
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao salvar");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao salvar"));
     } finally {
       setSalvando(false);
     }

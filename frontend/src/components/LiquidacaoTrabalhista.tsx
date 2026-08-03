@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
+import { detalheErro } from "../utils/erro";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function fmtBRL(v: number | null | undefined) {
@@ -43,16 +44,6 @@ function fmtFator(v: number | null | undefined) {
         minimumFractionDigits: 4,
         maximumFractionDigits: 6,
       });
-}
-function apiDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d))
-    return d
-      .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
-      .filter(Boolean)
-      .join("; ");
-  return fallback;
 }
 
 const MAX_VERBAS = 100;
@@ -305,8 +296,8 @@ export default function LiquidacaoTrabalhista() {
         },
       );
       setRes(data);
-    } catch (e: any) {
-      setErro(apiDetail(e, "Falha ao calcular a liquidação de sentença."));
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao calcular a liquidação de sentença."));
     } finally {
       setCalculando(false);
     }
@@ -331,8 +322,8 @@ export default function LiquidacaoTrabalhista() {
       a.click();
       URL.revokeObjectURL(url);
       toast.success("Planilha de liquidação (Visual Law) gerada.");
-    } catch (e: any) {
-      toast.error(apiDetail(e, "Falha ao gerar a planilha em PDF."));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao gerar a planilha em PDF."));
     } finally {
       setGerandoPdf(false);
     }

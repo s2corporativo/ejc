@@ -38,6 +38,7 @@ import ClientServiceTimeline, {
 import { soDigitos } from "../utils/phone";
 import { toast } from "../components/Toast";
 import { areaLabel } from "../lib/areas";
+import { detalheErro } from "../utils/erro";
 import {
   PageHeader,
   Spinner,
@@ -250,10 +251,8 @@ function PendingItemsPanel({
       setForm({ title: "", type: "documento", description: "", due_date: "" });
       setShowAdd(false);
       load();
-    } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Não foi possível criar a pendência",
-      );
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Não foi possível criar a pendência"));
     }
   }
 
@@ -263,10 +262,8 @@ function PendingItemsPanel({
         status,
       });
       load();
-    } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Não foi possível atualizar a pendência",
-      );
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Não foi possível atualizar a pendência"));
     }
   }
 
@@ -282,10 +279,8 @@ function PendingItemsPanel({
       );
       setPendenteExcluir(null);
       load();
-    } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Não foi possível excluir a pendência",
-      );
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Não foi possível excluir a pendência"));
     }
   }
 
@@ -538,10 +533,9 @@ function ComunicacaoRapida({
       toast.success("Desfecho do contato registrado no histórico");
       setFollowUp(null);
       onRegistrado?.();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e.response?.data?.detail ||
-          "Não foi possível registrar o desfecho do contato",
+        detalheErro(e, "Não foi possível registrar o desfecho do contato"),
       );
     } finally {
       setSalvandoDesfecho(false);
@@ -676,10 +670,9 @@ function RelatorioFinanceiro({
       const r = await api.get(`/clients/${clientId}/relatorio-financeiro`);
       setRel(r.data);
       setOpen(true);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e.response?.data?.detail ||
-          "Não foi possível carregar o relatório financeiro",
+        detalheErro(e, "Não foi possível carregar o relatório financeiro"),
       );
     } finally {
       setLoading(false);
@@ -940,10 +933,8 @@ export default function DossieCliente() {
       a.download = nome || `documento-${docId}`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Não foi possível baixar o documento",
-      );
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Não foi possível baixar o documento"));
     }
   };
 
@@ -1030,10 +1021,8 @@ export default function DossieCliente() {
         "Acesso criado — informe o e-mail e a senha inicial ao cliente",
       );
       setAcessoOpen(false);
-    } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Não foi possível criar o acesso ao portal",
-      );
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Não foi possível criar o acesso ao portal"));
     } finally {
       setCriandoAcesso(false);
     }

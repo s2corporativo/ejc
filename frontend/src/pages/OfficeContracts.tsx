@@ -19,6 +19,7 @@ import {
   ConfirmModal,
 } from "../components/UI";
 import { toast } from "../components/Toast";
+import { detalheErro } from "../utils/erro";
 
 interface Contract {
   id: string;
@@ -166,8 +167,8 @@ export default function OfficeContracts() {
       }
       setShowForm(false);
       load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Erro ao salvar contrato");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao salvar contrato"));
     } finally {
       setSalvando(false);
     }
@@ -183,8 +184,8 @@ export default function OfficeContracts() {
       await api.delete(`/v1/office-contracts/${pendenteExcluir}`);
       setPendenteExcluir(null);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao excluir contrato");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao excluir contrato"));
     }
   }
 

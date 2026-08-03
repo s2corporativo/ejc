@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import api, { logout } from "../lib/api";
 import type { LoginResponse } from "../types";
 import { useAuth } from "../stores/auth";
+import { detalheErro } from "../utils/erro";
 
 type SetupResponse = {
   secret: string;
@@ -27,8 +28,7 @@ export default function Configurar2FA() {
       .catch((err) => {
         if (active) {
           setError(
-            err?.response?.data?.detail ||
-              "Não foi possível iniciar a configuração do 2FA.",
+            detalheErro(err, "Não foi possível iniciar a configuração do 2FA."),
           );
         }
       })

@@ -173,7 +173,7 @@ export default function AnaliseEstrategica({
         texto_documento: textDoc,
       });
       setAnalise(res.data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAnalise({
         erro: mensagemErroIA(
           e,

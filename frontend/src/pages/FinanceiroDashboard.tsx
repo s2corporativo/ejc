@@ -17,6 +17,7 @@ import {
 import api from "../lib/api";
 import { toast } from "../components/Toast";
 import { Empty, Spinner } from "../components/UI";
+import { detalheErro } from "../utils/erro";
 
 function fmtR$(v: number | undefined | null) {
   if (v == null) return "R$ 0,00";
@@ -115,11 +116,13 @@ export default function FinanceiroDashboard({
         `/financeiro/consolidado?competencia=${competencia}`,
       );
       setD(r.data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setD(null);
       setErro(
-        e?.response?.data?.detail ||
+        detalheErro(
+          e,
           "Não foi possível carregar o consolidado financeiro. Os valores abaixo podem estar indisponíveis — tente atualizar.",
+        ),
       );
     } finally {
       setLoading(false);
@@ -134,11 +137,13 @@ export default function FinanceiroDashboard({
     try {
       const r = await api.get(`/relatorio/mensal?mes=${competencia}`);
       setRelatorio(r.data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setRelatorio(null);
       setErro(
-        e?.response?.data?.detail ||
+        detalheErro(
+          e,
           "Não foi possível carregar o relatório mensal. Tente atualizar.",
+        ),
       );
     }
   };
@@ -156,10 +161,8 @@ export default function FinanceiroDashboard({
       a.download = `despesas-${competencia}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Não foi possível exportar o CSV",
-      );
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Não foi possível exportar o CSV"));
     }
   };
 

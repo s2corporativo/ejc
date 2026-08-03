@@ -15,6 +15,7 @@ import QRCode from "qrcode";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import type { Fee, Client, Paged } from "../types";
+import { detalheErro } from "../utils/erro";
 import {
   StatusBadge,
   Modal,
@@ -91,8 +92,8 @@ export default function Honorarios() {
       setModal(false);
       setForm({ tipo: "fixo" });
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro"));
     } finally {
       setSalvando(false);
     }
@@ -104,8 +105,8 @@ export default function Honorarios() {
     try {
       const r = await api.get(`/honorarios-exito/${fee.id}/rateio`);
       setRateioModal({ fee, calc: r.data });
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao calcular rateio");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao calcular rateio"));
       setRateioModal(null);
     } finally {
       setRateioLoading(false);
@@ -121,8 +122,8 @@ export default function Honorarios() {
       );
       setRateioModal(null);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao gerar rateio");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao gerar rateio"));
     }
   };
 
@@ -134,8 +135,8 @@ export default function Honorarios() {
       setPagModal(null);
       setPag({});
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao registrar pagamento");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao registrar pagamento"));
     } finally {
       setRegistrando(false);
     }
@@ -164,8 +165,8 @@ export default function Honorarios() {
         margin: 1,
       });
       setPixQr(url);
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao gerar PIX");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao gerar PIX"));
     }
   };
 

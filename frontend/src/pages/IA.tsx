@@ -13,6 +13,7 @@ import {
 import { asList } from "../lib/list";
 import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
+import { detalheErro } from "../utils/erro";
 
 const AREAS = [
   "civil",
@@ -82,10 +83,8 @@ export default function IA() {
     try {
       const { data } = await api.get(`/ai/dossie/${caseId}`);
       setDossie(data.texto);
-    } catch (e: any) {
-      setDossie(
-        "Erro ao carregar dossiê: " + (e.response?.data?.detail || "falha"),
-      );
+    } catch (e: unknown) {
+      setDossie("Erro ao carregar dossiê: " + detalheErro(e, "falha"));
     } finally {
       setLoadingDossie(false);
     }
@@ -105,7 +104,7 @@ export default function IA() {
         case_id: caseId || undefined,
       });
       setResp(data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
@@ -121,7 +120,7 @@ export default function IA() {
         case_id: caseId || undefined,
       });
       setResp(data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
@@ -146,7 +145,7 @@ export default function IA() {
           .filter(Boolean),
       });
       setResp(data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);

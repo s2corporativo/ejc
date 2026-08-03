@@ -21,6 +21,7 @@ import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { useIaStatus } from "../lib/iaStatus";
 import { toast } from "./Toast";
 import { Badge, Button, Empty, Spinner, fmtDate } from "./UI";
+import { detalheErro } from "../utils/erro";
 
 // ── Tipos (contrato de GET /dossie/{caseId}/modulos) ─────────────────────────
 
@@ -171,11 +172,6 @@ const CATEGORIA_EVENTO: Record<EventoTimeline["categoria"], string> = {
 
 const EVENTOS_VISIVEIS = 15;
 
-function detalheErro(err: any, fallback: string): string {
-  const d = err?.response?.data?.detail;
-  return typeof d === "string" && d ? d : fallback;
-}
-
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
@@ -202,7 +198,7 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
       );
       setFaltantes(asList<ProvaFaltante>(data));
       setAvisoFaltantes(data?.aviso ?? null);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(mensagemErroIA(e, "Falha ao sugerir provas faltantes."));
     } finally {
       setSugerindo(false);
@@ -253,7 +249,7 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
       if (r.data?.modulos) setModulos(r.data.modulos);
       carregarHistorico();
       toast.success(`Dossiê v${r.data?.versao ?? ""} gerado como rascunho.`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(mensagemErroIA(err, "Não foi possível gerar o dossiê."));
     } finally {
       setGerando(false);
@@ -268,7 +264,7 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
       setDossie({ ...dossie, ...r.data });
       carregarHistorico();
       toast.success("Dossiê aprovado.");
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(
         detalheErro(err, "Não foi possível aprovar (somente sócios)."),
       );

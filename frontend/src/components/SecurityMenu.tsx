@@ -20,6 +20,7 @@ import api, { logout } from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { THEME_LABELS, useThemeStore, type ThemeMode } from "../stores/theme";
 import UserAvatar from "./UserAvatar";
+import { statusErro } from "../utils/erro";
 
 const THEME_OPTIONS: Array<{
   mode: ThemeMode;
@@ -48,8 +49,8 @@ export default function SecurityMenu({ user }: { user: any }) {
         : null;
       updateUser({ avatar_url: url });
       toast.success("Foto de perfil atualizada!");
-    } catch (e: any) {
-      const status = e?.response?.status;
+    } catch (e: unknown) {
+      const status = statusErro(e);
       toast.error(
         status === 413
           ? "Imagem grande demais (máx. 2MB)"

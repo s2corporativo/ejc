@@ -9,6 +9,7 @@ import {
 import api from "../lib/api";
 import { toast } from "./Toast";
 import { SectionCard, Spinner } from "./UI";
+import { detalheErro } from "../utils/erro";
 
 export type IntegrationState = "ready" | "attention" | "disabled";
 
@@ -76,10 +77,12 @@ export default function IntegrationHealthPanel() {
         "/system-modules/integrations",
       );
       setData(response.data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error?.response?.data?.detail ||
+        detalheErro(
+          error,
           "Não foi possível carregar o status das integrações.",
+        ),
       );
     } finally {
       setLoading(false);

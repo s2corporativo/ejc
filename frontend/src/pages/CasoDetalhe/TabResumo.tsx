@@ -24,25 +24,12 @@ import {
   FieldLabel,
 } from "../../components/UI";
 import { useAuth } from "../../stores/auth";
+import { detalheErro } from "../../utils/erro";
 
 interface PendenciaExclusao {
   tipo: string;
   id: string | number;
   descricao: string;
-}
-
-function detalheErro(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
-    ?.data?.detail;
-  if (typeof detail === "string") return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
 }
 
 function ExtratoCaso({ caso }: { caso: Case }) {
@@ -60,9 +47,7 @@ function ExtratoCaso({ caso }: { caso: Case }) {
         const r = await api.get(`/extratos/detalhado/${caso.id}`);
         setData(r.data);
       } catch (e: any) {
-        setErro(
-          e?.response?.data?.detail || "Falha ao carregar o extrato do caso.",
-        );
+        setErro(detalheErro(e, "Falha ao carregar o extrato do caso."));
       }
     }
   };
@@ -160,7 +145,7 @@ function AreasCaso({ caso }: { caso: Case }) {
       await api.delete(`/cases/${caso.id}/areas/${a}`);
       load();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao remover área");
+      toast.error(detalheErro(e, "Erro ao remover área"));
     }
   };
   const disponiveis = catalogoAreas.filter(
@@ -236,7 +221,7 @@ export function AvisoCasoEncerrado({ caso }: { caso: Case }) {
       }
       window.location.reload();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao reabrir caso");
+      toast.error(detalheErro(e, "Falha ao reabrir caso"));
     } finally {
       setReabrindo(false);
     }
@@ -393,7 +378,7 @@ export default function TabResumo({
       );
       window.location.reload();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao encerrar");
+      toast.error(detalheErro(e, "Falha ao encerrar"));
     } finally {
       setEncLoading(false);
     }
@@ -407,7 +392,7 @@ export default function TabResumo({
         `${data.gerados?.length || 0} minuta(s) gerada(s): Procuração, Contrato de Honorários e Relatório Inicial. Veja na aba Documentos do caso.`,
       );
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao gerar documentos");
+      toast.error(detalheErro(e, "Falha ao gerar documentos"));
     } finally {
       setGerando(false);
     }
@@ -475,7 +460,7 @@ export default function TabResumo({
       const { data } = await api.post(`/cases/${caso.id}/sincronizar-processo`);
       toast.success(data.detail || "Dados sincronizados com DataJud.");
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao sincronizar");
+      toast.error(detalheErro(e, "Falha ao sincronizar"));
     } finally {
       setSyncing(false);
     }

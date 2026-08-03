@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { Calculator, FileSignature, Info } from "lucide-react";
 import api from "../lib/api";
+import { detalheErro } from "../utils/erro";
 
 const AREAS = [
   "civil",
@@ -61,8 +62,8 @@ export default function EstimadorHonorarios() {
         observacoes: form.observacoes,
       });
       setR(data);
-    } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha ao estimar.");
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao estimar."));
     } finally {
       setLoading(false);
     }

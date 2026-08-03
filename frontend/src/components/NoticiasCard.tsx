@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { Spinner, Empty } from "./UI";
+import { statusErro } from "../utils/erro";
 
 type Noticia = {
   titulo: string;
@@ -117,11 +118,10 @@ export default function NoticiasCard() {
         ...p,
         [i]: data.resumo || data.resposta || data.texto || "—",
       }));
-    } catch (e: any) {
+    } catch (e: unknown) {
       setResumos((p) => ({
         ...p,
-        [i]:
-          e.response?.status === 503 ? "IA desabilitada." : "Falha ao resumir.",
+        [i]: statusErro(e) === 503 ? "IA desabilitada." : "Falha ao resumir.",
       }));
     } finally {
       setResumindo(null);

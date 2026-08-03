@@ -18,6 +18,7 @@ import api from "../lib/api";
 import { authFetch } from "../lib/stream";
 import { Modal, Button } from "./UI";
 import { toast } from "./Toast";
+import { detalheErro, mensagemErro, foiAbortado } from "../utils/erro";
 
 // Etapas do pipeline de peças (mesma esteira 7 etapas reutilizada pelo backend).
 const ETAPAS_MINUTA: { num: number; titulo: string }[] = [
@@ -80,8 +81,8 @@ export default function AnaliseExtratos() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setRes(data);
-    } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha ao analisar o extrato.");
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao analisar o extrato."));
     } finally {
       setLoading(false);
     }
@@ -214,11 +215,11 @@ export default function AnaliseExtratos() {
           }
         }
       }
-    } catch (e: any) {
-      if (e.name === "AbortError") return;
-      setMinutaErro(e.message ?? "Erro desconhecido");
+    } catch (e: unknown) {
+      if (foiAbortado(e)) return;
+      setMinutaErro(mensagemErro(e, "Erro desconhecido"));
       setMinutaFase("erro");
-      toast.error(e.message ?? "Falha ao gerar a minuta revisional.");
+      toast.error(mensagemErro(e, "Falha ao gerar a minuta revisional."));
     }
   };
 

@@ -19,6 +19,7 @@ import {
 } from "../components/UI";
 import { ClientesStats } from "../components/Dashboards";
 import { VerificarReceita } from "../components/Infosimples";
+import { detalheErro } from "../utils/erro";
 
 // Resposta de POST /clients/checar-conflito. O NOME vem completo (dever ético:
 // sem ele o alerta é inacionável), mas o CPF/CNPJ vem apenas MASCARADO — o
@@ -132,8 +133,8 @@ export default function Clientes() {
       setForm({ tipo: "PF", cidade: "Betim", estado: "MG" });
       setConflito(null);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao salvar");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao salvar"));
     } finally {
       setSalvando(false);
     }
@@ -387,10 +388,8 @@ export default function Clientes() {
                           estado: data.estado,
                           telefone: data.telefone,
                         });
-                      } catch (e: any) {
-                        toast.error(
-                          e.response?.data?.detail || "CNPJ não encontrado",
-                        );
+                      } catch (e: unknown) {
+                        toast.error(detalheErro(e, "CNPJ não encontrado"));
                       }
                     }}
                   >
@@ -607,8 +606,8 @@ export default function Clientes() {
                       "Acesso criado! Informe o e-mail e a senha inicial ao cliente.",
                     );
                     setAcessoModal(null);
-                  } catch (e: any) {
-                    toast.error(e.response?.data?.detail || "Erro");
+                  } catch (e: unknown) {
+                    toast.error(detalheErro(e, "Erro"));
                   }
                 }}
               >

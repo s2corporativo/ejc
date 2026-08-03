@@ -86,6 +86,7 @@ import {
 } from "../lib/revisaoExtracao";
 import Kanban from "./Kanban";
 import { List } from "lucide-react";
+import { detalheErro } from "../utils/erro";
 
 // Taxonomia canônica de áreas: GET /areas via useAreas(), com fallback
 // completo do enum CaseArea (25 áreas) em lib/areas.ts.
@@ -685,8 +686,10 @@ export default function Casos() {
           previewPreparado = true;
         } catch (e: any) {
           toast.error(
-            e.response?.data?.detail ||
+            detalheErro(
+              e,
               "Caso criado, mas não foi possível pré-visualizar os dados extraídos pela IA.",
+            ),
           );
         }
       }
@@ -711,7 +714,7 @@ export default function Casos() {
     } catch (e: any) {
       // Falha antes/na criação do caso: o caso NÃO foi criado; o rascunho (se
       // documental) permanece para retomada.
-      toast.error(e.response?.data?.detail || "Erro ao salvar");
+      toast.error(detalheErro(e, "Erro ao salvar"));
     } finally {
       setSalvando(false);
     }
@@ -758,8 +761,10 @@ export default function Casos() {
       load();
     } catch (e: any) {
       toast.error(
-        e.response?.data?.detail ||
+        detalheErro(
+          e,
           "Ainda não foi possível anexar. Tente de novo ou conclua sem o documento.",
+        ),
       );
     } finally {
       setReanexando(false);
@@ -812,9 +817,7 @@ export default function Casos() {
       nav(caseJourneyPath(caseId), { replace: true });
     } catch (e: any) {
       // Falha ao aplicar: rascunho e ?revisao permanecem — segue recuperável.
-      toast.error(
-        e.response?.data?.detail || "Erro ao aplicar os dados ao caso.",
-      );
+      toast.error(detalheErro(e, "Erro ao aplicar os dados ao caso."));
     } finally {
       setAplicando(false);
     }

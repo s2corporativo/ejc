@@ -16,6 +16,7 @@ import api from "../lib/api";
 import { toast } from "./Toast";
 import { Spinner, fmtDate } from "./UI";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 type TabKey = "saude" | "cobertura" | "laboratorio";
 
@@ -252,10 +253,9 @@ export default function KnowledgeGovernancePanel() {
       const list = asList(docsRes.data) as DocListItem[];
       setDocs(list);
       setSelectedId((current) => current || list[0]?.id || "");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error?.response?.data?.detail ||
-          "Falha ao carregar a governança da base.",
+        detalheErro(error, "Falha ao carregar a governança da base."),
       );
     } finally {
       setLoading(false);
@@ -294,9 +294,7 @@ export default function KnowledgeGovernancePanel() {
         });
       })
       .catch((error: any) =>
-        toast.error(
-          error?.response?.data?.detail || "Falha ao abrir o documento.",
-        ),
+        toast.error(detalheErro(error, "Falha ao abrir o documento.")),
       )
       .finally(() => setBusy(null));
   }, [selectedId]);
@@ -333,10 +331,8 @@ export default function KnowledgeGovernancePanel() {
           : "Governança atualizada.",
       );
       await loadOverview();
-    } catch (error: any) {
-      toast.error(
-        error?.response?.data?.detail || "Falha ao salvar a governança.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Falha ao salvar a governança."));
     } finally {
       setBusy(null);
     }
@@ -358,10 +354,8 @@ export default function KnowledgeGovernancePanel() {
       if (data.recuperado)
         toast.success("Documento recuperado pelo pipeline da IA.");
       else toast.error("Documento não recuperado; consulte o diagnóstico.");
-    } catch (error: any) {
-      toast.error(
-        error?.response?.data?.detail || "Falha no teste de recuperação.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Falha no teste de recuperação."));
     } finally {
       setBusy(null);
     }
@@ -378,10 +372,8 @@ export default function KnowledgeGovernancePanel() {
       setComparison(data as VersionComparison);
       if (!data.available)
         toast.error(data.detail || "Não existe versão anterior.");
-    } catch (error: any) {
-      toast.error(
-        error?.response?.data?.detail || "Falha ao comparar versões.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Falha ao comparar versões."));
     } finally {
       setBusy(null);
     }
@@ -396,10 +388,8 @@ export default function KnowledgeGovernancePanel() {
       if (data.failed === 0)
         toast.success("Todos os testes jurídicos foram aprovados.");
       else toast.error(`${data.failed} teste(s) jurídico(s) exigem atenção.`);
-    } catch (error: any) {
-      toast.error(
-        error?.response?.data?.detail || "Falha nos testes jurídicos.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Falha nos testes jurídicos."));
     } finally {
       setBusy(null);
     }

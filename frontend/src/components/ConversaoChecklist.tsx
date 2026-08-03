@@ -3,6 +3,7 @@ import { CheckCircle2, XCircle, RefreshCw, Scale } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
 import { Alert, Badge, Button, Modal, Skeleton } from "./UI";
+import { detalheErro } from "../utils/erro";
 
 /**
  * ConversaoChecklist — checklist bloqueante (#R8) de conversão
@@ -24,20 +25,6 @@ interface ChecklistItem {
 interface ChecklistResponse {
   itens: ChecklistItem[];
   pronto: boolean;
-}
-
-function msgErro(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
-    ?.data?.detail;
-  if (typeof detail === "string") return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
 }
 
 export default function ConversaoChecklist({
@@ -72,7 +59,7 @@ export default function ConversaoChecklist({
     } catch (e) {
       setItens([]);
       setPronto(false);
-      setErro(msgErro(e, "Falha ao verificar o checklist de conversão."));
+      setErro(detalheErro(e, "Falha ao verificar o checklist de conversão."));
     } finally {
       setLoading(false);
     }
@@ -94,7 +81,7 @@ export default function ConversaoChecklist({
       const status = (e as { response?: { status?: number } })?.response
         ?.status;
       if (status === 409) {
-        toast.info(msgErro(e, "Este caso já possui um processo judicial."));
+        toast.info(detalheErro(e, "Este caso já possui um processo judicial."));
         onClose();
       } else if (status === 422) {
         const detail = (
@@ -120,7 +107,7 @@ export default function ConversaoChecklist({
         );
         setPronto(false);
       } else {
-        toast.error(msgErro(e, "Falha ao converter o caso em judicial."));
+        toast.error(detalheErro(e, "Falha ao converter o caso em judicial."));
       }
     } finally {
       setConvertendo(false);

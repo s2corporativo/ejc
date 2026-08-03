@@ -10,6 +10,7 @@ import { toast } from "./Toast";
 import { Spinner, StatusBadge, Empty } from "./UI";
 import type { Case } from "../types";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 interface EnvCase {
   id: string;
@@ -101,8 +102,8 @@ export default function AmbientalAutos({ casos }: { casos: Case[] }) {
       setForm({ ...FORM_VAZIO });
       toast.success("Auto de infração registrado.");
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao registrar o auto.");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao registrar o auto."));
     } finally {
       setSalvando(false);
     }

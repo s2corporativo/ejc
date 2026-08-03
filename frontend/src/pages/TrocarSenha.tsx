@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api, { logout } from "../lib/api";
 import { toast } from "../components/Toast";
 import { useAuth } from "../stores/auth";
+import { detalheErro } from "../utils/erro";
 
 export default function TrocarSenha() {
   const [atual, setAtual] = useState("");
@@ -53,8 +54,8 @@ export default function TrocarSenha() {
       // redirect HARD para /login — o aviso de sucesso é exibido pela tela
       // de login via query string.
       logout("/login?motivo=senha-alterada");
-    } catch (e: any) {
-      setErro(e.response?.data?.detail || "Erro ao trocar a senha");
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Erro ao trocar a senha"));
     } finally {
       setSalvando(false);
     }

@@ -19,6 +19,7 @@ import {
   ErrorState,
 } from "../components/UI";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 interface Lead {
   id: string;
@@ -138,8 +139,8 @@ export default function CRMLeads() {
       setShowForm(false);
       setForm({ ...EMPTY_FORM });
       load();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Falha ao salvar o lead");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao salvar o lead"));
     }
   }
 
@@ -159,10 +160,12 @@ export default function CRMLeads() {
         ...extraPayload,
       });
       if (novaEtapa === "convertido") load(); // reload to remove from leads list
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e?.response?.data?.detail ||
+        detalheErro(
+          e,
           "Falha ao mover o lead. A etapa anterior foi restaurada.",
+        ),
       );
       load();
     }

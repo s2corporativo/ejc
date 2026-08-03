@@ -16,6 +16,7 @@ import { toast } from "./Toast";
 import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { useIaStatus } from "../lib/iaStatus";
 import { Badge, Spinner } from "./UI";
+import { detalheErro } from "../utils/erro";
 
 export type RiscoNivel = "baixo" | "medio" | "alto";
 export type FichaStatus = "rascunho" | "confirmada";
@@ -163,9 +164,7 @@ export default function FichaTriagem({
         if (cancelado) return;
         // 404 = ficha ainda não existe (fluxo normal). Demais erros → toast.
         if (e.response?.status !== 404) {
-          toast.error(
-            e.response?.data?.detail || "Falha ao carregar a ficha de triagem",
-          );
+          toast.error(detalheErro(e, "Falha ao carregar a ficha de triagem"));
         }
         onStatusRef.current?.("rascunho", CAMPOS_VAZIOS);
       })
@@ -202,7 +201,7 @@ export default function FichaTriagem({
       // Pré-preenchimento nasce como rascunho (campos não trazem status).
       aplicar(campos, conf);
       toast.success("Ficha pré-preenchida pela IA. Revise antes de confirmar.");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
         mensagemErroIA(e, "Não foi possível pré-preencher a ficha com IA."),
       );
@@ -241,8 +240,8 @@ export default function FichaTriagem({
           ? "Ficha de triagem confirmada. Geração de peça liberada."
           : "Rascunho da ficha salvo.",
       );
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao salvar a ficha");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao salvar a ficha"));
     } finally {
       setSalvando(false);
     }

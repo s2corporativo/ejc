@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { Sparkles, Scale, ShieldAlert, BookMarked } from "lucide-react";
 import api from "../lib/api";
+import { detalheErro, foiAbortado } from "../utils/erro";
 
 const VIAB: Record<string, { label: string; cls: string; dot: string }> = {
   alta: {
@@ -52,16 +53,15 @@ export default function MotorTeses({ caso }: { caso: any }) {
         { signal: AbortSignal.timeout(30000) },
       );
       setR(data);
-    } catch (e: any) {
-      const isTimeout =
-        e?.code === "ERR_CANCELED" ||
-        e?.name === "CanceledError" ||
-        e?.name === "TimeoutError";
+    } catch (e: unknown) {
+      const isTimeout = foiAbortado(e);
       setErro(
         isTimeout
           ? "A geração de teses demorou mais que o esperado (30s) e foi interrompida. Tente novamente."
-          : e.response?.data?.detail ||
+          : detalheErro(
+              e,
               "Falha ao gerar teses (a IA pode estar indisponível).",
+            ),
       );
     } finally {
       setLoading(false);

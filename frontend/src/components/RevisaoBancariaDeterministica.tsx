@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Banknote, Calculator, Loader2, TrendingUp } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
+import { detalheErro } from "../utils/erro";
 
 const MODALIDADES = [
   ["credito_pessoal", "Crédito pessoal não consignado"],
@@ -68,10 +69,9 @@ export default function RevisaoBancariaDeterministica() {
       if (pmt !== undefined) payload.parcela_contratual = pmt;
       const { data } = await api.post("/analise-bancaria/abusividade", payload);
       setAbusividade(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error.response?.data?.detail ||
-          "Falha ao consultar a média do Banco Central.",
+        detalheErro(error, "Falha ao consultar a média do Banco Central."),
       );
     } finally {
       setLoadingAbusividade(false);
@@ -109,8 +109,8 @@ export default function RevisaoBancariaDeterministica() {
       if (informado !== undefined) payload.cet_informado_aa_pct = informado;
       const { data } = await api.post("/analise-bancaria/cet", payload);
       setCet(data);
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Falha ao calcular o CET.");
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Falha ao calcular o CET."));
     } finally {
       setLoadingCet(false);
     }

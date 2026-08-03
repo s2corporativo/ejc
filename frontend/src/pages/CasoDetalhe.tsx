@@ -71,6 +71,7 @@ import TabDocumentos from "./CasoDetalhe/TabDocumentos";
 import TabPrazos from "./CasoDetalhe/TabPrazos";
 import TabPecas from "./CasoDetalhe/TabPecas";
 import TabTimeline from "./CasoDetalhe/TabTimeline";
+import { detalheErro } from "../utils/erro";
 
 export const TABS = [
   // Fase 1 (plano de simplificação): a antiga aba "orquestrador" deixou de
@@ -186,8 +187,8 @@ function TabChecklists({ caseId }: { caseId: string }) {
       await api.post(`/checklists/caso/${caseId}/gerar-ia`, { gatilho });
       toast.success("Checklist gerado por legislação (rascunho — revise).");
       carregar();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao gerar");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao gerar"));
     } finally {
       setGerando(false);
     }
@@ -443,8 +444,8 @@ function TabMensagens({ caseId }: { caseId: string }) {
       await api.post(`/cases/${caseId}/mensagens`, { mensagem: txt });
       setTxt("");
       carregar();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao enviar");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao enviar"));
     } finally {
       setSending(false);
     }
@@ -540,8 +541,8 @@ function TabEtiquetas({ caseId }: { caseId: string }) {
     try {
       await api.delete(`/cases/${caseId}/etiquetas/${id}`);
       setDoCaso((p) => p.filter((x) => x.id !== id));
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao remover etiqueta");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao remover etiqueta"));
     }
   };
   const criar = async (e: React.FormEvent) => {

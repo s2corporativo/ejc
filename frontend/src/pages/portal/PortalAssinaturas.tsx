@@ -11,6 +11,7 @@ import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { EmptyState, Modal } from "../../components/UI";
 import { useAuth } from "../../stores/auth";
+import { detalheErro } from "../../utils/erro";
 
 interface Signatario {
   nome?: string | null;
@@ -68,10 +69,12 @@ export default function PortalAssinaturas() {
         signatario: user?.full_name ?? user?.email,
       });
       load();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
-        e?.response?.data?.detail ||
+        detalheErro(
+          e,
           "Não foi possível registrar sua assinatura. O documento NÃO foi assinado. Tente novamente.",
+        ),
       );
     } finally {
       setSigning(null);

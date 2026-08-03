@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "../../components/Toast";
 import api from "../../lib/api";
 import { fmtDate } from "../../components/UI";
+import { detalheErro } from "../../utils/erro";
 
 export default function TabScore({ caseId }: { caseId: string }) {
   const [scores, setScores] = useState<any[]>([]);
@@ -31,8 +32,8 @@ export default function TabScore({ caseId }: { caseId: string }) {
         .get(`/cases/${caseId}/score-juridico`)
         .then((r) => setScores(r.data))
         .catch(() => {});
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha no cálculo");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha no cálculo"));
     } finally {
       setCalc(false);
     }

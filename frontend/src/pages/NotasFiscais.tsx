@@ -15,6 +15,7 @@ import {
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { toast } from "../components/Toast";
+import { detalheErro } from "../utils/erro";
 import type {
   Client,
   Fee,
@@ -187,8 +188,8 @@ export default function NotasFiscais() {
       setPdfFile(null);
       setXmlFile(null);
       recarregarDoInicio();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao registrar a nota.");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao registrar a nota."));
     } finally {
       setSalvando(false);
     }
@@ -228,8 +229,8 @@ export default function NotasFiscais() {
       setCancelNota(null);
       setMotivo("");
       void load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao cancelar a nota.");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao cancelar a nota."));
     } finally {
       setCancelando(false);
     }

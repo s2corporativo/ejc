@@ -14,6 +14,7 @@ import api from "../lib/api";
 import { toast } from "./Toast";
 import { SectionCard, fmtDateTime } from "./UI";
 import { useAuth } from "../stores/auth";
+import { detalheErro } from "../utils/erro";
 
 type SecurityStatus = {
   permissions: string[];
@@ -56,10 +57,12 @@ export default function AccountSecurity() {
       setStatus(securityResponse.data);
       setSessions(sessionsResponse.data.data ?? []);
       updateUser({ permissions: securityResponse.data.permissions });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error?.response?.data?.detail ||
+        detalheErro(
+          error,
           "Não foi possível carregar as configurações de segurança.",
+        ),
       );
     } finally {
       setLoading(false);
@@ -92,8 +95,8 @@ export default function AccountSecurity() {
       setSetup(data);
       setQrUrl(URL.createObjectURL(qr.data as Blob));
       setVerifyCode("");
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Falha ao iniciar o 2FA.");
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Falha ao iniciar o 2FA."));
     } finally {
       setBusy(null);
     }
@@ -113,8 +116,8 @@ export default function AccountSecurity() {
       setVerifyCode("");
       toast.success("Autenticação em duas etapas ativada.");
       await load();
-    } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Código inválido.");
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Código inválido."));
     } finally {
       setBusy(null);
     }
@@ -131,10 +134,8 @@ export default function AccountSecurity() {
       setDisableCode("");
       toast.success("Autenticação em duas etapas desativada.");
       await load();
-    } catch (error: any) {
-      toast.error(
-        error?.response?.data?.detail || "Não foi possível desativar o 2FA.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Não foi possível desativar o 2FA."));
     } finally {
       setBusy(null);
     }
@@ -146,10 +147,8 @@ export default function AccountSecurity() {
       await api.post(`/users/me/sessions/${sessionId}/revoke`);
       toast.success("Sessão remota revogada.");
       await load();
-    } catch (error: any) {
-      toast.error(
-        error?.response?.data?.detail || "Falha ao revogar a sessão.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Falha ao revogar a sessão."));
     } finally {
       setBusy(null);
     }
@@ -161,10 +160,8 @@ export default function AccountSecurity() {
       const { data } = await api.post("/users/me/sessions/revoke-others");
       toast.success(`${data.revoked ?? 0} sessão(ões) remota(s) revogada(s).`);
       await load();
-    } catch (error: any) {
-      toast.error(
-        error?.response?.data?.detail || "Falha ao revogar as outras sessões.",
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Falha ao revogar as outras sessões."));
     } finally {
       setBusy(null);
     }

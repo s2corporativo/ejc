@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
+import { detalheErro } from "../utils/erro";
 
 type Props = {
   modalidade: string;
@@ -97,11 +98,9 @@ export default function DefesasRevisoesComplementos({
       if (reqIdRef.current !== meuReqId) return; // resposta obsoleta
       setSaida(data);
       toast.success(sucesso);
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (reqIdRef.current !== meuReqId) return; // erro obsoleto
-      toast.error(
-        error.response?.data?.detail || "Não foi possível concluir a operação.",
-      );
+      toast.error(detalheErro(error, "Não foi possível concluir a operação."));
     } finally {
       if (reqIdRef.current === meuReqId) setLoading("");
     }

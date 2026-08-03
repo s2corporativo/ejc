@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
+import { detalheErro } from "../utils/erro";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function fmtBRL(v: number | null | undefined) {
@@ -37,16 +38,6 @@ function parseNum(s: string): number | null {
     return isNaN(n2) ? null : n2;
   }
   return n;
-}
-function apiDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d))
-    return d
-      .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
-      .filter(Boolean)
-      .join("; ");
-  return fallback;
 }
 
 // ── Tipos (contrato SimulacaoPrevidOut) ──────────────────────────────────────
@@ -245,8 +236,8 @@ export default function PrevidenciarioSimulacao() {
         { params },
       );
       setRes(data);
-    } catch (e: any) {
-      setErro(apiDetail(e, "Falha ao simular as regras de transição."));
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao simular as regras de transição."));
     } finally {
       setLoading(false);
     }
@@ -271,8 +262,8 @@ export default function PrevidenciarioSimulacao() {
       a.click();
       URL.revokeObjectURL(url);
       toast.success("Parecer de simulação (Visual Law) gerado.");
-    } catch (e: any) {
-      toast.error(apiDetail(e, "Falha ao gerar o parecer em PDF."));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao gerar o parecer em PDF."));
     } finally {
       setGerandoPdf(false);
     }

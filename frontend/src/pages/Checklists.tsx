@@ -4,6 +4,7 @@ import { ListChecks, Trash2, Plus } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 export default function Checklists() {
   const [tpls, setTpls] = useState<any[]>([]);
@@ -48,8 +49,8 @@ export default function Checklists() {
       setShow(false);
       setLoading(true);
       load();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao criar template");
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Falha ao criar template"));
     } finally {
       setSaving(false);
     }

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { Badge, Empty, PageHeader, Spinner } from "../components/UI";
+import { detalheErro, statusErro } from "../utils/erro";
 
 // ── Contrato (GET /diagnostico/central) ───────────────────────────────────────
 type Status = "ok" | "alerta" | "erro" | "desligado";
@@ -182,8 +183,8 @@ export default function CentralDiagnostico() {
       const res = await api.get<DiagnosticoPayload>("/diagnostico/central");
       setData(res.data);
       setErro(null);
-    } catch (e: any) {
-      const status = e?.response?.status;
+    } catch (e: unknown) {
+      const status = statusErro(e);
       if (status === 403) {
         setErro({
           tipo: "acesso",
@@ -192,9 +193,7 @@ export default function CentralDiagnostico() {
       } else {
         setErro({
           tipo: "geral",
-          msg:
-            e?.response?.data?.detail ||
-            "Não foi possível carregar o diagnóstico.",
+          msg: detalheErro(e, "Não foi possível carregar o diagnóstico."),
         });
       }
     } finally {

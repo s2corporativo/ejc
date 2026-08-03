@@ -89,7 +89,7 @@ export default function AssistenteIA() {
           fatos,
         }));
       setRes(data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setErro(mensagemErroIA(e));
     } finally {
       setLoading(false);

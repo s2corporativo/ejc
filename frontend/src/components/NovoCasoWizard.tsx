@@ -15,6 +15,7 @@ import { useAuth } from "../stores/auth";
 import { toast } from "./Toast";
 import { Badge, Button, Modal, Spinner } from "./UI";
 import type { CasoHonorariosInput, Client } from "../types";
+import { detalheErro, statusErro } from "../utils/erro";
 
 // Taxonomia canônica de áreas: GET /areas via useAreas() (lib/areas.ts),
 // com fallback completo do enum CaseArea (25 áreas).
@@ -208,17 +209,17 @@ export default function NovoCasoWizard({
       const { data } = await api.post("/clients/", payload);
       setCliente(data as Client);
       setPasso(2);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // 409 = documento já cadastrado: em vez de beco sem saída, refaz a
       // busca (agora com índice cego por hash no backend) para oferecer o
       // vínculo ao cadastro existente.
-      if (e.response?.status === 409) {
+      if (statusErro(e) === 409) {
         toast.error(
           "CPF/CNPJ já cadastrado — localizando o cliente para vincular.",
         );
         await buscar();
       } else {
-        toast.error(e.response?.data?.detail || "Erro ao criar o cliente");
+        toast.error(detalheErro(e, "Erro ao criar o cliente"));
       }
     } finally {
       setCriandoCliente(false);
@@ -267,8 +268,8 @@ export default function NovoCasoWizard({
       toast.success("Caso criado — acompanhe a jornada.");
       fechar();
       nav(`/casos/${novo.id}/jornada`);
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao criar o caso");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao criar o caso"));
     } finally {
       setCriandoCaso(false);
     }

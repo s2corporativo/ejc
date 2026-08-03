@@ -17,6 +17,7 @@ import {
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtMoney } from "../components/UI";
 import { toast } from "../components/Toast";
+import { detalheErro } from "../utils/erro";
 
 type ProviderRow = {
   provider: string;
@@ -180,10 +181,12 @@ export default function PainelProvedoresIA() {
           params: { dias, limite: 50 },
         });
         setData(response.data);
-      } catch (error: any) {
+      } catch (error: unknown) {
         toast.error(
-          error?.response?.data?.detail ||
+          detalheErro(
+            error,
             "Não foi possível carregar as métricas dos provedores.",
+          ),
         );
       } finally {
         setLoading(false);

@@ -26,6 +26,7 @@ import { DocumentosStats } from "../components/Dashboards";
 import CaseFilterChip from "../components/CaseFilterChip";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
 import { asList } from "../lib/list";
+import { detalheErro } from "../utils/erro";
 
 /** Item de alternativa devolvido pela classificação por IA. */
 type ClassAlternativa = { tipo_key: string; nome: string };
@@ -338,7 +339,7 @@ export default function Documentos() {
       } catch (e: any) {
         falhas.push({
           ...p,
-          erro: e.response?.data?.detail || "Erro no upload",
+          erro: detalheErro(e, "Erro no upload"),
         });
       }
     }
@@ -490,7 +491,7 @@ export default function Documentos() {
       toast.success("Documento excluído");
       load();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao excluir documento");
+      toast.error(detalheErro(e, "Falha ao excluir documento"));
     }
   };
 
@@ -622,7 +623,7 @@ export default function Documentos() {
       );
       setClassResult(r.data);
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao classificar documento");
+      toast.error(detalheErro(e, "Falha ao classificar documento"));
       setClassDoc(null);
     } finally {
       setClassLoading(false);
@@ -654,7 +655,7 @@ export default function Documentos() {
       setClassDoc(null);
       setClassResult(null);
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao aplicar o tipo");
+      toast.error(detalheErro(e, "Falha ao aplicar o tipo"));
     } finally {
       setAplicando(false);
     }

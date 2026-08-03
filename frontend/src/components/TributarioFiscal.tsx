@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
+import { detalheErro } from "../utils/erro";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function fmtBRL(v: number | null | undefined) {
@@ -31,16 +32,6 @@ function fmtDataISO(iso: string | null | undefined) {
   if (!iso) return "—";
   const [a, m, d] = String(iso).slice(0, 10).split("-");
   return d && m && a ? `${d}/${m}/${a}` : String(iso);
-}
-function apiDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d))
-    return d
-      .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
-      .filter(Boolean)
-      .join("; ");
-  return fallback;
 }
 
 const MAX_ARQUIVOS = 50;
@@ -206,8 +197,8 @@ export default function TributarioFiscal() {
         fd,
       );
       setRes(data);
-    } catch (e: any) {
-      setErro(apiDetail(e, "Falha ao analisar os XMLs de NF-e."));
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao analisar os XMLs de NF-e."));
     } finally {
       setAnalisando(false);
     }
@@ -232,8 +223,8 @@ export default function TributarioFiscal() {
       a.click();
       URL.revokeObjectURL(url);
       toast.success("Diagnóstico em PDF (Visual Law) gerado.");
-    } catch (e: any) {
-      toast.error(apiDetail(e, "Falha ao gerar o PDF do diagnóstico."));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao gerar o PDF do diagnóstico."));
     } finally {
       setGerandoPdf(false);
     }

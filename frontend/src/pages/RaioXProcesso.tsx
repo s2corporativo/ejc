@@ -28,6 +28,7 @@ import api, {
 } from "../lib/api";
 import Markdown from "../components/Markdown";
 import { useAuth } from "../stores/auth";
+import { detalheErro } from "../utils/erro";
 import {
   AIFactualityLegend,
   Badge,
@@ -380,12 +381,9 @@ export default function RaioXProcesso() {
         } else {
           await loadList();
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (active)
-          setError(
-            err?.response?.data?.detail ||
-              "Não foi possível carregar o Raio-X.",
-          );
+          setError(detalheErro(err, "Não foi possível carregar o Raio-X."));
       } finally {
         if (active) setLoading(false);
       }
@@ -474,8 +472,8 @@ export default function RaioXProcesso() {
     try {
       const { data } = await api.get<Analise>(`/raio-x/${id}`);
       setSelected(data);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao abrir a análise.");
+    } catch (err: unknown) {
+      setError(detalheErro(err, "Falha ao abrir a análise."));
     } finally {
       setBusy(false);
     }
@@ -495,8 +493,8 @@ export default function RaioXProcesso() {
       setNewTitle("");
       setNewClient("");
       await loadList();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao criar análise.");
+    } catch (err: unknown) {
+      setError(detalheErro(err, "Falha ao criar análise."));
     } finally {
       setBusy(false);
     }
@@ -529,8 +527,8 @@ export default function RaioXProcesso() {
         `Análise concluída.${notes.length ? ` ${notes.join("; ")}.` : ""}`,
       );
       await loadList();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao analisar documentos.");
+    } catch (err: unknown) {
+      setError(detalheErro(err, "Falha ao analisar documentos."));
     } finally {
       setBusy(false);
     }
@@ -552,10 +550,8 @@ export default function RaioXProcesso() {
       anchor.download = documento.nome_original;
       anchor.click();
       URL.revokeObjectURL(href);
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail || "Não foi possível baixar o documento.",
-      );
+    } catch (err: unknown) {
+      setError(detalheErro(err, "Não foi possível baixar o documento."));
     } finally {
       setBusy(false);
     }
@@ -576,11 +572,8 @@ export default function RaioXProcesso() {
       anchor.download = `raio-x-${selected.id}.${format}`;
       anchor.click();
       URL.revokeObjectURL(href);
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail ||
-          `Falha ao exportar ${format.toUpperCase()}.`,
-      );
+    } catch (err: unknown) {
+      setError(detalheErro(err, `Falha ao exportar ${format.toUpperCase()}.`));
     } finally {
       setBusy(false);
     }
@@ -624,8 +617,8 @@ export default function RaioXProcesso() {
         "Conferência humana salva. O relatório está pronto para decisão.",
       );
       await loadList();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao salvar conferência.");
+    } catch (err: unknown) {
+      setError(detalheErro(err, "Falha ao salvar conferência."));
     } finally {
       setBusy(false);
     }
@@ -650,10 +643,8 @@ export default function RaioXProcesso() {
           : "Relatório reconsolidado com os dados existentes.",
       );
       await loadList();
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail || "Falha ao reprocessar a análise.",
-      );
+    } catch (err: unknown) {
+      setError(detalheErro(err, "Falha ao reprocessar a análise."));
     } finally {
       setBusy(false);
     }
@@ -679,10 +670,8 @@ export default function RaioXProcesso() {
           String(identification.etapa_atual || selected?.fase || "") || null,
       });
       setActionResult(data.conteudo || "Resultado sem conteúdo.");
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail || "A ação com IA não pôde ser executada.",
-      );
+    } catch (err: unknown) {
+      setError(detalheErro(err, "A ação com IA não pôde ser executada."));
     } finally {
       setRunningAction(null);
     }
@@ -702,12 +691,11 @@ export default function RaioXProcesso() {
           ? await analiseAdvogadoPorAnalise(selected.id)
           : null;
       if (data) setAdvResult(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 409 (análise preliminar sem caso vinculado), 403 (perfil), 429 etc. —
       // exibido junto do botão, dentro do card da análise.
       setAdvError(
-        err?.response?.data?.detail ||
-          "Não foi possível gerar a análise do advogado (IA).",
+        detalheErro(err, "Não foi possível gerar a análise do advogado (IA)."),
       );
     } finally {
       setAdvLoading(false);
@@ -735,10 +723,8 @@ export default function RaioXProcesso() {
       });
       setSelected(data);
       setMessage("Resultado salvo na revisão interna do Raio-X.");
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail || "Falha ao salvar resultado da IA.",
-      );
+    } catch (err: unknown) {
+      setError(detalheErro(err, "Falha ao salvar resultado da IA."));
     }
   };
 
@@ -757,8 +743,8 @@ export default function RaioXProcesso() {
       setConfirmText("");
       setExistingClientId("");
       setShowConversion(true);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao preparar a conversão.");
+    } catch (err: unknown) {
+      setError(detalheErro(err, "Falha ao preparar a conversão."));
     } finally {
       setBusy(false);
     }
@@ -805,8 +791,8 @@ export default function RaioXProcesso() {
         "Caso oficial criado com trilha de auditoria. Redirecionando…",
       );
       window.location.assign(`/casos/${data.case_id}`);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao converter em caso.");
+    } catch (err: unknown) {
+      setError(detalheErro(err, "Falha ao converter em caso."));
     } finally {
       setBusy(false);
     }
@@ -822,10 +808,8 @@ export default function RaioXProcesso() {
         mode === "arquivar" ? "Análise arquivada." : "Análise descartada.",
       );
       await loadList();
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail || "A operação não pôde ser concluída.",
-      );
+    } catch (err: unknown) {
+      setError(detalheErro(err, "A operação não pôde ser concluída."));
     } finally {
       setBusy(false);
     }

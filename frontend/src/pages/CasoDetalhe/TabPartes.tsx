@@ -3,6 +3,7 @@ import { toast } from "../../components/Toast";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { Empty } from "../../components/UI";
+import { detalheErro } from "../../utils/erro";
 
 export default function TabPartes({ caseId }: { caseId: string }) {
   const [partes, setPartes] = useState<any[]>([]);
@@ -50,8 +51,8 @@ export default function TabPartes({ caseId }: { caseId: string }) {
     try {
       await api.delete(`/cases/${caseId}/partes/${id}`);
       setPartes((p) => p.filter((x) => x.id !== id));
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao remover parte");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao remover parte"));
     }
   };
 

@@ -14,6 +14,7 @@ import {
 import api from "../lib/api";
 import { toast } from "./Toast";
 import { Empty, SectionCard, cn, fmtDateTime } from "./UI";
+import { detalheErro } from "../utils/erro";
 
 type ChannelAvailability = {
   push: boolean;
@@ -156,10 +157,12 @@ export default function NotificationPreferences() {
       setData(preferenceResponse.data);
       setForm(preferenceResponse.data.preferences);
       setDevices(deviceResponse.data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error?.response?.data?.detail ||
+        detalheErro(
+          error,
           "Não foi possível carregar as preferências de notificação.",
+        ),
       );
     } finally {
       setLoading(false);
@@ -214,10 +217,9 @@ export default function NotificationPreferences() {
       setData(response.data);
       setForm(response.data.preferences);
       toast.success("Preferências de notificações atualizadas.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error?.response?.data?.detail ||
-          "Não foi possível salvar as preferências.",
+        detalheErro(error, "Não foi possível salvar as preferências."),
       );
     } finally {
       setSaving(false);
@@ -261,10 +263,12 @@ export default function NotificationPreferences() {
       });
       toast.success("Dispositivo inscrito para receber push.");
       await load();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error?.response?.data?.detail ||
+        detalheErro(
+          error,
           "Não foi possível ativar notificações neste dispositivo.",
+        ),
       );
     } finally {
       setBusyDevice(null);
@@ -277,10 +281,9 @@ export default function NotificationPreferences() {
       await api.delete(`/notifications/push/subscriptions/${deviceId}`);
       toast.success("Dispositivo push revogado.");
       await load();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error?.response?.data?.detail ||
-          "Não foi possível revogar o dispositivo.",
+        detalheErro(error, "Não foi possível revogar o dispositivo."),
       );
     } finally {
       setBusyDevice(null);

@@ -10,20 +10,7 @@ import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { Empty, fmtDate } from "../../components/UI";
 import { useAuth } from "../../stores/auth";
-
-function detalheErro(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: { detail?: unknown } } })
-    ?.response?.data?.detail;
-  if (typeof detail === "string" && detail) return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
-}
+import { detalheErro } from "../../utils/erro";
 
 interface Responsavel {
   id: string;

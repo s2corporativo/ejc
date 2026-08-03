@@ -12,6 +12,7 @@ import {
 import { toast } from "../components/Toast";
 import type { Client } from "../types";
 import { FileSignature, Plus, Info, CheckCircle, Circle } from "lucide-react";
+import { detalheErro } from "../utils/erro";
 
 interface Signatario {
   nome?: string;
@@ -88,11 +89,9 @@ export default function Assinaturas() {
       // O backend responde envelope { data: [...] } — asList() normaliza
       // (array cru | { items } | { data }) e nunca quebra o .map da lista.
       setSolicitacoes(asList<SolicitacaoAssinatura>(res.data));
-    } catch (e: any) {
+    } catch (e: unknown) {
       setSolicitacoes([]);
-      toast.error(
-        e.response?.data?.detail || "Falha ao carregar as solicitações",
-      );
+      toast.error(detalheErro(e, "Falha ao carregar as solicitações"));
     } finally {
       setLoading(false);
     }
@@ -111,7 +110,7 @@ export default function Assinaturas() {
       .get("/clients/", { params: { page_size: 100 } })
       .then((r) => setClientes(asList<Client>(r.data)))
       .catch((e: any) =>
-        toast.error(e.response?.data?.detail || "Falha ao carregar clientes"),
+        toast.error(detalheErro(e, "Falha ao carregar clientes")),
       );
   };
 
@@ -128,7 +127,7 @@ export default function Assinaturas() {
       .get("/documents/", { params: { client_id: clientId, page_size: 100 } })
       .then((r) => setDocumentos(asList<DocumentoOption>(r.data)))
       .catch((e: any) =>
-        toast.error(e.response?.data?.detail || "Falha ao carregar documentos"),
+        toast.error(detalheErro(e, "Falha ao carregar documentos")),
       )
       .finally(() => setCarregandoDocs(false));
   };
@@ -170,8 +169,8 @@ export default function Assinaturas() {
       });
       toast.success("Documento assinado");
       await fetchSolicitacoes();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao assinar o documento");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao assinar o documento"));
     } finally {
       setAssinando(null);
     }

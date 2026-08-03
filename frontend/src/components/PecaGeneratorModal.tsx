@@ -24,6 +24,7 @@ import {
   Bot,
 } from "lucide-react";
 import GuiadoForm from "./GuiadoForm";
+import { mensagemErro, foiAbortado } from "../utils/erro";
 
 // Catálogo de peças e áreas vem de GET /pecas/meta (fonte única no backend).
 // O modal não espelha mais essas listas manualmente — busca no mount.
@@ -683,9 +684,9 @@ export default function PecaGeneratorModal({
           }
         }
       }
-    } catch (e: any) {
-      if (e.name === "AbortError") return;
-      setErroMsg(e.message ?? "Erro desconhecido");
+    } catch (e: unknown) {
+      if (foiAbortado(e)) return;
+      setErroMsg(mensagemErro(e, "Erro desconhecido"));
       setFase("erro");
     }
   }, [

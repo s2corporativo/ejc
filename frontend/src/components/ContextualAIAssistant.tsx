@@ -17,6 +17,7 @@ import { AIFactualityLegend, HumanValidationStatus } from "./UI";
 import { toast } from "./Toast";
 import api from "../lib/api";
 import type { Case } from "../types";
+import { detalheErro, statusErro } from "../utils/erro";
 
 type ContextualAction = {
   id: string;
@@ -93,12 +94,6 @@ function dataAmanha() {
   const mes = String(data.getMonth() + 1).padStart(2, "0");
   const dia = String(data.getDate()).padStart(2, "0");
   return `${ano}-${mes}-${dia}`;
-}
-
-function detalheErro(error: any, fallback: string) {
-  const detail = error?.response?.data?.detail;
-  if (typeof detail === "string") return detail;
-  return fallback;
 }
 
 export default function ContextualAIAssistant({
@@ -207,7 +202,7 @@ export default function ContextualAIAssistant({
         }));
       }
       setResult(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(detalheErro(error, "Não foi possível executar a análise."));
     } finally {
       setRunning(false);
@@ -227,8 +222,8 @@ export default function ContextualAIAssistant({
         status: "aplicado",
         override_citacoes: false,
       });
-    } catch (error: any) {
-      if (error?.response?.status === 409) {
+    } catch (error: unknown) {
+      if (statusErro(error) === 409) {
         toast.error(
           "O conteúdo foi aplicado, mas as citações ainda precisam ser validadas no histórico de IA.",
         );
@@ -251,7 +246,7 @@ export default function ContextualAIAssistant({
       });
       await registrarStatusAplicado();
       toast.success("Resultado salvo no histórico do caso.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(detalheErro(error, "Não foi possível salvar a nota."));
     }
   };
@@ -279,7 +274,7 @@ export default function ContextualAIAssistant({
       setAgenda((atual) => ({ ...atual, open: false }));
       await registrarStatusAplicado();
       toast.success("Evento criado na agenda.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(detalheErro(error, "Não foi possível criar o evento."));
     }
   };

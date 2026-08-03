@@ -20,6 +20,12 @@ import api from "../lib/api";
 import { authFetch } from "../lib/stream";
 import { Modal, Button, Spinner } from "./UI";
 import { toast } from "./Toast";
+import {
+  detalheErro,
+  statusErro,
+  mensagemErro,
+  foiAbortado,
+} from "../utils/erro";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function fmtBRL(v: number | null | undefined) {
@@ -47,16 +53,6 @@ function parseNum(s: string): number | null {
 function parsePct(s: string): number | null {
   const n = parseFloat(String(s).trim().replace(",", "."));
   return isNaN(n) ? null : n;
-}
-function apiDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d))
-    return d
-      .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
-      .filter(Boolean)
-      .join("; ");
-  return fallback;
 }
 
 const AVISO_HITL_UI =
@@ -326,8 +322,8 @@ function CalculadoraCET() {
     try {
       const { data } = await api.post<CetRes>("/analise-bancaria/cet", body);
       setRes(data);
-    } catch (e: any) {
-      setErro(apiDetail(e, "Falha ao calcular o CET."));
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao calcular o CET."));
     } finally {
       setLoading(false);
     }
@@ -605,11 +601,11 @@ function MinutaRevisionalModal({
           }
         }
       }
-    } catch (e: any) {
-      if (e.name === "AbortError") return;
-      setErro(e.message ?? "Erro desconhecido");
+    } catch (e: unknown) {
+      if (foiAbortado(e)) return;
+      setErro(mensagemErro(e, "Erro desconhecido"));
       setFase("erro");
-      toast.error(e.message ?? "Falha ao gerar a minuta revisional.");
+      toast.error(mensagemErro(e, "Falha ao gerar a minuta revisional."));
     }
   };
 
@@ -871,8 +867,8 @@ function VerificadorAbusividade() {
         body,
       );
       setRes(data);
-    } catch (e: any) {
-      setErro(apiDetail(e, "Falha ao verificar abusividade."));
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Falha ao verificar abusividade."));
     } finally {
       setLoading(false);
     }
@@ -1131,8 +1127,8 @@ function TaxaMediaMercado() {
         },
       });
       setRes(data);
-    } catch (e: any) {
-      const status = e?.response?.status;
+    } catch (e: unknown) {
+      const status = statusErro(e);
       if (status === 503) {
         setErro(
           "Integração de índices do BCB desabilitada no servidor (INDICES_BCB_ENABLED=false).",
@@ -1142,7 +1138,7 @@ function TaxaMediaMercado() {
           "O serviço do BCB (Olinda) está indisponível no momento — tente novamente em instantes.",
         );
       } else {
-        setErro(apiDetail(e, "Falha ao consultar as taxas médias do BCB."));
+        setErro(detalheErro(e, "Falha ao consultar as taxas médias do BCB."));
       }
     } finally {
       setLoading(false);

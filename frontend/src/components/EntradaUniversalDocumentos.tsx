@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
+import { detalheErro } from "../utils/erro";
 
 export type EntradaUniversalResultado = {
   ok: boolean;
@@ -205,10 +206,9 @@ export default function EntradaUniversalDocumentos({
       toast.success(
         `${data.documentos?.length || 0} documento(s) processado(s) e preservado(s) no GED.`,
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(
-        error?.response?.data?.detail ||
-          "Falha ao processar o pacote documental.",
+        detalheErro(error, "Falha ao processar o pacote documental."),
       );
     } finally {
       setLoading(false);

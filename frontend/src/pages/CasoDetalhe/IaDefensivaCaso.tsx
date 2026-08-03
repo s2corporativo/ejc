@@ -5,6 +5,7 @@ import { toast } from "../../components/Toast";
 import Markdown from "../../components/Markdown";
 import { Spinner, Empty, fmtDate } from "../../components/UI";
 import type { Case } from "../../types";
+import { detalheErro } from "../../utils/erro";
 
 export default function IaDefensivaCaso({ caso }: { caso: Case }) {
   const [etapa, setEtapa] = React.useState("fluxo_completo");
@@ -61,8 +62,8 @@ export default function IaDefensivaCaso({ caso }: { caso: Case }) {
       await api.patch(`/ia-defensiva/historico/${logId}/status`, { status });
       toast.error(`Status atualizado para ${status}.`);
       await carregarHistorico();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao atualizar status");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao atualizar status"));
     }
   };
 
@@ -108,9 +109,9 @@ export default function IaDefensivaCaso({ caso }: { caso: Case }) {
         },
       });
       setResultado(data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setResultado({
-        erro: e.response?.data?.detail || "Falha ao executar IA defensiva",
+        erro: detalheErro(e, "Falha ao executar IA defensiva"),
       });
     } finally {
       setLoading(false);

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { toast } from "../components/Toast";
+import { detalheErro, statusErro } from "../utils/erro";
 import {
   EmptyState,
   ErrorState,
@@ -50,14 +51,16 @@ export default function DiarioOficial() {
     try {
       const res = await api.get("/diario-oficial/alertas/nao-lidos/count");
       setNaoLidosCount(res.data?.nao_lidos ?? 0);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // 403 (perfil sem acesso) é degradação esperada: zera sem alarme.
-      if (e?.response?.status === 403) {
+      if (statusErro(e) === 403) {
         setNaoLidosCount(0);
       } else {
         toast.error(
-          e?.response?.data?.detail ||
+          detalheErro(
+            e,
             "Não foi possível atualizar a contagem de alertas não lidos.",
+          ),
         );
       }
     }
@@ -137,8 +140,8 @@ export default function DiarioOficial() {
     try {
       await api.delete(`/diario-oficial/keywords/${id}`);
       setKeywords((prev) => prev.filter((k) => k.id !== id));
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao remover palavra-chave");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao remover palavra-chave"));
     }
   };
 

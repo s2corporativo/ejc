@@ -13,6 +13,7 @@ import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { EmptyState, ErrorState, Spinner } from "../../components/UI";
+import { detalheErro } from "../../utils/erro";
 
 interface ItemSolicitado {
   id: string;
@@ -112,10 +113,12 @@ export default function PortalDocumentos() {
       );
       toast.success("Documento enviado com sucesso.");
       await load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(
-        err.response?.data?.detail ||
+        detalheErro(
+          err,
           "Não foi possível enviar o documento. Tente novamente.",
+        ),
       );
     } finally {
       setUploadingId(null);

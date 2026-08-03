@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate, fmtMoney } from "../components/UI";
+import { detalheErro } from "../utils/erro";
 
 type Tab =
   "visao" | "curadoria" | "mgjec" | "prompts" | "fontes" | "guardrails";
@@ -158,8 +159,8 @@ export default function GovernancaIA() {
         rito: data.data.rito || jurisForm.rito,
       });
       setPreviewExtracao(data.texto_extraido_preview || "");
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao extrair URL oficial");
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao extrair URL oficial"));
     } finally {
       setSalvando(null);
     }

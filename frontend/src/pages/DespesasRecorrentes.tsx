@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Check, AlertCircle, Calendar, Repeat } from "lucide-react";
 import api from "../lib/api";
 import { Spinner, ErrorState } from "../components/UI";
+import { detalheErro } from "../utils/erro";
 
 interface Despesa {
   id: string;
@@ -88,8 +89,8 @@ export default function DespesasRecorrentes() {
       setMsg(
         `${count} despesas geradas para ${targetComp.split("-").reverse().join("/")}`,
       );
-    } catch (e: any) {
-      setMsg(`Erro: ${e.response?.data?.detail ?? "Falha ao gerar despesas"}`);
+    } catch (e: unknown) {
+      setMsg(`Erro: ${detalheErro(e, "Falha ao gerar despesas")}`);
     } finally {
       setGerando(false);
     }

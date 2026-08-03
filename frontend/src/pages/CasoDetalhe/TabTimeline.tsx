@@ -59,7 +59,7 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
       setMovDescricao("");
       setMovTipo("nota");
       setTimelineVersao((v) => v + 1);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(errDetail(err, "Não foi possível registrar o andamento."));
     } finally {
       setRegistrando(false);
