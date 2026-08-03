@@ -22,7 +22,7 @@
 | Criar caso | `Casos` (wizard) | `POST /api/cases` | `cases.py` | `cases`, `case_partes` | — | — | `test_casos_dblevel.py` | ✅ persistência real |
 | Converter Sala Jurídica → Caso | `SalaJuridica` | `POST /api/legal-chat/{id}/converter` | `legal_chat_service:893-937` | `clients`, `cases`, anexos | — | — | `test_sala_juridica.py` | ✅ **transação única** + lock |
 | Estratégia do caso | `RaioXProcesso`, `DossieEstrategicoCaso` | `POST /api/cases/{id}/analisar`, `/api/raio-x` | `legal_case_orchestrator`, `raio_x_service` | `dossies_estrategicos` | `CaseAgent` | `build_case_context`, `retrieve_rag` | — | ⚠️ **sem rate limit** (P1) |
-| Proposta de honorários | — | `POST /api/fees/propostas` | `fee_proposal` | `fee_proposals` | `FinanceAgent` | `analyze_financial_case` | `test_fee_proposal.py` (690 l.) | ⚠️ sem teste de **valor** |
+| Proposta de honorários | — | `POST /api/fees/propostas`, `/api/honorarios-calc/*` | `fee_proposal`, `honorarios_calc` | `fee_proposals`, `fees` | `FinanceAgent` | `analyze_financial_case` | `test_fee_proposal.py`, **`test_honorarios_calc_dblevel.py`** | ✅ **T-P1-2 corrigido** — teste de valor achou 2 defeitos de cálculo (misto subcontado, sucumbência em dobro) |
 | **Contrato do escritório** | `OfficeContracts` | `/api/office-contracts` | `office_contracts.py` | `office_contracts` | — | — | `test_prefixo_v1_e_deps_rota.py` | ✅ **P0-1 corrigido** (segue sem teste funcional próprio — T-P0-2) |
 | Procuração | — | `/api/procuracoes` | — | `procuracoes` | — | — | `test_procuracoes_titularidade_dblevel.py` | ⚠️ **sem tela** |
 | Tarefas | `Central` | `/api/tasks` | — | `tasks` | — | — | parcial | ⚠️ |
