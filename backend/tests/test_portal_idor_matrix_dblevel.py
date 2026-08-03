@@ -16,6 +16,8 @@ Pontos de isolamento cobertos (cada teste comenta o que prova):
   • mensagens._verificar_acesso       — cross-carteira entre advogados (staff
                                         sem ownership do caso → 403)
   • portal_documentos                 — solicitações por client_id
+  • portal.caso_detalhe / meus_casos  — movimento INTERNO (ia/nota) nunca chega
+                                        ao cliente, só andamento processual
 
 Padrão idêntico aos demais *_dblevel.py: handler chamado direto com
 AsyncSessionLocal, SQL cru para a massa, RUN_DB_TESTS obrigatório.
@@ -180,6 +182,10 @@ async def _limpar(db, *, client_ids=(), user_ids=()):
         await db.execute(text("DELETE FROM solicitacoes_documentos WHERE client_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM documents WHERE client_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM fees WHERE client_id = :id"), {"id": cid})
+        await db.execute(
+            text("DELETE FROM case_movimentos WHERE case_id IN " "(SELECT id FROM cases WHERE client_id = :id)"),
+            {"id": cid},
+        )
         await db.execute(text("DELETE FROM cases WHERE client_id = :id"), {"id": cid})
     for uid in user_ids:
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
@@ -442,3 +448,74 @@ async def test_solicitacoes_documentos_isolam_por_cliente():
             assert sol_a in ids and sol_b not in ids
         finally:
             await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Movimentos internos: o Portal expõe andamento PROCESSUAL, nunca registro
+# interno do escritório (P0-021)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+async def _criar_movimento(db, case_id: str, tipo: str, descricao: str, dias_atras: int) -> str:
+    """Movimento com data_evento controlada — a ordem importa: o teste precisa
+    que o movimento INTERNO seja o mais recente, senão `ultima_movimentacao`
+    devolveria o oficial por acaso e o teste passaria mesmo sem a correção."""
+    mov_id = str(uuid4())
+    await db.execute(
+        text(
+            "INSERT INTO case_movimentos (id, case_id, tipo, descricao, data_evento) "
+            "VALUES (:id, :cid, :tipo, :desc, now() - CAST(:dias AS interval))"
+        ),
+        {"id": mov_id, "cid": case_id, "tipo": tipo, "desc": descricao, "dias": f"{dias_atras} days"},
+    )
+    return mov_id
+
+
+async def test_portal_nao_expoe_movimentos_internos_nem_chance_de_exito():
+    """Regressão P0-021: `case_intel` grava um CaseMovimento tipo="ia" contendo
+    "chance≈NN%" — a estimativa de êxito do caso — e o agente de IA grava nota
+    livre (tipo="nota"). Antes da correção, portal.caso_detalhe devolvia TODOS
+    os movimentos e portal.meus_casos usava o mais recente como
+    `ultima_movimentacao`: o cliente lia a própria estimativa de êxito.
+
+    Aqui os dois movimentos internos são os MAIS RECENTES; o oficial é o mais
+    antigo. Sem a allowlist, `ultima_movimentacao` seria o de IA e o assert de
+    "chance≈" falharia."""
+    from app.core.database import AsyncSessionLocal
+    from app.routers.portal import caso_detalhe, meus_casos
+
+    tok = uuid4().hex[:6]
+    async with AsyncSessionLocal() as db:
+        cli = await _criar_cliente(db, f"Cliente {tok}")
+        uid = await _criar_portal_user(db, cli)
+        caso = await _criar_caso(db, cli, f"Caso {tok}")
+
+        oficial = f"Juntada de petição {tok}"
+        await _criar_movimento(db, caso, "andamento_oficial", oficial, dias_atras=3)
+        await _criar_movimento(
+            db, caso, "nota", f"Estratégia interna {tok}: segurar acordo até a perícia.", dias_atras=2
+        )
+        await _criar_movimento(
+            db,
+            caso,
+            "ia",
+            f"IA – Triagem automática {tok}: área≈civil · chance≈78% · complexidade=media. RASCUNHO.",
+            dias_atras=1,
+        )
+        await db.commit()
+        try:
+            user = await _carregar_user(db, uid)
+
+            # Detalhe: só o andamento processual; nada de IA nem de nota interna.
+            det = await caso_detalhe(case_id=caso, db=db, cu=user)
+            descricoes = [a["descricao"] for a in det["andamentos"]]
+            assert descricoes == [oficial]
+            assert not any("chance≈" in d for d in descricoes)
+            assert not any("Estratégia interna" in d for d in descricoes)
+
+            # Listagem: a última movimentação visível é a OFICIAL, embora a de
+            # IA seja cronologicamente a mais recente.
+            caso_listado = next(c for c in (await meus_casos(db=db, cu=user))["data"] if c["id"] == caso)
+            assert caso_listado["ultima_movimentacao"]["descricao"] == oficial
+        finally:
+            await _limpar(db, client_ids=[cli], user_ids=[uid])
