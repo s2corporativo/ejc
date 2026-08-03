@@ -11,6 +11,7 @@ from sqlalchemy import select, or_, func as sqlfunc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.id_validation import validar_uuid_path
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles, ROLE_LEVEL
 from app.models.user import User
@@ -330,6 +331,10 @@ async def detalhe(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Issue #581: separar "formato errado" (422) de "não existe" (404). Sem
+    # isto, "abc" e um UUID válido inexistente respondiam o MESMO 404 — o
+    # cliente não sabia se errou o path ou se o caso não existe.
+    validar_uuid_path(case_id, rotulo="ID do caso")
     q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
     c = (await db.execute(q)).scalar_one_or_none()
