@@ -1,5 +1,9 @@
 # ── app/services/backup_service.py ───────────────────────────────────────────
-# Backup diário automatizado → offsite (Google Drive ou remote rclone).
+# Backup diário automatizado → offsite (remote rclone/OneDrive ou Google Drive).
+#
+# DESTINO PADRÃO = rclone, que é por onde o OneDrive entra (decisão do titular,
+# 2026-08-03). O caminho Google segue inteiro e testado: BACKUP_DESTINO=gdrive
+# volta a ele sem mexer em código.
 #
 # Desenho de segurança (LGPD):
 # - O dump do Postgres carrega PII (clientes, processos): TODO artefato é
@@ -91,7 +95,7 @@ def configuracao_status() -> dict[str, bool | str]:
         "auth_mode": str(auth["auth_mode"]),
         "pg_dump_disponivel": shutil.which("pg_dump") is not None,
         # Destino offsite flexível (gdrive|rclone) e sua obrigatoriedade.
-        "destino": (settings.BACKUP_DESTINO or "gdrive").strip().lower(),
+        "destino": (settings.BACKUP_DESTINO or "rclone").strip().lower(),
         "rclone_remote_configurado": bool((settings.BACKUP_RCLONE_REMOTE or "").strip()),
         "rclone_disponivel": shutil.which("rclone") is not None,
         "offsite_obrigatorio": bool(settings.BACKUP_OFFSITE_OBRIGATORIO),
@@ -245,7 +249,29 @@ def _upload_drive_sync(service, caminho: str, nome: str, folder_id: str) -> dict
     ).execute()
 
 
-def _upload_rclone_sync(caminho: str, nome: str, remote: str) -> None:
+def caminho_remoto_backup(remote: str, nome: str, ts: datetime) -> str:
+    """`remote/AAAA/MM/<artefato>` — pastas por ano e mês no destino offsite.
+
+    Antes tudo caía PLANO na raiz do remote. Com backup diário e dois artefatos
+    por ciclo, o diretório passa de setecentos arquivos no primeiro ano — e é
+    nesse diretório que alguém precisa achar, sob pressão, o backup de uma data
+    específica para restaurar. A hierarquia existe para o humano do incidente,
+    não por estética.
+
+    `rclone copyto` cria os diretórios intermediários sozinho, então a "criação
+    de pastas" no OneDrive é consequência do caminho — não exige chamada extra
+    nem permissão além da de escrita que o upload já usa.
+
+    A data vem do timestamp do CICLO, não do relógio no instante do upload: os
+    artefatos de um mesmo backup têm de cair na mesma pasta, inclusive quando o
+    ciclo cruza a virada do mês.
+
+    Função pura — testável sem rclone e sem rede.
+    """
+    return f"{remote.rstrip('/')}/{ts.strftime('%Y/%m')}/{nome}"
+
+
+def _upload_rclone_sync(caminho: str, nome: str, remote: str, ts: datetime) -> None:
     """Envia UM artefato já cifrado via `rclone copyto` (BACKUP_DESTINO=rclone).
 
     Bloqueante — chamar via asyncio.to_thread. O conteúdo já é Fernet, então
@@ -258,7 +284,7 @@ def _upload_rclone_sync(caminho: str, nome: str, remote: str) -> None:
             "curl https://rclone.org/install.sh | sudo bash — e configure o "
             "remote com `rclone config` (ver runbook do backup)."
         )
-    destino = f"{remote.rstrip('/')}/{nome}"
+    destino = caminho_remoto_backup(remote, nome, ts)
     r = subprocess.run(
         # "--" impede que um remote iniciado em "-" seja lido como flag (auditoria PR #480).
         ["rclone", "copyto", "--", caminho, destino],
@@ -471,7 +497,7 @@ async def executar_backup(
         local_ok = False
         offsite_ok = False
         offsite_erro: str | None = None
-        destino = (settings.BACKUP_DESTINO or "gdrive").strip().lower()
+        destino = (settings.BACKUP_DESTINO or "rclone").strip().lower()
 
         try:
             # Gates de configuração LOCAL — falham cedo com mensagem acionável.
@@ -561,11 +587,15 @@ async def executar_backup(
                             )
                         for art in artefatos:
                             await asyncio.to_thread(
-                                _upload_rclone_sync, art["caminho"], art["nome"], remote,
+                                _upload_rclone_sync,
+                                art["caminho"], art["nome"], remote, ts,
                             )
                             art.pop("caminho", None)
                         # Retenção no remote rclone é gerida fora do ciclo
                         # (ver runbook) — nada é apagado automaticamente aqui.
+                        # Com as pastas AAAA/MM, a limpeza manual passa a ser
+                        # apagar o diretório de um mês inteiro, e não caçar
+                        # arquivo por data no meio de centenas.
                     else:
                         folder_id = (settings.BACKUP_DRIVE_FOLDER_ID or "").strip()
                         if not folder_id:

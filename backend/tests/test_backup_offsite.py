@@ -9,6 +9,8 @@
 # - pasta do Drive ausente virou falha de OFFSITE, não do ciclo inteiro.
 from __future__ import annotations
 
+import re
+
 from cryptography.fernet import Fernet
 
 from app.services import backup_service
@@ -97,7 +99,12 @@ async def test_destino_rclone_chama_subprocess_com_args_corretos(monkeypatch, tm
         cmd = chamada["cmd"]
         assert cmd[0] == "rclone" and cmd[1] == "copyto"
         assert cmd[2] == "--"  # remote iniciado em "-" nunca vira flag
-        assert cmd[4].startswith("onedrive:EJC-Backups/ejc_backup_")
+        # Pastas AAAA/MM no destino: com backup diário, a raiz plana passava
+        # de setecentos arquivos no primeiro ano — e é ali que alguém precisa
+        # achar, sob pressão, o backup de uma data para restaurar.
+        assert re.fullmatch(
+            r"onedrive:EJC-Backups/\d{4}/\d{2}/ejc_backup_.+\.enc", cmd[4]
+        ), cmd[4]
         assert chamada["timeout"] == 123
     destinos = [c["cmd"][4] for c in chamadas]
     assert any(d.endswith("_db.dump.enc") for d in destinos)
@@ -245,3 +252,50 @@ def test_contrato_infra_rclone_no_container():
     # rotaciona ~1h); mount :ro quebraria o backup diário (review PR #484).
     linha_mount = next(l for l in compose.splitlines() if "/root/.config/rclone" in l)
     assert not linha_mount.rstrip().endswith(":ro")
+
+
+# ── Pastas por ano/mês no destino offsite (OneDrive) ─────────────────────────
+# O upload rclone gravava tudo PLANO na raiz do remote. Com backup diário e
+# dois artefatos por ciclo, a pasta passa de setecentos arquivos no primeiro
+# ano — e é nela que alguém precisa achar, sob pressão, o backup de uma data
+# específica para restaurar.
+
+from datetime import datetime as _datetime, timezone as _timezone  # noqa: E402
+
+from app.services.backup_service import caminho_remoto_backup  # noqa: E402
+
+
+def _ts(ano, mes, dia=15, hora=5):
+    return _datetime(ano, mes, dia, hora, 0, 0, tzinfo=_timezone.utc)
+
+
+def test_artefato_vai_para_pasta_do_ano_e_mes():
+    assert caminho_remoto_backup(
+        "onedrive:EJC-Backups", "ejc_backup_20260803T050000Z_db.dump.enc", _ts(2026, 8)
+    ) == "onedrive:EJC-Backups/2026/08/ejc_backup_20260803T050000Z_db.dump.enc"
+
+
+def test_mes_com_um_digito_e_zero_a_esquerda():
+    """Sem o zero, "2026/9" e "2026/10" ordenam errado na listagem do OneDrive
+    — quem procura backup antigo passa a depender da data no nome do arquivo."""
+    caminho = caminho_remoto_backup("onedrive:EJC", "ejc_backup_x.enc", _ts(2026, 9))
+    assert "/2026/09/" in caminho
+
+
+def test_barra_final_no_remote_nao_duplica_separador():
+    """Remote configurado com barra no fim é erro comum de digitação no .env e
+    produziria "EJC//2026" — caminho diferente, backup espalhado em duas
+    pastas sem ninguém perceber."""
+    assert caminho_remoto_backup(
+        "onedrive:EJC-Backups/", "ejc_backup_x.enc", _ts(2026, 8)
+    ) == "onedrive:EJC-Backups/2026/08/ejc_backup_x.enc"
+
+
+def test_artefatos_do_mesmo_ciclo_caem_na_mesma_pasta():
+    """A data vem do timestamp do CICLO, não do relógio de cada upload: um
+    backup que começa 31/08 23:59 e termina 01/09 00:01 não pode ter o dump num
+    mês e os uploads no outro."""
+    ts = _ts(2026, 8, 31, 23)
+    a = caminho_remoto_backup("onedrive:EJC", "ejc_backup_a_db.dump.enc", ts)
+    b = caminho_remoto_backup("onedrive:EJC", "ejc_backup_a_uploads.tar.gz.enc", ts)
+    assert a.rsplit("/", 1)[0] == b.rsplit("/", 1)[0]

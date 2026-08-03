@@ -175,6 +175,11 @@ async def test_ciclo_completo_com_fakes(monkeypatch, tmp_path):
     (uploads_dir / "doc.pdf").write_bytes(b"%PDF fake" * 50)
 
     monkeypatch.setattr(backup_service.settings, "BACKUP_ENCRYPTION_KEY", CHAVE)
+    # Destino EXPLÍCITO: este teste cobre o fluxo Google Drive. Antes ele
+    # dependia do default global e passou a quebrar quando o padrão virou
+    # rclone/OneDrive — teste de um destino não pode depender de qual é o
+    # default do outro.
+    monkeypatch.setattr(backup_service.settings, "BACKUP_DESTINO", "gdrive")
     monkeypatch.setattr(backup_service.settings, "BACKUP_DRIVE_FOLDER_ID", "pasta123")
     monkeypatch.setattr(backup_service.settings, "BACKUP_UPLOADS_MAX_MB", 10)
     monkeypatch.setattr(backup_service.settings, "UPLOAD_DIR", str(uploads_dir))
@@ -278,6 +283,11 @@ async def test_uploads_acima_do_limite_gera_parcial(monkeypatch, tmp_path):
     (uploads_dir / "grande.bin").write_bytes(b"x" * (2 * 1024 * 1024))
 
     monkeypatch.setattr(backup_service.settings, "BACKUP_ENCRYPTION_KEY", CHAVE)
+    # Destino EXPLÍCITO: este teste cobre o fluxo Google Drive. Antes ele
+    # dependia do default global e passou a quebrar quando o padrão virou
+    # rclone/OneDrive — teste de um destino não pode depender de qual é o
+    # default do outro.
+    monkeypatch.setattr(backup_service.settings, "BACKUP_DESTINO", "gdrive")
     monkeypatch.setattr(backup_service.settings, "BACKUP_DRIVE_FOLDER_ID", "pasta123")
     monkeypatch.setattr(backup_service.settings, "BACKUP_UPLOADS_MAX_MB", 1)
     monkeypatch.setattr(backup_service.settings, "UPLOAD_DIR", str(uploads_dir))

@@ -716,10 +716,21 @@ class Settings(BaseSettings):
     BACKUP_DB_MAX_MB: int = 2048
     # Timeout (segundos) do pg_dump — bancos maiores podem precisar de mais.
     BACKUP_PG_DUMP_TIMEOUT: int = 600
-    # Destino OFFSITE dos artefatos cifrados: "gdrive" (Google Drive, fluxo
-    # original) ou "rclone" (qualquer remote rclone — ex.: OneDrive). O ciclo
-    # local (pg_dump + tar + Fernet) é idêntico nos dois modos.
-    BACKUP_DESTINO: str = "gdrive"
+    # Destino OFFSITE dos artefatos cifrados: "rclone" (qualquer remote rclone
+    # — é por onde o OneDrive entra) ou "gdrive" (Google Drive). O ciclo local
+    # (pg_dump + tar + Fernet) é idêntico nos dois modos.
+    #
+    # PADRÃO = rclone/OneDrive por decisão do titular (2026-08-03). O caminho
+    # Google continua inteiro e testado: basta BACKUP_DESTINO=gdrive para
+    # voltar a ele, sem mexer em código.
+    #
+    # ATENÇÃO OPERACIONAL: com este padrão, um ambiente que NÃO tenha
+    # BACKUP_RCLONE_REMOTE definido e o `rclone config` feito passa a falhar o
+    # envio offsite. Com BACKUP_OFFSITE_OBRIGATORIO=false (default) isso vira
+    # status "parcial" com aviso grave — a prova LOCAL cifrada continua sendo
+    # feita e o deploy não trava —, mas o backup deixa de sair do VPS até a
+    # configuração ser concluída. Ver RUNBOOK_BACKUP.md.
+    BACKUP_DESTINO: str = "rclone"
     # Remote rclone de destino quando BACKUP_DESTINO=rclone, no formato
     # "<remote>:<pasta>" (ex.: "onedrive:EJC-Backups"). Requer `rclone config`
     # feito na VPS e o binário rclone no PATH — ver runbook do backup.
