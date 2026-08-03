@@ -37,7 +37,7 @@ export const ACCENTS: Record<
   blue: {
     bg: "bg-primary-50",
     fg: "text-primary-600",
-    bar: "#2563EB",
+    bar: "#8F7117",
     ring: "ring-primary-100",
   },
   bronze: {
@@ -85,7 +85,7 @@ export const ACCENTS: Record<
   indigo: {
     bg: "bg-primary-50",
     fg: "text-primary-600",
-    bar: "#2563EB",
+    bar: "#8F7117",
     ring: "ring-primary-100",
   },
 };

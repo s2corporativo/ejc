@@ -27,6 +27,7 @@ import api from "../lib/api";
 import { CASE_STATUS_FECHADOS } from "../types/caseStatus";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
+import FerramentasRapidas from "../components/FerramentasRapidas";
 import NoticiasCard from "../components/NoticiasCard";
 import ThemeSelector from "../components/ThemeSelector";
 import {
@@ -1079,7 +1080,10 @@ export default function DashboardModern() {
         </div>
 
         {/* A grade extensa de atalhos para módulos foi removida — "Mais
-          Ferramentas" no menu cumpre esse papel. */}
+          Ferramentas" no menu cumpre esse papel. Aqui ficam só os atalhos
+          de 1 clique para as ferramentas jurídicas dos ramos (RBAC interno
+          ao componente: papéis com acesso a /areas-de-atuacao). */}
+        <FerramentasRapidas role={currentUser?.role} />
         <NoticiasCard />
       </section>
 

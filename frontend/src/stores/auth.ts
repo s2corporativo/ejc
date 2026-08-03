@@ -10,6 +10,23 @@ type SecurityState = {
   permissions?: string[];
 };
 
+// B3 (auditoria do Bloco 3): o rascunho da Entrada Única vive em
+// sessionStorage e pode conter dados pessoais do relato — não pode sobreviver
+// ao fim da sessão numa estação compartilhada. Prefixo espelha
+// pages/EntradaUnica/rascunhoStorage.ts (sem import de pages/ em stores/).
+function limparRascunhosEntrada() {
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const chave = sessionStorage.key(i);
+      if (chave && chave.startsWith("ejc_entrada_rascunho")) {
+        sessionStorage.removeItem(chave);
+      }
+    }
+  } catch {
+    /* storage indisponível não pode quebrar o logout */
+  }
+}
+
 function readStoredUser(): User | null {
   try {
     return JSON.parse(
@@ -106,6 +123,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       if (responseStatus === 401 || responseStatus === 403) {
         localStorage.removeItem("ejc_access");
         localStorage.removeItem(RASCUNHO_KEY);
+        limparRascunhosEntrada();
         limparCadastroManual();
         persistUser(null);
         set({ user: null, status: "unauthenticated" });
@@ -130,6 +148,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     // O rascunho de intake carrega dados pessoais extraídos de documentos —
     // não pode sobreviver ao fim da sessão em estação compartilhada (LGPD).
     localStorage.removeItem(RASCUNHO_KEY);
+    limparRascunhosEntrada();
     persistUser(null);
     set({ user: null, status: "unauthenticated" });
   },

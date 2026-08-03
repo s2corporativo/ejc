@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ChevronDown,
   ChevronUp,
@@ -72,7 +72,12 @@ export default function Ferramentas() {
   const navigate = useNavigate();
   const user = useAuth((state) => state.user);
   const [busca, setBusca] = useState("");
-  const [defesasOpen, setDefesasOpen] = useState(false);
+  // Deep-link do Dashboard (FerramentasRapidas): ?abrir=defesas já chega
+  // com o painel "Defesas e Revisões" expandido, sem clique extra.
+  const [searchParams] = useSearchParams();
+  const [defesasOpen, setDefesasOpen] = useState(
+    searchParams.get("abrir") === "defesas",
+  );
   const [favoritos, setFavoritos] = useState<Set<string>>(carregarFavoritos);
 
   const modulesByKey = useMemo(

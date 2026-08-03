@@ -137,6 +137,7 @@ const Ajuda = lazy(() => import("../pages/Ajuda"));
 const CentralDiagnostico = lazy(() => import("../pages/CentralDiagnostico"));
 const JornadaCaso = lazy(() => import("../pages/JornadaCaso"));
 const Ferramentas = lazy(() => import("../pages/Ferramentas"));
+const EntradaUnica = lazy(() => import("../pages/EntradaUnica"));
 
 // DECISÃO (EJC Command Center): a navegação é agrupada por INTENÇÃO em 4
 // grupos — "Trabalhar um caso", "Pesquisar & IA", "Gerir o escritório" e
@@ -168,6 +169,31 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "dashboard",
     sensitive: false,
     backendPrefixes: ["/api/dashboard", "/api/health"],
+  },
+  // Entrada Única (Bloco 3, docs/DESENHO_BLOCO3_TELAS.md): porta de entrada
+  // principal de casos — relato + documentos → análise → confirmação → caso.
+  // Logo abaixo de "Início" no grupo de trabalho (order 15 < /casos=20);
+  // `essential` fica false para preservar a lista travada em
+  // moduleRegistry.test.ts ("mantém o menu enxuto e o modo essencial").
+  {
+    key: "entrada",
+    path: "/entrada",
+    label: "Entrada de Caso",
+    description:
+      "Porta de entrada única: cole o relato, arraste documentos e crie o caso em duas telas.",
+    group: "Trabalhar um caso",
+    icon: Inbox,
+    component: EntradaUnica,
+    // Piso advogado+ (POST /entrada/analisar e criar caso são atos de
+    // advogado) — mesma matriz de ROLES.compliance usada em caso-entrevista.
+    roles: ROLES.compliance,
+    showInNav: true,
+    essential: false,
+    order: 15,
+    helpKey: "casos",
+    sensitive: true,
+    usesAI: true,
+    backendPrefixes: ["/api/entrada", "/api/entrada-universal", "/api/clients"],
   },
   // Destaque primário: wizard guiado de abertura de caso (cliente → caso).
   // Rota nova aditiva — /casos/novo vence /casos/:id no ranking do router v6.
