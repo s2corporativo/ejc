@@ -82,3 +82,51 @@ async def test_importar_url_juridica_html_monta_dossie(monkeypatch):
     assert "Decisao STF" in result.texto
     assert "Pedido" in result.dossie
     assert result.metadados["chars"] > 0
+
+
+# ── SSRF por DNS rebinding: conectar no IP validado, não no nome (DADOS-018) ──
+# Validar resolvia o host uma vez; o cliente HTTP resolvia OUTRA vez ao
+# conectar. Entre as duas consultas cabe o ataque: DNS hostil devolve IP
+# público para a checagem e IP interno para a conexão.
+
+import pytest as _pytest
+
+import app.services.document_url_import_service as _svc
+
+
+def test_validacao_devolve_o_ip_para_quem_vai_conectar(monkeypatch):
+    """A correção depende de o IP ATRAVESSAR a fronteira validação→conexão.
+    Se a função voltar a devolver só a URL, o pinning se perde em silêncio."""
+    monkeypatch.setattr(_svc, "_resolver_ips", lambda h: ["93.184.216.34"])
+    url, host, ip = _svc.validar_e_fixar_url("https://exemplo.gov.br/lei.pdf")
+    assert url == "https://exemplo.gov.br/lei.pdf"
+    assert host == "exemplo.gov.br"
+    assert ip == "93.184.216.34"
+
+
+def test_dominio_com_ip_publico_e_interno_e_recusado_inteiro(monkeypatch):
+    """Resposta DNS mista é a forma mais barata do ataque: basta um dos IPs ser
+    interno para a URL inteira cair — não se escolhe "o público entre eles"."""
+    monkeypatch.setattr(_svc, "_resolver_ips", lambda h: ["93.184.216.34", "169.254.169.254"])
+    with _pytest.raises(_svc.URLImportError):
+        _svc.validar_e_fixar_url("https://exemplo.gov.br/lei.pdf")
+
+
+@_pytest.mark.parametrize(
+    "url,ip,esperado",
+    [
+        ("https://exemplo.gov.br/a/b?c=1", "93.184.216.34", "https://93.184.216.34/a/b?c=1"),
+        ("http://exemplo.gov.br:8080/x", "93.184.216.34", "http://93.184.216.34:8080/x"),
+        ("https://exemplo.gov.br/x", "2001:db8::1", "https://[2001:db8::1]/x"),
+    ],
+)
+def test_url_reescrita_no_ip_preserva_porta_caminho_e_query(url, ip, esperado):
+    """Reescrever mal a URL trocaria um problema de segurança por um de
+    funcionamento — IPv6 precisa de colchetes, porta e query não podem sumir."""
+    assert _svc._url_no_ip(url, ip) == esperado
+
+
+def test_validar_url_importavel_mantem_o_contrato_antigo(monkeypatch):
+    """A função pública continua devolvendo só a URL: quem já a usava não muda."""
+    monkeypatch.setattr(_svc, "_resolver_ips", lambda h: ["93.184.216.34"])
+    assert _svc.validar_url_importavel("https://exemplo.gov.br/x") == "https://exemplo.gov.br/x"

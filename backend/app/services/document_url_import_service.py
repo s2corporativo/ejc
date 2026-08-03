@@ -140,18 +140,42 @@ def _resolver_ips(hostname: str) -> list[str]:
     return ips
 
 
-def validar_url_importavel(url: str) -> str:
-    """Valida URL contra SSRF e retorna URL normalizada."""
+def validar_e_fixar_url(url: str) -> tuple[str, str, str]:
+    """Valida contra SSRF e devolve `(url_normalizada, host, ip_validado)`.
+
+    O IP volta junto porque validar não basta: `getaddrinfo` aqui e uma nova
+    resolução na hora de conectar são DUAS consultas, e um DNS hostil pode
+    responder IP público na primeira e IP interno na segunda (rebinding). Quem
+    conecta precisa usar EXATAMENTE o endereço que passou pela checagem — é o
+    que `_fetch_bytes_seguro` faz com o valor devolvido aqui.
+
+    TODOS os IPs resolvidos são checados, não só o escolhido: um domínio que
+    devolve um IP público e um interno é recusado inteiro.
+    """
     url = _limpar_url(url)
     parsed = urlparse(url)
     host = parsed.hostname or ""
     host_lower = host.lower().strip(".")
     if host_lower in {"localhost", "localhost.localdomain"} or host_lower.endswith(".local"):
         raise URLImportError("Host local não é permitido.")
-    for ip in _resolver_ips(host_lower):
+    ips = _resolver_ips(host_lower)
+    for ip in ips:
         if not _ip_permitido(ip):
             raise URLImportError("URL aponta para IP interno ou não permitido.")
-    return url
+    return url, host_lower, ips[0]
+
+
+def validar_url_importavel(url: str) -> str:
+    """Valida URL contra SSRF e retorna URL normalizada."""
+    return validar_e_fixar_url(url)[0]
+
+
+def _url_no_ip(url: str, ip: str) -> str:
+    """Substitui o host da URL pelo IP já validado, preservando porta e path."""
+    parsed = urlparse(url)
+    literal = f"[{ip}]" if ":" in ip else ip
+    porta = f":{parsed.port}" if parsed.port else ""
+    return urlunparse(parsed._replace(netloc=f"{literal}{porta}"))
 
 
 def extrair_html_simples(html: str, base_url: str) -> tuple[str | None, str | None, str | None, str]:
@@ -172,7 +196,7 @@ def extrair_html_simples(html: str, base_url: str) -> tuple[str | None, str | No
 
 
 async def _fetch_bytes_seguro(url: str) -> tuple[str, int, str | None, bytes]:
-    atual = validar_url_importavel(url)
+    atual, host, ip = validar_e_fixar_url(url)
     headers = {
         "User-Agent": USER_AGENT,
         "Accept": "text/html,application/xhtml+xml,text/plain,application/pdf;q=0.8,*/*;q=0.2",
@@ -181,12 +205,27 @@ async def _fetch_bytes_seguro(url: str) -> tuple[str, int, str | None, bytes]:
 
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, headers=headers) as client:
         for _ in range(MAX_REDIRECTS + 1):
-            resp = await client.get(atual)
+            # Conecta no IP JÁ VALIDADO, não no nome. Pedir a URL com o host
+            # faria o httpx resolver de novo, e entre a validação e essa segunda
+            # resolução cabe o rebinding: DNS hostil devolve IP público para a
+            # checagem e IP interno para a conexão.
+            #   • `Host` explícito → o servidor recebe o virtual host correto;
+            #   • `sni_hostname`   → vira `server_hostname` no TLS, que governa
+            #     o SNI E a verificação do certificado. O certificado continua
+            #     sendo conferido contra o DOMÍNIO, nunca contra o IP; nada de
+            #     verificação afrouxada.
+            resp = await client.get(
+                _url_no_ip(atual, ip),
+                headers={"Host": host},
+                extensions={"sni_hostname": host},
+            )
             if resp.status_code in {301, 302, 303, 307, 308}:
                 loc = resp.headers.get("location")
                 if not loc:
                     raise URLImportError("Redirecionamento sem destino.")
-                atual = validar_url_importavel(urljoin(atual, loc))
+                # Cada salto é revalidado E refixado: o destino do redirect é
+                # entrada nova, e herdar o IP anterior seria pior que resolver.
+                atual, host, ip = validar_e_fixar_url(urljoin(atual, loc))
                 continue
 
             content_type = resp.headers.get("content-type")
