@@ -456,7 +456,15 @@ async def validar_peca_juridica(
         case_id=d.case_id,
         nivel_inteligencia="alto",
     )
-    resultado = await validar_rascunho_juridico(payload, db=db, user_id=cu.id, scope_client_id=escopo_cli)
+    try:
+        resultado = await validar_rascunho_juridico(payload, db=db, user_id=cu.id, scope_client_id=escopo_cli)
+    except RuntimeError as exc:
+        # Camada de borda (P0 §3.2, achado #672): sem isto o RuntimeError do
+        # ai_gateway (nenhum provedor de IA elegível) subia cru como 500
+        # genérico, e ai_log_id nunca era gravado — travando /aprovar em
+        # "sem_validacao" para sempre, sem explicar por quê.
+        from app.core.ai_errors import http_erro_ia
+        raise http_erro_ia(exc, 503, contexto="validar_peca_juridica")
     await criar_audit_log(db, cu.id, cu.role.value, "VALIDACAO_JURIDICA", "legal_docs", doc_id, detalhes=f"score={resultado.get('score_confianca')}")
     await db.commit()
     return resultado
