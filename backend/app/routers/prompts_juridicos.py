@@ -109,6 +109,37 @@ _ROLES_JURIDICO: frozenset[str] = frozenset({
 })
 
 
+def _so_publicos(cu: User) -> bool:
+    """Quem não é do time jurídico enxerga apenas os prompts públicos."""
+    return role_str(cu) not in _ROLES_JURIDICO
+
+
+async def _carregar_visivel(db: AsyncSession, prompt_id: str, cu: User) -> PromptJuridico:
+    """Carrega um prompt aplicando a MESMA visibilidade da listagem.
+
+    Achado de review do PR #652: a primeira versão do P1-4 cortou a LISTAGEM e
+    deixou as rotas de item (`GET /{id}`, `POST /{id}/executar`) selecionando só
+    por id. Esconder na coleção não protege nada — quem tem o UUID (de um cache
+    da interface, de um log, de quando a listagem ainda era aberta) lia e
+    executava o prompt institucional assim mesmo. É exatamente o defeito que
+    esta auditoria batizou: o gate existe no caminho gêmeo, não no endpoint que
+    executa o ato.
+
+    Responde **404**, não 403: revelar "existe, mas você não pode" já entrega a
+    existência do prompt privado. Mesmo critério de `clients._pode_ver_cliente`.
+    """
+    q = select(PromptJuridico).where(
+        PromptJuridico.id == prompt_id,
+        PromptJuridico.deleted_at.is_(None),
+    )
+    if _so_publicos(cu):
+        q = q.where(PromptJuridico.publico.is_(True))
+    p = (await db.execute(q)).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, "Prompt não encontrado")
+    return p
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("")
@@ -134,7 +165,7 @@ async def listar_prompts(
     # O conjunto é EXPLÍCITO de propósito: "jurídico" não é um piso de nível
     # (financeiro fica acima de estagiário sem ser do time), então um
     # `>=` não consegue expressá-lo. Espelha ROLES.juridico do registry.
-    if role_str(cu) not in _ROLES_JURIDICO:
+    if _so_publicos(cu):
         q = q.where(PromptJuridico.publico.is_(True))
 
     if categoria:
@@ -181,15 +212,7 @@ async def obter_prompt(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    p = (await db.execute(
-        select(PromptJuridico).where(
-            PromptJuridico.id == prompt_id,
-            PromptJuridico.deleted_at.is_(None),
-        )
-    )).scalar_one_or_none()
-    if not p:
-        raise HTTPException(404, "Prompt não encontrado")
-    return _out(p)
+    return _out(await _carregar_visivel(db, prompt_id, cu))
 
 
 @router.patch("/{prompt_id}")
@@ -259,14 +282,7 @@ async def executar_prompt(
     from app.services.sanitizer import sanitizar_pii
     from app.services.legal_base import garantir_identidade
 
-    p = (await db.execute(
-        select(PromptJuridico).where(
-            PromptJuridico.id == prompt_id,
-            PromptJuridico.deleted_at.is_(None),
-        )
-    )).scalar_one_or_none()
-    if not p:
-        raise HTTPException(404, "Prompt não encontrado")
+    p = await _carregar_visivel(db, prompt_id, cu)
 
     # Preenche variáveis
     conteudo_preenchido = _preencher_variaveis(p.conteudo, req.variaveis)
@@ -290,6 +306,13 @@ async def executar_prompt(
             temperature=req.temperature,
             max_tokens=req.max_tokens,
         )
+    except HTTPException:
+        # O gateway responde 503 quando `AI_ENABLED=false` (kill-switch, P1-3).
+        # Sem este `raise`, o `except Exception` abaixo o traduziria em 502
+        # "IA indisponível" — o cliente veria falha de provedor onde houve
+        # desligamento deliberado, e a interface não reconheceria a condição
+        # "IA não ativada". Um erro que JÁ é HTTP passa intacto.
+        raise
     except Exception:
         logger.exception("Falha na chamada de IA (prompts jurídicos)")
         raise HTTPException(502, "IA indisponível no momento")

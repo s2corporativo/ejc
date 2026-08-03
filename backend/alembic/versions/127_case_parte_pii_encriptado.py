@@ -133,10 +133,57 @@ def upgrade() -> None:
     op.execute("ALTER TABLE case_partes DROP COLUMN IF EXISTS cpf_cnpj")
 
 
+def _restaurar_texto_puro() -> None:
+    """Decifra `cpf_cnpj_enc` de volta para `cpf_cnpj` antes do DROP.
+
+    Sem isto o downgrade DESTRUIRIA todo documento de parte: o texto puro já não
+    existe e o ciphertext sai junto com a coluna. Achado de review do PR #652 —
+    a versão anterior dizia que "o dado segue decifrável em cpf_cnpj_enc" e
+    então dropava exatamente essa coluna.
+
+    Reverter uma migration tem de devolver o estado ANTERIOR, e o estado
+    anterior à 127 é o documento em claro em `cpf_cnpj`. Quem reverte assume
+    conscientemente esse retrocesso de privacidade — não uma perda silenciosa
+    de dado. Mesma paginação por keyset do backfill de ida.
+
+    Linha cujo `cpf_cnpj_enc` não decifra (chave rotacionada, ciphertext
+    corrompido) fica com `cpf_cnpj` NULL e é CONTADA no log: o downgrade não
+    para por causa dela, mas também não some com ela em silêncio.
+    """
+    from app.services.pii_crypto import decrypt
+
+    conn = op.get_bind()
+    sel = sa.text(
+        "SELECT id, cpf_cnpj_enc FROM case_partes "
+        "WHERE id > :last AND cpf_cnpj_enc IS NOT NULL AND cpf_cnpj IS NULL "
+        "ORDER BY id LIMIT :lim"
+    )
+    upd = sa.text("UPDATE case_partes SET cpf_cnpj = :doc WHERE id = :id")
+
+    last_id, indecifraveis = "", 0
+    while True:
+        linhas = conn.execute(sel, {"last": last_id, "lim": _LOTE}).fetchall()
+        if not linhas:
+            break
+        for pid, enc in linhas:
+            try:
+                doc = decrypt(enc)
+            except ValueError:
+                doc, indecifraveis = None, indecifraveis + 1
+            if doc:
+                conn.execute(upd, {"id": pid, "doc": doc[:18]})
+            last_id = pid
+    if indecifraveis:
+        print(
+            f"[127 downgrade] {indecifraveis} linha(s) com cpf_cnpj_enc "
+            "indecifrável — documento NÃO restaurado nessas linhas."
+        )
+
+
 def downgrade() -> None:
-    # Recria a coluna VAZIA (o texto puro NÃO volta — segue em cpf_cnpj_enc) e
-    # remove as colunas do cutover, restaurando o schema da head 126.
+    # Restaura o schema da head 126 — e o DADO junto com ele.
     op.execute("ALTER TABLE case_partes ADD COLUMN IF NOT EXISTS cpf_cnpj varchar(18)")
+    _restaurar_texto_puro()
     op.execute("DROP INDEX IF EXISTS ix_case_partes_cpf_cnpj_hash")
     op.execute("ALTER TABLE case_partes DROP COLUMN IF EXISTS cpf_cnpj_mascarado")
     op.execute("ALTER TABLE case_partes DROP COLUMN IF EXISTS cpf_cnpj_hash")

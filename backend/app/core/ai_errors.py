@@ -89,7 +89,23 @@ def http_erro_ia(
     padrao: str = MSG_IA_INDISPONIVEL,
 ) -> HTTPException:
     """Camada de borda: loga o DETALHE TÉCNICO (interno) e devolve HTTPException
-    com `detail` leigo. Usar `raise http_erro_ia(e, ...)` nos routers de IA."""
+    com `detail` leigo. Usar `raise http_erro_ia(e, ...)` nos routers de IA.
+
+    Um erro que JÁ é HTTPException passa INTACTO — status e detail preservados.
+    Achado de review do PR #652: os 18 sites que chamam este helper vivem dentro
+    de `except Exception`, então o 503 do kill-switch (`AI_ENABLED=false`,
+    P1-3) chegava aqui e era reescrito como 502 "IA indisponível". O cliente via
+    falha de provedor onde houve **desligamento deliberado**, e a interface não
+    reconhecia a condição "IA não ativada". Corrigir no CHOKE POINT vale mais do
+    que corrigir 18 `except` — e vale para o próximo `raise HTTPException` que o
+    gateway venha a fazer, não só para este.
+    """
+    if isinstance(erro, HTTPException):
+        logger.warning(
+            "[IA] %s interrompida por decisão explícita (HTTP %s) — repassando intacta",
+            contexto or "chamada de IA", erro.status_code,
+        )
+        return erro
     logger.error(
         "[IA] %s falhou: %s: %s",
         contexto or "chamada de IA",

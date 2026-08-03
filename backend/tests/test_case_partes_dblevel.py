@@ -58,10 +58,20 @@ async def _criar_caso(db, client_id: str, titulo: str,
 
 async def _criar_parte(db, case_id: str, nome: str,
                        cpf_cnpj: str | None = None) -> None:
+    # Migration 127: grava como `routers/case_partes.py` grava — normalizado,
+    # cifrado, hasheado e mascarado. Texto puro não existe mais na tabela.
+    from app.services.pii_crypto import (
+        encrypt, hash_documento, mascarar_documento, normalizar_documento,
+    )
+
+    doc = normalizar_documento(cpf_cnpj)
     await db.execute(
-        text("INSERT INTO case_partes (case_id, tipo, nome, cpf_cnpj, ativo) "
-             "VALUES (:cid, 'autor', :nome, :doc, true)"),
-        {"cid": case_id, "nome": nome, "doc": cpf_cnpj},
+        text("INSERT INTO case_partes "
+             "(case_id, tipo, nome, cpf_cnpj_enc, cpf_cnpj_hash, "
+             " cpf_cnpj_mascarado, ativo) "
+             "VALUES (:cid, 'autor', :nome, :enc, :hash, :masc, true)"),
+        {"cid": case_id, "nome": nome, "enc": encrypt(doc),
+         "hash": hash_documento(doc), "masc": mascarar_documento(doc)},
     )
 
 
@@ -108,7 +118,11 @@ async def test_listar_partes_respeita_ownership():
             # Responsável do caso vê as partes (documento completo incluso).
             partes = await listar_partes(caso, db, await _carregar_user(db, resp_adv))
             assert [p["nome"] for p in partes] == [f"Parte Autora {tok}"]
-            assert partes[0]["cpf_cnpj"] == "153.509.460-56"
+            # Migration 127: o contrato da resposta não mudou — a chave segue
+            # `cpf_cnpj` e o documento sai em claro para quem passou pelo gate
+            # de ownership. O que mudou é que ele é gravado NORMALIZADO (só
+            # dígitos), porque a máscara de exibição vive em coluna própria.
+            assert partes[0]["cpf_cnpj"] == "15350946056"
 
             # Gestão (socio+) vê qualquer caso.
             assert len(await listar_partes(caso, db, await _carregar_user(db, socio))) == 1

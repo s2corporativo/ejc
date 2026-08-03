@@ -31,10 +31,17 @@ Escopo: 15 fases, orientada por grafo, baseada em evidência.
 > acesso ao banco de produção, vedado pela regra 9 da governança. É trabalho **operacional do
 > titular**; a consulta e o procedimento estão no §"Pendências operacionais" abaixo.
 >
-> **Validação:** 4 570 testes de backend passam, `ruff check app` limpo, frontend com 364 testes e
-> `tsc --noEmit` exit 0. As 33 rotas foram conferidas no app montado: **nenhuma colisão, nenhuma
-> rota registrada sob `/api/v1`**. A migration 127 foi exercitada contra um **Postgres 16 real**
-> (upgrade → conferência linha a linha → reexecução idempotente → downgrade), não só revisada.
+> **Validação:** **4 746 testes de backend passam com `RUN_DB_TESTS=1` contra PostgreSQL 16 real
+> com pgvector** — a configuração exata do CI, incluindo os testes DB-level que antes não rodavam
+> nesta sessão. Cobertura 68,5% (piso do CI: 65%). `ruff check app` limpo, frontend com 364 testes
+> e `tsc --noEmit` exit 0. A cadeia inteira de migrations (`alembic upgrade head`, 122 revisões)
+> roda; a 127 foi exercitada isoladamente também no ciclo completo — upgrade → conferência linha a
+> linha → reexecução idempotente → downgrade com restauração dos documentos.
+>
+> **Cinco defeitos das próprias correções foram encontrados e corrigidos em revisão** — três por
+> CI/review externo, dois por varredura própria. Estão descritos em §11.1; o mais grave era o
+> oposto do que a correção pretendia: a anonimização apagava o quadro societário INTEIRO, incluindo
+> sócios que nunca pediram esquecimento.
 >
 > **Dois fatos que a correção revelou e que valem mais que ela:**
 > 1. Com o P0-2 corrigido, `test_api_contract.py` **falhou apontando exatamente as 27 chamadas** —
@@ -247,6 +254,32 @@ com evidência:
 - **`core/status_caso.py`** — matou cinco definições incompatíveis de "caso ativo" e documenta por
   quê.
 - **PDF de minuta sem gate** — correção de atrito que inverte a ordem errada do ato profissional.
+
+## 11.1 Os defeitos das próprias correções
+
+Uma correção não é verdadeira porque foi escrita com cuidado. Cinco defeitos entraram junto com as
+correções deste PR e foram achados **depois** — três por CI e review externo, dois por varredura
+própria. Registrar isso vale mais do que o relatório limpo que eu poderia ter escrito, porque
+todos os cinco pertencem à MESMA família que a auditoria diagnosticou: **cobrir por lista o que só
+a varredura cobre**.
+
+| # | Defeito introduzido | Como apareceu | Lição |
+|---|---|---|---|
+| 1 | O kill-switch do P1-3 foi parar em `_pseudonimizar_agentico` — um helper da barreira LGPD —, não em `chat_agentico` | releitura do diff | um `grep` pelo nome da função confirma que a linha existe, não que ela está no lugar certo |
+| 2 | Dois testes DB-level seguiam inserindo `case_partes.cpf_cnpj` e quebraram no CI com `UndefinedColumn` | **CI** | a guarda de cutover enumerava 4 arquivos que eu conhecia; testes que só rodam com `RUN_DB_TESTS=1` ficaram fora. Virou varredura por AST |
+| 3 | O `downgrade()` da 127 **destruía** todo documento de parte — dropava `cpf_cnpj_enc` sem decifrar, enquanto o comentário prometia que o dado seguia preservado | review externo | reverter tem de devolver o estado anterior; agora decifra de volta para texto puro |
+| 4 | A anonimização apagava o quadro societário **INTEIRO**, incluindo sócios que nunca pediram esquecimento | review externo | o art. 17 é direito do TITULAR, não autorização para apagar quem está ao redor. Corrigido: só sai o sócio casado pelo índice cego |
+| 5 | A parte processual criada pela interface **escapava** da anonimização — `TabPartes.tsx` não envia `client_id`, e o predicado só olhava esse campo | review externo | o vínculo que o modelo declara não é o vínculo que a interface cria |
+
+O defeito nº 4 é o mais instrutivo: a correção fazia o **oposto** do que pretendia. Foi escrita para
+cumprir o art. 17 e acabou processando dado pessoal de terceiro sem pedido dele — e destruindo
+histórico societário que o escritório tem dever de guardar. Passou nos meus testes porque o teste
+tinha **um** sócio; com um sócio, "anonimizou o titular" e "apagou todo mundo" são indistinguíveis.
+O teste agora tem dois, e o segundo é a asserção que importa.
+
+Achado nº 2 fechou também uma lacuna de método: os testes DB-level **não rodavam nesta sessão**
+(faltava pgvector). Instalado o `postgresql-16-pgvector`, a suíte passou a rodar na configuração
+exata do CI — 4 746 testes em vez de 4 580 — e é assim que este PR foi validado.
 
 ## 12. Correções necessárias no `CLAUDE.md`
 
