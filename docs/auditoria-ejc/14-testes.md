@@ -7,7 +7,7 @@
 > não cair em silêncio, e é para subir junto com ela.
 >
 > Os números brutos abaixo são os do diagnóstico (4 463 testes). Após as correções deste PR a
-> suíte tem **4 810 testes passando** com `RUN_DB_TESTS=1` contra Postgres 16 real.
+> suíte tem **4 826 testes passando** com `RUN_DB_TESTS=1` contra Postgres 16 real.
 >
 > **T-P0-1 fechado:** `peca_geracao_router` — o gerador de documento, e o achado mais grave desta
 > fase — ganhou teste funcional (`test_peca_geracao_router_dblevel.py`, 9 testes contra banco
@@ -48,6 +48,28 @@
 >
 > O arquivo antigo **não foi removido** — ele pega a sabotagem por remoção, que o comportamental
 > também pega, e custa nada. O achado era a ausência do segundo, não a presença do primeiro.
+>
+> **T-P1-2 fechado — e achou dois defeitos de cálculo em código de honorários.**
+> `test_honorarios_calc_dblevel.py` (16 testes contra banco real) exercita o provisionamento de
+> sucumbência (art. 85 §2º CPC) e o **teto ético** (EOAB, quota litis). Onze passaram de primeira;
+> três reprovaram, e os três eram defeito real:
+>
+> 1. **honorário MISTO contava só a parte fixa.** O `elif` somava o percentual de êxito apenas
+>    quando `valor` era nulo — mas `misto` é, por definição, fixo + êxito, e o model permite os
+>    dois campos. Um contrato de R$ 5.000 + 30% sobre R$ 100.000 entrava como R$ 5.000. O alerta
+>    ético ficava **mudo justamente no tipo de contrato mais propenso a estourar o teto**: num caso
+>    que consome 65% do proveito do cliente, nenhum aviso era emitido.
+> 2. **sucumbência lançada contava DUAS vezes** — uma como honorário contratual, outra como
+>    estimativa de 15% somada por cima. Aqui o alerta disparava em caso conforme.
+>
+> Os dois erram em **direções opostas**, o que é pior do que errar sempre para o mesmo lado: não há
+> como corrigir "no olho" um número que ora sobra, ora falta. E o primeiro é o mais grave, porque
+> um alerta de conformidade que subestima **não parece quebrado — parece conforme**.
+>
+> A resposta ganhou `sucumbencia_fonte` (`lancada` | `estimada` | `indisponivel`): um valor apurado
+> e uma projeção não podem sair com a mesma cara, porque a diferença muda a decisão de aceitar
+> acordo. E há teste do erro OPOSTO — êxito com valor já fechado não soma o percentual de novo —
+> para "somar os dois campos" não virar regra geral.
 >
 > T-P2-1/2 (teste que não exercita) **seguem abertos**.
 
