@@ -1,5 +1,10 @@
 # 08 — Backend (Fase 8)
 
+> **Estado:** os três P0 descritos aqui (§3, §4, §5) **foram corrigidos** neste mesmo PR — ver
+> `00-resumo-executivo.md`. O texto abaixo é mantido no tempo do diagnóstico, porque é ele que
+> explica *por que* o defeito existia e *por que* o CI não pegava. Cada seção traz nota do estado
+> atual.
+
 > Método: graphify para localizar → leitura do arquivo real → AST sobre `app/routers/` → **app
 > FastAPI montado de verdade** (`from app.main import app`, **830 rotas**) → requisições via
 > `TestClient` com JWT forjado. Os três achados P0 foram **provados em runtime**, não inferidos.
@@ -44,7 +49,12 @@ WAF, log, cache no Nginx) precisa cobrir **os dois** prefixos.
 
 ---
 
-## 🔴 3. P0-1 — 27 chamadas do frontend caem em 404
+## ✅ 3. P0-1 — 27 chamadas do frontend caem em 404 — **CORRIGIDO**
+
+> **Correção aplicada:** `/v1` removido do `prefix=` dos 8 routers. As 33 rotas passaram de
+> `/api/v1/X` para `/api/X`; o `/api/v1/X` público segue entregue pelo middleware. Conferido no app
+> montado: nenhuma colisão e **nenhuma rota registrada sob `/api/v1`**. Regressão em
+> `tests/test_prefixo_v1_e_deps_rota.py`.
 
 **Oito routers declaram `prefix="/v1/…"` no próprio `APIRouter`** e depois são montados sob
 `prefix="/api"`:
@@ -120,7 +130,11 @@ middleware, diff de contrato estático, *probe* com o axios real, e requisição
 
 ---
 
-## 🔴 4. P0-2 — o verificador de contrato está cego para exatamente este bug
+## ✅ 4. P0-2 — o verificador de contrato está cego para exatamente este bug — **CORRIGIDO**
+
+> **Correção aplicada:** `_podar_prefixo_repetido()` em `api_contract.py` espelha o interceptor de
+> `lib/api.ts:21-23`. Com o P0-1 ainda quebrado, o teste **falhou apontando exatamente as 27
+> chamadas** — a prova de que era falso-verde, e não hipótese.
 
 `backend/app/utils/api_contract.py:83-93` (`_final_url`) concatena `AXIOS_BASE_URL + raw`
 **sem reproduzir a poda de prefixo** de `api.ts:21-23`. Verificado por mim: a função faz
@@ -142,7 +156,14 @@ está cego para ela. **Corrigir o checker antes de corrigir os routers** — sen
 
 ---
 
-## 🔴 5. P0-3 — `GET /api/rag/docs` retorna 500 sempre
+## ✅ 5. P0-3 — `GET /api/rag/docs` retorna 500 sempre — **CORRIGIDO**
+
+> **Correção aplicada:** `db: AsyncSession = Depends(get_db)` e
+> `cu: User = Depends(get_current_user)` declarados em `_listar_docs_escopado`. A cadeia de DI
+> voltou e o escopo de visibilidade dos `KnowledgeDoc` **passou a executar pela primeira vez**.
+> Achado que só apareceu ao corrigir: o snapshot de paridade tinha **congelado o defeito**,
+> gravando `auth_deps: []` para esta rota — uma rota sem nenhuma dependência de autenticação
+> estava travada como "estado correto".
 
 `app/services/ai_core_hardening_patch.py:188-193` troca o callable da rota por atribuição direta:
 

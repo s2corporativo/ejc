@@ -2,7 +2,33 @@
 
 **Auditoria integral do EJC — Ecossistema Jurídico Clovis**
 Commit `aa65974` · branch `claude/auditoria-ejc-graphify-aoa2hi` · 2026-08-02
-Escopo: 15 fases, orientada por grafo, baseada em evidência. **Nenhuma correção foi aplicada.**
+Escopo: 15 fases, orientada por grafo, baseada em evidência.
+
+---
+
+> ## ⚠️ Estado: os três P0 foram CORRIGIDOS neste mesmo PR
+>
+> O diagnóstico abaixo descreve o sistema **como encontrado** no commit `aa65974`. Por autorização
+> do titular ("faça de acordo com o que achar melhor para o sistema"), os **três defeitos P0 foram
+> corrigidos** na sequência recomendada — verificador primeiro. O restante (P1, P2, P3) **não foi
+> tocado** e segue valendo como plano.
+>
+> | Defeito | Estado | Correção |
+> |---|---|---|
+> | **P0-2** verificador cego | ✅ corrigido | `api_contract.py` — `_podar_prefixo_repetido()` espelha o interceptor de `lib/api.ts:21-23` |
+> | **P0-1** prefixo `/v1` | ✅ corrigido | `/v1` removido do `prefix=` dos 8 routers; 33 rotas migraram de `/api/v1/X` para `/api/X` |
+> | **P0-3** `/api/rag/docs` 500 | ✅ corrigido | `Depends(get_db)` / `Depends(get_current_user)` declarados em `_listar_docs_escopado` |
+>
+> **Validação:** 4 537 testes de backend passam (era 4 463 + 9 de regressão novos + os que vieram
+> da `main`), `ruff` limpo, frontend com 364 testes e `tsc --noEmit` exit 0. As 33 rotas foram
+> conferidas no app montado: **nenhuma colisão, nenhuma rota registrada sob `/api/v1`**.
+>
+> **Dois fatos que a correção revelou e que valem mais que ela:**
+> 1. Com o P0-2 corrigido, `test_api_contract.py` **falhou apontando exatamente as 27 chamadas** —
+>    prova de que era falso-verde, não hipótese.
+> 2. O snapshot de paridade (`tests/snapshots/openapi_rotas_baseline.json`) tinha
+>    **congelado o defeito**: gravou `auth_deps: []` para `/api/rag/docs`. Uma rota sem nenhuma
+>    dependência de autenticação estava travada como "estado correto" — e ninguém percebeu.
 
 ---
 

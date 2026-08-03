@@ -1,5 +1,8 @@
 # 09 — Frontend (Fase 9)
 
+> **Estado:** os três P0 foram **corrigidos** neste mesmo PR (ver `00-resumo-executivo.md`). Os itens marcados como quebrados por causa do prefixo `/v1` ou de `GET /api/rag/docs` **já respondem**. O texto segue no tempo do diagnóstico; P1/P2/P3 continuam pendentes.
+
+
 > `npm run lint` (tsc --noEmit) → **exit 0**. `npm test` (vitest) → **54 arquivos, 343 testes,
 > todos passando**, 34,3 s. Nada foi alterado.
 

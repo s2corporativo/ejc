@@ -85,6 +85,48 @@ REMOCOES_INTENCIONAIS = {
 }
 
 
+# Mudanças INTENCIONAIS de dependência de auth. Alteração não declarada aqui
+# continua reprovando — mexer na cadeia de auth de uma rota é exatamente o que
+# esta trava existe para tornar visível.
+DEPS_ALTERADAS_INTENCIONAIS = {
+    # P0-3 da auditoria integral (docs/auditoria-ejc/08-backend.md §5).
+    # O snapshot CONGELOU O DEFEITO: gravou auth_deps=[] para esta rota porque,
+    # no estado anterior, o monkeypatch de ai_core_hardening_patch trocava
+    # route.endpoint por uma função com `db=None, cu=None` SEM Depends. O
+    # include_router reconstruía o dependant a partir dessa assinatura, então
+    # get_db e get_current_user sumiam da cadeia, db/cu viravam query params e
+    # a rota devolvia 500 em TODA chamada — levando junto o escopo de
+    # visibilidade dos KnowledgeDoc que o patch existe para instalar.
+    # Com os Depends declarados, a cadeia volta ao que sempre deveria ser.
+    ("/api/rag/docs", "GET"): ["HTTPBearer", "get_current_user", "get_db"],
+}
+
+
+def _reescritas_p0_1(base: list[dict]) -> tuple[set, set]:
+    """P0-1 da auditoria integral (docs/auditoria-ejc/08-backend.md §3).
+
+    Oito routers declaravam `prefix="/v1/..."`. Como main.py os monta sob
+    `prefix="/api"`, o path REGISTRADO virava `/api/v1/<X>` — mas o
+    APIVersionCompatibilityMiddleware reescreve `/api/v1/*` → `/api/*` ANTES do
+    roteamento, então essas rotas só respondiam em `/api/v1/v1/<X>`. Na prática
+    Contratos do Escritório, DataJud, Despesas e Kanban ficaram inacessíveis
+    pela interface, sem erro visível (o usuário via "lista vazia").
+
+    A correção remove o `/v1` do prefixo do router: o path passa a ser
+    `/api/<X>`, e o `/api/v1/<X>` público continua entregue pelo middleware.
+
+    NÃO é endpoint novo nem removido — é o MESMO endpoint no path que sempre
+    foi o pretendido. Derivamos os dois conjuntos do próprio baseline em vez de
+    enumerar 66 tuplas: assim a trava segue estrita e tolera exatamente esta
+    reescrita, e nada além dela.
+    """
+    antigas = {
+        (r["path"], r["method"]) for r in base if r["path"].startswith("/api/v1/")
+    }
+    novas = {("/api" + p[len("/api/v1") :], m) for p, m in antigas}
+    return antigas, novas
+
+
 def _baseline() -> list[dict]:
     caminho = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
@@ -104,11 +146,13 @@ def test_paridade_openapi_com_snapshot_anterior():
     chaves_base = {(r["path"], r["method"]): r for r in base}
     chaves_atual = {(r["path"], r["method"]): r for r in atual}
 
+    p0_1_antigas, p0_1_novas = _reescritas_p0_1(base)
+
     sumiram = sorted(
-        set(chaves_base) - set(chaves_atual) - REMOCOES_INTENCIONAIS
+        set(chaves_base) - set(chaves_atual) - REMOCOES_INTENCIONAIS - p0_1_antigas
     )
     surgiram = sorted(
-        set(chaves_atual) - set(chaves_base) - ADICOES_INTENCIONAIS
+        set(chaves_atual) - set(chaves_base) - ADICOES_INTENCIONAIS - p0_1_novas
     )
     assert not sumiram, f"{len(sumiram)} rota(s) DESAPARECERAM: {sumiram[:10]}"
     assert not surgiram, f"{len(surgiram)} rota(s) NOVAS não previstas: {surgiram[:10]}"
@@ -122,6 +166,7 @@ def test_paridade_openapi_com_snapshot_anterior():
         (k, chaves_base[k]["auth_deps"], chaves_atual[k]["auth_deps"])
         for k in sorted(set(chaves_base) & set(chaves_atual))
         if chaves_base[k]["auth_deps"] != chaves_atual[k]["auth_deps"]
+        and chaves_atual[k]["auth_deps"] != DEPS_ALTERADAS_INTENCIONAIS.get(k)
     ]
     assert not divergentes, f"dependências de auth alteradas: {divergentes[:5]}"
     assert len(base) == 826

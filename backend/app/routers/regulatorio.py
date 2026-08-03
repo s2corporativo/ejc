@@ -16,7 +16,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 
 router = APIRouter(
-    prefix="/v1/regulatorio",
+    prefix="/regulatorio",
     tags=["regulatorio"],
     dependencies=[Depends(get_current_user)],
 )

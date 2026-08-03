@@ -80,6 +80,29 @@ _FETCH_RE = re.compile(
 _FETCH_METHOD_RE = re.compile(r"method\s*:\s*[`'\"](\w+)", re.S)
 
 
+def _podar_prefixo_repetido(url: str) -> str:
+    """Espelha o interceptor de request de frontend/src/lib/api.ts:21-23.
+
+    O cliente `api` tem baseURL /api/v1 e apara um prefixo já presente na URL
+    antes de compor, para que chamadas legadas não dupliquem o prefixo. É um
+    if/else-if de passe ÚNICO — reproduzido aqui com a mesma semântica, e não
+    em laço, justamente para que o verificador enxergue o que o navegador faz
+    de fato (inclusive o caso não coberto: /api/v1/v1/... continua duplicado).
+
+    Sem esta poda o verificador calculava a URL que o navegador DEIXOU de
+    enviar: para "/v1/despesas" produzia /api/v1/v1/despesas, que
+    _internal_api_url reduzia a /api/v1/despesas e casava com a rota — falso
+    verde sobre exatamente a classe de bug que este módulo existe para pegar.
+    """
+    if url.startswith("/api/v1/"):
+        return url[len("/api/v1") :]
+    if url.startswith("/api/"):
+        return url[len("/api") :]
+    if url.startswith("/v1/"):
+        return url[len("/v1") :]
+    return url
+
+
 def _final_url(prefix_is_axios: bool, raw: str) -> str | None:
     """Resolve a URL final que o navegador chamaria."""
     norm = re.sub(r"\$\{[^}]*\}", "\x00", raw)
@@ -87,7 +110,7 @@ def _final_url(prefix_is_axios: bool, raw: str) -> str | None:
     if prefix_is_axios:
         if not norm.startswith("/"):
             return None
-        norm = AXIOS_BASE_URL + norm
+        norm = AXIOS_BASE_URL + _podar_prefixo_repetido(norm)
     elif not norm.startswith("/"):
         return None
     return norm.rstrip("/") or "/"

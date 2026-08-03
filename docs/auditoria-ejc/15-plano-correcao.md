@@ -1,8 +1,15 @@
 # 15 — Plano de correção priorizado (Fase 15)
 
-> **Nada foi corrigido nesta auditoria.** Este plano é o insumo para a próxima ordem de trabalho.
-> A ordem recomendada respeita o grafo de dependências (`03-mapa-dependencias.md` §3) e a matriz de
-> impacto: **corrigir o verificador antes do defeito que ele deveria ter pego.**
+> **Estado: os três P0 foram executados** (P0-2 → P0-1 → P0-3), por autorização do titular, na
+> ordem recomendada abaixo. **P0-4 e todos os P1/P2/P3 seguem pendentes.**
+> A ordem respeita o grafo de dependências (`03-mapa-dependencias.md` §3) e a matriz de impacto:
+> **corrigir o verificador antes do defeito que ele deveria ter pego.**
+>
+> | | Estado |
+> |---|---|
+> | P0-1 · P0-2 · P0-3 | ✅ **corrigidos e validados** (4 537 testes backend, 364 frontend, ruff limpo) |
+> | P0-4 (gate de cobertura no CI) | ⏳ pendente — exige decisão do titular (CI/CD) |
+> | P1 · P2 · P3 | ⏳ pendentes — inalterados |
 
 ## Ordem recomendada de execução
 
