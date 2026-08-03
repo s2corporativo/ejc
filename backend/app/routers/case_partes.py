@@ -8,8 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ownership import verificar_acesso_caso
+from app.models.client import _decifrar_para_exibicao
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
+from app.services.pii_crypto import (
+    encrypt,
+    hash_documento,
+    mascarar_documento,
+    normalizar_documento,
+)
 
 router = APIRouter(prefix="/cases/{case_id}/partes", tags=["Partes Processuais"])
 
@@ -39,7 +46,7 @@ async def listar_partes(
     await verificar_acesso_caso(db, cu, case_id)
     result = await db.execute(
         text("""
-            SELECT id, tipo, papel_processual, nome, cpf_cnpj,
+            SELECT id, tipo, papel_processual, nome, cpf_cnpj_enc,
                    qualificacao, email, telefone, representante_legal,
                    oab, client_id, ativo, observacoes, created_at
             FROM case_partes
@@ -48,7 +55,16 @@ async def listar_partes(
         """),
         {"case_id": case_id},
     )
-    return [dict(r) for r in result.mappings().all()]
+    # Migration 127: o documento está cifrado em repouso. O contrato da resposta
+    # NÃO muda — quem chega aqui já passou por `verificar_acesso_caso` e é da
+    # equipe do caso, o mesmo critério pelo qual `ClientResponse` devolve
+    # `cpf_plain`. O que muda é que o valor deixou de existir em claro no banco.
+    partes = []
+    for linha in result.mappings().all():
+        parte = dict(linha)
+        parte["cpf_cnpj"] = _decifrar_para_exibicao(parte.pop("cpf_cnpj_enc"))
+        partes.append(parte)
+    return partes
 
 
 @router.post("", status_code=201)
@@ -59,20 +75,27 @@ async def criar_parte(
     cu: User = Depends(get_current_user),
 ):
     await verificar_acesso_caso(db, cu, case_id)
+    # Migration 127: o documento entra normalizado e cifrado. O texto puro só
+    # existe nesta função, entre o corpo da requisição e o `encrypt()`.
+    doc = normalizar_documento(body.cpf_cnpj)
     result = await db.execute(
         text("""
             INSERT INTO case_partes
-                (case_id, tipo, papel_processual, nome, cpf_cnpj,
+                (case_id, tipo, papel_processual, nome,
+                 cpf_cnpj_enc, cpf_cnpj_hash, cpf_cnpj_mascarado,
                  qualificacao, email, telefone, representante_legal,
                  oab, client_id, observacoes, created_by)
             VALUES
-                (:cid, :tipo, :papel, :nome, :cpf, :qual,
+                (:cid, :tipo, :papel, :nome,
+                 :cpf_enc, :cpf_hash, :cpf_masc, :qual,
                  :email, :tel, :rep, :oab, :cli, :obs, :user)
             RETURNING id
         """),
         {
             "cid": case_id, "tipo": body.tipo, "papel": body.papel_processual,
-            "nome": body.nome, "cpf": body.cpf_cnpj, "qual": body.qualificacao,
+            "nome": body.nome, "qual": body.qualificacao,
+            "cpf_enc": encrypt(doc), "cpf_hash": hash_documento(doc),
+            "cpf_masc": mascarar_documento(doc),
             "email": body.email, "tel": body.telefone, "rep": body.representante_legal,
             "oab": body.oab, "cli": body.client_id, "obs": body.observacoes,
             "user": cu.id,

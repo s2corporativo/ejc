@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.client import Client
 from app.models.case import Case, CaseStatus
+from app.models.case_parte import CaseParte
+from app.models.sociedade_cliente import SociedadeCliente, SocioSociedade
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
 
@@ -103,13 +105,66 @@ async def anonimizar_cliente(
     cliente.observacoes = None
     cliente.anonimizado_em = agora
 
-    # Portal do cliente: desativa qualquer login vinculado — a identidade que
-    # existia (nome/e-mail) não corresponde mais aos dados reais.
+    # ── P1-6 da auditoria integral (docs/auditoria-ejc/07-banco-de-dados.md §5.2)
+    # Antes daqui a anonimização parava em `clients`, e o titular seguia
+    # recuperável por consulta às tabelas satélite — o que descaracteriza o
+    # atendimento ao art. 17. As três abaixo carregam o MESMO dado pessoal.
+
+    # 1) case_partes — o titular costuma ser parte do próprio caso, via
+    #    client_id. Sem isto, o documento apagado de `clients` continuaria
+    #    recuperável aqui. As três colunas de PII saem juntas: o HASH também é
+    #    reidentificador (quem tem o CPF confirma a identidade comparando o
+    #    HMAC), então zerar só o ciphertext não anonimizaria nada.
+    partes = (await db.execute(
+        select(CaseParte).where(CaseParte.client_id == client_id)
+    )).scalars().all()
+    for parte in partes:
+        parte.nome = _MARCADOR          # NOT NULL no banco — marcador, não None
+        parte.cpf_cnpj_enc = None
+        parte.cpf_cnpj_hash = None
+        parte.cpf_cnpj_mascarado = None
+        parte.email = None
+        parte.telefone = None
+        parte.representante_legal = None
+
+    # 2) Sociedades e sócios do titular — CNPJ, razão social e documento do
+    #    sócio são dado pessoal de PJ/PF vinculado ao mesmo titular. Sem filtro
+    #    de `deleted_at`: sociedade soft-deletada continua guardando a PII.
+    sociedades = (await db.execute(
+        select(SociedadeCliente).where(SociedadeCliente.client_id == client_id)
+    )).scalars().all()
+    for soc in sociedades:
+        soc.razao_social = _MARCADOR    # NOT NULL no banco
+        soc.cnpj = None
+    if sociedades:
+        socios = (await db.execute(
+            select(SocioSociedade).where(
+                SocioSociedade.sociedade_id.in_([s.id for s in sociedades])
+            )
+        )).scalars().all()
+        for socio in socios:
+            socio.nome = _MARCADOR      # NOT NULL no banco
+            socio.documento_enc = None
+            socio.documento_hash = None
+            socio.documento_mascarado = None
+
+    # Portal do cliente: desativa qualquer login vinculado E apaga a identidade.
+    #
+    # 3) Antes só havia `is_active = False`, e só para os ATIVOS. Desativar não
+    #    anonimiza: `email` e `full_name` do usuário de portal SÃO o nome e o
+    #    e-mail do titular, e continuavam legíveis em `users` — inclusive nos
+    #    logins já desativados, que o filtro antigo nem alcançava. O e-mail vira
+    #    um placeholder único (não nulo) porque a coluna é identidade de login e
+    #    tem índice único parcial (`uq_users_email_active`, migration 075) —
+    #    dois titulares anonimizados não podem colidir.
     usuarios_portal = (await db.execute(
-        select(User).where(User.client_id == client_id, User.is_active.is_(True))
+        select(User).where(User.client_id == client_id)
     )).scalars().all()
     for u in usuarios_portal:
         u.is_active = False
+        u.full_name = _MARCADOR
+        u.email = f"anonimizado+{u.id}@invalido.local"
+        u.phone = None
 
     # Log de auditoria SEM PII — só o fato, quem autorizou, e se foi forçado
     # apesar de bloqueios (rastreabilidade da decisão).

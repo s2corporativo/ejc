@@ -268,7 +268,9 @@ async def checar_conflito(
     lá o gate de titularidade se aplica normalmente.
     """
     from app.services.conflito_service import detectar_conflito
-    from app.services.pii_crypto import mascarar_documento, normalizar_documento
+    from app.services.pii_crypto import (
+        hash_documento, mascarar_documento, normalizar_documento,
+    )
     from app.models.case_parte import CaseParte
 
     matches: list[dict] = []
@@ -324,21 +326,17 @@ async def checar_conflito(
             _elevar("critico")
 
     # ── 2. case_partes: pessoa já é parte em algum caso? (status-aware) ──────
-    # cpf_cnpj em case_partes é texto (pode vir formatado) → compara normalizado.
+    # Migration 127: o documento da parte é cifrado. O cruzamento passa a ser
+    # pelo ÍNDICE CEGO (hash HMAC) — mais barato que a normalização em SQL que
+    # existia aqui (quatro `replace` aninhados, sem índice) e sem tocar no valor
+    # em claro. A normalização segue existindo, agora antes do hash.
     cpf_norm = normalizar_documento(req.cpf)
     cnpj_norm = normalizar_documento(req.cnpj)
     doc_norm = cpf_norm or cnpj_norm
 
     conds = []
     if doc_norm:
-        norm_expr = sqlfunc.replace(
-            sqlfunc.replace(
-                sqlfunc.replace(
-                    sqlfunc.replace(CaseParte.cpf_cnpj, ".", ""),
-                    "-", ""),
-                "/", ""),
-            " ", "")
-        conds.append(norm_expr == doc_norm)
+        conds.append(CaseParte.cpf_cnpj_hash == hash_documento(doc_norm))
     if req.nome and len(req.nome.strip()) >= 4:
         conds.append(CaseParte.nome.ilike(f"%{req.nome.strip()}%"))
 
@@ -359,7 +357,7 @@ async def checar_conflito(
                     "case_id": parte.case_id,
                     "papel": papel,
                     "nome": parte.nome,
-                    "documento_mascarado": mascarar_documento(parte.cpf_cnpj),
+                    "documento_mascarado": parte.cpf_cnpj_mascarado,
                     "descricao": (
                         f"{parte.nome} já figura como '{papel}' no caso ATIVO "
                         f"\"{titulo}\" (conflito potencial — EOAB arts. 34-35)."
@@ -372,7 +370,7 @@ async def checar_conflito(
                     "case_id": parte.case_id,
                     "papel": papel,
                     "nome": parte.nome,
-                    "documento_mascarado": mascarar_documento(parte.cpf_cnpj),
+                    "documento_mascarado": parte.cpf_cnpj_mascarado,
                     "descricao": (
                         f"{parte.nome} figurou como '{papel}' no caso já "
                         f"encerrado/arquivado \"{titulo}\"."

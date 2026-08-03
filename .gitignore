@@ -76,3 +76,8 @@ vps-tools/_*
 # Arquivos de rollback da reclassificação de área (contêm IDs de casos do
 # escritório) — ver RUNBOOK_RECLASSIFICACAO_AREAS.md. Guardar fora do repo.
 var/
+
+# Cobertura de testes (pytest-cov) — artefato local, nunca versionado
+.coverage
+coverage.xml
+htmlcov/

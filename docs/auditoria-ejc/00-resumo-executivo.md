@@ -6,22 +6,35 @@ Escopo: 15 fases, orientada por grafo, baseada em evidência.
 
 ---
 
-> ## ⚠️ Estado: os três P0 foram CORRIGIDOS neste mesmo PR
+> ## ⚠️ Estado: os três P0 e SEIS itens P1/P0-4 foram CORRIGIDOS neste mesmo PR
 >
 > O diagnóstico abaixo descreve o sistema **como encontrado** no commit `aa65974`. Por autorização
-> do titular ("faça de acordo com o que achar melhor para o sistema"), os **três defeitos P0 foram
-> corrigidos** na sequência recomendada — verificador primeiro. O restante (P1, P2, P3) **não foi
-> tocado** e segue valendo como plano.
+> do titular ("faça de acordo com o que achar melhor para o sistema", depois "autorizo todos"), os
+> **três defeitos P0 foram corrigidos** na sequência recomendada — verificador primeiro — e, em
+> seguida, os itens P1 de segurança, custo e LGPD. O restante (P2, P3) **não foi tocado** e segue
+> valendo como plano.
 >
 > | Defeito | Estado | Correção |
 > |---|---|---|
 > | **P0-2** verificador cego | ✅ corrigido | `api_contract.py` — `_podar_prefixo_repetido()` espelha o interceptor de `lib/api.ts:21-23` |
 > | **P0-1** prefixo `/v1` | ✅ corrigido | `/v1` removido do `prefix=` dos 8 routers; 33 rotas migraram de `/api/v1/X` para `/api/X` |
 > | **P0-3** `/api/rag/docs` 500 | ✅ corrigido | `Depends(get_db)` / `Depends(get_current_user)` declarados em `_listar_docs_escopado` |
+> | **P0-4** suíte sem piso de cobertura | ✅ corrigido | `ci.yml` — `--cov=app --cov-fail-under=65` (chão medido: 66%) |
+> | **P1-1** IA sem teto de custo | ✅ corrigido | `rate_limit` em 14 rotas POST de IA (`ai.py`, `ai_skills.py`); teste de varredura reprova rota nova sem teto |
+> | **P1-2** ato jurídico sem piso de papel | ✅ corrigido | `_req_advogado` no cofre institucional e na geração de documento |
+> | **P1-3** `AI_ENABLED` não desligava a IA | ✅ corrigido | `_exigir_ia_ligada()` nas 3 entradas do `ai_gateway` → 503 |
+> | **P1-4** `/prompts` aberto ao financeiro | ✅ corrigido | corte por CONJUNTO (`_ROLES_JURIDICO`), não por nível |
+> | **P1-5** CPF da parte em texto puro | ✅ corrigido | migration **127** conclui em `case_partes` o cutover que a 061→112 fez só em `clients` |
+> | **P1-6** anonimização parava em `clients` | ✅ corrigido | art. 17 alcança `case_partes`, `sociedades_cliente`/`socios_sociedade` e a identidade do portal |
 >
-> **Validação:** 4 537 testes de backend passam (era 4 463 + 9 de regressão novos + os que vieram
-> da `main`), `ruff` limpo, frontend com 364 testes e `tsc --noEmit` exit 0. As 33 rotas foram
-> conferidas no app montado: **nenhuma colisão, nenhuma rota registrada sob `/api/v1`**.
+> **P1-7 (conta `homolog.qa` superadmin em produção) NÃO foi executado** — e não podia ser: exige
+> acesso ao banco de produção, vedado pela regra 9 da governança. É trabalho **operacional do
+> titular**; a consulta e o procedimento estão no §"Pendências operacionais" abaixo.
+>
+> **Validação:** 4 570 testes de backend passam, `ruff check app` limpo, frontend com 364 testes e
+> `tsc --noEmit` exit 0. As 33 rotas foram conferidas no app montado: **nenhuma colisão, nenhuma
+> rota registrada sob `/api/v1`**. A migration 127 foi exercitada contra um **Postgres 16 real**
+> (upgrade → conferência linha a linha → reexecução idempotente → downgrade), não só revisada.
 >
 > **Dois fatos que a correção revelou e que valem mais que ela:**
 > 1. Com o P0-2 corrigido, `test_api_contract.py` **falhou apontando exatamente as 27 chamadas** —
@@ -178,6 +191,34 @@ P1 de qualidade (teste do peca_geracao_router · extrair regra jurídica de ramo
 **P0-2 vem primeiro**: corrigir os routers sem corrigir o checker deixa a regressão livre para
 voltar.
 
+**Executado neste PR:** toda a primeira linha (P0-2 → P0-1 → P0-3 → P0-4), a segunda inteira
+(P1-1, P1-2, P1-3, P1-4) e o P1 de LGPD (P1-5 e P1-6). Restam a terceira linha (P1 de qualidade),
+o P1 operacional e P2/P3.
+
+## 9.1 Pendências operacionais — só o titular pode executar
+
+Um item autorizado **não foi feito**, e a razão não é de escopo: a governança (regra 9) proíbe o
+executor técnico de acessar o banco de produção, e este ambiente não tem esse acesso. Autorização
+não cria acesso.
+
+**P1-7 — conta `homolog.qa` com perfil superadmin ativa em produção.** A origem está confirmada:
+`qa/e2e/run_fictitious_smoke.py` roda contra produção e é quem cria essa conta e os casos
+`HOMOLOG-FICTICIO-*`. O que precisa ser feito, na máquina de produção:
+
+```sql
+-- 1. Confirmar o que existe (leitura, não destrutivo)
+SELECT id, email, role, is_active, last_login_at
+  FROM users
+ WHERE email LIKE '%homolog%' OR email LIKE '%qa%';
+
+-- 2. Se a conta existir e não estiver em uso legítimo, DESATIVAR (não apagar —
+--    audit_logs tem FK para users.id, e o histórico de auditoria precisa dela).
+UPDATE users SET is_active = false WHERE email = '<email confirmado no passo 1>';
+```
+
+Depois disso, decidir onde a smoke E2E passa a rodar: enquanto apontar para produção, a conta
+volta a ser recriada no próximo ciclo. Essa segunda parte é decisão de ambiente, não de código.
+
 ## 10. Módulos liberados × bloqueados
 
 **Liberados** (íntegros, com teste, sem P0/P1 próprio): **Casos · Clientes** (menos pendências) **·
@@ -219,6 +260,19 @@ A auditoria encontrou **12 divergências** entre a documentação e o código
 4. origem da conta `homolog.qa` atribuída ao **runner errado**;
 5. *"163 routers"* — são **162**;
 6. *"o grafo versionado"* — `graphify-out/` está **no `.gitignore`**.
+
+**Achado novo, fora do escopo original mas relevante para quem trabalhar aqui depois:** o hook de
+`SessionStart` roda `pip3 install graphifyy` no **mesmo site-packages global** onde vive o backend,
+sem `--no-deps` e sem ambiente virtual. Nesta sessão isso subiu `pydantic-settings` de 2.3.1 para
+2.14.2 e `numpy` de 1.26.4 para 2.4.6 **por cima** das versões fixadas em `requirements.txt`,
+deixando os dois pacotes com árvores misturadas (dois `dist-info`, um `sources/` de uma versão
+sombreando o `sources.py` da outra). O sintoma não parece de ambiente: a suíte inteira falha no
+*collect* com `ImportError: cannot import name '_lenient_issubclass'`, e três testes de embeddings
+quebram com `import numpy failed`. Diagnosticado e revertido (`pip install --no-deps` nas versões
+fixadas) antes das medições deste PR — **os 4 570 testes verdes são posteriores à correção**.
+A recomendação é isolar o graphify em virtualenv próprio ou instalá-lo com `--no-deps`; enquanto
+isso não for feito, todo relatório de falha de teste nesta base merece uma conferência de
+`pip list` contra `requirements.txt` antes de virar diagnóstico de código.
 
 ---
 

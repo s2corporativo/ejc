@@ -3,6 +3,13 @@
 > **Classificação global: FUNCIONAL COM RESSALVAS.** A arquitetura de IA é a parte mais sólida do
 > EJC. Os achados P1 são de **cobertura de kill-switch** e **degradação silenciosa** — não de
 > vazamento de dados. Três hipóteses do escopo da auditoria foram **refutadas** com evidência.
+>
+> **Estado (atualizado):** o P1-3 do §1.1 — `AI_ENABLED` consultado só em `transcrever_audio()` e
+> no helper `ia_disponivel()`, deixando a checagem a cargo de cada router — **foi corrigido**. O
+> gate (`_exigir_ia_ligada`) passou para as três entradas do gateway (`chat`, `executar_tarefa_ia`,
+> `chat_agentico`) e responde **503**. Regressão comportamental em
+> `tests/test_ai_killswitch_gateway.py` (prova que o provedor não é alcançado, e também que o gate
+> não barra com `AI_ENABLED=true`). O P1-1 (custo sem teto) também foi corrigido — ver `12`.
 
 ## 0. Quatro estruturas distintas — não confundir
 

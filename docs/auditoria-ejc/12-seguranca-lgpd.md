@@ -1,8 +1,16 @@
 # 12 — Segurança e LGPD (Fase 12)
 
 > Análise estática sobre o commit `aa65974`, complementada por montagem real do app FastAPI
-> (830 rotas) e requisições com JWT forjado. **Nenhum arquivo foi alterado. Nenhum dado de
-> produção foi acessado.**
+> (830 rotas) e requisições com JWT forjado. **Nenhum dado de produção foi acessado.**
+>
+> **Estado (atualizado):** o texto abaixo é o diagnóstico. Depois dele, e no mesmo PR, foram
+> corrigidos: **P1-1** (teto de custo nas 14 rotas POST de IA), **P1-2** (piso de advogado no
+> cofre institucional e na geração de documento), **P1-3** (`AI_ENABLED` passou a barrar no
+> gateway, não no chamador), **P1-4** (`/prompts` cortado por conjunto de papéis, não por nível),
+> **P1-5** (migration 127 — o CPF/CNPJ da parte processual deixou de existir em texto puro) e
+> **P1-6** (o art. 17 passou a alcançar `case_partes`, `sociedades_cliente`/`socios_sociedade` e
+> a identidade do portal). **P1-7** (`homolog.qa`) segue aberto: exige o banco de produção.
+> Os P2 seguem valendo integralmente.
 
 ## 0. Veredito
 
