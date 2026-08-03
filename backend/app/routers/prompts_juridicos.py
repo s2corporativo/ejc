@@ -210,8 +210,11 @@ async def remover_prompt(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        raise HTTPException(403, "Apenas sócios podem remover prompts")
+    # Issue #580: autor (advogado+) remove o PRÓPRIO prompt; sócio+ remove
+    # qualquer um. Estagiário/perfis abaixo continuam bloqueados de vez —
+    # nunca chegam a "é o autor?" porque não têm _pode_editar.
+    if not _pode_editar(cu):
+        raise HTTPException(403, "Perfil sem autorização para remover prompt")
     p = (await db.execute(
         select(PromptJuridico).where(
             PromptJuridico.id == prompt_id,
@@ -220,6 +223,10 @@ async def remover_prompt(
     )).scalar_one_or_none()
     if not p:
         raise HTTPException(404)
+    e_autor = p.created_by == cu.id
+    e_socio = ROLE_LEVEL.get(cu.role.value, 0) >= ROLE_LEVEL["socio"]
+    if not (e_autor or e_socio):
+        raise HTTPException(403, "Apenas o autor ou sócio+ podem remover este prompt")
     p.deleted_at = datetime.now(timezone.utc)
     await db.commit()
 
