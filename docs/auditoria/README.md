@@ -75,6 +75,7 @@ Inclui o checklist de pré-operação e o método do "primeiro caso real".
 | `parte-10-hitl-e-item8.md` | **Provimento 205/2021 é norma de publicidade, não de IA** — citação incorreta na interface |
 | `parte-11-apis-sincronizacao.md` | **DJEN nunca capturou nada**; prefixo `/v1/` duplicado; 15 calculadoras órfãs |
 | `parte-12-falsos-positivos.md` | **11 falsos positivos** com 3 causas-raiz; retificação do número de peças |
+| `parte-13-homologacao-dinamica.md` | Primeira homologação com stack real (Docker) e código-fonte; confirma os P0 do PR #652 em runtime; achado novo: `/legal-docs/{id}/validar` quebra com 500 sem provedor de IA e é isso que trava `/aprovar` |
 
 ---
 
