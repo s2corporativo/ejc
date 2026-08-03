@@ -951,6 +951,32 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     _cached = await ai_cache.obter(_cache_key)
     if _cached:
         logger.info("[Gateway] cache HIT (tarefa) → %s (sem chamada ao provedor)", tarefa_label)
+        # IA-007: cache_hit tinha custo zero mas também trilha ZERO — a chamada
+        # não aparecia em nenhum AILog, então uma auditoria via AILog via
+        # "quantas vezes a tarefa X rodou" subcontava exatamente as chamadas
+        # mais repetidas (é o cache que existe pra elas). Grava o mesmo AILog
+        # canônico do caminho sem cache, com tokens/custo em 0 (não houve
+        # chamada real) e a origem marcada em `fontes_rag` — não crasha o cache
+        # hit se o log falhar (best-effort: response já está pronta e o cache
+        # hit deve continuar rápido; erro de log aqui não é motivo para bater
+        # de novo no provedor).
+        if db is not None and user_id:
+            try:
+                from app.services.ai.core.audit_logger import _tipo_uso
+                from app.services.ai_guard import registrar_ai_log
+                await registrar_ai_log(
+                    db, user_id=user_id, tipo_uso=_tipo_uso(tarefa), case_id=case_id,
+                    prompt_sanitizado=mensagem[:8000], pii_removida=False,
+                    resposta=_cached.get("texto", "")[:8000],
+                    modelo=_cached.get("modelo", ""),
+                    fontes_rag="[cache_hit] resposta servida do cache local, sem chamada ao provedor.",
+                    tokens_input=0, tokens_output=0, custo_estimado=0.0,
+                )
+            except Exception:
+                logger.warning(
+                    "[Gateway] falha ao registrar AILog de cache_hit (tarefa=%s) — "
+                    "resposta servida normalmente", tarefa_label, exc_info=True,
+                )
         return {
             "conteudo": _cached.get("texto", ""), "modelo": _cached.get("modelo", ""),
             "provider": _cached.get("provedor", ""),
