@@ -104,3 +104,43 @@ def test_barreira_externa_do_gateway_remove_cpf_cnpj():
     assert "[EMAIL]" in limpos[0]["content"]
     assert "123.456.789-09" not in limpos[0]["content"]
     assert residual == []
+
+
+# ── Segunda barreira: nenhum padrão pode ficar de fora (IA-008) ───────────────
+# `validar_sem_pii` é o gate que decide se o texto pode ir ao provedor EXTERNO.
+# A lista de tipos era escrita à mão, casando NOME com ÍNDICE de _PATTERNS, e
+# ficou para trás quando [CARTAO] e [CHAVE_PIX] entraram: `sanitizar_pii`
+# mascarava os dois, mas o gate respondia "limpo" com eles residuais em claro.
+
+from app.services.sanitizer import _CHECKS_PII, _PATTERNS  # noqa: E402
+
+
+def test_validacao_cobre_todo_padrao_de_sanitizacao():
+    """Regressão estrutural: quem sanitiza e quem valida têm de cobrir o MESMO
+    conjunto. Padrão novo em _PATTERNS entra na validação sozinho — é o que
+    impede a lista de envelhecer de novo."""
+    assert len(_CHECKS_PII) == len(_PATTERNS)
+    nomes = [n for n, _ in _CHECKS_PII]
+    assert "CARTAO" in nomes
+    assert "CHAVE_PIX" in nomes
+    assert len(nomes) == len(set(nomes)), "rótulo duplicado quebra o mapeamento"
+
+
+def test_validar_detecta_cartao_de_credito_residual():
+    """Cartão em claro NÃO pode ser considerado texto limpo para envio externo."""
+    assert "CARTAO" in validar_sem_pii("Pagamento no cartao 4111 1111 1111 1111")
+    assert "CARTAO" in validar_sem_pii("cartao 4111-1111-1111-1111")
+
+
+def test_validar_detecta_chave_pix_aleatoria_residual():
+    """Chave PIX aleatória é UUID e identifica a conta do titular."""
+    assert "CHAVE_PIX" in validar_sem_pii(
+        "Transferir para a chave 3f2504e0-4f89-11d3-9a0c-0305e82c3301"
+    )
+
+
+def test_validacao_interna_tambem_barra_cartao_e_pix():
+    """O caminho interno dispensa CPF/CNPJ (o escritório já os conhece), mas
+    dado financeiro não é dispensado por ser interno."""
+    residual = validar_sem_pii_interno("cartao 4111 1111 1111 1111")
+    assert "CARTAO" in residual

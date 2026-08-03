@@ -13,8 +13,29 @@ from app.models.audit_log import criar_audit_log
 router = APIRouter(prefix="/cases/{case_id}/indice-risco", tags=["Índice de Risco"])
 
 
-def _nivel(indice: int) -> str:
-    if indice <= 25: return "baixo"
+#: Caso sem NENHUM documento não tem risco baixo — tem risco DESCONHECIDO. O
+#: índice mede o risco que se consegue enxergar; sem base documental não há o
+#: que enxergar, e devolver "baixo" faz a interface afirmar que está tudo bem
+#: exatamente quando ela tem menos evidência para afirmar qualquer coisa. Era o
+#: caso concreto: sem documentos rendia 15 pontos, 15 caía em "baixo", e o
+#: painel pintava de verde a incompletude.
+NIVEL_INDETERMINADO = "indeterminado"
+
+
+def _nivel(indice: int, *, base_avaliavel: bool = True) -> str:
+    """Faixa do índice; `base_avaliavel=False` impede a classificação "baixo".
+
+    A trava é DELIBERADAMENTE só sobre "baixo". Acima dele já existe risco
+    conhecido e medido — um caso sem documentos e com prazo vencido é "medio"
+    de verdade, e rebaixar isso para "indeterminado" jogaria fora sinal real.
+    O que não pode existir é a combinação "não sei nada sobre este caso" +
+    "portanto está seguro".
+
+    O front já trata nível desconhecido como neutro (cinza), então este valor
+    aparece sem cor de aprovação e sem exigir mudança de interface.
+    """
+    if indice <= 25:
+        return "baixo" if base_avaliavel else NIVEL_INDETERMINADO
     if indice <= 50: return "medio"
     if indice <= 75: return "alto"
     return "critico"
@@ -81,7 +102,8 @@ async def recalcular(
     if prazos > 0:
         fatores["prazo_vencido"] = True
         indice += min(30, prazos * 15)
-    if int(data["total_docs"] or 0) == 0:
+    tem_documentos = int(data["total_docs"] or 0) > 0
+    if not tem_documentos:
         fatores["sem_documentos"] = True
         indice += 15
     valor = float(data["valor_causa"] or 0)
@@ -95,7 +117,7 @@ async def recalcular(
         fatores["processo_antigo"] = True
         indice += 10
     indice = min(indice, 100)
-    nivel = _nivel(indice)
+    nivel = _nivel(indice, base_avaliavel=tem_documentos)
 
     # Salvar histórico
     await db.execute(
