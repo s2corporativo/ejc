@@ -38,6 +38,25 @@ def test_cliente_axios_resolve_no_prefixo_publico_versionado():
     assert _final_url(True, "/auth/refresh") == "/api/v1/auth/refresh"
 
 
+def test_cliente_axios_apara_prefixo_repetido_como_o_interceptor():
+    """Regressão P0-009: o verificador precisa reproduzir o interceptor de
+    frontend/src/lib/api.ts, não o defeito que ele mascarava.
+
+    O interceptor apara /api/v1, /api ou /v1 do config.url antes de a chamada
+    sair, porque o baseURL do cliente já é /api/v1. Antes desta correção
+    `_final_url` concatenava direto e produzia `/api/v1/v1/despesas` — URL que
+    o navegador nunca emite. Como oito routers embutiam "/v1" no próprio
+    prefixo, essa URL fantasma casava a rota real: o contrato ficava verde
+    enquanto 27 chamadas do frontend davam 404 em produção.
+    """
+    assert _final_url(True, "/v1/despesas") == "/api/v1/despesas"
+    assert _final_url(True, "/api/casos") == "/api/v1/casos"
+    assert _final_url(True, "/api/v1/casos") == "/api/v1/casos"
+    # Sem barra depois do prefixo NÃO é prefixo repetido — é nome de recurso.
+    assert _final_url(True, "/v1beta/x") == "/api/v1/v1beta/x"
+    assert _final_url(True, "/apiario") == "/api/v1/apiario"
+
+
 def test_prefixo_publico_versionado_equivale_ao_path_interno_exato():
     assert _internal_api_url("/api/v1") == "/api"
     assert _internal_api_url("/api/v1/auth/refresh") == "/api/auth/refresh"
