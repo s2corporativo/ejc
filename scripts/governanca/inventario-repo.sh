@@ -60,14 +60,22 @@ echo "Inventariando repositorio (commit $REV)..."
   echo "## 1. Estrutura de primeiro e segundo nivel"
   echo ""
   echo '```'
-  # `var/` fica de fora: e diretorio transitorio e ignorado, criado por este
-  # proprio script para guardar a copia anterior. Inclui-lo faria o inventario
-  # se auto-contaminar, listando o proprio rastro como estrutura do projeto.
-  find . -maxdepth 2 -type d \
-    -not -path './.git*' -not -path '*/node_modules*' -not -path '*/.venv*' \
-    -not -path '*/__pycache__*' -not -path './dist*' -not -path './build*' \
-    -not -path './graphify-out*' -not -path './var*' -not -path './evidencias*' \
-    | sort | sed 's|^\./||' | sed '/^\.$/d'
+  # A exclusao vem do proprio .gitignore, via `git check-ignore`, e nao de uma
+  # lista fixa aqui. A lista fixa so casava caminhos ancorados na raiz
+  # (`./dist*`, `./graphify-out*`), entao `backend/.pytest_cache`,
+  # `frontend/dist` e `backend/graphify-out` entravam no inventario conforme o
+  # que a maquina de quem regenera tivesse rodado — e o documento saia
+  # descrevendo o ambiente local, nao o repositorio. Isso tambem cobre
+  # `var/`, transitorio criado por este proprio script: incluido, o inventario
+  # se auto-contaminaria listando o proprio rastro como estrutura do projeto.
+  DIRS=$(find . -maxdepth 2 -type d -not -path './.git' -not -path './.git/*' \
+    | sed 's|^\./||' | sed '/^\.$/d' | sort)
+  IGNORADOS=$(printf '%s\n' "$DIRS" | git check-ignore --stdin 2>/dev/null)
+  if [ -n "$IGNORADOS" ]; then
+    printf '%s\n' "$DIRS" | grep -vxF "$IGNORADOS"
+  else
+    printf '%s\n' "$DIRS"
+  fi
   echo '```'
   echo ""
 

@@ -1,6 +1,6 @@
 # MAPA DE MODULOS — EJC
 
-> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-07-29, commit `eb1ebfb4`.
+> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-08-03, commit `b0472404`.
 > Regenerar apos alteracao estrutural. Nao editar as secoes automaticas a mao.
 
 ## 1. Estrutura de primeiro e segundo nivel
@@ -8,10 +8,11 @@
 ```
 .claude
 .claude/agents
+.claude/hooks
 .claude/skills
-audit
-audit/quality
-auditoria-grafo
+.githooks
+.github
+.github/workflows
 backend
 backend/alembic
 backend/app
@@ -23,7 +24,9 @@ docs
 docs/ai
 docs/analises
 docs/audit
+docs/auditoria
 docs/auditorias
+docs/historico
 frontend
 frontend/public
 frontend/src
@@ -37,6 +40,7 @@ scripts
 scripts/audit_2026-07-01
 scripts/backup
 scripts/governanca
+scripts/rag
 scripts/tests
 vps-tools
 ```
@@ -47,31 +51,31 @@ vps-tools
 |---|---|---|
 | `backend` | 1 | 42 |
 | `backend/alembic` | 1 | 129 |
-| `backend/alembic/versions` | 117 | 8246 |
-| `backend/app` | 2 | 565 |
-| `backend/app/core` | 27 | 3900 |
+| `backend/alembic/versions` | 121 | 8642 |
+| `backend/app` | 2 | 578 |
+| `backend/app/core` | 28 | 4126 |
 | `backend/app/eval` | 4 | 1107 |
 | `backend/app/integrations` | 5 | 458 |
-| `backend/app/models` | 62 | 4611 |
+| `backend/app/models` | 62 | 4761 |
 | `backend/app/modules` | 1 | 0 |
 | `backend/app/modules/auditoria` | 2 | 60 |
 | `backend/app/modules/case_partes` | 1 | 0 |
 | `backend/app/modules/indice_risco` | 1 | 0 |
 | `backend/app/modules/score_juridico` | 1 | 0 |
 | `backend/app/repositories` | 2 | 98 |
-| `backend/app/routers` | 163 | 46698 |
-| `backend/app/schemas` | 30 | 2459 |
+| `backend/app/routers` | 164 | 47202 |
+| `backend/app/schemas` | 31 | 2516 |
 | `backend/app/seeds` | 10 | 3793 |
-| `backend/app/services` | 138 | 43878 |
+| `backend/app/services` | 144 | 46652 |
 | `backend/app/services/ai` | 12 | 2218 |
 | `backend/app/services/ai/agent` | 4 | 769 |
 | `backend/app/services/ai/agent/tools` | 6 | 886 |
 | `backend/app/services/ai/core` | 10 | 2233 |
 | `backend/app/services/ambiental` | 2 | 338 |
-| `backend/app/services/calc` | 8 | 1540 |
+| `backend/app/services/calc` | 8 | 1722 |
 | `backend/app/services/conhecimento_ingest` | 4 | 592 |
 | `backend/app/services/fiscal` | 3 | 605 |
-| `backend/app/services/ingestors` | 8 | 1512 |
+| `backend/app/services/ingestors` | 8 | 1585 |
 | `backend/app/services/juris_import` | 6 | 836 |
 | `backend/app/services/nfse` | 3 | 510 |
 | `backend/app/services/observability` | 2 | 270 |
@@ -81,33 +85,34 @@ vps-tools
 | `backend/app/utils` | 4 | 250 |
 | `backend/scripts` | 13 | 1869 |
 | `backend/seeds` | 2 | 340 |
-| `backend/tests` | 324 | 61204 |
+| `backend/tests` | 345 | 65878 |
 
 ## 3. Frontend — estrutura de src
 
 | Caminho | Arquivos .ts/.tsx | Linhas |
 |---|---|---|
 | `frontend/src` | 4 | 234 |
-| `frontend/src/components` | 84 | 34169 |
+| `frontend/src/components` | 87 | 34426 |
 | `frontend/src/components/__tests__` | 4 | 579 |
 | `frontend/src/components/base` | 1 | 97 |
 | `frontend/src/components/ui` | 6 | 389 |
-| `frontend/src/components/visual` | 4 | 1815 |
+| `frontend/src/components/visual` | 4 | 1634 |
 | `frontend/src/components/visual/__tests__` | 1 | 96 |
-| `frontend/src/config` | 7 | 1736 |
+| `frontend/src/config` | 7 | 1766 |
 | `frontend/src/config/__tests__` | 1 | 21 |
 | `frontend/src/content` | 1 | 820 |
 | `frontend/src/contexts` | 1 | 69 |
 | `frontend/src/lib` | 27 | 2366 |
-| `frontend/src/pages` | 76 | 35914 |
-| `frontend/src/pages/CasoDetalhe` | 8 | 3086 |
+| `frontend/src/pages` | 78 | 36541 |
+| `frontend/src/pages/CasoDetalhe` | 14 | 4172 |
 | `frontend/src/pages/CentralAtividades` | 2 | 527 |
+| `frontend/src/pages/EntradaUnica` | 4 | 1208 |
 | `frontend/src/pages/__tests__` | 6 | 381 |
-| `frontend/src/pages/portal` | 7 | 1733 |
-| `frontend/src/pages/ramos` | 9 | 5275 |
-| `frontend/src/stores` | 8 | 1288 |
-| `frontend/src/types` | 2 | 379 |
-| `frontend/src/utils` | 7 | 376 |
+| `frontend/src/pages/portal` | 7 | 1746 |
+| `frontend/src/pages/ramos` | 9 | 5303 |
+| `frontend/src/stores` | 8 | 1307 |
+| `frontend/src/types` | 4 | 521 |
+| `frontend/src/utils` | 9 | 498 |
 
 ## 4. Modelos de dados detectados
 
@@ -128,7 +133,6 @@ AlterarSenhaRequest
 AmbientalCreate
 AnalisarCasoRequest
 AnalisarIn
-AnalisarMagistradoRequest
 AnalisarUrlRequest
 AnaliseCompletaIn
 AnaliseTeseRequest
@@ -198,6 +202,7 @@ Client
 ClientBase
 ClientUpdate
 ClienteConversao
+ClienteEntrada
 ClienteExtraido
 ConfiguracaoMolde
 ConflitoCheckRequest
@@ -221,6 +226,7 @@ CoreTaskRequest
 CorrecaoIn
 CorrecaoOut
 CredencialMeta
+CriarCasoEntradaRequest
 CriarSolicitacaoReq
 CriticaAdversarial
 CriticaAdversarialRequest
@@ -391,6 +397,7 @@ PenalIn
 PendenciaRevisao
 PeriodoOut
 PesquisaIn
+PrazoEntrada
 PrazoExtraido
 PrePreencherIn
 PrecificacaoCreate
@@ -416,6 +423,7 @@ ProvaCreate
 ProvaExtraida
 ProvaUpdate
 ProviderStatus
+PublicarArquivoReq
 PushSubIn
 PushSubscription
 PushSubscriptionList
@@ -542,15 +550,11 @@ _ResolverClienteReq
 
 ## 5. Migrations
 
-Total de arquivos: 117
+Total de arquivos: 121
 
 Ultimas 15 por ordem de numeracao:
 
 ```
-backend/alembic/versions/108_credential_vault.py
-backend/alembic/versions/109_rag_chave_origem_por_cliente.py
-backend/alembic/versions/110_datajud_cognitive_feed.py
-backend/alembic/versions/111_ai_provider_metrics.py
 backend/alembic/versions/112_client_pii_drop_plaintext.py
 backend/alembic/versions/113_calendar_feed_revocation.py
 backend/alembic/versions/114_consolidar_dataroom_teses_v4.py
@@ -562,6 +566,10 @@ backend/alembic/versions/119_base_rag_enum.py
 backend/alembic/versions/120_chunk_pagina.py
 backend/alembic/versions/121_sala_juridica_chat.py
 backend/alembic/versions/122_route_usage_metrics.py
+backend/alembic/versions/123_legal_doc_ai_log_vinculo.py
+backend/alembic/versions/124_data_room_public_link_hardening.py
+backend/alembic/versions/125_fonte_ingestao_execucoes_zeradas.py
+backend/alembic/versions/126_case_status_quatro_estados.py
 ```
 
 Reserva de numeracao: `backend/alembic/MIGRATION_RESERVATIONS.md`.

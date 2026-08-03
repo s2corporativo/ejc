@@ -1,6 +1,6 @@
 # ARQUITETURA ATUAL — EJC
 
-> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-07-29, commit `eb1ebfb4`.
+> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-08-03, commit `b0472404`.
 > Descreve o estado observado, nao o estado desejado.
 
 ## 1. Dependencias declaradas — backend
@@ -96,40 +96,41 @@ google-auth==2.55.1
 40:  backend:
 45:    ports:
 99:    volumes:
-110:    depends_on:
-117:    # OBRIGATÓRIO: o frontend usa depends_on: backend: service_healthy —
-127:  worker:
-155:    volumes:
-157:    depends_on:
-173:  frontend:
-178:    ports:
-186:    depends_on:
-199:  langfuse-db:
-200:    image: postgres:16-alpine
-202:    profiles: ["observability"]
-212:    volumes:
-220:  langfuse:
-221:    image: langfuse/langfuse:2
-223:    profiles: ["observability"]
-225:    depends_on:
-230:    ports:
-257:  ollama:
-259:    image: ollama/ollama:0.31.1
-261:    profiles: ["ia-local"]
-280:    volumes:
-290:  ollama-init:
-296:    image: ollama/ollama:0.31.1
-298:    profiles: ["ia-local"]
-301:    depends_on:
-333:  default:
-335:  ia:
-337:volumes:
-338:  postgres_data:
-339:  uploads_data:
-340:  backups_data:
-341:  redis_data:
-342:  langfuse_db_data:
-343:  ollama_models:
+113:    depends_on:
+120:    # OBRIGATÓRIO: o frontend usa depends_on: backend: service_healthy —
+130:  worker:
+158:    volumes:
+161:    depends_on:
+177:  frontend:
+182:    ports:
+190:    depends_on:
+203:  langfuse-db:
+204:    image: postgres:16-alpine
+206:    profiles: ["observability"]
+216:    volumes:
+224:  langfuse:
+225:    image: langfuse/langfuse:2
+227:    profiles: ["observability"]
+229:    depends_on:
+234:    ports:
+261:  ollama:
+263:    image: ollama/ollama:0.31.1
+265:    profiles: ["ia-local"]
+284:    volumes:
+294:  ollama-init:
+300:    image: ollama/ollama:0.31.1
+302:    profiles: ["ia-local"]
+305:    depends_on:
+337:  default:
+339:  ia:
+341:volumes:
+342:  postgres_data:
+343:  uploads_data:
+344:  backups_data:
+345:  fastembed_cache:
+346:  redis_data:
+347:  langfuse_db_data:
+348:  ollama_models:
 ```
 
 ## 4. Variaveis de ambiente esperadas
@@ -330,6 +331,7 @@ USD_BRL_RATE
 VAPID_CLAIM_EMAIL
 VAPID_PRIVATE_KEY
 VAPID_PUBLIC_KEY
+VAULT_MASTER_KEYS
 WHATSAPP_ENABLED
 ```
 
@@ -353,6 +355,7 @@ WHATSAPP_ENABLED
 | `probe-apis.yml` | push workflow_dispatch | — |
 | `producao-prova-continuidade.yml` | workflow_dispatch | Produção — flags efetivas, restauração e rollback |
 | `production-backup-monitor.yml` | schedule workflow_dispatch | Produção — saúde do backup diário |
+| `rag-production-activation.yml` | pull_request workflow_dispatch | Validar ativação, idempotência e rollback · Ativar RAG semântico na VPS |
 
 > Os nomes de job desta tabela sao os contextos exigidos na protecao da
 > branch `main` (`scripts/governanca/branch-protection.sh`). Renomear um

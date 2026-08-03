@@ -68,10 +68,27 @@ de identificador fixo:
 mas fixa o head à mão — por isso todo PR com migration precisa editá-lo, e dois PRs com
 migration conflitam ali por construção.
 
+## Alterações em migrations que não criam número
+
+A trava `.github/workflows/governanca.yml` reprova qualquer PR que toque
+`backend/alembic/versions/` sem editar este arquivo. Isso inclui PR que **não** cria
+migration — e é proposital: toda mão em migration existente fica registrada aqui.
+
+| Data | PR | Arquivos | O que mudou | Autorização |
+|---|---|---|---|---|
+| 2026-08-03 | [#676](https://github.com/s2corporativo/ejc/pull/676) | 002, 011, 013, 039 | Remoção de 4 imports mortos (F401), para permitir que o gate de ruff do CI passe a cobrir `alembic/`. Nenhuma linha de `upgrade()`, `downgrade()` ou schema foi tocada; head inalterado. | Titular, no pedido de higienização geral, após o risco ser apresentado |
+
+Conferência feita antes da remoção, um arquivo por vez: o `vector(384)` da 002 está em
+SQL cru via `op.execute` e não usa o tipo Python do pgvector; 011 e 013 não têm uma única
+referência a `sa.`; a 039 não usa `ARRAY`. As 121 migrations foram carregadas uma a uma
+depois da mudança, sem falha.
+
 ## Regras que valem sempre
 
 - **Head único.** O repositório nunca tem dois heads; guardado pelos dois testes acima.
-- **Migration aplicada em produção não se edita** — corrige-se com uma nova.
+- **Migration aplicada em produção não se edita** — corrige-se com uma nova. A exceção é
+  mudança comprovadamente sem efeito (comentário, import morto), que exige autorização do
+  titular e registro na tabela da seção anterior.
 - **Autogenerate se revisa à mão.** Dezenas de tabelas do EJC existem apenas em SQL bruto e
   não têm model ORM; `alembic/env.py` tem guarda `include_name()`. Nunca aceite um
   `drop_table` proposto pelo autogenerate sem conferir a tabela.
