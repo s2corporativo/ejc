@@ -24,6 +24,8 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
+
 from app.core.config import get_settings
 from app.services import legal_base
 from app.services.ai_cost import custo_busca_web_brl, estimar_custo_brl
@@ -288,6 +290,38 @@ async def _chamar_com_barreira(provider, model, messages, modo_sanitizacao,
     return texto, texto_para_log, usage, messages_envio, bool(mapa_reidratacao)
 
 
+def _exigir_ia_ligada(origem: str) -> None:
+    """Kill-switch REAL de IA — barra no gateway, não no chamador.
+
+    P1-3 da auditoria integral (docs/auditoria-ejc/06-ia-rag-grafo-juridico.md
+    §1.1): `AI_ENABLED` só era consultado em `transcrever_audio()` e em
+    `ia_disponivel()`. A checagem ficava a cargo de cada router, e a cobertura
+    era parcial — `provas.py`, `teses.py`, `jurisprudencia_interna.py`,
+    `prompts_juridicos.py` e `ia_saude.py` importam o gateway e não checavam
+    nada. Com `AI_ENABLED=false` esses endpoints seguiam gerando e cobrando IA:
+    o kill-switch não desligava a IA.
+
+    Agora o gate vive nas TRÊS entradas de texto do gateway (chat,
+    executar_tarefa_ia, chat_agentico), que é por onde toda chamada de modelo
+    obrigatoriamente passa; `transcrever_audio()` mantém a checagem própria, que
+    já existia e é mais restritiva. 503 (e não 403) porque é indisponibilidade
+    deliberada de serviço, não falta de permissão — e é o código que o frontend
+    já trata como "IA não ativada".
+
+    Lê o SINGLETON `settings` (mutado in-place, nunca via cache_clear — ver
+    `services/credential_vault_service.py:390`), então o kill-switch acionado em
+    runtime pela governança vale na chamada seguinte, sem reiniciar o processo.
+    """
+    if not settings.AI_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "IA desativada pelo administrador (AI_ENABLED=false). "
+                f"Origem da chamada: {origem}."
+            ),
+        )
+
+
 async def chat(
     messages: list[dict],
     task_type: str = "analise_juridica",
@@ -316,6 +350,7 @@ async def chat(
 
     Retorna GatewayResponse com texto, metadados e informações de fallback.
     """
+    _exigir_ia_ligada("chat")
     # Modo de sanitização de PII é decidido pelo task_type ORIGINAL (antes dos
     # aliases do gateway), pois o mapeamento LGPD usa o vocabulário de tarefa.
     task_type_original = task_type
@@ -919,6 +954,7 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     EXTERNO_PSEUDONIMIZADO/EXTRACAO_LOCAL pseudonimizam (reversível) e reidratam
     a resposta; MASCARAMENTO mantém o mascaramento irreversível legado. O `mapa`
     de reidratação vive só em memória; AILog/Langfuse recebem versão PSEUDONIMIZADA."""
+    _exigir_ia_ligada("executar_tarefa_ia")
     from app.services.ai.sanitization_policy import (
         ModoSanitizacao, modo_para_task, reforcar_sigilo,
     )
@@ -1232,6 +1268,7 @@ async def chat_agentico(
     Retorna {"text","tool_calls","stop_reason","usage","provider","model",
              "text_para_log"}. `text_para_log` é PSEUDONIMIZADO (vai ao AILog;
     nunca PII reidratada)."""
+    _exigir_ia_ligada("chat_agentico")
     from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
 
     task_type_original = task_type

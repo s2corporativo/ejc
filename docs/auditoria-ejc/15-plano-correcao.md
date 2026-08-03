@@ -1,15 +1,22 @@
 # 15 — Plano de correção priorizado (Fase 15)
 
-> **Estado: os três P0 foram executados** (P0-2 → P0-1 → P0-3), por autorização do titular, na
-> ordem recomendada abaixo. **P0-4 e todos os P1/P2/P3 seguem pendentes.**
-> A ordem respeita o grafo de dependências (`03-mapa-dependencias.md` §3) e a matriz de impacto:
-> **corrigir o verificador antes do defeito que ele deveria ter pego.**
+> **Estado: os quatro P0 e seis itens P1 foram executados**, por autorização do titular
+> ("autorizo todos"), na ordem recomendada abaixo. A ordem respeita o grafo de dependências
+> (`03-mapa-dependencias.md` §3) e a matriz de impacto: **corrigir o verificador antes do defeito
+> que ele deveria ter pego.**
 >
 > | | Estado |
 > |---|---|
-> | P0-1 · P0-2 · P0-3 | ✅ **corrigidos e validados** (4 537 testes backend, 364 frontend, ruff limpo) |
-> | P0-4 (gate de cobertura no CI) | ⏳ pendente — exige decisão do titular (CI/CD) |
-> | P1 · P2 · P3 | ⏳ pendentes — inalterados |
+> | P0-1 · P0-2 · P0-3 | ✅ **corrigidos e validados** |
+> | P0-4 (gate de cobertura no CI) | ✅ **corrigido** — `--cov-fail-under=65` no job `db-validation` |
+> | P1-1 · P1-2 · P1-3 · P1-4 (segurança e custo) | ✅ **corrigidos** |
+> | P1-5 · P1-6 (LGPD) | ✅ **corrigidos** — migration 127 + anonimização das tabelas satélite |
+> | P1-7 (`homolog.qa` em produção) | ⛔ **não executável aqui** — exige o banco de produção, vedado pela regra 9. Procedimento em `00-resumo-executivo.md` §9.1 |
+> | P1 de qualidade · P2 · P3 | ⏳ pendentes — inalterados |
+>
+> **Validação global:** 4 570 testes de backend, 364 no frontend, `ruff check app` limpo,
+> `tsc --noEmit` exit 0. A migration 127 foi exercitada contra Postgres 16 real (upgrade →
+> conferência linha a linha → reexecução → downgrade).
 
 ## Ordem recomendada de execução
 

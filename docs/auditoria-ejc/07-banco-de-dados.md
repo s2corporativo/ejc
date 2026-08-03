@@ -1,13 +1,19 @@
 # 07 — Banco de dados e migrations (Fase 7)
 
-> **Limitação declarada:** não há PostgreSQL nesta sessão e o `alembic` não está instalado
-> (`python -m alembic heads` → `No module named alembic.__main__`). Toda a cadeia foi reconstruída
-> por *parsing* de `revision`/`down_revision` dos 121 arquivos. Nada foi executado, criado ou
-> alterado.
+> **Limitação declarada (no momento do diagnóstico):** não havia PostgreSQL na sessão e o
+> `alembic` não estava instalado. A cadeia foi reconstruída por *parsing* de
+> `revision`/`down_revision` dos 121 arquivos.
+>
+> **Atualização.** Ambas as limitações foram levantadas depois: `python -m alembic heads` roda, e
+> a migration **127** (P1-5) foi exercitada contra um **PostgreSQL 16 real e descartável** —
+> upgrade, conferência linha a linha do backfill (CPF formatado, CNPJ cru, documento-lixo e NULL),
+> reexecução idempotente e downgrade. O head passou de `126_case_status_quatro_estados` para
+> **`127_case_parte_pii_encriptado`**. O que segue indisponível localmente é o **pgvector**, então
+> `alembic upgrade head` completo continua sendo verificado só no CI.
 
 ## 1. Cadeia Alembic — SAUDÁVEL
 
-**Head real: `126_case_status_quatro_estados`** (`backend/alembic/versions/126_case_status_quatro_estados.py:44`).
+**Head no diagnóstico: `126_case_status_quatro_estados`.** Head atual, após o P1-5 deste PR: **`127_case_parte_pii_encriptado`** — 122 migrations. Nenhum número escrito em documento é confiável; confirme com `cd backend && python -m alembic heads`.
 
 | Verificação | Resultado |
 |---|---|

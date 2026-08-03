@@ -1,5 +1,15 @@
 # 14 — Testes (Fase 14)
 
+> **Estado (atualizado):** o P0-4 desta fase — a suíte grande e verde sem nenhum piso de
+> cobertura, com `pytest-cov` instalado e nunca acionado — **foi corrigido**. O job
+> `db-validation` do `ci.yml` agora roda `--cov=app --cov-fail-under=65`. O piso é o CHÃO
+> MEDIDO (66% em 4 570 testes locais, sem `RUN_DB_TESTS`), não uma meta: existe para a cobertura
+> não cair em silêncio, e é para subir junto com ela.
+>
+> Os números brutos abaixo são os do diagnóstico (4 463 testes). Após as correções deste PR a
+> suíte tem **4 570 testes passando**. Os achados T-P0-1 (rota sem teste), T-P1-1 e T-P2-1/2
+> (teste que não exercita) **seguem abertos**.
+
 ## 1. Execução real — números brutos
 
 ### Backend

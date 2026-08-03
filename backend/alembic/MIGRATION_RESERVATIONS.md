@@ -47,6 +47,7 @@ número volta a ficar disponível).
 | 124_dataroom_public_hardening | 123_legal_doc_ai_log_vinculo | fix/dataroom-public-link-hardening | [#547](https://github.com/s2corporativo/ejc/issues/547) | ChatGPT | Mesclada | Hash de links públicos em repouso e publicação externa explícita por arquivo. |
 | 125_fonte_execucoes_zeradas | 124_dataroom_public_hardening | claude/bloco5-monitorar-resultado | [#624](https://github.com/s2corporativo/ejc/pull/624) | Claude Code | Mesclada | Contador de execuções improdutivas + `ja_produziu` por fonte de ingestão (Bloco 5). |
 | 126_case_status_quatro_estados | 125_fonte_execucoes_zeradas | claude/bloco3-quatro-estados | [#630](https://github.com/s2corporativo/ejc/pull/630) | Claude Code | Mesclada | Quatro estados de caso (Bloco 3, decisão do titular 2026-08-02). Nasceu encadeada na 124; com o merge do #624 o down_revision foi promovido para a 125, como planejado. **Head da `main`.** |
+| 127_case_parte_pii_encriptado | 126_case_status_quatro_estados | claude/auditoria-ejc-graphify-aoa2hi | [#652](https://github.com/s2corporativo/ejc/pull/652) | Claude Code | Reservada | P1-5 da auditoria integral: conclui o cutover C6/LGPD em `case_partes` (`cpf_cnpj` em texto puro → `cpf_cnpj_enc`/`_hash`/`_mascarado`, com backfill por keyset antes do DROP). O número 127 estava livre — a reserva anterior (`127_audit_log_worm`, PR #497) foi **Revogada**. |
 
 > **Decisão do titular em 2026-07-29.** A continuidade das correções foi autorizada após
 > a integração dos PRs #535, #542 e #543. As reservas das branches antigas #495/#497

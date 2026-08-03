@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "126_case_status_quatro_estados"
+HEAD_REVISION = "127_case_parte_pii_encriptado"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -118,3 +118,10 @@ def test_quatro_estados_encadeia_apos_contador_de_execucoes_zeradas():
     # MIGRATION_RESERVATIONS.md — a cadeia provisória na 124 foi desfeita.
     revision = _script_directory().get_revision("126_case_status_quatro_estados")
     assert revision.down_revision == "125_fonte_execucoes_zeradas"
+
+
+def test_pii_da_parte_encadeia_apos_quatro_estados():
+    # P1-5 da auditoria integral: conclui em `case_partes` o cutover C6/LGPD que
+    # as migrations 061 → 112 fizeram só em `clients`.
+    revision = _script_directory().get_revision("127_case_parte_pii_encriptado")
+    assert revision.down_revision == "126_case_status_quatro_estados"
