@@ -7,7 +7,7 @@
 > não cair em silêncio, e é para subir junto com ela.
 >
 > Os números brutos abaixo são os do diagnóstico (4 463 testes). Após as correções deste PR a
-> suíte tem **4 755 testes passando** com `RUN_DB_TESTS=1` contra Postgres 16 real.
+> suíte tem **4 802 testes passando** com `RUN_DB_TESTS=1` contra Postgres 16 real.
 >
 > **T-P0-1 fechado:** `peca_geracao_router` — o gerador de documento, e o achado mais grave desta
 > fase — ganhou teste funcional (`test_peca_geracao_router_dblevel.py`, 9 testes contra banco
@@ -16,6 +16,19 @@
 > piso de advogado, o 404/400, e o **sandbox Jinja2** — que protege contra SSTI no template vindo
 > do banco e nunca tivera teste. Esse último foi verificado por negação: trocando o
 > `SandboxedEnvironment` pelo `Template` padrão, o teste reprova.
+>
+> **T-P0-3 fechado:** `pix.py` e `api_keys.py` — "dinheiro e credencial" — ganharam teste
+> (`test_pix_brcode.py`, 29 testes; `test_api_keys_dblevel.py`, 18 contra banco real).
+>
+> **E o teste do PIX encontrou um defeito vivo:** uma chave PIX acima de ~82 caracteres fazia o
+> montador EMV emitir TRÊS dígitos no campo de dois do comprimento (`01130…`), desalinhando a
+> leitura de todo o payload. O BR Code saía estruturalmente corrompido **com HTTP 200** — a falha
+> só aparecia no aplicativo do banco, na hora de o cliente pagar. Corrigido no mesmo commit:
+> validação contra o limite do BCB (77 caracteres, o do tipo e-mail) e 422 na rota.
+>
+> É o argumento mais concreto desta fase: os dois módulos que a auditoria apontou como os piores
+> lugares para não haver teste tinham, em um deles, exatamente o tipo de defeito que só um teste
+> estrutural pega — nenhuma leitura de código o revelaria, e nenhum erro de servidor o denunciaria.
 >
 > T-P1-1 e T-P2-1/2 (teste que não exercita) **seguem abertos**.
 
