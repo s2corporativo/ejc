@@ -32,6 +32,25 @@ def executa(comando: str, cwd: Path | None = None) -> bool:
     return '"deny"' in resultado.stdout
 
 
+@pytest.fixture(scope="module")
+def repo_em_branch_de_trabalho(tmp_path_factory) -> Path:
+    """Repo temporário numa branch de trabalho.
+
+    O guarda consulta a branch ATUAL do diretório (nega git mutante na main —
+    guarda_comandos.py). Sem cwd fixo, o veredito dependia de onde a suíte
+    roda: no CI de PR o checkout é detached (permite) e no push da main o
+    checkout está na main (nega) — o mesmo teste passava no PR e reprovava na
+    main. Todos os casos parametrizados rodam aqui dentro para o resultado
+    depender só do COMANDO; o comportamento na main tem teste próprio
+    (test_nega_commit_na_main).
+    """
+    repo = tmp_path_factory.mktemp("repo_guarda")
+    subprocess.run(
+        ["git", "init", "-q", "-b", "claude/teste-guarda", str(repo)], check=True
+    )
+    return repo
+
+
 @pytest.mark.parametrize(
     "comando",
     [
@@ -51,8 +70,12 @@ def executa(comando: str, cwd: Path | None = None) -> bool:
         "claude --dangerously-skip-permissions",
     ],
 )
-def test_nega_comando_proibido(comando: str) -> None:
-    assert executa(comando), f"deveria bloquear: {comando}"
+def test_nega_comando_proibido(
+    comando: str, repo_em_branch_de_trabalho: Path
+) -> None:
+    assert executa(comando, cwd=repo_em_branch_de_trabalho), (
+        f"deveria bloquear: {comando}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -74,8 +97,12 @@ def test_nega_comando_proibido(comando: str) -> None:
         "rg 'docker compose down -v' RUNBOOK_DEPLOY_FASES_1-3.md",
     ],
 )
-def test_permite_comando_legitimo(comando: str) -> None:
-    assert not executa(comando), f"não deveria bloquear: {comando}"
+def test_permite_comando_legitimo(
+    comando: str, repo_em_branch_de_trabalho: Path
+) -> None:
+    assert not executa(comando, cwd=repo_em_branch_de_trabalho), (
+        f"não deveria bloquear: {comando}"
+    )
 
 
 def test_nega_commit_na_main(tmp_path: Path) -> None:

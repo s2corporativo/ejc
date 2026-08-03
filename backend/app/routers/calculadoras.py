@@ -153,9 +153,13 @@ async def prescricao(req: PrescricaoIn, cu: User = Depends(require_roles(_EQUIPE
 @router.get("/custas-tjmg")
 async def custas_tjmg_endpoint(
     valor_causa: float = Query(..., gt=0),
+    grupo: int = Query(1, ge=1, le=7,
+                       description="Grupo da tabela oficial: 1 cível/fazenda, "
+                                   "2 família/JEC, 3 sucessões, 6 cautelar/"
+                                   "jurisd. voluntária, 7 mandado de segurança"),
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
-    """Custas/Taxa Judiciária TJMG: conversão UFEMG e isenção (valores oficiais
-    2026). As faixas de custas exigem carga da tabela oficial — ver sinalização.
-    """
-    return custas_tjmg.analisar(valor_causa)
+    """Custas iniciais + Taxa Judiciária TJMG (1ª instância, tabela oficial
+    2026 — Anexo I da Lei 14.939/2003). Resultado é MINUTA: a guia oficial
+    se emite no sistema do TJMG. Grupos 4/5 (rubricas fixas) seguem 503."""
+    return custas_tjmg.analisar(valor_causa, grupo=grupo)
