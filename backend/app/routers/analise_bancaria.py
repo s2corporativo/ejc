@@ -15,6 +15,8 @@ from app.models.user import User
 from app.services import ai_gateway, abusividade_service
 from app.services.calc import cet as cet_calc
 from app.core.rate_limit import rate_limit
+from app.core.config import get_settings
+from app.core.upload_seguro import ler_upload_com_teto
 from app.core.upload_guard import validar_upload
 
 router = APIRouter(prefix="/analise-bancaria", tags=["Análise de Documento"])
@@ -132,9 +134,12 @@ async def analisar_documento(
                  f"Válidas: {', '.join(sorted(AREA_PROMPTS))}")
     conteudo = (texto or "").strip()
     if file is not None:
-        raw = await file.read()
         # Pente fino 2026-07-26: era o único upload sem guarda — lia o arquivo
         # inteiro e jogava direto no fitz. Teto + magic bytes ANTES do parse.
+        # DADOS-019: o teto agora é aplicado DURANTE a leitura (ler_upload_com_teto),
+        # não só depois de já ter lido tudo (validar_upload, mantido para o
+        # magic-bytes de PDF).
+        raw = await ler_upload_com_teto(file, get_settings().MAX_UPLOAD_MB * 1024 * 1024)
         validar_upload(raw, exigir_pdf=True)
         try:
             import fitz

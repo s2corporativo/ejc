@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.rate_limit import rate_limit
+from app.core.upload_seguro import ler_upload_com_teto
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
@@ -418,12 +419,16 @@ async def analisar_documentos(
         if ext not in EXTENSOES:
             erros.append({"arquivo": filename, "erro": "Formato não suportado"})
             continue
-        content = await upload.read()
+        # DADOS-019: teto durante a leitura. Loop de lote é soft-fail (erro vai
+        # para `erros` e o lote CONTINUA) — por isso captura a HTTPException do
+        # helper em vez de deixá-la propagar e abortar os arquivos seguintes.
+        try:
+            content = await ler_upload_com_teto(upload, settings.MAX_UPLOAD_MB * 1024 * 1024)
+        except HTTPException:
+            erros.append({"arquivo": filename, "erro": f"Excede {settings.MAX_UPLOAD_MB} MB"})
+            continue
         if not content:
             erros.append({"arquivo": filename, "erro": "Arquivo vazio"})
-            continue
-        if len(content) > settings.MAX_UPLOAD_MB * 1024 * 1024:
-            erros.append({"arquivo": filename, "erro": f"Excede {settings.MAX_UPLOAD_MB} MB"})
             continue
         digest = hashlib.sha256(content).hexdigest()
         if digest in existing_hashes:

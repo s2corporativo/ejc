@@ -23,6 +23,7 @@ from app.services.bank_statement import parse_extrato, detectar_abusivas
 from app.services import bank_report
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.core.rate_limit import rate_limit
+from app.core.upload_seguro import ler_upload_com_teto
 import logging
 
 logger = logging.getLogger("ejc.bank_analysis")
@@ -57,9 +58,10 @@ async def upload(
     fmt = (formato or _fmt_de_nome(file.filename or "")).lower()
     if fmt not in ("ofx", "csv", "pdf"):
         raise HTTPException(422, "Formato não suportado (use PDF, OFX ou CSV)")
-    conteudo = await file.read()
-    if len(conteudo) > 25 * 1024 * 1024:
-        raise HTTPException(413, "Arquivo excede 25MB")
+    # DADOS-019: teto durante a leitura, não depois de já ler tudo.
+    conteudo = await ler_upload_com_teto(
+        file, 25 * 1024 * 1024, mensagem_413="Arquivo excede 25MB",
+    )
 
     aid = str(uuid4())
     try:

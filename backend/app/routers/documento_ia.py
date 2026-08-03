@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
+from app.core.upload_seguro import ler_upload_com_teto
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case, CaseMovimento
@@ -116,9 +117,10 @@ async def analisar(
         if not (file.filename or "").lower().endswith((".pdf", ".docx", ".png", ".jpg", ".jpeg", ".tiff", ".webp")):
             raise HTTPException(415, "Formato não suportado. Envie PDF, DOCX ou imagem.")
 
-    conteudo = await file.read()
-    if len(conteudo) > MAX_BYTES:
-        raise HTTPException(413, "Arquivo muito grande (máx. 25 MB).")
+    # DADOS-019: teto durante a leitura, não depois de já ler tudo.
+    conteudo = await ler_upload_com_teto(
+        file, MAX_BYTES, mensagem_413="Arquivo muito grande (máx. 25 MB).",
+    )
     if not conteudo:
         raise HTTPException(400, "Arquivo vazio.")
 

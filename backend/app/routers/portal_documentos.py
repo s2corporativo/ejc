@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
+from app.core.upload_seguro import ler_upload_com_teto
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
@@ -157,12 +158,11 @@ async def upload_item_solicitacao(
     if ext not in EXTENSOES_PERMITIDAS:
         raise HTTPException(status_code=422, detail=f"Extensão não permitida: {ext}")
 
-    conteudo = await file.read()
-    if len(conteudo) > settings.MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB",
-        )
+    # DADOS-019: teto durante a leitura, não depois de já ler tudo.
+    conteudo = await ler_upload_com_teto(
+        file, settings.MAX_UPLOAD_MB * 1024 * 1024,
+        mensagem_413=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB",
+    )
     # Magic bytes server-side — nunca confiar na extensão/content_type.
     mime_real = _validar_conteudo(ext, conteudo)
 

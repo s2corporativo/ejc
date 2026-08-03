@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.rate_limit import rate_limit
+from app.core.upload_seguro import ler_upload_com_teto
 from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.client import Client
@@ -194,7 +195,14 @@ async def ingerir_arquivos_lote(
     total_bytes) no mesmo formato consumido por montar_dossie/resumo_documentos."""
     total_bytes, virtuais = 0, []
     for uploaded in files:
-        raw = await uploaded.read()
+        # DADOS-019: teto durante a leitura. Um arquivo isolado não pode
+        # exceder o teto do LOTE de qualquer forma (checado abaixo por
+        # `total_bytes`), então capar a leitura individual no mesmo valor não
+        # muda o comportamento em caso normal — só evita bufferizar, sozinho,
+        # mais que o lote inteiro aceitaria.
+        raw = await ler_upload_com_teto(
+            uploaded, MAX_BYTES_LOTE, mensagem_413="Lote excede 120 MB",
+        )
         try:
             expandidos = expandir_arquivo(uploaded.filename or "documento", raw, uploaded.content_type)
         except ValueError as exc:
