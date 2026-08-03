@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "133_user_password_changed_at"
+HEAD_REVISION = "134_processes_numero_cnj_index"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -143,3 +143,8 @@ def test_pii_da_parte_encadeia_apos_audit_logs_worm():
 def test_password_changed_at_encadeia_apos_pii_da_parte():
     revision = _script_directory().get_revision("133_user_password_changed_at")
     assert revision.down_revision == "132_case_parte_pii_encriptado"
+
+
+def test_indice_numero_cnj_encadeia_apos_password_changed_at():
+    revision = _script_directory().get_revision("134_processes_numero_cnj_index")
+    assert revision.down_revision == "133_user_password_changed_at"

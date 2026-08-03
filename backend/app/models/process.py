@@ -34,7 +34,10 @@ class Process(Base):
     # Identificação processual (larguras conforme migration 048 — note que aqui
     # tribunal/comarca/vara são varchar(160), mais largos que os campos legados
     # homônimos em `cases`).
-    numero_cnj = Column(String(30), nullable=True)
+    # Índice (migration 129, DADOS-003): busca por CNJ era varredura
+    # sequencial. NÃO é `unique=True` de propósito — ver a migration para o
+    # motivo (não há como checar duplicata em produção a partir daqui).
+    numero_cnj = Column(String(30), nullable=True, index=True)
     instancia = Column(String(20), nullable=True)
     tribunal = Column(String(160), nullable=True)
     comarca = Column(String(160), nullable=True)
