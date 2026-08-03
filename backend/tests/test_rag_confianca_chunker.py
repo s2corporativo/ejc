@@ -181,3 +181,37 @@ def test_chave_manual_e_estavel_por_origem_e_isolada_por_usuario():
     assert k1 == k2
     assert k1 != k3
     assert "example.test" not in k1
+
+
+# ── Issue #601: vigente=True explícito, não implícito no server_default ──────
+# O ramo "novo" de upsert_documento confiava no server_default="true" da
+# coluna; o ramo "atualizado" (nova versão de doc existente) já gravava
+# vigente=True explicitamente. Um autogenerate futuro que altere o default —
+# ou qualquer INSERT fora deste caminho — mudaria o comportamento do ramo
+# "novo" em silêncio, sem o teste flagrar nada (porque o valor "certo" viria
+# do banco, não do código).
+
+
+async def test_documento_novo_grava_vigente_true_explicitamente():
+    """Não basta o objeto acabar com `.vigente is True` — isso aconteceria
+    mesmo se o código não passasse o campo (o Column tem default). O teste
+    força a distinção: chamando `KnowledgeDoc.__init__` sem vigente no kwargs
+    do fake, o valor do atributo em Python (antes de qualquer INSERT real)
+    fica None — só aparece True se `upsert_documento` o tiver passado."""
+    from app.models.rag import KnowledgeDoc
+    from app.services.ingestion_service import upsert_documento
+
+    db = _FakeDBUpsert()
+    res = await upsert_documento(
+        db, titulo="Lei Y", categoria="legislacao",
+        conteudo="Conteúdo jurídico de teste suficientemente longo para ingestão.",
+        chave_origem="teste:lei-y", embutir_vetores=False,
+    )
+    assert res == "novo"
+    docs = [o for o in db.added if isinstance(o, KnowledgeDoc)]
+    assert len(docs) == 1
+    # Column(Boolean, server_default="true") NÃO popula o atributo Python antes
+    # do INSERT — só o valor default do BANCO, que só existe após o round-trip.
+    # `is True` aqui só passa se `upsert_documento` tiver passado vigente=True
+    # explicitamente no construtor.
+    assert docs[0].vigente is True
