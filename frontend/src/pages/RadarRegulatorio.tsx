@@ -31,7 +31,7 @@ export default function RadarRegulatorio() {
   useEffect(() => {
     setLoading(true);
     api
-      .get("/v1/regulatorio/digest-semanal", { params: { dias } })
+      .get("/regulatorio/digest-semanal", { params: { dias } })
       .then((r) => setData(r.data))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
