@@ -19,7 +19,7 @@ from app.services.transparencia_service import (
     IntegracaoDesligadaError,
     consultar_sancoes,
     normalizar_sancao,
-    validar_cnpj,
+    normalizar_cnpj,
 )
 
 CHAVE_TESTE = "chave-cgu-super-secreta-nao-vazar"
@@ -207,10 +207,10 @@ def test_normalizar_tolerante_campos_ausentes():
     assert cepim["fundamentacao"] == "Prestação de contas rejeitada"
 
 
-def test_validar_cnpj():
-    assert validar_cnpj("11.222.333/0001-81") == CNPJ_DIG
+def test_normalizar_cnpj():
+    assert normalizar_cnpj("11.222.333/0001-81") == CNPJ_DIG
     with pytest.raises(ValueError):
-        validar_cnpj("123")
+        normalizar_cnpj("123")
 
 
 def test_schema_valida_cnpj():

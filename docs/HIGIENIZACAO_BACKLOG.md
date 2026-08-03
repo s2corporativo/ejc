@@ -26,11 +26,11 @@ prazos"), não marcadores de pendência.
    Unificar os 41 `__name__` restantes é possível, mas muda o campo `logger`
    de muitos registros de log — avaliar impacto em dashboards/filtros antes.
    (`rag_juridico.py` ficou de fora por estar em manutenção paralela.)
-2. **`transparencia_service.validar_cnpj`** — homônima da canônica de
-   `validators_service`, mas com contrato diferente (normaliza para 14 dígitos
-   e levanta `ValueError`; **não** valida dígito verificador). Não é duplicata
-   consolidável sem mudar comportamento; considerar renomear para
-   `normalizar_cnpj` para eliminar a ambiguidade.
+2. ~~**`transparencia_service.validar_cnpj`**~~ — **RESOLVIDO (2026-08-03)**:
+   renomeada para `normalizar_cnpj`, com docstring dizendo explicitamente que
+   não confere dígito verificador e apontando `validators_service.validar_cnpj`
+   como a validação de fato. O comportamento não mudou — só o nome deixou de
+   colidir com o da função de contrato oposto.
 3. **Schemas Pydantic inline em routers** — muitos routers definem schemas
    localmente em vez de `app/schemas/`. Migração é mecânica porém extensa;
    fazer por módulo, junto de mudanças funcionais de cada área.
@@ -43,6 +43,11 @@ prazos"), não marcadores de pendência.
 - Nenhum `.pyc`/`__pycache__`/artefato versionado por engano.
 - Nenhum `pdb.set_trace()`/`breakpoint()` em `app/` ou `tests/`.
 - `ruff check app` e `ruff check tests` 100% limpos após esta passada.
+  **Regrediu e foi recorrigido em 2026-08-03**: o gate do CI rodava só
+  `ruff check app`, então `tests/`, `seeds/` e `alembic/` ficaram sem cobertura
+  e voltaram 6 imports mortos. O gate agora roda
+  `ruff check app tests seeds alembic` — a limpeza declarada aqui passou a ter
+  quem a sustente.
 
 ## Sala Jurídica (2026-07-26)
 

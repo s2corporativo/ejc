@@ -83,6 +83,26 @@ Ficaram de fora, por terem comportamento próprio:
   handlers. É o padrão dominante do repo; tipar tudo é um passe dedicado
   (sugestão: helper `detalheErro(e: unknown)` central, como o adotado em
   `RedefinirSenha.tsx` nesta passada).
+
+  **Passe executado em 2026-08-03** — o helper central sugerido virou
+  `src/utils/erro.ts` e a maior parte da dívida saiu:
+
+  | | antes | depois |
+  |---|---|---|
+  | warnings do eslint | 644 | 460 |
+  | `no-explicit-any` | 619 | 435 |
+  | `catch (e: any)` | 227 | 56 |
+  | cópias locais do helper | 15 (em 3 nomes) | 0 |
+
+  `src/utils/erro.ts` exporta `detalheErro` (união dos formatos reais de
+  `response.data.detail`: string, objeto com `mensagem` e lista do 422 do
+  Pydantic), `statusErro`, `mensagemErro` e `foiAbortado`. Os 56 `catch` que
+  sobraram usam o erro fora do padrão (`instanceof` de erro próprio, leitura de
+  campos específicos) e pedem decisão caso a caso — não são mecânicos.
+
+  Método, se for retomar: converter `any` → `unknown` e deixar o `tsc` apontar
+  cada uso que não é seguro. Foi assim que os 21 pontos não mecânicos desta
+  passada apareceram, em vez de serem descobertos em produção.
 - `react-hooks/exhaustive-deps` em nível warn com ocorrências pontuais —
   revisar caso a caso (algumas dependências omitidas são intencionais).
 

@@ -73,8 +73,15 @@ def _so_digitos(v: Any) -> str:
     return re.sub(r"\D", "", str(v or ""))
 
 
-def validar_cnpj(cnpj: str) -> str:
-    """Normaliza para 14 dígitos; levanta ValueError se não tiver 14 dígitos."""
+def normalizar_cnpj(cnpj: str) -> str:
+    """Normaliza para 14 dígitos; levanta ValueError se não tiver 14 dígitos.
+
+    NÃO é validação: o dígito verificador não é conferido aqui. Quem precisa
+    validar de fato usa `validators_service.validar_cnpj`, que devolve bool e
+    checa o DV. Esta função se chamava `validar_cnpj` e era homônima daquela,
+    com contrato oposto (str + ValueError vs. bool) — um import trocado passava
+    despercebido e aceitava CNPJ com DV errado.
+    """
     d = _so_digitos(cnpj)
     if len(d) != 14:
         raise ValueError("CNPJ inválido: informe 14 dígitos (com ou sem máscara).")
@@ -269,7 +276,7 @@ async def consultar_sancoes(
             "(TRANSPARENCIA_ENABLED/TRANSPARENCIA_API_KEY). A ativação é uma "
             "decisão do administrador."
         )
-    cnpj = validar_cnpj(cnpj)
+    cnpj = normalizar_cnpj(cnpj)
     hoje = datetime.now(timezone.utc).date()
 
     await _ensure_tabela(db)

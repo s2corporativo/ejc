@@ -48,6 +48,18 @@ _QUARENTENA/
 vps-tools/generated/
 _session_componentes_bronze/
 
+# Saída de lint/format (o CI já publica como artifact do job; ver ci.yml)
+audit/quality/
+
+# Snapshot do grafo de código. O grafo vivo é o graphify-out/, regenerado por
+# `graphify update .` e igualmente fora do versionamento.
+auditoria-grafo/
+
+# Override local do compose. É arquivo de máquina/VPS — monta ./secrets, que
+# não existe no repo. O modelo versionado é docker-compose.override.example.yml.
+docker-compose.override.yml
+!docker-compose.override.example.yml
+
 # ── Backups locais de arquivos ───────────────────────────────────────
 *.bak
 *.bak.*
