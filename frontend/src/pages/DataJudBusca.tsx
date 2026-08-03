@@ -51,7 +51,9 @@ export default function DataJudBusca() {
     setSyncMsg(null);
     try {
       const cnj = formatCNJ(numero.trim());
-      const res = await api.get(`/datajud/process/${encodeURIComponent(cnj)}`);
+      const res = await api.get(
+        `/v1/datajud/process/${encodeURIComponent(cnj)}`,
+      );
       setProcesso(res.data);
     } catch (e: any) {
       const msg =
@@ -66,7 +68,7 @@ export default function DataJudBusca() {
     setSyncingId(caseId);
     setSyncMsg(null);
     try {
-      const res = await api.post(`/datajud/cases/${caseId}/sync`);
+      const res = await api.post(`/v1/datajud/cases/${caseId}/sync`);
       setSyncMsg(`Sincronizado: ${res.data.synced} movimentos atualizados`);
     } catch (e: any) {
       setSyncMsg(

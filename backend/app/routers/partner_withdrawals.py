@@ -7,7 +7,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
 
-router = APIRouter(prefix="/partner-withdrawals", tags=["partner-withdrawals"])
+router = APIRouter(prefix="/v1/partner-withdrawals", tags=["partner-withdrawals"])
 
 PRIVILEGED = {"superadmin", "socio"}
 

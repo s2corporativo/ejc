@@ -8,7 +8,7 @@ from app.core.security import get_current_user
 from app.core.ownership import is_gestao
 from app.models.user import User
 
-router = APIRouter(prefix="/clients", tags=["pending-items"])
+router = APIRouter(prefix="/v1/clients", tags=["pending-items"])
 
 
 async def _exigir_cliente_visivel(db: AsyncSession, cu: User, client_id: str) -> None:

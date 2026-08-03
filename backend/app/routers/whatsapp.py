@@ -31,7 +31,7 @@ def _exigir_gestao(cu: User = Depends(get_current_user)) -> User:
         raise HTTPException(403, "Pareamento do WhatsApp restrito à gestão")
     return cu
 
-router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
+router = APIRouter(prefix="/v1/whatsapp", tags=["whatsapp"])
 
 # Lê os nomes oficiais do .env (EVOLUTION_API_URL / EVOLUTION_API_KEY); mantém
 # fallback para nomes legados. Sem key por instância, usa a apikey global.
