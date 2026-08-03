@@ -53,7 +53,7 @@
 | Trilha de auditoria imutável | `Auditoria` | `/api/audit` | `criar_audit_log` | `audit_logs` | parcial | ❌ **sem WORM — apagável (P2)** |
 | Limitar custo de IA | — | `/api/ai/*` | `ai_gateway` | `ai_logs` | `test_p1_rbac_e_rate_limit_ia.py` | ✅ **P1-1 corrigido** — 14 rotas com teto + teste de varredura que reprova rota nova sem limite |
 | Kill-switch de IA | `GovernancaIA` | — | `ai_gateway:_exigir_ia_ligada` | — | `test_ai_killswitch_gateway.py` | ✅ **P1-3 corrigido** — gate nas 3 entradas do gateway, 503 |
-| Assinatura eletrônica | `Assinaturas` | `/api/signatures` | `signatures.py` | `signature_requests` | `test_signatures_ownership.py` | ❌ **3/3 testes são `inspect.getsource`, sem par comportamental (P1)** |
+| Assinatura eletrônica | `Assinaturas` | `/api/signatures` | `signatures.py` | `signature_requests` | `test_signatures_ownership.py` + **`_dblevel.py`** | ✅ **T-P1-1 corrigido** — par comportamental com dois clientes; provado por sabotagem que o teste de fonte fica 3/3 verde com o filtro morto |
 
 ## 3. Elos faltantes — resumo
 
@@ -62,7 +62,7 @@
 | **Endpoint existe, tela não alcança** | 4 módulos (Contratos, DataJud, Despesas, Kanban) + `entrada_universal`, `procuracoes`, `search` | P0-1, `03` §5.2 |
 | **Endpoint quebrado** | `GET /rag/docs` | P0-3 |
 | **Rota sem teste** | 23 routers — `peca_geracao_router`, `pix` e `api_keys` **fechados** (T-P0-1 e T-P0-3); o teste do PIX ainda achou um BR Code corrompido em produção | `14-testes.md` |
-| **Teste que não exercita** | 32 `inspect.getsource` + 14 sem asserção | T-P1-1, T-P2-1/2 |
+| **Teste que não exercita** | 29 `inspect.getsource` + 14 sem asserção — os 3 de assinatura ganharam par comportamental (T-P1-1) | T-P2-1/2 |
 | **Skill declarada, handler não executado** | 16 de 17 | `05-skills.md` §B2 |
 | **Agente sem prompt próprio** | `RAGResearchAgent` (exige fonte) | `04-agentes.md` B5.4 |
 | **Tabela sem cobertura de anonimização** | ~~`case_partes`, `sociedades_cliente`, `users`~~ — **corrigido (P1-6)** | `12-seguranca-lgpd.md` |
@@ -70,7 +70,7 @@
 
 ## 4. Como usar esta matriz
 
-1. **Nenhuma linha com ❌ pode ser declarada concluída.** Eram 12 no diagnóstico; sobraram 2 depois das correções deste PR — trilha de auditoria sem WORM (P2) e assinatura eletrônica sem teste comportamental (P1 de qualidade).
+1. **Nenhuma linha com ❌ pode ser declarada concluída.** Eram 12 no diagnóstico; sobrou 1 depois das correções deste PR — trilha de auditoria sem WORM (P2).
 2. **As linhas ⚠️ exigem decisão explícita** — ou se fecha a ressalva, ou se registra como risco
    aceito (com o precedente do 2FA em `GOVERNANCA_IA.md:254`).
 3. **Ao corrigir, atualize a coluna Teste antes da coluna Status.** Os três P0 desta auditoria
