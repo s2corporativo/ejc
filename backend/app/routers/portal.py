@@ -22,6 +22,25 @@ from app.models.audit_log import criar_audit_log
 
 router = APIRouter(prefix="/portal", tags=["Portal do Cliente"])
 
+# ── Movimentos visíveis ao cliente (ALLOWLIST — falha fechada) ───────────────
+# A timeline do caso mistura andamento PROCESSUAL (que o cliente deve ver) com
+# registro INTERNO do escritório (que ele nunca deve ver). Dois tipos internos
+# vazavam pelo Portal:
+#   • tipo="ia"   — case_intel grava "IA – Triagem automática: … chance≈NN% …",
+#                   isto é, a estimativa de êxito do próprio caso;
+#   • tipo="nota" — nota livre do escritório e do agente de IA (escrita.py),
+#                   onde cabe qualquer anotação de estratégia.
+# Allowlist, e não denylist, porque tipo é String livre: um writer novo com
+# rótulo novo tem de nascer OCULTO ao cliente, não visível por omissão. Isso
+# cumpre o que o cabeçalho deste arquivo já declarava (item 4).
+# Os três últimos não têm writer hoje, mas constam do vocabulário histórico do
+# modelo (models/case.py) — ficam na lista para não sumir da vista do cliente
+# um andamento processual já gravado.
+MOVIMENTOS_VISIVEIS_AO_CLIENTE = (
+    "andamento_oficial", "intimacao", "arquivamento", "encerramento",
+    "peticao", "decisao", "audiencia",
+)
+
 
 def _exigir_cliente(cu: User) -> str:
     """Garante perfil cliente_externo com vínculo; retorna client_id."""
@@ -55,7 +74,10 @@ async def meus_casos(
         sub = select(
             CaseMovimento.case_id, CaseMovimento.data_evento,
             CaseMovimento.descricao, rn,
-        ).where(CaseMovimento.case_id.in_(case_ids)).subquery()
+        ).where(
+            CaseMovimento.case_id.in_(case_ids),
+            CaseMovimento.tipo.in_(MOVIMENTOS_VISIVEIS_AO_CLIENTE),
+        ).subquery()
         movs = (await db.execute(
             select(sub.c.case_id, sub.c.data_evento, sub.c.descricao)
             .where(sub.c.rn == 1)
@@ -92,7 +114,10 @@ async def caso_detalhe(
         raise HTTPException(status_code=404, detail="Caso não encontrado")
 
     movs = (await db.execute(
-        select(CaseMovimento).where(CaseMovimento.case_id == case_id)
+        select(CaseMovimento).where(
+            CaseMovimento.case_id == case_id,
+            CaseMovimento.tipo.in_(MOVIMENTOS_VISIVEIS_AO_CLIENTE),
+        )
         .order_by(CaseMovimento.data_evento.desc()).limit(50)
     )).scalars().all()
 
