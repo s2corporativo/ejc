@@ -43,6 +43,20 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
     ), '[ENDERECO]'),
 ]
 
+#: Pares (nome do tipo, padrão) DERIVADOS de `_PATTERNS`, para a validação
+#: final. Antes esta lista era escrita à mão, casando NOME com ÍNDICE — e a
+#: enumeração ficou para trás quando `[CARTAO]` (7) e `[CHAVE_PIX]` (8) foram
+#: acrescentados: `sanitizar_pii` mascarava os dois, mas a SEGUNDA BARREIRA,
+#: a que decide se o texto pode ir ao provedor EXTERNO, respondia "limpo" com
+#: cartão de crédito ou chave PIX residual em claro. Derivar do rótulo elimina
+#: a classe do defeito: padrão novo entra na validação sozinho, e a advertência
+#: de "nunca reordenar" deixa de ser o que separa o gate de funcionar.
+_CHECKS_PII: tuple[tuple[str, re.Pattern], ...] = tuple(
+    (m.group(1), pattern)
+    for pattern, repl in _PATTERNS
+    if (m := re.search(r'\[(\w+)\]', repl))
+)
+
 # Datas de nascimento explícitas (contexto "nascido em", "nascimento")
 _NASCIMENTO = re.compile(
     r'(nascid[oa]\s+em|data\s+de\s+nascimento[:\s]*)'
@@ -129,20 +143,4 @@ def validar_sem_pii(texto: str) -> list[str]:
     Retorna lista de tipos encontrados (vazia = limpo).
     Usado como segunda barreira antes da chamada à API.
     """
-    encontrados = []
-    # Reusa os MESMOS padrões de sanitizar_pii (índices em _PATTERNS).
-    checks = {
-        'CPF': _PATTERNS[0][0],
-        'CNPJ': _PATTERNS[1][0],
-        'PROCESSO': _PATTERNS[2][0],
-        'RG': _PATTERNS[3][0],
-        'EMAIL': _PATTERNS[4][0],
-        'TELEFONE': _PATTERNS[5][0],
-        'CEP': _PATTERNS[6][0],
-        'OAB': _PATTERNS[9][0],
-        'ENDERECO': _PATTERNS[10][0],
-    }
-    for nome, pattern in checks.items():
-        if pattern.search(texto):
-            encontrados.append(nome)
-    return encontrados
+    return [nome for nome, pattern in _CHECKS_PII if pattern.search(texto)]
