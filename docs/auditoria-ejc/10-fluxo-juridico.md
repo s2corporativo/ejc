@@ -1,5 +1,8 @@
 # 10 — Fluxo jurídico ponta a ponta (Fase 10)
 
+> **Estado:** os três P0 foram **corrigidos** neste mesmo PR (ver `00-resumo-executivo.md`). Os itens marcados como quebrados por causa do prefixo `/v1` ou de `GET /api/rag/docs` **já respondem**. O texto segue no tempo do diagnóstico; P1/P2/P3 continuam pendentes.
+
+
 > **Limitação declarada:** sem banco, sem stack de pé e sem provedor de IA, o fluxo **não pôde ser
 > executado**. O que segue é rastreamento de cada etapa no código — interface, endpoint, service,
 > tabela, agente, gate — com classificação por etapa. Onde a conclusão exigiria execução, está

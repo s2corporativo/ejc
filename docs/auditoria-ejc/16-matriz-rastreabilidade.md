@@ -1,5 +1,8 @@
 # 16 — Matriz de rastreabilidade (Fase 15)
 
+> **Estado:** os três P0 foram **corrigidos** neste mesmo PR (ver `00-resumo-executivo.md`). Os itens marcados como quebrados por causa do prefixo `/v1` ou de `GET /api/rag/docs` **já respondem**. O texto segue no tempo do diagnóstico; P1/P2/P3 continuam pendentes.
+
+
 > Encadeamento **Requisito → Tela → Endpoint → Service → Tabela → Agente → Skill → Teste** para as
 > funções essenciais do EJC. Nenhuma função essencial pode ser declarada concluída sem esse
 > encadeamento completo.

@@ -1,5 +1,8 @@
 # 11 — Auditoria módulo por módulo (Fase 11)
 
+> **Estado:** os três P0 foram **corrigidos** neste mesmo PR (ver `00-resumo-executivo.md`). Os itens marcados como quebrados por causa do prefixo `/v1` ou de `GET /api/rag/docs` **já respondem**. O texto segue no tempo do diagnóstico; P1/P2/P3 continuam pendentes.
+
+
 > Os 38 módulos obrigatórios do escopo. Classificação com base em: existência do código, registro
 > da rota, consumidor no frontend, cobertura de teste e achados das fases 6-12.
 > **Limitação:** sem stack de pé, "funcional" significa *"o caminho existe e está íntegro no
