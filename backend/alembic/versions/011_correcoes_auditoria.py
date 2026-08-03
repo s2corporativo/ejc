@@ -13,7 +13,6 @@ Correcoes identificadas em auditoria 2026-06-15:
 """
 
 from alembic import op
-import sqlalchemy as sa
 
 revision = 'a1b2c3d4e5f6'
 down_revision = '010_ramos_juridicos'

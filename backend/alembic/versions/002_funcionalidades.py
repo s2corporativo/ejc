@@ -12,7 +12,6 @@ Adições (sem tocar em estruturas existentes):
 """
 from alembic import op
 import sqlalchemy as sa
-import pgvector.sqlalchemy
 
 revision = "002_funcionalidades"
 down_revision = "001_inicial"

@@ -100,7 +100,10 @@ jobs:
       - name: Lint bloqueante (ruff)
         run: |
           set -o pipefail
-          python -m ruff check app --output-format=concise 2>&1 | tee ../ruff-report.txt
+          # tests/, seeds/ e alembic/ entram no gate junto com app/: o gate
+          # cobria só app/, e foi por essas três pastas que voltaram imports
+          # mortos depois da higienização de 2026-07-26.
+          python -m ruff check app tests seeds alembic --output-format=concise 2>&1 | tee ../ruff-report.txt
 
       - name: Anexar diagnóstico Ruff
         if: always()

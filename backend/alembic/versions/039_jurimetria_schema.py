@@ -14,7 +14,7 @@ Tabelas criadas nesta migration:
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, ARRAY
+from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "039_jurimetria"
 down_revision = "d8e9f0a1b2c3"
