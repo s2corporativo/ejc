@@ -14,6 +14,21 @@ resolvidos naquela passada — cada um com o motivo.
   propósito — evita recursão com o interceptor de response que refaz refresh
   em 401. Comentado no código.
 
+## Kit de UI paralelo `src/components/ui/` — REMOVIDO (2026-08-03)
+
+389 linhas em 6 arquivos (`Badge`, `Button`, `Card`, `Input`, `Page` e o barrel
+`index.ts`) sem um único importador em `src/`. Entrou no commit `8524014`, o
+mesmo que trouxe por engano `audit/quality/`, `auditoria-grafo/` e o
+`docker-compose.override.yml`.
+
+Além de morto, era um risco ativo: exportava `Button`, `Badge`, `Card` e
+`PageHeader` — os mesmos nomes de `src/components/UI.tsx`, que 121 arquivos
+usam de fato. Bastava um autoimport do editor apontar para o lado errado para a
+tela renderizar com outro design system, sem erro de tipo.
+
+`src/lib/cn.ts` **ficou**: `components/base/Skeleton.tsx` e
+`pages/Ferramentas.tsx` usam.
+
 ## Módulos sem consumidores — RESOLVIDO (2026-07-27)
 
 Todos os itens desta seção foram removidos; ficam registrados com o destino:
