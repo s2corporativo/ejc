@@ -203,6 +203,18 @@ class Settings(BaseSettings):
     # False = só Ollama local (soberania total): nenhum dado sai do VPS,
     # mesmo sanitizado. Anthropic/Groq ficam inelegíveis na cadeia.
     AI_EXTERNAL_PROVIDERS_ALLOWED: bool = True
+    # IA-006: 429 (rate limit) e 529 (Anthropic overloaded) são erros
+    # TRANSITÓRIOS — o provedor volta a responder em segundos. Sem retry, o
+    # gateway tratava os dois exatamente como uma falha permanente e caía
+    # LATERALMENTE para o próximo provedor da cadeia na primeira ocorrência,
+    # mesmo quando esperar um instante bastaria. `_chamar_com_retry_transiente`
+    # em ai_gateway.py tenta de novo o MESMO provedor, com backoff exponencial,
+    # antes de desistir dele. 0 = desliga o retry (comportamento anterior).
+    AI_RETRY_MAX_TENTATIVAS: int = 2
+    # Backoff exponencial em segundos: tentativa 1 espera este valor, a 2ª
+    # o dobro, etc. 0.5s de base mantém o tempo total de espera pequeno mesmo
+    # com o máximo de tentativas (não trava a requisição HTTP do usuário).
+    AI_RETRY_BACKOFF_BASE_S: float = 0.5
     # True = todo conteúdo destinado a provider EXTERNO (Anthropic/Groq) passa
     # por sanitizar_pii + validar_sem_pii; PII residual bloqueia o envio (LGPD).
     # NUNCA desligar em produção sem parecer do encarregado de dados.

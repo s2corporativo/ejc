@@ -20,6 +20,7 @@
 from __future__ import annotations
 import logging
 import os
+import asyncio
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -252,6 +253,49 @@ class _ProviderPulado(Exception):
         super().__init__("PII residual: " + ", ".join(self.residual))
 
 
+#: 429 (rate limit) e 529 (Anthropic "overloaded") são TRANSITÓRIOS — o
+#: provedor volta a responder em segundos. Qualquer outro status (400, 401,
+#: 500 genérico) é tratado como antes: fallback lateral imediato, sem retry.
+_STATUS_HTTP_TRANSIENTES = frozenset({429, 529})
+
+
+def _status_http(e: Exception) -> int | None:
+    """Extrai o status HTTP de uma exceção de provedor, se houver (mesmo
+    padrão já usado no log de fallback_motivo — aqui decide se vale retry)."""
+    return getattr(e, "status_code", None) or getattr(
+        getattr(e, "response", None), "status_code", None
+    )
+
+
+async def _chamar_com_retry_transiente(chamar, *, tentativas: int, backoff_base: float):
+    """Repete `chamar()` (callable async de zero args) em erro HTTP TRANSIENTE
+    (429/529), com backoff exponencial, antes de deixar o chamador cair para
+    o PRÓXIMO provedor da cadeia (IA-006).
+
+    `_ProviderPulado` (bloqueio de PII, não falha de rede) e qualquer erro
+    NÃO-transiente propagam na primeira tentativa — o fallback lateral
+    existente cuida do resto, sem mudança de comportamento para esses casos.
+    `tentativas=0` desliga o retry por completo (equivalente ao comportamento
+    anterior a este ponto).
+    """
+    for tentativa in range(tentativas + 1):
+        try:
+            return await chamar()
+        except _ProviderPulado:
+            raise
+        except Exception as e:
+            status = _status_http(e)
+            if status not in _STATUS_HTTP_TRANSIENTES or tentativa == tentativas:
+                raise
+            espera = backoff_base * (2 ** tentativa)
+            logger.warning(
+                "[Gateway] HTTP %s transiente — nova tentativa em %.1fs (%d/%d)",
+                status, espera, tentativa + 1, tentativas,
+            )
+            await asyncio.sleep(espera)
+    raise AssertionError("inalcançável: o loop sempre retorna ou levanta")
+
+
 async def _chamar_com_barreira(provider, model, messages, modo_sanitizacao,
                                entidades, temperature, max_tokens):
     """Barreira FINAL LGPD + chamada ao provider + reidratação — FONTE ÚNICA.
@@ -439,9 +483,13 @@ async def chat(
             # ponto (fonte compartilhada com executar_tarefa_ia). Se o provider
             # externo é PULADO por PII residual, _chamar_com_barreira levanta
             # _ProviderPulado (tratado abaixo — tenta o próximo da cadeia).
-            texto, texto_para_log, usage, messages_envio, _ = await _chamar_com_barreira(
-                provider, model, messages, modo_sanitizacao, entidades,
-                temperature, max_tokens,
+            texto, texto_para_log, usage, messages_envio, _ = await _chamar_com_retry_transiente(
+                lambda: _chamar_com_barreira(
+                    provider, model, messages, modo_sanitizacao, entidades,
+                    temperature, max_tokens,
+                ),
+                tentativas=settings.AI_RETRY_MAX_TENTATIVAS,
+                backoff_base=settings.AI_RETRY_BACKOFF_BASE_S,
             )
             duracao = int((time.monotonic() - t0) * 1000)
             modelo_real = usage.get("model", model or "")
@@ -1030,9 +1078,13 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             continue
         try:
             # #39: barreira LGPD + chamada + reidratação — fonte única (idem chat).
-            texto, resposta_log, usage, messages_envio, pii_removida = await _chamar_com_barreira(
-                provider, model, messages, modo_sanitizacao, entidades,
-                cfg.temperature, cfg.max_tokens,
+            texto, resposta_log, usage, messages_envio, pii_removida = await _chamar_com_retry_transiente(
+                lambda: _chamar_com_barreira(
+                    provider, model, messages, modo_sanitizacao, entidades,
+                    cfg.temperature, cfg.max_tokens,
+                ),
+                tentativas=settings.AI_RETRY_MAX_TENTATIVAS,
+                backoff_base=settings.AI_RETRY_BACKOFF_BASE_S,
             )
         except _ProviderPulado as _pulado:
             bloqueado_por_pii = True
