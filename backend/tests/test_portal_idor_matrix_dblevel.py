@@ -459,14 +459,20 @@ async def test_solicitacoes_documentos_isolam_por_cliente():
 async def _criar_movimento(db, case_id: str, tipo: str, descricao: str, dias_atras: int) -> str:
     """Movimento com data_evento controlada — a ordem importa: o teste precisa
     que o movimento INTERNO seja o mais recente, senão `ultima_movimentacao`
-    devolveria o oficial por acaso e o teste passaria mesmo sem a correção."""
+    devolveria o oficial por acaso e o teste passaria mesmo sem a correção.
+
+    O intervalo vai por `make_interval(days => :dias)` com um INTEIRO. Com
+    `CAST(:dias AS interval)` e a string '3 days', o asyncpg tipa o parâmetro
+    como interval e exige um `timedelta` — a string estoura em DataError.
+    `make_interval` tem parâmetro tipado int, então não há inferência a errar.
+    """
     mov_id = str(uuid4())
     await db.execute(
         text(
             "INSERT INTO case_movimentos (id, case_id, tipo, descricao, data_evento) "
-            "VALUES (:id, :cid, :tipo, :desc, now() - CAST(:dias AS interval))"
+            "VALUES (:id, :cid, :tipo, :desc, now() - make_interval(days => :dias))"
         ),
-        {"id": mov_id, "cid": case_id, "tipo": tipo, "desc": descricao, "dias": f"{dias_atras} days"},
+        {"id": mov_id, "cid": case_id, "tipo": tipo, "desc": descricao, "dias": int(dias_atras)},
     )
     return mov_id
 
