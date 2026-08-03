@@ -183,13 +183,25 @@ async def remover_template(
     db:  AsyncSession = Depends(get_db),
     cu:  User = Depends(get_current_user),
 ):
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        raise HTTPException(403)
+    # Issue #578: autor (advogado+) remove o PRÓPRIO template; sócio+ remove
+    # qualquer um. Estagiário/perfis abaixo continuam bloqueados de vez —
+    # nunca chegam a "é o autor?" porque não têm _pode_gerenciar (piso
+    # advogado; `_pode_editar` deste arquivo é o piso ESTAGIÁRIO — nomes
+    # trocados em relação a prompts_juridicos.py, cuidado ao portar padrão).
+    if not _pode_gerenciar(cu):
+        raise HTTPException(403, "Perfil sem autorização para remover template")
     t = (await db.execute(
-        select(ChecklistTemplate).where(ChecklistTemplate.id == template_id)
+        select(ChecklistTemplate).where(
+            ChecklistTemplate.id == template_id,
+            ChecklistTemplate.deleted_at.is_(None),
+        )
     )).scalar_one_or_none()
     if not t:
         raise HTTPException(404)
+    e_autor = t.created_by == cu.id
+    e_socio = ROLE_LEVEL.get(cu.role.value, 0) >= ROLE_LEVEL["socio"]
+    if not (e_autor or e_socio):
+        raise HTTPException(403, "Apenas o autor ou sócio+ podem remover este template")
     t.deleted_at = datetime.now(timezone.utc)
     await db.commit()
 
