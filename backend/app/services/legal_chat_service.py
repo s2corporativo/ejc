@@ -904,7 +904,15 @@ async def converter_em_caso(
         numero_interno=numero,
         titulo=payload.titulo_caso,
         area=CaseArea(payload.area),
-        descricao_fatos=payload.descricao,
+        # `descricao` é OPCIONAL no payload (schemas/legal_chat.py:107). Sem
+        # fallback, converter sem preenchê-la criava um caso com os fatos
+        # NULOS — enquanto a sessão que originou a conversão os continha na
+        # área de trabalho. O relato some no ato de virar caso oficial, e
+        # `motor_peca_service` e `case_intel` leem justamente `descricao_fatos`
+        # como fonte dos fatos: o caso nasce sem matéria-prima para peça e
+        # triagem. Mesmo desenho do `proxima_acao` logo abaixo — o payload
+        # manda quando vem preenchido, e o default cobre a omissão.
+        descricao_fatos=payload.descricao or (sessao.workspace_texto or "").strip() or None,
         client_id=client.id,
         advogado_responsavel_id=payload.advogado_responsavel_id,
         # G1 (mesma guarda de cases.py): caso em triagem nunca nasce sem
