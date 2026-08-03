@@ -7,8 +7,17 @@
 > não cair em silêncio, e é para subir junto com ela.
 >
 > Os números brutos abaixo são os do diagnóstico (4 463 testes). Após as correções deste PR a
-> suíte tem **4 570 testes passando**. Os achados T-P0-1 (rota sem teste), T-P1-1 e T-P2-1/2
-> (teste que não exercita) **seguem abertos**.
+> suíte tem **4 755 testes passando** com `RUN_DB_TESTS=1` contra Postgres 16 real.
+>
+> **T-P0-1 fechado:** `peca_geracao_router` — o gerador de documento, e o achado mais grave desta
+> fase — ganhou teste funcional (`test_peca_geracao_router_dblevel.py`, 9 testes contra banco
+> real). Cobre o render de verdade (o histórico do arquivo é de estar QUEBRADO sem ninguém saber:
+> até 28/06/2026 chamava o vault async sem `await` e usava um campo inexistente no schema), o
+> piso de advogado, o 404/400, e o **sandbox Jinja2** — que protege contra SSTI no template vindo
+> do banco e nunca tivera teste. Esse último foi verificado por negação: trocando o
+> `SandboxedEnvironment` pelo `Template` padrão, o teste reprova.
+>
+> T-P1-1 e T-P2-1/2 (teste que não exercita) **seguem abertos**.
 
 ## 1. Execução real — números brutos
 
