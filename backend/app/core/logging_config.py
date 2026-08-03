@@ -53,8 +53,15 @@ def setup_logging(*, json_logs: bool, level: str = "INFO") -> None:
 
     json_logs=True → JsonFormatter; caso contrario o formato texto de sempre.
     Chamado do main.py no lugar do logging.basicConfig."""
+    from app.core.log_sanitizer import SanitizadorDeLog
+
     nivel = getattr(logging, str(level).upper(), logging.INFO)
     handler = logging.StreamHandler()
+    # Mascaramento de PII/credencial no ÚNICO handler raiz. No handler, e não
+    # em cada logger, para alcançar também o que bibliotecas de terceiros
+    # emitem — que é justamente o que ninguém revisa. Sem isto, o
+    # `log_sanitizer` só protegia as chamadas em que alguém lembrou de usá-lo.
+    handler.addFilter(SanitizadorDeLog())
     if json_logs:
         handler.setFormatter(JsonFormatter())
     else:
