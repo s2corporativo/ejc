@@ -164,8 +164,10 @@ async def test_anonimizacao_alcanca_as_tabelas_satelite():
       migration 127 (P1-5) o documento ali é cifrado, e a anonimização tem de
       zerar as TRÊS colunas: o hash HMAC é reidentificador tanto quanto o
       ciphertext (quem já tem o CPF confirma a identidade comparando o hash);
-    * `sociedades_cliente` / `socios_sociedade` — razão social, CNPJ e o
-      documento cifrado do sócio;
+    * `sociedades_cliente` — razão social e CNPJ da empresa do titular. Os
+      SÓCIOS entram só quando SÃO o titular (casados pelo índice cego): apagar
+      o quadro societário inteiro processaria dado de terceiro sem pedido dele
+      e destruiria o cap table que o escritório tem dever de guardar;
     * `users` do portal — `full_name` e `email` SÃO o nome e o e-mail do
       titular. Antes o serviço só marcava `is_active = False`, o que esconde o
       login e não anonimiza nada; pior, o filtro `is_active IS TRUE` nem
@@ -177,8 +179,11 @@ async def test_anonimizacao_alcanca_as_tabelas_satelite():
     from app.services.pii_crypto import encrypt, hash_documento
 
     client_id, case_id = str(uuid4()), str(uuid4())
-    parte_id, soc_id, socio_id, user_id = (str(uuid4()) for _ in range(4))
-    cpf_parte, doc_socio = "39053344705", "11144477735"
+    parte_id, parte_sem_vinculo_id = str(uuid4()), str(uuid4())
+    soc_id, socio_id, socio_terceiro_id, user_id = (str(uuid4()) for _ in range(4))
+    # `_criar_cliente` grava este CPF no titular — as satélites reconhecem o
+    # titular pelo MESMO índice cego.
+    cpf_titular, doc_terceiro = "39053344705", "11144477735"
 
     async with AsyncSessionLocal() as db:
         await _criar_cliente(db, client_id)
@@ -195,9 +200,23 @@ async def test_anonimizacao_alcanca_as_tabelas_satelite():
                 "        '***.533.447-**', :email, "
                 "        '31999998888', 'Representante Fulano', :clid)"
             ),
-            {"id": parte_id, "cid": case_id, "enc": encrypt(cpf_parte),
-             "hash": hash_documento(cpf_parte),
+            {"id": parte_id, "cid": case_id, "enc": encrypt(cpf_titular),
+             "hash": hash_documento(cpf_titular),
              "email": "fulano@teste.local", "clid": client_id},
+        )
+        # Parte do MESMO titular, criada SEM `client_id` — é o que `TabPartes.tsx`
+        # e o fluxo de importação de documento produzem (nenhum dos dois envia o
+        # campo). O vínculo explícito não existe; só o índice cego a alcança.
+        await db.execute(
+            text(
+                "INSERT INTO case_partes "
+                "(id, case_id, tipo, nome, cpf_cnpj_enc, cpf_cnpj_hash, "
+                " cpf_cnpj_mascarado) "
+                "VALUES (:id, :cid, 'autor', 'Fulano de Tal', :enc, :hash, "
+                "        '***.533.447-**')"
+            ),
+            {"id": parte_sem_vinculo_id, "cid": case_id,
+             "enc": encrypt(cpf_titular), "hash": hash_documento(cpf_titular)},
         )
         await db.execute(
             text(
@@ -208,15 +227,30 @@ async def test_anonimizacao_alcanca_as_tabelas_satelite():
             ),
             {"id": soc_id, "clid": client_id},
         )
+        # Sócio que É o titular (mesmo documento) → deve ser anonimizado.
         await db.execute(
             text(
                 "INSERT INTO socios_sociedade "
                 "(id, sociedade_id, nome, quotas, documento_enc, documento_hash, "
                 " documento_mascarado) "
-                "VALUES (:id, :sid, 'Fulano de Tal', 100, :enc, :hash, '***.444.777-**')"
+                "VALUES (:id, :sid, 'Fulano de Tal', 60, :enc, :hash, '***.533.447-**')"
             ),
             {"id": socio_id, "sid": soc_id,
-             "enc": encrypt(doc_socio), "hash": hash_documento(doc_socio)},
+             "enc": encrypt(cpf_titular), "hash": hash_documento(cpf_titular)},
+        )
+        # Sócio TERCEIRO, na mesma sociedade → NÃO pode ser tocado. É outro
+        # titular de dados, não pediu esquecimento nenhum, e o cap table é
+        # histórico que o escritório tem dever de guardar.
+        await db.execute(
+            text(
+                "INSERT INTO socios_sociedade "
+                "(id, sociedade_id, nome, quotas, documento_enc, documento_hash, "
+                " documento_mascarado) "
+                "VALUES (:id, :sid, 'Beltrana Terceira', 40, :enc, :hash, "
+                "        '***.444.777-**')"
+            ),
+            {"id": socio_terceiro_id, "sid": soc_id,
+             "enc": encrypt(doc_terceiro), "hash": hash_documento(doc_terceiro)},
         )
         await db.execute(
             text(
@@ -250,6 +284,20 @@ async def test_anonimizacao_alcanca_as_tabelas_satelite():
             assert parte["telefone"] is None
             assert parte["representante_legal"] is None
 
+            # A parte SEM `client_id` — a que a interface cria — também sai.
+            sem_vinculo = (await db.execute(
+                text("SELECT nome, cpf_cnpj_enc, cpf_cnpj_hash, cpf_cnpj_mascarado "
+                     "FROM case_partes WHERE id = :id"),
+                {"id": parte_sem_vinculo_id},
+            )).mappings().first()
+            assert sem_vinculo["cpf_cnpj_enc"] is None, (
+                "parte criada pela interface (sem client_id) escapou da "
+                "anonimização — o CPF do titular segue recuperável"
+            )
+            assert sem_vinculo["cpf_cnpj_hash"] is None
+            assert sem_vinculo["cpf_cnpj_mascarado"] is None
+            assert sem_vinculo["nome"] == "[ANONIMIZADO — LGPD ART. 17]"
+
             soc = (await db.execute(
                 text("SELECT razao_social, cnpj FROM sociedades_cliente WHERE id = :id"),
                 {"id": soc_id},
@@ -266,6 +314,22 @@ async def test_anonimizacao_alcanca_as_tabelas_satelite():
             assert socio["documento_hash"] is None, "hash HMAC é reidentificador — tem de sair"
             assert socio["documento_mascarado"] is None
             assert socio["nome"] == "[ANONIMIZADO — LGPD ART. 17]"
+
+            # E o TERCEIRO segue intacto. Este é o par indispensável do teste
+            # acima: sem ele, "anonimizou o sócio certo" e "apagou o quadro
+            # societário inteiro" passam pela mesma asserção.
+            terceiro = (await db.execute(
+                text("SELECT nome, documento_enc, documento_hash, documento_mascarado "
+                     "FROM socios_sociedade WHERE id = :id"),
+                {"id": socio_terceiro_id},
+            )).mappings().first()
+            assert terceiro["nome"] == "Beltrana Terceira", (
+                "sócio de terceiro foi anonimizado — o art. 17 é direito do "
+                "TITULAR, não autorização para apagar quem está ao redor"
+            )
+            assert terceiro["documento_enc"] is not None
+            assert terceiro["documento_hash"] == hash_documento(doc_terceiro)
+            assert terceiro["documento_mascarado"] == "***.444.777-**"
 
             usuario = (await db.execute(
                 text("SELECT full_name, email, phone, is_active FROM users WHERE id = :id"),

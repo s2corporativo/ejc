@@ -11,6 +11,20 @@
 > **P1-6** (o art. 17 passou a alcançar `case_partes`, `sociedades_cliente`/`socios_sociedade` e
 > a identidade do portal). **P1-7** (`homolog.qa`) segue aberto: exige o banco de produção.
 > Os P2 seguem valendo integralmente.
+>
+> **Duas correções da própria rodada precisaram ser corrigidas** (ver `00-resumo-executivo.md`
+> §11.1), e as duas em matéria de LGPD:
+>
+> * a anonimização apagava o quadro societário INTEIRO — inclusive sócios que nunca pediram
+>   esquecimento. O art. 17 é direito do TITULAR, não autorização para apagar quem está ao redor;
+>   destruía ainda o cap table que o escritório tem dever de guardar. Agora só sai o sócio casado
+>   pelo índice cego do titular;
+> * a parte processual criada pela interface ESCAPAVA da anonimização: `TabPartes.tsx` não envia
+>   `client_id`, e o predicado só olhava esse campo. Agora alcança por `client_id` **ou** por
+>   documento igual ao do titular — o hash é comparável sem ser legível.
+>
+> O `/prompts` também ganhou o gate no ITEM (`GET /{id}`, `POST /{id}/executar`), não só na
+> listagem: esconder na coleção não protege nada de quem tem o UUID.
 
 ## 0. Veredito
 

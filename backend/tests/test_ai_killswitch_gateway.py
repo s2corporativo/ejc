@@ -93,3 +93,62 @@ def test_pseudonimizacao_agentica_nao_carrega_o_gate():
     fonte = inspect.getsource(gw._pseudonimizar_agentico)
     assert "_exigir_ia_ligada" not in fonte
     assert "_exigir_ia_ligada" in inspect.getsource(gw.chat_agentico)
+
+
+# ── O 503 tem de CHEGAR ao cliente ───────────────────────────────────────────
+
+def test_erro_http_passa_intacto_pela_camada_de_borda():
+    """`http_erro_ia` é o choke point dos 18 sites que traduzem falha de IA.
+
+    Achado de review do PR #652: todos vivem dentro de `except Exception`, então
+    o 503 do kill-switch chegava aqui e virava 502 "IA indisponível" — o cliente
+    via falha de provedor onde houve desligamento deliberado. Um erro que JÁ é
+    HTTP passa intacto; o resto continua sendo traduzido.
+    """
+    from fastapi import HTTPException as HTTPExc
+
+    from app.core.ai_errors import http_erro_ia
+
+    original = HTTPExc(status_code=503, detail="IA desativada pelo administrador")
+    devolvido = http_erro_ia(original, 502, contexto="teste")
+    assert devolvido is original
+    assert devolvido.status_code == 503
+
+    # E o caminho normal segue traduzindo: erro técnico não vaza para o usuário.
+    traduzido = http_erro_ia(RuntimeError("connection refused ollama:11434"), 502)
+    assert traduzido.status_code == 502
+    assert "ollama" not in traduzido.detail
+
+
+async def test_kill_switch_chega_como_503_no_endpoint_de_prompts(ia_desligada, monkeypatch):
+    """Ponta a ponta no caller que o review apontou: `POST /prompts/{id}/executar`.
+
+    Exercita a função do router com o gateway REAL (só o kill-switch ligado) —
+    o que prova que o 503 atravessa o `except` do endpoint, não só que o helper
+    sabe repassá-lo.
+    """
+    from app.routers import prompts_juridicos as pj
+
+    class _PromptFake:
+        id = "p1"
+        conteudo = "Analise o caso de {{cliente}} com atenção aos prazos."
+        vezes_executado = 0
+        ultima_execucao = None
+        avaliacao_media = None
+
+    async def _carregar(db, prompt_id, cu):
+        return _PromptFake()
+
+    # Via monkeypatch: atribuir direto no módulo vazaria para os outros testes
+    # da sessão, que passariam a ver um `_carregar_visivel` sem gate de
+    # visibilidade — justamente o defeito que o teste vizinho cobra.
+    monkeypatch.setattr(pj, "_carregar_visivel", _carregar)
+
+    with pytest.raises(HTTPException) as exc:
+        await pj.executar_prompt(
+            "p1", pj.ExecutarPromptReq(variaveis={"cliente": "Fulano"}),
+            db=None, cu=object(),
+        )
+    assert exc.value.status_code == 503, (
+        f"kill-switch virou {exc.value.status_code} — o 503 foi mascarado no caminho"
+    )
