@@ -18,6 +18,7 @@ import type { LoginResponse } from "../types";
 import { useAuth } from "../stores/auth";
 import { usePreferencesStore } from "../stores/preferences";
 import { canRoleAccessPath } from "../config/moduleRegistry";
+import { detalheErro } from "../utils/erro";
 
 // Logomarca HD com fundo transparente (nunca a versão JPG com fundo)
 const BRAND_LOGO = "/brand/logo-hd.png";
@@ -130,12 +131,8 @@ export default function LoginModern() {
       nav(canRoleAccessPath(data.role, preferredHome) ? preferredHome : "/", {
         replace: true,
       });
-    } catch (e: any) {
-      const detail = e.response?.data?.detail;
-      const message =
-        typeof detail === "string"
-          ? detail
-          : detail?.message || "Falha no login";
+    } catch (e: unknown) {
+      const message = detalheErro(e, "Falha no login");
       if (message.includes("TOTP obrigatório")) {
         setRequiresTotp(true);
         setErro("Confirme o código do aplicativo autenticador.");

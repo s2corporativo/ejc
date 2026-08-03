@@ -149,12 +149,9 @@ export default function Assinaturas() {
       toast.success("Solicitação de assinatura criada");
       fecharModal();
       await fetchSolicitacoes();
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
+    } catch (err: unknown) {
       toast.error(
-        typeof detail === "string"
-          ? detail
-          : "Falha ao criar a solicitação de assinatura",
+        detalheErro(err, "Falha ao criar a solicitação de assinatura"),
       );
     } finally {
       setSalvando(false);

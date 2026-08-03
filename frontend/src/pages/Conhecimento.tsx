@@ -27,7 +27,7 @@ import {
   fmtDate,
 } from "../components/UI";
 import { asList } from "../lib/list";
-import { detalheErro } from "../utils/erro";
+import { detalheErro, statusErro } from "../utils/erro";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
 const CATS: { value: string; label: string; icon: any; cor: string }[] = [
@@ -183,7 +183,7 @@ function ModalIngestao({
       });
       onSalvo();
       onClose();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setErro(detalheErro(e, "Erro ao ingerir"));
     } finally {
       setSalvando(false);
@@ -395,7 +395,7 @@ function ModalIngestPdf({
         setResultado(data);
       }
       onSalvo();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setErro(detalheErro(e, "Erro ao ingerir"));
     } finally {
       setSalvando(false);
@@ -589,10 +589,10 @@ function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
           `/conhecimento/importar-jurisprudencia/status/${jobId}`,
         );
         if (data.status !== "executando") return data;
-      } catch (e: any) {
+      } catch (e: unknown) {
         // 404 = job não encontrado neste processo (backend reiniciado ou id
         // expirado) — parar o polling em vez de esperar o timeout de 3 min.
-        if (e?.response?.status === 404) {
+        if (statusErro(e) === 404) {
           return {
             status: "erro",
             erro: "Job não encontrado neste processo (backend reiniciado ou registro expirado). O resultado durável fica em fontes_ingestao/auditoria.",
@@ -639,11 +639,8 @@ function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
       } else {
         setErro(fim.erro || "Falha na importação — tente novamente");
       }
-    } catch (e: any) {
-      setErro(
-        e.response?.data?.detail?.toString?.() ||
-          "Erro ao iniciar a importação",
-      );
+    } catch (e: unknown) {
+      setErro(detalheErro(e, "Erro ao iniciar a importação"));
     } finally {
       if (vivoRef.current) setImportando(false);
     }

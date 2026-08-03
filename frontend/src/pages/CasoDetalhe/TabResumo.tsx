@@ -24,7 +24,7 @@ import {
   FieldLabel,
 } from "../../components/UI";
 import { useAuth } from "../../stores/auth";
-import { detalheErro } from "../../utils/erro";
+import { detalheErro, statusErro, detalheBruto } from "../../utils/erro";
 
 interface PendenciaExclusao {
   tipo: string;
@@ -46,7 +46,7 @@ function ExtratoCaso({ caso }: { caso: Case }) {
       try {
         const r = await api.get(`/extratos/detalhado/${caso.id}`);
         setData(r.data);
-      } catch (e: any) {
+      } catch (e: unknown) {
         setErro(detalheErro(e, "Falha ao carregar o extrato do caso."));
       }
     }
@@ -144,7 +144,7 @@ function AreasCaso({ caso }: { caso: Case }) {
     try {
       await api.delete(`/cases/${caso.id}/areas/${a}`);
       load();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Erro ao remover área"));
     }
   };
@@ -220,7 +220,7 @@ export function AvisoCasoEncerrado({ caso }: { caso: Case }) {
         toast.success("Caso reaberto.");
       }
       window.location.reload();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Falha ao reabrir caso"));
     } finally {
       setReabrindo(false);
@@ -344,9 +344,8 @@ export default function TabResumo({
       await api.delete(`/cases/${caso.id}`, { data: { motivo } });
       toast.success("Caso excluído — enviado para a Lixeira.");
       navigate("/casos");
-    } catch (e: any) {
-      const detail =
-        e?.response?.status === 422 ? e?.response?.data?.detail : null;
+    } catch (e: unknown) {
+      const detail: any = statusErro(e) === 422 ? detalheBruto(e) : null;
       if (
         detail &&
         Array.isArray(detail.pendencias) &&
@@ -377,7 +376,7 @@ export default function TabResumo({
         "Caso encerrado. Conhecimento registrado na base institucional (precedente + memória + tese).",
       );
       window.location.reload();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Falha ao encerrar"));
     } finally {
       setEncLoading(false);
@@ -391,7 +390,7 @@ export default function TabResumo({
       toast.success(
         `${data.gerados?.length || 0} minuta(s) gerada(s): Procuração, Contrato de Honorários e Relatório Inicial. Veja na aba Documentos do caso.`,
       );
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Falha ao gerar documentos"));
     } finally {
       setGerando(false);
@@ -407,7 +406,7 @@ export default function TabResumo({
         valor_causa: caso.valor_causa || undefined,
       });
       setHonResp(data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setHonResp({
         erro: mensagemErroIA(e, "Não foi possível sugerir honorários."),
       });
@@ -428,7 +427,7 @@ export default function TabResumo({
         nomes_proteger: [caso.parte_contraria].filter(Boolean),
       });
       setIaResp(data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setIaResp({
         erro: mensagemErroIA(e, "Não foi possível gerar a análise."),
       });
@@ -459,7 +458,7 @@ export default function TabResumo({
     try {
       const { data } = await api.post(`/cases/${caso.id}/sincronizar-processo`);
       toast.success(data.detail || "Dados sincronizados com DataJud.");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Falha ao sincronizar"));
     } finally {
       setSyncing(false);

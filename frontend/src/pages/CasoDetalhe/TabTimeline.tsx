@@ -8,14 +8,7 @@ import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { Empty, fmtDate } from "../../components/UI";
 import LinhaDoTempoProcessual from "../../components/visual/LinhaDoTempoProcessual";
-
-function errDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string" && d) return d;
-  if (d && typeof d === "object")
-    return d.mensagem ?? JSON.stringify(d).slice(0, 200);
-  return fallback;
-}
+import { detalheErro } from "../../utils/erro";
 
 // Valores aceitos por case_movimentos.tipo (models/case.py: CaseMovimento).
 const TIPOS_MOVIMENTO = [
@@ -60,7 +53,7 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
       setMovTipo("nota");
       setTimelineVersao((v) => v + 1);
     } catch (err: unknown) {
-      toast.error(errDetail(err, "Não foi possível registrar o andamento."));
+      toast.error(detalheErro(err, "Não foi possível registrar o andamento."));
     } finally {
       setRegistrando(false);
     }

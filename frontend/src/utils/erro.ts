@@ -14,7 +14,7 @@ export function detalheErro(erro: unknown, fallback: string): string {
   const detail = (erro as { response?: { data?: { detail?: unknown } } })
     ?.response?.data?.detail;
 
-  if (typeof detail === "string") return detail || fallback;
+  if (typeof detail === "string") return detail.trim() ? detail : fallback;
 
   if (Array.isArray(detail)) {
     const mensagens = detail
@@ -28,11 +28,36 @@ export function detalheErro(erro: unknown, fallback: string): string {
   }
 
   if (detail && typeof detail === "object") {
-    const mensagem = (detail as { mensagem?: unknown }).mensagem;
+    const { mensagem, message } = detail as {
+      mensagem?: unknown;
+      message?: unknown;
+    };
     if (typeof mensagem === "string" && mensagem) return mensagem;
+    if (typeof message === "string" && message) return message;
   }
 
   return fallback;
+}
+
+/**
+ * `response.data` cru. Para quem precisa de sinalização fora do `detail` —
+ * `must_change_password` e `precisa_configurar_2fa` no fluxo de sessão.
+ */
+export function dadosErro(erro: unknown): Record<string, unknown> | undefined {
+  const data = (erro as { response?: { data?: unknown } })?.response?.data;
+  return data && typeof data === "object"
+    ? (data as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * `response.data.detail` cru, sem formatar. Só para quem precisa inspecionar a
+ * forma do payload (lista de pendências, chave própria); para exibir mensagem,
+ * use `detalheErro`.
+ */
+export function detalheBruto(erro: unknown): unknown {
+  return (erro as { response?: { data?: { detail?: unknown } } })?.response
+    ?.data?.detail;
 }
 
 /** Código HTTP da resposta que gerou o erro, quando o erro veio do axios. */

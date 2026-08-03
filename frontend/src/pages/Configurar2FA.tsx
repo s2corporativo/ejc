@@ -52,13 +52,8 @@ export default function Configurar2FA() {
       localStorage.setItem("ejc_access", data.access_token);
       await bootstrap();
       navigate("/", { replace: true });
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      setError(
-        typeof detail === "string"
-          ? detail
-          : detail?.message || "Código inválido ou expirado.",
-      );
+    } catch (err: unknown) {
+      setError(detalheErro(err, "Código inválido ou expirado."));
     } finally {
       setVerifying(false);
     }

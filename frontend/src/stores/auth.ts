@@ -3,6 +3,7 @@ import api, { getAccessToken } from "../lib/api";
 import { RASCUNHO_KEY } from "../lib/intakeRascunho";
 import { limparCadastroManual } from "./cadastroManual";
 import type { User } from "../types";
+import { statusErro, dadosErro } from "../utils/erro";
 
 export type AuthStatus = "initializing" | "authenticated" | "unauthenticated";
 
@@ -88,18 +89,16 @@ export const useAuth = create<AuthState>((set, get) => ({
       };
       persistUser(user);
       set({ user, status: "authenticated" });
-    } catch (error: any) {
-      const responseStatus = error?.response?.status;
+    } catch (error: unknown) {
+      const responseStatus = statusErro(error);
+      const dados = dadosErro(error);
 
       // Troca de senha OBRIGATÓRIA: o middleware devolve 403 em /users/me até
       // o usuário trocar a senha. NÃO é sessão inválida — derrubar o token
       // aqui expulsava o usuário do /trocar-senha em loop (achado A1 do E2E).
       // Mantém a sessão cacheada; o interceptor do api.ts redireciona para
       // /trocar-senha e o middleware bloqueia todo o resto até a troca.
-      if (
-        responseStatus === 403 &&
-        error?.response?.data?.must_change_password
-      ) {
+      if (responseStatus === 403 && dados?.must_change_password) {
         const cachedUser = get().user ?? readStoredUser();
         set({
           user: cachedUser,
@@ -109,8 +108,9 @@ export const useAuth = create<AuthState>((set, get) => ({
       }
 
       const needsTwoFactorSetup =
-        error?.response?.data?.precisa_configurar_2fa ||
-        error?.response?.data?.detail?.precisa_configurar_2fa;
+        dados?.precisa_configurar_2fa ||
+        (dados?.detail as { precisa_configurar_2fa?: unknown } | undefined)
+          ?.precisa_configurar_2fa;
       if (responseStatus === 403 && needsTwoFactorSetup) {
         const cachedUser = get().user ?? readStoredUser();
         set({

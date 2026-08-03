@@ -8,6 +8,7 @@ import api from "../../lib/api";
 import { toast } from "../../components/Toast";
 import { Modal, Spinner } from "../../components/UI";
 import { useAuth } from "../../stores/auth";
+import { detalheErro, statusErro } from "../../utils/erro";
 
 /** Papéis aceitos por `require_roles` em backend/app/routers/suspensoes.py. */
 export const ROLES_SUSPENSAO = ["superadmin", "admin", "socio"] as const;
@@ -16,18 +17,6 @@ export const ROLES_SUSPENSAO = ["superadmin", "admin", "socio"] as const;
 export function usePodeGerirSuspensoes(): boolean {
   const role = useAuth((s) => s.user?.role);
   return !!role && (ROLES_SUSPENSAO as readonly string[]).includes(role);
-}
-
-function erroDetalhe(e: any, fallback: string): string {
-  const detail = e?.response?.data?.detail;
-  if (typeof detail === "string" && detail.trim()) return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof detail.mensagem === "string"
-  )
-    return detail.mensagem;
-  return fallback;
 }
 
 function fmtData(d?: string | null): string {
@@ -92,15 +81,15 @@ export function PrazoSugeridoModal({
       );
       onResolvido();
       onClose();
-    } catch (e: any) {
+    } catch (e: unknown) {
       // 422 = intimação sem caso vinculado (ou sem base para calcular).
       toast.error(
-        e?.response?.status === 422
-          ? erroDetalhe(
+        statusErro(e) === 422
+          ? detalheErro(
               e,
               "Intimação sem caso vinculado — vincule um caso antes de gerar o prazo.",
             )
-          : erroDetalhe(e, "Não foi possível cadastrar o prazo."),
+          : detalheErro(e, "Não foi possível cadastrar o prazo."),
       );
     } finally {
       setSalvando(null);
@@ -118,7 +107,7 @@ export function PrazoSugeridoModal({
       onResolvido();
       onClose();
     } catch (e) {
-      toast.error(erroDetalhe(e, "Não foi possível recusar o prazo."));
+      toast.error(detalheErro(e, "Não foi possível recusar o prazo."));
     } finally {
       setSalvando(null);
     }
@@ -253,7 +242,7 @@ export function SuspensaoFormModal({
       onCriada();
       onClose();
     } catch (e) {
-      setErro(erroDetalhe(e, "Falha ao salvar a suspensão."));
+      setErro(detalheErro(e, "Falha ao salvar a suspensão."));
     } finally {
       setSalvando(false);
     }
@@ -373,7 +362,7 @@ export function SimularPrazoModal({
       });
       setRes(data);
     } catch (e) {
-      setErro(erroDetalhe(e, "Não foi possível simular o prazo."));
+      setErro(detalheErro(e, "Não foi possível simular o prazo."));
     } finally {
       setCarregando(false);
     }

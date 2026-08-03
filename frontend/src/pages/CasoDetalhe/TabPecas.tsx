@@ -16,6 +16,7 @@ import api from "../../lib/api";
 import type { LegalDoc } from "../../types";
 import { toast } from "../../components/Toast";
 import { Empty, Modal, StatusBadge } from "../../components/UI";
+import { detalheErro } from "../../utils/erro";
 
 // Mesmos valores do enum PecaTipo do backend (app/models/legal_doc.py) — não
 // inventar tipos aqui: o backend devolve 422 para valor fora do enum.
@@ -35,14 +36,6 @@ const TIPOS_PECA = [
 // Espelha STATUS_POS_APROVACAO de Pecas.tsx: peça já assinada baixa o PDF de
 // protocolo (/pdf, com gates); antes disso, o PDF de LEITURA (/pdf-minuta).
 const STATUS_POS_APROVACAO = new Set(["aprovada", "final", "protocolada"]);
-
-function errDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string" && d) return d;
-  if (d && typeof d === "object")
-    return d.mensagem ?? JSON.stringify(d).slice(0, 200);
-  return fallback;
-}
 
 // responseType blob: erros 4xx/5xx chegam como Blob JSON — extrai o `detail`
 // legível para o toast (mesmo helper de Pecas.tsx).
@@ -109,8 +102,8 @@ export default function TabPecas({ caseId }: { caseId: string }) {
         "Peça criada como rascunho — a redação continua no módulo Peças.",
       );
       carregar();
-    } catch (e: any) {
-      toast.error(errDetail(e, "Erro ao criar a peça"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao criar a peça"));
     } finally {
       setSalvando(false);
     }
@@ -131,8 +124,8 @@ export default function TabPecas({ caseId }: { caseId: string }) {
       setAprovacao(null);
       toast.success("Peça conferida e assinada com revisão humana registrada");
       carregar();
-    } catch (e: any) {
-      toast.error(errDetail(e, "Falha ao conferir e assinar a peça"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao conferir e assinar a peça"));
     } finally {
       setAprovando(false);
     }
@@ -154,7 +147,7 @@ export default function TabPecas({ caseId }: { caseId: string }) {
       a.download = aprovada ? `${doc.titulo}.pdf` : `${doc.titulo}-minuta.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error((await blobErrorDetail(e)) || "Falha ao gerar o PDF.");
     }
   };

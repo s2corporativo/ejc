@@ -336,7 +336,7 @@ export default function Documentos() {
         ok += 1;
         // Backend avisa quando o formato legado (.doc/.xls) não é indexável.
         if (r.data?.aviso) avisos.push(`${p.titulo}: ${r.data.aviso}`);
-      } catch (e: any) {
+      } catch (e: unknown) {
         falhas.push({
           ...p,
           erro: detalheErro(e, "Erro no upload"),
@@ -490,7 +490,7 @@ export default function Documentos() {
       await api.delete(`/documents/${d.id}`);
       toast.success("Documento excluído");
       load();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Falha ao excluir documento"));
     }
   };
@@ -566,7 +566,7 @@ export default function Documentos() {
       aplicarPatchNaLista(editDoc.id, r.data);
       toast.success("Metadados atualizados");
       setEditDoc(null);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(patchErroMsg(e));
     } finally {
       setSalvandoEdit(false);
@@ -589,7 +589,7 @@ export default function Documentos() {
       try {
         await api.patch(`/documents/${d.id}`, payload);
         ok += 1;
-      } catch (e: any) {
+      } catch (e: unknown) {
         falhas.push(d.titulo);
         ultimoErro = patchErroMsg(e);
       }
@@ -622,7 +622,7 @@ export default function Documentos() {
         { params: { aplicar: false } },
       );
       setClassResult(r.data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Falha ao classificar documento"));
       setClassDoc(null);
     } finally {
@@ -654,7 +654,7 @@ export default function Documentos() {
       toast.success(`Tipo aplicado: ${novoTipo || "—"}`);
       setClassDoc(null);
       setClassResult(null);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Falha ao aplicar o tipo"));
     } finally {
       setAplicando(false);

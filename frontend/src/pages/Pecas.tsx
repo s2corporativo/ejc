@@ -40,7 +40,7 @@ import {
 } from "../lib/protocoloPeca";
 import { useIaStatus } from "../lib/iaStatus";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
-import { detalheErro } from "../utils/erro";
+import { detalheErro, statusErro, detalheBruto } from "../utils/erro";
 import FichaTriagem, {
   type FichaTriagemCampos,
   type FichaStatus,
@@ -64,13 +64,6 @@ async function blobErrorDetail(e: any): Promise<string | undefined> {
 
 // `detail` pode chegar como string OU objeto ({mensagem, ...}) — normaliza
 // para o toast nunca renderizar "[object Object]" nem falhar em silêncio.
-function errDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string" && d) return d;
-  if (d && typeof d === "object")
-    return d.mensagem ?? JSON.stringify(d).slice(0, 200);
-  return fallback;
-}
 
 const TIPOS = [
   "peticao_inicial",
@@ -186,8 +179,8 @@ export default function Pecas() {
         `VALIDAÇÃO JURÍDICA\nVeredito: ${data.veredito}\nScore: ${data.score_confianca}/100\nLog HITL: ${data.ai_log_id}\n\n${data.resposta}\n\n${data.aviso}`,
       );
       load();
-    } catch (e: any) {
-      toast.error(errDetail(e, "Falha na validação jurídica"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha na validação jurídica"));
     } finally {
       setAuditando(false);
     }
@@ -273,8 +266,8 @@ export default function Pecas() {
       setForm({ tipo_peca: "peticao_inicial", ai_generated: false });
       toast.success("Peça criada como rascunho");
       load();
-    } catch (e: any) {
-      toast.error(errDetail(e, "Erro ao salvar a peça"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Erro ao salvar a peça"));
     } finally {
       setSalvando(false);
     }
@@ -284,8 +277,8 @@ export default function Pecas() {
     try {
       const { data } = await api.get(`/legal-docs/${id}`);
       setView(data);
-    } catch (e: any) {
-      toast.error(errDetail(e, "Falha ao carregar a peça"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao carregar a peça"));
     }
   };
 
@@ -303,8 +296,8 @@ export default function Pecas() {
       );
       setRevisao(null);
       load();
-    } catch (e: any) {
-      toast.error(errDetail(e, "Falha ao registrar a revisão"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao registrar a revisão"));
     }
   };
 
@@ -324,8 +317,8 @@ export default function Pecas() {
       setAprovacao(null);
       toast.success("Peça conferida e assinada com revisão humana registrada");
       load();
-    } catch (e: any) {
-      toast.error(errDetail(e, "Falha ao conferir e assinar a peça"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao conferir e assinar a peça"));
     } finally {
       setAprovando(false);
     }
@@ -343,8 +336,8 @@ export default function Pecas() {
       const etapa = FILA.find((s) => s.key === status);
       toast.success(`Peça movida para "${etapa?.label ?? status}"`);
       load();
-    } catch (e: any) {
-      toast.error(errDetail(e, "Falha ao mudar o status da peça"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao mudar o status da peça"));
     }
   };
 
@@ -369,11 +362,11 @@ export default function Pecas() {
         return;
       }
       setProtocolo({ doc, numero: "", tribunal: "", data: "" });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
         mensagemErroProtocolo(
-          e?.response?.status,
-          e?.response?.data?.detail,
+          statusErro(e),
+          detalheBruto(e),
           'Falha ao mover a peça para "Protocolada"',
         ),
       );
@@ -391,11 +384,9 @@ export default function Pecas() {
     try {
       // 1) registra o comprovante (número/tribunal/data) na peça
       await api.patch(`/legal-docs/${protocolo.doc.id}/protocolo`, payload);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Peça segue onde estava — modal aberto para corrigir e tentar de novo.
-      toast.error(
-        mensagemErroProtocolo(e?.response?.status, e?.response?.data?.detail),
-      );
+      toast.error(mensagemErroProtocolo(statusErro(e), detalheBruto(e)));
       setProtocolando(false);
       return;
     }
@@ -405,10 +396,10 @@ export default function Pecas() {
         status: "protocolada",
       });
       toast.success('Protocolo registrado — peça movida para "Protocolada"');
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Protocolo JÁ registrado: um novo "Protocolar" pula o modal e só move.
       toast.error(
-        errDetail(
+        detalheErro(
           e,
           "Protocolo registrado, mas não foi possível mover o status. Tente novamente.",
         ),
@@ -431,8 +422,8 @@ export default function Pecas() {
       // Modo Caso: pré-seleciona o caso filtrado ao gerar de template.
       setCasoSel((prev) => prev || casoFiltro || "");
       setTplModal(true);
-    } catch (e: any) {
-      toast.error(errDetail(e, "Falha ao carregar templates e casos"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao carregar templates e casos"));
     }
   };
 
@@ -446,8 +437,8 @@ export default function Pecas() {
       setTplModal(false);
       toast.success("Rascunho gerado a partir do template");
       load();
-    } catch (e: any) {
-      toast.error(errDetail(e, "Falha ao gerar a peça do template"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao gerar a peça do template"));
     }
   };
 
@@ -468,7 +459,7 @@ export default function Pecas() {
       a.download = aprovada ? `${doc.titulo}.pdf` : `${doc.titulo}-minuta.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error((await blobErrorDetail(e)) || "Falha ao gerar o PDF.");
     }
   };
@@ -484,7 +475,7 @@ export default function Pecas() {
       a.download = `${doc.titulo}.docx`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Falha ao exportar DOCX. Tente novamente."));
     }
   };
@@ -507,7 +498,7 @@ export default function Pecas() {
       a.download = `${doc.titulo} — Documento Único.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
         (await blobErrorDetail(e)) ||
           "Falha ao gerar o documento único de impressão.",
@@ -522,7 +513,7 @@ export default function Pecas() {
       // A listagem pode não trazer o conteúdo completo — busca a peça inteira
       const { data } = await api.get(`/legal-docs/${doc.id}`);
       setPrintDoc(data);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(detalheErro(e, "Falha ao carregar a peça para impressão."));
     }
   };
@@ -543,8 +534,8 @@ export default function Pecas() {
       setAuditoria(
         `CHECK DE JURISPRUDENCIA\nStatus: ${data.apto ? "APTA" : "BLOQUEADA"}\n\nProblemas:\n${problemas}\n\nValidadas:\n${validadas}\n\nRegra: ${data.regra}`,
       );
-    } catch (e: any) {
-      toast.error(errDetail(e, "Falha na checagem de jurisprudencia"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha na checagem de jurisprudencia"));
     } finally {
       setAuditando(false);
     }
@@ -563,8 +554,8 @@ export default function Pecas() {
       setAuditoria(
         (data.resposta ?? data.conteudo) + (aviso ? "\n\n" + aviso : ""),
       );
-    } catch (e: any) {
-      toast.error(errDetail(e, "IA indisponível"));
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "IA indisponível"));
     } finally {
       setAuditando(false);
     }

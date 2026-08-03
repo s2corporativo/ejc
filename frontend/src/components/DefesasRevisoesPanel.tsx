@@ -195,7 +195,7 @@ export default function DefesasRevisoesPanel() {
       toast.success(
         "Pacote documental transformado em estratégia jurídica revisável.",
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(detalheErro(error, "Falha ao montar a estratégia jurídica."));
     } finally {
       setAnalisando(false);
@@ -245,7 +245,7 @@ export default function DefesasRevisoesPanel() {
         );
       }
       toast.success("Dossiê, checklist, tarefas e pacote registrados no caso.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error(detalheErro(error, "Falha ao persistir a jornada."));
     } finally {
       setSalvando(false);
@@ -276,12 +276,8 @@ export default function DefesasRevisoesPanel() {
       toast.success(
         "Motor de Peça executado. Revise checklist, documentos e prazo.",
       );
-    } catch (error: any) {
-      const detalhe = error.response?.data?.detail;
-      toast.error(
-        detalhe?.mensagem ||
-          (typeof detalhe === "string" ? detalhe : "Falha no Motor de Peça."),
-      );
+    } catch (error: unknown) {
+      toast.error(detalheErro(error, "Falha no Motor de Peça."));
     } finally {
       setEncaminhando(false);
     }

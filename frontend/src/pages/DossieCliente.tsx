@@ -910,13 +910,8 @@ export default function DossieCliente() {
       toast.success("Perfil do cliente atualizado");
       setEditOpen(false);
       carregarDossie();
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toast.error(
-        typeof detail === "string"
-          ? detail
-          : "Não foi possível atualizar o perfil",
-      );
+    } catch (err: unknown) {
+      toast.error(detalheErro(err, "Não foi possível atualizar o perfil"));
     } finally {
       setSalvandoEdit(false);
     }

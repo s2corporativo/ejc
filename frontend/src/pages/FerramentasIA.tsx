@@ -269,7 +269,7 @@ export default function FerramentasIA() {
         }));
       }
       setRes(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       setErro(detailErro(error));
     } finally {
       setLoading(false);

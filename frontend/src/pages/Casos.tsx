@@ -86,7 +86,7 @@ import {
 } from "../lib/revisaoExtracao";
 import Kanban from "./Kanban";
 import { List } from "lucide-react";
-import { detalheErro } from "../utils/erro";
+import { detalheErro, statusErro, detalheBruto } from "../utils/erro";
 
 // Taxonomia canônica de áreas: GET /areas via useAreas(), com fallback
 // completo do enum CaseArea (25 áreas) em lib/areas.ts.
@@ -456,11 +456,8 @@ export default function Casos() {
       await api.post(`/cases/${id}/desarquivar`);
       toast.success("Caso desarquivado.");
       await load();
-    } catch (e: any) {
-      const detail = e?.response?.data?.detail;
-      toast.error(
-        typeof detail === "string" ? detail : "Falha ao desarquivar o caso",
-      );
+    } catch (e: unknown) {
+      toast.error(detalheErro(e, "Falha ao desarquivar o caso"));
     } finally {
       setDesarquivandoId(null);
     }
@@ -481,16 +478,11 @@ export default function Casos() {
       setDelCaso(null);
       setDelMotivo("");
       await load();
-    } catch (e: any) {
-      if (e?.response?.status === 403) {
+    } catch (e: unknown) {
+      if (statusErro(e) === 403) {
         toast.error("Sem permissão para excluir casos (apenas admin/sócio).");
       } else {
-        const detail = e?.response?.data?.detail;
-        toast.error(
-          typeof detail === "string"
-            ? detail
-            : detail?.mensagem || "Falha ao excluir o caso",
-        );
+        toast.error(detalheErro(e, "Falha ao excluir o caso"));
       }
     } finally {
       setDelLoading(false);
@@ -648,7 +640,7 @@ export default function Casos() {
             );
           }
           atualizarRascunho({ uploadFeito: true });
-        } catch (e: any) {
+        } catch (e: unknown) {
           // Caso criado, vínculo/anexo falhou: NÃO navega nem silencia. Oferece
           // retomada (retry) sem recriar o caso (ele permanece em triagem).
           setPendencia({
@@ -661,10 +653,12 @@ export default function Casos() {
             batchId,
           });
           toast.error(
-            e.response?.data?.detail ||
-              (batchId
+            detalheErro(
+              e,
+              batchId
                 ? "O caso foi criado, mas os documentos importados não foram vinculados. Tente novamente abaixo — o caso não será duplicado."
-                : "O caso foi criado, mas o documento não foi anexado. Tente novamente abaixo — o caso não será duplicado."),
+                : "O caso foi criado, mas o documento não foi anexado. Tente novamente abaixo — o caso não será duplicado.",
+            ),
           );
           return;
         }
@@ -684,7 +678,7 @@ export default function Casos() {
             result,
           });
           previewPreparado = true;
-        } catch (e: any) {
+        } catch (e: unknown) {
           toast.error(
             detalheErro(
               e,
@@ -711,7 +705,7 @@ export default function Casos() {
       }
       setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
       load();
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Falha antes/na criação do caso: o caso NÃO foi criado; o rascunho (se
       // documental) permanece para retomada.
       toast.error(detalheErro(e, "Erro ao salvar"));
@@ -759,7 +753,7 @@ export default function Casos() {
       nav(caseJourneyPath(pendencia.caseId), { replace: true });
       setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
       load();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(
         detalheErro(
           e,
@@ -815,7 +809,7 @@ export default function Casos() {
       setPreview(null);
       load();
       nav(caseJourneyPath(caseId), { replace: true });
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Falha ao aplicar: rascunho e ?revisao permanecem — segue recuperável.
       toast.error(detalheErro(e, "Erro ao aplicar os dados ao caso."));
     } finally {

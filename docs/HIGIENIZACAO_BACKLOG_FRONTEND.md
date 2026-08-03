@@ -84,25 +84,40 @@ Ficaram de fora, por terem comportamento próprio:
   (sugestão: helper `detalheErro(e: unknown)` central, como o adotado em
   `RedefinirSenha.tsx` nesta passada).
 
-  **Passe executado em 2026-08-03** — o helper central sugerido virou
-  `src/utils/erro.ts` e a maior parte da dívida saiu:
+  **RESOLVIDO em 2026-08-03.** O helper central sugerido virou
+  `src/utils/erro.ts` e o `catch (e: any)` deixou de existir no repo:
 
   | | antes | depois |
   |---|---|---|
-  | warnings do eslint | 644 | 460 |
-  | `no-explicit-any` | 619 | 435 |
-  | `catch (e: any)` | 227 | 56 |
-  | cópias locais do helper | 15 (em 3 nomes) | 0 |
+  | warnings do eslint | 644 | 401 |
+  | `no-explicit-any` | 619 | 376 |
+  | `catch (e: any)` | 227 | **0** |
+  | cópias locais do helper | 19 (em 4 nomes) | **0** |
 
-  `src/utils/erro.ts` exporta `detalheErro` (união dos formatos reais de
-  `response.data.detail`: string, objeto com `mensagem` e lista do 422 do
-  Pydantic), `statusErro`, `mensagemErro` e `foiAbortado`. Os 56 `catch` que
-  sobraram usam o erro fora do padrão (`instanceof` de erro próprio, leitura de
-  campos específicos) e pedem decisão caso a caso — não são mecânicos.
+  `src/utils/erro.ts` é o ponto único. `detalheErro` cobre a união dos formatos
+  reais de `response.data.detail` — string, objeto com `mensagem` **ou**
+  `message`, e lista do 422 do Pydantic. Para o resto: `statusErro`
+  (`response.status`), `mensagemErro` (`.message` de erro nativo), `foiAbortado`
+  (as 4 formas de cancelamento), `dadosErro` (`response.data` cru, para
+  `must_change_password`/`precisa_configurar_2fa` no fluxo de sessão) e
+  `detalheBruto` (`detail` sem formatar, para quem inspeciona a forma do
+  payload). Coberto por `src/utils/erro.test.ts`.
 
-  Método, se for retomar: converter `any` → `unknown` e deixar o `tsc` apontar
-  cada uso que não é seguro. Foi assim que os 21 pontos não mecânicos desta
-  passada apareceram, em vez de serem descobertos em produção.
+  **Três mudanças de comportamento**, todas para melhor e todas com teste:
+  as cópias `errDetail` devolviam `JSON.stringify(detail).slice(0, 200)` para
+  objeto sem `mensagem`, colocando `{"campo":"cpf","codigo":422}` dentro de um
+  toast — agora cai no fallback em português; `detail` só com espaço em branco
+  vira fallback (comportamento que só o `erroDetalhe` tinha); e a chave
+  `message` passa a ser lida em todo lugar, não só no login e no 2FA.
+
+  Método, se for aplicar em outra frente: converter `any` → `unknown` e deixar o
+  `tsc` apontar cada uso que não é seguro. Foi assim que os 43 pontos não
+  mecânicos apareceram em tempo de build, em vez de em produção. Vale o aviso de
+  um erro cometido no caminho: o primeiro script checava se ainda havia acesso
+  cru **no arquivo inteiro** antes de trocar a anotação, então um único `catch`
+  fora do padrão travava todos os outros do mesmo arquivo — 44 dos 56 `catch`
+  que pareciam irredutíveis eram falso positivo disso. Escopo de verificação é
+  o bloco, não o arquivo.
 - `react-hooks/exhaustive-deps` em nível warn com ocorrências pontuais —
   revisar caso a caso (algumas dependências omitidas são intencionais).
 
