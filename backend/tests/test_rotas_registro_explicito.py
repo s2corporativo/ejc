@@ -85,6 +85,29 @@ REMOCOES_INTENCIONAIS = {
 }
 
 
+# Renomeação INTENCIONAL de path. Oito routers (kanban, datajud, regulatorio,
+# office_contracts, despesas, pending_items, partner_withdrawals, whatsapp)
+# carregavam "/v1" no PRÓPRIO prefixo, então o caminho real deles era
+# /api/v1/<x>. Só que o APIVersionCompatibilityMiddleware reescreve toda
+# requisição /api/v1/<x> para /api/<x> — ou seja, o caminho real era
+# inalcançável: 27 chamadas do frontend caíam em 404 e apenas o absurdo
+# /api/v1/v1/<x> respondia 200. O snapshot capturou esse estado e o congelou
+# como aceitável; esta trava, sozinha, nunca acusaria o defeito.
+#
+# O snapshot original permanece INTACTO (é evidência do que existia). A
+# correção é declarada aqui: todo path /api/v1/<x> do baseline passa a ser
+# comparado como /api/<x>. Qualquer divergência que NÃO seja essa renomeação
+# continua reprovando — e um router que volte a embutir "/v1" no prefixo
+# reprova, porque produziria /api/v1/<x> onde se espera /api/<x>.
+_PREFIXO_V1_DUPLICADO = "/api/v1/"
+
+
+def _corrigir_prefixo_duplicado(path: str) -> str:
+    if path.startswith(_PREFIXO_V1_DUPLICADO):
+        return "/api/" + path[len(_PREFIXO_V1_DUPLICADO):]
+    return path
+
+
 def _baseline() -> list[dict]:
     caminho = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
@@ -92,7 +115,8 @@ def _baseline() -> list[dict]:
         "openapi_rotas_baseline.json",
     )
     with open(caminho, encoding="utf-8") as fh:
-        return json.load(fh)
+        rotas = json.load(fh)
+    return [{**r, "path": _corrigir_prefixo_duplicado(r["path"])} for r in rotas]
 
 
 def test_paridade_openapi_com_snapshot_anterior():

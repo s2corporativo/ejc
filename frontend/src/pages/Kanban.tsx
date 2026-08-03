@@ -66,7 +66,7 @@ export default function Kanban() {
   const nav = useNavigate();
 
   const loadCols = useCallback(async (a: string) => {
-    const res = await api.get(`/v1/kanban-columns?legal_area=${a}`);
+    const res = await api.get(`/kanban-columns?legal_area=${a}`);
     setCols(res.data ?? []);
   }, []);
 
@@ -107,7 +107,7 @@ export default function Kanban() {
       prev.map((c) => (c.id === caseId ? { ...c, kanban_column: colName } : c)),
     );
     try {
-      await api.patch(`/v1/cases/${caseId}/kanban`, {
+      await api.patch(`/cases/${caseId}/kanban`, {
         kanban_column: colName,
         kanban_position: pos,
       });
