@@ -52,7 +52,8 @@ async def verificar_citacoes_juris(
         db, req.texto, consultar_datajud=req.consultar_datajud)
 
 
-@router.post("/analisar-caso")
+@router.post("/analisar-caso",
+             dependencies=[Depends(rate_limit("ai-analisar-caso", 10))])
 async def analisar(
     req: AnalisarCasoRequest,
     db: AsyncSession = Depends(get_db),
@@ -102,7 +103,8 @@ async def dossie_caso(
     return dossie
 
 
-@router.post("/resumir-documento")
+@router.post("/resumir-documento",
+             dependencies=[Depends(rate_limit("ai-resumir-documento", 15))])
 async def resumir(
     req: ResumirDocRequest,
     db: AsyncSession = Depends(get_db),
@@ -380,7 +382,8 @@ class AnaliseContratoReq(_BM):
     modo: _Opt[str] = None               # "comparacao" → compara cláusula a cláusula
 
 
-@router.post("/teses-ocultas")
+@router.post("/teses-ocultas",
+             dependencies=[Depends(rate_limit("ai-teses-ocultas", 10))])
 async def teses_ocultas(
     req: TesesOcultasReq,
     db: AsyncSession = Depends(get_db),
@@ -406,7 +409,8 @@ async def teses_ocultas(
     return r
 
 
-@router.post("/auditar-peca")
+@router.post("/auditar-peca",
+             dependencies=[Depends(rate_limit("ai-auditar-peca", 10))])
 async def auditar(
     req: AuditarPecaReq,
     db: AsyncSession = Depends(get_db),
@@ -448,7 +452,8 @@ async def auditar(
     return r
 
 
-@router.post("/preparar-audiencia")
+@router.post("/preparar-audiencia",
+             dependencies=[Depends(rate_limit("ai-preparar-audiencia", 10))])
 async def audiencia(
     req: AudienciaReq,
     db: AsyncSession = Depends(get_db),
@@ -549,7 +554,8 @@ class AssistenteCasoReq(_BM):
     modo: _Opt[str] = "geral"  # geral|resumo|riscos|teses|audiencia|documentos|peticao
 
 
-@router.post("/casos/{case_id}/assistente")
+@router.post("/casos/{case_id}/assistente",
+             dependencies=[Depends(rate_limit("ai-assistente", 8))])
 async def assistente_estrategico(
     case_id: str,
     req: AssistenteCasoReq,
@@ -669,7 +675,8 @@ class DualIAReq(_BM):
     model2:     _Opt[str] = None   # override modelo IA-2
 
 
-@router.post("/casos/{case_id}/dual")
+@router.post("/casos/{case_id}/dual",
+             dependencies=[Depends(rate_limit("ai-dual", 4))])
 async def dual_ia(
     case_id: str,
     req: DualIAReq,
@@ -789,7 +796,8 @@ class VisualLawReq(_BM):
     tipo: str = "timeline"  # timeline|fluxo_status|partes|prazos
 
 
-@router.post("/caso/{case_id}/visual-law")
+@router.post("/caso/{case_id}/visual-law",
+             dependencies=[Depends(rate_limit("ai-visual-law", 8))])
 async def visual_law(
     case_id: str,
     req: VisualLawReq,
@@ -831,7 +839,8 @@ class EstrategiaReq(_BM):
     foco: _Opt[str] = "geral"  # geral|defesa|recurso|acordo|execucao
 
 
-@router.post("/caso/{case_id}/estrategia")
+@router.post("/caso/{case_id}/estrategia",
+             dependencies=[Depends(rate_limit("ai-estrategia", 8))])
 async def motor_estrategia(
     case_id: str,
     req: EstrategiaReq,
@@ -940,7 +949,8 @@ REGRAS:
     }
 
 
-@router.post("/analisar-contrato")
+@router.post("/analisar-contrato",
+             dependencies=[Depends(rate_limit("ai-analisar-contrato", 10))])
 async def analisar_contrato_endpoint(
     req: AnaliseContratoReq,
     db: AsyncSession = Depends(get_db),
@@ -967,7 +977,8 @@ async def analisar_contrato_endpoint(
         raise http_erro_ia(r["erro"], 502)
     return r
 
-@router.post("/detectar-prazos")
+@router.post("/detectar-prazos",
+             dependencies=[Depends(rate_limit("ai-detectar-prazos", 10))])
 async def detectar_prazos(
     req: ResumirDocRequest,
     db: AsyncSession = Depends(get_db),

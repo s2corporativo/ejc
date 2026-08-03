@@ -15,6 +15,7 @@ from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.ownership import role_str
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.prompt_juridico import PromptJuridico, PromptCategoria
@@ -100,6 +101,14 @@ def _out(p: PromptJuridico) -> dict:
     }
 
 
+# Espelha ROLES.juridico de frontend/src/config/moduleRegistry.tsx: gestores +
+# advogado/advogado_auxiliar/estagiário. NÃO inclui `financeiro` nem
+# `secretaria` — ver comentário em listar_prompts.
+_ROLES_JURIDICO: frozenset[str] = frozenset({
+    "superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario",
+})
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("")
@@ -114,8 +123,18 @@ async def listar_prompts(
 ):
     q = select(PromptJuridico).where(PromptJuridico.deleted_at.is_(None))
 
-    # Usuários não-staff só veem prompts públicos
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+    # Quem não é do time JURÍDICO só vê prompts públicos.
+    #
+    # P1 da auditoria integral (docs/auditoria-ejc/09-frontend.md §6): antes o
+    # corte era `>= ROLE_LEVEL["estagiario"]`, e como `financeiro` (4) é MAIOR
+    # que `estagiario` (3), o perfil financeiro recebia a biblioteca inteira —
+    # embora o moduleRegistry restrinja /prompts a ROLES.juridico. A proteção
+    # existia só no frontend.
+    #
+    # O conjunto é EXPLÍCITO de propósito: "jurídico" não é um piso de nível
+    # (financeiro fica acima de estagiário sem ser do time), então um
+    # `>=` não consegue expressá-lo. Espelha ROLES.juridico do registry.
+    if role_str(cu) not in _ROLES_JURIDICO:
         q = q.where(PromptJuridico.publico.is_(True))
 
     if categoria:
