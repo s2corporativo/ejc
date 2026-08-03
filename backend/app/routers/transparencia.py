@@ -38,7 +38,7 @@ class SancoesIn(BaseModel):
     @classmethod
     def _v_cnpj(cls, v: str) -> str:
         try:
-            return transparencia_service.validar_cnpj(v)
+            return transparencia_service.normalizar_cnpj(v)
         except ValueError as e:
             raise ValueError(str(e))
 
