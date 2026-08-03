@@ -259,6 +259,11 @@ async def confirmar_reset(db: AsyncSession, token_raw: str, nova_senha: str) -> 
 
     user.hashed_password     = get_password_hash(nova_senha)
     user.must_change_password = False
+    # Mesma invalidação de access token da troca autenticada (migr. 128). Aqui
+    # ela pesa ainda mais: o reset por e-mail é o caminho de quem PERDEU o
+    # controle da conta, e sem esta marca o token do invasor continuaria válido
+    # depois do reset. Truncado ao segundo (o `iat` do JWT é inteiro em segundos).
+    user.password_changed_at = datetime.now(timezone.utc).replace(microsecond=0)
     record.used = True
 
     # Revogar todas as sessões ativas (segurança pós-reset)
