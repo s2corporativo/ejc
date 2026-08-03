@@ -96,10 +96,10 @@ export default function OfficeContracts() {
     setError(false);
     try {
       const [all, exp] = await Promise.all([
-        api.get("/office-contracts", {
+        api.get("/v1/office-contracts", {
           params: filterStatus ? { status: filterStatus } : {},
         }),
-        api.get("/office-contracts/expiring"),
+        api.get("/v1/office-contracts/expiring"),
       ]);
       setContracts(all.data.data || []);
       setExpiring(exp.data || []);
@@ -160,9 +160,9 @@ export default function OfficeContracts() {
     setSalvando(true);
     try {
       if (editing) {
-        await api.patch(`/office-contracts/${editing.id}`, payload);
+        await api.patch(`/v1/office-contracts/${editing.id}`, payload);
       } else {
-        await api.post("/office-contracts", payload);
+        await api.post("/v1/office-contracts", payload);
       }
       setShowForm(false);
       load();
@@ -180,7 +180,7 @@ export default function OfficeContracts() {
   async function confirmarExclusao() {
     if (!pendenteExcluir) return;
     try {
-      await api.delete(`/office-contracts/${pendenteExcluir}`);
+      await api.delete(`/v1/office-contracts/${pendenteExcluir}`);
       setPendenteExcluir(null);
       load();
     } catch (e: any) {

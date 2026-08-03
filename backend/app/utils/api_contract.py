@@ -80,24 +80,6 @@ _FETCH_RE = re.compile(
 _FETCH_METHOD_RE = re.compile(r"method\s*:\s*[`'\"](\w+)", re.S)
 
 
-def _podar_prefixo_repetido(path: str) -> str:
-    """Espelha o interceptor de request de frontend/src/lib/api.ts.
-
-    O cliente `api` já tem baseURL /api/v1, então o interceptor APARA um
-    prefixo repetido do config.url antes da requisição sair. Sem espelhar isso
-    aqui, o verificador concatenava direto e inventava uma URL que o navegador
-    NUNCA emite: `/v1/despesas` virava `/api/v1` + `/v1/despesas` =
-    `/api/v1/v1/despesas`. Como oito routers embutiam "/v1" no próprio prefixo,
-    essa URL fantasma casava a rota real e o contrato passava verde enquanto 27
-    chamadas caíam em 404 em produção. A ordem dos ramos é a mesma do
-    interceptor (o mais específico primeiro).
-    """
-    for prefixo in ("/api/v1", "/api", "/v1"):
-        if path.startswith(prefixo + "/"):
-            return path[len(prefixo):]
-    return path
-
-
 def _final_url(prefix_is_axios: bool, raw: str) -> str | None:
     """Resolve a URL final que o navegador chamaria."""
     norm = re.sub(r"\$\{[^}]*\}", "\x00", raw)
@@ -105,7 +87,7 @@ def _final_url(prefix_is_axios: bool, raw: str) -> str | None:
     if prefix_is_axios:
         if not norm.startswith("/"):
             return None
-        norm = AXIOS_BASE_URL + _podar_prefixo_repetido(norm)
+        norm = AXIOS_BASE_URL + norm
     elif not norm.startswith("/"):
         return None
     return norm.rstrip("/") or "/"

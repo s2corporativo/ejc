@@ -48,7 +48,7 @@ export default function DespesasRecorrentes() {
     setLoading(true);
     setError(false);
     try {
-      const res = await api.get("/despesas", {
+      const res = await api.get("/v1/despesas", {
         params: { recorrente: true },
       });
       setRecorrentes(
@@ -73,7 +73,7 @@ export default function DespesasRecorrentes() {
     try {
       let count = 0;
       for (const d of recorrentes) {
-        await api.post("/despesas", {
+        await api.post("/v1/despesas", {
           categoria: d.categoria,
           descricao: d.descricao,
           valor: d.valor,

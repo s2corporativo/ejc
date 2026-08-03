@@ -17,7 +17,7 @@ def _req_fin(cu: User = Depends(get_current_user)) -> User:
     return cu
 
 
-router = APIRouter(prefix="/office-contracts", tags=["office-contracts"], dependencies=[Depends(_req_fin)])
+router = APIRouter(prefix="/v1/office-contracts", tags=["office-contracts"], dependencies=[Depends(_req_fin)])
 
 
 @router.get("")
