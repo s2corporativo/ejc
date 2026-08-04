@@ -24,7 +24,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = '127_documento_publicacao_explicita'
+revision = '127_publicacao_explicita'
 down_revision = '126_case_status_quatro_estados'
 branch_labels = None
 depends_on = None
