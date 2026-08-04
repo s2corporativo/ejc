@@ -40,3 +40,85 @@ async def _engine_pool_limpo_por_teste():
     from app.core.database import engine
     await engine.dispose(close=False)
     yield
+
+
+# ── Guarda: ninguém recria o singleton de Settings entre testes (Issue #620) ─
+# `Settings` é cacheada via `lru_cache` em app.core.config.get_settings(), e
+# vários módulos capturam a referência da instância NO IMPORT (ex.:
+# app/services/vault_crypto.py: `settings = get_settings()`, linha de módulo).
+# Se um teste chamar `get_settings.cache_clear()`, o PRÓXIMO get_settings()
+# nasce OUTRA instância — quem já capturou a referência antiga fica
+# desalinhado, com sintomas em arquivos sem nenhuma relação com quem limpou o
+# cache (10 falhas em 5 arquivos, ver Issue #620: identidade de singleton,
+# chave Fernet efêmera nova para o Cofre, flags de política voltando ao
+# default).
+#
+# Tentativa descartada: detectar a recriação DEPOIS do fato (comparar
+# identidade antes/depois numa fixture autouse) e "restaurar" trocando
+# `app.core.config.get_settings` por um wrapper novo. Não funciona: arquivos
+# de teste que fazem `from app.core.config import get_settings` no TOPO do
+# arquivo (ex.: test_vault_service.py, test_roteamento_gateway.py — os
+# mesmos citados na Issue #620) capturam essa referência na COLETA, antes de
+# qualquer teste rodar. Trocar o atributo do módulo depois não afeta esse
+# nome já vinculado — ele continua apontando para a função ORIGINAL, cujo
+# `lru_cache` interno já foi poluído pelo `cache_clear()+get_settings()` do
+# teste ofensor. "Restaurar depois" é tarde demais; é preciso IMPEDIR.
+#
+# `get_settings` é um único objeto-função por processo — TODO `from
+# app.core.config import get_settings`, não importa quando rodar, aponta
+# para esse MESMO objeto (é assim que o cache de módulos do Python
+# funciona). Por isso a trava monkeypatcha `.cache_clear` DIRETO no objeto
+# compartilhado, aqui no nível de módulo do conftest.py raiz — roda uma
+# única vez, na coleta, antes de qualquer arquivo de teste ser importado, e
+# vale para a suíte inteira independentemente de quem capturar a referência
+# antes ou depois. `get_settings()` (a leitura) continua normal — só a
+# limpeza do cache fica bloqueada.
+#
+# Para VARIAR configuração num teste, use a fixture `override_settings`
+# abaixo — ela muta atributos da instância JÁ CACHEADA (via monkeypatch,
+# desfeito automaticamente ao final do teste), nunca troca o objeto nem
+# limpa o cache.
+from app.core.config import get_settings as _settings_singleton
+
+
+def _cache_clear_bloqueado_em_teste(*_args, **_kwargs):
+    pytest.fail(
+        "get_settings.cache_clear() foi chamado durante os testes. Isso "
+        "recria o singleton de Settings — vários módulos capturam a "
+        "referência da instância no import (ex.: vault_crypto.py: "
+        "`settings = get_settings()`), e uma segunda instância os deixa "
+        "desalinhados, com sintomas em arquivos sem relação nenhuma com "
+        "quem limpou o cache (Issue #620: 10 falhas em 5 arquivos). Use a "
+        "fixture `override_settings` (backend/conftest.py) para variar "
+        "configuração em teste sem recriar o singleton."
+    )
+
+
+_settings_singleton.cache_clear = _cache_clear_bloqueado_em_teste
+
+
+@pytest.fixture
+def override_settings(monkeypatch):
+    """Varia atributos de `Settings` SEM recriar o singleton (Issue #620).
+
+    Muta a instância já cacheada de `get_settings()` via `monkeypatch`
+    (desfeito automaticamente ao final do teste) — quem capturou
+    `settings = get_settings()` no import de outro módulo (ex.:
+    vault_crypto.py) continua vendo o MESMO objeto Python, só que com o
+    valor novo. Nunca chama `cache_clear()`, então a chave Fernet efêmera do
+    Cofre, a identidade do singleton e qualquer estado capturado por outro
+    módulo permanecem estáveis.
+
+    Uso:
+        def test_x(override_settings):
+            override_settings(AI_ENABLED=False, SOME_FLAG=True)
+            ...  # exercita o código; restaurado ao valor original no teardown
+    """
+    instancia = _settings_singleton()
+
+    def _aplicar(**valores):
+        for campo, valor in valores.items():
+            monkeypatch.setattr(instancia, campo, valor, raising=True)
+        return instancia
+
+    return _aplicar
