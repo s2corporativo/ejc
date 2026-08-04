@@ -28,6 +28,10 @@ import {
 } from "lucide-react";
 import CaseContextBar from "./CaseContextBar";
 import CommandPalette from "./CommandPalette";
+import RelogioAgora from "./header/RelogioAgora";
+import MensagemDia from "./header/MensagemDia";
+import AtalhosContato from "./header/AtalhosContato";
+import SidebarAgendaSemana from "./SidebarAgendaSemana";
 import HelpButton from "./HelpButton";
 import IaStatusBanner from "./IaStatusBanner";
 import { useIaStatus } from "../lib/iaStatus";
@@ -221,7 +225,7 @@ export default function Layout() {
           <span className="min-w-0 flex-1">
             <span className="block truncate leading-tight">{label}</span>
             {description && (
-              <span className="mt-0.5 block line-clamp-1 text-[11px] font-normal leading-tight text-slate-400">
+              <span className="sidebar-nav-desc mt-0.5 block line-clamp-1 text-[11px] font-normal leading-tight">
                 {description}
               </span>
             )}
@@ -247,11 +251,11 @@ export default function Layout() {
           CPF/processos e renderiza fora da área borrada. */}
       {!privacyMode && <CommandPalette />}
 
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white">
+      <header className="app-header-shell fixed inset-x-0 top-0 z-50">
         <div className="flex h-16 items-center gap-3 px-3 md:px-6">
           <button
             type="button"
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden"
+            className="rounded-lg p-2 text-shell-muted hover:bg-white/10 hover:text-shell-text md:hidden"
             onClick={() => setMenuOpen(true)}
             aria-label="Abrir menu"
           >
@@ -266,26 +270,40 @@ export default function Layout() {
             <img
               src={BRAND_LOGO}
               alt="De Paula Teixeira Sociedade de Advogados"
-              className="brand-logo-img h-12 w-auto max-w-[240px] md:h-14 md:max-w-[300px]"
+              className="brand-logo-img brand-logo-tile h-11 w-auto max-w-[200px]"
             />
           </Link>
 
-          <div className="flex min-w-0 flex-1 justify-center px-1">
+          {/* Hora e data — formato brasileiro, fuso configurável. */}
+          <RelogioAgora className="hidden shrink-0 md:flex" />
+
+          <span
+            aria-hidden="true"
+            className="hidden h-8 w-px shrink-0 bg-white/10 md:block"
+          />
+
+          {/* Versículo/mensagem do dia — base local auditável. */}
+          <MensagemDia className="hidden min-w-0 flex-1 xl:flex" />
+
+          <div className="flex min-w-0 flex-1 justify-center px-1 xl:flex-none">
             <button
               type="button"
               onClick={() => window.dispatchEvent(new Event("ejc-open-search"))}
-              className="flex h-10 w-full max-w-xl items-center gap-3 rounded-full bg-slate-900/[0.04] px-4 text-left text-sm text-slate-500 transition-all duration-150 hover:bg-primary-50 dark:bg-white/[0.06] dark:text-slate-400 dark:hover:bg-white/[0.09]"
+              className="app-header-search flex h-10 w-full max-w-xl items-center gap-3 rounded-full px-4 text-left text-sm transition-all duration-150 xl:w-64"
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden truncate sm:inline">
-                Buscar processos por parte, CPF ou número…
+                Buscar processos…
               </span>
               <span className="truncate sm:hidden">Buscar…</span>
-              <kbd className="ml-auto hidden rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 shadow-sm sm:block">
+              <kbd className="ml-auto hidden rounded-md px-1.5 py-0.5 text-[10px] font-medium sm:block">
                 Ctrl K
               </kbd>
             </button>
           </div>
+
+          {/* WhatsApp, e-mail e IA do Escritório — config central (office.ts). */}
+          <AtalhosContato className="hidden lg:flex" />
 
           {/* DECISÃO: o atalho do header abre o wizard guiado de Novo Caso
               (/casos/novo) com dois modos de entrada (analisar documento |
@@ -401,7 +419,7 @@ export default function Layout() {
             >
               <Bell className="h-4 w-4" />
               {notifCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-600 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-600 px-1 text-[10px] font-semibold text-white ring-2 ring-shell-800">
                   {notifCount}
                 </span>
               )}
@@ -480,7 +498,7 @@ export default function Layout() {
       >
         <div
           className={cn(
-            "relative flex min-h-20 items-center justify-center border-b border-slate-200 px-3",
+            "relative flex min-h-24 items-center justify-center border-b border-white/10 px-3 py-3",
             collapsed && "px-2",
           )}
         >
@@ -489,18 +507,22 @@ export default function Layout() {
             className="flex min-w-0 flex-1 justify-center"
             aria-label="Ir para o início do EJC"
           >
-            <img
-              src={BRAND_LOGO}
-              alt="De Paula Teixeira Sociedade de Advogados"
-              className={cn(
-                "brand-logo-img w-auto object-contain",
-                collapsed ? "h-8 max-w-12" : "h-14 max-w-[220px]",
-              )}
-            />
+            {/* Logomarca ORIGINAL sobre tile claro: preserva a leitura da
+                arte transparente no shell escuro, sem redesenhar a marca. */}
+            <span className={cn("brand-logo-tile", collapsed && "px-1.5 py-1")}>
+              <img
+                src={BRAND_LOGO}
+                alt="De Paula Teixeira Sociedade de Advogados"
+                className={cn(
+                  "brand-logo-img w-auto object-contain",
+                  collapsed ? "h-8 max-w-12" : "h-16 max-w-[200px]",
+                )}
+              />
+            </span>
           </Link>
           <button
             type="button"
-            className="absolute right-2 hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block"
+            className="absolute right-2 hidden rounded-lg p-1.5 text-shell-muted hover:bg-white/10 hover:text-shell-text md:block"
             onClick={() => setSidebarCollapsed(!collapsed)}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -512,7 +534,7 @@ export default function Layout() {
           </button>
           <button
             type="button"
-            className="absolute right-2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
+            className="absolute right-2 rounded-lg p-1.5 text-shell-muted hover:bg-white/10 hover:text-shell-text md:hidden"
             onClick={() => setMenuOpen(false)}
             aria-label="Fechar menu"
           >
@@ -600,15 +622,20 @@ export default function Layout() {
             ))}
         </nav>
 
-        <div className="border-t border-slate-200 p-3">
+        <div className="border-t border-white/10 p-3">
+          {/* Calendário semanal integrado à agenda real (conceito aprovado);
+              some no rail recolhido e em telas baixas para não espremer o menu. */}
           {!collapsed && (
-            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-inset ring-slate-200">
+            <SidebarAgendaSemana className="mb-2 hidden [@media(min-height:640px)]:block" />
+          )}
+          {!collapsed && (
+            <div className="sidebar-surface mb-2 flex items-center gap-2.5 rounded-xl px-3 py-2.5">
               <ShieldCheck className="h-4 w-4 shrink-0 text-[#D4AF37]" />
               <div className="min-w-0">
-                <div className="truncate text-[11px] font-semibold text-slate-700">
+                <div className="truncate text-[11px] font-semibold text-shell-text">
                   Seguro &amp; Conforme
                 </div>
-                <div className="truncate text-[10px] text-slate-400">
+                <div className="truncate text-[10px] text-shell-muted">
                   Dados protegidos — LGPD
                 </div>
               </div>
@@ -618,17 +645,17 @@ export default function Layout() {
             to="/configuracoes"
             title="Abrir preferências"
             className={cn(
-              "flex items-center gap-3 rounded-xl bg-slate-50 p-2",
+              "sidebar-surface flex items-center gap-3 rounded-xl p-2",
               collapsed && "justify-center",
             )}
           >
             <UserAvatar user={user} size="md" />
             {!collapsed && (
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-semibold text-slate-700">
+                <div className="truncate text-xs font-semibold text-shell-text">
                   {user?.full_name || "Usuário"}
                 </div>
-                <div className="truncate text-[11px] capitalize text-slate-400">
+                <div className="truncate text-[11px] capitalize text-shell-muted">
                   {user?.role || ""}
                 </div>
               </div>
@@ -638,7 +665,7 @@ export default function Layout() {
             type="button"
             onClick={logout}
             className={cn(
-              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-danger-600/10 hover:text-danger-600",
+              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-shell-muted transition-colors hover:bg-danger-600/15 hover:text-danger-400",
               collapsed && "justify-center px-0",
             )}
             aria-label="Sair"

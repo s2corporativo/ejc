@@ -144,20 +144,22 @@ export default function SecurityMenu({ user }: { user: any }) {
 
   return (
     <div className="relative">
+      {/* Gatilho vive no header ESCURO do AppShell (uso único no Layout):
+          texto claro + hover translúcido. O dropdown continua claro. */}
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-xl px-1 py-0.5 transition-colors hover:bg-slate-50"
+        className="flex items-center gap-2 rounded-xl px-1.5 py-1 transition-colors hover:bg-white/10"
       >
         <UserAvatar user={user} size="md" />
         <div className="hidden sm:block text-left">
-          <div className="text-sm font-medium leading-tight text-slate-900">
+          <div className="text-sm font-medium leading-tight text-shell-text">
             {user?.full_name}
           </div>
-          <div className="text-[11px] text-slate-400 capitalize">
+          <div className="text-[11px] capitalize text-shell-muted">
             {user?.role}
           </div>
         </div>
-        <ChevronDown size={14} className="text-slate-400" />
+        <ChevronDown size={14} className="text-shell-muted" />
       </button>
 
       {/* Input oculto acionado apenas pelo item "Trocar foto de perfil".
