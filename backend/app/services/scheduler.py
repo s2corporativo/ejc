@@ -465,6 +465,54 @@ async def _expurgar_telemetria_rotas() -> None:
     await route_usage.expurgar_antigos()
 
 
+async def job_expurgo_entrada_unica() -> None:
+    """03h50 — Expurgo LGPD de rascunhos abandonados da Entrada Única
+    (Issue #647 / achado B6). Gate interno ENTRADA_EXPURGO_ENABLED (default
+    False — opt-in: hard delete é irreversível, decisão do titular ligar).
+
+    Achado da auditoria ("monitoramento afere execução, não resultado"): o
+    heartbeat carrega o dict de RESULTADO (contagens/bytes/aging) serializado
+    em `detail`, não um "ok" mudo — dá pra saber, olhando só o heartbeat,
+    quantos documentos foram removidos na última execução.
+    """
+    if not settings.ENTRADA_EXPURGO_ENABLED:
+        logger.debug("[entrada_expurgo] ENTRADA_EXPURGO_ENABLED=false — job pulado")
+        return
+
+    import json
+    from app.modules.auditoria.middleware import registrar_acao
+    from app.services.entrada_expurgo_service import expurgar_rascunhos_entrada_unica
+    from app.services.heartbeat_service import JOB_ENTRADA_EXPURGO
+
+    hb_status, resultado = "ok", None
+    try:
+        async with AsyncSessionLocal() as db:
+            resultado = await expurgar_rascunhos_entrada_unica(
+                db, dias=settings.ENTRADA_EXPURGO_DIAS, dry_run=False,
+            )
+            if "erro" in resultado:
+                hb_status = "erro"
+            elif resultado.get("batches_removidos"):
+                # Auditoria do expurgo EXECUTADO (não dry-run). Job automático:
+                # user_id=None (sistema), não ação de usuário.
+                await registrar_acao(
+                    db, None, "expurgo_entrada_unica", "document_intake_batches",
+                    None,
+                    f"Expurgo LGPD (Entrada Única): "
+                    f"{resultado['batches_removidos']} lote(s), "
+                    f"{resultado['documentos_removidos']} documento(s), "
+                    f"{resultado['bytes_liberados']} byte(s) liberados "
+                    f"— corte {resultado['corte']}.",
+                )
+    except Exception as e:
+        hb_status = "erro"
+        resultado = {"erro": type(e).__name__}
+        logger.error(f"[entrada_expurgo] falha no job: {e}")
+
+    detail = json.dumps(resultado, ensure_ascii=False) if resultado else None
+    await _bater_ponto(JOB_ENTRADA_EXPURGO, hb_status, detail)
+
+
 async def _alertar_prescricao():
     """Casos com prescrição ≤90 dias → alerta semanal ao responsável."""
     from app.core.database import AsyncSessionLocal
@@ -1310,6 +1358,13 @@ def start_scheduler():
         job_regua_cobranca_cliente,
         CronTrigger(hour=8, minute=30),
         id="regua_cobranca_cliente", replace_existing=True,
+    )
+    # Expurgo LGPD de rascunhos abandonados da Entrada Única (Issue #647) —
+    # diário 03h50. Gate interno ENTRADA_EXPURGO_ENABLED (default False).
+    s.add_job(
+        job_expurgo_entrada_unica,
+        CronTrigger(hour=3, minute=50),
+        id="expurgo_entrada_unica", replace_existing=True,
     )
 
     s.start()
