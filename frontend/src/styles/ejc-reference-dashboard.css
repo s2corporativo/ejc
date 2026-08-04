@@ -1,0 +1,280 @@
+/*
+ * EJC — refinamento visual fiel ao conceito aprovado.
+ * Camada deliberadamente aditiva: preserva lógica, rotas, RBAC e componentes.
+ * Carregada por último em main.tsx para corrigir proporções, hierarquia e acabamento.
+ */
+
+:root {
+  --ejc-ink: #11151d;
+  --ejc-ink-2: #181e28;
+  --ejc-ink-3: #222a36;
+  --ejc-gold: #c8a24a;
+  --ejc-gold-strong: #b78b2f;
+  --ejc-gold-soft: #ead7a4;
+  --ejc-canvas: #f3f4f6;
+  --ejc-card: #ffffff;
+  --ejc-line: #e6e8ec;
+  --ejc-muted: #687184;
+  --ejc-radius: 18px;
+  --ejc-shadow: 0 10px 28px rgba(17, 21, 29, 0.08);
+}
+
+/* Estrutura geral */
+body {
+  background: var(--ejc-canvas);
+}
+
+.app-header-shell {
+  height: 72px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(90deg, rgba(200, 162, 74, 0.08), transparent 34%),
+    var(--ejc-ink);
+  box-shadow: 0 8px 28px rgba(17, 21, 29, 0.16);
+}
+
+.app-header-shell > div {
+  min-height: 72px;
+  padding-inline: clamp(14px, 2vw, 30px);
+}
+
+.sidebar-bronze {
+  top: 72px !important;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(200, 162, 74, 0.11), transparent 32%),
+    linear-gradient(180deg, #161b24 0%, #10141b 100%) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 18px 0 42px rgba(10, 13, 18, 0.12);
+}
+
+.sidebar-surface {
+  background: transparent !important;
+}
+
+.brand-logo-tile {
+  background: #fff !important;
+  border: 1px solid rgba(200, 162, 74, 0.28) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.18) !important;
+  padding: 10px 14px !important;
+}
+
+.brand-logo-img {
+  object-fit: contain;
+}
+
+.sidebar-nav-item {
+  min-height: 42px;
+  border: 1px solid transparent;
+  color: rgba(244, 246, 249, 0.78) !important;
+}
+
+.sidebar-nav-item:hover {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.055) !important;
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-nav-item.is-active {
+  color: #17130a !important;
+  background: linear-gradient(135deg, #d5b764 0%, #b78b2f 100%) !important;
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 20px rgba(183, 139, 47, 0.25);
+}
+
+.sidebar-nav-item.is-active .sidebar-nav-desc {
+  color: rgba(23, 19, 10, 0.7) !important;
+}
+
+.sidebar-nav-desc {
+  color: rgba(232, 235, 241, 0.46) !important;
+}
+
+.app-header-search {
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: rgba(255, 255, 255, 0.78) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.app-header-search:hover,
+.app-header-search:focus-visible {
+  border-color: rgba(200, 162, 74, 0.55) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.header-contact-btn {
+  min-height: 36px !important;
+  padding-inline: 10px !important;
+  border-radius: 10px !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.055) !important;
+}
+
+.header-contact-btn:hover {
+  border-color: rgba(200, 162, 74, 0.48) !important;
+  color: var(--ejc-gold-soft) !important;
+}
+
+/* Área de conteúdo */
+.ejc-modern-scope {
+  padding-top: 24px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent 240px),
+    var(--ejc-canvas);
+}
+
+.ejc-modern-scope > div {
+  max-width: 1480px !important;
+}
+
+/* Dashboard: mais próximo do mockup aprovado */
+.ejc-modern-scope .space-y-4 {
+  display: grid;
+  gap: 18px;
+}
+
+.ejc-modern-scope .space-y-4 > * + * {
+  margin-top: 0 !important;
+}
+
+.ejc-modern-scope .card,
+.ejc-modern-scope [class*="rounded-2xl"][class*="bg-white"],
+.ejc-modern-scope [class*="rounded-xl"][class*="bg-white"] {
+  border-color: var(--ejc-line) !important;
+  box-shadow: var(--ejc-shadow);
+}
+
+.ejc-modern-scope .section-card,
+.ejc-modern-scope [data-section-card] {
+  border-radius: var(--ejc-radius) !important;
+}
+
+/* Primeira faixa de KPIs: cartões mais baixos, firmes e alinhados */
+.ejc-modern-scope .grid:has(> a.group.relative.flex.items-center) {
+  gap: 14px !important;
+}
+
+.ejc-modern-scope a.group.relative.flex.items-center {
+  min-height: 116px;
+  border-radius: 16px !important;
+  padding: 18px !important;
+  box-shadow: 0 12px 24px rgba(17, 21, 29, 0.12) !important;
+}
+
+.ejc-modern-scope a.group.relative.flex.items-center:not([class*="from-[#C9A227]"]) {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.035), transparent),
+    var(--ejc-ink-2) !important;
+}
+
+.ejc-modern-scope a.group.relative.flex.items-center [class*="text-3xl"] {
+  font-size: 2rem !important;
+  line-height: 1 !important;
+  letter-spacing: -0.035em;
+}
+
+/* Page header com aparência editorial e menos genérica */
+.ejc-modern-scope h1 {
+  letter-spacing: -0.035em;
+}
+
+.ejc-modern-scope [class*="eyebrow"],
+.ejc-modern-scope .page-eyebrow {
+  color: var(--ejc-gold-strong) !important;
+  letter-spacing: 0.16em;
+}
+
+/* Painéis brancos */
+.ejc-modern-scope section,
+.ejc-modern-scope article {
+  scroll-margin-top: 96px;
+}
+
+.ejc-modern-scope [class*="divide-y"] {
+  border-color: var(--ejc-line) !important;
+}
+
+.ejc-modern-scope [class*="hover:bg-slate-50"]:hover {
+  background: #f8f6f0 !important;
+}
+
+/* Barras e elementos analíticos em paleta institucional */
+.ejc-modern-scope [class*="bg-primary-600"],
+.ejc-modern-scope [class*="bg-primary-500"],
+.ejc-modern-scope [class*="bg-primary-700"] {
+  background-color: var(--ejc-gold-strong) !important;
+}
+
+.ejc-modern-scope [class*="text-primary-700"],
+.ejc-modern-scope [class*="text-primary-600"] {
+  color: #8f6c22 !important;
+}
+
+.ejc-modern-scope [class*="bg-primary-50"] {
+  background-color: #fbf6e9 !important;
+}
+
+.ejc-modern-scope [class*="ring-primary-200"] {
+  --tw-ring-color: #ead7a4 !important;
+}
+
+/* Botões principais */
+.ejc-modern-scope button[class*="bg-primary"],
+.ejc-modern-scope a[class*="bg-primary"] {
+  background: linear-gradient(135deg, #c9a94f, #a97d24) !important;
+  color: #17130a !important;
+  box-shadow: 0 7px 16px rgba(169, 125, 36, 0.22);
+}
+
+/* Refinamento responsivo */
+@media (min-width: 1280px) {
+  .ejc-modern-scope {
+    padding-inline: 30px !important;
+  }
+
+  .ejc-modern-scope .grid:has(> a.group.relative.flex.items-center) {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1279px) {
+  .app-header-shell > div {
+    gap: 8px !important;
+  }
+
+  .header-contact-btn span {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-header-shell,
+  .app-header-shell > div {
+    height: 64px;
+    min-height: 64px;
+  }
+
+  .sidebar-bronze {
+    top: 64px !important;
+  }
+
+  .ejc-modern-scope {
+    padding: 16px !important;
+  }
+
+  .ejc-modern-scope a.group.relative.flex.items-center {
+    min-height: 102px;
+  }
+}
+
+/* Respeito à preferência de movimento reduzido */
+@media (prefers-reduced-motion: reduce) {
+  .ejc-modern-scope *,
+  .app-header-shell *,
+  .sidebar-bronze * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
