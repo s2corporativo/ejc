@@ -35,11 +35,15 @@ function BrandIntro({ className }: { className?: string }) {
 
   if (fallback || reduceMotion) {
     return (
-      <img
-        src={BRAND_LOGO}
-        alt="De Paula Teixeira Sociedade de Advogados"
-        className={`brand-logo-img h-40 w-auto max-w-[440px] ${className || ""}`}
-      />
+      // Tile claro atrás da arte transparente — preserva a leitura da
+      // logomarca original sobre o painel escuro do login.
+      <span className="brand-logo-tile inline-flex">
+        <img
+          src={BRAND_LOGO}
+          alt="De Paula Teixeira Sociedade de Advogados"
+          className={`brand-logo-img h-40 w-auto max-w-[440px] ${className || ""}`}
+        />
+      </span>
     );
   }
   return (
@@ -151,21 +155,24 @@ export default function LoginModern() {
     <div className="min-h-screen overflow-hidden bg-canvas text-slate-950">
       <div className="brand-watermark opacity-[0.05]" aria-hidden="true" />
       <div className="relative z-10 grid min-h-screen lg:grid-cols-[1fr_460px]">
-        <section className="relative hidden flex-col justify-between overflow-hidden p-10 text-slate-900 lg:flex">
+        {/* Painel institucional ESCURO (shell do conceito aprovado):
+            preto-azulado sóbrio com acentos dourados; o formulário à
+            direita permanece claro. Fluxo de autenticação intocado. */}
+        <section className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-b from-shell-800 via-shell to-shell-900 p-10 text-shell-text lg:flex">
           <div className="relative flex items-center gap-3">
             {/* Vinheta da marca — toca uma vez e congela na logomarca */}
             <BrandIntro />
           </div>
 
           <div className="relative max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-ouro-palha px-3 py-1 text-xs font-semibold text-ouro-profundo">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-gold/40 bg-gold/10 px-3 py-1 text-xs font-semibold text-gold-light">
               <Sparkles className="h-3.5 w-3.5" />
               Plataforma jurídica empresarial
             </div>
-            <h1 className="max-w-xl text-2xl font-bold leading-snug tracking-tight text-slate-950">
+            <h1 className="max-w-xl text-2xl font-bold leading-snug tracking-tight text-white">
               Gestão jurídica com controle, produtividade e IA revisável.
             </h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500">
+            <p className="mt-3 max-w-xl text-sm leading-6 text-shell-muted">
               Centralize casos, clientes, prazos, documentos, financeiro e
               produção jurídica em um ambiente seguro para operação
               profissional.
@@ -178,19 +185,19 @@ export default function LoginModern() {
               ].map(([title, desc]) => (
                 <div
                   key={title}
-                  className="rounded-xl border border-border bg-white p-3 shadow-soft transition-shadow duration-150 hover:shadow-card"
+                  className="rounded-xl border border-white/10 bg-white/[0.05] p-3 transition-colors duration-150 hover:border-gold/40"
                 >
-                  <div className="text-sm font-semibold text-slate-950">
+                  <div className="text-sm font-semibold text-shell-text">
                     {title}
                   </div>
-                  <div className="mt-1 text-xs text-slate-400">{desc}</div>
+                  <div className="mt-1 text-xs text-shell-muted">{desc}</div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="relative flex items-center gap-2 text-xs text-slate-500">
-            <ShieldCheck className="h-4 w-4 text-primary-500" />
+          <div className="relative flex items-center gap-2 text-xs text-shell-muted">
+            <ShieldCheck className="h-4 w-4 text-gold" />
             Acesso restrito com trilha de auditoria e perfis de permissão.
           </div>
         </section>
