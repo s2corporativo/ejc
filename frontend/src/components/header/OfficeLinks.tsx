@@ -43,15 +43,7 @@ export default function OfficeLinks() {
   return (
     <div className="ejc-office-links" aria-label="Atalhos institucionais">
       {links.map(
-        ({
-          key,
-          label,
-          wideLabel,
-          title,
-          missingTitle,
-          href,
-          icon: Icon,
-        }) => {
+        ({ key, label, wideLabel, title, missingTitle, href, icon: Icon }) => {
           const content = (
             <>
               <Icon className="h-4 w-4" aria-hidden="true" />
