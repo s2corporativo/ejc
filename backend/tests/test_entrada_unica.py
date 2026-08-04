@@ -345,7 +345,8 @@ async def test_criar_caso_422_documento_que_nao_e_do_rascunho(
     user = await _semear(sessao_db)
     # Documento real, mas de OUTRO lote — não pode ser vinculado por aqui.
     sessao_db.add(Document(id="d-alheio", titulo="Doc alheio",
-                           filename="x.pdf", filepath="2026/08/x.pdf"))
+                           filename="x.pdf", filepath="2026/08/x.pdf",
+                           confidencialidade=DocConfidencialidade.confidencial))
     await sessao_db.commit()
 
     with pytest.raises(HTTPException) as ei:
