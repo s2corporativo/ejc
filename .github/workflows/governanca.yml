@@ -80,7 +80,21 @@ jobs:
           [ "$ACHOU" -eq 0 ] || exit 1
           echo "Nenhum segredo detectado."
 
+      - name: Autor do PR
+        shell: bash
+        run: |
+          echo "Autor: ${{ github.event.pull_request.user.login }}"
+
       - name: Descricao do PR preenchida
+        # Isenção fechada: PR de manutenção automatizada de dependências, aberto por
+        # autor desta allowlist, é dispensado de Issue vinculada e do template de
+        # descrição. As DEMAIS travas deste job (migration, segredo, escopo, branch de
+        # origem) continuam se aplicando integralmente a esses PRs — só este step é
+        # pulado. Fundamentação, limite e como ampliar: docs/GOVERNANCA_IA.md, seção
+        # "Exceção de bot de manutenção de dependências". Allowlist deve coincidir
+        # EXATAMENTE com a do documento canônico (fixado por
+        # backend/tests/test_governanca_workflow.py).
+        if: ${{ !contains(fromJSON('["dependabot[bot]"]'), github.event.pull_request.user.login) }}
         env:
           CORPO: ${{ github.event.pull_request.body }}
         shell: bash
