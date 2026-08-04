@@ -31,19 +31,20 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Mudar DEFAULT de coluna existente: nova assinatura.
-    # Para enum PostgreSQL, server_default deve ser um literal SQL com quotes.
-    op.alter_column('documents', 'confidencialidade',
-                    existing_type=sa.Enum('normal', 'interno', 'restrito', 'confidencial', 'segredo_justica', name='docconfidencialidade'),
-                    existing_nullable=False,
-                    server_default="'confidencial'")
+    # Mudar DEFAULT de coluna existente via SQL direto (mais robusto que op.alter_column para enums).
+    op.execute(
+        sa.text(
+            "ALTER TABLE documents ALTER COLUMN confidencialidade "
+            "SET DEFAULT 'confidencial'::docconfidencialidade"
+        )
+    )
 
     # Reclassificar documentos existentes com default (era "normal") para "confidencial"
     # para refletir a nova política de publicação explícita.
     op.execute(
         sa.text(
-            "UPDATE documents SET confidencialidade = 'confidencial' "
-            "WHERE confidencialidade = 'normal'"
+            "UPDATE documents SET confidencialidade = 'confidencial'::docconfidencialidade "
+            "WHERE confidencialidade = 'normal'::docconfidencialidade"
         )
     )
 
@@ -52,13 +53,15 @@ def downgrade() -> None:
     # Desfazer a reclassificação (volta "confidencial" → "normal")
     op.execute(
         sa.text(
-            "UPDATE documents SET confidencialidade = 'normal' "
-            "WHERE confidencialidade = 'confidencial'"
+            "UPDATE documents SET confidencialidade = 'normal'::docconfidencialidade "
+            "WHERE confidencialidade = 'confidencial'::docconfidencialidade"
         )
     )
 
     # Restaurar default anterior
-    op.alter_column('documents', 'confidencialidade',
-                    existing_type=sa.Enum('normal', 'interno', 'restrito', 'confidencial', 'segredo_justica', name='docconfidencialidade'),
-                    existing_nullable=False,
-                    server_default="'normal'")
+    op.execute(
+        sa.text(
+            "ALTER TABLE documents ALTER COLUMN confidencialidade "
+            "SET DEFAULT 'normal'::docconfidencialidade"
+        )
+    )
