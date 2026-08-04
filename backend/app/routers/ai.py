@@ -137,13 +137,20 @@ async def listar_logs(
     rows = (await db.execute(
         q.offset((page - 1) * page_size).limit(page_size)
     )).scalars().all()
+    # Guardrail jurídico determinístico (Issue #554), aplicado NA LEITURA: o
+    # AILog não distingue qual skill gerou a resposta (não há coluna
+    # skill_name — fora do escopo desta Issue, que não autoriza migration de
+    # schema), então a correção de mérito (CPC art. 487, II) é reaplicada aqui
+    # a QUALQUER resposta já persistida, cobrindo execuções anteriores a esta
+    # correção sem reescrever o dado gravado no banco — só a cópia servida.
+    from app.services.ai import juridico_guardrails
     return {
         "data": [
             {"id": l.id, "tipo_uso": l.tipo_uso.value, "modelo": l.modelo,
              "status_hitl": l.status_hitl.value, "pii_removida": l.pii_removida,
              "risco_ia": l.risco_ia.value if l.risco_ia else None,
              "case_id": l.case_id, "created_at": l.created_at,
-             "resposta": l.resposta,
+             "resposta": juridico_guardrails.aplicar_guardrail_merito(l.resposta)[0],
              # Campo dedicado (migration 070): crítica adversarial p/ o revisor
              # HITL — separada de `resposta` para não gatear/ingerir a crítica.
              "critica_adversarial": l.critica_adversarial}

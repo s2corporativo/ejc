@@ -509,8 +509,18 @@ SKILLS = [
         "estrategia",
         "Produzir memória auditável de prescrição/decadência e alertar urgências.",
         "Natureza da pretensão, fatos e ciência, vencimentos, partes, incapacidade, notificações, protestos, processos, decisões, trânsito, pagamentos e datas completas.",
-        "Legislação material/processual específica; regras de transição; precedentes oficiais [VALIDAR FONTE].",
-        "Nunca emitir uma data final sem regra, termo inicial, contagem e eventos documentados. Diferenciar prescrição, decadência, preclusão e prazo processual.",
+        "Legislação material/processual específica; regras de transição; precedentes oficiais [VALIDAR FONTE]. "
+        "CPC, art. 487, II (https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm): "
+        "o reconhecimento de prescrição ou decadência é SENTENÇA DE MÉRITO — NUNCA qualifique como "
+        "extinção sem resolução de mérito (art. 485 do CPC). "
+        "CDC, arts. 26 e 27 (https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm): vício do "
+        "produto/serviço (art. 26) DECAI; fato do produto/serviço — defeito que causa dano (art. 27) "
+        "PRESCREVE. São regimes distintos: nunca cumule os dois automaticamente — fundamente cada "
+        "pretensão separadamente, com prazo, termo inicial e fonte próprios.",
+        "Nunca emitir uma data final sem regra, termo inicial, contagem e eventos documentados. "
+        "Diferenciar prescrição, decadência, preclusão e prazo processual. Um guardrail determinístico "
+        "do sistema corrige/alerta automaticamente qualificações incorretas de mérito e cumulações "
+        "indevidas do CDC — mesmo assim, redija corretamente desde a origem.",
     ),
     _skill(
         "scanner-injecao-prompts-documentos",
@@ -599,8 +609,17 @@ SKILLS = [
         "estrategia",
         "Fazer red-team jurídico da peça antes do uso externo.",
         "Peça, documentos que a sustentam, posição, ramo, fase, tribunal, objetivo, restrições, tese adversa conhecida e prazo.",
-        "Legislação aplicável; autos; precedentes oficiais fornecidos/RAG [VALIDAR FONTE].",
-        "A simulação não deve criar fato, prova ou precedente do adversário. Separar objeção plausível, resposta possível, prova necessária e risco residual.",
+        "Legislação aplicável; autos; precedentes oficiais fornecidos/RAG [VALIDAR FONTE]. "
+        "Se a peça envolver prescrição/decadência: CPC, art. 487, II "
+        "(https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm) — é SENTENÇA DE "
+        "MÉRITO, NUNCA extinção sem resolução de mérito (art. 485). Se envolver CDC: arts. 26 (vício — "
+        "decadência) e 27 (fato do produto/serviço — prescrição) "
+        "(https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm) são regimes distintos — não "
+        "cumule sem fundamentar cada pretensão separadamente.",
+        "A simulação não deve criar fato, prova ou precedente do adversário. Separar objeção plausível, "
+        "resposta possível, prova necessária e risco residual. Um guardrail determinístico do sistema "
+        "corrige/alerta automaticamente qualificações incorretas de mérito e cumulações indevidas do "
+        "CDC — mesmo assim, redija corretamente desde a origem.",
     ),
     _skill(
         "termometro-dano-moral",
@@ -613,6 +632,26 @@ SKILLS = [
         "Sem dataset identificado não fornecer média, mínimo ou máximo. Registrar amostra, vieses, moeda/data-base e casos descartados; valor passado não garante resultado.",
     ),
 ]
+
+
+# Skills cujo texto (system_prompt/description) precisa ser FORÇADO a
+# atualizar mesmo em instalações já feitas (Issue #554, problema 2): o
+# guardrail de regras jurídicas (CPC art. 487, II; CDC arts. 26 e 27) foi
+# adicionado ao texto acima, mas o loop de seed padrão só ignora nomes já
+# existentes — sem isto, bancos já semeados manteriam o prompt antigo, sem a
+# instrução do guardrail, para sempre.
+#
+# Abordagem escolhida (mais simples, sem migration de schema — fora do
+# escopo desta Issue): upsert direcionado por `name`, restrito a esta
+# allowlist. Alternativa descartada: migration de dados fazendo o mesmo
+# UPDATE — rejeitada porque o texto já vive aqui (fonte única) e uma
+# migration duplicaria o conteúdo (drift entre migration e seed no primeiro
+# ajuste futuro do prompt). O guardrail DETERMINÍSTICO em
+# `app/services/ai/juridico_guardrails.py` já cobre a resposta da IA
+# independentemente deste texto estar atualizado ou não — este upsert é
+# reforço de defesa em profundidade (o prompt correto reduz a chance de a
+# IA errar; o guardrail corrige/alerta quando ela erra mesmo assim).
+_NOMES_FORCAR_ATUALIZACAO = {"prescricao-decadencia", "simulador-defesa-adversarial"}
 
 
 def seed() -> None:
@@ -629,7 +668,7 @@ def seed() -> None:
         sys.exit(1)
 
     engine = create_engine(url)
-    inserted = skipped = 0
+    inserted = skipped = updated = 0
     now = datetime.utcnow()
     with Session(engine) as session:
         for skill in SKILLS:
@@ -638,8 +677,22 @@ def seed() -> None:
                 {"name": skill["name"]},
             ).fetchone()
             if exists:
-                print(f"  ⏭️  Já existe: {skill['name']}")
-                skipped += 1
+                if skill["name"] in _NOMES_FORCAR_ATUALIZACAO:
+                    session.execute(
+                        text("""
+                            UPDATE ejc_skills
+                            SET display_name=:display_name, description=:description,
+                                system_prompt=:system_prompt, area=:area,
+                                updated_at=:now
+                            WHERE name=:name
+                        """),
+                        {"now": now, **skill},
+                    )
+                    updated += 1
+                    print(f"  🔄 Atualizada (guardrail jurídico): {skill['name']}")
+                else:
+                    print(f"  ⏭️  Já existe: {skill['name']}")
+                    skipped += 1
                 continue
             session.execute(
                 text("""
@@ -660,7 +713,7 @@ def seed() -> None:
             print(f"  ✅ Inserida: {skill['name']} — {skill['display_name']}")
         session.commit()
     print(
-        f"\nSKILLS EXPANSION SEED: inseridas={inserted} "
+        f"\nSKILLS EXPANSION SEED: inseridas={inserted} atualizadas={updated} "
         f"ignoradas={skipped} total={len(SKILLS)}"
     )
 
