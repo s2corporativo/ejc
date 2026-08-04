@@ -34,7 +34,8 @@ from app.services.system_prompts.blocos_condicionais import (
     montar_instrucao_blocos,
 )
 from app.services.advogado_style_service import montar_instrucoes_estilo_para_prompt
-from app.services.homologacao_ferramentas import motivo_nao_homologada
+from app.services.homologacao_ferramentas import motivo_nao_homologada, normalizar_caminho_ferramenta
+from app.routers.ramos import CAMINHOS_FERRAMENTAS_VALIDOS, VERSAO_REGRA_ATUAL
 from app.schemas.peca_workflow import ProducaoModoRequest
 from app.services.peca_workflow_service import preparar_modo_producao
 from app.services.deep_research_service import DeepResearchInput, executar_deep_research
@@ -439,10 +440,26 @@ class DemonstrativoRequest(BaseModel):
     rodape: Optional[str] = Field(None, max_length=2000)
     case_id: Optional[str] = None
     # Caminho da ferramenta de origem do cálculo (ex.: /civel/ferramentas/
-    # prazos-contestacao). Opcional (retrocompatível); quando informado e a
-    # ferramenta consta na matriz de não homologadas (Onda 1), o demonstrativo
-    # é REJEITADO com 422 — resultado não homologado não vira peça.
-    ferramenta: Optional[str] = Field(None, max_length=200)
+    # prazos-contestacao). OBRIGATÓRIO desde a Onda 3 (Issue #702) — antes era
+    # opcional e a ausência só registrava um warning, o que contornava o gate
+    # de homologação por omissão do campo. Validado contra o conjunto REAL de
+    # rotas /ferramentas/ de ramos.py (CAMINHOS_FERRAMENTAS_VALIDOS) — não é
+    # string livre. Quando o caminho consta na matriz de não homologadas
+    # (Onda 1), o demonstrativo é REJEITADO com 422 — resultado não
+    # homologado não vira peça.
+    ferramenta: str = Field(..., min_length=1, max_length=200)
+    # Proveniência do cálculo (Onda 3, Issue #702) — os mesmos metadados que a
+    # ferramenta carimba na própria resposta (ramos.py, `_com_regra`/inline):
+    # `fontes` e `vigencia_regra` são citados no corpo do demonstrativo, ao
+    # lado de `base_legal`. `versao_regra` é conferido contra a versão
+    # REALMENTE vigente das regras (ramos.VERSAO_REGRA_ATUAL, o mesmo valor
+    # que TODA ferramenta carimba hoje) — um valor divergente é rejeitado,
+    # pois indica que os números não vieram de uma execução real e recente da
+    # ferramenta declarada. Mecanismo (c) da Issue #702: metadado conferível,
+    # NÃO prova criptográfica do cálculo — ver limitação registrada no PR.
+    fontes: list[str] = Field(..., min_length=1, max_length=20)
+    vigencia_regra: str = Field(..., min_length=1, max_length=300)
+    versao_regra: str = Field(..., min_length=1, max_length=50)
 
 
 @router.post("/demonstrativo", status_code=201)
@@ -454,7 +471,8 @@ async def gerar_demonstrativo(
     """Converte o resultado de uma calculadora em um Demonstrativo de Cálculo
     salvo como peça (LegalDoc) rascunho — vinculável a um caso. Reusa a esteira
     de peças existente; resultado é MINUTA (revisão humana obrigatória)."""
-    # DOIS GATES, do mais específico para o mais geral (consolidação 2026-07-29).
+    # QUATRO GATES, do mais específico para o mais geral (consolidação
+    # 2026-07-29; caminho-válido e proveniência entraram na Onda 3, Issue #702).
     #
     # O PR #493 trouxe a matriz por ferramenta (FERRAMENTAS_NAO_HOMOLOGADAS) e o
     # PR #496 trouxe a trava geral por flag. Eles nasceram em frentes paralelas e
@@ -470,28 +488,51 @@ async def gerar_demonstrativo(
     # exportação é decisão do titular (PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED),
     # não consequência silenciosa de um merge.
 
-    # Gate de homologação (Onda 1, PR #493): cálculo de ferramenta não homologada
-    # não pode ser convertido em demonstrativo/peça. O campo é OPT-IN por
-    # retrocompatibilidade — quando ausente, registramos o bypass para dar
-    # visibilidade (a obrigatoriedade fica para a Onda 3, com telemetria).
-    if not req.ferramenta:
-        logger.warning(
-            "demonstrativo_sem_ferramenta: gate de homologação não aplicado "
-            "(user_id=%s, case_id=%s, titulo=%r)", cu.id, req.case_id, req.titulo[:80])
-    if req.ferramenta:
-        motivo = motivo_nao_homologada(req.ferramenta)
-        if motivo:
-            raise HTTPException(422, detail={
-                "codigo": "ferramenta_nao_homologada",
-                "motivo": motivo,
-                "mensagem": ("Demonstrativo bloqueado: a ferramenta de origem não está "
-                             "homologada para uso profissional — em revisão jurídica"),
-            })
+    # Gate 1 — caminho existe? (Onda 3, Issue #702). `ferramenta` é OBRIGATÓRIO
+    # desde esta Issue (Pydantic já barra a ausência com 422) e é validado
+    # contra o conjunto REAL de rotas /ferramentas/ de ramos.py — string livre
+    # NÃO passa. Sem esta checagem, um caminho inventado "não está na matriz,
+    # logo está liberado" contornaria o Gate 2 do mesmo jeito que o campo
+    # ausente contornava o gate antigo.
+    caminho = normalizar_caminho_ferramenta(req.ferramenta)
+    if caminho not in CAMINHOS_FERRAMENTAS_VALIDOS:
+        raise HTTPException(422, detail={
+            "codigo": "ferramenta_desconhecida",
+            "mensagem": ("Demonstrativo bloqueado: 'ferramenta' não corresponde a "
+                         "nenhuma calculadora existente."),
+        })
 
-    # AI-107/AI-113 (auditoria 2026-07-26, PR #496): trava geral enquanto as
-    # regras das calculadoras não forem homologadas (fonte/vigência/revisor) —
-    # um demonstrativo dá aparência DOCUMENTAL a uma regra possivelmente errada
-    # e pode ser usado externamente.
+    # Gate 2 — homologação (Onda 1, PR #493): cálculo de ferramenta não
+    # homologada não pode ser convertido em demonstrativo/peça.
+    motivo = motivo_nao_homologada(req.ferramenta)
+    if motivo:
+        raise HTTPException(422, detail={
+            "codigo": "ferramenta_nao_homologada",
+            "motivo": motivo,
+            "mensagem": ("Demonstrativo bloqueado: a ferramenta de origem não está "
+                         "homologada para uso profissional — em revisão jurídica"),
+        })
+
+    # Gate 3 — proveniência (Onda 3, Issue #702). `versao_regra` é carimbado
+    # pelo PRÓPRIO servidor em toda resposta de ferramenta e hoje é o MESMO
+    # valor para todas elas (ramos.VERSAO_REGRA_ATUAL). Um demonstrativo que
+    # alega uma versão diferente da vigente não pode ter saído de uma
+    # execução real e recente da ferramenta — é o sinal mínimo de forjamento
+    # que este piso consegue detectar sem recalcular no servidor (mecanismo
+    # (c) da Issue: metadado conferível, NÃO prova do cálculo em si).
+    if req.versao_regra != VERSAO_REGRA_ATUAL:
+        raise HTTPException(422, detail={
+            "codigo": "versao_regra_divergente",
+            "mensagem": (
+                f"Demonstrativo bloqueado: versao_regra={req.versao_regra!r} não "
+                f"corresponde à versão vigente das regras ({VERSAO_REGRA_ATUAL!r}). "
+                "Refaça o cálculo na ferramenta antes de gerar o demonstrativo."),
+        })
+
+    # Gate 4 — trava geral (AI-107/AI-113, auditoria 2026-07-26, PR #496):
+    # enquanto as regras das calculadoras não forem homologadas
+    # (fonte/vigência/revisor), um demonstrativo dá aparência DOCUMENTAL a uma
+    # regra possivelmente errada e pode ser usado externamente.
     from app.core.config import get_settings
     if not getattr(get_settings(), "PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED", False):
         raise HTTPException(
@@ -514,6 +555,11 @@ async def gerar_demonstrativo(
     ]
     if req.base_legal:
         partes.append(f"\nFUNDAMENTO: {req.base_legal}")
+    partes.append(
+        f"\nFERRAMENTA DE ORIGEM: {req.ferramenta} (versão da regra: {req.versao_regra})"
+        f"\nVIGÊNCIA DA REGRA: {req.vigencia_regra}"
+        "\nFONTES:\n" + "\n".join(f"  • {f}" for f in req.fontes)
+    )
     if req.rodape:
         partes.append(f"\n{req.rodape}")
     partes.append(
