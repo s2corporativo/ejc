@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - claude/ejc-restilizacao-v2-clean
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
