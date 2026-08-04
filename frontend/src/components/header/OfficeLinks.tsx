@@ -1,7 +1,16 @@
-import { Bot, Mail, MessageCircle } from "lucide-react";
+import { Bot, Mail, MessageCircle, type LucideIcon } from "lucide-react";
 import { OFFICE_LINKS } from "../../config/office";
 
-const links = [
+type OfficeLink = {
+  key: string;
+  label: string;
+  wideLabel?: string;
+  title: string;
+  href: string;
+  icon: LucideIcon;
+};
+
+const links: readonly OfficeLink[] = [
   {
     key: "whatsapp",
     label: "WhatsApp",
@@ -24,7 +33,7 @@ const links = [
     href: OFFICE_LINKS.officeAi,
     icon: Bot,
   },
-] as const;
+];
 
 export default function OfficeLinks() {
   return (
