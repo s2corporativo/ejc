@@ -356,25 +356,32 @@
     }
   }
 
-  /* ── Sidebar clara (branca) — igual nos 2 temas ── */
+  /* ── Shell escuro premium (conceito aprovado 2026-08: sidebar e header
+     preto-azulados, dourado como destaque, conteúdo claro) — igual nos
+     2 temas. Texto claro #E7E9EF (>12:1) e acento de texto dourado
+     #E5CE7F (11,4:1 sobre o shell), conforme tokens do DS. ── */
   .sidebar-bronze {
-    background: #ffffff;
-    border-right: 1px solid rgb(226 232 240); /* slate-200 */
+    background: linear-gradient(180deg, #0d1120 0%, #0a0d18 100%);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
   }
   .sidebar-nav-item {
     position: relative;
     /* Recorta o filete ativo (::before, reto e 100% da altura) nos cantos
        arredondados (rounded-lg) do item. */
     overflow: hidden;
-    color: rgb(51 65 85); /* slate-700 */
+    color: #c3c9d9;
   }
   .sidebar-nav-item:hover {
-    background: #f8f6f0; /* neutro quente */
-    color: rgb(15 23 42); /* slate-900 */
+    background: rgba(255, 255, 255, 0.06);
+    color: #f2f4f8;
   }
   .sidebar-nav-item.is-active {
-    background: #f7f1dc; /* ouro palha */
-    color: #6f5711; /* ouro profundo — 6,9:1 sobre a palha (AA) */
+    background: linear-gradient(
+      90deg,
+      rgba(212, 175, 55, 0.18),
+      rgba(212, 175, 55, 0.08)
+    );
+    color: #e5ce7f; /* ouro claro-texto — 11,4:1 sobre o shell (AAA) */
   }
   /* Item ativo com "borderLeft" de 3px em toda a altura (idioma
      Verdelimp), no dourado da marca (#D4AF37). */
@@ -390,33 +397,93 @@
   }
   /* Ícones do menu neutros; dourados no hover/ativo — acento cirúrgico. */
   .sidebar-nav-item svg {
-    color: #667085;
+    color: #8b93a9;
     transition: color 0.15s ease-out;
   }
   .sidebar-nav-item:hover svg {
-    color: #8f7117;
+    color: #e5ce7f;
   }
   .sidebar-nav-item.is-active svg {
-    color: #8f7117;
+    color: #d4af37;
+  }
+  /* Subtítulo do item (description) precisa acompanhar o shell escuro. */
+  .sidebar-nav-item .sidebar-nav-desc {
+    color: #7d8499;
   }
   .sidebar-group-label {
-    color: rgb(100 116 139); /* slate-500 */
+    color: #8b93a9;
   }
   .sidebar-group-label:hover {
-    color: rgb(51 65 85); /* slate-700 */
+    color: #c3c9d9;
   }
   .sidebar-tree {
-    border-color: rgb(226 232 240); /* slate-200 */
+    border-color: rgba(255, 255, 255, 0.1);
   }
   .sidebar-count {
-    background: #f7f1dc;
-    color: #6f5711;
+    background: rgba(212, 175, 55, 0.16);
+    color: #e5ce7f;
+  }
+  /* Superfície elevada dentro do shell (rodapé de usuário, LGPD, agenda). */
+  .sidebar-surface {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
   }
 
-  /* Tile da logomarca (header) — logo-hd.png tem fundo TRANSPARENTE:
-     nenhum fundo branco é necessário em tema algum. */
+  /* ── Header escuro do AppShell — mesmo idioma da sidebar. Overrides
+     ESCOPADOS: .icon-btn é usado fora do header (portal, páginas) e lá
+     continua claro. ── */
+  .app-header-shell {
+    background: linear-gradient(180deg, #111527 0%, #0d1120 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: #e7e9ef;
+  }
+  .app-header-shell .icon-btn {
+    background: rgba(255, 255, 255, 0.06);
+    color: #aeb5c8;
+  }
+  .app-header-shell .icon-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #f2f4f8;
+  }
+  /* Pílula de busca global sobre o shell escuro. */
+  .app-header-search {
+    background: rgba(255, 255, 255, 0.07);
+    color: #9aa1b5;
+  }
+  .app-header-search:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .app-header-search kbd {
+    background: rgba(255, 255, 255, 0.1);
+    color: #aeb5c8;
+    box-shadow: none;
+  }
+  /* Botão compacto de contato (WhatsApp/E-mail/IA) — contorno discreto,
+     texto claro, realce dourado no hover/foco. */
+  .header-contact-btn {
+    @apply inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #d6dae5;
+  }
+  .header-contact-btn:hover,
+  .header-contact-btn:focus-visible {
+    border-color: rgba(212, 175, 55, 0.55);
+    color: #e5ce7f;
+    background: rgba(212, 175, 55, 0.08);
+  }
+  .header-contact-btn svg {
+    color: #c9a227;
+  }
+
+  /* Tile da logomarca — a logo-hd.png é transparente; sobre o shell ESCURO
+     ela recebe um tile claro para preservar a leitura da versão original
+     (exigência da marca: nunca redesenhar/recriar). */
   .brand-logo-tile {
-    background: transparent;
+    background: #fdfdfb;
+    border-radius: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   }
 
   /* ── Item de menu de dropdown (avatar/segurança) ──────────── */

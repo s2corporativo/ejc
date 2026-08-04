@@ -26,11 +26,25 @@ export default {
          */
 
         // Sidebar clara: branco com hover neutro quente e realce ouro palha.
+        // (Legado — o AppShell atual usa a família `shell` abaixo.)
         sidebar: {
           DEFAULT: "#FFFFFF",
           light: "#FAF9F6",
           hover: "#F8F6F0",
           active: "#F7F1DC",
+        },
+        // Shell escuro premium do AppShell (conceito aprovado 2026-08):
+        // sidebar/header preto-azulados; dourado (família `primary`/`gold`)
+        // como acento; conteúdo permanece claro. Texto sobre o shell:
+        // text #E7E9EF (>12:1), muted #9AA1B5 (7,1:1) — AA/AAA.
+        shell: {
+          DEFAULT: "#0D1120",
+          950: "#07090F",
+          900: "#0A0D18",
+          800: "#111527",
+          700: "#1A2036",
+          text: "#E7E9EF",
+          muted: "#9AA1B5",
         },
         // Primária — OURO institucional "De Paula Teixeira" (escala oficial
         // dos PDFs Visual Law). 600 #8F7117 = ação (texto branco 4,6:1 AA);
