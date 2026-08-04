@@ -31,37 +31,36 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Mudar DEFAULT de coluna existente via SQL direto (mais robusto que op.alter_column para enums).
-    op.execute(
-        sa.text(
-            "ALTER TABLE documents ALTER COLUMN confidencialidade "
-            "SET DEFAULT 'confidencial'::docconfidencialidade"
-        )
-    )
-
-    # Reclassificar documentos existentes com default (era "normal") para "confidencial"
+    # Reclassificar documentos existentes com "normal" para "confidencial"
     # para refletir a nova política de publicação explícita.
     op.execute(
         sa.text(
-            "UPDATE documents SET confidencialidade = 'confidencial'::docconfidencialidade "
-            "WHERE confidencialidade = 'normal'::docconfidencialidade"
+            "UPDATE documents SET confidencialidade = 'confidencial' "
+            "WHERE confidencialidade = 'normal'"
+        )
+    )
+
+    # Mudar DEFAULT de coluna existente. PostgreSQL infere o tipo do enum
+    # pela definição da coluna; não precisa type cast explícito.
+    op.execute(
+        sa.text(
+            "ALTER TABLE documents ALTER COLUMN confidencialidade SET DEFAULT 'confidencial'"
         )
     )
 
 
 def downgrade() -> None:
-    # Desfazer a reclassificação (volta "confidencial" → "normal")
-    op.execute(
-        sa.text(
-            "UPDATE documents SET confidencialidade = 'normal'::docconfidencialidade "
-            "WHERE confidencialidade = 'confidencial'::docconfidencialidade"
-        )
-    )
-
     # Restaurar default anterior
     op.execute(
         sa.text(
-            "ALTER TABLE documents ALTER COLUMN confidencialidade "
-            "SET DEFAULT 'normal'::docconfidencialidade"
+            "ALTER TABLE documents ALTER COLUMN confidencialidade SET DEFAULT 'normal'"
+        )
+    )
+
+    # Desfazer a reclassificação (volta "confidencial" → "normal")
+    op.execute(
+        sa.text(
+            "UPDATE documents SET confidencialidade = 'normal' "
+            "WHERE confidencialidade = 'confidencial'"
         )
     )
