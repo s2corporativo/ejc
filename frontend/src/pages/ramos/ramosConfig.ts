@@ -349,6 +349,33 @@ const civel: RamoConfig = {
     { nome: "observacoes", label: "Observações", tipo: "textarea", col: 2 },
   ],
   ferramentas: [
+    // ── CUSTAS ──────────────────────────────────────────────────────────
+    {
+      id: "custas-tjmg",
+      titulo: "Custas TJMG (1ª instância/2026)",
+      descricao:
+        "Custas iniciais + Taxa Judiciária pela tabela oficial 2026, por grupo de vara. Minuta — a guia se emite no sistema do TJMG.",
+      baseLegal: "Lei estadual 14.939/2003 (Anexo I) · Lei 6.763/75 (Tabela J)",
+      grupo: "Custas",
+      endpoint: "/calculadoras/custas-tjmg",
+      campos: [
+        {
+          nome: "valor_causa",
+          label: "Valor da causa (R$)",
+          tipo: "number",
+        },
+        {
+          nome: "grupo",
+          label: "Grupo (vara)",
+          tipo: "select",
+          // Grupos da tabela oficial carregados: 1 cível/fazenda, 2 família/
+          // JEC, 3 sucessões, 6 cautelar/jurisd. voluntária, 7 MS. Grupos 4/5
+          // (rubricas fixas) respondem 503 controlado no backend.
+          opcoes: ["1", "2", "3", "6", "7"],
+          default: "1",
+        },
+      ],
+    },
     // ── PRAZOS ──────────────────────────────────────────────────────────
     {
       id: "prazos-contestacao",

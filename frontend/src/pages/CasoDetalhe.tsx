@@ -22,7 +22,6 @@ import { areaLabel, useAreas } from "../lib/areas";
 import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { useIaStatus } from "../lib/iaStatus";
 import MotorTeses from "../components/MotorTeses";
-import LinhaDoTempoProcessual from "../components/visual/LinhaDoTempoProcessual";
 import MatrizRisco from "../components/visual/MatrizRisco";
 import BadgesAlerta from "../components/visual/BadgesAlerta";
 import CalculadoraAcordo from "../components/visual/CalculadoraAcordo";
@@ -66,24 +65,12 @@ import TabResumo, { AvisoCasoEncerrado } from "./CasoDetalhe/TabResumo";
 import IaDefensivaCaso from "./CasoDetalhe/IaDefensivaCaso";
 import TabMemoria from "./CasoDetalhe/TabMemoria";
 import TabProcessos from "./CasoDetalhe/TabProcessos";
-
-// Item 4.4: baixa um documento do caso reutilizando o endpoint ja validado
-// GET /documents/:id/download (mesmo padrao de Documentos.tsx).
-async function baixarDoc(docId: string, filename: string) {
-  try {
-    const r = await api.get(`/documents/${docId}/download`, {
-      responseType: "blob",
-    });
-    const url = URL.createObjectURL(r.data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || "documento";
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch {
-    toast.error("Nao foi possivel baixar o documento.");
-  }
-}
+// Tela C (Bloco 3) — abas de trabalho agem em lugar, extraídas em componentes
+// próprios (padrão Tab*.tsx): upload embutido, prazo inline, peças e composer.
+import TabDocumentos from "./CasoDetalhe/TabDocumentos";
+import TabPrazos from "./CasoDetalhe/TabPrazos";
+import TabPecas from "./CasoDetalhe/TabPecas";
+import TabTimeline from "./CasoDetalhe/TabTimeline";
 
 export const TABS = [
   // Fase 1 (plano de simplificação): a antiga aba "orquestrador" deixou de
@@ -97,6 +84,9 @@ export const TABS = [
   { key: "etiquetas", label: "Etiquetas" },
   { key: "checklists", label: "Checklists" },
   { key: "documentos", label: "Documentos" },
+  // Tela C (Bloco 3): a produção de peças passa a ter superfície no caso —
+  // duplicação temporária com o módulo /pecas aceita pelo titular (2026-08-02).
+  { key: "pecas", label: "Peças" },
   { key: "provas", label: "Provas" },
   { key: "contratos", label: "Contratos" },
   { key: "procuracoes", label: "Procurações" },
@@ -174,119 +164,7 @@ function RiscoChip({ nivel }: { nivel?: string }) {
 }
 
 // ── Tab: Resumo ──────────────────────────────────────────────────────────────
-// ── Tab: Timeline completa ───────────────────────────────────────────────────
-function TabTimeline({ caseId }: { caseId: string }) {
-  const [ts, setTs] = useState<any[]>([]);
-  const [tsForm, setTsForm] = useState({ descricao: "", horas: 1 });
-  const [showTsForm, setShowTsForm] = useState(false);
-
-  useEffect(() => {
-    api
-      .get(`/timesheet/casos/${caseId}`)
-      .then((r) => setTs(asList(r.data)))
-      .catch(() => setTs([]));
-  }, [caseId]);
-
-  const addTimesheet = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await api.post("/timesheet", { case_id: caseId, ...tsForm });
-    setShowTsForm(false);
-    api
-      .get(`/timesheet/casos/${caseId}`)
-      .then((r) => setTs(asList(r.data)))
-      .catch(() => setTs([]));
-  };
-
-  const totalHoras = ts.reduce((a, t) => a + (t.minutos ?? 0) / 60, 0);
-
-  return (
-    <div className="space-y-6">
-      <LinhaDoTempoProcessual caseId={caseId} />
-
-      <div>
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="font-semibold text-sm text-gray-500 uppercase">
-            Timesheet ({totalHoras.toFixed(1)}h registradas)
-          </h3>
-          <button
-            onClick={() => setShowTsForm(!showTsForm)}
-            className="btn-secondary text-xs"
-          >
-            + Lançar horas
-          </button>
-        </div>
-        {showTsForm && (
-          <form onSubmit={addTimesheet} className="card p-4 space-y-3 mb-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="label">Atividade</label>
-                <input
-                  required
-                  value={tsForm.descricao}
-                  onChange={(e) =>
-                    setTsForm((f) => ({ ...f, descricao: e.target.value }))
-                  }
-                  placeholder="Ex: Elaboração de petição..."
-                  className="input w-full text-sm"
-                />
-              </div>
-              <div>
-                <label className="label">Horas</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0.5"
-                  value={tsForm.horas}
-                  onChange={(e) =>
-                    setTsForm((f) => ({
-                      ...f,
-                      horas: parseFloat(e.target.value),
-                    }))
-                  }
-                  className="input w-full text-sm"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button type="submit" className="btn-primary text-sm">
-                Salvar
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowTsForm(false)}
-                className="btn-secondary text-sm"
-              >
-                Cancelar
-              </button>
-            </div>
-          </form>
-        )}
-        <div className="space-y-2">
-          {ts.map((t, i) => (
-            <div
-              key={t.id ?? i}
-              className="card p-3 flex flex-wrap justify-between items-center gap-2 text-sm"
-            >
-              <span className="min-w-0 flex-1 break-words text-gray-700">
-                {t.descricao}
-              </span>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-gray-400 text-xs">{fmtDate(t.data)}</span>
-                <span className="font-mono font-semibold text-primary-600">
-                  {((t.minutos ?? 0) / 60).toFixed(1)}h
-                </span>
-              </div>
-            </div>
-          ))}
-          {ts.length === 0 && !showTsForm && (
-            <Empty message="Nenhuma hora lançada" />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
+// ── Tab: Timeline completa — extraída para ./CasoDetalhe/TabTimeline.tsx ─────
 // ── Tab: Partes ──────────────────────────────────────────────────────────────
 // ── Tab: Checklists (estáticos + por legislação via IA · HITL) ───────────────
 function TabChecklists({ caseId }: { caseId: string }) {
@@ -1002,41 +880,11 @@ export default function CasoDetalhe() {
       case "jurisprudencia":
         return <TabJurisprudencia caseId={id} caso={caso} />;
       case "documentos":
-        return (
-          <div className="space-y-3">
-            {/* CTA de anexar: o upload vive no módulo global de Documentos,
-                que pré-seleciona o caso via ?caso= (achado M2 do E2E). */}
-            <div className="flex justify-end">
-              <Link
-                to={`/documentos?caso=${id}`}
-                className="btn-secondary text-xs"
-              >
-                Anexar documento ao caso
-              </Link>
-            </div>
-            <TabLista
-              titulo="Documentos"
-              endpoint={`/documents/?case_id=${id}`}
-              empty="Nenhum documento vinculado a este caso"
-              renderItem={(d) => (
-                <div
-                  className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
-                  onClick={() =>
-                    baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
-                  }
-                  title="Clique para baixar"
-                >
-                  <span className="text-gray-800">
-                    {d.titulo || d.filename || d.nome_arquivo}
-                  </span>
-                  <span className="text-gray-400 text-xs">
-                    {d.tipo_peca || d.tipo}
-                  </span>
-                </div>
-              )}
-            />
-          </div>
-        );
+        // Tela C: upload embutido na aba — a ação acontece dentro do caso.
+        return <TabDocumentos caseId={id} />;
+      case "pecas":
+        // Tela C: peças do caso — criação, PDF de minuta e conferir-e-assinar.
+        return <TabPecas caseId={id} />;
       case "provas":
         return <ProvasCaso caseId={id} />;
       case "contratos":
@@ -1076,39 +924,8 @@ export default function CasoDetalhe() {
           />
         );
       case "prazos":
-        return (
-          <div className="space-y-3">
-            <div className="flex justify-end">
-              <Link
-                to={`/atividades?caso=${id}&tipo=prazo`}
-                className="btn-secondary text-xs"
-              >
-                Novo prazo ou atividade
-              </Link>
-            </div>
-            <TabLista
-              titulo="Prazos"
-              endpoint={`/deadlines/?case_id=${id}&status=`}
-              empty="Nenhum prazo cadastrado"
-              renderItem={(d) => (
-                <div className="card p-3 flex justify-between items-center text-sm">
-                  <span className="text-gray-800">{d.titulo}</span>
-                  <span
-                    className={`font-medium text-xs ${
-                      (d.dias_restantes ?? 1) <= 0
-                        ? "text-danger-600"
-                        : (d.dias_restantes ?? 99) <= 7
-                          ? "text-orange-600"
-                          : "text-gray-500"
-                    }`}
-                  >
-                    {fmtDate(d.data_prazo)}
-                  </span>
-                </div>
-              )}
-            />
-          </div>
-        );
+        // Tela C: formulário inline de 3 campos — sem navegar para /atividades.
+        return <TabPrazos caseId={id} />;
       case "audiencias":
         return (
           <TabLista

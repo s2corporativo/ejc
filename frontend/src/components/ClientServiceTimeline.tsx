@@ -124,7 +124,7 @@ const PRIORIDADE_LABEL: Record<Prioridade, string> = {
 
 const PRIORIDADE_STYLE: Record<Prioridade, string> = {
   baixa: "bg-slate-100 text-slate-600",
-  normal: "bg-blue-50 text-blue-700",
+  normal: "bg-info-50 text-info-700",
   alta: "bg-orange-50 text-orange-700",
   urgente: "bg-red-50 text-red-700",
 };
@@ -944,8 +944,8 @@ export default function ClientServiceTimeline({
                       )}
 
                       {contatoStatus === "iniciado" && item.pode_editar && (
-                        <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
-                          <p className="text-xs font-medium text-blue-800">
+                        <div className="rounded-lg border border-info-100 bg-info-50 p-3 dark:border-info-900 dark:bg-info-950/40">
+                          <p className="text-xs font-medium text-info-800 dark:text-info-200">
                             Confirme o resultado deste contato.
                           </p>
                           <div className="mt-2 flex flex-wrap gap-2">

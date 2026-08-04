@@ -116,8 +116,12 @@ async def test_upload_com_case_id_vincula_documento_ao_caso(monkeypatch, tmp_pat
                 )).scalars().all()
                 assert doc_id in [d.id for d in do_caso]
             finally:
-                # Limpeza (ordem de FK): documentos, audit_logs, caso, cliente, user.
+                # Limpeza (ordem de FK): documentos, movimentos, audit_logs,
+                # caso, cliente, user. O upload com case_id agora dispara a
+                # transição automática de estado (status_transicao), que grava
+                # um CaseMovimento — sem apagá-lo o DELETE do caso viola FK.
                 await db.execute(text("DELETE FROM documents WHERE case_id = :c"), {"c": case_id})
+                await db.execute(text("DELETE FROM case_movimentos WHERE case_id = :c"), {"c": case_id})
                 await db.execute(text("DELETE FROM audit_logs WHERE user_id = :u"), {"u": uid})
                 await db.execute(text("DELETE FROM cases WHERE id = :c"), {"c": case_id})
                 await db.execute(text("DELETE FROM clients WHERE id = :c"), {"c": client_id})

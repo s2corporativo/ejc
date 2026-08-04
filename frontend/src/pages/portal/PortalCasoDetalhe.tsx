@@ -46,7 +46,7 @@ function MensagensCliente({ caseId }: { caseId: string }) {
             className={`flex ${m.autor_tipo === "cliente" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[78%] rounded-lg px-3 py-2 text-sm ${m.autor_tipo === "cliente" ? "bg-navy text-white" : "bg-slate-100 text-slate-800"}`}
+              className={`max-w-[78%] rounded-lg px-3 py-2 text-sm ${m.autor_tipo === "cliente" ? "bg-primary-900 text-white" : "bg-slate-100 text-slate-800"}`}
             >
               <p className="whitespace-pre-wrap">{m.mensagem}</p>
               <p

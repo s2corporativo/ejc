@@ -765,6 +765,15 @@ class Settings(BaseSettings):
     # escalada interna) — services/cobranca_cliente_service.py. NÃO confundir
     # com a régua interna do advogado (scheduler._regua_cobranca).
     COBRANCA_ENABLED: bool = False
+    # Expurgo LGPD de rascunhos abandonados da Entrada Única (Issue #647):
+    # remove DocumentIntakeBatch (e Documents órfãos do lote) nunca convertidos
+    # em caso (case_id IS NULL) após ENTRADA_EXPURGO_DIAS — services/
+    # entrada_expurgo_service.py. Opt-in (hard delete é irreversível; decisão
+    # do titular ligar em produção). Default False mantém tudo desligado.
+    ENTRADA_EXPURGO_ENABLED: bool = False
+    # Janela de retenção do rascunho não convertido, em dias (LGPD art. 15-16:
+    # dado deixa de ser necessário à finalidade após esse prazo sem uso).
+    ENTRADA_EXPURGO_DIAS: int = 30
 
     # ── Índices oficiais BCB (SGS + Olinda) — services/indices_service.py ─
     # API pública do Banco Central, gratuita e sem chave: correção monetária,

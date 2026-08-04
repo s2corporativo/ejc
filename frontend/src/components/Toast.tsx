@@ -28,15 +28,20 @@ function fire(type: ToastType, message: string) {
 }
 
 const ICONS = {
-  success: <CheckCircle size={16} className="text-green-500 shrink-0" />,
+  success: <CheckCircle size={16} className="text-success-600 shrink-0" />,
   error: <XCircle size={16} className="text-danger-500 shrink-0" />,
-  info: <Info size={16} className="text-primary-500 shrink-0" />,
+  info: <Info size={16} className="text-info-600 shrink-0" />,
 };
 
-const BG = {
-  success: "bg-white dark:bg-gray-800 border-green-200 dark:border-green-800",
-  error: "bg-white dark:bg-gray-800 border-danger-200   dark:border-danger-800",
-  info: "bg-white dark:bg-gray-800 border-primary-200  dark:border-primary-800",
+// Superfície elevada (branca no claro, grafite quente no escuro) com filete
+// de acento à esquerda na cor semântica — mesmo vocabulário dos cards/modais.
+const SURFACE =
+  "bg-white border-slate-200 dark:bg-[#241E10] dark:border-white/10";
+
+const ACCENT = {
+  success: "border-l-success-500",
+  error: "border-l-danger-500",
+  info: "border-l-info-500",
 };
 
 export function ToastContainer() {
@@ -57,11 +62,15 @@ export function ToastContainer() {
   if (!toasts.length) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+    <div
+      className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"
+      role="status"
+      aria-live="polite"
+    >
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-lg border shadow-float text-sm text-gray-700 dark:text-gray-200 animate-rise min-w-[220px] max-w-xs ${BG[t.type]}`}
+          className={`pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-xl border border-l-4 shadow-float text-sm text-slate-700 dark:text-slate-200 animate-rise min-w-[220px] max-w-xs ${SURFACE} ${ACCENT[t.type]}`}
         >
           {ICONS[t.type]}
           <span className="flex-1">{t.message}</span>
@@ -69,7 +78,8 @@ export function ToastContainer() {
             onClick={() =>
               setToasts((prev) => prev.filter((x) => x.id !== t.id))
             }
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            aria-label="Fechar aviso"
+            className="rounded-md p-0.5 text-slate-400 transition-colors hover:text-slate-600 dark:hover:text-slate-300"
           >
             <X size={14} />
           </button>

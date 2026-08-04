@@ -63,6 +63,12 @@ ADICOES_INTENCIONAIS = {
     # PR #622 (Bloco 2): PDF de LEITURA da minuta, sem gate de protocolo — o
     # advogado precisa ler antes de assinar. O /pdf de protocolo segue intacto.
     ("/api/legal-docs/{doc_id}/pdf-minuta", "GET"),
+    # Bloco 3 (entrada única, docs/DESENHO_BLOCO3_TELAS.md §4): orquestração do
+    # que já existe — relato/documentos → proposta conferível → caso em uma
+    # transação. Piso advogado + rate limit; rascunho vive no batch (sem tabela
+    # nova).
+    ("/api/entrada/analisar", "POST"),
+    ("/api/entrada/{rascunho_id}/criar-caso", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui

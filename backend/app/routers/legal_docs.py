@@ -381,6 +381,16 @@ async def criar(
         detalhes=f"IA={payload.ai_generated}",
     )
     await db.commit()
+    # Transição automática de estado (Bloco 3): peça criada ⇒ em_producao.
+    # APÓS o commit da peça (fail-safe: warning e segue) e ANTES do refresh —
+    # o commit da transição expira os atributos, e o refresh abaixo os reidrata
+    # para a serialização da resposta. Usa o case_id do payload (o atributo do
+    # ORM está expirado neste ponto).
+    if getattr(payload, "case_id", None):
+        from app.services.status_transicao import avancar_status_pos_commit
+        await avancar_status_pos_commit(
+            db, payload.case_id, "peca_criada", user_id=cu.id
+        )
     await db.refresh(d)
     # ETAPA 2 — produção interna alimenta a RAG (sanitizada, classificada).
     background.add_task(indexar_peca_rag, d.id)
@@ -446,7 +456,15 @@ async def validar_peca_juridica(
         case_id=d.case_id,
         nivel_inteligencia="alto",
     )
-    resultado = await validar_rascunho_juridico(payload, db=db, user_id=cu.id, scope_client_id=escopo_cli)
+    try:
+        resultado = await validar_rascunho_juridico(payload, db=db, user_id=cu.id, scope_client_id=escopo_cli)
+    except RuntimeError as exc:
+        # Camada de borda (P0 §3.2, achado #672): sem isto o RuntimeError do
+        # ai_gateway (nenhum provedor de IA elegível) subia cru como 500
+        # genérico, e ai_log_id nunca era gravado — travando /aprovar em
+        # "sem_validacao" para sempre, sem explicar por quê.
+        from app.core.ai_errors import http_erro_ia
+        raise http_erro_ia(exc, 503, contexto="validar_peca_juridica")
     await criar_audit_log(db, cu.id, cu.role.value, "VALIDACAO_JURIDICA", "legal_docs", doc_id, detalhes=f"score={resultado.get('score_confianca')}")
     await db.commit()
     return resultado
@@ -937,7 +955,16 @@ async def registrar_protocolo(
             f"comprovante={comprovante_antigo or '-'}→{d.protocolo_comprovante_doc_id or '-'}"
         ),
     )
+    case_id_peca = d.case_id  # capturado antes do commit (expira atributos)
     await db.commit()
+    # Transição automática de estado (Bloco 3): protocolo registrado ⇒
+    # protocolado. APÓS o commit do registro (fail-safe: warning e segue);
+    # o refresh abaixo reidrata a peça para a resposta.
+    if case_id_peca:
+        from app.services.status_transicao import avancar_status_pos_commit
+        await avancar_status_pos_commit(
+            db, case_id_peca, "peca_protocolada", user_id=cu.id
+        )
     await db.refresh(d)
     return d
 

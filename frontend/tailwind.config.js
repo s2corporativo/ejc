@@ -25,27 +25,30 @@ export default {
          * apenas os VALORES foram repintados (marrom → ouro).
          */
 
-        // Sidebar clara: o menu usa branco, slate e realce azul.
+        // Sidebar clara: branco com hover neutro quente e realce ouro palha.
         sidebar: {
           DEFAULT: "#FFFFFF",
-          light: "#F8FAFC",
-          hover: "#EFF6FF",
-          active: "#DBEAFE",
+          light: "#FAF9F6",
+          hover: "#F8F6F0",
+          active: "#F7F1DC",
         },
-        // Primária — azul institucional / elétrico.
+        // Primária — OURO institucional "De Paula Teixeira" (escala oficial
+        // dos PDFs Visual Law). 600 #8F7117 = ação (texto branco 4,6:1 AA);
+        // 700 #6F5711 = hover/texto-acento forte (6,9:1); 900 #3B2F0B =
+        // near-black de títulos (13,2:1 AAA); 50/100 = palha (fundos suaves).
         primary: {
-          DEFAULT: "#2563EB",
-          50: "#EFF6FF",
-          100: "#DBEAFE",
-          200: "#BFDBFE",
-          300: "#93C5FD",
-          400: "#60A5FA",
-          500: "#3B82F6",
-          600: "#2563EB",
-          700: "#1D4ED8",
-          800: "#1E40AF",
-          900: "#0B1F3A",
-          950: "#071426",
+          DEFAULT: "#8F7117",
+          50: "#FAF6E7",
+          100: "#F7F1DC",
+          200: "#EFE3B4",
+          300: "#E5CE7F",
+          400: "#C9A227",
+          500: "#A6842A",
+          600: "#8F7117",
+          700: "#6F5711",
+          800: "#55420D",
+          900: "#3B2F0B",
+          950: "#2A2108",
         },
         // IA — violeta reservado a superfícies e ações de inteligência.
         ai: {
@@ -103,13 +106,13 @@ export default {
          * claro #C9A227 = só filete/realce gráfico, nunca texto;
          * palha #F7F1DC = fundo suave (badges, quadros).
          */
-        // Alias legado para telas ainda não migradas. Visual Law usa
-        // gold/tokens próprios; a interface operacional usa azul.
+        // Tokens ouro nominais (mesma família da escala `primary` acima) —
+        // usados por Tabs/Spinner/badges "ouro" e telas Visual Law.
         ouro: {
-          profundo: "#1D4ED8",
-          DEFAULT: "#2563EB",
-          claro: "#60A5FA",
-          palha: "#EFF6FF",
+          profundo: "#6F5711",
+          DEFAULT: "#8F7117",
+          claro: "#C9A227",
+          palha: "#F7F1DC",
         },
         ink: {
           DEFAULT: "#111827",
@@ -264,12 +267,12 @@ export default {
         "3xl": "1.25rem",
       },
       boxShadow: {
-        // Soft elevation — sombras muito suaves e contidas
-        soft: "0 4px 18px rgba(24,16,8,0.05)",
-        card: "0 1px 2px rgba(24,16,8,0.03), 0 4px 18px rgba(24,16,8,0.05)",
+        // Soft elevation — sombras difusas em camadas (quentes, discretas)
+        soft: "0 1px 2px rgba(24,16,8,0.03), 0 6px 20px -6px rgba(24,16,8,0.06)",
+        card: "0 1px 2px rgba(24,16,8,0.03), 0 4px 16px -4px rgba(24,16,8,0.05)",
         "card-hover":
-          "0 2px 4px rgba(24,16,8,0.04), 0 8px 26px rgba(24,16,8,0.08)",
-        float: "0 4px 12px rgba(24,16,8,0.07), 0 18px 40px rgba(24,16,8,0.12)",
+          "0 2px 4px rgba(24,16,8,0.04), 0 10px 28px -8px rgba(24,16,8,0.09)",
+        float: "0 4px 12px rgba(24,16,8,0.07), 0 18px 40px -8px rgba(24,16,8,0.14)",
         logo: "0 2px 8px rgba(24,16,8,0.10)",
         // Sombra do botão primário ouro (profundidade sem borda)
         gold: "0 6px 16px rgba(111,87,17,0.22)",

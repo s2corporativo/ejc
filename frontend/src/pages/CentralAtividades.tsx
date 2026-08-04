@@ -1499,7 +1499,7 @@ export default function CentralAtividades() {
               onClick={() => setView("lista")}
               aria-label="Visualização em lista"
               title="Lista"
-              className={`p-2 rounded-lg transition-colors ${view === "lista" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
+              className={`p-2 rounded-lg transition-colors ${view === "lista" ? "bg-primary-900 text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
             >
               <List className="w-4 h-4" />
             </button>
@@ -1507,7 +1507,7 @@ export default function CentralAtividades() {
               onClick={() => setView("calendario")}
               aria-label="Visualização em calendário"
               title="Calendário"
-              className={`p-2 rounded-lg transition-colors ${view === "calendario" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
+              className={`p-2 rounded-lg transition-colors ${view === "calendario" ? "bg-primary-900 text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
             >
               <Calendar className="w-4 h-4" />
             </button>
@@ -1515,7 +1515,7 @@ export default function CentralAtividades() {
               onClick={() => setView("timeline")}
               aria-label="Visualização em timeline"
               title="Timeline"
-              className={`p-2 rounded-lg transition-colors ${view === "timeline" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
+              className={`p-2 rounded-lg transition-colors ${view === "timeline" ? "bg-primary-900 text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
             >
               <FileText className="w-4 h-4" />
             </button>
@@ -1523,7 +1523,7 @@ export default function CentralAtividades() {
               onClick={() => setView("kanban")}
               aria-label="Visualização em quadro"
               title="Quadro"
-              className={`p-2 rounded-lg transition-colors ${view === "kanban" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
+              className={`p-2 rounded-lg transition-colors ${view === "kanban" ? "bg-primary-900 text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
@@ -1718,7 +1718,7 @@ export default function CentralAtividades() {
           <button
             key={t}
             onClick={() => setFilterTipo(t)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterTipo === t ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterTipo === t ? "bg-primary-900 text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
           >
             {t === "todos" ? "Todos" : TIPO_CONFIG[t]?.label}
           </button>
@@ -1738,7 +1738,7 @@ export default function CentralAtividades() {
           <button
             key={key}
             onClick={() => setFilterSituacao(key)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterSituacao === key ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterSituacao === key ? "bg-primary-900 text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
           >
             {label}
           </button>
