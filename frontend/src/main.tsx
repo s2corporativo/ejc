@@ -8,6 +8,9 @@ import "./styles/site-system.css";
 // Polimento específico da página Financeiro (escopo .executive-workspace).
 // Não duplica o site-system e mantém o padrão branco+ouro (aba ativa escura é exceção permitida).
 import "./styles/workspace-executive.css";
+// Refinamento final do shell/dashboard aprovado pelo titular. Carregado por
+// último para ajustar proporções e acabamento sem alterar regras de negócio.
+import "./styles/ejc-reference-dashboard.css";
 
 initTheme();
 
