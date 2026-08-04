@@ -11,6 +11,7 @@ import "./styles/workspace-executive.css";
 // Shell e dashboard v2: classes próprias, carregadas por último para manter a
 // identidade visual isolada sem repintar indiscriminadamente os módulos.
 import "./styles/ejc-shell-v2.css";
+import "./styles/ejc-shell-v2-refinements.css";
 
 initTheme();
 
