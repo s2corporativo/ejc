@@ -178,7 +178,7 @@ async def _semear(db) -> User:
     )
     doc = Document(id="d1", titulo="Comprovante de pagamento",
                    filename="comprovante.pdf", filepath="2026/08/d1.pdf",
-                   confidencialidade=DocConfidencialidade.normal)
+                   confidencialidade=DocConfidencialidade.confidencial)
     item = DocumentIntakeItem(
         id="i1", batch_id="b1", document_id="d1", filename="comprovante.pdf",
         original_filename="comprovante.pdf", extension=".pdf",

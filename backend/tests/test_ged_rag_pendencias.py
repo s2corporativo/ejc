@@ -93,7 +93,7 @@ def _doc(**kw):
         id="doc-1", titulo="Contrato Antigo", tipo=None,
         filename="contrato.pdf", filepath="2026/07/doc-1.pdf",
         mimetype="application/pdf", size_bytes=100,
-        confidencialidade=DocConfidencialidade.normal,
+        confidencialidade=DocConfidencialidade.confidencial,
         case_id=None, client_id=None, uploaded_by="u1", deleted_at=None,
     )
     base.update(kw)
