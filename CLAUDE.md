@@ -132,9 +132,9 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 
 ## Backend (backend/app)
 
-- **Entrypoint**: `backend/app/main.py`. Todos os 163 routers de `app/routers/` são registrados manualmente com prefixo `API = "/api"`. Docs (`/api/docs`) desabilitadas em produção. Ordem de middlewares importa: `AuthMiddleware` (mais interno) → `ClientIPMiddleware` → GZip → CORS.
-- **Camadas**: routers finos → lógica de negócio em `app/services/` (~150 módulos) → models SQLAlchemy em `app/models/` → schemas Pydantic em `app/schemas/` (muitos routers definem schemas inline). Pacotes de feature autocontidos em `app/modules/` (auditoria, case_partes, indice_risco, score_juridico). Tarefas Celery em `app/tasks/`.
-- **Domínios principais**: auth/2FA (`auth.py`, `users.py`), clientes (`clients.py`, `dossie_cliente.py`, `intake.py`), casos (`cases.py`, `processes.py`, `jornada_caso.py`), prazos/agenda (`deadlines.py`, `tasks.py`, `intimacoes.py`), documentos (`documents.py`, `data_room*.py`, `signatures.py`), IA/RAG (`rag.py`, `ai_core.py`, `peca_geracao*.py`, `ia_governanca.py`), financeiro (`fees.py`, `honorarios_*.py`, `nfse.py`), integrações externas (`datajud.py`, `infosimples_*.py`, `whatsapp.py`, `diario_oficial.py`).
+- **Entrypoint**: `backend/app/main.py`. Todos os ~162 routers de `app/routers/` são registrados manualmente com prefixo `API = "/api"` (o número muda a cada merge — confira com `grep -c app.include_router backend/app/main.py`). Docs (`/api/docs`) desabilitadas em produção. Ordem de middlewares importa: `AuthMiddleware` (mais interno) → `ClientIPMiddleware` → GZip → CORS.
+- **Camadas**: routers finos → lógica de negócio em `app/services/` (~155 módulos) → models SQLAlchemy em `app/models/` → schemas Pydantic em `app/schemas/` (muitos routers definem schemas inline). Pacotes de feature autocontidos em `app/modules/` (auditoria, case_partes, indice_risco, score_juridico). Tarefas Celery em `app/tasks/`.
+- **Domínios principais**: auth/2FA (`auth.py`, `users.py`), clientes (`clients.py`, `dossie_cliente.py`, `intake.py`), casos (`cases.py`, `processes.py`, `jornada_caso.py`, `entrada.py` — entrada única do Bloco 3: `/entrada/analisar` → `/entrada/{id}/criar-caso`), prazos/agenda (`deadlines.py`, `tasks.py`, `intimacoes.py`), documentos (`documents.py`, `data_room*.py`, `signatures.py`), IA/RAG (`rag.py`, `ai_core.py`, `peca_geracao*.py`, `ia_governanca.py`), financeiro (`fees.py`, `honorarios_*.py`, `nfse.py`), integrações externas (`datajud.py`, `infosimples_*.py`, `whatsapp.py`, `diario_oficial.py`).
 - **Banco**: SQLAlchemy **async** (`asyncpg`) via `app/core/database.py`; dependency `get_db()` fornece `AsyncSession`. Duas URLs: `DATABASE_URL` (async, app) e `DATABASE_URL_SYNC` (psycopg2, Alembic).
 - **Config**: `app/core/config.py` (pydantic-settings, `.env`, `get_settings()` com cache). Em produção o boot FALHA se `SECRET_KEY`/chaves PII estiverem ausentes/placeholder ou CORS for wildcard. Exemplo anotado completo em `.env.example`.
 - **Auth/segurança**: JWT HS256 (PyJWT) — access token curto + refresh token com JTI revogável em cookie httpOnly; 2FA TOTP (`pyotp`); senhas com `bcrypt` puro (passlib/python-jose foram removidos deliberadamente — não reintroduzir). RBAC hierárquico (superadmin 9 → cliente_externo 1) via `require_roles()`/`require_admin`. Rate limit próprio em `app/core/rate_limit.py` (janela fixa 60s, memória ou Redis) + slowapi. CPF/CNPJ criptografados em repouso (Fernet + índice HMAC cego, `services/pii_crypto.py`).
@@ -146,6 +146,8 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 
 - Vivem em `backend/alembic/versions/`, numeradas sequencialmente (`049_totp_2fa.py`, ..., `126_case_status_quatro_estados.py`). O head muda a cada merge: **confirme com `cd backend && python -m alembic heads`** em vez de confiar neste número. Gerar: `python -m alembic revision --autogenerate -m "..."`; aplicar: `python -m alembic upgrade head` (roda automaticamente no boot do container quando `RUN_MIGRATIONS=1`).
 - `alembic/env.py` lê `DATABASE_URL_SYNC` e tem guarda `include_name()`: ~30 tabelas existem só em SQL bruto (sem model ORM) — nunca confie apenas em `Base.metadata` para o schema completo, e nunca aceite `drop_table` espúrio do autogenerate.
+- **Todo PR com migration precisa editar `test_alembic_single_head.py`** — o teste fixa o head à mão, e dois PRs com migration conflitam ali por construção (é intencional: o conflito força a renegociação do número). As regras completas (head único, downgrade obrigatório ou justificado, migration aplicada não se edita) estão no fim de `MIGRATION_RESERVATIONS.md`.
+- **Status de caso é enum nativo de 6 valores** desde a migration 126 (decisão do titular em `docs/DESENHO_ENTRADA_UNICA_E_CASO_WORKSPACE.md`): `aberto · em_instrucao · em_producao · protocolado · encerrado · arquivado`. O vocabulário antigo (`triagem`/`ativo`/`suspenso`/`acordo`) não existe mais; valor fora do enum recebe 422 com mensagem acionável. Índices parciais que citam valores do enum (ex.: `ix_cases_proxima_acao_pendente`) precisam cair e renascer em qualquer migração futura desse tipo.
 - Seeds: `backend/seeds/seed_all.py` (bootstrap idempotente do admin, roda no boot) e `backend/app/seeds/` (conteúdo: skills de IA, templates, checklists). Base de conhecimento em `backend/seeds/biblia_ejc/`.
 
 ## Frontend (frontend/src)
@@ -154,7 +156,7 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 - **Rotas**: a fonte da verdade é `src/config/moduleRegistry.tsx` (`STAFF_ROUTES`, `LEGACY_REDIRECTS`, RBAC por rota via `canRoleAccessPath`). `App.tsx` só consome o registry; páginas são lazy-loaded. Área staff sob `Layout` + `StaffOnly`; portal do cliente sob `/portal` (`PortalLayout` + `PortalOnly`). Para módulo novo, registre no registry — não adicione rota solta no App.tsx.
 - **API client**: `src/lib/api.ts` — axios com `baseURL: "/api/v1"` (constante `API_BASE_URL`, linha 9). O interceptor de request **remove** prefixo repetido (`/api/v1/`, `/api/`, `/v1/`) do `config.url`, então dentro do cliente `api` os caminhos se escrevem sem prefixo (`/casos`, não `/api/casos`). Quem usa `axios` cru — como `refreshAccessToken` — precisa do path REAL do backend (`/api/auth/refresh`, sem `v1`). Access token em `localStorage` (`ejc_access`) injetado por interceptor; refresh token em cookie httpOnly gerenciado pelo backend; 401 dispara refresh single-flight com retry; 403 `must_change_password` redireciona para `/trocar-senha`.
 - **Estado**: stores Zustand em `src/stores/` (`auth.ts`/`useAuth` com `bootstrap()`, `caseContext.ts`, `moduleLifecycle.ts`, `preferences.ts`, `theme.ts`).
-- **Layout de src/**: `pages/` (~70 páginas; `pages/portal/` e `pages/ramos/`), `components/`, `lib/` (api, SSE em `stream.ts`), `config/`, `stores/`, `contexts/`, `types/`, `utils/`. Testes co-localizados (`*.test.ts(x)`).
+- **Layout de src/**: `pages/` (~85 páginas; `pages/portal/` e `pages/ramos/`), `components/`, `lib/` (api, SSE em `stream.ts`), `config/`, `stores/`, `contexts/`, `types/`, `utils/`. Testes co-localizados (`*.test.ts(x)`).
 
 ## Comandos essenciais
 
@@ -188,7 +190,7 @@ Stack completa: `docker compose up -d --build` (serviços: db pgvector/pg16, red
 
 ## CI/CD e deploy
 
-- Workflows em `.github/workflows/`. **O CI roda automaticamente em todo Pull Request** — `ci.yml`, `ejc-release-gate.yml`, `governanca.yml`, `continuity-ui-gates.yml`, `architecture-inventory.yml`, `backup-gdrive-activation.yml` e `rag-production-activation.yml` disparam em `pull_request`. Só operação de ambiente (`deploy-vps.yml`, `producao-prova-continuidade.yml`, `frontend-ci.yml`) é `workflow_dispatch`, no runner self-hosted `ejc-vps`. Confira com `grep -A4 '^on:' .github/workflows/*.yml` antes de afirmar que algo não roda:
+- Workflows em `.github/workflows/`. **O CI roda automaticamente em todo Pull Request** — `ci.yml`, `ejc-release-gate.yml`, `governanca.yml`, `continuity-ui-gates.yml`, `architecture-inventory.yml`, `backup-gdrive-activation.yml` e `rag-production-activation.yml` disparam em `pull_request`. Operação de ambiente (`deploy-vps.yml`, `producao-prova-continuidade.yml`, `frontend-ci.yml`) é `workflow_dispatch`, no runner self-hosted `ejc-vps`. Fora desses dois grupos: `main-provenance.yml` roda em push na `main`, `production-backup-monitor.yml` é cron diário (08:30 UTC, valida que o backup de produção realmente produziu artefato), `probe-apis.yml` dispara em push de `claude/**` que toque `scripts/probe_apis.py`, e `architecture-refactor-wave*.yml` só rodam em branches `agent/` específicas. Confira com `grep -A4 '^on:' .github/workflows/*.yml` antes de afirmar que algo não roda:
   - `ci.yml` — job `db-validation` (Postgres pgvector de serviço, `alembic upgrade head`, `pytest tests -v`, ruff/pip-audit informativos) + job `frontend-build` (npm ci, test, build).
   - `deploy-vps.yml` — dispara manual ou após CI verde em `main`; rsync para `/opt/ejc` e executa `scripts/deploy_vps_safe.sh` (backup → build → health-poll → migrations/seeds opcionais → rollback automático em erro).
   - `ejc-release-gate.yml` — roda `scripts/ci_guard.sh` (bloqueia marcadores de merge, `.env`/segredos versionados, CORS wildcard).
@@ -211,8 +213,12 @@ Stack completa: `docker compose up -d --build` (serviços: db pgvector/pg16, red
 - `docs/ai/` — arquitetura do núcleo único de IA, política de provedores, roteamento de tarefas, LGPD/segurança de IA, HITL.
 - `docs/CATALOGO_APIS_EJC.md` — catálogo de APIs; `docs/DESIGN_SYSTEM_EJC.md` e `docs/VISUAL_LAW_EJC.md` — design.
 - `graphify-out/GRAPH_REPORT.md` — mapa arquitetural gerado (apenas para revisão ampla).
-- `docs/CLAUDE_CODE_PERMISSOES.md` — lista de permissões proposta para `.claude/settings.json`
-  (reduz aprovação de comando de rotina); aplicação é decisão do titular.
+- `docs/CLAUDE_CODE_PERMISSOES.md` — lista de permissões para `.claude/settings.json`
+  (reduz aprovação de comando de rotina); **aplicada pelo titular em 2026-08-02** — o bloco
+  `permissions` já vive em `.claude/settings.json`.
+- `docs/DESENHO_ENTRADA_UNICA_E_CASO_WORKSPACE.md` e `docs/DESENHO_BLOCO3_TELAS.md` — decisões
+  permanentes do titular sobre a entrada única de casos, os quatro estados e o caso como
+  espaço de trabalho (Bloco 3).
 - `RELATORIO_*.md` na raiz — histórico de auditorias/estabilização; contexto, não procedimento.
 
 ---
@@ -228,8 +234,16 @@ docs/auditoria/plano-lancamento-v3.md    PLANO ATIVO — 7 blocos, um prompt por
 docs/auditoria/plano-correcao-v2.md      backlog completo (40+ achados, com reprodução)
 docs/auditoria/parecer-arquitetural.md   crítica de produto: o que cortar
 docs/auditoria/reduzir-atrito.md         os 15 passos × 8 módulos do fluxo atual
-docs/auditoria/relatorios/               as 12 rodadas, com evidência bruta
+docs/auditoria/relatorios/               partes 1–13, com evidência bruta
 ```
+
+A parte 13 (`parte-13-homologacao-dinamica.md`, 2026-08-03) é diferente das doze anteriores:
+foi a **primeira auditoria com a stack real de pé** (Docker Compose local, admin fictício,
+curl/psql/browser reais). Ela confirmou os P0 do plano exatamente como descritos, confirmou
+dois achados LGPD em `case_partes` (CPF em texto puro; anonimização de cliente não alcança a
+tabela), e produziu correções já mergeadas: o 500 não tratado em `/pecas/validar` quando
+nenhum provedor de IA está elegível, e a ausência de `VAULT_MASTER_KEYS` no `.env.example`
+(exigida no boot de produção — hoje documentada na linha 37 do exemplo).
 
 **Leia sob demanda** — apenas o bloco em execução. Itens marcados `[INVESTIGAR]` **não são
 diagnóstico fechado**: a auditoria não viu o código. Confirme antes de agir.
@@ -259,8 +273,11 @@ Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real a
 - **Monitoramento afere execução, não resultado.** Heartbeats checam `last_run_at`, não se o job
   produziu algo — por isso a captura DJEN reporta "ok" há meses sem nunca ter capturado nada.
   Job novo ou corrigido deve monitorar resultado.
-- **Vocabulário de status inconsistente.** Backend usa `triagem`/`arquivado`; a interface oferece
-  `ativo`/`all`. O primeiro retorna vazio, o segundo dá 500.
+- **Vocabulário de status inconsistente.** Backend usava `triagem`/`arquivado`; a interface oferecia
+  `ativo`/`all`. O primeiro retornava vazio, o segundo dava 500.
+  *(Resolvido pela migration 126 — verificado com stack real na parte 13: banco e tela falam o
+  mesmo vocabulário de 6 estados, e `?status=all`/`?status=ativo` agora recusam com 422 e
+  mensagem acionável em vez de mentir ou derrubar o servidor.)*
 - **`qa/e2e/run_fictitious_smoke.py` roda contra produção.** É a origem dos casos
   `HOMOLOG-FICTICIO-*` e da conta `homolog.qa` (perfil superadmin, ativa em produção).
 - **Numeração de migrations envelhece rápido.** A auditoria viu `122_route_usage_metrics`; em
@@ -271,4 +288,7 @@ Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real a
 
 Um advogado leva um caso real do início ao protocolo dentro do sistema e considera que foi
 **mais fácil do que fazer fora dele**. Enquanto isso não acontecer, o trabalho não está pronto.
-Nenhum caso, até a data da auditoria, passou da triagem; nenhuma peça foi protocolada.
+Nenhum caso real passou da fase inicial até hoje; nenhuma peça foi protocolada. O Bloco 3 do
+plano (entrada única relato→análise→caso, quatro estados, caso como espaço de trabalho,
+seção "Ferramentas jurídicas" no dashboard) foi implementado e mergeado em 2026-08-02/03,
+mas implementado ≠ critério atingido: o teste que conta é o do caso real.
