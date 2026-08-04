@@ -71,6 +71,7 @@ from app.routers import deadlines
 from app.routers import despesas
 from app.routers import diagnostico
 from app.routers import diario_oficial
+from app.routers import diplomacia_v3
 from app.routers import documento_ia
 from app.routers import raio_x
 from app.routers import legal_chat
@@ -346,6 +347,7 @@ app.include_router(datajud.router, prefix=API)
 app.include_router(deadlines.router, prefix=API)
 app.include_router(despesas.router, prefix=API)
 app.include_router(diario_oficial.router, prefix=API)
+app.include_router(diplomacia_v3.router, prefix=API)
 app.include_router(documento_ia.router, prefix=API)
 app.include_router(raio_x.router, prefix=API)
 app.include_router(legal_chat.router, prefix=API)

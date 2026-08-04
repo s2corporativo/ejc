@@ -339,7 +339,7 @@ def test_patch_advogado_nao_eleva_para_cofre_403():
         "/documents/doc-1", json={"confidencialidade": "restrito"}
     )
     assert r.status_code == 403
-    assert doc.confidencialidade == DocConfidencialidade.normal
+    assert doc.confidencialidade == DocConfidencialidade.confidencial
     assert db.committed == 0
 
 
