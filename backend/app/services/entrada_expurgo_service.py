@@ -13,6 +13,13 @@
 # com `case_id`/`client_id` preenchido — mesmo que o batch pareça órfão (o
 # Document pode ter sido vinculado por um caminho independente do batch;
 # defesa em profundidade, dupla checagem no nível do Document).
+#
+# A checagem sozinha não basta: entre a seleção (sem lock) e o delete, uma
+# conversão concorrente (POST /entrada/{id}/criar-caso) pode commitar e
+# vincular exatamente o batch/Document que está sendo apagado (TOCTOU —
+# achado crítico da auditoria de segurança do PR #685). Por isso, no caminho
+# real (`dry_run=False`), a condição é REVALIDADA sob `SELECT ... FOR UPDATE`
+# imediatamente antes de cada delete — não só na leitura inicial.
 from __future__ import annotations
 
 import logging
@@ -128,6 +135,65 @@ async def expurgar_rascunhos_entrada_unica(
                 )
                 continue
 
+            # Revalidação sob lock — fecha a janela TOCTOU entre a seleção
+            # acima (sem lock) e o delete abaixo: uma conversão concorrente
+            # (POST /entrada/{id}/criar-caso, que grava case_id sob
+            # with_for_update em entrada_service.py) pode commitar bem no
+            # meio dessa função. Sem revalidar SOB LOCK imediatamente antes
+            # de apagar, o expurgo apagaria documento e batch já vinculados
+            # a um caso recém-criado com sucesso — achado crítico da
+            # auditoria de segurança do PR #685. O SELECT ... FOR UPDATE
+            # aqui bloqueia até a transação concorrente (que faz UPDATE nessa
+            # mesma linha) commitar ou desfazer, e então relê o valor
+            # JÁ COMMITADO — não o snapshot de antes.
+            # populate_existing=True é obrigatório aqui (mesmo padrão de
+            # criar_caso_do_rascunho): sem ele, o SQLAlchemy acha o objeto
+            # já carregado no identity map desta Session (pela seleção sem
+            # lock, mais acima) e devolve os atributos ANTIGOS em memória —
+            # mesmo com o lock corretamente adquirido e a linha do banco já
+            # atualizada. O lock sozinho não basta; precisa forçar o reload.
+            batch_travado = (
+                await db.execute(
+                    select(DocumentIntakeBatch)
+                    .where(DocumentIntakeBatch.id == batch.id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).scalar_one_or_none()
+            if batch_travado is None or batch_travado.case_id is not None:
+                logger.warning(
+                    "[entrada_expurgo] batch %s convertido/removido entre a "
+                    "seleção e o expurgo — pulado nesta execução", batch.id,
+                )
+                continue
+
+            documentos_travados: list[Document] = []
+            pular_batch = False
+            for doc in documentos_do_batch:
+                doc_travado = (
+                    await db.execute(
+                        select(Document)
+                        .where(Document.id == doc.id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalar_one_or_none()
+                if (
+                    doc_travado is None
+                    or doc_travado.case_id is not None
+                    or doc_travado.client_id is not None
+                ):
+                    logger.warning(
+                        "[entrada_expurgo] Document %s vinculado entre a "
+                        "seleção e o expurgo (batch %s) — batch pulado "
+                        "nesta execução", doc.id, batch.id,
+                    )
+                    pular_batch = True
+                    break
+                documentos_travados.append(doc_travado)
+            if pular_batch:
+                continue
+
             # Ordem: Items → Documents → Batch, todos apagados EXPLICITAMENTE
             # pelo ORM nesta função — não depende de cascade implícita (FK
             # ondelete="CASCADE" existe em produção, mas a suíte de testes
@@ -140,23 +206,38 @@ async def expurgar_rascunhos_entrada_unica(
             for item in itens:
                 await db.delete(item)
 
-            for doc in documentos_do_batch:
-                full_path = os.path.join(settings.UPLOAD_DIR, doc.filepath or "")
-                try:
-                    os.remove(full_path)
-                except FileNotFoundError:
-                    pass  # já removido antes (não-fatal)
-                except OSError as exc:
+            upload_root = os.path.realpath(settings.UPLOAD_DIR)
+            for doc in documentos_travados:
+                # Contido em UPLOAD_DIR: defesa em profundidade contra um
+                # filepath corrompido/absoluto (o campo é sempre gerado pelo
+                # servidor hoje, mas o job roda sem revisão humana — não
+                # confiar cegamente em dado de banco antes de os.remove()).
+                full_path = os.path.realpath(
+                    os.path.join(settings.UPLOAD_DIR, doc.filepath or "")
+                )
+                if not full_path.startswith(upload_root + os.sep):
                     logger.warning(
-                        "[entrada_expurgo] falha ao remover arquivo físico de "
-                        "%s (%s) — registro será removido do banco mesmo assim",
-                        doc.id, exc,
+                        "[entrada_expurgo] filepath fora de UPLOAD_DIR para "
+                        "Document %s — registro removido, arquivo físico "
+                        "NÃO tocado", doc.id,
                     )
+                else:
+                    try:
+                        os.remove(full_path)
+                    except FileNotFoundError:
+                        pass  # já removido antes (não-fatal)
+                    except OSError as exc:
+                        logger.warning(
+                            "[entrada_expurgo] falha ao remover arquivo "
+                            "físico de %s (%s) — registro será removido do "
+                            "banco mesmo assim",
+                            doc.id, exc,
+                        )
                 bytes_liberados += doc.size_bytes or 0
                 await db.delete(doc)
                 documentos_removidos += 1
 
-            await db.delete(batch)
+            await db.delete(batch_travado)
             batches_removidos += 1
 
         if not dry_run and (batches_removidos or documentos_removidos):
