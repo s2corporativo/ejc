@@ -1,0 +1,100 @@
+/* Refinamentos responsivos validados por screenshots automatizados.
+   Mantém o shell v2 como fonte principal e corrige somente os pontos
+   identificados na homologação visual em 1440, 1366, 1024, 768, 390 e 360 px. */
+
+.ejc-office-link.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.ejc-office-link.is-disabled:hover {
+  color: #c8d1dd;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+/* Em notebooks grandes, prioriza a mensagem diária e reduz a busca a um
+   comando compacto. Em 2xl a busca volta a exibir o texto completo. */
+@media (min-width: 1280px) and (max-width: 1535px) {
+  .ejc-shell-header div:has(> .ejc-daily-message) {
+    display: flex !important;
+    min-width: 0;
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .ejc-daily-message {
+    max-width: 360px;
+  }
+
+  .ejc-shell-header div:has(> .ejc-shell-search) {
+    width: 40px !important;
+    flex: 0 0 40px !important;
+    padding-inline: 0 !important;
+  }
+
+  .ejc-shell-search {
+    justify-content: center;
+    padding-inline: 0 !important;
+  }
+
+  .ejc-shell-search span,
+  .ejc-shell-search kbd {
+    display: none !important;
+  }
+}
+
+/* Abaixo de 1024 px a sidebar passa a funcionar como drawer. O breakpoint
+   md original deixava apenas 563 px úteis em tablets de 768 px. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .ejc-shell-header {
+    left: 0 !important;
+  }
+
+  .ejc-shell-root > div.relative.z-10 {
+    margin-left: 0 !important;
+  }
+
+  .ejc-shell-sidebar {
+    display: none !important;
+    width: 18rem !important;
+  }
+
+  .ejc-shell-root:has(> button[aria-label="Fechar menu"]) .ejc-shell-sidebar {
+    display: flex !important;
+  }
+
+  .ejc-shell-root > button[aria-label="Fechar menu"] {
+    display: block !important;
+  }
+
+  .ejc-shell-header button[aria-label="Abrir menu"],
+  .ejc-shell-header a[aria-label="De Paula Teixeira - EJC"] {
+    display: flex !important;
+  }
+
+  .ejc-brand-tile button[aria-label="Expandir menu"],
+  .ejc-brand-tile button[aria-label="Recolher menu"] {
+    display: none !important;
+  }
+
+  .ejc-brand-tile button[aria-label="Fechar menu"] {
+    display: block !important;
+  }
+}
+
+/* Contatos institucionais ficam no header amplo; em tablet e celular o
+   espaço é preservado para busca, notificações e navegação. */
+@media (max-width: 1023px) {
+  .ejc-office-links {
+    display: none !important;
+  }
+}
+
+/* O atalho transversal de importação já aparece no dashboard e no menu.
+   Em celulares o FAB fixo cobria KPIs e linhas da agenda. */
+@media (max-width: 639px) {
+  button[aria-label="Abrir Entrada Universal de Documentos"] {
+    display: none !important;
+  }
+}
