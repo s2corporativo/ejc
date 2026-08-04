@@ -68,7 +68,7 @@ export default function RelogioAgora({ className }: { className?: string }) {
         <span className="block text-lg font-semibold tabular-nums text-shell-text">
           {hora}
         </span>
-        <span className="block truncate text-[11px] capitalize text-shell-muted">
+        <span className="block truncate text-[11px] text-shell-muted first-letter:uppercase">
           {data}
         </span>
       </span>
