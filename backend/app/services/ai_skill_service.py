@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.models.ai_skill import EjcSkill
 from app.models.ai_log import AITipoUso, normalizar_modelo_ia
 from app.services import ai_gateway
+from app.services.ai import juridico_guardrails
 from app.services.ai_document_chunking import dividir_documento_em_blocos
 from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
 from app.services.legal_base import garantir_identidade
@@ -46,6 +47,31 @@ _AREA_TASK = {
 # trabalho jurídico sob responsabilidade OAB). cliente_externo já é bloqueado
 # antes (não acessa IA interna); estagiário/secretaria/financeiro ficam de fora.
 _ROLES_OAB = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
+
+
+def _aplicar_guardrails_juridicos(skill_name: str, texto: str) -> tuple[str, list[str]]:
+    """Guardrail jurídico DETERMINÍSTICO (Issue #554) — não confia só no
+    system_prompt gravado no banco (o texto vem da IA e a Issue reproduziu o
+    erro mesmo com o prompt instruindo o contrário):
+
+      1. Prescrição/decadência não pode ser qualificada como extinção SEM
+         resolução de mérito (contraria CPC, art. 487, II) — corrigida.
+      2. CDC arts. 26 (vício — decadência) e 27 (fato do produto/serviço —
+         prescrição) não podem ser cumulados sem fundamentação separada por
+         pretensão — alertado (HITL decide, pois depende dos fatos do caso).
+
+    Escopo: só as duas skills reproduzidas na Issue (`NOME_SKILLS_DECADENCIA_
+    PRESCRICAO`) — não altera o comportamento de nenhuma outra skill.
+    Retorna (texto_final, alertas_para_o_campo_'aviso').
+    """
+    if skill_name not in juridico_guardrails.NOME_SKILLS_DECADENCIA_PRESCRICAO:
+        return texto, []
+    alertas: list[str] = []
+    texto_final, corrigido = juridico_guardrails.aplicar_guardrail_merito(texto)
+    if corrigido:
+        alertas.append(juridico_guardrails.ALERTA_MERITO_CORRIGIDO)
+    alertas += juridico_guardrails.checar_cumulacao_vicio_fato_cdc(texto_final)
+    return texto_final, alertas
 
 
 def _marcar_uso(skill: EjcSkill) -> None:
@@ -152,8 +178,17 @@ async def executar_skill(
     inp = resp.input_tokens or 0
     out = resp.output_tokens or 0
     custo = float(resp.custo_estimado_brl or 0.0)
+
+    # Guardrail jurídico determinístico (Issue #554) — ANTES do log: corrige/
+    # alerta sobre a qualificação de mérito e a cumulação CDC 26/27, para que
+    # tanto a resposta devolvida quanto o AILog persistido já reflitam a
+    # correção (não só a leitura futura).
+    texto_corrigido, alertas_juridicos = _aplicar_guardrails_juridicos(
+        skill.name, resp.texto
+    )
+
     resposta_log, pii_resposta = sanitizar_ou_abortar(
-        resp.texto, nomes_entidades
+        texto_corrigido, nomes_entidades
     )
 
     modelo_log = f"{resp.provedor}/{resp.modelo}" if resp.provedor else resp.modelo
@@ -174,17 +209,23 @@ async def executar_skill(
         custo_estimado=custo,
     )
 
-    return {
-        "conteudo": resp.texto,
+    resultado = {
+        "conteudo": texto_corrigido,
         "skill": skill.display_name,
         "skill_name": skill.name,
         "engine": skill.engine,
         "is_rascunho": True,
-        "requer_revisao": skill.requires_human_review,
+        "requer_revisao": skill.requires_human_review or bool(alertas_juridicos),
         "tokens_usados": inp + out,
         "custo_estimado_brl": custo,
         "ai_log_id": log_id,
     }
+    if alertas_juridicos:
+        resultado["aviso"] = (
+            "RASCUNHO — revisão humana obrigatória antes de qualquer uso (OAB). "
+            + " ".join(alertas_juridicos)
+        )
+    return resultado
 
 
 async def executar_skill_documento_longo(
@@ -328,8 +369,15 @@ async def executar_skill_documento_longo(
     tokens_input = sum(r.input_tokens or 0 for r in respostas)
     tokens_output = sum(r.output_tokens or 0 for r in respostas)
     custo = sum(float(r.custo_estimado_brl or 0) for r in respostas)
+
+    # Guardrail jurídico determinístico (Issue #554) — mesmo tratamento de
+    # executar_skill(), aplicado à síntese final do documento longo.
+    texto_final_corrigido, alertas_juridicos = _aplicar_guardrails_juridicos(
+        skill.name, final.texto
+    )
+
     resposta_log, pii_resposta = sanitizar_ou_abortar(
-        final.texto, nomes_entidades
+        texto_final_corrigido, nomes_entidades
     )
     prompt_log, pii_nomes_prompt = sanitizar_ou_abortar(
         instrucoes_limpas, nomes_entidades
@@ -358,13 +406,13 @@ async def executar_skill_documento_longo(
         tokens_output=tokens_output,
         custo_estimado=custo,
     )
-    return {
-        "conteudo": final.texto,
+    resultado = {
+        "conteudo": texto_final_corrigido,
         "skill": skill.display_name,
         "skill_name": skill.name,
         "engine": skill.engine,
         "is_rascunho": True,
-        "requer_revisao": skill.requires_human_review,
+        "requer_revisao": skill.requires_human_review or bool(alertas_juridicos),
         "tokens_usados": tokens_input + tokens_output,
         "custo_estimado_brl": custo,
         "ai_log_id": log_id,
@@ -375,3 +423,9 @@ async def executar_skill_documento_longo(
             "truncado": False,
         },
     }
+    if alertas_juridicos:
+        resultado["aviso"] = (
+            "RASCUNHO — revisão humana obrigatória antes de qualquer uso (OAB). "
+            + " ".join(alertas_juridicos)
+        )
+    return resultado
