@@ -121,5 +121,28 @@ def test_guard_detecta_json_bruto():
     assert titulo_e_json_bruto("```json") is True
 
 
+def test_guard_detecta_array_json_com_objeto():
+    # Issue #556: array JSON válido continua bloqueado mesmo com objeto dentro.
+    assert titulo_e_json_bruto('[{"titulo":"x"}]') is True
+
+
 def test_guard_aceita_titulo_normal():
     assert titulo_e_json_bruto("Ação de Cobrança") is False
+
+
+def test_guard_aceita_rotulo_colchetes_homologacao():
+    # Issue #556: payload exato reproduzido na Homologação Técnica Parte 5.
+    assert titulo_e_json_bruto(
+        "[TESTE AUDITORIA - EXCLUIR] Caso fictício - civil"
+    ) is False
+    assert titulo_e_json_bruto("[URGENTE] Recurso administrativo") is False
+
+
+def test_guard_aceita_outros_rotulos_colchetes_usuais():
+    assert titulo_e_json_bruto("[REVISAR] Contrato de honorários") is False
+    assert titulo_e_json_bruto("[SIGILOSO] Ação de família") is False
+
+
+def test_guard_colchete_sem_fechamento_nao_bloqueia():
+    # Sem `]`, não há bloco balanceado — trata como texto plano.
+    assert titulo_e_json_bruto("[URGENTE sem fechamento") is False
