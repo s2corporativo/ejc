@@ -52,3 +52,29 @@ Ajustar o caminho relativo conforme a pasta da tela.
 2. Criar componentes oficiais para `Table`, `EmptyState`, `Modal`, `Tabs`, `StatCard` e `AiPanel`.
 3. Remover duplicidades visuais progressivamente.
 4. Manter cada PR visual pequeno, com CI verde e sem alteração de backend.
+
+## Shell escuro premium (conceito aprovado 2026-08)
+
+A partir da refatoração da Issue #689, o AppShell (sidebar + cabeçalho do
+staff) usa o idioma **preto-azulado com dourado**, mantendo o conteúdo claro:
+
+- Tokens: família `shell` no `tailwind.config.js` (`shell-950…700`,
+  `shell-text` #E7E9EF, `shell-muted` #9AA1B5) + classes globais em
+  `index.css` (`.sidebar-bronze` repintada, `.app-header-shell`,
+  `.app-header-search`, `.header-contact-btn`, `.sidebar-surface`,
+  `.brand-logo-tile`).
+- Dourado é acento (item ativo, ícones, filetes, card KPI de destaque) —
+  nunca fundo dominante de área de leitura. Texto dourado sobre o shell usa
+  `#E5CE7F` (`gold-light`, 11,4:1 AAA).
+- A logomarca original (`/brand/logo-hd.png`, transparente) fica sobre um
+  tile claro (`.brand-logo-tile`) no shell escuro — nunca redesenhar,
+  distorcer ou recriar a marca.
+- Cabeçalho: hora/data (`components/header/RelogioAgora`), mensagem do dia
+  (`components/header/MensagemDia`, base local `content/mensagensDoDia.ts`),
+  atalhos de contato + IA do Escritório (`components/header/AtalhosContato`)
+  e perfil autenticado. Parâmetros institucionais SÓ via
+  `src/config/office.ts` (variáveis `VITE_EJC_*`, ver `frontend/.env.example`).
+- Sidebar: calendário semanal (`components/SidebarAgendaSemana`) integrado a
+  `/agenda-eventos/`.
+- Portal do cliente (`PortalLayout`) ainda segue o shell claro — migração em
+  Issue própria.
