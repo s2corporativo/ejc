@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: format-ejc-v2-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   prettier:
     if: github.actor != 'github-actions[bot]'
