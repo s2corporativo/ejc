@@ -108,6 +108,60 @@ async def test_delete_direto_falha_contra_postgres_real():
 
 
 @pytest.mark.asyncio
+async def test_truncate_direto_falha_contra_postgres_real():
+    """TRUNCATE não dispara o trigger de linha (BEFORE UPDATE OR DELETE) —
+    precisa do trigger dedicado de STATEMENT (`trg_audit_logs_bloqueia_truncate`,
+    migration `131_audit_logs_worm`). Sem ele, `TRUNCATE audit_logs` apaga a
+    trilha inteira contornando por completo o bloqueio de UPDATE/DELETE."""
+    from app.core.database import AsyncSessionLocal
+
+    log_id = str(uuid4())
+    async with AsyncSessionLocal() as db:
+        await _inserir_log_cru(db, log_id)
+        try:
+            with pytest.raises(DBAPIError, match="imutavel"):
+                await db.execute(text("TRUNCATE audit_logs"))
+        finally:
+            await db.rollback()
+
+    async with AsyncSessionLocal() as db:
+        r = await db.execute(
+            text("SELECT count(*) FROM audit_logs WHERE id = :id"), {"id": log_id}
+        )
+        assert r.scalar_one() == 1, "linha deveria ter sobrevivido ao TRUNCATE rejeitado"
+        await _apagar_via_bypass(db, log_id)
+
+
+@pytest.mark.asyncio
+async def test_truncate_com_bypass_de_expurgo_funciona():
+    """A via privilegiada de expurgo (Issue #582, reservada e INATIVA neste
+    PR) também precisa cobrir TRUNCATE, não só UPDATE/DELETE.
+
+    TRUNCATE é transacional no Postgres — usa ROLLBACK ao final, em vez de
+    COMMIT, para provar que o bypass permite a operação sem de fato apagar a
+    tabela inteira compartilhada com o resto da suíte de testes."""
+    from app.core.database import AsyncSessionLocal
+
+    log_id = str(uuid4())
+    async with AsyncSessionLocal() as db:
+        await _inserir_log_cru(db, log_id)
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
+            # Não levanta exceção com o bypass ligado — é a asserção do teste.
+            await db.execute(text("TRUNCATE audit_logs"))
+            r = await db.execute(
+                text("SELECT count(*) FROM audit_logs WHERE id = :id"), {"id": log_id}
+            )
+            assert r.scalar_one() == 0, "TRUNCATE com bypass deveria ter apagado a linha"
+            await db.rollback()
+    finally:
+        async with AsyncSessionLocal() as db:
+            await _apagar_via_bypass(db, log_id)
+
+
+@pytest.mark.asyncio
 async def test_criar_audit_log_continua_funcionando_sem_regressao():
     """`criar_audit_log` (backend/app/models/audit_log.py:31-56) é o único
     caminho de escrita usado pelos ~77 chamadores do app — precisa continuar

@@ -6,15 +6,33 @@ SCHEMA impede um `db.execute(text(...))` futuro, um acesso direto ao Postgres
 ou uma rota nova de "limpar registros de teste" de reescrever a trilha sem
 deixar vestígio.
 
-Esta migration cria um trigger `BEFORE UPDATE OR DELETE ON audit_logs` que
-levanta exceção por padrão. A via privilegiada de expurgo fica pronta mas
-INATIVA: nenhum código do repositório define a GUC de sessão
-`ejc.audit_logs_permitir_expurgo`, então todo UPDATE/DELETE — de qualquer
-papel, inclusive superusuário, salvo desabilitação explícita do trigger —
-falha. Quando a Issue #582 (purga LGPD com preservação legal) definir a
-política de retenção, a rotina de expurgo autorizada poderá abrir a exceção
-com `SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'` dentro da própria
+Esta migration cria dois triggers: `BEFORE UPDATE OR DELETE ON audit_logs`
+(nível de linha) e `BEFORE TRUNCATE ON audit_logs` (nível de statement,
+exigência do Postgres para TRUNCATE) que levantam exceção por padrão. A via
+privilegiada de expurgo fica pronta mas INATIVA: nenhum código do
+repositório define a GUC de sessão `ejc.audit_logs_permitir_expurgo`, então
+todo UPDATE/DELETE/TRUNCATE — de qualquer papel, inclusive superusuário,
+salvo desabilitação explícita do trigger — falha. Quando a Issue #582
+(purga LGPD com preservação legal) definir a política de retenção, a
+rotina de expurgo autorizada poderá abrir a exceção com
+`SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'` dentro da própria
 transação de purga, sem precisar reabrir este trigger nem tocar em GRANT/REVOKE.
+
+LIMITAÇÃO CONHECIDA (review PR #707, não resolvida nesta migration): a GUC
+acima é livremente configurável por qualquer sessão autenticada com a
+credencial `ejc_user` — a aplicação e o Alembic compartilham essa mesma
+credencial (`DATABASE_URL`/`DATABASE_URL_SYNC`), então SQL cru comprometido
+ou uma injeção capaz de emitir múltiplos comandos poderia setar a GUC e em
+seguida mutar/apagar a trilha. Restringir o bypass a um papel de banco
+separado (ex.: `SET ROLE` para um role dedicado, com `current_user`
+verificado na função do trigger) exigiria uma credencial de login distinta
+da usada pela aplicação — a app e o Alembic não têm hoje um segundo
+segredo/credencial provisionado, e os ~17 arquivos `tests/test_*_dblevel.py`
+que limpam fixtures via este mesmo bypass (mesma credencial) precisariam
+ser todos migrados para a credencial nova. Isso é uma decisão de
+infraestrutura/provisionamento de segredo, fora do alcance desta migration.
+Desenho proposto registrado na Issue de continuidade aberta a partir do
+review deste PR (ver referência no corpo do PR #707).
 
 Por que trigger e não REVOKE UPDATE/DELETE do papel da aplicação:
 - A aplicação e o Alembic usam a MESMA credencial (`DATABASE_URL`/`DATABASE_URL_SYNC`
@@ -45,6 +63,8 @@ depends_on = None
 
 _FUNCTION = "audit_logs_bloqueia_mutacao"
 _TRIGGER = "trg_audit_logs_bloqueia_mutacao"
+_FUNCTION_TRUNCATE = "audit_logs_bloqueia_truncate"
+_TRIGGER_TRUNCATE = "trg_audit_logs_bloqueia_truncate"
 _GUC = "ejc.audit_logs_permitir_expurgo"
 
 
@@ -58,7 +78,7 @@ def upgrade() -> None:
         BEGIN
             IF current_setting('{_GUC}', true) IS DISTINCT FROM 'on' THEN
                 RAISE EXCEPTION
-                    'audit_logs e imutavel (WORM, LGPD art. 37): % bloqueado. '
+                    'audit_logs e imutavel (WORM): % bloqueado. '
                     'Via privilegiada de expurgo reservada para rotina auditada '
                     '(Issue #582): SET LOCAL {_GUC} = ''on'' dentro da transacao de purga.',
                     TG_OP;
@@ -80,7 +100,41 @@ def upgrade() -> None:
         """
     )
 
+    # TRUNCATE não dispara trigger de linha (BEFORE UPDATE OR DELETE acima) —
+    # o Postgres exige um trigger dedicado, de nível de STATEMENT, declarado
+    # explicitamente para TRUNCATE. Sem isto, `TRUNCATE audit_logs` (mesma
+    # credencial dona da tabela) apagaria a trilha inteira contornando o
+    # trigger de linha por completo.
+    op.execute(
+        f"""
+        CREATE OR REPLACE FUNCTION {_FUNCTION_TRUNCATE}()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF current_setting('{_GUC}', true) IS DISTINCT FROM 'on' THEN
+                RAISE EXCEPTION
+                    'audit_logs e imutavel (WORM): TRUNCATE bloqueado. '
+                    'Via privilegiada de expurgo reservada para rotina auditada '
+                    '(Issue #582): SET LOCAL {_GUC} = ''on'' dentro da transacao de purga.';
+            END IF;
+            RETURN NULL;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        f"""
+        CREATE TRIGGER {_TRIGGER_TRUNCATE}
+        BEFORE TRUNCATE ON audit_logs
+        FOR EACH STATEMENT
+        EXECUTE FUNCTION {_FUNCTION_TRUNCATE}()
+        """
+    )
+
 
 def downgrade() -> None:
+    op.execute(f"DROP TRIGGER IF EXISTS {_TRIGGER_TRUNCATE} ON audit_logs")
+    op.execute(f"DROP FUNCTION IF EXISTS {_FUNCTION_TRUNCATE}()")
     op.execute(f"DROP TRIGGER IF EXISTS {_TRIGGER} ON audit_logs")
     op.execute(f"DROP FUNCTION IF EXISTS {_FUNCTION}()")

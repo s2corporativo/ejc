@@ -69,7 +69,7 @@ def test_nenhuma_rota_registrada_muta_audit_logs():
     )
     assert not achadas, (
         f"rota(s) de MUTAÇÃO sobre a entidade de auditoria: {achadas}\n"
-        "audit_logs é WORM (LGPD art. 37, Issue #699, migration "
+        "audit_logs é WORM (Issue #699, migration "
         "131_audit_logs_worm) — o banco vai rejeitar em runtime (trigger "
         "trg_audit_logs_bloqueia_mutacao), mas a rota não deve nem existir. "
         "Se isto é a implementação da via de expurgo da #582, ela precisa de "
