@@ -17,6 +17,7 @@ JOB_PRAZOS_VENCIDOS = "prazos_vencidos"
 JOB_PRAZOS_ALERTAS = "prazos_alertas"
 JOB_AUDIENCIAS = "audiencias_agenda"
 JOB_PRESCRICAO = "prescricao"
+JOB_ENTRADA_EXPURGO = "entrada_expurgo"
 
 _MAX_DIARIO = 26
 _MAX_DATAJUD = 14
