@@ -31,11 +31,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Mudar DEFAULT de coluna existente: nova assinatura
+    # Mudar DEFAULT de coluna existente: nova assinatura.
+    # Para enum PostgreSQL, server_default deve ser um literal SQL com quotes.
     op.alter_column('documents', 'confidencialidade',
                     existing_type=sa.Enum('normal', 'interno', 'restrito', 'confidencial', 'segredo_justica', name='docconfidencialidade'),
                     existing_nullable=False,
-                    server_default='confidencial')
+                    server_default="'confidencial'")
 
     # Reclassificar documentos existentes com default (era "normal") para "confidencial"
     # para refletir a nova política de publicação explícita.
@@ -60,4 +61,4 @@ def downgrade() -> None:
     op.alter_column('documents', 'confidencialidade',
                     existing_type=sa.Enum('normal', 'interno', 'restrito', 'confidencial', 'segredo_justica', name='docconfidencialidade'),
                     existing_nullable=False,
-                    server_default='normal')
+                    server_default="'normal'")
