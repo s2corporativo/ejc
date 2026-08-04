@@ -54,8 +54,7 @@ export const MENSAGENS_DO_DIA: readonly MensagemDoDia[] = [
     referencia: "Salmos 121:1-2",
   },
   {
-    texto:
-      "Todas as coisas cooperam para o bem daqueles que amam a Deus.",
+    texto: "Todas as coisas cooperam para o bem daqueles que amam a Deus.",
     referencia: "Romanos 8:28",
   },
   {

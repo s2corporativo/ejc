@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  MENSAGENS_DO_DIA,
-  diaDoAno,
-  mensagemDoDia,
-} from "./mensagensDoDia";
+import { MENSAGENS_DO_DIA, diaDoAno, mensagemDoDia } from "./mensagensDoDia";
 
 describe("mensagensDoDia", () => {
   it("toda mensagem tem texto e referência conferível", () => {
