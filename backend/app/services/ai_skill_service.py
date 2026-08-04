@@ -62,6 +62,15 @@ def _aplicar_guardrails_juridicos(skill_name: str, texto: str) -> tuple[str, lis
 
     Escopo: só as duas skills reproduzidas na Issue (`NOME_SKILLS_DECADENCIA_
     PRESCRICAO`) — não altera o comportamento de nenhuma outra skill.
+
+    O texto retornado (`texto_final`) é o que vai para `resultado["conteudo"]`
+    E para `AILog.resposta` (mesma variável, ver `executar_skill`) — por isso
+    o alerta de cumulação CDC também é ANEXADO ao texto, não só devolvido na
+    lista `alertas` (achado de review, Codex, PR #703, P1): quando só
+    `checar_cumulacao_vicio_fato_cdc` dispara (sem correção de mérito), sem
+    anexar ao texto o alerta sumiria do log persistido, sobrevivendo só na
+    resposta transiente da API.
+
     Retorna (texto_final, alertas_para_o_campo_'aviso').
     """
     if skill_name not in juridico_guardrails.NOME_SKILLS_DECADENCIA_PRESCRICAO:
@@ -70,7 +79,10 @@ def _aplicar_guardrails_juridicos(skill_name: str, texto: str) -> tuple[str, lis
     texto_final, corrigido = juridico_guardrails.aplicar_guardrail_merito(texto)
     if corrigido:
         alertas.append(juridico_guardrails.ALERTA_MERITO_CORRIGIDO)
-    alertas += juridico_guardrails.checar_cumulacao_vicio_fato_cdc(texto_final)
+    alertas_cdc = juridico_guardrails.checar_cumulacao_vicio_fato_cdc(texto_final)
+    if alertas_cdc:
+        alertas += alertas_cdc
+        texto_final = juridico_guardrails.anexar_alerta_cdc_ao_texto(texto_final, alertas_cdc)
     return texto_final, alertas
 
 

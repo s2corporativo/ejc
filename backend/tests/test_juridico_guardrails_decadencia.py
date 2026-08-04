@@ -130,3 +130,175 @@ def test_nao_alerta_quando_regimes_sao_fundamentados_separadamente():
 def test_texto_vazio_nao_quebra_checagem_cdc():
     assert jg.checar_cumulacao_vicio_fato_cdc("") == []
     assert jg.checar_cumulacao_vicio_fato_cdc(None) == []
+
+
+# ── Achado de review #1 (P0) — vigência/versão da regra citada ─────────────
+
+def test_aviso_de_correcao_cita_vigencia_e_versao_da_regra():
+    texto = (
+        "Reconheço a PRESCRIÇÃO e julgo extinto sem resolução de mérito, "
+        "nos termos do art. 485 do CPC."
+    )
+    corrigido, houve_correcao = jg.aplicar_guardrail_merito(texto)
+
+    assert houve_correcao is True
+    # Não basta citar o artigo — precisa dizer QUAL lei, QUE VERSÃO/REDAÇÃO e
+    # DESDE QUANDO está em vigor (achado P0: Codex, PR #703).
+    assert "Lei 13.105/2015" in corrigido
+    assert "em vigor desde 18/03/2016" in corrigido
+
+
+def test_alerta_cumulacao_cdc_cita_vigencia_e_versao_da_regra():
+    assert "Lei 8.078/1990" in jg.ALERTA_CUMULACAO_CDC
+    assert "em vigor desde 11/03/1991" in jg.ALERTA_CUMULACAO_CDC
+
+
+# ── Achado de review #2 (P1) — não classificar toda resolução de mérito ────
+# parcial como sentença ────────────────────────────────────────────────────
+
+def test_aviso_nao_afirma_categoricamente_sentenca_de_merito():
+    texto = "Reconheço a prescrição e julgo extinto sem resolução de mérito."
+    corrigido, houve_correcao = jg.aplicar_guardrail_merito(texto)
+
+    assert houve_correcao is True
+    # O CPC permite decisão interlocutória de mérito PARCIAL (art. 356) quando
+    # prescrição/decadência resolve só parte dos pedidos cumulados — "profere
+    # SEMPRE sentença de mérito" (versão anterior) é categoricamente errado
+    # nesse caso. O aviso não pode afirmar isso sem qualificar.
+    assert "RESOLUÇÃO DE MÉRITO" in corrigido.upper()
+    assert "decisão interlocutória de mérito parcial" in corrigido.lower()
+    assert "art. 356" in corrigido.lower()
+
+
+def test_alerta_merito_corrigido_nao_afirma_categoricamente_sentenca():
+    texto_upper = jg.ALERTA_MERITO_CORRIGIDO.upper()
+    assert "RESOLUÇÃO DE MÉRITO" in texto_upper
+    assert "DECISÃO INTERLOCUTÓRIA DE MÉRITO PARCIAL" in texto_upper
+
+
+# ── Achado de review #3 (P1) — preservar cláusulas negadas/independentes ───
+
+def test_nao_inverte_clausula_negada_ligada_a_prescricao():
+    # "não é extinção sem resolução de mérito" já afirma corretamente o
+    # mérito — substituir só o núcleo produziria "não é ... COM resolução de
+    # mérito", invertendo o sentido (achado P1: Codex, PR #703).
+    texto = (
+        "Reconheço a prescrição da pretensão. Isso não é extinção sem "
+        "resolução de mérito."
+    )
+    corrigido, houve_correcao = jg.aplicar_guardrail_merito(texto)
+
+    assert houve_correcao is False
+    assert corrigido == texto
+    assert "não é ... COM resolução de mérito" not in corrigido
+    assert "não é extinção COM resolução" not in corrigido
+
+
+def test_nao_troca_art485_citado_por_fundamento_proprio_alheio():
+    # O art. 485 aparece perto de "prescrição" só por coincidência de
+    # proximidade — a extinção sem resolução de mérito é por ILEGITIMIDADE
+    # PASSIVA, fundamento independente e correto (achado P1: Codex, PR #703).
+    texto = (
+        "Quanto à prescrição, rejeito a preliminar arguida pela ré. "
+        "Quanto à ilegitimidade passiva da segunda ré, julgo extinto sem "
+        "resolução de mérito, nos termos do art. 485, VI, do CPC."
+    )
+    corrigido, houve_correcao = jg.aplicar_guardrail_merito(texto)
+
+    assert houve_correcao is False
+    assert corrigido == texto
+
+
+def test_ainda_corrige_erro_real_apos_guardas_de_falso_positivo():
+    # Controle positivo: as guardas de #3 não podem apagar o comportamento
+    # original — erro real (sem negação, sem fundamento próprio alheio)
+    # continua sendo corrigido.
+    texto = (
+        "Reconheço a PRESCRIÇÃO da pretensão e julgo o processo extinto sem "
+        "resolução de mérito, nos termos do art. 485 do CPC."
+    )
+    corrigido, houve_correcao = jg.aplicar_guardrail_merito(texto)
+    assert houve_correcao is True
+    assert "extinto COM resolução de mérito (art. 487, II, do CPC)" in corrigido
+
+
+# ── Achado de review #4 (P1) — verificar cada regime do CDC separadamente ──
+
+def test_alerta_cumulacao_mesmo_com_as_quatro_palavras_presentes():
+    # A versão anterior só checava se "decadência" e "prescrição" apareciam
+    # EM QUALQUER LUGAR do texto — este texto tem as quatro palavras e ainda
+    # assim é exatamente a cumulação indevida que deveria ser capturada
+    # (achado P1: Codex, PR #703).
+    texto = (
+        "O caso envolve vício do produto e fato do produto. Decadência e "
+        "prescrição aplicam-se conjuntamente, sem distinguir prazos entre "
+        "as pretensões."
+    )
+    alertas = jg.checar_cumulacao_vicio_fato_cdc(texto)
+    assert len(alertas) == 1
+
+
+def test_nao_alerta_quando_regimes_pareados_corretamente_por_proximidade():
+    # Controle positivo: as guardas de #4 não podem apagar o comportamento
+    # original — regimes corretamente pareados (vício perto de decadência,
+    # fato perto de prescrição), sem marcador de cumulação, continuam sem
+    # alerta.
+    texto = (
+        "Pretensão de vício do produto (CDC, art. 26): prazo decadencial de "
+        "90 dias. Pretensão de fato do produto — defeito que causa dano (CDC, "
+        "art. 27): prazo prescricional de 5 anos. São pretensões autônomas."
+    )
+    assert jg.checar_cumulacao_vicio_fato_cdc(texto) == []
+
+
+# ── Achado de review #5 (P1) — idempotência na releitura ───────────────────
+
+def test_reaplicar_guardrail_a_texto_ja_corrigido_nao_altera_nem_duplica():
+    texto_original = (
+        "Reconheço a PRESCRIÇÃO e julgo extinto sem resolução de mérito, "
+        "nos termos do art. 485 do CPC."
+    )
+    corrigido_1, houve_1 = jg.aplicar_guardrail_merito(texto_original)
+    assert houve_1 is True
+
+    # Simula a releitura de um log JÁ corrigido (GET /ai/logs) — reaplicar não
+    # pode encontrar as palavras-gatilho DENTRO do próprio aviso e reescrevê-lo
+    # (achado P1: Codex, PR #703).
+    corrigido_2, houve_2 = jg.aplicar_guardrail_merito(corrigido_1)
+    assert houve_2 is False
+    assert corrigido_2 == corrigido_1
+    # Não duplicou o aviso.
+    assert corrigido_2.count("GUARDRAIL DETERMINÍSTICO") == 1
+
+
+def test_ja_corrigido_detecta_marcador():
+    texto_corrigido, _ = jg.aplicar_guardrail_merito(
+        "Reconheço a prescrição e julgo extinto sem resolução de mérito."
+    )
+    assert jg.ja_corrigido(texto_corrigido) is True
+    assert jg.ja_corrigido("texto qualquer sem marcador") is False
+    assert jg.ja_corrigido("") is False
+    assert jg.ja_corrigido(None) is False
+
+
+# ── Achado de review #7 (P1) — persistir alerta CDC no texto ───────────────
+
+def test_anexar_alerta_cdc_ao_texto_persiste_o_alerta():
+    texto = "Resposta sem correção de mérito, só cumulação CDC indevida."
+    alertas = [jg.ALERTA_CUMULACAO_CDC]
+
+    anexado = jg.anexar_alerta_cdc_ao_texto(texto, alertas)
+
+    assert anexado != texto
+    assert jg.ALERTA_CUMULACAO_CDC in anexado
+    assert jg.MARCADOR_ALERTA_CDC in anexado
+
+
+def test_anexar_alerta_cdc_e_idempotente_e_noop_sem_alertas():
+    texto = "Resposta qualquer."
+    assert jg.anexar_alerta_cdc_ao_texto(texto, []) == texto
+
+    anexado = jg.anexar_alerta_cdc_ao_texto(texto, [jg.ALERTA_CUMULACAO_CDC])
+    anexado_de_novo = jg.anexar_alerta_cdc_ao_texto(anexado, [jg.ALERTA_CUMULACAO_CDC])
+    assert anexado_de_novo == anexado
+    assert anexado.count(jg.MARCADOR_ALERTA_CDC) == 1

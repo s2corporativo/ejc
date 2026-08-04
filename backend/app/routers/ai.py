@@ -143,19 +143,49 @@ async def listar_logs(
     # schema), então a correção de mérito (CPC art. 487, II) é reaplicada aqui
     # a QUALQUER resposta já persistida, cobrindo execuções anteriores a esta
     # correção sem reescrever o dado gravado no banco — só a cópia servida.
+    # `aplicar_guardrail_merito` é idempotente (não reaplica a um texto que já
+    # carrega o marcador da correção — achado de review, Codex, PR #703, P1),
+    # então reler um log JÁ corrigido não duplica nem corrompe o próprio aviso.
     from app.services.ai import juridico_guardrails
+
+    def _linha(l: AILog) -> dict:
+        resposta_corrigida, foi_corrigido_agora = juridico_guardrails.aplicar_guardrail_merito(
+            l.resposta
+        )
+        status_hitl = l.status_hitl.value
+        revisado_por = l.revisado_por
+        revisado_em = l.revisado_em
+        # Achado de review (Codex, PR #703, P1): se a correção só acontece
+        # AGORA, na leitura, de um log LEGADO (gravado antes deste guardrail
+        # existir) cujo status_hitl já era "revisado"/"aplicado", servir o
+        # texto corrigido mantendo o status antigo faria parecer que a versão
+        # CORRIGIDA já passou por revisão humana — não passou; quem revisou
+        # viu o texto ERRADO. Sem migration de dados no escopo desta Issue, a
+        # correção fica restrita a esta resposta: reexpõe como pendente de
+        # revisão (não sobrescreve `AILog` no banco — PATCH /logs/{id}/hitl e
+        # o relatório de citações continuam operando sobre o dado original,
+        # limitação residual registrada no PR).
+        if foi_corrigido_agora and l.status_hitl in (
+            AIStatusHITL.revisado, AIStatusHITL.aplicado,
+        ):
+            status_hitl = AIStatusHITL.gerado.value
+            revisado_por = None
+            revisado_em = None
+        return {
+            "id": l.id, "tipo_uso": l.tipo_uso.value, "modelo": l.modelo,
+            "status_hitl": status_hitl, "revisado_por": revisado_por,
+            "revisado_em": revisado_em, "pii_removida": l.pii_removida,
+            "risco_ia": l.risco_ia.value if l.risco_ia else None,
+            "case_id": l.case_id, "created_at": l.created_at,
+            "resposta": resposta_corrigida,
+            "corrigido_automaticamente_na_leitura": foi_corrigido_agora,
+            # Campo dedicado (migration 070): crítica adversarial p/ o revisor
+            # HITL — separada de `resposta` para não gatear/ingerir a crítica.
+            "critica_adversarial": l.critica_adversarial,
+        }
+
     return {
-        "data": [
-            {"id": l.id, "tipo_uso": l.tipo_uso.value, "modelo": l.modelo,
-             "status_hitl": l.status_hitl.value, "pii_removida": l.pii_removida,
-             "risco_ia": l.risco_ia.value if l.risco_ia else None,
-             "case_id": l.case_id, "created_at": l.created_at,
-             "resposta": juridico_guardrails.aplicar_guardrail_merito(l.resposta)[0],
-             # Campo dedicado (migration 070): crítica adversarial p/ o revisor
-             # HITL — separada de `resposta` para não gatear/ingerir a crítica.
-             "critica_adversarial": l.critica_adversarial}
-            for l in rows
-        ],
+        "data": [_linha(l) for l in rows],
         "total": total, "page": page, "page_size": page_size,
     }
 

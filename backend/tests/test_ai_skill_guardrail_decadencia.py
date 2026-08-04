@@ -151,7 +151,7 @@ async def test_cumulacao_cdc_sem_diferenciar_prazos_gera_alerta(monkeypatch):
     )
     skill = _skill("prescricao-decadencia")
     db = _FakeDBExecucao(skill)
-    _mockar_gateway_e_log(monkeypatch, texto)
+    gravados = _mockar_gateway_e_log(monkeypatch, texto)
 
     resultado = await ai_skill_service.executar_skill(
         db=db, skill_name="prescricao-decadencia", query="analise o caso de consumo",
@@ -161,6 +161,13 @@ async def test_cumulacao_cdc_sem_diferenciar_prazos_gera_alerta(monkeypatch):
     assert "aviso" in resultado
     assert "cumulação automática" in resultado["aviso"]
     assert resultado["requer_revisao"] is True
+    # Achado de review #7 (Codex, PR #703, P1): quando SÓ o alerta CDC dispara
+    # (sem correção de mérito), o alerta precisa sobreviver na persistência do
+    # AILog — antes ficava só na resposta transiente da API e sumia ao reler
+    # o histórico.
+    assert "cumulação automática" in gravados["resposta"]
+    assert "ALERTA JURÍDICO AUTOMÁTICO" in gravados["resposta"]
+    assert "cumulação automática" in resultado["conteudo"]
 
 
 async def test_cumulacao_cdc_fundamentada_separadamente_nao_gera_alerta(monkeypatch):
