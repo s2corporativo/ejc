@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
@@ -12,6 +12,7 @@ import {
   Clock,
   FileText,
   FileUp,
+  FolderOpen,
   Gavel,
   Headset,
   ListChecks,
@@ -175,6 +176,85 @@ function DeadlineBars({
   );
 }
 
+/**
+ * Card de KPI do conceito aprovado (preto/dourado): fundo escuro com tile
+ * de ícone dourado — a variante `destaque` inverte para o gradiente ouro.
+ * Clicável, com estado de carregamento e "—" quando o dado não veio
+ * (nunca 0 enganoso).
+ */
+function KpiConceito({
+  label,
+  value,
+  to,
+  icon: Icon,
+  destaque,
+  loading,
+}: {
+  label: string;
+  value: number | string | null | undefined;
+  to: string;
+  icon: ComponentType<{ className?: string }>;
+  destaque?: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <Link
+      to={to}
+      aria-label={`${label}: ${value ?? "sem dados"} — abrir`}
+      className={cn(
+        "group relative flex items-center gap-4 overflow-hidden rounded-2xl p-4 transition-transform duration-150 hover:-translate-y-0.5",
+        destaque
+          ? "bg-gradient-to-br from-[#C9A227] to-[#8F7117] text-[#2A2108] shadow-gold"
+          : "bg-shell-800 text-shell-text shadow-card ring-1 ring-inset ring-white/10",
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-12 w-12 shrink-0 items-center justify-center rounded-xl",
+          destaque ? "bg-white/25 text-[#2A2108]" : "bg-white/[0.07] text-gold",
+        )}
+      >
+        <Icon className="h-6 w-6" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span
+          className={cn(
+            "block truncate text-[13px] font-medium",
+            destaque ? "text-[#3B2F0B]" : "text-shell-muted",
+          )}
+        >
+          {label}
+        </span>
+        {loading ? (
+          <span
+            className="ejc-skeleton mt-1.5 block h-7 w-14 rounded-md bg-white/10"
+            aria-hidden="true"
+          />
+        ) : (
+          <span className="block text-3xl font-semibold tabular-nums tracking-tight">
+            {value ?? "—"}
+          </span>
+        )}
+        <span
+          className={cn(
+            "mt-0.5 block text-[11px]",
+            destaque ? "text-[#3B2F0B]/80" : "text-shell-muted/80",
+          )}
+        >
+          Atualizado hoje
+        </span>
+      </span>
+      <ArrowRight
+        className={cn(
+          "h-4 w-4 shrink-0 transition-transform group-hover:translate-x-1",
+          destaque ? "text-[#3B2F0B]" : "text-gold",
+        )}
+        aria-hidden="true"
+      />
+    </Link>
+  );
+}
+
 export default function DashboardModern() {
   const { user } = useAuth();
   const [dashboard, setDashboard] = useState<any>(null);
@@ -186,6 +266,9 @@ export default function DashboardModern() {
   const [iaSaude, setIaSaude] = useState<any>(null);
   const [solicitacoes, setSolicitacoes] = useState<any>(null);
   const [casosSaude, setCasosSaude] = useState<any[]>([]);
+  // null = ainda sem resposta (ou falha) → o card mostra "—", nunca um 0
+  // enganoso (armadilha apontada na auditoria de produção).
+  const [tarefasPendentes, setTarefasPendentes] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   // "Gestão do escritório": widgets analíticos/gerenciais, recolhidos por
   // padrão para priorizar o operacional do dia do advogado.
@@ -225,6 +308,8 @@ export default function DashboardModern() {
             params: { limit: 5, apenas_abertos: true },
           })
         : Promise.reject(new Error("sem permissão")),
+      // KPI "Tarefas pendentes" (visibilidade por RBAC aplicada no backend).
+      api.get("/tasks/"),
     ])
       .then(
         ([
@@ -236,6 +321,7 @@ export default function DashboardModern() {
           ia,
           solicitacoesReq,
           healthReq,
+          tasksReq,
         ]) => {
           if (dash.status === "fulfilled") setDashboard(dash.value.data);
           if (juri.status === "fulfilled") setJurimetria(juri.value.data);
@@ -250,6 +336,12 @@ export default function DashboardModern() {
           // G5 — caso health ranking
           if (healthReq && healthReq.status === "fulfilled")
             setCasosSaude(asList(healthReq.value.data));
+          if (tasksReq.status === "fulfilled")
+            setTarefasPendentes(
+              asList(tasksReq.value.data).filter(
+                (task: any) => task.status !== "concluida",
+              ).length,
+            );
         },
       )
       .finally(() => setLoading(false));
@@ -499,6 +591,56 @@ export default function DashboardModern() {
         subtitle="Prioridades, agenda e casos recentes para trabalhar com tranquilidade."
         actions={<ThemeSelector className="w-full sm:min-w-[330px]" />}
       />
+
+      {/* ============ KPIs do conceito (sem dados financeiros) ============ */}
+      {/* Números vêm de /dashboard/ e /tasks/ (RBAC no backend). Bloco
+          degradado no payload → "—" no card, nunca 0 enganoso. */}
+      <section
+        aria-label="Indicadores principais"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
+        <KpiConceito
+          label="Total de processos"
+          value={
+            dashboard?.degradado?.includes("casos")
+              ? null
+              : dashboard?.casos?.total
+          }
+          to="/casos"
+          icon={Scale}
+          loading={loading}
+        />
+        <KpiConceito
+          label="Processos ativos"
+          value={
+            dashboard?.degradado?.includes("casos")
+              ? null
+              : dashboard?.casos?.ativos
+          }
+          to="/casos"
+          icon={FolderOpen}
+          destaque
+          loading={loading}
+        />
+        <KpiConceito
+          label="Tarefas pendentes"
+          value={tarefasPendentes}
+          to="/atividades?tipo=tarefa"
+          icon={ListChecks}
+          loading={loading}
+        />
+        <KpiConceito
+          label="Prazos próximos"
+          value={
+            dashboard?.degradado?.includes("prazos")
+              ? null
+              : dashboard?.prazos?.proximos_7d
+          }
+          to="/atividades?tipo=prazo"
+          icon={CalendarClock}
+          loading={loading}
+        />
+      </section>
 
       {/* ===================== MEU DIA ===================== */}
       {/* Prioridade operacional do advogado: ações, pendências, agenda e
