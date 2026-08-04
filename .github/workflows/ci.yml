@@ -202,6 +202,28 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Gerar cópia formatada da restilização v2
+        run: |
+          npx prettier --write \
+            src/components/header/OfficeClock.tsx \
+            src/components/Layout.tsx \
+            src/config/office.ts \
+            src/pages/DashboardModern.tsx \
+            src/styles/ejc-shell-v2.css
+          tar -czf ../formatted-ejc-v2.tar.gz \
+            src/components/header/OfficeClock.tsx \
+            src/components/Layout.tsx \
+            src/config/office.ts \
+            src/pages/DashboardModern.tsx \
+            src/styles/ejc-shell-v2.css
+
+      - name: Anexar arquivos formatados da restilização
+        uses: actions/upload-artifact@v7
+        with:
+          name: formatted-ejc-v2
+          path: formatted-ejc-v2.tar.gz
+          retention-days: 1
+
       - name: Formatação bloqueante (prettier)
         run: |
           set -o pipefail
