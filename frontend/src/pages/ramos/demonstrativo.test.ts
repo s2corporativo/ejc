@@ -130,7 +130,10 @@ describe("provenienciaDoResultado", () => {
   // string/lista em branco que o backend (Gate de proveniência) rejeitaria.
   it.each([
     ["sem fontes", { vigencia_regra: "vigente", versao_regra: "2026-07" }],
-    ["fontes vazia", { fontes: [], vigencia_regra: "vigente", versao_regra: "2026-07" }],
+    [
+      "fontes vazia",
+      { fontes: [], vigencia_regra: "vigente", versao_regra: "2026-07" },
+    ],
     ["sem vigência", { fontes: ["fonte"], versao_regra: "2026-07" }],
     ["sem versão da regra", { fontes: ["fonte"], vigencia_regra: "vigente" }],
     ["resposta nula", null],
