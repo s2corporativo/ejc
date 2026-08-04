@@ -38,7 +38,11 @@
 
 .ejc-shell-sidebar {
   background:
-    radial-gradient(circle at 22% -5%, rgba(208, 173, 79, 0.14), transparent 19rem),
+    radial-gradient(
+      circle at 22% -5%,
+      rgba(208, 173, 79, 0.14),
+      transparent 19rem
+    ),
     linear-gradient(180deg, var(--ejc-shell-900), var(--ejc-shell-950));
   border-right: 1px solid var(--ejc-shell-line);
   color: var(--ejc-shell-text);
@@ -87,8 +91,11 @@
 
 .ejc-sidebar-nav-item.is-active {
   color: #fff8df;
-  background:
-    linear-gradient(90deg, rgba(177, 138, 36, 0.24), rgba(177, 138, 36, 0.1));
+  background: linear-gradient(
+    90deg,
+    rgba(177, 138, 36, 0.24),
+    rgba(177, 138, 36, 0.1)
+  );
   border-color: rgba(229, 206, 127, 0.24);
   box-shadow: inset 3px 0 0 var(--ejc-gold-400);
 }
@@ -122,7 +129,11 @@
 .ejc-shell-header {
   height: 76px;
   background:
-    radial-gradient(circle at 45% -240%, rgba(208, 173, 79, 0.38), transparent 32rem),
+    radial-gradient(
+      circle at 45% -240%,
+      rgba(208, 173, 79, 0.38),
+      transparent 32rem
+    ),
     linear-gradient(90deg, #0b1018, #0d1420 58%, #0a0f17);
   border-bottom: 1px solid var(--ejc-shell-line);
   color: var(--ejc-shell-text);
@@ -502,7 +513,11 @@
 .ejc-kpi-card.is-gold {
   color: #fffaf0;
   background:
-    radial-gradient(circle at 110% -20%, rgba(255, 243, 184, 0.25), transparent 15rem),
+    radial-gradient(
+      circle at 110% -20%,
+      rgba(255, 243, 184, 0.25),
+      transparent 15rem
+    ),
     linear-gradient(145deg, #6b5114, #a37c1c 58%, #c6a246);
   border-color: rgba(255, 244, 194, 0.22);
 }

@@ -17,8 +17,7 @@ export const OFFICE_CONFIG = Object.freeze({
   timezone: clean(env.VITE_EJC_TIMEZONE) || "America/Sao_Paulo",
   contactEmail: clean(env.VITE_EJC_CONTACT_EMAIL),
   whatsappNumber: clean(env.VITE_EJC_WHATSAPP_NUMBER),
-  officeAiUrl:
-    clean(env.VITE_EJC_OFFICE_AI_URL) || "https://claude.ai/",
+  officeAiUrl: clean(env.VITE_EJC_OFFICE_AI_URL) || "https://claude.ai/",
 });
 
 export const OFFICE_LINKS = Object.freeze({

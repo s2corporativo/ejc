@@ -474,7 +474,12 @@ export default function Layout() {
           menuOpen ? "flex w-72 md:flex" : "hidden md:flex",
         )}
       >
-        <div className={cn("ejc-brand-tile relative flex items-center justify-center px-4", collapsed && "mx-2 px-2")}>
+        <div
+          className={cn(
+            "ejc-brand-tile relative flex items-center justify-center px-4",
+            collapsed && "mx-2 px-2",
+          )}
+        >
           <Link
             to="/"
             className="flex min-w-0 flex-1 justify-center"

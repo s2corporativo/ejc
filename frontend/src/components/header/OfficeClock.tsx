@@ -42,7 +42,10 @@ export default function OfficeClock() {
   const formatted = useMemo(() => formatParts(now), [now]);
 
   return (
-    <div className="ejc-office-clock" aria-label={`${formatted.time}, ${formatted.day}`}>
+    <div
+      className="ejc-office-clock"
+      aria-label={`${formatted.time}, ${formatted.day}`}
+    >
       <span className="ejc-office-clock-icon" aria-hidden="true">
         <Clock3 className="h-4 w-4" />
       </span>

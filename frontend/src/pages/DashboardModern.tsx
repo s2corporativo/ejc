@@ -388,8 +388,9 @@ export default function DashboardModern() {
         <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            Alguns blocos estão temporariamente indisponíveis: {failures.join(", ")}.
-            Os demais dados continuam sendo exibidos normalmente.
+            Alguns blocos estão temporariamente indisponíveis:{" "}
+            {failures.join(", ")}. Os demais dados continuam sendo exibidos
+            normalmente.
           </span>
         </div>
       )}
@@ -444,7 +445,9 @@ export default function DashboardModern() {
               {movements.slice(0, 6).map((movement, index) => (
                 <Link
                   key={movement.id ?? index}
-                  to={movement.case_id ? `/casos/${movement.case_id}` : "/casos"}
+                  to={
+                    movement.case_id ? `/casos/${movement.case_id}` : "/casos"
+                  }
                   className="ejc-dashboard-feed-item"
                 >
                   <span className="ejc-dashboard-feed-dot">
@@ -452,7 +455,8 @@ export default function DashboardModern() {
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="ejc-dashboard-feed-title">
-                      {movement.descricao || humanize(movement.tipo || "Andamento")}
+                      {movement.descricao ||
+                        humanize(movement.tipo || "Andamento")}
                     </span>
                     <span className="ejc-dashboard-feed-meta">
                       <span>{movement.case_titulo || "Processo"}</span>
