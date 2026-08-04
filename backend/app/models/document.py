@@ -32,7 +32,7 @@ class Document(Base):
 
     confidencialidade = Column(
         SAEnum(DocConfidencialidade), nullable=False,
-        default=DocConfidencialidade.normal, index=True
+        default=DocConfidencialidade.confidencial, index=True
     )
 
     case_id   = Column(String(36), ForeignKey("cases.id"),   nullable=True, index=True)

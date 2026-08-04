@@ -308,7 +308,7 @@ async def upload(
     file: UploadFile = File(...),
     titulo: str = Form(...),
     tipo: Optional[str] = Form(None),
-    confidencialidade: str = Form("normal"),
+    confidencialidade: str = Form("confidencial"),
     case_id: Optional[str] = Form(None),
     client_id: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
