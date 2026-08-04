@@ -77,7 +77,9 @@ def _prova(**kw) -> Prova:
 
 
 def _document(**kw) -> Document:
-    base = dict(id="d1", case_id="case1", titulo="Contrato.pdf", deleted_at=None)
+    from app.models.document import DocConfidencialidade
+    base = dict(id="d1", case_id="case1", titulo="Contrato.pdf", deleted_at=None,
+                confidencialidade=DocConfidencialidade.confidencial)
     base.update(kw)
     return Document(**base)
 
