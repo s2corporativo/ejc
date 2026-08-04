@@ -46,7 +46,11 @@ import {
   chavesObsoletas,
   paramsVisiveis,
 } from "./camposCondicionais";
-import { linhasDoResultado, rodapeDoResultado } from "./demonstrativo";
+import {
+  linhasDoResultado,
+  rodapeDoResultado,
+  provenienciaDoResultado,
+} from "./demonstrativo";
 import GuiaBancario from "../../components/GuiaBancario";
 import AnaliseExtratos from "../../components/AnaliseExtratos";
 import BancarioForense from "../../components/BancarioForense";
@@ -147,6 +151,22 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
     const linhas = linhasDoResultado(res);
     // O rodapé carrega a fundamentação (fontes, vigência, versão da regra).
     const rodape = rodapeDoResultado(res);
+    // Proveniência estruturada (Issue #702) — o backend passou a EXIGIR
+    // `fontes`/`vigencia_regra`/`versao_regra` no corpo; a calculadora já
+    // carimba esses campos na resposta (mesma leitura do rodapé acima), só
+    // falta repassá-los. Sem proveniência suficiente, bloqueia ANTES de
+    // chamar a API — evita depender do 422 do backend para um caso que a UI
+    // já sabe que vai falhar.
+    const proveniencia = provenienciaDoResultado(res);
+    if (!proveniencia) {
+      setDocMsg(
+        "Não foi possível salvar o demonstrativo: a resposta da calculadora " +
+          "não trouxe fontes/vigência/versão da regra necessárias para a " +
+          "proveniência do cálculo.",
+      );
+      setGerandoDoc(false);
+      return;
+    }
     try {
       // Modo Caso: vincula o demonstrativo ao caso ativo para ele aparecer
       // na listagem de Peças (que filtra pelo caso ativo por padrão).
@@ -159,6 +179,11 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
         // Origem do cálculo — permite ao backend aplicar o gate de
         // homologação server-side (não só o bloqueio de UI).
         ferramenta: f.endpoint,
+        // Proveniência do cálculo (Issue #702) — exigida pelo backend desde
+        // que `ferramenta` passou a ser validada contra rotas reais.
+        fontes: proveniencia.fontes,
+        vigencia_regra: proveniencia.vigencia_regra,
+        versao_regra: proveniencia.versao_regra,
       });
       setDocMsg(
         casoAtivo

@@ -7,7 +7,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -460,6 +460,31 @@ class DemonstrativoRequest(BaseModel):
     fontes: list[str] = Field(..., min_length=1, max_length=20)
     vigencia_regra: str = Field(..., min_length=1, max_length=300)
     versao_regra: str = Field(..., min_length=1, max_length=50)
+
+    # `min_length` em `fontes` valida a QUANTIDADE de itens da lista, não o
+    # conteúdo de cada um — e `min_length` em `vigencia_regra` (str) aceita
+    # espaço em branco como caractere válido. Sem estes validators,
+    # `fontes=[""]` e `vigencia_regra=" "` passavam pelo schema e geravam um
+    # documento jurídico com proveniência "presente" mas vazia (achado do
+    # review Codex, Issue #702).
+    @field_validator("fontes")
+    @classmethod
+    def _fontes_sem_item_em_branco(cls, v: list[str]) -> list[str]:
+        limpas = [f.strip() for f in v]
+        if not all(limpas):
+            raise ValueError(
+                "fontes: cada item precisa ter conteúdo — não pode ser vazio "
+                "ou só espaço em branco")
+        return limpas
+
+    @field_validator("vigencia_regra")
+    @classmethod
+    def _vigencia_regra_nao_branco(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError(
+                "vigencia_regra não pode ser vazia ou só espaço em branco")
+        return v
 
 
 @router.post("/demonstrativo", status_code=201)

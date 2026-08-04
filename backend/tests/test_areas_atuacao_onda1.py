@@ -254,6 +254,7 @@ def _prova_provenencia(**overrides) -> dict:
 @pytest.mark.parametrize("ferramenta", [
     "/penal/ferramentas/dosimetria",                     # selo (simulador assistido)
     "/api/penal/ferramentas/dosimetria",                 # com prefixo /api
+    "/api/v1/penal/ferramentas/dosimetria",              # com prefixo CANÔNICO /api/v1
     "/penal/ferramentas/dosimetria?pena_minima_meses=24",  # com querystring
     "/Penal/Ferramentas/Dosimetria",                     # casing
     "//penal//ferramentas//dosimetria",                  # barras duplicadas
@@ -308,6 +309,38 @@ def test_demonstrativo_sem_campo_ferramenta_reprova_gate():
     assert "ferramenta" in str(e.value)
 
 
+def test_demonstrativo_fontes_com_item_em_branco_reprova_schema():
+    """Achado do review Codex (Issue #702): `min_length` em `fontes` (list[str])
+    valida a QUANTIDADE de itens, não o conteúdo — `fontes=[""]` tem 1 item e
+    passava pelo schema, gerando um demonstrativo com proveniência "presente"
+    mas vazia. Prova por negação: string vazia e string só de espaço em
+    branco são rejeitadas na própria validação do schema."""
+    from app.routers.peca_geracao import DemonstrativoRequest
+    for fontes_invalidas in ([""], ["   "], ["fonte válida", " "]):
+        with pytest.raises(ValidationError) as e:
+            DemonstrativoRequest(
+                titulo="Cálculo de teste",
+                ferramenta="/penal/ferramentas/dosimetria",
+                **{**_prova_provenencia(), "fontes": fontes_invalidas})
+        assert "fontes" in str(e.value)
+
+
+def test_demonstrativo_vigencia_regra_em_branco_reprova_schema():
+    """Achado do review Codex (Issue #702): `min_length=1` em `vigencia_regra`
+    (str) conta CARACTERES, e espaço em branco é um caractere válido —
+    `vigencia_regra=" "` passava pelo schema. Prova por negação: string vazia
+    e string só de espaço em branco são rejeitadas na própria validação do
+    schema."""
+    from app.routers.peca_geracao import DemonstrativoRequest
+    for vigencia_invalida in ("", "   ", "\t\n"):
+        with pytest.raises(ValidationError) as e:
+            DemonstrativoRequest(
+                titulo="Cálculo de teste",
+                ferramenta="/penal/ferramentas/dosimetria",
+                **{**_prova_provenencia(), "vigencia_regra": vigencia_invalida})
+        assert "vigencia_regra" in str(e.value)
+
+
 async def test_demonstrativo_ferramenta_caminho_inexistente_422():
     """AC #702: caminho que não corresponde a NENHUMA rota real de ferramenta
     é rejeitado — não pode passar pela lógica de 'não está na matriz de não
@@ -320,6 +353,23 @@ async def test_demonstrativo_ferramenta_caminho_inexistente_422():
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
     assert e.value.status_code == 422
     assert e.value.detail["codigo"] == "ferramenta_desconhecida"
+
+
+async def test_demonstrativo_ferramenta_prefixo_v1_canonico_passa_gate_1(_demonstrativo_liberado):
+    """Achado do review Codex (Issue #702): `/api/v1` é o prefixo CANÔNICO
+    (`app/core/api_version_middleware.py`), não apenas um sinônimo legado de
+    `/api`. Um cliente que identifica a ferramenta pela URL canônica real
+    (`/api/v1/trabalhista-esp/ferramentas/deposito-recursal`) não pode ser
+    rejeitado como `ferramenta_desconhecida` — prova por negação: se a
+    normalização voltasse a só remover `/api`, sobraria `/v1/...` e este
+    teste veria o 422 errado em vez do AttributeError do db=None."""
+    from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
+    req = DemonstrativoRequest(
+        titulo="Cálculo de teste",
+        ferramenta="/api/v1/trabalhista-esp/ferramentas/deposito-recursal",
+        **_prova_provenencia())
+    with pytest.raises(AttributeError):   # passou de todos os gates; parou só no db=None
+        await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
 
 
 async def test_demonstrativo_versao_regra_divergente_reprova_forjado():
