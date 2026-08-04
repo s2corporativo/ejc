@@ -461,7 +461,7 @@ export default function Layout() {
       {menuOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-45 bg-slate-950/65 md:hidden"
+          className="fixed inset-0 z-[45] bg-slate-950/65 md:hidden"
           aria-label="Fechar menu"
           onClick={() => setMenuOpen(false)}
         />
