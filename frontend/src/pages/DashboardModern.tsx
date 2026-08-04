@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
@@ -24,10 +24,7 @@ import {
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
-import {
-  NOVO_CASO_DOCUMENTO_PATH,
-  NOVO_CASO_MANUAL_PATH,
-} from "../lib/novoCaso";
+import { NOVO_CASO_DOCUMENTO_PATH } from "../lib/novoCaso";
 
 const CASE_CREATOR_ROLES = new Set([
   "superadmin",
@@ -46,7 +43,6 @@ const LEGAL_ROLES = new Set([
 ]);
 
 const CLOSED_CASE_STATUSES = new Set(["encerrado", "arquivado"]);
-
 const STATUS_COLORS = ["#b18a24", "#243047", "#768399", "#d7dee8"];
 
 function safeNumber(value: unknown) {
@@ -59,17 +55,6 @@ function parseDate(value?: string) {
   const normalized = value.includes("T") ? value : `${value}T12:00:00`;
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function formatDate(value?: string) {
-  const date = parseDate(value);
-  return date
-    ? new Intl.DateTimeFormat("pt-BR", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }).format(date)
-    : "Data não informada";
 }
 
 function formatDateTime(value?: string) {
@@ -128,7 +113,7 @@ type DashboardCardProps = {
   title: string;
   subtitle: string;
   to?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
 function DashboardCard({ title, subtitle, to, children }: DashboardCardProps) {
