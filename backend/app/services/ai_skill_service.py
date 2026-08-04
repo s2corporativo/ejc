@@ -5,6 +5,7 @@ Usa ai_gateway.chat() para roteamento ao provedor e registra em ai_logs.
 from __future__ import annotations
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +46,35 @@ _AREA_TASK = {
 # trabalho jurídico sob responsabilidade OAB). cliente_externo já é bloqueado
 # antes (não acessa IA interna); estagiário/secretaria/financeiro ficam de fora.
 _ROLES_OAB = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
+
+
+def _marcar_uso(skill: EjcSkill) -> None:
+    """Incrementa o contador de uso da skill (Bloco 4 — enxugar catálogo,
+    migration 130). Não commita — quem chama já commita junto do AILog na
+    mesma transação (registrar_ai_log)."""
+    skill.vezes_executado = (skill.vezes_executado or 0) + 1
+    skill.ultima_execucao = datetime.now(timezone.utc)
+
+
+async def skills_sem_uso(db: AsyncSession, dias_minimos: int = 90) -> list[EjcSkill]:
+    """Skills ativas, criadas há mais de `dias_minimos` dias, nunca executadas
+    (Bloco 4 — enxugar catálogo). Só relata — não arquiva nada; arquivar é
+    decisão humana, feita com `PATCH /ai/skills/{id}` (active=False) depois
+    de revisar esta lista. Skills recentes ficam de fora do relatório de
+    propósito — nunca terem sido usadas ainda não significa que não serão."""
+    from datetime import timedelta
+
+    corte = datetime.now(timezone.utc) - timedelta(days=dias_minimos)
+    result = await db.execute(
+        select(EjcSkill)
+        .where(
+            EjcSkill.active == True,
+            EjcSkill.vezes_executado == 0,
+            EjcSkill.created_at < corte,
+        )
+        .order_by(EjcSkill.area, EjcSkill.display_name)
+    )
+    return result.scalars().all()
 
 
 async def listar_skills(db: AsyncSession, area: str | None = None) -> list[EjcSkill]:
@@ -127,6 +157,7 @@ async def executar_skill(
     )
 
     modelo_log = f"{resp.provedor}/{resp.modelo}" if resp.provedor else resp.modelo
+    _marcar_uso(skill)
     # registrar_ai_log PROPAGA erro (não engole em try/except com só warning) —
     # log de uso de IA é parte da própria correção, não pode falhar em silêncio.
     log_id = await registrar_ai_log(
@@ -310,6 +341,7 @@ async def executar_skill_documento_longo(
         or any(item[2] for item in parciais)
     )
     modelo_log = f"{final.provedor}/{final.modelo}" if final.provedor else final.modelo
+    _marcar_uso(skill)
     log_id = await registrar_ai_log(
         db,
         user_id=user_id,

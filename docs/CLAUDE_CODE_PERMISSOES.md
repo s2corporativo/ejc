@@ -1,7 +1,12 @@
-# Permissões do Claude Code no EJC — proposta
+# Permissões do Claude Code no EJC
 
-Este documento existe porque um agente **não deve** conceder permissões a si mesmo. A lista
-abaixo está escrita, justificada e pronta para colar — mas quem decide aplicá-la é o titular.
+**Estado: aplicado em `.claude/settings.json` (2026-08-02), por autorização explícita do
+titular.** Este documento registra o que foi aplicado e por quê.
+
+Ele nasceu como proposta não aplicada, e a razão importa: um agente não concede permissões a si
+mesmo. A lista foi escrita e justificada aqui, e só entrou em vigor quando o titular mandou
+aplicar. Qualquer alteração futura desta lista segue a mesma regra — proposta primeiro,
+autorização depois.
 
 ## Por que
 
@@ -14,11 +19,12 @@ que **de fato** merecia atenção.
 A proposta é a inversa da intuição: **liberar explicitamente o que é rotina e sem efeito
 colateral**, para que cada prompt restante signifique alguma coisa.
 
-## O que aplicar
+## O que está aplicado
 
-Cole o bloco `permissions` dentro de `.claude/settings.json` (no mesmo nível de `hooks`), ou
-em `.claude/settings.local.json` se preferir que valha só para a sua máquina e fique fora do
-versionamento.
+O bloco abaixo vive em `.claude/settings.json`, no mesmo nível de `hooks`. Está **versionado de
+propósito**: `.gitignore` (linha 67) ignora `.claude/settings.local.json`, e as sessões do Claude
+Code na web clonam o repositório do zero — um arquivo ignorado pelo git não existiria nelas.
+Permissão que só vale na máquina de quem editou não serve para este repositório.
 
 ```json
 {
