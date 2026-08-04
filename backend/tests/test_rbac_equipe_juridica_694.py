@@ -263,37 +263,61 @@ def test_helper_bool_barra_secretaria_e_cliente_externo(modulo, funcao):
 # GRANDFATHER: os 7 sítios (6 arquivos) que a Issue #694 também lista mas que
 # esta correção NÃO tocou porque pertencem a PRs abertos concorrentes
 # (bank_analysis.py, entrada_universal.py, checklists.py, prompts_juridicos.py,
-# ai.py, users.py). Remova a entrada daqui quando o PR correspondente corrigir
-# o arquivo — se a lista ficar desatualizada (arquivo já corrigido mas ainda
-# grandfatherizado), o teste simplesmente para de proteger aquele arquivo, sem
-# quebrar; o objetivo deste teste é impedir REGRESSÃO em código NOVO.
+# ai.py, users.py).
+#
+# Rastreado por OCORRÊNCIA individual (arquivo:linha), não por arquivo inteiro
+# (review do Codex no PR #706): pular o arquivo inteiro tinha dois defeitos —
+# (a) um gate hierárquico NOVO adicionado a um arquivo grandfatherizado (ex.
+# um segundo piso em ai.py) não seria pego, porque o arquivo inteiro era
+# ignorado; (b) se um PR concorrente corrigisse a ocorrência conhecida sem
+# atualizar esta lista, o arquivo ficaria permanentemente sem a proteção da
+# varredura, já que continuaria na lista de exclusão para sempre.
+#
+# Com o rastreio por linha: qualquer ocorrência num arquivo grandfatherizado
+# que NÃO esteja neste conjunto é tratada como violação NOVA (assert
+# `infratores`); e qualquer linha listada aqui que não tiver mais o padrão no
+# código-fonte falha como baseline desatualizado (assert
+# `baseline_desatualizado`), forçando quem corrigiu a remover a entrada em vez
+# de deixá-la esquecida.
 _ROUTERS = pathlib.Path(__file__).resolve().parents[1] / "app" / "routers"
 _PADRAO_PISO_ESTAGIARIO = re.compile(r'ROLE_LEVEL\[\s*["\']estagiario["\']\s*\]')
-_GRANDFATHER_ISSUE_694 = {
-    "bank_analysis.py",
-    "entrada_universal.py",
-    "checklists.py",
-    "prompts_juridicos.py",
-    "ai.py",
-    "users.py",
+_GRANDFATHER_ISSUE_694: dict[str, frozenset[int]] = {
+    "bank_analysis.py": frozenset({283}),
+    "entrada_universal.py": frozenset({175, 258}),
+    "checklists.py": frozenset({69}),
+    "prompts_juridicos.py": frozenset({118}),
+    "ai.py": frozenset({564, 804}),
+    "users.py": frozenset({530}),
 }
 
 
 def test_nenhum_router_juridico_novo_usa_piso_hierarquico_estagiario():
     infratores = []
+    baseline_desatualizado = []
     for arq in sorted(_ROUTERS.glob("*.py")):
-        if arq.name in _GRANDFATHER_ISSUE_694:
-            continue
         texto = arq.read_text(encoding="utf-8")
-        for m in _PADRAO_PISO_ESTAGIARIO.finditer(texto):
-            linha = texto[: m.start()].count("\n") + 1
+        linhas_encontradas = {
+            texto[: m.start()].count("\n") + 1
+            for m in _PADRAO_PISO_ESTAGIARIO.finditer(texto)
+        }
+        linhas_conhecidas = _GRANDFATHER_ISSUE_694.get(arq.name, frozenset())
+        for linha in sorted(linhas_encontradas - linhas_conhecidas):
             infratores.append(f"{arq.name}:{linha}")
+        for linha in sorted(linhas_conhecidas - linhas_encontradas):
+            baseline_desatualizado.append(f"{arq.name}:{linha}")
     assert not infratores, (
         "Gate hierárquico com piso ROLE_LEVEL['estagiario'] em router — isso "
         "libera 'financeiro' (nível 4 > estagiario nível 3) para ato/acervo "
         "jurídico (Issue #694). Use EQUIPE_JURIDICA/requer_equipe_juridica de "
         "app.core.security (allowlist exata) em vez de comparação hierárquica:\n  "
         + "\n  ".join(infratores)
+    )
+    assert not baseline_desatualizado, (
+        "Ocorrência grandfatherizada da Issue #694 (_GRANDFATHER_ISSUE_694) não "
+        "existe mais no código-fonte nessa linha — o PR concorrente que a "
+        "corrigiu esqueceu de remover a entrada daqui. Atualize "
+        "_GRANDFATHER_ISSUE_694 (remova a linha, ou o arquivo inteiro se não "
+        "sobrar nenhuma):\n  " + "\n  ".join(baseline_desatualizado)
     )
 
 
