@@ -12,7 +12,7 @@ from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, ROLE_LEVEL, EQUIPE_JURIDICA
 from app.models.user import User
 from app.models.jurisprudencia_interna import JurisprudenciaInterna, JuriResultado
 from app.core.rate_limit import rate_limit
@@ -54,7 +54,9 @@ class JuriPatch(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _is_staff(u: User) -> bool:
-    return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["estagiario"]
+    # Issue #694: allowlist EXATA — financeiro não acessa o repositório interno
+    # de jurisprudência, mesmo com ROLE_LEVEL acima de estagiario.
+    return u.role.value in EQUIPE_JURIDICA
 
 def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]

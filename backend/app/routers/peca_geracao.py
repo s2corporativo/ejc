@@ -14,7 +14,7 @@ from typing import Optional
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, ROLE_LEVEL, requer_equipe_juridica
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
 from app.models.user import User
@@ -79,8 +79,7 @@ async def meta_pecas(
     """Catálogo (fonte única) para o formulário de geração de peças: tipos
     agrupados, áreas do direito e níveis de complexidade. Elimina o espelhamento
     manual desses metadados no frontend. Piso de role igual ao /gerar."""
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso negado")
+    requer_equipe_juridica(cu, "Acesso negado")
 
     return {
         "tipos": [
@@ -109,8 +108,7 @@ async def gerar_peca(
     Pipeline 7 etapas para geração de peças jurídicas com SSE streaming.
     Retorna Server-Sent Events: step(1-7) → concluido com o documento completo.
     """
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso negado")
+    requer_equipe_juridica(cu, "Acesso negado")
 
     if req.tipo_peca not in TIPOS_PECA:
         raise HTTPException(422, f"Tipo inválido. Use: {', '.join(TIPOS_PECA.keys())}")
@@ -405,8 +403,7 @@ async def deep_research_juridica(
     cu: User = Depends(get_current_user),
 ):
     """Executa Deep Research jurídica v1 com RAG, precedentes e IA central."""
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso negado")
+    requer_equipe_juridica(cu, "Acesso negado")
 
     scope_client_id = None
     if req.case_id:
@@ -499,8 +496,7 @@ async def gerar_demonstrativo(
                  "calculadoras estão em revisão (não homologadas — auditoria "
                  "2026-07-26). O resultado na tela permanece disponível como "
                  "apoio, com revisão do advogado.")
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso negado")
+    requer_equipe_juridica(cu, "Acesso negado")
 
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)
