@@ -98,25 +98,46 @@ def test_workflow_tem_todos_os_steps_esperados():
 
 # ── A isenção existe, é allowlist fechada, e só se aplica onde deve ──────────
 
-def test_step_de_descricao_tem_condicao_if_com_dependabot():
+def _condicao_if() -> str:
+    """Corpo bruto da condição `if:` do step com exceção — só até a próxima
+    chave YAML no mesmo nível de indentação (`env:`), nunca vazando para o
+    `run:`/`shell:` seguinte (que costuma conter `||` em script bash)."""
     bloco = _steps()[STEP_COM_EXCECAO]
-    m = re.search(r"if:\s*\$\{\{(.*?)\}\}", bloco)
+    m = re.search(r"\n        if:\s*(?:>-\s*\n(.*?)|\$\{\{(.*?)\}\})\n        env:", bloco, re.S)
     assert m, (
-        f"step {STEP_COM_EXCECAO!r} não tem condição if: — PR do dependabot "
-        "continuaria sendo reprovado por falta de Issue vinculada/template"
+        f"step {STEP_COM_EXCECAO!r} não tem condição if: no formato esperado "
+        "(escalar `${{ ... }}` ou bloco `>-` multilinha) imediatamente antes de `env:`"
     )
-    condicao = m.group(1)
+    return m.group(1) or m.group(2)
+
+
+def test_step_de_descricao_tem_condicao_if_com_dependabot():
+    condicao = _condicao_if()
     assert "dependabot[bot]" in condicao
     assert "github.event.pull_request.user.login" in condicao
 
 
+def test_condicao_tambem_checa_o_ator_que_disparou_o_evento():
+    """Achado de review (Codex, PR #709): github.event.pull_request.user.login é
+    sempre quem ABRIU o PR — continua 'dependabot[bot]' mesmo quando um humano
+    empurra um commit extra na mesma branch (evento synchronize). Sem checar
+    também github.actor, isso deixaria passar mudança funcional humana anexada
+    a um PR do dependabot, sem Issue vinculada nem template."""
+    condicao = _condicao_if()
+    assert "github.actor" in condicao, (
+        "a condição não checa github.actor — um push humano numa branch do "
+        "dependabot (evento synchronize) escaparia da trava de Issue/template, "
+        "porque pull_request.user.login continua sendo o autor original do PR"
+    )
+    # As duas checagens (autor original E ator do evento) precisam estar
+    # combinadas por E lógico (&&) dentro da mesma negação — não podem ser
+    # alternativas (||), senão qualquer uma sozinha já isentaria o step.
+    assert condicao.count("&&") >= 1
+    assert "||" not in condicao
+
+
 def test_condicao_nao_usa_padrao_amplo_de_bot():
-    bloco = _steps()[STEP_COM_EXCECAO]
-    m = re.search(r"if:\s*\$\{\{(.*?)\}\}", bloco)
-    assert m
-    condicao = m.group(1)
-    # Um padrao tipo endswith('[bot]') isentaria QUALQUER bot, nao so o
-    # dependabot — exatamente o que a Issue e o CLAUDE.md pedem para evitar.
+    condicao = _condicao_if()
     assert "endswith" not in condicao
     assert "fromJSON" in condicao and "contains" in condicao
 
