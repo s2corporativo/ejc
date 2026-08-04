@@ -89,7 +89,16 @@ class SkillsExpansionSeedTest(unittest.TestCase):
                     "https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm",
                     prompt,
                 )
-                self.assertIn("SENTENÇA DE MÉRITO", prompt.upper())
+                # Issue #554 review (Codex, PR #703, P1): a versão anterior
+                # afirmava categoricamente "SENTENÇA DE MÉRITO", o que erra
+                # quando prescrição/decadência resolve só PARTE dos pedidos
+                # (decisão interlocutória de mérito parcial, art. 356 do CPC,
+                # não sentença). O prompt certo usa a classificação sempre
+                # verdadeira — RESOLUÇÃO/DECISÃO DE MÉRITO — e qualifica
+                # quando é sentença vs. decisão parcial.
+                self.assertIn("RESOLUÇÃO DE MÉRITO", prompt.upper())
+                self.assertIn("DECISÃO INTERLOCUTÓRIA DE MÉRITO PARCIAL", prompt.upper())
+                self.assertIn("ART. 356", prompt.upper())
                 self.assertIn("CDC", prompt)
                 self.assertIn("26", prompt)
                 self.assertIn("27", prompt)

@@ -510,10 +510,14 @@ SKILLS = [
         "Produzir memória auditável de prescrição/decadência e alertar urgências.",
         "Natureza da pretensão, fatos e ciência, vencimentos, partes, incapacidade, notificações, protestos, processos, decisões, trânsito, pagamentos e datas completas.",
         "Legislação material/processual específica; regras de transição; precedentes oficiais [VALIDAR FONTE]. "
-        "CPC, art. 487, II (https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm): "
-        "o reconhecimento de prescrição ou decadência é SENTENÇA DE MÉRITO — NUNCA qualifique como "
-        "extinção sem resolução de mérito (art. 485 do CPC). "
-        "CDC, arts. 26 e 27 (https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm): vício do "
+        "CPC, art. 487, II (Lei 13.105/2015, em vigor desde 18/03/2016; "
+        "https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm): "
+        "o reconhecimento de prescrição ou decadência é RESOLUÇÃO DE MÉRITO — sentença, se extinguir "
+        "todo o processo, ou decisão interlocutória de mérito parcial (art. 356 do CPC), se resolver "
+        "apenas parte dos pedidos cumulados. NUNCA qualifique como extinção sem resolução de mérito "
+        "(art. 485 do CPC). "
+        "CDC, arts. 26 e 27 (Lei 8.078/1990, em vigor desde 11/03/1991; "
+        "https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm): vício do "
         "produto/serviço (art. 26) DECAI; fato do produto/serviço — defeito que causa dano (art. 27) "
         "PRESCREVE. São regimes distintos: nunca cumule os dois automaticamente — fundamente cada "
         "pretensão separadamente, com prazo, termo inicial e fonte próprios.",
@@ -610,12 +614,14 @@ SKILLS = [
         "Fazer red-team jurídico da peça antes do uso externo.",
         "Peça, documentos que a sustentam, posição, ramo, fase, tribunal, objetivo, restrições, tese adversa conhecida e prazo.",
         "Legislação aplicável; autos; precedentes oficiais fornecidos/RAG [VALIDAR FONTE]. "
-        "Se a peça envolver prescrição/decadência: CPC, art. 487, II "
-        "(https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm) — é SENTENÇA DE "
-        "MÉRITO, NUNCA extinção sem resolução de mérito (art. 485). Se envolver CDC: arts. 26 (vício — "
-        "decadência) e 27 (fato do produto/serviço — prescrição) "
-        "(https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm) são regimes distintos — não "
-        "cumule sem fundamentar cada pretensão separadamente.",
+        "Se a peça envolver prescrição/decadência: CPC, art. 487, II (Lei 13.105/2015, em vigor "
+        "desde 18/03/2016; https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm) "
+        "— é RESOLUÇÃO DE MÉRITO (sentença, se extinguir todo o processo; decisão interlocutória de "
+        "mérito parcial, art. 356 do CPC, se resolver só parte dos pedidos), NUNCA extinção sem "
+        "resolução de mérito (art. 485). Se envolver CDC: arts. 26 (vício — "
+        "decadência) e 27 (fato do produto/serviço — prescrição) (Lei 8.078/1990, em vigor desde "
+        "11/03/1991; https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm) são regimes "
+        "distintos — não cumule sem fundamentar cada pretensão separadamente.",
         "A simulação não deve criar fato, prova ou precedente do adversário. Separar objeção plausível, "
         "resposta possível, prova necessária e risco residual. Um guardrail determinístico do sistema "
         "corrige/alerta automaticamente qualificações incorretas de mérito e cumulações indevidas do "
@@ -651,6 +657,21 @@ SKILLS = [
 # independentemente deste texto estar atualizado ou não — este upsert é
 # reforço de defesa em profundidade (o prompt correto reduz a chance de a
 # IA errar; o guardrail corrige/alerta quando ela erra mesmo assim).
+#
+# LIMITAÇÃO CONHECIDA (achado de review, Codex, PR #703, P2): este UPDATE
+# persiste dado novo no banco. `git revert` deste commit restaura o CÓDIGO
+# (o loop volta a só ignorar nomes existentes), mas NÃO restaura o PROMPT
+# ANTIGO já gravado — rodar o seed revertido não sobrescreve nada, porque a
+# skill já existe. Ou seja, "reversível rodando o seed anterior" (como dizia
+# a descrição original desta PR) está ERRADO; corrigido no corpo da PR.
+# Reverter de fato o texto por instalação exige rodar manualmente um UPDATE
+# com o prompt anterior (não versionado neste arquivo) ou uma migration de
+# dados dedicada — nenhuma das duas está no escopo desta Issue (que
+# explicitamente não autoriza migration). Aceito como risco residual: o
+# prompt sendo revertido description volta a orientar incorretamente, mas o
+# guardrail DETERMINÍSTICO (`juridico_guardrails.py`) continua corrigindo a
+# resposta da IA independentemente do texto do prompt — a defesa em
+# profundidade não depende só deste seed.
 _NOMES_FORCAR_ATUALIZACAO = {"prescricao-decadencia", "simulador-defesa-adversarial"}
 
 
