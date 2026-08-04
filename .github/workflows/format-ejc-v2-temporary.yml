@@ -1,0 +1,51 @@
+name: Format EJC v2 temporary
+
+on:
+  push:
+    branches:
+      - claude/ejc-restilizacao-v2-clean
+
+permissions:
+  contents: write
+
+jobs:
+  prettier:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: claude/ejc-restilizacao-v2-clean
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Instalar dependências
+        working-directory: frontend
+        run: npm ci
+      - name: Formatar arquivos da restilização
+        working-directory: frontend
+        run: >-
+          npx prettier --write
+          src/components/header/OfficeClock.tsx
+          src/components/Layout.tsx
+          src/config/office.ts
+          src/pages/DashboardModern.tsx
+          src/styles/ejc-shell-v2.css
+      - name: Commitar formatação
+        run: |
+          if git diff --quiet; then
+            echo "Nenhuma alteração de formatação necessária."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/components/header/OfficeClock.tsx \
+                  frontend/src/components/Layout.tsx \
+                  frontend/src/config/office.ts \
+                  frontend/src/pages/DashboardModern.tsx \
+                  frontend/src/styles/ejc-shell-v2.css
+          git commit -m "style(ui): aplicar Prettier na restilização v2 [skip ci]"
+          git push origin HEAD:claude/ejc-restilizacao-v2-clean
