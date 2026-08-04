@@ -166,6 +166,14 @@ async def criar(
         ).scalar_one_or_none()
         if not caso:
             raise HTTPException(status_code=404, detail="Caso não encontrado")
+        # O caso é a fonte de verdade do cliente: recusa explicitamente em vez
+        # de aceitar um client_id que não bate, o que vazaria o honorário para
+        # o financeiro/portal de um cliente que não é parte no caso informado.
+        if caso.client_id != payload.client_id:
+            raise HTTPException(
+                status_code=422,
+                detail="client_id não corresponde ao cliente do caso informado",
+            )
 
     fee = Fee(id=str(uuid4()), **payload.model_dump())
     db.add(fee)
