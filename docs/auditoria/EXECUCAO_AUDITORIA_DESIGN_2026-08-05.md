@@ -12,8 +12,14 @@
 1. Confirmada a incorporação prévia, na `main`, das correções funcionais de auditoria: matriz RBAC, auditoria WORM, Entrada Universal, rastreabilidade da IA, HITL e testes fictícios.
 2. Adicionado gate de cobertura do backend com piso inicial de 65%.
 3. Elevado o gate do `npm audit` para bloquear vulnerabilidades altas e críticas.
-4. Integrada a refatoração visual EJC v2 sobre a base atual, preservando rotas, autenticação, RBAC, APIs e dados.
-5. Mantida a inexistência de migration nesta etapa.
+4. Corrigidas as vulnerabilidades frontend detectadas pelo novo gate:
+   - PostCSS atualizado para `8.5.25`;
+   - migração da camada declarativa de `react-router-dom` para `react-router 8.3.0`;
+   - atualização transitiva do `brace-expansion` pelo lockfile regenerado;
+   - Node alinhado em `22.22.0` no pacote, Dockerfile e runners permanentes.
+5. A migração frontend foi validada com instalação reproduzível, formatação, ESLint, 58 arquivos/364 testes Vitest, TypeScript/Vite build e `npm audit` sem vulnerabilidades.
+6. Integrada a refatoração visual EJC v2 sobre a base atual, preservando rotas, autenticação, RBAC, APIs e dados.
+7. Mantida a inexistência de migration nesta etapa.
 
 ## Decisão sobre 2FA
 
@@ -29,11 +35,11 @@ O 2FA não foi tornado obrigatório. Os recursos existentes permanecem disponív
 
 ## Validação obrigatória antes do merge
 
-- CI backend com PostgreSQL 16/pgvector, migrations, Ruff, pip-audit, testes e cobertura;
+- CI backend com PostgreSQL 16/pgvector, migrations, Ruff, pip-audit, testes e cobertura mínima de 65%;
 - eval offline de gold sets e trajetória/HITL;
 - frontend com Prettier, Vitest, npm audit em nível high, TypeScript e build;
 - Architecture Inventory;
-- Continuity and UI Gates;
+- Continuity and UI Gates, incluindo backup cifrado, restore e navegador responsivo;
 - EJC Release Gate;
 - Governança.
 
