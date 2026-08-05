@@ -38,6 +38,7 @@ from app.schemas.ai_skill import (
     SkillExecuteResponse,
     SkillListItem,
 )
+from app.core.rate_limit import rate_limit
 from app.services import ai_gateway, ai_skill_service
 from app.services.ai_contextual import (
     classificar_documento,
@@ -266,7 +267,8 @@ async def listar_skills(
     return await ai_skill_service.listar_skills(db, area=area)
 
 
-@router.post("/execute", response_model=SkillExecuteResponse)
+@router.post("/execute", response_model=SkillExecuteResponse,
+             dependencies=[Depends(rate_limit("ai-skill-execute", 15))])
 async def executar_skill(
     req: SkillExecuteRequest,
     db: AsyncSession = Depends(get_db),
@@ -306,7 +308,8 @@ async def executar_skill(
     return SkillExecuteResponse(**resultado)
 
 
-@router.post("/execute-doc", response_model=SkillExecuteResponse)
+@router.post("/execute-doc", response_model=SkillExecuteResponse,
+             dependencies=[Depends(rate_limit("ai-skill-execute-doc", 6))])
 async def executar_skill_documento(
     skill_name: Optional[str] = Form(None),
     file: UploadFile = File(...),
@@ -457,7 +460,8 @@ async def executar_skill_documento(
     return SkillExecuteResponse(**resultado)
 
 
-@router.post("/transcribe-media", response_model=SkillExecuteResponse)
+@router.post("/transcribe-media", response_model=SkillExecuteResponse,
+             dependencies=[Depends(rate_limit("ai-skill-transcribe", 6))])
 async def transcrever_midia(
     file: UploadFile = File(...),
     skill_name: str = Form("transcritor-midias-audiencia"),

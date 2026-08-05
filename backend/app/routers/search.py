@@ -125,11 +125,15 @@ async def busca_global(
                 detail="Informe um CPF ou CNPJ completo para a busca protegida.",
             )
 
+        # O índice cego serve aos DOIS cruzamentos abaixo (clientes e partes),
+        # por isso é calculado antes do gate de papel — que restringe só a busca
+        # na base de clientes, como antes.
+        try:
+            blind_index = hash_documento(digitos)
+        except RuntimeError:
+            blind_index = None
+
         if cu.role.value in _CLIENTES:
-            try:
-                blind_index = hash_documento(digitos)
-            except RuntimeError:
-                blind_index = None
             # Cutover C6/LGPD: busca de cliente por documento é feita SOMENTE
             # pelo índice cego (HMAC) — não há mais cpf/cnpj em texto puro no
             # banco. Igualdade exata (CPF/CNPJ completo). Sem PII_HASH_KEY
@@ -159,32 +163,37 @@ async def busca_global(
                         }
                     )
 
-        parte_query = _escopo_casos(
-            select(CaseParte, Case)
-            .join(Case, Case.id == CaseParte.case_id)
-            .where(
-                Case.deleted_at.is_(None),
-                CaseParte.ativo.is_(True),
-                _so_digitos(CaseParte.cpf_cnpj) == digitos,
-            )
-            .order_by(Case.updated_at.desc()),
-            cu,
-        )
+        # Migration 127: a parte processual também perdeu o texto puro. A busca
+        # passa pelo MESMO índice cego usado logo acima para `clients` — e sem
+        # PII_HASH_KEY (blind_index None) não há como casar documento nenhum,
+        # então a varredura de partes é pulada em vez de devolver tudo.
         casos_vistos: set[str] = set()
-        for parte, caso in (
-            await db.execute(parte_query.limit(limit * 3))
-        ).all():
-            if caso.id in casos_vistos:
-                continue
-            casos_vistos.add(caso.id)
-            out.append(
-                _item_caso(
-                    caso,
-                    f"Parte: {parte.nome} · {_mascarar_documento(parte.cpf_cnpj)}",
+        if blind_index:
+            parte_query = _escopo_casos(
+                select(CaseParte, Case)
+                .join(Case, Case.id == CaseParte.case_id)
+                .where(
+                    Case.deleted_at.is_(None),
+                    CaseParte.ativo.is_(True),
+                    CaseParte.cpf_cnpj_hash == blind_index,
                 )
+                .order_by(Case.updated_at.desc()),
+                cu,
             )
-            if len(casos_vistos) >= limit:
-                break
+            for parte, caso in (
+                await db.execute(parte_query.limit(limit * 3))
+            ).all():
+                if caso.id in casos_vistos:
+                    continue
+                casos_vistos.add(caso.id)
+                out.append(
+                    _item_caso(
+                        caso,
+                        f"Parte: {parte.nome} · {parte.cpf_cnpj_mascarado or '—'}",
+                    )
+                )
+                if len(casos_vistos) >= limit:
+                    break
         await _auditar_busca_pii(db, cu, len(out))
         return {"q": q, "tipo": tipo, "total": len(out), "resultados": out}
 

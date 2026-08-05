@@ -18,6 +18,13 @@ from __future__ import annotations
 import functools
 import logging
 
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.security import get_current_user
+from app.models.user import User
+
 logger = logging.getLogger("ejc.ai.core.hardening")
 _INSTALADO = False
 
@@ -112,8 +119,8 @@ async def _listar_docs_escopado(
     page: int = 1,
     page_size: int = 20,
     categoria: str | None = None,
-    db=None,
-    cu=None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
 ):
     """Contrato seguro de GET /rag/docs.
 

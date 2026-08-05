@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "129_processes_numero_cnj_index"
+HEAD_REVISION = "133_processes_numero_cnj_index"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -118,3 +118,34 @@ def test_quatro_estados_encadeia_apos_contador_de_execucoes_zeradas():
     # MIGRATION_RESERVATIONS.md — a cadeia provisória na 124 foi desfeita.
     revision = _script_directory().get_revision("126_case_status_quatro_estados")
     assert revision.down_revision == "125_fonte_execucoes_zeradas"
+
+
+def test_publicacao_explicita_encadeia_apos_quatro_estados():
+    revision = _script_directory().get_revision("127_publicacao_explicita")
+    assert revision.down_revision == "126_case_status_quatro_estados"
+
+
+def test_ejc_skills_uso_encadeia_apos_publicacao_explicita():
+    revision = _script_directory().get_revision("130_ejc_skills_uso")
+    assert revision.down_revision == "127_publicacao_explicita"
+
+
+def test_pii_da_parte_encadeia_apos_skills_uso():
+    # P1-5 da auditoria integral: conclui em `case_partes` o cutover C6/LGPD que
+    # as migrations 061 → 112 fizeram só em `clients`. Nasceu como 127 encadeada
+    # na 126; com o merge da 127_publicacao_explicita e da 130_ejc_skills_uso na
+    # `main`, foi renumerada para 131 e repontada para o head vigente.
+    revision = _script_directory().get_revision("131_case_parte_pii_encriptado")
+    assert revision.down_revision == "130_ejc_skills_uso"
+
+
+def test_password_changed_at_encadeia_apos_pii_da_parte():
+    # Nasceu como 128 encadeada na 126; renumerada para 132 em 2026-08-05, depois
+    # que a `main` mesclou a 127 e a 130 e o PR #652 tomou a 131.
+    revision = _script_directory().get_revision("132_user_password_changed_at")
+    assert revision.down_revision == "131_case_parte_pii_encriptado"
+
+
+def test_indice_numero_cnj_encadeia_apos_password_changed_at():
+    revision = _script_directory().get_revision("133_processes_numero_cnj_index")
+    assert revision.down_revision == "132_user_password_changed_at"

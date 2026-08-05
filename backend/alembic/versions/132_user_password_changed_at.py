@@ -33,14 +33,19 @@ correspondente, e uma chamada montada por variável passaria invisível por essa
 trava.
 
 Revision ID: 128_user_password_changed_at
-Revises: 126_case_status_quatro_estados
+Revises: 131_case_parte_pii_encriptado
 Create Date: 2026-08-03
+
+Renumerada de 128 para 132 em 2026-08-05. Nasceu encadeada na 126; enquanto o PR
+aguardava revisão, a `main` mesclou a 127 e a 130, e o PR #652 passou a ocupar a
+131. Mantida na 126, esta migration criaria uma head paralela. Repontada para o
+topo da fila; o DDL não mudou. **Depende do merge do #652.**
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "128_user_password_changed_at"
-down_revision = "126_case_status_quatro_estados"
+revision = "132_user_password_changed_at"
+down_revision = "131_case_parte_pii_encriptado"
 branch_labels = None
 depends_on = None
 

@@ -157,9 +157,25 @@ def extrair_titulo_caso(resposta_ia: str) -> str:
 def titulo_e_json_bruto(titulo: str) -> bool:
     """Guard do endpoint: True se o título é JSON/código cru (não parseado).
 
-    Usado para recusar (HTTP 422) títulos que começam com `{`, `[` ou cerca ```.
+    Usado para recusar (HTTP 422) títulos que começam com `{`, cerca ``` ou um
+    array JSON válido iniciado por `[` (ex.: `[1,2]`, `[{"titulo":"x"}]`).
+
+    Título começado por `[` que NÃO seja um array JSON válido — como um rótulo
+    humano (`[URGENTE] Recurso administrativo`, `[TESTE AUDITORIA - EXCLUIR]
+    Caso fictício - civil`) — não é bloqueado: só o primeiro bloco balanceado
+    é testado, e se ele não parsear como `list`, o `[` é tratado como texto.
     """
     if not titulo or not isinstance(titulo, str):
         return False
     t = titulo.lstrip()
-    return t.startswith(("{", "[", "```"))
+    if t.startswith(("{", "```")):
+        return True
+    if t.startswith("["):
+        bloco = _extrair_bloco_json(t)
+        if bloco is None:
+            return False
+        try:
+            return isinstance(json.loads(bloco), list)
+        except (json.JSONDecodeError, ValueError):
+            return False
+    return False

@@ -25,13 +25,15 @@ Zero linhas → seguro adicionar UNIQUE numa migration separada. Alguma linha �
 decisão humana sobre qual registro é o canônico antes de poder constranger.
 
 Revision ID: 129_processes_numero_cnj_index
-Revises: 128_user_password_changed_at
+Revises: 132_user_password_changed_at
 Create Date: 2026-08-03
+
+Renumerada de 129 para 133 em 2026-08-05, junto com a 128 → 132 que a precede.
 """
 from alembic import op
 
-revision = "129_processes_numero_cnj_index"
-down_revision = "128_user_password_changed_at"
+revision = "133_processes_numero_cnj_index"
+down_revision = "132_user_password_changed_at"
 branch_labels = None
 depends_on = None
 

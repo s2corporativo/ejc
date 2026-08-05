@@ -85,10 +85,24 @@ async def _criar_caso(db, client_id: str, titulo: str,
 async def _criar_parte(db, case_id: str, nome: str,
                        cpf_cnpj: str | None = None,
                        ativo: bool = True) -> None:
+    # Migration 127: `case_partes.cpf_cnpj` não existe mais em texto puro. O
+    # parâmetro continua recebendo o documento como o teste o escreve (com ou
+    # sem máscara) e a gravação replica o que `routers/case_partes.py` faz —
+    # normaliza, cifra, hasheia e mascara. A busca por CPF que estes testes
+    # exercitam passou a casar pelo HASH.
+    from app.services.pii_crypto import (
+        encrypt, hash_documento, mascarar_documento, normalizar_documento,
+    )
+
+    doc = normalizar_documento(cpf_cnpj)
     await db.execute(
-        text("INSERT INTO case_partes (case_id, tipo, nome, cpf_cnpj, ativo) "
-             "VALUES (:cid, 'autor', :nome, :doc, :ativo)"),
-        {"cid": case_id, "nome": nome, "doc": cpf_cnpj, "ativo": ativo},
+        text("INSERT INTO case_partes "
+             "(case_id, tipo, nome, cpf_cnpj_enc, cpf_cnpj_hash, "
+             " cpf_cnpj_mascarado, ativo) "
+             "VALUES (:cid, 'autor', :nome, :enc, :hash, :masc, :ativo)"),
+        {"cid": case_id, "nome": nome, "enc": encrypt(doc),
+         "hash": hash_documento(doc), "masc": mascarar_documento(doc),
+         "ativo": ativo},
     )
 
 

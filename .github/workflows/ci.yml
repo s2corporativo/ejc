@@ -129,10 +129,32 @@ jobs:
       - name: Aplicar migrations (alembic upgrade head)
         run: python -m alembic upgrade head
 
-      - name: Testes com banco real (saída concisa e rastreável)
+      # P0-4 da auditoria integral (docs/auditoria-ejc/14-testes.md): a suíte era
+      # grande e verde, e ninguém sabia o que ela cobria — `pytest-cov` estava
+      # instalado (requirements.txt:136) e nunca era acionado no CI. Sem piso, a
+      # cobertura só podia cair, e caía em silêncio.
+      #
+      # O piso 65% é o CHÃO MEDIDO, não uma meta: `pytest tests --cov=app` na
+      # branch da auditoria deu 66% (4560 testes, sem RUN_DB_TESTS). Aqui, com
+      # Postgres real e RUN_DB_TESTS=1, roda MAIS código que a medição local, de
+      # modo que 65% tem folga real e não reprova PR honesto. É para SUBIR: ao
+      # elevar a cobertura, suba o número junto — um piso que nunca sobe vira
+      # decoração.
+      - name: Testes com banco real + piso de cobertura (saída concisa e rastreável)
         run: |
           set -o pipefail
-          python -m pytest tests -q --tb=short --maxfail=25 2>&1 | tee ../backend-test-summary.log
+          python -m pytest tests -q --tb=short --maxfail=25 \
+            --cov=app --cov-report=term --cov-report=xml:../coverage.xml \
+            --cov-fail-under=65 2>&1 | tee ../backend-test-summary.log
+
+      - name: Anexar cobertura (XML)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-coverage
+          path: coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Publicar resumo backend
         if: always()
