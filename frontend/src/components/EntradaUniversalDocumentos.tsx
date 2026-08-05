@@ -562,6 +562,24 @@ export default function EntradaUniversalDocumentos({
                     prazo ou precedente antes de usar.
                   </p>
                 )}
+                {resultado.ia?.sem_base_verificavel && (
+                  <div className="mt-2 flex items-start gap-2 rounded bg-warn-50 p-2 dark:bg-warn-900/20">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warn-700 dark:text-warn-400" />
+                    <p className="text-[11px] text-warn-700 dark:text-warn-400">
+                      A IA mencionou normas, prazos ou precedentes que não foram verificados em fontes internas. Use com cautela.
+                    </p>
+                  </div>
+                )}
+                {(resultado.citacoes || []).length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-[11px] font-medium text-slate-700 dark:text-slate-200">Citações</p>
+                    <ul className="mt-1 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+                      {resultado.citacoes?.map((citacao, index) => (
+                        <li key={index} className="ml-2">• {citacao}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {(resultado.alertas_ia || []).length > 0 && (
                   <ul className="mt-2 space-y-1 text-[11px] text-warn-800">
                     {resultado.alertas_ia?.map((alerta, index) => (

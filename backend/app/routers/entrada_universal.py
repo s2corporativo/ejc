@@ -235,8 +235,13 @@ async def _analisar_ia(db: AsyncSession, cu: User, *, modalidade: str | None,
 
     bruto = str(nucleo.get("conteudo") or "")
     parsed = _parse_json(bruto)
-    estrutura_valida = parsed is not None
-    if parsed is None:
+    # Validar que há pelo menos um campo esperado de extração com forma válida
+    extracao_valida = (
+        isinstance(parsed, dict) and
+        any(k in parsed for k in ("area", "partes", "datas", "prazo", "teses"))
+    )
+    estrutura_valida = extracao_valida
+    if not extracao_valida:
         # Falha de ESTRUTURA (não de disponibilidade). O texto cru não pode ser
         # devolvido em `resumo_executivo.fatos`: o pré-preenchimento do caso lê
         # esse campo e gravava a resposta bruta do modelo como se fosse fato
