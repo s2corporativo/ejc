@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "release": {
+    "approved_commit_sha": "PREENCHER_COM_SHA_DE_40_CARACTERES",
+    "deployed_commit_sha": "PREENCHER_COM_O_MESMO_SHA_IMPLANTADO",
+    "environment": "homologacao",
+    "deployed_at": "PREENCHER_TIMESTAMP_ISO_8601_COM_FUSO"
+  },
+  "manual_scenarios": {
+    "H13": {
+      "status": "PENDENTE",
+      "evidence": "PREENCHER_REFERENCIA_SANITIZADA",
+      "executed_by": "PREENCHER",
+      "executed_at": "PREENCHER_TIMESTAMP_ISO_8601_COM_FUSO"
+    },
+    "H14": {
+      "status": "PENDENTE",
+      "evidence": "PREENCHER_REFERENCIA_SANITIZADA",
+      "executed_by": "PREENCHER",
+      "executed_at": "PREENCHER_TIMESTAMP_ISO_8601_COM_FUSO"
+    }
+  },
+  "controls": {
+    "ci": {
+      "status": "PENDENTE",
+      "evidence": "PREENCHER"
+    },
+    "branch_protection": {
+      "status": "PENDENTE",
+      "evidence": "PREENCHER"
+    },
+    "backup": {
+      "status": "PENDENTE",
+      "database_encrypted": false,
+      "uploads_encrypted": false,
+      "offsite_copy": false,
+      "evidence": "PREENCHER"
+    },
+    "restore": {
+      "status": "PENDENTE",
+      "database_restored": false,
+      "uploads_restored": false,
+      "application_started": false,
+      "evidence": "PREENCHER"
+    },
+    "rollback": {
+      "status": "PENDENTE",
+      "tested": false,
+      "evidence": "PREENCHER"
+    },
+    "rpo_rto": {
+      "status": "PENDENTE",
+      "rpo_hours": 24,
+      "rto_hours": 4,
+      "approved_at": "PREENCHER_TIMESTAMP_ISO_8601_COM_FUSO",
+      "evidence": "PREENCHER"
+    },
+    "security_audit": {
+      "status": "PENDENTE",
+      "rbac": false,
+      "idor": false,
+      "lgpd": false,
+      "ai_rag": false,
+      "evidence": "PREENCHER"
+    }
+  },
+  "approvals": [
+    {
+      "role": "responsavel_tecnico",
+      "status": "PENDENTE",
+      "approved_by": "PREENCHER",
+      "approved_at": "PREENCHER_TIMESTAMP_ISO_8601_COM_FUSO",
+      "evidence": "PREENCHER"
+    },
+    {
+      "role": "responsavel_juridico_lgpd",
+      "status": "PENDENTE",
+      "approved_by": "PREENCHER",
+      "approved_at": "PREENCHER_TIMESTAMP_ISO_8601_COM_FUSO",
+      "evidence": "PREENCHER"
+    },
+    {
+      "role": "titular_produto",
+      "status": "PENDENTE",
+      "approved_by": "PREENCHER",
+      "approved_at": "PREENCHER_TIMESTAMP_ISO_8601_COM_FUSO",
+      "evidence": "PREENCHER"
+    }
+  ],
+  "decision": {
+    "status": "piloto_controlado",
+    "restrictions": [
+      "PREENCHER_RESTRICOES_DO_PILOTO"
+    ]
+  }
+}
