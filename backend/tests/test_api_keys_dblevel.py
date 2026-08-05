@@ -62,9 +62,11 @@ async def _criar_admin(db) -> SimpleNamespace:
 
 async def _limpar(db, key_ids=(), user_ids=()):
     for kid in key_ids:
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE registro_id = :id"), {"id": kid})
         await db.execute(text("DELETE FROM api_keys WHERE id = :id"), {"id": kid})
     for uid in user_ids:
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
     await db.commit()

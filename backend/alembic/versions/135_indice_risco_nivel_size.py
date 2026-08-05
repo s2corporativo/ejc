@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "135_indice_risco_nivel_size"
-down_revision = "134_processes_numero_cnj_index"
+down_revision = "132_case_parte_pii_encriptado"
 branch_labels = None
 depends_on = None
 
