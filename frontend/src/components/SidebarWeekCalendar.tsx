@@ -66,7 +66,7 @@ export default function SidebarWeekCalendar() {
 
   const openDay = (day: Date) => {
     setSelectedDate(day);
-    navigate(`/atividades?view=calendario&data=${dateKey(day)}`);
+    navigate(`/atividades/dia/${dateKey(day)}`);
   };
 
   return (
