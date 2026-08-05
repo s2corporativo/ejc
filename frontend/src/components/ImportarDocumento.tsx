@@ -47,10 +47,15 @@ export default function ImportarDocumento({
           },
         ]
       : [];
+    // O rótulo da classificação só serve de título quando ela foi de fato
+    // afirmada — senão o caso nascia chamado "Não classificado — confirmar".
+    const rotuloClassificacao = principal?.classification?.tipo_catalogo
+      ? principal?.classification?.nome
+      : undefined;
     const titulo =
       resumo.providencia_principal ||
       resumo.situacao ||
-      principal?.classification?.nome ||
+      rotuloClassificacao ||
       principal?.filename ||
       "Novo caso importado";
     const patch: Patch = {
@@ -71,9 +76,11 @@ export default function ImportarDocumento({
         cpf: pessoais.cpf || undefined,
         cnpj: pessoais.cnpj || undefined,
       },
+      // Só a chave canônica do catálogo — o rótulo interno da regra local
+      // ("outro_documento") não existe no seletor de tipos do GED.
       _tipo_documento:
         classificacao.tipo_documento ||
-        principal?.classification?.tipo ||
+        principal?.classification?.tipo_catalogo ||
         undefined,
       _arquivo_original: resultado._arquivos_locais?.[0],
       _entrada_universal_batch_id: resultado.batch_id,
@@ -95,6 +102,12 @@ export default function ImportarDocumento({
         prazos,
         origem_documento_id: principal?.document_id || null,
         documentos: resultado.documentos || [],
+        // Procedência da leitura que pré-preencheu este caso: sem isto, o caso
+        // guardava os dados extraídos sem nenhum vínculo com o modelo, o log de
+        // auditoria e as fontes que os produziram.
+        ia: resultado.ia || null,
+        fontes: resultado.fontes || [],
+        alertas_ia: resultado.alertas_ia || [],
       },
     };
     Object.keys(patch).forEach(
