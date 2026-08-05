@@ -1,0 +1,123 @@
+name: Patch Selected Date Temp
+
+on:
+  push:
+    branches:
+      - refactor/ejc-premium-gold-graphite-20260805
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refactor/ejc-premium-gold-graphite-20260805
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências
+        working-directory: frontend
+        run: npm ci
+
+      - name: Aplicar deep link de data
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("frontend/src/pages/CentralAtividades.tsx")
+          text = path.read_text(encoding="utf-8")
+
+          old = '  const contextCaseId = readCaseContext(searchParams);\n  const rawView = searchParams.get("view");'
+          new = '''  const contextCaseId = readCaseContext(searchParams);
+  const rawSelectedDate = searchParams.get("data");
+  const selectedDate =
+    rawSelectedDate && /^\\d{4}-\\d{2}-\\d{2}$/.test(rawSelectedDate)
+      ? rawSelectedDate
+      : null;
+  const selectedDateLabel = selectedDate
+    ? new Date(`${selectedDate}T12:00:00`).toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      })
+    : null;
+  const clearSelectedDate = () => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("data");
+    setSearchParams(params, { replace: true });
+  };
+  const rawView = searchParams.get("view");'''
+          if old not in text:
+              raise SystemExit("marcador de leitura da data não encontrado")
+          text = text.replace(old, new, 1)
+
+          old = '''  const filtered = items.filter((item) => {
+    if (contextCaseId && item.case_id !== contextCaseId) return false;
+    if (filterTipo !== "todos" && item.tipo !== filterTipo) return false;'''
+          new = '''  const filtered = items.filter((item) => {
+    if (contextCaseId && item.case_id !== contextCaseId) return false;
+    if (selectedDate && item.date?.slice(0, 10) !== selectedDate) return false;
+    if (filterTipo !== "todos" && item.tipo !== filterTipo) return false;'''
+          if old not in text:
+              raise SystemExit("marcador do filtro não encontrado")
+          text = text.replace(old, new, 1)
+
+          old = '''        subtitle={
+          contextCaseId
+            ? "Atividades vinculadas ao caso selecionado"
+            : "Prazos, tarefas, audiências, compromissos e intimações em uma única tela"
+        }
+        actions={
+          <>'''
+          new = '''        subtitle={
+          selectedDateLabel
+            ? `Atividades de ${selectedDateLabel}`
+            : contextCaseId
+              ? "Atividades vinculadas ao caso selecionado"
+              : "Prazos, tarefas, audiências, compromissos e intimações em uma única tela"
+        }
+        actions={
+          <>
+            {selectedDateLabel && (
+              <button
+                type="button"
+                onClick={clearSelectedDate}
+                title="Remover filtro do dia selecionado"
+                aria-label={`Remover filtro de ${selectedDateLabel}`}
+                className="flex items-center gap-1 rounded-lg bg-ouro-palha px-3 py-2 text-sm font-medium text-ouro-profundo ring-1 ring-inset ring-ouro-claro/60 hover:bg-ouro-claro/30"
+              >
+                <Calendar className="h-4 w-4" />
+                {selectedDateLabel}
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}'''
+          if old not in text:
+              raise SystemExit("marcador do cabeçalho não encontrado")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          cd frontend
+          npx prettier --write src/pages/CentralAtividades.tsx
+
+      - name: Commit da correção
+        run: |
+          if git diff --quiet; then
+            echo "Nenhuma alteração necessária."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/CentralAtividades.tsx
+          git commit -m "fix(frontend): aplica dia selecionado na agenda"
+          git push origin HEAD:refactor/ejc-premium-gold-graphite-20260805
