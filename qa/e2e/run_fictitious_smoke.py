@@ -44,8 +44,11 @@ from typing import Any
 
 import httpx
 
+import rbac_matrix  # qa/e2e/rbac_matrix.py — matriz papel x rota (Issue #700)
+
 ROOT = Path(__file__).resolve().parents[2]
 MATRIX_PATH = ROOT / "qa" / "e2e" / "fictitious_matrix.json"
+ROUTERS_DIR = ROOT / "backend" / "app" / "routers"
 REPORT_DIR = ROOT / "qa" / "e2e" / "reports"
 REPORT_PATH = REPORT_DIR / "e2e_fictitious_report.json"
 MARKER = "E2E-FICTICIO"
@@ -154,6 +157,8 @@ class SuiteState:
     # Recursos criados por POSTs da matriz (fora dos três fluxos dedicados).
     # Sem isto eles não apareciam em lugar nenhum e viravam resíduo silencioso.
     extras_criados: list[tuple[str, str, str]] = field(default_factory=list)
+    # Matriz papel x rota (Issue #700) — preenchida por `_matriz_rbac`.
+    rbac_matrix: dict[str, Any] = field(default_factory=dict)
 
 
 def _env(name: str) -> str:
@@ -605,6 +610,296 @@ def _negativas_de_autorizacao(client: httpx.Client, state: SuiteState) -> None:
              expected=[404], degradado_ok=True)
 
 
+# ── Matriz papel × rota (Issue #700) ─────────────────────────────────────────
+# O runner autenticava com UMA conta só; a única negativa de autorização
+# exercitada era "sem token" (401). Nunca se provava que financeiro,
+# secretaria, estagiario e cliente_externo são barrados ONDE deveriam ser —
+# a Issue #694 documenta 27 gates frouxos que nenhum passo desta suíte pegaria.
+#
+# `rbac_matrix.py` deriva a matriz por parsing estático dos routers reais
+# (não uma lista escrita à mão que envelhece); aqui só autenticamos em cada
+# papel e sondamos.
+
+# (chave_do_papel, var_de_email, var_de_senha). O papel de GESTÃO (socio/admin)
+# reaproveita a conta já obrigatória (EJC_TEST_EMAIL/EJC_TEST_PASSWORD) — ver
+# `_matriz_rbac`; não está nesta lista porque não é uma credencial OPCIONAL a
+# mais, a suíte inteira já depende dela.
+PAPEIS_MATRIZ: tuple[tuple[str, str, str], ...] = (
+    ("advogado", "EJC_TEST_EMAIL_ADVOGADO", "EJC_TEST_PASSWORD_ADVOGADO"),
+    ("estagiario", "EJC_TEST_EMAIL_ESTAGIARIO", "EJC_TEST_PASSWORD_ESTAGIARIO"),
+    ("financeiro", "EJC_TEST_EMAIL_FINANCEIRO", "EJC_TEST_PASSWORD_FINANCEIRO"),
+    ("secretaria", "EJC_TEST_EMAIL_SECRETARIA", "EJC_TEST_PASSWORD_SECRETARIA"),
+    ("cliente_externo", "EJC_TEST_EMAIL_CLIENTE_EXTERNO", "EJC_TEST_PASSWORD_CLIENTE_EXTERNO"),
+)
+
+# Papéis aceitos para a conta de GESTÃO (login primário, EJC_TEST_EMAIL) —
+# usado por `_papel_gestao_confere` (achado #4 do review do PR #708).
+ROLES_GESTAO: frozenset[str] = frozenset({"superadmin", "admin", "socio"})
+
+
+def _papel_confere(role_key: str, actual_role: str | None) -> bool:
+    """Achado #4 do review do PR #708: se uma variável de ambiente apontar
+    para a conta errada (ex.: `EJC_TEST_EMAIL_FINANCEIRO` autentica um
+    admin), o runner NÃO pode calcular expectativas com `actual_role` e
+    registrar a célula sob `role_key` — isso reporta cobertura completa sem
+    nunca ter exercitado o papel pedido. Só reaproveita `actual_role or
+    role_key` quando os dois batem; caso contrário a célula fica FALTANTE,
+    nunca aprovação silenciosa."""
+    return actual_role == role_key
+
+
+def _papel_gestao_confere(actual_role: str | None) -> bool:
+    """Mesma ideia do achado #4 aplicada à conta primária (EJC_TEST_EMAIL):
+    ela precisa autenticar um papel de GESTÃO de fato — senão a célula
+    'gestao(login_primario)' mediria RBAC com um piso de privilégio errado
+    sem avisar."""
+    return actual_role in ROLES_GESTAO
+
+
+def _login_papel(rc: httpx.Client, email: str, password: str) -> tuple[str | None, str | None, int | None]:
+    """Login isolado por papel, em cliente httpx PRÓPRIO (cookie jar isolado
+    do login primário — trocar de papel não pode contaminar a sessão da
+    conta de gestão usada pelo resto da suíte)."""
+    try:
+        resp = rc.post("/api/auth/login", json={"email": email, "password": password}, timeout=60)
+    except Exception:
+        return None, None, None
+    if resp.status_code != 200:
+        return None, None, resp.status_code
+    try:
+        data = resp.json()
+    except Exception:
+        return None, None, resp.status_code
+    return data.get("access_token"), data.get("role"), resp.status_code
+
+
+def _sondar_papel(
+    rc: httpx.Client,
+    role_key: str,
+    token: str,
+    actual_role: str,
+    gates: list[rbac_matrix.RouteGate],
+    state: SuiteState,
+) -> list[dict[str, Any]]:
+    """Roda a amostra GET inteira sob o token de UM papel. Só GET: métodos
+    mutantes não são seguros para sondar negativamente sem efeito colateral
+    (ver limitação documentada em rbac_matrix.py)."""
+    celulas: list[dict[str, Any]] = []
+    headers = {"Authorization": f"Bearer {token}"}
+    for gate in gates:
+        esperado = gate.resultado_esperado(actual_role)
+        try:
+            resp = rc.get(gate.path, headers=headers, timeout=30)
+            status = resp.status_code
+        except Exception as exc:
+            _record(state, StepResult(
+                name=f"rbac.{role_key}", method="GET", path=gate.path,
+                ok=False, detail=f"erro de rede sondando papel {role_key}: {exc}",
+            ))
+            continue
+
+        degraded = False
+        if status == esperado:
+            ok, detail = True, ""
+        elif status in DEGRADADOS:
+            # Rota ausente/indisponível NESTE ambiente — não é achado de RBAC
+            # (mesma semântica de DEGRADADOS no resto da suíte).
+            ok, degraded = (not STRICT), True
+            detail = (f"DEGRADADO: {status} (rota ausente/indisponível neste ambiente) — "
+                      f"esperado={esperado}" + ("" if STRICT else " (tolerado: EJC_E2E_STRICT=false)"))
+        elif esperado == 403 and status == 200:
+            # É ISTO que a Issue #700 pede: célula "negado" respondendo 200
+            # reprova a execução, nomeando papel e rota.
+            ok = False
+            detail = (
+                f"GATE RBAC FROUXO: papel '{role_key}' (token com role='{actual_role}') "
+                f"deveria ser NEGADO (403) em GET {gate.path} — gate={gate.gate_kind}, "
+                f"min_level exigido={gate.min_level} ({gate.source_file}:{gate.source_line}) — "
+                f"mas a API respondeu 200. Ver Issue #694 para o padrão desta classe de defeito."
+            )
+        elif esperado == 200 and status == 403:
+            ok = False
+            detail = (
+                f"DIVERGÊNCIA: papel '{role_key}' (role='{actual_role}') deveria ser "
+                f"PERMITIDO (200) em GET {gate.path} — obteve 403. Ou o gate está mais "
+                "restritivo do que o código sugere, ou a matriz derivada está errada "
+                "para esta rota; investigar antes de ignorar."
+            )
+        elif status == 422 and esperado == 403 and gate.via_depends:
+            # Achado #3 do review do PR #708: quando o gate é resolvido via
+            # `Depends(...)` (de assinatura OU de `dependencies=[...]` do
+            # router — `gate.via_depends`), o FastAPI resolve TODA
+            # sub-dependência ANTES de validar os parâmetros (path/query) da
+            # PRÓPRIA rota — um papel NEGADO deveria ter recebido 403 já
+            # nessa fase, sem nunca alcançar a validação de query. Um 422
+            # aqui não é "faltou o parâmetro para o gate rodar": é a
+            # validação de query tendo sido ALCANÇADA porque o gate deixou
+            # o papel passar — exatamente o bypass que a Issue #694
+            # documenta, só que mascarado atrás de um 422 em vez de um 200.
+            # Tratar isto como inconclusivo esconderia a regressão.
+            ok = False
+            detail = (
+                f"GATE RBAC FROUXO (via 422): papel '{role_key}' (token com role="
+                f"'{actual_role}') deveria ser NEGADO (403) em GET {gate.path} — "
+                f"gate={gate.gate_kind} roda via Depends() (resolvido ANTES da "
+                f"validação de query), min_level exigido={gate.min_level} "
+                f"({gate.source_file}:{gate.source_line}) — mas a API respondeu 422 "
+                "(chegou a validar query, o que só acontece se o gate deixou passar). "
+                "Ver Issue #694 para o padrão desta classe de defeito."
+            )
+        elif status == 422:
+            # Limitação CONHECIDA e documentada: um GET com query param
+            # OBRIGATÓRIO (ex.: calculadoras jurídicas em ramos.py, `/ai/
+            # roteamento/preview`) responde 422 ANTES do gate rodar — mas só
+            # quando o gate é verificado no CORPO do handler (requer_advogado /
+            # local_level / local_membership / "nenhum", ou seja
+            # `gate.via_depends is False`): o FastAPI resolve e valida
+            # path/query params, e só ENTÃO executa o corpo — se faltar um
+            # param obrigatório, o handler nunca roda, e o `if papel ...:
+            # raise 403` dentro dele nunca é alcançado (para NENHUM papel,
+            # permitido ou negado). Evidência real: em `/api/calculadoras/inss`
+            # (gate por `Depends(require_roles(_EQUIPE))`, avaliado ANTES da
+            # validação de query) um papel negado recebeu 403 mesmo sem os
+            # params — mas em rotas com gate NO CORPO, a mesma ausência de
+            # params produz 422 tanto para papéis permitidos quanto negados,
+            # sem nunca provar nada sobre RBAC. Fica inconclusivo (não
+            # reprova), nunca desaparece do relatório (degraded=True). Quando
+            # `esperado == 403` e `gate.via_depends` é True, o ramo ACIMA já
+            # tratou o caso como falha real, não chega aqui.
+            ok, degraded = True, True
+            detail = (f"422 (validação de query — rota provavelmente exige parâmetros "
+                      f"que esta sonda não envia): inconclusivo para RBAC, gate={gate.gate_kind} "
+                      f"(esperado sem considerar a validação: {esperado})")
+        else:
+            ok = False
+            detail = f"status inesperado: esperado={esperado}, obtido={status}"
+
+        celulas.append({
+            "papel": role_key, "role_no_token": actual_role, "method": "GET",
+            "path": gate.path, "gate_kind": gate.gate_kind, "min_level_exigido": gate.min_level,
+            "esperado": esperado, "obtido": status, "ok": ok,
+        })
+        _record(state, StepResult(
+            name=f"rbac.{role_key}", method="GET", path=gate.path,
+            status_code=status, ok=ok, detail=detail, degraded=degraded,
+        ))
+    return celulas
+
+
+def _matriz_rbac(base_url: str, state: SuiteState) -> None:
+    """Autentica em cada papel disponível e prova, célula a célula, que o
+    resultado bate com o gate REAL do backend (critérios de aceite #1-#4)."""
+    try:
+        gates_todas = rbac_matrix.discover_gates(ROUTERS_DIR)
+    except Exception as exc:
+        _afirmar(state, "rbac.matriz_derivada", False,
+                 f"falha ao derivar a matriz a partir de {ROUTERS_DIR}: {exc}")
+        return
+    amostra, excluidos = rbac_matrix.selecionar_amostra_get(gates_todas)
+    _afirmar(state, "rbac.matriz_derivada_nao_vazia", len(amostra) > 0,
+             "nenhuma rota elegível derivada dos routers — matriz RBAC vazia")
+    for g in excluidos:
+        state.nao_coberto.append({
+            "module_key": f"rbac.{g.module_key}", "method": g.method, "path": g.path,
+            "motivo": ("parâmetro de path exige id real — fora do escopo desta amostra"
+                       if "{" in g.path else
+                       "gate com lista de papéis não resolvida estaticamente (indeterminado)"),
+        })
+
+    celulas_por_papel: dict[str, list[dict[str, Any]]] = {}
+    papeis_faltantes: list[str] = []
+
+    # Papel de gestão: reaproveita o login primário já feito por `_login`,
+    # numa sessão httpx isolada (não reusa `client` para não misturar cookies
+    # de refresh entre papéis).
+    papel_gestao_primario = str(state.user["role"]) if state.user.get("role") else None
+    if state.access_token and papel_gestao_primario and _papel_gestao_confere(papel_gestao_primario):
+        with httpx.Client(base_url=base_url, follow_redirects=True) as rc:
+            celulas_por_papel["gestao(login_primario)"] = _sondar_papel(
+                rc, "gestao(login_primario)", state.access_token, papel_gestao_primario,
+                amostra, state,
+            )
+    else:
+        papeis_faltantes.append("gestao(login_primario)")
+        if not state.access_token or not papel_gestao_primario:
+            motivo = "login primário indisponível — matriz não testou o papel de gestão"
+        else:
+            # Achado #4 do review do PR #708: EJC_TEST_EMAIL autenticou um
+            # papel que não é de gestão — testar RBAC com esse token mediria
+            # o piso errado sem avisar.
+            motivo = (
+                f"EJC_TEST_EMAIL autenticou papel '{papel_gestao_primario}', não um papel "
+                f"de gestão ({sorted(ROLES_GESTAO)}) — célula NÃO testada"
+            )
+        _afirmar(state, "rbac.login.gestao.papel_confere", False, motivo)
+        state.nao_coberto.append({
+            "module_key": "rbac.gestao", "method": "*", "path": "*",
+            "motivo": motivo,
+        })
+
+    for role_key, email_var, password_var in PAPEIS_MATRIZ:
+        email = os.getenv(email_var, "").strip()
+        password = os.getenv(password_var, "").strip()
+        if not email or not password:
+            # Critério de aceite: ausência de conta é cobertura FALTANTE
+            # relatada — nunca aprovação silenciosa.
+            papeis_faltantes.append(role_key)
+            state.nao_coberto.append({
+                "module_key": f"rbac.{role_key}", "method": "*", "path": "*",
+                "motivo": (f"cobertura RBAC FALTANTE — defina {email_var} e {password_var} "
+                           "com credenciais fictícias de homologação para este papel"),
+            })
+            continue
+        with httpx.Client(base_url=base_url, follow_redirects=True) as rc:
+            token, actual_role, login_status = _login_papel(rc, email, password)
+            _record(state, StepResult(
+                name=f"rbac.login.{role_key}", method="POST", path="/api/auth/login",
+                status_code=login_status, ok=bool(token),
+                detail="" if token else "login falhou para este papel — célula(s) não testadas",
+            ))
+            if not token:
+                papeis_faltantes.append(role_key)
+                state.nao_coberto.append({
+                    "module_key": f"rbac.{role_key}", "method": "*", "path": "*",
+                    "motivo": f"login falhou (status={login_status}) — credencial incorreta/expirada?",
+                })
+                continue
+            if not _papel_confere(role_key, actual_role):
+                # Achado #4 do review do PR #708: `email_var` pode apontar
+                # para a conta ERRADA (ex.: EJC_TEST_EMAIL_FINANCEIRO
+                # autentica um admin) — calcular expectativas com
+                # `actual_role` e registrar sob `role_key` reportaria
+                # cobertura completa sem nunca ter exercitado o papel pedido.
+                # Falha, não registra célula nenhuma sob `role_key`.
+                papeis_faltantes.append(role_key)
+                motivo = (
+                    f"{email_var} autenticou papel '{actual_role}', não '{role_key}' — "
+                    "provável credencial apontando para a conta errada; célula NÃO "
+                    "testada (nunca contada como cobertura)"
+                )
+                _afirmar(state, f"rbac.login.{role_key}.papel_confere", False, motivo)
+                state.nao_coberto.append({
+                    "module_key": f"rbac.{role_key}", "method": "*", "path": "*",
+                    "motivo": motivo,
+                })
+                continue
+            celulas_por_papel[role_key] = _sondar_papel(
+                rc, role_key, token, actual_role, amostra, state,
+            )
+
+    state.rbac_matrix = {
+        "papeis_testados": sorted(celulas_por_papel.keys()),
+        "papeis_faltantes": sorted(papeis_faltantes),
+        "rotas_na_amostra": len(amostra),
+        "rotas_excluidas_da_amostra": len(excluidos),
+        "celulas": celulas_por_papel,
+    }
+    print(
+        f"[rbac] papéis testados: {sorted(celulas_por_papel.keys())} · "
+        f"faltantes: {sorted(papeis_faltantes)} · rotas na amostra: {len(amostra)}"
+    )
+
+
 def _cleanup(client: httpx.Client, state: SuiteState) -> None:
     """Remove (soft-delete) SOMENTE os recursos criados por ESTA execução.
     Idempotente: 404 significa que já não existe — aceitável em reexecução.
@@ -687,9 +982,16 @@ def _write_report(state: SuiteState, matrix: dict[str, Any]) -> None:
             "asserts_de_efeito": len(asserts),
             "checks_nao_cobertos": len(state.nao_coberto),
             "modules_in_matrix": len(matrix["modules"]),
+            "rbac_papeis_testados": len(state.rbac_matrix.get("papeis_testados", [])),
+            "rbac_papeis_faltantes": len(state.rbac_matrix.get("papeis_faltantes", [])),
         },
-        # Cobertura omitida fica EXPLÍCITA no artefato (AI-005).
+        # Cobertura omitida fica EXPLÍCITA no artefato (AI-005 e, para a
+        # matriz por papel, Issue #700 — ausência de conta é FALTANTE, nunca
+        # aprovação silenciosa).
         "nao_coberto": state.nao_coberto,
+        # Matriz papel x rota (Issue #700). Nunca contém token/senha/e-mail —
+        # só papel, método, path e códigos de status.
+        "rbac_matrix": state.rbac_matrix,
         "results": [r.__dict__ for r in state.results],
     }
     REPORT_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -700,6 +1002,17 @@ def _write_report(state: SuiteState, matrix: dict[str, Any]) -> None:
         print("Endpoints degradados (404/405/501/503):")
         for r in degradados:
             print(f"  - {r.name} {r.method} {r.path} -> {r.status_code}")
+    if state.rbac_matrix:
+        print(f"Matriz RBAC — papéis testados: {state.rbac_matrix.get('papeis_testados')}")
+        if state.rbac_matrix.get("papeis_faltantes"):
+            print(f"  cobertura FALTANTE (sem credencial ou login falhou): "
+                  f"{state.rbac_matrix['papeis_faltantes']}")
+        gates_frouxos = [r for r in state.results
+                         if r.name.startswith("rbac.") and not r.ok and "GATE RBAC FROUXO" in r.detail]
+        if gates_frouxos:
+            print(f"  GATES FROUXOS DETECTADOS ({len(gates_frouxos)}) — célula negada respondeu 200:")
+            for r in gates_frouxos:
+                print(f"    - {r.name} {r.method} {r.path} -> {r.status_code}")
     if failed:
         print(f"Falhas: {len(failed)}")
         for r in failed:
@@ -727,6 +1040,13 @@ def main() -> None:
             _request(client, state, name="health.live", method="GET", path="/api/health", expected=[200])
             _login(client, state)
             _negativas_de_autorizacao(client, state)
+            try:
+                _matriz_rbac(base_url, state)
+            except Exception as exc:
+                # A matriz RBAC é uma frente NOVA (Issue #700) — um bug nela
+                # não pode impedir cleanup/relatório dos fluxos já existentes.
+                _afirmar(state, "rbac.matriz_execucao", False,
+                         f"matriz RBAC multi-papel abortou com exceção: {exc}")
             _matrix_smoke(client, state, matrix)
             _create_client(client, state, matrix)
             _create_case(client, state, matrix)
