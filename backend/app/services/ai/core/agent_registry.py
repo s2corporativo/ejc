@@ -72,6 +72,21 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         prompt_key="resumo",
         skills=_skills("build_document_context", "summarize_document", "extract_structured_data"),
     ),
+    # Extração ESTRUTURADA (JSON) de pacote documental — distinta do resumo.
+    # O DocumentAgent responde por `resumo` (TarefaIA.RESUMO: 900 tokens, rota
+    # econômica), orçamento adequado a um sumário em prosa e INSUFICIENTE para
+    # devolver o schema JSON da Entrada Universal/Defesas (~15 chaves de topo
+    # com listas aninhadas). Truncado no meio, o JSON não faz parse e o chamador
+    # cai no fallback — área, partes, prazo e teses chegam vazios à tela.
+    # TarefaIA.DOSSIE dá o teto (5.000) e o modelo complexo que a tarefa exige.
+    "DocumentExtractionAgent": AgenteInterno(
+        nome="DocumentExtractionAgent",
+        descricao="Extração estruturada (JSON) de pacote documental: fase, partes, datas, vícios, teses e lacunas.",
+        dominios=["extracao_documental", "entrada_universal", "pacote_documental"],
+        tarefa_padrao=TarefaIA.DOSSIE,
+        prompt_key="analise_caso",
+        skills=_skills("build_document_context", "extract_structured_data", "retrieve_rag_sources"),
+    ),
     "LegalWritingAgent": AgenteInterno(
         nome="LegalWritingAgent",
         descricao="Redação de minutas e peças jurídicas (sempre rascunho HITL).",

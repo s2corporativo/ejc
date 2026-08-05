@@ -782,7 +782,8 @@ class TestOrchestrator:
 # ══════════════════════════════════════════════════════════════════════════════
 
 AGENTES_CANONICOS = {
-    "EJCCoordinatorAgent", "CaseAgent", "ProcessAgent", "DocumentAgent", "LegalWritingAgent",
+    "EJCCoordinatorAgent", "CaseAgent", "ProcessAgent", "DocumentAgent",
+    "DocumentExtractionAgent", "LegalWritingAgent",
     "RAGResearchAgent", "JurimetryAgent", "FinanceAgent", "BankForensicsAgent",
     "ConsumerLawAgent", "TaxLawAgent", "SocialSecurityAgent", "CorporateLawAgent",
     "LaborLawAgent", "CriminalLawAgent", "FamilyLawAgent",
