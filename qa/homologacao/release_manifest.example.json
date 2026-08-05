@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "tracking_issue": 715,
   "release": {
     "approved_commit_sha": "PREENCHER_COM_SHA_DE_40_CARACTERES",
     "deployed_commit_sha": "PREENCHER_COM_O_MESMO_SHA_IMPLANTADO",
