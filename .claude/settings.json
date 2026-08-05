@@ -1,6 +1,18 @@
 {
   "permissions": {
     "allow": [
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(cat:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(pwd:*)",
+      "Bash(tree:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
@@ -12,18 +24,32 @@
       "Bash(git switch:*)",
       "Bash(git rev-parse:*)",
       "Bash(git ls-files:*)",
+      "Bash(git grep:*)",
+      "Bash(git blame:*)",
+      "Bash(git remote:*)",
+      "Bash(git tag:*)",
       "Bash(graphify:*)",
       "Bash(ruff check:*)",
+      "Bash(python -m ruff check:*)",
       "Bash(pytest:*)",
       "Bash(python -m pytest:*)",
+      "Bash(python -m compileall:*)",
       "Bash(python -m alembic heads:*)",
       "Bash(python -m alembic current:*)",
       "Bash(python -m alembic history:*)",
       "Bash(npm run lint:*)",
+      "Bash(npm run typecheck:*)",
       "Bash(npm test:*)",
       "Bash(npm run build:*)",
       "Bash(npm ci:*)",
-      "Bash(scripts/ci-local.sh:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npx vitest:*)",
+      "Bash(docker compose ps:*)",
+      "Bash(docker compose logs:*)",
+      "Bash(docker compose config:*)",
+      "Bash(docker compose up:*)",
+      "Bash(scripts/ci-local.sh:*)",
+      "Bash(scripts/ci_guard.sh:*)"
     ],
     "deny": [
       "Bash(git push --force:*)",
@@ -44,10 +70,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v graphify >/dev/null 2>&1 || pip3 install -q graphifyy >/dev/null 2>&1 || pip3 install -q --user graphifyy >/dev/null 2>&1; command -v graphify >/dev/null 2>&1 && graphify update . >/dev/null 2>&1; true",
+            "command": "VENV=\"${XDG_CACHE_HOME:-$HOME/.cache}/ejc-graphify\"; if [ ! -x \"$VENV/bin/graphify\" ]; then python3 -m venv \"$VENV\" && \"$VENV/bin/pip\" install -q graphifyy; fi; mkdir -p \"$HOME/.local/bin\"; ln -sf \"$VENV/bin/graphify\" \"$HOME/.local/bin/graphify\"; [ -x \"$VENV/bin/graphify\" ] && \"$VENV/bin/graphify\" update . >/dev/null 2>&1; true",
             "timeout": 600,
             "async": true,
-            "statusMessage": "Preparando graphify (instalação e atualização incremental do grafo)..."
+            "statusMessage": "Preparando graphify em ambiente Python isolado..."
           }
         ]
       }
@@ -58,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "F=$(python3 -c \"import json,sys;print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))\" 2>/dev/null); case \"$F\" in *.py|*.js|*.ts|*.tsx|*.jsx|*.go|*.rs|*.java|*.rb|*.c|*.h|*.cpp|*.cs|*.php|*.sh|*.kt|*.swift|*.vue|*.svelte) command -v graphify >/dev/null 2>&1 && graphify update . >/dev/null 2>&1 ;; esac; true",
+            "command": "F=$(python3 -c \"import json,sys;print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))\" 2>/dev/null); VENV=\"${XDG_CACHE_HOME:-$HOME/.cache}/ejc-graphify\"; case \"$F\" in *.py|*.js|*.ts|*.tsx|*.jsx|*.go|*.rs|*.java|*.rb|*.c|*.h|*.cpp|*.cs|*.php|*.sh|*.kt|*.swift|*.vue|*.svelte) [ -x \"$VENV/bin/graphify\" ] && \"$VENV/bin/graphify\" update . >/dev/null 2>&1 ;; esac; true",
             "timeout": 600,
             "async": true,
             "statusMessage": "Atualizando grafo graphify..."
