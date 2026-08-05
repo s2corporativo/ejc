@@ -35,6 +35,7 @@ A primeira onda concentra-se no AppShell, configurações institucionais públic
 - CSS isolado em `premium-shell.css` e `premium-dashboard.css`.
 - Configurações públicas centralizadas em `officeBranding.ts`.
 - Nenhum segredo é aceito nas variáveis públicas do Vite.
+- O dia escolhido no calendário semanal é transmitido por `?data=AAAA-MM-DD`, aplicado na Central de Atividades e removível por controle visível.
 
 ## 5. Variáveis públicas
 
