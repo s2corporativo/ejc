@@ -27,7 +27,7 @@ e para a checagem de conflito de interesses (`clients.py`), que passam a
 consultar o hash em vez de normalizar texto puro em SQL — mais barato e sem
 expor o valor.
 
-`downgrade()` recria a coluna VAZIA e devolve o schema da head 126. O texto puro
+`downgrade()` recria a coluna VAZIA e devolve o schema da revisão anterior. O texto puro
 NÃO é reconstruído: é exatamente o que se quer eliminar, e o dado segue íntegro
 e decifrável em `cpf_cnpj_enc`. Reverter esta migration não perde documento —
 perde só a capacidade de lê-lo por SQL cru, que é o objetivo.
@@ -35,16 +35,22 @@ perde só a capacidade de lê-lo por SQL cru, que é o objetivo.
 Escrita À MÃO (não autogenerate): `case_partes` é uma das tabelas que o EJC
 criou em SQL bruto e o `include_name()` de `alembic/env.py` protege.
 
-Revision ID: 127_case_parte_pii_encriptado
-Revises: 126_case_status_quatro_estados
+Revision ID: 131_case_parte_pii_encriptado
+Revises: 130_ejc_skills_uso
 Create Date: 2026-08-03
+
+Renumerada de 127 para 131 em 2026-08-05. Nasceu encadeada na 126; enquanto o PR
+aguardava revisão, a `main` mesclou a `127_publicacao_explicita` (que tomou o
+número) e a `130_ejc_skills_uso`. Mantida na 126, esta migration criaria uma
+SEGUNDA head — `alembic upgrade head` quebraria no boot do container. O
+`down_revision` foi repontado para o head vigente da `main`; o DDL não mudou.
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "127_case_parte_pii_encriptado"
-down_revision = "126_case_status_quatro_estados"
+revision = "131_case_parte_pii_encriptado"
+down_revision = "130_ejc_skills_uso"
 branch_labels = None
 depends_on = None
 
@@ -175,13 +181,13 @@ def _restaurar_texto_puro() -> None:
             last_id = pid
     if indecifraveis:
         print(
-            f"[127 downgrade] {indecifraveis} linha(s) com cpf_cnpj_enc "
+            f"[131 downgrade] {indecifraveis} linha(s) com cpf_cnpj_enc "
             "indecifrável — documento NÃO restaurado nessas linhas."
         )
 
 
 def downgrade() -> None:
-    # Restaura o schema da head 126 — e o DADO junto com ele.
+    # Restaura o schema da revisão anterior — e o DADO junto com ele.
     op.execute("ALTER TABLE case_partes ADD COLUMN IF NOT EXISTS cpf_cnpj varchar(18)")
     _restaurar_texto_puro()
     op.execute("DROP INDEX IF EXISTS ix_case_partes_cpf_cnpj_hash")
