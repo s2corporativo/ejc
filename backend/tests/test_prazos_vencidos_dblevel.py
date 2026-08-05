@@ -76,6 +76,7 @@ async def _contar_notif(db, user_id: str, tipo: str = "prazo") -> int:
 
 async def _limpar(db, *, deadline_ids=(), user_ids=()):
     for did in deadline_ids:
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE registro_id = :id"), {"id": did})
         await db.execute(text("DELETE FROM deadlines WHERE id = :id"), {"id": did})
     for uid in user_ids:

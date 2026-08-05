@@ -82,6 +82,7 @@ async def _limpar(db, client_id, case_id, user_id):
     # Ordem por FK: filhos → caso → usuário → cliente.
     await db.execute(text("DELETE FROM case_movimentos WHERE case_id = :id"), {"id": case_id})
     await db.execute(text("DELETE FROM deadlines WHERE case_id = :id"), {"id": case_id})
+    await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
     await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": user_id})
     await db.execute(text("DELETE FROM cases WHERE id = :id"), {"id": case_id})
     await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
