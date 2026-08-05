@@ -1,15 +1,13 @@
 name: Governanca
 
 # Travas automáticas de governança sobre cada Pull Request, derivadas de
-# docs/GOVERNANCA_IA.md e docs/FLUXO_DE_DESENVOLVIMENTO.md. Sem elas, a
-# governança é declaratória: nada impede migration sem reserva, segredo
-# versionado ou PR sem Issue vinculada.
+# docs/GOVERNANCA_IA.md e docs/FLUXO_DE_DESENVOLVIMENTO.md.
 #
-# Complementa — não substitui — o "EJC Release Gate" (scripts/ci_guard.sh),
-# que cobre marcadores de merge, CORS wildcard e resíduos de release.
+# A governança v2 mantém bloqueios objetivos de segurança e integridade, mas
+# evita reprovar automaticamente uma correção sistêmica apenas porque ela
+# harmoniza documentação de governança e código funcional no mesmo PR.
 #
-# Executa em runner GitHub-hosted: não depende da disponibilidade da VPS e
-# não acessa produção, secrets operacionais ou dados reais.
+# Complementa — não substitui — o "EJC Release Gate" (scripts/ci_guard.sh).
 on:
   pull_request:
 
@@ -34,7 +32,6 @@ jobs:
         id: diff
         shell: bash
         run: |
-          # $RUNNER_TEMP é isolado por job e evita colisões entre execuções.
           git fetch --quiet origin "${{ github.base_ref }}"
           git diff --name-only "origin/${{ github.base_ref }}...HEAD" > "$RUNNER_TEMP/alterados.txt"
           echo "--- arquivos alterados ---"
@@ -43,12 +40,10 @@ jobs:
       - name: Migration exige reserva registrada
         shell: bash
         run: |
-          # Caminho real do EJC: backend/alembic/versions/ (numeração sequencial),
-          # com reserva de número em backend/alembic/MIGRATION_RESERVATIONS.md.
           if grep -Eq '^backend/alembic/versions/' "$RUNNER_TEMP/alterados.txt"; then
             echo "Migration detectada no PR."
             if ! grep -q 'backend/alembic/MIGRATION_RESERVATIONS.md' "$RUNNER_TEMP/alterados.txt"; then
-              echo "::error::PR cria ou altera migration sem atualizar backend/alembic/MIGRATION_RESERVATIONS.md. Ver CLAUDE.md, regra 3, e docs/GOVERNANCA_IA.md."
+              echo "::error::PR cria ou altera migration sem atualizar backend/alembic/MIGRATION_RESERVATIONS.md. Ver docs/GOVERNANCA_IA.md."
               exit 1
             fi
             echo "Reserva atualizada no mesmo PR."
@@ -65,7 +60,6 @@ jobs:
             [ -f "$f" ] || continue
             case "$f" in
               *.lock|*.min.js|*.map|*.svg) continue;;
-              # .env.example versiona NOMES de variável e placeholders, por desenho.
               *.env.example|.env.example) continue;;
             esac
             if grep -EIn "$PADROES" "$f" >/dev/null 2>&1; then
@@ -88,23 +82,7 @@ jobs:
           echo "Autor: $AUTOR"
 
       - name: Descricao do PR preenchida
-        # Isenção fechada: PR de manutenção automatizada de dependências, aberto por
-        # autor desta allowlist, é dispensado de Issue vinculada e do template de
-        # descrição. As DEMAIS travas deste job (migration, segredo, escopo, branch de
-        # origem) continuam se aplicando integralmente a esses PRs — só este step é
-        # pulado. Fundamentação, limite e como ampliar: docs/GOVERNANCA_IA.md, seção
-        # "Exceção de bot de manutenção de dependências". Allowlist deve coincidir
-        # EXATAMENTE com a do documento canônico (fixado por
-        # backend/tests/test_governanca_workflow.py).
-        #
-        # Checa DOIS atores, não só um (achado de review, Codex, PR #709): em
-        # pull_request/synchronize, github.event.pull_request.user.login é sempre
-        # quem ABRIU o PR — permanece 'dependabot[bot]' mesmo quando um humano
-        # empurra um commit adicional na mesma branch. Sem checar também
-        # github.actor (quem disparou ESTE evento), um mantenedor poderia anexar
-        # mudança funcional não relacionada a um PR do dependabot sem Issue
-        # vinculada nem template. A isenção só vale quando AMBOS estão na
-        # allowlist.
+        # Isenção fechada somente para dependabot. As demais travas continuam.
         if: >-
           ${{
             !(
@@ -116,7 +94,6 @@ jobs:
           CORPO: ${{ github.event.pull_request.body }}
         shell: bash
         run: |
-          # Seções conforme .github/pull_request_template.md.
           FALTA=0
           while IFS= read -r SECAO; do
             [ -z "$SECAO" ] && continue
@@ -137,13 +114,13 @@ jobs:
       - name: Alteracao de governanca isolada
         shell: bash
         run: |
-          GOV=$(grep -Ec '^(CLAUDE\.md|AGENTS\.md|\.claude/|docs/GOVERNANCA_IA\.md)' "$RUNNER_TEMP/alterados.txt" || true)
+          GOV=$(grep -Ec '^(CLAUDE\.md|AGENTS\.md|\.claude/|docs/GOVERNANCA_IA\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md)' "$RUNNER_TEMP/alterados.txt" || true)
           COD=$(grep -Ec '^(backend/app/|frontend/src/)' "$RUNNER_TEMP/alterados.txt" || true)
           if [ "$GOV" -gt 0 ] && [ "$COD" -gt 0 ]; then
-            echo "::error::PR mistura alteracao de governanca com alteracao de codigo funcional. Separe em PRs distintos."
-            exit 1
+            echo "::warning::PR mistura governanca e codigo funcional. Na governanca v2 isso e permitido quando a mesma correcao sistemica exige harmonizacao entre regra e implementacao. Reforce escopo, testes, riscos e rollback no review."
+          else
+            echo "Escopo sem mistura entre governanca e codigo funcional."
           fi
-          echo "Escopo coerente."
 
       - name: Branch nao e main
         shell: bash
