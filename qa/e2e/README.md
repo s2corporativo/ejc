@@ -17,7 +17,10 @@ Validar, contra um ambiente de homologação/staging, os fluxos principais do si
 - auditoria;
 - portal;
 - mapa de módulos;
-- diagnóstico/AutoFix.
+- diagnóstico/AutoFix;
+- RBAC por papel — gestão, advogado, estagiário, financeiro, secretaria e
+  cliente_externo, cada um exercitado contra o que deveria (não só o login)
+  ser negado a ele (Issue #700).
 
 ## Proteção contra produção
 
@@ -57,6 +60,50 @@ Variáveis opcionais:
 | `EJC_E2E_STRICT` | `true` | Resposta 404/405/501/503 num passo marca **DEGRADADO** e falha a execução. `false` tolera (ambiente incompleto), mas o relatório continua registrando. |
 | `EJC_E2E_CLEANUP` | `true` | Remove (soft-delete) os recursos fictícios criados ao final. `false` preserva para inspeção manual. |
 
+### Matriz RBAC por papel (Issue #700)
+
+`EJC_TEST_EMAIL`/`EJC_TEST_PASSWORD` autenticam o papel de **gestão** (o
+mesmo login que já roda o resto da suíte). Para os demais papéis, defina o
+par `EJC_TEST_EMAIL_<PAPEL>` / `EJC_TEST_PASSWORD_<PAPEL>` com credenciais
+**fictícias de homologação** (nunca reais, nunca de produção — regra 9 da
+governança: o runner só CONSOME essas contas, não as cria):
+
+```bash
+EJC_TEST_EMAIL_ADVOGADO=... EJC_TEST_PASSWORD_ADVOGADO=... \
+EJC_TEST_EMAIL_ESTAGIARIO=... EJC_TEST_PASSWORD_ESTAGIARIO=... \
+EJC_TEST_EMAIL_FINANCEIRO=... EJC_TEST_PASSWORD_FINANCEIRO=... \
+EJC_TEST_EMAIL_SECRETARIA=... EJC_TEST_PASSWORD_SECRETARIA=... \
+EJC_TEST_EMAIL_CLIENTE_EXTERNO=... EJC_TEST_PASSWORD_CLIENTE_EXTERNO=...
+```
+
+Papel sem credencial não é pulado em silêncio: entra no relatório como
+cobertura **FALTANTE** (`nao_coberto`, `rbac_matrix.papeis_faltantes`) —
+nunca como aprovação. `cliente_externo` precisa de `client_id` vinculado no
+cadastro do usuário para os endpoints do Portal não confundirem "papel
+negado" com "cliente sem cadastro vinculado".
+
+A matriz papel × rota é **derivada do código real dos routers**
+(`qa/e2e/rbac_matrix.py`, parsing estático — não uma lista escrita à mão) a
+cada execução, incorporando o grafo REAL de `include_router()` de
+`backend/app/main.py` (alguns módulos são montados com prefixo extra além de
+`/api` — ex.: `advogado_estilo.router` sob `/api/pecas`; sem isso o path
+derivado seria espúrio). É sondada por GET contra cada papel autenticado. Uma
+célula "negada" que responde 200 — ou, quando o gate roda via `Depends(...)`
+(resolvido pelo FastAPI ANTES da validação de query), que responde 422 —
+reprova a execução nomeando o papel e a rota (`GATE RBAC FROUXO`). Login cujo
+papel retornado diverge do papel esperado pela variável de ambiente (`role`
+!= `role_key`) NUNCA conta como cobertura testada — entra como FALTANTE. Ver
+o módulo para as camadas de gate reconhecidas e as limitações documentadas.
+
+**Limitação conhecida, aberta (Issue #711):** a matriz esperada é derivada do
+MESMO código-fonte que a suíte sonda — se um `Depends(require_roles(...))`
+for enfraquecido/removido diretamente no router, a expectativa muda junto, e
+a suíte não pega essa classe específica de regressão (pega, sim, qualquer
+divergência entre o `Depends()` declarado e o comportamento real em runtime —
+é o que a prova de sabotagem via `ROLE_LEVEL` demonstra). Uma baseline
+independente, curada e versionada é a correção proposta na Issue #711; ainda
+não implementada.
+
 ## Saída
 
 O runner imprime cada etapa e grava o relatório em:
@@ -93,16 +140,16 @@ sucesso, nenhuma verificação de efeito. Regras atuais:
   404; um 200 nesses casos é falha.
 - **Cleanup idempotente** ao final (desligável por env).
 
-Também existe um teste unitário em `backend/tests/test_e2e_fictitious_matrix.py` que garante que a matriz cobre todos os módulos registrados no `module_registry`.
+Também existe um teste unitário em `backend/tests/test_e2e_fictitious_matrix.py` que garante que a matriz cobre todos os módulos registrados no `module_registry`, e `backend/tests/test_rbac_matrix.py` cobre a lógica de derivação da matriz papel × rota (`qa/e2e/rbac_matrix.py`).
 
 ## O que esta suíte não faz
 
 - Não testa pixel-perfect de UI.
 - Não substitui Playwright visual no futuro.
 - Não deve ser rodada contra produção sem autorização explícita.
-- Não cobre jornada por PAPEL (advogado/estagiário/cliente externo) nem asserts
-  diretos no banco — o AI-005 pede ambos; o que existe hoje é a verificação de
-  efeito **pela API** e as negativas de autorização acima.
+- Não cobre POST/PATCH/DELETE na matriz por papel (só GET — mutação sem
+  efeito colateral seguro fica fora da sondagem negativa; ver limitações em
+  `rbac_matrix.py`), nem asserts diretos no banco.
 
 Para inspeção manual, rode com `EJC_E2E_CLEANUP=false`: os dados ficam no
 ambiente e podem ser localizados pelo marcador `E2E-FICTICIO`.
