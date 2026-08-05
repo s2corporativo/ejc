@@ -1,0 +1,101 @@
+name: EJC Release Certification
+
+# Este workflow não acessa a VPS e não executa deploy. Ele valida o contrato
+# H01-H15 e um pacote de evidências previamente produzido e sanitizado.
+on:
+  pull_request:
+    paths:
+      - "qa/homologacao/**"
+      - "docs/RUNBOOK_CERTIFICACAO_RELEASE_EJC.md"
+      - ".github/workflows/release-certification.yml"
+  push:
+    branches: [main]
+    paths:
+      - "qa/homologacao/**"
+      - "docs/RUNBOOK_CERTIFICACAO_RELEASE_EJC.md"
+      - ".github/workflows/release-certification.yml"
+  workflow_dispatch:
+    inputs:
+      manifest_path:
+        description: "Manifesto JSON sanitizado da release"
+        required: true
+        default: "qa/homologacao/reports/release_manifest.json"
+        type: string
+      report_path:
+        description: "Relatório JSON gerado por run_homologacao.py"
+        required: true
+        default: "qa/homologacao/reports/homologacao_report.json"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ejc-release-certification-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract-tests:
+    name: Contrato da certificação
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configurar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Validar matriz H01-H15
+        run: python qa/homologacao/run_homologacao.py --validate
+
+      - name: Testar certificador
+        run: >-
+          python -m unittest discover
+          -s qa/homologacao
+          -p 'test_certificar_release.py'
+          -v
+
+  certify:
+    name: Certificar pacote real
+    if: github.event_name == 'workflow_dispatch'
+    needs: contract-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MANIFEST_PATH: ${{ inputs.manifest_path }}
+      REPORT_PATH: ${{ inputs.report_path }}
+      OUTPUT_PATH: qa/homologacao/reports/release_certification.json
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Configurar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Confirmar arquivos de evidência
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$MANIFEST_PATH"
+          test -f "$REPORT_PATH"
+
+      - name: Executar certificação bloqueante
+        run: >-
+          python qa/homologacao/certificar_release.py
+          --manifest "$MANIFEST_PATH"
+          --report "$REPORT_PATH"
+          --output "$OUTPUT_PATH"
+
+      - name: Publicar resultado sanitizado
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ejc-release-certification
+          path: qa/homologacao/reports/release_certification.json
+          if-no-files-found: error
+          retention-days: 30
