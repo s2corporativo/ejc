@@ -49,7 +49,12 @@ export type EntradaUniversalResultado = {
   };
   /** Fontes da base interna (RAG) consultadas para a análise. */
   fontes?: { titulo?: string; categoria?: string; fonte?: string }[];
-  citacoes?: { citacao?: string; tipo?: string; fonte?: string; status?: string }[];
+  citacoes?: {
+    citacao?: string;
+    tipo?: string;
+    fonte?: string;
+    status?: string;
+  }[];
   alertas_ia?: string[];
   /** Somente no navegador: mantém compatibilidade com o fluxo antigo de criação. */
   _arquivos_locais?: File[];
@@ -577,13 +582,11 @@ export default function EntradaUniversalDocumentos({
                       Citações
                     </p>
                     <ul className="mt-1 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
-                      {resultado.citacoes?.map(
-                        (citacao, index: number) => (
-                          <li key={index} className="ml-2">
-                            • {citacao.citacao}
-                          </li>
-                        ),
-                      )}
+                      {resultado.citacoes?.map((citacao, index: number) => (
+                        <li key={index} className="ml-2">
+                          • {citacao.citacao}
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 )}
