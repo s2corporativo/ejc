@@ -11,7 +11,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import { EmptyState, ErrorState, PageHeader, Spinner, StatusBadge } from "../components/UI";
+import {
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Spinner,
+  StatusBadge,
+} from "../components/UI";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 
@@ -81,7 +87,10 @@ const TYPE_CONFIG: Record<
 function isValidDateKey(value?: string): value is string {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T12:00:00`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
 }
 
 function formatDay(value: string) {
@@ -149,7 +158,10 @@ export default function AgendaDia() {
           .sort((a, b) => {
             const timeA = a.hora || "23:59";
             const timeB = b.hora || "23:59";
-            return timeA.localeCompare(timeB) || (a.titulo || "").localeCompare(b.titulo || "");
+            return (
+              timeA.localeCompare(timeB) ||
+              (a.titulo || "").localeCompare(b.titulo || "")
+            );
           });
 
         setItems(dayItems);
@@ -191,10 +203,7 @@ export default function AgendaDia() {
         title={title}
         subtitle="Prazos, tarefas, audiências e compromissos provenientes da agenda real do EJC."
         actions={
-          <Link
-            to="/atividades?view=calendario"
-            className="btn-secondary"
-          >
+          <Link to="/atividades?view=calendario" className="btn-secondary">
             <ArrowLeft className="h-4 w-4" />
             Agenda completa
           </Link>
