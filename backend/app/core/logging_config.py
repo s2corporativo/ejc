@@ -36,10 +36,11 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
-        if record.exc_info:
-            payload["exc"] = self.formatException(record.exc_info)
-        elif record.exc_text:
+        # Preferir exc_text sanitizado, que foi preenchido pelo filtro SanitizadorDeLog
+        if record.exc_text:
             payload["exc"] = record.exc_text
+        elif record.exc_info:
+            payload["exc"] = self.formatException(record.exc_info)
         # Campos estruturados passados via extra={...}.
         for chave, valor in record.__dict__.items():
             if chave not in _RESERVADOS and not chave.startswith("_"):

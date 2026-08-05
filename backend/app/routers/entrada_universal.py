@@ -237,10 +237,21 @@ async def _analisar_ia(db: AsyncSession, cu: User, *, modalidade: str | None,
     bruto = str(nucleo.get("conteudo") or "")
     parsed = _parse_json(bruto)
     # Validar que há pelo menos um campo esperado de extração com forma válida
-    extracao_valida = (
-        isinstance(parsed, dict) and
-        any(k in parsed for k in ("area", "partes", "datas", "prazo", "teses"))
-    )
+    extracao_valida = False
+    if isinstance(parsed, dict):
+        # Campos esperados do schema com seus tipos esperados
+        campos_schema = {
+            "area": (str, type(None)),
+            "partes": (dict, type(None)),
+            "datas_eventos": (list, type(None)),
+            "prazo": (dict, type(None)),
+            "matriz_vicios_teses": (list, type(None)),
+        }
+        # Verificar se há pelo menos um campo presente com tipo válido
+        extracao_valida = any(
+            k in parsed and isinstance(parsed[k], campos_schema[k])
+            for k in campos_schema
+        )
     estrutura_valida = extracao_valida
     if not extracao_valida:
         # Falha de ESTRUTURA (não de disponibilidade). O texto cru não pode ser

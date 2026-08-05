@@ -732,17 +732,15 @@ class Settings(BaseSettings):
     # — é por onde o OneDrive entra) ou "gdrive" (Google Drive). O ciclo local
     # (pg_dump + tar + Fernet) é idêntico nos dois modos.
     #
-    # PADRÃO = rclone/OneDrive por decisão do titular (2026-08-03). O caminho
-    # Google continua inteiro e testado: basta BACKUP_DESTINO=gdrive para
-    # voltar a ele, sem mexer em código.
+    # PADRÃO = gdrive (Google Drive) até que rclone/OneDrive esteja configurado
+    # em produção. Quando BACKUP_RCLONE_REMOTE for preenchido e `rclone config`
+    # for concluído, mude para BACKUP_DESTINO=rclone para usar OneDrive.
     #
-    # ATENÇÃO OPERACIONAL: com este padrão, um ambiente que NÃO tenha
-    # BACKUP_RCLONE_REMOTE definido e o `rclone config` feito passa a falhar o
-    # envio offsite. Com BACKUP_OFFSITE_OBRIGATORIO=false (default) isso vira
-    # status "parcial" com aviso grave — a prova LOCAL cifrada continua sendo
-    # feita e o deploy não trava —, mas o backup deixa de sair do VPS até a
-    # configuração ser concluída. Ver RUNBOOK_BACKUP.md.
-    BACKUP_DESTINO: str = "rclone"
+    # JUSTIFICATIVA: com rclone não configurado e BACKUP_OFFSITE_OBRIGATORIO=false,
+    # o status "parcial" mascarava perda de artifacts — cifrados em temp dir,
+    # deletados no exit do with block. Google Drive evita isso até a migração
+    # estar pronta. Ver RUNBOOK_BACKUP.md e issue #XXX.
+    BACKUP_DESTINO: str = "gdrive"
     # Remote rclone de destino quando BACKUP_DESTINO=rclone, no formato
     # "<remote>:<pasta>" (ex.: "onedrive:EJC-Backups"). Requer `rclone config`
     # feito na VPS e o binário rclone no PATH — ver runbook do backup.

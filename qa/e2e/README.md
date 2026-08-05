@@ -19,8 +19,8 @@ Validar, contra um ambiente de homologação/staging, os fluxos principais do si
 - mapa de módulos;
 - diagnóstico/AutoFix;
 - RBAC por papel — gestão, advogado, estagiário, financeiro, secretaria e
-  cliente_externo, cada um exercitado contra o que deveria (não só o login)
-  ser negado a ele (Issue #700).
+  cliente_externo. Cada papel é exercitado contra as rotas que devem ser
+  negadas a ele, não apenas no login (Issue #700).
 
 ## Proteção contra produção
 

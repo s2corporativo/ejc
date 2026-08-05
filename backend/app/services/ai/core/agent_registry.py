@@ -85,7 +85,8 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         dominios=["extracao_documental", "entrada_universal", "pacote_documental"],
         tarefa_padrao=TarefaIA.DOSSIE,
         prompt_key="analise_caso",
-        skills=_skills("build_document_context", "extract_structured_data", "retrieve_rag_sources"),
+        exige_fonte=True,
+        skills=_skills("build_document_context", "extract_structured_data", "retrieve_rag_sources", "validate_citations"),
     ),
     "LegalWritingAgent": AgenteInterno(
         nome="LegalWritingAgent",

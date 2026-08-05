@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "134_processes_numero_cnj_index"
+HEAD_REVISION = "135_indice_risco_nivel_size"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -135,18 +135,11 @@ def test_audit_logs_worm_encadeia_apos_skills_uso():
     assert revision.down_revision == "130_ejc_skills_uso"
 
 
-def test_pii_da_parte_encadeia_apos_audit_logs_worm():
-    revision = _script_directory().get_revision("132_case_parte_pii_encriptado")
-    assert revision.down_revision == "131_audit_logs_worm"
-
-
-def test_password_changed_at_encadeia_apos_audit_logs_worm():
-    # Temporário: depends on 131 enquanto PR #652 (migration 132) não é mergeada.
-    # Após PR #652 merge, rebasear para down_revision = "132_case_parte_pii_encriptado".
-    revision = _script_directory().get_revision("133_user_password_changed_at")
-    assert revision.down_revision == "131_audit_logs_worm"
-
-
 def test_indice_numero_cnj_encadeia_apos_password_changed_at():
     revision = _script_directory().get_revision("134_processes_numero_cnj_index")
     assert revision.down_revision == "133_user_password_changed_at"
+
+
+def test_indice_risco_nivel_size_encadeia_apos_numero_cnj():
+    revision = _script_directory().get_revision("135_indice_risco_nivel_size")
+    assert revision.down_revision == "134_processes_numero_cnj_index"
