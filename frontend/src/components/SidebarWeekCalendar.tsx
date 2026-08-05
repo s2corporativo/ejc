@@ -45,11 +45,7 @@ export default function SidebarWeekCalendar() {
   }, []);
 
   const weekStart = useMemo(
-    () =>
-      addWeeks(
-        startOfWeek(new Date(), { weekStartsOn: 1 }),
-        weekOffset,
-      ),
+    () => addWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), weekOffset),
     [weekOffset],
   );
   const days = useMemo(
@@ -57,7 +53,14 @@ export default function SidebarWeekCalendar() {
     [weekStart],
   );
   const activityDates = useMemo(
-    () => new Set(activities.map((item) => item.date).filter(Boolean).map(String).map(dateKey)),
+    () =>
+      new Set(
+        activities
+          .map((item) => item.date)
+          .filter(Boolean)
+          .map(String)
+          .map(dateKey),
+      ),
     [activities],
   );
 

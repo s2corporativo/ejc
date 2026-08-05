@@ -254,27 +254,29 @@ export default function DashboardPremium() {
       api.get("/agenda-eventos/", { params: { page_size: 500 } }),
       api.get("/movimentos/recentes?limit=8"),
     ])
-      .then(([dashboardResult, activitiesResult, agendaResult, movementResult]) => {
-        if (!active) return;
-        setFailed({
-          dashboard: dashboardResult.status === "rejected",
-          activities: activitiesResult.status === "rejected",
-          agenda: agendaResult.status === "rejected",
-          movements: movementResult.status === "rejected",
-        });
-        if (dashboardResult.status === "fulfilled") {
-          setDashboard(dashboardResult.value.data);
-        }
-        if (activitiesResult.status === "fulfilled") {
-          setActivities(asList(activitiesResult.value.data));
-        }
-        if (agendaResult.status === "fulfilled") {
-          setAgendaEvents(asList(agendaResult.value.data));
-        }
-        if (movementResult.status === "fulfilled") {
-          setMovements(asList(movementResult.value.data));
-        }
-      })
+      .then(
+        ([dashboardResult, activitiesResult, agendaResult, movementResult]) => {
+          if (!active) return;
+          setFailed({
+            dashboard: dashboardResult.status === "rejected",
+            activities: activitiesResult.status === "rejected",
+            agenda: agendaResult.status === "rejected",
+            movements: movementResult.status === "rejected",
+          });
+          if (dashboardResult.status === "fulfilled") {
+            setDashboard(dashboardResult.value.data);
+          }
+          if (activitiesResult.status === "fulfilled") {
+            setActivities(asList(activitiesResult.value.data));
+          }
+          if (agendaResult.status === "fulfilled") {
+            setAgendaEvents(asList(agendaResult.value.data));
+          }
+          if (movementResult.status === "fulfilled") {
+            setMovements(asList(movementResult.value.data));
+          }
+        },
+      )
       .finally(() => {
         if (active) setLoading(false);
       });
@@ -414,8 +416,8 @@ export default function DashboardPremium() {
           <span>Visão operacional do escritório</span>
           <h1>Bom trabalho, {firstName}</h1>
           <p>
-            Processos, prazos, atividades e movimentações provenientes das
-            bases reais do EJC.
+            Processos, prazos, atividades e movimentações provenientes das bases
+            reais do EJC.
           </p>
         </div>
         <Badge tone="ouro">Dashboard sem dados financeiros</Badge>
@@ -510,7 +512,9 @@ export default function DashboardPremium() {
                 return (
                   <Link
                     key={movement.id || `${title}-${index}`}
-                    to={movement.case_id ? `/casos/${movement.case_id}` : "/casos"}
+                    to={
+                      movement.case_id ? `/casos/${movement.case_id}` : "/casos"
+                    }
                     className="ejc-premium-feed__item"
                   >
                     <span className="ejc-premium-feed__icon">
@@ -583,7 +587,9 @@ export default function DashboardPremium() {
                     className="ejc-premium-agenda__item"
                   >
                     <span className="ejc-premium-agenda__date">
-                      <strong>{day ? String(day.getDate()).padStart(2, "0") : "--"}</strong>
+                      <strong>
+                        {day ? String(day.getDate()).padStart(2, "0") : "--"}
+                      </strong>
                       <small>
                         {day
                           ? day
@@ -648,8 +654,7 @@ export default function DashboardPremium() {
                     <b
                       style={{
                         width: `${Math.max(5, (area.value / maxArea) * 100)}%`,
-                        background:
-                          index % 2 === 0 ? "#c9a227" : "#101923",
+                        background: index % 2 === 0 ? "#c9a227" : "#101923",
                       }}
                     />
                   </i>
@@ -724,8 +729,8 @@ export default function DashboardPremium() {
       <div className="ejc-dashboard-premium__integrity">
         <Clock3 aria-hidden="true" />
         <span>
-          Indicadores financeiros permanecem exclusivamente no módulo
-          Financeiro e não são renderizados neste dashboard compartilhado.
+          Indicadores financeiros permanecem exclusivamente no módulo Financeiro
+          e não são renderizados neste dashboard compartilhado.
         </span>
       </div>
     </div>

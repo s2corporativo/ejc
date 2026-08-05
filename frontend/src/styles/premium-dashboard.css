@@ -50,7 +50,11 @@
   border: 1px solid rgba(201, 162, 39, 0.22);
   border-radius: 16px;
   background:
-    radial-gradient(circle at 100% 0%, rgba(201, 162, 39, 0.14), transparent 13rem),
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(201, 162, 39, 0.14),
+      transparent 13rem
+    ),
     linear-gradient(145deg, #0b141d 0%, #101a24 100%);
   box-shadow: 0 12px 26px rgba(11, 20, 29, 0.13);
   transition:
@@ -69,7 +73,11 @@
   color: #fff;
   border-color: rgba(111, 87, 17, 0.34);
   background:
-    radial-gradient(circle at 10% 15%, rgba(255, 255, 255, 0.24), transparent 11rem),
+    radial-gradient(
+      circle at 10% 15%,
+      rgba(255, 255, 255, 0.24),
+      transparent 11rem
+    ),
     linear-gradient(145deg, #d5a72a 0%, #a77e19 58%, #8f7117 100%);
 }
 
