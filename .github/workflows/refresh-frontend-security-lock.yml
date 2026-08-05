@@ -1,10 +1,15 @@
 name: One-time frontend security refresh
 
-# Workflow temporário e restrito à branch de integração. Ele existe apenas para
-# gerar um lockfile reproduzível no runner oficial, sem edição manual de hashes.
+# Workflow temporário e restrito à branch/PR de integração. Ele existe apenas
+# para gerar um lockfile reproduzível no runner oficial, sem edição manual de
+# hashes. O filtro pelo próprio arquivo impede recursão após o commit gerado.
 on:
   push:
     branches: [codex/auditoria-final-design-20260805]
+    paths:
+      - .github/workflows/refresh-frontend-security-lock.yml
+  pull_request:
+    branches: [main]
     paths:
       - .github/workflows/refresh-frontend-security-lock.yml
 
@@ -18,6 +23,7 @@ concurrency:
 jobs:
   refresh:
     name: Migrar React Router e regenerar lockfile com segurança
+    if: github.head_ref == 'codex/auditoria-final-design-20260805' || github.ref_name == 'codex/auditoria-final-design-20260805'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
