@@ -80,7 +80,11 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Formatação, lint, testes, build e auditoria
+      - name: Formatar alterações mecânicas
+        working-directory: frontend
+        run: npm run format
+
+      - name: Lint, testes, build e auditoria
         working-directory: frontend
         shell: bash
         run: |
