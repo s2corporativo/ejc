@@ -33,18 +33,19 @@ correspondente, e uma chamada montada por variável passaria invisível por essa
 trava.
 
 Revision ID: 133_user_password_changed_at
-Revises: 132_case_parte_pii_encriptado
+Revises: 131_audit_logs_worm
 Create Date: 2026-08-03
 
 Renumerada de 128 para 133 em 2026-08-05 após PR #652 ser renumerada de 131
-para 132. O down_revision foi repontado para 132_case_parte_pii_encriptado.
+para 132. Temporariamente apontado para 131_audit_logs_worm (PR #652 não mergeada
+ainda; após seu merge, rebasear para depender de 132_case_parte_pii_encriptado).
 O DDL não mudou.
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "133_user_password_changed_at"
-down_revision = "132_case_parte_pii_encriptado"
+down_revision = "131_audit_logs_worm"
 branch_labels = None
 depends_on = None
 

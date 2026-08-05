@@ -140,9 +140,11 @@ def test_pii_da_parte_encadeia_apos_audit_logs_worm():
     assert revision.down_revision == "131_audit_logs_worm"
 
 
-def test_password_changed_at_encadeia_apos_pii_da_parte():
+def test_password_changed_at_encadeia_apos_audit_logs_worm():
+    # Temporário: depends on 131 enquanto PR #652 (migration 132) não é mergeada.
+    # Após PR #652 merge, rebasear para down_revision = "132_case_parte_pii_encriptado".
     revision = _script_directory().get_revision("133_user_password_changed_at")
-    assert revision.down_revision == "132_case_parte_pii_encriptado"
+    assert revision.down_revision == "131_audit_logs_worm"
 
 
 def test_indice_numero_cnj_encadeia_apos_password_changed_at():
