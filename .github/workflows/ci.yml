@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   db-validation:
-    name: Backend — suíte completa + schema/RAG (Postgres pgvector)
+    name: Backend — suíte completa + cobertura + schema/RAG (Postgres pgvector)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -129,28 +129,35 @@ jobs:
       - name: Aplicar migrations (alembic upgrade head)
         run: python -m alembic upgrade head
 
-      - name: Testes com banco real (saída concisa e rastreável)
+      - name: Testes com banco real e cobertura mínima do backend
         run: |
           set -o pipefail
-          python -m pytest tests -q --tb=short --maxfail=25 2>&1 | tee ../backend-test-summary.log
+          python -m pytest tests -q --tb=short --maxfail=25 \
+            --cov=app \
+            --cov-report=term-missing:skip-covered \
+            --cov-report=xml:../backend-coverage.xml \
+            --cov-fail-under=65 \
+            2>&1 | tee ../backend-test-summary.log
 
       - name: Publicar resumo backend
         if: always()
         run: |
           {
-            echo "## Backend — resumo dos testes"
+            echo "## Backend — resumo dos testes e cobertura"
             echo
             echo '```text'
             tail -n 250 ../backend-test-summary.log 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Anexar log backend
+      - name: Anexar log e cobertura backend
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: backend-test-summary
-          path: backend-test-summary.log
+          name: backend-test-and-coverage
+          path: |
+            backend-test-summary.log
+            backend-coverage.xml
           if-no-files-found: warn
           retention-days: 7
 
@@ -183,7 +190,7 @@ jobs:
         run: python -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0
 
   frontend-build:
-    name: Frontend — testes + typecheck + build
+    name: Frontend — testes + auditoria alta + typecheck + build
     runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
@@ -241,8 +248,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Auditoria bloqueante de dependências Node (crítico)
-        run: npm audit --audit-level=critical
+      - name: Auditoria bloqueante de dependências Node (alta e crítica)
+        run: npm audit --audit-level=high
 
       - name: Typecheck + build
         run: |
