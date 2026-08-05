@@ -39,7 +39,11 @@ import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import SecurityMenu from "./SecurityMenu";
 import ErrorBoundary from "./ErrorBoundary";
 import UserAvatar from "./UserAvatar";
-import { Button, Tooltip, cn } from "./UI";
+import SidebarWeek from "./SidebarWeek";
+import OfficeClock from "./header/OfficeClock";
+import DailyMessage from "./header/DailyMessage";
+import OfficeLinks from "./header/OfficeLinks";
+import { Tooltip, cn } from "./UI";
 import { THEME_LABELS, useThemeStore } from "../stores/theme";
 import { useAuth } from "../stores/auth";
 import { usePreferencesStore } from "../stores/preferences";
@@ -55,7 +59,6 @@ import {
 } from "../lib/novoCaso";
 import api, { logout } from "../lib/api";
 
-// Logomarca HD com fundo transparente (nunca a versão JPG com fundo)
 const BRAND_LOGO = "/brand/logo-hd.png";
 
 export default function Layout() {
@@ -74,31 +77,16 @@ export default function Layout() {
     () => getHelpModuleKey(location.pathname),
     [location.pathname],
   );
+
   const [notifCount, setNotifCount] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
-  // Modo privacidade (reuniões/compartilhamento de tela): borra o conteúdo
-  // principal sem sair da sessão. Persistido para sobreviver a refresh, mas
-  // NUNCA nasce ligado sem escolha explícita do usuário.
+  const [notifs, setNotifs] = useState<any[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [novoCasoOpen, setNovoCasoOpen] = useState(false);
+  const novoCasoRef = useRef<HTMLDivElement>(null);
   const [privacyMode, setPrivacyMode] = useState(
     () => localStorage.getItem("ejc_privacy_mode") === "true",
   );
-  useEffect(() => {
-    document.documentElement.classList.toggle("ejc-privacy-mode", privacyMode);
-    localStorage.setItem("ejc_privacy_mode", String(privacyMode));
-    // O dropdown de notificações e o palette (Ctrl+K) vivem FORA do <main>
-    // borrado e exibem títulos de casos/prazos — com o modo ativo, fecha o
-    // dropdown e suprime a abertura do palette para não vazar conteúdo.
-    if (privacyMode) setNotifOpen(false);
-    return () => {
-      document.documentElement.classList.remove("ejc-privacy-mode");
-    };
-  }, [privacyMode]);
-  const [notifs, setNotifs] = useState<any[]>([]);
-  const [menuOpen, setMenuOpen] = useState(false);
-  // Atalho "Novo caso" do cabeçalho: menu com os dois modos de abertura
-  // (analisar documento | cadastro manual), ambos na rota /casos/novo.
-  const [novoCasoOpen, setNovoCasoOpen] = useState(false);
-  const novoCasoRef = useRef<HTMLDivElement>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try {
       return JSON.parse(localStorage.getItem("ejc_menu_groups") || "{}");
@@ -107,31 +95,14 @@ export default function Layout() {
     }
   });
 
-  const persistGroups = (next: Record<string, boolean>) => {
-    try {
-      localStorage.setItem("ejc_menu_groups", JSON.stringify(next));
-    } catch {
-      // Preferência de interface não deve interromper a navegação.
-    }
-  };
-
-  const toggleGroup = (group: string) =>
-    setOpenGroups((previous) => {
-      const next = { ...previous, [group]: previous[group] === false };
-      persistGroups(next);
-      return next;
-    });
-
-  // Modo Essencial: os módulos avançados moram sob uma única seção "Mais /
-  // Avançado" RECOLHIDA por padrão (default fechado → só abre com `=== true`).
-  const MAIS_KEY = "__mais__";
-  const maisOpen = openGroups[MAIS_KEY] === true;
-  const toggleMais = () =>
-    setOpenGroups((previous) => {
-      const next = { ...previous, [MAIS_KEY]: previous[MAIS_KEY] !== true };
-      persistGroups(next);
-      return next;
-    });
+  useEffect(() => {
+    document.documentElement.classList.toggle("ejc-privacy-mode", privacyMode);
+    localStorage.setItem("ejc_privacy_mode", String(privacyMode));
+    if (privacyMode) setNotifOpen(false);
+    return () => {
+      document.documentElement.classList.remove("ejc-privacy-mode");
+    };
+  }, [privacyMode]);
 
   useEffect(() => {
     const load = () =>
@@ -143,11 +114,10 @@ export default function Layout() {
         })
         .catch(() => {});
     load();
-    const timer = setInterval(load, 60_000);
-    return () => clearInterval(timer);
+    const timer = window.setInterval(load, 60_000);
+    return () => window.clearInterval(timer);
   }, []);
 
-  // Fecha o menu "Novo caso" ao clicar fora ou pressionar Esc.
   useEffect(() => {
     if (!novoCasoOpen) return;
     const onPointerDown = (event: PointerEvent) => {
@@ -174,10 +144,6 @@ export default function Layout() {
       ),
     [user?.role, lifecycleSettings],
   );
-
-  // FRENTE 1 (Modo Essencial): `visible` já vem ordenado por grupo/order.
-  // Particiona em essenciais (lista plana no topo, sempre visível) e resto
-  // (agrupado dentro de "Mais / Avançado"). Ordem preservada da fonte.
   const essentials = useMemo(
     () => visible.filter((item) => item.essential),
     [visible],
@@ -186,7 +152,6 @@ export default function Layout() {
     () => visible.filter((item) => !item.essential),
     [visible],
   );
-
   const groups = useMemo(() => {
     const map = new Map<string, ModuleRoute[]>();
     for (const item of resto) {
@@ -195,10 +160,30 @@ export default function Layout() {
     return Array.from(map.entries());
   }, [resto]);
 
-  // Item de navegação reutilizado por essenciais e pela seção "Mais": quando
-  // expandido mostra `label` + `description` (subtítulo discreto, line-clamp-1)
-  // e `title` nativo; quando recolhido, só o ícone com Tooltip (comportamento
-  // atual do rail estreito).
+  const persistGroups = (next: Record<string, boolean>) => {
+    try {
+      localStorage.setItem("ejc_menu_groups", JSON.stringify(next));
+    } catch {
+      // A navegação continua mesmo sem persistência local.
+    }
+  };
+
+  const toggleGroup = (group: string) =>
+    setOpenGroups((previous) => {
+      const next = { ...previous, [group]: previous[group] === false };
+      persistGroups(next);
+      return next;
+    });
+
+  const MAIS_KEY = "__mais__";
+  const maisOpen = openGroups[MAIS_KEY] === true;
+  const toggleMais = () =>
+    setOpenGroups((previous) => {
+      const next = { ...previous, [MAIS_KEY]: previous[MAIS_KEY] !== true };
+      persistGroups(next);
+      return next;
+    });
+
   const renderNavItem = (item: ModuleRoute) => {
     const { path, label, description, icon: Icon, end } = item;
     const content = (
@@ -210,8 +195,8 @@ export default function Layout() {
         title={collapsed ? undefined : description}
         className={({ isActive }) =>
           cn(
-            "sidebar-nav-item group flex items-center gap-2.5 rounded-lg px-3 text-[13px] font-medium transition-all duration-150",
-            collapsed ? "h-9 justify-center px-0" : "py-1.5",
+            "ejc-sidebar-nav-item group flex items-center gap-3 rounded-xl px-3 text-[12px] font-medium transition-all duration-150",
+            collapsed ? "h-11 justify-center px-0" : "py-2",
             isActive && "is-active",
           )
         }
@@ -221,7 +206,7 @@ export default function Layout() {
           <span className="min-w-0 flex-1">
             <span className="block truncate leading-tight">{label}</span>
             {description && (
-              <span className="mt-0.5 block line-clamp-1 text-[11px] font-normal leading-tight text-slate-400">
+              <span className="mt-0.5 block line-clamp-1 text-[10px] font-normal leading-tight text-slate-500">
                 {description}
               </span>
             )}
@@ -240,18 +225,22 @@ export default function Layout() {
 
   const sidebarWidth = collapsed ? "md:w-[5.25rem]" : "md:w-72";
   const contentMargin = collapsed ? "md:ml-[5.25rem]" : "md:ml-72";
+  const headerOffset = collapsed ? "md:left-[5.25rem]" : "md:left-72";
 
   return (
-    <div className="min-h-screen bg-canvas text-slate-900">
-      {/* Palette desmontado sob privacidade: a busca global lista partes/
-          CPF/processos e renderiza fora da área borrada. */}
+    <div className="ejc-shell-root">
       {!privacyMode && <CommandPalette />}
 
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white">
-        <div className="flex h-16 items-center gap-3 px-3 md:px-6">
+      <header
+        className={cn(
+          "ejc-shell-header fixed inset-x-0 top-0 z-40 transition-all",
+          headerOffset,
+        )}
+      >
+        <div className="flex h-full items-center gap-2 px-3 md:gap-3 md:px-5">
           <button
             type="button"
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden"
+            className="ejc-header-icon-button flex h-10 w-10 items-center justify-center rounded-xl md:hidden"
             onClick={() => setMenuOpen(true)}
             aria-label="Abrir menu"
           >
@@ -260,51 +249,56 @@ export default function Layout() {
 
           <Link
             to="/"
-            className="flex shrink-0 items-center px-1 md:hidden"
+            className="flex h-11 w-20 shrink-0 items-center justify-center rounded-xl bg-white px-2 md:hidden"
             aria-label="De Paula Teixeira - EJC"
           >
             <img
               src={BRAND_LOGO}
               alt="De Paula Teixeira Sociedade de Advogados"
-              className="brand-logo-img h-12 w-auto max-w-[240px] md:h-14 md:max-w-[300px]"
+              className="max-h-9 w-auto object-contain"
             />
           </Link>
 
-          <div className="flex min-w-0 flex-1 justify-center px-1">
+          <div className="hidden xl:block">
+            <OfficeClock />
+          </div>
+
+          <div className="hidden min-w-0 flex-1 2xl:flex 2xl:justify-center">
+            <DailyMessage />
+          </div>
+
+          <div className="flex min-w-0 flex-1 justify-center px-1 xl:flex-none xl:w-[300px] 2xl:w-[360px]">
             <button
               type="button"
               onClick={() => window.dispatchEvent(new Event("ejc-open-search"))}
-              className="flex h-10 w-full max-w-xl items-center gap-3 rounded-full bg-slate-900/[0.04] px-4 text-left text-sm text-slate-500 transition-all duration-150 hover:bg-primary-50 dark:bg-white/[0.06] dark:text-slate-400 dark:hover:bg-white/[0.09]"
+              className="ejc-shell-search flex w-full items-center gap-3 px-3 text-left text-xs"
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden truncate sm:inline">
-                Buscar processos por parte, CPF ou número…
+                Buscar processo, parte ou CPF…
               </span>
               <span className="truncate sm:hidden">Buscar…</span>
-              <kbd className="ml-auto hidden rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 shadow-sm sm:block">
+              <kbd className="ml-auto hidden rounded-md px-1.5 py-0.5 text-[9px] sm:block">
                 Ctrl K
               </kbd>
             </button>
           </div>
 
-          {/* DECISÃO: o atalho do header abre o wizard guiado de Novo Caso
-              (/casos/novo) com dois modos de entrada (analisar documento |
-              cadastro manual), selecionados por query param `modo` — sem
-              criar rota nova. */}
+          <OfficeLinks />
+
           {canCreateCase && (
-            <div ref={novoCasoRef} className="relative inline-flex">
-              <Button
+            <div ref={novoCasoRef} className="relative hidden md:inline-flex">
+              <button
                 type="button"
-                size="md"
-                icon={<Plus className="h-4 w-4" />}
                 onClick={() => setNovoCasoOpen((value) => !value)}
                 aria-haspopup="menu"
                 aria-expanded={novoCasoOpen}
-                aria-label="Novo caso"
+                className="ejc-header-new-case inline-flex h-9 items-center gap-2 rounded-xl px-3 text-[11px] font-bold"
               >
-                <span className="hidden lg:inline">Novo caso</span>
-                <ChevronDown className="hidden h-4 w-4 lg:block" />
-              </Button>
+                <Plus className="h-4 w-4" />
+                <span className="hidden 2xl:inline">Novo caso</span>
+                <ChevronDown className="hidden h-3.5 w-3.5 2xl:block" />
+              </button>
               {novoCasoOpen && (
                 <div
                   role="menu"
@@ -323,7 +317,7 @@ export default function Layout() {
                         Analisar documento e preencher
                       </span>
                       <span className="block text-[11px] text-slate-400">
-                        Recomendado — a IA extrai os dados do arquivo
+                        A IA extrai os dados para sua conferência
                       </span>
                     </span>
                   </Link>
@@ -339,7 +333,7 @@ export default function Layout() {
                         Cadastrar manualmente
                       </span>
                       <span className="block text-[11px] text-slate-400">
-                        Preencho os campos do caso por conta própria
+                        Preenchimento direto dos campos do caso
                       </span>
                     </span>
                   </Link>
@@ -348,19 +342,21 @@ export default function Layout() {
             </div>
           )}
 
-          <HelpButton moduleKey={moduleKey} />
+          <div className="hidden lg:block">
+            <HelpButton moduleKey={moduleKey} />
+          </div>
 
           <button
             type="button"
             onClick={() => setPrivacyMode((value) => !value)}
             title={
               privacyMode
-                ? "Modo privacidade ativo — clique para exibir o conteúdo"
-                : "Ativar modo privacidade (borra o conteúdo para reuniões/compartilhamento de tela)"
+                ? "Desativar modo privacidade"
+                : "Ativar modo privacidade"
             }
             className={cn(
-              "icon-btn hidden sm:flex",
-              privacyMode && "bg-primary-50 text-primary-700",
+              "ejc-header-icon-button hidden h-9 w-9 items-center justify-center rounded-xl sm:flex",
+              privacyMode && "text-amber-200",
             )}
             aria-pressed={privacyMode}
             aria-label={
@@ -379,8 +375,8 @@ export default function Layout() {
           <button
             type="button"
             onClick={cycleTheme}
-            title={`Tema: ${THEME_LABELS[theme]} — clique para alternar`}
-            className="icon-btn hidden sm:flex"
+            title={`Tema: ${THEME_LABELS[theme]}`}
+            className="ejc-header-icon-button hidden h-9 w-9 items-center justify-center rounded-xl lg:flex"
             aria-label={`Alternar tema (atual: ${THEME_LABELS[theme]})`}
           >
             {theme === "light" ? (
@@ -396,26 +392,24 @@ export default function Layout() {
             <button
               type="button"
               onClick={() => !privacyMode && setNotifOpen((value) => !value)}
-              className="icon-btn relative"
+              className="ejc-header-icon-button relative flex h-9 w-9 items-center justify-center rounded-xl"
               aria-label="Notificações"
             >
               <Bell className="h-4 w-4" />
               {notifCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-600 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-600 px-1 text-[9px] font-semibold text-white ring-2 ring-[#0b111b]">
                   {notifCount}
                 </span>
               )}
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-float animate-pop">
+              <div className="absolute right-0 mt-3 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-900 shadow-float animate-pop">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                  <div className="text-sm font-semibold text-slate-950">
-                    Notificações
-                  </div>
+                  <div className="text-sm font-semibold">Notificações</div>
                   <button
                     type="button"
-                    className="text-xs font-medium text-primary-600 hover:text-primary-700"
+                    className="text-xs font-medium text-primary-700"
                     onClick={() =>
                       api
                         .post("/notifications/ler-todas")
@@ -444,7 +438,7 @@ export default function Layout() {
                           !notification.lida && "bg-primary-50/40",
                         )}
                       >
-                        <div className="text-sm font-medium text-slate-900">
+                        <div className="text-sm font-medium">
                           {notification.titulo}
                         </div>
                         <div className="mt-1 line-clamp-2 text-xs text-slate-500">
@@ -458,14 +452,16 @@ export default function Layout() {
             )}
           </div>
 
-          <SecurityMenu user={user} />
+          <div className="ejc-security-menu-dark hidden sm:block">
+            <SecurityMenu user={user} />
+          </div>
         </div>
       </header>
 
       {menuOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-30 bg-slate-950/45 md:hidden"
+          className="fixed inset-0 z-[45] bg-slate-950/65 md:hidden"
           aria-label="Fechar menu"
           onClick={() => setMenuOpen(false)}
         />
@@ -473,15 +469,15 @@ export default function Layout() {
 
       <aside
         className={cn(
-          "sidebar-bronze fixed bottom-0 left-0 top-16 z-40 flex-col transition-all",
+          "ejc-shell-sidebar fixed bottom-0 left-0 top-0 z-50 flex-col transition-all",
           sidebarWidth,
           menuOpen ? "flex w-72 md:flex" : "hidden md:flex",
         )}
       >
         <div
           className={cn(
-            "relative flex min-h-20 items-center justify-center border-b border-slate-200 px-3",
-            collapsed && "px-2",
+            "ejc-brand-tile relative flex items-center justify-center px-4",
+            collapsed && "mx-2 px-2",
           )}
         >
           <Link
@@ -493,8 +489,8 @@ export default function Layout() {
               src={BRAND_LOGO}
               alt="De Paula Teixeira Sociedade de Advogados"
               className={cn(
-                "brand-logo-img w-auto object-contain",
-                collapsed ? "h-8 max-w-12" : "h-14 max-w-[220px]",
+                "w-auto",
+                collapsed ? "h-9 max-w-12" : "h-16 max-w-[230px]",
               )}
             />
           </Link>
@@ -520,19 +516,18 @@ export default function Layout() {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin">
-          {/* Essenciais — dia a dia do advogado, sempre visíveis no topo. */}
+        <nav className="ejc-sidebar-scroll flex-1 overflow-y-auto px-3 py-3">
           {essentials.length > 0 && (
             <div className="mb-4">
               {!collapsed && (
-                <div className="sidebar-group-label mb-2 px-2 text-2xs font-semibold uppercase tracking-[0.2em]">
+                <div className="ejc-sidebar-section-title mb-2 px-2 text-[9px] font-bold uppercase tracking-[0.22em]">
                   Essencial
                 </div>
               )}
               <div
                 className={cn(
                   "space-y-1",
-                  !collapsed && "sidebar-tree ml-3 border-l pl-2",
+                  !collapsed && "ejc-sidebar-tree ml-2 border-l pl-2",
                 )}
               >
                 {essentials.map((item) => renderNavItem(item))}
@@ -540,10 +535,6 @@ export default function Layout() {
             </div>
           )}
 
-          {/* Mais / Avançado — todo o restante dos módulos.
-              Rail estreito (collapsed): lista plana de ícones+tooltip, sempre
-              visível (mantém o comportamento atual). Expandido: uma única
-              seção colapsável, RECOLHIDA por padrão, com os grupos dentro. */}
           {resto.length > 0 &&
             (collapsed ? (
               <div className="space-y-1">
@@ -554,7 +545,7 @@ export default function Layout() {
                 <button
                   type="button"
                   onClick={toggleMais}
-                  className="sidebar-group-label mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] transition-colors"
+                  className="ejc-sidebar-advanced-button mb-2 flex w-full items-center justify-between px-2 text-[9px] font-bold uppercase tracking-[0.2em]"
                   aria-expanded={maisOpen}
                   aria-controls="sidebar-mais"
                 >
@@ -575,7 +566,7 @@ export default function Layout() {
                           <button
                             type="button"
                             onClick={() => toggleGroup(group)}
-                            className="sidebar-group-label mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] transition-colors"
+                            className="ejc-sidebar-advanced-button mb-2 flex w-full items-center justify-between px-2 text-[9px] font-bold uppercase tracking-[0.18em]"
                             aria-expanded={isOpen}
                           >
                             <span>{group}</span>
@@ -587,7 +578,7 @@ export default function Layout() {
                             />
                           </button>
                           {isOpen && (
-                            <div className="space-y-1 sidebar-tree ml-3 border-l pl-2">
+                            <div className="ejc-sidebar-tree ml-2 space-y-1 border-l pl-2">
                               {items.map((item) => renderNavItem(item))}
                             </div>
                           )}
@@ -600,15 +591,17 @@ export default function Layout() {
             ))}
         </nav>
 
-        <div className="border-t border-slate-200 p-3">
+        <SidebarWeek collapsed={collapsed} />
+
+        <div className="ejc-sidebar-footer border-t p-3">
           {!collapsed && (
-            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-inset ring-slate-200">
-              <ShieldCheck className="h-4 w-4 shrink-0 text-[#D4AF37]" />
+            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-white/[0.04] px-3 py-2.5 ring-1 ring-inset ring-white/[0.06]">
+              <ShieldCheck className="h-4 w-4 shrink-0 text-[#e5ce7f]" />
               <div className="min-w-0">
-                <div className="truncate text-[11px] font-semibold text-slate-700">
+                <div className="truncate text-[10px] font-semibold text-slate-200">
                   Seguro &amp; Conforme
                 </div>
-                <div className="truncate text-[10px] text-slate-400">
+                <div className="truncate text-[9px] text-slate-500">
                   Dados protegidos — LGPD
                 </div>
               </div>
@@ -618,17 +611,17 @@ export default function Layout() {
             to="/configuracoes"
             title="Abrir preferências"
             className={cn(
-              "flex items-center gap-3 rounded-xl bg-slate-50 p-2",
+              "ejc-sidebar-user flex items-center gap-3 rounded-xl p-2",
               collapsed && "justify-center",
             )}
           >
             <UserAvatar user={user} size="md" />
             {!collapsed && (
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-semibold text-slate-700">
+                <div className="truncate text-xs font-semibold text-slate-100">
                   {user?.full_name || "Usuário"}
                 </div>
-                <div className="truncate text-[11px] capitalize text-slate-400">
+                <div className="truncate text-[10px] capitalize text-slate-500">
                   {user?.role || ""}
                 </div>
               </div>
@@ -638,7 +631,7 @@ export default function Layout() {
             type="button"
             onClick={logout}
             className={cn(
-              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-danger-600/10 hover:text-danger-600",
+              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-xs font-medium text-slate-400 transition-colors hover:bg-danger-600/15 hover:text-red-300",
               collapsed && "justify-center px-0",
             )}
             aria-label="Sair"
@@ -651,16 +644,14 @@ export default function Layout() {
 
       <div
         className={cn(
-          "relative z-10 flex min-h-screen flex-col pt-16 transition-all",
+          "relative z-10 flex min-h-screen flex-col pt-16 transition-all md:pt-[76px]",
           contentMargin,
         )}
       >
-        {/* Aviso global: IA não ativada nesta instalação (dispensável). */}
         <IaStatusBanner />
-        {/* Modo Caso: faixa fina de contexto do caso ativo (discreta). */}
         <CaseContextBar />
-        <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
-          <div className="mx-auto w-full max-w-[1440px] animate-rise">
+        <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-6 md:py-6 xl:px-7">
+          <div className="mx-auto w-full max-w-[1540px] animate-rise">
             <ErrorBoundary key={location.pathname}>
               <ModuleLifecycleGate>
                 <Outlet />
