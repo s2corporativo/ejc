@@ -18,7 +18,7 @@ permissions:
 
 concurrency:
   group: one-time-frontend-security-refresh
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   refresh:
