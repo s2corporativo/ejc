@@ -62,19 +62,12 @@ jobs:
           npm install --package-lock-only --ignore-scripts
           npm audit fix --package-lock-only --ignore-scripts
 
-      - name: Alinhar toolchain de build e CI
+      - name: Alinhar imagem de build do frontend
         shell: bash
         run: |
           set -euo pipefail
           sed -i 's/FROM node:20-slim AS build/FROM node:22.22-slim AS build/' frontend/Dockerfile
-          sed -i 's/Instalar Node 20/Instalar Node 22.22/g; s/node-version: "20"/node-version: "22.22.0"/g' .github/workflows/ci.yml .github/workflows/continuity-ui-gates.yml
-          sed -i 's/node-version: 22$/node-version: "22.22.0"/' .github/workflows/frontend-ci.yml
           grep -q 'FROM node:22.22-slim AS build' frontend/Dockerfile
-          ! grep -n -E 'node-version: "20"|FROM node:20' \
-            .github/workflows/ci.yml \
-            .github/workflows/continuity-ui-gates.yml \
-            .github/workflows/frontend-ci.yml \
-            frontend/Dockerfile
 
       - name: Instalação reproduzível
         working-directory: frontend
@@ -102,10 +95,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add frontend/package.json frontend/package-lock.json frontend/Dockerfile \
-            frontend/src frontend/tests \
-            .github/workflows/ci.yml \
-            .github/workflows/frontend-ci.yml \
-            .github/workflows/continuity-ui-gates.yml
+            frontend/src frontend/tests
           if git diff --cached --quiet; then
             echo "Nenhuma alteração necessária"
             exit 0
