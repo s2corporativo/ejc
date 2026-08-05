@@ -81,9 +81,11 @@ jobs:
           echo "Nenhum segredo detectado."
 
       - name: Autor do PR
+        env:
+          AUTOR: ${{ github.event.pull_request.user.login }}
         shell: bash
         run: |
-          echo "Autor: ${{ github.event.pull_request.user.login }}"
+          echo "Autor: $AUTOR"
 
       - name: Descricao do PR preenchida
         # Isenção fechada: PR de manutenção automatizada de dependências, aberto por

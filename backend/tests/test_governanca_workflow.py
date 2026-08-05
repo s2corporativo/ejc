@@ -67,12 +67,17 @@ def _steps() -> dict[str, str]:
 
 def _allowlist_workflow() -> list[str]:
     bloco = _steps()[STEP_COM_EXCECAO]
-    m = re.search(r"fromJSON\('(\[[^']*\])'\)", bloco)
-    assert m, (
+    achados = re.findall(r"fromJSON\('(\[[^']*\])'\)", bloco)
+    assert achados, (
         f"step {STEP_COM_EXCECAO!r} não usa contains(fromJSON('[...]'), autor) "
         "na condição if: — isenção não implementada como allowlist fechada"
     )
-    return json.loads(m.group(1))
+    listas = [json.loads(bruto) for bruto in achados]
+    assert all(lista == listas[0] for lista in listas), (
+        "as allowlists da condição if: divergem entre si (autor do PR vs "
+        f"github.actor): {listas!r}"
+    )
+    return listas[0]
 
 
 def _allowlist_doc() -> list[str]:
@@ -140,6 +145,17 @@ def test_condicao_nao_usa_padrao_amplo_de_bot():
     condicao = _condicao_if()
     assert "endswith" not in condicao
     assert "fromJSON" in condicao and "contains" in condicao
+
+
+def test_condicao_e_negada_para_nao_isentar_pr_humano():
+    """A isenção é a NEGAÇÃO da allowlist: o step roda para todo PR, menos o do
+    bot. Sem o `!`, a polaridade inverte e todo PR humano passaria a pular a
+    trava de Issue/template."""
+    condicao = _condicao_if()
+    assert re.search(r"!\s*\(", condicao), (
+        "a condição if: não nega a allowlist — sem `!(...)` o step de descrição "
+        "rodaria SÓ para o bot e todo PR humano escaparia da trava"
+    )
 
 
 def test_isencao_nao_vaza_para_as_outras_travas():

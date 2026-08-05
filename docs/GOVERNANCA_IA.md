@@ -276,7 +276,8 @@ cada PR. Isso é o oposto do que a trava existe para proteger.
 ### O que a exceção faz — e o que não faz
 
 O step "Descricao do PR preenchida" é **pulado** quando `github.event.pull_request.user.login`
-está na allowlist fechada abaixo. Nenhum outro step do job é afetado: migration sem reserva,
+(autor do PR) **e** `github.actor` (ator que disparou o evento) estão, os dois, na allowlist
+fechada abaixo. Nenhum outro step do job é afetado: migration sem reserva,
 segredo versionado, mistura de escopo (governança + código) e branch de origem `main`/`master`
 continuam bloqueando PR de bot exatamente como bloqueiam PR humano. A exceção **não** dispensa
 essas travas — dispensa só a exigência de Issue vinculada e de template de descrição, porque
@@ -293,10 +294,12 @@ condição `if:` do step "Descricao do PR preenchida") e a allowlist deste docum
 coincidir exatamente** — nome por nome. `backend/tests/test_governanca_workflow.py` fixa esse
 contrato: falha se um arquivo ganhar uma entrada que o outro não tem.
 
-A condição verifica `github.event.pull_request.user.login` contra essa lista explícita — não
-um padrão amplo como "termina em `[bot]`". Um padrão amplo isentaria qualquer bot de qualquer
-origem, inclusive um bot malicioso ou mal configurado que abrisse PR contra o repositório; a
-allowlist fechada isenta só quem está nomeado.
+A condição verifica `github.event.pull_request.user.login` e `github.actor` contra essa lista
+explícita — não um padrão amplo como "termina em `[bot]`". Exigir os dois impede que um commit
+humano empurrado numa branch do dependabot (evento `synchronize`) herde a isenção. Um padrão
+amplo isentaria qualquer bot de qualquer origem, inclusive um bot malicioso ou mal configurado
+que abrisse PR contra o repositório; a allowlist fechada isenta só quem está nomeado nos dois
+campos.
 
 ### Limite
 
