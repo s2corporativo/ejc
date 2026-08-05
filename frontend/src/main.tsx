@@ -8,6 +8,9 @@ import "./styles/site-system.css";
 // Polimento específico da página Financeiro (escopo .executive-workspace).
 // Não duplica o site-system e mantém o padrão branco+ouro (aba ativa escura é exceção permitida).
 import "./styles/workspace-executive.css";
+// Camada final e isolada do AppShell premium preto, branco e dourado.
+// Mantém regras de negócio, rotas e componentes funcionais intactos.
+import "./styles/premium-shell.css";
 
 initTheme();
 
