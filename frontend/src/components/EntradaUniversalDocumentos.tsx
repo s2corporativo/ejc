@@ -577,11 +577,13 @@ export default function EntradaUniversalDocumentos({
                       Citações
                     </p>
                     <ul className="mt-1 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
-                      {resultado.citacoes?.map((citacao: string, index: number) => (
-                        <li key={index} className="ml-2">
-                          • {citacao}
-                        </li>
-                      ))}
+                      {resultado.citacoes?.map(
+                        (citacao: string, index: number) => (
+                          <li key={index} className="ml-2">
+                            • {citacao}
+                          </li>
+                        ),
+                      )}
                     </ul>
                   </div>
                 )}
