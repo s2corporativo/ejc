@@ -505,8 +505,8 @@ export default function EntradaUniversalDocumentos({
           )}
           <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
             <p className="flex items-center gap-2 text-xs font-semibold text-slate-900 dark:text-white">
-              <ShieldCheck className="h-4 w-4 text-primary-600" /> Procedência da
-              leitura por IA
+              <ShieldCheck className="h-4 w-4 text-primary-600" /> Procedência
+              da leitura por IA
             </p>
             {resultado.ia?.disponivel === false ? (
               <p className="mt-2 text-[11px] text-warn-800">
@@ -537,9 +537,9 @@ export default function EntradaUniversalDocumentos({
                 </div>
                 {resultado.ia?.estrutura_valida === false && (
                   <p className="mt-2 flex items-start gap-1 text-[11px] font-medium text-danger-700">
-                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> A IA não
-                    devolveu leitura estruturada: área, partes, datas, prazo e
-                    teses não foram preenchidos. Preencha o caso manualmente.
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> A IA
+                    não devolveu leitura estruturada: área, partes, datas, prazo
+                    e teses não foram preenchidos. Preencha o caso manualmente.
                   </p>
                 )}
                 <p className="mt-2 text-[11px] font-medium text-slate-700 dark:text-slate-200">
@@ -557,8 +557,8 @@ export default function EntradaUniversalDocumentos({
                   </ul>
                 ) : (
                   <p className="mt-1 text-[11px] text-warn-800">
-                    Nenhuma fonte da base interna respaldou esta leitura — ela se
-                    apoia apenas nos documentos enviados. Confira toda norma,
+                    Nenhuma fonte da base interna respaldou esta leitura — ela
+                    se apoia apenas nos documentos enviados. Confira toda norma,
                     prazo ou precedente antes de usar.
                   </p>
                 )}
