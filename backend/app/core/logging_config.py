@@ -62,7 +62,8 @@ def setup_logging(*, json_logs: bool, level: str = "INFO") -> None:
     # em cada logger, para alcançar também o que bibliotecas de terceiros
     # emitem — que é justamente o que ninguém revisa. Sem isto, o
     # `log_sanitizer` só protegia as chamadas em que alguém lembrou de usá-lo.
-    handler.addFilter(SanitizadorDeLog())
+    sanitizador = SanitizadorDeLog()
+    handler.addFilter(sanitizador)
     if json_logs:
         handler.setFormatter(JsonFormatter())
     else:
@@ -72,3 +73,10 @@ def setup_logging(*, json_logs: bool, level: str = "INFO") -> None:
     root = logging.getLogger()
     root.setLevel(nivel)
     root.handlers[:] = [handler]  # substitui (evita handler duplicado no reload)
+
+    # Aplicar sanitizador também aos handlers uvicorn.access e uvicorn.error,
+    # que podem emitir URLs com tokens sem passar pelo handler raiz.
+    for logger_name in ("uvicorn.access", "uvicorn.error"):
+        logger = logging.getLogger(logger_name)
+        logger.propagate = True  # propagar para raiz (que já tem sanitizador)
+        logger.handlers[:] = []  # remover handlers locais, usar a cadeia da raiz

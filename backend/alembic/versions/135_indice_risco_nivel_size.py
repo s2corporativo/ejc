@@ -22,5 +22,24 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    from sqlalchemy import text
+    conn = op.get_bind()
+
+    # Pré-verificação: detectar valores que não cabem em VARCHAR(10)
+    historico_valores = conn.execute(
+        text("SELECT COUNT(*) FROM indice_risco_historico WHERE LENGTH(nivel) > 10")
+    ).scalar() or 0
+
+    cases_valores = conn.execute(
+        text("SELECT COUNT(*) FROM cases WHERE LENGTH(risco_nivel) > 10")
+    ).scalar() or 0
+
+    if historico_valores > 0 or cases_valores > 0:
+        raise RuntimeError(
+            f"Reversão bloqueada: indice_risco_historico={historico_valores} valores, "
+            f"cases={cases_valores} valores com >10 caracteres. "
+            "Preserve os dados sem truncamento; migração reversa exige aprovação."
+        )
+
     op.alter_column("indice_risco_historico", "nivel", type_=sa.String(10), existing_type=sa.String(15))
     op.alter_column("cases", "risco_nivel", type_=sa.String(10), existing_type=sa.String(15))

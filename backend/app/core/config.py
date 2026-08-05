@@ -737,9 +737,9 @@ class Settings(BaseSettings):
     # for concluído, mude para BACKUP_DESTINO=rclone para usar OneDrive.
     #
     # JUSTIFICATIVA: com rclone não configurado e BACKUP_OFFSITE_OBRIGATORIO=false,
-    # o status "parcial" mascarava perda de artifacts — cifrados em temp dir,
-    # deletados no exit do with block. Google Drive evita isso até a migração
-    # estar pronta. Ver RUNBOOK_BACKUP.md e issue #XXX.
+    # o status "parcial" mascarava perda de artefatos — cifrados no diretório
+    # temporário e deletados na saída do bloco `with`. Google Drive evita isso
+    # até a migração estar pronta. Ver RUNBOOK_BACKUP.md e a demanda correspondente.
     BACKUP_DESTINO: str = "gdrive"
     # Remote rclone de destino quando BACKUP_DESTINO=rclone, no formato
     # "<remote>:<pasta>" (ex.: "onedrive:EJC-Backups"). Requer `rclone config`
@@ -1075,6 +1075,40 @@ class Settings(BaseSettings):
                 "cifradas com ela serão perdidas no próximo restart; defina "
                 "uma chave estável no .env para persistir.",
                 stacklevel=2,
+            )
+        # ── IA — validar configuração de retry em transientes ────────────────
+        # AI_RETRY_MAX_TENTATIVAS e AI_RETRY_BACKOFF_BASE_S devem estar dentro
+        # de limites razoáveis e definidamente numéricos. Sem isto, valores
+        # inválidos (negativos, NaN, infinito) só falham em runtime, na primeira
+        # tentativa de retry. Falhar no boot preserva a promessa "deploy rápido,
+        # dados confiáveis".
+        import math
+        if self.AI_RETRY_MAX_TENTATIVAS < 0:
+            raise ValueError(
+                f"AI_RETRY_MAX_TENTATIVAS não pode ser negativo "
+                f"({self.AI_RETRY_MAX_TENTATIVAS}). Use 0 para desligar retry, "
+                f"ou um valor entre 1 e 10 para habilitar."
+            )
+        if self.AI_RETRY_MAX_TENTATIVAS > 10:
+            raise ValueError(
+                f"AI_RETRY_MAX_TENTATIVAS muito alto ({self.AI_RETRY_MAX_TENTATIVAS}). "
+                f"Máximo 10 para evitar backoff excessivo e timeout de requisições HTTP."
+            )
+        if not isinstance(self.AI_RETRY_BACKOFF_BASE_S, (int, float)) or math.isnan(self.AI_RETRY_BACKOFF_BASE_S):
+            raise ValueError(
+                f"AI_RETRY_BACKOFF_BASE_S inválido ({self.AI_RETRY_BACKOFF_BASE_S}). "
+                f"Deve ser um número decimal, não NaN."
+            )
+        if self.AI_RETRY_BACKOFF_BASE_S < 0:
+            raise ValueError(
+                f"AI_RETRY_BACKOFF_BASE_S não pode ser negativo "
+                f"({self.AI_RETRY_BACKOFF_BASE_S}). Use 0 para sem backoff, "
+                f"ou um valor positivo em segundos (ex.: 0.5)."
+            )
+        if math.isinf(self.AI_RETRY_BACKOFF_BASE_S):
+            raise ValueError(
+                f"AI_RETRY_BACKOFF_BASE_S não pode ser infinito. "
+                f"Use um valor finito em segundos (ex.: 0.5 a 5.0)."
             )
         return self
 
