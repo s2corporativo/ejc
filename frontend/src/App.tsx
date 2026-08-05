@@ -30,6 +30,7 @@ const RecuperarSenha = lazy(() => import("./pages/RecuperarSenha"));
 const RedefinirSenha = lazy(() => import("./pages/RedefinirSenha"));
 const TrocarSenha = lazy(() => import("./pages/TrocarSenha"));
 const Configurar2FA = lazy(() => import("./pages/Configurar2FA"));
+const AgendaDia = lazy(() => import("./pages/AgendaDia"));
 const PortalDashboard = lazy(() => import("./pages/portal/PortalDashboard"));
 const PortalCasos = lazy(() => import("./pages/portal/PortalCasos"));
 const PortalCasoDetalhe = lazy(
@@ -155,6 +156,10 @@ export default function App() {
                   />
                 );
               })}
+
+              {/* Subrota contextual da agenda semanal: usa os mesmos dados e
+                  permanece sob os guards globais de equipe. */}
+              <Route path="/atividades/dia/:date" element={<AgendaDia />} />
 
               {/* Subrota contextual da Governança da IA: deliberadamente não é
                   um novo módulo/menu; permanece protegida pelos mesmos papéis. */}
