@@ -267,7 +267,7 @@ A trava `Governança — travas de PR` (`.github/workflows/governanca.yml`, step
 PR preenchida") reprova todo PR cujo corpo não referencie uma Issue (`#<numero>`) e não
 preencha as cinco seções do `.github/pull_request_template.md`. Essa regra é correta para PR
 humano — é o que sustenta "uma Issue → uma branch → um PR" (seção 3). Mas o **dependabot**
-não sabe preencher o modelo de descrição nem abrir Issue: ele abre PR de atualização de dependência com
+não sabe preencher template nem abrir Issue: ele abre PR de atualização de dependência com
 corpo gerado automaticamente. Sem exceção, **todo** PR do dependabot reprova essa trava
 incondicionalmente — inclusive atualização de dependência de **segurança** — e, com a
 proteção de branch ativa, nada disso é mesclável até alguém reescrever o corpo à mão em
@@ -276,14 +276,14 @@ cada PR. Isso é o oposto do que a trava existe para proteger.
 ### O que a exceção faz — e o que não faz
 
 O step "Descricao do PR preenchida" é **pulado** quando `github.event.pull_request.user.login`
-(autor do PR) **e** `github.actor` (ator que disparou o evento) estão, os dois, na lista de autores
+(autor do PR) **e** `github.actor` (ator que disparou o evento) estão, os dois, na allowlist
 fechada abaixo. Nenhum outro step do job é afetado: migration sem reserva,
 segredo versionado, mistura de escopo (governança + código) e branch de origem `main`/`master`
 continuam bloqueando PR de bot exatamente como bloqueiam PR humano. A exceção **não** dispensa
-essas travas — dispensa só a exigência de Issue vinculada e de modelo de descrição, porque
+essas travas — dispensa só a exigência de Issue vinculada e de template de descrição, porque
 só essa exigência pressupõe um autor que escreve texto de PR.
 
-### Lista de autores (fechada)
+### Allowlist (fechada)
 
 ```json
 ["dependabot[bot]"]
