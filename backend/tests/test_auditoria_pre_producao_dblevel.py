@@ -71,6 +71,7 @@ async def test_refresh_usuario_soft_deletado_401():
         finally:
             await db.rollback()
             await db.execute(text("DELETE FROM refresh_tokens WHERE user_id = :id"), {"id": uid})
+            await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
             await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
             await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
             await db.commit()

@@ -134,6 +134,7 @@ def _payload_existente(client_id: str) -> RaioXConverterRequest:
 
 async def _limpar(db, *, analise_ids=(), case_ids=(), client_ids=(), user_ids=()):
     for analise_id in analise_ids:
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(
             text("DELETE FROM audit_logs WHERE entidade = 'raio_x_analises' AND registro_id = :id"),
             {"id": analise_id},
@@ -159,6 +160,7 @@ async def _limpar(db, *, analise_ids=(), case_ids=(), client_ids=(), user_ids=()
         await db.execute(text("DELETE FROM cases WHERE client_id = :id"), {"id": client_id})
         await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": client_id})
     for user_id in user_ids:
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": user_id})
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
     await db.commit()

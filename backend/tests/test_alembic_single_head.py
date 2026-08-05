@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "131_case_parte_pii_encriptado"
+HEAD_REVISION = "134_processes_numero_cnj_index"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -130,10 +130,21 @@ def test_ejc_skills_uso_encadeia_apos_publicacao_explicita():
     assert revision.down_revision == "127_publicacao_explicita"
 
 
-def test_pii_da_parte_encadeia_apos_skills_uso():
-    # P1-5 da auditoria integral: conclui em `case_partes` o cutover C6/LGPD que
-    # as migrations 061 → 112 fizeram só em `clients`. Nasceu como 127 encadeada
-    # na 126; com o merge da 127_publicacao_explicita e da 130_ejc_skills_uso na
-    # `main`, foi renumerada para 131 e repontada para o head vigente.
-    revision = _script_directory().get_revision("131_case_parte_pii_encriptado")
+def test_audit_logs_worm_encadeia_apos_skills_uso():
+    revision = _script_directory().get_revision("131_audit_logs_worm")
     assert revision.down_revision == "130_ejc_skills_uso"
+
+
+def test_pii_da_parte_encadeia_apos_audit_logs_worm():
+    revision = _script_directory().get_revision("132_case_parte_pii_encriptado")
+    assert revision.down_revision == "131_audit_logs_worm"
+
+
+def test_password_changed_at_encadeia_apos_pii_da_parte():
+    revision = _script_directory().get_revision("133_user_password_changed_at")
+    assert revision.down_revision == "132_case_parte_pii_encriptado"
+
+
+def test_indice_numero_cnj_encadeia_apos_password_changed_at():
+    revision = _script_directory().get_revision("134_processes_numero_cnj_index")
+    assert revision.down_revision == "133_user_password_changed_at"

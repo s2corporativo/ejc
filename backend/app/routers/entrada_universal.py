@@ -67,6 +67,68 @@ def _role_value(user: User) -> str:
     return getattr(user.role, "value", user.role)
 
 
+def _fechar_json_truncado(texto: str) -> str | None:
+    """Fecha as estruturas abertas de um JSON cortado no meio.
+
+    Devolve None quando o corte caiu DENTRO de uma string ou de um escape (aí
+    não há fechamento honesto possível) ou quando há fechamento desbalanceado.
+    """
+    pilha: list[str] = []
+    em_string = escape = False
+    for ch in texto:
+        if escape:
+            escape = False
+            continue
+        if em_string:
+            if ch == "\\":
+                escape = True
+            elif ch == '"':
+                em_string = False
+            continue
+        if ch == '"':
+            em_string = True
+        elif ch in "{[":
+            pilha.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if not pilha or pilha[-1] != ch:
+                return None
+            pilha.pop()
+    if em_string or escape:
+        return None
+    return texto + "".join(reversed(pilha))
+
+
+def _reparar_json_truncado(bruto: str) -> dict[str, Any] | None:
+    """Recupera o máximo possível de um JSON interrompido pelo teto de tokens.
+
+    Tenta o texto inteiro e, em seguida, cortes sucessivos nos últimos
+    separadores (`,`/`}`/`]`), descartando o valor incompleto da cauda antes de
+    fechar a pilha. O número de tentativas é limitado — reparo é rede de
+    segurança, não substituto de orçamento de tokens adequado.
+    """
+    inicio = bruto.find("{")
+    if inicio < 0:
+        return None
+    texto = bruto[inicio:]
+    cortes = [len(texto)]
+    for i in range(len(texto) - 1, 0, -1):
+        if texto[i] in ",}]":
+            cortes.append(i + 1 if texto[i] in "}]" else i)
+            if len(cortes) > 60:
+                break
+    for corte in cortes:
+        candidato = _fechar_json_truncado(texto[:corte].rstrip().rstrip(","))
+        if not candidato:
+            continue
+        try:
+            valor = json.loads(candidato)
+        except Exception:
+            continue
+        if isinstance(valor, dict):
+            return valor
+    return None
+
+
 def _parse_json(texto: str) -> dict[str, Any] | None:
     if not texto:
         return None
@@ -74,14 +136,19 @@ def _parse_json(texto: str) -> dict[str, Any] | None:
         value = json.loads(texto)
         return value if isinstance(value, dict) else None
     except Exception:
-        match = re.search(r"\{.*\}", texto, re.DOTALL)
-        if not match:
-            return None
+        pass
+    match = re.search(r"\{.*\}", texto, re.DOTALL)
+    if match:
         try:
             value = json.loads(match.group(0))
-            return value if isinstance(value, dict) else None
+            if isinstance(value, dict):
+                return value
         except Exception:
-            return None
+            pass
+    # Resposta cortada no meio (teto de tokens / stop do provedor): o regex
+    # acima não fecha o objeto e o parse falha. Tenta o reparo antes de
+    # declarar a estrutura perdida.
+    return _reparar_json_truncado(texto)
 
 
 async def _acesso_batch(db: AsyncSession, cu: User, batch_id: str) -> DocumentIntakeBatch:
@@ -153,21 +220,45 @@ async def _analisar_ia(db: AsyncSession, cu: User, *, modalidade: str | None,
         f"{_SCHEMA_IA}\n\nDOSSIÊ:\n{dossie[:36000]}"
     )
     try:
+        # `document_extraction` (DocumentExtractionAgent → TarefaIA.DOSSIE) e não
+        # `document_analysis`: este último resolve DocumentAgent/TarefaIA.RESUMO,
+        # cujo teto de 900 tokens corta o JSON do schema acima no meio. Sem
+        # estrutura, área/partes/prazo/teses chegavam vazios à tela.
         nucleo = await orchestrator.run(
-            db=db, user=cu, task_type="document_analysis", domain=f"entrada_universal:{modalidade or 'geral'}",
+            db=db, user=cu, task_type="document_extraction", domain=f"entrada_universal:{modalidade or 'geral'}",
             mensagem=prompt, case_id=case_id, usar_rag=True, nivel_inteligencia="alto",
         )
-        bruto = str(nucleo.get("conteudo") or "")
-        parsed = _parse_json(bruto) or {"resumo_executivo": {"fatos": bruto[:4000]}}
-        parsed.update({"fontes": nucleo.get("fontes", []), "citacoes": nucleo.get("citacoes", []),
-                       "alertas_nucleo": nucleo.get("alertas", []), "modelo": nucleo.get("modelo"),
-                       "provider": nucleo.get("provider"), "log_id": nucleo.get("log_id"),
-                       "requer_revisao_humana": True})
-        return parsed
     except Exception as exc:
         logger.warning("Análise do lote pelo núcleo falhou: %s", exc)
         return {"alertas": ["A interpretação por IA ficou indisponível; a extração determinística foi preservada."],
-                "requer_revisao_humana": True}
+                "requer_revisao_humana": True, "estrutura_valida": False, "ia_disponivel": False}
+
+    bruto = str(nucleo.get("conteudo") or "")
+    parsed = _parse_json(bruto)
+    # Validar que há pelo menos um campo esperado de extração com forma válida
+    extracao_valida = (
+        isinstance(parsed, dict) and
+        any(k in parsed for k in ("area", "partes", "datas", "prazo", "teses"))
+    )
+    estrutura_valida = extracao_valida
+    if not extracao_valida:
+        # Falha de ESTRUTURA (não de disponibilidade). O texto cru não pode ser
+        # devolvido em `resumo_executivo.fatos`: o pré-preenchimento do caso lê
+        # esse campo e gravava a resposta bruta do modelo como se fosse fato
+        # extraído do documento. Fica em campo próprio, rotulado, e a tela avisa.
+        parsed = {
+            "texto_bruto_ia": bruto[:4000],
+            "alertas": ["A IA não devolveu JSON válido: a leitura estruturada "
+                        "(área, partes, datas, prazo, teses) não foi preenchida. "
+                        "A extração determinística e os originais foram preservados."],
+        }
+    parsed.update({"fontes": nucleo.get("fontes", []), "citacoes": nucleo.get("citacoes", []),
+                   "alertas_nucleo": nucleo.get("alertas", []), "modelo": nucleo.get("modelo"),
+                   "provider": nucleo.get("provider"), "log_id": nucleo.get("log_id"),
+                   "sem_base_verificavel": bool(nucleo.get("sem_base_verificavel", False)),
+                   "requer_revisao_humana": True, "estrutura_valida": estrutura_valida,
+                   "ia_disponivel": True})
+    return parsed
 
 
 @router.get("/meta")
@@ -232,7 +323,14 @@ async def ingerir_arquivos_lote(
                 item.extraction_status = "concluido" if meta_extracao.get("texto") else "sem_texto"
                 item.page_count = int(meta_extracao.get("page_count") or 0)
                 item.extraction_meta, item.classification = meta_extracao, classificacao
-                doc.ocr_text, doc.tipo = meta_extracao.get("texto") or None, classificacao.get("tipo")
+                doc.ocr_text = meta_extracao.get("texto") or None
+                # Só a chave CANÔNICA do catálogo entra em Document.tipo. Antes
+                # gravava-se o rótulo interno da regra local ("outro_documento",
+                # "sentenca_acordao"), que não existe em document_types_master —
+                # o seletor da Central não reconhecia e o filtro de pendentes não
+                # via o documento. Sem correspondência canônica o tipo fica NULO
+                # (= pendente de classificação humana), que é o estado honesto.
+                doc.tipo = classificacao.get("tipo_catalogo")
                 doc.descricao = f"Entrada Universal — lote {batch.id}; confiança média {meta_extracao.get('confianca_media', 0):.0%}"
             except Exception as exc:
                 logger.warning("Extração falhou para %s: %s", virtual["nome"], exc)
@@ -309,6 +407,21 @@ async def processar(
             "dados_bancarios": analise_ia.get("dados_bancarios") or {},
             "pacote": manifesto_pacote(modalidade, prontidao), "texto_consolidado": dossie,
             "revisao_obrigatoria": True,
+            # Rastreabilidade da leitura por IA no TOPO da resposta (mesmo padrão
+            # de /defesas-revisoes/analisar): sem isto, modelo, provedor, fontes
+            # RAG e id do AILog ficavam sepultados em `analise_ia` e nenhuma tela
+            # conseguia mostrar de onde veio a conclusão apresentada ao advogado.
+            "ia": {
+                "disponivel": bool(analise_ia.get("ia_disponivel", False)),
+                "estrutura_valida": bool(analise_ia.get("estrutura_valida", False)),
+                "modelo": analise_ia.get("modelo"),
+                "provider": analise_ia.get("provider"),
+                "ai_log_id": analise_ia.get("log_id"),
+                "sem_base_verificavel": bool(analise_ia.get("sem_base_verificavel", False)),
+            },
+            "fontes": analise_ia.get("fontes") or [],
+            "citacoes": analise_ia.get("citacoes") or [],
+            "alertas_ia": list(analise_ia.get("alertas") or []) + list(analise_ia.get("alertas_nucleo") or []),
             "aviso": "Originais preservados no GED. OCR, classificação, prazos e estratégia exigem revisão humana.",
         }
         batch.status, batch.nivel_prontidao = "concluido", prontidao["nivel"]

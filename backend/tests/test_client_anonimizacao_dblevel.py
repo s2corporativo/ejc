@@ -49,6 +49,7 @@ async def _criar_executor(db) -> str:
 
 async def _limpar_executor(db, executor_id: str):
     # audit_logs do executor primeiro (FK), depois o usuário.
+    await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
     await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": executor_id})
     await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": executor_id})
 
