@@ -78,8 +78,7 @@ export default function ImportarDocumento({
       },
       // Só a chave canônica do catálogo — o rótulo interno da regra local
       // ("outro_documento") não existe no seletor de tipos do GED.
-      _tipo_documento:
-        principal?.classification?.tipo_catalogo || undefined,
+      _tipo_documento: principal?.classification?.tipo_catalogo || undefined,
       _arquivo_original: resultado._arquivos_locais?.[0],
       _entrada_universal_batch_id: resultado.batch_id,
       _extracao: {
