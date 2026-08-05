@@ -25,6 +25,8 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
+from ._audit_utils import expurgar_audit_por_registro
+
 pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_DB_TESTS"),
     reason="requer PostgreSQL com migrations (RUN_DB_TESTS=1)",
@@ -54,8 +56,7 @@ async def _inserir_log_cru(db, log_id: str) -> None:
 async def _apagar_via_bypass(db, log_id: str) -> None:
     """Limpeza de teste pela via privilegiada. NÃO é a implementação de
     expurgo da #582 — só evita deixar lixo na base usada pelos testes."""
-    await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
-    await db.execute(text("DELETE FROM audit_logs WHERE id = :id"), {"id": log_id})
+    await expurgar_audit_por_registro(db, "id = :id", {"id": log_id})
     await db.commit()
 
 
