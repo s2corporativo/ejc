@@ -28,6 +28,7 @@ from app.core.auth_middleware import (  # noqa: E402
 from app.core.security import ROLE_LEVEL as BACKEND_ROLE_LEVEL  # noqa: E402
 
 ROUTERS_DIR = ROOT / "backend" / "app" / "routers"
+MAIN_PY = ROOT / "backend" / "app" / "main.py"
 
 
 # ── O espelho não pode divergir do original ──────────────────────────────────
@@ -328,3 +329,109 @@ def test_selecionar_amostra_get_inclui_ancoras_de_controle():
     caminhos = {g.path for g in amostra}
     assert "/api/cases/" in caminhos
     assert "/api/users/me" in caminhos
+
+
+# ── Achado #1 do review do PR #708: prefixo real de include_router() ────────
+
+
+def test_router_mount_overrides_encontra_os_tres_casos_reais():
+    """`app/main.py` monta a maioria dos routers só com `prefix=API`, mas
+    `precedentes_jurisprudencia`, `advogado_estilo` e `datajud_intelligence`
+    recebem um prefixo EXTRA (Onda 3 §4.1) — exatamente o caso que o review
+    do PR #708 apontou como gerador de 404 espúrio."""
+    overrides = rm.router_mount_overrides(MAIN_PY)
+    assert overrides["advogado_estilo"] == "/pecas"
+    assert overrides["precedentes_jurisprudencia"] == "/jurisprudencia-externa"
+    assert overrides["datajud_intelligence"] == "/casos"
+    # Router comum (prefix=API, sem sufixo) não deve ganhar sufixo indevido.
+    assert overrides.get("clients", "") == ""
+
+
+def test_discover_gates_deriva_o_path_real_de_advogado_estilo():
+    """Exemplo LITERAL do comentário do review: `advogado_estilo.router` é
+    montado sob `API + '/pecas'` (`backend/app/main.py`), então sua rota
+    real é `/api/pecas/advogado-estilo/me` — não `/api/advogado-estilo/me`,
+    que o parser produzia antes desta correção (e não existe no backend)."""
+    gates = rm.discover_gates(ROUTERS_DIR)
+    caminhos = {(g.method, g.path) for g in gates}
+    assert ("GET", "/api/pecas/advogado-estilo/me") in caminhos
+    assert ("GET", "/api/advogado-estilo/me") not in caminhos
+
+
+def test_discover_gates_deriva_path_de_router_side_effect_antigo():
+    """Os outros dois casos de Onda 3 §4.1: `precedentes_jurisprudencia` sob
+    `/jurisprudencia-externa` e `datajud_intelligence` sob `/casos`."""
+    gates = rm.discover_gates(ROUTERS_DIR)
+    caminhos = {(g.method, g.path) for g in gates}
+    assert any(p.startswith("/api/jurisprudencia-externa/precedentes") for _, p in caminhos)
+    assert any(p.startswith("/api/casos/") and "andamentos" in p for _, p in caminhos)
+
+
+def test_router_mount_overrides_e_falha_aberta_sem_main_py():
+    """Sem `main.py` legível, o override fica vazio — `discover_gates` cai de
+    volta no comportamento anterior a esta correção (só prefixo local),
+    nunca em erro nem em path mais restritivo do que antes."""
+    assert rm.router_mount_overrides(Path("/caminho/que/nao/existe/main.py")) == {}
+
+
+# ── Achado #3 do review do PR #708: 422 só é inconclusivo fora de Depends() ──
+
+
+def test_via_depends_true_para_gate_de_assinatura():
+    """`require_admin`/`require_roles` em `Depends(...)` de assinatura rodam
+    ANTES da validação de query do FastAPI — `via_depends` precisa refletir
+    isso para `run_fictitious_smoke.py` não tratar um 422 como inconclusivo
+    nesse caso (achado #3)."""
+    gates = rm.discover_gates(ROUTERS_DIR)
+    por_rota = {(g.method, g.path): g for g in gates}
+    admin = por_rota[("GET", "/api/users/")]
+    assert admin.via_depends is True
+
+
+def test_via_depends_false_para_checagem_no_corpo_do_handler():
+    """`environmental.py` (via `requer_advogado(cu)` chamado NO CORPO) e
+    `centro_custos.py::consolidado_geral` (checagem inline no corpo) só
+    executam DEPOIS que o FastAPI já validou path/query — um 422 aqui É
+    inconclusivo de verdade, `via_depends` precisa ser False."""
+    gates = rm.discover_gates(ROUTERS_DIR)
+    por_rota = {(g.method, g.path): g for g in gates}
+    advogado = por_rota[("GET", "/api/environmental/")]
+    assert advogado.via_depends is False
+    centro_custos = por_rota[("GET", "/api/centro-custos/consolidado")]
+    assert centro_custos.via_depends is False
+
+
+def test_via_depends_true_para_gate_de_router_inteiro():
+    """`dependencies=[Depends(...)]` do ROUTER inteiro também é Depends() —
+    roda antes da validação de query de toda rota do arquivo, mesmo quando a
+    rota em si não declara Depends próprio (`jurimetria_extra.py`)."""
+    gates = rm.discover_gates(ROUTERS_DIR)
+    alvo = next((g for g in gates if g.method == "GET" and g.path == "/api/jurimetria/ext/stats"), None)
+    assert alvo is not None
+    assert alvo.via_depends is True
+
+
+def test_combinar_gates_local_membership_e_conservador_sem_depends_dos_dois_lados():
+    """Intersecção de dois `local_membership` (rota + router) só é
+    `via_depends=True` quando o lado da ROTA também vem de `Depends()` — se
+    a rota nega só pelo corpo, um papel negado poderia estourar 422 antes de
+    alcançar o `raise`, então tratar como conclusivo esconderia esse caso."""
+    rota = ("local_membership", ["secretaria"], rm.ROLE_LEVEL["secretaria"])
+    router = ("local_membership", ["secretaria", "financeiro"], rm.ROLE_LEVEL["financeiro"])
+    combinado, via_depends = rm._combinar_gates(rota, False, router)
+    assert combinado[0] == "local_membership"
+    assert via_depends is False
+
+    combinado2, via_depends2 = rm._combinar_gates(rota, True, router)
+    assert via_depends2 is True
+
+
+def test_combinar_gates_router_vence_e_e_sempre_via_depends():
+    """Quando o gate do ROUTER decide sozinho (rota="nenhum") ou vence por
+    min_level, o resultado é sempre `via_depends=True` — `dependencies=[...]`
+    do router só existe via `Depends()` por construção."""
+    nenhum = ("nenhum", [], 1)
+    router_admin = ("require_admin", ["admin"], rm.ROLE_LEVEL["admin"])
+    combinado, via_depends = rm._combinar_gates(nenhum, False, router_admin)
+    assert combinado == router_admin
+    assert via_depends is True

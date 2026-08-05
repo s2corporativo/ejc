@@ -84,10 +84,25 @@ negado" com "cliente sem cadastro vinculado".
 
 A matriz papel × rota é **derivada do código real dos routers**
 (`qa/e2e/rbac_matrix.py`, parsing estático — não uma lista escrita à mão) a
-cada execução, e sondada por GET contra cada papel autenticado. Uma célula
-"negada" que responde 200 reprova a execução nomeando o papel e a rota
-(`GATE RBAC FROUXO`). Ver o módulo para as camadas de gate reconhecidas e as
-limitações documentadas.
+cada execução, incorporando o grafo REAL de `include_router()` de
+`backend/app/main.py` (alguns módulos são montados com prefixo extra além de
+`/api` — ex.: `advogado_estilo.router` sob `/api/pecas`; sem isso o path
+derivado seria espúrio). É sondada por GET contra cada papel autenticado. Uma
+célula "negada" que responde 200 — ou, quando o gate roda via `Depends(...)`
+(resolvido pelo FastAPI ANTES da validação de query), que responde 422 —
+reprova a execução nomeando o papel e a rota (`GATE RBAC FROUXO`). Login cujo
+papel retornado diverge do papel esperado pela variável de ambiente (`role`
+!= `role_key`) NUNCA conta como cobertura testada — entra como FALTANTE. Ver
+o módulo para as camadas de gate reconhecidas e as limitações documentadas.
+
+**Limitação conhecida, aberta (Issue #711):** a matriz esperada é derivada do
+MESMO código-fonte que a suíte sonda — se um `Depends(require_roles(...))`
+for enfraquecido/removido diretamente no router, a expectativa muda junto, e
+a suíte não pega essa classe específica de regressão (pega, sim, qualquer
+divergência entre o `Depends()` declarado e o comportamento real em runtime —
+é o que a prova de sabotagem via `ROLE_LEVEL` demonstra). Uma baseline
+independente, curada e versionada é a correção proposta na Issue #711; ainda
+não implementada.
 
 ## Saída
 

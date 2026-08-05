@@ -127,6 +127,16 @@ class RouteGate:
     min_level: int  # nível mínimo REAL exigido — é isto que decide, não allowed_roles
     source_file: str
     source_line: int
+    # True quando o gate DECISIVO (o que resultou em min_level/gate_kind acima,
+    # após combinar rota+router) é resolvido via `Depends(...)` — de assinatura
+    # OU de `dependencies=[...]` do router — e portanto roda ANTES da validação
+    # de query do FastAPI. False quando o gate só existe DENTRO do corpo do
+    # handler (checagem inline, ou chamada a um helper local que não passa por
+    # Depends()) — nesse caso um 422 por query faltante pode chegar ANTES do
+    # `raise 403`, e a rota nunca prova nada sobre RBAC para aquele papel.
+    # Decide o achado #3 do review do PR #708: só gate via_depends=True pode
+    # tratar um 422 em célula "negada" como bypass real (run_fictitious_smoke.py).
+    via_depends: bool = True
 
     def permite(self, role: str) -> bool:
         if self.gate_kind == "local_membership":
@@ -209,21 +219,36 @@ def _resolver_gate_de_dependencia(
     return None
 
 
-def _combinar_gates(rota: GateInfo, do_router: GateInfo | None) -> GateInfo:
+def _combinar_gates(
+    rota: GateInfo, rota_via_depends: bool, do_router: GateInfo | None
+) -> tuple[GateInfo, bool]:
     """AND lógico entre o gate da ROTA e o gate do ROUTER inteiro — a
     requisição real precisa passar pelos DOIS. Sem rota própria, o do router
     vale sozinho; dois `local_membership` combinam por INTERSECÇÃO (AND
     exato); nos demais casos usa o de MAIOR min_level como aproximação
-    (o mais exigente decide)."""
+    (o mais exigente decide).
+
+    Devolve também `via_depends`: o gate do ROUTER (`dependencies=[...]`) É
+    SEMPRE via `Depends()` por construção (só é extraído por
+    `_resolver_gate_de_dependencia`, que só reconhece `Depends(...)`) — roda
+    antes da validação de query de QUALQUER rota do arquivo. Quando ele
+    decide sozinho (rota="nenhum") ou vence por min_level, `via_depends` é
+    True. Na intersecção de dois `local_membership`, um papel pode ser negado
+    só pelo lado da ROTA (body, não Depends) — nesse caso a negação real só
+    aconteceria DEPOIS da validação de query, então a combinação herda
+    `rota_via_depends` (conservador: só True se os DOIS lados forem
+    Depends())."""
     if do_router is None or do_router[0] in ("nenhum", "indeterminado"):
-        return rota
+        return rota, rota_via_depends
     if rota[0] == "nenhum":
-        return do_router
+        return do_router, True
     if rota[0] == "local_membership" and do_router[0] == "local_membership":
         inter = [r for r in rota[1] if r in do_router[1]]
         level = min((ROLE_LEVEL.get(r, 0) for r in inter), default=0) if inter else 999
-        return ("local_membership", inter, level)
-    return rota if rota[2] >= do_router[2] else do_router
+        return ("local_membership", inter, level), rota_via_depends
+    if rota[2] >= do_router[2]:
+        return rota, rota_via_depends
+    return do_router, True
 
 
 def _join(prefix: str, subpath: str) -> str:
@@ -605,40 +630,164 @@ def _gate_from_function(
     constants: dict[str, list[str]],
     dep_registry: dict[str, GateInfo],
     aliases: dict[str, str] | None = None,
-) -> GateInfo:
-    """Retorna (gate_kind, allowed_roles, min_level), tentando nesta ordem:
-    1) Depends() reconhecido/resolvido na assinatura;
+) -> tuple[GateInfo, bool]:
+    """Retorna ((gate_kind, allowed_roles, min_level), via_depends), tentando
+    nesta ordem:
+    1) Depends() reconhecido/resolvido na assinatura — `via_depends=True`:
+       o FastAPI resolve TODA sub-dependência (`Depends(...)`) ANTES de
+       validar os parâmetros (path/query) da PRÓPRIA rota, então um `raise
+       403` aqui sempre chega antes de um 422 de query faltante;
     2) auto-checagem da PRÓPRIA função — membership/nível inline, OU um
        helper booleano chamado com `if not _helper(cu): raise 403`
        (`dep_registry[fn.name]`, computado por `_analisar_helpers_locais`
        para TODA função do módulo, não só as decoradas como rota — cobre
-       tanto handlers com checagem embutida quanto helpers dedicados);
+       tanto handlers com checagem embutida quanto helpers dedicados) —
+       `via_depends=False`: isto roda DENTRO do corpo do handler, só depois
+       que o FastAPI já validou path/query — um 422 de query pode mascarar
+       este `raise 403` para QUALQUER papel;
     3) chamada, no CORPO, a `requer_advogado(...)` ou a um helper local
        DIFERENTE já conhecido (ex.: handler que chama `_require_admin_socio(cu)`,
-       cujo PRÓPRIO corpo tem o `raise`, não o do handler);
+       cujo PRÓPRIO corpo tem o `raise`, não o do handler) — `via_depends=False`
+       pelo mesmo motivo do item 2;
     4) "nenhum" — qualquer autenticado passa (cliente_externo tratado à
-       parte pelo confinamento do AuthMiddleware)."""
+       parte pelo confinamento do AuthMiddleware) — `via_depends=False`
+       (não há gate nenhum para "chegar antes" de coisa alguma)."""
     found = _find_gate_in_signature(fn, constants, dep_registry, aliases)
     if found and found[0] != "indeterminado":
-        return found
+        return found, True
 
     auto = dep_registry.get(fn.name)
     if auto:
-        return auto
+        return auto, False
 
     chamada = _find_helper_call_gate(
         fn.body, {**dep_registry, "requer_advogado": ("requer_advogado", ["advogado"], ROLE_LEVEL["advogado"])}
     )
     if chamada:
-        return chamada
+        return chamada, False
 
     if found and found[0] == "indeterminado":
-        return found
-    return "nenhum", [], 1  # qualquer autenticado (piso = cliente_externo, tratado à parte)
+        return found, True
+    return ("nenhum", [], 1), False  # qualquer autenticado (piso = cliente_externo, tratado à parte)
 
 
-def discover_gates(routers_dir: Path) -> list[RouteGate]:
-    """Varre `backend/app/routers/*.py` e deriva o gate de cada rota."""
+# ── Grafo real de include_router() em app/main.py ────────────────────────────
+# Quase todo router é montado com `app.include_router(x.router, prefix=API)`
+# — mas alguns (Onda 3 §4.1 de main.py: `precedentes_jurisprudencia`,
+# `advogado_estilo`, `datajud_intelligence`) recebem um prefixo EXTRA
+# (`prefix=API + "/pecas"` etc.), reproduzindo o path onde eram anexados por
+# side effect antes da correção. Sem ler isto de `main.py`, o parser assumia
+# sempre `/api` + prefixo local do próprio arquivo router — 404 espúrio
+# (achado do review do PR #708).
+
+
+def _extra_prefix_from_call(call: ast.Call) -> str | None:
+    """Extrai o prefixo EXTRA de um `app.include_router(x.router,
+    prefix=...)`: `""` quando `prefix=API` (sem sufixo), a string literal
+    quando `prefix=API + "/algo"`. `None` quando o argumento `prefix` não é
+    resolvível estaticamente (nome que não é `API`, concatenação não
+    literal) — o chamador trata isso como "sem sufixo conhecido", igual ao
+    comportamento de antes desta correção: nunca mais restritivo, só mais
+    correto quando dá para resolver."""
+    prefix_expr: ast.expr | None = None
+    for kw in call.keywords:
+        if kw.arg == "prefix":
+            prefix_expr = kw.value
+            break
+    if prefix_expr is None and len(call.args) >= 2:
+        prefix_expr = call.args[1]
+    if prefix_expr is None:
+        return ""
+    if isinstance(prefix_expr, ast.Name) and prefix_expr.id == "API":
+        return ""
+    if (
+        isinstance(prefix_expr, ast.BinOp)
+        and isinstance(prefix_expr.op, ast.Add)
+        and isinstance(prefix_expr.left, ast.Name)
+        and prefix_expr.left.id == "API"
+    ):
+        sufixo = _string_const(prefix_expr.right)
+        if sufixo is not None:
+            return sufixo
+    return None
+
+
+def router_mount_overrides(main_py: Path) -> dict[str, str]:
+    """Deriva, por parsing estático de `app/main.py`, o prefixo EXTRA (além
+    de `/api`) que cada módulo de router recebe em `app.include_router(...)`
+    — chave = nome do módulo (`path.stem` em `backend/app/routers/`, o mesmo
+    `module_key` usado por `discover_gates`).
+
+    Resolve o alias de import (`from app.routers import api_keys as
+    api_keys_router`) para o nome REAL do módulo antes de indexar — sem isto
+    a única ocorrência de alias no repo (`api_keys_router`) ficaria sem
+    entrada, mas por sorte esse módulo não tem prefixo extra hoje; ainda
+    assim, resolver o alias é o que torna a função correta em geral, não só
+    para os 3 casos conhecidos.
+
+    Falha aberta (não fecha): se `main.py` não existir/não parsear, ou se o
+    módulo simplesmente não aparecer no grafo de mounts, devolve `{}`/omite a
+    chave — o chamador usa `.get(module_key, "")`, ou seja, sem override
+    conhecido o comportamento é o de ANTES desta correção (só prefixo local
+    do próprio router), nunca pior."""
+    try:
+        text = main_py.read_text(encoding="utf-8", errors="ignore")
+        tree = ast.parse(text, filename=str(main_py))
+    except (OSError, SyntaxError):
+        return {}
+
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "app.routers":
+            for alias in node.names:
+                if alias.asname:
+                    aliases[alias.asname] = alias.name
+
+    overrides: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "include_router"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "app"
+        ):
+            continue
+        if not node.args:
+            continue
+        router_expr = node.args[0]
+        # `x.router` ou `x.router_status` (ex.: ia_saude) — o que importa é o
+        # módulo (`x`), o atributo é só QUAL router dentro dele.
+        if not (isinstance(router_expr, ast.Attribute) and isinstance(router_expr.value, ast.Name)):
+            continue
+        module_local_name = router_expr.value.id
+        module_key = aliases.get(module_local_name, module_local_name)
+        extra = _extra_prefix_from_call(node)
+        if extra is None:
+            continue
+        # Primeira ocorrência vence: no repo atual nenhum módulo é montado
+        # duas vezes com prefixos EXTRA diferentes (só `ia_saude`, com o
+        # mesmo prefixo "" nas duas linhas) — divergência real seria um
+        # padrão novo, fora do escopo desta correção.
+        overrides.setdefault(module_key, extra)
+    return overrides
+
+
+def discover_gates(routers_dir: Path, main_py: Path | None = None) -> list[RouteGate]:
+    """Varre `backend/app/routers/*.py` e deriva o gate de cada rota.
+
+    `main_py` (default `routers_dir.parent / "main.py"`) é parseado UMA vez
+    para achar o prefixo EXTRA que cada módulo recebe em `app.include_router(
+    ..., prefix=...)` — ver `router_mount_overrides`. Sem isto o path
+    derivado assumia sempre `/api` + prefixo LOCAL do próprio router, o que
+    gera 404 espúrio para os poucos módulos montados com um prefixo adicional
+    (achado do review do PR #708: `advogado_estilo.router` monta em
+    `API + "/pecas"`, então sua rota real é `/api/pecas/advogado-estilo/me`,
+    não `/api/advogado-estilo/me`)."""
+    if main_py is None:
+        main_py = routers_dir.parent / "main.py"
+    mount_overrides = router_mount_overrides(main_py)
+
     gates: list[RouteGate] = []
     for path in sorted(routers_dir.glob("*.py")):
         if path.name == "__init__.py":
@@ -650,7 +799,7 @@ def discover_gates(routers_dir: Path) -> list[RouteGate]:
             tree = ast.parse(text, filename=str(path))
         except SyntaxError:
             continue
-        prefix = _extract_prefix(tree)
+        prefix = mount_overrides.get(path.stem, "") + _extract_prefix(tree)
         module_key = path.stem
         constants = _module_role_constants(tree)
         aliases = _import_aliases(tree)
@@ -682,9 +831,8 @@ def discover_gates(routers_dir: Path) -> list[RouteGate]:
                     continue
                 method, subpath = route
                 full_path = _join(prefix, subpath)
-                kind, roles, level = _combinar_gates(
-                    _gate_from_function(node, constants, dep_registry, aliases), router_gate
-                )
+                rota_gate, rota_via_depends = _gate_from_function(node, constants, dep_registry, aliases)
+                (kind, roles, level), via_depends = _combinar_gates(rota_gate, rota_via_depends, router_gate)
                 gates.append(
                     RouteGate(
                         module_key=module_key,
@@ -695,6 +843,7 @@ def discover_gates(routers_dir: Path) -> list[RouteGate]:
                         min_level=level,
                         source_file=str(path.relative_to(routers_dir.parents[1])),
                         source_line=node.lineno,
+                        via_depends=via_depends,
                     )
                 )
     return gates

@@ -632,6 +632,29 @@ PAPEIS_MATRIZ: tuple[tuple[str, str, str], ...] = (
     ("cliente_externo", "EJC_TEST_EMAIL_CLIENTE_EXTERNO", "EJC_TEST_PASSWORD_CLIENTE_EXTERNO"),
 )
 
+# Papéis aceitos para a conta de GESTÃO (login primário, EJC_TEST_EMAIL) —
+# usado por `_papel_gestao_confere` (achado #4 do review do PR #708).
+ROLES_GESTAO: frozenset[str] = frozenset({"superadmin", "admin", "socio"})
+
+
+def _papel_confere(role_key: str, actual_role: str | None) -> bool:
+    """Achado #4 do review do PR #708: se uma variável de ambiente apontar
+    para a conta errada (ex.: `EJC_TEST_EMAIL_FINANCEIRO` autentica um
+    admin), o runner NÃO pode calcular expectativas com `actual_role` e
+    registrar a célula sob `role_key` — isso reporta cobertura completa sem
+    nunca ter exercitado o papel pedido. Só reaproveita `actual_role or
+    role_key` quando os dois batem; caso contrário a célula fica FALTANTE,
+    nunca aprovação silenciosa."""
+    return actual_role == role_key
+
+
+def _papel_gestao_confere(actual_role: str | None) -> bool:
+    """Mesma ideia do achado #4 aplicada à conta primária (EJC_TEST_EMAIL):
+    ela precisa autenticar um papel de GESTÃO de fato — senão a célula
+    'gestao(login_primario)' mediria RBAC com um piso de privilégio errado
+    sem avisar."""
+    return actual_role in ROLES_GESTAO
+
 
 def _login_papel(rc: httpx.Client, email: str, password: str) -> tuple[str | None, str | None, int | None]:
     """Login isolado por papel, em cliente httpx PRÓPRIO (cookie jar isolado
@@ -702,14 +725,37 @@ def _sondar_papel(
                 "restritivo do que o código sugere, ou a matriz derivada está errada "
                 "para esta rota; investigar antes de ignorar."
             )
+        elif status == 422 and esperado == 403 and gate.via_depends:
+            # Achado #3 do review do PR #708: quando o gate é resolvido via
+            # `Depends(...)` (de assinatura OU de `dependencies=[...]` do
+            # router — `gate.via_depends`), o FastAPI resolve TODA
+            # sub-dependência ANTES de validar os parâmetros (path/query) da
+            # PRÓPRIA rota — um papel NEGADO deveria ter recebido 403 já
+            # nessa fase, sem nunca alcançar a validação de query. Um 422
+            # aqui não é "faltou o parâmetro para o gate rodar": é a
+            # validação de query tendo sido ALCANÇADA porque o gate deixou
+            # o papel passar — exatamente o bypass que a Issue #694
+            # documenta, só que mascarado atrás de um 422 em vez de um 200.
+            # Tratar isto como inconclusivo esconderia a regressão.
+            ok = False
+            detail = (
+                f"GATE RBAC FROUXO (via 422): papel '{role_key}' (token com role="
+                f"'{actual_role}') deveria ser NEGADO (403) em GET {gate.path} — "
+                f"gate={gate.gate_kind} roda via Depends() (resolvido ANTES da "
+                f"validação de query), min_level exigido={gate.min_level} "
+                f"({gate.source_file}:{gate.source_line}) — mas a API respondeu 422 "
+                "(chegou a validar query, o que só acontece se o gate deixou passar). "
+                "Ver Issue #694 para o padrão desta classe de defeito."
+            )
         elif status == 422:
             # Limitação CONHECIDA e documentada: um GET com query param
             # OBRIGATÓRIO (ex.: calculadoras jurídicas em ramos.py, `/ai/
             # roteamento/preview`) responde 422 ANTES do gate rodar — mas só
             # quando o gate é verificado no CORPO do handler (requer_advogado /
-            # local_level / local_membership / "nenhum"): o FastAPI resolve e
-            # valida path/query params, e só ENTÃO executa o corpo — se faltar
-            # um param obrigatório, o handler nunca roda, e o `if papel ...:
+            # local_level / local_membership / "nenhum", ou seja
+            # `gate.via_depends is False`): o FastAPI resolve e valida
+            # path/query params, e só ENTÃO executa o corpo — se faltar um
+            # param obrigatório, o handler nunca roda, e o `if papel ...:
             # raise 403` dentro dele nunca é alcançado (para NENHUM papel,
             # permitido ou negado). Evidência real: em `/api/calculadoras/inss`
             # (gate por `Depends(require_roles(_EQUIPE))`, avaliado ANTES da
@@ -717,7 +763,9 @@ def _sondar_papel(
             # params — mas em rotas com gate NO CORPO, a mesma ausência de
             # params produz 422 tanto para papéis permitidos quanto negados,
             # sem nunca provar nada sobre RBAC. Fica inconclusivo (não
-            # reprova), nunca desaparece do relatório (degraded=True).
+            # reprova), nunca desaparece do relatório (degraded=True). Quando
+            # `esperado == 403` e `gate.via_depends` é True, o ramo ACIMA já
+            # tratou o caso como falha real, não chega aqui.
             ok, degraded = True, True
             detail = (f"422 (validação de query — rota provavelmente exige parâmetros "
                       f"que esta sonda não envia): inconclusivo para RBAC, gate={gate.gate_kind} "
@@ -764,17 +812,29 @@ def _matriz_rbac(base_url: str, state: SuiteState) -> None:
     # Papel de gestão: reaproveita o login primário já feito por `_login`,
     # numa sessão httpx isolada (não reusa `client` para não misturar cookies
     # de refresh entre papéis).
-    if state.access_token and state.user.get("role"):
+    papel_gestao_primario = str(state.user["role"]) if state.user.get("role") else None
+    if state.access_token and papel_gestao_primario and _papel_gestao_confere(papel_gestao_primario):
         with httpx.Client(base_url=base_url, follow_redirects=True) as rc:
             celulas_por_papel["gestao(login_primario)"] = _sondar_papel(
-                rc, "gestao(login_primario)", state.access_token, str(state.user["role"]),
+                rc, "gestao(login_primario)", state.access_token, papel_gestao_primario,
                 amostra, state,
             )
     else:
         papeis_faltantes.append("gestao(login_primario)")
+        if not state.access_token or not papel_gestao_primario:
+            motivo = "login primário indisponível — matriz não testou o papel de gestão"
+        else:
+            # Achado #4 do review do PR #708: EJC_TEST_EMAIL autenticou um
+            # papel que não é de gestão — testar RBAC com esse token mediria
+            # o piso errado sem avisar.
+            motivo = (
+                f"EJC_TEST_EMAIL autenticou papel '{papel_gestao_primario}', não um papel "
+                f"de gestão ({sorted(ROLES_GESTAO)}) — célula NÃO testada"
+            )
+        _afirmar(state, "rbac.login.gestao.papel_confere", False, motivo)
         state.nao_coberto.append({
             "module_key": "rbac.gestao", "method": "*", "path": "*",
-            "motivo": "login primário indisponível — matriz não testou o papel de gestão",
+            "motivo": motivo,
         })
 
     for role_key, email_var, password_var in PAPEIS_MATRIZ:
@@ -804,8 +864,27 @@ def _matriz_rbac(base_url: str, state: SuiteState) -> None:
                     "motivo": f"login falhou (status={login_status}) — credencial incorreta/expirada?",
                 })
                 continue
+            if not _papel_confere(role_key, actual_role):
+                # Achado #4 do review do PR #708: `email_var` pode apontar
+                # para a conta ERRADA (ex.: EJC_TEST_EMAIL_FINANCEIRO
+                # autentica um admin) — calcular expectativas com
+                # `actual_role` e registrar sob `role_key` reportaria
+                # cobertura completa sem nunca ter exercitado o papel pedido.
+                # Falha, não registra célula nenhuma sob `role_key`.
+                papeis_faltantes.append(role_key)
+                motivo = (
+                    f"{email_var} autenticou papel '{actual_role}', não '{role_key}' — "
+                    "provável credencial apontando para a conta errada; célula NÃO "
+                    "testada (nunca contada como cobertura)"
+                )
+                _afirmar(state, f"rbac.login.{role_key}.papel_confere", False, motivo)
+                state.nao_coberto.append({
+                    "module_key": f"rbac.{role_key}", "method": "*", "path": "*",
+                    "motivo": motivo,
+                })
+                continue
             celulas_por_papel[role_key] = _sondar_papel(
-                rc, role_key, token, actual_role or role_key, amostra, state,
+                rc, role_key, token, actual_role, amostra, state,
             )
 
     state.rbac_matrix = {
