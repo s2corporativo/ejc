@@ -6,7 +6,7 @@
 // resposta que CHEGOU nunca vira tela de erro (degradado = confirmação com
 // campos vazios); rascunho sobrevive ao F5 via sessionStorage.
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
 import { PageHeader } from "../components/UI";

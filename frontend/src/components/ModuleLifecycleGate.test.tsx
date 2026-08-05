@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import type { ModuleLifecycleOverride } from "../stores/moduleLifecycle";
 
 // Store mockado com estado mutável entre os casos — evita chamada real de API

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import { Sparkles, RefreshCw, ArchiveRestore } from "lucide-react";
 import { toast } from "../../components/Toast";
 import api from "../../lib/api";

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Monitor, Moon, Sun } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import api from "../lib/api";
 import { THEME_LABELS, useThemeStore } from "../stores/theme";
 import type { ThemeMode } from "../stores/theme";
