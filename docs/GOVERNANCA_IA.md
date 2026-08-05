@@ -235,7 +235,8 @@ registrado, e o registro tem duas partes obrigatórias:
 Isso não é formalidade: a trava `Governança — travas de PR` (`.github/workflows/governanca.yml`)
 reprova PR cujo corpo não referencia `#<numero>`. Documento e automação precisam dizer a mesma
 coisa — regra escrita que o CI contradiz é a origem de metade da confusão que esta seção existe
-para eliminar.
+para eliminar. Essa exigência vale para agente e para humano; a única isenção é a de bot de
+manutenção de dependências, allowlist fechada, seção 12.
 
 O que a governança não admite é trabalho sem artefato nenhum. Abrir a Issue depois de começar é
 aceitável; terminar sem ela, não.
@@ -258,7 +259,67 @@ por iniciativa própria, com semânticas diferentes entre si, contra uma decisã
 comunicada (o #496 a respeitou explicitamente). Duas frentes gastaram trabalho e criaram
 um conflito por causa de uma decisão que não estava escrita no repositório.
 
-## 12. Documentos relacionados
+## 12. Exceção de bot de manutenção de dependências
+
+### Problema
+
+A trava `Governança — travas de PR` (`.github/workflows/governanca.yml`, step "Descricao do
+PR preenchida") reprova todo PR cujo corpo não referencie uma Issue (`#<numero>`) e não
+preencha as cinco seções do `.github/pull_request_template.md`. Essa regra é correta para PR
+humano — é o que sustenta "uma Issue → uma branch → um PR" (seção 3). Mas o **dependabot**
+não sabe preencher template nem abrir Issue: ele abre PR de atualização de dependência com
+corpo gerado automaticamente. Sem exceção, **todo** PR do dependabot reprova essa trava
+incondicionalmente — inclusive atualização de dependência de **segurança** — e, com a
+proteção de branch ativa, nada disso é mesclável até alguém reescrever o corpo à mão em
+cada PR. Isso é o oposto do que a trava existe para proteger.
+
+### O que a exceção faz — e o que não faz
+
+O step "Descricao do PR preenchida" é **pulado** quando `github.event.pull_request.user.login`
+(autor do PR) **e** `github.actor` (ator que disparou o evento) estão, os dois, na allowlist
+fechada abaixo. Nenhum outro step do job é afetado: migration sem reserva,
+segredo versionado, mistura de escopo (governança + código) e branch de origem `main`/`master`
+continuam bloqueando PR de bot exatamente como bloqueiam PR humano. A exceção **não** dispensa
+essas travas — dispensa só a exigência de Issue vinculada e de template de descrição, porque
+só essa exigência pressupõe um autor que escreve texto de PR.
+
+### Allowlist (fechada)
+
+```json
+["dependabot[bot]"]
+```
+
+Único membro hoje: `dependabot[bot]`. A allowlist do workflow (`.github/workflows/governanca.yml`,
+condição `if:` do step "Descricao do PR preenchida") e a allowlist deste documento **têm que
+coincidir exatamente** — nome por nome. `backend/tests/test_governanca_workflow.py` fixa esse
+contrato: falha se um arquivo ganhar uma entrada que o outro não tem.
+
+A condição verifica `github.event.pull_request.user.login` e `github.actor` contra essa lista
+explícita — não um padrão amplo como "termina em `[bot]`". Exigir os dois impede que um commit
+humano empurrado numa branch do dependabot (evento `synchronize`) herde a isenção. Um padrão
+amplo isentaria qualquer bot de qualquer origem, inclusive um bot malicioso ou mal configurado
+que abrisse PR contra o repositório; a allowlist fechada isenta só quem está nomeado nos dois
+campos.
+
+### Limite
+
+**Ampliar esta allowlist é decisão de governança do titular**, registrada em Issue — nenhum
+agente adiciona um bot novo por conta própria, mesmo que pareça análogo ao dependabot (ver
+seção 10, "Limites de autonomia do agente": CI/CD está na lista do que exige autorização
+explícita). Se uma investigação encontrar outro bot operando no repositório que precise da
+mesma isenção, o achado entra no PR como registro — a decisão de estender a lista não.
+
+### Origem
+
+Levantado no PR #533 (fechado sem merge — a implementação não chegou a ir para `main`) e
+registrado na Issue #534, que pedia para **documentar** uma isenção que a Issue presumia já
+implementada. Na investigação desta seção (2026-08-04) confirmou-se que `governanca.yml` não
+tinha nenhuma lógica de isenção e que `backend/tests/test_governanca_workflow.py` não existia
+— ou seja, o problema operacional (PR do dependabot falhando a trava, ex. #671 em 2026-08-03)
+era real e continuava sem correção. Esta seção documenta a implementação feita para corrigi-lo,
+não apenas a intenção original.
+
+## 13. Documentos relacionados
 
 - `CLAUDE.md` — regras operacionais do executor e mapa técnico do repositório.
 - `AGENTS.md` — regras comuns a qualquer agente de IA.
@@ -267,3 +328,6 @@ um conflito por causa de uma decisão que não estava escrita no repositório.
 - `docs/RELEASE_CHECKLIST.md` — o que precisa estar verde antes de um release.
 - `docs/MATRIZ_CONSOLIDACAO_P0.md` — consolidação dos PRs 493–497.
 - `backend/alembic/MIGRATION_RESERVATIONS.md` — reserva de numeração de migrations.
+- `docs/GOVERNANCA_FASE2.md` — ferramental que executa estas regras (CI, proteção de branch,
+  inventário); a exceção de bot da seção 12 é implementada em `.github/workflows/governanca.yml`,
+  item 1 daquele documento.
