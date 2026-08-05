@@ -81,7 +81,7 @@ def test_extracao_estruturada_nao_usa_o_orcamento_de_resumo():
     resumo = get_configuracao(AGENT_REGISTRY["DocumentAgent"].tarefa_padrao)
     extracao = get_configuracao(AGENT_REGISTRY["DocumentExtractionAgent"].tarefa_padrao)
     assert resumo.max_tokens == 900, "premissa do teste: RESUMO segue econômico"
-    assert extracao.max_tokens >= 4000
+    assert extracao.max_tokens == 5000
     assert AGENT_REGISTRY["DocumentExtractionAgent"].tarefa_padrao is TarefaIA.DOSSIE
 
 

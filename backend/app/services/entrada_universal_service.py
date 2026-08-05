@@ -108,6 +108,7 @@ TIPO_LOCAL_PARA_CATALOGO: dict[str, str] = {
     "contrato_bancario": "contrato",
     "aditivo_contratual": "contrato",
     "auto_infracao_transito": "multa_transito",
+    "notificacao_transito": "multa_transito",
     "auto_infracao_ambiental": "multa_ambiental",
     "auto_ou_notificacao_administrativa": "auto_infracao",
     "licenca_laudo_ambiental": "laudo_tecnico",
