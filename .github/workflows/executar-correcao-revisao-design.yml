@@ -1,0 +1,174 @@
+name: Executar correção validada da revisão do design
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/executar-correcao-revisao-design.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: executar-correcao-revisao-design
+  cancel-in-progress: true
+
+jobs:
+  validar:
+    name: Validar correções da revisão
+    if: github.head_ref == 'codex/auditoria-final-design-20260805'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout sem credenciais persistidas
+        uses: actions/checkout@v7
+        with:
+          ref: codex/auditoria-final-design-20260805
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Extrair e executar o patch já versionado
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import textwrap
+
+          source = Path('.github/workflows/correcao-revisao-design.yml').read_text()
+          match = re.search(
+              r"          python - <<'PY'\n(.*?)\n          PY\n",
+              source,
+              flags=re.S,
+          )
+          if not match:
+              raise SystemExit('Patch versionado não localizado')
+          Path('/tmp/aplicar_correcao.py').write_text(textwrap.dedent(match.group(1)))
+          PY
+          python /tmp/aplicar_correcao.py
+
+      - name: Validar sintaxe Python alterada
+        run: |
+          python -m py_compile \
+            backend/app/routers/agenda_eventos.py \
+            backend/app/routers/deadlines.py \
+            backend/app/routers/cases.py
+
+      - name: Instalar Node 22.22
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.22.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Formatar allowlist frontend
+        working-directory: frontend
+        run: |
+          npx prettier --write \
+            src/components/Layout.tsx \
+            src/components/SidebarWeek.tsx \
+            src/components/SidebarWeek.test.tsx \
+            src/components/header/OfficeLinks.tsx \
+            src/config/office.ts \
+            src/content/dailyMessages.ts \
+            src/content/dailyMessages.test.ts \
+            src/pages/DashboardModern.tsx \
+            src/styles/ejc-shell-v2-refinements.css
+
+      - name: Validar frontend completo
+        working-directory: frontend
+        run: |
+          npm run format:check
+          npm run lint:eslint
+          npm run test -- --reporter=dot
+          npm run build
+          npm audit --audit-level=high
+
+      - name: Criar e validar allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/allowlist <<'EOF'
+          backend/app/routers/agenda_eventos.py
+          backend/app/routers/cases.py
+          backend/app/routers/deadlines.py
+          docs/auditoria/EXECUCAO_AUDITORIA_DESIGN_2026-08-05.md
+          docs/design/RESTILIZACAO_EJC_V2.md
+          frontend/src/components/Layout.tsx
+          frontend/src/components/SidebarWeek.test.tsx
+          frontend/src/components/SidebarWeek.tsx
+          frontend/src/components/header/OfficeLinks.tsx
+          frontend/src/config/office.ts
+          frontend/src/content/dailyMessages.test.ts
+          frontend/src/content/dailyMessages.ts
+          frontend/src/pages/DashboardModern.tsx
+          frontend/src/styles/ejc-shell-v2-refinements.css
+          EOF
+          git diff --name-only | sort > /tmp/changed
+          diff -u /tmp/allowlist /tmp/changed
+          tar -czf /tmp/review-fixes.tgz --files-from=/tmp/allowlist
+
+      - name: Publicar artefato validado
+        uses: actions/upload-artifact@v7
+        with:
+          name: correcoes-revisao-design-visivel
+          path: /tmp/review-fixes.tgz
+          retention-days: 1
+
+  publicar:
+    name: Publicar correções validadas
+    needs: validar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exclusivo para publicação
+        uses: actions/checkout@v7
+        with:
+          ref: codex/auditoria-final-design-20260805
+          fetch-depth: 0
+
+      - name: Baixar artefato validado
+        uses: actions/download-artifact@v8
+        with:
+          name: correcoes-revisao-design-visivel
+          path: /tmp/correcoes
+
+      - name: Conferir e publicar somente a allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/allowlist <<'EOF'
+          backend/app/routers/agenda_eventos.py
+          backend/app/routers/cases.py
+          backend/app/routers/deadlines.py
+          docs/auditoria/EXECUCAO_AUDITORIA_DESIGN_2026-08-05.md
+          docs/design/RESTILIZACAO_EJC_V2.md
+          frontend/src/components/Layout.tsx
+          frontend/src/components/SidebarWeek.test.tsx
+          frontend/src/components/SidebarWeek.tsx
+          frontend/src/components/header/OfficeLinks.tsx
+          frontend/src/config/office.ts
+          frontend/src/content/dailyMessages.test.ts
+          frontend/src/content/dailyMessages.ts
+          frontend/src/pages/DashboardModern.tsx
+          frontend/src/styles/ejc-shell-v2-refinements.css
+          EOF
+          tar -tzf /tmp/correcoes/review-fixes.tgz | sed 's#/$##' | sort > /tmp/archive-files
+          diff -u /tmp/allowlist /tmp/archive-files
+          tar -xzf /tmp/correcoes/review-fixes.tgz
+          git diff --name-only | sort > /tmp/changed
+          diff -u /tmp/allowlist /tmp/changed
+          git add --pathspec-from-file=/tmp/allowlist
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: atender revisão funcional e acessível do design"
+          git push origin HEAD:codex/auditoria-final-design-20260805
