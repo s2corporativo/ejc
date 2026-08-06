@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   db-validation:
-    name: Backend — suíte completa + cobertura + schema/RAG (Postgres pgvector)
+    name: Backend — suíte completa + schema/RAG (Postgres pgvector)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -190,7 +190,7 @@ jobs:
         run: python -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0
 
   frontend-build:
-    name: Frontend — testes + auditoria alta + typecheck + build
+    name: Frontend — testes + audit + typecheck + build
     runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
