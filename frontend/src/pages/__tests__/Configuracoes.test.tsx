@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 
 // stores/theme lê `window.matchMedia` na inicialização do store (fora do
 // jsdom por padrão, sem polyfill no setup de testes deste repo). O tema não é

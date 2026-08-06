@@ -1,6 +1,6 @@
 import { toast } from "../components/Toast";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Plus, Search, ShieldAlert, KeyRound } from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";

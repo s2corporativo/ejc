@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link } from "react-router";
 import { ArrowLeft, CalendarClock, History, MessageSquare } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";

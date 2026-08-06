@@ -11,6 +11,7 @@ import {
   PackageCheck,
   Plus,
   ScanLine,
+  ShieldCheck,
   Trash2,
   UploadCloud,
 } from "lucide-react";
@@ -38,6 +39,19 @@ export type EntradaUniversalResultado = {
   prazo?: any;
   dados_bancarios?: any;
   aviso?: string;
+  /** Procedência da leitura por IA: modelo, provedor e id do log de auditoria. */
+  ia?: {
+    disponivel?: boolean;
+    estrutura_valida?: boolean;
+    modelo?: string | null;
+    provider?: string | null;
+    ai_log_id?: string | null;
+    sem_base_verificavel?: boolean;
+  };
+  /** Fontes da base interna (RAG) consultadas para a análise. */
+  fontes?: { titulo?: string; categoria?: string; fonte?: string }[];
+  citacoes?: any;
+  alertas_ia?: string[];
   /** Somente no navegador: mantém compatibilidade com o fluxo antigo de criação. */
   _arquivos_locais?: File[];
 };
@@ -489,6 +503,104 @@ export default function EntradaUniversalDocumentos({
               </div>
             </div>
           )}
+          <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+            <p className="flex items-center gap-2 text-xs font-semibold text-slate-900 dark:text-white">
+              <ShieldCheck className="h-4 w-4 text-primary-600" /> Procedência
+              da leitura por IA
+            </p>
+            {resultado.ia?.disponivel === false ? (
+              <p className="mt-2 text-[11px] text-warn-800">
+                A interpretação por IA ficou indisponível. A extração
+                determinística e os originais no GED foram preservados.
+              </p>
+            ) : (
+              <>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+                  <span>
+                    Modelo:{" "}
+                    <b className="font-medium">
+                      {resultado.ia?.modelo || "não informado"}
+                    </b>
+                  </span>
+                  <span>
+                    Provedor:{" "}
+                    <b className="font-medium">
+                      {resultado.ia?.provider || "não informado"}
+                    </b>
+                  </span>
+                  <span>
+                    Log de auditoria:{" "}
+                    <b className="font-mono font-medium">
+                      {resultado.ia?.ai_log_id || "não registrado"}
+                    </b>
+                  </span>
+                </div>
+                {resultado.ia?.estrutura_valida === false && (
+                  <p className="mt-2 flex items-start gap-1 text-[11px] font-medium text-danger-700">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> A IA
+                    não devolveu leitura estruturada: área, partes, datas, prazo
+                    e teses não foram preenchidos. Preencha o caso manualmente.
+                  </p>
+                )}
+                <p className="mt-2 text-[11px] font-medium text-slate-700 dark:text-slate-200">
+                  Fontes da base interna consultadas
+                </p>
+                {(resultado.fontes || []).length > 0 ? (
+                  <ul className="mt-1 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+                    {resultado.fontes?.map((fonte, index) => (
+                      <li key={`${fonte.titulo}-${index}`}>
+                        • {fonte.titulo || "sem título"}
+                        {fonte.categoria ? ` — ${fonte.categoria}` : ""}
+                        {fonte.fonte ? ` (${fonte.fonte})` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-[11px] text-warn-800">
+                    Nenhuma fonte da base interna respaldou esta leitura — ela
+                    se apoia apenas nos documentos enviados. Confira toda norma,
+                    prazo ou precedente antes de usar.
+                  </p>
+                )}
+                {resultado.ia?.sem_base_verificavel && (
+                  <div className="mt-2 flex items-start gap-2 rounded bg-warn-50 p-2 dark:bg-warn-900/20">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warn-700 dark:text-warn-400" />
+                    <p className="text-[11px] text-warn-700 dark:text-warn-400">
+                      A IA mencionou normas, prazos ou precedentes que não foram
+                      verificados em fontes internas. Use com cautela.
+                    </p>
+                  </div>
+                )}
+                {(resultado.citacoes || []).length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-[11px] font-medium text-slate-700 dark:text-slate-200">
+                      Citações
+                    </p>
+                    <ul className="mt-1 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+                      {resultado.citacoes?.map(
+                        (citacao: string, index: number) => (
+                          <li key={index} className="ml-2">
+                            • {citacao}
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                )}
+                {(resultado.alertas_ia || []).length > 0 && (
+                  <ul className="mt-2 space-y-1 text-[11px] text-warn-800">
+                    {resultado.alertas_ia?.map((alerta, index) => (
+                      <li key={index} className="flex items-start gap-1">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                        {alerta}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>
+
           <p className="text-[11px] text-slate-500">{resultado.aviso}</p>
         </div>
       )}

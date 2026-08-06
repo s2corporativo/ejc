@@ -105,10 +105,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Instalar Node 20
+      - name: Instalar Node 22.22
         uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "22.22.0"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -126,10 +126,15 @@ jobs:
           npm install --no-save --package-lock=false playwright@1.56.1
           npx playwright install --with-deps chromium
 
-      - name: Smoke responsivo em Chromium real
+      - name: Smoke responsivo do login em Chromium real
         env:
-          SCREENSHOT_DIR: tests/__out__
+          SCREENSHOT_DIR: tests/__out__/login
         run: npm run test:responsive
+
+      - name: Smoke autenticado do dashboard premium — sete larguras
+        env:
+          PREMIUM_SCREENSHOT_DIR: tests/__out__/premium-dashboard
+        run: npm run test:premium-responsive
 
       - name: Anexar evidências visuais
         if: always()

@@ -10,7 +10,7 @@
 // chamada sem confirmação explícita. Duplicação temporária com /pecas aceita
 // pelo titular (Decisões de 2026-08-02, item 2).
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { FileDown, FolderOpen, Plus, ShieldCheck } from "lucide-react";
 import api from "../../lib/api";
 import type { LegalDoc } from "../../types";

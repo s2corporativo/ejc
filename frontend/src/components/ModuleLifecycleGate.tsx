@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router";
 import { AlertTriangle, ArrowLeft, Route } from "lucide-react";
 import { lifecycleForPath, safeReplacementRoute } from "../lib/moduleLifecycle";
 import {

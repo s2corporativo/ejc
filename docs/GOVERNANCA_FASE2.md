@@ -36,6 +36,16 @@ Executar **na ordem**. Cada item tem pré-requisito do anterior.
 - PR misturando governança (`CLAUDE.md`, `AGENTS.md`, `.claude/`, `docs/GOVERNANCA_IA.md`) com código funcional (`backend/app/`, `frontend/src/`) → falha
 - PR originado de `main`/`master` → falha
 
+A terceira trava (descrição do PR) tem uma exceção fechada: PR de manutenção automatizada de
+dependências, aberto por autor de allowlist fechada (hoje só `dependabot[bot]`), é dispensado
+de Issue vinculada e do preenchimento do template — as outras quatro travas continuam se
+aplicando a esse PR sem exceção. Fundamentação, limite e a allowlist completa (que precisa
+coincidir, nome por nome, com a do workflow) estão em **`docs/GOVERNANCA_IA.md`, seção 12** —
+fonte canônica; este documento não duplica a regra, só aponta para onde ela vive. Ampliar a
+allowlist é decisão de governança do titular, nunca deste (ou de qualquer outro) documento
+operacional. `backend/tests/test_governanca_workflow.py` fixa o contrato entre as duas
+allowlists.
+
 Roda no runner self-hosted `ejc-vps`, como os demais workflows (`docs/RUNNER_SELFHOSTED.md`).
 Complementa — não substitui — o `EJC Release Gate` (`scripts/ci_guard.sh`), que cobre
 marcadores de merge, CORS wildcard e resíduos de release.

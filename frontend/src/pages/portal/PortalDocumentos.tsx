@@ -1,6 +1,6 @@
 // ── Portal do Cliente: documentos solicitados pelo escritório ──
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import {
   CheckCircle,
   FileText,

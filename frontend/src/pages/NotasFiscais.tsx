@@ -3,7 +3,7 @@
 // registrada aqui via POST /nfse/manual. Funciona com NFSE_ENABLED=false —
 // nada de emissão via API de provedor é exibido nesta tela.
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import {
   Ban,
   Download,

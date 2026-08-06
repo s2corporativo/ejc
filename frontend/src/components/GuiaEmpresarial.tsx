@@ -5,7 +5,7 @@
 // do sistema (Sociedades do Cliente, análise IA de contrato, contratos com
 // alerta de vencimento) e checklist de Due Diligence persistido localmente.
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import {
   BookOpen,
   Building2,

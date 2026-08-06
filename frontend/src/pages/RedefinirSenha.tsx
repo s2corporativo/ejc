@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "../components/Toast";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router";
 import { isAxiosError } from "axios";
 import api from "../lib/api";
 

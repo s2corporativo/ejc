@@ -85,6 +85,7 @@ async def _contar_audit(db, case_id: str) -> int:
 
 async def _limpar(db, *, case_ids=(), user_ids=(), client_ids=()):
     for cid in case_ids:
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE registro_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM case_movimentos WHERE case_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM caso_areas WHERE case_id = :id"), {"id": cid})
