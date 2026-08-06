@@ -50,9 +50,42 @@ jobs:
               line[10:] if line.startswith("          ") else line
               for line in lines
           ) + "\n"
+          normalized = normalized.replace(
+              'if old_button not in text:\n    raise SystemExit("Botão de notificações não encontrado")',
+              'if old_button not in text:\n    pass',
+          )
           Path('/tmp/aplicar_correcao.py').write_text(normalized)
           PY
           python /tmp/aplicar_correcao.py
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('frontend/src/components/Layout.tsx')
+          text = path.read_text()
+          if 'disabled={privacyMode}' not in text:
+              pattern = re.compile(
+                  r'(\s*<button\n\s+type="button"\n\s+onClick=\{\(\) => !privacyMode && setNotifOpen\(\(value\) => !value\)\}\n)'
+                  r'\s+className="ejc-header-icon-button relative flex h-9 w-9 items-center justify-center rounded-xl"\n'
+                  r'\s+aria-label="Notificações"'
+              )
+              replacement = '''\1              disabled={privacyMode}
+              title={
+                privacyMode
+                  ? "Notificações ocultas no modo privacidade"
+                  : "Notificações"
+              }
+              className="ejc-header-icon-button relative flex h-9 w-9 items-center justify-center rounded-xl"
+              aria-label={
+                privacyMode
+                  ? "Notificações — ocultas no modo privacidade"
+                  : "Notificações"
+              }'''
+              text, count = pattern.subn(replacement, text, count=1)
+              if count != 1:
+                  raise SystemExit('Botão de notificações não localizado por padrão semântico')
+              path.write_text(text)
+          PY
 
       - name: Validar sintaxe Python alterada
         run: |
