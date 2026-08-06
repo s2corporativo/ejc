@@ -1,5 +1,5 @@
 // ── Portal do Cliente: layout simplificado e acolhedor ──
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router";
 import {
   Home,
   Briefcase,

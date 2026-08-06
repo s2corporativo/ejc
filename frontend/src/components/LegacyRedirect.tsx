@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router";
 
 /**
  * FLX-029 — mescla a URL de origem com o destino de um redirect legado,
