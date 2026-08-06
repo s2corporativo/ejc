@@ -3,7 +3,7 @@
 > **Documento canônico.** `CLAUDE.md`, `AGENTS.md` e os demais documentos de processo
 > traduzem estas regras para cada agente. Em caso de divergência, este arquivo prevalece.
 
-Versão: 2.0 — 2026-08-05.
+Versão: 2.1 — 2026-08-06.
 
 ## 1. Princípio
 
@@ -11,14 +11,15 @@ A governança do EJC existe para proteger produção, dados, validade jurídica 
 Ela **não pode impedir diagnóstico, auditoria, revisão ou correção autorizada pelo titular**.
 
 O GitHub é a fonte permanente de verdade do projeto. Pedido direto do titular por chat é
-autorização válida para começar; a decisão, os achados e as mudanças devem ser registrados no
-GitHub até o encerramento do trabalho, por Issue, Pull Request, comentário de review ou documento
+autorização válida para iniciar diagnóstico somente leitura; antes de qualquer escrita, a decisão,
+os achados e o escopo devem estar registrados no GitHub por Issue ou Issue-guarda-chuva. As
+mudanças devem permanecer rastreáveis por Pull Request, comentário de revisão ou documento
 versionado.
 
 A governança deve ser aplicada de forma proporcional ao risco:
 
 - leitura e diagnóstico têm ampla liberdade;
-- escrita exige branch, rastreabilidade e testes;
+- escrita exige Issue, branch, rastreabilidade e testes;
 - mudança irreversível exige decisão humana específica;
 - produção, segredos e dados reais permanecem fora do alcance operacional dos agentes.
 
@@ -37,7 +38,8 @@ de IA fica permanentemente impedido de implementar ou revisar.
 | **CI/GitHub** | Mantém histórico e executa controles automáticos | Não substitui homologação humana |
 
 O mesmo agente pode auditar e implementar quando isso for expressamente autorizado, desde que
-registre as duas etapas e submeta o resultado a revisão independente quando o risco justificar.
+registre as duas etapas. Toda entrega de risco relevante ou significativo deve receber revisão
+independente antes do merge.
 
 ## 3. Modos de trabalho
 
@@ -56,8 +58,9 @@ A sobreposição com outro PR **não impede leitura nem diagnóstico**.
 ### 3.2 Auditoria corretiva ampla
 
 Quando o titular pede “pente fino”, “corrija tudo”, “auditoria completa com correção” ou comando
-equivalente, o pedido autoriza um escopo sistêmico. O trabalho pode usar uma **Issue-guarda-chuva**
-e um ou mais PRs organizados por dependência técnica, risco ou facilidade de revisão.
+equivalente, o pedido autoriza o diagnóstico sistêmico. Antes de criar branch de implementação,
+alterar arquivo ou produzir commit, deve existir uma **Issue-guarda-chuva**. O trabalho pode usar
+um ou mais PRs organizados por dependência técnica, risco ou facilidade de revisão.
 
 Achados podem ser corrigidos no mesmo trabalho quando forem:
 
@@ -73,7 +76,7 @@ continuidade, mas não precisa interromper o trabalho atual.
 
 Para funcionalidade ou bug específico, permanece o fluxo normal:
 
-```
+```text
 pedido/Issue → branch → implementação → testes → PR → revisão → homologação → merge autorizado
 ```
 
@@ -96,16 +99,17 @@ apenas liberar mudança que dependa do risco não resolvido.
 
 Leitura e auditoria podem ocorrer em paralelo sem restrição de arquivos.
 
-Para escrita, PR aberto no mesmo arquivo é um **risco a administrar**, não uma proibição absoluta.
-Antes de editar, o executor deve verificar o diff concorrente e escolher uma destas opções:
+Para escrita, arquivo pertencente a PR ativo **não deve ser modificado em outra branch**. Antes de
+editar, o executor deve verificar os PRs concorrentes e escolher uma destas opções:
 
-1. trabalhar em trechos ou funções independentes e registrar a sobreposição;
-2. coordenar a ordem de merge e rebase;
-3. consolidar as mudanças numa única branch;
-4. adiar somente a parte que realmente conflita.
+1. consolidar a alteração na mesma branch do PR ativo;
+2. aguardar a integração do PR ativo e atualizar a branch seguinte;
+3. dividir o trabalho por arquivos sem sobreposição;
+4. adiar somente a parte incompatível.
 
-A tarefa só deve parar quando a concorrência produzir duas soluções incompatíveis para o mesmo
-comportamento ou risco concreto de perda de trabalho.
+Não é permitido sobrescrever silenciosamente trabalho concorrente. A tarefa deve parar quando a
+escrita alcançar arquivo de outro PR ativo e ainda não existir estratégia explícita de
+consolidação ou sequência.
 
 ### Migrations
 
@@ -119,7 +123,8 @@ testes antes de ficar pronta para merge.
 1. Não alterar, commitar ou empurrar diretamente na `main`/`master`.
 2. Não fazer merge nem deploy de produção sem autorização humana expressa.
 3. Toda escrita ocorre em branch identificável e termina registrada em PR.
-4. Auditoria ampla pode usar Issue-guarda-chuva; não é obrigatório criar uma Issue por achado.
+4. Auditoria ampla exige Issue-guarda-chuva antes da primeira escrita; não é obrigatório criar uma
+   Issue por achado.
 5. Escopo pode ser ampliado para achados relacionados, desde que a ampliação seja registrada.
 6. Correção de bug deve ter teste de regressão quando tecnicamente possível.
 7. Regra jurídica exige fonte oficial, vigência, versão e revisão humana.
@@ -130,6 +135,8 @@ testes antes de ficar pronta para merge.
 12. Chamadas de IA passam pelo gateway; HITL, gate de citações, sanitização de PII e kill-switch
     não podem ser contornados incidentalmente.
 13. Rota nova nasce protegida; endpoint público exige justificativa registrada.
+14. Mudança sensível envolvendo autenticação, permissões, uploads, CI/CD ou configuração exige
+    execução e registro do `security-auditor` antes da finalização e do merge.
 
 ## 7. Proteções não negociáveis
 
@@ -179,15 +186,17 @@ Regra não homologada pode apoiar análise, mas não deve virar documento formal
 
 ## 10. Autonomia operacional
 
-O pedido direto do titular autoriza todas as ações **razoavelmente necessárias** ao objetivo,
-inclusive alterar API, migration, autenticação, RBAC, CI/CD, Docker, dependência, rota ou código,
-desde que a mudança:
+O pedido direto do titular autoriza todas as ações de diagnóstico e leitura **razoavelmente
+necessárias** ao objetivo. A escrita pode incluir API, migration, autenticação, RBAC, CI/CD,
+Docker, dependência, rota ou código, desde que exista Issue ou Issue-guarda-chuva e a mudança:
 
 - permaneça fora de produção;
 - seja feita em branch;
 - seja reversível ou tenha decisão humana específica quando irreversível;
 - tenha testes e impacto documentados;
-- não extrapole para assunto sem relação com o objetivo.
+- não extrapole para assunto sem relação com o objetivo;
+- passe por `security-auditor` quando envolver autenticação, permissões, uploads, CI/CD ou
+  configuração.
 
 O agente não precisa pedir autorização repetida para cada arquivo, comando seguro, teste ou
 refatoração necessária. Deve parar e pedir decisão apenas quando:
@@ -197,8 +206,8 @@ refatoração necessária. Deve parar e pedir decisão apenas quando:
 3. a mudança contrariar decisão permanente do titular;
 4. a execução depender de credencial, produção ou dado real não disponibilizado com segurança.
 
-Uma tarefa pode começar sem Issue. Auditoria somente leitura pode terminar em relatório; tarefa
-com escrita deve terminar vinculada a Issue ou Issue-guarda-chuva e PR.
+Auditoria somente leitura pode terminar em relatório. Tarefa com escrita deve começar vinculada a
+Issue ou Issue-guarda-chuva e terminar em PR.
 
 ## 11. Decisões permanentes do titular
 
@@ -217,9 +226,9 @@ o autor original do PR **e** o ator do evento pertencem à lista fechada abaixo:
 ["dependabot[bot]"]
 ```
 
-A exceção dispensa apenas Issue vinculada e preenchimento manual do template. Não dispensa
-controle de migration, segredo, branch ou demais verificações. A lista do workflow e deste
-documento deve coincidir exatamente. Ampliá-la exige decisão do titular.
+A exceção dispensa apenas Issue vinculada e preenchimento manual do modelo. Não dispensa controle
+de migration, segredo, branch ou demais verificações. A lista do workflow e deste documento deve
+coincidir exatamente. Ampliá-la exige decisão do titular.
 
 ## 13. Documentos relacionados
 
