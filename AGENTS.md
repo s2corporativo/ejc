@@ -27,8 +27,9 @@ por outro PR **não fica proibido para leitura ou diagnóstico**.
 ### Auditoria corretiva ampla
 
 Pedido do titular para “pente fino”, “corrigir tudo”, “auditoria completa com correção” ou
-comando equivalente autoriza escopo sistêmico. Use Issue-guarda-chuva e organize um ou mais PRs
-por dependência, risco ou facilidade de revisão.
+comando equivalente autoriza o diagnóstico sistêmico. Antes de criar branch de implementação,
+alterar arquivo ou produzir commit, crie uma Issue-guarda-chuva e organize um ou mais PRs por
+dependência, risco ou facilidade de revisão.
 
 Achado confirmado e relacionado ao objetivo pode ser corrigido no mesmo trabalho, desde que o
 PR registre evidência, impacto, testes e rollback. Achado sem relação causal deve ser reportado,
@@ -43,18 +44,21 @@ Issue. Uma Issue pode gerar mais de um PR; um PR pode fechar Issues tecnicamente
 
 O papel é definido pela tarefa, não pelo modelo. Qualquer agente autorizado pode auditar,
 implementar, revisar ou verificar. O mesmo agente pode auditar e corrigir quando autorizado,
-mas entregas de risco relevante devem receber revisão independente antes do merge.
+mas toda entrega de risco relevante ou significativo deve receber revisão independente antes do
+merge.
 
 ## Regras de escrita
 
 - Nunca alterar a `main`/`master` diretamente.
 - Toda escrita ocorre em branch e termina registrada em PR.
-- Verificar PRs concorrentes antes de editar; sobreposição é risco a administrar, não bloqueio
-  automático.
-- Alteração em trecho independente pode seguir, desde que documentada e rebaseada antes do merge.
+- Verificar PRs concorrentes antes de editar.
+- Não modificar, em outra branch, arquivo que pertença a PR ativo. Quando houver sobreposição,
+  consolide o trabalho na mesma branch, aguarde a integração ou adie somente a parte incompatível.
 - Escopo pode ser ampliado para correções relacionadas ou necessárias ao objetivo sistêmico.
 - Correção de bug deve ter teste de regressão quando tecnicamente possível.
 - Entrega termina com arquivos, comandos, testes, riscos, limitações e rollback.
+- Mudança sensível envolvendo autenticação, permissões, uploads, CI/CD ou configuração exige
+  execução e registro do `security-auditor` antes da finalização e do merge.
 
 ## Proteções que nenhum agente ultrapassa
 
