@@ -143,7 +143,11 @@ export default function PremiumShellOverlay() {
 
   return (
     <>
-      <div className="ejc-premium-topbar" role="banner">
+      <div
+        className="ejc-premium-topbar"
+        role="region"
+        aria-label="Informações e contatos do escritório"
+      >
         <div
           className="ejc-premium-topbar__clock"
           aria-label="Data e hora atual"
