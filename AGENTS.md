@@ -50,13 +50,14 @@ merge.
 ## Regras de escrita
 
 - Nunca alterar a `main`/`master` diretamente.
-- Toda escrita ocorre em branch e termina registrada em PR.
+- Toda escrita exige Issue ou Issue-guarda-chuva, ocorre em branch e termina registrada em PR.
 - Verificar PRs concorrentes antes de editar.
 - Não modificar, em outra branch, arquivo que pertença a PR ativo. Quando houver sobreposição,
   consolide o trabalho na mesma branch, aguarde a integração ou adie somente a parte incompatível.
 - Escopo pode ser ampliado para correções relacionadas ou necessárias ao objetivo sistêmico.
 - Correção de bug deve ter teste de regressão quando tecnicamente possível.
-- Entrega termina com arquivos, comandos, testes, riscos, limitações e rollback.
+- Entrega termina com arquivos, comandos, testes, evidências, riscos, limitações, rollback e
+  decisões que exigem ação humana.
 - Mudança sensível envolvendo autenticação, permissões, uploads, CI/CD ou configuração exige
   execução e registro do `security-auditor` antes da finalização e do merge.
 
@@ -72,20 +73,26 @@ merge.
 6. Não desligar silenciosamente RBAC, isolamento, HITL, gate de citações, sanitização de PII ou
    kill-switch de IA.
 7. Não apresentar hipótese jurídica ou técnica como fato sem evidência.
+8. Não executar operação SQL `DROP`, migration destrutiva ou transformação irreversível sem
+   backup prévio, verificável, restauração testada e decisão humana registrada.
+9. Toda chamada de IA passa pelo gateway institucional; rota nova nasce protegida e endpoint
+   público exige justificativa registrada.
 
 ## Migrations
 
 Mais de uma branch pode analisar mudança de banco, mas apenas uma migration é integrada por vez.
 Antes de ficar pronta para merge, a branch deve atualizar a base, conferir `alembic heads`,
-ajustar reserva/número/`down_revision` e demonstrar head único.
+ajustar reserva/número/`down_revision`, validar upgrade e rollback aplicável e demonstrar head
+único. Migration destrutiva exige backup e teste de restauração antes do merge.
 
 ## Validade jurídica
 
-Regra jurídica exige fonte oficial, vigência, versão, teste e aviso de revisão humana. Ferramenta
-não homologada pode apoiar análise, mas não deve gerar documento formal automaticamente.
+Regra jurídica exige fonte oficial, vigência, versão, teste, rastreabilidade do fundamento e aviso
+de revisão humana. Ferramenta não homologada pode apoiar análise, mas não deve gerar documento
+formal automaticamente.
 
 ## Decisão e dúvida
 
 Decida e siga sem pedir autorização repetida para arquivos, testes, refatorações ou comandos
-seguros necessários ao objetivo. Pare apenas diante de ambiguidade material, alteração
-irreversível, produção/dado real ou conflito com decisão permanente do titular.
+seguros necessários ao objetivo. Pare diante de ambiguidade material, alteração irreversível,
+produção, credencial, segredo, dado real ou conflito com decisão permanente do titular.
