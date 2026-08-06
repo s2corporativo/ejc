@@ -7,7 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import type { OrquestradorVisao } from "../lib/api";
 
 const { visaoOrquestrador, avancarOrquestrador } = vi.hoisted(() => ({

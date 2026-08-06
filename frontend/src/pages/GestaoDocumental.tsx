@@ -1,4 +1,4 @@
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { FolderOpen, Lock } from "lucide-react";
 import Documentos from "./Documentos";
 import DataRoom from "./DataRoom";

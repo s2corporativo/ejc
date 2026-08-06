@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import { FolderOpen, X } from "lucide-react";
 import { CASE_NAV_SECTIONS } from "../config/caseNav";
 import { useCaseContext } from "../stores/caseContext";

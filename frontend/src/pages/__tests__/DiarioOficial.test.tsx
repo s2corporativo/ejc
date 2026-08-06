@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 
 // vi.hoisted: o factory de vi.mock é içado ao topo — precisa acessar `get` assim.
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
