@@ -133,6 +133,19 @@ def _legal_doc_query(case_id: str, source_limit: int) -> Select[Any]:
     )
 
 
+def _attendance_query(case_id: str, source_limit: int) -> Select[Any]:
+    """Seleciona atendimentos com desempate determinístico antes do limite."""
+    return (
+        select(Atendimento)
+        .where(Atendimento.case_id == case_id)
+        .order_by(
+            Atendimento.data_atendimento.desc(),
+            Atendimento.created_at.desc(),
+        )
+        .limit(source_limit)
+    )
+
+
 def _register_saturation(
     rows: list[Any], source: str, source_limit: int, saturated: list[str]
 ) -> None:
@@ -285,19 +298,7 @@ async def timeline(
     )
 
     attendances = list(
-        (
-            await db.execute(
-                select(Atendimento)
-                .where(Atendimento.case_id == case_id)
-                .order_by(
-                    Atendimento.data_atendimento.desc(),
-                    Atendimento.created_at.desc(),
-                )
-                .limit(source_limit)
-            )
-        )
-        .scalars()
-        .all()
+        (await db.execute(_attendance_query(case_id, source_limit))).scalars().all()
     )
     _register_saturation(
         attendances, "atendimentos", source_limit, saturated_sources
