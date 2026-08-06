@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { BrainCircuit, Clock3, Mail, MessageCircle, Quote } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import {
   getMailtoUrl,
   getWhatsAppUrl,

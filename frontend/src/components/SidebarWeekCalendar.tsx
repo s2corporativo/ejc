@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { addDays, addWeeks, format, isSameDay, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 

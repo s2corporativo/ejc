@@ -5,7 +5,7 @@ import {
   Route,
   Routes,
   useParams,
-} from "react-router-dom";
+} from "react-router";
 import { ToastContainer } from "./components/Toast";
 import { Spinner } from "./components/UI";
 import ErrorBoundary from "./components/ErrorBoundary";

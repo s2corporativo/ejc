@@ -1,7 +1,7 @@
 // ── Menu do avatar: foto de perfil, segurança e preferências ──
 import { useRef, useState } from "react";
 import { toast } from "./Toast";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import {
   BellRing,
   Camera,
