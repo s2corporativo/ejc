@@ -1,5 +1,6 @@
 name: Executar correção validada da revisão do design
 
+# Executor temporário: remover após a publicação e homologação do patch.
 on:
   pull_request:
     branches: [main]
