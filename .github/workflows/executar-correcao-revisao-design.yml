@@ -69,7 +69,9 @@ jobs:
                   r'\s+className="ejc-header-icon-button relative flex h-9 w-9 items-center justify-center rounded-xl"\n'
                   r'\s+aria-label="Notificações"'
               )
-              replacement = '''\1              disabled={privacyMode}
+
+              def replace_button(match: re.Match[str]) -> str:
+                  return match.group(1) + '''              disabled={privacyMode}
               title={
                 privacyMode
                   ? "Notificações ocultas no modo privacidade"
@@ -81,7 +83,8 @@ jobs:
                   ? "Notificações — ocultas no modo privacidade"
                   : "Notificações"
               }'''
-              text, count = pattern.subn(replacement, text, count=1)
+
+              text, count = pattern.subn(replace_button, text, count=1)
               if count != 1:
                   raise SystemExit('Botão de notificações não localizado por padrão semântico')
               path.write_text(text)
