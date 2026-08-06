@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router";
 import { Spinner } from "./UI";
 import { useAuth } from "../stores/auth";
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { ExternalLink, HelpCircle } from "lucide-react";
 import api from "../lib/api";
 import Markdown from "./Markdown";

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ScanLine, ShieldCheck, X } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import EntradaUniversalDocumentos, {
   EntradaUniversalResultado,
 } from "./EntradaUniversalDocumentos";
