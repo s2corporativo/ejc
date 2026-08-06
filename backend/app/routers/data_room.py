@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
+from app.core.publicacao_externa import confidencialidade_str as _confidencialidade
+from app.core.publicacao_externa import pode_publicar_externamente as _pode_publicar_externamente
 from app.core.rate_limit import consumir
 from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.case import Case
@@ -63,25 +65,9 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
 
 
-def _confidencialidade(doc: Document) -> str:
-    return str(
-        getattr(doc.confidencialidade, "value", doc.confidencialidade) or ""
-    ).lower()
-
-
-def _pode_publicar_externamente(u: User, doc: Document) -> bool:
-    """Política explícita de publicação, separada do acesso interno ao cofre."""
-    conf = _confidencialidade(doc)
-    nivel = ROLE_LEVEL.get(u.role.value, 0)
-    if conf == DocConfidencialidade.normal.value:
-        return nivel >= ROLE_LEVEL["advogado"]
-    if conf in {
-        DocConfidencialidade.restrito.value,
-        DocConfidencialidade.confidencial.value,
-    }:
-        return nivel >= ROLE_LEVEL["socio"]
-    # Documento interno e segredo de justiça nunca são publicados por link.
-    return False
+# _confidencialidade / _pode_publicar_externamente: reexportados de
+# app/core/publicacao_externa (Issue #698) — fonte única compartilhada com o
+# Portal do Cliente, para as duas políticas não divergirem com o tempo.
 
 
 def _arquivo_publicavel(arquivo: DataRoomArquivo, doc: Document) -> bool:

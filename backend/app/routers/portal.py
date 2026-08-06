@@ -3,12 +3,16 @@
 # Segurança em camadas:
 #   1. Middleware confina cliente_externo a /api/portal/*
 #   2. Cada endpoint filtra por cu.client_id (nunca expõe dados de terceiros)
-#   3. Documentos: apenas confidencialidade=normal
+#   3. Documentos: confidencialidade=normal E publicado_portal=true (ato
+#      EXPLÍCITO — reclassificar para "normal" não publica sozinho desde a
+#      Issue #698; ver PATCH /documents/{id}/publicacao-portal). Exceção: o
+#      próprio upload do cliente pelo Portal nasce visível a ele mesmo
+#      (portal_documentos.py), sem depender de ato do escritório.
 #   4. Estratégia do caso (tese, pontos fortes/fracos) NUNCA é exposta
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -150,13 +154,26 @@ async def documentos(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Apenas docs do cliente com confidencialidade NORMAL (liberados)."""
+    """Docs do cliente com confidencialidade NORMAL **e** publicados
+    explicitamente (Issue #698) — reavaliados a cada leitura, como o Data
+    Room faz para o link público (`_arquivo_publicavel`): um documento
+    publicado e depois reclassificado para `interno`/`segredo_justica` some
+    daqui automaticamente, sem precisar de um ato de despublicação.
+
+    Exceção: documento que o PRÓPRIO cliente enviou pelo Portal
+    (`uploaded_by == cu.id`, ver portal_documentos.py) fica visível a ele
+    sem depender de publicação do escritório — é o dele.
+    """
     client_id = _exigir_cliente(cu)
     rows = (await db.execute(
         select(Document).where(
             Document.client_id == client_id,
             Document.deleted_at.is_(None),
             Document.confidencialidade == DocConfidencialidade.normal,
+            or_(
+                Document.publicado_portal.is_(True),
+                Document.uploaded_by == cu.id,
+            ),
         ).order_by(Document.created_at.desc())
     )).scalars().all()
     return {"data": [

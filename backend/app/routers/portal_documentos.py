@@ -208,6 +208,14 @@ async def upload_item_solicitacao(
         case_id=sol.case_id,
         client_id=sol.client_id,
         uploaded_by=cu.id,
+        # Issue #698: publicação explícita normalmente exige ato do
+        # escritório — mas o documento é do PRÓPRIO cliente (ele que enviou),
+        # então nasce visível a ele sem depender de publicar (publicado_por
+        # None marca que não foi o escritório quem publicou; portal.documentos
+        # também cobre isso via uploaded_by == cu.id, em defesa dupla).
+        publicado_portal=True,
+        publicado_por=None,
+        publicado_em=agora,
     )
     db.add(d)
 

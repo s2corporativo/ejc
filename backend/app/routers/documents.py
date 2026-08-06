@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.publicacao_externa import confidencialidade_str, pode_publicar_externamente
 from app.core.rate_limit import rate_limit
 from app.core.upload_seguro import ler_upload_com_teto
 from app.core.security import get_current_user, ROLE_LEVEL
@@ -816,6 +817,80 @@ async def atualizar_metadados(
         "case_id": d.case_id,
         "client_id": d.client_id,
         "detail": "Metadados atualizados" if alteracoes else "Nada a alterar",
+    }
+
+
+class DocumentPublicacaoPortalRequest(BaseModel):
+    publicado: bool
+
+
+@router.patch("/{doc_id}/publicacao-portal")
+async def publicar_no_portal(
+    doc_id: str,
+    req: DocumentPublicacaoPortalRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Ato EXPLÍCITO de publicação ao Portal do Cliente (Issue #698).
+
+    Separado do PATCH de metadados comuns (`atualizar_metadados`) de
+    propósito: reclassificar um documento para "normal" é gestão documental
+    (peça já pública, cópia de diário oficial), publicar para o titular é
+    comunicação com o cliente. Antes desta rota eram o mesmo botão.
+
+    Piso de papel: `pode_publicar_externamente` (app/core/publicacao_externa)
+    — a MESMA política que o Data Room usa para o link público, para as duas
+    nunca divergirem. O Portal só exibe documentos `confidencialidade=normal`
+    (`GET /portal/documentos`), então publicar qualquer outro nível é rejeitado
+    aqui — não teria efeito lá e confundiria quem publicou.
+
+    Idempotente: pedir o estado já vigente não regrava publicado_por/em nem
+    duplica audit log.
+    """
+    d = (await db.execute(
+        select(Document).where(
+            Document.id == doc_id, Document.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    # Ownership (IDOR) + cofre — mesmos gates do PATCH de metadados.
+    await _verificar_acesso_documento(db, cu, d)
+    if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
+        raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
+
+    if req.publicado:
+        if confidencialidade_str(d) != DocConfidencialidade.normal.value:
+            raise HTTPException(
+                status_code=422,
+                detail="Só documentos com confidencialidade normal podem ser "
+                       "publicados no Portal do Cliente",
+            )
+        if not pode_publicar_externamente(cu, d):
+            raise HTTPException(
+                status_code=403,
+                detail="A classificação atual do documento impede publicação externa",
+            )
+
+    ja_publicado = bool(d.publicado_portal)
+    if ja_publicado != req.publicado:
+        d.publicado_portal = req.publicado
+        d.publicado_por = cu.id if req.publicado else None
+        d.publicado_em = datetime.now(timezone.utc) if req.publicado else None
+        await criar_audit_log(
+            db, cu.id, cu.role.value,
+            "PUBLISH_PORTAL" if req.publicado else "UNPUBLISH_PORTAL",
+            "documents", doc_id,
+            detalhes=f"publicado_portal: {ja_publicado} → {req.publicado}",
+        )
+        await db.commit()
+
+    return {
+        "id": d.id,
+        "publicado_portal": bool(d.publicado_portal),
+        "publicado_por": d.publicado_por,
+        "publicado_em": d.publicado_em.isoformat() if d.publicado_em else None,
     }
 
 
