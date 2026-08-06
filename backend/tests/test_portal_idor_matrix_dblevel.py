@@ -89,14 +89,25 @@ async def _criar_caso(db, client_id: str, titulo: str, resp_id: str | None = Non
     return case_id
 
 
-async def _criar_documento(db, client_id: str, case_id: str | None, titulo: str, confid: str = "normal") -> str:
+async def _criar_documento(
+    db, client_id: str, case_id: str | None, titulo: str, confid: str = "normal",
+    *, publicado_portal: bool = False, publicado_por: str | None = None,
+    uploaded_by: str | None = None,
+) -> str:
+    """Issue #698: `confidencialidade='normal'` sozinho NÃO publica mais —
+    precisa `publicado_portal=true` (ato explícito) OU `uploaded_by` ser o
+    próprio cliente (upload dele mesmo pelo Portal). Default aqui é
+    NÃO publicado, de propósito: replica o estado real de um documento
+    recém-classificado como normal, antes de qualquer ato de publicação."""
     doc_id = str(uuid4())
     await db.execute(
         text(
             "INSERT INTO documents (id, titulo, filename, filepath, client_id, "
-            "case_id, confidencialidade) VALUES "
+            "case_id, confidencialidade, publicado_portal, publicado_por, "
+            "publicado_em, uploaded_by) VALUES "
             "(:id, :titulo, :fn, :fp, :cid, :case, "
-            " CAST(:conf AS docconfidencialidade))"
+            " CAST(:conf AS docconfidencialidade), :pub, :pubpor, "
+            " CASE WHEN :pub THEN now() ELSE NULL END, :upby)"
         ),
         {
             "id": doc_id,
@@ -106,6 +117,9 @@ async def _criar_documento(db, client_id: str, case_id: str | None, titulo: str,
             "cid": client_id,
             "case": case_id,
             "conf": confid,
+            "pub": publicado_portal,
+            "pubpor": publicado_por,
+            "upby": uploaded_by,
         },
     )
     return doc_id
@@ -246,9 +260,11 @@ async def test_caso_detalhe_e_meus_casos_isolam_por_cliente():
 
 
 async def test_documentos_portal_apenas_normais_do_proprio_cliente():
-    """Prova: A recebe só o próprio documento NORMAL. Não recebe: (a) o próprio
-    documento CONFIDENCIAL (filtro de confidencialidade) nem (b) o documento
-    normal de B (isolamento por client_id)."""
+    """Prova: A recebe só o próprio documento NORMAL **e publicado**. Não
+    recebe: (a) o próprio documento CONFIDENCIAL (filtro de confidencialidade)
+    nem (b) o documento normal de B (isolamento por client_id) nem (c) o
+    próprio documento NORMAL mas nunca publicado (Issue #698 — reclassificar
+    não é mais publicar)."""
     from app.core.database import AsyncSessionLocal
     from app.routers.portal import documentos
 
@@ -256,19 +272,29 @@ async def test_documentos_portal_apenas_normais_do_proprio_cliente():
     async with AsyncSessionLocal() as db:
         cli_a = await _criar_cliente(db, f"Cliente A {tok}")
         cli_b = await _criar_cliente(db, f"Cliente B {tok}")
+        adv = await _criar_staff(db, "advogado")
         ua = await _criar_portal_user(db, cli_a)
-        doc_a_normal = await _criar_documento(db, cli_a, None, f"A-normal-{tok}", "normal")
+        doc_a_normal = await _criar_documento(
+            db, cli_a, None, f"A-normal-{tok}", "normal",
+            publicado_portal=True, publicado_por=adv,
+        )
+        doc_a_nao_publicado = await _criar_documento(
+            db, cli_a, None, f"A-normal-nao-publicado-{tok}", "normal",
+        )
         doc_a_conf = await _criar_documento(db, cli_a, None, f"A-conf-{tok}", "confidencial")
-        doc_b_normal = await _criar_documento(db, cli_b, None, f"B-normal-{tok}", "normal")
+        doc_b_normal = await _criar_documento(
+            db, cli_b, None, f"B-normal-{tok}", "normal", publicado_portal=True,
+        )
         await db.commit()
         try:
             user_a = await _carregar_user(db, ua)
             ids = {d["id"] for d in (await documentos(db=db, cu=user_a))["data"]}
-            assert doc_a_normal in ids  # POSITIVO
+            assert doc_a_normal in ids  # POSITIVO: normal + publicado
+            assert doc_a_nao_publicado not in ids  # #698: normal sem ato de publicação não vaza
             assert doc_a_conf not in ids  # confidencial não vaza p/ portal
             assert doc_b_normal not in ids  # doc de terceiro não vaza
         finally:
-            await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
+            await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua, adv])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
