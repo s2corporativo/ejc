@@ -42,10 +42,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git grep -l -E "from ['\"]react-router-dom['\"]" -- \
-            'frontend/src/**/*.ts' 'frontend/src/**/*.tsx' \
-            'frontend/tests/**/*.ts' 'frontend/tests/**/*.tsx' \
-            2>/dev/null | sort -u > /tmp/router-files || true
+          git grep -l -E "from ['\"]react-router-dom['\"]" -- frontend/src frontend/tests \
+            | grep -E '\.(ts|tsx)$' \
+            | sort -u > /tmp/router-files
           {
             cat /tmp/router-files
             printf '%s\n' \
