@@ -1,0 +1,122 @@
+name: Register Agenda Route Temp
+
+on:
+  push:
+    branches:
+      - refactor/ejc-premium-gold-graphite-20260805
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refactor/ejc-premium-gold-graphite-20260805
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências
+        working-directory: frontend
+        run: npm ci
+
+      - name: Registrar rota e corrigir teste
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          registry = Path("frontend/src/config/moduleRegistry.tsx")
+          text = registry.read_text(encoding="utf-8")
+
+          import_marker = 'const Central = lazy(() => import("../pages/Central"));\n'
+          import_value = import_marker + 'const AgendaDia = lazy(() => import("../pages/AgendaDia"));\n'
+          if 'const AgendaDia = lazy(() => import("../pages/AgendaDia"));' not in text:
+              if import_marker not in text:
+                  raise SystemExit("marcador de import da Central não encontrado")
+              text = text.replace(import_marker, import_value, 1)
+
+          route_marker = '  {\n    key: "prazos",\n'
+          route_value = '''  {
+    key: "atividades-dia",
+    path: "/atividades/dia/:date",
+    label: "Agenda do Dia",
+    description:
+      "Atividades da data selecionada no calendário semanal do escritório.",
+    group: "Trabalhar um caso",
+    icon: CalendarClock,
+    component: AgendaDia,
+    status: "hidden",
+    helpKey: "atividades",
+    sensitive: true,
+    backendPrefixes: ["/api/atividades", "/api/agenda-eventos"],
+  },
+'''
+          if 'key: "atividades-dia"' not in text:
+              if route_marker not in text:
+                  raise SystemExit("marcador da rota de prazos não encontrado")
+              text = text.replace(route_marker, route_value + route_marker, 1)
+
+          registry.write_text(text, encoding="utf-8")
+
+          app = Path("frontend/src/App.tsx")
+          text = app.read_text(encoding="utf-8")
+          text = text.replace(
+              'const AgendaDia = lazy(() => import("./pages/AgendaDia"));\n',
+              "",
+              1,
+          )
+          route_block = '''
+              {/* Subrota contextual da agenda semanal: usa os mesmos dados e
+                  permanece sob os guards globais de equipe. */}
+              <Route path="/atividades/dia/:date" element={<AgendaDia />} />
+'''
+          if route_block not in text:
+              raise SystemExit("bloco literal da agenda diária não encontrado no App")
+          text = text.replace(route_block, "", 1)
+          app.write_text(text, encoding="utf-8")
+
+          test = Path("frontend/src/pages/AgendaDia.test.tsx")
+          text = test.read_text(encoding="utf-8")
+          old = '    expect(screen.getByText(/09:30/)).toBeTruthy();\n'
+          new = '    expect(screen.getAllByText(/09:30/)).toHaveLength(2);\n'
+          if old not in text:
+              raise SystemExit("asserção de horário não encontrada")
+          test.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          cd frontend
+          npx prettier --write \
+            src/App.tsx \
+            src/config/moduleRegistry.tsx \
+            src/pages/AgendaDia.test.tsx
+
+      - name: Executar testes de integridade afetados
+        working-directory: frontend
+        run: |
+          npx vitest run \
+            src/config/internalLinks.test.ts \
+            src/config/routeIntegrity.test.ts \
+            src/pages/AgendaDia.test.tsx
+
+      - name: Commit da correção
+        run: |
+          if git diff --quiet; then
+            echo "Nenhuma alteração necessária."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            frontend/src/App.tsx \
+            frontend/src/config/moduleRegistry.tsx \
+            frontend/src/pages/AgendaDia.test.tsx
+          git commit -m "fix(frontend): registra rota da agenda diaria"
+          git push origin HEAD:refactor/ejc-premium-gold-graphite-20260805
