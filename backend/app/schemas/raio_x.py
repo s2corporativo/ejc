@@ -43,6 +43,33 @@ class RaioXUpdate(BaseModel):
         return value
 
 
+class RaioXIdentificacaoRevisada(BaseModel):
+    """Allowlist explícita para ``revisao_humana.identificacao`` no PATCH.
+
+    Issue #695: o dict livre enviado pelo cliente era iterado com
+    ``setattr(analise, key, value)`` em qualquer atributo existente no model
+    (status, deleted_at, created_by, id, titulo...) — mass assignment. Aqui só
+    os mesmos campos de identificação processual que ``_aplicar_identificacao``
+    trata (raio_x.py) são aceitos, com os mesmos limites de tamanho de
+    ``RaioXUpdate``. Qualquer chave fora deste conjunto é rejeitada em
+    ``atualizar()`` (raio_x.py) com 422 nomeando os campos recusados —
+    ``extra="forbid"`` aqui é defesa em profundidade, não a mensagem ao
+    cliente (essa é construída no router, para poder listar os nomes).
+    """
+
+    model_config = {"extra": "forbid"}
+
+    numero_processo: Optional[str] = Field(None, max_length=30)
+    area: Optional[str] = Field(None, max_length=50)
+    subarea: Optional[str] = Field(None, max_length=100)
+    rito: Optional[str] = Field(None, max_length=100)
+    fase: Optional[str] = Field(None, max_length=100)
+    tribunal: Optional[str] = Field(None, max_length=50)
+    orgao: Optional[str] = Field(None, max_length=100)
+    unidade: Optional[str] = Field(None, max_length=100)
+    posicao_cliente: Optional[str] = Field(None, max_length=100)
+
+
 class ClienteConversao(BaseModel):
     modo: Literal["existente", "novo"]
     client_id: Optional[str] = None
