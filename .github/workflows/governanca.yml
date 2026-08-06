@@ -111,15 +111,33 @@ jobs:
           [ "$FALTA" -eq 0 ] || exit 1
           echo "Descricao do PR completa."
 
+      - name: Revisao de seguranca registrada
+        env:
+          CORPO: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
+          SENSIVEL=$(grep -Ec "$PADRAO_SENSIVEL" "$RUNNER_TEMP/alterados.txt" || true)
+          if [ "$SENSIVEL" -gt 0 ]; then
+            if ! printf '%s' "$CORPO" | grep -qi 'security-auditor: executado'; then
+              echo "::error::PR sensível altera autenticação, permissões, uploads, CI/CD ou configuração sem registrar 'security-auditor: executado' no corpo do PR."
+              exit 1
+            fi
+            echo "Revisão security-auditor registrada para alteração sensível."
+          else
+            echo "PR não altera superfície que exija security-auditor obrigatório."
+          fi
+
       - name: Alteracao de governanca isolada
         shell: bash
         run: |
-          GOV=$(grep -Ec '^(CLAUDE\.md|AGENTS\.md|\.claude/|docs/GOVERNANCA_IA\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md)' "$RUNNER_TEMP/alterados.txt" || true)
+          PADRAO_GOV='^(CLAUDE\.md|AGENTS\.md|\.claude/|\.github/workflows/governanca\.yml|docs/GOVERNANCA_IA\.md|docs/GOVERNANCA_FASE2\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md)'
+          GOV=$(grep -Ec "$PADRAO_GOV" "$RUNNER_TEMP/alterados.txt" || true)
           COD=$(grep -Ec '^(backend/app/|frontend/src/)' "$RUNNER_TEMP/alterados.txt" || true)
           if [ "$GOV" -gt 0 ] && [ "$COD" -gt 0 ]; then
-            echo "::warning::PR mistura governanca e codigo funcional. Na governanca v2 isso e permitido quando a mesma correcao sistemica exige harmonizacao entre regra e implementacao. Reforce escopo, testes, riscos e rollback no review."
+            echo "::warning::PR mistura governança e código funcional. Na governança v2, isso é permitido quando a mesma correção sistêmica exige harmonização entre regra e implementação. Reforce escopo, testes, riscos e rollback na revisão."
           else
-            echo "Escopo sem mistura entre governanca e codigo funcional."
+            echo "Escopo sem mistura entre governança e código funcional."
           fi
 
       - name: Branch nao e main
