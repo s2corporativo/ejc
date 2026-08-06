@@ -36,6 +36,7 @@ A primeira onda concentra-se no AppShell, configurações institucionais públic
 - Configurações públicas centralizadas em `officeBranding.ts`.
 - Nenhum segredo é aceito nas variáveis públicas do Vite.
 - O dia escolhido no calendário semanal abre a rota protegida `/atividades/dia/:date`, alimentada pelos mesmos endpoints reais da Central de Atividades.
+- A rota diária é registrada como rota oculta no `moduleRegistry.tsx`, preservando a governança central de rotas, RBAC e verificação de links internos.
 - A agenda diária possui teste para data válida, data inválida e falha de API sem criação de conteúdo fictício.
 
 ## 5. Variáveis públicas
