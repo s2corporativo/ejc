@@ -1,0 +1,188 @@
+name: Executar hardening controlado das dependências
+
+# Executor temporário. A etapa que executa código possui somente leitura; a
+# publicação recebe apenas o artefato validado e não executa o projeto.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/executar-hardening-dependencias.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: executar-hardening-dependencias-732
+  cancel-in-progress: true
+
+jobs:
+  validar:
+    name: Validar migração segura das dependências
+    if: github.head_ref == 'codex/auditoria-hardening-pos-design-20260806'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout sem credenciais persistidas
+        uses: actions/checkout@v7
+        with:
+          ref: codex/auditoria-hardening-pos-design-20260806
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Instalar Node 22.22
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.22.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Construir manifesto prévio dos arquivos permitidos
+        shell: bash
+        run: |
+          set -euo pipefail
+          git grep -l -E "from ['\"]react-router-dom['\"]" -- \
+            'frontend/src/**/*.ts' 'frontend/src/**/*.tsx' \
+            'frontend/tests/**/*.ts' 'frontend/tests/**/*.tsx' \
+            2>/dev/null | sort -u > /tmp/router-files || true
+          {
+            cat /tmp/router-files
+            printf '%s\n' \
+              frontend/package.json \
+              frontend/package-lock.json \
+              frontend/Dockerfile
+          } | sort -u > /tmp/allowed-files
+          test -s /tmp/router-files
+          cat /tmp/allowed-files
+
+      - name: Migrar imports declarativos para o pacote oficial
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            sed -i -E "s/from ['\"]react-router-dom['\"]/from \"react-router\"/g" "$file"
+          done < /tmp/router-files
+          if git grep -n -E "from ['\"]react-router-dom['\"]" -- frontend/src frontend/tests; then
+            echo "Imports legados permaneceram após a migração" >&2
+            exit 1
+          fi
+
+      - name: Atualizar pacote e lockfile sem force
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pkg delete dependencies.react-router-dom
+          npm pkg set dependencies.react-router="8.3.0"
+          npm pkg set devDependencies.postcss="8.5.25"
+          npm pkg set engines.node=">=22.22.0"
+          npm install --package-lock-only --ignore-scripts
+          npm audit fix --package-lock-only --ignore-scripts
+
+      - name: Alinhar imagem de build
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/FROM node:20-slim AS build/FROM node:22.22-slim AS build/' frontend/Dockerfile
+          grep -q 'FROM node:22.22-slim AS build' frontend/Dockerfile
+
+      - name: Instalação reproduzível
+        working-directory: frontend
+        run: npm ci
+
+      - name: Formatação, lint, testes, build e auditoria
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run format:check
+          npm run lint:eslint
+          npm run test -- --reporter=dot
+          npm run build
+          npm audit --audit-level=high
+
+      - name: Validar que o diff respeita o manifesto prévio
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only | sort -u > /tmp/changed-files
+          test -s /tmp/changed-files
+          unexpected="$(comm -23 /tmp/changed-files /tmp/allowed-files)"
+          if [ -n "$unexpected" ]; then
+            echo "Arquivos inesperados no diff:" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
+          grep -qx 'frontend/package.json' /tmp/changed-files
+          grep -qx 'frontend/package-lock.json' /tmp/changed-files
+          grep -qx 'frontend/Dockerfile' /tmp/changed-files
+          while IFS= read -r file; do
+            grep -qx "$file" /tmp/changed-files || {
+              echo "Import esperado não foi migrado: $file" >&2
+              exit 1
+            }
+          done < /tmp/router-files
+
+      - name: Empacotar somente arquivos validados
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/hardening-dependencias.tgz --files-from=/tmp/changed-files
+          cp /tmp/changed-files /tmp/hardening-manifest.txt
+
+      - name: Publicar artefato validado
+        uses: actions/upload-artifact@v7
+        with:
+          name: hardening-dependencias-validado
+          path: |
+            /tmp/hardening-dependencias.tgz
+            /tmp/hardening-manifest.txt
+          retention-days: 1
+
+  publicar:
+    name: Publicar dependências validadas
+    needs: validar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exclusivo para publicação
+        uses: actions/checkout@v7
+        with:
+          ref: codex/auditoria-hardening-pos-design-20260806
+          fetch-depth: 0
+
+      - name: Baixar artefato validado
+        uses: actions/download-artifact@v8
+        with:
+          name: hardening-dependencias-validado
+          path: /tmp/hardening
+
+      - name: Conferir manifesto e publicar
+        shell: bash
+        run: |
+          set -euo pipefail
+          sort -u /tmp/hardening/hardening-manifest.txt > /tmp/manifest
+          tar -tzf /tmp/hardening/hardening-dependencias.tgz \
+            | sed 's#/$##' | sort -u > /tmp/archive-files
+          diff -u /tmp/manifest /tmp/archive-files
+          while IFS= read -r file; do
+            case "$file" in
+              frontend/package.json|frontend/package-lock.json|frontend/Dockerfile|frontend/src/*.ts|frontend/src/*.tsx|frontend/src/*/*.ts|frontend/src/*/*.tsx|frontend/src/*/*/*.ts|frontend/src/*/*/*.tsx|frontend/tests/*.ts|frontend/tests/*.tsx|frontend/tests/*/*.ts|frontend/tests/*/*.tsx)
+                ;;
+              *)
+                echo "Caminho não permitido no artefato: $file" >&2
+                exit 1
+                ;;
+            esac
+          done < /tmp/manifest
+          tar -xzf /tmp/hardening/hardening-dependencias.tgz
+          git diff --name-only | sort -u > /tmp/published-files
+          diff -u /tmp/manifest /tmp/published-files
+          git add --pathspec-from-file=/tmp/manifest
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(frontend): corrigir vulnerabilidades de dependências"
+          git push origin HEAD:codex/auditoria-hardening-pos-design-20260806
