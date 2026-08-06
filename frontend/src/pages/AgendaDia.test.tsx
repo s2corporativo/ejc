@@ -73,7 +73,7 @@ describe("agenda diária", () => {
       expect(screen.getByText("Audiência trabalhista")).toBeTruthy();
     });
     expect(screen.queryByText("Atividade de outro dia")).toBeNull();
-    expect(screen.getByText(/09:30/)).toBeTruthy();
+    expect(screen.getAllByText(/09:30/)).toHaveLength(2);
     expect(screen.getByText(/Fórum trabalhista/)).toBeTruthy();
     expect(getMock).toHaveBeenCalledWith("/atividades", {
       params: { apenas_pendentes: false },
