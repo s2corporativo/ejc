@@ -69,6 +69,10 @@ ADICOES_INTENCIONAIS = {
     # nova).
     ("/api/entrada/analisar", "POST"),
     ("/api/entrada/{rascunho_id}/criar-caso", "POST"),
+    # Issue #716: fachadas somente-leitura do workspace. Ambas exigem
+    # autenticação + ownership no handler e não criam tabela ou escrita paralela.
+    ("/api/cases/{case_id}/timeline", "GET"),
+    ("/api/cases/{case_id}/operational-health", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui

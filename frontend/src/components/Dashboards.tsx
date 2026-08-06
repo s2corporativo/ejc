@@ -2,7 +2,7 @@
 // Kit de dashboard reutilizável — design moderno branco+azul.
 // Usado pelo Dashboard principal, pelos ramos do Direito e pela tela de Casos.
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import {
   ArrowUpRight,
   BookOpen,

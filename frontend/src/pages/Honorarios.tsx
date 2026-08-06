@@ -2,7 +2,7 @@ import { exportCsv } from "../utils/exportCsv";
 import { toast } from "../components/Toast";
 import { exportPdf } from "../utils/exportPdf";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import {
   Plus,
   DollarSign,

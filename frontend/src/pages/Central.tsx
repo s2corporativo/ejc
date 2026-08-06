@@ -3,7 +3,7 @@
 // única tela com abas. A aba é controlada por ?tab= para deep links; o
 // parâmetro ?view= continua sendo lido pela aba de atividades (compatível
 // com os redirects /agenda e /kanban).
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import { CalendarClock, Users } from "lucide-react";
 import { useAuth } from "../stores/auth";
 import { ROLES } from "../config/moduleRegistry";

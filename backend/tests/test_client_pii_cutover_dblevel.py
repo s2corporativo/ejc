@@ -49,9 +49,11 @@ async def _carregar_user(db, uid: str):
 
 async def _limpar(db, *, user_ids=None, client_ids=None):
     for cid in (client_ids or []):
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE registro_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": cid})
     for uid in (user_ids or []):
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
     await db.commit()
