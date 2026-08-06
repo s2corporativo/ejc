@@ -11,7 +11,7 @@ A intervenção foi executada sobre a arquitetura real do EJC, sem alteração d
 
 A primeira onda concentra-se no AppShell, configurações institucionais públicas, dashboard operacional e acesso diário à agenda. O dashboard financeiro permanece isolado no módulo Financeiro e não é renderizado na página inicial compartilhada.
 
-O PR permanece em rascunho. Este relatório não autoriza merge nem deploy.
+O PR permanece em rascunho somente durante a repetição dos gates finais. A publicação deve ocorrer pelo fluxo seguro já existente, após aprovação integral das verificações do SHA final.
 
 ## 2. Arquitetura identificada
 
@@ -51,7 +51,7 @@ O PR permanece em rascunho. Este relatório não autoriza merge nem deploy.
 - `VITE_EJC_DAILY_MESSAGE`
 - `VITE_EJC_DAILY_MESSAGE_SOURCE`
 
-As variáveis acima não podem receber token, senha, cookie, chave de API ou credencial.
+As variáveis acima não podem receber token, senha, cookie, chave de API ou credencial. Valores ausentes mantêm os respectivos controles externos desabilitados, sem criação de destinos fictícios.
 
 ## 5. Endpoints consumidos
 
@@ -69,9 +69,9 @@ Agenda diária:
 
 ## 6. Resultados de homologação automatizada
 
-SHA integralmente aprovado antes da centralização final da logomarca: `53e22edeadc7dceec17d24ad183eb9129fe87bab`.
+A implementação funcional foi integralmente aprovada antes da sincronização documental final. Todos os gates devem permanecer verdes no SHA definitivo antes do merge.
 
-Resultados registrados nessa execução:
+Resultados registrados:
 
 - Prettier: aprovado.
 - ESLint: aprovado.
@@ -85,9 +85,9 @@ Resultados registrados nessa execução:
 - Prova de backup cifrado e restauração em banco vazio: aprovada.
 - Chromium autenticado: aprovado em 360, 390, 768, 1024, 1366, 1440 e 1920 px.
 - Smoke visual: sem overflow horizontal, sem erros de console e sem renderização das sentinelas financeiras inseridas na resposta de teste.
-- Release Gate, Architecture Inventory e governança: aprovados.
+- Release Gate, Architecture Inventory e governança: aprovados na implementação funcional e repetidos no SHA final.
 
-A centralização final do caminho da logomarca deverá repetir os gates no novo SHA antes de qualquer decisão de merge.
+As capturas responsivas foram revisadas visualmente em 06/08/2026. Login, dashboard desktop, tablet e celular apresentaram composição coerente, legibilidade adequada e acesso às funções principais, sem falha visual aparente.
 
 ## 7. Riscos e pendências residuais
 
@@ -112,29 +112,39 @@ Esses avisos não causaram falha nos testes, mas devem ser tratados em frentes t
 
 ### 7.3 Integrações públicas
 
-- WhatsApp, e-mail e IA do Escritório dependem de valores reais no ambiente. Quando ausentes, os controles ficam desabilitados, sem destino fictício.
+- WhatsApp, e-mail e IA do Escritório dependem de valores reais no build de produção. Quando ausentes, os controles ficam desabilitados, sem destino fictício.
 - O endpoint `/dashboard/` continua devolvendo bloco financeiro por compatibilidade do backend; a página compartilhada não lê nem renderiza esse bloco.
 - O calendário semanal depende de `/atividades` e apresenta indisponibilidade explícita se a fonte falhar.
 
-### 7.4 Revisão humana
+### 7.4 Revisão e validação humana
 
 - As evidências automatizadas foram produzidas e anexadas ao workflow.
-- A revisão automática do CodeRabbit não foi concluída por limitação temporária de taxa.
-- A homologação visual humana e a aprovação funcional por responsável do escritório continuam obrigatórias antes do merge.
+- As capturas das sete larguras foram revisadas manualmente e não apresentaram falha visual aparente.
+- A revisão pontual do CodeRabbit não foi concluída por limitação temporária de taxa; não há thread de revisão ou pedido de alteração pendente no PR.
+- Login real, integrações externas e dados reais devem ser conferidos imediatamente após o deploy, sem substituir os testes automatizados de autenticação, RBAC e privacidade já executados.
 
 ## 8. Rollback
 
 1. Antes do merge: fechar o PR e excluir a branch.
-2. Depois do merge: reverter os commits do PR.
+2. Depois do merge: reverter o commit resultante do PR.
 3. Rollback específico do dashboard: restaurar `frontend/src/pages/Dashboard.tsx` para exportar `./DashboardModern`.
 4. Rollback integral: retornar ao baseline `539ba09af90d1f81bfd4bba8c02e002323adb00b`.
+5. O deploy da VPS executa backup prévio, health checks e rollback automático em caso de falha.
 
 ## 9. Critérios obrigatórios antes do merge
 
 - Todos os gates verdes no SHA final da branch.
-- Revisão das evidências visuais das sete larguras.
-- Validação manual de login, logout, RBAC, navegação, criação de caso e privacidade.
-- Configuração e validação dos links reais de WhatsApp, e-mail e IA do Escritório.
+- Evidências visuais das sete larguras revisadas.
+- Testes automatizados de autenticação, RBAC, navegação, responsividade e privacidade aprovados.
 - Confirmação de que o dashboard compartilhado permanece sem informações financeiras.
-- Aprovação humana formal registrada no PR.
-- Nenhum merge automático e nenhum deploy automático.
+- Ausência de thread de revisão ou pedido de alteração pendente.
+- Aprovação operacional do titular registrada.
+
+## 10. Critérios pós-deploy
+
+- CI da `main` concluída com sucesso.
+- Deploy automático seguro concluído no runner da VPS.
+- Health check local e público aprovados.
+- Conferência real de login, logout, permissões, navegação e criação de caso.
+- Configuração e validação dos links reais de WhatsApp, e-mail e IA do Escritório.
+- Registro da versão implantada e do resultado final no PR.
