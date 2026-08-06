@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -10,6 +9,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import Select
+from sqlalchemy.dialects import postgresql
 
 import app.routers.case_timeline as roteador_timeline
 from app.core.database import get_db
@@ -21,14 +21,13 @@ from app.models.task import Task
 from app.services import case_timeline_service
 from app.services.case_timeline_service import (
     _as_utc,
+    _attendance_query,
     _deadline_query,
     _document_query,
     _event,
     _legal_doc_query,
     _task_query,
 )
-
-RAIZ_BACKEND = Path(__file__).parents[1]
 
 
 def _usuario(papel: str):
@@ -63,6 +62,18 @@ class _SessaoSomenteLeituraFalsa:
         if isinstance(limite, int):
             linhas = linhas[:limite]
         return _ResultadoEscalarFalso(linhas)
+
+
+def _ordem_sql(consulta: Select[Any]) -> str:
+    """Retorna somente o trecho ORDER BY compilado no dialeto de produção."""
+    sql = str(
+        consulta.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    ).lower()
+    assert " order by " in sql
+    return sql.split(" order by ", 1)[1].split(" limit ", 1)[0]
 
 
 def _prazo(
@@ -194,25 +205,29 @@ def test_socio_preserva_acesso_documental_conforme_politica_interna():
 
 
 def test_fontes_ordenam_pela_mesma_precedencia_exposta_em_occurred_at():
-    ordem_prazos = " ".join(
-        str(clausula).lower() for clausula in _deadline_query("case-1", 2)._order_by_clauses
-    )
-    assert "coalesce(deadlines.data_conclusao" in ordem_prazos
+    ordem_prazos = _ordem_sql(_deadline_query("case-1", 2))
+    assert ordem_prazos.startswith("coalesce(deadlines.data_conclusao, timezone(")
+    assert "'utc'" in ordem_prazos
     assert "deadlines.data_prazo" in ordem_prazos
+    assert ordem_prazos.split(", deadlines.created_at", 1)[0].endswith(" desc")
+    assert "deadlines.created_at desc" in ordem_prazos
 
-    ordem_tarefas = " ".join(
-        str(clausula).lower() for clausula in _task_query("case-1", 2)._order_by_clauses
+    ordem_tarefas = _ordem_sql(_task_query("case-1", 2))
+    assert ordem_tarefas.startswith(
+        "coalesce(tasks.concluida_em, tasks.updated_at, tasks.created_at) desc"
     )
-    assert "coalesce(tasks.concluida_em, tasks.updated_at, tasks.created_at)" in ordem_tarefas
+    assert "tasks.created_at desc" in ordem_tarefas
 
-    ordem_pecas = " ".join(
-        str(clausula).lower()
-        for clausula in _legal_doc_query("case-1", 2)._order_by_clauses
-    )
-    assert (
+    ordem_pecas = _ordem_sql(_legal_doc_query("case-1", 2))
+    assert ordem_pecas.startswith(
         "coalesce(legal_docs.protocolado_em, legal_docs.revisado_em, "
-        "legal_docs.updated_at, legal_docs.created_at)"
-    ) in ordem_pecas
+        "legal_docs.updated_at, legal_docs.created_at) desc"
+    )
+    assert "legal_docs.created_at desc" in ordem_pecas
+
+    ordem_atendimentos = _ordem_sql(_attendance_query("case-1", 2))
+    assert ordem_atendimentos.startswith("atendimentos.data_atendimento desc")
+    assert "atendimentos.created_at desc" in ordem_atendimentos
 
 
 @pytest.mark.asyncio
@@ -399,7 +414,18 @@ def test_handlers_rejeitam_sem_ownership_e_expoem_saude_deterministica(monkeypat
 
 
 def test_router_e_anexado_uma_unica_vez_ao_dominio_cases():
-    codigo_fonte = (RAIZ_BACKEND / "app/routers/__init__.py").read_text(
-        encoding="utf-8"
-    )
-    assert codigo_fonte.count("cases.router.include_router(case_timeline.router)") == 1
+    from app.main import app
+
+    caminhos = [
+        rota.path
+        for rota in app.routes
+        if getattr(rota, "path", "")
+        in {
+            "/api/cases/{case_id}/timeline",
+            "/api/cases/{case_id}/operational-health",
+        }
+    ]
+    assert sorted(caminhos) == [
+        "/api/cases/{case_id}/operational-health",
+        "/api/cases/{case_id}/timeline",
+    ]
