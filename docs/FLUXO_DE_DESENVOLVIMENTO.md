@@ -10,7 +10,7 @@ Use para diagnóstico, pente fino, revisão de PR, inventário, homologação t�
 
 Fluxo:
 
-```
+```text
 pedido do titular → leitura ampla → buscas/testes/builds → confirmação dos achados → relatório
 ```
 
@@ -33,15 +33,17 @@ Use quando o titular autorizar revisão sistêmica com correção, por exemplo: 
 
 Fluxo:
 
-```
-pedido do titular → Issue-guarda-chuva → branch(es) → auditoria → correções relacionadas
-→ testes → PR(s) → revisão independente → homologação → merge autorizado
+```text
+pedido do titular → diagnóstico somente leitura → Issue-guarda-chuva → branch(es)
+→ correções relacionadas → testes → PR(s) → revisão independente → homologação
+→ merge autorizado
 ```
 
 Regras:
 
-- o pedido direto do titular autoriza começar;
-- a Issue-guarda-chuva pode ser criada antes ou durante a execução, mas deve existir até o PR;
+- o pedido direto do titular autoriza iniciar a auditoria somente leitura;
+- a Issue-guarda-chuva deve existir antes da criação da branch de implementação, de qualquer
+  alteração em arquivos ou de qualquer commit;
 - os achados podem ser agrupados por domínio, dependência, risco ou facilidade de revisão;
 - um achado relacionado pode entrar no mesmo PR quando necessário para completar, testar ou
   estabilizar a correção;
@@ -55,7 +57,7 @@ Use para bug, melhoria ou funcionalidade específica.
 
 Fluxo:
 
-```
+```text
 pedido/Issue → branch → reprodução → implementação → testes → PR → revisão → homologação
 → autorização do titular → merge → deploy
 ```
@@ -70,15 +72,17 @@ pedido/Issue → branch → reprodução → implementação → testes → PR �
 
 ### Sobreposição com outro PR
 
-Sobreposição não bloqueia automaticamente a tarefa. Escolha uma solução proporcional:
+Leitura e diagnóstico podem ocorrer em paralelo. Para escrita, arquivo pertencente a PR ativo
+não deve ser modificado em outra branch. Escolha uma solução proporcional:
 
-- seguir em função/trecho independente e registrar a concorrência;
-- consolidar numa única branch;
-- combinar a ordem de merge e rebase;
-- adiar apenas a parte incompatível.
+- consolidar as mudanças na mesma branch do PR ativo;
+- combinar a ordem de merge e atualizar a branch seguinte depois da integração;
+- adiar somente a parte incompatível;
+- dividir a entrega por arquivos que não estejam sob alteração concorrente.
 
-Pare somente se as duas frentes alterarem o mesmo comportamento de forma incompatível ou se a
-continuação tiver risco concreto de perda de trabalho.
+Pare quando a escrita pretendida alcançar arquivo de outro PR ativo e ainda não existir uma
+estratégia explícita de consolidação ou sequência. Não sobrescreva silenciosamente trabalho
+concorrente.
 
 ## 3. Implementação
 
@@ -126,6 +130,9 @@ Aplicar `docs/CRITERIOS_DE_ACEITE.md` de forma proporcional ao escopo:
 
 Revisor pode propor correção, abrir commit em branch própria ou, quando autorizado, corrigir na
 branch do PR. O importante é preservar histórico e revisão independente do resultado final.
+
+Mudanças sensíveis envolvendo autenticação, permissões, uploads, CI/CD ou configuração exigem
+execução e registro do `security-auditor` antes da finalização e do merge.
 
 ## 6. Migrations
 
