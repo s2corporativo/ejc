@@ -3,7 +3,7 @@
 > **Documento canônico.** `CLAUDE.md`, `AGENTS.md` e os demais documentos de processo
 > traduzem estas regras para cada agente. Em caso de divergência, este arquivo prevalece.
 
-Versão: 2.1 — 2026-08-06.
+Versão: 2.2 — 2026-08-06 (registro das decisões permanentes do enxugamento na seção 11).
 
 ## 1. Princípio
 
@@ -218,6 +218,8 @@ Decisão permanente só é reaberta por novo pedido explícito do titular.
 | Decisão | Estado | Observação |
 |---|---|---|
 | **2FA — não implementar por padrão** | Vigente desde 2026-07-26 | `TWO_FACTOR_AUTH_ENABLED` permanece desligado por padrão e o kill-switch é preservado. Auditoria pode registrar o risco, mas não tratá-lo como correção obrigatória contra a decisão do titular. |
+| **Enxugamento — módulos cortados** | Vigente desde 2026-08-06 | Autorizado pelo titular (chat, 2026-08-06), com fundamento no `docs/auditoria/plano-lancamento-v3.md` (Bloco 4) e no `docs/auditoria/parecer-arquitetural.md` (§3): **diplomacia-v3 é removida do código** (risco reputacional e disciplinar); **jurimetria/predição de êxito, Victory Vault, Notícias/radar regulatório e Sociedade saem da navegação** (código pode permanecer até a faxina da Trilha D, Issue #741). A ausência desses módulos **não é regressão** — auditoria futura não deve reabri-los como defeito. Reconstrução só por novo pedido explícito do titular (jurimetria: quando houver histórico da ordem de ~300 casos encerrados). |
+| **Áreas de atuação reduzidas às praticadas** | Vigente desde 2026-08-06 | O catálogo operacional (navegação, skills ativas, cobertura RAG) passa das 25 áreas canônicas para as efetivamente praticadas pelo escritório — hoje **consumidor e civil** —, com reinclusão incremental conforme a prática exigir. A taxonomia completa pode permanecer no backend; o que se reduz é a superfície exposta e o esforço de curadoria. Cobertura de RAG e curadoria de skills concentram-se apenas nas áreas ativas. |
 
 ## 12. Exceção de bot de manutenção de dependências
 

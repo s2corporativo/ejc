@@ -160,8 +160,11 @@ C2/C3 antes do Bloco 7 (começar a operação sem saber o que é real é fatal).
 
 ## 5. Regras que atravessam o plano
 
-- Uma Issue + um PR draft por item; `Closes #NNN` no corpo (a trava `governanca.yml`
-  reprova sem isso); correção de review na mesma branch.
+- Issues-guarda-chuva das trilhas (`GOVERNANCA_IA.md` §3.2): **#739** (Trilha A),
+  **#740** (Trilha B), **#741** (Trilha D). Cada item referencia o guarda-chuva da sua
+  trilha; não é obrigatória uma Issue por achado (§6.4).
+- Um PR draft por item; `Closes #NNN` ou referência ao guarda-chuva no corpo (a trava
+  `governanca.yml` reprova sem número de Issue); correção de review na mesma branch.
 - Migration nova só depois do head reconciliado (A1) e com reserva em
   `MIGRATION_RESERVATIONS.md`.
 - Mudança em auth/RBAC/upload/portal passa pelo `security-auditor` antes de finalizar.

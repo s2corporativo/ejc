@@ -144,7 +144,7 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 
 ### Migrations (Alembic)
 
-- Vivem em `backend/alembic/versions/`, numeradas sequencialmente (`049_totp_2fa.py`, ..., `126_case_status_quatro_estados.py`). O head muda a cada merge: **confirme com `cd backend && python -m alembic heads`** em vez de confiar neste número. Gerar: `python -m alembic revision --autogenerate -m "..."`; aplicar: `python -m alembic upgrade head` (roda automaticamente no boot do container quando `RUN_MIGRATIONS=1`).
+- Vivem em `backend/alembic/versions/`, numeradas sequencialmente (`049_totp_2fa.py`, ..., `131_audit_logs_worm.py`). O head muda a cada merge: **confirme com `cd backend && python -m alembic heads`** em vez de confiar neste número. Gerar: `python -m alembic revision --autogenerate -m "..."`; aplicar: `python -m alembic upgrade head` (roda automaticamente no boot do container quando `RUN_MIGRATIONS=1`).
 - `alembic/env.py` lê `DATABASE_URL_SYNC` e tem guarda `include_name()`: ~30 tabelas existem só em SQL bruto (sem model ORM) — nunca confie apenas em `Base.metadata` para o schema completo, e nunca aceite `drop_table` espúrio do autogenerate.
 - Seeds: `backend/seeds/seed_all.py` (bootstrap idempotente do admin, roda no boot) e `backend/app/seeds/` (conteúdo: skills de IA, templates, checklists). Base de conhecimento em `backend/seeds/biblia_ejc/`.
 
@@ -211,8 +211,8 @@ Stack completa: `docker compose up -d --build` (serviços: db pgvector/pg16, red
 - `docs/ai/` — arquitetura do núcleo único de IA, política de provedores, roteamento de tarefas, LGPD/segurança de IA, HITL.
 - `docs/CATALOGO_APIS_EJC.md` — catálogo de APIs; `docs/DESIGN_SYSTEM_EJC.md` e `docs/VISUAL_LAW_EJC.md` — design.
 - `graphify-out/GRAPH_REPORT.md` — mapa arquitetural gerado (apenas para revisão ampla).
-- `docs/CLAUDE_CODE_PERMISSOES.md` — lista de permissões proposta para `.claude/settings.json`
-  (reduz aprovação de comando de rotina); aplicação é decisão do titular.
+- `docs/CLAUDE_CODE_PERMISSOES.md` — permissões **aplicadas** em `.claude/settings.json`
+  (2026-08-02, por autorização do titular); alterações seguem o rito proposta → autorização.
 - `RELATORIO_*.md` na raiz — histórico de auditorias/estabilização; contexto, não procedimento.
 
 ---
@@ -233,6 +233,13 @@ docs/auditoria/relatorios/               as 12 rodadas, com evidência bruta
 
 **Leia sob demanda** — apenas o bloco em execução. Itens marcados `[INVESTIGAR]` **não são
 diagnóstico fechado**: a auditoria não viu o código. Confirme antes de agir.
+
+A execução dos blocos está consolidada em **`docs/PLANO_EXECUCAO_CONSOLIDADO.md`** (estado
+verificado por bloco × trilhas A–D, com o Bloco 7 como gate) e os prompts prontos por item
+estão em **`docs/PROMPT_MESTRE_EXECUCAO.md`**. Issues-guarda-chuva (`GOVERNANCA_IA.md` §3.2):
+#739 (Trilha A — convergir PRs abertos), #740 (Trilha B — blocos 1–5), #741 (Trilha D —
+faxina pós-lançamento). As decisões de corte de módulos e de redução de áreas são
+**decisões permanentes** registradas na §11 da governança — não as trate como regressão.
 
 ### Armadilhas confirmadas em produção
 
@@ -264,7 +271,8 @@ Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real a
 - **`qa/e2e/run_fictitious_smoke.py` roda contra produção.** É a origem dos casos
   `HOMOLOG-FICTICIO-*` e da conta `homolog.qa` (perfil superadmin, ativa em produção).
 - **Numeração de migrations envelhece rápido.** A auditoria viu `122_route_usage_metrics`; em
-  2026-08-02 o head do repositório já era `126_case_status_quatro_estados`. Nenhum número escrito
+  2026-08-02 o head já era `126_case_status_quatro_estados` e em 2026-08-06, `131_audit_logs_worm`
+  — com PRs abertos carregando migrations paralelas (ver Issue #719). Nenhum número escrito
   em documento é confiável: rode `cd backend && python -m alembic heads`.
 
 ### Critério de lançamento
