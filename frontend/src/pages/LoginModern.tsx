@@ -18,9 +18,7 @@ import type { LoginResponse } from "../types";
 import { useAuth } from "../stores/auth";
 import { usePreferencesStore } from "../stores/preferences";
 import { canRoleAccessPath } from "../config/moduleRegistry";
-
-// Logomarca HD com fundo transparente (nunca a versão JPG com fundo)
-const BRAND_LOGO = "/brand/logo-hd.png";
+import { officeBranding } from "../config/officeBranding";
 // Vinheta de marca (10s, muda, toca UMA vez e congela no logo final)
 const BRAND_INTRO_VIDEO = "/brand/logo-intro.mp4";
 const BRAND_INTRO_POSTER = "/brand/logo-intro-poster.jpg";
@@ -36,7 +34,7 @@ function BrandIntro({ className }: { className?: string }) {
   if (fallback || reduceMotion) {
     return (
       <img
-        src={BRAND_LOGO}
+        src={officeBranding.logoPath}
         alt="De Paula Teixeira Sociedade de Advogados"
         className={`brand-logo-img h-40 w-auto max-w-[440px] ${className || ""}`}
       />
@@ -199,7 +197,7 @@ export default function LoginModern() {
           <div className="w-full max-w-md animate-rise">
             <div className="mb-8 flex items-center justify-center lg:hidden">
               <img
-                src={BRAND_LOGO}
+                src={officeBranding.logoPath}
                 alt="De Paula Teixeira Sociedade de Advogados"
                 className="brand-logo-img h-28 w-auto max-w-[320px]"
               />

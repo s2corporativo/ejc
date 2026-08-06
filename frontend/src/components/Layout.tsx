@@ -54,9 +54,7 @@ import {
   NOVO_CASO_MANUAL_PATH,
 } from "../lib/novoCaso";
 import api, { logout } from "../lib/api";
-
-// Logomarca HD com fundo transparente (nunca a versão JPG com fundo)
-const BRAND_LOGO = "/brand/logo-hd.png";
+import { officeBranding } from "../config/officeBranding";
 
 export default function Layout() {
   const { theme, cycleTheme } = useThemeStore();
@@ -264,7 +262,7 @@ export default function Layout() {
             aria-label="De Paula Teixeira - EJC"
           >
             <img
-              src={BRAND_LOGO}
+              src={officeBranding.logoPath}
               alt="De Paula Teixeira Sociedade de Advogados"
               className="brand-logo-img h-12 w-auto max-w-[240px] md:h-14 md:max-w-[300px]"
             />
@@ -490,7 +488,7 @@ export default function Layout() {
             aria-label="Ir para o início do EJC"
           >
             <img
-              src={BRAND_LOGO}
+              src={officeBranding.logoPath}
               alt="De Paula Teixeira Sociedade de Advogados"
               className={cn(
                 "brand-logo-img w-auto object-contain",
