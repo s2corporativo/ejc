@@ -90,6 +90,14 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Formatar somente arquivos do manifesto
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed 's#^frontend/##' /tmp/router-files \
+            | xargs npx prettier --write
+
       - name: Formatação, lint, testes, build e auditoria
         working-directory: frontend
         shell: bash
