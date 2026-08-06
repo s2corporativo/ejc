@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell, ExternalLink, FileText, AlertTriangle } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
 import RadarLegislativo from "../components/RadarLegislativo";

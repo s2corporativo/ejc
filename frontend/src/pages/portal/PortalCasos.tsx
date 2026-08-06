@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { ChevronRight, Scale, Search } from "lucide-react";
 import api from "../../lib/api";
 import { EmptyState, ErrorState, Spinner, fmtDate } from "../../components/UI";

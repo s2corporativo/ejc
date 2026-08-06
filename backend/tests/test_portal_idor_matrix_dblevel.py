@@ -160,6 +160,7 @@ async def _carregar_user(db, uid: str):
 
 async def _limpar(db, *, client_ids=(), user_ids=()):
     for uid in user_ids:
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
         await db.execute(text("DELETE FROM notifications WHERE user_id = :id"), {"id": uid})
         await db.execute(text("DELETE FROM portal_mensagens WHERE autor_id = :id"), {"id": uid})

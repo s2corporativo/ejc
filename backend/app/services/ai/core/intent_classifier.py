@@ -37,6 +37,9 @@ TASK_TYPE_PARA_AGENTE: dict[str, str] = {
     "process": "ProcessAgent",
     # Documentos
     "document_analysis": "DocumentAgent",
+    # Extração estruturada (JSON) de pacote documental — orçamento de DOSSIÊ.
+    "document_extraction": "DocumentExtractionAgent",
+    "extracao_documental": "DocumentExtractionAgent",
     "resumo_documento": "DocumentAgent",
     "ocr": "DocumentAgent",
     "resumo": "DocumentAgent",

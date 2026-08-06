@@ -100,6 +100,7 @@ async def _limpar(db, *, user_ids=(), case_ids=(), client_ids=()):
     for cid in client_ids:
         await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": cid})
     for uid in user_ids:
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
     await db.commit()

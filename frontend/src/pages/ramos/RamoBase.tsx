@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { toast } from "../../components/Toast";
 import Markdown from "../../components/Markdown";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link } from "react-router";
 import {
   Plus,
   Calculator,

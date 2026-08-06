@@ -69,13 +69,51 @@ CATALOGO_DOCUMENTAL: dict[str, list[dict[str, Any]]] = {
 }
 _CLASSIFICADORES_GERAIS = [
     ("peticao", ["excelentissimo", "dos fatos", "dos pedidos", "requer a vossa excelencia"]),
-    ("sentenca_acordao", ["sentenca", "acordao", "dispositivo", "dou provimento", "nego provimento"]),
+    ("sentenca_acordao", ["sentenca", "acordao", "dou provimento", "nego provimento", "julgo procedente"]),
     ("procuracao", ["outorgante", "outorgado", "poderes da clausula ad judicia"]),
-    ("documento_identificacao", ["registro geral", "carteira de identidade", "cpf", "data de nascimento"]),
+    # "cpf" e "data de nascimento" SAÍRAM: aparecem em qualquer petição, contrato
+    # ou procuração — eram a origem de peça longa classificada como documento de
+    # identificação. Os aliases restantes só ocorrem no documento de identidade.
+    ("documento_identificacao", ["registro geral", "carteira de identidade", "orgao expedidor",
+                                 "documento de identidade", "carteira nacional de habilitacao"]),
     ("comprovante_residencia", ["energia eletrica", "agua e esgoto", "endereco de fornecimento"]),
     ("laudo_tecnico", ["laudo tecnico", "responsavel tecnico", "conclusao tecnica"]),
-    ("nota_fiscal", ["nota fiscal", "nfe", "valor total", "chave de acesso"]),
+    # "valor total" saiu pelo mesmo motivo (aparece em contrato, planilha, orçamento).
+    ("nota_fiscal", ["nota fiscal", "nfe", "chave de acesso", "danfe", "natureza da operacao"]),
 ]
+
+# Zona de cabeçalho: onde um documento se identifica ("EXCELENTÍSSIMO...",
+# "AUTO DE INFRAÇÃO Nº...", "PROCURAÇÃO"). Um alias aqui vale mais que o mesmo
+# alias perdido na página 12.
+_JANELA_CABECALHO = 2_500
+_PESO_CABECALHO = 2.0
+# Evidência mínima para afirmar um tipo. Abaixo disso o documento fica sem tipo
+# afirmado (revisão humana), em vez de receber um rótulo confiante e errado.
+_SCORE_MINIMO = 3.0
+# Margem sobre o segundo colocado. Empate técnico não é classificação.
+_MARGEM_MINIMA = 1.5
+
+# Tipos locais → chaves canônicas de `document_types_master`. Só o que está
+# mapeado pode ser gravado em `Document.tipo`; o resto permanece sugestão no
+# item do lote. Sem isto, o GED guardava chaves inexistentes no catálogo
+# ("outro_documento", "sentenca_acordao"), que nenhum seletor/filtro reconhece.
+TIPO_LOCAL_PARA_CATALOGO: dict[str, str] = {
+    "peticao": "peticao",
+    "procuracao": "procuracao",
+    "documento_identificacao": "doc_identificacao",
+    "comprovante_residencia": "comprovante_residencia",
+    "laudo_tecnico": "laudo_tecnico",
+    "nota_fiscal": "nfe_xml",
+    "contrato_original": "contrato",
+    "contrato_bancario": "contrato",
+    "aditivo_contratual": "contrato",
+    "auto_infracao_transito": "multa_transito",
+    "notificacao_transito": "multa_transito",
+    "auto_infracao_ambiental": "multa_ambiental",
+    "auto_ou_notificacao_administrativa": "auto_infracao",
+    "licenca_laudo_ambiental": "laudo_tecnico",
+    "prova_tecnica_regularidade": "laudo_tecnico",
+}
 
 
 def _norm(texto: str | None) -> str:
@@ -144,24 +182,93 @@ def expandir_arquivo(nome: str, raw: bytes, mimetype: str | None = None) -> list
              "mimetype": mimetype or MIME_FALLBACK.get(ext, "application/octet-stream"), "origem_zip": None}]
 
 
+def _peso_alias(alias: str) -> float:
+    """Aliases longos são evidência forte; palavra solta é evidência fraca.
+
+    "requer a vossa excelencia" identifica uma petição; "sentenca" aparece no
+    pedido de qualquer petição. Contá-los igual era o que fazia um documento
+    longo pontuar em meia dúzia de tipos ao mesmo tempo.
+    """
+    palavras = len(alias.split())
+    if palavras >= 4:
+        return 3.0
+    if palavras >= 2:
+        return 2.0
+    return 1.0
+
+
+def _score_aliases(aliases: list[str], cabecalho: str, corpo: str) -> float:
+    """Soma o peso dos aliases encontrados, com bônus para a zona de cabeçalho.
+
+    A busca exige fronteira de palavra: sem isso "cnh" casava dentro de
+    "reconhecimento" e "ait" dentro de "gratuita".
+    """
+    total = 0.0
+    for alias in aliases:
+        alvo = _norm(alias)
+        if not alvo:
+            continue
+        padrao = re.compile(rf"(?<!\w){re.escape(alvo)}(?!\w)")
+        if padrao.search(cabecalho):
+            total += _peso_alias(alvo) * _PESO_CABECALHO
+        elif padrao.search(corpo):
+            total += _peso_alias(alvo)
+    return total
+
+
+def _nao_classificado(motivo: str) -> dict[str, Any]:
+    # Rótulo honesto na tela: "Outro documento" soava como decisão tomada.
+    return {"tipo": "outro_documento", "nome": "Não classificado — confirmar", "confianca": 0.0,
+            "tipo_catalogo": None, "metodo": "regras_locais",
+            "obrigatorio_na_modalidade": False, "requer_confirmacao_humana": True,
+            "motivo": motivo}
+
+
 def classificar_documento(nome: str, texto: str, modalidade: str | None = None) -> dict[str, Any]:
-    base, candidatos = _norm(f"{nome} {texto[:40000]}"), []
+    """Sugere o tipo do documento por regras locais — SUGESTÃO, nunca veredito.
+
+    Devolve `tipo_catalogo` (chave de `document_types_master`) apenas quando a
+    evidência é suficiente e o tipo tem correspondente canônico; só esse campo
+    pode ser gravado no GED. `requer_confirmacao_humana` é sempre verdadeiro:
+    classificação documental é ato do advogado (HITL).
+    """
+    texto = texto or ""
+    cabecalho = _norm(f"{nome} {texto[:_JANELA_CABECALHO]}")
+    corpo = _norm(texto[_JANELA_CABECALHO:40_000])
+    candidatos: list[tuple[str, str, float, bool]] = []
     if modalidade in CATALOGO_DOCUMENTAL:
         for item in CATALOGO_DOCUMENTAL[modalidade]:
-            score = sum(1 for alias in item["aliases"] if _norm(alias) in base)
+            score = _score_aliases(item["aliases"], cabecalho, corpo)
             if score:
                 candidatos.append((item["tipo"], item["nome"], score, bool(item["obrigatorio"])))
     for tipo, aliases in _CLASSIFICADORES_GERAIS:
-        score = sum(1 for alias in aliases if _norm(alias) in base)
+        score = _score_aliases(aliases, cabecalho, corpo)
         if score:
             candidatos.append((tipo, tipo.replace("_", " ").title(), score, False))
     if not candidatos:
-        return {"tipo": "outro_documento", "nome": "Outro documento", "confianca": 0.35,
-                "metodo": "regras_locais", "obrigatorio_na_modalidade": False}
+        return _nao_classificado("Nenhum indício textual do tipo documental.")
+
     candidatos.sort(key=lambda x: (x[2], x[3]), reverse=True)
     tipo, rotulo, score, obrigatorio = candidatos[0]
-    return {"tipo": tipo, "nome": rotulo, "confianca": round(min(0.98, 0.5 + score * 0.14), 2),
-            "metodo": "regras_locais", "obrigatorio_na_modalidade": obrigatorio}
+    if score < _SCORE_MINIMO:
+        return _nao_classificado(
+            f"Evidência insuficiente para afirmar o tipo (score {score:.1f} < {_SCORE_MINIMO:.1f})."
+        )
+    segundo = candidatos[1][2] if len(candidatos) > 1 else 0.0
+    if score - segundo < _MARGEM_MINIMA:
+        return _nao_classificado(
+            f"Empate técnico entre '{tipo}' e '{candidatos[1][0]}' — classificação não afirmada."
+        )
+
+    # Confiança ancorada na evidência acima do mínimo, com teto: regra local não
+    # produz certeza. O valor antigo (0.5 + 0.14×score) exibia ~64% para um
+    # único alias fraco encontrado em qualquer ponto do texto.
+    confianca = round(min(0.9, 0.45 + (score - _SCORE_MINIMO) * 0.05), 2)
+    return {"tipo": tipo, "nome": rotulo, "confianca": confianca,
+            "tipo_catalogo": TIPO_LOCAL_PARA_CATALOGO.get(tipo),
+            "metodo": "regras_locais", "obrigatorio_na_modalidade": obrigatorio,
+            "requer_confirmacao_humana": True,
+            "score": round(score, 2), "score_segundo_colocado": round(segundo, 2)}
 
 
 def _registrar_heif() -> bool:
