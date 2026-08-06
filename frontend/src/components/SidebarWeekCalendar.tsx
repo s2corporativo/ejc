@@ -100,7 +100,7 @@ export default function SidebarWeekCalendar() {
         </div>
       </div>
 
-      <div className="ejc-sidebar-week__days" role="list">
+      <div className="ejc-sidebar-week__days">
         {days.map((day) => {
           const key = dateKey(day);
           const selected = isSameDay(day, selectedDate);
@@ -110,7 +110,6 @@ export default function SidebarWeekCalendar() {
             <button
               key={key}
               type="button"
-              role="listitem"
               onClick={() => openDay(day)}
               className={selected ? "is-selected" : undefined}
               aria-current={today ? "date" : undefined}
