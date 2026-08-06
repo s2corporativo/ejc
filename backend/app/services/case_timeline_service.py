@@ -88,11 +88,12 @@ def _document_query(user: User, case_id: str, source_limit: int) -> Select[Any]:
 
 
 def _deadline_query(case_id: str, source_limit: int) -> Select[Any]:
-    """Seleciona prazos pela mesma data que será exposta em ``occurred_at``."""
-    data_evento = func.coalesce(
-        Deadline.data_conclusao,
-        cast(Deadline.data_prazo, DateTime(timezone=True)),
+    """Seleciona prazos pela mesma data UTC exposta em ``occurred_at``."""
+    data_prazo_utc = func.timezone(
+        "UTC",
+        cast(Deadline.data_prazo, DateTime(timezone=False)),
     )
+    data_evento = func.coalesce(Deadline.data_conclusao, data_prazo_utc)
     return (
         select(Deadline)
         .where(Deadline.case_id == case_id, Deadline.deleted_at.is_(None))
@@ -288,7 +289,10 @@ async def timeline(
             await db.execute(
                 select(Atendimento)
                 .where(Atendimento.case_id == case_id)
-                .order_by(Atendimento.data_atendimento.desc())
+                .order_by(
+                    Atendimento.data_atendimento.desc(),
+                    Atendimento.created_at.desc(),
+                )
                 .limit(source_limit)
             )
         )
