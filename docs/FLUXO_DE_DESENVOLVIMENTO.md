@@ -1,145 +1,163 @@
-# Fluxo de desenvolvimento do EJC
+# Fluxo de desenvolvimento e auditoria do EJC
 
-Ciclo obrigatório de qualquer alteração no repositório. Regras canônicas em
-`docs/GOVERNANCA_IA.md`.
+Regras canônicas em `docs/GOVERNANCA_IA.md`.
 
-## Visão geral
+## 1. Escolha do modo de trabalho
 
-```
-Clovis define o resultado
-  ↓
-ChatGPT escreve a Issue (escopo, exclusões, critérios de aceite)
-  ↓
-Claude Code implementa em branch exclusiva, com testes
-  ↓
-PR draft vinculado à Issue
-  ↓
-ChatGPT revisa (técnico, segurança, jurídico, funcional, regressão)
-  ↓
-Claude Code corrige na mesma branch
-  ↓
-CI verde + homologação
-  ↓
-Autorização do titular → merge → deploy
+### Modo A — auditoria ou revisão somente leitura
+
+Use para diagnóstico, pente fino, revisão de PR, inventário, homologação técnica ou relatório.
+
+Fluxo:
+
+```text
+pedido do titular → leitura ampla → buscas/testes/builds → confirmação dos achados → relatório
 ```
 
-## Etapa 1 — a Issue
+Regras:
 
-O normal é a Issue vir antes. Quando o titular pede direto por chat, o pedido autoriza começar e
-a Issue de registro é aberta pelo próprio executor, sempre vinculada ao PR — a trava
-`governanca.yml` reprova PR sem `#<numero>` (`docs/GOVERNANCA_IA.md` §10, "Tarefa que chega sem
-Issue"). Nenhum trabalho **termina** sem Issue. Ela contém:
+- não exige Issue ou branch para começar;
+- pode ler todo o repositório e todos os PRs abertos;
+- pode examinar arquivos alterados por outras branches;
+- pode executar comandos seguros de diagnóstico e testes;
+- não altera arquivos, não empurra commit e não opera em produção;
+- o relatório deve distinguir fato confirmado, hipótese, limitação e recomendação.
 
-- código único (ex.: `EJC-P0-014`) e título;
-- problema e origem (auditoria, relato, incidente);
-- prioridade (P0/P1/P2/P3) e domínio;
-- arquivos prováveis;
-- escopo e **fora do escopo** (explícito);
-- critérios de aceite verificáveis;
-- testes esperados;
-- risco jurídico e risco LGPD;
-- dependências (Issues e PRs);
-- responsável.
+A auditoria pode terminar em chat, comentário de PR, Issue ou documento versionado, conforme a
+finalidade.
 
-Labels: `P0-bloqueador`, `P1-alto`, `P2-medio`, `P3-evolucao`, `backend`, `frontend`,
-`database`, `security`, `lgpd`, `juridico`, `infra`, `ux`, `rag`, `ia`.
+### Modo B — auditoria corretiva ampla
 
-### Exemplo
+Use quando o titular autorizar revisão sistêmica com correção, por exemplo: “corrija tudo”,
+“faça um pente fino completo”, “homologue e corrija” ou comando equivalente.
 
-```
-EJC-P0-014 — Corrigir contagem de prazo trabalhista
+Fluxo:
 
-Problema: a calculadora usa dias corridos.
-Regra:    art. 775 da CLT — contagem em dias úteis.
-
-Escopo:            service da calculadora; endpoint; componente frontend; testes.
-Fora do escopo:    redesign da tela; outras calculadoras.
-
-Critérios de aceite:
-1. Contagem em dias úteis.
-2. Exclusão do dia inicial, inclusão do dia final.
-3. Tratamento de suspensão (inclusive recesso).
-4. Fonte normativa e vigência exibidas no resultado.
-5. Testes cobrindo fim de semana, feriado e suspensão.
-6. Nenhuma regressão nas demais calculadoras.
+```text
+pedido do titular → diagnóstico somente leitura → Issue-guarda-chuva → branch(es)
+→ correções relacionadas → testes → PR(s) → revisão independente → homologação
+→ merge autorizado
 ```
 
-## Etapa 2 — antes de tocar em código
+Regras:
 
-1. `git checkout main && git pull --ff-only`
-2. Listar PRs abertos e verificar sobreposição de arquivos:
-   `git diff --name-only origin/main...origin/<branch-do-PR>`
-3. Se a tarefa mexe em banco: conferir o head (`cd backend && python -m alembic heads` —
-   o `alembic.ini` está em `backend/`, o comando falha a partir da raiz) e reservar o
-   número em `backend/alembic/MIGRATION_RESERVATIONS.md`.
-4. Reproduzir o problema e registrar o diagnóstico na Issue.
-5. Criar a branch: `git checkout -b fix/014-prazo-trabalhista`.
+- o pedido direto do titular autoriza iniciar a auditoria somente leitura;
+- a Issue-guarda-chuva deve existir antes da criação da branch de implementação, de qualquer
+  alteração em arquivos ou de qualquer commit;
+- os achados podem ser agrupados por domínio, dependência, risco ou facilidade de revisão;
+- um achado relacionado pode entrar no mesmo PR quando necessário para completar, testar ou
+  estabilizar a correção;
+- achado sem relação causal é registrado para continuidade, sem interromper o escopo atual;
+- mais de um PR pode fechar a mesma Issue-guarda-chuva;
+- o relatório final deve mapear cada achado para arquivo, evidência, correção e teste.
 
-Se outro PR aberto já altera os mesmos arquivos, **a tarefa não começa**: ou espera o merge
-do outro, ou o titular decide qual das duas frentes segue (`docs/GOVERNANCA_IA.md`, seção 5).
+### Modo C — desenvolvimento focal
 
-## Etapa 3 — implementação
+Use para bug, melhoria ou funcionalidade específica.
 
-- Somente o escopo da Issue. Achado fora do escopo vira Issue nova.
-- Teste de regressão junto com a correção, no mesmo commit ou no seguinte.
-- Regra jurídica com fonte, vigência, versão e aviso de revisão humana.
-- Commits em português, descritivos, no formato `tipo(escopo): descrição`.
+Fluxo:
 
-Validações locais mínimas:
+```text
+pedido/Issue → branch → reprodução → implementação → testes → PR → revisão → homologação
+→ autorização do titular → merge → deploy
+```
+
+## 2. Antes de escrever código
+
+1. Atualizar a referência da `main` sem alterar a `main` diretamente.
+2. Listar PRs abertos e verificar sobreposição real de arquivos e trechos.
+3. Reproduzir o problema ou confirmar a necessidade.
+4. Definir branch e vínculo com Issue ou Issue-guarda-chuva.
+5. Se houver banco: conferir `cd backend && python -m alembic heads` e as reservas existentes.
+
+### Sobreposição com outro PR
+
+Leitura e diagnóstico podem ocorrer em paralelo. Para escrita, arquivo pertencente a PR ativo
+não deve ser modificado em outra branch. Escolha uma solução proporcional:
+
+- consolidar as mudanças na mesma branch do PR ativo;
+- combinar a ordem de merge e atualizar a branch seguinte depois da integração;
+- adiar somente a parte incompatível;
+- dividir a entrega por arquivos que não estejam sob alteração concorrente.
+
+Pare quando a escrita pretendida alcançar arquivo de outro PR ativo e ainda não existir uma
+estratégia explícita de consolidação ou sequência. Não sobrescreva silenciosamente trabalho
+concorrente.
+
+## 3. Implementação
+
+- Implementar o objetivo autorizado e as correções relacionadas necessárias.
+- Não usar o rótulo “fora de escopo” para deixar regressão conhecida causada pela própria mudança.
+- Registrar toda ampliação material no corpo do PR.
+- Criar teste de regressão para bug quando tecnicamente possível.
+- Usar fonte oficial, vigência, versão e revisão humana em regra jurídica.
+- Evitar massa real, segredo, PII e qualquer acesso à produção.
+
+Validações mínimas devem ser proporcionais ao diff. Exemplos:
 
 ```bash
-# Cada grupo em um subshell — sem isso o segundo `cd` parte de dentro de backend/.
-( cd backend  && pytest && ruff check app )
-( cd frontend && npm run lint && npm test && npm run build )
+( cd backend && python -m pytest tests -q && python -m ruff check app tests )
+( cd frontend && npm test -- --run && npx tsc --noEmit && npm run build )
 ```
 
-## Etapa 4 — Pull Request
+Não é obrigatório rodar toda a suíte antes de qualquer edição pequena, mas o PR deve indicar o
+que foi testado, o que não foi e por quê.
 
-- Sempre **draft**, sempre contra `main`, sempre vinculado à Issue (`Closes #NNN`).
-- Corpo preenchido conforme `.github/pull_request_template.md` — inclusive migrations,
-  impacto jurídico, impacto LGPD, riscos residuais e rollback.
-- Evidências anexadas: saída de teste, capturas quando houver mudança de UI, logs de
-  reprodução do 4xx/5xx corrigido.
-- Nenhum merge pelo executor.
+## 4. Pull Request
 
-## Etapa 5 — revisão
+O PR deve:
 
-O revisor aplica as cinco camadas de `docs/CRITERIOS_DE_ACEITE.md`: correção técnica,
-segurança, validade jurídica, fluxo funcional e regressão. Os apontamentos ficam
-registrados no PR — não em chat.
+- apontar para Issue ou Issue-guarda-chuva;
+- explicar problema, solução, testes, riscos e rollback;
+- declarar sobreposições com outros PRs;
+- listar migrations e dependências de ordem de merge;
+- anexar evidências de UI quando aplicável;
+- permanecer sem merge até revisão e autorização do titular.
 
-## Etapa 6 — correções
+Mudança de governança e código funcional pode coexistir quando forem parte da mesma correção
+sistêmica. Isso deve ser destacado no PR; a automação emite aviso para revisão reforçada, mas não
+reprova automaticamente.
 
-Na **mesma branch** e no **mesmo PR**. Nada de abrir um PR novo para corrigir o anterior.
-Cada apontamento é respondido com o commit que o resolve ou com a justificativa técnica de
-por que não se aplica.
+## 5. Revisão
 
-## Etapa 7 — homologação
+Aplicar `docs/CRITERIOS_DE_ACEITE.md` de forma proporcional ao escopo:
 
-Mudança funcional é exercitada em ambiente separado (staging ou stack local com massa
-fictícia), não em produção. Evidência anexada ao PR.
+- correção técnica;
+- segurança e LGPD;
+- validade jurídica;
+- fluxo funcional e UX;
+- regressão e continuidade.
 
-## Etapa 8 — merge
+Revisor pode propor correção, abrir commit em branch própria ou, quando autorizado, corrigir na
+branch do PR. O importante é preservar histórico e revisão independente do resultado final.
 
-Só com todos os itens de `docs/RELEASE_CHECKLIST.md` atendidos e autorização expressa do
-titular. Merge e deploy são atos humanos.
+Mudanças sensíveis envolvendo autenticação, permissões, uploads, CI/CD ou configuração exigem
+execução e registro do `security-auditor` antes da finalização e do merge.
 
-## Ambientes
+## 6. Migrations
 
-**`/opt/ejc` na VPS é a produção.** Não existe subdiretório `production/`: o
-`deploy-vps.yml` sincroniza o checkout aprovado direto em `/opt/ejc` e o
-`scripts/deploy_vps_safe.sh` roda ali mesmo, assim como os scripts de backup e os runbooks.
-Qualquer comando executado nesse caminho toca produção.
+Mais de uma branch pode preparar mudança de banco, mas a integração é sequencial:
 
-| Caminho | O que é | Quem opera |
+1. branch atualiza a base;
+2. confere o head vigente;
+3. ajusta reserva, número e `down_revision`;
+4. executa upgrade e valida rollback aplicável;
+5. demonstra head único antes do merge.
+
+Migration destrutiva exige backup, plano de rollback e decisão humana registrada.
+
+## 7. Homologação
+
+Mudança funcional deve ser exercitada em stack local ou staging com massa fictícia. Sem staging
+permanente, o PR deve dizer claramente que a homologação foi local.
+
+## 8. Ambientes
+
+| Caminho | Uso | Regra |
 |---|---|---|
-| `/opt/ejc` (VPS) | **produção** — código, `.env` real, banco e uploads | somente o deploy automatizado, autorizado pelo titular |
-| clone próprio do agente (máquina de dev, ou outro diretório da VPS) | desenvolvimento | o agente |
-| stack local via `docker compose` com massa fictícia | homologação | o agente |
+| `/opt/ejc` na VPS | produção | agente não opera diretamente |
+| clone/branch de desenvolvimento | escrita e testes | permitido |
+| stack local com dados fictícios | homologação | permitido |
 
-Não há hoje um diretório de staging permanente na VPS. Enquanto não houver, a homologação
-acontece em stack local com dados fictícios — e isso precisa ser dito no PR, para que ninguém
-leia "homologado" como "testado em ambiente equivalente ao de produção".
-
-O agente nunca opera em `/opt/ejc`, nunca aponta para o banco de produção e não mantém `.env`
-real disponível sem necessidade.
+Nenhum agente aponta testes para banco de produção ou usa `.env` real sem necessidade operacional
+humana e controle específico.
