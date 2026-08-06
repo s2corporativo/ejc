@@ -466,10 +466,16 @@ async def test_publicar_no_portal_exige_piso_de_papel_e_grava_autor_e_data():
     """PATCH /documents/{id}/publicacao-portal (endpoint novo, Issue #698):
       • estagiário (abaixo de advogado) não publica documento normal → 403;
       • advogado publica → grava publicado_por/publicado_em + audit log;
+      • estagiário com ownership do documento (auxiliar do caso) TAMBÉM não
+        DESPUBLICA um documento já publicado — o piso de papel do ato é
+        simétrico (mesmo desenho do Data Room `_pode_editar`): revogar
+        visibilidade do cliente é decisão do escritório tanto quanto
+        concedê-la, não "qualquer um com acesso ao documento";
       • publicar confidencial (nunca aparece no Portal mesmo assim) exige
         piso mais alto (sócio+) — mesma política do Data Room, reutilizada."""
     from app.core.database import AsyncSessionLocal
     from app.models.audit_log import AuditLog
+    from app.models.document import Document
     from app.routers.documents import (
         DocumentPublicacaoPortalRequest, publicar_no_portal,
     )
@@ -521,6 +527,30 @@ async def test_publicar_no_portal_exige_piso_de_papel_e_grava_autor_e_data():
                 )
             )).scalar_one_or_none()
             assert log is not None, "ato de publicar precisa gravar audit log"
+
+            # Piso simétrico: estagiário com OWNERSHIP do doc (auxiliar do
+            # caso, passa o gate de posse) ainda assim não despublica —
+            # o piso de papel do ato vale para as duas direções.
+            await db.execute(
+                text(
+                    "UPDATE cases SET advogado_auxiliar_id = :est WHERE id = :cid"
+                ),
+                {"est": estagiario, "cid": caso},
+            )
+            await db.commit()
+            with pytest.raises(HTTPException) as exc_desp:
+                await publicar_no_portal(
+                    doc_id=doc_id,
+                    req=DocumentPublicacaoPortalRequest(publicado=False),
+                    db=db, cu=user_estagiario,
+                )
+            assert exc_desp.value.status_code == 403
+            ainda_publicado = (await db.execute(
+                select(Document.publicado_portal).where(Document.id == doc_id)
+            )).scalar_one()
+            assert ainda_publicado is True, (
+                "estagiário sem piso não pode ter conseguido despublicar"
+            )
 
             # Despublicar: limpa autor/data e grava audit log de despublicação.
             out2 = await publicar_no_portal(

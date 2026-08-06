@@ -838,11 +838,23 @@ async def publicar_no_portal(
     (peça já pública, cópia de diário oficial), publicar para o titular é
     comunicação com o cliente. Antes desta rota eram o mesmo botão.
 
-    Piso de papel: `pode_publicar_externamente` (app/core/publicacao_externa)
-    — a MESMA política que o Data Room usa para o link público, para as duas
-    nunca divergirem. O Portal só exibe documentos `confidencialidade=normal`
+    Piso de papel: MESMO desenho do Data Room (`_pode_editar` — advogado+
+    — cobre publicar E despublicar de saída, antes de qualquer checagem fina).
+    Despublicar exige o mesmo piso de publicar — não é "qualquer um com acesso
+    ao documento pode revogar": revogar visibilidade do cliente é decisão do
+    escritório tanto quanto concedê-la, e um piso assimétrico deixaria um
+    perfil abaixo de advogado (com acesso de leitura ao documento via caso)
+    apagar uma publicação que só um advogado+ pôde criar.
+    Publicar tem, além disso, o piso fino por confidencialidade
+    (`pode_publicar_externamente`, app/core/publicacao_externa) — a MESMA
+    política que o Data Room usa para o link público, para as duas nunca
+    divergirem. O Portal só exibe documentos `confidencialidade=normal`
     (`GET /portal/documentos`), então publicar qualquer outro nível é rejeitado
-    aqui — não teria efeito lá e confundiria quem publicou.
+    aqui — não teria efeito lá e confundiria quem publicou. Despublicar,
+    ao contrário, precisa funcionar mesmo se o documento já foi reclassificado
+    para interno/segredo_justica nesse meio tempo (limpar o registro de uma
+    publicação antiga) — por isso usa o piso de PAPEL (advogado+), não o piso
+    fino por confidencialidade atual.
 
     Idempotente: pedir o estado já vigente não regrava publicado_por/em nem
     duplica audit log.
@@ -859,6 +871,17 @@ async def publicar_no_portal(
     await _verificar_acesso_documento(db, cu, d)
     if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
+
+    # Piso de papel do ATO (publicar OU despublicar) — mesmo piso do Data
+    # Room (`_pode_editar`), independente da confidencialidade atual do
+    # documento. Sem isto, despublicar ficava só atrás do gate de OWNERSHIP
+    # acima — um perfil abaixo de advogado com acesso ao caso conseguiria
+    # revogar uma publicação que só um advogado+ pôde criar.
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["advogado"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Publicar ou despublicar no Portal exige advogado ou superior",
+        )
 
     if req.publicado:
         if confidencialidade_str(d) != DocConfidencialidade.normal.value:

@@ -73,6 +73,10 @@ ADICOES_INTENCIONAIS = {
     # autenticação + ownership no handler e não criam tabela ou escrita paralela.
     ("/api/cases/{case_id}/timeline", "GET"),
     ("/api/cases/{case_id}/operational-health", "GET"),
+    # Issue #698: ato EXPLÍCITO de publicação/despublicação ao Portal do
+    # Cliente, separado do PATCH de metadados comuns — mesmo desenho do PR
+    # #547 para o Data Room (linha acima), agora para documents.
+    ("/api/documents/{doc_id}/publicacao-portal", "PATCH"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
