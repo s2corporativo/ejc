@@ -36,7 +36,6 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re
-          import textwrap
 
           source = Path('.github/workflows/correcao-revisao-design.yml').read_text()
           match = re.search(
@@ -46,7 +45,12 @@ jobs:
           )
           if not match:
               raise SystemExit('Patch versionado não localizado')
-          Path('/tmp/aplicar_correcao.py').write_text(textwrap.dedent(match.group(1)))
+          lines = match.group(1).splitlines()
+          normalized = "\n".join(
+              line[10:] if line.startswith("          ") else line
+              for line in lines
+          ) + "\n"
+          Path('/tmp/aplicar_correcao.py').write_text(normalized)
           PY
           python /tmp/aplicar_correcao.py
 
