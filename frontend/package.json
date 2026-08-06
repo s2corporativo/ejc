@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:responsive": "node tests/responsividade.mjs",
+    "test:premium-responsive": "node tests/premium-dashboard-responsividade.mjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\""
   },

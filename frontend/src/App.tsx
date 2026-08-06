@@ -14,6 +14,7 @@ import FlowEnhancements from "./components/FlowEnhancements";
 import Layout from "./components/Layout";
 import LegacyRedirect from "./components/LegacyRedirect";
 import PortalLayout from "./components/PortalLayout";
+import PremiumShellOverlay from "./components/PremiumShellOverlay";
 import ProviderPanelShortcut from "./components/ProviderPanelShortcut";
 import {
   PortalOnly,
@@ -128,6 +129,7 @@ export default function App() {
                   <StaffOnly>
                     <>
                       <Layout />
+                      <PremiumShellOverlay />
                       <EntradaUniversalGlobal />
                       <FlowEnhancements />
                       <ProviderPanelShortcut />

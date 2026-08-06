@@ -11,9 +11,7 @@ import {
 } from "lucide-react";
 import { logout } from "../lib/api";
 import { useAuth } from "../stores/auth";
-
-// Logomarca HD com fundo transparente (nunca a versão JPG com fundo)
-const BRAND_LOGO = "/brand/logo-hd.png";
+import { officeBranding } from "../config/officeBranding";
 
 const NAV = [
   { to: "/portal", label: "Início", icon: Home, end: true },
@@ -34,7 +32,7 @@ export default function PortalLayout() {
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img
-              src={BRAND_LOGO}
+              src={officeBranding.logoPath}
               alt="De Paula Teixeira Sociedade de Advogados"
               className="brand-logo-img h-12 w-auto max-w-[220px] sm:h-14 sm:max-w-[260px]"
             />
