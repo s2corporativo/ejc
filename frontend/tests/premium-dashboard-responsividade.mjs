@@ -1,13 +1,10 @@
 // Homologação visual do shell e dashboard premium em Chromium real.
-//
-// O teste usa somente o build de produção e intercepta APIs dentro do contexto
-// Playwright. Nenhum mock, dado estático ou credencial é inserido no produto.
+// As respostas abaixo existem somente no contexto Playwright e não alteram o produto.
 import http from "node:http";
 import { existsSync, mkdirSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-
 import { chromium } from "playwright";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,20 +13,6 @@ const OUT =
   process.env.PREMIUM_SCREENSHOT_DIR ||
   path.resolve(__dirname, "__out__", "premium-dashboard");
 const CHROMIUM = process.env.PW_CHROMIUM || chromium.executablePath();
-
-const MIME = {
-  ".html": "text/html",
-  ".js": "text/javascript",
-  ".css": "text/css",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".webp": "image/webp",
-  ".json": "application/json",
-  ".woff2": "font/woff2",
-  ".ico": "image/x-icon",
-};
 
 const VIEWPORTS = [
   { name: "mobile-360", width: 360, height: 800 },
@@ -50,6 +33,20 @@ const USER = {
   avatar_url: null,
 };
 
+const MIME = {
+  ".html": "text/html",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".json": "application/json",
+  ".woff2": "font/woff2",
+  ".ico": "image/x-icon",
+};
+
 function dateKey(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -66,12 +63,7 @@ yesterday.setDate(today.getDate() - 1);
 const FIXTURES = {
   dashboard: {
     casos: {
-      por_status: {
-        ativo: 98,
-        arquivado: 18,
-        suspenso: 8,
-        encerrado: 2,
-      },
+      por_status: { ativo: 98, arquivado: 18, suspenso: 8, encerrado: 2 },
       por_area: [
         { area: "trabalhista", total: 57 },
         { area: "civil", total: 32 },
@@ -84,13 +76,8 @@ const FIXTURES = {
       arquivados: 18,
       encerrados: 2,
     },
-    prazos: {
-      vencidos: 1,
-      criticos_3d: 4,
-      proximos_7d: 18,
-    },
-    // Sentinelas financeiras deliberadamente presentes na resposta para provar
-    // que o dashboard compartilhado não as renderiza.
+    prazos: { vencidos: 1, criticos_3d: 4, proximos_7d: 18 },
+    // Sentinelas deliberadas: a página compartilhada não pode renderizá-las.
     financeiro: {
       pendente: 918273.45,
       atrasado: 876543.21,
@@ -188,32 +175,25 @@ const FIXTURES = {
 };
 
 if (!existsSync(DIST)) {
-  console.error(
-    `[premium-dashboard] dist/ não encontrado em ${DIST}. Rode 'npm run build' antes.`,
-  );
+  console.error(`[premium-dashboard] dist/ não encontrado em ${DIST}.`);
   process.exit(2);
 }
-
 if (!CHROMIUM || !existsSync(CHROMIUM)) {
-  console.error(
-    "[premium-dashboard] Chromium não encontrado. Rode " +
-      "'npx playwright install --with-deps chromium' ou defina PW_CHROMIUM.",
-  );
+  console.error("[premium-dashboard] Chromium não encontrado.");
   process.exit(2);
 }
 
 const server = http.createServer(async (request, response) => {
   try {
-    const url = decodeURIComponent((request.url || "/").split("?")[0]);
-    let file = path.join(DIST, url);
-    const isFile = existsSync(file) && (await stat(file)).isFile();
-    if (!isFile) file = path.join(DIST, "index.html");
-    const body = await readFile(file);
+    const pathname = decodeURIComponent((request.url || "/").split("?")[0]);
+    let file = path.join(DIST, pathname);
+    const validFile = existsSync(file) && (await stat(file)).isFile();
+    if (!validFile) file = path.join(DIST, "index.html");
     response.writeHead(200, {
       "content-type": MIME[path.extname(file)] || "application/octet-stream",
       "cache-control": "no-store",
     });
-    response.end(body);
+    response.end(await readFile(file));
   } catch (error) {
     response.writeHead(500);
     response.end(String(error));
@@ -221,17 +201,13 @@ const server = http.createServer(async (request, response) => {
 });
 
 function fixtureFor(requestUrl) {
-  const parsed = new URL(requestUrl);
-  const pathname = parsed.pathname.replace(/^\/api\/v1/, "");
-
+  const pathname = new URL(requestUrl).pathname.replace(/^\/api\/v1/, "");
   if (pathname === "/users/me") return USER;
   if (pathname === "/users/me/security") return { permissions: [] };
   if (pathname === "/system-modules/settings") {
     return { data: [], protected_module_keys: [] };
   }
-  if (pathname === "/ia/status") {
-    return { disponivel: true, mensagem: null };
-  }
+  if (pathname === "/ia/status") return { disponivel: true, mensagem: null };
   if (pathname === "/dashboard/") return FIXTURES.dashboard;
   if (pathname === "/atividades") return FIXTURES.activities;
   if (pathname === "/agenda-eventos/") return FIXTURES.agenda;
@@ -239,27 +215,24 @@ function fixtureFor(requestUrl) {
   if (pathname === "/notifications/") {
     return { data: [], nao_lidas: 0, total: 0 };
   }
-
   return {};
 }
 
 async function installApiFixtures(page) {
   await page.route("**/api/**", async (route) => {
-    const request = route.request();
-    const method = request.method();
-    if (method === "OPTIONS") {
+    if (route.request().method() === "OPTIONS") {
       await route.fulfill({ status: 204, body: "" });
       return;
     }
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify(fixtureFor(request.url())),
+      body: JSON.stringify(fixtureFor(route.request().url())),
     });
   });
 }
 
-async function assertDashboard(page, viewport, failures) {
+async function inspectDashboard(page, viewport, failures) {
   await page.waitForSelector(".ejc-dashboard-premium", { timeout: 15000 });
   await page.getByText("Visão operacional do escritório").waitFor();
   await page.getByText("Total de Processos").waitFor();
@@ -287,7 +260,7 @@ async function assertDashboard(page, viewport, failures) {
     failures.push(`${viewport.name}: dashboard premium não está visível`);
   }
 
-  const forbiddenFinancialContent = [
+  for (const forbidden of [
     "918.273,45",
     "876.543,21",
     "765.432,10",
@@ -297,16 +270,15 @@ async function assertDashboard(page, viewport, failures) {
     "Despesas",
     "Honorários",
     "Saldo financeiro",
-  ];
-  for (const forbidden of forbiddenFinancialContent) {
+  ]) {
     if (layout.mainText.includes(forbidden)) {
       failures.push(
-        `${viewport.name}: conteúdo financeiro indevido encontrado: ${forbidden}`,
+        `${viewport.name}: conteúdo financeiro indevido: ${forbidden}`,
       );
     }
   }
 
-  const expectedOperationalContent = [
+  for (const expected of [
     "126",
     "98",
     "Tarefas Pendentes",
@@ -315,24 +287,24 @@ async function assertDashboard(page, viewport, failures) {
     "Agenda da Semana",
     "Distribuição por Área",
     "Processos por Status",
-  ];
-  for (const expected of expectedOperationalContent) {
+  ]) {
     if (!layout.mainText.includes(expected)) {
-      failures.push(
-        `${viewport.name}: conteúdo operacional ausente: ${expected}`,
-      );
+      failures.push(`${viewport.name}: conteúdo operacional ausente: ${expected}`);
     }
   }
 
   const sidebar = page.locator("aside.sidebar-bronze");
   if (viewport.width < 768) {
-    const menuButton = page.getByRole("button", { name: "Abrir menu" });
-    await menuButton.click();
+    await page.getByRole("button", { name: "Abrir menu" }).click();
     if (!(await sidebar.isVisible())) {
       failures.push(`${viewport.name}: drawer da sidebar não abriu`);
     }
-    const closeButtons = page.getByRole("button", { name: "Fechar menu" });
-    if ((await closeButtons.count()) > 0) await closeButtons.first().click();
+    const drawerCloseButton = sidebar.getByRole("button", {
+      name: "Fechar menu",
+    });
+    if ((await drawerCloseButton.count()) > 0) {
+      await drawerCloseButton.click();
+    }
   } else if (!(await sidebar.isVisible())) {
     failures.push(`${viewport.name}: sidebar desktop não está visível`);
   }
@@ -341,7 +313,6 @@ async function assertDashboard(page, viewport, failures) {
     path: path.join(OUT, `dashboard-${viewport.name}.png`),
     fullPage: true,
   });
-
   console.log(
     `[${viewport.name} ${viewport.width}x${viewport.height}] ` +
       `scrollWidth=${layout.scrollWidth} innerWidth=${layout.innerWidth} ` +
@@ -355,9 +326,9 @@ async function main() {
   if (!address || typeof address === "string") {
     throw new Error("Não foi possível resolver a porta do servidor de teste.");
   }
-  const base = `http://127.0.0.1:${address.port}/`;
 
   mkdirSync(OUT, { recursive: true });
+  const base = `http://127.0.0.1:${address.port}/`;
   const browser = await chromium.launch({ executablePath: CHROMIUM });
   const failures = [];
 
@@ -386,9 +357,8 @@ async function main() {
       });
       page.on("pageerror", (error) => consoleErrors.push(String(error)));
       await installApiFixtures(page);
-
       await page.goto(base, { waitUntil: "networkidle" });
-      await assertDashboard(page, viewport, failures);
+      await inspectDashboard(page, viewport, failures);
 
       if (consoleErrors.length) {
         failures.push(
@@ -411,7 +381,7 @@ async function main() {
 
   console.log(
     "\nDASHBOARD PREMIUM RESPONSIVO: OK — sete larguras, sem overflow, " +
-      "sem erro de console e sem renderização dos sentinelas financeiros.",
+      "sem erro de console e sem sentinelas financeiras renderizadas.",
   );
 }
 
