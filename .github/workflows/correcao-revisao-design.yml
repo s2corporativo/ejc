@@ -1,0 +1,753 @@
+name: Correção controlada da revisão do design
+
+on:
+  push:
+    branches: [codex/auditoria-final-design-20260805]
+    paths:
+      - .github/workflows/correcao-revisao-design.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: correcao-controlada-revisao-design
+  cancel-in-progress: true
+
+jobs:
+  validar:
+    name: Aplicar patch e validar sem permissão de escrita
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout sem credenciais persistidas
+        uses: actions/checkout@v7
+        with:
+          ref: codex/auditoria-final-design-20260805
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Aplicar correções verificadas da revisão
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"Trecho esperado não encontrado em {path}: {old[:120]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          # Acessibilidade e seletor semântico do cabeçalho.
+          replace(
+              "frontend/src/components/header/OfficeLinks.tsx",
+              '<div className="ejc-office-links" aria-label="Atalhos institucionais">',
+              '<nav className="ejc-office-links" aria-label="Atalhos institucionais">',
+          )
+          replace(
+              "frontend/src/components/header/OfficeLinks.tsx",
+              "    </div>\n  );\n}\n",
+              "    </nav>\n  );\n}\n",
+          )
+          replace(
+              "frontend/src/styles/ejc-shell-v2-refinements.css",
+              '.ejc-shell-header a[aria-label="De Paula Teixeira - EJC"] {',
+              ".ejc-shell-header .ejc-mobile-brand-link {",
+          )
+
+          layout = Path("frontend/src/components/Layout.tsx")
+          text = layout.read_text()
+          text = text.replace(
+              'className="flex h-11 w-20 shrink-0 items-center justify-center rounded-xl bg-white px-2 md:hidden"',
+              'className="ejc-mobile-brand-link flex h-11 w-20 shrink-0 items-center justify-center rounded-xl bg-white px-2 md:hidden"',
+              1,
+          )
+          text = text.replace(
+              '"ejc-shell-sidebar fixed bottom-0 left-0 top-0 z-50 flex-col transition-all",',
+              '"ejc-shell-sidebar fixed bottom-0 left-0 top-0 z-50 flex-col overflow-y-auto transition-all",',
+              1,
+          )
+          text = text.replace(
+              '<nav className="ejc-sidebar-scroll flex-1 overflow-y-auto px-3 py-3">',
+              '<nav className="ejc-sidebar-scroll min-h-24 flex-1 overflow-y-auto px-3 py-3">',
+              1,
+          )
+          old_button = '''            <button
+              type="button"
+              onClick={() => !privacyMode && setNotifOpen((value) => !value)}
+              className="ejc-header-icon-button relative flex h-9 w-9 items-center justify-center rounded-xl"
+              aria-label="Notificações"
+            >'''
+          new_button = '''            <button
+              type="button"
+              onClick={() => !privacyMode && setNotifOpen((value) => !value)}
+              disabled={privacyMode}
+              title={
+                privacyMode
+                  ? "Notificações ocultas no modo privacidade"
+                  : "Notificações"
+              }
+              className="ejc-header-icon-button relative flex h-9 w-9 items-center justify-center rounded-xl"
+              aria-label={
+                privacyMode
+                  ? "Notificações — ocultas no modo privacidade"
+                  : "Notificações"
+              }
+            >'''
+          if old_button not in text:
+              raise SystemExit("Botão de notificações não encontrado")
+          layout.write_text(text.replace(old_button, new_button, 1))
+
+          # Fuso horário validado no ponto de configuração.
+          replace(
+              "frontend/src/config/office.ts",
+              '''function whatsappUrl(number: string) {
+  const digits = number.replace(/\\D/g, "");
+  return digits ? `https://wa.me/${digits}` : "";
+}
+
+export const OFFICE_CONFIG = Object.freeze({
+  name: clean(env.VITE_EJC_OFFICE_NAME) || "De Paula Teixeira",
+  timezone: clean(env.VITE_EJC_TIMEZONE) || "America/Sao_Paulo",''',
+              '''function whatsappUrl(number: string) {
+  const digits = number.replace(/\\D/g, "");
+  return digits ? `https://wa.me/${digits}` : "";
+}
+
+export function safeTimezone(value: string, fallback = "America/Sao_Paulo") {
+  if (!value) return fallback;
+  try {
+    new Intl.DateTimeFormat("pt-BR", { timeZone: value });
+    return value;
+  } catch {
+    return fallback;
+  }
+}
+
+export const OFFICE_CONFIG = Object.freeze({
+  name: clean(env.VITE_EJC_OFFICE_NAME) || "De Paula Teixeira",
+  timezone: safeTimezone(clean(env.VITE_EJC_TIMEZONE)),''',
+          )
+
+          # Mensagem diária calculada no fuso do escritório.
+          daily = Path("frontend/src/content/dailyMessages.ts")
+          daily_text = daily.read_text()
+          daily_text = 'import { OFFICE_CONFIG } from "../config/office";\n\n' + daily_text
+          old_daily = '''export function getDailyMessage(date = new Date()): DailyMessage {
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const current = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+  );
+  const dayOfYear = Math.floor((current - start) / 86_400_000);
+  return DAILY_MESSAGES[dayOfYear % DAILY_MESSAGES.length];
+}
+'''
+          new_daily = '''function datePartsInTimezone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+  };
+}
+
+export function getDailyMessage(date = new Date()): DailyMessage {
+  const { year, month, day } = datePartsInTimezone(
+    date,
+    OFFICE_CONFIG.timezone,
+  );
+  const start = Date.UTC(year, 0, 0);
+  const current = Date.UTC(year, month - 1, day);
+  const dayOfYear = Math.floor((current - start) / 86_400_000);
+  return DAILY_MESSAGES[dayOfYear % DAILY_MESSAGES.length];
+}
+'''
+          if old_daily not in daily_text:
+              raise SystemExit("Função getDailyMessage não encontrada")
+          daily.write_text(daily_text.replace(old_daily, new_daily, 1))
+
+          # Agenda lateral: utilitários testáveis e consulta restrita à semana.
+          sidebar = Path("frontend/src/components/SidebarWeek.tsx")
+          side_text = sidebar.read_text()
+          side_text = side_text.replace("function startOfWeek", "export function startOfWeek", 1)
+          side_text = side_text.replace("function addDays", "export function addDays", 1)
+          side_text = side_text.replace("function isoDate", "export function isoDate", 1)
+          old_effect = '''  useEffect(() => {
+    let active = true;
+    api
+      .get("/agenda-eventos/?page_size=500")
+      .then((response) => {
+        if (active) setEvents(asList(response.data));
+      })
+      .catch(() => {
+        if (active) setEvents([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+'''
+          new_effect = '''  useEffect(() => {
+    let active = true;
+    const dataInicio = isoDate(anchor);
+    const dataFim = isoDate(addDays(anchor, 6));
+    api
+      .get(
+        `/agenda-eventos/?data_inicio=${dataInicio}&data_fim=${dataFim}&page_size=50`,
+      )
+      .then((response) => {
+        if (active) setEvents(asList(response.data));
+      })
+      .catch(() => {
+        if (active) setEvents([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [anchor]);
+'''
+          if old_effect not in side_text:
+              raise SystemExit("Effect da agenda lateral não encontrado")
+          sidebar.write_text(side_text.replace(old_effect, new_effect, 1))
+
+          # Backend da agenda: faixa semanal filtrada antes do LIMIT e com o mesmo RBAC.
+          agenda = Path("backend/app/routers/agenda_eventos.py")
+          agenda_text = agenda.read_text()
+          agenda_text = agenda_text.replace(
+              '''async def listar(
+    page_size: int = Query(200, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),''',
+              '''async def listar(
+    page_size: int = Query(200, ge=1, le=500),
+    data_inicio: Optional[date] = Query(None),
+    data_fim: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),''',
+              1,
+          )
+          agenda_text = agenda_text.replace(
+              '''    filtro_pessoal = ""
+    params: dict = {"ps": page_size}
+    if not is_gestao(cu):''',
+              '''    if data_inicio and data_fim and data_fim < data_inicio:
+        raise HTTPException(422, "data_fim deve ser igual ou posterior a data_inicio")
+
+    filtro_pessoal = ""
+    filtro_data = ""
+    params: dict = {"ps": page_size}
+    if data_inicio:
+        filtro_data += " AND e.data_evento >= :data_inicio"
+        params["data_inicio"] = data_inicio
+    if data_fim:
+        filtro_data += " AND e.data_evento <= :data_fim"
+        params["data_fim"] = data_fim
+    if not is_gestao(cu):''',
+              1,
+          )
+          agenda_text = agenda_text.replace(
+              'WHERE e.deleted_at IS NULL{filtro_pessoal}\n',
+              'WHERE e.deleted_at IS NULL{filtro_pessoal}{filtro_data}\n',
+              1,
+          )
+          agenda.write_text(agenda_text)
+
+          # Prazos: filtro temporal no banco, total agregado no mesmo escopo do usuário.
+          deadlines = Path("backend/app/routers/deadlines.py")
+          deadlines_text = deadlines.read_text()
+          deadlines_text = deadlines_text.replace(
+              '''    case_id: Optional[str] = None,
+    tipo: Optional[str] = None,
+    apenas_meus: bool = False,''',
+              '''    case_id: Optional[str] = None,
+    tipo: Optional[str] = None,
+    data_inicio: Optional[date] = None,
+    data_fim: Optional[date] = None,
+    apenas_meus: bool = False,''',
+              1,
+          )
+          deadlines_text = deadlines_text.replace(
+              '''    if tipo:
+        q = q.where(Deadline.tipo == tipo)
+    # [A3] Escopo''',
+              '''    if tipo:
+        q = q.where(Deadline.tipo == tipo)
+    if data_inicio and data_fim and data_fim < data_inicio:
+        raise HTTPException(422, "data_fim deve ser igual ou posterior a data_inicio")
+    if data_inicio:
+        q = q.where(Deadline.data_prazo >= data_inicio)
+    if data_fim:
+        q = q.where(Deadline.data_prazo <= data_fim)
+    # [A3] Escopo''',
+              1,
+          )
+          deadlines.write_text(deadlines_text)
+
+          # Estatísticas de casos: opção explícita para espelhar ativos/arquivados/todos.
+          cases = Path("backend/app/routers/cases.py")
+          cases_text = cases.read_text()
+          cases_text = cases_text.replace(
+              '''async def stats_casos(
+    advogado_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),''',
+              '''async def stats_casos(
+    advogado_id: Optional[str] = None,
+    arquivo: str = Query("todos", pattern="^(ativos|arquivados|todos)$"),
+    db: AsyncSession = Depends(get_db),''',
+              1,
+          )
+          cases_text = cases_text.replace(
+              '''    if advogado_id:
+        base_q = base_q.where(or_(
+            Case.advogado_responsavel_id == advogado_id,
+            Case.advogado_auxiliar_id == advogado_id,
+        ))
+    base = base_q.subquery()
+''',
+              '''    if advogado_id:
+        base_q = base_q.where(or_(
+            Case.advogado_responsavel_id == advogado_id,
+            Case.advogado_auxiliar_id == advogado_id,
+        ))
+    if arquivo == "ativos":
+        base_q = base_q.where(Case.status != CaseStatus.arquivado)
+    elif arquivo == "arquivados":
+        base_q = base_q.where(Case.status == CaseStatus.arquivado)
+    base = base_q.subquery()
+''',
+              1,
+          )
+          cases_text = cases_text.replace(
+              '''    por_area = {(r[0].value if hasattr(r[0], "value") else r[0]): r[1] for r in rows}
+
+    return {
+        "total": total,
+        "ativos": ativos,
+        "encerrados": encerrados,
+        "arquivados": arquivados,
+        "por_area": por_area,
+    }
+''',
+              '''    por_area = {(r[0].value if hasattr(r[0], "value") else r[0]): r[1] for r in rows}
+    status_rows = (await db.execute(
+        select(base.c.status, sqlfunc.count())
+        .select_from(base)
+        .group_by(base.c.status)
+    )).all()
+    por_status = {
+        (r[0].value if hasattr(r[0], "value") else r[0]): r[1]
+        for r in status_rows
+    }
+
+    return {
+        "total": total,
+        "ativos": ativos,
+        "encerrados": encerrados,
+        "arquivados": arquivados,
+        "por_area": por_area,
+        "por_status": por_status,
+    }
+''',
+              1,
+          )
+          cases.write_text(cases_text)
+
+          # Dashboard: agregados completos, mesma visibilidade e faixa temporal.
+          dash = Path("frontend/src/pages/DashboardModern.tsx")
+          dash_text = dash.read_text()
+          dash_text = dash_text.replace(
+              '''function parseDate(value?: string) {
+  if (!value) return null;
+  const normalized = value.includes("T") ? value : `${value}T12:00:00`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+''',
+              '''function parseDate(value?: string) {
+  if (!value) return null;
+  const normalized = value.includes("T") ? value : `${value}T12:00:00`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+''',
+              1,
+          )
+          dash_text = dash_text.replace(
+              '''  const [dashboard, setDashboard] = useState<any>(null);
+  const [deadlines, setDeadlines] = useState<any[]>([]);
+  const [movements, setMovements] = useState<any[]>([]);
+  const [cases, setCases] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);''',
+              '''  const [caseStats, setCaseStats] = useState<any>(null);
+  const [deadlines, setDeadlines] = useState<any[]>([]);
+  const [deadlineTotal, setDeadlineTotal] = useState(0);
+  const [movements, setMovements] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);''',
+              1,
+          )
+          effect_pattern = re.compile(
+              r'''    Promise\.allSettled\(\[\n      api\.get\("/dashboard/"\),.*?      setLoading\(false\);\n    \}\);''',
+              re.S,
+          )
+          new_effect = '''    const periodStart = new Date();
+    periodStart.setHours(0, 0, 0, 0);
+    const periodEnd = new Date(periodStart);
+    periodEnd.setDate(periodEnd.getDate() + 7);
+    const dataInicio = isoDate(periodStart);
+    const dataFim = isoDate(periodEnd);
+
+    Promise.allSettled([
+      api.get(
+        `/deadlines/?status=pendente&data_inicio=${dataInicio}&data_fim=${dataFim}&page_size=100`,
+      ),
+      api.get("/movimentos/recentes?limit=6"),
+      api.get("/tasks/"),
+      api.get(
+        `/agenda-eventos/?data_inicio=${dataInicio}&data_fim=${dataFim}&page_size=200`,
+      ),
+      api.get("/cases/stats?arquivo=ativos"),
+    ]).then((results) => {
+      if (!active) return;
+      const [deadlineReq, movementReq, taskReq, agendaReq, caseStatsReq] =
+        results;
+      const nextFailures: string[] = [];
+
+      if (deadlineReq.status === "fulfilled") {
+        setDeadlines(asList(deadlineReq.value.data));
+        setDeadlineTotal(safeNumber(deadlineReq.value.data?.total));
+      } else {
+        setDeadlineTotal(0);
+        nextFailures.push("prazos");
+      }
+
+      if (movementReq.status === "fulfilled")
+        setMovements(asList(movementReq.value.data));
+      else nextFailures.push("andamentos");
+
+      if (taskReq.status === "fulfilled") setTasks(asList(taskReq.value.data));
+      else nextFailures.push("tarefas");
+
+      if (agendaReq.status === "fulfilled")
+        setAgendaEvents(asList(agendaReq.value.data));
+      else nextFailures.push("agenda");
+
+      if (caseStatsReq.status === "fulfilled")
+        setCaseStats(caseStatsReq.value.data);
+      else nextFailures.push("indicadores de processos");
+
+      setFailures(nextFailures);
+      setLoading(false);
+    });'''
+          dash_text, count = effect_pattern.subn(new_effect, dash_text, count=1)
+          if count != 1:
+              raise SystemExit(f"Bloco de carregamento do dashboard não encontrado: {count}")
+
+          kpi_pattern = re.compile(
+              r'''  const dashboardDegraded =.*?  const areas = useMemo\(\(\) => \{.*?  \}, \[cases\]\);\n\n  const statuses = useMemo\(\(\) => \{.*?  \}, \[cases\]\);''',
+              re.S,
+          )
+          new_kpis = '''  const caseStatsUnavailable = failures.includes("indicadores de processos");
+  const taskUnavailable = failures.includes("tarefas");
+  const deadlineUnavailable = failures.includes("prazos");
+
+  const totalCases = caseStatsUnavailable
+    ? "—"
+    : safeNumber(caseStats?.total);
+
+  const activeCases = caseStatsUnavailable
+    ? "—"
+    : safeNumber(caseStats?.ativos);
+
+  const pendingTasks = taskUnavailable
+    ? "—"
+    : tasks.filter((task) => task.status !== "concluida").length;
+
+  const nextDeadlines = deadlineUnavailable ? "—" : deadlineTotal;
+
+  const areas = useMemo(
+    () =>
+      Object.entries(caseStats?.por_area ?? {})
+        .map(([label, value]) => ({ label, value: safeNumber(value) }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 7),
+    [caseStats],
+  );
+
+  const statuses = useMemo(
+    () =>
+      Object.entries(caseStats?.por_status ?? {})
+        .map(([label, value]) => ({ label, value: safeNumber(value) }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 4)
+        .map((item, index) => ({ ...item, color: STATUS_COLORS[index] })),
+    [caseStats],
+  );'''
+          dash_text, count = kpi_pattern.subn(new_kpis, dash_text, count=1)
+          if count != 1:
+              raise SystemExit(f"Bloco de KPIs não encontrado: {count}")
+
+          dash_text = dash_text.replace(
+              "      urgent: safeNumber(item.dias_restantes) <= 3,",
+              '''      urgent:
+        item.dias_restantes !== null &&
+        item.dias_restantes !== undefined &&
+        Number.isFinite(Number(item.dias_restantes)) &&
+        Number(item.dias_restantes) <= 3,''',
+              1,
+          )
+          dash_text = dash_text.replace(
+              '''    return [...deadlineItems, ...eventItems]
+      .filter((item) => parseDate(item.date))''',
+              '''    const floor = new Date();
+    floor.setHours(0, 0, 0, 0);
+
+    return [...deadlineItems, ...eventItems]
+      .filter((item) => {
+        const date = parseDate(item.date);
+        return date != null && date >= floor;
+      })''',
+              1,
+          )
+          dash_text = dash_text.replace(
+              '<div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">',
+              '<div role="status" className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">',
+              1,
+          )
+          dash_text = dash_text.replace(
+              '<AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />',
+              '<AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />',
+              1,
+          )
+          dash_text = dash_text.replace(
+              'aria-label={`${statusTotal} processos distribuídos por status`}',
+              'aria-label={`${statusTotal} processos nos principais status`}',
+              1,
+          )
+          dash_text = dash_text.replace(
+              "<small>processos</small>",
+              "<small>nos principais status</small>",
+              1,
+          )
+          dash.write_text(dash_text)
+
+          # Documentação de aceite, encerramento e rollback sem inventar dados de produção.
+          design = Path("docs/design/RESTILIZACAO_EJC_V2.md")
+          design_text = design.read_text()
+          design_text = design_text.replace(
+              "- homologação do titular.\n",
+              '''- homologação do titular;
+- rollback preparado por `git revert <SHA_DO_MERGE>` e nova execução controlada
+  do workflow `Deploy VPS`, somente depois de registrar o estado implantado;
+- relatório de encerramento com arquivos alterados, comandos executados, testes,
+  evidências, riscos residuais, limitações e decisões pendentes de ação humana.
+''',
+              1,
+          )
+          design.write_text(design_text)
+
+          audit = Path("docs/auditoria/EXECUCAO_AUDITORIA_DESIGN_2026-08-05.md")
+          audit_text = audit.read_text()
+          rollback = '''## Rollback
+
+A etapa não altera banco ou dados persistentes. Antes do merge, o SHA final e o
+pai principal ainda não existem e não devem ser inventados. Após a integração,
+o relatório de encerramento deve registrar o SHA real do merge, a estratégia
+utilizada e o comando `git revert <SHA_REAL_DO_MERGE>`.
+
+Como nenhum deploy de produção foi executado nesta tarefa, `.deployed_sha`, tags
+e digests das imagens implantadas não foram alterados nem podem ser inferidos do
+repositório. Esses valores devem ser coletados do ambiente oficial imediatamente
+antes de eventual implantação e anexados ao registro de mudança. A reversão em
+produção deve ocorrer pelo workflow `Deploy VPS`, apontando explicitamente para
+o commit aprovado após o revert, com backup, healthchecks e evidências.
+'''
+          audit_text = re.sub(r"## Rollback\n.*\Z", rollback, audit_text, flags=re.S)
+          audit.write_text(audit_text)
+
+          # Testes co-localizados solicitados na revisão.
+          Path("frontend/src/components/SidebarWeek.test.tsx").write_text('''import { describe, expect, it } from "vitest";
+import { addDays, isoDate, startOfWeek } from "./SidebarWeek";
+
+describe("utilitários da agenda semanal", () => {
+  it("leva o domingo para a segunda-feira anterior", () => {
+    expect(isoDate(startOfWeek(new Date(2026, 7, 9, 10)))).toBe("2026-08-03");
+  });
+
+  it("atravessa a mudança de mês", () => {
+    expect(isoDate(addDays(new Date(2026, 7, 31, 12), 1))).toBe("2026-09-01");
+  });
+
+  it("atravessa a mudança de ano", () => {
+    expect(isoDate(addDays(new Date(2026, 11, 31, 12), 1))).toBe("2027-01-01");
+  });
+});
+''')
+          Path("frontend/src/content/dailyMessages.test.ts").write_text('''import { describe, expect, it } from "vitest";
+import { getDailyMessage } from "./dailyMessages";
+
+describe("getDailyMessage", () => {
+  it("mantém o dia civil do escritório entre 21h e 23h59", () => {
+    const lateUtc = new Date("2026-08-05T02:30:00.000Z");
+    const sameOfficeDay = new Date("2026-08-04T15:00:00.000Z");
+    expect(getDailyMessage(lateUtc)).toEqual(getDailyMessage(sameOfficeDay));
+  });
+});
+''')
+          PY
+
+      - name: Validar sintaxe Python alterada
+        run: |
+          python -m py_compile \
+            backend/app/routers/agenda_eventos.py \
+            backend/app/routers/deadlines.py \
+            backend/app/routers/cases.py
+
+      - name: Instalar Node 22.22
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.22.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Formatar somente a allowlist frontend
+        working-directory: frontend
+        run: |
+          npx prettier --write \
+            src/components/Layout.tsx \
+            src/components/SidebarWeek.tsx \
+            src/components/SidebarWeek.test.tsx \
+            src/components/header/OfficeLinks.tsx \
+            src/config/office.ts \
+            src/content/dailyMessages.ts \
+            src/content/dailyMessages.test.ts \
+            src/pages/DashboardModern.tsx \
+            src/styles/ejc-shell-v2-refinements.css
+
+      - name: Validar frontend completo
+        working-directory: frontend
+        run: |
+          npm run format:check
+          npm run lint:eslint
+          npm run test -- --reporter=dot
+          npm run build
+          npm audit --audit-level=high
+
+      - name: Verificar allowlist do diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/allowlist <<'EOF'
+          backend/app/routers/agenda_eventos.py
+          backend/app/routers/cases.py
+          backend/app/routers/deadlines.py
+          docs/auditoria/EXECUCAO_AUDITORIA_DESIGN_2026-08-05.md
+          docs/design/RESTILIZACAO_EJC_V2.md
+          frontend/src/components/Layout.tsx
+          frontend/src/components/SidebarWeek.test.tsx
+          frontend/src/components/SidebarWeek.tsx
+          frontend/src/components/header/OfficeLinks.tsx
+          frontend/src/config/office.ts
+          frontend/src/content/dailyMessages.test.ts
+          frontend/src/content/dailyMessages.ts
+          frontend/src/pages/DashboardModern.tsx
+          frontend/src/styles/ejc-shell-v2-refinements.css
+          EOF
+          git diff --name-only | sort > /tmp/changed
+          diff -u /tmp/allowlist /tmp/changed
+
+      - name: Empacotar somente arquivos validados
+        run: |
+          tar -czf /tmp/review-fixes.tgz \
+            backend/app/routers/agenda_eventos.py \
+            backend/app/routers/cases.py \
+            backend/app/routers/deadlines.py \
+            docs/auditoria/EXECUCAO_AUDITORIA_DESIGN_2026-08-05.md \
+            docs/design/RESTILIZACAO_EJC_V2.md \
+            frontend/src/components/Layout.tsx \
+            frontend/src/components/SidebarWeek.test.tsx \
+            frontend/src/components/SidebarWeek.tsx \
+            frontend/src/components/header/OfficeLinks.tsx \
+            frontend/src/config/office.ts \
+            frontend/src/content/dailyMessages.test.ts \
+            frontend/src/content/dailyMessages.ts \
+            frontend/src/pages/DashboardModern.tsx \
+            frontend/src/styles/ejc-shell-v2-refinements.css
+
+      - name: Publicar artefato validado
+        uses: actions/upload-artifact@v7
+        with:
+          name: correcoes-revisao-design
+          path: /tmp/review-fixes.tgz
+          retention-days: 1
+
+  publicar:
+    name: Publicar somente o artefato validado
+    needs: validar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exclusivo para publicação
+        uses: actions/checkout@v7
+        with:
+          ref: codex/auditoria-final-design-20260805
+          fetch-depth: 0
+
+      - name: Baixar artefato validado
+        uses: actions/download-artifact@v8
+        with:
+          name: correcoes-revisao-design
+          path: /tmp/correcoes
+
+      - name: Aplicar allowlist e publicar
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -tzf /tmp/correcoes/review-fixes.tgz | sed 's#/$##' | sort > /tmp/archive-files
+          cat > /tmp/allowlist <<'EOF'
+          backend/app/routers/agenda_eventos.py
+          backend/app/routers/cases.py
+          backend/app/routers/deadlines.py
+          docs/auditoria/EXECUCAO_AUDITORIA_DESIGN_2026-08-05.md
+          docs/design/RESTILIZACAO_EJC_V2.md
+          frontend/src/components/Layout.tsx
+          frontend/src/components/SidebarWeek.test.tsx
+          frontend/src/components/SidebarWeek.tsx
+          frontend/src/components/header/OfficeLinks.tsx
+          frontend/src/config/office.ts
+          frontend/src/content/dailyMessages.test.ts
+          frontend/src/content/dailyMessages.ts
+          frontend/src/pages/DashboardModern.tsx
+          frontend/src/styles/ejc-shell-v2-refinements.css
+          EOF
+          diff -u /tmp/allowlist /tmp/archive-files
+          tar -xzf /tmp/correcoes/review-fixes.tgz
+          git diff --name-only | sort > /tmp/changed
+          diff -u /tmp/allowlist /tmp/changed
+          git add --pathspec-from-file=/tmp/allowlist
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: atender revisão funcional e acessível do design"
+          git push origin HEAD:codex/auditoria-final-design-20260805
