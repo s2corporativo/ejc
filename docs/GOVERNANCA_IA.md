@@ -11,10 +11,11 @@ A governança do EJC existe para proteger produção, dados, validade jurídica 
 Ela **não pode impedir diagnóstico, auditoria, revisão ou correção autorizada pelo titular**.
 
 O GitHub é a fonte permanente de verdade do projeto. Pedido direto do titular por chat é
-autorização válida para iniciar diagnóstico somente leitura; antes de qualquer escrita, a decisão,
-os achados e o escopo devem estar registrados no GitHub por Issue ou Issue-guarda-chuva. As
-mudanças devem permanecer rastreáveis por Pull Request, comentário de revisão ou documento
-versionado.
+autorização válida para iniciar diagnóstico somente de leitura; antes de qualquer escrita, a
+decisão, os achados e o escopo devem estar registrados no GitHub por Issue ou Issue-guarda-chuva.
+As decisões, os achados e o escopo devem permanecer rastreáveis por Issue, comentário de revisão
+ou documento versionado. Toda mudança de arquivo deve ocorrer em branch identificável e terminar
+registrada em Pull Request.
 
 A governança deve ser aplicada de forma proporcional ao risco:
 
@@ -206,8 +207,9 @@ refatoração necessária. Deve parar e pedir decisão apenas quando:
 3. a mudança contrariar decisão permanente do titular;
 4. a execução depender de credencial, produção ou dado real não disponibilizado com segurança.
 
-Auditoria somente leitura pode terminar em relatório. Tarefa com escrita deve começar vinculada a
-Issue ou Issue-guarda-chuva e terminar em PR.
+Toda tarefa deve terminar em relatório com arquivos alterados ou “nenhum”, comandos, testes,
+evidências, riscos residuais, limitações, rollback e decisões que exigem ação humana. Tarefa com
+escrita deve começar vinculada a Issue ou Issue-guarda-chuva e terminar em PR.
 
 ## 11. Decisões permanentes do titular
 
