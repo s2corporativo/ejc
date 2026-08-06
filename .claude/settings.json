@@ -26,8 +26,10 @@
       "Bash(git ls-files:*)",
       "Bash(git grep:*)",
       "Bash(git blame:*)",
-      "Bash(git remote:*)",
-      "Bash(git tag:*)",
+      "Bash(git remote -v:*)",
+      "Bash(git remote get-url:*)",
+      "Bash(git tag --list:*)",
+      "Bash(git show-ref --tags:*)",
       "Bash(graphify:*)",
       "Bash(ruff check:*)",
       "Bash(python -m ruff check:*)",
@@ -41,13 +43,12 @@
       "Bash(npm run typecheck:*)",
       "Bash(npm test:*)",
       "Bash(npm run build:*)",
-      "Bash(npm ci:*)",
+      "Bash(npm ci --ignore-scripts:*)",
       "Bash(npx tsc:*)",
       "Bash(npx vitest:*)",
       "Bash(docker compose ps:*)",
       "Bash(docker compose logs:*)",
       "Bash(docker compose config:*)",
-      "Bash(docker compose up:*)",
       "Bash(scripts/ci-local.sh:*)",
       "Bash(scripts/ci_guard.sh:*)"
     ],
@@ -61,7 +62,22 @@
       "Bash(dropdb:*)",
       "Bash(alembic downgrade base:*)",
       "Read(./.env)",
-      "Read(./vps-tools/.env)"
+      "Read(./.env.local)",
+      "Read(./.env.production)",
+      "Read(./.env.prod)",
+      "Read(./vps-tools/.env)",
+      "Read(./**/.env)",
+      "Read(./**/.env.local)",
+      "Read(./**/.env.production)",
+      "Read(./**/.env.prod)",
+      "Read(./**/*credentials*.json)",
+      "Read(./**/*service-account*.json)",
+      "Read(./**/*.key)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.p12)",
+      "Read(./**/*.pfx)",
+      "Read(~/.ssh/id_rsa)",
+      "Read(~/.ssh/id_ed25519)"
     ]
   },
   "hooks": {
@@ -70,7 +86,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "VENV=\"${XDG_CACHE_HOME:-$HOME/.cache}/ejc-graphify\"; if [ ! -x \"$VENV/bin/graphify\" ]; then python3 -m venv \"$VENV\" && \"$VENV/bin/pip\" install -q graphifyy; fi; mkdir -p \"$HOME/.local/bin\"; ln -sf \"$VENV/bin/graphify\" \"$HOME/.local/bin/graphify\"; [ -x \"$VENV/bin/graphify\" ] && \"$VENV/bin/graphify\" update . >/dev/null 2>&1; true",
+            "command": "VENV=\"${XDG_CACHE_HOME:-$HOME/.cache}/ejc-graphify\"; STATE=\"$VENV/.ejc-state\"; READY=\"$STATE/ready\"; LOCK=\"$STATE/install.lock\"; LOG=\"$STATE/graphify.log\"; mkdir -p \"$STATE\"; ( ACQUIRED=0; for I in $(seq 1 60); do if mkdir \"$LOCK\" 2>/dev/null; then ACQUIRED=1; break; fi; sleep 2; done; if [ \"$ACQUIRED\" -ne 1 ]; then echo \"::warning::graphify: instalação ocupada por mais de 120s; sessão seguirá sem bloquear.\" >&2; exit 0; fi; trap 'rmdir \"$LOCK\" 2>/dev/null || true' EXIT; rm -f \"$READY\"; if [ ! -x \"$VENV/bin/graphify\" ]; then python3 -m venv \"$VENV\" && \"$VENV/bin/pip\" install graphifyy >\"$LOG\" 2>&1 || { echo \"::warning::graphify: falha na instalação isolada; consulte $LOG.\" >&2; tail -n 20 \"$LOG\" >&2 2>/dev/null || true; exit 0; }; fi; mkdir -p \"$HOME/.local/bin\"; ln -sf \"$VENV/bin/graphify\" \"$HOME/.local/bin/graphify\"; if \"$VENV/bin/graphify\" update . >\"$LOG\" 2>&1; then touch \"$READY\"; else echo \"::warning::graphify: atualização inicial falhou; consulte $LOG.\" >&2; tail -n 20 \"$LOG\" >&2 2>/dev/null || true; fi ) || { echo \"::warning::graphify: preparação terminou com erro não bloqueante.\" >&2; true; }",
             "timeout": 600,
             "async": true,
             "statusMessage": "Preparando graphify em ambiente Python isolado..."
@@ -84,7 +100,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "F=$(python3 -c \"import json,sys;print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))\" 2>/dev/null); VENV=\"${XDG_CACHE_HOME:-$HOME/.cache}/ejc-graphify\"; case \"$F\" in *.py|*.js|*.ts|*.tsx|*.jsx|*.go|*.rs|*.java|*.rb|*.c|*.h|*.cpp|*.cs|*.php|*.sh|*.kt|*.swift|*.vue|*.svelte) [ -x \"$VENV/bin/graphify\" ] && \"$VENV/bin/graphify\" update . >/dev/null 2>&1 ;; esac; true",
+            "command": "F=$(python3 -c \"import json,sys;print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))\" 2>/dev/null); VENV=\"${XDG_CACHE_HOME:-$HOME/.cache}/ejc-graphify\"; STATE=\"$VENV/.ejc-state\"; READY=\"$STATE/ready\"; LOCK=\"$STATE/update.lock\"; LOG=\"$STATE/graphify.log\"; case \"$F\" in *.py|*.js|*.ts|*.tsx|*.jsx|*.go|*.rs|*.java|*.rb|*.c|*.h|*.cpp|*.cs|*.php|*.sh|*.kt|*.swift|*.vue|*.svelte) FOUND=0; for I in $(seq 1 60); do if [ -f \"$READY\" ] && [ -x \"$VENV/bin/graphify\" ]; then FOUND=1; break; fi; sleep 2; done; if [ \"$FOUND\" -ne 1 ]; then echo \"::warning::graphify: executável não ficou pronto após 120s; atualização adiada.\" >&2; exit 0; fi; ACQUIRED=0; for I in $(seq 1 30); do if mkdir \"$LOCK\" 2>/dev/null; then ACQUIRED=1; break; fi; sleep 1; done; if [ \"$ACQUIRED\" -ne 1 ]; then echo \"::warning::graphify: outra atualização permaneceu ativa por 30s; esta execução foi adiada.\" >&2; exit 0; fi; trap 'rmdir \"$LOCK\" 2>/dev/null || true' EXIT; if ! \"$VENV/bin/graphify\" update . >\"$LOG\" 2>&1; then echo \"::warning::graphify: atualização incremental falhou; consulte $LOG.\" >&2; tail -n 20 \"$LOG\" >&2 2>/dev/null || true; fi ;; esac; true",
             "timeout": 600,
             "async": true,
             "statusMessage": "Atualizando grafo graphify..."
