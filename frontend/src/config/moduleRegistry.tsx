@@ -103,6 +103,7 @@ const Suspensoes = lazy(() => import("../pages/Suspensoes"));
 const Tarefas = lazy(() => import("../pages/Tarefas"));
 const Intimacoes = lazy(() => import("../pages/Intimacoes"));
 const Central = lazy(() => import("../pages/Central"));
+const AgendaDia = lazy(() => import("../pages/AgendaDia"));
 const GestaoDocumental = lazy(() => import("../pages/GestaoDocumental"));
 const Pecas = lazy(() => import("../pages/Pecas"));
 const RamosHub = lazy(() => import("../pages/RamosHub"));
@@ -443,6 +444,20 @@ export const STAFF_ROUTES: ModuleRoute[] = [
       "/api/clients",
       "/api/notifications",
     ],
+  },
+  {
+    key: "atividades-dia",
+    path: "/atividades/dia/:date",
+    label: "Agenda do Dia",
+    description:
+      "Atividades da data selecionada no calendário semanal do escritório.",
+    group: "Trabalhar um caso",
+    icon: CalendarClock,
+    component: AgendaDia,
+    status: "hidden",
+    helpKey: "atividades",
+    sensitive: true,
+    backendPrefixes: ["/api/atividades", "/api/agenda-eventos"],
   },
   {
     key: "prazos",

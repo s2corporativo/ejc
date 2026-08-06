@@ -93,6 +93,7 @@ async def _limpar(db, *, case_ids=(), user_ids=(), client_ids=()):
         await db.execute(text("DELETE FROM cases WHERE id = :id"), {"id": cid})
     for cid in client_ids:
         await db.execute(text("DELETE FROM cases WHERE client_id = :id"), {"id": cid})
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(
             text("DELETE FROM audit_logs WHERE user_id IN "
                  "(SELECT id FROM users WHERE client_id = :id)"),
@@ -100,6 +101,7 @@ async def _limpar(db, *, case_ids=(), user_ids=(), client_ids=()):
         await db.execute(text("DELETE FROM users WHERE client_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": cid})
     for uid in user_ids:
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
     await db.commit()
@@ -296,6 +298,7 @@ async def test_criar_acesso_portal_aceita_senha_forte():
             assert criado.client_id == cli
         finally:
             if novo_user_id:
+                await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
                 await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"),
                                  {"id": novo_user_id})
                 await db.execute(text("DELETE FROM users WHERE id = :id"),

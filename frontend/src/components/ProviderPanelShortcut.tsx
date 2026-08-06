@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import { Activity } from "lucide-react";
 
 export default function ProviderPanelShortcut() {

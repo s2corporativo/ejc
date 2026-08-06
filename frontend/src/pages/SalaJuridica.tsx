@@ -9,7 +9,7 @@
  * (sanitização LGPD → RAG → AILog → HITL) — esta tela nunca chama modelo.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import {
   AlertTriangle,
   Archive,

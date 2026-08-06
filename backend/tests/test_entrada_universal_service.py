@@ -10,6 +10,7 @@ from app.services.entrada_universal_service import (
     comparar_documentos,
     expandir_zip,
     manifesto_pacote,
+    TIPO_LOCAL_PARA_CATALOGO,
 )
 
 
@@ -111,3 +112,62 @@ def test_manifesto_tem_dez_itens_e_bloqueia_peca_quando_nao_apto():
     assert len(manifesto) == 10
     peca = next(item for item in manifesto if item["codigo"] == "peca_principal")
     assert peca["status"] == "bloqueado"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Regressão do teste de campo de 2026-08-05 (P1 "Classificação documental").
+# Um TXT jurídico de 43 KB era rotulado por alias solto encontrado em qualquer
+# ponto do texto, com confiança exibida acima de 60%.
+# ─────────────────────────────────────────────────────────────────────────────
+_PETICAO_LONGA = (
+    "EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA VARA CÍVEL\n\n"
+    "Fulano de Tal, inscrito no CPF 000.000.000-00, data de nascimento "
+    "01/01/1980, vem respeitosamente à presença de Vossa Excelência propor\n\n"
+    "DOS FATOS\n" + ("O requerente contratou o serviço e não foi atendido. " * 400) +
+    "\nDOS PEDIDOS\nRequer a Vossa Excelência a procedência do pedido."
+)
+
+
+def test_peca_longa_nao_vira_documento_de_identificacao_por_conter_cpf():
+    resultado = classificar_documento("peticao.txt", _PETICAO_LONGA)
+    assert resultado["tipo"] == "peticao"
+    assert resultado["tipo_catalogo"] == "peticao"
+    assert resultado["requer_confirmacao_humana"] is True
+
+
+def test_evidencia_fraca_nao_afirma_tipo_nem_grava_no_ged():
+    # "sentença" aparece no pedido de quase toda petição — sozinha não classifica.
+    resultado = classificar_documento("anexo.txt", "Aguarda-se a sentença do feito.")
+    assert resultado["tipo_catalogo"] is None
+    assert resultado["confianca"] == 0.0
+    assert resultado["requer_confirmacao_humana"] is True
+    assert "Não classificado" in resultado["nome"]
+
+
+def test_alias_exige_fronteira_de_palavra():
+    # "ait" (auto de infração de trânsito) não pode casar dentro de "gratuita".
+    resultado = classificar_documento(
+        "recibo.txt", "Consulta gratuita realizada na data aprazada.", "multa_transito"
+    )
+    assert resultado["tipo_catalogo"] is None
+
+
+def test_tipo_gravavel_e_sempre_chave_do_catalogo_oficial():
+    # Chaves de document_types_master (backend/app/seeds/redesign_seed.py).
+    catalogo = {
+        "contrato", "multa_transito", "multa_ambiental", "auto_infracao", "nfe_xml",
+        "denuncia", "boletim_ocorrencia", "peticao", "procuracao", "doc_identificacao",
+        "comprovante_residencia", "laudo_tecnico", "outro",
+    }
+    assert set(TIPO_LOCAL_PARA_CATALOGO.values()).issubset(catalogo)
+    classificados = [
+        classificar_documento("peticao.txt", _PETICAO_LONGA),
+        classificar_documento(
+            "notificacao.pdf",
+            "NOTIFICAÇÃO DE PENALIDADE. Recurso à JARI. Código da infração e RENAVAM.",
+            "multa_transito",
+        ),
+    ]
+    for resultado in classificados:
+        chave = resultado["tipo_catalogo"]
+        assert chave is None or chave in catalogo

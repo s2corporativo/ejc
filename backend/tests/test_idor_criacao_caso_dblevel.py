@@ -77,6 +77,7 @@ async def _limpar(db, *, case_ids=(), user_ids=(), client_ids=()):
         await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": cid})
     for uid in user_ids:
         # A criação de caso deixa trilha de auditoria referenciando o autor.
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
         await db.execute(
             text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid}
         )

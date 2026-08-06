@@ -9,7 +9,7 @@
 //   • Ações executáveis passam por ConfirmModal mostrando o que será chamado.
 //   • Tudo que a IA produz é RASCUNHO sujeito à revisão do advogado.
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import {
   AlertTriangle,
   CheckCircle2,

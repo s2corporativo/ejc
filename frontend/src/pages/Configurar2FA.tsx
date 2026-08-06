@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Copy, Loader2, LogOut, ShieldCheck } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import api, { logout } from "../lib/api";
 import type { LoginResponse } from "../types";
 import { useAuth } from "../stores/auth";
