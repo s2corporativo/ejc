@@ -145,7 +145,7 @@ export default function FinanceiroDashboard({
 
   const exportarCSV = async () => {
     try {
-      // Reusa o cliente axios (baseURL /api + interceptor de token/refresh).
+      // Reusa o cliente axios (baseURL /api/v1 + interceptor de token/refresh).
       const resp = await api.get("/despesas/export/csv", {
         params: { competencia },
         responseType: "blob",

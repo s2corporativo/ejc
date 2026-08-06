@@ -238,13 +238,14 @@ diagnóstico fechado**: a auditoria não viu o código. Confirme antes de agir.
 
 Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real antes de assumir:
 
-- **Prefixo `/v1/` duplicado.** `/api/v1/v1/despesas` responde 200; `/api/v1/despesas` dá 404.
-  Mesmo padrão em `office-contracts`, `partner-withdrawals`, `kanban-columns`,
-  `regulatorio/digest-semanal`. O frontend compensa chamando `/v1/x`.
-  *(Resolvido em 2026-08-02: `src/lib/api.ts` linha 9 usa `baseURL: "/api/v1"` — o bundle está
-  certo e a descrição antiga neste arquivo (`/api`) é que estava errada. O interceptor de request
-  apara prefixo repetido; a duplicação `/api/v1/v1/` vem de chamada que já traz `/v1` e escapa
-  dessa poda. Ao investigar, comece pelo interceptor, não pelo `baseURL`.)*
+- **Prefixo `/v1/` duplicado — resolvido na fatia 652-A (2026-08-06).** Oito routers
+  (`despesas`, `office-contracts`, `partner-withdrawals`, `kanban-columns`, `regulatorio`,
+  `datajud`, `whatsapp`, `clients/.../pending-items`) declaravam `/v1` como prefixo próprio
+  além do `API = "/api"` que o `main.py` já aplica; o `APIVersionCompatibilityMiddleware`
+  reescreve `/api/v1/x` → `/api/x` antes do dispatch, então o caminho canônico dava 404 e a
+  rota só respondia no defeituoso `/api/v1/v1/x`. O frontend compensava chamando `/v1/x`
+  (interceptor de `src/lib/api.ts`, removido junto). Não reintroduza o `/v1` no prefixo de
+  nenhum router — `backend/tests/test_routing_prefixo_v1.py` reprova a volta da classe.
 - **Superfície dupla.** Toda rota responde em `/api/` e em `/api/v1/`. Regras por path
   (rate limit, WAF, log, cache) precisam cobrir as duas.
 - **Painéis de diagnóstico divergem entre si.** Sobre provedores/modelos de IA, a fonte de verdade

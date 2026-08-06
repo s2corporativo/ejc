@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import api from "./api";
+import api, { API_BASE_URL } from "./api";
 import { toast } from "../components/Toast";
 
 // Exercita o interceptor de resposta REAL do cliente `api`: um adapter mockado
@@ -81,5 +81,51 @@ describe("api · tratamento global de 403", () => {
     });
 
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+// Regressão do prefixo /v1 duplicado (fatia 652-A): o interceptor de request
+// já não reescreve /api, /api/v1 ou /v1 do path informado — remover essa poda
+// era seguro só porque nenhuma chamada real do repositório ainda os usa. Este
+// teste trava o comportamento atual: o path chega ao adapter exatamente como
+// foi escrito pela chamada, sem reescrita alguma.
+describe("api · request não reescreve o path informado", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    api.defaults.adapter = undefined;
+  });
+
+  function capturarUrlEnviada(path: string): Promise<string> {
+    return new Promise((resolve) => {
+      api.defaults.adapter = async (config) => {
+        resolve(String(config.url));
+        return {
+          data: {},
+          status: 200,
+          statusText: "OK",
+          headers: {},
+          config,
+        };
+      };
+      void api.get(path);
+    });
+  }
+
+  it("baseURL do cliente é o contrato público /api/v1", () => {
+    expect(API_BASE_URL).toBe("/api/v1");
+  });
+
+  it("path relativo comum chega intacto ao adapter", async () => {
+    await expect(capturarUrlEnviada("/despesas")).resolves.toBe("/despesas");
+  });
+
+  it("path que por engano reintroduza /v1 NÃO é mais podado", async () => {
+    // Antes da fatia 652-A esta chamada seria reescrita para "/v1/despesas"
+    // (compensando o prefixo duplicado nos routers). Hoje o cliente resolve
+    // /api/v1/v1/despesas — um 404, não um sucesso silencioso — porque o
+    // defeito de roteamento que a poda compensava foi corrigido na origem.
+    await expect(capturarUrlEnviada("/v1/despesas")).resolves.toBe(
+      "/v1/despesas",
+    );
   });
 });

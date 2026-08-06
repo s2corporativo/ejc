@@ -11,6 +11,7 @@ datajud, whatsapp, pending-items). Estes testes impedem a volta da classe.
 
 from app.main import app
 from app.utils.api_contract import _internal_api_url
+from tests.test_rotas_registro_explicito import RELOCACOES_PREFIXO_V1
 
 
 def _paths() -> set[str]:
@@ -19,9 +20,9 @@ def _paths() -> set[str]:
 
 def test_nenhuma_rota_interna_carrega_prefixo_v1():
     """Superfície interna livre de /v1: o versionamento é só do middleware."""
-    ofensoras = sorted(
-        p for p in _paths() if p == "/api/v1" or p.startswith("/api/v1/")
-    )
+    rotas = _paths()
+    assert len(rotas) > 300, f"poucas rotas extraídas do app ({len(rotas)}) — import quebrado?"
+    ofensoras = sorted(p for p in rotas if p == "/api/v1" or p.startswith("/api/v1/"))
     assert not ofensoras, (
         "Router montado com prefixo /v1 próprio — o caminho canônico /api/v1/... "
         "será reescrito pelo APIVersionCompatibilityMiddleware para /api/... e "
@@ -31,21 +32,18 @@ def test_nenhuma_rota_interna_carrega_prefixo_v1():
 
 
 def test_superficie_canonica_dos_oito_routers_resolve():
-    """O path público /api/v1/x dos 8 routers corrigidos casa rota interna real."""
-    publicos = [
-        "/api/v1/despesas",
-        "/api/v1/despesas/resumo",
-        "/api/v1/office-contracts",
-        "/api/v1/partner-withdrawals",
-        "/api/v1/kanban-columns",
-        "/api/v1/cases/{case_id}/kanban",
-        "/api/v1/regulatorio/digest-semanal",
-        "/api/v1/datajud/cases/{case_id}/sync",
-        "/api/v1/whatsapp/status",
-        "/api/v1/clients/{client_id}/pending-items",
-    ]
+    """O path público /api/v1/x dos 33 endpoints realocados casa rota interna real.
+
+    Deriva de RELOCACOES_PREFIXO_V1 (fonte única, também usada para provar que a
+    relocação preservou auth em test_rotas_registro_explicito.py) — evita manter
+    uma segunda lista hardcoded que envelhece por conta própria.
+    """
     rotas = _paths()
-    sem_rota = [p for p in publicos if _internal_api_url(p) not in rotas]
+    sem_rota = [
+        publico
+        for publico, _ in RELOCACOES_PREFIXO_V1
+        if _internal_api_url(publico) not in rotas
+    ]
     assert not sem_rota, (
         "Caminho canônico sem rota interna correspondente (404 em produção "
         f"após a reescrita do middleware): {sem_rota}"

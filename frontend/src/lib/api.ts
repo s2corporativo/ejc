@@ -15,13 +15,6 @@ export function getAccessToken(): string | null {
 }
 
 api.interceptors.request.use((config) => {
-  // Compatibilidade transitória: chamadas antigas que ainda informam /api ou
-  // /v1 não podem duplicar o prefixo agora que o cliente usa /api/v1.
-  const url = String(config.url || "");
-  if (url.startsWith("/api/v1/")) config.url = url.slice("/api/v1".length);
-  else if (url.startsWith("/api/")) config.url = url.slice("/api".length);
-  else if (url.startsWith("/v1/")) config.url = url.slice("/v1".length);
-
   const token = getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;

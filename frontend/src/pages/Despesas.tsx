@@ -114,7 +114,7 @@ export default function Despesas({
 
   async function exportCSV() {
     try {
-      // Reusa o cliente axios (baseURL /api + interceptor de token/refresh).
+      // Reusa o cliente axios (baseURL /api/v1 + interceptor de token/refresh).
       const resp = await api.get("/despesas/export/csv", {
         params: filterComp ? { competencia: filterComp } : {},
         responseType: "blob",
