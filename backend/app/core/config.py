@@ -1107,8 +1107,8 @@ class Settings(BaseSettings):
             )
         if math.isinf(self.AI_RETRY_BACKOFF_BASE_S):
             raise ValueError(
-                f"AI_RETRY_BACKOFF_BASE_S não pode ser infinito. "
-                f"Use um valor finito em segundos (ex.: 0.5 a 5.0)."
+                "AI_RETRY_BACKOFF_BASE_S não pode ser infinito. "
+                "Use um valor finito em segundos (ex.: 0.5 a 5.0)."
             )
         return self
 
