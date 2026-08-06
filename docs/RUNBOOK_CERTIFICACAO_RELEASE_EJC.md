@@ -158,6 +158,13 @@ O resultado esperado fica em:
 qa/homologacao/reports/homologacao_report.json
 ```
 
+`run_homologacao.py` grava automaticamente `commit_sha` no relatório (via
+`git rev-parse HEAD` do checkout onde a execução roda; declare
+`EJC_HOMOLOGACAO_COMMIT_SHA` só se estiver rodando fora de um checkout git da
+release, ex.: contra ambiente remoto já implantado). O certificador (Fase 12)
+recusa relatório com `commit_sha` ausente ou diferente do `approved_commit_sha`
+do manifesto — H01–H15 verdes num commit não certificam outro.
+
 Regras de aceite:
 
 - H01–H12 e H15 devem sair `PASS` no relatório automatizado;
@@ -265,16 +272,27 @@ Executar:
 python qa/homologacao/certificar_release.py \
   --manifest qa/homologacao/reports/release_manifest.json \
   --report qa/homologacao/reports/homologacao_report.json \
-  --output qa/homologacao/reports/release_certification.json
+  --output qa/homologacao/reports/release_certification.json \
+  --expected-sha "$(git rev-parse HEAD)"
 ```
+
+`--expected-sha` é o SHA REAL do checkout que está rodando a certificação —
+diferente de `approved_commit_sha`/`deployed_commit_sha`, que são campos que
+alguém preencheu no manifesto. Quando informado (o workflow **sempre**
+informa), o certificador reprova se o manifesto certificar um commit que não
+é o que está sob execução agora, mesmo que o manifesto seja internamente
+consistente (aprovado == implantado == relatório). Em uso manual local, pode
+ser omitido — a conferência de `git rev-parse HEAD` volta a ser humana, como
+antes.
 
 Resultados possíveis:
 
 - `CERTIFICADO_PILOTO_CONTROLADO`;
 - `CERTIFICADO_PRODUCAO`;
-- `NAO_CERTIFICADO` com causa objetiva.
+- `NAO_CERTIFICADO` com causa objetiva — inclui SHA do relatório divergente
+  do manifesto, ou SHA do checkout divergente do manifesto.
 
-Também é possível disparar manualmente o workflow **EJC Release Certification**, informando os caminhos do manifesto e do relatório já presentes na branch controlada.
+Também é possível disparar manualmente o workflow **EJC Release Certification**, informando os caminhos do manifesto e do relatório já presentes na branch controlada — o job `certify` já passa `--expected-sha` com o SHA do próprio checkout do workflow automaticamente.
 
 ## 13. Aprovações e ata final
 

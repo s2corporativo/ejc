@@ -12,13 +12,16 @@ SCRIPT = Path(__file__).with_name("certificar_release.py")
 SHA = "a" * 40
 
 
-def report(*, blocked: str | None = None) -> dict:
+def report(*, blocked: str | None = None, commit_sha: str = SHA) -> dict:
     scenarios = []
     for number in range(1, 16):
         scenario_id = f"H{number:02d}"
         status = "BLOQUEADO" if scenario_id == blocked else "PASS"
         scenarios.append({"id": scenario_id, "status": status, "passos": []})
-    return {"cenarios": scenarios}
+    payload = {"cenarios": scenarios}
+    if commit_sha is not None:
+        payload["commit_sha"] = commit_sha
+    return payload
 
 
 def manifest(*, deployed_sha: str = SHA, include_approvals: bool = True) -> dict:
@@ -122,7 +125,13 @@ def manifest(*, deployed_sha: str = SHA, include_approvals: bool = True) -> dict
 
 
 class CertificationCliTest(unittest.TestCase):
-    def run_cli(self, manifest_payload: dict, report_payload: dict):
+    def run_cli(
+        self,
+        manifest_payload: dict,
+        report_payload: dict,
+        *,
+        expected_sha: str | None = None,
+    ):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manifest_path = root / "manifest.json"
@@ -130,17 +139,20 @@ class CertificationCliTest(unittest.TestCase):
             output_path = root / "certification.json"
             manifest_path.write_text(json.dumps(manifest_payload), encoding="utf-8")
             report_path.write_text(json.dumps(report_payload), encoding="utf-8")
+            argv = [
+                sys.executable,
+                str(SCRIPT),
+                "--manifest",
+                str(manifest_path),
+                "--report",
+                str(report_path),
+                "--output",
+                str(output_path),
+            ]
+            if expected_sha is not None:
+                argv += ["--expected-sha", expected_sha]
             completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "--manifest",
-                    str(manifest_path),
-                    "--report",
-                    str(report_path),
-                    "--output",
-                    str(output_path),
-                ],
+                argv,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -185,6 +197,54 @@ class CertificationCliTest(unittest.TestCase):
         completed, output = self.run_cli(payload, report())
         self.assertEqual(completed.returncode, 2)
         self.assertIn("campo sensível proibido", output["reason"])
+
+    # ── Issue #715: vincular H01–H15 e a execução real ao SHA da release ────
+
+    def test_bloqueia_relatorio_sem_commit_sha(self):
+        """H01–H15 verdes sem dizer de QUAL commit não provam nada sobre a
+        release — run_homologacao.py desatualizado (sem o campo) não passa."""
+        payload = report()
+        del payload["commit_sha"]
+        completed, output = self.run_cli(manifest(), payload)
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("commit_sha", output["reason"])
+
+    def test_bloqueia_relatorio_de_outro_commit(self):
+        """H01–H15 rodaram de verdade, mas em outro commit — não podem
+        certificar ESTA release, mesmo com manifesto internamente consistente
+        (approved == deployed)."""
+        completed, output = self.run_cli(manifest(), report(commit_sha="c" * 40))
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("relatório", output["reason"])
+        self.assertIn("commit", output["reason"])
+
+    def test_certifica_quando_expected_sha_bate_com_manifesto(self):
+        """Controle positivo: --expected-sha (o SHA real do checkout do
+        workflow) igual ao aprovado não bloqueia a certificação normal."""
+        completed, output = self.run_cli(
+            manifest(), report(blocked="H13"), expected_sha=SHA
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(output["status"], "CERTIFICADO_PILOTO_CONTROLADO")
+
+    def test_bloqueia_quando_expected_sha_diverge_do_manifesto(self):
+        """O gate central da Issue #715: mesmo um manifesto 100% consistente
+        internamente (aprovado == implantado == relatório) é reprovado se o
+        checkout REAL desta execução (--expected-sha, vindo de
+        'git rev-parse HEAD' no workflow) for outro commit — impede
+        certificar um manifesto que não corresponde ao código sob teste."""
+        completed, output = self.run_cli(
+            manifest(), report(), expected_sha="d" * 40
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("checkout", output["reason"])
+
+    def test_bloqueia_expected_sha_mal_formado(self):
+        completed, output = self.run_cli(
+            manifest(), report(), expected_sha="nao-e-um-sha"
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("--expected-sha", output["reason"])
 
 
 if __name__ == "__main__":

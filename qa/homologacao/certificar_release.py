@@ -125,6 +125,62 @@ def _validate_release(manifest: dict[str, Any]) -> tuple[str, str]:
     return approved_sha, environment
 
 
+def _validate_report_commit_sha(report: dict[str, Any], approved_sha: str) -> None:
+    """Vincula o relatório H01–H15 ao SHA aprovado — sem isso, o relatório é só
+    "H01–H15 passaram em algum commit, algum dia", não uma prova ligada à
+    release. `run_homologacao.py` grava `commit_sha` via `git rev-parse HEAD`
+    no momento da execução; aqui é onde essa amarração é COBRADA."""
+    report_sha = report.get("commit_sha")
+    if not isinstance(report_sha, str) or not report_sha.strip():
+        raise CertificationError(
+            "relatório não contém 'commit_sha' — gere com run_homologacao.py "
+            "atualizado (grava o commit_sha automaticamente) para vincular "
+            "H01–H15 ao SHA da release"
+        )
+    report_sha = report_sha.strip()
+    if not SHA_RE.fullmatch(report_sha):
+        raise CertificationError("relatório.commit_sha deve ser SHA-1 de 40 hex")
+    if report_sha != approved_sha:
+        raise CertificationError(
+            "relatório de homologação (H01–H15) foi gerado em um commit "
+            f"diferente do aprovado: relatório={report_sha} "
+            f"aprovado={approved_sha}. H01–H15 não provam nada sobre o SHA "
+            "que está sendo certificado — rode run_homologacao.py de novo no "
+            "SHA candidato."
+        )
+
+
+def _validate_expected_sha(approved_sha: str, expected_sha: str | None) -> None:
+    """Vincula a certificação ao commit que ESTÁ SENDO CERTIFICADO nesta
+    execução — não apenas ao que o manifesto AFIRMA. Sem isso, qualquer
+    manifesto internamente consistente (approved == deployed == relatório)
+    passa mesmo rodando num checkout de outro commit: nada no processo
+    obrigava o SHA declarado a ser o SHA real sob teste.
+
+    `expected_sha` normalmente vem de `git rev-parse HEAD` do checkout que o
+    workflow de CI fez para este job — é o SHA real, não um campo que alguém
+    preencheu à mão. Opcional na CLI para não quebrar uso local/manual (onde
+    conferir o SHA é responsabilidade humana, como já documentado no runbook),
+    mas o workflow de release SEMPRE o passa — é o que fecha o gate de verdade
+    (Issue #715)."""
+    if expected_sha is None:
+        return
+    expected_sha = expected_sha.strip()
+    if not SHA_RE.fullmatch(expected_sha):
+        raise CertificationError(
+            "--expected-sha deve ser SHA-1 de 40 hex (recebido do checkout "
+            "real do workflow; se isto falhar, o checkout está errado, não o "
+            "manifesto)"
+        )
+    if expected_sha != approved_sha:
+        raise CertificationError(
+            "SHA do checkout real desta execução diverge do manifesto: "
+            f"checkout={expected_sha} manifesto.approved_commit_sha="
+            f"{approved_sha}. Certificar é proibido — o manifesto certifica "
+            "um commit que não é o que está rodando agora."
+        )
+
+
 def _report_scenarios(report: dict[str, Any]) -> dict[str, str]:
     scenarios = report.get("cenarios")
     if not isinstance(scenarios, list):
@@ -299,10 +355,17 @@ def _validate_decision(manifest: dict[str, Any], environment: str) -> str:
     return status
 
 
-def certify(manifest: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+def certify(
+    manifest: dict[str, Any],
+    report: dict[str, Any],
+    *,
+    expected_sha: str | None = None,
+) -> dict[str, Any]:
     _validate_no_sensitive_keys(manifest)
     _validate_no_sensitive_keys(report)
     approved_sha, environment = _validate_release(manifest)
+    _validate_expected_sha(approved_sha, expected_sha)
+    _validate_report_commit_sha(report, approved_sha)
     _validate_homologation(manifest, report)
     _validate_controls(manifest)
     _validate_approvals(manifest)
@@ -333,10 +396,28 @@ def main() -> None:
         type=Path,
         default=Path("qa/homologacao/reports/release_certification.json"),
     )
+    parser.add_argument(
+        "--expected-sha",
+        default=None,
+        help=(
+            "SHA-1 do commit que está REALMENTE sob certificação nesta "
+            "execução (ex.: 'git rev-parse HEAD' do checkout do workflow). "
+            "Quando informado, precisa bater com release.approved_commit_sha "
+            "do manifesto — é o que impede certificar um manifesto "
+            "internamente consistente rodando sobre outro commit. O "
+            "workflow de release SEMPRE passa este argumento; uso manual "
+            "local pode omiti-lo (nesse caso a conferência é humana, como "
+            "já documentado no runbook)."
+        ),
+    )
     args = parser.parse_args()
 
     try:
-        result = certify(_load_json(args.manifest), _load_json(args.report))
+        result = certify(
+            _load_json(args.manifest),
+            _load_json(args.report),
+            expected_sha=args.expected_sha,
+        )
     except CertificationError as exc:
         failure = {
             "schema_version": 1,
