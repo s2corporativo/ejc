@@ -1,7 +1,7 @@
 # ── app/routers/radar_legislativo.py ─────────────────────────────────────────
 # Radar Legislativo (Câmara + Senado + ALMG) — consulta ao vivo + histórico do
 # que o job diário já viu (tabela radar_legislativo_visto). O feed AGREGADO
-# continua no Radar Regulatório (/v1/regulatorio/digest-semanal), que recebe
+# continua no Radar Regulatório (/regulatorio/digest-semanal), que recebe
 # os alertas criados pelo job em diario_oficial_alertas.
 from __future__ import annotations
 

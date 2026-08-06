@@ -3,7 +3,7 @@
 # Federal e na ALMG (estadual MG) por termos derivados dos ramos ativos do
 # escritório, e alimenta o Radar Regulatório existente: cada proposição NOVA
 # vira um registro em `diario_oficial_alertas` (o mesmo modelo agregado pelo
-# endpoint /v1/regulatorio/digest-semanal e pela página RadarRegulatorio.tsx).
+# endpoint /regulatorio/digest-semanal e pela página RadarRegulatorio.tsx).
 #
 # Decisões (docs/CATALOGO_APIS_EJC.md — sondagem ao vivo 2026-07):
 #   • Câmara v2: OK mas lenta (~13s) → timeout 30s.
@@ -377,7 +377,7 @@ def _parse_data(valor: str | None) -> date | None:
 
 async def _criar_alerta(db, item: dict, termo: str) -> None:
     """Proposição nova → alerta no MESMO modelo do Radar Regulatório
-    (diario_oficial_alertas): aparece no digest /v1/regulatorio/digest-semanal
+    (diario_oficial_alertas): aparece no digest /regulatorio/digest-semanal
     e na página RadarRegulatorio.tsx sem criar estrutura paralela. keyword_id/
     case_id ficam NULL (office-wide — visível a toda a equipe no filtro de
     ownership do Diário Oficial)."""

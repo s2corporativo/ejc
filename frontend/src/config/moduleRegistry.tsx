@@ -630,7 +630,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     status: "hidden",
     helpKey: "datajud",
     sensitive: true,
-    backendPrefixes: ["/api/v1/datajud"],
+    backendPrefixes: ["/api/datajud"],
   },
   {
     key: "diario-oficial",
@@ -661,7 +661,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "radar-regulatorio",
     sensitive: true,
     usesAI: true,
-    backendPrefixes: ["/api/v1/regulatorio"],
+    backendPrefixes: ["/api/regulatorio"],
   },
   {
     key: "radar-compliance",
@@ -709,7 +709,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     backendPrefixes: [
       "/api/financeiro",
       "/api/fees",
-      "/api/v1/despesas",
+      "/api/despesas",
       "/api/nfse",
     ],
   },

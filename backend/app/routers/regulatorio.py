@@ -3,7 +3,7 @@ Digest regulatorio semanal (consolidacao 28/06/2026).
 Agrega DADOS REAIS ja coletados pela prod (tabela diario_oficial_alertas,
 populada pelo scheduler que monitora DOU/DOE-MG) — sem mock, sem tabela nova.
 Substitui de forma honesta o objetivo do mock "legislacao_dinamica".
-Montado em /api/v1/regulatorio.
+Montado em /api/regulatorio (contrato público /api/v1/regulatorio via middleware).
 """
 from datetime import datetime, timedelta
 from typing import Dict, Any
@@ -16,7 +16,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 
 router = APIRouter(
-    prefix="/v1/regulatorio",
+    prefix="/regulatorio",
     tags=["regulatorio"],
     dependencies=[Depends(get_current_user)],
 )

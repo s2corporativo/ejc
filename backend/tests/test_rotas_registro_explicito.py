@@ -74,7 +74,7 @@ ADICOES_INTENCIONAIS = {
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
 # continua reprovando — sumiço silencioso de endpoint é o defeito que esta trava
 # existe para pegar. Cada entrada precisa da decisão que a justifica.
-REMOCOES_INTENCIONAIS = {
+REMOCOES_INTENCIONAIS: set[tuple[str, str]] = {
     # Bloco 4 do plano de lançamento. Decisão do ESCRITÓRIO, não achado técnico:
     # "dossiê de pressão" e "análise de magistrado" num sistema de advocacia são
     # risco reputacional e disciplinar indefensável se expostos numa perícia ou
@@ -83,6 +83,62 @@ REMOCOES_INTENCIONAIS = {
     ("/api/diplomacia-v3/dossie-pressao", "POST"),
     ("/api/diplomacia-v3/analisar-magistrado", "POST"),
 }
+
+# Fatia 652-A: correção do prefixo /v1 duplicado (P0 da auditoria 2026-07).
+# Oito routers declaravam prefixo próprio "/v1/..." e o main.py já os monta sob
+# API = "/api" — o path interno virava /api/v1/x. Como o
+# APIVersionCompatibilityMiddleware reescreve /api/v1/x → /api/x, o caminho
+# público canônico caía em rota inexistente (404) e o endpoint só respondia no
+# defeituoso /api/v1/v1/x. A correção remove o /v1 do router: RELOCAÇÃO 1:1 de
+# path interno, sem criar, remover ou renomear endpoint. Para o cliente o
+# caminho público /api/v1/... não muda — passa a funcionar de fato.
+_ROTAS_V1_REALOCADAS: tuple[tuple[str, str], ...] = (
+    ("/api/v1/cases/{case_id}/kanban", "PATCH"),
+    ("/api/v1/clients/{client_id}/pending-items", "GET"),
+    ("/api/v1/clients/{client_id}/pending-items", "POST"),
+    ("/api/v1/clients/{client_id}/pending-items/{item_id}", "DELETE"),
+    ("/api/v1/clients/{client_id}/pending-items/{item_id}", "PATCH"),
+    ("/api/v1/datajud/cases/{case_id}/sync", "POST"),
+    ("/api/v1/datajud/cases/{case_id}/sync-prazos", "POST"),
+    ("/api/v1/datajud/process/{numero_cnj}", "GET"),
+    ("/api/v1/despesas", "GET"),
+    ("/api/v1/despesas", "POST"),
+    ("/api/v1/despesas/export/csv", "GET"),
+    ("/api/v1/despesas/resumo", "GET"),
+    ("/api/v1/despesas/{despesa_id}", "DELETE"),
+    ("/api/v1/despesas/{despesa_id}", "PATCH"),
+    ("/api/v1/kanban-columns", "GET"),
+    ("/api/v1/office-contracts", "GET"),
+    ("/api/v1/office-contracts", "POST"),
+    ("/api/v1/office-contracts/expiring", "GET"),
+    ("/api/v1/office-contracts/{contract_id}", "DELETE"),
+    ("/api/v1/office-contracts/{contract_id}", "GET"),
+    ("/api/v1/office-contracts/{contract_id}", "PATCH"),
+    ("/api/v1/partner-withdrawals", "GET"),
+    ("/api/v1/partner-withdrawals", "POST"),
+    ("/api/v1/partner-withdrawals/{withdrawal_id}", "DELETE"),
+    ("/api/v1/partner-withdrawals/{withdrawal_id}/approve", "PATCH"),
+    ("/api/v1/partner-withdrawals/{withdrawal_id}/pay", "PATCH"),
+    ("/api/v1/partner-withdrawals/{withdrawal_id}/reject", "PATCH"),
+    ("/api/v1/regulatorio/digest-semanal", "GET"),
+    ("/api/v1/whatsapp/chats", "GET"),
+    ("/api/v1/whatsapp/messages", "POST"),
+    ("/api/v1/whatsapp/qrcode", "GET"),
+    ("/api/v1/whatsapp/send", "POST"),
+    ("/api/v1/whatsapp/status", "GET"),
+)
+
+# {(path_interno_antigo, método): (path_interno_novo, método)} — o novo é o
+# antigo sem o segmento /v1, mecanicamente.
+RELOCACOES_PREFIXO_V1: dict[tuple[str, str], tuple[str, str]] = {
+    (antigo, metodo): (antigo.replace("/api/v1/", "/api/", 1), metodo)
+    for antigo, metodo in _ROTAS_V1_REALOCADAS
+}
+
+# O par entra nas duas listas: o path antigo sai da superfície (e voltar é
+# regressão — a assertiva de "ressuscitadas" cobre isso) e o novo entra.
+REMOCOES_INTENCIONAIS |= set(RELOCACOES_PREFIXO_V1)
+ADICOES_INTENCIONAIS |= set(RELOCACOES_PREFIXO_V1.values())
 
 
 def _baseline() -> list[dict]:
@@ -127,6 +183,33 @@ def test_paridade_openapi_com_snapshot_anterior():
     assert len(base) == 826
     assert len(atual) == (
         len(base) + len(ADICOES_INTENCIONAIS) - len(REMOCOES_INTENCIONAIS)
+    )
+
+
+def test_relocacao_do_prefixo_v1_preserva_auth():
+    """Fatia 652-A: tirar o /v1 do router não pode afrouxar RBAC de nenhuma rota.
+
+    `despesas` e `office-contracts` dependem de `_req_fin` no próprio router e
+    `regulatorio` de `get_current_user` — dependências declaradas no
+    `APIRouter(...)`, exatamente onde o prefixo foi editado. Compara o conjunto
+    de dependências de auth do path ANTIGO no snapshot com o do path NOVO no app.
+    """
+    from app.main import app
+
+    base = {(r["path"], r["method"]): r for r in _baseline()}
+    atual = {(r["path"], r["method"]): r for r in _extrair_rotas(app)}
+
+    ausentes = [novo for novo in RELOCACOES_PREFIXO_V1.values() if novo not in atual]
+    assert not ausentes, f"rota realocada não existe no app: {ausentes}"
+
+    divergentes = [
+        (antigo[0], novo[0], base[antigo]["auth_deps"], atual[novo]["auth_deps"])
+        for antigo, novo in RELOCACOES_PREFIXO_V1.items()
+        if antigo in base and base[antigo]["auth_deps"] != atual[novo]["auth_deps"]
+    ]
+    assert not divergentes, (
+        "a remoção do prefixo /v1 alterou as dependências de auth: "
+        f"{divergentes[:5]}"
     )
 
 
