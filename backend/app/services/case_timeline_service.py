@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from typing import Any
 
-from sqlalchemy import Select, select
+from sqlalchemy import DateTime, Select, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import ROLE_LEVEL
@@ -34,7 +34,11 @@ def _enum_value(value: Any) -> Any:
 
 def _as_utc(value: datetime | date | None) -> datetime:
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return (
+            value.astimezone(timezone.utc)
+            if value.tzinfo
+            else value.replace(tzinfo=timezone.utc)
+        )
     if isinstance(value, date):
         return datetime.combine(value, time.min, tzinfo=timezone.utc)
     return datetime.min.replace(tzinfo=timezone.utc)
@@ -81,6 +85,51 @@ def _document_query(user: User, case_id: str, source_limit: int) -> Select[Any]:
             Document.confidencialidade.notin_(_RESTRITOS_PARA_EQUIPE_NAO_SOCIA)
         )
     return query.order_by(Document.created_at.desc()).limit(source_limit)
+
+
+def _deadline_query(case_id: str, source_limit: int) -> Select[Any]:
+    """Seleciona prazos pela mesma data que será exposta em ``occurred_at``."""
+    data_evento = func.coalesce(
+        Deadline.data_conclusao,
+        cast(Deadline.data_prazo, DateTime(timezone=True)),
+    )
+    return (
+        select(Deadline)
+        .where(Deadline.case_id == case_id, Deadline.deleted_at.is_(None))
+        .order_by(data_evento.desc(), Deadline.created_at.desc())
+        .limit(source_limit)
+    )
+
+
+def _task_query(case_id: str, source_limit: int) -> Select[Any]:
+    """Seleciona tarefas pela precedência usada em ``occurred_at``."""
+    data_evento = func.coalesce(
+        Task.concluida_em,
+        Task.updated_at,
+        Task.created_at,
+    )
+    return (
+        select(Task)
+        .where(Task.case_id == case_id, Task.deleted_at.is_(None))
+        .order_by(data_evento.desc(), Task.created_at.desc())
+        .limit(source_limit)
+    )
+
+
+def _legal_doc_query(case_id: str, source_limit: int) -> Select[Any]:
+    """Seleciona peças pela precedência usada em ``occurred_at``."""
+    data_evento = func.coalesce(
+        LegalDoc.protocolado_em,
+        LegalDoc.revisado_em,
+        LegalDoc.updated_at,
+        LegalDoc.created_at,
+    )
+    return (
+        select(LegalDoc)
+        .where(LegalDoc.case_id == case_id, LegalDoc.deleted_at.is_(None))
+        .order_by(data_evento.desc(), LegalDoc.created_at.desc())
+        .limit(source_limit)
+    )
 
 
 def _register_saturation(
@@ -190,16 +239,7 @@ async def timeline(
     )
 
     deadlines = list(
-        (
-            await db.execute(
-                select(Deadline)
-                .where(Deadline.case_id == case_id, Deadline.deleted_at.is_(None))
-                .order_by(Deadline.data_prazo.desc(), Deadline.created_at.desc())
-                .limit(source_limit)
-            )
-        )
-        .scalars()
-        .all()
+        (await db.execute(_deadline_query(case_id, source_limit))).scalars().all()
     )
     _register_saturation(deadlines, "deadlines", source_limit, saturated_sources)
     events.extend(
@@ -223,18 +263,7 @@ async def timeline(
         for row in deadlines
     )
 
-    tasks = list(
-        (
-            await db.execute(
-                select(Task)
-                .where(Task.case_id == case_id, Task.deleted_at.is_(None))
-                .order_by(Task.updated_at.desc(), Task.created_at.desc())
-                .limit(source_limit)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    tasks = list((await db.execute(_task_query(case_id, source_limit))).scalars().all())
     _register_saturation(tasks, "tasks", source_limit, saturated_sources)
     events.extend(
         _event(
@@ -295,16 +324,7 @@ async def timeline(
     )
 
     legal_docs = list(
-        (
-            await db.execute(
-                select(LegalDoc)
-                .where(LegalDoc.case_id == case_id, LegalDoc.deleted_at.is_(None))
-                .order_by(LegalDoc.updated_at.desc(), LegalDoc.created_at.desc())
-                .limit(source_limit)
-            )
-        )
-        .scalars()
-        .all()
+        (await db.execute(_legal_doc_query(case_id, source_limit))).scalars().all()
     )
     _register_saturation(legal_docs, "legal_docs", source_limit, saturated_sources)
     events.extend(
