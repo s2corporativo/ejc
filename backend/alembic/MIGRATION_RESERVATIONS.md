@@ -3,7 +3,9 @@
 Controle obrigatório para impedir que dois PRs escolham o mesmo número de migration ou
 partam de heads diferentes. Regra canônica em `docs/GOVERNANCA_IA.md`, seção 8.
 
-**Head da `main` em 2026-07-30:** `123_legal_doc_ai_log_vinculo`.
+**Head da `main` em 2026-08-06:** `131_audit_logs_worm` (cadeia ...126 → 127 → 130 → 131;
+os números 128 e 129 foram queimados — ver tabela). O head muda a cada merge: confirme com
+`cd backend && python -m alembic heads` antes de reservar.
 
 ## Como reservar
 
@@ -29,7 +31,9 @@ gh pr list --state open                        # confere quem já reservou núme
 Estados: `Reservada` (número tomado, migration em desenvolvimento) · `Em PR` (aberta,
 aguardando revisão) · `Mesclada` (na `main`) · `Revogada` (branch ficou incompatível; a
 migration precisa ser reconstruída e renumerada) · `Liberada` (PR fechado sem merge — o
-número volta a ficar disponível).
+número volta a ficar disponível) · `Queimada` (número pulado permanentemente; a lacuna fica
+documentada e o número **nunca** é reutilizado — a guarda de numeração exige monotonicidade,
+não continuidade).
 
 ## Tabela de reservas
 
@@ -46,10 +50,13 @@ número volta a ficar disponível).
 | 123_legal_doc_ai_log_vinculo | 122_route_usage_metrics | main | [#544](https://github.com/s2corporativo/ejc/pull/544) | ChatGPT | Mesclada | Head canônico atual; FK + hash do conteúdo + invalidação automática da validação ao editar a peça. |
 | 124_dataroom_public_hardening | 123_legal_doc_ai_log_vinculo | fix/dataroom-public-link-hardening | [#547](https://github.com/s2corporativo/ejc/issues/547) | ChatGPT | Mesclada | Hash de links públicos em repouso e publicação externa explícita por arquivo. |
 | 125_fonte_execucoes_zeradas | 124_dataroom_public_hardening | claude/bloco5-monitorar-resultado | [#624](https://github.com/s2corporativo/ejc/pull/624) | Claude Code | Mesclada | Contador de execuções improdutivas + `ja_produziu` por fonte de ingestão (Bloco 5). |
-| 126_case_status_quatro_estados | 125_fonte_execucoes_zeradas | claude/bloco3-quatro-estados | [#630](https://github.com/s2corporativo/ejc/pull/630) | Claude Code | Mesclada | Quatro estados de caso (Bloco 3, decisão do titular 2026-08-02). Nasceu encadeada na 124; com o merge do #624 o down_revision foi promovido para a 125, como planejado. **Head da `main`.** |
-| 127_publicacao_explicita | 126_case_status_quatro_estados | claude/ejc-audit-redesign-7i7idc | [#684](https://github.com/s2corporativo/ejc/pull/684) | Claude Code | Mesclada | Fase 0: corrige vazamento de sigilo do portal — documentos publicados por omissão. Default confidencialidade "normal"→"confidencial"; usuário marca EXPLICITAMENTE para publicar (Auditoria 2026-07). **Head da `main`** até a reserva abaixo — nota: PR #679 (aberto) reservou `128_user_password_changed_at`/`129_processes_numero_cnj_index` a partir de um head anterior a este merge; pode exigir renumeração/rebase antes de integrar. |
-| 130_ejc_skills_uso | 127_publicacao_explicita | claude/ejc-skills-uso-tracking | (a abrir) | Claude Code | Reservada | Bloco 4 (enxugar catálogo): contador `vezes_executado`/`ultima_execucao` em `ejc_skills` — pré-requisito para "mantenha no catálogo só skills com uso registrado"; `AILog` não distingue qual skill gerou a chamada, não dava pra inferir uso retroativo. Não arquiva nada sozinho — só relatório (`scripts/relatorio_skills_sem_uso.py`). Número escolhido pulando 128/129 (reservados pelo #679, ainda não mesclado). |
-| 131_audit_logs_worm | 130_ejc_skills_uso | claude/audit-worm-699 | (a abrir) | Claude Code | Em PR | Issue #699: impõe WORM em `audit_logs` via trigger `BEFORE UPDATE OR DELETE` que levanta exceção, com via privilegiada de expurgo inativa (`SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'`) reservada para a futura #582. Retoma a intenção da reserva revogada `127_audit_log_worm` (branch #497, morta), renumerada a partir do head vigente. Não define política de retenção nem implementa expurgo. |
+| 126_case_status_quatro_estados | 125_fonte_execucoes_zeradas | claude/bloco3-quatro-estados | [#630](https://github.com/s2corporativo/ejc/pull/630) | Claude Code | Mesclada | Quatro estados de caso (Bloco 3, decisão do titular 2026-08-02). Nasceu encadeada na 124; com o merge do #624 o down_revision foi promovido para a 125, como planejado. |
+| 127_publicacao_explicita | 126_case_status_quatro_estados | claude/ejc-audit-redesign-7i7idc | [#684](https://github.com/s2corporativo/ejc/pull/684) | Claude Code | Mesclada | Fase 0: corrige vazamento de sigilo do portal — documentos publicados por omissão. Default confidencialidade "normal"→"confidencial"; usuário marca EXPLICITAMENTE para publicar (Auditoria 2026-07). |
+| 128 e 129 | — | claude/fixes-without-github-45v7ep | [#679](https://github.com/s2corporativo/ejc/pull/679) | Claude Code | Queimada | Reservados pelo #679 (`128_user_password_changed_at`/`129_processes_numero_cnj_index`) a partir de um head que deixou de existir. A `main` seguiu com 130/131 pulando-os; a lacuna é permanente e documentada. O conteúdo do #679 será reconstruído com os números 133–135 (ver abaixo). |
+| 130_ejc_skills_uso | 127_publicacao_explicita | claude/ejc-skills-uso-tracking | [#688](https://github.com/s2corporativo/ejc/pull/688) | Claude Code | Mesclada | Bloco 4 (enxugar catálogo): contador `vezes_executado`/`ultima_execucao` em `ejc_skills` — pré-requisito para "mantenha no catálogo só skills com uso registrado". Não arquiva nada sozinho — só relatório (`scripts/relatorio_skills_sem_uso.py`). Número escolhido pulando 128/129 (queimados). |
+| 131_audit_logs_worm | 130_ejc_skills_uso | claude/audit-worm-699 | [#707](https://github.com/s2corporativo/ejc/pull/707) | Claude Code | Mesclada | Issue #699: impõe WORM em `audit_logs` via trigger `BEFORE UPDATE OR DELETE` que levanta exceção, com via privilegiada de expurgo inativa (`SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'`) reservada para a futura #582. Não define política de retenção nem implementa expurgo. **Head da `main` em 2026-08-06.** Atenção: o #679 (aberto) ainda carrega uma cópia paralela deste número — ela morre na reconstrução (Onda 3 do plano de consolidação). |
+| 132_case_parte_pii_encriptado | 131_audit_logs_worm | (a criar — fatia 652-C) | reintegração do [#652](https://github.com/s2corporativo/ejc/pull/652) | Claude Code | Reservada | Criptografia de PII em `case_partes` (Fernet + índice HMAC) com backfill e `DROP COLUMN` posterior — **migration destrutiva**: exige backup comprovado, plano de rollback no PR e backfill validado em staging antes de produção. Nasce da `main` na fatia 652-C do plano de consolidação (Onda 2); a versão dentro do #652 original não será mesclada. |
+| 133–135 | 132 (encadeadas) | (a criar — reconstrução do #679) | reconstrução do [#679](https://github.com/s2corporativo/ejc/pull/679) | Claude Code | Reservada | Conteúdo das migrations do #679 (`password_changed_at`, índice CNJ e correlatas), renumerado a partir do head vigente na Onda 3 do plano de consolidação. Nomes definitivos registrados aqui quando cada fatia abrir; se a Onda 2 consumir 132 antes, a cadeia segue 132 → 133 → 134 → 135 linear. |
 
 > **Decisão do titular em 2026-07-29.** A continuidade das correções foi autorizada após
 > a integração dos PRs #535, #542 e #543. As reservas das branches antigas #495/#497
