@@ -24,7 +24,8 @@ import argparse
 import copy
 import json
 import os
-import sys
+import re
+import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -37,6 +38,46 @@ REPORT_DIR = Path(__file__).resolve().parent / "reports"
 REPORT_PATH = REPORT_DIR / "homologacao_report.json"
 
 PASS, FALHA, BLOQUEADO = "PASS", "FALHA", "BLOQUEADO"
+
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _commit_sha() -> str:
+    """SHA-1 completo do commit sob homologação — vincula o relatório H01–H15
+    a um código exato, não a "o que estiver no branch quando alguém rodar".
+
+    `EJC_HOMOLOGACAO_COMMIT_SHA` permite declarar o SHA quando o executor roda
+    fora do checkout git da release (ex.: contra ambiente remoto já implantado,
+    a partir de uma máquina com histórico git diferente). Sem a variável, exige
+    `git rev-parse HEAD` do próprio checkout — é o caso do workflow de CI, que
+    sempre roda com o SHA exato do evento como HEAD.
+    """
+    forced = os.getenv("EJC_HOMOLOGACAO_COMMIT_SHA", "").strip()
+    if forced:
+        sha = forced
+    else:
+        try:
+            sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=Path(__file__).resolve().parent,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            ).stdout.strip()
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
+            raise SystemExit(
+                "Não foi possível determinar o commit_sha do relatório "
+                f"(git rev-parse HEAD falhou: {exc}). Rode a partir de um "
+                "checkout git válido ou declare EJC_HOMOLOGACAO_COMMIT_SHA."
+            ) from exc
+    if not _SHA_RE.fullmatch(sha):
+        raise SystemExit(
+            f"commit_sha inválido: {sha!r} — precisa ser SHA-1 completo (40 "
+            "hex, minúsculo). O certificador (certificar_release.py) recusa "
+            "qualquer outro formato."
+        )
+    return sha
 
 
 @dataclass
@@ -450,6 +491,7 @@ def _escrever_report(
     }
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "commit_sha": _commit_sha(),
         "base_url": base_url,
         "run_marker": marker,
         "resumo": resumo,

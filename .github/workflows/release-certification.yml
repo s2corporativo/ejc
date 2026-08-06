@@ -85,11 +85,18 @@ jobs:
           test -f "$REPORT_PATH"
 
       - name: Executar certificação bloqueante
+        # --expected-sha vem do checkout REAL deste job (git rev-parse HEAD),
+        # não de um campo que alguém preencheu no manifesto. É o que fecha o
+        # gate da Issue #715: um manifesto pode ser internamente consistente
+        # (approved == deployed == relatório) e ainda assim certificar um
+        # commit que não é o que está rodando agora — sem esta comparação,
+        # nada no processo impedia isso.
         run: >-
           python qa/homologacao/certificar_release.py
           --manifest "$MANIFEST_PATH"
           --report "$REPORT_PATH"
           --output "$OUTPUT_PATH"
+          --expected-sha "$(git rev-parse HEAD)"
 
       - name: Publicar resultado sanitizado
         if: always()
