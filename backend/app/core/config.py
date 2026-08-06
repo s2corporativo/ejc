@@ -428,6 +428,22 @@ class Settings(BaseSettings):
     NFSE_CTRIB_NAC: str = ""             # cTribNac (GET /nfse/cidades/3106200). A confirmar.
     NFSE_TIMEOUT: int = 60               # timeout (s) das chamadas ao provedor
 
+    # ── Varredura antivírus no upload do GED (ClamAV/clamd) — GATED ─────
+    # Opt-in, desligada por padrão (mesmo idioma de DataJud/Infosimples):
+    # com a flag OFF, o upload em documents.py fica byte a byte idêntico ao
+    # comportamento anterior — nenhuma chamada de rede é feita.
+    # Diferença deliberada de categoria: DataJud/Infosimples/NFSe são
+    # RECURSOS externos (indisponibilidade = degradar sem eles); varredura
+    # antivírus é CONTROLE DE SEGURANÇA — se o operador ligou a flag e o
+    # clamd não responde, o upload falha FECHADO (503), nunca é aceito
+    # silenciosamente como "não varrido" (services/malware_scan_service.py).
+    MALWARE_SCAN_ENABLED: bool = False
+    # Host/porta do daemon clamd (protocolo INSTREAM). Instalação/operação do
+    # serviço é ação humana de infraestrutura — fora do escopo desta app.
+    MALWARE_SCAN_HOST: str = "localhost"
+    MALWARE_SCAN_PORT: int = 3310
+    MALWARE_SCAN_TIMEOUT_SECONDS: float = 15.0
+
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)
     # por OAB monitorada. A retenção da API é limitada — o RAG do EJC é o

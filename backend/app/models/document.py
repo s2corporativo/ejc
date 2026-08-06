@@ -29,6 +29,12 @@ class Document(Base):
     mimetype     = Column(String(100), nullable=True)
     size_bytes   = Column(Integer, nullable=True)
     ocr_text     = Column(Text, nullable=True)           # texto extraído (busca)
+    # Hash de integridade do conteúdo (mesmo padrão de document_intake.py,
+    # raio_x.py, legal_chat.py, signature.py). Nullable: documentos já
+    # ingeridos antes desta coluna (Issue #697) e os criados pela via
+    # Drive (upload_para_drive) ficam sem hash até backfill (Issue própria,
+    # fora de escopo aqui) — não é enforcement de schema, é conferência.
+    sha256       = Column(String(64), nullable=True, index=True)
 
     confidencialidade = Column(
         SAEnum(DocConfidencialidade), nullable=False,

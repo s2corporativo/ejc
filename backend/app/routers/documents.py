@@ -1,6 +1,7 @@
 # ── app/routers/documents.py ─────────────────────────────────────────────────
 # GED: upload/download com controle de confidencialidade (cofre).
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
+import hashlib
 import logging
 import os
 from datetime import date, datetime, time as dtime, timedelta, timezone
@@ -23,6 +24,8 @@ from app.models.user import User
 from app.models.document import Document, DocConfidencialidade
 from app.models.client import Client
 from app.models.case import Case
+from app.models.centro_custo import CentroCusto
+from app.models.fee import FeePayment
 from app.models.redesign import DocumentTypeMaster
 from app.models.legal_doc import LegalDoc
 from app.models.audit_log import criar_audit_log
@@ -387,6 +390,47 @@ async def upload(
     # content_type do cliente. Retorna o MIME real, persistido abaixo.
     mime_real = _validar_conteudo(ext, conteudo)
 
+    # Hash de integridade (Issue #697): mesmo padrão de document_intake.py,
+    # raio_x.py e legal_chat.py. Persistido em Document.sha256, devolvido na
+    # resposta e no download — permite conferir bit a bit o que foi enviado.
+    digest = hashlib.sha256(conteudo).hexdigest()
+
+    # Varredura antivírus — OPT-IN (MALWARE_SCAN_ENABLED, default OFF; ver
+    # core/config.py). Com a flag desligada, nada muda aqui (nenhuma chamada
+    # de rede, nenhum import do serviço) — fluxo idêntico ao anterior.
+    #
+    # Decisão (Issue #697): FAIL-CLOSED quando a flag está ligada e o clamd
+    # está indisponível — bloqueia o upload com 503, nunca aceita o arquivo
+    # marcado como "não varrido". Justificativa: ao contrário de integrações
+    # como DataJud/Infosimples/NFSe (recursos de NEGÓCIO, cuja indisponibilidade
+    # degrada uma funcionalidade), varredura antivírus ligada é um CONTROLE DE
+    # SEGURANÇA — aceitar o upload sem varrer quando o operador pediu
+    # explicitamente a varredura recriaria, de forma silenciosa, exatamente o
+    # buraco que a flag foi ligada para fechar. É o mesmo idioma de
+    # allowlist/magic-bytes/RBAC do restante deste arquivo: controle de
+    # segurança nunca abre exceção silenciosa por indisponibilidade de
+    # dependência.
+    if settings.MALWARE_SCAN_ENABLED:
+        from app.services.malware_scan_service import escanear, MalwareScanIndisponivelError
+        try:
+            ameaca = await escanear(
+                conteudo,
+                host=settings.MALWARE_SCAN_HOST,
+                port=settings.MALWARE_SCAN_PORT,
+                timeout=settings.MALWARE_SCAN_TIMEOUT_SECONDS,
+            )
+        except MalwareScanIndisponivelError as exc:
+            logger.error("Varredura antivírus indisponível no upload: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail="Verificação antivírus indisponível no momento — tente novamente.",
+            ) from exc
+        if ameaca:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Arquivo rejeitado pela varredura antivírus ({ameaca}).",
+            )
+
     # Salvar no volume (estrutura: uploads/AAAA/MM/uuid.ext)
     agora = datetime.now(timezone.utc)
     subdir = f"{agora.year}/{agora.month:02d}"
@@ -424,6 +468,7 @@ async def upload(
         mimetype=mime_real, size_bytes=len(conteudo),
         confidencialidade=conf_enum, ocr_text=ocr_text,
         case_id=case_id, client_id=client_id, uploaded_by=cu.id,
+        sha256=digest,
     )
 
     # G3 — Versionamento: se já existe documento com mesmo título no mesmo caso,
@@ -461,7 +506,7 @@ async def upload(
     # Hook: análise estratégica automática quando há OCR e case_id
     if case_id and ocr_text:
         background_tasks.add_task(_analisar_doc_bg, case_id, ocr_text, doc_id, cu.id)
-    resposta: dict = {"id": doc_id, "detail": "Documento enviado"}
+    resposta: dict = {"id": doc_id, "detail": "Documento enviado", "sha256": digest}
     if nfe_info:
         resposta["nfe"] = nfe_info  # campos fiscais estruturados (NF-e/XML)
     # P1 (2026-07-05): formatos legados SEM extrator de texto (.doc/.xls) —
@@ -635,28 +680,74 @@ async def download(
     return FileResponse(
         full_path, filename=d.filename,
         media_type=d.mimetype or "application/octet-stream",
+        # Conferência de integridade (Issue #697): expõe o hash gravado no
+        # upload. Ausente (None) em documentos ingeridos antes desta coluna
+        # ou pela via Drive — o header some quando não há valor.
+        headers={"X-Content-SHA256": d.sha256} if d.sha256 else None,
     )
 
 
 async def _bloquear_comprovante_protocolo(db: AsyncSession, doc_id: str, acao: str):
-    """M2 (TOCTOU): documento referenciado em legal_docs.protocolo_comprovante_doc_id
-    é PROVA DE TEMPESTIVIDADE — a validação do PATCH /legal-docs/{id}/protocolo
-    (mesmo caso, não excluído) valia só no instante do registro. Mover de caso ou
-    excluir o documento DEPOIS quebrava a prova silenciosamente. 409 com a peça
-    que referencia; remova/troque o comprovante na peça antes."""
-    ref = (await db.execute(
+    """M2 (TOCTOU), generalizado na Issue #697: documento referenciado como
+    comprovante em QUALQUER registro financeiro/processual não pode sumir por
+    baixo — a exclusão de `documents` é SOFT (deleted_at), então o
+    `ON DELETE SET NULL` das FKs nunca dispara e a referência continua
+    apontando para um documento excluído sem que ninguém perceba.
+
+    Três fontes checadas (409 nomeando qual registro referencia o documento):
+      1. LegalDoc.protocolo_comprovante_doc_id — prova de tempestividade do
+         protocolo de uma peça (checagem original, M2).
+      2. CentroCusto.comprovante_id — comprovante de um lançamento financeiro
+         do caso (ForeignKey ondelete=SET NULL que o soft-delete não aciona).
+      3. FeePayment.comprovante_doc_id — comprovante de pagamento de
+         honorário. Hoje NENHUM router escreve neste campo (dormente), mas
+         entra no mesmo guarda para não nascer desprotegido quando um router
+         futuro passar a gravá-lo.
+    """
+    ref_peca = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.protocolo_comprovante_doc_id == doc_id,
             LegalDoc.deleted_at.is_(None),
         ).limit(1)
     )).scalar_one_or_none()
-    if ref:
+    if ref_peca:
         raise HTTPException(
             status_code=409,
             detail=(
-                f"Documento é comprovante de protocolo da peça '{ref.titulo}' "
-                f"(id {ref.id}) e não pode ser {acao}. Atualize o comprovante "
+                f"Documento é comprovante de protocolo da peça '{ref_peca.titulo}' "
+                f"(id {ref_peca.id}) e não pode ser {acao}. Atualize o comprovante "
                 "na peça (PATCH /legal-docs/{id}/protocolo) antes."
+            ),
+        )
+
+    ref_custo = (await db.execute(
+        select(CentroCusto).where(
+            CentroCusto.comprovante_id == doc_id,
+            CentroCusto.deleted_at.is_(None),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if ref_custo:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Documento é comprovante do lançamento de centro de custos "
+                f"'{ref_custo.descricao}' (id {ref_custo.id}, caso {ref_custo.case_id}) "
+                f"e não pode ser {acao}. Desvincule o comprovante do lançamento antes."
+            ),
+        )
+
+    ref_fee = (await db.execute(
+        select(FeePayment).where(
+            FeePayment.comprovante_doc_id == doc_id,
+        ).limit(1)
+    )).scalar_one_or_none()
+    if ref_fee:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Documento é comprovante do pagamento (id {ref_fee.id}) do "
+                f"honorário {ref_fee.fee_id} e não pode ser {acao}. Desvincule "
+                "o comprovante do pagamento antes."
             ),
         )
 

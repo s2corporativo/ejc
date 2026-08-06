@@ -212,9 +212,13 @@ def test_patch_case_de_outro_cliente_400():
         id="caso-2", client_id="cli-2",
         advogado_responsavel_id=None, advogado_auxiliar_id=None,
     )
-    # fila: SELECT doc → checagem M2 (não é comprovante de protocolo) →
-    # SELECT case (verificar_acesso_caso)
-    db = _FakeDB(results=[_Res(one=doc), _Res(one=None), _Res(one=caso)])
+    # fila: SELECT doc → checagem de comprovante (LegalDoc/CentroCusto/
+    # FeePayment, nenhum referencia — Issue #697 generalizou de 1 p/ 3
+    # consultas) → SELECT case (verificar_acesso_caso)
+    db = _FakeDB(results=[
+        _Res(one=doc), _Res(one=None), _Res(one=None), _Res(one=None),
+        _Res(one=caso),
+    ])
     r = _montar(db).patch("/documents/doc-1", json={"case_id": "caso-2"})
     assert r.status_code == 400
     assert "outro cliente" in r.json()["detail"]
@@ -228,7 +232,12 @@ def test_patch_vincula_caso_do_mesmo_cliente_e_deriva_client():
         id="caso-1", client_id="cli-1",
         advogado_responsavel_id=None, advogado_auxiliar_id=None,
     )
-    db = _FakeDB(results=[_Res(one=doc), _Res(one=None), _Res(one=caso)])
+    # fila: SELECT doc → checagem de comprovante (3 consultas, nenhuma
+    # referencia — Issue #697) → SELECT case (verificar_acesso_caso)
+    db = _FakeDB(results=[
+        _Res(one=doc), _Res(one=None), _Res(one=None), _Res(one=None),
+        _Res(one=caso),
+    ])
     r = _montar(db).patch("/documents/doc-1", json={"case_id": "caso-1"})
     assert r.status_code == 200
     assert doc.case_id == "caso-1"
@@ -285,9 +294,12 @@ def test_delete_nao_exclui_comprovante_de_protocolo_409():
 
 
 def test_delete_documento_sem_referencia_segue_funcionando():
-    """M2 não regride o delete normal: sem peça referenciando, soft-delete ok."""
+    """M2 não regride o delete normal: sem nenhuma referência (peça, centro
+    de custos ou pagamento de honorário — Issue #697), soft-delete ok."""
     doc = _doc()
-    db = _FakeDB(results=[_Res(one=doc), _Res(one=None)])
+    db = _FakeDB(results=[
+        _Res(one=doc), _Res(one=None), _Res(one=None), _Res(one=None),
+    ])
     r = _montar(db).delete("/documents/doc-1")
     assert r.status_code == 200
     assert doc.deleted_at is not None
