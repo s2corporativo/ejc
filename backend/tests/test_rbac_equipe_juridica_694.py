@@ -22,6 +22,7 @@
 #      escrito como piso hierárquico com estagiario em backend/app/routers/.
 from __future__ import annotations
 
+import ast
 import pathlib
 import re
 
@@ -265,30 +266,56 @@ def test_helper_bool_barra_secretaria_e_cliente_externo(modulo, funcao):
 # (bank_analysis.py, entrada_universal.py, checklists.py, prompts_juridicos.py,
 # ai.py, users.py).
 #
-# Rastreado por OCORRÊNCIA individual (arquivo:linha), não por arquivo inteiro
-# (review do Codex no PR #706): pular o arquivo inteiro tinha dois defeitos —
-# (a) um gate hierárquico NOVO adicionado a um arquivo grandfatherizado (ex.
-# um segundo piso em ai.py) não seria pego, porque o arquivo inteiro era
-# ignorado; (b) se um PR concorrente corrigisse a ocorrência conhecida sem
-# atualizar esta lista, o arquivo ficaria permanentemente sem a proteção da
-# varredura, já que continuaria na lista de exclusão para sempre.
+# Rastreado por OCORRÊNCIA individual (arquivo::função), não por arquivo
+# inteiro (review do Codex no PR #706): pular o arquivo inteiro tinha dois
+# defeitos — (a) um gate hierárquico NOVO adicionado a um arquivo
+# grandfatherizado (ex. um segundo piso em ai.py) não seria pego, porque o
+# arquivo inteiro era ignorado; (b) se um PR concorrente corrigisse a
+# ocorrência conhecida sem atualizar esta lista, o arquivo ficaria
+# permanentemente sem a proteção da varredura, já que continuaria na lista de
+# exclusão para sempre.
 #
-# Com o rastreio por linha: qualquer ocorrência num arquivo grandfatherizado
-# que NÃO esteja neste conjunto é tratada como violação NOVA (assert
-# `infratores`); e qualquer linha listada aqui que não tiver mais o padrão no
-# código-fonte falha como baseline desatualizado (assert
+# A âncora é a FUNÇÃO, não o número da linha (ver _GRANDFATHER_ISSUE_694).
+# Qualquer ocorrência num arquivo grandfatherizado cuja função NÃO esteja no
+# conjunto é violação NOVA (assert `infratores`); e qualquer função listada
+# aqui que não tenha mais o padrão falha como baseline desatualizado (assert
 # `baseline_desatualizado`), forçando quem corrigiu a remover a entrada em vez
 # de deixá-la esquecida.
+#
+# Limitação aceita: se um mesmo PR remover o piso de uma função E adicionar
+# outro na MESMA função, os dois conjuntos continuam iguais e a troca passa.
+# Cobrir isso exigiria comparar o corpo da função, não sua identidade — custo
+# alto para um caso que o review de diff pega trivialmente.
 _ROUTERS = pathlib.Path(__file__).resolve().parents[1] / "app" / "routers"
 _PADRAO_PISO_ESTAGIARIO = re.compile(r'ROLE_LEVEL\[\s*["\']estagiario["\']\s*\]')
-_GRANDFATHER_ISSUE_694: dict[str, frozenset[int]] = {
-    "bank_analysis.py": frozenset({283}),
-    "entrada_universal.py": frozenset({175, 258}),
-    "checklists.py": frozenset({69}),
-    "prompts_juridicos.py": frozenset({118}),
-    "ai.py": frozenset({564, 804}),
-    "users.py": frozenset({530}),
+# Ancorado pela FUNÇÃO que contém a ocorrência, não pelo número da linha.
+# A primeira versão desta lista fixava `arquivo:linha` e quebrou o CI do PR
+# #706 sem nenhuma mudança de gate: a `main` avançou (PRs #735/#736), o
+# `entrada_universal.py` cresceu e as duas ocorrências conhecidas escorregaram
+# de 175/258 para 266/356. Número de linha não identifica um gate — identifica
+# uma posição no arquivo, que qualquer merge desloca. O nome da função é
+# estável sob deslocamento e continua específico o bastante para que uma
+# ocorrência NOVA numa função diferente do mesmo arquivo seja pega.
+_GRANDFATHER_ISSUE_694: dict[str, frozenset[str]] = {
+    "bank_analysis.py": frozenset({"gerar_peca"}),
+    "entrada_universal.py": frozenset({"meta", "processar"}),
+    "checklists.py": frozenset({"_pode_editar"}),
+    "prompts_juridicos.py": frozenset({"listar_prompts"}),
+    "ai.py": frozenset({"assistente_estrategico", "visual_law"}),
+    "users.py": frozenset({"obter_avatar"}),
 }
+
+
+def _funcao_que_contem(tree: ast.Module, linha: int) -> str:
+    """Nome da função MAIS INTERNA que contém `linha` (ou "<módulo>")."""
+    melhor, melhor_ini = "<módulo>", -1
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        fim = getattr(node, "end_lineno", None) or node.lineno
+        if node.lineno <= linha <= fim and node.lineno > melhor_ini:
+            melhor, melhor_ini = node.name, node.lineno
+    return melhor
 
 
 def test_nenhum_router_juridico_novo_usa_piso_hierarquico_estagiario():
@@ -296,15 +323,19 @@ def test_nenhum_router_juridico_novo_usa_piso_hierarquico_estagiario():
     baseline_desatualizado = []
     for arq in sorted(_ROUTERS.glob("*.py")):
         texto = arq.read_text(encoding="utf-8")
-        linhas_encontradas = {
-            texto[: m.start()].count("\n") + 1
-            for m in _PADRAO_PISO_ESTAGIARIO.finditer(texto)
-        }
-        linhas_conhecidas = _GRANDFATHER_ISSUE_694.get(arq.name, frozenset())
-        for linha in sorted(linhas_encontradas - linhas_conhecidas):
-            infratores.append(f"{arq.name}:{linha}")
-        for linha in sorted(linhas_conhecidas - linhas_encontradas):
-            baseline_desatualizado.append(f"{arq.name}:{linha}")
+        if not _PADRAO_PISO_ESTAGIARIO.search(texto):
+            funcoes_encontradas: set[str] = set()
+        else:
+            tree = ast.parse(texto)
+            funcoes_encontradas = {
+                _funcao_que_contem(tree, texto[: m.start()].count("\n") + 1)
+                for m in _PADRAO_PISO_ESTAGIARIO.finditer(texto)
+            }
+        funcoes_conhecidas = _GRANDFATHER_ISSUE_694.get(arq.name, frozenset())
+        for fn in sorted(funcoes_encontradas - funcoes_conhecidas):
+            infratores.append(f"{arq.name}::{fn}")
+        for fn in sorted(funcoes_conhecidas - funcoes_encontradas):
+            baseline_desatualizado.append(f"{arq.name}::{fn}")
     assert not infratores, (
         "Gate hierárquico com piso ROLE_LEVEL['estagiario'] em router — isso "
         "libera 'financeiro' (nível 4 > estagiario nível 3) para ato/acervo "
@@ -314,9 +345,9 @@ def test_nenhum_router_juridico_novo_usa_piso_hierarquico_estagiario():
     )
     assert not baseline_desatualizado, (
         "Ocorrência grandfatherizada da Issue #694 (_GRANDFATHER_ISSUE_694) não "
-        "existe mais no código-fonte nessa linha — o PR concorrente que a "
-        "corrigiu esqueceu de remover a entrada daqui. Atualize "
-        "_GRANDFATHER_ISSUE_694 (remova a linha, ou o arquivo inteiro se não "
+        "existe mais nessa função — ou o PR concorrente que a corrigiu esqueceu "
+        "de remover a entrada daqui, ou a função foi renomeada. Atualize "
+        "_GRANDFATHER_ISSUE_694 (remova a função, ou o arquivo inteiro se não "
         "sobrar nenhuma):\n  " + "\n  ".join(baseline_desatualizado)
     )
 

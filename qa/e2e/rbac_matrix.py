@@ -93,6 +93,43 @@ ROLE_LEVEL: dict[str, int] = {
     "cliente_externo": 1,
 }
 
+# Espelha app/core/security.py::EQUIPE_JURIDICA — allowlist EXATA da superfície
+# jurídica (Issue #694). NÃO é um piso hierárquico: `financeiro` (nível 4) fica
+# ACIMA de `estagiario` (3) em ROLE_LEVEL e mesmo assim NÃO pertence à equipe.
+# Diferente das constantes de `_module_role_constants`, esta é IMPORTADA pelos
+# routers (`from app.core.security import EQUIPE_JURIDICA`), então não aparece
+# como atribuição de módulo no arquivo que a usa — sem registrá-la aqui, todo
+# gate `... in EQUIPE_JURIDICA` ficaria irresolvido e a rota apareceria como
+# "sem gate" na matriz. `test_rbac_matrix.py::test_equipe_juridica_espelha_backend`
+# compara os dois lados para que uma mudança em security.py quebre o CI em vez
+# de divergir em silêncio.
+EQUIPE_JURIDICA: tuple[str, ...] = (
+    "superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario",
+)
+
+# Constantes de papel IMPORTADAS de app.core.security que os routers usam como
+# container de pertencimento. Semeiam `_module_role_constants` por arquivo; uma
+# atribuição de módulo com o mesmo nome, se existir, sobrescreve (o arquivo
+# local é sempre mais específico que o default importado).
+_CONSTANTES_DE_PAPEL_IMPORTADAS: dict[str, list[str]] = {
+    "EQUIPE_JURIDICA": list(EQUIPE_JURIDICA),
+}
+
+# Gates COMPARTILHADOS de app/core/security.py chamados direto no corpo do
+# handler (`requer_advogado(cu)`, `requer_equipe_juridica(cu, "...")`). O
+# `raise 403` mora na função importada, não no arquivo do router, então o
+# parser não o encontra varrendo o corpo — precisa conhecê-los por nome.
+# Chave = nome da função; valor = o gate que ela impõe.
+_GATES_COMPARTILHADOS: dict[str, "GateInfo"] = {
+    "requer_advogado": ("requer_advogado", ["advogado"], ROLE_LEVEL["advogado"]),
+    # Allowlist exata, NÃO piso: min_level = estagiario (3) só descreve o menor
+    # nível da lista; é `permite()` sobre `local_membership` que barra
+    # financeiro (4), que está acima desse número e fora da equipe.
+    "requer_equipe_juridica": (
+        "local_membership", list(EQUIPE_JURIDICA), ROLE_LEVEL["estagiario"],
+    ),
+}
+
 # Espelha app/core/auth_middleware.py::PREFIXOS_PUBLICOS filtrados para o
 # ramo `cliente_externo` (bloco "if request.state.role == 'cliente_externo'").
 PORTAL_PREFIXES_CLIENTE_EXTERNO: tuple[str, ...] = (
@@ -317,7 +354,7 @@ def _extract_roles_from_expr(node: ast.expr, constants: dict[str, list[str]]) ->
 def _module_role_constants(tree: ast.Module) -> dict[str, list[str]]:
     """Varre atribuições de nível de módulo `NOME = [...]` / `{...}` / `(...)`
     para resolver referências por nome (ver `_extract_roles_from_expr`)."""
-    out: dict[str, list[str]] = {}
+    out: dict[str, list[str]] = dict(_CONSTANTES_DE_PAPEL_IMPORTADAS)
     for node in tree.body:
         if not isinstance(node, ast.Assign):
             continue
@@ -571,6 +608,14 @@ def _analisar_helpers_locais(
             eq_level = min((ROLE_LEVEL.get(r, 0) for r in eq_roles), default=0)
             helper_gates[fn.name] = ("local_membership", eq_roles, eq_level)
             continue
+        # Helper que só delega a um gate compartilhado de security.py
+        # (`_req_staff` em jurimetria_extra.py chama requer_equipe_juridica).
+        # O `raise 403` está na função importada, não neste arquivo, então
+        # nenhuma das varreduras acima o encontra.
+        compartilhado = _find_helper_call_gate(fn.body, _GATES_COMPARTILHADOS)
+        if compartilhado:
+            helper_gates[fn.name] = compartilhado
+            continue
         bool_gate = _find_bool_return_gate(fn, constants)
         if bool_gate:
             bool_helpers[fn.name] = bool_gate
@@ -661,7 +706,7 @@ def _gate_from_function(
         return auto, False
 
     chamada = _find_helper_call_gate(
-        fn.body, {**dep_registry, "requer_advogado": ("requer_advogado", ["advogado"], ROLE_LEVEL["advogado"])}
+        fn.body, {**dep_registry, **_GATES_COMPARTILHADOS}
     )
     if chamada:
         return chamada, False
