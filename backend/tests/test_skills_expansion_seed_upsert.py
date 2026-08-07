@@ -9,6 +9,7 @@ instalações já feitas." Este teste falha se essa regressão voltar.
 """
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import create_engine, text
 
 from app.seeds.skills_expansion_seed import SKILLS, seed
@@ -133,3 +134,66 @@ def test_seed_nao_sobrescreve_skill_ja_instalada_fora_do_escopo_da_issue(monkeyp
             text("SELECT system_prompt FROM ejc_skills WHERE name = 'negativacao-indevida'")
         ).scalar_one()
     assert prompt == "Texto customizado manualmente por um sócio."
+
+
+def test_seed_grava_backup_do_prompt_anterior_antes_de_sobrescrever(monkeypatch, tmp_path):
+    """Review do CodeRabbit no PR #703. O upsert forçado é a ÚNICA operação
+    deste seed que destrói conteúdo já gravado: `git revert` devolve o código,
+    não o prompt antigo do banco. O próprio PR registrava isso como "rollback
+    parcial" nos riscos residuais — agora o estado anterior é persistido antes
+    do commit, e o rollback deixa de depender de memória de ninguém."""
+    import json
+
+    engine = _engine_sqlite_com_tabela()
+    _instalar_versao_antiga(
+        engine, "prescricao-decadencia", "PROMPT ANTIGO QUE PRECISA SOBREVIVER",
+    )
+    destino = tmp_path / "backups"
+    monkeypatch.setattr("sqlalchemy.create_engine", lambda *_a, **_k: engine)
+    monkeypatch.setenv("DATABASE_URL_SYNC", "sqlite:///:memory:")
+    monkeypatch.setattr(
+        "app.seeds.skills_expansion_seed._DIR_BACKUP_SKILLS", str(destino))
+
+    seed()
+
+    arquivos = list(destino.glob("skills_pre_upsert_*.json"))
+    assert len(arquivos) == 1, "o backup do prompt anterior não foi gravado"
+    dados = json.loads(arquivos[0].read_text(encoding="utf-8"))
+    salvo = {s["name"]: s for s in dados["skills"]}
+    assert salvo["prescricao-decadencia"]["system_prompt"] == (
+        "PROMPT ANTIGO QUE PRECISA SOBREVIVER"
+    )
+    # O backup guarda o suficiente para reconstruir a linha, não só o prompt.
+    for campo in ("display_name", "description", "area", "version"):
+        assert campo in salvo["prescricao-decadencia"]
+
+
+def test_seed_nao_comita_se_o_backup_falhar(monkeypatch, tmp_path):
+    """Prova por negação da ordem: o backup é gravado ANTES do commit e sua
+    falha ABORTA a transação. Se a ordem se inverter, o prompt antigo já teria
+    sido destruído quando a escrita falhasse — e este teste veria o prompt
+    NOVO no banco."""
+    engine = _engine_sqlite_com_tabela()
+    _instalar_versao_antiga(
+        engine, "prescricao-decadencia", "PROMPT ANTIGO QUE PRECISA SOBREVIVER",
+    )
+    monkeypatch.setattr("sqlalchemy.create_engine", lambda *_a, **_k: engine)
+    monkeypatch.setenv("DATABASE_URL_SYNC", "sqlite:///:memory:")
+
+    def _explode(*_a, **_k):
+        raise OSError("disco cheio")
+
+    monkeypatch.setattr(
+        "app.seeds.skills_expansion_seed._persistir_backup", _explode)
+
+    with pytest.raises(OSError):
+        seed()
+
+    with engine.connect() as conn:
+        prompt = conn.execute(
+            text("SELECT system_prompt FROM ejc_skills WHERE name='prescricao-decadencia'")
+        ).scalar_one()
+    assert prompt == "PROMPT ANTIGO QUE PRECISA SOBREVIVER", (
+        "a transação foi comitada mesmo com o backup falhando — o prompt "
+        "anterior ficou irrecuperável"
+    )
