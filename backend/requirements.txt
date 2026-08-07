@@ -122,6 +122,15 @@ numpy==1.26.4
 beautifulsoup4==4.12.3
 lxml==6.1.1
 
+# Cliente SOAP para integração de processo eletrônico via MNI 2.2.2 (Issue
+# #762, Fase A). zeep é a lib SOAP padrão em Python (suporta WSDL e MTOM,
+# necessário para os binários de documento do MNI) — dependência nova
+# justificada: não há alternativa madura para SOAP/WSDL já presente no
+# projeto (httpx/requests só cobrem REST). Só é importado por
+# services/mni_connector.py, chamado exclusivamente de dentro de tasks
+# Celery (nunca em request HTTP síncrono).
+zeep==4.2.1
+
 # Streaming, jobs, observability
 sse-starlette==2.1.0
 APScheduler==3.10.4

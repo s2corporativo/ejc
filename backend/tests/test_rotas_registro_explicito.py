@@ -73,6 +73,14 @@ ADICOES_INTENCIONAIS = {
     # autenticação + ownership no handler e não criam tabela ou escrita paralela.
     ("/api/cases/{case_id}/timeline", "GET"),
     ("/api/cases/{case_id}/operational-health", "GET"),
+    # Issue #762 (Fase A): integração de processo eletrônico via MNI 2.2.2,
+    # somente leitura (TJMG). Sincronização assíncrona (Celery) + cofre de
+    # credenciais dedicado — nunca ecoa segredo, todo uso audita.
+    ("/api/processo-eletronico/sincronizar", "POST"),
+    ("/api/processo-eletronico/status/{case_id}", "GET"),
+    ("/api/processo-eletronico/credenciais", "GET"),
+    ("/api/processo-eletronico/credenciais", "POST"),
+    ("/api/processo-eletronico/credenciais/{credencial_id}/testar", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui

@@ -89,6 +89,10 @@ from app.models.nfse import NotaFiscalServico, NFSeStatus  # noqa
 from app.models.route_usage_metric import RouteUsageMetric  # noqa
 from app.models.scheduler_heartbeat import SchedulerHeartbeat  # noqa
 from app.models.integration_credential import IntegrationCredential  # noqa  (Cofre de Credenciais — migração 108)
+from app.models.processo_eletronico import (  # noqa  (MNI 2.2.2 leitura — migração 132)
+    Tribunal, CredencialProcessoEletronico, SincronizacaoProcessoEletronico,
+    DocumentoProcessoEletronicoDedup,
+)
 
 # Registra a política runtime que suprime temporariamente a exigência de TOTP sem
 # alterar os valores persistidos. A importação é deliberadamente tardia para
