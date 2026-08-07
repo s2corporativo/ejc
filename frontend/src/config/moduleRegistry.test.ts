@@ -47,6 +47,15 @@ describe("moduleRegistry", () => {
     expect(canRoleAccessPath("estagiario", "/financeiro")).toBe(false);
   });
 
+  it("nega financeiro em Peças — espelha o backend (Issue #694, allowlist EQUIPE_JURIDICA em POST /pecas/gerar)", () => {
+    expect(canRoleAccessPath("financeiro", "/pecas")).toBe(false);
+    expect(canRoleAccessPath("estagiario", "/pecas")).toBe(true);
+    expect(canRoleAccessPath("advogado", "/pecas")).toBe(true);
+    expect(
+      getProductionNavigation("financeiro").some((m) => m.path === "/pecas"),
+    ).toBe(false);
+  });
+
   it("destaca a Sala Jurídica e o Financeiro apenas para os perfis autorizados", () => {
     const advogado = getProductionNavigation("advogado");
     const socio = getProductionNavigation("socio");
@@ -139,8 +148,7 @@ describe("moduleRegistry", () => {
       "/checklists",
       "/datajud",
       "/diario-oficial",
-      "/radar-regulatorio",
-      "/compliance/radar",
+      "/radar",
       "/noticias",
       "/produtividade",
       "/ia-governanca",
@@ -151,5 +159,46 @@ describe("moduleRegistry", () => {
       expect(canonical.has(path)).toBe(true);
       expect(advogado).not.toContain(path);
     }
+  });
+});
+
+// ── Onda 2: os dois radares viraram uma porta ────────────────────────────────
+// O feed de compliance já consolidava Diário Oficial + monitoramento
+// regulatório + autos ambientais; o radar regulatório era o DIGEST da mesma
+// matéria. Duas entradas de menu para a mesma pergunta é atrito — viraram
+// `?modo=feed|digest` de /radar. Este teste trava a consolidação e, sobretudo,
+// que a fusão NÃO alargou quem enxerga o feed de risco.
+describe("radar consolidado", () => {
+  it("expõe uma única porta e aposenta as duas rotas antigas", () => {
+    const rotas = new Set(STAFF_ROUTES.map((r) => r.path));
+    expect(rotas.has("/radar")).toBe(true);
+    expect(rotas.has("/radar-regulatorio")).toBe(false);
+    expect(rotas.has("/compliance/radar")).toBe(false);
+  });
+
+  it("redireciona os dois caminhos legados, o digest para o seu modo", () => {
+    const destino = new Map(LEGACY_REDIRECTS.map((r) => [r.from, r.to]));
+    expect(destino.get("/compliance/radar")).toBe("/radar");
+    expect(destino.get("/radar-regulatorio")).toBe("/radar?modo=digest");
+  });
+
+  it("herda o RBAC mais restritivo dos dois — a fusão não alarga acesso", () => {
+    // A versão anterior deste teste comparava /radar com /compliance/radar.
+    // Como /compliance/radar deixou de ser rota, os dois lados davam `false` e
+    // a asserção passava por VÁCUO — não validava matriz nenhuma. Agora a
+    // matriz de ROLES.compliance é afirmada papel a papel.
+    for (const papel of ["superadmin", "admin", "socio", "advogado"]) {
+      expect(canRoleAccessPath(papel, "/radar"), papel).toBe(true);
+    }
+    for (const papel of [
+      "advogado_auxiliar",
+      "estagiario",
+      "financeiro",
+      "secretaria",
+    ]) {
+      expect(canRoleAccessPath(papel, "/radar"), papel).toBe(false);
+    }
+    // E o portal do cliente jamais alcança o feed de risco do escritório.
+    expect(canRoleAccessPath("cliente_externo", "/radar")).toBe(false);
   });
 });

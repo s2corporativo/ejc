@@ -107,6 +107,29 @@ def _baseline() -> list[dict]:
         return json.load(fh)
 
 
+# ── Onda 2: oito routers saíram de /api/v1/… para /api/… ─────────────────────
+# Eles declaravam `prefix="/v1/..."` e eram montados com `prefix="/api"`,
+# caindo em /api/v1/... — exatamente o endereço que o
+# APIVersionCompatibilityMiddleware reescreve para /api/... ANTES do dispatch.
+# Consequência: inalcançáveis pelo contrato público (/api/v1/despesas → 404) e
+# alcançáveis só pelo acidente /api/v1/v1/despesas. Era a causa do "Financeiro:
+# Despesas, Contratos e Sociedade hoje 404" da auditoria.
+#
+# Nenhum endpoint foi criado nem removido: cada par abaixo é a MESMA rota, no
+# endereço correto. O par (removida em /api/v1/X, adicionada em /api/X) é
+# gerado do próprio snapshot para não haver lista escrita à mão divergindo do
+# fato.
+_MOVIDAS_ONDA2 = tuple(
+    (r["path"], r["method"])
+    for r in _baseline()
+    if r["path"].startswith("/api/v1/")
+)
+REMOCOES_INTENCIONAIS |= set(_MOVIDAS_ONDA2)
+ADICOES_INTENCIONAIS |= {
+    ("/api" + path[len("/api/v1"):], metodo) for path, metodo in _MOVIDAS_ONDA2
+}
+
+
 def test_paridade_openapi_com_snapshot_anterior():
     """Path + método + dependências de auth idênticos ao estado pré-mudança."""
     from app.main import app
@@ -218,3 +241,31 @@ def test_efeitos_colaterais_nao_de_rota_preservados():
 
     fonte_pm = inspect.getsource(provider_metrics_runtime)
     assert "_instalar_instrumentacao(gateway)" in fonte_pm
+
+
+def test_movimentacao_onda2_preservou_as_dependencias_de_auth():
+    """A rota mudou de endereço — o gate NÃO pode ter mudado junto.
+
+    A trava de paridade compara `auth_deps` só das rotas que sobreviveram com o
+    mesmo par (path, método). As 33 movidas contam como removida+adicionada e
+    escapariam dessa comparação: um `dependencies=[...]` perdido no caminho
+    passaria como "rota nova". Aqui a comparação é feita explicitamente, par a
+    par, entre o endereço antigo e o novo.
+    """
+    from app.main import app
+
+    atual = {(r["path"], r["method"]): r for r in _extrair_rotas(app)}
+    divergentes = []
+    for r in _baseline():
+        antigo = r["path"]
+        if not antigo.startswith("/api/v1/"):
+            continue
+        novo = "/api" + antigo[len("/api/v1") :]
+        destino = atual.get((novo, r["method"]))
+        assert destino is not None, f"{antigo} {r['method']} não reapareceu em {novo}"
+        if destino["auth_deps"] != r["auth_deps"]:
+            divergentes.append((antigo, novo, r["auth_deps"], destino["auth_deps"]))
+    assert not divergentes, (
+        "a mudança de prefixo alterou o gate de auth de "
+        f"{len(divergentes)} rota(s): {divergentes[:3]}"
+    )

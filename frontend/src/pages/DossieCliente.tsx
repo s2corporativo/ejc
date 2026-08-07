@@ -90,6 +90,60 @@ interface DossieData {
     tipo: string;
     created_at: string;
   }>;
+  // Degradação por seção: o backend isola cada agregação e nomeia aqui a que
+  // não pôde ser carregada, em vez de responder 500 e deixar a ficha fechada.
+  // Sem esta lista o usuário veria "0 prazos" achando que não há prazo — a
+  // falha silenciosa que o padrão de erro do EJC proíbe.
+  secoes_indisponiveis?: string[];
+}
+
+const ROTULO_SECAO: Record<string, string> = {
+  casos: "casos",
+  prazos: "prazos",
+  documentos: "documentos",
+  honorarios: "financeiro",
+  resumo_casos: "resumo dos casos",
+};
+
+export function AvisoSecoesIndisponiveis({
+  secoes,
+  onRecarregar,
+}: {
+  secoes: string[];
+  onRecarregar: () => void;
+}) {
+  if (!secoes.length) return null;
+  const nomes = secoes.map((s) => ROTULO_SECAO[s] ?? s);
+  const lista =
+    nomes.length === 1
+      ? nomes[0]
+      : `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
+  return (
+    <div
+      role="status"
+      className="card border border-warn-200 bg-warn-50 text-warn-700 p-4 flex items-start gap-3"
+    >
+      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+      <div className="text-sm">
+        <p className="font-medium">
+          Ficha carregada parcialmente: {lista} não{" "}
+          {nomes.length === 1 ? "pôde" : "puderam"} ser carregad
+          {nomes.length === 1 ? "a" : "as"}.
+        </p>
+        <p className="mt-1">
+          Os demais dados desta tela estão completos. O erro foi registrado para
+          a equipe técnica.
+        </p>
+        <button
+          type="button"
+          onClick={onRecarregar}
+          className="mt-2 underline underline-offset-2 font-medium"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // Rótulos de área vêm da taxonomia canônica (lib/areas.ts — enum CaseArea).
@@ -212,7 +266,7 @@ function PendingItemsPanel({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/v1/clients/${clientId}/pending-items`);
+      const res = await api.get(`/clients/${clientId}/pending-items`);
       setItems(res.data || []);
       onItemsChange?.(res.data || []);
     } catch {
@@ -238,7 +292,7 @@ function PendingItemsPanel({
   async function create() {
     if (!form.title.trim()) return;
     try {
-      await api.post(`/v1/clients/${clientId}/pending-items`, {
+      await api.post(`/clients/${clientId}/pending-items`, {
         ...form,
         due_date: form.due_date || undefined,
       });
@@ -254,7 +308,7 @@ function PendingItemsPanel({
 
   async function updateStatus(id: string, status: string) {
     try {
-      await api.patch(`/v1/clients/${clientId}/pending-items/${id}`, {
+      await api.patch(`/clients/${clientId}/pending-items/${id}`, {
         status,
       });
       load();
@@ -272,9 +326,7 @@ function PendingItemsPanel({
   async function confirmarExclusao() {
     if (!pendenteExcluir) return;
     try {
-      await api.delete(
-        `/v1/clients/${clientId}/pending-items/${pendenteExcluir}`,
-      );
+      await api.delete(`/clients/${clientId}/pending-items/${pendenteExcluir}`);
       setPendenteExcluir(null);
       load();
     } catch (e: any) {
@@ -681,12 +733,27 @@ function RelatorioFinanceiro({
     }
   };
 
+  // Seções que o backend não conseguiu carregar (degradação por seção). Um
+  // relatório financeiro parcial não pode ser lido — nem exportado — como se
+  // fosse completo: seria registro contábil enganoso.
+  const secoesIndisponiveis: string[] = rel?.secoes_indisponiveis ?? [];
+
   const exportarCSV = () => {
     if (!rel) {
       toast.error("Carregue o relatório antes de exportar");
       return;
     }
-    const linhas: string[] = ["Data;Tipo;Categoria;Descrição;Caso;Valor"];
+    const linhas: string[] = [];
+    if (secoesIndisponiveis.length) {
+      // A marca vai DENTRO do arquivo: o CSV circula fora da tela que avisa.
+      linhas.push(
+        `EXTRATO INCOMPLETO - nao foi possivel carregar: ${secoesIndisponiveis.join(", ")}`,
+      );
+      toast.error(
+        "Extrato exportado INCOMPLETO — gere o relatório novamente antes de usar",
+      );
+    }
+    linhas.push("Data;Tipo;Categoria;Descrição;Caso;Valor");
     for (const e of rel.extrato ?? []) {
       linhas.push(
         [
@@ -750,6 +817,10 @@ function RelatorioFinanceiro({
 
       {open && r && (
         <div className="p-4 space-y-4">
+          <AvisoSecoesIndisponiveis
+            secoes={secoesIndisponiveis}
+            onRecarregar={carregar}
+          />
           {/* Cards resumo */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[
@@ -994,7 +1065,7 @@ export default function DossieCliente() {
   useEffect(() => {
     if (!clientId) return;
     api
-      .get(`/v1/clients/${clientId}/pending-items`)
+      .get(`/clients/${clientId}/pending-items`)
       .then((r) => setPendingItems(r.data || []))
       .catch(() => {
         // Indicador opcional — o painel de pendências reporta o erro ao usuário.
@@ -1104,6 +1175,13 @@ export default function DossieCliente() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6 animate-rise">
+      <AvisoSecoesIndisponiveis
+        secoes={data.secoes_indisponiveis ?? []}
+        onRecarregar={() => {
+          setLoading(true);
+          carregarDossie();
+        }}
+      />
       {/* Header */}
       <div className="flex items-start gap-3">
         <button

@@ -86,7 +86,9 @@ function formatData(iso: string | null): string {
   return d.toLocaleDateString("pt-BR");
 }
 
-export default function RadarCompliance() {
+export default function RadarCompliance({
+  embutido = false,
+}: { embutido?: boolean } = {}) {
   const [fonte, setFonte] = useState<"" | FonteRadar>("");
   const [desde, setDesde] = useState("");
   const [data, setData] = useState<RadarResponse | null>(null);
@@ -118,11 +120,13 @@ export default function RadarCompliance() {
 
   return (
     <div>
-      <PageHeader
-        eyebrow="Inteligencia"
-        title="Radar de Compliance"
-        subtitle="Feed consolidado de Diario Oficial, monitoramento regulatorio e autos ambientais, priorizado por risco (critico -> baixo)."
-      />
+      {!embutido && (
+        <PageHeader
+          eyebrow="Inteligencia"
+          title="Radar de Compliance"
+          subtitle="Feed consolidado de Diario Oficial, monitoramento regulatorio e autos ambientais, priorizado por risco (critico -> baixo)."
+        />
+      )}
 
       {/* Filtros — chips por fonte + recorte por data */}
       <div className="mb-6 flex flex-wrap items-end gap-3">

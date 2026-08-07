@@ -58,3 +58,50 @@ def test_extrator_reconhece_chamada_encadeada_multilinha():
     assert m.group(1) == "api"
     assert m.group(2) == "get"
     assert m.group(4) == "/visual-law/casos/abc/timeline"
+
+
+# ── Ponto cego que mascarava um 404 real (Onda 2 da refatoração) ─────────────
+# O verificador não modelava o interceptor de request do frontend. Resultado:
+# `api.get("/v1/despesas")` era lido como `/api/v1/v1/despesas` — que casava a
+# rota montada POR ENGANO em `/api/v1/despesas` — enquanto o navegador de
+# verdade pedia `/api/v1/despesas` e tomava 404. O verificador aprovava
+# justamente o defeito que existe para pegar.
+def test_verificador_espelha_a_poda_de_prefixo_do_interceptor():
+    from app.utils.api_contract import _podar_prefixo_do_interceptor as podar
+
+    assert podar("/v1/despesas") == "/despesas"
+    assert podar("/api/despesas") == "/despesas"
+    assert podar("/api/v1/despesas") == "/despesas"
+    # Sem prefixo repetido, nada muda.
+    assert podar("/despesas") == "/despesas"
+    # Não pode comer um segmento que apenas COMEÇA com o prefixo.
+    assert podar("/apiario/x") == "/apiario/x"
+    assert podar("/v10/x") == "/v10/x"
+
+
+def test_chamada_escrita_com_prefixo_resolve_na_mesma_url_da_canonica():
+    """As duas formas produzem o MESMO request na rede — é o que o interceptor
+    garante. O verificador precisa enxergar isso, senão aprova uma e reprova a
+    outra sem que nada tenha mudado no comportamento."""
+    assert _final_url(True, "/despesas") == "/api/v1/despesas"
+    assert _final_url(True, "/v1/despesas") == "/api/v1/despesas"
+    assert _final_url(True, "/api/despesas") == "/api/v1/despesas"
+    assert _final_url(True, "/api/v1/despesas") == "/api/v1/despesas"
+
+
+def test_nenhum_router_fica_montado_dentro_de_api_v1():
+    """Router com `prefix="/v1/..."` montado sob `prefix="/api"` cai em
+    `/api/v1/...` — exatamente o que o middleware de versão reescreve para
+    longe, deixando a rota inalcançável pelo contrato público. Oito routers
+    estavam assim (despesas, office-contracts, partner-withdrawals,
+    pending-items, kanban, datajud, regulatorio, whatsapp), e era a causa do
+    'Financeiro: Despesas, Contratos e Sociedade hoje 404'."""
+    from app.main import app
+
+    presos = sorted(
+        {p for r in app.routes if "/api/v1/" in (p := getattr(r, "path", "") or "")}
+    )
+    assert presos == [], (
+        "rota(s) montada(s) em /api/v1/ — o middleware de versão as reescreve "
+        "para /api/... e elas ficam inalcançáveis:\n  " + "\n  ".join(presos)
+    )

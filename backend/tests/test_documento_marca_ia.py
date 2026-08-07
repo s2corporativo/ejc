@@ -2,8 +2,9 @@
 
 Auditoria de geração de documentos:
   (A/B) OAB, endereço, CEP e CNPJ do escritório vêm da FONTE ÚNICA (settings
-        ESCRITORIO_*); vazios no .env viram placeholder EXPLÍCITO, nunca dado
-        inventado nem "A PREENCHER" mudo.
+        ESCRITORIO_*); vazio no .env OMITE o segmento inteiro do timbre — nunca
+        dado inventado, "A PREENCHER" mudo ou placeholder de pendência interna
+        no documento entregue ao cliente (a pendência vai para o log de boot).
   (C)   O aviso de rascunho-IA agora é EMBUTIDO no PDF/DOCX exportado quando a
         peça é ai_generated e ainda NÃO foi human_reviewed (minuta não revisada);
         a versão revisada sai LIMPA. Sem gate de bloqueio no download.
@@ -57,21 +58,48 @@ def test_pdf_html_peca_revisada_sai_limpa_sem_marca_ia():
     assert "ia-minuta" not in html
 
 
-# ── (A/B) Dados FIXOS do escritório: fonte única + fallback explícito ─────────
-def test_placeholder_explicito_quando_setting_vazia():
-    # Vazio no .env → placeholder VISÍVEL, nunca string vazia silenciosa.
-    assert Settings._ou_placeholder("", "OAB/MG nº ___") == "[OAB/MG nº ___ - preencher em .env]"
-    assert Settings._ou_placeholder("   ", "CEP") == "[CEP - preencher em .env]"
+# ── (A/B) Dados FIXOS do escritório: fonte única, sem placeholder no papel ────
+# Onda 1 da refatoração: setting institucional vazia NÃO imprime mais
+# "[CEP - preencher em .env]" no timbre — o segmento inteiro é omitido e a
+# pendência migra para escritorio_pendencias() (log de boot / diagnóstico).
+def test_helper_devolve_vazio_quando_setting_vazia():
+    s = Settings(ESCRITORIO_CEP="   ", ESCRITORIO_OAB="")
+    assert s.escritorio_cep() == ""
+    assert s.escritorio_oab() == ""
 
 
-def test_setting_preenchida_e_usada_sem_placeholder():
-    assert Settings._ou_placeholder("  12.345 ", "OAB/MG nº ___") == "12.345"
+def test_helper_normaliza_setting_preenchida():
+    assert Settings(ESCRITORIO_OAB="  12.345 ").escritorio_oab() == "12.345"
 
 
-def test_helpers_escritorio_nunca_retornam_vazio():
-    s = get_settings()
-    for valor in (s.escritorio_oab(), s.escritorio_endereco(), s.escritorio_cep()):
-        assert valor and valor.strip()
+def test_pendencias_listam_apenas_os_campos_vazios():
+    s = Settings(ESCRITORIO_OAB="251174", ESCRITORIO_ENDERECO="Rua X, 10", ESCRITORIO_CEP="")
+    assert s.escritorio_pendencias() == ["ESCRITORIO_CEP"]
+    assert Settings(ESCRITORIO_CEP="32510-010").escritorio_pendencias() == []
+
+
+def test_timbre_docx_omite_segmento_vazio_em_vez_de_imprimir_placeholder():
+    """Regressão: com CEP vazio (default), nem o placeholder nem o rótulo órfão
+    'CEP' podem aparecer no timbre/rodapé do documento entregue ao cliente."""
+    from app.services import docx_service
+
+    assert "preencher em .env" not in docx_service.ESCRITORIO_TIMBRE_SUB
+    assert "preencher em .env" not in docx_service.ESCRITORIO_CONTATO
+    if not docx_service.settings.escritorio_cep():
+        assert "CEP" not in docx_service.ESCRITORIO_TIMBRE_SUB
+        assert "CEP" not in docx_service.ESCRITORIO_CONTATO
+    # Sem rótulo órfão nem separador duplicado sobrando.
+    for linha in (docx_service.ESCRITORIO_TIMBRE_SUB, docx_service.ESCRITORIO_CONTATO):
+        assert "|  |" not in linha
+        assert not linha.strip().endswith("|")
+
+
+def test_timbre_pdf_omite_segmento_vazio():
+    from app.services import pdf_service
+
+    for linha in (pdf_service._ESC_SUB1, pdf_service._ESC_SUB2):
+        assert "preencher em .env" not in linha
+        assert not linha.strip().endswith("&nbsp;|&nbsp;")
 
 
 def test_docx_timbre_traz_oab_e_endereco_do_escritorio():
@@ -103,7 +131,7 @@ def test_procuracao_usa_dados_do_escritorio_e_remove_placeholders_legados():
     assert "DE PAULA TEIXEIRA - SOCIEDADE DE ADVOGADOS" in texto
     assert f"{s.ESCRITORIO_CIDADE}/{s.ESCRITORIO_ESTADO}," in texto
     # OUTORGADO FIXO: sócio-titular com OAB/MG 251.174 — não o `adv` da chamada.
-    assert "JOAO PEDRO RODRIGUES TEIXEIRA" in texto
+    assert "JOÃO PEDRO RODRIGUES TEIXEIRA" in texto
     assert "251.174" in texto
     assert "Dra. Beltrana" not in texto
     # Placeholders legados de dado FIXO NÃO escapam mais para o documento.

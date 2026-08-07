@@ -55,4 +55,32 @@ echo "[entrypoint] Iniciando uvicorn..."
 # Ambos são POR PROCESSO: com N workers, o atacante ganha N× o limite (cada
 # worker conta suas próprias falhas). RATE_LIMIT_REDIS_ENABLED cobre apenas a
 # dependency consumir()/rate_limit() — não cobre os dois itens acima.
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+#
+# --forwarded-allow-ips (Onda 1 da refatoração): `--proxy-headers` sozinho NÃO
+# bastava. O default do uvicorn é confiar só em 127.0.0.1, mas o Nginx roda no
+# HOST e chega aqui pela porta publicada — o Docker reescreve a origem para o
+# gateway da bridge (172.x.0.1), NUNCA 127.0.0.1. Resultado: o
+# `X-Forwarded-Proto: https` que o Nginx envia era DESCARTADO, o app enxergava
+# esquema `http` e todo redirect absoluto que o Starlette gera saía como
+# `Location: http://...`. Numa página https o browser bloqueia o downgrade e a
+# chamada morre em "Failed to fetch" — o sintoma que a auditoria reproduziu na
+# Sala Jurídica com barra final (`/api/sala-juridica/` → 307 → bloqueado;
+# `/api/sala-juridica` → 200), e que valia para QUALQUER rota cuja barra final
+# divergisse da declarada (163 routers, uns com "", outros com "/").
+#
+# FRONTEIRA DE CONFIANÇA com `*` — o que ela realmente é: todo mundo que abre
+# TCP para este processo. Isso são (a) o Nginx do host, pela porta publicada só
+# no loopback (docker-compose.yml), (b) os demais containers das redes `default`
+# e `ia` — worker, frontend (que faz proxy_pass para backend:8000), e os perfis
+# opt-in — e (c) qualquer processo local do VPS. NÃO é "só o Nginx".
+#
+# O risco residual é aceito porque nada que decide segurança no EJC lê
+# `request.client`: rate limit, anti-brute-force do login e trilha de auditoria
+# passam todos por `parse_client_ip` (app/core/request_context.py), que lê o
+# header cru e pega o ÚLTIMO salto — a parte que o Nginx anexa, não a que o
+# cliente controla. O que fica exposto a forja é o access log do uvicorn.
+#
+# Para apertar, use FORWARDED_ALLOW_IPS no .env — mas note que esta versão do
+# uvicorn compara IP por STRING EXATA, sem CIDR (ver o aviso no .env.example).
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 \
+    --proxy-headers --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-*}"
