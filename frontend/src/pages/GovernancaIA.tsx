@@ -319,7 +319,7 @@ export default function GovernancaIA() {
               </p>
             )}
             <p className="text-xs text-slate-400 mt-3">
-              Ollama (local) = R$ 0. Custo estimado por chamada (ai_cost.py).
+              Custo estimado por chamada (ai_cost.py).
               {dash?.custo?.orcamento_alerta_brl == null &&
                 " Defina AI_BUDGET_ALERTA_BRL no .env para ativar o alerta de orçamento."}
             </p>
