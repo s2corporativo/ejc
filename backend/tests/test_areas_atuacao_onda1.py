@@ -372,6 +372,37 @@ async def test_demonstrativo_ferramenta_prefixo_v1_canonico_passa_gate_1(_demons
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
 
 
+async def test_demonstrativo_grava_o_caminho_normalizado_nao_o_valor_cru(_demonstrativo_liberado):
+    """Achado do review CodeRabbit (Issue #702, Integridade de Dados): o Gate 1
+    valida o caminho NORMALIZADO (`normalizar_caminho_ferramenta` descarta
+    query string, casing, barras duplicadas, barra final e prefixo
+    `/api`|`/api/v1`), mas o corpo do documento gravava `req.ferramenta` CRU.
+    Um cliente podia mandar uma rota válida com texto livre pendurado depois do
+    `?`: o gate aceitava — porque a query string nunca chega ao lookup — e o
+    demonstrativo registrava, como peça jurídica, conteúdo que não participou
+    de validação nenhuma.
+
+    Prova por negação: com `req.ferramenta` de volta no lugar de `caminho`, a
+    asserção do `nota=` reprova."""
+    from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
+
+    class _DbFake:
+        def add(self, _doc): pass
+        async def commit(self): pass
+
+    req = DemonstrativoRequest(
+        titulo="Cálculo de teste",
+        ferramenta="/API/V1/Trabalhista-Esp/Ferramentas/Deposito-Recursal/?nota=texto+livre",
+        **_prova_provenencia())
+    resposta = await gerar_demonstrativo(req, db=_DbFake(), cu=_cu_advogado())
+
+    linha = [ln for ln in resposta["conteudo"].splitlines()
+             if ln.startswith("FERRAMENTA DE ORIGEM:")][0]
+    assert "/trabalhista-esp/ferramentas/deposito-recursal" in linha
+    assert "nota=texto+livre" not in resposta["conteudo"]
+    assert "?" not in linha
+
+
 async def test_demonstrativo_versao_regra_divergente_reprova_forjado():
     """Mecanismo de proveniência (piso, opção (c) da Issue #702): `versao_regra`
     é o mesmo valor que a PRÓPRIA ferramenta carimba em toda resposta

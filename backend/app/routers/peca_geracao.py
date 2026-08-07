@@ -585,7 +585,13 @@ async def gerar_demonstrativo(
     if req.base_legal:
         partes.append(f"\nFUNDAMENTO: {req.base_legal}")
     partes.append(
-        f"\nFERRAMENTA DE ORIGEM: {req.ferramenta} (versão da regra: {req.versao_regra})"
+        # `caminho`, não `req.ferramenta`: o Gate 1 valida o caminho NORMALIZADO
+        # (normalizar_caminho_ferramenta descarta query string, casing, barra
+        # final e prefixo /api|/api/v1). Gravar o valor cru deixaria entrar no
+        # documento jurídico texto que nunca passou pela validação — ex.
+        # "/penal/ferramentas/dosimetria?nota=qualquer+coisa" seria aceito pelo
+        # gate e registrado por inteiro. Review do CodeRabbit no PR #705.
+        f"\nFERRAMENTA DE ORIGEM: {caminho} (versão da regra: {req.versao_regra})"
         f"\nVIGÊNCIA DA REGRA: {req.vigencia_regra}"
         "\nFONTES:\n" + "\n".join(f"  • {f}" for f in req.fontes)
     )
