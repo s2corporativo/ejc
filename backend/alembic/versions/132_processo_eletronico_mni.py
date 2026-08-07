@@ -14,13 +14,22 @@ escopo desta fase, nenhuma tabela/coluna aqui dá suporte a isso.
 """
 from alembic import op
 import sqlalchemy as sa
-from uuid import uuid4
 
 
 revision = '132_processo_eletronico_mni'
 down_revision = '131_audit_logs_worm'
 branch_labels = None
 depends_on = None
+
+# O seed do catálogo é INSERT de dados, não DDL — precisa se declarar como tal
+# para o `scripts/check_migration_compatibility.py`, que o deploy roda antes de
+# aplicar qualquer migration pendente. A versão original usava
+# `op.bulk_insert` sobre `sa.table()`: o classificador reprova tanto a
+# atribuição intermediária ("estrutura dinâmica Assign") quanto o próprio
+# `bulk_insert` (fora da allowlist), e o deploy automático parava no passo
+# "Classificar migrations pendentes" com exit 1.
+deployment_policy = 'additive_data_backfill'
+data_backfill_targets = ('tribunais',)
 
 
 def upgrade() -> None:
@@ -97,36 +106,34 @@ def upgrade() -> None:
     # Endpoints WSDL conforme divulgação pública do TJMG para o serviço MNI
     # 2.2.2 — revisar/confirmar a URL exata antes de habilitar em produção
     # (ver services/tribunal_registry.py e ressalva no relatório da tarefa).
-    tribunais_table = sa.table(
-        'tribunais',
-        sa.column('id', sa.String),
-        sa.column('nome', sa.String),
-        sa.column('codigo_tribunal', sa.String),
-        sa.column('grau', sa.String),
-        sa.column('endpoint_wsdl', sa.String),
-        sa.column('versao_mni', sa.String),
-        sa.column('ativo', sa.Boolean),
+    #
+    # `INSERT ... SELECT ... WHERE NOT EXISTS` em vez de `op.bulk_insert`: a
+    # idempotência fica provável estaticamente (é o que o classificador de
+    # deploy exige) e o seed passa a poder ser reaplicado sem violar
+    # `uq_tribunais_codigo_grau`. Os UUIDs são fixos, e não `uuid4()`, para que
+    # a mesma linha tenha a mesma identidade em todo ambiente — com id sorteado
+    # em tempo de migration, produção, homologação e CI divergiriam.
+    op.execute(
+        """
+        INSERT INTO tribunais
+            (id, nome, codigo_tribunal, grau, endpoint_wsdl, versao_mni, ativo)
+        SELECT novo.id, novo.nome, novo.codigo_tribunal, novo.grau,
+               novo.endpoint_wsdl, novo.versao_mni, TRUE
+        FROM (VALUES
+            ('9f1c4b02-3d5a-4e77-9b64-0a1f2c3d4e51',
+             'TJMG - 1º Grau', '13', '1',
+             'https://pje1grau.tjmg.jus.br/pje/intercomunicacao?wsdl', '2.2.2'),
+            ('9f1c4b02-3d5a-4e77-9b64-0a1f2c3d4e52',
+             'TJMG - 2º Grau', '13', '2',
+             'https://pje2grau.tjmg.jus.br/pje/intercomunicacao?wsdl', '2.2.2')
+        ) AS novo (id, nome, codigo_tribunal, grau, endpoint_wsdl, versao_mni)
+        WHERE NOT EXISTS (
+            SELECT 1 FROM tribunais existente
+            WHERE existente.codigo_tribunal = novo.codigo_tribunal
+              AND existente.grau = novo.grau
+        )
+        """
     )
-    op.bulk_insert(tribunais_table, [
-        {
-            'id': str(uuid4()),
-            'nome': 'TJMG - 1º Grau',
-            'codigo_tribunal': '13',
-            'grau': '1',
-            'endpoint_wsdl': 'https://pje1grau.tjmg.jus.br/pje/intercomunicacao?wsdl',
-            'versao_mni': '2.2.2',
-            'ativo': True,
-        },
-        {
-            'id': str(uuid4()),
-            'nome': 'TJMG - 2º Grau',
-            'codigo_tribunal': '13',
-            'grau': '2',
-            'endpoint_wsdl': 'https://pje2grau.tjmg.jus.br/pje/intercomunicacao?wsdl',
-            'versao_mni': '2.2.2',
-            'ativo': True,
-        },
-    ])
 
 
 def downgrade() -> None:
