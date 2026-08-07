@@ -70,10 +70,39 @@ Permissão que só vale na máquina de quem editou não serve para este reposit�
 }
 ```
 
+## Revisão de 2026-08-07 — comandos de escrita de git e comandos `gh`
+
+Por pedido explícito do titular, a lista acima ganhou os comandos de escrita do ciclo normal
+de trabalho (`git commit`, `git checkout`, `git switch`, `git pull`, `git merge`, `git rebase`,
+`git remote`, `git stash`) e os comandos `gh` de PR, Issue e Actions. O bloco vigente é o de
+`.claude/settings.json` — este documento descreve as decisões, não duplica a lista.
+
+**Risco e justificativa.** O ganho é fechar os travamentos e os prompts repetidos do fluxo
+Issue → branch → PR. O custo é que o prompt de permissão deixa de ser a última barreira em
+comandos que saem da sessão. Três entradas foram recusadas na auditoria justamente por isso e
+**não** entraram na forma pedida:
+
+- `gh api *` — `gh api -X POST .../deploy-vps.yml/dispatches` dispara o deploy de produção
+  (`deploy-vps.yml` é `workflow_dispatch`), e `-X PUT /repos/.../contents/...` escreve direto
+  na `main`. Entrou apenas `gh api graphql -f query=*`, que é leitura.
+- `gh pr merge *` — merge é ato humano (regra 8). Ficou no `deny`.
+- `git push *` — permite `git push origin HEAD:main`. Entrou como `git push -u origin *`,
+  com `main`/`master` e refspecs `HEAD:` no `deny`.
+
+**Rollback.** Reverter o commit que introduziu o bloco restaura o estado de 2026-08-02; o
+arquivo é só configuração, sem migration nem efeito em runtime do app.
+
+**Limite conhecido.** O `deny` é declarativo e casa texto de comando: `git remote "set-url"`
+com o subcomando entre aspas escapa tanto do `deny` quanto do hook, que descarta literais
+citados antes de aplicar os padrões. Fechar isso exige corrigir `guarda_comandos.py`, e está
+fora do escopo desta revisão.
+
 ## O que deliberadamente ficou de fora
 
-- **`git commit` e `git push`** — continuam pedindo aprovação. São os pontos onde o trabalho
-  do agente sai da sessão e vira histórico; vale o clique.
+- **`git push` para `main`/`master` e refspecs `HEAD:`** — estão em `deny`, não em prompt.
+  A branch de destino não é detalhe de forma: é a regra 1 da governança.
+- **`gh pr merge` e `gh workflow run`** — em `deny`. Merge e deploy são atos humanos
+  (regra 8 e regra 9).
 - **`docker compose up`, `alembic upgrade`, `pip install`, `rm`** — mudam estado da máquina
   ou do banco. Aprovação caso a caso.
 - **Leitura de `.env`** — está em `deny`, não em silêncio: segredo não entra em contexto de
