@@ -122,7 +122,7 @@ export default function Sociedade() {
         api.get("/sociedade/socios"),
         api.get("/sociedade/distribuicao"),
         api.get("/users/?page_size=50"),
-        api.get("/v1/partner-withdrawals?page_size=50"),
+        api.get("/partner-withdrawals?page_size=50"),
       ]);
       if (s.status === "fulfilled") {
         setSocios(s.value.data?.socios ?? []);
@@ -199,7 +199,7 @@ export default function Sociedade() {
     if (savingSaque) return;
     setSavingSaque(true);
     try {
-      await api.post("/v1/partner-withdrawals", {
+      await api.post("/partner-withdrawals", {
         gross_value: gross,
         case_expenses: parseFloat(novoSaque.case_expenses) || 0,
         description: novoSaque.description || undefined,
@@ -225,7 +225,7 @@ export default function Sociedade() {
     action: "approve" | "reject",
   ) => {
     try {
-      await api.patch(`/v1/partner-withdrawals/${id}/${action}`);
+      await api.patch(`/partner-withdrawals/${id}/${action}`);
       load();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Falha");
