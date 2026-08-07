@@ -52,7 +52,7 @@ ESCRITORIO_TIMBRE_SUB = juntar_segmentos((_OAB, _ENDERECO_CIDADE, _CEP), _SEP)
 # Rodapé: contato completo (CNPJ + OAB + endereço + e-mail).
 ESCRITORIO_CONTATO = juntar_segmentos(
     (
-        f"CNPJ {settings.ESCRITORIO_CNPJ}" if settings.ESCRITORIO_CNPJ else "",
+        f"CNPJ {settings.escritorio_cnpj()}" if settings.escritorio_cnpj() else "",
         _OAB,
         _ENDERECO_CIDADE,
         _CEP,
@@ -286,7 +286,10 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     quadro = doc.add_paragraph()
     quadro.alignment = WD_ALIGN_PARAGRAPH.CENTER
     quadro.paragraph_format.space_after = Pt(8)
-    q = quadro.add_run("CONTROLE VISUAL LAW EJC")
+    # Rótulo NEUTRO: "Visual Law EJC" era marca interna vazando no documento
+    # entregue ao cliente (Onda 2 da refatoração) — o quadro de controle fica,
+    # a marca some.
+    q = quadro.add_run("CONTROLE DO DOCUMENTO")
     q.bold = True
     q.font.name = fonte
     q.font.size = Pt(10)
@@ -297,7 +300,7 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     status_doc = meta.get("status") or "Versão de trabalho"
     tabela = doc.add_table(rows=2, cols=3)
     campos = [
-        ("Controle", str(codigo_peca or "Visual Law")),
+        ("Controle", str(codigo_peca or "—")),
         ("Versão", versao_doc),
         ("Status", str(status_doc)),
         ("Processo", str(numero_processo or "—")),
@@ -321,9 +324,10 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     nota.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     nota.paragraph_format.space_before = Pt(8)
     nota.paragraph_format.space_after = Pt(14)
+    # Texto neutro: a versão anterior citava "Visual Law" (jargão interno).
     nr = nota.add_run(
-        "Documento estruturado com elementos de Visual Law para facilitar leitura, "
-        "controle de versão e conferência profissional, sem alteração do teor."
+        "Documento estruturado para facilitar leitura, controle de versão "
+        "e conferência profissional, sem alteração do teor."
     )
     nr.italic = True
     nr.font.name = fonte
