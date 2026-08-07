@@ -8,13 +8,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
 from app.core.security import require_roles
 from app.models.audit_log import criar_audit_log
@@ -59,7 +59,13 @@ async def sincronizar(
 ):
     """Nunca chama o MNI na própria request — só enfileira a task Celery
     (sincronizar_processo_task) e devolve o job_id. O status real é
-    consultado em GET /status/{case_id}."""
+    consultado em GET /status/{case_id}.
+
+    Ownership: `verificar_acesso_caso` (mesmo gate dos demais sub-recursos
+    de caso) — só a equipe vinculada ao caso ou a gestão (sócio+) pode
+    disparar sincronização MNI, evitando IDOR sobre credencial/caso alheio."""
+    await verificar_acesso_caso(db, cu, req.case_id)
+
     from app.tasks.processo_eletronico_tasks import sincronizar_processo_task
 
     async_result = sincronizar_processo_task.delay(req.case_id, req.numero_cnj)
@@ -83,6 +89,11 @@ async def status_sincronizacao(
     db: AsyncSession = Depends(get_db),
     cu=Depends(_OPERACIONAL),
 ):
+    """Ownership: `verificar_acesso_caso` — sem o gate, `numero_cnj`,
+    contagem de documentos e `mensagem_erro` de qualquer caso vazariam para
+    qualquer papel operacional, inclusive casos em segredo de justiça."""
+    await verificar_acesso_caso(db, cu, case_id)
+
     sync = (await db.execute(
         select(SincronizacaoProcessoEletronico).where(
             SincronizacaoProcessoEletronico.case_id == case_id,
@@ -178,11 +189,13 @@ async def testar_credencial(
     cu=Depends(_GESTAO_CREDENCIAL),
 ):
     """Dispara o teste em Celery (nunca síncrono na request) e devolve
-    'enfileirado' — o resultado atualiza `ultima_verificacao` na credencial;
-    consulte /credenciais para ver o novo valor.
+    'enfileirado' — a chamada SOAP pode levar segundos e não pode bloquear
+    o event loop do worker uvicorn (premissa de worker único). O resultado
+    atualiza `ultima_verificacao` na credencial; consulte /credenciais para
+    ver o novo valor.
 
     Fase A: se o SOAP falhar (tribunal indisponível, credencial inválida),
-    a falha é tratada graciosamente — não derruba a rota, só reporta."""
+    a falha é tratada graciosamente dentro da task — não derruba a rota."""
     credencial = (await db.execute(
         select(CredencialProcessoEletronico).where(
             CredencialProcessoEletronico.id == credencial_id,
@@ -191,37 +204,13 @@ async def testar_credencial(
     if credencial is None:
         raise HTTPException(status_code=404, detail="Credencial não encontrada.")
 
+    from app.tasks.processo_eletronico_tasks import testar_credencial_task
+
+    testar_credencial_task.delay(credencial_id)
+
     await criar_audit_log(
         db, cu.id, cu.role.value, "PROCESSO_ELETRONICO_CREDENCIAL_TESTADA",
         ENTIDADE_AUDIT, credencial_id, ip=obter_ip_real(request),
     )
     await db.commit()
-
-    try:
-        from app.services import tribunal_registry  # noqa: F401 (mantém import local, padrão do módulo)
-        from app.services.mni_connector import (
-            MNIConnector, MNIConnectorError, MNICredencial,
-        )
-
-        tribunal = (await db.execute(
-            select(Tribunal).where(Tribunal.id == credencial.tribunal_id)
-        )).scalar_one_or_none()
-        if tribunal is None:
-            return TestarCredencialResp(estado="falha", detalhe="Tribunal não encontrado.")
-
-        cred = MNICredencial(
-            id_consultante=cred_service.decifrar_id_consultante(
-                credencial.id_consultante_cifrado) or "",
-            senha_consultante=cred_service.decifrar_senha(
-                credencial.senha_consultante_ref) or "",
-        )
-        connector = MNIConnector(tribunal.endpoint_wsdl, cred, timeout=15.0)
-        connector.consultar_avisos_pendentes()
-        credencial.ultima_verificacao = datetime.now(timezone.utc)
-        await db.commit()
-        return TestarCredencialResp(estado="ok", detalhe="Credencial MNI válida.")
-    except MNIConnectorError as e:
-        return TestarCredencialResp(estado="falha", detalhe=f"Tribunal indisponível ou credencial inválida: {e}")
-    except Exception as e:  # noqa: BLE001 — healthcheck nunca derruba a rota
-        logger.error("[MNI] teste de credencial %s falhou: %s", credencial_id, e)
-        return TestarCredencialResp(estado="falha", detalhe="Falha ao testar credencial.")
+    return TestarCredencialResp(estado="enfileirado", detalhe="Teste de credencial enfileirado.")

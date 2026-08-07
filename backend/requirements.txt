@@ -129,7 +129,7 @@ lxml==6.1.1
 # projeto (httpx/requests só cobrem REST). Só é importado por
 # services/mni_connector.py, chamado exclusivamente de dentro de tasks
 # Celery (nunca em request HTTP síncrono).
-zeep==4.2.1
+zeep==4.3.3
 
 # Streaming, jobs, observability
 sse-starlette==2.1.0

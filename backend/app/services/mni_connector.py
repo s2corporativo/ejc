@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from zeep import Client
+from zeep import Client, Settings
 from zeep.transports import Transport
 
 logger = logging.getLogger("ejc.mni")
@@ -68,7 +68,12 @@ class MNIConnector:
     def _get_client(self) -> Client:
         if self._client is None:
             transport = Transport(timeout=self._timeout, operation_timeout=self._timeout)
-            self._client = Client(self.endpoint_wsdl, transport=transport)
+            # forbid_external: WSDL/XSD do tribunal não pode arrastar
+            # import/include/DTD externo para outra URL (SSRF via WSDL
+            # malicioso/comprometido) — defesa em profundidade além do
+            # pin de versão (PYSEC-2026-2323 exige zeep>=4.3.3).
+            settings = Settings(forbid_external=True)
+            self._client = Client(self.endpoint_wsdl, transport=transport, settings=settings)
         return self._client
 
     def consultar_processo(

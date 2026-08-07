@@ -54,5 +54,5 @@ class CredencialMetaResp(BaseModel):
 
 
 class TestarCredencialResp(BaseModel):
-    estado: str  # ok | falha
+    estado: str  # enfileirado | ok | falha
     detalhe: str

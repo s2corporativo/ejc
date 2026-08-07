@@ -212,6 +212,62 @@ async def _sincronizar_avisos(advogado_id: str) -> dict:
     return {"advogado_id": advogado_id, "total_avisos": total_avisos, "erros": erros}
 
 
+async def _testar_credencial(credencial_id: str) -> dict:
+    from app.core.database import AsyncSessionLocal
+    from app.models.processo_eletronico import (
+        CredencialProcessoEletronico, Tribunal,
+    )
+    from app.services import processo_eletronico_credential_service as cred_service
+    from app.services.mni_connector import (
+        MNIConnector, MNIConnectorError, MNICredencial,
+    )
+
+    async with AsyncSessionLocal() as db:
+        credencial = (await db.execute(
+            select(CredencialProcessoEletronico).where(
+                CredencialProcessoEletronico.id == credencial_id,
+            )
+        )).scalar_one_or_none()
+        if credencial is None:
+            return {"estado": "falha", "detalhe": "Credencial não encontrada."}
+
+        tribunal = (await db.execute(
+            select(Tribunal).where(Tribunal.id == credencial.tribunal_id)
+        )).scalar_one_or_none()
+        if tribunal is None:
+            return {"estado": "falha", "detalhe": "Tribunal não encontrado."}
+
+        try:
+            cred = MNICredencial(
+                id_consultante=cred_service.decifrar_id_consultante(
+                    credencial.id_consultante_cifrado) or "",
+                senha_consultante=cred_service.decifrar_senha(
+                    credencial.senha_consultante_ref) or "",
+            )
+            connector = MNIConnector(tribunal.endpoint_wsdl, cred, timeout=15.0)
+            connector.consultar_avisos_pendentes()
+            credencial.ultima_verificacao = datetime.now(timezone.utc)
+            await db.commit()
+            return {"estado": "ok", "detalhe": "Credencial MNI válida."}
+        except MNIConnectorError as e:
+            await db.rollback()
+            return {
+                "estado": "falha",
+                "detalhe": f"Tribunal indisponível ou credencial inválida: {e}",
+            }
+        except Exception as e:  # noqa: BLE001 — healthcheck nunca propaga exceção crua
+            await db.rollback()
+            logger.error("[MNI] teste de credencial %s falhou: %s", credencial_id, e)
+            return {"estado": "falha", "detalhe": "Falha ao testar credencial."}
+
+
+@celery_app.task(name="app.tasks.testar_credencial_processo_eletronico", bind=True)
+def testar_credencial_task(self, credencial_id: str) -> dict:
+    """Healthcheck de credencial MNI — roda em Celery, nunca síncrono numa
+    request HTTP (a chamada SOAP pode levar até ~15s)."""
+    return asyncio.run(_com_engine_limpo(_testar_credencial(credencial_id)))
+
+
 @celery_app.task(
     name="app.tasks.sincronizar_avisos",
     bind=True, max_retries=3, default_retry_delay=60,
