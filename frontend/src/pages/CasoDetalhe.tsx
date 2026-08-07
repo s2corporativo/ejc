@@ -28,7 +28,6 @@ import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
 import OrquestradorPanel from "../components/OrquestradorPanel";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
-import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
 import {
   StatusBadge,

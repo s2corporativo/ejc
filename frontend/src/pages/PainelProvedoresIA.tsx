@@ -103,7 +103,6 @@ const nomeProvider = (provider: string) =>
     anthropic: "Anthropic",
     maritaca: "Maritaca",
     groq: "Groq",
-    ollama: "Ollama",
   })[provider] || provider;
 
 function StatusBadge({ status }: { status: string }) {
@@ -225,7 +224,7 @@ export default function PainelProvedoresIA() {
       <PageHeader
         eyebrow="Governança da IA"
         title="Inteligência dos Provedores"
-        subtitle="Operação, desempenho, custo, consumo e fallback de Anthropic, Maritaca, Groq e Ollama"
+        subtitle="Operação, desempenho, custo, consumo e fallback de Anthropic, Maritaca e Groq"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <button

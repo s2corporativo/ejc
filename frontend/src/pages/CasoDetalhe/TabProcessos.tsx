@@ -3,7 +3,6 @@ import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { StatusBadge, Modal, Empty, fmtMoney } from "../../components/UI";
-import { ConsultaProfundaTJMG } from "../../components/Infosimples";
 
 export default function TabProcessos({ caseId }: { caseId: string }) {
   const [procs, setProcs] = useState<any[]>([]);
@@ -135,7 +134,6 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
               </button>
             ))}
           </div>
-          <ConsultaProfundaTJMG caseId={caseId} />
           <button
             onClick={() => setShowForm(!showForm)}
             className="btn-primary text-sm"

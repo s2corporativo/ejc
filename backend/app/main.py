@@ -100,9 +100,6 @@ from app.routers import ia_provider_metrics
 from app.routers import ia_saude
 from app.routers import indice_risco
 from app.routers import indices
-from app.routers import infosimples_receita
-from app.routers import infosimples_tjmg
-from app.routers import car  # CAR/SICAR via conector Infosimples (reuso)
 from app.routers import transparencia  # CGU Portal da Transparência (sanções) — GATED
 # PNCP removido completamente (licitações desativadas)
 from app.routers import nfse
@@ -201,17 +198,10 @@ from app.core.logging_config import setup_logging
 setup_logging(json_logs=settings.LOG_JSON, level=settings.LOG_LEVEL)
 logger = logging.getLogger("ejc")
 
-# ── Observabilidade: Sentry gated (no-op sem SENTRY_DSN) ──────────────────────
-# init_sentry() é defensivo: sem SENTRY_DSN é no-op e nunca levanta exceção,
-# então o boot fica idêntico ao de hoje. Com DSN, aplica scrub LGPD (before_send)
-# e send_default_pii=False. Ver app/core/observability.py.
 from app.core.observability import (
     app_version,
-    coletor_erros_ativo,
-    init_sentry,
     uptime_seconds,
 )
-init_sentry()
 
 
 @asynccontextmanager
@@ -376,9 +366,6 @@ app.include_router(ia_saude.router, prefix=API)
 app.include_router(ia_saude.router_status, prefix=API)  # GET /api/ia/status
 app.include_router(indice_risco.router, prefix=API)
 app.include_router(indices.router, prefix=API)  # Índices oficiais BCB (SGS + Olinda) — Bloco 1 das APIs públicas
-app.include_router(infosimples_receita.router, prefix=API)
-app.include_router(infosimples_tjmg.router, prefix=API)
-app.include_router(car.router, prefix=API)  # CAR/SICAR via Infosimples (consulta paga, reuso do conector)
 app.include_router(transparencia.router, prefix=API)  # CGU sanções CEIS/CNEP/CEPIM — GATED (default off)
 # PNCP removido — licitações desativadas no EJC
 app.include_router(nfse.router, prefix=API)  # NFS-e (emissão fiscal GATED, homologação) — migração 085
@@ -566,13 +553,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         # Em dev/staging, mantém stack para diagnóstico técnico.
         exc_info=settings.APP_ENV != "production",
     )
-    # A mensagem só promete notificação quando existe coletor de erros ativo.
-    # Sem SENTRY_DSN o erro fica apenas no log do container: ninguém é avisado e
-    # não há histórico consultável — afirmar o contrário faz o usuário aguardar
-    # um retorno que não virá.
-    detail = (
-        "Erro interno. A equipe foi notificada."
-        if coletor_erros_ativo()
-        else "Erro interno. Se persistir, informe o horário e o que estava fazendo."
-    )
+    # Não há coletor de erros persistido: o erro fica apenas no log do
+    # container, então a mensagem não promete notificação que não virá.
+    detail = "Erro interno. Se persistir, informe o horário e o que estava fazendo."
     return JSONResponse(status_code=500, content={"detail": detail})

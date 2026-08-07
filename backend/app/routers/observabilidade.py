@@ -1,14 +1,13 @@
 # ── app/routers/observabilidade.py ───────────────────────────────────────────
 # Recebe erros de RENDERIZAÇÃO do frontend (capturados pelo ErrorBoundary) para
 # dar visibilidade a crashes de tela SEM depender de auditoria manual de console.
-# Loga estruturado e, se o Sentry estiver configurado, encaminha o evento.
+# Loga estruturado.
 from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.models.user import User
 

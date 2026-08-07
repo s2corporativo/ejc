@@ -18,7 +18,6 @@ import {
   Button,
 } from "../components/UI";
 import { ClientesStats } from "../components/Dashboards";
-import { VerificarReceita } from "../components/Infosimples";
 
 // Resposta de POST /clients/checar-conflito. O NOME vem completo (dever ético:
 // sem ele o alerta é inacionável), mas o CPF/CNPJ vem apenas MASCARADO — o
@@ -332,19 +331,12 @@ export default function Clientes() {
               </div>
               <div>
                 <label className="label">CPF</label>
-                <div className="flex gap-2">
-                  <input
-                    className="input flex-1"
-                    value={form.cpf || ""}
-                    onChange={(e) => setForm({ ...form, cpf: e.target.value })}
-                    onBlur={checarConflito}
-                  />
-                  <VerificarReceita
-                    tipo="cpf"
-                    documento={form.cpf || ""}
-                    onUsarNome={(nome) => setForm((f: any) => ({ ...f, nome }))}
-                  />
-                </div>
+                <input
+                  className="input w-full"
+                  value={form.cpf || ""}
+                  onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+                  onBlur={checarConflito}
+                />
               </div>
             </>
           ) : (
@@ -396,13 +388,6 @@ export default function Clientes() {
                   >
                     🔍 Receita
                   </button>
-                  <VerificarReceita
-                    tipo="cnpj"
-                    documento={form.cnpj || ""}
-                    onUsarNome={(razao_social) =>
-                      setForm((f: any) => ({ ...f, razao_social }))
-                    }
-                  />
                 </div>
               </div>
             </>

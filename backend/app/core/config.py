@@ -200,8 +200,8 @@ class Settings(BaseSettings):
     MARITACA_EXIGIR_SOBERANIA: bool = False
 
     # ── IA — Núcleo Único (policy central de provedores) ──────────────────
-    # False = só Ollama local (soberania total): nenhum dado sai do VPS,
-    # mesmo sanitizado. Anthropic/Groq ficam inelegíveis na cadeia.
+    # False = nenhum provider externo elegível (soberania): sem processamento
+    # local disponível, a chamada fica bloqueada por política de sigilo/LGPD.
     AI_EXTERNAL_PROVIDERS_ALLOWED: bool = True
     # True = todo conteúdo destinado a provider EXTERNO (Anthropic/Groq) passa
     # por sanitizar_pii + validar_sem_pii; PII residual bloqueia o envio (LGPD).
@@ -255,24 +255,25 @@ class Settings(BaseSettings):
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     # Maritaca antes do groq: para tarefa jurídica PT-BR o Sabiá rankeia acima
     # de um generalista; só entra na cadeia se elegível (ENABLED + chave).
-    AI_PROVIDER_PRIORITY: str = "ollama,anthropic,maritaca,groq"
+    AI_PROVIDER_PRIORITY: str = "anthropic,maritaca,groq"
     # ── Níveis de sanitização de PII por tipo de tarefa (LGPD art. 33/46) ─────
     # JSON OPCIONAL (string) mapeando task_type → modo de sanitização, que
     # SOBREPÕE o default de app/services/ai/sanitization_policy.py. Modos:
-    # "local_completo" (só Ollama local; nunca externo), "externo_pseudonimizado"
-    # (pseudonimiza reversível → externo → reidrata), "extracao_local" (extração
-    # estruturada local) e "mascaramento" (irreversível — legado). Vazio = usa o
-    # default (revisável por Dr. Clovis). Ex.: {"familia":"local_completo"}.
+    # "local_completo" (sem provider local disponível; nunca externo),
+    # "externo_pseudonimizado" (pseudonimiza reversível → externo → reidrata),
+    # "extracao_local" (extração estruturada local) e "mascaramento"
+    # (irreversível — legado). Vazio = usa o default (revisável por Dr. Clovis).
+    # Ex.: {"familia":"local_completo"}.
     # Fail-safe: JSON inválido ou modo desconhecido é ignorado (cai no default).
     AI_SANITIZATION_MODE_MAP: str = ""
     # ── Intake de documentos (importação inteligente) ─────────────────────
     # True (default) = a interpretação do documento importado usa a cadeia
-    # automática do gateway (ollama→anthropic→groq): se o Ollama local cair,
-    # o texto — JÁ SANITIZADO (sanitizar_pii + barreira final do gateway) —
-    # pode ir a provedor EXTERNO (EUA → transferência internacional, art. 33
-    # LGPD; o dado pessoal exato NUNCA sai, é extraído localmente por regex).
-    # False = fail-closed: intake só usa Ollama local; indisponível → a
-    # importação degrada com erro claro citando esta flag.
+    # automática do gateway (anthropic→maritaca→groq), já sanitizada
+    # (sanitizar_pii + barreira final do gateway) antes de ir a provedor
+    # EXTERNO (EUA → transferência internacional, art. 33 LGPD; o dado
+    # pessoal exato NUNCA sai, é extraído localmente por regex).
+    # False = fail-closed: sem provider local disponível, a importação
+    # degrada com erro claro citando esta flag.
     INTAKE_EXTERNAL_FALLBACK: bool = True
 
     # ── Fase 6 — Roteamento inteligente por complexidade/custo ────────────
@@ -285,11 +286,9 @@ class Settings(BaseSettings):
     # Provedor preferido por TIER de complexidade (o roteador só PROPÕE; se
     # inelegível, o gateway ignora e usa a cadeia normal por prioridade).
     ROTEAMENTO_PROVIDER_LEVE: str = "groq"       # rápido/barato p/ tarefas leves
-    # médio = anthropic: o stack de produção não sobe ollama (compose:
-    # OLLAMA_ENABLED=false) — apontar o tier médio para provider morto só gerava
-    # tentativa-e-fallback a cada tarefa. O MODELO do tier médio é COMPLEXO
-    # (Opus), NÃO Haiku — ver model_router._model_do_provider (anti-rebaixamento
-    # P1: só o tier LEVE usa o modelo rápido).
+    # médio = anthropic. O MODELO do tier médio é COMPLEXO (Opus), NÃO Haiku —
+    # ver model_router._model_do_provider (anti-rebaixamento P1: só o tier
+    # LEVE usa o modelo rápido).
     ROTEAMENTO_PROVIDER_MEDIO: str = "anthropic"
     ROTEAMENTO_PROVIDER_PESADO: str = "anthropic"  # modelo forte p/ raciocínio
     # Limiares (score inteiro) que separam os tiers leve|medio|pesado.
@@ -374,23 +373,6 @@ class Settings(BaseSettings):
     DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
     # Timeout por requisição. O CNJ pode responder lentamente em horários de pico.
     DATAJUD_TIMEOUT_SECONDS: float = 25.0
-
-    # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
-    # Agregador comercial (https://infosimples.com/consultas/): cada consulta
-    # EXECUTADA é cobrada. Integração opt-in, desligada por padrão, com teto
-    # diário de custo e cache do mesmo dia (ver services/infosimples_service).
-    INFOSIMPLES_ENABLED: bool = False
-    # Token da conta contratada — vai só no corpo da requisição; NUNCA em
-    # logs, mensagens de erro ou payloads de resposta.
-    INFOSIMPLES_TOKEN: str = ""
-    # Timeout repassado à Infosimples (segundos) — as consultas raspam sites
-    # públicos e podem demorar; o cliente HTTP usa este valor + margem.
-    INFOSIMPLES_TIMEOUT: int = 300
-    # TETO DE CUSTO: máximo de consultas EXECUTADAS (cobradas) por dia UTC.
-    # Atingido o teto, o serviço recusa novas consultas (429) até o dia virar.
-    INFOSIMPLES_MAX_CONSULTAS_DIA: int = 50
-    # Base oficial (POST {base}/{caminho} form-urlencoded). Só mude p/ testes.
-    INFOSIMPLES_BASE_URL: str = "https://api.infosimples.com/api/v2/consultas"
 
     # ── CGU Portal da Transparência — sanções (CEIS/CNEP/CEPIM) — GATED ──
     # API pública de dados do governo federal (chave GRÁTIS, cadastro no portal).
@@ -639,33 +621,12 @@ class Settings(BaseSettings):
 
     # ── Custo estimado Groq (R$ por 1.000.000 de tokens) — auditoria de gasto ──
     # Valores padrão 0; ajuste via .env conforme a fatura/câmbio.
-    # Ollama (local) = custo zero por token.
     GROQ_PRECO_INPUT_BRL_POR_MILHAO:  float = 0.0
     GROQ_PRECO_OUTPUT_BRL_POR_MILHAO: float = 0.0
 
-    # ── Ollama — modelos locais (soberania total, sem custo por token) ────
-    # Instalar: ollama pull qwen2.5:14b && ollama pull deepseek-r1:8b etc.
-    OLLAMA_BASE_URL: str = "http://ollama:11434"
-    # Default True: cadeia de fallback do ai_gateway (_resolver_cadeia/chat)
-    # já trata Ollama indisponível/sem host de forma graciosa — connection
-    # refused/DNS falha rápido, ollama_provider.chat() levanta RuntimeError
-    # que o loop de `chat()` captura e segue para o próximo provedor
-    # (Anthropic/Groq) sem quebrar a requisição do usuário. Sem um serviço
-    # "ollama" no docker-compose, isso só passa a valer quando um for
-    # provisionado — até lá, cai direto para o próximo provedor.
-    OLLAMA_ENABLED: bool = True
-    # Modelos disponíveis por categoria (ajuste ao hardware disponível)
-    OLLAMA_MODEL_ANALISE: str = "deepseek-r1:8b"     # análise jurídica profunda
-    OLLAMA_MODEL_PETICAO:  str = "qwen2.5:14b"       # elaboração de peças
-    OLLAMA_MODEL_RESUMO:   str = "gemma3:9b"          # resumos rápidos
-    OLLAMA_MODEL_CHAT:     str = "gemma3:9b"          # chat e perguntas simples
-    OLLAMA_MODEL_CONTRATO: str = "deepseek-r1:8b"    # análise contratual
-    OLLAMA_TIMEOUT: int = 180                         # modelos locais = mais lentos
-
     # ── AI Provider — seleção automática ──────────────────────────────────
-    # "auto"      = Ollama (se habilitado) → Anthropic (se houver chave) → Groq
+    # "auto"      = Anthropic (se houver chave) → Maritaca → Groq
     # "groq"      = força Groq (nuvem, grátis)
-    # "ollama"    = força Ollama (local) — falha se indisponível
     # "anthropic" = força Claude — sem chave, cai na cadeia automática
     AI_PROVIDER: str = "auto"
 
@@ -674,11 +635,6 @@ class Settings(BaseSettings):
     # dano moral etc.). ATUALIZAR anualmente pelo decreto; valor default é o
     # último decreto conhecido (2025: R$ 1.518,00).
     SALARIO_MINIMO_BRL: float = 1518.00
-
-    # ── Sentry — rastreamento de erros em produção ────────────────────────
-    SENTRY_DSN: str = ""            # deixar vazio para desabilitar
-    SENTRY_ENVIRONMENT: str = "production"   # tag de ambiente nos eventos
-    SENTRY_TRACES_SAMPLE_RATE: float = 0.0   # 0.0 = performance tracing off
 
     # ── Governança de custo de IA ─────────────────────────────────────────
     # Alerta de gasto no painel de Governança da IA: se o custo estimado de IA

@@ -601,7 +601,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
           "Use os links de ferramentas públicas oficiais (PJe-Calc, Registrato/BACEN, Meu INSS, e-CAC, Consumidor.gov...).",
           "Aproveite as calculadoras embutidas de cada ramo (juros, prazos, liquidação...).",
         ],
-        dica: "As ferramentas públicas e os índices do BCB e a consulta via Infosimples abrem por dentro dos ramos — são fontes oficiais de governo e tribunais.",
+        dica: "As ferramentas públicas e os índices do BCB abrem por dentro dos ramos — são fontes oficiais de governo e tribunais.",
         perfil: "advogado",
         badge: "IA",
       },
@@ -612,7 +612,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         oQueE:
           "A página especializada de um ramo, com seus guias e ferramentas específicas.",
         paraQueServe:
-          "Concentra tudo de uma área — guia prático, calculadoras e integrações (como índices BCB e consultas Infosimples) — no contexto certo para quem atua naquele ramo.",
+          "Concentra tudo de uma área — guia prático, calculadoras e integrações (como índices BCB) — no contexto certo para quem atua naquele ramo.",
         comoUsar: [
           "Em Áreas de Atuação, clique na área desejada.",
           "Leia o guia da área e as subáreas atendidas.",

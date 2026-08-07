@@ -50,7 +50,6 @@ const PROVIDER_META: Record<string, { label: string; group: string }> = {
   maritaca: { label: "Maritaca (Sabiá)", group: "Inteligência" },
   datajud: { label: "DataJud / CNJ", group: "Jurídico" },
   transparencia: { label: "Portal da Transparência", group: "Jurídico" },
-  infosimples: { label: "Infosimples", group: "Jurídico" },
   whatsapp_zapi: { label: "WhatsApp (Z-API)", group: "Comunicação" },
   smtp: { label: "E-mail (SMTP)", group: "Comunicação" },
   push_vapid: { label: "Web Push (VAPID)", group: "Comunicação" },
