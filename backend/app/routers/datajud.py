@@ -14,7 +14,7 @@ from app.models.case import Case
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1/datajud", tags=["datajud"])
+router = APIRouter(prefix="/datajud", tags=["datajud"])
 
 # [B4] Proxy de consulta CNJ arbitrária → piso advogado+.
 _ADVOGADO_MAIS = require_roles(["advogado"])
