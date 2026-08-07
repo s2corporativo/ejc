@@ -13,7 +13,7 @@ seria só aparente e a seção seguinte falharia em cascata.
 from __future__ import annotations
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.core.database import get_db
@@ -85,6 +85,33 @@ def test_executar_secao_isola_calculo_sincrono():
     assert executar_secao(secoes, "resumo", _quebra, padrao={}) == {}
     assert executar_secao(secoes, "outro", lambda: {"x": 1}, padrao={}) == {"x": 1}
     assert secoes.indisponiveis == ["resumo"]
+
+
+@pytest.mark.asyncio
+async def test_http_exception_atravessa_o_coletor_sem_virar_degradacao():
+    """Autorização NÃO degrada. Se um gate levantar 403/404 de dentro de uma
+    seção, virar 200 + valor neutro esconderia justamente o erro que mais
+    importa — o padrão que existe para não mascarar falha passaria a mascarar
+    a falha de autorização."""
+    async def _negado():
+        raise HTTPException(403, "Acesso restrito à gestão (sócio+)")
+
+    secoes = ColetorDeSecoes("teste")
+    with pytest.raises(HTTPException) as exc:
+        await secoes.tentar("casos", _negado(), padrao=[])
+    assert exc.value.status_code == 403
+    assert secoes.indisponiveis == []  # não foi contabilizada como degradação
+
+
+def test_http_exception_tambem_atravessa_a_variante_sincrona():
+    def _nao_encontrado():
+        raise HTTPException(404, "Cliente não encontrado")
+
+    secoes = ColetorDeSecoes("teste")
+    with pytest.raises(HTTPException) as exc:
+        executar_secao(secoes, "resumo", _nao_encontrado, padrao={})
+    assert exc.value.status_code == 404
+    assert secoes.indisponiveis == []
 
 
 def test_mesma_secao_falhando_duas_vezes_nao_duplica_o_nome():

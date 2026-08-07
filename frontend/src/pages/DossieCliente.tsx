@@ -735,12 +735,27 @@ function RelatorioFinanceiro({
     }
   };
 
+  // Seções que o backend não conseguiu carregar (degradação por seção). Um
+  // relatório financeiro parcial não pode ser lido — nem exportado — como se
+  // fosse completo: seria registro contábil enganoso.
+  const secoesIndisponiveis: string[] = rel?.secoes_indisponiveis ?? [];
+
   const exportarCSV = () => {
     if (!rel) {
       toast.error("Carregue o relatório antes de exportar");
       return;
     }
-    const linhas: string[] = ["Data;Tipo;Categoria;Descrição;Caso;Valor"];
+    const linhas: string[] = [];
+    if (secoesIndisponiveis.length) {
+      // A marca vai DENTRO do arquivo: o CSV circula fora da tela que avisa.
+      linhas.push(
+        `EXTRATO INCOMPLETO - nao foi possivel carregar: ${secoesIndisponiveis.join(", ")}`,
+      );
+      toast.error(
+        "Extrato exportado INCOMPLETO — gere o relatório novamente antes de usar",
+      );
+    }
+    linhas.push("Data;Tipo;Categoria;Descrição;Caso;Valor");
     for (const e of rel.extrato ?? []) {
       linhas.push(
         [
@@ -804,6 +819,10 @@ function RelatorioFinanceiro({
 
       {open && r && (
         <div className="p-4 space-y-4">
+          <AvisoSecoesIndisponiveis
+            secoes={secoesIndisponiveis}
+            onRecarregar={carregar}
+          />
           {/* Cards resumo */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[

@@ -11,10 +11,28 @@
 # (lista/dict vazio), o nome dela entra em `secoes_indisponiveis` e o erro vai
 # para o log sanitizado + Sentry. O resto da tela abre. Nunca falha silenciosa:
 # o cliente da API sabe QUAL seção faltou e pode dizer isso ao usuário.
+#
+# DUAS FRONTEIRAS que este módulo NÃO pode atravessar:
+#
+#   1. HTTPException NUNCA é degradada — é RE-LEVANTADA. 403/404 são decisão de
+#      autorização, não indisponibilidade de dado. Sem esta exceção à regra, um
+#      gate levantado de dentro de uma seção viraria 200 + valor neutro, e o
+#      padrão que existe para não esconder erro passaria a esconder o erro que
+#      mais importa (`CLAUDE.md`, regra 5: rota nasce protegida).
+#
+#   2. O `db` passado ao coletor é a MESMA AsyncSession de `get_db`, usada
+#      também por `get_current_user`. O rollback pós-falha expira os objetos ORM
+#      dessa sessão e descarta escrita pendente (inclusive `criar_audit_log`,
+#      que deixa o commit para o chamador). Por isso o coletor com `db` só serve
+#      a handler SOMENTE-LEITURA, que não escreve nada e não lê atributo de
+#      objeto ORM depois de coletar. Para um handler que escreva, instancie sem
+#      `db` (`ColetorDeSecoes("contexto")`) e trate a transação por fora.
 from __future__ import annotations
 
 import logging
 from typing import Any, Awaitable, Callable, TypeVar
+
+from fastapi import HTTPException
 
 from app.core.log_sanitizer import safe_exception_log
 
@@ -56,6 +74,9 @@ class ColetorDeSecoes:
         """Executa a seção; devolve `padrao` e registra a falha se ela quebrar."""
         try:
             return await coro
+        except HTTPException:
+            # Autorização não degrada: 403/404 sobem intactos (ver fronteira 1).
+            raise
         except Exception as e:  # noqa: BLE001 — isolar a seção é o objetivo
             self.registrar_falha(nome, e)
             await self._recuperar_sessao()
@@ -116,6 +137,8 @@ def executar_secao(
     depende de dados possivelmente ausentes)."""
     try:
         return fn()
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
         coletor.registrar_falha(nome, e)
         return padrao

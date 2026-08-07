@@ -68,8 +68,19 @@ echo "[entrypoint] Iniciando uvicorn..."
 # `/api/sala-juridica` → 200), e que valia para QUALQUER rota cuja barra final
 # divergisse da declarada (163 routers, uns com "", outros com "/").
 #
-# `*` é seguro AQUI porque a porta 8000 é publicada só no loopback do host
-# (docker-compose.yml) — apenas o Nginx do host alcança este processo. Em
-# topologia diferente, aperte com FORWARDED_ALLOW_IPS no .env.
+# FRONTEIRA DE CONFIANÇA com `*` — o que ela realmente é: todo mundo que abre
+# TCP para este processo. Isso são (a) o Nginx do host, pela porta publicada só
+# no loopback (docker-compose.yml), (b) os demais containers das redes `default`
+# e `ia` — worker, frontend (que faz proxy_pass para backend:8000), e os perfis
+# opt-in — e (c) qualquer processo local do VPS. NÃO é "só o Nginx".
+#
+# O risco residual é aceito porque nada que decide segurança no EJC lê
+# `request.client`: rate limit, anti-brute-force do login e trilha de auditoria
+# passam todos por `parse_client_ip` (app/core/request_context.py), que lê o
+# header cru e pega o ÚLTIMO salto — a parte que o Nginx anexa, não a que o
+# cliente controla. O que fica exposto a forja é o access log do uvicorn.
+#
+# Para apertar, use FORWARDED_ALLOW_IPS no .env — mas note que esta versão do
+# uvicorn compara IP por STRING EXATA, sem CIDR (ver o aviso no .env.example).
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 \
     --proxy-headers --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-*}"
