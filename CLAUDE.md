@@ -281,3 +281,9 @@ Nenhum caso, até a data da auditoria, passou da triagem; nenhuma peça foi prot
 - Para clonagem apenas de inspeção pontual, sem necessidade de histórico completo, use `git clone --depth 1` em vez de clone completo.
 - Se qualquer comando `git` ou `gh` não retornar em tempo razoável, não repita a mesma chamada indefinidamente: interrompa, verifique se há prompt interativo pendente (autenticação, GPG, hook) e reporte a causa provável ao usuário.
 - Não use `git commit --no-verify`, `git push --force` ou `git reset --hard` sem confirmação explícita do usuário para aquele comando específico.
+
+A recomendação de `gh api graphql` acima vale **só para leitura**: a allowlist libera
+`gh api graphql -f query=*` e nega `gh api` com método de escrita (`-X`, `--method`, `-F`,
+`--input`). As travas de governança continuam valendo sobre todo comando desta seção —
+merge é ato humano do titular (regra 8), não se empurra nada para a `main` (regra 1) e não se
+dispara workflow de deploy (regra 9, `deploy-vps.yml` é `workflow_dispatch`).
