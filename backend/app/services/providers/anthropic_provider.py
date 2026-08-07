@@ -1,5 +1,5 @@
 # ── app/services/providers/anthropic_provider.py ─────────────────────────────
-# Provider Anthropic (Claude) — mesmo contrato de groq_provider/ollama_provider:
+# Provider Anthropic (Claude) — mesmo contrato de groq_provider/maritaca_provider:
 #   chat(messages, model, temperature, max_tokens) -> (texto, usage_dict)
 # Converte mensagens formato OpenAI [{role,content}] → API Anthropic (system separado).
 # Cliente lazy: só inicializa quando há ANTHROPIC_API_KEY. Sem chave → erro claro
