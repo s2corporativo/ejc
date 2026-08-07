@@ -437,8 +437,7 @@ async def extrair_e_analisar(
     # erro claro citando a flag, sem jamais acionar provedor externo.
     from app.core.config import get_settings
     settings = get_settings()
-    somente_local = not settings.INTAKE_EXTERNAL_FALLBACK
-    if somente_local:
+    if not settings.INTAKE_EXTERNAL_FALLBACK:
         # Sem processamento local disponível, fail-closed é a única opção.
         return {"ok": False, "erro": _ERRO_FAIL_CLOSED}
 
