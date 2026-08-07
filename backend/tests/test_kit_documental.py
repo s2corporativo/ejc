@@ -199,7 +199,7 @@ async def test_kit_completo_gera_tres_rascunhos_procuracao_e_auditoria():
     assert procs == []
     assert out["procuracao"]["tipo_poderes"] == "ad_judicia"
     assert "pendente de assinatura" in out["procuracao"]["aviso"]
-    assert "PROCURACAO AD JUDICIA" in out["procuracao"]["conteudo"]
+    assert "PROCURAÇÃO AD JUDICIA" in out["procuracao"]["conteudo"]
     assert "renunciar" not in out["procuracao"]["conteudo"].lower()
 
     # Contrato: referência REAL da tabela OAB, valor contratado segue placeholder
@@ -388,7 +388,7 @@ async def test_auto_wrapper_gera_kit_poderes_gerais_e_nao_cria_registro_formal(m
     proc = next(d for d in docs if d.tipo_peca == PecaTipo.procuracao)
     # (d) política central: PODERES GERAIS + OUTORGADO fixo (sócio-titular)
     assert "AD JUDICIA ET EXTRA - PODERES GERAIS" in proc.conteudo
-    assert "JOAO PEDRO RODRIGUES TEIXEIRA" in proc.conteudo
+    assert "JOÃO PEDRO RODRIGUES TEIXEIRA" in proc.conteudo
     # Item 6: NENHUM registro formal Procuracao no fluxo automático (só a minuta)
     assert [o for o in db.added if isinstance(o, Procuracao)] == []
     assert db.commits == 1
