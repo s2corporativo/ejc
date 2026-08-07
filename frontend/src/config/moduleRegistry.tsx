@@ -548,6 +548,12 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: FileText,
     component: Pecas,
+    // Issue #694 (achado do Codex no PR #706): backend nega financeiro com
+    // 403 em POST /pecas/gerar (allowlist EQUIPE_JURIDICA, app/core/
+    // security.py). Sem `roles` aqui, financeiro via o item de menu, entrava
+    // na tela e só descobria o bloqueio ao enviar o formulário — espelha a
+    // mesma allowlist para não deixar a UI prometer o que o backend nega.
+    roles: ROLES.juridico,
     showInNav: true,
     essential: true,
     order: 70,

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, ROLE_LEVEL, requer_equipe_juridica
 from app.models.user import User
 # Piso de amostra único do escritório (=5): reutilizado para não inventar taxa
 # com n<5 (mesmo padrão de honestidade estatística de veredito_ia/jurimetria).
@@ -15,10 +15,11 @@ from app.services.jurimetria import MIN_AMOSTRA
 
 
 def _req_staff(cu: User = Depends(get_current_user)) -> User:
-    # MESMO gate de papel de jurimetria.py (_is_staff = estagiario+): barra
-    # cliente_externo/secretaria. Sem isso, qualquer usuário via métricas de êxito.
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso restrito à equipe do escritório")
+    # MESMO gate de papel de jurimetria.py (_is_staff = EQUIPE_JURIDICA).
+    # Issue #694: allowlist EXATA — financeiro NÃO passa aqui mesmo com
+    # ROLE_LEVEL acima de estagiario (cliente_externo/secretaria já ficavam
+    # de fora por estarem abaixo do piso anterior).
+    requer_equipe_juridica(cu, "Acesso restrito à equipe do escritório")
     return cu
 
 

@@ -10,7 +10,7 @@ from sqlalchemy import select, func, text, case as sa_case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, ROLE_LEVEL, EQUIPE_JURIDICA
 from app.models.user import User
 from app.models.tese import Tese, TeseCasoLink, TeseStatus
 from app.models.case import Case
@@ -19,7 +19,9 @@ router = APIRouter(prefix="/jurimetria", tags=["Jurimetria"])
 
 
 def _is_staff(user: User) -> bool:
-    return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["estagiario"]
+    # Issue #694: allowlist EXATA — financeiro não acessa métricas de
+    # jurimetria, mesmo com ROLE_LEVEL acima de estagiario.
+    return user.role.value in EQUIPE_JURIDICA
 
 def _is_socio(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]

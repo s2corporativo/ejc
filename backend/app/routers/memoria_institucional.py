@@ -10,17 +10,17 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, requer_equipe_juridica
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
 
 
 def _req_staff(cu: User = Depends(get_current_user)) -> User:
-    # Conhecimento interno do escritório: só equipe (estagiario+); nunca
-    # cliente_externo/secretaria.
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso restrito à equipe do escritório")
+    # Conhecimento interno do escritório: só EQUIPE_JURIDICA. Issue #694:
+    # allowlist EXATA — financeiro nunca passa aqui, mesmo com ROLE_LEVEL
+    # acima de estagiario (cliente_externo/secretaria já ficavam de fora).
+    requer_equipe_juridica(cu, "Acesso restrito à equipe do escritório")
     return cu
 
 
