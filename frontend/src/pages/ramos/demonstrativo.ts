@@ -137,3 +137,56 @@ export function rodapeDoResultado(data: any): string {
   }
   return linhas.join("\n");
 }
+
+export type Proveniencia = {
+  fontes: string[];
+  vigencia_regra: string;
+  versao_regra: string;
+};
+
+/**
+ * Extrai a proveniência do cálculo (fontes/vigência/versão da regra) que a
+ * calculadora já carimba na resposta — a MESMA leitura que `rodapeDoResultado`
+ * faz para o texto do rodapé (fonte/fontes no singular ou plural, objeto ou
+ * string, vigencia_regra/vigencia_tabela), aqui como campos ESTRUTURADOS.
+ *
+ * Backend (`POST /pecas/demonstrativo`, Issue #702) passou a exigir
+ * `fontes`/`vigencia_regra`/`versao_regra` no corpo da requisição — sem isto,
+ * toda chamada do único chamador real (`RamoBase.tsx`) recebia 422 mesmo com
+ * a ferramenta homologada e a flag geral ligada (achado do review Codex).
+ *
+ * `null` quando a resposta não carrega proveniência suficiente — o chamador
+ * deve bloquear o envio nesse caso, não tentar mandar campos vazios (o
+ * backend já rejeita string/lista em branco).
+ */
+export function provenienciaDoResultado(data: unknown): Proveniencia | null {
+  if (!data || typeof data !== "object") return null;
+  const obj = data as Record<string, unknown>;
+
+  const fontesBrutas = Array.isArray(obj.fontes)
+    ? obj.fontes
+    : obj.fonte
+      ? [obj.fonte]
+      : [];
+  const fontes = fontesBrutas
+    .map((f: unknown) => {
+      if (typeof f === "string") return f.trim();
+      if (f && typeof f === "object") {
+        const o = f as Record<string, unknown>;
+        for (const v of [o.titulo, o.nome, o.fonte]) {
+          if (typeof v === "string" && v.trim()) return v.trim();
+        }
+      }
+      return "";
+    })
+    .filter((f: string) => f.length > 0);
+
+  const vigenciaBruta = obj.vigencia_regra ?? obj.vigencia_tabela;
+  const vigencia_regra =
+    typeof vigenciaBruta === "string" ? vigenciaBruta.trim() : "";
+  const versao_regra =
+    typeof obj.versao_regra === "string" ? obj.versao_regra.trim() : "";
+
+  if (!fontes.length || !vigencia_regra || !versao_regra) return null;
+  return { fontes, vigencia_regra, versao_regra };
+}

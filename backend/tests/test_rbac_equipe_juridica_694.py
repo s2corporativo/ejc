@@ -130,11 +130,29 @@ async def test_pecas_deep_research_financeiro_403():
     assert exc.value.status_code == 403
 
 
+def _req_demonstrativo(**over):
+    """Corpo VÁLIDO de demonstrativo. A Issue #702 (PR #705) tornou `ferramenta`,
+    `fontes`, `vigencia_regra` e `versao_regra` obrigatórios e não-brancos — sem
+    eles o Pydantic reprova na construção e o teste nunca chega ao gate que quer
+    exercitar. `versao_regra` é lida de ramos para não envelhecer no arquivo."""
+    from app.routers import peca_geracao as peca_router
+    from app.routers.ramos import VERSAO_REGRA_ATUAL
+
+    base = dict(
+        titulo="Demonstrativo teste",
+        ferramenta="/penal/ferramentas/dosimetria",
+        fontes=["CP art. 59"],
+        vigencia_regra="desde 1940-12-07",
+        versao_regra=VERSAO_REGRA_ATUAL,
+    )
+    base.update(over)
+    return peca_router.DemonstrativoRequest(**base)
+
+
 async def test_pecas_demonstrativo_financeiro_403(monkeypatch):
-    # gerar_demonstrativo tem DOIS gates antes do de papel (homologação de
-    # ferramenta + flag PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED). Habilita a
-    # flag para provar que o 403 vem do papel, não da flag desligada por
-    # padrão.
+    # gerar_demonstrativo tem QUATRO gates de conteúdo; o de papel agora vem
+    # ANTES de todos. Habilita a flag geral para provar que o 403 vem do papel,
+    # não da trava desligada por padrão.
     from app.routers import peca_geracao as peca_router
     from types import SimpleNamespace
 
@@ -142,9 +160,9 @@ async def test_pecas_demonstrativo_financeiro_403(monkeypatch):
         "app.core.config.get_settings",
         lambda: SimpleNamespace(PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED=True),
     )
-    req = peca_router.DemonstrativoRequest(titulo="Demonstrativo teste")
     with pytest.raises(HTTPException) as exc:
-        await peca_router.gerar_demonstrativo(req=req, db=None, cu=_u(UserRole.financeiro))
+        await peca_router.gerar_demonstrativo(
+            req=_req_demonstrativo(), db=None, cu=_u(UserRole.financeiro))
     assert exc.value.status_code == 403
     assert exc.value.detail == "Acesso negado"
 
@@ -159,11 +177,10 @@ async def test_demonstrativo_financeiro_nao_descobre_estado_de_homologacao():
     # status vira 422 e este teste reprova.
     from app.routers import peca_geracao as peca_router
 
-    req = peca_router.DemonstrativoRequest(
-        titulo="Dosimetria", ferramenta="/penal/ferramentas/dosimetria",
-    )
     with pytest.raises(HTTPException) as exc:
-        await peca_router.gerar_demonstrativo(req=req, db=None, cu=_u(UserRole.financeiro))
+        await peca_router.gerar_demonstrativo(
+            req=_req_demonstrativo(titulo="Dosimetria"), db=None,
+            cu=_u(UserRole.financeiro))
     assert exc.value.status_code == 403, (
         "financeiro recebeu %s — o gate de papel voltou para depois da matriz de "
         "homologação e está vazando o motivo da não homologação" % exc.value.status_code
@@ -177,11 +194,10 @@ async def test_demonstrativo_equipe_ainda_ve_motivo_da_nao_homologacao():
     # ter engolido a mensagem útil ao advogado.
     from app.routers import peca_geracao as peca_router
 
-    req = peca_router.DemonstrativoRequest(
-        titulo="Dosimetria", ferramenta="/penal/ferramentas/dosimetria",
-    )
     with pytest.raises(HTTPException) as exc:
-        await peca_router.gerar_demonstrativo(req=req, db=None, cu=_u(UserRole.advogado))
+        await peca_router.gerar_demonstrativo(
+            req=_req_demonstrativo(titulo="Dosimetria"), db=None,
+            cu=_u(UserRole.advogado))
     assert exc.value.status_code == 422
     assert exc.value.detail["codigo"] == "ferramenta_nao_homologada"
 

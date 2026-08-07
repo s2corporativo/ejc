@@ -2,7 +2,11 @@
 // Onda 2 o conteúdo vive dentro de arrays/objetos, e o filtro antigo (só
 // escalares de 1º nível) produzia peças vazias.
 import { describe, expect, it } from "vitest";
-import { linhasDoResultado, rodapeDoResultado } from "./demonstrativo";
+import {
+  linhasDoResultado,
+  rodapeDoResultado,
+  provenienciaDoResultado,
+} from "./demonstrativo";
 
 describe("linhasDoResultado", () => {
   it("achata arrays de objetos com label hierárquico", () => {
@@ -86,5 +90,55 @@ describe("rodapeDoResultado", () => {
   it("devolve string vazia sem metadados", () => {
     expect(rodapeDoResultado({ total: 10 })).toBe("");
     expect(rodapeDoResultado(null)).toBe("");
+  });
+});
+
+// Issue #702 — backend passou a EXIGIR fontes/vigencia_regra/versao_regra no
+// corpo de POST /pecas/demonstrativo. Estes testes provam que o frontend
+// consegue montar esses campos a partir do que a calculadora já carimba na
+// resposta (achado do review Codex: o único chamador real não os enviava).
+describe("provenienciaDoResultado", () => {
+  it("extrai fontes (array), vigência e versão quando presentes", () => {
+    const prov = provenienciaDoResultado({
+      total: 100,
+      fontes: ["CPC art. 335", "Lei 9.099/95 art. 30"],
+      vigencia_regra: "CPC/2015 desde 18/03/2016",
+      versao_regra: "2026-07",
+    });
+    expect(prov).toEqual({
+      fontes: ["CPC art. 335", "Lei 9.099/95 art. 30"],
+      vigencia_regra: "CPC/2015 desde 18/03/2016",
+      versao_regra: "2026-07",
+    });
+  });
+
+  it("aceita fonte/vigencia_tabela no singular (tabelas do tributário)", () => {
+    const prov = provenienciaDoResultado({
+      fonte: "Res. CGSN 140/2018",
+      vigencia_tabela: "2026",
+      versao_regra: "2026-07",
+    });
+    expect(prov).toEqual({
+      fontes: ["Res. CGSN 140/2018"],
+      vigencia_regra: "2026",
+      versao_regra: "2026-07",
+    });
+  });
+
+  // Prova por negação — cada um destes é um jeito de a resposta NÃO trazer
+  // proveniência suficiente; o chamador precisa bloquear o envio, não mandar
+  // string/lista em branco que o backend (Gate de proveniência) rejeitaria.
+  it.each([
+    ["sem fontes", { vigencia_regra: "vigente", versao_regra: "2026-07" }],
+    [
+      "fontes vazia",
+      { fontes: [], vigencia_regra: "vigente", versao_regra: "2026-07" },
+    ],
+    ["sem vigência", { fontes: ["fonte"], versao_regra: "2026-07" }],
+    ["sem versão da regra", { fontes: ["fonte"], vigencia_regra: "vigente" }],
+    ["resposta nula", null],
+    ["resposta não-objeto", "erro"],
+  ])("devolve null quando %s", (_descricao, entrada) => {
+    expect(provenienciaDoResultado(entrada)).toBeNull();
   });
 });
