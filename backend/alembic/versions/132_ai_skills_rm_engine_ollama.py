@@ -26,13 +26,20 @@ saindo do sistema por decisão de produto (Issue #761); o cenário em que
 faria sentido restaurar `'ollama'` como engine ativo de alguma skill não
 existe mais.
 
-Revision ID: 132_ai_skills_remover_engine_ollama
+Revision ID: 132_ai_skills_rm_engine_ollama
 Revises: 131_audit_logs_worm
 Create Date: 2026-08-07
+
+Nota sobre o revision id: encurtado de "132_ai_skills_remover_engine_ollama"
+(35 caracteres) para "132_ai_skills_rm_engine_ollama" (30 caracteres) porque
+`alembic_version.version_num` é `VARCHAR(32)` — o id original estourava a
+coluna e derrubava `alembic upgrade head` em qualquer banco limpo (achado do
+agente verifier em 2026-08-07). Renomeado antes de qualquer merge, sem
+migration aplicada em produção a preservar.
 """
 from alembic import op
 
-revision = "132_ai_skills_remover_engine_ollama"
+revision = "132_ai_skills_rm_engine_ollama"
 down_revision = "131_audit_logs_worm"
 branch_labels = None
 depends_on = None
