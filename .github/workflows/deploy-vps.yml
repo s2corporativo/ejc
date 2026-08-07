@@ -230,16 +230,28 @@ jobs:
           {
             echo "## Deploy VPS"
             echo
+            # Só `skipped` (ou vazio, quando o job aborta antes do passo ser
+            # avaliado) prova que produção não foi tocada. `failure` NÃO prova:
+            # o `rsync --delete` reescreve e apaga arquivo a arquivo e só então
+            # retorna erro — pode ter mexido em /opt/ejc e falhado no meio.
+            # Afirmar "nada foi implantado" nesse caso é o mesmo defeito que
+            # este bloco existe para corrigir, só que mais perigoso, porque
+            # /opt/ejc fica num estado parcial que ninguém vai conferir.
             if [ "$JOB_STATUS" = "success" ]; then
               echo "- Resultado: **implantado**"
+            elif [ -z "$SYNC_OUTCOME" ] || [ "$SYNC_OUTCOME" = "skipped" ]; then
+              echo "- Resultado: **abortado antes de tocar produção** (\`$JOB_STATUS\`)"
+              echo "  — nada foi implantado; \`/opt/ejc\` está como estava."
             elif [ "$SYNC_OUTCOME" = "success" ]; then
               echo "- Resultado: **FALHOU APÓS TOCAR PRODUÇÃO** (\`$JOB_STATUS\`)"
               echo "  — \`/opt/ejc\` já foi reescrito e o deploy pode ter migrado o schema."
               echo "  O rollback automático restaura imagens, **não** a árvore nem o banco."
               echo "  Verifique o estado real antes de reexecutar."
             else
-              echo "- Resultado: **abortado antes de tocar produção** (\`$JOB_STATUS\`)"
-              echo "  — nada foi implantado; \`/opt/ejc\` está como estava."
+              echo "- Resultado: **ESTADO INCERTO** — a sincronização não concluiu (\`$SYNC_OUTCOME\`)."
+              echo "  O \`rsync --delete\` pode ter reescrito ou apagado parte de \`/opt/ejc\`"
+              echo "  antes de falhar. **Não presuma que produção está intacta**:"
+              echo "  confira a árvore contra o SHA abaixo antes de reexecutar."
             fi
             echo "- Target SHA: \`$TARGET_SHA\`"
             echo "- Revisão anterior: \`$REVISAO_ANTERIOR\`"

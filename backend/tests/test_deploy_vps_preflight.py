@@ -77,6 +77,27 @@ def _comandos(corpo: str) -> list[str]:
     ]
 
 
+def _script(nome_do_passo: str) -> str:
+    """Corpo do bloco `run: |` de um step, já sem a indentação do YAML.
+
+    Sem PyYAML de propósito: ele não está em `requirements.txt`, e
+    `test_governanca_workflow.py` já lê o YAML fonte pela mesma razão. Um teste
+    que depende de dependência transitória quebra no dia em que ela sai.
+    """
+    corpo = _passos()[nome_do_passo]
+    _, _, resto = corpo.partition("run: |\n")
+    assert resto, f"o passo '{nome_do_passo}' não declara um bloco `run: |`"
+
+    linhas = resto.splitlines()
+    recuo = len(linhas[0]) - len(linhas[0].lstrip())
+    saida: list[str] = []
+    for linha in linhas:
+        if linha.strip() and len(linha) - len(linha.lstrip()) < recuo:
+            break  # dedentou: acabou o bloco escalar
+        saida.append(linha[recuo:])
+    return "\n".join(saida)
+
+
 def _invoca_git(linha: str) -> bool:
     """Linha que EXECUTA git — não a que apenas cita o comando numa mensagem.
 
@@ -189,29 +210,81 @@ def test_nenhuma_checagem_do_pre_voo_pode_abortar_o_passo_em_silencio():
     assert re.search(r"exit 1", corpo), "o pré-voo precisa reprovar o job ao fim"
 
 
-def test_resumo_distingue_abortado_de_falha_apos_tocar_producao():
-    """Dois estados mentem: o rsync já reescreveu /opt/ejc quando o health falha.
+def _resumo(job_status: str, sync_outcome: str, tmp_path) -> str:
+    """Executa o `run:` do resumo de verdade e devolve o que ele escreveu.
 
-    O rollback do `deploy_vps_safe.sh` restaura imagens — não a árvore de
-    `/opt/ejc` nem o schema. Afirmar "nada foi implantado" numa falha posterior
-    ao rsync é registro de deploy factualmente falso.
+    Grep no YAML provaria só que certas palavras existem no arquivo — não que a
+    ramificação escolhe a certa. O `run:` do resumo é bash puro sobre variáveis
+    de ambiente (as expressões saíram para `env:`), então dá para rodá-lo.
     """
-    corpo = _passos()[PASSO_RESUMO]
+    import subprocess
 
-    assert "steps.sync.outcome" in corpo, (
-        "o resumo decide só por `job.status` — não distingue falha antes de "
-        "tocar produção de falha depois, e as duas não são a mesma notícia"
+    script = _script(PASSO_RESUMO)
+    # Arquivo próprio por invocação: o resumo APENDA (`>>`), como o GitHub
+    # espera, então reusar o mesmo caminho misturaria as saídas e faria um
+    # cenário passar com o texto do anterior.
+    saida = tmp_path / f"summary-{job_status}-{sync_outcome or 'vazio'}.md"
+    subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script],
+        check=True,
+        env={
+            "PATH": "/usr/bin:/bin",
+            "GITHUB_STEP_SUMMARY": str(saida),
+            "JOB_STATUS": job_status,
+            "SYNC_OUTCOME": sync_outcome,
+            "TARGET_SHA": "0" * 40,
+            "REVISAO_ANTERIOR": "126_case_status",
+            "MIGRATIONS_PENDENTES": "0",
+            "RUN_SEEDS": "1",
+            "REQUIRE_PREDEPLOY_BACKUP": "1",
+        },
     )
-    assert re.search(r"APÓS TOCAR PRODUÇÃO", corpo), (
-        "falta o estado intermediário: falhou com /opt/ejc já reescrito"
-    )
-    assert re.search(r"abortado antes de tocar produção", corpo, re.I)
+    return saida.read_text(encoding="utf-8")
 
-    # O passo do rsync precisa ter o id que o resumo consulta.
+
+def test_resumo_so_afirma_producao_intacta_quando_o_rsync_nao_rodou(tmp_path):
+    """`failure` no rsync NÃO prova que produção está intacta.
+
+    `rsync --delete` reescreve e apaga arquivo a arquivo e só então retorna
+    erro: pode ter mexido em `/opt/ejc` e falhado no meio. Dizer "nada foi
+    implantado" aí é pior que o defeito original, porque produção fica num
+    estado parcial que ninguém vai conferir.
+
+    O rollback do `deploy_vps_safe.sh` restaura imagens — não a árvore nem o
+    schema —, então a distinção não é cosmética.
+    """
+    intacta = "nada foi implantado"
+
+    # Único caso em que produção comprovadamente não foi tocada.
+    for outcome in ("skipped", ""):
+        texto = _resumo("failure", outcome, tmp_path)
+        assert intacta in texto, f"outcome={outcome!r} devia acusar produção intacta"
+
+    # rsync concluiu: produção foi tocada, com certeza.
+    texto = _resumo("failure", "success", tmp_path)
+    assert "APÓS TOCAR PRODUÇÃO" in texto
+    assert intacta not in texto
+
+    # rsync não concluiu: NÃO se sabe. Precisa dizer que não sabe.
+    for outcome in ("failure", "cancelled"):
+        texto = _resumo("failure", outcome, tmp_path)
+        assert intacta not in texto, (
+            f"outcome={outcome!r}: o resumo afirma que produção está intacta "
+            "sem ter como saber — o rsync pode ter falhado no meio da escrita"
+        )
+        assert "ESTADO INCERTO" in texto
+
+    # E o caminho feliz continua dizendo o que sempre disse.
+    assert "**implantado**" in _resumo("success", "success", tmp_path)
+
+
+def test_o_passo_do_rsync_mantem_o_id_que_o_resumo_consulta():
     sync = _passos()["Sincronizar checkout aprovado para /opt/ejc"]
     assert re.search(r"^\s*id:\s*sync\s*$", sync, re.M), (
-        "o passo do rsync perdeu o `id: sync` que o resumo lê"
+        "o passo do rsync perdeu o `id: sync` — sem ele `steps.sync.outcome` "
+        "chega vazio e toda falha vira 'nada foi implantado'"
     )
+    assert "steps.sync.outcome" in _passos()[PASSO_RESUMO]
 
 
 def test_valores_de_dado_nao_viram_texto_de_script_no_resumo():
