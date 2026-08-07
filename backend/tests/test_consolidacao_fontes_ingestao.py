@@ -24,7 +24,7 @@ UTC = timezone.utc
 
 MIGRATION = (
     Path(__file__).resolve().parents[1]
-    / "alembic" / "versions" / "138_consolida_fontes_juris_import.py"
+    / "alembic" / "versions" / "138_consolida_fontes_ingestao.py"
 )
 _spec = importlib.util.spec_from_file_location("mig_138_consolida_fontes", MIGRATION)
 mig = importlib.util.module_from_spec(_spec)

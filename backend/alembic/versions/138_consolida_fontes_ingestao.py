@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from alembic import op
 
-revision = "138_consolida_fontes_juris_import"
+revision = "138_consolida_fontes_ingestao"
 down_revision = "132_processo_eletronico_mni"
 branch_labels = None
 depends_on = None
