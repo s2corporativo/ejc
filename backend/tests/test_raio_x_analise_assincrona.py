@@ -19,6 +19,7 @@ dispatcher._redis_alcancavel). Cobre:
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -213,6 +214,9 @@ def test_upload_com_analise_em_processamento_da_409(monkeypatch, tmp_path):
     st = get_settings()
     monkeypatch.setattr(st, "UPLOAD_DIR", str(tmp_path), raising=False)
     analise = _analise("fila")
+    # No banco real updated_at nunca é NULL (server_default=now); execução
+    # recente e viva → o guard de staleness não pode destravar.
+    analise.updated_at = datetime.now(timezone.utc)
     app, _ = _app(analise)
     with TestClient(app) as client:
         resp = client.post(
@@ -419,3 +423,64 @@ def test_fila_e_erro_pertencem_ao_vocabulario_canonico():
 def test_patch_aceita_status_do_ciclo_assincrono():
     assert RaioXUpdate(status="fila").status == "fila"
     assert RaioXUpdate(status="erro").status == "erro"
+
+
+# ── (h) Recuperação de análise presa (worker morto sem marcar erro) ──────────
+
+def test_processamento_preso_respeita_teto_e_status():
+    from app.routers.raio_x import PROCESSAMENTO_TIMEOUT_MINUTOS, _processamento_preso
+
+    agora = datetime.now(timezone.utc)
+
+    viva = _analise("em_processamento")
+    viva.updated_at = agora
+    assert _processamento_preso(viva) is False
+
+    presa = _analise("fila")
+    presa.updated_at = agora - timedelta(minutes=PROCESSAMENTO_TIMEOUT_MINUTOS + 1)
+    assert _processamento_preso(presa) is True
+
+    # Fora do ciclo assíncrono o teto não se aplica, por mais antiga que seja.
+    concluida = _analise("aguardando_conferencia")
+    concluida.updated_at = agora - timedelta(days=30)
+    assert _processamento_preso(concluida) is False
+
+    # Datetime naive (SQLite/testes) é interpretado como UTC, não explode.
+    naive = _analise("em_processamento")
+    naive.updated_at = (agora - timedelta(hours=2)).replace(tzinfo=None)
+    assert _processamento_preso(naive) is True
+
+
+def test_upload_com_analise_presa_destrava_e_aceita_o_novo_lote(monkeypatch, tmp_path):
+    """(h) Worker morreu no meio (fila/em_processamento além do teto): o novo
+    lote NÃO leva 409 — a execução morta vira desfecho `erro` registrado e o
+    lote entra na fila normalmente."""
+    from app.routers.raio_x import PROCESSAMENTO_TIMEOUT_MINUTOS
+
+    st = get_settings()
+    monkeypatch.setattr(st, "UPLOAD_DIR", str(tmp_path), raising=False)
+
+    despacho: dict = {}
+
+    async def fake_agendar(analise_id, user_id, user_role, documento_ids, reprocessar, background_tasks):
+        despacho.update(documento_ids=documento_ids, reprocessar=reprocessar)
+        return "background"
+
+    monkeypatch.setattr(raio_x_tasks, "agendar_analise", fake_agendar)
+
+    analise = _analise("em_processamento")
+    analise.updated_at = datetime.now(timezone.utc) - timedelta(
+        minutes=PROCESSAMENTO_TIMEOUT_MINUTOS + 5
+    )
+    app, _ = _app(analise)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/raio-x/a1/documentos/analisar",
+            files=[("files", ("peticao.txt", b"Conteudo ficticio.", "text/plain"))],
+        )
+    assert resp.status_code == 200
+    assert resp.json()["analise"]["status"] == "fila"
+    assert despacho["reprocessar"] is False
+    # O desfecho da execução morta ficou registrado antes do novo ciclo.
+    assert "expirou" in analise.relatorio["erro_processamento"]
+    assert analise.relatorio["erro_processamento_em"]

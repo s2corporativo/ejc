@@ -73,6 +73,45 @@ async def _obter(db: AsyncSession, analise_id: str, user: User) -> RaioXAnalise:
     return analise
 
 
+# Teto de staleness do processamento assíncrono (Onda 1). O pipeline leva
+# 71–87s em produção; muito além disso, o worker morreu sem marcar `erro`
+# (kill -9, OOM, deploy no meio) e a análise ficaria presa em
+# fila/em_processamento para sempre — 409 permanente nos endpoints de
+# análise (achado baixo da auditoria de segurança desta branch).
+PROCESSAMENTO_TIMEOUT_MINUTOS = 30
+
+
+def _processamento_preso(analise: RaioXAnalise) -> bool:
+    """fila/em_processamento parada além do teto = worker morreu no meio."""
+    if analise.status not in {"fila", "em_processamento"}:
+        return False
+    ref = analise.updated_at
+    if ref is None:
+        return True
+    if ref.tzinfo is None:
+        ref = ref.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - ref > timedelta(
+        minutes=PROCESSAMENTO_TIMEOUT_MINUTOS
+    )
+
+
+def _destravar_analise_presa(analise: RaioXAnalise) -> None:
+    """Registra o desfecho `erro` da execução morta antes de aceitar o novo lote.
+
+    O caminho normal de erro é a própria task marcar o estado; este é o
+    plano B para execução que morreu sem desfecho. A mensagem segue o mesmo
+    contrato sanitizado de raio_x_tasks (string legível, sem detalhe interno).
+    """
+    relatorio = dict(analise.relatorio or {})
+    relatorio["erro_processamento"] = (
+        "Processamento anterior expirou sem concluir "
+        f"(mais de {PROCESSAMENTO_TIMEOUT_MINUTOS} min) e foi destravado."
+    )
+    relatorio["erro_processamento_em"] = datetime.now(timezone.utc).isoformat()
+    analise.relatorio = relatorio
+    analise.status = "erro"
+
+
 def _aplicar_identificacao(analise: RaioXAnalise) -> None:
     report = analise.relatorio or {}
     identification = report.get("identificacao") or {}
@@ -407,7 +446,11 @@ async def analisar_documentos(
     if analise.status == "convertido_em_caso":
         raise HTTPException(409, "Análise já convertida; o relatório está congelado")
     if analise.status in {"fila", "em_processamento"}:
-        raise HTTPException(409, "Análise em processamento; aguarde a conclusão do lote atual")
+        if not _processamento_preso(analise):
+            raise HTTPException(
+                409, "Análise em processamento; aguarde a conclusão do lote atual"
+            )
+        _destravar_analise_presa(analise)
     if not files or len(files) > MAX_ARQUIVOS:
         raise HTTPException(422, f"Envie de 1 a {MAX_ARQUIVOS} arquivos por lote")
 
@@ -516,7 +559,11 @@ async def reanalisar(
     if analise.status == "convertido_em_caso":
         raise HTTPException(409, "Relatório convertido está congelado")
     if analise.status in {"fila", "em_processamento"}:
-        raise HTTPException(409, "Análise em processamento; aguarde a conclusão do lote atual")
+        if not _processamento_preso(analise):
+            raise HTTPException(
+                409, "Análise em processamento; aguarde a conclusão do lote atual"
+            )
+        _destravar_analise_presa(analise)
     errors: list[dict[str, str]] = []
     if reprocessar and analise.documentos:
         # Reprocessamento refaz OCR + IA de todos os documentos — operação
