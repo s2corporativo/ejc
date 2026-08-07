@@ -9,7 +9,9 @@ Seed idempotente por ``name``. Executado por ``backend/seeds/seed_all.py``.
 """
 from __future__ import annotations
 
+import json
 import os
+import pathlib
 import sys
 from datetime import datetime
 from uuid import uuid4
@@ -674,6 +676,31 @@ SKILLS = [
 # profundidade não depende só deste seed.
 _NOMES_FORCAR_ATUALIZACAO = {"prescricao-decadencia", "simulador-defesa-adversarial"}
 
+# Onde o backup dos prompts sobrescritos é gravado. Sobrescrevível por env para
+# que o container aponte para volume persistente — o default fica ao lado dos
+# seeds, que já é diretório versionado do projeto.
+_DIR_BACKUP_SKILLS = os.getenv(
+    "SKILLS_SEED_BACKUP_DIR",
+    str(pathlib.Path(__file__).resolve().parent / "backups"),
+)
+
+
+def _persistir_backup(backups: list[dict], quando: datetime) -> str:
+    """Grava o estado ANTERIOR das skills sobrescritas, em JSON, e devolve o
+    caminho. Levanta se não conseguir escrever — o chamador conta com isso para
+    abortar antes do commit, em vez de destruir o prompt antigo sem rede."""
+    destino = pathlib.Path(_DIR_BACKUP_SKILLS)
+    destino.mkdir(parents=True, exist_ok=True)
+    arquivo = destino / f"skills_pre_upsert_{quando.strftime('%Y%m%dT%H%M%S')}.json"
+    arquivo.write_text(
+        json.dumps(
+            {"gerado_em": quando.isoformat(), "skills": backups},
+            ensure_ascii=False, indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return str(arquivo)
+
 
 def seed() -> None:
     from sqlalchemy import create_engine, text
@@ -691,6 +718,7 @@ def seed() -> None:
     engine = create_engine(url)
     inserted = skipped = updated = 0
     now = datetime.utcnow()
+    backups: list[dict] = []
     with Session(engine) as session:
         for skill in SKILLS:
             exists = session.execute(
@@ -699,11 +727,28 @@ def seed() -> None:
             ).fetchone()
             if exists:
                 if skill["name"] in _NOMES_FORCAR_ATUALIZACAO:
+                    # BACKUP ANTES DE SOBRESCREVER (review do CodeRabbit no PR
+                    # #703). O upsert forçado é a única operação deste seed que
+                    # DESTRÓI conteúdo já gravado: `git revert` devolve o código
+                    # do seed, mas não o prompt anterior. Sem este registro o
+                    # texto antigo é irrecuperável — inclusive uma customização
+                    # que um sócio tenha feito à mão.
+                    anterior = session.execute(
+                        text("""
+                            SELECT name, display_name, description, system_prompt,
+                                   area, version
+                            FROM ejc_skills WHERE name=:name
+                        """),
+                        {"name": skill["name"]},
+                    ).mappings().fetchone()
+                    if anterior is not None:
+                        backups.append(dict(anterior))
                     session.execute(
                         text("""
                             UPDATE ejc_skills
                             SET display_name=:display_name, description=:description,
                                 system_prompt=:system_prompt, area=:area,
+                                version=version + 1,
                                 updated_at=:now
                             WHERE name=:name
                         """),
@@ -732,6 +777,12 @@ def seed() -> None:
             )
             inserted += 1
             print(f"  ✅ Inserida: {skill['name']} — {skill['display_name']}")
+        # O backup é gravado ANTES do commit e sua falha ABORTA a transação:
+        # comitar sem ele deixaria o prompt anterior irrecuperável, que é
+        # exatamente o que este bloco existe para impedir.
+        if backups:
+            caminho = _persistir_backup(backups, now)
+            print(f"  💾 Backup dos prompts anteriores: {caminho}")
         session.commit()
     print(
         f"\nSKILLS EXPANSION SEED: inseridas={inserted} atualizadas={updated} "

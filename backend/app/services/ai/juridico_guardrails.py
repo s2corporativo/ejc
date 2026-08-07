@@ -351,3 +351,27 @@ def anexar_alerta_cdc_ao_texto(texto: str, alertas: list[str]) -> str:
     if MARCADOR_ALERTA_CDC in texto:
         return texto
     return texto + _AVISO_CUMULACAO_CDC
+
+
+def aplicar_guardrails_de_leitura(texto: str) -> tuple[str, bool]:
+    """Encadeia os DOIS guardrails na ordem canônica — correção de mérito
+    (CPC art. 487, II) e depois alerta de cumulação CDC 26/27 — e devolve
+    `(texto, alterou)`.
+
+    Existe para que TODA superfície de leitura de resposta já persistida
+    aplique o mesmo conjunto. Antes, `GET /ai/logs` chamava só
+    `aplicar_guardrail_merito`: um log legado com cumulação CDC indevida era
+    servido sem o alerta que a mesma resposta receberia se fosse gerada hoje
+    (achado do review do CodeRabbit no PR #703).
+
+    `alterou` é o gatilho do reset de HITL: se o texto mudou AGORA, na
+    leitura, quem revisou antes revisou outra coisa. Ambas as funções são
+    idempotentes, então reler um texto já tratado devolve `alterou=False`."""
+    corrigido, houve_merito = aplicar_guardrail_merito(texto)
+    alertas_cdc = checar_cumulacao_vicio_fato_cdc(corrigido)
+    if alertas_cdc:
+        com_alerta = anexar_alerta_cdc_ao_texto(corrigido, alertas_cdc)
+        if com_alerta != corrigido:
+            return com_alerta, True
+        corrigido = com_alerta
+    return corrigido, houve_merito

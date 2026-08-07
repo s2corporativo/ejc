@@ -18,6 +18,7 @@ from app.models.user import User
 from app.models.case import Case
 from app.models.ai_log import AILog, AIStatusHITL
 from app.models.legal_doc import LegalDoc
+from app.services.ai import juridico_guardrails
 from app.services.ai_service import analisar_caso, extrair_prazos_ia, resumir_documento
 from app.services.case_context import montar_dossie
 from app.schemas.ai import (
@@ -146,11 +147,12 @@ async def listar_logs(
     # `aplicar_guardrail_merito` é idempotente (não reaplica a um texto que já
     # carrega o marcador da correção — achado de review, Codex, PR #703, P1),
     # então reler um log JÁ corrigido não duplica nem corrompe o próprio aviso.
-    from app.services.ai import juridico_guardrails
-
     def _linha(l: AILog) -> dict:
-        resposta_corrigida, foi_corrigido_agora = juridico_guardrails.aplicar_guardrail_merito(
-            l.resposta
+        # Os DOIS guardrails, não só o de mérito (review do CodeRabbit, PR
+        # #703): um log legado com cumulação CDC 26/27 indevida era servido sem
+        # o alerta que a MESMA resposta receberia se fosse gerada hoje.
+        resposta_corrigida, foi_corrigido_agora = (
+            juridico_guardrails.aplicar_guardrails_de_leitura(l.resposta)
         )
         status_hitl = l.status_hitl.value
         revisado_por = l.revisado_por
