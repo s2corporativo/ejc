@@ -41,15 +41,81 @@ function arquivosFonte(dir: string, prefixo = ""): string[] {
   return saida;
 }
 
-// `api.get("/api/v1/x")`, `api.post<T>(\n  `/v1/x`…)` etc.
+// Detector: `api.<metodo>` seguido de um genérico OPCIONAL e do literal do
+// caminho. Regex não serve para o genérico — ele tem delimitador BALANCEADO e
+// pode conter parênteses e literais de string:
 //
-// O genérico aceita ANINHAMENTO (`api.get<Resposta<Item[]>>(…)`): `<[^>]*>`
-// pararia no primeiro `>` e deixaria a chamada passar batido — um buraco no
-// guarda, e este teste existe justamente para não ter buraco. `[^()"\'`]*`
-// consome o corpo do genérico inteiro sem atravessar o parêntese de abertura
-// nem o literal do caminho, que são os delimitadores reais aqui.
-const CHAMADA_COM_PREFIXO =
-  /\bapi\s*\.\s*(get|post|put|patch|delete|request|head|options)\s*(?:<[^()"'`]*>)?\s*\(\s*(["'`])\/(api\/v1|api|v1)\//g;
+//     api.get<Resposta<(Item | null)[]>>("/v1/itens")
+//     api.get<Resposta<Record<"campo", Item>>>(`/api/v1/itens`)
+//
+// `<[^>]*>` para no primeiro `>`; `<[^()"\'`]*>` tropeça no parêntese e na
+// aspa. Qualquer classe de caracteres erra num desses casos, e um detector com
+// buraco é pior que detector nenhum: passa a falsa garantia. Daí o scanner.
+const METODOS = "get|post|put|patch|delete|request|head|options";
+const INICIO_CHAMADA = new RegExp(`\\bapi\\s*\\.\\s*(${METODOS})\\b`, "g");
+const PREFIXOS_PROIBIDOS = ["/api/v1/", "/api/", "/v1/"] as const;
+
+/** Avança sobre espaços a partir de `i`. */
+function pularEspacos(texto: string, i: number): number {
+  while (i < texto.length && /\s/.test(texto[i])) i += 1;
+  return i;
+}
+
+/**
+ * Fim de um genérico `<...>` iniciado em `i`, contando aninhamento e pulando
+ * literais de string — ou -1 se não fechar. Aceita `<` e `>` dentro de string
+ * sem contá-los como delimitador.
+ */
+function fimDoGenerico(texto: string, i: number): number {
+  let profundidade = 0;
+  while (i < texto.length) {
+    const c = texto[i];
+    if (c === '"' || c === "'" || c === "`") {
+      i += 1;
+      while (i < texto.length && texto[i] !== c) {
+        if (texto[i] === "\\") i += 1; // escape dentro do literal
+        i += 1;
+      }
+    } else if (c === "<") {
+      profundidade += 1;
+    } else if (c === ">") {
+      profundidade -= 1;
+      if (profundidade === 0) return i + 1;
+    } else if (c === "(" && profundidade === 0) {
+      return -1; // chegou na chamada sem genérico aberto
+    } else if (c === ";" || c === "\n") {
+      if (profundidade === 0) return -1;
+    }
+    i += 1;
+  }
+  return -1;
+}
+
+type Ocorrencia = { indice: number; metodo: string; prefixo: string };
+
+/** Chamadas ao cliente `api` cujo caminho literal repete o prefixo do baseURL. */
+export function chamadasComPrefixo(conteudo: string): Ocorrencia[] {
+  const achados: Ocorrencia[] = [];
+  INICIO_CHAMADA.lastIndex = 0;
+  for (const m of conteudo.matchAll(INICIO_CHAMADA)) {
+    let i = pularEspacos(conteudo, (m.index ?? 0) + m[0].length);
+    if (conteudo[i] === "<") {
+      const fim = fimDoGenerico(conteudo, i);
+      if (fim === -1) continue;
+      i = pularEspacos(conteudo, fim);
+    }
+    if (conteudo[i] !== "(") continue;
+    i = pularEspacos(conteudo, i + 1);
+    const aspa = conteudo[i];
+    if (aspa !== '"' && aspa !== "'" && aspa !== "`") continue;
+    const literal = conteudo.slice(i + 1, i + 1 + 12);
+    const prefixo = PREFIXOS_PROIBIDOS.find((p) => literal.startsWith(p));
+    if (prefixo) {
+      achados.push({ indice: m.index ?? 0, metodo: m[1], prefixo });
+    }
+  }
+  return achados;
+}
 
 function linhaDe(conteudo: string, indice: number): number {
   return conteudo.slice(0, indice).split("\n").length;
@@ -58,19 +124,23 @@ function linhaDe(conteudo: string, indice: number): number {
 describe("prefixo das chamadas ao cliente api", () => {
   const arquivos = arquivosFonte(RAIZ).filter((f) => !ISENTOS.has(f));
 
-  it("varre um conjunto de arquivos não trivial", () => {
-    // Guarda contra o próprio teste passar por vacuidade (raiz errada, glob
-    // quebrado) e dar falsa sensação de cobertura.
-    expect(arquivos.length).toBeGreaterThan(100);
+  it("varreu a raiz certa (o guarda não roda no vazio)", () => {
+    // Sentinela estável em vez de contagem: um número mínimo de arquivos
+    // reprovaria numa poda legítima da árvore e ainda assim não provaria que a
+    // raiz percorrida foi `src/`. Estes dois arquivos são o coração do
+    // roteamento e das chamadas — se sumirem, o guarda precisa mesmo ser
+    // revisto.
+    expect(arquivos).toContain("config/moduleRegistry.tsx");
+    expect(arquivos).toContain("lib/stream.ts");
   });
 
   it("nenhuma chamada ao cliente api repete o prefixo do baseURL", () => {
     const ocorrencias: string[] = [];
     for (const relativo of arquivos) {
       const conteudo = readFileSync(join(RAIZ, relativo), "utf-8");
-      for (const m of conteudo.matchAll(CHAMADA_COM_PREFIXO)) {
+      for (const o of chamadasComPrefixo(conteudo)) {
         ocorrencias.push(
-          `${relativo}:${linhaDe(conteudo, m.index ?? 0)}  api.${m[1]}("/${m[3]}/…)  →  escreva o caminho sem prefixo`,
+          `${relativo}:${linhaDe(conteudo, o.indice)}  api.${o.metodo}("${o.prefixo}…)  →  escreva o caminho sem prefixo`,
         );
       }
     }
@@ -86,10 +156,14 @@ describe("prefixo das chamadas ao cliente api", () => {
       // Genérico ANINHADO — o buraco que `<[^>]*>` deixava passar.
       'api.get<Resposta<Item[]>>("/v1/itens")',
       'api.get<Resposta<Map<string, Item[]>>>("/api/v1/itens")',
+      // Parêntese DENTRO do genérico — quebrava a classe `[^()"\'`]`.
+      'api.get<Resposta<(Item | null)[]>>("/v1/itens")',
+      // Literal de string dentro do genérico — idem.
+      'api.get<Resposta<Record<"campo", Item>>>(`/api/v1/itens`)',
+      'api.get<Resposta<Resultado<A, B>>>(\n  "/v1/resultado",\n)',
     ];
     for (const amostra of amostras) {
-      CHAMADA_COM_PREFIXO.lastIndex = 0;
-      expect(CHAMADA_COM_PREFIXO.test(amostra), amostra).toBe(true);
+      expect(chamadasComPrefixo(amostra).length, amostra).toBe(1);
     }
     // E o que é legítimo NÃO dispara.
     for (const ok of [
@@ -97,9 +171,10 @@ describe("prefixo das chamadas ao cliente api", () => {
       'streamSSE("/api/ia/agente/stream", body)',
       'backendPrefixes: ["/api/diagnostico"]',
       'axios.post("/api/auth/refresh")',
+      // Genérico sem prefixo no caminho: legítimo.
+      'api.get<Resposta<Record<"campo", Item>>>("/itens")',
     ]) {
-      CHAMADA_COM_PREFIXO.lastIndex = 0;
-      expect(CHAMADA_COM_PREFIXO.test(ok), ok).toBe(false);
+      expect(chamadasComPrefixo(ok).length, ok).toBe(0);
     }
   });
 });
