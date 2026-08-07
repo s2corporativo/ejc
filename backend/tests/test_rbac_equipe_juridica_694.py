@@ -149,6 +149,43 @@ async def test_pecas_demonstrativo_financeiro_403(monkeypatch):
     assert exc.value.detail == "Acesso negado"
 
 
+async def test_demonstrativo_financeiro_nao_descobre_estado_de_homologacao():
+    # Review do CodeRabbit no PR #706 (Segurança, Major). O gate de papel era o
+    # ÚLTIMO da função: `financeiro` com ferramenta NÃO homologada recebia 422
+    # com o MOTIVO da não homologação — estado interno vazando para quem não
+    # pode nem chamar a rota. Agora a autorização vem primeiro: 403 seco.
+    #
+    # Prova por negação: se alguém devolver o gate para o fim da função, o
+    # status vira 422 e este teste reprova.
+    from app.routers import peca_geracao as peca_router
+
+    req = peca_router.DemonstrativoRequest(
+        titulo="Dosimetria", ferramenta="/penal/ferramentas/dosimetria",
+    )
+    with pytest.raises(HTTPException) as exc:
+        await peca_router.gerar_demonstrativo(req=req, db=None, cu=_u(UserRole.financeiro))
+    assert exc.value.status_code == 403, (
+        "financeiro recebeu %s — o gate de papel voltou para depois da matriz de "
+        "homologação e está vazando o motivo da não homologação" % exc.value.status_code
+    )
+    assert exc.value.detail == "Acesso negado"
+
+
+async def test_demonstrativo_equipe_ainda_ve_motivo_da_nao_homologacao():
+    # Contraprova: para quem PERTENCE à equipe, o 422 com o diagnóstico
+    # específico continua chegando — mover a autorização para o topo não pode
+    # ter engolido a mensagem útil ao advogado.
+    from app.routers import peca_geracao as peca_router
+
+    req = peca_router.DemonstrativoRequest(
+        titulo="Dosimetria", ferramenta="/penal/ferramentas/dosimetria",
+    )
+    with pytest.raises(HTTPException) as exc:
+        await peca_router.gerar_demonstrativo(req=req, db=None, cu=_u(UserRole.advogado))
+    assert exc.value.status_code == 422
+    assert exc.value.detail["codigo"] == "ferramenta_nao_homologada"
+
+
 # ── provas.py — GET /provas/matriz ────────────────────────────────────────────
 
 async def test_provas_matriz_financeiro_403():
@@ -287,7 +324,18 @@ def test_helper_bool_barra_secretaria_e_cliente_externo(modulo, funcao):
 # Cobrir isso exigiria comparar o corpo da função, não sua identidade — custo
 # alto para um caso que o review de diff pega trivialmente.
 _ROUTERS = pathlib.Path(__file__).resolve().parents[1] / "app" / "routers"
-_PADRAO_PISO_ESTAGIARIO = re.compile(r'ROLE_LEVEL\[\s*["\']estagiario["\']\s*\]')
+# rglob + as duas formas de acesso (índice e .get) — review do CodeRabbit no PR
+# #706. Hoje não há router em subdiretório nem uso de ROLE_LEVEL.get("estagiario")
+# no repositório: a ampliação é PREVENTIVA, não corrige violação existente. Sem
+# ela, um gate hierárquico novo escrito em app/routers/<sub>/x.py, ou com .get(),
+# passaria pela varredura sem virar `infratores`.
+_PADRAO_PISO_ESTAGIARIO = re.compile(
+    r"""ROLE_LEVEL\s*(?:
+        \[\s*["']estagiario["']\s*\]
+        |\.get\(\s*["']estagiario["']\s*(?:,[^)]*)?\)
+    )""",
+    re.VERBOSE,
+)
 # Ancorado pela FUNÇÃO que contém a ocorrência, não pelo número da linha.
 # A primeira versão desta lista fixava `arquivo:linha` e quebrou o CI do PR
 # #706 sem nenhuma mudança de gate: a `main` avançou (PRs #735/#736), o
@@ -321,7 +369,8 @@ def _funcao_que_contem(tree: ast.Module, linha: int) -> str:
 def test_nenhum_router_juridico_novo_usa_piso_hierarquico_estagiario():
     infratores = []
     baseline_desatualizado = []
-    for arq in sorted(_ROUTERS.glob("*.py")):
+    for arq in sorted(_ROUTERS.rglob("*.py")):
+        nome = arq.relative_to(_ROUTERS).as_posix()
         texto = arq.read_text(encoding="utf-8")
         if not _PADRAO_PISO_ESTAGIARIO.search(texto):
             funcoes_encontradas: set[str] = set()
@@ -331,11 +380,11 @@ def test_nenhum_router_juridico_novo_usa_piso_hierarquico_estagiario():
                 _funcao_que_contem(tree, texto[: m.start()].count("\n") + 1)
                 for m in _PADRAO_PISO_ESTAGIARIO.finditer(texto)
             }
-        funcoes_conhecidas = _GRANDFATHER_ISSUE_694.get(arq.name, frozenset())
+        funcoes_conhecidas = _GRANDFATHER_ISSUE_694.get(nome, frozenset())
         for fn in sorted(funcoes_encontradas - funcoes_conhecidas):
-            infratores.append(f"{arq.name}::{fn}")
+            infratores.append(f"{nome}::{fn}")
         for fn in sorted(funcoes_conhecidas - funcoes_encontradas):
-            baseline_desatualizado.append(f"{arq.name}::{fn}")
+            baseline_desatualizado.append(f"{nome}::{fn}")
     assert not infratores, (
         "Gate hierárquico com piso ROLE_LEVEL['estagiario'] em router — isso "
         "libera 'financeiro' (nível 4 > estagiario nível 3) para ato/acervo "
@@ -379,7 +428,8 @@ _GATES_DE_CORPO = ("requer_equipe_juridica", "requer_advogado")
 
 def test_gates_compartilhados_nunca_usados_como_depends():
     infratores = []
-    for arq in sorted(_ROUTERS.glob("*.py")):
+    for arq in sorted(_ROUTERS.rglob("*.py")):
+        nome = arq.relative_to(_ROUTERS).as_posix()
         texto = arq.read_text(encoding="utf-8")
         if not any(g in texto for g in _GATES_DE_CORPO):
             continue
@@ -389,9 +439,11 @@ def test_gates_compartilhados_nunca_usados_como_depends():
                     and node.func.id == "Depends" and node.args):
                 continue
             alvo = node.args[0]
-            nome = alvo.id if isinstance(alvo, ast.Name) else None
-            if nome in _GATES_DE_CORPO:
-                infratores.append(f"{arq.name}::{_funcao_que_contem(tree, node.lineno)} -> Depends({nome})")
+            nome_gate = alvo.id if isinstance(alvo, ast.Name) else None
+            if nome_gate in _GATES_DE_CORPO:
+                infratores.append(
+                    f"{nome}::{_funcao_que_contem(tree, node.lineno)} -> Depends({nome_gate})"
+                )
     assert not infratores, (
         "Gate compartilhado de app.core.security usado como Depends(). O FastAPI "
         "aceita isso em silêncio e transforma `cu`/`detail` em query params: a "

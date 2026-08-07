@@ -471,7 +471,8 @@ async def matriz_provas_referencia(
 ):
     """Referência determinística (matriz tese×prova) — provas mínimas típicas.
 
-    Piso estagiário+ (leitura de referência estática, sem IA e sem PII).
+    Exige pertencer à allowlist EQUIPE_JURIDICA — não é piso hierárquico
+    (Issue #694): leitura de referência estática, sem IA e sem PII.
     Ownership via verificar_acesso_caso. Se ``area``/``pedidos`` não vierem,
     são derivados do próprio caso (área + título + tese principal). Nunca 500:
     a matriz degrada para lista vazia quando nada casa.

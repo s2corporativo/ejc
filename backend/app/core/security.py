@@ -59,7 +59,7 @@ EQUIPE_JURIDICA: frozenset[str] = frozenset({
 })
 
 
-def requer_equipe_juridica(cu: "User", detail: str = "Acesso negado") -> None:
+def requer_equipe_juridica(cu: "User", detalhe: str = "Acesso negado") -> None:
     """Gate compartilhado (fonte única): superfície jurídica exige um papel de
     EQUIPE_JURIDICA — allowlist EXATA, sem fallback hierárquico (ver
     EQUIPE_JURIDICA acima). `financeiro` e `secretaria` nunca passam aqui,
@@ -78,7 +78,7 @@ def requer_equipe_juridica(cu: "User", detail: str = "Acesso negado") -> None:
     requer_advogado()."""
     role = getattr(getattr(cu, "role", None), "value", None) or str(getattr(cu, "role", "") or "")
     if role not in EQUIPE_JURIDICA:
-        raise HTTPException(status_code=403, detail=detail)
+        raise HTTPException(status_code=403, detail=detalhe)
 
 
 def requer_advogado(cu, detail: str = "Acesso restrito a advogados") -> None:

@@ -78,7 +78,8 @@ async def meta_pecas(
 ):
     """Catálogo (fonte única) para o formulário de geração de peças: tipos
     agrupados, áreas do direito e níveis de complexidade. Elimina o espelhamento
-    manual desses metadados no frontend. Piso de role igual ao /gerar."""
+    manual desses metadados no frontend. Exige pertencer à allowlist
+    EQUIPE_JURIDICA — a mesma de /gerar; não é piso hierárquico (Issue #694)."""
     requer_equipe_juridica(cu, "Acesso negado")
 
     return {
@@ -451,6 +452,14 @@ async def gerar_demonstrativo(
     """Converte o resultado de uma calculadora em um Demonstrativo de Cálculo
     salvo como peça (LegalDoc) rascunho — vinculável a um caso. Reusa a esteira
     de peças existente; resultado é MINUTA (revisão humana obrigatória)."""
+    # AUTORIZAÇÃO PRIMEIRO (Issue #694, review do CodeRabbit no PR #706). Antes
+    # este gate era o ÚLTIMO, depois da matriz de homologação: um papel fora da
+    # EQUIPE_JURIDICA recebia 422 com o MOTIVO da não homologação da ferramenta
+    # em vez de 403 — vazava estado interno de homologação para quem não podia
+    # nem chamar a rota. Quem não pertence à equipe não descobre nada sobre a
+    # ferramenta.
+    requer_equipe_juridica(cu, "Acesso negado")
+
     # DOIS GATES, do mais específico para o mais geral (consolidação 2026-07-29).
     #
     # O PR #493 trouxe a matriz por ferramenta (FERRAMENTAS_NAO_HOMOLOGADAS) e o
@@ -496,7 +505,6 @@ async def gerar_demonstrativo(
                  "calculadoras estão em revisão (não homologadas — auditoria "
                  "2026-07-26). O resultado na tela permanece disponível como "
                  "apoio, com revisão do advogado.")
-    requer_equipe_juridica(cu, "Acesso negado")
 
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)
