@@ -166,6 +166,7 @@ from app.routers import signatures
 from app.routers import sociedades_cliente
 from app.routers import provas
 from app.routers import jornada_caso
+from app.routers import processo_eletronico
 from app.routers import sumulas
 from app.routers import suspensoes
 from app.routers import system_modules
@@ -480,6 +481,7 @@ app.include_router(signatures.router, prefix=API)
 app.include_router(sociedades_cliente.router, prefix=API)  # gestão societária de CLIENTES (vertical Empresarial)
 app.include_router(provas.router, prefix=API)  # Gestão de Provas por caso + Documento Único de Anexos (Visual Law)
 app.include_router(jornada_caso.router, prefix=API)  # Jornada do Caso — estado determinístico das 9 etapas (sem IA)
+app.include_router(processo_eletronico.router, prefix=API)  # Processo Eletrônico MNI 2.2.2 (Issue #762, Fase A leitura)
 app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA (art. 37) por cliente + RIPD (art. 38)
 app.include_router(sumulas.router, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
