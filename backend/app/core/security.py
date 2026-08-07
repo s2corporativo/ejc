@@ -4,7 +4,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Annotated
+from typing import Optional, List, Annotated, TYPE_CHECKING
 from uuid import uuid4
 
 import jwt
@@ -16,6 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.config import get_settings
+
+if TYPE_CHECKING:  # só para anotação — importar User em runtime seria circular
+    from app.models.user import User
 
 settings = get_settings()
 
@@ -35,6 +38,47 @@ ROLE_LEVEL: dict[str, int] = {
     "secretaria":    2,
     "cliente_externo": 1,
 }
+
+
+# ── Allowlist exata p/ superfície jurídica (Issue #694) ───────────────────────
+# `financeiro` (nível 4) fica ACIMA de `estagiario` (nível 3) em ROLE_LEVEL —
+# qualquer gate escrito como piso hierárquico (`ROLE_LEVEL.get(...) <
+# ROLE_LEVEL["estagiario"]` ou o equivalente `>=`) libera `financeiro` para
+# acervo/atos jurídicos (teses, jurisprudência, peças, dossiê, provas,
+# jurimetria, memória institucional) — ele não deveria ter esse acesso.
+# `secretaria` (nível 2) já ficava de fora por estar abaixo do piso; a
+# allowlist não muda o comportamento dela, só fecha o vazamento do financeiro.
+#
+# ATENÇÃO: NÃO confundir com require_roles() — aquela dependency factory cai
+# para comparação hierárquica quando o papel não está na lista literal (é o
+# MESMO defeito, uma camada abaixo: require_roles(EQUIPE_JURIDICA) ainda
+# deixaria financeiro passar, porque nível 4 >= min(EQUIPE_JURIDICA) = 3).
+# EQUIPE_JURIDICA/requer_equipe_juridica são allowlist EXATA — sem fallback.
+EQUIPE_JURIDICA: frozenset[str] = frozenset({
+    "superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario",
+})
+
+
+def requer_equipe_juridica(cu: "User", detalhe: str = "Acesso negado") -> None:
+    """Gate compartilhado (fonte única): superfície jurídica exige um papel de
+    EQUIPE_JURIDICA — allowlist EXATA, sem fallback hierárquico (ver
+    EQUIPE_JURIDICA acima). `financeiro` e `secretaria` nunca passam aqui,
+    mesmo com ROLE_LEVEL numericamente maior que estagiario.
+
+    Aceita User ORM ou objeto com .role (enum ou string).
+
+    CHAME NO CORPO do handler — NUNCA como `Depends(requer_equipe_juridica)`.
+    Verificado: sob `Depends`, o FastAPI monta a rota **em silêncio** e trata
+    `cu` e `detail` como query params de string. A rota vira 403 permanente
+    (fail-closed, mas quebrada) e o cliente passa a escolher a mensagem de erro
+    pela URL. A anotação de `cu` abaixo NÃO impede isso — serve só ao type
+    checker; quem impede é o teste de varredura
+    `test_gates_compartilhados_nunca_usados_como_depends`
+    (tests/test_rbac_equipe_juridica_694.py). Mesmo contrato de
+    requer_advogado()."""
+    role = getattr(getattr(cu, "role", None), "value", None) or str(getattr(cu, "role", "") or "")
+    if role not in EQUIPE_JURIDICA:
+        raise HTTPException(status_code=403, detail=detalhe)
 
 
 def requer_advogado(cu, detail: str = "Acesso restrito a advogados") -> None:

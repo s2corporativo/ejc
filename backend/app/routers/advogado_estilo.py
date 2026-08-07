@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import ROLE_LEVEL, get_current_user
+from app.core.security import get_current_user, EQUIPE_JURIDICA
 from app.models.user import User
 from app.services.advogado_style_service import gerar_perfil_estilo
 
@@ -13,7 +13,9 @@ router = APIRouter(prefix="/advogado-estilo", tags=["Aprendizado de Estilo"])
 
 
 def _pode_usar_estilo(u: User) -> bool:
-    return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["estagiario"]
+    # Issue #694: allowlist EXATA — financeiro não deve treinar/usar o perfil
+    # de estilo de redação de peças, mesmo com ROLE_LEVEL acima de estagiario.
+    return u.role.value in EQUIPE_JURIDICA
 
 
 @router.get("/me")

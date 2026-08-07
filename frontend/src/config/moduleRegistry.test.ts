@@ -47,6 +47,15 @@ describe("moduleRegistry", () => {
     expect(canRoleAccessPath("estagiario", "/financeiro")).toBe(false);
   });
 
+  it("nega financeiro em Peças — espelha o backend (Issue #694, allowlist EQUIPE_JURIDICA em POST /pecas/gerar)", () => {
+    expect(canRoleAccessPath("financeiro", "/pecas")).toBe(false);
+    expect(canRoleAccessPath("estagiario", "/pecas")).toBe(true);
+    expect(canRoleAccessPath("advogado", "/pecas")).toBe(true);
+    expect(
+      getProductionNavigation("financeiro").some((m) => m.path === "/pecas"),
+    ).toBe(false);
+  });
+
   it("destaca a Sala Jurídica e o Financeiro apenas para os perfis autorizados", () => {
     const advogado = getProductionNavigation("advogado");
     const socio = getProductionNavigation("socio");
