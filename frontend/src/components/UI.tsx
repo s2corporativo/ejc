@@ -258,6 +258,21 @@ const STATUS_REGISTRY: Record<
   arquivado: { tone: "slate", icon: Archive, label: "Arquivado" },
   suspenso: { tone: "slate", icon: PauseCircle, label: "Suspenso" },
   critico: { tone: "red", icon: AlertTriangle, label: "Crítico" },
+  // Processamento assíncrono do Raio-X (fila → em processamento →
+  // aguardando conferência/documentos pendentes, ou erro).
+  fila: { tone: "blue", icon: Clock, label: "Na fila" },
+  "em processamento": { tone: "blue", icon: FileClock, label: "Processando" },
+  "aguardando conferencia": {
+    tone: "amber",
+    icon: Eye,
+    label: "Aguardando conferência",
+  },
+  "documentos pendentes": {
+    tone: "orange",
+    icon: FileClock,
+    label: "Documentos pendentes",
+  },
+  erro: { tone: "red", icon: AlertTriangle, label: "Erro" },
 };
 
 // Tons dos status legados que ainda NÃO fazem parte do vocabulário canônico —

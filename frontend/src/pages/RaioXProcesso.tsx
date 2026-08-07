@@ -189,6 +189,29 @@ const STATUS_CONVERTIVEIS = new Set([
   "analise_concluida",
 ]);
 
+// Processamento assíncrono: o POST de análise/reanálise responde na hora com
+// status "fila" e o backend processa em segundo plano (fila →
+// em_processamento → aguardando_conferencia/documentos_pendentes, ou erro).
+// A página acompanha a transição por polling do GET da análise.
+const STATUS_PROCESSANDO = new Set(["fila", "em_processamento"]);
+const POLLING_INTERVALO_MS = 3000;
+// Teto do polling (~5 min por fase) para não consultar o backend para sempre.
+const POLLING_MAX_TENTATIVAS = 100;
+
+// O backend registra a falha com mensagem legível na própria análise
+// (relatorio["erro_processamento"], cf. schemas/raio_x.py); os demais campos
+// são fallback defensivo caso o contrato evolua.
+const extrairErroProcessamento = (analise: Analise): string | null => {
+  const relatorio = (analise.relatorio || {}) as Record<string, unknown>;
+  const candidato =
+    relatorio.erro_processamento ??
+    relatorio.erro_mensagem ??
+    relatorio.erro ??
+    relatorio.aviso;
+  const texto = candidato == null ? "" : String(candidato).trim();
+  return texto || null;
+};
+
 const humanize = (value: string) =>
   value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
@@ -395,6 +418,59 @@ export default function RaioXProcesso() {
     };
   }, [contextualCaseId, loadList]);
 
+  // Polling do processamento assíncrono: enquanto a análise aberta estiver em
+  // "fila"/"em_processamento", consulta o GET a cada ~3s até o estado terminal
+  // (com teto de tentativas). O cleanup encerra o timer no unmount ou quando a
+  // análise selecionada muda.
+  const selectedId = selected?.id;
+  const selectedStatus = selected?.status;
+  useEffect(() => {
+    if (!selectedId || contextualCaseId) return;
+    if (!selectedStatus || !STATUS_PROCESSANDO.has(selectedStatus)) return;
+    let ativo = true;
+    let tentativas = 0;
+    const timer = window.setInterval(() => {
+      tentativas += 1;
+      if (tentativas > POLLING_MAX_TENTATIVAS) {
+        window.clearInterval(timer);
+        if (ativo) {
+          setError(
+            "O processamento está demorando mais que o esperado. Reabra a análise em instantes para ver o resultado.",
+          );
+        }
+        return;
+      }
+      void api
+        .get<Analise>(`/raio-x/${selectedId}`)
+        .then(({ data }) => {
+          if (!ativo) return;
+          setSelected((atual) =>
+            atual && atual.id === selectedId ? data : atual,
+          );
+          if (!STATUS_PROCESSANDO.has(data.status)) {
+            window.clearInterval(timer);
+            if (data.status === "erro") {
+              setError(
+                extrairErroProcessamento(data) ||
+                  "O processamento da análise falhou. Reprocesse os documentos para tentar novamente.",
+              );
+            } else {
+              setMessage(
+                "Análise processada. Confira o relatório antes de decidir.",
+              );
+            }
+            void loadList();
+          }
+        })
+        // Falha transitória de rede não interrompe o acompanhamento.
+        .catch(() => undefined);
+    }, POLLING_INTERVALO_MS);
+    return () => {
+      ativo = false;
+      window.clearInterval(timer);
+    };
+  }, [selectedId, selectedStatus, contextualCaseId, loadList]);
+
   useEffect(() => {
     setAdvResult(null);
     const identification = selected?.relatorio?.identificacao || {};
@@ -432,6 +508,11 @@ export default function RaioXProcesso() {
 
   const report = contextual || selected?.relatorio;
   const identification = report?.identificacao || {};
+  // Análise aberta ainda em processamento assíncrono (fila/em_processamento):
+  // bloqueia ações que gravariam por cima do resultado que está por chegar.
+  const processandoAsync = Boolean(
+    !contextual && selectedStatus && STATUS_PROCESSANDO.has(selectedStatus),
+  );
   const sourceCount = useMemo(
     () => selected?.documentos?.length || 0,
     [selected],
@@ -525,8 +606,16 @@ export default function RaioXProcesso() {
           : "",
         data.erros?.length ? `${data.erros.length} arquivo(s) com erro` : "",
       ].filter(Boolean);
+      // Backend assíncrono responde na hora com a análise em fila; a página
+      // acompanha por polling. Se o backend ainda responder síncrono, mantém
+      // a mensagem de conclusão.
+      const emFila = STATUS_PROCESSANDO.has(String(data.analise?.status || ""));
       setMessage(
-        `Análise concluída.${notes.length ? ` ${notes.join("; ")}.` : ""}`,
+        `${
+          emFila
+            ? "Documentos enviados. A análise entrou na fila e esta página acompanha o processamento automaticamente."
+            : "Análise concluída."
+        }${notes.length ? ` ${notes.join("; ")}.` : ""}`,
       );
       await loadList();
     } catch (err: any) {
@@ -643,11 +732,19 @@ export default function RaioXProcesso() {
           params: { reprocessar: reprocess },
         },
       );
-      setSelected(data.analise || data);
+      const analiseAtualizada: Analise = data.analise || data;
+      setSelected(analiseAtualizada);
+      // Reanálise também pode ser assíncrona: entra na fila e o polling
+      // acompanha; mantém a mensagem antiga quando a resposta já vem pronta.
+      const emFila = STATUS_PROCESSANDO.has(
+        String(analiseAtualizada?.status || ""),
+      );
       setMessage(
-        reprocess
-          ? `Documentos reprocessados.${data.erros?.length ? ` ${data.erros.length} erro(s).` : ""}`
-          : "Relatório reconsolidado com os dados existentes.",
+        emFila
+          ? "Reanálise iniciada. Esta página acompanha o processamento automaticamente."
+          : reprocess
+            ? `Documentos reprocessados.${data.erros?.length ? ` ${data.erros.length} erro(s).` : ""}`
+            : "Relatório reconsolidado com os dados existentes.",
       );
       await loadList();
     } catch (err: any) {
@@ -1100,7 +1197,7 @@ export default function RaioXProcesso() {
                   </label>
                   <Button
                     onClick={() => void upload()}
-                    disabled={!files.length || busy}
+                    disabled={!files.length || busy || processandoAsync}
                   >
                     {busy ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -1126,6 +1223,35 @@ export default function RaioXProcesso() {
                 </div>
               )}
             </SectionCard>
+          )}
+
+          {processandoAsync && selected && (
+            <div
+              className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-100"
+              role="status"
+            >
+              <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+              <div>
+                <strong>
+                  {selected.status === "fila"
+                    ? "Análise na fila de processamento."
+                    : "Documentos em processamento."}
+                </strong>{" "}
+                Esta página atualiza automaticamente quando o resultado ficar
+                pronto — não é preciso recarregar.
+              </div>
+            </div>
+          )}
+
+          {!contextual && selected?.status === "erro" && (
+            <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <strong>O processamento da análise falhou:</strong>{" "}
+                {extrairErroProcessamento(selected) || "erro não especificado."}{" "}
+                Use "Reprocessar" ou envie os documentos novamente.
+              </div>
+            </div>
           )}
 
           <AIFactualityLegend />
@@ -1472,7 +1598,7 @@ export default function RaioXProcesso() {
                     <Button
                       className="w-full"
                       onClick={() => void saveReview()}
-                      disabled={busy}
+                      disabled={busy || processandoAsync}
                     >
                       <CheckCircle2 className="h-4 w-4" /> Salvar conferência
                     </Button>
@@ -1502,12 +1628,14 @@ export default function RaioXProcesso() {
                         <Button
                           variant="ghost"
                           onClick={() => void reconsolidate(false)}
+                          disabled={busy || processandoAsync}
                         >
                           <RefreshCw className="h-4 w-4" /> Reconsolidar
                         </Button>
                         <Button
                           variant="ghost"
                           onClick={() => void reconsolidate(true)}
+                          disabled={busy || processandoAsync}
                         >
                           <RefreshCw className="h-4 w-4" /> Reprocessar
                         </Button>
