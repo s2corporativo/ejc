@@ -219,6 +219,15 @@ async def lifespan(app: FastAPI):
     # Startup
     db_ok = await check_db()
     logger.info(f"[EJC] Banco de dados: {'OK' if db_ok else 'FALHA'}")
+    # Timbre dos documentos: setting institucional vazia FAZ SUMIR o segmento da
+    # peça (não imprime mais "[CEP - preencher em .env]" no papel que o cliente
+    # assina). Para a pendência não ficar silenciosa, ela é anunciada aqui.
+    pendencias_timbre = settings.escritorio_pendencias()
+    if pendencias_timbre:
+        logger.warning(
+            "[EJC] Timbre incompleto — segmento(s) omitido(s) nos documentos "
+            f"gerados: {', '.join(pendencias_timbre)}"
+        )
     # Carrega feriados municipais/estaduais da tabela `feriados` para o
     # calculador de prazos (caso contrário só os nacionais entram na conta).
     from app.services.deadline_calculator import carregar_feriados_db

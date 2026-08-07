@@ -1,8 +1,15 @@
-"""Relatório financeiro consolidado do cliente — GET /clients/{client_id}/relatorio-financeiro"""
+"""Relatório financeiro consolidado do cliente — GET /clients/{client_id}/relatorio-financeiro
+
+Degradação POR SEÇÃO (Onda 1 da refatoração): honorários e despesas são
+agregações independentes. Uma que falhe devolve lista vazia, entra em
+`secoes_indisponiveis` e vai para o log/Sentry — o relatório ABRE com o resto,
+em vez de responder 500 e deixar a tela em branco (achado da auditoria).
+"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
+from app.core.degradacao import ColetorDeSecoes
 from app.core.security import get_current_user
 from app.core.ownership import is_gestao
 from app.models.user import User
@@ -36,6 +43,39 @@ async def _cliente_visivel(db: AsyncSession, cu: User, client_id: str) -> bool:
     return row is not None
 
 
+async def _carregar_honorarios(db: AsyncSession, client_id: str) -> list[dict]:
+    rows = (await db.execute(text("""
+        SELECT f.id, f.tipo, f.status, f.descricao, f.valor, f.percentual_exito,
+               f.data_vencimento, f.data_pagamento, f.case_id,
+               c.titulo AS caso_titulo, c.numero_interno
+        FROM fees f
+        LEFT JOIN cases c ON c.id = f.case_id
+        WHERE f.client_id = :cid AND f.deleted_at IS NULL
+        ORDER BY f.created_at DESC
+    """), {"cid": client_id})).mappings().all()
+    fees = [dict(f) for f in rows]
+    for f in fees:
+        f["valor"] = float(f["valor"] or 0)
+        if f.get("percentual_exito") is not None:
+            f["percentual_exito"] = float(f["percentual_exito"])
+    return fees
+
+
+async def _carregar_despesas(db: AsyncSession, client_id: str) -> list[dict]:
+    rows = (await db.execute(text("""
+        SELECT cc.id, cc.tipo, cc.categoria, cc.valor, cc.descricao,
+               cc.data_lancamento, cc.pago, cc.case_id, c.titulo AS caso_titulo
+        FROM centro_custos cc
+        JOIN cases c ON c.id = cc.case_id
+        WHERE c.client_id = :cid AND cc.deleted_at IS NULL
+        ORDER BY cc.data_lancamento DESC
+    """), {"cid": client_id})).mappings().all()
+    despesas = [dict(d) for d in rows]
+    for d in despesas:
+        d["valor"] = float(d["valor"] or 0)
+    return despesas
+
+
 router = APIRouter(prefix="/clients/{client_id}/relatorio-financeiro", tags=["Relatório Financeiro Cliente"], dependencies=[Depends(_req_fin_adv)])
 
 
@@ -55,21 +95,8 @@ async def relatorio_financeiro_cliente(
         # 404 (não 403) para não confirmar a existência de cliente alheio.
         raise HTTPException(404, "Cliente não encontrado")
 
-    # Honorários por tipo/status
-    fees = (await db.execute(text("""
-        SELECT f.id, f.tipo, f.status, f.descricao, f.valor, f.percentual_exito,
-               f.data_vencimento, f.data_pagamento, f.case_id,
-               c.titulo AS caso_titulo, c.numero_interno
-        FROM fees f
-        LEFT JOIN cases c ON c.id = f.case_id
-        WHERE f.client_id = :cid AND f.deleted_at IS NULL
-        ORDER BY f.created_at DESC
-    """), {"cid": client_id})).mappings().all()
-    fees = [dict(f) for f in fees]
-    for f in fees:
-        f["valor"] = float(f["valor"] or 0)
-        if f.get("percentual_exito") is not None:
-            f["percentual_exito"] = float(f["percentual_exito"])
+    secoes = ColetorDeSecoes("relatorio_financeiro_cliente", db)
+    fees = await secoes.tentar("honorarios", _carregar_honorarios(db, client_id), padrao=[])
 
     def soma(pred):
         return round(sum(f["valor"] for f in fees if pred(f)), 2)
@@ -84,17 +111,7 @@ async def relatorio_financeiro_cliente(
     exito_recebido = soma(lambda f: f["tipo"] == "exito" and f["status"] == "pago")
 
     # Despesas vinculadas aos casos do cliente (centro de custos)
-    despesas = (await db.execute(text("""
-        SELECT cc.id, cc.tipo, cc.categoria, cc.valor, cc.descricao,
-               cc.data_lancamento, cc.pago, cc.case_id, c.titulo AS caso_titulo
-        FROM centro_custos cc
-        JOIN cases c ON c.id = cc.case_id
-        WHERE c.client_id = :cid AND cc.deleted_at IS NULL
-        ORDER BY cc.data_lancamento DESC
-    """), {"cid": client_id})).mappings().all()
-    despesas = [dict(d) for d in despesas]
-    for d in despesas:
-        d["valor"] = float(d["valor"] or 0)
+    despesas = await secoes.tentar("despesas", _carregar_despesas(db, client_id), padrao=[])
     total_despesas    = round(sum(d["valor"] for d in despesas), 2)
     despesas_pagas    = round(sum(d["valor"] for d in despesas if d["pago"]), 2)
     reembolsos        = round(sum(d["valor"] for d in despesas if (d.get("tipo") or "") == "reembolsavel"), 2)
@@ -145,4 +162,5 @@ async def relatorio_financeiro_cliente(
         "honorarios": fees,
         "despesas": despesas,
         "extrato": extrato,
+        **secoes.rodape(),
     }

@@ -20,7 +20,7 @@ def _case() -> Case:
 
 def test_ad_judicia_sem_substab_nao_contem_substabelecer_nem_renunciar():
     titulo, corpo = _clausula_poderes("ad_judicia", permite_substabelecimento=False, poderes_especiais=None)
-    assert titulo == "PROCURACAO AD JUDICIA"
+    assert titulo == "PROCURAÇÃO AD JUDICIA"
     assert "ET EXTRA" not in titulo
     assert "substabelecer" not in corpo.lower()
     assert "renunciar" not in corpo.lower()
@@ -35,7 +35,7 @@ def test_ad_judicia_com_substab_inclui_substabelecer_mas_nao_renunciar():
 
 def test_et_extra_sem_substab_inclui_renunciar_mas_nao_substabelecer():
     titulo, corpo = _clausula_poderes("ad_judicia_et_extra", permite_substabelecimento=False, poderes_especiais=None)
-    assert titulo == "PROCURACAO AD JUDICIA ET EXTRA"
+    assert titulo == "PROCURAÇÃO AD JUDICIA ET EXTRA"
     assert "renunciar" in corpo.lower()
     assert "substabelecer" not in corpo.lower()
 
@@ -69,7 +69,7 @@ def test_minuta_ad_judicia_do_cadastro_nao_outorga_poderes_nao_concedidos():
         _case(), _cli(), "Dra. Fulana",
         tipo_poderes="ad_judicia", permite_substabelecimento=False, poderes_especiais=None,
     )
-    assert "PROCURACAO AD JUDICIA" in texto
+    assert "PROCURAÇÃO AD JUDICIA" in texto
     assert "ET EXTRA" not in texto
     assert "substabelecer" not in texto.lower()
     assert "renunciar" not in texto.lower()
@@ -94,7 +94,7 @@ def test_minuta_default_conservador_ad_judicia_sem_art_105():
     # KitDocumentalIn). O comportamento histórico (et extra por omissão) foi
     # descontinuado.
     texto = _procuracao(_case(), _cli(), "Dra. Fulana")
-    assert "PROCURACAO AD JUDICIA" in texto
+    assert "PROCURAÇÃO AD JUDICIA" in texto
     assert "ET EXTRA" not in texto
     assert "renunciar" not in texto.lower()
     assert "transigir" not in texto.lower()
@@ -157,8 +157,8 @@ def test_modelo_oficial_cabecalho_outorgado_fixo_outorgante_e_alineas():
     assert "AD JUDICIA ET EXTRA - PODERES GERAIS" in texto
 
     # OUTORGADO FIXO = sócio-titular, independente do `adv` passado na chamada
-    assert "JOAO PEDRO RODRIGUES TEIXEIRA" in texto
-    assert "OAB/MG no 251.174" in texto
+    assert "JOÃO PEDRO RODRIGUES TEIXEIRA" in texto
+    assert "OAB/MG nº 251.174" in texto
     assert "Dra. Fulana" not in texto
 
     # OUTORGANTE = cliente do caso, nacionalidade default "brasileiro(a)" + CPF
@@ -170,11 +170,11 @@ def test_modelo_oficial_cabecalho_outorgado_fixo_outorgante_e_alineas():
     for alinea in ("(a)", "(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)", "(i)", "(j)"):
         assert alinea in texto, f"falta a alinea {alinea}"
     # Âncoras de conteúdo do modelo
-    assert "tutelas de urgencia" in texto                                       # (a)
-    assert "renunciar ao direito sobre que se funda a acao (art. 105 do CPC)" in texto  # (c)
+    assert "tutelas de urgência" in texto                                       # (a)
+    assert "renunciar ao direito sobre que se funda a ação (art. 105 do CPC)" in texto  # (c)
     assert "PJe, e-Proc" in texto                                               # (d)
-    assert "Justica Gratuita" in texto                                          # (e)
-    assert "levantar depositos judiciais" in texto                             # (f)
+    assert "Justiça Gratuita" in texto                                          # (e)
+    assert "levantar depósitos judiciais" in texto                             # (f)
     assert "substabelecer este mandato, com ou sem reserva de poderes" in texto  # (j)
 
     # Fecho: Betim/MG + data corrente por extenso no mesmo fuso de Brasília usado

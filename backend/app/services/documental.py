@@ -21,8 +21,8 @@ _settings = get_settings()
 # advogado responsável pelo caso (que, quando preciso, atua por
 # substabelecimento). Dado institucional fixo (não é PII de cliente).
 _OUTORGADO_SOCIO = (
-    "JOAO PEDRO RODRIGUES TEIXEIRA, brasileiro, advogado, OAB/MG no 251.174, "
-    "com endereco profissional na Av. Gov. Valadares no 851, sala 405, Centro, "
+    "JOÃO PEDRO RODRIGUES TEIXEIRA, brasileiro, advogado, OAB/MG nº 251.174, "
+    "com endereço profissional na Av. Gov. Valadares nº 851, sala 405, Centro, "
     "Betim/MG, e-mail contato@depaulateixeira.adv.br"
 )
 
@@ -30,7 +30,7 @@ _OUTORGADO_SOCIO = (
 _CABECALHO_ESCRITORIO = "DE PAULA TEIXEIRA - SOCIEDADE DE ADVOGADOS"
 
 _MESES_PT = (
-    "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
+    "janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
 )
 
@@ -47,9 +47,9 @@ def _qualificacao(c: Client) -> str:
     # em claro via cnpj_plain/cpf_plain (decifrado para a peça).
     if (getattr(c, "tipo", "") or "").lower() in ("pj", "juridica", "pessoa_juridica") or c.cnpj_enc:
         return (
-            f"{c.razao_social or c.nome}, pessoa juridica inscrita no CNPJ sob o no "
+            f"{c.razao_social or c.nome}, pessoa jurídica inscrita no CNPJ sob o nº "
             f"{c.cnpj_plain or '[CNPJ]'}, com sede em "
-            f"{c.logradouro or '[endereco]'}, {c.numero or ''} {c.complemento or ''}, "
+            f"{c.logradouro or '[endereço]'}, {c.numero or ''} {c.complemento or ''}, "
             f"{c.bairro or ''}, {c.cidade or '[cidade]'}/{c.estado or 'MG'}, CEP {c.cep or '[CEP]'}"
         )
     # Nacionalidade da PF na qualificação do outorgante. O model Client ainda não
@@ -57,8 +57,8 @@ def _qualificacao(c: Client) -> str:
     # default "brasileiro(a)". Quando a coluna existir e vier preenchida, é usada.
     nacionalidade = (getattr(c, "nacionalidade", "") or "").strip() or "brasileiro(a)"
     return (
-        f"{c.nome}, {nacionalidade}, {c.profissao or '[profissao]'}, inscrito(a) no CPF sob o no "
-        f"{c.cpf_plain or '[CPF]'}, residente em {c.logradouro or '[endereco]'}, "
+        f"{c.nome}, {nacionalidade}, {c.profissao or '[profissão]'}, inscrito(a) no CPF sob o nº "
+        f"{c.cpf_plain or '[CPF]'}, residente em {c.logradouro or '[endereço]'}, "
         f"{c.numero or ''} {c.complemento or ''}, {c.bairro or ''}, "
         f"{c.cidade or '[cidade]'}/{c.estado or 'MG'}, CEP {c.cep or '[CEP]'}"
     )
@@ -67,9 +67,9 @@ def _qualificacao(c: Client) -> str:
 # Poderes especiais do art. 105 do CPC. NUNCA os outorgue por padrao: so entram
 # quando o cadastro (Procuracao.tipo_poderes) diz "ad_judicia_et_extra".
 _PODERES_ESPECIAIS_105 = (
-    "receber citacao, confessar, reconhecer a procedencia do pedido, "
-    "transigir, desistir, renunciar ao direito sobre que se funda a acao, "
-    "receber e dar quitacao, firmar compromisso"
+    "receber citação, confessar, reconhecer a procedência do pedido, "
+    "transigir, desistir, renunciar ao direito sobre que se funda a ação, "
+    "receber e dar quitação, firmar compromisso"
 )
 # Clausula de substabelecimento (padrao do escritorio: com ou sem reserva). So
 # aparece quando o cadastro autoriza (Procuracao.permite_substabelecimento).
@@ -93,55 +93,55 @@ def _clausula_poderes(
     substab = _CLAUSULA_SUBSTAB if permite_substabelecimento else ""
 
     if tipo == "ad_judicia_et_extra":
-        titulo = "PROCURACAO AD JUDICIA ET EXTRA"
+        titulo = "PROCURAÇÃO AD JUDICIA ET EXTRA"
         # Poderes gerais (modelo oficial do escritório) detalhados em alíneas
         # (a)-(j). A alínea (j) — substabelecimento — SÓ entra quando o cadastro
         # autoriza (permite_substabelecimento), preservando o gate independente
         # do art. 105 que o restante das alíneas materializa.
         alineas = [
-            "(a) propor as acoes e medidas cabiveis, inclusive tutelas de urgencia e "
-            "cautelares, defender o(a) outorgante nas contrarias e acompanhar os feitos "
-            "em todas as instancias e graus de jurisdicao ate o transito em julgado",
-            "(b) confessar, reconhecer a procedencia do pedido, transigir, celebrar "
-            "acordos judiciais e extrajudiciais, fixar condicoes de pagamento e assinar "
+            "(a) propor as ações e medidas cabíveis, inclusive tutelas de urgência e "
+            "cautelares, defender o(a) outorgante nas contrárias e acompanhar os feitos "
+            "em todas as instâncias e graus de jurisdição até o trânsito em julgado",
+            "(b) confessar, reconhecer a procedência do pedido, transigir, celebrar "
+            "acordos judiciais e extrajudiciais, fixar condições de pagamento e assinar "
             "os respectivos termos",
-            "(c) desistir de recursos, renunciar ao direito sobre que se funda a acao "
-            "(art. 105 do CPC) e praticar os demais atos de disposicao processual",
-            "(d) receber citacoes, intimacoes e notificacoes, inclusive eletronicas "
+            "(c) desistir de recursos, renunciar ao direito sobre que se funda a ação "
+            "(art. 105 do CPC) e praticar os demais atos de disposição processual",
+            "(d) receber citações, intimações e notificações, inclusive eletrônicas "
             "(PJe, e-Proc e demais sistemas)",
-            "(e) requerer os beneficios da Justica Gratuita (Lei 1.060/50; art. 98 do CPC)",
-            "(f) receber valores, dar quitacao, levantar depositos judiciais e assinar "
-            "requerimentos de alvara",
-            "(g) obter certidoes e informacoes junto a cartorios, juntas comerciais, "
-            "DETRAN, Receita Federal, INSS, FGTS e demais orgaos",
-            "(h) representar o(a) outorgante em audiencias de conciliacao, mediacao, "
-            "instrucao e julgamento",
-            "(i) assinar peticoes, memoriais e documentos",
+            "(e) requerer os benefícios da Justiça Gratuita (Lei 1.060/50; art. 98 do CPC)",
+            "(f) receber valores, dar quitação, levantar depósitos judiciais e assinar "
+            "requerimentos de alvará",
+            "(g) obter certidões e informações junto a cartórios, juntas comerciais, "
+            "DETRAN, Receita Federal, INSS, FGTS e demais órgãos",
+            "(h) representar o(a) outorgante em audiências de conciliação, mediação, "
+            "instrução e julgamento",
+            "(i) assinar petições, memoriais e documentos",
         ]
         if permite_substabelecimento:
             alineas.append(
                 "(j) substabelecer este mandato, com ou sem reserva de poderes"
             )
         corpo = (
-            "a quem confere os poderes da clausula ad judicia et extra, para o foro em "
-            "geral, em qualquer Juizo, Instancia ou Tribunal, e ainda os seguintes "
+            "a quem confere os poderes da cláusula ad judicia et extra, para o foro em "
+            "geral, em qualquer Juízo, Instância ou Tribunal, e ainda os seguintes "
             "poderes especiais: " + "; ".join(alineas)
         )
     elif tipo == "especiais":
-        titulo = "PROCURACAO COM PODERES ESPECIAIS"
+        titulo = "PROCURAÇÃO COM PODERES ESPECIAIS"
         especiais = (poderes_especiais or "").strip() or "[especificar os poderes especiais outorgados]"
         corpo = (
-            "a quem confere os poderes da clausula ad judicia, para o foro em geral, "
-            "em qualquer Juizo, Instancia ou Tribunal, podendo propor as acoes "
-            "competentes e defender o(a) outorgante nas contrarias, alem dos seguintes "
+            "a quem confere os poderes da cláusula ad judicia, para o foro em geral, "
+            "em qualquer Juízo, Instância ou Tribunal, podendo propor as ações "
+            "competentes e defender o(a) outorgante nas contrárias, além dos seguintes "
             "poderes especiais expressamente outorgados: " + especiais + substab
         )
     else:  # "ad_judicia" — default CONSERVADOR (so foro em geral, sem art. 105)
-        titulo = "PROCURACAO AD JUDICIA"
+        titulo = "PROCURAÇÃO AD JUDICIA"
         corpo = (
-            "a quem confere os poderes da clausula ad judicia, para o foro em geral, "
-            "em qualquer Juizo, Instancia ou Tribunal, podendo propor as acoes "
-            "competentes e defender o(a) outorgante nas contrarias" + substab
+            "a quem confere os poderes da cláusula ad judicia, para o foro em geral, "
+            "em qualquer Juízo, Instância ou Tribunal, podendo propor as ações "
+            "competentes e defender o(a) outorgante nas contrárias" + substab
         )
     return titulo, corpo
 
@@ -178,11 +178,11 @@ def _procuracao(
 
     # Cabeçalho oficial: no modelo de PODERES GERAIS (ad_judicia_et_extra) sai o
     # timbre completo; nos demais tipos, o timbre do escritório + o título do
-    # instrumento (mantém "PROCURACAO AD JUDICIA"/"...ESPECIAIS" visível).
+    # instrumento (mantém "PROCURAÇÃO AD JUDICIA"/"...ESPECIAIS" visível).
     if tipo == "ad_judicia_et_extra":
         cabecalho = (
             _CABECALHO_ESCRITORIO + "\n"
-            "PROCURACAO\n"
+            "PROCURAÇÃO\n"
             "AD JUDICIA ET EXTRA - PODERES GERAIS"
         )
     else:
@@ -191,10 +191,10 @@ def _procuracao(
     if case is not None:
         alvo = (
             f", especialmente para atuar no caso {case.titulo}"
-            f"{(' (processo no ' + case.numero_processo + ')') if case.numero_processo else ''}"
+            f"{(' (processo nº ' + case.numero_processo + ')') if case.numero_processo else ''}"
         )
     elif foro_restrito:
-        alvo = f", com atuacao adstrita ao foro/comarca de {foro_restrito}"
+        alvo = f", com atuação adstrita ao foro/comarca de {foro_restrito}"
     else:
         alvo = ""
 
@@ -217,23 +217,23 @@ def _procuracao(
 # há proposta de honorários APROVADA (fee_proposal_service) — sem proposta, o
 # contrato mantém EXATAMENTE o comportamento histórico (placeholders de revisão).
 _CLAUSULAS_FIXAS_CONTRATO = (
-    "RESCISAO. O presente contrato podera ser rescindido por qualquer das partes, "
-    "mediante comunicacao escrita, sendo devidos ao contratado os honorarios "
-    "proporcionais ao trabalho ja realizado ate a data da rescisao, na forma do "
+    "RESCISÃO. O presente contrato poderá ser rescindido por qualquer das partes, "
+    "mediante comunicação escrita, sendo devidos ao contratado os honorários "
+    "proporcionais ao trabalho já realizado até a data da rescisão, na forma do "
     "artigo 22 da Lei 8.906/94.",
-    "INADIMPLEMENTO. O atraso no pagamento de qualquer parcela sujeitara o "
+    "INADIMPLEMENTO. O atraso no pagamento de qualquer parcela sujeitará o "
     "contratante a multa de 2% (dois por cento), juros de mora de 1% (um por "
-    "cento) ao mes e correcao monetaria, autorizada a suspensao dos servicos "
-    "nao urgentes apos notificacao, ressalvados os deveres legais do advogado.",
-    "REVOGACAO E RENUNCIA. A revogacao do mandato pelo contratante nao o exime "
-    "do pagamento dos honorarios proporcionais ao trabalho realizado. Em caso "
-    "de renuncia, o contratado observara o artigo 112 do CPC, permanecendo "
-    "responsavel pelos atos urgentes pelo prazo legal.",
-    "PROTECAO DE DADOS (LGPD). Os dados pessoais do contratante serao tratados "
-    "exclusivamente para a execucao deste contrato e o cumprimento de "
-    "obrigacoes legais e regulatorias, nos termos da Lei 13.709/2018 (LGPD), "
+    "cento) ao mês e correção monetária, autorizada a suspensão dos serviços "
+    "não urgentes após notificação, ressalvados os deveres legais do advogado.",
+    "REVOGAÇÃO E RENÚNCIA. A revogação do mandato pelo contratante não o exime "
+    "do pagamento dos honorários proporcionais ao trabalho realizado. Em caso "
+    "de renúncia, o contratado observará o artigo 112 do CPC, permanecendo "
+    "responsável pelos atos urgentes pelo prazo legal.",
+    "PROTEÇÃO DE DADOS (LGPD). Os dados pessoais do contratante serão tratados "
+    "exclusivamente para a execução deste contrato e o cumprimento de "
+    "obrigações legais e regulatórias, nos termos da Lei 13.709/2018 (LGPD), "
     "observado o sigilo profissional do advogado (Lei 8.906/94).",
-    "COMUNICACAO ELETRONICA. As partes reconhecem como validas as comunicacoes "
+    "COMUNICAÇÃO ELETRÔNICA. As partes reconhecem como válidas as comunicações "
     "realizadas pelos e-mails e telefones informados no cadastro, inclusive "
     "por aplicativos de mensagens, cabendo a cada parte manter seus dados de "
     "contato atualizados.",
@@ -263,59 +263,59 @@ def _contrato_honorarios(
 
     if proposta is None:
         clausulas = (
-            "CLAUSULA 2 - HONORARIOS. As partes ajustam honorarios no valor de R$ [____], "
-            f"tendo como referencia a Tabela de Honorarios da OAB/MG{ref}, pagos da seguinte forma: [____].\n\n"
-            "CLAUSULA 3 - HONORARIOS DE EXITO. Em caso de exito, fica ajustado o percentual de "
-            "[__]% sobre o proveito economico obtido.\n\n"
-            "CLAUSULA 4 - HONORARIOS SUCUMBENCIAIS. Pertencem ao contratado, na forma do artigo 85, "
-            "paragrafo 14, do CPC e do artigo 22 da Lei 8.906/94.\n\n"
-            "CLAUSULA 5 - DESPESAS. Custas, taxas e despesas processuais correm por conta do contratante.\n\n"
-            "CLAUSULA 6 - FORO. Comarca de [____]/MG.\n\n"
+            "CLÁUSULA 2 - HONORÁRIOS. As partes ajustam honorários no valor de R$ [____], "
+            f"tendo como referência a Tabela de Honorários da OAB/MG{ref}, pagos da seguinte forma: [____].\n\n"
+            "CLÁUSULA 3 - HONORÁRIOS DE ÊXITO. Em caso de êxito, fica ajustado o percentual de "
+            "[__]% sobre o proveito econômico obtido.\n\n"
+            "CLÁUSULA 4 - HONORÁRIOS SUCUMBENCIAIS. Pertencem ao contratado, na forma do artigo 85, "
+            "parágrafo 14, do CPC e do artigo 22 da Lei 8.906/94.\n\n"
+            "CLÁUSULA 5 - DESPESAS. Custas, taxas e despesas processuais correm por conta do contratante.\n\n"
+            "CLÁUSULA 6 - FORO. Comarca de [____]/MG.\n\n"
         )
     else:
         valor = proposta.get("valor")
         valor_txt = formatar_brl(valor) if valor is not None else "R$ [____]"
         forma = proposta.get("forma_pagamento") or "[____]"
         versao = proposta.get("versao")
-        origem = (f", conforme proposta de honorarios aprovada"
-                  f"{(' (versao ' + str(versao) + ')') if versao else ''}")
+        origem = (f", conforme proposta de honorários aprovada"
+                  f"{(' (versão ' + str(versao) + ')') if versao else ''}")
         exito = proposta.get("exito_percentual")
         exito_txt = (
-            "CLAUSULA 3 - HONORARIOS DE EXITO. Em caso de exito, fica ajustado o percentual de "
-            f"{float(exito):g}% sobre o proveito economico obtido.\n\n"
+            "CLÁUSULA 3 - HONORÁRIOS DE ÊXITO. Em caso de êxito, fica ajustado o percentual de "
+            f"{float(exito):g}% sobre o proveito econômico obtido.\n\n"
             if exito is not None else
-            "CLAUSULA 3 - HONORARIOS DE EXITO. Nao foram ajustados honorarios de exito "
+            "CLÁUSULA 3 - HONORÁRIOS DE ÊXITO. Não foram ajustados honorários de êxito "
             "entre as partes.\n\n"
         )
         despesas = proposta.get("despesas_criterio") or (
             "Custas, taxas e despesas processuais correm por conta do contratante."
         )
         clausulas_fixas = "".join(
-            f"CLAUSULA {n} - {texto}\n\n"
+            f"CLÁUSULA {n} - {texto}\n\n"
             for n, texto in enumerate(_CLAUSULAS_FIXAS_CONTRATO, start=6)
         )
         clausulas = (
-            f"CLAUSULA 2 - HONORARIOS. As partes ajustam honorarios no valor de {valor_txt}, "
-            f"tendo como referencia a Tabela de Honorarios da OAB/MG{ref}{origem}, "
+            f"CLÁUSULA 2 - HONORÁRIOS. As partes ajustam honorários no valor de {valor_txt}, "
+            f"tendo como referência a Tabela de Honorários da OAB/MG{ref}{origem}, "
             f"pagos da seguinte forma: {forma}.\n\n"
             + exito_txt +
-            "CLAUSULA 4 - HONORARIOS SUCUMBENCIAIS. Pertencem ao contratado, na forma do artigo 85, "
-            "paragrafo 14, do CPC e do artigo 22 da Lei 8.906/94.\n\n"
-            f"CLAUSULA 5 - DESPESAS. {despesas}\n\n"
+            "CLÁUSULA 4 - HONORÁRIOS SUCUMBENCIAIS. Pertencem ao contratado, na forma do artigo 85, "
+            "parágrafo 14, do CPC e do artigo 22 da Lei 8.906/94.\n\n"
+            f"CLÁUSULA 5 - DESPESAS. {despesas}\n\n"
             + clausulas_fixas +
-            f"CLAUSULA {6 + len(_CLAUSULAS_FIXAS_CONTRATO)} - FORO. Fica eleito o foro da "
+            f"CLÁUSULA {6 + len(_CLAUSULAS_FIXAS_CONTRATO)} - FORO. Fica eleito o foro da "
             f"Comarca de {_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, "
-            "sede do escritorio contratado, para dirimir quaisquer controversias "
+            "sede do escritório contratado, para dirimir quaisquer controvérsias "
             "oriundas deste contrato.\n\n"
         )
 
     texto = _MARCA + (
-        "CONTRATO DE PRESTACAO DE SERVICOS ADVOCATICIOS E HONORARIOS\n\n"
+        "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ADVOCATÍCIOS E HONORÁRIOS\n\n"
         f"CONTRATANTE: {_qualificacao(cli)}.\n\n"
-        f"CONTRATADO: {_settings.ESCRITORIO_NOME}, por seu(sua) advogado(a) {adv} "
-        f"(OAB/MG no {_settings.escritorio_oab()}).\n\n"
-        f"CLAUSULA 1 - OBJETO. Prestacao de servicos advocaticios no caso {case.titulo} "
-        f"(area: {area}){(', processo no ' + case.numero_processo) if case.numero_processo else ''}.\n\n"
+        f"CONTRATADO: {_settings.ESCRITORIO_NOME}, por seu(sua) advogado(a) {adv}"
+        f"{(' (OAB/MG nº ' + _settings.escritorio_oab() + ')') if _settings.escritorio_oab() else ''}.\n\n"
+        f"CLÁUSULA 1 - OBJETO. Prestação de serviços advocatícios no caso {case.titulo} "
+        f"(área: {area}){(', processo nº ' + case.numero_processo) if case.numero_processo else ''}.\n\n"
         + clausulas +
         f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, [data].\n\n"
         f"____________________________   ____________________________\n"
@@ -327,19 +327,19 @@ def _contrato_honorarios(
 def _relatorio_inicial(case: Case, cli: Client, area: str) -> str:
     proc = f"\nProcesso: {case.numero_processo}" if case.numero_processo else ""
     texto = (
-        "RELATORIO JURIDICO INICIAL\n\n"
+        "RELATÓRIO JURÍDICO INICIAL\n\n"
         f"Caso: {case.titulo}\nCliente: {cli.razao_social or cli.nome}\n"
-        f"Area: {area}\nNo interno: {case.numero_interno or '-'}{proc}\n\n"
+        f"Área: {area}\nNº interno: {case.numero_interno or '-'}{proc}\n\n"
         "1. FATOS\n\n" + (case.descricao_fatos or "[a preencher]") + "\n\n"
-        "2. TESE PRINCIPAL\n\n" + (case.tese_principal or "[analise pendente]") + "\n\n"
+        "2. TESE PRINCIPAL\n\n" + (case.tese_principal or "[análise pendente]") + "\n\n"
         "3. PONTOS FORTES\n\n" + (case.pontos_fortes or "-") + "\n\n"
         "4. PONTOS FRACOS E RISCOS\n\n" + (case.pontos_fracos or "-") + "\n\n"
-        "5. PROXIMAS PROVIDENCIAS\n\n"
+        "5. PRÓXIMAS PROVIDÊNCIAS\n\n"
         "- Reunir documentos\n"
-        "- Obter procuracao assinada\n"
-        "- Formalizar contrato de honorarios\n"
-        "- Definir estrategia processual ou extrajudicial\n\n"
-        "Documento de trabalho. Sintese inicial sujeita a revisao juridica."
+        "- Obter procuração assinada\n"
+        "- Formalizar contrato de honorários\n"
+        "- Definir estratégia processual ou extrajudicial\n\n"
+        "Documento de trabalho. Síntese inicial sujeita a revisão jurídica."
     )
     return padronizar_documento_juridico(texto)
 
@@ -367,18 +367,18 @@ async def gerar_documentos_iniciais(
         if not cli:
             return []
         adv_user = await db.get(User, case.advogado_responsavel_id) if case.advogado_responsavel_id else None
-        adv = getattr(adv_user, "full_name", None) or "[advogado responsavel]"
+        adv = getattr(adv_user, "full_name", None) or "[advogado responsável]"
         area = getattr(case.area, "value", None) or str(case.area or "")
 
         docs = [
-            ("Procuracao - " + case.titulo, PecaTipo.procuracao, _procuracao(
+            ("Procuração - " + case.titulo, PecaTipo.procuracao, _procuracao(
                 case, cli, adv,
                 tipo_poderes=tipo_poderes,
                 permite_substabelecimento=permite_substabelecimento,
                 poderes_especiais=poderes_especiais,
             )),
-            ("Contrato de Honorarios - " + case.titulo, PecaTipo.contrato, _contrato_honorarios(case, cli, adv, area)),
-            ("Relatorio Juridico Inicial - " + case.titulo, PecaTipo.parecer, _relatorio_inicial(case, cli, area)),
+            ("Contrato de Honorários - " + case.titulo, PecaTipo.contrato, _contrato_honorarios(case, cli, adv, area)),
+            ("Relatório Jurídico Inicial - " + case.titulo, PecaTipo.parecer, _relatorio_inicial(case, cli, area)),
         ]
         criados = []
         for titulo, tipo, conteudo in docs:

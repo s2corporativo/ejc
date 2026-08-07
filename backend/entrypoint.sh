@@ -55,4 +55,21 @@ echo "[entrypoint] Iniciando uvicorn..."
 # Ambos são POR PROCESSO: com N workers, o atacante ganha N× o limite (cada
 # worker conta suas próprias falhas). RATE_LIMIT_REDIS_ENABLED cobre apenas a
 # dependency consumir()/rate_limit() — não cobre os dois itens acima.
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+#
+# --forwarded-allow-ips (Onda 1 da refatoração): `--proxy-headers` sozinho NÃO
+# bastava. O default do uvicorn é confiar só em 127.0.0.1, mas o Nginx roda no
+# HOST e chega aqui pela porta publicada — o Docker reescreve a origem para o
+# gateway da bridge (172.x.0.1), NUNCA 127.0.0.1. Resultado: o
+# `X-Forwarded-Proto: https` que o Nginx envia era DESCARTADO, o app enxergava
+# esquema `http` e todo redirect absoluto que o Starlette gera saía como
+# `Location: http://...`. Numa página https o browser bloqueia o downgrade e a
+# chamada morre em "Failed to fetch" — o sintoma que a auditoria reproduziu na
+# Sala Jurídica com barra final (`/api/sala-juridica/` → 307 → bloqueado;
+# `/api/sala-juridica` → 200), e que valia para QUALQUER rota cuja barra final
+# divergisse da declarada (163 routers, uns com "", outros com "/").
+#
+# `*` é seguro AQUI porque a porta 8000 é publicada só no loopback do host
+# (docker-compose.yml) — apenas o Nginx do host alcança este processo. Em
+# topologia diferente, aperte com FORWARDED_ALLOW_IPS no .env.
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 \
+    --proxy-headers --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-*}"

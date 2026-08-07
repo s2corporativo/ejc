@@ -90,6 +90,59 @@ interface DossieData {
     tipo: string;
     created_at: string;
   }>;
+  // Degradação por seção: o backend isola cada agregação e nomeia aqui a que
+  // não pôde ser carregada, em vez de responder 500 e deixar a ficha fechada.
+  // Sem esta lista o usuário veria "0 prazos" achando que não há prazo — a
+  // falha silenciosa que o padrão de erro do EJC proíbe.
+  secoes_indisponiveis?: string[];
+}
+
+const ROTULO_SECAO: Record<string, string> = {
+  casos: "casos",
+  prazos: "prazos",
+  documentos: "documentos",
+  honorarios: "financeiro",
+  resumo_casos: "resumo dos casos",
+};
+
+export function AvisoSecoesIndisponiveis({
+  secoes,
+  onRecarregar,
+}: {
+  secoes: string[];
+  onRecarregar: () => void;
+}) {
+  if (!secoes.length) return null;
+  const nomes = secoes.map((s) => ROTULO_SECAO[s] ?? s);
+  const lista =
+    nomes.length === 1
+      ? nomes[0]
+      : `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
+  return (
+    <div
+      role="status"
+      className="card border border-warn-200 bg-warn-50 text-warn-700 p-4 flex items-start gap-3"
+    >
+      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+      <div className="text-sm">
+        <p className="font-medium">
+          Ficha carregada parcialmente: {lista} não {nomes.length === 1 ? "pôde" : "puderam"} ser
+          carregad{nomes.length === 1 ? "a" : "as"}.
+        </p>
+        <p className="mt-1">
+          Os demais dados desta tela estão completos. O erro foi registrado para a
+          equipe técnica.
+        </p>
+        <button
+          type="button"
+          onClick={onRecarregar}
+          className="mt-2 underline underline-offset-2 font-medium"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // Rótulos de área vêm da taxonomia canônica (lib/areas.ts — enum CaseArea).
@@ -1104,6 +1157,13 @@ export default function DossieCliente() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6 animate-rise">
+      <AvisoSecoesIndisponiveis
+        secoes={data.secoes_indisponiveis ?? []}
+        onRecarregar={() => {
+          setLoading(true);
+          carregarDossie();
+        }}
+      />
       {/* Header */}
       <div className="flex items-start gap-3">
         <button
