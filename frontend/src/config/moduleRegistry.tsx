@@ -121,8 +121,10 @@ const GovernancaIA = lazy(() => import("../pages/GovernancaIA"));
 // rollback/histórico, mas não são mais roteados.
 const DataJudBusca = lazy(() => import("../pages/DataJudBusca"));
 const DiarioOficial = lazy(() => import("../pages/DiarioOficial"));
-const RadarRegulatorio = lazy(() => import("../pages/RadarRegulatorio"));
-const RadarCompliance = lazy(() => import("../pages/RadarCompliance"));
+// Onda 2: as duas telas de radar viraram MODOS de uma só (pages/Radar.tsx).
+// Os componentes originais seguem no repositório — a casca os renderiza
+// embutidos, e as rotas antigas viram LEGACY_REDIRECTS.
+const Radar = lazy(() => import("../pages/Radar"));
 const Noticias = lazy(() => import("../pages/Noticias"));
 const Checklists = lazy(() => import("../pages/Checklists"));
 const Workflow = lazy(() => import("../pages/Workflow"));
@@ -664,34 +666,27 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     backendPrefixes: ["/api/diario-oficial"],
   },
   {
-    key: "radar-regulatorio",
-    path: "/radar-regulatorio",
-    label: "Radar Regulatório",
-    description: "Visão executiva dos alertas normativos.",
-    group: "Pesquisar & IA",
-    icon: Bell,
-    component: RadarRegulatorio,
-    // PODA 2026-07: radar consultivo; atalho no Dashboard. Rota ativa.
-    status: "hidden",
-    helpKey: "radar-regulatorio",
-    sensitive: true,
-    usesAI: true,
-    backendPrefixes: ["/api/v1/regulatorio"],
-  },
-  {
-    key: "radar-compliance",
-    path: "/compliance/radar",
-    label: "Radar de Compliance",
-    description: "Avaliação de riscos regulatórios e conformidade.",
+    // Onda 2 — UMA porta para "o que apareceu que me afeta?". O feed de
+    // compliance já consolidava Diário Oficial + monitoramento regulatório +
+    // autos ambientais; o radar regulatório era o digest da MESMA matéria.
+    // Viraram dois modos (?modo=feed|digest) de pages/Radar.tsx.
+    // RBAC: mantém ROLES.compliance — o modo mais restritivo dos dois manda,
+    // para a fusão não alargar quem enxerga o feed de risco.
+    key: "radar",
+    path: "/radar",
+    label: "Radar",
+    description:
+      "Alertas do Diário Oficial, do monitoramento regulatório e dos autos ambientais — por risco ou agregados no período.",
     group: "Pesquisar & IA",
     icon: ShieldAlert,
-    component: RadarCompliance,
+    component: Radar,
     roles: ROLES.compliance,
     // PODA 2026-07: radar consultivo; atalho no Dashboard. Rota ativa.
     status: "hidden",
     helpKey: "compliance",
     sensitive: true,
     usesAI: true,
+    backendPrefixes: ["/api/compliance/radar", "/api/regulatorio"],
   },
   {
     key: "noticias",
@@ -892,6 +887,18 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     from: "/central-relacionamento",
     to: "/atividades?tab=relacionamento",
     reason: "Central de Relacionamento virou aba da Central unificada.",
+  },
+  {
+    from: "/compliance/radar",
+    to: "/radar",
+    reason:
+      "Radar de Compliance e Radar Regulatório eram a mesma matéria em duas telas; viraram modos de /radar (feed é o padrão).",
+  },
+  {
+    from: "/radar-regulatorio",
+    to: "/radar?modo=digest",
+    reason:
+      "O radar regulatório é o DIGEST agregado do mesmo material — agora o modo `digest` de /radar.",
   },
   {
     from: "/dashboard",

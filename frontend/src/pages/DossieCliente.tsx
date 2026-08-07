@@ -212,7 +212,7 @@ function PendingItemsPanel({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/v1/clients/${clientId}/pending-items`);
+      const res = await api.get(`/clients/${clientId}/pending-items`);
       setItems(res.data || []);
       onItemsChange?.(res.data || []);
     } catch {
@@ -238,7 +238,7 @@ function PendingItemsPanel({
   async function create() {
     if (!form.title.trim()) return;
     try {
-      await api.post(`/v1/clients/${clientId}/pending-items`, {
+      await api.post(`/clients/${clientId}/pending-items`, {
         ...form,
         due_date: form.due_date || undefined,
       });
@@ -254,7 +254,7 @@ function PendingItemsPanel({
 
   async function updateStatus(id: string, status: string) {
     try {
-      await api.patch(`/v1/clients/${clientId}/pending-items/${id}`, {
+      await api.patch(`/clients/${clientId}/pending-items/${id}`, {
         status,
       });
       load();
@@ -272,9 +272,7 @@ function PendingItemsPanel({
   async function confirmarExclusao() {
     if (!pendenteExcluir) return;
     try {
-      await api.delete(
-        `/v1/clients/${clientId}/pending-items/${pendenteExcluir}`,
-      );
+      await api.delete(`/clients/${clientId}/pending-items/${pendenteExcluir}`);
       setPendenteExcluir(null);
       load();
     } catch (e: any) {
@@ -994,7 +992,7 @@ export default function DossieCliente() {
   useEffect(() => {
     if (!clientId) return;
     api
-      .get(`/v1/clients/${clientId}/pending-items`)
+      .get(`/clients/${clientId}/pending-items`)
       .then((r) => setPendingItems(r.data || []))
       .catch(() => {
         // Indicador opcional — o painel de pendências reporta o erro ao usuário.

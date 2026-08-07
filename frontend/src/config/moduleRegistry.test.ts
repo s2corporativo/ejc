@@ -139,8 +139,7 @@ describe("moduleRegistry", () => {
       "/checklists",
       "/datajud",
       "/diario-oficial",
-      "/radar-regulatorio",
-      "/compliance/radar",
+      "/radar",
       "/noticias",
       "/produtividade",
       "/ia-governanca",
@@ -151,5 +150,35 @@ describe("moduleRegistry", () => {
       expect(canonical.has(path)).toBe(true);
       expect(advogado).not.toContain(path);
     }
+  });
+});
+
+// ── Onda 2: os dois radares viraram uma porta ────────────────────────────────
+// O feed de compliance já consolidava Diário Oficial + monitoramento
+// regulatório + autos ambientais; o radar regulatório era o DIGEST da mesma
+// matéria. Duas entradas de menu para a mesma pergunta é atrito — viraram
+// `?modo=feed|digest` de /radar. Este teste trava a consolidação e, sobretudo,
+// que a fusão NÃO alargou quem enxerga o feed de risco.
+describe("radar consolidado", () => {
+  it("expõe uma única porta e aposenta as duas rotas antigas", () => {
+    const rotas = new Set(STAFF_ROUTES.map((r) => r.path));
+    expect(rotas.has("/radar")).toBe(true);
+    expect(rotas.has("/radar-regulatorio")).toBe(false);
+    expect(rotas.has("/compliance/radar")).toBe(false);
+  });
+
+  it("redireciona os dois caminhos legados, o digest para o seu modo", () => {
+    const destino = new Map(LEGACY_REDIRECTS.map((r) => [r.from, r.to]));
+    expect(destino.get("/compliance/radar")).toBe("/radar");
+    expect(destino.get("/radar-regulatorio")).toBe("/radar?modo=digest");
+  });
+
+  it("herda o RBAC mais restritivo dos dois — a fusão não alarga acesso", () => {
+    // O Radar de Compliance era o mais restrito (ROLES.compliance); a porta
+    // única mantém esse gate. Perfil sem compliance continua fora.
+    expect(canRoleAccessPath("estagiario", "/radar")).toBe(
+      canRoleAccessPath("estagiario", "/compliance/radar"),
+    );
+    expect(canRoleAccessPath("socio", "/radar")).toBe(true);
   });
 });
