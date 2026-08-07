@@ -17,8 +17,12 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const RAIZ = new URL("..", import.meta.url).pathname; // src/
+// fileURLToPath, não `.pathname`: a URL preserva escapes (%20, %C3%A1) e o
+// readdirSync receberia um caminho inexistente se o checkout ficasse numa
+// pasta com espaço ou acento — o guarda morreria de erro, não de achado.
+const RAIZ = fileURLToPath(new URL("..", import.meta.url)); // src/
 // O interceptor PRECISA continuar reconhecendo as formas antigas para não
 // quebrar chamada legada — é o único arquivo isento.
 const ISENTOS = new Set(["lib/api.ts", "lib/api.prefixo.test.ts"]);
@@ -37,10 +41,15 @@ function arquivosFonte(dir: string, prefixo = ""): string[] {
   return saida;
 }
 
-// `api.get("/api/v1/x")`, `api.post<T>(\n  `/v1/x`…)` etc. O `[\s\S]*?` cobre a
-// forma quebrada em várias linhas, comum quando o path é longo.
+// `api.get("/api/v1/x")`, `api.post<T>(\n  `/v1/x`…)` etc.
+//
+// O genérico aceita ANINHAMENTO (`api.get<Resposta<Item[]>>(…)`): `<[^>]*>`
+// pararia no primeiro `>` e deixaria a chamada passar batido — um buraco no
+// guarda, e este teste existe justamente para não ter buraco. `[^()"\'`]*`
+// consome o corpo do genérico inteiro sem atravessar o parêntese de abertura
+// nem o literal do caminho, que são os delimitadores reais aqui.
 const CHAMADA_COM_PREFIXO =
-  /\bapi\s*\.\s*(get|post|put|patch|delete|request|head|options)\s*(?:<[^>]*>)?\s*\(\s*(["'`])\/(api\/v1|api|v1)\//g;
+  /\bapi\s*\.\s*(get|post|put|patch|delete|request|head|options)\s*(?:<[^()"'`]*>)?\s*\(\s*(["'`])\/(api\/v1|api|v1)\//g;
 
 function linhaDe(conteudo: string, indice: number): number {
   return conteudo.slice(0, indice).split("\n").length;
@@ -74,6 +83,9 @@ describe("prefixo das chamadas ao cliente api", () => {
       "api.post(`/api/v1/casos/${id}`)",
       'await api.patch(\n  "/api/clients/1",\n  {},\n)',
       'api.get<Sessao[]>("/v1/sala-juridica")',
+      // Genérico ANINHADO — o buraco que `<[^>]*>` deixava passar.
+      'api.get<Resposta<Item[]>>("/v1/itens")',
+      'api.get<Resposta<Map<string, Item[]>>>("/api/v1/itens")',
     ];
     for (const amostra of amostras) {
       CHAMADA_COM_PREFIXO.lastIndex = 0;

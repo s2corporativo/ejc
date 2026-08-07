@@ -174,11 +174,22 @@ describe("radar consolidado", () => {
   });
 
   it("herda o RBAC mais restritivo dos dois — a fusão não alarga acesso", () => {
-    // O Radar de Compliance era o mais restrito (ROLES.compliance); a porta
-    // única mantém esse gate. Perfil sem compliance continua fora.
-    expect(canRoleAccessPath("estagiario", "/radar")).toBe(
-      canRoleAccessPath("estagiario", "/compliance/radar"),
-    );
-    expect(canRoleAccessPath("socio", "/radar")).toBe(true);
+    // A versão anterior deste teste comparava /radar com /compliance/radar.
+    // Como /compliance/radar deixou de ser rota, os dois lados davam `false` e
+    // a asserção passava por VÁCUO — não validava matriz nenhuma. Agora a
+    // matriz de ROLES.compliance é afirmada papel a papel.
+    for (const papel of ["superadmin", "admin", "socio", "advogado"]) {
+      expect(canRoleAccessPath(papel, "/radar"), papel).toBe(true);
+    }
+    for (const papel of [
+      "advogado_auxiliar",
+      "estagiario",
+      "financeiro",
+      "secretaria",
+    ]) {
+      expect(canRoleAccessPath(papel, "/radar"), papel).toBe(false);
+    }
+    // E o portal do cliente jamais alcança o feed de risco do escritório.
+    expect(canRoleAccessPath("cliente_externo", "/radar")).toBe(false);
   });
 });
