@@ -13,7 +13,6 @@ async def test_gateway_fail_closed_nao_contorna_kill_switch(monkeypatch):
 
     s = get_settings()
     monkeypatch.setattr(s, "AI_EXTERNAL_PROVIDERS_ALLOWED", False)
-    monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(s, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(s, "ANTHROPIC_API_KEY", "fake")
     monkeypatch.setattr(s, "MARITACA_ENABLED", True)

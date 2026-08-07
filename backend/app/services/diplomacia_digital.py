@@ -60,7 +60,7 @@ class DiplomaciaDigital:
         Gera os argumentos para o Dossiê de Pressão (Visual Law).
 
         P1 (2026-07-05): antes retornava string fixa; agora chama o gateway
-        central de IA (task_type="estrategia" — cadeia Ollama→Anthropic→Groq,
+        central de IA (task_type="estrategia" — cadeia Anthropic→Maritaca→Groq,
         com barreira LGPD do próprio gateway). O prompt contém apenas dados
         NUMÉRICOS do cálculo (sem PII). Saída é RASCUNHO (HITL): o router
         registra AILog e marca is_rascunho.

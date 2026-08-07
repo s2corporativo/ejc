@@ -21,7 +21,7 @@ SingleAICoreOrchestrator.run (orchestrator.py:67)
   5. AIProviderPolicy().avaliar → PolicyDecision (provider_policy.py:70)
   6. ai_gateway.chat(task_type do gateway) → cadeia de providers
        └─ barreira FINAL de PII p/ externo (ai_gateway.py:197-207)
-       └─ providers/{ollama,anthropic,groq}_provider.chat
+       └─ providers/{anthropic,maritaca,groq}_provider.chat
   7. response_validator.validar — citações/promessa/sem base (response_validator.py:38)
   8. custo BRL (ai_gateway._custo_brl) quando provider=anthropic
   9. audit_logger.registrar → AILog (erro PROPAGA — sem trilha, sem resposta)

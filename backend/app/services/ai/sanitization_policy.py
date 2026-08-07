@@ -5,7 +5,7 @@
 # tarefa, decidindo COMO o conteúdo é tratado antes de um provider EXTERNO
 # (Anthropic/Groq — fora do VPS, art. 33/46 LGPD):
 #
-#   • LOCAL_COMPLETO         (Modo 1) — sigilo reforçado: só Ollama LOCAL; o
+#   • LOCAL_COMPLETO         (Modo 1) — sigilo reforçado: só provider LOCAL; o
 #                            conteúdo NUNCA vai a provider externo (nem
 #                            pseudonimizado). Sem local elegível → bloqueia.
 #   • EXTERNO_PSEUDONIMIZADO (Modo 2+3) — pseudonimiza (marcadores consistentes
@@ -64,9 +64,9 @@ _MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
     # forte, em penal/família/saúde/menores/violência a COMBINAÇÃO de fatos
     # raros e eventos permite reidentificação sem nenhum identificador direto —
     # o conteúdo dessas áreas NÃO sai do VPS por padrão. Consequência operacional
-    # deliberada (fail-closed): sem Ollama on-prem ativo, a IA dessas áreas fica
-    # INDISPONÍVEL (scripts/subir-ia-local.sh para habilitar IA local). O piso de
-    # segurança em modo_para_task impede rebaixar estes defaults por override.
+    # deliberada (fail-closed): sem processamento local disponível, a IA dessas
+    # áreas fica INDISPONÍVEL. O piso de segurança em modo_para_task impede
+    # rebaixar estes defaults por override.
     "criminal": ModoSanitizacao.LOCAL_COMPLETO,
     "penal": ModoSanitizacao.LOCAL_COMPLETO,
     "familia": ModoSanitizacao.LOCAL_COMPLETO,

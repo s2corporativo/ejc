@@ -80,7 +80,7 @@ def _setup(monkeypatch, *, jurimetria_data, rag_chunks, gw_texto=_GW_JSON,
         calls["gw"] = {"messages": messages, **kw}
         class _R:
             texto = gw_texto
-            provedor = "ollama"
+            provedor = "groq"
             modelo = "modelo-teste"
             input_tokens = 10
             output_tokens = 20
@@ -172,7 +172,7 @@ async def test_ai_log_registrado_na_chamada_de_ia(monkeypatch):
     assert log["user_id"] == "u-1"
     assert log["case_id"] == "case-1"
     assert log["resposta"] == _GW_JSON
-    assert log["modelo"] == "ollama/modelo-teste"
+    assert log["modelo"] == "groq/modelo-teste"
 
 
 async def test_shape_compativel_com_frontend_e_hitl(monkeypatch):
@@ -198,7 +198,7 @@ async def test_ia_indisponivel_degrada_sem_inventar(monkeypatch):
            rag_chunks=_RAG_CHUNKS)
 
     async def gw_quebrado(*a, **k):
-        raise RuntimeError("ollama down")
+        raise RuntimeError("groq down")
     monkeypatch.setattr("app.services.ai_gateway.chat", gw_quebrado)
 
     r = await _analisar()

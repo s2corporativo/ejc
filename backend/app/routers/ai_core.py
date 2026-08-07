@@ -225,7 +225,6 @@ async def core_status(cu: User = Depends(get_current_user)):
         "skills": len(listar_skills()),
         "skills_nativas": native_skill_coverage(),
         "providers": {
-            "ollama": bool(s.OLLAMA_ENABLED),
             "anthropic": bool(s.ANTHROPIC_ENABLED and s.ANTHROPIC_API_KEY),
             "groq": bool(s.GROQ_API_KEY),
             "maritaca": bool(s.MARITACA_ENABLED and s.MARITACA_API_KEY),

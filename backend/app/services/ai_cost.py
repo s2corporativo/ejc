@@ -1,7 +1,7 @@
 # ── app/services/ai_cost.py ──────────────────────────────────────────────────
 # Estimativa de custo de chamadas de IA em R$ — FONTE ÚNICA de preço de IA do
-# EJC (gateway, dossiê, skills). Ollama (local) = 0. Groq = tokens × preço/milhão
-# (config via .env). Anthropic = tabela de preços por modelo (USD) × USD_BRL_RATE.
+# EJC (gateway, dossiê, skills). Groq = tokens × preço/milhão (config via .env).
+# Anthropic = tabela de preços por modelo (USD) × USD_BRL_RATE.
 # Permite auditar o gasto com IA por chamada/caso (AILog.custo_estimado).
 from __future__ import annotations
 import os
@@ -41,7 +41,7 @@ def estimar_custo_brl(
 ) -> Decimal:
     """
     Retorna o custo estimado da chamada em R$ (Decimal).
-    Ollama/local → 0. Groq → tokens × preço/milhão definido na config.
+    Groq → tokens × preço/milhão definido na config.
     Anthropic → tabela de preços por `modelo` (USD/1M) × cotação USD_BRL_RATE.
     Modelo/provedor desconhecido → 0. Nunca levanta exceção; tokens ausentes
     contam como 0.

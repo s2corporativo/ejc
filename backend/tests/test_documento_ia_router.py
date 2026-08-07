@@ -45,7 +45,7 @@ def _prepara(monkeypatch, resultado):
     async def fake_run(**kw):
         chamadas["n"] += 1
         return {"conteudo": "diag", "agente": "a", "modelo": "m",
-                "provider": "ollama", "log_id": "l1"}
+                "provider": "groq", "log_id": "l1"}
 
     monkeypatch.setattr(orchestrator, "run", fake_run)
     return chamadas, capturado

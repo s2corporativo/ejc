@@ -23,15 +23,15 @@ EMAIL_FAKE = "maria.exemplo@teste-ficticio.com.br"
 @pytest.fixture
 def s(monkeypatch):
     """Settings cacheada com baseline determinística p/ os testes do núcleo:
-    Anthropic habilitado c/ chave fake, Groq c/ chave fake, Ollama desligado."""
+    Anthropic habilitado c/ chave fake, Groq c/ chave fake. O EJC não tem
+    provider de IA local."""
     st = get_settings()
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
     monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
-    monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
-    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "anthropic,groq")
     monkeypatch.setattr(st, "AI_PROVIDER", "auto")
     monkeypatch.setattr(st, "AI_REQUIRE_HITL", True)
     return st
@@ -64,7 +64,7 @@ class TestAIProviderPolicy:
         d = AIProviderPolicy().avaliar("texto limpo", "analise_juridica")
         assert "anthropic" not in _providers(d)
         assert "groq" not in _providers(d)
-        # Sem Ollama local, nada resta → bloqueado com motivo seguro.
+        # O EJC não tem provider local: nada resta → bloqueado com motivo seguro.
         assert d.permitido is False
         assert d.bloqueio_motivo
 
@@ -81,14 +81,6 @@ class TestAIProviderPolicy:
         assert CPF_FAKE not in (d.bloqueio_motivo or "")
         assert texto not in (d.bloqueio_motivo or "")
 
-    def test_pii_residual_mantem_provider_local(self, s, monkeypatch):
-        from app.services.ai import provider_policy as pp
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
-        monkeypatch.setattr(pp, "validar_sem_pii", lambda t: ["CPF"])
-        d = pp.AIProviderPolicy().avaliar(f"texto com {CPF_FAKE}", "analise_juridica")
-        assert d.permitido is True
-        assert _providers(d) == ["ollama"]  # externos saíram da cadeia (LGPD)
-
     def test_caminho_nao_sanitizado_com_texto_limpo_permite(self, s):
         from app.services.ai.provider_policy import AIProviderPolicy
         d = AIProviderPolicy().avaliar(
@@ -99,22 +91,17 @@ class TestAIProviderPolicy:
         assert d.permitido is True
         assert d.sanitizar_antes is True  # destino externo exige sanitização
 
-    def test_tarefa_complexa_prioriza_anthropic(self, s, monkeypatch):
+    def test_tarefa_complexa_prioriza_anthropic(self, s):
         from app.services.ai.provider_policy import AIProviderPolicy
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
         d = AIProviderPolicy().avaliar("texto limpo", "analise_juridica")
         assert _providers(d)[0] == "anthropic"
 
-    def test_tarefa_economica_prioriza_local_barato(self, s, monkeypatch):
+    def test_tarefa_economica_prioriza_groq(self, s):
         from app.services.ai.provider_policy import AIProviderPolicy
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+        # Tarefa econômica prioriza Groq (custo ~zero) — o EJC não tem
+        # provider local para priorizar antes do Anthropic.
         d = AIProviderPolicy().avaliar("texto limpo", "resumo")
-        assert _providers(d)[0] in ("ollama", "groq")
-        assert _providers(d)[0] == "ollama"  # prioridade ollama,anthropic,groq
-        # Sem Ollama, cai no Groq (custo ~zero) antes do Anthropic.
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
-        d2 = AIProviderPolicy().avaliar("texto limpo", "resumo")
-        assert _providers(d2)[0] == "groq"
+        assert _providers(d)[0] == "groq"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -156,7 +143,7 @@ class TestGatewayBarreiraLGPD:
 
         monkeypatch.setattr(ai_gateway, "_chamar_provedor", _nao_chamar)
 
-        # Ollama OFF → cadeia de "resumo" fica só-externa (groq).
+        # Cadeia de "resumo" é só-externa (maritaca/groq) — sem provider local.
         with pytest.raises(RuntimeError) as exc:
             await ai_gateway.chat(
                 [{"role": "user", "content": f"resumir caso do CPF {CPF_FAKE}"}],
@@ -199,7 +186,7 @@ class TestModosSanitizacaoGateway:
             lambda trace, **kw: logados.update(kw),
         )
 
-        # analise_caso → EXTERNO_PSEUDONIMIZADO; sem Ollama → anthropic externo.
+        # analise_caso → EXTERNO_PSEUDONIMIZADO → anthropic externo.
         resp = await ai_gateway.chat(
             [{"role": "user", "content": f"Analise o caso do CPF {CPF_FAKE}."}],
             task_type="analise_caso",
@@ -215,11 +202,12 @@ class TestModosSanitizacaoGateway:
         assert CPF_FAKE not in str(logados.get("output_text", ""))
         assert CPF_FAKE not in str(logados.get("input_messages", ""))
 
-    async def test_criminal_default_local_completo_bloqueia_sem_ollama(self, s, monkeypatch):
+    async def test_criminal_default_local_completo_bloqueia(self, s, monkeypatch):
         """Auditoria máxima (2026-07-26, AI-019): `criminal` volta a LOCAL_COMPLETO
         por DEFAULT — mesmo pseudonimizado, o conteúdo penal permite reidentificação
-        por combinação de fatos raros. Sem Ollama, a tarefa BLOQUEIA (fail-closed) e
-        o provider externo NUNCA é chamado; mensagem de erro não vaza PII."""
+        por combinação de fatos raros. Sem provider local (o EJC não tem um), a
+        tarefa BLOQUEIA (fail-closed) e o provider externo NUNCA é chamado;
+        mensagem de erro não vaza PII."""
         from app.services import ai_gateway
 
         chamadas: list = []
@@ -240,10 +228,11 @@ class TestModosSanitizacaoGateway:
         assert CPF_FAKE not in msg      # mensagem segura
         assert chamadas == []           # externo nunca tocado
 
-    async def test_local_completo_via_override_bloqueia_sem_ollama(self, s, monkeypatch):
-        """O MECANISMO LOCAL_COMPLETO permanece: se o escritório REFORÇAR criminal
-        para local_completo (AI_SANITIZATION_MODE_MAP) e não houver Ollama, bloqueia
-        e o provider externo NUNCA é chamado — mensagem de erro não vaza PII."""
+    async def test_local_completo_via_override_bloqueia(self, s, monkeypatch):
+        """O MECANISMO LOCAL_COMPLETO permanece: se o escritório REFORÇAR uma
+        tarefa qualquer para local_completo (AI_SANITIZATION_MODE_MAP), bloqueia
+        — o EJC não tem provider local — e o provider externo NUNCA é chamado;
+        mensagem de erro não vaza PII."""
         from app.services import ai_gateway
 
         monkeypatch.setattr(s, "AI_SANITIZATION_MODE_MAP", '{"criminal":"local_completo"}')
@@ -264,30 +253,6 @@ class TestModosSanitizacaoGateway:
         assert "local" in msg.lower()
         assert CPF_FAKE not in msg      # mensagem segura
         assert chamadas == []           # externo nunca tocado
-
-    async def test_local_completo_via_override_usa_ollama_com_conteudo_real(self, s, monkeypatch):
-        """Com LOCAL_COMPLETO (reforçado por override) e Ollama ligado, roda no
-        provider LOCAL recebendo o conteúdo REAL (sem pseudonimizar) — soberania."""
-        from app.services import ai_gateway
-
-        monkeypatch.setattr(s, "AI_SANITIZATION_MODE_MAP", '{"criminal":"local_completo"}')
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
-        capturado: dict = {}
-
-        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
-            capturado["provider"] = provider
-            capturado["conteudo"] = " ".join(m.get("content", "") for m in messages)
-            return "resposta local", {"model": "ollama-x", "input_tokens": 1, "output_tokens": 1}
-
-        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
-
-        resp = await ai_gateway.chat(
-            [{"role": "user", "content": f"Caso criminal com CPF {CPF_FAKE}."}],
-            task_type="criminal",
-        )
-        assert capturado["provider"] == "ollama"
-        assert CPF_FAKE in capturado["conteudo"]   # local recebe o dado real
-        assert resp.provedor == "ollama"
 
     async def test_entidades_pseudonimizadas_e_reidratadas(self, s, monkeypatch):
         """FIX 3 — nomes próprios via `entidades` são pseudonimizados antes do
@@ -362,10 +327,10 @@ class TestModosSanitizacaoGateway:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestExecutarTarefaIAModos:
-    async def test_criminal_default_local_completo_bloqueia_sem_ollama(self, s, monkeypatch):
+    async def test_criminal_default_local_completo_bloqueia(self, s, monkeypatch):
         """AI-019 (2026-07-26): `criminal` em executar_tarefa_ia é LOCAL_COMPLETO
-        por DEFAULT — sem Ollama, bloqueia fail-closed e o externo NUNCA é chamado.
-        Espelha o chat()."""
+        por DEFAULT — sem provider local (o EJC não tem um), bloqueia fail-closed
+        e o externo NUNCA é chamado. Espelha o chat()."""
         from app.services import ai_gateway
         from app.services.system_prompts import TarefaIA
 
@@ -384,30 +349,8 @@ class TestExecutarTarefaIAModos:
         assert CPF_FAKE not in str(exc.value)   # mensagem segura
         assert chamadas == []                   # externo nunca tocado
 
-    async def test_criminal_local_completo_via_override_usa_ollama(self, s, monkeypatch):
-        """Mecanismo LOCAL_COMPLETO preservado em executar_tarefa_ia: reforçado por
-        override + Ollama ligado → roda no Ollama local com conteúdo real."""
-        from app.services import ai_gateway
-        from app.services.system_prompts import TarefaIA
-
-        monkeypatch.setattr(s, "AI_SANITIZATION_MODE_MAP", '{"criminal":"local_completo"}')
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
-        capturado: dict = {}
-
-        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
-            capturado["provider"] = provider
-            return "rascunho local", {"model": "ollama-x", "input_tokens": 1, "output_tokens": 1}
-
-        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
-
-        out = await ai_gateway.executar_tarefa_ia(
-            TarefaIA.CRIMINAL, f"Caso do CPF {CPF_FAKE}.",
-        )
-        assert capturado["provider"] == "ollama"
-        assert out["provider"] == "ollama"
-
     async def test_pseudonimizado_reidrata_e_ailog_sem_pii(self, s, monkeypatch):
-        """EXTERNO_PSEUDONIMIZADO (analise_caso) sem Ollama: provider externo
+        """EXTERNO_PSEUDONIMIZADO (analise_caso): provider externo
         recebe marcador; resposta devolvida reidratada; AILog registra a versão
         PSEUDONIMIZADA (sem PII real)."""
         from app.services import ai_gateway
@@ -446,15 +389,13 @@ class TestExecutarTarefaIAModos:
         assert CPF_FAKE not in str(registrado.get("resposta", ""))
         assert registrado.get("pii_removida") is True
 
-    async def test_fallback_local_antes_de_externo(self, s, monkeypatch):
-        """P1b (LGPD): na cadeia própria de executar_tarefa_ia o LOCAL (Ollama)
-        é tentado ANTES do externo (Groq). ANALISE_CASO tem cfg.provider=anthropic
-        → cadeia [anthropic, ollama, groq]. Todos falhando, a ORDEM de tentativa
-        prova o local-antes-de-externo (antes era groq antes de ollama)."""
+    async def test_fallback_para_externo_quando_primario_cai(self, s, monkeypatch):
+        """Cadeia própria de executar_tarefa_ia: ANALISE_CASO tem cfg.provider=
+        anthropic → cadeia [anthropic, groq] (sem provider local, o EJC não tem
+        um). Falhando o anthropic, cai no groq (externo, último recurso)."""
         from app.services import ai_gateway
         from app.services.system_prompts import TarefaIA
 
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
         ordem: list[str] = []
 
         async def _fake_provedor(provider, model, messages, temperature, max_tokens):
@@ -464,8 +405,7 @@ class TestExecutarTarefaIAModos:
         monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
         with pytest.raises(RuntimeError):
             await ai_gateway.executar_tarefa_ia(TarefaIA.ANALISE_CASO, "texto limpo")
-        assert "ollama" in ordem and "groq" in ordem
-        assert ordem.index("ollama") < ordem.index("groq")   # local antes do externo
+        assert ordem == ["anthropic", "groq"]
 
     async def test_fallback_nao_silencioso_no_dict(self, s, monkeypatch):
         """P1b: degradação Opus/Anthropic → outro provedor NÃO é silenciosa — o
@@ -473,7 +413,6 @@ class TestExecutarTarefaIAModos:
         from app.services import ai_gateway
         from app.services.system_prompts import TarefaIA
 
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
         chamadas: list[str] = []
 
         async def _fake_provedor(provider, model, messages, temperature, max_tokens):
@@ -484,7 +423,7 @@ class TestExecutarTarefaIAModos:
 
         monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
         out = await ai_gateway.executar_tarefa_ia(TarefaIA.ANALISE_CASO, "texto limpo")
-        # Respondeu por um provedor de fallback (ollama, local), não o primário.
+        # Respondeu por um provedor de fallback (groq), não o primário.
         assert out["provider"] != "anthropic"
         assert out["fallback_ativado"] is True
         assert out["fallback_motivo"] and out["fallback_motivo"].startswith("anthropic:")
@@ -500,25 +439,25 @@ class TestResolverCadeia:
         cadeia = _resolver_cadeia("analise_juridica", None, None)
         providers = [p for p, _ in cadeia]
         assert "anthropic" in providers
-        # Ollama OFF → anthropic vem antes de groq (AI_PROVIDER_PRIORITY).
+        # Sem provider local, anthropic vem antes de groq (AI_PROVIDER_PRIORITY).
         assert providers.index("anthropic") < providers.index("groq")
         modelo_anthropic = dict(cadeia)["anthropic"]
         assert modelo_anthropic == (s.ANTHROPIC_MODEL_COMPLEXO or s.ANTHROPIC_MODEL_RAPIDO)
 
-    def test_sem_externos_e_sem_ollama_cadeia_vazia_fail_closed(self, s, monkeypatch):
+    def test_sem_externos_cadeia_vazia_fail_closed(self, s, monkeypatch):
         # Hardening (PR #322 — ai_core_hardening_patch.resolver_fail_closed): sem
-        # provedores externos permitidos E sem Ollama, NENHUM provider é elegível
-        # (groq é EXTERNO, barrado por _provider_elegivel) → cadeia VAZIA
-        # (fail-closed), em vez do antigo fallback INSEGURO para groq. Coerente com
-        # test_ai_knowledge_core_hardening (gateway fail-closed não contorna gate).
-        # Em produção o resolver fail-closed é instalado no boot (event_subscribers
-        # → instalar()); garantimos o mesmo aqui (idempotente) para o teste ser
-        # determinístico rodado isolado ou na suíte completa.
+        # provedores externos permitidos, NENHUM provider é elegível (o EJC não
+        # tem provider local; groq é EXTERNO, barrado por _provider_elegivel) →
+        # cadeia VAZIA (fail-closed), em vez do antigo fallback INSEGURO para
+        # groq. Coerente com test_ai_knowledge_core_hardening (gateway
+        # fail-closed não contorna gate). Em produção o resolver fail-closed é
+        # instalado no boot (event_subscribers → instalar()); garantimos o
+        # mesmo aqui (idempotente) para o teste ser determinístico rodado
+        # isolado ou na suíte completa.
         from app.services.ai_core_hardening_patch import _instalar_resolver_provedores
         _instalar_resolver_provedores()
         from app.services.ai_gateway import _resolver_cadeia
         monkeypatch.setattr(s, "AI_EXTERNAL_PROVIDERS_ALLOWED", False)
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
         cadeia = _resolver_cadeia("analise_juridica", None, None)
         assert cadeia == []
 
@@ -690,9 +629,6 @@ def nucleo_mocks(s, monkeypatch):
     from app.services.ai.core import audit_logger, context_builder
     from app.services.ai.core.context_builder import ContextoMontado
 
-    # Ollama ON p/ a policy permitir sem depender de sanitização externa.
-    monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
-
     estado = {"texto": "Análise estratégica fictícia, sem promessas."}
 
     async def fake_montar_contexto(db, **kw):
@@ -705,7 +641,7 @@ def nucleo_mocks(s, monkeypatch):
         return ai_gateway.GatewayResponse(
             texto=estado["texto"],
             modelo="modelo-fake",
-            provedor="ollama",
+            provedor="groq",
             task_type=kw.get("task_type", ""),
             input_tokens=10,
             output_tokens=20,
@@ -759,11 +695,11 @@ class TestOrchestrator:
         assert r["ramo_juridico"] == "trabalhista"
         assert "ramo_trabalhista" in r["skills_nativas"]
         assert "resolve_native_skills" in r["skill_pipeline"]
-        assert r["modelo"] == "ollama/modelo-fake"
-        assert r["provider"] == "ollama"
+        assert r["modelo"] == "groq/modelo-fake"
+        assert r["provider"] == "groq"
         assert r["log_id"] == "log-fake"
         assert r["status_hitl"] == "gerado"
-        assert r["custo_estimado_brl"] == 0.0  # provedor local não fatura
+        assert r["custo_estimado_brl"] == 0.0  # GROQ_PRECO_*_BRL_POR_MILHAO=0.0 (default)
 
     async def test_promessa_do_modelo_gera_alerta_e_revisao(self, nucleo_mocks):
         from app.services.ai.core.orchestrator import orchestrator

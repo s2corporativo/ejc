@@ -3,7 +3,7 @@ movimento_ia.py — Tradução de andamentos processuais para linguagem simples 
 
 Pega a descrição técnica de um CaseMovimento (ex.: "Conclusos para decisão") e
 gera um resumo curto e claro, que o cliente entende. REUSA o ai_gateway
-(Ollama→Groq, com fallback) e SANITIZA PII antes de qualquer envio externo (LGPD).
+(Anthropic→Maritaca→Groq, com fallback) e SANITIZA PII antes de qualquer envio externo (LGPD).
 Resultado é RASCUNHO — revisão humana (OAB) continua valendo.
 
 Idempotente: não retraduz se já houver resumo_ia (salvo forcar=True).

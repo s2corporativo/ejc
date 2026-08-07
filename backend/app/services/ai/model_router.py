@@ -131,8 +131,8 @@ def _provider_do_tier(tier: str) -> str:
 
 
 def _model_do_provider(provider: str, tier: str) -> str | None:
-    """Modelo sugerido. Anthropic e Maritaca diferenciam por tier; ollama/groq
-    resolvem o modelo default por tarefa no gateway.
+    """Modelo sugerido. Anthropic e Maritaca diferenciam por tier; groq
+    resolve o modelo default por tarefa no gateway.
 
     Anthropic (correção P1 anti-rebaixamento): SÓ o tier LEVE usa RAPIDO (Haiku).
     Tier MÉDIO e PESADO usam COMPLEXO (Opus) — antes o médio caía em Haiku,

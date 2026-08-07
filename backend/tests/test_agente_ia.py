@@ -35,13 +35,12 @@ CPF = "123.456.789-09"
 
 @pytest.fixture
 def s(monkeypatch):
-    """Baseline: Anthropic elegível, sanitização externa exigida, Ollama OFF."""
+    """Baseline: Anthropic elegível, sanitização externa exigida (sem provider local)."""
     st = get_settings()
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
-    monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(st, "AI_PROVIDER", "auto")
     monkeypatch.setattr(st, "GROQ_API_KEY", "")
     monkeypatch.setattr(st, "AI_SANITIZATION_MODE_MAP", "")

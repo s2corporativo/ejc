@@ -131,26 +131,6 @@ def test_provedores_ia_reuso_health(monkeypatch, tester, field):
     assert _run(tester())[0] == ct.AUSENTE
 
 
-# ── infosimples: mapeia o `code` do corpo (endpoint gratuito de conta) ───────
-
-@pytest.mark.parametrize("code,esperado", [
-    (200, ct.CONFIGURADA),
-    (401, ct.INVALIDA),
-    (403, ct.SEM_PERMISSAO),
-    (600, ct.INDISPONIVEL),
-])
-def test_infosimples_mapeia_code(monkeypatch, code, esperado):
-    monkeypatch.setattr(get_settings(), "INFOSIMPLES_TOKEN", "info-token-secret")
-    _mock_httpx(monkeypatch, resp=_Resp(200, json_data={"code": code}))
-    assert _run(ct.testar_infosimples())[0] == esperado
-
-
-def test_infosimples_timeout_indisponivel(monkeypatch):
-    monkeypatch.setattr(get_settings(), "INFOSIMPLES_TOKEN", "info-token-secret")
-    _mock_httpx(monkeypatch, exc=httpx.ReadTimeout("t"))
-    assert _run(ct.testar_infosimples())[0] == ct.INDISPONIVEL
-
-
 # ── nfse: OAuth client_credentials, token descartado ─────────────────────────
 
 def test_nfse_oauth(monkeypatch):

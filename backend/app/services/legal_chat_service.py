@@ -438,10 +438,9 @@ async def _extrair_estado_automatico(
     Retorna (novo estado validado | None, custo estimado em BRL). O estado é
     None em qualquer falha (fail-soft): JSON inválido, chaves desconhecidas,
     provider indisponível. O custo já incorrido é SEMPRE devolvido: a cadeia
-    do task_type "resumo" prioriza o provider local (ollama), mas pode cair
-    em fallback externo pago (maritaca/groq) e o orchestrator não expõe uma
-    forma de forçar rota local-only por chamada — então o gasto é
-    contabilizado em custo_ia_total pelo chamador.
+    do task_type "resumo" prioriza maritaca, mas pode cair em fallback pago
+    (groq) e o orchestrator não expõe uma forma de forçar rota local-only por
+    chamada — então o gasto é contabilizado em custo_ia_total pelo chamador.
     """
     import json
 

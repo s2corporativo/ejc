@@ -5,19 +5,21 @@ art. 33/46: PII não sai em claro do VPS para provedor externo):
   • O dado pessoal EXATO (CPF/nº CNJ/e-mail/...) é extraído LOCALMENTE por
     regex determinística (extracao_estruturada) — sem LLM — e devolvido em
     `dados_estruturados` em TODOS os caminhos de retorno.
-  • O LLM (cadeia automática do gateway: ollama→anthropic→groq, com fallback)
-    recebe o texto SANITIZADO — sanitizar_pii mascara CPF/CNPJ/nº de processo
-    ([CPF]/[CNPJ]/[PROCESSO]), e o gateway ainda aplica _sanitizar_messages_
-    externo como segunda barreira antes de qualquer provedor externo.
+  • O LLM (cadeia automática do gateway: anthropic→maritaca→groq, com
+    fallback) recebe o texto SANITIZADO — sanitizar_pii mascara CPF/CNPJ/nº
+    de processo ([CPF]/[CNPJ]/[PROCESSO]), e o gateway ainda aplica
+    _sanitizar_messages_externo como segunda barreira antes de qualquer
+    provedor externo.
   • A flag INTAKE_EXTERNAL_FALLBACK continua decidindo SE provedores externos
-    podem ser usados no intake (off = só Ollama local, fail-closed).
+    podem ser usados no intake (off = fail-closed — o EJC não tem provider
+    local).
   • Se TODA a cadeia LLM falhar, a importação NÃO quebra: retorna ok=True com
     analise_llm_indisponivel=True + dados_estruturados + texto OCR.
 Estes testes travam esses invariantes contra regressão."""
 
 
 class _R:
-    def __init__(self, texto, provedor="ollama", modelo="llama3"):
+    def __init__(self, texto, provedor="anthropic", modelo="claude"):
         self.texto, self.provedor, self.modelo = texto, provedor, modelo
 
 
@@ -49,7 +51,7 @@ async def test_llm_recebe_texto_sanitizado_e_usa_cadeia_com_fallback(monkeypatch
     from app.services.documento_service import extrair_e_analisar
     r = await extrair_e_analisar("/fake.pdf", "application/pdf", db=None, enriquecer_rag=False)
 
-    # Cadeia automática (ollama→anthropic→groq no TASK_ROUTING) — nada fixado.
+    # Cadeia automática (anthropic→maritaca→groq no TASK_ROUTING) — nada fixado.
     assert captured["provider_override"] is None
     assert captured["task_type"] == "analise_juridica"
     # Sanitização reativada (LGPD): o documento vai MASCARADO ao modelo.
@@ -61,7 +63,7 @@ async def test_llm_recebe_texto_sanitizado_e_usa_cadeia_com_fallback(monkeypatch
 
 
 async def test_fallback_externo_ve_texto_sanitizado(monkeypatch):
-    """(b) Ollama cai → provedor externo assume e recebe o MESMO texto
+    """(b) Provider externo assume a cadeia e recebe o MESMO texto
     SANITIZADO (LGPD: PII não sai em claro para provedor externo)."""
     captured = {}
     _mock_ocr(monkeypatch)
@@ -144,15 +146,14 @@ def _settings():
 
 
 async def test_gateway_real_provider_externo_recebe_texto_sanitizado(monkeypatch):
-    """(e) Integração com o gateway REAL (sem mock do chat), Ollama
-    desabilitado → cadeia cai no Anthropic; mockamos APENAS
-    anthropic_provider.chat. Com a sanitização reativada, o conteúdo chega
-    MASCARADO ao provider externo (sanitizar_pii no intake +
-    _sanitizar_messages_externo como segunda barreira, LGPD art. 33/46)."""
+    """(e) Integração com o gateway REAL (sem mock do chat) — a cadeia cai no
+    Anthropic (sem provider local); mockamos APENAS anthropic_provider.chat.
+    Com a sanitização reativada, o conteúdo chega MASCARADO ao provider
+    externo (sanitizar_pii no intake + _sanitizar_messages_externo como
+    segunda barreira, LGPD art. 33/46)."""
     _mock_ocr(monkeypatch)
     s = _settings()
     monkeypatch.setattr(s, "INTAKE_EXTERNAL_FALLBACK", True)
-    monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(s, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(s, "ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.setattr(s, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
@@ -185,39 +186,20 @@ async def test_gateway_real_provider_externo_recebe_texto_sanitizado(monkeypatch
 
 
 async def test_flag_false_volta_ao_fail_closed_com_erro_claro(monkeypatch):
-    """(f) INTAKE_EXTERNAL_FALLBACK=false → só Ollama local; Ollama caiu →
-    ok=False com mensagem citando a flag; NENHUM provedor externo é tocado."""
+    """(f) INTAKE_EXTERNAL_FALLBACK=false → o EJC não tem provider local →
+    ok=False com mensagem citando a flag; NENHUM provedor (nem o gateway) é
+    tocado."""
     _mock_ocr(monkeypatch)
     s = _settings()
     monkeypatch.setattr(s, "INTAKE_EXTERNAL_FALLBACK", False)
-    monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
     monkeypatch.setattr(s, "ROTEAMENTO_INTELIGENTE_ENABLED", False)
-
-    async def ollama_caiu(*a, **k):
-        raise RuntimeError("connection refused")
 
     async def externo_proibido(*a, **k):
         raise AssertionError("provedor externo NÃO pode ser chamado com a flag off")
 
-    from app.services.providers import ollama_provider, anthropic_provider, groq_provider
-    monkeypatch.setattr(ollama_provider, "chat", ollama_caiu)
+    from app.services.providers import anthropic_provider, groq_provider
     monkeypatch.setattr(anthropic_provider, "chat", externo_proibido)
     monkeypatch.setattr(groq_provider, "chat", externo_proibido)
-
-    from app.services.documento_service import extrair_e_analisar
-    r = await extrair_e_analisar("/fake.pdf", "application/pdf", db=None, enriquecer_rag=False)
-
-    assert r["ok"] is False
-    assert "INTAKE_EXTERNAL_FALLBACK" in r["erro"]
-
-
-async def test_flag_false_sem_ollama_habilitado_erra_antes_do_gateway(monkeypatch):
-    """(g) Flag off + OLLAMA_ENABLED=false → erro imediato (o gateway trataria
-    o override inelegível caindo na cadeia automática EXTERNA — proibido)."""
-    _mock_ocr(monkeypatch)
-    s = _settings()
-    monkeypatch.setattr(s, "INTAKE_EXTERNAL_FALLBACK", False)
-    monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
 
     async def gateway_nao_chamado(**kw):
         raise AssertionError("ai_gateway.chat não deveria ser chamado")
@@ -226,6 +208,7 @@ async def test_flag_false_sem_ollama_habilitado_erra_antes_do_gateway(monkeypatc
 
     from app.services.documento_service import extrair_e_analisar
     r = await extrair_e_analisar("/fake.pdf", "application/pdf", db=None, enriquecer_rag=False)
+
     assert r["ok"] is False
     assert "INTAKE_EXTERNAL_FALLBACK" in r["erro"]
 

@@ -2,7 +2,7 @@
 
 Trava a regressão de segurança mais perigosa da consolidação de gateways de IA:
 que o shim legado `AIGateway` volte a abrir um SEGUNDO caminho de execução
-(httpx direto ao Ollama/provider), FORA do gateway canônico
+(httpx direto a um provider), FORA do gateway canônico
 `app.services.ai_gateway.chat`. O caminho canônico é quem aplica a cadeia de
 providers por prioridade, a barreira final de PII (LGPD) e o custo/roteamento.
 
@@ -96,14 +96,6 @@ async def test_processar_demanda_delega_e_mantem_shape(monkeypatch):
     assert res["status"] == "sucesso"
     assert len(chamadas) == 1
     assert chamadas[0]["task_type"] == "analise_juridica"
-
-
-async def test_call_ollama_legado_nao_fala_direto_com_ollama(monkeypatch):
-    """O nome é histórico; o corpo DEVE delegar ao gateway canônico."""
-    chamadas = _instalar_fake_chat(monkeypatch)
-    out = await ai_gateway._call_ollama("deepseek-r1:14b", "prompt qualquer")
-    assert out == "RESPOSTA CANÔNICA"
-    assert len(chamadas) == 1, "_call_ollama deve delegar, nunca abrir conexão própria"
 
 
 async def test_modo_duas_ias_faz_duas_passagens_pelo_canonico(monkeypatch):

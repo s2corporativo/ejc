@@ -12,11 +12,9 @@ Este arquivo mantém APENAS a interface pública histórica (AIGateway com
 `ai_brain`) para os ~16 consumidores legados. O MIOLO foi reescrito:
   1. sanitiza PII (app.services.sanitizer.sanitizar_pii) ANTES de qualquer envio;
   2. delega ao gateway central (app.services.ai_gateway.chat), que aplica a
-     cadeia de providers por prioridade (ollama → anthropic → groq) e a
+     cadeia de providers por prioridade (anthropic → maritaca → groq) e a
      barreira final de PII para providers externos (LGPD);
   3. erros retornam mensagem segura (sem stack trace nem conteúdo do prompt).
-
-Não há mais chamada httpx direta ao Ollama aqui.
 """
 import logging
 from typing import Optional, Dict, Any
@@ -81,14 +79,6 @@ class AIGateway:
                 f"AI Gateway legado ({task_type}): {type(e).__name__}: {str(e)[:200]}"
             )
             return {"ok": False, "texto": _ERRO_SEGURO, "modelo": task_type}
-
-    async def _call_ollama(self, model: str, prompt: str, system: Optional[str] = None) -> str:
-        """DEPRECATED — mantido por compatibilidade de interface.
-
-        Não fala mais com o Ollama diretamente: delega ao gateway central
-        (que decide provider/modelo pela cadeia de prioridade)."""
-        r = await self._chamar_central(prompt, "default", system)
-        return r["texto"]
 
     async def processar_demanda(
         self, demanda: str, contexto: Optional[str] = None, tipo: str = "default"

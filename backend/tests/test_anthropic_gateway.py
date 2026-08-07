@@ -124,28 +124,20 @@ async def test_provider_legado_respeita_teto_de_custo(sink, monkeypatch):
 
 # ── Gateway: cadeia por prioridade + elegibilidade ────────────────────────────
 
-def _prep(monkeypatch, *, tem_chave=True, ollama=True):
+def _prep(monkeypatch, *, tem_chave=True):
     monkeypatch.setattr(g.settings, "ANTHROPIC_API_KEY", "sk-x" if tem_chave else "")
     monkeypatch.setattr(g.settings, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(g.settings, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
-    monkeypatch.setattr(g.settings, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
-    monkeypatch.setattr(g.settings, "OLLAMA_ENABLED", ollama)
+    monkeypatch.setattr(g.settings, "AI_PROVIDER_PRIORITY", "anthropic,groq")
     monkeypatch.setattr(g.settings, "GROQ_API_KEY", "gk")
 
 
 def test_gateway_tarefa_complexa_inclui_claude(monkeypatch):
-    _prep(monkeypatch, tem_chave=True, ollama=False)
+    _prep(monkeypatch, tem_chave=True)
     cadeia = g._resolver_cadeia("estrategia", provider_force=None, model_override=None)
-    # Sem Ollama, Claude assume a frente com o modelo COMPLEXO configurado.
+    # Sem provider local, Claude assume a frente com o modelo COMPLEXO configurado.
     assert cadeia[0] == ("anthropic", g.settings.ANTHROPIC_MODEL_COMPLEXO)
     assert any(p == "groq" for p, _ in cadeia)             # fallback preservado
-
-
-def test_gateway_prioridade_ollama_primeiro(monkeypatch):
-    _prep(monkeypatch, tem_chave=True, ollama=True)
-    cadeia = g._resolver_cadeia("elaboracao_peca", provider_force=None, model_override=None)
-    assert cadeia[0][0] == "ollama"                        # soberania local primeiro
-    assert any(p == "anthropic" for p, _ in cadeia)
 
 
 def test_gateway_pula_claude_sem_chave(monkeypatch):
@@ -170,7 +162,7 @@ def test_gateway_force_anthropic_com_chave(monkeypatch):
 
 def test_gateway_force_anthropic_sem_chave_degrada(monkeypatch):
     # EJC skills com engine=anthropic não podem falhar duro sem chave:
-    # caem na cadeia automática (Ollama/Groq).
+    # caem na cadeia automática (Groq).
     _prep(monkeypatch, tem_chave=False)
     cadeia = g._resolver_cadeia("elaboracao_peca", provider_force="anthropic",
                                 model_override=None)
@@ -179,7 +171,7 @@ def test_gateway_force_anthropic_sem_chave_degrada(monkeypatch):
 
 
 def test_gateway_model_override_tem_prioridade(monkeypatch):
-    _prep(monkeypatch, tem_chave=True, ollama=False)
+    _prep(monkeypatch, tem_chave=True)
     cadeia = g._resolver_cadeia("elaboracao_peca", provider_force=None,
                                 model_override="claude-sonnet-5")
     assert cadeia[0] == ("anthropic", "claude-sonnet-5")

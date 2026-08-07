@@ -51,8 +51,8 @@ async def coletar_numeros_semana(db: AsyncSession, hoje: date) -> dict:
       (c) recebiveis_atraso_reais — SUM(fees.valor) de parcelas pendente/
           atrasado vencidas, LÍQUIDO de fee_payments (pagamentos parciais
           descontados por subquery; nunca negativo por parcela).
-      (d) custo_ia_semana — ai_logs.custo_estimado (R$; 0/NULL p/ Ollama
-          local) somado na semana + nº de chamadas + top 5 casos por custo.
+      (d) custo_ia_semana — ai_logs.custo_estimado (R$; 0/NULL quando não
+          apurado) somado na semana + nº de chamadas + top 5 casos por custo.
       (e) casos_parados_30d — mesma regra da auditoria semanal
           (scheduler._auditoria_processos): casos ativos cuja última
           case_movimentos.data_evento (fallback created_at do caso) < hoje-30.

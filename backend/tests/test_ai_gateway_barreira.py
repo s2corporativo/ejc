@@ -54,20 +54,21 @@ async def test_provider_externo_recebe_sanitizado_e_resposta_reidratada(monkeypa
     assert pii is True
 
 
-async def test_provider_local_nao_passa_pela_sanitizacao(monkeypatch):
-    """Provider local (ollama) não é externo → a sanitização não roda e as
-    mensagens seguem íntegras (uso interno)."""
+async def test_provider_nao_externo_nao_passa_pela_sanitizacao(monkeypatch):
+    """Provider fora de _PROVIDERS_EXTERNOS (ex.: um provider interno futuro)
+    não é externo → a sanitização não roda e as mensagens seguem íntegras
+    (uso interno)."""
     async def _fake_prov(provider, model, messages_envio, temp, maxt):
         return "ok", {"input_tokens": 1, "output_tokens": 1, "model": "local"}
 
     def _nao_deve_rodar(*a, **k):
-        raise AssertionError("provider local não deve sanitizar")
+        raise AssertionError("provider não externo não deve sanitizar")
 
     monkeypatch.setattr(gw, "_chamar_provedor", _fake_prov)
     monkeypatch.setattr(gw, "_preparar_mensagens_externo", _nao_deve_rodar)
 
     orig = [{"role": "user", "content": "REAL"}]
     texto, texto_log, usage, envio, pii = await gw._chamar_com_barreira(
-        "ollama", None, orig, None, None, 0.2, 128
+        "provider-interno-generico", None, orig, None, None, 0.2, 128
     )
     assert envio is orig and pii is False

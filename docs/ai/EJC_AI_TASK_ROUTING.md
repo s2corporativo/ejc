@@ -61,17 +61,21 @@ No núcleo, o orchestrator usa `cfg.temperature`/`cfg.max_tokens` e o system pro
 
 `_TAREFA_PARA_GATEWAY`: ANALISE_CASO/DOSSIE/TRABALHISTA/CRIMINAL/FAMILIA → `estrategia`; AMBIENTAL/PRAZOS/AUDIENCIA/HONORARIOS/PESQUISA_JURIDICA/RAG_QUERY → `analise_juridica`; MINUTAS → `elaboracao_peca`; TRIAGEM/RESUMO → `resumo`; DEFAULT → `chat_rapido`. Overrides por agente (`_AGENTE_GATEWAY_OVERRIDE`): JurimetryAgent→`jurimetria`, BankForensicsAgent→`analise_contrato`, LicitacaoComplianceAgent→`auditoria_peca`. Aliases do gateway (`TASK_ALIASES`, ai_gateway.py:39-46): redacao_peca/redacao_juridica/peca_juridica→elaboracao_peca; analise_caso→estrategia; pesquisa_juridica/rag_query→analise_juridica.
 
-## 5. task_type do gateway → cadeia de providers (TASK_ROUTING, ai_gateway.py:76-118)
+## 5. task_type do gateway → cadeia de providers (TASK_ROUTING, ai_gateway.py)
 
-| task_type | Cadeia declarada (ordem do TASK_ROUTING) | Modelo Ollama |
-|---|---|---|
-| analise_juridica | ollama → anthropic → groq | OLLAMA_MODEL_ANALISE (deepseek-r1:8b) |
-| elaboracao_peca | ollama → anthropic → groq | OLLAMA_MODEL_PETICAO (qwen2.5:14b) |
-| resumo | ollama → groq | OLLAMA_MODEL_RESUMO (gemma3:9b) |
-| chat_rapido | ollama → groq | OLLAMA_MODEL_CHAT (gemma3:9b) |
-| analise_contrato | ollama → anthropic → groq | OLLAMA_MODEL_CONTRATO (deepseek-r1:8b) |
-| estrategia | ollama → anthropic → groq | OLLAMA_MODEL_ANALISE |
-| auditoria_peca | ollama → anthropic → groq | OLLAMA_MODEL_PETICAO |
-| jurimetria | ollama → anthropic → groq | OLLAMA_MODEL_ANALISE |
+| task_type | Cadeia declarada (ordem do TASK_ROUTING) |
+|---|---|
+| analise_juridica | anthropic → maritaca → groq |
+| elaboracao_peca | anthropic → maritaca → groq |
+| resumo | maritaca → groq |
+| chat_rapido | maritaca → groq |
+| analise_contrato | anthropic → maritaca → groq |
+| estrategia | anthropic → maritaca → groq |
+| auditoria_peca | anthropic → maritaca → groq |
+| jurimetria | anthropic → maritaca → groq |
 
-Ordem final = `_ordenar_por_prioridade` por `AI_PROVIDER_PRIORITY` (default `ollama,anthropic,groq`) + filtro `_provider_elegivel` (ai_gateway.py:272-330): ollama exige OLLAMA_ENABLED; anthropic exige ENABLED+chave+AI_EXTERNAL_PROVIDERS_ALLOWED (modelo = ANTHROPIC_MODEL_COMPLEXO, linha 305); groq exige chave+externos permitidos. Cadeia vazia → último recurso `("groq", ...)` que falha com erro claro (linhas 327-329). `provider_override`/`AI_PROVIDER != "auto"` força um único provider (linhas 179-182, 316-317). Em cada tentativa a provider externo aplica-se a barreira final de PII (linhas 192-207); falha → próximo da cadeia com `fallback_ativado`/`fallback_motivo` no `GatewayResponse` (linhas 135-148).
+Ordem final = `_ordenar_por_prioridade` por `AI_PROVIDER_PRIORITY` (default `anthropic,maritaca,groq`) + filtro `_provider_elegivel` (ai_gateway.py): anthropic exige ENABLED+chave+AI_EXTERNAL_PROVIDERS_ALLOWED (modelo = ANTHROPIC_MODEL_COMPLEXO); maritaca exige ENABLED+chave+AI_EXTERNAL_PROVIDERS_ALLOWED; groq exige chave+externos permitidos. Cadeia vazia → último recurso `("groq", ...)` que falha com erro claro. `provider_override`/`AI_PROVIDER != "auto"` força um único provider. Em cada tentativa a provider externo aplica-se a barreira final de PII; falha → próximo da cadeia com `fallback_ativado`/`fallback_motivo` no `GatewayResponse`.
+
+O EJC não tem provider de IA local: sem nenhum provider externo elegível
+(chave ausente ou `AI_EXTERNAL_PROVIDERS_ALLOWED=false`), a cadeia fica vazia
+e a chamada é bloqueada por política de sigilo/LGPD.

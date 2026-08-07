@@ -64,7 +64,7 @@ class _FakeDB:
         pass
 
 
-def _fake_chat(texto="RASCUNHO: análise estratégica.", provedor="ollama", modelo="modelo-x"):
+def _fake_chat(texto="RASCUNHO: análise estratégica.", provedor="groq", modelo="modelo-x"):
     async def chat(messages, task_type="", **kw):
         return GatewayResponse(
             texto=texto, modelo=modelo, provedor=provedor,
@@ -105,7 +105,7 @@ async def test_assistente_estrategico_caso_grava_ailog(monkeypatch):
     assert log.case_id == "case-1"
     assert log.tipo_uso == AITipoUso.analise_caso
     assert log.resposta == "RASCUNHO: análise estratégica."
-    assert log.modelo == "ollama/modelo-x"  # modelo REAL devolvido pelo shim
+    assert log.modelo == "groq/modelo-x"  # modelo REAL devolvido pelo shim
     assert db.commits >= 1
 
 
@@ -164,7 +164,7 @@ async def test_ia_analise_cliente_grava_ailog(monkeypatch):
     # Perfil de CLIENTE → tipo_uso=outro (não "analise_caso"/sugestão de teses).
     assert log.tipo_uso == AITipoUso.outro
     assert log.resposta == "Perfil de risco moderado."
-    assert log.modelo == "ollama/modelo-x"
+    assert log.modelo == "groq/modelo-x"
     assert db.commits >= 1
 
 
@@ -194,7 +194,7 @@ async def test_analise_impacto_grava_ailog(monkeypatch):
     assert log.case_id is None
     assert log.tipo_uso == AITipoUso.outro
     assert log.resposta == "Impacto: alta relevância tributária."
-    assert log.modelo == "ollama/modelo-x"  # modelo REAL exposto por processar_demanda
+    assert log.modelo == "groq/modelo-x"  # modelo REAL exposto por processar_demanda
     assert db.commits >= 1
 
 

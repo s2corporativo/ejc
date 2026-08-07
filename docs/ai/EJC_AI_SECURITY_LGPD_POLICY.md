@@ -60,4 +60,4 @@ Data: 2026-07-04.
 
 ## 8. Resumo das flags de governança (core/config.py:83-92)
 
-`AI_EXTERNAL_PROVIDERS_ALLOWED` (desliga todos os externos), `AI_REQUIRE_SANITIZATION_FOR_EXTERNAL` (barreiras obrigatórias), `AI_REQUIRE_HITL` (revisão formal), `AI_PROVIDER_PRIORITY` (ordem). Em produção todas permanecem nos defaults seguros (`true`/`ollama,anthropic,groq`).
+`AI_EXTERNAL_PROVIDERS_ALLOWED` (desliga todos os externos — sem provider local no EJC, IA fica indisponível), `AI_REQUIRE_SANITIZATION_FOR_EXTERNAL` (barreiras obrigatórias), `AI_REQUIRE_HITL` (revisão formal), `AI_PROVIDER_PRIORITY` (ordem). Em produção todas permanecem nos defaults seguros (`true`/`anthropic,maritaca,groq`).

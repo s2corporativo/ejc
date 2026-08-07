@@ -1,5 +1,5 @@
 """Módulo NFS-e (emissão fiscal GATED) — sem rede real (httpx MockTransport),
-sem banco (fakes no padrão test_infosimples).
+sem banco (fakes locais, mesmo padrão dos demais testes de integração externa).
 
 Cobre: gate NFSE_ENABLED (503) e provedor inválido; credencial faltando (422);
 token OAuth cacheado (uma auth p/ várias chamadas); montagem do DPS em

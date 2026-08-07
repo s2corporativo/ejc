@@ -2,7 +2,7 @@
 
 Item #3 do plano de melhorias: o ErrorBoundary passa a reportar o erro ao
 backend (visibilidade sem auditoria manual de console). Testa o contrato do
-endpoint com auth substituível (padrão de test_search.py), sem banco nem Sentry.
+endpoint com auth substituível (padrão de test_search.py), sem banco.
 """
 from __future__ import annotations
 

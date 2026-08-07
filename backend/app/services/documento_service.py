@@ -381,10 +381,10 @@ def _montar_intake_result(
 
 
 _ERRO_FAIL_CLOSED = (
-    "A interpretação por IA local (Ollama) está indisponível e o fallback para "
-    "provedores externos está DESLIGADO (INTAKE_EXTERNAL_FALLBACK=false). "
-    "Habilite o Ollama ou ligue INTAKE_EXTERNAL_FALLBACK no .env para permitir "
-    "a cadeia externa (o texto vai sanitizado — sem CPF/CNPJ/nº de processo)."
+    "Não há processamento local disponível e o fallback para provedores "
+    "externos está DESLIGADO (INTAKE_EXTERNAL_FALLBACK=false). Ligue "
+    "INTAKE_EXTERNAL_FALLBACK no .env para permitir a cadeia externa (o texto "
+    "vai sanitizado — sem CPF/CNPJ/nº de processo)."
 )
 
 
@@ -424,24 +424,22 @@ async def extrair_e_analisar(
     # 2) Interpretação LLM (1 chamada de IA) — cadeia com fallback.
     # Decisão LGPD (híbrido determinístico + LLM):
     #   • O dado pessoal exato vem da extração determinística local acima.
-    #   • O LLM (possivelmente EXTERNO via fallback ollama→anthropic→groq) só
-    #     vê `texto_para_ia`, JÁ SANITIZADO por sanitizar_pii (CPF/CNPJ/nº de
+    #   • O LLM (EXTERNO via cadeia anthropic→maritaca→groq) só vê
+    #     `texto_para_ia`, JÁ SANITIZADO por sanitizar_pii (CPF/CNPJ/nº de
     #     processo/e-mail/etc. viram marcadores [CPF], [PROCESSO], ...).
     #   • Segunda linha de defesa: o gateway aplica _sanitizar_messages_externo
     #     e PULA provedores externos se restar PII estrutural
     #     (AI_REQUIRE_SANITIZATION_FOR_EXTERNAL).
-    # Por isso o fallback externo é seguro — e a importação não depende mais
-    # exclusivamente do Ollama estar provisionado.
+    # Por isso o fallback externo é seguro.
     #
-    # Opt-out (INTAKE_EXTERNAL_FALLBACK=false): volta ao fail-closed antigo —
-    # provider_override="ollama" (só local); indisponível → erro claro citando
-    # a flag, sem jamais acionar provedor externo neste fluxo.
+    # Opt-out (INTAKE_EXTERNAL_FALLBACK=false): fail-closed — não há provider
+    # local disponível no EJC, então a importação por IA fica bloqueada com
+    # erro claro citando a flag, sem jamais acionar provedor externo.
     from app.core.config import get_settings
     settings = get_settings()
     somente_local = not settings.INTAKE_EXTERNAL_FALLBACK
-    if somente_local and not settings.OLLAMA_ENABLED:
-        # Guarda: provider forçado inelegível faria o gateway cair na cadeia
-        # automática (externa) — exatamente o que a flag proíbe.
+    if somente_local:
+        # Sem processamento local disponível, fail-closed é a única opção.
         return {"ok": False, "erro": _ERRO_FAIL_CLOSED}
 
     user_msg = f"DOCUMENTO:\n\n{texto_para_ia}\n\n---\n{ESQUEMA}"
@@ -452,13 +450,9 @@ async def extrair_e_analisar(
             task_type="analise_juridica",
             temperature=0.1,
             max_tokens=3200,
-            provider_override="ollama" if somente_local else None,
         )
     except Exception as e:
         logger.warning(f"Cadeia de IA falhou na análise do documento: {e}")
-        if somente_local:
-            # Fail-closed explícito escolhido pelo escritório via flag.
-            return {"ok": False, "erro": _ERRO_FAIL_CLOSED}
         # 2.a) TODA a cadeia LLM falhou → degrada com sucesso parcial: a
         # extração determinística local + texto OCR continuam úteis para o
         # advogado. Nunca mais erro seco na importação.

@@ -27,7 +27,7 @@ def _defaults(monkeypatch):
         ROTEAMENTO_LIMIAR_MEDIO=3,
         ROTEAMENTO_LIMIAR_PESADO=6,
         ROTEAMENTO_PROVIDER_LEVE="groq",
-        ROTEAMENTO_PROVIDER_MEDIO="ollama",
+        ROTEAMENTO_PROVIDER_MEDIO="maritaca",
         ROTEAMENTO_PROVIDER_PESADO="anthropic",
         ANTHROPIC_MODEL_RAPIDO="claude-haiku-4-5-20251001",
         ANTHROPIC_MODEL_COMPLEXO="claude-opus-4-8",
@@ -46,7 +46,7 @@ def test_tarefa_leve_input_pequeno_e_leve():
 def test_tarefa_media_por_task_type():
     d = mr.escolher_modelo("analise_contrato", "contrato pequeno")
     assert d.tier == "medio"
-    assert d.provider == "ollama"
+    assert d.provider == "maritaca"
 
 
 def test_tarefa_pesada_por_task_type():

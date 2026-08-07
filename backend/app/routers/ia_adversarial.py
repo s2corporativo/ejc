@@ -31,7 +31,7 @@ class CriticaAdversarialRequest(BaseModel):
     task_type_origem: str | None = Field(default=None, max_length=60,
                                          description="task_type que gerou a peça (ex: elaboracao_peca).")
     provedor_origem: str | None = Field(default=None, max_length=30,
-                                        description="Provider que gerou a peça (ollama|anthropic|groq) — "
+                                        description="Provider que gerou a peça (anthropic|maritaca|groq) — "
                                                     "a crítica prefere um DIFERENTE.")
     case_id: str | None = Field(default=None, max_length=64,
                                 description="Caso ao qual a peça pertence. Quando informado, os nomes "

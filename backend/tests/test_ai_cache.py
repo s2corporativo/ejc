@@ -78,7 +78,7 @@ async def test_cache_hit_zera_tokens_e_custo(monkeypatch):
     )
 
     async def _fake_obter(_key):
-        return {"texto": "resposta cacheada", "modelo": "m", "provedor": "ollama",
+        return {"texto": "resposta cacheada", "modelo": "m", "provedor": "groq",
                 "input_tokens": 500, "output_tokens": 800, "custo_estimado_brl": 1.23}
 
     monkeypatch.setattr(_c, "obter", _fake_obter)

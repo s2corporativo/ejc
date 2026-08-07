@@ -25,7 +25,7 @@ TAREFAS_COMPLEXAS = {
     "estrategia", "analise_juridica", "elaboracao_peca",
 }
 
-# Tarefas simples/econômicas → preferem Ollama/Groq (custo ~zero).
+# Tarefas simples/econômicas → preferem Groq (custo ~zero).
 TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido"}
 
 
@@ -46,8 +46,6 @@ class AIProviderPolicy:
     @staticmethod
     def _elegivel(provider: str) -> bool:
         s = get_settings()
-        if provider == "ollama":
-            return bool(s.OLLAMA_ENABLED)
         if provider == "anthropic":
             return bool(
                 s.ANTHROPIC_ENABLED and s.ANTHROPIC_API_KEY
@@ -73,7 +71,7 @@ class AIProviderPolicy:
         # Default sem AI_PROVIDER_PRIORITY: maritaca antes do groq — para tarefa
         # jurídica PT-BR, Sabiá rankeia acima de um modelo generalista; elegível
         # só com MARITACA_ENABLED+chave (default OFF → ordem efetiva idêntica).
-        return vistos or ["ollama", "anthropic", "maritaca", "groq"]
+        return vistos or ["anthropic", "maritaca", "groq"]
 
     def avaliar(
         self,
@@ -92,7 +90,7 @@ class AIProviderPolicy:
              sanitiza e checa residual; PII residual → remove externos.
           3. Cadeia vazia → permitido=False com motivo SEGURO (tipos de PII,
              nunca os valores — o conteúdo jamais é ecoado).
-          4. Tarefas complexas priorizam Anthropic; econômicas, Ollama/Groq.
+          4. Tarefas complexas priorizam Anthropic; econômicas, Groq.
         """
         s = get_settings()
         task = (task_type or "").strip().lower()
@@ -132,33 +130,32 @@ class AIProviderPolicy:
             elegiveis = locais + ["maritaca"] + externos
             motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada entre externos")
         elif task in TAREFAS_ECONOMICAS:
-            econ = [p for p in elegiveis if p in ("ollama", "groq")]
+            econ = [p for p in elegiveis if p == "groq"]
             elegiveis = econ + [p for p in elegiveis if p not in econ]
-            motivos.append("tarefa econômica — Ollama/Groq priorizados")
+            motivos.append("tarefa econômica — Groq priorizado")
 
         requer_hitl = bool(s.AI_REQUIRE_HITL)
 
         if not elegiveis:
             # Mensagem HONESTA conforme a causa da cadeia vazia:
-            #  • se externos foram removidos por PII residual, só uma IA LOCAL
-            #    resolveria (ou limpar o texto);
+            #  • se externos foram removidos por PII residual, não há provider
+            #    local disponível para processar o conteúdo (bloqueio de
+            #    sigilo/LGPD) — a única saída é limpar o texto;
             #  • caso contrário, o deploy simplesmente não tem provedor externo
             #    elegível (falta ANTHROPIC_API_KEY / AI_EXTERNAL_PROVIDERS_ALLOWED)
-            #    nem Ollama local. Não direcionar só para "habilite o Ollama":
-            #    o desenho de produção é IA externa com mascaramento de PII.
+            #    e não há processamento local disponível.
             removido_por_pii = any("PII residual" in m for m in motivos)
             if removido_por_pii:
                 bloqueio = (
                     "Este conteúdo tem dados pessoais que não podem ir a uma IA "
-                    "externa. Habilite uma IA local (OLLAMA_ENABLED=true) ou "
-                    "remova os dados pessoais do texto e tente novamente."
+                    "externa e não há processamento local disponível — remova "
+                    "os dados pessoais do texto e tente novamente."
                 )
             else:
                 bloqueio = (
                     "Nenhum provedor de IA está configurado. Configure a IA "
                     "externa (defina ANTHROPIC_API_KEY no ambiente e mantenha "
-                    "AI_EXTERNAL_PROVIDERS_ALLOWED=true) ou habilite uma IA local "
-                    "(OLLAMA_ENABLED=true com um serviço Ollama disponível)."
+                    "AI_EXTERNAL_PROVIDERS_ALLOWED=true)."
                 )
             return PolicyDecision(
                 permitido=False,

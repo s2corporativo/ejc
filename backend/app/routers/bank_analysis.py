@@ -292,7 +292,11 @@ async def gerar_peca(analysis_id: str, payload: dict | None = Body(default=None)
 
     # Fail-safe: a esteira de peças depende de IA. Se nenhum provedor estiver
     # configurado, retorna erro limpo antes de abrir o stream.
-    if not settings.GROQ_API_KEY and not settings.OLLAMA_ENABLED:
+    if (
+        not settings.GROQ_API_KEY
+        and not (settings.ANTHROPIC_ENABLED and settings.ANTHROPIC_API_KEY)
+        and not (settings.MARITACA_ENABLED and settings.MARITACA_API_KEY)
+    ):
         raise HTTPException(503, "Serviço de IA indisponível para geração de peças no momento.")
 
     analise = d["analise"]

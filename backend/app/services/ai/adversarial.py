@@ -67,7 +67,7 @@ def neutralizar_marcador_ailog(texto: str | None) -> str | None:
 
 # Maritaca incluída: laboratório/treinamento distintos do gerador reduzem erro
 # correlacionado — exatamente o objetivo da diversidade no Modo Duas IAs.
-_PROVIDERS_CONHECIDOS = ("ollama", "anthropic", "groq", "maritaca")
+_PROVIDERS_CONHECIDOS = ("anthropic", "groq", "maritaca")
 
 SYSTEM_CRITICA = """
 Você é a IA CRÍTICA/ADVERSARIAL do escritório De Paula Teixeira Advogados.

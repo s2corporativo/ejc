@@ -32,7 +32,6 @@ def _modelo_configurado(provider: str) -> str | None:
         "anthropic": settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO,
         "maritaca": settings.MARITACA_MODEL or settings.MARITACA_MODEL_RAPIDO,
         "groq": settings.GROQ_MODEL,
-        "ollama": settings.OLLAMA_MODEL_ANALISE,
     }.get(provider)
 
 

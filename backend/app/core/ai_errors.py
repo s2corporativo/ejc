@@ -55,7 +55,7 @@ _RE_TRANSCRICAO = re.compile(
 # Qualquer traço de infraestrutura/configuração que um advogado leigo não
 # decodifica: providers, chaves, envs, erros de rede, task=, "Falha na IA".
 _RE_TECNICO = re.compile(
-    r"provedor|provider|task=|\.env|api[_ ]?key|ollama|groq|anthropic|maritaca"
+    r"provedor|provider|task=|\.env|api[_ ]?key|groq|anthropic|maritaca"
     r"|errno|timeout|timed?\s?out|connection|refused|unreachable|http\s?\d{3}"
     r"|traceback|exception|falha na ia|ia indisponível|desabilitad|configur"
     r"|indispon[ií]vel|localhost|127\.0\.0\.1|:\d{4,5}\b",

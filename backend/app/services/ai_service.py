@@ -685,8 +685,8 @@ async def resumir_documento(
     try:
         # FASE 1b (MAPA §5 Passo 2): task de PROSA coberto pela base central
         # ("resumo" NÃO recebe aplicar_base — legal_base._TASKS_COM_BASE).
-        # "chat_rapido" mantém o tier leve (ollama chat → maritaca rápido →
-        # groq) e garante a barreira anti-alucinação central. A regra inline
+        # "chat_rapido" mantém o tier leve (maritaca rápido → groq) e garante
+        # a barreira anti-alucinação central. A regra inline
         # de SYSTEM_RESUMO_DOC é preservada (mudança aditiva).
         resposta, resp = await _gateway_text(
             SYSTEM_RESUMO_DOC, texto_limpo,
@@ -1083,8 +1083,7 @@ async def analisar_contrato(
         # FASE 1b (MAPA §5 Passo 2): "analise_contrato" está no TASK_ROUTING mas
         # FORA de legal_base._TASKS_COM_BASE (sem base central). A saída aqui é
         # PROSA (relatório de auditoria de minuta contratual) → task coberto
-        # "auditoria_peca" (mesma cadeia anthropic/groq; ollama muda de
-        # OLLAMA_MODEL_CONTRATO p/ OLLAMA_MODEL_PETICAO — revisão textual).
+        # "auditoria_peca" (mesma cadeia anthropic/maritaca/groq).
         # Não ampliamos _TASKS_COM_BASE com "analise_contrato" porque o
         # BankForensicsAgent (ai/core/orchestrator.py) usa esse task para saída
         # ESTRUTURADA — injetar a base de prosa lá arriscaria o parse.

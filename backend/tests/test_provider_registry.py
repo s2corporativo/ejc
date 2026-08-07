@@ -4,7 +4,8 @@ from __future__ import annotations
 def test_registry_externos_sao_suportados():
     from app.services.ai.provider_registry import PROVIDERS_EXTERNOS, PROVIDERS_SUPORTADOS
     assert PROVIDERS_EXTERNOS <= set(PROVIDERS_SUPORTADOS)
-    assert [p for p in PROVIDERS_SUPORTADOS if p not in PROVIDERS_EXTERNOS] == ["ollama"]
+    # O EJC não tem provider local: todo provider suportado é externo.
+    assert [p for p in PROVIDERS_SUPORTADOS if p not in PROVIDERS_EXTERNOS] == []
 
 
 def test_runtime_compartilha_registro():
@@ -42,5 +43,4 @@ def test_gateway_permanece_fail_closed(monkeypatch):
 
     settings = get_settings()
     monkeypatch.setattr(settings, "AI_EXTERNAL_PROVIDERS_ALLOWED", False)
-    monkeypatch.setattr(settings, "OLLAMA_ENABLED", False)
     assert ai_gateway._resolver_cadeia("analise_juridica", None, None) == []

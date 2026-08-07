@@ -45,7 +45,6 @@ services:
     ports:
       # Publica só no loopback do host; o Nginx do host faz proxy_pass para 127.0.0.1:8000.
       - "127.0.0.1:8000:8000"
-    networks: [default, ia]
     env_file:
       - .env
     environment:
@@ -79,18 +78,12 @@ services:
       # login (security_service.py) e o slowapi @limiter.limit continuam POR
       # PROCESSO — não escalar uvicorn com --workers sem migrá-los para Redis.
       RATE_LIMIT_REDIS_ENABLED: "true"
-      # IA: este stack NÃO sobe um serviço `ollama` (OLLAMA_BASE_URL default
-      # aponta para http://ollama:11434, inexistente aqui). Mantê-lo "enabled"
-      # fazia TODA tarefa tentar um provider local morto antes do Anthropic e,
-      # sem Anthropic elegível, a importação de documentos falhava com
-      # "habilite o Ollama". Decisão de produto: IA externa com mascaramento/
-      # pseudonimização de PII (CPF/CNPJ → [CPF]/[CNPJ]). Para usar IA local,
-      # suba um serviço `ollama` e volte para "true".
-      OLLAMA_ENABLED: "false"
-      # Anthropic primeiro (melhor qualidade jurídica); Maritaca (Sabiá,
-      # legal-tuned PT-BR) como 2º externo; Groq depois.
-      # Requer ANTHROPIC_API_KEY no .env do VPS (segredo — nunca versionado).
-      AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
+      # IA: decisão de produto — IA externa com mascaramento/pseudonimização
+      # de PII (CPF/CNPJ → [CPF]/[CNPJ]). Anthropic primeiro (melhor qualidade
+      # jurídica); Maritaca (Sabiá, legal-tuned PT-BR) como 2º externo; Groq
+      # depois. Requer ANTHROPIC_API_KEY no .env do VPS (segredo — nunca
+      # versionado).
+      AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq"
       # Decisão de produto (2026-07-19): Maritaca LIGADA neste stack — a chave
       # MARITACA_API_KEY vive só no .env do VPS; sem chave o provider continua
       # inelegível (fail-safe, fora da cadeia). O .env pode sobrepor para
@@ -133,7 +126,6 @@ services:
       context: ./backend
     container_name: ejc_worker
     restart: unless-stopped
-    networks: [default, ia]
     command: celery -A app.core.celery_app.celery_app worker --loglevel=INFO --concurrency=2
     env_file:
       - .env
@@ -150,9 +142,8 @@ services:
       # Scheduler APScheduler só no processo da API — nunca no worker.
       ENABLE_SCHEDULER: "false"
       # Mesma política de IA da API (o worker também roda tarefas de IA na fila):
-      # sem Ollama local neste stack; IA externa com mascaramento de PII.
-      OLLAMA_ENABLED: "false"
-      AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
+      # IA externa com mascaramento de PII.
+      AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq"
       # Mesma decisão de produto da API: Maritaca ligada; .env pode sobrepor.
       MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
     volumes:
@@ -244,99 +235,8 @@ services:
       # Self-hosted fechado: sem signup público após criar o 1º usuário admin.
       LANGFUSE_DEFAULT_PROJECT_ROLE: MEMBER
 
-  # ── IA local (Ollama) — análise com custo zero por token ───────────────────
-  # OPT-IN via profile "ia-local": o `up -d` padrão NÃO sobe estes serviços.
-  # Para ligar (ou use scripts/subir-ia-local.sh, que acompanha o download):
-  #   docker compose --profile ia-local up -d
-  # O backend já aponta para http://ollama:11434 (OLLAMA_BASE_URL) e a cadeia
-  # de fallback do ai_gateway cai para Anthropic/Groq se o Ollama estiver
-  # ausente/lento — ligar ou desligar este profile NUNCA quebra a aplicação.
-  #
-  # RAM por modelo (CPU, sem GPU — some ~1-2GB de overhead do runtime):
-  #   llama3.2:3b / qwen2.5:3b  ≈ 3-4 GB   → VPS modesta (8 GB total)
-  #   deepseek-r1:8b / gemma3:9b ≈ 6-7 GB  → servidor 16 GB+
-  #   qwen2.5:14b               ≈ 10-11 GB → servidor 16 GB+ (apertado c/ 16)
-  # Ajuste OLLAMA_MEM_LIMIT e os OLLAMA_MODEL_*/OLLAMA_PULL_MODELS no .env
-  # (perfis prontos comentados no .env.example).
-  ollama:
-    # Tag pinada (não usar :latest): 0.31.1 estável em 2026-06-30.
-    image: ollama/ollama:0.31.1
-    container_name: ejc_ollama
-    profiles: ["ia-local"]
-    restart: unless-stopped
-    # Rede dedicada: só backend/worker alcançam a API sem auth do Ollama —
-    # frontend/langfuse ficam fora (menor superfície em caso de comprometimento).
-    networks: [ia]
-    # Porta NÃO publicada no host de propósito: só a rede interna do compose
-    # alcança o Ollama (backend/worker via http://ollama:11434). Não exponha —
-    # a API do Ollama não tem autenticação.
-    environment:
-      # 1 modelo carregado por vez e sem paralelismo: teto de RAM previsível
-      # numa VPS sem GPU. Troca de modelo = descarrega/carrega (segundos).
-      OLLAMA_MAX_LOADED_MODELS: "1"
-      OLLAMA_NUM_PARALLEL: "1"
-      # Descarrega o modelo da RAM após ociosidade (recarrega sob demanda).
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
-    # Teto duro de memória do container (mem_limit = compose standalone, como
-    # usamos aqui). Estouro → OOM-kill do container, NUNCA da VPS inteira;
-    # o backend segue no ar e cai para Anthropic/Groq.
-    mem_limit: ${OLLAMA_MEM_LIMIT:-12g}
-    volumes:
-      - ollama_models:/root/.ollama
-    healthcheck:
-      # A imagem não traz curl/wget; o próprio CLI consulta o servidor local.
-      test: ["CMD", "ollama", "list"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-
-  ollama-init:
-    # One-shot: baixa os modelos listados em OLLAMA_PULL_MODELS (CSV no .env;
-    # default = modelos padrão do backend/app/core/config.py). Idempotente:
-    # pull de modelo já baixado só confere o digest e retorna em segundos.
-    # Roda e SAI (restart "no") — `docker compose --profile ia-local up -d`
-    # já o executa; acompanhe com `docker logs -f ejc_ollama_init`.
-    image: ollama/ollama:0.31.1
-    container_name: ejc_ollama_init
-    profiles: ["ia-local"]
-    restart: "no"
-    networks: [ia]
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      # CLI dentro deste container fala com o serviço ollama, não com localhost.
-      OLLAMA_HOST: http://ollama:11434
-      # Fonte única: mantenha em sincronia com os OLLAMA_MODEL_* do .env
-      # (config.py: ANALISE/CONTRATO=deepseek-r1:8b, PETICAO=qwen2.5:14b,
-      # RESUMO/CHAT=gemma3:9b).
-      OLLAMA_PULL_MODELS: ${OLLAMA_PULL_MODELS:-deepseek-r1:8b,qwen2.5:14b,gemma3:9b}
-    entrypoint: ["/bin/sh", "-c"]
-    # $$ = escape do compose: variável avaliada pelo shell DO CONTAINER.
-    command:
-      - |
-        set -eu
-        set -f  # sem glob: item com * no CSV não expande contra o cwd
-        falhas=0
-        IFS=','
-        for m in $$OLLAMA_PULL_MODELS; do
-          m="$$(echo "$$m" | tr -d '[:space:]')"
-          [ -n "$$m" ] || continue
-          echo "==> ollama pull $$m"
-          if ! ollama pull -- "$$m"; then
-            echo "[ERRO] pull de $$m falhou (segue para o próximo)" >&2
-            falhas=$$((falhas+1))
-          fi
-        done
-        echo "==> modelos instalados:"
-        ollama list
-        exit "$$falhas"
-
 networks:
   default:
-  # Rede interna da IA local: backend/worker <-> ollama. Nenhuma porta no host.
-  ia:
 
 volumes:
   postgres_data:
@@ -345,4 +245,3 @@ volumes:
   fastembed_cache:
   redis_data:
   langfuse_db_data:
-  ollama_models:

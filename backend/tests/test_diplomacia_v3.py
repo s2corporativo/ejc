@@ -33,7 +33,7 @@ def _fake_chat(texto="Acordo hoje é a decisão racional.", capturado=None):
             capturado["messages"] = messages
             capturado["task_type"] = task_type
         return GatewayResponse(
-            texto=texto, modelo="modelo-x", provedor="ollama",
+            texto=texto, modelo="modelo-x", provedor="groq",
             task_type=task_type, input_tokens=10, output_tokens=20,
         )
     return chat
@@ -92,7 +92,7 @@ async def test_gerar_dossie_pressao_chama_gateway_estrategia(monkeypatch):
     r = await diplomacia.gerar_dossie_pressao(dados)
 
     assert r["argumentacao"] == "Acordo hoje é a decisão racional."
-    assert r["modelo"] == "modelo-x" and r["provedor"] == "ollama"
+    assert r["modelo"] == "modelo-x" and r["provedor"] == "groq"
     assert capturado["task_type"] == "estrategia"
     prompt = capturado["messages"][0]["content"]
     assert "100000.0" in prompt and "0.7" in prompt  # dados numéricos, sem PII

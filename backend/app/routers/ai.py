@@ -468,7 +468,7 @@ async def audiencia(
 
 @router.post("/gateway/health")
 async def gateway_health(cu: User = Depends(get_current_user)):
-    """Status dos provedores de IA disponíveis (Ollama, Anthropic, Maritaca, Groq)."""
+    """Status dos provedores de IA disponíveis (Anthropic, Maritaca, Groq)."""
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["admin"]:
         raise HTTPException(403, "Apenas administradores")
     from app.services.ai_gateway import health as gw_health
@@ -559,7 +559,7 @@ async def assistente_estrategico(
     """
     IA contextual vinculada ao caso específico.
     Acessa o dossiê completo automaticamente e responde apenas sobre aquele processo.
-    Usa AI Gateway (Ollama local prioritário, Groq como fallback).
+    Usa AI Gateway (Anthropic prioritário, Groq como fallback).
     """
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         raise HTTPException(403)

@@ -43,7 +43,6 @@ class _User:
 def _sem_provedores(monkeypatch):
     from app.services import ai_gateway as gw
     monkeypatch.setattr(gw.settings, "AI_ENABLED", True, raising=False)
-    monkeypatch.setattr(gw.settings, "OLLAMA_ENABLED", False, raising=False)
     monkeypatch.setattr(gw.settings, "ANTHROPIC_API_KEY", "", raising=False)
     monkeypatch.setattr(gw.settings, "GROQ_API_KEY", "", raising=False)
     monkeypatch.setattr(gw.settings, "MARITACA_ENABLED", False, raising=False)
@@ -87,13 +86,13 @@ async def test_ia_status_ai_enabled_false_desativa(monkeypatch):
 
 def test_erro_provedores_falharam_vira_mensagem_leiga():
     tecnico = ("Todos os provedores falharam para task=estrategia. "
-               "Último erro: Ollama indisponível: [Errno -2] Name or service not known")
+               "Último erro: Anthropic indisponível: [Errno -2] Name or service not known")
     assert mensagem_ia_para_usuario(tecnico) == MSG_IA_INDISPONIVEL
 
 
 def test_erro_pii_vira_mensagem_leiga():
-    tecnico = ("Conteúdo com dados pessoais não pode ir a provider externo — "
-               "configure Ollama ou revise o texto")
+    tecnico = ("Conteúdo com dados pessoais não pode ir a provider externo e não "
+               "há processamento local disponível — revise o texto ou a política de sigilo")
     assert mensagem_ia_para_usuario(tecnico) == MSG_PII_BLOQUEADA
 
 

@@ -30,15 +30,14 @@ RELATORIO_OK = (
 
 @pytest.fixture
 def s(monkeypatch):
-    """Baseline: Anthropic e Groq elegíveis, Ollama OFF, Duas IAs OFF."""
+    """Baseline: Anthropic e Groq elegíveis (sem provider local), Duas IAs OFF."""
     st = get_settings()
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
     monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
-    monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
-    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "anthropic,groq")
     monkeypatch.setattr(st, "AI_PROVIDER", "auto")
     monkeypatch.setattr(st, "DUAS_IAS_ENABLED", False)
     monkeypatch.setattr(st, "DUAS_IAS_TASK_TYPES", "elaboracao_peca,auditoria_peca")
@@ -64,18 +63,9 @@ def _fake_chat(box: dict, *, texto: str = RELATORIO_OK, provedor: str = "anthrop
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestProviderDiverso:
-    def test_origem_ollama_prefere_anthropic(self, s):
-        from app.services.ai.adversarial import escolher_provider_diverso
-        assert escolher_provider_diverso("ollama") == "anthropic"
-
-    def test_origem_anthropic_cai_no_groq_sem_ollama(self, s):
+    def test_origem_anthropic_cai_no_groq(self, s):
         from app.services.ai.adversarial import escolher_provider_diverso
         assert escolher_provider_diverso("anthropic") == "groq"
-
-    def test_origem_anthropic_prefere_ollama_quando_ligado(self, s, monkeypatch):
-        from app.services.ai.adversarial import escolher_provider_diverso
-        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
-        assert escolher_provider_diverso("anthropic") == "ollama"
 
     def test_nenhum_diverso_elegivel_devolve_none(self, s, monkeypatch):
         from app.services.ai.adversarial import escolher_provider_diverso
@@ -136,12 +126,12 @@ class TestCriticarPeca:
 
         c = await adversarial.criticar_peca(
             db=object(), texto_peca=TEXTO_PECA,
-            task_type_origem="elaboracao_peca", provedor_origem="ollama",
+            task_type_origem="elaboracao_peca", provedor_origem="groq",
         )
         assert c.disponivel is True
         assert c.nota_robustez == 72
         assert c.provider_diverso is True
-        assert c.provedor == "anthropic" and c.provedor_origem == "ollama"
+        assert c.provedor == "anthropic" and c.provedor_origem == "groq"
         # Pediu explicitamente o provider diverso ao gateway.
         assert box["provider_override"] == "anthropic"
         assert box["task_type"] == "critica_adversarial"
@@ -197,7 +187,7 @@ class TestCriticarPeca:
         from app.services.ai import adversarial
         monkeypatch.setattr(ai_gateway, "chat", _fake_chat({}, falhar=True))
         c = await adversarial.criticar_peca(
-            db=object(), texto_peca=TEXTO_PECA, provedor_origem="ollama",
+            db=object(), texto_peca=TEXTO_PECA, provedor_origem="groq",
         )
         assert c.disponivel is False
         assert c.relatorio is None
@@ -300,7 +290,7 @@ class TestCriticaProtegeNomesLGPD:
             texto_peca=texto_peca,
             contexto_caso="Cliente João da Silva; parte contrária Construtora Alfa Ltda.",
             task_type_origem="elaboracao_peca",
-            provedor_origem="ollama",  # crítica cai no anthropic (externo)
+            provedor_origem="groq",  # crítica cai no anthropic (externo)
             case_id="c1",
         )
 
@@ -371,7 +361,7 @@ class TestAnexarAoAILog:
         critica = adversarial.CriticaAdversarial(
             disponivel=True, relatorio=RELATORIO_OK, nota_robustez=72,
             provedor="anthropic", modelo="claude-fake",
-            provedor_origem="ollama", provider_diverso=True,
+            provedor_origem="groq", provider_diverso=True,
         )
         log = SimpleNamespace(resposta="TEXTO DA PEÇA", critica_adversarial=None)
         db = _FakeDB(log)
@@ -566,8 +556,6 @@ def nucleo_mocks(s, monkeypatch):
     from app.services.ai.core import audit_logger, context_builder
     from app.services.ai.core.context_builder import ContextoMontado
 
-    monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
-
     async def fake_montar_contexto(db, **kw):
         return ContextoMontado()
 
@@ -577,7 +565,7 @@ def nucleo_mocks(s, monkeypatch):
     async def fake_chat(messages, **kw):
         return GatewayResponse(
             texto="Minuta fictícia de petição, sem promessas.",
-            modelo="modelo-fake", provedor="ollama",
+            modelo="modelo-fake", provedor="groq",
             task_type=kw.get("task_type", ""), input_tokens=10, output_tokens=20,
         )
 
@@ -643,7 +631,7 @@ class TestOrchestratorDuasIAs:
         assert len(critica_spy["criticar"]) == 1
         chamada = critica_spy["criticar"][0]
         assert chamada["task_type_origem"] == "elaboracao_peca"
-        assert chamada["provedor_origem"] == "ollama"
+        assert chamada["provedor_origem"] == "groq"
         # A crítica recebe o conteúdo JÁ validado (pós gate de citações da peça).
         assert r["conteudo"].endswith(chamada["texto_peca"]) or \
             chamada["texto_peca"] == r["conteudo"]
@@ -730,7 +718,7 @@ class TestEndpointCriticaAdversarial:
         monkeypatch.setattr(citation_gate, "validar_citacoes", fake_validar)
         db = _EndpointDB()
         c = await critica_adversarial_endpoint(
-            CriticaAdversarialRequest(texto_peca=TEXTO_PECA, provedor_origem="ollama"),
+            CriticaAdversarialRequest(texto_peca=TEXTO_PECA, provedor_origem="groq"),
             db=db, cu=SimpleNamespace(id="user-1"),
         )
         assert c.disponivel is True and c.provider_diverso is True

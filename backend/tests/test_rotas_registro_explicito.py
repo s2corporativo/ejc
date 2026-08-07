@@ -86,6 +86,17 @@ REMOCOES_INTENCIONAIS = {
     # do sistema chamava os dois. Não reintroduzir sem decisão escrita do titular.
     ("/api/diplomacia-v3/dossie-pressao", "POST"),
     ("/api/diplomacia-v3/analisar-magistrado", "POST"),
+    # Issue #761: remoção completa da integração Infosimples (consultas pagas
+    # a TJMG/Receita) — já vinha desligada em produção (INFOSIMPLES_ENABLED=
+    # false por padrão) e sem consumidor no frontend. CAR/SICAR removido
+    # junto: reusava 100% infosimples_service.consultar(), sem transporte
+    # HTTP próprio e sem consumidor no frontend.
+    ("/api/infosimples/tjmg/processo", "POST"),
+    ("/api/infosimples/receita/cpf", "POST"),
+    ("/api/infosimples/receita/cnpj", "POST"),
+    ("/api/infosimples/status", "GET"),
+    ("/api/car/imovel", "POST"),
+    ("/api/car/demonstrativo", "POST"),
 }
 
 

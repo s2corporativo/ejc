@@ -23,15 +23,15 @@ def sanitizar_ou_abortar(texto: str, nomes_proteger: list[str] | None = None) ->
     Antes esta barreira ABORTAVA (HTTP 422) quando sobrava PII residual após a
     limpeza de entrada. Isso bloqueava análises legítimas do escritório. Agora
     ela NÃO aborta mais: sanitiza o texto internamente (remove processo/RG/e-mail/
-    telefone/CEP/cartão/PIX/nomes protegidos; CPF/CNPJ seguem íntegros para o
-    Ollama local, decisão de 2026-07-04) e apenas REGISTRA (log) que houve PII
+    telefone/CEP/cartão/PIX/nomes protegidos; CPF/CNPJ seguem íntegros para uso
+    100% interno, decisão de 2026-07-04) e apenas REGISTRA (log) que houve PII
     residual, seguindo o fluxo. O nome/contrato é mantido por compatibilidade.
 
     Segurança preservada: a proteção real de provider externo é a barreira FINAL
     do `ai_gateway` (`_preparar_mensagens_externo` → pseudonimização/mascaramento
     + `validar_sem_pii*`), que PULA o provider externo se ainda houver PII —
-    NENHUM PII real chega a Anthropic/Groq mesmo sem este abort de entrada. Só o
-    Ollama local recebe CPF/CNPJ em texto plano.
+    NENHUM PII real chega a Anthropic/Groq/Maritaca mesmo sem este abort de
+    entrada.
 
     Retorna (texto_sanitizado, houve_remocao).
     """

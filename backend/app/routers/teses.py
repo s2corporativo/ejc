@@ -369,7 +369,7 @@ async def sugerir_teses_ia(
 ):
     """
     IA analisa os fatos e busca teses existentes no banco + sugere novas.
-    Usa AI Gateway — preferência Ollama, fallback Groq.
+    Usa AI Gateway — preferência Anthropic/Maritaca, fallback Groq.
     Todas as sugestões são RASCUNHO (HITL obrigatório).
     """
     if not _pode_editar(cu):

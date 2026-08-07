@@ -4,6 +4,8 @@ Data: 2026-07-04 · Branch: `claude/ejc-legal-ai-architecture-s2ctes`
 Escopo: inventário completo da superfície de IA do EJC (backend FastAPI + frontend React) antes da consolidação em um núcleo único de IA nativa.
 
 > **Nota de atualização (2026-07-27)** — documento histórico (retrato de 2026-07-04). O plano da Etapa 9 (§7) previa um client `aiCore` no frontend: ele chegou a ser criado (`frontend/src/lib/aiCore.ts`) mas **nunca teve um consumidor** e foi removido em 1befdf0. As telas de IA continuam nos endpoints legados; ver a pendência em `docs/HIGIENIZACAO_BACKLOG_FRONTEND.md`.
+>
+> **Nota de atualização (2026-08)** — o provider Ollama (IA local) foi REMOVIDO do EJC (Issue #761): já vinha desligado em produção (`OLLAMA_ENABLED=false`, último da cadeia) e sem uso real. O `_call_ollama` do gateway-sombra (§1, linha 14) também foi removido — o shim `core/ai_brain.py` hoje só delega ao gateway central. O `EJC não tem mais provider local`; a cadeia atual é `anthropic → maritaca → groq`. As referências a Ollama abaixo retratam o estado em 2026-07-04 (histórico).
 
 ---
 

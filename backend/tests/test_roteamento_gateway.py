@@ -21,14 +21,13 @@ def _prep(monkeypatch, **kw):
         ANTHROPIC_API_KEY="sk-x",
         ANTHROPIC_ENABLED=True,
         AI_EXTERNAL_PROVIDERS_ALLOWED=True,
-        AI_PROVIDER_PRIORITY="ollama,anthropic,groq",
-        OLLAMA_ENABLED=True,
+        AI_PROVIDER_PRIORITY="anthropic,groq",
         GROQ_API_KEY="gk",
         ROTEAMENTO_INTELIGENTE_ENABLED=False,
         ROTEAMENTO_LIMIAR_MEDIO=3,
         ROTEAMENTO_LIMIAR_PESADO=6,
         ROTEAMENTO_PROVIDER_LEVE="groq",
-        ROTEAMENTO_PROVIDER_MEDIO="ollama",
+        ROTEAMENTO_PROVIDER_MEDIO="anthropic",
         ROTEAMENTO_PROVIDER_PESADO="anthropic",
     )
     base.update(kw)
@@ -45,18 +44,22 @@ def test_cadeia_promove_preferido_elegivel(monkeypatch):
         provider_preferido="anthropic", model_preferido="claude-opus-4-8",
     )
     assert cadeia[0] == ("anthropic", "claude-opus-4-8")   # promovido à frente
-    assert any(p == "ollama" for p, _ in cadeia)           # fallback preservado
+    assert any(p == "groq" for p, _ in cadeia)             # fallback preservado
 
 
 def test_cadeia_ignora_preferido_inelegivel(monkeypatch):
-    # Kill-switch de soberania: externos inelegíveis → anthropic proposto é ignorado.
+    # Kill-switch de soberania: externos inelegíveis → anthropic proposto é
+    # ignorado. O hardening patch (instalado no boot real da app — reproduzido
+    # aqui para não depender da ordem de execução da suíte) refiltra a cadeia
+    # por elegibilidade; sem provider local, ela fica VAZIA (fail-closed).
+    from app.services.ai_core_hardening_patch import _instalar_resolver_provedores
+    _instalar_resolver_provedores()
     _prep(monkeypatch, AI_EXTERNAL_PROVIDERS_ALLOWED=False)
     cadeia = g._resolver_cadeia(
         "elaboracao_peca", provider_force=None, model_override=None,
         provider_preferido="anthropic", model_preferido="claude-opus-4-8",
     )
-    assert all(p != "anthropic" for p, _ in cadeia)        # externo bloqueado fora
-    assert cadeia[0][0] == "ollama"                        # cadeia normal
+    assert cadeia == []
 
 
 def test_cadeia_preferido_fora_do_task_routing_e_ignorado(monkeypatch):
@@ -84,8 +87,8 @@ async def test_chat_roteamento_off_usa_cadeia_por_task_type(monkeypatch):
     cap = {}
     _mock_provedor(monkeypatch, cap)
     resp = await g.chat([{"role": "user", "content": "oi"}], task_type="elaboracao_peca")
-    # off → prioridade normal: ollama primeiro
-    assert cap["provider"] == "ollama"
+    # off → prioridade normal: anthropic primeiro (sem provider local)
+    assert cap["provider"] == "anthropic"
     assert resp.roteamento_tier is None
 
 
@@ -102,13 +105,19 @@ async def test_chat_roteamento_on_promove_provedor(monkeypatch):
 
 
 async def test_chat_roteamento_on_respeita_kill_switch(monkeypatch):
-    # Roteador propõe anthropic, mas externos bloqueados → cai p/ ollama local.
+    # Roteador propõe anthropic, mas externos bloqueados → anthropic nunca é
+    # escolhido. Sem provider local, a cadeia elegível fica vazia e a chamada
+    # falha fail-closed (nenhum provider é tocado) — comportamento real do
+    # boot (hardening patch, ver test_cadeia_ignora_preferido_inelegivel).
+    from app.services.ai_core_hardening_patch import _instalar_resolver_provedores
+    _instalar_resolver_provedores()
     _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=True,
           AI_EXTERNAL_PROVIDERS_ALLOWED=False)
     cap = {}
     _mock_provedor(monkeypatch, cap)
-    await g.chat([{"role": "user", "content": "peça"}], task_type="elaboracao_peca")
-    assert cap["provider"] == "ollama"   # externo nunca escolhido
+    with pytest.raises(RuntimeError):
+        await g.chat([{"role": "user", "content": "peça"}], task_type="elaboracao_peca")
+    assert cap == {}   # nenhum provider foi tocado
 
 
 async def test_chat_calcula_custo_estimado(monkeypatch):
@@ -117,7 +126,6 @@ async def test_chat_calcula_custo_estimado(monkeypatch):
         return "r", {"model": "claude-opus-4-8", "input_tokens": 1_000_000, "output_tokens": 0}
     monkeypatch.setattr(g, "_chamar_provedor", _fake)
     monkeypatch.setattr(g.settings, "AI_PROVIDER_PRIORITY", "anthropic,groq")
-    monkeypatch.setattr(g.settings, "OLLAMA_ENABLED", False)
     resp = await g.chat([{"role": "user", "content": "x"}], task_type="estrategia")
     # Opus 4.8 = $5/1M input; 1M tokens input → $5 × USD_BRL (default 5.70) ≈ 28.5
     assert resp.custo_estimado_brl > 0

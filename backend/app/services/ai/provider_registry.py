@@ -3,15 +3,13 @@ from __future__ import annotations
 
 from app.core.config import get_settings
 
-PROVIDERS_SUPORTADOS: tuple[str, ...] = ("ollama", "anthropic", "maritaca", "groq")
+PROVIDERS_SUPORTADOS: tuple[str, ...] = ("anthropic", "maritaca", "groq")
 PROVIDERS_EXTERNOS: frozenset[str] = frozenset({"anthropic", "groq", "maritaca"})
 
 
 def provider_elegivel(provider: str) -> bool:
     """Fonte única de habilitação, credencial e kill-switch por provedor."""
     s = get_settings()
-    if provider == "ollama":
-        return bool(s.OLLAMA_ENABLED)
     if provider == "anthropic":
         return bool(
             s.ANTHROPIC_ENABLED

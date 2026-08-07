@@ -141,7 +141,7 @@ class TestVeredictoWiring:
             capturado["entidades"] = kw.get("entidades")
             from app.services.ai_gateway import GatewayResponse
             return GatewayResponse(
-                texto="Sugestões sobre o caso.", modelo="fake", provedor="ollama",
+                texto="Sugestões sobre o caso.", modelo="fake", provedor="groq",
                 task_type="jurimetria", input_tokens=1, output_tokens=1,
             )
 

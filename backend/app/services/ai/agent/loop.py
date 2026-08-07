@@ -301,7 +301,8 @@ async def rodar_agente(
     if modo_sanitizacao == ModoSanitizacao.LOCAL_COMPLETO:
         await _emitir(on_event, "erro", {
             "detalhe": "Caso de sigilo reforçado exige IA local; o agente não pode "
-                       "usar provedor externo. Habilite o Ollama on-prem."
+                       "usar provedor externo e não há processamento local "
+                       "disponível — a ação fica bloqueada por política de sigilo/LGPD."
         })
         return {"status": "erro", "detalhe": "caso_sigiloso_exige_ia_local"}
 

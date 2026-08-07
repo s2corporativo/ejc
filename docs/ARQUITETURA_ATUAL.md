@@ -1,6 +1,6 @@
 # ARQUITETURA ATUAL — EJC
 
-> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-07-29, commit `eb1ebfb4`.
+> Gerado por `scripts/governanca/inventario-repo.sh` em 2026-08-07, commit `bc2e0899`.
 > Descreve o estado observado, nao o estado desejado.
 
 ## 1. Dependencias declaradas — backend
@@ -51,7 +51,7 @@ slowapi==0.1.9
 bcrypt==4.0.1
 pyotp==2.9.0
 PyJWT==2.13.0
-cryptography==48.0.1
+cryptography==50.0.0
 
 # HTTP and integrations
 httpx==0.27.0
@@ -79,7 +79,7 @@ google-auth==2.55.1
     "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.1",
+    "react-router": "8.3.0",
     "zustand": "^4.5.2"
   },
 ```
@@ -95,41 +95,32 @@ google-auth==2.55.1
 32:    volumes:
 40:  backend:
 45:    ports:
-99:    volumes:
-110:    depends_on:
-117:    # OBRIGATÓRIO: o frontend usa depends_on: backend: service_healthy —
-127:  worker:
-155:    volumes:
-157:    depends_on:
-173:  frontend:
-178:    ports:
-186:    depends_on:
-199:  langfuse-db:
-200:    image: postgres:16-alpine
-202:    profiles: ["observability"]
-212:    volumes:
-220:  langfuse:
-221:    image: langfuse/langfuse:2
-223:    profiles: ["observability"]
-225:    depends_on:
-230:    ports:
-257:  ollama:
-259:    image: ollama/ollama:0.31.1
-261:    profiles: ["ia-local"]
-280:    volumes:
-290:  ollama-init:
-296:    image: ollama/ollama:0.31.1
-298:    profiles: ["ia-local"]
-301:    depends_on:
-333:  default:
-335:  ia:
-337:volumes:
-338:  postgres_data:
-339:  uploads_data:
-340:  backups_data:
-341:  redis_data:
-342:  langfuse_db_data:
-343:  ollama_models:
+92:    volumes:
+106:    depends_on:
+113:    # OBRIGATÓRIO: o frontend usa depends_on: backend: service_healthy —
+123:  worker:
+149:    volumes:
+152:    depends_on:
+168:  frontend:
+173:    ports:
+181:    depends_on:
+194:  langfuse-db:
+195:    image: postgres:16-alpine
+197:    profiles: ["observability"]
+207:    volumes:
+215:  langfuse:
+216:    image: langfuse/langfuse:2
+218:    profiles: ["observability"]
+220:    depends_on:
+225:    ports:
+239:  default:
+241:volumes:
+242:  postgres_data:
+243:  uploads_data:
+244:  backups_data:
+245:  fastembed_cache:
+246:  redis_data:
+247:  langfuse_db_data:
 ```
 
 ## 4. Variaveis de ambiente esperadas
@@ -285,11 +276,6 @@ MARITACA_MODEL_RAPIDO
 MARITACA_TIMEOUT
 MAX_UPLOAD_MB
 NORMAS_RFB_TERMOS
-OLLAMA_BASE_URL
-OLLAMA_ENABLED
-OLLAMA_KEEP_ALIVE
-OLLAMA_MEM_LIMIT
-OLLAMA_PULL_MODELS
 PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED
 PII_ENCRYPTION_KEY
 PII_HASH_KEY
@@ -317,7 +303,6 @@ ROTEAMENTO_PROVIDER_PESADO
 SALARIO_MINIMO_BRL
 SALA_JURIDICA_AUTO_ESTADO
 SECRET_KEY
-SENTRY_DSN
 SMTP_HOST
 SMTP_PASSWORD
 SMTP_PORT
@@ -330,6 +315,7 @@ USD_BRL_RATE
 VAPID_CLAIM_EMAIL
 VAPID_PRIVATE_KEY
 VAPID_PUBLIC_KEY
+VAULT_MASTER_KEYS
 WHATSAPP_ENABLED
 ```
 
@@ -353,6 +339,7 @@ WHATSAPP_ENABLED
 | `probe-apis.yml` | push workflow_dispatch | — |
 | `producao-prova-continuidade.yml` | workflow_dispatch | Produção — flags efetivas, restauração e rollback |
 | `production-backup-monitor.yml` | schedule workflow_dispatch | Produção — saúde do backup diário |
+| `rag-production-activation.yml` | pull_request workflow_dispatch | Validar ativação, idempotência e rollback · Ativar RAG semântico na VPS |
 
 > Os nomes de job desta tabela sao os contextos exigidos na protecao da
 > branch `main` (`scripts/governanca/branch-protection.sh`). Renomear um
@@ -366,7 +353,6 @@ api-publica.datajud.cnj.jus.br
 api.anthropic.com
 api.bcb.gov.br
 api.groq.com
-api.infosimples.com
 api.nuvemfiscal.com.br
 api.opencnpj.org
 api.portaldatransparencia.gov.br
@@ -394,13 +380,14 @@ embeddings
 evil.com
 evolution
 example.test
-infosimples.com
 langfuse
 legis.senado.leg.br
 link1.com
 local
 meu.inss.gov.br
 new.safernet.org.br
+normas.receita.fazenda.gov.br
+nuvemfiscal.com.br
 ```
 
 > Toda integracao externa do EJC e opt-in por flag de ambiente, com default

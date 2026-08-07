@@ -61,15 +61,14 @@ def _caso_com_cliente(nome: str = "João da Silva") -> Case:
 
 @pytest.fixture
 def s(monkeypatch):
-    """Settings determinística: Anthropic/Groq com chave fake, Ollama off,
-    externos permitidos e barreira de sanitização ligada (força o caminho de
-    pseudonimização reversível antes do provider externo)."""
+    """Settings determinística: Anthropic/Groq com chave fake (sem provider
+    local), externos permitidos e barreira de sanitização ligada (força o
+    caminho de pseudonimização reversível antes do provider externo)."""
     st = get_settings()
     monkeypatch.setattr(st, "AI_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
     monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
-    monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
     monkeypatch.setattr(st, "AI_PROVIDER", "auto")
@@ -221,7 +220,7 @@ class TestPecaPipelineWiring:
             # devolve JSON simples p/ etapa 1 e texto para as demais.
             return GatewayResponse(
                 texto='{"tipo_confirmado": "peticao_inicial"}',
-                modelo="fake", provedor="ollama", task_type=kw.get("task_type"),
+                modelo="fake", provedor="groq", task_type=kw.get("task_type"),
                 input_tokens=1, output_tokens=1,
             )
 

@@ -79,7 +79,8 @@ class TestModoParaTask:
     @pytest.mark.parametrize("rotulo", AREAS_NAO_SIGILOSAS)
     def test_area_comum_nao_e_bloqueada_no_local(self, rotulo):
         """O piso não pode virar bloqueio geral: área comum segue externa
-        pseudonimizada (senão a IA fica indisponível sem Ollama on-prem)."""
+        pseudonimizada (senão a IA fica indisponível — o EJC não tem
+        provider local)."""
         assert modo_para_task(rotulo) != ModoSanitizacao.LOCAL_COMPLETO
 
     def test_tarefa_desconhecida_cai_no_fallback_reversivel(self):
@@ -136,7 +137,8 @@ def gateway_espiao(monkeypatch):
     from app.services.ai.core.context_builder import ContextoMontado
 
     st = get_settings()
-    monkeypatch.setattr(st, "OLLAMA_ENABLED", True)
+    monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
+    monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_SANITIZATION_MODE_MAP", "")
 
@@ -160,7 +162,7 @@ def gateway_espiao(monkeypatch):
         capturado["modo"] = capturado["chamadas"][0]["modo"]
         return ai_gateway.GatewayResponse(
             texto="Resposta fictícia para teste.",
-            modelo="modelo-fake", provedor="ollama",
+            modelo="modelo-fake", provedor="groq",
             task_type=kw.get("task_type", ""), input_tokens=1, output_tokens=1,
         )
 
@@ -218,12 +220,12 @@ class TestPisoChegaAoGateway:
 
 class TestGatewayBloqueiaExternoEmAreaSensivel:
     async def test_sem_provider_local_a_chamada_e_bloqueada(self, monkeypatch):
-        """Fail-closed: em LOCAL_COMPLETO sem Ollama elegível o gateway levanta
-        em vez de cair para Anthropic/Groq. Vale para o rótulo acentuado."""
+        """Fail-closed: em LOCAL_COMPLETO, sem provider local (o EJC não tem
+        um), o gateway levanta em vez de cair para Anthropic/Groq. Vale para
+        o rótulo acentuado."""
         from app.services import ai_gateway
 
         st = get_settings()
-        monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
         monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
         monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
         monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
@@ -384,7 +386,6 @@ class TestModoSanitizacaoSoEleva:
         from app.services import ai_gateway
 
         st = get_settings()
-        monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
         monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
         monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
         monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)

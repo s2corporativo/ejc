@@ -129,7 +129,7 @@ def test_montar_metadata_so_operacional():
     meta = lf.montar_metadata(
         provider="anthropic", model="claude-opus-4-8", task_type="estrategia",
         input_tokens=100, output_tokens=200, duracao_ms=1234,
-        fallback_ativado=True, fallback_motivo="ollama: timeout",
+        fallback_ativado=True, fallback_motivo="groq: timeout",
         custo_estimado_brl=0.5, sucesso=True, tier="pesado", roteamento_score=7,
     )
     assert meta["provider"] == "anthropic"

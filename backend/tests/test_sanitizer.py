@@ -59,7 +59,7 @@ def test_validar_sem_pii_interno_ignora_cpf_cnpj():
     assert "EMAIL" in validar_sem_pii_interno("contato a@b.com")
 
 
-def test_sanitizar_ou_abortar_mantem_cpf_cnpj_para_ollama():
+def test_sanitizar_ou_abortar_mantem_cpf_cnpj_para_uso_interno():
     """Barreira de ENTRADA: CPF/CNPJ passam íntegros (uso interno)."""
     limpo, _ = sanitizar_ou_abortar("Cliente CPF 123.456.789-09, CNPJ 12.345.678/0001-99")
     assert "123.456.789-09" in limpo

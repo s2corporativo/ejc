@@ -128,16 +128,15 @@ def test_pos_pseudonimizacao_nao_ha_residual_pessoa():
 
 @pytest.fixture
 def s(monkeypatch):
-    """Baseline determinística: externos habilitados (chaves fake), Ollama off."""
+    """Baseline determinística: externos habilitados (chaves fake), sem provider local."""
     from app.core.config import get_settings
     st = get_settings()
     monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
     monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
     monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
-    monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
     monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
-    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "anthropic,groq")
     monkeypatch.setattr(st, "AI_PROVIDER", "auto")
     monkeypatch.setattr(st, "ROTEAMENTO_INTELIGENTE_ENABLED", False)
     return st

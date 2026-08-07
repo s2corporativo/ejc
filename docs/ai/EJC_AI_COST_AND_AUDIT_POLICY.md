@@ -17,7 +17,7 @@ Pricing por modelo (`_PRICING_USD_MM`, ai_gateway.py:380-384, USD por 1M tokens)
 | claude-sonnet-4-6 | 3.00 | 15.00 |
 | claude-opus-4-8 | 15.00 | 75.00 |
 
-Modelo fora da tabela → custo 0 (atualizar `_PRICING_USD_MM` ao adotar novo modelo). Câmbio via env `USD_BRL_RATE` (default 5.70). O custo só é calculado quando `provedor == "anthropic"` (orchestrator.py:153-154; ai_gateway.py:435) — Ollama local e Groq contam como 0. Skill de introspecção: `estimate_ai_cost` (skill_registry.py:152-154).
+Modelo fora da tabela → custo 0 (atualizar `_PRICING_USD_MM` ao adotar novo modelo). Câmbio via env `USD_BRL_RATE` (default 5.70). O custo só é calculado quando `provedor == "anthropic"` (orchestrator.py; ai_gateway.py) — Maritaca usa tabela própria em BRL (ai_cost.py) e Groq conta como 0. Skill de introspecção: `estimate_ai_cost` (skill_registry.py).
 
 ## 2. Tetos duros de custo
 
@@ -51,9 +51,9 @@ Toda interação do núcleo grava, via `audit_logger.registrar` → `ai_guard.re
 
 ## 5. Procedimento em custo anômalo
 
-1. **Conter**: `ANTHROPIC_ENABLED=false` (para o gasto na hora, cadeia cai para Ollama/Groq) e/ou reduzir `ANTHROPIC_MAX_TOKENS`; alternativa branda: `ANTHROPIC_MODEL_COMPLEXO=claude-haiku-4-5-20251001`.
+1. **Conter**: `ANTHROPIC_ENABLED=false` (para o gasto na hora, cadeia cai para Maritaca/Groq) e/ou reduzir `ANTHROPIC_MAX_TOKENS`; alternativa branda: `ANTHROPIC_MODEL_COMPLEXO=claude-haiku-4-5-20251001`.
 2. **Diagnosticar**: consultar `ai_logs` por `custo_estimado`/`tokens_output` desc — identificar user_id, case_id, tipo_uso, modelo e horário; conferir `fontes_rag`/`prompt_sanitizado` para contexto inflado; usar `/ia-saude/dashboard` para a série por período.
-3. **Verificar configuração**: `USD_BRL_RATE` correto; `_PRICING_USD_MM` atualizado para os modelos em uso; `AI_PROVIDER_PRIORITY` ainda com `ollama` à frente; `TAREFAS_ECONOMICAS` não roteando para Anthropic.
+3. **Verificar configuração**: `USD_BRL_RATE` correto; `_PRICING_USD_MM` atualizado para os modelos em uso; `AI_PROVIDER_PRIORITY` (default `anthropic,maritaca,groq`); `TAREFAS_ECONOMICAS` não roteando para Anthropic.
 4. **Corrigir a causa**: endpoint/agente que envia contexto além do orçamento, laço de reprocessamento, ou tarefa simples mapeada como complexa (`_TAREFA_PARA_GATEWAY`/`TAREFAS_COMPLEXAS`).
 5. **Registrar**: decisão e ajuste documentados; o AILog é a fonte de verdade da reconstrução do gasto (nunca apagar registros).
 

@@ -209,7 +209,7 @@ async def pesquisar(body: PesquisaIn, db: AsyncSession = Depends(get_db),
     try:
         # Pesquisa jurídica é PROSA grounded no RAG → "estrategia" (∈
         # _TASKS_COM_BASE); a cadeia de modelos é IDÊNTICA à de
-        # "analise_juridica" (ollama ANALISE → anthropic COMPLEXO → groq),
+        # "analise_juridica" (anthropic COMPLEXO → maritaca → groq),
         # então o roteamento não muda — só ganha a base anti-alucinação.
         resposta, resp = await _ia(SYS_PESQUISA, user, task_type="estrategia", temperature=0.12, max_tokens=2200, nivel="alto")
     except Exception:

@@ -123,7 +123,7 @@ def test_habilitado_com_chave_fica_elegivel(habilitado):
 # ── Reorganização IA jurídica (2026-07-19): Maritaca no caminho jurídico ─────
 
 def test_habilitada_entra_nas_cadeias_juridicas_antes_do_groq(monkeypatch, habilitado):
-    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "ollama,anthropic,maritaca,groq")
+    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "anthropic,maritaca,groq")
     monkeypatch.setattr(habilitado, "GROQ_API_KEY", "groq-key", raising=False)
     for task in ("analise_juridica", "estrategia", "analise_contrato",
                  "auditoria_peca", "jurimetria", "critica_adversarial",
@@ -147,7 +147,7 @@ def test_provider_force_maritaca_inelegivel_cai_na_cadeia_automatica(monkeypatch
 
 
 def test_roteamento_inteligente_promove_maritaca(monkeypatch, habilitado):
-    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "ollama,anthropic,maritaca,groq")
+    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "anthropic,maritaca,groq")
     cadeia = ai_gateway._resolver_cadeia(
         "elaboracao_peca", None, None,
         provider_preferido="maritaca", model_preferido="sabia-4",
@@ -168,16 +168,14 @@ def test_adversarial_escolhe_maritaca_como_provider_diverso(monkeypatch, habilit
     # Só a Maritaca elegível e diferente da origem → diversidade real de
     # laboratório na crítica (Duas IAs), mesmo fora de AI_PROVIDER_PRIORITY.
     from app.services.ai.adversarial import escolher_provider_diverso
-    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
-    monkeypatch.setattr(habilitado, "OLLAMA_ENABLED", False, raising=False)
+    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "anthropic,groq")
     monkeypatch.setattr(habilitado, "ANTHROPIC_ENABLED", False, raising=False)
     monkeypatch.setattr(habilitado, "GROQ_API_KEY", "", raising=False)
     assert escolher_provider_diverso("anthropic") == "maritaca"
 
 
 def test_policy_prioriza_maritaca_em_tarefa_complexa_sem_anthropic(monkeypatch, habilitado):
-    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "ollama,anthropic,maritaca,groq")
-    monkeypatch.setattr(habilitado, "OLLAMA_ENABLED", False, raising=False)
+    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "anthropic,maritaca,groq")
     monkeypatch.setattr(habilitado, "ANTHROPIC_ENABLED", False, raising=False)
     monkeypatch.setattr(habilitado, "GROQ_API_KEY", "groq-key", raising=False)
     decisao = provider_policy.AIProviderPolicy().avaliar(

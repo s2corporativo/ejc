@@ -2,7 +2,7 @@
 
 Cobre: gate flag/chave (503), sucesso normaliza as 3 bases, chave NUNCA
 vaza no retorno/erro/audit, cache do dia SEM segunda chamada HTTP, parsing
-tolerante a campos ausentes e tem_sancao. Fakes no padrão test_infosimples.
+tolerante a campos ausentes e tem_sancao. Fakes locais, sem rede real.
 """
 from __future__ import annotations
 

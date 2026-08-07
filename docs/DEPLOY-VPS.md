@@ -76,34 +76,16 @@ O Compose serve HTTP na porta 80. Para HTTPS, coloque um reverse proxy à frente
 (Caddy, Traefik ou Nginx no host com certbot) apontando para a porta 80 do
 container `frontend`, e ajuste `CORS_ORIGINS`/`FRONTEND_URL` para `https://...`.
 
-## IA local com Ollama (opcional — profile `ia-local`)
+## IA — provedores externos (Anthropic, Maritaca, Groq)
 
-O compose traz um serviço Ollama **opt-in** (o `up -d` padrão não o sobe).
-Ligado, a análise de IA do dia a dia roda local com **custo zero por token**;
-se o Ollama estiver fora do ar ou lento, a cadeia do gateway cai para
-Anthropic/Groq **automaticamente** — ligar/desligar nunca quebra nada.
+O EJC não tem provider de IA local: a cadeia do gateway é
+Anthropic → Maritaca → Groq, com fallback automático entre eles. O conteúdo
+enviado a qualquer provider externo passa por sanitização/pseudonimização de
+PII (CPF/CNPJ/processo/etc.) antes do envio (LGPD, art. 33/46).
 
-```bash
-./scripts/subir-ia-local.sh        # sobe, baixa os modelos e confere
-# ou, manualmente:
-docker compose --profile ia-local up -d   # o one-shot ollama-init baixa os modelos
-```
-
-Requisitos de RAM (CPU, sem GPU): perfis prontos no `.env.example` —
-VPS de 8 GB usa `llama3.2:3b` para tudo (~4 GB); servidor 16 GB+ usa os
-modelos padrão (`deepseek-r1:8b`, `qwen2.5:14b`, `gemma3:9b`, até ~11 GB).
-A lista de download vem de `OLLAMA_PULL_MODELS` no `.env` (fonte única —
-mantenha em sincronia com os `OLLAMA_MODEL_*`). A porta 11434 **não** é
-publicada no host: só o backend alcança o Ollama pela rede interna.
-
-Verificação: `docker compose exec ollama ollama list` e, como admin,
-`POST /api/ai/gateway/health` (status de cada provedor). No deploy,
-`IA_LOCAL=1 ./scripts/atualizar-vps.sh` inclui a subida do profile (e ele
-re-sobe sozinho nas atualizações seguintes enquanto o container existir).
-
-A extração de PII de documentos roda **só em modelo local (Ollama)** por LGPD —
-se não houver Ollama, esse recurso específico falha fechado (o resto do sistema
-funciona normalmente). Recursos de IA em nuvem (Groq) exigem `GROQ_API_KEY` no `.env`.
+Verificação: como admin, `POST /api/ai/gateway/health` (status de cada
+provedor). Requer `ANTHROPIC_API_KEY` (e opcionalmente `MARITACA_API_KEY`,
+`GROQ_API_KEY`) no `.env`.
 
 ## Atualizar para uma nova versão
 
