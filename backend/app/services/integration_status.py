@@ -33,7 +33,6 @@ _ITEM_PROVIDER = {
     "maritaca": "maritaca",
     "datajud": "datajud",
     "transparencia": "transparencia",
-    "infosimples": "infosimples",
     "email": "smtp",
     "push": "push_vapid",
     "langfuse": "langfuse",
@@ -128,9 +127,9 @@ def build_integration_status(
             group="Inteligência",
             enabled=settings.AI_ENABLED,
             configured=bool(
-                settings.OLLAMA_ENABLED
-                or (settings.ANTHROPIC_ENABLED and settings.ANTHROPIC_API_KEY)
+                (settings.ANTHROPIC_ENABLED and settings.ANTHROPIC_API_KEY)
                 or settings.GROQ_API_KEY
+                or (settings.MARITACA_ENABLED and settings.MARITACA_API_KEY)
             ),
             ready_detail="Há pelo menos um provedor elegível na política central de IA.",
             mode=(
@@ -165,15 +164,6 @@ def build_integration_status(
             configured=bool(settings.MARITACA_API_KEY),
             ready_detail="Provider brasileiro (OpenAI-compatible) habilitado e credencial presente.",
             mode=settings.MARITACA_MODEL,
-        ),
-        _status(
-            key="ollama",
-            label="Ollama local",
-            group="Inteligência",
-            enabled=settings.AI_ENABLED and settings.OLLAMA_ENABLED,
-            configured=bool(settings.OLLAMA_BASE_URL),
-            ready_detail="Provider local habilitado; este painel não testa conectividade de rede.",
-            mode="local",
         ),
         _status(
             key="embeddings",
@@ -262,15 +252,6 @@ def build_integration_status(
             mode="consulta anônima com rate limit; sem Conecta gov.br",
         ),
         _status(
-            key="infosimples",
-            label="Infosimples (consultas pagas)",
-            group="Jurídico",
-            enabled=settings.INFOSIMPLES_ENABLED,
-            configured=bool(settings.INFOSIMPLES_TOKEN),
-            ready_detail="Agregador comercial habilitado com token presente e teto diário de custo.",
-            mode=f"teto {settings.INFOSIMPLES_MAX_CONSULTAS_DIA} consultas/dia",
-        ),
-        _status(
             key="email",
             label="E-mail SMTP",
             group="Comunicação",
@@ -324,14 +305,6 @@ def build_integration_status(
                 if settings.LANGFUSE_CAPTURE_CONTENT
                 else "somente metadados"
             ),
-        ),
-        _status(
-            key="sentry",
-            label="Sentry",
-            group="Infraestrutura",
-            enabled=bool(settings.SENTRY_DSN),
-            configured=bool(settings.SENTRY_DSN),
-            ready_detail="Rastreamento de erros configurado no ambiente.",
         ),
         _status(
             key="backup_offsite",

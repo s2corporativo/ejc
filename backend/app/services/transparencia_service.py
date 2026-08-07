@@ -135,7 +135,7 @@ def normalizar_sancao(item: dict) -> dict:
     }
 
 
-# ── Estado persistido (sem migration — precedente infosimples_uso) ────────────
+# ── Estado persistido (sem migration) ──────────────────────────────────────────
 
 async def _ensure_tabela(db: AsyncSession) -> None:
     """Cria a tabela de cache se não existir (idempotente). Uma linha por

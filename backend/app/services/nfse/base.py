@@ -1,7 +1,7 @@
 # ── app/services/nfse/base.py ────────────────────────────────────────────────
 # Interface abstrata de provedor de NFS-e + contratos (pedido/resultado) e erros
 # tipados. Emissão fiscal é ação SENSÍVEL: os erros carregam code/mensagem do
-# provedor, mas NUNCA credencial/token (mesma promessa do infosimples_service).
+# provedor, mas NUNCA credencial/token.
 #
 # O módulo nasce GATED: o gate de NFSE_ENABLED/provedor fica em
 # services/nfse/__init__.get_provider(); o gate de credenciais faltando

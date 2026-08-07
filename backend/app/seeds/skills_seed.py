@@ -347,7 +347,7 @@ A decisão final é do cliente, com assessoramento do advogado responsável.
 
     # ══════════════════════════════════════════
     # SKILL 4 — Resumidor de Audiências
-    # Engine: ollama | Área: jurídico | Prioridade: MÉDIA
+    # Engine: groq | Área: jurídico | Prioridade: MÉDIA
     # ══════════════════════════════════════════
     {
         "name": "resumidor-audiencias",
@@ -357,7 +357,7 @@ A decisão final é do cliente, com assessoramento do advogado responsável.
             "negociações em atas estruturadas com fatos relevantes, obrigações "
             "por parte, prazos identificados e próximos passos."
         ),
-        "engine": "ollama",
+        "engine": "groq",
         "area": "juridico",
         "requires_case": False,
         "requires_human_review": True,
@@ -451,7 +451,7 @@ PRÓXIMO CONTATO: [data] | Motivo: [retorno com documentos / etc.]
 
     # ══════════════════════════════════════════
     # SKILL 5 — Humanizador Jurídico
-    # Engine: ollama | Área: jurídico | Prioridade: MÉDIA
+    # Engine: groq | Área: jurídico | Prioridade: MÉDIA
     # ══════════════════════════════════════════
     {
         "name": "humanizador-juridico",
@@ -462,7 +462,7 @@ PRÓXIMO CONTATO: [data] | Motivo: [retorno com documentos / etc.]
             "Informa o que foi decidido, o que o cliente precisa fazer, "
             "prazos e riscos — sem prometer resultado."
         ),
-        "engine": "ollama",
+        "engine": "groq",
         "area": "juridico",
         "requires_case": False,
         "requires_human_review": True,
@@ -573,7 +573,7 @@ NOSSA ORIENTAÇÃO: [próximo passo — sem prometer resultado]
 
     # ══════════════════════════════════════════
     # SKILL 6 — Checklist por Tipo de Ação
-    # Engine: ollama | Área: jurídico | Prioridade: BAIXA
+    # Engine: groq | Área: jurídico | Prioridade: BAIXA
     # ══════════════════════════════════════════
     {
         "name": "gestor-checklists-acoes",
@@ -583,7 +583,7 @@ NOSSA ORIENTAÇÃO: [próximo passo — sem prometer resultado]
             "documentos necessários, perguntas ao cliente, riscos comuns, "
             "base legal e roteiro de atendimento inicial."
         ),
-        "engine": "ollama",
+        "engine": "groq",
         "area": "juridico",
         "requires_case": False,
         "requires_human_review": False,

@@ -34,21 +34,4 @@ async def registrar_erro_frontend(
         "[frontend-error] user=%s url=%s msg=%s",
         cu.id, err.url, err.message[:500],
     )
-    # Encaminha ao Sentry quando configurado (mesmo backend já integrado).
-    if get_settings().SENTRY_DSN:
-        try:
-            import sentry_sdk
-
-            with sentry_sdk.push_scope() as scope:
-                scope.set_tag("origin", "frontend")
-                scope.set_user({"id": cu.id})
-                scope.set_extra("url", err.url)
-                scope.set_extra("stack", err.stack)
-                scope.set_extra("component_stack", err.component_stack)
-                scope.set_extra("user_agent", err.user_agent)
-                sentry_sdk.capture_message(
-                    f"[frontend] {err.message[:200]}", level="error"
-                )
-        except Exception:  # noqa: BLE001 — telemetria nunca deve quebrar
-            logger.warning("[frontend-error] falha ao encaminhar ao Sentry", exc_info=True)
     return None

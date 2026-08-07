@@ -193,8 +193,6 @@ async def _probe_ia(settings: Settings) -> dict[str, Any]:
         provedores.append("anthropic")
     if settings.GROQ_API_KEY:
         provedores.append("groq")
-    if settings.OLLAMA_ENABLED and settings.OLLAMA_BASE_URL:
-        provedores.append("ollama")
 
     if not provedores:
         return _sub(
@@ -202,7 +200,7 @@ async def _probe_ia(settings: Settings) -> dict[str, Any]:
             "alerta",
             "AI_ENABLED=true, mas NENHUM provedor está configurado — nenhuma "
             "chamada de IA pode ser atendida.",
-            "Configure ao menos um provedor (Anthropic/Groq/Ollama) ou desative AI_ENABLED.",
+            "Configure ao menos um provedor (Anthropic/Groq/Maritaca) ou desative AI_ENABLED.",
             _ms(inicio),
             provedores=[],
         )
@@ -264,11 +262,7 @@ async def _probe_integracoes(settings: Settings) -> dict[str, Any]:
         })
 
     # Integrações não cobertas pelo painel (lidas só via flags — sem tocar nos
-    # serviços): Infosimples, Google Drive (base de conhecimento) e índices BCB.
-    itens.append(_item_integracao(
-        "infosimples", "Infosimples (consultas pagas)", "Jurídico",
-        settings.INFOSIMPLES_ENABLED, bool(settings.INFOSIMPLES_TOKEN),
-    ))
+    # serviços): Google Drive (base de conhecimento) e índices BCB.
     itens.append(_item_integracao(
         "google_drive", "Google Drive (base de conhecimento)", "Conhecimento",
         os.getenv("GOOGLE_DRIVE_ENABLED", "false").strip().lower() in {"1", "true", "yes"},
@@ -637,20 +631,13 @@ async def _probe_disco(
 # ── Probe: Erros recentes ─────────────────────────────────────────────────────
 async def _probe_erros(settings: Settings) -> dict[str, Any]:
     inicio = time.perf_counter()
-    if settings.SENTRY_DSN:
-        return _sub(
-            "Erros recentes",
-            "ok",
-            "Rastreamento externo de erros ativo (Sentry configurado).",
-            "Consulte o painel do Sentry para as falhas mais recentes.",
-            _ms(inicio),
-            coletor="sentry",
-        )
+    # Não há coletor de erros persistido no sistema (falhas ficam apenas nos
+    # logs do container) — o probe sempre reporta esse estado.
     return _sub(
         "Erros recentes",
         "ok",
         "Sem coletor de erros persistido no banco (falhas ficam nos logs do container).",
-        "Considere habilitar Sentry (SENTRY_DSN) para rastreamento de erros centralizado.",
+        "Consulte os logs do container para as falhas mais recentes.",
         _ms(inicio),
         coletor=None,
     )

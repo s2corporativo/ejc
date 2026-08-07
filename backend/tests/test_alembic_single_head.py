@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "131_audit_logs_worm"
+HEAD_REVISION = "132_ai_skills_remover_engine_ollama"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -128,3 +128,15 @@ def test_publicacao_explicita_encadeia_apos_quatro_estados():
 def test_ejc_skills_uso_encadeia_apos_publicacao_explicita():
     revision = _script_directory().get_revision("130_ejc_skills_uso")
     assert revision.down_revision == "127_publicacao_explicita"
+
+
+def test_audit_logs_worm_encadeia_apos_ejc_skills_uso():
+    revision = _script_directory().get_revision("131_audit_logs_worm")
+    assert revision.down_revision == "130_ejc_skills_uso"
+
+
+def test_remocao_engine_ollama_encadeia_apos_audit_logs_worm():
+    revision = _script_directory().get_revision(
+        "132_ai_skills_remover_engine_ollama"
+    )
+    assert revision.down_revision == "131_audit_logs_worm"

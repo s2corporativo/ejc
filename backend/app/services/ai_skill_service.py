@@ -21,8 +21,10 @@ from app.services.legal_base import garantir_identidade
 logger = logging.getLogger("ejc.ai.skills")
 settings = get_settings()
 
-_ENGINE_PROVIDER = {"anthropic": "anthropic", "groq": "groq", "ollama": "ollama",
-                    "maritaca": "maritaca"}
+# 'ollama' removido (Issue #761 — descontinuação do provider Ollama local).
+# Skills legadas com engine='ollama' que ainda não passaram pela migration
+# 132 caem no fallback "groq" do .get() nos dois pontos de uso abaixo.
+_ENGINE_PROVIDER = {"anthropic": "anthropic", "groq": "groq", "maritaca": "maritaca"}
 
 _AREA_TASK = {
     "juridico": "elaboracao_peca",

@@ -26,9 +26,9 @@
 #
 # Reuso: as URLs/headers espelham os conectores existentes — datajud_service
 # (_datajud_search / APIKey), nfse/nuvem_fiscal (_obter_token /
-# client_credentials), infosimples_service (account) e as healths de groq/
-# anthropic/maritaca (ai_gateway.health) — mas aqui a classificação é granular
-# (401 vs 403 vs timeout vs expirado), o que o health() booleano não distingue.
+# client_credentials) e as healths de groq/anthropic/maritaca
+# (ai_gateway.health) — mas aqui a classificação é granular (401 vs 403 vs
+# timeout vs expirado), o que o health() booleano não distingue.
 from __future__ import annotations
 
 import asyncio
@@ -203,44 +203,6 @@ async def testar_maritaca() -> TesteResultado:
     )
 
 
-def _estado_infosimples_code(code: int) -> TesteResultado:
-    """Infosimples devolve HTTP 200 com um `code` no corpo (padrão da API v2)."""
-    if code == 200:
-        return (CONFIGURADA, "Conta acessível (endpoint gratuito de saldo/conta).")
-    if code in (401, 402):  # token inválido / crédito
-        return (INVALIDA, f"Token recusado pela Infosimples (code {code}).")
-    if code == 403:
-        return (SEM_PERMISSAO, "Sem permissão na Infosimples (code 403).")
-    return (INDISPONIVEL, f"Resposta inesperada da Infosimples (code {code}).")
-
-
-async def testar_infosimples() -> TesteResultado:
-    """Consulta o endpoint GRATUITO de conta/saldo (nunca um endpoint cobrado).
-    O token vai no corpo (POST) para não ir na URL/log."""
-    s = get_settings()
-    token = (s.INFOSIMPLES_TOKEN or "").strip()
-    if _vazio(token):
-        return (AUSENTE, "INFOSIMPLES_TOKEN não configurado.")
-    base = (s.INFOSIMPLES_BASE_URL
-            or "https://api.infosimples.com/api/v2/consultas").rstrip("/")
-    # .../api/v2/consultas → .../api/v2/account (endpoint de conta, gratuito).
-    raiz = base.rsplit("/", 1)[0]
-    url = f"{raiz}/account"
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT_PADRAO) as client:
-            resp = await client.post(url, data={"token": token})
-    except Exception as exc:  # noqa: BLE001
-        return _estado_por_excecao(exc)
-    # Erros de transporte HTTP primeiro (alguns 401/403/5xx vêm no status).
-    if resp.status_code in (401, 403) or resp.status_code >= 500:
-        return _estado_por_resposta(resp)
-    try:
-        code = int((resp.json() or {}).get("code") or resp.status_code)
-    except Exception:  # noqa: BLE001 — corpo não-JSON → usa o status HTTP
-        code = resp.status_code
-    return _estado_infosimples_code(code)
-
-
 def _estado_por_excecao_smtp(exc: BaseException) -> TesteResultado:
     import smtplib
     if isinstance(exc, smtplib.SMTPAuthenticationError):
@@ -354,7 +316,6 @@ TESTERS: dict[str, Callable[[], Awaitable[TesteResultado]]] = {
     "groq": testar_groq,
     "anthropic": testar_anthropic,
     "maritaca": testar_maritaca,
-    "infosimples": testar_infosimples,
     "smtp": testar_smtp,
     "nfse": testar_nfse,
     "transparencia": testar_transparencia,

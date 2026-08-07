@@ -132,7 +132,6 @@ async def test_probe_ia_sem_provedor(monkeypatch):
     monkeypatch.setattr(s, "ANTHROPIC_ENABLED", False)
     monkeypatch.setattr(s, "ANTHROPIC_API_KEY", "")
     monkeypatch.setattr(s, "GROQ_API_KEY", "")
-    monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
     r = await dg._probe_ia(s)
     assert r["status"] == "alerta"
     assert r["provedores"] == []
@@ -141,22 +140,16 @@ async def test_probe_ia_sem_provedor(monkeypatch):
 async def test_probe_ia_ok(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "AI_ENABLED", True)
-    monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
-    monkeypatch.setattr(s, "OLLAMA_BASE_URL", "http://ollama:11434")
+    monkeypatch.setattr(s, "GROQ_API_KEY", "chave-teste")
     r = await dg._probe_ia(s)
     assert r["status"] == "ok"
-    assert "ollama" in r["provedores"]
+    assert "groq" in r["provedores"]
 
 
 # ── Integrações (ligada sem credencial → alerta) ──────────────────────────────
-async def test_probe_integracoes_ligada_sem_credencial(monkeypatch):
-    s = get_settings()
-    monkeypatch.setattr(s, "INFOSIMPLES_ENABLED", True)
-    monkeypatch.setattr(s, "INFOSIMPLES_TOKEN", "")  # ligada, sem token
-    r = await dg._probe_integracoes(s)
+def test_item_integracao_ligada_sem_credencial():
+    r = dg._item_integracao("teste", "Integração Teste", "Jurídico", True, False)
     assert r["status"] == "alerta"
-    infos = [i for i in r["itens"] if i["chave"] == "infosimples"]
-    assert infos and infos[0]["status"] == "alerta"
 
 
 async def test_probe_integracoes_indices_bcb_ok(monkeypatch):
@@ -263,18 +256,10 @@ async def test_probe_disco_caminho_nao_expoe_path_absoluto(tmp_path):
 # ── Erros ─────────────────────────────────────────────────────────────────────
 async def test_probe_erros_sem_coletor(monkeypatch):
     s = get_settings()
-    monkeypatch.setattr(s, "SENTRY_DSN", "")
     r = await dg._probe_erros(s)
     assert r["status"] == "ok"
     assert r["coletor"] is None
     assert "sem coletor" in r["detalhe"].lower()
-
-
-async def test_probe_erros_sentry(monkeypatch):
-    s = get_settings()
-    monkeypatch.setattr(s, "SENTRY_DSN", "https://x@sentry.example/1")
-    r = await dg._probe_erros(s)
-    assert r["coletor"] == "sentry"
 
 
 # ── Agregação status_geral ────────────────────────────────────────────────────

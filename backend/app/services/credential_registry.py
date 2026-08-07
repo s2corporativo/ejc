@@ -40,9 +40,6 @@ REGISTRY: dict[str, tuple[CampoCredencial, ...]] = {
     "maritaca": (
         CampoCredencial("MARITACA_API_KEY", "api_key", "API Key da Maritaca (Sabiá)"),
     ),
-    "infosimples": (
-        CampoCredencial("INFOSIMPLES_TOKEN", "token", "Token da Infosimples"),
-    ),
     "smtp": (
         CampoCredencial("SMTP_USER", "login", "Usuário SMTP"),
         CampoCredencial("SMTP_PASSWORD", "senha", "Senha SMTP"),

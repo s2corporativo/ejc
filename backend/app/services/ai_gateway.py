@@ -5,17 +5,17 @@
 #
 # Fluxo:
 #   Frontend → Backend Router → AI Gateway → Provedor adequado
-#   (Ollama local · Anthropic/Claude p/ tarefa jurídica pesada · Maritaca/Sabiá
-#    PT-BR · Groq último recurso)
+#   (Anthropic/Claude p/ tarefa jurídica pesada · Maritaca/Sabiá PT-BR ·
+#    Groq último recurso)
 #
 # Roteamento por tipo de tarefa (ver TASK_ROUTING): cada tarefa lista os
 # provedores candidatos; a ordem final vem de AI_PROVIDER_PRIORITY filtrada
 # por elegibilidade (chave + ENABLED + soberania). Provedores atuais:
-#   ollama (local, custo zero) · anthropic (Claude — raciocínio profundo)
+#   anthropic (Claude — raciocínio profundo)
 #   maritaca (Sabiá — PT-BR jurídico, IA brasileira) · groq (último recurso)
 #
 # Fallback automático: se o modelo primário falhar, tenta o próximo da cadeia.
-# Quando AI_PROVIDER="auto" → Ollama (local) tem prioridade; Groq como fallback.
+# Quando AI_PROVIDER="auto" → Anthropic tem prioridade; Groq como fallback.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 import logging
@@ -37,7 +37,6 @@ settings = get_settings()
 # ── Tipos de tarefa e cadeia de modelos ──────────────────────────────────────
 # Cada tarefa lista provedores em ordem de preferência: (provider, model).
 # "groq" usa o modelo configurado em GROQ_MODEL / GROQ_MODEL_LARGE.
-# "ollama" usa o modelo local especificado.
 
 TASK_ALIASES = {
     "redacao_peca": "elaboracao_peca",
