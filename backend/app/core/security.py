@@ -4,7 +4,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Annotated
+from typing import Optional, List, Annotated, TYPE_CHECKING
 from uuid import uuid4
 
 import jwt
@@ -16,6 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.config import get_settings
+
+if TYPE_CHECKING:  # só para anotação — importar User em runtime seria circular
+    from app.models.user import User
 
 settings = get_settings()
 
@@ -56,13 +59,23 @@ EQUIPE_JURIDICA: frozenset[str] = frozenset({
 })
 
 
-def requer_equipe_juridica(cu, detail: str = "Acesso negado") -> None:
+def requer_equipe_juridica(cu: "User", detail: str = "Acesso negado") -> None:
     """Gate compartilhado (fonte única): superfície jurídica exige um papel de
     EQUIPE_JURIDICA — allowlist EXATA, sem fallback hierárquico (ver
     EQUIPE_JURIDICA acima). `financeiro` e `secretaria` nunca passam aqui,
     mesmo com ROLE_LEVEL numericamente maior que estagiario.
 
-    Aceita User ORM ou objeto com .role (enum ou string)."""
+    Aceita User ORM ou objeto com .role (enum ou string).
+
+    CHAME NO CORPO do handler — NUNCA como `Depends(requer_equipe_juridica)`.
+    Verificado: sob `Depends`, o FastAPI monta a rota **em silêncio** e trata
+    `cu` e `detail` como query params de string. A rota vira 403 permanente
+    (fail-closed, mas quebrada) e o cliente passa a escolher a mensagem de erro
+    pela URL. A anotação de `cu` abaixo NÃO impede isso — serve só ao type
+    checker; quem impede é o teste de varredura
+    `test_gates_compartilhados_nunca_usados_como_depends`
+    (tests/test_rbac_equipe_juridica_694.py). Mesmo contrato de
+    requer_advogado()."""
     role = getattr(getattr(cu, "role", None), "value", None) or str(getattr(cu, "role", "") or "")
     if role not in EQUIPE_JURIDICA:
         raise HTTPException(status_code=403, detail=detail)

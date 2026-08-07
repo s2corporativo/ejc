@@ -366,3 +366,36 @@ def test_grandfather_nao_cobre_os_15_arquivos_corrigidos():
     }
     assert arquivos_corrigidos.isdisjoint(_GRANDFATHER_ISSUE_694)
     assert len(arquivos_corrigidos) == 15
+
+
+# ── Os gates compartilhados só valem chamados no CORPO ────────────────────────
+# `requer_equipe_juridica`/`requer_advogado` recebem `cu` como argumento comum,
+# não como dependency. Sob `Depends(...)` o FastAPI monta a rota EM SILÊNCIO e
+# trata `cu` e `detail` como query params de string — verificado: a rota vira
+# 403 permanente e o cliente escolhe a mensagem de erro pela URL. Anotar `cu`
+# NÃO impede (o FastAPI resolve o forward ref mesmo assim); só um teste impede.
+_GATES_DE_CORPO = ("requer_equipe_juridica", "requer_advogado")
+
+
+def test_gates_compartilhados_nunca_usados_como_depends():
+    infratores = []
+    for arq in sorted(_ROUTERS.glob("*.py")):
+        texto = arq.read_text(encoding="utf-8")
+        if not any(g in texto for g in _GATES_DE_CORPO):
+            continue
+        tree = ast.parse(texto)
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "Depends" and node.args):
+                continue
+            alvo = node.args[0]
+            nome = alvo.id if isinstance(alvo, ast.Name) else None
+            if nome in _GATES_DE_CORPO:
+                infratores.append(f"{arq.name}::{_funcao_que_contem(tree, node.lineno)} -> Depends({nome})")
+    assert not infratores, (
+        "Gate compartilhado de app.core.security usado como Depends(). O FastAPI "
+        "aceita isso em silêncio e transforma `cu`/`detail` em query params: a "
+        "rota passa a responder 403 SEMPRE, com a mensagem de erro escolhida "
+        "pelo cliente na URL. Chame no CORPO do handler:\n  "
+        + "\n  ".join(infratores)
+    )
