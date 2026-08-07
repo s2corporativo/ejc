@@ -126,12 +126,13 @@ export function AvisoSecoesIndisponiveis({
       <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
       <div className="text-sm">
         <p className="font-medium">
-          Ficha carregada parcialmente: {lista} não {nomes.length === 1 ? "pôde" : "puderam"} ser
-          carregad{nomes.length === 1 ? "a" : "as"}.
+          Ficha carregada parcialmente: {lista} não{" "}
+          {nomes.length === 1 ? "pôde" : "puderam"} ser carregad
+          {nomes.length === 1 ? "a" : "as"}.
         </p>
         <p className="mt-1">
-          Os demais dados desta tela estão completos. O erro foi registrado para a
-          equipe técnica.
+          Os demais dados desta tela estão completos. O erro foi registrado para
+          a equipe técnica.
         </p>
         <button
           type="button"

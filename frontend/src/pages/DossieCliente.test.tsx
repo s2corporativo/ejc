@@ -28,12 +28,17 @@ describe("AvisoSecoesIndisponiveis", () => {
     const aviso = screen.getByRole("status");
     expect(aviso.textContent).toContain("prazos não pôde ser carregada");
     // Diz que o resto é confiável — é isso que permite seguir usando a tela.
-    expect(aviso.textContent).toContain("demais dados desta tela estão completos");
+    expect(aviso.textContent).toContain(
+      "demais dados desta tela estão completos",
+    );
   });
 
   it("traduz a chave técnica da seção para o vocabulário do usuário", () => {
     render(
-      <AvisoSecoesIndisponiveis secoes={["honorarios"]} onRecarregar={() => {}} />,
+      <AvisoSecoesIndisponiveis
+        secoes={["honorarios"]}
+        onRecarregar={() => {}}
+      />,
     );
     expect(screen.getByRole("status").textContent).toContain("financeiro");
   });
@@ -52,7 +57,10 @@ describe("AvisoSecoesIndisponiveis", () => {
 
   it("mantém legível uma seção desconhecida vinda do backend", () => {
     render(
-      <AvisoSecoesIndisponiveis secoes={["secao_nova"]} onRecarregar={() => {}} />,
+      <AvisoSecoesIndisponiveis
+        secoes={["secao_nova"]}
+        onRecarregar={() => {}}
+      />,
     );
     expect(screen.getByRole("status").textContent).toContain("secao_nova");
   });
@@ -60,7 +68,10 @@ describe("AvisoSecoesIndisponiveis", () => {
   it("oferece nova tentativa sem exigir recarregar a página", () => {
     const onRecarregar = vi.fn();
     render(
-      <AvisoSecoesIndisponiveis secoes={["casos"]} onRecarregar={onRecarregar} />,
+      <AvisoSecoesIndisponiveis
+        secoes={["casos"]}
+        onRecarregar={onRecarregar}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: /tentar novamente/i }));
     expect(onRecarregar).toHaveBeenCalledTimes(1);
