@@ -19,14 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
-from app.core.security import ROLE_LEVEL, get_current_user
+from app.core.security import EQUIPE_JURIDICA, get_current_user
 from app.models.ficha_triagem import FichaTriagem
 from app.models.user import User
 from app.services import ficha_triagem_service as svc
 
 router = APIRouter(prefix="/triagem/ficha", tags=["Triagem — Ficha pré-peça"])
-
-_PISO = ROLE_LEVEL["estagiario"]
 
 
 def _role_str(cu: User) -> str:
@@ -35,7 +33,10 @@ def _role_str(cu: User) -> str:
 
 
 def _exigir_piso(cu: User) -> None:
-    if ROLE_LEVEL.get(_role_str(cu), 0) < _PISO:
+    # Issue #694: allowlist EXATA (mesmo conjunto de peca_geracao.gerar_peca)
+    # — financeiro NÃO pode operar a ficha de triagem pré-peça, mesmo com
+    # ROLE_LEVEL acima de estagiario.
+    if _role_str(cu) not in EQUIPE_JURIDICA:
         raise HTTPException(403, "Acesso negado")
 
 

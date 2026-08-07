@@ -44,6 +44,7 @@ from app.schemas.areas_atuacao import (
 from app.services.homologacao_ferramentas import (  # noqa: F401 (reexport p/ compat)
     FERRAMENTAS_BLOQUEADAS,
     FERRAMENTAS_NAO_HOMOLOGADAS,
+    normalizar_caminho_ferramenta,
     selo_homologacao as _selo_homologacao,
 )
 # `bloquear_nao_homologada` NÃO é importado aqui: nenhuma ferramenta está
@@ -128,6 +129,14 @@ def _parse_sim_nao(valor: str, campo: str) -> bool:
 # Versão do conjunto de regras jurídicas embarcadas nas ferramentas corrigidas
 # na Onda 2 — carimbada em toda resposta (campo `versao_regra`).
 _VERSAO_REGRA = "2026-07"
+
+# Alias público (Onda 3, Issue #702): o gate de proveniência do demonstrativo
+# de cálculo (routers/peca_geracao.py) compara o `versao_regra` declarado
+# pelo cliente com a versão REALMENTE vigente — um demonstrativo que alega
+# uma versão diferente da atual não pode ter saído de uma execução real da
+# ferramenta (é o sinal mínimo de forjamento que o piso de proveniência
+# consegue detectar sem recalcular no servidor). Ver PR da Issue #702.
+VERSAO_REGRA_ATUAL: str = _VERSAO_REGRA
 
 # ── Rotas DUPLICADAS mantidas por compatibilidade (Onda 3 §4.5) ──────────────
 # Cada uma delega à implementação da rota canônica. Aqui elas passam a se
@@ -4516,3 +4525,18 @@ async def amb_reserva_legal(
                  "fiscais e análise do CAR. Revisão humana obrigatória.",
     }
     return out
+
+
+# ── Registro de caminhos válidos das ferramentas (Onda 3, Issue #702) ────────
+# Fonte única para validar o campo `ferramenta` do demonstrativo de cálculo em
+# routers/peca_geracao.py: deriva da própria APIRouter (precisa vir DEPOIS de
+# todas as rotas acima estarem registradas), então nunca diverge das rotas de
+# fato existentes — não é uma lista mantida à mão que pode ficar desatualizada.
+# `normalizar_caminho_ferramenta` é a MESMA porta usada pelo selo e pelo
+# bloqueio (linhas 44-48): caminho válido, selo, bloqueio e gate do
+# demonstrativo compartilham uma única semântica de normalização.
+CAMINHOS_FERRAMENTAS_VALIDOS: frozenset[str] = frozenset(
+    normalizar_caminho_ferramenta(rota.path)
+    for rota in router.routes
+    if "/ferramentas/" in getattr(rota, "path", "")
+)

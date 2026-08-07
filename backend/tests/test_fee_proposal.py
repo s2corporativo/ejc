@@ -475,10 +475,10 @@ def test_contrato_sem_proposta_mantem_placeholders_byte_identico():
     # proposta=None explícito == comportamento default (mudança aditiva)
     assert _contrato(proposta=None) == base
     assert "R$ [____]" in base
-    assert "[__]% sobre o proveito economico" in base
+    assert "[__]% sobre o proveito econômico" in base
     assert "Comarca de [____]/MG" in base
     # Nenhuma cláusula nova vaza para o fluxo sem proposta
-    for marcador in ("LGPD", "RESCISAO", "INADIMPLEMENTO", "COMUNICACAO ELETRONICA"):
+    for marcador in ("LGPD", "RESCISÃO", "INADIMPLEMENTO", "COMUNICAÇÃO ELETRÔNICA"):
         assert marcador not in base
 
 
@@ -492,12 +492,12 @@ def test_contrato_com_proposta_aprovada_sai_completo():
     s = get_settings()
     assert "R$ 15.000,00" in txt                      # valor da proposta aprovada
     assert "R$ [____]" not in txt                     # sem placeholder de valor
-    assert "30% sobre o proveito economico" in txt    # êxito da proposta
+    assert "30% sobre o proveito econômico" in txt    # êxito da proposta
     assert "entrada de R$ 5.000,00" in txt            # parcelamento
-    assert "proposta de honorarios aprovada (versao 1)" in txt
+    assert "proposta de honorários aprovada (versão 1)" in txt
     # Cláusulas fixas de template (determinísticas, sem LLM)
-    for marcador in ("RESCISAO", "INADIMPLEMENTO", "REVOGACAO E RENUNCIA",
-                     "LGPD", "COMUNICACAO ELETRONICA"):
+    for marcador in ("RESCISÃO", "INADIMPLEMENTO", "REVOGAÇÃO E RENÚNCIA",
+                     "LGPD", "COMUNICAÇÃO ELETRÔNICA"):
         assert marcador in txt
     # Foro na comarca do escritório (settings), não placeholder
     assert f"Comarca de {s.ESCRITORIO_CIDADE}/{s.ESCRITORIO_ESTADO}" in txt
@@ -509,7 +509,7 @@ def test_contrato_proposta_sem_valor_mantem_placeholder_de_valor():
                               "forma_pagamento": "a vista, na assinatura deste contrato",
                               "exito_percentual": None, "despesas_criterio": None})
     assert "R$ [____]" in txt                         # nunca inventar valor
-    assert "Nao foram ajustados honorarios de exito" in txt
+    assert "Não foram ajustados honorários de êxito" in txt
     assert "LGPD" in txt
 
 
@@ -636,7 +636,7 @@ async def test_seed_honorarios_preenche_contrato_do_kit():
     conteudo = out["contrato"]["conteudo"]
     assert "R$ 12.000,00" in conteudo                    # valor do cadastro
     assert "R$ [____]" not in conteudo                   # sem placeholder de valor
-    assert "25% sobre o proveito economico" in conteudo  # êxito
+    assert "25% sobre o proveito econômico" in conteudo  # êxito
     assert "3x sem juros" in conteudo                    # forma de pagamento
     assert "LGPD" in conteudo                            # cláusulas fixas completas
     assert out["contrato"]["proposta_aprovada"]["valor"] == 12000.0

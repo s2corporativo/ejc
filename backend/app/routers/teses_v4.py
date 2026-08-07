@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Base, get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import ROLE_LEVEL, get_current_user
+from app.core.security import EQUIPE_JURIDICA, get_current_user
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -63,8 +63,10 @@ router = APIRouter(
 
 
 def _is_staff(user: User) -> bool:
+    # Issue #694: allowlist EXATA — financeiro não acessa o compat de teses,
+    # mesmo com ROLE_LEVEL acima de estagiario.
     role = user.role.value if hasattr(user.role, "value") else str(user.role)
-    return ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["estagiario"]
+    return role in EQUIPE_JURIDICA
 
 
 def _headers_deprecacao(response: Response) -> None:

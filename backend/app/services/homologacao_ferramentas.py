@@ -41,14 +41,22 @@ FERRAMENTAS_BLOQUEADAS: frozenset[str] = frozenset()
 
 def normalizar_caminho_ferramenta(caminho: str) -> str:
     """Normaliza o caminho declarado antes do lookup na matriz: espaços,
-    percent-encoding, casing, barras duplicadas, querystring, barra final e /api.
-    É a ÚNICA porta de entrada do lookup — selo, bloqueio e gate usam esta função,
-    para que as três semânticas nunca divirjam."""
+    percent-encoding, casing, barras duplicadas, querystring, barra final e
+    prefixo /api ou /api/v1. É a ÚNICA porta de entrada do lookup — selo,
+    bloqueio e gate usam esta função, para que as três semânticas nunca
+    divirjam.
+
+    `/api/v1` é o prefixo CANÔNICO (`app/core/api_version_middleware.py`) —
+    precisa ser removido ANTES do legado `/api`, senão sobra um `/v1/...`
+    que não bate com nenhum caminho da allowlist (Issue #702, achado do
+    review Codex)."""
     c = unquote(caminho or "").strip().split("?")[0].strip().casefold()
     while "//" in c:
         c = c.replace("//", "/")
     c = c.rstrip("/")
-    if c.startswith("/api/"):
+    if c == "/api/v1" or c.startswith("/api/v1/"):
+        c = c[len("/api/v1"):]
+    elif c.startswith("/api/"):
         c = c[len("/api"):]
     return c
 

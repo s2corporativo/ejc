@@ -25,6 +25,7 @@ from app.core.auth_middleware import (  # noqa: E402
     AuthMiddleware,
     _path_casa_prefixo_publico,
 )
+from app.core.security import EQUIPE_JURIDICA as BACKEND_EQUIPE_JURIDICA  # noqa: E402
 from app.core.security import ROLE_LEVEL as BACKEND_ROLE_LEVEL  # noqa: E402
 
 ROUTERS_DIR = ROOT / "backend" / "app" / "routers"
@@ -39,6 +40,27 @@ def test_role_level_espelha_backend():
     a matriz calcularia resultado esperado errado sem avisar — é exatamente
     o tipo de lista que envelhece em silêncio que a Issue #700 quer evitar."""
     assert rm.ROLE_LEVEL == BACKEND_ROLE_LEVEL
+
+
+def test_equipe_juridica_espelha_backend():
+    """Mesma razão de `test_role_level_espelha_backend`, para a allowlist da
+    Issue #694: os routers importam EQUIPE_JURIDICA de security.py, então o
+    espelho de `rbac_matrix.py` é o que decide se a matriz enxerga o gate.
+    Divergir em silêncio faria a matriz prever 403 para quem passa (ou 200
+    para quem é barrado) em 15 arquivos da superfície jurídica."""
+    assert set(rm.EQUIPE_JURIDICA) == set(BACKEND_EQUIPE_JURIDICA)
+
+
+def test_gate_compartilhado_equipe_juridica_nao_e_piso_hierarquico():
+    """`financeiro` (nível 4) está ACIMA de `estagiario` (3) em ROLE_LEVEL e
+    mesmo assim NÃO pertence à equipe. Se `_GATES_COMPARTILHADOS` registrasse
+    requer_equipe_juridica como `local_level` (piso) em vez de
+    `local_membership` (allowlist), a matriz daria financeiro como permitido —
+    exatamente o defeito que a Issue #694 corrigiu no backend."""
+    kind, roles, level = rm._GATES_COMPARTILHADOS["requer_equipe_juridica"]
+    assert kind == "local_membership"
+    assert "financeiro" not in roles
+    assert rm.ROLE_LEVEL["financeiro"] > level  # acima do nível, fora da lista
 
 
 def test_casa_prefixo_publico_bate_com_auth_middleware():
