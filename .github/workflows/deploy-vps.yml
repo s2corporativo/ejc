@@ -45,16 +45,49 @@ jobs:
           ref: ${{ env.TARGET_SHA }}
           fetch-depth: 0
 
-      - name: Confirmar SHA e runtime de produção
+      # O actions/checkout registra `safe.directory` num HOME TEMPORÁRIO, que ele
+      # próprio desfaz no post-cleanup. As etapas `run:` seguintes voltam ao HOME
+      # real — sem a exceção — e, como o diretório de trabalho é de outro dono que
+      # o processo do runner, QUALQUER comando git morre com "detected dubious
+      # ownership". Foi assim que o pré-voo abaixo passou a reprovar no seu
+      # PRIMEIRO comando, sem chegar a checar coisa alguma, em todo deploy desde
+      # 2026-08-06 — e a reprovar em silêncio, porque `test` não imprime nada.
+      - name: Confiar no workspace do runner para comandos git
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
-          test -d /opt/ejc
-          test -f /opt/ejc/.env
-          docker ps --format '{{.Names}}' | grep -qx ejc_db
-          command -v python3 >/dev/null
-          command -v rsync >/dev/null
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # Sem `-e`: as seis pré-condições são verificadas TODAS, e cada reprovação
+      # se identifica. Parar na primeira economizaria um segundo de runner e
+      # custaria uma rodada de deploy por pré-condição quebrada.
+      - name: Confirmar SHA e runtime de produção
+        shell: bash
+        run: |
+          set -uo pipefail
+          erros=0
+          reprovar() { echo "::error::Pré-voo do deploy: $1"; erros=1; }
+
+          if head_local="$(git rev-parse HEAD 2>&1)"; then
+            [ "$head_local" = "$TARGET_SHA" ] ||
+              reprovar "checkout está em '$head_local', esperado '$TARGET_SHA'"
+          else
+            reprovar "git rev-parse HEAD falhou — $head_local"
+          fi
+
+          [ -d /opt/ejc ] ||
+            reprovar "/opt/ejc não existe ou não é diretório"
+          [ -f /opt/ejc/.env ] ||
+            reprovar "/opt/ejc/.env ausente ou ilegível para o usuário do runner"
+          docker ps --format '{{.Names}}' 2>/dev/null | grep -qx ejc_db ||
+            reprovar "container ejc_db fora do ar, ou o runner não alcança o socket do Docker"
+          command -v python3 >/dev/null ||
+            reprovar "python3 ausente no PATH do runner"
+          command -v rsync >/dev/null ||
+            reprovar "rsync ausente no PATH do runner"
+
+          [ "$erros" -eq 0 ] || exit 1
+          echo "Pré-voo aprovado — HEAD $head_local, /opt/ejc e ejc_db presentes."
 
       - name: Classificar migrations pendentes
         id: migrations
@@ -160,6 +193,14 @@ jobs:
           {
             echo "## Deploy VPS"
             echo
+            # Sem esta linha o resumo sai igual tendo havido deploy ou não: os
+            # campos abaixo ficam vazios quando o job aborta cedo, e um sumário
+            # de campos vazios se lê como sumário de sucesso.
+            if [ "${{ job.status }}" = "success" ]; then
+              echo "- Resultado: **implantado**"
+            else
+              echo "- Resultado: **ABORTADO — nada foi implantado** (\`${{ job.status }}\`)"
+            fi
             echo "- Target SHA: \`$TARGET_SHA\`"
             echo "- Revisão anterior: \`${{ steps.migrations.outputs.current_revision }}\`"
             echo "- Migrations pendentes: \`${{ steps.migrations.outputs.pending_count }}\`"
