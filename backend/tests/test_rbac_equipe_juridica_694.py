@@ -426,6 +426,29 @@ def test_grandfather_nao_cobre_os_15_arquivos_corrigidos():
 _GATES_DE_CORPO = ("requer_equipe_juridica", "requer_advogado")
 
 
+def _apelidos_de_gate(tree: ast.Module) -> dict[str, str]:
+    """Mapeia nome LOCAL -> nome canônico do gate, resolvendo alias de import
+    (`from app.core.security import requer_advogado as _req`). Sem isto, trocar
+    o nome no import escaparia da varredura."""
+    apelidos = {g: g for g in _GATES_DE_CORPO}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for a in node.names:
+            if a.name in _GATES_DE_CORPO and a.asname:
+                apelidos[a.asname] = a.name
+    return apelidos
+
+
+def _nome_de(no: ast.expr) -> str | None:
+    """`x` -> "x"; `mod.x` -> "x" (o atributo final é o que identifica o gate)."""
+    if isinstance(no, ast.Name):
+        return no.id
+    if isinstance(no, ast.Attribute):
+        return no.attr
+    return None
+
+
 def test_gates_compartilhados_nunca_usados_como_depends():
     infratores = []
     for arq in sorted(_ROUTERS.rglob("*.py")):
@@ -434,15 +457,23 @@ def test_gates_compartilhados_nunca_usados_como_depends():
         if not any(g in texto for g in _GATES_DE_CORPO):
             continue
         tree = ast.parse(texto)
+        apelidos = _apelidos_de_gate(tree)
         for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                    and node.func.id == "Depends" and node.args):
+            # `Depends(...)` e `fastapi.Depends(...)` — o atributo final decide.
+            if not (isinstance(node, ast.Call) and _nome_de(node.func) == "Depends"):
                 continue
-            alvo = node.args[0]
-            nome_gate = alvo.id if isinstance(alvo, ast.Name) else None
+            # Alvo por posição OU pelo nomeado `dependency=`.
+            alvos = list(node.args) + [
+                kw.value for kw in node.keywords if kw.arg == "dependency"
+            ]
+            if not alvos:
+                continue
+            # `security.requer_advogado` resolve pelo atributo; alias pelo import.
+            local = _nome_de(alvos[0])
+            nome_gate = apelidos.get(local)
             if nome_gate in _GATES_DE_CORPO:
                 infratores.append(
-                    f"{nome}::{_funcao_que_contem(tree, node.lineno)} -> Depends({nome_gate})"
+                    f"{nome}::{_funcao_que_contem(tree, node.lineno)} -> Depends({local})"
                 )
     assert not infratores, (
         "Gate compartilhado de app.core.security usado como Depends(). O FastAPI "
