@@ -105,4 +105,20 @@ ressalvas registradas na verificação:
 | Acentuação das minutas | `app/services/documental.py`, `app/services/document_format.py` |
 | Timbre sem placeholder | `app/core/config.py`, `app/services/pdf_service.py`, `app/services/docx_service.py`, `app/services/system_prompts/templates_documentos.py`, `app/main.py` |
 | Redirect atrás do proxy | `backend/entrypoint.sh`, `.env.example` |
-| Testes | `tests/test_degradacao_por_secao.py`, `tests/test_acentuacao_documentos.py`, `tests/test_proxy_headers_redirect.py` (+ ajustes em `test_documento_marca_ia.py`, `test_procuracao_poderes.py`, `test_kit_documental.py`, `test_document_format.py`) |
+| Testes | `tests/test_degradacao_por_secao.py`, `tests/test_acentuacao_documentos.py`, `tests/test_proxy_headers_redirect.py` (+ ajustes em `test_documento_marca_ia.py`, `test_procuracao_poderes.py`, `test_kit_documental.py`, `test_document_format.py`, `test_fee_proposal.py`) |
+
+---
+
+## Achados registrados, não corrigidos
+
+Levantados durante a Onda 1 — inclusive pela revisão de segurança do PR — e
+deixados para trabalho próprio, por serem pré-existentes ou de outra frente.
+Ficam aqui para não se perderem entre as ondas:
+
+| Achado | Onde | Encaminhamento |
+|---|---|---|
+| `_before_send` do Sentry não varre `exception.value` nem os locais do stacktrace — PII pode sair para o SaaS externo quando o DSN for ligado (Onda 0) | `app/core/observability.py:68-84` | Issue #766 |
+| Resumo do dossiê afirma `0` para seção indisponível, em vez de "desconhecido" | `app/routers/dossie_cliente.py:135,137` | Issue #766 |
+| `DossieCliente.tsx` chama `/v1/clients/{id}/pending-items` — o `/v1` já vem no caminho, escapa da poda do interceptor e vira `/api/v1/v1/…` | `frontend/src/pages/DossieCliente.tsx` | Mesma classe do prefixo duplicado da Onda 2; pede um varredor do padrão inteiro, não uma correção pontual |
+| `ESCRITORIO_CNPJ` pode resolver para outra razão social | `app/core/config.py:838` | Conferência na Receita + ajuste de `.env` — decisão do titular, não é código |
+| Fonte tipográfica diverge entre PDF (DejaVu Sans) e DOCX (Times New Roman) | `pdf_service.py`, `docx_service.py` | Não é bug: ambas suportam pt-BR. Unificar é decisão de identidade visual do titular |
