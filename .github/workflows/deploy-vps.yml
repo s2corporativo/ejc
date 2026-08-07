@@ -45,34 +45,51 @@ jobs:
           ref: ${{ env.TARGET_SHA }}
           fetch-depth: 0
 
-      # O actions/checkout registra `safe.directory` num HOME TEMPORÁRIO, que ele
-      # próprio desfaz no post-cleanup. As etapas `run:` seguintes voltam ao HOME
-      # real — sem a exceção — e, como o diretório de trabalho é de outro dono que
-      # o processo do runner, QUALQUER comando git morre com "detected dubious
-      # ownership". Foi assim que o pré-voo abaixo passou a reprovar no seu
-      # PRIMEIRO comando, sem chegar a checar coisa alguma, em todo deploy desde
-      # 2026-08-06 — e a reprovar em silêncio, porque `test` não imprime nada.
-      - name: Confiar no workspace do runner para comandos git
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      # Sem `-e`: as seis pré-condições são verificadas TODAS, e cada reprovação
-      # se identifica. Parar na primeira economizaria um segundo de runner e
-      # custaria uma rodada de deploy por pré-condição quebrada.
+      # Por que este passo existe: o actions/checkout registra `safe.directory`
+      # num HOME TEMPORÁRIO, que ele próprio desfaz no post-cleanup. As etapas
+      # `run:` seguintes voltam ao HOME real — sem a exceção — e, como o
+      # diretório de trabalho é de outro dono que o processo do runner, QUALQUER
+      # comando git morre com "detected dubious ownership". Foi assim que este
+      # pré-voo passou a reprovar no seu PRIMEIRO comando, sem chegar a checar
+      # coisa alguma, em todo deploy desde 2026-08-06 — e a reprovar em
+      # silêncio, porque `test` não imprime nada ao falhar.
+      #
+      # Por que `git -c` e não `git config --global --add safe.directory`: o
+      # `--global` conserta, mas PERSISTE no host depois do job, vale para todo
+      # processo git daquele usuário e não deduplica — cresce uma linha por
+      # deploy. O `-c` conta como protected configuration para o git, então tem
+      # o mesmo efeito com escopo de um comando só e nenhum estado residual.
+      #
+      # E a exceção não é dada às cegas: `safe.directory` desliga uma proteção
+      # real (um `.git/config` hostil executa comando arbitrário via
+      # `core.fsmonitor` no primeiro `rev-parse`). Por isso o dono é conferido
+      # ANTES, e o git só roda se o workspace for do runner ou de root.
+      #
+      # `set +e` explícito: o `shell: bash` do GitHub é
+      # `bash --noprofile --norc -eo pipefail {0}` — o `-e` já vem ligado, e
+      # `set -uo pipefail` NÃO o desliga. Sem isto, uma checagem futura escrita
+      # sem `||` abortaria o passo calada, que é justamente o defeito que este
+      # passo existe para corrigir. As seis pré-condições são verificadas TODAS
+      # e cada reprovação se identifica: parar na primeira economizaria um
+      # segundo de runner e custaria uma rodada de deploy por defeito.
       - name: Confirmar SHA e runtime de produção
         shell: bash
         run: |
           set -uo pipefail
+          set +e
           erros=0
           reprovar() { echo "::error::Pré-voo do deploy: $1"; erros=1; }
 
-          if head_local="$(git rev-parse HEAD 2>&1)"; then
-            [ "$head_local" = "$TARGET_SHA" ] ||
-              reprovar "checkout está em '$head_local', esperado '$TARGET_SHA'"
+          dono="$(stat -c %u "$GITHUB_WORKSPACE" 2>/dev/null)"
+          if [ "$dono" = "$(id -u)" ] || [ "$dono" = "0" ]; then
+            if head_local="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD 2>&1)"; then
+              [ "$head_local" = "$TARGET_SHA" ] ||
+                reprovar "checkout está em '$head_local', esperado '$TARGET_SHA'"
+            else
+              reprovar "git rev-parse HEAD falhou — $head_local"
+            fi
           else
-            reprovar "git rev-parse HEAD falhou — $head_local"
+            reprovar "workspace pertence ao uid '${dono:-desconhecido}', nem ao runner nem a root — não confio nele para executar git"
           fi
 
           [ -d /opt/ejc ] ||
@@ -142,7 +159,11 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # `id: sync` — este é o passo a partir do qual produção deixa de estar
+      # intacta: o rsync abaixo já reescreveu /opt/ejc. O resumo lê o resultado
+      # dele para não afirmar "nada foi implantado" depois de ter implantado.
       - name: Sincronizar checkout aprovado para /opt/ejc
+        id: sync
         shell: bash
         run: |
           set -euo pipefail
@@ -187,23 +208,42 @@ jobs:
             "https://ejc.depaulateixeira.adv.br/api/health → HTTP %{http_code}\n" \
             https://ejc.depaulateixeira.adv.br/api/health
 
+      # Três estados, não dois. Um resumo de campos vazios se lê como resumo de
+      # sucesso — mas dizer "nada foi implantado" em toda falha seria pior, e
+      # falso: a partir do `rsync` (id: sync) produção já está reescrita, e o
+      # rollback do deploy_vps_safe.sh restaura IMAGENS, não a árvore de
+      # /opt/ejc nem o schema. Uma falha no health check público, que é o último
+      # passo, deixaria o registro afirmando que produção está intacta quando
+      # não está. O estado vem do resultado do passo que tocou produção.
+      #
+      # Os valores entram por `env:` em vez de interpolados no `run:`:
+      # `current_revision` vem de um SELECT no banco de produção, e valor de
+      # dado nunca deve virar texto de script.
       - name: Resumo da implantação
         if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SYNC_OUTCOME: ${{ steps.sync.outcome }}
+          REVISAO_ANTERIOR: ${{ steps.migrations.outputs.current_revision }}
+          MIGRATIONS_PENDENTES: ${{ steps.migrations.outputs.pending_count }}
         run: |
           {
             echo "## Deploy VPS"
             echo
-            # Sem esta linha o resumo sai igual tendo havido deploy ou não: os
-            # campos abaixo ficam vazios quando o job aborta cedo, e um sumário
-            # de campos vazios se lê como sumário de sucesso.
-            if [ "${{ job.status }}" = "success" ]; then
+            if [ "$JOB_STATUS" = "success" ]; then
               echo "- Resultado: **implantado**"
+            elif [ "$SYNC_OUTCOME" = "success" ]; then
+              echo "- Resultado: **FALHOU APÓS TOCAR PRODUÇÃO** (\`$JOB_STATUS\`)"
+              echo "  — \`/opt/ejc\` já foi reescrito e o deploy pode ter migrado o schema."
+              echo "  O rollback automático restaura imagens, **não** a árvore nem o banco."
+              echo "  Verifique o estado real antes de reexecutar."
             else
-              echo "- Resultado: **ABORTADO — nada foi implantado** (\`${{ job.status }}\`)"
+              echo "- Resultado: **abortado antes de tocar produção** (\`$JOB_STATUS\`)"
+              echo "  — nada foi implantado; \`/opt/ejc\` está como estava."
             fi
             echo "- Target SHA: \`$TARGET_SHA\`"
-            echo "- Revisão anterior: \`${{ steps.migrations.outputs.current_revision }}\`"
-            echo "- Migrations pendentes: \`${{ steps.migrations.outputs.pending_count }}\`"
+            echo "- Revisão anterior: \`$REVISAO_ANTERIOR\`"
+            echo "- Migrations pendentes: \`$MIGRATIONS_PENDENTES\`"
             echo "- Seeds: \`$RUN_SEEDS\`"
             echo "- Backup pré-deploy obrigatório: \`$REQUIRE_PREDEPLOY_BACKUP\`"
           } >> "$GITHUB_STEP_SUMMARY"
