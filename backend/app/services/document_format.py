@@ -109,6 +109,17 @@ def ascii_seguro(texto: str | None) -> str:
     return saida.encode("ascii", "ignore").decode("ascii").strip()
 
 
+def juntar_segmentos(segmentos, separador: str) -> str:
+    """Junta segmentos de timbre DESCARTANDO os vazios.
+
+    Um segmento é o par rótulo+valor já formatado ("CEP 32510-010"). Quando a
+    setting por trás dele não está preenchida, o consumidor passa "" e o
+    segmento some por inteiro — o timbre nunca exibe rótulo órfão ("CEP  |")
+    nem placeholder de pendência interna.
+    """
+    return separador.join(s for s in (str(t or "").strip() for t in segmentos) if s)
+
+
 def padronizar_documento_juridico(conteudo: str | None) -> str:
     texto = sem_caracteres_problematicos(conteudo)
     if not texto:
@@ -126,17 +137,17 @@ def padronizar_documento_juridico(conteudo: str | None) -> str:
 
 def aviso_rascunho_ia() -> str:
     return (
-        "RASCUNHO EM PADRAO JURIDICO-PROFISSIONAL PARA REVISAO INTERNA. "
-        "O advogado responsavel deve validar fatos, documentos, valores, prazos, "
-        "pedidos, citacoes e estrategia antes de assinatura, protocolo ou uso externo."
+        "RASCUNHO EM PADRÃO JURÍDICO-PROFISSIONAL PARA REVISÃO INTERNA. "
+        "O advogado responsável deve validar fatos, documentos, valores, prazos, "
+        "pedidos, citações e estratégia antes de assinatura, protocolo ou uso externo."
     )
 
 
 def aviso_minuta_automatica() -> str:
     return (
-        "RASCUNHO AUTOMATICO EM PADRAO JURIDICO-PROFISSIONAL PARA REVISAO INTERNA. "
-        "O advogado responsavel deve conferir campos entre colchetes, fatos, documentos, "
-        "valores, prazos e citacoes antes de assinatura, protocolo ou uso externo."
+        "RASCUNHO AUTOMÁTICO EM PADRÃO JURÍDICO-PROFISSIONAL PARA REVISÃO INTERNA. "
+        "O advogado responsável deve conferir campos entre colchetes, fatos, documentos, "
+        "valores, prazos e citações antes de assinatura, protocolo ou uso externo."
     )
 
 

@@ -72,4 +72,4 @@ def test_entrada_vazia():
 def test_aviso_rascunho_marca_ia():
     aviso = aviso_rascunho_ia()
     assert "RASCUNHO" in aviso
-    assert "REVISAO" in aviso
+    assert "REVISÃO" in aviso
