@@ -21,7 +21,7 @@ def _req_fin(cu: User = Depends(get_current_user)) -> User:
     return cu
 
 
-router = APIRouter(prefix="/v1/despesas", tags=["despesas"], dependencies=[Depends(_req_fin)])
+router = APIRouter(prefix="/despesas", tags=["despesas"], dependencies=[Depends(_req_fin)])
 
 
 @router.get("/resumo")

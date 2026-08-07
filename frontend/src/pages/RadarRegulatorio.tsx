@@ -23,7 +23,9 @@ interface Digest {
   itens_recentes: Item[];
 }
 
-export default function RadarRegulatorio() {
+export default function RadarRegulatorio({
+  embutido = false,
+}: { embutido?: boolean } = {}) {
   const [dias, setDias] = useState(7);
   const [data, setData] = useState<Digest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,7 +33,7 @@ export default function RadarRegulatorio() {
   useEffect(() => {
     setLoading(true);
     api
-      .get("/v1/regulatorio/digest-semanal", { params: { dias } })
+      .get("/regulatorio/digest-semanal", { params: { dias } })
       .then((r) => setData(r.data))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
@@ -41,11 +43,13 @@ export default function RadarRegulatorio() {
     <div className="space-y-6">
       <div className="rounded-2xl border border-primary-100 bg-white p-5 shadow-sm md:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <PageHeader
-            eyebrow="Inteligencia"
-            title="Radar regulatório"
-            subtitle="Resumo dos alertas do Diario Oficial (DOU/DOE-MG) coletados pelo monitoramento, agregados por fonte e palavra-chave."
-          />
+          {!embutido && (
+            <PageHeader
+              eyebrow="Inteligencia"
+              title="Radar regulatório"
+              subtitle="Resumo dos alertas do Diario Oficial (DOU/DOE-MG) coletados pelo monitoramento, agregados por fonte e palavra-chave."
+            />
+          )}
           <select
             value={dias}
             onChange={(e) => setDias(Number(e.target.value))}
