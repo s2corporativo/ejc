@@ -5,11 +5,14 @@ Todos os documentos gerados pela IA usam estes templates como base estrutural.
 
 Os dados FIXOS do escritório (nome, CNPJ, OAB, endereço, CEP, cidade, email)
 vêm da FONTE ÚNICA em app.core.config (settings ESCRITORIO_*). Quando OAB/
-endereço/CEP ainda não foram preenchidos no .env, os helpers das settings
-devolvem um placeholder EXPLÍCITO — nunca "A PREENCHER" mudo nem dado inventado.
+endereço/CEP ainda não foram preenchidos no .env, o SEGMENTO INTEIRO some do
+timbre (rótulo incluído) — nunca placeholder de pendência interna nem rótulo
+órfão no documento. A pendência fica visível ao operador em
+Settings.escritorio_pendencias().
 """
 
 from app.core.config import get_settings
+from app.services.document_format import juntar_segmentos
 
 _settings = get_settings()
 
@@ -34,23 +37,44 @@ ADVOGADOS = {
     "joao_pedro": {"nome": "João Pedro Teixeira", "oab": "[OAB/MG - preencher]", "cargo": "Sócio"},
 }
 
-TIMBRADO = """
-================================================================================
-DE PAULA TEIXEIRA ADVOGADOS ASSOCIADOS
-Civil | Trabalhista | Consumidor | Família | Ambiental | Criminal
-OAB/MG {oab_registro}
-{endereco} — {cidade}/{estado} — CEP {cep}
-Tel: {telefone} | {email} | {site}
-================================================================================
-""".format(**DADOS_ESCRITORIO)
+# Linhas montadas por SEGMENTO: o que não está preenchido no .env não vira linha
+# nem rótulo solto no timbre.
+_LINHA_OAB = f"OAB/MG {DADOS_ESCRITORIO['oab_registro']}" if DADOS_ESCRITORIO["oab_registro"] else ""
+_LINHA_ENDERECO = juntar_segmentos(
+    (
+        DADOS_ESCRITORIO["endereco"],
+        f"{DADOS_ESCRITORIO['cidade']}/{DADOS_ESCRITORIO['estado']}",
+        f"CEP {DADOS_ESCRITORIO['cep']}" if DADOS_ESCRITORIO["cep"] else "",
+    ),
+    " — ",
+)
 
-RODAPE = """
----
-De Paula Teixeira Advogados Associados — OAB/MG {oab_registro}
-CNPJ: {cnpj}
-{endereco} — {cidade}/{estado}
-Tel: {telefone} | {email}
-""".format(**DADOS_ESCRITORIO)
+TIMBRADO = "\n" + juntar_segmentos(
+    (
+        "=" * 80,
+        "DE PAULA TEIXEIRA ADVOGADOS ASSOCIADOS",
+        "Civil | Trabalhista | Consumidor | Família | Ambiental | Criminal",
+        _LINHA_OAB,
+        _LINHA_ENDERECO,
+        "Tel: {telefone} | {email} | {site}".format(**DADOS_ESCRITORIO),
+        "=" * 80,
+    ),
+    "\n",
+) + "\n"
+
+RODAPE = "\n" + juntar_segmentos(
+    (
+        "---",
+        juntar_segmentos(("De Paula Teixeira Advogados Associados", _LINHA_OAB), " — "),
+        "CNPJ: {cnpj}".format(**DADOS_ESCRITORIO),
+        juntar_segmentos(
+            (DADOS_ESCRITORIO["endereco"], f"{DADOS_ESCRITORIO['cidade']}/{DADOS_ESCRITORIO['estado']}"),
+            " — ",
+        ),
+        "Tel: {telefone} | {email}".format(**DADOS_ESCRITORIO),
+    ),
+    "\n",
+) + "\n"
 
 TEMPLATE_PETICAO_INICIAL = """
 EXCELENTÍSSIMO(A) SENHOR(A) DOUTOR(A) JUIZ(A) DE DIREITO DA {vara}

@@ -80,6 +80,28 @@ _FETCH_RE = re.compile(
 _FETCH_METHOD_RE = re.compile(r"method\s*:\s*[`'\"](\w+)", re.S)
 
 
+def _podar_prefixo_do_interceptor(path: str) -> str:
+    """Espelha o interceptor de request de frontend/src/lib/api.ts.
+
+    O interceptor apara prefixo repetido ANTES de o axios prepender o baseURL:
+
+        if (url.startsWith("/api/v1/")) url = url.slice("/api/v1".length);
+        else if (url.startsWith("/api/")) url = url.slice("/api".length);
+        else if (url.startsWith("/v1/"))  url = url.slice("/v1".length);
+
+    Sem modelar essa poda, o verificador calculava a URL ERRADA para toda
+    chamada escrita com prefixo — e foi assim que ele deixou passar um 404 real
+    em produção: `api.get("/v1/despesas")` era lido como `/api/v1/v1/despesas`,
+    que casava a rota montada por engano em `/api/v1/despesas`, enquanto o
+    navegador de verdade pedia `/api/v1/despesas` e recebia 404. O ponto cego
+    do verificador mascarava exatamente o defeito que ele existe para pegar.
+    """
+    for prefixo in ("/api/v1/", "/api/", "/v1/"):
+        if path.startswith(prefixo):
+            return path[len(prefixo.rstrip("/")) :]
+    return path
+
+
 def _final_url(prefix_is_axios: bool, raw: str) -> str | None:
     """Resolve a URL final que o navegador chamaria."""
     norm = re.sub(r"\$\{[^}]*\}", "\x00", raw)
@@ -87,7 +109,7 @@ def _final_url(prefix_is_axios: bool, raw: str) -> str | None:
     if prefix_is_axios:
         if not norm.startswith("/"):
             return None
-        norm = AXIOS_BASE_URL + norm
+        norm = AXIOS_BASE_URL + _podar_prefixo_do_interceptor(norm)
     elif not norm.startswith("/"):
         return None
     return norm.rstrip("/") or "/"

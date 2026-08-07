@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, ROLE_LEVEL, requer_equipe_juridica
 from app.core.ownership import verificar_acesso_caso
 from app.core.request_context import get_client_ip
 from app.models.user import User
@@ -259,9 +259,10 @@ async def listar_templates(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    # Leitura restrita a staff (estagiário+) — alinhado aos irmãos do arquivo.
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Acesso restrito")
+    # Leitura restrita a EQUIPE_JURIDICA. Issue #694: allowlist EXATA —
+    # financeiro não acessa templates de due diligence, mesmo com ROLE_LEVEL
+    # acima de estagiario.
+    requer_equipe_juridica(cu, "Acesso restrito")
     filters = ["is_active = TRUE"]
     params: dict = {}
     if dd_type:

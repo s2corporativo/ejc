@@ -18,7 +18,7 @@ def _req_team(cu: User = Depends(get_current_user)) -> User:
     return cu
 
 
-router = APIRouter(prefix="/v1", tags=["kanban"])
+router = APIRouter(prefix="", tags=["kanban"])
 
 
 def _status_da_coluna(nome: str) -> Optional[str]:
