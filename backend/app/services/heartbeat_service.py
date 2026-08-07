@@ -61,6 +61,19 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
     },
 }
 
+#: Job de captura/ingestão → slug da fonte correspondente em `fontes_ingestao`.
+#: Fecha a armadilha confirmada pela auditoria ("captura DJEN reporta ok há
+#: meses sem nunca ter capturado nada"): o heartbeat afere EXECUÇÃO; a saúde
+#: da fonte (services/ingestao_saude.py) afere RESULTADO. Um job que roda em
+#: dia mas cuja fonte está `nunca_produziu`/`parou_de_produzir` não pode
+#: aparecer "ok" no painel.
+#: Jobs sem fonte mapeada (alertas de prazos, DOU — que não registra linha em
+#: fontes_ingestao) mantêm o comportamento por execução.
+FONTE_POR_JOB: dict[str, str] = {
+    JOB_DJEN: "djen",                    # ingestor DJEN (comunicações → RAG)
+    JOB_DATAJUD: "datajud_processos",    # feed cognitivo DataJud/CNJ
+}
+
 _STATUS_VALIDOS = {"ok", "erro"}
 
 
@@ -199,7 +212,18 @@ def avaliar_job(
     *,
     max_age_horas: float,
     agora: datetime | None = None,
+    saude_fonte: Any = None,
 ) -> dict[str, Any]:
+    """Estado do job: execução (cadência/erro) cruzada com RESULTADO.
+
+    `saude_fonte` é o veredito da fonte correspondente em fontes_ingestao
+    (ingestao_saude.SaudeFonte ou dict equivalente), quando o job tem uma.
+    Um job que roda em dia ("ok" pela execução) mas cuja fonte está em
+    situação CRÍTICA (`nunca_produziu`, `parou_de_produzir`, `erro`...) é
+    rebaixado para "sem_resultado", com o motivo explícito — rodar sem
+    entregar não é "ok". Sem `saude_fonte`, comportamento por execução
+    preservado (jobs sem fonte mapeada).
+    """
     agora = agora or datetime.now(timezone.utc)
     if last_run_at is None:
         return {"status": "nunca_executou", "idade_horas": None}
@@ -209,22 +233,53 @@ def avaliar_job(
         return {"status": "defasado", "idade_horas": idade_arredondada}
     if (last_status or "").strip().lower() == "erro":
         return {"status": "erro", "idade_horas": idade_arredondada}
+    if saude_fonte is not None:
+        critico = bool(_saude_attr(saude_fonte, "critico"))
+        if critico:
+            situacao = str(_saude_attr(saude_fonte, "situacao") or "critica")
+            motivo = str(_saude_attr(saude_fonte, "motivo") or "").strip()
+            return {
+                "status": "sem_resultado",
+                "idade_horas": idade_arredondada,
+                "fonte_situacao": situacao,
+                "motivo": (
+                    f"Job executou em dia, mas a fonte correspondente está "
+                    f"'{situacao}'" + (f": {motivo}" if motivo else ".")
+                ),
+            }
     return {"status": "ok", "idade_horas": idade_arredondada}
+
+
+def _saude_attr(saude: Any, campo: str) -> Any:
+    """Lê um campo do veredito de saúde (aceita SaudeFonte ou dict)."""
+    if isinstance(saude, dict):
+        return saude.get(campo)
+    return getattr(saude, campo, None)
 
 
 def avaliar_jobs(
     heartbeats: dict[str, dict[str, Any]],
     agora: datetime | None = None,
+    saudes_fontes: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    """Avalia os jobs monitorados cruzando execução com resultado.
+
+    `saudes_fontes` — vereditos de ingestao_saude indexados por slug de fonte
+    (ver FONTE_POR_JOB). Ausente ou sem o slug do job, a avaliação fica só na
+    execução (comportamento anterior).
+    """
     agora = agora or datetime.now(timezone.utc)
+    saudes_fontes = saudes_fontes or {}
     saida: list[dict[str, Any]] = []
     for job_name, config in JOBS_MONITORADOS.items():
         heartbeat = heartbeats.get(job_name) or {}
+        fonte_slug = FONTE_POR_JOB.get(job_name)
         avaliacao = avaliar_job(
             heartbeat.get("last_run_at"),
             heartbeat.get("last_status"),
             max_age_horas=config["max_age_horas"],
             agora=agora,
+            saude_fonte=saudes_fontes.get(fonte_slug) if fonte_slug else None,
         )
         saida.append(
             {
@@ -237,6 +292,10 @@ def avaliar_jobs(
                 "last_run_at": heartbeat.get("last_run_at"),
                 "last_status": heartbeat.get("last_status"),
                 "detail": heartbeat.get("detail"),
+                # Cruzamento execução × resultado (None quando não se aplica):
+                "fonte_slug": fonte_slug,
+                "fonte_situacao": avaliacao.get("fonte_situacao"),
+                "motivo": avaliacao.get("motivo"),
             }
         )
     return saida

@@ -9,8 +9,7 @@ from typing import Optional
 from uuid import uuid4
 
 import aiofiles
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.encoders import jsonable_encoder
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +28,6 @@ from app.models.raio_x import RaioXAnalise, RaioXDocumento
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.raio_x import RaioXCreate, RaioXConverterRequest, RaioXUpdate
-from app.services import documento_service
 from app.services.raio_x_advogado_service import analise_advogado_caso
 from app.services.raio_x_export_service import gerar_docx, gerar_pdf
 from app.services.raio_x_service import (
@@ -393,23 +391,30 @@ async def atualizar(
 )
 async def analisar_documentos(
     analise_id: str,
+    background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Recebe o lote, persiste os documentos e ENFILEIRA a análise (Onda 1).
+
+    A extração + IA (71–87s em produção) roda fora do request, em
+    app/tasks/raio_x_tasks.py: aqui só validação barata, gravação em disco e
+    despacho. Estados observáveis via GET: fila → em_processamento →
+    aguardando_conferencia | documentos_pendentes | erro.
+    """
     analise = await _obter(db, analise_id, user)
     if analise.status == "convertido_em_caso":
         raise HTTPException(409, "Análise já convertida; o relatório está congelado")
+    if analise.status in {"fila", "em_processamento"}:
+        raise HTTPException(409, "Análise em processamento; aguarde a conclusão do lote atual")
     if not files or len(files) > MAX_ARQUIVOS:
         raise HTTPException(422, f"Envie de 1 a {MAX_ARQUIVOS} arquivos por lote")
-    analise.status = "em_processamento"
-    await db.flush()
 
     existing_hashes = {doc.sha256 for doc in analise.documentos}
     novos: list[RaioXDocumento] = []
     duplicados: list[str] = []
     erros: list[dict[str, str]] = []
-    total_tokens = 0
     from app.routers.documents import _validar_conteudo
 
     for upload in files:
@@ -440,91 +445,69 @@ async def analisar_documentos(
         full.parent.mkdir(parents=True, exist_ok=True)
         async with aiofiles.open(full, "wb") as target:
             await target.write(content)
-        try:
-            result = await documento_service.extrair_e_analisar(
-                str(full),
-                mime_real or upload.content_type,
-                db=db,
-                enriquecer_rag=True,
-                user_id=user.id,
-            )
-            if not result.get("ok"):
-                raise ValueError(result.get("erro") or "Falha na extração")
-            result.pop("_texto_sanitizado", None)
-            encoded = jsonable_encoder(result)
-            intake = encoded.get("intake_result") or encoded
-            tipo = intake.get("tipo_documento") if isinstance(intake, dict) else None
-            tipo = tipo.get("valor") if isinstance(tipo, dict) else tipo
-            doc = RaioXDocumento(
-                id=str(uuid4()),
-                analise_id=analise.id,
-                nome_original=filename,
-                filepath=str(rel),
-                mimetype=mime_real,
-                size_bytes=len(content),
-                sha256=digest,
-                tipo_documento=str(tipo)[:100] if tipo else None,
-                ocr_utilizado=ext in {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".webp"},
-                resultado_analise=encoded,
-                uploaded_by=user.id,
-            )
-            db.add(doc)
-            novos.append(doc)
-            existing_hashes.add(digest)
-            total_tokens += int(encoded.get("tokens_total") or encoded.get("tokens") or 0)
-        except Exception as exc:
-            try:
-                full.unlink(missing_ok=True)
-            except OSError:
-                pass
-            erros.append({"arquivo": filename, "erro": str(exc)[:300]})
+        # Documento PENDENTE: resultado_analise vazio até a task preencher.
+        doc = RaioXDocumento(
+            id=str(uuid4()),
+            analise_id=analise.id,
+            nome_original=filename,
+            filepath=str(rel),
+            mimetype=mime_real,
+            size_bytes=len(content),
+            sha256=digest,
+            ocr_utilizado=ext in {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".webp"},
+            resultado_analise={},
+            uploaded_by=user.id,
+        )
+        db.add(doc)
+        novos.append(doc)
+        existing_hashes.add(digest)
 
-    await db.flush()
-    current_docs = list(
-        (
-            await db.execute(
-                select(RaioXDocumento)
-                .where(RaioXDocumento.analise_id == analise.id)
-                .order_by(RaioXDocumento.created_at.asc())
-            )
-        ).scalars().all()
-    )
-    analise.relatorio = consolidar_relatorio(current_docs)
-    _aplicar_identificacao(analise)
-    preview = await preview_conversao(db, analise)
-    analise.alertas_conflito = preview.get("alertas_conflito") or []
-    analise.status = "aguardando_conferencia" if current_docs else "documentos_pendentes"
-    analise.custo_ia = {
-        **(analise.custo_ia or {}),
-        "tokens_ultimo_lote": total_tokens,
-        "arquivos_ultimo_lote": len(novos),
-        "documentos_totais": len(current_docs),
-    }
+    if novos:
+        analise.status = "fila"
     await criar_audit_log(
         db,
         user.id,
         _role(user),
-        "AI_USE",
+        "UPLOAD",
         "raio_x_analises",
         analise.id,
-        detalhes=f"{len(novos)} documento(s) analisado(s); {len(duplicados)} duplicado(s); {len(erros)} erro(s)",
+        detalhes=(
+            f"{len(novos)} documento(s) enfileirado(s) para análise; "
+            f"{len(duplicados)} duplicado(s); {len(erros)} erro(s) de validação"
+        ),
         dados_depois={
             "documentos": [doc.id for doc in novos],
             "duplicados": duplicados,
             "erros": erros,
-            "risco": analise.risco_nivel,
-            "urgente": analise.prazo_urgente,
-            "alertas_conflito": len(analise.alertas_conflito or []),
         },
     )
     await db.commit()
+
+    processamento = None
+    if novos:
+        from app.tasks.raio_x_tasks import agendar_analise
+
+        processamento = await agendar_analise(
+            analise.id,
+            user.id,
+            _role(user),
+            documento_ids=[doc.id for doc in novos],
+            reprocessar=False,
+            background_tasks=background_tasks,
+        )
     refreshed = await _obter(db, analise.id, user)
-    return {"analise": serializar_analise(refreshed), "duplicados": duplicados, "erros": erros}
+    return {
+        "analise": serializar_analise(refreshed),
+        "duplicados": duplicados,
+        "erros": erros,
+        "processamento": processamento,
+    }
 
 
 @router.post("/{analise_id}/reanalisar")
 async def reanalisar(
     analise_id: str,
+    background_tasks: BackgroundTasks,
     reprocessar: bool = Query(False, description="Quando true, refaz OCR/extração de todos os documentos"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -532,28 +515,40 @@ async def reanalisar(
     analise = await _obter(db, analise_id, user)
     if analise.status == "convertido_em_caso":
         raise HTTPException(409, "Relatório convertido está congelado")
+    if analise.status in {"fila", "em_processamento"}:
+        raise HTTPException(409, "Análise em processamento; aguarde a conclusão do lote atual")
     errors: list[dict[str, str]] = []
-    if reprocessar:
-        for doc in analise.documentos:
-            full = Path(settings.UPLOAD_DIR) / doc.filepath
-            if not full.exists():
-                errors.append({"arquivo": doc.nome_original, "erro": "Arquivo físico indisponível"})
-                continue
-            try:
-                result = await documento_service.extrair_e_analisar(
-                    str(full),
-                    doc.mimetype,
-                    db=db,
-                    enriquecer_rag=True,
-                    user_id=user.id,
-                )
-                if not result.get("ok"):
-                    raise ValueError(result.get("erro") or "Falha na extração")
-                result.pop("_texto_sanitizado", None)
-                doc.resultado_analise = jsonable_encoder(result)
-            except Exception as exc:
-                errors.append({"arquivo": doc.nome_original, "erro": str(exc)[:300]})
-        await db.flush()
+    if reprocessar and analise.documentos:
+        # Reprocessamento refaz OCR + IA de todos os documentos — operação
+        # longa, vai para a fila (Onda 1); o request só enfileira e responde.
+        analise.status = "fila"
+        await criar_audit_log(
+            db,
+            user.id,
+            _role(user),
+            "REPROCESS",
+            "raio_x_analises",
+            analise.id,
+            dados_depois={"reprocessar": True, "modo": "assincrono"},
+        )
+        await db.commit()
+        from app.tasks.raio_x_tasks import agendar_analise
+
+        processamento = await agendar_analise(
+            analise.id,
+            user.id,
+            _role(user),
+            documento_ids=None,
+            reprocessar=True,
+            background_tasks=background_tasks,
+        )
+        return {
+            "analise": serializar_analise(analise),
+            "erros": errors,
+            "reprocessado": True,
+            "processamento": processamento,
+        }
+    # Reconsolidação síncrona (sem IA, barata): comportamento anterior mantido.
     analise.relatorio = consolidar_relatorio(list(analise.documentos))
     _aplicar_identificacao(analise)
     preview = await preview_conversao(db, analise)

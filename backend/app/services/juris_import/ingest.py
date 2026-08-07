@@ -153,7 +153,13 @@ async def executar_importacao(
     from app.core.database import AsyncSessionLocal
     from app.services.juris_import import FONTES
 
-    slug = f"juris_import_{fonte}"
+    # Slug ÚNICO por fonte (Onda 2): a trilha agendada (scheduler) e esta
+    # trilha on-demand alimentam a MESMA linha de fontes_ingestao — antes a
+    # on-demand gravava "juris_import_<fonte>" e o painel mostrava a mesma
+    # fonte duas vezes, com métricas separadas (registros_novos, ja_produziu,
+    # execucoes_zeradas_consecutivas). Histórico antigo consolidado pela
+    # migration 138.
+    slug = fonte
     registrar_job(job_id, {
         "job_id": job_id, "status": "executando", "fonte": fonte,
         "consulta": consulta, "tribunal": tribunal, "limite": limite,
