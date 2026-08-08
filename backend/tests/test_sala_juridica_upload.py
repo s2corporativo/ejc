@@ -20,6 +20,10 @@ from fastapi.testclient import TestClient
 from app.core.config import get_settings
 from app.models.legal_chat import LegalChatAttachment, LegalChatSession
 
+#: PK real (str(uuid4())) — processar_lote agora exige formato UUID em
+#: entidade_id (defesa em profundidade contra path traversal).
+SESSAO_ID = "51111111-1111-1111-1111-111111111111"
+
 
 def _user():
     return SimpleNamespace(id="u1", role=SimpleNamespace(value="advogado"))
@@ -27,7 +31,7 @@ def _user():
 
 def _sessao(frozen: bool = False) -> LegalChatSession:
     sessao = LegalChatSession(
-        id="s1",
+        id=SESSAO_ID,
         titulo="Sessão fictícia",
         status="em_analise",
         created_by="u1",
@@ -114,7 +118,7 @@ def test_upload_grava_anexo_e_extrai_inline(monkeypatch, tmp_path):
     app, db = _app(sessao)
     with TestClient(app) as client:
         resp = client.post(
-            "/sala-juridica/s1/anexos",
+            "/sala-juridica/" + SESSAO_ID + "/anexos",
             files=[("files", ("peticao.txt", b"Conteudo ficticio de peticao.", "text/plain"))],
         )
     assert resp.status_code == 200
@@ -132,7 +136,7 @@ def test_upload_grava_anexo_e_extrai_inline(monkeypatch, tmp_path):
     assert len(audit_calls) == 1
     assert audit_calls[0]["acao"] == "UPLOAD"
     assert audit_calls[0]["entidade"] == "legal_chat_sessions"
-    assert audit_calls[0]["registro_id"] == "s1"
+    assert audit_calls[0]["registro_id"] == SESSAO_ID
 
 
 def test_upload_acima_do_teto_da_422(monkeypatch, tmp_path):
@@ -149,7 +153,7 @@ def test_upload_acima_do_teto_da_422(monkeypatch, tmp_path):
         for i in range(legal_chat_router.MAX_ARQUIVOS + 1)
     ]
     with TestClient(app) as client:
-        resp = client.post("/sala-juridica/s1/anexos", files=arquivos)
+        resp = client.post("/sala-juridica/" + SESSAO_ID + "/anexos", files=arquivos)
     assert resp.status_code == 422
     assert db.added == []
 
@@ -165,7 +169,7 @@ def test_upload_em_sessao_congelada_da_409(tmp_path):
     app, db = _app(sessao)
     with TestClient(app) as client:
         resp = client.post(
-            "/sala-juridica/s1/anexos",
+            "/sala-juridica/" + SESSAO_ID + "/anexos",
             files=[("files", ("peticao.txt", b"conteudo", "text/plain"))],
         )
     assert resp.status_code == 409

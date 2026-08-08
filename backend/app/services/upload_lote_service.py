@@ -35,7 +35,6 @@ class ArquivoValidado:
 
     nome_original: str
     ext: str
-    content: bytes
     mimetype: str
     size_bytes: int
     sha256: str
@@ -67,6 +66,14 @@ async def processar_lote(
     """
     if not files or len(files) > max_arquivos:
         raise HTTPException(422, f"Envie de 1 a {max_arquivos} arquivos por lote")
+    # Mesma defesa já aplicada ao filename: um segmento de path "achatado" via
+    # .name — sem isso, storage_subdir/entidade_id concatenados sem sanitização
+    # reabririam path traversal clássico para um chamador futuro que (por
+    # engano) passe um valor não confiável (achado do security-auditor).
+    subdir_seguro = Path(storage_subdir).name
+    entidade_segura = Path(entidade_id).name
+    if not subdir_seguro or not entidade_segura or entidade_segura != entidade_id:
+        raise ValueError("storage_subdir/entidade_id inválidos para gravação em disco")
 
     from app.routers.documents import _validar_conteudo
 
@@ -99,7 +106,7 @@ async def processar_lote(
 
         now = datetime.now(timezone.utc)
         rel = (
-            Path(storage_subdir)
+            Path(subdir_seguro)
             / f"{now.year}"
             / f"{now.month:02d}"
             / entidade_id
@@ -115,7 +122,6 @@ async def processar_lote(
             ArquivoValidado(
                 nome_original=filename,
                 ext=ext,
-                content=content,
                 mimetype=mime_real,
                 size_bytes=len(content),
                 sha256=digest,
