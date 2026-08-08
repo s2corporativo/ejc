@@ -15,6 +15,10 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.ingestion_service import fetch, upsert_documento
+# Mesmo inferidor de área usado pelo TJMG (ingestors/tjmg.py): um
+# vocabulário de áreas só, para a matriz de cobertura não ver duas
+# taxonomias diferentes conforme o tribunal de origem.
+from app.services.jurisprudencia_externa import _inferir_area
 
 logger = logging.getLogger("ejc.ingestao.stj")
 
@@ -150,6 +154,12 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                         "relator": rec.get("ministroRelator"),
                         "classe": rec.get("siglaClasse"),
                         "data_decisao": rec.get("dataDecisao"),
+                        # Sem esta chave, `detectar_area` cai no match textual
+                        # sobre título/categoria e todo acórdão do STJ termina
+                        # em "Geral" na matriz de cobertura — a "lacuna de área"
+                        # da auditoria era rótulo faltando, não conteúdo. Mesmo
+                        # inferidor do TJMG: um vocabulário de áreas só.
+                        "area_juridica": _inferir_area(f"{titulo}\n{conteudo}") or None,
                         "rag_status": "aprovado",
                         "tipo_fonte": "jurisprudencia_oficial",
                     },

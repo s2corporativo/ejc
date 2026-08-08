@@ -103,6 +103,7 @@ async def importar_julgados(
                     "orgao_julgador": j.orgao_julgador,
                     "relator": j.relator,
                     "classe": j.classe,
+                    "area_juridica": j.area_juridica,
                     "url_fonte": j.url_fonte,
                     "fonte_importacao": fonte_slug,
                 },
