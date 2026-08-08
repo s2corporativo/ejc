@@ -25,7 +25,7 @@ celery_app = Celery(
     # registrando o handler de task_prerun (ressincronização do cofre, PR-2).
     include=[
         "app.tasks.rag_tasks", "app.tasks.vault_sync",
-        "app.tasks.processo_eletronico_tasks",
+        "app.tasks.processo_eletronico_tasks", "app.tasks.raio_x_tasks",
     ],
 )
 

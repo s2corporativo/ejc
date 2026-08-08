@@ -106,7 +106,7 @@ _SEP_HTML = " &nbsp;|&nbsp; "
 _ESC_NOME = _esc_html(_settings.ESCRITORIO_NOME)
 _ESC_SUB1 = juntar_segmentos(
     (
-        f"CNPJ {_esc_html(_settings.ESCRITORIO_CNPJ)}" if _settings.ESCRITORIO_CNPJ else "",
+        f"CNPJ {_esc_html(_settings.escritorio_cnpj())}" if _settings.escritorio_cnpj() else "",
         f"OAB/MG {_esc_html(_settings.escritorio_oab())}" if _settings.escritorio_oab() else "",
         _esc_html(_settings.ESCRITORIO_EMAIL),
     ),
@@ -211,7 +211,7 @@ def _art_peca_html(
     return f"""
 <article class=\"visual-law legal-doc\">
   {banner_ia}<div class=\"doc-cover\">
-    <div class=\"doc-kicker\">Peca juridica | Padrao Visual Law EJC</div>
+    <div class=\"doc-kicker\">Peça jurídica</div>
     <h1>{titulo_esc}</h1>
     <table class=\"meta-grid\"><tr>
       <td><span class=\"meta-label\">Controle</span><span class=\"meta-value\">{controle_val}</span></td>

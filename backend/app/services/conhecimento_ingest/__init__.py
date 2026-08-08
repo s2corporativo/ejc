@@ -83,6 +83,14 @@ async def executar_ingest_conhecimento() -> dict:
 
     Retorna {slug: {"novos", "atualizados", "inalterados", "erros", "status"
     [, "erro"]}}. NUNCA levanta — apto a rodar em scheduler/BackgroundTasks.
+
+    Diagnóstico (mesmo contrato do wrapper ingestion_service.executar_ingestao):
+    status "erro" NUNCA grava `ultimo_erro` vazio no painel — usa a amostra da
+    última exceção que o ingestor engoliu ("ultimo_erro_amostra" no resumo) ou
+    um texto que aponte para os logs. E "zero_brutos" (a origem não rendeu
+    NENHUM link/ato — layout provavelmente mudou) não vira "sucesso": vira erro
+    com mensagem explícita, que o painel de saúde (services/ingestao_saude.py)
+    trata como crítico.
     """
     resumo_geral: dict[str, dict] = {}
     for slug, descricao, categoria, ingerir in _fontes():
@@ -102,9 +110,22 @@ async def executar_ingest_conhecimento() -> dict:
 
         efetivos = parcial.get("novos", 0) + parcial.get("atualizados", 0)
         total = efetivos + parcial.get("inalterados", 0)
-        houve_erro = bool(erro) or parcial.get("erros", 0) > 0
+        houve_erro = (bool(erro) or parcial.get("erros", 0) > 0
+                      or bool(parcial.get("zero_brutos")))
         status = ("sucesso" if not houve_erro
                   else ("parcial" if total else "erro"))
+        # Erros engolidos dentro do ingestor (contados em "erros"/"zero_brutos",
+        # sem exceção propagada) chegavam aqui com erro=None e o painel exibia
+        # "erro" sem mensagem — o estado `erro_sem_diagnostico`. A amostra que o
+        # ingestor capturou preenche a lacuna; sem amostra, ao menos o caminho
+        # de investigação fica registrado.
+        if houve_erro and not erro:
+            erro = parcial.get("ultimo_erro_amostra")
+        if status == "erro" and not (erro or "").strip():
+            erro = (
+                f"{parcial.get('erros', 0)} falha(s) sem mensagem capturada; "
+                f"investigue o ingestor '{slug}' pelos logs do container."
+            )
         try:
             async with _sessao() as db:
                 await marcar_execucao(db, slug, status=status,

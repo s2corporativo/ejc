@@ -14,13 +14,14 @@ import pytest
 from fastapi import FastAPI
 
 import app.integrations.brasilapi_client as brasilapi_mod
-import app.integrations.datajud_client as datajud_mod
 import app.integrations.djen_comunica_client as djen_mod
 from app.integrations import routers as integ_routers
 from app.integrations.brasilapi_client import BrasilApiClient, BrasilApiError
+from app.core.config import get_settings
 from app.integrations.datajud_client import (
     TRIBUNAL_ALIASES,
     DataJudClient,
+    DataJudDesabilitadoError,
     DataJudError,
 )
 from app.integrations.djen_comunica_client import (
@@ -56,8 +57,14 @@ async def test_datajud_limpa_mascara_envia_apikey_e_retorna_json(monkeypatch):
         visto["body"] = json.loads(request.content)
         return httpx.Response(200, json={"hits": {"hits": []}})
 
-    _mock_async_client(monkeypatch, datajud_mod, handler)
-    cli = DataJudClient(api_key="chave-teste")
+    # Onda 3: o wrapper delega a datajud_service (caminho único, com
+    # retry/backoff) — o HTTP a mockar é o do serviço, não o do wrapper.
+    from app.services import datajud_service as datajud_svc
+    _mock_async_client(monkeypatch, datajud_svc, handler)
+    st = get_settings()
+    monkeypatch.setattr(st, "DATAJUD_ENABLED", True, raising=False)
+    monkeypatch.setattr(st, "DATAJUD_API_KEY", "chave-teste", raising=False)
+    cli = DataJudClient()
     out = await cli.consultar_processo(
         "0000001-02.2024.8.13.0024", TRIBUNAL_ALIASES["TJMG"]
     )
@@ -67,21 +74,65 @@ async def test_datajud_limpa_mascara_envia_apikey_e_retorna_json(monkeypatch):
     assert visto["body"]["query"]["match"]["numeroProcesso"] == "00000010220248130024"
 
 
-def test_datajud_env_vazia_cai_no_fallback_publico(monkeypatch):
-    """Regressão (review): .env/docker-compose exporta DATAJUD_API_KEY= vazia;
-    string vazia deve cair no fallback público do CNJ, não virar 'APIKey '."""
-    monkeypatch.setenv("DATAJUD_API_KEY", "")
-    assert DataJudClient().api_key == datajud_mod.DATAJUD_API_KEY_DEFAULT
-    monkeypatch.setenv("DATAJUD_API_KEY", "chave-do-env")
-    assert DataJudClient().api_key == "chave-do-env"
+async def test_datajud_sem_chave_nao_usa_fallback_embutido(monkeypatch):
+    """Onda 3 (achado de segurança): a chave pública do CNJ embutida no código
+    foi REMOVIDA. Chave vazia não cai mais em fallback — a consulta é recusada
+    (fail-closed), no mesmo idioma de degradação de datajud_service.
+
+    O comportamento anterior (`DATAJUD_API_KEY=` vazia → chave embutida) fazia
+    os endpoints de /integracoes continuarem batendo no CNJ mesmo com o
+    kill-switch DATAJUD_ENABLED desligado.
+    """
+    st = get_settings()
+    monkeypatch.setattr(st, "DATAJUD_ENABLED", True, raising=False)
+    monkeypatch.setattr(st, "DATAJUD_API_KEY", "", raising=False)
+    with pytest.raises(DataJudDesabilitadoError):
+        await DataJudClient().consultar_processo(
+            "0000001-02.2024.8.13.0024", TRIBUNAL_ALIASES["TJMG"]
+        )
 
 
-async def test_datajud_nao_200_vira_datajuderror(monkeypatch):
+async def test_datajud_kill_switch_desliga_o_endpoint_cru(monkeypatch):
+    """A superfície /integracoes passa a obedecer ao mesmo kill-switch do
+    router principal: flag desligada recusa, mesmo com chave configurada."""
+    st = get_settings()
+    monkeypatch.setattr(st, "DATAJUD_ENABLED", False, raising=False)
+    monkeypatch.setattr(st, "DATAJUD_API_KEY", "chave-valida", raising=False)
+    with pytest.raises(DataJudDesabilitadoError):
+        await DataJudClient().consultar_processo(
+            "0000001-02.2024.8.13.0024", TRIBUNAL_ALIASES["TJMG"]
+        )
+
+
+def test_chave_publica_do_cnj_nao_esta_versionada():
+    """Trava da correção: a chave embutida não pode voltar ao repositório."""
+    from pathlib import Path
+
+    raiz = Path(__file__).parents[1] / "app"
+    embutida = "cDZHYzlZa0JadVREZDJCendQbXY"  # prefixo da chave que existia
+    ofensores = [
+        str(f) for f in raiz.rglob("*.py") if embutida in f.read_text(encoding="utf-8")
+    ]
+    assert not ofensores, f"chave do CNJ embutida de volta no código: {ofensores}"
+
+
+async def test_datajud_nao_200_propaga_erro_http_do_servico(monkeypatch):
+    """Onda 3: com o wrapper delegando ao serviço, o erro HTTP é o do caminho
+    único (httpx após os retries). 401 é erro de contrato/auth — o predicado de
+    retry do serviço não o repete, então a falha chega direto ao chamador.
+
+    `DataJudError` continua exportado para consumidores legados do wrapper.
+    """
+    from app.services import datajud_service as datajud_svc
+
     _mock_async_client(
-        monkeypatch, datajud_mod, lambda r: httpx.Response(401, text="unauthorized")
+        monkeypatch, datajud_svc, lambda r: httpx.Response(401, text="unauthorized")
     )
-    with pytest.raises(DataJudError):
-        await DataJudClient(api_key="x").consultar_processo("123", "api_publica_tjmg")
+    st = get_settings()
+    monkeypatch.setattr(st, "DATAJUD_ENABLED", True, raising=False)
+    monkeypatch.setattr(st, "DATAJUD_API_KEY", "chave-teste", raising=False)
+    with pytest.raises((DataJudError, httpx.HTTPStatusError)):
+        await DataJudClient().consultar_processo("123", "api_publica_tjmg")
 
 
 # ── DJEN/Comunica ─────────────────────────────────────────────────────────────

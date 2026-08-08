@@ -350,7 +350,9 @@ export default function DashboardModern() {
       ? [
           {
             to: "/raio-x",
-            label: "Analisar processo externo",
+            // Mesmo rótulo do CommandPalette: o Raio-X analisa a
+            // entrada/potencial caso, não consulta processo por número CNJ.
+            label: "Analisar caso externo",
             icon: ScanSearch,
           },
         ]

@@ -31,7 +31,8 @@ def test_cpf_invalido_repetido_ou_tamanho():
 def test_cnpj_valido():
     assert validar_cnpj("11.222.333/0001-81")
     assert validar_cnpj("11222333000181")
-    # CNPJ real do escritório (config ESCRITORIO_CNPJ)
+    # CNPJ sintático válido usado como massa de teste (não é mais o default de
+    # ESCRITORIO_CNPJ — a auditoria jul/2026 apontou razão social divergente).
     assert validar_cnpj("32.491.468/0001-12")
 
 

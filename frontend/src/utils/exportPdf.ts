@@ -103,7 +103,7 @@ export function exportPdf(
     </div>
   </div>
   <section class="cover">
-    <div class="kicker">Relatorio | Padrao Visual Law EJC</div>
+    <div class="kicker">Relatorio</div>
     <h1>${safeTitle}</h1>
   </section>
   <div class="review">Documento gerado automaticamente. Conferir dados antes de envio externo, protocolo ou tomada de decisao.</div>
