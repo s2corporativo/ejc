@@ -192,6 +192,129 @@ describe("Sala Jurídica — wizard pré-preenche área e fatos da sessão", () 
   });
 });
 
+describe("Sala Jurídica — exibe citações e crítica adversarial (achado: backend produzia, UI descartava)", () => {
+  // Achado da auditoria (docs/PLANO_FUSAO_CASO_UNICO.md §4.3-2): o gate
+  // anti-alucinação de citações (citation_gate.py) e a crítica adversarial do
+  // Modo Duas IAs (services/ai/adversarial.py) já eram calculados pelo
+  // backend, mas a UI descartava os dois campos — o advogado nunca via o
+  // aviso "confira antes de usar" nem a nota de robustez.
+  it("mostra o aviso de citações não confirmadas, mas não lista as já verificadas", async () => {
+    const sessaoComCitacoes = {
+      ...SESSAO,
+      mensagens: [
+        {
+          id: "m-ia-1",
+          autor: "ia",
+          modo: "juridico_profundo",
+          conteudo: "Aplica-se o art. 927 do CC, conforme Súmula 227 do STJ.",
+          fontes: [],
+          alertas: [],
+          // LegalChatMessage.citacoes é a LISTA de itens (mesmo padrão de
+          // fontes/alertas/skills) — não o relatório completo do gate
+          // (achado do code-reviewer: legal_chat_service.py gravava as
+          // CHAVES do relatório via `list(dict)` antes da correção).
+          citacoes: [
+            { trecho: "art. 927 do CC", tipo: "lei", status: "verificada" },
+            {
+              trecho: "Súmula 227 do STJ",
+              tipo: "sumula",
+              status: "suspeita",
+            },
+          ],
+        },
+      ],
+    };
+    getMock.mockImplementation((url: string) => {
+      if (url === "/sala-juridica")
+        return Promise.resolve({ data: [sessaoComCitacoes] });
+      if (url === "/sala-juridica/s1")
+        return Promise.resolve({ data: sessaoComCitacoes });
+      return Promise.resolve({ data: {} });
+    });
+    renderizar();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Citações não confirmadas na base oficial/i),
+      ).toBeTruthy();
+    });
+    // A citação suspeita aparece na lista do aviso...
+    expect(screen.getByText(/Súmula 227 do STJ \(suspeita\)/)).toBeTruthy();
+    // ...a verificada, não — só a que precisa de conferência entra no aviso
+    // (o texto "art. 927 do CC" sozinho aparece no corpo da resposta, então
+    // a checagem é pela combinação com o status, exclusiva do item da lista).
+    expect(screen.queryByText(/art\. 927 do CC \(verificada\)/)).toBeNull();
+  });
+
+  it("exibe a crítica adversarial (Modo Duas IAs) devolvida pelo envio da mensagem", async () => {
+    rotearGet();
+    const sessaoComRespostaIa = {
+      ...SESSAO,
+      mensagens: [
+        {
+          id: "m-ia-2",
+          autor: "ia",
+          modo: "duas_ias",
+          conteudo: "Resposta revisada pelas duas IAs.",
+          fontes: [],
+          alertas: [],
+        },
+      ],
+    };
+    let jaRespondeu = false;
+    getMock.mockImplementation((url: string) => {
+      if (url === "/sala-juridica") return Promise.resolve({ data: [SESSAO] });
+      if (url === "/sala-juridica/s1") {
+        return Promise.resolve({
+          data: jaRespondeu ? sessaoComRespostaIa : SESSAO,
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    postMock.mockImplementation(() => {
+      jaRespondeu = true;
+      return Promise.resolve({
+        data: {
+          mensagem_ia: { id: "m-ia-2" },
+          critica_adversarial: {
+            disponivel: true,
+            relatorio: "A segunda IA aponta fragilidade na tese de dano moral.",
+            nota_robustez: 42,
+            provider_diverso: true,
+          },
+        },
+      });
+    });
+    renderizar();
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Análise preliminar").length).toBeGreaterThan(
+        0,
+      );
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText(
+        "Converse livremente ou dê um comando jurídico…",
+      ),
+      { target: { value: "Analise o risco de dano moral." } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Enviar$/i }));
+
+    await waitFor(() => {
+      expect(postMock).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Crítica adversarial \(Modo Duas IAs\)/i),
+      ).toBeTruthy();
+      expect(screen.getByText(/robustez 42\/100/i)).toBeTruthy();
+      expect(
+        screen.getByText(/fragilidade na tese de dano moral/i),
+      ).toBeTruthy();
+    });
+  });
+});
+
 describe("Sala Jurídica — wizard de conversão", () => {
   it("consulta o preview para o nome digitado, não para o da abertura", async () => {
     rotearGet();

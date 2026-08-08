@@ -849,6 +849,47 @@ def test_ficha_confirmada_nao_e_rebaixada_por_escrita_automatica():
     assert "preservar_confirmada=True" in inspect.getsource(te._alimentar_ficha)
 
 
+async def test_enviar_mensagem_grava_lista_de_citacoes_nao_as_chaves_do_relatorio(monkeypatch):
+    """Achado do code-reviewer (docs/PLANO_FUSAO_CASO_UNICO.md): resultado["citacoes"]
+    é o RELATÓRIO do gate anti-alucinação — {total, confirmadas,
+    nao_encontradas, citacoes: [...]} —, não uma lista. `list(dict)` iterava
+    as CHAVES do relatório (["total", "confirmadas", ...]) em vez dos itens
+    verificados; a coluna (mesmo padrão de fontes/alertas/skills) espera a
+    lista de itens."""
+    from app.models.legal_chat import LegalChatMessage, LegalChatSession
+    from app.services import legal_chat_service as svc
+
+    sessao = LegalChatSession(id="s1", titulo="t", created_by="u1")
+    db = _FakeDB(sessao=sessao)
+
+    async def fake_run_ai_task(**kwargs):
+        return {
+            "conteudo": "Aplica-se o art. 927 do CC.",
+            "custo_estimado_brl": 0,
+            "citacoes": {
+                "total": 1,
+                "confirmadas": 0,
+                "nao_encontradas": 1,
+                "citacoes": [
+                    {"trecho": "art. 927 do CC", "tipo": "lei", "status": "suspeita"},
+                ],
+                "aviso": "...",
+                "score": 40,
+            },
+        }
+
+    import app.services.ai.core.orchestrator as orch
+    monkeypatch.setattr(orch, "run_ai_task", fake_run_ai_task)
+
+    payload = MensagemCreate(conteudo="qual a base legal?")
+    await svc.enviar_mensagem(db, sessao, payload, _user())
+
+    msg_ia = next(m for m in db.added if isinstance(m, LegalChatMessage) and m.autor == "ia")
+    assert msg_ia.citacoes == [
+        {"trecho": "art. 927 do CC", "tipo": "lei", "status": "suspeita"},
+    ]
+
+
 def test_ai_log_id_tem_ondelete_set_null():
     """F1a (docs/PLANO_FUSAO_CASO_UNICO.md §4.3-6): esta é a única FK do sistema
     para ai_logs.id. Sem ON DELETE SET NULL, o DELETE cru de

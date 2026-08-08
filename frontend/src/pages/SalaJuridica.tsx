@@ -53,14 +53,9 @@ import {
 
 // Item do gate anti-alucinação de citações (services/verificador_jurisprudencia.py).
 // Status possíveis: verificada | identificada | suspeita | generica | possivelmente_desatualizada.
+// O backend grava a LISTA de itens (LegalChatMessage.citacoes), não o
+// relatório completo — mesmo padrão de fontes/alertas/skills nessa tabela.
 type CitacaoItem = { trecho?: string; tipo?: string; status?: string };
-
-type RelatorioCitacoes = {
-  total?: number;
-  confirmadas?: number;
-  nao_encontradas?: number;
-  citacoes?: CitacaoItem[];
-} | null;
 
 type Mensagem = {
   id: string;
@@ -71,7 +66,7 @@ type Mensagem = {
   agente?: string | null;
   fontes: Array<{ titulo?: string; categoria?: string; fonte?: string }>;
   alertas: string[];
-  citacoes?: RelatorioCitacoes;
+  citacoes?: CitacaoItem[];
   custo_estimado?: number | null;
   estado_versao?: number | null;
   created_at?: string | null;
@@ -1101,7 +1096,7 @@ export default function SalaJuridica() {
                         </ul>
                       )}
                       {m.autor === "ia" &&
-                        (m.citacoes?.citacoes ?? []).some(
+                        (m.citacoes ?? []).some(
                           (c) => c.status !== "verificada",
                         ) && (
                           <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
@@ -1110,7 +1105,7 @@ export default function SalaJuridica() {
                               conferir antes de usar:
                             </p>
                             <ul className="mt-1 list-disc pl-4">
-                              {(m.citacoes?.citacoes ?? [])
+                              {(m.citacoes ?? [])
                                 .filter((c) => c.status !== "verificada")
                                 .map((c, i) => (
                                   <li key={i}>

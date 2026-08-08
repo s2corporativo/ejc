@@ -79,7 +79,15 @@ async def _carregar_user(db, uid: str):
 async def _limpar(db, *, case_ids=(), user_ids=(), client_ids=()):
     for cid in case_ids:
         await db.execute(text("DELETE FROM cases WHERE id = :id"), {"id": cid})
+    # audit_logs.user_id tem FK real para users.id (sem ON DELETE) e a tabela
+    # é WORM (migration 131_audit_logs_worm bloqueia DELETE direto) — o PATCH
+    # bem-sucedido em test_patch_reabertura_limpa_campos_de_desfecho grava um
+    # audit_log via criar_audit_log(), então o usuário não pode ser apagado
+    # sem primeiro expurgar o próprio log de teste. Mesmo padrão dos demais
+    # *_dblevel.py (ex.: test_casos_dblevel.py::_limpar).
     for uid in user_ids:
+        await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
+        await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
     for cid in client_ids:
         await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": cid})
@@ -127,6 +135,45 @@ async def test_patch_nao_arquiva_nem_encerra_mesmo_com_papel_de_gestao():
                 text("SELECT status FROM cases WHERE id = :id"), {"id": caso},
             )).scalar()
             assert status_atual == "em_instrucao"
+        finally:
+            await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
+
+
+async def test_patch_reenvio_do_mesmo_status_arquivado_preserva_registro():
+    """Achado do code-reviewer: um PATCH que reenvia {"status": "arquivado"}
+    para um caso JÁ arquivado (payload "salvar tudo" reenviando o objeto
+    inteiro) não é uma transição — o gate de 422 não dispara porque o status
+    não mudou — mas não pode, por isso, apagar `archived_at`/`archive_reason`
+    como se o caso estivesse saindo do arquivamento."""
+    from app.core.database import AsyncSessionLocal
+    from app.routers.cases import atualizar
+
+    tok = f"Reenv{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db, f"Cliente {tok}")
+        caso = await _criar_caso(db, cli, f"Caso {tok}", socio, status="arquivado")
+        agora = datetime.now(timezone.utc)
+        await db.execute(
+            text("UPDATE cases SET archived_at = :agora, archive_reason = 'Cliente desistiu' WHERE id = :id"),
+            {"id": caso, "agora": agora},
+        )
+        await db.commit()
+        try:
+            cu = await _carregar_user(db, socio)
+            # Reenvia o MESMO status, junto de outro campo qualquer (simula
+            # uma tela que sempre manda o objeto inteiro no PATCH).
+            await atualizar(
+                caso, CaseUpdate(status="arquivado", prioridade="alta"),
+                BackgroundTasks(), db, cu,
+            )
+            row = (await db.execute(
+                text("SELECT status, archived_at, archive_reason FROM cases WHERE id = :id"),
+                {"id": caso},
+            )).one()
+            assert row[0] == "arquivado"
+            assert row[1] is not None
+            assert row[2] == "Cliente desistiu"
         finally:
             await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
 

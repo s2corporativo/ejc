@@ -389,8 +389,12 @@ async def atualizar(
     for k, v in mudancas.items():
         setattr(c, k, v)
     # Só sobra a saída de "arquivado" por aqui (entrada é bloqueada acima) —
-    # reabertura sempre limpa o registro de arquivamento.
-    if mudancas.get("status"):
+    # reabertura limpa o registro de arquivamento. Achado do code-reviewer:
+    # sem o `!= "arquivado"`, um PATCH que reenvia o MESMO status (payload
+    # "salvar tudo" reenviando o objeto inteiro) zerava archived_at/
+    # archive_reason mesmo com o caso permanecendo arquivado, perdendo quando
+    # e por que foi arquivado.
+    if mudancas.get("status") and mudancas["status"] != "arquivado":
         c.archived_at = None
         c.archive_reason = None
     # Reabertura (sai de encerrado/arquivado para um estado de trabalho): limpa
