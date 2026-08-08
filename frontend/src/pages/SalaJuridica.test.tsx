@@ -238,8 +238,12 @@ describe("Sala Jurídica — exibe citações e crítica adversarial (achado: ba
         screen.getByText(/Citações não confirmadas na base oficial/i),
       ).toBeTruthy();
     });
-    // A citação suspeita aparece na lista do aviso...
-    expect(screen.getByText(/Súmula 227 do STJ \(suspeita\)/)).toBeTruthy();
+    // A citação suspeita aparece na lista do aviso, com o status traduzido
+    // (achado do app-runner: o enum cru "suspeita" já é uma palavra comum,
+    // mas outros valores como possivelmente_desatualizada não são).
+    expect(
+      screen.getByText(/Súmula 227 do STJ \(suspeita de erro\)/),
+    ).toBeTruthy();
     // ...a verificada, não — só a que precisa de conferência entra no aviso
     // (o texto "art. 927 do CC" sozinho aparece no corpo da resposta, então
     // a checagem é pela combinação com o status, exclusiva do item da lista).

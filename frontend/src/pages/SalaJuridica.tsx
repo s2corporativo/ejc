@@ -57,6 +57,18 @@ import {
 // relatório completo — mesmo padrão de fontes/alertas/skills nessa tabela.
 type CitacaoItem = { trecho?: string; tipo?: string; status?: string };
 
+// Achado do app-runner: o status bruto do enum vazava sem tradução
+// ("possivelmente_desatualizada" cru, sem acento). Rótulos curtos, legíveis
+// a um advogado sem contexto do código.
+const STATUS_CITACAO_LABEL: Record<string, string> = {
+  identificada: "não conferida na base oficial",
+  suspeita: "suspeita de erro",
+  generica: "citação genérica, sem base específica",
+  possivelmente_desatualizada: "possivelmente desatualizada",
+};
+const humanizarStatusCitacao = (status?: string) =>
+  status ? (STATUS_CITACAO_LABEL[status] ?? status) : "";
+
 type Mensagem = {
   id: string;
   autor: "user" | "ia";
@@ -1110,14 +1122,22 @@ export default function SalaJuridica() {
                                 .map((c, i) => (
                                   <li key={i}>
                                     {c.trecho ?? c.tipo ?? "citação"}
-                                    {c.status ? ` (${c.status})` : ""}
+                                    {c.status
+                                      ? ` (${humanizarStatusCitacao(c.status)})`
+                                      : ""}
                                   </li>
                                 ))}
                             </ul>
                           </div>
                         )}
                       {m.autor === "ia" && criticas[m.id] && (
-                        <div className="mt-2 rounded border border-violet-300 bg-violet-50 p-2 text-xs text-violet-900">
+                        // Token semântico "ai" (não violet-* cru): é a mesma
+                        // família já usada nos demais painéis de IA do
+                        // sistema (ex.: ContextualAIAssistant.tsx) e a única
+                        // com dark mode coberto em index.css — achado do
+                        // app-runner: violet-* cru ficava quase branco no
+                        // tema escuro.
+                        <div className="mt-2 rounded border border-ai-200 bg-ai-50 p-2 text-xs text-ai-800">
                           <p className="font-semibold">
                             Crítica adversarial (Modo Duas IAs)
                             {criticas[m.id].nota_robustez != null &&
