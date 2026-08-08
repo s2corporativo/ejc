@@ -16,7 +16,7 @@
 
 | ID  | Item                                | Estado no código                                            | O que falta para o critério de conclusão |
 |-----|-------------------------------------|-------------------------------------------------------------|------------------------------------------|
-| 0.1 | Ativar Sentry (DSN + release)       | **Quase pronto** — integração completa e gated. **⚠ Conflito:** o PR aberto #773 propõe REMOVER o Sentry | Decisão do titular sobre o #773; ato humano: `SENTRY_DSN` no `.env` da VPS. **Lacuna de código:** `release` não é enviado ao Sentry e `GIT_SHA` não é exportado no deploy |
+| 0.1 | Ativar Sentry (DSN + release)       | **Decidido 2026-08-08: mantido e ativado** (ver adenda) — integração completa e gated; `release` corrigido | Ato humano: `SENTRY_DSN` no `.env` da VPS |
 | 0.2 | Decidir estratégia de embeddings    | **Decisão de fato já tomada e implementada**: local (fastembed/ONNX, `multilingual-e5-large` 1024d) | Ratificação formal do titular (registro da decisão). A dicotomia do item ("Ollama × externo") está desatualizada |
 | 0.3 | Religar embeddings + backfill       | **Máquina completa e governada** (workflow de ativação, canário, backfill idempotente, job automático de órfãos) | Ato humano: dispatch de `rag-production-activation.yml` na `main`. O critério do plano cita `modo: vetorial`; a API real responde `modo: "semantica"` |
 | 0.4 | Ativar backup offsite               | **Implementado** (Fernet + Google Drive/rclone, rotação, drills de restauração), default OFF | Atos humanos: `BACKUP_ENABLED=true` + chave + credencial na VPS; decisão do titular sobre prazo de retenção; recomendação de `BACKUP_OFFSITE_OBRIGATORIO=true` |
@@ -59,14 +59,18 @@ estão no 0.1 (release do Sentry) e no 0.5 (não há composição de homologaç�
    Existe `app_version()` (env `APP_VERSION`/`GIT_SHA`, senão `"dev"` —
    `observability.py:44-46`) usada só no healthcheck. Sem release, o painel do
    Sentry não correlaciona erro ↔ versão implantada, nem marca regressões.
-2. **`GIT_SHA` não é populado no deploy.** `docker-compose.yml:55` e `:144`
-   leem `${GIT_SHA:-}` do ambiente, mas `.github/workflows/deploy-vps.yml` não
-   exporta essa variável — em produção `app_version()` tende a responder
-   `"dev"`. Mesmo corrigindo o item 1, o release ficaria sem valor útil.
 
-   **Correção sugerida (pequena, própria para Issue/PR dedicado):** passar
-   `release=app_version()` no `init_sentry()` e exportar
-   `GIT_SHA=$(git rev-parse HEAD)` no passo de deploy do workflow.
+   **Correção:** passar `release=app_version()` no `init_sentry()`.
+
+   > **Correção a este relatório (versão anterior estava errada):** a versão
+   > original deste documento afirmava que `GIT_SHA` também não era exportado
+   > no deploy. É falso — `scripts/deploy_vps_safe.sh:162-234` já exporta
+   > `GIT_SHA`, usa no `docker compose build` e **verifica o valor publicado
+   > contra `/api/health`**, com rollback automático em divergência;
+   > `docker-compose.yml:55,144` já encaminha `GIT_SHA` ao container. `app_version()`
+   > já recebe um SHA real em produção. A única lacuna de código era mesmo o
+   > parâmetro `release` ausente — corrigida separadamente (ver PR de execução
+   > vinculado a este relatório).
 
 ### Conflito de decisão em aberto: PR #773 propõe REMOVER o Sentry
 
@@ -266,10 +270,11 @@ verificável a partir do repositório.
 
 **Trabalho de código pendente (cabe a Issues/PRs de execução, não a esta auditoria):**
 
-1. *(0.1)* Passar `release=app_version()` no `sentry_sdk.init()` e exportar
-   `GIT_SHA` no `deploy-vps.yml` — mudança pequena; mexe em CI/CD, portanto nos
-   termos do §10 da governança já fica aqui solicitada a autorização.
-2. *(0.5)* Compor a stack de homologação **após** o titular decidir a topologia.
+1. ~~*(0.1)* Passar `release=app_version()` no `sentry_sdk.init()` e exportar
+   `GIT_SHA` no `deploy-vps.yml`~~ — **feito** (ver adenda; `GIT_SHA` já estava
+   exportado, só o `release` precisou de correção).
+2. *(0.5)* Compor a stack de homologação **após** o titular decidir a topologia
+   — topologia decidida na adenda; composição da stack é Issue própria.
 3. *(0.3, menor)* Se desejado, alinhar vocabulário: ou o plano passa a citar
    `modo: semantica`, ou a rota passa a responder `vetorial` — recomenda-se
    ajustar o plano (mudar contrato de API é custo sem benefício).
@@ -300,3 +305,24 @@ verificável a partir do repositório.
   `.github/pull_request_template.md` não as contém — todo PR que segue o
   template à risca reprova no CI. Corrigir o template é mudança de governança
   e fica como apontamento (fora do escopo deste PR de auditoria).
+
+## Adenda — decisões e execução (mesmo dia, 2026-08-08)
+
+Após a leitura deste relatório, o titular autorizou por chat a resolução das
+cinco pendências acima. As decisões, justificativas e o código correspondente
+estão em `docs/auditoria/decisoes-bloco0-2026-08-08.md`, registrados na
+**Issue #800 / PR #801**:
+
+- **0.1** — Sentry mantido e ativado; PR #773 comentado pedindo revisão para
+  excluir a remoção do Sentry daquele escopo. `release=app_version()`
+  adicionado ao `init_sentry()`. A afirmação original deste relatório sobre
+  `GIT_SHA` não ser exportado no deploy estava **errada** — corrigida acima.
+- **0.2** — Estratégia de embeddings ratificada por escrito (local/fastembed).
+- **0.4** — Retenção offsite definida em 30 dias (`BACKUP_RETENCAO_DIAS`).
+- **0.5** — Topologia de homologação decidida (mesma VPS, compose separado,
+  dados fictícios); build da stack em **Issue #802**, fora desta rodada.
+
+Os atos humanos de ativação (preencher `SENTRY_DSN`, `BACKUP_ENABLED=true` +
+credencial, disparar `rag-production-activation.yml`, subir a homologação na
+VPS) continuam pendentes — nenhum deles foi nem podia ser executado por este
+executor (regra 9 da governança).
