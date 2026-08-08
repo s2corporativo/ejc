@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import date
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -277,6 +278,15 @@ def _normalizar_campos(dados: Optional[dict],
     campos["provas_faltantes"] = _reforcar_faltantes_matriz(
         campos.get("provas_faltantes"), case, disp)
 
+    # prescricao_decadencia: reforço/sobreposição determinística (Fase Onda 4).
+    campos["prescricao_decadencia"], confianca["prescricao_decadencia"] = (
+        _reforcar_prescricao(
+            campos.get("prescricao_decadencia"),
+            confianca.get("prescricao_decadencia"),
+            case,
+        )
+    )
+
     return campos, confianca
 
 
@@ -322,6 +332,61 @@ def _reforcar_faltantes_matriz(valor_ia: Optional[str], case: Optional[Case],
         return f"{valor_ia.strip()} — {reforco}" if (valor_ia and valor_ia.strip()) else reforco
     except Exception:
         return valor_ia
+
+
+def _reforcar_prescricao(valor_ia: Optional[str], conf_ia: Optional[int],
+                         case: Optional[Case]) -> tuple[Optional[str], Optional[int]]:
+    """Onda 4 — prescrição/decadência pela calculadora determinística, não pela
+    IA (regra do repo: toda regra jurídica precisa de fonte oficial e teste).
+
+    Fonte escolhida: `deadline_calculator.PRESCRICAO_TABELA`, a MESMA usada em
+    `routers/cases.py` para calcular `Case.data_prescricao` no cadastro do
+    caso — reaproveitar evita uma segunda fonte de verdade que poderia divergir
+    do que o próprio caso já mostra. Se o caso já tem `tipo_acao_prescricao` +
+    `data_prescricao` calculados (advogado already rodou a calculadora no
+    cadastro), o texto da IA é SOBRESCRITO com o resultado determinístico,
+    confiança 100, origem explícita.
+
+    Sem os dois insumos não há como calcular sem adivinhar o tipo de ação —
+    a estimativa da IA permanece, mas nunca passa por confirmada: teto de
+    confiança e aviso de que exige checagem na calculadora antes de virar
+    prazo real. Nunca levanta exceção: falha aqui não pode derrubar a ficha.
+    """
+    try:
+        if (
+            case is not None
+            and case.tipo_acao_prescricao
+            and case.data_prescricao is not None
+        ):
+            from app.services.deadline_calculator import PRESCRICAO_TABELA
+            regra = PRESCRICAO_TABELA.get(case.tipo_acao_prescricao)
+            if regra:
+                data_limite = case.data_prescricao
+                data_limite = data_limite.date() if hasattr(data_limite, "date") else data_limite
+                dias_restantes = (data_limite - date.today()).days
+                situacao = "PRAZO PROVAVELMENTE CONSUMADO" if dias_restantes < 0 else "prazo em curso"
+                rotulo = case.tipo_acao_prescricao.replace("_", " ")
+                texto = (
+                    f"{rotulo} — {regra['anos']} ano(s), base legal {regra['base']}. "
+                    f"Data-limite: {data_limite.isoformat()} ({situacao}). "
+                    "Calculado pela calculadora de prescrição do EJC no cadastro do "
+                    "caso — verifique causas suspensivas/interruptivas (CC arts. 197-202) "
+                    "antes de protocolar."
+                )
+                return texto[:8000], 100
+    except Exception:
+        pass   # nunca derruba a ficha por falha no reforço determinístico
+
+    if valor_ia:
+        aviso = (
+            " [ESTIMATIVA DA IA — NÃO é prazo confirmado; calcule na "
+            "calculadora de prescrição (/calculadoras) antes de confiar nesta data.]"
+        )
+        texto = valor_ia if aviso.strip() in valor_ia else (valor_ia.strip() + aviso)
+        teto_confianca = 60
+        conf_final = min(conf_ia, teto_confianca) if conf_ia is not None else teto_confianca
+        return texto[:8000], conf_final
+    return valor_ia, conf_ia
 
 
 # ── obter / salvar / gate helpers ─────────────────────────────────────────────

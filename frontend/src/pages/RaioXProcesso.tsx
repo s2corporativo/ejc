@@ -64,6 +64,9 @@ type Relatorio = {
   teses?: unknown[];
   pontos_fortes?: unknown[];
   pontos_fracos?: unknown[];
+  // Status técnico do pipeline (ex.: "número do processo não identificado") —
+  // separado de pontos_fracos, que passou a conter só fraqueza jurídica.
+  lacunas_da_analise?: unknown[];
   proximos_passos?: unknown[];
   documentos_pendentes?: unknown[];
   rito_jornada?: Record<string, unknown>;
@@ -1326,6 +1329,10 @@ export default function RaioXProcesso() {
                 <ReportList
                   title="Documentos pendentes"
                   items={report.documentos_pendentes}
+                />
+                <ReportList
+                  title="Lacunas da análise"
+                  items={report.lacunas_da_analise}
                 />
               </div>
 
