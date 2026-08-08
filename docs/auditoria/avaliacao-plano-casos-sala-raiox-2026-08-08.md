@@ -72,7 +72,7 @@ existe, mas **não** está no `main`.
 | §15.1 | Quatro portas de criação de `Case` com efeitos divergentes | `cases.py::criar`, `entrada_service.py`, `legal_chat_service.py:902`, `raio_x_service.py:700` | **Parcial**: F1a+F1b igualam o comportamento essencial; unificação estrutural adiada pelo #795 — ver Fase C |
 | §15.2 | Pipeline documental duplicado; Raio-X copia arquivo fisicamente na conversão | `raio_x_service.py:11,576` (`shutil.copy2`) | **Parcial**: PR #797 (F2) unifica validação/gravação de upload; a cópia física na conversão **permanece** — ver Fase B |
 | §17 | Sinais de governança (crítica/citações/HITL) invisíveis na UI da Sala | Backend devolve `aviso_hitl`/`critica_adversarial`/`citacoes`; frontend descartava | **PR #791 aberto (item 5)**; painel consolidado por resposta segue como evolução — Fase D |
-| §18 | Sem job de expurgo LGPD para pré-casos | `retention_until` só em model/router/service do Raio-X; nada em `app/tasks/`; Sala sem campo equivalente | **PR #803 aberto (F4)** — purga por inatividade + paridade de retenção na Sala |
+| §18 | Sem job de expurgo LGPD **para Sala e Raio-X** | `retention_until` só em model/router/service do Raio-X; Sala sem campo equivalente. **Correção a este documento** (achado do review Codex, conferido em 2026-08-08): o expurgo canônico de pré-caso **existe** — `services/entrada_expurgo_service.py:41::expurgar_rascunhos_entrada_unica`, agendado em `scheduler.py:484-490`, com salvaguardas de conversão e ownership. Minha varredura só olhou `app/tasks/` e por isso a conclusão original ("sem job de expurgo para pré-casos") era ampla demais. A lacuna real é específica de Sala/Raio-X, e a F4 deve **reusar ou estender** esse serviço, nunca criar purga paralela que duplique ou perca aquelas salvaguardas | **PR #803 aberto (F4)** — purga por inatividade + paridade de retenção na Sala |
 | §5/§13 | Sala e Raio-X como modos da Entrada, saída do menu, redirects | — | **PRs #805 (F3), #807/#810 (F3.2) abertos** |
 | §12/§10/§11/§20 | Consolidação de Estratégia, Atividades, Arquivos e navegação | — | **LACUNA — sem PR; vira Fase D** |
 | §15.3 | Matriz Fato × Prova | — | **LACUNA — funcionalidade nova; vira Fase D** |
@@ -108,18 +108,35 @@ titular intervém apenas nas exceções do §6-A da governança e nas decisões 
 
 ### Fase A — destravar e integrar o trem existente (semana 1)
 
-Ordem de integração proposta, um PR por vez, resolvendo conflito em cascata a cada merge:
+Ordem **aprovada pelo titular em 2026-08-08** e já em execução. A revisão da sobreposição real de
+arquivos (feita ao executar) mostrou que a fila **não precisa ser inteiramente serial**: só há
+dependência onde dois PRs tocam o mesmo arquivo de produção.
 
-1. **#757** (P0 segurança) — rebase sobre `main` (está `dirty`; o conflito provável é com o
-   merge do #786 em `raio_x.py`). Primeiro da fila por ser o único P0 de segurança.
-2. **#791** (F1a) — fecha P0-3 e os P1 da Sala.
-3. **#795** (F1b) — fecha P0-2. Pequeno e independente de arquivo do #757 (router × service).
-4. **#797** (F2) — depende de `raio_x.py`/`legal_chat.py` estáveis pós 1–2.
-5. **#803** (F4) — traz migration 140; conferir `alembic heads` no momento do rebase (o
-   encadeamento citado nos PRs já divergiu ao longo da semana: 131 → 138 → 140/142).
-6. **#805** (F3) → **#807/#810** (F3.2) — a fusão de UX só depois de tudo acima verde.
-7. **#788** (plano) — atualizar a branch e integrar a qualquer momento; é referência documental.
-8. **#812** (F5) — **não** entra no trem até o titular responder a Issue #799 (seção 5).
+| PR | Arquivos de produção | Conflita com |
+|---|---|---|
+| #757 | `routers/raio_x.py`, `schemas/raio_x.py` | #797 |
+| #791 | `routers/cases.py`, `kanban.py`, `legal_chat_service.py`, `models/legal_chat.py`, migration 139 | #803 |
+| #795 | `services/raio_x_service.py` | #803 |
+| #805 | **só frontend** | ninguém |
+| #797 | `routers/raio_x.py`, `routers/legal_chat.py`, `upload_lote_service.py` | #757, #803 |
+| #803 | `legal_chat*`, `raio_x_service.py`, `scheduler.py`, migration 140 | #791, #795, #797 |
+
+**Onda 1 — em paralelo** (nenhum arquivo em comum): **#757** (P0 segurança) · **#791** (F1a) ·
+**#795** (F1b) · **#805** (F3, frontend puro). Executado: #757 teve o conflito com a `main`
+resolvido por merge (não rebase — força não é usada), os quatro foram atualizados e tirados de
+draft para a esteira integrar com gates verdes.
+
+**Onda 2 — depois da onda 1** (dependência real de arquivo): **#797** (F2, espera `raio_x.py` do
+#757) → **#803** (F4, espera #791/#795/#797) → **#807/#810** (F3.2).
+
+**Fora do trem**: **#788** (documental, integra a qualquer momento) e **#812** (F5) — este
+permanece retido até a decisão da Issue #799, conforme §22 do relatório e a própria ressalva do
+PR.
+
+**Migrations**: #791 traz a 139 e #803 a 140 sobre o head 138 — encadeamento consistente, mas o
+head muda a cada merge da onda. Reconferir `python -m alembic heads` e
+`MIGRATION_RESERVATIONS.md` imediatamente antes de cada integração da onda 2, renumerando se
+necessário.
 
 Critério de pronto da Fase A: `main` com **#757 e F1a–F4** (#791, #795, #797, #803) integrados,
 CI verde, e os três P0 do relatório irreproduzíveis via API.
@@ -130,36 +147,78 @@ CI verde, e os três P0 do relatório irreproduzíveis via API.
   independentes dentro do mesmo PR:
 
   **(i) A correção do defeito**: trocar `DeadlineStatus(Deadline.status) == DeadlineStatus.pendente`
-  por comparação SQL direta (`Deadline.status == DeadlineStatus.pendente`) em `cases.py:403-405`.
-  Isso, sozinho, já faz o contador voltar a contar — o `except` deixa de ser alcançado no caminho
-  normal.
+  por comparação SQL direta (`Deadline.status == DeadlineStatus.pendente`) em `cases.py:403-405`,
+  **somada a `Deadline.deleted_at.is_(None)`** — `Deadline` tem soft-delete
+  (`models/deadline.py:84`) e o laço geral de contadores (`cases.py:380-383`) já exclui excluídos;
+  sem essa cláusula o contador consertado passaria a contar prazo apagado (achado do review Codex,
+  conferido). Isso, somado, já faz o contador voltar a contar certo — o `except` deixa de ser
+  alcançado no caminho normal.
 
   **(ii) O contrato de erro** (decisão fixada aqui para não ficar em aberto): em
-  `GET /cases/{case_id}/resumo`, **`null` significa "contador indisponível" e `0` significa
-  "contei e não há nenhum"** — erro nunca mais vira `0`. O `except` permanece como rede para falha
-  genuína de banco (um contador quebrado não pode derrubar um resumo que agrega ~14 contadores),
-  mas passa a **logar em nível `warning` e atribuir `None`**. Propagar 500 foi descartado
-  justamente por esse motivo de robustez; `null` preserva a disponibilidade do resumo sem mentir
-  sobre o dado.
+  `GET /cases/{case_id}/resumo`, para **todos** os contadores — `prazos_pendentes`, os ~12 do laço
+  de `cases.py:377-388` e `honorarios_valor_total` —, **`null` significa "contador indisponível" e
+  `0`/`0.0` significa "contei e não há nenhum"**. Erro nunca mais vira `0`. O `except` permanece
+  como rede para falha genuína de banco (um contador quebrado não pode derrubar um resumo que
+  agrega ~14 contadores), mas passa a **registrar mensagem em nível `warning` e atribuir `None`**.
+  Propagar 500 foi descartado justamente por esse motivo de robustez; `null` preserva a
+  disponibilidade do resumo sem mentir sobre o dado. O contrato vale por inteiro a partir do PR do
+  B1 — não se declara a uniformização concluída enquanto houver contador convertendo falha em zero.
 
-  **Consumidores**: verificado em 2026-08-08 que **não há nenhum consumidor de `prazos_pendentes`
-  no frontend** (`grep` em todo o repositório: só `routers/cases.py` e este documento; o
-  `prazos_pendentes` de `services/visual_law_core.py:74` é outro parâmetro, sem relação). Adotar
-  `null` agora, portanto, não quebra contrato em uso — e é o momento mais barato de fixá-lo. Se
-  algum consumidor surgir antes do PR, tratar `null` como "—" na UI, nunca como zero.
+  **Consumidores**: verificado em 2026-08-08 que **nenhum consumidor interno de `prazos_pendentes`
+  foi encontrado** (`grep` em todo o repositório: só `routers/cases.py` e este documento; o
+  `prazos_pendentes` de `services/visual_law_core.py:74` é outro parâmetro, sem relação). Isso
+  cobre o repositório, **não** clientes externos, integrações ou scripts fora dele — antes de
+  trocar `0` por `null`, levantar esse inventário; havendo consumidor numérico, versionar o
+  contrato ou planejar migração em vez de mudar em silêncio. Onde `null` for adotado, a UI mostra
+  "—", nunca zero.
 
-  **Escopo do contrato**: a mesma regra vale para os contadores irmãos do bloco — o laço de
-  `cases.py:377-388` e o total de honorários em `cases.py:391-399` engolem exceção para `0`/`0.0`
-  pelo mesmo padrão. Uniformizar todos no mesmo PR e **declarar os campos no `response_model`**
-  (a rota hoje devolve dict solto, sem tipo declarado), tornando o `Optional` explícito no contrato.
+  **Escopo do contrato**: uniformizar os três grupos de contadores no mesmo PR e **declarar os
+  campos no `response_model`** (a rota hoje devolve dict solto, sem tipo declarado), tornando o
+  `Optional` explícito no contrato.
 
-  **Testes**: regressão cobrindo (a) sucesso — caso com prazos pendentes devolve a contagem certa,
-  teste que falha contra o código atual; (b) falha — erro de banco simulado devolve `null` e não
-  `0`, com o resumo ainda respondendo 200.
+  **Testes**: regressão cobrindo, **para cada contador**, (a) sucesso — inclusive prazo pendente
+  soft-deleted, que não pode ser contado, em teste que falha contra o código atual; (b) falha —
+  erro de banco simulado devolve `null` e não `0`, com o resumo ainda respondendo 200.
 - **B2 — cópia física na conversão do Raio-X (§15.2)**: após F2 integrada, substituir
   `shutil.copy2` (`raio_x_service.py:576`) por movimentação/referência controlada no pipeline
   canônico, eliminando duplicação de conteúdo sensível em disco. Risco médio (transferência
   documental); exige `security-auditor` e teste do fluxo de conversão ponta a ponta.
+- **B4 — completar a derivação do estado do caso** (pedido do titular, 2026-08-08: "vocabulário
+  de estado fragmentado; definir um ciclo de vida único e cada módulo derivar dele"):
+
+  **Verificação no `main` `50cb9c4` — o diagnóstico precisa de duas correções.** Primeira: o
+  vocabulário de Casos não é "Aberto/Ativo/Arquivado". Desde a migration 126 são **seis** estados
+  (`models/case.py:42-56`): `aberto` → `em_instrucao` → `em_producao` → `protocolado`, mais
+  `encerrado` (desfecho) e `arquivado` (guarda). O trio "ativos/arquivados/todos" que aparece na
+  tela (`Casos.tsx:317`) é o **filtro de arquivo**, não o status — e casa com o parâmetro do
+  backend (`cases.py:93`). Segunda, e mais relevante: **o acoplamento já existe**.
+  `services/status_transicao.py` deriva o estado do caso de eventos dos módulos —
+  `documento_vinculado → em_instrucao`, `peca_criada → em_producao`,
+  `peca_protocolada → protocolado` — sempre para frente, nunca regredindo, sem tocar terminais e
+  registrando `CaseMovimento` na mesma transação. É exatamente a arquitetura pedida, e na direção
+  certa: **quem sabe o fato é o módulo; o caso projeta**.
+
+  **A lacuna real, então, não é vocabulário — é cobertura.** Só três eventos estão ligados, e só
+  de documentos e peças: `avancar_status_por_evento` é chamado de `entrada_service.py:643`,
+  `routers/legal_docs.py` e `routers/documents.py`, e **de mais nenhum lugar**. Prazos
+  (`DeadlineStatus`: pendente/concluído/vencido/cancelado) e Atividades (`TaskStatus`:
+  a_fazer/fazendo/concluida) não emitem nada — um caso com prazo vencido ou com todas as tarefas
+  concluídas não move um milímetro. É por isso que "em que pé está o caso X" não se responde numa
+  tela só, e não porque as três máquinas de estado existam.
+
+  **Decisão de desenho: não unificar os três vocabulários.** Eles descrevem objetos diferentes e
+  o de peças carrega o gate de HITL — `STATUS_EXIGE_REVISAO`/`STATUS_EXIGE_VALIDACAO`
+  (`routers/legal_docs.py:39-40`) impedem peça gerada por IA de chegar a
+  `aprovada`/`final`/`protocolada` sem revisão humana. Colapsar esse vocabulário no do caso
+  destruiria a trava. O ciclo de vida único é o **do caso**, e ele é a **projeção** dos fatos dos
+  módulos, cada um mantendo o vocabulário do seu domínio.
+
+  **Trabalho**: (a) ligar os eventos que faltam ao `status_transicao` (prazo criado/cumprido,
+  audiência marcada, tarefa concluída), mantendo os invariantes de nunca regredir e nunca tocar
+  terminal; (b) expor a projeção em **uma** leitura — o cartão "Estado da instrução" da Visão
+  (§9 do relatório), respondendo "o que falta" a partir dos mesmos fatos. Teste de regressão por
+  evento, e nenhum evento novo pode regredir estado. Precede D1 e alimenta o D5.
+
 - **B3 — painel de governança por resposta (§17)**: verificar o que resta após o item 5 do #791
   (que já expõe `aviso_hitl`, crítica e citações). O painel consolidado
   (fontes/verificadas/pendentes/confiança + "ver validações") vira Issue de UX na Fase D se
@@ -168,19 +227,36 @@ CI verde, e os três P0 do relatório irreproduzíveis via API.
 ### Fase C — serviço canônico de criação de caso (§15.1) — decidir com critério, não por impulso
 
 O relatório pede `CasoCreationService`; o PR #795 adiou deliberadamente ("refatoração
-especulativa sem um segundo achado concreto"). Os dois têm razão em tempos diferentes.
-Proposta de critério objetivo para resolver a tensão:
+especulativa sem um segundo achado concreto"). O critério de gatilhos foi aprovado pelo titular
+em 2026-08-08 — **e a verificação mostra que ele já disparou**.
 
-- **Gatilho 1**: surgir o **segundo** defeito de divergência entre portas *após* F1a+F1b
-  integradas (o primeiro foi `proxima_acao`).
-- **Gatilho 2**: a F3.2 precisar mexer nos conversores de qualquer forma — nesse caso a
-  extração do serviço único entra na mesma janela, pagando o custo uma vez só.
+**O gatilho já está satisfeito** (achado do review Codex, conferido no `main` `50cb9c4`): a
+divergência entre as portas não se resume a `proxima_acao`. Confirmado lendo as quatro
+implementações lado a lado:
 
-Enquanto nenhum gatilho dispara, a equivalência entre portas é garantida por **teste de
-contrato**: um teste que cria caso pelas quatro portas e afirma o mesmo conjunto de invariantes
-(cliente, `proxima_acao`, movimento inicial, auditoria, snapshot quando IA, documentos
-vinculados, evento emitido). Esse teste é barato, entra na Fase B e transforma "as quatro portas
-divergem" de risco silencioso em quebra de CI.
+| Porta | `CaseMovimento` inicial | Evento `caso.criado` |
+|---|---|---|
+| `cases.py::criar` (manual) | sim (`cases.py:297-300`) | sim (`cases.py:322`, `emitir_caso_criado`) |
+| `entrada_service.py` (Entrada Única) | sim (`:630`) | **não** |
+| `legal_chat_service.py` (Sala) | **não** | **não** |
+| `raio_x_service.py` (Raio-X) | **não** | **não** |
+
+São dois defeitos adicionais além do `proxima_acao`, não um: caso nascido de IA não entra na
+linha do tempo e não aciona nenhum assinante do event bus (automação, triagem, kit documental).
+Portanto **a Fase C deixa de ser condicional e passa a ser trabalho programado**, imediatamente
+após a Fase A — que é justamente quando `raio_x_service.py`/`legal_chat_service.py` param de
+estar sob PR ativo. O gatilho 2 (F3.2 tocar os conversores) continua valendo como reforço, não
+como alternativa.
+
+**Ordem dentro da Fase C**: primeiro **alinhar os invariantes** nas quatro portas (movimento e
+evento nas que não têm), depois extrair o `CasoCreationService` — alinhar sem extrair já elimina
+o defeito visível ao advogado; extrair sem alinhar só moveria a divergência de lugar.
+
+O **teste de contrato** (quatro portas → mesmo conjunto de invariantes: cliente, `proxima_acao`,
+movimento inicial, auditoria, snapshot quando IA, documentos vinculados, evento emitido) entra
+**junto** com o alinhamento, não antes: escrito hoje ele reprovaria de saída, o que é o
+diagnóstico correto mas não um CI utilizável. Escrito junto, transforma "as quatro portas
+divergem" de risco silencioso em quebra de CI permanente.
 
 ### Fase D — consolidações de UX do relatório (após F3 integrada; uma Issue por item)
 
@@ -198,33 +274,66 @@ Pré-requisito comum: **extração de componentes antes de mover** (§19 do rela
 - **D4 — Navegação do menu (§20)**: Sala/Raio-X já saem no #805; reorganização dos grupos
   (TRABALHO/INTELIGÊNCIA/GESTÃO/ADMINISTRAÇÃO) é mudança de `moduleRegistry.tsx` com redirects,
   só depois de D1–D3 estabilizarem os destinos.
-- **D5 — Matriz Fato × Prova (§15.3)**: funcionalidade **nova**, não correção. O substrato certo
-  é o estado jurídico da Sala (fatos/provas/contradições já versionados) e, se o titular aprovar
-  a F5, o schema `preliminares`. Issue própria com proposta de design antes de código.
+- **D5 — Matriz Fato × Prova (§15.3)**: funcionalidade **nova**, não correção — aprovada para
+  execução **após a Fase C** (seção 5, decisão 3). Substrato: o Estado Jurídico Canônico do caso
+  (§16 do relatório), a partir do estado jurídico da Sala, que já versiona
+  fatos/provas/contradições — **não** depende da F5. Regra de produto que a torna útil em vez de
+  mais uma tela: cada linha carrega estado do fato (comprovado/alegado/inferência), prova que o
+  sustenta, força, fonte e contestação previsível, e a IA **sugere** enquanto o advogado
+  **aceita, rejeita ou corrige** — o aceito vira memória oficial do caso. Issue própria com
+  proposta de design antes de código.
+- **D6 — Painel de governança consolidado (§17)**: componente único de resposta de IA
+  (fontes · verificadas · pendentes · confiança · aviso de revisão obrigatória), reutilizado pela
+  Sala, pela Estratégia e pela Entrada. Entra **junto de D1** (seção 5, decisão 4), reaproveitando
+  o que o #791 já expõe, em vez de criar um segundo componente de governança.
 
 ### Fase E — poda final e telemetria (última)
 
 Redirects já nascem no #805; manter. Antes de apagar qualquer rota/endpoint legado, medir uso
-real (a infra `route_usage_metrics` existe desde a migration 122) por um ciclo de uso e podar
-só o que estiver comprovadamente morto — mesmo critério que o #791 aplicou ao código sem
-consumidor.
+real por um ciclo e podar só o que estiver comprovadamente morto — mesmo critério que o #791
+aplicou ao código sem consumidor.
+
+**Ressalva de medição** (achado do review Codex, conferido): a infra `route_usage_metrics` **não
+serve, como está, para provar que as telas de Sala/Raio-X ficaram ociosas**. Ela monitora uma
+allowlist fixa de endpoints (`services/route_usage.py:60-89`) e o próprio módulo documenta o
+limite (`:29-36`): quando a mesma ação passa a existir também na tela consolidada, o contador
+soma as duas origens e deixa de provar que a tela legada está parada. Como a F3 preserva os
+componentes e só muda a navegação, os endpoints da Sala e do Raio-X continuarão sendo chamados
+**pelos modos da Entrada** — contador alto não significa uso da rota legada. Para a Fase E valer,
+é preciso primeiro **distinguir origem**: cabeçalho `X-EJC-Origem: entrada|legado` enviado pelo
+frontend (o próprio módulo sugere esse desenho) ou analytics de navegação, e só então abrir a
+janela de medição. Sem isso, o critério "comprovadamente morto" não é satisfazível para essas
+rotas e a poda vira suposição.
 
 ---
 
-## 5. Decisões que cabem ao titular
+## 5. Decisões — registro
 
-1. **Ordem de integração da Fase A** — aprovar a fila proposta (ou reordenar). Sem isso os 9
-   PRs continuam em draft se acumulando conflito entre si.
-2. **F5/#812** — responder as 4 perguntas da Issue #799 (vale o esforço agora? abordagem A/B?
-   volume real? discriminador na UI?). Recomendação desta avaliação, alinhada ao relatório
-   (§22) e ao próprio #812: **não integrar F5 antes de F1–F4 estarem em produção estáveis**.
-3. **Fase C** — aceitar o critério de gatilhos para o `CasoCreationService` ou mandar executar
-   já (custo maior agora, com F3 ainda em voo).
-4. **Matriz Fato × Prova (D5)** — prioridade relativa: é a única peça do relatório que é
-   feature nova, e concorre por janela com o critério de lançamento ("um advogado leva um caso
-   real ao protocolo").
-5. **Painel de governança (B3/D-UX)** — validar se a exposição do #791 basta ou se quer o
-   painel consolidado por resposta.
+Decisões do titular em **2026-08-08**, com o que foi delegado ao executor já resolvido aqui.
+
+1. **Ordem de integração da Fase A** — **aprovada**. Executada na mesma data (ondas 1 e 2 da
+   Fase A); a paralelização por sobreposição de arquivos foi decisão de execução, dentro da
+   ordem aprovada, e reduz a espera sem criar conflito.
+2. **Fase C / `CasoCreationService`** — critério de gatilhos **aceito**. Como a verificação
+   mostrou que o gatilho **já disparou** (movimento e evento ausentes em Sala/Raio-X), a Fase C
+   entra como trabalho programado logo após a Fase A, com o alinhamento dos invariantes antes
+   da extração do serviço.
+3. **Matriz Fato × Prova (D5)** — **delegada ao executor**. Decisão: **fazer, mas depois da
+   Fase C**, e sobre o Estado Jurídico Canônico (§16 do relatório), não como tela nova. A razão
+   é o próprio critério de lançamento: a matriz só entrega valor se os fatos e provas que ela
+   cruza já forem os do caso oficial — construí-la antes de as quatro portas produzirem caso
+   equivalente significaria alimentá-la com dado que a Fase C ainda vai mudar. Não depende da
+   F5: o substrato é o estado jurídico da Sala, que já existe e já é versionado.
+4. **Painel de governança (B3)** — **delegada ao executor**. Decisão: **o #791 basta para a
+   Fase A** (ele já leva `aviso_hitl`, crítica adversarial e citações à UI da Sala, que era a
+   lacuna real — governança produzida pelo backend e invisível ao advogado). O painel
+   consolidado por resposta (fontes/verificadas/pendentes/confiança) entra na Fase D como
+   componente único reutilizável, junto de D1, e **não** como trabalho separado: fazê-lo antes
+   criaria um segundo componente de governança para reconciliar depois com a Estratégia.
+5. **F5/#812** — **permanece com o titular**: as 4 perguntas da Issue #799 (vale o esforço
+   agora? abordagem A/B? volume real? discriminador na UI?). Recomendação mantida, alinhada ao
+   §22 do relatório e à própria ressalva do #812: **não integrar F5 antes de F1–F4 estáveis em
+   produção**. É a única decisão que continua bloqueando trabalho.
 
 ## 6. Riscos do plano
 
