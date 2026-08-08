@@ -29,12 +29,14 @@ concurrency:
 
 jobs:
   staging:
+    # workflow_dispatch restrito à main: o runner é a VPS de produção e roda
+    # `sudo rsync` + build do conteúdo do checkout — branch arbitrária não sobe.
     if: >-
       vars.STAGING_ENABLED == '1' &&
-      (github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
        (github.event_name == 'workflow_run' &&
         contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event) &&
-        github.event.workflow_run.conclusion == 'success'))
+        github.event.workflow_run.conclusion == 'success')))
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 45
     env:

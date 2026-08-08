@@ -171,8 +171,11 @@ registra o motivo no PR):
 4. alteração crítica de autenticação/autorização;
 5. impossibilidade de rollback seguro;
 6. alteração estrutural cuja segurança não possa ser validada automaticamente — incluída
-   qualquer mudança em workflows, governança, configuração de agentes, nginx, compose e
-   scripts de deploy/backup (a automação não integra mudanças em si mesma);
+   qualquer mudança em workflows, governança, configuração de agentes, nginx, compose,
+   `scripts/` (esteira executada na VPS), Dockerfiles, dependências (`requirements*.txt`,
+   `package*.json`), núcleo `backend/app/core/`, middlewares, rotas de auth/usuários,
+   `pii_crypto` e `ai_gateway` (a automação não integra mudanças em si mesma nem no que
+   roda com privilégio em produção);
 7. falha persistente que o agente não consiga resolver autonomamente.
 
 **Concorrência:** segue o §5 — dois agentes não alteram os mesmos arquivos sem estratégia
