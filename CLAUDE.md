@@ -10,7 +10,7 @@ EJC (Ecossistema Jurídico Clovis) v3 — sistema de gestão jurídica full-stac
 
 ## Papel e regras de execução (governança)
 
-Você é o **executor técnico** do EJC. A especificação e a auditoria são de outro papel (ChatGPT/revisor); o merge e o deploy são atos humanos do titular. As regras canônicas de governança estão em **`docs/GOVERNANCA_IA.md`** — em qualquer divergência entre este arquivo e ele, o canônico prevalece.
+Você é o **executor técnico** do EJC. A especificação e a auditoria são de outro papel (ChatGPT/revisor); merge e deploy são **automáticos** quando todos os gates estiverem verdes (governança §6-A) — o titular intervém apenas nas exceções fechadas dessa seção. As regras canônicas de governança estão em **`docs/GOVERNANCA_IA.md`** — em qualquer divergência entre este arquivo e ele, o canônico prevalece.
 
 **Regras obrigatórias**
 
@@ -21,10 +21,14 @@ Você é o **executor técnico** do EJC. A especificação e a auditoria são de
 5. Toda regra jurídica precisa de fonte oficial, vigência e teste.
 6. Toda correção entra com teste de regressão.
 7. Não alterar escopo sem registrar a justificativa no PR — achado fora do escopo vira Issue nova.
-8. Não fazer merge.
-9. Não executar deploy de produção, não acessar o banco de produção, não trabalhar no diretório de produção.
+8. Merge é automático via `auto-integracao.yml` quando todos os gates estiverem verdes e o diff
+   não tocar exceção do §6-A da governança; o agente não força integração de PR retido.
+9. Deploy ocorre somente pela esteira automatizada (CI verde na `main` → `deploy-vps.yml`, com
+   backup, health e rollback); não acessar o banco de produção nem trabalhar no diretório de produção.
 10. Encerrar cada tarefa com relatório: arquivos, comandos, testes, evidências, riscos residuais, limitações e pontos que exigem decisão humana.
-11. PR sempre em **draft**, vinculado à Issue, com o template preenchido; correções de review vão na mesma branch e no mesmo PR.
+11. PR vinculado à Issue e com o template preenchido; no fluxo autônomo o PR nasce **pronto para
+    integração** (draft apenas quando cai em exceção do §6-A ou o trabalho está incompleto);
+    correções de review vão na mesma branch e no mesmo PR.
 12. Não usar `git push --force`, `git reset --hard`, `git clean -fd`, `rm -rf`, `docker compose down -v`, `docker volume rm`, `dropdb`, `alembic downgrade base` nem `--dangerously-skip-permissions`.
 13. Respeitar LGPD, RBAC, isolamento de dados e revisão humana; jamais enfraquecer HITL, gate de citações, sanitização de PII ou kill-switch de IA.
 
@@ -285,5 +289,5 @@ Nenhum caso, até a data da auditoria, passou da triagem; nenhuma peça foi prot
 A recomendação de `gh api graphql` acima vale **só para leitura**: a allowlist libera
 `gh api graphql -f query=*` e nega `gh api` com método de escrita (`-X`, `--method`, `-F`,
 `--input`). As travas de governança continuam valendo sobre todo comando desta seção —
-merge é ato humano do titular (regra 8), não se empurra nada para a `main` (regra 1) e não se
-dispara workflow de deploy (regra 9, `deploy-vps.yml` é `workflow_dispatch`).
+merge acontece pela esteira automatizada com gates verdes (regra 8), não se empurra nada para
+a `main` diretamente (regra 1) e deploy só pela esteira (regra 9).
