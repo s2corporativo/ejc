@@ -18,7 +18,7 @@
 > Adenda **revoga** o que estiver em conflito. Quem for agir a partir deste
 > documento deve ler o **Sumário executivo** (já atualizado para o estado
 > final) e a **Adenda** — não o meio do documento isoladamente. Em especial:
-> **a decisão é remover o Sentry**, não ativá-lo — quem ler só a antiga linha
+> **A decisão é remover o Sentry**, não ativá-lo — quem lesse apenas a antiga linha
 > 0.1 do meio do documento faria exatamente o trabalho que o titular rejeitou.
 > **Precisão (achado de revisão, CodeRabbit):** "decisão" e "estado do código
 > na `main`" são coisas diferentes — ver a coluna "Estado do código" abaixo.
