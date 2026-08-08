@@ -273,13 +273,13 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
       </div>
 
       <div>
-        <div className="flex justify-between items-center mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h3 className="font-semibold text-sm text-gray-500 uppercase">
             Despesas processuais (R$ {totalDespesas.toFixed(2)})
           </h3>
           <button
             onClick={() => setShowDespesaForm(!showDespesaForm)}
-            className="btn-secondary text-xs"
+            className="btn-secondary text-xs whitespace-nowrap"
           >
             + Lançar despesa
           </button>
