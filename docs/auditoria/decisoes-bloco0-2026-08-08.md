@@ -10,56 +10,61 @@ associadas. Este documento registra cada decisão, a justificativa e o que foi
 
 ---
 
-## 0.1 — Sentry: mantido e ativado (não removido)
+## 0.1 — Sentry: decisão revista — REMOVIDO (PR #773 segue como estava)
 
-**Decisão:** o EJC mantém o Sentry. O PR aberto **#773** ("Remover Infosimples,
-Sentry e Ollama do EJC") precisa ser revisado para **excluir** a parte de
-Sentry antes de poder ser mesclado; a remoção de Infosimples e Ollama não é
-afetada por esta decisão (fora do escopo desta rodada).
+> **Histórico da decisão, para quem ler isto depois:** esta seção foi escrita
+> duas vezes no mesmo dia. A primeira versão (preservada em
+> `git log -p` deste arquivo) decidiu **manter e ativar** o Sentry, resolvendo
+> a favor do item 0.1 do plano de lançamento. Ao apresentar os comandos de
+> shell para ativação, o titular perguntou diretamente se o Sentry teria custo
+> — a resposta correta é "só acima da cota gratuita, sem cobrança automática",
+> mas isso reabriu a pergunta de fundo por completo. Perguntado se aceitava
+> ficar **sem nenhuma ferramenta de rastreamento de erro** (nem Sentry SaaS,
+> nem self-hosted como GlitchTip — só log manual do container), o titular
+> confirmou que sim. **Esta segunda versão é a que vale.**
 
-**Por que não a leitura oposta.** O PR #773 também alega "pedido do titular em
-chat" (2026-08-07, Issue #761), então havia dois sinais aparentemente do
-titular apontando em direções opostas — exatamente o tipo de contradição que
-`CLAUDE.md` manda não resolver sozinho. A decisão de manter foi tomada porque:
+**Decisão final:** o EJC **não terá** rastreamento de erro automatizado por
+enquanto — nem Sentry, nem alternativa self-hosted. O PR **#773** ("Remover
+Infosimples, Sentry e Ollama do EJC") pode prosseguir **exatamente como estava
+proposto**, incluindo a remoção do Sentry. O comentário anterior desta sessão
+naquele PR (pedindo para excluir a remoção do Sentry) foi **retratado** com um
+comentário de acompanhamento.
 
-1. O pedido que abriu esta auditoria, no mesmo dia, listava "0.1 Ativar
-   Sentry" como a **causa-raiz nº 1** — os 500 do dossiê, dos ingestores e do
-   Raio-X falhando sem diagnóstico, "reaparece em ~todas as auditorias"
-   (`docs/auditoria/plano-lancamento-v3.md`, BLOCO 1).
-2. A auditoria encontrou o Sentry **já pronto** no código: gated (no-op sem
-   DSN), scrub de PII (`observability.py:62-84`), sem PII default
-   (`send_default_pii=False`), integrado ao FastAPI/SQLAlchemy, com teste de
-   regressão dedicado (`test_mensagem_erro_sem_coletor.py`) — não é uma
-   integração abandonada, é a peça que fecha o achado mais citado da auditoria
-   externa de julho.
-3. Ao reler o pedido do titular no fechamento desta sessão ("Resolver o
-   conflito Sentry: ativar (0.1) ou remover (PR #773)"), a ordem das opções e
-   o contexto (a mesma sessão que apontou o conflito) indicam que a decisão
-   pedida era resolver a favor do item 0.1.
+**Consequência aceita conscientemente:** a causa-raiz nº 1 do plano de
+lançamento — "os 500 do dossiê, dos ingestores e do Raio-X falham sem
+diagnóstico" — **continua sem solução automatizada**. Sem Sentry (ou
+equivalente), um erro em produção só é percebido de duas formas: alguém
+reclama, ou alguém entra na VPS e roda `docker compose logs backend`. A
+mensagem de erro já não promete mais uma notificação que não existe
+(`coletor_erros_ativo()`, corrigido em rodada anterior) — isso permanece
+correto e não é revertido — mas a lacuna de fundo (ninguém é avisado
+proativamente) fica aberta por decisão consciente, registrada aqui, não por
+omissão.
 
-**Ação tomada:** comentário registrado no PR #773 (sem tocar na branch daquele
-PR — regra 4 do `CLAUDE.md`, "nunca modificar arquivos que pertencem a outro
-PR ativo") explicando a decisão e pedindo que a remoção do Sentry seja
-revertida naquele PR antes do merge.
+**Por que a primeira leitura (manter) foi razoável e ainda assim trocada.**
+Não foi erro de leitura do pedido — foi informação nova chegando depois: só ao
+ser questionado diretamente sobre custo e sobre a alternativa self-hosted
+(GlitchTip) o titular esclareceu a preferência real, mais restritiva do que
+qualquer um dos dois PRs (#773 removia o Sentry mas cogitava reintroduzir
+alguma observabilidade depois; a auditoria original pedia ativação). Nenhuma
+das duas leituras anteriores previa "nenhuma ferramenta, nunca".
 
-**Execução de código (autorizada, §10 não se aplica — é código de aplicação,
-não migration/auth/API pública/CI/CD/exclusão/dependência):**
+**Ações tomadas nesta revisão:**
 
-- `backend/app/core/observability.py`: `init_sentry()` agora passa
-  `release=app_version()` ao `sentry_sdk.init()`, correlacionando erro ↔
-  commit publicado no painel do Sentry.
-- **Correção ao relatório original:** a versão inicial da auditoria afirmava
-  que `GIT_SHA` também não era exportado no deploy. Isso estava **errado** —
-  `scripts/deploy_vps_safe.sh:162-234` já exporta `GIT_SHA`, usa no
-  `docker compose build` e **verifica o valor publicado contra `/api/health`**
-  (com rollback automático em divergência); `docker-compose.yml:55,144` já
-  encaminha a variável ao container. Nenhuma mudança em `deploy-vps.yml` foi
-  necessária — a única lacuna real era o parâmetro `release` ausente,
-  corrigido acima.
+1. `backend/app/core/observability.py`: revertido o `release=app_version()`
+   adicionado na primeira versão desta decisão — sem sentido manter parâmetro
+   de uma integração que nunca vai rodar (a limpeza completa de
+   `core/observability.py` fica a cargo do PR #773, que já a propõe).
+2. Comentário de acompanhamento postado no PR #773 retratando o pedido
+   anterior desta sessão.
+3. Este documento e a adenda em
+   `docs/auditoria/auditoria-bloco0-infra-dados-2026-08-08.md` corrigidos.
 
-**O que continua sendo ato humano:** preencher `SENTRY_DSN` no `.env` da VPS e
-reiniciar o backend. Sem isso o `init_sentry()` segue no-op por desenho — este
-executor não acessa a VPS (regra 9).
+**Se a decisão mudar no futuro:** GlitchTip self-hosted continua sendo a
+opção que resolve o problema de fundo sem custo recorrente e sem dado saindo
+do VPS (mesmo código `sentry_sdk`, só aponta o DSN para um servidor próprio em
+vez do sentry.io) — não implementado agora, só registrado como alternativa
+válida caso a lacuna volte a incomodar.
 
 ---
 
@@ -168,28 +173,32 @@ acessa produção.
 
 | Item | Decisão | Código alterado nesta PR |
 |---|---|---|
-| 0.1 | Sentry mantido e ativado; PR #773 comentado pedindo revisão | `observability.py` (`release`) |
+| 0.1 | **Revisado**: sem ferramenta de erro (nem Sentry nem self-hosted); PR #773 segue como estava, comentário anterior retratado | `observability.py` (`release` revertido — nenhuma mudança líquida) |
 | 0.2 | Embeddings locais/fastembed ratificados | nenhum (só registro) |
 | 0.4 | Retenção offsite = 30 dias | `config.py`, `.env.example` |
 | 0.5 | Topologia: mesma VPS, compose separado, dados fictícios | nenhum (Issue de build aberta à parte) |
 
 ## Revisão de segurança
 
-`security-auditor: executado` sobre o diff de código (`observability.py` +
-`config.py`): nenhum achado crítico ou alto. O scrub de PII do Sentry
-(`_before_send`, `_SCRUB_KEYS`) e `send_default_pii=False` seguem intactos;
-`release` expõe só o SHA do commit. A retenção maior do backup cifrado é
-característica inerente a qualquer retenção >0, não um problema introduzido —
-nota de acompanhamento não bloqueante: reavaliar a rotação de
-`BACKUP_ENCRYPTION_KEY` quando o sistema tiver histórico real de uso. Veredito:
-seguro para prosseguir.
+`security-auditor: executado` sobre o diff de código original
+(`observability.py` + `config.py`): nenhum achado crítico ou alto. O scrub de
+PII do Sentry (`_before_send`, `_SCRUB_KEYS`) e `send_default_pii=False`
+seguem intactos. A retenção maior do backup cifrado é característica inerente
+a qualquer retenção >0, não um problema introduzido — nota de acompanhamento
+não bloqueante: reavaliar a rotação de `BACKUP_ENCRYPTION_KEY` quando o
+sistema tiver histórico real de uso. Veredito: seguro para prosseguir.
+*(Nota pós-revisão: `observability.py` voltou ao estado original — sem `release`
+— após a decisão 0.1 ser revista; a parte do parecer sobre `config.py`/retenção
+continua valendo integralmente.)*
 
 ## Riscos residuais
 
-- A decisão 0.1 resolve um conflito entre dois pedidos atribuídos ao titular
-  em datas diferentes; se a leitura estiver errada, o comentário em #773 é
-  reversível sem custo (nenhuma branch foi tocada) — basta o titular dizer o
-  contrário e a remoção segue seu curso normal naquele PR.
+- **0.1 é agora um risco aceito, não um problema resolvido**: sem coletor de
+  erro, o EJC volta a depender de reclamação de usuário ou checagem manual de
+  log para saber que algo quebrou em produção. Se isso se tornar doloroso na
+  operação real, o caminho de volta mais barato é o GlitchTip self-hosted
+  (mesmo código, sem custo recorrente, sem dado saindo do VPS) — não o Sentry
+  SaaS nem reabrir o PR #773.
 - A retenção de 30 dias (0.4) é uma escolha razoável, não uma exigência legal
   identificada — pode ser ajustada livremente sem migração de dado.
 - A topologia de homologação (0.5) é decisão de baixo custo para reverter
