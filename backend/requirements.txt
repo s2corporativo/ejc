@@ -105,7 +105,7 @@ reportlab==4.2.0  # relatorio_visual_law.py, visual_law_templates.py
 # embedding_service + pgvector diretos; langfuse não depende de langchain em
 # runtime). Elimina a exposição às CVE-2024-8309 (SQLi) e CVE-2024-7774 (path
 # traversal) do langchain-community 0.2.x. Validado: suíte completa verde sem eles.
-anthropic==0.113.0  # providers/anthropic_provider.py (ai_gateway)
+anthropic==0.120.2  # providers/anthropic_provider.py (ai_gateway)
 # PIN EXATO (auditoria P2 + REPRODUTIBILIDADE do RAG). O RAG usa fastembed
 # (ONNX, sem torch) — NÃO sentence-transformers. Uma versão flutuante é risco de
 # supply chain E de reprodutibilidade: o intfloat/multilingual-e5-large chegou a
