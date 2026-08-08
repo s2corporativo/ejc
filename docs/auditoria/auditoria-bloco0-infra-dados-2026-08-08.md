@@ -1,6 +1,7 @@
 # Auditoria — Bloco 0 (infraestrutura e dados): Sentry, embeddings/RAG, backup offsite e homologação
 
 **Data:** 2026-08-08 · **Escopo:** itens 0.1 a 0.5 da tabela de pré-lançamento
+· **Registro:** Issue #792 / PR #793
 · **Método:** leitura do código-fonte na branch `claude/auditoria-infra-dados-2mgrm9`
 (base `main` em `f27d54f`), sem acesso ao ambiente de produção (regra 9 de
 `docs/GOVERNANCA_IA.md` — o executor não acessa VPS nem banco de produção).
