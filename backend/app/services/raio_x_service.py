@@ -17,6 +17,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.client_ownership import (
     obter_cliente_autorizado,
@@ -668,6 +669,22 @@ async def converter_em_caso(
             status_code=403,
             detail="Seu perfil pode analisar documentos, mas não possui autorização para criar casos oficiais.",
         )
+    # Lock pessimista + recheck (paridade legal_chat_service.py::converter_em_caso
+    # e vincular_caso_existente): sem isto, o job de purga de preliminares
+    # abandonadas (F4 / Issue #798) pode correr concorrente a uma conversão em
+    # voo — a UPDATE da purga vence a corrida entre o SELECT inicial (feito
+    # pelo router, sem lock) e o commit final desta função, sobrescrevendo
+    # `discarded_at` num registro que acabou de ser convertido (achado do
+    # security-auditor). populate_existing garante que o recheck abaixo lê o
+    # estado já commitado, não o identity map stale.
+    res = await db.execute(
+        select(RaioXAnalise)
+        .options(selectinload(RaioXAnalise.documentos))
+        .where(RaioXAnalise.id == analise.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    analise = res.scalar_one()
     if analise.convertido_case_id:
         return {"case_id": analise.convertido_case_id, "ja_convertido": True}
 

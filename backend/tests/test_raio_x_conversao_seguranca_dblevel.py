@@ -294,3 +294,55 @@ async def test_conversao_cria_snapshot_raio_x_na_mesma_operacao():
                 client_ids=[client_id],
                 user_ids=[advogado],
             )
+
+
+async def test_conversao_rele_estado_sob_lock_nao_duplica_caso():
+    """Achado do security-auditor (F4/#798): antes desta correção,
+    converter_em_caso checava `analise.convertido_case_id` no objeto Python
+    já carregado pelo chamador — se esse objeto estivesse desatualizado
+    (ex.: outra transação converteu/tocou a análise entre o SELECT do router
+    e este commit), a checagem de idempotência não via a mudança e criaria um
+    SEGUNDO caso. Agora a função rebusca sob `with_for_update` antes de
+    checar. Simula a corrida sem depender de dois processos reais: a
+    conversão real acontece via uma segunda sessão; o objeto `analise`
+    passado à função sob teste é o ORIGINAL, sem essa mudança."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.raio_x_service import converter_em_caso
+
+    case_id_real = None
+    async with AsyncSessionLocal() as db_evento_concorrente, AsyncSessionLocal() as db:
+        advogado = await _criar_user(db)
+        client_id = await _criar_cliente(db, "Cliente Corrida de Conversão", advogado)
+        analise_id = await _criar_analise(db, advogado, "Cliente Corrida de Conversão")
+        await db.commit()
+        try:
+            user = await _carregar_user(db, advogado)
+            # Objeto "stale" que o chamador (router) teria em mãos ANTES da
+            # corrida — convertido_case_id ainda None neste snapshot.
+            analise_stale = await _carregar_analise(db, analise_id)
+            assert analise_stale.convertido_case_id is None
+
+            # Outra transação converte a análise "por fora" enquanto o
+            # objeto acima já estava carregado em memória.
+            user_evento = await _carregar_user(db_evento_concorrente, advogado)
+            analise_evento = await _carregar_analise(db_evento_concorrente, analise_id)
+            resultado_real = await converter_em_caso(
+                db_evento_concorrente, analise_evento, _payload_existente(client_id), user_evento,
+            )
+            case_id_real = resultado_real["case_id"]
+            assert resultado_real["ja_convertido"] is False
+
+            # A chamada com o objeto STALE não pode criar um segundo caso —
+            # tem que enxergar, via lock+recheck, que já foi convertida.
+            resultado_stale = await converter_em_caso(
+                db, analise_stale, _payload_existente(client_id), user,
+            )
+            assert resultado_stale == {"case_id": case_id_real, "ja_convertido": True}
+        finally:
+            await _limpar(
+                db,
+                analise_ids=[analise_id],
+                case_ids=[case_id_real] if case_id_real else [],
+                client_ids=[client_id],
+                user_ids=[advogado],
+            )
