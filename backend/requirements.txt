@@ -75,7 +75,7 @@ aiofiles==23.2.1
 python-magic-bin==0.4.14; platform_system == "Windows"
 python-magic==0.4.27; platform_system != "Windows"
 PyMuPDF==1.24.5
-pypdf==6.14.2
+pypdf==6.15.0
 # Pin explícito da dependência de pdfplumber: versões anteriores permitiam
 # desserialização insegura de CMaps e parsing malicioso de PDFs. O pdfplumber
 # 0.11.10 exige exatamente a série 20260107.

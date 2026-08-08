@@ -376,7 +376,7 @@
     ),
     linear-gradient(135deg, #3b2f0b 0%, #6f5711 62%, #8f7117 100%);
   color: rgba(255, 245, 230, 0.86);
-  content: "VISUAL LAW EJC · PRÉ-VISUALIZAÇÃO DA PEÇA";
+  content: "PRÉ-VISUALIZAÇÃO DA PEÇA";
   font-size: 0.72rem;
   font-weight: 850;
   letter-spacing: 0.16em;
@@ -612,15 +612,8 @@
   line-height: 1.1;
 }
 
-.print-view-title::before {
-  display: block;
-  margin-bottom: 0.55rem;
-  color: rgba(255, 255, 255, 0.68);
-  content: "VISUAL LAW EJC";
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-}
+/* O kicker de marca interna acima do título impresso foi removido: o
+   documento final é entregue ao cliente e não deve carregar rótulo interno. */
 
 .print-view-meta {
   margin: 0 0 1.5rem;

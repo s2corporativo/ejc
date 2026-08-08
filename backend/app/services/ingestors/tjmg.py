@@ -152,7 +152,8 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
 
     novos = total = 0
     vistas: set[str] = set()   # dedup intra-execução (mesmo julgado em 2 temas)
-    # Contagem de itens BRUTOS recebidos, antes de qualquer filtro ou parsing.
+    # Contagem de blocos BRUTOS que a origem devolveu, medida DENTRO do parser
+    # (_parse_tjmg_html, via `metricas`) — antes de qualquer filtro de campo.
     # Sem ela, "nada veio da origem" e "veio e o parser não reconheceu" produzem
     # exatamente o mesmo resultado — zero, sem erro. Esse é o defeito estrutural
     # do parser tolerante: ele nunca falha, então nunca avisa. Com o número
@@ -160,16 +161,31 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
     brutos = 0
 
     for tema in temas:
+        met: dict = {}
         try:
             itens = await buscar_tjmg(
                 tema, por_pagina=max_tema,
                 data_inicial=data_ini, data_final=data_fim,
+                metricas=met,
             )
         except Exception as e:   # rede/HTML — nunca derruba a execução inteira
             logger.warning("TJMG tema %r: %s: %s", tema, type(e).__name__, e)
             continue
 
-        brutos += len(itens or [])
+        # Fallback len(itens): buscar_tjmg substituído em teste/monkeypatch
+        # pode não preencher `met` — degrada para a contagem antiga.
+        blocos_tema = int(met.get("blocos", len(itens or [])))
+        brutos += blocos_tema
+        # Os três zeros diferentes, distinguidos e logados na camada certa:
+        if met.get("rede_falhou"):
+            logger.warning("TJMG tema %r: falha de rede/HTTP na origem — "
+                           "0 itens (não é ausência de julgados)", tema)
+        elif met.get("html_bytes", 0) > 0 and blocos_tema == 0:
+            logger.warning(
+                "TJMG tema %r: HTML recebido (%d bytes) mas 0 blocos casaram o "
+                "padrão de classe CSS — layout da página de resultados pode "
+                "ter mudado", tema, met["html_bytes"],
+            )
         n_tema = 0
         for it in itens:
             ementa = it.get("ementa") or ""
@@ -220,9 +236,11 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
 
     # A linha que torna um zero diagnosticável: brutos=0 é "a origem não
     # devolveu nada"; brutos>0 com total=0 é "veio e o parser descartou tudo" —
-    # dois problemas diferentes, com investigações diferentes.
+    # dois problemas diferentes, com investigações diferentes. `brutos` aqui é
+    # a contagem de BLOCOS que a origem devolveu (medida no parser), não a de
+    # itens já parseados.
     logger.info(
-        "TJMG execução: %d itens brutos recebidos → %d processados → %d novos",
+        "TJMG execução: %d blocos brutos na origem → %d processados → %d novos",
         brutos, total, novos,
     )
     if brutos and not total:

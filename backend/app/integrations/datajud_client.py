@@ -9,30 +9,27 @@ a qualquer momento pelo CNJ — não é uma credencial pessoal do usuário).
 Uso no EJC: consulta de metadados processuais (capa e movimentações) por
 número de processo, para qualquer tribunal brasileiro, via alias do tribunal.
 
-IMPORTANTE (revisão técnica):
-- Esta API é somente leitura (metadados processuais), respeitando sigilo de
-  processos protegidos por segredo de justiça (Portaria CNJ 160/2020).
-- A API Key abaixo é PÚBLICA (publicada oficialmente pelo CNJ na Wiki do
-  Datajud) e pode ser alterada pelo CNJ sem aviso prévio. Trate-a como
-  configuração, não como segredo — mas mantenha-a em variável de ambiente
-  para facilitar atualização futura sem alterar código.
+IMPORTANTE (Onda 3 — achado de segurança/consistência):
+- A chave embutida no código foi REMOVIDA. A única fonte da chave é a
+  configuração central (settings.DATAJUD_API_KEY, que o pydantic-settings lê
+  do .env/variável de ambiente DATAJUD_API_KEY). Sem chave ou com
+  DATAJUD_ENABLED=false, a consulta levanta DataJudDesabilitadoError —
+  degradação graciosa, no MESMO idioma de services/datajud_service.py.
+- Este módulo é um wrapper fino: a chamada HTTP real (retry/backoff, base URL
+  e timeout configuráveis) é delegada a datajud_service.buscar_processo_bruto,
+  eliminando o caminho paralelo sem retry que existia aqui.
 """
 
 from __future__ import annotations
 
-import os
-from typing import Any, Optional
+from typing import Any
 
-import httpx
+from app.services.datajud_service import (  # noqa: F401  (reexport p/ consumidores)
+    DataJudDesabilitadoError,
+    buscar_processo_bruto,
+)
 
 DATAJUD_BASE_URL = "https://api-publica.datajud.cnj.jus.br"
-
-# Valor publicado em https://datajud-wiki.cnj.jus.br/api-publica/acesso
-# Pode mudar a qualquer momento por decisão do CNJ — sempre confirme na Wiki
-# antes de assumir que este valor ainda é válido.
-DATAJUD_API_KEY_DEFAULT = (
-    "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
-)
 
 # Aliases de tribunal mais usados pelo escritório (ajustar conforme a
 # distribuição real de casos do EJC). Lista completa em:
@@ -51,21 +48,11 @@ class DataJudError(RuntimeError):
 
 
 class DataJudClient:
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        timeout_s: float = 15.0,
-    ) -> None:
-        # "or" (e não default do getenv): o .env/docker-compose exporta
-        # DATAJUD_API_KEY= VAZIA — string vazia também deve cair no fallback.
-        self.api_key = api_key or os.getenv("DATAJUD_API_KEY") or DATAJUD_API_KEY_DEFAULT
-        self._timeout = httpx.Timeout(timeout_s)
+    """Wrapper fino sobre datajud_service (caminho único de saída ao CNJ).
 
-    def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"APIKey {self.api_key}",
-            "Content-Type": "application/json",
-        }
+    Não guarda chave própria: flag e chave são resolvidas pelo serviço no
+    momento da chamada (kill-switch DATAJUD_ENABLED prevalece sempre).
+    """
 
     async def consultar_processo(
         self,
@@ -80,19 +67,8 @@ class DataJudClient:
         Use TRIBUNAL_ALIASES para os mais comuns, ou consulte a lista completa
         na Wiki do Datajud antes de assumir um alias que não esteja mapeado
         aqui.
+
+        Levanta DataJudDesabilitadoError (flag/chave ausentes) ou httpx.*
+        (falha de rede/HTTP após os retries do serviço).
         """
-        numero_limpo = "".join(ch for ch in numero_processo if ch.isdigit())
-        url = f"{DATAJUD_BASE_URL}/{tribunal_alias}/_search"
-        payload = {
-            "query": {
-                "match": {"numeroProcesso": numero_limpo}
-            }
-        }
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(url, headers=self._headers(), json=payload)
-        if resp.status_code != 200:
-            raise DataJudError(
-                f"DataJud retornou HTTP {resp.status_code} para "
-                f"{tribunal_alias}/{numero_limpo}: {resp.text[:500]}"
-            )
-        return resp.json()
+        return await buscar_processo_bruto(numero_processo, tribunal_alias)

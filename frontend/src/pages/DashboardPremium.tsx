@@ -383,12 +383,12 @@ export default function DashboardPremium() {
       ? [
           {
             to: NOVO_CASO_DOCUMENTO_PATH,
-            label: "Novo processo por documento",
+            label: "Novo caso por documento",
             icon: FilePlus2,
           },
           {
             to: NOVO_CASO_MANUAL_PATH,
-            label: "Novo processo manual",
+            label: "Novo caso manual",
             icon: Plus,
           },
           { to: "/clientes", label: "Novo cliente", icon: UserPlus },

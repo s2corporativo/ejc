@@ -35,6 +35,12 @@ class JulgadoNormalizado(BaseModel):
     orgao_julgador: str | None = None
     relator: str | None = None
     classe: str | None = None
+    # Área do direito inferida da ementa. Sem ela, `detectar_area`
+    # (knowledge_governance) cai no match textual sobre título/categoria
+    # e o julgado termina em "Geral" na matriz de cobertura — era o caso
+    # de todo acórdão do STJ (auditoria: a lacuna de área é rótulo
+    # faltando, não conteúdo).
+    area_juridica: str | None = None
     # Chave PRINCIPAL de gravação (knowledge_docs.chave_origem) quando o
     # conector compartilha keyspace com um ingestor agendado (ex.: STJ usa a
     # MESMA chave "stj:<numeroRegistro>" do job diário — assim o job de amanhã
