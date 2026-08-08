@@ -3,7 +3,8 @@
 > **Documento canônico.** `CLAUDE.md`, `AGENTS.md` e os demais documentos de processo
 > traduzem estas regras para cada agente. Em caso de divergência, este arquivo prevalece.
 
-Versão: 2.1 — 2026-08-06.
+Versão: 3.0 — 2026-08-08 — **fluxo autônomo**: merge e deploy automáticos quando todos os
+gates automatizados estiverem verdes; intervenção humana reservada às exceções do §6-A.
 
 ## 1. Princípio
 
@@ -32,9 +33,9 @@ de IA fica permanentemente impedido de implementar ou revisar.
 
 | Papel da tarefa | Responsabilidade | Limite principal |
 |---|---|---|
-| **Titular** | Define objetivo, prioridade, decisões jurídicas e autorização de merge/deploy | Não precisa revisar código linha a linha |
+| **Titular** | Define objetivo, prioridade, decisões jurídicas e decide as exceções do §6-A | Não intervém no ciclo normal: merge e deploy são automáticos com gates verdes |
 | **Auditor** | Lê todo o escopo necessário, executa diagnóstico, testes e produz achados verificáveis | Não altera produção nem apresenta hipótese como fato |
-| **Executor** | Implementa correções ou funcionalidades, escreve testes e registra decisões | Não faz merge/deploy sem autorização humana |
+| **Executor** | Implementa correções ou funcionalidades, escreve testes e registra decisões | Não força integração de mudança retida por exceção do §6-A |
 | **Revisor independente** | Revisa diff, segurança, LGPD, validade jurídica, UX e regressão | Não aprova por confiança; exige evidência |
 | **CI/GitHub** | Mantém histórico e executa controles automáticos | Não substitui homologação humana |
 
@@ -78,7 +79,9 @@ continuidade, mas não precisa interromper o trabalho atual.
 Para funcionalidade ou bug específico, permanece o fluxo normal:
 
 ```text
-pedido/Issue → branch → implementação → testes → PR → revisão → homologação → merge autorizado
+pedido/Issue → branch → implementação → testes locais → PR → gates automatizados verdes
+            → merge automático → deploy automático (staging quando ativo → produção)
+            → health-check + smoke → rollback automático em falha
 ```
 
 Uma Issue pode originar mais de um PR quando a divisão reduzir risco, conflito ou tamanho do diff.
@@ -122,8 +125,12 @@ testes antes de ficar pronta para merge.
 ## 6. Regras de execução
 
 1. Não alterar, commitar ou empurrar diretamente na `main`/`master`.
-2. Não fazer merge nem deploy de produção sem autorização humana expressa.
-3. Toda escrita ocorre em branch identificável e termina registrada em PR.
+2. Merge e deploy ocorrem **automaticamente** quando todos os gates automatizados estiverem
+   verdes e o diff não alcançar exceção do §6-A. Fora dessas condições, a integração espera
+   decisão humana; o agente jamais a contorna.
+3. Toda escrita ocorre em branch identificável e termina registrada em PR. Antes do push, o
+   executor roda os testes locais existentes das áreas afetadas; teste que falhar é investigado
+   e corrigido dentro do escopo antes de o PR ficar elegível.
 4. Auditoria ampla exige Issue-guarda-chuva antes da primeira escrita; não é obrigatório criar uma
    Issue por achado.
 5. Escopo pode ser ampliado para achados relacionados, desde que a ampliação seja registrada.
@@ -138,6 +145,49 @@ testes antes de ficar pronta para merge.
 13. Rota nova nasce protegida; endpoint público exige justificativa registrada.
 14. Mudança sensível envolvendo autenticação, permissões, uploads, CI/CD ou configuração exige
     execução e registro do `security-auditor` antes da finalização e do merge.
+
+## 6-A. Fluxo autônomo — gates e exceções
+
+Decisão permanente do titular (2026-08-08): no ciclo normal de desenvolvimento, **nenhuma
+autorização intermediária é exigida** para análise, Issue, branch, implementação, testes,
+commits, push, abertura/atualização de PR, merge e deploy. O GitHub atua como versionamento,
+auditoria e CI/CD — não como ponto de espera humana.
+
+**Gates automatizados obrigatórios (todos verdes para integrar):**
+
+1. testes locais executados antes do push;
+2. CI completa (backend + banco/migrations + frontend);
+3. travas de governança (`governanca.yml`) e release gate (`ci_guard.sh`);
+4. pós-merge: deploy com backup prévio, health-check com confirmação de SHA e smoke test
+   (`scripts/post_deploy_check.sh`); staging com gates próprios quando `STAGING_ENABLED=1`;
+5. rollback automático para a última versão estável em falha de deploy.
+
+**Exceções — intervenção humana obrigatória** (o workflow `auto-integracao.yml` retém e
+registra o motivo no PR):
+
+1. migration destrutiva ou irreversível;
+2. risco concreto de perda ou corrupção de dados;
+3. alteração de credenciais ou segredos;
+4. alteração crítica de autenticação/autorização;
+5. impossibilidade de rollback seguro;
+6. alteração estrutural cuja segurança não possa ser validada automaticamente — incluída
+   qualquer mudança em workflows, governança, configuração de agentes, nginx, compose,
+   `scripts/` (esteira executada na VPS), Dockerfiles, dependências (`requirements*.txt`,
+   `package*.json`), núcleo `backend/app/core/`, middlewares, rotas de auth/usuários,
+   `pii_crypto` e `ai_gateway` (a automação não integra mudanças em si mesma nem no que
+   roda com privilégio em produção);
+7. falha persistente que o agente não consiga resolver autonomamente.
+
+**Concorrência:** segue o §5 — dois agentes não alteram os mesmos arquivos sem estratégia
+explícita de consolidação; arquivo de PR ativo funciona como lock lógico.
+
+**Rastreabilidade mínima por ciclo:** Issue, PR, commits, resultado de cada gate, artefato de
+decisão de migration, SHA implantado (`.deployed_sha`), tags de rollback e versão anterior.
+Alterações pequenas e relacionadas podem compartilhar Issue e PR — coerência operacional
+prevalece sobre fragmentação.
+
+Nada neste modo reduz backup, rollback, integridade de banco, proteção de segredos, HITL,
+citation gate, sanitização de PII ou isolamento entre ambientes.
 
 ## 7. Proteções não negociáveis
 
@@ -217,6 +267,7 @@ Decisão permanente só é reaberta por novo pedido explícito do titular.
 
 | Decisão | Estado | Observação |
 |---|---|---|
+| **Fluxo autônomo — merge/deploy automáticos com gates verdes** | Vigente desde 2026-08-08 | Ciclo normal sem intervenção humana; exceções fechadas no §6-A. Reverter exige novo pedido explícito do titular. |
 | **2FA — não implementar por padrão** | Vigente desde 2026-07-26 | `TWO_FACTOR_AUTH_ENABLED` permanece desligado por padrão e o kill-switch é preservado. Auditoria pode registrar o risco, mas não tratá-lo como correção obrigatória contra a decisão do titular. |
 
 ## 12. Exceção de bot de manutenção de dependências

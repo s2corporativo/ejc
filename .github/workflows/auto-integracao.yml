@@ -1,0 +1,196 @@
+# Auto-integração — governança v3 (fluxo autônomo).
+#
+# Quando TODOS os checks do PR estiverem verdes e o diff não tocar caminho de
+# exceção, o PR é integrado automaticamente (squash) sem aprovação humana,
+# conforme docs/GOVERNANCA_IA.md §6-A. Após o merge, a CI é redisparada na main
+# via workflow_dispatch (o push feito pelo GITHUB_TOKEN não gera evento novo),
+# o que aciona a cadeia de deploy automático existente.
+#
+# Retenção humana (nunca integra sozinho) quando o PR:
+#   - está em draft ou carrega o label `retencao-humana`;
+#   - altera workflows, governança, configuração de agentes, nginx, compose,
+#     scripts de deploy/backup ou núcleo de segurança/config do backend;
+#   - contém migration com operação destrutiva (drop/delete/truncate);
+#   - tem qualquer check vermelho.
+name: Auto-integracao
+
+on:
+  workflow_run:
+    workflows: ["CI", "Governanca", "EJC Release Gate"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: auto-integracao-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  integrar:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Localizar PR do commit
+        id: pr
+        shell: bash
+        run: |
+          set -euo pipefail
+          PR_JSON="$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.state == "open" and .base.ref == "main")][0]')"
+          if [ -z "$PR_JSON" ] || [ "$PR_JSON" = "null" ]; then
+            echo "Nenhum PR aberto para $SHA com base na main; nada a integrar."
+            echo "numero=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Origem confiável obrigatória: PR de fork NUNCA é auto-integrado
+          # (o CI verde de um fork não é prova de intenção do titular), e o
+          # autor precisa ter escrita no repositório.
+          HEAD_REPO="$(printf '%s' "$PR_JSON" | jq -r '.head.repo.full_name')"
+          ASSOC="$(printf '%s' "$PR_JSON" | jq -r '.author_association')"
+          if [ "$HEAD_REPO" != "$REPO" ]; then
+            echo "PR originado de fork ($HEAD_REPO); auto-integração não se aplica."
+            echo "numero=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$ASSOC" in
+            OWNER|MEMBER|COLLABORATOR) ;;
+            *)
+              echo "Autor sem escrita no repositório ($ASSOC); auto-integração não se aplica."
+              echo "numero=" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+          echo "numero=$(printf '%s' "$PR_JSON" | jq -r '.number')" >> "$GITHUB_OUTPUT"
+          echo "draft=$(printf '%s' "$PR_JSON" | jq -r '.draft')" >> "$GITHUB_OUTPUT"
+          echo "labels=$(printf '%s' "$PR_JSON" | jq -r '[.labels[].name] | join(",")')" >> "$GITHUB_OUTPUT"
+
+      - name: Avaliar elegibilidade e caminhos de exceção
+        id: avaliar
+        if: steps.pr.outputs.numero != ''
+        shell: bash
+        env:
+          PR: ${{ steps.pr.outputs.numero }}
+          DRAFT: ${{ steps.pr.outputs.draft }}
+          LABELS: ${{ steps.pr.outputs.labels }}
+        run: |
+          set -euo pipefail
+          motivo=""
+
+          if [ "$DRAFT" = "true" ]; then
+            motivo="PR em draft"
+          fi
+          case ",$LABELS," in
+            *,retencao-humana,*) motivo="${motivo:+$motivo; }label retencao-humana presente" ;;
+          esac
+
+          # Caminhos que exigem decisão humana (GOVERNANCA_IA.md §6-A):
+          # a automação não integra mudanças em si mesma, na governança, na
+          # esteira executada na VPS (scripts/, Dockerfiles, compose, nginx),
+          # em dependências, segredos ou no núcleo de auth/segurança/PII.
+          EXCECAO='^(\.github/|\.claude/|CLAUDE\.md|AGENTS\.md|docs/GOVERNANCA|nginx/|docker-compose[^/]*\.yml|scripts/|.*Dockerfile[^/]*$|backend/requirements[^/]*\.txt|frontend/package(-lock)?\.json|frontend/nginx|backend/app/core/|backend/app/middleware|backend/app/routers/(auth|users|api_keys)|backend/app/services/(pii_crypto|ai_gateway)|(^|/)\.env)'
+          # Lista via API REST para enxergar também o caminho ANTERIOR de
+          # arquivos renomeados — rename não escapa da exceção.
+          ARQS="$(gh api "repos/$REPO/pulls/$PR/files" --paginate \
+            --jq '.[] | .filename, (.previous_filename // empty)')"
+          SENSIVEIS="$(printf '%s\n' "$ARQS" | grep -E "$EXCECAO" || true)"
+          if [ -n "$SENSIVEIS" ]; then
+            motivo="${motivo:+$motivo; }arquivos de exceção: $(printf '%s' "$SENSIVEIS" | tr '\n' ' ')"
+          fi
+
+          # Migration com traço destrutivo é retida. Heurística textual
+          # best-effort — a defesa final é o classificador expand-only do
+          # deploy (check_migration_compatibility.py), que bloqueia a
+          # aplicação de migration não retrocompatível em produção.
+          MIGS="$(printf '%s\n' "$ARQS" | grep -E '^backend/alembic/versions/' || true)"
+          if [ -n "$MIGS" ]; then
+            PATCH="$(gh pr diff "$PR" --repo "$REPO" || true)"
+            if printf '%s' "$PATCH" | grep -Eiq 'op\.drop_|op\.alter_column|DROP (TABLE|COLUMN|INDEX|CONSTRAINT)|TRUNCATE|DELETE FROM'; then
+              motivo="${motivo:+$motivo; }migration com operação potencialmente destrutiva"
+            fi
+          fi
+
+          # Todos os check runs do SHA precisam estar concluídos e verdes, E os
+          # gates obrigatórios precisam EXISTIR — um check obrigatório ainda não
+          # registrado (workflow atrasado na fila) conta como pendente, não como
+          # ausência de problema. Poll de até 15 min.
+          OBRIGATORIOS='Backend — suíte completa
+          Frontend — testes + typecheck + build
+          Governança — travas de PR
+          P0 guard'
+          for _ in $(seq 1 15); do
+            CHECKS="$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.name != "integrar")]')"
+            PENDENTES="$(printf '%s' "$CHECKS" | jq '[.[] | select(.status != "completed")] | length')"
+            FALHAS="$(printf '%s' "$CHECKS" | jq '[.[] | select(.conclusion != null and .conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped")] | length')"
+            FALTANTES=0
+            while IFS= read -r g; do
+              g="$(printf '%s' "$g" | sed 's/^ *//')"
+              [ -z "$g" ] && continue
+              printf '%s' "$CHECKS" | jq -e --arg g "$g" '[.[] | select(.name | startswith($g))] | length > 0' >/dev/null \
+                || { echo "Gate obrigatório ainda não registrado: $g"; FALTANTES=$((FALTANTES+1)); }
+            done <<< "$OBRIGATORIOS"
+            if [ "$FALHAS" -gt 0 ]; then
+              motivo="${motivo:+$motivo; }$FALHAS check(s) reprovado(s)"
+              break
+            fi
+            [ "$PENDENTES" -eq 0 ] && [ "$FALTANTES" -eq 0 ] && break
+            echo "Aguardando: $PENDENTES pendente(s), $FALTANTES gate(s) obrigatório(s) ausente(s)..."
+            sleep 60
+          done
+          if { [ "${PENDENTES:-1}" -gt 0 ] || [ "${FALTANTES:-1}" -gt 0 ]; } && [ -z "$motivo" ]; then
+            motivo="gates obrigatórios pendentes ou ausentes após espera"
+          fi
+
+          echo "motivo=$motivo" >> "$GITHUB_OUTPUT"
+          if [ -n "$motivo" ]; then
+            echo "Retido para decisão humana: $motivo"
+          else
+            echo "Elegível para integração automática."
+          fi
+
+      - name: Registrar retenção no PR
+        if: steps.pr.outputs.numero != '' && steps.avaliar.outputs.motivo != ''
+        shell: bash
+        env:
+          PR: ${{ steps.pr.outputs.numero }}
+          MOTIVO: ${{ steps.avaliar.outputs.motivo }}
+        run: |
+          set -euo pipefail
+          MARCA="<!-- auto-integracao:retencao -->"
+          if ! gh pr view "$PR" --repo "$REPO" --json comments \
+              --jq '.comments[].body' | grep -qF "$MARCA"; then
+            gh pr comment "$PR" --repo "$REPO" --body "$MARCA
+          ⏸️ **Auto-integração retida — decisão humana necessária.**
+
+          Motivo: $MOTIVO
+
+          Com os gates verdes e a exceção resolvida (ou merge manual do titular), o PR segue o fluxo normal.
+
+          ---
+          _Generated by [Claude Code](https://claude.ai/code)_"
+          fi
+
+      - name: Integrar (squash) e redisparar CI na main
+        if: steps.pr.outputs.numero != '' && steps.avaliar.outputs.motivo == ''
+        shell: bash
+        env:
+          PR: ${{ steps.pr.outputs.numero }}
+        run: |
+          set -euo pipefail
+          gh api -X PUT "repos/$REPO/pulls/$PR/merge" \
+            -f merge_method=squash \
+            -f sha="$SHA" \
+            --jq '.merged, .message'
+          # Push via GITHUB_TOKEN não gera evento de push; a CI da main é
+          # disparada explicitamente para acionar a cadeia de deploy.
+          gh workflow run ci.yml --repo "$REPO" --ref main
+          echo "PR #$PR integrado; CI da main disparada."
