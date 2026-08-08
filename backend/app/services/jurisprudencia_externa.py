@@ -170,6 +170,7 @@ async def buscar_tjmg(
     data_final: str = "",
     classe: str = "",
     orgao: str = "",
+    metricas: dict | None = None,
 ) -> list[dict]:
     """
     Busca na jurisprudência pública do TJMG via formulário web.
@@ -178,6 +179,12 @@ async def buscar_tjmg(
     Filtros opcionais (usados pelo ingestor RAG agendado; a busca ao vivo do
     usuário chama sem eles): `data_inicial`/`data_final` (dd/mm/aaaa),
     `classe` (ex.: para mirar IRDR/IAC) e `orgao` (código do órgão julgador).
+
+    `metricas` (opcional, preenchido in-place — a lista de retorno não muda de
+    shape para os demais chamadores): {"rede_falhou": bool, "html_bytes": int,
+    "blocos": int}. É o que permite ao ingestor agendado distinguir "a rede
+    caiu", "o HTML veio mas nenhum bloco casou o padrão (layout mudou)" e
+    "veio e parseou" — três zeros diferentes que antes eram indistinguíveis.
     """
     # TJMG espera POST com params de formulário
     payload = {
@@ -202,12 +209,16 @@ async def buscar_tjmg(
             r.raise_for_status()
     except Exception as exc:
         logger.warning("TJMG indisponível: %s", exc)
+        if metricas is not None:
+            metricas.update(rede_falhou=True, html_bytes=0, blocos=0)
         return []
 
-    return _parse_tjmg_html(r.text)
+    if metricas is not None:
+        metricas["rede_falhou"] = False
+    return _parse_tjmg_html(r.text, metricas)
 
 
-def _parse_tjmg_html(html: str) -> list[dict]:
+def _parse_tjmg_html(html: str, metricas: dict | None = None) -> list[dict]:
     """Parse tolerante do HTML de resultados do TJMG.
 
     Baseado em regex (não há bs4/lxml nas dependências) e deliberadamente
@@ -215,8 +226,15 @@ def _parse_tjmg_html(html: str) -> list[dict]:
     são descartados — NUNCA levanta exceção. Se o HTML do TJMG mudar, o
     resultado degrada para lista vazia (e o job de ingestão marca a fonte como
     'parcial'/'erro' no painel, sem quebrar o scheduler).
+
+    `metricas` (opcional, preenchido in-place): {"html_bytes": tamanho do HTML
+    recebido, "blocos": quantos blocos brutos o split por classe CSS casou}.
+    Instrumenta a camada onde a mudança de layout mata a coleta: html_bytes > 0
+    com blocos == 0 significa "a página veio e o padrão não casou" — sinal de
+    layout novo, invisível quando o retorno era só a lista vazia.
     """
     resultados = []
+    tamanho_html = len(html or "")
 
     # Teto defensivo de tamanho: bound o custo do parse regex sobre HTML de
     # terceiros (uma resposta anômala não vira gasto de CPU desproporcional).
@@ -234,6 +252,10 @@ def _parse_tjmg_html(html: str) -> list[dict]:
     # Extração via regex dos campos principais
     # Padrão TJMG: Número | Relator | Órgão | Classe | Data | Ementa
     blocos = re.split(r'(?i)<(?:tr|div)[^>]*class="[^"]*(?:resultad|accordao|acordao|linha)[^"]*"', html)
+
+    if metricas is not None:
+        metricas["html_bytes"] = tamanho_html
+        metricas["blocos"] = max(len(blocos) - 1, 0)
 
     for bloco in blocos[1:]:
         # Número do acórdão

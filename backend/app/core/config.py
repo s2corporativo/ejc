@@ -374,6 +374,10 @@ class Settings(BaseSettings):
     DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
     # Timeout por requisição. O CNJ pode responder lentamente em horários de pico.
     DATAJUD_TIMEOUT_SECONDS: float = 25.0
+    # Cache TTL (segundos) da consulta processual por número CNJ — evita bater
+    # no CNJ a cada request repetida. Em memória (premissa de worker único).
+    # 0 desliga o cache. Erro do CNJ nunca entra no cache.
+    DATAJUD_CACHE_TTL_SEGUNDOS: int = 900
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta
