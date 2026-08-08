@@ -6,6 +6,7 @@ decisões pendentes do Bloco 0 e a execução das correções pequenas de códig
 associadas. Este documento registra cada decisão, a justificativa e o que foi
 (ou não) implementado — é o registro exigido por `docs/GOVERNANCA_IA.md` (regra
 7: escopo sem registro não é escopo) e pelas "Regras de decisão" do `CLAUDE.md`.
+**Registro:** Issue #800 / PR #801.
 
 ---
 
