@@ -18,7 +18,7 @@ _settings = get_settings()
 
 DADOS_ESCRITORIO = {
     "nome": _settings.ESCRITORIO_NOME,
-    "cnpj": _settings.ESCRITORIO_CNPJ,
+    "cnpj": _settings.escritorio_cnpj(),
     "oab_registro": _settings.escritorio_oab(),
     "endereco": _settings.escritorio_endereco(),
     "cep": _settings.escritorio_cep(),
@@ -40,6 +40,9 @@ ADVOGADOS = {
 # Linhas montadas por SEGMENTO: o que não está preenchido no .env não vira linha
 # nem rótulo solto no timbre.
 _LINHA_OAB = f"OAB/MG {DADOS_ESCRITORIO['oab_registro']}" if DADOS_ESCRITORIO["oab_registro"] else ""
+# CNPJ vazio (default desde a auditoria jul/2026) NÃO vira rótulo órfão
+# "CNPJ:" no rodapé — o segmento inteiro some (juntar_segmentos descarta).
+_LINHA_CNPJ = f"CNPJ: {DADOS_ESCRITORIO['cnpj']}" if DADOS_ESCRITORIO["cnpj"] else ""
 _LINHA_ENDERECO = juntar_segmentos(
     (
         DADOS_ESCRITORIO["endereco"],
@@ -66,7 +69,7 @@ RODAPE = "\n" + juntar_segmentos(
     (
         "---",
         juntar_segmentos(("De Paula Teixeira Advogados Associados", _LINHA_OAB), " — "),
-        "CNPJ: {cnpj}".format(**DADOS_ESCRITORIO),
+        _LINHA_CNPJ,
         juntar_segmentos(
             (DADOS_ESCRITORIO["endereco"], f"{DADOS_ESCRITORIO['cidade']}/{DADOS_ESCRITORIO['estado']}"),
             " — ",

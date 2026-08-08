@@ -228,6 +228,13 @@ async def lifespan(app: FastAPI):
             "[EJC] Timbre incompleto — segmento(s) omitido(s) nos documentos "
             f"gerados: {', '.join(pendencias_timbre)}"
         )
+        if "ESCRITORIO_CNPJ" in pendencias_timbre:
+            logger.warning(
+                "[EJC] ESCRITORIO_CNPJ vazio — confirmar o CNPJ da sociedade "
+                "na Receita Federal e preencher ESCRITORIO_CNPJ no .env "
+                "(auditoria jul/2026: o CNPJ antes fixo no código resolvia "
+                "para outra razão social)."
+            )
     # FORWARDED_ALLOW_IPS com CIDR falha em SILÊNCIO: o uvicorn compara IP por
     # string exata, então "172.18.0.0/16" faz o processo não confiar em ninguém
     # — o X-Forwarded-Proto do Nginx volta a ser descartado e os redirects

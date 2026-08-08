@@ -14,11 +14,11 @@
 #     log do servidor (padrão main.py: nunca repassar detalhe interno).
 #   • Timeouts/falhas de conexão httpx também viram 502 (não 500 genérico).
 #
-# DECISÃO explícita: o endpoint cru do DataJud NÃO obedece ao kill-switch
-# DATAJUD_ENABLED — esse flag governa a integração INTERNA (sync de
-# andamentos/prazos via datajud_service). Aqui a consulta é manual, autenticada
-# e auditada, e funciona out-of-the-box com a chave pública do CNJ
-# (settings.DATAJUD_API_KEY, se configurada, tem precedência sobre o fallback).
+# DECISÃO revista (Onda 3, achado de segurança): o endpoint cru do DataJud
+# passou a OBEDECER ao kill-switch DATAJUD_ENABLED e à chave central
+# (settings.DATAJUD_API_KEY) — a chave pública embutida no código foi removida
+# e o cliente delega ao caminho único de datajud_service (retry/backoff).
+# Flag desligada ou chave ausente → 503, igual ao router principal /datajud.
 #
 # O Conecta gov.br NÃO existe aqui de propósito: integração pendente de
 # credenciamento institucional — o scaffold antigo (conecta_gov_client.py) foi
@@ -34,13 +34,12 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
-from app.services.datajud_service import _SEG_TR_ALIAS
+from app.services.datajud_service import _SEG_TR_ALIAS, DataJudDesabilitadoError
 
 from app.integrations.brasilapi_client import BrasilApiClient, BrasilApiError
 from app.integrations.datajud_client import (
@@ -59,9 +58,9 @@ datajud_router = APIRouter(prefix="/integracoes/datajud", tags=["integracoes"])
 djen_router = APIRouter(prefix="/integracoes/djen", tags=["integracoes"])
 brasilapi_router = APIRouter(prefix="/integracoes/brasilapi", tags=["integracoes"])
 
-# settings.DATAJUD_API_KEY (pydantic lê o .env mesmo fora do Docker) tem
-# precedência; vazia → cadeia de fallback do cliente (env → chave pública CNJ).
-_datajud = DataJudClient(api_key=get_settings().DATAJUD_API_KEY or None)
+# Wrapper sem estado: flag e chave (settings.DATAJUD_API_KEY) são resolvidas
+# pelo serviço a cada chamada — sem chave embutida, sem bypass do kill-switch.
+_datajud = DataJudClient()
 _djen = DjenComunicaClient()
 _brasilapi = BrasilApiClient()
 
@@ -128,6 +127,10 @@ async def consultar_processo_datajud(
     numero = _somente_digitos(numero_processo, 20, "Número de processo (CNJ)")
     try:
         resultado = await _datajud.consultar_processo(numero, alias)
+    except DataJudDesabilitadoError as exc:
+        # Mesmo contrato do router principal /datajud: integração desligada
+        # ou sem chave → 503 (não é falha do upstream).
+        raise HTTPException(503, str(exc))
     except _ERROS_UPSTREAM as exc:
         raise _falha_upstream("DataJud", exc)
     await _auditar_consulta(db, current_user, "integracoes_datajud", numero)

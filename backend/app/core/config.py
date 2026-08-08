@@ -374,6 +374,10 @@ class Settings(BaseSettings):
     DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
     # Timeout por requisição. O CNJ pode responder lentamente em horários de pico.
     DATAJUD_TIMEOUT_SECONDS: float = 25.0
+    # Cache TTL (segundos) da consulta processual por número CNJ — evita bater
+    # no CNJ a cada request repetida. Em memória (premissa de worker único).
+    # 0 desliga o cache. Erro do CNJ nunca entra no cache.
+    DATAJUD_CACHE_TTL_SEGUNDOS: int = 900
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta
@@ -839,7 +843,12 @@ class Settings(BaseSettings):
     # (Onda 1 da refatoração). A pendência não fica silenciosa: aparece em
     # `escritorio_pendencias()`, que o boot loga e o diagnóstico expõe.
     ESCRITORIO_NOME: str = "De Paula Teixeira Sociedade de Advogados"
-    ESCRITORIO_CNPJ: str = "32.491.468/0001-12"
+    # CNPJ nasce VAZIO de propósito (mesmo padrão do CEP): a auditoria de
+    # julho/2026 apontou que o CNPJ antes hardcoded aqui resolvia para OUTRA
+    # razão social na Receita. Confirmar o CNPJ da sociedade na Receita e
+    # preencher ESCRITORIO_CNPJ no .env; vazio, o segmento some do timbre e a
+    # pendência aparece em escritorio_pendencias() (log de boot + diagnóstico).
+    ESCRITORIO_CNPJ: str = ""
     ESCRITORIO_CIDADE: str = "Betim"
     ESCRITORIO_ESTADO: str = "MG"
     ESCRITORIO_EMAIL: str = "contato@depaulateixeira.adv.br"
@@ -856,6 +865,9 @@ class Settings(BaseSettings):
     def escritorio_cep(self) -> str:
         return (self.ESCRITORIO_CEP or "").strip()
 
+    def escritorio_cnpj(self) -> str:
+        return (self.ESCRITORIO_CNPJ or "").strip()
+
     def escritorio_pendencias(self) -> list[str]:
         """Settings institucionais do timbre ainda não preenchidas no .env.
 
@@ -869,6 +881,10 @@ class Settings(BaseSettings):
                 ("ESCRITORIO_OAB", self.escritorio_oab()),
                 ("ESCRITORIO_ENDERECO", self.escritorio_endereco()),
                 ("ESCRITORIO_CEP", self.escritorio_cep()),
+                # Auditoria jul/2026: confirmar CNPJ da sociedade na Receita e
+                # preencher ESCRITORIO_CNPJ no .env (o antigo default resolvia
+                # para outra razão social).
+                ("ESCRITORIO_CNPJ", self.escritorio_cnpj()),
             )
             if not valor
         ]

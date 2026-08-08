@@ -109,11 +109,17 @@ async def ingerir(db: AsyncSession) -> dict:
     """Busca por termos tributários no sijut2consulta e ingere os atos no RAG.
 
     Retorna {"novos", "atualizados", "inalterados", "erros"} — contrato do
-    orquestrador. Commit POR ato; erro isolado nunca derruba a fonte.
+    orquestrador. Diagnóstico: a ÚLTIMA exceção engolida vai em
+    "ultimo_erro_amostra" (tipo + mensagem, truncada) e zero atos brutos
+    coletados na origem inteira marca "zero_brutos" — o orquestrador transforma
+    ambos em `ultimo_erro` no painel (antes, falha aqui virava status "erro"
+    com erro null: indiagnosticável).
+    Commit POR ato; erro isolado nunca derruba a fonte.
     """
     cfg = get_settings()
     resumo = {"novos": 0, "atualizados": 0, "inalterados": 0, "erros": 0}
     processados = 0
+    brutos = 0                   # atos reconhecidos nas listas de resultado
     vistos: set[str] = set()
 
     for termo in _termos(cfg):
@@ -130,8 +136,11 @@ async def ingerir(db: AsyncSession) -> dict:
             atos = parse_resultados(r.text)
         except Exception as e:   # portal fora do ar/HTML mudou → pula o termo
             resumo["erros"] += 1
+            resumo["ultimo_erro_amostra"] = \
+                f"termo {termo!r}: {type(e).__name__}: {e}"[:300]
             logger.warning("RFB termo %r: %s: %s", termo, type(e).__name__, e)
             continue
+        brutos += len(atos)
         if not atos:
             logger.warning("RFB termo %r: nenhum resultado parseado "
                            "(layout mudou?)", termo)
@@ -183,9 +192,24 @@ async def ingerir(db: AsyncSession) -> dict:
             except Exception as e:   # ato problemático nunca derruba a fonte
                 await db.rollback()
                 resumo["erros"] += 1
+                resumo["ultimo_erro_amostra"] = \
+                    f"{chave}: {type(e).__name__}: {e}"[:300]
                 logger.warning("RFB %s: %s: %s", chave, type(e).__name__, e)
                 continue
             await asyncio.sleep(PAUSA_S)        # educação com o portal
         logger.info("RFB termo %r: %d processado(s) até aqui — %s",
                     termo, processados, resumo)
+
+    # Zero atos BRUTOS em TODOS os termos não é "sucesso": ou o portal caiu (a
+    # amostra da exceção já explica) ou o HTML do sijut2consulta mudou e o
+    # parser deixou de reconhecer os resultados. Sem esta marca, o parser
+    # tolerante reportava sucesso com zero para sempre.
+    if brutos == 0:
+        resumo["zero_brutos"] = True
+        resumo.setdefault(
+            "ultimo_erro_amostra",
+            "0 itens brutos na origem — layout pode ter mudado "
+            "(nenhum resultado parseado no sijut2consulta para nenhum termo)",
+        )
+        logger.warning("RFB: 0 itens brutos na origem — layout pode ter mudado")
     return resumo

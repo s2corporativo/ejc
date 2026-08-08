@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "133_ai_log_fk_ondelete_set_null"
+HEAD_REVISION = "139_ai_log_fk_ondelete_set_null"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -128,3 +128,13 @@ def test_publicacao_explicita_encadeia_apos_quatro_estados():
 def test_ejc_skills_uso_encadeia_apos_publicacao_explicita():
     revision = _script_directory().get_revision("130_ejc_skills_uso")
     assert revision.down_revision == "127_publicacao_explicita"
+
+
+def test_ai_log_fk_ondelete_encadeia_apos_consolidacao_fontes():
+    # Nasceu como 133 (encadeada em 132); o PR #786 mesclou primeiro e
+    # consumiu 138 a partir do mesmo pai (132) — dois filhos, um pai só.
+    # Renumerada para 139 e reencadeada em 138 na integração.
+    revision = _script_directory().get_revision(
+        "139_ai_log_fk_ondelete_set_null"
+    )
+    assert revision.down_revision == "138_consolida_fontes_ingestao"

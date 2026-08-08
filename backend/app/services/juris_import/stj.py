@@ -21,6 +21,7 @@ import logging
 
 from app.services.ingestion_service import fetch
 # Reuso do ingestor agendado (contrato/campos já validados em produção):
+from app.services.jurisprudencia_externa import _inferir_area
 from app.services.ingestors.stj import CKAN, ORGAOS, _monta_conteudo
 from app.services.juris_import.base import (
     JulgadoNormalizado, no_ano, normalizar_termos, texto_normalizado,
@@ -61,6 +62,7 @@ def normalizar_registro(rec: dict, url_fonte: str) -> JulgadoNormalizado | None:
         orgao_julgador=rec.get("nomeOrgaoJulgador"),
         relator=rec.get("ministroRelator"),
         classe=rec.get("siglaClasse"),
+        area_juridica=_inferir_area(ementa) or None,
         # Chave PRINCIPAL = a MESMA do ingestor agendado (ingestors/stj.py,
         # "stj:<numeroRegistro>"): o que for importado aqui é reconhecido pelo
         # job diário (e vice-versa) — a canônica julgado:STJ:<dígitos> entra

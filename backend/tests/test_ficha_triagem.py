@@ -372,3 +372,123 @@ def test_dados_do_painel_entrevista_vazio_sem_lixo():
     assert svc.dados_do_painel_entrevista(
         {"competencia": {"valor": None, "confianca": 90}}
     ) == {}
+
+
+# ── Onda 4 — prescrição pela calculadora determinística, não pela IA ────────
+
+async def test_prescricao_case_com_calculadora_rodada_sobrescreve_a_ia(monkeypatch):
+    """Caso de consumidor com tipo_acao_prescricao + data_prescricao já
+    calculados no cadastro (routers/cases.py → deadline_calculator) — o
+    campo da ficha é SOBRESCRITO pelo resultado determinístico, confiança 100."""
+    from datetime import datetime, timezone
+
+    from app.services import ai_gateway
+    from app.services.ai import entidades_caso
+
+    async def _fake_chat(messages, **kw):
+        return _gw_resp(_JSON_IA)   # a IA "chuta" 5 anos/art. 206 CC
+
+    monkeypatch.setattr(ai_gateway, "chat", _fake_chat)
+    monkeypatch.setattr(entidades_caso, "entidades_do_caso", _entidades_vazias)
+
+    caso = _case(
+        tipo_acao_prescricao="negativacao_indevida",
+        data_prescricao=datetime(2030, 1, 1, tzinfo=timezone.utc),
+    )
+    db = _FakeDB([caso, [_prova()]])
+    out = await svc.pre_preencher(db, "case1", user_id="u1", user_role="advogado")
+
+    texto = out["campos"]["prescricao_decadencia"]
+    assert out["confianca"]["prescricao_decadencia"] == 100
+    assert "CDC art. 43" in texto           # base legal da tabela curada, não da IA
+    assert "2030-01-01" in texto
+    assert "art. 206 CC" not in texto       # a estimativa da IA foi substituída
+
+
+async def test_prescricao_consumada_e_sinalizada(monkeypatch):
+    from datetime import datetime, timezone
+
+    from app.services import ai_gateway
+    from app.services.ai import entidades_caso
+
+    async def _fake_chat(messages, **kw):
+        return _gw_resp(_JSON_IA)
+
+    monkeypatch.setattr(ai_gateway, "chat", _fake_chat)
+    monkeypatch.setattr(entidades_caso, "entidades_do_caso", _entidades_vazias)
+
+    caso = _case(
+        tipo_acao_prescricao="acao_trabalhista",
+        data_prescricao=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    db = _FakeDB([caso, [_prova()]])
+    out = await svc.pre_preencher(db, "case1", user_id="u1", user_role="advogado")
+
+    assert "CONSUMADO" in out["campos"]["prescricao_decadencia"]
+    assert out["confianca"]["prescricao_decadencia"] == 100
+
+
+async def test_prescricao_sem_calculo_no_caso_limita_confianca_da_ia(monkeypatch):
+    """Sem tipo_acao_prescricao/data_prescricao no caso, não há como calcular
+    sem adivinhar — a estimativa da IA fica, mas nunca como prazo confirmado:
+    teto de confiança e aviso explícito de que exige confirmação."""
+    from app.services import ai_gateway
+    from app.services.ai import entidades_caso
+
+    async def _fake_chat(messages, **kw):
+        return _gw_resp(_JSON_IA)   # confiança original da IA: 60
+
+    monkeypatch.setattr(ai_gateway, "chat", _fake_chat)
+    monkeypatch.setattr(entidades_caso, "entidades_do_caso", _entidades_vazias)
+
+    caso = _case(tipo_acao_prescricao=None, data_prescricao=None)
+    db = _FakeDB([caso, [_prova()]])
+    out = await svc.pre_preencher(db, "case1", user_id="u1", user_role="advogado")
+
+    texto = out["campos"]["prescricao_decadencia"]
+    assert "art. 206 CC" in texto           # a estimativa da IA permanece
+    assert "ESTIMATIVA DA IA" in texto      # mas marcada como não confirmada
+    assert out["confianca"]["prescricao_decadencia"] <= 60
+
+
+async def test_prescricao_ia_confiante_e_rebaixada_ao_teto(monkeypatch):
+    """IA que 'inventa' prazo com confiança alta (95) é rebaixada — nunca
+    passa por confirmado sem a calculadora."""
+    from app.services import ai_gateway
+    from app.services.ai import entidades_caso
+
+    json_confiante = _JSON_IA.replace(
+        '"prescricao_decadencia": {"valor": "5 anos (art. 206 CC)", "confianca": 60}',
+        '"prescricao_decadencia": {"valor": "5 anos (art. 206 CC)", "confianca": 95}',
+    )
+    assert json_confiante != _JSON_IA
+
+    async def _fake_chat(messages, **kw):
+        return _gw_resp(json_confiante)
+
+    monkeypatch.setattr(ai_gateway, "chat", _fake_chat)
+    monkeypatch.setattr(entidades_caso, "entidades_do_caso", _entidades_vazias)
+
+    caso = _case(tipo_acao_prescricao=None, data_prescricao=None)
+    db = _FakeDB([caso, [_prova()]])
+    out = await svc.pre_preencher(db, "case1", user_id="u1", user_role="advogado")
+
+    assert out["confianca"]["prescricao_decadencia"] == 60   # teto, não 95
+
+
+def test_reforcar_prescricao_tipo_acao_desconhecido_nao_quebra():
+    """tipo_acao_prescricao preenchido mas fora da tabela curada (dado legado
+    ou digitado à mão) não derruba a ficha — cai no caminho de estimativa."""
+    from datetime import datetime, timezone
+
+    caso = _case(
+        tipo_acao_prescricao="Ação de cobrança",   # não é uma chave da tabela
+        data_prescricao=datetime(2030, 1, 1, tzinfo=timezone.utc),
+    )
+    texto, conf = svc._reforcar_prescricao("estimativa qualquer", 50, caso)
+    assert conf == 50
+    assert "ESTIMATIVA DA IA" in texto
+
+
+def test_reforcar_prescricao_sem_caso_nem_ia_nao_quebra():
+    assert svc._reforcar_prescricao(None, None, None) == (None, None)

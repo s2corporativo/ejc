@@ -6,7 +6,7 @@ Tudo sem rede — httpx mockado na indireção _get_json.
 
 from app.services import validators_service as vs
 
-CNPJ = "32491468000112"   # dígitos verificadores válidos (ESCRITORIO_CNPJ)
+CNPJ = "32491468000112"   # CNPJ sintático válido — só massa de teste do validador (NÃO é o CNPJ do escritório; ESCRITORIO_CNPJ nasce vazio desde a auditoria jul/2026)
 CEP = "32600000"
 
 

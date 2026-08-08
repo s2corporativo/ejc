@@ -20,15 +20,20 @@ que nem sempre é literal), a migration descobre o nome real em
 `information_schema` antes de derrubar o constraint — não quebra se algum dia
 divergir.
 
-Revision ID: 133_ai_log_fk_ondelete_set_null
-Revises: 132_processo_eletronico_mni
+Revision ID: 139_ai_log_fk_ondelete_set_null
+Revises: 138_consolida_fontes_ingestao
 Create Date: 2026-08-08
+
+Nasceu como 133 (encadeada em 132, head da main no momento). O PR #786
+mesclou primeiro e consumiu 138 (pulando 134-137, reservados por outros PRs
+abertos) com down_revision=132 — mesmo pai, dois filhos. Renumerada para 139
+e reencadeada em 138 na integração, conforme MIGRATION_RESERVATIONS.md.
 """
 from alembic import op
 from sqlalchemy import text
 
-revision = "133_ai_log_fk_ondelete_set_null"
-down_revision = "132_processo_eletronico_mni"
+revision = "139_ai_log_fk_ondelete_set_null"
+down_revision = "138_consolida_fontes_ingestao"
 branch_labels = None
 depends_on = None
 

@@ -141,14 +141,36 @@ def consolidar_relatorio(documentos: list[RaioXDocumento]) -> dict[str, Any]:
         for key in campos_identificacao:
             identificacao[key] = identificacao.get(key) or _valor(intake.get(key))
 
-    faltantes: list[str] = []
+    # Onda 4 — separar STATUS TÉCNICO do pipeline (o que a extração não
+    # conseguiu identificar) de MÉRITO jurídico (fraqueza do caso em si).
+    # Antes, esta mesma lista alimentava `pontos_fracos`: "não achei o número
+    # do processo" chegava ao advogado como se fosse uma fraqueza da causa.
+    lacunas_da_analise: list[str] = []
     if not identificacao["numero_processo"]:
-        faltantes.append("Número do processo não identificado")
+        lacunas_da_analise.append("Número do processo não identificado")
     if not partes:
-        faltantes.append("Partes não identificadas com segurança")
+        lacunas_da_analise.append("Partes não identificadas com segurança")
     if not provas:
-        faltantes.append("Provas ainda não classificadas")
-    faltantes.extend(str(_valor(item)) for item in pendencias if _valor(item))
+        lacunas_da_analise.append("Provas ainda não classificadas")
+
+    # `pendencias` vem da extração de IA como pendência processual/documental
+    # concreta (ex.: "juntar procuração", "aguardando perícia") — pertence a
+    # "o que falta resolver no caso", não ao diagnóstico do pipeline.
+    pendencias_texto = [str(_valor(item)) for item in pendencias if _valor(item)]
+
+    # `documentos_pendentes` preserva o significado combinado que já tinha
+    # (o que falta para a análise ficar completa: identificação + pendências
+    # levantadas) — só deixou de ser reaproveitado como fraqueza jurídica.
+    faltantes = lacunas_da_analise + pendencias_texto
+
+    _ACAO_POR_LACUNA = {
+        "Número do processo não identificado": "Informar o número do processo (CNJ), se houver.",
+        "Partes não identificadas com segurança": "Confirmar nome e qualificação completa das partes.",
+        "Provas ainda não classificadas": "Classificar as provas anexadas ou indicar as que faltam.",
+    }
+    proximos_passos_iniciais = [
+        _ACAO_POR_LACUNA.get(item, item) for item in lacunas_da_analise
+    ] + pendencias_texto
 
     base = {
         "versao": 2,
@@ -170,13 +192,33 @@ def consolidar_relatorio(documentos: list[RaioXDocumento]) -> dict[str, Any]:
         "prazos_potenciais": prazos,
         "riscos": riscos,
         "teses": teses,
+        # Status técnico do pipeline — NÃO é fraqueza do caso. Consumido pela
+        # UI numa seção própria ("Lacunas da análise"), separada do mérito.
+        "lacunas_da_analise": lacunas_da_analise,
         "pontos_fortes": [],
-        "pontos_fracos": faltantes,
-        "proximos_passos": faltantes or ["Revisar o relatório e definir a providência jurídica."],
+        # Substantivo: só recebe fraqueza JURÍDICA (enriquecer_relatorio
+        # adiciona fato sem prova / contradição). Nasce vazio de propósito.
+        "pontos_fracos": [],
+        "proximos_passos": proximos_passos_iniciais or ["Revisar o relatório e definir a providência jurídica."],
         "documentos_pendentes": faltantes,
         "confianca_global": "insuficiente_para_automatizacao",
     }
-    return enriquecer_relatorio(documentos, base)
+    enriquecido = enriquecer_relatorio(documentos, base)
+
+    # `pontos_fortes` nunca pode ficar vazio quando há teses identificadas —
+    # regra explícita da Onda 4. enriquecer_relatorio só preenche a partir de
+    # decisão/correlação de prova; um caso com teses mas sem nenhuma das duas
+    # ficaria sem nenhum ponto forte, mesmo tendo mérito a favor do cliente.
+    if teses and not enriquecido.get("pontos_fortes"):
+        primeiras = [str(_valor(item)) for item in teses[:3] if _valor(item)]
+        resumo = "; ".join(primeiras)
+        if len(teses) > 3:
+            resumo += "…"
+        enriquecido["pontos_fortes"] = [
+            f"{len(teses)} tese(s) jurídica(s) identificada(s) para avaliação"
+            + (f": {resumo}" if resumo else ".")
+        ]
+    return enriquecido
 
 
 def serializar_analise(analise: RaioXAnalise, incluir_documentos: bool = True) -> dict[str, Any]:

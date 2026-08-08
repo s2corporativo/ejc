@@ -7,10 +7,13 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+# `fila` e `erro` pertencem ao ciclo assíncrono da análise (Onda 1):
+# fila → em_processamento → aguardando_conferencia | documentos_pendentes,
+# com `erro` em falha (mensagem em relatorio["erro_processamento"]).
 STATUS_RAIO_X = {
-    "novo", "em_processamento", "aguardando_conferencia", "em_analise",
+    "novo", "fila", "em_processamento", "aguardando_conferencia", "em_analise",
     "documentos_pendentes", "analise_concluida", "nao_convertido",
-    "convertido_em_caso", "descartado", "arquivado",
+    "convertido_em_caso", "descartado", "arquivado", "erro",
 }
 
 

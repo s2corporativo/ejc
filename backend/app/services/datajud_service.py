@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -67,6 +68,58 @@ def _erro_datajud_transitorio(exc: BaseException) -> bool:
         status = exc.response.status_code
         return status == 429 or status >= 500
     return False
+
+
+# ── Cache TTL em memória da consulta processual (premissa de worker único) ───
+# Chave: número CNJ (20 dígitos). Valor: (monotônico da gravação, resultado).
+# Só resultado de SUCESSO entra (inclusive None = "não localizado", que é
+# resposta válida do CNJ); erro nunca é cacheado. TTL 0 desliga o cache.
+# NUNCA serve cache com a integração desligada — o kill-switch prevalece.
+_CACHE_CONSULTA: dict[str, tuple[float, dict | None]] = {}
+_CACHE_MAX_ENTRADAS = 512
+_CACHE_MISS = object()
+
+
+def _cache_ttl_segundos() -> int:
+    try:
+        return int(getattr(get_settings(), "DATAJUD_CACHE_TTL_SEGUNDOS", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _cache_obter(numero_limpo: str):
+    """Resultado cacheado ainda válido, ou _CACHE_MISS."""
+    ttl = _cache_ttl_segundos()
+    if ttl <= 0:
+        return _CACHE_MISS
+    entrada = _CACHE_CONSULTA.get(numero_limpo)
+    if entrada is None:
+        return _CACHE_MISS
+    gravado_em, valor = entrada
+    if time.monotonic() - gravado_em > ttl:
+        _CACHE_CONSULTA.pop(numero_limpo, None)
+        return _CACHE_MISS
+    return valor
+
+
+def _cache_gravar(numero_limpo: str, valor: dict | None) -> None:
+    if _cache_ttl_segundos() <= 0:
+        return
+    if len(_CACHE_CONSULTA) >= _CACHE_MAX_ENTRADAS:
+        # Poda simples: expirados primeiro; se nada expirou, descarta o mais antigo.
+        agora = time.monotonic()
+        ttl = _cache_ttl_segundos()
+        for k in [k for k, (t, _) in _CACHE_CONSULTA.items() if agora - t > ttl]:
+            _CACHE_CONSULTA.pop(k, None)
+        if len(_CACHE_CONSULTA) >= _CACHE_MAX_ENTRADAS:
+            mais_antigo = min(_CACHE_CONSULTA, key=lambda k: _CACHE_CONSULTA[k][0])
+            _CACHE_CONSULTA.pop(mais_antigo, None)
+    _CACHE_CONSULTA[numero_limpo] = (time.monotonic(), valor)
+
+
+def _cache_limpar() -> None:
+    """Uso em testes (e eventual troca de chave/config em runtime)."""
+    _CACHE_CONSULTA.clear()
 
 
 @retry(
@@ -209,6 +262,10 @@ async def consultar_processo(numero_cnj: str) -> dict | None:
         )
 
     n = re.sub(r"\D", "", numero_cnj)
+    cacheado = _cache_obter(n)
+    if cacheado is not _CACHE_MISS:
+        return cacheado
+
     payload = {"query": {"match": {"numeroProcesso": n}}, "size": 1}
     headers = {
         "Authorization": f"APIKey {s.DATAJUD_API_KEY}",
@@ -218,6 +275,7 @@ async def consultar_processo(numero_cnj: str) -> dict | None:
         data = await _datajud_search(alias, payload, headers)
         hits = data.get("hits", {}).get("hits", [])
         if not hits:
+            _cache_gravar(n, None)
             return None
         src = hits[0]["_source"]
         movs = []
@@ -226,11 +284,13 @@ async def consultar_processo(numero_cnj: str) -> dict | None:
                 "data": m.get("dataHora", "")[:10],
                 "descricao": m.get("nome", ""),
             })
-        return {
+        resultado = {
             "classe": (src.get("classe") or {}).get("nome"),
             "orgao": (src.get("orgaoJulgador") or {}).get("nome"),
             "movimentos": movs,
         }
+        _cache_gravar(n, resultado)
+        return resultado
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         # Nunca registrar número do processo, payload, corpo ou header.
         status = (
@@ -244,6 +304,32 @@ async def consultar_processo(numero_cnj: str) -> dict | None:
             type(exc).__name__, status,
         )
         raise
+
+
+async def buscar_processo_bruto(
+    numero_processo: str, tribunal_alias: str,
+) -> dict:
+    """Consulta crua (JSON Elasticsearch completo) por número + alias explícito.
+
+    Caminho ÚNICO de saída para o wrapper app/integrations/datajud_client.py —
+    mesma chave (settings.DATAJUD_API_KEY), mesmo retry/backoff, mesma base URL
+    e timeout dos demais caminhos. Mesmo idioma de degradação graciosa: flag
+    desligada ou chave ausente → DataJudDesabilitadoError (o router traduz
+    para 503); falha de rede/HTTP propaga httpx.* após os retries.
+    """
+    s = get_settings()
+    if not s.DATAJUD_ENABLED or not s.DATAJUD_API_KEY:
+        raise DataJudDesabilitadoError(
+            "Integração DataJud desativada ou sem chave configurada "
+            "(DATAJUD_ENABLED/DATAJUD_API_KEY)."
+        )
+    n = re.sub(r"\D", "", numero_processo or "")
+    payload = {"query": {"match": {"numeroProcesso": n}}}
+    headers = {
+        "Authorization": f"APIKey {s.DATAJUD_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    return await _datajud_search(tribunal_alias, payload, headers)
 
 
 # ── Etapa 13 — consulta normalizada de andamentos (router /andamentos) ───────
