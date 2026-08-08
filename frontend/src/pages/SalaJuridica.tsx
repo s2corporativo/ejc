@@ -51,6 +51,17 @@ import {
   cn,
 } from "../components/UI";
 
+// Item do gate anti-alucinação de citações (services/verificador_jurisprudencia.py).
+// Status possíveis: verificada | identificada | suspeita | generica | possivelmente_desatualizada.
+type CitacaoItem = { trecho?: string; tipo?: string; status?: string };
+
+type RelatorioCitacoes = {
+  total?: number;
+  confirmadas?: number;
+  nao_encontradas?: number;
+  citacoes?: CitacaoItem[];
+} | null;
+
 type Mensagem = {
   id: string;
   autor: "user" | "ia";
@@ -60,9 +71,20 @@ type Mensagem = {
   agente?: string | null;
   fontes: Array<{ titulo?: string; categoria?: string; fonte?: string }>;
   alertas: string[];
+  citacoes?: RelatorioCitacoes;
   custo_estimado?: number | null;
   estado_versao?: number | null;
   created_at?: string | null;
+};
+
+// Crítica adversarial (Modo Duas IAs) — services/ai/adversarial.py::CriticaAdversarial.
+// Ephemeral: só chega no POST /mensagens, não é persistida na mensagem — por
+// isso vive num estado local à parte, indexado pelo id da mensagem da IA.
+type CriticaAdversarial = {
+  disponivel: boolean;
+  relatorio?: string | null;
+  nota_robustez?: number | null;
+  provider_diverso?: boolean;
 };
 
 type Anexo = {
@@ -245,6 +267,10 @@ export default function SalaJuridica() {
   const navigate = useNavigate();
   const [sessoes, setSessoes] = useState<Sessao[]>([]);
   const [ativa, setAtiva] = useState<Sessao | null>(null);
+  // Crítica adversarial por mensagem da IA (ephemeral — ver tipo acima).
+  const [criticas, setCriticas] = useState<Record<string, CriticaAdversarial>>(
+    {},
+  );
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [texto, setTexto] = useState("");
@@ -435,10 +461,18 @@ export default function SalaJuridica() {
         : s,
     );
     try {
-      await api.post(`/sala-juridica/${ativa.id}/mensagens`, {
+      const { data } = await api.post(`/sala-juridica/${ativa.id}/mensagens`, {
         conteudo,
         modo,
       });
+      // Crítica adversarial (Modo Duas IAs) não é persistida na mensagem —
+      // só chega aqui, no retorno do envio. Sem capturá-la agora, uma nota de
+      // robustez baixa fica invisível ao advogado (achado da auditoria).
+      const critica = data?.critica_adversarial as CriticaAdversarial | null;
+      const idMsgIa = data?.mensagem_ia?.id as string | undefined;
+      if (critica?.disponivel && idMsgIa) {
+        setCriticas((prev) => ({ ...prev, [idMsgIa]: critica }));
+      }
       await abrirSessao(ativa.id);
       await carregarLista();
     } catch (err: unknown) {
@@ -490,9 +524,15 @@ export default function SalaJuridica() {
     // Fatos pré-preenchidos do estado consolidado da conversa — sem isso o
     // caso nascia com descricao_fatos NULL (o backend aceita `descricao`,
     // mas o wizard nunca enviava). Limite espelha o schema (max 10_000).
+    // `||` (não `??`): resumo "" (extração automática desligada/falhou) tem
+    // que cair para workspace_texto, não travar num fatos vazio.
     setConvFatos(
-      (ativa.estado?.resumo ?? ativa.workspace_texto ?? "").slice(0, 10_000),
+      (ativa.estado?.resumo || ativa.workspace_texto || "").slice(0, 10_000),
     );
+    // Área sugerida pela conversa — sem isto o caso nascia sempre "civil"
+    // (achado da auditoria: o valor era só exibido na lista, nunca aplicado
+    // aqui). Cai para "civil" só quando a sessão não sugeriu nenhuma área.
+    setConvArea(ativa.area_sugerida || "civil");
     setConvNovoCliente(ativa.cliente_potencial ?? "");
     setConvClienteId(null);
     setConvConflito(false);
@@ -1059,6 +1099,39 @@ export default function SalaJuridica() {
                             <li key={i}>{a}</li>
                           ))}
                         </ul>
+                      )}
+                      {m.autor === "ia" &&
+                        (m.citacoes?.citacoes ?? []).some(
+                          (c) => c.status !== "verificada",
+                        ) && (
+                          <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+                            <p className="font-semibold">
+                              Citações não confirmadas na base oficial —
+                              conferir antes de usar:
+                            </p>
+                            <ul className="mt-1 list-disc pl-4">
+                              {(m.citacoes?.citacoes ?? [])
+                                .filter((c) => c.status !== "verificada")
+                                .map((c, i) => (
+                                  <li key={i}>
+                                    {c.trecho ?? c.tipo ?? "citação"}
+                                    {c.status ? ` (${c.status})` : ""}
+                                  </li>
+                                ))}
+                            </ul>
+                          </div>
+                        )}
+                      {m.autor === "ia" && criticas[m.id] && (
+                        <div className="mt-2 rounded border border-violet-300 bg-violet-50 p-2 text-xs text-violet-900">
+                          <p className="font-semibold">
+                            Crítica adversarial (Modo Duas IAs)
+                            {criticas[m.id].nota_robustez != null &&
+                              ` — robustez ${criticas[m.id].nota_robustez}/100`}
+                          </p>
+                          {criticas[m.id].relatorio && (
+                            <p className="mt-1">{criticas[m.id].relatorio}</p>
+                          )}
+                        </div>
                       )}
                       {m.autor === "ia" && (
                         <div className="mt-2 flex flex-wrap gap-2 text-[11px]">

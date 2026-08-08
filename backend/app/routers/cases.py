@@ -33,7 +33,6 @@ from app.models.case_parte import CaseParte
 from app.models.caso_area import CasoArea
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus
 from app.services.extracao_estruturada import parse_data_br
-from app.services.movimento_ia import traduzir_movimento
 from app.core.ownership import verificar_acesso_caso
 from app.core.status_caso import (
     STATUS_ABERTOS,
@@ -345,83 +344,6 @@ async def detalhe(
     return result
 
 
-@router.get("/{case_id}/resumo")
-async def resumo_caso(
-    case_id: str,
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
-):
-    """Resumo agregado de todas as entidades vinculadas ao caso.
-
-    Retorna contadores e dados-chave de cada domínio em um único payload,
-    evitando N chamadas separadas no frontend (CasoDetalhe tabs).
-    """
-    c = await verificar_acesso_caso(db, cu, case_id)
-
-    # Contagens paralelas via COUNTs
-    counts = {}
-    for label, model_class, fk_col in [
-        ("processos", __import__("app.models.process", fromlist=["Process"]).Process, "case_id"),
-        ("prazos", Deadline, "case_id"),
-        ("documentos", __import__("app.models.document", fromlist=["Document"]).Document, "case_id"),
-        ("pecas", __import__("app.models.legal_doc", fromlist=["LegalDoc"]).LegalDoc, "case_id"),
-        ("honorarios", __import__("app.models.fee", fromlist=["Fee"]).Fee, "case_id"),
-        ("tarefas", __import__("app.models.task", fromlist=["Task"]).Task, "case_id"),
-        ("partes", CaseParte, "case_id"),
-        ("areas", CasoArea, "case_id"),
-        ("checklists", __import__("app.models.checklist", fromlist=["CaseChecklist"]).CaseChecklist, "case_id"),
-        ("movimentos", CaseMovimento, "case_id"),
-        ("provas", __import__("app.models.prova", fromlist=["Prova"]).Prova, "case_id"),
-        ("teses_vinculadas", __import__("app.models.tese", fromlist=["TeseCasoLink"]).TeseCasoLink, "case_id"),
-    ]:
-        try:
-            col = getattr(model_class, fk_col, None)
-            if col is not None:
-                q = select(sqlfunc.count()).select_from(model_class).where(
-                    col == case_id, model_class.deleted_at.is_(None)
-                    if hasattr(model_class, "deleted_at") else True
-                )
-                counts[label] = (await db.execute(q)).scalar() or 0
-            else:
-                counts[label] = 0
-        except Exception:
-            counts[label] = 0
-
-    # Honorários: total financeiro
-    try:
-        q_valor = select(sqlfunc.coalesce(sqlfunc.sum(
-            __import__("app.models.fee", fromlist=["Fee"]).Fee.valor
-        ), 0)).where(
-            __import__("app.models.fee", fromlist=["Fee"]).Fee.case_id == case_id
-        )
-        counts["honorarios_valor_total"] = float((await db.execute(q_valor)).scalar() or 0)
-    except Exception:
-        counts["honorarios_valor_total"] = 0.0
-
-    # Prazos pendentes
-    try:
-        q_pend = select(sqlfunc.count()).select_from(Deadline).where(
-            Deadline.case_id == case_id,
-            DeadlineStatus(Deadline.status) == DeadlineStatus.pendente,
-        )
-        counts["prazos_pendentes"] = (await db.execute(q_pend)).scalar() or 0
-    except Exception:
-        counts["prazos_pendentes"] = 0
-
-    return {
-        "case_id": case_id,
-        "titulo": c.titulo,
-        "status": c.status.value if c.status else None,
-        "fase": c.fase.value if hasattr(c, "fase") and c.fase else None,
-        "area": c.area,
-        "prioridade": c.prioridade.value if hasattr(c, "prioridade") and c.prioridade else None,
-        "advogado_responsavel_id": c.advogado_responsavel_id,
-        "proxima_acao": c.proxima_acao,
-        "proxima_acao_prazo": str(c.proxima_acao_prazo) if c.proxima_acao_prazo else None,
-        "contadores": counts,
-    }
-
-
 @router.patch("/{case_id}", response_model=CaseDetail)
 async def atualizar(
     case_id: str, payload: CaseUpdate,
@@ -436,9 +358,10 @@ async def atualizar(
         raise HTTPException(status_code=404, detail="Caso não encontrado")
 
     mudancas = payload.model_dump(exclude_unset=True)
+    status_anterior = c.status.value if c.status else None
 
     # G1: valida proxima_acao — se o caso é/será ativo, exige campo
-    status_novo = mudancas.get("status", c.status.value if c.status else None)
+    status_novo = mudancas.get("status", status_anterior)
     proxima_nova = mudancas.get("proxima_acao", c.proxima_acao)
     if status_novo in _STATUS_EXIGE_PROXIMA_ACAO and not proxima_nova:
         raise HTTPException(
@@ -446,25 +369,43 @@ async def atualizar(
             detail="Campo 'proxima_acao' é obrigatório para casos abertos (aberto/em_instrucao/em_producao/protocolado)",
         )
 
+    # Achado da auditoria (docs/PLANO_FUSAO_CASO_UNICO.md §4.3-5): este PATCH
+    # genérico não pode ser um atalho para arquivar/encerrar — os dois têm
+    # endpoint dedicado com gate de papel (POST /arquivar) e pós-mortem
+    # obrigatório (POST /encerrar). Entrar em qualquer um dos dois por aqui
+    # contornava ambos os gates. Sempre exige o endpoint dedicado — nenhuma
+    # exceção por papel, para não manter dois caminhos com regras distintas
+    # para o mesmo destino. Sair deles (reabertura) continua livre por PATCH.
+    if mudancas.get("status") in ("arquivado", "encerrado") and \
+            mudancas["status"] != status_anterior:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Use POST /cases/{id}/arquivar" if mudancas["status"] == "arquivado"
+                else "Use POST /cases/{id}/encerrar (exige pós-mortem)"
+            ),
+        )
+
     for k, v in mudancas.items():
         setattr(c, k, v)
-    if mudancas.get("status") == "encerrado":
-        c.data_encerramento = datetime.now(timezone.utc)
-    if mudancas.get("status") == "arquivado" and c.archived_at is None:
-        c.archived_at = datetime.now(timezone.utc)
-    elif mudancas.get("status") and mudancas.get("status") != "arquivado":
+    # Só sobra a saída de "arquivado" por aqui (entrada é bloqueada acima) —
+    # reabertura sempre limpa o registro de arquivamento.
+    if mudancas.get("status"):
         c.archived_at = None
         c.archive_reason = None
-    # Sincroniza coluna Kanban quando o status muda para um estado terminal
-    _status_para_coluna = {"encerrado": "Encerrado", "arquivado": "Encerrado"}
-    _alvo = _status_para_coluna.get(mudancas.get("status"))
-    if _alvo:
-        col = (await db.execute(text("""
-            SELECT name FROM kanban_columns WHERE is_active=true AND name ILIKE :nm
-            ORDER BY position LIMIT 1
-        """), {"nm": _alvo})).scalar()
-        if col:
-            c.kanban_column = col
+    # Reabertura (sai de encerrado/arquivado para um estado de trabalho): limpa
+    # os campos de desfecho — um caso reaberto não é mais um caso encerrado,
+    # e deixá-los preencher contaminava jurimetria/case_health com um desfecho
+    # que deixou de existir (achado da auditoria).
+    if (
+        status_anterior in ("encerrado", "arquivado")
+        and mudancas.get("status") not in (None, "encerrado", "arquivado")
+    ):
+        c.data_encerramento = None
+        c.resultado = None
+        c.motivo_resultado = None
+        c.provas_determinantes = None
+        c.licoes_aprendidas = None
 
     await criar_audit_log(
         db, cu.id, cu.role.value, "UPDATE", "cases", case_id,
@@ -785,68 +726,6 @@ async def criar_movimento(
     return {"id": m.id, "detail": "Movimento registrado"}
 
 
-@router.post("/{case_id}/assistente-estrategico")
-async def assistente_estrategico_caso(
-    case_id: str,
-    demanda: str = Body(..., embed=True),
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
-):
-    """
-    IA Contextual: Assistente Estratégico do Caso (Seção 1.33).
-    Acesso automático a todos os dados do processo e documentos.
-    """
-    from app.core.ai_brain import ai_gateway
-    from app.models.case_parte import CaseParte
-    
-    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    q = _filtro_visibilidade(q, cu)
-    c = (await db.execute(q)).scalar_one_or_none()
-    if not c:
-        raise HTTPException(status_code=404, detail="Caso não encontrado")
-    
-    partes = (await db.execute(select(CaseParte).where(CaseParte.case_id == case_id))).scalars().all()
-    movs = (await db.execute(select(CaseMovimento).where(CaseMovimento.case_id == case_id).limit(10))).scalars().all()
-    
-    contexto = (
-        f"CASO: {c.titulo}\nNÚMERO: {c.numero_processo}\nÁREA: {c.area}\n"
-        f"TESE: {c.tese_principal}\n"
-        f"PARTES: {', '.join([p.nome for p in partes])}\n"
-        f"ÚLTIMOS MOVIMENTOS: {'; '.join([m.descricao[:100] for m in movs])}\n"
-    )
-
-    # LGPD: sanitiza PII (nomes de partes, nº do processo, CPF/CNPJ) antes de
-    # enviar à IA — a análise estratégica não precisa dos dados reais.
-    from app.services.sanitizer import sanitizar_pii
-    contexto, pii_ctx = sanitizar_pii(contexto, [p.nome for p in partes if p.nome])
-    demanda_limpa, pii_dem = sanitizar_pii(demanda)
-
-    res = await ai_gateway.processar_demanda(demanda_limpa, contexto, tipo="juridico_profundo")
-
-    # Auditoria obrigatória (LGPD/OAB): TODA chamada de IA precisa de rastro em
-    # ai_logs. Este endpoint passa pelo shim legado (core.ai_brain →
-    # ai_gateway.chat), que antes NÃO gravava AILog (furo de compliance #4a). A
-    # gravação é ADITIVA: não altera a resposta nem o comportamento do modelo —
-    # só registra o que já foi enviado/recebido (prompt já sanitizado acima +
-    # modelo real devolvido pelo shim). Loga apenas em sucesso, mesma semântica
-    # dos endpoints de IA já auditados (ai.py::assistente_estrategico e
-    # diplomacia_v3::dossie_pressao só gravam quando a IA respondeu). Se a
-    # gravação falhar, o erro PROPAGA (registrar_ai_log) — rastro é obrigatório;
-    # não introduzimos try/except que engula a falha de auditoria.
-    if res.get("status") == "sucesso":
-        from app.services.ai_guard import registrar_ai_log
-        from app.models.ai_log import AITipoUso
-        await registrar_ai_log(
-            db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, case_id=case_id,
-            prompt_sanitizado=f"{contexto}\n\n[DEMANDA]\n{demanda_limpa}",
-            pii_removida=bool(pii_ctx or pii_dem),
-            resposta=res.get("resposta"),
-            modelo=res.get("modelo_utilizado"),
-        )
-
-    return res
-
-
 # ═══ DataJud: sincronização de movimentos oficiais ═══
 from app.services.datajud_service import sincronizar_caso as _dj_sync
 
@@ -983,34 +862,6 @@ async def encerrar_caso(
         {"resultado": payload.resultado}, cu.id,
     )
     return {"detail": "Caso encerrado. Conhecimento registrado na base institucional."}
-
-
-# ── Tradução de andamento por IA (P1) ─────────────────────────────────────────
-@router.post("/{case_id}/movimentos/{mov_id}/traduzir")
-async def traduzir_andamento(
-    case_id: str, mov_id: str,
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
-):
-    """Gera o resumo em linguagem simples de um andamento (sob demanda).
-    Útil para movimentos importados do DataJud. Resultado é RASCUNHO."""
-    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    q = _filtro_visibilidade(q, cu)
-    if not (await db.execute(q)).scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Caso não encontrado")
-    # IDOR: o movimento precisa pertencer a ESTE caso (não basta o caso existir).
-    mov_ok = (await db.execute(
-        select(CaseMovimento.id).where(
-            CaseMovimento.id == mov_id, CaseMovimento.case_id == case_id,
-        )
-    )).scalar_one_or_none()
-    if not mov_ok:
-        raise HTTPException(status_code=404, detail="Movimento não encontrado neste caso")
-    resumo = await traduzir_movimento(db, mov_id, forcar=True)
-    if resumo is None:
-        raise HTTPException(status_code=422, detail="Não foi possível traduzir o andamento (IA indisponível ou texto curto).")
-    return {"id": mov_id, "resumo_ia": resumo,
-            "aviso": "Resumo gerado por IA — rascunho, conferir com o andamento original."}
 
 
 # ── Importação inteligente → Caso núcleo (P1) ─────────────────────────────────
@@ -1205,28 +1056,6 @@ async def aplicar_extracao(
         "prazos_criados": n_prazos,
         "aviso": "Dados extraídos por IA aplicados ao caso. Prazos criados como RASCUNHO (a confirmar) — já entram nos alertas. Revisão obrigatória do advogado (OAB).",
     }
-
-
-# ── Linha do tempo do caso (#41) — determinístico, sem IA ─────────────────────
-@router.get("/{case_id}/linha-do-tempo")
-async def linha_do_tempo(
-    case_id: str,
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
-):
-    """Cronologia unificada do caso: movimentos + prazos + documentos + honorários,
-    ordenada por data (mais recente primeiro). Agrega dados reais — não inventa.
-    A montagem dos eventos vive em app/services/visual_law_core.py (compartilhada
-    com o módulo Visual Law); o contrato deste endpoint permanece o mesmo."""
-    from app.services.visual_law_core import montar_eventos_caso
-
-    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    q = _filtro_visibilidade(q, cu)
-    if not (await db.execute(q)).scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Caso não encontrado")
-
-    eventos = await montar_eventos_caso(db, case_id)
-    return {"case_id": case_id, "total": len(eventos), "eventos": eventos}
 
 
 # ── Recomendação de teses relevantes ao caso (#tese-match) ────────────────────

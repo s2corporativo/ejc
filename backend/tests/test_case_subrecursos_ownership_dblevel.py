@@ -1,13 +1,17 @@
 """Gates de ownership de LEITURA nos sub-recursos do caso (row-level).
 
 Trava contra regressão o isolamento entre advogados nos GETs que agregam dados
-sensíveis do caso: movimentos, linha-do-tempo e teses-sugeridas. Um advogado
-sem vínculo com o caso NÃO pode ler nenhum deles.
+sensíveis do caso: movimentos e teses-sugeridas. Um advogado sem vínculo com
+o caso NÃO pode ler nenhum deles.
 
 Contratos distintos, ambos encodados aqui:
-  • /movimentos e /linha-do-tempo usam _filtro_visibilidade → advogado sem
-    vínculo recebe 404 (a query não retorna o caso; nada vaza).
+  • /movimentos usa _filtro_visibilidade → advogado sem vínculo recebe 404
+    (a query não retorna o caso; nada vaza).
   • /teses-sugeridas usa verificar_acesso_caso → advogado sem vínculo recebe 403.
+
+(/linha-do-tempo tinha o mesmo contrato de /movimentos e foi removido em F1a —
+docs/PLANO_FUSAO_CASO_UNICO.md — por não ter consumidor no frontend, superseded
+por /visual-law/casos/{id}/timeline.)
 
 Postgres é OBRIGATÓRIO (mesmo padrão dos demais *_dblevel.py: chama o handler
 direto com AsyncSessionLocal). Sem RUN_DB_TESTS=1, pula.
@@ -119,33 +123,6 @@ async def test_movimentos_respeita_ownership():
         finally:
             await _limpar(db, case_ids=[caso],
                           user_ids=[resp_adv, outro_adv, socio], client_ids=[cli])
-
-
-# ── /linha-do-tempo ────────────────────────────────────────────────────────────
-
-async def test_linha_do_tempo_respeita_ownership():
-    from app.core.database import AsyncSessionLocal
-    from app.routers.cases import linha_do_tempo
-
-    tok = f"Ldt{uuid4().hex[:6]}"
-    async with AsyncSessionLocal() as db:
-        resp_adv = await _criar_user(db, "advogado")
-        outro_adv = await _criar_user(db, "advogado")
-        cli = await _criar_cliente(db, f"Cliente Ldt {tok}")
-        caso = await _criar_caso(db, cli, f"Caso ldt {tok}", resp_id=resp_adv)
-        await _criar_movimento(db, caso, f"Evento {tok}")
-        await db.commit()
-        try:
-            # Responsável obtém a cronologia.
-            r = await linha_do_tempo(caso, db, await _carregar_user(db, resp_adv))
-            assert r["case_id"] == caso
-            # Advogado sem vínculo → 404.
-            with pytest.raises(HTTPException) as exc:
-                await linha_do_tempo(caso, db, await _carregar_user(db, outro_adv))
-            assert exc.value.status_code == 404
-        finally:
-            await _limpar(db, case_ids=[caso],
-                          user_ids=[resp_adv, outro_adv], client_ids=[cli])
 
 
 # ── /teses-sugeridas ───────────────────────────────────────────────────────────

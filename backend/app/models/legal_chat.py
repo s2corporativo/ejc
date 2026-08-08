@@ -143,7 +143,14 @@ class LegalChatMessage(Base):
     tokens_input = Column(Integer, nullable=True)
     tokens_output = Column(Integer, nullable=True)
     custo_estimado = Column(Numeric(12, 6), nullable=True)
-    ai_log_id = Column(String(36), ForeignKey("ai_logs.id"), nullable=True, index=True)
+    # ON DELETE SET NULL (migration 133): a purga LGPD de ai_logs expira o log
+    # de auditoria, não o conteúdo da mensagem — sem isso o DELETE cru de
+    # services/scheduler.py::_purgar_logs_ia batia nesta FK e falhava em
+    # silêncio (achado da auditoria, docs/PLANO_FUSAO_CASO_UNICO.md §4.3-6).
+    ai_log_id = Column(
+        String(36), ForeignKey("ai_logs.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     estado_versao = Column(Integer, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

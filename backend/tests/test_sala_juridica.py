@@ -847,3 +847,18 @@ def test_ficha_confirmada_nao_e_rebaixada_por_escrita_automatica():
     assert 'ficha.status == "confirmada"' in fonte
     # A ponte Entrevista→Ficha precisa realmente pedir a preservação.
     assert "preservar_confirmada=True" in inspect.getsource(te._alimentar_ficha)
+
+
+def test_ai_log_id_tem_ondelete_set_null():
+    """F1a (docs/PLANO_FUSAO_CASO_UNICO.md §4.3-6): esta é a única FK do sistema
+    para ai_logs.id. Sem ON DELETE SET NULL, o DELETE cru de
+    services/scheduler.py::_purgar_logs_ia falha (IntegrityError) na primeira
+    mensagem com log expirado, e a purga LGPD para em silêncio a partir daí.
+    Teste de metadado — não requer banco (migration 133 aplica o mesmo
+    contrato no schema real)."""
+    from app.models.legal_chat import LegalChatMessage
+
+    col = LegalChatMessage.__table__.columns["ai_log_id"]
+    fks = list(col.foreign_keys)
+    assert len(fks) == 1
+    assert fks[0].ondelete == "SET NULL"

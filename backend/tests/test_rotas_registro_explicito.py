@@ -69,10 +69,6 @@ ADICOES_INTENCIONAIS = {
     # nova).
     ("/api/entrada/analisar", "POST"),
     ("/api/entrada/{rascunho_id}/criar-caso", "POST"),
-    # Issue #716: fachadas somente-leitura do workspace. Ambas exigem
-    # autenticação + ownership no handler e não criam tabela ou escrita paralela.
-    ("/api/cases/{case_id}/timeline", "GET"),
-    ("/api/cases/{case_id}/operational-health", "GET"),
     # Issue #762 (Fase A): integração de processo eletrônico via MNI 2.2.2,
     # somente leitura (TJMG). Sincronização assíncrona (Celery) + cofre de
     # credenciais dedicado — nunca ecoa segredo, todo uso audita.
@@ -94,6 +90,32 @@ REMOCOES_INTENCIONAIS = {
     # do sistema chamava os dois. Não reintroduzir sem decisão escrita do titular.
     ("/api/diplomacia-v3/dossie-pressao", "POST"),
     ("/api/diplomacia-v3/analisar-magistrado", "POST"),
+    # docs/PLANO_FUSAO_CASO_UNICO.md (F1a) — quatro endpoints de Casos sem
+    # nenhum consumidor no frontend (grep confirmado antes da remoção), dois
+    # deles duplicando outra rota já em uso: /resumo (contadores nunca lidos —
+    # e continha o bug do prazos_pendentes sempre 0, corrigido junto),
+    # /linha-do-tempo (superseded por /visual-law/casos/{id}/timeline, que o
+    # frontend de fato chama), /assistente-estrategico (chamada de IA sem rate
+    # limit nem piso de papel, duplicando o endpoint real em ai.py) e
+    # /movimentos/{mov_id}/traduzir (o gatilho automático de
+    # services/movimento_ia.py via event_subscribers continua intacto — só o
+    # re-disparo manual sem UI foi removido).
+    ("/api/cases/{case_id}/resumo", "GET"),
+    ("/api/cases/{case_id}/linha-do-tempo", "GET"),
+    ("/api/cases/{case_id}/assistente-estrategico", "POST"),
+    ("/api/cases/{case_id}/movimentos/{mov_id}/traduzir", "POST"),
+    # Jornada de 9 etapas (jornada_caso.py): endpoint sem nenhum consumidor —
+    # a página React /casos/:id/jornada é um redirect puro para
+    # /casos/:id?tab=resumo desde a Fase 1 do plano de simplificação e nunca
+    # chamou esta rota. A jornada visível ao usuário é o orquestrador de 16
+    # etapas (legal_case_orchestrator.py, /cases/{id}/orquestrador), intacto.
+    ("/api/casos/{case_id}/jornada", "GET"),
+    # Issue #716 revertida — /timeline e /operational-health (case_timeline.py)
+    # eram fachadas de leitura sem nenhum consumidor (mesma varredura acima);
+    # a saúde do caso segue exposta em Analytics via case_health.py, que
+    # não foi tocado. Nunca chegaram a existir no snapshot baseline (eram
+    # ADICOES_INTENCIONAIS), por isso não entram como remoção — apenas saem
+    # da lista de adições abaixo.
 }
 
 

@@ -133,6 +133,65 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+describe("Sala Jurídica — wizard pré-preenche área e fatos da sessão", () => {
+  // Achado da auditoria (docs/PLANO_FUSAO_CASO_UNICO.md §4.3-2): o wizard
+  // nunca aplicava a área sugerida pela conversa — o caso sempre nascia
+  // "civil". E o fallback de fatos usava `??`, que não cobre string vazia:
+  // com extração automática ligada mas sem resultado (resumo === ""), o
+  // texto do workspace era descartado.
+  it("aplica area_sugerida da sessão, não o default civil", async () => {
+    rotearGet();
+    getMock.mockImplementation((url: string) => {
+      if (url === "/sala-juridica")
+        return Promise.resolve({
+          data: [{ ...SESSAO, area_sugerida: "trabalhista" }],
+        });
+      if (url === "/sala-juridica/s1")
+        return Promise.resolve({
+          data: { ...SESSAO, area_sugerida: "trabalhista" },
+        });
+      if (url.endsWith("/conversao/preview"))
+        return Promise.resolve({ data: PREVIEW_LIMPO });
+      if (url === "/clients" || url === "/cases")
+        return Promise.resolve({ data: { data: [] } });
+      return Promise.resolve({ data: {} });
+    });
+    renderizar();
+    await abrirWizard();
+
+    expect(screen.getByDisplayValue("Trabalhista")).toBeTruthy();
+  });
+
+  it("cai para workspace_texto quando o resumo do estado é string vazia", async () => {
+    getMock.mockImplementation((url: string) => {
+      const sessaoComEstadoVazio = {
+        ...SESSAO,
+        estado: { resumo: "" },
+        workspace_texto: "Relato do cliente colado na área de trabalho.",
+      };
+      if (url === "/sala-juridica")
+        return Promise.resolve({ data: [sessaoComEstadoVazio] });
+      if (url === "/sala-juridica/s1")
+        return Promise.resolve({ data: sessaoComEstadoVazio });
+      if (url.endsWith("/conversao/preview"))
+        return Promise.resolve({ data: PREVIEW_LIMPO });
+      if (url === "/clients" || url === "/cases")
+        return Promise.resolve({ data: { data: [] } });
+      return Promise.resolve({ data: {} });
+    });
+    renderizar();
+    await abrirWizard();
+
+    // Placeholder específico do textarea de fatos do wizard — o workspace
+    // principal também exibe o mesmo texto, então getByDisplayValue
+    // encontraria os dois.
+    const fatos = screen.getByPlaceholderText(
+      "Fatos do caso (pré-preenchidos da análise — confira e ajuste)",
+    ) as HTMLTextAreaElement;
+    expect(fatos.value).toBe("Relato do cliente colado na área de trabalho.");
+  });
+});
+
 describe("Sala Jurídica — wizard de conversão", () => {
   it("consulta o preview para o nome digitado, não para o da abertura", async () => {
     rotearGet();
