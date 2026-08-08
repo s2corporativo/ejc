@@ -166,6 +166,7 @@ from app.routers import signatures
 from app.routers import sociedades_cliente
 from app.routers import provas
 from app.routers import jornada_caso
+from app.routers import processo_eletronico
 from app.routers import sumulas
 from app.routers import suspensoes
 from app.routers import system_modules
@@ -219,6 +220,37 @@ async def lifespan(app: FastAPI):
     # Startup
     db_ok = await check_db()
     logger.info(f"[EJC] Banco de dados: {'OK' if db_ok else 'FALHA'}")
+    # Timbre dos documentos: setting institucional vazia FAZ SUMIR o segmento da
+    # peça (não imprime mais "[CEP - preencher em .env]" no papel que o cliente
+    # assina). Para a pendência não ficar silenciosa, ela é anunciada aqui.
+    pendencias_timbre = settings.escritorio_pendencias()
+    if pendencias_timbre:
+        logger.warning(
+            "[EJC] Timbre incompleto — segmento(s) omitido(s) nos documentos "
+            f"gerados: {', '.join(pendencias_timbre)}"
+        )
+        if "ESCRITORIO_CNPJ" in pendencias_timbre:
+            logger.warning(
+                "[EJC] ESCRITORIO_CNPJ vazio — confirmar o CNPJ da sociedade "
+                "na Receita Federal e preencher ESCRITORIO_CNPJ no .env "
+                "(auditoria jul/2026: o CNPJ antes fixo no código resolvia "
+                "para outra razão social)."
+            )
+    # FORWARDED_ALLOW_IPS com CIDR falha em SILÊNCIO: o uvicorn compara IP por
+    # string exata, então "172.18.0.0/16" faz o processo não confiar em ninguém
+    # — o X-Forwarded-Proto do Nginx volta a ser descartado e os redirects
+    # voltam a sair em http://, que o browser bloqueia. Sem este aviso, o
+    # sintoma só aparece no navegador do usuário, não no boot.
+    import os as _os
+
+    _forwarded = (_os.getenv("FORWARDED_ALLOW_IPS") or "").strip()
+    if "/" in _forwarded:
+        logger.warning(
+            "[EJC] FORWARDED_ALLOW_IPS contém CIDR (%s) — o uvicorn compara IP "
+            "por string exata e vai DESCARTAR o X-Forwarded-Proto do Nginx. "
+            "Use IPs exatos separados por vírgula.",
+            _forwarded,
+        )
     # Carrega feriados municipais/estaduais da tabela `feriados` para o
     # calculador de prazos (caso contrário só os nacionais entram na conta).
     from app.services.deadline_calculator import carregar_feriados_db
@@ -456,6 +488,7 @@ app.include_router(signatures.router, prefix=API)
 app.include_router(sociedades_cliente.router, prefix=API)  # gestão societária de CLIENTES (vertical Empresarial)
 app.include_router(provas.router, prefix=API)  # Gestão de Provas por caso + Documento Único de Anexos (Visual Law)
 app.include_router(jornada_caso.router, prefix=API)  # Jornada do Caso — estado determinístico das 9 etapas (sem IA)
+app.include_router(processo_eletronico.router, prefix=API)  # Processo Eletrônico MNI 2.2.2 (Issue #762, Fase A leitura)
 app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA (art. 37) por cliente + RIPD (art. 38)
 app.include_router(sumulas.router, prefix=API)
 app.include_router(suspensoes.router, prefix=API)

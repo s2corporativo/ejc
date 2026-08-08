@@ -354,5 +354,14 @@ def test_tjmg_conta_itens_brutos_antes_do_parsing():
     fonte = (
         Path(__file__).parents[1] / "app" / "services" / "ingestors" / "tjmg.py"
     ).read_text(encoding="utf-8")
-    assert "brutos += len(itens or [])" in fonte
-    assert "itens brutos recebidos" in fonte
+    # A contagem migrou para a camada certa (Onda 3): `brutos` deixou de ser
+    # "itens que buscar_tjmg já parseou" e passou a ser o número de BLOCOS que
+    # a origem devolveu, medido dentro do parser de HTML e devolvido em
+    # `metricas`. A propriedade que este teste trava é a mesma — existir uma
+    # contagem do bruto ANTES do parsing, e o log distinguir os zeros.
+    assert "brutos += blocos_tema" in fonte
+    assert "blocos brutos na origem" in fonte
+    assert "metricas=met" in fonte, (
+        "o ingestor precisa pedir as métricas do parser para saber o que a "
+        "origem devolveu de fato"
+    )

@@ -10,7 +10,7 @@ EJC (Ecossistema Jurídico Clovis) v3 — sistema de gestão jurídica full-stac
 
 ## Papel e regras de execução (governança)
 
-Você é o **executor técnico** do EJC. A especificação e a auditoria são de outro papel (ChatGPT/revisor); o merge e o deploy são atos humanos do titular. As regras canônicas de governança estão em **`docs/GOVERNANCA_IA.md`** — em qualquer divergência entre este arquivo e ele, o canônico prevalece.
+Você é o **executor técnico** do EJC. A especificação e a auditoria são de outro papel (ChatGPT/revisor); merge e deploy são **automáticos** quando todos os gates estiverem verdes (governança §6-A) — o titular intervém apenas nas exceções fechadas dessa seção. As regras canônicas de governança estão em **`docs/GOVERNANCA_IA.md`** — em qualquer divergência entre este arquivo e ele, o canônico prevalece.
 
 **Regras obrigatórias**
 
@@ -21,10 +21,14 @@ Você é o **executor técnico** do EJC. A especificação e a auditoria são de
 5. Toda regra jurídica precisa de fonte oficial, vigência e teste.
 6. Toda correção entra com teste de regressão.
 7. Não alterar escopo sem registrar a justificativa no PR — achado fora do escopo vira Issue nova.
-8. Não fazer merge.
-9. Não executar deploy de produção, não acessar o banco de produção, não trabalhar no diretório de produção.
+8. Merge é automático via `auto-integracao.yml` quando todos os gates estiverem verdes e o diff
+   não tocar exceção do §6-A da governança; o agente não força integração de PR retido.
+9. Deploy ocorre somente pela esteira automatizada (CI verde na `main` → `deploy-vps.yml`, com
+   backup, health e rollback); não acessar o banco de produção nem trabalhar no diretório de produção.
 10. Encerrar cada tarefa com relatório: arquivos, comandos, testes, evidências, riscos residuais, limitações e pontos que exigem decisão humana.
-11. PR sempre em **draft**, vinculado à Issue, com o template preenchido; correções de review vão na mesma branch e no mesmo PR.
+11. PR vinculado à Issue e com o template preenchido; no fluxo autônomo o PR nasce **pronto para
+    integração** (draft apenas quando cai em exceção do §6-A ou o trabalho está incompleto);
+    correções de review vão na mesma branch e no mesmo PR.
 12. Não usar `git push --force`, `git reset --hard`, `git clean -fd`, `rm -rf`, `docker compose down -v`, `docker volume rm`, `dropdb`, `alembic downgrade base` nem `--dangerously-skip-permissions`.
 13. Respeitar LGPD, RBAC, isolamento de dados e revisão humana; jamais enfraquecer HITL, gate de citações, sanitização de PII ou kill-switch de IA.
 
@@ -272,3 +276,18 @@ Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real a
 Um advogado leva um caso real do início ao protocolo dentro do sistema e considera que foi
 **mais fácil do que fazer fora dele**. Enquanto isso não acontecer, o trabalho não está pronto.
 Nenhum caso, até a data da auditoria, passou da triagem; nenhuma peça foi protocolada.
+
+## Diretrizes para operações Git/GitHub
+
+- Antes de qualquer sequência de comandos `gh`, rode `gh auth status` uma única vez no início da tarefa; se retornar não autenticado, pare e reporte ao usuário — nunca tente `gh auth login` de forma autônoma, pois esse comando abre fluxo interativo de navegador e trava a sessão.
+- Nunca execute `gh pr create`, `gh issue create` ou comandos `gh` equivalentes sem todas as flags necessárias (`--title`, `--body`, `--base`, `--head` conforme o caso); chamadas sem flags entram em modo interativo de terminal e travam aguardando entrada que não será fornecida.
+- Para consultas em lote de múltiplos PRs ou issues, prefira uma única chamada via `gh api graphql` a N chamadas sequenciais de `gh pr view`/`gh issue view`, reduzindo requisições contra o rate limit da API do GitHub.
+- Para clonagem apenas de inspeção pontual, sem necessidade de histórico completo, use `git clone --depth 1` em vez de clone completo.
+- Se qualquer comando `git` ou `gh` não retornar em tempo razoável, não repita a mesma chamada indefinidamente: interrompa, verifique se há prompt interativo pendente (autenticação, GPG, hook) e reporte a causa provável ao usuário.
+- Não use `git commit --no-verify`, `git push --force` ou `git reset --hard` sem confirmação explícita do usuário para aquele comando específico.
+
+A recomendação de `gh api graphql` acima vale **só para leitura**: a allowlist libera
+`gh api graphql -f query=*` e nega `gh api` com método de escrita (`-X`, `--method`, `-F`,
+`--input`). As travas de governança continuam valendo sobre todo comando desta seção —
+merge acontece pela esteira automatizada com gates verdes (regra 8), não se empurra nada para
+a `main` diretamente (regra 1) e deploy só pela esteira (regra 9).

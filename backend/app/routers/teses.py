@@ -13,7 +13,7 @@ from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, ROLE_LEVEL, EQUIPE_JURIDICA
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.tese import Tese, TeseCasoLink, TeseTipo, TeseStatus
@@ -70,7 +70,9 @@ class SugestaoIARequest(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _is_staff(user: User) -> bool:
-    return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["estagiario"]
+    # Issue #694: allowlist EXATA — financeiro não acessa o banco de teses
+    # jurídicas, mesmo com ROLE_LEVEL acima de estagiario.
+    return user.role.value in EQUIPE_JURIDICA
 
 def _pode_editar(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["advogado"]

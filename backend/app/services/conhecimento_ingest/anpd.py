@@ -129,11 +129,16 @@ async def ingerir(db: AsyncSession) -> dict:
     """Raspagem leve das páginas oficiais da ANPD → RAG.
 
     Retorna {"novos", "atualizados", "inalterados", "erros"} — contrato do
-    orquestrador (conhecimento_ingest.executar_ingest_conhecimento).
+    orquestrador (conhecimento_ingest.executar_ingest_conhecimento). Diagnóstico:
+    a ÚLTIMA exceção engolida vai em "ultimo_erro_amostra" (tipo + mensagem,
+    truncada) e zero itens brutos coletados na origem inteira marca
+    "zero_brutos" — o orquestrador transforma ambos em `ultimo_erro` no painel
+    (antes, falha aqui virava status "erro" com erro null: indiagnosticável).
     Commit POR documento: erro isolado dá rollback só do item corrente.
     """
     resumo = {"novos": 0, "atualizados": 0, "inalterados": 0, "erros": 0}
     processados = 0
+    brutos = 0                   # links de documento reconhecidos na origem
     vistos: set[str] = set()
 
     for rotulo, categoria, pagina in PAGINAS:
@@ -145,8 +150,11 @@ async def ingerir(db: AsyncSession) -> dict:
             links = extrair_links(r.text, pagina)
         except Exception as e:   # página indisponível/fora do padrão → pula
             resumo["erros"] += 1
+            resumo["ultimo_erro_amostra"] = \
+                f"página {rotulo!r}: {type(e).__name__}: {e}"[:300]
             logger.warning("ANPD página %r: %s: %s", rotulo, type(e).__name__, e)
             continue
+        brutos += len(links)
         if not links:
             logger.warning("ANPD página %r: nenhum link de documento reconhecido "
                            "(layout mudou?)", rotulo)
@@ -196,9 +204,24 @@ async def ingerir(db: AsyncSession) -> dict:
             except Exception as e:   # doc problemático nunca derruba a fonte
                 await db.rollback()
                 resumo["erros"] += 1
+                resumo["ultimo_erro_amostra"] = \
+                    f"{chave}: {type(e).__name__}: {e}"[:300]
                 logger.warning("ANPD %s: %s: %s", chave, type(e).__name__, e)
                 continue
             await asyncio.sleep(PAUSA_S)
         logger.info("ANPD %r: %d processado(s) até aqui — %s",
                     rotulo, processados, resumo)
+
+    # Zero itens BRUTOS na origem inteira não é "sucesso": ou o site caiu (a
+    # amostra da exceção já explica) ou o layout mudou e o parser deixou de
+    # reconhecer os links. Sem esta marca, o parser tolerante reportava sucesso
+    # com zero para sempre — o defeito estrutural que deixou a fonte às cegas.
+    if brutos == 0:
+        resumo["zero_brutos"] = True
+        resumo.setdefault(
+            "ultimo_erro_amostra",
+            "0 itens brutos na origem — layout pode ter mudado "
+            "(nenhum link de documento reconhecido nas páginas-índice da ANPD)",
+        )
+        logger.warning("ANPD: 0 itens brutos na origem — layout pode ter mudado")
     return resumo

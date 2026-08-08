@@ -13,6 +13,7 @@ from datetime import date
 from typing import Any
 from app.core.config import get_settings
 from app.services.document_format import (
+    juntar_segmentos,
     marca_minuta_ia,
     padronizar_documento_juridico,
     sem_caracteres_problematicos,
@@ -98,16 +99,31 @@ def _esc_html(valor: str) -> str:
     return _html.escape(str(valor or ""))
 
 
+# Segmentos do timbre: cada um só entra se a setting por trás dele estiver
+# preenchida (juntar_segmentos descarta os vazios). Sem isto o rodapé saía com
+# "CEP [CEP - preencher em .env]" no documento entregue ao cliente.
+_SEP_HTML = " &nbsp;|&nbsp; "
 _ESC_NOME = _esc_html(_settings.ESCRITORIO_NOME)
-_ESC_SUB1 = (
-    f"CNPJ {_esc_html(_settings.ESCRITORIO_CNPJ)} &nbsp;|&nbsp; "
-    f"OAB/MG {_esc_html(_settings.escritorio_oab())} &nbsp;|&nbsp; "
-    f"{_esc_html(_settings.ESCRITORIO_EMAIL)}"
+_ESC_SUB1 = juntar_segmentos(
+    (
+        f"CNPJ {_esc_html(_settings.escritorio_cnpj())}" if _settings.escritorio_cnpj() else "",
+        f"OAB/MG {_esc_html(_settings.escritorio_oab())}" if _settings.escritorio_oab() else "",
+        _esc_html(_settings.ESCRITORIO_EMAIL),
+    ),
+    _SEP_HTML,
 )
-_ESC_SUB2 = (
-    f"{_esc_html(_settings.escritorio_endereco())} - "
-    f"{_esc_html(_settings.ESCRITORIO_CIDADE)}/{_esc_html(_settings.ESCRITORIO_ESTADO)} &nbsp;|&nbsp; "
-    f"CEP {_esc_html(_settings.escritorio_cep())}"
+_ESC_SUB2 = juntar_segmentos(
+    (
+        juntar_segmentos(
+            (
+                _esc_html(_settings.escritorio_endereco()),
+                f"{_esc_html(_settings.ESCRITORIO_CIDADE)}/{_esc_html(_settings.ESCRITORIO_ESTADO)}",
+            ),
+            " - ",
+        ),
+        f"CEP {_esc_html(_settings.escritorio_cep())}" if _settings.escritorio_cep() else "",
+    ),
+    _SEP_HTML,
 )
 
 # Paleta dourada vinda do tema central (fonte única de verdade) — os tokens
@@ -195,7 +211,7 @@ def _art_peca_html(
     return f"""
 <article class=\"visual-law legal-doc\">
   {banner_ia}<div class=\"doc-cover\">
-    <div class=\"doc-kicker\">Peca juridica | Padrao Visual Law EJC</div>
+    <div class=\"doc-kicker\">Peça jurídica</div>
     <h1>{titulo_esc}</h1>
     <table class=\"meta-grid\"><tr>
       <td><span class=\"meta-label\">Controle</span><span class=\"meta-value\">{controle_val}</span></td>

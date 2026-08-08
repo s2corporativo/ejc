@@ -20,7 +20,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, EQUIPE_JURIDICA
 from app.models.user import User
 
 logger = logging.getLogger("ejc.consumidor_monitor")
@@ -142,7 +142,9 @@ def _normalizar(nome: str) -> str:
 
 
 def _is_staff(u: User) -> bool:
-    return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["estagiario"]
+    # Issue #694: allowlist EXATA — financeiro não acessa o Monitor CDC/JEC,
+    # mesmo com ROLE_LEVEL acima de estagiario.
+    return u.role.value in EQUIPE_JURIDICA
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────

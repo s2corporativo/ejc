@@ -115,7 +115,7 @@ export default function Despesas({
   async function exportCSV() {
     try {
       // Reusa o cliente axios (baseURL /api + interceptor de token/refresh).
-      const resp = await api.get("/v1/despesas/export/csv", {
+      const resp = await api.get("/despesas/export/csv", {
         params: filterComp ? { competencia: filterComp } : {},
         responseType: "blob",
       });
@@ -140,7 +140,7 @@ export default function Despesas({
       if (filterCat) params.categoria = filterCat;
       if (filterStatus) params.status = filterStatus;
       if (filterComp) params.competencia = filterComp;
-      const res = await api.get("/v1/despesas", { params });
+      const res = await api.get("/despesas", { params });
       setItems(res.data ?? []);
     } catch {
       setError(true);
@@ -187,9 +187,9 @@ export default function Despesas({
     };
     try {
       if (editId) {
-        await api.patch(`/v1/despesas/${editId}`, payload);
+        await api.patch(`/despesas/${editId}`, payload);
       } else {
-        await api.post("/v1/despesas", payload);
+        await api.post("/despesas", payload);
       }
       setShowForm(false);
       load();
@@ -200,7 +200,7 @@ export default function Despesas({
 
   async function marcarPago(id: string) {
     try {
-      await api.patch(`/v1/despesas/${id}`, {
+      await api.patch(`/despesas/${id}`, {
         status: "pago",
         pago_em: new Date().toISOString().split("T")[0],
       });
@@ -219,7 +219,7 @@ export default function Despesas({
   async function confirmarExclusao() {
     if (!pendenteExcluir) return;
     try {
-      await api.delete(`/v1/despesas/${pendenteExcluir}`);
+      await api.delete(`/despesas/${pendenteExcluir}`);
       setPendenteExcluir(null);
       load();
     } catch (e: any) {

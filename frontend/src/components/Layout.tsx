@@ -32,7 +32,6 @@ import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
 import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import SecurityMenu from "./SecurityMenu";
 import ErrorBoundary from "./ErrorBoundary";
-import UserAvatar from "./UserAvatar";
 import { Button, Tooltip, cn } from "./UI";
 import { THEME_LABELS, useThemeStore } from "../stores/theme";
 import { useAuth } from "../stores/auth";
@@ -270,7 +269,7 @@ export default function Layout() {
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden truncate sm:inline">
-                Buscar processos por parte, CPF ou número…
+                Buscar casos por parte, CPF ou número…
               </span>
               <span className="truncate sm:hidden">Buscar…</span>
               <kbd className="ml-auto hidden rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 shadow-sm sm:block">
@@ -606,26 +605,9 @@ export default function Layout() {
               </div>
             </div>
           )}
-          <Link
-            to="/configuracoes"
-            title="Abrir preferências"
-            className={cn(
-              "flex items-center gap-3 rounded-xl bg-slate-50 p-2",
-              collapsed && "justify-center",
-            )}
-          >
-            <UserAvatar user={user} size="md" />
-            {!collapsed && (
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-semibold text-slate-700">
-                  {user?.full_name || "Usuário"}
-                </div>
-                <div className="truncate text-[11px] capitalize text-slate-400">
-                  {user?.role || ""}
-                </div>
-              </div>
-            )}
-          </Link>
+          {/* Identidade do usuário (avatar + nome + papel) fica SOMENTE no
+              header, via SecurityMenu — que concentra o menu de ações da
+              conta. Repetir o bloco aqui duplicava a informação na tela. */}
           <button
             type="button"
             onClick={logout}

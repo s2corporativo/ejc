@@ -75,7 +75,7 @@ aiofiles==23.2.1
 python-magic-bin==0.4.14; platform_system == "Windows"
 python-magic==0.4.27; platform_system != "Windows"
 PyMuPDF==1.24.5
-pypdf==6.14.2
+pypdf==6.15.0
 # Pin explícito da dependência de pdfplumber: versões anteriores permitiam
 # desserialização insegura de CMaps e parsing malicioso de PDFs. O pdfplumber
 # 0.11.10 exige exatamente a série 20260107.
@@ -121,6 +121,15 @@ numpy==1.26.4
 # entravam no RAG. lxml também já é exigido transitivamente por python-docx.
 beautifulsoup4==4.12.3
 lxml==6.1.1
+
+# Cliente SOAP para integração de processo eletrônico via MNI 2.2.2 (Issue
+# #762, Fase A). zeep é a lib SOAP padrão em Python (suporta WSDL e MTOM,
+# necessário para os binários de documento do MNI) — dependência nova
+# justificada: não há alternativa madura para SOAP/WSDL já presente no
+# projeto (httpx/requests só cobrem REST). Só é importado por
+# services/mni_connector.py, chamado exclusivamente de dentro de tasks
+# Celery (nunca em request HTTP síncrono).
+zeep==4.3.3
 
 # Streaming, jobs, observability
 sse-starlette==2.1.0

@@ -1186,6 +1186,12 @@ async def test_prescricao_penal_expoe_prazo_base_e_reduzido():
     "/API/penal/ferramentas/dosimetria/",
     "  /penal/ferramentas/dosimetria  ",
     "//Penal//Ferramentas//Dosimetria",
+    # Prefixo canônico /api/v1 (app/core/api_version_middleware.py) — achado
+    # do review Codex na Issue #702: a normalização só removia /api e deixava
+    # sobrar /v1/..., o que rejeitava uma ferramenta real identificada pela
+    # URL canônica.
+    "/api/v1/penal/ferramentas/dosimetria",
+    "/API/V1/Penal/Ferramentas/Dosimetria/",
 ])
 def test_selo_e_gate_usam_a_mesma_normalizacao(caminho):
     from app.services import homologacao_ferramentas as hf

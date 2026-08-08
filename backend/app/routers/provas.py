@@ -43,7 +43,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
-from app.core.security import ROLE_LEVEL, get_current_user
+from app.core.security import ROLE_LEVEL, get_current_user, requer_equipe_juridica
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.client import Client
@@ -471,13 +471,13 @@ async def matriz_provas_referencia(
 ):
     """Referência determinística (matriz tese×prova) — provas mínimas típicas.
 
-    Piso estagiário+ (leitura de referência estática, sem IA e sem PII).
+    Exige pertencer à allowlist EQUIPE_JURIDICA — não é piso hierárquico
+    (Issue #694): leitura de referência estática, sem IA e sem PII.
     Ownership via verificar_acesso_caso. Se ``area``/``pedidos`` não vierem,
     são derivados do próprio caso (área + título + tese principal). Nunca 500:
     a matriz degrada para lista vazia quando nada casa.
     """
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403, "Sem permissão para consultar a matriz de provas")
+    requer_equipe_juridica(cu, "Sem permissão para consultar a matriz de provas")
     case = await verificar_acesso_caso(db, cu, case_id)
 
     from app.services.matriz_provas import provas_recomendadas

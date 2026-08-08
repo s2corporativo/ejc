@@ -6,7 +6,10 @@ Cobre, no padrão dos vizinhos (chamada direta às funções, sem harness de ban
   (c) ferramentas da matriz P0 carregam selo homologada=False + aviso;
   (d) parâmetro de classificação jurídica inválido → 422 (sem fallback silencioso);
   (e) EIRELI rejeitada em registros novos (POST e PATCH empresarial);
-  (f) /pecas/demonstrativo rejeita ferramenta não homologada com 422.
+  (f) /pecas/demonstrativo rejeita ferramenta não homologada com 422;
+  (g) Onda 3 (Issue #702) — `ferramenta` obrigatória e validada contra rotas
+      reais + proveniência mínima (`versao_regra` conferido contra a versão
+      vigente) rejeitam bypass por omissão e demonstrativo forjado.
 """
 from datetime import date
 from types import SimpleNamespace
@@ -237,9 +240,21 @@ def _cu_advogado():
                            full_name="Advogado Teste", oab_number=None)
 
 
+def _prova_provenencia(**overrides) -> dict:
+    """Metadados de proveniência (Onda 3, Issue #702) válidos por padrão —
+    `versao_regra` bate com a versão vigente (`ramos.VERSAO_REGRA_ATUAL`).
+    Testes que querem exercitar o gate de proveniência sobrescrevem via
+    `overrides`."""
+    base = {"fontes": ["fonte de teste"], "vigencia_regra": "vigente",
+            "versao_regra": ramos.VERSAO_REGRA_ATUAL}
+    base.update(overrides)
+    return base
+
+
 @pytest.mark.parametrize("ferramenta", [
     "/penal/ferramentas/dosimetria",                     # selo (simulador assistido)
     "/api/penal/ferramentas/dosimetria",                 # com prefixo /api
+    "/api/v1/penal/ferramentas/dosimetria",              # com prefixo CANÔNICO /api/v1
     "/penal/ferramentas/dosimetria?pena_minima_meses=24",  # com querystring
     "/Penal/Ferramentas/Dosimetria",                     # casing
     "//penal//ferramentas//dosimetria",                  # barras duplicadas
@@ -248,7 +263,8 @@ def _cu_advogado():
 ])
 async def test_demonstrativo_rejeita_ferramenta_nao_homologada(ferramenta):
     from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
-    req = DemonstrativoRequest(titulo="Cálculo de teste", ferramenta=ferramenta)
+    req = DemonstrativoRequest(titulo="Cálculo de teste", ferramenta=ferramenta,
+                               **_prova_provenencia())
     with pytest.raises(HTTPException) as e:
         # O gate dispara antes de qualquer uso do banco → db=None é seguro aqui.
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
@@ -278,31 +294,154 @@ def _demonstrativo_liberado(monkeypatch):
         get_settings(), "PECAS_DEMONSTRATIVO_CALCULADORA_ENABLED", True)
 
 
-async def test_demonstrativo_sem_campo_ferramenta_passa_do_gate(_demonstrativo_liberado):
-    """Retrocompatibilidade: sem `ferramenta`, o gate não interfere (a chamada
-    segue até o banco — db=None estoura AttributeError, prova de que NÃO houve
-    rejeição 422 nem quebra de contrato para clientes antigos)."""
+def test_demonstrativo_sem_campo_ferramenta_reprova_gate():
+    """INVERSO do teste original (Onda 3, Issue #702): `ferramenta` passou a
+    ser OBRIGATÓRIA — a ausência do campo não passa mais silenciosamente pelo
+    gate de homologação. Antes desta Issue, `test_demonstrativo_sem_campo_
+    ferramenta_passa_do_gate` afirmava e cobria o bypass; este teste prova a
+    negação: a omissão é rejeitada na própria validação do schema (Pydantic
+    `ValidationError` — equivalente ao 422 que o FastAPI devolve na borda
+    HTTP para erro de corpo da requisição), antes de qualquer gate de
+    negócio ou uso do banco."""
+    from app.routers.peca_geracao import DemonstrativoRequest
+    with pytest.raises(ValidationError) as e:
+        DemonstrativoRequest(titulo="Cálculo de teste", **_prova_provenencia())
+    assert "ferramenta" in str(e.value)
+
+
+def test_demonstrativo_fontes_com_item_em_branco_reprova_schema():
+    """Achado do review Codex (Issue #702): `min_length` em `fontes` (list[str])
+    valida a QUANTIDADE de itens, não o conteúdo — `fontes=[""]` tem 1 item e
+    passava pelo schema, gerando um demonstrativo com proveniência "presente"
+    mas vazia. Prova por negação: string vazia e string só de espaço em
+    branco são rejeitadas na própria validação do schema."""
+    from app.routers.peca_geracao import DemonstrativoRequest
+    for fontes_invalidas in ([""], ["   "], ["fonte válida", " "]):
+        with pytest.raises(ValidationError) as e:
+            DemonstrativoRequest(
+                titulo="Cálculo de teste",
+                ferramenta="/penal/ferramentas/dosimetria",
+                **{**_prova_provenencia(), "fontes": fontes_invalidas})
+        assert "fontes" in str(e.value)
+
+
+def test_demonstrativo_vigencia_regra_em_branco_reprova_schema():
+    """Achado do review Codex (Issue #702): `min_length=1` em `vigencia_regra`
+    (str) conta CARACTERES, e espaço em branco é um caractere válido —
+    `vigencia_regra=" "` passava pelo schema. Prova por negação: string vazia
+    e string só de espaço em branco são rejeitadas na própria validação do
+    schema."""
+    from app.routers.peca_geracao import DemonstrativoRequest
+    for vigencia_invalida in ("", "   ", "\t\n"):
+        with pytest.raises(ValidationError) as e:
+            DemonstrativoRequest(
+                titulo="Cálculo de teste",
+                ferramenta="/penal/ferramentas/dosimetria",
+                **{**_prova_provenencia(), "vigencia_regra": vigencia_invalida})
+        assert "vigencia_regra" in str(e.value)
+
+
+async def test_demonstrativo_ferramenta_caminho_inexistente_422():
+    """AC #702: caminho que não corresponde a NENHUMA rota real de ferramenta
+    é rejeitado — não pode passar pela lógica de 'não está na matriz de não
+    homologadas, logo está liberado' (a matriz é denylist, não allowlist)."""
     from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
-    req = DemonstrativoRequest(titulo="Cálculo de teste")
-    with pytest.raises(AttributeError):
+    req = DemonstrativoRequest(titulo="Cálculo de teste",
+                               ferramenta="/inventado/ferramentas/nao-existe",
+                               **_prova_provenencia())
+    with pytest.raises(HTTPException) as e:
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
+    assert e.value.status_code == 422
+    assert e.value.detail["codigo"] == "ferramenta_desconhecida"
+
+
+async def test_demonstrativo_ferramenta_prefixo_v1_canonico_passa_gate_1(_demonstrativo_liberado):
+    """Achado do review Codex (Issue #702): `/api/v1` é o prefixo CANÔNICO
+    (`app/core/api_version_middleware.py`), não apenas um sinônimo legado de
+    `/api`. Um cliente que identifica a ferramenta pela URL canônica real
+    (`/api/v1/trabalhista-esp/ferramentas/deposito-recursal`) não pode ser
+    rejeitado como `ferramenta_desconhecida` — prova por negação: se a
+    normalização voltasse a só remover `/api`, sobraria `/v1/...` e este
+    teste veria o 422 errado em vez do AttributeError do db=None."""
+    from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
+    req = DemonstrativoRequest(
+        titulo="Cálculo de teste",
+        ferramenta="/api/v1/trabalhista-esp/ferramentas/deposito-recursal",
+        **_prova_provenencia())
+    with pytest.raises(AttributeError):   # passou de todos os gates; parou só no db=None
+        await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
+
+
+async def test_demonstrativo_grava_o_caminho_normalizado_nao_o_valor_cru(_demonstrativo_liberado):
+    """Achado do review CodeRabbit (Issue #702, Integridade de Dados): o Gate 1
+    valida o caminho NORMALIZADO (`normalizar_caminho_ferramenta` descarta
+    query string, casing, barras duplicadas, barra final e prefixo
+    `/api`|`/api/v1`), mas o corpo do documento gravava `req.ferramenta` CRU.
+    Um cliente podia mandar uma rota válida com texto livre pendurado depois do
+    `?`: o gate aceitava — porque a query string nunca chega ao lookup — e o
+    demonstrativo registrava, como peça jurídica, conteúdo que não participou
+    de validação nenhuma.
+
+    Prova por negação: com `req.ferramenta` de volta no lugar de `caminho`, a
+    asserção do `nota=` reprova."""
+    from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
+
+    class _DbFake:
+        def add(self, _doc): pass
+        async def commit(self): pass
+
+    req = DemonstrativoRequest(
+        titulo="Cálculo de teste",
+        ferramenta="/API/V1/Trabalhista-Esp/Ferramentas/Deposito-Recursal/?nota=texto+livre",
+        **_prova_provenencia())
+    resposta = await gerar_demonstrativo(req, db=_DbFake(), cu=_cu_advogado())
+
+    linha = [ln for ln in resposta["conteudo"].splitlines()
+             if ln.startswith("FERRAMENTA DE ORIGEM:")][0]
+    assert "/trabalhista-esp/ferramentas/deposito-recursal" in linha
+    assert "nota=texto+livre" not in resposta["conteudo"]
+    assert "?" not in linha
+
+
+async def test_demonstrativo_versao_regra_divergente_reprova_forjado():
+    """Mecanismo de proveniência (piso, opção (c) da Issue #702): `versao_regra`
+    é o mesmo valor que a PRÓPRIA ferramenta carimba em toda resposta
+    (ramos.VERSAO_REGRA_ATUAL). Um demonstrativo que alega uma versão que
+    nunca foi a vigente não pode ter saído de uma execução real da
+    ferramenta — é rejeitado mesmo com ferramenta homologada e caminho
+    válido (o gate roda ANTES da trava geral, então nem depende dela estar
+    liberada)."""
+    from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
+    req = DemonstrativoRequest(
+        titulo="Cálculo de teste",
+        ferramenta="/trabalhista-esp/ferramentas/deposito-recursal",
+        fontes=["fonte forjada"], vigencia_regra="forjada",
+        versao_regra="1999-01",   # nunca foi a versão vigente
+    )
+    with pytest.raises(HTTPException) as e:
+        await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
+    assert e.value.status_code == 422
+    assert e.value.detail["codigo"] == "versao_regra_divergente"
 
 
 async def test_demonstrativo_ferramenta_homologada_passa_do_gate(_demonstrativo_liberado):
     from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
     req = DemonstrativoRequest(titulo="Cálculo de teste",
-                               ferramenta="/trabalhista-esp/ferramentas/deposito-recursal")
+                               ferramenta="/trabalhista-esp/ferramentas/deposito-recursal",
+                               **_prova_provenencia())
     with pytest.raises(AttributeError):   # passou do gate; parou só no db=None
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
 
 
 async def test_trava_geral_bloqueia_mesmo_ferramenta_homologada():
-    """A trava geral continua valendo com a matriz por ferramenta no lugar:
-    ferramenta homologada + trava fechada (default) = 403. Sem este teste, um
-    merge futuro poderia reabrir a exportação sem ninguém perceber."""
+    """Não-regressão (AC #702): com a flag geral desligada (default), o
+    comportamento segue sendo 403 mesmo com ferramenta homologada, caminho
+    válido e proveniência correta. Sem este teste, um merge futuro poderia
+    reabrir a exportação sem ninguém perceber."""
     from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
     req = DemonstrativoRequest(titulo="Cálculo de teste",
-                               ferramenta="/trabalhista-esp/ferramentas/deposito-recursal")
+                               ferramenta="/trabalhista-esp/ferramentas/deposito-recursal",
+                               **_prova_provenencia())
     with pytest.raises(HTTPException) as e:
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
     assert e.value.status_code == 403
@@ -314,7 +453,8 @@ async def test_ferramenta_nao_homologada_responde_422_mesmo_com_trava_fechada():
     da matriz nunca aparecia."""
     from app.routers.peca_geracao import DemonstrativoRequest, gerar_demonstrativo
     req = DemonstrativoRequest(titulo="Cálculo de teste",
-                               ferramenta="/penal/ferramentas/dosimetria")
+                               ferramenta="/penal/ferramentas/dosimetria",
+                               **_prova_provenencia())
     with pytest.raises(HTTPException) as e:
         await gerar_demonstrativo(req, db=None, cu=_cu_advogado())
     assert e.value.status_code == 422

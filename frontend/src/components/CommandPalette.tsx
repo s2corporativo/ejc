@@ -99,7 +99,10 @@ export default function CommandPalette() {
         ? [
             {
               path: "/raio-x",
-              label: "Analisar processo externo",
+              // "Caso", e não "processo": o Raio-X analisa a entrada/potencial
+              // caso a partir de documentos — não consulta processo judicial
+              // por número CNJ (isso é o DataJud).
+              label: "Analisar caso externo",
               description: "Fazer uma análise preliminar sem criar caso",
               icon: ScanSearch,
             },

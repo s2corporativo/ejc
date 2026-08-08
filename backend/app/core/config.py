@@ -374,6 +374,10 @@ class Settings(BaseSettings):
     DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
     # Timeout por requisição. O CNJ pode responder lentamente em horários de pico.
     DATAJUD_TIMEOUT_SECONDS: float = 25.0
+    # Cache TTL (segundos) da consulta processual por número CNJ — evita bater
+    # no CNJ a cada request repetida. Em memória (premissa de worker único).
+    # 0 desliga o cache. Erro do CNJ nunca entra no cache.
+    DATAJUD_CACHE_TTL_SEGUNDOS: int = 900
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta
@@ -830,11 +834,21 @@ class Settings(BaseSettings):
     # os geradores de documento (documental.py, templates_documentos.py,
     # pdf_service.py, docx_service.py). OAB/ENDERECO trazem o DADO INSTITUCIONAL
     # do escritório como default (sobreponível pelo .env de cada instalação);
-    # CEP nasce VAZIO de propósito. Quando vazios, os helpers abaixo devolvem um
-    # placeholder EXPLÍCITO e visível — o documento nunca sai com string vazia
-    # silenciosa nem com dado inventado.
+    # CEP nasce VAZIO de propósito.
+    #
+    # Campo vazio → os helpers devolvem STRING VAZIA e o consumidor DESCARTA o
+    # segmento inteiro do timbre (rótulo incluído). O comportamento anterior
+    # imprimia "[CEP - preencher em .env]" no papel timbrado da procuração e do
+    # contrato — pendência interna vazando para o documento que o cliente assina
+    # (Onda 1 da refatoração). A pendência não fica silenciosa: aparece em
+    # `escritorio_pendencias()`, que o boot loga e o diagnóstico expõe.
     ESCRITORIO_NOME: str = "De Paula Teixeira Sociedade de Advogados"
-    ESCRITORIO_CNPJ: str = "32.491.468/0001-12"
+    # CNPJ nasce VAZIO de propósito (mesmo padrão do CEP): a auditoria de
+    # julho/2026 apontou que o CNPJ antes hardcoded aqui resolvia para OUTRA
+    # razão social na Receita. Confirmar o CNPJ da sociedade na Receita e
+    # preencher ESCRITORIO_CNPJ no .env; vazio, o segmento some do timbre e a
+    # pendência aparece em escritorio_pendencias() (log de boot + diagnóstico).
+    ESCRITORIO_CNPJ: str = ""
     ESCRITORIO_CIDADE: str = "Betim"
     ESCRITORIO_ESTADO: str = "MG"
     ESCRITORIO_EMAIL: str = "contato@depaulateixeira.adv.br"
@@ -842,22 +856,38 @@ class Settings(BaseSettings):
     ESCRITORIO_ENDERECO: str = "Av. Gov. Valadares nº 851, sala 405, Centro, Betim"
     ESCRITORIO_CEP: str = ""
 
-    @staticmethod
-    def _ou_placeholder(valor: str, rotulo: str) -> str:
-        """Valor da setting, ou um placeholder EXPLÍCITO quando ainda não
-        preenchido no .env — visível no documento para sinalizar a pendência
-        (nunca string vazia, que passaria despercebida)."""
-        limpo = (valor or "").strip()
-        return limpo or f"[{rotulo} - preencher em .env]"
-
     def escritorio_oab(self) -> str:
-        return self._ou_placeholder(self.ESCRITORIO_OAB, "OAB/MG nº ___")
+        return (self.ESCRITORIO_OAB or "").strip()
 
     def escritorio_endereco(self) -> str:
-        return self._ou_placeholder(self.ESCRITORIO_ENDERECO, "endereço do escritório")
+        return (self.ESCRITORIO_ENDERECO or "").strip()
 
     def escritorio_cep(self) -> str:
-        return self._ou_placeholder(self.ESCRITORIO_CEP, "CEP")
+        return (self.ESCRITORIO_CEP or "").strip()
+
+    def escritorio_cnpj(self) -> str:
+        return (self.ESCRITORIO_CNPJ or "").strip()
+
+    def escritorio_pendencias(self) -> list[str]:
+        """Settings institucionais do timbre ainda não preenchidas no .env.
+
+        É o substituto do placeholder no documento: a pendência continua
+        VISÍVEL, mas para o operador (log de boot + Central de Diagnóstico), não
+        para o cliente que recebe a peça.
+        """
+        return [
+            nome
+            for nome, valor in (
+                ("ESCRITORIO_OAB", self.escritorio_oab()),
+                ("ESCRITORIO_ENDERECO", self.escritorio_endereco()),
+                ("ESCRITORIO_CEP", self.escritorio_cep()),
+                # Auditoria jul/2026: confirmar CNPJ da sociedade na Receita e
+                # preencher ESCRITORIO_CNPJ no .env (o antigo default resolvia
+                # para outra razão social).
+                ("ESCRITORIO_CNPJ", self.escritorio_cnpj()),
+            )
+            if not valor
+        ]
 
     @model_validator(mode="after")
     def _validar_seguranca_producao(self):

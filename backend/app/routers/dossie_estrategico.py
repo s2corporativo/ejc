@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, ROLE_LEVEL, EQUIPE_JURIDICA
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.dossie_estrategico import DossieEstrategico, DossieStatus
@@ -30,7 +30,9 @@ class GerarDossieReq(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _pode_ver(u: User) -> bool:
-    return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["estagiario"]
+    # Issue #694: allowlist EXATA — financeiro (nível 4) NÃO pode ver dossiê
+    # estratégico do caso, mesmo estando acima de estagiario em ROLE_LEVEL.
+    return u.role.value in EQUIPE_JURIDICA
 
 def _pode_gerar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]

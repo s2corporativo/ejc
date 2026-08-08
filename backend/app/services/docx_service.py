@@ -24,7 +24,7 @@ import re
 from typing import Any
 
 from app.core.config import get_settings
-from app.services.document_format import marca_minuta_ia
+from app.services.document_format import juntar_segmentos, marca_minuta_ia
 from app.services.visual_law_theme import OURO
 
 logger = logging.getLogger("ejc.docx")
@@ -32,20 +32,33 @@ logger = logging.getLogger("ejc.docx")
 settings = get_settings()
 
 # Identidade institucional — mesma FONTE ÚNICA usada pelo PDF (settings
-# ESCRITORIO_*). OAB e endereço agora integram o timbre (cabeçalho) e o rodapé;
-# vazios no .env viram placeholder explícito, nunca dado inventado.
+# ESCRITORIO_*). OAB e endereço integram o timbre (cabeçalho) e o rodapé; setting
+# vazia FAZ SUMIR o segmento inteiro (rótulo incluído) em vez de imprimir o
+# placeholder de pendência interna no documento do cliente — ver
+# Settings.escritorio_pendencias(), que mantém a pendência visível ao operador.
+_SEP = "  |  "
 ESCRITORIO_NOME = settings.ESCRITORIO_NOME
-# Sub-linha do timbre (cabeçalho): OAB + endereço — dados FIXOS do escritório.
-ESCRITORIO_TIMBRE_SUB = (
-    f"OAB/MG {settings.escritorio_oab()}  |  "
-    f"{settings.escritorio_endereco()} - {settings.ESCRITORIO_CIDADE}/{settings.ESCRITORIO_ESTADO}  |  "
-    f"CEP {settings.escritorio_cep()}"
+_ENDERECO_CIDADE = juntar_segmentos(
+    (
+        settings.escritorio_endereco(),
+        f"{settings.ESCRITORIO_CIDADE}/{settings.ESCRITORIO_ESTADO}",
+    ),
+    " - ",
 )
+_OAB = f"OAB/MG {settings.escritorio_oab()}" if settings.escritorio_oab() else ""
+_CEP = f"CEP {settings.escritorio_cep()}" if settings.escritorio_cep() else ""
+# Sub-linha do timbre (cabeçalho): OAB + endereço — dados FIXOS do escritório.
+ESCRITORIO_TIMBRE_SUB = juntar_segmentos((_OAB, _ENDERECO_CIDADE, _CEP), _SEP)
 # Rodapé: contato completo (CNPJ + OAB + endereço + e-mail).
-ESCRITORIO_CONTATO = (
-    f"CNPJ {settings.ESCRITORIO_CNPJ}  |  OAB/MG {settings.escritorio_oab()}  |  "
-    f"{settings.escritorio_endereco()} - {settings.ESCRITORIO_CIDADE}/{settings.ESCRITORIO_ESTADO}  |  "
-    f"CEP {settings.escritorio_cep()}  |  {settings.ESCRITORIO_EMAIL}"
+ESCRITORIO_CONTATO = juntar_segmentos(
+    (
+        f"CNPJ {settings.escritorio_cnpj()}" if settings.escritorio_cnpj() else "",
+        _OAB,
+        _ENDERECO_CIDADE,
+        _CEP,
+        settings.ESCRITORIO_EMAIL,
+    ),
+    _SEP,
 )
 
 # ── Parser de markdown (linha a linha) ───────────────────────────────────────
@@ -273,7 +286,10 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     quadro = doc.add_paragraph()
     quadro.alignment = WD_ALIGN_PARAGRAPH.CENTER
     quadro.paragraph_format.space_after = Pt(8)
-    q = quadro.add_run("CONTROLE VISUAL LAW EJC")
+    # Rótulo NEUTRO: "Visual Law EJC" era marca interna vazando no documento
+    # entregue ao cliente (Onda 2 da refatoração) — o quadro de controle fica,
+    # a marca some.
+    q = quadro.add_run("CONTROLE DO DOCUMENTO")
     q.bold = True
     q.font.name = fonte
     q.font.size = Pt(10)
@@ -284,7 +300,7 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     status_doc = meta.get("status") or "Versão de trabalho"
     tabela = doc.add_table(rows=2, cols=3)
     campos = [
-        ("Controle", str(codigo_peca or "Visual Law")),
+        ("Controle", str(codigo_peca or "—")),
         ("Versão", versao_doc),
         ("Status", str(status_doc)),
         ("Processo", str(numero_processo or "—")),
@@ -308,9 +324,10 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     nota.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     nota.paragraph_format.space_before = Pt(8)
     nota.paragraph_format.space_after = Pt(14)
+    # Texto neutro: a versão anterior citava "Visual Law" (jargão interno).
     nr = nota.add_run(
-        "Documento estruturado com elementos de Visual Law para facilitar leitura, "
-        "controle de versão e conferência profissional, sem alteração do teor."
+        "Documento estruturado para facilitar leitura, controle de versão "
+        "e conferência profissional, sem alteração do teor."
     )
     nr.italic = True
     nr.font.name = fonte

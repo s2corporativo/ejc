@@ -475,16 +475,37 @@ async def _probe_heartbeat_jobs(session, settings: Settings) -> dict[str, Any]:
             jobs=[],
         )
 
-    jobs = hb.avaliar_jobs(heartbeats)
+    # Cruzamento execução × RESULTADO (armadilha da auditoria: "captura DJEN
+    # reporta ok há meses sem nunca ter capturado nada"): para jobs de captura
+    # com fonte mapeada (hb.FONTE_POR_JOB), consulta a saúde da fonte em
+    # fontes_ingestao — job em dia com fonte `nunca_produziu`/
+    # `parou_de_produzir` vira "sem_resultado" (alerta), não "ok".
+    # Best-effort: sem a tabela/linhas, avaliação por execução preservada.
+    saudes_fontes = None
+    try:
+        from app.models.rag import FonteIngestao
+        from app.services.ingestao_saude import avaliar_fontes
+
+        rf = await session.execute(
+            select(FonteIngestao).where(
+                FonteIngestao.slug.in_(sorted(set(hb.FONTE_POR_JOB.values())))
+            )
+        )
+        saudes_fontes = avaliar_fontes(rf.scalars().all())
+    except Exception:
+        saudes_fontes = None
+
+    jobs = hb.avaliar_jobs(heartbeats, saudes_fontes=saudes_fontes)
     for j in jobs:
         j["last_run_at"] = _iso(j["last_run_at"])  # serializa datetime p/ JSON
 
     n_erro = sum(j["status"] == "erro" for j in jobs)
     n_defasado = sum(j["status"] == "defasado" for j in jobs)
     n_nunca = sum(j["status"] == "nunca_executou" for j in jobs)
+    n_sem_resultado = sum(j["status"] == "sem_resultado" for j in jobs)
     problemas = [
         j["label"] for j in jobs
-        if j["status"] in ("erro", "defasado", "nunca_executou")
+        if j["status"] in ("erro", "defasado", "nunca_executou", "sem_resultado")
     ]
     resumo = {
         "total": len(jobs),
@@ -492,6 +513,7 @@ async def _probe_heartbeat_jobs(session, settings: Settings) -> dict[str, Any]:
         "defasado": n_defasado,
         "nunca_executou": n_nunca,
         "erro": n_erro,
+        "sem_resultado": n_sem_resultado,
     }
 
     if n_erro:
@@ -511,6 +533,21 @@ async def _probe_heartbeat_jobs(session, settings: Settings) -> dict[str, Any]:
             f"(possível parada silenciosa do scheduler): {', '.join(problemas)}.",
             "Confirme que o scheduler está de pé e que os jobs rodam "
             "(lifespan/start_scheduler e logs).",
+            _ms(inicio),
+            jobs=jobs, resumo=resumo,
+        )
+    if n_sem_resultado:
+        motivos = "; ".join(
+            f"{j['label']}: {j['motivo']}" for j in jobs
+            if j["status"] == "sem_resultado" and j.get("motivo")
+        )
+        return _sub(
+            "Jobs monitorados (heartbeat)",
+            "alerta",
+            f"{n_sem_resultado} job(s) executam em dia mas a fonte "
+            f"correspondente não produz resultado — {motivos}",
+            "Job que roda sem entregar não é saudável: verifique o ingestor da "
+            "fonte sinalizada (GET /ia-governanca/fontes traz o veredito).",
             _ms(inicio),
             jobs=jobs, resumo=resumo,
         )

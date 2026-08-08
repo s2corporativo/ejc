@@ -88,15 +88,20 @@ async def listar_fontes(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Fontes de importação disponíveis + frescor da última execução."""
+    """Fontes de importação disponíveis + frescor da última execução.
+
+    Slug ÚNICO por fonte (Onda 2): execuções on-demand e agendadas alimentam a
+    MESMA linha de fontes_ingestao (`stj`/`tjmg`/`lexml`) — a "última execução"
+    aqui reflete qualquer uma das duas trilhas.
+    """
     fontes = fontes_disponiveis()
-    slugs = [f"juris_import_{f['slug']}" for f in fontes]
+    slugs = [f["slug"] for f in fontes]
     rows = (await db.execute(
         select(FonteIngestao).where(FonteIngestao.slug.in_(slugs))
     )).scalars().all()
     por_slug = {r.slug: r for r in rows}
     for f in fontes:
-        r = por_slug.get(f"juris_import_{f['slug']}")
+        r = por_slug.get(f["slug"])
         f["ultima_execucao"] = r.ultima_execucao if r else None
         f["ultimo_status"] = r.ultimo_status if r else None
         f["registros_novos"] = r.registros_novos if r else 0
