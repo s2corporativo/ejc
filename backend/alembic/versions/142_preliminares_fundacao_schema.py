@@ -50,6 +50,15 @@ def upgrade() -> None:
         sa.Column("convertido_case_id", sa.String(36), sa.ForeignKey("cases.id")),
         sa.Column("converted_at", sa.DateTime(timezone=True)),
         sa.Column("created_by", sa.String(36), sa.ForeignKey("users.id"), nullable=False),
+        # Piso de purga LGPD — comum às duas origens (ver migration
+        # 140_legal_chat_retention_purga, PR #803: dá o mesmo campo e a mesma
+        # semântica à origem "sala_juridica" e já lê ambas em
+        # services/scheduler.py::_purgar_analises_preliminares_abandonadas).
+        # A Fase 2 (backfill/dual-write) deve popular esta coluna também para
+        # origem="sala_juridica" — não é exclusiva de origem="raio_x".
+        sa.Column("retention_until", sa.DateTime(timezone=True)),
+        sa.Column("archived_at", sa.DateTime(timezone=True)),
+        sa.Column("discarded_at", sa.DateTime(timezone=True)),
         sa.Column("deleted_at", sa.DateTime(timezone=True)),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
@@ -64,15 +73,16 @@ def upgrade() -> None:
         sa.Column("posicao_cliente", sa.String(100)),
         sa.Column("risco_nivel", sa.String(30)),
         sa.Column("prazo_urgente", sa.Boolean(), server_default=sa.false()),
+        # FK para o Case que CONTEXTUALIZOU a criação deste Raio-X — não
+        # confundir com o discriminador `origem` (raio_x|sala_juridica) da
+        # tabela-mãe: este campo é sobre "a partir de qual caso" a análise
+        # nasceu, aquele é sobre "qual produto" a gerou.
         sa.Column("origem_contextual_case_id", sa.String(36), sa.ForeignKey("cases.id")),
         sa.Column("dados_extraidos", postgresql.JSONB(), server_default=sa.text("'{}'::jsonb")),
         sa.Column("relatorio", postgresql.JSONB(), server_default=sa.text("'{}'::jsonb")),
         sa.Column("revisao_humana", postgresql.JSONB(), server_default=sa.text("'{}'::jsonb")),
         sa.Column("alertas_conflito", postgresql.JSONB(), server_default=sa.text("'[]'::jsonb")),
         sa.Column("custo_ia", postgresql.JSONB(), server_default=sa.text("'{}'::jsonb")),
-        sa.Column("retention_until", sa.DateTime(timezone=True)),
-        sa.Column("archived_at", sa.DateTime(timezone=True)),
-        sa.Column("discarded_at", sa.DateTime(timezone=True)),
         # ── Específicas de origem="sala_juridica" (LegalChatSession) — nullable ─
         sa.Column("favorita", sa.Boolean(), server_default=sa.false()),
         sa.Column("client_id", sa.String(36), sa.ForeignKey("clients.id")),
@@ -96,6 +106,12 @@ def upgrade() -> None:
     )
     op.create_index("ix_preliminares_status_criado", "preliminares", ["status", "created_at"])
     op.create_index("ix_preliminares_criador_status", "preliminares", ["created_by", "status"])
+    # Preservam os índices que RaioXAnalise já tinha (raio_x.py: numero_processo
+    # e area com index=True) — busca por processo (ilike) e filtro por área são
+    # caminhos de consulta ativos em routers/raio_x.py hoje; criar agora, com a
+    # tabela vazia, é instantâneo — na Fase 3 (tabela populada) não seria.
+    op.create_index("ix_preliminares_numero_processo", "preliminares", ["numero_processo"])
+    op.create_index("ix_preliminares_area", "preliminares", ["area"])
 
     op.create_table(
         "preliminar_documentos",

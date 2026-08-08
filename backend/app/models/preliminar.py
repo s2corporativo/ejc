@@ -74,10 +74,17 @@ class Preliminar(Base):
     titulo = Column(String(255), nullable=False)
     status = Column(String(40), nullable=False, index=True)
     potencial_cliente = Column(String(255), nullable=True)
-    area = Column(String(100), nullable=True)
+    area = Column(String(100), nullable=True, index=True)
     convertido_case_id = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
     converted_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    # Piso de purga LGPD — comum às duas origens (ver 140_legal_chat_retention_purga,
+    # PR #803, que dá o mesmo campo/semântica a legal_chat_sessions e já o lê
+    # para ambas em services/scheduler.py::_purgar_analises_preliminares_abandonadas).
+    # A Fase 2 deve popular esta coluna também para origem="sala_juridica".
+    retention_until = Column(DateTime(timezone=True), nullable=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
+    discarded_at = Column(DateTime(timezone=True), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
@@ -85,7 +92,7 @@ class Preliminar(Base):
     )
 
     # ── Específicas de origem="raio_x" (RaioXAnalise) ────────────────────
-    numero_processo = Column(String(30), nullable=True)
+    numero_processo = Column(String(30), nullable=True, index=True)
     subarea = Column(String(100), nullable=True)
     rito = Column(String(100), nullable=True)
     fase = Column(String(100), nullable=True)
@@ -95,15 +102,16 @@ class Preliminar(Base):
     posicao_cliente = Column(String(100), nullable=True)
     risco_nivel = Column(String(30), nullable=True)
     prazo_urgente = Column(Boolean, nullable=True, default=False)
+    # FK para o Case que CONTEXTUALIZOU a criação deste Raio-X — não confundir
+    # com o discriminador `origem` (raio_x|sala_juridica) desta mesma tabela:
+    # este campo é "a partir de qual caso" a análise nasceu, aquele é "qual
+    # produto" a gerou.
     origem_contextual_case_id = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
     dados_extraidos = Column(JSONB, nullable=True, default=dict)
     relatorio = Column(JSONB, nullable=True, default=dict)
     revisao_humana = Column(JSONB, nullable=True, default=dict)
     alertas_conflito = Column(JSONB, nullable=True, default=list)
     custo_ia = Column(JSONB, nullable=True, default=dict)
-    retention_until = Column(DateTime(timezone=True), nullable=True)
-    archived_at = Column(DateTime(timezone=True), nullable=True)
-    discarded_at = Column(DateTime(timezone=True), nullable=True)
 
     # ── Específicas de origem="sala_juridica" (LegalChatSession) ─────────
     favorita = Column(Boolean, nullable=True, default=False)
