@@ -137,7 +137,7 @@ APScheduler==3.11.3
 celery[redis]==5.4.0  # fila assíncrona (Fase 3A) — worker no docker-compose
 redis==5.0.7          # broker/backend do Celery + ping de disponibilidade (dispatcher)
 sentry-sdk[fastapi]==2.13.0
-langfuse==2.50.0
+langfuse==4.14.2
 
 # Tests/dev
 pytest==9.0.3
