@@ -93,6 +93,7 @@ from app.models.processo_eletronico import (  # noqa  (MNI 2.2.2 leitura — mig
     Tribunal, CredencialProcessoEletronico, SincronizacaoProcessoEletronico,
     DocumentoProcessoEletronicoDedup,
 )
+from app.models import preliminar          # noqa  (fusão Raio-X + Sala Jurídica, fundação — migração 142)
 
 # Registra a política runtime que suprime temporariamente a exigência de TOTP sem
 # alterar os valores persistidos. A importação é deliberadamente tardia para
