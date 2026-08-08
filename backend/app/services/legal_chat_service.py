@@ -1147,6 +1147,7 @@ def serializar_sessao(
         "convertido_case_id": s.convertido_case_id,
         "frozen": s.frozen_at is not None,
         "custo_ia_total": float(s.custo_ia_total or 0),
+        "retention_until": s.retention_until.isoformat() if s.retention_until else None,
         "created_by": s.created_by,
         "created_at": s.created_at.isoformat() if s.created_at else None,
         "updated_at": s.updated_at.isoformat() if s.updated_at else None,

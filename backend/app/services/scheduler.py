@@ -1209,6 +1209,52 @@ async def _purgar_logs_ia():
         logger.error(f"[Retenção IA] falha: {e}")
 
 
+# ── Purga de análises preliminares abandonadas (F4 / Issue #798) ─────────────
+async def _purgar_analises_preliminares_abandonadas():
+    """Descarta (soft) Raio-X e sessões da Sala Jurídica nunca convertidas em
+    caso, inativas há mais de PURGA_PRELIMINARES_INATIVIDADE_DIAS (default
+    365) dias.
+
+    IMPORTANTE: `retention_until` em ambas as tabelas é um PISO mínimo de
+    retenção ("não excluir antes disso"), não um teto que dispara purga — o
+    sinal de "abandono" real é inatividade (`updated_at` parado), sempre
+    respeitando o piso quando ele existe (`retention_until` nulo ou já
+    vencido). Nunca toca análise/sessão já convertida, arquivada ou
+    descartada — só o estado "em progresso e esquecido".
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import text as _t
+    from app.core.database import AsyncSessionLocal
+    dias = getattr(settings, "PURGA_PRELIMINARES_INATIVIDADE_DIAS", 365)
+    corte = datetime.now(timezone.utc) - timedelta(days=dias)
+    try:
+        async with AsyncSessionLocal() as db:
+            r_raiox = await db.execute(_t("""
+                UPDATE raio_x_analises
+                SET status = 'descartado', discarded_at = NOW()
+                WHERE deleted_at IS NULL
+                AND status NOT IN ('convertido_em_caso', 'arquivado', 'descartado')
+                AND updated_at < :corte
+                AND (retention_until IS NULL OR retention_until <= NOW())
+            """), {"corte": corte})
+            r_sala = await db.execute(_t("""
+                UPDATE legal_chat_sessions
+                SET status = 'arquivada', deleted_at = NOW()
+                WHERE deleted_at IS NULL
+                AND status NOT IN ('convertida_em_caso', 'arquivada')
+                AND updated_at < :corte
+                AND (retention_until IS NULL OR retention_until <= NOW())
+            """), {"corte": corte})
+            await db.commit()
+            logger.info(
+                f"[Purga preliminares] {r_raiox.rowcount or 0} Raio-X + "
+                f"{r_sala.rowcount or 0} Sala Jurídica descartados "
+                f"(inativos > {dias} dias, piso de retenção respeitado)"
+            )
+    except Exception as e:
+        logger.error(f"[Purga preliminares] falha: {e}")
+
+
 # ── Start/Stop ────────────────────────────────────────────────────────────────
 
 async def _reembedar_rag_orfaos():
@@ -1276,6 +1322,7 @@ def start_scheduler():
     s.add_job(_reembedar_rag_orfaos, CronTrigger(minute=20), id="reembed_rag_orfaos",
               replace_existing=True, max_instances=1, coalesce=True)
     s.add_job(_purgar_dados_lgpd, CronTrigger(day_of_week="sun", hour=2, minute=30), id="purga_lgpd", replace_existing=True)
+    s.add_job(_purgar_analises_preliminares_abandonadas, CronTrigger(day_of_week="sun", hour=2, minute=45), id="purga_preliminares", replace_existing=True)
     s.add_job(job_ingestao_camara,   CronTrigger(hour=4, minute=0),          id="ing_camara",   replace_existing=True)
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)
     # DJEN → RAG: gate interno DJEN_INGEST_ENABLED (default False)

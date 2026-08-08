@@ -7,7 +7,7 @@ são contornados por esta superfície.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -61,6 +61,13 @@ EXTENSOES = {
     ".png", ".jpg", ".jpeg", ".tiff", ".webp",
 }
 
+#: Piso mínimo de retenção (F4 / Issue #798) — mesmo valor default de
+#: RaioXAnalise.retention_days (schemas/raio_x.py). Sem campo próprio no
+#: payload de criação: ao contrário do Raio-X (que já expõe retention_days
+#: há tempo, decisão preexistente), aqui é um piso novo — fixo, sem knob por
+#: sessão, para não inventar superfície de API sem pedido concreto.
+RETENTION_DIAS_DEFAULT = 90
+
 
 @router.post("", dependencies=[Depends(rate_limit("sala-juridica-criar", 20))])
 async def criar_sessao(
@@ -76,6 +83,7 @@ async def criar_sessao(
         workspace_texto=payload.workspace_texto,
         advogado_responsavel_id=user.id,
         created_by=user.id,
+        retention_until=datetime.now(timezone.utc) + timedelta(days=RETENTION_DIAS_DEFAULT),
     )
     db.add(sessao)
     await db.commit()

@@ -91,6 +91,10 @@ class LegalChatSession(Base):
 
     created_by = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
+    # Piso mínimo de retenção (paridade RaioXAnalise.retention_until, F4 /
+    # Issue #798) — NÃO é teto de purga automática, é "não excluir antes
+    # disso". migration 140.
+    retention_until = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
