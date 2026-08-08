@@ -1,0 +1,24 @@
+# Override de staging — usar SEMPRE junto com o compose base e projeto próprio:
+#
+#   docker compose -p ejc-staging \
+#     -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+#
+# O projeto `ejc-staging` isola redes e volumes dos de produção; este override
+# só renomeia containers e remapeia portas para não colidir com a stack real.
+# O diretório de execução deve ser /opt/ejc-staging, com .env PRÓPRIO (jamais
+# o .env de produção: banco, chaves e credenciais precisam ser distintos).
+services:
+  db:
+    container_name: ejc_stg_db
+  redis:
+    container_name: ejc_stg_redis
+  backend:
+    container_name: ejc_stg_backend
+    ports: !override
+      - "127.0.0.1:8001:8000"
+  worker:
+    container_name: ejc_stg_worker
+  frontend:
+    container_name: ejc_stg_frontend
+    ports: !override
+      - "127.0.0.1:8081:80"
