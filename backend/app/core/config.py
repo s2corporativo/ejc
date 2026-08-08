@@ -710,8 +710,13 @@ class Settings(BaseSettings):
     # Horário DIÁRIO do job, em UTC ("HH:MM"). 05:00 UTC = 02:00 BRT.
     BACKUP_HORA_UTC: str = "05:00"
     # Retenção no Drive: mantém N dias de backups diários; mais antigos são
-    # apagados na rotação (somente arquivos com o prefixo do EJC).
-    BACKUP_RETENCAO_DIAS: int = 14
+    # apagados na rotação (somente arquivos com o prefixo do EJC). 30 dias
+    # (decisão registrada em docs/auditoria/decisoes-bloco0-2026-08-08.md,
+    # item 0.4): a LGPD não fixa prazo para backup de disaster recovery (é
+    # distinto da retenção do próprio documento jurídico); 30 dias dá margem
+    # para notar corrupção/erro silencioso sem acumular custo de storage
+    # indefinidamente.
+    BACKUP_RETENCAO_DIAS: int = 30
     # Teto do tar.gz de uploads (a criptografia Fernet é em memória): acima
     # disto o backup segue SÓ com o banco e marca status "parcial".
     BACKUP_UPLOADS_MAX_MB: int = 512
