@@ -71,7 +71,7 @@ pywebpush==1.14.1
 py-vapid==1.9.2
 
 # Documents and exports
-aiofiles==23.2.1
+aiofiles==25.1.0
 python-magic-bin==0.4.14; platform_system == "Windows"
 python-magic==0.4.27; platform_system != "Windows"
 PyMuPDF==1.24.5
