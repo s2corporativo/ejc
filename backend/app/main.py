@@ -69,6 +69,7 @@ from app.routers import data_room_v4
 from app.routers import datajud
 from app.routers import deadlines
 from app.routers import despesas
+from app.routers import despesas_processuais
 from app.routers import diagnostico
 from app.routers import diario_oficial
 from app.routers import diplomacia_v3
@@ -378,6 +379,7 @@ app.include_router(data_room_v4.router, prefix=API)
 app.include_router(datajud.router, prefix=API)
 app.include_router(deadlines.router, prefix=API)
 app.include_router(despesas.router, prefix=API)
+app.include_router(despesas_processuais.router, prefix=API)
 app.include_router(diario_oficial.router, prefix=API)
 app.include_router(diplomacia_v3.router, prefix=API)
 app.include_router(documento_ia.router, prefix=API)

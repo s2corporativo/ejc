@@ -74,3 +74,104 @@ describe("TabTimeline — composer de andamentos", () => {
     });
   });
 });
+
+describe("TabTimeline — lançar horas (achado corrigido)", () => {
+  beforeEach(() => {
+    vi.spyOn(api, "get").mockResolvedValue({ data: [] });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("envia data + minutos (não `horas`) — schema EntryIn exige os dois", async () => {
+    const post = vi.spyOn(api, "post").mockResolvedValue({ data: {} });
+    render(<TabTimeline caseId="case-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Lançar horas/ }));
+    fireEvent.change(screen.getByPlaceholderText(/Elaboração de petição/), {
+      target: { value: "Audiência de instrução" },
+    });
+    fireEvent.change(screen.getByLabelText("Horas"), {
+      target: { value: "2.5" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledWith(
+        "/timesheet/",
+        expect.objectContaining({
+          case_id: "case-1",
+          minutos: 150,
+          descricao: "Audiência de instrução",
+        }),
+      );
+    });
+    const [, payload] = post.mock.calls[0];
+    expect(typeof (payload as { data?: unknown }).data).toBe("string");
+  });
+});
+
+describe("TabTimeline — despesas processuais (F3.2)", () => {
+  beforeEach(() => {
+    vi.spyOn(api, "get").mockResolvedValue({ data: [] });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("lança despesa via POST /despesas-processuais/", async () => {
+    const post = vi.spyOn(api, "post").mockResolvedValue({ data: {} });
+    render(<TabTimeline caseId="case-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Lançar despesa/ }));
+    fireEvent.change(
+      screen.getByPlaceholderText(/Cópias autenticadas do processo/),
+      { target: { value: "Cópias do processo" } },
+    );
+    fireEvent.change(screen.getByLabelText("Valor (R$)"), {
+      target: { value: "42.50" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledWith(
+        "/despesas-processuais/",
+        expect.objectContaining({
+          case_id: "case-1",
+          valor: 42.5,
+          descricao: "Cópias do processo",
+          categoria: "outro",
+        }),
+      );
+    });
+  });
+
+  it("mostra despesas já lançadas, marcando as faturadas", async () => {
+    vi.spyOn(api, "get").mockImplementation((url: string) => {
+      if (url === "/despesas-processuais/casos/case-1") {
+        return Promise.resolve({
+          data: [
+            {
+              id: "d1",
+              data: "2026-01-10",
+              valor: 100,
+              descricao: "Custas iniciais",
+              faturada: true,
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<TabTimeline caseId="case-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Custas iniciais")).toBeTruthy();
+      expect(screen.getByText("(faturada)")).toBeTruthy();
+    });
+  });
+});

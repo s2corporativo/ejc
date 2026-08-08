@@ -1,13 +1,30 @@
 // ── Aba Timeline/Andamentos do caso (extraída de CasoDetalhe.tsx — Tela C) ───
 // Composer inline no topo (Bloco 3): registra andamento via
 // POST /cases/{id}/movimentos (schema MovimentoCreate: tipo + descricao) e
-// recarrega a linha do tempo. O timesheet existente permanece abaixo.
+// recarrega a linha do tempo. O timesheet existente permanece abaixo, seguido
+// de despesas processuais (F3.2 / Issue #806) — mesmo desenho de
+// "lançar cru, faturar depois" do timesheet, mas em /despesas-processuais
+// (NÃO confundir com /despesas — overhead do escritório, RBAC diferente).
 import { useEffect, useState } from "react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { Empty, fmtDate } from "../../components/UI";
 import LinhaDoTempoProcessual from "../../components/visual/LinhaDoTempoProcessual";
+
+const CATEGORIAS_DESPESA = [
+  { value: "custas", label: "Custas" },
+  { value: "diligencia", label: "Diligência" },
+  { value: "copias", label: "Cópias" },
+  { value: "deslocamento", label: "Deslocamento" },
+  { value: "pericia", label: "Perícia" },
+  { value: "correios", label: "Correios" },
+  { value: "outro", label: "Outro" },
+];
+
+function hoje(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function errDetail(e: any, fallback: string): string {
   const d = e?.response?.data?.detail;
@@ -36,11 +53,30 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
   // Recarrega a linha do tempo remontando o componente (ele busca no mount).
   const [timelineVersao, setTimelineVersao] = useState(0);
 
-  useEffect(() => {
+  const [despesas, setDespesas] = useState<any[]>([]);
+  const [despesaForm, setDespesaForm] = useState({
+    descricao: "",
+    valor: 0,
+    categoria: "outro",
+  });
+  const [showDespesaForm, setShowDespesaForm] = useState(false);
+
+  const carregarTimesheet = () =>
     api
       .get(`/timesheet/casos/${caseId}`)
       .then((r) => setTs(asList(r.data)))
       .catch(() => setTs([]));
+
+  const carregarDespesas = () =>
+    api
+      .get(`/despesas-processuais/casos/${caseId}`)
+      .then((r) => setDespesas(asList(r.data)))
+      .catch(() => setDespesas([]));
+
+  useEffect(() => {
+    carregarTimesheet();
+    carregarDespesas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
   const registrarMovimento = async (e: React.FormEvent) => {
@@ -68,15 +104,50 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
 
   const addTimesheet = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post("/timesheet", { case_id: caseId, ...tsForm });
-    setShowTsForm(false);
-    api
-      .get(`/timesheet/casos/${caseId}`)
-      .then((r) => setTs(asList(r.data)))
-      .catch(() => setTs([]));
+    try {
+      // Achado corrigido de passagem: o payload não incluía `data` nem
+      // `minutos` (schema EntryIn exige os dois) — só `horas`, que o backend
+      // não reconhece. O lançamento sempre voltava 422; nunca chegou a
+      // gravar uma hora sequer em produção.
+      await api.post("/timesheet/", {
+        case_id: caseId,
+        data: hoje(),
+        minutos: Math.round((tsForm.horas || 0) * 60),
+        descricao: tsForm.descricao,
+      });
+      setShowTsForm(false);
+      setTsForm({ descricao: "", horas: 1 });
+      carregarTimesheet();
+    } catch (err: any) {
+      toast.error(errDetail(err, "Não foi possível lançar as horas."));
+    }
+  };
+
+  const addDespesa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!despesaForm.descricao.trim() || !(despesaForm.valor > 0)) {
+      toast.error("Informe a descrição e um valor maior que zero.");
+      return;
+    }
+    try {
+      await api.post("/despesas-processuais/", {
+        case_id: caseId,
+        data: hoje(),
+        valor: despesaForm.valor,
+        descricao: despesaForm.descricao.trim(),
+        categoria: despesaForm.categoria,
+      });
+      toast.success("Despesa lançada.");
+      setShowDespesaForm(false);
+      setDespesaForm({ descricao: "", valor: 0, categoria: "outro" });
+      carregarDespesas();
+    } catch (err: any) {
+      toast.error(errDetail(err, "Não foi possível lançar a despesa."));
+    }
   };
 
   const totalHoras = ts.reduce((a, t) => a + (t.minutos ?? 0) / 60, 0);
+  const totalDespesas = despesas.reduce((a, d) => a + Number(d.valor ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -152,6 +223,7 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
                   type="number"
                   step="0.5"
                   min="0.5"
+                  aria-label="Horas"
                   value={tsForm.horas}
                   onChange={(e) =>
                     setTsForm((f) => ({
@@ -196,6 +268,115 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
           ))}
           {ts.length === 0 && !showTsForm && (
             <Empty message="Nenhuma hora lançada" />
+          )}
+        </div>
+      </div>
+
+      <div>
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-semibold text-sm text-gray-500 uppercase">
+            Despesas processuais (R$ {totalDespesas.toFixed(2)})
+          </h3>
+          <button
+            onClick={() => setShowDespesaForm(!showDespesaForm)}
+            className="btn-secondary text-xs"
+          >
+            + Lançar despesa
+          </button>
+        </div>
+        {showDespesaForm && (
+          <form onSubmit={addDespesa} className="card p-4 space-y-3 mb-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="label">Descrição</label>
+                <input
+                  required
+                  value={despesaForm.descricao}
+                  onChange={(e) =>
+                    setDespesaForm((f) => ({
+                      ...f,
+                      descricao: e.target.value,
+                    }))
+                  }
+                  placeholder="Ex: Cópias autenticadas do processo..."
+                  className="input w-full text-sm"
+                />
+              </div>
+              <div>
+                <label className="label">Valor (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  aria-label="Valor (R$)"
+                  value={despesaForm.valor || ""}
+                  onChange={(e) =>
+                    setDespesaForm((f) => ({
+                      ...f,
+                      valor: parseFloat(e.target.value) || 0,
+                    }))
+                  }
+                  className="input w-full text-sm"
+                />
+              </div>
+              <div>
+                <label className="label">Categoria</label>
+                <select
+                  className="input w-full text-sm"
+                  value={despesaForm.categoria}
+                  onChange={(e) =>
+                    setDespesaForm((f) => ({
+                      ...f,
+                      categoria: e.target.value,
+                    }))
+                  }
+                >
+                  {CATEGORIAS_DESPESA.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" className="btn-primary text-sm">
+                Salvar
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDespesaForm(false)}
+                className="btn-secondary text-sm"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        )}
+        <div className="space-y-2">
+          {despesas.map((d, i) => (
+            <div
+              key={d.id ?? i}
+              className="card p-3 flex flex-wrap justify-between items-center gap-2 text-sm"
+            >
+              <span className="min-w-0 flex-1 break-words text-gray-700">
+                {d.descricao}
+                {d.faturada && (
+                  <span className="ml-2 text-xs text-emerald-600">
+                    (faturada)
+                  </span>
+                )}
+              </span>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-gray-400 text-xs">{fmtDate(d.data)}</span>
+                <span className="font-mono font-semibold text-primary-600">
+                  R$ {Number(d.valor ?? 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
+          ))}
+          {despesas.length === 0 && !showDespesaForm && (
+            <Empty message="Nenhuma despesa lançada" />
           )}
         </div>
       </div>

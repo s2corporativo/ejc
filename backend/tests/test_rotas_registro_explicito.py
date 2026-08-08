@@ -81,6 +81,14 @@ ADICOES_INTENCIONAIS = {
     ("/api/processo-eletronico/credenciais", "GET"),
     ("/api/processo-eletronico/credenciais", "POST"),
     ("/api/processo-eletronico/credenciais/{credencial_id}/testar", "POST"),
+    # F3.2 (Issue #806): despesa PROCESSUAL por caso — distinta de /despesas
+    # (overhead do escritório, SQL bruto, RBAC restrito a gestão/financeiro).
+    # Mesmo desenho de /timesheet: lançamento cru (acesso ao caso) + faturar
+    # (advogado/gestão/financeiro) consolida em Fee custas_despesas.
+    ("/api/despesas-processuais/", "POST"),
+    ("/api/despesas-processuais/caso/{case_id}/faturar", "POST"),
+    ("/api/despesas-processuais/casos/{case_id}", "GET"),
+    ("/api/despesas-processuais/{entry_id}", "DELETE"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
