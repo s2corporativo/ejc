@@ -119,7 +119,7 @@ numpy==1.26.4
 # + parser "lxml"). Sem estes, o job de ingestão do Planalto (scheduler, dom 03h)
 # estourava ModuleNotFoundError silenciosamente e os códigos federais nunca
 # entravam no RAG. lxml também já é exigido transitivamente por python-docx.
-beautifulsoup4==4.12.3
+beautifulsoup4==4.15.0
 lxml==6.1.1
 
 # Cliente SOAP para integração de processo eletrônico via MNI 2.2.2 (Issue
