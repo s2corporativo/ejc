@@ -56,27 +56,15 @@ describe("moduleRegistry", () => {
     ).toBe(false);
   });
 
-  it("destaca a Sala Jurídica e o Financeiro apenas para os perfis autorizados", () => {
+  it("destaca a Entrada Única e o Financeiro apenas para os perfis autorizados", () => {
     const advogado = getProductionNavigation("advogado");
     const socio = getProductionNavigation("socio");
     expect(
-      advogado.find((item) => item.path === "/sala-juridica")?.essential,
+      advogado.find((item) => item.path === "/entrada")?.essential,
     ).toBe(true);
     expect(advogado.some((item) => item.path === "/financeiro")).toBe(false);
     expect(socio.find((item) => item.path === "/financeiro")?.essential).toBe(
       true,
-    );
-  });
-
-  it("mantém o Raio-X acessível no menu como apoio da Sala Jurídica", () => {
-    const advogado = getProductionNavigation("advogado");
-    const raioX = STAFF_ROUTES.find((item) => item.path === "/raio-x");
-    expect(canRoleAccessPath("advogado", "/raio-x")).toBe(true);
-    expect(raioX?.showInNav).toBe(true);
-    expect(raioX?.essential).toBe(false);
-    expect(advogado.some((item) => item.path === "/raio-x")).toBe(true);
-    expect(STAFF_ROUTES.some((item) => item.path === "/sala-analise")).toBe(
-      false,
     );
   });
 
@@ -123,12 +111,12 @@ describe("moduleRegistry", () => {
       .map((m) => m.path);
     expect(essenciais).toEqual([
       "/",
+      "/entrada",
       "/casos",
       "/atividades",
       "/clientes",
       "/documentos",
       "/pecas",
-      "/sala-juridica",
       "/inteligencia",
     ]);
     expect(advogado).not.toContain("/casos/novo");
@@ -200,5 +188,47 @@ describe("radar consolidado", () => {
     }
     // E o portal do cliente jamais alcança o feed de risco do escritório.
     expect(canRoleAccessPath("cliente_externo", "/radar")).toBe(false);
+  });
+});
+
+// ── F3: Sala Jurídica e Raio-X viraram modos da Entrada Única ────────────────
+// Eram duas portas de menu concorrentes com a Entrada de Caso — nenhuma
+// terminava sozinha no fluxo que a auditoria pedia. Viraram `?modo=sala` e
+// `?modo=raio-x` de /entrada, mesmo padrão do Radar. Diferente do Radar: aqui
+// o RBAC não pode usar "o mais restritivo vence" — Sala/Raio-X já admitiam
+// estagiário e advogado_auxiliar, e a Entrada sozinha exigia compliance
+// (advogado+). Usar o mais restrito TIRARIA uma ferramenta que esses papéis
+// já tinham; a porta usa o mais AMPLO dos três porque o backend continua
+// sendo quem barra os atos de advogado (criar caso, enviar mensagem,
+// converter) — este teste também confirma que ninguém GANHOU rota nova.
+describe("entrada única consolidada (F3)", () => {
+  it("expõe uma única porta e aposenta as duas rotas antigas", () => {
+    const rotas = new Set(STAFF_ROUTES.map((r) => r.path));
+    expect(rotas.has("/entrada")).toBe(true);
+    expect(rotas.has("/sala-juridica")).toBe(false);
+    expect(rotas.has("/raio-x")).toBe(false);
+  });
+
+  it("redireciona os dois caminhos legados para o modo correspondente", () => {
+    const destino = new Map(LEGACY_REDIRECTS.map((r) => [r.from, r.to]));
+    expect(destino.get("/sala-juridica")).toBe("/entrada?modo=sala");
+    expect(destino.get("/raio-x")).toBe("/entrada?modo=raio-x");
+  });
+
+  it("preserva o acesso de estagiário/advogado_auxiliar que a Sala e o Raio-X já davam", () => {
+    for (const papel of [
+      "superadmin",
+      "admin",
+      "socio",
+      "advogado",
+      "advogado_auxiliar",
+      "estagiario",
+    ]) {
+      expect(canRoleAccessPath(papel, "/entrada"), papel).toBe(true);
+    }
+    for (const papel of ["financeiro", "secretaria"]) {
+      expect(canRoleAccessPath(papel, "/entrada"), papel).toBe(false);
+    }
+    expect(canRoleAccessPath("cliente_externo", "/entrada")).toBe(false);
   });
 });

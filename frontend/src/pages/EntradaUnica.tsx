@@ -1,17 +1,26 @@
-// Entrada Única (/entrada) — porta de entrada principal de casos.
-// Duas telas na mesma rota (docs/DESENHO_BLOCO3_TELAS.md, seções 2-4):
-//   A) relato + documentos → POST /entrada/analisar (multipart);
-//   B) confirmação editável → POST /entrada/{rascunho_id}/criar-caso.
-// Regras: nada que o sistema possa inferir é perguntado antes de inferir;
-// resposta que CHEGOU nunca vira tela de erro (degradado = confirmação com
-// campos vazios); rascunho sobrevive ao F5 via sessionStorage.
+// Entrada Única (/entrada) — porta ÚNICA de entrada de casos (F3 do plano de
+// fusão Casos/Raio-X/Sala Jurídica). Raio-X e Sala Jurídica eram duas portas
+// de menu concorrentes com esta; viraram MODOS aqui (?modo=raio-x|sala),
+// mesmo padrão já usado por pages/Radar.tsx para unificar Radar de
+// Compliance + Radar Regulatório. Os dois componentes originais foram
+// PRESERVADOS e são renderizados embutidos (sem o cabeçalho próprio) — nada
+// de reescrever ~3.500 linhas já testadas só para unificar a porta de
+// entrada.
+//
+// O modo "relato" é o fluxo original desta tela (docs/DESENHO_BLOCO3_TELAS.md,
+// seções 2-4): relato + documentos → confirmação editável → caso. Continua
+// sendo o modo padrão — é o caminho mais curto para quem não precisa da
+// triagem documental pesada do Raio-X nem de uma conversa longa na Sala.
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
+import { FileText, ScanSearch, Sparkles } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
 import { PageHeader } from "../components/UI";
 import { useAuth } from "../stores/auth";
 import type { User } from "../types";
+import RaioXProcesso from "./RaioXProcesso";
+import SalaJuridica from "./SalaJuridica";
 import { Confirmacao } from "./EntradaUnica/Confirmacao";
 import { TelaAnalisando, TelaInicial } from "./EntradaUnica/TelaEnvio";
 import {
@@ -30,6 +39,38 @@ import {
 } from "./EntradaUnica/types";
 
 type Fase = "inicial" | "analisando" | "confirmar";
+
+const MODOS = [
+  {
+    id: "relato",
+    label: "Relato ou documentos",
+    icon: FileText,
+    descricao:
+      "Cole o relato do cliente ou arraste os documentos — o sistema propõe cliente, área, fatos e próxima ação para um clique só.",
+  },
+  {
+    id: "raio-x",
+    label: "Raio-X de documentos",
+    icon: ScanSearch,
+    descricao:
+      "Análise preliminar autônoma de um lote pesado de documentos (autos, contratos, provas) antes de decidir aceitar o caso.",
+  },
+  {
+    id: "sala",
+    label: "Conversa jurídica",
+    icon: Sparkles,
+    descricao:
+      "Converse livremente sobre o caso — o EJC estrutura fatos, provas e estratégia por trás da tela ao longo da conversa.",
+  },
+] as const;
+
+type ModoId = (typeof MODOS)[number]["id"];
+
+const MODO_PADRAO: ModoId = "relato";
+
+function ehModo(valor: string | null): valor is ModoId {
+  return MODOS.some((m) => m.id === valor);
+}
 
 function asLista<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) return payload as T[];
@@ -50,6 +91,20 @@ export default function EntradaUnica() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const meuId = user?.id ?? "";
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const modoBruto = searchParams.get("modo");
+  // Modo desconhecido cai no padrão em vez de tela vazia — links legados
+  // (/sala-juridica, /raio-x) chegam aqui via LEGACY_REDIRECTS já com
+  // ?modo=, mas um link externo velho sem parâmetro precisa funcionar.
+  const modo: ModoId = ehModo(modoBruto) ? modoBruto : MODO_PADRAO;
+  const trocarModo = (novo: ModoId) => {
+    const proximos = new URLSearchParams(searchParams);
+    proximos.set("modo", novo);
+    // replace: trocar de modo não deve encher o histórico do navegador.
+    setSearchParams(proximos, { replace: true });
+  };
+  const modoAtivo = MODOS.find((m) => m.id === modo) ?? MODOS[0];
 
   const [fase, setFase] = useState<Fase>("inicial");
   const [texto, setTexto] = useState("");
@@ -263,35 +318,75 @@ export default function EntradaUnica() {
   }, []);
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        title="Novo caso"
-        subtitle="Cole o relato, arraste os documentos, ou os dois."
+        title="Entrada Única"
+        subtitle="A porta única para trazer um caso novo — três modos, um destino."
       />
-      {fase === "inicial" && (
-        <TelaInicial
-          texto={texto}
-          onTexto={setTexto}
-          arquivos={arquivos}
-          onArquivos={setArquivos}
-          meta={meta}
-          onAnalisar={analisar}
-        />
+
+      <div
+        role="tablist"
+        aria-label="Modo de entrada do caso"
+        className="flex flex-wrap gap-2"
+      >
+        {MODOS.map((m) => {
+          const Icone = m.icon;
+          const selecionado = m.id === modo;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              role="tab"
+              aria-selected={selecionado}
+              onClick={() => trocarModo(m.id)}
+              className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
+                selecionado
+                  ? "border-bronze bg-bronze-50 text-bronze-deep"
+                  : "border-slate-200 text-slate-600 hover:border-bronze-pale hover:text-bronze-deep"
+              }`}
+            >
+              <Icone className="h-4 w-4" />
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="text-sm text-slate-500">{modoAtivo.descricao}</p>
+
+      {modo === "relato" && (
+        <div>
+          {fase === "inicial" && (
+            <TelaInicial
+              texto={texto}
+              onTexto={setTexto}
+              arquivos={arquivos}
+              onArquivos={setArquivos}
+              meta={meta}
+              onAnalisar={analisar}
+            />
+          )}
+          {fase === "analisando" && (
+            <TelaAnalisando
+              numArquivos={arquivos.length}
+              uploadPct={uploadPct}
+            />
+          )}
+          {fase === "confirmar" && proposta && (
+            <Confirmacao
+              proposta={proposta}
+              onChange={atualizarProposta}
+              usuarios={usuarios}
+              criando={criando}
+              erro409={erro409}
+              onCriar={criarCaso}
+              onDescartar={descartar}
+            />
+          )}
+        </div>
       )}
-      {fase === "analisando" && (
-        <TelaAnalisando numArquivos={arquivos.length} uploadPct={uploadPct} />
-      )}
-      {fase === "confirmar" && proposta && (
-        <Confirmacao
-          proposta={proposta}
-          onChange={atualizarProposta}
-          usuarios={usuarios}
-          criando={criando}
-          erro409={erro409}
-          onCriar={criarCaso}
-          onDescartar={descartar}
-        />
-      )}
+      {modo === "raio-x" && <RaioXProcesso embutido />}
+      {modo === "sala" && <SalaJuridica embutido />}
     </div>
   );
 }

@@ -298,7 +298,9 @@ function RiskBadge({
   );
 }
 
-export default function RaioXProcesso() {
+export default function RaioXProcesso({
+  embutido = false,
+}: { embutido?: boolean } = {}) {
   const [searchParams] = useSearchParams();
   const contextualCaseId = searchParams.get("case_id");
   const user = useAuth((state) => state.user);
@@ -939,43 +941,51 @@ export default function RaioXProcesso() {
     );
   }
 
+  const raioXAcoes = contextualCaseId ? (
+    <Link to={`/casos/${contextualCaseId}`}>
+      <Button variant="secondary">Voltar ao caso</Button>
+    </Link>
+  ) : (
+    <div className="flex flex-wrap gap-2">
+      {/* Modo irmão dentro da mesma Entrada Única: quem prefere ANALISAR
+          CONVERSANDO (e não só ler documentos) troca de modo sem sair
+          da tela. */}
+      <Link to="/entrada?modo=sala">
+        <Button variant="secondary">Analisar conversando</Button>
+      </Link>
+      <Button onClick={() => setCreating(true)}>
+        <Plus className="h-4 w-4" /> Nova análise
+      </Button>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow={
-          contextualCaseId
-            ? "Inteligência contextual"
-            : "Análise preliminar isolada"
-        }
-        title={
-          contextualCaseId
-            ? `Raio-X · ${String(identification.titulo || "Caso")}`
-            : "Raio-X do Processo"
-        }
-        subtitle={
-          contextualCaseId
-            ? "Leitura estratégica do caso existente, sem criar ou converter cadastros."
-            : "Analise documentos externos antes de decidir se o escritório deve aceitar e cadastrar o caso."
-        }
-        actions={
-          contextualCaseId ? (
-            <Link to={`/casos/${contextualCaseId}`}>
-              <Button variant="secondary">Voltar ao caso</Button>
-            </Link>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {/* Rota alternativa de entrada: quem prefere ANALISAR
-                  CONVERSANDO (e não só ler documentos) vai para a Sala. */}
-              <Link to="/sala-juridica">
-                <Button variant="secondary">Analisar conversando</Button>
-              </Link>
-              <Button onClick={() => setCreating(true)}>
-                <Plus className="h-4 w-4" /> Nova análise
-              </Button>
-            </div>
-          )
-        }
-      />
+      {embutido ? (
+        // Embutido na Entrada Única: o cabeçalho de página some (o modo já
+        // tem o próprio), mas a ação primária ("Nova análise") não pode
+        // desaparecer junto — é o único jeito de abrir o upload.
+        <div className="flex justify-end">{raioXAcoes}</div>
+      ) : (
+        <PageHeader
+          eyebrow={
+            contextualCaseId
+              ? "Inteligência contextual"
+              : "Análise preliminar isolada"
+          }
+          title={
+            contextualCaseId
+              ? `Raio-X · ${String(identification.titulo || "Caso")}`
+              : "Raio-X do Processo"
+          }
+          subtitle={
+            contextualCaseId
+              ? "Leitura estratégica do caso existente, sem criar ou converter cadastros."
+              : "Analise documentos externos antes de decidir se o escritório deve aceitar e cadastrar o caso."
+          }
+          actions={raioXAcoes}
+        />
+      )}
 
       <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />

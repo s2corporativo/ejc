@@ -24,7 +24,6 @@ import {
   Newspaper,
   Plus,
   Scale,
-  ScanSearch,
   ScrollText,
   Settings,
   ShieldAlert,
@@ -93,8 +92,6 @@ const CadastroManual = lazy(() => import("../pages/CadastroManual"));
 const DossieCliente = lazy(() => import("../pages/DossieCliente"));
 const Casos = lazy(() => import("../pages/Casos"));
 const CasoDetalhe = lazy(() => import("../pages/CasoDetalhe"));
-const RaioXProcesso = lazy(() => import("../pages/RaioXProcesso"));
-const SalaJuridica = lazy(() => import("../pages/SalaJuridica"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
 );
@@ -175,28 +172,47 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   },
   // Entrada Única (Bloco 3, docs/DESENHO_BLOCO3_TELAS.md): porta de entrada
   // principal de casos — relato + documentos → análise → confirmação → caso.
-  // Logo abaixo de "Início" no grupo de trabalho (order 15 < /casos=20);
-  // `essential` fica false para preservar a lista travada em
-  // moduleRegistry.test.ts ("mantém o menu enxuto e o modo essencial").
+  // F3 do plano de fusão Casos/Raio-X/Sala Jurídica: Sala Jurídica e Raio-X
+  // eram duas portas de menu concorrentes com esta; viraram MODOS aqui
+  // (?modo=raio-x|sala, ver pages/EntradaUnica.tsx) — mesmo padrão do Radar
+  // (compliance+regulatório → ?modo=feed|digest). Herda a prominência que a
+  // Sala Jurídica tinha (essential=true) porque agora é ela também — mantém
+  // o próprio order:15 (grupo "Trabalhar um caso", entre Dashboard=10 e
+  // Casos=20: começar algo novo antes de navegar pelo que já existe).
+  //
+  // RBAC: ROLES.juridico (o MAIS AMPLO dos três, não o mais restrito) —
+  // diferente do Radar, aqui os papéis divergiam de verdade (entrada exigia
+  // compliance/advogado+; Sala/Raio-X já admitiam estagiário e advogado
+  // auxiliar). Usar o mais restrito tiraria de estagiário/advogado_auxiliar
+  // uma ferramenta que eles já tinham. Ninguém GANHA capacidade nova: os
+  // atos de advogado (criar caso, enviar mensagem, converter) continuam
+  // 403 no backend para quem não é advogado — isto só abre a PORTA da tela.
   {
     key: "entrada",
     path: "/entrada",
-    label: "Entrada de Caso",
+    label: "Entrada Única",
     description:
-      "Porta de entrada única: cole o relato, arraste documentos e crie o caso em duas telas.",
+      "Porta única para trazer um caso novo: relato/documentos, Raio-X de documentos ou conversa jurídica — três modos, um destino.",
     group: "Trabalhar um caso",
     icon: Inbox,
     component: EntradaUnica,
-    // Piso advogado+ (POST /entrada/analisar e criar caso são atos de
-    // advogado) — mesma matriz de ROLES.compliance usada em caso-entrevista.
-    roles: ROLES.compliance,
+    roles: ROLES.juridico,
     showInNav: true,
-    essential: false,
+    essential: true,
     order: 15,
     helpKey: "casos",
     sensitive: true,
     usesAI: true,
-    backendPrefixes: ["/api/entrada", "/api/entrada-universal", "/api/clients"],
+    backendPrefixes: [
+      "/api/entrada",
+      "/api/entrada-universal",
+      "/api/clients",
+      "/api/sala-juridica",
+      "/api/ai",
+      "/api/raio-x",
+      "/api/documentos-ia",
+      "/api/ai/skills",
+    ],
   },
   // Destaque primário: wizard guiado de abertura de caso (cliente → caso).
   // Rota nova aditiva — /casos/novo vence /casos/:id no ranking do router v6.
@@ -291,44 +307,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "clientes",
     status: "hidden",
     sensitive: true,
-  },
-  {
-    key: "sala-juridica",
-    path: "/sala-juridica",
-    label: "Sala Jurídica",
-    description:
-      "Porta de entrada conversacional: área de trabalho livre, chat jurídico com estado probatório e conversão controlada em caso.",
-    group: "Pesquisar & IA",
-    icon: Sparkles,
-    component: SalaJuridica,
-    roles: ROLES.juridico,
-    showInNav: true,
-    essential: true,
-    order: 5,
-    helpKey: "inteligencia",
-    usesAI: true,
-    sensitive: true,
-    backendPrefixes: ["/api/sala-juridica", "/api/ai"],
-  },
-  {
-    key: "raio-x-processo",
-    path: "/raio-x",
-    // "Triagem" é nome de ETAPA da jornada, não de módulo — o rótulo antigo
-    // ("Triagem e Raio-X") disputava com a Sala Jurídica como porta de entrada.
-    label: "Raio-X de Documentos",
-    description:
-      "Análise preliminar autônoma de documentos (autos, contratos, provas) antes da abertura de um caso.",
-    group: "Pesquisar & IA",
-    icon: ScanSearch,
-    component: RaioXProcesso,
-    roles: ROLES.juridico,
-    showInNav: true,
-    essential: false,
-    order: 15,
-    helpKey: "inteligencia",
-    usesAI: true,
-    sensitive: true,
-    backendPrefixes: ["/api/raio-x", "/api/documentos-ia", "/api/ai/skills"],
   },
   {
     key: "casos",
@@ -885,9 +863,21 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   ...LEGACY_CANONICAL_REDIRECTS,
   {
     from: "/sala-analise",
-    to: "/raio-x",
+    to: "/entrada?modo=raio-x",
     reason:
-      "A Sala de Análise foi absorvida pelo Raio-X (mesmo backend); a nova porta de entrada conversacional é a Sala Jurídica.",
+      "A Sala de Análise foi absorvida pelo Raio-X (mesmo backend), que por sua vez virou o modo `raio-x` da Entrada Única (F3).",
+  },
+  {
+    from: "/sala-juridica",
+    to: "/entrada?modo=sala",
+    reason:
+      "Sala Jurídica e Raio-X eram portas de menu concorrentes com a Entrada de Caso (F3 do plano de fusão Casos/Raio-X/Sala Jurídica) — viraram modos de /entrada (`?modo=sala`), mesmo padrão do Radar (`?modo=feed|digest`).",
+  },
+  {
+    from: "/raio-x",
+    to: "/entrada?modo=raio-x",
+    reason:
+      "Ver /sala-juridica acima — mesma fusão, modo `raio-x` (é o modo padrão para quem chega sem `?modo=`, mas o link explícito evita a etapa extra).",
   },
   {
     from: "/central-relacionamento",

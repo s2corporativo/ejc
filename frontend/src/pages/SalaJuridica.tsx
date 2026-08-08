@@ -240,7 +240,9 @@ const CLASSIFICACAO_COR: Record<string, string> = {
   superado: "bg-gray-200 text-gray-500 line-through",
 };
 
-export default function SalaJuridica() {
+export default function SalaJuridica({
+  embutido = false,
+}: { embutido?: boolean } = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [sessoes, setSessoes] = useState<Sessao[]>([]);
@@ -776,60 +778,70 @@ export default function SalaJuridica() {
     );
   }
 
+  const salaAcoes = (
+    <div className="flex flex-wrap gap-2">
+      <Button
+        variant="secondary"
+        disabled={!ativa || exportando}
+        onClick={() => void exportarSessao("pdf")}
+      >
+        <Download className="h-4 w-4" /> PDF
+      </Button>
+      <Button
+        variant="secondary"
+        disabled={!ativa || exportando}
+        onClick={() => void exportarSessao("docx")}
+      >
+        <Download className="h-4 w-4" /> DOCX
+      </Button>
+      <Button
+        variant="secondary"
+        onClick={arquivar}
+        disabled={!ativa || ativa.frozen}
+      >
+        <Archive className="h-4 w-4" /> Arquivar
+      </Button>
+      <Button
+        variant="secondary"
+        disabled={!ativa || ativa.frozen}
+        onClick={() => {
+          setVincCaseId(null);
+          setVincRevisado(false);
+          setVincBusca("");
+          setVincCasos([]);
+          setVincAberto(true);
+        }}
+      >
+        <Link2 className="h-4 w-4" /> Vincular a caso
+      </Button>
+      <Button
+        variant="secondary"
+        disabled={!ativa || ativa.frozen}
+        onClick={abrirWizard}
+      >
+        <FolderInput className="h-4 w-4" /> Transformar em caso
+      </Button>
+      <Button onClick={novaSessao}>
+        <Plus className="h-4 w-4" /> Nova análise
+      </Button>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Sala Jurídica"
-        subtitle="Converse livremente — o EJC estrutura fatos, provas e estratégia por trás da tela. Conteúdo de IA é rascunho sujeito a revisão humana (OAB)."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              disabled={!ativa || exportando}
-              onClick={() => void exportarSessao("pdf")}
-            >
-              <Download className="h-4 w-4" /> PDF
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!ativa || exportando}
-              onClick={() => void exportarSessao("docx")}
-            >
-              <Download className="h-4 w-4" /> DOCX
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={arquivar}
-              disabled={!ativa || ativa.frozen}
-            >
-              <Archive className="h-4 w-4" /> Arquivar
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!ativa || ativa.frozen}
-              onClick={() => {
-                setVincCaseId(null);
-                setVincRevisado(false);
-                setVincBusca("");
-                setVincCasos([]);
-                setVincAberto(true);
-              }}
-            >
-              <Link2 className="h-4 w-4" /> Vincular a caso
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!ativa || ativa.frozen}
-              onClick={abrirWizard}
-            >
-              <FolderInput className="h-4 w-4" /> Transformar em caso
-            </Button>
-            <Button onClick={novaSessao}>
-              <Plus className="h-4 w-4" /> Nova análise
-            </Button>
-          </div>
-        }
-      />
+      {embutido ? (
+        // Embutido na Entrada Única: o cabeçalho de página some (o modo já
+        // tem o próprio título/subtítulo), mas a barra de ações é o único
+        // jeito de exportar, arquivar, vincular, converter ou criar sessão —
+        // não pode desaparecer com o cabeçalho.
+        <div className="flex justify-end">{salaAcoes}</div>
+      ) : (
+        <PageHeader
+          title="Sala Jurídica"
+          subtitle="Converse livremente — o EJC estrutura fatos, provas e estratégia por trás da tela. Conteúdo de IA é rascunho sujeito a revisão humana (OAB)."
+          actions={salaAcoes}
+        />
+      )}
 
       <div
         className={cn(
@@ -1176,7 +1188,7 @@ export default function SalaJuridica() {
                   <Button onClick={() => void novaSessao()}>
                     <Plus className="h-4 w-4" /> Nova análise
                   </Button>
-                  <Link to="/raio-x">
+                  <Link to="/entrada?modo=raio-x">
                     <Button variant="secondary">Ir para o Raio-X</Button>
                   </Link>
                 </div>

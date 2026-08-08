@@ -349,7 +349,7 @@ export default function DashboardModern() {
     ...(canUseLegalAI
       ? [
           {
-            to: "/raio-x",
+            to: "/entrada?modo=raio-x",
             // Mesmo rótulo do CommandPalette: o Raio-X analisa a
             // entrada/potencial caso, não consulta processo por número CNJ.
             label: "Analisar caso externo",
@@ -751,7 +751,7 @@ export default function DashboardModern() {
 
         {canUseLegalAI && (
           <Link
-            to="/raio-x"
+            to="/entrada?modo=raio-x"
             className="group flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 transition sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-white/[0.03]"
           >
             <div className="flex items-start gap-4">

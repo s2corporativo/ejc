@@ -528,7 +528,7 @@ export default function TabResumo({
           💰 Honorários (OAB)
         </button>
         <Link
-          to={`/raio-x?case_id=${caso.id}`}
+          to={`/entrada?modo=raio-x&case_id=${caso.id}`}
           className="btn-secondary flex items-center gap-1 text-primary-700"
         >
           🔎 Raio-X do processo
