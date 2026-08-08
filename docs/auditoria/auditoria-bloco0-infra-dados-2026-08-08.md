@@ -12,20 +12,31 @@
 > (c) o que é **ato humano de ativação** em produção — que este executor não
 > pode e não deve realizar.
 
-## Sumário executivo
+> ⚠️ **Achado de revisão (CodeRabbit/Codex, 2026-08-08): o corpo original
+> deste relatório (abaixo) registra o estado ANTES da decisão final do
+> titular.** A tabela e as seções 0.1–0.5 foram escritas antes da Adenda; a
+> Adenda **revoga** o que estiver em conflito. Quem for agir a partir deste
+> documento deve ler o **Sumário executivo** (já atualizado para o estado
+> final) e a **Adenda** — não o meio do documento isoladamente. Em especial:
+> **o Sentry foi removido**, não ativado — quem ler só a antiga linha 0.1 do
+> meio do documento faria exatamente o trabalho que o titular rejeitou.
 
-| ID  | Item                                | Estado no código                                            | O que falta para o critério de conclusão |
+## Sumário executivo (estado final, pós-adenda — 2026-08-08)
+
+| ID  | Item                                | Estado final                                                 | Pendências |
 |-----|-------------------------------------|-------------------------------------------------------------|------------------------------------------|
-| 0.1 | Ativar Sentry (DSN + release)       | **Decidido 2026-08-08: mantido e ativado** (ver adenda) — integração completa e gated; `release` corrigido | Ato humano: `SENTRY_DSN` no `.env` da VPS |
-| 0.2 | Decidir estratégia de embeddings    | **Decisão de fato já tomada e implementada**: local (fastembed/ONNX, `multilingual-e5-large` 1024d) | Ratificação formal do titular (registro da decisão). A dicotomia do item ("Ollama × externo") está desatualizada |
-| 0.3 | Religar embeddings + backfill       | **Máquina completa e governada** (workflow de ativação, canário, backfill idempotente, job automático de órfãos) | Ato humano: dispatch de `rag-production-activation.yml` na `main`. O critério do plano cita `modo: vetorial`; a API real responde `modo: "semantica"` |
-| 0.4 | Ativar backup offsite               | **Implementado** (Fernet + Google Drive/rclone, rotação, drills de restauração), default OFF | Atos humanos: `BACKUP_ENABLED=true` + chave + credencial na VPS; decisão do titular sobre prazo de retenção; recomendação de `BACKUP_OFFSITE_OBRIGATORIO=true` |
-| 0.5 | Ambiente de homologação separado    | **Parcial** — guardas anti-produção, suíte H01–H15 e purga de resíduos existem; **o ambiente em si não existe** | Decisão de infra do titular (onde/como hospedar homolog) + composição da stack; purga dos dados fictícios em produção é ato humano com backup prévio |
+| 0.1 | Sentry (DSN + release)              | **Decisão final: REMOVIDO.** O titular reverteu a decisão inicial (manter/ativar) após perguntar sobre custo — aceitou ficar sem qualquer coletor de erro (nem Sentry, nem self-hosted). O PR #773 (que remove o Sentry) segue como estava. `release=app_version()` foi implementado e depois revertido — sem efeito líquido em `observability.py`. | Nenhuma — decisão executada. Risco residual: causa-raiz "500 sem diagnóstico" fica sem solução automatizada (aceito conscientemente). |
+| 0.2 | Estratégia de embeddings            | **Ratificada:** local (fastembed/ONNX, `multilingual-e5-large` 1024d) — nenhuma mudança de código necessária | Nenhuma |
+| 0.3 | Religar embeddings + backfill       | Máquina completa e governada, **ainda não disparada** | Ato humano: dispatch de `rag-production-activation.yml` na `main`. Ver ressalva sobre `modo: "semantica"` não ser prova de retrieval vetorial de fato (abaixo) |
+| 0.4 | Backup offsite                      | Pipeline implementado; **retenção definida em 30 dias**; ainda não ativado em produção | Ato humano: `BACKUP_ENABLED=true` + credencial DEDICADA (não `auto`/`inherit`) + chave Fernet fora do servidor. Ver ressalvas sobre identidade e rotação por destino (abaixo) |
+| 0.5 | Ambiente de homologação             | **Topologia decidida** (mesma VPS, compose separado, dados fictícios); build da stack em Issue #802, ainda não implementado | Compor a stack; purgar dados fictícios em produção (ato humano, com backup prévio) |
 
-Nenhum dos cinco itens exige desenvolvimento grande. Três (0.1, 0.3, 0.4) já têm
-a máquina pronta e dependem essencialmente de **atos de ativação em produção**,
-que a governança reserva ao titular. As únicas lacunas de código encontradas
-estão no 0.1 (release do Sentry) e no 0.5 (não há composição de homologação).
+Detalhes de cada decisão e a justificativa completa estão em
+`docs/auditoria/decisoes-bloco0-2026-08-08.md` (Issue #800 / **PR #801** —
+esse arquivo não existe nesta branch/PR, só na daquele PR irmão) e na
+**Adenda**, ao final deste documento. As seções 0.1–0.5 abaixo são a
+**auditoria original**, preservada como registro histórico de como o estado
+do código era lido antes da decisão — não é mais o guia de ação.
 
 ---
 
@@ -60,7 +71,13 @@ estão no 0.1 (release do Sentry) e no 0.5 (não há composição de homologaç�
    `observability.py:44-46`) usada só no healthcheck. Sem release, o painel do
    Sentry não correlaciona erro ↔ versão implantada, nem marca regressões.
 
-   **Correção:** passar `release=app_version()` no `init_sentry()`.
+   **Correção sugerida (histórica — não aplicada ao final):** passar
+   `release=app_version()` no `init_sentry()`. Essa mudança chegou a ser
+   implementada no PR #801, mas foi **revertida no mesmo dia** quando a
+   decisão sobre o Sentry mudou de "manter" para "remover" (ver Adenda) — não
+   faz sentido manter o parâmetro de uma integração que não vai rodar.
+   `backend/app/core/observability.py` está, no estado final, idêntico à
+   `main` neste trecho: `sentry_sdk.init()` **não** recebe `release`.
 
    > **Correção a este relatório (versão anterior estava errada):** a versão
    > original deste documento afirmava que `GIT_SHA` também não era exportado
@@ -68,28 +85,25 @@ estão no 0.1 (release do Sentry) e no 0.5 (não há composição de homologaç�
    > `GIT_SHA`, usa no `docker compose build` e **verifica o valor publicado
    > contra `/api/health`**, com rollback automático em divergência;
    > `docker-compose.yml:55,144` já encaminha `GIT_SHA` ao container. `app_version()`
-   > já recebe um SHA real em produção. A única lacuna de código era mesmo o
-   > parâmetro `release` ausente — corrigida separadamente (ver PR de execução
-   > vinculado a este relatório).
+   > já recebe um SHA real em produção — isso continua correto independente da
+   > decisão sobre o Sentry.
 
-### Conflito de decisão em aberto: PR #773 propõe REMOVER o Sentry
+### Conflito de decisão (histórico — RESOLVIDO): PR #773 propõe REMOVER o Sentry
 
-O PR draft **#773 — "Remover Infosimples, Sentry e Ollama do EJC"** está aberto
-e caminha na direção **oposta** ao item 0.1 desta tabela (ativar Sentry). As
-duas coisas não podem prosseguir ao mesmo tempo: ou o titular ratifica a
-ativação (0.1) e o #773 perde a parte de Sentry, ou ratifica a remoção e o
-item 0.1 sai da tabela (e a "causa-raiz nº 1 — falhas sem diagnóstico" precisa
-de outra resposta, ex. o funil `/observabilidade/frontend-error` + logs).
-**Decisão do titular antes de qualquer PR de execução no 0.1.**
+O PR draft **#773 — "Remover Infosimples, Sentry e Ollama do EJC"** estava
+aberto no momento desta auditoria, caminhando na direção **oposta** ao que o
+item 0.1 pedia originalmente (ativar Sentry). **Resolvido na Adenda: o
+titular decidiu pela remoção** — o #773 segue como estava proposto, sem a
+exclusão do Sentry ter sido bloqueada.
 
-### Atos humanos de ativação
+### Atos humanos (histórico — não se aplica mais)
 
-- Resolver o conflito com o PR #773 (acima).
-- Criar o projeto no Sentry (SaaS free tier ou self-hosted) e preencher
-  `SENTRY_DSN` (e opcionalmente `SENTRY_TRACES_SAMPLE_RATE`) no `.env` da VPS;
-  reiniciar o backend. Sem isso o init é no-op por desenho.
-- O critério "erro do dossiê visível no painel" só é verificável **após** essa
-  ativação, em produção — fora do alcance desta auditoria.
+~~- Resolver o conflito com o PR #773.
+- Criar o projeto no Sentry e preencher `SENTRY_DSN` no `.env` da VPS.~~
+
+Nenhum ato de ativação do Sentry é necessário — a decisão final foi não usar
+nenhuma ferramenta de rastreamento de erro (nem Sentry, nem alternativa
+self-hosted). Ver risco residual registrado no Sumário executivo.
 
 ---
 
@@ -106,8 +120,23 @@ protocolo E5 `query:`/`passage:` documentado
 
 Consequências práticas dessa escolha:
 
-- **LGPD/soberania atendidas por construção:** nenhum conteúdo jurídico sai do
-  VPS para gerar embeddings; não há custo por token nem dependência de terceiro.
+- **LGPD/soberania atendidas por construção — sob a configuração atual
+  (`EMBEDDINGS_PROVIDER=local`, o default):** nenhum conteúdo jurídico sai do
+  VPS para gerar embeddings nesse modo. **Ressalva (achado de revisão):** essa
+  garantia depende do provider efetivamente configurado, não é uma propriedade
+  incondicional do código. `EMBEDDINGS_PROVIDER=http` existe e, se ativado,
+  envia `textos` para `EMBEDDINGS_API_URL` — hoje sem nenhum serviço
+  `embeddings` definido em `docker-compose.yml` correspondendo ao default
+  `http://embeddings:8010/embed` (não é um destino comprovadamente interno; é
+  só um valor placeholder). `disponivel()` só valida que a URL não está vazia,
+  não que ela aponta para dentro do VPS. Não afirmar "rota de saída" como algo
+  testado — é uma opção de código não implantada.
+- **A dependência de terceiro não é zero, é adiada:** o primeiro uso baixa
+  ~2,3 GB de pesos do modelo de um host externo (`_get_model()`,
+  `embedding_service.py:86-94` — mesmo ponto citado adiante, §0.3). A
+  ativação depende de acesso de saída à internet e da disponibilidade desse
+  host até o cache (`fastembed_cache`) estar populado; depois disso, sim, a
+  inferência roda 100% local.
   (Para *geração* de texto a política é outra — `docs/ai/EJC_AI_PROVIDER_POLICY.md`,
   com sanitização de PII e `AI_EXTERNAL_PROVIDERS_ALLOWED` — e não se confunde
   com embeddings.)
@@ -117,9 +146,10 @@ Consequências práticas dessa escolha:
   `scripts/rag/provar_ativacao.py` (`EXPECTED_PROVIDER = "local"`,
   `EXPECTED_MODEL = "intfloat/multilingual-e5-large"`, `EXPECTED_DIM = 1024`) —
   o workflow de ativação **recusa** outra configuração.
-- Existe rota de saída sem re-arquitetura: `EMBEDDINGS_PROVIDER=http` +
-  `EMBEDDINGS_API_URL` para um container dedicado de embeddings
-  (`config.py:511-514`), com validação de dimensão e contagem na resposta.
+- Existe um caminho de código para provider HTTP (`EMBEDDINGS_PROVIDER=http` +
+  `EMBEDDINGS_API_URL`, `config.py:511-514`, com validação de dimensão e
+  contagem na resposta) — mas, como acima, sem um serviço implantado
+  correspondente hoje. Não tratar como "rota de saída pronta".
 
 ### O que falta para "decisão registrada"
 
@@ -162,14 +192,36 @@ o item 0.2 não reabra a cada rodada. Não há trabalho de código pendente.
 ### Observações de precisão sobre o critério de conclusão
 
 - **O critério cita `modo: vetorial`; a API real responde `modo: "semantica"`**
-  (ou `"textual"` no fallback) — `backend/app/routers/rag.py:371-374`. Quem for
-  validar a ativação deve procurar `"modo": "semantica"`, senão declarará falha
-  onde há sucesso.
+  (ou `"textual"` no fallback) — `backend/app/routers/rag.py:371-374`.
+  **Ressalva importante (achado de revisão):** `modo` em `rag.py:371` vem de
+  `"semantica" if emb_disponivel() else "textual"` — ou seja, reflete se o
+  **provider está configurado**, não se aquela consulta específica de fato
+  usou busca vetorial. `buscar_contexto_rag` pode cair para o fallback textual
+  em runtime (falha ao gerar o embedding da query, erro do pgvector, zero
+  resultados vetoriais — `ai_service.py:354-415`) e a resposta **continua**
+  dizendo `"modo": "semantica"`. Portanto: **não usar o campo `modo` de uma
+  chamada isolada como prova de ativação** — ele mostra intenção de
+  configuração, não resultado real. Usar a prova governada
+  (`scripts/rag/provar_ativacao.py`, modo `proof`) ou o harness de avaliação
+  abaixo, que medem o comportamento de fato.
 - **O número 59.444 trechos não é verificável no repositório** (é contagem do
-  banco de produção). A validação de "zero órfãos" do runbook
-  (`SELECT count(*) FROM knowledge_chunks WHERE embedding IS NULL;`) é o
-  critério operacional correto, junto com o harness
-  `app.eval.run_eval --gold app/eval/gold_set.jsonl`.
+  banco de produção).
+- **A validação de "zero órfãos" precisa do mesmo escopo do backfill, não uma
+  contagem crua (achado de revisão):** `reembedar_chunks_orfaos.py` só
+  processa documentos `deleted_at IS NULL AND vigente = true`
+  (`_SQL_DOCS_COM_ORFAO`, linhas 48-58) — chunks de documentos excluídos ou
+  não-vigentes nunca são tocados por design. A consulta correta é:
+  ```sql
+  SELECT count(*) FROM knowledge_chunks kc
+  JOIN knowledge_docs kd ON kd.id = kc.doc_id
+  WHERE kc.embedding IS NULL
+    AND kd.deleted_at IS NULL AND kd.vigente = true;
+  ```
+  Rodar `SELECT count(*) FROM knowledge_chunks WHERE embedding IS NULL;` sem
+  esse filtro pode nunca chegar a zero mesmo com o corpus ativo 100%
+  vetorizado, declarando falsamente uma ativação incompleta. Usar também o
+  harness `app.eval.run_eval --gold app/eval/gold_set.jsonl` como segunda
+  fonte.
 
 ### Atos humanos de ativação
 
@@ -186,11 +238,30 @@ na VPS, como alerta o runbook.
 
 - **Pipeline completo** em `backend/app/services/backup_service.py`: `pg_dump`
   + uploads → tar → **cifra Fernet antes de sair do VPS**
-  (`BACKUP_ENCRYPTION_KEY`) → envio offsite para **Google Drive** (identidade
-  dedicada `BACKUP_GOOGLE_DRIVE_*`, preservando o escopo somente-leitura do
-  RAG) **ou** qualquer remote **rclone** (`BACKUP_DESTINO=rclone`, ex.
-  OneDrive/B2 — `config.py:724-732`). Rotação apaga só artefatos com prefixo
-  `ejc_backup_`; guard de execução única.
+  (`BACKUP_ENCRYPTION_KEY`) → envio offsite para **Google Drive** **ou**
+  qualquer remote **rclone** (`BACKUP_DESTINO=rclone`, ex. OneDrive/B2 —
+  `config.py:724-732`); guard de execução única.
+- **Identidade do Drive NÃO é dedicada por garantia de código (achado de
+  revisão) — depende de configuração explícita:** `BACKUP_GOOGLE_DRIVE_AUTH_MODE`
+  tem default `"auto"` (`backup_drive_auth.py:31`); em `auto`/`inherit`, sem
+  credencial `BACKUP_GOOGLE_DRIVE_*` dedicada configurada, o serviço reusa a
+  credencial herdada `GOOGLE_DRIVE_*` (a mesma do RAG) — **re-escopando-a para
+  escrita**, não preservando o escopo somente-leitura. O boot em produção só
+  valida a chave Fernet (`config.py:981-996`), não o modo de autenticação.
+  Ligar `BACKUP_ENABLED=true` sem antes configurar credencial dedicada pode
+  ampliar silenciosamente o acesso da credencial do RAG. **Ação recomendada:**
+  exigir `BACKUP_GOOGLE_DRIVE_AUTH_MODE` dedicado (não `auto`/`inherit`) como
+  pré-condição da ativação — o próprio script `scripts/backup/ativar_backup.sh`
+  já recusa prosseguir sem isso (linhas 260-270 do script; ver mais abaixo).
+- **Rotação automática só existe no destino Google Drive, não no rclone
+  (achado de revisão):** `_rotacionar_sync` (que apaga só artefatos com
+  prefixo `ejc_backup_` além de `BACKUP_RETENCAO_DIAS`) só é chamado no ramo
+  `gdrive` de `backup_service.py`; no ramo `rclone` o próprio código comenta
+  "Retenção no remote rclone é gerida fora do ciclo (ver runbook) — nada é
+  apagado automaticamente aqui" (`backup_service.py:567-568`). Quem migrar
+  para OneDrive/rclone (como sugerido em conversa anterior desta sessão)
+  precisa de rotação manual ou script externo — a retenção de 30 dias definida
+  em 0.4 **não se aplica sozinha** nesse destino.
 - **Boot valida a ativação:** com `BACKUP_ENABLED=true` em produção, chave
   ausente/placeholder ou inválida **derruba o boot** (`config.py:981-996`) —
   não existe backup "ligado" sem cifra.
@@ -210,12 +281,29 @@ na VPS, como alerta o runbook.
 1. **Default OFF por desenho** (`BACKUP_ENABLED=false`, `.env.example:644`):
    ligar é configuração da VPS + credencial do destino + chave Fernet guardada
    **fora** do servidor (perder a chave = perder os backups). Ato humano.
-2. **Retenção:** default `BACKUP_RETENCAO_DIAS=14` offsite / 7 dias local.
-   O critério pede "retenção conforme prazo legal" — a LGPD (art. 46) não fixa
-   dias; o prazo é **decisão do titular** (sugere-se registrá-la junto com a
-   ativação). Lacuna de decisão, não de código.
-3. **Recomendação:** após período de estabilização, `BACKUP_OFFSITE_OBRIGATORIO=true`,
-   para que backup sem cópia externa deixe de contar como sucesso.
+2. **Retenção:** default `BACKUP_RETENCAO_DIAS=14` offsite / 7 dias local —
+   **decidido em 30 dias offsite** na Adenda (ver `decisoes-bloco0-2026-08-08.md`
+   §0.4). Fonte legal citada: Lei nº 13.709/2018 (LGPD), art. 46 (dever de
+   segurança do controlador) — o artigo não fixa um prazo numérico de retenção
+   de backup; a leitura de que o prazo fica a critério do controlador é
+   interpretação deste executor, não parecer jurídico formal, e deve ser
+   conferida contra o texto oficial vigente
+   (`planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm`) antes de
+   virar política definitiva. **Nota de terminologia:** "titular" nesta seção
+   segue a convenção do repositório (o dono/decisor do escritório, `CLAUDE.md`),
+   diferente do sentido técnico de "titular de dados" na própria LGPD (a
+   pessoa a quem os dados se referem) — os backups tratam dados de titulares
+   (clientes), mas quem decide o prazo de retenção do *backup* é o
+   controlador (o escritório).
+3. **Recomendação:** a prova de ativação (`scripts/backup/ativar_backup.sh`)
+   só é uma prova real do envio offsite se `BACKUP_OFFSITE_OBRIGATORIO=true`
+   no momento em que rodar (achado de revisão) — com o default `false`, o
+   próprio contrato do script aceita `status="parcial"` (falha só local
+   detectada) como `ok=True`, então "prova integral concluída" pode aparecer
+   mesmo com o envio ao Drive/rclone falhando. **Ativar com
+   `BACKUP_OFFSITE_OBRIGATORIO=true` na primeira ativação** (não só "depois de
+   estabilizar") é a única forma de a prova realmente comprovar o offsite;
+   depois de confirmado, decidir se relaxa.
 4. **Ao validar em produção, não usar `/diagnostico/central`** como fonte — a
    auditoria de julho registrou que ele reporta `backup_offsite` ligado e
    desligado na mesma resposta (armadilha documentada no `CLAUDE.md`). Usar
@@ -268,26 +356,39 @@ verificável a partir do repositório.
 
 ## Consolidação — quem faz o quê
 
-**Trabalho de código pendente (cabe a Issues/PRs de execução, não a esta auditoria):**
+> Esta seção também é **histórica** (escrita antes da decisão final sobre o
+> Sentry). Ver o Sumário executivo no topo para o estado real.
 
-1. ~~*(0.1)* Passar `release=app_version()` no `sentry_sdk.init()` e exportar
-   `GIT_SHA` no `deploy-vps.yml`~~ — **feito** (ver adenda; `GIT_SHA` já estava
-   exportado, só o `release` precisou de correção).
+**Trabalho de código pendente (estado final, não o que esta seção dizia antes):**
+
+1. ~~*(0.1)* Passar `release=app_version()` no `sentry_sdk.init()`~~ —
+   implementado no PR #801 e depois **revertido no mesmo PR**: a decisão
+   virou "remover o Sentry", então manter o parâmetro não fazia sentido.
+   `observability.py` está, ao final, sem mudança líquida em relação à `main`.
 2. *(0.5)* Compor a stack de homologação **após** o titular decidir a topologia
-   — topologia decidida na adenda; composição da stack é Issue própria.
+   — topologia decidida na adenda; composição da stack é Issue própria
+   (**#802**).
 3. *(0.3, menor)* Se desejado, alinhar vocabulário: ou o plano passa a citar
    `modo: semantica`, ou a rota passa a responder `vetorial` — recomenda-se
-   ajustar o plano (mudar contrato de API é custo sem benefício).
+   ajustar o plano (mudar contrato de API é custo sem benefício). Reforço: o
+   campo `modo` não prova retrieval vetorial de fato (ver ressalva na §0.3).
 
 **Atos humanos de ativação (titular/operação — regras 8 e 9 da governança):**
 
-- Preencher `SENTRY_DSN` na VPS e reiniciar (0.1).
-- Ratificar formalmente a estratégia de embeddings local/fastembed (0.2).
-- Disparar `rag-production-activation.yml` e validar zero órfãos (0.3).
-- Configurar credenciais/chave e `BACKUP_ENABLED=true`; disparar a prova de
-  `backup-gdrive-activation.yml`; **decidir o prazo de retenção** (0.4).
-- Decidir topologia da homologação; executar a purga dos dados fictícios em
-  produção com backup prévio (0.5).
+- ~~Preencher `SENTRY_DSN` na VPS e reiniciar (0.1)~~ — **não se aplica**: o
+  Sentry foi decidido como removido, não ativado.
+- Ratificar formalmente a estratégia de embeddings local/fastembed (0.2) —
+  já ratificada por escrito (ver adenda).
+- Disparar `rag-production-activation.yml` e validar zero órfãos **com o
+  filtro `vigente=true`/`deleted_at IS NULL`** (0.3, ver ressalva acima).
+- Configurar credencial **dedicada** (não `auto`/`inherit`) + chave +
+  `BACKUP_ENABLED=true`; disparar a prova de `backup-gdrive-activation.yml`
+  **com `BACKUP_OFFSITE_OBRIGATORIO=true`** para que a prova seja real (0.4).
+  Retenção já decidida: 30 dias (só se aplica automaticamente ao destino
+  Google Drive; rclone precisa de rotação externa).
+- Decidir topologia da homologação — **já decidida** (mesma VPS, compose
+  separado); falta compor a stack (Issue #802) e, depois, executar a purga
+  dos dados fictícios em produção com backup prévio (0.5).
 
 ## Riscos residuais e limitações
 
@@ -299,19 +400,28 @@ verificável a partir do repositório.
   citados (caminho:linha).
 - Painéis internos de diagnóstico divergem entre si (armadilha documentada);
   as validações pós-ativação devem usar as fontes indicadas em cada item.
-- **Conflito de governança encontrado na execução:** a trava
-  `.github/workflows/governanca.yml` (linhas 102–108) exige as seções
-  "Riscos residuais" e "Rollback" no corpo do PR, mas o template oficial
-  `.github/pull_request_template.md` não as contém — todo PR que segue o
-  template à risca reprova no CI. Corrigir o template é mudança de governança
-  e fica como apontamento (fora do escopo deste PR de auditoria).
+- ~~Conflito de governança entre o template de PR e a trava
+  `governanca.yml`~~ — **retratado (achado de revisão, Codex):** conferido de
+  novo, `.github/pull_request_template.md` **já contém** as seções
+  "## Riscos residuais e limitações" e "## Rollback" (linhas 84-90 no commit
+  auditado). A hipótese original deste relatório estava errada — não há
+  conflito. O que de fato aconteceu ao preparar o PR #793 foi um lapso deste
+  executor ao preencher o corpo a partir do template (seções omitidas na
+  primeira versão do PR, não ausência no template) — corrigido ali, sem
+  achado de governança a registrar.
 
 ## Adenda — decisões e execução (mesmo dia, 2026-08-08)
 
 Após a leitura deste relatório, o titular autorizou por chat a resolução das
 cinco pendências acima. As decisões, justificativas e o código correspondente
 estão em `docs/auditoria/decisoes-bloco0-2026-08-08.md`, registrados na
-**Issue #800 / PR #801**:
+**Issue #800 / PR #801**. **Nota (achado de revisão, Codex):** esse arquivo
+**não existe nesta branch** (`claude/auditoria-infra-dados-2mgrm9`, a deste
+PR #793) — ele foi criado na branch irmã `claude/bloco0-decisoes-execucao-9k4p2m`
+(PR #801). Quem quiser conferir o conteúdo citado abaixo precisa olhar aquele
+PR, não este. As afirmações resumidas aqui foram checadas contra aquele
+arquivo no momento da escrita, mas não são auto-verificáveis só com o diff
+deste PR:
 
 - **0.1** — **Decisão revista no mesmo dia.** Primeira resposta: Sentry
   mantido e ativado. Ao apresentar os comandos de ativação, o titular
