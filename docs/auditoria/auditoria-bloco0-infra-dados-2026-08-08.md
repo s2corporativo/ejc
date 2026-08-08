@@ -313,16 +313,26 @@ cinco pendências acima. As decisões, justificativas e o código correspondente
 estão em `docs/auditoria/decisoes-bloco0-2026-08-08.md`, registrados na
 **Issue #800 / PR #801**:
 
-- **0.1** — Sentry mantido e ativado; PR #773 comentado pedindo revisão para
-  excluir a remoção do Sentry daquele escopo. `release=app_version()`
-  adicionado ao `init_sentry()`. A afirmação original deste relatório sobre
-  `GIT_SHA` não ser exportado no deploy estava **errada** — corrigida acima.
+- **0.1** — **Decisão revista no mesmo dia.** Primeira resposta: Sentry
+  mantido e ativado. Ao apresentar os comandos de ativação, o titular
+  perguntou sobre custo; a resposta reabriu a decisão de fundo, e perguntado
+  se aceitava ficar **sem qualquer ferramenta de rastreamento de erro** (nem
+  Sentry, nem self-hosted como GlitchTip), confirmou que sim. **Decisão final:
+  Sentry removido — o PR #773 segue como estava proposto.** O comentário
+  anterior desta sessão em #773 (pedindo excluir a remoção) foi retratado.
+  Consequência aceita: a causa-raiz nº 1 ("500 sem diagnóstico") continua sem
+  solução automatizada — risco residual registrado, não pendência esquecida.
+  Histórico completo das duas versões em
+  `docs/auditoria/decisoes-bloco0-2026-08-08.md`, seção 0.1.
+  (A afirmação original deste relatório sobre `GIT_SHA` não ser exportado no
+  deploy estava **errada** — corrigida acima; isso continua valendo
+  independente da decisão do Sentry.)
 - **0.2** — Estratégia de embeddings ratificada por escrito (local/fastembed).
 - **0.4** — Retenção offsite definida em 30 dias (`BACKUP_RETENCAO_DIAS`).
 - **0.5** — Topologia de homologação decidida (mesma VPS, compose separado,
   dados fictícios); build da stack em **Issue #802**, fora desta rodada.
 
-Os atos humanos de ativação (preencher `SENTRY_DSN`, `BACKUP_ENABLED=true` +
-credencial, disparar `rag-production-activation.yml`, subir a homologação na
-VPS) continuam pendentes — nenhum deles foi nem podia ser executado por este
-executor (regra 9 da governança).
+Os atos humanos de ativação (`BACKUP_ENABLED=true` + credencial, disparar
+`rag-production-activation.yml`, subir a homologação na VPS) continuam
+pendentes — nenhum deles foi nem podia ser executado por este executor
+(regra 9 da governança).
