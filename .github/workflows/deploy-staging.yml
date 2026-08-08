@@ -1,0 +1,96 @@
+# Deploy de staging — governança v3 (fluxo autônomo), etapa opt-in.
+#
+# DESLIGADO por padrão: o job só executa quando a variável de repositório
+# STAGING_ENABLED == '1' (Settings → Secrets and variables → Actions →
+# Variables). Antes de ligar, provisionar na VPS:
+#   1. sudo mkdir -p /opt/ejc-staging
+#   2. criar /opt/ejc-staging/.env PRÓPRIO (banco, chaves e segredos distintos
+#      dos de produção; jamais copiar o .env real)
+#   3. conferir recursos livres (a stack de staging sobe db+redis+backend+
+#      worker+frontend em paralelo aos de produção, portas 8001/8081)
+#
+# Enquanto STAGING_ENABLED != '1', a promoção para produção segue direto pela
+# cadeia CI main → Deploy VPS, que já contém backup, health e rollback.
+name: Deploy Staging
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    if: >-
+      vars.STAGING_ENABLED == '1' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'workflow_run' &&
+        contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event) &&
+        github.event.workflow_run.conclusion == 'success'))
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 45
+    env:
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Checkout exato do commit aprovado
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TARGET_SHA }}
+
+      - name: Pré-requisitos de staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d /opt/ejc-staging
+          test -f /opt/ejc-staging/.env
+
+      - name: Sincronizar checkout para /opt/ejc-staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.env' --exclude '.env.*' \
+            --exclude '**/.env' --exclude '**/.env.*' \
+            --exclude 'uploads/' --exclude 'backups/' \
+            --exclude 'logs/' --exclude 'data/' --exclude 'storage/' \
+            --exclude 'secrets/' --exclude 'certs/' --exclude 'tmp/' \
+            --exclude 'node_modules/' --exclude 'frontend/node_modules/' \
+            --exclude 'frontend/dist/' --exclude 'graphify-out/' \
+            --exclude 'vps-tools/' --exclude '*.log' \
+            ./ /opt/ejc-staging/
+
+      - name: Subir stack de staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /opt/ejc-staging
+          docker compose -p ejc-staging \
+            -f docker-compose.yml -f docker-compose.staging.yml \
+            up -d --build db redis backend worker frontend
+
+      - name: Gates automatizados de staging
+        shell: bash
+        env:
+          RUN_STAGING_PYTEST: "1"
+        run: |
+          cd /opt/ejc-staging
+          bash scripts/smoke_staging.sh
+
+      - name: Resumo
+        if: always()
+        run: |
+          {
+            echo "## Deploy Staging"
+            echo
+            echo "- Target SHA: \`$TARGET_SHA\`"
+            echo "- Gates: smoke + pytest no container"
+          } >> "$GITHUB_STEP_SUMMARY"

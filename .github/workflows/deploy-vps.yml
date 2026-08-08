@@ -27,10 +27,14 @@ concurrency:
 
 jobs:
   deploy:
+    # A CI da main chega por push (fluxo clássico) ou por workflow_dispatch
+    # (redisparo do Auto-integracao após merge automático — o push feito pelo
+    # GITHUB_TOKEN não gera evento). O filtro `branches: [main]` do gatilho
+    # garante que só corridas da main chegam aqui em ambos os casos.
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref_name == 'main') ||
       (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.event == 'push' &&
+       contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event) &&
        github.event.workflow_run.conclusion == 'success')
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 45
@@ -153,6 +157,13 @@ jobs:
           curl -fsS -o /dev/null -w \
             "https://ejc.depaulateixeira.adv.br/api/health → HTTP %{http_code}\n" \
             https://ejc.depaulateixeira.adv.br/api/health
+
+      - name: Smoke test pós-deploy
+        # Frontend + API locais e públicos, endpoint de login, compilação dos
+        # módulos críticos. Falha aqui NÃO dispara o rollback do deploy (a troca
+        # já foi validada pelo health com SHA); ela reprova o workflow para que
+        # a falha fique visível e acionável.
+        run: bash /opt/ejc/scripts/post_deploy_check.sh
 
       - name: Resumo da implantação
         if: always()
