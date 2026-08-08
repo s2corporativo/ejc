@@ -109,11 +109,9 @@ def init_sentry() -> None:
         from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
         environment = settings.SENTRY_ENVIRONMENT or settings.APP_ENV
-        release = app_version()
         sentry_sdk.init(
             dsn=dsn,
             environment=environment,
-            release=release,                 # correlaciona erro ↔ commit publicado
             traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
             send_default_pii=False,          # LGPD: obrigatório
             before_send=_before_send,        # scrub de dados sensíveis
@@ -121,8 +119,8 @@ def init_sentry() -> None:
         )
         _sentry_inicializado = True
         logger.info(
-            "Sentry inicializado (environment=%s, release=%s, traces_sample_rate=%s)",
-            environment, release, settings.SENTRY_TRACES_SAMPLE_RATE,
+            "Sentry inicializado (environment=%s, traces_sample_rate=%s)",
+            environment, settings.SENTRY_TRACES_SAMPLE_RATE,
         )
     except Exception as e:  # pragma: no cover - defensivo, nunca derruba o boot
         logger.warning("Falha ao inicializar Sentry (ignorado): %s", e)
