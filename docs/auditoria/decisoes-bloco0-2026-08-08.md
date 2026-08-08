@@ -153,8 +153,8 @@ VPS, fora do alcance deste executor.
 
 **Implementação: fora do escopo desta rodada.** Compor a stack (arquivo
 compose, config de Nginx, wiring de CI/dispatch, se necessário) é trabalho de
-infraestrutura genuíno — não cabe dentro de "escolher a topologia". Abre-se
-Issue própria para esse build, referenciando esta decisão, a ser atacada pelo
+infraestrutura genuíno — não cabe dentro de "escolher a topologia". Aberta a
+**Issue #802** para esse build, referenciando esta decisão, a ser atacada pelo
 agente `arquiteto-docker-deploy`/skill correspondente.
 
 **O que continua sendo ato humano:** depois que a stack existir, a purga dos
@@ -172,6 +172,17 @@ acessa produção.
 | 0.2 | Embeddings locais/fastembed ratificados | nenhum (só registro) |
 | 0.4 | Retenção offsite = 30 dias | `config.py`, `.env.example` |
 | 0.5 | Topologia: mesma VPS, compose separado, dados fictícios | nenhum (Issue de build aberta à parte) |
+
+## Revisão de segurança
+
+`security-auditor: executado` sobre o diff de código (`observability.py` +
+`config.py`): nenhum achado crítico ou alto. O scrub de PII do Sentry
+(`_before_send`, `_SCRUB_KEYS`) e `send_default_pii=False` seguem intactos;
+`release` expõe só o SHA do commit. A retenção maior do backup cifrado é
+característica inerente a qualquer retenção >0, não um problema introduzido —
+nota de acompanhamento não bloqueante: reavaliar a rotação de
+`BACKUP_ENCRYPTION_KEY` quando o sistema tiver histórico real de uso. Veredito:
+seguro para prosseguir.
 
 ## Riscos residuais
 
