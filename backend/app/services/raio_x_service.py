@@ -717,6 +717,12 @@ async def converter_em_caso(
         client_id=client.id,
         advogado_responsavel_id=user.id,
         observacoes=f"Originado do Raio-X preliminar {analise.id}. Relatório preservado na origem.",
+        # G1 (mesma guarda de cases.py / entrada_service.py / legal_chat_service.py):
+        # caso em triagem nunca nasce sem "o que fazer agora". Esta era a única das
+        # 4 portas de criação que deixava `proxima_acao` NULL — Case nascia aberto
+        # sem próxima ação, driblando o gate que cases.py::atualizar() exige em toda
+        # atualização subsequente.
+        proxima_acao="Revisar a análise convertida do Raio-X e definir a próxima providência",
     )
     db.add(case)
 
