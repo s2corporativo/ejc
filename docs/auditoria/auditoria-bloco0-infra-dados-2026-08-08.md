@@ -18,18 +18,20 @@
 > Adenda **revoga** o que estiver em conflito. Quem for agir a partir deste
 > documento deve ler o **Sumário executivo** (já atualizado para o estado
 > final) e a **Adenda** — não o meio do documento isoladamente. Em especial:
-> **o Sentry foi removido**, não ativado — quem ler só a antiga linha 0.1 do
-> meio do documento faria exatamente o trabalho que o titular rejeitou.
+> **a decisão é remover o Sentry**, não ativá-lo — quem ler só a antiga linha
+> 0.1 do meio do documento faria exatamente o trabalho que o titular rejeitou.
+> **Precisão (achado de revisão, CodeRabbit):** "decisão" e "estado do código
+> na `main`" são coisas diferentes — ver a coluna "Estado do código" abaixo.
 
 ## Sumário executivo (estado final, pós-adenda — 2026-08-08)
 
-| ID  | Item                                | Estado final                                                 | Pendências |
-|-----|-------------------------------------|-------------------------------------------------------------|------------------------------------------|
-| 0.1 | Sentry (DSN + release)              | **Decisão final: REMOVIDO.** O titular reverteu a decisão inicial (manter/ativar) após perguntar sobre custo — aceitou ficar sem qualquer coletor de erro (nem Sentry, nem self-hosted). O PR #773 (que remove o Sentry) segue como estava. `release=app_version()` foi implementado e depois revertido — sem efeito líquido em `observability.py`. | Nenhuma — decisão executada. Risco residual: causa-raiz "500 sem diagnóstico" fica sem solução automatizada (aceito conscientemente). |
-| 0.2 | Estratégia de embeddings            | **Ratificada:** local (fastembed/ONNX, `multilingual-e5-large` 1024d) — nenhuma mudança de código necessária | Nenhuma |
-| 0.3 | Religar embeddings + backfill       | Máquina completa e governada, **ainda não disparada** | Ato humano: dispatch de `rag-production-activation.yml` na `main`. Ver ressalva sobre `modo: "semantica"` não ser prova de retrieval vetorial de fato (abaixo) |
-| 0.4 | Backup offsite                      | Pipeline implementado; **retenção definida em 30 dias**; ainda não ativado em produção | Ato humano: `BACKUP_ENABLED=true` + credencial DEDICADA (não `auto`/`inherit`) + chave Fernet fora do servidor. Ver ressalvas sobre identidade e rotação por destino (abaixo) |
-| 0.5 | Ambiente de homologação             | **Topologia decidida** (mesma VPS, compose separado, dados fictícios); build da stack em Issue #802, ainda não implementado | Compor a stack; purgar dados fictícios em produção (ato humano, com backup prévio) |
+| ID  | Item                                | Decisão                                                      | Estado do código na `main` | Pendências |
+|-----|-------------------------------------|-------------------------------------------------------------|-----------------------------|------------|
+| 0.1 | Sentry (DSN + release)              | **Aprovada: remover.** O titular reverteu a decisão inicial (manter/ativar) após perguntar sobre custo — aceitou ficar sem qualquer coletor de erro (nem Sentry, nem self-hosted). | **Ainda não removido.** O PR #773 (que remove o Sentry) segue **aberto/draft, não mesclado** — `init_sentry()`, `SENTRY_DSN`, `sentry-sdk` continuam na `main` hoje. O `release=app_version()` chegou a ser implementado no PR #801 e foi revertido no mesmo PR — sem efeito líquido. | Merge do #773 (ato do titular). Risco residual: causa-raiz "500 sem diagnóstico" fica sem solução automatizada quando o merge acontecer (aceito conscientemente). |
+| 0.2 | Estratégia de embeddings            | **Ratificada:** local (fastembed/ONNX, `multilingual-e5-large` 1024d) | Já era o comportamento da `main` — nenhuma mudança de código necessária | Nenhuma |
+| 0.3 | Religar embeddings + backfill       | — | Máquina completa e governada já na `main`, **ainda não disparada** | Ato humano: dispatch de `rag-production-activation.yml` na `main`. Ver ressalva sobre `modo: "semantica"` não ser prova de retrieval vetorial de fato (abaixo) |
+| 0.4 | Backup offsite                      | **Retenção definida em 30 dias** | Pipeline já na `main`; **retenção ainda em 14 dias** até o PR #801 mesclar (também aberto/draft) | Merge do #801; depois `BACKUP_ENABLED=true` + credencial DEDICADA (não `auto`/`inherit`) + chave Fernet fora do servidor + **conferir `BACKUP_RETENCAO_DIAS=30`** explicitamente na ativação, não presumir o default. Ver ressalvas sobre identidade e rotação por destino (abaixo) |
+| 0.5 | Ambiente de homologação             | **Topologia decidida** (mesma VPS, compose separado, dados fictícios) | Stack não existe — build em Issue #802, ainda não implementado | Compor a stack; purgar dados fictícios em produção (ato humano, com backup prévio) |
 
 Detalhes de cada decisão e a justificativa completa estão em
 `docs/auditoria/decisoes-bloco0-2026-08-08.md` (Issue #800 / **PR #801** —
@@ -283,7 +285,14 @@ na VPS, como alerta o runbook.
    **fora** do servidor (perder a chave = perder os backups). Ato humano.
 2. **Retenção:** default `BACKUP_RETENCAO_DIAS=14` offsite / 7 dias local —
    **decidido em 30 dias offsite** na Adenda (ver `decisoes-bloco0-2026-08-08.md`
-   §0.4). Fonte legal citada: Lei nº 13.709/2018 (LGPD), art. 46 (dever de
+   §0.4). Essa mudança só existe no PR #801 (`BACKUP_RETENCAO_DIAS=14→30` em
+   `config.py`), **ainda aberto/draft, não mesclado** — hoje a `main` continua
+   com `14`. Na ação humana de ativação: mesclar o #801 e depois **conferir
+   explicitamente** `BACKUP_RETENCAO_DIAS=30` no `.env` da VPS antes de assumir
+   que o valor decidido está em vigor — não presumir que o default do código
+   já reflete a decisão. Para destino rclone (OneDrive), mantenha também a
+   exigência de rotação externa manual/script, já que `_rotacionar_sync` não
+   cobre esse ramo (achado acima). Fonte legal citada: Lei nº 13.709/2018 (LGPD), art. 46 (dever de
    segurança do controlador) — o artigo não fixa um prazo numérico de retenção
    de backup; a leitura de que o prazo fica a critério do controlador é
    interpretação deste executor, não parecer jurídico formal, e deve ser
@@ -400,14 +409,14 @@ verificável a partir do repositório.
   citados (caminho:linha).
 - Painéis internos de diagnóstico divergem entre si (armadilha documentada);
   as validações pós-ativação devem usar as fontes indicadas em cada item.
-- ~~Conflito de governança entre o template de PR e a trava
+- ~~Conflito de governança entre o modelo de pull request e a trava
   `governanca.yml`~~ — **retratado (achado de revisão, Codex):** conferido de
   novo, `.github/pull_request_template.md` **já contém** as seções
   "## Riscos residuais e limitações" e "## Rollback" (linhas 84-90 no commit
   auditado). A hipótese original deste relatório estava errada — não há
   conflito. O que de fato aconteceu ao preparar o PR #793 foi um lapso deste
-  executor ao preencher o corpo a partir do template (seções omitidas na
-  primeira versão do PR, não ausência no template) — corrigido ali, sem
+  executor ao preencher o corpo a partir do modelo (seções omitidas na
+  primeira versão do PR, não ausência no modelo) — corrigido ali, sem
   achado de governança a registrar.
 
 ## Adenda — decisões e execução (mesmo dia, 2026-08-08)
