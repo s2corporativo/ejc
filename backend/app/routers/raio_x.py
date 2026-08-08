@@ -10,7 +10,9 @@ from uuid import uuid4
 
 import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -27,7 +29,12 @@ from app.models.document import Document
 from app.models.raio_x import RaioXAnalise, RaioXDocumento
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.raio_x import RaioXCreate, RaioXConverterRequest, RaioXUpdate
+from app.schemas.raio_x import (
+    RaioXCreate,
+    RaioXConverterRequest,
+    RaioXIdentificacaoRevisada,
+    RaioXUpdate,
+)
 from app.services.raio_x_advogado_service import analise_advogado_caso
 from app.services.raio_x_export_service import gerar_docx, gerar_pdf
 from app.services.raio_x_service import (
@@ -392,11 +399,35 @@ async def atualizar(
         identification = dict(report.get("identificacao") or {})
         reviewed_identification = review.get("identificacao")
         if isinstance(reviewed_identification, dict):
-            for key, value in reviewed_identification.items():
+            # Issue #695 (mass assignment): `identification` é dict livre vindo
+            # do cliente. Sem allowlist, `setattr(analise, key, value)` escrevia
+            # em QUALQUER coluna do model (status, deleted_at, created_by, id,
+            # titulo...), incl. travar o registro como "convertido_em_caso" sem
+            # nunca ter sido convertido. Allowlist explícita, fail-closed: chave
+            # fora do conjunto é 422 nomeando o que foi rejeitado (não ignorada
+            # em silêncio) — mesmo espírito de ramos.py:340-349 (AI-121).
+            campos_permitidos = RaioXIdentificacaoRevisada.model_fields.keys()
+            rejeitados = sorted(
+                k for k in reviewed_identification if k not in campos_permitidos
+            )
+            if rejeitados:
+                raise HTTPException(
+                    422,
+                    "Campos não permitidos em revisao_humana.identificacao: "
+                    + ", ".join(rejeitados),
+                )
+            try:
+                # Mesmos validadores de comprimento de RaioXUpdate para estes
+                # campos (ex.: titulo de 8 KB não passa mais por aqui).
+                identificacao_validada = RaioXIdentificacaoRevisada(**reviewed_identification)
+            except ValidationError as exc:
+                raise HTTPException(
+                    422, jsonable_encoder(exc.errors(include_url=False))
+                ) from exc
+            for key, value in identificacao_validada.model_dump(exclude_unset=True).items():
                 if value not in (None, ""):
                     identification[key] = value
-                    if hasattr(analise, key):
-                        setattr(analise, key, value)
+                    setattr(analise, key, value)
         if review.get("sintese_revisada"):
             report["sintese_executiva_revisada"] = review["sintese_revisada"]
         for key in (
