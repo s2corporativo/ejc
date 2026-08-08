@@ -121,17 +121,41 @@ Ordem de integração proposta, um PR por vez, resolvendo conflito em cascata a 
 7. **#788** (plano) — atualizar a branch e integrar a qualquer momento; é referência documental.
 8. **#812** (F5) — **não** entra no trem até o titular responder a Issue #799 (seção 5).
 
-Critério de pronto da Fase A: `main` com F1a–F4 integradas, CI verde, e os três P0 do relatório
-irreproduzíveis via API.
+Critério de pronto da Fase A: `main` com **#757 e F1a–F4** (#791, #795, #797, #803) integrados,
+CI verde, e os três P0 do relatório irreproduzíveis via API.
 
 ### Fase B — lacunas que nenhum PR cobre (semana 1–2, em paralelo com o fim da Fase A)
 
-- **B1 — contador `prazos_pendentes` (P1-1)**: Issue + PR pequeno. Trocar
-  `DeadlineStatus(Deadline.status) == DeadlineStatus.pendente` por comparação SQL direta
-  (`Deadline.status == DeadlineStatus.pendente`), **remover o `except` que converte erro em 0**
-  (logar e propagar, ou devolver `null` explícito — "erro" ≠ "nenhum prazo") e cobrir com teste
-  de regressão que falharia contra o código atual. Auditar no mesmo PR os `except Exception → 0`
-  vizinhos do mesmo bloco de resumo (`cases.py:398-399` idem para honorários).
+- **B1 — contador `prazos_pendentes` (P1-1)**: Issue + PR pequeno, em duas mudanças distintas e
+  independentes dentro do mesmo PR:
+
+  **(i) A correção do defeito**: trocar `DeadlineStatus(Deadline.status) == DeadlineStatus.pendente`
+  por comparação SQL direta (`Deadline.status == DeadlineStatus.pendente`) em `cases.py:403-405`.
+  Isso, sozinho, já faz o contador voltar a contar — o `except` deixa de ser alcançado no caminho
+  normal.
+
+  **(ii) O contrato de erro** (decisão fixada aqui para não ficar em aberto): em
+  `GET /cases/{case_id}/resumo`, **`null` significa "contador indisponível" e `0` significa
+  "contei e não há nenhum"** — erro nunca mais vira `0`. O `except` permanece como rede para falha
+  genuína de banco (um contador quebrado não pode derrubar um resumo que agrega ~14 contadores),
+  mas passa a **logar em nível `warning` e atribuir `None`**. Propagar 500 foi descartado
+  justamente por esse motivo de robustez; `null` preserva a disponibilidade do resumo sem mentir
+  sobre o dado.
+
+  **Consumidores**: verificado em 2026-08-08 que **não há nenhum consumidor de `prazos_pendentes`
+  no frontend** (`grep` em todo o repositório: só `routers/cases.py` e este documento; o
+  `prazos_pendentes` de `services/visual_law_core.py:74` é outro parâmetro, sem relação). Adotar
+  `null` agora, portanto, não quebra contrato em uso — e é o momento mais barato de fixá-lo. Se
+  algum consumidor surgir antes do PR, tratar `null` como "—" na UI, nunca como zero.
+
+  **Escopo do contrato**: a mesma regra vale para os contadores irmãos do bloco — o laço de
+  `cases.py:377-388` e o total de honorários em `cases.py:391-399` engolem exceção para `0`/`0.0`
+  pelo mesmo padrão. Uniformizar todos no mesmo PR e **declarar os campos no `response_model`**
+  (a rota hoje devolve dict solto, sem tipo declarado), tornando o `Optional` explícito no contrato.
+
+  **Testes**: regressão cobrindo (a) sucesso — caso com prazos pendentes devolve a contagem certa,
+  teste que falha contra o código atual; (b) falha — erro de banco simulado devolve `null` e não
+  `0`, com o resumo ainda respondendo 200.
 - **B2 — cópia física na conversão do Raio-X (§15.2)**: após F2 integrada, substituir
   `shutil.copy2` (`raio_x_service.py:576`) por movimentação/referência controlada no pipeline
   canônico, eliminando duplicação de conteúdo sensível em disco. Risco médio (transferência
