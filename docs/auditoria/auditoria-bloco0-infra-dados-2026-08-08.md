@@ -294,3 +294,9 @@ verificável a partir do repositório.
   citados (caminho:linha).
 - Painéis internos de diagnóstico divergem entre si (armadilha documentada);
   as validações pós-ativação devem usar as fontes indicadas em cada item.
+- **Conflito de governança encontrado na execução:** a trava
+  `.github/workflows/governanca.yml` (linhas 102–108) exige as seções
+  "Riscos residuais" e "Rollback" no corpo do PR, mas o template oficial
+  `.github/pull_request_template.md` não as contém — todo PR que segue o
+  template à risca reprova no CI. Corrigir o template é mudança de governança
+  e fica como apontamento (fora do escopo deste PR de auditoria).
