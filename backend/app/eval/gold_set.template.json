@@ -1,6 +1,7 @@
 {
   "id": "area-001",
   "area": "[AREA_JURIDICA]",
+  "cenario": "normal | fronteira | excecao",
   "ficticio": false,
   "query": "pergunta jurídica pseudonimizada, sem PII",
   "expected_titulos": ["documento que o retrieval deveria trazer"],
@@ -16,7 +17,9 @@
       {
         "titulo": "[TITULO_DA_FONTE]",
         "url": "https://[DOMINIO_OFICIAL]/[CAMINHO]",
-        "consultada_em": "YYYY-MM-DD"
+        "consultada_em": "YYYY-MM-DD",
+        "identificador_versao": "[NORMA/JULGADO + VERSAO OU DATA DO TEXTO CONFERIDO]",
+        "hash_sha256": "[OPCIONAL: SHA-256 DO SNAPSHOT CONFERIDO]"
       }
     ]
   },
