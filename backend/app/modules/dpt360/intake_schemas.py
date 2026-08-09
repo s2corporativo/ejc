@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class DptInboundOpportunity(BaseModel):
@@ -13,7 +14,7 @@ class DptInboundOpportunity(BaseModel):
     mensagem: str = Field(min_length=10, max_length=8000)
     empresa: str | None = Field(default=None, max_length=240)
     contato: str | None = Field(default=None, max_length=180)
-    email: EmailStr | None = None
+    email: str | None = Field(default=None, max_length=254)
     telefone: str | None = Field(default=None, max_length=40)
     urgencia_declarada: Literal["baixa", "normal", "alta", "critica"] = "normal"
     consentimento_privacidade: bool = False
@@ -27,6 +28,16 @@ class DptInboundOpportunity(BaseModel):
                 "Encaminhamento AcioneJus permanece desativado até revisão ética/comercial."
             )
         return value
+
+    @field_validator("email")
+    @classmethod
+    def validar_email_minimo(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalized):
+            raise ValueError("E-mail inválido")
+        return normalized
 
 
 class DptInboundOpportunityOut(BaseModel):
