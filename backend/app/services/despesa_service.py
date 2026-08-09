@@ -25,11 +25,6 @@ def _dict(row) -> dict:
 def _vencimento_na_competencia(
     vencimento_modelo: date | None, competencia: str
 ) -> date | None:
-    """Replica somente o DIA do vencimento do modelo para a competência alvo.
-
-    Ex.: modelo vence dia 31; fevereiro recebe o último dia do mês. Se o modelo
-    não tem vencimento, o lançamento gerado também não inventa um.
-    """
     if vencimento_modelo is None:
         return None
     ano, mes = (int(parte) for parte in competencia.split("-", 1))
@@ -84,9 +79,6 @@ async def atualizar_despesa(
     antes = await obter_despesa(db, despesa_id)
     if antes is None:
         raise LookupError("Despesa não encontrada")
-
-    # Lançamento gerado por template nunca pode virar um novo template. Essa é
-    # a trava lógica complementar ao índice único da migration.
     if antes.get("recorrencia_origem_id") and payload.recorrente is True:
         raise ValueError(
             "Lançamento gerado por recorrência não pode se tornar um novo modelo recorrente"
@@ -142,12 +134,11 @@ async def excluir_despesa(db: AsyncSession, despesa_id: str) -> dict:
 async def gerar_recorrentes(
     db: AsyncSession, competencia: str, *, user_id: str
 ) -> dict:
-    """Gera uma competência a partir dos modelos recorrentes, com idempotência.
+    """Gera uma competência a partir dos modelos recorrentes, sem duplicação.
 
-    Fonte de verdade: linhas `recorrente = true` e sem `recorrencia_origem_id`.
-    Filhos são gravados `recorrente = false`, preservando a origem em
-    `recorrencia_origem_id`. A restrição UNIQUE (origem, competência) impede
-    duplicação inclusive sob concorrência/retry.
+    Cada par modelo+competência recebe advisory lock transacional no PostgreSQL.
+    Assim retries e duas requisições concorrentes são serializados sem exigir
+    criação de UNIQUE em tabela já populada durante o rolling deploy.
     """
     templates = (
         await db.execute(
@@ -169,41 +160,62 @@ async def gerar_recorrentes(
     existentes = 0
     ids: list[str] = []
     for modelo in templates:
-        vencimento = _vencimento_na_competencia(modelo["vencimento"], competencia)
-        result = await db.execute(
-            text(
-                """
-                INSERT INTO office_expenses
-                    (categoria, subcategoria, tipo, descricao, valor,
-                     vencimento, recorrente, recorrencia, status, competencia,
-                     recorrencia_origem_id, created_by)
-                VALUES
-                    (:categoria, :subcategoria, :tipo, :descricao, :valor,
-                     :vencimento, FALSE, :recorrencia, 'pendente', :competencia,
-                     :origem_id, :created_by)
-                ON CONFLICT (recorrencia_origem_id, competencia) DO NOTHING
-                RETURNING id
-                """
-            ),
-            {
-                "categoria": modelo["categoria"],
-                "subcategoria": modelo["subcategoria"],
-                "tipo": modelo["tipo"],
-                "descricao": modelo["descricao"],
-                "valor": Decimal(str(modelo["valor"] or 0)),
-                "vencimento": vencimento,
-                "recorrencia": modelo["recorrencia"] or "mensal",
-                "competencia": competencia,
-                "origem_id": modelo["id"],
-                "created_by": user_id,
-            },
+        lock_key = f"despesa-recorrente:{modelo['id']}:{competencia}"
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:chave, 0))"),
+            {"chave": lock_key},
         )
-        criado = result.scalar_one_or_none()
-        if criado:
-            gerados += 1
-            ids.append(str(criado))
-        else:
+        existente = (
+            await db.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM office_expenses
+                    WHERE deleted_at IS NULL
+                      AND recorrencia_origem_id = :origem_id
+                      AND competencia = :competencia
+                    LIMIT 1
+                    """
+                ),
+                {"origem_id": modelo["id"], "competencia": competencia},
+            )
+        ).scalar_one_or_none()
+        if existente:
             existentes += 1
+            continue
+
+        vencimento = _vencimento_na_competencia(modelo["vencimento"], competencia)
+        criado = (
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO office_expenses
+                        (categoria, subcategoria, tipo, descricao, valor,
+                         vencimento, recorrente, recorrencia, status, competencia,
+                         recorrencia_origem_id, created_by)
+                    VALUES
+                        (:categoria, :subcategoria, :tipo, :descricao, :valor,
+                         :vencimento, FALSE, :recorrencia, 'pendente', :competencia,
+                         :origem_id, :created_by)
+                    RETURNING id
+                    """
+                ),
+                {
+                    "categoria": modelo["categoria"],
+                    "subcategoria": modelo["subcategoria"],
+                    "tipo": modelo["tipo"],
+                    "descricao": modelo["descricao"],
+                    "valor": Decimal(str(modelo["valor"] or 0)),
+                    "vencimento": vencimento,
+                    "recorrencia": modelo["recorrencia"] or "mensal",
+                    "competencia": competencia,
+                    "origem_id": modelo["id"],
+                    "created_by": user_id,
+                },
+            )
+        ).scalar_one()
+        gerados += 1
+        ids.append(str(criado))
 
     return {
         "competencia": competencia,
