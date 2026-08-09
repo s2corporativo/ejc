@@ -108,7 +108,8 @@ describe("TabDocumentos — vínculo canônico", () => {
 
     expect(screen.getByText("Documento de outro caso")).toBeTruthy();
     expect(screen.getByText(/evidência original não pode ser movida/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Indisponível" })).toBeDisabled();
+    const indisponivel = screen.getByRole("button", { name: "Indisponível" });
+    expect((indisponivel as HTMLButtonElement).disabled).toBe(true);
     expect(post).not.toHaveBeenCalled();
   });
 
