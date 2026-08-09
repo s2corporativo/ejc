@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(new URL("./Jurimetria.tsx", import.meta.url), "utf8");
+const source = readFileSync(
+  new URL("./Jurimetria.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("Jurimetria — verdade da fonte", () => {
   it("consome os endpoints internos canônicos", () => {
