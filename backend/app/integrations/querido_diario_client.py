@@ -29,6 +29,43 @@ class QueridoDiarioClient:
     def __init__(self, timeout_s: float = 20.0) -> None:
         self.timeout = httpx.Timeout(timeout_s)
 
+    async def _get_json(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        require_enabled("querido_diario", "Querido Diário")
+        ultimo: Exception | None = None
+        async with httpx.AsyncClient(
+            timeout=self.timeout,
+            headers={"Accept": "application/json", "User-Agent": "EJC/1.0 QueridoDiario"},
+            follow_redirects=True,
+        ) as client:
+            for tentativa in range(2):
+                try:
+                    resp = await client.get(f"{QUERIDO_DIARIO_BASE}/{path.lstrip('/')}", params=params)
+                    if resp.status_code in _TRANSIENTES:
+                        raise httpx.HTTPStatusError(
+                            f"HTTP {resp.status_code}", request=resp.request, response=resp
+                        )
+                    resp.raise_for_status()
+                    try:
+                        payload = resp.json()
+                    except ValueError as exc:
+                        raise QueridoDiarioError("Querido Diário retornou JSON inválido") from exc
+                    if not isinstance(payload, dict):
+                        raise QueridoDiarioError("Querido Diário retornou formato inesperado")
+                    return payload
+                except QueridoDiarioError:
+                    raise
+                except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+                    ultimo = exc
+                    status = getattr(getattr(exc, "response", None), "status_code", None)
+                    if status is not None and 400 <= status < 500 and status != 429:
+                        break
+                    if tentativa == 0:
+                        await asyncio.sleep(0.5)
+        status = getattr(getattr(ultimo, "response", None), "status_code", None)
+        raise QueridoDiarioError(
+            f"Querido Diário indisponível{f' (HTTP {status})' if status else ''}"
+        ) from ultimo
+
     async def buscar(
         self,
         *,
@@ -39,7 +76,6 @@ class QueridoDiarioClient:
         tamanho: int = 10,
         excerto: int = 500,
     ) -> dict[str, Any]:
-        require_enabled("querido_diario", "Querido Diário")
         territorio = str(codigo_ibge or "").strip()
         if not _IBGE_RE.fullmatch(territorio):
             raise ValueError("codigo_ibge deve conter 7 dígitos")
@@ -63,58 +99,18 @@ class QueridoDiarioClient:
         if data_fim:
             params["published_until"] = data_fim.isoformat()
 
-        ultimo: Exception | None = None
-        async with httpx.AsyncClient(
-            timeout=self.timeout,
-            headers={"Accept": "application/json", "User-Agent": "EJC/1.0 QueridoDiario"},
-            follow_redirects=True,
-        ) as client:
-            for tentativa in range(2):
-                try:
-                    resp = await client.get(f"{QUERIDO_DIARIO_BASE}/gazettes", params=params)
-                    if resp.status_code in _TRANSIENTES:
-                        raise httpx.HTTPStatusError(
-                            f"HTTP {resp.status_code}", request=resp.request, response=resp
-                        )
-                    resp.raise_for_status()
-                    payload = resp.json()
-                    if not isinstance(payload, dict):
-                        raise QueridoDiarioError("Querido Diário retornou formato inesperado")
-                    return {
-                        **payload,
-                        "proveniencia_ejc": {
-                            "fonte": "Querido Diário — Open Knowledge Brasil",
-                            "natureza": "agregador_secundario",
-                            "conferencia_original_obrigatoria": True,
-                        },
-                    }
-                except QueridoDiarioError:
-                    raise
-                except (httpx.TransportError, httpx.HTTPStatusError, ValueError) as exc:
-                    ultimo = exc
-                    status = getattr(getattr(exc, "response", None), "status_code", None)
-                    if status is not None and 400 <= status < 500 and status != 429:
-                        break
-                    if tentativa == 0:
-                        await asyncio.sleep(0.5)
-        status = getattr(getattr(ultimo, "response", None), "status_code", None)
-        raise QueridoDiarioError(
-            f"Querido Diário indisponível{f' (HTTP {status})' if status else ''}"
-        ) from ultimo
+        payload = await self._get_json("gazettes", params)
+        return {
+            **payload,
+            "proveniencia_ejc": {
+                "fonte": "Querido Diário — Open Knowledge Brasil",
+                "natureza": "agregador_secundario",
+                "conferencia_original_obrigatoria": True,
+            },
+        }
 
     async def cidade(self, codigo_ibge: str) -> dict[str, Any]:
-        require_enabled("querido_diario", "Querido Diário")
         territorio = str(codigo_ibge or "").strip()
         if not _IBGE_RE.fullmatch(territorio):
             raise ValueError("codigo_ibge deve conter 7 dígitos")
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
-            resp = await client.get(
-                f"{QUERIDO_DIARIO_BASE}/cities/{territorio}",
-                headers={"Accept": "application/json", "User-Agent": "EJC/1.0 QueridoDiario"},
-            )
-        if resp.status_code != 200:
-            raise QueridoDiarioError(f"Querido Diário cidade indisponível (HTTP {resp.status_code})")
-        payload = resp.json()
-        if not isinstance(payload, dict):
-            raise QueridoDiarioError("Querido Diário retornou cidade em formato inesperado")
-        return payload
+        return await self._get_json(f"cities/{territorio}")
