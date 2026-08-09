@@ -81,14 +81,12 @@ class SignatureSigner(Base):
     nome_snapshot = Column(String(255), nullable=True)
     email_snapshot = Column(String(320), nullable=False)
     papel_snapshot = Column(String(80), nullable=False, default="cliente")
-    # native_enum=False evita DDL de TYPE PostgreSQL e mantém a migration
-    # expand-only/portável. A unicidade do vocabulário continua na validação
-    # Python; a migration adiciona CHECK equivalente no banco.
     status = Column(
         SAEnum(
             SignatureSignerStatus,
             native_enum=False,
             create_constraint=True,
+            length=20,
             name="ck_signature_signers_status_enum",
         ),
         nullable=False,
