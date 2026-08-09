@@ -82,7 +82,9 @@ export function ComparadorBacen() {
   const media = res?.ao_mes?.media;
   const acima = res && !Number.isNaN(t) && media != null ? t > media : null;
   const diff =
-    res && !Number.isNaN(t) && media != null ? ((t - media) / media) * 100 : null;
+    res && !Number.isNaN(t) && media != null
+      ? ((t - media) / media) * 100
+      : null;
 
   return (
     <div className="card p-4 border-l-4 border-primary-500">
@@ -316,7 +318,9 @@ export function AnaliseDocumentoArea({
       <textarea
         className="input w-full text-xs font-mono"
         rows={4}
-        placeholder={ANALISE_PLACEHOLDER[area] || "…ou cole aqui o texto do documento"}
+        placeholder={
+          ANALISE_PLACEHOLDER[area] || "…ou cole aqui o texto do documento"
+        }
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
       />
@@ -326,13 +330,17 @@ export function AnaliseDocumentoArea({
           {res.resumo && <p className="text-slate-700">{res.resumo}</p>}
           {res.juros && (
             <div className="bg-slate-50 rounded-lg p-3">
-              <p className="text-xs font-semibold text-slate-500 uppercase">Juros</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase">
+                Juros
+              </p>
               <p className="text-slate-700">
                 Taxa: <b>{res.juros.taxa_identificada || "não identificada"}</b>{" "}
                 · Capitalização: {res.juros.capitalizacao}
               </p>
               {res.juros.observacao && (
-                <p className="text-xs text-slate-500 mt-1">{res.juros.observacao}</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {res.juros.observacao}
+                </p>
               )}
             </div>
           )}
@@ -364,7 +372,10 @@ export function AnaliseDocumentoArea({
                 Cláusulas questionáveis
               </p>
               {res.clausulas_questionaveis.map((cq: any, i: number) => (
-                <div key={i} className="py-1.5 text-xs border-b border-slate-50">
+                <div
+                  key={i}
+                  className="py-1.5 text-xs border-b border-slate-50"
+                >
                   <span
                     className={`px-1.5 py-0.5 rounded-full font-medium ${riscoCor(cq.risco)}`}
                   >
