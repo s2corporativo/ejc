@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import urlparse
 
 from app.integrations.tcu_client import TcuPublicClient
 from app.services.juris_import.base import (
@@ -38,11 +39,7 @@ def _data_iso(valor: object) -> str | None:
 
 
 def _identificador_citavel(rec: dict) -> str:
-    """Mantém a identidade completa do acórdão para RAG/citação.
-
-    O número simples se repete entre anos e colegiados. A chave oficial da API
-    (ex.: AC-123-2026-P) é preferida; sem ela, compomos número/ano/colegiado.
-    """
+    """Mantém a identidade completa do acórdão para RAG/citação."""
     chave = str(rec.get("chave") or "").strip()
     if chave:
         return chave
@@ -58,6 +55,18 @@ def _identificador_citavel(rec: dict) -> str:
     return ident
 
 
+def _url_tcu_oficial(url: str) -> bool:
+    """Aceita somente HTTPS no domínio oficial tcu.gov.br e subdomínios."""
+    try:
+        p = urlparse(url)
+    except ValueError:
+        return False
+    host = (p.hostname or "").lower().rstrip(".")
+    return p.scheme == "https" and bool(host) and (
+        host == "tcu.gov.br" or host.endswith(".tcu.gov.br")
+    )
+
+
 def normalizar_registro(rec: dict) -> JulgadoNormalizado | None:
     numero = _identificador_citavel(rec)
     titulo = str(rec.get("titulo") or "").strip()
@@ -66,7 +75,8 @@ def normalizar_registro(rec: dict) -> JulgadoNormalizado | None:
         return None
     ementa = "\n\n".join(x for x in (titulo, sumario) if x)[:20000]
     url = str(rec.get("url") or rec.get("url_pdf") or "").strip()
-    if not url.startswith("https://"):
+    if not _url_tcu_oficial(url):
+        logger.warning("TCU descartou URL de origem não oficial para %s", numero)
         return None
     return JulgadoNormalizado(
         tribunal="TCU",
@@ -107,10 +117,6 @@ async def buscar(
                 quantidade=_POR_PAGINA,
             )
         except Exception as exc:
-            # O contrato do importador só distingue sucesso/erro pela exceção;
-            # esconder uma queda como [] registraria falso "sucesso, zero itens".
-            # Propagamos inclusive em páginas posteriores para preservar a
-            # rastreabilidade do job; resultados ainda não foram persistidos.
             logger.warning("TCU página %s: %s: %s", pagina, type(exc).__name__, exc)
             raise
         if not itens:
