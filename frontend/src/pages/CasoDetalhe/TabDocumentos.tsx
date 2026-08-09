@@ -1,10 +1,15 @@
-// ── Aba Documentos do caso — upload embutido (Tela C, Bloco 3) ───────────────
+// ── Aba Documentos do caso — upload e vínculo embutidos (Tela C, Bloco 3.2) ──
 // A aba age EM LUGAR: a zona de arrastar/selecionar + título + tipo enviam
 // direto para POST /documents/upload (multipart, mesmo contrato já validado do
 // CaseCommandDock.enviarDocumento) — sem navegar para /documentos.
-// A lista existente permanece; após o upload ela é recarregada.
+// "Vincular documento existente" fecha a outra metade do achado F3.2: antes só
+// dava para linkar um documento já cadastrado indo ao módulo /documentos e
+// usando a ação em lote "Vincular ao caso" de lá. Busca em GET /documents/
+// (já com todo o RBAC/ownership/cofre aplicado no backend) + PATCH
+// /documents/{id} com case_id (mesmo endpoint/contrato do módulo).
+// A lista existente permanece; após upload ou vínculo ela é recarregada.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileUp } from "lucide-react";
+import { FileUp, Link2, Search } from "lucide-react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
@@ -59,6 +64,11 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
   const [arrastando, setArrastando] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [buscaVinculo, setBuscaVinculo] = useState("");
+  const [resultadosVinculo, setResultadosVinculo] = useState<any[]>([]);
+  const [buscandoVinculo, setBuscandoVinculo] = useState(false);
+  const [vinculandoId, setVinculandoId] = useState<string | null>(null);
+
   const carregar = useCallback(() => {
     api
       .get(`/documents/?case_id=${caseId}`)
@@ -69,6 +79,46 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  // Busca debounced de documento existente para vincular — mesma fonte
+  // (GET /documents/) e mesmo filtro de acesso do módulo /documentos.
+  useEffect(() => {
+    const termo = buscaVinculo.trim();
+    if (!termo) {
+      setResultadosVinculo([]);
+      return;
+    }
+    setBuscandoVinculo(true);
+    const id = setTimeout(() => {
+      api
+        .get("/documents/", { params: { search: termo, page_size: 10 } })
+        .then((r) =>
+          setResultadosVinculo(
+            asList(r.data).filter((d: any) => d.case_id !== caseId),
+          ),
+        )
+        .catch(() => setResultadosVinculo([]))
+        .finally(() => setBuscandoVinculo(false));
+    }, 400);
+    return () => clearTimeout(id);
+  }, [buscaVinculo, caseId]);
+
+  const vincular = async (docId: string) => {
+    setVinculandoId(docId);
+    try {
+      await api.patch(`/documents/${docId}`, { case_id: caseId });
+      toast.success("Documento vinculado ao caso.");
+      setBuscaVinculo("");
+      setResultadosVinculo([]);
+      carregar();
+    } catch (error) {
+      toast.error(
+        detalheErro(error, "Não foi possível vincular o documento ao caso."),
+      );
+    } finally {
+      setVinculandoId(null);
+    }
+  };
 
   const selecionarArquivo = (file: File | null) => {
     setArquivo(file);
@@ -181,6 +231,62 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
             {enviando ? "Anexando…" : "Anexar documento"}
           </button>
         </div>
+      </div>
+
+      {/* Vincular documento já cadastrado (GED) — a outra metade do achado
+          F3.2: antes só existia como ação em lote no módulo /documentos. */}
+      <div className="card p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-slate-700">
+          Vincular documento já cadastrado
+        </h3>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            className="input w-full pl-9 text-sm"
+            value={buscaVinculo}
+            onChange={(e) => setBuscaVinculo(e.target.value)}
+            placeholder="Buscar documento por título…"
+          />
+        </div>
+        {buscandoVinculo && <p className="text-xs text-slate-400">Buscando…</p>}
+        {!buscandoVinculo &&
+          buscaVinculo.trim() &&
+          resultadosVinculo.length === 0 && (
+            <p className="text-xs text-slate-400">
+              Nenhum documento encontrado fora deste caso.
+            </p>
+          )}
+        {resultadosVinculo.length > 0 && (
+          <div className="space-y-1">
+            {resultadosVinculo.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 p-2 text-sm"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-slate-800">
+                    {d.titulo || d.filename || d.nome_arquivo}
+                  </p>
+                  {d.case_id && (
+                    <p className="text-xs text-amber-600">
+                      Já vinculado a outro caso — vincular aqui move o
+                      documento.
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void vincular(d.id)}
+                  disabled={vinculandoId === d.id}
+                  className="btn-secondary flex shrink-0 items-center gap-1 text-xs disabled:opacity-50"
+                >
+                  <Link2 className="h-3.5 w-3.5" />
+                  {vinculandoId === d.id ? "Vinculando…" : "Vincular"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Lista existente — clique baixa o arquivo */}
