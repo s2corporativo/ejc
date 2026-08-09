@@ -99,6 +99,10 @@ ADICOES_INTENCIONAIS = {
     ("/api/jurimetria/analise-prospectiva", "POST"),
     ("/api/jurimetria/cobertura-rag", "GET"),
     ("/api/jurimetria/cobertura-mg-jec", "GET"),
+    # PR #888: vínculo canônico de documento solto ao caso. A busca filtra
+    # candidatos server-side e o POST aplica domínio/auditoria de forma atômica.
+    ("/api/cases/{case_id}/documentos/candidatos", "GET"),
+    ("/api/cases/{case_id}/documentos/{document_id}/vincular", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
