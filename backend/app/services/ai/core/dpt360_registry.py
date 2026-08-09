@@ -5,6 +5,7 @@ Não cria executor, gateway, provider ou política HITL paralelos.
 """
 from __future__ import annotations
 
+from app.models.user import UserRole
 from app.services.system_prompts import TarefaIA
 
 DPT_SKILL_NAMES = frozenset(
@@ -17,6 +18,22 @@ DPT_SKILL_NAMES = frozenset(
 )
 
 _REGISTERED = False
+
+
+def _allowed_dpt_roles() -> list[str]:
+    """Compatibilidade com o orquestrador atual (`str(user.role)`).
+
+    `User.role` é SAEnum(UserRole), logo pode chegar como `UserRole.advogado`; em
+    alguns testes/integrações chega como string simples. Aceitar ambas as formas
+    evita falso 403 sem ampliar o conjunto de papéis autorizado.
+    """
+    roles = (
+        UserRole.superadmin,
+        UserRole.admin,
+        UserRole.socio,
+        UserRole.advogado,
+    )
+    return list(dict.fromkeys([*(role.value for role in roles), *(str(role) for role in roles)]))
 
 
 def ensure_dpt360_registered() -> None:
@@ -85,7 +102,7 @@ def ensure_dpt360_registered() -> None:
             tarefa_padrao=TarefaIA.ANALISE_CASO,
             prompt_key="empresarial",
             exige_fonte=True,
-            roles_permitidos=["superadmin", "admin", "socio", "advogado"],
+            roles_permitidos=_allowed_dpt_roles(),
             skills=[
                 "classify_intent",
                 "build_company_legal_context",
