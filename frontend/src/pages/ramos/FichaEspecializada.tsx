@@ -35,8 +35,7 @@ export default function FichaEspecializada({
       return;
     }
     const obrigatorio = cfg.campos.find(
-      (campo) =>
-        campo.obrigatorio && valorObrigatorioAusente(form[campo.nome]),
+      (campo) => campo.obrigatorio && valorObrigatorioAusente(form[campo.nome]),
     );
     if (obrigatorio) {
       toast.error(`Campo obrigatório: ${obrigatorio.label}`);
