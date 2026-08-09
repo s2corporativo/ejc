@@ -17,7 +17,7 @@ def _blocos(preambulo: str):
 
 def test_revogacao_total_declarada_continua_bloqueando():
     resultado = situacao_juridica(
-        _blocos("LEI Nº 1.234. Revogada pela Lei nº 9.999, de 2024.")
+        _blocos("LEI Nº 1.234.\n(Revogada pela Lei nº 9.999, de 2024.)")
     )
 
     assert resultado["legal_status"] == "revogada"
@@ -27,7 +27,7 @@ def test_revogacao_total_declarada_continua_bloqueando():
 
 def test_revogacao_parcial_nao_pode_ser_promovida_a_revogacao_total():
     resultado = situacao_juridica(
-        _blocos("LEI Nº 1.234. Parcialmente revogada pela Lei nº 9.999, de 2024.")
+        _blocos("LEI Nº 1.234.\n(Parcialmente revogada pela Lei nº 9.999, de 2024.)")
     )
 
     assert resultado["legal_status"] == "parcialmente_revogada"
