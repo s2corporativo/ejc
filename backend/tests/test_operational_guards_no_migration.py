@@ -9,17 +9,17 @@ from fastapi import HTTPException
 from app.routers import produtividade, trash
 
 
-class _FakeScalarDB:
+class _BancoEscalarFalso:
     def __init__(self, resultado):
         self.resultado = resultado
 
-    async def scalar(self, _query):
+    async def scalar(self, _consulta):
         return self.resultado
 
 
 @pytest.mark.asyncio
 async def test_lixeira_bloqueia_restauração_quando_pai_nao_existe():
-    db = _FakeScalarDB(None)
+    db = _BancoEscalarFalso(None)
     registro = SimpleNamespace(case_id="caso-ficticio", client_id=None)
 
     with pytest.raises(HTTPException) as exc:
@@ -31,7 +31,7 @@ async def test_lixeira_bloqueia_restauração_quando_pai_nao_existe():
 
 @pytest.mark.asyncio
 async def test_lixeira_bloqueia_restauração_quando_pai_esta_na_lixeira():
-    db = _FakeScalarDB(SimpleNamespace(deleted_at="2026-08-09T00:00:00Z"))
+    db = _BancoEscalarFalso(SimpleNamespace(deleted_at="2026-08-09T00:00:00Z"))
     registro = SimpleNamespace(case_id="caso-ficticio", client_id=None)
 
     with pytest.raises(HTTPException) as exc:
@@ -43,13 +43,13 @@ async def test_lixeira_bloqueia_restauração_quando_pai_esta_na_lixeira():
 
 @pytest.mark.asyncio
 async def test_lixeira_permite_filhos_quando_pai_esta_ativo():
-    db = _FakeScalarDB(SimpleNamespace(deleted_at=None))
+    db = _BancoEscalarFalso(SimpleNamespace(deleted_at=None))
     registro = SimpleNamespace(case_id="caso-ficticio", client_id=None)
 
     await trash._validar_dependencias_restauração(db, "documents", registro)
 
 
-class _FakeCommitDB:
+class _BancoCommitFalso:
     def __init__(self):
         self.commits = 0
 
@@ -63,7 +63,7 @@ async def test_exportacao_produtividade_registra_auditoria_sem_conteudo_do_relat
 ):
     chamadas: list[dict] = []
 
-    async def fake_audit(
+    async def auditoria_falsa(
         db,
         user_id,
         papel,
@@ -83,15 +83,17 @@ async def test_exportacao_produtividade_registra_auditoria_sem_conteudo_do_relat
             }
         )
 
-    monkeypatch.setattr(produtividade, "criar_audit_log", fake_audit)
-    db = _FakeCommitDB()
-    user = SimpleNamespace(id="usuario-ficticio", role=SimpleNamespace(value="admin"))
-    body = produtividade.ProdutividadeExportEvent(
+    monkeypatch.setattr(produtividade, "criar_audit_log", auditoria_falsa)
+    db = _BancoCommitFalso()
+    usuario = SimpleNamespace(
+        id="usuario-ficticio", role=SimpleNamespace(value="admin")
+    )
+    evento_exportacao = produtividade.ProdutividadeExportEvent(
         periodo="30d", formato="csv", linhas=12
     )
 
     resultado = await produtividade.registrar_exportacao_produtividade(
-        body=body, db=db, cu=user
+        body=evento_exportacao, db=db, cu=usuario
     )
 
     assert resultado == {"ok": True}
@@ -113,15 +115,17 @@ async def test_exportacao_produtividade_registra_auditoria_sem_conteudo_do_relat
 
 @pytest.mark.asyncio
 async def test_exportacao_produtividade_rejeita_quantidade_de_linhas_invalida():
-    db = _FakeCommitDB()
-    user = SimpleNamespace(id="usuario-ficticio", role=SimpleNamespace(value="admin"))
-    body = produtividade.ProdutividadeExportEvent(
+    db = _BancoCommitFalso()
+    usuario = SimpleNamespace(
+        id="usuario-ficticio", role=SimpleNamespace(value="admin")
+    )
+    evento_exportacao = produtividade.ProdutividadeExportEvent(
         periodo="30d", formato="csv", linhas=100_001
     )
 
     with pytest.raises(HTTPException) as exc:
         await produtividade.registrar_exportacao_produtividade(
-            body=body, db=db, cu=user
+            body=evento_exportacao, db=db, cu=usuario
         )
 
     assert exc.value.status_code == 422
