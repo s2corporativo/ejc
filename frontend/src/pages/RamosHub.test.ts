@@ -1,27 +1,34 @@
-// hubDoRamo deve apontar para a rota canônica /areas-de-atuacao/:slug —
-// o alias legado /ramos/:slug existe só como redirect (auditoria Onda 1).
 import { describe, expect, it } from "vitest";
-import { hubDoRamo } from "./RamosHub";
-import { CANONICAL_ROUTES } from "../config/canonicalRoutes";
-import { RAMOS } from "./ramos/ramosConfig";
+import { hubDoRamo, podeCriarCasoNoHub } from "./RamosHub";
 
 describe("hubDoRamo", () => {
-  it("gera a rota canônica /areas-de-atuacao/<slug>", () => {
+  it("gera rota canônica somente para workspaces realmente existentes", () => {
     expect(hubDoRamo("empresarial")).toBe("/areas-de-atuacao/empresarial");
-    // Áreas com hub de nome próprio: civil → civel, criminal → penal.
     expect(hubDoRamo("civil")).toBe("/areas-de-atuacao/civel");
     expect(hubDoRamo("criminal")).toBe("/areas-de-atuacao/penal");
   });
 
-  it("nunca gera link pelo alias legado /ramos/", () => {
-    for (const slug of Object.keys(RAMOS)) {
-      const hub = hubDoRamo(slug);
-      expect(hub).not.toMatch(/^\/ramos\//);
-      expect(hub?.startsWith(`${CANONICAL_ROUTES.areasAtuacao}/`)).toBe(true);
-    }
+  it("não achata especialidades canônicas em outro workspace", () => {
+    expect(hubDoRamo("societario")).toBeNull();
+    expect(hubDoRamo("sucessoes")).toBeNull();
+    expect(hubDoRamo("licitacoes")).toBeNull();
   });
 
-  it("devolve null para área sem hub", () => {
+  it("não cria rota para área inexistente ou sem workspace", () => {
+    expect(hubDoRamo("internacional")).toBeNull();
     expect(hubDoRamo("area-inexistente")).toBeNull();
+  });
+});
+
+describe("RBAC do Novo caso no hub", () => {
+  it("espelha a lista de papéis da rota /casos/novo", () => {
+    expect(podeCriarCasoNoHub("superadmin")).toBe(true);
+    expect(podeCriarCasoNoHub("admin")).toBe(true);
+    expect(podeCriarCasoNoHub("socio")).toBe(true);
+    expect(podeCriarCasoNoHub("advogado")).toBe(true);
+    expect(podeCriarCasoNoHub("secretaria")).toBe(true);
+    expect(podeCriarCasoNoHub("advogado_auxiliar")).toBe(false);
+    expect(podeCriarCasoNoHub("estagiario")).toBe(false);
+    expect(podeCriarCasoNoHub("financeiro")).toBe(false);
   });
 });

@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  Baby,
   Banknote,
   BookOpenCheck,
   BriefcaseBusiness,
   Building2,
   Car,
-  ClipboardPen,
   Database,
   FileSignature,
   Globe,
@@ -16,184 +14,163 @@ import {
   Home,
   Landmark,
   Leaf,
-  Network,
   Receipt,
   Scale,
+  Search,
   Shield,
   Sprout,
+  Star,
   Stethoscope,
-  UploadCloud,
   Users,
   Vote,
-  Wrench,
 } from "lucide-react";
 import api from "../lib/api";
-import { ROLES } from "../config/moduleRegistry";
 import { CANONICAL_ROUTES } from "../config/canonicalRoutes";
-import { useAuth } from "../stores/auth";
-import { RAMOS } from "./ramos/ramosConfig";
+import { ROLES } from "../config/moduleRegistry";
 import { Badge, Button, Card, PageHeader } from "../components/UI";
+import { useAuth } from "../stores/auth";
+import {
+  AREAS_PRINCIPAIS_PADRAO,
+  GRUPOS_AREAS,
+  areaCombinaBusca,
+  casosGeraisPath,
+  grupoDaArea,
+  hubSlugDaArea,
+  novoCasoPath,
+  type AreaResumo,
+} from "./ramos/areasWorkspace";
 
-// Área (taxonomia de casos) → slug do hub de ferramentas na rota canônica
-// /areas-de-atuacao/<slug> (o alias legado /ramos/<slug> só redireciona).
-// A maioria coincide; "civil" e "criminal" têm hubs com nome próprio.
-const AREA_PARA_HUB: Record<string, string> = {
-  civil: "civel",
-  criminal: "penal",
-};
+const FAVORITOS_KEY = "ejc:areas-favoritas:v1";
 
-/** Caminho do hub do ramo para uma área, ou null quando não há hub. */
 export function hubDoRamo(areaSlug: string): string | null {
-  const slug = AREA_PARA_HUB[areaSlug] ?? areaSlug;
-  return RAMOS[slug] ? `${CANONICAL_ROUTES.areasAtuacao}/${slug}` : null;
+  const slug = hubSlugDaArea(areaSlug);
+  return slug ? `${CANONICAL_ROUTES.areasAtuacao}/${slug}` : null;
 }
 
-type Area = {
-  slug: string;
-  nome: string;
-  ordem?: number;
-  ativo?: boolean;
-};
+export function podeCriarCasoNoHub(role?: string | null): boolean {
+  return Boolean(role && (ROLES.clientes as readonly string[]).includes(role));
+}
+
+type Area = AreaResumo;
+type IconeArea = typeof Scale;
 
 type AreaVisual = {
-  icon: typeof Scale;
-  description: string;
-  tone: string;
+  icon: IconeArea;
+  descricao: string;
 };
 
 const VISUAL: Record<string, AreaVisual> = {
   empresarial: {
     icon: Building2,
-    description: "Sociedades, contratos empresariais, recuperação e governança",
-    tone: "bg-primary-900 text-primary-800 dark:bg-primary-400",
+    descricao: "Sociedades, contratos empresariais, recuperação e governança.",
   },
   societario: {
-    icon: Network,
-    description:
-      "Constituição, alterações, sócios, governança e reorganizações",
-    tone: "bg-indigo-500 text-indigo-700",
+    icon: BriefcaseBusiness,
+    descricao: "Constituição, alterações, sócios, governança e reorganizações.",
   },
   contratual: {
     icon: FileSignature,
-    description: "Elaboração, revisão, obrigações, riscos e inadimplemento",
-    tone: "bg-slate-700 text-slate-700 dark:bg-slate-400",
+    descricao: "Elaboração, revisão, riscos, obrigações e inadimplemento.",
   },
   civil: {
     icon: Scale,
-    description:
-      "Obrigações, responsabilidade civil, danos e procedimentos comuns",
-    tone: "bg-slate-900 text-slate-800 dark:bg-slate-400",
+    descricao:
+      "Responsabilidade civil, obrigações, cobrança, indenizações e JEC.",
   },
   criminal: {
     icon: Shield,
-    description: "Defesa criminal, inquéritos, cautelares e recursos",
-    tone: "bg-danger-500 text-danger-700",
+    descricao: "Defesa criminal, inquéritos, cautelares, instrução e recursos.",
   },
   trabalhista: {
     icon: HardHat,
-    description: "Vínculo, verbas, audiência, recursos, liquidação e execução",
-    tone: "bg-yellow-500 text-yellow-700",
+    descricao: "Consultivo, contencioso, vínculo, verbas, recursos e execução.",
   },
   administrativo: {
     icon: Landmark,
-    description:
-      "Atos administrativos, servidores, sanções e processos públicos",
-    tone: "bg-ouro text-ouro-profundo",
+    descricao: "Atos, sanções, servidores, contratos públicos e regulação.",
+  },
+  licitacoes: {
+    icon: Landmark,
+    descricao:
+      "Licitações, compras públicas e execução de contratos administrativos.",
   },
   bancario: {
     icon: Banknote,
-    description:
-      "Contratos bancários, CET, juros, cobranças e superendividamento",
-    tone: "bg-success-500 text-success-700",
+    descricao:
+      "Contratos bancários, CET, juros, cobranças e superendividamento.",
   },
   tributario: {
     icon: Receipt,
-    description: "Autos, lançamentos, execução fiscal, defesas e planejamento",
-    tone: "bg-orange-500 text-orange-700",
+    descricao: "Autos, lançamentos, execução fiscal, defesas e planejamento.",
   },
   ambiental: {
     icon: Leaf,
-    description:
-      "Licenciamento, autos, embargos, laudos e responsabilidades conexas",
-    tone: "bg-green-500 text-green-700",
+    descricao:
+      "Licenciamento, autos, embargos, laudos e responsabilidades conexas.",
   },
   agrario: {
     icon: Sprout,
-    description:
-      "Posse rural, contratos agrários, regularização e conflitos fundiários",
-    tone: "bg-lime-600 text-lime-700",
+    descricao:
+      "Posse rural, contratos agrários, regularização e conflitos fundiários.",
   },
   agronegocio: {
     icon: BriefcaseBusiness,
-    description:
-      "Operações rurais, cadeias produtivas, crédito e contratos do agro",
-    tone: "bg-emerald-600 text-emerald-700",
+    descricao:
+      "Operações rurais, cadeias produtivas, crédito e contratos do agro.",
   },
   consumidor: {
     icon: Users,
-    description:
-      "Cobranças, vícios, serviços, negativação e responsabilidade do fornecedor",
-    tone: "bg-teal-500 text-teal-700",
+    descricao:
+      "Cobranças, vícios, serviços, negativação e responsabilidade do fornecedor.",
   },
   familia: {
-    icon: Baby,
-    description: "Divórcio, união estável, guarda, convivência e alimentos",
-    tone: "bg-rose-500 text-rose-700",
+    icon: Users,
+    descricao:
+      "Família, guarda, convivência, alimentos, divórcio e planejamento.",
   },
   sucessoes: {
     icon: BookOpenCheck,
-    description: "Inventário, testamento, herdeiros, bens e partilha",
-    tone: "bg-violet-500 text-violet-700",
+    descricao: "Inventário, testamento, herdeiros, bens e partilha.",
   },
   imobiliario: {
     icon: Home,
-    description: "Locação, compra e venda, posse, usucapião e incorporação",
-    tone: "bg-stone-500 text-stone-700",
+    descricao: "Locação, compra e venda, posse, usucapião e incorporação.",
   },
   previdenciario: {
     icon: Shield,
-    description: "INSS, benefícios, CNIS, PPP, perícias e revisões",
-    tone: "bg-slate-500 text-slate-700",
+    descricao: "Benefícios, CNIS, PPP, perícias, revisões e planejamento.",
   },
   saude: {
     icon: HeartPulse,
-    description:
-      "Planos de saúde, SUS, tratamentos, negativas e tutelas urgentes",
-    tone: "bg-pink-500 text-pink-700",
+    descricao:
+      "Planos de saúde, SUS, tratamentos, negativas e tutelas urgentes.",
   },
   medico: {
     icon: Stethoscope,
-    description:
-      "Responsabilidade médica, prontuários, consentimento e perícia",
-    tone: "bg-cyan-500 text-cyan-700",
+    descricao: "Responsabilidade médica, prontuários, consentimento e perícia.",
   },
   digital_lgpd: {
     icon: Database,
-    description:
-      "LGPD, incidentes, contratos digitais, provas e governança de dados",
-    tone: "bg-sky-600 text-sky-700",
+    descricao:
+      "LGPD, incidentes, contratos digitais, provas e governança de dados.",
   },
   transito: {
     icon: Car,
-    description: "Multas, defesa prévia, JARI, CETRAN, suspensão e cassação",
-    tone: "bg-indigo-600 text-indigo-700",
+    descricao: "Multas, recursos, suspensão, cassação e questões de trânsito.",
   },
   constitucional: {
     icon: Scale,
-    description: "Questões constitucionais, controle, repercussão geral e STF",
-    tone: "bg-purple-600 text-purple-700",
+    descricao: "Questões constitucionais, controle, repercussão geral e STF.",
   },
   eleitoral: {
     icon: Vote,
-    description:
-      "Eleições, candidaturas, propaganda, contas e contencioso eleitoral",
-    tone: "bg-fuchsia-600 text-fuchsia-700",
+    descricao:
+      "Eleições, candidaturas, propaganda, contas e contencioso eleitoral.",
   },
   internacional: {
     icon: Globe,
-    description:
-      "Contratos internacionais, cooperação, tratados e comércio exterior",
-    tone: "bg-primary-900 text-primary-800 dark:bg-primary-400",
+    descricao:
+      "Contratos internacionais, cooperação, tratados e comércio exterior.",
   },
 };
 
@@ -222,146 +199,262 @@ const FALLBACK_AREAS: Area[] = [
   ["internacional", "Direito Internacional"],
   ["contratual", "Direito Contratual"],
   ["societario", "Direito Societário"],
+  ["licitacoes", "Licitações"],
 ].map(([slug, nome], index) => ({ slug, nome, ordem: (index + 1) * 10 }));
 
-export default function RamosHub() {
+function lerFavoritos(): string[] {
+  if (typeof window === "undefined") return [...AREAS_PRINCIPAIS_PADRAO];
+  try {
+    const salvo = JSON.parse(
+      window.localStorage.getItem(FAVORITOS_KEY) || "null",
+    );
+    if (
+      Array.isArray(salvo) &&
+      salvo.every((item) => typeof item === "string")
+    ) {
+      return salvo;
+    }
+  } catch {
+    // Preferência local inválida não bloqueia o módulo.
+  }
+  return [...AREAS_PRINCIPAIS_PADRAO];
+}
+
+function mesclarAreas(remotas: Area[]): Area[] {
+  const porSlug = new Map(FALLBACK_AREAS.map((area) => [area.slug, area]));
+  for (const area of remotas) {
+    if (!area?.slug || !area?.nome || area.ativo === false) continue;
+    porSlug.set(area.slug, { ...porSlug.get(area.slug), ...area });
+  }
+  return [...porSlug.values()]
+    .filter((area) => area.ativo !== false)
+    .sort(
+      (a, b) =>
+        (a.ordem ?? Number.MAX_SAFE_INTEGER) -
+          (b.ordem ?? Number.MAX_SAFE_INTEGER) ||
+        a.nome.localeCompare(b.nome, "pt-BR"),
+    );
+}
+
+function AreaCard({
+  area,
+  favorito,
+  onFavorito,
+  podeCriarCaso,
+}: {
+  area: Area;
+  favorito: boolean;
+  onFavorito: (slug: string) => void;
+  podeCriarCaso: boolean;
+}) {
   const navigate = useNavigate();
+  const visual = VISUAL[area.slug] ?? {
+    icon: Scale,
+    descricao: "Casos e recursos relacionados a esta especialidade jurídica.",
+  };
+  const Icon = visual.icon;
+  const hub = hubDoRamo(area.slug);
+
+  return (
+    <Card className="flex h-full flex-col rounded-xl p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200">
+          <Icon className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <button
+          type="button"
+          onClick={() => onFavorito(area.slug)}
+          className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-black/[0.04] hover:text-ouro dark:hover:bg-white/[0.06]"
+          aria-label={
+            favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"
+          }
+          title={favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+        >
+          <Star
+            className={`h-4 w-4 ${favorito ? "fill-current text-ouro" : ""}`}
+          />
+        </button>
+      </div>
+
+      <div className="mt-3 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-bold text-slate-950 dark:text-white">
+            {area.nome}
+          </h2>
+          {!hub && <Badge>Sem workspace dedicado</Badge>}
+        </div>
+        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-300">
+          {visual.descricao}
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        {hub ? (
+          <Button size="sm" className="w-full" onClick={() => navigate(hub)}>
+            Abrir workspace
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="w-full"
+            onClick={() => navigate(casosGeraisPath())}
+          >
+            Ver todos os casos
+          </Button>
+        )}
+        {podeCriarCaso && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="w-full"
+            onClick={() => navigate(novoCasoPath())}
+          >
+            Novo caso
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+export default function RamosHub() {
+  const role = useAuth((state) => state.user?.role);
+  const podeCriarCaso = podeCriarCasoNoHub(role);
   const [areas, setAreas] = useState<Area[]>(FALLBACK_AREAS);
-  // O RamosHub é visível para ROLES.juridico (inclui estagiário/auxiliar),
-  // mas /cadastro-manual exige ROLES.clientes — só mostra o atalho para quem
-  // de fato passa no guard da rota (evita botão que leva a "acesso negado").
-  const role = useAuth((s) => s.user?.role);
-  const podeCadastroManual =
-    !!role && (ROLES.clientes as readonly string[]).includes(role);
+  const [busca, setBusca] = useState("");
+  const [favoritos, setFavoritos] = useState<string[]>(lerFavoritos);
 
   useEffect(() => {
+    let ativo = true;
     api
       .get("/areas")
-      .then(({ data }) => {
-        const list = Array.isArray(data) ? data : data?.areas;
-        if (Array.isArray(list) && list.length) {
-          setAreas(list.filter((area: Area) => area.ativo !== false));
-        }
+      .then((resposta) => {
+        if (!ativo) return;
+        const remotas = Array.isArray(resposta.data?.areas)
+          ? (resposta.data.areas as Area[])
+          : [];
+        setAreas(mesclarAreas(remotas));
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (ativo) setAreas(FALLBACK_AREAS);
+      });
+    return () => {
+      ativo = false;
+    };
   }, []);
 
-  const ordered = useMemo(
-    () => [...areas].sort((a, b) => (a.ordem || 999) - (b.ordem || 999)),
-    [areas],
+  const alternarFavorito = (slug: string) => {
+    setFavoritos((atuais) => {
+      const proximos = atuais.includes(slug)
+        ? atuais.filter((item) => item !== slug)
+        : [...atuais, slug];
+      window.localStorage.setItem(FAVORITOS_KEY, JSON.stringify(proximos));
+      return proximos;
+    });
+  };
+
+  const filtradas = useMemo(
+    () => areas.filter((area) => areaCombinaBusca(area, busca)),
+    [areas, busca],
+  );
+
+  const favoritas = useMemo(
+    () => filtradas.filter((area) => favoritos.includes(area.slug)),
+    [filtradas, favoritos],
   );
 
   return (
-    <div className="min-h-full px-6 py-6">
-      <div className="mx-auto max-w-7xl space-y-4">
-        <PageHeader
-          title="Áreas de Atuação"
-          subtitle="As áreas funcionam como filtros e perfis de jornada. Selecione uma área para consultar os casos correspondentes ou iniciar uma importação inteligente."
-          eyebrow="Especializações da Central de Casos"
-          actions={
-            <>
-              {podeCadastroManual && (
-                <Button
-                  variant="secondary"
-                  onClick={() => navigate("/cadastro-manual")}
-                >
-                  <ClipboardPen className="h-4 w-4" /> Cadastro manual
-                </Button>
-              )}
-              <Button variant="secondary" onClick={() => navigate("/casos")}>
-                Todos os casos
-              </Button>
-              <Button onClick={() => navigate("/casos/novo?modo=documento")}>
-                <UploadCloud className="h-4 w-4" /> Importar documento
-              </Button>
-            </>
-          }
-        />
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Organização jurídica"
+        title="Áreas de Atuação"
+        subtitle="Encontre a especialidade, abra o workspace existente e preserve a classificação jurídica canônica de cada caso."
+      />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {ordered.map((area) => {
-            const visual = VISUAL[area.slug] || {
-              icon: Scale,
-              description:
-                "Casos, documentos, jornadas e ferramentas pertinentes à área",
-              tone: "bg-slate-500 text-slate-700",
-            };
-            const Icon = visual.icon;
-            const hub = hubDoRamo(area.slug);
-            const toneText =
-              visual.tone.split(" ").find((c) => c.startsWith("text-")) || "";
-            return (
-              <Card
-                key={area.slug}
-                className="group relative h-full overflow-hidden rounded-[10px] p-4"
-              >
-                <div
-                  className={`absolute inset-x-0 top-0 h-[3px] ${visual.tone}`}
-                  aria-hidden="true"
-                />
-                <div className="relative flex h-full flex-col gap-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div
-                      className={`grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/10 ${toneText} dark:text-slate-200`}
-                    >
-                      <Icon className="h-5 w-5" aria-hidden="true" />
-                    </div>
-                    <span className="rounded-full bg-slate-950/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/10 dark:text-slate-300">
-                      Área
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    <h2 className="text-[15px] font-bold text-slate-950 dark:text-slate-50">
-                      {area.nome}
-                    </h2>
-                    <p className="text-[13px] leading-5 text-slate-500 dark:text-slate-300">
-                      {visual.description}
-                    </p>
-                  </div>
-                  <div className="mt-auto space-y-2 pt-2">
-                    {/* Ação primária: abre o hub do ramo (calculadoras, guias
-                        e súmulas) — antes só alcançável digitando a URL. */}
-                    {hub && (
-                      <Button
-                        size="sm"
-                        className="w-full"
-                        onClick={() => navigate(hub)}
-                      >
-                        <Wrench className="h-3.5 w-3.5" /> Abrir ferramentas do
-                        ramo
-                      </Button>
-                    )}
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() =>
-                          navigate(
-                            `/casos?area=${encodeURIComponent(area.slug)}`,
-                          )
-                        }
-                      >
-                        Ver casos
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() =>
-                          navigate(
-                            `/casos/novo?modo=documento&area=${encodeURIComponent(area.slug)}`,
-                          )
-                        }
-                      >
-                        <UploadCloud className="h-3.5 w-3.5" /> Importar
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
+        <label className="relative block">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+            aria-hidden="true"
+          />
+          <input
+            type="search"
+            className="input w-full pl-9"
+            value={busca}
+            onChange={(event) => setBusca(event.target.value)}
+            placeholder="Buscar área, assunto, ferramenta ou base legal…"
+            aria-label="Buscar áreas de atuação"
+          />
+        </label>
+        <p className="mt-2 text-xs text-slate-500">
+          {filtradas.length} de {areas.length} áreas visíveis. Workspaces só são
+          oferecidos quando existe implementação correspondente no EJC.
+        </p>
       </div>
+
+      {favoritas.length > 0 && (
+        <section className="space-y-3" aria-labelledby="areas-favoritas">
+          <div>
+            <h2
+              id="areas-favoritas"
+              className="text-sm font-bold text-slate-900 dark:text-white"
+            >
+              Favoritas
+            </h2>
+            <p className="text-xs text-slate-500">
+              Preferência local deste navegador; não altera cadastro, caso ou
+              permissão.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {favoritas.map((area) => (
+              <AreaCard
+                key={`fav-${area.slug}`}
+                area={area}
+                favorito
+                onFavorito={alternarFavorito}
+                podeCriarCaso={podeCriarCaso}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {GRUPOS_AREAS.map((grupo) => {
+        const doGrupo = filtradas.filter(
+          (area) => grupoDaArea(area.slug)?.id === grupo.id,
+        );
+        if (doGrupo.length === 0) return null;
+        return (
+          <section key={grupo.id} className="space-y-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                {grupo.titulo}
+              </h2>
+              <p className="text-xs text-slate-500">{grupo.descricao}</p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {doGrupo.map((area) => (
+                <AreaCard
+                  key={area.slug}
+                  area={area}
+                  favorito={favoritos.includes(area.slug)}
+                  onFavorito={alternarFavorito}
+                  podeCriarCaso={podeCriarCaso}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+
+      {filtradas.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-white/15">
+          Nenhuma área corresponde à busca. Tente outro termo jurídico ou nome
+          de ferramenta.
+        </div>
+      )}
     </div>
   );
 }
