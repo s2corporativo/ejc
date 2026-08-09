@@ -84,6 +84,20 @@ jobs:
           command -v rsync >/dev/null ||
             reprovar "rsync ausente no PATH do runner"
 
+          # Defesa pós-ativação: se o gate jurídico já foi promovido para true,
+          # qualquer drift do .env deve abortar ANTES do rsync/build/restart.
+          # Só contamos a chave; o conteúdo do .env nunca é impresso.
+          APP_DIR=/opt/ejc
+          activated_marker="$APP_DIR/data/.rag_vigencia_activated_v1"
+          env_file="$APP_DIR/.env"
+          if sudo test -f "$activated_marker"; then
+            total_true="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+            true_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=true$' "$env_file" || true)"
+            if [ "$total_true" != "1" ] || [ "$true_count" != "1" ]; then
+              reprovar "marker de ativação existe, mas o gate de vigência não está canonicamente true; abortando antes de tocar produção"
+            fi
+          fi
+
           [ "$erros" -eq 0 ] || exit 1
           echo "Pré-voo aprovado — HEAD $head_local, /opt/ejc e ejc_db presentes."
 
