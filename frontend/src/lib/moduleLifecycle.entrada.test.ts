@@ -31,6 +31,19 @@ const raioX: ModuloTeste = {
   label: "Raio-X de Documentos",
 };
 
+function override(
+  moduleKey: string,
+  enabled: boolean,
+): ModuleLifecycleOverride {
+  return {
+    module_key: moduleKey,
+    enabled,
+    menu_visible: enabled,
+    status: enabled ? "active" : "disabled",
+    reason: enabled ? null : "Desabilitado para manutenção",
+  } as ModuleLifecycleOverride;
+}
+
 describe("Entrada Única — consolidação segura de navegação", () => {
   it("consolida Sala/Raio-X quando a Entrada já está disponível ao papel", () => {
     const result = filterModulesByLifecycle([entrada, sala, raioX], {});
@@ -49,6 +62,17 @@ describe("Entrada Única — consolidação segura de navegação", () => {
     ]);
   });
 
+  it("não esconde Sala/Raio-X quando a própria Entrada foi desabilitada", () => {
+    const result = filterModulesByLifecycle([entrada, sala, raioX], {
+      entrada: override("entrada", false),
+    });
+
+    expect(result.map((item) => item.key)).toEqual([
+      "sala-juridica",
+      "raio-x-processo",
+    ]);
+  });
+
   it("mantém o RBAC canônico: estagiário não ganha criação de caso", () => {
     expect(canRoleAccessPath("estagiario", "/entrada")).toBe(false);
     expect(canRoleAccessPath("estagiario", "/sala-juridica")).toBe(true);
@@ -56,16 +80,12 @@ describe("Entrada Única — consolidação segura de navegação", () => {
   });
 
   it("continua respeitando override administrativo da Sala Jurídica", () => {
-    const override = {
-      module_key: "sala-juridica",
-      enabled: false,
-      menu_visible: false,
-      status: "disabled",
-      reason: "Desabilitado para manutenção",
-    } as ModuleLifecycleOverride;
+    const salaDesabilitada = override("sala-juridica", false);
 
-    expect(lifecycleForPath("/sala-juridica", { "sala-juridica": override })).toBe(
-      override,
-    );
+    expect(
+      lifecycleForPath("/sala-juridica", {
+        "sala-juridica": salaDesabilitada,
+      }),
+    ).toBe(salaDesabilitada);
   });
 });
