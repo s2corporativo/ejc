@@ -231,9 +231,18 @@ jobs:
             rm -f "$work"
             sudo rm -f "$candidate"
             if [ "$concluido" != "1" ]; then
-              if [ "$alterado" = "1" ] && sudo test -f "$backup"; then
-                echo "::warning::Prearm RAG interrompido; restaurando .env a partir do backup 0600."
-                sudo mv -f "$backup" "$env_file"
+              if [ "$alterado" = "1" ]; then
+                if sudo test -f "$backup"; then
+                  echo "::warning::Prearm RAG interrompido; restaurando .env a partir do backup 0600."
+                  sudo mv -f "$backup" "$env_file"
+                else
+                  echo "::error::Prearm RAG interrompido após abrir a janela de alteração, mas backup não está disponível."
+                fi
+              else
+                # Se o backup foi criado mas a janela de alteração ainda não
+                # abriu, o .env segue intacto: remova a cópia de segredo em vez
+                # de tentar restaurá-la (ela pode até estar parcial).
+                sudo rm -f "$backup"
               fi
               if sudo test -f "$marker"; then
                 marker_sha="$(sudo cat "$marker" 2>/dev/null || true)"
