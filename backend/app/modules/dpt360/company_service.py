@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func as sqlfunc, or_, select
+from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.client import Client
-from app.models.document import Document
 from app.models.environmental import EnvironmentalCase
 from app.models.lgpd_tratamento import RegistroTratamento
 from app.models.sociedade_cliente import SociedadeCliente
 from app.models.user import User
+from app.modules.dpt360.access_scope import visible_document_count_query
 from app.modules.dpt360.dashboard_service import (
     OPEN_CASE_STATUSES,
     _value,
@@ -46,14 +46,12 @@ async def get_company_profile(
     ).scalars().all()
     case_ids = [item.id for item in cases]
 
-    document_scopes = [Document.client_id == client_id]
-    if case_ids:
-        document_scopes.append(Document.case_id.in_(case_ids))
     documents = (
         await db.execute(
-            select(sqlfunc.count(Document.id)).where(
-                Document.deleted_at.is_(None),
-                or_(*document_scopes),
+            visible_document_count_query(
+                user,
+                client_id=client_id,
+                visible_case_ids=case_ids,
             )
         )
     ).scalar() or 0
@@ -71,7 +69,9 @@ async def get_company_profile(
         await db.execute(
             select(
                 sqlfunc.count(RegistroTratamento.id),
-                sqlfunc.count(RegistroTratamento.id).filter(RegistroTratamento.risco == "alto"),
+                sqlfunc.count(RegistroTratamento.id).filter(
+                    RegistroTratamento.risco == "alto"
+                ),
             ).where(
                 RegistroTratamento.client_id == client_id,
                 RegistroTratamento.deleted_at.is_(None),
@@ -90,13 +90,11 @@ async def get_company_profile(
             )
         ).scalar() or 0
 
-    # Perfil vivo é uma projeção factual. Classificação de saúde permanece
-    # Não avaliada até existir diagnóstico especializado aprovado; a presença de
-    # processo, ROPA ou auto não é transformada automaticamente em irregularidade.
     health = [DptHealthArea(area=label) for label in HEALTH_LABELS]
-
     areas = sorted({_value(item.area) for item in cases if _value(item.area)})
-    open_cases = sum(1 for item in cases if _value(item.status) in OPEN_CASE_STATUSES)
+    open_cases = sum(
+        1 for item in cases if _value(item.status) in OPEN_CASE_STATUSES
+    )
 
     from app.models.deadline import Deadline, DeadlineStatus
 
@@ -107,10 +105,10 @@ async def get_company_profile(
                 select(sqlfunc.count(Deadline.id)).where(
                     Deadline.deleted_at.is_(None),
                     Deadline.case_id.in_(case_ids),
-                    Deadline.status.in_([
-                        DeadlineStatus.pendente.value,
-                        DeadlineStatus.vencido.value,
-                    ]),
+                    Deadline.confirmado.is_(True),
+                    Deadline.status.in_(
+                        [DeadlineStatus.pendente.value, DeadlineStatus.vencido.value]
+                    ),
                 )
             )
         ).scalar() or 0
@@ -133,11 +131,11 @@ async def get_company_profile(
         ),
         DptTwinDimension(
             key="documentos",
-            label="Documentos vinculados",
+            label="Documentos visíveis vinculados",
             status="com_dados" if documents else "sem_dados",
             registros=int(documents),
             canonical_path=f"/clientes/{client_id}",
-            note="A projeção usa apenas contagem; conteúdo e metadados sensíveis não são replicados.",
+            note="Contagem respeita cofre, confidencialidade e ownership do GED canônico; conteúdo não é replicado.",
         ),
         DptTwinDimension(
             key="societario",
@@ -171,7 +169,7 @@ async def get_company_profile(
             status="sem_dados",
             registros=0,
             note="Ainda não existe inventário empresarial de IA confirmado para esta projeção.",
-            canonical_path="/governanca-ia",
+            canonical_path="/ia-governanca",
         ),
     ]
 
