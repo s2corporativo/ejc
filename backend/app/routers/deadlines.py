@@ -1,42 +1,46 @@
 # ── app/routers/deadlines.py ─────────────────────────────────────────────────
-# Prazos: CRUD + cálculo automático (úteis/corridos) + confirmação de ciência
+# Prazos: CRUD + cálculo assistido + confirmação de ciência.
 from __future__ import annotations
+
 import csv
 import io
 import logging
-from datetime import datetime, timezone, date
-from uuid import uuid4
+from datetime import date, datetime, timezone
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import select, func as sqlfunc, or_
+from sqlalchemy import func as sqlfunc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import get_current_user, requer_advogado
-from app.core.ownership import verificar_acesso_caso, is_gestao
-from app.models.user import User
+from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.deadline import Deadline
-from app.models.audit_log import criar_audit_log
-from app.services.deadline_calculator import (
-    prazo_dias_uteis, prazo_dias_corridos, dias_uteis_restantes,
-)
-from app.schemas.deadline import (
-    DeadlineCreate, DeadlineUpdate, DeadlineResponse, CalcularPrazoRequest,
-)
+from app.models.user import User
 from app.schemas.common import MsgResponse
+from app.schemas.deadline import (
+    CalcularPrazoRequest,
+    DeadlineCreate,
+    DeadlineResponse,
+    DeadlineUpdate,
+)
+from app.services.deadline_calculator import (
+    dias_uteis_restantes,
+    prazo_dias_corridos,
+    prazo_dias_uteis,
+    regime_processual_por_area,
+)
 
 router = APIRouter(prefix="/deadlines", tags=["Prazos"])
 logger = logging.getLogger("ejc.deadlines")
-
-_MAX_EXPORT = 5000  # teto de linhas do CSV (painel de prazos é sempre pequeno)
+_MAX_EXPORT = 5000
 
 
 def _ids_casos_do_usuario(user: User):
-    """IDs dos casos onde o usuário é responsável ou auxiliar (espelha
-    fees._ids_casos_do_usuario / verificar_acesso_caso)."""
     return (
         select(Case.id)
         .where(
@@ -51,10 +55,6 @@ def _ids_casos_do_usuario(user: User):
 
 
 def _filtro_escopo_prazos(q, cu: User):
-    """[A3] Escopo de ownership por DEFAULT para não-gestão: só prazos de casos
-    próprios (responsável/auxiliar), prazos onde é o responsável direto, ou
-    prazos sem caso (avulsos/internos). Gestão (socio+) enxerga tudo.
-    Espelha fees._filtro_fees_lista."""
     if is_gestao(cu):
         return q
     return q.where(
@@ -68,27 +68,70 @@ def _filtro_escopo_prazos(q, cu: User):
 
 @router.post("/calcular")
 async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_user)):
-    """Calculadora rápida de prazo (sem persistir)."""
+    """Calculadora rápida, sem persistência.
+
+    Para processo penal, a data fatal depende da regra de contagem contínua e
+    do marco processual específico. O endpoint genérico não converte
+    silenciosamente uma data arbitrária em termo inicial penal: exige o fluxo
+    DJEN (que conhece disponibilização/publicação) ou data final manual.
+    """
+    if req.regime_processual == "penal":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Cálculo penal não usa a contagem civil em dias úteis. "
+                "Para publicação DJEN, use a sugestão da própria intimação; "
+                "fora do DJEN, confirme o marco inicial e informe a data fatal."
+            ),
+        )
+
     if req.dias_uteis:
-        vencimento = prazo_dias_uteis(req.data_inicio, req.dias,
-                                      tribunal=req.tribunal, em_dobro=req.dobro)
-        modo = ("dias úteis EM DOBRO (CPC art. 183/229)" if req.dobro
-                else "dias úteis (CPC art. 219)")
+        if req.regime_processual is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Informe regime_processual (civel ou trabalhista) para "
+                    "cálculo processual automático."
+                ),
+            )
+        vencimento = prazo_dias_uteis(
+            req.data_inicio,
+            req.dias,
+            tribunal=req.tribunal,
+            em_dobro=req.dobro,
+            aplicar_recesso=req.aplicar_recesso,
+        )
+        norma = (
+            "CLT arts. 775 e 775-A"
+            if req.regime_processual == "trabalhista"
+            else "CPC arts. 219 e 220"
+        )
+        modo = f"dias úteis processuais ({norma})"
+        if req.dobro:
+            modo += " · quantidade dobrada (hipótese deve ser conferida)"
     else:
-        # Prazo em dobro é dos prazos processuais em dias úteis; não incide sobre
-        # prazo administrativo corrido (Lei 9.784) — ignorado aqui de propósito.
-        vencimento = prazo_dias_corridos(req.data_inicio, req.dias, tribunal=req.tribunal)
-        modo = "dias corridos c/ prorrogação (Lei 9.784 art. 66 §1º)"
+        vencimento = prazo_dias_corridos(
+            req.data_inicio, req.dias, tribunal=req.tribunal
+        )
+        modo = "dias corridos c/ prorrogação do termo final"
+
     return {
         "data_vencimento": vencimento,
         "modo": modo,
-        "dias_uteis_restantes": dias_uteis_restantes(vencimento),
+        "regime_processual": req.regime_processual,
+        "dias_uteis_restantes": dias_uteis_restantes(
+            vencimento,
+            aplicar_recesso=bool(req.dias_uteis and req.aplicar_recesso),
+            tribunal=req.tribunal,
+        ),
+        "aviso": "Cálculo assistivo; confirme marco inicial, rito, suspensões e ato judicial.",
     }
 
 
 @router.get("/")
 async def listar(
-    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     status_f: Optional[str] = Query("pendente", alias="status"),
     case_id: Optional[str] = None,
     tipo: Optional[str] = None,
@@ -103,31 +146,32 @@ async def listar(
         q = q.where(Deadline.case_id == case_id)
     if tipo:
         q = q.where(Deadline.tipo == tipo)
-    # [A3] Escopo de ownership por DEFAULT (não-gestão só vê prazos dos próprios
-    # casos / avulsos); gestão vê tudo. `apenas_meus` continua estreitando p/
-    # os prazos onde o usuário é o responsável direto.
     q = _filtro_escopo_prazos(q, cu)
     if apenas_meus:
         q = q.where(Deadline.responsavel_id == cu.id)
     q = q.order_by(Deadline.data_prazo.asc())
 
-    total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.subquery())
-    )).scalar()
-    rows = (await db.execute(
-        q.offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
+    total = (
+        await db.execute(select(sqlfunc.count()).select_from(q.subquery()))
+    ).scalar()
+    rows = (
+        await db.execute(q.offset((page - 1) * page_size).limit(page_size))
+    ).scalars().all()
 
     hoje = date.today()
     data = []
-    for d in rows:
-        item = DeadlineResponse.model_validate(d).model_dump()
-        dias = (d.data_prazo - hoje).days
+    for prazo in rows:
+        item = DeadlineResponse.model_validate(prazo).model_dump()
+        dias = (prazo.data_prazo - hoje).days
         item["dias_restantes"] = dias
         item["urgencia"] = (
-            "vencido" if dias < 0 else
-            "critico" if dias <= 3 else
-            "atencao" if dias <= 7 else "normal"
+            "vencido"
+            if dias < 0
+            else "critico"
+            if dias <= 3
+            else "atencao"
+            if dias <= 7
+            else "normal"
         )
         data.append(item)
     return {"data": data, "total": total, "page": page, "page_size": page_size}
@@ -141,10 +185,6 @@ async def exportar_csv(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Exporta os prazos (com os mesmos filtros do painel) em CSV — uso recorrente
-    do escritório (imprimir/compartilhar/importar em planilha). Mesmo modelo de
-    acesso do GET /deadlines (painel compartilhado). UTF-8 com BOM p/ o Excel
-    abrir acentos corretamente."""
     q = select(Deadline).where(Deadline.deleted_at.is_(None))
     if status_f:
         q = q.where(Deadline.status == status_f)
@@ -152,13 +192,10 @@ async def exportar_csv(
         q = q.where(Deadline.case_id == case_id)
     if tipo:
         q = q.where(Deadline.tipo == tipo)
-    # [A3] Mesmo escopo de ownership do GET /deadlines: não-gestão só exporta os
-    # prazos que já enxerga; gestão exporta tudo.
     q = _filtro_escopo_prazos(q, cu)
     q = q.order_by(Deadline.data_prazo.asc()).limit(_MAX_EXPORT + 1)
     rows = (await db.execute(q)).scalars().all()
-    truncado = len(rows) > _MAX_EXPORT
-    if truncado:
+    if len(rows) > _MAX_EXPORT:
         rows = rows[:_MAX_EXPORT]
         logger.warning("[export.csv] resultado truncado em %d linhas", _MAX_EXPORT)
 
@@ -170,20 +207,47 @@ async def exportar_csv(
 
 
 def _prazos_para_csv(rows, hoje: date) -> str:
-    """Serializa prazos em CSV (';' pt-BR, BOM UTF-8 p/ Excel). Pura e testável."""
     buf = io.StringIO()
-    w = csv.writer(buf, delimiter=";")
-    w.writerow(["Titulo", "Tipo", "Prioridade", "Status", "Data do prazo",
-                "Data da intimacao", "Dias restantes", "Base legal"])
-    for d in rows:
-        dias = (d.data_prazo - hoje).days if d.data_prazo else ""
-        w.writerow([
-            d.titulo or "", d.tipo or "", d.prioridade or "", d.status or "",
-            d.data_prazo.isoformat() if d.data_prazo else "",
-            d.data_intimacao.isoformat() if getattr(d, "data_intimacao", None) else "",
-            dias, getattr(d, "base_legal", "") or "",
-        ])
-    return "﻿" + buf.getvalue()   # BOM UTF-8
+    writer = csv.writer(buf, delimiter=";")
+    writer.writerow(
+        [
+            "Titulo",
+            "Tipo",
+            "Prioridade",
+            "Status",
+            "Data do prazo",
+            "Data da intimacao",
+            "Publicacao",
+            "Termo inicial",
+            "Regime",
+            "Dias restantes",
+            "Base legal",
+        ]
+    )
+    for prazo in rows:
+        dias = (prazo.data_prazo - hoje).days if prazo.data_prazo else ""
+        writer.writerow(
+            [
+                prazo.titulo or "",
+                prazo.tipo or "",
+                prazo.prioridade or "",
+                prazo.status or "",
+                prazo.data_prazo.isoformat() if prazo.data_prazo else "",
+                prazo.data_intimacao.isoformat()
+                if getattr(prazo, "data_intimacao", None)
+                else "",
+                prazo.data_publicacao.isoformat()
+                if getattr(prazo, "data_publicacao", None)
+                else "",
+                prazo.termo_inicial.isoformat()
+                if getattr(prazo, "termo_inicial", None)
+                else "",
+                getattr(prazo, "regime_calculo", "") or "",
+                dias,
+                getattr(prazo, "base_legal", "") or "",
+            ]
+        )
+    return "﻿" + buf.getvalue()
 
 
 @router.post("/", status_code=201)
@@ -192,91 +256,168 @@ async def criar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    # Cálculo automático se dias_prazo informado
+    caso: Case | None = None
+    if payload.case_id:
+        await verificar_acesso_caso(db, cu, payload.case_id)
+        caso = (
+            await db.execute(
+                select(Case).where(
+                    Case.id == payload.case_id, Case.deleted_at.is_(None)
+                )
+            )
+        ).scalar_one_or_none()
+
+    regime = payload.regime_processual
+    if regime is None and caso is not None:
+        regime = regime_processual_por_area(caso.area)
+
     data_prazo = payload.data_prazo
     base = payload.base_legal
+    calculo_automatico = False
+
     if not data_prazo and payload.dias_prazo and payload.data_intimacao:
-        if payload.dias_uteis:
-            data_prazo = prazo_dias_uteis(payload.data_intimacao, payload.dias_prazo,
-                                          tribunal=payload.tribunal, em_dobro=payload.dobro)
-            base = base or (
-                f"{payload.dias_prazo} dias úteis em dobro (CPC art. 183/229)"
-                if payload.dobro else f"{payload.dias_prazo} dias úteis (CPC art. 219)"
+        if payload.tipo == "processual":
+            if regime is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Não foi possível determinar o regime processual do caso. "
+                        "Informe regime_processual ou a data_prazo manualmente."
+                    ),
+                )
+            if regime == "penal":
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Prazo penal não pode ser convertido pela contagem civil. "
+                        "Confirme o marco inicial e informe a data fatal, ou use "
+                        "o fluxo assistido da intimação DJEN."
+                    ),
+                )
+            data_prazo = prazo_dias_uteis(
+                payload.data_intimacao,
+                payload.dias_prazo,
+                tribunal=payload.tribunal,
+                em_dobro=payload.dobro,
+                aplicar_recesso=True,
             )
+            norma = (
+                "CLT arts. 775 e 775-A"
+                if regime == "trabalhista"
+                else "CPC arts. 219 e 220"
+            )
+            base = base or f"{payload.dias_prazo} dias úteis ({norma})"
+            calculo_automatico = True
         else:
-            data_prazo = prazo_dias_corridos(payload.data_intimacao, payload.dias_prazo, tribunal=payload.tribunal)
-            base = base or f"{payload.dias_prazo} dias corridos (Lei 9.784)"
+            data_prazo = prazo_dias_corridos(
+                payload.data_intimacao,
+                payload.dias_prazo,
+                tribunal=payload.tribunal,
+            )
+            base = base or f"{payload.dias_prazo} dias corridos"
+            calculo_automatico = True
+
     if not data_prazo:
         raise HTTPException(
             status_code=422,
             detail="Informe data_prazo OU (data_intimacao + dias_prazo)",
         )
 
-    if payload.case_id:
-        await verificar_acesso_caso(db, cu, payload.case_id)
-    d = Deadline(
+    prazo = Deadline(
         id=str(uuid4()),
-        titulo=payload.titulo, tipo=payload.tipo,
-        prioridade=payload.prioridade, descricao=payload.descricao,
-        data_prazo=data_prazo, data_intimacao=payload.data_intimacao,
-        base_legal=base, case_id=payload.case_id,
+        titulo=payload.titulo,
+        tipo=payload.tipo,
+        prioridade=payload.prioridade,
+        descricao=payload.descricao,
+        data_prazo=data_prazo,
+        data_intimacao=payload.data_intimacao,
+        regime_calculo=regime,
+        calculo_automatico=calculo_automatico,
+        base_legal=base,
+        case_id=payload.case_id,
         responsavel_id=payload.responsavel_id or cu.id,
     )
-    db.add(d)
-    await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "deadlines", d.id)
+    db.add(prazo)
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "CREATE",
+        "deadlines",
+        prazo.id,
+        dados_depois={
+            "data_prazo": str(data_prazo),
+            "data_intimacao": str(payload.data_intimacao)
+            if payload.data_intimacao
+            else None,
+            "regime_calculo": regime,
+            "calculo_automatico": calculo_automatico,
+        },
+    )
     await db.commit()
-    await db.refresh(d)
-    return DeadlineResponse.model_validate(d)
+    await db.refresh(prazo)
+    return DeadlineResponse.model_validate(prazo)
 
 
 @router.patch("/{deadline_id}")
 async def atualizar(
-    deadline_id: str, payload: DeadlineUpdate,
+    deadline_id: str,
+    payload: DeadlineUpdate,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    d = (await db.execute(
-        select(Deadline).where(
-            Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+    prazo = (
+        await db.execute(
+            select(Deadline).where(
+                Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+            )
         )
-    )).scalar_one_or_none()
-    if not d:
+    ).scalar_one_or_none()
+    if not prazo:
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+    if prazo.case_id:
+        await verificar_acesso_caso(db, cu, prazo.case_id)
 
     mudancas = payload.model_dump(exclude_unset=True)
-    # Status ANTES de aplicar mudanças (o loop abaixo sobrescreve d.status):
-    # usado para gravar a baixa só na TRANSIÇÃO para concluído (idempotente).
-    status_antes = getattr(d.status, "value", d.status)
-    # Alteração de data_prazo é sensível: audit detalhado
-    if "data_prazo" in mudancas and mudancas["data_prazo"] != d.data_prazo:
+    status_antes = getattr(prazo.status, "value", prazo.status)
+    if "data_prazo" in mudancas and mudancas["data_prazo"] != prazo.data_prazo:
         await criar_audit_log(
-            db, cu.id, cu.role.value, "PRAZO_ALTERADO", "deadlines", deadline_id,
-            dados_antes={"data_prazo": str(d.data_prazo)},
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_ALTERADO",
+            "deadlines",
+            deadline_id,
+            dados_antes={"data_prazo": str(prazo.data_prazo)},
             dados_depois={"data_prazo": str(mudancas["data_prazo"])},
         )
-    for k, v in mudancas.items():
-        setattr(d, k, v)
-    # Baixa (conclusão): além de carimbar data_conclusao, registra QUEM concluiu
-    # e deixa trilha PRAZO_CONCLUIDO. Guarda `status_antes != concluido` evita
-    # regravar audit/autor quando o prazo já estava concluído (idempotente,
-    # mesmo padrão de `confirmar`).
+        # Alteração humana de data invalida a afirmação de que a data fatal foi
+        # produzida integralmente pelo motor automático.
+        prazo.calculo_automatico = False
+
+    for key, value in mudancas.items():
+        setattr(prazo, key, value)
+
     if mudancas.get("status") == "concluido" and status_antes != "concluido":
-        d.data_conclusao = datetime.now(timezone.utc)
-        d.concluido_por = cu.id
+        prazo.data_conclusao = datetime.now(timezone.utc)
+        prazo.concluido_por = cu.id
         await criar_audit_log(
-            db, cu.id, cu.role.value, "PRAZO_CONCLUIDO", "deadlines", deadline_id,
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_CONCLUIDO",
+            "deadlines",
+            deadline_id,
             dados_antes={"status": status_antes},
             dados_depois={
                 "status": "concluido",
                 "concluido_por": cu.id,
-                "data_conclusao": d.data_conclusao.isoformat(),
+                "data_conclusao": prazo.data_conclusao.isoformat(),
             },
         )
     await db.commit()
-    await db.refresh(d)
-    return DeadlineResponse.model_validate(d)
+    await db.refresh(prazo)
+    return DeadlineResponse.model_validate(prazo)
 
 
 @router.patch("/{deadline_id}/confirmar", response_model=DeadlineResponse)
@@ -285,30 +426,31 @@ async def confirmar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Confirma um prazo RASCUNHO extraído por IA (confirmado=false → true, #83
-    Gap C). O prazo já dispara alertas mesmo como rascunho — isto apenas remove
-    a marca "a confirmar" e deixa trilha de auditoria (PRAZO_CONFIRMADO).
-
-    Ownership idêntico aos demais endpoints de prazo (verificar_acesso_caso):
-    sem vínculo com o caso → 403/404. Idempotente: reconfirmar não regrava audit."""
-    d = (await db.execute(
-        select(Deadline).where(
-            Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+    prazo = (
+        await db.execute(
+            select(Deadline).where(
+                Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+            )
         )
-    )).scalar_one_or_none()
-    if not d:
+    ).scalar_one_or_none()
+    if not prazo:
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+    if prazo.case_id:
+        await verificar_acesso_caso(db, cu, prazo.case_id)
 
-    if not d.confirmado:
-        d.confirmado = True
+    if not prazo.confirmado:
+        prazo.confirmado = True
         await criar_audit_log(
-            db, cu.id, cu.role.value, "PRAZO_CONFIRMADO", "deadlines", deadline_id,
+            db,
+            cu.id,
+            cu.role.value,
+            "PRAZO_CONFIRMADO",
+            "deadlines",
+            deadline_id,
         )
         await db.commit()
-        await db.refresh(d)
-    return DeadlineResponse.model_validate(d)
+        await db.refresh(prazo)
+    return DeadlineResponse.model_validate(prazo)
 
 
 @router.post("/{deadline_id}/ciencia", response_model=MsgResponse)
@@ -317,22 +459,23 @@ async def confirmar_ciencia(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Confirmação de ciência do prazo (rastro LGPD/responsabilidade)."""
-    d = (await db.execute(
-        select(Deadline).where(
-            Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+    prazo = (
+        await db.execute(
+            select(Deadline).where(
+                Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+            )
         )
-    )).scalar_one_or_none()
-    if not d:
+    ).scalar_one_or_none()
+    if not prazo:
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+    if prazo.case_id:
+        await verificar_acesso_caso(db, cu, prazo.case_id)
 
-    d.ciencia_confirmada = True
-    d.ciencia_confirmada_em = datetime.now(timezone.utc)
-    d.ciencia_confirmada_por = cu.id
+    prazo.ciencia_confirmada = True
+    prazo.ciencia_confirmada_em = datetime.now(timezone.utc)
+    prazo.ciencia_confirmada_por = cu.id
     await criar_audit_log(
-        db, cu.id, cu.role.value, "CIENCIA_PRAZO", "deadlines", deadline_id,
+        db, cu.id, cu.role.value, "CIENCIA_PRAZO", "deadlines", deadline_id
     )
     await db.commit()
     return MsgResponse(detail="Ciência confirmada")
@@ -344,21 +487,22 @@ async def cancelar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    # [B1] Piso por NÍVEL (advogado+), não por tupla literal — a lista antiga
-    # ("admin","socio","advogado") excluía superadmin(9) e causava lockout do
-    # superadmin. requer_advogado garante advogado(6)+ e nunca barra superadmin.
     requer_advogado(cu, detail="Sem permissão para cancelar prazos")
-    d = (await db.execute(
-        select(Deadline).where(
-            Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+    prazo = (
+        await db.execute(
+            select(Deadline).where(
+                Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+            )
         )
-    )).scalar_one_or_none()
-    if not d:
+    ).scalar_one_or_none()
+    if not prazo:
         raise HTTPException(status_code=404, detail="Prazo não encontrado")
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
-    d.deleted_at = datetime.now(timezone.utc)
-    d.status = "cancelado"
-    await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "deadlines", deadline_id)
+    if prazo.case_id:
+        await verificar_acesso_caso(db, cu, prazo.case_id)
+    prazo.deleted_at = datetime.now(timezone.utc)
+    prazo.status = "cancelado"
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "DELETE", "deadlines", deadline_id
+    )
     await db.commit()
     return MsgResponse(detail="Prazo cancelado")
