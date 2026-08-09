@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "138_consolida_fontes_ingestao"
+HEAD_REVISION = "139_preliminares_fundacao_schema"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -102,9 +102,7 @@ def test_vinculo_legal_doc_ai_log_encadeia_apos_metricas_de_rota():
 
 
 def test_hardening_data_room_encadeia_apos_vinculo_legal_doc():
-    revision = _script_directory().get_revision(
-        "124_dataroom_public_hardening"
-    )
+    revision = _script_directory().get_revision("124_dataroom_public_hardening")
     assert revision.down_revision == "123_legal_doc_ai_log_vinculo"
 
 
@@ -128,3 +126,8 @@ def test_publicacao_explicita_encadeia_apos_quatro_estados():
 def test_ejc_skills_uso_encadeia_apos_publicacao_explicita():
     revision = _script_directory().get_revision("130_ejc_skills_uso")
     assert revision.down_revision == "127_publicacao_explicita"
+
+
+def test_preliminares_encadeiam_apos_consolidacao_fontes():
+    revision = _script_directory().get_revision("139_preliminares_fundacao_schema")
+    assert revision.down_revision == "138_consolida_fontes_ingestao"
