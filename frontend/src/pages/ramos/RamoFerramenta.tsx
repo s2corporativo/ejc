@@ -62,7 +62,9 @@ function TaxasBacenView({
           </div>
         ))}
       </div>
-      {aviso && <div className="text-[11px] text-slate-500 italic">{aviso}</div>}
+      {aviso && (
+        <div className="text-[11px] text-slate-500 italic">{aviso}</div>
+      )}
     </div>
   );
 }
@@ -96,7 +98,9 @@ function VerbaRescisView({ data }: { data: any }) {
         </div>
       </div>
       <div className="text-[10px] text-slate-400 space-y-0.5">
-        <div>Tempo de contrato: {data.dados_contrato?.tempo_contrato_anos} anos</div>
+        <div>
+          Tempo de contrato: {data.dados_contrato?.tempo_contrato_anos} anos
+        </div>
         <div>
           Aviso prévio: {data.dados_contrato?.dias_aviso_previo} dias (Lei
           12.506/11)
@@ -118,7 +122,11 @@ function ResultadoView({ data }: { data: any }) {
       <ul className="space-y-1">
         {data.map((item, i) => (
           <li key={i} className="text-xs text-navy">
-            {typeof item === "object" ? <ResultadoView data={item} /> : String(item)}
+            {typeof item === "object" ? (
+              <ResultadoView data={item} />
+            ) : (
+              String(item)
+            )}
           </li>
         ))}
       </ul>
@@ -271,7 +279,9 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
     <div className="card p-4">
       <div className="flex items-center gap-2 mb-1">
         <IconeCalc size={15} className="text-gold-600" />
-        <h3 className="font-serif font-semibold text-navy text-sm">{f.titulo}</h3>
+        <h3 className="font-serif font-semibold text-navy text-sm">
+          {f.titulo}
+        </h3>
         {naoHomologada && (
           <span
             className="text-[10px] font-semibold text-warn-800 bg-warn-100 border border-warn-300 px-1.5 py-0.5 rounded-full whitespace-nowrap"
@@ -312,7 +322,9 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
                 <select
                   className="input text-sm"
                   value={vals[c.nome] ?? ""}
-                  onChange={(e) => setVals({ ...vals, [c.nome]: e.target.value })}
+                  onChange={(e) =>
+                    setVals({ ...vals, [c.nome]: e.target.value })
+                  }
                 >
                   <option value="">—</option>
                   {c.opcoes?.map((o) => (
@@ -327,7 +339,9 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
                   type={c.tipo}
                   step={c.tipo === "number" ? "0.01" : undefined}
                   value={vals[c.nome] ?? ""}
-                  onChange={(e) => setVals({ ...vals, [c.nome]: e.target.value })}
+                  onChange={(e) =>
+                    setVals({ ...vals, [c.nome]: e.target.value })
+                  }
                 />
               )}
             </div>
@@ -336,7 +350,11 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
       )}
 
       {(!f.autoLoad || visiveis.length > 0) && (
-        <button className="btn-gold text-sm mt-3" disabled={loading} onClick={calcular}>
+        <button
+          className="btn-gold text-sm mt-3"
+          disabled={loading}
+          onClick={calcular}
+        >
           {loading
             ? "Calculando..."
             : f.campos.length === 0
@@ -389,7 +407,8 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
               </button>
               {bloqueadaParaDocumento && (
                 <span className="text-[11px] text-warn-700">
-                  Demonstrativo e minuta bloqueados — ferramenta em revisão jurídica.
+                  Demonstrativo e minuta bloqueados — ferramenta em revisão
+                  jurídica.
                 </span>
               )}
               {docMsg && (
