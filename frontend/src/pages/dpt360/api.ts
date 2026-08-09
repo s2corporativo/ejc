@@ -100,6 +100,24 @@ export type DptCompanyProfile = {
   notes: string[];
 };
 
+export type DptAction = "conselho" | "preflight" | "diagnostico";
+
+export type DptActionResponse = {
+  action: DptAction;
+  client_id: string;
+  conteudo: string;
+  estruturado?: Record<string, unknown> | null;
+  fontes: Array<Record<string, unknown>>;
+  citacoes: unknown[];
+  alertas: string[];
+  critica_adversarial?: Record<string, unknown> | null;
+  is_rascunho: boolean;
+  requer_revisao: boolean;
+  status_hitl: string;
+  aviso_hitl: string;
+  log_id?: string | null;
+};
+
 export async function getDptDashboard(): Promise<DptDashboard> {
   const response = await api.get<DptDashboard>("/dpt360/dashboard");
   return response.data;
@@ -107,5 +125,15 @@ export async function getDptDashboard(): Promise<DptDashboard> {
 
 export async function getDptCompanyProfile(clientId: string): Promise<DptCompanyProfile> {
   const response = await api.get<DptCompanyProfile>(`/dpt360/companies/${clientId}`);
+  return response.data;
+}
+
+export async function runDptAction(payload: {
+  action: DptAction;
+  client_id: string;
+  question: string;
+  area?: string;
+}): Promise<DptActionResponse> {
+  const response = await api.post<DptActionResponse>("/dpt360/actions", payload);
   return response.data;
 }
