@@ -99,6 +99,10 @@ ADICOES_INTENCIONAIS = {
     ("/api/jurimetria/analise-prospectiva", "POST"),
     ("/api/jurimetria/cobertura-rag", "GET"),
     ("/api/jurimetria/cobertura-mg-jec", "GET"),
+    # PR #938: vínculo canônico de documento solto ao caso. A busca filtra
+    # candidatos server-side e o POST aplica domínio/auditoria de forma atômica.
+    ("/api/cases/{case_id}/documentos/candidatos", "GET"),
+    ("/api/cases/{case_id}/documentos/{document_id}/vincular", "POST"),
     # DPT Empresarial 360 — superfície nova declarada nominalmente. Não usar
     # wildcard: cada contrato precisa ser revisto quando surgir ou desaparecer.
     ("/api/dpt360/dashboard", "GET"),
