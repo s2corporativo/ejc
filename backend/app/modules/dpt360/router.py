@@ -4,11 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import require_roles
 from app.models.user import User
 from app.modules.dpt360.company_service import get_company_profile
 from app.modules.dpt360.dashboard_service import build_dashboard
 from app.modules.dpt360.diagnostic_service import build_diagnostic_readiness
+from app.modules.dpt360.intake_schemas import DptInboundOpportunity, DptInboundOpportunityOut
+from app.modules.dpt360.intake_service import create_inbound_opportunity
 from app.modules.dpt360.intelligence_service import run_dpt_action
 from app.modules.dpt360.radar_service import build_today_radar
 from app.modules.dpt360.report_service import build_executive_report
@@ -76,6 +79,20 @@ async def executive_report(
     if report is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
     return report
+
+
+@router.post(
+    "/intake/opportunities",
+    response_model=DptInboundOpportunityOut,
+    dependencies=[Depends(rate_limit("dpt360-intake-opportunity", 10))],
+)
+async def intake_opportunity(
+    payload: DptInboundOpportunity,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["advogado"])),
+) -> DptInboundOpportunityOut:
+    """Entrada autenticada interna. Não é endpoint público do site."""
+    return await create_inbound_opportunity(db, cu, payload)
 
 
 @router.post("/actions", response_model=DptActionResponse)
