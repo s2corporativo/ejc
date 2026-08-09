@@ -37,8 +37,29 @@ def _data_iso(valor: object) -> str | None:
     return None
 
 
+def _identificador_citavel(rec: dict) -> str:
+    """Mantém a identidade completa do acórdão para RAG/citação.
+
+    O número simples se repete entre anos e colegiados. A chave oficial da API
+    (ex.: AC-123-2026-P) é preferida; sem ela, compomos número/ano/colegiado.
+    """
+    chave = str(rec.get("chave") or "").strip()
+    if chave:
+        return chave
+    numero = str(rec.get("numero") or "").strip()
+    ano = str(rec.get("ano") or "").strip()
+    colegiado = str(rec.get("colegiado") or "").strip()
+    partes = [numero]
+    if ano:
+        partes.append(ano)
+    ident = "/".join(x for x in partes if x)
+    if colegiado:
+        ident = f"{ident} — {colegiado}" if ident else colegiado
+    return ident
+
+
 def normalizar_registro(rec: dict) -> JulgadoNormalizado | None:
-    numero = str(rec.get("numero") or rec.get("chave") or "").strip()
+    numero = _identificador_citavel(rec)
     titulo = str(rec.get("titulo") or "").strip()
     sumario = str(rec.get("sumario") or "").strip()
     if not numero or not (titulo or sumario):
@@ -57,9 +78,7 @@ def normalizar_registro(rec: dict) -> JulgadoNormalizado | None:
         relator=str(rec.get("relator") or "").strip() or None,
         classe=str(rec.get("tipo") or "Acórdão").strip() or "Acórdão",
         area_juridica="Administrativo",
-        chave_principal=(
-            f"tcu:{rec.get('chave')}" if rec.get("chave") else f"tcu:{numero}"
-        ),
+        chave_principal=f"tcu:{str(rec.get('chave') or numero).strip()}",
     )
 
 
@@ -87,9 +106,13 @@ async def buscar(
                 inicio=pagina * _POR_PAGINA,
                 quantidade=_POR_PAGINA,
             )
-        except Exception as exc:  # degradação: página posterior não derruba as já lidas
+        except Exception as exc:
+            # O contrato do importador só distingue sucesso/erro pela exceção;
+            # esconder uma queda como [] registraria falso "sucesso, zero itens".
+            # Propagamos inclusive em páginas posteriores para preservar a
+            # rastreabilidade do job; resultados ainda não foram persistidos.
             logger.warning("TCU página %s: %s: %s", pagina, type(exc).__name__, exc)
-            break
+            raise
         if not itens:
             break
         for rec in itens:
