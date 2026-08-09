@@ -60,13 +60,6 @@ const RELACOES_VISUAIS: Record<string, RelacaoVisualArea[]> = {
   ],
   empresarial: [
     {
-      slug: "dpt360",
-      label: "DPT Empresarial 360",
-      descricao:
-        "Cockpit transversal para empresas: diagnóstico, radar, obrigações, inteligência e relatórios, reutilizando os mesmos dados canônicos do EJC.",
-      workspace: "/dpt360",
-    },
-    {
       slug: "societario",
       label: "Societário",
       descricao:
