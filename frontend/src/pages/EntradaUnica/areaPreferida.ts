@@ -11,3 +11,8 @@ export function resolverAreaPreferida(valor: string | null): string | null {
   if (!valor) return null;
   return AREAS_VALIDAS.has(valor) ? valor : null;
 }
+
+/** Rótulo humano da área canônica; não inventa nome para slug desconhecido. */
+export function rotuloAreaPreferida(slug: string): string {
+  return AREAS_CANONICAS.find((area) => area.slug === slug)?.nome ?? slug;
+}
