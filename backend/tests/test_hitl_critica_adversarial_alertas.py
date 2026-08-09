@@ -43,6 +43,34 @@ def test_critica_disponivel_propaga_alertas_de_provider_e_citacao_sem_aviso_gene
     assert "Relatório de IA sujeito a revisão humana." not in resultado["alertas"]
 
 
+def test_alertas_da_critica_em_string_nao_sao_iterados_por_caractere():
+    resultado = {
+        "alertas": [],
+        "critica_adversarial": {
+            "disponivel": True,
+            "alertas": "texto malformado",
+        },
+    }
+
+    _propagar_alertas_critica(resultado)
+
+    assert resultado["alertas"] == []
+
+
+def test_alertas_da_critica_em_objeto_malformado_sao_ignorados():
+    resultado = {
+        "alertas": [],
+        "critica_adversarial": {
+            "disponivel": True,
+            "alertas": {"mensagem": "não iterar"},
+        },
+    }
+
+    _propagar_alertas_critica(resultado)
+
+    assert resultado["alertas"] == []
+
+
 def test_sem_critica_nao_altera_alertas():
     resultado = {"alertas": ["x"], "critica_adversarial": None}
     _propagar_alertas_critica(resultado)
