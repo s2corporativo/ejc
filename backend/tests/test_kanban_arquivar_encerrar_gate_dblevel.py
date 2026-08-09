@@ -1,9 +1,9 @@
-"""PATCH /cases/{case_id}/kanban não pode sincronizar status para
-arquivado/encerrado sem passar pelo endpoint dedicado.
+"""Kanban é organização visual e não pode substituir transições de Case.
 
-Cobre também reabertura e concorrência: o status usado para decidir a limpeza
-deve estar protegido por lock transacional para não reabrir com metadados
-terminais obsoletos.
+O endpoint deve bloquear entrada em status terminal e também impedir que um caso
+já encerrado/arquivado seja visualmente movido para coluna ativa antes da
+reabertura canônica. A decisão é serializada com `FOR UPDATE` para não usar
+estado obsoleto diante de transição concorrente.
 """
 from __future__ import annotations
 
@@ -95,20 +95,13 @@ async def test_estagiario_nao_arquiva_nem_encerra_arrastando_cartao():
         await db.commit()
         try:
             cu = await _carregar_user(db, estagiario)
-
-            with pytest.raises(HTTPException) as exc:
-                await update_case_kanban(
-                    caso, {"kanban_column": "Arquivado", "kanban_position": 0}, db, cu,
-                )
-            assert exc.value.status_code == 422
-            assert "arquivar" in str(exc.value.detail).lower()
-
-            with pytest.raises(HTTPException) as exc:
-                await update_case_kanban(
-                    caso, {"kanban_column": "Encerrado", "kanban_position": 0}, db, cu,
-                )
-            assert exc.value.status_code == 422
-            assert "encerrar" in str(exc.value.detail).lower()
+            for coluna, termo in (("Arquivado", "arquivar"), ("Encerrado", "encerrar")):
+                with pytest.raises(HTTPException) as exc:
+                    await update_case_kanban(
+                        caso, {"kanban_column": coluna, "kanban_position": 0}, db, cu,
+                    )
+                assert exc.value.status_code == 422
+                assert termo in str(exc.value.detail).lower()
 
             status_atual = (await db.execute(
                 text("SELECT status FROM cases WHERE id = :id"), {"id": caso},
@@ -118,7 +111,7 @@ async def test_estagiario_nao_arquiva_nem_encerra_arrastando_cartao():
             await _limpar(db, case_ids=[caso], user_ids=[socio, estagiario], client_ids=[cli])
 
 
-async def test_kanban_move_livre_para_coluna_nao_terminal():
+async def test_kanban_move_livre_para_coluna_nao_terminal_sem_mudar_status():
     from app.core.database import AsyncSessionLocal
     from app.routers.kanban import update_case_kanban
 
@@ -135,7 +128,7 @@ async def test_kanban_move_livre_para_coluna_nao_terminal():
             )
             assert resultado["status_sincronizado"] is None
             row = (await db.execute(
-                text("SELECT status, kanban_column, kanban_position FROM cases WHERE id = :id"),
+                text("SELECT status, kanban_column, kanban_position FROM cases WHERE id=:id"),
                 {"id": caso},
             )).one()
             assert row[0] == "em_instrucao"
@@ -145,85 +138,55 @@ async def test_kanban_move_livre_para_coluna_nao_terminal():
             await _limpar(db, case_ids=[caso], user_ids=[estagiario], client_ids=[cli])
 
 
-async def test_kanban_reabertura_limpa_campos_de_desfecho():
+@pytest.mark.parametrize("status", ["encerrado", "arquivado"])
+async def test_kanban_nao_reabre_caso_terminal_por_coluna_ativa(status: str):
     from app.core.database import AsyncSessionLocal
     from app.routers.kanban import update_case_kanban
 
-    tok = f"Kan{uuid4().hex[:6]}"
+    tok = f"Reab{uuid4().hex[:6]}"
     async with AsyncSessionLocal() as db:
         socio = await _criar_user(db, "socio")
         cli = await _criar_cliente(db, f"Cliente {tok}")
-        caso = await _criar_caso(db, cli, f"Caso {tok}", resp_id=socio, status="encerrado")
-        await db.execute(
-            text("""
-                UPDATE cases SET
-                    data_encerramento = :agora,
-                    resultado = 'exito_total',
-                    motivo_resultado = 'Acordo homologado',
-                    provas_determinantes = 'Contrato assinado',
-                    licoes_aprendidas = 'Documentar cedo',
-                    kanban_column = 'Encerrado'
-                WHERE id = :id
-            """),
-            {"id": caso, "agora": datetime.now(timezone.utc)},
-        )
-        await db.commit()
-        try:
-            cu = await _carregar_user(db, socio)
-            resultado = await update_case_kanban(
-                caso, {"kanban_column": "Aguardando prazo", "kanban_position": 0}, db, cu,
-            )
-            assert resultado["status_sincronizado"] == "aberto"
-            row = (await db.execute(
-                text(
-                    "SELECT status, data_encerramento, resultado, motivo_resultado, "
-                    "provas_determinantes, licoes_aprendidas FROM cases WHERE id = :id"
-                ),
-                {"id": caso},
-            )).one()
-            assert row[0] == "aberto"
-            assert all(v is None for v in row[1:])
-        finally:
-            await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
-
-
-async def test_kanban_reabertura_de_arquivado_limpa_metadados_de_arquivo():
-    from app.core.database import AsyncSessionLocal
-    from app.routers.kanban import update_case_kanban
-
-    tok = f"Arq{uuid4().hex[:6]}"
-    async with AsyncSessionLocal() as db:
-        socio = await _criar_user(db, "socio")
-        cli = await _criar_cliente(db, f"Cliente {tok}")
-        caso = await _criar_caso(db, cli, f"Caso {tok}", resp_id=socio, status="arquivado")
+        caso = await _criar_caso(db, cli, f"Caso {tok}", resp_id=socio, status=status)
         await db.execute(
             text(
-                "UPDATE cases SET archived_at=:agora, archive_reason='Sem movimentação', "
-                "kanban_column='Arquivado' WHERE id=:id"
+                "UPDATE cases SET archived_at=:agora, archive_reason='Registro terminal', "
+                "data_encerramento=:agora, resultado='exito_total' WHERE id=:id"
             ),
             {"id": caso, "agora": datetime.now(timezone.utc)},
         )
         await db.commit()
         try:
             cu = await _carregar_user(db, socio)
-            await update_case_kanban(
-                caso, {"kanban_column": "Aguardando prazo", "kanban_position": 0}, db, cu,
-            )
+            with pytest.raises(HTTPException) as exc:
+                await update_case_kanban(
+                    caso,
+                    {"kanban_column": "Aguardando prazo", "kanban_position": 0},
+                    db,
+                    cu,
+                )
+            assert exc.value.status_code == 422
+            assert "reabra" in str(exc.value.detail).lower()
+
             row = (await db.execute(
-                text("SELECT status, archived_at, archive_reason FROM cases WHERE id=:id"),
+                text(
+                    "SELECT status, archived_at, archive_reason, data_encerramento, resultado "
+                    "FROM cases WHERE id=:id"
+                ),
                 {"id": caso},
             )).one()
-            assert row[0] == "aberto"
-            assert row[1] is None
-            assert row[2] is None
+            assert row[0] == status
+            assert row[1] is not None
+            assert row[2] == "Registro terminal"
+            assert row[3] is not None
+            assert row[4] == "exito_total"
         finally:
             await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
 
 
-async def test_kanban_rele_status_apos_lock_concorrente_e_limpa_arquivamento():
-    """Uma transação concorrente que arquiva o caso deve terminar antes de o
-    Kanban decidir a reabertura; ao destravar, o handler relê `arquivado` e
-    limpa os metadados terminais na mesma transação."""
+async def test_kanban_rele_status_apos_lock_concorrente_e_bloqueia_reabertura():
+    """Se outra transação arquivar enquanto o Kanban aguarda, o handler deve
+    reler o status depois do lock e recusar a movimentação para coluna ativa."""
     from app.core.database import AsyncSessionLocal
     from app.routers.kanban import update_case_kanban
 
@@ -237,9 +200,7 @@ async def test_kanban_rele_status_apos_lock_concorrente_e_limpa_arquivamento():
     try:
         async with AsyncSessionLocal() as escritor, AsyncSessionLocal() as kanban_db:
             cu = await _carregar_user(kanban_db, socio)
-            await escritor.execute(
-                text("SELECT id FROM cases WHERE id=:id FOR UPDATE"), {"id": caso}
-            )
+            await escritor.execute(text("SELECT id FROM cases WHERE id=:id FOR UPDATE"), {"id": caso})
             await escritor.execute(
                 text(
                     "UPDATE cases SET status='arquivado', archived_at=:agora, "
@@ -258,18 +219,20 @@ async def test_kanban_rele_status_apos_lock_concorrente_e_limpa_arquivamento():
             )
             await asyncio.sleep(0.1)
             assert not tarefa.done(), "Kanban não aguardou o lock concorrente"
-
             await escritor.commit()
-            resultado = await asyncio.wait_for(tarefa, timeout=5)
-            assert resultado["status_sincronizado"] == "aberto"
+
+            with pytest.raises(HTTPException) as exc:
+                await asyncio.wait_for(tarefa, timeout=5)
+            assert exc.value.status_code == 422
+            assert "reabra" in str(exc.value.detail).lower()
 
             row = (await kanban_db.execute(
                 text("SELECT status, archived_at, archive_reason FROM cases WHERE id=:id"),
                 {"id": caso},
             )).one()
-            assert row[0] == "aberto"
-            assert row[1] is None
-            assert row[2] is None
+            assert row[0] == "arquivado"
+            assert row[1] is not None
+            assert row[2] == "Concorrente"
     finally:
         async with AsyncSessionLocal() as cleanup:
             await _limpar(cleanup, case_ids=[caso], user_ids=[socio], client_ids=[cli])
