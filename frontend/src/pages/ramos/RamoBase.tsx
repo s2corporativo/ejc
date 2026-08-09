@@ -1,29 +1,28 @@
-﻿// ── src/pages/ramos/RamoBase.tsx ─────────────────────────────────────────────
-// Página genérica de ramo especializado. Renderiza qualquer um dos 6 ramos a
-// partir de ramosConfig.ts. Três blocos: ferramentas (calculadoras com resultado
-// ao vivo), formulário de criação e listagem dos casos do ramo.
-//
-// Todas as calculadoras devolvem MINUTAS (HITL) — o resultado exibe o aviso.
-import { useEffect, useMemo, useState, useRef } from "react";
-import { toast } from "../../components/Toast";
-import Markdown from "../../components/Markdown";
-import { useParams, Link } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router";
 import {
-  Plus,
+  ArrowLeft,
+  BookOpen,
+  Briefcase,
   Calculator,
-  Building2,
-  Scale,
-  Lock,
-  HardHat,
-  Landmark,
-  Banknote,
-  Folder,
-  Receipt,
-  Leaf,
-  TrendingUp,
-  Users,
-  Car,
+  ExternalLink,
+  FileSearch,
+  FolderOpen,
+  Library,
+  Plus,
+  Sparkles,
+  Wrench,
 } from "lucide-react";
+import Markdown from "../../components/Markdown";
+import { toast } from "../../components/Toast";
+import {
+  Empty,
+  Modal,
+  PageHeader,
+  Spinner,
+  StatusBadge,
+} from "../../components/UI";
+import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
 import api from "../../lib/api";
 import {
   AVISO_FERRAMENTA_NAO_HOMOLOGADA,
@@ -32,25 +31,6 @@ import {
 } from "../../lib/iaErro";
 import { useCaseContext } from "../../stores/caseContext";
 import type { Case } from "../../types";
-import {
-  PageHeader,
-  StatusBadge,
-  Modal,
-  Empty,
-  Spinner,
-  fmtMoney,
-} from "../../components/UI";
-import { RAMOS, type RamoConfig, type FerramentaConfig } from "./ramosConfig";
-import {
-  camposVisiveis,
-  chavesObsoletas,
-  paramsVisiveis,
-} from "./camposCondicionais";
-import {
-  linhasDoResultado,
-  rodapeDoResultado,
-  provenienciaDoResultado,
-} from "./demonstrativo";
 import GuiaBancario from "../../components/GuiaBancario";
 import AnaliseExtratos from "../../components/AnaliseExtratos";
 import BancarioForense from "../../components/BancarioForense";
@@ -74,442 +54,57 @@ import GuiaEmpresarial from "../../components/GuiaEmpresarial";
 import SociedadesCliente from "../../components/SociedadesCliente";
 import LgpdRegistros from "../../components/LgpdRegistros";
 import GuiaLgpd from "../../components/GuiaLgpd";
-import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
-import { RamoStats } from "../../components/Dashboards";
+import {
+  camposVisiveis,
+  chavesObsoletas,
+  paramsVisiveis,
+} from "./camposCondicionais";
+import {
+  linhasDoResultado,
+  provenienciaDoResultado,
+  rodapeDoResultado,
+} from "./demonstrativo";
+import { RAMOS, type FerramentaConfig, type RamoConfig } from "./ramosConfig";
+import {
+  abasDoWorkspace,
+  casosDaAreaPath,
+  ferramentasDoWorkspace,
+  importacaoDaAreaPath,
+  novoCasoPath,
+  subareasDoWorkspace,
+  subtituloDoWorkspace,
+  tituloDoWorkspace,
+  type WorkspaceTabId,
+} from "./areasWorkspace";
 
-// Mapa de ícones por nome (evita importar a lib inteira)
-const ICONES: Record<string, any> = {
-  Building2,
-  Scale,
-  Lock,
-  HardHat,
-  Landmark,
-  Banknote,
-  Folder,
-  Receipt,
-  Leaf,
-  Users,
-  Car,
+const ROTULO_ABA: Record<WorkspaceTabId, string> = {
+  "visao-geral": "Visão geral",
+  casos: "Casos",
+  ferramentas: "Ferramentas",
+  analise: "IA & Análise",
+  referencias: "Referências",
 };
 
-// Tailwind purga classes dinâmicas; mapa estático garante que as cores existam no build
-const COR_BORDA: Record<string, string> = {
-  amber: "border-warn-500",
-  blue: "border-primary-500",
-  red: "border-danger-500",
-  green: "border-green-500",
-  slate: "border-slate-500",
-  yellow: "border-yellow-500",
+const ICONE_ABA: Record<WorkspaceTabId, typeof Briefcase> = {
+  "visao-geral": Briefcase,
+  casos: FolderOpen,
+  ferramentas: Wrench,
+  analise: Sparkles,
+  referencias: Library,
 };
 
-function rotulo(v: string) {
-  return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+function rotulo(valor: string) {
+  return valor.replace(/_/g, " ").replace(/\b\w/g, (letra) => letra.toUpperCase());
 }
 
-// ── Bloco de uma ferramenta/calculadora ──────────────────────────────────────
-function Ferramenta({ f }: { f: FerramentaConfig }) {
-  const [vals, setVals] = useState<Record<string, any>>(() => {
-    const init: Record<string, any> = {};
-    f.campos.forEach((c) => {
-      if (c.default !== undefined) init[c.nome] = c.default;
-    });
-    return init;
-  });
-  const [res, setRes] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-  const [gerandoDoc, setGerandoDoc] = useState(false);
-  const [docMsg, setDocMsg] = useState<string | null>(null);
-  // Link "Ver em Peças" após salvar — diz ONDE a peça foi parar (a listagem
-  // de /pecas filtra pelo caso ativo; sem o vínculo, o rascunho ficava
-  // invisível e o usuário concluía que "sumiu").
-  const [docLink, setDocLink] = useState<string | null>(null);
-  const casoAtivo = useCaseContext((state) => state.caso);
-
-  // Bloqueio de risco (auditoria Áreas de Atuação — Onda 1): ferramenta não
-  // homologada — pela config OU pela resposta da API — não pode virar
-  // demonstrativo nem minuta; o resultado só aparece com o aviso jurídico.
-  const naoHomologada = f.homologada === false;
-  const bloqueadaParaDocumento = naoHomologada || res?.homologada === false;
-  const MOTIVO_BLOQUEIO = `Bloqueado: ${AVISO_FERRAMENTA_NAO_HOMOLOGADA}`;
-
-  // Converte o resultado da calculadora em um Demonstrativo (LegalDoc rascunho).
-  const gerarDemonstrativo = async () => {
-    if (!res) return;
-    // Guarda dupla: além do botão desabilitado, impede persistir resultado
-    // de ferramenta em revisão jurídica como peça.
-    if (bloqueadaParaDocumento) {
-      setDocMsg(MOTIVO_BLOQUEIO);
-      return;
-    }
-    setGerandoDoc(true);
-    setDocMsg(null);
-    setDocLink(null);
-    // Achata a resposta inteira (objetos e arrays aninhados) — o filtro antigo
-    // só aceitava escalares de 1º nível e produzia peças vazias depois que a
-    // Onda 2 moveu o conteúdo para `marcos[]`, `componentes[]`, `fase_1{}`…
-    const linhas = linhasDoResultado(res);
-    // O rodapé carrega a fundamentação (fontes, vigência, versão da regra).
-    const rodape = rodapeDoResultado(res);
-    // Proveniência estruturada (Issue #702) — o backend passou a EXIGIR
-    // `fontes`/`vigencia_regra`/`versao_regra` no corpo; a calculadora já
-    // carimba esses campos na resposta (mesma leitura do rodapé acima), só
-    // falta repassá-los. Sem proveniência suficiente, bloqueia ANTES de
-    // chamar a API — evita depender do 422 do backend para um caso que a UI
-    // já sabe que vai falhar.
-    const proveniencia = provenienciaDoResultado(res);
-    if (!proveniencia) {
-      setDocMsg(
-        "Não foi possível salvar o demonstrativo: a resposta da calculadora " +
-          "não trouxe fontes/vigência/versão da regra necessárias para a " +
-          "proveniência do cálculo.",
-      );
-      setGerandoDoc(false);
-      return;
-    }
-    try {
-      // Modo Caso: vincula o demonstrativo ao caso ativo para ele aparecer
-      // na listagem de Peças (que filtra pelo caso ativo por padrão).
-      await api.post("/pecas/demonstrativo", {
-        titulo: f.titulo,
-        base_legal: f.baseLegal,
-        linhas,
-        rodape: rodape || undefined,
-        case_id: casoAtivo?.id || undefined,
-        // Origem do cálculo — permite ao backend aplicar o gate de
-        // homologação server-side (não só o bloqueio de UI).
-        ferramenta: f.endpoint,
-        // Proveniência do cálculo (Issue #702) — exigida pelo backend desde
-        // que `ferramenta` passou a ser validada contra rotas reais.
-        fontes: proveniencia.fontes,
-        vigencia_regra: proveniencia.vigencia_regra,
-        versao_regra: proveniencia.versao_regra,
-      });
-      setDocMsg(
-        casoAtivo
-          ? `✓ Salvo em Peças > Rascunhos, vinculado ao caso "${casoAtivo.titulo}".`
-          : "✓ Salvo em Peças > Rascunhos (sem vínculo a caso).",
-      );
-      setDocLink(casoAtivo ? `/pecas?caso=${casoAtivo.id}` : "/pecas");
-    } catch (e: any) {
-      // `detail` pode ser objeto (gate de homologação) ou array (Pydantic):
-      // nunca renderizar cru — sempre string via helper.
-      setDocMsg(
-        mensagemErroFerramenta(e, "Falha ao salvar o demonstrativo em Peças."),
-      );
-    } finally {
-      setGerandoDoc(false);
-    }
-  };
-
-  // Campos condicionais: só existem para a opção escolhida (ex.: cada fase do
-  // recurso de multa tem a SUA data). Renderizar e enviar os demais gera 422.
-  const visiveis = camposVisiveis(f.campos, vals);
-
-  // Trocar a opção condicionante apaga o que ficou órfão — sem isso o valor
-  // continuaria no estado e voltaria a viajar se o campo reaparecesse.
-  useEffect(() => {
-    const obsoletas = chavesObsoletas(f.campos, vals);
-    if (obsoletas.length === 0) return;
-    setVals((atuais) => {
-      const copia = { ...atuais };
-      obsoletas.forEach((nome) => delete copia[nome]);
-      return copia;
-    });
-  }, [f.campos, vals]);
-
-  const calcular = async () => {
-    setLoading(true);
-    setErro(null);
-    setRes(null);
-    try {
-      const r = await api.get(f.endpoint, {
-        params: paramsVisiveis(f.campos, vals),
-      });
-      setRes(r.data);
-    } catch (e: any) {
-      // 503 "ferramenta_nao_homologada" vira mensagem controlada — nunca
-      // lista vazia nem erro genérico/objeto cru.
-      setErro(mensagemErroFerramenta(e));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Auto-load para ferramentas sem campos de entrada (ex: taxas-bacen)
-  useEffect(() => {
-    if (f.autoLoad) calcular();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [f.id]);
-
-  // Ícone especial para taxas ao vivo
-  const IconeCalc = f.id === "taxas-bacen" ? TrendingUp : Calculator;
-
-  return (
-    <div className="card p-4">
-      <div className="flex items-center gap-2 mb-1">
-        <IconeCalc size={15} className="text-gold-600" />
-        <h3 className="font-serif font-semibold text-navy text-sm">
-          {f.titulo}
-        </h3>
-        {naoHomologada && (
-          <span
-            className="text-[10px] font-semibold text-warn-800 bg-warn-100 border border-warn-300 px-1.5 py-0.5 rounded-full whitespace-nowrap"
-            title={MOTIVO_BLOQUEIO}
-          >
-            ⚠️ Não homologada
-          </span>
-        )}
-        {f.autoLoad && res && (
-          <span className="ml-auto text-[10px] text-green-600 font-medium bg-green-50 px-1.5 py-0.5 rounded">
-            ● ao vivo
-          </span>
-        )}
-      </div>
-      <p className="text-xs text-slate-500 mb-3">
-        {f.descricao} · <span className="text-gold-700">{f.baseLegal}</span>{" "}
-        {/* AI-107/AI-113: nenhuma calculadora está homologada — o estado é
-            comunicado como selo operacional, não só aviso genérico. */}
-        <span className="inline-block ml-1 px-1.5 py-0.5 rounded bg-warn-50 text-warn-700 text-[10px] font-medium align-middle">
-          ⚠ regra em revisão — não homologada
-        </span>
-      </p>
-
-      {naoHomologada && (
-        <div className="mb-3 p-2 rounded-lg bg-warn-50 border border-warn-200 text-xs text-warn-800">
-          ⚠️ {AVISO_FERRAMENTA_NAO_HOMOLOGADA}
-        </div>
-      )}
-
-      {visiveis.length > 0 && (
-        <div className="grid grid-cols-2 gap-2">
-          {visiveis.map((c) => (
-            <div
-              key={c.nome}
-              className={c.tipo === "select" ? "col-span-2 sm:col-span-1" : ""}
-            >
-              <label className="label text-xs">{c.label}</label>
-              {c.tipo === "select" ? (
-                <select
-                  className="input text-sm"
-                  value={vals[c.nome] ?? ""}
-                  onChange={(e) =>
-                    setVals({ ...vals, [c.nome]: e.target.value })
-                  }
-                >
-                  <option value="">—</option>
-                  {c.opcoes?.map((o) => (
-                    <option key={o} value={o}>
-                      {rotulo(o)}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  className="input text-sm"
-                  type={c.tipo}
-                  step={c.tipo === "number" ? "0.01" : undefined}
-                  value={vals[c.nome] ?? ""}
-                  onChange={(e) =>
-                    setVals({ ...vals, [c.nome]: e.target.value })
-                  }
-                />
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Só mostra botão "Calcular" se não for autoLoad OU se houver campos */}
-      {(!f.autoLoad || visiveis.length > 0) && (
-        <button
-          className="btn-gold text-sm mt-3"
-          disabled={loading}
-          onClick={calcular}
-        >
-          {loading
-            ? "Calculando..."
-            : f.campos.length === 0
-              ? "Atualizar"
-              : "Calcular"}
-        </button>
-      )}
-
-      {loading && f.autoLoad && !res && (
-        <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
-          <Spinner /> Consultando BCB...
-        </div>
-      )}
-
-      {erro && (
-        <div className="mt-3 p-2 rounded bg-danger-50 text-danger-700 text-xs">
-          {erro}
-        </div>
-      )}
-
-      {res && (
-        <div className="mt-3 p-3 rounded-lg bg-gold-50 border border-gold-200">
-          {!f.autoLoad && (
-            <div className="text-[11px] font-semibold text-gold-700 uppercase mb-2">
-              Resultado — minuta, revisão obrigatória
-            </div>
-          )}
-          {/* Render especial para taxas BACEN */}
-          {f.id === "taxas-bacen" && res.taxas ? (
-            <TaxasBacenView taxas={res.taxas} aviso={res.aviso} />
-          ) : f.id === "verbas-rescisorias" && res.verbas ? (
-            <VerbaRescisView data={res} />
-          ) : (
-            <ResultadoView data={res} />
-          )}
-          {/* Metadados de regra (fontes/vigência/versão) em linha discreta */}
-          <RodapeRegra data={res} />
-          {/* Aviso de homologação vindo da API acompanha o resultado */}
-          {res.homologada === false && (
-            <div className="mt-2 p-2 rounded bg-warn-50 border border-warn-200 text-xs text-warn-800">
-              ⚠️ {res.aviso_homologacao || AVISO_FERRAMENTA_NAO_HOMOLOGADA}
-            </div>
-          )}
-          {!f.autoLoad && (
-            <div className="mt-3 pt-2 border-t border-gold-200 flex flex-wrap items-center gap-2">
-              <button
-                className="btn-ghost text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={gerandoDoc || bloqueadaParaDocumento}
-                title={bloqueadaParaDocumento ? MOTIVO_BLOQUEIO : undefined}
-                onClick={gerarDemonstrativo}
-              >
-                {gerandoDoc ? "Gerando..." : "📄 Gerar demonstrativo"}
-              </button>
-              {bloqueadaParaDocumento && (
-                <span className="text-[11px] text-warn-700">
-                  Demonstrativo e minuta bloqueados — ferramenta em revisão
-                  jurídica.
-                </span>
-              )}
-              {docMsg && (
-                <span
-                  className={`text-xs ${bloqueadaParaDocumento ? "text-warn-700" : "text-green-700"}`}
-                >
-                  {docMsg}{" "}
-                  {docLink && (
-                    <Link
-                      to={docLink}
-                      className="font-medium underline underline-offset-2 hover:text-green-800"
-                    >
-                      Abrir Peças
-                    </Link>
-                  )}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Render especial: Taxas BACEN ──────────────────────────────────────────────
-function TaxasBacenView({
-  taxas,
-  aviso,
-}: {
-  taxas: Record<string, any>;
-  aviso?: string;
-}) {
-  const labels: Record<string, string> = {
-    selic_meta_aa: "SELIC Meta",
-    cdi_diario: "CDI diário",
-    tr_mensal: "TR mensal",
-    ipca_15_mensal: "IPCA-15",
-  };
-  return (
-    <div>
-      <div className="grid grid-cols-2 gap-2 mb-2">
-        {Object.entries(taxas).map(([chave, item]: [string, any]) => (
-          <div
-            key={chave}
-            className="bg-white rounded p-2 border border-gold-100 text-center"
-          >
-            <div className="text-[10px] text-slate-500 uppercase tracking-wide">
-              {labels[chave] || chave}
-            </div>
-            {item.valor != null ? (
-              <>
-                <div className="text-lg font-bold text-navy">
-                  {Number(item.valor).toFixed(4)}%
-                </div>
-                <div className="text-[10px] text-slate-400">{item.data}</div>
-              </>
-            ) : (
-              <div className="text-xs text-danger-500">indisponível</div>
-            )}
-          </div>
-        ))}
-      </div>
-      {aviso && (
-        <div className="text-[11px] text-slate-500 italic">{aviso}</div>
-      )}
-    </div>
-  );
-}
-
-// ── Render especial: Verbas Rescisórias ───────────────────────────────────────
-function VerbaRescisView({ data }: { data: any }) {
-  const verbas = data.verbas as Record<string, number>;
-  const total = data.total_bruto_estimado as number;
-  const labels: Record<string, string> = {
-    saldo_salario: "Saldo de salário",
-    aviso_previo: "Aviso prévio",
-    decimo_terceiro_proporcional: "13° proporcional",
-    ferias_proporcionais_mais_um_terco: "Férias + 1/3",
-    fgts_rescisorio_8pct: "FGTS (8% rescisório)",
-    multa_fgts: "Multa FGTS",
-  };
-  return (
-    <div>
-      <div className="text-[11px] font-semibold text-gold-700 uppercase mb-2">
-        Verbas rescisórias — minuta, revisão obrigatória
-      </div>
-      <div className="space-y-1 mb-3">
-        {Object.entries(verbas).map(([k, v]) => (
-          <div key={k} className="flex justify-between text-xs">
-            <span className="text-slate-600">{labels[k] || rotulo(k)}</span>
-            <span className="font-medium text-navy">{fmtMoney(v)}</span>
-          </div>
-        ))}
-        <div className="flex justify-between text-sm font-bold text-navy border-t border-gold-300 pt-1 mt-1">
-          <span>Total bruto estimado</span>
-          <span>{fmtMoney(total)}</span>
-        </div>
-      </div>
-      <div className="text-[10px] text-slate-400 space-y-0.5">
-        <div>
-          Tempo de contrato: {data.dados_contrato?.tempo_contrato_anos} anos
-        </div>
-        <div>
-          Aviso prévio: {data.dados_contrato?.dias_aviso_previo} dias (Lei
-          12.506/11)
-        </div>
-      </div>
-      {data.aviso && (
-        <div className="text-[11px] text-slate-500 italic mt-2 pt-2 border-t border-gold-200">
-          {data.aviso}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Renderiza o JSON de resultado de forma legível (chave: valor, listas, aninhado).
-function ResultadoView({ data }: { data: any }) {
+function ResultadoView({ data }: { data: unknown }) {
   if (data === null || data === undefined) return null;
   if (Array.isArray(data)) {
     return (
-      <ul className="space-y-1">
-        {data.map((item, i) => (
-          <li key={i} className="text-xs text-navy">
-            {typeof item === "object" ? (
+      <ul className="space-y-1 pl-4">
+        {data.map((item, index) => (
+          <li key={index} className="text-xs text-slate-700 dark:text-slate-200">
+            {typeof item === "object" && item !== null ? (
               <ResultadoView data={item} />
             ) : (
               String(item)
@@ -521,41 +116,32 @@ function ResultadoView({ data }: { data: any }) {
   }
   if (typeof data === "object") {
     return (
-      <div className="space-y-1">
-        {Object.entries(data).map(([k, v]) => {
-          // Exibidos no aviso dedicado de homologação — não na tabela.
-          if (k === "homologada" || k === "aviso_homologacao") return null;
-          // Metadados de regra vão para o rodapé <RodapeRegra /> — não na tabela.
-          if (METADADOS_REGRA.includes(k)) return null;
-          // Campos nulos (ex.: `calculo` quando o ente não tem cálculo próprio)
-          // são omitidos — renderizá-los imprimia "null" na tela.
-          if (v === null || v === undefined) return null;
-          if (k === "aviso") {
-            return (
-              <div
-                key={k}
-                className="text-[11px] text-slate-500 italic mt-2 pt-2 border-t border-gold-200"
-              >
-                {String(v)}
-              </div>
-            );
+      <div className="space-y-1.5">
+        {Object.entries(data as Record<string, unknown>).map(([chave, valor]) => {
+          if (
+            chave === "homologada" ||
+            chave === "aviso_homologacao" ||
+            METADADOS_REGRA.includes(chave) ||
+            valor === null ||
+            valor === undefined
+          ) {
+            return null;
           }
-          const label = rotulo(k);
-          if (typeof v === "object" && v !== null) {
+          if (typeof valor === "object") {
             return (
-              <div key={k} className="mt-1">
-                <div className="text-xs font-semibold text-navy">{label}:</div>
-                <div className="pl-3">
-                  <ResultadoView data={v} />
+              <div key={chave} className="rounded-lg bg-slate-50/70 p-2 dark:bg-white/[0.03]">
+                <div className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  {rotulo(chave)}
                 </div>
+                <ResultadoView data={valor} />
               </div>
             );
           }
           return (
-            <div key={k} className="flex justify-between gap-2 text-xs">
-              <span className="text-slate-500">{label}</span>
-              <span className="font-medium text-navy text-right">
-                {typeof v === "boolean" ? (v ? "✓ Sim" : "✗ Não") : String(v)}
+            <div key={chave} className="flex justify-between gap-4 text-xs">
+              <span className="text-slate-500">{rotulo(chave)}</span>
+              <span className="text-right font-medium text-slate-800 dark:text-slate-100">
+                {typeof valor === "boolean" ? (valor ? "Sim" : "Não") : String(valor)}
               </span>
             </div>
           );
@@ -566,167 +152,230 @@ function ResultadoView({ data }: { data: any }) {
   return <span className="text-xs">{String(data)}</span>;
 }
 
-// ── Página principal ──────────────────────────────────────────────────────────
-const _ANALISE_TITULO: Record<string, string> = {
-  bancario: "🏦 Análise de Contrato Bancário",
-  consumidor: "🛒 Análise de Contrato/Documento (Consumidor)",
-  trabalhista: "🦺 Análise de Documento Trabalhista",
-  empresarial: "🏢 Análise de Contrato Empresarial",
-  tributario: "📊 Análise de Auto/Documento Tributário",
-  ambiental: "🌿 Análise de Auto Ambiental",
-  digital_lgpd: "💻 Análise de Contrato Digital/LGPD",
-};
-
-// Placeholder do textarea POR RAMO — o texto genérico "contrato bancário"
-// estava reciclado em todos os ramos (auditoria de usabilidade §4).
-const _ANALISE_PLACEHOLDER: Record<string, string> = {
-  bancario: "…ou cole aqui o texto do contrato bancário",
-  consumidor:
-    "…ou cole aqui o texto do contrato ou documento de consumo (fatura, cobrança, termo de adesão)",
-  trabalhista:
-    "…ou cole aqui o texto do documento trabalhista (contrato, rescisão, holerite)",
-  empresarial: "…ou cole aqui o texto do contrato empresarial",
-  tributario:
-    "…ou cole aqui o texto do auto de infração ou documento tributário",
-  ambiental: "…ou cole aqui o texto do auto de infração ambiental",
-  digital_lgpd:
-    "…ou cole aqui o texto do contrato digital ou documento de dados (LGPD)",
-};
-function ComparadorBacen() {
-  const [mods, setMods] = useState<any[]>([]);
-  const [periodo, setPeriodo] = useState("");
-  const [idx, setIdx] = useState("");
-  const [taxa, setTaxa] = useState("");
-  const [res, setRes] = useState<any>(null);
+function FerramentaWorkspace({ ferramenta }: { ferramenta: FerramentaConfig }) {
+  const [valores, setValores] = useState<Record<string, string | number>>(() => {
+    const iniciais: Record<string, string | number> = {};
+    ferramenta.campos.forEach((campo) => {
+      if (campo.default !== undefined) iniciais[campo.nome] = campo.default;
+    });
+    return iniciais;
+  });
+  const [resultado, setResultado] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
-  const [erro, setErro] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [gerando, setGerando] = useState(false);
+  const [mensagemDocumento, setMensagemDocumento] = useState<string | null>(null);
+  const [linkDocumento, setLinkDocumento] = useState<string | null>(null);
+  const casoAtivo = useCaseContext((state) => state.caso);
+
+  const visiveis = camposVisiveis(ferramenta.campos, valores);
+  const bloqueada =
+    ferramenta.homologada === false || resultado?.homologada === false;
 
   useEffect(() => {
-    api
-      .get("/analise-bancaria/modalidades")
-      .then((r) => {
-        setMods(r.data?.modalidades ?? []);
-        setPeriodo(r.data?.periodo ?? "");
-      })
-      .catch(() => {});
-  }, []);
+    const obsoletas = chavesObsoletas(ferramenta.campos, valores);
+    if (!obsoletas.length) return;
+    setValores((atuais) => {
+      const copia = { ...atuais };
+      obsoletas.forEach((nome) => delete copia[nome]);
+      return copia;
+    });
+  }, [ferramenta.campos, valores]);
 
-  const comparar = async () => {
-    const sel = mods[Number(idx)];
-    if (!sel) {
-      setErro("Selecione a modalidade.");
-      return;
-    }
+  const calcular = async () => {
     setLoading(true);
-    setErro("");
-    setRes(null);
+    setErro(null);
+    setResultado(null);
+    setMensagemDocumento(null);
+    setLinkDocumento(null);
     try {
-      const r = await api.get("/analise-bancaria/taxa-media", {
-        params: { modalidade: sel.modalidade, segmento: sel.segmento, periodo },
+      const resposta = await api.get(ferramenta.endpoint, {
+        params: paramsVisiveis(ferramenta.campos, valores),
       });
-      setRes(r.data);
-    } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha ao consultar o BACEN.");
+      setResultado(resposta.data);
+    } catch (error: unknown) {
+      setErro(mensagemErroFerramenta(error));
     } finally {
       setLoading(false);
     }
   };
 
-  const t = parseFloat((taxa || "").replace(",", "."));
-  const media = res?.ao_mes?.media;
-  const acima = res && !isNaN(t) && media != null ? t > media : null;
-  const diff =
-    res && !isNaN(t) && media != null ? ((t - media) / media) * 100 : null;
+  useEffect(() => {
+    if (ferramenta.autoLoad) void calcular();
+    // A identidade da ferramenta controla o carregamento automático.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ferramenta.id]);
+
+  const gerarDemonstrativo = async () => {
+    if (!resultado || bloqueada) {
+      setMensagemDocumento(
+        bloqueada
+          ? `Bloqueado: ${AVISO_FERRAMENTA_NAO_HOMOLOGADA}`
+          : "Calcule antes de gerar o demonstrativo.",
+      );
+      return;
+    }
+    const proveniencia = provenienciaDoResultado(resultado);
+    if (!proveniencia) {
+      setMensagemDocumento(
+        "Não foi possível salvar: faltam fontes, vigência ou versão da regra na resposta.",
+      );
+      return;
+    }
+    setGerando(true);
+    setMensagemDocumento(null);
+    try {
+      await api.post("/pecas/demonstrativo", {
+        titulo: ferramenta.titulo,
+        base_legal: ferramenta.baseLegal,
+        linhas: linhasDoResultado(resultado),
+        rodape: rodapeDoResultado(resultado) || undefined,
+        case_id: casoAtivo?.id || undefined,
+        ferramenta: ferramenta.endpoint,
+        fontes: proveniencia.fontes,
+        vigencia_regra: proveniencia.vigencia_regra,
+        versao_regra: proveniencia.versao_regra,
+      });
+      const link = casoAtivo ? `/pecas?caso=${casoAtivo.id}` : "/pecas";
+      setLinkDocumento(link);
+      setMensagemDocumento(
+        casoAtivo
+          ? `Salvo em Peças > Rascunhos, vinculado ao caso “${casoAtivo.titulo}”.`
+          : "Salvo em Peças > Rascunhos, sem vínculo com caso.",
+      );
+    } catch (error: unknown) {
+      setMensagemDocumento(
+        mensagemErroFerramenta(error, "Falha ao salvar o demonstrativo em Peças."),
+      );
+    } finally {
+      setGerando(false);
+    }
+  };
 
   return (
-    <div className="card p-4 mb-4 border-l-4 border-primary-500">
-      <h2 className="font-serif font-semibold text-navy mb-1">
-        📈 Comparador de Juros (BACEN)
-      </h2>
-      <p className="text-xs text-slate-500 mb-3">
-        Compara a taxa do contrato com a média de mercado do Banco Central, por
-        modalidade.
-      </p>
-      <div className="grid sm:grid-cols-3 gap-2 items-end">
-        <div className="sm:col-span-2">
-          <label className="label">Modalidade</label>
-          <select
-            className="input w-full text-sm"
-            value={idx}
-            onChange={(e) => setIdx(e.target.value)}
-          >
-            <option value="">Selecione…</option>
-            {mods.map((m, i) => (
-              <option key={i} value={i}>
-                {(m.segmento || "").includes("FÍSICA") ? "PF" : "PJ"} ·{" "}
-                {m.modalidade}
-              </option>
-            ))}
-          </select>
-        </div>
+    <section
+      id={`ferramenta-${ferramenta.id}`}
+      className="scroll-mt-28 rounded-2xl border border-black/[0.06] bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
+    >
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <label className="label">Taxa do contrato (% a.m.)</label>
-          <input
-            className="input w-full"
-            placeholder="ex: 3,5"
-            value={taxa}
-            onChange={(e) => setTaxa(e.target.value)}
-          />
-        </div>
-      </div>
-      <button
-        onClick={comparar}
-        disabled={loading}
-        className="btn-gold text-sm mt-2"
-      >
-        {loading ? "Consultando BACEN…" : "Comparar"}
-      </button>
-      {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
-      {res && (
-        <div className="mt-3 space-y-2 text-sm">
-          <p className="text-xs text-slate-500">
-            Mercado em {res.periodo} · {res.instituicoes} instituições · fonte:
-            BACEN
-          </p>
-          <div className="grid grid-cols-3 gap-2 text-center">
-            {[
-              ["Mínima", res.ao_mes?.min],
-              ["Média", res.ao_mes?.media],
-              ["Máxima", res.ao_mes?.max],
-            ].map(([l, v]: any) => (
-              <div key={l} className="bg-slate-50 rounded-lg p-2">
-                <p className="text-[11px] text-slate-500">{l} (% a.m.)</p>
-                <p className="font-bold text-slate-800">{v}%</p>
-              </div>
-            ))}
+          <div className="flex items-center gap-2">
+            <Calculator className="h-4 w-4 text-ouro-profundo" />
+            <h3 className="text-sm font-bold text-slate-950 dark:text-white">
+              {ferramenta.titulo}
+            </h3>
           </div>
-          {acima !== null && (
-            <div
-              className={`rounded-lg p-3 text-sm font-medium ${acima ? "bg-danger-50 text-danger-700" : "bg-success-50 text-success-700"}`}
-            >
-              Sua taxa de <b>{t.toFixed(2)}% a.m.</b> está{" "}
-              <b>
-                {Math.abs(diff!).toFixed(0)}% {acima ? "ACIMA" : "abaixo"}
-              </b>{" "}
-              da média de mercado.
-              {acima &&
-                " — possível indício de abusividade (verificar caso a caso)."}
-            </div>
-          )}
-          <p className="text-[11px] text-warn-700">
-            ⚠ Indicador de apoio. A média do BACEN não define abusividade
-            automaticamente — análise do advogado é necessária.
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            {ferramenta.descricao}
           </p>
+          <p className="mt-1 text-[11px] font-medium text-ouro-profundo">
+            {ferramenta.baseLegal}
+          </p>
+        </div>
+        {ferramenta.homologada === false && (
+          <span className="rounded-full bg-warn-50 px-2 py-1 text-[10px] font-semibold text-warn-700">
+            Em revisão jurídica
+          </span>
+        )}
+      </div>
+
+      {visiveis.length > 0 && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {visiveis.map((campo) => (
+            <label key={campo.nome} className="text-xs text-slate-600 dark:text-slate-300">
+              <span className="mb-1 block font-medium">{campo.label}</span>
+              {campo.tipo === "select" ? (
+                <select
+                  className="input w-full text-sm"
+                  value={valores[campo.nome] ?? ""}
+                  onChange={(event) =>
+                    setValores({ ...valores, [campo.nome]: event.target.value })
+                  }
+                >
+                  <option value="">Selecione…</option>
+                  {campo.opcoes?.map((opcao) => (
+                    <option key={opcao} value={opcao}>
+                      {rotulo(opcao)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="input w-full text-sm"
+                  type={campo.tipo}
+                  step={campo.tipo === "number" ? "0.01" : undefined}
+                  value={valores[campo.nome] ?? ""}
+                  onChange={(event) =>
+                    setValores({ ...valores, [campo.nome]: event.target.value })
+                  }
+                />
+              )}
+            </label>
+          ))}
         </div>
       )}
-    </div>
+
+      {(!ferramenta.autoLoad || visiveis.length > 0) && (
+        <button className="btn-gold mt-3 text-sm" disabled={loading} onClick={calcular}>
+          {loading ? "Calculando…" : ferramenta.campos.length ? "Calcular" : "Atualizar"}
+        </button>
+      )}
+
+      {erro && <p className="mt-3 text-xs text-danger-600">{erro}</p>}
+      {resultado && (
+        <div className="mt-4 rounded-xl border border-black/[0.05] bg-slate-50/70 p-3 dark:border-white/10 dark:bg-white/[0.02]">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Resultado de apoio — revisão humana obrigatória
+            </span>
+          </div>
+          <ResultadoView data={resultado} />
+          <RodapeRegra data={resultado} />
+          {resultado.homologada === false && (
+            <p className="mt-2 rounded-lg bg-warn-50 p-2 text-xs text-warn-700">
+              {String(
+                resultado.aviso_homologacao || AVISO_FERRAMENTA_NAO_HOMOLOGADA,
+              )}
+            </p>
+          )}
+          {!ferramenta.autoLoad && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/[0.05] pt-3 dark:border-white/10">
+              <button
+                className="btn-secondary text-xs"
+                disabled={gerando || bloqueada}
+                onClick={gerarDemonstrativo}
+              >
+                {gerando ? "Salvando…" : "Gerar demonstrativo"}
+              </button>
+              {mensagemDocumento && (
+                <span className="text-xs text-slate-500">
+                  {mensagemDocumento}{" "}
+                  {linkDocumento && (
+                    <Link className="font-semibold text-ouro-profundo underline" to={linkDocumento}>
+                      Abrir Peças
+                    </Link>
+                  )}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
-// Tipos de peça oferecidos ao gerar minuta a partir da análise (AI-106): a
-// escolha é HUMANA e obrigatória — nunca fixada em "petição inicial", que pode
-// ser incompatível com a fase/polo/rito do caso.
-const TIPOS_PECA_MINUTA = [
+const TITULO_ANALISE: Record<string, string> = {
+  bancario: "Análise de contrato bancário",
+  consumidor: "Análise de documento de consumo",
+  trabalhista: "Análise de documento trabalhista",
+  empresarial: "Análise de contrato empresarial",
+  tributario: "Análise de auto ou documento tributário",
+  ambiental: "Análise de auto ambiental",
+  digital_lgpd: "Análise de contrato digital / LGPD",
+};
+
+const TIPOS_PECA = [
   "petição inicial",
   "contestação",
   "réplica",
@@ -736,605 +385,761 @@ const TIPOS_PECA_MINUTA = [
   "parecer",
 ];
 
-function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
-  const [casoSel, setCasoSel] = useState("");
+function AnaliseDocumento({ area, casos }: { area: string; casos: Case[] }) {
+  const [texto, setTexto] = useState("");
+  const [resultado, setResultado] = useState<Record<string, unknown> | null>(null);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [casoSelecionado, setCasoSelecionado] = useState("");
   const [tipoPeca, setTipoPeca] = useState("");
   const [acao, setAcao] = useState("");
-  const [minuta, setMinuta] = useState<string>("");
-  const [texto, setTexto] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [res, setRes] = useState<any>(null);
-  const [erro, setErro] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [minuta, setMinuta] = useState("");
+  const arquivoRef = useRef<HTMLInputElement>(null);
 
-  const analisar = async (file?: File) => {
+  const analisar = async (arquivo?: File) => {
+    if (!arquivo && texto.trim().length < 120) {
+      setErro("Cole ao menos 120 caracteres ou envie um PDF.");
+      return;
+    }
     setLoading(true);
     setErro("");
-    setRes(null);
+    setResultado(null);
     try {
-      const fd = new FormData();
-      fd.append("area", area);
-      if (file) fd.append("file", file);
-      else if (texto.trim().length >= 120) fd.append("texto", texto);
-      else {
-        setErro("Cole o texto (mín. 120 caracteres) ou envie um PDF.");
-        setLoading(false);
-        return;
-      }
-      const r = await api.post("/analise-bancaria/contrato", fd, {
+      const formulario = new FormData();
+      formulario.append("area", area);
+      if (arquivo) formulario.append("file", arquivo);
+      else formulario.append("texto", texto);
+      const resposta = await api.post("/analise-bancaria/contrato", formulario, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      setRes(r.data);
-    } catch (e: any) {
-      setErro(mensagemErroIA(e, "Não foi possível analisar o documento."));
+      setResultado(resposta.data);
+    } catch (error: unknown) {
+      setErro(mensagemErroIA(error, "Não foi possível analisar o documento."));
     } finally {
       setLoading(false);
     }
   };
 
-  const riscoCor = (r: string) =>
-    r === "alto"
-      ? "bg-danger-100 text-danger-700"
-      : r === "medio"
-        ? "bg-warn-100 text-warn-700"
-        : "bg-slate-100 text-slate-600";
-
-  const resumoTexto = () => {
-    if (!res) return "";
-    const cl = (res.clausulas_questionaveis ?? [])
-      .map((x: any) => `- [${x.risco}] ${x.clausula}`)
-      .join("\n");
-    const tf = (res.tarifas_encargos ?? [])
-      .map((x: any) => `- [${x.risco}] ${x.item}: ${x.motivo}`)
-      .join("\n");
-    return `ANÁLISE (${area}) — ${res.resumo || ""}\n\nTarifas/encargos:\n${tf}\n\nCláusulas questionáveis:\n${cl}\n\n${res.proxima_acao || ""}`;
+  const resumo = () => {
+    if (!resultado) return "";
+    const principal = typeof resultado.resumo === "string" ? resultado.resumo : "";
+    return `${principal}\n\n${JSON.stringify(resultado, null, 2)}`.slice(0, 4000);
   };
+
   const salvarNoCaso = async () => {
-    if (!casoSel) {
-      setAcao("Selecione um caso.");
+    if (!casoSelecionado) {
+      setAcao("Selecione o caso em que a análise será registrada.");
       return;
     }
     try {
-      await api.post(`/cases/${casoSel}/movimentos`, {
+      await api.post(`/cases/${casoSelecionado}/movimentos`, {
         tipo: "nota",
-        descricao: resumoTexto().slice(0, 4000),
+        descricao: resumo(),
       });
-      setAcao("✓ Análise salva no histórico do caso.");
+      setAcao("Análise registrada na timeline do caso.");
     } catch {
-      setAcao("Falha ao salvar.");
+      setAcao("Não foi possível registrar a análise no caso.");
     }
   };
+
   const gerarMinuta = async () => {
-    // AI-106: o tipo de peça é decisão do advogado — sem seleção, não gera.
-    if (!tipoPeca) {
-      setAcao("Selecione o tipo de peça antes de gerar a minuta.");
-      return;
-    }
+    if (!tipoPeca || !resultado) return;
     setAcao("Gerando minuta…");
     setMinuta("");
     try {
-      const { data } = await api.post("/ai/gerar-minuta", {
-        tema: "Ação revisional/defesa com base na análise do documento",
+      const resposta = await api.post("/ai/gerar-minuta", {
+        tema: "Minuta baseada na análise documental",
         tipo_peca: tipoPeca,
         area,
-        fatos: resumoTexto().slice(0, 3000),
+        fatos: resumo().slice(0, 3000),
       });
       setMinuta(
-        data.minuta ||
-          data.texto ||
-          data.resposta ||
-          JSON.stringify(data).slice(0, 2000),
+        resposta.data.minuta ||
+          resposta.data.texto ||
+          resposta.data.resposta ||
+          "",
       );
       setAcao("");
-    } catch (e: any) {
-      setAcao(mensagemErroIA(e, "Não foi possível gerar a minuta."));
+    } catch (error: unknown) {
+      setAcao(mensagemErroIA(error, "Não foi possível gerar a minuta."));
     }
   };
 
   return (
-    <div
-      id="analise-documento"
-      className="card p-4 mb-4 border-l-4 border-success-500 scroll-mt-4"
-    >
-      <h2 className="font-serif font-semibold text-navy mb-1 flex items-center gap-2">
-        {_ANALISE_TITULO[area] || "📄 Análise de Documento"}
-      </h2>
-      <p className="text-xs text-slate-500 mb-3">
-        Lê o documento (PDF ou texto) e aponta riscos e cláusulas questionáveis
-        conforme a área — como apoio, sempre com revisão do advogado.
-      </p>
-      <div className="flex flex-wrap gap-2 mb-2">
+    <section className="rounded-2xl border border-black/[0.06] bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="flex items-start gap-3">
+        <div className="grid h-9 w-9 place-items-center rounded-lg bg-success-50 text-success-700">
+          <FileSearch className="h-4 w-4" />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-slate-950 dark:text-white">
+            {TITULO_ANALISE[area] || "Análise de documento"}
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Apoio por IA com revisão obrigatória do advogado. A conclusão não substitui conferência dos autos e das fontes.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
         <input
-          ref={fileRef}
+          ref={arquivoRef}
           type="file"
           accept="application/pdf"
           className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) analisar(f);
+          onChange={(event) => {
+            const arquivo = event.target.files?.[0];
+            if (arquivo) void analisar(arquivo);
           }}
         />
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={loading}
-          className="btn-gold text-sm"
-        >
-          📄 Enviar PDF
+        <button className="btn-gold text-sm" onClick={() => arquivoRef.current?.click()}>
+          Enviar PDF
         </button>
-        <button
-          onClick={() => analisar()}
-          disabled={loading}
-          className="btn-secondary text-sm"
-        >
-          {loading ? "Analisando…" : "Analisar texto colado"}
+        <button className="btn-secondary text-sm" disabled={loading} onClick={() => void analisar()}>
+          {loading ? "Analisando…" : "Analisar texto"}
         </button>
       </div>
       <textarea
-        className="input w-full text-xs font-mono"
-        rows={4}
-        placeholder={
-          _ANALISE_PLACEHOLDER[area] || "…ou cole aqui o texto do documento"
-        }
+        className="input mt-2 w-full text-sm"
+        rows={6}
         value={texto}
-        onChange={(e) => setTexto(e.target.value)}
+        onChange={(event) => setTexto(event.target.value)}
+        placeholder="Cole aqui o texto do documento…"
       />
-      {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
-      {res && (
-        <div className="mt-4 space-y-3 text-sm">
-          {res.resumo && <p className="text-slate-700">{res.resumo}</p>}
-          {res.juros && (
-            <div className="bg-slate-50 rounded-lg p-3">
-              <p className="text-xs font-semibold text-slate-500 uppercase">
-                Juros
-              </p>
-              <p className="text-slate-700">
-                Taxa: <b>{res.juros.taxa_identificada || "não identificada"}</b>{" "}
-                · Capitalização: {res.juros.capitalizacao}
-              </p>
-              {res.juros.observacao && (
-                <p className="text-xs text-slate-500 mt-1">
-                  {res.juros.observacao}
-                </p>
-              )}
-            </div>
-          )}
-          {(res.tarifas_encargos ?? []).length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
-                Tarifas / encargos
-              </p>
-              {res.tarifas_encargos.map((t: any, i: number) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2 py-1 text-xs border-b border-slate-50"
-                >
-                  <span
-                    className={`px-1.5 py-0.5 rounded-full font-medium ${riscoCor(t.risco)}`}
-                  >
-                    {t.risco}
-                  </span>
-                  <span className="text-slate-700">
-                    <b>{t.item}</b> — {t.motivo}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {(res.clausulas_questionaveis ?? []).length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
-                Cláusulas questionáveis
-              </p>
-              {res.clausulas_questionaveis.map((cq: any, i: number) => (
-                <div
-                  key={i}
-                  className="py-1.5 text-xs border-b border-slate-50"
-                >
-                  <span
-                    className={`px-1.5 py-0.5 rounded-full font-medium ${riscoCor(cq.risco)}`}
-                  >
-                    {cq.risco}
-                  </span>
-                  <span className="text-slate-700 ml-2">{cq.clausula}</span>
-                  {cq.fundamento && (
-                    <span className="text-slate-400 block mt-0.5">
-                      Fundamento: {cq.fundamento}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {(res.pontos_de_atencao ?? []).length > 0 && (
-            <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
-              {res.pontos_de_atencao.map((p: string, i: number) => (
-                <li key={i}>{p}</li>
-              ))}
-            </ul>
-          )}
-          {res.proxima_acao && (
-            <p className="text-xs text-success-700 bg-success-50 rounded-lg p-2">
-              ➡ {res.proxima_acao}
-            </p>
-          )}
-          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+      {erro && <p className="mt-2 text-xs text-danger-600">{erro}</p>}
+
+      {resultado && (
+        <div className="mt-4 space-y-3 rounded-xl bg-slate-50/70 p-3 dark:bg-white/[0.02]">
+          <ResultadoView data={resultado} />
+          <div className="grid gap-2 border-t border-black/[0.05] pt-3 dark:border-white/10 md:grid-cols-[1fr_auto_auto]">
             <select
-              className="input text-xs flex-1 min-w-[160px]"
-              value={casoSel}
-              onChange={(e) => setCasoSel(e.target.value)}
+              className="input text-xs"
+              value={casoSelecionado}
+              onChange={(event) => setCasoSelecionado(event.target.value)}
             >
               <option value="">Vincular a um caso…</option>
-              {casos.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {(c as any).numero_interno} — {c.titulo}
+              {casos.map((caso) => (
+                <option key={caso.id} value={caso.id}>
+                  {caso.numero_interno} — {caso.titulo}
                 </option>
               ))}
             </select>
-            <button onClick={salvarNoCaso} className="btn-secondary text-xs">
-              💾 Salvar no caso
+            <button className="btn-secondary text-xs" onClick={salvarNoCaso}>
+              Salvar no caso
             </button>
             <select
-              className="input text-xs min-w-[150px]"
+              className="input text-xs"
               value={tipoPeca}
-              onChange={(e) => setTipoPeca(e.target.value)}
-              title="Tipo de peça (escolha do advogado — obrigatório)"
+              onChange={(event) => setTipoPeca(event.target.value)}
             >
               <option value="">Tipo de peça…</option>
-              {TIPOS_PECA_MINUTA.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {TIPOS_PECA.map((tipo) => (
+                <option key={tipo} value={tipo}>
+                  {tipo}
                 </option>
               ))}
             </select>
-            <button
-              onClick={gerarMinuta}
-              disabled={!tipoPeca}
-              className="btn-gold text-xs disabled:opacity-50"
-            >
-              ✍️ Gerar minuta
-            </button>
           </div>
+          <button
+            className="btn-gold text-xs disabled:opacity-50"
+            disabled={!tipoPeca}
+            onClick={gerarMinuta}
+          >
+            Gerar minuta a partir da análise
+          </button>
           {acao && <p className="text-xs text-slate-500">{acao}</p>}
           {minuta && (
-            <div className="bg-slate-50 rounded-lg p-3">
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
-                Minuta (rascunho — revisão obrigatória)
+            <div className="rounded-xl border border-black/[0.05] bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                Minuta — rascunho para revisão humana
               </p>
-              <Markdown
-                source={minuta}
-                className="text-xs text-slate-700 leading-relaxed max-h-72 overflow-y-auto"
-              />
+              <Markdown source={minuta} className="max-h-96 overflow-y-auto text-sm" />
             </div>
-          )}
-          {res._aviso && (
-            <p className="text-[11px] text-warn-700 border-t border-warn-100 pt-2">
-              ⚠ {res._aviso}
-            </p>
           )}
         </div>
       )}
+    </section>
+  );
+}
+
+function ComparadorBacen() {
+  const [modalidades, setModalidades] = useState<Array<Record<string, string>>>([]);
+  const [periodo, setPeriodo] = useState("");
+  const [indice, setIndice] = useState("");
+  const [taxa, setTaxa] = useState("");
+  const [resultado, setResultado] = useState<Record<string, unknown> | null>(null);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api
+      .get("/analise-bancaria/modalidades")
+      .then((resposta) => {
+        setModalidades(resposta.data?.modalidades ?? []);
+        setPeriodo(resposta.data?.periodo ?? "");
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const comparar = async () => {
+    const modalidade = modalidades[Number(indice)];
+    if (!modalidade) {
+      setErro("Selecione a modalidade.");
+      return;
+    }
+    setLoading(true);
+    setErro("");
+    try {
+      const resposta = await api.get("/analise-bancaria/taxa-media", {
+        params: {
+          modalidade: modalidade.modalidade,
+          segmento: modalidade.segmento,
+          periodo,
+        },
+      });
+      setResultado({ ...resposta.data, taxa_informada_percentual_mes: taxa || undefined });
+    } catch (error: unknown) {
+      setErro(mensagemErroFerramenta(error, "Falha ao consultar a média do BACEN."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="rounded-2xl border border-black/[0.06] bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="flex items-center gap-2">
+        <Calculator className="h-4 w-4 text-ouro-profundo" />
+        <h3 className="text-sm font-bold text-slate-950 dark:text-white">
+          Comparador de Juros — BACEN
+        </h3>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        Compara a taxa informada com a referência de mercado. Diferença de taxa é indício de análise, não conclusão automática de abusividade.
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <select className="input" value={indice} onChange={(event) => setIndice(event.target.value)}>
+          <option value="">Modalidade…</option>
+          {modalidades.map((modalidade, index) => (
+            <option key={`${modalidade.modalidade}:${index}`} value={index}>
+              {modalidade.segmento} · {modalidade.modalidade}
+            </option>
+          ))}
+        </select>
+        <input
+          className="input"
+          value={taxa}
+          onChange={(event) => setTaxa(event.target.value)}
+          placeholder="Taxa do contrato (% a.m.)"
+        />
+      </div>
+      <button className="btn-gold mt-3 text-sm" disabled={loading} onClick={comparar}>
+        {loading ? "Consultando…" : "Comparar"}
+      </button>
+      {erro && <p className="mt-2 text-xs text-danger-600">{erro}</p>}
+      {resultado && (
+        <div className="mt-3 rounded-xl bg-slate-50 p-3 dark:bg-white/[0.03]">
+          <ResultadoView data={resultado} />
+          <p className="mt-2 text-[11px] text-warn-700">
+            Indicador de apoio. A conclusão jurídica exige análise individual do contrato e das circunstâncias do caso.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CasosWorkspace({ casos, area }: { casos: Case[] | null; area: string }) {
+  if (casos === null) return <Spinner />;
+  if (!casos.length) {
+    return (
+      <Empty message="Nenhum caso encontrado nesta área. Use “Novo caso” para iniciar um cadastro com a área pré-selecionada." />
+    );
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <Link className="btn-secondary text-sm" to={casosDaAreaPath(area)}>
+          Abrir lista completa em Casos
+        </Link>
+      </div>
+      {casos.map((caso) => (
+        <Link
+          key={caso.id}
+          to={`/casos/${caso.id}`}
+          className="flex flex-col gap-3 rounded-2xl border border-black/[0.06] bg-white p-4 transition hover:border-ouro/40 hover:shadow-sm dark:border-white/10 dark:bg-white/[0.03] sm:flex-row sm:items-center"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+              {caso.numero_interno || "Caso"}
+            </p>
+            <h3 className="mt-1 truncate text-sm font-bold text-slate-950 dark:text-white">
+              {caso.titulo}
+            </h3>
+          </div>
+          {caso.status && <StatusBadge value={String(caso.status)} />}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function EstatisticasWorkspace({ casos }: { casos: Case[] | null }) {
+  const total = casos?.length ?? 0;
+  const ativos =
+    casos?.filter((caso) => !["encerrado", "arquivado"].includes(String(caso.status))).length ?? 0;
+  const producao =
+    casos?.filter((caso) => String(caso.status) === "em_producao").length ?? 0;
+  const protocolados =
+    casos?.filter((caso) => String(caso.status) === "protocolado").length ?? 0;
+  const itens = [
+    ["Casos", total],
+    ["Ativos", ativos],
+    ["Em produção", producao],
+    ["Protocolados", protocolados],
+  ];
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {itens.map(([rotuloItem, valor]) => (
+        <div
+          key={String(rotuloItem)}
+          className="rounded-2xl border border-black/[0.05] bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"
+        >
+          <p className="text-xs text-slate-500">{rotuloItem}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">{valor}</p>
+        </div>
+      ))}
     </div>
   );
 }
 
 export default function RamoBase() {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const cfg: RamoConfig | undefined = slug ? RAMOS[slug] : undefined;
+  const [casos, setCasos] = useState<Case[] | null>(null);
+  const [registrosEspecializados, setRegistrosEspecializados] = useState<unknown[] | null>(null);
+  const [modalRegistro, setModalRegistro] = useState(false);
+  const [formularioRegistro, setFormularioRegistro] = useState<Record<string, unknown>>({});
+  const [salvandoRegistro, setSalvandoRegistro] = useState(false);
 
-  const [lista, setLista] = useState<any[] | null>(null);
-  const [casos, setCasos] = useState<Case[]>([]);
-  const [modal, setModal] = useState(false);
-  const [form, setForm] = useState<any>({});
-  const [salvando, setSalvando] = useState(false);
-
-  const Icone = useMemo(() => {
-    if (!cfg) return Folder;
-    return ICONES[cfg.icone] || Folder;
-  }, [cfg]);
-
-  const load = () => {
-    if (!cfg) return;
-    if (cfg.externo) {
-      setLista([]);
-      return;
-    }
-    api
-      .get(cfg.endpoint)
-      .then((r) => setLista(r.data.data || []))
-      .catch(() => setLista([]));
-  };
+  const abas = useMemo(() => (cfg ? abasDoWorkspace(cfg) : []), [cfg]);
+  const abaSolicitada = searchParams.get("tab") as WorkspaceTabId | null;
+  const abaAtiva =
+    abaSolicitada && abas.includes(abaSolicitada) ? abaSolicitada : "visao-geral";
 
   useEffect(() => {
     if (!cfg) return;
-    setLista(null);
-    setForm({});
-    load();
-    // Casos novos nascem na área canônica do hub, mas os históricos ficaram
-    // gravados na área achatada (ex.: bancário como "civil"). O backend filtra
-    // por UMA área só, então buscamos a canônica + as legadas e unimos —
-    // é leitura pura, nenhum registro é reclassificado.
+    setCasos(null);
+    setFormularioRegistro({});
     const areas = [cfg.areaCaso, ...(cfg.areasLegadas ?? [])];
     Promise.all(
       areas.map((area) =>
         api
           .get("/cases/", { params: { area, page_size: 100 } })
-          .then((r) => (r.data.data ?? []) as Case[])
+          .then((resposta) => (resposta.data.data ?? []) as Case[])
           .catch(() => [] as Case[]),
       ),
     )
       .then((listas) => {
-        const porId = new Map<string, Case>();
-        listas.flat().forEach((caso) => porId.set(caso.id, caso));
-        setCasos([...porId.values()]);
+        const unicos = new Map<string, Case>();
+        listas.flat().forEach((caso) => unicos.set(caso.id, caso));
+        setCasos([...unicos.values()]);
       })
       .catch(() => setCasos([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
 
-  if (!cfg) return <Empty message="Ramo não encontrado" />;
+    if (cfg.externo) {
+      setRegistrosEspecializados([]);
+    } else {
+      setRegistrosEspecializados(null);
+      api
+        .get(cfg.endpoint)
+        .then((resposta) => setRegistrosEspecializados(resposta.data.data ?? []))
+        .catch(() => setRegistrosEspecializados([]));
+    }
+  }, [cfg, slug]);
 
-  const salvar = async () => {
-    if (!form.case_id) {
-      toast.error("Selecione o caso vinculado");
+  useEffect(() => {
+    const ferramenta = searchParams.get("ferramenta");
+    if (abaAtiva !== "ferramentas" || !ferramenta) return;
+    const id = window.requestAnimationFrame(() => {
+      document
+        .getElementById(`ferramenta-${ferramenta}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [abaAtiva, searchParams]);
+
+  if (!cfg) return <Empty message="Área de atuação não encontrada" />;
+
+  const ferramentas = ferramentasDoWorkspace(cfg);
+  const subareas = subareasDoWorkspace(cfg);
+
+  const mudarAba = (aba: WorkspaceTabId) => {
+    const proximo = new URLSearchParams(searchParams);
+    proximo.set("tab", aba);
+    proximo.delete("ferramenta");
+    setSearchParams(proximo, { replace: true });
+  };
+
+  const registrarEspecializado = async () => {
+    if (!formularioRegistro.case_id) {
+      toast.error("Selecione o caso que receberá os dados especializados.");
       return;
     }
-    const obrig = cfg.campos.find((c) => c.obrigatorio && !form[c.nome]);
-    if (obrig) {
-      toast.error(`Campo obrigatório: ${obrig.label}`);
+    const obrigatorio = cfg.campos.find(
+      (campo) => campo.obrigatorio && !formularioRegistro[campo.nome],
+    );
+    if (obrigatorio) {
+      toast.error(`Campo obrigatório: ${obrigatorio.label}`);
       return;
     }
-    setSalvando(true);
+    setSalvandoRegistro(true);
     try {
-      await api.post(cfg.endpoint, form);
-      setModal(false);
-      setForm({});
-      load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao salvar");
+      await api.post(cfg.endpoint, formularioRegistro);
+      const resposta = await api.get(cfg.endpoint);
+      setRegistrosEspecializados(resposta.data.data ?? []);
+      setModalRegistro(false);
+      setFormularioRegistro({});
+      toast.success("Dados especializados registrados no caso.");
+    } catch (error: unknown) {
+      toast.error(mensagemErroFerramenta(error, "Não foi possível registrar os dados especializados."));
     } finally {
-      setSalvando(false);
+      setSalvandoRegistro(false);
     }
   };
 
   return (
-    <div>
+    <div className="mx-auto max-w-7xl space-y-5 px-6 py-6">
       <PageHeader
-        eyebrow="Ramos especializados"
-        title={cfg.titulo}
-        subtitle={cfg.subtitulo}
+        eyebrow="Workspace jurídico"
+        title={tituloDoWorkspace(cfg)}
+        subtitle={subtituloDoWorkspace(cfg)}
         actions={
-          cfg.externo ? (
-            <Link to={`/casos`} className="btn-gold flex items-center gap-1">
-              <Plus size={16} /> Novo caso
+          <>
+            <Link className="btn-secondary flex items-center gap-1" to="/areas-de-atuacao">
+              <ArrowLeft className="h-4 w-4" /> Áreas
             </Link>
-          ) : (
-            <button className="btn-gold" onClick={() => setModal(true)}>
-              <Plus size={16} /> Novo caso
-            </button>
-          )
+            <Link className="btn-secondary" to={casosDaAreaPath(cfg.areaCaso)}>
+              Ver em Casos
+            </Link>
+            <Link className="btn-gold flex items-center gap-1" to={novoCasoPath(cfg.areaCaso)}>
+              <Plus className="h-4 w-4" /> Novo caso
+            </Link>
+          </>
         }
       />
 
-      <RamoStats
-        casos={casos}
-        lista={lista}
-        cor={cfg.cor}
-        area={cfg.areaCaso}
-      />
-
-      {cfg.comparadorBacen && <ComparadorBacen />}
-      {cfg.analiseDocumento && (
-        // AI-105: a análise usa a ÁREA DE ANÁLISE do ramo (analiseArea) — não a
-        // areaCaso, que serve para filtrar casos e pode divergir (ex.: ramo
-        // bancário guarda casos como "civil").
-        <AnaliseBancaria area={cfg.analiseArea || cfg.areaCaso} casos={casos} />
-      )}
-      {cfg.guiaBancario && <GuiaBancario />}
-      {cfg.analiseExtratos && <AnaliseExtratos />}
-      {cfg.bancarioForense && <BancarioForense />}
-      {cfg.guiaTransito && <GuiaTransito />}
-      {cfg.liquidacaoTrabalhista && <LiquidacaoTrabalhista />}
-      {cfg.guiaTrabalhista && <GuiaTrabalhista />}
-      {cfg.tributarioFiscal && <TributarioFiscal />}
-      {cfg.guiaTributario && <GuiaTributario />}
-      {cfg.previdenciarioSimulacao && <PrevidenciarioSimulacao />}
-      {cfg.guiaPrevidenciario && <GuiaPrevidenciario />}
-      {cfg.autosAmbientais && <AmbientalAutos casos={casos} />}
-      {cfg.ambientalEstrategia && <AmbientalEstrategia />}
-      {cfg.guiaAmbiental && <GuiaAmbiental />}
-      {cfg.guiaCivil && <GuiaCivil />}
-      {cfg.guiaPenal && <GuiaPenal />}
-      {cfg.guiaConsumidor && <GuiaConsumidor />}
-      {cfg.guiaImobiliario && <GuiaImobiliario />}
-      {cfg.guiaFamilia && <GuiaFamilia />}
-      {cfg.guiaAdministrativo && <GuiaAdministrativo />}
-      {cfg.guiaEmpresarial && <GuiaEmpresarial />}
-      {cfg.sociedadesCliente && <SociedadesCliente />}
-      {cfg.lgpdRegistros && <LgpdRegistros />}
-      {cfg.guiaLgpd && <GuiaLgpd />}
-
-      {/* Áreas de atuação (subáreas) */}
-      {cfg.subareas && cfg.subareas.length > 0 && (
-        <div className="card p-4 mb-4">
-          <h2 className="font-serif font-semibold text-navy mb-3 flex items-center gap-2">
-            <Icone size={16} className="text-gold-600" /> Áreas de atuação
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {cfg.subareas.map((sa) => (
-              <span
-                key={sa}
-                className="text-xs px-2.5 py-1 rounded-full bg-slate-900/[0.05] text-slate-600 dark:bg-white/[0.07] dark:text-slate-300"
-              >
-                {sa}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Ferramentas públicas externas */}
-      {cfg.ferramentasExternas && cfg.ferramentasExternas.length > 0 && (
-        <div className="card p-4 mb-4">
-          <h2 className="font-serif font-semibold text-navy mb-3">
-            Ferramentas públicas
-          </h2>
-          <div className="grid sm:grid-cols-2 gap-2">
-            {cfg.ferramentasExternas.map((fe) => (
-              <a
-                key={fe.url}
-                href={fe.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-start gap-2 p-2.5 rounded-lg border border-black/[0.05] hover:border-gold-400 hover:bg-gold-50/30 transition-colors group"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-navy group-hover:text-gold-700">
-                    {fe.nome} ↗
-                  </p>
-                  <p className="text-xs text-slate-400">{fe.descricao}</p>
-                </div>
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Ferramentas / calculadoras */}
-      {cfg.ferramentas.length > 0 && (
-        <div className="grid md:grid-cols-2 gap-3 mb-6">
-          {cfg.ferramentas.map((f) => (
-            <Ferramenta key={f.id} f={f} />
-          ))}
-        </div>
-      )}
-
-      {/* Listagem */}
-      <h2 className="font-serif font-semibold text-navy mb-3 flex items-center gap-2">
-        <Icone size={18} className="text-gold-600" /> Casos registrados
-      </h2>
-      {lista === null ? (
-        <Spinner />
-      ) : lista.length === 0 ? (
-        <Empty message="Nenhum caso especializado registrado neste ramo" />
-      ) : (
-        <div className="space-y-2">
-          {lista.map((item) => (
-            <div
-              key={item.id}
-              className={`card p-4 flex flex-wrap items-center gap-4 border-l-4 ${COR_BORDA[cfg.cor] || "border-slate-500"}`}
+      <nav
+        className="flex gap-1 overflow-x-auto rounded-2xl border border-black/[0.06] bg-white p-1.5 dark:border-white/10 dark:bg-white/[0.03]"
+        aria-label="Seções do workspace"
+      >
+        {abas.map((aba) => {
+          const Icone = ICONE_ABA[aba];
+          const ativa = aba === abaAtiva;
+          return (
+            <button
+              key={aba}
+              type="button"
+              onClick={() => mudarAba(aba)}
+              className={`flex min-w-max items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition ${
+                ativa
+                  ? "bg-slate-950 text-white shadow-sm dark:bg-white dark:text-slate-950"
+                  : "text-slate-500 hover:bg-black/[0.04] hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/[0.06] dark:hover:text-white"
+              }`}
+              aria-current={ativa ? "page" : undefined}
             >
-              <div className="flex-1 min-w-[200px]">
-                <div className="font-medium text-navy">
-                  {rotulo(String(item[cfg.campoTitulo] || "—"))}
+              <Icone className="h-4 w-4" /> {ROTULO_ABA[aba]}
+            </button>
+          );
+        })}
+      </nav>
+
+      {abaAtiva === "visao-geral" && (
+        <div className="space-y-5">
+          <EstatisticasWorkspace casos={casos} />
+
+          <section className="grid gap-3 md:grid-cols-3">
+            <Link
+              to={casosDaAreaPath(cfg.areaCaso)}
+              className="rounded-2xl border border-black/[0.06] bg-white p-4 transition hover:border-ouro/40 dark:border-white/10 dark:bg-white/[0.03]"
+            >
+              <FolderOpen className="h-5 w-5 text-ouro-profundo" />
+              <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">Trabalhar casos</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Abra a carteira completa já filtrada por esta área.
+              </p>
+            </Link>
+            <Link
+              to={importacaoDaAreaPath(cfg.areaCaso)}
+              className="rounded-2xl border border-black/[0.06] bg-white p-4 transition hover:border-ouro/40 dark:border-white/10 dark:bg-white/[0.03]"
+            >
+              <FileSearch className="h-5 w-5 text-ouro-profundo" />
+              <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">Importar documento</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Inicie um caso pela leitura documental com a área pré-selecionada.
+              </p>
+            </Link>
+            {abas.includes("ferramentas") ? (
+              <button
+                type="button"
+                onClick={() => mudarAba("ferramentas")}
+                className="rounded-2xl border border-black/[0.06] bg-white p-4 text-left transition hover:border-ouro/40 dark:border-white/10 dark:bg-white/[0.03]"
+              >
+                <Wrench className="h-5 w-5 text-ouro-profundo" />
+                <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">Abrir ferramentas</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Cálculos, simuladores e utilitários próprios desta matéria.
+                </p>
+              </button>
+            ) : (
+              <Link
+                to="/pecas"
+                className="rounded-2xl border border-black/[0.06] bg-white p-4 transition hover:border-ouro/40 dark:border-white/10 dark:bg-white/[0.03]"
+              >
+                <BookOpen className="h-5 w-5 text-ouro-profundo" />
+                <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">Peças</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Acesse a produção jurídica do escritório.</p>
+              </Link>
+            )}
+          </section>
+
+          {!cfg.externo && (
+            <section className="rounded-2xl border border-black/[0.06] bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-950 dark:text-white">Dados especializados</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Registro complementar vinculado a um caso existente. Não cria um segundo caso.
+                  </p>
                 </div>
-                <div className="text-xs text-slate-400">
-                  {item.instituicao_financeira ||
-                    item.orgao_autuador ||
-                    item.cnpj_empresa ||
-                    item.cargo ||
-                    item.competencia ||
-                    "—"}
-                </div>
+                <button className="btn-secondary text-sm" onClick={() => setModalRegistro(true)}>
+                  Registrar dados especializados
+                </button>
               </div>
-              {item[cfg.campoStatus] && (
-                <StatusBadge value={String(item[cfg.campoStatus])} />
+              {registrosEspecializados === null ? (
+                <div className="mt-3"><Spinner /></div>
+              ) : registrosEspecializados.length > 0 ? (
+                <p className="mt-3 text-xs text-slate-500">
+                  {registrosEspecializados.length} registro(s) especializado(s) nesta área.
+                </p>
+              ) : (
+                <p className="mt-3 text-xs text-slate-400">Nenhum registro complementar criado.</p>
               )}
-            </div>
-          ))}
+            </section>
+          )}
         </div>
       )}
 
-      {/* Modal de criação */}
+      {abaAtiva === "casos" && <CasosWorkspace casos={casos} area={cfg.areaCaso} />}
+
+      {abaAtiva === "ferramentas" && (
+        <div className="space-y-4">
+          {cfg.comparadorBacen && <ComparadorBacen />}
+          {cfg.bancarioForense && <BancarioForense />}
+          {cfg.liquidacaoTrabalhista && <LiquidacaoTrabalhista />}
+          {cfg.tributarioFiscal && <TributarioFiscal />}
+          {cfg.previdenciarioSimulacao && <PrevidenciarioSimulacao />}
+          {cfg.autosAmbientais && <AmbientalAutos casos={casos ?? []} />}
+          {cfg.ambientalEstrategia && <AmbientalEstrategia />}
+          {cfg.sociedadesCliente && <SociedadesCliente />}
+          {cfg.lgpdRegistros && <LgpdRegistros />}
+
+          {ferramentas.length > 0 ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {ferramentas.map((ferramenta) => (
+                <FerramentaWorkspace key={ferramenta.id} ferramenta={ferramenta} />
+              ))}
+            </div>
+          ) : (
+            !(
+              cfg.comparadorBacen ||
+              cfg.bancarioForense ||
+              cfg.liquidacaoTrabalhista ||
+              cfg.tributarioFiscal ||
+              cfg.previdenciarioSimulacao ||
+              cfg.autosAmbientais ||
+              cfg.ambientalEstrategia ||
+              cfg.sociedadesCliente ||
+              cfg.lgpdRegistros
+            ) && <Empty message="Nenhuma ferramenta específica cadastrada para esta área." />
+          )}
+        </div>
+      )}
+
+      {abaAtiva === "analise" && (
+        <div className="space-y-4">
+          {cfg.analiseDocumento && (
+            <AnaliseDocumento area={cfg.analiseArea || cfg.areaCaso} casos={casos ?? []} />
+          )}
+          {cfg.analiseExtratos && <AnaliseExtratos />}
+        </div>
+      )}
+
+      {abaAtiva === "referencias" && (
+        <div className="space-y-4">
+          {subareas.length > 0 && (
+            <section className="rounded-2xl border border-black/[0.06] bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+              <h3 className="text-sm font-bold text-slate-950 dark:text-white">Escopo da área</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Subáreas para orientação e pesquisa. A classificação do caso continua sendo confirmada pelo advogado.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {subareas.map((subarea) => (
+                  <span
+                    key={subarea}
+                    className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-white/[0.06] dark:text-slate-300"
+                  >
+                    {subarea}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {cfg.guiaBancario && <GuiaBancario />}
+          {cfg.guiaTransito && <GuiaTransito />}
+          {cfg.guiaTrabalhista && <GuiaTrabalhista />}
+          {cfg.guiaTributario && <GuiaTributario />}
+          {cfg.guiaPrevidenciario && <GuiaPrevidenciario />}
+          {cfg.guiaAmbiental && <GuiaAmbiental />}
+          {cfg.guiaCivil && <GuiaCivil />}
+          {cfg.guiaPenal && <GuiaPenal />}
+          {cfg.guiaConsumidor && <GuiaConsumidor />}
+          {cfg.guiaImobiliario && <GuiaImobiliario />}
+          {cfg.guiaFamilia && <GuiaFamilia />}
+          {cfg.guiaAdministrativo && <GuiaAdministrativo />}
+          {cfg.guiaEmpresarial && <GuiaEmpresarial />}
+          {cfg.guiaLgpd && <GuiaLgpd />}
+
+          {(cfg.ferramentasExternas?.length ?? 0) > 0 && (
+            <section className="rounded-2xl border border-black/[0.06] bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
+              <h3 className="text-sm font-bold text-slate-950 dark:text-white">Fontes e serviços externos</h3>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {cfg.ferramentasExternas?.map((item) => (
+                  <a
+                    key={`${item.nome}:${item.url}`}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start justify-between gap-3 rounded-xl border border-black/[0.05] p-3 transition hover:border-ouro/40 dark:border-white/10"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{item.nome}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">{item.descricao}</p>
+                    </div>
+                    <ExternalLink className="h-4 w-4 shrink-0 text-slate-400" />
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+
       <Modal
-        open={modal}
-        onClose={() => setModal(false)}
-        title={`Novo caso — ${cfg.titulo}`}
+        open={modalRegistro}
+        onClose={() => setModalRegistro(false)}
+        title={`Registrar dados especializados — ${tituloDoWorkspace(cfg)}`}
         wide
       >
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="label">Caso vinculado *</label>
             <select
               className="input"
-              value={form.case_id || ""}
-              onChange={(e) => setForm({ ...form, case_id: e.target.value })}
+              value={String(formularioRegistro.case_id ?? "")}
+              onChange={(event) =>
+                setFormularioRegistro({ ...formularioRegistro, case_id: event.target.value })
+              }
             >
-              <option value="">Selecione o caso...</option>
-              {casos.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.numero_interno} — {c.titulo}
+              <option value="">Selecione o caso…</option>
+              {(casos ?? []).map((caso) => (
+                <option key={caso.id} value={caso.id}>
+                  {caso.numero_interno} — {caso.titulo}
                 </option>
               ))}
             </select>
-            {casos.length === 0 && (
-              <p className="text-xs text-warn-600 mt-1">
-                Crie antes um caso com área "{cfg.areaCaso}"
+            {!casos?.length && (
+              <p className="mt-1 text-xs text-warn-600">
+                Primeiro crie um caso nesta área pelo botão “Novo caso”.
               </p>
             )}
           </div>
-          {cfg.campos.map((c) => (
-            <div key={c.nome} className={c.col === 2 ? "sm:col-span-2" : ""}>
+          {cfg.campos.map((campo) => (
+            <div key={campo.nome} className={campo.col === 2 ? "sm:col-span-2" : ""}>
               <label className="label">
-                {c.label}
-                {c.obrigatorio && " *"}
+                {campo.label}
+                {campo.obrigatorio ? " *" : ""}
               </label>
-              {c.tipo === "select" ? (
+              {campo.tipo === "select" ? (
                 <select
                   className="input"
-                  value={form[c.nome] || ""}
-                  onChange={(e) =>
-                    setForm({ ...form, [c.nome]: e.target.value })
+                  value={String(formularioRegistro[campo.nome] ?? "")}
+                  onChange={(event) =>
+                    setFormularioRegistro({
+                      ...formularioRegistro,
+                      [campo.nome]: event.target.value,
+                    })
                   }
                 >
-                  <option value="">Selecione...</option>
-                  {c.opcoes?.map((o) => (
-                    <option key={o} value={o}>
-                      {rotulo(o)}
+                  <option value="">Selecione…</option>
+                  {campo.opcoes?.map((opcao) => (
+                    <option key={opcao} value={opcao}>
+                      {rotulo(opcao)}
                     </option>
                   ))}
                 </select>
-              ) : c.tipo === "textarea" ? (
+              ) : campo.tipo === "textarea" ? (
                 <textarea
                   className="input"
                   rows={3}
-                  value={form[c.nome] || ""}
-                  placeholder={c.placeholder}
-                  onChange={(e) =>
-                    setForm({ ...form, [c.nome]: e.target.value })
+                  value={String(formularioRegistro[campo.nome] ?? "")}
+                  placeholder={campo.placeholder}
+                  onChange={(event) =>
+                    setFormularioRegistro({
+                      ...formularioRegistro,
+                      [campo.nome]: event.target.value,
+                    })
                   }
                 />
-              ) : c.tipo === "checkbox" ? (
-                <label className="flex items-center gap-2 mt-1 text-sm">
+              ) : campo.tipo === "checkbox" ? (
+                <label className="mt-1 flex items-center gap-2 text-sm text-slate-600">
                   <input
                     type="checkbox"
-                    checked={!!form[c.nome]}
-                    onChange={(e) =>
-                      setForm({ ...form, [c.nome]: e.target.checked })
+                    checked={Boolean(formularioRegistro[campo.nome])}
+                    onChange={(event) =>
+                      setFormularioRegistro({
+                        ...formularioRegistro,
+                        [campo.nome]: event.target.checked,
+                      })
                     }
                   />
-                  <span className="text-slate-600">{c.ajuda || "Sim"}</span>
+                  {campo.ajuda || "Sim"}
                 </label>
               ) : (
                 <input
                   className="input"
-                  type={c.tipo}
-                  step={c.tipo === "number" ? "0.01" : undefined}
-                  placeholder={c.placeholder}
-                  value={form[c.nome] || ""}
-                  onChange={(e) =>
-                    setForm({ ...form, [c.nome]: e.target.value })
+                  type={campo.tipo}
+                  step={campo.tipo === "number" ? "0.01" : undefined}
+                  value={String(formularioRegistro[campo.nome] ?? "")}
+                  placeholder={campo.placeholder}
+                  onChange={(event) =>
+                    setFormularioRegistro({
+                      ...formularioRegistro,
+                      [campo.nome]: event.target.value,
+                    })
                   }
                 />
               )}
-              {c.ajuda && c.tipo !== "checkbox" && (
-                <p className="text-xs text-slate-400 mt-1">{c.ajuda}</p>
+              {campo.ajuda && campo.tipo !== "checkbox" && (
+                <p className="mt-1 text-xs text-slate-400">{campo.ajuda}</p>
               )}
             </div>
           ))}
         </div>
-        <div className="flex justify-end mt-5">
-          <button className="btn-primary" disabled={salvando} onClick={salvar}>
-            {salvando ? "Salvando..." : "Registrar caso"}
+        <div className="mt-5 flex justify-end">
+          <button className="btn-primary" disabled={salvandoRegistro} onClick={registrarEspecializado}>
+            {salvandoRegistro ? "Salvando…" : "Registrar ficha especializada"}
           </button>
         </div>
       </Modal>
