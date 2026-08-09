@@ -5,7 +5,6 @@ Agrega o AILog (uso, custo, aproveitamento HITL, modelos) — só leitura, sem s
 from __future__ import annotations
 
 import importlib.util
-import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -58,6 +57,63 @@ def _busca_semantica_pronta(cfg, *, fastembed_instalado: bool) -> bool:
     if provider == "http":
         return bool(str(cfg.EMBEDDINGS_API_URL or "").strip())
     return fastembed_instalado
+
+
+def _estado_provedores(cfg) -> dict:
+    """Espelha kill-switch, provider forçado e elegibilidade do ai_gateway."""
+    externos_permitidos = bool(cfg.AI_EXTERNAL_PROVIDERS_ALLOWED)
+    configurados = {
+        "anthropic": bool(
+            externos_permitidos and cfg.ANTHROPIC_ENABLED and cfg.ANTHROPIC_API_KEY
+        ),
+        "maritaca": bool(
+            externos_permitidos and cfg.MARITACA_ENABLED and cfg.MARITACA_API_KEY
+        ),
+        "groq": bool(externos_permitidos and cfg.GROQ_API_KEY),
+        "ollama": bool(getattr(cfg, "OLLAMA_ENABLED", False)),
+    }
+    prioridade = [
+        p.strip().lower()
+        for p in str(cfg.AI_PROVIDER_PRIORITY or "").split(",")
+        if p.strip()
+    ]
+    selecionado = str(getattr(cfg, "AI_PROVIDER", "auto") or "auto").strip().lower()
+    forcado = selecionado if selecionado in configurados else None
+    forcado_inelegivel = bool(forcado and not configurados[forcado])
+
+    runtime = {p: False for p in configurados}
+    if bool(cfg.AI_ENABLED):
+        # Mesmo contrato de _resolver_cadeia: provider forçado elegível vira a
+        # cadeia única; se for inelegível, o gateway cai para a cadeia automática.
+        if forcado and configurados[forcado]:
+            runtime[forcado] = True
+        else:
+            runtime.update(configurados)
+
+    elegiveis = [p for p in prioridade if runtime.get(p, False)]
+    for provider, ativo in runtime.items():
+        if ativo and provider not in elegiveis:
+            elegiveis.append(provider)
+
+    if not bool(cfg.AI_ENABLED) or not elegiveis:
+        modo = "indisponivel"
+    elif forcado and runtime.get(forcado):
+        modo = "local" if forcado == "ollama" else "externo"
+    elif forcado_inelegivel:
+        modo = "auto_fallback"
+    else:
+        modo = "auto"
+
+    return {
+        "ai_enabled": bool(cfg.AI_ENABLED),
+        "externos_permitidos": externos_permitidos,
+        "selecionado": selecionado,
+        "forcado_inelegivel": forcado_inelegivel,
+        "runtime": runtime,
+        "prioridade": prioridade,
+        "elegiveis": elegiveis,
+        "modo": modo,
+    }
 
 
 @router.get("/dashboard")
@@ -124,12 +180,6 @@ async def estado_operacional(
 
     cfg = get_settings()
 
-    def _bool_env(name: str, default: bool = False) -> bool:
-        val = os.getenv(name)
-        if val is None:
-            return default
-        return val.lower() in ("1", "true", "yes", "on")
-
     total_logs = (
         await db.execute(select(sqlfunc.count()).select_from(AILog))
     ).scalar() or 0
@@ -155,77 +205,53 @@ async def estado_operacional(
     ).all()
     status_map = {_v(s): c for s, c in por_status}
 
-    embeddings_provider = str(cfg.EMBEDDINGS_PROVIDER or "local").lower()
+    embeddings_provider = str(cfg.EMBEDDINGS_PROVIDER or "local").strip().lower()
     fastembed_instalado = importlib.util.find_spec("fastembed") is not None
     embeddings_enabled = bool(cfg.EMBEDDINGS_ENABLED)
     semantic_ready = _busca_semantica_pronta(
         cfg, fastembed_instalado=fastembed_instalado
     )
-
-    externos_permitidos = bool(cfg.AI_EXTERNAL_PROVIDERS_ALLOWED)
-    anthropic_habilitado = bool(
-        externos_permitidos and cfg.ANTHROPIC_ENABLED and cfg.ANTHROPIC_API_KEY
-    )
-    maritaca_habilitado = bool(
-        externos_permitidos and cfg.MARITACA_ENABLED and cfg.MARITACA_API_KEY
-    )
-    groq_habilitado = bool(externos_permitidos and cfg.GROQ_API_KEY)
-    ollama_habilitado = bool(getattr(cfg, "OLLAMA_ENABLED", False))
-
-    prioridade = [
-        p.strip().lower()
-        for p in str(cfg.AI_PROVIDER_PRIORITY or "").split(",")
-        if p.strip()
-    ]
-    ativos = {
-        "anthropic": anthropic_habilitado,
-        "maritaca": maritaca_habilitado,
-        "groq": groq_habilitado,
-        "ollama": ollama_habilitado,
-    }
-    elegiveis = [p for p in prioridade if ativos.get(p, False)]
+    estado = _estado_provedores(cfg)
+    runtime = estado["runtime"]
 
     return {
         "provedores": {
             "anthropic": {
                 "suportado": True,
-                "habilitado_runtime": anthropic_habilitado,
+                "habilitado_runtime": runtime["anthropic"],
                 "configurado": bool(cfg.ANTHROPIC_API_KEY),
                 "enabled": bool(cfg.ANTHROPIC_ENABLED),
                 "modelo_complexo": cfg.ANTHROPIC_MODEL_COMPLEXO,
             },
             "maritaca": {
                 "suportado": True,
-                "habilitado_runtime": maritaca_habilitado,
+                "habilitado_runtime": runtime["maritaca"],
                 "configurado": bool(cfg.MARITACA_API_KEY),
                 "enabled": bool(cfg.MARITACA_ENABLED),
                 "modelo": cfg.MARITACA_MODEL,
             },
             "groq": {
                 "suportado": True,
-                "habilitado_runtime": groq_habilitado,
+                "habilitado_runtime": runtime["groq"],
                 "configurado": bool(cfg.GROQ_API_KEY),
                 "modelo": cfg.GROQ_MODEL,
             },
             "ollama": {
                 "suportado": True,
-                "habilitado_runtime": ollama_habilitado,
+                "habilitado_runtime": runtime["ollama"],
                 # compatibilidade com consumidores legados
-                "habilitado": ollama_habilitado,
+                "habilitado": runtime["ollama"],
                 "opt_in": True,
-                "status": "habilitado" if ollama_habilitado else "desativado",
+                "status": "habilitado" if runtime["ollama"] else "desativado",
                 "modelo_analise": getattr(cfg, "OLLAMA_MODEL_ANALISE", None),
             },
-            "externos_permitidos": externos_permitidos,
-            "prioridade_runtime": prioridade,
-            "elegiveis_na_prioridade": elegiveis,
-            "modo": (
-                "externo"
-                if any(ativos[p] for p in ("anthropic", "maritaca", "groq"))
-                else "local"
-                if ollama_habilitado
-                else "indisponivel"
-            ),
+            "ai_enabled": estado["ai_enabled"],
+            "externos_permitidos": estado["externos_permitidos"],
+            "provider_selecionado": estado["selecionado"],
+            "provider_forcado_inelegivel": estado["forcado_inelegivel"],
+            "prioridade_runtime": estado["prioridade"],
+            "elegiveis_na_prioridade": estado["elegiveis"],
+            "modo": estado["modo"],
             "observacao": (
                 "Provider suportado pelo código não significa provider ativo. "
                 "Use habilitado_runtime/elegiveis_na_prioridade como estado operacional."
@@ -238,7 +264,7 @@ async def estado_operacional(
             "busca_semantica_ativa": semantic_ready,
             "embeddings_enabled": embeddings_enabled,
             "provider": embeddings_provider,
-            "api_url_configurada": bool(cfg.EMBEDDINGS_API_URL),
+            "api_url_configurada": bool(str(cfg.EMBEDDINGS_API_URL or "").strip()),
             "fastembed_instalado_no_backend": fastembed_instalado,
         },
         "hitl": {
