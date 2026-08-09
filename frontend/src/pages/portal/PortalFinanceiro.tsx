@@ -45,8 +45,10 @@ export default function PortalFinanceiro() {
   }, [load]);
 
   const original = (r: any) => Number(r.valor_original ?? r.valor ?? 0);
-  const pagoLinha = (r: any) => Number(r.valor_pago ?? (r.status === "pago" ? original(r) : 0));
-  const saldo = (r: any) => Number(r.saldo_aberto ?? (r.status === "pago" ? 0 : original(r)));
+  const pagoLinha = (r: any) =>
+    Number(r.valor_pago ?? (r.status === "pago" ? original(r) : 0));
+  const saldo = (r: any) =>
+    Number(r.saldo_aberto ?? (r.status === "pago" ? 0 : original(r)));
 
   const total = rows
     .filter((r) => r.status !== "cancelado")
@@ -174,13 +176,16 @@ export default function PortalFinanceiro() {
                     )}
                     {pagoAtual > 0 && saldoAtual > 0 && (
                       <p className="text-xs text-success-600 mt-1">
-                        Já pago: {fmtMoney(pagoAtual)} · saldo: {fmtMoney(saldoAtual)}
+                        Já pago: {fmtMoney(pagoAtual)} · saldo:{" "}
+                        {fmtMoney(saldoAtual)}
                       </p>
                     )}
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-bold text-slate-800">
-                      {saldoAtual > 0 ? fmtMoney(saldoAtual) : fmtMoney(originalLinha)}
+                      {saldoAtual > 0
+                        ? fmtMoney(saldoAtual)
+                        : fmtMoney(originalLinha)}
                     </p>
                     {saldoAtual > 0 && pagoAtual > 0 && (
                       <p className="text-[10px] text-slate-400">
@@ -248,7 +253,9 @@ export default function PortalFinanceiro() {
               {recibo.ultima_baixa && (
                 <div>
                   <p className="text-xs text-slate-400">Última baixa</p>
-                  <p className="text-slate-800">{fmtDate(recibo.ultima_baixa)}</p>
+                  <p className="text-slate-800">
+                    {fmtDate(recibo.ultima_baixa)}
+                  </p>
                 </div>
               )}
             </div>
