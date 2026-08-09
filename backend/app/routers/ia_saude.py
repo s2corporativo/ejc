@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib.util
 from datetime import datetime, timedelta, timezone
+from typing import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func as sqlfunc
@@ -44,19 +45,34 @@ def _v(x):
     return x.value if hasattr(x, "value") else x
 
 
-def _busca_semantica_pronta(cfg, *, fastembed_instalado: bool) -> bool:
+def _busca_semantica_pronta(
+    cfg,
+    *,
+    fastembed_instalado: bool,
+    validar_local: Callable[[], tuple[bool, str]] | None = None,
+) -> bool:
     """Estado operacional real do mecanismo de embeddings.
 
-    Provider HTTP só está pronto com endpoint configurado. Providers locais
-    dependem do FastEmbed instalado. Em ambos os casos EMBEDDINGS_ENABLED é o
-    kill-switch autoritativo.
+    Provider HTTP só está pronto com endpoint configurado. Provider local exige
+    FastEmbed instalado E modelo/dimensão aceitos pelo mesmo validador usado por
+    embedding_service. Em ambos os casos EMBEDDINGS_ENABLED é o kill-switch.
     """
     if not bool(cfg.EMBEDDINGS_ENABLED):
         return False
     provider = str(cfg.EMBEDDINGS_PROVIDER or "local").strip().lower()
     if provider == "http":
         return bool(str(cfg.EMBEDDINGS_API_URL or "").strip())
-    return fastembed_instalado
+    if not fastembed_instalado:
+        return False
+    if validar_local is None:
+        from app.services.embedding_service import validar_modelo_local
+
+        validar_local = validar_modelo_local
+    try:
+        ok, _detalhe = validar_local()
+    except Exception:
+        return False
+    return bool(ok)
 
 
 def _estado_provedores(cfg) -> dict:
@@ -133,7 +149,9 @@ async def dashboard(
         await db.execute(select(sqlfunc.count()).select_from(AILog).where(w))
     ).scalar() or 0
     custo = (
-        await db.execute(select(sqlfunc.coalesce(sqlfunc.sum(AILog.custo_estimado), 0)).where(w))
+        await db.execute(
+            select(sqlfunc.coalesce(sqlfunc.sum(AILog.custo_estimado), 0)).where(w)
+        )
     ).scalar() or 0
     pii = (
         await db.execute(

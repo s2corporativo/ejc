@@ -42,13 +42,38 @@ def test_embeddings_http_com_url_fica_pronto_sem_fastembed_local():
 
 def test_embeddings_local_exige_fastembed_e_respeita_kill_switch():
     assert not _busca_semantica_pronta(
-        _cfg_embeddings("local"), fastembed_instalado=False
+        _cfg_embeddings("local"),
+        fastembed_instalado=False,
+        validar_local=lambda: (True, "ok"),
     )
     assert _busca_semantica_pronta(
-        _cfg_embeddings("local"), fastembed_instalado=True
+        _cfg_embeddings("local"),
+        fastembed_instalado=True,
+        validar_local=lambda: (True, "modelo e dimensão válidos"),
     )
     assert not _busca_semantica_pronta(
-        _cfg_embeddings("local", enabled=False), fastembed_instalado=True
+        _cfg_embeddings("local", enabled=False),
+        fastembed_instalado=True,
+        validar_local=lambda: (True, "ok"),
+    )
+
+
+def test_embeddings_local_invalido_nao_e_anunciado_como_pronto():
+    assert not _busca_semantica_pronta(
+        _cfg_embeddings("local"),
+        fastembed_instalado=True,
+        validar_local=lambda: (False, "dimensão incompatível"),
+    )
+
+
+def test_embeddings_local_falha_fechado_se_validador_lancar_excecao():
+    def falhar():
+        raise RuntimeError("registro fastembed indisponível")
+
+    assert not _busca_semantica_pronta(
+        _cfg_embeddings("local"),
+        fastembed_instalado=True,
+        validar_local=falhar,
     )
 
 
