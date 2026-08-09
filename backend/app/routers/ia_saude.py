@@ -45,6 +45,21 @@ def _v(x):
     return x.value if hasattr(x, "value") else x
 
 
+def _busca_semantica_pronta(cfg, *, fastembed_instalado: bool) -> bool:
+    """Estado operacional real do mecanismo de embeddings.
+
+    Provider HTTP só está pronto com endpoint configurado. Providers locais
+    dependem do FastEmbed instalado. Em ambos os casos EMBEDDINGS_ENABLED é o
+    kill-switch autoritativo.
+    """
+    if not bool(cfg.EMBEDDINGS_ENABLED):
+        return False
+    provider = str(cfg.EMBEDDINGS_PROVIDER or "local").strip().lower()
+    if provider == "http":
+        return bool(str(cfg.EMBEDDINGS_API_URL or "").strip())
+    return fastembed_instalado
+
+
 @router.get("/dashboard")
 async def dashboard(
     dias: int = Query(30, ge=1, le=365),
@@ -143,8 +158,8 @@ async def estado_operacional(
     embeddings_provider = str(cfg.EMBEDDINGS_PROVIDER or "local").lower()
     fastembed_instalado = importlib.util.find_spec("fastembed") is not None
     embeddings_enabled = bool(cfg.EMBEDDINGS_ENABLED)
-    semantic_ready = embeddings_enabled and (
-        embeddings_provider == "http" or fastembed_instalado
+    semantic_ready = _busca_semantica_pronta(
+        cfg, fastembed_instalado=fastembed_instalado
     )
 
     externos_permitidos = bool(cfg.AI_EXTERNAL_PROVIDERS_ALLOWED)
