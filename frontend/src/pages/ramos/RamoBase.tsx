@@ -115,7 +115,8 @@ function ResumoWorkspace({
     {
       label: "Ferramentas",
       value: ferramentasUnicas,
-      descricao: "Calculadoras e rotinas operacionais disponíveis neste núcleo.",
+      descricao:
+        "Calculadoras e rotinas operacionais disponíveis neste núcleo.",
       icon: Wrench,
     },
     {
@@ -239,7 +240,9 @@ function RegistrosEspecializados({
           >
             <div className="min-w-[180px] flex-1">
               <p className="text-sm font-medium text-navy">
-                {rotulo(String(item[cfg.campoTitulo] || "Registro especializado"))}
+                {rotulo(
+                  String(item[cfg.campoTitulo] || "Registro especializado"),
+                )}
               </p>
               <p className="text-xs text-slate-400">
                 {item.instituicao_financeira ||
@@ -294,7 +297,8 @@ function CasosDoRamo({
               <StatusBadge value={caso.status} />
             </div>
             <p className="mt-1 text-xs text-slate-400">
-              {caso.numero_interno || "Sem número interno"} · {rotulo(caso.area)}
+              {caso.numero_interno || "Sem número interno"} ·{" "}
+              {rotulo(caso.area)}
               {caso.fase ? ` · ${rotulo(caso.fase)}` : ""}
             </p>
           </div>
@@ -308,7 +312,9 @@ function CasosDoRamo({
 }
 
 function FerramentasDoRamo({ cfg, casos }: { cfg: RamoConfig; casos: Case[] }) {
-  const ferramentas = [...new Map(cfg.ferramentas.map((f) => [f.endpoint, f])).values()];
+  const ferramentas = [
+    ...new Map(cfg.ferramentas.map((f) => [f.endpoint, f])).values(),
+  ];
   const grupos = new Map<string, typeof ferramentas>();
   for (const ferramenta of ferramentas) {
     const grupo = ferramenta.grupo || "Ferramentas do núcleo";
@@ -373,7 +379,9 @@ function AnalisesDoRamo({ cfg, casos }: { cfg: RamoConfig; casos: Case[] }) {
 
 function ReferenciasDoRamo({ cfg }: { cfg: RamoConfig }) {
   const linksExternos = [
-    ...new Map((cfg.ferramentasExternas ?? []).map((item) => [item.url, item])).values(),
+    ...new Map(
+      (cfg.ferramentasExternas ?? []).map((item) => [item.url, item]),
+    ).values(),
   ];
 
   return (
