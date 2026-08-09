@@ -130,14 +130,14 @@ export function relacoesDoWorkspace(cfg: RamoConfig): RelacaoVisualArea[] {
 export function temFerramentasWorkspace(cfg: RamoConfig): boolean {
   return Boolean(
     cfg.ferramentas.length > 0 ||
-      cfg.comparadorBacen ||
-      cfg.liquidacaoTrabalhista ||
-      cfg.tributarioFiscal ||
-      cfg.previdenciarioSimulacao ||
-      cfg.autosAmbientais ||
-      cfg.ambientalEstrategia ||
-      cfg.sociedadesCliente ||
-      cfg.lgpdRegistros,
+    cfg.comparadorBacen ||
+    cfg.liquidacaoTrabalhista ||
+    cfg.tributarioFiscal ||
+    cfg.previdenciarioSimulacao ||
+    cfg.autosAmbientais ||
+    cfg.ambientalEstrategia ||
+    cfg.sociedadesCliente ||
+    cfg.lgpdRegistros,
   );
 }
 
@@ -150,8 +150,8 @@ export function temAnaliseWorkspace(cfg: RamoConfig): boolean {
 export function temReferenciasWorkspace(cfg: RamoConfig): boolean {
   return Boolean(
     (cfg.subareas?.length ?? 0) > 0 ||
-      (cfg.ferramentasExternas?.length ?? 0) > 0 ||
-      GUIAS.some((chave) => Boolean(cfg[chave])),
+    (cfg.ferramentasExternas?.length ?? 0) > 0 ||
+    GUIAS.some((chave) => Boolean(cfg[chave])),
   );
 }
 
