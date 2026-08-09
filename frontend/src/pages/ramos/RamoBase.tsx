@@ -234,7 +234,7 @@ function RegistrosEspecializados({
         independentes e não substituem o cadastro central de Casos.
       </p>
       <div className="mt-3 space-y-2">
-        {registros.slice(0, 8).map((item) => (
+        {registros.map((item) => (
           <div
             key={item.id}
             className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3"
@@ -476,6 +476,9 @@ export default function RamoBase() {
     (ROLES.clientes as readonly string[]).includes(role),
   );
   const [aba, setAba] = useState<WorkspaceTabId>("visao");
+  const [abasVisitadas, setAbasVisitadas] = useState<Set<WorkspaceTabId>>(
+    () => new Set(["visao"]),
+  );
   const [casos, setCasos] = useState<Case[]>([]);
   const [casosLoading, setCasosLoading] = useState(true);
   const [casosErro, setCasosErro] = useState(false);
@@ -500,6 +503,7 @@ export default function RamoBase() {
     if (!cfg || !podeAcessarArea) return;
     let ativo = true;
     setAba("visao");
+    setAbasVisitadas(new Set(["visao"]));
     setCasos([]);
     setCasosLoading(true);
     setCasosErro(false);
@@ -560,6 +564,15 @@ export default function RamoBase() {
   }
 
   const relacoes = relacoesDoWorkspace(cfg);
+  const ativarAba = (id: WorkspaceTabId) => {
+    setAbasVisitadas((atuais) => {
+      if (atuais.has(id)) return atuais;
+      const proximas = new Set(atuais);
+      proximas.add(id);
+      return proximas;
+    });
+    setAba(id);
+  };
 
   return (
     <div className="space-y-5">
@@ -596,7 +609,7 @@ export default function RamoBase() {
               type="button"
               role="tab"
               aria-selected={aba === item.id}
-              onClick={() => setAba(item.id)}
+              onClick={() => ativarAba(item.id)}
               className={`whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition ${
                 aba === item.id
                   ? "bg-slate-900 text-white dark:bg-white dark:text-slate-950"
@@ -609,7 +622,10 @@ export default function RamoBase() {
         </div>
       </div>
 
-      {aba === "visao" && (
+      <div
+        className={aba === "visao" ? "" : "hidden"}
+        aria-hidden={aba !== "visao"}
+      >
         <div className="space-y-4">
           <ResumoWorkspace cfg={cfg} casos={casos} registros={registros} />
           <section className="card p-4">
@@ -644,32 +660,67 @@ export default function RamoBase() {
           />
           <RegistrosEspecializados cfg={cfg} registros={registros} />
         </div>
-      )}
+      </div>
 
-      {aba === "casos" && (
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="font-serif text-lg font-semibold text-navy">
-                Casos desta área
-              </h2>
-              <p className="text-xs text-slate-500">
-                Lista canônica por {areasDoWorkspace(cfg).join(" + ")} —
-                registros legados são unidos apenas para leitura, sem
-                reclassificação.
-              </p>
+      {abasVisitadas.has("casos") && (
+        <div
+          className={aba === "casos" ? "" : "hidden"}
+          aria-hidden={aba !== "casos"}
+        >
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="font-serif text-lg font-semibold text-navy">
+                  Casos desta área
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Lista canônica por {areasDoWorkspace(cfg).join(" + ")} —
+                  registros legados são unidos apenas para leitura, sem
+                  reclassificação.
+                </p>
+              </div>
+              <Link to="/casos" className="btn-secondary text-sm">
+                Abrir lista geral
+              </Link>
             </div>
-            <Link to="/casos" className="btn-secondary text-sm">
-              Abrir lista geral
-            </Link>
-          </div>
-          <CasosDoRamo casos={casos} loading={casosLoading} erro={casosErro} />
-        </section>
+            <CasosDoRamo
+              casos={casos}
+              loading={casosLoading}
+              erro={casosErro}
+            />
+          </section>
+        </div>
       )}
 
-      {aba === "ferramentas" && <FerramentasDoRamo cfg={cfg} casos={casos} />}
-      {aba === "analise" && <AnalisesDoRamo cfg={cfg} casos={casos} />}
-      {aba === "referencias" && <ReferenciasDoRamo cfg={cfg} />}
+      {abasVisitadas.has("ferramentas") && (
+        <div
+          key={`${cfg.slug}:ferramentas`}
+          className={aba === "ferramentas" ? "" : "hidden"}
+          aria-hidden={aba !== "ferramentas"}
+        >
+          <FerramentasDoRamo cfg={cfg} casos={casos} />
+        </div>
+      )}
+
+      {abasVisitadas.has("analise") && (
+        <div
+          key={`${cfg.slug}:analise`}
+          className={aba === "analise" ? "" : "hidden"}
+          aria-hidden={aba !== "analise"}
+        >
+          <AnalisesDoRamo cfg={cfg} casos={casos} />
+        </div>
+      )}
+
+      {abasVisitadas.has("referencias") && (
+        <div
+          key={`${cfg.slug}:referencias`}
+          className={aba === "referencias" ? "" : "hidden"}
+          aria-hidden={aba !== "referencias"}
+        >
+          <ReferenciasDoRamo cfg={cfg} />
+        </div>
+      )}
     </div>
   );
 }
