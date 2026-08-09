@@ -12,6 +12,8 @@ from typing import Any
 
 import httpx
 
+from app.integrations.feature_flags import require_enabled
+
 
 IBGE_LOCALIDADES_BASE = "https://servicodados.ibge.gov.br/api/v1/localidades"
 _UF_RE = re.compile(r"^[A-Z]{2}$")
@@ -54,6 +56,7 @@ class IbgeLocalidadesClient:
         self.timeout = httpx.Timeout(timeout_s)
 
     async def _get(self, path: str) -> Any:
+        require_enabled("ibge", "IBGE Localidades")
         url = f"{IBGE_LOCALIDADES_BASE}/{path.lstrip('/')}"
         ultimo: Exception | None = None
         async with httpx.AsyncClient(
