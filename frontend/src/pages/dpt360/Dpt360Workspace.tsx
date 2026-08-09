@@ -26,11 +26,8 @@ import {
 } from "lucide-react";
 import { Link, NavLink, useLocation } from "react-router";
 import { Empty, ErrorState, Spinner } from "../../components/UI";
-import {
-  getDptDashboard,
-  type DptCompany,
-  type DptDashboard,
-} from "./api";
+import { getDptDashboard, type DptCompany, type DptDashboard } from "./api";
+import CompanyLegalTwin from "./CompanyLegalTwin";
 
 const NAV_ITEMS: Array<{ path: string; label: string; icon: LucideIcon }> = [
   { path: "/dpt360", label: "Visão Executiva", icon: Gauge },
@@ -44,16 +41,6 @@ const NAV_ITEMS: Array<{ path: string; label: string; icon: LucideIcon }> = [
   { path: "/dpt360/biblioteca", label: "Biblioteca", icon: LibraryBig },
   { path: "/dpt360/relatorios", label: "Relatórios", icon: BookOpen },
 ];
-
-const HEALTH_AREAS = [
-  "Tributário",
-  "Ambiental",
-  "Administrativo",
-  "Trabalhista",
-  "Contratual",
-  "LGPD",
-  "Governança de IA",
-] as const;
 
 function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
@@ -214,14 +201,12 @@ function CompanyDetail({ data, company }: { data: DptDashboard; company: DptComp
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-300">Empresa 360</p>
             <h2 className="mt-1 text-2xl font-semibold text-slate-950 dark:text-white">{company.nome}</h2>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{[company.cidade, company.estado].filter(Boolean).join(" / ") || "Localidade não informada"} · base do futuro Perfil Jurídico Vivo / Legal Twin.</p>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{[company.cidade, company.estado].filter(Boolean).join(" / ") || "Localidade não informada"} · Perfil Jurídico Vivo derivado de registros canônicos.</p>
           </div>
           <Link to={`/clientes/${company.id}`} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-white/10 dark:text-slate-200">Abrir cadastro canônico <ArrowRight className="h-3.5 w-3.5" /></Link>
         </div>
       </Card>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {HEALTH_AREAS.map((area) => <Card key={area} className="p-4"><div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{area}</div><div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Não avaliado</div><div className="mt-2 text-xs leading-5 text-slate-400">Sem diagnóstico especializado aprovado e evidenciado.</div></Card>)}
-      </div>
+      <CompanyLegalTwin clientId={company.id} />
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <div className="flex items-center justify-between"><h3 className="font-semibold text-slate-950 dark:text-white">Casos empresariais</h3><span className="text-xs text-slate-400">{cases.length}</span></div>
@@ -314,7 +299,7 @@ export default function Dpt360Workspace() {
         {data?.notes?.length ? <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs leading-5 text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-400">{data.notes.join(" ")}</div> : null}
         {content}
         <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100"><Building2 className="h-4 w-4 text-amber-600" />DPT Legal Twin</div><p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">Perfil Jurídico Vivo será construído sobre dados canônicos, com histórico e evidências, sem segundo cadastro.</p></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100"><Building2 className="h-4 w-4 text-amber-600" />DPT Legal Twin</div><p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">Perfil Jurídico Vivo construído sobre dados canônicos, com histórico e evidências, sem segundo cadastro.</p></div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100"><FileSearch className="h-4 w-4 text-amber-600" />Pré-flight jurídico</div><p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">Fatos sem prova, vigência, citações e inconsistências serão verificados antes de liberar entregáveis.</p></div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100"><BrainCircuit className="h-4 w-4 text-amber-600" />Modo Conselho</div><p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">Perguntas executivas serão respondidas a partir do contexto real da empresa, com revisão humana.</p></div>
         </div>
