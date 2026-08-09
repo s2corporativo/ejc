@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision = "143_auditoria_operacional_861"
 down_revision = "138_consolida_fontes_ingestao"
@@ -86,6 +87,17 @@ def upgrade() -> None:
         "ix_documents_publicado_portal", "documents", ["publicado_portal"], unique=False
     )
 
+    # Convenção aceita pelo gate: CREATE TYPE idempotente e sem Assign dinâmico.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            CREATE TYPE signaturesignerstatus AS ENUM ('pendente','assinado','recusado');
+        EXCEPTION WHEN duplicate_object THEN
+            NULL;
+        END $$;
+        """
+    )
     op.create_table(
         "signature_signers",
         sa.Column("id", sa.String(length=36), primary_key=True),
@@ -110,7 +122,16 @@ def upgrade() -> None:
             server_default="cliente",
         ),
         sa.Column(
-            "status", sa.String(length=20), nullable=False, server_default="pendente"
+            "status",
+            postgresql.ENUM(
+                "pendente",
+                "assinado",
+                "recusado",
+                name="signaturesignerstatus",
+                create_type=False,
+            ),
+            nullable=False,
+            server_default="pendente",
         ),
         sa.Column("assinado_em", sa.DateTime(timezone=True), nullable=True),
         sa.Column("ip", sa.String(length=45), nullable=True),
@@ -120,10 +141,6 @@ def upgrade() -> None:
             sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.func.now(),
-        ),
-        sa.CheckConstraint(
-            "status IN ('pendente','assinado','recusado')",
-            name="ck_signature_signers_status_enum",
         ),
         sa.UniqueConstraint(
             "signature_request_id",
@@ -155,8 +172,8 @@ def upgrade() -> None:
                ||'-'||substr(md5('signature-signer:' || sr.id || ':' || sr.assinado_por_user),17,4)
                ||'-'||substr(md5('signature-signer:' || sr.id || ':' || sr.assinado_por_user),21,12),
                sr.id, sr.assinado_por_user, u.full_name, u.email,
-               'cliente', 'assinado', sr.assinado_em, sr.ip, sr.user_agent,
-               sr.created_at
+               'cliente', 'assinado'::signaturesignerstatus,
+               sr.assinado_em, sr.ip, sr.user_agent, sr.created_at
           FROM signature_requests sr
           JOIN users u ON u.id = sr.assinado_por_user
          WHERE sr.deleted_at IS NULL
@@ -176,7 +193,7 @@ def upgrade() -> None:
                ||'-'||substr(md5('signature-signer:' || sr.id || ':' || u.id),17,4)
                ||'-'||substr(md5('signature-signer:' || sr.id || ':' || u.id),21,12),
                sr.id, u.id, u.full_name, u.email,
-               'cliente', 'pendente', sr.created_at
+               'cliente', 'pendente'::signaturesignerstatus, sr.created_at
           FROM signature_requests sr
           JOIN users u ON u.client_id = sr.client_id
          WHERE sr.deleted_at IS NULL
@@ -260,8 +277,8 @@ def _assert_sem_evidencia_nova() -> None:
             SELECT COUNT(*)
               FROM signature_signers ss
               JOIN signature_requests sr ON sr.id = ss.signature_request_id
-             WHERE ss.status = 'recusado'
-                OR (ss.status = 'assinado' AND
+             WHERE ss.status::text = 'recusado'
+                OR (ss.status::text = 'assinado' AND
                     (sr.assinado_por_user IS NULL OR ss.user_id <> sr.assinado_por_user))
         """,
         "histórico societário": "SELECT COUNT(*) FROM socios_historico",
@@ -308,6 +325,7 @@ def downgrade() -> None:
     op.drop_index("ix_signature_signers_user", table_name="signature_signers")
     op.drop_index("ix_signature_signers_request", table_name="signature_signers")
     op.drop_table("signature_signers")
+    postgresql.ENUM(name="signaturesignerstatus").drop(op.get_bind(), checkfirst=True)
     op.drop_index("ix_documents_publicado_portal", table_name="documents")
     op.drop_constraint(
         "fk_documents_publicado_por_users", "documents", type_="foreignkey"
