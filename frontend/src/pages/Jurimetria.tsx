@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Database } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
@@ -113,6 +113,7 @@ export default function Jurimetria() {
   const [benchmarks, setBenchmarks] = useState<any>(null);
   const [selectedTribunal, setSelectedTribunal] = useState("TJMG");
   const [loadingExt, setLoadingExt] = useState(false);
+  const benchmarkRequestRef = useRef(0);
 
   useEffect(() => {
     api
@@ -147,22 +148,29 @@ export default function Jurimetria() {
     });
   }, []);
 
-  const carregarBenchmarks = async () => {
+  const carregarBenchmarks = async (tribunal: string) => {
+    const requestId = ++benchmarkRequestRef.current;
     setLoadingExt(true);
     try {
       const r = await api.get(
-        `/jurimetria/interno/benchmarks?tribunal=${selectedTribunal}`,
+        `/jurimetria/interno/benchmarks?tribunal=${tribunal}`,
       );
-      setBenchmarks(r.data);
+      if (requestId === benchmarkRequestRef.current) {
+        setBenchmarks(r.data);
+      }
     } catch {
-      setBenchmarks(null);
+      if (requestId === benchmarkRequestRef.current) {
+        setBenchmarks(null);
+      }
     } finally {
-      setLoadingExt(false);
+      if (requestId === benchmarkRequestRef.current) {
+        setLoadingExt(false);
+      }
     }
   };
 
   useEffect(() => {
-    carregarBenchmarks();
+    void carregarBenchmarks(selectedTribunal);
   }, [selectedTribunal]);
 
   if (loading)
@@ -174,10 +182,12 @@ export default function Jurimetria() {
 
   const taxa = ov?.taxa_sucesso_geral;
   const totalInterno =
+    internalStats?.total_com_tribunal ??
     internalStats?.por_tribunal?.reduce(
       (s: number, t: any) => s + t.total,
       0,
-    ) ?? 0;
+    ) ??
+    0;
   const taxaHistorica =
     predicao?.taxa_historica_favoravel ?? predicao?.probabilidade_provimento;
 
