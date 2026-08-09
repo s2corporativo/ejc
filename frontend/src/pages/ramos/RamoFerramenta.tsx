@@ -49,12 +49,12 @@ function TaxasBacenView({
             <div className="text-[10px] text-slate-500 uppercase tracking-wide">
               {labels[chave] || chave}
             </div>
-            {item.valor != null ? (
+            {item?.valor != null ? (
               <>
                 <div className="text-lg font-bold text-navy">
                   {Number(item.valor).toFixed(4)}%
                 </div>
-                <div className="text-[10px] text-slate-400">{item.data}</div>
+                <div className="text-[10px] text-slate-400">{item?.data}</div>
               </>
             ) : (
               <div className="text-xs text-danger-500">indisponível</div>
@@ -298,10 +298,12 @@ export default function RamoFerramenta({ f }: { f: FerramentaConfig }) {
       </div>
 
       <p className="text-xs text-slate-500 mb-3">
-        {f.descricao} · <span className="text-gold-700">{f.baseLegal}</span>{" "}
-        <span className="inline-block ml-1 px-1.5 py-0.5 rounded bg-warn-50 text-warn-700 text-[10px] font-medium align-middle">
-          ⚠ regra em revisão — não homologada
-        </span>
+        {f.descricao} · <span className="text-gold-700">{f.baseLegal}</span>
+        {naoHomologada && (
+          <span className="inline-block ml-1 px-1.5 py-0.5 rounded bg-warn-50 text-warn-700 text-[10px] font-medium align-middle">
+            ⚠ regra em revisão — não homologada
+          </span>
+        )}
       </p>
 
       {naoHomologada && (
