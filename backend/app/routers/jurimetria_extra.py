@@ -329,9 +329,9 @@ async def ingerir_datajud(
 @router.get("/cobertura-rag")
 async def cobertura_rag(
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(_req_socio),
+    cu: User = Depends(_req_staff),
 ):
-    """Mapa agregado do que está efetivamente armazenado no RAG atual."""
+    """Mapa agregado do RAG para a equipe jurídica; não retorna conteúdo/PII."""
     from app.services.rag_coverage import medir_cobertura_rag
 
     return await medir_cobertura_rag(db, mg_jec_only=False)
@@ -340,9 +340,9 @@ async def cobertura_rag(
 @router.get("/cobertura-mg-jec")
 async def cobertura_mg_jec(
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(_req_socio),
+    cu: User = Depends(_req_staff),
 ):
-    """Cobertura mensurável MG/JEC, incluindo TJMG automático sem duplicação."""
+    """Cobertura agregada MG/JEC para equipe jurídica, sem conteúdo documental."""
     from app.services.rag_coverage import medir_cobertura_rag
 
     return await medir_cobertura_rag(db, mg_jec_only=True)
