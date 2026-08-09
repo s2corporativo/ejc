@@ -260,6 +260,10 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
         <h3 className="text-sm font-semibold text-slate-700">
           Vincular documento já cadastrado
         </h3>
+        <p className="text-xs text-slate-500">
+          Apenas documentos ainda sem caso podem ser vinculados. Documentos que
+          já integram outro caso permanecem preservados no contexto de origem.
+        </p>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
@@ -292,33 +296,40 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
           )}
         {resultadosVinculo.length > 0 && (
           <div className="space-y-1">
-            {resultadosVinculo.map((d) => (
-              <div
-                key={d.id}
-                className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 p-2 text-sm"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-slate-800">
-                    {d.titulo || d.filename || "Documento"}
-                  </p>
-                  {d.case_id && (
-                    <p className="text-xs text-amber-600">
-                      Já vinculado a outro caso — vincular aqui move o
-                      documento.
-                    </p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void vincular(d.id)}
-                  disabled={vinculandoId === d.id}
-                  className="btn-secondary flex shrink-0 items-center gap-1 text-xs disabled:opacity-50"
+            {resultadosVinculo.map((d) => {
+              const jaVinculado = Boolean(d.case_id);
+              return (
+                <div
+                  key={d.id}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 p-2 text-sm"
                 >
-                  <Link2 className="h-3.5 w-3.5" />
-                  {vinculandoId === d.id ? "Vinculando…" : "Vincular"}
-                </button>
-              </div>
-            ))}
+                  <div className="min-w-0">
+                    <p className="truncate text-slate-800">
+                      {d.titulo || d.filename || "Documento"}
+                    </p>
+                    {jaVinculado && (
+                      <p className="text-xs text-amber-600">
+                        Já vinculado a outro caso — a evidência original não pode
+                        ser movida.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void vincular(d.id)}
+                    disabled={jaVinculado || vinculandoId === d.id}
+                    className="btn-secondary flex shrink-0 items-center gap-1 text-xs disabled:opacity-50"
+                  >
+                    <Link2 className="h-3.5 w-3.5" />
+                    {jaVinculado
+                      ? "Indisponível"
+                      : vinculandoId === d.id
+                        ? "Vinculando…"
+                        : "Vincular"}
+                  </button>
+                </div>
+              );
+            })}
             {totalVinculo > resultadosVinculo.length && (
               <p className="pt-1 text-xs text-slate-400">
                 {totalVinculo} documentos correspondem à busca. Refine o termo
