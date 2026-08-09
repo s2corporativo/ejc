@@ -18,7 +18,7 @@ Próximos passos (NÃO fazem parte desta fase — deixados para o futuro):
 
 Discriminador `origem` (`raio_x` | `sala_juridica`): colunas específicas de
 cada origem ficam nullable — nula quando não fizer sentido para aquela
-origem. Nomes que description a MESMA coisa nas duas tabelas de origem foram
+origem. Nomes que descrevem a MESMA coisa nas duas tabelas de origem foram
 unificados num único nome canônico:
   - `potencial_cliente` (RaioXAnalise.potencial_cliente == LegalChatSession.cliente_potencial)
   - `area`              (RaioXAnalise.area == LegalChatSession.area_sugerida; ampliado p/ String(100))
@@ -78,10 +78,11 @@ class Preliminar(Base):
     convertido_case_id = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
     converted_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    # Piso de purga LGPD — comum às duas origens (ver 140_legal_chat_retention_purga,
-    # PR #803, que dá o mesmo campo/semântica a legal_chat_sessions e já o lê
-    # para ambas em services/scheduler.py::_purgar_analises_preliminares_abandonadas).
-    # A Fase 2 deve popular esta coluna também para origem="sala_juridica".
+    # Piso técnico para futura política de retenção LGPD. Nenhuma migration ou
+    # rotina de purga anterior é dependência desta Fase 1: a coluna nasce
+    # nullable e sem comportamento automático. A política, o cálculo e eventual
+    # backfill de `retention_until` pertencem à fase posterior de continuidade e
+    # só podem ser ativados após regra formal de retenção + testes/rollback.
     retention_until = Column(DateTime(timezone=True), nullable=True)
     archived_at = Column(DateTime(timezone=True), nullable=True)
     discarded_at = Column(DateTime(timezone=True), nullable=True)
