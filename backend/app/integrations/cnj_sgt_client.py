@@ -27,8 +27,8 @@ XSI = "http://www.w3.org/2001/XMLSchema-instance"
 XSD = "http://www.w3.org/2001/XMLSchema"
 URN = "urn:sgt"
 
-TIPOS_TABELA = frozenset({"A", "M", "C"})  # Assunto, Movimento, Classe
-TIPOS_PESQUISA = frozenset({"G", "N", "C"})  # Glossário, Nome, Código
+TIPOS_TABELA = frozenset({"A", "M", "C"})
+TIPOS_PESQUISA = frozenset({"G", "N", "C"})
 _TRANSIENTES = {429, 500, 502, 503, 504}
 
 
@@ -40,21 +40,28 @@ def _local(tag: str) -> str:
     return tag.split("}", 1)[-1].split(":", 1)[-1]
 
 
-def _resolver_xml(root: ET.Element, el: ET.Element) -> Any:
-    """Converte um nó SOAP em tipos Python, resolvendo href -> id/multiRef."""
+def _resolver_xml(
+    root: ET.Element,
+    el: ET.Element,
+    visitados: frozenset[str] = frozenset(),
+) -> Any:
+    """Converte SOAP em Python e interrompe ciclos href/multiRef."""
     href = el.attrib.get("href")
     if href and href.startswith("#"):
         alvo_id = href[1:]
+        if alvo_id in visitados:
+            raise CnjSgtError("CNJ/SGT retornou referência SOAP cíclica")
         for candidato in root.iter():
             if candidato.attrib.get("id") == alvo_id:
-                return _resolver_xml(root, candidato)
+                return _resolver_xml(root, candidato, visitados | {alvo_id})
+        raise CnjSgtError("CNJ/SGT retornou referência SOAP sem destino")
 
     filhos = list(el)
     if not filhos:
         return (el.text or "").strip()
 
     pares: list[tuple[str, Any]] = [
-        (_local(f.tag), _resolver_xml(root, f)) for f in filhos
+        (_local(f.tag), _resolver_xml(root, f, visitados)) for f in filhos
     ]
     nomes = [k for k, _ in pares]
     if nomes and len(set(nomes)) == 1:
@@ -176,9 +183,10 @@ class CnjSgtClient:
         seq = str(seq_item).strip()
         if not seq.isdigit():
             raise ValueError("seq_item deve ser numérico")
+        # Contrato público CNJ: getArrayDetalhesItemPublicoWS recebe seqItem string.
         return await self._call(
             "getArrayDetalhesItemPublicoWS",
-            [("seqItem", seq, "int"), ("tipoItem", tipo, "string")],
+            [("seqItem", seq, "string"), ("tipoItem", tipo, "string")],
         )
 
     async def filhos(self, seq_item: int | str, tipo_item: str) -> Any:
