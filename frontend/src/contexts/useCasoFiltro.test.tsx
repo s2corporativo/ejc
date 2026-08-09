@@ -37,6 +37,24 @@ describe("useCasoFiltro — contexto pela rota", () => {
     expect(screen.getByTestId("caso").textContent).toBe("case-123");
   });
 
+  it("faz o caso da rota vencer uma query de outro caso", () => {
+    render(
+      <MemoryRouter initialEntries={["/casos/caso-a?caso=caso-b&tab=pecas"]}>
+        <Probe />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("caso").textContent).toBe("caso-a");
+  });
+
+  it("não derruba a tela quando o segmento possui escape percentual inválido", () => {
+    render(
+      <MemoryRouter initialEntries={["/casos/%E0%A4?tab=pecas"]}>
+        <Probe />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("caso").textContent).toBe("sem-caso");
+  });
+
   it("não trata /casos/novo como contexto de caso", () => {
     render(
       <MemoryRouter initialEntries={["/casos/novo"]}>
