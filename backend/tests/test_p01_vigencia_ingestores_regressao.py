@@ -30,6 +30,21 @@ def test_planalto_referencia_a_outra_lei_revogada_nao_revoga_diploma_atual():
     assert "legal_status_verificado_em" not in status
 
 
+def test_planalto_referencia_narrativa_em_linha_separada_nao_revoga_diploma_atual():
+    """Quebra de linha da ementa não transforma outra lei no sujeito do ato."""
+    blocos = _blocos_preambulo(
+        "LEI Nº 14.133, DE 1º DE ABRIL DE 2021\n"
+        "Altera a Lei nº 8.666/1993, anteriormente aplicável às licitações,\n"
+        "revogada pela Lei nº 14.133/2021, e dá outras providências."
+    )
+
+    status = planalto.situacao_juridica(blocos)
+
+    assert status["legal_status"] == "vigencia_nao_verificada"
+    assert "legal_status_inferido_em" in status
+    assert "legal_status_verificado_em" not in status
+
+
 def test_planalto_marcador_do_proprio_diploma_no_cabecalho_e_revogacao_verificada():
     blocos = _blocos_preambulo(
         "LEI Nº 8.666, DE 21 DE JUNHO DE 1993\n"
