@@ -32,15 +32,21 @@ async def _inserir_diploma(
     vigente: bool = True,
     versao: int = 1,
     legal_status: str | None = "vigente",
+    legal_status_verificado_em: str | None = "2026-08-01T10:00:00Z",
 ) -> str:
-    """Diploma como a ingestão o grava HOJE (Issue #636): legislação carrega
-    `extra.legal_status`. `legal_status=None` reproduz o acervo legado, ainda
-    não reingerido — que o gate de vigência exclui de propósito."""
+    """Diploma como a ingestão o grava HOJE (P0.1): legislação carrega
+    `extra.legal_status` COM proveniência positiva completa (origem e data de
+    verificação, SEM carimbo de inferência). `legal_status=None` reproduz o
+    acervo legado, ainda não reingerido — que o gate de vigência exclui.
+    `legal_status_verificado_em=None` reproduz inferência (sem proveniência
+    completa) — que o gate estrito também rejeita."""
     doc_id = str(uuid4())
     extra = {"rag_status": "aprovado", "confidence_level": "alta"}
     if legal_status is not None:
         extra["legal_status"] = legal_status
         extra["legal_status_origem"] = "planalto:texto_compilado"
+        if legal_status_verificado_em is not None:
+            extra["legal_status_verificado_em"] = legal_status_verificado_em
     await db.execute(
         text(
             """
@@ -369,5 +375,50 @@ async def test_versao_superada_mantem_o_mesmo_recorte_de_diploma():
             assert citacao["fonte_doc_id"] == id_cc
             assert citacao["fonte_versao"] == 2
             assert citacao["fonte_vigente"] is False
+        finally:
+            await _limpar(db, ids)
+
+
+async def test_diploma_vigente_sem_data_verificacao_nao_e_recuperado_pelo_gate_estrito():
+    """P0.1: legislação vigente='vigente' SEM legal_status_verificado_em (apenas
+    inferido) NÃO passa pelo gate estrito de vigência. O diploma existe no
+    banco e citation_check poderia achá-lo, mas o filtro RAG o exclui."""
+    from app.core.database import AsyncSessionLocal
+
+    ids: list[str] = []
+    async with AsyncSessionLocal() as db:
+        try:
+            # Diploma vigente COM legal_status mas SEM data de verificação
+            # (só tem carimbo de inferência) — gate estrito deve rejeitar
+            id_inferido = await _inserir_diploma(
+                db,
+                chave="planalto:cdc",
+                titulo="Código de Defesa do Consumidor (Lei 8.078/1990)",
+                conteudo="Art. 6. Direitos básicos do consumidor (versão inferida).",
+                legal_status="vigente",
+                legal_status_verificado_em=None,  # SEM proveniência completa
+            )
+            ids.append(id_inferido)
+            # Adicionar o campo de inferência manualmente via UPDATE
+            await db.execute(
+                text(
+                    "UPDATE knowledge_docs SET extra = extra || "
+                    "CAST(:inf AS jsonb) WHERE id = :id"
+                ),
+                {"id": id_inferido, "inf": json.dumps({"legal_status_inferido_em": "2026-08-01T10:00:00Z"})}
+            )
+            await db.commit()
+
+            # Tentativa de verificação de citação: como o gate estrito está
+            # ligado e o documento não tem proveniência completa, NÃO deve
+            # ser encontrado pelo RAG/busca de citações
+            citacao = await _verificar(
+                db,
+                "Direito básico do consumidor previsto no art. 6º do CDC.",
+            )
+            # Como o filtro RAG o exclui, a citação NÃO é verificada
+            assert citacao["status"] != "verificada", (
+                "diploma sem data de verificação passou pelo gate estrito")
+            assert citacao["encontrada"] is False
         finally:
             await _limpar(db, ids)

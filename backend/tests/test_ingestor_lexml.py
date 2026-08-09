@@ -241,7 +241,7 @@ async def test_ingerir_propaga_revogacao_e_omite_chave_quando_nao_ha(monkeypatch
     por_chave = {u["chave_origem"]: u["extra"] for u in ups}
     revogada = por_chave["lexml:leg:federal:lei;8.666;1993"]
     assert revogada["legal_status"] == "revogada"
-    assert revogada["legal_status_origem"] == "lexml:registro"
+    assert revogada["legal_status_origem"] == "lexml:titulo"
 
     # sem declaração a chave é OMITIDA (não gravada como None): o upsert mescla
     # `extra` a cada re-feed, e um None apagaria curadoria já registrada.

@@ -411,9 +411,20 @@ async def upsert_documento(
         # G4 — base_rag derivada de client_id/case_id
         from app.models.rag import BaseRag
         base = BaseRag.caso if case_id else (BaseRag.escritorio if client_id else BaseRag.publica)
+        # Preservar campos curados de vigência na nova versão (mesmo padrão do
+        # caminho "inalterado"). CONTEÚDO mudou, mas a decisão humana sobre
+        # vigência — se houver — continua aplicável ao diploma atualizado.
+        extra_nova_versao = dict(extra or {})
+        anterior = dict(existente.extra or {})
+        if _vigencia_de_curadoria(anterior):
+            for campo in _CAMPOS_VIGENCIA:
+                if campo in anterior:
+                    extra_nova_versao[campo] = anterior[campo]
+                else:
+                    extra_nova_versao.pop(campo, None)
         db.add(KnowledgeDoc(
             id=doc_id, titulo=titulo, categoria=categoria,
-            fonte=fonte, tribunal=tribunal, extra=extra,
+            fonte=fonte, tribunal=tribunal, extra=extra_nova_versao,
             client_id=client_id, case_id=case_id,
             base_rag=base,
             chave_origem=chave_origem, hash_conteudo=h, atualizado_em=agora,

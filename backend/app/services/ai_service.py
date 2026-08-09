@@ -148,17 +148,16 @@ _SQL_SITUACAO_DECLARADA = (
     "'revogado','suspensa','nao_aplicavel','nao aplicavel','não aplicável',"
     "'historica')"
 )
-# Sob RAG_EXIGIR_VIGENCIA_VERIFICADA (default true), documento de LEGISLAÇÃO sem
-# vigência declarada pela fonte também sai da recuperação. Três recortes, e cada
-# um reproduz um ramo de inferir_situacao_juridica:
+# Sob RAG_EXIGIR_VIGENCIA_VERIFICADA (default true), documento de LEGISLAÇÃO com
+# vigência 'vigente' só passa se tiver proveniência POSITIVA COMPLETA: origem
+# preenchida, data de verificação preenchida E carimbo de inferência AUSENTE.
+# Três recortes, e cada um reproduz um ramo de inferir_situacao_juridica:
 #
 #   1. kd.vigente — a inferência testa `if not bool(doc.vigente)` ANTES de olhar
-#      o extra e devolve 'historica', que é situação DECLARADA. Sem esta guarda
-#      o espelho divergia do Python e sumia com o acervo histórico: era o que
-#      quebrava _artigo_superado/_sumula_superada em citation_check.py, que
-#      consultam `vigente = FALSE` de propósito para avisar "possivelmente
-#      desatualizada". Coluna NULL vale como não vigente, igual ao bool() do
-#      Python — daí o COALESCE(...,false).
+#      o extra e devolve 'historica', que é situação DECLARADA. Versões
+#      históricas (vigente=false) PASSAM (bypass), porque a análise histórica é
+#      válida. Coluna NULL vale como não vigente, igual ao bool() do Python —
+#      daí o COALESCE(...,false).
 #   2. categoria LIKE '%legisl%' — só nessa faixa a inferência devolve
 #      'vigencia_nao_verificada'; para o restante do acervo devolve
 #      'nao_aplicavel' (que PERMITE fundamentação), então súmulas,
@@ -169,11 +168,24 @@ _SQL_SITUACAO_DECLARADA = (
 #      tramitação e não pode fundamentar peça como se fosse lei em vigor. Se um
 #      dia proposição precisar voltar, o caminho é categoria própria fora do
 #      recorte — não afrouxar o filtro.
-#   3. situação não declarada — mesma lista de valores da inferência.
+#   3. Condição POSITIVA: para legislação vigente, exige legal_status='vigente'
+#      COM proveniência positiva completa (origem e data de verificação
+#      preenchidos e carimbo de inferência ausente). Situações 'suspensa' ou
+#      'parcialmente_revogada' NÃO passam sem conferência humana específica.
 _FILTRO_VIGENCIA_VERIFICADA_RAG = (
-    "AND NOT (COALESCE(kd.vigente, false) = true "
-    "AND lower(COALESCE(kd.categoria,'')) LIKE '%legisl%' "
-    f"AND {_SQL_SITUACAO_JURIDICA} NOT IN {_SQL_SITUACAO_DECLARADA})"
+    "AND ("
+    # Bypass: versões históricas sempre passam (vigente=false ou NULL)
+    "COALESCE(kd.vigente, false) = false "
+    # OU não é legislação (outros acervos sempre passam)
+    "OR lower(COALESCE(kd.categoria,'')) NOT LIKE '%legisl%' "
+    # OU legislação vigente com situação 'vigente' E proveniência positiva completa
+    "OR ("
+    f"{_SQL_SITUACAO_JURIDICA} = 'vigente' "
+    "AND NULLIF(btrim(kd.extra->>'legal_status_origem'),'') IS NOT NULL "
+    "AND NULLIF(btrim(kd.extra->>'legal_status_verificado_em'),'') IS NOT NULL "
+    "AND NULLIF(btrim(kd.extra->>'legal_status_inferido_em'),'') IS NULL"
+    ")"
+    ")"
 )
 
 
