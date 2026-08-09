@@ -32,8 +32,8 @@ describe("Dashboard — acesso PJe", () => {
     renderizar();
 
     const link = screen.getByRole("link", { name: /Abrir intimações/i });
-    expect(link).toHaveAttribute("href", "/atividades?tipo=intimacao");
-    expect(screen.getByTestId("dashboard-ultra")).toBeInTheDocument();
+    expect(link.getAttribute("href")).toBe("/atividades?tipo=intimacao");
+    expect(screen.getByTestId("dashboard-ultra")).toBeTruthy();
   });
 
   it("não renderiza o acesso PJe para papel não autorizado", () => {
@@ -42,7 +42,7 @@ describe("Dashboard — acesso PJe", () => {
 
     expect(
       screen.queryByRole("link", { name: /Abrir intimações/i }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByTestId("dashboard-ultra")).toBeInTheDocument();
+    ).toBeNull();
+    expect(screen.getByTestId("dashboard-ultra")).toBeTruthy();
   });
 });
