@@ -5,7 +5,11 @@ Cobre:
 - deduplicação por CPF não pode devolver/vincular cliente alheio;
 - preview preserva o alerta sem expor id/nome da carteira protegida;
 - conversão autorizada cria CaseIntelligenceSnapshot de origem ``raio_x`` na
-  mesma operação, não aprovado e versionado.
+  mesma operação, não aprovado e versionado;
+- G1 (proxima_acao obrigatório em caso aberto): das 4 portas de criação de
+  caso (manual via cases.py, Entrada Única, Sala Jurídica, Raio-X), esta era
+  a única que deixava o campo NULL — auditoria confirmada lendo o código das
+  outras 3 antes de escrever este teste.
 """
 from __future__ import annotations
 
@@ -286,6 +290,45 @@ async def test_conversao_cria_snapshot_raio_x_na_mesma_operacao():
             assert snapshot.congelado is False
             assert snapshot.payload["raio_x_analise_id"] == analise_id
             assert snapshot.payload["revisao_humana_obrigatoria"] is True
+        finally:
+            await _limpar(
+                db,
+                analise_ids=[analise_id],
+                case_ids=[case_id] if case_id else [],
+                client_ids=[client_id],
+                user_ids=[advogado],
+            )
+
+
+async def test_conversao_nao_deixa_caso_aberto_sem_proxima_acao():
+    """G1: cases.py::atualizar() exige `proxima_acao` em toda atualização de
+    caso aberto/em_instrucao/em_producao/protocolado. entrada_service.py e
+    legal_chat_service.py já aplicam um default explícito na criação; o
+    Raio-X era o único dos 4 caminhos que deixava o campo NULL, criando um
+    caso que nasce válido mas trava no primeiro PATCH legítimo."""
+    from app.core.database import AsyncSessionLocal
+    from app.models.case import Case, CaseStatus
+    from app.services.raio_x_service import converter_em_caso
+
+    case_id = None
+    async with AsyncSessionLocal() as db:
+        advogado = await _criar_user(db)
+        client_id = await _criar_cliente(db, "Cliente G1 Raio-X", advogado)
+        analise_id = await _criar_analise(db, advogado, "Cliente G1 Raio-X")
+        await db.commit()
+        try:
+            user = await _carregar_user(db, advogado)
+            analise = await _carregar_analise(db, analise_id)
+            result = await converter_em_caso(
+                db, analise, _payload_existente(client_id), user,
+            )
+            case_id = result["case_id"]
+
+            case = (
+                await db.execute(select(Case).where(Case.id == case_id))
+            ).scalar_one()
+            assert case.status == CaseStatus.aberto
+            assert (case.proxima_acao or "").strip()
         finally:
             await _limpar(
                 db,
