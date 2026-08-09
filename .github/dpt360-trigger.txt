@@ -1,1 +1,0 @@
-Trigger efêmero para executar o workflow restrito da Onda 1 DPT 360. Remover após a correção automática.
