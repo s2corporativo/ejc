@@ -77,6 +77,15 @@ ADICOES_INTENCIONAIS = {
     ("/api/processo-eletronico/credenciais", "GET"),
     ("/api/processo-eletronico/credenciais", "POST"),
     ("/api/processo-eletronico/credenciais/{credencial_id}/testar", "POST"),
+    # PR #905: jurimetria passa a expor, de forma explícita, apenas métricas
+    # internas e cobertura agregada do RAG. Os aliases /ext legados permanecem,
+    # mas estes são os contratos canônicos novos e deliberados.
+    ("/api/jurimetria/interno/stats", "GET"),
+    ("/api/jurimetria/interno/benchmarks", "GET"),
+    ("/api/jurimetria/interno/analise-prospectiva", "GET"),
+    ("/api/jurimetria/analise-prospectiva", "POST"),
+    ("/api/jurimetria/cobertura-rag", "GET"),
+    ("/api/jurimetria/cobertura-mg-jec", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -161,12 +170,8 @@ def test_paridade_openapi_com_snapshot_anterior():
     chaves_base = {(r["path"], r["method"]): r for r in base}
     chaves_atual = {(r["path"], r["method"]): r for r in atual}
 
-    sumiram = sorted(
-        set(chaves_base) - set(chaves_atual) - REMOCOES_INTENCIONAIS
-    )
-    surgiram = sorted(
-        set(chaves_atual) - set(chaves_base) - ADICOES_INTENCIONAIS
-    )
+    sumiram = sorted(set(chaves_base) - set(chaves_atual) - REMOCOES_INTENCIONAIS)
+    surgiram = sorted(set(chaves_atual) - set(chaves_base) - ADICOES_INTENCIONAIS)
     assert not sumiram, f"{len(sumiram)} rota(s) DESAPARECERAM: {sumiram[:10]}"
     assert not surgiram, f"{len(surgiram)} rota(s) NOVAS não previstas: {surgiram[:10]}"
 
