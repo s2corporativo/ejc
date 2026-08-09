@@ -264,6 +264,8 @@ async function inspectDashboard(page, viewport, failures) {
     failures.push(`${viewport.name}: dashboard ultra não está visível`);
   }
 
+  const normalizedMainText = layout.mainText.toLocaleLowerCase("pt-BR");
+
   for (const forbidden of [
     "918.273,45",
     "876.543,21",
@@ -275,7 +277,7 @@ async function inspectDashboard(page, viewport, failures) {
     "Honorários",
     "Saldo financeiro",
   ]) {
-    if (layout.mainText.includes(forbidden)) {
+    if (normalizedMainText.includes(forbidden.toLocaleLowerCase("pt-BR"))) {
       failures.push(
         `${viewport.name}: conteúdo financeiro indevido: ${forbidden}`,
       );
@@ -292,7 +294,7 @@ async function inspectDashboard(page, viewport, failures) {
     "Áreas de atuação",
     "Distribuição dos casos",
   ]) {
-    if (!layout.mainText.includes(expected)) {
+    if (!normalizedMainText.includes(expected.toLocaleLowerCase("pt-BR"))) {
       failures.push(`${viewport.name}: conteúdo operacional ausente: ${expected}`);
     }
   }
