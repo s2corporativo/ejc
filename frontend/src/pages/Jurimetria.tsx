@@ -69,6 +69,12 @@ function StatCard({
   );
 }
 
+function fmtData(value: string | null | undefined) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
+}
+
 export default function Jurimetria() {
   const [ov, setOv] = useState<any>(null);
   const [area, setArea] = useState<any[]>([]);
@@ -76,6 +82,8 @@ export default function Jurimetria() {
   const [tese, setTese] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [desfechos, setDesfechos] = useState<any>(null);
+  const [ragCoverage, setRagCoverage] = useState<any>(null);
+  const [mgCoverage, setMgCoverage] = useState<any>(null);
 
   // Análise prospectiva por histórico interno (heurística descritiva, não ML).
   const [predForm, setPredForm] = useState({
@@ -129,6 +137,14 @@ export default function Jurimetria() {
       .get("/jurimetria/interno/stats")
       .then((r: any) => setInternalStats(r.data))
       .catch(() => {});
+
+    Promise.allSettled([
+      api.get("/jurimetria/cobertura-rag"),
+      api.get("/jurimetria/cobertura-mg-jec"),
+    ]).then(([rag, mg]) => {
+      if (rag.status === "fulfilled") setRagCoverage(rag.value.data);
+      if (mg.status === "fulfilled") setMgCoverage(mg.value.data);
+    });
   }, []);
 
   const carregarBenchmarks = async () => {
@@ -187,6 +203,104 @@ export default function Jurimetria() {
           sub="casos com tribunal informado"
         />
       </div>
+
+      {/* Cobertura real do conhecimento */}
+      {(ragCoverage || mgCoverage) && (
+        <div className="card p-5 mb-6">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Database size={16} className="text-primary-500" />
+            <h3 className="font-semibold text-sm text-gray-700 uppercase">
+              Cobertura Real do Conhecimento da IA
+            </h3>
+          </div>
+          <p className="text-xs text-gray-400 mb-4">
+            Contagem do acervo RAG efetivamente armazenado. Ausência de metadado
+            ou fonte validada permanece visível e não é inferida como cobertura.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+            <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <p className="text-xl font-bold text-gray-800">
+                {ragCoverage?.documentos?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+              <p className="text-xs text-gray-500">Docs RAG atuais</p>
+            </div>
+            <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <p className="text-xl font-bold text-gray-800">
+                {ragCoverage?.chunks?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+              <p className="text-xs text-gray-500">Chunks atuais</p>
+            </div>
+            <div className="text-center p-3 bg-primary-50 rounded-lg">
+              <p className="text-xl font-bold text-primary-700">
+                {mgCoverage?.documentos?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+              <p className="text-xs text-primary-600">Docs MG/JEC</p>
+            </div>
+            <div className="text-center p-3 bg-primary-50 rounded-lg">
+              <p className="text-xl font-bold text-primary-700">
+                {mgCoverage?.chunks?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+              <p className="text-xs text-primary-600">Chunks MG/JEC</p>
+            </div>
+            <div className="text-center p-3 bg-green-50 rounded-lg">
+              <p className="text-xl font-bold text-green-700">
+                {mgCoverage?.pct_fonte_validada_explicita != null
+                  ? `${mgCoverage.pct_fonte_validada_explicita}%`
+                  : "—"}
+              </p>
+              <p className="text-xs text-green-600">Fonte validada explícita</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 mb-3">
+            <span>
+              MG/JEC indexados: {mgCoverage?.documentos_indexados ?? "—"}
+            </span>
+            <span>
+              MG/JEC aprovados: {mgCoverage?.documentos_aprovados ?? "—"}
+            </span>
+            <span>Última atualização: {fmtData(mgCoverage?.ultima_atualizacao)}</span>
+          </div>
+          {mgCoverage?.colecoes?.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-gray-400 border-b">
+                    <th className="py-2 pr-3 font-medium">Coleção medida</th>
+                    <th className="py-2 px-3 font-medium text-right">Docs</th>
+                    <th className="py-2 px-3 font-medium text-right">Chunks</th>
+                    <th className="py-2 px-3 font-medium text-right">Indexados</th>
+                    <th className="py-2 pl-3 font-medium text-right">Fonte validada</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mgCoverage.colecoes.slice(0, 10).map((c: any) => (
+                    <tr key={c.colecao} className="border-b border-gray-100">
+                      <td className="py-2 pr-3 text-gray-700">{c.colecao}</td>
+                      <td className="py-2 px-3 text-right text-gray-600">
+                        {c.documentos}
+                      </td>
+                      <td className="py-2 px-3 text-right text-gray-600">
+                        {c.chunks}
+                      </td>
+                      <td className="py-2 px-3 text-right text-gray-600">
+                        {c.indexados}
+                      </td>
+                      <td className="py-2 pl-3 text-right text-gray-600">
+                        {c.fonte_validada_explicita}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-[11px] text-gray-400 mt-3">
+            O crawler TJMG genérico é mapeado logicamente na cobertura, sem
+            duplicar documentos. “Fonte validada” conta somente metadado
+            explícito; ausência não é presumida como validação.
+          </p>
+        </div>
+      )}
 
       {/* Desfechos reais */}
       {desfechos?.por_resultado?.length > 0 && (
