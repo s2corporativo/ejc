@@ -1,20 +1,13 @@
 """PATCH /cases/{case_id}/kanban não pode sincronizar status para
 arquivado/encerrado sem passar pelo endpoint dedicado.
 
-Achado do security-auditor sobre o PR que fechou o mesmo gap no PATCH
-genérico (docs/PLANO_FUSAO_CASO_UNICO.md §4.3-5): `update_case_kanban`
-(`kanban.py`) era o SEGUNDO caminho que gravava `Case.status` direto por SQL
-cru — sem `require_roles(_ARQUIVAMENTO_ROLES)`, sem pós-mortem, sem
-`AuditLog`, sem `CaseMovimento` — e não limpava os campos de desfecho na
-reabertura. Qualquer usuário de `_TEAM` (inclusive `estagiario` vinculado
-como auxiliar do caso) conseguia arquivar ou encerrar um caso só arrastando
-o cartão para uma coluna com nome "Arquivado"/"Encerrado"/"Entregue"/"Acordo".
-
-Postgres é OBRIGATÓRIO (mesmo padrão dos demais *_dblevel.py: chama o handler
-direto com AsyncSessionLocal). Sem RUN_DB_TESTS=1, pula.
+Cobre também reabertura e concorrência: o status usado para decidir a limpeza
+deve estar protegido por lock transacional para não reabrir com metadados
+terminais obsoletos.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -98,8 +91,6 @@ async def test_estagiario_nao_arquiva_nem_encerra_arrastando_cartao():
         socio = await _criar_user(db, "socio")
         estagiario = await _criar_user(db, "estagiario")
         cli = await _criar_cliente(db, f"Cliente {tok}")
-        # Estagiário vinculado como AUXILIAR do caso — passa por
-        # verificar_acesso_caso mesmo sem papel de gestão.
         caso = await _criar_caso(db, cli, f"Caso {tok}", resp_id=socio, auxiliar_id=estagiario)
         await db.commit()
         try:
@@ -128,9 +119,6 @@ async def test_estagiario_nao_arquiva_nem_encerra_arrastando_cartao():
 
 
 async def test_kanban_move_livre_para_coluna_nao_terminal():
-    """Mover o cartão entre colunas que não mapeiam para status terminal
-    continua funcionando sem nenhum gate extra — só a sincronização de
-    status para arquivado/encerrado é bloqueada."""
     from app.core.database import AsyncSessionLocal
     from app.routers.kanban import update_case_kanban
 
@@ -197,3 +185,91 @@ async def test_kanban_reabertura_limpa_campos_de_desfecho():
             assert all(v is None for v in row[1:])
         finally:
             await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
+
+
+async def test_kanban_reabertura_de_arquivado_limpa_metadados_de_arquivo():
+    from app.core.database import AsyncSessionLocal
+    from app.routers.kanban import update_case_kanban
+
+    tok = f"Arq{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db, f"Cliente {tok}")
+        caso = await _criar_caso(db, cli, f"Caso {tok}", resp_id=socio, status="arquivado")
+        await db.execute(
+            text(
+                "UPDATE cases SET archived_at=:agora, archive_reason='Sem movimentação', "
+                "kanban_column='Arquivado' WHERE id=:id"
+            ),
+            {"id": caso, "agora": datetime.now(timezone.utc)},
+        )
+        await db.commit()
+        try:
+            cu = await _carregar_user(db, socio)
+            await update_case_kanban(
+                caso, {"kanban_column": "Aguardando prazo", "kanban_position": 0}, db, cu,
+            )
+            row = (await db.execute(
+                text("SELECT status, archived_at, archive_reason FROM cases WHERE id=:id"),
+                {"id": caso},
+            )).one()
+            assert row[0] == "aberto"
+            assert row[1] is None
+            assert row[2] is None
+        finally:
+            await _limpar(db, case_ids=[caso], user_ids=[socio], client_ids=[cli])
+
+
+async def test_kanban_rele_status_apos_lock_concorrente_e_limpa_arquivamento():
+    """Uma transação concorrente que arquiva o caso deve terminar antes de o
+    Kanban decidir a reabertura; ao destravar, o handler relê `arquivado` e
+    limpa os metadados terminais na mesma transação."""
+    from app.core.database import AsyncSessionLocal
+    from app.routers.kanban import update_case_kanban
+
+    tok = f"Conc{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as setup:
+        socio = await _criar_user(setup, "socio")
+        cli = await _criar_cliente(setup, f"Cliente {tok}")
+        caso = await _criar_caso(setup, cli, f"Caso {tok}", resp_id=socio, status="aberto")
+        await setup.commit()
+
+    try:
+        async with AsyncSessionLocal() as escritor, AsyncSessionLocal() as kanban_db:
+            cu = await _carregar_user(kanban_db, socio)
+            await escritor.execute(
+                text("SELECT id FROM cases WHERE id=:id FOR UPDATE"), {"id": caso}
+            )
+            await escritor.execute(
+                text(
+                    "UPDATE cases SET status='arquivado', archived_at=:agora, "
+                    "archive_reason='Concorrente' WHERE id=:id"
+                ),
+                {"id": caso, "agora": datetime.now(timezone.utc)},
+            )
+
+            tarefa = asyncio.create_task(
+                update_case_kanban(
+                    caso,
+                    {"kanban_column": "Aguardando prazo", "kanban_position": 0},
+                    kanban_db,
+                    cu,
+                )
+            )
+            await asyncio.sleep(0.1)
+            assert not tarefa.done(), "Kanban não aguardou o lock concorrente"
+
+            await escritor.commit()
+            resultado = await asyncio.wait_for(tarefa, timeout=5)
+            assert resultado["status_sincronizado"] == "aberto"
+
+            row = (await kanban_db.execute(
+                text("SELECT status, archived_at, archive_reason FROM cases WHERE id=:id"),
+                {"id": caso},
+            )).one()
+            assert row[0] == "aberto"
+            assert row[1] is None
+            assert row[2] is None
+    finally:
+        async with AsyncSessionLocal() as cleanup:
+            await _limpar(cleanup, case_ids=[caso], user_ids=[socio], client_ids=[cli])
