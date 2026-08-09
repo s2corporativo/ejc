@@ -3,9 +3,9 @@
 Fonte oficial: https://www.cnj.jus.br/sgt/infWebService.php
 WSDL: https://www.cnj.jus.br/sgt/sgt_ws.php?wsdl
 
-O serviço é SOAP/RPC. Para não adicionar uma dependência SOAP ao backend, este
-cliente monta o envelope mínimo e normaliza a resposta XML, inclusive referências
-SOAP ``href``/``multiRef``. Nenhuma credencial é necessária.
+O serviço é SOAP/RPC com corpo literal. Para não adicionar uma dependência SOAP
+ao backend, este cliente monta o envelope mínimo e normaliza a resposta XML,
+inclusive referências SOAP ``href``/``multiRef``. Nenhuma credencial é necessária.
 """
 from __future__ import annotations
 
@@ -21,11 +21,10 @@ from app.integrations.feature_flags import require_enabled
 
 SGT_ENDPOINT = "https://www.cnj.jus.br/sgt/sgt_ws.php"
 SGT_WSDL = f"{SGT_ENDPOINT}?wsdl"
+SGT_NS = SGT_ENDPOINT
 SOAP_ENV = "http://schemas.xmlsoap.org/soap/envelope/"
-SOAP_ENC = "http://schemas.xmlsoap.org/soap/encoding/"
 XSI = "http://www.w3.org/2001/XMLSchema-instance"
 XSD = "http://www.w3.org/2001/XMLSchema"
-URN = "urn:sgt"
 
 TIPOS_TABELA = frozenset({"A", "M", "C"})
 TIPOS_PESQUISA = frozenset({"G", "N", "C"})
@@ -90,7 +89,9 @@ def _parse_soap(xml_text: str) -> Any:
         if _local(el.tag) == "Fault":
             fault = _resolver_xml(root, el)
             codigo = fault.get("faultcode") if isinstance(fault, dict) else None
-            raise CnjSgtError(f"CNJ/SGT retornou SOAP Fault{': ' + str(codigo) if codigo else ''}")
+            raise CnjSgtError(
+                f"CNJ/SGT retornou SOAP Fault{': ' + str(codigo) if codigo else ''}"
+            )
 
     for el in root.iter():
         if _local(el.tag) == "return":
@@ -99,6 +100,7 @@ def _parse_soap(xml_text: str) -> Any:
 
 
 def _envelope(method: str, params: list[tuple[str, str, str]]) -> str:
+    """Envelope RPC/literal alinhado ao binding publicado no WSDL do SGT."""
     campos = "".join(
         f'<{nome} xsi:type="xsd:{tipo}">{escape(valor)}</{nome}>'
         for nome, valor, tipo in params
@@ -106,9 +108,9 @@ def _envelope(method: str, params: list[tuple[str, str, str]]) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         f'<soapenv:Envelope xmlns:xsi="{XSI}" xmlns:xsd="{XSD}" '
-        f'xmlns:soapenv="{SOAP_ENV}" xmlns:urn="{URN}">'
+        f'xmlns:soapenv="{SOAP_ENV}" xmlns:sgt="{SGT_NS}">'
         '<soapenv:Body>'
-        f'<urn:{method} soapenv:encodingStyle="{SOAP_ENC}">{campos}</urn:{method}>'
+        f'<sgt:{method}>{campos}</sgt:{method}>'
         '</soapenv:Body></soapenv:Envelope>'
     )
 
@@ -122,18 +124,27 @@ class CnjSgtClient:
         body = _envelope(method, params)
         headers = {
             "Content-Type": "text/xml; charset=utf-8",
-            "SOAPAction": f'"{URN}#{method}"',
+            "SOAPAction": f'"{SGT_NS}#{method}"',
             "Accept": "text/xml, application/xml",
             "User-Agent": "EJC/1.0 (+https://depaulateixeira.adv.br; cnj-sgt)",
         }
         ultimo: Exception | None = None
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout,
+            follow_redirects=True,
+        ) as client:
             for tentativa in range(2):
                 try:
-                    resp = await client.post(SGT_ENDPOINT, content=body.encode("utf-8"), headers=headers)
+                    resp = await client.post(
+                        SGT_ENDPOINT,
+                        content=body.encode("utf-8"),
+                        headers=headers,
+                    )
                     if resp.status_code in _TRANSIENTES:
                         raise httpx.HTTPStatusError(
-                            f"HTTP {resp.status_code}", request=resp.request, response=resp
+                            f"HTTP {resp.status_code}",
+                            request=resp.request,
+                            response=resp,
                         )
                     resp.raise_for_status()
                     return _parse_soap(resp.text)
@@ -141,7 +152,9 @@ class CnjSgtClient:
                     raise
                 except (httpx.TransportError, httpx.HTTPStatusError) as exc:
                     ultimo = exc
-                    status = getattr(getattr(exc, "response", None), "status_code", None)
+                    status = getattr(
+                        getattr(exc, "response", None), "status_code", None
+                    )
                     if status is not None and 400 <= status < 500 and status != 429:
                         break
                     if tentativa == 0:
@@ -162,9 +175,13 @@ class CnjSgtClient:
         pesquisa = (tipo_pesquisa or "").upper().strip()
         valor = (valor or "").strip()
         if tabela not in TIPOS_TABELA:
-            raise ValueError("tipo_tabela deve ser A (assunto), M (movimento) ou C (classe)")
+            raise ValueError(
+                "tipo_tabela deve ser A (assunto), M (movimento) ou C (classe)"
+            )
         if pesquisa not in TIPOS_PESQUISA:
-            raise ValueError("tipo_pesquisa deve ser G (glossário), N (nome) ou C (código)")
+            raise ValueError(
+                "tipo_pesquisa deve ser G (glossário), N (nome) ou C (código)"
+            )
         if not valor or len(valor) > 200:
             raise ValueError("valor de pesquisa obrigatório (máximo 200 caracteres)")
         return await self._call(
@@ -183,7 +200,6 @@ class CnjSgtClient:
         seq = str(seq_item).strip()
         if not seq.isdigit():
             raise ValueError("seq_item deve ser numérico")
-        # Contrato público CNJ: getArrayDetalhesItemPublicoWS recebe seqItem string.
         return await self._call(
             "getArrayDetalhesItemPublicoWS",
             [("seqItem", seq, "string"), ("tipoItem", tipo, "string")],
