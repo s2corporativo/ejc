@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import {
   Search,
@@ -42,20 +42,34 @@ export default function DataJudBusca() {
   // endpoint nem disparar consulta externa automaticamente. `caso` habilita a
   // sincronização apenas após o advogado conferir o resultado.
   const numeroInicial = searchParams.get("numero")?.trim() || "";
-  const caseIdContexto = searchParams.get("caso")?.trim() || null;
+  const idCasoContexto = searchParams.get("caso")?.trim() || null;
   const [numero, setNumero] = useState(numeroInicial);
   const [loading, setLoading] = useState(false);
   const [processo, setProcesso] = useState<ProcessoDataJud | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [syncingId, setSyncingId] = useState<string | null>(null);
-  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [idSincronizando, setIdSincronizando] = useState<string | null>(null);
+  const [mensagemSincronizacao, setMensagemSincronizacao] = useState<
+    string | null
+  >(null);
+  const [erroSincronizacao, setErroSincronizacao] = useState<string | null>(null);
+
+  // React Router pode reaproveitar o mesmo componente entre deep-links de
+  // processos diferentes. O campo precisa acompanhar o parâmetro canônico.
+  useEffect(() => {
+    setNumero(numeroInicial);
+    setProcesso(null);
+    setErro(null);
+    setMensagemSincronizacao(null);
+    setErroSincronizacao(null);
+  }, [numeroInicial, idCasoContexto]);
 
   async function buscar() {
     if (!numero.trim()) return;
     setLoading(true);
     setErro(null);
     setProcesso(null);
-    setSyncMsg(null);
+    setMensagemSincronizacao(null);
+    setErroSincronizacao(null);
     try {
       const cnj = formatCNJ(numero.trim());
       const res = await api.get(`/datajud/process/${encodeURIComponent(cnj)}`);
@@ -63,25 +77,30 @@ export default function DataJudBusca() {
     } catch (e: any) {
       const msg =
         e.response?.data?.detail ?? "Processo não encontrado no DataJud";
-      setErro(typeof msg === "string" ? msg : "Processo não encontrado no DataJud");
+      setErro(
+        typeof msg === "string" ? msg : "Processo não encontrado no DataJud",
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  async function sincronizar(caseId: string) {
-    setSyncingId(caseId);
-    setSyncMsg(null);
+  async function sincronizar(idCaso: string) {
+    setIdSincronizando(idCaso);
+    setMensagemSincronizacao(null);
+    setErroSincronizacao(null);
     try {
-      const res = await api.post(`/datajud/cases/${caseId}/sync`);
-      setSyncMsg(`Sincronizado: ${res.data.synced} movimentos atualizados`);
+      const res = await api.post(`/datajud/cases/${idCaso}/sync`);
+      setMensagemSincronizacao(
+        `Sincronizado: ${res.data.synced} movimentos atualizados`,
+      );
     } catch (e: any) {
       const detail = e.response?.data?.detail;
-      setSyncMsg(
-        `Erro: ${typeof detail === "string" ? detail : "Falha na sincronização"}`,
+      setErroSincronizacao(
+        typeof detail === "string" ? detail : "Falha na sincronização",
       );
     } finally {
-      setSyncingId(null);
+      setIdSincronizando(null);
     }
   }
 
@@ -92,7 +111,7 @@ export default function DataJudBusca() {
         subtitle="Busca de processos pelo número CNJ — API pública do Conselho Nacional de Justiça"
       />
 
-      {caseIdContexto && (
+      {idCasoContexto && (
         <div className="rounded-xl border border-primary-100 bg-primary-50 p-3 text-sm text-primary-800">
           Consulta aberta a partir de um Caso. Confira o processo antes de
           sincronizar movimentações com o cadastro interno.
@@ -138,6 +157,13 @@ export default function DataJudBusca() {
         </div>
       )}
 
+      {erroSincronizacao && (
+        <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-danger-500 flex-shrink-0" />
+          <p className="text-sm text-danger-700">{erroSincronizacao}</p>
+        </div>
+      )}
+
       {processo && (
         <div className="space-y-4">
           <div className="card p-5">
@@ -158,19 +184,19 @@ export default function DataJudBusca() {
                     {processo.situacao}
                   </span>
                 )}
-                {caseIdContexto && (
+                {idCasoContexto && (
                   <button
                     type="button"
                     className="btn-secondary text-xs"
-                    disabled={syncingId === caseIdContexto}
-                    onClick={() => void sincronizar(caseIdContexto)}
+                    disabled={idSincronizando === idCasoContexto}
+                    onClick={() => void sincronizar(idCasoContexto)}
                   >
                     <RefreshCw
                       className={`w-3.5 h-3.5 ${
-                        syncingId === caseIdContexto ? "animate-spin" : ""
+                        idSincronizando === idCasoContexto ? "animate-spin" : ""
                       }`}
                     />
-                    {syncingId === caseIdContexto
+                    {idSincronizando === idCasoContexto
                       ? "Sincronizando…"
                       : "Sincronizar com este caso"}
                   </button>
@@ -257,10 +283,12 @@ export default function DataJudBusca() {
             </div>
           )}
 
-          {syncMsg && (
+          {mensagemSincronizacao && (
             <div className="bg-success-50 border border-success-200 rounded-xl p-4 flex items-center gap-3">
               <CheckCircle className="w-4 h-4 text-success-600" />
-              <p className="text-sm text-success-700">{syncMsg}</p>
+              <p className="text-sm text-success-700">
+                {mensagemSincronizacao}
+              </p>
             </div>
           )}
         </div>
