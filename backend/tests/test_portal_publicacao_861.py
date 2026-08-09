@@ -3,7 +3,8 @@
 Os testes DB-level em test_portal_idor_matrix_dblevel.py cobrem o isolamento por
 linha. Aqui travamos a defesa em profundidade que precisa funcionar ANTES de
 qualquer query: cliente_externo nunca administra publicação, apesar de
-AuthMiddleware permitir a subárvore /api/portal/*.
+AuthMiddleware permitir a subárvore /api/portal/*. A autorização externa exige
+ainda publicação explícita e classificação atual ``normal`` em toda leitura.
 """
 from __future__ import annotations
 
