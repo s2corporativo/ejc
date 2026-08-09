@@ -29,6 +29,15 @@ const ACTIONS: Array<{ value: DptAction; label: string; description: string }> =
     },
   ];
 
+function traceText(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 export default function DptIntelligence({
   companies,
   initialAction = "conselho",
@@ -47,18 +56,22 @@ export default function DptIntelligence({
   const [result, setResult] = useState<DptActionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Sincroniza o pai quando o diagnóstico troca de empresa. A seleção manual
+  // feita dentro do Motor não participa deste efeito e não é revertida.
   useEffect(() => {
     if (
       initialClientId &&
       companies.some((company) => company.id === initialClientId)
     ) {
       setClientId(initialClientId);
-      return;
     }
+  }, [companies, initialClientId]);
+
+  useEffect(() => {
     if (!companies.some((company) => company.id === clientId)) {
       setClientId(fallbackClientId);
     }
-  }, [companies, fallbackClientId, initialClientId, clientId]);
+  }, [companies, clientId, fallbackClientId]);
 
   async function submit() {
     if (!clientId || question.trim().length < 3) return;
@@ -203,6 +216,53 @@ export default function DptIntelligence({
               ? JSON.stringify(result.estruturado, null, 2)
               : result.conteudo}
           </pre>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Fontes recuperadas
+              </h3>
+              {result.fontes.length ? (
+                <div className="mt-2 space-y-2">
+                  {result.fontes.map((fonte, index) => (
+                    <pre
+                      key={`fonte-${index}`}
+                      className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-2 text-[11px] leading-5 text-slate-600 dark:bg-black/20 dark:text-slate-300"
+                    >
+                      {traceText(fonte)}
+                    </pre>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-slate-400">
+                  Nenhuma fonte retornada pelo núcleo central.
+                </p>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Citações / rastreabilidade
+              </h3>
+              {result.citacoes.length ? (
+                <div className="mt-2 space-y-2">
+                  {result.citacoes.map((citation, index) => (
+                    <pre
+                      key={`citacao-${index}`}
+                      className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-2 text-[11px] leading-5 text-slate-600 dark:bg-black/20 dark:text-slate-300"
+                    >
+                      {traceText(citation)}
+                    </pre>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-slate-400">
+                  Nenhuma citação verificável retornada; não trate o rascunho
+                  como fundamentado sem conferência.
+                </p>
+              )}
+            </div>
+          </div>
+
           <p className="mt-3 text-xs text-slate-400">{result.aviso_hitl}</p>
         </section>
       ) : null}
