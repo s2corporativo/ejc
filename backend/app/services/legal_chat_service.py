@@ -324,6 +324,17 @@ async def enviar_mensagem(
     )
 
     custo = Decimal(str(resultado.get("custo_estimado_brl") or 0))
+    # Achado do code-reviewer (docs/PLANO_FUSAO_CASO_UNICO.md): resultado["citacoes"]
+    # é o RELATÓRIO do gate anti-alucinação (response_validator.py: dict com
+    # total/confirmadas/nao_encontradas/citacoes/...), não uma lista de
+    # citações. `list(dict)` iterava as CHAVES do relatório — gravava
+    # ["total", "confirmadas", ...] em vez dos itens verificados, e a coluna
+    # (mesmo padrão de fontes/alertas/skills) espera lista de itens.
+    _relatorio_citacoes = resultado.get("citacoes")
+    citacoes_lista = (
+        list(_relatorio_citacoes.get("citacoes") or [])
+        if isinstance(_relatorio_citacoes, dict) else []
+    )
     msg_ia = LegalChatMessage(
         id=str(uuid4()),
         session_id=sessao.id,
@@ -334,7 +345,7 @@ async def enviar_mensagem(
         agente=resultado.get("agente"),
         skills=list(resultado.get("skills_nativas") or []),
         fontes=list(resultado.get("fontes") or []),
-        citacoes=list(resultado.get("citacoes") or []),
+        citacoes=citacoes_lista,
         alertas=list(resultado.get("alertas") or []),
         tokens_input=resultado.get("tokens_input"),
         tokens_output=resultado.get("tokens_output"),
