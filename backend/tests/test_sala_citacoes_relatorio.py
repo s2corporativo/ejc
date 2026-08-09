@@ -98,7 +98,9 @@ async def test_enviar_mensagem_persiste_e_serializa_somente_lista_interna_de_cit
         if isinstance(item, LegalChatMessage) and item.autor == "ia"
     ]
     assert len(mensagens_ia) == 1
+    assert isinstance(mensagens_ia[0].citacoes, list)
     assert mensagens_ia[0].citacoes == [citacao]
+    assert isinstance(resposta["mensagem_ia"]["citacoes"], list)
     assert resposta["mensagem_ia"]["citacoes"] == [citacao]
     assert "total" not in resposta["mensagem_ia"]["citacoes"]
     assert "confirmadas" not in resposta["mensagem_ia"]["citacoes"]
