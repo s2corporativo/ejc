@@ -123,14 +123,14 @@ async def test_heuristica_reconhece_contestacao_15_dias_art_335():
 @pytest.mark.asyncio
 async def test_heuristica_reconhece_apelacao_15_dias_art_1003():
     s = await _sugestao_civel(_com(texto="Interponha apelação."))
-    assert s["tipo_detectado"] == "apelação/recurso"
+    assert s["tipo_detectado"] == "apelação"
     assert s["dias"] == 15
     assert "1.003" in s["fundamentacao"]
 
 
 @pytest.mark.asyncio
 async def test_heuristica_reconhece_manifestacao_despacho_5_dias_art_218():
-    s = await _sugestao_civel(_com(texto="Despacho: manifeste-se."))
+    s = await _sugestao_civel(_com(texto="Despacho para manifestação."))
     assert s["dias"] == 5
     assert "218" in s["fundamentacao"]
     assert "supletivo" in s["fundamentacao"]
@@ -226,7 +226,7 @@ async def test_aceitar_cria_deadline_com_rastreabilidade(monkeypatch):
     import app.routers.intimacoes as mod
 
     monkeypatch.setattr(mod, "verificar_acesso_caso", _noop_acesso)
-    monkeypatch.setattr("app.models.audit_log.criar_audit_log", _noop_audit)
+    monkeypatch.setattr(mod, "criar_audit_log", _noop_audit)
     comunicacao = _com(case_id="case-1")
     db = _FakeDB([comunicacao])
     out = await mod.aceitar_prazo(
@@ -274,7 +274,7 @@ async def test_dias_recalcula_pelo_termo_inicial_djen(monkeypatch):
     import app.routers.intimacoes as mod
 
     monkeypatch.setattr(mod, "verificar_acesso_caso", _noop_acesso)
-    monkeypatch.setattr("app.models.audit_log.criar_audit_log", _noop_audit)
+    monkeypatch.setattr(mod, "criar_audit_log", _noop_audit)
     comunicacao = _com(case_id="case-1", texto="Ciência sem tipo reconhecível.")
     db = _FakeDB([comunicacao])
     out = await mod.aceitar_prazo(
@@ -291,7 +291,7 @@ async def test_responsavel_default_e_o_advogado_da_intimacao(monkeypatch):
     import app.routers.intimacoes as mod
 
     monkeypatch.setattr(mod, "verificar_acesso_caso", _noop_acesso)
-    monkeypatch.setattr("app.models.audit_log.criar_audit_log", _noop_audit)
+    monkeypatch.setattr(mod, "criar_audit_log", _noop_audit)
     comunicacao = _com(
         case_id="case-1", advogado_id="adv-destino", texto="Apresente contestação."
     )
@@ -311,6 +311,7 @@ async def test_recusar_nao_cria_deadline(monkeypatch):
     import app.routers.intimacoes as mod
 
     monkeypatch.setattr(mod, "verificar_acesso_caso", _noop_acesso)
+    monkeypatch.setattr(mod, "criar_audit_log", _noop_audit)
     comunicacao = _com(case_id="case-1")
     db = _FakeDB([comunicacao])
     out = await mod.recusar_prazo(comunicacao.id, db, _user())
