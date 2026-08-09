@@ -45,6 +45,8 @@ def _minimal_company_context(profile) -> dict:
             {
                 "area": item.area,
                 "classificacao": item.classificacao,
+                # É apenas contagem quantitativa do Legal Twin, nunca conteúdo
+                # documental ou evidência textual enviada ao provider.
                 "evidencias": item.evidencias,
             }
             for item in profile.health
@@ -62,7 +64,6 @@ async def run_dpt_action(
     if profile is None:
         return None
 
-    # Extensão explícita dos registries centrais; não existe executor DPT paralelo.
     ensure_dpt360_registered()
 
     requested_domain = (request.area or "empresarial").strip().lower()
@@ -74,6 +75,9 @@ async def run_dpt_action(
         area=domain,
     )
 
+    # O orquestrador central chama obrigatoriamente `ai_gateway` e sua barreira
+    # final de PII. O nome empresarial é fornecido como entidade adicional para
+    # pseudonimização reversível caso o usuário o repita na pergunta livre.
     result = await orchestrator.run(
         db=db,
         user=user,
@@ -82,7 +86,11 @@ async def run_dpt_action(
         mensagem=instruction,
         usar_rag=True,
         nivel_inteligencia="alto",
-        params={"module_key": "dpt360", "surface": "dpt360"},
+        params={
+            "module_key": "dpt360",
+            "surface": "dpt360",
+            "nomes_proteger": [profile.nome] if profile.nome else [],
+        },
     )
 
     structured = parse_structured_content(str(result.get("conteudo") or ""))
