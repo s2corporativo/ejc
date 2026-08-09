@@ -44,7 +44,8 @@ export function extractCollection<T>(payload: unknown): {
   items: T[];
   total: number;
 } {
-  if (Array.isArray(payload)) return { items: payload as T[], total: payload.length };
+  if (Array.isArray(payload))
+    return { items: payload as T[], total: payload.length };
   if (!payload || typeof payload !== "object") return { items: [], total: 0 };
   const record = payload as Record<string, unknown>;
   const items = Array.isArray(record.data)
@@ -66,7 +67,10 @@ export function isOpenCase(item: Case): boolean {
 
 export function isCriticalCase(item: Case): boolean {
   const risk = (item.risco_nivel || item.risco || "").toLowerCase();
-  return isOpenCase(item) && (item.prioridade === "critica" || risk === "alto" || risk === "critico");
+  return (
+    isOpenCase(item) &&
+    (item.prioridade === "critica" || risk === "alto" || risk === "critico")
+  );
 }
 
 export function localIsoDate(date = new Date()): string {
@@ -77,7 +81,11 @@ export function localIsoDate(date = new Date()): string {
 }
 
 export function addLocalDays(base: Date, days: number): string {
-  const next = new Date(base.getFullYear(), base.getMonth(), base.getDate() + days);
+  const next = new Date(
+    base.getFullYear(),
+    base.getMonth(),
+    base.getDate() + days,
+  );
   return localIsoDate(next);
 }
 
@@ -88,7 +96,10 @@ export function deadlineIsPending(item: Deadline): boolean {
 export function buildCompanySummaries(data: DptData): CompanySummary[] {
   const caseByCompany = new Map<string, Case[]>();
   for (const item of data.cases.filter(isBusinessCase)) {
-    caseByCompany.set(item.client_id, [...(caseByCompany.get(item.client_id) || []), item]);
+    caseByCompany.set(item.client_id, [
+      ...(caseByCompany.get(item.client_id) || []),
+      item,
+    ]);
   }
 
   const deadlineByCase = new Map<string, Deadline[]>();
@@ -102,7 +113,9 @@ export function buildCompanySummaries(data: DptData): CompanySummary[] {
 
   return data.companies.map((company) => {
     const cases = caseByCompany.get(company.id) || [];
-    const deadlines = cases.flatMap((item) => deadlineByCase.get(item.id) || []);
+    const deadlines = cases.flatMap(
+      (item) => deadlineByCase.get(item.id) || [],
+    );
     return {
       company,
       cases,
@@ -112,7 +125,11 @@ export function buildCompanySummaries(data: DptData): CompanySummary[] {
   });
 }
 
-export function nextCompanyDeadlines(data: DptData, days = 7, now = new Date()): Deadline[] {
+export function nextCompanyDeadlines(
+  data: DptData,
+  days = 7,
+  now = new Date(),
+): Deadline[] {
   const companyIds = new Set(data.companies.map((company) => company.id));
   const companyCaseIds = new Set(
     data.cases

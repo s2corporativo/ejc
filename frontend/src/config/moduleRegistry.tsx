@@ -984,7 +984,7 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/despesas",
     to: "/financeiro?tab=despesas",
-    reason: "Despesas foi incorporado ao workspace financeiro.",
+    reason: "Despesas foram incorporadas ao workspace financeiro.",
   },
   {
     from: "/despesas-recorrentes",
@@ -1021,7 +1021,7 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/jurimetria",
     to: "/inteligencia?tab=jurimetria",
-    reason: "Jurimetria foi incorporado ao workspace de Inteligência Jurídica.",
+    reason: "Jurimetria foi incorporada ao workspace de Inteligência Jurídica.",
   },
   {
     from: "/ia-saude",
@@ -1132,7 +1132,9 @@ export function getHelpModuleKey(pathname: string): string | null {
     if (base === "/") return pathname === "/";
     if (base.endsWith("/*")) {
       const wildcardBase = base.slice(0, -2);
-      return pathname === wildcardBase || pathname.startsWith(`${wildcardBase}/`);
+      return (
+        pathname === wildcardBase || pathname.startsWith(`${wildcardBase}/`)
+      );
     }
     return pathname === base || pathname.startsWith(`${base}/`);
   });
