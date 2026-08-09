@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, CircleSlash2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, CircleSlash2, Inbox } from "lucide-react";
 import { Link } from "react-router";
 
 const TOOLS = [
@@ -85,13 +85,23 @@ export default function DptTools() {
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
-        <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
-          Ferramentas Empresariais
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          Catálogo de capacidades já existentes no EJC. O DPT funciona como
-          cockpit e não cria calculadoras ou verticais duplicadas.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
+              Ferramentas Empresariais
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+              Catálogo de capacidades já existentes no EJC. O DPT funciona como
+              cockpit e não cria calculadoras ou verticais duplicadas.
+            </p>
+          </div>
+          <Link
+            to="/dpt360/oportunidades"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 dark:border-white/10 dark:text-slate-200"
+          >
+            <Inbox className="h-3.5 w-3.5" /> Oportunidades em triagem
+          </Link>
+        </div>
       </section>
       <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
         {TOOLS.map((tool) => (
@@ -105,9 +115,15 @@ export default function DptTools() {
               </h3>
               <span>
                 {tool.available ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                  <CheckCircle2
+                    className="h-4 w-4 text-emerald-600"
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <CircleSlash2 className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                  <CircleSlash2
+                    className="h-4 w-4 text-slate-400"
+                    aria-hidden="true"
+                  />
                 )}
                 <span className="sr-only">
                   {tool.available ? "Disponível" : "Indisponível"}
