@@ -259,8 +259,11 @@ def _chave(item: dict, tipo: str) -> str:
 # marcação que apareça apenas na ementa é fail-closed: o item segue sem status
 # positivo e exige curadoria.
 _RE_ATO_REVOGADO = re.compile(
-    r"revogad[oa]s?\s+(?:integralmente\s+|expressamente\s+|tacitamente\s+)?"
-    r"pel[ao]s?\b",
+    r"(?:"
+    r"revogad[oa]s?\s+(?:integralmente\s+|expressamente\s+|tacitamente\s+)?pel[ao]s?\b"
+    r"|\(\s*revogad[oa]s?\s*\)"
+    r"|(?:^|[—–\-]\s*)revogad[oa]s?\s*$"
+    r")",
     re.IGNORECASE,
 )
 
