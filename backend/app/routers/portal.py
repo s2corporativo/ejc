@@ -14,7 +14,7 @@ from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case, CaseMovimento
 from app.models.deadline import Deadline
-from app.models.document import Document
+from app.models.document import DocConfidencialidade, Document
 from app.models.fee import Fee, FeePayment
 from app.models.user import User, UserRole
 
@@ -165,9 +165,11 @@ async def documentos(
 ):
     """Somente documentos EXPRESSAMENTE publicados para o Portal.
 
-    Confidencialidade é classificação interna; não funciona mais como permissão
-    externa implícita. Isso evita expor um documento apenas porque foi marcado
-    como `normal` no GED.
+    Confidencialidade é classificação interna e publicação é autorização externa.
+    As duas condições são reavaliadas em toda leitura: se um documento publicado
+    for posteriormente movido para interno/restrito/confidencial/segredo, ele
+    deixa de ser servido imediatamente, mesmo que o flag de publicação ainda
+    esteja registrado para auditoria/gestão.
     """
     client_id = _exigir_cliente(cu)
     rows = (
@@ -177,8 +179,12 @@ async def documentos(
                 Document.client_id == client_id,
                 Document.deleted_at.is_(None),
                 Document.publicado_portal.is_(True),
+                Document.confidencialidade == DocConfidencialidade.normal,
             )
-            .order_by(Document.publicado_em.desc().nullslast(), Document.created_at.desc())
+            .order_by(
+                Document.publicado_em.desc().nullslast(),
+                Document.created_at.desc(),
+            )
         )
     ).scalars().all()
     return {
