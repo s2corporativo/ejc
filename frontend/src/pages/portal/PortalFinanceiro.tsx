@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  DollarSign,
-  Clock,
-  CheckCircle,
   AlertCircle,
+  CheckCircle,
+  Clock,
+  DollarSign,
   Receipt,
   TrendingUp,
 } from "lucide-react";
@@ -44,20 +44,24 @@ export default function PortalFinanceiro() {
     load();
   }, [load]);
 
-  const total = rows.reduce((s, r) => s + (r.valor ?? 0), 0);
-  const pago = rows
-    .filter((r) => r.status === "pago")
-    .reduce((s, r) => s + (r.valor ?? 0), 0);
+  const original = (r: any) => Number(r.valor_original ?? r.valor ?? 0);
+  const pagoLinha = (r: any) => Number(r.valor_pago ?? (r.status === "pago" ? original(r) : 0));
+  const saldo = (r: any) => Number(r.saldo_aberto ?? (r.status === "pago" ? 0 : original(r)));
+
+  const total = rows
+    .filter((r) => r.status !== "cancelado")
+    .reduce((s, r) => s + original(r), 0);
+  const pago = rows.reduce((s, r) => s + pagoLinha(r), 0);
   const pendente = rows
     .filter((r) => r.status === "pendente")
-    .reduce((s, r) => s + (r.valor ?? 0), 0);
+    .reduce((s, r) => s + saldo(r), 0);
   const atrasado = rows
     .filter((r) => r.status === "atrasado")
-    .reduce((s, r) => s + (r.valor ?? 0), 0);
+    .reduce((s, r) => s + saldo(r), 0);
 
   const kpis = [
     {
-      label: "Total honorários",
+      label: "Total contratado",
       value: fmtMoney(total),
       icon: TrendingUp,
       color: "text-primary-500",
@@ -71,14 +75,14 @@ export default function PortalFinanceiro() {
       bg: "bg-success-50",
     },
     {
-      label: "Em aberto",
+      label: "Saldo em aberto",
       value: fmtMoney(pendente),
       icon: Clock,
       color: "text-warn-500",
       bg: "bg-warn-50",
     },
     {
-      label: "Em atraso",
+      label: "Saldo em atraso",
       value: fmtMoney(atrasado),
       icon: AlertCircle,
       color: "text-danger-500",
@@ -91,11 +95,10 @@ export default function PortalFinanceiro() {
       <div>
         <h1 className="text-xl font-bold text-slate-800">Financeiro</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Seus honorários e pagamentos
+          Honorários, pagamentos realizados e saldo atual
         </p>
       </div>
 
-      {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {kpis.map((k) => (
           <div key={k.label} className="card p-4">
@@ -112,23 +115,21 @@ export default function PortalFinanceiro() {
         ))}
       </div>
 
-      {/* Alert for overdue */}
       {atrasado > 0 && (
         <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-danger-700">
-              Pagamento em atraso
+              Saldo em atraso
             </p>
             <p className="text-xs text-danger-600 mt-0.5">
-              Você possui {fmtMoney(atrasado)} em honorários vencidos. Entre em
-              contato com o escritório para regularizar.
+              Há {fmtMoney(atrasado)} de saldo vencido. Pagamentos parciais já
+              registrados foram abatidos deste valor.
             </p>
           </div>
         </div>
       )}
 
-      {/* Table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100">
           <h2 className="font-semibold text-slate-700 flex items-center gap-2">
@@ -144,19 +145,22 @@ export default function PortalFinanceiro() {
           />
         ) : rows.length === 0 ? (
           <div className="p-10 text-center text-slate-400 text-sm">
-            Nenhum lançamento — você está em dia com o escritório.
+            Nenhum lançamento financeiro.
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {rows.map((f, i) => {
+            {rows.map((f) => {
               const [label, cor, bgcor] = ST[f.status] ?? [
                 f.status,
                 "text-slate-500",
                 "bg-slate-50",
               ];
+              const originalLinha = original(f);
+              const pagoAtual = pagoLinha(f);
+              const saldoAtual = saldo(f);
               return (
                 <div
-                  key={i}
+                  key={f.id ?? `${f.descricao}-${f.vencimento}`}
                   className="px-5 py-4 flex items-center justify-between gap-4"
                 >
                   <div className="min-w-0">
@@ -165,33 +169,35 @@ export default function PortalFinanceiro() {
                     </p>
                     {f.vencimento && (
                       <p className="text-xs text-slate-400 mt-0.5">
-                        Venc.{" "}
-                        {new Date(f.vencimento + "T12:00").toLocaleDateString(
-                          "pt-BR",
-                        )}
+                        Venc. {fmtDate(f.vencimento)}
                       </p>
                     )}
-                    {f.tipo && (
-                      <p className="text-xs text-slate-400 capitalize">
-                        {f.tipo.replace(/_/g, " ")}
+                    {pagoAtual > 0 && saldoAtual > 0 && (
+                      <p className="text-xs text-success-600 mt-1">
+                        Já pago: {fmtMoney(pagoAtual)} · saldo: {fmtMoney(saldoAtual)}
                       </p>
                     )}
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-bold text-slate-800">
-                      {fmtMoney(f.valor ?? 0)}
+                      {saldoAtual > 0 ? fmtMoney(saldoAtual) : fmtMoney(originalLinha)}
                     </p>
+                    {saldoAtual > 0 && pagoAtual > 0 && (
+                      <p className="text-[10px] text-slate-400">
+                        de {fmtMoney(originalLinha)}
+                      </p>
+                    )}
                     <span
                       className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full mt-1 ${cor} ${bgcor}`}
                     >
                       {label}
                     </span>
-                    {f.status === "pago" && (
+                    {pagoAtual > 0 && (
                       <button
                         onClick={() => setRecibo(f)}
                         className="block ml-auto mt-1 text-xs text-success-600 hover:underline inline-flex items-center gap-1"
                       >
-                        <Receipt className="w-3 h-3" /> Ver confirmação
+                        <Receipt className="w-3 h-3" /> Ver pagamentos
                       </button>
                     )}
                   </div>
@@ -202,40 +208,53 @@ export default function PortalFinanceiro() {
         )}
       </div>
 
-      {/* Confirmação de pagamento — apenas os dados que o escritório registrou */}
       <Modal
         open={recibo !== null}
         onClose={() => setRecibo(null)}
-        title="Confirmação de pagamento"
+        title="Resumo de pagamento"
         size="sm"
       >
         {recibo && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-success-600">
               <CheckCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="text-sm font-semibold">Pagamento registrado</p>
+              <p className="text-sm font-semibold">Pagamentos registrados</p>
             </div>
             <div className="text-sm space-y-2">
               <div>
                 <p className="text-xs text-slate-400">Descrição</p>
                 <p className="text-slate-800 font-medium">{recibo.descricao}</p>
               </div>
-              <div>
-                <p className="text-xs text-slate-400">Valor</p>
-                <p className="text-slate-800 font-bold">
-                  {fmtMoney(recibo.valor ?? 0)}
-                </p>
-              </div>
-              {recibo.vencimento && (
+              <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <p className="text-xs text-slate-400">Vencimento</p>
-                  <p className="text-slate-800">{fmtDate(recibo.vencimento)}</p>
+                  <p className="text-xs text-slate-400">Original</p>
+                  <p className="text-slate-800 font-semibold">
+                    {fmtMoney(original(recibo))}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Pago</p>
+                  <p className="text-success-700 font-semibold">
+                    {fmtMoney(pagoLinha(recibo))}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Saldo</p>
+                  <p className="text-slate-800 font-semibold">
+                    {fmtMoney(saldo(recibo))}
+                  </p>
+                </div>
+              </div>
+              {recibo.ultima_baixa && (
+                <div>
+                  <p className="text-xs text-slate-400">Última baixa</p>
+                  <p className="text-slate-800">{fmtDate(recibo.ultima_baixa)}</p>
                 </div>
               )}
             </div>
             <p className="text-xs text-slate-400">
-              Confirmação emitida pelo Portal do Cliente com base nos registros
-              do escritório. Para um recibo formal, solicite pelas Mensagens.
+              Este resumo reflete as baixas registradas no escritório. Para
+              recibo fiscal/formal, solicite pelas Mensagens.
             </p>
           </div>
         )}
