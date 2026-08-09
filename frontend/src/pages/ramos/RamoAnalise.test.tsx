@@ -36,7 +36,9 @@ describe("ComparadorBacen", () => {
     render(<ComparadorBacen />);
 
     expect(
-      await screen.findByText(/não foi possível carregar as modalidades do BACEN/i),
+      await screen.findByText(
+        /não foi possível carregar as modalidades do BACEN/i,
+      ),
     ).toBeTruthy();
   });
 
