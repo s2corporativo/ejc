@@ -5,16 +5,28 @@
 // preservados, mas a experiência passa a ser uma única tela com modos. Isso
 // reduz regressão: nenhuma persistência é fundida nesta etapa e os RBACs de cada
 // ação continuam sendo validados pelo backend.
+import { lazy, Suspense, type MouseEvent as ReactMouseEvent } from "react";
 import { FileText, ScanSearch, Sparkles } from "lucide-react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import { Spinner } from "../components/UI";
 import { useAuth } from "../stores/auth";
-import EntradaRelato from "./EntradaRelato";
-import RaioXProcesso from "./RaioXProcesso";
-import SalaJuridica from "./SalaJuridica";
+import {
+  useModuleLifecycleStore,
+  type ModuleLifecycleOverride,
+} from "../stores/moduleLifecycle";
+
+const EntradaRelato = lazy(() => import("./EntradaRelato"));
+const RaioXProcesso = lazy(() => import("./RaioXProcesso"));
+const SalaJuridica = lazy(() => import("./SalaJuridica"));
 
 type ModoEntrada = "relato" | "raio-x" | "sala";
 
 const ROLES_RELATO = new Set(["superadmin", "admin", "socio", "advogado"]);
+
+const MODULO_POR_MODO: Partial<Record<ModoEntrada, string>> = {
+  "raio-x": "raio-x-processo",
+  sala: "sala-juridica",
+};
 
 const MODOS: Array<{
   id: ModoEntrada;
@@ -70,6 +82,18 @@ export function modoPermitidoParaRole(
   return modo !== "relato" || podeUsarRelato(role);
 }
 
+export function modoDisponivelPorLifecycle(
+  modo: ModoEntrada,
+  settings: Record<string, ModuleLifecycleOverride>,
+): boolean {
+  const moduleKey = MODULO_POR_MODO[modo];
+  if (!moduleKey) return true;
+  const lifecycle = settings[moduleKey];
+  return Boolean(
+    !lifecycle || (lifecycle.enabled && lifecycle.status !== "disabled"),
+  );
+}
+
 function hrefModo(modo: ModoEntrada, params: URLSearchParams): string {
   const proximos = new URLSearchParams(params);
   proximos.set("modo", modo);
@@ -78,22 +102,66 @@ function hrefModo(modo: ModoEntrada, params: URLSearchParams): string {
 }
 
 export default function EntradaUnica() {
-  const user = useAuth((state) => state.user);
+  const { user } = useAuth();
+  const settings = useModuleLifecycleStore((state) => state.settings);
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const bruto = searchParams.get("modo");
   const candidato = ehModoEntrada(bruto)
     ? bruto
     : modoPadraoParaRole(user?.role);
-  const modo = modoPermitidoParaRole(candidato, user?.role)
-    ? candidato
-    : modoPadraoParaRole(user?.role);
-  const modosVisiveis = MODOS.filter((item) =>
-    modoPermitidoParaRole(item.id, user?.role),
+  const modosVisiveis = MODOS.filter(
+    (item) =>
+      modoPermitidoParaRole(item.id, user?.role) &&
+      modoDisponivelPorLifecycle(item.id, settings),
   );
+  const modo =
+    modoPermitidoParaRole(candidato, user?.role) &&
+    modoDisponivelPorLifecycle(candidato, settings)
+      ? candidato
+      : (modosVisiveis[0]?.id ?? modoPadraoParaRole(user?.role));
   const ativo = MODOS.find((item) => item.id === modo) ?? modosVisiveis[0];
 
+  const interceptarNavegacaoInterna = (
+    evento: ReactMouseEvent<HTMLDivElement>,
+  ) => {
+    if (
+      evento.defaultPrevented ||
+      evento.button !== 0 ||
+      evento.metaKey ||
+      evento.ctrlKey ||
+      evento.shiftKey ||
+      evento.altKey
+    ) {
+      return;
+    }
+    const alvo = evento.target as HTMLElement | null;
+    const link = alvo?.closest("a");
+    if (!(link instanceof HTMLAnchorElement)) return;
+
+    const url = new URL(link.href, window.location.origin);
+    const modoDestino: ModoEntrada | null =
+      url.pathname === "/sala-juridica"
+        ? "sala"
+        : url.pathname === "/raio-x"
+          ? "raio-x"
+          : null;
+    if (
+      !modoDestino ||
+      !modoPermitidoParaRole(modoDestino, user?.role) ||
+      !modoDisponivelPorLifecycle(modoDestino, settings)
+    ) {
+      return;
+    }
+
+    evento.preventDefault();
+    const proximos = new URLSearchParams(searchParams);
+    url.searchParams.forEach((valor, chave) => proximos.set(chave, valor));
+    navigate(hrefModo(modoDestino, proximos));
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" onClickCapture={interceptarNavegacaoInterna}>
       <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
         <div className="mb-3 px-1">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
@@ -136,9 +204,17 @@ export default function EntradaUnica() {
         )}
       </section>
 
-      {modo === "relato" && <EntradaRelato key="relato" />}
-      {modo === "raio-x" && <RaioXProcesso key="raio-x" />}
-      {modo === "sala" && <SalaJuridica key="sala" />}
+      <Suspense
+        fallback={
+          <div className="grid min-h-[30vh] place-items-center">
+            <Spinner />
+          </div>
+        }
+      >
+        {modo === "relato" && <EntradaRelato key="relato" />}
+        {modo === "raio-x" && <RaioXProcesso key="raio-x" />}
+        {modo === "sala" && <SalaJuridica key="sala" />}
+      </Suspense>
     </div>
   );
 }
