@@ -131,40 +131,58 @@ export const GRUPOS_AREAS: GrupoArea[] = [
   },
 ];
 
+const WORKSPACES_GERAIS = new Map<string, RamoConfig>();
+
 function areaCanonica(areaSlug: string): AreaResumo | undefined {
   return AREAS_CANONICAS.find((area) => area.slug === areaSlug);
 }
 
+function ramoRegistrado(slug: string): RamoConfig | undefined {
+  return Object.hasOwn(RAMOS, slug) ? RAMOS[slug] : undefined;
+}
+
+function aliasDaArea(areaSlug: string): string | undefined {
+  return Object.hasOwn(HUB_POR_AREA, areaSlug)
+    ? HUB_POR_AREA[areaSlug]
+    : undefined;
+}
+
 export function hubSlugDaArea(areaSlug: string): string | null {
-  const alias = HUB_POR_AREA[areaSlug];
-  if (alias && RAMOS[alias]) return alias;
-  if (RAMOS[areaSlug]) return areaSlug;
+  const alias = aliasDaArea(areaSlug);
+  if (alias && ramoRegistrado(alias)) return alias;
+  if (ramoRegistrado(areaSlug)) return areaSlug;
   return areaCanonica(areaSlug) ? areaSlug : null;
 }
 
 export function temWorkspaceEspecializado(areaSlug: string): boolean {
-  const slug = HUB_POR_AREA[areaSlug] ?? areaSlug;
-  return Boolean(RAMOS[slug]);
+  return Boolean(ramoRegistrado(aliasDaArea(areaSlug) ?? areaSlug));
 }
 
 /**
  * Retorna a configuração especializada quando ela existe. Para as demais
- * classificações canônicas, cria somente uma casca de workspace: Casos + Peças
- * e referências centrais. Nenhum endpoint, ferramenta ou regra jurídica é
- * inventado para preencher a lacuna.
+ * classificações canônicas, cria e reutiliza uma casca estável de workspace:
+ * Casos + Peças e referências centrais. Nenhum endpoint, ferramenta ou regra
+ * jurídica é inventado para preencher a lacuna.
  */
 export function configWorkspaceDaArea(
   areaSlug: string,
 ): RamoConfig | undefined {
-  if (RAMOS[areaSlug]) return RAMOS[areaSlug];
+  const direto = ramoRegistrado(areaSlug);
+  if (direto) return direto;
 
-  const alias = HUB_POR_AREA[areaSlug];
-  if (alias && RAMOS[alias]) return RAMOS[alias];
+  const alias = aliasDaArea(areaSlug);
+  if (alias) {
+    const porAlias = ramoRegistrado(alias);
+    if (porAlias) return porAlias;
+  }
 
   const area = areaCanonica(areaSlug);
   if (!area) return undefined;
 
-  return {
+  const existente = WORKSPACES_GERAIS.get(area.slug);
+  if (existente) return existente;
+
+  const workspace: RamoConfig = {
     slug: area.slug,
     endpoint: "",
     areaCaso: area.slug,
@@ -179,6 +197,8 @@ export function configWorkspaceDaArea(
     ferramentas: [],
     externo: true,
   };
+  WORKSPACES_GERAIS.set(area.slug, workspace);
+  return workspace;
 }
 
 /**
