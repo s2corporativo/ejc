@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import api from "../../lib/api";
@@ -44,5 +44,22 @@ describe("RamoBase — fallback estável", () => {
     expect(getMock).toHaveBeenCalledWith("/cases/", {
       params: { area: "societario", page_size: 100 },
     });
+  });
+
+  it("abre a Entrada Jurídica com a área canônica pré-selecionada", async () => {
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={["/areas-de-atuacao/ambiental"]}>
+          <Routes>
+            <Route path="/areas-de-atuacao/:slug" element={<RamoBase />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+
+    const novoCaso = screen.getByRole("link", { name: /novo caso/i });
+    expect(novoCaso.getAttribute("href")).toBe(
+      "/entrada?modo=relato&area=ambiental",
+    );
   });
 });
