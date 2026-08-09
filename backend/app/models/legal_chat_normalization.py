@@ -58,5 +58,5 @@ def _normalizar_citacoes_ao_atribuir(_target, value, _oldvalue, _initiator):
 @event.listens_for(LegalChatMessage, "load")
 def _normalizar_citacoes_ao_carregar(target: LegalChatMessage, _context) -> None:
     normalizadas = normalizar_citacoes(target.citacoes)
-    if normalizadas != (target.citacoes or []):
+    if normalizadas != target.citacoes:
         set_committed_value(target, "citacoes", normalizadas)
