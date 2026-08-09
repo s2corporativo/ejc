@@ -3,7 +3,7 @@
 Controle obrigatório para impedir que dois PRs escolham o mesmo número de migration ou
 partam de heads diferentes. Regra canônica em `docs/GOVERNANCA_IA.md`, seção 8.
 
-**Head canônico da `main` em 2026-08-08:** `138_consolida_fontes_ingestao`.
+**Head canônico da `main` em 2026-08-09:** `138_consolida_fontes_ingestao`.
 
 ## Como reservar
 
@@ -52,7 +52,7 @@ número volta a ficar disponível).
 | 130_ejc_skills_uso | 127_publicacao_explicita | claude/ejc-skills-uso-tracking | (a abrir) | Claude Code | Reservada | Bloco 4 (enxugar catálogo): contador `vezes_executado`/`ultima_execucao` em `ejc_skills`; não arquiva nada sozinho. |
 | 131_audit_logs_worm | 130_ejc_skills_uso | claude/audit-worm-699 | (a abrir) | Claude Code | Mesclada | Impõe WORM em `audit_logs` via trigger `BEFORE UPDATE OR DELETE`, com via privilegiada de expurgo inativa reservada para política futura. |
 | 138_consolida_fontes_ingestao | 132_processo_eletronico_mni | main | [#786](https://github.com/s2corporativo/ejc/pull/786) / [#819](https://github.com/s2corporativo/ejc/pull/819) | Claude Code / ChatGPT | Mesclada; correção em PR | **Head canônico atual da `main`.** A versão inicial consolidava as métricas por lógica dinâmica e removia as linhas `juris_import_*`, o que reprovava no classificador expand-only. O #819 preserva o histórico: promove a linha antiga quando não há canônica; quando coexistem, mescla métricas por UPDATE estático e arquiva a antiga como `legacy_138_*`, inativa, sem DELETE. Se houver prova de que a 138 já foi aplicada em produção fora da esteira registrada, esta edição deve ser abandonada e substituída por migration corretiva posterior. |
-| 143_auditoria_operacional_861 | 138_consolida_fontes_ingestao | fix/auditoria-operacional-financeiro-prazos-861 | draft | ChatGPT | Reservada | **Reserva provisória/bloqueada.** PRs abertos #795/#803/#806/#812 ocupam 139–142 e também partem de 138. Esta branch NÃO pode ser promovida/auto-integrada antes da reconciliação do trem; renumerar/reencadear se qualquer predecessor mesclar. |
+| 143_auditoria_operacional_861 | 138_consolida_fontes_ingestao | fix/auditoria-operacional-financeiro-prazos-861 | [#906](https://github.com/s2corporativo/ejc/pull/906) | ChatGPT | Em PR | **Reserva ativa.** As antigas reservas 139–142 foram liberadas por PRs fechados sem merge; o #965, que tentou reutilizar 139 para a fundação Sala/Raio-X, também foi fechado sem merge em 2026-08-09 para não bloquear a correção P0 da #861. A revisão 143 é mantida deliberadamente para preservar o histórico/testes já validados; Alembic não exige numeração contínua. Down revision permanece o head canônico 138, com grafo linear e head único na branch. |
 
 > **Decisão do titular em 2026-07-29.** A continuidade das correções foi autorizada após
 > a integração dos PRs #535, #542 e #543. As reservas das branches antigas #495/#497
