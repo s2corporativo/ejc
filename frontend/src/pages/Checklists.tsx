@@ -27,7 +27,9 @@ export default function Checklists() {
       .catch((err: any) => {
         setTpls([]);
         setLoadError(true);
-        toast.error(err.response?.data?.detail || "Falha ao carregar checklists");
+        toast.error(
+          err.response?.data?.detail || "Falha ao carregar checklists",
+        );
       })
       .finally(() => setLoading(false));
   };
@@ -156,8 +158,8 @@ export default function Checklists() {
         (tpls.length === 0 ? (
           <div className="card p-10 text-center text-slate-400">
             <ListChecks size={32} className="mx-auto mb-3 text-bronze-pale" />
-            Nenhum template ainda. Crie modelos de checklist por tipo de demanda —
-            eles ficam disponíveis para aplicar em cada caso.
+            Nenhum template ainda. Crie modelos de checklist por tipo de demanda
+            — eles ficam disponíveis para aplicar em cada caso.
           </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-4">
