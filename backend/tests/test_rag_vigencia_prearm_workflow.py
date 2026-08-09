@@ -61,12 +61,27 @@ def test_rollback_tem_copia_0600_restore_atomico_e_flag_antes_do_rename():
     assert 'sudo chmod 600 "$backup"' in trecho
     assert 'sudo mv -f "$backup" "$env_file"' in trecho
     assert 'if [ "$concluido" != "1" ]; then' in trecho
-    assert 'if [ "$alterado" = "1" ] && sudo test -f "$backup"; then' in trecho
+    assert 'if [ "$alterado" = "1" ]; then' in trecho
+    assert 'if sudo test -f "$backup"; then' in trecho
 
     indice_backup = trecho.index('sudo chmod 600 "$backup"')
     indice_flag = trecho.rindex("alterado=1")
     indice_rename = trecho.index('sudo mv -f "$candidate" "$env_file"')
     assert indice_backup < indice_flag < indice_rename
+
+
+def test_interrupcao_antes_da_flag_remove_backup_sem_restaurar_copia_parcial():
+    trecho = _trecho_prearm()
+    inicio_finalizar = trecho.index("          finalizar() {")
+    fim_finalizar = trecho.index("          trap finalizar EXIT", inicio_finalizar)
+    finalizar = trecho[inicio_finalizar:fim_finalizar]
+
+    indice_alterado = finalizar.index('if [ "$alterado" = "1" ]; then')
+    indice_restore = finalizar.index('sudo mv -f "$backup" "$env_file"', indice_alterado)
+    indice_else = finalizar.index("              else", indice_restore)
+    indice_cleanup = finalizar.index('sudo rm -f "$backup"', indice_else)
+    assert indice_alterado < indice_restore < indice_else < indice_cleanup
+    assert "ela pode até estar parcial" in finalizar
 
 
 def test_saida_e_sinais_passam_pelo_rollback_quando_necessario():
