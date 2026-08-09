@@ -2,7 +2,13 @@
 // Estimador assistivo. Só usa o rótulo OAB/MG quando o backend confirma que
 // encontrou contexto real da tabela oficial; fallback é explicitamente mercado.
 import { useState } from "react";
-import { AlertTriangle, Calculator, FileSignature, Info, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  Calculator,
+  FileSignature,
+  Info,
+  ShieldCheck,
+} from "lucide-react";
 import api from "../lib/api";
 
 const AREAS = [
@@ -164,7 +170,8 @@ export default function EstimadorHonorarios() {
         </div>
         <div className="sm:col-span-2">
           <button className="btn-gold" disabled={loading} onClick={estimar}>
-            <Calculator size={15} /> {loading ? "Calculando…" : "Estimar honorários"}
+            <Calculator size={15} />{" "}
+            {loading ? "Calculando…" : "Estimar honorários"}
           </button>
           {erro && <span className="text-xs text-danger-600 ml-3">{erro}</span>}
         </div>
@@ -213,8 +220,12 @@ export default function EstimadorHonorarios() {
               { l: "Estratégico", v: r.estrategico, c: "border-success-200" },
             ].map(({ l, v, c }) => (
               <div key={l} className={`card p-4 text-center ${c}`}>
-                <p className="text-[11px] uppercase tracking-wide text-ink-light">{l}</p>
-                <p className="text-lg font-bold text-navy-900 mt-1">{v || "—"}</p>
+                <p className="text-[11px] uppercase tracking-wide text-ink-light">
+                  {l}
+                </p>
+                <p className="text-lg font-bold text-navy-900 mt-1">
+                  {v || "—"}
+                </p>
               </div>
             ))}
           </div>
@@ -227,22 +238,27 @@ export default function EstimadorHonorarios() {
             )}
             {r.memoria_calculo && (
               <p>
-                <b className="text-slate-600">Memória de cálculo:</b> {r.memoria_calculo}
+                <b className="text-slate-600">Memória de cálculo:</b>{" "}
+                {r.memoria_calculo}
               </p>
             )}
             {r.contrato_sugerido && (
               <p className="flex items-start gap-1">
-                <FileSignature size={14} className="text-bronze mt-0.5 shrink-0" />
+                <FileSignature
+                  size={14}
+                  className="text-bronze mt-0.5 shrink-0"
+                />
                 <span>
-                  <b className="text-slate-600">Contrato sugerido:</b> {r.contrato_sugerido}
+                  <b className="text-slate-600">Contrato sugerido:</b>{" "}
+                  {r.contrato_sugerido}
                 </span>
               </p>
             )}
             {r.tabela_oficial_disponivel === false && (
               <p className="text-xs text-warn-700 bg-warn-50 rounded-lg p-2 flex items-start gap-1">
-                <Info size={13} className="mt-0.5 shrink-0" /> A tabela oficial OAB/MG
-                não está disponível para esta consulta. O sistema está exibindo
-                somente uma estimativa interna de mercado.
+                <Info size={13} className="mt-0.5 shrink-0" /> A tabela oficial
+                OAB/MG não está disponível para esta consulta. O sistema está
+                exibindo somente uma estimativa interna de mercado.
               </p>
             )}
             {r._aviso && (
