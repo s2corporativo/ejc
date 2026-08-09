@@ -1,0 +1,72 @@
+name: RAG Vigencia Prearm
+
+on:
+  workflow_run:
+    workflows: ["Deploy VPS"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rag-vigencia-prearm
+  cancel-in-progress: false
+
+jobs:
+  prearm:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 5
+    env:
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+      APP_DIR: /opt/ejc
+    steps:
+      - name: Pré-armar gate de vigência em modo compatível
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          marker="$APP_DIR/data/.rag_vigencia_prearm_v1"
+          deployed="$(sudo cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+          if [ -z "$deployed" ] || [ "$deployed" != "$TARGET_SHA" ]; then
+            echo "::error::Prearm RAG: /opt/ejc não comprova o SHA esperado."
+            exit 1
+          fi
+
+          sudo mkdir -p "$APP_DIR/data"
+          if sudo test -f "$marker"; then
+            echo "Prearm RAG já aplicado anteriormente; nenhuma alteração necessária."
+            exit 0
+          fi
+
+          sudo test -f "$APP_DIR/.env" || {
+            echo "::error::Prearm RAG: .env de produção ausente."
+            exit 1
+          }
+
+          uid="$(sudo stat -c %u "$APP_DIR/.env")"
+          gid="$(sudo stat -c %g "$APP_DIR/.env")"
+          mode="$(sudo stat -c %a "$APP_DIR/.env")"
+          tmp="$(mktemp)"
+          trap 'rm -f "$tmp"' EXIT
+
+          sudo cat "$APP_DIR/.env" > "$tmp"
+          chmod 600 "$tmp"
+          if grep -q '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$tmp"; then
+            sed -i 's/^RAG_EXIGIR_VIGENCIA_VERIFICADA=.*/RAG_EXIGIR_VIGENCIA_VERIFICADA=false/' "$tmp"
+          else
+            printf '\nRAG_EXIGIR_VIGENCIA_VERIFICADA=false\n' >> "$tmp"
+          fi
+
+          sudo install -o "$uid" -g "$gid" -m "$mode" "$tmp" "$APP_DIR/.env"
+          printf '%s\n' "$TARGET_SHA" | sudo tee "$marker" >/dev/null
+          sudo chmod 600 "$marker"
+
+          # Prova sem revelar o arquivo: exatamente uma linha com a chave e valor false.
+          ocorrencias="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$APP_DIR/.env" || true)"
+          if [ "$ocorrencias" != "1" ]; then
+            echo "::error::Prearm RAG: flag não foi persistida de forma canônica."
+            exit 1
+          fi
+          echo "Prearm RAG concluído: gate estrito permanecerá desligado até o backfill." 
