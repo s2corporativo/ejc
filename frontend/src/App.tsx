@@ -137,6 +137,27 @@ export default function App() {
               }
             >
               {STAFF_ROUTES.map((module) => {
+                // /casos/novo permanece registrado no catálogo para
+                // compatibilidade e integridade, porém já não é outra tela de
+                // criação. Todo deep-link histórico converge para /entrada e
+                // LegacyRedirect preserva modo, client_id, query e hash.
+                if (module.key === "caso-novo") {
+                  const redirect = <LegacyRedirect to="/entrada" />;
+                  return (
+                    <Route
+                      key={module.key}
+                      path={module.path}
+                      element={
+                        module.roles ? (
+                          <RoleOnly roles={module.roles}>{redirect}</RoleOnly>
+                        ) : (
+                          redirect
+                        )
+                      }
+                    />
+                  );
+                }
+
                 const Component = module.component;
                 const content = <Component />;
                 return (
