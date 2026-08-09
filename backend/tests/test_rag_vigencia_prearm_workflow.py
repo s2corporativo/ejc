@@ -55,13 +55,18 @@ def test_env_nao_e_sobrescrito_in_place():
     assert 'sudo install -o "$uid" -g "$gid" -m "$mode" "$work" "$env_file"' not in trecho
 
 
-def test_rollback_tem_copia_0600_e_restore_atomico():
+def test_rollback_tem_copia_0600_restore_atomico_e_flag_antes_do_rename():
     trecho = _trecho_prearm()
     assert 'sudo cp -p "$env_file" "$backup"' in trecho
     assert 'sudo chmod 600 "$backup"' in trecho
     assert 'sudo mv -f "$backup" "$env_file"' in trecho
     assert 'if [ "$concluido" != "1" ]; then' in trecho
     assert 'if [ "$alterado" = "1" ] && sudo test -f "$backup"; then' in trecho
+
+    indice_backup = trecho.index('sudo chmod 600 "$backup"')
+    indice_flag = trecho.rindex("alterado=1")
+    indice_rename = trecho.index('sudo mv -f "$candidate" "$env_file"')
+    assert indice_backup < indice_flag < indice_rename
 
 
 def test_saida_e_sinais_passam_pelo_rollback_quando_necessario():
