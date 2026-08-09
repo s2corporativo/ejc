@@ -110,15 +110,49 @@ _FILTRO_SUMULAS_QUARENTENA = (
 # peça a partir de modelos).
 _FILTRO_FICTICIO_RAG = "AND COALESCE((kd.extra->>'ficticio')::boolean, false) = false"
 
+# ── Situação JURÍDICA na recuperação (P0.1 / Issue #826) ──────────────────────
+# `kd.vigente` é versionamento TÉCNICO do documento no EJC; não prova que a
+# norma continua juridicamente vigente. A situação normativa é lida do JSONB
+# com a mesma precedência usada por knowledge_governance:
+# legal_status → situacao_normativa → vigencia_status.
+_SQL_SITUACAO_JURIDICA = (
+    "regexp_replace(lower(btrim(COALESCE("
+    "NULLIF(btrim(kd.extra->>'legal_status'),''),"
+    "NULLIF(btrim(kd.extra->>'situacao_normativa'),''),"
+    "NULLIF(btrim(kd.extra->>'vigencia_status'),''),''))),'\\s+',' ','g')"
+)
 
-def _filtros_gate_rag(incluir_ficticio: bool = False) -> str:
-    """Fragmento SQL (sem bind params) com o gate de governança/quarentena
-    aplicado a TODAS as consultas de recuperação RAG. A decisão é feita em
-    Python a partir das flags de config, então não há parâmetros novos para
-    propagar aos dicionários de params das queries. Fail-closed."""
+# FAIL-CLOSED para DIREITO ATUAL: legislação só pode fundamentar a IA quando a
+# situação jurídica está explicitamente `vigente`. Revogada, suspensa,
+# parcialmente revogada e vigência não verificada ficam fora do contexto atual.
+# `parcialmente_revogada` é deliberadamente conservadora aqui: até existir um
+# recorte material/temporal por artigo, o EJC não tem como saber qual trecho
+# continua vigente sem arriscar aplicar parte revogada. Pesquisa histórica
+# (`incluir_historico=True`) omite este filtro e continua podendo localizar o
+# material com finalidade de auditoria/evolução normativa.
+_FILTRO_VIGENCIA_ATUAL_RAG = (
+    "AND NOT (COALESCE(kd.vigente, false) = true "
+    "AND lower(COALESCE(kd.categoria,'')) LIKE '%legisl%' "
+    f"AND {_SQL_SITUACAO_JURIDICA} <> 'vigente')"
+)
+
+
+def _filtros_gate_rag(
+    incluir_ficticio: bool = False,
+    incluir_historico: bool = False,
+) -> str:
+    """Gate SQL de governança/quarentena aplicado a TODA recuperação RAG.
+
+    `incluir_historico=False` (padrão) também exige vigência jurídica positiva
+    para legislação. O modo histórico desliga SOMENTE esse recorte jurídico;
+    aprovação, quarentena, corpus fictício e demais controles continuam ativos.
+    Não há flag permissiva para direito atual: a política é fail-closed.
+    """
     partes = [_FILTRO_GATE_RAG]
     if settings.RAG_EXIGIR_APROVADO:
         partes.append(_FILTRO_APROVADO_RAG)
+    if not incluir_historico:
+        partes.append(_FILTRO_VIGENCIA_ATUAL_RAG)
     if settings.RAG_SUMULAS_QUARENTENA:
         partes.append(_FILTRO_SUMULAS_QUARENTENA)
     if not incluir_ficticio:
@@ -202,7 +236,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
               {filtro}
               {_FILTRO_ESCOPO_RAG}
               {_FILTRO_VIGENTE_RAG}
-              {_filtros_gate_rag(incluir_ficticio)}
+              {_filtros_gate_rag(incluir_ficticio, incluir_historico)}
             ORDER BY sim DESC
             LIMIT :lim
         """)
@@ -247,7 +281,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                   {filtro_f}
                   {_FILTRO_ESCOPO_RAG}
                   {_FILTRO_VIGENTE_RAG}
-                  {_filtros_gate_rag(incluir_ficticio)}
+                  {_filtros_gate_rag(incluir_ficticio, incluir_historico)}
                 ORDER BY rank DESC
                 LIMIT :lim
             """)
@@ -313,9 +347,9 @@ async def buscar_contexto_rag(
     precedentes internos, onde a relevância parcial é valiosa e os textos
     raramente repetem o vocabulário exato do caso novo.
 
-    incluir_historico=True: inclui versões não-vigentes (migration 068) —
-    útil para auditoria de citações antigas ou pesquisa da evolução de uma
-    tese/entendimento. Por padrão (False) só a versão vigente é retornada.
+    incluir_historico=True: inclui versões não-vigentes e também permite
+    legislação cuja situação jurídica não é apta à fundamentação atual. É um
+    modo de pesquisa/auditoria; não deve ser usado para fundamentar saída final.
 
     incluir_ficticio=True: permite recuperar o corpus FICTÍCIO da Bíblia EJC
     (extra.ficticio=true — modelos de peça/referência interna). SÓ deve ser
@@ -324,25 +358,17 @@ async def buscar_contexto_rag(
     para nunca aparecer como fundamentação em buscas amplas.
 
     Gate de governança (fail-closed) é aplicado a TODAS as consultas via
-    _filtros_gate_rag: docs bloqueados/recusados/pendentes nunca entram; súmulas
-    e corpus fictício são excluídos conforme quarentena/flags de config.
+    _filtros_gate_rag. No modo padrão, legislação só entra quando possui
+    `legal_status=vigente`; status ausente, revogado, suspenso ou parcial fica
+    fora até curadoria/recorte seguro. Não existe opt-out permissivo para
+    fundamentação atual.
     """
-    # Tentativa 0: busca SEMÂNTICA via pgvector (se embeddings habilitados).
-    # Usa distância de cosseno (operador <=> do pgvector). Cai no textual se
-    # indisponível ou em erro. Esta é a busca "por significado" — encontra
-    # precedentes mesmo quando o vocabulário do caso novo difere do registrado.
-    # Reranking (Fase 1 — auditoria IA): recupera um POOL maior de candidatos e
-    # reordena com um cross-encoder antes de cortar em `limite`. Desligado ou
-    # indisponível → pool = limite e a ordem RRF é mantida (degradação graciosa;
-    # ver ai/reranker.py). rerank(...) sempre devolve no máximo `limite` itens.
     from app.services.ai import reranker as _reranker
     _rerank_on = _reranker.disponivel()
     _n_pool = _reranker.tamanho_pool(limite) if _rerank_on else limite
 
     from app.services.embedding_service import disponivel as _emb_on, gerar_embeddings
     if not _emb_on():
-        # Degradação AUDÍVEL: sem embeddings a busca vira ILIKE puro (recall
-        # muito menor). Warning único por processo — visível no monitoramento.
         global _AVISOU_SEM_EMBEDDINGS
         if not _AVISOU_SEM_EMBEDDINGS:
             _AVISOU_SEM_EMBEDDINGS = True
@@ -352,8 +378,6 @@ async def buscar_contexto_rag(
                 "recall reduzido. Habilite embeddings em produção."
             )
     if _emb_on():
-        # HyDE (O-6, OFF por default): enriquece SÓ a query densa; a lexical usa
-        # a consulta real. modo="query": prefixo E5 só se o modelo for E5.
         consulta_emb = await _hyde_expandir(consulta)
         vetores = await gerar_embeddings([consulta_emb], modo="query")
         if vetores:
@@ -377,19 +401,14 @@ async def buscar_contexto_rag(
                   {filtro_cat_v}
                   {_FILTRO_ESCOPO_RAG}
                   {_FILTRO_VIGENTE_RAG}
-                  {_filtros_gate_rag(incluir_ficticio)}
+                  {_filtros_gate_rag(incluir_ficticio, incluir_historico)}
                 ORDER BY kc.embedding <=> :vec
                 LIMIT :lim
             """)
-            # #13: com filtros seletivos (escopo por cliente, vigência, categoria)
-            # o índice HNSW aproximado pode varrer poucos candidatos e sub-retornar
-            # (precedentes internos somem do topo). Elevar ef_search nesta
-            # transação amplia a lista de candidatos e melhora o recall sem trocar
-            # o índice. SET LOCAL = escopo da transação apenas.
             try:
                 await db.execute(text("SET LOCAL hnsw.ef_search = 100"))
             except Exception:
-                pass  # GUC ausente (índice não-HNSW/pgvector antigo) → segue igual
+                pass
             try:
                 rows_v = await db.execute(sql_v, params_v)
                 resultados = [
@@ -398,21 +417,17 @@ async def buscar_contexto_rag(
                      "categoria": r.categoria, "fonte": r.fonte,
                      "confianca": r.confianca,
                      "versao": getattr(r, "versao", None),
-                     "score": round(1 - r.dist, 4)}   # cosine similarity
+                     "score": round(1 - r.dist, 4)}
                     for r in rows_v
                 ]
                 if resultados:
-                    # Funde a perna lexical (RRF) sobre o POOL, depois reranqueia
-                    # e corta em `limite` (rerank off → devolve o RRF[:limite]).
                     fundidos = await _fundir_lexical(db, consulta, resultados, _n_pool, categorias,
                                                      scope_client_id, incluir_historico,
                                                      incluir_ficticio)
                     return await _reranker.rerank(consulta, fundidos, limite)
-                # Sem vetores gravados ainda → cai no textual abaixo
             except Exception as e:
                 logger.warning(f"Busca vetorial falhou, usando textual: {e}")
 
-    # Tentativa 1: busca textual nos chunks (funciona sem embeddings)
     termos = [t for t in consulta.replace(",", " ").split() if len(t) >= 3][:8]
     params: dict = {"lim": _n_pool}
     cond_termos = ""
@@ -445,7 +460,7 @@ async def buscar_contexto_rag(
           {filtro_cat}
           {_FILTRO_ESCOPO_RAG}
           {_FILTRO_VIGENTE_RAG}
-          {_filtros_gate_rag(incluir_ficticio)}
+          {_filtros_gate_rag(incluir_ficticio, incluir_historico)}
         LIMIT :lim
     """)
     try:
@@ -459,7 +474,6 @@ async def buscar_contexto_rag(
             }
             for r in rows
         ]
-        # Reranqueia também o fallback textual (rerank off → res_txt[:limite]).
         return await _reranker.rerank(consulta, res_txt, limite)
     except Exception as e:
         logger.warning(f"RAG search falhou: {e}")
@@ -479,22 +493,12 @@ def _formatar_fontes(fontes: list[dict]) -> str:
     return "\n".join(linhas)
 
 
-# ── Seleção de modelo por tamanho de contexto ─────────────────────────────────
-
 def _modelo_para_prompt(prompt: str) -> str:
-    """
-    Groq llama3-70b-8192 tem janela de 8 192 tokens (~32 000 chars).
-    Quando o prompt excede 20 000 chars, usa llama-3.1-70b-versatile
-    (128k tokens) para evitar truncamento silencioso de dossiês grandes.
-    Os dois modelos ficam na mesma API Groq — sem custo extra de chave.
-    """
     if len(prompt) > 20_000:
         modelo = settings.GROQ_MODEL_LARGE
         logger.info(f"[IA] Prompt grande ({len(prompt)} chars) → {modelo}")
         return modelo
     return settings.GROQ_MODEL
-
-
 
 
 async def _gateway_text(
@@ -507,11 +511,7 @@ async def _gateway_text(
     model_override: str | None = None,
     entidades: dict[str, list[str]] | None = None,
 ) -> tuple[str, GatewayResponse]:
-    """Chamada centralizada ao AI Gateway, mantendo metadados para logs HITL.
-
-    `entidades` (opcional): nomes próprios do caso para pseudonimização
-    REVERSÍVEL no gateway (só surte efeito em tasks EXTERNO_PSEUDONIMIZADO). None
-    (default) = só PII estrutural, sem quebrar os call sites existentes."""
+    """Chamada centralizada ao AI Gateway, mantendo metadados para logs HITL."""
     provider_override = "groq" if model_override else None
     resp = await gw_chat(
         messages=[
@@ -548,7 +548,6 @@ def _tokens_output(resp: object) -> int | None:
         return getattr(usage, "completion_tokens", None)
     return getattr(resp, "output_tokens", None)
 
-# ── Funções principais ────────────────────────────────────────────────────────
 
 async def analisar_caso(
     db: AsyncSession,
@@ -558,43 +557,29 @@ async def analisar_caso(
     nomes_proteger: list[str] | None = None,
     case_id: str | None = None,
 ) -> dict:
-    """
-    Análise de caso novo → sugestão de teses.
-    Pipeline completo: sanitiza → RAG → Groq → log → resposta marcada como rascunho.
-    """
     if not settings.AI_ENABLED:
         return {"erro": "IA desabilitada na configuração"}
 
-    # 1. SANITIZAÇÃO LGPD (obrigatória)
     texto_limpo, houve_pii = sanitizar_pii(descricao_fatos, nomes_proteger)
     residual = validar_sem_pii(texto_limpo)
     if residual:
-        # Segunda barreira: PII residual detectada → abortar
         logger.error(f"PII residual após sanitização: {residual}")
         return {
             "erro": f"Dados pessoais detectados ({', '.join(residual)}). "
                     "Remova CPF/CNPJ/nº processo do texto e tente novamente."
         }
 
-    # Escopo de isolamento por cliente (Bloco 5): restrito ao client_id do caso.
-    # None quando não há caso → RAG fail-closed (sem conteúdo restrito).
     escopo_cli = await _escopo_cliente_do_caso(db, case_id)
-
-    # 2. RAG — recuperar contexto da base
     fontes = await buscar_contexto_rag(
         db, texto_limpo, limite=6,
-        categorias=None,  # busca em todas; filtrar por área em fase 2
+        categorias=None,
         scope_client_id=escopo_cli,
     )
     contexto = _formatar_fontes(fontes)
 
-    # 2.a PRECEDENTES INTERNOS — casos já encerrados do próprio escritório.
-    # Busca dedicada para garantir que a experiência acumulada da firma apareça,
-    # mesmo que as fontes legais dominem o ranking textual. Restrita ao próprio
-    # cliente via escopo — precedente de um cliente NUNCA aparece p/ outro.
     precedentes = await buscar_contexto_rag(
         db, texto_limpo, limite=3, categorias=["precedente_interno"],
-        modo_or=True,   # relevância parcial é útil: poucos precedentes, vocabulário variado
+        modo_or=True,
         scope_client_id=escopo_cli,
     )
     contexto_precedentes = ""
@@ -604,9 +589,6 @@ async def analisar_caso(
             linhas.append(f"[Precedente {i}] {p['titulo']}\n{p['conteudo'][:600]}\n")
         contexto_precedentes = "\n".join(linhas) + "\n\n"
 
-    # 2.b INTERLIGAÇÃO — se há case_id, carregar o dossiê consolidado do caso.
-    # Isso faz a IA "enxergar" todo o sistema: cliente, ramo especializado,
-    # prazos, honorários, peças e histórico — já sanitizado (LGPD).
     dossie_txt = ""
     nomes_caso: list[str] = []
     if case_id:
@@ -614,11 +596,9 @@ async def analisar_caso(
         if dossie:
             dossie_txt = dossie["texto"] + "\n\n"
             nomes_caso = dossie["nomes_proteger"]
-            # Re-sanitizar os fatos colados com os nomes descobertos no dossiê
             if nomes_caso:
                 texto_limpo, _ = sanitizar_pii(texto_limpo, nomes_caso)
 
-    # 3. Chamada Groq
     prompt_usuario = (
         f"ÁREA JURÍDICA: {area}\n\n"
         f"{dossie_txt}"
@@ -642,7 +622,6 @@ async def analisar_caso(
         logger.error(f"AI Gateway falhou: {e}")
         return {"erro": f"Falha na IA: {str(e)[:200]}"}
 
-    # 4. AI LOG (rastreabilidade LGPD + HITL)
     log = AILog(
         id=str(uuid4()),
         user_id=user_id,
@@ -660,7 +639,6 @@ async def analisar_caso(
     db.add(log)
     await db.commit()
 
-    # 5. Resposta — SEMPRE marcada como rascunho
     return {
         "ai_log_id": log.id,
         "resposta": resposta,
@@ -676,18 +654,12 @@ async def resumir_documento(
     db: AsyncSession, user_id: str, texto_documento: str,
     case_id: str | None = None,
 ) -> dict:
-    """Resume documento (intimação, decisão) — mesma pipeline de segurança."""
     if not settings.AI_ENABLED:
         return {"erro": "IA desabilitada"}
 
     texto_limpo, houve_pii = sanitizar_pii(texto_documento[:12000])
 
     try:
-        # FASE 1b (MAPA §5 Passo 2): task de PROSA coberto pela base central
-        # ("resumo" NÃO recebe aplicar_base — legal_base._TASKS_COM_BASE).
-        # "chat_rapido" mantém o tier leve (ollama chat → maritaca rápido →
-        # groq) e garante a barreira anti-alucinação central. A regra inline
-        # de SYSTEM_RESUMO_DOC é preservada (mudança aditiva).
         resposta, resp = await _gateway_text(
             SYSTEM_RESUMO_DOC, texto_limpo,
             task_type="chat_rapido", temperature=0.1, max_tokens=1200, nivel="alto",
@@ -729,22 +701,12 @@ async def extrair_prazos_ia(
     db: AsyncSession, user_id: str, texto: str,
     case_id: str | None = None,
 ) -> dict:
-    """Extração de prazos por IA (endpoint /ai/detectar-prazos).
-
-    Mesma pipeline de segurança do resumir_documento: sanitização LGPD →
-    gateway → AILog (HITL). O parse reaproveita o caminho fail-safe do intake
-    (`_parse_json`/`_prazos_extraidos` de documento_service): item sem data
-    fatal parseável é DESCARTADO — a IA nunca materializa prazo inventado.
-    """
     if not settings.AI_ENABLED:
         return {"erro": "IA desabilitada"}
 
     texto_limpo, houve_pii = sanitizar_pii(texto[:12000])
 
     try:
-        # Fluxo JSON com task fora de _TASKS_COM_BASE ("resumo" — por design):
-        # PREPENDE BASE_ESTRUTURADA no system (padrão peca_service/ia_extra
-        # sugestao-honorarios) — barreira anti-alucinação sem quebrar o parse.
         resposta, resp = await _gateway_text(
             BASE_ESTRUTURADA + "\n\n" + SYSTEM_EXTRACAO_PRAZOS, texto_limpo,
             task_type="resumo", temperature=0.0, max_tokens=1500, nivel="alto",
@@ -781,7 +743,6 @@ async def extrair_prazos_ia(
 
 async def _log_ai(db, user_id, tipo_uso_str, prompt, resposta,
                   pii, fontes, resp_groq, case_id):
-    """Helper de log para as funções ECJ — mesmo padrão do analisar_caso."""
     log = AILog(
         id=str(uuid4()), user_id=user_id, case_id=case_id,
         tipo_uso=AITipoUso(tipo_uso_str),
@@ -797,11 +758,6 @@ async def _log_ai(db, user_id, tipo_uso_str, prompt, resposta,
     db.add(log)
     await db.commit()
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# MELHORIAS ECJ — Inteligência Jurídica (Groq llama3-70b existente)
-# Todas as saídas: rascunho HITL, sanitização LGPD, fontes citadas.
-# ═══════════════════════════════════════════════════════════════════════════
 
 SYSTEM_TESES_OCULTAS = """Você é um advogado sênior brasileiro revisor de estratégia.
 Sua função: identificar TESES ADICIONAIS que o advogado pode não ter percebido.
@@ -874,15 +830,6 @@ async def detectar_teses_ocultas(
     case_id: str | None = None,
     scope_client_id: str | None = None,
 ) -> dict:
-    """Detector de Teses Ocultas — ranking por relevância.
-
-    scope_client_id (Bloco 5): o CHAMADOR deve verificar ownership do case_id
-    e derivar o escopo (ver routers/ai.py::teses_ocultas) — esta função de
-    serviço não tem acesso ao usuário autenticado para checar isso sozinha."""
-    # Pseudonimização REVERSÍVEL dos nomes do caso (PR #85): com case_id, deriva
-    # as ENTIDADES e deixa o gateway pseudonimizar/reidratar — as teses voltam
-    # com o NOME REAL. Sem case_id (fatos livres), mantém o mascaramento
-    # IRREVERSÍVEL legado via nomes_proteger. entidades_do_caso é fail-safe.
     entidades = None
     if case_id:
         from app.services.ai.entidades_caso import entidades_do_caso
@@ -908,10 +855,6 @@ async def detectar_teses_ocultas(
             task_type="estrategia", temperature=0.2, max_tokens=2400, nivel="alto",
             entidades=entidades,
         )
-        # LGPD — AILog.prompt_sanitizado é "SEM PII". Com `entidades` o user_msg
-        # tem nomes em claro (o gateway só os pseudonimiza no envio ao externo);
-        # pseudonimizamos AQUI apenas o valor logado (marcadores), preservando o
-        # que foi enviado e a resposta reidratada.
         prompt_log = user_msg
         if entidades:
             from app.services.ai.pseudonymizer import pseudonimizar
@@ -933,7 +876,6 @@ async def auditar_peca(
     db, user_id: str, conteudo_peca: str, tipo_peca: str,
     case_id: str | None = None,
 ) -> dict:
-    """Auditor de Petições — pontuação técnica + omissões."""
     texto, pii = sanitizar_pii(conteudo_peca, [])
     user_msg = f"Tipo de peça: {tipo_peca}\n\nPEÇA (sanitizada):\n{texto[:12000]}"
     try:
@@ -957,7 +899,6 @@ async def preparar_audiencia(
     nomes_proteger: list[str] | None = None,
     case_id: str | None = None,
 ) -> dict:
-    """Assistente de Audiência — kit de preparação."""
     texto, pii = sanitizar_pii(resumo_caso, nomes_proteger or [])
     user_msg = f"Tipo de audiência: {tipo_audiencia}\n\nCASO (sanitizado):\n{texto[:8000]}"
     try:
@@ -1031,12 +972,6 @@ async def analisar_contrato(
     texto_contrato_2: str | None = None,
     modo: str | None = None,
 ) -> dict:
-    """Análise de contrato (Bloco E) — sanitiza → RAG (CC/CDC) → Groq → log HITL.
-
-    modo="comparacao" + texto_contrato_2: compara as duas minutas cláusula a
-    cláusula (qual é mais favorável e por quê), mesmo fluxo LGPD/HITL.
-    Saída é MINUTA de análise: o advogado revisa antes de qualquer uso.
-    """
     if not settings.AI_ENABLED:
         return {"erro": "IA desabilitada na configuração"}
 
@@ -1044,7 +979,6 @@ async def analisar_contrato(
         (texto_contrato_2 or "").strip()
     )
 
-    # 1) Sanitização LGPD (dupla barreira, como nas demais funções)
     texto, pii = sanitizar_pii(texto_contrato, nomes_proteger or [])
     residual = validar_sem_pii(texto)
     if residual:
@@ -1060,7 +994,6 @@ async def analisar_contrato(
             return {"erro": "Não foi possível sanitizar dados pessoais com segurança."}
         pii = pii or pii2
 
-    # 2) Recuperação no RAG — legislação relevante (CC, CDC) por termos do contrato
     consulta = f"{tipo_contrato} contrato cláusula abusiva rescisão multa garantia"
     fontes = await buscar_contexto_rag(
         db, consulta, limite=6, categorias=["legislacao"]
@@ -1080,15 +1013,6 @@ async def analisar_contrato(
         )
     system = SYSTEM_COMPARACAO_CONTRATOS if comparacao else SYSTEM_ANALISE_CONTRATO
     try:
-        # FASE 1b (MAPA §5 Passo 2): "analise_contrato" está no TASK_ROUTING mas
-        # FORA de legal_base._TASKS_COM_BASE (sem base central). A saída aqui é
-        # PROSA (relatório de auditoria de minuta contratual) → task coberto
-        # "auditoria_peca" (mesma cadeia anthropic/groq; ollama muda de
-        # OLLAMA_MODEL_CONTRATO p/ OLLAMA_MODEL_PETICAO — revisão textual).
-        # Não ampliamos _TASKS_COM_BASE com "analise_contrato" porque o
-        # BankForensicsAgent (ai/core/orchestrator.py) usa esse task para saída
-        # ESTRUTURADA — injetar a base de prosa lá arriscaria o parse.
-        # As REGRAS INVIOLÁVEIS inline dos prompts são preservadas (aditivo).
         conteudo, resp = await _gateway_text(
             system, user_msg,
             task_type="auditoria_peca", temperature=0.15,
