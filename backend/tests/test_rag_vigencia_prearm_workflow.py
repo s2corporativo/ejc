@@ -27,6 +27,20 @@ def _trecho_prearm() -> str:
     return texto[inicio:fim]
 
 
+def _trecho_preflight_vigencia() -> str:
+    """Extrai a defesa pós-ativação do pré-voo para teste comportamental."""
+    texto = _texto()
+    inicio_passo = texto.index("      - name: Confirmar SHA e runtime de produção")
+    inicio = texto.index("          APP_DIR=/opt/ejc", inicio_passo)
+    fim = texto.index('\n\n          [ "$erros" -eq 0 ] || exit 1', inicio)
+    trecho = textwrap.dedent(texto[inicio:fim])
+    return (
+        trecho.replace("APP_DIR=/opt/ejc", 'APP_DIR="$TEST_APP_DIR"')
+        .replace("sudo test", "test")
+        .replace("sudo grep", "grep")
+    )
+
+
 def _trecho_gate_sha() -> str:
     """Extrai a verificação real de SHA do passo de pré-armamento."""
     trecho = _trecho_prearm()
@@ -46,6 +60,80 @@ def test_prearm_fica_dentro_do_deploy_e_nao_cria_workflow_concorrente():
     assert texto.index("- name: Smoke test pós-deploy") < texto.index(
         "- name: Pré-armar gate de vigência em modo compatível"
     )
+
+
+def test_preflight_pos_ativacao_ocorre_antes_de_tocar_producao():
+    texto = _texto()
+    inicio_passo = texto.index("- name: Confirmar SHA e runtime de produção")
+    indice_marker = texto.index('.rag_vigencia_activated_v1', inicio_passo)
+    indice_sync = texto.index("- name: Sincronizar checkout aprovado para /opt/ejc")
+    indice_deploy = texto.index("- name: Deploy seguro com política calculada")
+    indice_prearm = texto.index("- name: Pré-armar gate de vigência em modo compatível")
+
+    assert inicio_passo < indice_marker < indice_sync < indice_deploy < indice_prearm
+
+
+def test_preflight_marker_ativo_reprova_drift_false_e_aceita_true(tmp_path: Path):
+    trecho = _trecho_preflight_vigencia()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / ".rag_vigencia_activated_v1").write_text("ativo\n", encoding="utf-8")
+    env_file = tmp_path / ".env"
+    ambiente = {**os.environ, "TEST_APP_DIR": str(tmp_path)}
+    shell = (
+        "set -uo pipefail\n"
+        "erros=0\n"
+        'reprovar() { echo "::error::Pré-voo do deploy: $1"; erros=1; }\n'
+        f"{trecho}\n"
+        '[ "$erros" -eq 0 ] || exit 1\n'
+    )
+
+    env_file.write_text("RAG_EXIGIR_VIGENCIA_VERIFICADA=false\n", encoding="utf-8")
+    drift = subprocess.run(
+        ["bash", "-c", shell],
+        env=ambiente,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert drift.returncode != 0
+    assert "abortando antes de tocar produção" in drift.stdout
+    assert "RAG_EXIGIR_VIGENCIA_VERIFICADA=false" not in drift.stdout
+
+    env_file.write_text("RAG_EXIGIR_VIGENCIA_VERIFICADA=true\n", encoding="utf-8")
+    canonico = subprocess.run(
+        ["bash", "-c", shell],
+        env=ambiente,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert canonico.returncode == 0
+    assert "RAG_EXIGIR_VIGENCIA_VERIFICADA=true" not in canonico.stdout
+
+
+def test_preflight_sem_marker_mantem_fluxo_pre_ativacao(tmp_path: Path):
+    trecho = _trecho_preflight_vigencia()
+    tmp_path.joinpath("data").mkdir()
+    tmp_path.joinpath(".env").write_text(
+        "RAG_EXIGIR_VIGENCIA_VERIFICADA=false\n", encoding="utf-8"
+    )
+    ambiente = {**os.environ, "TEST_APP_DIR": str(tmp_path)}
+    shell = (
+        "set -uo pipefail\n"
+        "erros=0\n"
+        'reprovar() { erros=1; }\n'
+        f"{trecho}\n"
+        '[ "$erros" -eq 0 ] || exit 1\n'
+    )
+    resultado = subprocess.run(
+        ["bash", "-c", shell],
+        env=ambiente,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert resultado.returncode == 0
 
 
 def test_env_nao_e_sobrescrito_in_place():
