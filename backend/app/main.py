@@ -189,6 +189,7 @@ from app.routers import whatsapp
 from app.routers import workflow
 from app.routers import architecture
 from app.integrations import routers as integracoes
+from app.modules.dpt360.router import router as dpt360_router
 
 
 # Ativa a arquitetura orientada a eventos (P1): importar registra os @on subscribers.
@@ -372,6 +373,7 @@ app.include_router(conversao_caso.router, prefix=API)
 app.include_router(credential_vault.router, prefix=API)  # cofre de credenciais (superadmin)
 app.include_router(curadoria_renomada.router, prefix=API)
 app.include_router(dashboard.router, prefix=API)
+app.include_router(dpt360_router, prefix=API)
 app.include_router(data_room.router, prefix=API)
 app.include_router(data_room_v4.router, prefix=API)
 app.include_router(datajud.router, prefix=API)
