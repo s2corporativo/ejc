@@ -2,24 +2,25 @@ import { ArrowRight, BookOpen, CalendarClock, LibraryBig, Radar, Wrench } from "
 import { Link } from "react-router";
 import DptDiagnosis from "./DptDiagnosis";
 import DptIntelligence from "./DptIntelligence";
+import DptRadar from "./DptRadar";
 import type { DptDashboard } from "./api";
 
 const PLANNED: Record<string, { title: string; text: string; href?: string; hrefLabel?: string }> = {
-  radar: { title: "Radar Jurídico DPT", text: "A camada especializada cruzará publicações oficiais validadas com a carteira e nunca concluirá irregularidade automaticamente.", href: "/radar", hrefLabel: "Abrir Radar atual" },
   ferramentas: { title: "Ferramentas Empresariais", text: "O DPT compõe ferramentas existentes por área sem duplicar calculadoras, analisadores ou workspaces.", href: "/areas-de-atuacao", hrefLabel: "Abrir Áreas de Atuação" },
   obrigacoes: { title: "Agenda de Obrigações Empresariais", text: "Licenças, TACs, contratos e obrigações recorrentes serão modelados somente após confirmar o que Prazos, Tarefas e Checklists já atendem.", href: "/atividades", hrefLabel: "Abrir Agenda e Prazos" },
   biblioteca: { title: "Biblioteca Empresarial", text: "Legislação, jurisprudência, teses, modelos, checklists e memória institucional permanecem no conhecimento canônico, com segregação por escopo.", href: "/inteligencia?tab=conhecimento", hrefLabel: "Abrir Conhecimento" },
   relatorios: { title: "Relatórios Executivos", text: "Relatórios mensais serão gerados como rascunho, com revisão humana obrigatória antes de compartilhar com cliente." },
 };
 
-const ICONS = { radar: Radar, ferramentas: Wrench, obrigacoes: CalendarClock, biblioteca: LibraryBig, relatorios: BookOpen };
+const ICONS = { ferramentas: Wrench, obrigacoes: CalendarClock, biblioteca: LibraryBig, relatorios: BookOpen };
 
 export default function DptFeatureRouter({ name, data }: { name: string; data: DptDashboard }) {
   if (name === "inteligencia") return <DptIntelligence companies={data.companies} initialAction="conselho" />;
   if (name === "diagnostico") return <DptDiagnosis companies={data.companies} />;
+  if (name === "radar") return <DptRadar />;
 
   const item = PLANNED[name] || PLANNED.relatorios;
-  const Icon = ICONS[name as keyof typeof ICONS] || BookOpen;
+  const Icon = ICONS[name as keyof typeof ICONS] || Radar;
   return (
     <section className="min-h-[360px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/40">
       <span className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-950 text-amber-300 dark:bg-white/10"><Icon className="h-6 w-6" /></span>
