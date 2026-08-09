@@ -25,7 +25,8 @@ def _propagar_alertas_critica(resultado: dict) -> None:
     if not isinstance(critica, dict):
         return
 
-    alertas = list(resultado.get("alertas") or [])
+    alertas_existentes = resultado.get("alertas")
+    alertas = list(alertas_existentes) if isinstance(alertas_existentes, list) else []
 
     def adicionar(valor) -> None:
         if isinstance(valor, str):
@@ -33,8 +34,10 @@ def _propagar_alertas_critica(resultado: dict) -> None:
             if texto and texto not in alertas:
                 alertas.append(texto)
 
-    for alerta in critica.get("alertas") or []:
-        adicionar(alerta)
+    alertas_critica = critica.get("alertas")
+    if isinstance(alertas_critica, list):
+        for alerta in alertas_critica:
+            adicionar(alerta)
 
     # Em falha, o aviso é o dado essencial que explica que a segunda revisão
     # não ocorreu e que a conferência manual deve ser reforçada. Em sucesso, o
