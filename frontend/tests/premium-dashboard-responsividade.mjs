@@ -1,4 +1,4 @@
-// Homologação visual do shell e dashboard premium em Chromium real.
+// Homologação visual do AppShell v2 e dashboard ultra em Chromium real.
 // As respostas abaixo existem somente no contexto Playwright e não alteram o produto.
 import http from "node:http";
 import { existsSync, mkdirSync } from "node:fs";
@@ -233,31 +233,35 @@ async function installApiFixtures(page) {
 }
 
 async function inspectDashboard(page, viewport, failures) {
-  await page.waitForSelector(".ejc-dashboard-premium", { timeout: 15000 });
-  await page.getByText("Visão operacional do escritório").waitFor();
-  await page.getByText("Total de Processos").waitFor();
+  await page.waitForSelector(".ejc-ultra-dashboard", { timeout: 15000 });
+  await page.getByText("Legal Operations Command Center").waitFor();
+  await page.getByText("Casos ativos").waitFor();
 
-  const layout = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    innerWidth: window.innerWidth,
-    topbarVisible:
-      getComputedStyle(document.querySelector(".ejc-premium-topbar"))
-        .display !== "none",
-    dashboardVisible:
-      getComputedStyle(document.querySelector(".ejc-dashboard-premium"))
-        .display !== "none",
-    mainText: document.querySelector("main")?.innerText || "",
-  }));
+  const layout = await page.evaluate(() => {
+    const topbar = document.querySelector("header.fixed.inset-x-0.top-0");
+    const dashboard = document.querySelector(".ejc-ultra-dashboard");
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+      topbarVisible: Boolean(
+        topbar && getComputedStyle(topbar).display !== "none",
+      ),
+      dashboardVisible: Boolean(
+        dashboard && getComputedStyle(dashboard).display !== "none",
+      ),
+      mainText: document.querySelector("main")?.innerText || "",
+    };
+  });
 
   const overflow = layout.scrollWidth - layout.innerWidth;
   if (overflow > 1) {
     failures.push(`${viewport.name}: overflow horizontal de ${overflow}px`);
   }
   if (!layout.topbarVisible) {
-    failures.push(`${viewport.name}: topbar premium não está visível`);
+    failures.push(`${viewport.name}: topbar principal não está visível`);
   }
   if (!layout.dashboardVisible) {
-    failures.push(`${viewport.name}: dashboard premium não está visível`);
+    failures.push(`${viewport.name}: dashboard ultra não está visível`);
   }
 
   for (const forbidden of [
@@ -281,12 +285,12 @@ async function inspectDashboard(page, viewport, failures) {
   for (const expected of [
     "126",
     "98",
-    "Tarefas Pendentes",
-    "Prazos Próximos",
-    "Andamentos Recentes",
-    "Agenda da Semana",
-    "Distribuição por Área",
-    "Processos por Status",
+    "Tarefas pendentes",
+    "Prazos em 7 dias",
+    "Movimentações recentes",
+    "Próximos compromissos",
+    "Áreas de atuação",
+    "Distribuição dos casos",
   ]) {
     if (!layout.mainText.includes(expected)) {
       failures.push(`${viewport.name}: conteúdo operacional ausente: ${expected}`);
@@ -374,19 +378,19 @@ async function main() {
 
   if (failures.length) {
     console.error(
-      `\nDASHBOARD PREMIUM RESPONSIVO: FALHOU\n - ${failures.join("\n - ")}`,
+      `\nDASHBOARD ULTRA RESPONSIVO: FALHOU\n - ${failures.join("\n - ")}`,
     );
     process.exit(1);
   }
 
   console.log(
-    "\nDASHBOARD PREMIUM RESPONSIVO: OK — sete larguras, sem overflow, " +
+    "\nDASHBOARD ULTRA RESPONSIVO: OK — sete larguras, sem overflow, " +
       "sem erro de console e sem sentinelas financeiras renderizadas.",
   );
 }
 
 main().catch((error) => {
-  console.error("[premium-dashboard] erro:", error);
+  console.error("[dashboard-ultra] erro:", error);
   server.close();
   process.exit(1);
 });
