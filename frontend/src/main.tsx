@@ -8,10 +8,12 @@ import "./styles/site-system.css";
 // Polimento específico da página Financeiro (escopo .executive-workspace).
 // Não duplica o site-system e mantém o padrão branco+ouro (aba ativa escura é exceção permitida).
 import "./styles/workspace-executive.css";
-// Camadas finais e isoladas do AppShell e do Dashboard premium.
-// Mantêm regras de negócio, rotas e componentes funcionais intactos.
+// Camadas legadas preservadas para rollback visual isolado.
 import "./styles/premium-shell.css";
 import "./styles/premium-dashboard.css";
+// Camada final do AppShell v2 e do dashboard ultra: somente apresentação,
+// sem alterar regras de negócio, rotas, RBAC ou contratos de API.
+import "./styles/saas-ultra-v2.css";
 
 initTheme();
 
