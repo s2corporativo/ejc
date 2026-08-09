@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import {
   Search,
   RefreshCw,
@@ -36,7 +37,13 @@ function formatCNJ(raw: string) {
 }
 
 export default function DataJudBusca() {
-  const [numero, setNumero] = useState("");
+  const [searchParams] = useSearchParams();
+  // Deep-link de Caso → Processos: o número chega preenchido, sem inventar
+  // endpoint nem disparar consulta externa automaticamente. `caso` habilita a
+  // sincronização apenas após o advogado conferir o resultado.
+  const numeroInicial = searchParams.get("numero")?.trim() || "";
+  const caseIdContexto = searchParams.get("caso")?.trim() || null;
+  const [numero, setNumero] = useState(numeroInicial);
   const [loading, setLoading] = useState(false);
   const [processo, setProcesso] = useState<ProcessoDataJud | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -56,7 +63,7 @@ export default function DataJudBusca() {
     } catch (e: any) {
       const msg =
         e.response?.data?.detail ?? "Processo não encontrado no DataJud";
-      setErro(msg);
+      setErro(typeof msg === "string" ? msg : "Processo não encontrado no DataJud");
     } finally {
       setLoading(false);
     }
@@ -69,8 +76,9 @@ export default function DataJudBusca() {
       const res = await api.post(`/datajud/cases/${caseId}/sync`);
       setSyncMsg(`Sincronizado: ${res.data.synced} movimentos atualizados`);
     } catch (e: any) {
+      const detail = e.response?.data?.detail;
       setSyncMsg(
-        `Erro: ${e.response?.data?.detail ?? "Falha na sincronização"}`,
+        `Erro: ${typeof detail === "string" ? detail : "Falha na sincronização"}`,
       );
     } finally {
       setSyncingId(null);
@@ -79,13 +87,18 @@ export default function DataJudBusca() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      {/* Header */}
       <PageHeader
         title="Consulta DataJud"
         subtitle="Busca de processos pelo número CNJ — API pública do Conselho Nacional de Justiça"
       />
 
-      {/* Search */}
+      {caseIdContexto && (
+        <div className="rounded-xl border border-primary-100 bg-primary-50 p-3 text-sm text-primary-800">
+          Consulta aberta a partir de um Caso. Confira o processo antes de
+          sincronizar movimentações com o cadastro interno.
+        </div>
+      )}
+
       <div className="card p-5">
         <label className="block text-sm font-medium text-slate-700 mb-2">
           Número do processo (CNJ)
@@ -118,7 +131,6 @@ export default function DataJudBusca() {
         </p>
       </div>
 
-      {/* Error */}
       {erro && (
         <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 text-danger-500 flex-shrink-0" />
@@ -126,12 +138,10 @@ export default function DataJudBusca() {
         </div>
       )}
 
-      {/* Result */}
       {processo && (
         <div className="space-y-4">
-          {/* Dados básicos */}
           <div className="card p-5">
-            <div className="flex items-start justify-between mb-4">
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
               <div>
                 <h2 className="font-semibold text-slate-800 text-lg">
                   {processo.numero}
@@ -142,11 +152,30 @@ export default function DataJudBusca() {
                   </p>
                 )}
               </div>
-              {processo.situacao && (
-                <span className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium">
-                  {processo.situacao}
-                </span>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {processo.situacao && (
+                  <span className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium">
+                    {processo.situacao}
+                  </span>
+                )}
+                {caseIdContexto && (
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs"
+                    disabled={syncingId === caseIdContexto}
+                    onClick={() => void sincronizar(caseIdContexto)}
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${
+                        syncingId === caseIdContexto ? "animate-spin" : ""
+                      }`}
+                    />
+                    {syncingId === caseIdContexto
+                      ? "Sincronizando…"
+                      : "Sincronizar com este caso"}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
               {[
@@ -177,7 +206,6 @@ export default function DataJudBusca() {
             </div>
           </div>
 
-          {/* Partes */}
           {processo.partes && processo.partes.length > 0 && (
             <div className="card p-5">
               <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
@@ -200,7 +228,6 @@ export default function DataJudBusca() {
             </div>
           )}
 
-          {/* Movimentos */}
           {processo.movimentos && processo.movimentos.length > 0 && (
             <div className="card p-5">
               <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
@@ -230,7 +257,6 @@ export default function DataJudBusca() {
             </div>
           )}
 
-          {/* Sync message */}
           {syncMsg && (
             <div className="bg-success-50 border border-success-200 rounded-xl p-4 flex items-center gap-3">
               <CheckCircle className="w-4 h-4 text-success-600" />
