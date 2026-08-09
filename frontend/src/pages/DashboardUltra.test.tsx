@@ -14,9 +14,7 @@ vi.mock("../lib/api", () => ({
 
 vi.mock("../stores/auth", () => ({
   useAuth: (
-    selector: (state: {
-      user: { role: string; full_name: string };
-    }) => unknown,
+    selector: (state: { user: { role: string; full_name: string } }) => unknown,
   ) => selector({ user: { role: papelAtual, full_name: "Clovis Teste" } }),
 }));
 
