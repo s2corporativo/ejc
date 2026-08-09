@@ -22,6 +22,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlparse
 
 # Fontes institucionais brasileiras típicas. O sufixo é deliberadamente
@@ -77,24 +78,29 @@ def _host_oficial(url: str) -> bool:
     return host in _HOSTS_OFICIAIS or any(host.endswith(s) for s in _SUFFIXES_OFICIAIS)
 
 
+def _validador_pii() -> Callable[[str], list[str]]:
+    """Carrega o sanitizer obrigatório; a ausência deve bloquear o gold set."""
+    from app.services.sanitizer import validar_sem_pii
+
+    return validar_sem_pii
+
+
 def _pii(caso: dict) -> list[str]:
-    """Reusa o sanitizer da aplicação, sem enviar conteúdo a provedor externo."""
+    """Valida todo o payload versionado e falha fechado sem sanitizer."""
     try:
-        from app.services.sanitizer import validar_sem_pii
+        validar_sem_pii = _validador_pii()
     except Exception:
+        return ["validação de PII indisponível: sanitizer obrigatório não carregou"]
+
+    try:
+        payload = json.dumps(caso, ensure_ascii=False, sort_keys=True, default=str)
+        tipos = validar_sem_pii(payload)
+    except Exception:
+        return ["validação de PII indisponível: sanitizer falhou ao validar o payload"]
+
+    if not tipos:
         return []
-    erros: list[str] = []
-    for campo in ("query", "fatos", "pedidos", "notes"):
-        valor = caso.get(campo)
-        if not valor:
-            continue
-        texto = "\n".join(map(str, valor)) if isinstance(valor, list) else str(valor)
-        tipos = validar_sem_pii(texto)
-        if tipos:
-            erros.append(
-                f"PII detectada em {campo}: {', '.join(sorted(set(map(str, tipos))))}"
-            )
-    return erros
+    return [f"PII detectada no payload versionado: {', '.join(sorted(set(map(str, tipos))))}"]
 
 
 def validar_caso_real(caso: dict) -> list[str]:
@@ -178,6 +184,8 @@ def auditar_diretorio(base: str | os.PathLike[str]) -> AuditoriaGold:
     """Audita gold sets reais; exemplos/templates não contam como cobertura."""
     raiz = Path(base)
     out = AuditoriaGold()
+    ids: dict[str, tuple[Path, int]] = {}
+
     for path in sorted(raiz.glob("gold_set*.jsonl")):
         nome = path.name.lower()
         if ".example." in nome or ".synthetic." in nome or ".sintetico." in nome:
@@ -187,19 +195,28 @@ def auditar_diretorio(base: str | os.PathLike[str]) -> AuditoriaGold:
         if not casos and not erros_arquivo:
             continue
         out.arquivos_reais += 1
-        ids: set[str] = set()
+
         for idx, caso in enumerate(casos, 1):
             # Cenários agênticos são outro benchmark, não gold jurídico material.
             if "intencao" in caso and "query" not in caso and "fatos" not in caso:
                 continue
+
             cid = str(caso.get("id") or "").strip()
             prefixo = f"{path.name}:{idx} ({cid or '?'})"
+            errs: list[str] = []
+
             if not cid:
-                out.erros.append(f"{prefixo}: id é obrigatório")
+                errs.append("id é obrigatório")
             elif cid in ids:
-                out.erros.append(f"{prefixo}: id duplicado")
-            ids.add(cid)
-            errs = validar_caso_real(caso)
+                primeira_path, primeira_linha = ids[cid]
+                errs.append(
+                    "id duplicado; primeira ocorrência em "
+                    f"{primeira_path.name}:{primeira_linha}"
+                )
+            else:
+                ids[cid] = (path, idx)
+
+            errs.extend(validar_caso_real(caso))
             out.erros.extend(f"{prefixo}: {e}" for e in errs)
             if not errs:
                 out.casos_reais += 1
