@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { Inbox, RefreshCcw } from "lucide-react";
 import { ErrorState, Spinner } from "../../components/UI";
-import {
-  getDptOpportunityQueue,
-  type DptOpportunityQueueItem,
-} from "./api";
+import { getDptOpportunityQueue, type DptOpportunityQueueItem } from "./api";
 
 function formatDateTime(value?: string | null) {
   if (!value) return "Data não informada";
