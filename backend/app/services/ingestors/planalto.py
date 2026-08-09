@@ -224,12 +224,11 @@ def extrair_texto_planalto(html: str) -> str:
     return normalizar("\n".join(linhas))
 
 
-# Revogação do DIPLOMA INTEIRO só é aceita quando a linha do preâmbulo COMEÇA
-# como anotação de situação do próprio diploma. Isso preserva marcadores do
-# cabeçalho como "(Revogada pela Lei nº ...)" e rejeita referências narrativas
-# da ementa, por exemplo "Altera a Lei X, revogada pela Lei Y".
-# A revogação PARCIAL é detectada separadamente para não promover o diploma
-# inteiro a 'revogada'. Forma ativa "Revoga a Lei X" também não casa.
+# Revogação do DIPLOMA INTEIRO só é aceita quando a linha do cabeçalho COMEÇA
+# como anotação de situação do próprio diploma. O recorte positivo é ainda mais
+# conservador: `situacao_juridica()` examina somente a primeira linha não vazia
+# do diploma e a linha imediatamente seguinte. Qualquer menção mais distante é
+# narrativa/ementa e permanece sem prova positiva (fail-closed).
 _RE_DIPLOMA_PARCIALMENTE_REVOGADO = re.compile(
     r"(?m)^\s*\(?\s*(?:parcialmente\s+revogad[oa]s?\s+"
     r"(?:pel[ao]s?\b|a\s+partir\b|em\s+\d)"
@@ -267,37 +266,49 @@ def _preambulo(blocos: list[tuple[str | None, str]]) -> str | None:
     return corpo if len(corpo) >= MIN_PREAMBULO else None
 
 
+def _cabecalho_situacao(preambulo: str) -> str:
+    """Recorte máximo aceito como prova positiva de situação do diploma.
+
+    Apenas as duas primeiras linhas não vazias são consideradas: a epígrafe e o
+    marcador imediatamente associado. Se a fonte deslocar a anotação para mais
+    longe, o resultado seguro é `vigencia_nao_verificada` e curadoria humana,
+    nunca inferir revogação a partir de narrativa posterior da ementa.
+    """
+    linhas = [ln.strip() for ln in preambulo.splitlines() if ln.strip()]
+    return "\n".join(linhas[:2])
+
+
 def situacao_juridica(blocos: list[tuple[str | None, str]]) -> dict:
     """Fragmento de `extra` com a situação jurídica que a fonte sustenta.
 
-    FAIL-CLOSED: apenas uma declaração positiva da fonte recebe
-    `legal_status_verificado_em`. O silêncio do texto compilado NÃO é prova
-    positiva de vigência e permanece `vigencia_nao_verificada`, com carimbo de
-    inferência para auditoria.
+    FAIL-CLOSED: apenas uma declaração positiva no cabeçalho imediato recebe
+    `legal_status_verificado_em`. O silêncio — ou uma menção posterior na
+    ementa — NÃO é prova positiva de vigência/revogação e permanece
+    `vigencia_nao_verificada`, com carimbo de inferência para auditoria.
 
     Desfechos:
-      • revogação total declarada no preâmbulo → `revogada` verificada;
-      • revogação parcial declarada → `parcialmente_revogada` verificada;
-      • preâmbulo identificável sem declaração → `vigencia_nao_verificada`
-        inferida, nunca `vigente`;
+      • revogação total no cabeçalho imediato → `revogada` verificada;
+      • revogação parcial no cabeçalho imediato → `parcialmente_revogada`;
+      • cabeçalho sem declaração → `vigencia_nao_verificada` inferida;
       • sem preâmbulo identificável → `{}`.
 
-    O escopo é o preâmbulo: o corpo compilado contém anotações de artigos
-    individuais revogados, que não podem ser promovidas ao diploma inteiro.
+    O corpo compilado e a narrativa posterior podem conter anotações de outras
+    normas ou artigos individuais; eles nunca são promovidos ao diploma inteiro.
     """
     preambulo = _preambulo(blocos)
     if preambulo is None:
         return {}
 
+    cabecalho = _cabecalho_situacao(preambulo)
     base = {"legal_status_origem": "planalto:texto_compilado"}
     agora = datetime.now(timezone.utc).isoformat()
-    if _RE_DIPLOMA_PARCIALMENTE_REVOGADO.search(preambulo):
+    if _RE_DIPLOMA_PARCIALMENTE_REVOGADO.search(cabecalho):
         return {
             **base,
             "legal_status": "parcialmente_revogada",
             "legal_status_verificado_em": agora,
         }
-    if _RE_DIPLOMA_REVOGADO.search(preambulo):
+    if _RE_DIPLOMA_REVOGADO.search(cabecalho):
         return {
             **base,
             "legal_status": "revogada",
