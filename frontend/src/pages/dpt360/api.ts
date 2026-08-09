@@ -44,6 +44,7 @@ export type DptPriority = {
   detail: string;
   canonical_path: string;
   due_date?: string | null;
+  confirmado?: boolean | null;
 };
 
 export type DptDashboard = {
@@ -61,7 +62,7 @@ export type DptDashboard = {
   deadlines: DptDeadline[];
   priorities: DptPriority[];
   radar_por_area?: Record<string, number> | null;
-  coverage: "complete";
+  coverage: "complete" | "partial";
   notes: string[];
 };
 
@@ -151,6 +152,14 @@ export type DptDiagnosticReadiness = {
   hitl: "obrigatorio";
 };
 
+export type DptOpportunityQueueItem = {
+  intake_id: string;
+  status: string;
+  created_at?: string | null;
+  origem?: string | null;
+  urgencia_declarada?: string | null;
+};
+
 export async function getDptDashboard(): Promise<DptDashboard> {
   const response = await api.get<DptDashboard>("/dpt360/dashboard");
   return response.data;
@@ -172,6 +181,16 @@ export async function getDptDiagnosticReadiness(
   const response = await api.get<DptDiagnosticReadiness>(
     `/dpt360/diagnostics/readiness/${clientId}`,
     { params: { kind } },
+  );
+  return response.data;
+}
+
+export async function getDptOpportunityQueue(
+  limit = 100,
+): Promise<DptOpportunityQueueItem[]> {
+  const response = await api.get<DptOpportunityQueueItem[]>(
+    "/dpt360/intake/opportunities",
+    { params: { limit } },
   );
   return response.data;
 }
