@@ -13,6 +13,8 @@ from xml.etree import ElementTree as ET
 
 import httpx
 
+from app.integrations.feature_flags import require_enabled
+
 
 IDE_SISEMA_OWS = "https://geoserver.meioambiente.mg.gov.br/ows"
 _LAYER_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,180}$")
@@ -56,6 +58,7 @@ class IdeSisemaClient:
         self.timeout = httpx.Timeout(timeout_s)
 
     async def _get(self, params: dict[str, Any], *, accept: str) -> httpx.Response:
+        require_enabled("ide_sisema", "IDE-Sisema/MG")
         ultimo: Exception | None = None
         async with httpx.AsyncClient(
             timeout=self.timeout,
