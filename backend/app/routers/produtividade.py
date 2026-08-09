@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
@@ -135,7 +136,10 @@ class ProdutividadeExportEvent(BaseModel):
     linhas: int = 0
 
 
-@router.post("/produtividade/export-event")
+@router.post(
+    "/produtividade/export-event",
+    dependencies=[Depends(rate_limit("produtividade_export_event", 30))],
+)
 async def registrar_exportacao_produtividade(
     body: ProdutividadeExportEvent,
     db: AsyncSession = Depends(get_db),
