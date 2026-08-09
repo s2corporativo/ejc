@@ -1,12 +1,8 @@
 """143 — auditoria operacional: prazos, financeiro, portal e assinaturas.
 
-Migration da Issue #861, criada sobre o head canônico 138 e reservada como 143
-nesta branch. O head e eventuais migrations concorrentes devem ser rechecados
-imediatamente antes da integração.
-
-Upgrade somente aditivo. Downgrade é permitido enquanto o novo fluxo não tiver
-produzido evidência que não seja representável no schema legado; depois disso a
-estratégia segura é backup + forward-fix.
+Upgrade expand-only com backfill aditivo apenas de signatários legados. Não
+presume publicação externa de documentos antigos nem confirmação fiscal de
+cancelamentos históricos.
 
 Revision ID: 143_auditoria_operacional_861
 Revises: 138_consolida_fontes_ingestao
@@ -15,26 +11,17 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 revision = "143_auditoria_operacional_861"
 down_revision = "138_consolida_fontes_ingestao"
 branch_labels = None
 depends_on = None
 
-
-def _id_deterministico(expr: str) -> str:
-    """UUID textual derivado de md5(), sem depender de extensão pgcrypto."""
-    digest = f"md5({expr})"
-    return (
-        f"substr({digest},1,8)||'-'||substr({digest},9,4)||'-'||"
-        f"substr({digest},13,4)||'-'||substr({digest},17,4)||'-'||"
-        f"substr({digest},21,12)"
-    )
+deployment_policy = "additive_data_backfill"
+data_backfill_targets = ("signature_signers",)
 
 
 def upgrade() -> None:
-    # 1) Prazos — trilha do cálculo processual eletrônico.
     op.add_column("deadlines", sa.Column("data_publicacao", sa.Date(), nullable=True))
     op.add_column("deadlines", sa.Column("termo_inicial", sa.Date(), nullable=True))
     op.add_column(
@@ -53,7 +40,6 @@ def upgrade() -> None:
         "ix_deadlines_regime_calculo", "deadlines", ["regime_calculo"], unique=False
     )
 
-    # 2) Despesas recorrentes — template -> competência, idempotente.
     op.add_column(
         "office_expenses",
         sa.Column("recorrencia_origem_id", sa.String(length=36), nullable=True),
@@ -72,13 +58,7 @@ def upgrade() -> None:
         ["recorrencia_origem_id"],
         unique=False,
     )
-    op.create_unique_constraint(
-        "uq_office_expenses_origem_competencia",
-        "office_expenses",
-        ["recorrencia_origem_id", "competencia"],
-    )
 
-    # 3) Portal — confidencialidade interna != publicação externa.
     op.add_column(
         "documents",
         sa.Column(
@@ -105,32 +85,7 @@ def upgrade() -> None:
     op.create_index(
         "ix_documents_publicado_portal", "documents", ["publicado_portal"], unique=False
     )
-    # A migration 127 já tornou `normal` uma reclassificação explícita para
-    # exposição. Preserva-se o estado efetivo no cutover; daqui em diante os
-    # conceitos ficam separados.
-    op.execute(
-        sa.text(
-            """
-            UPDATE documents
-               SET publicado_portal = TRUE,
-                   publicado_em = COALESCE(updated_at, created_at)
-             WHERE deleted_at IS NULL
-               AND confidencialidade::text = 'normal'
-            """
-        )
-    )
 
-    # 4) Assinaturas — evidência individual por signatário.
-    # O enum é criado explicitamente para permitir checkfirst. `create_type=False`
-    # impede que o evento before_create da tabela tente emitir CREATE TYPE de novo.
-    signer_status = postgresql.ENUM(
-        "pendente",
-        "assinado",
-        "recusado",
-        name="signaturesignerstatus",
-        create_type=False,
-    )
-    signer_status.create(op.get_bind(), checkfirst=True)
     op.create_table(
         "signature_signers",
         sa.Column("id", sa.String(length=36), primary_key=True),
@@ -155,7 +110,7 @@ def upgrade() -> None:
             server_default="cliente",
         ),
         sa.Column(
-            "status", signer_status, nullable=False, server_default="pendente"
+            "status", sa.String(length=20), nullable=False, server_default="pendente"
         ),
         sa.Column("assinado_em", sa.DateTime(timezone=True), nullable=True),
         sa.Column("ip", sa.String(length=45), nullable=True),
@@ -165,6 +120,10 @@ def upgrade() -> None:
             sa.DateTime(timezone=True),
             nullable=False,
             server_default=sa.func.now(),
+        ),
+        sa.CheckConstraint(
+            "status IN ('pendente','assinado','recusado')",
+            name="ck_signature_signers_status_enum",
         ),
         sa.UniqueConstraint(
             "signature_request_id",
@@ -184,54 +143,51 @@ def upgrade() -> None:
     op.create_index(
         "ix_signature_signers_status", "signature_signers", ["status"], unique=False
     )
-
-    id_assinado = _id_deterministico(
-        "'signature-signer:' || sr.id || ':' || sr.assinado_por_user"
+    op.execute(
+        """
+        INSERT INTO signature_signers
+            (id, signature_request_id, user_id, nome_snapshot,
+             email_snapshot, papel_snapshot, status, assinado_em, ip,
+             user_agent, created_at)
+        SELECT substr(md5('signature-signer:' || sr.id || ':' || sr.assinado_por_user),1,8)
+               ||'-'||substr(md5('signature-signer:' || sr.id || ':' || sr.assinado_por_user),9,4)
+               ||'-'||substr(md5('signature-signer:' || sr.id || ':' || sr.assinado_por_user),13,4)
+               ||'-'||substr(md5('signature-signer:' || sr.id || ':' || sr.assinado_por_user),17,4)
+               ||'-'||substr(md5('signature-signer:' || sr.id || ':' || sr.assinado_por_user),21,12),
+               sr.id, sr.assinado_por_user, u.full_name, u.email,
+               'cliente', 'assinado', sr.assinado_em, sr.ip, sr.user_agent,
+               sr.created_at
+          FROM signature_requests sr
+          JOIN users u ON u.id = sr.assinado_por_user
+         WHERE sr.deleted_at IS NULL
+           AND sr.status::text = 'assinado'
+           AND sr.assinado_por_user IS NOT NULL
+        ON CONFLICT (signature_request_id, user_id) DO NOTHING
+        """
     )
     op.execute(
-        sa.text(
-            f"""
-            INSERT INTO signature_signers
-                (id, signature_request_id, user_id, nome_snapshot,
-                 email_snapshot, papel_snapshot, status, assinado_em, ip,
-                 user_agent, created_at)
-            SELECT {id_assinado},
-                   sr.id, sr.assinado_por_user, u.full_name, u.email,
-                   'cliente', 'assinado'::signaturesignerstatus,
-                   sr.assinado_em, sr.ip, sr.user_agent, sr.created_at
-              FROM signature_requests sr
-              JOIN users u ON u.id = sr.assinado_por_user
-             WHERE sr.deleted_at IS NULL
-               AND sr.status::text = 'assinado'
-               AND sr.assinado_por_user IS NOT NULL
-            ON CONFLICT (signature_request_id, user_id) DO NOTHING
-            """
-        )
+        """
+        INSERT INTO signature_signers
+            (id, signature_request_id, user_id, nome_snapshot,
+             email_snapshot, papel_snapshot, status, created_at)
+        SELECT substr(md5('signature-signer:' || sr.id || ':' || u.id),1,8)
+               ||'-'||substr(md5('signature-signer:' || sr.id || ':' || u.id),9,4)
+               ||'-'||substr(md5('signature-signer:' || sr.id || ':' || u.id),13,4)
+               ||'-'||substr(md5('signature-signer:' || sr.id || ':' || u.id),17,4)
+               ||'-'||substr(md5('signature-signer:' || sr.id || ':' || u.id),21,12),
+               sr.id, u.id, u.full_name, u.email,
+               'cliente', 'pendente', sr.created_at
+          FROM signature_requests sr
+          JOIN users u ON u.client_id = sr.client_id
+         WHERE sr.deleted_at IS NULL
+           AND sr.status::text = 'pendente'
+           AND u.role::text = 'cliente_externo'
+           AND u.is_active = TRUE
+           AND u.deleted_at IS NULL
+        ON CONFLICT (signature_request_id, user_id) DO NOTHING
+        """
     )
 
-    id_pendente = _id_deterministico("'signature-signer:' || sr.id || ':' || u.id")
-    op.execute(
-        sa.text(
-            f"""
-            INSERT INTO signature_signers
-                (id, signature_request_id, user_id, nome_snapshot,
-                 email_snapshot, papel_snapshot, status, created_at)
-            SELECT {id_pendente},
-                   sr.id, u.id, u.full_name, u.email,
-                   'cliente', 'pendente'::signaturesignerstatus, sr.created_at
-              FROM signature_requests sr
-              JOIN users u ON u.client_id = sr.client_id
-             WHERE sr.deleted_at IS NULL
-               AND sr.status::text = 'pendente'
-               AND u.role::text = 'cliente_externo'
-               AND u.is_active = TRUE
-               AND u.deleted_at IS NULL
-            ON CONFLICT (signature_request_id, user_id) DO NOTHING
-            """
-        )
-    )
-
-    # 5) NFS-e — prova do tipo de cancelamento.
     op.add_column(
         "notas_fiscais_servico",
         sa.Column("cancelamento_tipo", sa.String(length=30), nullable=True),
@@ -251,29 +207,7 @@ def upgrade() -> None:
             "cancelamento_confirmado_em", sa.DateTime(timezone=True), nullable=True
         ),
     )
-    op.execute(
-        sa.text(
-            """
-            UPDATE notas_fiscais_servico
-               SET cancelamento_tipo = 'registro_local',
-                   cancelamento_fiscal_confirmado = FALSE
-             WHERE status = 'cancelada' AND provider = 'manual'
-            """
-        )
-    )
-    op.execute(
-        sa.text(
-            """
-            UPDATE notas_fiscais_servico
-               SET cancelamento_tipo = 'fiscal_provider',
-                   cancelamento_fiscal_confirmado = TRUE,
-                   cancelamento_confirmado_em = updated_at
-             WHERE status = 'cancelada' AND provider <> 'manual'
-            """
-        )
-    )
 
-    # 6) Sociedade — campo já usado pela API + histórico de mutação.
     op.add_column(
         "socios", sa.Column("meta_produtividade", sa.Numeric(12, 2), nullable=True)
     )
@@ -322,15 +256,12 @@ def upgrade() -> None:
 def _assert_sem_evidencia_nova() -> None:
     bind = op.get_bind()
     verificacoes = {
-        # Backfill legado é representável no schema antigo e não bloqueia. O que
-        # bloqueia é evidência que o legado NÃO consegue preservar: recusa,
-        # múltiplos signatários ou assinatura parcial em request ainda pendente.
         "assinaturas multiparte/recusas": """
             SELECT COUNT(*)
               FROM signature_signers ss
               JOIN signature_requests sr ON sr.id = ss.signature_request_id
-             WHERE ss.status::text = 'recusado'
-                OR (ss.status::text = 'assinado' AND
+             WHERE ss.status = 'recusado'
+                OR (ss.status = 'assinado' AND
                     (sr.assinado_por_user IS NULL OR ss.user_id <> sr.assinado_por_user))
         """,
         "histórico societário": "SELECT COUNT(*) FROM socios_historico",
@@ -365,38 +296,34 @@ def _assert_sem_evidencia_nova() -> None:
 
 def downgrade() -> None:
     _assert_sem_evidencia_nova()
-
     op.drop_index("ix_socios_historico_created_at", table_name="socios_historico")
     op.drop_index("ix_socios_historico_alterado_por", table_name="socios_historico")
     op.drop_index("ix_socios_historico_socio", table_name="socios_historico")
     op.drop_table("socios_historico")
     op.drop_column("socios", "meta_produtividade")
-
     op.drop_column("notas_fiscais_servico", "cancelamento_confirmado_em")
     op.drop_column("notas_fiscais_servico", "cancelamento_fiscal_confirmado")
     op.drop_column("notas_fiscais_servico", "cancelamento_tipo")
-
     op.drop_index("ix_signature_signers_status", table_name="signature_signers")
     op.drop_index("ix_signature_signers_user", table_name="signature_signers")
     op.drop_index("ix_signature_signers_request", table_name="signature_signers")
     op.drop_table("signature_signers")
-    postgresql.ENUM(name="signaturesignerstatus").drop(op.get_bind(), checkfirst=True)
-
     op.drop_index("ix_documents_publicado_portal", table_name="documents")
-    op.drop_constraint("fk_documents_publicado_por_users", "documents", type_="foreignkey")
+    op.drop_constraint(
+        "fk_documents_publicado_por_users", "documents", type_="foreignkey"
+    )
     op.drop_column("documents", "publicado_por")
     op.drop_column("documents", "publicado_em")
     op.drop_column("documents", "publicado_portal")
-
-    op.drop_constraint(
-        "uq_office_expenses_origem_competencia", "office_expenses", type_="unique"
+    op.drop_index(
+        "ix_office_expenses_recorrencia_origem", table_name="office_expenses"
     )
-    op.drop_index("ix_office_expenses_recorrencia_origem", table_name="office_expenses")
     op.drop_constraint(
-        "fk_office_expenses_recorrencia_origem", "office_expenses", type_="foreignkey"
+        "fk_office_expenses_recorrencia_origem",
+        "office_expenses",
+        type_="foreignkey",
     )
     op.drop_column("office_expenses", "recorrencia_origem_id")
-
     op.drop_index("ix_deadlines_regime_calculo", table_name="deadlines")
     op.drop_column("deadlines", "calculo_automatico")
     op.drop_column("deadlines", "regime_calculo")
