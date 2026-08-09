@@ -1,29 +1,13 @@
 """143 — auditoria operacional: prazos, financeiro, portal e assinaturas.
 
-Migration PROVISÓRIA desta branch (Issue #861), criada sobre o head canônico
-138. Os números 139–142 estão ocupados por PRs concorrentes ainda não
-mesclados; este PR deve permanecer DRAFT e ser renumerado/reencadeado antes do
-merge se qualquer um deles integrar a main.
+Migration PROVISÓRIA da Issue #861, criada sobre o head canônico 138. Os
+números 139–142 estão ocupados por PRs concorrentes ainda não mesclados; este PR
+deve permanecer DRAFT e ser renumerado/reencadeado se qualquer predecessor
+entrar na main.
 
-Mudanças aditivas:
-- deadlines: publicação/termo inicial/regime/rastro de cálculo;
-- office_expenses: origem do template recorrente + unicidade por competência;
-- documents: publicação externa explícita independente da confidencialidade;
-- signature_signers: evidência individual para múltiplos signatários;
-- NFSe: natureza/prova do cancelamento local x fiscal;
-- socios: meta de produtividade persistida + histórico imutável de mutações.
-
-Compatibilidade:
-- documentos atualmente `normal` são backfillados como publicados, porque a
-  migration 127 já transformou `normal` em escolha explícita de publicação;
-- solicitações de assinatura legadas assinadas recebem apenas o signatário que
-  efetivamente assinou; pendentes recebem os usuários ativos do portal;
-- notas manuais canceladas são marcadas como cancelamento registral, não fiscal.
-
-Rollback seguro: downgrade só é permitido enquanto os novos campos/tabelas não
-contiverem evidência operacional criada após o upgrade. Depois do go-live, a
-estratégia correta é forward-fix; apagar trilha de assinatura/societária/fiscal
-seria juridicamente inadequado.
+Upgrade somente aditivo. Downgrade é permitido enquanto o novo fluxo não tiver
+produzido evidência que não seja representável no schema legado; depois disso a
+estratégia segura é backup + forward-fix.
 
 Revision ID: 143_auditoria_operacional_861
 Revises: 138_consolida_fontes_ingestao
@@ -34,18 +18,29 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-
 revision = "143_auditoria_operacional_861"
 down_revision = "138_consolida_fontes_ingestao"
 branch_labels = None
 depends_on = None
 
 
+def _id_deterministico(expr: str) -> str:
+    """UUID textual derivado de md5(), sem depender de extensão pgcrypto."""
+    digest = f"md5({expr})"
+    return (
+        f"substr({digest},1,8)||'-'||substr({digest},9,4)||'-'||"
+        f"substr({digest},13,4)||'-'||substr({digest},17,4)||'-'||"
+        f"substr({digest},21,12)"
+    )
+
+
 def upgrade() -> None:
-    # ── 1. Prazos: rastreabilidade jurídica do cálculo ──────────────────────
+    # 1) Prazos — trilha do cálculo processual eletrônico.
     op.add_column("deadlines", sa.Column("data_publicacao", sa.Date(), nullable=True))
     op.add_column("deadlines", sa.Column("termo_inicial", sa.Date(), nullable=True))
-    op.add_column("deadlines", sa.Column("regime_calculo", sa.String(length=20), nullable=True))
+    op.add_column(
+        "deadlines", sa.Column("regime_calculo", sa.String(length=20), nullable=True)
+    )
     op.add_column(
         "deadlines",
         sa.Column(
@@ -59,7 +54,7 @@ def upgrade() -> None:
         "ix_deadlines_regime_calculo", "deadlines", ["regime_calculo"], unique=False
     )
 
-    # ── 2. Recorrência: template -> lançamento, sem filhos virarem templates ─
+    # 2) Despesas recorrentes — template -> competência, idempotente.
     op.add_column(
         "office_expenses",
         sa.Column("recorrencia_origem_id", sa.String(length=36), nullable=True),
@@ -84,7 +79,7 @@ def upgrade() -> None:
         ["recorrencia_origem_id", "competencia"],
     )
 
-    # ── 3. Portal: classificação interna != autorização externa ─────────────
+    # 3) Portal — confidencialidade interna != publicação externa.
     op.add_column(
         "documents",
         sa.Column(
@@ -111,8 +106,9 @@ def upgrade() -> None:
     op.create_index(
         "ix_documents_publicado_portal", "documents", ["publicado_portal"], unique=False
     )
-    # Preserva o estado efetivo da migration 127: hoje `normal` significa que
-    # alguém reclassificou conscientemente o documento para exposição.
+    # A migration 127 já tornou `normal` uma reclassificação explícita para
+    # exposição. Preserva-se o estado efetivo no cutover; daqui em diante os
+    # conceitos ficam separados.
     op.execute(
         sa.text(
             """
@@ -125,7 +121,7 @@ def upgrade() -> None:
         )
     )
 
-    # ── 4. Assinaturas: evidência por signatário ─────────────────────────────
+    # 4) Assinaturas — evidência individual por signatário.
     signer_status = postgresql.ENUM(
         "pendente", "assinado", "recusado", name="signaturesignerstatus"
     )
@@ -154,10 +150,7 @@ def upgrade() -> None:
             server_default="cliente",
         ),
         sa.Column(
-            "status",
-            signer_status,
-            nullable=False,
-            server_default="pendente",
+            "status", signer_status, nullable=False, server_default="pendente"
         ),
         sa.Column("assinado_em", sa.DateTime(timezone=True), nullable=True),
         sa.Column("ip", sa.String(length=45), nullable=True),
@@ -187,26 +180,20 @@ def upgrade() -> None:
         "ix_signature_signers_status", "signature_signers", ["status"], unique=False
     )
 
-    # Legado já assinado: só há prova de UM usuário, portanto não inventar os
-    # demais signatários. Copia exatamente a evidência disponível.
+    id_assinado = _id_deterministico(
+        "'signature-signer:' || sr.id || ':' || sr.assinado_por_user"
+    )
     op.execute(
         sa.text(
-            """
+            f"""
             INSERT INTO signature_signers
                 (id, signature_request_id, user_id, nome_snapshot,
                  email_snapshot, papel_snapshot, status, assinado_em, ip,
                  user_agent, created_at)
-            SELECT gen_random_uuid()::text,
-                   sr.id,
-                   sr.assinado_por_user,
-                   u.full_name,
-                   u.email,
-                   'cliente',
-                   'assinado'::signaturesignerstatus,
-                   sr.assinado_em,
-                   sr.ip,
-                   sr.user_agent,
-                   sr.created_at
+            SELECT {id_assinado},
+                   sr.id, sr.assinado_por_user, u.full_name, u.email,
+                   'cliente', 'assinado'::signaturesignerstatus,
+                   sr.assinado_em, sr.ip, sr.user_agent, sr.created_at
               FROM signature_requests sr
               JOIN users u ON u.id = sr.assinado_por_user
              WHERE sr.deleted_at IS NULL
@@ -216,22 +203,17 @@ def upgrade() -> None:
             """
         )
     )
-    # Legado pendente: recria a expectativa que a UI já anunciava — todos os
-    # logins ativos do Portal vinculados ao cliente são signatários pendentes.
+
+    id_pendente = _id_deterministico("'signature-signer:' || sr.id || ':' || u.id")
     op.execute(
         sa.text(
-            """
+            f"""
             INSERT INTO signature_signers
                 (id, signature_request_id, user_id, nome_snapshot,
                  email_snapshot, papel_snapshot, status, created_at)
-            SELECT gen_random_uuid()::text,
-                   sr.id,
-                   u.id,
-                   u.full_name,
-                   u.email,
-                   'cliente',
-                   'pendente'::signaturesignerstatus,
-                   sr.created_at
+            SELECT {id_pendente},
+                   sr.id, u.id, u.full_name, u.email,
+                   'cliente', 'pendente'::signaturesignerstatus, sr.created_at
               FROM signature_requests sr
               JOIN users u ON u.client_id = sr.client_id
              WHERE sr.deleted_at IS NULL
@@ -244,7 +226,7 @@ def upgrade() -> None:
         )
     )
 
-    # ── 5. NFS-e: distinguir registro encerrado de cancelamento fiscal ──────
+    # 5) NFS-e — prova do tipo de cancelamento.
     op.add_column(
         "notas_fiscais_servico",
         sa.Column("cancelamento_tipo", sa.String(length=30), nullable=True),
@@ -260,7 +242,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "notas_fiscais_servico",
-        sa.Column("cancelamento_confirmado_em", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "cancelamento_confirmado_em", sa.DateTime(timezone=True), nullable=True
+        ),
     )
     op.execute(
         sa.text(
@@ -284,7 +268,7 @@ def upgrade() -> None:
         )
     )
 
-    # ── 6. Sociedade: persistência + trilha interna imutável ────────────────
+    # 6) Sociedade — campo já usado pela API + histórico de mutação.
     op.add_column(
         "socios", sa.Column("meta_produtividade", sa.Numeric(12, 2), nullable=True)
     )
@@ -333,31 +317,44 @@ def upgrade() -> None:
 def _assert_sem_evidencia_nova() -> None:
     bind = op.get_bind()
     verificacoes = {
-        "signature_signers": "SELECT COUNT(*) FROM signature_signers",
-        "socios_historico": "SELECT COUNT(*) FROM socios_historico",
-        "office_expenses recorrentes geradas": (
+        # Backfill legado é representável no schema antigo e não bloqueia. O que
+        # bloqueia é evidência que o legado NÃO consegue preservar: recusa,
+        # múltiplos signatários ou assinatura parcial em request ainda pendente.
+        "assinaturas multiparte/recusas": """
+            SELECT COUNT(*)
+              FROM signature_signers ss
+              JOIN signature_requests sr ON sr.id = ss.signature_request_id
+             WHERE ss.status::text = 'recusado'
+                OR (ss.status::text = 'assinado' AND
+                    (sr.assinado_por_user IS NULL OR ss.user_id <> sr.assinado_por_user))
+        """,
+        "histórico societário": "SELECT COUNT(*) FROM socios_historico",
+        "meta de produtividade societária": (
+            "SELECT COUNT(*) FROM socios WHERE meta_produtividade IS NOT NULL"
+        ),
+        "despesas recorrentes geradas": (
             "SELECT COUNT(*) FROM office_expenses WHERE recorrencia_origem_id IS NOT NULL"
         ),
-        "prazos com metadados de cálculo": (
+        "prazos com nova trilha de cálculo": (
             "SELECT COUNT(*) FROM deadlines WHERE data_publicacao IS NOT NULL "
-            "OR termo_inicial IS NOT NULL OR regime_calculo IS NOT NULL OR calculo_automatico = TRUE"
+            "OR termo_inicial IS NOT NULL OR regime_calculo IS NOT NULL "
+            "OR calculo_automatico = TRUE"
         ),
         "documentos publicados pelo novo fluxo": (
             "SELECT COUNT(*) FROM documents WHERE publicado_por IS NOT NULL"
         ),
-        "evidência nova de cancelamento NFSe": (
-            "SELECT COUNT(*) FROM notas_fiscais_servico "
-            "WHERE cancelamento_confirmado_em IS NOT NULL AND updated_at > created_at"
-        ),
     }
     usados = [
-        nome for nome, sql in verificacoes.items() if int(bind.execute(sa.text(sql)).scalar() or 0) > 0
+        nome
+        for nome, sql in verificacoes.items()
+        if int(bind.execute(sa.text(sql)).scalar() or 0) > 0
     ]
     if usados:
         raise RuntimeError(
-            "Downgrade 143 recusado: há evidência operacional nos novos campos/tabelas: "
+            "Downgrade 143 recusado: há evidência operacional não representável "
+            "com segurança no schema legado: "
             + ", ".join(usados)
-            + ". Faça backup e forward-fix; não apague trilha jurídica/financeira."
+            + ". Faça backup e forward-fix."
         )
 
 
