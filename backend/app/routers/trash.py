@@ -35,8 +35,10 @@ ENTIDADES = {
 router = APIRouter(prefix="/trash", tags=["Lixeira"])
 
 
-async def _exigir_pai_ativo(db: AsyncSession, Model, registro_id: str, rotulo: str) -> None:
-    pai = await db.scalar(select(Model).where(Model.id == registro_id))
+async def _exigir_pai_ativo(
+    db: AsyncSession, modelo, registro_id: str, rotulo: str
+) -> None:
+    pai = await db.scalar(select(modelo).where(modelo.id == registro_id))
     if pai is None:
         raise HTTPException(
             status_code=409,
@@ -90,18 +92,20 @@ async def listar(
         raise HTTPException(
             status_code=422, detail=f"Entidade inválida. Use: {list(ENTIDADES)}"
         )
-    Model, rotulo = ENTIDADES[entidade]
+    modelo, rotulo = ENTIDADES[entidade]
     total = int(
         await db.scalar(
-            select(func.count()).select_from(Model).where(Model.deleted_at.isnot(None))
+            select(func.count())
+            .select_from(modelo)
+            .where(modelo.deleted_at.isnot(None))
         )
         or 0
     )
     rows = (
         await db.execute(
-            select(Model)
-            .where(Model.deleted_at.isnot(None))
-            .order_by(Model.deleted_at.desc())
+            select(modelo)
+            .where(modelo.deleted_at.isnot(None))
+            .order_by(modelo.deleted_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
@@ -126,10 +130,12 @@ async def restaurar(
 ):
     if entidade not in ENTIDADES:
         raise HTTPException(status_code=422, detail="Entidade inválida")
-    Model, _ = ENTIDADES[entidade]
+    modelo, _ = ENTIDADES[entidade]
     registro = (
         await db.execute(
-            select(Model).where(Model.id == registro_id, Model.deleted_at.isnot(None))
+            select(modelo).where(
+                modelo.id == registro_id, modelo.deleted_at.isnot(None)
+            )
         )
     ).scalar_one_or_none()
     if not registro:
