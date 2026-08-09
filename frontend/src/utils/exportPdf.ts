@@ -16,6 +16,7 @@ export function exportPdf(
   headers: string[],
   rows: (string | number | null | undefined)[][],
   filename = "export.pdf",
+  targetWindow?: Window | null,
 ) {
   const safeTitle = escapeHtml(title);
   const exportedAt = escapeHtml(
@@ -115,12 +116,16 @@ export function exportPdf(
 </body>
 </html>`;
 
-  const w = window.open("", "_blank");
-  if (!w) return;
+  // Quando o chamador precisa aguardar uma auditoria antes de gerar o relatório,
+  // ele pode abrir a janela sincronicamente no clique e passá-la aqui. `null`
+  // significa popup já bloqueado e NÃO deve disparar uma segunda tentativa tardia.
+  const w = targetWindow === undefined ? window.open("", "_blank") : targetWindow;
+  if (!w) return false;
   w.document.write(html);
   w.document.close();
   w.focus();
   setTimeout(() => {
     w.print();
   }, 300);
+  return true;
 }
