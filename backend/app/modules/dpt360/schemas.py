@@ -131,3 +131,37 @@ class DptActionResponse(BaseModel):
     status_hitl: str
     aviso_hitl: str
     log_id: str | None = None
+
+
+class DptDiagnosticEvidence(BaseModel):
+    tipo: str
+    presente: bool
+    quantidade: int | None = None
+
+
+class DptDiagnosticAreaReadiness(BaseModel):
+    area: str
+    estado: Literal["com_evidencias", "nao_avaliado"]
+    evidencias_disponiveis: list[DptDiagnosticEvidence] = Field(default_factory=list)
+    lacunas_preliminares: list[str] = Field(default_factory=list)
+    regra: str
+
+
+class DptDiagnosticReadiness(BaseModel):
+    client_id: str
+    tipo: Literal[
+        "completo",
+        "tributario",
+        "ambiental",
+        "administrativo",
+        "trabalhista",
+        "contratual",
+        "lgpd",
+        "governanca_ia",
+    ]
+    generated_at: datetime
+    areas: list[DptDiagnosticAreaReadiness] = Field(default_factory=list)
+    pode_iniciar_analise: bool = True
+    persistencia: Literal["nao_habilitada_nesta_pilha"]
+    motivo_persistencia: str
+    hitl: Literal["obrigatorio"] = "obrigatorio"
