@@ -19,12 +19,21 @@ from typing import Any, Iterable
 
 import httpx
 
+from app.integrations.feature_flags import require_enabled
+
 
 CKAN_BASES: dict[str, str] = {
     "ibama": "https://dadosabertos.ibama.gov.br/api/3/action",
     "mj": "https://dados.mj.gov.br/api/3/action",
     "cvm": "https://dados.cvm.gov.br/api/3/action",
     "tse": "https://dadosabertos.tse.jus.br/api/3/action",
+}
+
+_CKAN_LABELS = {
+    "ibama": "IBAMA Dados Abertos",
+    "mj": "Consumidor.gov.br/SENACON — Dados Abertos MJ",
+    "cvm": "CVM Dados Abertos",
+    "tse": "TSE Dados Abertos",
 }
 
 _UA = "EJC/1.0 (+https://depaulateixeira.adv.br; public-data-client)"
@@ -60,6 +69,7 @@ class CkanPublicClient:
         self.timeout = httpx.Timeout(timeout_s)
 
     async def _get(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
+        require_enabled(self.source, _CKAN_LABELS[self.source])
         url = f"{self.base_url}/{action}"
         ultimo: Exception | None = None
         async with httpx.AsyncClient(
