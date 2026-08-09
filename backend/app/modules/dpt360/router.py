@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -8,12 +8,14 @@ from app.core.security import require_roles
 from app.models.user import User
 from app.modules.dpt360.company_service import get_company_profile
 from app.modules.dpt360.dashboard_service import build_dashboard
+from app.modules.dpt360.diagnostic_service import build_diagnostic_readiness
 from app.modules.dpt360.intelligence_service import run_dpt_action
 from app.modules.dpt360.schemas import (
     DptActionRequest,
     DptActionResponse,
     DptCompanyProfile,
     DptDashboardResponse,
+    DptDiagnosticReadiness,
 )
 
 router = APIRouter(prefix="/dpt360", tags=["DPT Empresarial 360"])
@@ -24,7 +26,6 @@ async def dashboard(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["advogado"])),
 ) -> DptDashboardResponse:
-    """Cockpit empresarial read-only, sempre respeitando o escopo do usuário."""
     return await build_dashboard(db, cu)
 
 
@@ -34,11 +35,23 @@ async def company_profile(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["advogado"])),
 ) -> DptCompanyProfile:
-    """Perfil Jurídico Vivo derivado somente de registros canônicos visíveis."""
     profile = await get_company_profile(db, cu, client_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
     return profile
+
+
+@router.get("/diagnostics/readiness/{client_id}", response_model=DptDiagnosticReadiness)
+async def diagnostic_readiness(
+    client_id: str,
+    kind: str = Query(default="completo", max_length=40),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["advogado"])),
+) -> DptDiagnosticReadiness:
+    result = await build_diagnostic_readiness(db, cu, client_id, kind)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    return DptDiagnosticReadiness.model_validate(result)
 
 
 @router.post("/actions", response_model=DptActionResponse)
@@ -47,7 +60,6 @@ async def run_action(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["advogado"])),
 ) -> DptActionResponse:
-    """Motor Jurídico DPT: Conselho, pré-flight e diagnóstico via núcleo único."""
     result = await run_dpt_action(db, cu, payload)
     if result is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
