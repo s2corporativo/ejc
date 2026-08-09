@@ -100,31 +100,27 @@ describe("DashboardUltra", () => {
   it("aplica RBAC aos comandos rápidos", async () => {
     papelAtual = "advogado";
     const primeira = renderizar();
-    expect(
-      await screen.findByText("Novo caso por documento"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Inteligência jurídica")).toBeInTheDocument();
+    expect(await screen.findByText("Novo caso por documento")).toBeTruthy();
+    expect(screen.getByText("Inteligência jurídica")).toBeTruthy();
     primeira.unmount();
 
     papelAtual = "cliente_externo";
     renderizar();
     await screen.findByText("Agenda e prazos");
-    expect(
-      screen.queryByText("Novo caso por documento"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("Importar documento")).not.toBeInTheDocument();
-    expect(screen.queryByText("Inteligência jurídica")).not.toBeInTheDocument();
+    expect(screen.queryByText("Novo caso por documento")).toBeNull();
+    expect(screen.queryByText("Importar documento")).toBeNull();
+    expect(screen.queryByText("Inteligência jurídica")).toBeNull();
   });
 
   it("exclui tarefas finalizadas da contagem pendente e preserva descrição da movimentação", async () => {
     renderizar();
 
     await screen.findByText("Juízo abriu vista para manifestação");
-    expect(screen.getByText("Caso Alfa")).toBeInTheDocument();
+    expect(screen.getByText("Caso Alfa")).toBeTruthy();
 
     const card = screen.getByText("Tarefas pendentes").closest("a");
-    expect(card).toHaveTextContent("1");
-    expect(screen.getByText("SNAPSHOT")).toBeInTheDocument();
+    expect(card?.textContent).toContain("1");
+    expect(screen.getByText("SNAPSHOT")).toBeTruthy();
   });
 
   it("expõe falha do dashboard em vez de inventar indicadores", async () => {
@@ -143,7 +139,7 @@ describe("DashboardUltra", () => {
         screen.getAllByText("Fonte indisponível").length,
       ).toBeGreaterThanOrEqual(2);
     });
-    expect(screen.getByText("Prazos indisponíveis")).toBeInTheDocument();
+    expect(screen.getByText("Prazos indisponíveis")).toBeTruthy();
   });
 
   it("expõe falha de atividades e não mascara a agenda como vazia", async () => {
@@ -157,11 +153,9 @@ describe("DashboardUltra", () => {
     });
 
     renderizar();
-    expect(
-      await screen.findByText("Agenda indisponível no momento."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Agenda indisponível no momento.")).toBeTruthy();
     const card = screen.getByText("Tarefas pendentes").closest("a");
-    expect(card).toHaveTextContent("Fonte indisponível");
+    expect(card?.textContent).toContain("Fonte indisponível");
   });
 
   it("sinaliza degradação parcial quando somente o enriquecimento da agenda falha", async () => {
@@ -179,8 +173,8 @@ describe("DashboardUltra", () => {
       await screen.findByText(
         /Horário, local e subtipo dos compromissos podem estar indisponíveis/i,
       ),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Tarefa pendente")).toBeInTheDocument();
+    ).toBeTruthy();
+    expect(screen.getByText("Tarefa pendente")).toBeTruthy();
   });
 
   it("expõe falha de movimentações", async () => {
@@ -194,8 +188,6 @@ describe("DashboardUltra", () => {
     });
 
     renderizar();
-    expect(
-      await screen.findByText("Movimentações indisponíveis."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Movimentações indisponíveis.")).toBeTruthy();
   });
 });
