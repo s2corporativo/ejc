@@ -1,0 +1,129 @@
+name: RAG Vigencia Activate
+
+on:
+  workflow_run:
+    workflows: ["Deploy VPS"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rag-vigencia-activate
+  cancel-in-progress: false
+
+jobs:
+  activate:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 30
+    env:
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+      APP_DIR: /opt/ejc
+    steps:
+      - name: Reingerir Planalto e ativar gate de vigência
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          prearm="$APP_DIR/data/.rag_vigencia_prearm_v1"
+          marker="$APP_DIR/data/.rag_vigencia_activated_v1"
+          deployed="$(sudo cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+
+          if [ -z "$deployed" ] || [ "$deployed" != "$TARGET_SHA" ]; then
+            echo "::error::Ativação RAG: /opt/ejc não comprova o SHA esperado."
+            exit 1
+          fi
+          if ! sudo test -f "$prearm"; then
+            echo "::error::Ativação RAG: prearm ausente; recuso ativar gate estrito."
+            exit 1
+          fi
+          if sudo test -f "$marker"; then
+            echo "Gate de vigência já ativado anteriormente; nenhuma ação necessária."
+            exit 0
+          fi
+          if ! grep -q 'RAG_EXIGIR_VIGENCIA_VERIFICADA' "$APP_DIR/backend/app/core/config.py"; then
+            echo "::error::Ativação RAG: código publicado não contém o gate de vigência."
+            exit 1
+          fi
+          ocorrencias_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$APP_DIR/.env" || true)"
+          if [ "$ocorrencias_false" != "1" ]; then
+            echo "::error::Ativação RAG: .env não está pré-armado em false."
+            exit 1
+          fi
+
+          set_flag() {
+            valor="$1"
+            uid="$(sudo stat -c %u "$APP_DIR/.env")"
+            gid="$(sudo stat -c %g "$APP_DIR/.env")"
+            mode="$(sudo stat -c %a "$APP_DIR/.env")"
+            tmp="$(mktemp)"
+            sudo cat "$APP_DIR/.env" > "$tmp"
+            chmod 600 "$tmp"
+            if grep -q '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$tmp"; then
+              sed -i "s/^RAG_EXIGIR_VIGENCIA_VERIFICADA=.*/RAG_EXIGIR_VIGENCIA_VERIFICADA=${valor}/" "$tmp"
+            else
+              printf '\nRAG_EXIGIR_VIGENCIA_VERIFICADA=%s\n' "$valor" >> "$tmp"
+            fi
+            sudo install -o "$uid" -g "$gid" -m "$mode" "$tmp" "$APP_DIR/.env"
+            rm -f "$tmp"
+          }
+
+          flag_changed=0
+          rollback_flag() {
+            rc=$?
+            trap - ERR
+            set +e
+            if [ "$flag_changed" = "1" ]; then
+              echo "::warning::Ativação RAG falhou após ligar o gate; restaurando flag=false."
+              set_flag false
+              cd "$APP_DIR"
+              RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend worker
+              for _ in $(seq 1 12); do
+                sleep 5
+                curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1 && break
+              done
+            fi
+            exit "$rc"
+          }
+          trap rollback_flag ERR
+
+          cd "$APP_DIR"
+          echo "Reingerindo corpus Planalto com gate estrito ainda desligado."
+          docker compose exec -T backend \
+            python -m app.seeds.base_juridica_seed --incluir-legislacao --forcar-legislacao
+
+          echo "Backfill concluído; ativando gate de vigência."
+          set_flag true
+          flag_changed=1
+          RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend worker
+
+          backend_ok=0
+          for _ in $(seq 1 12); do
+            sleep 5
+            if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+              backend_ok=1
+              break
+            fi
+          done
+          [ "$backend_ok" = "1" ] || {
+            echo "::error::Ativação RAG: backend não respondeu após restart."
+            false
+          }
+
+          commit_no_ar="$(curl -fsS http://127.0.0.1:8000/api/health \
+            | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+          if [ "$commit_no_ar" != "$TARGET_SHA" ]; then
+            echo "::error::Ativação RAG: backend declara SHA divergente."
+            false
+          fi
+
+          docker compose exec -T backend python -c \
+            'from app.core.config import get_settings; assert get_settings().RAG_EXIGIR_VIGENCIA_VERIFICADA is True'
+
+          printf '%s\n' "$TARGET_SHA" | sudo tee "$marker" >/dev/null
+          sudo chmod 600 "$marker"
+          flag_changed=0
+          trap - ERR
+          echo "Gate de vigência ativado após backfill e health-check do SHA aprovado."
