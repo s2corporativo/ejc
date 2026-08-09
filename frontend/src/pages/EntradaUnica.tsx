@@ -77,7 +77,8 @@ function nomeClienteContexto(raw: unknown): string {
  */
 export default function EntradaUnica() {
   const [searchParams] = useSearchParams();
-  const role = useAuth((state) => state.user?.role || "");
+  const { user } = useAuth();
+  const role = user?.role || "";
   const modoManual = searchParams.get("modo") === "manual";
   if (modoManual || !PAPEIS_ENTRADA_IA.has(role)) return <CadastroManual />;
   return <EntradaInteligente />;
@@ -215,8 +216,6 @@ function EntradaInteligente() {
       });
       let nova = normalizarAnalise(data, meuId);
       if (!nova) {
-        // Resposta sem rascunho_id: sem destino para o criar-caso. Volta ao
-        // formulário preservando relato e arquivos — nada se perde.
         toast.error(
           "A análise respondeu sem identificador de rascunho. Tente novamente.",
         );
@@ -291,13 +290,6 @@ function EntradaInteligente() {
       const status = (err as { response?: { status?: number } } | undefined)
         ?.response?.status;
       if (status === 409) {
-        // Achados do servidor viram blocos na tela (nunca toast de objeto
-        // cru): a mensagem entra no banner e os checkboxes reaparecem.
-        // Chaves REAIS do detail do backend (paridade com a conversão da
-        // Sala Jurídica): alertas_conflito, clientes_possivelmente_duplicados
-        // e casos_ativos_do_cliente. Casos ativos entram na mesma lista de
-        // duplicidade — é o que faz o checkbox aparecer também para cliente
-        // EXISTENTE (sem isso o 409 virava beco sem saída).
         const detail =
           (err as { response?: { data?: { detail?: unknown } } }).response?.data
             ?.detail ?? {};
