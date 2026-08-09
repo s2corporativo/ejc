@@ -121,8 +121,8 @@ export function ComparadorBacen() {
         📈 Comparador de Juros (BACEN)
       </h2>
       <p className="text-xs text-slate-500 mb-3">
-        Compara a taxa do contrato com a média de mercado retornada pela consulta
-        ao Banco Central, por modalidade e período.
+        Compara a taxa do contrato com a média de mercado retornada pela
+        consulta ao Banco Central, por modalidade e período.
       </p>
       <div className="grid sm:grid-cols-3 gap-2 items-end">
         <div className="sm:col-span-2">
@@ -162,8 +162,8 @@ export function ComparadorBacen() {
       {resultado && (
         <div className="mt-3 space-y-2 text-sm">
           <p className="text-xs text-slate-500">
-            Mercado em {resultado.periodo} · {resultado.instituicoes} instituições
-            · fonte de dados: BACEN
+            Mercado em {resultado.periodo} · {resultado.instituicoes}{" "}
+            instituições · fonte de dados: BACEN
           </p>
           <div className="grid grid-cols-3 gap-2 text-center">
             {[
@@ -189,7 +189,8 @@ export function ComparadorBacen() {
             >
               A taxa informada de <b>{taxaContrato.toFixed(2)}% a.m.</b> está{" "}
               <b>
-                {Math.abs(diferencaPercentual).toFixed(0)}% {acima ? "ACIMA" : "abaixo"}
+                {Math.abs(diferencaPercentual).toFixed(0)}%{" "}
+                {acima ? "ACIMA" : "abaixo"}
               </b>{" "}
               da média retornada para a modalidade e período consultados.
             </div>
@@ -237,9 +238,13 @@ export function AnaliseDocumentoArea({
         setErro("Cole o texto (mín. 120 caracteres) ou envie um PDF.");
         return;
       }
-      const resposta = await api.post("/analise-bancaria/contrato", formulario, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const resposta = await api.post(
+        "/analise-bancaria/contrato",
+        formulario,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      );
       setResultado(resposta.data);
     } catch (e: any) {
       setErro(mensagemErroIA(e, "Não foi possível analisar o documento."));
