@@ -27,6 +27,7 @@ export default function Checklists() {
       .catch((err: any) => {
         setTpls([]);
         setLoadError(true);
+        setShow(false);
         toast.error(
           err.response?.data?.detail || "Falha ao carregar checklists",
         );
@@ -39,7 +40,7 @@ export default function Checklists() {
 
   const criar = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (f.nome.trim().length < 3) return;
+    if (loadError || f.nome.trim().length < 3) return;
     setSaving(true);
     const itens = f.itens
       .split("\n")
@@ -91,6 +92,12 @@ export default function Checklists() {
           <button
             onClick={() => setShow((s) => !s)}
             className="btn-primary flex items-center gap-1"
+            disabled={loadError}
+            title={
+              loadError
+                ? "Recarregue os checklists antes de criar um novo template"
+                : undefined
+            }
           >
             <Plus size={15} /> Novo template
           </button>
