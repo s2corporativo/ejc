@@ -2,12 +2,21 @@ import { describe, expect, it } from "vitest";
 import {
   addCaseContext,
   caseJourneyPath,
+  caseTabPath,
   readCaseContext,
 } from "./caseContext";
 
 describe("contexto do caso", () => {
-  it("abre a jornada do caso recém-criado", () => {
-    expect(caseJourneyPath("caso 123")).toBe("/casos/caso%20123/jornada");
+  it("abre a visão canônica do caso recém-criado", () => {
+    expect(caseJourneyPath("caso 123")).toBe(
+      "/casos/caso%20123?tab=resumo",
+    );
+  });
+
+  it("gera deep-link de aba sem perder encoding do caso", () => {
+    expect(caseTabPath("caso 123", "peças especiais")).toBe(
+      "/casos/caso%20123?tab=pe%C3%A7as%20especiais",
+    );
   });
 
   it("lê o caso informado na Central", () => {
