@@ -142,16 +142,18 @@ export default function App() {
                 // criação. Todo deep-link histórico converge para /entrada e
                 // LegacyRedirect preserva modo, client_id, query e hash.
                 if (module.key === "caso-novo") {
-                  const redirect = <LegacyRedirect to="/entrada" />;
+                  const redirecionamento = <LegacyRedirect to="/entrada" />;
                   return (
                     <Route
                       key={module.key}
                       path={module.path}
                       element={
                         module.roles ? (
-                          <RoleOnly roles={module.roles}>{redirect}</RoleOnly>
+                          <RoleOnly roles={module.roles}>
+                            {redirecionamento}
+                          </RoleOnly>
                         ) : (
-                          redirect
+                          redirecionamento
                         )
                       }
                     />
