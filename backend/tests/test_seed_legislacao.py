@@ -339,7 +339,8 @@ def test_texto_compilado_sem_marcacao_infere_vigente(blocos):
     """Ausência de marcação de revogação num preâmbulo IDENTIFICÁVEL de texto
     COMPILADO = o que a fonte publica como em vigor. É inferência por AUSÊNCIA,
     então o carimbo é `legal_status_inferido_em` — não pode se apresentar como
-    conferência que não houve."""
+    conferência que não houve. A governança classifica isso como
+    'vigencia_nao_verificada' e o gate estrito rejeita."""
     vigencia = pl.situacao_juridica(blocos)
     assert vigencia["legal_status"] == "vigente"
     assert vigencia["legal_status_origem"] == "planalto:texto_compilado"
@@ -399,7 +400,10 @@ def test_sem_preambulo_identificavel_nao_declara_vigencia(blocos_sem_preambulo):
 
 async def test_ingestao_grava_vigencia_declarada_no_extra(pipeline_mockado):
     """Sem `extra.legal_status` o documento entra como 'vigencia_nao_verificada'
-    na governança — e o gate de situação jurídica o exclui da recuperação."""
+    na governança — e o gate de situação jurídica o exclui da recuperação.
+    COM `extra.legal_status='vigente'` mas apenas inferido (sem data de
+    verificação, com carimbo de inferência), a governança marca como
+    'vigencia_nao_verificada' e o gate estrito rejeita."""
     from app.services.knowledge_governance import (
         LEGAL_STATUS_VALUES,
         inferir_situacao_juridica,
@@ -413,12 +417,13 @@ async def test_ingestao_grava_vigencia_declarada_no_extra(pipeline_mockado):
     assert extra["legal_status"] in LEGAL_STATUS_VALUES
     assert extra["legal_status_origem"] == "planalto:texto_compilado"
     assert extra["legal_status_inferido_em"]
+    assert "legal_status_verificado_em" not in extra
 
-    # ponta a ponta: a governança para de marcar o documento como não conferido
+    # ponta a ponta: a governança classifica como vigencia_nao_verificada
     doc = KnowledgeDoc(titulo="x", categoria="legislacao", extra=extra, vigente=True)
     situacao = inferir_situacao_juridica(doc)
-    assert situacao["code"] == "vigente"
-    assert situacao["permite_fundamentacao_atual"] is True
+    assert situacao["code"] == "vigencia_nao_verificada"
+    assert situacao["permite_fundamentacao_atual"] is False
 
 
 # ══════════════════════════════════════════════════════════════════════════

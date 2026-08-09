@@ -73,13 +73,14 @@ async def test_gate_bloqueado_e_pendente_nao_recuperados():
     termo = f"zzgate{uuid4().hex[:10]}"
     async with AsyncSessionLocal() as db:
         # O documento de CONTROLE é legislação corretamente ingerida no mundo
-        # pós-Issue #636: aprovado na curadoria E com vigência lida da fonte.
-        # Sem `legal_status` ele sairia pelo gate de vigência, e este teste
-        # deixaria de medir o que se propõe (curadoria), medindo outra coisa.
+        # pós-P0.1: aprovado na curadoria E com vigência 'vigente' COM
+        # proveniência positiva completa (origem, data de verificação e SEM
+        # carimbo de inferência). Sem isso sairia pelo gate de vigência estrito.
         await _ins(db, titulo="GATE_OK", categoria="legislacao",
                    conteudo=f"norma valida {termo}", chave_origem=f"n:{uuid4()}",
                    extra={"rag_status": "aprovado", "legal_status": "vigente",
-                          "legal_status_origem": "planalto:texto_compilado"})
+                          "legal_status_origem": "planalto:texto_compilado",
+                          "legal_status_verificado_em": "2026-08-01T10:00:00Z"})
         await _ins(db, titulo="GATE_BLOQUEADO", categoria="legislacao",
                    conteudo=f"norma bloqueada {termo}", chave_origem=f"b:{uuid4()}",
                    extra={"confidence_level": "bloqueado"})
@@ -225,7 +226,9 @@ async def test_vigencia_nao_verificada_segue_a_flag_sem_esvaziar_a_base(monkeypa
         await _ins(db, titulo="VER_LEG_DECLARADA", categoria="legislacao",
                    conteudo=f"norma com vigencia declarada {termo}",
                    chave_origem=f"cd:{uuid4()}",
-                   extra={"rag_status": "aprovado", "legal_status": "vigente"})
+                   extra={"rag_status": "aprovado", "legal_status": "vigente",
+                          "legal_status_origem": "planalto:texto_compilado",
+                          "legal_status_verificado_em": "2026-08-01T10:00:00Z"})
         await _ins(db, titulo="VER_JURIS_COMUM", categoria="jurisprudencia",
                    conteudo=f"acordao comum sem vigencia {termo}",
                    chave_origem=f"jc:{uuid4()}", extra={"rag_status": "aprovado"})
@@ -394,22 +397,32 @@ async def test_refeed_do_ingestor_nao_reverte_vigencia_decidida_por_curador():
             })})
         await db.commit()
 
+    # Re-feed com CONTEÚDO DIFERENTE → caminho de versionamento (não "inalterado")
+    txt_v2 = txt + " Texto adicional para forcar nova versao do diploma."
     async with AsyncSessionLocal() as db:
-        await upsert_documento(db, titulo="VIGC v1", categoria="legislacao",
-                               conteudo=txt, fonte="http://x", chave_origem=k,
+        await upsert_documento(db, titulo="VIGC v2", categoria="legislacao",
+                               conteudo=txt_v2, fonte="http://x", chave_origem=k,
                                extra=dict(extra_ingestor), embutir_vetores=False)
         await db.commit()
 
     async with AsyncSessionLocal() as db:
         try:
-            extra = (await db.execute(text(
-                "SELECT extra FROM knowledge_docs WHERE chave_origem = :k"),
-                {"k": k})).scalar_one()
-            assert extra["legal_status"] == "revogada", (
-                "o re-feed reverteu a vigência decidida pelo curador")
-            assert extra["legal_status_origem"] == "curadoria:u-teste"
-            assert extra["legal_status_verificado_em"] == "2026-08-02T12:00:00+00:00"
-            assert "legal_status_inferido_em" not in extra, (
+            # Deve haver DUAS versões: a anterior (vigente=false) e a nova (vigente=true)
+            linhas = (await db.execute(text(
+                "SELECT versao, vigente, extra FROM knowledge_docs "
+                "WHERE chave_origem = :k ORDER BY versao"),
+                {"k": k})).fetchall()
+            assert len(linhas) == 2, "deveria ter criado nova versão"
+            v1, vig1, extra1 = linhas[0]
+            v2, vig2, extra2 = linhas[1]
+            assert v1 == 1 and not vig1, "versão 1 deveria estar desativada"
+            assert v2 == 2 and vig2, "versão 2 deveria estar vigente"
+            # A NOVA versão (v2) deve preservar a curadoria da v1
+            assert extra2["legal_status"] == "revogada", (
+                "versionamento perdeu a vigência decidida pelo curador")
+            assert extra2["legal_status_origem"] == "curadoria:u-teste"
+            assert extra2["legal_status_verificado_em"] == "2026-08-02T12:00:00+00:00"
+            assert "legal_status_inferido_em" not in extra2, (
                 "carimbo do ingestor sobrando ao lado do status do curador — o "
                 "registro afirmaria uma leitura que não vale para este valor")
         finally:
