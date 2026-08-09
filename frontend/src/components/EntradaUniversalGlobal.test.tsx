@@ -15,9 +15,7 @@ vi.mock("../stores/auth", () => ({
 }));
 
 vi.mock("./EntradaUniversalDocumentos", () => ({
-  default: () => (
-    <div data-testid="entrada-documentos">Entrada documentos</div>
-  ),
+  default: () => <div data-testid="entrada-documentos">Entrada documentos</div>,
 }));
 
 import EntradaUniversalGlobal from "./EntradaUniversalGlobal";
