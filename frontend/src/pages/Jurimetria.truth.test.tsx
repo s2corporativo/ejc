@@ -14,7 +14,13 @@ vi.mock("../lib/api", () => ({
 
 function resposta(url: string) {
   if (url === "/jurimetria/desfechos") {
-    return { data: { total_encerrados: 0, por_resultado: [], licoes_aprendidas: [] } };
+    return {
+      data: {
+        total_encerrados: 0,
+        por_resultado: [],
+        licoes_aprendidas: [],
+      },
+    };
   }
   if (url === "/jurimetria/overview") {
     return { data: { taxa_sucesso_geral: 0.5 } };
@@ -100,7 +106,9 @@ describe("Jurimetria — verdade da fonte", () => {
 
     expect(screen.getByText("123")).toBeTruthy();
     expect(screen.getByText("casos com tribunal informado")).toBeTruthy();
-    expect(screen.getByText("Cobertura Real do Conhecimento da IA")).toBeTruthy();
+    expect(
+      screen.getByText("Cobertura Real do Conhecimento da IA"),
+    ).toBeTruthy();
     expect(screen.getByText("100")).toBeTruthy();
     expect(screen.getByText("250")).toBeTruthy();
     expect(screen.getByText("40")).toBeTruthy();
@@ -108,13 +116,17 @@ describe("Jurimetria — verdade da fonte", () => {
     expect(screen.getByText("75%")).toBeTruthy();
     expect(screen.getByText(/não são DataJud\/STJ/i)).toBeTruthy();
     expect(screen.getByText("Classe TPU (somente referência)")).toBeTruthy();
-    expect(screen.getByPlaceholderText("Opcional — não filtra a base atual")).toBeTruthy();
+    expect(
+      screen.getByPlaceholderText("Opcional — não filtra a base atual"),
+    ).toBeTruthy();
   });
 
   it("aciona a análise prospectiva canônica e mostra a taxa histórica", async () => {
     render(<Jurimetria />);
 
-    const botao = await screen.findByRole("button", { name: "Calcular histórico" });
+    const botao = await screen.findByRole("button", {
+      name: "Calcular histórico",
+    });
     fireEvent.click(botao);
 
     await waitFor(() => {
@@ -158,7 +170,11 @@ describe("Jurimetria — verdade da fonte", () => {
     resolveStj?.({
       data: {
         fonte: "base interna",
-        tempo_tramitacao: { media_dias: 45, mediana_dias: 40, total_processos: 9 },
+        tempo_tramitacao: {
+          media_dias: 45,
+          mediana_dias: 40,
+          total_processos: 9,
+        },
       },
     });
     await waitFor(() => expect(screen.getByText("45d")).toBeTruthy());
@@ -167,7 +183,11 @@ describe("Jurimetria — verdade da fonte", () => {
     resolveTjmg?.({
       data: {
         fonte: "base interna",
-        tempo_tramitacao: { media_dias: 999, mediana_dias: 999, total_processos: 99 },
+        tempo_tramitacao: {
+          media_dias: 999,
+          mediana_dias: 999,
+          total_processos: 99,
+        },
       },
     });
 
