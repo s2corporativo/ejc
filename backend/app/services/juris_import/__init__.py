@@ -7,26 +7,24 @@
 #   • lexml — LexML Brasil/Senado, serviço SRU (legislação + jurisprudência).
 #   • stj   — STJ Dados Abertos (CKAN), espelhos de acórdãos com ementa.
 #   • tjmg  — Busca pública de acórdãos do TJMG (formulário HTML; parser
-#             tolerante fail-safe — sem API oficial de dados abertos). Mesmo
-#             keyspace de dedup do crawler agendado (ingestors/tjmg.py).
+#             tolerante fail-safe — sem API oficial de dados abertos).
+#   • tcu   — TCU Dados Abertos, acórdãos com título/sumário e URL oficial.
 #
-# Candidatas avaliadas e NÃO implementadas nesta passada (sem contrato de
-# ementa/inteiro teor confirmado): API Pública DataJud/CNJ retorna apenas
-# CAPA e MOVIMENTOS (sem ementa) — já usada como VALIDADOR de nº CNJ pelo
-# verificador_jurisprudencia; dados abertos STF/TST — sem endpoint estável
-# de acórdãos confirmado nesta pesquisa.
+# DataJud/CNJ permanece fora deste pacote porque entrega capa/movimentos, não
+# ementa. A taxonomia TPU/SGT é consumida no gateway de integrações para
+# normalização processual, não como jurisprudência.
 from __future__ import annotations
 
 import os
 
-from app.services.juris_import import lexml, stj, tjmg
+from app.services.juris_import import lexml, stj, tcu, tjmg
 
-# Config por env var (os.getenv) DE PROPÓSITO: a migração destas chaves para
-# core/config.Settings fica para depois — outro fluxo é dono de config.py e
-# .env.example neste PR. CSV de fontes habilitadas; default: todas.
+# Config por env var DE PROPÓSITO: não toca core/config.py (arquivo estrutural
+# sob governança reforçada). CSV de fontes habilitadas; default = todas as
+# fontes oficiais/on-demand atualmente suportadas.
 _FONTES_ATIVAS = {
     f.strip().lower()
-    for f in os.getenv("JURIS_IMPORT_FONTES", "lexml,stj,tjmg").split(",")
+    for f in os.getenv("JURIS_IMPORT_FONTES", "lexml,stj,tjmg,tcu").split(",")
     if f.strip()
 }
 
@@ -59,6 +57,16 @@ FONTES: dict[str, dict] = {
         "tribunais": "TJMG (acórdãos de 2º grau, incl. IRDR/IAC)",
         "enabled": "tjmg" in _FONTES_ATIVAS,
         "buscar": tjmg.buscar,
+    },
+    "tcu": {
+        "slug": "tcu",
+        "nome": "TCU — Dados Abertos (acórdãos)",
+        "descricao": "Acórdãos do Tribunal de Contas da União via API oficial de "
+                     "Dados Abertos; busca temática limitada e sem download "
+                     "automático de PDFs.",
+        "tribunais": "TCU",
+        "enabled": "tcu" in _FONTES_ATIVAS,
+        "buscar": tcu.buscar,
     },
 }
 
