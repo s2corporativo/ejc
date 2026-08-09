@@ -78,14 +78,16 @@ describe("ComparadorBacen", () => {
       } as any);
 
     render(<ComparadorBacen />);
-    const seletor = await screen.findByLabelText("Modalidade");
+    const [seletor] = await screen.findAllByRole("combobox");
     fireEvent.change(seletor, { target: { value: "0" } });
-    fireEvent.change(screen.getByLabelText("Taxa do contrato (% a.m.)"), {
+    fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "3" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Comparar" }));
 
-    expect(await screen.findByText(/média retornada para a modalidade/i)).toBeTruthy();
+    expect(
+      await screen.findByText(/média retornada para a modalidade/i),
+    ).toBeTruthy();
     fireEvent.change(seletor, { target: { value: "1" } });
     expect(screen.queryByText(/média retornada para a modalidade/i)).toBeNull();
   });
@@ -125,12 +127,13 @@ describe("AnaliseDocumentoArea", () => {
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "x".repeat(140) },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Analisar texto colado" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Analisar texto colado" }),
+    );
     await screen.findByText("Resumo estruturado do documento");
 
-    fireEvent.change(screen.getByRole("combobox", { name: /Vincular a um caso/i }), {
-      target: { value: "caso-1" },
-    });
+    const [seletorCaso] = screen.getAllByRole("combobox");
+    fireEvent.change(seletorCaso, { target: { value: "caso-1" } });
     const salvar = screen.getByRole("button", { name: "💾 Salvar no caso" });
     fireEvent.click(salvar);
     fireEvent.click(salvar);
