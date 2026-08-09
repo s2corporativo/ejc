@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { Database } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Database, LockKeyhole } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
 import { asList } from "../lib/list";
+import { useAuth } from "../stores/auth";
 
 const TRIBUNAIS = ["TJMG", "STJ", "STF", "TRF1", "TRT3"];
+const PAPEIS_METRICAS_RESTRITAS = new Set(["superadmin", "admin", "socio"]);
 
 function Bars({
   titulo,
@@ -76,6 +78,10 @@ function fmtData(value: string | null | undefined) {
 }
 
 export default function Jurimetria() {
+  const user = useAuth((state) => state.user);
+  const podeVerMetricasRestritas = PAPEIS_METRICAS_RESTRITAS.has(
+    user?.role || "",
+  );
   const [ov, setOv] = useState<any>(null);
   const [area, setArea] = useState<any[]>([]);
   const [trib, setTrib] = useState<any[]>([]);
@@ -95,6 +101,7 @@ export default function Jurimetria() {
   const [loadingPred, setLoadingPred] = useState(false);
 
   const prever = async () => {
+    if (!podeVerMetricasRestritas) return;
     setLoadingPred(true);
     try {
       const r = await api.get(
@@ -116,10 +123,6 @@ export default function Jurimetria() {
   const benchmarkRequestRef = useRef(0);
 
   useEffect(() => {
-    api
-      .get("/jurimetria/desfechos")
-      .then((r: any) => setDesfechos(r.data))
-      .catch(() => {});
     Promise.allSettled([
       api.get("/jurimetria/overview"),
       api.get("/jurimetria/por-area"),
@@ -138,6 +141,20 @@ export default function Jurimetria() {
       .get("/jurimetria/interno/stats")
       .then((r: any) => setInternalStats(r.data))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!podeVerMetricasRestritas) {
+      setDesfechos(null);
+      setRagCoverage(null);
+      setMgCoverage(null);
+      return;
+    }
+
+    api
+      .get("/jurimetria/desfechos")
+      .then((r: any) => setDesfechos(r.data))
+      .catch(() => {});
 
     Promise.allSettled([
       api.get("/jurimetria/cobertura-rag"),
@@ -146,9 +163,15 @@ export default function Jurimetria() {
       if (rag.status === "fulfilled") setRagCoverage(rag.value.data);
       if (mg.status === "fulfilled") setMgCoverage(mg.value.data);
     });
-  }, []);
+  }, [podeVerMetricasRestritas]);
 
   const carregarBenchmarks = async (tribunal: string) => {
+    if (!podeVerMetricasRestritas) {
+      setBenchmarks(null);
+      setLoadingExt(false);
+      return;
+    }
+
     const requestId = ++benchmarkRequestRef.current;
     setLoadingExt(true);
     try {
@@ -171,7 +194,18 @@ export default function Jurimetria() {
 
   useEffect(() => {
     void carregarBenchmarks(selectedTribunal);
-  }, [selectedTribunal]);
+  }, [selectedTribunal, podeVerMetricasRestritas]);
+
+  const totalInterno = useMemo(
+    () =>
+      internalStats?.total_com_tribunal ??
+      internalStats?.por_tribunal?.reduce(
+        (s: number, t: any) => s + t.total,
+        0,
+      ) ??
+      0,
+    [internalStats],
+  );
 
   if (loading)
     return (
@@ -181,13 +215,6 @@ export default function Jurimetria() {
     );
 
   const taxa = ov?.taxa_sucesso_geral;
-  const totalInterno =
-    internalStats?.total_com_tribunal ??
-    internalStats?.por_tribunal?.reduce(
-      (s: number, t: any) => s + t.total,
-      0,
-    ) ??
-    0;
   const taxaHistorica =
     predicao?.taxa_historica_favoravel ?? predicao?.probabilidade_provimento;
 
@@ -198,7 +225,6 @@ export default function Jurimetria() {
         subtitle="Desempenho e histórico interno do escritório — sem benchmark externo ativo"
       />
 
-      {/* Cards resumo escritório */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard
           label="Taxa de Teses Decididas"
@@ -218,8 +244,23 @@ export default function Jurimetria() {
         />
       </div>
 
-      {/* Cobertura real do conhecimento */}
-      {(ragCoverage || mgCoverage) && (
+      {!podeVerMetricasRestritas && (
+        <div className="card mb-6 flex items-start gap-3 p-4 text-sm text-gray-600">
+          <LockKeyhole
+            className="mt-0.5 h-4 w-4 shrink-0 text-gray-400"
+            aria-hidden="true"
+          />
+          <div>
+            <strong className="text-gray-700">Métricas consolidadas restritas</strong>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Cobertura do RAG, desfechos consolidados, benchmarks internos e
+              análise prospectiva são exibidos apenas para sócios e administradores.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {podeVerMetricasRestritas && (ragCoverage || mgCoverage) && (
         <div className="card p-5 mb-6">
           <div className="flex items-center gap-1.5 mb-1">
             <Database size={16} className="text-primary-500" />
@@ -284,9 +325,7 @@ export default function Jurimetria() {
                     <th className="py-2 pr-3 font-medium">Coleção medida</th>
                     <th className="py-2 px-3 font-medium text-right">Docs</th>
                     <th className="py-2 px-3 font-medium text-right">Chunks</th>
-                    <th className="py-2 px-3 font-medium text-right">
-                      Indexados
-                    </th>
+                    <th className="py-2 px-3 font-medium text-right">Indexados</th>
                     <th className="py-2 pl-3 font-medium text-right">
                       Fonte validada
                     </th>
@@ -316,14 +355,13 @@ export default function Jurimetria() {
           )}
           <p className="text-[11px] text-gray-400 mt-3">
             O crawler TJMG genérico é mapeado logicamente na cobertura, sem
-            duplicar documentos. “Fonte validada” conta somente metadado
-            explícito; ausência não é presumida como validação.
+            duplicar documentos. “Fonte validada” conta somente metadado explícito;
+            ausência não é presumida como validação.
           </p>
         </div>
       )}
 
-      {/* Desfechos reais */}
-      {desfechos?.por_resultado?.length > 0 && (
+      {podeVerMetricasRestritas && desfechos?.por_resultado?.length > 0 && (
         <div className="card p-5 mb-6">
           <h3 className="font-semibold text-sm text-gray-500 uppercase mb-3">
             Desfechos Reais — {desfechos.total_encerrados} casos encerrados
@@ -357,102 +395,102 @@ export default function Jurimetria() {
         </div>
       )}
 
-      {/* Histórico interno por tribunal */}
-      <div className="card p-5 mb-6">
-        <div className="flex flex-wrap items-center gap-3 mb-2">
-          <div className="flex items-center gap-1.5">
-            <Database size={16} className="text-primary-500" />
-            <h3 className="font-semibold text-sm text-gray-700 uppercase">
-              Histórico Interno por Tribunal
-            </h3>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            {TRIBUNAIS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setSelectedTribunal(t)}
-                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-                  selectedTribunal === t
-                    ? "bg-primary-600 text-white border-primary-600"
-                    : "text-gray-600 border-gray-300 hover:border-primary-400"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-        <p className="text-xs text-gray-400 mb-4">
-          Fonte: casos cadastrados no EJC. Estes números não são DataJud/STJ e
-          não representam benchmark externo.
-        </p>
-
-        {loadingExt ? (
-          <div className="flex justify-center py-6">
-            <Spinner />
-          </div>
-        ) : benchmarks ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-gray-800">
-                {benchmarks.tempo_tramitacao?.media_dias != null
-                  ? `${Math.round(benchmarks.tempo_tramitacao.media_dias)}d`
-                  : "—"}
-              </p>
-              <p className="text-xs text-gray-500">Duração média</p>
+      {podeVerMetricasRestritas && (
+        <div className="card p-5 mb-6">
+          <div className="flex flex-wrap items-center gap-3 mb-2">
+            <div className="flex items-center gap-1.5">
+              <Database size={16} className="text-primary-500" />
+              <h3 className="font-semibold text-sm text-gray-700 uppercase">
+                Histórico Interno por Tribunal
+              </h3>
             </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-gray-800">
-                {benchmarks.tempo_tramitacao?.mediana_dias != null
-                  ? `${Math.round(benchmarks.tempo_tramitacao.mediana_dias)}d`
-                  : "—"}
-              </p>
-              <p className="text-xs text-gray-500">Mediana duração</p>
+            <div className="flex gap-2 flex-wrap">
+              {TRIBUNAIS.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setSelectedTribunal(t)}
+                  className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                    selectedTribunal === t
+                      ? "bg-primary-600 text-white border-primary-600"
+                      : "text-gray-600 border-gray-300 hover:border-primary-400"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
             </div>
-            <div className="text-center col-span-2">
-              <p className="text-2xl font-bold text-gray-800">
-                {benchmarks.tempo_tramitacao?.total_processos?.toLocaleString(
-                  "pt-BR",
-                ) ?? "0"}
-              </p>
-              <p className="text-xs text-gray-500">
-                Processos encerrados na base interna
-              </p>
-            </div>
-            {benchmarks.por_resultado?.length > 0 && (
-              <div className="col-span-4 mt-3 space-y-2">
-                <p className="text-xs text-gray-500 font-medium uppercase">
-                  Distribuição de Resultados
-                </p>
-                {benchmarks.por_resultado.map((r: any, i: number) => (
-                  <div key={i}>
-                    <div className="flex justify-between text-xs mb-0.5">
-                      <span className="capitalize text-gray-600">
-                        {(r.resultado || "outro").replace("_", " ")}
-                      </span>
-                      <span className="text-gray-400">
-                        {r.pct?.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary-500"
-                        style={{ width: `${r.pct ?? 0}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
-        ) : (
-          <p className="text-gray-400 text-sm text-center py-6">
-            Sem dados para {selectedTribunal} na base interna do escritório.
+          <p className="text-xs text-gray-400 mb-4">
+            Fonte: casos cadastrados no EJC. Estes números não são DataJud/STJ e
+            não representam benchmark externo.
           </p>
-        )}
-      </div>
 
-      {/* Gráficos internos do escritório */}
+          {loadingExt ? (
+            <div className="flex justify-center py-6">
+              <Spinner />
+            </div>
+          ) : benchmarks ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-gray-800">
+                  {benchmarks.tempo_tramitacao?.media_dias != null
+                    ? `${Math.round(benchmarks.tempo_tramitacao.media_dias)}d`
+                    : "—"}
+                </p>
+                <p className="text-xs text-gray-500">Duração média</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-gray-800">
+                  {benchmarks.tempo_tramitacao?.mediana_dias != null
+                    ? `${Math.round(benchmarks.tempo_tramitacao.mediana_dias)}d`
+                    : "—"}
+                </p>
+                <p className="text-xs text-gray-500">Mediana duração</p>
+              </div>
+              <div className="text-center col-span-2">
+                <p className="text-2xl font-bold text-gray-800">
+                  {benchmarks.tempo_tramitacao?.total_processos?.toLocaleString(
+                    "pt-BR",
+                  ) ?? "0"}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Processos encerrados na base interna
+                </p>
+              </div>
+              {benchmarks.por_resultado?.length > 0 && (
+                <div className="col-span-4 mt-3 space-y-2">
+                  <p className="text-xs text-gray-500 font-medium uppercase">
+                    Distribuição de Resultados
+                  </p>
+                  {benchmarks.por_resultado.map((r: any, i: number) => (
+                    <div key={i}>
+                      <div className="flex justify-between text-xs mb-0.5">
+                        <span className="capitalize text-gray-600">
+                          {(r.resultado || "outro").replace("_", " ")}
+                        </span>
+                        <span className="text-gray-400">
+                          {r.pct?.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary-500"
+                          style={{ width: `${r.pct ?? 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-gray-400 text-sm text-center py-6">
+              Sem dados para {selectedTribunal} na base interna do escritório.
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <Bars
           titulo="Por Área"
@@ -477,8 +515,7 @@ export default function Jurimetria() {
         cor="bg-success-500"
       />
 
-      {/* Lições aprendidas */}
-      {desfechos?.licoes_aprendidas?.length > 0 && (
+      {podeVerMetricasRestritas && desfechos?.licoes_aprendidas?.length > 0 && (
         <div className="card p-5 mt-4">
           <h3 className="font-semibold text-sm text-gray-500 uppercase mb-3">
             Últimas Lições Aprendidas
@@ -499,115 +536,116 @@ export default function Jurimetria() {
         </div>
       )}
 
-      {/* Análise prospectiva descritiva */}
-      <div className="card p-5 mt-4">
-        <h3 className="font-semibold text-sm text-gray-500 uppercase mb-1">
-          Análise Prospectiva — Histórico Interno
-        </h3>
-        <p className="text-xs text-gray-400 mb-3">
-          Indicador descritivo dos casos decididos do escritório. Não é modelo
-          preditivo e não representa probabilidade de decisão futura.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">
-              Classe TPU (somente referência)
-            </label>
-            <input
-              type="number"
-              placeholder="Opcional — não filtra a base atual"
-              value={predForm.classe}
-              onChange={(e) =>
-                setPredForm((p) => ({ ...p, classe: e.target.value }))
-              }
-              className="w-full text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-bronze"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Tribunal</label>
-            <select
-              value={predForm.tribunal}
-              onChange={(e) =>
-                setPredForm((p) => ({ ...p, tribunal: e.target.value }))
-              }
-              className="w-full text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-bronze"
-            >
-              {TRIBUNAIS.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">
-              Duração estimada (dias)
-            </label>
-            <input
-              type="number"
-              value={predForm.dias}
-              onChange={(e) =>
-                setPredForm((p) => ({ ...p, dias: e.target.value }))
-              }
-              className="w-full text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-bronze"
-            />
-          </div>
-        </div>
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={prever}
-            disabled={loadingPred}
-            className="btn-primary"
-          >
-            {loadingPred ? "Calculando..." : "Calcular histórico"}
-          </button>
-        </div>
-
-        {predicao && taxaHistorica == null && (
-          <p className="text-sm text-warn-600 bg-warn-50 border border-warn-200 rounded px-3 py-2">
-            {predicao.aviso ||
-              `Amostra decidida insuficiente (${predicao.amostra ?? 0} casos).`}
+      {podeVerMetricasRestritas && (
+        <div className="card p-5 mt-4">
+          <h3 className="font-semibold text-sm text-gray-500 uppercase mb-1">
+            Análise Prospectiva — Histórico Interno
+          </h3>
+          <p className="text-xs text-gray-400 mb-3">
+            Indicador descritivo dos casos decididos do escritório. Não é modelo
+            preditivo e não representa probabilidade de decisão futura.
           </p>
-        )}
-
-        {predicao != null && taxaHistorica != null && (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="text-center p-3 bg-green-50 rounded-lg border border-green-100">
-                <p className="text-2xl font-bold text-green-700">
-                  {taxaHistorica}%
-                </p>
-                <p className="text-xs text-green-600">
-                  Taxa histórica favorável
-                </p>
-              </div>
-              <div className="text-center p-3 bg-danger-50 rounded-lg border border-danger-100">
-                <p className="text-2xl font-bold text-danger-700">
-                  {predicao.desfavoraveis ?? "—"}
-                </p>
-                <p className="text-xs text-danger-600">
-                  Desfechos desfavoráveis
-                </p>
-              </div>
-              <div className="text-center p-3 bg-gray-50 rounded-lg border border-black/[0.05]">
-                <p className="text-2xl font-bold text-gray-700">
-                  {predicao.acordos ?? 0}
-                </p>
-                <p className="text-xs text-gray-500">Acordos (fora da taxa)</p>
-              </div>
-              <div className="text-center p-3 bg-primary-50 rounded-lg border border-primary-100">
-                <p className="text-2xl font-bold capitalize text-primary-700">
-                  {predicao.confianca}
-                </p>
-                <p className="text-xs text-primary-600">
-                  Amostra: {predicao.amostra} decididos
-                </p>
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">
+                Classe TPU (somente referência)
+              </label>
+              <input
+                type="number"
+                placeholder="Opcional — não filtra a base atual"
+                value={predForm.classe}
+                onChange={(e) =>
+                  setPredForm((p) => ({ ...p, classe: e.target.value }))
+                }
+                className="w-full text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-bronze"
+              />
             </div>
-            {predicao.aviso && (
-              <p className="text-xs text-gray-500 mt-3">{predicao.aviso}</p>
-            )}
-          </>
-        )}
-      </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Tribunal</label>
+              <select
+                value={predForm.tribunal}
+                onChange={(e) =>
+                  setPredForm((p) => ({ ...p, tribunal: e.target.value }))
+                }
+                className="w-full text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-bronze"
+              >
+                {TRIBUNAIS.map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">
+                Duração estimada (dias)
+              </label>
+              <input
+                type="number"
+                value={predForm.dias}
+                onChange={(e) =>
+                  setPredForm((p) => ({ ...p, dias: e.target.value }))
+                }
+                className="w-full text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-bronze"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={prever}
+              disabled={loadingPred}
+              className="btn-primary"
+            >
+              {loadingPred ? "Calculando..." : "Calcular histórico"}
+            </button>
+          </div>
+
+          {predicao && taxaHistorica == null && (
+            <p className="text-sm text-warn-600 bg-warn-50 border border-warn-200 rounded px-3 py-2">
+              {predicao.aviso ||
+                `Amostra decidida insuficiente (${predicao.amostra ?? 0} casos).`}
+            </p>
+          )}
+
+          {predicao != null && taxaHistorica != null && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="text-center p-3 bg-green-50 rounded-lg border border-green-100">
+                  <p className="text-2xl font-bold text-green-700">
+                    {taxaHistorica}%
+                  </p>
+                  <p className="text-xs text-green-600">
+                    Taxa histórica favorável
+                  </p>
+                </div>
+                <div className="text-center p-3 bg-danger-50 rounded-lg border border-danger-100">
+                  <p className="text-2xl font-bold text-danger-700">
+                    {predicao.desfavoraveis ?? "—"}
+                  </p>
+                  <p className="text-xs text-danger-600">
+                    Desfechos desfavoráveis
+                  </p>
+                </div>
+                <div className="text-center p-3 bg-gray-50 rounded-lg border border-black/[0.05]">
+                  <p className="text-2xl font-bold text-gray-700">
+                    {predicao.acordos ?? 0}
+                  </p>
+                  <p className="text-xs text-gray-500">Acordos (fora da taxa)</p>
+                </div>
+                <div className="text-center p-3 bg-primary-50 rounded-lg border border-primary-100">
+                  <p className="text-2xl font-bold capitalize text-primary-700">
+                    {predicao.confianca}
+                  </p>
+                  <p className="text-xs text-primary-600">
+                    Amostra: {predicao.amostra} decididos
+                  </p>
+                </div>
+              </div>
+              {predicao.aviso && (
+                <p className="text-xs text-gray-500 mt-3">{predicao.aviso}</p>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
