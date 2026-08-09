@@ -68,11 +68,7 @@ export type DptDashboard = {
 export type DptHealthArea = {
   area: string;
   classificacao:
-    | "Regular"
-    | "Atenção"
-    | "Alto Risco"
-    | "Crítico"
-    | "Não avaliado";
+    "Regular" | "Atenção" | "Alto Risco" | "Crítico" | "Não avaliado";
   justificativa: string;
   evidencias: number;
 };
@@ -186,6 +182,9 @@ export async function runDptAction(payload: {
   question: string;
   area?: string;
 }): Promise<DptActionResponse> {
-  const response = await api.post<DptActionResponse>("/dpt360/actions", payload);
+  const response = await api.post<DptActionResponse>(
+    "/dpt360/actions",
+    payload,
+  );
   return response.data;
 }

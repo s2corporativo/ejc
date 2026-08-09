@@ -7,23 +7,27 @@ import {
   type DptCompany,
 } from "./api";
 
-const ACTIONS: Array<{ value: DptAction; label: string; description: string }> = [
-  {
-    value: "conselho",
-    label: "Modo Conselho",
-    description: "Prioridades executivas e redução de risco com base na realidade registrada.",
-  },
-  {
-    value: "diagnostico",
-    label: "Diagnóstico",
-    description: "Fatos, provas, questões, teses, riscos, lacunas e providências.",
-  },
-  {
-    value: "preflight",
-    label: "Pré-flight",
-    description: "Consistência de fatos, fontes, vigência, datas, provas e contradições.",
-  },
-];
+const ACTIONS: Array<{ value: DptAction; label: string; description: string }> =
+  [
+    {
+      value: "conselho",
+      label: "Modo Conselho",
+      description:
+        "Prioridades executivas e redução de risco com base na realidade registrada.",
+    },
+    {
+      value: "diagnostico",
+      label: "Diagnóstico",
+      description:
+        "Fatos, provas, questões, teses, riscos, lacunas e providências.",
+    },
+    {
+      value: "preflight",
+      label: "Pré-flight",
+      description:
+        "Consistência de fatos, fontes, vigência, datas, provas e contradições.",
+    },
+  ];
 
 export default function DptIntelligence({
   companies,
@@ -44,7 +48,10 @@ export default function DptIntelligence({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (initialClientId && companies.some((company) => company.id === initialClientId)) {
+    if (
+      initialClientId &&
+      companies.some((company) => company.id === initialClientId)
+    ) {
       setClientId(initialClientId);
       return;
     }
@@ -59,9 +66,13 @@ export default function DptIntelligence({
     setError(null);
     setResult(null);
     try {
-      setResult(await runDptAction({ action, client_id: clientId, question, area }));
+      setResult(
+        await runDptAction({ action, client_id: clientId, question, area }),
+      );
     } catch {
-      setError("Não foi possível executar a análise. Nenhuma conclusão foi presumida.");
+      setError(
+        "Não foi possível executar a análise. Nenhuma conclusão foi presumida.",
+      );
     } finally {
       setLoading(false);
     }
@@ -75,9 +86,12 @@ export default function DptIntelligence({
             <BrainCircuit className="h-5 w-5" />
           </span>
           <div>
-            <h2 className="text-xl font-semibold text-slate-950 dark:text-white">Motor Jurídico DPT</h2>
+            <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
+              Motor Jurídico DPT
+            </h2>
             <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Executa pelo núcleo único do EJC, com RAG, validação de citações e HITL. Não altera caso nem comunica cliente.
+              Executa pelo núcleo único do EJC, com RAG, validação de citações e
+              HITL. Não altera caso nem comunica cliente.
             </p>
           </div>
         </div>
@@ -90,8 +104,12 @@ export default function DptIntelligence({
               onClick={() => setAction(item.value)}
               className={`rounded-xl border p-4 text-left transition ${action === item.value ? "border-amber-300 bg-amber-50/60 dark:border-amber-400/30 dark:bg-amber-400/10" : "border-slate-200 dark:border-white/10"}`}
             >
-              <div className="text-sm font-semibold text-slate-900 dark:text-white">{item.label}</div>
-              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.description}</p>
+              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                {item.label}
+              </div>
+              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {item.description}
+              </p>
             </button>
           ))}
         </div>
@@ -168,7 +186,8 @@ export default function DptIntelligence({
         <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-              <ShieldAlert className="h-4 w-4 text-amber-600" /> Rascunho jurídico — revisão humana obrigatória
+              <ShieldAlert className="h-4 w-4 text-amber-600" /> Rascunho
+              jurídico — revisão humana obrigatória
             </div>
             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">
               {result.status_hitl}
@@ -180,7 +199,9 @@ export default function DptIntelligence({
             </div>
           ) : null}
           <pre className="mt-4 whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 text-xs leading-6 text-slate-700 dark:bg-black/20 dark:text-slate-200">
-            {result.estruturado ? JSON.stringify(result.estruturado, null, 2) : result.conteudo}
+            {result.estruturado
+              ? JSON.stringify(result.estruturado, null, 2)
+              : result.conteudo}
           </pre>
           <p className="mt-3 text-xs text-slate-400">{result.aviso_hitl}</p>
         </section>

@@ -26,20 +26,24 @@ import {
 } from "lucide-react";
 import { Link, NavLink, useLocation } from "react-router";
 import { Empty, ErrorState, Spinner } from "../../components/UI";
-import {
-  getDptDashboard,
-  type DptCompany,
-  type DptDashboard,
-} from "./api";
+import { getDptDashboard, type DptCompany, type DptDashboard } from "./api";
 import CompanyLegalTwin from "./CompanyLegalTwin";
 import DptFeatureRouter from "./DptFeatureRouter";
 
 const NAV_ITEMS: Array<{ path: string; label: string; icon: LucideIcon }> = [
   { path: "/dpt360", label: "Visão Executiva", icon: Gauge },
   { path: "/dpt360/empresas", label: "Empresas", icon: Building2 },
-  { path: "/dpt360/diagnostico", label: "Diagnóstico 360", icon: ClipboardCheck },
+  {
+    path: "/dpt360/diagnostico",
+    label: "Diagnóstico 360",
+    icon: ClipboardCheck,
+  },
   { path: "/dpt360/radar", label: "Radar Jurídico", icon: Radar },
-  { path: "/dpt360/inteligencia", label: "Inteligência Jurídica", icon: BrainCircuit },
+  {
+    path: "/dpt360/inteligencia",
+    label: "Inteligência Jurídica",
+    icon: BrainCircuit,
+  },
   { path: "/dpt360/ferramentas", label: "Ferramentas", icon: Wrench },
   { path: "/dpt360/casos", label: "Casos", icon: Gavel },
   { path: "/dpt360/obrigacoes", label: "Obrigações", icon: CalendarClock },
@@ -55,7 +59,13 @@ const RADAR_AREAS = [
   { label: "LGPD/IA", key: "lgpd_ia" },
 ] as const;
 
-function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+function Card({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <section
       className={`rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/40 ${className}`}
@@ -160,8 +170,8 @@ function ExecutiveHome({ data }: { data: DptDashboard }) {
           </div>
           {data.priorities.length === 0 ? (
             <div className="mt-5 rounded-xl border border-dashed border-slate-200 px-4 py-7 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
-              Nenhum sinal prioritário foi encontrado nos registros disponíveis. Isso não
-              equivale a regularidade jurídica.
+              Nenhum sinal prioritário foi encontrado nos registros disponíveis.
+              Isso não equivale a regularidade jurídica.
             </div>
           ) : (
             <div className="mt-4 divide-y divide-slate-100 dark:divide-white/10">
@@ -209,8 +219,9 @@ function ExecutiveHome({ data }: { data: DptDashboard }) {
                 O que exige minha atenção hoje?
               </h3>
               <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                A resposta especializada usa o núcleo central de IA com RAG, citações e
-                HITL. O dashboard não dispara comunicação nem altera casos automaticamente.
+                A resposta especializada usa o núcleo central de IA com RAG,
+                citações e HITL. O dashboard não dispara comunicação nem altera
+                casos automaticamente.
               </p>
               <Link
                 to="/dpt360/inteligencia"
@@ -256,7 +267,8 @@ function ExecutiveHome({ data }: { data: DptDashboard }) {
                   {value === null ? "—" : value}
                 </div>
                 <div className="mt-1 text-[11px] text-slate-400">
-                  Publicações classificadas nas últimas 24h; vigência requer confirmação.
+                  Publicações classificadas nas últimas 24h; vigência requer
+                  confirmação.
                 </div>
               </div>
             );
@@ -306,8 +318,9 @@ function CompaniesView({ data }: { data: DptDashboard }) {
                     {company.nome}
                   </div>
                   <div className="mt-1 text-xs text-slate-400">
-                    {[company.cidade, company.estado].filter(Boolean).join(" / ") ||
-                      "Localidade não informada"}
+                    {[company.cidade, company.estado]
+                      .filter(Boolean)
+                      .join(" / ") || "Localidade não informada"}
                   </div>
                 </td>
                 <td className="px-3 py-4">
@@ -341,7 +354,13 @@ function CompaniesView({ data }: { data: DptDashboard }) {
   );
 }
 
-function CompanyDetail({ data, company }: { data: DptDashboard; company: DptCompany }) {
+function CompanyDetail({
+  data,
+  company,
+}: {
+  data: DptDashboard;
+  company: DptCompany;
+}) {
   const cases = data.cases.filter((item) => item.client_id === company.id);
   const caseIds = new Set(cases.map((item) => item.id));
   const deadlines = data.deadlines.filter((item) => caseIds.has(item.case_id));
@@ -414,7 +433,8 @@ function CompanyDetail({ data, company }: { data: DptDashboard; company: DptComp
           </div>
           {deadlines.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">
-              Nenhuma pendência temporal vinculada aos casos empresariais foi encontrada.
+              Nenhuma pendência temporal vinculada aos casos empresariais foi
+              encontrada.
             </p>
           ) : (
             <div className="mt-3 divide-y divide-slate-100 dark:divide-white/10">
@@ -478,7 +498,8 @@ function CasesView({ data }: { data: DptDashboard }) {
                 {item.titulo}
               </div>
               <div className="mt-1 text-xs text-slate-400">
-                {companies.get(item.client_id) || "Empresa"} · {item.area} · {item.status}
+                {companies.get(item.client_id) || "Empresa"} · {item.area} ·{" "}
+                {item.status}
               </div>
             </div>
             <ChevronRight className="h-4 w-4 text-slate-300" />
@@ -561,7 +582,9 @@ export default function Dpt360Workspace() {
                 <h1 className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
                   DPT Empresarial 360
                 </h1>
-                <p className="text-xs text-slate-400">Inteligência Jurídica Empresarial</p>
+                <p className="text-xs text-slate-400">
+                  Inteligência Jurídica Empresarial
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -614,17 +637,18 @@ export default function Dpt360Workspace() {
               <Building2 className="h-4 w-4 text-amber-600" /> DPT Legal Twin
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Perfil Jurídico Vivo construído sobre dados canônicos, com histórico e
-              evidências, sem segundo cadastro.
+              Perfil Jurídico Vivo construído sobre dados canônicos, com
+              histórico e evidências, sem segundo cadastro.
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-              <FileSearch className="h-4 w-4 text-amber-600" /> Pré-flight jurídico
+              <FileSearch className="h-4 w-4 text-amber-600" /> Pré-flight
+              jurídico
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Fatos sem prova, vigência, citações e inconsistências são verificados antes de
-              liberar entregáveis.
+              Fatos sem prova, vigência, citações e inconsistências são
+              verificados antes de liberar entregáveis.
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
@@ -632,8 +656,8 @@ export default function Dpt360Workspace() {
               <BrainCircuit className="h-4 w-4 text-amber-600" /> Modo Conselho
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Perguntas executivas usam o contexto real da empresa e permanecem sob revisão
-              humana.
+              Perguntas executivas usam o contexto real da empresa e permanecem
+              sob revisão humana.
             </p>
           </div>
         </div>

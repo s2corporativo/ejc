@@ -28,9 +28,12 @@ export default function DptFeatureRouter({
   data: DptDashboard;
 }) {
   if (name === "inteligencia") {
-    return <DptIntelligence companies={data.companies} initialAction="conselho" />;
+    return (
+      <DptIntelligence companies={data.companies} initialAction="conselho" />
+    );
   }
-  if (name === "diagnostico") return <DptDiagnosis companies={data.companies} />;
+  if (name === "diagnostico")
+    return <DptDiagnosis companies={data.companies} />;
   if (name === "radar") return <DptRadar />;
   if (name === "ferramentas") return <DptTools />;
   if (name === "obrigacoes") return <DptObligations data={data} />;
@@ -49,7 +52,9 @@ export default function DptFeatureRouter({
         {item.text}
       </p>
       <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-4 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-400">
-        <strong className="text-slate-700 dark:text-slate-200">Regra de governança:</strong>{" "}
+        <strong className="text-slate-700 dark:text-slate-200">
+          Regra de governança:
+        </strong>{" "}
         conteúdo de cliente permanece segregado e conhecimento interno continua
         versionado/aprovado nas bases canônicas.
       </div>

@@ -18,7 +18,13 @@ export type DptExecutiveReport = {
   nota: string;
 };
 
-export async function getDptExecutiveReport(clientId: string, days = 30): Promise<DptExecutiveReport> {
-  const response = await api.get<DptExecutiveReport>(`/dpt360/reports/executive/${clientId}`, { params: { days } });
+export async function getDptExecutiveReport(
+  clientId: string,
+  days = 30,
+): Promise<DptExecutiveReport> {
+  const response = await api.get<DptExecutiveReport>(
+    `/dpt360/reports/executive/${clientId}`,
+    { params: { days } },
+  );
   return response.data;
 }

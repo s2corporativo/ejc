@@ -19,10 +19,16 @@ const KINDS: Array<{ value: DptDiagnosticKind; label: string }> = [
   { value: "governanca_ia", label: "Governança de IA" },
 ];
 
-export default function DptDiagnosis({ companies }: { companies: DptCompany[] }) {
+export default function DptDiagnosis({
+  companies,
+}: {
+  companies: DptCompany[];
+}) {
   const [clientId, setClientId] = useState(companies[0]?.id || "");
   const [kind, setKind] = useState<DptDiagnosticKind>("completo");
-  const [readiness, setReadiness] = useState<DptDiagnosticReadiness | null>(null);
+  const [readiness, setReadiness] = useState<DptDiagnosticReadiness | null>(
+    null,
+  );
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -56,7 +62,8 @@ export default function DptDiagnosis({ companies }: { companies: DptCompany[] })
               Diagnóstico Jurídico Empresarial 360
             </h2>
             <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Primeiro verifica evidências e lacunas nos registros canônicos; depois a IA estrutura a análise em rascunho para revisão.
+              Primeiro verifica evidências e lacunas nos registros canônicos;
+              depois a IA estrutura a análise em rascunho para revisão.
             </p>
           </div>
         </div>
@@ -108,7 +115,9 @@ export default function DptDiagnosis({ companies }: { companies: DptCompany[] })
                     {area.area.replace("_", " ")}
                   </span>
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                    {area.estado === "com_evidencias" ? "Com evidências" : "Não avaliado"}
+                    {area.estado === "com_evidencias"
+                      ? "Com evidências"
+                      : "Não avaliado"}
                   </span>
                 </div>
                 <p className="mt-3 text-xs text-slate-500">
@@ -117,7 +126,8 @@ export default function DptDiagnosis({ companies }: { companies: DptCompany[] })
                 {area.lacunas_preliminares.length ? (
                   <div className="mt-2 flex items-start gap-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
                     <FileWarning className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    Lacunas preliminares: {area.lacunas_preliminares.join(", ")}.
+                    Lacunas preliminares: {area.lacunas_preliminares.join(", ")}
+                    .
                   </div>
                 ) : null}
               </div>
@@ -126,7 +136,10 @@ export default function DptDiagnosis({ companies }: { companies: DptCompany[] })
         ) : null}
         {readiness ? (
           <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs leading-5 text-slate-500 dark:border-white/10 dark:bg-white/[0.03]">
-            Persistência estruturada de diagnóstico não foi criada nesta pilha porque a governança Alembic exige migration partindo diretamente da main. O AILog/HITL da análise continua ativo. {readiness.motivo_persistencia}
+            Persistência estruturada de diagnóstico não foi criada nesta pilha
+            porque a governança Alembic exige migration partindo diretamente da
+            main. O AILog/HITL da análise continua ativo.{" "}
+            {readiness.motivo_persistencia}
           </div>
         ) : null}
       </section>

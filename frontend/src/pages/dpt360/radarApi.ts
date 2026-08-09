@@ -35,6 +35,8 @@ export type DptRadarToday = {
 };
 
 export async function getDptRadarToday(hours = 24): Promise<DptRadarToday> {
-  const response = await api.get<DptRadarToday>("/dpt360/radar/today", { params: { hours } });
+  const response = await api.get<DptRadarToday>("/dpt360/radar/today", {
+    params: { hours },
+  });
   return response.data;
 }
