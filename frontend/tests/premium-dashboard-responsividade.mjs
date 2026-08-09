@@ -153,6 +153,7 @@ const FIXTURES = {
       {
         id: "movimento-1",
         titulo: "Recurso especial publicado",
+        descricao: "Publicação de recurso especial no processo",
         status: "publicado",
         created_at: `${dateKey(today)}T09:30:00`,
         case_id: "caso-1",
@@ -163,6 +164,7 @@ const FIXTURES = {
       {
         id: "movimento-2",
         titulo: "Manifestação protocolada",
+        descricao: "Manifestação protocolada no processo",
         status: "protocolado",
         created_at: `${dateKey(yesterday)}T17:45:00`,
         case_id: "caso-3",
@@ -293,10 +295,24 @@ async function inspectDashboard(page, viewport, failures) {
     "Próximos compromissos",
     "Áreas de atuação",
     "Distribuição dos casos",
+    "Publicação de recurso especial no processo",
   ]) {
     if (!normalizedMainText.includes(expected.toLocaleLowerCase("pt-BR"))) {
       failures.push(`${viewport.name}: conteúdo operacional ausente: ${expected}`);
     }
+  }
+
+  // O contexto inteiro roda com reducedMotion="reduce". O hover não pode
+  // deslocar o cartão quando o usuário solicitou redução de movimento.
+  const metric = page.locator(".ejc-ultra-metric").first();
+  await metric.hover();
+  const transformReduzido = await metric.evaluate(
+    (element) => getComputedStyle(element).transform,
+  );
+  if (transformReduzido !== "none") {
+    failures.push(
+      `${viewport.name}: hover desloca métrica com reduced-motion (${transformReduzido})`,
+    );
   }
 
   const sidebar = page.locator("aside.sidebar-bronze");
@@ -387,7 +403,7 @@ async function main() {
 
   console.log(
     "\nDASHBOARD ULTRA RESPONSIVO: OK — sete larguras, sem overflow, " +
-      "sem erro de console e sem sentinelas financeiras renderizadas.",
+      "sem erro de console, sem movimento indevido e sem sentinelas financeiras renderizadas.",
   );
 }
 
