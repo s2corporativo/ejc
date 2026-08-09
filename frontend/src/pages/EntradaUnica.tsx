@@ -37,6 +37,13 @@ type ClienteContexto = {
   nome: string;
 };
 
+const PAPEIS_ENTRADA_IA = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+]);
+
 function asLista<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) return payload as T[];
   const data = (payload as { data?: unknown })?.data;
@@ -65,10 +72,14 @@ function nomeClienteContexto(raw: unknown): string {
 /**
  * Entrada Jurídica é a única porta visível. O modo manual reutiliza a tela
  * canônica sem IA, mantendo /cadastro-manual como rota histórica/atalho.
+ * Perfis autorizados a cadastrar cliente/caso, mas não a usar /entrada/analisar
+ * (ex.: secretaria), permanecem na mesma porta e recebem o modo manual.
  */
 export default function EntradaUnica() {
   const [searchParams] = useSearchParams();
-  if (searchParams.get("modo") === "manual") return <CadastroManual />;
+  const role = useAuth((state) => state.user?.role || "");
+  const modoManual = searchParams.get("modo") === "manual";
+  if (modoManual || !PAPEIS_ENTRADA_IA.has(role)) return <CadastroManual />;
   return <EntradaInteligente />;
 }
 
@@ -219,10 +230,7 @@ function EntradaInteligente() {
           clienteNome: clienteContexto?.nome || nova.clienteNome,
           clienteOrigem: "contexto_cliente",
           clienteJaCadastrada: true,
-          avisos: [
-            ...nova.avisos,
-            "Cliente fixado pela Ficha Mestra.",
-          ],
+          avisos: [...nova.avisos, "Cliente fixado pela Ficha Mestra."],
         };
       }
       setErro409(null);
