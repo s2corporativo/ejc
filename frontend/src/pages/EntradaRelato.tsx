@@ -41,7 +41,7 @@ function asLista<T>(payload: unknown): T[] {
 /** Mensagem humana a partir de um detail de erro HTTP (nunca objeto cru). */
 function mensagemDeErro(err: unknown, fallback: string): string {
   const detail = (
-    err as { response?: { data?: { detail?: unknown } } | undefined
+    err as { response?: { data?: { detail?: unknown } } } | undefined
   )?.response?.data?.detail;
   const texto = textoDeAchado(detail);
   return texto || fallback;
