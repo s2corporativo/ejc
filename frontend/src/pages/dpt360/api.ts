@@ -64,7 +64,48 @@ export type DptDashboard = {
   notes: string[];
 };
 
+export type DptHealthArea = {
+  area: string;
+  classificacao: "Regular" | "Atenção" | "Alto Risco" | "Crítico" | "Não avaliado";
+  justificativa: string;
+  evidencias: number;
+};
+
+export type DptTwinDimension = {
+  key: string;
+  label: string;
+  status: "com_dados" | "sem_dados" | "nao_aplicavel";
+  registros: number;
+  note?: string | null;
+  canonical_path?: string | null;
+};
+
+export type DptCompanyProfile = {
+  id: string;
+  nome: string;
+  status: string;
+  cidade?: string | null;
+  estado?: string | null;
+  generated_at: string;
+  health: DptHealthArea[];
+  twin: DptTwinDimension[];
+  areas_com_casos: string[];
+  casos_abertos: number;
+  prazos_pendentes: number;
+  documentos: number;
+  sociedades: number;
+  operacoes_lgpd: number;
+  operacoes_lgpd_alto_risco: number;
+  autos_ambientais: number;
+  notes: string[];
+};
+
 export async function getDptDashboard(): Promise<DptDashboard> {
   const response = await api.get<DptDashboard>("/dpt360/dashboard");
+  return response.data;
+}
+
+export async function getDptCompanyProfile(clientId: string): Promise<DptCompanyProfile> {
+  const response = await api.get<DptCompanyProfile>(`/dpt360/companies/${clientId}`);
   return response.data;
 }
