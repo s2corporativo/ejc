@@ -1,11 +1,25 @@
 export type NovoCasoModo = "documento" | "manual";
 
-export const NOVO_CASO_DOCUMENTO_PATH = "/casos/novo?modo=documento";
-export const NOVO_CASO_MANUAL_PATH = "/casos/novo?modo=manual";
+/**
+ * Entrada Jurídica é a única porta VISÍVEL para abertura de casos.
+ * As rotas históricas continuam ativas para favoritos/deep-links, mas novos
+ * atalhos devem convergir para /entrada e escolher apenas o modo da mesma porta.
+ */
+export const NOVO_CASO_DOCUMENTO_PATH = "/entrada?modo=documento";
+export const NOVO_CASO_MANUAL_PATH = "/entrada?modo=manual";
+
+export function entradaNovoCasoComCliente(
+  clientId: string,
+  modo: NovoCasoModo = "manual",
+): string {
+  const params = new URLSearchParams({ modo, client_id: clientId });
+  return `/entrada?${params.toString()}`;
+}
 
 /**
- * Mantém a rota histórica /casos/novo como cadastro manual e permite abrir
- * diretamente o intake documental sem criar um módulo ou menu paralelo.
+ * Compatibilidade da rota histórica /casos/novo. Ela continua resolvendo os
+ * modos existentes sem quebrar links antigos; nenhum novo CTA precisa apontar
+ * para esta rota.
  */
 export function resolverModoNovoCaso(
   pathname: string,
