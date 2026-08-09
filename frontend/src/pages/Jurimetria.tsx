@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Database } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
@@ -69,6 +69,12 @@ function StatCard({
   );
 }
 
+function fmtData(value: string | null | undefined) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
+}
+
 export default function Jurimetria() {
   const [ov, setOv] = useState<any>(null);
   const [area, setArea] = useState<any[]>([]);
@@ -76,8 +82,10 @@ export default function Jurimetria() {
   const [tese, setTese] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [desfechos, setDesfechos] = useState<any>(null);
+  const [ragCoverage, setRagCoverage] = useState<any>(null);
+  const [mgCoverage, setMgCoverage] = useState<any>(null);
 
-  // Predição por taxa histórica (heurística estatística, não ML)
+  // Análise prospectiva por histórico interno (heurística descritiva, não ML).
   const [predForm, setPredForm] = useState({
     classe: "",
     tribunal: "TJMG",
@@ -87,11 +95,10 @@ export default function Jurimetria() {
   const [loadingPred, setLoadingPred] = useState(false);
 
   const prever = async () => {
-    if (!predForm.classe) return;
     setLoadingPred(true);
     try {
       const r = await api.get(
-        `/jurimetria/ext/predicao/provimento?classe=${predForm.classe}&tribunal=${predForm.tribunal}&dias_estimados=${predForm.dias}`,
+        `/jurimetria/interno/analise-prospectiva?classe=${predForm.classe}&tribunal=${predForm.tribunal}&dias_estimados=${predForm.dias}`,
       );
       setPredicao(r.data);
     } catch {
@@ -101,11 +108,12 @@ export default function Jurimetria() {
     }
   };
 
-  // Dados externos (DataJud/STJ)
-  const [extStats, setExtStats] = useState<any>(null);
+  // Métricas internas do escritório. DataJud externo não está habilitado aqui.
+  const [internalStats, setInternalStats] = useState<any>(null);
   const [benchmarks, setBenchmarks] = useState<any>(null);
   const [selectedTribunal, setSelectedTribunal] = useState("TJMG");
   const [loadingExt, setLoadingExt] = useState(false);
+  const benchmarkRequestRef = useRef(0);
 
   useEffect(() => {
     api
@@ -126,29 +134,43 @@ export default function Jurimetria() {
       })
       .finally(() => setLoading(false));
 
-    // Estatisticas da base externa
     api
-      .get("/jurimetria/ext/stats")
-      .then((r: any) => setExtStats(r.data))
+      .get("/jurimetria/interno/stats")
+      .then((r: any) => setInternalStats(r.data))
       .catch(() => {});
+
+    Promise.allSettled([
+      api.get("/jurimetria/cobertura-rag"),
+      api.get("/jurimetria/cobertura-mg-jec"),
+    ]).then(([rag, mg]) => {
+      if (rag.status === "fulfilled") setRagCoverage(rag.value.data);
+      if (mg.status === "fulfilled") setMgCoverage(mg.value.data);
+    });
   }, []);
 
-  const carregarBenchmarks = async () => {
+  const carregarBenchmarks = async (tribunal: string) => {
+    const requestId = ++benchmarkRequestRef.current;
     setLoadingExt(true);
     try {
       const r = await api.get(
-        `/jurimetria/ext/benchmarks?tribunal=${selectedTribunal}`,
+        `/jurimetria/interno/benchmarks?tribunal=${tribunal}`,
       );
-      setBenchmarks(r.data);
+      if (requestId === benchmarkRequestRef.current) {
+        setBenchmarks(r.data);
+      }
     } catch {
-      setBenchmarks(null);
+      if (requestId === benchmarkRequestRef.current) {
+        setBenchmarks(null);
+      }
     } finally {
-      setLoadingExt(false);
+      if (requestId === benchmarkRequestRef.current) {
+        setLoadingExt(false);
+      }
     }
   };
 
   useEffect(() => {
-    carregarBenchmarks();
+    void carregarBenchmarks(selectedTribunal);
   }, [selectedTribunal]);
 
   if (loading)
@@ -159,31 +181,146 @@ export default function Jurimetria() {
     );
 
   const taxa = ov?.taxa_sucesso_geral;
-  const totalExt =
-    extStats?.por_tribunal?.reduce((s: number, t: any) => s + t.total, 0) ?? 0;
+  const totalInterno =
+    internalStats?.total_com_tribunal ??
+    internalStats?.por_tribunal?.reduce(
+      (s: number, t: any) => s + t.total,
+      0,
+    ) ??
+    0;
+  const taxaHistorica =
+    predicao?.taxa_historica_favoravel ?? predicao?.probabilidade_provimento;
 
   return (
     <div>
       <PageHeader
         title="Jurimetria"
-        subtitle="Desempenho do escritório + benchmarks externos DataJud/STJ"
+        subtitle="Desempenho e histórico interno do escritório — sem benchmark externo ativo"
       />
 
       {/* Cards resumo escritório */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard
-          label="Taxa de Sucesso"
+          label="Taxa de Teses Decididas"
           value={taxa != null ? `${(taxa * 100).toFixed(1)}%` : "—"}
-          sub="casos encerrados"
+          sub="procedentes ÷ decididas"
         />
-        <StatCard label="Áreas" value={area.length} sub="com processos" />
+        <StatCard
+          label="Áreas"
+          value={area.length}
+          sub="com vínculos de tese"
+        />
         <StatCard label="Tribunais" value={trib.length} sub="no escritório" />
         <StatCard
-          label="Base Externa"
-          value={totalExt.toLocaleString("pt-BR")}
-          sub="processos DataJud"
+          label="Base Interna"
+          value={totalInterno.toLocaleString("pt-BR")}
+          sub="casos com tribunal informado"
         />
       </div>
+
+      {/* Cobertura real do conhecimento */}
+      {(ragCoverage || mgCoverage) && (
+        <div className="card p-5 mb-6">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Database size={16} className="text-primary-500" />
+            <h3 className="font-semibold text-sm text-gray-700 uppercase">
+              Cobertura Real do Conhecimento da IA
+            </h3>
+          </div>
+          <p className="text-xs text-gray-400 mb-4">
+            Contagem do acervo RAG efetivamente armazenado. Ausência de metadado
+            ou fonte validada permanece visível e não é inferida como cobertura.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+            <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <p className="text-xl font-bold text-gray-800">
+                {ragCoverage?.documentos?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+              <p className="text-xs text-gray-500">Docs RAG atuais</p>
+            </div>
+            <div className="text-center p-3 bg-gray-50 rounded-lg">
+              <p className="text-xl font-bold text-gray-800">
+                {ragCoverage?.chunks?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+              <p className="text-xs text-gray-500">Chunks atuais</p>
+            </div>
+            <div className="text-center p-3 bg-primary-50 rounded-lg">
+              <p className="text-xl font-bold text-primary-700">
+                {mgCoverage?.documentos?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+              <p className="text-xs text-primary-600">Docs MG/JEC</p>
+            </div>
+            <div className="text-center p-3 bg-primary-50 rounded-lg">
+              <p className="text-xl font-bold text-primary-700">
+                {mgCoverage?.chunks?.toLocaleString("pt-BR") ?? "—"}
+              </p>
+              <p className="text-xs text-primary-600">Chunks MG/JEC</p>
+            </div>
+            <div className="text-center p-3 bg-green-50 rounded-lg">
+              <p className="text-xl font-bold text-green-700">
+                {mgCoverage?.pct_fonte_validada_explicita != null
+                  ? `${mgCoverage.pct_fonte_validada_explicita}%`
+                  : "—"}
+              </p>
+              <p className="text-xs text-green-600">Fonte validada explícita</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 mb-3">
+            <span>
+              MG/JEC indexados: {mgCoverage?.documentos_indexados ?? "—"}
+            </span>
+            <span>
+              MG/JEC aprovados: {mgCoverage?.documentos_aprovados ?? "—"}
+            </span>
+            <span>
+              Última atualização: {fmtData(mgCoverage?.ultima_atualizacao)}
+            </span>
+          </div>
+          {mgCoverage?.colecoes?.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-gray-400 border-b">
+                    <th className="py-2 pr-3 font-medium">Coleção medida</th>
+                    <th className="py-2 px-3 font-medium text-right">Docs</th>
+                    <th className="py-2 px-3 font-medium text-right">Chunks</th>
+                    <th className="py-2 px-3 font-medium text-right">
+                      Indexados
+                    </th>
+                    <th className="py-2 pl-3 font-medium text-right">
+                      Fonte validada
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mgCoverage.colecoes.slice(0, 10).map((c: any) => (
+                    <tr key={c.colecao} className="border-b border-gray-100">
+                      <td className="py-2 pr-3 text-gray-700">{c.colecao}</td>
+                      <td className="py-2 px-3 text-right text-gray-600">
+                        {c.documentos}
+                      </td>
+                      <td className="py-2 px-3 text-right text-gray-600">
+                        {c.chunks}
+                      </td>
+                      <td className="py-2 px-3 text-right text-gray-600">
+                        {c.indexados}
+                      </td>
+                      <td className="py-2 pl-3 text-right text-gray-600">
+                        {c.fonte_validada_explicita}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-[11px] text-gray-400 mt-3">
+            O crawler TJMG genérico é mapeado logicamente na cobertura, sem
+            duplicar documentos. “Fonte validada” conta somente metadado
+            explícito; ausência não é presumida como validação.
+          </p>
+        </div>
+      )}
 
       {/* Desfechos reais */}
       {desfechos?.por_resultado?.length > 0 && (
@@ -220,13 +357,13 @@ export default function Jurimetria() {
         </div>
       )}
 
-      {/* Seção benchmarks externos */}
+      {/* Histórico interno por tribunal */}
       <div className="card p-5 mb-6">
-        <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-3 mb-2">
           <div className="flex items-center gap-1.5">
             <Database size={16} className="text-primary-500" />
             <h3 className="font-semibold text-sm text-gray-700 uppercase">
-              Benchmarks DataJud
+              Histórico Interno por Tribunal
             </h3>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -245,6 +382,10 @@ export default function Jurimetria() {
             ))}
           </div>
         </div>
+        <p className="text-xs text-gray-400 mb-4">
+          Fonte: casos cadastrados no EJC. Estes números não são DataJud/STJ e
+          não representam benchmark externo.
+        </p>
 
         {loadingExt ? (
           <div className="flex justify-center py-6">
@@ -275,7 +416,7 @@ export default function Jurimetria() {
                 ) ?? "0"}
               </p>
               <p className="text-xs text-gray-500">
-                Processos encerrados na base
+                Processos encerrados na base interna
               </p>
             </div>
             {benchmarks.por_resultado?.length > 0 && (
@@ -348,7 +489,9 @@ export default function Jurimetria() {
                 key={i}
                 className="text-sm text-gray-600 border-l-2 border-warn-400 pl-3 py-0.5"
               >
-                <span className="font-medium text-gray-700">{l.nr_cnj}</span>
+                <span className="font-medium text-gray-700">
+                  {l.titulo || "Caso"}
+                </span>
                 {l.licoes_aprendidas && <> — {l.licoes_aprendidas}</>}
               </li>
             ))}
@@ -356,23 +499,23 @@ export default function Jurimetria() {
         </div>
       )}
 
-      {/* ── Predição por taxa histórica ─────────────────────────────── */}
+      {/* Análise prospectiva descritiva */}
       <div className="card p-5 mt-4">
         <h3 className="font-semibold text-sm text-gray-500 uppercase mb-1">
-          Predição de Provimento
+          Análise Prospectiva — Histórico Interno
         </h3>
         <p className="text-xs text-gray-400 mb-3">
-          Baseada na taxa histórica dos casos do escritório (heurística
-          estatística, não ML).
+          Indicador descritivo dos casos decididos do escritório. Não é modelo
+          preditivo e não representa probabilidade de decisão futura.
         </p>
-        <div className="grid grid-cols-3 gap-3 mb-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
           <div>
             <label className="text-xs text-gray-500 block mb-1">
-              Classe TPU
+              Classe TPU (somente referência)
             </label>
             <input
               type="number"
-              placeholder="Ex: 1116"
+              placeholder="Opcional — não filtra a base atual"
               value={predForm.classe}
               onChange={(e) =>
                 setPredForm((p) => ({ ...p, classe: e.target.value }))
@@ -389,7 +532,7 @@ export default function Jurimetria() {
               }
               className="w-full text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-bronze"
             >
-              {["TJMG", "STJ", "STF", "TRF1", "TRT3"].map((t) => (
+              {TRIBUNAIS.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </select>
@@ -411,53 +554,58 @@ export default function Jurimetria() {
         <div className="flex gap-2 mb-4">
           <button
             onClick={prever}
-            disabled={loadingPred || !predForm.classe}
+            disabled={loadingPred}
             className="btn-primary"
           >
-            {loadingPred ? "Calculando..." : "Calcular"}
+            {loadingPred ? "Calculando..." : "Calcular histórico"}
           </button>
         </div>
 
-        {/* Shape real do backend (/jurimetria/ext/predicao/provimento):
-            probabilidade_provimento (null = amostra insuficiente), amostra,
-            metodo, confianca textual (baixa/média/alta). */}
-        {predicao && predicao.probabilidade_provimento == null && (
+        {predicao && taxaHistorica == null && (
           <p className="text-sm text-warn-600 bg-warn-50 border border-warn-200 rounded px-3 py-2">
-            Amostra histórica insuficiente para estimar ({predicao.metodo}).
-            Encerre mais casos desta classe/tribunal para habilitar a taxa.
+            {predicao.aviso ||
+              `Amostra decidida insuficiente (${predicao.amostra ?? 0} casos).`}
           </p>
         )}
 
-        {predicao != null && predicao.probabilidade_provimento != null && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="text-center p-3 bg-green-50 rounded-lg border border-green-100">
-              <p className="text-2xl font-bold text-green-700">
-                {predicao.probabilidade_provimento}%
-              </p>
-              <p className="text-xs text-green-600">Taxa hist. favorável</p>
+        {predicao != null && taxaHistorica != null && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="text-center p-3 bg-green-50 rounded-lg border border-green-100">
+                <p className="text-2xl font-bold text-green-700">
+                  {taxaHistorica}%
+                </p>
+                <p className="text-xs text-green-600">
+                  Taxa histórica favorável
+                </p>
+              </div>
+              <div className="text-center p-3 bg-danger-50 rounded-lg border border-danger-100">
+                <p className="text-2xl font-bold text-danger-700">
+                  {predicao.desfavoraveis ?? "—"}
+                </p>
+                <p className="text-xs text-danger-600">
+                  Desfechos desfavoráveis
+                </p>
+              </div>
+              <div className="text-center p-3 bg-gray-50 rounded-lg border border-black/[0.05]">
+                <p className="text-2xl font-bold text-gray-700">
+                  {predicao.acordos ?? 0}
+                </p>
+                <p className="text-xs text-gray-500">Acordos (fora da taxa)</p>
+              </div>
+              <div className="text-center p-3 bg-primary-50 rounded-lg border border-primary-100">
+                <p className="text-2xl font-bold capitalize text-primary-700">
+                  {predicao.confianca}
+                </p>
+                <p className="text-xs text-primary-600">
+                  Amostra: {predicao.amostra} decididos
+                </p>
+              </div>
             </div>
-            <div className="text-center p-3 bg-danger-50 rounded-lg border border-danger-100">
-              <p className="text-2xl font-bold text-danger-700">
-                {Math.round((100 - predicao.probabilidade_provimento) * 10) /
-                  10}
-                %
-              </p>
-              <p className="text-xs text-danger-600">Taxa hist. desfavorável</p>
-            </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg border border-black/[0.05]">
-              <p className="text-2xl font-bold capitalize text-gray-700">
-                {predicao.confianca}
-              </p>
-              <p className="text-xs text-gray-500">
-                Confiança ({predicao.amostra} casos)
-              </p>
-            </div>
-            <div className="text-center p-3 bg-primary-50 rounded-lg border border-primary-100 flex items-center justify-center">
-              <p className="text-sm font-medium text-primary-700">
-                {predicao.metodo}
-              </p>
-            </div>
-          </div>
+            {predicao.aviso && (
+              <p className="text-xs text-gray-500 mt-3">{predicao.aviso}</p>
+            )}
+          </>
         )}
       </div>
     </div>
