@@ -14,6 +14,10 @@ mockado, mesma estratégia do test_ingestor_tjmg):
 5) Federação EXPLÍCITA por jurisdição (ALMG/MG-estadual, Betim-municipal, TRT-3,
    TRF-6, juizados): presença no catálogo, URN/consulta bem-formadas e na
    allowlist oficial, categoria correta por esfera, e wiring no ingerir().
+6) Vigência (Issue #636): propaga `extra.legal_status='revogada'` só quando o
+   registro DECLARA a própria revogação; nunca declara vigência por ausência de
+   marcação (o feed Atom não expõe situação normativa) e nunca aplica situação
+   de norma a jurisprudência.
 """
 from __future__ import annotations
 
@@ -179,6 +183,72 @@ async def test_ingerir_varre_dois_tipos_e_categoriza(monkeypatch):
     assert all(u["extra"]["origem"] == "lexml" for u in ups)
     assert leg["extra"]["tipo_fonte"] == "legislacao_referencia"
     assert jur["extra"]["tipo_fonte"] == "jurisprudencia_oficial"
+
+
+# ── 3b. Vigência declarada pelo registro (Issue #636) ─────────────────────────
+
+LEG_REVOGADA = {
+    **LEG_ITEM,
+    "titulo": "Lei nº 8.666, de 21 de junho de 1993 — Revogada pela Lei nº 14.133, de 2021",
+    "numero_acordao": "federal:lei;8.666;1993",
+}
+LEG_QUE_REVOGA_OUTRA = {
+    **LEG_ITEM,
+    "titulo": "Lei nº 14.133, de 1º de abril de 2021",
+    "ementa": "Lei de Licitações e Contratos Administrativos. Revoga a Lei nº "
+              "8.666, de 21 de junho de 1993, e dá outras providências.",
+    "numero_acordao": "federal:lei;14.133;2021",
+}
+JUR_QUE_CITA_REVOGACAO = {
+    **JUR_ITEM,
+    "ementa": "LICITAÇÃO. Aplicação da Lei nº 8.666/1993, revogada pela Lei nº "
+              "14.133/2021, aos contratos firmados na sua vigência.",
+    "numero_acordao": "tribunal.regional.federal.6;ac;0002",
+}
+
+
+def test_situacao_juridica_le_revogacao_declarada_pela_fonte():
+    assert lexml.situacao_juridica(LEG_REVOGADA, "legislacao") == "revogada"
+
+
+def test_situacao_juridica_nao_declara_vigencia_por_ausencia():
+    """LIMITAÇÃO DA FONTE: o feed Atom não traz situação normativa. Sem
+    declaração, nada é gravado — a governança marca 'vigencia_nao_verificada'
+    (o lado seguro) e o documento vira fila de curadoria."""
+    assert lexml.situacao_juridica(LEG_ITEM, "legislacao") is None
+
+
+def test_norma_que_revoga_outra_nao_se_declara_revogada():
+    """Forma ATIVA ('Revoga a Lei X') não casa — só a passiva com agente."""
+    assert lexml.situacao_juridica(LEG_QUE_REVOGA_OUTRA, "legislacao") is None
+
+
+def test_jurisprudencia_nunca_recebe_situacao_de_norma():
+    """A ementa de um acórdão comenta a revogação de NORMAS; ler isso como
+    situação do julgado tiraria jurisprudência válida da recuperação."""
+    assert lexml.situacao_juridica(JUR_QUE_CITA_REVOGACAO, "jurisprudencia") is None
+
+
+async def test_ingerir_propaga_revogacao_e_omite_chave_quando_nao_ha(monkeypatch):
+    ups: list[dict] = []
+    por_tipo = {
+        ("tema1", "legislacao"): [LEG_ITEM, LEG_REVOGADA],
+        ("tema1", "jurisprudencia"): [JUR_QUE_CITA_REVOGACAO],
+    }
+    _prepara(monkeypatch, por_tipo=por_tipo, upserts=ups)
+    await lexml.ingerir(_FakeDB())
+
+    por_chave = {u["chave_origem"]: u["extra"] for u in ups}
+    revogada = por_chave["lexml:leg:federal:lei;8.666;1993"]
+    assert revogada["legal_status"] == "revogada"
+    assert revogada["legal_status_origem"] == "lexml:registro"
+
+    # sem declaração a chave é OMITIDA (não gravada como None): o upsert mescla
+    # `extra` a cada re-feed, e um None apagaria curadoria já registrada.
+    sem_declaracao = por_chave["lexml:leg:minas.gerais:lei;12.345;2020"]
+    assert "legal_status" not in sem_declaracao
+    jur = por_chave["lexml:jur:tribunal.regional.federal.6;ac;0002"]
+    assert "legal_status" not in jur
 
 
 async def test_ingerir_deduplica_intra_execucao(monkeypatch):

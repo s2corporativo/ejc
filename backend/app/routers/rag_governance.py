@@ -19,6 +19,7 @@ from app.core.database import get_db
 from app.core.security import require_roles
 from app.models.rag import KnowledgeDoc
 from app.models.user import User
+from app.services.ingestion_service import ORIGEM_VIGENCIA_CURADORIA
 from app.services.knowledge_governance import (
     AUTHORITY_LABELS,
     LEGAL_STATUS_VALUES,
@@ -136,6 +137,15 @@ async def atualizar_governanca_documento(
 
     extra = dict(doc.extra or {})
     extra.update(values)
+    if "legal_status" in values:
+        # PROVENIÊNCIA da vigência (review de segurança do PR #642): sem este
+        # carimbo, `upsert_documento` não consegue distinguir a decisão do
+        # curador da leitura automática do ingestor — e o re-feed periódico do
+        # Planalto reverteria silenciosamente um diploma marcado 'revogada'
+        # aqui. Ver ingestion_service.ORIGEM_VIGENCIA_CURADORIA.
+        extra["legal_status_origem"] = f"{ORIGEM_VIGENCIA_CURADORIA}:{cu.id}"
+        extra["legal_status_verificado_em"] = datetime.now(timezone.utc).isoformat()
+        extra.pop("legal_status_inferido_em", None)
     if link_official is not None:
         extra["link_official"] = link_official
         if not doc.fonte and link_official:

@@ -4,6 +4,10 @@ Cobre: políticas bloquear/marcar/desligado, critérios de bloqueio (suspeita,
 genérica, julgado sem tribunal+data), verificação contra base mockada
 (verificada vs não verificada), gate no endpoint HITL (409 sem override,
 override justificado auditado) e montagem da rota POST /ia/validar-citacoes.
+
+P0.1: artigo de lei só pode ser aprovado quando positivamente confirmado na
+base legislativa apta a fundamentar direito atual; artigo identificado ou
+localizado apenas em versão superada é bloqueante mesmo sem modo estrito.
 """
 import pytest
 from fastapi import HTTPException
@@ -13,15 +17,12 @@ from app.services.citation_gate import (
 )
 
 
-# ── Fakes de banco (mesmo padrão de test_citation_check) ─────────────────────
-
 class _RowVazia:
     def first(self):
         return None
 
 
 class _DBVazio:
-    """Base RAG vazia: nenhuma súmula/artigo confirmado."""
     async def execute(self, *a, **k):
         return _RowVazia()
 
@@ -32,7 +33,6 @@ class _RowConfirma:
 
 
 class _DBConfirma:
-    """Base RAG que confirma qualquer súmula/artigo consultado."""
     async def execute(self, *a, **k):
         return _RowConfirma()
 
@@ -45,9 +45,8 @@ TEXTO_JULGADO_COMPLETO = (
     "Andrighi, julgado em 12/02/2019, aplica-se a tese."
 )
 TEXTO_SUMULA_OK = "Aplica-se a Súmula 7 do STJ ao caso concreto."
+TEXTO_ARTIGO_NAO_CONFIRMADO = "Aplica-se o art. 300 do CPC ao caso concreto."
 
-
-# ── validar_citacoes: políticas ──────────────────────────────────────────────
 
 async def test_politica_desligado_nao_verifica_nada():
     r = await validar_citacoes(_DBVazio(), TEXTO_SUSPEITO, politica="desligado")
@@ -60,8 +59,8 @@ async def test_politica_desligado_nao_verifica_nada():
 
 async def test_politica_marcar_lista_bloqueantes_mas_nao_bloqueia():
     r = await validar_citacoes(_DBVazio(), TEXTO_SUSPEITO, politica="marcar")
-    assert r.bloqueia_aprovacao is False           # marcar nunca bloqueia
-    assert r.bloqueantes                            # ... mas expõe ao revisor
+    assert r.bloqueia_aprovacao is False
+    assert r.bloqueantes
     assert r.bloqueantes[0].status == "suspeita"
     assert r.motivos
 
@@ -79,7 +78,6 @@ async def test_politica_bloquear_mencao_generica_bloqueia():
 
 
 async def test_julgado_sem_data_bloqueia_em_bloquear():
-    # REsp identificado (tribunal STJ implícito pela classe), mas SEM data.
     r = await validar_citacoes(
         _DBVazio(), TEXTO_JULGADO_INCOMPLETO, politica="bloquear")
     assert r.bloqueia_aprovacao is True
@@ -87,8 +85,6 @@ async def test_julgado_sem_data_bloqueia_em_bloquear():
 
 
 async def test_julgado_completo_nao_bloqueia():
-    # Julgado com tribunal + data no contexto: identificada plausível → passa
-    # (confirmação de inteiro teor é do revisor; base local não tem acórdãos).
     r = await validar_citacoes(
         _DBVazio(), TEXTO_JULGADO_COMPLETO, politica="bloquear")
     assert r.bloqueia_aprovacao is False
@@ -99,7 +95,6 @@ async def test_sumula_confirmada_na_base_verificada_e_nao_bloqueia():
     r = await validar_citacoes(_DBConfirma(), TEXTO_SUMULA_OK, politica="bloquear")
     assert r.verificadas >= 1
     assert r.bloqueia_aprovacao is False
-    # relatório integral preservado (shape do verificador rigoroso)
     assert r.relatorio and r.relatorio["confirmadas"] == r.verificadas
 
 
@@ -107,8 +102,15 @@ async def test_sumula_nao_confirmada_conta_como_nao_verificada():
     r = await validar_citacoes(_DBVazio(), TEXTO_SUMULA_OK, politica="marcar")
     assert r.verificadas == 0
     assert r.nao_verificadas == r.total >= 1
-    # Súmula em faixa plausível não é bloqueante (é "identificada", não julgado)
     assert r.bloqueia_aprovacao is False
+
+
+async def test_artigo_nao_confirmado_bloqueia_sem_modo_estrito():
+    r = await validar_citacoes(
+        _DBVazio(), TEXTO_ARTIGO_NAO_CONFIRMADO, politica="bloquear")
+    assert r.verificadas == 0
+    assert r.bloqueia_aprovacao is True
+    assert any(b.tipo == "artigo" for b in r.bloqueantes)
 
 
 async def test_texto_sem_citacoes_nunca_bloqueia():
@@ -117,26 +119,32 @@ async def test_texto_sem_citacoes_nunca_bloqueia():
 
 
 def test_politica_invalida_cai_no_modo_seguro_bloquear(monkeypatch):
-    # Fail-secure: um valor inválido/typo NÃO pode rebaixar o gate para o modo
-    # permissivo "marcar" (deixaria passar citação inventada) — cai em "bloquear",
-    # coerente com o novo default seguro de CITACOES_POLITICA.
     from app.core.config import get_settings
     from app.services.citation_gate import politica_citacoes
     monkeypatch.setattr(get_settings(), "CITACOES_POLITICA", "banana")
     assert politica_citacoes() == "bloquear"
 
 
-def test_avaliar_bloqueantes_ignora_verificadas_e_identificadas_completas():
+def test_avaliar_bloqueantes_ignora_verificadas_e_julgados_identificados_completos():
     rel = {"citacoes": [
         {"status": "verificada", "tipo": "sumula", "citacao": "Súmula 7 STJ"},
+        {"status": "verificada", "tipo": "artigo", "citacao": "art. 5 CF"},
         {"status": "identificada", "tipo": "recurso", "citacao": "REsp 1",
          "tribunal": "STJ", "data": "12/02/2019"},
-        {"status": "identificada", "tipo": "artigo", "citacao": "art. 5 CF"},
     ]}
     assert avaliar_bloqueantes(rel) == []
 
 
-# ── Gate no fluxo HITL (PATCH /ai/logs/{id}/hitl) ────────────────────────────
+def test_avaliar_bloqueantes_artigo_identificado_e_desatualizado_bloqueiam():
+    rel = {"citacoes": [
+        {"status": "identificada", "tipo": "artigo", "citacao": "art. 300 CPC"},
+        {"status": "possivelmente_desatualizada", "tipo": "artigo",
+         "citacao": "art. 186 CC"},
+    ]}
+    bloqueantes = avaliar_bloqueantes(rel, modo_estrito=False)
+    assert len(bloqueantes) == 2
+    assert all(b["tipo"] == "artigo" for b in bloqueantes)
+
 
 class _Role:
     value = "advogado"
@@ -159,7 +167,6 @@ class _FakeLog:
 
 
 class _ResultHITL:
-    """Serve tanto o select(AILog) quanto os lookups text() do verificador."""
     def __init__(self, log):
         self._log = log
 
@@ -167,13 +174,13 @@ class _ResultHITL:
         return self._log
 
     def first(self):
-        return None  # base RAG vazia
+        return None
 
 
 class _DBHITL:
     def __init__(self, log):
         self.log = log
-        self.added = []          # AuditLog do override (criar_audit_log)
+        self.added = []
 
     def add(self, obj):
         self.added.append(obj)
@@ -237,7 +244,7 @@ async def test_hitl_politica_marcar_nao_bloqueia(monkeypatch):
     r = await atualizar_hitl("log-1", HITLRevisaoRequest(status="revisado"),
                              db=_DBHITL(log), cu=_CU())
     assert "revisado" in r["detail"]
-    assert log.fontes_rag is None  # sem override → sem rastro extra
+    assert log.fontes_rag is None
 
 
 async def test_hitl_descartar_nunca_bloqueia(monkeypatch):
@@ -249,8 +256,6 @@ async def test_hitl_descartar_nunca_bloqueia(monkeypatch):
                              db=_DBHITL(log), cu=_CU())
     assert "descartado" in r["detail"]
 
-
-# ── Endpoint sob demanda + validador de resposta ─────────────────────────────
 
 def test_rota_validar_citacoes_montada():
     from app.main import app

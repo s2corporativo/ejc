@@ -33,6 +33,15 @@
 # o gate (números de artigo passariam a "existir" via ementa alheia). A busca
 # semântica default (categorias=None) varre TODAS as categorias, então esses
 # documentos seguem recuperáveis normalmente — só não contaminam o gate.
+#
+# VIGÊNCIA (Issue #636) — LIMITAÇÃO DA FONTE: o feed Atom do federador não
+# expõe campo de situação normativa, então este ingestor NÃO declara vigência
+# por ausência de marcação; só propaga `extra.legal_status='revogada'` quando o
+# próprio TÍTULO do registro afirma a revogação (ver `situacao_juridica`). O
+# resumo/ementa pode mencionar OUTRA norma revogada e, por isso, não é usado
+# como prova da situação do item atual. O restante permanece
+# 'vigencia_nao_verificada' na governança — e, com
+# RAG_EXIGIR_VIGENCIA_VERIFICADA ligada, fora da recuperação até curadoria.
 from __future__ import annotations
 
 import hashlib
@@ -234,6 +243,42 @@ def _chave(item: dict, tipo: str) -> str:
     return f"lexml:{ns}:{h}"
 
 
+# ── Vigência declarada no registro LexML (Issue #636) ─────────────────────────
+# LIMITAÇÃO HONESTA da fonte: o feed Atom do federador (o que
+# jurisprudencia_externa.buscar_lexml consome) traz title/summary/link/author/
+# published/id — NÃO há campo estruturado de situação normativa (vigente /
+# revogada). Logo NÃO se declara vigência por ausência de marcação: um registro
+# sem marcação continua sem `legal_status` e a governança o classifica como
+# 'vigencia_nao_verificada' (o lado seguro), o que exige curadoria manual.
+#
+# Para evitar falsa autorrevogação, somente o TÍTULO do item é aceito como
+# evidência positiva. O resumo/ementa frequentemente descreve relações entre
+# normas e pode conter frases como "Lei 8.666 revogada pela Lei 14.133" dentro
+# do registro da própria Lei 14.133. Usar esse texto para classificar o item
+# atual faria uma referência histórica revogar a norma errada. Perder uma
+# marcação que apareça apenas na ementa é fail-closed: o item segue sem status
+# positivo e exige curadoria.
+_RE_ATO_REVOGADO = re.compile(
+    r"revogad[oa]s?\s+(?:integralmente\s+|expressamente\s+|tacitamente\s+)?"
+    r"pel[ao]s?\b",
+    re.IGNORECASE,
+)
+
+
+def situacao_juridica(item: dict, tipo: str) -> str | None:
+    """Retorna `revogada` só quando o TÍTULO da legislação declara a própria
+    revogação.
+
+    A ementa/resumo não é prova de autorrevogação porque pode mencionar outra
+    norma revogada. Ausência de declaração mantém `None`, que a governança trata
+    como vigência não verificada. Jurisprudência nunca herda status normativo.
+    """
+    if tipo != "legislacao":
+        return None
+    titulo = str(item.get("titulo") or "").strip()
+    return "revogada" if _RE_ATO_REVOGADO.search(titulo) else None
+
+
 def _monta_conteudo(item: dict, tipo: str) -> str:
     """Concatena as partes citáveis do registro LexML (título + metadados +
     ementa/resumo). Não inventa texto: usa só o que o federador retornou."""
@@ -299,6 +344,18 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
             link = it.get("link_original") or ""
             fonte = link if _url_oficial(link) else url_consulta
 
+            # Vigência: só grava quando a FONTE declara (ver situacao_juridica).
+            # A chave é OMITIDA quando não há declaração — `upsert_documento`
+            # mescla `extra` a cada re-feed, e gravar None apagaria uma decisão
+            # de curadoria já registrada no documento.
+            extra_vigencia: dict = {}
+            legal_status = situacao_juridica(it, tipo)
+            if legal_status:
+                extra_vigencia = {
+                    "legal_status": legal_status,
+                    "legal_status_origem": "lexml:titulo",
+                }
+
             try:
                 res = await upsert_documento(
                     db,
@@ -328,6 +385,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                         "origem": "lexml",
                         "rag_status": "aprovado",
                         "tipo_fonte": _TIPO_FONTE[tipo],
+                        **extra_vigencia,
                     },
                     confianca="alta",   # federador oficial (Senado/LexML)
                 )
