@@ -14,20 +14,38 @@ Sem régua, toda melhoria é aposta.
 
 ## 1. Monte o gold set
 
-Consulte também [`GUIA_CURADORIA_GOLD_SET.md`](GUIA_CURADORIA_GOLD_SET.md) e
+Consulte também [`GUIA_CURADORIA_GOLD_SET.md`](GUIA_CURADORIA_GOLD_SET.md),
+[`GOLD_SET_GOVERNANCE.md`](GOLD_SET_GOVERNANCE.md) e
 [`gold_set.template.json`](gold_set.template.json).
 
-Copie `gold_set.example.jsonl` para `gold_set.jsonl` e cresça para **50–150 casos
-reais** (pseudonimizados), cobrindo as áreas de atuação. Cada linha é um JSON:
+Use `gold_set.example.jsonl` apenas para entender o formato sintético. Para o
+corpus real, parta de `gold_set.template.json` e crie `gold_set.jsonl`, crescendo
+para **50–150 casos reais pseudonimizados**, cobrindo as áreas de atuação e os
+cenários `normal`, `fronteira` e `excecao`. Cada linha é um JSON independente.
+Exemplo resumido de um caso real (os valores de curadoria são ilustrativos):
 
 ```json
-{"id": "trab-001", "area": "trabalhista",
- "query": "prazo prescricional para verbas rescisórias",
- "expected_titulos": ["CLT art. 11", "Súmula 308 TST"],
- "expected_categorias": ["legislacao", "sumula"],
- "expected_citacoes": ["Súmula 308 do TST"],
- "notes": "referência humana"}
+{"id":"trab-001","area":"trabalhista","cenario":"normal","ficticio":false,
+ "query":"prazo prescricional para verbas rescisórias",
+ "expected_titulos":["CLT art. 11","Súmula 308 TST"],
+ "expected_categorias":["legislacao","sumula"],
+ "expected_citacoes":["Súmula 308 do TST"],
+ "curadoria":{"curador":"advogado-area","revisor":"revisor-independente",
+ "revisado_em":"YYYY-MM-DD","vigencia_conferida_em":"YYYY-MM-DD",
+ "fontes_oficiais":[{"titulo":"Fonte oficial","url":"https://dominio-oficial.gov.br/caminho",
+ "consultada_em":"YYYY-MM-DD","identificador_versao":"norma/julgado + versão ou data do texto conferido"}]},
+ "notes":"referência humana sem PII"}
 ```
+
+Regras bloqueantes do corpus real:
+
+- curador e revisor são identidades distintas;
+- consulta da fonte e conferência de vigência não podem ser posteriores à revisão;
+- toda fonte oficial precisa identificar a versão revisada por `identificador_versao` ou `hash_sha256`;
+- o sanitizer de PII examina todo o payload e falha fechado se ficar indisponível;
+- IDs são únicos em todo o acervo, mesmo quando repartido em vários arquivos;
+- RAG exige `query` + `expected_titulos`; peças exigem `fatos`, `tipo_peca_esperado`, `teses_esperadas` e `criterios`;
+- placeholders/fonte fictícia são proibidos em `expected_citacoes` e `jurisprudencia_esperada` de casos reais.
 
 O gold set é o ativo mais valioso do processo — só o escritório o produz.
 
@@ -111,6 +129,15 @@ python -m app.eval.run_eval --smoke \
   --areas-obrigatorias penal,trabalhista --min-casos-area 10
 ```
 
+A governança do corpus também pode exigir amplitude de cenários antes de chamar o
+gate de institucional:
+
+```bash
+python -m app.eval.gold_governance --require-real \
+  --areas penal,trabalhista,consumidor,tributario,ambiental --min-casos-area 10 \
+  --cenarios normal,fronteira,excecao --min-casos-cenario 5 --min-total 100
+```
+
 > **Estado atual (honesto):** o repositório só tem gold sets de **exemplo**, então
 > a cobertura real por área é **zero** e o gate acima falha de propósito se ligado.
 > O mecanismo está pronto; o que falta é conteúdo — e conteúdo jurídico gold só
@@ -166,24 +193,26 @@ Cresça-o cobrindo as intenções reais do escritório. Teste offline determiní
 
 Scaffold pronto para o escritório preencher:
 
-- **Template comentado**: `gold_set_pecas.template.json` — todos os campos de um
-  caso (`id`, `area`, `ficticio`, `fatos`, `pedidos`, `tipo_peca_esperado`,
-  `teses_esperadas`, `jurisprudencia_esperada`, `criterios`, `notes`).
-- **Exemplos FICTÍCIOS**: `gold_set_pecas.example.jsonl` — 3 casos 100% sintéticos
-  (`ficticio: true`), com jurisprudência **placeholder** (`SUMULA-FICTICIA-XXX`).
-  Servem só para demonstrar o formato — **nunca** copie os placeholders.
+- **Template comentado**: `gold_set_pecas.template.json` — inclui payload avaliável,
+  classificação de cenário e a mesma trilha `curadoria` obrigatória do gold RAG;
+- **Exemplos FICTÍCIOS**: `gold_set_pecas.example.jsonl` — casos 100% sintéticos.
+  Servem só para demonstrar o formato. Placeholders de jurisprudência são
+  tolerados apenas nos arquivos `.example.*` e são bloqueados em corpus real.
 
 ### Curadoria
 
-1. Copie o formato dos exemplos para `gold_set_pecas.jsonl`.
+1. Use `gold_set_pecas.template.json` como fonte do schema do caso real; os exemplos não são base para copiar metadados de proveniência.
 2. Pseudonimize nomes, documentos, endereços e valores identificáveis.
-3. Liste apenas jurisprudência real conferida na fonte oficial.
-4. Cresça para 50–150 casos pseudonimizados.
-5. Marque `ficticio: false` nos casos reais.
+3. Classifique `cenario` como `normal`, `fronteira` ou `excecao`.
+4. Preencha `curadoria` com curador, revisor independente, datas e fonte oficial; a fonte deve ter `identificador_versao` ou `hash_sha256`.
+5. Liste apenas jurisprudência real conferida na fonte oficial.
+6. Confirme que `fatos`, `tipo_peca_esperado`, `teses_esperadas` e `criterios` estão preenchidos.
+7. Cresça para 50–150 casos pseudonimizados e marque `ficticio: false` somente nos casos reais revisados.
 
 ### Como rodar
 
 ```bash
+python -m app.eval.gold_governance
 python -m app.eval.run_eval --smoke
 python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6
 ```
