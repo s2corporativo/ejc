@@ -117,21 +117,36 @@ export default function Produtividade() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let ativo = true;
     setLoading(true);
     api
       .get(`/analytics/produtividade?periodo=${periodo}`)
-      .then((r: { data: ProdData }) => setData(r.data))
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
+      .then((r: { data: ProdData }) => {
+        if (ativo) setData(r.data);
+      })
+      .catch(() => {
+        if (ativo) setData(null);
+      })
+      .finally(() => {
+        if (ativo) setLoading(false);
+      });
+
+    // A resposta de um período anterior nunca pode sobrescrever o snapshot
+    // atual nem liberar exportação com metadados divergentes.
+    return () => {
+      ativo = false;
+    };
   }, [periodo]);
 
-  const registrarExportacao = async (formato: "csv" | "pdf") => {
-    if (!data) return false;
+  const registrarExportacao = async (
+    formato: "csv" | "pdf",
+    snapshot: ProdData,
+  ) => {
     try {
       await api.post("/analytics/produtividade/export-event", {
-        periodo,
+        periodo: snapshot.periodo,
         formato,
-        linhas: data.por_advogado.length,
+        linhas: snapshot.por_advogado.length,
       });
       return true;
     } catch (e: any) {
@@ -143,10 +158,16 @@ export default function Produtividade() {
     }
   };
 
+  const snapshotExportavel = () => {
+    if (!data || loading || data.periodo !== periodo) return null;
+    return data;
+  };
+
   const exportarCsv = async () => {
-    if (!data || !(await registrarExportacao("csv"))) return;
+    const snapshot = snapshotExportavel();
+    if (!snapshot || !(await registrarExportacao("csv", snapshot))) return;
     exportCsv(
-      data.por_advogado.map((a) => ({
+      snapshot.por_advogado.map((a) => ({
         advogado: a.nome,
         horas: a.horas,
         horas_faturavel: a.horas_faturavel,
@@ -154,25 +175,46 @@ export default function Produtividade() {
         lancamentos: a.lancamentos,
         casos: a.casos,
       })),
-      `produtividade-${periodo}`,
+      `produtividade-${snapshot.periodo}`,
     );
   };
 
   const exportarPdf = async () => {
-    if (!data || !(await registrarExportacao("pdf"))) return;
+    const snapshot = snapshotExportavel();
+    if (!snapshot) return;
+
+    // `window.open` precisa ocorrer dentro do gesto do usuário. Se o navegador
+    // bloquear o popup, não registramos uma exportação que nunca poderá abrir.
+    const janela = window.open("", "_blank");
+    if (!janela) {
+      toast.error(
+        "O navegador bloqueou a janela do PDF. Autorize pop-ups para o EJC e tente novamente.",
+      );
+      return;
+    }
+    janela.document.title = "Preparando relatório de produtividade";
+
+    if (!(await registrarExportacao("pdf", snapshot))) {
+      janela.close();
+      return;
+    }
+
     exportPdf(
-      `Produtividade — ${periodo}`,
+      `Produtividade — ${snapshot.periodo}`,
       ["Advogado", "Horas", "HH Fat.", "%Fat.", "Casos"],
-      data.por_advogado.map((a) => [
+      snapshot.por_advogado.map((a) => [
         a.nome,
         `${a.horas}h`,
         `${a.horas_faturavel}h`,
         `${a.pct_faturavel}%`,
         String(a.casos),
       ]),
+      `produtividade-${snapshot.periodo}.pdf`,
+      janela,
     );
   };
 
+  const podeExportar = Boolean(data && !loading && data.periodo === periodo);
   const maxAdv = data
     ? Math.max(...data.por_advogado.map((a) => a.horas), 1)
     : 1;
@@ -200,6 +242,7 @@ export default function Produtividade() {
               onClick={() => void exportarCsv()}
               className="btn-secondary text-xs px-3 py-1.5"
               title="Exportar CSV"
+              disabled={!podeExportar}
             >
               <Download className="w-3.5 h-3.5" /> CSV
             </button>
@@ -207,6 +250,7 @@ export default function Produtividade() {
               onClick={() => void exportarPdf()}
               className="btn-secondary text-xs px-3 py-1.5"
               title="Exportar PDF"
+              disabled={!podeExportar}
             >
               <FileType2 className="w-3.5 h-3.5" /> PDF
             </button>
