@@ -7,12 +7,12 @@ recursos do cliente B, recebe 404 e SÓ enxerga o que é seu (assert positivo).
 
 Pontos de isolamento cobertos (cada teste comenta o que prova):
   • portal.caso_detalhe / meus_casos  — caso por client_id
-  • portal.documentos                 — só docs NORMAIS do próprio cliente
+  • portal.documentos                 — publicação explícita + confidencialidade
+                                        normal + client_id próprio
   • portal.financeiro                 — honorários do próprio cliente
   • portal.listar/enviar_mensagem     — chat isolado por caso do cliente
-  • signatures.listar / assinar       — assinaturas por client_id (rota que o
-                                        middleware LIBERA ao cliente_externo:
-                                        o isolamento é 100% do router)
+  • signatures.listar / assinar       — assinatura multiparte por client_id e
+                                        signatário individual
   • mensagens._verificar_acesso       — cross-carteira entre advogados (staff
                                         sem ownership do caso → 403)
   • portal_documentos                 — solicitações por client_id
@@ -43,7 +43,10 @@ pytestmark = pytest.mark.skipif(
 async def _criar_cliente(db, nome: str) -> str:
     cid = str(uuid4())
     await db.execute(
-        text("INSERT INTO clients (id, tipo, nome, email, status) " "VALUES (:id, 'PF', :nome, :email, 'ativo')"),
+        text(
+            "INSERT INTO clients (id, tipo, nome, email, status) "
+            "VALUES (:id, 'PF', :nome, :email, 'ativo')"
+        ),
         {"id": cid, "nome": nome, "email": f"{cid[:8]}@idor.local"},
     )
     return cid
@@ -74,7 +77,9 @@ async def _criar_staff(db, role: str = "advogado") -> str:
     return uid
 
 
-async def _criar_caso(db, client_id: str, titulo: str, resp_id: str | None = None) -> str:
+async def _criar_caso(
+    db, client_id: str, titulo: str, resp_id: str | None = None
+) -> str:
     case_id = str(uuid4())
     await db.execute(
         text(
@@ -87,14 +92,28 @@ async def _criar_caso(db, client_id: str, titulo: str, resp_id: str | None = Non
     return case_id
 
 
-async def _criar_documento(db, client_id: str, case_id: str | None, titulo: str, confid: str = "normal") -> str:
+async def _criar_documento(
+    db,
+    client_id: str,
+    case_id: str | None,
+    titulo: str,
+    confid: str = "normal",
+    publicado: bool = True,
+) -> str:
+    """Cria massa com publicação explícita controlada pelo teste.
+
+    `normal` sozinho NÃO implica exposição. O default `publicado=True` preserva
+    a intenção histórica dos testes que criavam um documento para ser visto no
+    Portal; cenários de fail-closed passam `publicado=False` explicitamente.
+    """
     doc_id = str(uuid4())
     await db.execute(
         text(
             "INSERT INTO documents (id, titulo, filename, filepath, client_id, "
-            "case_id, confidencialidade) VALUES "
+            "case_id, confidencialidade, publicado_portal, publicado_em) VALUES "
             "(:id, :titulo, :fn, :fp, :cid, :case, "
-            " CAST(:conf AS docconfidencialidade))"
+            " CAST(:conf AS docconfidencialidade), :pub, "
+            " CASE WHEN :pub THEN NOW() ELSE NULL END)"
         ),
         {
             "id": doc_id,
@@ -104,6 +123,7 @@ async def _criar_documento(db, client_id: str, case_id: str | None, titulo: str,
             "cid": client_id,
             "case": case_id,
             "conf": confid,
+            "pub": publicado,
         },
     )
     return doc_id
@@ -121,15 +141,45 @@ async def _criar_fee(db, client_id: str, descricao: str) -> str:
     return fee_id
 
 
-async def _criar_signature(db, client_id: str, document_id: str, status: str = "pendente") -> str:
+async def _criar_signature(
+    db,
+    client_id: str,
+    document_id: str,
+    status: str = "pendente",
+    *,
+    signer_user_id: str | None = None,
+    hash_sha256: str = "a" * 64,
+) -> str:
     sig_id = str(uuid4())
     await db.execute(
         text(
             "INSERT INTO signature_requests (id, document_id, client_id, "
             "hash_sha256, status) VALUES (:id, :doc, :cid, :h, :st)"
         ),
-        {"id": sig_id, "doc": document_id, "cid": client_id, "h": uuid4().hex + uuid4().hex, "st": status},
+        {
+            "id": sig_id,
+            "doc": document_id,
+            "cid": client_id,
+            "h": hash_sha256,
+            "st": status,
+        },
     )
+    if signer_user_id:
+        await db.execute(
+            text(
+                "INSERT INTO signature_signers "
+                "(id, signature_request_id, user_id, nome_snapshot, "
+                "email_snapshot, papel_snapshot, status) "
+                "SELECT :sid, :sig, u.id, u.full_name, u.email, 'cliente', "
+                "CAST('pendente' AS signaturesignerstatus) "
+                "FROM users u WHERE u.id = :uid"
+            ),
+            {
+                "sid": str(uuid4()),
+                "sig": sig_id,
+                "uid": signer_user_id,
+            },
+        )
     return sig_id
 
 
@@ -146,7 +196,10 @@ async def _inserir_msg_escritorio(db, case_id: str, autor_id: str, msg: str) -> 
 async def _criar_solicitacao(db, client_id: str, case_id: str) -> str:
     sol_id = str(uuid4())
     await db.execute(
-        text("INSERT INTO solicitacoes_documentos (id, case_id, client_id) " "VALUES (:id, :case, :cid)"),
+        text(
+            "INSERT INTO solicitacoes_documentos (id, case_id, client_id) "
+            "VALUES (:id, :case, :cid)"
+        ),
         {"id": sol_id, "case": case_id, "cid": client_id},
     )
     return sol_id
@@ -161,13 +214,25 @@ async def _carregar_user(db, uid: str):
 async def _limpar(db, *, client_ids=(), user_ids=()):
     for uid in user_ids:
         await db.execute(text("SET LOCAL ejc.audit_logs_permitir_expurgo = 'on'"))
-        await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
-        await db.execute(text("DELETE FROM notifications WHERE user_id = :id"), {"id": uid})
-        await db.execute(text("DELETE FROM portal_mensagens WHERE autor_id = :id"), {"id": uid})
-    for cid in client_ids:
-        await db.execute(text("DELETE FROM signature_requests WHERE client_id = :id"), {"id": cid})
         await db.execute(
-            text("DELETE FROM portal_mensagens WHERE case_id IN " "(SELECT id FROM cases WHERE client_id = :id)"),
+            text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid}
+        )
+        await db.execute(
+            text("DELETE FROM notifications WHERE user_id = :id"), {"id": uid}
+        )
+        await db.execute(
+            text("DELETE FROM portal_mensagens WHERE autor_id = :id"), {"id": uid}
+        )
+    for cid in client_ids:
+        await db.execute(
+            text("DELETE FROM signature_requests WHERE client_id = :id"),
+            {"id": cid},
+        )
+        await db.execute(
+            text(
+                "DELETE FROM portal_mensagens WHERE case_id IN "
+                "(SELECT id FROM cases WHERE client_id = :id)"
+            ),
             {"id": cid},
         )
         await db.execute(
@@ -177,8 +242,13 @@ async def _limpar(db, *, client_ids=(), user_ids=()):
             ),
             {"id": cid},
         )
-        await db.execute(text("DELETE FROM solicitacoes_documentos WHERE client_id = :id"), {"id": cid})
-        await db.execute(text("DELETE FROM documents WHERE client_id = :id"), {"id": cid})
+        await db.execute(
+            text("DELETE FROM solicitacoes_documentos WHERE client_id = :id"),
+            {"id": cid},
+        )
+        await db.execute(
+            text("DELETE FROM documents WHERE client_id = :id"), {"id": cid}
+        )
         await db.execute(text("DELETE FROM fees WHERE client_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM cases WHERE client_id = :id"), {"id": cid})
     for uid in user_ids:
@@ -218,16 +288,13 @@ async def test_caso_detalhe_e_meus_casos_isolam_por_cliente():
         try:
             user_a = await _carregar_user(db, ua)
 
-            # POSITIVO: A vê o próprio caso.
             det = await caso_detalhe(case_id=caso_a, db=db, cu=user_a)
             assert det["caso"]["titulo"] == f"Caso A {tok}"
 
-            # IDOR: A forjando o id do caso de B → 404 (WHERE client_id = A).
             with pytest.raises(HTTPException) as exc:
                 await caso_detalhe(case_id=caso_b, db=db, cu=user_a)
             assert exc.value.status_code == 404
 
-            # Listagem: só o caso de A.
             ids = {c["id"] for c in (await meus_casos(db=db, cu=user_a))["data"]}
             assert caso_a in ids and caso_b not in ids
         finally:
@@ -235,14 +302,17 @@ async def test_caso_detalhe_e_meus_casos_isolam_por_cliente():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Documentos: só NORMAIS do próprio cliente (nem confidenciais, nem de terceiros)
+# Documentos: publicação explícita + classificação normal + client_id próprio
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-async def test_documentos_portal_apenas_normais_do_proprio_cliente():
-    """Prova: A recebe só o próprio documento NORMAL. Não recebe: (a) o próprio
-    documento CONFIDENCIAL (filtro de confidencialidade) nem (b) o documento
-    normal de B (isolamento por client_id)."""
+async def test_documentos_portal_exigem_publicacao_normal_e_cliente_proprio():
+    """Prova as três barreiras simultâneas do Portal documental.
+
+    A vê somente o próprio documento NORMAL e PUBLICADO. Não recebe:
+    (a) normal não publicado; (b) confidencial ainda que flagado como publicado;
+    (c) documento normal/publicado de outro cliente.
+    """
     from app.core.database import AsyncSessionLocal
     from app.routers.portal import documentos
 
@@ -251,16 +321,26 @@ async def test_documentos_portal_apenas_normais_do_proprio_cliente():
         cli_a = await _criar_cliente(db, f"Cliente A {tok}")
         cli_b = await _criar_cliente(db, f"Cliente B {tok}")
         ua = await _criar_portal_user(db, cli_a)
-        doc_a_normal = await _criar_documento(db, cli_a, None, f"A-normal-{tok}", "normal")
-        doc_a_conf = await _criar_documento(db, cli_a, None, f"A-conf-{tok}", "confidencial")
-        doc_b_normal = await _criar_documento(db, cli_b, None, f"B-normal-{tok}", "normal")
+        doc_a_normal = await _criar_documento(
+            db, cli_a, None, f"A-normal-{tok}", "normal", True
+        )
+        doc_a_nao_publicado = await _criar_documento(
+            db, cli_a, None, f"A-nao-publicado-{tok}", "normal", False
+        )
+        doc_a_conf = await _criar_documento(
+            db, cli_a, None, f"A-conf-{tok}", "confidencial", True
+        )
+        doc_b_normal = await _criar_documento(
+            db, cli_b, None, f"B-normal-{tok}", "normal", True
+        )
         await db.commit()
         try:
             user_a = await _carregar_user(db, ua)
             ids = {d["id"] for d in (await documentos(db=db, cu=user_a))["data"]}
-            assert doc_a_normal in ids  # POSITIVO
-            assert doc_a_conf not in ids  # confidencial não vaza p/ portal
-            assert doc_b_normal not in ids  # doc de terceiro não vaza
+            assert doc_a_normal in ids
+            assert doc_a_nao_publicado not in ids
+            assert doc_a_conf not in ids
+            assert doc_b_normal not in ids
         finally:
             await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
 
@@ -285,7 +365,9 @@ async def test_financeiro_portal_apenas_do_proprio_cliente():
         await db.commit()
         try:
             user_a = await _carregar_user(db, ua)
-            descrs = {f["descricao"] for f in (await financeiro(db=db, cu=user_a))["data"]}
+            descrs = {
+                f["descricao"] for f in (await financeiro(db=db, cu=user_a))["data"]
+            }
             assert f"Honorario-A-{tok}" in descrs
             assert f"Honorario-B-{tok}" not in descrs
         finally:
@@ -299,8 +381,7 @@ async def test_financeiro_portal_apenas_do_proprio_cliente():
 
 async def test_mensagens_portal_isola_caso_por_cliente():
     """Prova: A lê o chat do PRÓPRIO caso (200); forjar o caso de B para LER
-    (GET) ou ESCREVER (POST) → 404 (_caso_do_cliente). Fecha o IDOR nos dois
-    verbos — ler mensagens de outro cliente e injetar mensagem no caso dele."""
+    (GET) ou ESCREVER (POST) → 404 (_caso_do_cliente)."""
     from app.core.database import AsyncSessionLocal
     from app.routers.portal import (
         MsgIn,
@@ -321,64 +402,90 @@ async def test_mensagens_portal_isola_caso_por_cliente():
         try:
             user_a = await _carregar_user(db, ua)
 
-            # POSITIVO: A lê o chat do próprio caso.
             msgs = await listar_mensagens_portal(case_id=caso_a, db=db, cu=user_a)
             assert any(m["mensagem"] == f"ola A {tok}" for m in msgs)
 
-            # IDOR leitura: A no caso de B → 404.
             with pytest.raises(HTTPException) as exc:
                 await listar_mensagens_portal(case_id=caso_b, db=db, cu=user_a)
             assert exc.value.status_code == 404
 
-            # IDOR escrita: A injetando mensagem no caso de B → 404.
             with pytest.raises(HTTPException) as exc2:
-                await enviar_mensagem_portal(case_id=caso_b, body=MsgIn(mensagem="intruso"), db=db, cu=user_a)
+                await enviar_mensagem_portal(
+                    case_id=caso_b,
+                    body=MsgIn(mensagem="intruso"),
+                    db=db,
+                    cu=user_a,
+                )
             assert exc2.value.status_code == 404
         finally:
             await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua, adv])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Assinaturas: rota LIBERADA ao cliente_externo pelo middleware → isolamento é
-# 100% do router. É o ponto mais sensível da allowlist.
+# Assinaturas: rota liberada ao cliente_externo pelo middleware; isolamento é
+# do router + signatário individual.
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-async def test_signatures_listar_e_assinar_isolam_por_cliente():
-    """Prova: em /signatures (rota que o middleware libera ao cliente_externo):
-    • listar → A vê só a própria solicitação, nunca a de B;
-    • assinar → A assina a PRÓPRIA pendente (200); forjar o id da de B → 404.
+async def test_signatures_listar_e_assinar_isolam_por_cliente(monkeypatch):
+    """Prova listagem cross-client, signer individual e aceite positivo.
+
+    O hash físico é substituído por valor determinístico apenas neste teste de
+    autorização; a revalidação real do arquivo é coberta pelos testes próprios
+    de assinatura/integridade.
     """
     from app.core.database import AsyncSessionLocal
-    from app.routers.signatures import assinar, listar
+    from app.routers import signatures as signatures_router
 
     tok = uuid4().hex[:6]
     async with AsyncSessionLocal() as db:
         cli_a = await _criar_cliente(db, f"Cliente A {tok}")
         cli_b = await _criar_cliente(db, f"Cliente B {tok}")
         ua = await _criar_portal_user(db, cli_a)
-        doc_a = await _criar_documento(db, cli_a, None, f"proc-A-{tok}", "normal")
-        doc_b = await _criar_documento(db, cli_b, None, f"proc-B-{tok}", "normal")
-        sig_a = await _criar_signature(db, cli_a, doc_a, "pendente")
-        sig_b = await _criar_signature(db, cli_b, doc_b, "pendente")
+        doc_a = await _criar_documento(
+            db, cli_a, None, f"proc-A-{tok}", "normal", True
+        )
+        doc_b = await _criar_documento(
+            db, cli_b, None, f"proc-B-{tok}", "normal", True
+        )
+        sig_a = await _criar_signature(
+            db,
+            cli_a,
+            doc_a,
+            "pendente",
+            signer_user_id=ua,
+            hash_sha256="a" * 64,
+        )
+        sig_b = await _criar_signature(
+            db, cli_b, doc_b, "pendente", hash_sha256="b" * 64
+        )
         await db.commit()
         try:
             user_a = await _carregar_user(db, ua)
 
-            # listar: só a solicitação de A.
-            ids = {s["id"] for s in (await listar(db=db, cu=user_a))["data"]}
+            ids = {
+                s["id"]
+                for s in (await signatures_router.listar(db=db, cu=user_a))["data"]
+            }
             assert sig_a in ids and sig_b not in ids
 
-            # assinar IDOR: A forjando a solicitação de B → 404 (antes de tocar
-            # qualquer evidência; request nem é usado nesse caminho).
             req = types.SimpleNamespace(headers={}, client=None)
             with pytest.raises(HTTPException) as exc:
-                await assinar(sig_id=sig_b, request=req, db=db, cu=user_a)
+                await signatures_router.assinar(
+                    sig_id=sig_b, request=req, db=db, cu=user_a
+                )
             assert exc.value.status_code == 404
 
-            # assinar POSITIVO: A assina a própria pendente → 200 + comprovante.
-            out = await assinar(sig_id=sig_a, request=req, db=db, cu=user_a)
-            assert out["comprovante"]["hash_documento"]
+            monkeypatch.setattr(
+                signatures_router,
+                "_arquivo_hash",
+                lambda _doc: "a" * 64,
+            )
+            out = await signatures_router.assinar(
+                sig_id=sig_a, request=req, db=db, cu=user_a
+            )
+            assert out["comprovante"]["hash_documento"] == "a" * 64
+            assert out["status_solicitacao"] == "assinado"
         finally:
             await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
 
@@ -390,9 +497,7 @@ async def test_signatures_listar_e_assinar_isolam_por_cliente():
 
 
 async def test_mensagens_staff_cross_carteira_exige_ownership():
-    """Prova: no lado STAFF do chat (mensagens.py), um advogado SEM vínculo com
-    o caso → 403; o responsável passa. Impede um advogado de ler o chat
-    cliente↔escritório de caso de OUTRA carteira (IDOR entre advogados)."""
+    """Prova: advogado sem vínculo com o caso → 403; responsável passa."""
     from app.core.database import AsyncSessionLocal
     from app.routers.mensagens import _verificar_acesso
 
@@ -404,10 +509,8 @@ async def test_mensagens_staff_cross_carteira_exige_ownership():
         caso = await _criar_caso(db, cli, f"Caso {tok}", resp_id=resp)
         await db.commit()
         try:
-            # Responsável passa (sem exceção).
             await _verificar_acesso(caso, await _carregar_user(db, resp), db)
 
-            # Advogado de outra carteira → 403.
             with pytest.raises(HTTPException) as exc:
                 await _verificar_acesso(caso, await _carregar_user(db, outro), db)
             assert exc.value.status_code == 403
@@ -421,8 +524,7 @@ async def test_mensagens_staff_cross_carteira_exige_ownership():
 
 
 async def test_solicitacoes_documentos_isolam_por_cliente():
-    """Prova: A lista só as PRÓPRIAS solicitações de documentos; a de B nunca
-    aparece (isolamento por client_id no router de upload do portal)."""
+    """Prova: A lista só as próprias solicitações; a de B nunca aparece."""
     from app.core.database import AsyncSessionLocal
     from app.routers.portal_documentos import listar_solicitacoes_portal
 
@@ -438,7 +540,12 @@ async def test_solicitacoes_documentos_isolam_por_cliente():
         await db.commit()
         try:
             user_a = await _carregar_user(db, ua)
-            ids = {s["id"] for s in (await listar_solicitacoes_portal(db=db, cu=user_a))["data"]}
+            ids = {
+                s["id"]
+                for s in (
+                    await listar_solicitacoes_portal(db=db, cu=user_a)
+                )["data"]
+            }
             assert sol_a in ids and sol_b not in ids
         finally:
             await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
