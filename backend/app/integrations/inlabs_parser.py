@@ -48,12 +48,34 @@ def _local(tag: str) -> str:
 
 
 def _valor(el: ET.Element, nomes: Iterable[str]) -> str | None:
+    """Busca metadado por atributo ou nome de elemento, case-insensitive."""
     procurados = {n.casefold() for n in nomes}
     for chave, valor in el.attrib.items():
         if _local(chave).casefold() in procurados and str(valor).strip():
             return str(valor).strip()
     for filho in el.iter():
         if _local(filho.tag).casefold() in procurados:
+            txt = " ".join(x.strip() for x in filho.itertext() if x and x.strip()).strip()
+            if txt:
+                return txt
+    return None
+
+
+def _texto_por_classe(el: ET.Element, classes: Iterable[str]) -> str | None:
+    """Lê elementos HTML-like do XML INLABS, ex. `<p class="identifica">`.
+
+    O heading publicado não é o atributo `name` do article: `name` é usado como
+    identificador interno em pacotes reais. Classes podem vir combinadas no
+    atributo, por isso a comparação é por token.
+    """
+    procuradas = {c.casefold() for c in classes}
+    for filho in el.iter():
+        classes_el = {
+            token.casefold()
+            for token in str(filho.attrib.get("class") or "").split()
+            if token.strip()
+        }
+        if classes_el & procuradas:
             txt = " ".join(x.strip() for x in filho.itertext() if x and x.strip()).strip()
             if txt:
                 return txt
@@ -91,18 +113,25 @@ def parse_xml(xml_bytes: bytes) -> list[InlabsArticle]:
 
     saida: list[InlabsArticle] = []
     for el in artigos:
-        titulo = _valor(el, ("name", "title", "titulo", "identifica")) or "Publicação DOU"
+        # Schema INLABS real: heading visual em <p class="identifica">;
+        # `name` é identificador interno e NÃO deve virar título jurídico.
+        titulo = (
+            _texto_por_classe(el, ("identifica", "titulo", "title"))
+            or _valor(el, ("title", "titulo"))
+            or "Publicação DOU"
+        )
         corpo = _texto_corpo(el)
         if len(corpo) < 20:
             continue
         saida.append(InlabsArticle(
             titulo=titulo[:500],
             texto=corpo,
-            secao=_valor(el, ("artType", "secao", "section")),
+            # pubName identifica a seção/edição do DOU; artType é natureza do ato.
+            secao=_valor(el, ("pubName", "secao", "section")),
             data_publicacao=_valor(el, ("pubDate", "dataPublicacao", "data_publicacao")),
             edicao=_valor(el, ("editionNumber", "edicao", "edition")),
-            categoria=_valor(el, ("artCategory", "categoria", "category")),
-            identificador=_valor(el, ("id", "idMateria", "identificador")),
+            categoria=_valor(el, ("artType", "artCategory", "categoria", "category")),
+            identificador=_valor(el, ("id", "idMateria", "identificador", "name")),
             url_original=_valor(el, ("urlTitle", "url", "link")),
         ))
     return saida
