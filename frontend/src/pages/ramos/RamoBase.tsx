@@ -467,8 +467,13 @@ export default function RamoBase() {
     ? configWorkspaceDaArea(slug)
     : undefined;
   const role = useAuth((state) => state.user?.role);
+  const podeAcessarArea = Boolean(
+    role && (ROLES.juridico as readonly string[]).includes(role),
+  );
   const podeCriarCaso = Boolean(
-    role && (ROLES.clientes as readonly string[]).includes(role),
+    podeAcessarArea &&
+      role &&
+      (ROLES.clientes as readonly string[]).includes(role),
   );
   const [aba, setAba] = useState<WorkspaceTabId>("visao");
   const [casos, setCasos] = useState<Case[]>([]);
@@ -483,7 +488,7 @@ export default function RamoBase() {
   const abas = useMemo(() => (cfg ? abasDoWorkspace(cfg) : []), [cfg]);
 
   const recarregarRegistros = () => {
-    if (!cfg || !possuiRegistroEspecializado(cfg)) return;
+    if (!cfg || !podeAcessarArea || !possuiRegistroEspecializado(cfg)) return;
     setRegistros(null);
     api
       .get(cfg.endpoint)
@@ -492,7 +497,7 @@ export default function RamoBase() {
   };
 
   useEffect(() => {
-    if (!cfg) return;
+    if (!cfg || !podeAcessarArea) return;
     let ativo = true;
     setAba("visao");
     setCasos([]);
@@ -547,9 +552,12 @@ export default function RamoBase() {
     return () => {
       ativo = false;
     };
-  }, [cfg]);
+  }, [cfg, podeAcessarArea]);
 
   if (!cfg) return <Empty message="Área de atuação não encontrada" />;
+  if (!podeAcessarArea) {
+    return <Empty message="Acesso restrito à equipe jurídica." />;
+  }
 
   const relacoes = relacoesDoWorkspace(cfg);
 
