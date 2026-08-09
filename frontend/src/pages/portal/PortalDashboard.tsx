@@ -28,7 +28,10 @@ const STATUS_COR: Record<string, string> = {
 };
 
 const fmtR$ = (v: number) =>
-  Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  Number(v || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
 
 interface Pendencia {
   to: string;
@@ -67,9 +70,9 @@ export default function PortalDashboard() {
 
   const ativos = casos.filter((c) => isCasoAtivo(c.status)).length;
   const saldoDe = (f: any) =>
-    Number(f.saldo_aberto ?? (f.status === "pago" ? 0 : f.valor ?? 0));
+    Number(f.saldo_aberto ?? (f.status === "pago" ? 0 : (f.valor ?? 0)));
   const pagoDe = (f: any) =>
-    Number(f.valor_pago ?? (f.status === "pago" ? f.valor ?? 0 : 0));
+    Number(f.valor_pago ?? (f.status === "pago" ? (f.valor ?? 0) : 0));
 
   const pendente = fees
     .filter((f) => f.status === "pendente" || f.status === "atrasado")
@@ -124,7 +127,10 @@ export default function PortalDashboard() {
       cta: "Ver",
     });
   const totalPendencias =
-    docsPendentes + assinaturasPendentes + mensagensNaoLidas + pagamentosAbertos;
+    docsPendentes +
+    assinaturasPendentes +
+    mensagensNaoLidas +
+    pagamentosAbertos;
 
   return (
     <div className="space-y-6">
@@ -168,9 +174,12 @@ export default function PortalDashboard() {
           <div className="bg-success-50 border border-success-200 rounded-xl p-4 flex items-center gap-3">
             <CheckCircle className="w-6 h-6 text-success-600 flex-shrink-0" />
             <div>
-              <p className="text-sm font-semibold text-success-700">Você está em dia</p>
+              <p className="text-sm font-semibold text-success-700">
+                Você está em dia
+              </p>
               <p className="text-xs text-success-600 mt-0.5">
-                Nenhum documento, assinatura sua ou pagamento pendente no momento.
+                Nenhum documento, assinatura sua ou pagamento pendente no
+                momento.
               </p>
             </div>
           </div>
@@ -182,8 +191,12 @@ export default function PortalDashboard() {
             <Scale className="w-5 h-5 text-primary-600" />
           </div>
           <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wide">Casos ativos</p>
-            <p className="text-2xl font-bold text-slate-800">{loading ? "…" : ativos}</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">
+              Casos ativos
+            </p>
+            <p className="text-2xl font-bold text-slate-800">
+              {loading ? "…" : ativos}
+            </p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
@@ -191,7 +204,9 @@ export default function PortalDashboard() {
             <DollarSign className="w-5 h-5 text-warn-600" />
           </div>
           <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wide">Saldo a pagar</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">
+              Saldo a pagar
+            </p>
             <p className="text-2xl font-bold text-slate-800">
               {loading ? "…" : fmtR$(pendente)}
             </p>
@@ -202,7 +217,9 @@ export default function PortalDashboard() {
             <CheckCircle className="w-5 h-5 text-success-600" />
           </div>
           <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wide">Já pago</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">
+              Já pago
+            </p>
             <p className="text-2xl font-bold text-slate-800">
               {loading ? "…" : fmtR$(honPago)}
             </p>
@@ -212,13 +229,42 @@ export default function PortalDashboard() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { to: "/portal/casos", label: "Casos", icon: Scale, color: "text-primary-600 bg-primary-50" },
-          { to: "/portal/documentos", label: "Documentos", icon: FileText, color: "text-ai-600 bg-ai-50" },
-          { to: "/portal/assinaturas", label: "Assinaturas", icon: PenLine, color: "text-primary-600 bg-primary-50" },
-          { to: "/portal/financeiro", label: "Financeiro", icon: DollarSign, color: "text-success-600 bg-success-50" },
-          { to: "/portal/mensagens", label: "Mensagens", icon: Bell, color: "text-warn-600 bg-warn-50" },
+          {
+            to: "/portal/casos",
+            label: "Casos",
+            icon: Scale,
+            color: "text-primary-600 bg-primary-50",
+          },
+          {
+            to: "/portal/documentos",
+            label: "Documentos",
+            icon: FileText,
+            color: "text-ai-600 bg-ai-50",
+          },
+          {
+            to: "/portal/assinaturas",
+            label: "Assinaturas",
+            icon: PenLine,
+            color: "text-primary-600 bg-primary-50",
+          },
+          {
+            to: "/portal/financeiro",
+            label: "Financeiro",
+            icon: DollarSign,
+            color: "text-success-600 bg-success-50",
+          },
+          {
+            to: "/portal/mensagens",
+            label: "Mensagens",
+            icon: Bell,
+            color: "text-warn-600 bg-warn-50",
+          },
         ].map(({ to, label, icon: Icon, color }) => (
-          <Link key={to} to={to} className="card p-4 flex flex-col items-center gap-2 transition-all">
+          <Link
+            key={to}
+            to={to}
+            className="card p-4 flex flex-col items-center gap-2 transition-all"
+          >
             <div className={`p-2.5 rounded-lg ${color}`}>
               <Icon className="w-5 h-5" />
             </div>
@@ -231,13 +277,18 @@ export default function PortalDashboard() {
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-slate-800">Meus processos</h2>
-            <Link to="/portal/casos" className="text-xs text-primary-600 hover:underline">
+            <Link
+              to="/portal/casos"
+              className="text-xs text-primary-600 hover:underline"
+            >
               Ver todos
             </Link>
           </div>
           <div className="space-y-2">
             {casos.slice(0, 5).map((c) => {
-              const label = CASE_STATUS_LABEL[c.status as keyof typeof CASE_STATUS_LABEL] ?? c.status;
+              const label =
+                CASE_STATUS_LABEL[c.status as keyof typeof CASE_STATUS_LABEL] ??
+                c.status;
               const cor = STATUS_COR[c.status] ?? "bg-slate-100 text-slate-500";
               return (
                 <Link
@@ -247,13 +298,18 @@ export default function PortalDashboard() {
                 >
                   <Scale className="w-4 h-4 text-slate-400 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{c.titulo}</p>
+                    <p className="text-sm font-medium text-slate-800 truncate">
+                      {c.titulo}
+                    </p>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {c.numero_processo || c.numero_interno || "—"}
-                      {c.created_at && ` · No escritório desde ${fmtDate(c.created_at)}`}
+                      {c.created_at &&
+                        ` · No escritório desde ${fmtDate(c.created_at)}`}
                     </p>
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${cor}`}>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${cor}`}
+                  >
                     {label}
                   </span>
                   <ChevronRight className="w-4 h-4 text-slate-300 flex-shrink-0" />
