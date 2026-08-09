@@ -112,7 +112,7 @@ export default function DptDiagnosis({
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-semibold capitalize text-slate-900 dark:text-white">
-                    {area.area.replace("_", " ")}
+                    {area.area.replaceAll("_", " ")}
                   </span>
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                     {area.estado === "com_evidencias"
@@ -121,7 +121,12 @@ export default function DptDiagnosis({
                   </span>
                 </div>
                 <p className="mt-3 text-xs text-slate-500">
-                  Evidências localizadas: {area.evidencias_disponiveis.length}
+                  Evidências localizadas:{" "}
+                  {
+                    area.evidencias_disponiveis.filter(
+                      (evidence) => evidence.presente,
+                    ).length
+                  }
                 </p>
                 {area.lacunas_preliminares.length ? (
                   <div className="mt-2 flex items-start gap-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
