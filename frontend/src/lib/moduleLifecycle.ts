@@ -56,8 +56,7 @@ export function filterModulesByLifecycle<T extends ModuleLike>(
       return {
         ...module,
         label: "Entrada Jurídica",
-        description:
-          "Uma única porta para Novo caso, Raio-X e Sala Jurídica.",
+        description: "Uma única porta para Novo caso, Raio-X e Sala Jurídica.",
         essential: true,
       } as T;
     });
