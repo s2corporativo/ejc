@@ -63,7 +63,10 @@ def test_inlabs_rejeita_doctype_e_entity():
 def test_inlabs_converte_falha_de_leitura_zip_em_erro_controlado(monkeypatch):
     buf = BytesIO()
     with ZipFile(buf, "w") as zf:
-        zf.writestr("dou.xml", "<root><article><body>texto suficientemente longo</body></article></root>")
+        zf.writestr(
+            "dou.xml",
+            "<root><article><body>texto suficientemente longo</body></article></root>",
+        )
 
     real_zip = inlabs_mod.ZipFile
 
@@ -83,16 +86,20 @@ def test_inlabs_converte_falha_de_leitura_zip_em_erro_controlado(monkeypatch):
 
 
 def test_cnj_sgt_rejeita_referencia_soap_ciclica():
-    xml = """<Envelope><Body><return href='#id1'/><multiRef id='id1' href='#id1'/></Body></Envelope>"""
+    xml = (
+        "<Envelope><Body><return href='#id1'/>"
+        "<multiRef id='id1' href='#id1'/></Body></Envelope>"
+    )
     with pytest.raises(CnjSgtError, match="cíclica"):
         sgt_mod._parse_soap(xml)
 
 
-async def test_cnj_sgt_detalhes_envia_seqitem_string(monkeypatch):
+async def test_cnj_sgt_binding_literal_e_seqitem_string(monkeypatch):
     visto = {}
 
     def handler(req: httpx.Request) -> httpx.Response:
         visto["body"] = req.content.decode("utf-8")
+        visto["soap_action"] = req.headers.get("SOAPAction")
         return httpx.Response(
             200,
             text="<Envelope><Body><return><ok>1</ok></return></Body></Envelope>",
@@ -100,7 +107,13 @@ async def test_cnj_sgt_detalhes_envia_seqitem_string(monkeypatch):
 
     _mock_httpx(monkeypatch, sgt_mod, handler)
     await CnjSgtClient().detalhes("123", "C")
+
     assert '<seqItem xsi:type="xsd:string">123</seqItem>' in visto["body"]
+    assert f'xmlns:sgt="{sgt_mod.SGT_ENDPOINT}"' in visto["body"]
+    assert "encodingStyle" not in visto["body"]
+    assert visto["soap_action"] == (
+        f'"{sgt_mod.SGT_ENDPOINT}#getArrayDetalhesItemPublicoWS"'
+    )
 
 
 async def test_pgfn_nao_confunde_pagina_sem_download_com_recurso(monkeypatch):
