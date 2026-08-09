@@ -9,25 +9,33 @@ from app.routers.deadlines import _prazos_para_csv
 
 
 def _linhas(texto):
-    # Remove o BOM antes de parsear.
     return list(csv.reader(io.StringIO(texto.lstrip("﻿")), delimiter=";"))
 
 
 def _prazo(**kw):
-    base = dict(titulo="Contestacao", tipo="processual", prioridade="alta",
-                status="pendente", data_prazo=date(2026, 7, 20),
-                data_intimacao=date(2026, 7, 1), base_legal="CPC 335")
+    base = dict(
+        titulo="Contestacao",
+        tipo="processual",
+        prioridade="alta",
+        status="pendente",
+        data_prazo=date(2026, 7, 20),
+        data_intimacao=date(2026, 7, 1),
+        data_publicacao=None,
+        termo_inicial=None,
+        regime_calculo=None,
+        base_legal="CPC 335",
+    )
     base.update(kw)
     return SimpleNamespace(**base)
 
 
 def test_csv_tem_bom_e_cabecalho():
     out = _prazos_para_csv([], date(2026, 7, 5))
-    assert out.startswith("﻿")  # BOM p/ Excel abrir acentos
+    assert out.startswith("﻿")
     linhas = _linhas(out)
     assert linhas[0][0] == "Titulo"
     assert linhas[0][-1] == "Base legal"
-    assert len(linhas) == 1  # só cabeçalho quando não há prazos
+    assert len(linhas) == 1
 
 
 def test_csv_serializa_prazo_e_calcula_dias_restantes():
@@ -36,20 +44,26 @@ def test_csv_serializa_prazo_e_calcula_dias_restantes():
     assert len(linhas) == 2
     linha = linhas[1]
     assert linha[0] == "Contestacao"
-    assert linha[4] == "2026-07-20"        # data_prazo ISO
-    assert linha[5] == "2026-07-01"        # data_intimacao ISO
-    assert linha[6] == "15"                # 20/07 - 05/07 = 15 dias
+    assert linha[4] == "2026-07-20"
+    assert linha[5] == "2026-07-01"
+    assert linha[6] == ""  # publicação ainda não informada neste fixture
+    assert linha[7] == ""  # termo inicial ainda não informado
+    assert linha[8] == ""  # regime ainda não informado
+    assert linha[9] == "15"  # 20/07 - 05/07 = 15 dias corridos de calendário
+    assert linha[10] == "CPC 335"
 
 
 def test_csv_escapa_delimitador_no_titulo():
-    # Título com ';' não pode quebrar a coluna — o csv.writer deve aspá-lo.
     out = _prazos_para_csv([_prazo(titulo="Prazo A; parte B")], date(2026, 7, 5))
     linhas = _linhas(out)
-    assert linhas[1][0] == "Prazo A; parte B"  # continua uma única célula
+    assert linhas[1][0] == "Prazo A; parte B"
 
 
 def test_csv_tolera_campos_ausentes():
     p = _prazo(data_intimacao=None, base_legal=None, data_prazo=None)
     out = _prazos_para_csv([p], date(2026, 7, 5))
     linha = _linhas(out)[1]
-    assert linha[4] == "" and linha[5] == "" and linha[6] == "" and linha[7] == ""
+    assert linha[4] == ""
+    assert linha[5] == ""
+    assert linha[9] == ""
+    assert linha[10] == ""
