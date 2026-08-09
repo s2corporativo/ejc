@@ -1,0 +1,44 @@
+name: TMP Format 904
+
+on:
+  push:
+    branches:
+      - feat/904-areas-workspaces
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/904-areas-workspaces
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.22.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Instalar dependências
+        working-directory: frontend
+        run: npm ci
+      - name: Formatar arquivos do escopo
+        working-directory: frontend
+        run: >-
+          npx prettier --write
+          src/pages/RamosHub.tsx
+          src/pages/ramos/RamoBase.tsx
+          src/pages/ramos/areasWorkspace.ts
+          src/pages/ramos/areasWorkspace.test.ts
+      - name: Persistir formatação na branch
+        run: |
+          if git diff --quiet; then
+            echo "Nenhuma alteração de formatação."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/RamosHub.tsx frontend/src/pages/ramos/RamoBase.tsx frontend/src/pages/ramos/areasWorkspace.ts frontend/src/pages/ramos/areasWorkspace.test.ts
+          git commit -m "style(areas): aplicar prettier"
+          git push origin HEAD:feat/904-areas-workspaces
