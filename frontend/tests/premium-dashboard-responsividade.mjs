@@ -1,4 +1,4 @@
-// Homologação visual do shell e dashboard premium em Chromium real.
+// Homologação visual do AppShell v2 e dashboard ultra em Chromium real.
 // As respostas abaixo existem somente no contexto Playwright e não alteram o produto.
 import http from "node:http";
 import { existsSync, mkdirSync } from "node:fs";
@@ -153,6 +153,7 @@ const FIXTURES = {
       {
         id: "movimento-1",
         titulo: "Recurso especial publicado",
+        descricao: "Publicação de recurso especial no processo",
         status: "publicado",
         created_at: `${dateKey(today)}T09:30:00`,
         case_id: "caso-1",
@@ -163,6 +164,7 @@ const FIXTURES = {
       {
         id: "movimento-2",
         titulo: "Manifestação protocolada",
+        descricao: "Manifestação protocolada no processo",
         status: "protocolado",
         created_at: `${dateKey(yesterday)}T17:45:00`,
         case_id: "caso-3",
@@ -233,32 +235,38 @@ async function installApiFixtures(page) {
 }
 
 async function inspectDashboard(page, viewport, failures) {
-  await page.waitForSelector(".ejc-dashboard-premium", { timeout: 15000 });
-  await page.getByText("Visão operacional do escritório").waitFor();
-  await page.getByText("Total de Processos").waitFor();
+  await page.waitForSelector(".ejc-ultra-dashboard", { timeout: 15000 });
+  await page.getByText("Legal Operations Command Center").waitFor();
+  await page.getByText("Casos ativos").waitFor();
 
-  const layout = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    innerWidth: window.innerWidth,
-    topbarVisible:
-      getComputedStyle(document.querySelector(".ejc-premium-topbar"))
-        .display !== "none",
-    dashboardVisible:
-      getComputedStyle(document.querySelector(".ejc-dashboard-premium"))
-        .display !== "none",
-    mainText: document.querySelector("main")?.innerText || "",
-  }));
+  const layout = await page.evaluate(() => {
+    const topbar = document.querySelector("header.fixed.inset-x-0.top-0");
+    const dashboard = document.querySelector(".ejc-ultra-dashboard");
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+      topbarVisible: Boolean(
+        topbar && getComputedStyle(topbar).display !== "none",
+      ),
+      dashboardVisible: Boolean(
+        dashboard && getComputedStyle(dashboard).display !== "none",
+      ),
+      mainText: document.querySelector("main")?.innerText || "",
+    };
+  });
 
   const overflow = layout.scrollWidth - layout.innerWidth;
   if (overflow > 1) {
     failures.push(`${viewport.name}: overflow horizontal de ${overflow}px`);
   }
   if (!layout.topbarVisible) {
-    failures.push(`${viewport.name}: topbar premium não está visível`);
+    failures.push(`${viewport.name}: topbar principal não está visível`);
   }
   if (!layout.dashboardVisible) {
-    failures.push(`${viewport.name}: dashboard premium não está visível`);
+    failures.push(`${viewport.name}: dashboard ultra não está visível`);
   }
+
+  const normalizedMainText = layout.mainText.toLocaleLowerCase("pt-BR");
 
   for (const forbidden of [
     "918.273,45",
@@ -271,7 +279,7 @@ async function inspectDashboard(page, viewport, failures) {
     "Honorários",
     "Saldo financeiro",
   ]) {
-    if (layout.mainText.includes(forbidden)) {
+    if (normalizedMainText.includes(forbidden.toLocaleLowerCase("pt-BR"))) {
       failures.push(
         `${viewport.name}: conteúdo financeiro indevido: ${forbidden}`,
       );
@@ -281,16 +289,30 @@ async function inspectDashboard(page, viewport, failures) {
   for (const expected of [
     "126",
     "98",
-    "Tarefas Pendentes",
-    "Prazos Próximos",
-    "Andamentos Recentes",
-    "Agenda da Semana",
-    "Distribuição por Área",
-    "Processos por Status",
+    "Tarefas pendentes",
+    "Prazos em 7 dias",
+    "Movimentações recentes",
+    "Próximos compromissos",
+    "Áreas de atuação",
+    "Distribuição dos casos",
+    "Publicação de recurso especial no processo",
   ]) {
-    if (!layout.mainText.includes(expected)) {
+    if (!normalizedMainText.includes(expected.toLocaleLowerCase("pt-BR"))) {
       failures.push(`${viewport.name}: conteúdo operacional ausente: ${expected}`);
     }
+  }
+
+  // O contexto inteiro roda com reducedMotion="reduce". O hover não pode
+  // deslocar o cartão quando o usuário solicitou redução de movimento.
+  const metric = page.locator(".ejc-ultra-metric").first();
+  await metric.hover();
+  const transformReduzido = await metric.evaluate(
+    (element) => getComputedStyle(element).transform,
+  );
+  if (transformReduzido !== "none") {
+    failures.push(
+      `${viewport.name}: hover desloca métrica com reduced-motion (${transformReduzido})`,
+    );
   }
 
   const sidebar = page.locator("aside.sidebar-bronze");
@@ -374,19 +396,19 @@ async function main() {
 
   if (failures.length) {
     console.error(
-      `\nDASHBOARD PREMIUM RESPONSIVO: FALHOU\n - ${failures.join("\n - ")}`,
+      `\nDASHBOARD ULTRA RESPONSIVO: FALHOU\n - ${failures.join("\n - ")}`,
     );
     process.exit(1);
   }
 
   console.log(
-    "\nDASHBOARD PREMIUM RESPONSIVO: OK — sete larguras, sem overflow, " +
-      "sem erro de console e sem sentinelas financeiras renderizadas.",
+    "\nDASHBOARD ULTRA RESPONSIVO: OK — sete larguras, sem overflow, " +
+      "sem erro de console, sem movimento indevido e sem sentinelas financeiras renderizadas.",
   );
 }
 
 main().catch((error) => {
-  console.error("[premium-dashboard] erro:", error);
+  console.error("[dashboard-ultra] erro:", error);
   server.close();
   process.exit(1);
 });
