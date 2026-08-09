@@ -232,7 +232,9 @@ export default function NotasFiscais() {
   const cancelar = async () => {
     if (!cancelNota || cancelando) return;
     if (motivo.trim().length < 3) {
-      toast.error("Informe o motivo do encerramento local (mínimo 3 caracteres).");
+      toast.error(
+        "Informe o motivo do encerramento local (mínimo 3 caracteres).",
+      );
       return;
     }
     setCancelando(true);
@@ -247,7 +249,9 @@ export default function NotasFiscais() {
       setMotivo("");
       void load();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao encerrar o registro local.");
+      toast.error(
+        e.response?.data?.detail || "Erro ao encerrar o registro local.",
+      );
     } finally {
       setCancelando(false);
     }
@@ -569,9 +573,9 @@ export default function NotasFiscais() {
       >
         <div className="space-y-4">
           <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-800">
-            Esta ação <b>não cancela a NFS-e perante o Fisco</b>. Ela apenas encerra
-            o registro administrativo dentro do EJC. Se a nota precisar ser
-            cancelada fiscalmente, faça o procedimento no Emissor Nacional
+            Esta ação <b>não cancela a NFS-e perante o Fisco</b>. Ela apenas
+            encerra o registro administrativo dentro do EJC. Se a nota precisar
+            ser cancelada fiscalmente, faça o procedimento no Emissor Nacional
             (gov.br) e confira a situação oficial.
           </div>
           <div>
