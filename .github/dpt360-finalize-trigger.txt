@@ -1,1 +1,0 @@
-Gatilho efêmero da consolidação final da Onda 1 DPT Empresarial 360. O próprio workflow remove este arquivo antes do push final.
