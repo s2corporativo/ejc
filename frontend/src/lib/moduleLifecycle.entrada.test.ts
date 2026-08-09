@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canRoleAccessPath } from "../config/moduleRegistry";
-import {
-  filterModulesByLifecycle,
-  lifecycleForPath,
-} from "./moduleLifecycle";
+import { filterModulesByLifecycle, lifecycleForPath } from "./moduleLifecycle";
 import type { ModuleLifecycleOverride } from "../stores/moduleLifecycle";
 
 type ModuloTeste = {
