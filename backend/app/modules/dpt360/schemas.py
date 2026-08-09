@@ -70,3 +70,41 @@ class DptDashboardResponse(BaseModel):
     priorities: list[DptPriorityItem] = Field(default_factory=list)
     coverage: Literal["complete"] = "complete"
     notes: list[str] = Field(default_factory=list)
+
+
+class DptHealthArea(BaseModel):
+    area: str
+    classificacao: Literal[
+        "Regular", "Atenção", "Alto Risco", "Crítico", "Não avaliado"
+    ] = "Não avaliado"
+    justificativa: str = "Sem diagnóstico especializado aprovado."
+    evidencias: int = 0
+
+
+class DptTwinDimension(BaseModel):
+    key: str
+    label: str
+    status: Literal["com_dados", "sem_dados", "nao_aplicavel"]
+    registros: int = 0
+    note: str | None = None
+    canonical_path: str | None = None
+
+
+class DptCompanyProfile(BaseModel):
+    id: str
+    nome: str
+    status: str
+    cidade: str | None = None
+    estado: str | None = None
+    generated_at: datetime
+    health: list[DptHealthArea] = Field(default_factory=list)
+    twin: list[DptTwinDimension] = Field(default_factory=list)
+    areas_com_casos: list[str] = Field(default_factory=list)
+    casos_abertos: int = 0
+    prazos_pendentes: int = 0
+    documentos: int = 0
+    sociedades: int = 0
+    operacoes_lgpd: int = 0
+    operacoes_lgpd_alto_risco: int = 0
+    autos_ambientais: int = 0
+    notes: list[str] = Field(default_factory=list)
