@@ -1,32 +1,41 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useLocation, useSearchParams } from "react-router";
 import api from "../lib/api";
 import { useCaseContext } from "../stores/caseContext";
 
 /**
- * Resolve o filtro de caso dos módulos globais (Documentos, Peças, Prazos).
+ * Resolve o filtro de caso dos módulos globais (Documentos, Peças, Prazos)
+ * e dos mesmos workspaces quando montados DENTRO de /casos/:id.
  *
- * Regra: `?caso=` na URL SEMPRE vence; quando não há query, o caso ativo do
- * Modo Caso preenche o filtro. O usuário pode remover o chip — isso limpa a
- * query e passa a ignorar o contexto apenas nesta tela (até remontar).
+ * Precedência:
+ * 1) `?caso=` explícito;
+ * 2) id da própria rota `/casos/:id` (contexto obrigatório e imediato);
+ * 3) caso ativo do Modo Caso.
+ *
+ * O contexto de rota evita um primeiro render da fila global enquanto o store
+ * assíncrono ainda carrega o caso e não pode ser removido sem sair do Caso.
  */
 export function useCasoFiltro(): {
-  /** id do caso a enviar como `case_id` na listagem (ou undefined). */
   casoFiltro: string | undefined;
-  /** Título do caso para o chip "Filtrando por: {caso}". */
   casoFiltroNome: string | undefined;
-  /** Remove o filtro (limpa `?caso=` e ignora o contexto na tela). */
   removerFiltro: () => void;
 } {
+  const { pathname } = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const casoUrl = searchParams.get("caso") || undefined;
+  const casoUrl = searchParams.get("caso")?.trim() || undefined;
   const casoAtivo = useCaseContext((state) => state.caso);
   const [ignorarContexto, setIgnorarContexto] = useState(false);
 
-  const casoFiltro = casoUrl ?? (ignorarContexto ? undefined : casoAtivo?.id);
+  const matchCaso = /^\/casos\/([^/]+)(?:\/|$)/.exec(pathname);
+  const rawCasoRota = matchCaso?.[1];
+  const casoRota =
+    rawCasoRota && rawCasoRota !== "novo"
+      ? decodeURIComponent(rawCasoRota)
+      : undefined;
 
-  // Nome do caso quando o filtro veio da URL e não é o caso ativo — busca
-  // pontual só para rotular o chip (falha silenciosa: chip mostra fallback).
+  const casoFiltro =
+    casoUrl ?? casoRota ?? (ignorarContexto ? undefined : casoAtivo?.id);
+
   const [nomeResolvido, setNomeResolvido] = useState<{
     id: string;
     nome: string;
@@ -56,11 +65,13 @@ export function useCasoFiltro(): {
         : undefined;
 
   const removerFiltro = () => {
+    // Dentro de /casos/:id o contexto não é um filtro opcional: remover só
+    // faria a tela mostrar dados globais sem o usuário ter saído do Caso.
+    if (casoRota) return;
     setIgnorarContexto(true);
     if (casoUrl) {
       const params = new URLSearchParams(searchParams);
       params.delete("caso");
-      // replace: remover um chip de filtro não deve criar entrada no histórico.
       setSearchParams(params, { replace: true });
     }
   };
