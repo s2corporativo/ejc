@@ -6,6 +6,7 @@ from app.models.user import User
 from app.modules.dpt360.company_service import get_company_profile
 from app.modules.dpt360.schemas import DptActionRequest, DptActionResponse
 from app.services.ai.core.dpt360_protocol import build_dpt_instruction, parse_structured_content
+from app.services.ai.core.dpt360_registry import ensure_dpt360_registered
 from app.services.ai.core.orchestrator import orchestrator
 
 _ALLOWED_DOMAINS = {
@@ -20,15 +21,18 @@ _ALLOWED_DOMAINS = {
     "lgpd",
 }
 
+_ACTION_TASK = {
+    "conselho": "conselho_empresarial",
+    "preflight": "preflight_empresarial",
+    "diagnostico": "diagnostico_empresarial",
+}
+
 
 def _minimal_company_context(profile) -> dict:
     """Contexto empresarial suficiente para análise sem duplicar PII no prompt."""
     return {
         "empresa_ref": profile.id,
-        "localidade": {
-            "cidade": profile.cidade,
-            "estado": profile.estado,
-        },
+        "localidade": {"cidade": profile.cidade, "estado": profile.estado},
         "areas_com_casos": profile.areas_com_casos,
         "casos_abertos": profile.casos_abertos,
         "prazos_pendentes": profile.prazos_pendentes,
@@ -58,6 +62,9 @@ async def run_dpt_action(
     if profile is None:
         return None
 
+    # Extensão explícita dos registries centrais; não existe executor DPT paralelo.
+    ensure_dpt360_registered()
+
     requested_domain = (request.area or "empresarial").strip().lower()
     domain = requested_domain if requested_domain in _ALLOWED_DOMAINS else "empresarial"
     instruction = build_dpt_instruction(
@@ -70,7 +77,7 @@ async def run_dpt_action(
     result = await orchestrator.run(
         db=db,
         user=user,
-        task_type=domain,
+        task_type=_ACTION_TASK[request.action],
         domain=domain,
         mensagem=instruction,
         usar_rag=True,
@@ -83,6 +90,10 @@ async def run_dpt_action(
     if structured is None:
         alerts.append(
             "A IA não devolveu JSON estruturado válido; o conteúdo permanece rascunho e exige revisão humana antes de qualquer reaproveitamento."
+        )
+    if result.get("critica_adversarial") is None:
+        alerts.append(
+            "Crítica adversarial especializada do DPT ainda não foi executada por esta tarefa; revisão humana permanece obrigatória."
         )
 
     citations = result.get("citacoes") or []
