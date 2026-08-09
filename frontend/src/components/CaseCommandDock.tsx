@@ -12,7 +12,7 @@ import {
 import api from "../lib/api";
 import { CASE_NAV_SECTIONS } from "../config/caseNav";
 import { useAreas } from "../lib/areas";
-import { caseTabPath } from "../lib/caseContext";
+import { caminhoAbaCaso } from "../lib/caseContext";
 import { toast } from "./Toast";
 import { Badge, Button, EmptyState, Modal } from "./UI";
 
@@ -165,7 +165,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
     label: secao.label,
     description: secao.descricao,
     icon: secao.icon,
-    to: caseTabPath(caseId, secao.tab),
+    to: caminhoAbaCaso(caseId, secao.tab),
   }));
 
   return (
@@ -226,7 +226,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => abrirDestino(caseTabPath(caseId, "pecas"))}
+                onClick={() => abrirDestino(caminhoAbaCaso(caseId, "pecas"))}
                 icon={<FileText className="h-4 w-4" />}
               >
                 Peças do caso
@@ -301,6 +301,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
                 className="input w-full"
                 value={areaNova}
                 onChange={(event) => setAreaNova(event.target.value)}
+                aria-label="Adicionar área relacionada"
               >
                 <option value="">Selecione uma área relacionada</option>
                 {areasDisponiveis.map((area) => (
@@ -342,10 +343,14 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
+              <label
+                htmlFor={`case-dock-file-${caseId}`}
+                className="mb-1 block text-sm font-medium text-slate-700"
+              >
                 Arquivo
               </label>
               <input
+                id={`case-dock-file-${caseId}`}
                 type="file"
                 accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.xlsx,.xls,.txt,.xml"
                 className="input w-full"
@@ -362,10 +367,14 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
+              <label
+                htmlFor={`case-dock-title-${caseId}`}
+                className="mb-1 block text-sm font-medium text-slate-700"
+              >
                 Título
               </label>
               <input
+                id={`case-dock-title-${caseId}`}
                 className="input w-full"
                 value={titulo}
                 maxLength={255}
@@ -375,10 +384,14 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
+              <label
+                htmlFor={`case-dock-type-${caseId}`}
+                className="mb-1 block text-sm font-medium text-slate-700"
+              >
                 Tipo
               </label>
               <select
+                id={`case-dock-type-${caseId}`}
                 className="input w-full"
                 value={tipo}
                 onChange={(event) => setTipo(event.target.value)}
