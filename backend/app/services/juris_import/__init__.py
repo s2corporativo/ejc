@@ -45,9 +45,10 @@ def _configurar_fontes_ativas(raw: str, *, tcu_enabled: bool) -> set[str]:
 
 
 # Config por env var DE PROPÓSITO: não toca core/config.py (arquivo estrutural
-# sob governança reforçada). TCU é integração NOVA e nasce opt-in/default OFF.
+# sob governança reforçada). Mantém o default histórico lexml+stj+tjmg; somente
+# TCU é integração NOVA e nasce opt-in/default OFF.
 _FONTES_ATIVAS = _configurar_fontes_ativas(
-    os.getenv("JURIS_IMPORT_FONTES", "lexml,stj"),
+    os.getenv("JURIS_IMPORT_FONTES", "lexml,stj,tjmg"),
     tcu_enabled=_env_true("TCU_OPEN_DATA_ENABLED"),
 )
 
