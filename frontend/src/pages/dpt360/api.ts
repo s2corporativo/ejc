@@ -60,6 +60,7 @@ export type DptDashboard = {
   cases: DptCase[];
   deadlines: DptDeadline[];
   priorities: DptPriority[];
+  radar_por_area?: Record<string, number> | null;
   coverage: "complete";
   notes: string[];
 };
@@ -135,7 +136,11 @@ export type DptDiagnosticReadiness = {
   areas: Array<{
     area: string;
     estado: "com_evidencias" | "nao_avaliado";
-    evidencias_disponiveis: Array<{ tipo: string; presente: boolean; quantidade?: number | null }>;
+    evidencias_disponiveis: Array<{
+      tipo: string;
+      presente: boolean;
+      quantidade?: number | null;
+    }>;
     lacunas_preliminares: string[];
     regra: string;
   }>;
@@ -159,9 +164,10 @@ export async function getDptDiagnosticReadiness(
   clientId: string,
   kind: DptDiagnosticKind,
 ): Promise<DptDiagnosticReadiness> {
-  const response = await api.get<DptDiagnosticReadiness>(`/dpt360/diagnostics/readiness/${clientId}`, {
-    params: { kind },
-  });
+  const response = await api.get<DptDiagnosticReadiness>(
+    `/dpt360/diagnostics/readiness/${clientId}`,
+    { params: { kind } },
+  );
   return response.data;
 }
 
