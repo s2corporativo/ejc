@@ -12,6 +12,7 @@ import {
 import api from "../lib/api";
 import { CASE_NAV_SECTIONS } from "../config/caseNav";
 import { useAreas } from "../lib/areas";
+import { caseTabPath } from "../lib/caseContext";
 import { toast } from "./Toast";
 import { Badge, Button, EmptyState, Modal } from "./UI";
 
@@ -160,15 +161,11 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
     setAreaNova("");
   };
 
-  // Fase 1 (plano de simplificação): os destinos de navegação são EXATAMENTE
-  // os cinco canônicos de config/caseNav.ts — os mesmos rótulos da barra
-  // (CaseContextBar) e da página do caso (CasoDetalhe). "Peças" deixou de ser
-  // um sexto destino: é ação de produção, junto de Áreas e Anexar documento.
   const actions = CASE_NAV_SECTIONS.map((secao) => ({
     label: secao.label,
     description: secao.descricao,
     icon: secao.icon,
-    to: `/casos/${caseId}?tab=${secao.tab}`,
+    to: caseTabPath(caseId, secao.tab),
   }));
 
   return (
@@ -229,7 +226,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => abrirDestino(`/pecas?caso=${caseId}`)}
+                onClick={() => abrirDestino(caseTabPath(caseId, "pecas"))}
                 icon={<FileText className="h-4 w-4" />}
               >
                 Peças do caso
