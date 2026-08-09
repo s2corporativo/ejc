@@ -84,9 +84,7 @@ def _out_socio(s: Socio) -> dict:
 
 
 def _snapshot(s: Socio) -> dict:
-    out = _out_socio(s)
-    # Snapshot societário não precisa repetir ids de apresentação que não mudam.
-    return out
+    return _out_socio(s)
 
 
 async def _validar_cap_table(
@@ -100,7 +98,7 @@ async def _validar_cap_table(
         total_outros = await db.scalar(
             select(func.coalesce(func.sum(Socio.participacao_percentual), 0)).where(
                 Socio.ativo.is_(True),
-                *( [Socio.id != excluir_socio_id] if excluir_socio_id else [] ),
+                *([Socio.id != excluir_socio_id] if excluir_socio_id else []),
             )
         )
         return Decimal(str(total_outros or 0)).quantize(_QUATRO)
@@ -213,7 +211,9 @@ async def cadastrar_socio(
     cu: User = Depends(get_current_user),
 ):
     if not _is_admin(cu):
-        raise HTTPException(status_code=403, detail="Apenas administradores podem cadastrar sócios")
+        raise HTTPException(
+            status_code=403, detail="Apenas administradores podem cadastrar sócios"
+        )
     existente = await db.scalar(select(Socio).where(Socio.user_id == req.user_id))
     if existente:
         raise HTTPException(status_code=409, detail="Usuário já é sócio")
@@ -447,12 +447,23 @@ async def aprovar_distribuicao(
     if not _is_admin(cu):
         raise HTTPException(status_code=403, detail="Aprovação restrita a administradores")
     dist = await db.scalar(
-        select(DistribuicaoLucro).where(DistribuicaoLucro.id == dist_id).with_for_update()
+        select(DistribuicaoLucro)
+        .where(DistribuicaoLucro.id == dist_id)
+        .with_for_update()
     )
     if not dist:
         raise HTTPException(status_code=404, detail="Distribuição não encontrada")
     if dist.status != "calculado":
         raise HTTPException(status_code=422, detail=f"Distribuição já está '{dist.status}'")
+    # Segregação de funções: quem calculou/criou a própria distribuição não pode
+    # ser o segundo par de olhos que a aprova, inclusive se for superadmin.
+    if dist.created_by and str(dist.created_by) == str(cu.id):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Quem criou a distribuição não pode aprová-la — segregação de funções"
+            ),
+        )
     dist.status = "aprovado"
     dist.aprovado_por = cu.id
     dist.aprovado_em = datetime.now(timezone.utc)
