@@ -38,11 +38,15 @@ router = APIRouter(
 )
 
 _RESULTADO_LABEL = {
+    "exito": "Êxito",
     "exito_total": "Êxito total",
     "exito_parcial": "Êxito parcial",
     "acordo": "Acordo",
+    "derrota": "Derrota",
     "improcedente": "Improcedente",
 }
+_RESULTADOS_FAVORAVEIS = {"exito", "exito_total", "exito_parcial"}
+_RESULTADOS_DESFAVORAVEIS = {"derrota", "improcedente"}
 
 
 async def _por_resultado(db: AsyncSession, tribunal: Optional[str] = None):
@@ -211,15 +215,18 @@ async def analise_prospectiva(
     A tabela `cases` não possui classe TPU; a classe recebida é somente contexto
     exibido ao usuário (`classe_filtrada=False`) e NÃO entra no cálculo.
 
-    A taxa favorável usa apenas desfechos DECIDIDOS:
-    `exito_total + exito_parcial` / (`exito_total + exito_parcial + improcedente`).
-    Acordos são mostrados separadamente e não são tratados como vitória judicial.
-    Outros resultados não classificáveis também ficam fora do denominador.
+    A taxa usa apenas desfechos DECIDIDOS e reconhece a taxonomia histórica da
+    base: `exito`, `exito_total` e `exito_parcial` são favoráveis; `derrota` e
+    `improcedente` são desfavoráveis. Acordos ficam separados e não são tratados
+    como vitória judicial. Outros resultados não classificáveis também ficam
+    fora do denominador.
     """
     total_encerrados, por_resultado = await _por_resultado(db, tribunal or None)
     contagens = {r["resultado_raw"]: int(r["total"]) for r in por_resultado}
-    favoraveis = contagens.get("exito_total", 0) + contagens.get("exito_parcial", 0)
-    desfavoraveis = contagens.get("improcedente", 0)
+    favoraveis = sum(contagens.get(chave, 0) for chave in _RESULTADOS_FAVORAVEIS)
+    desfavoraveis = sum(
+        contagens.get(chave, 0) for chave in _RESULTADOS_DESFAVORAVEIS
+    )
     acordos = contagens.get("acordo", 0)
     decididos = favoraveis + desfavoraveis
 
