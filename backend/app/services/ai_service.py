@@ -110,70 +110,53 @@ _FILTRO_SUMULAS_QUARENTENA = (
 # peça a partir de modelos).
 _FILTRO_FICTICIO_RAG = "AND COALESCE((kd.extra->>'ficticio')::boolean, false) = false"
 
-# ── Situação JURÍDICA na recuperação (Issue #636) ─────────────────────────────
-# Curadoria (rag_status) e vigência da norma são campos DISTINTOS: um documento
-# podia estar 'aprovado' para o RAG e, ao mesmo tempo, revogado — nada na
-# recuperação olhava a situação jurídica. Estes filtros espelham, em SQL, a
-# leitura que knowledge_governance.inferir_situacao_juridica faz de
-# knowledge_docs.extra: MESMA precedência de chaves (legal_status →
-# situacao_normativa → vigencia_status) e MESMA normalização (minúsculas,
-# espaços colapsados, aliases com espaço/acento).
+# ── Situação JURÍDICA na recuperação (Issue #636 / P0.1 #952) ────────────────
+# Curadoria RAG e vigência normativa são dimensões distintas. Uma norma pode
+# estar aprovada para o acervo e ainda assim ser revogada, suspensa ou não ter
+# vigência comprovada. A recuperação jurídica precisa falhar para o lado seguro.
 #
-# Onde o espelho é DELIBERADAMENTE mais apertado que a inferência (e por quê):
-#   • a inferência devolve 'historica' — não 'revogada' — para qualquer versão
-#     não vigente, mesmo com extra.legal_status='revogada'. _FILTRO_REVOGADA_RAG
-#     lê o extra INDEPENDENTE de kd.vigente: uma norma declarada revogada não
-#     volta nem como histórico. Erro possível aqui só remove, nunca inclui.
-#   • a governança também nega fundamentação atual a 'suspensa' e
-#     'parcialmente_revogada'; o gate NÃO as exclui, porque continuam citáveis
-#     com ressalva (a peça precisa do texto para discutir a suspensão). Está
-#     registrado como follow-up conhecido no PR — assimetria intencional.
+# `_SQL_SITUACAO_JURIDICA` mantém compatibilidade de LEITURA com metadados
+# legados para o bloqueio incondicional de revogação. Já o gate estrito de
+# direito ATUAL usa somente `extra.legal_status` canônico e exige proveniência
+# positiva; aliases legados não bastam para afirmar vigência.
 _SQL_SITUACAO_JURIDICA = (
     "regexp_replace(lower(btrim(COALESCE("
     "NULLIF(btrim(kd.extra->>'legal_status'),''),"
     "NULLIF(btrim(kd.extra->>'situacao_normativa'),''),"
     "NULLIF(btrim(kd.extra->>'vigencia_status'),''),''))),'\\s+',' ','g')"
 )
+_SQL_LEGAL_STATUS_CANONICO = (
+    "regexp_replace(lower(btrim(COALESCE(kd.extra->>'legal_status',''))),"
+    "'\\s+',' ','g')"
+)
+
 # Norma REVOGADA nunca é fundamentação atual: exclusão INCONDICIONAL (sem flag),
-# em qualquer categoria. Cobre as duas grafias que uma ingestão pode gravar.
+# em qualquer categoria e inclusive quando o status veio de chave legada.
 _FILTRO_REVOGADA_RAG = (
     f"AND {_SQL_SITUACAO_JURIDICA} NOT IN ('revogada','revogado')"
 )
-# Valores que inferir_situacao_juridica reconhece como situação DECLARADA
-# (LEGAL_STATUS_VALUES + aliases). Qualquer outro conteúdo — extra ausente,
-# valor desconhecido ou o próprio 'vigencia_nao_verificada' — é vigência NÃO
-# conferida, exatamente como na inferência.
-_SQL_SITUACAO_DECLARADA = (
-    "('vigente','parcialmente_revogada','parcialmente revogada','revogada',"
-    "'revogado','suspensa','nao_aplicavel','nao aplicavel','não aplicável',"
-    "'historica')"
-)
-# Sob RAG_EXIGIR_VIGENCIA_VERIFICADA (default true), documento de LEGISLAÇÃO sem
-# vigência declarada pela fonte também sai da recuperação. Três recortes, e cada
-# um reproduz um ramo de inferir_situacao_juridica:
+
+# Sob RAG_EXIGIR_VIGENCIA_VERIFICADA, documento de LEGISLAÇÃO vigente só pode
+# fundamentar direito atual quando houver prova positiva e rastreável de
+# vigência. São necessárias, cumulativamente:
+#   • `legal_status` canônico exatamente `vigente`;
+#   • `legal_status_origem` não vazio (curadoria OU futura fonte oficial);
+#   • `legal_status_verificado_em` não vazio;
+#   • ausência de `legal_status_inferido_em`.
 #
-#   1. kd.vigente — a inferência testa `if not bool(doc.vigente)` ANTES de olhar
-#      o extra e devolve 'historica', que é situação DECLARADA. Sem esta guarda
-#      o espelho divergia do Python e sumia com o acervo histórico: era o que
-#      quebrava _artigo_superado/_sumula_superada em citation_check.py, que
-#      consultam `vigente = FALSE` de propósito para avisar "possivelmente
-#      desatualizada". Coluna NULL vale como não vigente, igual ao bool() do
-#      Python — daí o COALESCE(...,false).
-#   2. categoria LIKE '%legisl%' — só nessa faixa a inferência devolve
-#      'vigencia_nao_verificada'; para o restante do acervo devolve
-#      'nao_aplicavel' (que PERMITE fundamentação), então súmulas,
-#      jurisprudência, doutrina, modelos e peças internas seguem recuperáveis.
-#      ATENÇÃO: o LIKE também alcança 'proposicao_legislativa' (ingestors
-#      camara.py/senado.py), que NÃO grava legal_status. A exclusão desse corpus
-#      é INTENCIONAL e permanente, não transitória: proposição é projeto em
-#      tramitação e não pode fundamentar peça como se fosse lei em vigor. Se um
-#      dia proposição precisar voltar, o caminho é categoria própria fora do
-#      recorte — não afrouxar o filtro.
-#   3. situação não declarada — mesma lista de valores da inferência.
+# `suspensa`, `parcialmente_revogada`, ausência de status e status apenas
+# inferido permanecem no acervo/histórico, mas não entram como autoridade atual.
+# Versões históricas (`kd.vigente=false`) continuam acessíveis quando o call site
+# pede `incluir_historico=True`; conteúdo não legislativo também não é afetado.
 _FILTRO_VIGENCIA_VERIFICADA_RAG = (
     "AND NOT (COALESCE(kd.vigente, false) = true "
     "AND lower(COALESCE(kd.categoria,'')) LIKE '%legisl%' "
-    f"AND {_SQL_SITUACAO_JURIDICA} NOT IN {_SQL_SITUACAO_DECLARADA})"
+    "AND NOT ("
+    f"{_SQL_LEGAL_STATUS_CANONICO} = 'vigente' "
+    "AND NULLIF(btrim(kd.extra->>'legal_status_origem'),'') IS NOT NULL "
+    "AND NULLIF(btrim(kd.extra->>'legal_status_verificado_em'),'') IS NOT NULL "
+    "AND NULLIF(btrim(kd.extra->>'legal_status_inferido_em'),'') IS NULL"
+    "))"
 )
 
 
