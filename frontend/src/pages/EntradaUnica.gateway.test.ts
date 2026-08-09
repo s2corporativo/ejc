@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ehModoEntrada,
+  modoDisponivelPorLifecycle,
   modoPadraoParaRole,
   modoPermitidoParaRole,
   podeUsarRelato,
@@ -27,5 +28,20 @@ describe("Entrada Jurídica — contrato dos modos", () => {
     expect(modoPermitidoParaRole("relato", "estagiario")).toBe(false);
     expect(modoPermitidoParaRole("raio-x", "estagiario")).toBe(true);
     expect(modoPermitidoParaRole("sala", "advogado_auxiliar")).toBe(true);
+  });
+
+  it("não monta um modo técnico desabilitado administrativamente", () => {
+    const settings = {
+      "sala-juridica": {
+        module_key: "sala-juridica",
+        enabled: false,
+        menu_visible: false,
+        status: "disabled" as const,
+      },
+    };
+
+    expect(modoDisponivelPorLifecycle("relato", settings)).toBe(true);
+    expect(modoDisponivelPorLifecycle("raio-x", settings)).toBe(true);
+    expect(modoDisponivelPorLifecycle("sala", settings)).toBe(false);
   });
 });
