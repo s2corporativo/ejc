@@ -10,11 +10,13 @@ from zipfile import ZipFile
 import httpx
 import pytest
 
+from app.integrations import ckan_public_client as ckan_mod
 from app.integrations import cnj_sgt_client as sgt_mod
 from app.integrations import feature_flags
 from app.integrations import ide_sisema_client as sisema_mod
 from app.integrations import inlabs_parser as inlabs_mod
 from app.integrations import pgfn_open_data_client as pgfn_mod
+from app.integrations.ckan_public_client import CkanPublicClient
 from app.integrations.cnj_sgt_client import CnjSgtClient, CnjSgtError
 from app.integrations.ide_sisema_client import IdeSisemaClient
 from app.integrations.inlabs_parser import InlabsParseError, parse_xml, parse_zip
@@ -50,6 +52,45 @@ def test_tcu_rejeita_url_https_fora_do_dominio_oficial():
         "colegiado": "Plenário",
     })
     assert julgado is None
+
+
+async def test_ckan_rejeita_recurso_https_fora_do_dominio_oficial(monkeypatch):
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "result": {
+                    "count": 1,
+                    "results": [
+                        {
+                            "id": "ds-1",
+                            "title": "Autos de Infração",
+                            "resources": [
+                                {
+                                    "id": "oficial",
+                                    "name": "oficial.csv",
+                                    "format": "CSV",
+                                    "url": "https://dadosabertos.ibama.gov.br/base/oficial.csv",
+                                },
+                                {
+                                    "id": "externo",
+                                    "name": "externo.csv",
+                                    "format": "CSV",
+                                    "url": "https://evil.example/base/externo.csv",
+                                },
+                            ],
+                        }
+                    ],
+                },
+            },
+        )
+
+    _mock_httpx(monkeypatch, ckan_mod, handler)
+    recursos = await CkanPublicClient("ibama").recursos_por_busca(
+        "autos", formatos=["CSV"]
+    )
+    assert [recurso.resource_id for recurso in recursos] == ["oficial"]
 
 
 def test_inlabs_rejeita_doctype_e_entity():
