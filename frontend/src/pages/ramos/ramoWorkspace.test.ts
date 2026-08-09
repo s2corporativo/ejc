@@ -71,7 +71,9 @@ describe("ramoWorkspace", () => {
       expect(cfg, area.slug).toBeDefined();
       expect(cfg?.areaCaso, area.slug).toBe(area.slug);
       expect(abasDoWorkspace(cfg!).map((aba) => aba.id)).toContain("casos");
-      expect(abasDoWorkspace(cfg!).map((aba) => aba.id)).toContain("referencias");
+      expect(abasDoWorkspace(cfg!).map((aba) => aba.id)).toContain(
+        "referencias",
+      );
     }
   });
 
