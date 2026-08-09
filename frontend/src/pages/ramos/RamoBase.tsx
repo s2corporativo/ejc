@@ -36,6 +36,7 @@ import {
 } from "./ramoWorkspace";
 import RamoFerramenta from "./RamoFerramenta";
 import { AnaliseDocumentoArea, ComparadorBacen } from "./RamoAnalise";
+import FichaEspecializada from "./FichaEspecializada";
 import GuiaBancario from "../../components/GuiaBancario";
 import AnaliseExtratos from "../../components/AnaliseExtratos";
 import BancarioForense from "../../components/BancarioForense";
@@ -94,7 +95,16 @@ function ResumoWorkspace({
   registros: any[] | null;
 }) {
   const relacoes = relacoesDoWorkspace(cfg);
-  const ferramentasUnicas = new Set(cfg.ferramentas.map((f) => f.endpoint)).size;
+  const ferramentasUnicas =
+    new Set(cfg.ferramentas.map((f) => f.endpoint)).size +
+    Number(Boolean(cfg.comparadorBacen)) +
+    Number(Boolean(cfg.liquidacaoTrabalhista)) +
+    Number(Boolean(cfg.tributarioFiscal)) +
+    Number(Boolean(cfg.previdenciarioSimulacao)) +
+    Number(Boolean(cfg.autosAmbientais)) +
+    Number(Boolean(cfg.ambientalEstrategia)) +
+    Number(Boolean(cfg.sociedadesCliente)) +
+    Number(Boolean(cfg.lgpdRegistros));
   const cards = [
     {
       label: "Casos canônicos",
@@ -105,7 +115,7 @@ function ResumoWorkspace({
     {
       label: "Ferramentas",
       value: ferramentasUnicas,
-      descricao: "Calculadoras configuradas diretamente neste núcleo.",
+      descricao: "Calculadoras e rotinas operacionais disponíveis neste núcleo.",
       icon: Wrench,
     },
     {
@@ -119,7 +129,7 @@ function ResumoWorkspace({
       value: registros?.length ?? 0,
       descricao: cfg.externo
         ? "Este núcleo usa apenas registros canônicos do EJC."
-        : "Dados auxiliares legados, sempre vinculados a um caso.",
+        : "Dados auxiliares vinculados a um caso canônico.",
       icon: FolderOpen,
     },
   ];
@@ -218,8 +228,8 @@ function RegistrosEspecializados({
         </h2>
       </div>
       <p className="mt-1 text-xs leading-5 text-slate-500">
-        Estes registros são fichas auxiliares históricas do núcleo. Eles não são
-        casos independentes e não substituem o cadastro central de Casos.
+        Estes registros são fichas auxiliares do núcleo. Eles não são casos
+        independentes e não substituem o cadastro central de Casos.
       </p>
       <div className="mt-3 space-y-2">
         {registros.slice(0, 8).map((item) => (
@@ -463,6 +473,15 @@ export default function RamoBase() {
   }, [cfg]);
   const abas = useMemo(() => (cfg ? abasDoWorkspace(cfg) : []), [cfg]);
 
+  const recarregarRegistros = () => {
+    if (!cfg || !possuiRegistroEspecializado(cfg)) return;
+    setRegistros(null);
+    api
+      .get(cfg.endpoint)
+      .then((resposta) => setRegistros(carregarListaResposta(resposta.data)))
+      .catch(() => setRegistros([]));
+  };
+
   useEffect(() => {
     if (!cfg) return;
     let ativo = true;
@@ -490,14 +509,18 @@ export default function RamoBase() {
     ).then((resultados) => {
       if (!ativo) return;
       const porId = new Map<string, Case>();
-      resultados.flatMap((item) => item.casos).forEach((caso) => porId.set(caso.id, caso));
+      resultados
+        .flatMap((item) => item.casos)
+        .forEach((caso) => porId.set(caso.id, caso));
       setCasos(
         [...porId.values()].sort(
           (a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
         ),
       );
-      setCasosErro(resultados.length > 0 && resultados.every((item) => !item.ok));
+      setCasosErro(
+        resultados.length > 0 && resultados.every((item) => !item.ok),
+      );
       setCasosLoading(false);
     });
 
@@ -533,7 +556,10 @@ export default function RamoBase() {
               Todas as áreas
             </Link>
             {podeCriarCaso && (
-              <Link to="/casos/novo" className="btn-gold flex items-center gap-1 text-sm">
+              <Link
+                to="/casos/novo"
+                className="btn-gold flex items-center gap-1 text-sm"
+              >
                 <Plus size={16} /> Novo caso
               </Link>
             )}
@@ -542,7 +568,11 @@ export default function RamoBase() {
       />
 
       <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Navegação do núcleo jurídico">
+        <div
+          className="flex gap-1 overflow-x-auto"
+          role="tablist"
+          aria-label="Navegação do núcleo jurídico"
+        >
           {abas.map((item) => (
             <button
               key={item.id}
@@ -576,9 +606,10 @@ export default function RamoBase() {
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
                   O caso é sempre o registro principal. Use <b>Casos</b> para
-                  trabalhar a carteira desta área, <b>Ferramentas</b> para cálculos
-                  e rotinas especializadas, <b>IA & Análise</b> para leitura assistida
-                  e <b>Referências</b> para guias, consultas e peças.
+                  trabalhar a carteira desta área, <b>Ferramentas</b> para
+                  cálculos e rotinas especializadas, <b>IA & Análise</b> para
+                  leitura assistida e <b>Referências</b> para guias, consultas e
+                  peças.
                 </p>
                 {cfg.externo && (
                   <p className="mt-2 text-xs text-slate-500">
@@ -590,6 +621,11 @@ export default function RamoBase() {
             </div>
           </section>
           {relacoes.length > 0 && <RelacoesVisuais cfg={cfg} />}
+          <FichaEspecializada
+            cfg={cfg}
+            casos={casos}
+            onSaved={recarregarRegistros}
+          />
           <RegistrosEspecializados cfg={cfg} registros={registros} />
         </div>
       )}
@@ -602,8 +638,9 @@ export default function RamoBase() {
                 Casos desta área
               </h2>
               <p className="text-xs text-slate-500">
-                Lista canônica por {areasDoWorkspace(cfg).join(" + ")} — registros
-                legados são unidos apenas para leitura, sem reclassificação.
+                Lista canônica por {areasDoWorkspace(cfg).join(" + ")} —
+                registros legados são unidos apenas para leitura, sem
+                reclassificação.
               </p>
             </div>
             <Link to="/casos" className="btn-secondary text-sm">
