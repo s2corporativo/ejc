@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import {
+  Banknote,
   BookOpen,
   Brain,
   Briefcase,
@@ -17,7 +18,6 @@ import {
   Scale,
   Users,
   Wrench,
-  Banknote,
 } from "lucide-react";
 import api from "../../lib/api";
 import type { Case } from "../../types";
@@ -84,6 +84,11 @@ function carregarListaResposta(data: any): any[] {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.data)) return data.data;
   return [];
+}
+
+export function respostaListaFoiTruncada(data: any, carregados: number): boolean {
+  const total = Number(data?.total);
+  return Number.isFinite(total) && total > carregados;
 }
 
 function ResumoWorkspace({
@@ -268,10 +273,12 @@ function CasosDoRamo({
   casos,
   loading,
   erro,
+  truncado,
 }: {
   casos: Case[];
   loading: boolean;
   erro: boolean;
+  truncado: boolean;
 }) {
   if (loading) return <Spinner />;
   if (erro && casos.length === 0) {
@@ -285,29 +292,41 @@ function CasosDoRamo({
     );
   }
   return (
-    <div className="space-y-2">
-      {casos.map((caso) => (
-        <Link
-          key={caso.id}
-          to={`/casos/${caso.id}`}
-          className="card flex flex-wrap items-center gap-4 p-4 transition hover:border-gold-300"
-        >
-          <div className="min-w-[220px] flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="font-medium text-navy">{caso.titulo}</p>
-              <StatusBadge value={caso.status} />
+    <div className="space-y-3">
+      {truncado && (
+        <div className="rounded-xl border border-warn-200 bg-warn-50 p-3 text-xs text-warn-800">
+          Esta visão carregou até 100 casos por classificação. Existem mais
+          registros disponíveis; use a lista geral de Casos para consultar o
+          conjunto completo.
+          <Link to="/casos" className="ml-1 font-semibold underline">
+            Abrir lista geral
+          </Link>
+        </div>
+      )}
+      <div className="space-y-2">
+        {casos.map((caso) => (
+          <Link
+            key={caso.id}
+            to={`/casos/${caso.id}`}
+            className="card flex flex-wrap items-center gap-4 p-4 transition hover:border-gold-300"
+          >
+            <div className="min-w-[220px] flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium text-navy">{caso.titulo}</p>
+                <StatusBadge value={caso.status} />
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                {caso.numero_interno || "Sem número interno"} ·{" "}
+                {rotulo(caso.area)}
+                {caso.fase ? ` · ${rotulo(caso.fase)}` : ""}
+              </p>
             </div>
-            <p className="mt-1 text-xs text-slate-400">
-              {caso.numero_interno || "Sem número interno"} ·{" "}
-              {rotulo(caso.area)}
-              {caso.fase ? ` · ${rotulo(caso.fase)}` : ""}
-            </p>
-          </div>
-          <div className="text-xs text-slate-500">
-            Prioridade: {rotulo(caso.prioridade || "media")}
-          </div>
-        </Link>
-      ))}
+            <div className="text-xs text-slate-500">
+              Prioridade: {rotulo(caso.prioridade || "media")}
+            </div>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
@@ -463,17 +482,18 @@ function ReferenciasDoRamo({ cfg }: { cfg: RamoConfig }) {
 
 export default function RamoBase() {
   const { slug } = useParams<{ slug: string }>();
-  const cfg: RamoConfig | undefined = slug
-    ? configWorkspaceDaArea(slug)
-    : undefined;
+  const cfg: RamoConfig | undefined = useMemo(
+    () => (slug ? configWorkspaceDaArea(slug) : undefined),
+    [slug],
+  );
   const role = useAuth((state) => state.user?.role);
   const podeAcessarArea = Boolean(
     role && (ROLES.juridico as readonly string[]).includes(role),
   );
   const podeCriarCaso = Boolean(
     podeAcessarArea &&
-    role &&
-    (ROLES.clientes as readonly string[]).includes(role),
+      role &&
+      (ROLES.clientes as readonly string[]).includes(role),
   );
   const [aba, setAba] = useState<WorkspaceTabId>("visao");
   const [abasVisitadas, setAbasVisitadas] = useState<Set<WorkspaceTabId>>(
@@ -482,6 +502,7 @@ export default function RamoBase() {
   const [casos, setCasos] = useState<Case[]>([]);
   const [casosLoading, setCasosLoading] = useState(true);
   const [casosErro, setCasosErro] = useState(false);
+  const [casosTruncados, setCasosTruncados] = useState(false);
   const [registros, setRegistros] = useState<any[] | null>(null);
 
   const Icone = useMemo(() => {
@@ -507,6 +528,7 @@ export default function RamoBase() {
     setCasos([]);
     setCasosLoading(true);
     setCasosErro(false);
+    setCasosTruncados(false);
     setRegistros(possuiRegistroEspecializado(cfg) ? null : []);
 
     const areas = areasDoWorkspace(cfg);
@@ -516,12 +538,17 @@ export default function RamoBase() {
           const resposta = await api.get("/cases/", {
             params: { area, page_size: 100 },
           });
+          const casosCarregados = carregarListaResposta(resposta.data) as Case[];
           return {
             ok: true,
-            casos: carregarListaResposta(resposta.data) as Case[],
+            casos: casosCarregados,
+            truncado: respostaListaFoiTruncada(
+              resposta.data,
+              casosCarregados.length,
+            ),
           };
         } catch {
-          return { ok: false, casos: [] as Case[] };
+          return { ok: false, casos: [] as Case[], truncado: false };
         }
       }),
     ).then((resultados) => {
@@ -539,6 +566,7 @@ export default function RamoBase() {
       setCasosErro(
         resultados.length > 0 && resultados.every((item) => !item.ok),
       );
+      setCasosTruncados(resultados.some((item) => item.truncado));
       setCasosLoading(false);
     });
 
@@ -556,7 +584,7 @@ export default function RamoBase() {
     return () => {
       ativo = false;
     };
-  }, [cfg, podeAcessarArea]);
+  }, [slug, podeAcessarArea, cfg]);
 
   if (!cfg) return <Empty message="Área de atuação não encontrada" />;
   if (!podeAcessarArea) {
@@ -687,6 +715,7 @@ export default function RamoBase() {
               casos={casos}
               loading={casosLoading}
               erro={casosErro}
+              truncado={casosTruncados}
             />
           </section>
         </div>
