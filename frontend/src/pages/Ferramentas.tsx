@@ -20,7 +20,7 @@ import {
 } from "../config/moduleRegistry";
 import { useAuth } from "../stores/auth";
 
-export const FERRAMENTAS_CATEGORIES: {
+export const CATEGORIAS_FERRAMENTAS: {
   title: string;
   description: string;
   keys: string[];
@@ -82,7 +82,7 @@ export default function Ferramentas() {
   const termo = busca.trim().toLowerCase();
   const groups = useMemo(
     () =>
-      FERRAMENTAS_CATEGORIES.map((category) => ({
+      CATEGORIAS_FERRAMENTAS.map((category) => ({
         ...category,
         modules: category.keys
           .map((key) => modulesByKey.get(key))
@@ -127,7 +127,7 @@ export default function Ferramentas() {
       <div className="mx-auto max-w-7xl space-y-4">
         <PageHeader
           title="Mais Ferramentas"
-          subtitle="Recursos complementares organizados por finalidade. A rotina principal continua dentro do caso e da Jornada."
+          subtitle="Recursos complementares organizados por finalidade. A rotina principal continua dentro do Caso."
           eyebrow="Catálogo de ferramentas"
         />
 
