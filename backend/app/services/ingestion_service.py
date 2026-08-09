@@ -247,6 +247,44 @@ def _filtro_escopo_cliente(client_id: str | None):
 # UPSERT idempotente de documento no RAG
 # ══════════════════════════════════════════════════════════════════════════
 
+# ── Vigência jurídica: decisão de curador × leitura de ingestor ───────────────
+# Marcador que a curadoria grava em `extra.legal_status_origem` ao decidir a
+# situação jurídica pelo painel (rag_governance.atualizar_governanca_documento).
+# Os ingestores gravam a PRÓPRIA origem ('planalto:texto_compilado',
+# 'lexml:registro'), então o prefixo distingue quem decidiu o quê.
+ORIGEM_VIGENCIA_CURADORIA = "curadoria"
+# Todo o bloco de auditoria da vigência anda junto: preservar só o valor e
+# deixar o carimbo do ingestor faria o registro afirmar uma conferência que não
+# aconteceu sobre o status preservado.
+_CAMPOS_VIGENCIA = (
+    "legal_status",
+    "legal_status_origem",
+    "legal_status_verificado_em",
+    "legal_status_inferido_em",
+)
+
+
+def _vigencia_de_curadoria(anterior: dict) -> bool:
+    """A vigência já registrada no documento é DECISÃO HUMANA?
+
+    Verdadeiro quando há um `legal_status` que representa decisão e ele não veio
+    de ingestor:
+      • 'vigencia_nao_verificada' NÃO conta — é o default que
+        knowledge_autoapproval grava por `setdefault`, ou seja, a AUSÊNCIA de
+        decisão. Tratá-lo como curadoria congelaria para sempre o documento
+        fora da recuperação, já que nenhum re-feed poderia mais corrigi-lo.
+      • sem `legal_status_origem` conta como curadoria: até o PR #642 nenhum
+        ingestor escrevia `legal_status`, então o acervo com o campo preenchido
+        e sem origem só pode ter vindo do painel — e a PRIMEIRA execução do job
+        novo é justamente onde essas decisões seriam atropeladas.
+    """
+    status = str(anterior.get("legal_status") or "").strip().lower()
+    if not status or status == "vigencia_nao_verificada":
+        return False
+    origem = str(anterior.get("legal_status_origem") or "").strip().lower()
+    return not origem or origem.split(":", 1)[0] == ORIGEM_VIGENCIA_CURADORIA
+
+
 async def upsert_documento(
     db: AsyncSession,
     *,
@@ -317,6 +355,19 @@ async def upsert_documento(
             # ingestor manda `rag_status=pendente` por default e o merge
             # devolvia ao fluxo de pendentes um documento que o curador já
             # tinha rejeitado — a rejeição sumia a cada atualização periódica.
+            # VIGÊNCIA decidida por curador também é decisão humana (review de
+            # segurança do PR #642): o job semanal do Planalto reescreve
+            # `legal_status` a cada re-feed, inclusive por este atalho
+            # "inalterado". Sem esta preservação, um diploma marcado
+            # 'revogada' no painel voltava a 'vigente' sozinho — e, como
+            # `governance_updated_by` continua apontando para o curador, o
+            # estado revertido AINDA PARECERIA decisão humana.
+            if _vigencia_de_curadoria(anterior):
+                for campo in _CAMPOS_VIGENCIA:
+                    if campo in anterior:
+                        mesclado[campo] = anterior[campo]
+                    else:
+                        mesclado.pop(campo, None)
             if anterior.get("rag_status") == "recusado":
                 mesclado["rag_status"] = "recusado"
             elif anterior.get("rag_status") == "aprovado" and extra.get("rag_status") == "pendente":

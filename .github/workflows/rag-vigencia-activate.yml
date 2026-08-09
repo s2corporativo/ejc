@@ -1,0 +1,198 @@
+name: RAG Vigencia Activate
+
+on:
+  workflow_run:
+    workflows: ["Deploy VPS"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Compartilha o mesmo lock repository-wide do Deploy VPS e do prearm. Assim
+# nenhum deploy pode alterar .env/containers durante backfill, flip ou rollback.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  activate:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 30
+    env:
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+      APP_DIR: /opt/ejc
+    steps:
+      - name: Reingerir Planalto e ativar gate de vigência
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          prearm="$APP_DIR/data/.rag_vigencia_prearm_v1"
+          marker="$APP_DIR/data/.rag_vigencia_activated_v1"
+          env_file="$APP_DIR/.env"
+          deployed="$(sudo cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+
+          if [ -z "$deployed" ] || [ "$deployed" != "$TARGET_SHA" ]; then
+            echo "::error::Ativação RAG: /opt/ejc não comprova o SHA esperado."
+            exit 1
+          fi
+          if ! sudo test -f "$prearm"; then
+            echo "::error::Ativação RAG: prearm ausente; recuso ativar gate estrito."
+            exit 1
+          fi
+          if ! grep -q 'RAG_EXIGIR_VIGENCIA_VERIFICADA' "$APP_DIR/backend/app/core/config.py"; then
+            echo "::error::Ativação RAG: código publicado não contém o gate de vigência."
+            exit 1
+          fi
+          sudo test -f "$env_file" || {
+            echo "::error::Ativação RAG: .env de produção ausente."
+            exit 1
+          }
+
+          # Um marcador antigo só autoriza fast-path se a configuração REAL
+          # continuar canônica e ativa. Caso contrário, reexecutamos o fluxo.
+          if sudo test -f "$marker"; then
+            total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+            true_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=true$' "$env_file" || true)"
+            if [ "$total" = "1" ] && [ "$true_count" = "1" ]; then
+              echo "Gate de vigência já ativado e configuração canônica; nenhuma ação necessária."
+              exit 0
+            fi
+            echo "::warning::Ativação RAG: marcador existe, mas .env divergiu; revalidando rollout."
+          fi
+
+          total_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+          false_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$env_file" || true)"
+          if [ "$total_false" != "1" ] || [ "$false_count" != "1" ]; then
+            echo "::error::Ativação RAG: .env não está pré-armado canonicamente em false."
+            exit 1
+          fi
+
+          # Troca UMA chave do .env de forma atômica. O destino nunca é
+          # truncado in-place: montamos/validamos um candidato no mesmo
+          # filesystem, guardamos rollback 0600 e só então fazemos rename.
+          set_flag() {
+            valor="$1"
+            uid="$(sudo stat -c %u "$env_file")"
+            gid="$(sudo stat -c %g "$env_file")"
+            mode="$(sudo stat -c %a "$env_file")"
+            work="$(mktemp)"
+            candidate="$APP_DIR/.env.rag-vigencia.new"
+            backup="$APP_DIR/.env.rag-vigencia.rollback"
+
+            cleanup_flag() {
+              rm -f "$work"
+              sudo rm -f "$candidate"
+            }
+
+            sudo cat "$env_file" | awk -v value="$valor" '
+              BEGIN { seen = 0 }
+              /^RAG_EXIGIR_VIGENCIA_VERIFICADA=/ {
+                if (!seen) {
+                  print "RAG_EXIGIR_VIGENCIA_VERIFICADA=" value
+                  seen = 1
+                }
+                next
+              }
+              { print }
+              END {
+                if (!seen) print "RAG_EXIGIR_VIGENCIA_VERIFICADA=" value
+              }
+            ' > "$work" || { cleanup_flag; return 1; }
+            chmod 600 "$work"
+
+            sudo rm -f "$candidate" "$backup"
+            sudo install -o "$uid" -g "$gid" -m "$mode" "$work" "$candidate" || {
+              cleanup_flag
+              return 1
+            }
+            candidate_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$candidate" || true)"
+            candidate_value="$(sudo grep -c "^RAG_EXIGIR_VIGENCIA_VERIFICADA=${valor}$" "$candidate" || true)"
+            if [ "$candidate_total" != "1" ] || [ "$candidate_value" != "1" ]; then
+              echo "::error::Ativação RAG: candidato de .env não ficou canônico."
+              cleanup_flag
+              return 1
+            fi
+
+            sudo cp -p "$env_file" "$backup" || { cleanup_flag; return 1; }
+            sudo chmod 600 "$backup"
+            if ! sudo mv -f "$candidate" "$env_file"; then
+              cleanup_flag
+              sudo rm -f "$backup"
+              return 1
+            fi
+
+            final_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+            final_value="$(sudo grep -c "^RAG_EXIGIR_VIGENCIA_VERIFICADA=${valor}$" "$env_file" || true)"
+            if [ "$final_total" != "1" ] || [ "$final_value" != "1" ]; then
+              echo "::error::Ativação RAG: prova pós-rename falhou; restaurando backup."
+              sudo mv -f "$backup" "$env_file"
+              cleanup_flag
+              return 1
+            fi
+
+            sudo rm -f "$backup"
+            cleanup_flag
+          }
+
+          flag_changed=0
+          rollback_flag() {
+            rc=$?
+            trap - ERR
+            set +e
+            if [ "$flag_changed" = "1" ]; then
+              echo "::warning::Ativação RAG falhou após ligar o gate; restaurando flag=false."
+              set_flag false
+              cd "$APP_DIR"
+              RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend worker
+              for _ in $(seq 1 12); do
+                sleep 5
+                curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1 && break
+              done
+            fi
+            exit "$rc"
+          }
+          trap rollback_flag ERR
+
+          cd "$APP_DIR"
+          echo "Reingerindo corpus Planalto com gate estrito ainda desligado."
+          docker compose exec -T backend \
+            python -m app.seeds.base_juridica_seed --incluir-legislacao --forcar-legislacao
+
+          echo "Backfill concluído; ativando gate de vigência."
+          set_flag true
+          flag_changed=1
+          RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend worker
+
+          backend_ok=0
+          for _ in $(seq 1 12); do
+            sleep 5
+            if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+              backend_ok=1
+              break
+            fi
+          done
+          [ "$backend_ok" = "1" ] || {
+            echo "::error::Ativação RAG: backend não respondeu após restart."
+            false
+          }
+
+          commit_no_ar="$(curl -fsS http://127.0.0.1:8000/api/health \
+            | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+          if [ "$commit_no_ar" != "$TARGET_SHA" ]; then
+            echo "::error::Ativação RAG: backend declara SHA divergente."
+            false
+          fi
+
+          docker compose exec -T backend python -c \
+            'from app.core.config import get_settings; assert get_settings().RAG_EXIGIR_VIGENCIA_VERIFICADA is True'
+
+          # Marcador somente após backfill, restart, health/SHA e leitura da
+          # configuração terem sido comprovados.
+          printf '%s\n' "$TARGET_SHA" | sudo tee "$marker" >/dev/null
+          sudo chmod 600 "$marker"
+          flag_changed=0
+          trap - ERR
+          echo "Gate de vigência ativado após backfill e health-check do SHA aprovado."

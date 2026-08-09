@@ -33,6 +33,13 @@
 # o gate (números de artigo passariam a "existir" via ementa alheia). A busca
 # semântica default (categorias=None) varre TODAS as categorias, então esses
 # documentos seguem recuperáveis normalmente — só não contaminam o gate.
+#
+# VIGÊNCIA (Issue #636) — LIMITAÇÃO DA FONTE: o feed Atom do federador não
+# expõe campo de situação normativa, então este ingestor NÃO declara vigência
+# por ausência de marcação; só propaga `extra.legal_status='revogada'` quando o
+# próprio registro afirma a revogação (ver `situacao_juridica`). O restante
+# permanece 'vigencia_nao_verificada' na governança — e, com
+# RAG_EXIGIR_VIGENCIA_VERIFICADA ligada, fora da recuperação até curadoria.
 from __future__ import annotations
 
 import hashlib
@@ -234,6 +241,39 @@ def _chave(item: dict, tipo: str) -> str:
     return f"lexml:{ns}:{h}"
 
 
+# ── Vigência declarada no registro LexML (Issue #636) ─────────────────────────
+# LIMITAÇÃO HONESTA da fonte: o feed Atom do federador (o que
+# jurisprudencia_externa.buscar_lexml consome) traz title/summary/link/author/
+# published/id — NÃO há campo estruturado de situação normativa (vigente /
+# revogada). Logo NÃO se declara vigência por ausência de marcação: um registro
+# sem marcação continua sem `legal_status` e a governança o classifica como
+# 'vigencia_nao_verificada' (o lado seguro), o que exige curadoria manual.
+# O que dá para propagar com honestidade é o caso POSITIVO: quando o próprio
+# título/ementa devolvido pelo LexML declara a revogação do ato, isso é dado da
+# fonte e vira 'revogada'. O erro possível aqui só APERTA a recuperação (um
+# falso positivo tira o registro do RAG; nunca coloca norma revogada dentro).
+# Exige a forma PASSIVA com agente ("Revogada pela Lei nº ...", "Revogado pelo
+# Decreto ..."): "Revoga a Lei nº X" — o ato que revoga OUTRO — não casa.
+_RE_ATO_REVOGADO = re.compile(
+    r"revogad[oa]s?\s+(?:integralmente\s+|expressamente\s+|tacitamente\s+)?"
+    r"pel[ao]s?\b",
+    re.IGNORECASE,
+)
+
+
+def situacao_juridica(item: dict, tipo: str) -> str | None:
+    """'revogada' quando o registro LexML de LEGISLAÇÃO declara a própria
+    revogação; None quando a fonte não diz nada (deixa a governança marcar como
+    não verificada) e sempre None para jurisprudência — a ementa de um acórdão
+    comenta a revogação de NORMAS, e ler isso como situação do julgado tiraria
+    do RAG jurisprudência válida.
+    """
+    if tipo != "legislacao":
+        return None
+    texto = f"{item.get('titulo') or ''}\n{item.get('ementa') or ''}"
+    return "revogada" if _RE_ATO_REVOGADO.search(texto) else None
+
+
 def _monta_conteudo(item: dict, tipo: str) -> str:
     """Concatena as partes citáveis do registro LexML (título + metadados +
     ementa/resumo). Não inventa texto: usa só o que o federador retornou."""
@@ -299,6 +339,18 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
             link = it.get("link_original") or ""
             fonte = link if _url_oficial(link) else url_consulta
 
+            # Vigência: só grava quando a FONTE declara (ver situacao_juridica).
+            # A chave é OMITIDA quando não há declaração — `upsert_documento`
+            # mescla `extra` a cada re-feed, e gravar None apagaria uma decisão
+            # de curadoria já registrada no documento.
+            extra_vigencia: dict = {}
+            legal_status = situacao_juridica(it, tipo)
+            if legal_status:
+                extra_vigencia = {
+                    "legal_status": legal_status,
+                    "legal_status_origem": "lexml:registro",
+                }
+
             try:
                 res = await upsert_documento(
                     db,
@@ -328,6 +380,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                         "origem": "lexml",
                         "rag_status": "aprovado",
                         "tipo_fonte": _TIPO_FONTE[tipo],
+                        **extra_vigencia,
                     },
                     confianca="alta",   # federador oficial (Senado/LexML)
                 )
