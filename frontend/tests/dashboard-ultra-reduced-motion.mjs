@@ -13,7 +13,7 @@ const cssBase = readFileSync(
   "utf8",
 );
 const cssGuard = readFileSync(
-  path.join(ROOT, "src", "styles", "saas-ultra-reduced-motion.css"),
+  path.join(ROOT, "src", "styles", "saas-ultra-accessibility.css"),
   "utf8",
 );
 
