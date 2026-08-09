@@ -13,8 +13,11 @@ vi.mock("../lib/api", () => ({
 }));
 
 vi.mock("../stores/auth", () => ({
-  useAuth: (selector: (state: { user: { role: string; full_name: string } }) => unknown) =>
-    selector({ user: { role: papelAtual, full_name: "Clovis Teste" } }),
+  useAuth: (
+    selector: (state: {
+      user: { role: string; full_name: string };
+    }) => unknown,
+  ) => selector({ user: { role: papelAtual, full_name: "Clovis Teste" } }),
 }));
 
 import DashboardUltra from "./DashboardUltra";
@@ -99,14 +102,18 @@ describe("DashboardUltra", () => {
   it("aplica RBAC aos comandos rápidos", async () => {
     papelAtual = "advogado";
     const primeira = renderizar();
-    expect(await screen.findByText("Novo caso por documento")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Novo caso por documento"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Inteligência jurídica")).toBeInTheDocument();
     primeira.unmount();
 
     papelAtual = "cliente_externo";
     renderizar();
     await screen.findByText("Agenda e prazos");
-    expect(screen.queryByText("Novo caso por documento")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Novo caso por documento"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Importar documento")).not.toBeInTheDocument();
     expect(screen.queryByText("Inteligência jurídica")).not.toBeInTheDocument();
   });
@@ -124,7 +131,8 @@ describe("DashboardUltra", () => {
 
   it("expõe falha do dashboard em vez de inventar indicadores", async () => {
     getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/") return Promise.reject(new Error("dashboard off"));
+      if (url === "/dashboard/")
+        return Promise.reject(new Error("dashboard off"));
       if (url === "/atividades") return Promise.resolve(atividadesOk);
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
       if (url === "/movimentos/recentes") return Promise.resolve(movimentosOk);
@@ -133,7 +141,9 @@ describe("DashboardUltra", () => {
 
     renderizar();
     await waitFor(() => {
-      expect(screen.getAllByText("Fonte indisponível").length).toBeGreaterThanOrEqual(2);
+      expect(
+        screen.getAllByText("Fonte indisponível").length,
+      ).toBeGreaterThanOrEqual(2);
     });
     expect(screen.getByText("Prazos indisponíveis")).toBeInTheDocument();
   });
@@ -141,14 +151,17 @@ describe("DashboardUltra", () => {
   it("expõe falha de atividades e não mascara a agenda como vazia", async () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/dashboard/") return Promise.resolve(dashboardOk);
-      if (url === "/atividades") return Promise.reject(new Error("atividades off"));
+      if (url === "/atividades")
+        return Promise.reject(new Error("atividades off"));
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
       if (url === "/movimentos/recentes") return Promise.resolve(movimentosOk);
       return Promise.reject(new Error("inesperado"));
     });
 
     renderizar();
-    expect(await screen.findByText("Agenda indisponível no momento.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Agenda indisponível no momento."),
+    ).toBeInTheDocument();
     const card = screen.getByText("Tarefas pendentes").closest("a");
     expect(card).toHaveTextContent("Fonte indisponível");
   });
@@ -157,14 +170,17 @@ describe("DashboardUltra", () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/dashboard/") return Promise.resolve(dashboardOk);
       if (url === "/atividades") return Promise.resolve(atividadesOk);
-      if (url === "/agenda-eventos/") return Promise.reject(new Error("agenda off"));
+      if (url === "/agenda-eventos/")
+        return Promise.reject(new Error("agenda off"));
       if (url === "/movimentos/recentes") return Promise.resolve(movimentosOk);
       return Promise.reject(new Error("inesperado"));
     });
 
     renderizar();
     expect(
-      await screen.findByText(/Horário, local e subtipo dos compromissos podem estar indisponíveis/i),
+      await screen.findByText(
+        /Horário, local e subtipo dos compromissos podem estar indisponíveis/i,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText("Tarefa pendente")).toBeInTheDocument();
   });
@@ -174,11 +190,14 @@ describe("DashboardUltra", () => {
       if (url === "/dashboard/") return Promise.resolve(dashboardOk);
       if (url === "/atividades") return Promise.resolve(atividadesOk);
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/movimentos/recentes") return Promise.reject(new Error("mov off"));
+      if (url === "/movimentos/recentes")
+        return Promise.reject(new Error("mov off"));
       return Promise.reject(new Error("inesperado"));
     });
 
     renderizar();
-    expect(await screen.findByText("Movimentações indisponíveis.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Movimentações indisponíveis."),
+    ).toBeInTheDocument();
   });
 });
