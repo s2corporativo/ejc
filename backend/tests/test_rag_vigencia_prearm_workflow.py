@@ -1,4 +1,7 @@
-"""Contrato de segurança do prearm do gate de vigência em produção."""
+"""Contrato de segurança do prearm do gate de vigência em produção.
+
+Rebuild #944: mantém o mesmo contrato funcional do #939 sobre a main atual.
+"""
 from pathlib import Path
 
 
