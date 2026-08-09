@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useAuth } from "../stores/auth";
 import DashboardUltra from "./DashboardUltra";
 
-const PJE_ROLES = new Set([
+const PAPEIS_PJE = new Set([
   "superadmin",
   "admin",
   "socio",
@@ -24,11 +24,11 @@ const PJE_ROLES = new Set([
  */
 export default function Dashboard() {
   const user = useAuth((state) => state.user);
-  const canUsePje = Boolean(user?.role && PJE_ROLES.has(user.role));
+  const podeUsarPje = Boolean(user?.role && PAPEIS_PJE.has(user.role));
 
   return (
     <div>
-      {canUsePje && (
+      {podeUsarPje && (
         <div className="mb-3 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-950/55 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-950 text-[#e5ce7f] dark:bg-white/10">
