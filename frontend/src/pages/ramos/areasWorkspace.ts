@@ -21,10 +21,46 @@ export type ResultadoFerramentaBusca = {
 };
 
 /**
+ * Catálogo visual das 25 classificações canônicas expostas pela API `/areas`.
+ * Os slugs continuam sendo os do backend; este catálogo é fallback de UX e
+ * não substitui a taxonomia persistida.
+ */
+export const AREAS_CANONICAS: AreaResumo[] = [
+  ["empresarial", "Direito Empresarial"],
+  ["civil", "Direito Cível"],
+  ["criminal", "Direito Penal"],
+  ["trabalhista", "Direito Trabalhista"],
+  ["administrativo", "Direito Administrativo"],
+  ["bancario", "Direito Bancário"],
+  ["tributario", "Direito Tributário"],
+  ["ambiental", "Direito Ambiental"],
+  ["consumidor", "Direito do Consumidor"],
+  ["familia", "Direito de Família"],
+  ["sucessoes", "Direito das Sucessões"],
+  ["imobiliario", "Direito Imobiliário"],
+  ["previdenciario", "Direito Previdenciário"],
+  ["saude", "Direito da Saúde"],
+  ["medico", "Direito Médico"],
+  ["digital_lgpd", "Direito Digital e LGPD"],
+  ["transito", "Direito de Trânsito"],
+  ["constitucional", "Direito Constitucional"],
+  ["agrario", "Direito Agrário"],
+  ["agronegocio", "Direito do Agronegócio"],
+  ["eleitoral", "Direito Eleitoral"],
+  ["internacional", "Direito Internacional"],
+  ["contratual", "Direito Contratual"],
+  ["societario", "Direito Societário"],
+  ["licitacoes", "Licitações"],
+].map(([slug, nome], index) => ({
+  slug,
+  nome,
+  ordem: (index + 1) * 10,
+}));
+
+/**
  * Somente aliases técnicos em que a taxonomia de casos e o slug histórico do
  * workspace têm nomes diferentes. Especialidades canônicas NÃO são achatadas
- * em um núcleo pai: societário, sucessões e licitações preservam seu próprio
- * slug e, enquanto não houver workspace dedicado, permanecem sem hub.
+ * em um núcleo pai.
  */
 export const HUB_POR_AREA: Record<string, string> = {
   civil: "civel",
@@ -95,16 +131,60 @@ export const GRUPOS_AREAS: GrupoArea[] = [
   },
 ];
 
+function areaCanonica(areaSlug: string): AreaResumo | undefined {
+  return AREAS_CANONICAS.find((area) => area.slug === areaSlug);
+}
+
 export function hubSlugDaArea(areaSlug: string): string | null {
+  const alias = HUB_POR_AREA[areaSlug];
+  if (alias && RAMOS[alias]) return alias;
+  if (RAMOS[areaSlug]) return areaSlug;
+  return areaCanonica(areaSlug) ? areaSlug : null;
+}
+
+export function temWorkspaceEspecializado(areaSlug: string): boolean {
   const slug = HUB_POR_AREA[areaSlug] ?? areaSlug;
-  return RAMOS[slug] ? slug : null;
+  return Boolean(RAMOS[slug]);
+}
+
+/**
+ * Retorna a configuração especializada quando ela existe. Para as demais
+ * classificações canônicas, cria somente uma casca de workspace: Casos + Peças
+ * e referências centrais. Nenhum endpoint, ferramenta ou regra jurídica é
+ * inventado para preencher a lacuna.
+ */
+export function configWorkspaceDaArea(
+  areaSlug: string,
+): RamoConfig | undefined {
+  if (RAMOS[areaSlug]) return RAMOS[areaSlug];
+
+  const alias = HUB_POR_AREA[areaSlug];
+  if (alias && RAMOS[alias]) return RAMOS[alias];
+
+  const area = areaCanonica(areaSlug);
+  if (!area) return undefined;
+
+  return {
+    slug: area.slug,
+    endpoint: "",
+    areaCaso: area.slug,
+    titulo: area.nome,
+    subtitulo:
+      "Workspace geral desta especialidade: casos canônicos, peças e referências centrais do EJC. Ferramentas próprias só aparecem quando existe implementação confirmada.",
+    icone: "Folder",
+    cor: "slate",
+    campoTitulo: "tipo",
+    campoStatus: "status",
+    campos: [],
+    ferramentas: [],
+    externo: true,
+  };
 }
 
 /**
  * Casos.tsx ainda não consome `?area=` para filtro nem para pré-preenchimento.
  * Estes caminhos são propositalmente honestos: não codificam um filtro que a
- * tela atual ignoraria. O workspace especializado continua sendo o caminho
- * contextual quando ele existe.
+ * tela atual ignoraria. O workspace é o caminho contextual de cada área.
  */
 export function novoCasoPath(): string {
   return "/casos/novo";
@@ -127,8 +207,7 @@ export function normalizarBusca(valor: string): string {
 }
 
 function configDaArea(areaSlug: string): RamoConfig | undefined {
-  const hubSlug = hubSlugDaArea(areaSlug);
-  return hubSlug ? RAMOS[hubSlug] : undefined;
+  return configWorkspaceDaArea(areaSlug);
 }
 
 export function textoIndexavelDaArea(area: AreaResumo): string {
@@ -157,16 +236,14 @@ export function areaCombinaBusca(area: AreaResumo, termo: string): boolean {
 }
 
 /**
- * Pesquisa ferramentas sem remover capacidades do Cível. O PR anterior
- * descartava grupos inteiros e, com eles, ferramentas sem equivalente em
- * Família/Consumidor/Imobiliário. A deduplicação aqui é apenas por endpoint
- * idêntico no resultado agregado da busca.
+ * Pesquisa todas as ferramentas configuradas. Não deduplica por endpoint:
+ * configurações diferentes podem compartilhar implementação HTTP e ainda ter
+ * finalidade, defaults, base legal ou contexto jurídico distintos.
  */
 export function buscarFerramentas(termo: string): ResultadoFerramentaBusca[] {
   const q = normalizarBusca(termo);
   if (!q) return [];
   const resultados: ResultadoFerramentaBusca[] = [];
-  const endpoints = new Set<string>();
 
   for (const cfg of Object.values(RAMOS)) {
     for (const ferramenta of cfg.ferramentas) {
@@ -179,8 +256,7 @@ export function buscarFerramentas(termo: string): ResultadoFerramentaBusca[] {
           cfg.titulo,
         ].join(" "),
       );
-      if (!texto.includes(q) || endpoints.has(ferramenta.endpoint)) continue;
-      endpoints.add(ferramenta.endpoint);
+      if (!texto.includes(q)) continue;
       resultados.push({
         areaSlug: cfg.areaCaso,
         areaTitulo: cfg.titulo,
