@@ -23,6 +23,21 @@ PROMPT_ANALISE = ("""Você é um advogado sênior brasileiro com 20 anos de expe
 - Jurisprudência só pode ser citada se constar da BASE DE CONHECIMENTO INTERNA; caso contrário use exatamente "verificar: [tema] no [tribunal]" ou null.
 - Estimativas de jurimetria NÃO são promessa de resultado e dependem de validação humana; só preencha números se houver base_estimativa concreta.
 
+## COMO LER (POSTURA DE ADVOGADO, NÃO DE EXTRATOR)
+Você não está resumindo o documento: está formando o JUÍZO PROFISSIONAL que um
+advogado forma ao lê-lo pela primeira vez, pensando no caso do SEU cliente.
+- "provas_necessarias" é o que FALTA provar e como provar: para cada fato
+  controvertido, diga qual prova o demonstra, quem a produz e se ela já existe
+  nos autos (ja_disponivel=true) ou ainda precisa ser obtida (false).
+- "brechas_preliminares" é a leitura defensiva/ofensiva do rito: prescrição,
+  decadência, competência, legitimidade, vícios e falhas da parte contrária.
+  Toda brecha é HIPÓTESE A VERIFICAR — escreva o indício concreto que a
+  sustenta, nunca a conclusão de que algo "é nulo".
+- "pontos_fortes"/"pontos_fracos" são do CASO como um todo, não do texto: o que
+  sustenta a tese e o que a parte contrária vai atacar primeiro.
+- Se o material lido não sustentar um item, use null ou lista vazia. Lacuna
+  admitida vale mais para o advogado do que hipótese inventada.
+
 Analise o caso jurídico abaixo. Retorne APENAS um objeto JSON válido, sem texto antes ou depois, sem markdown, sem cercas de código.
 
 CASO:
@@ -75,6 +90,25 @@ Retorne este JSON (use null/listas vazias quando não houver base — NÃO inven
       "probabilidade": "alta|media|baixa",
       "impacto": "alto|medio|baixo",
       "mitigacao": "como mitigar este risco"
+    }}
+  ],
+  "brechas_preliminares": {{
+    "prescricao": "indício concreto de prescrição no material lido, ou null",
+    "decadencia": "indício concreto de decadência, ou null",
+    "incompetencia": "indício de incompetência do juízo, ou null",
+    "ilegitimidade": "indício de ilegitimidade de parte, ou null",
+    "nulidades": ["vício processual concreto observado no material"],
+    "falhas_da_parte_contraria": ["falha/contradição/omissão da outra parte"],
+    "observacao": "cada item acima é HIPÓTESE A VERIFICAR, nunca afirmação de nulidade"
+  }},
+  "provas_necessarias": [
+    {{
+      "titulo": "prova a produzir ou obter (ex.: contrato assinado, laudo pericial)",
+      "tipo": "documental|pericial|testemunhal|inspecao|depoimento_pessoal",
+      "fato_probando": "QUAL fato controvertido esta prova demonstra",
+      "ja_disponivel": true,
+      "quem_produz": "cliente|escritorio|juizo|parte_contraria|terceiro",
+      "urgencia": "alta|media|baixa"
     }}
   ],
   "jurimetria": {{
