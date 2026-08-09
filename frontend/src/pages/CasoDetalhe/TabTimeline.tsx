@@ -17,6 +17,14 @@ function errDetail(e: any, fallback: string): string {
   return fallback;
 }
 
+function hojeLocalISO(): string {
+  const agora = new Date();
+  const ano = agora.getFullYear();
+  const mes = String(agora.getMonth() + 1).padStart(2, "0");
+  const dia = String(agora.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
 // Valores aceitos por case_movimentos.tipo (models/case.py: CaseMovimento).
 const TIPOS_MOVIMENTO = [
   { value: "nota", label: "Nota" },
@@ -29,6 +37,7 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
   const [ts, setTs] = useState<any[]>([]);
   const [tsForm, setTsForm] = useState({ descricao: "", horas: 1 });
   const [showTsForm, setShowTsForm] = useState(false);
+  const [salvandoHoras, setSalvandoHoras] = useState(false);
   // Composer de andamentos
   const [movTipo, setMovTipo] = useState("nota");
   const [movDescricao, setMovDescricao] = useState("");
@@ -36,11 +45,16 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
   // Recarrega a linha do tempo remontando o componente (ele busca no mount).
   const [timelineVersao, setTimelineVersao] = useState(0);
 
-  useEffect(() => {
+  const recarregarTimesheet = () =>
     api
       .get(`/timesheet/casos/${caseId}`)
       .then((r) => setTs(asList(r.data)))
       .catch(() => setTs([]));
+
+  useEffect(() => {
+    void recarregarTimesheet();
+    // caseId é o gatilho canônico da releitura; a função apenas encapsula a chamada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
   const registrarMovimento = async (e: React.FormEvent) => {
@@ -68,12 +82,30 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
 
   const addTimesheet = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post("/timesheet", { case_id: caseId, ...tsForm });
-    setShowTsForm(false);
-    api
-      .get(`/timesheet/casos/${caseId}`)
-      .then((r) => setTs(asList(r.data)))
-      .catch(() => setTs([]));
+    const minutos = Math.round(tsForm.horas * 60);
+    if (!Number.isFinite(minutos) || minutos <= 0) {
+      toast.error("Informe uma quantidade válida de horas.");
+      return;
+    }
+
+    setSalvandoHoras(true);
+    try {
+      await api.post("/timesheet", {
+        case_id: caseId,
+        data: hojeLocalISO(),
+        minutos,
+        descricao: tsForm.descricao.trim(),
+        faturavel: true,
+      });
+      toast.success("Horas lançadas no caso.");
+      setTsForm({ descricao: "", horas: 1 });
+      setShowTsForm(false);
+      await recarregarTimesheet();
+    } catch (err: any) {
+      toast.error(errDetail(err, "Não foi possível lançar as horas."));
+    } finally {
+      setSalvandoHoras(false);
+    }
   };
 
   const totalHoras = ts.reduce((a, t) => a + (t.minutos ?? 0) / 60, 0);
@@ -164,13 +196,18 @@ export default function TabTimeline({ caseId }: { caseId: string }) {
               </div>
             </div>
             <div className="flex gap-2">
-              <button type="submit" className="btn-primary text-sm">
-                Salvar
+              <button
+                type="submit"
+                disabled={salvandoHoras}
+                className="btn-primary text-sm disabled:opacity-50"
+              >
+                {salvandoHoras ? "Salvando…" : "Salvar"}
               </button>
               <button
                 type="button"
                 onClick={() => setShowTsForm(false)}
-                className="btn-secondary text-sm"
+                disabled={salvandoHoras}
+                className="btn-secondary text-sm disabled:opacity-50"
               >
                 Cancelar
               </button>
