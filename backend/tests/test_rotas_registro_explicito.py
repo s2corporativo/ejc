@@ -54,6 +54,8 @@ ADICOES_INTENCIONAIS = {
     ("/api/architecture/uso-rotas", "GET"),
     ("/api/sala-juridica/{session_id}/conversao/preview", "GET"),
     ("/api/diagnostico/integridade", "GET"),
+    # DPT Empresarial 360 — Onda 2: agregador read-only da carteira empresarial.
+    ("/api/dpt360/dashboard", "GET"),
     # PR #547: decisão explícita de publicar/despublicar arquivo no Data Room.
     ("/api/data-rooms/{room_id}/arquivos/{arquivo_id}/publicacao", "PATCH"),
     # PR #622 (Bloco 2): conferência e assinatura da peça em um ato só, no lugar
