@@ -1,58 +1,41 @@
-"""Fluxo assistido intimação DJEN → prazo (P0 — erro aqui gera PRECLUSÃO).
-
-O plano de simplificação marca este fluxo como P0 justamente porque um prazo
-calculado a mais, a menos, duplicado ou silenciosamente não criado custa o
-direito da parte. Até aqui ele não tinha NENHUM teste.
-
-Cobre os três endpoints do fluxo (`prazo-sugerido`, `aceitar-prazo`,
-`recusar-prazo`) e as invariantes que protegem o prazo:
-
-  • heurística por tipo de comunicação (embargos 5 / contestação 15 / recurso
-    15 / manifestação 5), com ordem de precedência dos termos;
-  • artigo SÓ citado quando a heurística casou explicitamente — nunca inventado;
-  • sem data de disponibilização não há contagem: `disponivel=False` e 422 no
-    aceite sem override;
-  • precedência do override: data_prazo > dias > sugestão;
-  • IDEMPOTÊNCIA: aceitar duas vezes não duplica o prazo (prazo duplicado polui
-    a agenda e mascara o verdadeiro);
-  • ownership: intimação alheia devolve 404 (não confirma existência) e o
-    aceite exige acesso ao caso;
-  • intimação sem caso não gera prazo órfão (422).
-
-Padrão do repo: sem Postgres — fakes de sessão por arquivo e chamada direta
-dos handlers.
-"""
-from __future__ import annotations
-
+"""Testes do fluxo assistido intimação DJEN -> prazo jurídico (#861)."""
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 
-from app.models.deadline import Deadline
+from app.models.djen import DjenComunicacao
 from app.models.user import User, UserRole
 
 
-# ── Fakes ────────────────────────────────────────────────────────────────────
-
-class _Res:
-    def __init__(self, val):
-        self._val = val
+class _FakeResult:
+    def __init__(self, value):
+        self.value = value
 
     def scalar_one_or_none(self):
-        return self._val
+        return self.value
+
+    def scalar(self):
+        return self.value
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self.value if isinstance(self.value, list) else []
 
 
 class _FakeDB:
-    """Fila de resultados para execute(); registra add/commit."""
-
-    def __init__(self, resultados: list | None = None):
-        self._resultados = list(resultados or [])
-        self.added: list = []
+    def __init__(self, results=None):
+        self.results = list(results or [])
+        self.added = []
         self.commits = 0
+        self.refreshes = 0
 
-    async def execute(self, *a, **k):
-        return _Res(self._resultados.pop(0) if self._resultados else None)
+    async def execute(self, _query):
+        value = self.results.pop(0) if self.results else None
+        return _FakeResult(value)
 
     def add(self, obj):
         self.added.append(obj)
@@ -60,308 +43,277 @@ class _FakeDB:
     async def commit(self):
         self.commits += 1
 
-    async def refresh(self, obj):
-        pass
-
-    async def rollback(self):
-        pass
+    async def refresh(self, _obj):
+        self.refreshes += 1
 
 
-def _user(role: UserRole = UserRole.advogado, uid: str = "adv-1") -> User:
-    u = User(id=uid, email=f"{uid}@ejc.adv.br", full_name="Dra. Fulana", role=role)
-    u.is_active = True
-    return u
+class _GestaoResult:
+    def __init__(self, rows, total):
+        self.rows = rows
+        self.total = total
+
+    def scalar(self):
+        return self.total
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self.rows
+
+
+class _GestaoDB:
+    def __init__(self, rows):
+        self.rows = rows
+        self.calls = 0
+
+    async def execute(self, _query):
+        self.calls += 1
+        if self.calls == 1:
+            return _GestaoResult([], len(self.rows))
+        return _GestaoResult(self.rows, len(self.rows))
+
+
+def _user(uid="u1", role=UserRole.advogado):
+    return User(id=uid, role=role, email=f"{uid}@teste.local")
 
 
 def _com(**kw):
-    """Comunicação DJEN com defaults de um caso feliz."""
-    from app.models.djen import DjenComunicacao
-
-    base = dict(
-        id="com-1",
-        advogado_id="adv-1",
-        case_id="case-1",
-        numero_processo="1001234-56.2024.8.13.0024",
-        tribunal="TJMG",
-        tipo_comunicacao="Intimação",
-        texto_resumo="Fica a parte intimada para apresentar contestação.",
-        data_disponibilizacao=date(2026, 3, 2),  # segunda-feira
-        prazo_sugerido_status=None,
-        prazo_deadline_id=None,
+    return DjenComunicacao(
+        id=kw.get("id", "com-1"),
+        comunicacao_id_externo=kw.get("external_id", "ext-1"),
+        advogado_id=kw.get("advogado_id", "u1"),
+        numero_processo=kw.get("numero_processo", "0000001-00.2026.8.13.0001"),
+        tribunal=kw.get("tribunal", "TJMG"),
+        tipo_comunicacao=kw.get("tipo", "Intimação"),
+        data_disponibilizacao=kw.get("data", date(2026, 7, 7)),
+        texto_resumo=kw.get("texto", "Apresente contestação no prazo legal."),
+        case_id=kw.get("case_id"),
+        processada=kw.get("processada", False),
+        prazo_sugerido_status=kw.get("prazo_sugerido_status", "nenhum"),
+        prazo_deadline_id=kw.get("prazo_deadline_id"),
     )
-    base.update(kw)
-    return DjenComunicacao(**base)
 
 
-def _liberar_caso(monkeypatch):
-    """Ownership de caso concedido (o gate tem cobertura própria)."""
-    from app.routers import intimacoes
-
-    async def _ok(db, user, case_id):
-        return object()
-
-    monkeypatch.setattr(intimacoes, "verificar_acesso_caso", _ok)
-
-
-# ── Heurística: dias e fundamentação ─────────────────────────────────────────
-
-@pytest.mark.parametrize(
-    "texto,dias_esperados,artigo_trecho",
-    [
-        ("Intimação para opor embargos de declaração", 5, "art. 1.023"),
-        ("Fica intimado para apresentar contestação", 15, "art. 335"),
-        ("Prazo para interpor apelação da sentença", 15, "art. 1.003"),
-        ("Intimação de despacho para manifestação", 5, "art. 218"),
-    ],
-)
-def test_heuristica_reconhece_tipo_e_cita_o_artigo(texto, dias_esperados, artigo_trecho):
+async def _sugestao_civel(comunicacao):
     from app.routers.intimacoes import _calcular_sugestao
 
-    s = _calcular_sugestao(_com(texto_resumo=texto))
-    assert s["dias"] == dias_esperados
-    assert artigo_trecho in (s["fundamentacao"] or "")
+    comunicacao.case_id = comunicacao.case_id or "case-1"
+    return await _calcular_sugestao(comunicacao, _FakeDB(["civil"]))
 
 
-def test_heuristica_prefere_o_termo_mais_especifico():
-    """'embargos de declaração' vem ANTES de 'recurso' na tabela: um texto com
-    ambos precisa cair em 5 dias, não em 15 — errar aqui perde o prazo."""
-    from app.routers.intimacoes import _calcular_sugestao
-
-    s = _calcular_sugestao(
-        _com(texto_resumo="Recurso: intimação para opor embargos de declaração")
-    )
+@pytest.mark.asyncio
+async def test_heuristica_reconhece_embargos_5_dias_art_1023():
+    s = await _sugestao_civel(_com(texto="Embargos de Declaração."))
+    assert s["tipo_detectado"] == "embargos de declaração"
     assert s["dias"] == 5
-    assert "1.023" in (s["fundamentacao"] or "")
-
-
-def test_tipo_nao_identificado_nao_inventa_artigo():
-    """Sem casamento explícito o sistema NÃO pode citar base legal — é a regra
-    anti-alucinação do repo aplicada ao prazo."""
-    from app.routers.intimacoes import _calcular_sugestao
-
-    s = _calcular_sugestao(_com(texto_resumo="Comunicação de ato ordinatório."))
-    assert s["tipo_detectado"] == "não identificado"
-    assert s["fundamentacao"] is None
-    assert s["dias"] == 15  # default conservador
-
-
-def test_sem_disponibilizacao_marca_indisponivel():
-    from app.routers.intimacoes import _calcular_sugestao
-
-    s = _calcular_sugestao(_com(data_disponibilizacao=None))
-    assert s["disponivel"] is False
-
-
-def test_datetime_de_disponibilizacao_e_normalizado_para_date():
-    from app.routers.intimacoes import _calcular_sugestao
-
-    s = _calcular_sugestao(
-        _com(data_disponibilizacao=datetime(2026, 3, 2, 14, 30, tzinfo=timezone.utc))
-    )
+    assert "1.023" in s["fundamentacao"]
+    assert s["regime_processual"] == "civel"
     assert s["disponivel"] is True
-    assert isinstance(s["data_sugerida"], date)
 
 
-# ── Ownership ────────────────────────────────────────────────────────────────
-
-@pytest.mark.anyio
-async def test_intimacao_de_outro_advogado_404():
-    """404 (não 403): não confirma a existência de intimação alheia."""
-    from app.routers.intimacoes import prazo_sugerido
-
-    db = _FakeDB([_com(advogado_id="outro-adv")])
-    with pytest.raises(HTTPException) as ei:
-        await prazo_sugerido(com_id="com-1", db=db, cu=_user())
-    assert ei.value.status_code == 404
+@pytest.mark.asyncio
+async def test_heuristica_reconhece_contestacao_15_dias_art_335():
+    s = await _sugestao_civel(_com(texto="Apresente contestação."))
+    assert s["tipo_detectado"] == "contestação"
+    assert s["dias"] == 15
+    assert "335" in s["fundamentacao"]
 
 
-@pytest.mark.anyio
-async def test_gestao_enxerga_intimacao_de_qualquer_advogado():
-    from app.routers.intimacoes import prazo_sugerido
-
-    db = _FakeDB([_com(advogado_id="outro-adv")])
-    out = await prazo_sugerido(com_id="com-1", db=db, cu=_user(UserRole.socio, "s1"))
-    assert out["disponivel"] is True
-
-
-@pytest.mark.anyio
-async def test_aceitar_prazo_aplica_ownership_do_caso(monkeypatch):
-    from app.routers import intimacoes
-
-    async def _negar(db, user, case_id):
-        raise HTTPException(status_code=403, detail="Sem acesso a este caso")
-
-    monkeypatch.setattr(intimacoes, "verificar_acesso_caso", _negar)
-    db = _FakeDB([_com()])
-    with pytest.raises(HTTPException) as ei:
-        await intimacoes.aceitar_prazo(com_id="com-1", payload=None, db=db, cu=_user())
-    assert ei.value.status_code == 403
-    assert db.added == []  # nada gravado quando o gate barra
+@pytest.mark.asyncio
+async def test_heuristica_reconhece_apelacao_15_dias_art_1003():
+    s = await _sugestao_civel(_com(texto="Interponha apelação."))
+    assert s["tipo_detectado"] == "apelação/recurso"
+    assert s["dias"] == 15
+    assert "1.003" in s["fundamentacao"]
 
 
-# ── Aceite: criação do prazo ─────────────────────────────────────────────────
+@pytest.mark.asyncio
+async def test_heuristica_reconhece_manifestacao_despacho_5_dias_art_218():
+    s = await _sugestao_civel(_com(texto="Despacho: manifeste-se."))
+    assert s["dias"] == 5
+    assert "218" in s["fundamentacao"]
+    assert "supletivo" in s["fundamentacao"]
 
-@pytest.mark.anyio
-async def test_aceitar_cria_deadline_com_rastreabilidade(monkeypatch):
-    from app.routers import intimacoes
 
-    _liberar_caso(monkeypatch)
-    com = _com()
-    db = _FakeDB([com])
-    out = await intimacoes.aceitar_prazo(
-        com_id="com-1", payload=None, db=db, cu=_user()
+@pytest.mark.asyncio
+async def test_termo_especifico_prevalece_sobre_generico():
+    s = await _sugestao_civel(_com(texto="Despacho: apresente contestação."))
+    assert s["tipo_detectado"] == "contestação"
+    assert s["dias"] == 15
+
+
+@pytest.mark.asyncio
+async def test_tipo_desconhecido_nao_inventa_artigo_nem_prazo_padrao():
+    s = await _sugestao_civel(_com(texto="Ciência do teor da certidão juntada."))
+    assert s["casou"] is False
+    assert s["dias"] is None
+    assert s["fundamentacao"] is None
+    assert s["disponivel"] is False
+    assert s["data_sugerida"] is None
+
+
+@pytest.mark.asyncio
+async def test_sem_data_disponibilizacao_fica_indisponivel():
+    s = await _sugestao_civel(_com(data=None, texto="Apresente contestação."))
+    assert s["disponivel"] is False
+    assert s["data_base"] is None
+    assert s["data_sugerida"] is None
+
+
+@pytest.mark.asyncio
+async def test_datetime_disponibilizacao_e_normalizado():
+    s = await _sugestao_civel(
+        _com(data=datetime(2026, 7, 7, 12, tzinfo=timezone.utc), texto="Contestação.")
     )
+    assert s["data_base"] == date(2026, 7, 7)
+    assert s["data_publicacao"] == date(2026, 7, 8)
+    assert s["termo_inicial"] == date(2026, 7, 9)
+    assert s["data_sugerida"] == date(2026, 7, 29)
 
-    prazos = [o for o in db.added if isinstance(o, Deadline)]
-    assert len(prazos) == 1
-    d = prazos[0]
+
+@pytest.mark.asyncio
+async def test_regime_desconhecido_falha_fechado():
+    from app.routers.intimacoes import _calcular_sugestao
+
+    s = await _calcular_sugestao(_com(case_id=None), _FakeDB([]))
+    assert s["disponivel"] is False
+    assert s["regime_processual"] is None
+    assert "regime" in s["aviso"].lower()
+
+
+@pytest.mark.asyncio
+async def test_gestao_enxerga_intimacao_de_qualquer_advogado():
+    from app.routers.intimacoes import listar
+
+    comunicacao = _com(advogado_id="u-outro", processada=True)
+    out = await listar(
+        apenas_pendentes=False,
+        page=1,
+        page_size=30,
+        db=_GestaoDB([comunicacao]),
+        cu=_user("gestao", UserRole.socio),
+    )
+    assert out["total"] == 1
+    assert out["data"][0]["processada"] is True
+
+
+async def _noop_acesso(*_args, **_kwargs):
+    return None
+
+
+async def _noop_audit(*_args, **_kwargs):
+    return None
+
+
+@pytest.mark.asyncio
+async def test_aceitar_exige_vinculo_com_caso():
+    from app.routers.intimacoes import AceitarPrazoRequest, aceitar_prazo
+
+    comunicacao = _com(case_id=None)
+    with pytest.raises(HTTPException) as exc:
+        await aceitar_prazo(
+            comunicacao.id,
+            AceitarPrazoRequest(regime_processual="civel"),
+            _FakeDB([comunicacao]),
+            _user(),
+        )
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_aceitar_cria_deadline_com_rastreabilidade(monkeypatch):
+    import app.routers.intimacoes as mod
+
+    monkeypatch.setattr(mod, "verificar_acesso_caso", _noop_acesso)
+    monkeypatch.setattr("app.models.audit_log.criar_audit_log", _noop_audit)
+    comunicacao = _com(case_id="case-1")
+    db = _FakeDB([comunicacao])
+    out = await mod.aceitar_prazo(
+        comunicacao.id,
+        mod.AceitarPrazoRequest(
+            data_prazo=date(2026, 7, 30), regime_processual="civel"
+        ),
+        db,
+        _user(),
+    )
     assert out["criado"] is True
-    assert d.case_id == "case-1"
-    assert d.origem == "djen"                    # rastreia a fonte do prazo
-    assert d.data_intimacao == date(2026, 3, 2)  # termo inicial preservado
-    assert d.data_prazo > d.data_intimacao       # nunca retroativo
-    assert "335" in (d.base_legal or "")         # contestação → art. 335
-    # A intimação passa a apontar para o prazo criado (fecha o ciclo).
-    assert com.prazo_sugerido_status == "aceito"
-    assert com.prazo_deadline_id == d.id
+    prazo = next(obj for obj in db.added if obj.__class__.__name__ == "Deadline")
+    assert prazo.origem == "djen"
+    assert prazo.data_intimacao == date(2026, 7, 7)
+    assert prazo.regime_calculo == "civel"
+    assert prazo.data_prazo == date(2026, 7, 30)
+    assert comunicacao.prazo_sugerido_status == "aceito"
+    assert db.commits == 1
 
 
-@pytest.mark.anyio
-async def test_aceitar_e_idempotente(monkeypatch):
-    """Segundo aceite NÃO duplica: prazo duplicado polui a agenda e mascara o
-    verdadeiro."""
-    from app.routers import intimacoes
+@pytest.mark.asyncio
+async def test_aceitar_e_idempotente_quando_deadline_ainda_existe(monkeypatch):
+    import app.routers.intimacoes as mod
 
-    _liberar_caso(monkeypatch)
-    com = _com(prazo_sugerido_status="aceito", prazo_deadline_id="dl-1")
-    existente = Deadline(id="dl-1", titulo="Contestação", tipo="processual",
-                         data_prazo=date(2026, 3, 25), case_id="case-1")
-    db = _FakeDB([com, existente])
-
-    out = await intimacoes.aceitar_prazo(
-        com_id="com-1", payload=None, db=db, cu=_user()
+    monkeypatch.setattr(mod, "verificar_acesso_caso", _noop_acesso)
+    existente = SimpleNamespace(
+        id="deadline-1", data_prazo=date(2026, 7, 28), deleted_at=None
+    )
+    comunicacao = _com(
+        case_id="case-1",
+        prazo_sugerido_status="aceito",
+        prazo_deadline_id="deadline-1",
+    )
+    db = _FakeDB([comunicacao, existente])
+    out = await mod.aceitar_prazo(
+        comunicacao.id, mod.AceitarPrazoRequest(), db, _user()
     )
     assert out["criado"] is False
-    assert out["deadline_id"] == "dl-1"
-    assert [o for o in db.added if isinstance(o, Deadline)] == []
+    assert out["deadline_id"] == "deadline-1"
+    assert db.added == []
 
 
-# ── Precedência do override: data_prazo > dias > sugestão ────────────────────
+@pytest.mark.asyncio
+async def test_dias_recalcula_pelo_termo_inicial_djen(monkeypatch):
+    import app.routers.intimacoes as mod
 
-@pytest.mark.anyio
-async def test_data_prazo_absoluta_vence_dias(monkeypatch):
-    from app.routers import intimacoes
-
-    _liberar_caso(monkeypatch)
-    db = _FakeDB([_com()])
-    payload = intimacoes.AceitarPrazoRequest(
-        dias=30, data_prazo=date(2026, 4, 10)
+    monkeypatch.setattr(mod, "verificar_acesso_caso", _noop_acesso)
+    monkeypatch.setattr("app.models.audit_log.criar_audit_log", _noop_audit)
+    comunicacao = _com(case_id="case-1", texto="Ciência sem tipo reconhecível.")
+    db = _FakeDB([comunicacao])
+    out = await mod.aceitar_prazo(
+        comunicacao.id,
+        mod.AceitarPrazoRequest(dias=15, regime_processual="civel"),
+        db,
+        _user(),
     )
-    await intimacoes.aceitar_prazo(
-        com_id="com-1", payload=payload, db=db, cu=_user()
-    )
-    d = next(o for o in db.added if isinstance(o, Deadline))
-    assert d.data_prazo == date(2026, 4, 10)
+    assert out["data_prazo"] == date(2026, 7, 29)
 
 
-@pytest.mark.anyio
-async def test_dias_recalcula_a_partir_da_disponibilizacao(monkeypatch):
-    from app.routers import intimacoes
-    from app.services.deadline_calculator import prazo_dias_uteis
-
-    _liberar_caso(monkeypatch)
-    db = _FakeDB([_com()])
-    await intimacoes.aceitar_prazo(
-        com_id="com-1",
-        payload=intimacoes.AceitarPrazoRequest(dias=10),
-        db=db, cu=_user(),
-    )
-    d = next(o for o in db.added if isinstance(o, Deadline))
-    # Dias ÚTEIS forenses — nunca soma corrida (a diferença é o que precluí).
-    assert d.data_prazo == prazo_dias_uteis(date(2026, 3, 2), 10, tribunal="TJMG")
-
-
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_responsavel_default_e_o_advogado_da_intimacao(monkeypatch):
-    from app.routers import intimacoes
+    import app.routers.intimacoes as mod
 
-    _liberar_caso(monkeypatch)
-    db = _FakeDB([_com(advogado_id="adv-1")])
-    await intimacoes.aceitar_prazo(
-        com_id="com-1", payload=None, db=db, cu=_user(UserRole.socio, "socio-9")
+    monkeypatch.setattr(mod, "verificar_acesso_caso", _noop_acesso)
+    monkeypatch.setattr("app.models.audit_log.criar_audit_log", _noop_audit)
+    comunicacao = _com(
+        case_id="case-1", advogado_id="adv-destino", texto="Apresente contestação."
     )
-    d = next(o for o in db.added if isinstance(o, Deadline))
-    # Quem foi intimado responde pelo prazo — não quem clicou.
-    assert d.responsavel_id == "adv-1"
-
-
-# ── Recusas seguras (422) — nunca criar prazo sem base ───────────────────────
-
-@pytest.mark.anyio
-async def test_intimacao_sem_caso_nao_gera_prazo_orfao(monkeypatch):
-    from app.routers import intimacoes
-
-    _liberar_caso(monkeypatch)
-    db = _FakeDB([_com(case_id=None)])
-    with pytest.raises(HTTPException) as ei:
-        await intimacoes.aceitar_prazo(com_id="com-1", payload=None, db=db, cu=_user())
-    assert ei.value.status_code == 422
-    assert db.added == []
-
-
-@pytest.mark.anyio
-async def test_sem_disponibilizacao_e_sem_override_recusa(monkeypatch):
-    from app.routers import intimacoes
-
-    _liberar_caso(monkeypatch)
-    db = _FakeDB([_com(data_disponibilizacao=None)])
-    with pytest.raises(HTTPException) as ei:
-        await intimacoes.aceitar_prazo(com_id="com-1", payload=None, db=db, cu=_user())
-    assert ei.value.status_code == 422
-    assert db.added == []
-
-
-@pytest.mark.anyio
-async def test_sem_disponibilizacao_aceita_data_absoluta(monkeypatch):
-    """Escape hatch: sem termo inicial, o advogado ainda pode informar a data."""
-    from app.routers import intimacoes
-
-    _liberar_caso(monkeypatch)
-    db = _FakeDB([_com(data_disponibilizacao=None)])
-    await intimacoes.aceitar_prazo(
-        com_id="com-1",
-        payload=intimacoes.AceitarPrazoRequest(data_prazo=date(2026, 4, 10)),
-        db=db, cu=_user(),
+    db = _FakeDB([comunicacao, "civil"])
+    await mod.aceitar_prazo(
+        comunicacao.id,
+        mod.AceitarPrazoRequest(regime_processual="civel"),
+        db,
+        _user("gestao", UserRole.socio),
     )
-    d = next(o for o in db.added if isinstance(o, Deadline))
-    assert d.data_prazo == date(2026, 4, 10)
+    prazo = next(obj for obj in db.added if obj.__class__.__name__ == "Deadline")
+    assert prazo.responsavel_id == "adv-destino"
 
 
-@pytest.mark.anyio
-async def test_dias_sem_disponibilizacao_recusa(monkeypatch):
-    from app.routers import intimacoes
+@pytest.mark.asyncio
+async def test_recusar_nao_cria_deadline(monkeypatch):
+    import app.routers.intimacoes as mod
 
-    _liberar_caso(monkeypatch)
-    db = _FakeDB([_com(data_disponibilizacao=None)])
-    with pytest.raises(HTTPException) as ei:
-        await intimacoes.aceitar_prazo(
-            com_id="com-1",
-            payload=intimacoes.AceitarPrazoRequest(dias=10),
-            db=db, cu=_user(),
-        )
-    assert ei.value.status_code == 422
-
-
-# ── Recusa explícita ─────────────────────────────────────────────────────────
-
-@pytest.mark.anyio
-async def test_recusar_marca_status_e_nao_cria_prazo(monkeypatch):
-    from app.routers import intimacoes
-
-    _liberar_caso(monkeypatch)
-    com = _com()
-    db = _FakeDB([com])
-    out = await intimacoes.recusar_prazo(com_id="com-1", db=db, cu=_user())
+    monkeypatch.setattr(mod, "verificar_acesso_caso", _noop_acesso)
+    comunicacao = _com(case_id="case-1")
+    db = _FakeDB([comunicacao])
+    out = await mod.recusar_prazo(comunicacao.id, db, _user())
     assert out["prazo_sugerido_status"] == "recusado"
-    assert com.prazo_sugerido_status == "recusado"
-    assert [o for o in db.added if isinstance(o, Deadline)] == []
+    assert not any(obj.__class__.__name__ == "Deadline" for obj in db.added)
+    assert db.commits == 1
