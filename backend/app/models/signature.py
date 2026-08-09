@@ -1,6 +1,5 @@
 # ── app/models/signature.py ──────────────────────────────────────────────────
-# Assinatura eletrônica simples/avançada conforme a evidência disponível:
-# aceite autenticado + hash SHA-256 do documento + IP + UA + timestamp.
+# Assinatura eletrônica com evidência individual por signatário.
 from __future__ import annotations
 
 import enum
@@ -47,13 +46,11 @@ class SignatureRequest(Base):
         index=True,
     )
     hash_sha256 = Column(String(64), nullable=False)
-
     assinado_em = Column(DateTime(timezone=True), nullable=True)
     assinado_por_user = Column(String(36), nullable=True)
     ip = Column(String(45), nullable=True)
     user_agent = Column(String(300), nullable=True)
     criado_por = Column(String(36), nullable=True)
-
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -82,13 +79,7 @@ class SignatureSigner(Base):
     email_snapshot = Column(String(320), nullable=False)
     papel_snapshot = Column(String(80), nullable=False, default="cliente")
     status = Column(
-        SAEnum(
-            SignatureSignerStatus,
-            native_enum=False,
-            create_constraint=True,
-            length=20,
-            name="ck_signature_signers_status_enum",
-        ),
+        SAEnum(SignatureSignerStatus),
         nullable=False,
         default=SignatureSignerStatus.pendente,
         index=True,
@@ -96,5 +87,4 @@ class SignatureSigner(Base):
     assinado_em = Column(DateTime(timezone=True), nullable=True)
     ip = Column(String(45), nullable=True)
     user_agent = Column(String(300), nullable=True)
-
     created_at = Column(DateTime(timezone=True), server_default=func.now())
