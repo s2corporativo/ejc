@@ -11,6 +11,7 @@ concurrency:
   group: dpt360-format-temp
   cancel-in-progress: false
 
+# Workflow efêmero: será removido assim que o commit de formatação for gerado.
 jobs:
   format:
     if: github.actor != 'github-actions[bot]'
