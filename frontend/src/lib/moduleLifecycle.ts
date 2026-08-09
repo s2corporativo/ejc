@@ -5,24 +5,54 @@ type ModuleLike = {
   key: string;
   path: string;
   status?: string;
+  label?: string;
+  description?: string;
+  essential?: boolean;
 };
 
 // Rotas mantidas somente por compatibilidade. A tarefa correspondente já existe
 // em outro workspace canônico e não deve aparecer novamente na navegação.
 const CONSOLIDATED_NAV_KEYS = new Set(["knowledge-hub"]);
 
+// Sala Jurídica e Raio-X continuam sendo módulos/rotas canônicos porque isso
+// preserva lifecycle, RBAC, ajuda contextual, manifests e deep links. Porém,
+// quando a própria Entrada já está visível para o papel atual, elas deixam de
+// competir no menu e a Entrada assume o rótulo de gateway único. Para papéis de
+// apoio, que não recebem /entrada pelo RBAC do registry, Sala/Raio-X continuam
+// visíveis exatamente como antes.
+const ENTRADA_CONSOLIDATED_NAV_KEYS = new Set([
+  "sala-juridica",
+  "raio-x-processo",
+]);
+
 export function filterModulesByLifecycle<T extends ModuleLike>(
   modules: T[],
   settings: Record<string, ModuleLifecycleOverride>,
 ): T[] {
-  return modules.filter((module) => {
-    if (CONSOLIDATED_NAV_KEYS.has(module.key)) return false;
-    const override = settings[module.key];
-    if (!override) return module.status !== "hidden";
-    if (!override.enabled || override.status === "disabled") return false;
-    if (!override.menu_visible || override.status === "hidden") return false;
-    return true;
-  });
+  const entradaVisivel = modules.some((module) => module.key === "entrada");
+
+  return modules
+    .filter((module) => {
+      if (CONSOLIDATED_NAV_KEYS.has(module.key)) return false;
+      if (entradaVisivel && ENTRADA_CONSOLIDATED_NAV_KEYS.has(module.key)) {
+        return false;
+      }
+      const override = settings[module.key];
+      if (!override) return module.status !== "hidden";
+      if (!override.enabled || override.status === "disabled") return false;
+      if (!override.menu_visible || override.status === "hidden") return false;
+      return true;
+    })
+    .map((module) => {
+      if (!entradaVisivel || module.key !== "entrada") return module;
+      return {
+        ...module,
+        label: "Entrada Única",
+        description:
+          "Porta principal para iniciar um caso por relato/documentos e acessar Sala Jurídica ou Raio-X.",
+        essential: true,
+      } as T;
+    });
 }
 
 function routePatternToRegex(path: string): RegExp {
