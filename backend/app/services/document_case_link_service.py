@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ownership import is_gestao, role_str, verificar_acesso_caso
-from app.core.security import ROLE_LEVEL
+from app.core.security import ROLE_LEVEL, requer_equipe_juridica
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.document import Document, DocConfidencialidade
@@ -54,6 +54,10 @@ async def buscar_documentos_vinculaveis(
     page_size: int = 20,
 ) -> dict:
     """Busca server-side somente documentos visíveis e ainda fora do caso."""
+    # A superfície interna de GED do caso não é uma extensão do Portal do
+    # Cliente. A allowlist jurídica fecha cliente_externo/financeiro/secretaria
+    # mesmo quando conheçam IDs válidos; autorização nunca depende da UI.
+    requer_equipe_juridica(cu, "Vínculo documental restrito à equipe jurídica")
     await verificar_acesso_caso(db, cu, case_id)
     page = max(1, int(page or 1))
     page_size = min(50, max(1, int(page_size or 20)))
@@ -141,6 +145,7 @@ async def vincular_documento_existente(
     document_id: str,
 ) -> dict:
     """Move/vincula documento ao caso e aplica efeitos de domínio atomicamente."""
+    requer_equipe_juridica(cu, "Vínculo documental restrito à equipe jurídica")
     target_case = await verificar_acesso_caso(db, cu, case_id)
     doc = (
         await db.execute(
