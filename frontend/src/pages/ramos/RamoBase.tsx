@@ -24,7 +24,8 @@ import type { Case } from "../../types";
 import { Empty, PageHeader, Spinner, StatusBadge } from "../../components/UI";
 import { useAuth } from "../../stores/auth";
 import { ROLES } from "../../config/moduleRegistry";
-import { RAMOS, type RamoConfig } from "./ramosConfig";
+import type { RamoConfig } from "./ramosConfig";
+import { configWorkspaceDaArea } from "./areasWorkspace";
 import {
   abasDoWorkspace,
   areasDoWorkspace,
@@ -96,7 +97,7 @@ function ResumoWorkspace({
 }) {
   const relacoes = relacoesDoWorkspace(cfg);
   const ferramentasUnicas =
-    new Set(cfg.ferramentas.map((f) => f.endpoint)).size +
+    cfg.ferramentas.length +
     Number(Boolean(cfg.comparadorBacen)) +
     Number(Boolean(cfg.liquidacaoTrabalhista)) +
     Number(Boolean(cfg.tributarioFiscal)) +
@@ -312,9 +313,7 @@ function CasosDoRamo({
 }
 
 function FerramentasDoRamo({ cfg, casos }: { cfg: RamoConfig; casos: Case[] }) {
-  const ferramentas = [
-    ...new Map(cfg.ferramentas.map((f) => [f.endpoint, f])).values(),
-  ];
+  const ferramentas = cfg.ferramentas;
   const grupos = new Map<string, typeof ferramentas>();
   for (const ferramenta of ferramentas) {
     const grupo = ferramenta.grupo || "Ferramentas do núcleo";
@@ -464,7 +463,9 @@ function ReferenciasDoRamo({ cfg }: { cfg: RamoConfig }) {
 
 export default function RamoBase() {
   const { slug } = useParams<{ slug: string }>();
-  const cfg: RamoConfig | undefined = slug ? RAMOS[slug] : undefined;
+  const cfg: RamoConfig | undefined = slug
+    ? configWorkspaceDaArea(slug)
+    : undefined;
   const role = useAuth((state) => state.user?.role);
   const podeCriarCaso = Boolean(
     role && (ROLES.clientes as readonly string[]).includes(role),
@@ -613,11 +614,10 @@ export default function RamoBase() {
                   Como usar este núcleo
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
-                  O caso é sempre o registro principal. Use <b>Casos</b> para
-                  trabalhar a carteira desta área, <b>Ferramentas</b> para
-                  cálculos e rotinas especializadas, <b>IA & Análise</b> para
-                  leitura assistida e <b>Referências</b> para guias, consultas e
-                  peças.
+                  O caso é sempre o registro principal. As abas disponíveis
+                  neste workspace mostram somente capacidades efetivamente
+                  implementadas para a área, além do acesso central a casos,
+                  peças e referências.
                 </p>
                 {cfg.externo && (
                   <p className="mt-2 text-xs text-slate-500">
