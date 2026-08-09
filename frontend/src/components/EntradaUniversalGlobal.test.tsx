@@ -45,21 +45,17 @@ describe("EntradaUniversalGlobal", () => {
         name: "Abrir Entrada Universal de Documentos",
       }),
     );
-    expect(
-      screen.getByText("Entrada Universal de Documentos"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Entrada Universal de Documentos")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Ir para dashboard" }));
 
     await waitFor(() => {
-      expect(
-        screen.queryByText("Entrada Universal de Documentos"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Entrada Universal de Documentos")).toBeNull();
       expect(
         screen.queryByRole("button", {
           name: "Abrir Entrada Universal de Documentos",
         }),
-      ).not.toBeInTheDocument();
+      ).toBeNull();
     });
   });
 });
