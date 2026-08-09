@@ -187,6 +187,51 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
             <div>
               <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Casos considerados no relatório
+              </h4>
+              {report.casos.length ? (
+                <div className="mt-2 space-y-2">
+                  {report.casos.map((item, index) => (
+                    <pre
+                      key={`caso-${index}`}
+                      className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-[11px] leading-5 text-slate-600 dark:bg-black/20 dark:text-slate-300"
+                    >
+                      {traceText(item)}
+                    </pre>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-slate-400">
+                  Nenhum caso empresarial entrou no recorte consultado.
+                </p>
+              )}
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Providências futuras
+              </h4>
+              {report.providencias_futuras.length ? (
+                <div className="mt-2 space-y-2">
+                  {report.providencias_futuras.map((item, index) => (
+                    <pre
+                      key={`providencia-${index}`}
+                      className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-[11px] leading-5 text-slate-600 dark:bg-black/20 dark:text-slate-300"
+                    >
+                      {traceText(item)}
+                    </pre>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-slate-400">
+                  Nenhuma providência futura foi localizada no período.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
                 Recomendações
               </h4>
               <ul className="mt-2 space-y-2 text-sm text-slate-600 dark:text-slate-300">
