@@ -21,6 +21,13 @@ vi.mock("../components/Toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
+function campoPorRotulo(rotulo: string, seletor: "input" | "select") {
+  const label = screen.getByText(rotulo);
+  const campo = label.parentElement?.querySelector(seletor);
+  if (!campo) throw new Error(`Campo não encontrado para: ${rotulo}`);
+  return campo as HTMLInputElement | HTMLSelectElement;
+}
+
 describe("CadastroManual — cliente fixado pela Ficha Mestra", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -66,10 +73,9 @@ describe("CadastroManual — cliente fixado pela Ficha Mestra", () => {
     expect(screen.getByText(/Cliente definido pela Ficha Mestra/i)).toBeTruthy();
     expect(screen.queryByText("+ Criar cliente novo junto")).toBeNull();
 
-    const selectCliente = screen.getByLabelText(/Cliente/).closest("select");
-    expect(selectCliente).toBeTruthy();
-    expect((selectCliente as HTMLSelectElement).disabled).toBe(true);
-    expect((selectCliente as HTMLSelectElement).value).toBe("c1");
+    const selectCliente = campoPorRotulo("Cliente *", "select");
+    expect(selectCliente.disabled).toBe(true);
+    expect(selectCliente.value).toBe("c1");
   });
 
   it("envia o caso usando o client_id autorizado, sem criar outro cliente", async () => {
@@ -83,10 +89,10 @@ describe("CadastroManual — cliente fixado pela Ficha Mestra", () => {
       expect(screen.getByText(/Vínculo validado pelo backend/i)).toBeTruthy(),
     );
 
-    fireEvent.change(screen.getByLabelText("Título do caso *"), {
+    fireEvent.change(campoPorRotulo("Título do caso *", "input"), {
       target: { value: "Caso contextual" },
     });
-    fireEvent.change(screen.getByLabelText("Próxima ação *"), {
+    fireEvent.change(campoPorRotulo("Próxima ação *", "input"), {
       target: { value: "Revisar documentos" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Abrir caso" }));
