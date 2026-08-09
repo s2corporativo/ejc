@@ -148,15 +148,28 @@ function isFinalActivity(status?: string) {
   return FINAL_ACTIVITY_STATUSES.has((status || "").toLowerCase());
 }
 
+function agendaTimestamp(item: Pick<ActivityItem, "date" | "hora">) {
+  if (!item.date) return Number.POSITIVE_INFINITY;
+  const data = item.date.slice(0, 10);
+  const hora = /^\d{2}:\d{2}/.test(item.hora || "")
+    ? String(item.hora).slice(0, 5)
+    : "12:00";
+  const parsed = new Date(`${data}T${hora}:00`);
+  return Number.isNaN(parsed.getTime())
+    ? Number.POSITIVE_INFINITY
+    : parsed.getTime();
+}
+
 function buildDonutGradient(entries: Array<{ value: number; color: string }>) {
   const total = entries.reduce((sum, entry) => sum + entry.value, 0);
   if (total <= 0) return "conic-gradient(#e5e7eb 0 100%)";
   let cursor = 0;
   return `conic-gradient(${entries
-    .map((entry) => {
+    .map((entry, index) => {
       const start = cursor;
       cursor += (entry.value / total) * 100;
-      return `${entry.color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
+      const end = index === entries.length - 1 ? 100 : cursor;
+      return `${entry.color} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
     })
     .join(", ")})`;
 }
@@ -222,7 +235,11 @@ function Metric({
       <span className="ejc-ultra-metric__copy">
         <small>{label}</small>
         {loading ? (
-          <i className="ejc-ultra-skeleton" aria-label="Carregando" />
+          <i
+            className="ejc-ultra-skeleton"
+            role="status"
+            aria-label="Carregando"
+          />
         ) : (
           <strong>{unavailable ? "—" : (value ?? 0)}</strong>
         )}
@@ -254,7 +271,7 @@ export default function DashboardUltra() {
       api.get("/dashboard/"),
       api.get("/atividades", { params: { apenas_pendentes: false } }),
       api.get("/agenda-eventos/", { params: { page_size: 500 } }),
-      api.get("/movimentos/recentes?limit=8"),
+      api.get("/movimentos/recentes", { params: { limit: 8 } }),
     ])
       .then(
         ([dashboardResult, activitiesResult, agendaResult, movementResult]) => {
@@ -331,11 +348,7 @@ export default function DashboardUltra() {
         );
         return parsed >= today;
       })
-      .sort((a, b) =>
-        `${a.date || ""} ${a.hora || ""}`.localeCompare(
-          `${b.date || ""} ${b.hora || ""}`,
-        ),
-      )
+      .sort((a, b) => agendaTimestamp(a) - agendaTimestamp(b))
       .slice(0, 6);
   }, [activities, agendaMap]);
 
@@ -434,12 +447,12 @@ export default function DashboardUltra() {
           <div className="ejc-ultra-hero__eyebrow">
             <Radar aria-hidden="true" />
             <span>Legal Operations Command Center</span>
-            <i>LIVE</i>
+            <i>SNAPSHOT</i>
           </div>
           <h1>Bom trabalho, {firstName}.</h1>
           <p>
             Uma visão única de casos, prazos, tarefas e movimentações para
-            decidir o que exige atenção agora.
+            decidir o que exige atenção agora. Dados carregados ao abrir a tela.
           </p>
           <div className="ejc-ultra-hero__actions">
             {canCreateCase && (
@@ -604,6 +617,12 @@ export default function DashboardUltra() {
             </div>
           ) : (
             <div className="ejc-ultra-agenda-list">
+              {failed.agenda && (
+                <div className="ejc-ultra-empty" role="status">
+                  Horário, local e subtipo dos compromissos podem estar
+                  indisponíveis no momento.
+                </div>
+              )}
               {upcomingAgenda.map((item, index) => {
                 const destination = item.case_id
                   ? `/casos/${item.case_id}`
@@ -745,7 +764,8 @@ export default function DashboardUltra() {
                     <span className="ejc-ultra-timeline__copy">
                       <small>{formatDateTime(date)}</small>
                       <strong>
-                        {movement.titulo ||
+                        {movement.descricao ||
+                          movement.titulo ||
                           formatArea(movement.tipo) ||
                           "Movimentação"}
                       </strong>
@@ -754,7 +774,6 @@ export default function DashboardUltra() {
                           movement.cliente_nome ||
                           movement.case_number ||
                           movement.numero_processo ||
-                          movement.descricao ||
                           "Caso relacionado"}
                       </em>
                     </span>
