@@ -106,21 +106,26 @@ export default function PortalAssinaturas() {
     setRejecting(s.id);
     try {
       await api.post(`/signatures/${s.id}/recusar`);
-      toast.success("Assinatura recusada. O escritório poderá enviar uma nova versão.");
+      toast.success(
+        "Assinatura recusada. O escritório poderá enviar uma nova versão.",
+      );
       load();
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Não foi possível recusar a assinatura.");
+      toast.error(
+        e?.response?.data?.detail || "Não foi possível recusar a assinatura.",
+      );
     } finally {
       setRejecting(null);
     }
   };
 
   const verComprovante = (s: AssinaturaRow) => {
-    const sig = (s.signatarios ?? []).find(
-      (x) =>
-        x.status === "assinado" &&
-        (x.email ?? "").toLowerCase() === (user?.email ?? "").toLowerCase(),
-    ) ?? (s.signatarios ?? []).find((x) => x.status === "assinado");
+    const sig =
+      (s.signatarios ?? []).find(
+        (x) =>
+          x.status === "assinado" &&
+          (x.email ?? "").toLowerCase() === (user?.email ?? "").toLowerCase(),
+      ) ?? (s.signatarios ?? []).find((x) => x.status === "assinado");
     setComprovante({
       documento: s.documento,
       assinado_em: sig?.assinado_em ?? s.assinado_em,
@@ -168,11 +173,15 @@ export default function PortalAssinaturas() {
             <div className="text-sm space-y-2">
               <div>
                 <p className="text-xs text-slate-400">Documento</p>
-                <p className="text-slate-800 font-medium">{comprovante.documento}</p>
+                <p className="text-slate-800 font-medium">
+                  {comprovante.documento}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-400">Data e hora</p>
-                <p className="text-slate-800">{fmtDataHora(comprovante.assinado_em)}</p>
+                <p className="text-slate-800">
+                  {fmtDataHora(comprovante.assinado_em)}
+                </p>
               </div>
               {comprovante.signatario && (
                 <div>
@@ -182,7 +191,8 @@ export default function PortalAssinaturas() {
               )}
               <div>
                 <p className="text-xs text-slate-400">
-                  Hash SHA-256 do arquivo{comprovante.hashCompleto ? "" : " (prefixo)"}
+                  Hash SHA-256 do arquivo
+                  {comprovante.hashCompleto ? "" : " (prefixo)"}
                 </p>
                 <p className="font-mono text-xs text-slate-700 break-all">
                   {comprovante.hash}
@@ -208,13 +218,18 @@ export default function PortalAssinaturas() {
           </div>
           <div className="divide-y divide-slate-100">
             {pendentesMinhas.map((s) => (
-              <div key={s.id} className="px-5 py-4 flex items-center justify-between gap-4">
+              <div
+                key={s.id}
+                className="px-5 py-4 flex items-center justify-between gap-4"
+              >
                 <div className="flex items-start gap-3 min-w-0">
                   <div className="w-8 h-8 bg-warn-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
                     <FileText className="w-4 h-4 text-warn-500" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{s.documento}</p>
+                    <p className="text-sm font-medium text-slate-800 truncate">
+                      {s.documento}
+                    </p>
                     {s.created_at && (
                       <p className="text-xs text-slate-400 mt-0.5">
                         Solicitado em {fmtDataHora(s.created_at)}
@@ -250,16 +265,28 @@ export default function PortalAssinaturas() {
         <div className="card overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
             <Clock className="w-4 h-4 text-primary-500" />
-            <h2 className="font-semibold text-slate-700">Aguardando outros signatários</h2>
+            <h2 className="font-semibold text-slate-700">
+              Aguardando outros signatários
+            </h2>
           </div>
           <div className="divide-y divide-slate-100">
             {aguardandoOutros.map((s) => (
-              <div key={s.id} className="px-5 py-4 flex items-center justify-between gap-4">
+              <div
+                key={s.id}
+                className="px-5 py-4 flex items-center justify-between gap-4"
+              >
                 <div>
-                  <p className="text-sm font-medium text-slate-800">{s.documento}</p>
-                  <p className="text-xs text-success-600 mt-1">Sua assinatura já foi registrada.</p>
+                  <p className="text-sm font-medium text-slate-800">
+                    {s.documento}
+                  </p>
+                  <p className="text-xs text-success-600 mt-1">
+                    Sua assinatura já foi registrada.
+                  </p>
                 </div>
-                <button onClick={() => verComprovante(s)} className="btn-secondary text-xs">
+                <button
+                  onClick={() => verComprovante(s)}
+                  className="btn-secondary text-xs"
+                >
                   <ShieldCheck className="w-3.5 h-3.5" /> Ver sua evidência
                 </button>
               </div>
@@ -272,18 +299,28 @@ export default function PortalAssinaturas() {
         <div className="card overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-success-500" />
-            <h2 className="font-semibold text-slate-700">Concluídas ({concluidas.length})</h2>
+            <h2 className="font-semibold text-slate-700">
+              Concluídas ({concluidas.length})
+            </h2>
           </div>
           <div className="divide-y divide-slate-100">
             {concluidas.map((s) => (
-              <div key={s.id} className="px-5 py-4 flex items-center justify-between gap-4">
+              <div
+                key={s.id}
+                className="px-5 py-4 flex items-center justify-between gap-4"
+              >
                 <div>
-                  <p className="text-sm font-medium text-slate-800">{s.documento}</p>
+                  <p className="text-sm font-medium text-slate-800">
+                    {s.documento}
+                  </p>
                   <p className="text-xs text-slate-400 mt-0.5">
                     Todos os signatários concluíram a solicitação.
                   </p>
                 </div>
-                <button onClick={() => verComprovante(s)} className="text-xs font-medium text-success-600 bg-success-50 hover:bg-success-100 px-3 py-1.5 rounded-full inline-flex items-center gap-1.5">
+                <button
+                  onClick={() => verComprovante(s)}
+                  className="text-xs font-medium text-success-600 bg-success-50 hover:bg-success-100 px-3 py-1.5 rounded-full inline-flex items-center gap-1.5"
+                >
                   <ShieldCheck className="w-3.5 h-3.5" /> Ver comprovante
                 </button>
               </div>
