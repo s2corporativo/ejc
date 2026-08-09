@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addCaseContext,
   caseJourneyPath,
-  caseTabPath,
+  caminhoAbaCaso,
   readCaseContext,
 } from "./caseContext";
 
@@ -14,7 +14,7 @@ describe("contexto do caso", () => {
   });
 
   it("gera deep-link de aba sem perder encoding do caso", () => {
-    expect(caseTabPath("caso 123", "peças especiais")).toBe(
+    expect(caminhoAbaCaso("caso 123", "peças especiais")).toBe(
       "/casos/caso%20123?tab=pe%C3%A7as%20especiais",
     );
   });
