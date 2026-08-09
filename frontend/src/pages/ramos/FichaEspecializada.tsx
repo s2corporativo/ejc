@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
@@ -26,6 +26,12 @@ export default function FichaEspecializada({
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<Record<string, any>>({});
   const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    setModal(false);
+    setForm({});
+    setSalvando(false);
+  }, [cfg.slug]);
 
   if (cfg.externo) return null;
 
