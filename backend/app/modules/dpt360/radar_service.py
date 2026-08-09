@@ -5,10 +5,11 @@ from datetime import datetime, timedelta, timezone
 import re
 from typing import Any
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.diario_oficial import DiarioOficialAlerta
 from app.models.user import User
+from app.modules.dpt360.access_scope import visible_alerts_query
 from app.modules.dpt360.dashboard_service import (
     _value,
     _visible_business_cases_query,
@@ -16,21 +17,11 @@ from app.modules.dpt360.dashboard_service import (
 )
 
 AREA_TERMS: dict[str, tuple[str, ...]] = {
-    "tributario": (
-        "tribut", "receita federal", "pgfn", "icms", "iss", "ibs", "cbs", "imposto", "contribuicao",
-    ),
-    "ambiental": (
-        "ambient", "ibama", "conama", "semad", "feam", "ief", "igam", "copam", "licenciamento", "residuo",
-    ),
-    "administrativo": (
-        "licit", "contrato administrativo", "tcu", "pncp", "administracao publica", "sancao administrativa",
-    ),
-    "trabalhista": (
-        "trabalh", "emprego", "empregado", "sst", "seguranca do trabalho", "ministerio do trabalho", "fgts",
-    ),
-    "lgpd_ia": (
-        "lgpd", "anpd", "dados pessoais", "inteligencia artificial", "sistema de ia", "algoritm",
-    ),
+    "tributario": ("tribut", "receita federal", "pgfn", "icms", "iss", "ibs", "cbs", "imposto", "contribuicao"),
+    "ambiental": ("ambient", "ibama", "conama", "semad", "feam", "ief", "igam", "copam", "licenciamento", "residuo"),
+    "administrativo": ("licit", "contrato administrativo", "tcu", "pncp", "administracao publica", "sancao administrativa"),
+    "trabalhista": ("trabalh", "emprego", "empregado", "sst", "seguranca do trabalho", "ministerio do trabalho", "fgts"),
+    "lgpd_ia": ("lgpd", "anpd", "dados pessoais", "inteligencia artificial", "sistema de ia", "algoritm"),
 }
 
 AREA_CASE_ALIASES = {
@@ -66,7 +57,6 @@ def impact_level(area: str, company_case_areas: set[str]) -> str | None:
     aliases = AREA_CASE_ALIASES.get(area, set())
     if aliases & company_case_areas:
         return "alta"
-    # Sem sinal objetivo da atividade/perfil, não inventamos aderência baixa.
     return None
 
 
@@ -81,23 +71,17 @@ async def build_today_radar(
 
     rows = (
         await db.execute(
-            text(
-                """
-                SELECT id, fonte, keyword_match, titulo, resumo, link,
-                       data_publicacao, created_at, lido
-                FROM diario_oficial_alertas
-                WHERE created_at >= :desde
-                ORDER BY data_publicacao DESC NULLS LAST, created_at DESC
-                LIMIT 300
-                """
-            ),
-            {"desde": since.replace(tzinfo=None)},
+            visible_alerts_query(user)
+            .where(DiarioOficialAlerta.created_at >= since)
+            .order_by(
+                DiarioOficialAlerta.data_publicacao.desc().nullslast(),
+                DiarioOficialAlerta.created_at.desc(),
+            )
+            .limit(300)
         )
-    ).mappings().all()
-
-    companies = (
-        await db.execute(_visible_company_query(user))
     ).scalars().all()
+
+    companies = (await db.execute(_visible_company_query(user))).scalars().all()
     company_ids = [item.id for item in companies]
     cases = []
     if company_ids:
@@ -115,7 +99,7 @@ async def build_today_radar(
     impacted_company_ids: set[str] = set()
 
     for row in rows:
-        area = classify_area(row["keyword_match"], row["titulo"], row["resumo"])
+        area = classify_area(row.keyword_match, row.titulo, row.resumo)
         area_counts[area] += 1
         impacts = []
         for company_id, case_areas in areas_by_company.items():
@@ -126,30 +110,26 @@ async def build_today_radar(
             if company is None:
                 continue
             impacted_company_ids.add(company_id)
-            impacts.append(
-                {
-                    "client_id": company_id,
-                    "empresa": company.razao_social or company.nome_fantasia or "Empresa sem razão social",
-                    "aderencia": level,
-                    "fundamento": f"A empresa possui caso canônico na área {area}; requer análise jurídica humana.",
-                    "status": "possivel_impacto",
-                }
-            )
-        items.append(
-            {
-                "id": str(row["id"]),
-                "fonte": row["fonte"],
-                "titulo": row["titulo"],
-                "resumo": row["resumo"],
-                "link": row["link"],
-                "data_publicacao": row["data_publicacao"],
-                "area": area,
-                "estado_conhecimento": "CLASSIFICADO",
-                "vigencia": "a_confirmar",
-                "rag": "nao_promovido_por_este_endpoint",
-                "impactos": impacts,
-            }
-        )
+            impacts.append({
+                "client_id": company_id,
+                "empresa": company.razao_social or company.nome_fantasia or "Empresa sem razão social",
+                "aderencia": level,
+                "fundamento": f"A empresa possui caso canônico na área {area}; requer análise jurídica humana.",
+                "status": "possivel_impacto",
+            })
+        items.append({
+            "id": str(row.id),
+            "fonte": row.fonte,
+            "titulo": row.titulo,
+            "resumo": row.resumo,
+            "link": row.link,
+            "data_publicacao": row.data_publicacao,
+            "area": area,
+            "estado_conhecimento": "CLASSIFICADO",
+            "vigencia": "a_confirmar",
+            "rag": "nao_promovido_por_este_endpoint",
+            "impactos": impacts,
+        })
 
     return {
         "generated_at": datetime.now(timezone.utc),
@@ -159,12 +139,6 @@ async def build_today_radar(
         "empresas_potencialmente_impactadas": len(impacted_company_ids),
         "itens": items[:100],
         "fontes_ativas": ["diario_oficial_alertas: DOU/DOE-MG"],
-        "dependencias_pendentes": [
-            "PR #887: fontes oficiais adicionais",
-            "PR #895: gate de vigência RAG",
-        ],
-        "regra_impacto": (
-            "Aderência só é exibida quando existe sinal objetivo no perfil/casos da empresa. "
-            "Possível impacto não significa irregularidade."
-        ),
+        "dependencias_pendentes": ["PR #895: gate de vigência RAG"],
+        "regra_impacto": "Aderência só é exibida quando existe sinal objetivo no perfil/casos da empresa. Possível impacto não significa irregularidade.",
     }
