@@ -69,7 +69,7 @@ const TOOLS = [
     ],
     evidence:
       "Núcleo e governança de IA já existentes; inventário empresarial específico será enriquecido depois da persistência canônica.",
-    href: "/governanca-ia",
+    href: "/ia-governanca",
   },
   {
     area: "PNCP / captura de licitações",
@@ -103,11 +103,16 @@ export default function DptTools() {
               <h3 className="font-semibold text-slate-900 dark:text-white">
                 {tool.area}
               </h3>
-              {tool.available ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              ) : (
-                <CircleSlash2 className="h-4 w-4 text-slate-400" />
-              )}
+              <span>
+                {tool.available ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                ) : (
+                  <CircleSlash2 className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                )}
+                <span className="sr-only">
+                  {tool.available ? "Disponível" : "Indisponível"}
+                </span>
+              </span>
             </div>
             <ul className="mt-3 space-y-1.5 text-sm text-slate-600 dark:text-slate-300">
               {tool.items.map((item) => (
