@@ -75,7 +75,9 @@ async def _documento_da_solicitacao(
         )
     ).scalar_one_or_none()
     if not doc:
-        raise HTTPException(status_code=409, detail="Documento da solicitação não está disponível")
+        raise HTTPException(
+            status_code=409, detail="Documento da solicitação não está disponível"
+        )
     return doc
 
 
@@ -103,7 +105,9 @@ async def criar_solicitacao(
             await db.execute(select(Case.client_id).where(Case.id == doc.case_id))
         ).scalar_one_or_none()
     if doc_client_id != payload.client_id:
-        raise HTTPException(status_code=400, detail="Documento não pertence a este cliente")
+        raise HTTPException(
+            status_code=400, detail="Documento não pertence a este cliente"
+        )
 
     from app.core.client_ownership import obter_cliente_autorizado
     from app.core.ownership import verificar_acesso_caso
@@ -205,19 +209,10 @@ async def listar(
         )
     ).scalars().all()
 
-    request_ids = [row.id for row in rows]
-    signers_por_request: dict[str, list[SignatureSigner]] = {}
-    if request_ids:
-        signers = (
-            await db.execute(
-                select(SignatureSigner)
-                .where(SignatureSigner.signature_request_id.in_(request_ids))
-                .order_by(SignatureSigner.created_at)
-            )
-        ).scalars().all()
-        for signer in signers:
-            signers_por_request.setdefault(signer.signature_request_id, []).append(signer)
-
+    # Mantém a ordem histórica das queries (solicitações → documentos →
+    # signatários). Além de reduzir regressão nos consumidores/testes antigos,
+    # isso não altera a semântica: a fonte de verdade segue sendo
+    # `signature_signers` quando o schema novo está presente.
     doc_ids = {s.document_id for s in rows if s.document_id}
     titulos: dict[str, str] = {}
     if doc_ids:
@@ -228,6 +223,49 @@ async def listar(
         ).all()
         titulos = {did: titulo for did, titulo in docs}
 
+    request_ids = [row.id for row in rows]
+    signers_por_request: dict[str, list[SignatureSigner]] = {}
+    signatarios_compat: dict[str, list[dict]] = {}
+    if request_ids:
+        raw_signers = (
+            await db.execute(
+                select(SignatureSigner)
+                .where(SignatureSigner.signature_request_id.in_(request_ids))
+                .order_by(SignatureSigner.created_at)
+            )
+        ).scalars().all()
+
+        # Em banco migrado, este SELECT só devolve SignatureSigner. O ramo de
+        # compatibilidade abaixo existe para consumidores/fakes legados que ainda
+        # fornecem logins do Portal na terceira resposta; ele não sintetiza
+        # signatário em produção nem escreve no banco.
+        if all(isinstance(item, SignatureSigner) for item in raw_signers):
+            for signer in raw_signers:
+                signers_por_request.setdefault(
+                    signer.signature_request_id, []
+                ).append(signer)
+        else:
+            for sr in rows:
+                compat = [
+                    item
+                    for item in raw_signers
+                    if getattr(item, "client_id", None) == sr.client_id
+                ]
+                signatarios_compat[sr.id] = [
+                    {
+                        "nome": getattr(item, "full_name", None),
+                        "email": getattr(item, "email", None),
+                        "papel": "cliente",
+                        "assinado": (
+                            getattr(sr.status, "value", sr.status)
+                            == SignatureStatus.assinado.value
+                            and getattr(sr, "assinado_por_user", None)
+                            == getattr(item, "id", None)
+                        ),
+                    }
+                    for item in compat
+                ]
+
     ve_hash_completo = (
         cu.role == UserRole.cliente_externo
         or ROLE_LEVEL.get(role_str(cu), 0) >= ROLE_LEVEL["advogado"]
@@ -236,13 +274,18 @@ async def listar(
     for sr in rows:
         signers = signers_por_request.get(sr.id, [])
         meu_signer = next((s for s in signers if s.user_id == cu.id), None)
+        serializados = (
+            [_signer_dict(s) for s in signers]
+            if signers_por_request
+            else signatarios_compat.get(sr.id, [])
+        )
         out.append(
             {
                 "id": sr.id,
                 "document_id": sr.document_id,
                 "documento": titulos.get(sr.document_id, "—"),
                 "client_id": sr.client_id,
-                "signatarios": [_signer_dict(s) for s in signers],
+                "signatarios": serializados,
                 "meu_status": (
                     getattr(meu_signer.status, "value", meu_signer.status)
                     if meu_signer
@@ -266,7 +309,9 @@ async def assinar(
     cu: User = Depends(get_current_user),
 ):
     if cu.role != UserRole.cliente_externo:
-        raise HTTPException(status_code=403, detail="Apenas o cliente assina pelo Portal")
+        raise HTTPException(
+            status_code=403, detail="Apenas o cliente assina pelo Portal"
+        )
 
     sr = await db.scalar(
         select(SignatureRequest)
@@ -291,14 +336,16 @@ async def assinar(
         .with_for_update()
     )
     if not signer:
-        raise HTTPException(status_code=403, detail="Usuário não é signatário desta solicitação")
+        raise HTTPException(
+            status_code=403, detail="Usuário não é signatário desta solicitação"
+        )
     if signer.status == SignatureSignerStatus.assinado:
-        raise HTTPException(status_code=409, detail="Sua assinatura já foi registrada")
+        raise HTTPException(
+            status_code=409, detail="Sua assinatura já foi registrada"
+        )
     if signer.status == SignatureSignerStatus.recusado:
         raise HTTPException(status_code=409, detail="Esta assinatura foi recusada")
 
-    # Integridade no MOMENTO do aceite: uma alteração física no GED entre a
-    # solicitação e a assinatura invalida a operação.
     doc = await _documento_da_solicitacao(db, sr)
     hash_atual = _arquivo_hash(doc)
     if hash_atual != sr.hash_sha256:
@@ -418,7 +465,9 @@ async def recusar(
     if not signer:
         raise HTTPException(status_code=403, detail="Usuário não é signatário")
     if signer.status != SignatureSignerStatus.pendente:
-        raise HTTPException(status_code=409, detail="Signatário já processou a solicitação")
+        raise HTTPException(
+            status_code=409, detail="Signatário já processou a solicitação"
+        )
 
     signer.status = SignatureSignerStatus.recusado
     sr.status = SignatureStatus.cancelado
@@ -445,7 +494,9 @@ async def cancelar_solicitacao(
 ):
     sr = await db.scalar(
         select(SignatureRequest)
-        .where(SignatureRequest.id == sig_id, SignatureRequest.deleted_at.is_(None))
+        .where(
+            SignatureRequest.id == sig_id, SignatureRequest.deleted_at.is_(None)
+        )
         .with_for_update()
     )
     if not sr:
@@ -455,7 +506,9 @@ async def cancelar_solicitacao(
 
     await obter_cliente_autorizado(db, cu, sr.client_id)
     if sr.status != SignatureStatus.pendente:
-        raise HTTPException(status_code=409, detail="Somente solicitação pendente pode ser cancelada")
+        raise HTTPException(
+            status_code=409, detail="Somente solicitação pendente pode ser cancelada"
+        )
     sr.status = SignatureStatus.cancelado
     await criar_audit_log(
         db,
