@@ -99,10 +99,20 @@ ADICOES_INTENCIONAIS = {
     ("/api/jurimetria/analise-prospectiva", "POST"),
     ("/api/jurimetria/cobertura-rag", "GET"),
     ("/api/jurimetria/cobertura-mg-jec", "GET"),
-    # PR #888: vínculo canônico de documento solto ao caso. A busca filtra
+    # PR #938: vínculo canônico de documento solto ao caso. A busca filtra
     # candidatos server-side e o POST aplica domínio/auditoria de forma atômica.
     ("/api/cases/{case_id}/documentos/candidatos", "GET"),
     ("/api/cases/{case_id}/documentos/{document_id}/vincular", "POST"),
+    # DPT Empresarial 360 — superfície nova declarada nominalmente. Não usar
+    # wildcard: cada contrato precisa ser revisto quando surgir ou desaparecer.
+    ("/api/dpt360/dashboard", "GET"),
+    ("/api/dpt360/companies/{client_id}", "GET"),
+    ("/api/dpt360/diagnostics/readiness/{client_id}", "GET"),
+    ("/api/dpt360/radar/today", "GET"),
+    ("/api/dpt360/reports/executive/{client_id}", "GET"),
+    ("/api/dpt360/intake/opportunities", "GET"),
+    ("/api/dpt360/intake/opportunities", "POST"),
+    ("/api/dpt360/actions", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -221,6 +231,31 @@ def test_paridade_openapi_com_snapshot_anterior():
 )
 def test_rotas_antes_dinamicas_seguem_montadas(caminho, metodo):
     """Uma rota-testemunha de cada um dos cinco grupos."""
+    from app.main import app
+
+    montadas = {
+        (getattr(r, "path", ""), m)
+        for r in app.routes
+        for m in (getattr(r, "methods", None) or [])
+    }
+    assert (caminho, metodo) in montadas
+
+
+@pytest.mark.parametrize(
+    "caminho,metodo",
+    [
+        ("/api/dpt360/dashboard", "GET"),
+        ("/api/dpt360/companies/{client_id}", "GET"),
+        ("/api/dpt360/diagnostics/readiness/{client_id}", "GET"),
+        ("/api/dpt360/radar/today", "GET"),
+        ("/api/dpt360/reports/executive/{client_id}", "GET"),
+        ("/api/dpt360/intake/opportunities", "GET"),
+        ("/api/dpt360/intake/opportunities", "POST"),
+        ("/api/dpt360/actions", "POST"),
+    ],
+)
+def test_rotas_dpt360_sao_explicitas(caminho, metodo):
+    """Toda rota DPT nova precisa continuar explicitamente montada no FastAPI."""
     from app.main import app
 
     montadas = {
