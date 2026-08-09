@@ -228,11 +228,17 @@ def extrair_texto_planalto(html: str) -> str:
 # do texto compilado: "(Revogada pela Lei nº 14.133, de 2021)", "(Revogado pelo
 # Decreto nº ...)", "Revogada a partir de ...", "Vigência encerrada", e a
 # anotação SOLTA "(Revogada)" — que no preâmbulo só pode ser do próprio diploma.
-# É a forma PASSIVA — "Revoga a Lei nº X" (a norma que revoga OUTRA) não casa,
-# porque exige o particípio seguido de agente/termo inicial ou de parêntese.
+# A revogação PARCIAL é detectada separadamente para não promover a situação do
+# diploma inteiro a 'revogada'. É a forma PASSIVA — "Revoga a Lei nº X" (a
+# norma que revoga OUTRA) não casa.
+_RE_DIPLOMA_PARCIALMENTE_REVOGADO = re.compile(
+    r"(?:parcialmente\s+revogad[oa]s?\s+(?:pel[ao]s?\b|a\s+partir\b|em\s+\d)"
+    r"|revogad[oa]s?\s+parcialmente\s+(?:pel[ao]s?\b|a\s+partir\b|em\s+\d))",
+    re.IGNORECASE,
+)
 _RE_DIPLOMA_REVOGADO = re.compile(
-    r"(?:revogad[oa]s?\s+(?:integralmente\s+|expressamente\s+|tacitamente\s+|"
-    r"parcialmente\s+)?(?:pel[ao]s?\b|a\s+partir\b|em\s+\d)"
+    r"(?:revogad[oa]s?\s+(?:integralmente\s+|expressamente\s+|tacitamente\s+)?"
+    r"(?:pel[ao]s?\b|a\s+partir\b|em\s+\d)"
     r"|\(\s*revogad[oa]s?\s*\)"
     r"|vig[êe]ncia\s+encerrada)",
     re.IGNORECASE,
@@ -260,41 +266,46 @@ def _preambulo(blocos: list[tuple[str | None, str]]) -> str | None:
 
 
 def situacao_juridica(blocos: list[tuple[str | None, str]]) -> dict:
-    """Fragmento de `extra` com a vigência que a FONTE permite afirmar
-    (vocabulário de knowledge_governance.LEGAL_STATUS_VALUES). Devolve `{}`
-    quando não permite afirmar nada — e aí a chave é OMITIDA, para a governança
-    marcar 'vigencia_nao_verificada' e o gate do RAG excluir o documento até que
-    alguém confira. FAIL-CLOSED: o erro de detecção aperta, nunca afrouxa.
+    """Fragmento de `extra` com a situação jurídica que a fonte sustenta.
 
-    O que o Planalto entrega: as URLs do CATALOGO apontam para o texto
-    COMPILADO, que é a consolidação oficial da redação EM VIGOR, e o próprio
-    Planalto anota a revogação do diploma inteiro no cabeçalho/ementa (antes do
-    Art. 1º). Três desfechos:
+    FAIL-CLOSED: apenas uma declaração positiva da fonte recebe
+    `legal_status_verificado_em`. O silêncio do texto compilado NÃO é prova
+    positiva de vigência e permanece `vigencia_nao_verificada`, com carimbo de
+    inferência para auditoria.
 
-      • marcação de revogação no PREÂMBULO → 'revogada'. É leitura POSITIVA da
-        fonte, então carimba `legal_status_verificado_em`.
-      • preâmbulo identificável SEM marcação → 'vigente'. Isto é INFERÊNCIA POR
-        AUSÊNCIA, não declaração explícita: carimba `legal_status_inferido_em`,
-        chave distinta que não afirma conferência. Quem audita consegue separar
-        o que a fonte disse do que se concluiu do silêncio dela.
-      • sem preâmbulo identificável (página sem cabeçalho, markup mudou,
-        extração falhou) → `{}`. Antes este ramo devolvia 'vigente', ou seja,
-        uma falha de detecção declarava vigência — era fail-OPEN e é o oposto do
-        que lexml.py faz.
+    Desfechos:
+      • revogação total declarada no preâmbulo → `revogada` verificada;
+      • revogação parcial declarada → `parcialmente_revogada` verificada;
+      • preâmbulo identificável sem declaração → `vigencia_nao_verificada`
+        inferida, nunca `vigente`;
+      • sem preâmbulo identificável → `{}`.
 
-    O escopo é deliberadamente o preâmbulo: o corpo do compilado tem anotações
-    "(Revogado ...)" de ARTIGOS individuais (preservadas por
-    `extrair_texto_planalto`), e lê-las como revogação do diploma marcaria todo
-    código como revogado.
+    O escopo é o preâmbulo: o corpo compilado contém anotações de artigos
+    individuais revogados, que não podem ser promovidas ao diploma inteiro.
     """
     preambulo = _preambulo(blocos)
     if preambulo is None:
         return {}
+
     base = {"legal_status_origem": "planalto:texto_compilado"}
     agora = datetime.now(timezone.utc).isoformat()
+    if _RE_DIPLOMA_PARCIALMENTE_REVOGADO.search(preambulo):
+        return {
+            **base,
+            "legal_status": "parcialmente_revogada",
+            "legal_status_verificado_em": agora,
+        }
     if _RE_DIPLOMA_REVOGADO.search(preambulo):
-        return {**base, "legal_status": "revogada", "legal_status_verificado_em": agora}
-    return {**base, "legal_status": "vigente", "legal_status_inferido_em": agora}
+        return {
+            **base,
+            "legal_status": "revogada",
+            "legal_status_verificado_em": agora,
+        }
+    return {
+        **base,
+        "legal_status": "vigencia_nao_verificada",
+        "legal_status_inferido_em": agora,
+    }
 
 
 def _rotulo(m: re.Match) -> str:
@@ -468,12 +479,9 @@ async def ingerir_diploma(
             # Curadoria (governança RAG da main): fonte oficial nasce aprovada
             # e tipada — nunca entra em quarentena.
             "rag_status": "aprovado", "tipo_fonte": "legislacao_oficial",
-            # Vigência lida da FONTE (Issue #636): sem isto o documento entra
-            # como 'vigencia_nao_verificada' na governança e — com o gate de
-            # situação jurídica — sai da recuperação. `*_origem` registra DE
-            # ONDE veio a marcação, para auditoria/curadoria. O fragmento vem
-            # VAZIO quando a página não permite afirmar nada; a chave então é
-            # omitida, e o merge do upsert não apaga curadoria já registrada.
+            # Situação jurídica lida do preâmbulo do texto oficial. O silêncio
+            # do Planalto não é mais promovido a vigência positiva: permanece
+            # `vigencia_nao_verificada` até prova/curadoria.
             **prep["vigencia"],
         },
         confianca="alta",              # fonte oficial — texto de lei compilado
