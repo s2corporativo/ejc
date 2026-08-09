@@ -15,7 +15,7 @@ from app.models.audit_log import criar_audit_log
 from app.models.case import Case, CaseMovimento
 from app.models.deadline import Deadline
 from app.models.document import DocConfidencialidade, Document
-from app.models.fee import Fee, FeePayment
+from app.models.fee import Fee, FeePayment, FeeStatus
 from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/portal", tags=["Portal do Cliente"])
@@ -210,6 +210,12 @@ async def financeiro(
 
     `valor` é mantido por compatibilidade e representa o valor ORIGINAL. A UI
     deve usar `saldo_aberto` para cobrança e `valor_pago` para baixas parciais.
+
+    Honorários legados podem estar quitados apenas por `status=pago` +
+    `data_pagamento`, antes de `fee_payments` existir como trilha granular. Nessa
+    hipótese o Portal respeita a quitação histórica sem fabricar uma linha de
+    pagamento retroativa: considera o valor integral pago somente para cálculo
+    de leitura, preservando o registro original intacto.
     """
     client_id = _exigir_cliente(cu)
     rows = (
@@ -242,9 +248,22 @@ async def financeiro(
     data = []
     for fee in rows:
         original = Decimal(str(fee.valor or 0))
-        pago, ultima_baixa = pagamentos_por_fee.get(fee.id, (Decimal("0"), None))
-        saldo = max(original - pago, Decimal("0"))
         status = fee.status.value if hasattr(fee.status, "value") else str(fee.status)
+        tem_baixas = fee.id in pagamentos_por_fee
+        pago, ultima_baixa = pagamentos_por_fee.get(fee.id, (Decimal("0"), None))
+
+        # Compatibilidade com quitações anteriores à trilha FeePayment. Não
+        # cria nem altera dado financeiro; apenas impede cobrança duplicada no
+        # Portal quando o próprio registro legado já afirma quitação integral.
+        if (
+            not tem_baixas
+            and status == FeeStatus.pago.value
+            and fee.data_pagamento is not None
+        ):
+            pago = original
+            ultima_baixa = fee.data_pagamento
+
+        saldo = max(original - pago, Decimal("0"))
         data.append(
             {
                 "id": fee.id,
