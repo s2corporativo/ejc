@@ -269,9 +269,7 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
             placeholder="Buscar documento por título ou arquivo…"
           />
         </div>
-        {buscandoVinculo && (
-          <p className="text-xs text-slate-400">Buscando…</p>
-        )}
+        {buscandoVinculo && <p className="text-xs text-slate-400">Buscando…</p>}
         {!buscandoVinculo && erroBuscaVinculo && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-red-100 bg-red-50 p-2 text-xs text-red-700">
             <span>{erroBuscaVinculo}</span>
@@ -305,7 +303,8 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
                   </p>
                   {d.case_id && (
                     <p className="text-xs text-amber-600">
-                      Já vinculado a outro caso — vincular aqui move o documento.
+                      Já vinculado a outro caso — vincular aqui move o
+                      documento.
                     </p>
                   )}
                 </div>
