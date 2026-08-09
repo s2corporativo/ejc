@@ -5,7 +5,6 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -79,6 +78,35 @@ describe("TabDocumentos — vínculo canônico", () => {
     expect(post).toHaveBeenCalledWith(
       "/cases/case-1/documentos/d1/vincular",
     );
+  });
+
+  it("mantém visível o aviso quando o candidato pertence a outro caso", async () => {
+    vi.spyOn(api, "get").mockImplementation((url) => {
+      if (String(url).includes("/documentos/candidatos")) {
+        return Promise.resolve({
+          data: {
+            data: [
+              { id: "d-outro", titulo: "Procuração", case_id: "case-origem" },
+            ],
+            total: 1,
+          },
+        });
+      }
+      return Promise.resolve({ data: { data: [] } });
+    });
+
+    render(<TabDocumentos caseId="case-1" />);
+    fireEvent.change(
+      screen.getByPlaceholderText("Buscar documento por título ou arquivo…"),
+      { target: { value: "procuração" } },
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(450);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Procuração")).toBeTruthy();
+    expect(screen.getByText(/Já vinculado a outro caso/)).toBeTruthy();
   });
 
   it("não deixa resposta antiga sobrescrever a busca mais recente", async () => {
