@@ -9,8 +9,10 @@ on:
 permissions:
   contents: read
 
+# Compartilha o mesmo lock repository-wide do Deploy VPS. Assim nenhum novo
+# deploy pode alterar o .env entre a leitura, o candidato e o rename do prearm.
 concurrency:
-  group: rag-vigencia-prearm
+  group: deploy-vps
   cancel-in-progress: false
 
 jobs:
