@@ -35,8 +35,6 @@ describe("Entrada Única — contrato dos modos", () => {
   it("remove apenas o parâmetro de modo ao encaminhar para Sala Jurídica", () => {
     const params = new URLSearchParams("modo=sala&case_id=caso-456");
 
-    expect(destinoModo("sala", params)).toBe(
-      "/sala-juridica?case_id=caso-456",
-    );
+    expect(destinoModo("sala", params)).toBe("/sala-juridica?case_id=caso-456");
   });
 });
