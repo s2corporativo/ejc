@@ -5,24 +5,62 @@ type ModuleLike = {
   key: string;
   path: string;
   status?: string;
+  label?: string;
+  description?: string;
+  essential?: boolean;
 };
 
 // Rotas mantidas somente por compatibilidade. A tarefa correspondente já existe
 // em outro workspace canônico e não deve aparecer novamente na navegação.
 const CONSOLIDATED_NAV_KEYS = new Set(["knowledge-hub"]);
 
+// Sala Jurídica e Raio-X continuam sendo módulos/rotas canônicos para preservar
+// lifecycle, RBAC, ajuda contextual, manifests e deep links. Quando a Entrada
+// está efetivamente visível para o papel atual, porém, elas deixam de competir
+// no menu: a experiência passa a ter uma única porta de navegação.
+const ENTRADA_CONSOLIDATED_NAV_KEYS = new Set([
+  "sala-juridica",
+  "raio-x-processo",
+]);
+
+function visibleByLifecycle<T extends ModuleLike>(
+  module: T,
+  settings: Record<string, ModuleLifecycleOverride>,
+): boolean {
+  const override = settings[module.key];
+  if (!override) return module.status !== "hidden";
+  if (!override.enabled || override.status === "disabled") return false;
+  if (!override.menu_visible || override.status === "hidden") return false;
+  return true;
+}
+
 export function filterModulesByLifecycle<T extends ModuleLike>(
   modules: T[],
   settings: Record<string, ModuleLifecycleOverride>,
 ): T[] {
-  return modules.filter((module) => {
-    if (CONSOLIDATED_NAV_KEYS.has(module.key)) return false;
-    const override = settings[module.key];
-    if (!override) return module.status !== "hidden";
-    if (!override.enabled || override.status === "disabled") return false;
-    if (!override.menu_visible || override.status === "hidden") return false;
-    return true;
-  });
+  const entradaVisivel = modules.some(
+    (module) =>
+      module.key === "entrada" && visibleByLifecycle(module, settings),
+  );
+
+  return modules
+    .filter((module) => {
+      if (CONSOLIDATED_NAV_KEYS.has(module.key)) return false;
+      if (entradaVisivel && ENTRADA_CONSOLIDATED_NAV_KEYS.has(module.key)) {
+        return false;
+      }
+      return visibleByLifecycle(module, settings);
+    })
+    .map((module) => {
+      if (!entradaVisivel || module.key !== "entrada") return module;
+      return {
+        ...module,
+        label: "Entrada Jurídica",
+        description:
+          "Uma única porta para Novo caso, Raio-X e Sala Jurídica.",
+        essential: true,
+      } as T;
+    });
 }
 
 function routePatternToRegex(path: string): RegExp {
