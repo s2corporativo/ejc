@@ -31,9 +31,12 @@ function casoDaRota(pathname: string): string | undefined {
 }
 
 /**
- * Atalho transversal, sem item adicional na barra lateral. Fica disponível no
- * Dashboard, Documentos, Peças, Raio-X e demais módulos jurídicos. Dentro de um
- * caso, os originais já são persistidos diretamente no respectivo GED.
+ * Atalho transversal, sem item adicional na barra lateral. Fica disponível em
+ * Documentos, Peças, Raio-X e demais módulos jurídicos. No Dashboard v2 o
+ * comando equivalente já existe na grade de acesso rápido, então o FAB é
+ * ocultado ali para evitar sobreposição e duplicidade visual.
+ *
+ * Dentro de um caso, os originais já são persistidos diretamente no GED.
  */
 export default function EntradaUniversalGlobal() {
   const location = useLocation();
@@ -49,18 +52,22 @@ export default function EntradaUniversalGlobal() {
 
   if (!user?.role || !ROLES_JURIDICOS.has(user.role)) return null;
 
+  const exibirAtalhoFlutuante = location.pathname !== "/";
+
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="fixed bottom-20 right-4 z-30 flex h-12 items-center gap-2 rounded-xl bg-slate-950 px-3 text-sm font-semibold text-white shadow-md transition hover:bg-slate-800 md:right-5 md:px-4"
-        aria-label="Abrir Entrada Universal de Documentos"
-        title="Importar PDF, Word, fotos, planilhas ou ZIP"
-      >
-        <ScanLine className="h-5 w-5" />
-        <span className="hidden xl:inline">Importar documentos</span>
-      </button>
+      {exibirAtalhoFlutuante && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="fixed bottom-20 right-4 z-30 flex h-12 items-center gap-2 rounded-xl bg-slate-950 px-3 text-sm font-semibold text-white shadow-md transition hover:bg-slate-800 md:right-5 md:px-4"
+          aria-label="Abrir Entrada Universal de Documentos"
+          title="Importar PDF, Word, fotos, planilhas ou ZIP"
+        >
+          <ScanLine className="h-5 w-5" />
+          <span className="hidden xl:inline">Importar documentos</span>
+        </button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-950/45 p-3 pt-16 md:p-6 md:pt-20">
