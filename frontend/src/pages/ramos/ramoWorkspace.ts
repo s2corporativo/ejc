@@ -162,9 +162,7 @@ export function abasDoWorkspace(cfg: RamoConfig): WorkspaceTab[] {
   if (temAnaliseWorkspace(cfg)) {
     abas.push({ id: "analise", label: "IA & Análise" });
   }
-  if (temReferenciasWorkspace(cfg)) {
-    abas.push({ id: "referencias", label: "Referências" });
-  }
+  abas.push({ id: "referencias", label: "Peças & referências" });
   return abas;
 }
 
