@@ -16,6 +16,8 @@ from xml.sax.saxutils import escape
 
 import httpx
 
+from app.integrations.feature_flags import require_enabled
+
 
 SGT_ENDPOINT = "https://www.cnj.jus.br/sgt/sgt_ws.php"
 SGT_WSDL = f"{SGT_ENDPOINT}?wsdl"
@@ -109,6 +111,7 @@ class CnjSgtClient:
         self.timeout = httpx.Timeout(timeout_s)
 
     async def _call(self, method: str, params: list[tuple[str, str, str]]) -> Any:
+        require_enabled("cnj_sgt", "CNJ/SGT — TPU")
         body = _envelope(method, params)
         headers = {
             "Content-Type": "text/xml; charset=utf-8",
