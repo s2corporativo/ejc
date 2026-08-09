@@ -21,7 +21,6 @@ import {
   Download,
   Receipt,
   Bot,
-  ExternalLink,
   KeyRound,
   Zap,
   AlertTriangle,
@@ -33,6 +32,7 @@ import ClientServiceTimeline, {
 import { soDigitos } from "../utils/phone";
 import { toast } from "../components/Toast";
 import { areaLabel } from "../lib/areas";
+import { entradaNovoCasoComCliente } from "../lib/novoCaso";
 import {
   PageHeader,
   Spinner,
@@ -90,10 +90,6 @@ interface DossieData {
     tipo: string;
     created_at: string;
   }>;
-  // Degradação por seção: o backend isola cada agregação e nomeia aqui a que
-  // não pôde ser carregada, em vez de responder 500 e deixar a ficha fechada.
-  // Sem esta lista o usuário veria "0 prazos" achando que não há prazo — a
-  // falha silenciosa que o padrão de erro do EJC proíbe.
   secoes_indisponiveis?: string[];
 }
 
@@ -145,8 +141,6 @@ export function AvisoSecoesIndisponiveis({
     </div>
   );
 }
-
-// Rótulos de área vêm da taxonomia canônica (lib/areas.ts — enum CaseArea).
 
 function StatCard({
   icon: Icon,
@@ -214,7 +208,6 @@ function PrazoRow({ p }: { p: DossieData["prazos"][0] }) {
   );
 }
 
-// ── Tipos ──────────────────────────────────────────────────────────────────
 type PendingItem = {
   id: string;
   type: string;
@@ -240,16 +233,15 @@ const PENDING_STATUS_LABEL: Record<string, string> = {
   concluido: "Concluído",
 };
 
-// ── PendingItemsPanel ───────────────────────────────────────────────────────
 function PendingItemsPanel({
   clientId,
   abrirNovaSignal = 0,
+  permitirDocumentoGenerico = true,
   onItemsChange,
 }: {
   clientId: string | number;
-  /** Incrementado pelo painel de ações rápidas para abrir o formulário de
-   *  solicitação de documento já pré-configurado. */
   abrirNovaSignal?: number;
+  permitirDocumentoGenerico?: boolean;
   onItemsChange?: (items: PendingItem[]) => void;
 }) {
   const [items, setItems] = useState<PendingItem[]>([]);
@@ -258,7 +250,7 @@ function PendingItemsPanel({
   const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: "",
-    type: "documento",
+    type: permitirDocumentoGenerico ? "documento" : "informacao",
     description: "",
     due_date: "",
   });
@@ -283,11 +275,17 @@ function PendingItemsPanel({
   }, [load]);
 
   useEffect(() => {
-    if (abrirNovaSignal > 0) {
+    if (abrirNovaSignal > 0 && permitirDocumentoGenerico) {
       setShowAdd(true);
       setForm((f) => ({ ...f, type: "documento" }));
     }
-  }, [abrirNovaSignal]);
+  }, [abrirNovaSignal, permitirDocumentoGenerico]);
+
+  useEffect(() => {
+    if (!permitirDocumentoGenerico && form.type === "documento") {
+      setForm((atual) => ({ ...atual, type: "informacao" }));
+    }
+  }, [permitirDocumentoGenerico, form.type]);
 
   async function create() {
     if (!form.title.trim()) return;
@@ -296,7 +294,12 @@ function PendingItemsPanel({
         ...form,
         due_date: form.due_date || undefined,
       });
-      setForm({ title: "", type: "documento", description: "", due_date: "" });
+      setForm({
+        title: "",
+        type: permitirDocumentoGenerico ? "documento" : "informacao",
+        description: "",
+        due_date: "",
+      });
       setShowAdd(false);
       load();
     } catch (e: any) {
@@ -352,7 +355,12 @@ function PendingItemsPanel({
           )}
         </p>
         <button
-          onClick={() => setShowAdd(!showAdd)}
+          onClick={() => {
+            setShowAdd(!showAdd);
+            if (!permitirDocumentoGenerico && form.type === "documento") {
+              setForm((atual) => ({ ...atual, type: "informacao" }));
+            }
+          }}
           className="flex items-center gap-1 text-xs text-bronze hover:text-bronze-dark font-medium transition-colors"
         >
           <Plus className="w-3 h-3" /> Adicionar
@@ -367,7 +375,9 @@ function PendingItemsPanel({
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value })}
             >
-              <option value="documento">Documento</option>
+              {permitirDocumentoGenerico && (
+                <option value="documento">Documento</option>
+              )}
               <option value="informacao">Informação</option>
               <option value="assinatura">Assinatura</option>
               <option value="pagamento">Pagamento</option>
@@ -397,6 +407,12 @@ function PendingItemsPanel({
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
+          {!permitirDocumentoGenerico && (
+            <p className="text-[11px] text-slate-500">
+              Solicitações de documentos são feitas dentro do Caso para chegar
+              ao Portal do Cliente e retornar ao GED correto.
+            </p>
+          )}
           <div className="flex gap-2 justify-end">
             <button
               onClick={() => setShowAdd(false)}
@@ -507,9 +523,6 @@ function PendingItemsPanel({
   );
 }
 
-// Desfechos possíveis do contato rápido — mapeados para o vocabulário que o
-// backend aceita (PATCH /atendimentos/{id}: contato_status ∈ iniciado |
-// confirmado | nao_concluido; detalhe registrado em proximo_passo).
 const DESFECHOS_CONTATO: Array<{
   label: string;
   patch: { contato_status: string; proximo_passo?: string };
@@ -532,7 +545,6 @@ const DESFECHOS_CONTATO: Array<{
   },
 ];
 
-// ── WhatsApp / Comunicação ──────────────────────────────────────────────────
 function ComunicacaoRapida({
   cliente,
   onRegistrado,
@@ -563,7 +575,6 @@ function ComunicacaoRapida({
         contato_status: "iniciado",
       })
       .then((r) => {
-        // Ao voltar o foco para a aba, o mini-modal pede o desfecho do contato.
         if (r.data?.id) setFollowUp({ id: String(r.data.id), tipo });
         onRegistrado?.();
       })
@@ -649,10 +660,8 @@ function ComunicacaoRapida({
             <Mail className="w-3.5 h-3.5" /> E-mail
           </a>
         )}
-        <a
-          href={`https://calendar.google.com/calendar/u/0/r/eventedit?text=${encodeURIComponent("Reunião — " + cliente.nome)}`}
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          to={`/atividades?tipo=reuniao&client_id=${encodeURIComponent(String(cliente.id ?? ""))}`}
           onClick={() =>
             registrarAtendimento(
               "reuniao_virtual",
@@ -662,10 +671,9 @@ function ComunicacaoRapida({
           className="flex items-center gap-1 px-2.5 py-1.5 bg-ai-600 text-white rounded-lg hover:bg-ai-700 transition-colors text-xs font-medium"
         >
           <Calendar className="w-3.5 h-3.5" /> Reunião
-        </a>
+        </Link>
       </div>
 
-      {/* Mini-modal de confirmação pós-contato */}
       <Modal
         open={followUp !== null}
         onClose={() => setFollowUp(null)}
@@ -702,7 +710,6 @@ function ComunicacaoRapida({
   );
 }
 
-// ── Relatório Financeiro do Cliente ─────────────────────────────────────────
 function RelatorioFinanceiro({
   clientId,
   clienteNome,
@@ -733,9 +740,6 @@ function RelatorioFinanceiro({
     }
   };
 
-  // Seções que o backend não conseguiu carregar (degradação por seção). Um
-  // relatório financeiro parcial não pode ser lido — nem exportado — como se
-  // fosse completo: seria registro contábil enganoso.
   const secoesIndisponiveis: string[] = rel?.secoes_indisponiveis ?? [];
 
   const exportarCSV = () => {
@@ -745,7 +749,6 @@ function RelatorioFinanceiro({
     }
     const linhas: string[] = [];
     if (secoesIndisponiveis.length) {
-      // A marca vai DENTRO do arquivo: o CSV circula fora da tela que avisa.
       linhas.push(
         `EXTRATO INCOMPLETO - nao foi possivel carregar: ${secoesIndisponiveis.join(", ")}`,
       );
@@ -821,7 +824,6 @@ function RelatorioFinanceiro({
             secoes={secoesIndisponiveis}
             onRecarregar={carregar}
           />
-          {/* Cards resumo */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[
               { l: "Total honorários", v: fmtm(r.total), c: "text-navy-900" },
@@ -865,7 +867,6 @@ function RelatorioFinanceiro({
             ))}
           </div>
 
-          {/* Extrato */}
           {(rel.extrato ?? []).length > 0 && (
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase mb-2">
@@ -916,8 +917,6 @@ export default function DossieCliente() {
     "prazos",
     "financeiro",
     "documentos",
-    // "ia_cliente" sai dos deep-links enquanto a aba está oculta do seletor
-    // (painel "Em breve" preservado no código para reativação futura).
   ];
   const [data, setData] = useState<DossieData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -944,8 +943,6 @@ export default function DossieCliente() {
     carregarDossie();
   }, [carregarDossie]);
 
-  // Edição de perfil inline (PATCH /clients/{id}) — a rota /clientes/:id é a
-  // própria Ficha Mestra, então "Editar perfil" abre um modal aqui mesmo.
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     nome: "",
@@ -1013,7 +1010,6 @@ export default function DossieCliente() {
     }
   };
 
-  // ── Indicadores de relacionamento (topo) ─────────────────────────────────
   const [ultimaInteracao, setUltimaInteracao] = useState<string | null>(null);
   const [indicadoresProntos, setIndicadoresProntos] = useState(false);
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
@@ -1060,8 +1056,6 @@ export default function DossieCliente() {
     [],
   );
 
-  // Carga inicial das pendências para os indicadores do topo — o painel da aba
-  // Resumo mantém a lista atualizada via onItemsChange quando montado.
   useEffect(() => {
     if (!clientId) return;
     api
@@ -1072,8 +1066,9 @@ export default function DossieCliente() {
       });
   }, [clientId]);
 
-  // ── Ações rápidas ────────────────────────────────────────────────────────
   const [solicitarDocSignal, setSolicitarDocSignal] = useState(0);
+  const [solicitarDocCaseOpen, setSolicitarDocCaseOpen] = useState(false);
+  const [caseSolicitacaoId, setCaseSolicitacaoId] = useState("");
   const [acessoOpen, setAcessoOpen] = useState(false);
   const [acessoForm, setAcessoForm] = useState({
     email: "",
@@ -1105,8 +1100,6 @@ export default function DossieCliente() {
     }
   };
 
-  // Fontes extras da linha do tempo (documentos e aberturas de caso) — dados
-  // que o dossiê já carregou; nenhuma chamada adicional.
   const eventosExtras = useMemo<ClientTimelineExtraEvent[]>(() => {
     if (!data) return [];
     return [
@@ -1138,7 +1131,22 @@ export default function DossieCliente() {
 
   const { cliente, resumo, casos, prazos, documentos_recentes } = data;
 
-  // Indicadores de relacionamento derivados
+  const abrirSolicitacaoDocumento = () => {
+    if (casos.length === 0) {
+      setSolicitarDocSignal((s) => s + 1);
+      toast.info(
+        "Este cliente ainda não possui Caso. A solicitação ficará como pendência interna até a abertura do Caso.",
+      );
+      return;
+    }
+    if (casos.length === 1) {
+      navigate(`/casos/${casos[0].id}?tab=documentos`);
+      return;
+    }
+    setCaseSolicitacaoId(String(casos[0].id));
+    setSolicitarDocCaseOpen(true);
+  };
+
   const diasSemContato = ultimaInteracao
     ? Math.max(
         0,
@@ -1168,9 +1176,6 @@ export default function DossieCliente() {
     { id: "prazos", label: "Prazos", icon: Calendar },
     { id: "financeiro", label: "Financeiro", icon: DollarSign },
     { id: "documentos", label: "Documentos", icon: FileText },
-    // PENTE FINO 2026-07 (onda 2): a aba "IA do Cliente" fica FORA do seletor
-    // até existir implementação real — o painel abaixo (abaAtiva ===
-    // "ia_cliente") é mantido para reativação futura sem retrabalho.
   ];
 
   return (
@@ -1182,7 +1187,6 @@ export default function DossieCliente() {
           carregarDossie();
         }}
       />
-      {/* Header */}
       <div className="flex items-start gap-3">
         <button
           onClick={() => navigate(-1)}
@@ -1200,26 +1204,14 @@ export default function DossieCliente() {
                 .join(" · ") || undefined
             }
             actions={
-              <>
-                <a
-                  href="/portal"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-ghost text-xs"
-                  title="Abrir o Portal do Cliente em uma nova aba"
-                >
-                  <ExternalLink className="w-3 h-3" /> Portal do Cliente
-                </a>
-                <button onClick={abrirEdicao} className="btn-outline text-xs">
-                  <User className="w-3 h-3" /> Editar perfil
-                </button>
-              </>
+              <button onClick={abrirEdicao} className="btn-outline text-xs">
+                <User className="w-3 h-3" /> Editar perfil
+              </button>
             }
           />
         </div>
       </div>
 
-      {/* Indicadores de relacionamento */}
       <div className="card divide-x divide-bronze-pale/50 grid grid-cols-2 lg:grid-cols-4 xl:flex">
         <div className="px-4 py-3 xl:flex-1 min-w-0">
           <p className="label-caps text-slate-400">Última interação</p>
@@ -1283,7 +1275,6 @@ export default function DossieCliente() {
         )}
       </div>
 
-      {/* Seletor de Abas (Ficha Mestra - Seção 2.113) */}
       <div className="flex border-b border-bronze-pale overflow-x-auto no-scrollbar">
         {abas.map((aba) => (
           <button
@@ -1304,7 +1295,6 @@ export default function DossieCliente() {
         ))}
       </div>
 
-      {/* Conteúdo Dinâmico por Aba */}
       {abaAtiva === "resumo" && (
         <div className="space-y-6 animate-fade-in">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1337,7 +1327,6 @@ export default function DossieCliente() {
               color="bronze"
             />
           </div>
-          {/* Painel de ações rápidas */}
           <div className="card p-4">
             <p className="eyebrow mb-3 flex items-center gap-2">
               <Zap className="w-3 h-3" /> Ações rápidas
@@ -1356,19 +1345,19 @@ export default function DossieCliente() {
                 <MessageCircle className="w-3.5 h-3.5" /> Registrar atendimento
               </button>
               <button
-                onClick={() => setSolicitarDocSignal((s) => s + 1)}
+                onClick={abrirSolicitacaoDocumento}
                 className="btn-outline text-xs"
               >
                 <FileText className="w-3.5 h-3.5" /> Solicitar documento
               </button>
               <Link
-                to={`/casos/novo?client_id=${clientId}`}
+                to={entradaNovoCasoComCliente(String(clientId))}
                 className="btn-outline text-xs"
               >
                 <Briefcase className="w-3.5 h-3.5" /> Cadastrar caso
               </Link>
               <Link
-                to="/atividades"
+                to={`/atividades?tipo=reuniao&client_id=${encodeURIComponent(String(clientId))}`}
                 title="Agendar na Central de Atividades"
                 className="btn-outline text-xs"
               >
@@ -1393,6 +1382,7 @@ export default function DossieCliente() {
             <PendingItemsPanel
               clientId={clientId!}
               abrirNovaSignal={solicitarDocSignal}
+              permitirDocumentoGenerico={casos.length === 0}
               onItemsChange={handlePendingItems}
             />
             <ComunicacaoRapida
@@ -1422,7 +1412,7 @@ export default function DossieCliente() {
               {casos.length})
             </p>
             <Link
-              to={`/casos/novo?client_id=${clientId}`}
+              to={entradaNovoCasoComCliente(String(clientId))}
               className="btn-outline text-[10px] py-1"
             >
               + Novo caso
@@ -1525,7 +1515,6 @@ export default function DossieCliente() {
         </div>
       )}
 
-      {/* Distribuição por área */}
       {Object.keys(resumo.area_breakdown).length > 1 && (
         <div className="card p-4">
           <p className="eyebrow mb-3 flex items-center gap-2">
@@ -1547,7 +1536,51 @@ export default function DossieCliente() {
         </div>
       )}
 
-      {/* Modal — Conceder acesso ao Portal do Cliente */}
+      <Modal
+        open={solicitarDocCaseOpen}
+        onClose={() => setSolicitarDocCaseOpen(false)}
+        title="Escolha o caso da solicitação"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">
+            A solicitação será feita dentro do Caso para chegar ao Portal do
+            Cliente e para que o arquivo recebido volte ao GED correto.
+          </p>
+          <select
+            className="input w-full"
+            value={caseSolicitacaoId}
+            onChange={(event) => setCaseSolicitacaoId(event.target.value)}
+          >
+            {casos.map((caso) => (
+              <option key={caso.id} value={caso.id}>
+                {caso.numero_interno ? `${caso.numero_interno} · ` : ""}
+                {caso.titulo}
+              </option>
+            ))}
+          </select>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setSolicitarDocCaseOpen(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!caseSolicitacaoId}
+              onClick={() => {
+                setSolicitarDocCaseOpen(false);
+                navigate(`/casos/${caseSolicitacaoId}?tab=documentos`);
+              }}
+            >
+              Abrir documentos do caso
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal
         open={acessoOpen}
         onClose={() => setAcessoOpen(false)}
@@ -1601,7 +1634,6 @@ export default function DossieCliente() {
         </div>
       </Modal>
 
-      {/* Modal — Editar perfil do cliente */}
       <Modal
         open={editOpen}
         onClose={() => setEditOpen(false)}
