@@ -77,6 +77,18 @@ ADICOES_INTENCIONAIS = {
     ("/api/processo-eletronico/credenciais", "GET"),
     ("/api/processo-eletronico/credenciais", "POST"),
     ("/api/processo-eletronico/credenciais/{credencial_id}/testar", "POST"),
+    # Issue #836: onda de fontes públicas oficiais. Todas são somente leitura,
+    # JWT + rate limit, e reutilizam o router de integrações já montado em main.
+    ("/api/integracoes/cnj/tpu/versao", "GET"),
+    ("/api/integracoes/cnj/tpu/pesquisar", "GET"),
+    ("/api/integracoes/tcu/acordaos", "GET"),
+    ("/api/integracoes/ibge/municipios/{uf}", "GET"),
+    ("/api/integracoes/ibge/canonicalizar", "GET"),
+    ("/api/integracoes/dados-publicos/{fonte}/recursos", "GET"),
+    ("/api/integracoes/pgfn/divida-ativa/recursos", "GET"),
+    ("/api/integracoes/querido-diario/{codigo_ibge}", "GET"),
+    ("/api/integracoes/ide-sisema/camadas", "GET"),
+    ("/api/integracoes/ide-sisema/feicoes", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
