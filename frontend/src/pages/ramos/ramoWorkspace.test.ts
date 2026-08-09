@@ -25,14 +25,29 @@ describe("ramoWorkspace", () => {
     expect(areasDoWorkspace(cfg)).toEqual(["bancario", "civil"]);
   });
 
-  it("não reclassifica especialidades relacionadas", () => {
+  it("não reclassifica especialidades relacionadas e mantém navegação própria", () => {
     const empresarial = relacoesDoWorkspace(RAMOS.empresarial);
     expect(empresarial.map((item) => item.slug)).toContain("societario");
+    expect(
+      empresarial.find((item) => item.slug === "societario")?.workspace,
+    ).toBe("/areas-de-atuacao/societario");
+    expect(
+      empresarial.find((item) => item.slug === "contratual")?.workspace,
+    ).toBe("/areas-de-atuacao/contratual");
     expect(RAMOS.empresarial.areaCaso).toBe("empresarial");
 
     const administrativo = relacoesDoWorkspace(RAMOS.administrativo);
     expect(administrativo.map((item) => item.slug)).toContain("licitacoes");
+    expect(
+      administrativo.find((item) => item.slug === "licitacoes")?.workspace,
+    ).toBe("/areas-de-atuacao/licitacoes");
     expect(RAMOS.administrativo.areaCaso).toBe("administrativo");
+
+    const familia = relacoesDoWorkspace(RAMOS.familia);
+    expect(familia.find((item) => item.slug === "sucessoes")?.workspace).toBe(
+      "/areas-de-atuacao/sucessoes",
+    );
+    expect(RAMOS.familia.areaCaso).toBe("familia");
   });
 
   it("apresenta Cível como núcleo geral sem remover workspaces próprios", () => {
