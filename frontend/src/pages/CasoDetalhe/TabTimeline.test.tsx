@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
-// Tela C (Bloco 3) — composer inline de andamentos no topo da timeline:
-// registra via POST /cases/{id}/movimentos (tipo + descricao) e recarrega a
-// linha do tempo (remontagem do componente de timeline).
+// Tela C (Bloco 3) — composer inline de andamentos + contrato do timesheet.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
@@ -17,10 +15,19 @@ vi.mock("../../components/visual/LinhaDoTempoProcessual", () => ({
   ),
 }));
 
+vi.mock("../../components/Toast", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+  },
+}));
+
+import { toast } from "../../components/Toast";
 import api from "../../lib/api";
 import TabTimeline from "./TabTimeline";
 
-describe("TabTimeline — composer de andamentos", () => {
+describe("TabTimeline — composer de andamentos e timesheet", () => {
   beforeEach(() => {
     vi.spyOn(api, "get").mockResolvedValue({ data: [] });
   });
@@ -62,7 +69,6 @@ describe("TabTimeline — composer de andamentos", () => {
         descricao: "Sentença publicada no DJe.",
       });
     });
-    // Campo limpo após registrar — pronto para o próximo andamento.
     await waitFor(() => {
       expect(
         (
@@ -72,5 +78,62 @@ describe("TabTimeline — composer de andamentos", () => {
         ).value,
       ).toBe("");
     });
+  });
+
+  it("converte horas para minutos e envia o contrato canônico do timesheet", async () => {
+    const post = vi.spyOn(api, "post").mockResolvedValue({ data: { id: "ts-1" } });
+    render(<TabTimeline caseId="case-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Lançar horas/ }));
+    fireEvent.change(
+      screen.getByPlaceholderText("Ex: Elaboração de petição..."),
+      { target: { value: "Revisão de contrato" } },
+    );
+    fireEvent.change(screen.getByRole("spinbutton"), {
+      target: { value: "1.5" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    const [url, payload] = post.mock.calls[0];
+    expect(url).toBe("/timesheet");
+    expect(payload).toMatchObject({
+      case_id: "case-1",
+      minutos: 90,
+      descricao: "Revisão de contrato",
+      faturavel: true,
+    });
+    expect((payload as Record<string, unknown>).horas).toBeUndefined();
+    expect((payload as Record<string, unknown>).data).toMatch(
+      /^\d{4}-\d{2}-\d{2}$/,
+    );
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith("/timesheet/casos/case-1"),
+    );
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      "Horas lançadas no caso.",
+    );
+  });
+
+  it("mantém o formulário aberto e informa erro quando o lançamento falha", async () => {
+    vi.spyOn(api, "post").mockRejectedValue({
+      response: { data: { detail: "Falha fictícia de validação" } },
+    });
+    render(<TabTimeline caseId="case-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Lançar horas/ }));
+    const atividade = screen.getByPlaceholderText(
+      "Ex: Elaboração de petição...",
+    ) as HTMLInputElement;
+    fireEvent.change(atividade, { target: { value: "Atividade fictícia" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+        "Falha fictícia de validação",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeTruthy();
+    expect(atividade.value).toBe("Atividade fictícia");
   });
 });
