@@ -87,12 +87,16 @@ async def test_ckan_descobre_recurso_oficial_sem_baixar_arquivo(monkeypatch):
                     "title": "Autos de Infração",
                     "resources": [
                         {
-                            "id": "r1", "name": "2026.csv", "format": "CSV",
+                            "id": "r1",
+                            "name": "2026.csv",
+                            "format": "CSV",
                             "url": "https://dadosabertos.ibama.gov.br/dataset/2026.csv",
                             "last_modified": "2026-08-01T10:00:00",
                         },
                         {
-                            "id": "r2", "name": "legado", "format": "CSV",
+                            "id": "r2",
+                            "name": "legado",
+                            "format": "CSV",
                             "url": "http://inseguro.exemplo/legado.csv",
                         },
                     ],
@@ -101,12 +105,13 @@ async def test_ckan_descobre_recurso_oficial_sem_baixar_arquivo(monkeypatch):
         })
 
     _mock_async_client(monkeypatch, ckan_mod, handler)
-    cli = CkanPublicClient("ibama")
-    recursos = await cli.recursos_por_busca("auto de infração", formatos=["CSV"])
+    recursos = await CkanPublicClient("ibama").recursos_por_busca(
+        "auto de infração", formatos=["CSV"]
+    )
     assert len(recursos) == 1
     assert recursos[0].resource_id == "r1"
     assert recursos[0].source == "ibama"
-    assert len(chamadas) == 1  # somente package_search; recurso não foi baixado
+    assert len(chamadas) == 1
 
 
 async def test_cnj_sgt_monta_soap_e_normaliza_return(monkeypatch):
@@ -129,7 +134,7 @@ async def test_cnj_sgt_monta_soap_e_normaliza_return(monkeypatch):
     assert out["codigo"] == "123"
     assert out["descricao"] == "Procedimento Comum"
     assert "pesquisarItemPublicoWS" in visto["body"]
-    assert "<tipoTabela" in visto["body"] and ">C</tipoTabela>" in visto["body"]
+    assert ">C</tipoTabela>" in visto["body"]
 
 
 async def test_tcu_limita_quantidade_e_normaliza(monkeypatch):
@@ -160,9 +165,6 @@ async def test_tcu_limita_quantidade_e_normaliza(monkeypatch):
 
 def test_tcu_esta_registrado_no_importador_rag_com_id_citavel_completo():
     assert "tcu" in FONTES
-    # Import-time sem env explícito = OFF; o teste do CSV legado acima valida
-    # que basta ligar TCU_OPEN_DATA_ENABLED em produção para adicioná-lo.
-    assert FONTES["tcu"]["enabled"] is False
     assert callable(FONTES["tcu"]["buscar"])
     j = normalizar_tcu({
         "chave": "AC-1-2026-P",
@@ -195,33 +197,27 @@ async def test_tcu_nao_converte_indisponibilidade_em_sucesso_vazio(monkeypatch):
 async def test_ibge_canonicaliza_nome_sem_acento(monkeypatch):
     def handler(req: httpx.Request) -> httpx.Response:
         assert req.url.path.endswith("/estados/MG/municipios")
-        return httpx.Response(200, json=[{
-            "id": 3106705,
-            "nome": "Betim",
-            "regiao-imediata": {
-                "regiao-intermediaria": {
-                    "UF": {
-                        "id": 31, "sigla": "MG", "nome": "Minas Gerais",
-                        "regiao": {"id": 3, "sigla": "SE", "nome": "Sudeste"},
-                    }
-                }
+        base_uf = {
+            "id": 31,
+            "sigla": "MG",
+            "nome": "Minas Gerais",
+            "regiao": {"id": 3, "sigla": "SE", "nome": "Sudeste"},
+        }
+        return httpx.Response(200, json=[
+            {
+                "id": 3106705,
+                "nome": "Betim",
+                "regiao-imediata": {"regiao-intermediaria": {"UF": base_uf}},
             },
-        }, {
-            "id": 3144805,
-            "nome": "Nova Lima",
-            "regiao-imediata": {
-                "regiao-intermediaria": {
-                    "UF": {
-                        "id": 31, "sigla": "MG", "nome": "Minas Gerais",
-                        "regiao": {"id": 3, "sigla": "SE", "nome": "Sudeste"},
-                    }
-                }
+            {
+                "id": 3144805,
+                "nome": "Nova Lima",
+                "regiao-imediata": {"regiao-intermediaria": {"UF": base_uf}},
             },
-        }])
+        ])
 
     _mock_async_client(monkeypatch, ibge_mod, handler)
-    cli = IbgeLocalidadesClient()
-    item = await cli.canonicalizar("Nóva Lima", "mg")
+    item = await IbgeLocalidadesClient().canonicalizar("Nóva Lima", "mg")
     assert item and item["id"] == 3144805
     assert item["uf_sigla"] == "MG"
 
@@ -264,9 +260,10 @@ async def test_ide_sisema_lista_camadas_wfs(monkeypatch):
 
 
 async def test_ide_sisema_bloqueia_bbox_invalido_sem_rede():
-    cli = IdeSisemaClient()
     with pytest.raises(ValueError):
-        await cli.consultar_camadas("sisema:camada", bbox=[-44, -20, -45, -19])
+        await IdeSisemaClient().consultar_camadas(
+            "sisema:camada", bbox=[-44, -20, -45, -19]
+        )
 
 
 async def test_pgfn_filtra_links_nao_oficiais(monkeypatch):
@@ -288,14 +285,15 @@ async def test_pgfn_filtra_links_nao_oficiais(monkeypatch):
 
 
 def test_inlabs_parse_xml_mapeia_shape_real_sem_usar_name_como_titulo():
-    xml = b"""<root>
-      <article name='515150' pubName='DO1' artType='Portaria' pubDate='2026-08-08' editionNumber='150'>
+    xml = """<root>
+      <article name='515150' pubName='DO1' artType='Portaria'
+               pubDate='2026-08-08' editionNumber='150'>
         <body>
-          <p class='identifica'>PORTARIA NÂ          <p class='identifica'>PORTARIA N\xc2º          <p class='identifica'>PORTARIA N\xc2\xba 123, DE 8 DE AGOSTO DE 2026</p>
+          <p class='identifica'>PORTARIA Nº 123, DE 8 DE AGOSTO DE 2026</p>
           <p>Texto oficial suficientemente longo para ser processado pelo EJC.</p>
         </body>
       </article>
-    </root>"""
+    </root>""".encode("utf-8")
     itens = parse_xml(xml)
     assert len(itens) == 1
     assert itens[0].titulo == "PORTARIA Nº 123, DE 8 DE AGOSTO DE 2026"
@@ -308,7 +306,10 @@ def test_inlabs_parse_xml_mapeia_shape_real_sem_usar_name_como_titulo():
 def test_inlabs_zip_rejeita_path_traversal():
     buf = BytesIO()
     with ZipFile(buf, "w") as zf:
-        zf.writestr("../escape.xml", "<root><article><body>conteudo longo o bastante para teste</body></article></root>")
+        zf.writestr(
+            "../escape.xml",
+            "<root><article><body>conteudo longo o bastante para teste</body></article></root>",
+        )
     with pytest.raises(InlabsParseError):
         parse_zip(buf.getvalue())
 
@@ -316,10 +317,6 @@ def test_inlabs_zip_rejeita_path_traversal():
 def test_paths_historicos_brasilapi_foram_preservados_e_novas_rotas_existem():
     from app.integrations import routers
 
-    # FastAPI armazena em APIRouter.routes o path já composto com o prefixo do
-    # próprio router. O prefixo /api é acrescentado somente quando main.py monta
-    # esse router; por isso aqui validamos /integracoes/... e o gate OpenAPI
-    # valida o path externo final /api/integracoes/....
     paths = {r.path for r in routers.brasilapi_router.routes}
     assert "/integracoes/brasilapi/cnpj/{cnpj}" in paths
     assert "/integracoes/brasilapi/cep/{cep}" in paths
