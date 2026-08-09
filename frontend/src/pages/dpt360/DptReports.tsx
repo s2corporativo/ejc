@@ -1,8 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, ShieldCheck } from "lucide-react";
 import type { DptCompany } from "./api";
 import DptPortalGuard from "./DptPortalGuard";
 import { getDptExecutiveReport, type DptExecutiveReport } from "./reportApi";
+
+function traceText(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
 
 export default function DptReports({ companies }: { companies: DptCompany[] }) {
   const [clientId, setClientId] = useState(companies[0]?.id || "");
@@ -10,6 +18,13 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
   const [report, setReport] = useState<DptExecutiveReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!companies.some((company) => company.id === clientId)) {
+      setClientId(companies[0]?.id || "");
+      setReport(null);
+    }
+  }, [companies, clientId]);
 
   async function generate() {
     if (!clientId) return;
@@ -43,8 +58,12 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <select
             value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-slate-950"
+            disabled={loading}
+            onChange={(e) => {
+              setClientId(e.target.value);
+              setReport(null);
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm disabled:opacity-60 dark:border-white/10 dark:bg-slate-950"
           >
             {companies.map((company) => (
               <option key={company.id} value={company.id}>
@@ -54,8 +73,12 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
           </select>
           <select
             value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-slate-950"
+            disabled={loading}
+            onChange={(e) => {
+              setDays(Number(e.target.value));
+              setReport(null);
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm disabled:opacity-60 dark:border-white/10 dark:bg-slate-950"
           >
             <option value={7}>7 dias</option>
             <option value={30}>30 dias</option>
@@ -94,7 +117,7 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              ["Riscos", report.principais_riscos.length],
+              ["Riscos atuais", report.principais_riscos.length],
               ["Providências", report.providencias_futuras.length],
               ["Casos", report.casos.length],
               [
@@ -113,6 +136,54 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
               </div>
             ))}
           </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Principais riscos atuais
+              </h4>
+              {report.principais_riscos.length ? (
+                <div className="mt-2 space-y-2">
+                  {report.principais_riscos.map((item, index) => (
+                    <pre
+                      key={`risco-${index}`}
+                      className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-[11px] leading-5 text-slate-600 dark:bg-black/20 dark:text-slate-300"
+                    >
+                      {traceText(item)}
+                    </pre>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-slate-400">
+                  Nenhum sinal crítico atual foi localizado; isso não equivale a
+                  regularidade jurídica.
+                </p>
+              )}
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Mudanças jurídicas e proveniência
+              </h4>
+              {report.mudancas_juridicas_relevantes.length ? (
+                <div className="mt-2 space-y-2">
+                  {report.mudancas_juridicas_relevantes.map((item, index) => (
+                    <pre
+                      key={`mudanca-${index}`}
+                      className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-[11px] leading-5 text-slate-600 dark:bg-black/20 dark:text-slate-300"
+                    >
+                      {traceText(item)}
+                    </pre>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-slate-400">
+                  Nenhuma publicação com aderência objetiva foi localizada no
+                  período.
+                </p>
+              )}
+            </div>
+          </div>
+
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
             <div>
               <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
