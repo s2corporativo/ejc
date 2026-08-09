@@ -34,9 +34,9 @@ describe("ramoWorkspace", () => {
     expect(
       empresarial.find((item) => item.slug === "contratual")?.workspace,
     ).toBe("/areas-de-atuacao/contratual");
-    expect(
-      empresarial.find((item) => item.slug === "dpt360")?.workspace,
-    ).toBe("/dpt360");
+    expect(empresarial.find((item) => item.slug === "dpt360")?.workspace).toBe(
+      "/dpt360",
+    );
     expect(RAMOS.empresarial.areaCaso).toBe("empresarial");
 
     const administrativo = relacoesDoWorkspace(RAMOS.administrativo);
