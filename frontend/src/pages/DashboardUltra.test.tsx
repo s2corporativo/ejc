@@ -100,9 +100,7 @@ describe("DashboardUltra", () => {
   it("aplica RBAC aos comandos rápidos", async () => {
     papelAtual = "advogado";
     const primeira = renderizar();
-    expect(
-      await screen.findByText("Novo caso por documento"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Novo caso por documento")).toBeTruthy();
     expect(screen.getByText("Inteligência jurídica")).toBeTruthy();
     primeira.unmount();
 
