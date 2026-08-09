@@ -115,6 +115,17 @@ async def stats_internos(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    total_com_tribunal = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM cases
+                WHERE deleted_at IS NULL AND tribunal IS NOT NULL
+                """
+            )
+        )
+    ).scalar() or 0
     trib = (
         await db.execute(
             text(
@@ -130,6 +141,7 @@ async def stats_internos(
         )
     ).mappings().all()
     return {
+        "total_com_tribunal": int(total_com_tribunal),
         "por_tribunal": [
             {"tribunal": t["tribunal"], "total": int(t["total"])} for t in trib
         ],
