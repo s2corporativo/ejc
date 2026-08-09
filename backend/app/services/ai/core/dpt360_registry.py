@@ -7,6 +7,15 @@ from __future__ import annotations
 
 from app.services.system_prompts import TarefaIA
 
+DPT_SKILL_NAMES = frozenset(
+    {
+        "build_company_legal_context",
+        "apply_dpt_legal_protocol",
+        "preflight_legal_consistency",
+        "dpt_adversarial_review",
+    }
+)
+
 _REGISTERED = False
 
 
@@ -58,6 +67,7 @@ def ensure_dpt360_registered() -> None:
             handler=None,
         ),
     }
+    assert set(skills) == DPT_SKILL_NAMES
     for name, skill in skills.items():
         SKILL_REGISTRY.setdefault(name, skill)
 
@@ -66,7 +76,12 @@ def ensure_dpt360_registered() -> None:
         AgenteInterno(
             nome="DPTEnterpriseAgent",
             descricao="DPT Empresarial 360: análise empresarial multidisciplinar, Conselho, diagnóstico e pré-flight.",
-            dominios=["dpt360", "conselho_empresarial", "diagnostico_empresarial", "preflight_empresarial"],
+            dominios=[
+                "dpt360",
+                "conselho_empresarial",
+                "diagnostico_empresarial",
+                "preflight_empresarial",
+            ],
             tarefa_padrao=TarefaIA.ANALISE_CASO,
             prompt_key="empresarial",
             exige_fonte=True,
