@@ -119,3 +119,46 @@ async def test_nova_versao_pode_atualizar_status_quando_anterior_nao_era_curador
     novo = next(obj for obj in db.adicionados if isinstance(obj, KnowledgeDoc))
     assert novo.extra["legal_status"] == "revogada"
     assert novo.extra["legal_status_origem"] == "planalto:texto_compilado"
+
+
+async def test_status_legado_sem_origem_nao_e_presumido_curadoria_humana():
+    """Ausência de origem é ausência de prova de autoria humana, não curadoria."""
+    existente = KnowledgeDoc(
+        id="doc-legado-sem-origem",
+        titulo="Lei legada",
+        categoria="legislacao",
+        chave_origem="planalto:lei-legada",
+        hash_conteudo="hash-anterior",
+        versao=2,
+        vigente=True,
+        extra={
+            "legal_status": "vigente",
+            "legal_status_verificado_em": "2025-01-01T10:00:00+00:00",
+        },
+    )
+    db = _BancoFalso(existente)
+
+    await upsert_documento(
+        db,
+        titulo="Lei legada atualizada",
+        categoria="legislacao",
+        conteudo=(
+            "Conteúdo oficial realmente alterado e suficientemente longo para "
+            "criar nova versão sem preservar status legado de origem desconhecida."
+        ),
+        chave_origem="planalto:lei-legada",
+        extra={
+            "legal_status": "revogada",
+            "legal_status_origem": "planalto:texto_compilado",
+            "legal_status_verificado_em": "2026-08-09T11:00:00+00:00",
+        },
+        embutir_vetores=False,
+        chunks=[
+            "Art. 1 Conteúdo alterado suficientemente longo para compor um chunk de teste."
+        ],
+    )
+
+    novo = next(obj for obj in db.adicionados if isinstance(obj, KnowledgeDoc))
+    assert novo.extra["legal_status"] == "revogada"
+    assert novo.extra["legal_status_origem"] == "planalto:texto_compilado"
+    assert novo.extra["legal_status_verificado_em"] == "2026-08-09T11:00:00+00:00"
