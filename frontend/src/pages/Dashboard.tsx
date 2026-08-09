@@ -1,3 +1,3 @@
-// Entrada estável da rota principal; implementação isolada para rollback seguro.
-// O DashboardModern permanece preservado e pode ser restaurado com uma troca deste export.
-export { default } from "./DashboardPremium";
+// Entrada estável da rota principal; implementações anteriores permanecem
+// preservadas para rollback seguro sem alteração de rotas ou contratos de API.
+export { default } from "./DashboardUltra";
