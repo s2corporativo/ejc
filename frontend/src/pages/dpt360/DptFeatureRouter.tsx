@@ -1,8 +1,10 @@
 import { ArrowRight, LibraryBig } from "lucide-react";
 import { Link } from "react-router";
+import { ErrorState } from "../../components/UI";
 import DptDiagnosis from "./DptDiagnosis";
 import DptIntelligence from "./DptIntelligence";
 import DptObligations from "./DptObligations";
+import DptOpportunities from "./DptOpportunities";
 import DptRadar from "./DptRadar";
 import DptReports from "./DptReports";
 import DptTools from "./DptTools";
@@ -37,9 +39,14 @@ export default function DptFeatureRouter({
   if (name === "radar") return <DptRadar />;
   if (name === "ferramentas") return <DptTools />;
   if (name === "obrigacoes") return <DptObligations data={data} />;
+  if (name === "oportunidades") return <DptOpportunities />;
   if (name === "relatorios") return <DptReports companies={data.companies} />;
 
-  const item = PLANNED[name] || PLANNED.biblioteca;
+  const item = PLANNED[name];
+  if (!item) {
+    return <ErrorState message="Funcionalidade DPT não encontrada." />;
+  }
+
   return (
     <section className="min-h-[360px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/40">
       <span className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-950 text-amber-300 dark:bg-white/10">
