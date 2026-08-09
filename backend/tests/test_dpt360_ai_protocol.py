@@ -1,7 +1,8 @@
 import json
 
+from app.models.user import UserRole
 from app.services.ai.core.dpt360_protocol import build_dpt_instruction, parse_structured_content
-from app.services.ai.core.dpt360_registry import ensure_dpt360_registered
+from app.services.ai.core.dpt360_registry import _allowed_dpt_roles, ensure_dpt360_registered
 
 
 def test_protocolo_nao_solicita_chain_of_thought_e_exige_produto_estruturado():
@@ -22,6 +23,28 @@ def test_parse_estruturado_nao_conserta_json_invalido():
     payload = {"fatos": [], "conclusao": "rascunho"}
     assert parse_structured_content(json.dumps(payload)) == payload
     assert parse_structured_content(f"```json\n{json.dumps(payload)}\n```") == payload
+
+
+def test_roles_dpt_aceitam_enum_e_string_sem_ampliar_allowlist():
+    allowed = set(_allowed_dpt_roles())
+    expected = {
+        UserRole.superadmin,
+        UserRole.admin,
+        UserRole.socio,
+        UserRole.advogado,
+    }
+    for role in expected:
+        assert role.value in allowed
+        assert str(role) in allowed
+    for forbidden in (
+        UserRole.advogado_auxiliar,
+        UserRole.financeiro,
+        UserRole.estagiario,
+        UserRole.secretaria,
+        UserRole.cliente_externo,
+    ):
+        assert forbidden.value not in allowed
+        assert str(forbidden) not in allowed
 
 
 def test_registro_dpt_extende_nucleo_unico_de_forma_idempotente():
