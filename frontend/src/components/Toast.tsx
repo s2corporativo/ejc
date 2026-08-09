@@ -15,15 +15,64 @@ interface ToastItem {
 
 let _id = 0;
 
-export const toast = {
-  success: (message: string) => fire("success", message),
-  error: (message: string) => fire("error", message),
-  info: (message: string) => fire("info", message),
+const FALLBACK: Record<ToastType, string> = {
+  success: "Operação concluída.",
+  error: "Ocorreu um erro. Tente novamente.",
+  info: "Informação indisponível.",
 };
 
-function fire(type: ToastType, message: string) {
+/**
+ * Converte respostas estruturadas (especialmente `detail` do FastAPI/Pydantic)
+ * em texto seguro para o React. Nunca serializa o objeto inteiro: campos como
+ * `input` podem conter dados pessoais ou valores que não pertencem ao toast.
+ */
+export function normalizarMensagemToast(
+  value: unknown,
+  fallback = FALLBACK.error,
+): string {
+  if (typeof value === "string") return value.trim() || fallback;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const mensagens = value
+      .map((item) => normalizarMensagemToast(item, ""))
+      .filter(Boolean);
+    if (!mensagens.length) return fallback;
+    const exibidas = mensagens.slice(0, 3);
+    const restante = mensagens.length - exibidas.length;
+    return `${exibidas.join(" · ")}${restante > 0 ? ` · +${restante} validação(ões)` : ""}`;
+  }
+
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    for (const key of ["msg", "mensagem", "message", "detail"] as const) {
+      if (obj[key] !== undefined) {
+        const texto = normalizarMensagemToast(obj[key], "");
+        if (texto) return texto;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+export const toast = {
+  success: (message: unknown) => fire("success", message),
+  error: (message: unknown) => fire("error", message),
+  info: (message: unknown) => fire("info", message),
+};
+
+function fire(type: ToastType, message: unknown) {
   window.dispatchEvent(
-    new CustomEvent("ejc-toast", { detail: { type, message, id: ++_id } }),
+    new CustomEvent("ejc-toast", {
+      detail: {
+        type,
+        message: normalizarMensagemToast(message, FALLBACK[type]),
+        id: ++_id,
+      },
+    }),
   );
 }
 
