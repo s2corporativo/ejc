@@ -210,7 +210,11 @@ function Metric({
   return (
     <Link
       to={to}
-      className={cn("ejc-ultra-metric", `is-${tone}`, unavailable && "is-muted")}
+      className={cn(
+        "ejc-ultra-metric",
+        `is-${tone}`,
+        unavailable && "is-muted",
+      )}
     >
       <span className="ejc-ultra-metric__icon">
         <Icon aria-hidden="true" />
@@ -252,27 +256,29 @@ export default function DashboardUltra() {
       api.get("/agenda-eventos/", { params: { page_size: 500 } }),
       api.get("/movimentos/recentes?limit=8"),
     ])
-      .then(([dashboardResult, activitiesResult, agendaResult, movementResult]) => {
-        if (!active) return;
-        setFailed({
-          dashboard: dashboardResult.status === "rejected",
-          activities: activitiesResult.status === "rejected",
-          agenda: agendaResult.status === "rejected",
-          movements: movementResult.status === "rejected",
-        });
-        if (dashboardResult.status === "fulfilled") {
-          setDashboard(dashboardResult.value.data);
-        }
-        if (activitiesResult.status === "fulfilled") {
-          setActivities(asList(activitiesResult.value.data));
-        }
-        if (agendaResult.status === "fulfilled") {
-          setAgendaEvents(asList(agendaResult.value.data));
-        }
-        if (movementResult.status === "fulfilled") {
-          setMovements(asList(movementResult.value.data));
-        }
-      })
+      .then(
+        ([dashboardResult, activitiesResult, agendaResult, movementResult]) => {
+          if (!active) return;
+          setFailed({
+            dashboard: dashboardResult.status === "rejected",
+            activities: activitiesResult.status === "rejected",
+            agenda: agendaResult.status === "rejected",
+            movements: movementResult.status === "rejected",
+          });
+          if (dashboardResult.status === "fulfilled") {
+            setDashboard(dashboardResult.value.data);
+          }
+          if (activitiesResult.status === "fulfilled") {
+            setActivities(asList(activitiesResult.value.data));
+          }
+          if (agendaResult.status === "fulfilled") {
+            setAgendaEvents(asList(agendaResult.value.data));
+          }
+          if (movementResult.status === "fulfilled") {
+            setMovements(asList(movementResult.value.data));
+          }
+        },
+      )
       .finally(() => {
         if (active) setLoading(false);
       });
@@ -432,12 +438,15 @@ export default function DashboardUltra() {
           </div>
           <h1>Bom trabalho, {firstName}.</h1>
           <p>
-            Uma visão única de casos, prazos, tarefas e movimentações para decidir
-            o que exige atenção agora.
+            Uma visão única de casos, prazos, tarefas e movimentações para
+            decidir o que exige atenção agora.
           </p>
           <div className="ejc-ultra-hero__actions">
             {canCreateCase && (
-              <Link to={NOVO_CASO_DOCUMENTO_PATH} className="ejc-ultra-primary-action">
+              <Link
+                to={NOVO_CASO_DOCUMENTO_PATH}
+                className="ejc-ultra-primary-action"
+              >
                 <Sparkles aria-hidden="true" />
                 Abrir caso com documento
               </Link>
@@ -448,7 +457,10 @@ export default function DashboardUltra() {
             </Link>
           </div>
         </div>
-        <div className="ejc-ultra-hero__signal" aria-label="Resumo de atenção operacional">
+        <div
+          className="ejc-ultra-hero__signal"
+          aria-label="Resumo de atenção operacional"
+        >
           <div className="ejc-ultra-orbit" aria-hidden="true">
             <span />
             <span />
@@ -468,7 +480,10 @@ export default function DashboardUltra() {
         </div>
       </section>
 
-      <section className="ejc-ultra-metrics" aria-label="Indicadores operacionais">
+      <section
+        className="ejc-ultra-metrics"
+        aria-label="Indicadores operacionais"
+      >
         <Metric
           label="Casos ativos"
           value={dashboard?.casos?.ativos ?? null}
@@ -522,27 +537,44 @@ export default function DashboardUltra() {
           }
         >
           <div className="ejc-ultra-priority-list">
-            <Link to="/atividades?tipo=prazo" className="ejc-ultra-priority is-critical">
+            <Link
+              to="/atividades?tipo=prazo"
+              className="ejc-ultra-priority is-critical"
+            >
               <span className="ejc-ultra-priority__icon">
                 <CircleAlert aria-hidden="true" />
               </span>
               <span>
                 <small>Prazos vencidos</small>
-                <strong>{deadlinesUnavailable ? "—" : dashboard?.prazos?.vencidos ?? 0}</strong>
+                <strong>
+                  {deadlinesUnavailable
+                    ? "—"
+                    : (dashboard?.prazos?.vencidos ?? 0)}
+                </strong>
               </span>
               <em>tratar primeiro</em>
             </Link>
-            <Link to="/atividades?tipo=prazo" className="ejc-ultra-priority is-warning">
+            <Link
+              to="/atividades?tipo=prazo"
+              className="ejc-ultra-priority is-warning"
+            >
               <span className="ejc-ultra-priority__icon">
                 <Clock3 aria-hidden="true" />
               </span>
               <span>
                 <small>Críticos em 3 dias</small>
-                <strong>{deadlinesUnavailable ? "—" : dashboard?.prazos?.criticos_3d ?? 0}</strong>
+                <strong>
+                  {deadlinesUnavailable
+                    ? "—"
+                    : (dashboard?.prazos?.criticos_3d ?? 0)}
+                </strong>
               </span>
               <em>janela curta</em>
             </Link>
-            <Link to="/atividades?tipo=tarefa" className="ejc-ultra-priority is-neutral">
+            <Link
+              to="/atividades?tipo=tarefa"
+              className="ejc-ultra-priority is-neutral"
+            >
               <span className="ejc-ultra-priority__icon">
                 <CheckCircle2 aria-hidden="true" />
               </span>
@@ -563,13 +595,19 @@ export default function DashboardUltra() {
           {loading ? (
             <div className="ejc-ultra-list-loading">Carregando agenda…</div>
           ) : failed.activities ? (
-            <div className="ejc-ultra-empty">Agenda indisponível no momento.</div>
+            <div className="ejc-ultra-empty">
+              Agenda indisponível no momento.
+            </div>
           ) : upcomingAgenda.length === 0 ? (
-            <div className="ejc-ultra-empty">Nenhuma atividade futura encontrada.</div>
+            <div className="ejc-ultra-empty">
+              Nenhuma atividade futura encontrada.
+            </div>
           ) : (
             <div className="ejc-ultra-agenda-list">
               {upcomingAgenda.map((item, index) => {
-                const destination = item.case_id ? `/casos/${item.case_id}` : "/atividades";
+                const destination = item.case_id
+                  ? `/casos/${item.case_id}`
+                  : "/atividades";
                 return (
                   <Link
                     key={item.id || `${dateKey(item.date)}-${index}`}
@@ -580,9 +618,15 @@ export default function DashboardUltra() {
                       {formatDateTime(item.date)}
                     </span>
                     <span className="ejc-ultra-agenda-item__copy">
-                      <strong>{item.titulo || item.caso_titulo || "Atividade"}</strong>
+                      <strong>
+                        {item.titulo || item.caso_titulo || "Atividade"}
+                      </strong>
                       <small>
-                        {[item.hora, item.local, formatArea(item.subtipo || item.tipo)]
+                        {[
+                          item.hora,
+                          item.local,
+                          formatArea(item.subtipo || item.tipo),
+                        ]
                           .filter(Boolean)
                           .join(" · ")}
                       </small>
@@ -597,7 +641,9 @@ export default function DashboardUltra() {
 
         <Surface eyebrow="Carteira" title="Distribuição dos casos">
           {loading ? (
-            <div className="ejc-ultra-portfolio-loading">Carregando carteira…</div>
+            <div className="ejc-ultra-portfolio-loading">
+              Carregando carteira…
+            </div>
           ) : casesUnavailable ? (
             <div className="ejc-ultra-empty">Dados de casos indisponíveis.</div>
           ) : totalCases === 0 ? (
@@ -633,7 +679,9 @@ export default function DashboardUltra() {
                   <Badge tone="ouro">Top {areas.length}</Badge>
                 </div>
                 {areas.length === 0 ? (
-                  <div className="ejc-ultra-empty">Sem distribuição por área.</div>
+                  <div className="ejc-ultra-empty">
+                    Sem distribuição por área.
+                  </div>
                 ) : (
                   areas.map((item) => (
                     <div className="ejc-ultra-area-row" key={item.label}>
@@ -642,7 +690,11 @@ export default function DashboardUltra() {
                         <strong>{item.value}</strong>
                       </div>
                       <div className="ejc-ultra-area-track">
-                        <i style={{ width: `${Math.max(6, (item.value / maxArea) * 100)}%` }} />
+                        <i
+                          style={{
+                            width: `${Math.max(6, (item.value / maxArea) * 100)}%`,
+                          }}
+                        />
                       </div>
                     </div>
                   ))
@@ -664,7 +716,9 @@ export default function DashboardUltra() {
           }
         >
           {loading ? (
-            <div className="ejc-ultra-list-loading">Carregando movimentações…</div>
+            <div className="ejc-ultra-list-loading">
+              Carregando movimentações…
+            </div>
           ) : failed.movements ? (
             <div className="ejc-ultra-empty">Movimentações indisponíveis.</div>
           ) : movements.length === 0 ? (
@@ -673,8 +727,12 @@ export default function DashboardUltra() {
             <div className="ejc-ultra-timeline">
               {movements.slice(0, 6).map((movement, index) => {
                 const date =
-                  movement.data_movimento || movement.created_at || movement.data;
-                const destination = movement.case_id ? `/casos/${movement.case_id}` : "/casos";
+                  movement.data_movimento ||
+                  movement.created_at ||
+                  movement.data;
+                const destination = movement.case_id
+                  ? `/casos/${movement.case_id}`
+                  : "/casos";
                 return (
                   <Link
                     key={movement.id || `${date}-${index}`}
@@ -686,7 +744,11 @@ export default function DashboardUltra() {
                     </span>
                     <span className="ejc-ultra-timeline__copy">
                       <small>{formatDateTime(date)}</small>
-                      <strong>{movement.titulo || formatArea(movement.tipo) || "Movimentação"}</strong>
+                      <strong>
+                        {movement.titulo ||
+                          formatArea(movement.tipo) ||
+                          "Movimentação"}
+                      </strong>
                       <em>
                         {movement.case_title ||
                           movement.cliente_nome ||
@@ -703,10 +765,18 @@ export default function DashboardUltra() {
           )}
         </Surface>
 
-        <Surface eyebrow="Comandos" title="Acesso rápido" className="ejc-ultra-command-panel">
+        <Surface
+          eyebrow="Comandos"
+          title="Acesso rápido"
+          className="ejc-ultra-command-panel"
+        >
           <div className="ejc-ultra-command-grid">
             {quickActions.map(({ to, label, detail, icon: Icon }) => (
-              <Link to={to} key={`${to}-${label}`} className="ejc-ultra-command">
+              <Link
+                to={to}
+                key={`${to}-${label}`}
+                className="ejc-ultra-command"
+              >
                 <span>
                   <Icon aria-hidden="true" />
                 </span>
@@ -719,7 +789,8 @@ export default function DashboardUltra() {
           <div className="ejc-ultra-command-foot">
             <Zap aria-hidden="true" />
             <span>
-              Interface orientada a decisão: atalhos levam aos módulos existentes e respeitam RBAC.
+              Interface orientada a decisão: atalhos levam aos módulos
+              existentes e respeitam RBAC.
             </span>
           </div>
         </Surface>
@@ -727,7 +798,9 @@ export default function DashboardUltra() {
 
       <div className="ejc-ultra-privacy-note">
         <Users aria-hidden="true" />
-        <span>Dashboard operacional compartilhado — sem informações financeiras.</span>
+        <span>
+          Dashboard operacional compartilhado — sem informações financeiras.
+        </span>
       </div>
     </div>
   );

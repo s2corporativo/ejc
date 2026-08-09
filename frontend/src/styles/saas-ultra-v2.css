@@ -75,7 +75,11 @@ header.fixed.inset-x-0.top-0 kbd {
   color: #d9e0e6;
   border-right: 1px solid rgba(229, 206, 127, 0.16) !important;
   background:
-    radial-gradient(circle at 24% 0%, rgba(201, 162, 39, 0.12), transparent 18rem),
+    radial-gradient(
+      circle at 24% 0%,
+      rgba(201, 162, 39, 0.12),
+      transparent 18rem
+    ),
     linear-gradient(180deg, #08121b 0%, #0b1620 58%, #09121b 100%) !important;
   box-shadow: 16px 0 44px -38px rgba(3, 9, 14, 0.85);
 }
@@ -131,7 +135,9 @@ header.fixed.inset-x-0.top-0 kbd {
 
 .sidebar-bronze .sidebar-nav-item svg {
   color: #9da9b4 !important;
-  transition: color 150ms ease, transform 150ms ease;
+  transition:
+    color 150ms ease,
+    transform 150ms ease;
 }
 
 .sidebar-bronze .sidebar-nav-item:hover {
@@ -148,8 +154,11 @@ header.fixed.inset-x-0.top-0 kbd {
 .sidebar-bronze .sidebar-nav-item.is-active {
   color: #ffffff !important;
   border-color: rgba(229, 206, 127, 0.18);
-  background:
-    linear-gradient(90deg, rgba(201, 162, 39, 0.2), rgba(201, 162, 39, 0.06)) !important;
+  background: linear-gradient(
+    90deg,
+    rgba(201, 162, 39, 0.2),
+    rgba(201, 162, 39, 0.06)
+  ) !important;
   box-shadow: inset 3px 0 0 #c9a227;
 }
 
@@ -179,8 +188,16 @@ header.fixed.inset-x-0.top-0 kbd {
 main.ejc-modern-scope {
   min-height: calc(100vh - 64px);
   background:
-    radial-gradient(circle at 88% 3%, rgba(201, 162, 39, 0.065), transparent 25rem),
-    radial-gradient(circle at 15% 18%, rgba(47, 111, 143, 0.045), transparent 28rem),
+    radial-gradient(
+      circle at 88% 3%,
+      rgba(201, 162, 39, 0.065),
+      transparent 25rem
+    ),
+    radial-gradient(
+      circle at 15% 18%,
+      rgba(47, 111, 143, 0.045),
+      transparent 28rem
+    ),
     var(--ejc-v2-canvas) !important;
 }
 
@@ -238,8 +255,16 @@ main.ejc-modern-scope > div {
   border: 1px solid rgba(229, 206, 127, 0.16);
   border-radius: 24px;
   background:
-    radial-gradient(circle at 76% 14%, rgba(201, 162, 39, 0.17), transparent 23rem),
-    radial-gradient(circle at 14% 88%, rgba(47, 111, 143, 0.13), transparent 25rem),
+    radial-gradient(
+      circle at 76% 14%,
+      rgba(201, 162, 39, 0.17),
+      transparent 23rem
+    ),
+    radial-gradient(
+      circle at 14% 88%,
+      rgba(47, 111, 143, 0.13),
+      transparent 25rem
+    ),
     linear-gradient(135deg, #07111a 0%, #0c1823 52%, #111c26 100%);
   box-shadow: 0 28px 65px -38px rgba(4, 12, 18, 0.72);
 }
@@ -249,7 +274,12 @@ main.ejc-modern-scope > div {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(112deg, transparent 0 60%, rgba(255, 255, 255, 0.025) 60% 61%, transparent 61% 100%);
+  background: linear-gradient(
+    112deg,
+    transparent 0 60%,
+    rgba(255, 255, 255, 0.025) 60% 61%,
+    transparent 61% 100%
+  );
 }
 
 .ejc-ultra-hero__grid {
@@ -337,7 +367,10 @@ main.ejc-modern-scope > div {
   border-radius: 11px;
   font-size: 12px;
   font-weight: 700;
-  transition: transform 150ms ease, background 150ms ease, border-color 150ms ease;
+  transition:
+    transform 150ms ease,
+    background 150ms ease,
+    border-color 150ms ease;
 }
 
 .ejc-ultra-primary-action {
@@ -488,7 +521,10 @@ main.ejc-modern-scope > div {
   border-radius: 17px;
   background: var(--ejc-v2-card);
   box-shadow: var(--ejc-v2-shadow);
-  transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .ejc-ultra-metric::after {
@@ -593,7 +629,12 @@ main.ejc-modern-scope > div {
   display: block;
   margin-top: 7px;
   border-radius: 7px;
-  background: linear-gradient(90deg, rgba(130, 143, 153, 0.12), rgba(130, 143, 153, 0.24), rgba(130, 143, 153, 0.12));
+  background: linear-gradient(
+    90deg,
+    rgba(130, 143, 153, 0.12),
+    rgba(130, 143, 153, 0.24),
+    rgba(130, 143, 153, 0.12)
+  );
   background-size: 200% 100%;
   animation: ejc-ultra-shimmer 1.4s infinite linear;
 }
@@ -692,7 +733,10 @@ main.ejc-modern-scope > div {
   border: 1px solid var(--ejc-v2-line);
   border-radius: 14px;
   background: rgba(250, 250, 250, 0.62);
-  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease;
 }
 
 .dark .ejc-ultra-priority {
@@ -1058,7 +1102,10 @@ main.ejc-modern-scope > div {
   border: 1px solid var(--ejc-v2-line);
   border-radius: 14px;
   background: rgba(250, 250, 250, 0.58);
-  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease;
 }
 
 .dark .ejc-ultra-command {
