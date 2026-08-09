@@ -66,8 +66,15 @@ async def update_case_kanban(
     kanban_position = body.get("kanban_position", 0)
     # IDOR: mover cartão sincroniza o STATUS do caso — só quem atua no caso (ou gestão).
     await verificar_acesso_caso(db, current_user, case_id)
+
+    # A transição usa o status atual como pré-condição para decidir se deve
+    # limpar metadados de encerramento/arquivamento. Sem lock, um endpoint
+    # canônico poderia encerrar/arquivar o caso entre este SELECT e os UPDATEs,
+    # deixando uma reabertura com metadados terminais obsoletos. O lock é
+    # transacional e dura até o commit abaixo.
     row = (await db.execute(
-        text("SELECT status FROM cases WHERE id=:id AND deleted_at IS NULL"), {"id": case_id}
+        text("SELECT status FROM cases WHERE id=:id AND deleted_at IS NULL FOR UPDATE"),
+        {"id": case_id},
     )).mappings().first()
     if not row:
         raise HTTPException(404, "Case not found")
