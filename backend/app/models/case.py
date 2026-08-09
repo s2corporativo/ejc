@@ -1,6 +1,6 @@
 # ── app/models/case.py ────────────────────────────────────────────────────────
 from __future__ import annotations
-from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Numeric, ForeignKey, Boolean, Integer, Index, text
+from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Numeric, ForeignKey, Boolean, Integer, Index, text, event
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -166,6 +166,35 @@ class Case(Base):
     trabalhista_esp = relationship("TrabalhistaCase",  back_populates="case", uselist=False)
     admin_esp     = relationship("AdminCase",          back_populates="case", uselist=False)
     bancario      = relationship("BancarioCase",       back_populates="case", uselist=False)
+
+
+_TERMINAIS_CASE = {CaseStatus.encerrado.value, CaseStatus.arquivado.value}
+
+
+def _status_value(value) -> str | None:
+    raw = getattr(value, "value", value)
+    return raw if isinstance(raw, str) else None
+
+
+@event.listens_for(Case.status, "set", active_history=True)
+def _limpar_campos_terminais_ao_reabrir(target: Case, value, oldvalue, initiator):
+    """Invariante de domínio: caso reaberto não conserva desfecho/arquivamento.
+
+    Vale para todos os fluxos ORM (PATCH, POST /desarquivar e futuros serviços).
+    Escritas SQL cruas devem continuar proibidas para mudança de status fora de
+    migrações/rotinas explicitamente auditadas.
+    """
+    anterior = _status_value(oldvalue)
+    novo = _status_value(value)
+    if anterior in _TERMINAIS_CASE and novo and novo not in _TERMINAIS_CASE:
+        target.data_encerramento = None
+        target.resultado = None
+        target.motivo_resultado = None
+        target.provas_determinantes = None
+        target.licoes_aprendidas = None
+        target.archived_at = None
+        target.archive_reason = None
+    return value
 
 
 class CaseMovimento(Base):

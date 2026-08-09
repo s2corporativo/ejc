@@ -3,33 +3,32 @@
 Problema: a trilha agendada (scheduler) grava as fontes de jurisprudência com
 os slugs `stj`/`tjmg`/`lexml`, enquanto a trilha on-demand (juris_import)
 gravava `juris_import_stj`/`juris_import_tjmg`/`juris_import_lexml`. São a
-MESMA fonte — mesmos ingestores/keyspace de dedup — com métricas separadas, e
-o painel (GET /ia-governanca/fontes) mostrava cada uma duas vezes.
+MESMA fonte — mesmos ingestores/keyspace de dedup — com métricas separadas.
 
-O código passou a usar o slug único (services/juris_import/ingest.py); esta
-migration mescla o histórico das linhas antigas `juris_import_*` nas linhas
-canônicas:
+A migration consolida os valores nas linhas canônicas sem apagar histórico:
 
-  • contadores (`registros_novos`, `registros_total`) são SOMADOS;
-  • `ja_produziu` e `ativo` viram OR lógico (uma vez produtiva, sempre);
-  • `ultima_execucao` mantém o timestamp mais recente, e `ultimo_status`/
-    `ultimo_erro`/`execucoes_zeradas_consecutivas` acompanham a linha dessa
-    execução mais recente — a sequência de execuções que CONTINUA após a
-    unificação é a dela (somar duas sequências "consecutivas" paralelas
-    fabricaria um falso `parou_de_produzir` no veredito de saúde);
-  • se a linha canônica não existir, a antiga é apenas renomeada.
+* se só existir `juris_import_*`, a linha é renomeada para o slug canônico;
+* se as duas existirem, métricas são mescladas na canônica;
+* a linha antiga é preservada como `legacy_138_juris_import_*`, inativa, para
+  auditoria e rollback lógico. O painel ignora apenas esse prefixo técnico.
 
-Idempotente: reexecutar sem linhas `juris_import_*` é no-op.
+A escolha de preservar a linha antiga substitui o DELETE da versão inicial da
+migration. Isso permite que a esteira automática mantenha a política
+`additive_data_backfill`: rollback de imagem nunca precisa reconstruir dado
+apagado. Reexecutar a migration é no-op para as linhas já renomeadas/arquivadas.
 
-downgrade: irreversível por natureza — depois da soma não há como separar
-quanto veio de cada trilha. Recuperação, se necessária, é via backup do banco
-(scripts/backup.sh) anterior ao upgrade. As linhas antigas não são recriadas.
+O merge mantém:
+  * contadores somados;
+  * `ja_produziu` e `ativo` por OR lógico;
+  * timestamp/status/erro/sequência de zeradas da execução mais recente.
+
+`downgrade()` permanece no-op: a consolidação dos contadores é irreversível sem
+um snapshot anterior, embora as linhas legadas sejam preservadas para auditoria.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import sqlalchemy as sa
 from alembic import op
 
 revision = "138_consolida_fontes_ingestao"
@@ -37,22 +36,18 @@ down_revision = "132_processo_eletronico_mni"
 branch_labels = None
 depends_on = None
 
-#: Fontes com trilha dupla (agendada + on-demand) a consolidar.
-FONTES_DUPLICADAS = ("stj", "tjmg", "lexml")
+# Backfill estritamente aditivo/não destrutivo. O classificador do deploy
+# permite UPDATE com WHERE e target declarado, mas continua recusando DELETE.
+deployment_policy = "additive_data_backfill"
+data_backfill_targets = ("fontes_ingestao",)
 
-_CAMPOS = (
-    "slug", "descricao", "categoria_rag", "ativo", "ultima_execucao",
-    "ultimo_status", "registros_novos", "registros_total", "ultimo_erro",
-    "execucoes_zeradas_consecutivas", "ja_produziu",
-)
+#: Mantido como especificação testável da regra usada pelos UPDATEs SQL.
+FONTES_DUPLICADAS = ("stj", "tjmg", "lexml")
+LEGACY_PREFIX = "legacy_138_"
 
 
 def _aware(dt):
-    """Timestamp comparável: naive é assumido UTC (mesma convenção do app).
-
-    Aceita string ISO porque SELECT bruto em SQLite (testes de lógica da
-    migration) devolve datetime como texto; em PostgreSQL chega datetime.
-    """
+    """Timestamp comparável: naive é assumido UTC; aceita ISO string em testes."""
     if dt is None:
         return None
     if isinstance(dt, str):
@@ -63,16 +58,9 @@ def _aware(dt):
 
 
 def mesclar_fontes(origem: dict, destino: dict) -> dict:
-    """Regra PURA de merge de duas linhas de fontes_ingestao (testável sem banco).
-
-    `origem` é a linha antiga (`juris_import_*`), `destino` a canônica. Devolve
-    os campos consolidados a gravar na linha destino (sem `slug`/`descricao`/
-    `categoria_rag`, que permanecem os do destino).
-    """
+    """Especificação pura da regra de merge aplicada pelo SQL da migration."""
     exec_origem = _aware(origem.get("ultima_execucao"))
     exec_destino = _aware(destino.get("ultima_execucao"))
-    # A linha "mais recente" dita status/erro/sequência de zeradas. Empate (ou
-    # nenhuma execução em ambas) fica com o destino — a trilha canônica.
     if exec_origem is not None and (exec_destino is None or exec_origem > exec_destino):
         recente = origem
         ultima_execucao = origem.get("ultima_execucao")
@@ -95,56 +83,181 @@ def mesclar_fontes(origem: dict, destino: dict) -> dict:
     }
 
 
-def _buscar(bind, slug: str) -> dict | None:
-    row = bind.execute(
-        sa.text(
-            f"SELECT {', '.join(_CAMPOS)} FROM fontes_ingestao WHERE slug = :slug"
-        ),
-        {"slug": slug},
-    ).mappings().first()
-    return dict(row) if row is not None else None
-
-
 def upgrade() -> None:
-    bind = op.get_bind()
-    for fonte in FONTES_DUPLICADAS:
-        antigo = f"juris_import_{fonte}"
-        origem = _buscar(bind, antigo)
-        if origem is None:
-            continue  # nada a consolidar (idempotência)
-        destino = _buscar(bind, fonte)
-        if destino is None:
-            # Só a trilha on-demand existia — basta renomear para o slug único.
-            bind.execute(
-                sa.text(
-                    "UPDATE fontes_ingestao SET slug = :novo WHERE slug = :antigo"
-                ),
-                {"novo": fonte, "antigo": antigo},
-            )
-            continue
-        consolidado = mesclar_fontes(origem, destino)
-        bind.execute(
-            sa.text(
-                "UPDATE fontes_ingestao SET "
-                "ultima_execucao = :ultima_execucao, "
-                "ultimo_status = :ultimo_status, "
-                "ultimo_erro = :ultimo_erro, "
-                "execucoes_zeradas_consecutivas = :execucoes_zeradas_consecutivas, "
-                "registros_novos = :registros_novos, "
-                "registros_total = :registros_total, "
-                "ja_produziu = :ja_produziu, "
-                "ativo = :ativo "
-                "WHERE slug = :slug"
-            ),
-            {**consolidado, "slug": fonte},
-        )
-        bind.execute(
-            sa.text("DELETE FROM fontes_ingestao WHERE slug = :slug"),
-            {"slug": antigo},
-        )
+    # STJ — se não há canônica, apenas promove a linha antiga.
+    op.execute(
+        """
+        UPDATE fontes_ingestao SET slug = 'stj'
+        WHERE slug = 'juris_import_stj'
+          AND NOT EXISTS (
+              SELECT 1 FROM fontes_ingestao AS can
+              WHERE can.slug = 'stj'
+          )
+        """
+    )
+    # STJ — quando coexistem, consolida na linha canônica.
+    op.execute(
+        """
+        UPDATE fontes_ingestao SET
+            ultima_execucao = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN src.ultima_execucao ELSE fontes_ingestao.ultima_execucao END,
+            ultimo_status = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN src.ultimo_status ELSE fontes_ingestao.ultimo_status END,
+            ultimo_erro = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN src.ultimo_erro ELSE fontes_ingestao.ultimo_erro END,
+            execucoes_zeradas_consecutivas = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN COALESCE(src.execucoes_zeradas_consecutivas, 0)
+                ELSE COALESCE(fontes_ingestao.execucoes_zeradas_consecutivas, 0) END,
+            registros_novos = COALESCE(fontes_ingestao.registros_novos, 0)
+                              + COALESCE(src.registros_novos, 0),
+            registros_total = COALESCE(fontes_ingestao.registros_total, 0)
+                              + COALESCE(src.registros_total, 0),
+            ja_produziu = fontes_ingestao.ja_produziu OR src.ja_produziu,
+            ativo = fontes_ingestao.ativo OR src.ativo
+        FROM fontes_ingestao AS src
+        WHERE fontes_ingestao.slug = 'stj'
+          AND src.slug = 'juris_import_stj'
+        """
+    )
+    op.execute(
+        """
+        UPDATE fontes_ingestao SET
+            slug = 'legacy_138_juris_import_stj',
+            ativo = FALSE,
+            descricao = '[LEGADO CONSOLIDADO 138] ' || descricao
+        WHERE slug = 'juris_import_stj'
+          AND EXISTS (SELECT 1 FROM fontes_ingestao AS can WHERE can.slug = 'stj')
+        """
+    )
+
+    # TJMG.
+    op.execute(
+        """
+        UPDATE fontes_ingestao SET slug = 'tjmg'
+        WHERE slug = 'juris_import_tjmg'
+          AND NOT EXISTS (
+              SELECT 1 FROM fontes_ingestao AS can
+              WHERE can.slug = 'tjmg'
+          )
+        """
+    )
+    op.execute(
+        """
+        UPDATE fontes_ingestao SET
+            ultima_execucao = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN src.ultima_execucao ELSE fontes_ingestao.ultima_execucao END,
+            ultimo_status = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN src.ultimo_status ELSE fontes_ingestao.ultimo_status END,
+            ultimo_erro = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN src.ultimo_erro ELSE fontes_ingestao.ultimo_erro END,
+            execucoes_zeradas_consecutivas = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN COALESCE(src.execucoes_zeradas_consecutivas, 0)
+                ELSE COALESCE(fontes_ingestao.execucoes_zeradas_consecutivas, 0) END,
+            registros_novos = COALESCE(fontes_ingestao.registros_novos, 0)
+                              + COALESCE(src.registros_novos, 0),
+            registros_total = COALESCE(fontes_ingestao.registros_total, 0)
+                              + COALESCE(src.registros_total, 0),
+            ja_produziu = fontes_ingestao.ja_produziu OR src.ja_produziu,
+            ativo = fontes_ingestao.ativo OR src.ativo
+        FROM fontes_ingestao AS src
+        WHERE fontes_ingestao.slug = 'tjmg'
+          AND src.slug = 'juris_import_tjmg'
+        """
+    )
+    op.execute(
+        """
+        UPDATE fontes_ingestao SET
+            slug = 'legacy_138_juris_import_tjmg',
+            ativo = FALSE,
+            descricao = '[LEGADO CONSOLIDADO 138] ' || descricao
+        WHERE slug = 'juris_import_tjmg'
+          AND EXISTS (SELECT 1 FROM fontes_ingestao AS can WHERE can.slug = 'tjmg')
+        """
+    )
+
+    # LexML.
+    op.execute(
+        """
+        UPDATE fontes_ingestao SET slug = 'lexml'
+        WHERE slug = 'juris_import_lexml'
+          AND NOT EXISTS (
+              SELECT 1 FROM fontes_ingestao AS can
+              WHERE can.slug = 'lexml'
+          )
+        """
+    )
+    op.execute(
+        """
+        UPDATE fontes_ingestao SET
+            ultima_execucao = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN src.ultima_execucao ELSE fontes_ingestao.ultima_execucao END,
+            ultimo_status = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN src.ultimo_status ELSE fontes_ingestao.ultimo_status END,
+            ultimo_erro = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN src.ultimo_erro ELSE fontes_ingestao.ultimo_erro END,
+            execucoes_zeradas_consecutivas = CASE
+                WHEN src.ultima_execucao IS NOT NULL
+                 AND (fontes_ingestao.ultima_execucao IS NULL
+                      OR src.ultima_execucao > fontes_ingestao.ultima_execucao)
+                THEN COALESCE(src.execucoes_zeradas_consecutivas, 0)
+                ELSE COALESCE(fontes_ingestao.execucoes_zeradas_consecutivas, 0) END,
+            registros_novos = COALESCE(fontes_ingestao.registros_novos, 0)
+                              + COALESCE(src.registros_novos, 0),
+            registros_total = COALESCE(fontes_ingestao.registros_total, 0)
+                              + COALESCE(src.registros_total, 0),
+            ja_produziu = fontes_ingestao.ja_produziu OR src.ja_produziu,
+            ativo = fontes_ingestao.ativo OR src.ativo
+        FROM fontes_ingestao AS src
+        WHERE fontes_ingestao.slug = 'lexml'
+          AND src.slug = 'juris_import_lexml'
+        """
+    )
+    op.execute(
+        """
+        UPDATE fontes_ingestao SET
+            slug = 'legacy_138_juris_import_lexml',
+            ativo = FALSE,
+            descricao = '[LEGADO CONSOLIDADO 138] ' || descricao
+        WHERE slug = 'juris_import_lexml'
+          AND EXISTS (SELECT 1 FROM fontes_ingestao AS can WHERE can.slug = 'lexml')
+        """
+    )
 
 
 def downgrade() -> None:
-    # Irreversível por natureza (ver docstring): as somas não podem ser
-    # desfeitas e as linhas `juris_import_*` não são recriadas. No-op.
+    # A soma dos contadores não é separável de forma confiável sem snapshot.
+    # As linhas legadas, porém, continuam preservadas no próprio banco.
     pass

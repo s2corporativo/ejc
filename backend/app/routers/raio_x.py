@@ -1,16 +1,16 @@
 """Raio-X do Processo — análise preliminar autônoma e conversão confirmada."""
 from __future__ import annotations
 
-import hashlib
 import io
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -27,7 +27,12 @@ from app.models.document import Document
 from app.models.raio_x import RaioXAnalise, RaioXDocumento
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.raio_x import RaioXCreate, RaioXConverterRequest, RaioXUpdate
+from app.schemas.raio_x import (
+    RaioXCreate,
+    RaioXConverterRequest,
+    RaioXIdentificacaoRevisada,
+    RaioXUpdate,
+)
 from app.services.raio_x_advogado_service import analise_advogado_caso
 from app.services.raio_x_export_service import gerar_docx, gerar_pdf
 from app.services.raio_x_service import (
@@ -36,6 +41,7 @@ from app.services.raio_x_service import (
     preview_conversao,
     serializar_analise,
 )
+from app.services.upload_lote_service import processar_lote
 
 settings = get_settings()
 router = APIRouter(prefix="/raio-x", tags=["Raio-X do Processo"])
@@ -392,11 +398,35 @@ async def atualizar(
         identification = dict(report.get("identificacao") or {})
         reviewed_identification = review.get("identificacao")
         if isinstance(reviewed_identification, dict):
-            for key, value in reviewed_identification.items():
+            # Issue #695 (mass assignment): `identification` é dict livre vindo
+            # do cliente. Sem allowlist, `setattr(analise, key, value)` escrevia
+            # em QUALQUER coluna do model (status, deleted_at, created_by, id,
+            # titulo...), incl. travar o registro como "convertido_em_caso" sem
+            # nunca ter sido convertido. Allowlist explícita, fail-closed: chave
+            # fora do conjunto é 422 nomeando o que foi rejeitado (não ignorada
+            # em silêncio) — mesmo espírito de ramos.py:340-349 (AI-121).
+            campos_permitidos = RaioXIdentificacaoRevisada.model_fields.keys()
+            rejeitados = sorted(
+                k for k in reviewed_identification if k not in campos_permitidos
+            )
+            if rejeitados:
+                raise HTTPException(
+                    422,
+                    "Campos não permitidos em revisao_humana.identificacao: "
+                    + ", ".join(rejeitados),
+                )
+            try:
+                # Mesmos validadores de comprimento de RaioXUpdate para estes
+                # campos (ex.: titulo de 8 KB não passa mais por aqui).
+                identificacao_validada = RaioXIdentificacaoRevisada(**reviewed_identification)
+            except ValidationError as exc:
+                raise HTTPException(
+                    422, jsonable_encoder(exc.errors(include_url=False))
+                ) from exc
+            for key, value in identificacao_validada.model_dump(exclude_unset=True).items():
                 if value not in (None, ""):
                     identification[key] = value
-                    if hasattr(analise, key):
-                        setattr(analise, key, value)
+                    setattr(analise, key, value)
         if review.get("sintese_revisada"):
             report["sintese_executiva_revisada"] = review["sintese_revisada"]
         for key in (
@@ -451,59 +481,33 @@ async def analisar_documentos(
                 409, "Análise em processamento; aguarde a conclusão do lote atual"
             )
         _destravar_analise_presa(analise)
-    if not files or len(files) > MAX_ARQUIVOS:
-        raise HTTPException(422, f"Envie de 1 a {MAX_ARQUIVOS} arquivos por lote")
-
     existing_hashes = {doc.sha256 for doc in analise.documentos}
-    novos: list[RaioXDocumento] = []
-    duplicados: list[str] = []
-    erros: list[dict[str, str]] = []
-    from app.routers.documents import _validar_conteudo
+    validos, duplicados, erros = await processar_lote(
+        files,
+        max_arquivos=MAX_ARQUIVOS,
+        extensoes_permitidas=EXTENSOES,
+        existing_hashes=existing_hashes,
+        storage_subdir="raio-x",
+        entidade_id=analise.id,
+    )
 
-    for upload in files:
-        filename = Path(upload.filename or "documento").name[:255]
-        ext = Path(filename).suffix.lower()
-        if ext not in EXTENSOES:
-            erros.append({"arquivo": filename, "erro": "Formato não suportado"})
-            continue
-        content = await upload.read()
-        if not content:
-            erros.append({"arquivo": filename, "erro": "Arquivo vazio"})
-            continue
-        if len(content) > settings.MAX_UPLOAD_MB * 1024 * 1024:
-            erros.append({"arquivo": filename, "erro": f"Excede {settings.MAX_UPLOAD_MB} MB"})
-            continue
-        digest = hashlib.sha256(content).hexdigest()
-        if digest in existing_hashes:
-            duplicados.append(filename)
-            continue
-        try:
-            mime_real = _validar_conteudo(ext, content)
-        except HTTPException as exc:
-            erros.append({"arquivo": filename, "erro": str(exc.detail)[:300]})
-            continue
-        now = datetime.now(timezone.utc)
-        rel = Path("raio-x") / f"{now.year}" / f"{now.month:02d}" / analise.id / f"{uuid4()}{ext}"
-        full = Path(settings.UPLOAD_DIR) / rel
-        full.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(full, "wb") as target:
-            await target.write(content)
+    novos: list[RaioXDocumento] = []
+    for arquivo in validos:
         # Documento PENDENTE: resultado_analise vazio até a task preencher.
         doc = RaioXDocumento(
             id=str(uuid4()),
             analise_id=analise.id,
-            nome_original=filename,
-            filepath=str(rel),
-            mimetype=mime_real,
-            size_bytes=len(content),
-            sha256=digest,
-            ocr_utilizado=ext in {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".webp"},
+            nome_original=arquivo.nome_original,
+            filepath=arquivo.filepath,
+            mimetype=arquivo.mimetype,
+            size_bytes=arquivo.size_bytes,
+            sha256=arquivo.sha256,
+            ocr_utilizado=arquivo.ocr_utilizado,
             resultado_analise={},
             uploaded_by=user.id,
         )
         db.add(doc)
         novos.append(doc)
-        existing_hashes.add(digest)
 
     if novos:
         analise.status = "fila"
