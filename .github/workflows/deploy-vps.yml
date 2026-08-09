@@ -319,8 +319,10 @@ jobs:
 
           sudo cp -p "$env_file" "$backup"
           sudo chmod 600 "$backup"
-          sudo mv -f "$candidate" "$env_file"
+          # Marque a janela de rollback ANTES do rename: um INT/TERM entre o mv
+          # e a atribuição posterior deixaria o .env trocado sem restauração.
           alterado=1
+          sudo mv -f "$candidate" "$env_file"
 
           final_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
           final_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$env_file" || true)"
