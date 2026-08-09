@@ -5,6 +5,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+DptDiagnosticKind = Literal[
+    "completo",
+    "tributario",
+    "ambiental",
+    "administrativo",
+    "trabalhista",
+    "contratual",
+    "lgpd",
+    "governanca_ia",
+]
+
 
 class DptCompanySummary(BaseModel):
     id: str
@@ -50,6 +61,7 @@ class DptPriorityItem(BaseModel):
     detail: str
     canonical_path: str
     due_date: date | None = None
+    confirmado: bool | None = None
 
 
 class DptDashboardMetrics(BaseModel):
@@ -69,7 +81,7 @@ class DptDashboardResponse(BaseModel):
     deadlines: list[DptDeadlineSummary] = Field(default_factory=list)
     priorities: list[DptPriorityItem] = Field(default_factory=list)
     radar_por_area: dict[str, int] | None = None
-    coverage: Literal["complete"] = "complete"
+    coverage: Literal["complete", "partial"] = "complete"
     notes: list[str] = Field(default_factory=list)
 
 
@@ -150,19 +162,19 @@ class DptDiagnosticAreaReadiness(BaseModel):
 
 class DptDiagnosticReadiness(BaseModel):
     client_id: str
-    tipo: Literal[
-        "completo",
-        "tributario",
-        "ambiental",
-        "administrativo",
-        "trabalhista",
-        "contratual",
-        "lgpd",
-        "governanca_ia",
-    ]
+    tipo: DptDiagnosticKind
     generated_at: datetime
     areas: list[DptDiagnosticAreaReadiness] = Field(default_factory=list)
     pode_iniciar_analise: bool = True
     persistencia: Literal["nao_habilitada_nesta_pilha"]
     motivo_persistencia: str
     hitl: Literal["obrigatorio"] = "obrigatorio"
+
+
+class DptOpportunityQueueItem(BaseModel):
+    intake_id: str
+    status: str
+    created_at: datetime | None = None
+    origem: str | None = None
+    urgencia_declarada: str | None = None
+    campanha_ref: str | None = None
