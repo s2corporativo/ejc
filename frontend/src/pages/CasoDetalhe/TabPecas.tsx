@@ -9,6 +9,10 @@ import Pecas from "../Pecas";
  * usam exatamente o mesmo código da fila global `/pecas`, sem duas regras de
  * negócio concorrentes.
  */
-export default function TabPecas({ caseId: _caseId }: { caseId: string }) {
-  return <Pecas />;
+export default function TabPecas({ caseId }: { caseId: string }) {
+  return (
+    <div data-case-context={caseId}>
+      <Pecas />
+    </div>
+  );
 }
