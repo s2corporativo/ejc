@@ -1,0 +1,13 @@
+/* Ajustes finais de acessibilidade do AppShell/Dashboard Ultra.
+ * Esta camada é importada depois de saas-ultra-v2.css para garantir que
+ * prefers-reduced-motion neutralize também os transforms de hover. */
+@media (prefers-reduced-motion: reduce) {
+  .ejc-ultra-primary-action:hover,
+  .ejc-ultra-secondary-action:hover,
+  .ejc-ultra-metric:hover,
+  .ejc-ultra-priority:hover,
+  .ejc-ultra-command:hover,
+  .sidebar-bronze .sidebar-nav-item:hover svg {
+    transform: none;
+  }
+}
