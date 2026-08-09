@@ -4,8 +4,9 @@ O INLABS exige cadastro/login para download em seu portal. Este módulo NÃO
 implementa automação de login nem recebe credenciais; ele processa XML/ZIP já
 obtido por fluxo autorizado e mantém o monitor atual do in.gov.br como fallback.
 
-O XML do INLABS é fonte de dados abertos, mas não substitui a versão certificada
-do Diário Oficial da União para conferência jurídica final.
+A conferência jurídica final deve usar a publicação eletrônica oficial do DOU
+no sítio da Imprensa Nacional, sob o regime do Decreto 9.215/2017. O XML do
+INLABS é fonte estruturada de dados, não substituto da publicação certificada.
 """
 from __future__ import annotations
 
@@ -62,12 +63,7 @@ def _valor(el: ET.Element, nomes: Iterable[str]) -> str | None:
 
 
 def _texto_por_classe(el: ET.Element, classes: Iterable[str]) -> str | None:
-    """Lê elementos HTML-like do XML INLABS, ex. `<p class="identifica">`.
-
-    O heading publicado não é o atributo `name` do article: `name` é usado como
-    identificador interno em pacotes reais. Classes podem vir combinadas no
-    atributo, por isso a comparação é por token.
-    """
+    """Lê elementos HTML-like do XML INLABS, ex. `<p class="identifica">`."""
     procuradas = {c.casefold() for c in classes}
     for filho in el.iter():
         classes_el = {
@@ -89,9 +85,14 @@ def _texto_corpo(el: ET.Element) -> str:
             txt = "\n".join(x.strip() for x in filho.itertext() if x and x.strip()).strip()
             if txt:
                 return txt
-    # fallback: somente texto interno; metadados curtos são depois removidos da
-    # utilidade prática pelo requisito de tamanho mínimo.
     return "\n".join(x.strip() for x in el.itertext() if x and x.strip()).strip()
+
+
+def _rejeitar_dtd_entidades(xml_bytes: bytes) -> None:
+    """Bloqueia DTD/ENTITY antes do ElementTree para evitar expansão de entidade."""
+    cabecalho = xml_bytes.upper()
+    if b"<!DOCTYPE" in cabecalho or b"<!ENTITY" in cabecalho:
+        raise InlabsParseError("XML INLABS com DTD/ENTITY não é permitido")
 
 
 def parse_xml(xml_bytes: bytes) -> list[InlabsArticle]:
@@ -99,6 +100,7 @@ def parse_xml(xml_bytes: bytes) -> list[InlabsArticle]:
         return []
     if len(xml_bytes) > MAX_XML_BYTES:
         raise InlabsParseError("XML INLABS excede o limite de processamento")
+    _rejeitar_dtd_entidades(xml_bytes)
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError as exc:
@@ -113,8 +115,6 @@ def parse_xml(xml_bytes: bytes) -> list[InlabsArticle]:
 
     saida: list[InlabsArticle] = []
     for el in artigos:
-        # Schema INLABS real: heading visual em <p class="identifica">;
-        # `name` é identificador interno e NÃO deve virar título jurídico.
         titulo = (
             _texto_por_classe(el, ("identifica", "titulo", "title"))
             or _valor(el, ("title", "titulo"))
@@ -126,7 +126,6 @@ def parse_xml(xml_bytes: bytes) -> list[InlabsArticle]:
         saida.append(InlabsArticle(
             titulo=titulo[:500],
             texto=corpo,
-            # pubName identifica a seção/edição do DOU; artType é natureza do ato.
             secao=_valor(el, ("pubName", "secao", "section")),
             data_publicacao=_valor(el, ("pubDate", "dataPublicacao", "data_publicacao")),
             edicao=_valor(el, ("editionNumber", "edicao", "edition")),
@@ -161,7 +160,10 @@ def parse_zip(zip_bytes: bytes) -> list[InlabsArticle]:
             raise InlabsParseError("ZIP INLABS contém caminho inseguro")
         if not nome.lower().endswith(".xml"):
             continue
-        dados = zf.read(info)
+        try:
+            dados = zf.read(info)
+        except (BadZipFile, RuntimeError, NotImplementedError) as exc:
+            raise InlabsParseError("Falha ao ler membro XML do ZIP INLABS") from exc
         if len(dados) > MAX_XML_BYTES:
             raise InlabsParseError("XML dentro do ZIP excede o limite")
         saida.extend(parse_xml(dados))
