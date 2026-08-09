@@ -22,46 +22,50 @@ def _ms(inicio: float) -> float:
 async def diagnosticar(db: AsyncSession) -> dict[str, Any]:
     inicio = time.perf_counter()
     try:
-        row = (
-            await db.execute(
-                text(
-                    """
-                    SELECT
-                      (SELECT COUNT(*) FROM deadlines
-                         WHERE deleted_at IS NULL
-                           AND status = 'pendente'
-                           AND confirmado = FALSE) AS prazos_nao_confirmados,
-                      (SELECT COUNT(*) FROM deadlines
-                         WHERE deleted_at IS NULL
-                           AND status = 'pendente'
-                           AND calculo_automatico = TRUE
-                           AND ciencia_confirmada = FALSE) AS prazos_auto_sem_ciencia,
-                      (SELECT COUNT(*) FROM djen_comunicacoes
-                         WHERE processada = FALSE) AS intimacoes_pendentes,
-                      (SELECT COUNT(*) FROM notas_fiscais_servico
-                         WHERE status = 'cancelada'
-                           AND cancelamento_tipo = 'registro_local'
-                           AND cancelamento_fiscal_confirmado = FALSE) AS nfse_canceladas_localmente,
-                      (SELECT COUNT(*) FROM office_contracts
-                         WHERE deleted_at IS NULL
-                           AND status = 'vigente'
-                           AND end_date IS NOT NULL
-                           AND end_date < CURRENT_DATE) AS contratos_vencidos,
-                      (SELECT COUNT(*) FROM office_contracts
-                         WHERE deleted_at IS NULL
-                           AND status = 'vigente'
-                           AND end_date IS NOT NULL
-                           AND end_date >= CURRENT_DATE
-                           AND end_date <= CURRENT_DATE
-                               + (alert_days_before * INTERVAL '1 day'))
-                        AS contratos_em_alerta
-                    """
+        # Durante rollout, a aplicação pode iniciar antes de a migration desta
+        # versão ter sido aplicada. A query fica num SAVEPOINT: se uma coluna
+        # nova ainda não existir, o erro não envenena a sessão compartilhada da
+        # Central de Diagnóstico nem obriga rollback da transação externa.
+        async with db.begin_nested():
+            row = (
+                await db.execute(
+                    text(
+                        """
+                        SELECT
+                          (SELECT COUNT(*) FROM deadlines
+                             WHERE deleted_at IS NULL
+                               AND status = 'pendente'
+                               AND confirmado = FALSE) AS prazos_nao_confirmados,
+                          (SELECT COUNT(*) FROM deadlines
+                             WHERE deleted_at IS NULL
+                               AND status = 'pendente'
+                               AND calculo_automatico = TRUE
+                               AND ciencia_confirmada = FALSE) AS prazos_auto_sem_ciencia,
+                          (SELECT COUNT(*) FROM djen_comunicacoes
+                             WHERE processada = FALSE) AS intimacoes_pendentes,
+                          (SELECT COUNT(*) FROM notas_fiscais_servico
+                             WHERE status = 'cancelada'
+                               AND cancelamento_tipo = 'registro_local'
+                               AND cancelamento_fiscal_confirmado = FALSE) AS nfse_canceladas_localmente,
+                          (SELECT COUNT(*) FROM office_contracts
+                             WHERE deleted_at IS NULL
+                               AND status = 'vigente'
+                               AND end_date IS NOT NULL
+                               AND end_date < CURRENT_DATE) AS contratos_vencidos,
+                          (SELECT COUNT(*) FROM office_contracts
+                             WHERE deleted_at IS NULL
+                               AND status = 'vigente'
+                               AND end_date IS NOT NULL
+                               AND end_date >= CURRENT_DATE
+                               AND end_date <= CURRENT_DATE
+                                   + (alert_days_before * INTERVAL '1 day'))
+                            AS contratos_em_alerta
+                        """
+                    )
                 )
-            )
-        ).mappings().one()
+            ).mappings().one()
     except Exception as exc:
-        # Normal durante rollout antes de aplicar a migration 143. Não vaza SQL,
-        # stack trace, tabela nem credencial ao painel.
+        # Não vaza SQL, stack trace, nomes de clientes/processos ou credenciais.
         return {
             "nome": "Saúde jurídico-operacional",
             "status": "alerta",
@@ -98,7 +102,7 @@ async def diagnosticar(db: AsyncSession) -> dict[str, Any]:
     else:
         status = "ok"
         detalhe = (
-            "Nenhum prazo automático sem ciência/confirmação e nenhum cancelamento local de NFS-e ou contrato vencido detectado."
+            "Nenhum prazo automático sem ciência/confirmação e nenhum cancelamento local de NFS-e ou contrato vencido detectado."
         )
         acao = "Nenhuma ação imediata; acompanhe os contratos dentro da janela de alerta."
 
