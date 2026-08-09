@@ -224,23 +224,25 @@ def extrair_texto_planalto(html: str) -> str:
     return normalizar("\n".join(linhas))
 
 
-# Revogação do DIPLOMA INTEIRO, como o Planalto a publica no cabeçalho/ementa
-# do texto compilado: "(Revogada pela Lei nº 14.133, de 2021)", "(Revogado pelo
-# Decreto nº ...)", "Revogada a partir de ...", "Vigência encerrada", e a
-# anotação SOLTA "(Revogada)" — que no preâmbulo só pode ser do próprio diploma.
-# A revogação PARCIAL é detectada separadamente para não promover a situação do
-# diploma inteiro a 'revogada'. É a forma PASSIVA — "Revoga a Lei nº X" (a
-# norma que revoga OUTRA) não casa.
+# Revogação do DIPLOMA INTEIRO só é aceita quando a linha do preâmbulo COMEÇA
+# como anotação de situação do próprio diploma. Isso preserva marcadores do
+# cabeçalho como "(Revogada pela Lei nº ...)" e rejeita referências narrativas
+# da ementa, por exemplo "Altera a Lei X, revogada pela Lei Y".
+# A revogação PARCIAL é detectada separadamente para não promover o diploma
+# inteiro a 'revogada'. Forma ativa "Revoga a Lei X" também não casa.
 _RE_DIPLOMA_PARCIALMENTE_REVOGADO = re.compile(
-    r"(?:parcialmente\s+revogad[oa]s?\s+(?:pel[ao]s?\b|a\s+partir\b|em\s+\d)"
-    r"|revogad[oa]s?\s+parcialmente\s+(?:pel[ao]s?\b|a\s+partir\b|em\s+\d))",
+    r"(?m)^\s*\(?\s*(?:parcialmente\s+revogad[oa]s?\s+"
+    r"(?:pel[ao]s?\b|a\s+partir\b|em\s+\d)"
+    r"|revogad[oa]s?\s+parcialmente\s+"
+    r"(?:pel[ao]s?\b|a\s+partir\b|em\s+\d))",
     re.IGNORECASE,
 )
 _RE_DIPLOMA_REVOGADO = re.compile(
-    r"(?:revogad[oa]s?\s+(?:integralmente\s+|expressamente\s+|tacitamente\s+)?"
+    r"(?m)^\s*\(?\s*(?:revogad[oa]s?\s+"
+    r"(?:integralmente\s+|expressamente\s+|tacitamente\s+)?"
     r"(?:pel[ao]s?\b|a\s+partir\b|em\s+\d)"
-    r"|\(\s*revogad[oa]s?\s*\)"
-    r"|vig[êe]ncia\s+encerrada)",
+    r"|revogad[oa]s?\s*\)\s*$"
+    r"|vig[êe]ncia\s+encerrada\b)",
     re.IGNORECASE,
 )
 
