@@ -49,16 +49,43 @@ jobs:
           ref: ${{ env.TARGET_SHA }}
           fetch-depth: 0
 
+      # O actions/checkout registra safe.directory num HOME temporário. Em
+      # self-hosted runner isso não deve virar confiança global persistente.
+      # A exceção é concedida por comando e somente após validar o dono do
+      # workspace, evitando reabrir execução de .git/config não confiável.
       - name: Confirmar SHA e runtime de produção
         shell: bash
         run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
-          test -d /opt/ejc
-          test -f /opt/ejc/.env
-          docker ps --format '{{.Names}}' | grep -qx ejc_db
-          command -v python3 >/dev/null
-          command -v rsync >/dev/null
+          set -uo pipefail
+          set +e
+          erros=0
+          reprovar() { echo "::error::Pré-voo do deploy: $1"; erros=1; }
+
+          dono="$(stat -c %u "$GITHUB_WORKSPACE" 2>/dev/null)"
+          if [ "$dono" = "$(id -u)" ] || [ "$dono" = "0" ]; then
+            if head_local="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD 2>&1)"; then
+              [ "$head_local" = "$TARGET_SHA" ] ||
+                reprovar "checkout está em '$head_local', esperado '$TARGET_SHA'"
+            else
+              reprovar "git rev-parse HEAD falhou — $head_local"
+            fi
+          else
+            reprovar "workspace pertence ao uid '${dono:-desconhecido}', nem ao runner nem a root — não confio nele para executar git"
+          fi
+
+          [ -d /opt/ejc ] ||
+            reprovar "/opt/ejc não existe ou não é diretório"
+          [ -f /opt/ejc/.env ] ||
+            reprovar "/opt/ejc/.env ausente ou ilegível para o usuário do runner"
+          docker ps --format '{{.Names}}' 2>/dev/null | grep -qx ejc_db ||
+            reprovar "container ejc_db fora do ar, ou o runner não alcança o socket do Docker"
+          command -v python3 >/dev/null ||
+            reprovar "python3 ausente no PATH do runner"
+          command -v rsync >/dev/null ||
+            reprovar "rsync ausente no PATH do runner"
+
+          [ "$erros" -eq 0 ] || exit 1
+          echo "Pré-voo aprovado — HEAD $head_local, /opt/ejc e ejc_db presentes."
 
       - name: Classificar migrations pendentes
         id: migrations
@@ -113,7 +140,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # A partir deste passo /opt/ejc pode ter sido alterado. O id é usado no
+      # resumo para não declarar produção intacta quando o rsync falha no meio.
       - name: Sincronizar checkout aprovado para /opt/ejc
+        id: sync
         shell: bash
         run: |
           set -euo pipefail
@@ -130,8 +160,17 @@ jobs:
             --exclude 'vps-tools/' --exclude '*.log' \
             ./ /opt/ejc/
 
-      - name: Garantir permissão de leitura do .env
-        run: sudo chmod 644 /opt/ejc/.env
+      - name: Restringir acesso ao .env preservado
+        shell: bash
+        run: |
+          set -euo pipefail
+          # O deploy precisa ler e eventualmente migrar valores obsoletos do
+          # .env. Em vez de torná-lo world-readable (0644), o arquivo fica sob
+          # o usuário dedicado do runner e modo 0600. root continua tendo acesso.
+          sudo chown "$(id -u):$(id -g)" /opt/ejc/.env
+          sudo chmod 600 /opt/ejc/.env
+          test "$(stat -c %a /opt/ejc/.env)" = "600"
+          test "$(stat -c %u:%g /opt/ejc/.env)" = "$(id -u):$(id -g)"
 
       - name: Deploy seguro com política calculada
         env:
@@ -167,13 +206,33 @@ jobs:
 
       - name: Resumo da implantação
         if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SYNC_OUTCOME: ${{ steps.sync.outcome }}
+          REVISAO_ANTERIOR: ${{ steps.migrations.outputs.current_revision }}
+          MIGRATIONS_PENDENTES: ${{ steps.migrations.outputs.pending_count }}
         run: |
           {
             echo "## Deploy VPS"
             echo
+            if [ "$JOB_STATUS" = "success" ]; then
+              echo "- Resultado: **implantado**"
+            elif [ -z "$SYNC_OUTCOME" ] || [ "$SYNC_OUTCOME" = "skipped" ]; then
+              echo "- Resultado: **abortado antes de tocar produção** (\`$JOB_STATUS\`)"
+              echo "  — nada foi implantado; \`/opt/ejc\` está como estava."
+            elif [ "$SYNC_OUTCOME" = "success" ]; then
+              echo "- Resultado: **FALHOU APÓS TOCAR PRODUÇÃO** (\`$JOB_STATUS\`)"
+              echo "  — \`/opt/ejc\` já foi reescrito e o deploy pode ter migrado o schema."
+              echo "  O rollback automático restaura imagens, **não** a árvore nem o banco."
+              echo "  Verifique o estado real antes de reexecutar."
+            else
+              echo "- Resultado: **ESTADO INCERTO** — a sincronização não concluiu (\`$SYNC_OUTCOME\`)."
+              echo "  O \`rsync --delete\` pode ter reescrito ou apagado parte de \`/opt/ejc\`"
+              echo "  antes de falhar. **Não presuma que produção está intacta**."
+            fi
             echo "- Target SHA: \`$TARGET_SHA\`"
-            echo "- Revisão anterior: \`${{ steps.migrations.outputs.current_revision }}\`"
-            echo "- Migrations pendentes: \`${{ steps.migrations.outputs.pending_count }}\`"
+            echo "- Revisão anterior: \`$REVISAO_ANTERIOR\`"
+            echo "- Migrations pendentes: \`$MIGRATIONS_PENDENTES\`"
             echo "- Seeds: \`$RUN_SEEDS\`"
             echo "- Backup pré-deploy obrigatório: \`$REQUIRE_PREDEPLOY_BACKUP\`"
           } >> "$GITHUB_STEP_SUMMARY"
