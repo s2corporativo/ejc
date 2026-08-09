@@ -11,6 +11,7 @@ from app.modules.dpt360.dashboard_service import build_dashboard
 from app.modules.dpt360.diagnostic_service import build_diagnostic_readiness
 from app.modules.dpt360.intelligence_service import run_dpt_action
 from app.modules.dpt360.radar_service import build_today_radar
+from app.modules.dpt360.report_service import build_executive_report
 from app.modules.dpt360.schemas import (
     DptActionRequest,
     DptActionResponse,
@@ -61,8 +62,20 @@ async def radar_today(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["advogado"])),
 ):
-    """Digest regulatório DPT: leitura de dados já coletados pelo scheduler."""
     return await build_today_radar(db, cu, hours=hours)
+
+
+@router.get("/reports/executive/{client_id}")
+async def executive_report(
+    client_id: str,
+    days: int = Query(default=30, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["advogado"])),
+):
+    report = await build_executive_report(db, cu, client_id, days=days)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    return report
 
 
 @router.post("/actions", response_model=DptActionResponse)
