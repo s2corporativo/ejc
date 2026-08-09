@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.client import Client
 from app.models.document import Document
-from app.models.environmental import EnvironmentalCase, StatusDefesa
+from app.models.environmental import EnvironmentalCase
 from app.models.lgpd_tratamento import RegistroTratamento
 from app.models.sociedade_cliente import SociedadeCliente
 from app.models.user import User
@@ -46,15 +46,16 @@ async def get_company_profile(
     ).scalars().all()
     case_ids = [item.id for item in cases]
 
-    document_filter = [
-        Document.deleted_at.is_(None),
-        or_(
-            Document.client_id == client_id,
-            Document.case_id.in_(case_ids) if case_ids else Document.case_id.is_(None) & False,
-        ),
-    ]
+    document_scopes = [Document.client_id == client_id]
+    if case_ids:
+        document_scopes.append(Document.case_id.in_(case_ids))
     documents = (
-        await db.execute(select(sqlfunc.count(Document.id)).where(*document_filter))
+        await db.execute(
+            select(sqlfunc.count(Document.id)).where(
+                Document.deleted_at.is_(None),
+                or_(*document_scopes),
+            )
+        )
     ).scalar() or 0
 
     societies = (
@@ -97,9 +98,6 @@ async def get_company_profile(
     areas = sorted({_value(item.area) for item in cases if _value(item.area)})
     open_cases = sum(1 for item in cases if _value(item.status) in OPEN_CASE_STATUSES)
 
-    # Prazos são obtidos de forma indireta pelo relacionamento já validado na
-    # Onda 2; a contagem aqui é inferida somente das relações ORM carregáveis via
-    # consulta dedicada para evitar lazy-load em AsyncSession.
     from app.models.deadline import Deadline, DeadlineStatus
 
     pending_deadlines = 0
