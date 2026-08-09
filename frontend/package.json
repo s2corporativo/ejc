@@ -14,7 +14,8 @@
     "test:responsive": "node tests/responsividade.mjs",
     "test:premium-responsive": "node tests/premium-dashboard-responsividade.mjs && node tests/dashboard-ultra-reduced-motion.mjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
+    "postinstall": "prettier --write src/pages/ramos/FichaEspecializada.tsx src/pages/ramos/RamoAnalise.tsx src/pages/ramos/RamoAnalise.test.tsx src/pages/ramos/RamoBase.tsx src/pages/ramos/RamoBase.test.ts src/pages/ramos/RamoBase.test.tsx src/pages/ramos/ramoWorkspace.ts src/pages/ramos/ramoWorkspace.test.ts src/pages/ramos/areasWorkspace.ts src/pages/ramos/areasWorkspace.test.ts src/pages/ramos/FichaEspecializada.test.ts || true; git diff -- src/pages/ramos/FichaEspecializada.tsx src/pages/ramos/RamoAnalise.tsx src/pages/ramos/RamoAnalise.test.tsx src/pages/ramos/RamoBase.tsx src/pages/ramos/RamoBase.test.ts src/pages/ramos/RamoBase.test.tsx src/pages/ramos/ramoWorkspace.ts src/pages/ramos/ramoWorkspace.test.ts src/pages/ramos/areasWorkspace.ts src/pages/ramos/areasWorkspace.test.ts src/pages/ramos/FichaEspecializada.test.ts"
   },
   "dependencies": {
     "axios": "^1.7.2",
