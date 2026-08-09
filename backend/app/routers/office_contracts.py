@@ -1,141 +1,282 @@
-"""Office contracts CRUD"""
-from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+"""Contratos administrativos do próprio escritório.
+
+Leitura: gestão/financeiro. Mutação de termos contratuais: gestão (sócio+).
+Este módulo organiza obrigações; não substitui o documento contratual assinado.
+"""
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+from typing import Literal, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
-from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import ROLE_LEVEL, get_current_user
+from app.models.audit_log import criar_audit_log
 from app.models.user import User
 
 _FIN = {"superadmin", "admin", "socio", "financeiro"}
 
 
 def _req_fin(cu: User = Depends(get_current_user)) -> User:
-    # Contratos do escritório = societário/financeiro: só gestão/financeiro.
     if cu.role.value not in _FIN:
         raise HTTPException(status_code=403, detail="Acesso restrito a gestão/financeiro")
     return cu
 
 
-router = APIRouter(prefix="/office-contracts", tags=["office-contracts"], dependencies=[Depends(_req_fin)])
+def _req_gestao(cu: User = Depends(get_current_user)) -> User:
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Alterações contratuais são restritas a sócios/administradores",
+        )
+    return cu
+
+
+router = APIRouter(prefix="/office-contracts", tags=["office-contracts"])
+
+
+class ContractBase(BaseModel):
+    title: str = Field(min_length=3, max_length=255)
+    counterparty: str = Field(min_length=2, max_length=255)
+    contract_type: str = Field(default="prestacao_servico", max_length=80)
+    status: Literal["vigente", "encerrado", "suspenso", "rascunho"] = "vigente"
+    start_date: date
+    end_date: date | None = None
+    value: Decimal | None = Field(default=None, ge=Decimal("0"), max_digits=14, decimal_places=2)
+    description: str | None = Field(default=None, max_length=5000)
+    file_url: str | None = Field(default=None, max_length=1000)
+    alert_days_before: int = Field(default=30, ge=1, le=3650)
+
+    @model_validator(mode="after")
+    def _datas(self):
+        if self.end_date and self.end_date < self.start_date:
+            raise ValueError("end_date não pode ser anterior a start_date")
+        return self
+
+
+class ContractCreate(ContractBase):
+    pass
+
+
+class ContractUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=3, max_length=255)
+    counterparty: str | None = Field(default=None, min_length=2, max_length=255)
+    contract_type: str | None = Field(default=None, max_length=80)
+    status: Literal["vigente", "encerrado", "suspenso", "rascunho"] | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    value: Decimal | None = Field(default=None, ge=Decimal("0"), max_digits=14, decimal_places=2)
+    description: str | None = Field(default=None, max_length=5000)
+    file_url: str | None = Field(default=None, max_length=1000)
+    alert_days_before: int | None = Field(default=None, ge=1, le=3650)
+
+
+async def _get(db: AsyncSession, contract_id: str) -> dict | None:
+    row = (
+        await db.execute(
+            text(
+                "SELECT * FROM office_contracts "
+                "WHERE id=:id AND deleted_at IS NULL"
+            ),
+            {"id": contract_id},
+        )
+    ).mappings().first()
+    return dict(row) if row else None
 
 
 @router.get("")
 async def list_contracts(
     status: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 20,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(_req_fin),
 ):
     q = "SELECT * FROM office_contracts WHERE deleted_at IS NULL"
-    params = {}
+    params: dict = {}
     if status:
         q += " AND status=:status"
         params["status"] = status
     count_result = await db.execute(text(q.replace("SELECT *", "SELECT COUNT(*)")), params)
-    total = count_result.scalar()
-
-    q += " ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+    total = int(count_result.scalar() or 0)
+    q += " ORDER BY COALESCE(end_date, DATE '9999-12-31'), created_at DESC LIMIT :limit OFFSET :offset"
     params["limit"] = page_size
     params["offset"] = (page - 1) * page_size
     result = await db.execute(text(q), params)
-    return {"data": [dict(r) for r in result.mappings().all()], "total": total, "page": page, "page_size": page_size}
+    return {
+        "data": [dict(r) for r in result.mappings().all()],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.get("/expiring")
 async def list_expiring(
-    days: int = 30,
+    days: int | None = Query(default=None, ge=1, le=3650),
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(_req_fin),
 ):
-    result = await db.execute(
-        text("SELECT * FROM office_contracts WHERE deleted_at IS NULL AND status='vigente' AND end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + make_interval(days => :days) ORDER BY end_date"),
-        {"days": days}
-    )
+    """Contratos dentro do alerta.
+
+    Sem `days`, cada contrato usa sua própria `alert_days_before`. Com `days`,
+    o parâmetro funciona como janela adicional de consulta manual.
+    """
+    if days is None:
+        sql = """
+            SELECT *, (end_date - CURRENT_DATE) AS days_remaining
+            FROM office_contracts
+            WHERE deleted_at IS NULL AND status='vigente' AND end_date IS NOT NULL
+              AND end_date BETWEEN CURRENT_DATE
+                  AND CURRENT_DATE + (alert_days_before * INTERVAL '1 day')
+            ORDER BY end_date
+        """
+        params = {}
+    else:
+        sql = """
+            SELECT *, (end_date - CURRENT_DATE) AS days_remaining
+            FROM office_contracts
+            WHERE deleted_at IS NULL AND status='vigente' AND end_date IS NOT NULL
+              AND end_date BETWEEN CURRENT_DATE
+                  AND CURRENT_DATE + (:days * INTERVAL '1 day')
+            ORDER BY end_date
+        """
+        params = {"days": days}
+    result = await db.execute(text(sql), params)
     return [dict(r) for r in result.mappings().all()]
 
 
 @router.post("", status_code=201)
 async def create_contract(
-    body: dict = Body(...),
+    body: ContractCreate,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(_req_gestao),
 ):
-    faltando = [k for k in ("title","counterparty","start_date") if not body.get(k)]
-    if faltando:
-        raise HTTPException(422, "Campos obrigatórios: " + ", ".join(faltando))
+    dados = body.model_dump(mode="python")
     result = await db.execute(
-        text("""INSERT INTO office_contracts (title,counterparty,contract_type,status,start_date,end_date,value,description,file_url,alert_days_before,created_by)
-             VALUES (:title,:counterparty,:contract_type,:status,:start_date,:end_date,:value,:description,:file_url,:alert_days_before,:created_by)
-             RETURNING *"""),
-        {
-            "title": body.get("title"),
-            "counterparty": body.get("counterparty"),
-            "contract_type": body.get("contract_type", "prestacao_servico"),
-            "status": body.get("status", "vigente"),
-            "start_date": body.get("start_date"),
-            "end_date": body.get("end_date"),
-            "value": body.get("value"),
-            "description": body.get("description"),
-            "file_url": body.get("file_url"),
-            "alert_days_before": body.get("alert_days_before", 30),
-            "created_by": str(current_user.id),
-        }
+        text(
+            """
+            INSERT INTO office_contracts
+                (title,counterparty,contract_type,status,start_date,end_date,value,
+                 description,file_url,alert_days_before,created_by)
+            VALUES
+                (:title,:counterparty,:contract_type,:status,:start_date,:end_date,:value,
+                 :description,:file_url,:alert_days_before,:created_by)
+            RETURNING *
+            """
+        ),
+        {**dados, "created_by": str(current_user.id)},
+    )
+    row = dict(result.mappings().first())
+    await criar_audit_log(
+        db,
+        current_user.id,
+        current_user.role.value,
+        "CREATE",
+        "office_contracts",
+        str(row["id"]),
+        dados_depois={
+            "title": row.get("title"),
+            "counterparty": row.get("counterparty"),
+            "status": row.get("status"),
+            "start_date": str(row.get("start_date")),
+            "end_date": str(row.get("end_date")) if row.get("end_date") else None,
+            "value": str(row.get("value")) if row.get("value") is not None else None,
+        },
     )
     await db.commit()
-    return dict(result.mappings().first())
+    return row
 
 
 @router.get("/{contract_id}")
 async def get_contract(
     contract_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(_req_fin),
 ):
-    result = await db.execute(text("SELECT * FROM office_contracts WHERE id=:id AND deleted_at IS NULL"), {"id": contract_id})
-    row = result.mappings().first()
+    row = await _get(db, contract_id)
     if not row:
-        raise HTTPException(404, "Contract not found")
-    return dict(row)
+        raise HTTPException(status_code=404, detail="Contrato não encontrado")
+    return row
 
 
 @router.patch("/{contract_id}")
 async def update_contract(
     contract_id: str,
-    body: dict = Body(...),
+    body: ContractUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(_req_gestao),
 ):
-    # Floor de role já é imposto pela dependency de router (_req_fin = _FIN),
-    # aplicada a TODOS os endpoints deste módulo (contratos são office-wide por
-    # design). Falta a checagem de EXISTÊNCIA: sem ela, um UPDATE por id
-    # inexistente/soft-deleted retornava 200 silencioso (padrão pending_items).
-    existe = await db.execute(
-        text("SELECT id FROM office_contracts WHERE id=:id AND deleted_at IS NULL"),
-        {"id": contract_id},
-    )
-    if not existe.fetchone():
-        raise HTTPException(404, "Contract not found")
+    antes = await _get(db, contract_id)
+    if not antes:
+        raise HTTPException(status_code=404, detail="Contrato não encontrado")
+    updates = body.model_dump(exclude_unset=True, mode="python")
+    if not updates:
+        raise HTTPException(status_code=422, detail="Nenhuma alteração informada")
 
-    sets = []
-    params = {"id": contract_id}
-    for field in ["title","counterparty","contract_type","status","start_date","end_date","value","description","file_url","alert_days_before"]:
-        if field in body:
-            sets.append(f"{field}=:{field}")
-            params[field] = body[field]
+    start = updates.get("start_date", antes.get("start_date"))
+    end = updates.get("end_date", antes.get("end_date"))
+    if start and end and end < start:
+        raise HTTPException(status_code=422, detail="end_date não pode ser anterior a start_date")
+
+    sets = [f"{field}=:{field}" for field in updates]
     sets.append("updated_at=NOW()")
-    await db.execute(text(f"UPDATE office_contracts SET {','.join(sets)} WHERE id=:id AND deleted_at IS NULL"), params)
+    result = await db.execute(
+        text(
+            f"UPDATE office_contracts SET {','.join(sets)} "
+            "WHERE id=:id AND deleted_at IS NULL RETURNING *"
+        ),
+        {**updates, "id": contract_id},
+    )
+    depois = dict(result.mappings().first())
+    await criar_audit_log(
+        db,
+        current_user.id,
+        current_user.role.value,
+        "UPDATE",
+        "office_contracts",
+        contract_id,
+        dados_antes={k: str(antes.get(k)) for k in updates},
+        dados_depois={k: str(depois.get(k)) for k in updates},
+    )
     await db.commit()
-    return {"ok": True}
+    return depois
 
 
 @router.delete("/{contract_id}")
 async def delete_contract(
     contract_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(_req_gestao),
 ):
-    await db.execute(text("UPDATE office_contracts SET deleted_at=NOW() WHERE id=:id"), {"id": contract_id})
+    antes = await _get(db, contract_id)
+    if not antes:
+        raise HTTPException(status_code=404, detail="Contrato não encontrado")
+    await db.execute(
+        text(
+            "UPDATE office_contracts SET deleted_at=NOW(), updated_at=NOW() "
+            "WHERE id=:id AND deleted_at IS NULL"
+        ),
+        {"id": contract_id},
+    )
+    await criar_audit_log(
+        db,
+        current_user.id,
+        current_user.role.value,
+        "DELETE",
+        "office_contracts",
+        contract_id,
+        dados_antes={
+            "title": antes.get("title"),
+            "counterparty": antes.get("counterparty"),
+            "status": antes.get("status"),
+            "end_date": str(antes.get("end_date")) if antes.get("end_date") else None,
+        },
+    )
     await db.commit()
     return {"ok": True}
