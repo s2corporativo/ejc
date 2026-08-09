@@ -1,6 +1,9 @@
 """Regressões das normalizações defensivas da Sala Jurídica (#890)."""
+from sqlalchemy.orm.attributes import set_committed_value
+
 from app.models.legal_chat import LegalChatMessage, LegalChatSession
 from app.models.legal_chat_normalization import (
+    _normalizar_citacoes_ao_carregar,
     normalizar_area_sugerida,
     normalizar_citacoes,
 )
@@ -54,3 +57,21 @@ def test_listener_impede_nova_persistencia_de_citacao_malformada():
         citacoes=["total", {"trecho": "Lei X", "status": "verificada"}],
     )
     assert msg.citacoes == [{"trecho": "Lei X", "status": "verificada"}]
+
+
+def test_listener_converte_citacoes_null_legadas_em_lista_vazia():
+    msg = LegalChatMessage(
+        id="msg-2",
+        session_id="sessao-1",
+        autor="ia",
+        modo="conversa_livre",
+        conteudo="Resposta legada",
+        citacoes=[],
+    )
+    # Simula valor NULL já carregado do legado sem disparar o listener de set.
+    set_committed_value(msg, "citacoes", None)
+    assert msg.citacoes is None
+
+    _normalizar_citacoes_ao_carregar(msg, None)
+
+    assert msg.citacoes == []
