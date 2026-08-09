@@ -100,7 +100,9 @@ describe("DashboardUltra", () => {
   it("aplica RBAC aos comandos rápidos", async () => {
     papelAtual = "advogado";
     const primeira = renderizar();
-    expect(await screen.findByText("Novo caso por documento")).toBeTruthy();
+    expect(
+      await screen.findByText("Novo caso por documento"),
+    ).toBeTruthy();
     expect(screen.getByText("Inteligência jurídica")).toBeTruthy();
     primeira.unmount();
 
@@ -153,7 +155,9 @@ describe("DashboardUltra", () => {
     });
 
     renderizar();
-    expect(await screen.findByText("Agenda indisponível no momento.")).toBeTruthy();
+    expect(
+      await screen.findByText("Agenda indisponível no momento."),
+    ).toBeTruthy();
     const card = screen.getByText("Tarefas pendentes").closest("a");
     expect(card?.textContent).toContain("Fonte indisponível");
   });
@@ -188,6 +192,8 @@ describe("DashboardUltra", () => {
     });
 
     renderizar();
-    expect(await screen.findByText("Movimentações indisponíveis.")).toBeTruthy();
+    expect(
+      await screen.findByText("Movimentações indisponíveis."),
+    ).toBeTruthy();
   });
 });
