@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useNavigate } from "react-router";
 
@@ -9,7 +15,9 @@ vi.mock("../stores/auth", () => ({
 }));
 
 vi.mock("./EntradaUniversalDocumentos", () => ({
-  default: () => <div data-testid="entrada-documentos">Entrada documentos</div>,
+  default: () => (
+    <div data-testid="entrada-documentos">Entrada documentos</div>
+  ),
 }));
 
 import EntradaUniversalGlobal from "./EntradaUniversalGlobal";
@@ -39,7 +47,9 @@ describe("EntradaUniversalGlobal", () => {
         name: "Abrir Entrada Universal de Documentos",
       }),
     );
-    expect(screen.getByText("Entrada Universal de Documentos")).toBeInTheDocument();
+    expect(
+      screen.getByText("Entrada Universal de Documentos"),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Ir para dashboard" }));
 
