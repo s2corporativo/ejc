@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -108,3 +108,26 @@ class DptCompanyProfile(BaseModel):
     operacoes_lgpd_alto_risco: int = 0
     autos_ambientais: int = 0
     notes: list[str] = Field(default_factory=list)
+
+
+class DptActionRequest(BaseModel):
+    action: Literal["conselho", "preflight", "diagnostico"]
+    client_id: str
+    question: str = Field(min_length=3, max_length=12000)
+    area: str | None = Field(default=None, max_length=80)
+
+
+class DptActionResponse(BaseModel):
+    action: Literal["conselho", "preflight", "diagnostico"]
+    client_id: str
+    conteudo: str
+    estruturado: dict[str, Any] | None = None
+    fontes: list[dict[str, Any]] = Field(default_factory=list)
+    citacoes: list[Any] = Field(default_factory=list)
+    alertas: list[str] = Field(default_factory=list)
+    critica_adversarial: dict[str, Any] | None = None
+    is_rascunho: bool = True
+    requer_revisao: bool = True
+    status_hitl: str
+    aviso_hitl: str
+    log_id: str | None = None
