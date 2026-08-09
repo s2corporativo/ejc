@@ -8,12 +8,14 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import aiofiles
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_ownership import ids_clientes_visiveis
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.ownership import is_gestao
 from app.core.rate_limit import rate_limit
 from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.audit_log import criar_audit_log
@@ -78,6 +80,74 @@ async def _documento_autorizado_staff(
 
         await obter_cliente_autorizado(db, cu, doc.client_id)
     return doc
+
+
+@router.get("/admin/documentos")
+async def listar_documentos_admin(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Lista somente documentos que o advogado pode administrar no Portal.
+
+    A rota vive sob `/portal` porque é a superfície de publicação, mas NÃO é uma
+    rota de cliente: o gate advogado+ roda antes de qualquer query. Advogado sem
+    visão total recebe apenas documentos de casos em que atua ou documentos
+    avulsos de clientes da sua carteira. Isso evita enumerar títulos de casos de
+    outro advogado apenas porque compartilham o mesmo cliente.
+    """
+    _exigir_advogado(cu)
+    q = select(Document).where(
+        Document.deleted_at.is_(None),
+        Document.client_id.is_not(None),
+    )
+    if not is_gestao(cu):
+        casos_visiveis = select(Case.id).where(
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == cu.id,
+                Case.advogado_auxiliar_id == cu.id,
+            ),
+        )
+        q = q.where(
+            or_(
+                Document.case_id.in_(casos_visiveis),
+                (
+                    Document.case_id.is_(None)
+                    & Document.client_id.in_(ids_clientes_visiveis(cu))
+                ),
+            )
+        )
+
+    q = q.order_by(Document.created_at.desc())
+    total = (
+        await db.execute(select(func.count()).select_from(q.subquery()))
+    ).scalar() or 0
+    rows = (
+        await db.execute(q.offset((page - 1) * page_size).limit(page_size))
+    ).scalars().all()
+    return {
+        "data": [
+            {
+                "id": doc.id,
+                "titulo": doc.titulo,
+                "filename": doc.filename,
+                "client_id": doc.client_id,
+                "case_id": doc.case_id,
+                "confidencialidade": getattr(
+                    doc.confidencialidade, "value", doc.confidencialidade
+                ),
+                "publicado_portal": bool(doc.publicado_portal),
+                "publicado_em": doc.publicado_em,
+                "created_at": doc.created_at,
+            }
+            for doc in rows
+        ],
+        "total": int(total),
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @router.post("/admin/documentos/{document_id}/publicar")
