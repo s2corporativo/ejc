@@ -17,18 +17,12 @@ from __future__ import annotations
 
 import os
 
+from app.integrations.feature_flags import enabled as integracao_habilitada
 from app.services.juris_import import lexml, stj, tcu, tjmg
-
-_TRUE = frozenset({"1", "true", "yes", "on", "sim"})
-
-
-def _env_true(nome: str) -> bool:
-    """Feature flag externa: ausente/valor desconhecido = OFF."""
-    return os.getenv(nome, "").strip().casefold() in _TRUE
 
 
 def _configurar_fontes_ativas(raw: str, *, tcu_enabled: bool) -> set[str]:
-    """Combina o CSV legado com flags novas sem exigir edição do valor antigo.
+    """Combina o CSV legado com a flag nova sem exigir edição do valor antigo.
 
     Produção preserva `.env` entre deploys. Portanto um ambiente que já tenha
     `JURIS_IMPORT_FONTES=lexml,stj` passa a habilitar TCU ao ligar apenas
@@ -49,7 +43,7 @@ def _configurar_fontes_ativas(raw: str, *, tcu_enabled: bool) -> set[str]:
 # TCU é integração NOVA e nasce opt-in/default OFF.
 _FONTES_ATIVAS = _configurar_fontes_ativas(
     os.getenv("JURIS_IMPORT_FONTES", "lexml,stj,tjmg"),
-    tcu_enabled=_env_true("TCU_OPEN_DATA_ENABLED"),
+    tcu_enabled=integracao_habilitada("tcu"),
 )
 
 FONTES: dict[str, dict] = {
