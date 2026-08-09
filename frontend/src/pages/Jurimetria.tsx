@@ -581,9 +581,7 @@ export default function Jurimetria() {
                 <p className="text-2xl font-bold text-gray-700">
                   {predicao.acordos ?? 0}
                 </p>
-                <p className="text-xs text-gray-500">
-                  Acordos (fora da taxa)
-                </p>
+                <p className="text-xs text-gray-500">Acordos (fora da taxa)</p>
               </div>
               <div className="text-center p-3 bg-primary-50 rounded-lg border border-primary-100">
                 <p className="text-2xl font-bold capitalize text-primary-700">
