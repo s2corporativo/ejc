@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from app.services.module_registry import MODULE_REGISTRY
 from app.services.ai.core.agent_registry import AGENT_REGISTRY
+from app.services.ai.core.dpt360_registry import DPT_SKILL_NAMES
 from app.services.ai.core.ejc_skill_catalog import (
     LEGAL_AREA_SPECS,
     MODULE_SKILL_SPECS,
@@ -109,11 +110,22 @@ def test_prompts_nativos_preservam_regras_juridicas_e_operacionais() -> None:
 
 def test_registry_central_inclui_todas_as_skills_nativas() -> None:
     expected_names = {spec.name for spec in native_skill_specs()}
+    registered_names = set(SKILL_REGISTRY)
+    dpt_present = registered_names & DPT_SKILL_NAMES
 
-    assert expected_names <= set(SKILL_REGISTRY)
+    assert expected_names <= registered_names
     assert "resolve_native_skills" in SKILL_REGISTRY
     assert SKILL_REGISTRY["resolve_native_skills"].handler is not None
-    assert len(SKILL_REGISTRY) == 28 + len(expected_names)
+
+    # O catálogo nativo continua tendo exatamente 28 skills centrais + 48
+    # nativas. O DPT é uma extensão registrada sob demanda; como os registries
+    # são globais no processo de teste, sua presença depende da ordem da suíte.
+    # Quando presente, a extensão deve aparecer de forma atômica (as 4 ou
+    # nenhuma), nunca parcialmente.
+    assert dpt_present in (set(), set(DPT_SKILL_NAMES))
+    base_registry = registered_names - DPT_SKILL_NAMES
+    assert len(base_registry) == 28 + len(expected_names)
+    assert len(registered_names) == len(base_registry) + len(dpt_present)
 
 
 def test_coordenador_e_especialistas_estao_registrados() -> None:

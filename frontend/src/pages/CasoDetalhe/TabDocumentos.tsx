@@ -1,16 +1,21 @@
-// ── Aba Documentos do caso — upload embutido (Tela C, Bloco 3) ───────────────
-// A aba age EM LUGAR: a zona de arrastar/selecionar + título + tipo enviam
-// direto para POST /documents/upload (multipart, mesmo contrato já validado do
-// CaseCommandDock.enviarDocumento) — sem navegar para /documentos.
-// A lista existente permanece; após o upload ela é recarregada.
+// ── Aba Documentos do caso — upload e vínculo embutidos (Tela C, Bloco 3.2) ──
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileUp } from "lucide-react";
+import { FileUp, Link2, Search } from "lucide-react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { Empty } from "../../components/UI";
+import { useAuth } from "../../stores/auth";
 
-// Mesmo padrão de download já validado (GET /documents/:id/download, blob).
+const PAPEIS_VINCULO_DOCUMENTAL = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+  "estagiario",
+]);
+
 async function baixarDoc(docId: string, filename: string) {
   try {
     const r = await api.get(`/documents/${docId}/download`, {
@@ -41,6 +46,13 @@ function detalheErro(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function formatarDataDocumento(value?: string | null): string | null {
+  if (!value) return null;
+  const data = new Date(value);
+  if (Number.isNaN(data.getTime())) return null;
+  return data.toLocaleDateString("pt-BR");
+}
+
 const TIPOS_DOCUMENTO = [
   { value: "outro", label: "Outro" },
   { value: "peticao", label: "Petição" },
@@ -50,7 +62,18 @@ const TIPOS_DOCUMENTO = [
   { value: "prova", label: "Prova" },
 ];
 
+type DocumentoCandidato = {
+  id: string;
+  titulo?: string | null;
+  filename?: string | null;
+  case_id?: string | null;
+  confidencialidade?: string | null;
+  created_at?: string | null;
+};
+
 export default function TabDocumentos({ caseId }: { caseId: string }) {
+  const user = useAuth((state) => state.user);
+  const podeVincularDocumento = PAPEIS_VINCULO_DOCUMENTAL.has(user?.role || "");
   const [docs, setDocs] = useState<any[]>([]);
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [titulo, setTitulo] = useState("");
@@ -58,6 +81,17 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
   const [enviando, setEnviando] = useState(false);
   const [arrastando, setArrastando] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const [buscaVinculo, setBuscaVinculo] = useState("");
+  const [resultadosVinculo, setResultadosVinculo] = useState<
+    DocumentoCandidato[]
+  >([]);
+  const [totalVinculo, setTotalVinculo] = useState(0);
+  const [buscandoVinculo, setBuscandoVinculo] = useState(false);
+  const [erroBuscaVinculo, setErroBuscaVinculo] = useState<string | null>(null);
+  const [tentativaBusca, setTentativaBusca] = useState(0);
+  const [vinculandoId, setVinculandoId] = useState<string | null>(null);
+  const buscaSeq = useRef(0);
 
   const carregar = useCallback(() => {
     api
@@ -69,6 +103,68 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  useEffect(() => {
+    const termo = buscaVinculo.trim();
+    const seq = ++buscaSeq.current;
+    let ativo = true;
+
+    // Resultados pertencem ao par caseId+termo. Limpar imediatamente impede
+    // que um botão de contexto anterior seja acionado durante debounce/rede.
+    setResultadosVinculo([]);
+    setTotalVinculo(0);
+    setErroBuscaVinculo(null);
+
+    if (!podeVincularDocumento || !termo) {
+      setBuscandoVinculo(false);
+      return () => {
+        ativo = false;
+      };
+    }
+
+    setBuscandoVinculo(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const r = await api.get(`/cases/${caseId}/documentos/candidatos`, {
+          params: { search: termo, page: 1, page_size: 20 },
+        });
+        if (!ativo || seq !== buscaSeq.current) return;
+        setResultadosVinculo(asList(r.data) as DocumentoCandidato[]);
+        setTotalVinculo(Number(r.data?.total || 0));
+      } catch (error) {
+        if (!ativo || seq !== buscaSeq.current) return;
+        setErroBuscaVinculo(
+          detalheErro(error, "Não foi possível buscar documentos disponíveis."),
+        );
+      } finally {
+        if (ativo && seq === buscaSeq.current) setBuscandoVinculo(false);
+      }
+    }, 400);
+
+    return () => {
+      ativo = false;
+      window.clearTimeout(timer);
+    };
+  }, [buscaVinculo, caseId, tentativaBusca, podeVincularDocumento]);
+
+  const vincular = async (docId: string) => {
+    if (!podeVincularDocumento) return;
+    setVinculandoId(docId);
+    try {
+      await api.post(`/cases/${caseId}/documentos/${docId}/vincular`);
+      toast.success("Documento vinculado ao caso.");
+      setBuscaVinculo("");
+      setResultadosVinculo([]);
+      setTotalVinculo(0);
+      carregar();
+    } catch (error) {
+      toast.error(
+        detalheErro(error, "Não foi possível vincular o documento ao caso."),
+      );
+    } finally {
+      setVinculandoId(null);
+    }
+  };
 
   const selecionarArquivo = (file: File | null) => {
     setArquivo(file);
@@ -107,7 +203,6 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
 
   return (
     <div className="space-y-4">
-      {/* Upload embutido — a ação acontece dentro do caso */}
       <div className="card p-4 space-y-3">
         <h3 className="text-sm font-semibold text-slate-700">
           Anexar documento ao caso
@@ -183,7 +278,101 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
         </div>
       </div>
 
-      {/* Lista existente — clique baixa o arquivo */}
+      {podeVincularDocumento && (
+        <div className="card p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-slate-700">
+            Vincular documento já cadastrado
+          </h3>
+          <p className="text-xs text-slate-500">
+            Apenas documentos ainda sem caso podem ser vinculados. Documentos
+            que já integram outro caso permanecem preservados no contexto de
+            origem.
+          </p>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              className="input w-full pl-9 text-sm"
+              value={buscaVinculo}
+              onChange={(e) => setBuscaVinculo(e.target.value)}
+              placeholder="Buscar documento por título ou arquivo…"
+            />
+          </div>
+          {buscandoVinculo && (
+            <p className="text-xs text-slate-400">Buscando…</p>
+          )}
+          {!buscandoVinculo && erroBuscaVinculo && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-red-100 bg-red-50 p-2 text-xs text-red-700">
+              <span>{erroBuscaVinculo}</span>
+              <button
+                type="button"
+                className="font-medium underline"
+                onClick={() => setTentativaBusca((v) => v + 1)}
+              >
+                Tentar novamente
+              </button>
+            </div>
+          )}
+          {!buscandoVinculo &&
+            !erroBuscaVinculo &&
+            buscaVinculo.trim() &&
+            resultadosVinculo.length === 0 && (
+              <p className="text-xs text-slate-400">
+                Nenhum documento disponível para vínculo.
+              </p>
+            )}
+          {resultadosVinculo.length > 0 && (
+            <div className="space-y-1">
+              {resultadosVinculo.map((d) => {
+                const jaVinculado = Boolean(d.case_id);
+                const dataDocumento = formatarDataDocumento(d.created_at);
+                return (
+                  <div
+                    key={d.id}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 p-2 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-slate-800">
+                        {d.titulo || d.filename || "Documento"}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {[d.filename, dataDocumento, d.confidencialidade]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </p>
+                      {jaVinculado && (
+                        <p className="text-xs text-amber-600">
+                          Já vinculado a outro caso — a evidência original não
+                          pode ser movida.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void vincular(d.id)}
+                      disabled={jaVinculado || vinculandoId === d.id}
+                      className="btn-secondary flex shrink-0 items-center gap-1 text-xs disabled:opacity-50"
+                    >
+                      <Link2 className="h-3.5 w-3.5" />
+                      {jaVinculado
+                        ? "Indisponível"
+                        : vinculandoId === d.id
+                          ? "Vinculando…"
+                          : "Vincular"}
+                    </button>
+                  </div>
+                );
+              })}
+              {totalVinculo > resultadosVinculo.length && (
+                <p className="pt-1 text-xs text-slate-400">
+                  {totalVinculo} documentos correspondem à busca. Refine o termo
+                  para localizar outros resultados.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <h2 className="font-semibold">Documentos ({docs.length})</h2>
       <div className="space-y-2">
         {docs.map((d, i) => (
