@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
@@ -26,6 +26,19 @@ export default function FichaEspecializada({
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<Record<string, any>>({});
   const [salvando, setSalvando] = useState(false);
+  const slugWorkspaceRef = useRef(cfg.slug);
+  const geracaoWorkspaceRef = useRef(0);
+
+  if (slugWorkspaceRef.current !== cfg.slug) {
+    slugWorkspaceRef.current = cfg.slug;
+    geracaoWorkspaceRef.current += 1;
+  }
+
+  useEffect(() => {
+    setModal(false);
+    setForm({});
+    setSalvando(false);
+  }, [cfg.slug]);
 
   if (cfg.externo) return null;
 
@@ -41,14 +54,23 @@ export default function FichaEspecializada({
       toast.error(`Campo obrigatório: ${obrigatorio.label}`);
       return;
     }
+
+    const geracaoDaRequisicao = geracaoWorkspaceRef.current;
+    const requisicaoAindaPertenceAoWorkspace = () =>
+      geracaoDaRequisicao === geracaoWorkspaceRef.current;
+
     setSalvando(true);
     try {
       await api.post(cfg.endpoint, form);
+      if (!requisicaoAindaPertenceAoWorkspace()) return;
+
       toast.success("Ficha especializada registrada e vinculada ao caso.");
       setModal(false);
       setForm({});
       onSaved?.();
     } catch (e: any) {
+      if (!requisicaoAindaPertenceAoWorkspace()) return;
+
       const detail = e?.response?.data?.detail;
       toast.error(
         typeof detail === "string"
@@ -56,7 +78,7 @@ export default function FichaEspecializada({
           : "Não foi possível registrar a ficha especializada.",
       );
     } finally {
-      setSalvando(false);
+      if (requisicaoAindaPertenceAoWorkspace()) setSalvando(false);
     }
   };
 
