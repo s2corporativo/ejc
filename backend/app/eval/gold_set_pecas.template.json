@@ -2,23 +2,41 @@
   "_o_que_e": "TEMPLATE de UM caso-teste do gold set de PEÇAS (avaliação do pipeline gerar_peca_pipeline + laço de auto-crítica). O gold set real vive em gold_set_pecas.jsonl — UMA linha JSON por caso, no formato deste template (sem os campos _*, que são documentação).",
   "_regras_de_curadoria": [
     "NUNCA inclua PII real: pseudonimize nomes, CPFs, endereços e valores identificáveis ANTES de gravar (LGPD).",
-    "NUNCA invente jurisprudência: em jurisprudencia_esperada liste apenas referências REAIS conferidas na fonte oficial; em exemplos fictícios use placeholders SUMULA-FICTICIA-XXX.",
+    "NUNCA invente jurisprudência: em jurisprudencia_esperada liste apenas referências REAIS conferidas na fonte oficial; placeholders só pertencem aos arquivos .example.",
+    "Todo caso real exige curador, revisor independente, vigência conferida e fonte oficial com referência da versão revisada.",
+    "Classifique o cenário como normal, fronteira ou excecao para impedir um corpus formado apenas por happy paths.",
     "Meta: 50-150 casos reais pseudonimizados cobrindo as áreas de atuação do escritório."
   ],
   "id": "(obrigatório) identificador único e estável, ex.: trab-peca-001",
   "area": "(obrigatório) área do direito, ex.: trabalhista | consumidor | civel | previdenciario | tributario | familia",
+  "cenario": "(obrigatório) normal | fronteira | excecao",
   "ficticio": "(obrigatório, bool) true = exemplo sintético de demonstração; false = caso real pseudonimizado",
   "fatos": "(obrigatório) narrativa fática PSEUDONIMIZADA do caso (use marcadores como [CLIENTE_1], [EMPRESA_1])",
   "pedidos": "(opcional) pedidos formulados, também pseudonimizados",
   "tipo_peca_esperado": "(obrigatório) chave de TIPOS_PECA de app/services/peca_service.py, ex.: peticao_inicial, contestacao, recurso_ordinario",
   "teses_esperadas": [
-    "(obrigatório, lista) teses jurídicas que a peça gerada DEVE sustentar"
+    "(obrigatório, lista não vazia) teses jurídicas que a peça gerada DEVE sustentar"
   ],
   "jurisprudencia_esperada": [
     "(opcional, lista) súmulas/julgados REAIS que a peça deveria citar — conferidos na fonte oficial; NUNCA inventados"
   ],
   "criterios": [
-    "(obrigatório, lista) critérios objetivos de aceitação avaliáveis pelo revisor: estrutura formal completa, fatos ancorados em provas (doc. NN), nenhuma citação não confirmada pelo gate, pedidos cobertos, etc."
+    "(obrigatório, lista não vazia) critérios objetivos de aceitação avaliáveis pelo revisor: estrutura formal completa, fatos ancorados em provas (doc. NN), nenhuma citação não confirmada pelo gate, pedidos cobertos, etc."
   ],
-  "notes": "(opcional) observações do curador — referência humana"
+  "curadoria": {
+    "curador": "[IDENTIDADE_DO_CURADOR]",
+    "revisor": "[IDENTIDADE_DO_REVISOR_INDEPENDENTE]",
+    "revisado_em": "YYYY-MM-DD",
+    "vigencia_conferida_em": "YYYY-MM-DD",
+    "fontes_oficiais": [
+      {
+        "titulo": "[TITULO_DA_FONTE]",
+        "url": "https://[DOMINIO_OFICIAL]/[CAMINHO]",
+        "consultada_em": "YYYY-MM-DD",
+        "identificador_versao": "[NORMA/JULGADO + VERSAO OU DATA DO TEXTO CONFERIDO]",
+        "hash_sha256": "[OPCIONAL: SHA-256 DO SNAPSHOT CONFERIDO]"
+      }
+    ]
+  },
+  "notes": "(opcional) observações do curador — referência humana; nunca incluir PII real"
 }
