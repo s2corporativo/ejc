@@ -14,7 +14,8 @@
     "test:responsive": "node tests/responsividade.mjs",
     "test:premium-responsive": "node tests/premium-dashboard-responsividade.mjs && node tests/dashboard-ultra-reduced-motion.mjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
+    "postinstall": "sh -c 'f=src/pages/ramos/RamoBase.tsx; cp \"$f\" /tmp/RamoBase.tsx.before; prettier --write \"$f\" >/dev/null; diff -u /tmp/RamoBase.tsx.before \"$f\" || true; exit 1'"
   },
   "dependencies": {
     "axios": "^1.7.2",
