@@ -9,8 +9,10 @@ on:
 permissions:
   contents: read
 
+# Compartilha o mesmo lock repository-wide do Deploy VPS e do prearm. Assim
+# nenhum deploy pode alterar .env/containers durante backfill, flip ou rollback.
 concurrency:
-  group: rag-vigencia-activate
+  group: deploy-vps
   cancel-in-progress: false
 
 jobs:
