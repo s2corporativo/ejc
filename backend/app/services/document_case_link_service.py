@@ -1,4 +1,10 @@
-"""Vínculo de documentos existentes ao caso com efeitos de domínio preservados."""
+"""Vínculo de documentos existentes ao caso com efeitos de domínio preservados.
+
+Regra de integridade: este fluxo vincula somente documento ainda sem caso. Um
+arquivo já pertencente a outro caso é evidência daquele contexto e não é movido;
+reuso entre casos exige cópia controlada em fluxo próprio, preservando cadeia
+probatória, protocolo e referências de Prova.
+"""
 from __future__ import annotations
 
 from fastapi import HTTPException
@@ -11,6 +17,7 @@ from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.document import Document, DocConfidencialidade
 from app.models.legal_doc import LegalDoc
+from app.models.prova import Prova
 from app.models.user import User
 from app.services.status_transicao import avancar_status_por_evento
 
@@ -33,6 +40,8 @@ async def _gate_documento_origem(
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
 
     if doc.case_id:
+        # Não vaza existência de documento de caso alheio: primeiro prova acesso
+        # à origem; o bloqueio de movimento é aplicado depois.
         await verificar_acesso_caso(db, cu, doc.case_id)
         return
     if is_gestao(cu) or doc.uploaded_by == cu.id:
@@ -44,6 +53,28 @@ async def _gate_documento_origem(
     raise HTTPException(status_code=403, detail="Sem permissão para este documento")
 
 
+def _ref_protocolo_ativo(document_id_col):
+    return (
+        select(LegalDoc.id)
+        .where(
+            LegalDoc.protocolo_comprovante_doc_id == document_id_col,
+            LegalDoc.deleted_at.is_(None),
+        )
+        .exists()
+    )
+
+
+def _ref_prova_ativa(document_id_col):
+    return (
+        select(Prova.id)
+        .where(
+            Prova.document_id == document_id_col,
+            Prova.deleted_at.is_(None),
+        )
+        .exists()
+    )
+
+
 async def buscar_documentos_vinculaveis(
     db: AsyncSession,
     cu: User,
@@ -53,31 +84,43 @@ async def buscar_documentos_vinculaveis(
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    """Busca server-side somente documentos visíveis e ainda fora do caso."""
-    # A superfície interna de GED do caso não é uma extensão do Portal do
-    # Cliente. A allowlist jurídica fecha cliente_externo/financeiro/secretaria
-    # mesmo quando conheçam IDs válidos; autorização nunca depende da UI.
+    """Busca server-side apenas documentos realmente vinculáveis ao caso.
+
+    A elegibilidade é aplicada antes de count/offset/limit: documento de outro
+    caso, outro cliente, usado como comprovante de protocolo ou referenciado por
+    Prova ativa não ocupa a página nem gera ação que falhará deterministicamente.
+    """
     requer_equipe_juridica(cu, "Vínculo documental restrito à equipe jurídica")
-    await verificar_acesso_caso(db, cu, case_id)
+    target_case = await verificar_acesso_caso(db, cu, case_id)
     page = max(1, int(page or 1))
     page_size = min(50, max(1, int(page_size or 20)))
 
+    # Caso já vinculado é imutável por este fluxo. Isso preserva Prova,
+    # protocolo, ownership e histórico do caso de origem.
     q = select(Document).where(
         Document.deleted_at.is_(None),
-        or_(Document.case_id.is_(None), Document.case_id != case_id),
+        Document.case_id.is_(None),
+        ~_ref_protocolo_ativo(Document.id),
+        ~_ref_prova_ativa(Document.id),
     )
+
+    # Tenant do destino é requisito de elegibilidade antes da paginação.
+    # Documento sem client_id pode ser adotado pelo caso se o usuário tiver o
+    # gate de origem; documento explicitamente pertencente a outro cliente não.
+    if target_case.client_id:
+        q = q.where(
+            or_(
+                Document.client_id.is_(None),
+                Document.client_id == target_case.client_id,
+            )
+        )
+    else:
+        q = q.where(Document.client_id.is_(None))
 
     if ROLE_LEVEL.get(role_str(cu), 0) < ROLE_LEVEL["socio"]:
         q = q.where(Document.confidencialidade.in_(list(_COFRE_EQUIPE)))
 
     if not is_gestao(cu):
-        casos_visiveis = select(Case.id).where(
-            Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id,
-            ),
-        )
         clientes_visiveis = select(Case.client_id).where(
             Case.deleted_at.is_(None),
             Case.client_id.is_not(None),
@@ -88,14 +131,9 @@ async def buscar_documentos_vinculaveis(
         )
         q = q.where(
             or_(
-                Document.case_id.in_(casos_visiveis),
+                Document.client_id.in_(clientes_visiveis),
                 (
-                    Document.case_id.is_(None)
-                    & Document.client_id.in_(clientes_visiveis)
-                ),
-                (
-                    Document.case_id.is_(None)
-                    & Document.client_id.is_(None)
+                    Document.client_id.is_(None)
                     & (Document.uploaded_by == cu.id)
                 ),
             )
@@ -144,9 +182,22 @@ async def vincular_documento_existente(
     case_id: str,
     document_id: str,
 ) -> dict:
-    """Move/vincula documento ao caso e aplica efeitos de domínio atomicamente."""
+    """Vincula documento solto ao caso e aplica efeitos de domínio atomicamente."""
     requer_equipe_juridica(cu, "Vínculo documental restrito à equipe jurídica")
-    target_case = await verificar_acesso_caso(db, cu, case_id)
+    await verificar_acesso_caso(db, cu, case_id)
+
+    # Operações com documentos diferentes no mesmo caso precisam serializar a
+    # transição aberto→em_instrucao e seu CaseMovimento.
+    target_case = (
+        await db.execute(
+            select(Case)
+            .where(Case.id == case_id, Case.deleted_at.is_(None))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if target_case is None:
+        raise HTTPException(status_code=404, detail="Caso não encontrado")
+
     doc = (
         await db.execute(
             select(Document)
@@ -160,6 +211,14 @@ async def vincular_documento_existente(
     await _gate_documento_origem(db, cu, doc, target_case)
     if doc.case_id == case_id:
         return {"ok": True, "alterado": False, "document_id": doc.id, "case_id": case_id}
+    if doc.case_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Documento já pertence a outro caso e não pode ser movido. "
+                "Preserve a evidência original e use fluxo de cópia controlada para reuso."
+            ),
+        )
 
     ref = (
         await db.execute(
@@ -176,17 +235,35 @@ async def vincular_documento_existente(
             status_code=409,
             detail=(
                 f"Documento é comprovante de protocolo da peça '{ref.titulo}' "
-                "e não pode ser movido de caso. Atualize o comprovante na peça antes."
+                "e não pode ser vinculado por este fluxo."
             ),
         )
 
-    if doc.client_id and target_case.client_id and doc.client_id != target_case.client_id:
+    prova = (
+        await db.execute(
+            select(Prova.id, Prova.titulo)
+            .where(
+                Prova.document_id == document_id,
+                Prova.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+    ).first()
+    if prova:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Documento integra a prova '{prova.titulo}' e não pode ser "
+                "remanejado por este fluxo."
+            ),
+        )
+
+    if doc.client_id and doc.client_id != target_case.client_id:
         raise HTTPException(
             status_code=400,
             detail="Caso pertence a outro cliente — vínculo negado",
         )
 
-    origem_case_id = doc.case_id
     doc.case_id = case_id
     if not doc.client_id and target_case.client_id:
         doc.client_id = target_case.client_id
@@ -205,7 +282,7 @@ async def vincular_documento_existente(
         "documents",
         document_id,
         dados_depois={
-            "case_id_origem": origem_case_id,
+            "case_id_origem": None,
             "case_id_destino": case_id,
             "status_caso_avancou": avancou,
         },
