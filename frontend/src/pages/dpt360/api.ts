@@ -67,7 +67,12 @@ export type DptDashboard = {
 
 export type DptHealthArea = {
   area: string;
-  classificacao: "Regular" | "Atenção" | "Alto Risco" | "Crítico" | "Não avaliado";
+  classificacao:
+    | "Regular"
+    | "Atenção"
+    | "Alto Risco"
+    | "Crítico"
+    | "Não avaliado";
   justificativa: string;
   evidencias: number;
 };
@@ -155,8 +160,12 @@ export async function getDptDashboard(): Promise<DptDashboard> {
   return response.data;
 }
 
-export async function getDptCompanyProfile(clientId: string): Promise<DptCompanyProfile> {
-  const response = await api.get<DptCompanyProfile>(`/dpt360/companies/${clientId}`);
+export async function getDptCompanyProfile(
+  clientId: string,
+): Promise<DptCompanyProfile> {
+  const response = await api.get<DptCompanyProfile>(
+    `/dpt360/companies/${clientId}`,
+  );
   return response.data;
 }
 
