@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "rag-vigencia-prearm.yml"
+DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy-vps.yml"
 
 
 def _texto() -> str:
@@ -49,3 +50,12 @@ def test_fast_path_revalida_o_env_real():
     i_exit = texto.index('exit 0', i_marker_check)
     assert i_marker_check < i_total < i_exit
     assert i_marker_check < i_false < i_exit
+
+
+def test_prearm_compartilha_lock_com_deploy_vps():
+    prearm = _texto()
+    deploy = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    assert "group: deploy-vps" in deploy
+    assert "group: deploy-vps" in prearm
+    assert "group: rag-vigencia-prearm" not in prearm
+    assert "cancel-in-progress: false" in prearm
