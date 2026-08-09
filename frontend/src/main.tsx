@@ -14,6 +14,7 @@ import "./styles/premium-dashboard.css";
 // Camada final do AppShell v2 e do dashboard ultra: somente apresentação,
 // sem alterar regras de negócio, rotas, RBAC ou contratos de API.
 import "./styles/saas-ultra-v2.css";
+import "./styles/saas-ultra-accessibility.css";
 
 initTheme();
 
