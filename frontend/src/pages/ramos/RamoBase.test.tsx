@@ -44,6 +44,11 @@ describe("RamoBase — fallback estável", () => {
     expect(getMock).toHaveBeenCalledWith("/cases/", {
       params: { area: "societario", page_size: 100 },
     });
+    expect(
+      screen.getByText(
+        "Nenhum caso canônico registrado nesta área. Use Novo caso para abrir a Entrada Jurídica do EJC.",
+      ),
+    ).toBeTruthy();
   });
 
   it("abre a Entrada Jurídica com a área canônica pré-selecionada", async () => {
