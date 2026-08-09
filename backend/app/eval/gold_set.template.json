@@ -1,10 +1,27 @@
 {
-  "id": "trab-001",
-  "area": "trabalhista",
+  "id": "area-001",
+  "area": "[AREA_JURIDICA]",
+  "cenario": "normal | fronteira | excecao",
+  "ficticio": false,
   "query": "pergunta jurídica pseudonimizada, sem PII",
   "expected_titulos": ["documento que o retrieval deveria trazer"],
   "expected_categorias": ["legislacao"],
   "expected_citacoes": ["referência real conferida em fonte oficial"],
   "categorias": [],
-  "notes": "observação opcional do curador"
+  "curadoria": {
+    "curador": "[IDENTIDADE_DO_CURADOR]",
+    "revisor": "[IDENTIDADE_DO_REVISOR_INDEPENDENTE]",
+    "revisado_em": "YYYY-MM-DD",
+    "vigencia_conferida_em": "YYYY-MM-DD",
+    "fontes_oficiais": [
+      {
+        "titulo": "[TITULO_DA_FONTE]",
+        "url": "https://[DOMINIO_OFICIAL]/[CAMINHO]",
+        "consultada_em": "YYYY-MM-DD",
+        "identificador_versao": "[NORMA/JULGADO + VERSAO OU DATA DO TEXTO CONFERIDO]",
+        "hash_sha256": "[OPCIONAL: SHA-256 DO SNAPSHOT CONFERIDO]"
+      }
+    ]
+  },
+  "notes": "observação opcional do curador; nunca incluir PII real"
 }

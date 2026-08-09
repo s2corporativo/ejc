@@ -6,12 +6,10 @@ são contornados por esta superfície.
 """
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-import aiofiles
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
@@ -36,6 +34,7 @@ from app.schemas.legal_chat import (
 )
 from app.services import legal_chat_service as svc
 from app.services import documento_service
+from app.services.upload_lote_service import processar_lote
 
 router = APIRouter(prefix="/sala-juridica", tags=["Sala Jurídica Conversacional"])
 settings = get_settings()
@@ -224,52 +223,29 @@ async def anexar_documentos(
 ):
     sessao = await svc.obter_sessao(db, session_id, user)
     svc.exigir_nao_congelada(sessao)
-    if not files or len(files) > MAX_ARQUIVOS:
-        raise HTTPException(422, f"Envie de 1 a {MAX_ARQUIVOS} arquivos por lote")
-
     res = await db.execute(
         select(LegalChatAttachment.sha256).where(
             LegalChatAttachment.session_id == sessao.id
         )
     )
     existentes = {row[0] for row in res.all()}
-    novos, duplicados, erros = [], [], []
-    from app.routers.documents import _validar_conteudo
+    validos, duplicados, erros = await processar_lote(
+        files,
+        max_arquivos=MAX_ARQUIVOS,
+        extensoes_permitidas=EXTENSOES,
+        existing_hashes=existentes,
+        storage_subdir="sala-juridica",
+        entidade_id=sessao.id,
+    )
 
-    for upload in files:
-        filename = Path(upload.filename or "documento").name[:255]
-        ext = Path(filename).suffix.lower()
-        if ext not in EXTENSOES:
-            erros.append({"arquivo": filename, "erro": "Formato não suportado"})
-            continue
-        content = await upload.read()
-        if not content:
-            erros.append({"arquivo": filename, "erro": "Arquivo vazio"})
-            continue
-        if len(content) > settings.MAX_UPLOAD_MB * 1024 * 1024:
-            erros.append({"arquivo": filename, "erro": f"Excede {settings.MAX_UPLOAD_MB} MB"})
-            continue
-        digest = hashlib.sha256(content).hexdigest()
-        if digest in existentes:
-            duplicados.append(filename)
-            continue
-        try:
-            mime_real = _validar_conteudo(ext, content)
-        except HTTPException as exc:
-            erros.append({"arquivo": filename, "erro": str(exc.detail)[:300]})
-            continue
-        now = datetime.now(timezone.utc)
-        rel = Path("sala-juridica") / f"{now.year}" / f"{now.month:02d}" / sessao.id / f"{uuid4()}{ext}"
-        full = Path(settings.UPLOAD_DIR) / rel
-        full.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(full, "wb") as target:
-            await target.write(content)
+    novos: list[LegalChatAttachment] = []
+    for arquivo in validos:
+        full = Path(settings.UPLOAD_DIR) / arquivo.filepath
         resultado: dict = {}
-        ocr = ext in {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".webp"}
         try:
             extraido = await documento_service.extrair_e_analisar(
                 str(full),
-                mime_real or upload.content_type,
+                arquivo.mimetype,
                 db=db,
                 enriquecer_rag=False,
                 user_id=user.id,
@@ -286,19 +262,35 @@ async def anexar_documentos(
         anexo = LegalChatAttachment(
             id=str(uuid4()),
             session_id=sessao.id,
-            nome_original=filename,
-            filepath=str(rel),
-            mimetype=mime_real,
-            size_bytes=len(content),
-            sha256=digest,
-            ocr_utilizado=ocr,
+            nome_original=arquivo.nome_original,
+            filepath=arquivo.filepath,
+            mimetype=arquivo.mimetype,
+            size_bytes=arquivo.size_bytes,
+            sha256=arquivo.sha256,
+            ocr_utilizado=arquivo.ocr_utilizado,
             resultado_analise=resultado,
             uploaded_by=user.id,
         )
         db.add(anexo)
-        existentes.add(digest)
         novos.append(anexo)
 
+    # Achado F2: este endpoint nunca teve audit log de upload, ao contrário do
+    # equivalente em raio_x.py — mesma classe de gap que o PATCH/Kanban do
+    # PR #791 (caminho paralelo sem a guarda do irmão).
+    await criar_audit_log(
+        db, user_id=user.id, user_role=svc._role(user),
+        acao="UPLOAD", entidade="legal_chat_sessions",
+        registro_id=sessao.id,
+        detalhes=(
+            f"{len(novos)} anexo(s) enviado(s); {len(duplicados)} duplicado(s); "
+            f"{len(erros)} erro(s) de validação"
+        ),
+        dados_depois={
+            "anexos": [a.id for a in novos],
+            "duplicados": duplicados,
+            "erros": erros,
+        },
+    )
     await db.commit()
     return {
         "anexados": [svc.serializar_anexo(a) for a in novos],

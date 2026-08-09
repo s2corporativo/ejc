@@ -1,31 +1,16 @@
 # ── app/integrations/routers.py ──────────────────────────────────────────────
 # Routers das integrações externas públicas (/api/integracoes/*).
 #
-# Segurança (auditoria 2026-07-18):
-#   • TODOS os endpoints exigem JWT (get_current_user), além do AuthMiddleware
-#     global — sem isso o backend viraria proxy aberto para consultas de
-#     CNPJ/intimações (dados de terceiros — LGPD) e queimaria a cota da API
-#     key pública do DataJud.
-#   • Rate limit individual (padrão do repo, ex. search.py) — protege a cota
-#     das APIs públicas contra loop de usuário autenticado/token vazado.
-#   • Consultas que tocam dados de terceiros (DJEN por OAB/processo, CNPJ)
-#     geram trilha em audit_logs (LGPD art. 6º, X — padrão criar_audit_log).
-#   • O detail do 502 é GENÉRICO; o corpo de erro do upstream vai só para o
-#     log do servidor (padrão main.py: nunca repassar detalhe interno).
-#   • Timeouts/falhas de conexão httpx também viram 502 (não 500 genérico).
+# Segurança:
+#   • TODOS os endpoints exigem JWT (get_current_user), além do AuthMiddleware.
+#   • Rate limit por fonte evita transformar o EJC em proxy aberto.
+#   • Consultas que tocam dado de terceiro (DJEN/CNPJ) geram audit_log.
+#   • 502 usa detail genérico; resposta/stack do upstream não vaza ao cliente.
+#   • Hosts dos novos conectores são fixos/allowlisted nos respectivos clients.
 #
-# DECISÃO revista (Onda 3, achado de segurança): o endpoint cru do DataJud
-# passou a OBEDECER ao kill-switch DATAJUD_ENABLED e à chave central
-# (settings.DATAJUD_API_KEY) — a chave pública embutida no código foi removida
-# e o cliente delega ao caminho único de datajud_service (retry/backoff).
-# Flag desligada ou chave ausente → 503, igual ao router principal /datajud.
-#
-# O Conecta gov.br NÃO existe aqui de propósito: integração pendente de
-# credenciamento institucional — o scaffold antigo (conecta_gov_client.py) foi
-# removido na faxina 2026-07; recriar só quando CONECTA_CLIENT_ID/
-# CONECTA_CLIENT_SECRET existirem de verdade.
-# SEM `from __future__ import annotations`: o wrapper do slowapi faz o FastAPI
-# resolver anotações string fora deste módulo → Optional[date] quebraria.
+# O Conecta gov.br permanece fora até credenciamento institucional real.
+# SEM `from __future__ import annotations`: slowapi/FastAPI resolve anotações
+# deste módulo em runtime.
 import logging
 from datetime import date
 from typing import Optional
@@ -42,6 +27,11 @@ from app.models.user import User
 from app.services.datajud_service import _SEG_TR_ALIAS, DataJudDesabilitadoError
 
 from app.integrations.brasilapi_client import BrasilApiClient, BrasilApiError
+from app.integrations.ckan_public_client import (
+    CkanPublicClient,
+    CkanPublicError,
+)
+from app.integrations.cnj_sgt_client import CnjSgtClient, CnjSgtError
 from app.integrations.datajud_client import (
     TRIBUNAL_ALIASES,
     DataJudClient,
@@ -51,41 +41,76 @@ from app.integrations.djen_comunica_client import (
     DjenComunicaClient,
     DjenComunicaError,
 )
+from app.integrations.ibge_localidades_client import (
+    IbgeLocalidadesClient,
+    IbgeLocalidadesError,
+)
+from app.integrations.ide_sisema_client import IdeSisemaClient, IdeSisemaError
+from app.integrations.pgfn_open_data_client import PgfnOpenDataClient, PgfnOpenDataError
+from app.integrations.querido_diario_client import QueridoDiarioClient, QueridoDiarioError
+from app.integrations.tcu_client import TcuPublicClient, TcuPublicError
 
 logger = logging.getLogger("ejc.integracoes")
 
 datajud_router = APIRouter(prefix="/integracoes/datajud", tags=["integracoes"])
 djen_router = APIRouter(prefix="/integracoes/djen", tags=["integracoes"])
-brasilapi_router = APIRouter(prefix="/integracoes/brasilapi", tags=["integracoes"])
+# Nome mantido por compatibilidade com main.py. O prefixo foi elevado para
+# /integracoes e as rotas BrasilAPI ganharam /brasilapi explicitamente, mantendo
+# os paths finais históricos e permitindo centralizar as novas fontes sem editar
+# main.py enquanto ele está sob lock de outro PR.
+brasilapi_router = APIRouter(prefix="/integracoes", tags=["integracoes"])
 
-# Wrapper sem estado: flag e chave (settings.DATAJUD_API_KEY) são resolvidas
-# pelo serviço a cada chamada — sem chave embutida, sem bypass do kill-switch.
 _datajud = DataJudClient()
 _djen = DjenComunicaClient()
 _brasilapi = BrasilApiClient()
+_cnj_sgt = CnjSgtClient()
+_tcu = TcuPublicClient()
+_ibge = IbgeLocalidadesClient()
+_querido = QueridoDiarioClient()
+_sisema = IdeSisemaClient()
+_pgfn = PgfnOpenDataClient()
+_ckan = {
+    "ibama": CkanPublicClient("ibama"),
+    "mj": CkanPublicClient("mj"),
+    "cvm": CkanPublicClient("cvm"),
+    "tse": CkanPublicClient("tse"),
+}
+_CKAN_DEFAULT_QUERY = {
+    "ibama": "auto de infração embargo",
+    "mj": "Consumidor.gov.br",
+    "cvm": "companhias abertas",
+    "tse": "candidatos 2026",
+}
 
-# Review Codex (PR #305): os 5 aliases de TRIBUNAL_ALIASES cobriam uma fração
-# dos tribunais. Completa o mapa sigla → alias a partir do mapeamento auditado
-# do serviço interno (Res. CNJ 65/2008 — todos os TJs, TRTs, TRFs, STJ e TST);
-# o alias embute a própria sigla ("api_publica_tjmg" → "TJMG"). As entradas da
-# spec (TRIBUNAL_ALIASES) têm precedência.
 _ALIAS_POR_SIGLA: dict = {
     alias.removeprefix("api_publica_").upper(): alias
     for alias in _SEG_TR_ALIAS.values()
 }
 _ALIAS_POR_SIGLA.update(TRIBUNAL_ALIASES)
 
-# Erros de integração mapeados para 502 com detail genérico (o detalhe do
-# upstream fica no log). ValueError cobre 200 com corpo não-JSON (WAF/
-# manutenção); httpx.HTTPError cobre timeout/conexão/transport.
 _ERROS_UPSTREAM = (
-    DataJudError, DjenComunicaError, BrasilApiError, ValueError, httpx.HTTPError,
+    DataJudError,
+    DjenComunicaError,
+    BrasilApiError,
+    CkanPublicError,
+    CnjSgtError,
+    TcuPublicError,
+    IbgeLocalidadesError,
+    QueridoDiarioError,
+    IdeSisemaError,
+    PgfnOpenDataError,
+    ValueError,
+    httpx.HTTPError,
 )
 
 
 def _falha_upstream(origem: str, exc: Exception) -> HTTPException:
-    logger.warning("Integração %s falhou: %s: %s",
-                   origem, type(exc).__name__, str(exc)[:500])
+    logger.warning(
+        "Integração %s falhou: %s: %s",
+        origem,
+        type(exc).__name__,
+        str(exc)[:500],
+    )
     return HTTPException(502, f"Falha na consulta à API externa ({origem}).")
 
 
@@ -93,7 +118,8 @@ def _somente_digitos(valor: str, tamanho: int, campo: str) -> str:
     limpo = "".join(ch for ch in valor if ch.isdigit())
     if len(limpo) != tamanho:
         raise HTTPException(
-            400, f"{campo} inválido: esperado {tamanho} dígitos (com ou sem máscara)."
+            400,
+            f"{campo} inválido: esperado {tamanho} dígitos (com ou sem máscara).",
         )
     return limpo
 
@@ -102,11 +128,17 @@ async def _auditar_consulta(
     db: AsyncSession, cu: User, entidade: str, registro_id: str,
 ) -> None:
     await criar_audit_log(
-        db, cu.id, getattr(cu.role, "value", str(cu.role)),
-        "CONSULTA_EXTERNA", entidade, registro_id,
+        db,
+        cu.id,
+        getattr(cu.role, "value", str(cu.role)),
+        "CONSULTA_EXTERNA",
+        entidade,
+        registro_id,
     )
     await db.commit()
 
+
+# ── DataJud / DJEN / BrasilAPI existentes ────────────────────────────────────
 
 @datajud_router.get("/processos/{tribunal}/{numero_processo}")
 @limiter.limit("30/minute")
@@ -128,8 +160,6 @@ async def consultar_processo_datajud(
     try:
         resultado = await _datajud.consultar_processo(numero, alias)
     except DataJudDesabilitadoError as exc:
-        # Mesmo contrato do router principal /datajud: integração desligada
-        # ou sem chave → 503 (não é falha do upstream).
         raise HTTPException(503, str(exc))
     except _ERROS_UPSTREAM as exc:
         raise _falha_upstream("DataJud", exc)
@@ -151,8 +181,11 @@ async def consultar_djen_por_oab(
 ):
     try:
         resultado = await _djen.consultar_por_oab(
-            numero_oab, uf.upper(),
-            data_inicio=data_inicio, data_fim=data_fim, pagina=pagina,
+            numero_oab,
+            uf.upper(),
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            pagina=pagina,
         )
     except _ERROS_UPSTREAM as exc:
         raise _falha_upstream("DJEN/Comunica", exc)
@@ -179,7 +212,7 @@ async def consultar_djen_por_processo(
     return resultado
 
 
-@brasilapi_router.get("/cnpj/{cnpj}")
+@brasilapi_router.get("/brasilapi/cnpj/{cnpj}")
 @limiter.limit("30/minute")
 async def consultar_cnpj(
     request: Request,
@@ -196,16 +229,226 @@ async def consultar_cnpj(
     return resultado
 
 
-@brasilapi_router.get("/cep/{cep}")
+@brasilapi_router.get("/brasilapi/cep/{cep}")
 @limiter.limit("30/minute")
 async def consultar_cep(
     request: Request,
     cep: str,
     current_user: User = Depends(get_current_user),
 ):
-    # CEP é dado de endereço público, não identifica pessoa — sem audit log.
     numero = _somente_digitos(cep, 8, "CEP")
     try:
         return await _brasilapi.consultar_cep(numero)
     except _ERROS_UPSTREAM as exc:
         raise _falha_upstream("BrasilAPI/CEP", exc)
+
+
+# ── CNJ TPU/SGT ──────────────────────────────────────────────────────────────
+
+@brasilapi_router.get("/cnj/tpu/versao")
+@limiter.limit("20/minute")
+async def versao_tpu(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return {"ultima_versao": await _cnj_sgt.ultima_versao(), "fonte": "CNJ/SGT"}
+    except _ERROS_UPSTREAM as exc:
+        raise _falha_upstream("CNJ/SGT", exc)
+
+
+@brasilapi_router.get("/cnj/tpu/pesquisar")
+@limiter.limit("30/minute")
+async def pesquisar_tpu(
+    request: Request,
+    tipo_tabela: str = Query(..., pattern=r"^[AMC]$"),
+    valor: str = Query(..., min_length=1, max_length=200),
+    tipo_pesquisa: str = Query("N", pattern=r"^[GNC]$"),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        resultado = await _cnj_sgt.pesquisar(
+            tipo_tabela, valor, tipo_pesquisa=tipo_pesquisa
+        )
+        return {"fonte": "CNJ/SGT — Tabelas Processuais Unificadas", "resultado": resultado}
+    except _ERROS_UPSTREAM as exc:
+        raise _falha_upstream("CNJ/SGT", exc)
+
+
+# ── TCU ──────────────────────────────────────────────────────────────────────
+
+@brasilapi_router.get("/tcu/acordaos")
+@limiter.limit("20/minute")
+async def listar_acordaos_tcu(
+    request: Request,
+    inicio: int = Query(0, ge=0),
+    quantidade: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        itens = await _tcu.listar_acordaos(inicio=inicio, quantidade=quantidade)
+        return {"fonte": "TCU — Dados Abertos", "total_retornado": len(itens), "items": itens}
+    except _ERROS_UPSTREAM as exc:
+        raise _falha_upstream("TCU", exc)
+
+
+# ── IBGE Localidades ─────────────────────────────────────────────────────────
+
+@brasilapi_router.get("/ibge/municipios/{uf}")
+@limiter.limit("30/minute")
+async def municipios_ibge(
+    request: Request,
+    uf: str = Path(pattern=r"^[A-Za-z]{2}$"),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        itens = await _ibge.municipios_por_uf(uf.upper())
+        return {"uf": uf.upper(), "total": len(itens), "items": itens}
+    except _ERROS_UPSTREAM as exc:
+        raise _falha_upstream("IBGE Localidades", exc)
+
+
+@brasilapi_router.get("/ibge/canonicalizar")
+@limiter.limit("30/minute")
+async def canonicalizar_municipio_ibge(
+    request: Request,
+    nome: str = Query(..., min_length=1, max_length=120),
+    uf: str = Query(..., pattern=r"^[A-Za-z]{2}$"),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        item = await _ibge.canonicalizar(nome, uf.upper())
+        if item is None:
+            raise HTTPException(404, "Município não localizado de forma unívoca no IBGE.")
+        return item
+    except HTTPException:
+        raise
+    except _ERROS_UPSTREAM as exc:
+        raise _falha_upstream("IBGE Localidades", exc)
+
+
+# ── CKAN oficiais: IBAMA, MJ/Consumidor.gov.br, CVM e TSE ────────────────────
+
+@brasilapi_router.get("/dados-publicos/{fonte}/recursos")
+@limiter.limit("20/minute")
+async def recursos_ckan_oficiais(
+    request: Request,
+    fonte: str = Path(pattern=r"^(ibama|mj|cvm|tse)$"),
+    q: Optional[str] = Query(None, max_length=200),
+    formatos: Optional[str] = Query(None, max_length=80, description="CSV,JSON,XML,ZIP"),
+    limit: int = Query(20, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+):
+    consulta = (q or _CKAN_DEFAULT_QUERY[fonte]).strip()
+    fmts = [x.strip() for x in formatos.split(",") if x.strip()] if formatos else None
+    try:
+        recursos = await _ckan[fonte].recursos_por_busca(
+            consulta, formatos=fmts, rows=5, limit=limit
+        )
+        return {
+            "fonte": fonte,
+            "consulta": consulta,
+            "total": len(recursos),
+            "items": [r.to_dict() for r in recursos],
+            "observacao": (
+                "Retorno contém metadados/links de recursos oficiais; arquivos volumosos "
+                "não são baixados automaticamente pelo EJC."
+            ),
+        }
+    except _ERROS_UPSTREAM as exc:
+        raise _falha_upstream(f"CKAN/{fonte}", exc)
+
+
+# ── PGFN — Dívida Ativa (bulk oficial) ───────────────────────────────────────
+
+@brasilapi_router.get("/pgfn/divida-ativa/recursos")
+@limiter.limit("10/minute")
+async def recursos_pgfn(
+    request: Request,
+    ano: Optional[int] = Query(None, ge=2019, le=2100),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        itens = await _pgfn.listar_recursos(ano=ano)
+        return {
+            "fonte": "PGFN — Dados Abertos da Dívida Ativa",
+            "total": len(itens),
+            "items": itens,
+            "observacao": "Catálogo de arquivos bulk; não realiza consulta individual de CPF/CNPJ.",
+        }
+    except _ERROS_UPSTREAM as exc:
+        raise _falha_upstream("PGFN", exc)
+
+
+# ── Querido Diário (agregador secundário municipal) ──────────────────────────
+
+@brasilapi_router.get("/querido-diario/{codigo_ibge}")
+@limiter.limit("20/minute")
+async def buscar_querido_diario(
+    request: Request,
+    codigo_ibge: str = Path(pattern=r"^\d{7}$"),
+    termo: str = Query(..., min_length=2, max_length=300),
+    data_inicio: Optional[date] = Query(None),
+    data_fim: Optional[date] = Query(None),
+    tamanho: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return await _querido.buscar(
+            codigo_ibge=codigo_ibge,
+            termo=termo,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            tamanho=tamanho,
+        )
+    except _ERROS_UPSTREAM as exc:
+        raise _falha_upstream("Querido Diário", exc)
+
+
+# ── IDE-Sisema/MG (WFS público) ──────────────────────────────────────────────
+
+@brasilapi_router.get("/ide-sisema/camadas")
+@limiter.limit("10/minute")
+async def listar_camadas_sisema(
+    request: Request,
+    q: Optional[str] = Query(None, max_length=100),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        camadas = await _sisema.listar_camadas()
+        if q:
+            termo = q.casefold()
+            camadas = [
+                c for c in camadas
+                if termo in f"{c.get('name','')} {c.get('title','')} {c.get('abstract','')}".casefold()
+            ]
+        return {"fonte": "IDE-Sisema — Sisema/MG", "total": len(camadas), "items": camadas[:limit]}
+    except _ERROS_UPSTREAM as exc:
+        raise _falha_upstream("IDE-Sisema", exc)
+
+
+@brasilapi_router.get("/ide-sisema/feicoes")
+@limiter.limit("20/minute")
+async def consultar_sisema(
+    request: Request,
+    type_name: str = Query(..., min_length=1, max_length=180),
+    bbox: Optional[str] = Query(None, max_length=120, description="minx,miny,maxx,maxy"),
+    count: int = Query(50, ge=1, le=200),
+    srs_name: str = Query("EPSG:4326", pattern=r"^EPSG:(4326|4674)$"),
+    current_user: User = Depends(get_current_user),
+):
+    coords = None
+    if bbox:
+        try:
+            coords = [float(x.strip()) for x in bbox.split(",")]
+        except ValueError:
+            raise HTTPException(400, "bbox inválido: use minx,miny,maxx,maxy")
+    try:
+        return await _sisema.consultar_camadas(
+            type_name, bbox=coords, count=count, srs_name=srs_name
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except _ERROS_UPSTREAM as exc:
+        raise _falha_upstream("IDE-Sisema", exc)

@@ -49,16 +49,57 @@ jobs:
           ref: ${{ env.TARGET_SHA }}
           fetch-depth: 0
 
+      # O actions/checkout registra safe.directory num HOME temporário. Em
+      # self-hosted runner isso não deve virar confiança global persistente.
+      # A exceção é concedida por comando e somente após validar o dono do
+      # workspace, evitando reabrir execução de .git/config não confiável.
       - name: Confirmar SHA e runtime de produção
         shell: bash
         run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
-          test -d /opt/ejc
-          test -f /opt/ejc/.env
-          docker ps --format '{{.Names}}' | grep -qx ejc_db
-          command -v python3 >/dev/null
-          command -v rsync >/dev/null
+          set -uo pipefail
+          set +e
+          erros=0
+          reprovar() { echo "::error::Pré-voo do deploy: $1"; erros=1; }
+
+          dono="$(stat -c %u "$GITHUB_WORKSPACE" 2>/dev/null)"
+          if [ "$dono" = "$(id -u)" ] || [ "$dono" = "0" ]; then
+            if head_local="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD 2>&1)"; then
+              [ "$head_local" = "$TARGET_SHA" ] ||
+                reprovar "checkout está em '$head_local', esperado '$TARGET_SHA'"
+            else
+              reprovar "git rev-parse HEAD falhou — $head_local"
+            fi
+          else
+            reprovar "workspace pertence ao uid '${dono:-desconhecido}', nem ao runner nem a root — não confio nele para executar git"
+          fi
+
+          [ -d /opt/ejc ] ||
+            reprovar "/opt/ejc não existe ou não é diretório"
+          [ -f /opt/ejc/.env ] ||
+            reprovar "/opt/ejc/.env ausente ou ilegível para o usuário do runner"
+          docker ps --format '{{.Names}}' 2>/dev/null | grep -qx ejc_db ||
+            reprovar "container ejc_db fora do ar, ou o runner não alcança o socket do Docker"
+          command -v python3 >/dev/null ||
+            reprovar "python3 ausente no PATH do runner"
+          command -v rsync >/dev/null ||
+            reprovar "rsync ausente no PATH do runner"
+
+          # Defesa pós-ativação: se o gate jurídico já foi promovido para true,
+          # qualquer drift do .env deve abortar ANTES do rsync/build/restart.
+          # Só contamos a chave; o conteúdo do .env nunca é impresso.
+          APP_DIR=/opt/ejc
+          activated_marker="$APP_DIR/data/.rag_vigencia_activated_v1"
+          env_file="$APP_DIR/.env"
+          if sudo test -f "$activated_marker"; then
+            total_true="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+            true_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=true$' "$env_file" || true)"
+            if [ "$total_true" != "1" ] || [ "$true_count" != "1" ]; then
+              reprovar "marker de ativação existe, mas o gate de vigência não está canonicamente true; abortando antes de tocar produção"
+            fi
+          fi
+
+          [ "$erros" -eq 0 ] || exit 1
+          echo "Pré-voo aprovado — HEAD $head_local, /opt/ejc e ejc_db presentes."
 
       - name: Classificar migrations pendentes
         id: migrations
@@ -113,7 +154,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # A partir deste passo /opt/ejc pode ter sido alterado. O id é usado no
+      # resumo para não declarar produção intacta quando o rsync falha no meio.
       - name: Sincronizar checkout aprovado para /opt/ejc
+        id: sync
         shell: bash
         run: |
           set -euo pipefail
@@ -130,8 +174,17 @@ jobs:
             --exclude 'vps-tools/' --exclude '*.log' \
             ./ /opt/ejc/
 
-      - name: Garantir permissão de leitura do .env
-        run: sudo chmod 644 /opt/ejc/.env
+      - name: Restringir acesso ao .env preservado
+        shell: bash
+        run: |
+          set -euo pipefail
+          # O deploy precisa ler e eventualmente migrar valores obsoletos do
+          # .env. Em vez de torná-lo world-readable (0644), o arquivo fica sob
+          # o usuário dedicado do runner e modo 0600. root continua tendo acesso.
+          sudo chown "$(id -u):$(id -g)" /opt/ejc/.env
+          sudo chmod 600 /opt/ejc/.env
+          test "$(stat -c %a /opt/ejc/.env)" = "600"
+          test "$(stat -c %u:%g /opt/ejc/.env)" = "$(id -u):$(id -g)"
 
       - name: Deploy seguro com política calculada
         env:
@@ -165,15 +218,176 @@ jobs:
         # a falha fique visível e acionável.
         run: bash /opt/ejc/scripts/post_deploy_check.sh
 
+      # P0.1 — pré-armamento transicional do gate jurídico de vigência.
+      # Fica DENTRO do Deploy VPS para usar exatamente o TARGET_SHA implantado e
+      # a mesma serialização do deploy, sem criar workflow concorrente que possa
+      # cancelar uma execução pendente. Depois que o gate for ativado, o marcador
+      # de ativação faz esta etapa apenas validar/preservar o estado true.
+      - name: Pré-armar gate de vigência em modo compatível
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_DIR=/opt/ejc
+          marker="$APP_DIR/data/.rag_vigencia_prearm_v1"
+          activated_marker="$APP_DIR/data/.rag_vigencia_activated_v1"
+          env_file="$APP_DIR/.env"
+          candidate="$APP_DIR/.env.prearm.new"
+          backup="$APP_DIR/.env.prearm.rollback"
+          work="$(mktemp)"
+          alterado=0
+          concluido=0
+
+          finalizar() {
+            rc=$?
+            trap - EXIT INT TERM
+            set +e
+            rm -f "$work"
+            sudo rm -f "$candidate"
+            if [ "$concluido" != "1" ]; then
+              if [ "$alterado" = "1" ]; then
+                if sudo test -f "$backup"; then
+                  echo "::warning::Prearm RAG interrompido; restaurando .env a partir do backup 0600."
+                  sudo mv -f "$backup" "$env_file"
+                else
+                  echo "::error::Prearm RAG interrompido após abrir a janela de alteração, mas backup não está disponível."
+                fi
+              else
+                # Se o backup foi criado mas a janela de alteração ainda não
+                # abriu, o .env segue intacto: remova a cópia de segredo em vez
+                # de tentar restaurá-la (ela pode até estar parcial).
+                sudo rm -f "$backup"
+              fi
+              if sudo test -f "$marker"; then
+                marker_sha="$(sudo cat "$marker" 2>/dev/null || true)"
+                [ "$marker_sha" != "$TARGET_SHA" ] || sudo rm -f "$marker"
+              fi
+            else
+              sudo rm -f "$backup"
+            fi
+            exit "$rc"
+          }
+          trap finalizar EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          deployed="$(sudo cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+          if [ -z "$deployed" ] || [ "$deployed" != "$TARGET_SHA" ]; then
+            echo "::error::Prearm RAG: /opt/ejc não comprova o TARGET_SHA que este Deploy VPS implantou."
+            false
+          fi
+
+          sudo mkdir -p "$APP_DIR/data"
+          sudo test -f "$env_file" || {
+            echo "::error::Prearm RAG: .env de produção ausente."
+            false
+          }
+
+          # Depois da ativação definitiva, nunca rebaixe true→false em deploys
+          # futuros. O marcador ativo só é aceito junto da configuração REAL.
+          if sudo test -f "$activated_marker"; then
+            total_true="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+            true_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=true$' "$env_file" || true)"
+            if [ "$total_true" = "1" ] && [ "$true_count" = "1" ]; then
+              sudo rm -f "$backup"
+              concluido=1
+              echo "Gate de vigência já ativado; prearm preservou configuração canônica true."
+              exit 0
+            fi
+            echo "::error::Prearm RAG: marcador de ativação existe, mas .env não está canonicamente true."
+            false
+          fi
+
+          total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+          false_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$env_file" || true)"
+          if [ "$total" = "1" ] && [ "$false_count" = "1" ]; then
+            sudo rm -f "$backup"
+            printf '%s\n' "$TARGET_SHA" | sudo tee "$marker" >/dev/null
+            sudo chmod 600 "$marker"
+            concluido=1
+            echo "Prearm RAG já canônico em false; prova atualizada para o SHA implantado."
+            exit 0
+          fi
+
+          uid="$(sudo stat -c %u "$env_file")"
+          gid="$(sudo stat -c %g "$env_file")"
+          mode="$(sudo stat -c %a "$env_file")"
+
+          # Nunca imprime o .env. O awk preserva todas as demais linhas,
+          # remove duplicatas da chave e grava UMA ocorrência canônica=false.
+          sudo cat "$env_file" | awk '
+            BEGIN { seen = 0 }
+            /^RAG_EXIGIR_VIGENCIA_VERIFICADA=/ {
+              if (!seen) {
+                print "RAG_EXIGIR_VIGENCIA_VERIFICADA=false"
+                seen = 1
+              }
+              next
+            }
+            { print }
+            END {
+              if (!seen) print "RAG_EXIGIR_VIGENCIA_VERIFICADA=false"
+            }
+          ' > "$work"
+          chmod 600 "$work"
+
+          sudo rm -f "$candidate" "$backup"
+          sudo install -o "$uid" -g "$gid" -m "$mode" "$work" "$candidate"
+          candidate_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$candidate" || true)"
+          candidate_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$candidate" || true)"
+          if [ "$candidate_total" != "1" ] || [ "$candidate_false" != "1" ]; then
+            echo "::error::Prearm RAG: candidato não ficou canônico; destino não será tocado."
+            false
+          fi
+
+          sudo cp -p "$env_file" "$backup"
+          sudo chmod 600 "$backup"
+          # Marque a janela de rollback ANTES do rename: um INT/TERM entre o mv
+          # e a atribuição posterior deixaria o .env trocado sem restauração.
+          alterado=1
+          sudo mv -f "$candidate" "$env_file"
+
+          final_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+          final_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$env_file" || true)"
+          if [ "$final_total" != "1" ] || [ "$final_false" != "1" ]; then
+            echo "::error::Prearm RAG: validação pós-rename falhou."
+            false
+          fi
+
+          printf '%s\n' "$TARGET_SHA" | sudo tee "$marker" >/dev/null
+          sudo chmod 600 "$marker"
+          concluido=1
+          echo "Prearm RAG concluído: gate estrito permanece desligado até backfill/ativação."
+
       - name: Resumo da implantação
         if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SYNC_OUTCOME: ${{ steps.sync.outcome }}
+          REVISAO_ANTERIOR: ${{ steps.migrations.outputs.current_revision }}
+          MIGRATIONS_PENDENTES: ${{ steps.migrations.outputs.pending_count }}
         run: |
           {
             echo "## Deploy VPS"
             echo
+            if [ "$JOB_STATUS" = "success" ]; then
+              echo "- Resultado: **implantado**"
+            elif [ -z "$SYNC_OUTCOME" ] || [ "$SYNC_OUTCOME" = "skipped" ]; then
+              echo "- Resultado: **abortado antes de tocar produção** (\`$JOB_STATUS\`)"
+              echo "  — nada foi implantado; \`/opt/ejc\` está como estava."
+            elif [ "$SYNC_OUTCOME" = "success" ]; then
+              echo "- Resultado: **FALHOU APÓS TOCAR PRODUÇÃO** (\`$JOB_STATUS\`)"
+              echo "  — \`/opt/ejc\` já foi reescrito e o deploy pode ter migrado o schema."
+              echo "  O rollback automático restaura imagens, **não** a árvore nem o banco."
+              echo "  Verifique o estado real antes de reexecutar."
+            else
+              echo "- Resultado: **ESTADO INCERTO** — a sincronização não concluiu (\`$SYNC_OUTCOME\`)."
+              echo "  O \`rsync --delete\` pode ter reescrito ou apagado parte de \`/opt/ejc\`"
+              echo "  antes de falhar. **Não presuma que produção está intacta**."
+            fi
             echo "- Target SHA: \`$TARGET_SHA\`"
-            echo "- Revisão anterior: \`${{ steps.migrations.outputs.current_revision }}\`"
-            echo "- Migrations pendentes: \`${{ steps.migrations.outputs.pending_count }}\`"
+            echo "- Revisão anterior: \`$REVISAO_ANTERIOR\`"
+            echo "- Migrations pendentes: \`$MIGRATIONS_PENDENTES\`"
             echo "- Seeds: \`$RUN_SEEDS\`"
             echo "- Backup pré-deploy obrigatório: \`$REQUIRE_PREDEPLOY_BACKUP\`"
           } >> "$GITHUB_STEP_SUMMARY"

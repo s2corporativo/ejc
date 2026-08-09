@@ -1,9 +1,7 @@
 # EJC — validação e prova manual do backup diário cifrado no Google Drive.
 #
-# Em Pull Request, executa somente testes determinísticos. A prova em produção é
-# deliberadamente manual e limitada à main: o deploy automático já gera backup
-# pré-deploy, portanto um gatilho adicional por push poderia iniciar duas cópias
-# simultâneas e degradar banco, CPU e Drive.
+# Em Pull Request, executa somente testes determinísticos em runner hospedado
+# pelo GitHub. A VPS de produção só é alcançada por execução manual na main.
 name: Backup Google Drive — validar e comprovar
 
 on:
@@ -30,7 +28,8 @@ concurrency:
 jobs:
   validar:
     name: Validar backup, migration e rollback
-    runs-on: [self-hosted, ejc-vps]
+    # Nunca executar conteúdo de PR no host que também hospeda produção.
+    runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v7
@@ -57,6 +56,7 @@ jobs:
     needs: validar
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
+    environment: production
     steps:
       - uses: actions/checkout@v7
         with:
@@ -68,7 +68,7 @@ jobs:
           test -f /opt/ejc/.env
           docker ps --format '{{.Names}}' | grep -qx ejc_db
           cd /opt/ejc
-          docker compose config >/dev/null
+          docker compose config --quiet
 
       - name: Instalar wrappers revisados
         run: |

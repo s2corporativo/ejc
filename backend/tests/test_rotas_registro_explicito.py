@@ -69,10 +69,6 @@ ADICOES_INTENCIONAIS = {
     # nova).
     ("/api/entrada/analisar", "POST"),
     ("/api/entrada/{rascunho_id}/criar-caso", "POST"),
-    # Issue #716: fachadas somente-leitura do workspace. Ambas exigem
-    # autenticação + ownership no handler e não criam tabela ou escrita paralela.
-    ("/api/cases/{case_id}/timeline", "GET"),
-    ("/api/cases/{case_id}/operational-health", "GET"),
     # Issue #762 (Fase A): integração de processo eletrônico via MNI 2.2.2,
     # somente leitura (TJMG). Sincronização assíncrona (Celery) + cofre de
     # credenciais dedicado — nunca ecoa segredo, todo uso audita.
@@ -81,6 +77,42 @@ ADICOES_INTENCIONAIS = {
     ("/api/processo-eletronico/credenciais", "GET"),
     ("/api/processo-eletronico/credenciais", "POST"),
     ("/api/processo-eletronico/credenciais/{credencial_id}/testar", "POST"),
+    # Issue #836: onda de fontes públicas oficiais, já integrada na main pelo
+    # PR #887. O PR #905 preserva explicitamente essas rotas ao acrescentar os
+    # contratos canônicos de Jurimetria abaixo.
+    ("/api/integracoes/cnj/tpu/versao", "GET"),
+    ("/api/integracoes/cnj/tpu/pesquisar", "GET"),
+    ("/api/integracoes/tcu/acordaos", "GET"),
+    ("/api/integracoes/ibge/municipios/{uf}", "GET"),
+    ("/api/integracoes/ibge/canonicalizar", "GET"),
+    ("/api/integracoes/dados-publicos/{fonte}/recursos", "GET"),
+    ("/api/integracoes/pgfn/divida-ativa/recursos", "GET"),
+    ("/api/integracoes/querido-diario/{codigo_ibge}", "GET"),
+    ("/api/integracoes/ide-sisema/camadas", "GET"),
+    ("/api/integracoes/ide-sisema/feicoes", "GET"),
+    # PR #905: jurimetria passa a expor, de forma explícita, apenas métricas
+    # internas e cobertura agregada do RAG. Os aliases /ext legados permanecem,
+    # mas estes são os contratos canônicos novos e deliberados.
+    ("/api/jurimetria/interno/stats", "GET"),
+    ("/api/jurimetria/interno/benchmarks", "GET"),
+    ("/api/jurimetria/interno/analise-prospectiva", "GET"),
+    ("/api/jurimetria/analise-prospectiva", "POST"),
+    ("/api/jurimetria/cobertura-rag", "GET"),
+    ("/api/jurimetria/cobertura-mg-jec", "GET"),
+    # PR #938: vínculo canônico de documento solto ao caso. A busca filtra
+    # candidatos server-side e o POST aplica domínio/auditoria de forma atômica.
+    ("/api/cases/{case_id}/documentos/candidatos", "GET"),
+    ("/api/cases/{case_id}/documentos/{document_id}/vincular", "POST"),
+    # DPT Empresarial 360 — superfície nova declarada nominalmente. Não usar
+    # wildcard: cada contrato precisa ser revisto quando surgir ou desaparecer.
+    ("/api/dpt360/dashboard", "GET"),
+    ("/api/dpt360/companies/{client_id}", "GET"),
+    ("/api/dpt360/diagnostics/readiness/{client_id}", "GET"),
+    ("/api/dpt360/radar/today", "GET"),
+    ("/api/dpt360/reports/executive/{client_id}", "GET"),
+    ("/api/dpt360/intake/opportunities", "GET"),
+    ("/api/dpt360/intake/opportunities", "POST"),
+    ("/api/dpt360/actions", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -94,6 +126,32 @@ REMOCOES_INTENCIONAIS = {
     # do sistema chamava os dois. Não reintroduzir sem decisão escrita do titular.
     ("/api/diplomacia-v3/dossie-pressao", "POST"),
     ("/api/diplomacia-v3/analisar-magistrado", "POST"),
+    # docs/PLANO_FUSAO_CASO_UNICO.md (F1a) — quatro endpoints de Casos sem
+    # nenhum consumidor no frontend (grep confirmado antes da remoção), dois
+    # deles duplicando outra rota já em uso: /resumo (contadores nunca lidos —
+    # e continha o bug do prazos_pendentes sempre 0, corrigido junto),
+    # /linha-do-tempo (superseded por /visual-law/casos/{id}/timeline, que o
+    # frontend de fato chama), /assistente-estrategico (chamada de IA sem rate
+    # limit nem piso de papel, duplicando o endpoint real em ai.py) e
+    # /movimentos/{mov_id}/traduzir (o gatilho automático de
+    # services/movimento_ia.py via event_subscribers continua intacto — só o
+    # re-disparo manual sem UI foi removido).
+    ("/api/cases/{case_id}/resumo", "GET"),
+    ("/api/cases/{case_id}/linha-do-tempo", "GET"),
+    ("/api/cases/{case_id}/assistente-estrategico", "POST"),
+    ("/api/cases/{case_id}/movimentos/{mov_id}/traduzir", "POST"),
+    # Jornada de 9 etapas (jornada_caso.py): endpoint sem nenhum consumidor —
+    # a página React /casos/:id/jornada é um redirect puro para
+    # /casos/:id?tab=resumo desde a Fase 1 do plano de simplificação e nunca
+    # chamou esta rota. A jornada visível ao usuário é o orquestrador de 16
+    # etapas (legal_case_orchestrator.py, /cases/{id}/orquestrador), intacto.
+    ("/api/casos/{case_id}/jornada", "GET"),
+    # Issue #716 revertida — /timeline e /operational-health (case_timeline.py)
+    # eram fachadas de leitura sem nenhum consumidor (mesma varredura acima);
+    # a saúde do caso segue exposta em Analytics via case_health.py, que
+    # não foi tocado. Nunca chegaram a existir no snapshot baseline (eram
+    # ADICOES_INTENCIONAIS), por isso não entram como remoção — apenas saem
+    # da lista de adições abaixo.
 }
 
 
@@ -139,12 +197,8 @@ def test_paridade_openapi_com_snapshot_anterior():
     chaves_base = {(r["path"], r["method"]): r for r in base}
     chaves_atual = {(r["path"], r["method"]): r for r in atual}
 
-    sumiram = sorted(
-        set(chaves_base) - set(chaves_atual) - REMOCOES_INTENCIONAIS
-    )
-    surgiram = sorted(
-        set(chaves_atual) - set(chaves_base) - ADICOES_INTENCIONAIS
-    )
+    sumiram = sorted(set(chaves_base) - set(chaves_atual) - REMOCOES_INTENCIONAIS)
+    surgiram = sorted(set(chaves_atual) - set(chaves_base) - ADICOES_INTENCIONAIS)
     assert not sumiram, f"{len(sumiram)} rota(s) DESAPARECERAM: {sumiram[:10]}"
     assert not surgiram, f"{len(surgiram)} rota(s) NOVAS não previstas: {surgiram[:10]}"
 
@@ -177,6 +231,31 @@ def test_paridade_openapi_com_snapshot_anterior():
 )
 def test_rotas_antes_dinamicas_seguem_montadas(caminho, metodo):
     """Uma rota-testemunha de cada um dos cinco grupos."""
+    from app.main import app
+
+    montadas = {
+        (getattr(r, "path", ""), m)
+        for r in app.routes
+        for m in (getattr(r, "methods", None) or [])
+    }
+    assert (caminho, metodo) in montadas
+
+
+@pytest.mark.parametrize(
+    "caminho,metodo",
+    [
+        ("/api/dpt360/dashboard", "GET"),
+        ("/api/dpt360/companies/{client_id}", "GET"),
+        ("/api/dpt360/diagnostics/readiness/{client_id}", "GET"),
+        ("/api/dpt360/radar/today", "GET"),
+        ("/api/dpt360/reports/executive/{client_id}", "GET"),
+        ("/api/dpt360/intake/opportunities", "GET"),
+        ("/api/dpt360/intake/opportunities", "POST"),
+        ("/api/dpt360/actions", "POST"),
+    ],
+)
+def test_rotas_dpt360_sao_explicitas(caminho, metodo):
+    """Toda rota DPT nova precisa continuar explicitamente montada no FastAPI."""
     from app.main import app
 
     montadas = {

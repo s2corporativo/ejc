@@ -165,7 +165,6 @@ from app.routers import search
 from app.routers import signatures
 from app.routers import sociedades_cliente
 from app.routers import provas
-from app.routers import jornada_caso
 from app.routers import processo_eletronico
 from app.routers import sumulas
 from app.routers import suspensoes
@@ -190,6 +189,7 @@ from app.routers import whatsapp
 from app.routers import workflow
 from app.routers import architecture
 from app.integrations import routers as integracoes
+from app.modules.dpt360.router import router as dpt360_router
 
 
 # Ativa a arquitetura orientada a eventos (P1): importar registra os @on subscribers.
@@ -373,6 +373,7 @@ app.include_router(conversao_caso.router, prefix=API)
 app.include_router(credential_vault.router, prefix=API)  # cofre de credenciais (superadmin)
 app.include_router(curadoria_renomada.router, prefix=API)
 app.include_router(dashboard.router, prefix=API)
+app.include_router(dpt360_router, prefix=API)
 app.include_router(data_room.router, prefix=API)
 app.include_router(data_room_v4.router, prefix=API)
 app.include_router(datajud.router, prefix=API)
@@ -487,7 +488,6 @@ app.include_router(search.router, prefix=API)
 app.include_router(signatures.router, prefix=API)
 app.include_router(sociedades_cliente.router, prefix=API)  # gestão societária de CLIENTES (vertical Empresarial)
 app.include_router(provas.router, prefix=API)  # Gestão de Provas por caso + Documento Único de Anexos (Visual Law)
-app.include_router(jornada_caso.router, prefix=API)  # Jornada do Caso — estado determinístico das 9 etapas (sem IA)
 app.include_router(processo_eletronico.router, prefix=API)  # Processo Eletrônico MNI 2.2.2 (Issue #762, Fase A leitura)
 app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA (art. 37) por cliente + RIPD (art. 38)
 app.include_router(sumulas.router, prefix=API)
