@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
+import { ListChecks, Plus, Trash2 } from "lucide-react";
 import { toast } from "../components/Toast";
-import { ListChecks, Trash2, Plus } from "lucide-react";
+import { ErrorState, PageHeader, Spinner } from "../components/UI";
 import api from "../lib/api";
-import { PageHeader, Spinner } from "../components/UI";
 import { asList } from "../lib/list";
 
 export default function Checklists() {
   const [tpls, setTpls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [show, setShow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [f, setF] = useState({
@@ -18,14 +19,20 @@ export default function Checklists() {
   });
 
   const load = () => {
-    api
+    setLoading(true);
+    setLoadError(false);
+    return api
       .get("/checklists/templates")
       .then((r) => setTpls(asList(r.data)))
-      .catch(() => {})
+      .catch((err: any) => {
+        setTpls([]);
+        setLoadError(true);
+        toast.error(err.response?.data?.detail || "Falha ao carregar checklists");
+      })
       .finally(() => setLoading(false));
   };
   useEffect(() => {
-    load();
+    void load();
   }, []);
 
   const criar = async (e: React.FormEvent) => {
@@ -46,8 +53,7 @@ export default function Checklists() {
       });
       setF({ nome: "", descricao: "", area_juridica: "", itens: "" });
       setShow(false);
-      setLoading(true);
-      load();
+      await load();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Falha ao criar template");
     } finally {
@@ -57,8 +63,13 @@ export default function Checklists() {
 
   const excluir = async (id: string) => {
     if (!confirm("Excluir este template de checklist?")) return;
-    await api.delete(`/checklists/templates/${id}`);
-    setTpls((p) => p.filter((t) => t.id !== id));
+    try {
+      await api.delete(`/checklists/templates/${id}`);
+      setTpls((p) => p.filter((t) => t.id !== id));
+      toast.success("Template excluído.");
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Falha ao excluir template");
+    }
   };
 
   if (loading)
@@ -84,7 +95,16 @@ export default function Checklists() {
         }
       />
 
-      {show && (
+      {loadError && (
+        <div className="card p-5">
+          <ErrorState
+            message="Não foi possível carregar os checklists. Uma falha de API não é tratada como lista vazia."
+            onRetry={() => void load()}
+          />
+        </div>
+      )}
+
+      {!loadError && show && (
         <form onSubmit={criar} className="card p-5 space-y-3 max-w-2xl">
           <div className="grid md:grid-cols-2 gap-3">
             <div>
@@ -132,52 +152,53 @@ export default function Checklists() {
         </form>
       )}
 
-      {tpls.length === 0 ? (
-        <div className="card p-10 text-center text-slate-400">
-          <ListChecks size={32} className="mx-auto mb-3 text-bronze-pale" />
-          Nenhum template ainda. Crie modelos de checklist por tipo de demanda —
-          eles ficam disponíveis para aplicar em cada caso.
-        </div>
-      ) : (
-        <div className="grid md:grid-cols-2 gap-4">
-          {tpls.map((t) => (
-            <div key={t.id} className="card p-5">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h3 className="font-serif text-base font-semibold text-navy">
-                    {t.nome}
-                  </h3>
-                  {t.area_juridica && (
-                    <span className="badge badge-neutral capitalize mt-1">
-                      {t.area_juridica}
-                    </span>
-                  )}
+      {!loadError &&
+        (tpls.length === 0 ? (
+          <div className="card p-10 text-center text-slate-400">
+            <ListChecks size={32} className="mx-auto mb-3 text-bronze-pale" />
+            Nenhum template ainda. Crie modelos de checklist por tipo de demanda —
+            eles ficam disponíveis para aplicar em cada caso.
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-4">
+            {tpls.map((t) => (
+              <div key={t.id} className="card p-5">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h3 className="font-serif text-base font-semibold text-navy">
+                      {t.nome}
+                    </h3>
+                    {t.area_juridica && (
+                      <span className="badge badge-neutral capitalize mt-1">
+                        {t.area_juridica}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => void excluir(t.id)}
+                    className="text-slate-300 hover:text-danger-500"
+                  >
+                    <Trash2 size={15} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => excluir(t.id)}
-                  className="text-slate-300 hover:text-danger-500"
-                >
-                  <Trash2 size={15} />
-                </button>
+                {t.descricao && (
+                  <p className="text-sm text-slate-500 mb-2">{t.descricao}</p>
+                )}
+                <ul className="space-y-1 text-sm text-slate-600">
+                  {(t.itens || []).map((i: any) => (
+                    <li key={i.id} className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-bronze shrink-0" />{" "}
+                      {i.texto}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-slate-400 mt-3">
+                  {(t.itens || []).length} item(ns)
+                </p>
               </div>
-              {t.descricao && (
-                <p className="text-sm text-slate-500 mb-2">{t.descricao}</p>
-              )}
-              <ul className="space-y-1 text-sm text-slate-600">
-                {(t.itens || []).map((i: any) => (
-                  <li key={i.id} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-bronze shrink-0" />{" "}
-                    {i.texto}
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-slate-400 mt-3">
-                {(t.itens || []).length} item(ns)
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        ))}
     </div>
   );
 }
