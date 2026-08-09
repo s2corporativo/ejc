@@ -151,3 +151,28 @@ def test_deploy_futuro_nao_rebaixa_gate_ja_ativado():
     indice_awk = trecho.index("sudo cat \"$env_file\" | awk")
     assert indice_ativado < indice_true < indice_concluido < indice_saida < indice_awk
     assert "marcador de ativação existe, mas .env não está canonicamente true" in trecho
+
+
+def test_prearm_nao_executa_operacoes_de_banco_container_ou_exposicao_de_env():
+    trecho = _trecho_prearm()
+    proibidos = (
+        "docker ",
+        "docker-compose",
+        "docker compose",
+        "alembic ",
+        "psql ",
+        "restart ",
+        "systemctl ",
+        "printenv",
+        "env |",
+        'echo "$env_file"',
+        'cat "$env_file"\n',
+    )
+    for comando in proibidos:
+        assert comando not in trecho, f"prearm ganhou operação fora do escopo: {comando}"
+
+    # A leitura do .env existe apenas como entrada de uma transformação cujo
+    # stdout é redirecionado ao arquivo temporário; o conteúdo nunca é logado.
+    assert 'sudo cat "$env_file" | awk' in trecho
+    assert "' > \"$work\"" in trecho
+    assert trecho.count("RAG_EXIGIR_VIGENCIA_VERIFICADA=false") >= 3
