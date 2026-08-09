@@ -72,17 +72,20 @@ const VISUAL: Record<string, AreaVisual> = {
   },
   societario: {
     icon: Network,
-    description: "Constituição, alterações, sócios, governança e reorganizações",
+    description:
+      "Constituição, alterações, sócios, governança e reorganizações",
     tone: "bg-indigo-500 text-indigo-700",
   },
   contratual: {
     icon: FileSignature,
-    description: "Especialidade transversal para elaboração, revisão e inadimplemento",
+    description:
+      "Especialidade transversal para elaboração, revisão e inadimplemento",
     tone: "bg-slate-700 text-slate-700 dark:bg-slate-400",
   },
   civil: {
     icon: Scale,
-    description: "Responsabilidade civil, obrigações, cobrança, indenizações e JEC",
+    description:
+      "Responsabilidade civil, obrigações, cobrança, indenizações e JEC",
     tone: "bg-slate-900 text-slate-800 dark:bg-slate-400",
   },
   criminal: {
@@ -102,12 +105,14 @@ const VISUAL: Record<string, AreaVisual> = {
   },
   licitacoes: {
     icon: ClipboardPen,
-    description: "Especialidade de Direito Administrativo para compras e contratos públicos",
+    description:
+      "Especialidade de Direito Administrativo para compras e contratos públicos",
     tone: "bg-ouro text-ouro-profundo",
   },
   bancario: {
     icon: Banknote,
-    description: "Contratos bancários, CET, juros, cobranças e superendividamento",
+    description:
+      "Contratos bancários, CET, juros, cobranças e superendividamento",
     tone: "bg-success-500 text-success-700",
   },
   tributario: {
@@ -117,27 +122,32 @@ const VISUAL: Record<string, AreaVisual> = {
   },
   ambiental: {
     icon: Leaf,
-    description: "Licenciamento, autos, embargos, laudos e responsabilidades conexas",
+    description:
+      "Licenciamento, autos, embargos, laudos e responsabilidades conexas",
     tone: "bg-green-500 text-green-700",
   },
   agrario: {
     icon: Sprout,
-    description: "Posse rural, contratos agrários, regularização e conflitos fundiários",
+    description:
+      "Posse rural, contratos agrários, regularização e conflitos fundiários",
     tone: "bg-lime-600 text-lime-700",
   },
   agronegocio: {
     icon: BriefcaseBusiness,
-    description: "Operações rurais, cadeias produtivas, crédito e contratos do agro",
+    description:
+      "Operações rurais, cadeias produtivas, crédito e contratos do agro",
     tone: "bg-emerald-600 text-emerald-700",
   },
   consumidor: {
     icon: Users,
-    description: "Cobranças, vícios, serviços, negativação e responsabilidade do fornecedor",
+    description:
+      "Cobranças, vícios, serviços, negativação e responsabilidade do fornecedor",
     tone: "bg-teal-500 text-teal-700",
   },
   familia: {
     icon: Baby,
-    description: "Família, inventário, sucessões, guarda, convivência e alimentos",
+    description:
+      "Família, inventário, sucessões, guarda, convivência e alimentos",
     tone: "bg-rose-500 text-rose-700",
   },
   sucessoes: {
@@ -157,17 +167,20 @@ const VISUAL: Record<string, AreaVisual> = {
   },
   saude: {
     icon: HeartPulse,
-    description: "Planos de saúde, SUS, tratamentos, negativas e tutelas urgentes",
+    description:
+      "Planos de saúde, SUS, tratamentos, negativas e tutelas urgentes",
     tone: "bg-pink-500 text-pink-700",
   },
   medico: {
     icon: Stethoscope,
-    description: "Responsabilidade médica, prontuários, consentimento e perícia",
+    description:
+      "Responsabilidade médica, prontuários, consentimento e perícia",
     tone: "bg-cyan-500 text-cyan-700",
   },
   digital_lgpd: {
     icon: Database,
-    description: "LGPD, incidentes, contratos digitais, provas e governança de dados",
+    description:
+      "LGPD, incidentes, contratos digitais, provas e governança de dados",
     tone: "bg-sky-600 text-sky-700",
   },
   transito: {
@@ -182,12 +195,14 @@ const VISUAL: Record<string, AreaVisual> = {
   },
   eleitoral: {
     icon: Vote,
-    description: "Eleições, candidaturas, propaganda, contas e contencioso eleitoral",
+    description:
+      "Eleições, candidaturas, propaganda, contas e contencioso eleitoral",
     tone: "bg-fuchsia-600 text-fuchsia-700",
   },
   internacional: {
     icon: Globe,
-    description: "Contratos internacionais, cooperação, tratados e comércio exterior",
+    description:
+      "Contratos internacionais, cooperação, tratados e comércio exterior",
     tone: "bg-primary-900 text-primary-800 dark:bg-primary-400",
   },
 };
@@ -223,8 +238,13 @@ const FALLBACK_AREAS: Area[] = [
 function lerFavoritos(): string[] {
   if (typeof window === "undefined") return [...AREAS_PRINCIPAIS_PADRAO];
   try {
-    const salvo = JSON.parse(window.localStorage.getItem(FAVORITOS_KEY) || "null");
-    if (Array.isArray(salvo) && salvo.every((item) => typeof item === "string")) {
+    const salvo = JSON.parse(
+      window.localStorage.getItem(FAVORITOS_KEY) || "null",
+    );
+    if (
+      Array.isArray(salvo) &&
+      salvo.every((item) => typeof item === "string")
+    ) {
       return salvo;
     }
   } catch {
@@ -284,10 +304,16 @@ function AreaCard({
             type="button"
             onClick={() => onFavorito(area.slug)}
             className="grid h-9 w-9 place-items-center rounded-lg border border-black/[0.06] text-slate-400 transition hover:text-ouro dark:border-white/10"
-            title={favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-            aria-label={favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+            title={
+              favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"
+            }
+            aria-label={
+              favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"
+            }
           >
-            <Star className={`h-4 w-4 ${favorito ? "fill-current text-ouro" : ""}`} />
+            <Star
+              className={`h-4 w-4 ${favorito ? "fill-current text-ouro" : ""}`}
+            />
           </button>
           <Button
             variant="secondary"
@@ -308,7 +334,10 @@ function AreaCard({
 
   return (
     <Card className="group relative h-full overflow-hidden rounded-xl p-4">
-      <div className={`absolute inset-x-0 top-0 h-[3px] ${visual.tone}`} aria-hidden="true" />
+      <div
+        className={`absolute inset-x-0 top-0 h-[3px] ${visual.tone}`}
+        aria-hidden="true"
+      />
       <div className="relative flex h-full flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
           <div
@@ -320,10 +349,16 @@ function AreaCard({
             type="button"
             onClick={() => onFavorito(area.slug)}
             className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-black/[0.04] hover:text-ouro dark:hover:bg-white/[0.06]"
-            title={favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-            aria-label={favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+            title={
+              favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"
+            }
+            aria-label={
+              favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"
+            }
           >
-            <Star className={`h-4 w-4 ${favorito ? "fill-current text-ouro" : ""}`} />
+            <Star
+              className={`h-4 w-4 ${favorito ? "fill-current text-ouro" : ""}`}
+            />
           </button>
         </div>
         <div className="space-y-1">
@@ -408,7 +443,10 @@ export default function RamosHub() {
   );
 
   const resultadosArea = useMemo(
-    () => (busca.trim() ? ordered.filter((area) => areaCombinaBusca(area, busca)) : []),
+    () =>
+      busca.trim()
+        ? ordered.filter((area) => areaCombinaBusca(area, busca))
+        : [],
     [busca, ordered],
   );
 
@@ -438,7 +476,10 @@ export default function RamosHub() {
           actions={
             <>
               {podeCadastroManual && (
-                <Button variant="secondary" onClick={() => navigate("/cadastro-manual")}>
+                <Button
+                  variant="secondary"
+                  onClick={() => navigate("/cadastro-manual")}
+                >
                   <ClipboardPen className="h-4 w-4" /> Cadastro manual
                 </Button>
               )}
@@ -462,7 +503,8 @@ export default function RamosHub() {
                 O que você precisa trabalhar agora?
               </h2>
               <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-300">
-                Pesquise por área, assunto ou ferramenta — por exemplo: ANPP, usucapião, BACEN, alimentos, LGPD ou licitações.
+                Pesquise por área, assunto ou ferramenta — por exemplo: ANPP,
+                usucapião, BACEN, alimentos, LGPD ou licitações.
               </p>
             </div>
             <Badge>{`${ordered.length} classificações preservadas`}</Badge>
@@ -488,7 +530,8 @@ export default function RamosHub() {
                     Áreas encontradas
                   </h2>
                   <p className="text-xs text-slate-500">
-                    A busca considera especialidades, subáreas e o conteúdo das ferramentas.
+                    A busca considera especialidades, subáreas e o conteúdo das
+                    ferramentas.
                   </p>
                 </div>
                 <Badge>{resultadosArea.length}</Badge>
@@ -526,38 +569,40 @@ export default function RamosHub() {
                   <Badge>{resultadosFerramenta.length}</Badge>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  {resultadosFerramenta.map(({ areaSlug, areaTitulo, ferramenta }) => {
-                    const hub = hubDoRamo(areaSlug);
-                    return (
-                      <button
-                        key={`${areaSlug}:${ferramenta.id}`}
-                        type="button"
-                        disabled={!hub}
-                        onClick={() =>
-                          hub &&
-                          navigate(
-                            `${hub}?tab=ferramentas&ferramenta=${encodeURIComponent(ferramenta.id)}`,
-                          )
-                        }
-                        className="rounded-xl border border-black/[0.06] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-ouro/40 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.03]"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ouro-profundo">
-                              {areaTitulo}
-                            </p>
-                            <h3 className="mt-1 text-sm font-bold text-slate-950 dark:text-white">
-                              {ferramenta.titulo}
-                            </h3>
-                            <p className="mt-1 text-xs leading-5 text-slate-500">
-                              {ferramenta.descricao}
-                            </p>
+                  {resultadosFerramenta.map(
+                    ({ areaSlug, areaTitulo, ferramenta }) => {
+                      const hub = hubDoRamo(areaSlug);
+                      return (
+                        <button
+                          key={`${areaSlug}:${ferramenta.id}`}
+                          type="button"
+                          disabled={!hub}
+                          onClick={() =>
+                            hub &&
+                            navigate(
+                              `${hub}?tab=ferramentas&ferramenta=${encodeURIComponent(ferramenta.id)}`,
+                            )
+                          }
+                          className="rounded-xl border border-black/[0.06] bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-ouro/40 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.03]"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ouro-profundo">
+                                {areaTitulo}
+                              </p>
+                              <h3 className="mt-1 text-sm font-bold text-slate-950 dark:text-white">
+                                {ferramenta.titulo}
+                              </h3>
+                              <p className="mt-1 text-xs leading-5 text-slate-500">
+                                {ferramenta.descricao}
+                              </p>
+                            </div>
+                            <Wrench className="h-4 w-4 shrink-0 text-slate-400" />
                           </div>
-                          <Wrench className="h-4 w-4 shrink-0 text-slate-400" />
-                        </div>
-                      </button>
-                    );
-                  })}
+                        </button>
+                      );
+                    },
+                  )}
                 </div>
               </section>
             )}
@@ -571,7 +616,8 @@ export default function RamosHub() {
                     Minhas áreas
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Fixe somente o que você usa no dia a dia. A preferência fica neste navegador.
+                    Fixe somente o que você usa no dia a dia. A preferência fica
+                    neste navegador.
                   </p>
                 </div>
                 <Badge>{`${areasFavoritas.length} favoritas`}</Badge>
@@ -589,7 +635,8 @@ export default function RamosHub() {
                 </div>
               ) : (
                 <Card className="p-5 text-sm text-slate-500">
-                  Nenhuma área fixada. Use a estrela em “Todas as áreas” para montar seu acesso rápido.
+                  Nenhuma área fixada. Use a estrela em “Todas as áreas” para
+                  montar seu acesso rápido.
                 </Card>
               )}
             </section>
@@ -600,7 +647,8 @@ export default function RamosHub() {
                   Todas as áreas
                 </h2>
                 <p className="text-xs text-slate-500">
-                  A taxonomia completa continua disponível, agora organizada por finalidade jurídica em vez de uma grade única.
+                  A taxonomia completa continua disponível, agora organizada por
+                  finalidade jurídica em vez de uma grade única.
                 </p>
               </div>
 
@@ -623,7 +671,9 @@ export default function RamosHub() {
                         <h3 className="text-sm font-bold text-slate-950 dark:text-white">
                           {grupo.titulo}
                         </h3>
-                        <p className="mt-1 text-xs text-slate-500">{grupo.descricao}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {grupo.descricao}
+                        </p>
                       </div>
                       <Badge>{`${areasGrupo.length} matérias`}</Badge>
                     </div>

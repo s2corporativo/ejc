@@ -94,7 +94,9 @@ const ICONE_ABA: Record<WorkspaceTabId, typeof Briefcase> = {
 };
 
 function rotulo(valor: string) {
-  return valor.replace(/_/g, " ").replace(/\b\w/g, (letra) => letra.toUpperCase());
+  return valor
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letra) => letra.toUpperCase());
 }
 
 function ResultadoView({ data }: { data: unknown }) {
@@ -103,7 +105,10 @@ function ResultadoView({ data }: { data: unknown }) {
     return (
       <ul className="space-y-1 pl-4">
         {data.map((item, index) => (
-          <li key={index} className="text-xs text-slate-700 dark:text-slate-200">
+          <li
+            key={index}
+            className="text-xs text-slate-700 dark:text-slate-200"
+          >
             {typeof item === "object" && item !== null ? (
               <ResultadoView data={item} />
             ) : (
@@ -117,35 +122,44 @@ function ResultadoView({ data }: { data: unknown }) {
   if (typeof data === "object") {
     return (
       <div className="space-y-1.5">
-        {Object.entries(data as Record<string, unknown>).map(([chave, valor]) => {
-          if (
-            chave === "homologada" ||
-            chave === "aviso_homologacao" ||
-            METADADOS_REGRA.includes(chave) ||
-            valor === null ||
-            valor === undefined
-          ) {
-            return null;
-          }
-          if (typeof valor === "object") {
-            return (
-              <div key={chave} className="rounded-lg bg-slate-50/70 p-2 dark:bg-white/[0.03]">
-                <div className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
-                  {rotulo(chave)}
+        {Object.entries(data as Record<string, unknown>).map(
+          ([chave, valor]) => {
+            if (
+              chave === "homologada" ||
+              chave === "aviso_homologacao" ||
+              METADADOS_REGRA.includes(chave) ||
+              valor === null ||
+              valor === undefined
+            ) {
+              return null;
+            }
+            if (typeof valor === "object") {
+              return (
+                <div
+                  key={chave}
+                  className="rounded-lg bg-slate-50/70 p-2 dark:bg-white/[0.03]"
+                >
+                  <div className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    {rotulo(chave)}
+                  </div>
+                  <ResultadoView data={valor} />
                 </div>
-                <ResultadoView data={valor} />
+              );
+            }
+            return (
+              <div key={chave} className="flex justify-between gap-4 text-xs">
+                <span className="text-slate-500">{rotulo(chave)}</span>
+                <span className="text-right font-medium text-slate-800 dark:text-slate-100">
+                  {typeof valor === "boolean"
+                    ? valor
+                      ? "Sim"
+                      : "Não"
+                    : String(valor)}
+                </span>
               </div>
             );
-          }
-          return (
-            <div key={chave} className="flex justify-between gap-4 text-xs">
-              <span className="text-slate-500">{rotulo(chave)}</span>
-              <span className="text-right font-medium text-slate-800 dark:text-slate-100">
-                {typeof valor === "boolean" ? (valor ? "Sim" : "Não") : String(valor)}
-              </span>
-            </div>
-          );
-        })}
+          },
+        )}
       </div>
     );
   }
@@ -153,18 +167,24 @@ function ResultadoView({ data }: { data: unknown }) {
 }
 
 function FerramentaWorkspace({ ferramenta }: { ferramenta: FerramentaConfig }) {
-  const [valores, setValores] = useState<Record<string, string | number>>(() => {
-    const iniciais: Record<string, string | number> = {};
-    ferramenta.campos.forEach((campo) => {
-      if (campo.default !== undefined) iniciais[campo.nome] = campo.default;
-    });
-    return iniciais;
-  });
-  const [resultado, setResultado] = useState<Record<string, unknown> | null>(null);
+  const [valores, setValores] = useState<Record<string, string | number>>(
+    () => {
+      const iniciais: Record<string, string | number> = {};
+      ferramenta.campos.forEach((campo) => {
+        if (campo.default !== undefined) iniciais[campo.nome] = campo.default;
+      });
+      return iniciais;
+    },
+  );
+  const [resultado, setResultado] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [gerando, setGerando] = useState(false);
-  const [mensagemDocumento, setMensagemDocumento] = useState<string | null>(null);
+  const [mensagemDocumento, setMensagemDocumento] = useState<string | null>(
+    null,
+  );
   const [linkDocumento, setLinkDocumento] = useState<string | null>(null);
   const casoAtivo = useCaseContext((state) => state.caso);
 
@@ -245,7 +265,10 @@ function FerramentaWorkspace({ ferramenta }: { ferramenta: FerramentaConfig }) {
       );
     } catch (error: unknown) {
       setMensagemDocumento(
-        mensagemErroFerramenta(error, "Falha ao salvar o demonstrativo em Peças."),
+        mensagemErroFerramenta(
+          error,
+          "Falha ao salvar o demonstrativo em Peças.",
+        ),
       );
     } finally {
       setGerando(false);
@@ -282,7 +305,10 @@ function FerramentaWorkspace({ ferramenta }: { ferramenta: FerramentaConfig }) {
       {visiveis.length > 0 && (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {visiveis.map((campo) => (
-            <label key={campo.nome} className="text-xs text-slate-600 dark:text-slate-300">
+            <label
+              key={campo.nome}
+              className="text-xs text-slate-600 dark:text-slate-300"
+            >
               <span className="mb-1 block font-medium">{campo.label}</span>
               {campo.tipo === "select" ? (
                 <select
@@ -316,8 +342,16 @@ function FerramentaWorkspace({ ferramenta }: { ferramenta: FerramentaConfig }) {
       )}
 
       {(!ferramenta.autoLoad || visiveis.length > 0) && (
-        <button className="btn-gold mt-3 text-sm" disabled={loading} onClick={calcular}>
-          {loading ? "Calculando…" : ferramenta.campos.length ? "Calcular" : "Atualizar"}
+        <button
+          className="btn-gold mt-3 text-sm"
+          disabled={loading}
+          onClick={calcular}
+        >
+          {loading
+            ? "Calculando…"
+            : ferramenta.campos.length
+              ? "Calcular"
+              : "Atualizar"}
         </button>
       )}
 
@@ -351,7 +385,10 @@ function FerramentaWorkspace({ ferramenta }: { ferramenta: FerramentaConfig }) {
                 <span className="text-xs text-slate-500">
                   {mensagemDocumento}{" "}
                   {linkDocumento && (
-                    <Link className="font-semibold text-ouro-profundo underline" to={linkDocumento}>
+                    <Link
+                      className="font-semibold text-ouro-profundo underline"
+                      to={linkDocumento}
+                    >
                       Abrir Peças
                     </Link>
                   )}
@@ -387,7 +424,9 @@ const TIPOS_PECA = [
 
 function AnaliseDocumento({ area, casos }: { area: string; casos: Case[] }) {
   const [texto, setTexto] = useState("");
-  const [resultado, setResultado] = useState<Record<string, unknown> | null>(null);
+  const [resultado, setResultado] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
   const [casoSelecionado, setCasoSelecionado] = useState("");
@@ -409,9 +448,13 @@ function AnaliseDocumento({ area, casos }: { area: string; casos: Case[] }) {
       formulario.append("area", area);
       if (arquivo) formulario.append("file", arquivo);
       else formulario.append("texto", texto);
-      const resposta = await api.post("/analise-bancaria/contrato", formulario, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const resposta = await api.post(
+        "/analise-bancaria/contrato",
+        formulario,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      );
       setResultado(resposta.data);
     } catch (error: unknown) {
       setErro(mensagemErroIA(error, "Não foi possível analisar o documento."));
@@ -422,8 +465,12 @@ function AnaliseDocumento({ area, casos }: { area: string; casos: Case[] }) {
 
   const resumo = () => {
     if (!resultado) return "";
-    const principal = typeof resultado.resumo === "string" ? resultado.resumo : "";
-    return `${principal}\n\n${JSON.stringify(resultado, null, 2)}`.slice(0, 4000);
+    const principal =
+      typeof resultado.resumo === "string" ? resultado.resumo : "";
+    return `${principal}\n\n${JSON.stringify(resultado, null, 2)}`.slice(
+      0,
+      4000,
+    );
   };
 
   const salvarNoCaso = async () => {
@@ -476,7 +523,8 @@ function AnaliseDocumento({ area, casos }: { area: string; casos: Case[] }) {
             {TITULO_ANALISE[area] || "Análise de documento"}
           </h3>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            Apoio por IA com revisão obrigatória do advogado. A conclusão não substitui conferência dos autos e das fontes.
+            Apoio por IA com revisão obrigatória do advogado. A conclusão não
+            substitui conferência dos autos e das fontes.
           </p>
         </div>
       </div>
@@ -492,10 +540,17 @@ function AnaliseDocumento({ area, casos }: { area: string; casos: Case[] }) {
             if (arquivo) void analisar(arquivo);
           }}
         />
-        <button className="btn-gold text-sm" onClick={() => arquivoRef.current?.click()}>
+        <button
+          className="btn-gold text-sm"
+          onClick={() => arquivoRef.current?.click()}
+        >
           Enviar PDF
         </button>
-        <button className="btn-secondary text-sm" disabled={loading} onClick={() => void analisar()}>
+        <button
+          className="btn-secondary text-sm"
+          disabled={loading}
+          onClick={() => void analisar()}
+        >
           {loading ? "Analisando…" : "Analisar texto"}
         </button>
       </div>
@@ -553,7 +608,10 @@ function AnaliseDocumento({ area, casos }: { area: string; casos: Case[] }) {
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                 Minuta — rascunho para revisão humana
               </p>
-              <Markdown source={minuta} className="max-h-96 overflow-y-auto text-sm" />
+              <Markdown
+                source={minuta}
+                className="max-h-96 overflow-y-auto text-sm"
+              />
             </div>
           )}
         </div>
@@ -563,11 +621,15 @@ function AnaliseDocumento({ area, casos }: { area: string; casos: Case[] }) {
 }
 
 function ComparadorBacen() {
-  const [modalidades, setModalidades] = useState<Array<Record<string, string>>>([]);
+  const [modalidades, setModalidades] = useState<Array<Record<string, string>>>(
+    [],
+  );
   const [periodo, setPeriodo] = useState("");
   const [indice, setIndice] = useState("");
   const [taxa, setTaxa] = useState("");
-  const [resultado, setResultado] = useState<Record<string, unknown> | null>(null);
+  const [resultado, setResultado] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -597,9 +659,14 @@ function ComparadorBacen() {
           periodo,
         },
       });
-      setResultado({ ...resposta.data, taxa_informada_percentual_mes: taxa || undefined });
+      setResultado({
+        ...resposta.data,
+        taxa_informada_percentual_mes: taxa || undefined,
+      });
     } catch (error: unknown) {
-      setErro(mensagemErroFerramenta(error, "Falha ao consultar a média do BACEN."));
+      setErro(
+        mensagemErroFerramenta(error, "Falha ao consultar a média do BACEN."),
+      );
     } finally {
       setLoading(false);
     }
@@ -614,10 +681,15 @@ function ComparadorBacen() {
         </h3>
       </div>
       <p className="mt-1 text-xs text-slate-500">
-        Compara a taxa informada com a referência de mercado. Diferença de taxa é indício de análise, não conclusão automática de abusividade.
+        Compara a taxa informada com a referência de mercado. Diferença de taxa
+        é indício de análise, não conclusão automática de abusividade.
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <select className="input" value={indice} onChange={(event) => setIndice(event.target.value)}>
+        <select
+          className="input"
+          value={indice}
+          onChange={(event) => setIndice(event.target.value)}
+        >
           <option value="">Modalidade…</option>
           {modalidades.map((modalidade, index) => (
             <option key={`${modalidade.modalidade}:${index}`} value={index}>
@@ -632,7 +704,11 @@ function ComparadorBacen() {
           placeholder="Taxa do contrato (% a.m.)"
         />
       </div>
-      <button className="btn-gold mt-3 text-sm" disabled={loading} onClick={comparar}>
+      <button
+        className="btn-gold mt-3 text-sm"
+        disabled={loading}
+        onClick={comparar}
+      >
         {loading ? "Consultando…" : "Comparar"}
       </button>
       {erro && <p className="mt-2 text-xs text-danger-600">{erro}</p>}
@@ -640,7 +716,8 @@ function ComparadorBacen() {
         <div className="mt-3 rounded-xl bg-slate-50 p-3 dark:bg-white/[0.03]">
           <ResultadoView data={resultado} />
           <p className="mt-2 text-[11px] text-warn-700">
-            Indicador de apoio. A conclusão jurídica exige análise individual do contrato e das circunstâncias do caso.
+            Indicador de apoio. A conclusão jurídica exige análise individual do
+            contrato e das circunstâncias do caso.
           </p>
         </div>
       )}
@@ -648,7 +725,13 @@ function ComparadorBacen() {
   );
 }
 
-function CasosWorkspace({ casos, area }: { casos: Case[] | null; area: string }) {
+function CasosWorkspace({
+  casos,
+  area,
+}: {
+  casos: Case[] | null;
+  area: string;
+}) {
   if (casos === null) return <Spinner />;
   if (!casos.length) {
     return (
@@ -686,7 +769,9 @@ function CasosWorkspace({ casos, area }: { casos: Case[] | null; area: string })
 function EstatisticasWorkspace({ casos }: { casos: Case[] | null }) {
   const total = casos?.length ?? 0;
   const ativos =
-    casos?.filter((caso) => !["encerrado", "arquivado"].includes(String(caso.status))).length ?? 0;
+    casos?.filter(
+      (caso) => !["encerrado", "arquivado"].includes(String(caso.status)),
+    ).length ?? 0;
   const producao =
     casos?.filter((caso) => String(caso.status) === "em_producao").length ?? 0;
   const protocolados =
@@ -705,7 +790,9 @@ function EstatisticasWorkspace({ casos }: { casos: Case[] | null }) {
           className="rounded-2xl border border-black/[0.05] bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"
         >
           <p className="text-xs text-slate-500">{rotuloItem}</p>
-          <p className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">{valor}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">
+            {valor}
+          </p>
         </div>
       ))}
     </div>
@@ -717,15 +804,21 @@ export default function RamoBase() {
   const [searchParams, setSearchParams] = useSearchParams();
   const cfg: RamoConfig | undefined = slug ? RAMOS[slug] : undefined;
   const [casos, setCasos] = useState<Case[] | null>(null);
-  const [registrosEspecializados, setRegistrosEspecializados] = useState<unknown[] | null>(null);
+  const [registrosEspecializados, setRegistrosEspecializados] = useState<
+    unknown[] | null
+  >(null);
   const [modalRegistro, setModalRegistro] = useState(false);
-  const [formularioRegistro, setFormularioRegistro] = useState<Record<string, unknown>>({});
+  const [formularioRegistro, setFormularioRegistro] = useState<
+    Record<string, unknown>
+  >({});
   const [salvandoRegistro, setSalvandoRegistro] = useState(false);
 
   const abas = useMemo(() => (cfg ? abasDoWorkspace(cfg) : []), [cfg]);
   const abaSolicitada = searchParams.get("tab") as WorkspaceTabId | null;
   const abaAtiva =
-    abaSolicitada && abas.includes(abaSolicitada) ? abaSolicitada : "visao-geral";
+    abaSolicitada && abas.includes(abaSolicitada)
+      ? abaSolicitada
+      : "visao-geral";
 
   useEffect(() => {
     if (!cfg) return;
@@ -753,7 +846,9 @@ export default function RamoBase() {
       setRegistrosEspecializados(null);
       api
         .get(cfg.endpoint)
-        .then((resposta) => setRegistrosEspecializados(resposta.data.data ?? []))
+        .then((resposta) =>
+          setRegistrosEspecializados(resposta.data.data ?? []),
+        )
         .catch(() => setRegistrosEspecializados([]));
     }
   }, [cfg, slug]);
@@ -802,7 +897,12 @@ export default function RamoBase() {
       setFormularioRegistro({});
       toast.success("Dados especializados registrados no caso.");
     } catch (error: unknown) {
-      toast.error(mensagemErroFerramenta(error, "Não foi possível registrar os dados especializados."));
+      toast.error(
+        mensagemErroFerramenta(
+          error,
+          "Não foi possível registrar os dados especializados.",
+        ),
+      );
     } finally {
       setSalvandoRegistro(false);
     }
@@ -816,13 +916,19 @@ export default function RamoBase() {
         subtitle={subtituloDoWorkspace(cfg)}
         actions={
           <>
-            <Link className="btn-secondary flex items-center gap-1" to="/areas-de-atuacao">
+            <Link
+              className="btn-secondary flex items-center gap-1"
+              to="/areas-de-atuacao"
+            >
               <ArrowLeft className="h-4 w-4" /> Áreas
             </Link>
             <Link className="btn-secondary" to={casosDaAreaPath(cfg.areaCaso)}>
               Ver em Casos
             </Link>
-            <Link className="btn-gold flex items-center gap-1" to={novoCasoPath(cfg.areaCaso)}>
+            <Link
+              className="btn-gold flex items-center gap-1"
+              to={novoCasoPath(cfg.areaCaso)}
+            >
               <Plus className="h-4 w-4" /> Novo caso
             </Link>
           </>
@@ -864,7 +970,9 @@ export default function RamoBase() {
               className="rounded-2xl border border-black/[0.06] bg-white p-4 transition hover:border-ouro/40 dark:border-white/10 dark:bg-white/[0.03]"
             >
               <FolderOpen className="h-5 w-5 text-ouro-profundo" />
-              <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">Trabalhar casos</h3>
+              <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">
+                Trabalhar casos
+              </h3>
               <p className="mt-1 text-xs leading-5 text-slate-500">
                 Abra a carteira completa já filtrada por esta área.
               </p>
@@ -874,9 +982,12 @@ export default function RamoBase() {
               className="rounded-2xl border border-black/[0.06] bg-white p-4 transition hover:border-ouro/40 dark:border-white/10 dark:bg-white/[0.03]"
             >
               <FileSearch className="h-5 w-5 text-ouro-profundo" />
-              <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">Importar documento</h3>
+              <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">
+                Importar documento
+              </h3>
               <p className="mt-1 text-xs leading-5 text-slate-500">
-                Inicie um caso pela leitura documental com a área pré-selecionada.
+                Inicie um caso pela leitura documental com a área
+                pré-selecionada.
               </p>
             </Link>
             {abas.includes("ferramentas") ? (
@@ -886,7 +997,9 @@ export default function RamoBase() {
                 className="rounded-2xl border border-black/[0.06] bg-white p-4 text-left transition hover:border-ouro/40 dark:border-white/10 dark:bg-white/[0.03]"
               >
                 <Wrench className="h-5 w-5 text-ouro-profundo" />
-                <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">Abrir ferramentas</h3>
+                <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">
+                  Abrir ferramentas
+                </h3>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
                   Cálculos, simuladores e utilitários próprios desta matéria.
                 </p>
@@ -897,8 +1010,12 @@ export default function RamoBase() {
                 className="rounded-2xl border border-black/[0.06] bg-white p-4 transition hover:border-ouro/40 dark:border-white/10 dark:bg-white/[0.03]"
               >
                 <BookOpen className="h-5 w-5 text-ouro-profundo" />
-                <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">Peças</h3>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Acesse a produção jurídica do escritório.</p>
+                <h3 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">
+                  Peças
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Acesse a produção jurídica do escritório.
+                </p>
               </Link>
             )}
           </section>
@@ -907,30 +1024,43 @@ export default function RamoBase() {
             <section className="rounded-2xl border border-black/[0.06] bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-950 dark:text-white">Dados especializados</h3>
+                  <h3 className="text-sm font-bold text-slate-950 dark:text-white">
+                    Dados especializados
+                  </h3>
                   <p className="mt-1 text-xs text-slate-500">
-                    Registro complementar vinculado a um caso existente. Não cria um segundo caso.
+                    Registro complementar vinculado a um caso existente. Não
+                    cria um segundo caso.
                   </p>
                 </div>
-                <button className="btn-secondary text-sm" onClick={() => setModalRegistro(true)}>
+                <button
+                  className="btn-secondary text-sm"
+                  onClick={() => setModalRegistro(true)}
+                >
                   Registrar dados especializados
                 </button>
               </div>
               {registrosEspecializados === null ? (
-                <div className="mt-3"><Spinner /></div>
+                <div className="mt-3">
+                  <Spinner />
+                </div>
               ) : registrosEspecializados.length > 0 ? (
                 <p className="mt-3 text-xs text-slate-500">
-                  {registrosEspecializados.length} registro(s) especializado(s) nesta área.
+                  {registrosEspecializados.length} registro(s) especializado(s)
+                  nesta área.
                 </p>
               ) : (
-                <p className="mt-3 text-xs text-slate-400">Nenhum registro complementar criado.</p>
+                <p className="mt-3 text-xs text-slate-400">
+                  Nenhum registro complementar criado.
+                </p>
               )}
             </section>
           )}
         </div>
       )}
 
-      {abaAtiva === "casos" && <CasosWorkspace casos={casos} area={cfg.areaCaso} />}
+      {abaAtiva === "casos" && (
+        <CasosWorkspace casos={casos} area={cfg.areaCaso} />
+      )}
 
       {abaAtiva === "ferramentas" && (
         <div className="space-y-4">
@@ -947,7 +1077,10 @@ export default function RamoBase() {
           {ferramentas.length > 0 ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {ferramentas.map((ferramenta) => (
-                <FerramentaWorkspace key={ferramenta.id} ferramenta={ferramenta} />
+                <FerramentaWorkspace
+                  key={ferramenta.id}
+                  ferramenta={ferramenta}
+                />
               ))}
             </div>
           ) : (
@@ -961,7 +1094,9 @@ export default function RamoBase() {
               cfg.ambientalEstrategia ||
               cfg.sociedadesCliente ||
               cfg.lgpdRegistros
-            ) && <Empty message="Nenhuma ferramenta específica cadastrada para esta área." />
+            ) && (
+              <Empty message="Nenhuma ferramenta específica cadastrada para esta área." />
+            )
           )}
         </div>
       )}
@@ -969,7 +1104,10 @@ export default function RamoBase() {
       {abaAtiva === "analise" && (
         <div className="space-y-4">
           {cfg.analiseDocumento && (
-            <AnaliseDocumento area={cfg.analiseArea || cfg.areaCaso} casos={casos ?? []} />
+            <AnaliseDocumento
+              area={cfg.analiseArea || cfg.areaCaso}
+              casos={casos ?? []}
+            />
           )}
           {cfg.analiseExtratos && <AnaliseExtratos />}
         </div>
@@ -979,9 +1117,12 @@ export default function RamoBase() {
         <div className="space-y-4">
           {subareas.length > 0 && (
             <section className="rounded-2xl border border-black/[0.06] bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
-              <h3 className="text-sm font-bold text-slate-950 dark:text-white">Escopo da área</h3>
+              <h3 className="text-sm font-bold text-slate-950 dark:text-white">
+                Escopo da área
+              </h3>
               <p className="mt-1 text-xs text-slate-500">
-                Subáreas para orientação e pesquisa. A classificação do caso continua sendo confirmada pelo advogado.
+                Subáreas para orientação e pesquisa. A classificação do caso
+                continua sendo confirmada pelo advogado.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {subareas.map((subarea) => (
@@ -1013,7 +1154,9 @@ export default function RamoBase() {
 
           {(cfg.ferramentasExternas?.length ?? 0) > 0 && (
             <section className="rounded-2xl border border-black/[0.06] bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
-              <h3 className="text-sm font-bold text-slate-950 dark:text-white">Fontes e serviços externos</h3>
+              <h3 className="text-sm font-bold text-slate-950 dark:text-white">
+                Fontes e serviços externos
+              </h3>
               <div className="mt-3 grid gap-2 md:grid-cols-2">
                 {cfg.ferramentasExternas?.map((item) => (
                   <a
@@ -1024,8 +1167,12 @@ export default function RamoBase() {
                     className="flex items-start justify-between gap-3 rounded-xl border border-black/[0.05] p-3 transition hover:border-ouro/40 dark:border-white/10"
                   >
                     <div>
-                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{item.nome}</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">{item.descricao}</p>
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                        {item.nome}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {item.descricao}
+                      </p>
                     </div>
                     <ExternalLink className="h-4 w-4 shrink-0 text-slate-400" />
                   </a>
@@ -1049,7 +1196,10 @@ export default function RamoBase() {
               className="input"
               value={String(formularioRegistro.case_id ?? "")}
               onChange={(event) =>
-                setFormularioRegistro({ ...formularioRegistro, case_id: event.target.value })
+                setFormularioRegistro({
+                  ...formularioRegistro,
+                  case_id: event.target.value,
+                })
               }
             >
               <option value="">Selecione o caso…</option>
@@ -1066,7 +1216,10 @@ export default function RamoBase() {
             )}
           </div>
           {cfg.campos.map((campo) => (
-            <div key={campo.nome} className={campo.col === 2 ? "sm:col-span-2" : ""}>
+            <div
+              key={campo.nome}
+              className={campo.col === 2 ? "sm:col-span-2" : ""}
+            >
               <label className="label">
                 {campo.label}
                 {campo.obrigatorio ? " *" : ""}
@@ -1138,7 +1291,11 @@ export default function RamoBase() {
           ))}
         </div>
         <div className="mt-5 flex justify-end">
-          <button className="btn-primary" disabled={salvandoRegistro} onClick={registrarEspecializado}>
+          <button
+            className="btn-primary"
+            disabled={salvandoRegistro}
+            onClick={registrarEspecializado}
+          >
             {salvandoRegistro ? "Salvando…" : "Registrar ficha especializada"}
           </button>
         </div>

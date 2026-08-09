@@ -15,11 +15,7 @@ export type GrupoArea = {
 };
 
 export type WorkspaceTabId =
-  | "visao-geral"
-  | "casos"
-  | "ferramentas"
-  | "analise"
-  | "referencias";
+  "visao-geral" | "casos" | "ferramentas" | "analise" | "referencias";
 
 export type ResultadoFerramentaBusca = {
   areaSlug: string;
@@ -55,7 +51,8 @@ export const GRUPOS_AREAS: GrupoArea[] = [
   {
     id: "pessoas",
     titulo: "Pessoas e Patrimônio",
-    descricao: "Relações privadas, família, patrimônio, consumo e proteção social.",
+    descricao:
+      "Relações privadas, família, patrimônio, consumo e proteção social.",
     slugs: [
       "civil",
       "consumidor",
@@ -70,7 +67,8 @@ export const GRUPOS_AREAS: GrupoArea[] = [
   {
     id: "negocios",
     titulo: "Empresas e Negócios",
-    descricao: "Estrutura empresarial, contratos, crédito, tributos e relações de trabalho.",
+    descricao:
+      "Estrutura empresarial, contratos, crédito, tributos e relações de trabalho.",
     slugs: [
       "empresarial",
       "societario",
@@ -84,7 +82,8 @@ export const GRUPOS_AREAS: GrupoArea[] = [
   {
     id: "publico",
     titulo: "Poder Público e Regulação",
-    descricao: "Administração, licitações, regulação, ambiente, trânsito e controle público.",
+    descricao:
+      "Administração, licitações, regulação, ambiente, trânsito e controle público.",
     slugs: [
       "administrativo",
       "licitacoes",
@@ -139,7 +138,9 @@ export function subtituloDoWorkspace(cfg: RamoConfig): string {
 export function ferramentasDoWorkspace(cfg: RamoConfig): FerramentaConfig[] {
   if (cfg.slug !== "civel") return cfg.ferramentas;
   const gruposDelegados = new Set(["Consumidor", "Família", "Imobiliário"]);
-  return cfg.ferramentas.filter((f) => !f.grupo || !gruposDelegados.has(f.grupo));
+  return cfg.ferramentas.filter(
+    (f) => !f.grupo || !gruposDelegados.has(f.grupo),
+  );
 }
 
 export function subareasDoWorkspace(cfg: RamoConfig): string[] {
@@ -159,7 +160,9 @@ export function subareasDoWorkspace(cfg: RamoConfig): string[] {
   ];
   return subareas.filter((subarea) => {
     const texto = normalizarBusca(subarea);
-    return !termosDelegados.some((termo) => texto.includes(normalizarBusca(termo)));
+    return !termosDelegados.some((termo) =>
+      texto.includes(normalizarBusca(termo)),
+    );
   });
 }
 
@@ -167,14 +170,14 @@ export function abasDoWorkspace(cfg: RamoConfig): WorkspaceTabId[] {
   const abas: WorkspaceTabId[] = ["visao-geral", "casos"];
   const temFerramentasEspecializadas = Boolean(
     cfg.comparadorBacen ||
-      cfg.bancarioForense ||
-      cfg.liquidacaoTrabalhista ||
-      cfg.tributarioFiscal ||
-      cfg.previdenciarioSimulacao ||
-      cfg.autosAmbientais ||
-      cfg.ambientalEstrategia ||
-      cfg.lgpdRegistros ||
-      cfg.sociedadesCliente,
+    cfg.bancarioForense ||
+    cfg.liquidacaoTrabalhista ||
+    cfg.tributarioFiscal ||
+    cfg.previdenciarioSimulacao ||
+    cfg.autosAmbientais ||
+    cfg.ambientalEstrategia ||
+    cfg.lgpdRegistros ||
+    cfg.sociedadesCliente,
   );
   if (ferramentasDoWorkspace(cfg).length || temFerramentasEspecializadas) {
     abas.push("ferramentas");

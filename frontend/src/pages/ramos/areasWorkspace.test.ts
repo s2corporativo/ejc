@@ -33,27 +33,54 @@ describe("areasWorkspace", () => {
 
   it("apresenta Cível Geral sem repetir ferramentas de consumidor, família e imobiliário", () => {
     const civel = RAMOS.civel;
-    const grupos = ferramentasDoWorkspace(civel).map((ferramenta) => ferramenta.grupo);
+    const grupos = ferramentasDoWorkspace(civel).map(
+      (ferramenta) => ferramenta.grupo,
+    );
     expect(tituloDoWorkspace(civel)).toBe("Direito Cível Geral");
     expect(subtituloDoWorkspace(civel)).toContain("Responsabilidade civil");
     expect(grupos).not.toContain("Consumidor");
     expect(grupos).not.toContain("Família");
     expect(grupos).not.toContain("Imobiliário");
-    expect(ferramentasDoWorkspace(civel).some((ferramenta) => ferramenta.id === "custas-tjmg")).toBe(true);
-    expect(ferramentasDoWorkspace(civel).some((ferramenta) => ferramenta.id === "prazos-contestacao")).toBe(true);
+    expect(
+      ferramentasDoWorkspace(civel).some(
+        (ferramenta) => ferramenta.id === "custas-tjmg",
+      ),
+    ).toBe(true);
+    expect(
+      ferramentasDoWorkspace(civel).some(
+        (ferramenta) => ferramenta.id === "prazos-contestacao",
+      ),
+    ).toBe(true);
   });
 
   it("mantém busca central por ferramentas sem recolocar as duplicidades de Cível", () => {
     const anpp = buscarFerramentas("ANPP");
-    expect(anpp.some((resultado) => resultado.areaSlug === "penal" && resultado.ferramenta.id === "anpp")).toBe(true);
+    expect(
+      anpp.some(
+        (resultado) =>
+          resultado.areaSlug === "penal" && resultado.ferramenta.id === "anpp",
+      ),
+    ).toBe(true);
 
     const alimentos = buscarFerramentas("alimentos");
-    expect(alimentos.some((resultado) => resultado.areaSlug === "civel" && resultado.ferramenta.grupo === "Família")).toBe(false);
+    expect(
+      alimentos.some(
+        (resultado) =>
+          resultado.areaSlug === "civel" &&
+          resultado.ferramenta.grupo === "Família",
+      ),
+    ).toBe(false);
   });
 
   it("define abas conforme os recursos reais de cada workspace", () => {
     expect(abasDoWorkspace(RAMOS.bancario)).toEqual(
-      expect.arrayContaining(["visao-geral", "casos", "ferramentas", "analise", "referencias"]),
+      expect.arrayContaining([
+        "visao-geral",
+        "casos",
+        "ferramentas",
+        "analise",
+        "referencias",
+      ]),
     );
     expect(abasDoWorkspace(RAMOS.civel)).toContain("ferramentas");
     expect(abasDoWorkspace(RAMOS.civel)).not.toContain("analise");
