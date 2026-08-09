@@ -78,6 +78,24 @@ describe("Entrada Jurídica — contexto e RBAC", () => {
     expect(screen.queryByText("analisar-test")).toBeNull();
   });
 
+  it("não inicia a IA enquanto o client_id da URL ainda não foi validado", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === "/clients/c1") return new Promise(() => {});
+      if (url === "/entrada-universal/meta") return Promise.resolve({ data: {} });
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/entrada?client_id=c1"]}>
+        <EntradaUnica />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith("/clients/c1"));
+    fireEvent.click(screen.getByText("analisar-test"));
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
   it("revalida client_id no backend e ele vence cliente inferido pela IA", async () => {
     render(
       <MemoryRouter initialEntries={["/entrada?client_id=c1"]}>
@@ -86,6 +104,7 @@ describe("Entrada Jurídica — contexto e RBAC", () => {
     );
 
     await waitFor(() => expect(getMock).toHaveBeenCalledWith("/clients/c1"));
+    await waitFor(() => screen.getByText("analisar-test"));
     fireEvent.click(screen.getByText("analisar-test"));
 
     await waitFor(() =>
