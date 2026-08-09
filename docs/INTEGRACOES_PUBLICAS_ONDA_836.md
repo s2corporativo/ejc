@@ -22,7 +22,7 @@ ficam sob JWT e rate limit no gateway já montado em `app/integrations/routers.p
 | PGFN Dados Abertos | `integrations/pgfn_open_data_client.py` | due diligence tributária | descobre arquivos bulk; sem consulta individual |
 | Querido Diário | `integrations/querido_diario_client.py` | diários municipais | agregador secundário; conferir publicação original |
 | IDE-Sisema/MG | `integrations/ide_sisema_client.py` | Ambiental/geoespacial | WFS 2.0, camada e BBOX validados |
-| INLABS/DOU XML | `integrations/inlabs_parser.py` | processamento estruturado do DOU | sem automação de login; exige conferência na versão certificada |
+| INLABS/DOU XML | `integrations/inlabs_parser.py` | processamento estruturado do DOU | sem automação de login; exige conferência na publicação oficial |
 
 ## Feature flags e ativação segura
 
@@ -44,10 +44,12 @@ externa. A referência operacional está em
 | Querido Diário | `QUERIDO_DIARIO_ENABLED` |
 | IDE-Sisema | `IDE_SISEMA_ENABLED` |
 
-Ativação recomendada: **uma fonte por vez**, smoke real na VPS e observação de
-latência/erros. Se uma fonte apresentar quebra de contrato, indisponibilidade ou
-questão de termos de uso, `FLAG=false` é o rollback imediato antes de qualquer
-reversão de código.
+Ativação recomendada: **uma fonte por vez**, somente por configuração do ambiente
+aprovado e pela esteira automatizada de deploy após CI verde na `main`. O smoke
+de conectividade deve ocorrer em ambiente aprovado ou no deployment automatizado,
+sem acesso manual ao banco ou ao diretório de produção. Se uma fonte apresentar
+quebra de contrato, indisponibilidade ou questão de termos de uso, `FLAG=false`
+é o rollback operacional imediato antes de qualquer reversão de código.
 
 ### TCU e `.env` legado
 
@@ -92,6 +94,9 @@ Dois requisitos de rastreabilidade são explícitos:
 2. indisponibilidade da API é propagada ao job e registrada como erro, nunca
    convertida em falso “sucesso com zero resultados”.
 
+Além disso, somente URLs HTTPS de `tcu.gov.br` ou subdomínios oficiais podem ser
+persistidas como fonte citável pelo RAG.
+
 ## INLABS
 
 O portal INLABS exige fluxo de cadastro/autenticação para obtenção dos pacotes.
@@ -101,11 +106,15 @@ cria segredo novo. O parser aceita XML/ZIP já obtido por fluxo autorizado, com:
 - teto de tamanho compactado e descompactado;
 - limite de arquivos;
 - bloqueio de path traversal;
+- rejeição de `DOCTYPE`/`ENTITY` antes do parse XML;
+- conversão de falhas de leitura de membros ZIP em erro controlado;
 - normalização de metadados do schema real (`identifica`, `pubName`, `artType`,
   `name` como identificador interno);
 - marca explícita `requer_conferencia_certificada=True`.
 
-O monitor DOU atual via `in.gov.br` permanece intacto como caminho operacional.
+Para conclusão jurídica, a conferência permanece na publicação eletrônica oficial
+do DOU no sítio da Imprensa Nacional, sob o regime do Decreto 9.215/2017. O
+monitor DOU atual via `in.gov.br` permanece intacto como caminho operacional.
 
 ## LGPD e governança
 
@@ -126,13 +135,13 @@ O monitor DOU atual via `in.gov.br` permanece intacto como caminho operacional.
 `backend/tests/test_integracoes_publicas_onda_836.py` cobre clientes, parsers,
 limites, proveniência, allowlists, feature flags default OFF, configuração TCU
 com `.env` legado, propagação de indisponibilidade TCU, identificação citável,
-schema real INLABS, preservação das URLs BrasilAPI e registro do TCU no
-importador RAG. Toda rede é simulada por `httpx.MockTransport`.
+schema real INLABS, endurecimento XML/ZIP, preservação das URLs BrasilAPI e
+registro do TCU no importador RAG. Toda rede é simulada por `httpx.MockTransport`.
 
 ## Rollback
 
-Primeiro nível: desligar somente a flag da fonte afetada e reiniciar o serviço
-que carrega o `.env`, conforme o procedimento operacional padrão do EJC.
+Primeiro nível: desligar somente a flag da fonte afetada e promover a alteração
+pela esteira de configuração/deploy aprovada do EJC.
 
 Segundo nível: reverter o PR da Issue #836. Não há migration nem alteração de
 schema. As rotas antigas de DataJud/DJEN/BrasilAPI mantêm seus paths externos e
