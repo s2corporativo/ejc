@@ -76,7 +76,7 @@ export default function DptRadar() {
                 className="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.03]"
               >
                 <div className="text-xs font-semibold capitalize text-slate-500">
-                  {area.replaceAll("_", "/")}
+                  {area.replace(/_/g, "/")}
                 </div>
                 <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
                   {total}
