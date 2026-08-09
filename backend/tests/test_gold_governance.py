@@ -52,6 +52,17 @@ def test_caso_sintetico_nao_pode_se_passar_por_gold_real():
     assert any("fictícia" in e for e in erros)
 
 
+def test_curadoria_rejeita_data_futura_e_vigencia_posterior_a_revisao():
+    caso = _caso_ok()
+    caso["curadoria"]["revisado_em"] = "2026-08-08"
+    caso["curadoria"]["vigencia_conferida_em"] = "2099-01-01"
+    caso["curadoria"]["fontes_oficiais"][0]["consultada_em"] = "2099-01-01"
+
+    erros = validar_caso_real(caso)
+    assert any("data futura" in e for e in erros)
+    assert any("posterior a revisado_em" in e for e in erros)
+
+
 def test_auditoria_ignora_example_na_cobertura(tmp_path: Path):
     (tmp_path / "gold_set.example.jsonl").write_text(
         json.dumps({"id": "x", "area": "civel", "query": "x"}) + "\n",
