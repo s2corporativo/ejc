@@ -113,6 +113,15 @@ ADICOES_INTENCIONAIS = {
     ("/api/dpt360/intake/opportunities", "GET"),
     ("/api/dpt360/intake/opportunities", "POST"),
     ("/api/dpt360/actions", "POST"),
+    # Issue #861 — rotas deliberadas da blindagem operacional.
+    ("/api/analytics/produtividade/export-event", "POST"),
+    ("/api/despesas/recorrentes/gerar", "POST"),
+    ("/api/portal/admin/documentos", "GET"),
+    ("/api/portal/admin/documentos/{document_id}/publicar", "POST"),
+    ("/api/portal/admin/documentos/{document_id}/revogar", "POST"),
+    ("/api/signatures/{sig_id}/cancelar", "POST"),
+    ("/api/signatures/{sig_id}/recusar", "POST"),
+    ("/api/sociedade/socios/{socio_id}/historico", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
