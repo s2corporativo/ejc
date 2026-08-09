@@ -72,6 +72,29 @@ const EMPTY_FORM: FormNota = {
   fee_id: "",
 };
 
+function statusFiscalLabel(nota: NotaFiscal): string {
+  if (nota.provider === "manual" && nota.status === "cancelada") {
+    return "registro encerrado";
+  }
+  return nota.status;
+}
+
+function statusFiscalTitle(nota: NotaFiscal): string | undefined {
+  if (nota.provider === "manual" && nota.status === "cancelada") {
+    return (
+      "Registro encerrado somente no EJC. Isso NÃO confirma cancelamento fiscal " +
+      "no Emissor Nacional; confira a situação oficial no gov.br."
+    );
+  }
+  if (nota.status === "rejeitada" && nota.mensagem_erro) {
+    return nota.mensagem_erro;
+  }
+  if (nota.status === "cancelada" && nota.motivo_cancelamento) {
+    return nota.motivo_cancelamento;
+  }
+  return undefined;
+}
+
 export default function NotasFiscais() {
   const [statusInfo, setStatusInfo] = useState<NfseStatusInfo | null>(null);
   const [data, setData] = useState<NotaFiscalListResponse | null>(null);
@@ -79,8 +102,6 @@ export default function NotasFiscais() {
   const [fees, setFees] = useState<Fee[]>([]);
   const [error, setError] = useState(false);
   const [searchParams] = useSearchParams();
-  // Filtro inicial pode vir de drill-down (?status=autorizada), como nas
-  // demais abas do workspace financeiro.
   const [statusF, setStatusF] = useState(() => {
     const s = searchParams.get("status");
     return s && STATUS_VALIDOS.includes(s) ? s : "";
@@ -102,8 +123,6 @@ export default function NotasFiscais() {
         params: { limit: LIMIT, offset, status: statusF || undefined },
       });
       if (r.data.items.length === 0 && offset > 0) {
-        // Página presa no vazio (após filtro/cancelamento): volta à primeira
-        // página; o useEffect refaz o fetch com offset 0.
         setOffset(0);
         return;
       }
@@ -132,8 +151,6 @@ export default function NotasFiscais() {
       .catch(() => setFees([]));
   }, []);
 
-  // Só aceita URL do domínio oficial do Emissor Nacional; qualquer outro
-  // valor vindo da API cai no fallback local.
   const emissorUrl = statusInfo?.emissor_nacional_url?.startsWith(
     "https://www.nfse.gov.br",
   )
@@ -196,7 +213,6 @@ export default function NotasFiscais() {
 
   const baixar = async (n: NotaFiscal, kind: "pdf" | "xml") => {
     try {
-      // Reusa o cliente axios (baseURL /api + interceptor de token/refresh).
       const resp = await api.get(`/nfse/${n.id}/${kind}`, {
         responseType: "blob",
       });
@@ -216,7 +232,7 @@ export default function NotasFiscais() {
   const cancelar = async () => {
     if (!cancelNota || cancelando) return;
     if (motivo.trim().length < 3) {
-      toast.error("Informe o motivo do cancelamento (mínimo 3 caracteres).");
+      toast.error("Informe o motivo do encerramento local (mínimo 3 caracteres).");
       return;
     }
     setCancelando(true);
@@ -224,12 +240,14 @@ export default function NotasFiscais() {
       await api.post(`/nfse/manual/${cancelNota.id}/cancelar`, {
         motivo: motivo.trim(),
       });
-      toast.success("Nota cancelada.");
+      toast.success(
+        "Registro encerrado no EJC. Isso não confirma cancelamento fiscal no Emissor Nacional.",
+      );
       setCancelNota(null);
       setMotivo("");
       void load();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao cancelar a nota.");
+      toast.error(e.response?.data?.detail || "Erro ao encerrar o registro local.");
     } finally {
       setCancelando(false);
     }
@@ -237,7 +255,6 @@ export default function NotasFiscais() {
 
   return (
     <div>
-      {/* Cabeçalho fica no FinanceiroWorkspace; aqui as ações da aba. */}
       <div className="card mb-4 flex flex-wrap items-center justify-between gap-3 p-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-semibold text-navy">
@@ -335,17 +352,15 @@ export default function NotasFiscais() {
                   <td className="px-4 py-3 font-semibold">
                     {n.valor == null ? "—" : fmtMoney(Number(n.valor))}
                   </td>
-                  <td
-                    className="px-4 py-3"
-                    title={
-                      (n.status === "rejeitada" && n.mensagem_erro) ||
-                      (n.status === "cancelada" && n.motivo_cancelamento) ||
-                      undefined
-                    }
-                  >
+                  <td className="px-4 py-3" title={statusFiscalTitle(n)}>
                     <Badge tone={STATUS_TONE[n.status] ?? "slate"}>
-                      {n.status}
+                      {statusFiscalLabel(n)}
                     </Badge>
+                    {n.provider === "manual" && n.status === "cancelada" && (
+                      <div className="mt-1 max-w-48 text-[10px] leading-4 text-danger-600">
+                        Apenas no EJC; confira o estado fiscal no gov.br.
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {n.provider === "manual" ? (
@@ -376,7 +391,7 @@ export default function NotasFiscais() {
                     {n.provider === "manual" && n.status !== "cancelada" && (
                       <button
                         className="btn-ghost px-2 py-1 text-danger-600"
-                        title="Cancelar nota"
+                        title="Encerrar somente o registro local no EJC"
                         onClick={() => {
                           setCancelNota(n);
                           setMotivo("");
@@ -550,20 +565,22 @@ export default function NotasFiscais() {
       <Modal
         open={!!cancelNota}
         onClose={() => setCancelNota(null)}
-        title={`Cancelar nota ${cancelNota?.numero || ""}`}
+        title={`Encerrar registro local da nota ${cancelNota?.numero || ""}`}
       >
         <div className="space-y-4">
-          <p className="text-sm text-slate-600">
-            O cancelamento é apenas lógico neste registro — se necessário,
-            cancele também no Emissor Nacional (gov.br).
-          </p>
+          <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-800">
+            Esta ação <b>não cancela a NFS-e perante o Fisco</b>. Ela apenas encerra
+            o registro administrativo dentro do EJC. Se a nota precisar ser
+            cancelada fiscalmente, faça o procedimento no Emissor Nacional
+            (gov.br) e confira a situação oficial.
+          </div>
           <div>
-            <label className="label">Motivo do cancelamento *</label>
+            <label className="label">Motivo do encerramento local *</label>
             <textarea
               className="input min-h-20 resize-y"
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
-              placeholder="Ex.: nota emitida com valor incorreto"
+              placeholder="Ex.: registro substituído após correção da nota no emissor"
             />
           </div>
           <button
@@ -571,7 +588,7 @@ export default function NotasFiscais() {
             disabled={cancelando}
             onClick={() => void cancelar()}
           >
-            {cancelando ? "Cancelando..." : "Confirmar cancelamento"}
+            {cancelando ? "Encerrando..." : "Confirmar encerramento local"}
           </button>
         </div>
       </Modal>
