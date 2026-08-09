@@ -273,9 +273,130 @@ resume o que a IA efetivamente sabe, o fluxo de retrieval e o estado real da jur
 
 ## 6. Radares de Compliance/Regulatório e integrações externas
 
-*(Consolidação da frente específica — causa-raiz dos ingestores e inventário de integrações.)*
+### 6.1 Descoberta estrutural: três clientes do Senado, contratos incompatíveis
 
-<!-- SEÇÃO 6: PREENCHIDA AO FIM DA FRENTE RADARES -->
+Existem **três implementações paralelas** do mesmo endpoint do Senado, com parsers mutuamente
+incompatíveis — e a fixture de teste do próprio repo
+(`tests/test_radar_legislativo.py:88-93`) documenta o shape real (ANINHADO:
+`IdentificacaoMateria.CodigoMateria`, `DadosBasicosMateria.EmentaMateria`):
+
+| Cliente | URL | Parser espera | Consumidor |
+|---|---|---|---|
+| `services/ingestors/senado.py:19` | `.../lista.json` | shape **ACHATADO** (`m["Ementa"]`, `m["Codigo"]`…) — **errado** | job `ing_senado` 04h20 → RAG |
+| `services/radar_legislativo.py:32,152` | `.../lista.json` | shape ANINHADO — certo | job `radar_legislativo` 07h → `diario_oficial_alertas` |
+| `services/radar_poder.py:58,74` | `.../lista` (**sem `.json`**) | shape ANINHADO | widget `GET /intelligence-v3/radar/legislativo` |
+
+### 6.2 Causas-raiz das falhas dos radares (ordenadas por confiança)
+
+| # | Causa | Evidência | Status |
+|---|---|---|---|
+| R-1 | **Ingestor do Senado descarta 100% dos itens em silêncio**: lê campos achatados de payload aninhado → `ementa=None` → `len<50` → `continue` para todo item; retorna `(0,0)` e grava `status="sucesso"`. **Não existe teste para `ingestors/senado.py`** (há para stj/tjmg/djen/lexml/planalto). Contraste: `ingestors/camara.py:49-52` usa os campos certos da API v2 | `ingestors/senado.py:52-54` vs fixture `test_radar_legislativo.py:88-93` | **CONFIRMADO** |
+| R-2 | `radar_poder` (Senado): URL **sem `.json`** → API devolve XML → `r.json()` levanta sempre → `except` → `[]` para as 5 keywords. Os outros dois clientes usam `.json` e o comentário `radar_legislativo.py:10` registra o requisito | `radar_poder.py:56-67` | **CONFIRMADO** |
+| R-3 | `radar_poder` (Câmara): não passa `keywords`/`itens` à API — traz ~15 proposições default do ano e filtra 5 termos em memória; probabilidade de casar ≈ 0. Widget devolve `[]` estável com HTTP 200 | `radar_poder.py:20-38` | **CONFIRMADO** |
+| R-4 | Monitor DOU: `DOU_SEARCH_URL` aponta para a **tela de busca HTML** do in.gov.br; o parser espera o JSON de outra rota (`leiturajornal`) → `JSONDecodeError` → `warning` → `[]` | `diario_oficial_service.py:11,35-45` | Alta confiança **[PRODUÇÃO]** |
+| R-5 | Monitor DOU: sem `DiarioOficialKeyword` cadastrada o job retorna 0 sem tocar a rede — e **não há seed de keywords no repo** (só POST manual). Heartbeat grava "ok" | `diario_oficial_service.py:88-96` | **CONFIRMADO** |
+| R-6 | Radar Legislativo: exceção engolida em três camadas (`_get_json`→None; termo→warning; fonte→"erro" no resumo) e notificação só com `total>0` — zero por falha é indistinguível de zero por ausência de novidade | `radar_legislativo.py:92-97,435-449,476-482` | **CONFIRMADO** |
+| R-7 | **Radar de Compliance não tem fonte externa própria**: 2 das 3 fontes leem a mesma tabela `diario_oficial_alertas` (vazia pelas causas acima); `try/except` por fonte só acusa exceção — lista vazia sai como sucesso; degrada para lista de autos ambientais (única fonte interna) | `compliance.py:163,198-206,288-307` | **CONFIRMADO** |
+| R-8 | ALMG: path `/api/v2/` provavelmente errado (serviço público é `/ws/`); comentários do próprio arquivo admitem probe com timeout e "parse TOLERANTE" escrito sem ver resposta real | `radar_legislativo.py:12,34-36` | Alta confiança **[PRODUÇÃO]** |
+| R-9 | Senado via `radar_legislativo`: `palavraChave` com texto livre ("reforma trabalhista") casa contra **tesauro indexado**, não full-text de ementa — filtro tende a descartar tudo | `radar_legislativo.py:254-260` | Média-alta **[PRODUÇÃO]** |
+
+**Experimento mínimo que decide tudo**: um `GET
+https://legis.senado.leg.br/dadosabertos/materia/pesquisa/lista.json?ano=2026&sigla=PL` a
+partir da VPS desambigua os três parsers de uma vez. Verificação barata em banco:
+`SELECT slug, ultimo_status, registros_novos, execucoes_zeradas_consecutivas FROM
+fontes_ingestao WHERE slug IN ('senado','camara')`.
+
+### 6.3 Onde o monitoramento ainda mente
+
+O repo já corrigiu o padrão para DJEN/DataJud (`heartbeat_service.py:72-75` cruza execução ×
+resultado via `FONTE_POR_JOB`) — mas o mapa tem **só essas duas entradas**:
+
+- `dou_monitor` bate ponto sem cruzamento com resultado (comentário em
+  `heartbeat_service.py:70-71` admite) — **réplica exata do bug do DJEN, ainda aberta**, no
+  alimentador principal do Radar Regulatório.
+- `job_radar_legislativo` **não registra heartbeat algum** (`radar_legislativo.py:487-499`) —
+  se parar de rodar, nada acusa.
+- `ing_senado`: o sinal `nunca_produziu` (situação CRÍTICA) **existe** em
+  `/ia-governanca/fontes` (`ingestao_saude.py:20-22`), mas não aparece no painel de heartbeat.
+
+Nota: o digest anuncia "DOU/DOE-MG" (`routers/regulatorio.py:73`), mas **não existe coletor de
+DOE-MG** — o único produtor grava `fonte="dou"`.
+
+Sobre o bug `/v1/` duplicado em `regulatorio/digest-semanal`: **não se confirma na árvore
+atual** — a cadeia (interceptor `api.ts:9-23` → nginx → `api_version_middleware.py:31-37`)
+está íntegra. Restam inconsistências de **metadados**: `services/module_registry.py:323`
+declara `/api/v1/regulatorio` enquanto `frontend .../moduleRegistry.tsx:695` declara
+`/api/regulatorio`, e docstrings desatualizadas. Sintoma em produção provavelmente vem de
+bundle antigo ou do probe do mapa de módulos.
+
+### 6.4 Inventário de integrações externas
+
+| Integração | Flag (default) | Endpoint | Erro/fallback |
+|---|---|---|---|
+| DataJud/CNJ | `DATAJUD_ENABLED` (**OFF**) + key | `api-publica.datajud.cnj.jus.br` | exceções tipadas, retry tenacity só transitório, cache 900s — **bom** |
+| Infosimples | `INFOSIMPLES_ENABLED` (**OFF**) + token | `api.infosimples.com/api/v2` | teto diário 50, cache, sem vazar token — **bom** (pago; PR #773 propõe remover) |
+| DJEN intimações | sem flag (gate = usuários com OAB) | `comunicaapi.pje.jus.br` | retry 3×; `fonte_ok=False` em falha; **único caminho já cruzado no heartbeat** |
+| DJEN → RAG | `DJEN_INGEST_ENABLED` (**ON**) | idem | filtro LGPD deliberado: só comunicação com caso **ativo** cadastrado → tende a `novos=0` com poucos casos |
+| WhatsApp saída | `WHATSAPP_ENABLED` (**OFF**) | **nenhum** (vendor Z-API removido) | stub que loga e retorna False — canal morto por design |
+| E-mail/SMTP | `EMAIL_ENABLED` (**OFF**) | `smtp.gmail.com:587` | falha silenciosa documentada; **toda notificação dos radares é no-op com o default** |
+| NFS-e Nuvem Fiscal | `NFSE_ENABLED` (**OFF**, homolog) | `api.nuvemfiscal.com.br` | alíquota/ctrib "a confirmar" — não emitiria nota válida |
+| Transparência/CGU | `TRANSPARENCIA_ENABLED` (**OFF**) | `portaldatransparencia.gov.br` | opt-in, cache diário |
+| BrasilAPI feriados | `FERIADOS_BRASILAPI_ENABLED` (**ON**) | `brasilapi.com.br` | merge aditivo fail-safe |
+| Assinaturas | — | nenhum (fluxo interno) | N/A |
+
+**Padrão que emerge**: integrações pagas/sensíveis nascem OFF e **falham alto**; as gratuitas
+nascem ON e **falham em silêncio**. Os dois radares caem inteiros no segundo grupo.
+
+### 6.5 Nota sobre Groq e Maritaca (complemento à §1)
+
+- **Groq**: SDK oficial, modelos atuais (`openai/gpt-oss-120b`; migração do llama-3.3
+  depreciado já feita). Achado: `GROQ_MODEL` e `GROQ_MODEL_LARGE` apontam para **o mesmo
+  modelo** — o fallback de contexto longo (>20k chars, `groq_provider.py:37-38`) é no-op; a
+  intenção (janela maior) se perdeu na migração. Comentários mortos citando llama3-70b em
+  `ai_service.py:486,802` e `docs/ai/EJC_AI_TASK_ROUTING.md:38` induzem erro de calibração.
+- **Maritaca**: endpoint e auth corretos, erros sem vazamento, flag verificada em defesa em
+  profundidade. `sabia-4`/`sabiazinho-4` **não verificados contra o catálogo vigente**
+  **[PRODUÇÃO]** — se o modelo não existir, o gateway faria fallback silencioso e ninguém
+  saberia que o provider brasileiro nunca respondeu (risco baixo enquanto
+  `MARITACA_ENABLED=false`).
+
+---
+
+## 6-A. Reconciliação com o trabalho do Codex na `main` (pós-base desta auditoria)
+
+A `main` avançou (4d5d4f1 → ffc9cbb) **durante** esta auditoria, com trabalho do Codex que
+toca o módulo de IA. Reconciliação dos achados:
+
+- **`bab55ee` — "verdade da Jurimetria, cobertura MG/JEC e providers" (#925)** +
+  **`63ca850` (#937)**: reescrevem `routers/ia_saude.py`, `jurimetria.py`,
+  `jurimetria_extra.py` e criam `services/rag_coverage.py` — a **"geometria MG/JEC"** agora
+  tem serviço dedicado de cobertura com as coleções `jurisprudencia_tjmg_acordaos`,
+  `jurisprudencia_tjmg_juizados`, `sentencas_jec_tjmg`, `fonaje_enunciados`, `stj_juizados`,
+  `datajud_metadados` (+ mapeamento lógico da jurisprudência genérica do crawler TJMG), só
+  metadados/contagens, com testes de contrato (`test_jurimetria_truth_contract.py`,
+  `test_rag_coverage.py`, `test_ia_saude_operacional.py`).
+  **Efeito nos achados**: **A-16 corrigido** (o `ia_saude` da main atual inclui Maritaca e não
+  usa mais `os.getenv`); **A-15 parcialmente corrigido** (permanece em
+  `routers/ai_tools.py:48,63-66` e `ai_cost.py`).
+- **`870e22b` — DPT360 Ondas 1–10 (#942)**: novos `ai/core/dpt360_protocol.py` e
+  `dpt360_registry.py` — registro **explícito** de competências no núcleo ("não cria executor,
+  gateway, provider ou política HITL paralelos"), na direção certa contra o achado N-2.
+- **`hitl_policy.py` ganhou `_propagar_alertas_critica`**: falhas/alertas da 2ª IA (crítica
+  adversarial) agora são copiados para `alertas`, visíveis em todas as superfícies — atenua a
+  observação da §4 sobre a finura do módulo (a lacuna de testes de borda permanece).
+- **`system_prompts/juizados.py` reescrito (+92 linhas), `base.py`, `minutas.py`,
+  `padrao_ouro.py` ajustados** — o prompt de Juizados (relevante para o benchmark MG/JEC do
+  Anexo A) foi aprofundado após a base desta auditoria.
+- **Frente ativa não integrada**: família de branches `stabilization/rag-vigencia-*` /
+  `port/rag-vigencia-*` / `claude/rag-vigencia-gate` ("P0.1 — gate jurídico de vigência com
+  pré-armação") em CI no momento desta auditoria — toca exatamente a §5 (vigência no RAG).
+  **Esta reanálise não deve ser lida como estado final da vigência**: conferir o PR dessa
+  família antes de agir na área.
+
+Os demais achados (A-1…A-14, A-17…A-22, N-1…N-12, lacunas de teste, R-1…R-9) **permanecem
+válidos na main atual** — os arquivos que os fundamentam (`ai_gateway.py`, providers,
+`citation_gate.py`, `legal_docs.py`, `agent_registry.py`, radares) não foram tocados pelo
+intervalo 4d5d4f1..ffc9cbb, exceto onde anotado acima.
 
 ---
 
@@ -298,6 +419,23 @@ resume o que a IA efetivamente sabe, o fluxo de retrieval e o estado real da jur
 8. **[P2] Atualizar `docs/ai/`** — hoje induz operação errada (custo, LGPD, roteamento).
 9. **[P2] `AI_ENABLED` decidir**: ou vira kill-switch de verdade no gateway (A-1), ou é
    removida para não dar falsa sensação de controle.
+
+**Radares (a partir da §6):**
+
+10. **[P0] Corrigir o parser do ingestor do Senado** (R-1) para o shape aninhado que a
+    própria fixture documenta, **com teste** (hoje inexistente) — e rodar o experimento mínimo
+    da VPS antes, para validar o contrato real.
+11. **[P0] Fechar o buraco do monitoramento**: mapear `dou_monitor` em `FONTE_POR_JOB`,
+    registrar heartbeat do `job_radar_legislativo` e exibir `nunca_produziu` no painel —
+    regra do repo: job novo/corrigido monitora **resultado**, não execução.
+12. **[P1] `radar_poder`**: adicionar `.json` na URL do Senado (R-2) e passar
+    `keywords`/`itens` server-side na Câmara (R-3) — ou aposentar o widget em favor do
+    `radar_legislativo`, que já faz certo.
+13. **[P1] Monitor DOU**: trocar a URL pela rota que serve JSON (R-4), semear keywords
+    iniciais (R-5) e remover "DOE-MG" do rótulo até existir coletor.
+14. **[P2] `GROQ_MODEL_LARGE`**: apontar para modelo de janela maior ou remover o fallback
+    no-op; limpar comentários/doc do llama descontinuado; verificar `sabia-4` contra o
+    catálogo Maritaca antes de ligar `MARITACA_ENABLED`.
 
 ---
 
