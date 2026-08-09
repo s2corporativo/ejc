@@ -14,7 +14,7 @@ vi.mock("../lib/api", () => ({
 
 function resposta(url: string) {
   if (url === "/jurimetria/desfechos") {
-    return { data: { total_encerrados: 0, por_resultado: [], lessons_learned: [] } };
+    return { data: { total_encerrados: 0, por_resultado: [], licoes_aprendidas: [] } };
   }
   if (url === "/jurimetria/overview") {
     return { data: { taxa_sucesso_geral: 0.5 } };
@@ -23,7 +23,14 @@ function resposta(url: string) {
   if (url === "/jurimetria/por-tribunal") return { data: [] };
   if (url === "/jurimetria/por-tese") return { data: [] };
   if (url === "/jurimetria/interno/stats") {
-    return { data: { fonte: "base interna", por_tribunal: [{ tribunal: "TJMG", total: 12 }] } };
+    return {
+      data: {
+        fonte: "base interna",
+        total_com_tribunal: 123,
+        // Top 15 é apenas breakdown; a soma deliberadamente não representa o total.
+        por_tribunal: [{ tribunal: "TJMG", total: 12 }],
+      },
+    };
   }
   if (url === "/jurimetria/cobertura-rag") {
     return { data: { documentos: 100, chunks: 250 } };
@@ -45,7 +52,12 @@ function resposta(url: string) {
     return {
       data: {
         fonte: "base interna",
-        tempo_tramitacao: { media_dias: 120, mediana_dias: 100, total_processos: 8 },
+        tribunal: new URLSearchParams(url.split("?")[1]).get("tribunal"),
+        tempo_tramitacao: {
+          media_dias: 120,
+          mediana_dias: 100,
+          total_processos: 8,
+        },
       },
     };
   }
@@ -70,7 +82,7 @@ beforeEach(() => {
 });
 
 describe("Jurimetria — verdade da fonte", () => {
-  it("renderiza fonte interna e cobertura real sem anunciar benchmark externo", async () => {
+  it("renderiza fonte interna, total real e cobertura sem anunciar benchmark externo", async () => {
     render(<Jurimetria />);
 
     await waitFor(() => {
@@ -86,6 +98,8 @@ describe("Jurimetria — verdade da fonte", () => {
       ),
     ).toBe(true);
 
+    expect(screen.getByText("123")).toBeTruthy();
+    expect(screen.getByText("casos com tribunal informado")).toBeTruthy();
     expect(screen.getByText("Cobertura Real do Conhecimento da IA")).toBeTruthy();
     expect(screen.getByText("100")).toBeTruthy();
     expect(screen.getByText("250")).toBeTruthy();
@@ -115,5 +129,51 @@ describe("Jurimetria — verdade da fonte", () => {
 
     expect(await screen.findByText("62.5%")).toBeTruthy();
     expect(screen.getByText("Taxa histórica favorável")).toBeTruthy();
+  });
+
+  it("ignora resposta antiga quando o tribunal muda antes da requisição anterior terminar", async () => {
+    let resolveTjmg: ((value: unknown) => void) | undefined;
+    let resolveStj: ((value: unknown) => void) | undefined;
+
+    getMock.mockImplementation((url: string) => {
+      if (url === "/jurimetria/interno/benchmarks?tribunal=TJMG") {
+        return new Promise((resolve) => {
+          resolveTjmg = resolve;
+        });
+      }
+      if (url === "/jurimetria/interno/benchmarks?tribunal=STJ") {
+        return new Promise((resolve) => {
+          resolveStj = resolve;
+        });
+      }
+      return Promise.resolve(resposta(url));
+    });
+
+    render(<Jurimetria />);
+    await screen.findByText("Histórico Interno por Tribunal");
+
+    fireEvent.click(screen.getByRole("button", { name: "STJ" }));
+    await waitFor(() => expect(resolveStj).toBeDefined());
+
+    resolveStj?.({
+      data: {
+        fonte: "base interna",
+        tempo_tramitacao: { media_dias: 45, mediana_dias: 40, total_processos: 9 },
+      },
+    });
+    await waitFor(() => expect(screen.getByText("45d")).toBeTruthy());
+
+    // A resposta mais lenta do TJMG chega depois e não pode sobrescrever o STJ.
+    resolveTjmg?.({
+      data: {
+        fonte: "base interna",
+        tempo_tramitacao: { media_dias: 999, mediana_dias: 999, total_processos: 99 },
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("45d")).toBeTruthy();
+      expect(screen.queryByText("999d")).toBeNull();
+    });
   });
 });
