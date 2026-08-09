@@ -13,6 +13,8 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from app.integrations.feature_flags import require_enabled
+
 
 PGFN_DADOS_ABERTOS = (
     "https://www.gov.br/pgfn/pt-br/assuntos/divida-ativa-da-uniao/"
@@ -73,6 +75,7 @@ class PgfnOpenDataClient:
         self.timeout = httpx.Timeout(timeout_s)
 
     async def listar_recursos(self, *, ano: int | None = None) -> list[dict[str, str]]:
+        require_enabled("pgfn", "PGFN Dados Abertos")
         if ano is not None and not (2019 <= int(ano) <= 2100):
             raise ValueError("ano fora do intervalo esperado")
         ultimo: Exception | None = None
