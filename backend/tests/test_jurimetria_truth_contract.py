@@ -42,6 +42,34 @@ async def test_analise_prospectiva_nao_conta_acordo_como_vitoria(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_analise_prospectiva_inclui_aliases_exito_e_derrota(monkeypatch):
+    async def _fake_por_resultado(db, tribunal=None):
+        return 10, [
+            {"resultado_raw": "exito", "total": 2},
+            {"resultado_raw": "exito_total", "total": 1},
+            {"resultado_raw": "exito_parcial", "total": 1},
+            {"resultado_raw": "derrota", "total": 1},
+            {"resultado_raw": "improcedente", "total": 1},
+            {"resultado_raw": "acordo", "total": 4},
+        ]
+
+    monkeypatch.setattr(jurimetria_extra, "_por_resultado", _fake_por_resultado)
+    r = await jurimetria_extra.analise_prospectiva(
+        classe="",
+        tribunal="TJMG",
+        dias_estimados=0,
+        db=object(),
+        cu=object(),
+    )
+
+    assert r["favoraveis"] == 4
+    assert r["desfavoraveis"] == 2
+    assert r["amostra_decidida"] == 6
+    assert r["acordos"] == 4
+    assert r["taxa_historica_favoravel"] == 66.7
+
+
+@pytest.mark.asyncio
 async def test_analise_prospectiva_omite_taxa_com_amostra_decidida_baixa(monkeypatch):
     async def _fake_por_resultado(db, tribunal=None):
         return 20, [
