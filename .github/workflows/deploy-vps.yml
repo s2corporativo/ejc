@@ -204,6 +204,136 @@ jobs:
         # a falha fique visível e acionável.
         run: bash /opt/ejc/scripts/post_deploy_check.sh
 
+      # P0.1 — pré-armamento transicional do gate jurídico de vigência.
+      # Fica DENTRO do Deploy VPS para usar exatamente o TARGET_SHA implantado e
+      # a mesma serialização do deploy, sem criar workflow concorrente que possa
+      # cancelar uma execução pendente. Depois que o gate for ativado, o marcador
+      # de ativação faz esta etapa apenas validar/preservar o estado true.
+      - name: Pré-armar gate de vigência em modo compatível
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_DIR=/opt/ejc
+          marker="$APP_DIR/data/.rag_vigencia_prearm_v1"
+          activated_marker="$APP_DIR/data/.rag_vigencia_activated_v1"
+          env_file="$APP_DIR/.env"
+          candidate="$APP_DIR/.env.prearm.new"
+          backup="$APP_DIR/.env.prearm.rollback"
+          work="$(mktemp)"
+          alterado=0
+          concluido=0
+
+          finalizar() {
+            rc=$?
+            trap - EXIT INT TERM
+            set +e
+            rm -f "$work"
+            sudo rm -f "$candidate"
+            if [ "$concluido" != "1" ]; then
+              if [ "$alterado" = "1" ] && sudo test -f "$backup"; then
+                echo "::warning::Prearm RAG interrompido; restaurando .env a partir do backup 0600."
+                sudo mv -f "$backup" "$env_file"
+              fi
+              if sudo test -f "$marker"; then
+                marker_sha="$(sudo cat "$marker" 2>/dev/null || true)"
+                [ "$marker_sha" != "$TARGET_SHA" ] || sudo rm -f "$marker"
+              fi
+            else
+              sudo rm -f "$backup"
+            fi
+            exit "$rc"
+          }
+          trap finalizar EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          deployed="$(sudo cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+          if [ -z "$deployed" ] || [ "$deployed" != "$TARGET_SHA" ]; then
+            echo "::error::Prearm RAG: /opt/ejc não comprova o TARGET_SHA que este Deploy VPS implantou."
+            false
+          fi
+
+          sudo mkdir -p "$APP_DIR/data"
+          sudo test -f "$env_file" || {
+            echo "::error::Prearm RAG: .env de produção ausente."
+            false
+          }
+
+          # Depois da ativação definitiva, nunca rebaixe true→false em deploys
+          # futuros. O marcador ativo só é aceito junto da configuração REAL.
+          if sudo test -f "$activated_marker"; then
+            total_true="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+            true_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=true$' "$env_file" || true)"
+            if [ "$total_true" = "1" ] && [ "$true_count" = "1" ]; then
+              sudo rm -f "$backup"
+              concluido=1
+              echo "Gate de vigência já ativado; prearm preservou configuração canônica true."
+              exit 0
+            fi
+            echo "::error::Prearm RAG: marcador de ativação existe, mas .env não está canonicamente true."
+            false
+          fi
+
+          total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+          false_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$env_file" || true)"
+          if [ "$total" = "1" ] && [ "$false_count" = "1" ]; then
+            sudo rm -f "$backup"
+            printf '%s\n' "$TARGET_SHA" | sudo tee "$marker" >/dev/null
+            sudo chmod 600 "$marker"
+            concluido=1
+            echo "Prearm RAG já canônico em false; prova atualizada para o SHA implantado."
+            exit 0
+          fi
+
+          uid="$(sudo stat -c %u "$env_file")"
+          gid="$(sudo stat -c %g "$env_file")"
+          mode="$(sudo stat -c %a "$env_file")"
+
+          # Nunca imprime o .env. O awk preserva todas as demais linhas,
+          # remove duplicatas da chave e grava UMA ocorrência canônica=false.
+          sudo cat "$env_file" | awk '
+            BEGIN { seen = 0 }
+            /^RAG_EXIGIR_VIGENCIA_VERIFICADA=/ {
+              if (!seen) {
+                print "RAG_EXIGIR_VIGENCIA_VERIFICADA=false"
+                seen = 1
+              }
+              next
+            }
+            { print }
+            END {
+              if (!seen) print "RAG_EXIGIR_VIGENCIA_VERIFICADA=false"
+            }
+          ' > "$work"
+          chmod 600 "$work"
+
+          sudo rm -f "$candidate" "$backup"
+          sudo install -o "$uid" -g "$gid" -m "$mode" "$work" "$candidate"
+          candidate_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$candidate" || true)"
+          candidate_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$candidate" || true)"
+          if [ "$candidate_total" != "1" ] || [ "$candidate_false" != "1" ]; then
+            echo "::error::Prearm RAG: candidato não ficou canônico; destino não será tocado."
+            false
+          fi
+
+          sudo cp -p "$env_file" "$backup"
+          sudo chmod 600 "$backup"
+          sudo mv -f "$candidate" "$env_file"
+          alterado=1
+
+          final_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+          final_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$env_file" || true)"
+          if [ "$final_total" != "1" ] || [ "$final_false" != "1" ]; then
+            echo "::error::Prearm RAG: validação pós-rename falhou."
+            false
+          fi
+
+          printf '%s\n' "$TARGET_SHA" | sudo tee "$marker" >/dev/null
+          sudo chmod 600 "$marker"
+          concluido=1
+          echo "Prearm RAG concluído: gate estrito permanece desligado até backfill/ativação."
+
       - name: Resumo da implantação
         if: always()
         env:
