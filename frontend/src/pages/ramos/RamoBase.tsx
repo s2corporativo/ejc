@@ -291,7 +291,7 @@ function CasosDoRamo({
   }
   if (casos.length === 0) {
     return (
-      <Empty message="Nenhum caso canônico registrado nesta área. Use Novo caso para abrir o cadastro central do EJC." />
+      <Empty message="Nenhum caso canônico registrado nesta área. Use Novo caso para abrir a Entrada Jurídica do EJC." />
     );
   }
   return (
@@ -620,7 +620,7 @@ export default function RamoBase() {
             </Link>
             {podeCriarCaso && (
               <Link
-                to="/casos/novo"
+                to={`/entrada?modo=relato&area=${encodeURIComponent(cfg.areaCaso)}`}
                 className="btn-gold flex items-center gap-1 text-sm"
               >
                 <Plus size={16} /> Novo caso
