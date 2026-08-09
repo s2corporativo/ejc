@@ -71,12 +71,12 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Lista notificações preservando o contrato legado `{data, nao_lidas}`.
+    """Lista notificações sem quebrar o contrato histórico do sino.
 
-    `limit` continua funcionando exatamente como antes. A paginação explícita é
-    ativada somente quando `page` ou `page_size` é informado; nesse modo o
-    tamanho é `page_size` (ou o `limit` legado, se omitido). Metadados novos são
-    aditivos e consumidores antigos podem ignorá-los.
+    Sem `page`/`page_size` e sem ordenação nova, a resposta preserva literalmente
+    `{data, nao_lidas}` e o mesmo custo de duas queries. A paginação é opt-in;
+    somente nesse modo entram `total`, `page` e `page_size`. Criticidade também
+    só é exposta quando o consumidor pede paginação ou ordenação por criticidade.
     """
     filtros = [Notification.user_id == cu.id]
     if apenas_nao_lidas:
@@ -85,6 +85,7 @@ async def listar(
     paginado = page is not None or page_size is not None
     pagina = page or 1
     tamanho = page_size or limit
+    modo_avancado = paginado or ordenar_criticidade
 
     q = select(Notification).where(*filtros)
     if ordenar_criticidade:
@@ -95,7 +96,6 @@ async def listar(
         )
         q = q.order_by(ordem_criticidade, Notification.created_at.desc())
     else:
-        # Compatibilidade: o sino histórico continua estritamente cronológico.
         q = q.order_by(Notification.created_at.desc())
 
     if paginado:
@@ -104,13 +104,8 @@ async def listar(
         q = q.limit(limit)
     rows = (await db.execute(q)).scalars().all()
 
-    total = (
-        await db.execute(
-            select(sqlfunc.count()).select_from(Notification).where(*filtros)
-        )
-    ).scalar() or 0
-
-    # Contagem exata e independente do recorte/página exibida.
+    # Contagem exata e independente do recorte/página exibida. Esta já existia
+    # no contrato legado e continua sendo a segunda query do sino.
     nao_lidas = (
         await db.execute(
             select(sqlfunc.count()).where(
@@ -120,26 +115,36 @@ async def listar(
         )
     ).scalar() or 0
 
-    return {
-        "data": [
+    data = []
+    for n in rows:
+        item = {
+            "id": n.id,
+            "titulo": n.titulo,
+            "mensagem": n.mensagem,
+            "tipo": n.tipo,
+            "link": n.link,
+            "lida": n.lida,
+            "created_at": n.created_at,
+        }
+        if modo_avancado:
+            item["criticidade"] = _criticidade(n.tipo)
+        data.append(item)
+
+    resposta = {"data": data, "nao_lidas": int(nao_lidas)}
+    if paginado:
+        total = (
+            await db.execute(
+                select(sqlfunc.count()).select_from(Notification).where(*filtros)
+            )
+        ).scalar() or 0
+        resposta.update(
             {
-                "id": n.id,
-                "titulo": n.titulo,
-                "mensagem": n.mensagem,
-                "tipo": n.tipo,
-                "criticidade": _criticidade(n.tipo),
-                "link": n.link,
-                "lida": n.lida,
-                "created_at": n.created_at,
+                "total": int(total),
+                "page": pagina,
+                "page_size": tamanho,
             }
-            for n in rows
-        ],
-        "nao_lidas": int(nao_lidas),
-        "total": int(total),
-        "page": pagina,
-        "page_size": tamanho,
-        "paginado": paginado,
-    }
+        )
+    return resposta
 
 
 @router.get("/preferences", response_model=NotificationPreferenceEnvelope)
