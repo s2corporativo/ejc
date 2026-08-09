@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import app.eval.gold_governance as gold_governance
 from app.eval.gold_governance import (
     auditar_diretorio,
     avaliar_prontidao,
@@ -23,11 +24,13 @@ def _caso_ok() -> dict:
             "revisor": "revisor-independente",
             "revisado_em": "2026-08-08",
             "vigencia_conferida_em": "2026-08-08",
-            "fontes_oficiais": [{
-                "titulo": "Fonte oficial",
-                "url": "https://www.planalto.gov.br/exemplo",
-                "consultada_em": "2026-08-08",
-            }],
+            "fontes_oficiais": [
+                {
+                    "titulo": "Fonte oficial",
+                    "url": "https://www.planalto.gov.br/exemplo",
+                    "consultada_em": "2026-08-08",
+                }
+            ],
         },
     }
 
@@ -63,6 +66,25 @@ def test_curadoria_rejeita_data_futura_e_vigencia_posterior_a_revisao():
     assert any("posterior a revisado_em" in e for e in erros)
 
 
+def test_pii_em_campo_versionado_fora_da_lista_antiga_e_bloqueada():
+    caso = _caso_ok()
+    caso["metadados"] = {"observacao": "CPF 123.456.789-00"}
+
+    erros = validar_caso_real(caso)
+
+    assert any("PII detectada no payload versionado" in e for e in erros)
+    assert any("CPF" in e for e in erros)
+
+
+def test_sanitizer_indisponivel_bloqueia_gold(monkeypatch):
+    def indisponivel():
+        raise RuntimeError("sanitizer indisponível")
+
+    monkeypatch.setattr(gold_governance, "_validador_pii", indisponivel)
+    erros = validar_caso_real(_caso_ok())
+    assert any("validação de PII indisponível" in e for e in erros)
+
+
 def test_auditoria_ignora_example_na_cobertura(tmp_path: Path):
     (tmp_path / "gold_set.example.jsonl").write_text(
         json.dumps({"id": "x", "area": "civel", "query": "x"}) + "\n",
@@ -80,6 +102,28 @@ def test_auditoria_conta_apenas_caso_real_valido(tmp_path: Path):
     assert audit.erros == []
     assert audit.casos_reais == 1
     assert audit.por_area == {"consumidor": 1}
+
+
+def test_auditoria_rejeita_id_duplicado_entre_arquivos(tmp_path: Path):
+    caso = _caso_ok()
+    (tmp_path / "gold_set_a.jsonl").write_text(
+        json.dumps(caso, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "gold_set_b.jsonl").write_text(
+        json.dumps(caso, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    audit = auditar_diretorio(tmp_path)
+
+    assert audit.casos_reais == 1
+    assert any(
+        "gold_set_b.jsonl:1" in e
+        and "id duplicado" in e
+        and "gold_set_a.jsonl:1" in e
+        for e in audit.erros
+    )
 
 
 def test_prontidao_falha_area_critica_sem_amostra_suficiente():
