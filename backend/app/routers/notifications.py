@@ -30,32 +30,89 @@ from app.services.notification_preferences import (
 
 router = APIRouter(prefix="/notifications", tags=["Notificações"])
 
+# Tipos cuja perda de visibilidade pode gerar risco processual/material. A
+# prioridade é derivada no retorno — sem alterar registros históricos nem criar
+# migration. O frontend pode separar a caixa crítica do ruído informativo.
+_TIPOS_CRITICOS = {"prazo", "intimacao", "audiencia", "prescricao"}
+_TIPOS_ALTOS = {"documento", "workflow", "financeiro", "societario"}
+
 
 def _role_value(user: User) -> str:
     return getattr(user.role, "value", str(user.role))
 
 
+def _prioridade(tipo: str | None) -> str:
+    valor = (tipo or "").lower()
+    if valor in _TIPOS_CRITICOS:
+        return "critica"
+    if valor in _TIPOS_ALTOS:
+        return "alta"
+    return "normal"
+
+
 @router.get("/")
 async def listar(
     apenas_nao_lidas: bool = False,
+    prioridade: str | None = Query(default=None, pattern="^(critica|alta|normal)$"),
+    page: int = Query(1, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=100),
+    # `limit` preserva clientes antigos. Quando page_size é informado, ele vence.
     limit: int = Query(30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    tamanho = page_size or limit
     q = select(Notification).where(Notification.user_id == cu.id)
+    count_q = select(sqlfunc.count()).where(Notification.user_id == cu.id)
     if apenas_nao_lidas:
         q = q.where(Notification.lida.is_(False))
-    q = q.order_by(Notification.created_at.desc()).limit(limit)
+        count_q = count_q.where(Notification.lida.is_(False))
+
+    if prioridade:
+        if prioridade == "critica":
+            tipos = _TIPOS_CRITICOS
+            q = q.where(Notification.tipo.in_(tipos))
+            count_q = count_q.where(Notification.tipo.in_(tipos))
+        elif prioridade == "alta":
+            tipos = _TIPOS_ALTOS
+            q = q.where(Notification.tipo.in_(tipos))
+            count_q = count_q.where(Notification.tipo.in_(tipos))
+        else:
+            relevantes = _TIPOS_CRITICOS | _TIPOS_ALTOS
+            q = q.where(~Notification.tipo.in_(relevantes))
+            count_q = count_q.where(~Notification.tipo.in_(relevantes))
+
+    total_filtrado = int((await db.execute(count_q)).scalar() or 0)
+    q = (
+        q.order_by(Notification.created_at.desc())
+        .offset((page - 1) * tamanho)
+        .limit(tamanho)
+    )
     rows = (await db.execute(q)).scalars().all()
 
-    nao_lidas = (
-        await db.execute(
-            select(sqlfunc.count()).where(
-                Notification.user_id == cu.id,
-                Notification.lida.is_(False),
+    nao_lidas = int(
+        (
+            await db.execute(
+                select(sqlfunc.count()).where(
+                    Notification.user_id == cu.id,
+                    Notification.lida.is_(False),
+                )
             )
-        )
-    ).scalar()
+        ).scalar()
+        or 0
+    )
+    criticas_nao_lidas = int(
+        (
+            await db.execute(
+                select(sqlfunc.count()).where(
+                    Notification.user_id == cu.id,
+                    Notification.lida.is_(False),
+                    Notification.tipo.in_(_TIPOS_CRITICOS),
+                )
+            )
+        ).scalar()
+        or 0
+    )
 
     return {
         "data": [
@@ -64,6 +121,7 @@ async def listar(
                 "titulo": n.titulo,
                 "mensagem": n.mensagem,
                 "tipo": n.tipo,
+                "prioridade": _prioridade(n.tipo),
                 "link": n.link,
                 "lida": n.lida,
                 "created_at": n.created_at,
@@ -71,6 +129,11 @@ async def listar(
             for n in rows
         ],
         "nao_lidas": nao_lidas,
+        "criticas_nao_lidas": criticas_nao_lidas,
+        "total": total_filtrado,
+        "page": page,
+        "page_size": tamanho,
+        "pages": (total_filtrado + tamanho - 1) // tamanho if tamanho else 0,
     }
 
 
@@ -158,8 +221,8 @@ class PushSubIn(BaseModel):
     @field_validator("endpoint")
     @classmethod
     def _valida_endpoint(cls, v: str) -> str:
-        # SSRF guard: só serviços de push conhecidos via https (ver notification_service).
         from app.services.notification_service import endpoint_push_valido
+
         if not endpoint_push_valido(v):
             raise ValueError(
                 "endpoint de push não permitido — apenas serviços FCM/Mozilla/Apple/WNS via https"
