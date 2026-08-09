@@ -72,12 +72,42 @@ async def update_case_kanban(
     if not row:
         raise HTTPException(404, "Case not found")
 
+    status_anterior = row["status"]
     novo_status = _status_da_coluna(kanban_column or "")
-    if novo_status and novo_status != row["status"]:
+
+    # Achado da auditoria (docs/PLANO_FUSAO_CASO_UNICO.md §4.3-5): este era o
+    # segundo caminho — além do PATCH genérico — que sincronizava status para
+    # arquivado/encerrado sem o gate de papel de POST /arquivar nem o
+    # pós-mortem obrigatório de POST /encerrar. Arrastar um cartão para essas
+    # colunas passa a exigir o mesmo caminho dedicado; a coluna em si continua
+    # livre para mover (só a sincronização de status é recusada).
+    if novo_status in ("arquivado", "encerrado") and novo_status != status_anterior:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Use POST /cases/{id}/arquivar" if novo_status == "arquivado"
+                else "Use POST /cases/{id}/encerrar (exige pós-mortem)"
+            ),
+        )
+
+    if novo_status and novo_status != status_anterior:
         await db.execute(
             text("UPDATE cases SET kanban_column=:col, kanban_position=:pos, status=:st, updated_at=NOW() WHERE id=:id"),
             {"col": kanban_column, "pos": kanban_position, "st": novo_status, "id": case_id}
         )
+        # Reabertura (sai de encerrado/arquivado): mesma limpeza de campos de
+        # desfecho que o PATCH genérico faz — um caso reaberto pelo kanban não
+        # pode continuar contando como desfecho em jurimetria/case_health.
+        if status_anterior in ("encerrado", "arquivado"):
+            await db.execute(
+                text(
+                    "UPDATE cases SET data_encerramento=NULL, resultado=NULL, "
+                    "motivo_resultado=NULL, provas_determinantes=NULL, "
+                    "licoes_aprendidas=NULL, archived_at=NULL, archive_reason=NULL "
+                    "WHERE id=:id"
+                ),
+                {"id": case_id},
+            )
     else:
         await db.execute(
             text("UPDATE cases SET kanban_column=:col, kanban_position=:pos, updated_at=NOW() WHERE id=:id"),
