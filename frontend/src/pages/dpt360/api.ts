@@ -118,6 +118,33 @@ export type DptActionResponse = {
   log_id?: string | null;
 };
 
+export type DptDiagnosticKind =
+  | "completo"
+  | "tributario"
+  | "ambiental"
+  | "administrativo"
+  | "trabalhista"
+  | "contratual"
+  | "lgpd"
+  | "governanca_ia";
+
+export type DptDiagnosticReadiness = {
+  client_id: string;
+  tipo: DptDiagnosticKind;
+  generated_at: string;
+  areas: Array<{
+    area: string;
+    estado: "com_evidencias" | "nao_avaliado";
+    evidencias_disponiveis: Array<{ tipo: string; presente: boolean; quantidade?: number | null }>;
+    lacunas_preliminares: string[];
+    regra: string;
+  }>;
+  pode_iniciar_analise: boolean;
+  persistencia: "nao_habilitada_nesta_pilha";
+  motivo_persistencia: string;
+  hitl: "obrigatorio";
+};
+
 export async function getDptDashboard(): Promise<DptDashboard> {
   const response = await api.get<DptDashboard>("/dpt360/dashboard");
   return response.data;
@@ -125,6 +152,16 @@ export async function getDptDashboard(): Promise<DptDashboard> {
 
 export async function getDptCompanyProfile(clientId: string): Promise<DptCompanyProfile> {
   const response = await api.get<DptCompanyProfile>(`/dpt360/companies/${clientId}`);
+  return response.data;
+}
+
+export async function getDptDiagnosticReadiness(
+  clientId: string,
+  kind: DptDiagnosticKind,
+): Promise<DptDiagnosticReadiness> {
+  const response = await api.get<DptDiagnosticReadiness>(`/dpt360/diagnostics/readiness/${clientId}`, {
+    params: { kind },
+  });
   return response.data;
 }
 
