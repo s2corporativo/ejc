@@ -193,10 +193,17 @@ function EntradaInteligente() {
   }, [clienteContexto, proposta]);
 
   const analisar = useCallback(async () => {
-    if (clientIdContexto && clienteContextoInvalido) {
-      toast.error(
-        "O cliente informado não está disponível para o seu perfil. Abra a Entrada Jurídica sem esse vínculo ou retorne à sua carteira.",
-      );
+    // Quando a URL veio da Ficha Mestra, a análise só pode começar DEPOIS que
+    // o backend confirmou o cliente. Assim um id em query nunca é promovido a
+    // cliente do caso por simples presença no navegador.
+    if (clientIdContexto && !clienteContexto) {
+      if (clienteContextoInvalido) {
+        toast.error(
+          "O cliente informado não está disponível para o seu perfil. Abra a Entrada Jurídica sem esse vínculo ou retorne à sua carteira.",
+        );
+      } else {
+        toast.info("Aguarde a validação do cliente selecionado.");
+      }
       return;
     }
     setFase("analisando");
@@ -222,11 +229,11 @@ function EntradaInteligente() {
         setFase("inicial");
         return;
       }
-      if (clientIdContexto) {
+      if (clientIdContexto && clienteContexto) {
         nova = {
           ...nova,
-          clienteId: clientIdContexto,
-          clienteNome: clienteContexto?.nome || nova.clienteNome,
+          clienteId: clienteContexto.id,
+          clienteNome: clienteContexto.nome,
           clienteOrigem: "contexto_cliente",
           clienteJaCadastrada: true,
           avisos: [...nova.avisos, "Cliente fixado pela Ficha Mestra."],
