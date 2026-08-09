@@ -112,7 +112,7 @@ export default function DptDiagnosis({
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-semibold capitalize text-slate-900 dark:text-white">
-                    {area.area.replaceAll("_", " ")}
+                    {area.area.replace(/_/g, " ")}
                   </span>
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                     {area.estado === "com_evidencias"
