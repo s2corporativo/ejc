@@ -6,7 +6,7 @@
 // resposta que CHEGOU nunca vira tela de erro (degradado = confirmação com
 // campos vazios); rascunho sobrevive ao F5 via sessionStorage.
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
 import { PageHeader } from "../components/UI";
@@ -14,6 +14,7 @@ import { useAuth } from "../stores/auth";
 import type { User } from "../types";
 import { Confirmacao } from "./EntradaUnica/Confirmacao";
 import { TelaAnalisando, TelaInicial } from "./EntradaUnica/TelaEnvio";
+import { resolverAreaPreferida } from "./EntradaUnica/areaPreferida";
 import {
   carregarRascunho,
   limparRascunho,
@@ -40,7 +41,7 @@ function asLista<T>(payload: unknown): T[] {
 /** Mensagem humana a partir de um detail de erro HTTP (nunca objeto cru). */
 function mensagemDeErro(err: unknown, fallback: string): string {
   const detail = (
-    err as { response?: { data?: { detail?: unknown } } } | undefined
+    err as { response?: { data?: { detail?: unknown } } | undefined
   )?.response?.data?.detail;
   const texto = textoDeAchado(detail);
   return texto || fallback;
@@ -48,6 +49,8 @@ function mensagemDeErro(err: unknown, fallback: string): string {
 
 export default function EntradaRelato() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const areaPreferida = resolverAreaPreferida(searchParams.get("area"));
   const { user } = useAuth();
   const meuId = user?.id ?? "";
 
@@ -64,10 +67,16 @@ export default function EntradaRelato() {
   useEffect(() => {
     const salvo = carregarRascunho();
     if (salvo) {
+      // Contexto explícito vindo de uma Área de Atuação prevalece somente na
+      // pré-seleção. A confirmação continua editável pelo advogado.
+      if (areaPreferida) {
+        salvo.area = areaPreferida;
+        salvo.areaConfianca = null;
+      }
       setProposta(salvo);
       setFase("confirmar");
     }
-  }, []);
+  }, [areaPreferida]);
 
   useEffect(() => {
     api
@@ -114,6 +123,10 @@ export default function EntradaRelato() {
         setFase("inicial");
         return;
       }
+      if (areaPreferida) {
+        nova.area = areaPreferida;
+        nova.areaConfianca = null;
+      }
       setErro409(null);
       setProposta(nova);
       setFase("confirmar");
@@ -126,7 +139,7 @@ export default function EntradaRelato() {
       );
       setFase("inicial");
     }
-  }, [arquivos, texto, meuId]);
+  }, [arquivos, texto, meuId, areaPreferida]);
 
   const atualizarProposta = useCallback((patch: Partial<Proposta>) => {
     setProposta((atual) => (atual ? { ...atual, ...patch } : atual));
@@ -254,6 +267,12 @@ export default function EntradaRelato() {
         title="Novo caso"
         subtitle="Cole o relato, arraste os documentos, ou os dois."
       />
+      {areaPreferida && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
+          Área pré-selecionada pelo workspace: <strong>{areaPreferida}</strong>.
+          Você poderá alterá-la na revisão antes de criar o caso.
+        </div>
+      )}
       {fase === "inicial" && (
         <TelaInicial
           texto={texto}
