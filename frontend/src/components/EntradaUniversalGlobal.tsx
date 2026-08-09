@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ScanLine, ShieldCheck, X } from "lucide-react";
 import { useLocation } from "react-router";
 import EntradaUniversalDocumentos, {
@@ -49,10 +49,16 @@ export default function EntradaUniversalGlobal() {
   const [modalidade, setModalidade] = useState("");
   const [ultimoLote, setUltimoLote] =
     useState<EntradaUniversalResultado | null>(null);
+  const exibirAtalhoFlutuante = location.pathname !== "/";
+
+  // O Dashboard já possui a mesma ação na grade de comandos. Se o usuário
+  // navegar para a raiz com o modal aberto, não deixamos uma camada órfã sobre
+  // a nova tela: o estado acompanha a mesma regra que oculta o FAB.
+  useEffect(() => {
+    if (!exibirAtalhoFlutuante) setOpen(false);
+  }, [exibirAtalhoFlutuante]);
 
   if (!user?.role || !ROLES_JURIDICOS.has(user.role)) return null;
-
-  const exibirAtalhoFlutuante = location.pathname !== "/";
 
   return (
     <>
@@ -69,7 +75,7 @@ export default function EntradaUniversalGlobal() {
         </button>
       )}
 
-      {open && (
+      {exibirAtalhoFlutuante && open && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-950/45 p-3 pt-16 md:p-6 md:pt-20">
           <div className="w-full max-w-6xl rounded-xl border border-slate-200 bg-canvas shadow-float dark:border-white/10">
             <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-4 dark:border-white/10 md:px-5">
