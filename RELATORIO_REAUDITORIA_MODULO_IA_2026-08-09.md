@@ -25,7 +25,7 @@ indicadas):
 1. **Erosão do "núcleo único"** (§3.3, N-1/N-2) — três caminhos de IA convivem
    (orchestrator, `gw_chat` direto, loop agêntico); só o primeiro aplica classificação,
    validador de resposta e política HITL completos. O fluxo de **audiência é o caso
-   extremo**: tarefa registrada mas inalcançável, prompt de 14 linhas fora do núcleo, sem
+   extremo**: tarefa registrada, mas inalcançável, prompt de 14 linhas fora do núcleo, sem
    RAG nem validação de citações.
 2. **Qualidade jurídica não medida** (§4) — existe maquinaria completa de avaliação
    (gold sets, LLM-judge, comparador de providers) e **zero golden answers reais**; o único
@@ -97,7 +97,7 @@ desligada **derruba o deploy** (`config.py:1022-1044`).
 
 | Grupo | Flags (default) |
 |---|---|
-| Liga/desliga | `AI_ENABLED` (true), `AI_EXTERNAL_PROVIDERS_ALLOWED` (true), `ANTHROPIC_ENABLED` (true), `MARITACA_ENABLED` (**false**), `OLLAMA_ENABLED` (true no código; **false no compose de produção**), `AI_AGENT_ENABLED` (**false**) |
+| Liga/desliga | `AI_ENABLED` (true), `AI_EXTERNAL_PROVIDERS_ALLOWED` (true), `ANTHROPIC_ENABLED` (true), `MARITACA_ENABLED` (false no código, **mas o compose de produção liga por default**: `${MARITACA_ENABLED:-true}`, `docker-compose.yml:98,157`), `OLLAMA_ENABLED` (true no código; **false no compose de produção**), `AI_AGENT_ENABLED` (**false**) |
 | LGPD | `AI_REQUIRE_SANITIZATION_FOR_EXTERNAL` (true), `AI_ACCEPT_EXTERNAL_WITHOUT_SANITIZATION` (false), `AI_SANITIZATION_MODE_MAP` (""), `PII_ENCRYPTION_KEY`/`PII_HASH_KEY` (obrigatórias em prod) |
 | HITL/qualidade | `AI_REQUIRE_HITL` (true), `CITACOES_POLITICA` (**bloquear**), `CITACOES_MODO_ESTRITO` (false), `DUAS_IAS_ENABLED` (true p/ `elaboracao_peca,auditoria_peca`), `FICHA_TRIAGEM_OBRIGATORIA` (true), `AI_LIVE_GROUNDING_ENABLED` (true), `AI_GROUNDING_DATAJUD_ENABLED` (false) |
 | Roteamento | `AI_PROVIDER` (auto), `AI_PROVIDER_PRIORITY` (ollama,anthropic,maritaca,groq), `ROTEAMENTO_INTELIGENTE_ENABLED` (true), `ROTEAMENTO_PROVIDER_LEVE` (**groq**) / `MEDIO`/`PESADO` (anthropic), limiares 3/6 |
@@ -116,7 +116,7 @@ desligada **derruba o deploy** (`config.py:1022-1044`).
 | A-11 | `AI_REQUIRE_HITL` tem alcance quase nulo: governa só o booleano `requer_revisao`; os bloqueios reais vêm de `LegalDoc.human_reviewed` + citation gate (o nome promete mais do que entrega) | Baixa-média | `hitl_policy.py:15-26` |
 | A-2 | `_provider_elegivel` triplicado (gateway, registry, policy) — já divergiu no passado | Média | `ai_gateway.py:667`; `provider_registry.py:10`; `provider_policy.py:46` |
 | A-4 | Cadeia vazia cai em `[("groq", …)]` sem checar chave/kill-switch — mitigado por monkey-patch de hardening no startup, código-base segue fail-open | Baixa-média | `ai_gateway.py:762-765`; `ai_core_hardening_patch.py:37-68` |
-| A-9 | Áudio sai íntegro (sem sanitização possível) para Groq — 5 portões cumulativos, todos OFF; risco residual = um `true` acidental | Média | `ai_gateway.py:556-628` |
+| A-9 | Áudio sai íntegro (sem sanitização possível) para Groq — mitigado por **5 portões cumulativos e conjuntivos** (confirmação por requisição + `AUDIO_TRANSCRIPTION_ENABLED` + externos permitidos + `GROQ_ZDR_VERIFIED` + `AUDIO_TRANSCRIPTION_DPA_APPROVED`, três deles OFF por default em `config.py:117-123`): um toggle isolado **não** abre o canal; o risco residual exige ligar o conjunto sem o DPA de fato assinado | Baixa-média (redimensionado em review) | `ai_gateway.py:556-628` |
 | A-12/13 | `chat_agentico` fora da telemetria de provedores, do `ai_cost` e do Langfuse (barreira LGPD ok, custo/latência invisíveis) | Baixa | `provider_metrics_runtime.py:88-197`; `ai_gateway.py:1284` |
 | A-14 | `chat()` não grava AILog — trilha legal depende do chamador (76 consumidores) | Média (desenho) | `ai_gateway.py:291-553` |
 | A-19 | Agente exige Anthropic (ponto único de falha) apesar de `maritaca.chat_tools` pronto e nunca chamado | Média | `ai_gateway.py:1264-1269`; `maritaca_provider.py:101-153` |
@@ -213,8 +213,8 @@ OAB/LGPD; nunca inventar acórdão — na dúvida, `"verificar: [tema] no [tribu
 |---|---|---|
 | N-1 | **`TarefaIA.AUDIENCIA` é código morto**: nenhum agente a usa, ausente do classificador, prompt = análise de caso. O fluxo real (`POST /ai/preparar-audiencia`) roda **fora do núcleo**, sem RAG, sem validação de citações, prompt de ~14 linhas, log `tipo_uso="outro"`. Não existe resumidor de atas | `system_prompts/__init__.py:84`; `routers/ai.py:451`; `ai_service.py:853-976` |
 | N-2 | **Três caminhos de IA** convivem com o "núcleo único" (orchestrator; `gw_chat` direto em `ia_defensiva_service.py:307`, `ai_service.py:906-964`, `ia_especializada.py:92`, `ai_skill_service.py`, `peca_service.py`; loop agêntico). A regra declarada em `orchestrator.py:4-5` não corresponde ao código | citados |
-| N-3 | **11 dos 24 agentes de ramo sem skill nativa** (7 também com tarefa genérica `ANALISE_CASO`): saúde, médico, agrário, agronegócio, eleitoral, internacional, contratual (+ sucessões, constitucional, juizados sem skill) — perdem bloco de método e calibração da área | `agent_registry.py:225-334` |
-| N-4 | `_AGENTES_COM_CASO` omite 10 agentes de ramo → `precisa_caso=False` indevido | `intent_classifier.py:217-224` |
+| N-3 | **10 dos 24 agentes de ramo sem skill nativa** (7 deles também com tarefa genérica `ANALISE_CASO`): saúde, médico, agrário, agronegócio, eleitoral, internacional, contratual (+ sucessões, constitucional, juizados sem skill) — perdem bloco de método e calibração da área | `agent_registry.py:225-334` (contagem corrigida em review) |
+| N-4 | `_AGENTES_COM_CASO` omite **7** agentes de ramo (saúde, médico, agrário, agronegócio, eleitoral, internacional, contratual) → `precisa_caso=False` indevido | `intent_classifier.py:217-224` (verificado: 17 dos 24 de ramo presentes) |
 | N-5 | `SecurityLGPDOABAgent` **sem** `roles_permitidos` (pares técnicos exigem) — qualquer staff audita acessos | `agent_registry.py:379-386` |
 | N-6 | Peça de trânsito sem especialização (`_AREA_PROMPT_KEY["transito"]=None` apesar de `PROMPT_TRANSITO` existir e estar registrado) | `peca_service.py:391,409-412`; `__init__.py:75` |
 | N-7 | **Frontend não consome `/ai/core/*`** — núcleo alcançado só por wrappers; endpoints de introspecção sem tela | varredura `frontend/src`; `moduleRegistry.tsx:627` |
@@ -269,16 +269,20 @@ Defesas e Revisões, Raio-X, Governança da IA, Painel de Provedores, Biblioteca
 
 ### 5.1 O que a IA efetivamente sabe
 
-- **Legislação real**: 37 diplomas federais do catálogo Planalto, **chunkados por artigo**
-  (cabeçalho `Art. N — <lei>`, que é o que o `citation_check` procura) —
-  `ingestors/planalto.py:50-148,259-296`. CF/88, CC, CPC, CLT, CDC, CP, CPP, CTN, Lei
-  9.099/95, LGPD, Lei 14.133/21, Maria da Penha, etc. **Zero norma estadual (MG/ALMG) e zero
-  municipal (Betim)**; sem Lei 8.666/93 (contratos legados).
+- **Legislação real**: **36 diplomas federais** do catálogo Planalto, **chunkados por
+  artigo** (cabeçalho `Art. N — <lei>`, que é o que o `citation_check` procura) —
+  `ingestors/planalto.py:50-148,259-296` (contagem verificada no catálogo). CF/88, CC, CPC,
+  CLT, CDC, CP, CPP, CTN, Lei 9.099/95, LGPD, Lei 14.133/21, Maria da Penha, etc. **Zero
+  texto integral de norma estadual (MG/ALMG) ou municipal (Betim)** — o LexML ingere
+  legislação ALMG e de Betim apenas como **`referencia_legislativa`** (metadado/ementa, não
+  texto integral; `ingestors/lexml.py:61,138-147`), categoria que o retrieval semântico
+  default inclui; sem Lei 8.666/93 (contratos legados).
 - **Precedente qualificado curado**: **24 súmulas ativas** (de 27 reconstruídas, conferidas em
-  2026-07-18: 12 TST, 11 STJ, 3 Súmulas Vinculantes STF) — `sumulas_ingestion.py:33-226`. As
-  3 não-ativas viram teses arquivadas e são revogadas ativamente. **Zero súmula TJMG, zero
-  enunciado FONAJE, zero tema repetitivo/repercussão geral** — a lacuna mais grave para um
-  escritório cujo core é JEC/MG.
+  2026-07-18 — acervo total: 12 TST, 12 STJ, 3 Súmulas Vinculantes STF; **ativas: 9 TST, 12
+  STJ, 3 STF**) — `sumulas_ingestion.py:33-226` (contagem verificada por script no seed). As
+  3 não-ativas (todas TST) viram teses arquivadas e são revogadas ativamente. **Zero súmula
+  TJMG, zero enunciado FONAJE, zero tema repetitivo/repercussão geral** — a lacuna mais grave
+  para um escritório cujo core é JEC/MG.
 - **Crawlers agendados** (todos ON por default, rodando no container da API): Planalto (dom),
   STJ (sáb), TJMG (sáb — **só acórdãos de 2º grau**; sentenças de 1º grau e monocráticas
   inalcançáveis, `tjmg.py:11-18`), LexML (sáb), Câmara/Senado (diário — mas ver R-1 da §6:
@@ -310,7 +314,7 @@ e exclusão de fictícios aplicadas em todo caminho. Tudo-ou-nada na contagem de
 
 | # | Achado | Evidência |
 |---|---|---|
-| **G (alto)** | **Norma revogada não é bloqueada**: `knowledge_governance` calcula `blocks_current_law` (`code=="revogada"`) e **ninguém consome** — ausente de `ai_service`, `citation_check` e `citation_gate`; no reranker, revogada é só **−0.08 de score**, contra o próprio cabeçalho do arquivo ("norma marcada como revogada não fundamenta resposta atual"). O commit 23f2a07 reconheceu e adiou o bloqueio; **1.479 documentos de legislação com `legal_status_unverified`** | `knowledge_governance.py:234`; `reranker.py:11,44`; `ai_service.py:114-126` (verificado por grep direto) |
+| **G (médio — corrigido em review)** | **Norma marcada como revogada É excluída** do caminho normal de retrieval: `_hidratar_governanca` descarta doc `status=="revogada"` vigente antes do score, e `rerank()` hidrata mesmo com o cross-encoder desligado. Residuais reais: (i) o caminho é **fail-open** — se a hidratação de governança falhar, os candidatos seguem sem filtro ("mantendo candidatos"); (ii) `blocks_current_law` (`knowledge_governance.py:234`) segue sem consumidor no `citation_gate`/`citation_check` (modo estrito, default off, é o único que bloquearia citação de norma ausente/desatualizada); (iii) **1.479 documentos de legislação com `legal_status_unverified`** passam sem aviso bloqueante (commit 23f2a07) | `reranker.py:190-206` (filtro + `except` fail-open, verificado por leitura direta); `ai_service.py:114-126` |
 | **H (alto)** | **`RAG_EXIGIR_APROVADO` é quase no-op**: listener ORM `before_insert/before_update` carimba `rag_status="aprovado"` em praticamente todo `KnowledgeDoc` (política literal `"knowledge_module_always_approved"`), registrado globalmente. Na prática o gate só filtra o que um humano **explicitamente recusou** — não é a quarentena de acervo legado que o comentário da config promete | `knowledge_autoapproval.py:30,107-110`; `services/__init__.py:7` (verificado por grep direto); `config.py:608-614` |
 | **I (médio-alto)** | **Projeto de lei tratado como norma vigente**: proposições Câmara/Senado entram com `rag_status="aprovado"`, `confianca="alta"`, e `inferir_autoridade` classifica `proposicao_legislativa` como `oficial_normativa` **peso 100** (o teste é `"legisl" in cat`, que casa) — no rerank, PL pode superar lei vigente | `camara.py:60-67`; `senado.py:64-70`; `knowledge_governance.py:174-175` |
 
@@ -377,8 +381,8 @@ incompatíveis — e a fixture de teste do próprio repo
 
 | # | Causa | Evidência | Status |
 |---|---|---|---|
-| R-1 | **Ingestor do Senado descarta 100% dos itens em silêncio**: lê campos achatados de payload aninhado → `ementa=None` → `len<50` → `continue` para todo item; retorna `(0,0)` e grava `status="sucesso"`. **Não existe teste para `ingestors/senado.py`** (há para stj/tjmg/djen/lexml/planalto). Contraste: `ingestors/camara.py:49-52` usa os campos certos da API v2 | `ingestors/senado.py:52-54` vs fixture `test_radar_legislativo.py:88-93` | **CONFIRMADO** |
-| R-2 | `radar_poder` (Senado): URL **sem `.json`** → API devolve XML → `r.json()` levanta sempre → `except` → `[]` para as 5 keywords. Os outros dois clientes usam `.json` e o comentário `radar_legislativo.py:10` registra o requisito | `radar_poder.py:56-67` | **CONFIRMADO** |
+| R-1 | **Ingestor do Senado incompatível com o contrato que o próprio repo documenta**: lê campos achatados (`m["Ementa"]`) enquanto a fixture de teste do repo declara payload aninhado (`DadosBasicosMateria.EmentaMateria`) — contra esse contrato, `ementa=None` → `len<50` → `continue` para todo item, `(0,0)` gravado como `status="sucesso"`. **Não existe teste para `ingestors/senado.py`**. Contraste: `ingestors/camara.py:49-52` usa os campos certos da API v2 | `ingestors/senado.py:52-54` vs fixture `test_radar_legislativo.py:88-93` | **CONFIRMADO contra a fixture do repo**; contrato externo real a validar **[PRODUÇÃO]** |
+| R-2 | `radar_poder` (Senado): URL **sem `.json`** enquanto os outros dois clientes usam `.json` e o comentário `radar_legislativo.py:10` registra o requisito ("JSON via sufixo") — se o endpoint servir XML por default como documentado no repo, `r.json()` levanta sempre → `except` → `[]` | `radar_poder.py:56-67` | **CONFIRMADO no código** (inconsistência interna); comportamento do endpoint **[PRODUÇÃO]** |
 | R-3 | `radar_poder` (Câmara): não passa `keywords`/`itens` à API — traz ~15 proposições default do ano e filtra 5 termos em memória; probabilidade de casar ≈ 0. Widget devolve `[]` estável com HTTP 200 | `radar_poder.py:20-38` | **CONFIRMADO** |
 | R-4 | Monitor DOU: `DOU_SEARCH_URL` aponta para a **tela de busca HTML** do in.gov.br; o parser espera o JSON de outra rota (`leiturajornal`) → `JSONDecodeError` → `warning` → `[]` | `diario_oficial_service.py:11,35-45` | Alta confiança **[PRODUÇÃO]** |
 | R-5 | Monitor DOU: sem `DiarioOficialKeyword` cadastrada o job retorna 0 sem tocar a rede — e **não há seed de keywords no repo** (só POST manual). Heartbeat grava "ok" | `diario_oficial_service.py:88-96` | **CONFIRMADO** |
@@ -388,12 +392,14 @@ incompatíveis — e a fixture de teste do próprio repo
 | R-9 | Senado via `radar_legislativo`: `palavraChave` com texto livre ("reforma trabalhista") casa contra **tesauro indexado**, não full-text de ementa — filtro tende a descartar tudo | `radar_legislativo.py:254-260` | Média-alta **[PRODUÇÃO]** |
 
 **Experimento mínimo que decide tudo** (sem acesso direto à produção — regra 9 da
-governança): gravar uma resposta real do endpoint público `dadosabertos` do Senado a partir
-de ambiente autorizado (homologação/CI) como **fixture** e rodá-la contra os três parsers —
-uma única resposta desambigua os três de uma vez. O estado das fontes em produção se confere
-pelo endpoint read-only de governança `GET /ia-governanca/fontes` (`ia_governanca.py:472`,
-que expõe `ultimo_status`, `registros_novos` e `execucoes_zeradas_consecutivas` por slug),
-nunca por consulta direta ao banco.
+governança): gravar, em ambiente autorizado (homologação/CI), respostas reais **das URLs
+exatas de cada cliente** do endpoint público `dadosabertos` do Senado como **fixtures** — a
+fixture valida o shape do payload; as respostas por URL exata validam URL, content type e
+filtros de cada cliente (inclusive a rota sem `.json` do `radar_poder` e os parâmetros
+próprios do fluxo da Câmara). O estado das fontes em produção se confere pelo endpoint
+read-only de governança `GET /ia-governanca/fontes` (`ia_governanca.py:472`, que expõe
+`ultimo_status`, `registros_novos` e `execucoes_zeradas_consecutivas` por slug), nunca por
+consulta direta ao banco.
 
 ### 6.3 Onde o monitoramento ainda mente
 
@@ -423,8 +429,8 @@ bundle antigo ou do probe do mapa de módulos.
 Evidências por linha: `services/datajud_service.py:128,271,306`;
 `services/infosimples_service.py:339-340,407`; `services/djen_service.py:35,250-255,349-356`;
 `services/ingestors/djen.py:22-24,228-240`; `services/notification_service.py:41-79`;
-`services/nfse/nuvem_fiscal.py` + `config.py:350-354,429-431`; `services/scheduler.py:1480-1488`;
-flags em `core/config.py`.
+`services/nfse/nuvem_fiscal.py:5-19,42`; `services/scheduler.py:1480-1488`; flags em
+`core/config.py:354,360,368,386,403,417-430,440`.
 
 | Integração | Flag (default) | Endpoint | Erro/fallback |
 |---|---|---|---|
@@ -433,7 +439,7 @@ flags em `core/config.py`.
 | DJEN intimações | sem flag (gate = usuários com OAB) | `comunicaapi.pje.jus.br` | retry 3×; `fonte_ok=False` em falha; **único caminho já cruzado no heartbeat** |
 | DJEN → RAG | `DJEN_INGEST_ENABLED` (**ON**) | idem | filtro LGPD deliberado: só comunicação com caso **ativo** cadastrado → tende a `novos=0` com poucos casos |
 | WhatsApp saída | `WHATSAPP_ENABLED` (**OFF**) | **nenhum** (vendor Z-API removido) | stub que loga e retorna False — canal morto por design |
-| E-mail/SMTP | `EMAIL_ENABLED` (**OFF**) | `smtp.gmail.com:587` | falha silenciosa documentada; **toda notificação dos radares é no-op com o default** |
+| E-mail/SMTP | `EMAIL_ENABLED` (**OFF**) | `smtp.gmail.com:587` | falha silenciosa documentada; **a entrega por e-mail é no-op com o default** — a notificação **interna (sino)** dos radares independe do SMTP e continua ativa (`diario_oficial_service.py:63-70`; `radar_legislativo.py:444-463`) |
 | NFS-e Nuvem Fiscal | `NFSE_ENABLED` (**OFF**, homolog) | `api.nuvemfiscal.com.br` | alíquota/ctrib "a confirmar" — não emitiria nota válida |
 | Transparência/CGU | `TRANSPARENCIA_ENABLED` (**OFF**) | `portaldatransparencia.gov.br` | opt-in, cache diário |
 | BrasilAPI feriados | `FERIADOS_BRASILAPI_ENABLED` (**ON**) | `brasilapi.com.br` | merge aditivo fail-safe |
@@ -451,9 +457,11 @@ nascem ON e **falham em silêncio**. Os dois radares caem inteiros no segundo gr
   `ai_service.py:486,802` e `docs/ai/EJC_AI_TASK_ROUTING.md:38` induzem erro de calibração.
 - **Maritaca**: endpoint e auth corretos, erros sem vazamento, flag verificada em defesa em
   profundidade. `sabia-4`/`sabiazinho-4` **não verificados contra o catálogo vigente**
-  **[PRODUÇÃO]** — se o modelo não existir, o gateway faria fallback silencioso e ninguém
-  saberia que o provider brasileiro nunca respondeu (risco baixo enquanto
-  `MARITACA_ENABLED=false`).
+  **[PRODUÇÃO]** — se o modelo não existir, o gateway faz fallback silencioso e ninguém
+  sabe que o provider brasileiro nunca respondeu. **Atenção (corrigido em review): o compose
+  de produção liga a Maritaca por default** (`${MARITACA_ENABLED:-true}`,
+  `docker-compose.yml:98,157`) — com a chave presente, os modelos não verificados já são
+  elegíveis hoje; a verificação do catálogo é **P1**, não condicionada a "alguém ligar".
 
 ---
 
@@ -497,8 +505,10 @@ intervalo 4d5d4f1..ffc9cbb, exceto onde anotado acima.
 
 ## 7. Recomendações priorizadas
 
-**Rastreabilidade** (cada grupo tem Issue aberta; toda correção entra com teste de regressão
-— regra 6 do CLAUDE.md — e evidência de CI verde no PR que a encerrar):
+**Rastreabilidade** (cada grupo tem Issue aberta; o **contrato de encerramento por item** —
+critérios de aceite, teste de regressão exigido e evidência de CI/execução — está registrado
+no corpo de cada Issue, que é a fonte de verdade do fechamento; toda correção entra com teste
+de regressão — regra 6 do CLAUDE.md — e evidência de CI verde no PR que a encerrar):
 
 | Issues | Recomendações |
 |---|---|
@@ -545,15 +555,20 @@ intervalo 4d5d4f1..ffc9cbb, exceto onde anotado acima.
     `radar_legislativo`, que já faz certo.
 13. **[P1] Monitor DOU**: trocar a URL pela rota que serve JSON (R-4), semear keywords
     iniciais (R-5) e remover "DOE-MG" do rótulo até existir coletor.
-14. **[P2] `GROQ_MODEL_LARGE`**: apontar para modelo de janela maior ou remover o fallback
-    no-op; limpar comentários/doc do llama descontinuado; verificar `sabia-4` contra o
-    catálogo Maritaca antes de ligar `MARITACA_ENABLED`.
+14. **[P1] Providers**: verificar `sabia-4`/`sabiazinho-4` contra o catálogo Maritaca —
+    **urgente, pois o compose de produção já liga a Maritaca por default**
+    (`docker-compose.yml:98,157`); `GROQ_MODEL_LARGE` apontar para modelo de janela maior ou
+    remover o fallback no-op; limpar comentários/doc do llama descontinuado. Com teste de
+    contrato gravado.
 
 **RAG e base de conhecimento (a partir da §5):**
 
-15. **[P0] Consumir `blocks_current_law`** (risco G): norma com `legal_status="revogada"`
-    deve ser excluída do retrieval de fundamentação (ou bloqueada no citation gate) — atacar
-    dentro da frente ativa de vigência (`stabilization/rag-vigencia-*`), não em PR paralelo.
+15. **[P1] Fechar os residuais de vigência** (risco G, redimensionado em review): tornar o
+    filtro de revogada do reranker **fail-closed** (hoje a exceção de hidratação mantém os
+    candidatos sem filtro), dar consumidor a `blocks_current_law` no citation gate e tratar
+    os 1.479 docs `legal_status_unverified` — dentro da frente ativa de vigência
+    (`stabilization/rag-vigencia-*`), não em PR paralelo. Com teste de regressão do caminho
+    de exceção.
 16. **[P0] Corrigir a auto-aprovação ORM** (risco H): trocar a política
     `always_approved` por aprovação explícita nas categorias jurídicas (legislação,
     jurisprudência, súmula), mantendo auto-aprovação só para referência interna — e alinhar o
@@ -583,6 +598,16 @@ intervalo 4d5d4f1..ffc9cbb, exceto onde anotado acima.
 > oficiais, `vigencia_conferida_em`, revisão independente) e curadoria humana (Issue #982).
 > O gabarito abaixo foi redigido pelo executor e **deve passar por revisão jurídica humana
 > do titular antes de ser usado como régua de avaliação**.
+>
+> **Fontes oficiais das normas e súmulas citadas** (vigência conferida em 2026-08-09):
+> CDC — <https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm>;
+> Lei 9.099/95 — <https://www.planalto.gov.br/ccivil_03/leis/l9099.htm>;
+> LGPD — <https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm>;
+> Lei 14.905/2024 — <https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2024/lei/l14905.htm>;
+> CC e CPC — portal Planalto (compilados);
+> Súmulas STJ (54, 297, 362, 385, 479) — verbetes oficiais do STJ/SCON
+> (<https://scon.stj.jus.br/>). A adoção como gold set exige revalidar cada verbete na
+> fonte oficial na data da curadoria (contrato do `GOLD_SET_GOVERNANCE.md`).
 
 ### A.1 Enunciado (entrada para a IA)
 
@@ -696,7 +721,7 @@ acórdãos** (violação = reprovação no citation gate).
 | 2 | Súmula 479/STJ aplicada ao fortuito interno | ausente |
 | 3 | Súmula 385/STJ **enfrentada** | omitida ou mal aplicada |
 | 4 | Teto 40 SM + renúncia (art. 3º, §3º) + advogado >20 SM | cálculo de alçada ausente |
-| 5 | Juros/correção pós-Lei 14.905/2024, com metodologia CMN/BCB, piso zero do art. 406 §3º e as datas de efeitos do art. 5º | 1% a.m. do art. 406 antigo sem ressalva, ou omissão da metodologia CMN/BCB e do piso zero |
+| 5 | Juros/correção pós-Lei 14.905/2024, com metodologia CMN/BCB, piso zero do art. 406 §3º e as datas de efeitos do art. 5º | 1% a.m. do art. 406 antigo sem ressalva, ou omissão do IPCA (art. 389, §ú), da metodologia CMN/BCB, do piso zero do §3º ou das datas distintas do art. 5º (efeito imediato do §2º do art. 406; 60 dias — 30/8/2024 — para os demais) |
 | 6 | LGPD arts. 42–48 conectada ao nexo causal | vazamento tratado como irrelevante |
 | 7 | Dobro do art. 42, §ú com requisito do engano justificável | dobro sem fundamento |
 | 8 | Tutela com os 3 comandos + perigo (verba alimentar) | ausente |
