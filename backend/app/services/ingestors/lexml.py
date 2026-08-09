@@ -37,8 +37,10 @@
 # VIGÊNCIA (Issue #636) — LIMITAÇÃO DA FONTE: o feed Atom do federador não
 # expõe campo de situação normativa, então este ingestor NÃO declara vigência
 # por ausência de marcação; só propaga `extra.legal_status='revogada'` quando o
-# próprio registro afirma a revogação (ver `situacao_juridica`). O restante
-# permanece 'vigencia_nao_verificada' na governança — e, com
+# próprio TÍTULO do registro afirma a revogação (ver `situacao_juridica`). O
+# resumo/ementa pode mencionar OUTRA norma revogada e, por isso, não é usado
+# como prova da situação do item atual. O restante permanece
+# 'vigencia_nao_verificada' na governança — e, com
 # RAG_EXIGIR_VIGENCIA_VERIFICADA ligada, fora da recuperação até curadoria.
 from __future__ import annotations
 
@@ -248,12 +250,14 @@ def _chave(item: dict, tipo: str) -> str:
 # revogada). Logo NÃO se declara vigência por ausência de marcação: um registro
 # sem marcação continua sem `legal_status` e a governança o classifica como
 # 'vigencia_nao_verificada' (o lado seguro), o que exige curadoria manual.
-# O que dá para propagar com honestidade é o caso POSITIVO: quando o próprio
-# título/ementa devolvido pelo LexML declara a revogação do ato, isso é dado da
-# fonte e vira 'revogada'. O erro possível aqui só APERTA a recuperação (um
-# falso positivo tira o registro do RAG; nunca coloca norma revogada dentro).
-# Exige a forma PASSIVA com agente ("Revogada pela Lei nº ...", "Revogado pelo
-# Decreto ..."): "Revoga a Lei nº X" — o ato que revoga OUTRO — não casa.
+#
+# Para evitar falsa autorrevogação, somente o TÍTULO do item é aceito como
+# evidência positiva. O resumo/ementa frequentemente descreve relações entre
+# normas e pode conter frases como "Lei 8.666 revogada pela Lei 14.133" dentro
+# do registro da própria Lei 14.133. Usar esse texto para classificar o item
+# atual faria uma referência histórica revogar a norma errada. Perder uma
+# marcação que apareça apenas na ementa é fail-closed: o item segue sem status
+# positivo e exige curadoria.
 _RE_ATO_REVOGADO = re.compile(
     r"revogad[oa]s?\s+(?:integralmente\s+|expressamente\s+|tacitamente\s+)?"
     r"pel[ao]s?\b",
@@ -262,16 +266,17 @@ _RE_ATO_REVOGADO = re.compile(
 
 
 def situacao_juridica(item: dict, tipo: str) -> str | None:
-    """'revogada' quando o registro LexML de LEGISLAÇÃO declara a própria
-    revogação; None quando a fonte não diz nada (deixa a governança marcar como
-    não verificada) e sempre None para jurisprudência — a ementa de um acórdão
-    comenta a revogação de NORMAS, e ler isso como situação do julgado tiraria
-    do RAG jurisprudência válida.
+    """Retorna `revogada` só quando o TÍTULO da legislação declara a própria
+    revogação.
+
+    A ementa/resumo não é prova de autorrevogação porque pode mencionar outra
+    norma revogada. Ausência de declaração mantém `None`, que a governança trata
+    como vigência não verificada. Jurisprudência nunca herda status normativo.
     """
     if tipo != "legislacao":
         return None
-    texto = f"{item.get('titulo') or ''}\n{item.get('ementa') or ''}"
-    return "revogada" if _RE_ATO_REVOGADO.search(texto) else None
+    titulo = str(item.get("titulo") or "").strip()
+    return "revogada" if _RE_ATO_REVOGADO.search(titulo) else None
 
 
 def _monta_conteudo(item: dict, tipo: str) -> str:
@@ -348,7 +353,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
             if legal_status:
                 extra_vigencia = {
                     "legal_status": legal_status,
-                    "legal_status_origem": "lexml:registro",
+                    "legal_status_origem": "lexml:titulo",
                 }
 
             try:
