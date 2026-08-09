@@ -213,6 +213,25 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     usesAI: true,
     backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
   },
+  // Empresa 360 possui rota dinâmica explícita para que guards de integridade
+  // reconheçam links canônicos /dpt360/empresas/:clientId. O wildcard segue
+  // atendendo as demais subrotas internas do mesmo workspace.
+  {
+    key: "dpt360-company-detail",
+    path: "/dpt360/empresas/:clientId",
+    label: "Empresa 360",
+    description: "Visão jurídica empresarial do cliente pessoa jurídica.",
+    group: "Pesquisar & IA",
+    icon: BriefcaseBusiness,
+    component: Dpt360Workspace,
+    roles: ROLES.compliance,
+    showInNav: false,
+    status: "hidden",
+    helpKey: "dpt360",
+    sensitive: true,
+    usesAI: true,
+    backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
+  },
   // Entrada Única (Bloco 3, docs/DESENHO_BLOCO3_TELAS.md): porta de entrada
   // principal de casos — relato + documentos → análise → confirmação → caso.
   // Logo abaixo de "Início" no grupo de trabalho (order 15 < /casos=20);
