@@ -8,9 +8,18 @@ interface Despesa {
   categoria: string;
   descricao: string;
   valor: number;
+  recorrente: boolean;
   recorrencia: string;
   competencia?: string;
   status: string;
+  recorrencia_origem_id?: string | null;
+}
+
+interface GeracaoResumo {
+  competencia: string;
+  modelos: number;
+  gerados: number;
+  ja_existentes: number;
 }
 
 const CAT_LABEL: Record<string, string> = {
@@ -51,9 +60,11 @@ export default function DespesasRecorrentes() {
       const res = await api.get("/despesas", {
         params: { recorrente: true },
       });
+      // O backend agora garante que filhos gerados são recorrente=false.
+      // O filtro adicional protege compatibilidade com bancos ainda não migrados.
       setRecorrentes(
         (res.data ?? []).filter(
-          (d: Despesa & { recorrente: boolean }) => d.recorrente,
+          (d: Despesa) => d.recorrente && !d.recorrencia_origem_id,
         ),
       );
     } catch {
@@ -68,26 +79,28 @@ export default function DespesasRecorrentes() {
   }, [load]);
 
   async function gerarProximoMes() {
+    if (!targetComp) return;
     setGerando(true);
     setMsg(null);
     try {
-      let count = 0;
-      for (const d of recorrentes) {
-        await api.post("/despesas", {
-          categoria: d.categoria,
-          descricao: d.descricao,
-          valor: d.valor,
-          tipo: "fixo",
-          recorrente: true,
-          recorrencia: d.recorrencia,
-          status: "pendente",
-          competencia: targetComp,
-        });
-        count++;
-      }
-      setMsg(
-        `${count} despesas geradas para ${targetComp.split("-").reverse().join("/")}`,
+      const { data } = await api.post<GeracaoResumo>(
+        "/despesas/recorrentes/gerar",
+        { competencia: targetComp },
       );
+      const competencia = targetComp.split("-").reverse().join("/");
+      if (data.gerados === 0 && data.ja_existentes > 0) {
+        setMsg(
+          `Competência ${competencia} já estava gerada: nenhum lançamento foi duplicado.`,
+        );
+      } else {
+        const sufixo =
+          data.ja_existentes > 0
+            ? ` · ${data.ja_existentes} já existente(s) preservado(s)`
+            : "";
+        setMsg(
+          `${data.gerados} lançamento(s) gerado(s) para ${competencia}${sufixo}`,
+        );
+      }
     } catch (e: any) {
       setMsg(`Erro: ${e.response?.data?.detail ?? "Falha ao gerar despesas"}`);
     } finally {
@@ -99,17 +112,17 @@ export default function DespesasRecorrentes() {
 
   return (
     <div className="space-y-5">
-      {/* Cabeçalho fica no FinanceiroWorkspace. A competência-alvo abaixo é
-          intencional e local: é o mês de DESTINO da geração de lançamentos
-          (padrão: próximo mês), não o filtro de visualização compartilhado. */}
-
-      {/* Action card */}
       <div className="card p-5">
         <h2 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
           <Repeat className="w-4 h-4 text-primary-500" />
           Gerar lançamentos para novo mês
         </h2>
-        <div className="flex items-center gap-4">
+        <p className="text-xs text-slate-500 mb-3">
+          A geração é idempotente: repetir a mesma competência não cria
+          duplicidades. Os lançamentos gerados não se tornam novos modelos de
+          recorrência.
+        </p>
+        <div className="flex flex-wrap items-center gap-4">
           <div className="input flex w-auto items-center gap-2">
             <Calendar className="w-4 h-4 text-slate-400" />
             <input
@@ -121,7 +134,7 @@ export default function DespesasRecorrentes() {
           </div>
           <button
             onClick={gerarProximoMes}
-            disabled={gerando || recorrentes.length === 0}
+            disabled={gerando || recorrentes.length === 0 || !targetComp}
             className="btn-primary"
           >
             {gerando ? (
@@ -150,17 +163,15 @@ export default function DespesasRecorrentes() {
         )}
       </div>
 
-      {/* Summary */}
       <div className="rounded-xl bg-slate-900/[0.04] p-4 flex items-center justify-between dark:bg-white/[0.06]">
         <span className="text-sm text-slate-600">
-          {recorrentes.length} despesas recorrentes cadastradas
+          {recorrentes.length} modelos recorrentes cadastrados
         </span>
         <span className="font-semibold text-slate-800">
           Total mensal: {fmtR$(total)}
         </span>
       </div>
 
-      {/* List */}
       {loading ? (
         <Spinner />
       ) : error ? (
@@ -190,7 +201,7 @@ export default function DespesasRecorrentes() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-xs bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full capitalize">
-                      {d.recorrencia}
+                      {d.recorrencia || "mensal"}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-800">
@@ -204,7 +215,7 @@ export default function DespesasRecorrentes() {
                     colSpan={4}
                     className="px-4 py-10 text-center text-slate-400"
                   >
-                    Nenhuma despesa recorrente cadastrada. Crie despesas com a
+                    Nenhum modelo recorrente cadastrado. Crie uma despesa com a
                     opção "Recorrente" em Despesas.
                   </td>
                 </tr>
