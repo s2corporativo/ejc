@@ -3,13 +3,21 @@ import { useLocation, useSearchParams } from "react-router";
 import api from "../lib/api";
 import { useCaseContext } from "../stores/caseContext";
 
+function decodificarComSeguranca(valor: string): string | undefined {
+  try {
+    return decodeURIComponent(valor);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Resolve o filtro de caso dos módulos globais (Documentos, Peças, Prazos)
  * e dos mesmos workspaces quando montados DENTRO de /casos/:id.
  *
  * Precedência:
- * 1) `?caso=` explícito;
- * 2) id da própria rota `/casos/:id` (contexto obrigatório e imediato);
+ * 1) id da própria rota `/casos/:id` (contexto obrigatório e imediato);
+ * 2) `?caso=` explícito, somente em superfícies fora de outro Caso;
  * 3) caso ativo do Modo Caso.
  *
  * O contexto de rota evita um primeiro render da fila global enquanto o store
@@ -27,14 +35,17 @@ export function useCasoFiltro(): {
   const [ignorarContexto, setIgnorarContexto] = useState(false);
 
   const matchCaso = /^\/casos\/([^/]+)(?:\/|$)/.exec(pathname);
-  const rawCasoRota = matchCaso?.[1];
+  const casoRotaCodificado = matchCaso?.[1];
   const casoRota =
-    rawCasoRota && rawCasoRota !== "novo"
-      ? decodeURIComponent(rawCasoRota)
+    casoRotaCodificado && casoRotaCodificado !== "novo"
+      ? decodificarComSeguranca(casoRotaCodificado)
       : undefined;
 
+  // Em /casos/A, uma query antiga ?caso=B jamais pode trocar o contexto para
+  // outro processo. A rota vence porque é a declaração explícita de onde o
+  // usuário está trabalhando.
   const casoFiltro =
-    casoUrl ?? casoRota ?? (ignorarContexto ? undefined : casoAtivo?.id);
+    casoRota ?? casoUrl ?? (ignorarContexto ? undefined : casoAtivo?.id);
 
   const [nomeResolvido, setNomeResolvido] = useState<{
     id: string;
