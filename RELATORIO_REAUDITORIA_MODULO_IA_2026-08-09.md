@@ -13,26 +13,29 @@
 ## Sumário executivo
 
 O módulo de IA do EJC é, na arquitetura, **muito acima da média**: gateway único real (nenhum
-SDK de LLM fora de `services/providers/`), barreira LGPD com pseudonimização reversível e
-fail-closed, gate anti-alucinação de citações fail-secure, HITL em três camadas, piso de
-sigilo por área não rebaixável, e ~1.000 testes estruturais na área de IA. Os 22 prompts de
-ramo têm profundidade profissional genuína (dispositivo por dispositivo, súmulas nominadas).
+SDK de LLM fora de `services/providers/` — evidência na §1.1), barreira LGPD com
+pseudonimização reversível e fail-closed (§1.2), gate anti-alucinação de citações fail-secure
+(§2.1), HITL em três camadas (§2.1), piso de sigilo por área não rebaixável (§1.2/§3.1), e
+~1.000 testes estruturais na área de IA (§4). Os 22 prompts de ramo têm profundidade
+profissional genuína (dispositivo por dispositivo, súmulas nominadas — §3.2).
 
-Os problemas encontrados são de **três naturezas**:
+Os problemas encontrados são de **três naturezas** (evidência arquivo:linha nas seções
+indicadas):
 
-1. **Erosão do "núcleo único"** — três caminhos de IA convivem (orchestrator, `gw_chat`
-   direto, loop agêntico); só o primeiro aplica classificação, validador de resposta e
-   política HITL completos. O fluxo de **audiência é o caso extremo**: tarefa registrada mas
-   inalcançável, prompt de 14 linhas fora do núcleo, sem RAG nem validação de citações.
-2. **Qualidade jurídica não medida** — existe maquinaria completa de avaliação
+1. **Erosão do "núcleo único"** (§3.3, N-1/N-2) — três caminhos de IA convivem
+   (orchestrator, `gw_chat` direto, loop agêntico); só o primeiro aplica classificação,
+   validador de resposta e política HITL completos. O fluxo de **audiência é o caso
+   extremo**: tarefa registrada mas inalcançável, prompt de 14 linhas fora do núcleo, sem
+   RAG nem validação de citações.
+2. **Qualidade jurídica não medida** (§4) — existe maquinaria completa de avaliação
    (gold sets, LLM-judge, comparador de providers) e **zero golden answers reais**; o único
    benchmark quantitativo é de retrieval (Hit@5/MRR) com piso frouxo. Nenhum teste afirma que
-   a IA respondeu **juridicamente certo**. O Anexo A ataca exatamente essa lacuna.
-3. **Configuração de produção contradiz o desenho** — `OLLAMA_ENABLED=false` no compose de
-   produção torna as áreas sensíveis (criminal, família, saúde) **sem IA nenhuma** (fail-closed
-   correto, mas indisponibilidade não documentada), e o roteamento inteligente pode mandar
-   tarefa leve para Groq (EUA) **antes** do provedor local, contrariando a minimização
-   declarada.
+   a IA respondeu **juridicamente certo**. O Anexo A ataca essa lacuna como fixture de smoke.
+3. **Configuração de produção contradiz o desenho** (§1.5, A-3/A-7) — `OLLAMA_ENABLED=false`
+   no compose de produção torna as áreas sensíveis (criminal, família, saúde) **sem IA
+   nenhuma** (fail-closed correto, mas indisponibilidade não documentada), e o roteamento
+   inteligente pode mandar tarefa leve para Groq (EUA) **antes** do provedor local,
+   contrariando a minimização declarada.
 
 As seções 5 (RAG/base de conhecimento e jurimetria MG/JEC) e 6 (radares e integrações)
 consolidam as frentes específicas, incluindo a causa-raiz dos ingestores dos radares.
@@ -384,11 +387,13 @@ incompatíveis — e a fixture de teste do próprio repo
 | R-8 | ALMG: path `/api/v2/` provavelmente errado (serviço público é `/ws/`); comentários do próprio arquivo admitem probe com timeout e "parse TOLERANTE" escrito sem ver resposta real | `radar_legislativo.py:12,34-36` | Alta confiança **[PRODUÇÃO]** |
 | R-9 | Senado via `radar_legislativo`: `palavraChave` com texto livre ("reforma trabalhista") casa contra **tesauro indexado**, não full-text de ementa — filtro tende a descartar tudo | `radar_legislativo.py:254-260` | Média-alta **[PRODUÇÃO]** |
 
-**Experimento mínimo que decide tudo**: um `GET
-https://legis.senado.leg.br/dadosabertos/materia/pesquisa/lista.json?ano=2026&sigla=PL` a
-partir da VPS desambigua os três parsers de uma vez. Verificação barata em banco:
-`SELECT slug, ultimo_status, registros_novos, execucoes_zeradas_consecutivas FROM
-fontes_ingestao WHERE slug IN ('senado','camara')`.
+**Experimento mínimo que decide tudo** (sem acesso direto à produção — regra 9 da
+governança): gravar uma resposta real do endpoint público `dadosabertos` do Senado a partir
+de ambiente autorizado (homologação/CI) como **fixture** e rodá-la contra os três parsers —
+uma única resposta desambigua os três de uma vez. O estado das fontes em produção se confere
+pelo endpoint read-only de governança `GET /ia-governanca/fontes` (`ia_governanca.py:472`,
+que expõe `ultimo_status`, `registros_novos` e `execucoes_zeradas_consecutivas` por slug),
+nunca por consulta direta ao banco.
 
 ### 6.3 Onde o monitoramento ainda mente
 
@@ -414,6 +419,12 @@ declara `/api/v1/regulatorio` enquanto `frontend .../moduleRegistry.tsx:695` dec
 bundle antigo ou do probe do mapa de módulos.
 
 ### 6.4 Inventário de integrações externas
+
+Evidências por linha: `services/datajud_service.py:128,271,306`;
+`services/infosimples_service.py:339-340,407`; `services/djen_service.py:35,250-255,349-356`;
+`services/ingestors/djen.py:22-24,228-240`; `services/notification_service.py:41-79`;
+`services/nfse/nuvem_fiscal.py` + `config.py:350-354,429-431`; `services/scheduler.py:1480-1488`;
+flags em `core/config.py`.
 
 | Integração | Flag (default) | Endpoint | Erro/fallback |
 |---|---|---|---|
@@ -486,8 +497,25 @@ intervalo 4d5d4f1..ffc9cbb, exceto onde anotado acima.
 
 ## 7. Recomendações priorizadas
 
+**Rastreabilidade** (cada grupo tem Issue aberta; toda correção entra com teste de regressão
+— regra 6 do CLAUDE.md — e evidência de CI verde no PR que a encerrar):
+
+| Issues | Recomendações |
+|---|---|
+| [#982](https://github.com/s2corporativo/ejc/issues/982) | 1 (gold set + gate no CI) |
+| [#983](https://github.com/s2corporativo/ejc/issues/983) | 2 (invariante de rota, testes de `hitl_policy`, smoke E2E de IA) |
+| [#984](https://github.com/s2corporativo/ejc/issues/984) | 3 (elo fraco `/legal-docs/{id}/revisar`) |
+| [#988](https://github.com/s2corporativo/ejc/issues/988) | 4, 8, 14 (Ollama×roteamento, docs/ai, providers) |
+| [#987](https://github.com/s2corporativo/ejc/issues/987) | 5, 6, 7, 9 (audiência, elegibilidade única, agentes de ramo, `AI_ENABLED`) |
+| [#986](https://github.com/s2corporativo/ejc/issues/986) | 10, 11, 12, 13 (radares + monitoramento de resultado) |
+| [#985](https://github.com/s2corporativo/ejc/issues/985) | 15, 16, 17 (riscos G/H/I do RAG — com teste de regressão cada) |
+| [#989](https://github.com/s2corporativo/ejc/issues/989) | 18, 19 (base MG/JEC, coluna de área, painéis) |
+
 1. **[P0] Curar o gold set jurídico** e ligar o gate por área no CI — é a única forma de
-   medir se prompt/modelo/reranker melhoram ou pioram a resposta. Começar pelo Anexo A.
+   medir se prompt/modelo/reranker melhoram ou pioram a resposta. O gold set real segue o
+   contrato de `backend/app/eval/GOLD_SET_GOVERNANCE.md` (fontes oficiais Planalto/STJ,
+   `vigencia_conferida_em`, revisão independente); o Anexo A entra como **fixture de smoke
+   comportamental**, não como item do gold set.
 2. **[P0] Invariante de rota**: teste que garante HITL + validador em todo endpoint gerador.
 3. **[P0] Fechar o elo fraco A-10** (`/legal-docs/{id}/revisar`): exigir papel jurídico e
    citation gate, como no `conferir-e-assinar`.
@@ -549,6 +577,12 @@ intervalo 4d5d4f1..ffc9cbb, exceto onde anotado acima.
 > `ai_gateway` com HITL e citation gate ativos) e avaliar contra o gabarito e a rubrica.
 > Nenhum dado é real. Desenhado para o recorte **MG/JEC** da jurimetria do sistema. Resultado
 > esperado: **rascunho** retido para revisão de advogado — nunca resposta final automática.
+>
+> **Natureza**: este caso é **fixture de smoke comportamental** — não integra o gold set
+> jurídico real, que exige o contrato de `backend/app/eval/GOLD_SET_GOVERNANCE.md` (fontes
+> oficiais, `vigencia_conferida_em`, revisão independente) e curadoria humana (Issue #982).
+> O gabarito abaixo foi redigido pelo executor e **deve passar por revisão jurídica humana
+> do titular antes de ser usado como régua de avaliação**.
 
 ### A.1 Enunciado (entrada para a IA)
 
@@ -601,8 +635,10 @@ teses de defesa esperadas, competência e cabimento no JEC/BH, pedidos e tutela 
   declaração de inexigibilidade, vedação de descontos, devolução do debitado; repetição
   **em dobro** (**CDC, art. 42, parágrafo único** — cobrança mantida após reclamação formal,
   sem engano justificável).
-- Título de capitalização: cancelamento e restituição integral (contratação fraudulenta;
-  CDC, art. 39, I, no que couber).
+- Título de capitalização: cancelamento e restituição integral — mesmo fundamento do
+  empréstimo (**negócio inexistente** em relação à correntista, contratado pelo fraudador);
+  subsidiariamente, prática abusiva do **CDC, art. 39, IV** (prevalecer-se da fraqueza da
+  consumidora idosa), se se discutir contratação induzida.
 
 **2. Negativação e dano moral**
 - Inscrição de débito inexigível → dano moral; **obrigatório enfrentar a Súmula 385/STJ**
@@ -629,10 +665,14 @@ teses de defesa esperadas, competência e cabimento no JEC/BH, pedidos e tutela 
 - **Tutela de urgência** (CPC, art. 300): (i) suspensão dos descontos na conta da
   aposentadoria; (ii) exclusão/suspensão da negativação; (iii) abstenção de novas cobranças —
   perigo evidente (verba alimentar).
-- Juros e correção **pós-Lei 14.905/2024**: correção pelo **IPCA** e juros pela **taxa
-  legal** (SELIC deduzido o IPCA) — CC, arts. 389 e 406, redação vigente; dano moral: correção
-  do arbitramento (**Súmula 362/STJ**), juros do evento danoso (**Súmula 54/STJ**),
-  registrando a interação com o novo regime.
+- Juros e correção **pós-Lei 14.905/2024** (publicada em 1º/7/2024; pelo art. 5º, a maioria
+  dos dispositivos produz efeitos **60 dias após a publicação — 30/8/2024** — e o §2º do
+  art. 406 do CC desde a publicação): correção pelo **IPCA** (CC, art. 389, parágrafo único)
+  e juros pela **taxa legal** — SELIC deduzido o IPCA, com **metodologia definida pelo CMN e
+  divulgada pelo Banco Central** (CC, art. 406, §§ 1º e 2º) e **piso zero** quando o
+  resultado do período for negativo (CC, art. 406, § 3º); dano moral: correção do
+  arbitramento (**Súmula 362/STJ**), juros do evento danoso (**Súmula 54/STJ**), registrando
+  a interação com o novo regime.
 - Prescrição: **5 anos** (CDC, art. 27) — sem risco (fatos de 2026), mas consignar.
 
 **5. Teses de defesa a antecipar**
@@ -656,7 +696,7 @@ acórdãos** (violação = reprovação no citation gate).
 | 2 | Súmula 479/STJ aplicada ao fortuito interno | ausente |
 | 3 | Súmula 385/STJ **enfrentada** | omitida ou mal aplicada |
 | 4 | Teto 40 SM + renúncia (art. 3º, §3º) + advogado >20 SM | cálculo de alçada ausente |
-| 5 | Juros/correção pós-Lei 14.905/2024 | 1% a.m. do art. 406 antigo sem ressalva |
+| 5 | Juros/correção pós-Lei 14.905/2024, com metodologia CMN/BCB, piso zero do art. 406 §3º e as datas de efeitos do art. 5º | 1% a.m. do art. 406 antigo sem ressalva, ou omissão da metodologia CMN/BCB e do piso zero |
 | 6 | LGPD arts. 42–48 conectada ao nexo causal | vazamento tratado como irrelevante |
 | 7 | Dobro do art. 42, §ú com requisito do engano justificável | dobro sem fundamento |
 | 8 | Tutela com os 3 comandos + perigo (verba alimentar) | ausente |
