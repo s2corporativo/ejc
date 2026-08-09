@@ -1,0 +1,135 @@
+name: RAG Vigencia Prearm
+
+on:
+  workflow_run:
+    workflows: ["Deploy VPS"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Compartilha o mesmo lock repository-wide do Deploy VPS. Assim nenhum novo
+# deploy pode alterar o .env entre a leitura, o candidato e o rename do prearm.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  prearm:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 5
+    env:
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+      APP_DIR: /opt/ejc
+    steps:
+      - name: Pré-armar gate de vigência em modo compatível
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          marker="$APP_DIR/data/.rag_vigencia_prearm_v1"
+          env_file="$APP_DIR/.env"
+          candidate="$APP_DIR/.env.prearm.new"
+          backup="$APP_DIR/.env.prearm.rollback"
+          work="$(mktemp)"
+          changed=0
+
+          cleanup() {
+            rm -f "$work"
+            sudo rm -f "$candidate"
+          }
+          rollback() {
+            rc=$?
+            trap - ERR
+            set +e
+            if [ "$changed" = "1" ] && sudo test -f "$backup"; then
+              echo "::warning::Prearm RAG: restaurando .env a partir do backup 0600."
+              sudo mv -f "$backup" "$env_file"
+            fi
+            cleanup
+            exit "$rc"
+          }
+          trap rollback ERR
+          trap cleanup EXIT
+
+          deployed="$(sudo cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+          if [ -z "$deployed" ] || [ "$deployed" != "$TARGET_SHA" ]; then
+            echo "::error::Prearm RAG: /opt/ejc não comprova o SHA esperado."
+            false
+          fi
+
+          sudo mkdir -p "$APP_DIR/data"
+          sudo test -f "$env_file" || {
+            echo "::error::Prearm RAG: .env de produção ausente."
+            false
+          }
+
+          # Marcador só permite fast-path se a configuração REAL continuar
+          # canônica. Se alguém alterou/duplicou a chave, a rotina repara.
+          if sudo test -f "$marker"; then
+            total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+            false_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$env_file" || true)"
+            if [ "$total" = "1" ] && [ "$false_count" = "1" ]; then
+              echo "Prearm RAG já aplicado e configuração canônica; nenhuma alteração necessária."
+              exit 0
+            fi
+            echo "::warning::Prearm RAG: marcador existe, mas .env divergiu; reparando configuração."
+          fi
+
+          uid="$(sudo stat -c %u "$env_file")"
+          gid="$(sudo stat -c %g "$env_file")"
+          mode="$(sudo stat -c %a "$env_file")"
+
+          # Nunca imprime o .env. O awk preserva todas as demais linhas,
+          # remove duplicatas da chave e grava UMA ocorrência canônica=false.
+          sudo cat "$env_file" | awk '
+            BEGIN { seen = 0 }
+            /^RAG_EXIGIR_VIGENCIA_VERIFICADA=/ {
+              if (!seen) {
+                print "RAG_EXIGIR_VIGENCIA_VERIFICADA=false"
+                seen = 1
+              }
+              next
+            }
+            { print }
+            END {
+              if (!seen) print "RAG_EXIGIR_VIGENCIA_VERIFICADA=false"
+            }
+          ' > "$work"
+          chmod 600 "$work"
+
+          # Candidato e rollback vivem no MESMO filesystem do destino. O
+          # overwrite final é um rename atômico; nunca truncamos .env in-place.
+          sudo rm -f "$candidate" "$backup"
+          sudo install -o "$uid" -g "$gid" -m "$mode" "$work" "$candidate"
+          candidate_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$candidate" || true)"
+          candidate_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$candidate" || true)"
+          if [ "$candidate_total" != "1" ] || [ "$candidate_false" != "1" ]; then
+            echo "::error::Prearm RAG: candidato não ficou canônico; destino não será tocado."
+            false
+          fi
+
+          sudo cp -p "$env_file" "$backup"
+          sudo chmod 600 "$backup"
+          sudo mv -f "$candidate" "$env_file"
+          changed=1
+
+          # Prova DEPOIS do rename. O marcador só nasce após esta validação.
+          final_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+          final_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$env_file" || true)"
+          if [ "$final_total" != "1" ] || [ "$final_false" != "1" ]; then
+            echo "::error::Prearm RAG: validação pós-rename falhou."
+            false
+          fi
+
+          printf '%s\n' "$TARGET_SHA" | sudo tee "$marker" >/dev/null
+          sudo chmod 600 "$marker"
+
+          # Sucesso comprovado: backup temporário não precisa permanecer com
+          # uma segunda cópia de segredos em repouso.
+          sudo rm -f "$backup"
+          changed=0
+          trap - ERR
+          echo "Prearm RAG concluído: gate estrito permanecerá desligado até o backfill."
