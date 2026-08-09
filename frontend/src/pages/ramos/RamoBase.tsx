@@ -86,7 +86,10 @@ function carregarListaResposta(data: any): any[] {
   return [];
 }
 
-export function respostaListaFoiTruncada(data: any, carregados: number): boolean {
+export function respostaListaFoiTruncada(
+  data: any,
+  carregados: number,
+): boolean {
   const total = Number(data?.total);
   return Number.isFinite(total) && total > carregados;
 }
@@ -492,8 +495,8 @@ export default function RamoBase() {
   );
   const podeCriarCaso = Boolean(
     podeAcessarArea &&
-      role &&
-      (ROLES.clientes as readonly string[]).includes(role),
+    role &&
+    (ROLES.clientes as readonly string[]).includes(role),
   );
   const [aba, setAba] = useState<WorkspaceTabId>("visao");
   const [abasVisitadas, setAbasVisitadas] = useState<Set<WorkspaceTabId>>(
@@ -538,7 +541,9 @@ export default function RamoBase() {
           const resposta = await api.get("/cases/", {
             params: { area, page_size: 100 },
           });
-          const casosCarregados = carregarListaResposta(resposta.data) as Case[];
+          const casosCarregados = carregarListaResposta(
+            resposta.data,
+          ) as Case[];
           return {
             ok: true,
             casos: casosCarregados,
