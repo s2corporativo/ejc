@@ -14,10 +14,10 @@ export const NOVO_CASO_MANUAL_PATH = "/entrada?modo=manual";
  * assistida; secretaria permanece no cadastro manual.
  */
 export function entradaNovoCasoComCliente(
-  clientId: string,
+  idCliente: string,
   modo?: NovoCasoModo,
 ): string {
-  const params = new URLSearchParams({ client_id: clientId });
+  const params = new URLSearchParams({ client_id: idCliente });
   if (modo) params.set("modo", modo);
   return `/entrada?${params.toString()}`;
 }
