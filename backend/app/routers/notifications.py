@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
+from sqlalchemy import case as sql_case
 from sqlalchemy import func as sqlfunc
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +31,31 @@ from app.services.notification_preferences import (
 
 router = APIRouter(prefix="/notifications", tags=["Notificações"])
 
+# Classificação exclusivamente pelo `tipo` persistido. Não inspeciona título ou
+# mensagem, evitando inferência jurídica por texto livre. Tipos novos/inesperados
+# ficam informativos até decisão explícita de produto.
+_TIPOS_CRITICOS = frozenset({"prazo", "intimacao", "audiencia", "auditoria"})
+_TIPOS_ATENCAO = frozenset(
+    {
+        "honorario",
+        "financeiro",
+        "assinatura",
+        "documento",
+        "diario_oficial",
+        "ambiental",
+        "sistema",
+    }
+)
+
+
+def _criticidade(tipo: str | None) -> str:
+    normalizado = (tipo or "").strip().lower()
+    if normalizado in _TIPOS_CRITICOS:
+        return "critica"
+    if normalizado in _TIPOS_ATENCAO:
+        return "atencao"
+    return "informativa"
+
 
 def _role_value(user: User) -> str:
     return getattr(user.role, "value", str(user.role))
@@ -39,15 +65,52 @@ def _role_value(user: User) -> str:
 async def listar(
     apenas_nao_lidas: bool = False,
     limit: int = Query(30, ge=1, le=100),
+    page: int | None = Query(None, ge=1),
+    page_size: int | None = Query(None, ge=1, le=100),
+    ordenar_criticidade: bool = False,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    q = select(Notification).where(Notification.user_id == cu.id)
+    """Lista notificações preservando o contrato legado `{data, nao_lidas}`.
+
+    `limit` continua funcionando exatamente como antes. A paginação explícita é
+    ativada somente quando `page` ou `page_size` é informado; nesse modo o
+    tamanho é `page_size` (ou o `limit` legado, se omitido). Metadados novos são
+    aditivos e consumidores antigos podem ignorá-los.
+    """
+    filtros = [Notification.user_id == cu.id]
     if apenas_nao_lidas:
-        q = q.where(Notification.lida.is_(False))
-    q = q.order_by(Notification.created_at.desc()).limit(limit)
+        filtros.append(Notification.lida.is_(False))
+
+    paginado = page is not None or page_size is not None
+    pagina = page or 1
+    tamanho = page_size or limit
+
+    q = select(Notification).where(*filtros)
+    if ordenar_criticidade:
+        ordem_criticidade = sql_case(
+            (Notification.tipo.in_(_TIPOS_CRITICOS), 0),
+            (Notification.tipo.in_(_TIPOS_ATENCAO), 1),
+            else_=2,
+        )
+        q = q.order_by(ordem_criticidade, Notification.created_at.desc())
+    else:
+        # Compatibilidade: o sino histórico continua estritamente cronológico.
+        q = q.order_by(Notification.created_at.desc())
+
+    if paginado:
+        q = q.offset((pagina - 1) * tamanho).limit(tamanho)
+    else:
+        q = q.limit(limit)
     rows = (await db.execute(q)).scalars().all()
 
+    total = (
+        await db.execute(
+            select(sqlfunc.count()).select_from(Notification).where(*filtros)
+        )
+    ).scalar() or 0
+
+    # Contagem exata e independente do recorte/página exibida.
     nao_lidas = (
         await db.execute(
             select(sqlfunc.count()).where(
@@ -55,7 +118,7 @@ async def listar(
                 Notification.lida.is_(False),
             )
         )
-    ).scalar()
+    ).scalar() or 0
 
     return {
         "data": [
@@ -64,13 +127,18 @@ async def listar(
                 "titulo": n.titulo,
                 "mensagem": n.mensagem,
                 "tipo": n.tipo,
+                "criticidade": _criticidade(n.tipo),
                 "link": n.link,
                 "lida": n.lida,
                 "created_at": n.created_at,
             }
             for n in rows
         ],
-        "nao_lidas": nao_lidas,
+        "nao_lidas": int(nao_lidas),
+        "total": int(total),
+        "page": pagina,
+        "page_size": tamanho,
+        "paginado": paginado,
     }
 
 
@@ -160,6 +228,7 @@ class PushSubIn(BaseModel):
     def _valida_endpoint(cls, v: str) -> str:
         # SSRF guard: só serviços de push conhecidos via https (ver notification_service).
         from app.services.notification_service import endpoint_push_valido
+
         if not endpoint_push_valido(v):
             raise ValueError(
                 "endpoint de push não permitido — apenas serviços FCM/Mozilla/Apple/WNS via https"
