@@ -76,7 +76,8 @@ describe("TabDocumentos — vínculo canônico", () => {
     expect(post).toHaveBeenCalledWith("/cases/case-1/documentos/d1/vincular");
   });
 
-  it("mantém visível o aviso quando o candidato pertence a outro caso", async () => {
+  it("não oferece movimento se uma resposta inesperada trouxer documento de outro caso", async () => {
+    const post = vi.spyOn(api, "post").mockResolvedValue({ data: { ok: true } });
     vi.spyOn(api, "get").mockImplementation((url) => {
       if (String(url).includes("/documentos/candidatos")) {
         return Promise.resolve({
@@ -106,7 +107,9 @@ describe("TabDocumentos — vínculo canônico", () => {
     });
 
     expect(screen.getByText("Documento de outro caso")).toBeTruthy();
-    expect(screen.getByText(/Já vinculado a outro caso/)).toBeTruthy();
+    expect(screen.getByText(/evidência original não pode ser movida/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Indisponível" })).toBeDisabled();
+    expect(post).not.toHaveBeenCalled();
   });
 
   it("não deixa resposta antiga sobrescrever a busca mais recente", async () => {
