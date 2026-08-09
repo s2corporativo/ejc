@@ -77,15 +77,6 @@ ADICOES_INTENCIONAIS = {
     ("/api/processo-eletronico/credenciais", "GET"),
     ("/api/processo-eletronico/credenciais", "POST"),
     ("/api/processo-eletronico/credenciais/{credencial_id}/testar", "POST"),
-    # PR #905: jurimetria passa a expor, de forma explícita, apenas métricas
-    # internas e cobertura agregada do RAG. Os aliases /ext legados permanecem,
-    # mas estes são os contratos canônicos novos e deliberados.
-    ("/api/jurimetria/interno/stats", "GET"),
-    ("/api/jurimetria/interno/benchmarks", "GET"),
-    ("/api/jurimetria/interno/analise-prospectiva", "GET"),
-    ("/api/jurimetria/analise-prospectiva", "POST"),
-    ("/api/jurimetria/cobertura-rag", "GET"),
-    ("/api/jurimetria/cobertura-mg-jec", "GET"),
     # PR #888: contrato de domínio para localizar e vincular documento existente
     # ao caso. São rotas autenticadas; RBAC/ownership permanecem no service.
     ("/api/cases/{case_id}/documentos/candidatos", "GET"),
