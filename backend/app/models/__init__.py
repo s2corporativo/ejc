@@ -94,6 +94,10 @@ from app.models.processo_eletronico import (  # noqa  (MNI 2.2.2 leitura — mig
     DocumentoProcessoEletronicoDedup,
 )
 
+# Registra normalização defensiva da Sala Jurídica depois que os modelos estão
+# carregados: área sugerida canônica e citações legadas saneadas em memória.
+from app.models import legal_chat_normalization as _legal_chat_normalization  # noqa: F401,E402
+
 # Registra a política runtime que suprime temporariamente a exigência de TOTP sem
 # alterar os valores persistidos. A importação é deliberadamente tardia para
 # evitar ciclo durante a definição de User.
