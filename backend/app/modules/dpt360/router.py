@@ -10,6 +10,7 @@ from app.modules.dpt360.company_service import get_company_profile
 from app.modules.dpt360.dashboard_service import build_dashboard
 from app.modules.dpt360.diagnostic_service import build_diagnostic_readiness
 from app.modules.dpt360.intelligence_service import run_dpt_action
+from app.modules.dpt360.radar_service import build_today_radar
 from app.modules.dpt360.schemas import (
     DptActionRequest,
     DptActionResponse,
@@ -52,6 +53,16 @@ async def diagnostic_readiness(
     if result is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
     return DptDiagnosticReadiness.model_validate(result)
+
+
+@router.get("/radar/today")
+async def radar_today(
+    hours: int = Query(default=24, ge=1, le=168),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["advogado"])),
+):
+    """Digest regulatório DPT: leitura de dados já coletados pelo scheduler."""
+    return await build_today_radar(db, cu, hours=hours)
 
 
 @router.post("/actions", response_model=DptActionResponse)
