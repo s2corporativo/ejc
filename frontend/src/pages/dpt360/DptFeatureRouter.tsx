@@ -1,5 +1,6 @@
 import { ArrowRight, BookOpen, CalendarClock, LibraryBig, Radar, Wrench } from "lucide-react";
 import { Link } from "react-router";
+import DptDiagnosis from "./DptDiagnosis";
 import DptIntelligence from "./DptIntelligence";
 import type { DptDashboard } from "./api";
 
@@ -15,7 +16,7 @@ const ICONS = { radar: Radar, ferramentas: Wrench, obrigacoes: CalendarClock, bi
 
 export default function DptFeatureRouter({ name, data }: { name: string; data: DptDashboard }) {
   if (name === "inteligencia") return <DptIntelligence companies={data.companies} initialAction="conselho" />;
-  if (name === "diagnostico") return <DptIntelligence companies={data.companies} initialAction="diagnostico" />;
+  if (name === "diagnostico") return <DptDiagnosis companies={data.companies} />;
 
   const item = PLANNED[name] || PLANNED.relatorios;
   const Icon = ICONS[name as keyof typeof ICONS] || BookOpen;
