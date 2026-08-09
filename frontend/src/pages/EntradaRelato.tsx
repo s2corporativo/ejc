@@ -14,7 +14,10 @@ import { useAuth } from "../stores/auth";
 import type { User } from "../types";
 import { Confirmacao } from "./EntradaUnica/Confirmacao";
 import { TelaAnalisando, TelaInicial } from "./EntradaUnica/TelaEnvio";
-import { resolverAreaPreferida } from "./EntradaUnica/areaPreferida";
+import {
+  resolverAreaPreferida,
+  rotuloAreaPreferida,
+} from "./EntradaUnica/areaPreferida";
 import {
   carregarRascunho,
   limparRascunho,
@@ -32,6 +35,8 @@ import {
 
 type Fase = "inicial" | "analisando" | "confirmar";
 
+const TIMEOUT_ANALISE_MS = 120_000;
+
 function asLista<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) return payload as T[];
   const data = (payload as { data?: unknown })?.data;
@@ -45,6 +50,10 @@ function mensagemDeErro(err: unknown, fallback: string): string {
   )?.response?.data?.detail;
   const texto = textoDeAchado(detail);
   return texto || fallback;
+}
+
+function analiseExcedeuTempo(err: unknown): boolean {
+  return (err as { code?: string } | undefined)?.code === "ECONNABORTED";
 }
 
 export default function EntradaRelato() {
@@ -108,6 +117,7 @@ export default function EntradaRelato() {
     for (const arquivo of arquivos) form.append("files", arquivo);
     try {
       const { data } = await api.post("/entrada/analisar", form, {
+        timeout: TIMEOUT_ANALISE_MS,
         onUploadProgress: (evento) => {
           const total = evento.total ?? 0;
           setUploadPct(
@@ -132,10 +142,12 @@ export default function EntradaRelato() {
       setFase("confirmar");
     } catch (err) {
       toast.error(
-        mensagemDeErro(
-          err,
-          "Não foi possível analisar agora. Nada foi perdido — tente novamente.",
-        ),
+        analiseExcedeuTempo(err)
+          ? "A análise excedeu dois minutos e foi encerrada. Nada foi perdido; tente novamente."
+          : mensagemDeErro(
+              err,
+              "Não foi possível analisar agora. Nada foi perdido — tente novamente.",
+            ),
       );
       setFase("inicial");
     }
@@ -269,8 +281,9 @@ export default function EntradaRelato() {
       />
       {areaPreferida && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
-          Área pré-selecionada pelo workspace: <strong>{areaPreferida}</strong>.
-          Você poderá alterá-la na revisão antes de criar o caso.
+          Área pré-selecionada pelo workspace:{" "}
+          <strong>{rotuloAreaPreferida(areaPreferida)}</strong>. Você poderá
+          alterá-la na revisão antes de criar o caso.
         </div>
       )}
       {fase === "inicial" && (
