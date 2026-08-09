@@ -403,6 +403,19 @@ async def upsert_documento(
     vetores = await gerar_embeddings(textos) if embutir_vetores else None
     status_novo = "indexado" if vetores else "pendente"
 
+    # Conteúdo novo pode gerar uma nova versão, mas a decisão humana de vigência
+    # pertence ao documento lógico, não ao hash anterior. Preserve o bloco de
+    # auditoria somente quando ele veio de curadoria; leituras automáticas do
+    # ingestor continuam livres para evoluir com a nova fonte.
+    if existente and _vigencia_de_curadoria(dict(existente.extra or {})):
+        anterior = dict(existente.extra or {})
+        extra = dict(extra or {})
+        for campo in _CAMPOS_VIGENCIA:
+            if campo in anterior:
+                extra[campo] = anterior[campo]
+            else:
+                extra.pop(campo, None)
+
     if existente:
         # Conteúdo mudou → NOVA VERSÃO. A versão antiga vira histórico.
         existente.vigente = False
