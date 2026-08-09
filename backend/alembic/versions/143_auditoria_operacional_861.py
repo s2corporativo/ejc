@@ -1,9 +1,8 @@
 """143 — auditoria operacional: prazos, financeiro, portal e assinaturas.
 
-Migration PROVISÓRIA da Issue #861, criada sobre o head canônico 138. Os
-números 139–142 estão ocupados por PRs concorrentes ainda não mesclados; este PR
-deve permanecer DRAFT e ser renumerado/reencadeado se qualquer predecessor
-entrar na main.
+Migration da Issue #861, criada sobre o head canônico 138 e reservada como 143
+nesta branch. O head e eventuais migrations concorrentes devem ser rechecados
+imediatamente antes da integração.
 
 Upgrade somente aditivo. Downgrade é permitido enquanto o novo fluxo não tiver
 produzido evidência que não seja representável no schema legado; depois disso a
@@ -122,8 +121,14 @@ def upgrade() -> None:
     )
 
     # 4) Assinaturas — evidência individual por signatário.
+    # O enum é criado explicitamente para permitir checkfirst. `create_type=False`
+    # impede que o evento before_create da tabela tente emitir CREATE TYPE de novo.
     signer_status = postgresql.ENUM(
-        "pendente", "assinado", "recusado", name="signaturesignerstatus"
+        "pendente",
+        "assinado",
+        "recusado",
+        name="signaturesignerstatus",
+        create_type=False,
     )
     signer_status.create(op.get_bind(), checkfirst=True)
     op.create_table(
