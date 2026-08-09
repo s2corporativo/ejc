@@ -1,9 +1,6 @@
 # ── app/models/signature.py ──────────────────────────────────────────────────
 # Assinatura eletrônica simples/avançada conforme a evidência disponível:
 # aceite autenticado + hash SHA-256 do documento + IP + UA + timestamp.
-#
-# A solicitação e os signatários são entidades separadas. O status global só
-# vira `assinado` quando TODOS os signatários exigidos tiverem assinado.
 from __future__ import annotations
 
 import enum
@@ -51,10 +48,6 @@ class SignatureRequest(Base):
     )
     hash_sha256 = Column(String(64), nullable=False)
 
-    # Campos legados preservados para compatibilidade/histórico. Novas
-    # assinaturas usam SignatureSigner como fonte de verdade da evidência por
-    # signatário; estes campos recebem o último signatário somente quando a
-    # solicitação é integralmente concluída.
     assinado_em = Column(DateTime(timezone=True), nullable=True)
     assinado_por_user = Column(String(36), nullable=True)
     ip = Column(String(45), nullable=True)
@@ -66,11 +59,7 @@ class SignatureRequest(Base):
 
 
 class SignatureSigner(Base):
-    """Signatário obrigatório de uma solicitação de assinatura.
-
-    Nome/e-mail são snapshots probatórios: mesmo que o cadastro do usuário seja
-    alterado depois, a trilha preserva quem foi convidado no momento da criação.
-    """
+    """Signatário obrigatório de uma solicitação de assinatura."""
 
     __tablename__ = "signature_signers"
     __table_args__ = (
@@ -92,8 +81,16 @@ class SignatureSigner(Base):
     nome_snapshot = Column(String(255), nullable=True)
     email_snapshot = Column(String(320), nullable=False)
     papel_snapshot = Column(String(80), nullable=False, default="cliente")
+    # native_enum=False evita DDL de TYPE PostgreSQL e mantém a migration
+    # expand-only/portável. A unicidade do vocabulário continua na validação
+    # Python; a migration adiciona CHECK equivalente no banco.
     status = Column(
-        SAEnum(SignatureSignerStatus),
+        SAEnum(
+            SignatureSignerStatus,
+            native_enum=False,
+            create_constraint=True,
+            name="ck_signature_signers_status_enum",
+        ),
         nullable=False,
         default=SignatureSignerStatus.pendente,
         index=True,
