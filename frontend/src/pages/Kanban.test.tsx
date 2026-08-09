@@ -26,7 +26,8 @@ vi.mock("../components/Toast", () => ({
 
 const COLUNAS = [
   { id: "c1", name: "Em andamento", legal_area: "default", position: 0 },
-  { id: "c2", name: "Arquivado", legal_area: "default", position: 1 },
+  { id: "c2", name: "Em elaboração", legal_area: "default", position: 1 },
+  { id: "c3", name: "Arquivado", legal_area: "default", position: 2 },
 ];
 
 const CASO = {
@@ -85,7 +86,7 @@ describe("Kanban — recusa de arquivar/encerrar via arrasto", () => {
     ).toBeGreaterThan(1);
   });
 
-  it("move o cartão normalmente quando o backend aceita", async () => {
+  it("move o cartão normalmente para coluna não terminal", async () => {
     patchMock.mockResolvedValue({
       data: { ok: true, status_sincronizado: null },
     });
@@ -98,12 +99,12 @@ describe("Kanban — recusa de arquivar/encerrar via arrasto", () => {
     const select = screen.getByDisplayValue(
       "Em andamento",
     ) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "Arquivado" } });
+    fireEvent.change(select, { target: { value: "Em elaboração" } });
 
     await waitFor(() => {
       expect(patchMock).toHaveBeenCalledWith(
         "/cases/caso-1/kanban",
-        expect.objectContaining({ kanban_column: "Arquivado" }),
+        expect.objectContaining({ kanban_column: "Em elaboração" }),
       );
     });
     expect(toastError).not.toHaveBeenCalled();
