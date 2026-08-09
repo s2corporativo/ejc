@@ -63,7 +63,9 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [buscaVinculo, setBuscaVinculo] = useState("");
-  const [resultadosVinculo, setResultadosVinculo] = useState<DocumentoCandidato[]>([]);
+  const [resultadosVinculo, setResultadosVinculo] = useState<
+    DocumentoCandidato[]
+  >([]);
   const [totalVinculo, setTotalVinculo] = useState(0);
   const [buscandoVinculo, setBuscandoVinculo] = useState(false);
   const [erroBuscaVinculo, setErroBuscaVinculo] = useState<string | null>(null);
@@ -267,7 +269,9 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
             placeholder="Buscar documento por título ou arquivo…"
           />
         </div>
-        {buscandoVinculo && <p className="text-xs text-slate-400">Buscando…</p>}
+        {buscandoVinculo && (
+          <p className="text-xs text-slate-400">Buscando…</p>
+        )}
         {!buscandoVinculo && erroBuscaVinculo && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-red-100 bg-red-50 p-2 text-xs text-red-700">
             <span>{erroBuscaVinculo}</span>
@@ -318,7 +322,8 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
             ))}
             {totalVinculo > resultadosVinculo.length && (
               <p className="pt-1 text-xs text-slate-400">
-                {totalVinculo} documentos correspondem à busca. Refine o termo para localizar outros resultados.
+                {totalVinculo} documentos correspondem à busca. Refine o termo
+                para localizar outros resultados.
               </p>
             )}
           </div>
