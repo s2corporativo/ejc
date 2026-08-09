@@ -9,9 +9,11 @@ from zipfile import ZipFile
 
 import httpx
 import pytest
+from fastapi import HTTPException
 
 from app.integrations import ckan_public_client as ckan_mod
 from app.integrations import cnj_sgt_client as sgt_mod
+from app.integrations import feature_flags
 from app.integrations import ibge_localidades_client as ibge_mod
 from app.integrations import ide_sisema_client as sisema_mod
 from app.integrations import pgfn_open_data_client as pgfn_mod
@@ -25,8 +27,16 @@ from app.integrations.inlabs_parser import InlabsParseError, parse_xml, parse_zi
 from app.integrations.pgfn_open_data_client import PgfnOpenDataClient
 from app.integrations.querido_diario_client import QueridoDiarioClient
 from app.integrations.tcu_client import TcuPublicClient
-from app.services.juris_import import FONTES
+from app.services.juris_import import FONTES, _configurar_fontes_ativas
+from app.services.juris_import import tcu as tcu_import_mod
 from app.services.juris_import.tcu import normalizar_registro as normalizar_tcu
+
+
+@pytest.fixture(autouse=True)
+def _habilitar_flags_da_onda_nos_testes(monkeypatch):
+    """Testes de contrato ligam explicitamente as fontes; runtime nasce OFF."""
+    for env_name in feature_flags.FLAGS.values():
+        monkeypatch.setenv(env_name, "true")
 
 
 def _mock_async_client(monkeypatch, modulo, handler):
@@ -38,6 +48,24 @@ def _mock_async_client(monkeypatch, modulo, handler):
         return real(**kwargs)
 
     monkeypatch.setattr(modulo.httpx, "AsyncClient", factory)
+
+
+def test_flags_novas_sao_default_off_e_retornam_503(monkeypatch):
+    monkeypatch.delenv("TCU_OPEN_DATA_ENABLED", raising=False)
+    assert feature_flags.enabled("tcu") is False
+    with pytest.raises(HTTPException) as exc:
+        feature_flags.require_enabled("tcu", "TCU Dados Abertos")
+    assert exc.value.status_code == 503
+    assert "TCU_OPEN_DATA_ENABLED" in str(exc.value.detail)
+
+
+def test_config_tcu_adiciona_flag_sem_reescrever_csv_legado():
+    assert _configurar_fontes_ativas("lexml,stj", tcu_enabled=True) == {
+        "lexml", "stj", "tcu"
+    }
+    assert _configurar_fontes_ativas("lexml,stj,tcu", tcu_enabled=False) == {
+        "lexml", "stj"
+    }
 
 
 def test_ckan_rejeita_host_fora_da_allowlist():
@@ -126,16 +154,20 @@ async def test_tcu_limita_quantidade_e_normaliza(monkeypatch):
     out = await TcuPublicClient().listar_acordaos(quantidade=999)
     assert visto["quantidade"] == "100"
     assert out[0]["numero"] == 123
+    assert out[0]["chave"] == "AC-123-2026-P"
     assert out[0]["fonte"] == "TCU — Dados Abertos"
 
 
-def test_tcu_esta_registrado_no_importador_rag():
+def test_tcu_esta_registrado_no_importador_rag_com_id_citavel_completo():
     assert "tcu" in FONTES
-    assert FONTES["tcu"]["enabled"] is True
+    # Import-time sem env explícito = OFF; o teste do CSV legado acima valida
+    # que basta ligar TCU_OPEN_DATA_ENABLED em produção para adicioná-lo.
+    assert FONTES["tcu"]["enabled"] is False
     assert callable(FONTES["tcu"]["buscar"])
     j = normalizar_tcu({
         "chave": "AC-1-2026-P",
         "numero": 1,
+        "ano": 2026,
         "titulo": "Licitação",
         "sumario": "Pregão eletrônico e habilitação",
         "url": "https://tcu.gov.br/acordao/1",
@@ -144,8 +176,20 @@ def test_tcu_esta_registrado_no_importador_rag():
     })
     assert j is not None
     assert j.tribunal == "TCU"
+    assert j.numero == "AC-1-2026-P"
     assert j.area_juridica == "Administrativo"
     assert j.data == "2026-08-01"
+    assert j.chave_principal == "tcu:AC-1-2026-P"
+
+
+async def test_tcu_nao_converte_indisponibilidade_em_sucesso_vazio(monkeypatch):
+    class ClienteIndisponivel:
+        async def listar_acordaos(self, **kwargs):
+            raise RuntimeError("upstream indisponível")
+
+    monkeypatch.setattr(tcu_import_mod, "_client", ClienteIndisponivel())
+    with pytest.raises(RuntimeError, match="indisponível"):
+        await tcu_import_mod.buscar("licitação")
 
 
 async def test_ibge_canonicaliza_nome_sem_acento(monkeypatch):
@@ -243,15 +287,21 @@ async def test_pgfn_filtra_links_nao_oficiais(monkeypatch):
     assert itens[0]["url"].startswith("https://arquivos.pgfn.gov.br/")
 
 
-def test_inlabs_parse_xml_mantem_proveniencia_e_conferencia():
-    xml = b"""<root><article id='42' artType='DO1' pubDate='2026-08-08'>
-      <title>Portaria de teste</title>
-      <body>Texto oficial suficientemente longo para ser processado pelo EJC.</body>
-    </article></root>"""
+def test_inlabs_parse_xml_mapeia_shape_real_sem_usar_name_como_titulo():
+    xml = b"""<root>
+      <article name='515150' pubName='DO1' artType='Portaria' pubDate='2026-08-08' editionNumber='150'>
+        <body>
+          <p class='identifica'>PORTARIA NÂ          <p class='identifica'>PORTARIA N\xc2º          <p class='identifica'>PORTARIA N\xc2\xba 123, DE 8 DE AGOSTO DE 2026</p>
+          <p>Texto oficial suficientemente longo para ser processado pelo EJC.</p>
+        </body>
+      </article>
+    </root>"""
     itens = parse_xml(xml)
     assert len(itens) == 1
-    assert itens[0].titulo == "Portaria de teste"
-    assert itens[0].identificador == "42"
+    assert itens[0].titulo == "PORTARIA Nº 123, DE 8 DE AGOSTO DE 2026"
+    assert itens[0].secao == "DO1"
+    assert itens[0].categoria == "Portaria"
+    assert itens[0].identificador == "515150"
     assert itens[0].requer_conferencia_certificada is True
 
 
