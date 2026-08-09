@@ -71,3 +71,13 @@ def test_workflows_de_producao_fazem_checkout_da_main_ou_sha_aprovado():
     assert "ref: main" in monitor
     assert "ref: ${{ github.sha }}" in rag
     assert "ref: ${{ env.TARGET_SHA }}" in deploy
+
+
+def test_operacoes_manuais_sensiveis_usam_environment_de_producao():
+    backup = _job_block(_read("backup-gdrive-activation.yml"), "  comprovar-producao:\n")
+    rag = _job_block(_read("rag-production-activation.yml"), "  ativar-producao:\n")
+    continuidade = _job_block(_read("producao-prova-continuidade.yml"), "  prova:\n")
+
+    for bloco in (backup, rag, continuidade):
+        assert "runs-on: [self-hosted, ejc-vps]" in bloco
+        assert "environment: production" in bloco
