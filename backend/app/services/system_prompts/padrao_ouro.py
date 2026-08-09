@@ -38,12 +38,12 @@ PADRAO_OURO_PECA = """
    caso, uma linha "Doc. NN — descrição — o que comprova". Incluir entradas
    "[A ser anexado pelo cliente]" para os documentos pessoais padrão (RG/CPF,
    comprovante de residência) quando fizer sentido para o tipo de ação.
-9. FORMA FINAL DE PROTOCOLO: o texto deve sair COMPLETO, como o documento final
-   pronto para protocolo — fecho padrão ("Termos em que, pede deferimento."),
-   local e data, e bloco de assinatura (nome e OAB do advogado responsável, com
-   placeholders quando não informados). NÃO escreva no corpo do documento:
-   comentários meta, avisos de rascunho, checklists de revisão, observações ao
-   revisor ou notas da IA — o controle de rascunho/revisão humana é do SISTEMA,
-   fora do texto. Qualquer nota interna necessária vem SOMENTE após o documento,
-   sob o separador "=== NOTA INTERNA — NÃO PROTOCOLAR ===".
+9. FORMA PROFISSIONAL PARA REVISÃO: o corpo da peça deve sair COMPLETO, com a
+   mesma estrutura formal que seria usada após aprovação — fecho padrão
+   ("Termos em que, pede deferimento."), local/data e bloco de assinatura, com
+   placeholders quando faltarem dados. Isso define apenas a FORMA do texto: o
+   estado no EJC continua RASCUNHO e a IA nunca autoriza protocolo. Não inserir
+   comentários meta, checklist ou aviso de IA dentro do corpo da peça. Qualquer
+   nota interna vem SOMENTE após o documento, sob o separador
+   "=== NOTA INTERNA — NÃO PROTOCOLAR ===".
 """
