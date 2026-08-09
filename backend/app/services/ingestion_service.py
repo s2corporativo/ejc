@@ -265,24 +265,21 @@ _CAMPOS_VIGENCIA = (
 
 
 def _vigencia_de_curadoria(anterior: dict) -> bool:
-    """A vigência já registrada no documento é DECISÃO HUMANA?
+    """A vigência registrada é uma decisão humana explicitamente rastreada?
 
-    Verdadeiro quando há um `legal_status` que representa decisão e ele não veio
-    de ingestor:
-      • 'vigencia_nao_verificada' NÃO conta — é o default que
-        knowledge_autoapproval grava por `setdefault`, ou seja, a AUSÊNCIA de
-        decisão. Tratá-lo como curadoria congelaria para sempre o documento
-        fora da recuperação, já que nenhum re-feed poderia mais corrigi-lo.
-      • sem `legal_status_origem` conta como curadoria: até o PR #642 nenhum
-        ingestor escrevia `legal_status`, então o acervo com o campo preenchido
-        e sem origem só pode ter vindo do painel — e a PRIMEIRA execução do job
-        novo é justamente onde essas decisões seriam atropeladas.
+    Só preservamos o bloco quando há um `legal_status` decisório E a origem foi
+    gravada pelo fluxo de curadoria (`curadoria` ou `curadoria:<user>`).
+    Ausência de origem é ausência de prova de autoria humana: registros legados
+    sem proveniência e estados automáticos continuam atualizáveis pela fonte.
+    `vigencia_nao_verificada` também nunca conta como decisão humana.
     """
     status = str(anterior.get("legal_status") or "").strip().lower()
     if not status or status == "vigencia_nao_verificada":
         return False
     origem = str(anterior.get("legal_status_origem") or "").strip().lower()
-    return not origem or origem.split(":", 1)[0] == ORIGEM_VIGENCIA_CURADORIA
+    return origem == ORIGEM_VIGENCIA_CURADORIA or origem.startswith(
+        f"{ORIGEM_VIGENCIA_CURADORIA}:"
+    )
 
 
 async def upsert_documento(
