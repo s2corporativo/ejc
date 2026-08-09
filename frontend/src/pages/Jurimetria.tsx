@@ -77,7 +77,7 @@ export default function Jurimetria() {
   const [loading, setLoading] = useState(true);
   const [desfechos, setDesfechos] = useState<any>(null);
 
-  // Predição por taxa histórica (heurística estatística, não ML)
+  // Análise prospectiva por histórico interno (heurística descritiva, não ML).
   const [predForm, setPredForm] = useState({
     classe: "",
     tribunal: "TJMG",
@@ -87,11 +87,10 @@ export default function Jurimetria() {
   const [loadingPred, setLoadingPred] = useState(false);
 
   const prever = async () => {
-    if (!predForm.classe) return;
     setLoadingPred(true);
     try {
       const r = await api.get(
-        `/jurimetria/ext/predicao/provimento?classe=${predForm.classe}&tribunal=${predForm.tribunal}&dias_estimados=${predForm.dias}`,
+        `/jurimetria/interno/analise-prospectiva?classe=${predForm.classe}&tribunal=${predForm.tribunal}&dias_estimados=${predForm.dias}`,
       );
       setPredicao(r.data);
     } catch {
@@ -101,8 +100,8 @@ export default function Jurimetria() {
     }
   };
 
-  // Dados externos (DataJud/STJ)
-  const [extStats, setExtStats] = useState<any>(null);
+  // Métricas internas do escritório. DataJud externo não está habilitado aqui.
+  const [internalStats, setInternalStats] = useState<any>(null);
   const [benchmarks, setBenchmarks] = useState<any>(null);
   const [selectedTribunal, setSelectedTribunal] = useState("TJMG");
   const [loadingExt, setLoadingExt] = useState(false);
@@ -126,10 +125,9 @@ export default function Jurimetria() {
       })
       .finally(() => setLoading(false));
 
-    // Estatisticas da base externa
     api
-      .get("/jurimetria/ext/stats")
-      .then((r: any) => setExtStats(r.data))
+      .get("/jurimetria/interno/stats")
+      .then((r: any) => setInternalStats(r.data))
       .catch(() => {});
   }, []);
 
@@ -137,7 +135,7 @@ export default function Jurimetria() {
     setLoadingExt(true);
     try {
       const r = await api.get(
-        `/jurimetria/ext/benchmarks?tribunal=${selectedTribunal}`,
+        `/jurimetria/interno/benchmarks?tribunal=${selectedTribunal}`,
       );
       setBenchmarks(r.data);
     } catch {
@@ -159,29 +157,34 @@ export default function Jurimetria() {
     );
 
   const taxa = ov?.taxa_sucesso_geral;
-  const totalExt =
-    extStats?.por_tribunal?.reduce((s: number, t: any) => s + t.total, 0) ?? 0;
+  const totalInterno =
+    internalStats?.por_tribunal?.reduce(
+      (s: number, t: any) => s + t.total,
+      0,
+    ) ?? 0;
+  const taxaHistorica =
+    predicao?.taxa_historica_favoravel ?? predicao?.probabilidade_provimento;
 
   return (
     <div>
       <PageHeader
         title="Jurimetria"
-        subtitle="Desempenho do escritório + benchmarks externos DataJud/STJ"
+        subtitle="Desempenho e histórico interno do escritório — sem benchmark externo ativo"
       />
 
       {/* Cards resumo escritório */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard
-          label="Taxa de Sucesso"
+          label="Taxa de Teses Decididas"
           value={taxa != null ? `${(taxa * 100).toFixed(1)}%` : "—"}
-          sub="casos encerrados"
+          sub="procedentes ÷ decididas"
         />
-        <StatCard label="Áreas" value={area.length} sub="com processos" />
+        <StatCard label="Áreas" value={area.length} sub="com vínculos de tese" />
         <StatCard label="Tribunais" value={trib.length} sub="no escritório" />
         <StatCard
-          label="Base Externa"
-          value={totalExt.toLocaleString("pt-BR")}
-          sub="processos DataJud"
+          label="Base Interna"
+          value={totalInterno.toLocaleString("pt-BR")}
+          sub="casos com tribunal informado"
         />
       </div>
 
@@ -220,13 +223,13 @@ export default function Jurimetria() {
         </div>
       )}
 
-      {/* Seção benchmarks externos */}
+      {/* Histórico interno por tribunal */}
       <div className="card p-5 mb-6">
-        <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-3 mb-2">
           <div className="flex items-center gap-1.5">
             <Database size={16} className="text-primary-500" />
             <h3 className="font-semibold text-sm text-gray-700 uppercase">
-              Benchmarks DataJud
+              Histórico Interno por Tribunal
             </h3>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -245,6 +248,10 @@ export default function Jurimetria() {
             ))}
           </div>
         </div>
+        <p className="text-xs text-gray-400 mb-4">
+          Fonte: casos cadastrados no EJC. Estes números não são DataJud/STJ e
+          não representam benchmark externo.
+        </p>
 
         {loadingExt ? (
           <div className="flex justify-center py-6">
@@ -275,7 +282,7 @@ export default function Jurimetria() {
                 ) ?? "0"}
               </p>
               <p className="text-xs text-gray-500">
-                Processos encerrados na base
+                Processos encerrados na base interna
               </p>
             </div>
             {benchmarks.por_resultado?.length > 0 && (
@@ -348,7 +355,9 @@ export default function Jurimetria() {
                 key={i}
                 className="text-sm text-gray-600 border-l-2 border-warn-400 pl-3 py-0.5"
               >
-                <span className="font-medium text-gray-700">{l.nr_cnj}</span>
+                <span className="font-medium text-gray-700">
+                  {l.titulo || "Caso"}
+                </span>
                 {l.licoes_aprendidas && <> — {l.licoes_aprendidas}</>}
               </li>
             ))}
@@ -356,23 +365,23 @@ export default function Jurimetria() {
         </div>
       )}
 
-      {/* ── Predição por taxa histórica ─────────────────────────────── */}
+      {/* Análise prospectiva descritiva */}
       <div className="card p-5 mt-4">
         <h3 className="font-semibold text-sm text-gray-500 uppercase mb-1">
-          Predição de Provimento
+          Análise Prospectiva — Histórico Interno
         </h3>
         <p className="text-xs text-gray-400 mb-3">
-          Baseada na taxa histórica dos casos do escritório (heurística
-          estatística, não ML).
+          Indicador descritivo dos casos decididos do escritório. Não é modelo
+          preditivo e não representa probabilidade de decisão futura.
         </p>
-        <div className="grid grid-cols-3 gap-3 mb-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
           <div>
             <label className="text-xs text-gray-500 block mb-1">
-              Classe TPU
+              Classe TPU (somente referência)
             </label>
             <input
               type="number"
-              placeholder="Ex: 1116"
+              placeholder="Opcional — não filtra a base atual"
               value={predForm.classe}
               onChange={(e) =>
                 setPredForm((p) => ({ ...p, classe: e.target.value }))
@@ -389,7 +398,7 @@ export default function Jurimetria() {
               }
               className="w-full text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-bronze"
             >
-              {["TJMG", "STJ", "STF", "TRF1", "TRT3"].map((t) => (
+              {TRIBUNAIS.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </select>
@@ -411,53 +420,58 @@ export default function Jurimetria() {
         <div className="flex gap-2 mb-4">
           <button
             onClick={prever}
-            disabled={loadingPred || !predForm.classe}
+            disabled={loadingPred}
             className="btn-primary"
           >
-            {loadingPred ? "Calculando..." : "Calcular"}
+            {loadingPred ? "Calculando..." : "Calcular histórico"}
           </button>
         </div>
 
-        {/* Shape real do backend (/jurimetria/ext/predicao/provimento):
-            probabilidade_provimento (null = amostra insuficiente), amostra,
-            metodo, confianca textual (baixa/média/alta). */}
-        {predicao && predicao.probabilidade_provimento == null && (
+        {predicao && taxaHistorica == null && (
           <p className="text-sm text-warn-600 bg-warn-50 border border-warn-200 rounded px-3 py-2">
-            Amostra histórica insuficiente para estimar ({predicao.metodo}).
-            Encerre mais casos desta classe/tribunal para habilitar a taxa.
+            {predicao.aviso ||
+              `Amostra decidida insuficiente (${predicao.amostra ?? 0} casos).`}
           </p>
         )}
 
-        {predicao != null && predicao.probabilidade_provimento != null && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="text-center p-3 bg-green-50 rounded-lg border border-green-100">
-              <p className="text-2xl font-bold text-green-700">
-                {predicao.probabilidade_provimento}%
-              </p>
-              <p className="text-xs text-green-600">Taxa hist. favorável</p>
+        {predicao != null && taxaHistorica != null && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="text-center p-3 bg-green-50 rounded-lg border border-green-100">
+                <p className="text-2xl font-bold text-green-700">
+                  {taxaHistorica}%
+                </p>
+                <p className="text-xs text-green-600">
+                  Taxa histórica favorável
+                </p>
+              </div>
+              <div className="text-center p-3 bg-danger-50 rounded-lg border border-danger-100">
+                <p className="text-2xl font-bold text-danger-700">
+                  {predicao.desfavoraveis ?? "—"}
+                </p>
+                <p className="text-xs text-danger-600">Desfechos desfavoráveis</p>
+              </div>
+              <div className="text-center p-3 bg-gray-50 rounded-lg border border-black/[0.05]">
+                <p className="text-2xl font-bold text-gray-700">
+                  {predicao.acordos ?? 0}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Acordos (fora da taxa)
+                </p>
+              </div>
+              <div className="text-center p-3 bg-primary-50 rounded-lg border border-primary-100">
+                <p className="text-2xl font-bold capitalize text-primary-700">
+                  {predicao.confianca}
+                </p>
+                <p className="text-xs text-primary-600">
+                  Amostra: {predicao.amostra} decididos
+                </p>
+              </div>
             </div>
-            <div className="text-center p-3 bg-danger-50 rounded-lg border border-danger-100">
-              <p className="text-2xl font-bold text-danger-700">
-                {Math.round((100 - predicao.probabilidade_provimento) * 10) /
-                  10}
-                %
-              </p>
-              <p className="text-xs text-danger-600">Taxa hist. desfavorável</p>
-            </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg border border-black/[0.05]">
-              <p className="text-2xl font-bold capitalize text-gray-700">
-                {predicao.confianca}
-              </p>
-              <p className="text-xs text-gray-500">
-                Confiança ({predicao.amostra} casos)
-              </p>
-            </div>
-            <div className="text-center p-3 bg-primary-50 rounded-lg border border-primary-100 flex items-center justify-center">
-              <p className="text-sm font-medium text-primary-700">
-                {predicao.metodo}
-              </p>
-            </div>
-          </div>
+            {predicao.aviso && (
+              <p className="text-xs text-gray-500 mt-3">{predicao.aviso}</p>
+            )}
+          </>
         )}
       </div>
     </div>
