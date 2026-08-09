@@ -67,7 +67,7 @@ export type ModuleRoute = {
   component: LazyExoticComponent<ComponentType>;
   roles?: readonly string[];
   showInNav?: boolean;
-  // Modo Essencial: marca os 7 destinos do dia a dia do advogado que ficam
+  // Modo Essencial: marca os destinos do dia a dia do advogado que ficam
   // sempre visíveis no topo da barra lateral (campo aditivo — não altera
   // rota/RBAC nem a ordenação de getNavigationModules).
   essential?: boolean;
@@ -88,6 +88,7 @@ export type LegacyRedirect = {
 };
 
 const Dashboard = lazy(() => import("../pages/Dashboard"));
+const Dpt360Workspace = lazy(() => import("../pages/dpt360/Dpt360Workspace"));
 const Clientes = lazy(() => import("../pages/Clientes"));
 const CadastroManual = lazy(() => import("../pages/CadastroManual"));
 const DossieCliente = lazy(() => import("../pages/DossieCliente"));
@@ -173,6 +174,45 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: false,
     backendPrefixes: ["/api/dashboard", "/api/health"],
   },
+  // DPT Empresarial 360: subaplicativo especializado, sem novo backend ou
+  // persistência própria nesta primeira onda. Reutiliza Clientes, Casos e
+  // Prazos existentes e mantém o mesmo piso RBAC do Radar/Compliance.
+  {
+    key: "dpt360",
+    path: "/dpt360",
+    label: "DPT Empresarial 360",
+    description:
+      "Cockpit de inteligência, prevenção e gestão jurídica empresarial.",
+    group: "Pesquisar & IA",
+    icon: Briefcase,
+    component: Dpt360Workspace,
+    roles: ROLES.compliance,
+    showInNav: true,
+    essential: true,
+    order: 1,
+    helpKey: "dpt360",
+    sensitive: true,
+    usesAI: true,
+    backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
+  },
+  // Wildcard interno para /dpt360/empresas, /diagnostico, /radar etc. Não cria
+  // outro menu nem outra SPA; o próprio workspace faz a navegação interna.
+  {
+    key: "dpt360-subroutes",
+    path: "/dpt360/*",
+    label: "DPT Empresarial 360",
+    description: "Navegação interna do workspace empresarial.",
+    group: "Pesquisar & IA",
+    icon: Briefcase,
+    component: Dpt360Workspace,
+    roles: ROLES.compliance,
+    showInNav: false,
+    status: "hidden",
+    helpKey: "dpt360",
+    sensitive: true,
+    usesAI: true,
+    backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
+  },
   // Entrada Única (Bloco 3, docs/DESENHO_BLOCO3_TELAS.md): porta de entrada
   // principal de casos — relato + documentos → análise → confirmação → caso.
   // Logo abaixo de "Início" no grupo de trabalho (order 15 < /casos=20);
@@ -187,8 +227,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: Inbox,
     component: EntradaUnica,
-    // Piso advogado+ (POST /entrada/analisar e criar caso são atos de
-    // advogado) — mesma matriz de ROLES.compliance usada em caso-entrevista.
     roles: ROLES.compliance,
     showInNav: true,
     essential: false,
@@ -198,8 +236,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     usesAI: true,
     backendPrefixes: ["/api/entrada", "/api/entrada-universal", "/api/clients"],
   },
-  // Destaque primário: wizard guiado de abertura de caso (cliente → caso).
-  // Rota nova aditiva — /casos/novo vence /casos/:id no ranking do router v6.
   {
     key: "caso-novo",
     path: "/casos/novo",
@@ -209,12 +245,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: Plus,
     component: Casos,
-    // Abertura de caso cria/seleciona cliente (POST /clients → matriz
-    // _CLIENTES) e busca /users; perfis fora dessa matriz recebem 403.
     roles: ROLES.clientes,
-    // A rota continua ativa, protegida e acessível pelo cabeçalho, Dashboard
-    // e busca global. Não aparece no menu para evitar três entradas visuais
-    // para a mesma tarefa.
     showInNav: false,
     essential: false,
     order: 10,
@@ -222,8 +253,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: true,
     backendPrefixes: ["/api/cases", "/api/clients"],
   },
-  // CONSOLIDAÇÃO 2026-07: /central-relacionamento virou aba da Central
-  // (/atividades?tab=relacionamento) — ver LEGACY_REDIRECTS.
   {
     key: "crm",
     path: "/crm-leads",
@@ -242,12 +271,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     path: "/clientes",
     label: "Clientes",
     description: "Cadastro central de clientes e responsáveis.",
-    // Cliente integra a entrada e o acompanhamento do caso; no Modo
-    // Essencial deve vir antes de Documentos e Peças.
     group: "Trabalhar um caso",
     icon: Briefcase,
     component: Clientes,
-    // Backend /clients (matriz _CLIENTES) nega financeiro/estagiario/auxiliar.
     roles: ROLES.clientes,
     showInNav: true,
     essential: true,
@@ -265,13 +291,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: ClipboardPen,
     component: CadastroManual,
-    // Mesma matriz do backend /clients (_CLIENTES) — subconjunto seguro dos
-    // papéis aceitos por POST /cases (secretaria/advogado/socio/admin).
     roles: ROLES.clientes,
-    // Fora do menu para respeitar o guard "menu enxuto" de
-    // moduleRegistry.test.ts: rota ativa via URL /cadastro-manual, Paleta de
-    // Comandos e o atalho no hub de Áreas de Atuação (RamosHub), no padrão
-    // das demais rotas podadas.
     showInNav: false,
     essential: false,
     order: 45,
@@ -313,8 +333,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "raio-x-processo",
     path: "/raio-x",
-    // "Triagem" é nome de ETAPA da jornada, não de módulo — o rótulo antigo
-    // ("Triagem e Raio-X") disputava com a Sala Jurídica como porta de entrada.
     label: "Raio-X de Documentos",
     description:
       "Análise preliminar autônoma de documentos (autos, contratos, provas) antes da abertura de um caso.",
@@ -358,8 +376,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     status: "hidden",
     sensitive: true,
   },
-  // Rota-detalhe (padrão /casos/:id): jornada guiada das 9 etapas do caso.
-  // status hidden = fora do menu, igual a caso-detalhe.
   {
     key: "caso-jornada",
     path: "/casos/:id/jornada",
@@ -373,8 +389,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     status: "hidden",
     sensitive: true,
   },
-  // Etapa 2 da jornada (Triagem): entrevista em texto livre com painel de
-  // confiança da IA. status hidden = fora do menu, igual a caso-jornada.
   {
     key: "caso-entrevista",
     path: "/casos/:id/entrevista",
@@ -388,8 +402,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     status: "hidden",
     sensitive: true,
     usesAI: true,
-    // Backend exige advogado+ — sem o gate aqui, perfis de apoio navegavam
-    // até a tela e só viam o 403 ao clicar em "Analisar".
     roles: ROLES.compliance,
     backendPrefixes: ["/api/triagem"],
   },
@@ -401,8 +413,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Pesquisar & IA",
     icon: Scale,
     component: RamosHub,
-    // Ferramentas dos ramos exigem a equipe jurídica (_EQUIPE no backend);
-    // financeiro/secretaria recebem 403 ao acionar qualquer ferramenta.
     roles: ROLES.juridico,
     showInNav: true,
     order: 30,
@@ -423,8 +433,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     usesAI: true,
     sensitive: true,
   },
-  // Central unificada: atividades (agenda/prazos/tarefas/intimações) +
-  // relacionamento (funil, captação e contato) em abas na mesma rota.
   {
     key: "atividades",
     path: "/atividades",
@@ -469,8 +477,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: AlarmClock,
     component: Prazos,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central "Agenda e Prazos"
-    // (filtro Tipo=Prazo); rota ativa para links diretos/favoritos.
     status: "hidden",
     helpKey: "prazos",
     sensitive: true,
@@ -484,7 +490,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: CheckSquare,
     component: Tarefas,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central (filtro Tipo=Tarefa); rota ativa.
     status: "hidden",
     helpKey: "tarefas",
     sensitive: true,
@@ -498,8 +503,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: Inbox,
     component: Intimacoes,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central "Agenda e Prazos"
-    // (filtro Tipo=Intimação); rota ativa para links diretos/favoritos.
     status: "hidden",
     helpKey: "intimacoes",
     sensitive: true,
@@ -514,7 +517,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: Activity,
     component: Suspensoes,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Central (filtro Tipo=Suspensão); rota ativa.
     status: "hidden",
     helpKey: "prazos",
     sensitive: true,
@@ -548,11 +550,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: FileText,
     component: Pecas,
-    // Issue #694 (achado do Codex no PR #706): backend nega financeiro com
-    // 403 em POST /pecas/gerar (allowlist EQUIPE_JURIDICA, app/core/
-    // security.py). Sem `roles` aqui, financeiro via o item de menu, entrava
-    // na tela e só descobria o bloqueio ao enviar o formulário — espelha a
-    // mesma allowlist para não deixar a UI prometer o que o backend nega.
     roles: ROLES.juridico,
     showInNav: true,
     essential: true,
@@ -570,8 +567,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: FileSignature,
     component: Assinaturas,
-    // PODA 2026-07: fluxo de apoio à produção; acessível pelos atalhos do
-    // Dashboard e pela paleta ⌘K. Rota ativa.
     status: "hidden",
     helpKey: "assinaturas",
     sensitive: true,
@@ -585,8 +580,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: GitBranch,
     component: Workflow,
-    // PODA 2026-07: configuração de fluxos usada esporadicamente; atalho no
-    // Dashboard. Rota ativa.
     status: "hidden",
     helpKey: "workflow",
     sensitive: true,
@@ -600,8 +593,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: ListChecks,
     component: Checklists,
-    // PODA 2026-07: apoio à produção, alcançável pelo caso e atalhos do
-    // Dashboard. Rota ativa.
     status: "hidden",
     helpKey: "checklists",
     sensitive: true,
@@ -648,8 +639,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Pesquisar & IA",
     icon: Scale,
     component: DataJudBusca,
-    // PODA 2026-07: consulta pontual, acessível pelos atalhos do Dashboard
-    // e de dentro do caso. Rota ativa.
     status: "hidden",
     helpKey: "datajud",
     sensitive: true,
@@ -663,8 +652,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Pesquisar & IA",
     icon: ScrollText,
     component: DiarioOficial,
-    // PODA 2026-07: monitoramento alcançável pelo Radar Regulatório e
-    // atalhos do Dashboard. Rota ativa.
     status: "hidden",
     helpKey: "diario-oficial",
     sensitive: true,
@@ -672,12 +659,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     backendPrefixes: ["/api/diario-oficial"],
   },
   {
-    // Onda 2 — UMA porta para "o que apareceu que me afeta?". O feed de
-    // compliance já consolidava Diário Oficial + monitoramento regulatório +
-    // autos ambientais; o radar regulatório era o digest da MESMA matéria.
-    // Viraram dois modos (?modo=feed|digest) de pages/Radar.tsx.
-    // RBAC: mantém ROLES.compliance — o modo mais restritivo dos dois manda,
-    // para a fusão não alargar quem enxerga o feed de risco.
     key: "radar",
     path: "/radar",
     label: "Radar",
@@ -687,7 +668,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: ShieldAlert,
     component: Radar,
     roles: ROLES.compliance,
-    // PODA 2026-07: radar consultivo; atalho no Dashboard. Rota ativa.
     status: "hidden",
     helpKey: "compliance",
     sensitive: true,
@@ -702,8 +682,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Pesquisar & IA",
     icon: Newspaper,
     component: Noticias,
-    // PODA 2026-07: o card de notícias do Dashboard cobre o uso diário;
-    // página completa segue por atalho/URL. Rota ativa.
     status: "hidden",
     helpKey: "noticias",
     sensitive: false,
@@ -737,8 +715,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Gerir o escritório",
     icon: BarChart3,
     component: Produtividade,
-    // PODA 2026-07: indicadores gerenciais; atalho no bloco administrativo
-    // do Dashboard. Rota ativa.
     status: "hidden",
     helpKey: "produtividade",
     sensitive: true,
@@ -765,8 +741,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Sparkles,
     component: GovernancaIA,
     roles: ROLES.gestores,
-    // PODA 2026-07: painel de governança usado por gestores; atalho no
-    // bloco administrativo do Dashboard. Rota ativa.
     status: "hidden",
     helpKey: "governanca-ia",
     sensitive: true,
@@ -797,8 +771,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: ShieldCheck,
     component: Auditoria,
     roles: ROLES.gestores,
-    // PODA 2026-07: trilha consultada sob demanda; atalho no bloco
-    // administrativo do Dashboard. Rota ativa.
     status: "hidden",
     helpKey: "auditoria",
     sensitive: true,
@@ -815,8 +787,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     roles: ROLES.gestores,
     helpKey: "autofix",
     sensitive: false,
-    // PODA 2026-07: inventário técnico (beta); atalho no bloco
-    // administrativo do Dashboard. Rota ativa.
     status: "hidden",
     backendPrefixes: ["/api/system-modules"],
   },
@@ -844,8 +814,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Trash2,
     component: Lixeira,
     roles: ROLES.gestores,
-    // PODA 2026-07: restauração eventual; atalho no bloco administrativo
-    // do Dashboard. Rota ativa.
     status: "hidden",
     helpKey: "lixeira",
     sensitive: true,
@@ -863,8 +831,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     status: "hidden",
     sensitive: false,
   },
-  // PODA 2026-07: hub de descoberta para os módulos reais que ficaram fora
-  // do menu principal — evita reabrir 18 itens na barra lateral.
   {
     key: "ferramentas",
     path: "/ferramentas",
@@ -1031,9 +997,6 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     reason:
       "Curadoria da base de conhecimento foi incorporada ao workspace de Inteligência Jurídica.",
   },
-  // CONSOLIDAÇÃO CONHECIMENTO 2026-07: as quatro superfícies redundantes
-  // (Conhecimento Jurídico/KnowledgeHub, Biblioteca, Memória Institucional e
-  // Wiki) foram unificadas na aba canônica "Conhecimento" da Inteligência.
   {
     from: "/legado/knowledge-hub",
     to: "/inteligencia?tab=conhecimento",
@@ -1090,16 +1053,15 @@ export function getHelpModuleKey(pathname: string): string | null {
   const match = candidates.find((module) => {
     const base = routeBase(module.path);
     if (base === "/") return pathname === "/";
+    if (base.endsWith("/*")) {
+      const wildcardBase = base.slice(0, -2);
+      return pathname === wildcardBase || pathname.startsWith(`${wildcardBase}/`);
+    }
     return pathname === base || pathname.startsWith(`${base}/`);
   });
   return match?.helpKey ?? null;
 }
 
-/**
- * Título humano do módulo a partir do helpKey (ex.: "inteligencia" →
- * "Inteligência Jurídica"). Evita exibir o slug técnico em títulos de UI
- * como o painel "Ajuda — {módulo}".
- */
 export function getModuleTitleByHelpKey(helpKey: string): string | null {
   const match = STAFF_ROUTES.find((module) => module.helpKey === helpKey);
   return match?.label ?? null;
@@ -1110,7 +1072,14 @@ export function canRoleAccessPath(
   route: string,
 ): boolean {
   const pathname = route.split("?")[0] || "/";
-  const module = STAFF_ROUTES.find((item) => item.path === pathname);
+  const module = STAFF_ROUTES.find((item) => {
+    if (item.path === pathname) return true;
+    if (item.path.endsWith("/*")) {
+      const base = item.path.slice(0, -2);
+      return pathname.startsWith(`${base}/`);
+    }
+    return false;
+  });
   if (!module?.roles) return Boolean(module);
   return Boolean(role && module.roles.includes(role));
 }
