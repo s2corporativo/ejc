@@ -28,6 +28,7 @@ _SQL_LEGAL_STATUS = (
     "NULLIF(kd.extra->>'situacao_normativa',''), "
     "NULLIF(kd.extra->>'vigencia_status',''), 'nao_informado'))"
 )
+_SQL_FONTE_VALIDADA = "lower(COALESCE(kd.extra->>'fonte_validada','')) = 'true'"
 _SQL_COLECAO = (
     "COALESCE(NULLIF(kd.extra->>'collection',''), "
     "CASE WHEN lower(kd.categoria) = 'jurisprudencia' "
@@ -76,7 +77,7 @@ async def medir_cobertura_rag(db: AsyncSession, *, mg_jec_only: bool = False) ->
                         WHERE COALESCE(kd.extra->>'rag_status','') = 'aprovado'
                     ) AS documentos_aprovados,
                     COUNT(DISTINCT kd.id) FILTER (
-                        WHERE COALESCE((kd.extra->>'fonte_validada')::boolean, false)
+                        WHERE {_SQL_FONTE_VALIDADA}
                     ) AS fonte_validada_explicita,
                     MAX(COALESCE(kd.atualizado_em, kd.created_at)) AS ultima_atualizacao
                 FROM knowledge_docs kd
@@ -102,7 +103,7 @@ async def medir_cobertura_rag(db: AsyncSession, *, mg_jec_only: bool = False) ->
                         WHERE COALESCE(kd.extra->>'rag_status','') = 'aprovado'
                     ) AS aprovados,
                     COUNT(DISTINCT kd.id) FILTER (
-                        WHERE COALESCE((kd.extra->>'fonte_validada')::boolean, false)
+                        WHERE {_SQL_FONTE_VALIDADA}
                     ) AS fonte_validada_explicita,
                     MAX(COALESCE(kd.atualizado_em, kd.created_at)) AS ultima_atualizacao
                 FROM knowledge_docs kd
@@ -130,7 +131,9 @@ async def medir_cobertura_rag(db: AsyncSession, *, mg_jec_only: bool = False) ->
                 )
             )
         ).mappings().all()
-        return [{nome: r["valor"], "documentos": int(r["documentos"] or 0)} for r in rows]
+        return [
+            {nome: r["valor"], "documentos": int(r["documentos"] or 0)} for r in rows
+        ]
 
     por_tribunal = await _dim(_SQL_TRIBUNAL, "tribunal")
     por_area = await _dim(_SQL_AREA, "area")
@@ -147,7 +150,9 @@ async def medir_cobertura_rag(db: AsyncSession, *, mg_jec_only: bool = False) ->
         "documentos_indexados": int((resumo or {}).get("documentos_indexados") or 0),
         "documentos_aprovados": int((resumo or {}).get("documentos_aprovados") or 0),
         "fonte_validada_explicita": validadas,
-        "pct_fonte_validada_explicita": round(validadas / documentos * 100, 1) if documentos else 0.0,
+        "pct_fonte_validada_explicita": (
+            round(validadas / documentos * 100, 1) if documentos else 0.0
+        ),
         "ultima_atualizacao": (resumo or {}).get("ultima_atualizacao"),
         "colecoes": [
             {
@@ -172,7 +177,8 @@ async def medir_cobertura_rag(db: AsyncSession, *, mg_jec_only: bool = False) ->
             "tjmg_generico_mapeado_sem_duplicacao": True,
             "tjmg_generico_colecao_logica": "jurisprudencia_tjmg_acordaos_auto",
             "fonte_validada_explicita": (
-                "Conta somente extra.fonte_validada=true; ausência do metadado não é inferida como validação."
+                "Conta somente extra.fonte_validada=true; ausência do metadado "
+                "não é inferida como validação."
             ),
         },
     }
