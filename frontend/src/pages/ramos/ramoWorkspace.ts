@@ -1,11 +1,7 @@
 import type { RamoConfig } from "./ramosConfig";
 
 export type WorkspaceTabId =
-  | "visao"
-  | "casos"
-  | "ferramentas"
-  | "analise"
-  | "referencias";
+  "visao" | "casos" | "ferramentas" | "analise" | "referencias";
 
 export type WorkspaceTab = {
   id: WorkspaceTabId;
@@ -19,25 +15,26 @@ export type RelacaoVisualArea = {
   workspace?: string;
 };
 
-const COPIA_WORKSPACE: Record<string, { titulo?: string; subtitulo?: string }> = {
-  civel: {
-    titulo: "Direito Cível Geral",
-    subtitulo:
-      "Responsabilidade civil, obrigações, cobrança, indenizações e rito cível. Consumidor, Família e Imobiliário permanecem em workspaces próprios.",
-  },
-  empresarial: {
-    subtitulo:
-      "Empresas, governança, recuperação, operações societárias e contratos empresariais, com especialidades relacionadas preservadas na taxonomia.",
-  },
-  administrativo: {
-    subtitulo:
-      "Atos, sanções, servidores, contratos públicos e regulação. Licitações permanece classificação jurídica própria e relacionada.",
-  },
-  familia: {
-    subtitulo:
-      "Família, guarda, convivência, alimentos e divórcio. Sucessões permanece classificação jurídica própria e relacionada.",
-  },
-};
+const COPIA_WORKSPACE: Record<string, { titulo?: string; subtitulo?: string }> =
+  {
+    civel: {
+      titulo: "Direito Cível Geral",
+      subtitulo:
+        "Responsabilidade civil, obrigações, cobrança, indenizações e rito cível. Consumidor, Família e Imobiliário permanecem em workspaces próprios.",
+    },
+    empresarial: {
+      subtitulo:
+        "Empresas, governança, recuperação, operações societárias e contratos empresariais, com especialidades relacionadas preservadas na taxonomia.",
+    },
+    administrativo: {
+      subtitulo:
+        "Atos, sanções, servidores, contratos públicos e regulação. Licitações permanece classificação jurídica própria e relacionada.",
+    },
+    familia: {
+      subtitulo:
+        "Família, guarda, convivência, alimentos e divórcio. Sucessões permanece classificação jurídica própria e relacionada.",
+    },
+  };
 
 const RELACOES_VISUAIS: Record<string, RelacaoVisualArea[]> = {
   civel: [
@@ -56,7 +53,8 @@ const RELACOES_VISUAIS: Record<string, RelacaoVisualArea[]> = {
     {
       slug: "imobiliario",
       label: "Imobiliário",
-      descricao: "Workspace próprio para locação, posse e negócios imobiliários.",
+      descricao:
+        "Workspace próprio para locação, posse e negócios imobiliários.",
       workspace: "/areas-de-atuacao/imobiliario",
     },
   ],
@@ -128,26 +126,28 @@ export function relacoesDoWorkspace(cfg: RamoConfig): RelacaoVisualArea[] {
 export function temFerramentasWorkspace(cfg: RamoConfig): boolean {
   return Boolean(
     cfg.ferramentas.length > 0 ||
-      cfg.comparadorBacen ||
-      cfg.liquidacaoTrabalhista ||
-      cfg.tributarioFiscal ||
-      cfg.previdenciarioSimulacao ||
-      cfg.autosAmbientais ||
-      cfg.ambientalEstrategia ||
-      cfg.sociedadesCliente ||
-      cfg.lgpdRegistros,
+    cfg.comparadorBacen ||
+    cfg.liquidacaoTrabalhista ||
+    cfg.tributarioFiscal ||
+    cfg.previdenciarioSimulacao ||
+    cfg.autosAmbientais ||
+    cfg.ambientalEstrategia ||
+    cfg.sociedadesCliente ||
+    cfg.lgpdRegistros,
   );
 }
 
 export function temAnaliseWorkspace(cfg: RamoConfig): boolean {
-  return Boolean(cfg.analiseDocumento || cfg.analiseExtratos || cfg.bancarioForense);
+  return Boolean(
+    cfg.analiseDocumento || cfg.analiseExtratos || cfg.bancarioForense,
+  );
 }
 
 export function temReferenciasWorkspace(cfg: RamoConfig): boolean {
   return Boolean(
     (cfg.subareas?.length ?? 0) > 0 ||
-      (cfg.ferramentasExternas?.length ?? 0) > 0 ||
-      GUIAS.some((chave) => Boolean(cfg[chave])),
+    (cfg.ferramentasExternas?.length ?? 0) > 0 ||
+    GUIAS.some((chave) => Boolean(cfg[chave])),
   );
 }
 
