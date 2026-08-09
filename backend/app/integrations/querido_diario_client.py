@@ -13,6 +13,8 @@ from typing import Any
 
 import httpx
 
+from app.integrations.feature_flags import require_enabled
+
 
 QUERIDO_DIARIO_BASE = "https://api.queridodiario.ok.org.br"
 _IBGE_RE = re.compile(r"^\d{7}$")
@@ -37,6 +39,7 @@ class QueridoDiarioClient:
         tamanho: int = 10,
         excerto: int = 500,
     ) -> dict[str, Any]:
+        require_enabled("querido_diario", "Querido Diário")
         territorio = str(codigo_ibge or "").strip()
         if not _IBGE_RE.fullmatch(territorio):
             raise ValueError("codigo_ibge deve conter 7 dígitos")
@@ -100,6 +103,7 @@ class QueridoDiarioClient:
         ) from ultimo
 
     async def cidade(self, codigo_ibge: str) -> dict[str, Any]:
+        require_enabled("querido_diario", "Querido Diário")
         territorio = str(codigo_ibge or "").strip()
         if not _IBGE_RE.fullmatch(territorio):
             raise ValueError("codigo_ibge deve conter 7 dígitos")
