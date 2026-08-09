@@ -12,7 +12,15 @@
 #     "Art. N [· Art. M ...] — <lei>", compatível com o lookup ILIKE de
 #     citation_check._existe_artigo (inclusive grafia oficial "Art. 10.");
 #   • upsert idempotente pelo pipeline oficial (dedup por chave_origem, hash
-#     sobre `conteudo`, versionamento migration 068, chunks pré-computados).
+#     sobre `conteudo`, versionamento migration 068, chunks pré-computados);
+#   • vigência lida da fonte gravada em `extra.legal_status` (Issue #636): sem
+#     isso o documento entra como 'vigencia_nao_verificada' na governança e o
+#     gate de situação jurídica do RAG o exclui. Ver `situacao_juridica` — a
+#     marcação vem do PREÂMBULO do texto compilado e o fragmento vem VAZIO
+#     quando a página não permite afirmar nada. Como o upsert mescla `extra`
+#     mesmo no atalho "inalterado", UMA execução do job/seed já regrava a
+#     vigência do acervo existente (sem nova versão) — exceto onde um curador
+#     já decidiu, que `upsert_documento` preserva.
 #
 # Migração de chunking (deploy único): docs vigentes gravados pelo formato
 # antigo (extra sem divisao='por_artigo') têm o MESMO conteúdo (mesmo hash),
@@ -29,6 +37,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -215,6 +224,90 @@ def extrair_texto_planalto(html: str) -> str:
     return normalizar("\n".join(linhas))
 
 
+# Revogação do DIPLOMA INTEIRO, como o Planalto a publica no cabeçalho/ementa
+# do texto compilado: "(Revogada pela Lei nº 14.133, de 2021)", "(Revogado pelo
+# Decreto nº ...)", "Revogada a partir de ...", "Vigência encerrada", e a
+# anotação SOLTA "(Revogada)" — que no preâmbulo só pode ser do próprio diploma.
+# A revogação PARCIAL é detectada separadamente para não promover a situação do
+# diploma inteiro a 'revogada'. É a forma PASSIVA — "Revoga a Lei nº X" (a
+# norma que revoga OUTRA) não casa.
+_RE_DIPLOMA_PARCIALMENTE_REVOGADO = re.compile(
+    r"(?:parcialmente\s+revogad[oa]s?\s+(?:pel[ao]s?\b|a\s+partir\b|em\s+\d)"
+    r"|revogad[oa]s?\s+parcialmente\s+(?:pel[ao]s?\b|a\s+partir\b|em\s+\d))",
+    re.IGNORECASE,
+)
+_RE_DIPLOMA_REVOGADO = re.compile(
+    r"(?:revogad[oa]s?\s+(?:integralmente\s+|expressamente\s+|tacitamente\s+)?"
+    r"(?:pel[ao]s?\b|a\s+partir\b|em\s+\d)"
+    r"|\(\s*revogad[oa]s?\s*\)"
+    r"|vig[êe]ncia\s+encerrada)",
+    re.IGNORECASE,
+)
+
+# Tamanho mínimo para aceitar um bloco como PREÂMBULO de fato. O preâmbulo de
+# um diploma do Planalto traz epígrafe + ementa + fórmula de promulgação, muito
+# acima disso; o piso existe só para rejeitar bloco vazio/residual — sobre o
+# qual a busca por marcação de revogação não significaria nada.
+MIN_PREAMBULO = 80
+
+
+def _preambulo(blocos: list[tuple[str | None, str]]) -> str | None:
+    """Preâmbulo IDENTIFICÁVEL, ou None quando a página não expõe um.
+
+    `dividir_artigos` usa rotulo=None para o preâmbulo E para trechos finais sem
+    artigo (assinaturas, anexos). Só o PRIMEIRO bloco pode ser o preâmbulo: se a
+    página começa direto no Art. 1º, o primeiro rotulo=None é um bloco final e
+    lê-lo como cabeçalho seria procurar a marcação no lugar errado.
+    """
+    if not blocos or blocos[0][0] is not None:
+        return None
+    corpo = blocos[0][1].strip()
+    return corpo if len(corpo) >= MIN_PREAMBULO else None
+
+
+def situacao_juridica(blocos: list[tuple[str | None, str]]) -> dict:
+    """Fragmento de `extra` com a situação jurídica que a fonte sustenta.
+
+    FAIL-CLOSED: apenas uma declaração positiva da fonte recebe
+    `legal_status_verificado_em`. O silêncio do texto compilado NÃO é prova
+    positiva de vigência e permanece `vigencia_nao_verificada`, com carimbo de
+    inferência para auditoria.
+
+    Desfechos:
+      • revogação total declarada no preâmbulo → `revogada` verificada;
+      • revogação parcial declarada → `parcialmente_revogada` verificada;
+      • preâmbulo identificável sem declaração → `vigencia_nao_verificada`
+        inferida, nunca `vigente`;
+      • sem preâmbulo identificável → `{}`.
+
+    O escopo é o preâmbulo: o corpo compilado contém anotações de artigos
+    individuais revogados, que não podem ser promovidas ao diploma inteiro.
+    """
+    preambulo = _preambulo(blocos)
+    if preambulo is None:
+        return {}
+
+    base = {"legal_status_origem": "planalto:texto_compilado"}
+    agora = datetime.now(timezone.utc).isoformat()
+    if _RE_DIPLOMA_PARCIALMENTE_REVOGADO.search(preambulo):
+        return {
+            **base,
+            "legal_status": "parcialmente_revogada",
+            "legal_status_verificado_em": agora,
+        }
+    if _RE_DIPLOMA_REVOGADO.search(preambulo):
+        return {
+            **base,
+            "legal_status": "revogada",
+            "legal_status_verificado_em": agora,
+        }
+    return {
+        **base,
+        "legal_status": "vigencia_nao_verificada",
+        "legal_status_inferido_em": agora,
+    }
+
+
 def _rotulo(m: re.Match) -> str:
     """Rótulo canônico do artigo ("Art. 6", "Art. 19-A", "Art. 1.022") —
     SEM ordinal, para casar com o ILIKE '%Art. N %' de _existe_artigo."""
@@ -311,7 +404,8 @@ def preparar_diploma(diploma: dict, html: str) -> dict:
     if artigos < MIN_ARTIGOS:
         raise ValueError(f"apenas {artigos} artigos encontrados — parser não reconheceu a página")
     chunks = montar_chunks(diploma["titulo"], blocos)
-    return {"texto": texto, "blocos": blocos, "chunks": chunks, "artigos": artigos}
+    return {"texto": texto, "blocos": blocos, "chunks": chunks, "artigos": artigos,
+            "vigencia": situacao_juridica(blocos)}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -385,6 +479,10 @@ async def ingerir_diploma(
             # Curadoria (governança RAG da main): fonte oficial nasce aprovada
             # e tipada — nunca entra em quarentena.
             "rag_status": "aprovado", "tipo_fonte": "legislacao_oficial",
+            # Situação jurídica lida do preâmbulo do texto oficial. O silêncio
+            # do Planalto não é mais promovido a vigência positiva: permanece
+            # `vigencia_nao_verificada` até prova/curadoria.
+            **prep["vigencia"],
         },
         confianca="alta",              # fonte oficial — texto de lei compilado
         embutir_vetores=embutir_vetores,

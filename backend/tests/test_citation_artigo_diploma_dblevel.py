@@ -1,6 +1,7 @@
 """P0 — verificação determinística de artigo × diploma com Postgres real."""
 from __future__ import annotations
 
+import json
 import os
 from uuid import uuid4
 
@@ -30,8 +31,16 @@ async def _inserir_diploma(
     conteudo: str,
     vigente: bool = True,
     versao: int = 1,
+    legal_status: str | None = "vigente",
 ) -> str:
+    """Diploma como a ingestão o grava HOJE (Issue #636): legislação carrega
+    `extra.legal_status`. `legal_status=None` reproduz o acervo legado, ainda
+    não reingerido — que o gate de vigência exclui de propósito."""
     doc_id = str(uuid4())
+    extra = {"rag_status": "aprovado", "confidence_level": "alta"}
+    if legal_status is not None:
+        extra["legal_status"] = legal_status
+        extra["legal_status_origem"] = "planalto:texto_compilado"
     await db.execute(
         text(
             """
@@ -51,7 +60,7 @@ async def _inserir_diploma(
             "chave": chave,
             "versao": versao,
             "vigente": vigente,
-            "extra": '{"rag_status":"aprovado","confidence_level":"alta"}',
+            "extra": json.dumps(extra),
         },
     )
     await db.execute(
@@ -244,7 +253,87 @@ async def test_lei_por_numero_normalizado_aceita_abreviacoes_compostas(abreviaca
             await _limpar(db, ids)
 
 
+async def test_legislacao_sem_vigencia_declarada_nao_confirma_a_citacao(monkeypatch):
+    """Issue #636, no nível do GATE DE CITAÇÃO: o artigo existe, está no diploma
+    citado e a curadoria o aprovou — mas ninguém conferiu a vigência da norma.
+    Com RAG_EXIGIR_VIGENCIA_VERIFICADA ligada (default), a citação NÃO recebe o
+    selo 'verificada'; desligada, volta a receber. É o mesmo documento e o mesmo
+    texto nos dois casos: só a flag muda."""
+    from app.core.database import AsyncSessionLocal
+    from app.services import ai_service
+
+    ids: list[str] = []
+    async with AsyncSessionLocal() as db:
+        try:
+            id_cpc = await _inserir_diploma(
+                db,
+                chave="planalto:cpc",
+                titulo="Código de Processo Civil (Lei 13.105/2015)",
+                conteudo="Art. 300. Texto do diploma ainda não reingerido.",
+                legal_status=None,
+            )
+            ids.append(id_cpc)
+            await db.commit()
+            texto = "Tutela de urgência conforme o art. 300 do CPC."
+
+            monkeypatch.setattr(
+                ai_service.settings, "RAG_EXIGIR_VIGENCIA_VERIFICADA", True)
+            estrita = await _verificar(db, texto)
+            assert estrita["status"] == "identificada", (
+                "legislação com vigência não conferida NÃO pode receber selo "
+                "de citação verificada")
+            assert estrita["encontrada"] is False
+            assert estrita["fonte_chave_origem"] is None
+
+            monkeypatch.setattr(
+                ai_service.settings, "RAG_EXIGIR_VIGENCIA_VERIFICADA", False)
+            frouxa = await _verificar(db, texto)
+            assert frouxa["status"] == "verificada", (
+                "com a flag desligada o acervo não reingerido deve voltar a "
+                "confirmar a citação")
+            assert frouxa["fonte_doc_id"] == id_cpc
+        finally:
+            await _limpar(db, ids)
+
+
+async def test_norma_revogada_nunca_confirma_a_citacao(monkeypatch):
+    """A exclusão do REVOGADO não tem flag: mesmo com
+    RAG_EXIGIR_VIGENCIA_VERIFICADA desligada, artigo de norma revogada não vira
+    fundamentação confirmada."""
+    from app.core.database import AsyncSessionLocal
+    from app.services import ai_service
+
+    monkeypatch.setattr(
+        ai_service.settings, "RAG_EXIGIR_VIGENCIA_VERIFICADA", False)
+    ids: list[str] = []
+    async with AsyncSessionLocal() as db:
+        try:
+            ids.append(
+                await _inserir_diploma(
+                    db,
+                    chave="planalto:cpc",
+                    titulo="Código de Processo Civil (Lei 13.105/2015)",
+                    conteudo="Art. 300. Dispositivo de diploma revogado.",
+                    legal_status="revogada",
+                )
+            )
+            await db.commit()
+
+            citacao = await _verificar(
+                db, "Tutela de urgência conforme o art. 300 do CPC.")
+            assert citacao["status"] != "verificada"
+            assert citacao["encontrada"] is False
+            assert citacao["fonte_chave_origem"] is None
+        finally:
+            await _limpar(db, ids)
+
+
 async def test_versao_superada_mantem_o_mesmo_recorte_de_diploma():
+    """A versão histórica entra SEM `legal_status` de propósito: a governança
+    classifica toda versão não vigente como 'historica' (situação declarada) e
+    o gate de vigência precisa espelhar esse ramo. Se o espelho SQL voltar a
+    ignorar `kd.vigente`, `_artigo_superado` perde o hit e o veredito cai para
+    'identificada' — o aviso de desatualização some sem ninguém perceber."""
     from app.core.database import AsyncSessionLocal
 
     ids: list[str] = []
@@ -257,6 +346,7 @@ async def test_versao_superada_mantem_o_mesmo_recorte_de_diploma():
                 conteudo="Art. 927. Versão histórica do dispositivo.",
                 vigente=False,
                 versao=2,
+                legal_status=None,
             )
             ids.append(id_cc)
             ids.append(
