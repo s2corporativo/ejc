@@ -149,7 +149,9 @@ async def dashboard(
         await db.execute(select(sqlfunc.count()).select_from(AILog).where(w))
     ).scalar() or 0
     custo = (
-        await db.execute(select(sqlfunc.coalesce(sqlfunc.sum(AILog.custo_estimado), 0)).where(w)
+        await db.execute(
+            select(sqlfunc.coalesce(sqlfunc.sum(AILog.custo_estimado), 0)).where(w)
+        )
     ).scalar() or 0
     pii = (
         await db.execute(
