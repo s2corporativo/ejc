@@ -19,7 +19,8 @@ concurrency:
 jobs:
   apply:
     name: Apply Case and Process separation
-    runs-on: [self-hosted, ejc-vps]
+    # Codemod de branch não precisa nem pode compartilhar o host de produção.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
