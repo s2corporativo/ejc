@@ -1,17 +1,11 @@
 # ── app/services/upload_lote_service.py ──────────────────────────────────────
-"""Validação e gravação de lote de upload — extraído de raio_x.py e
-legal_chat.py, que tinham a mesma sequência de checagens byte-a-byte
-duplicada (achado F2 do plano de fusão Casos/Raio-X/Sala Jurídica).
+"""Validação e gravação compartilhada de lotes de upload.
 
-O que é compartilhado: teto de arquivos por lote, extensão permitida, leitura
-e teto de tamanho, hash SHA-256 com deduplicação, validação de conteúdo real
-(magic bytes) via `app.routers.documents._validar_conteudo`, e gravação em
-disco sob um caminho `{subdir}/{ano}/{mes}/{entidade_id}/{uuid}{ext}`.
-
-O que continua em cada chamador, de propósito (diferença legítima de
-comportamento, não duplicação): construir a linha do banco (`RaioXDocumento`
-vs `LegalChatAttachment`), decidir se a extração roda inline ou em fila
-assíncrona, e o audit log específico do módulo.
+Raio-X e Sala Jurídica usam este serviço para as etapas que precisam ter a
+mesma implementação de segurança: teto do lote, allowlist de extensão, tamanho,
+SHA-256/deduplicação, validação de conteúdo real e gravação confinada em
+``UPLOAD_DIR``. Construção das entidades, extração/OCR e auditoria permanecem
+nos chamadores porque têm semânticas diferentes.
 """
 from __future__ import annotations
 
@@ -31,7 +25,7 @@ settings = get_settings()
 
 @dataclass
 class ArquivoValidado:
-    """Um arquivo do lote que passou em todas as checagens e já está em disco."""
+    """Arquivo que passou nas checagens e já foi gravado no storage."""
 
     nome_original: str
     ext: str
@@ -42,9 +36,33 @@ class ArquivoValidado:
     ocr_utilizado: bool
 
 
-#: Extensões cujo conteúdo se beneficia de OCR na extração — mesmo conjunto
-#: usado hoje por raio_x.py e legal_chat.py.
 EXTENSOES_OCR = {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".webp"}
+
+
+def _segmento_storage(valor: str, *, campo: str) -> str:
+    """Aceita somente um segmento simples e nunca ``.``/``..``."""
+    if not isinstance(valor, str):
+        raise ValueError(f"{campo} inválido para gravação em disco")
+    segmento = Path(valor).name
+    if (
+        not segmento
+        or segmento in {".", ".."}
+        or segmento != valor
+        or Path(valor).is_absolute()
+    ):
+        raise ValueError(f"{campo} inválido para gravação em disco")
+    return segmento
+
+
+def _destino_confinado(root: Path, rel: Path) -> Path:
+    """Resolve o destino e prova que ele continua sob a raiz configurada."""
+    raiz = root.resolve()
+    destino = (raiz / rel).resolve()
+    try:
+        destino.relative_to(raiz)
+    except ValueError as exc:
+        raise ValueError("destino de upload escapou da raiz configurada") from exc
+    return destino
 
 
 async def processar_lote(
@@ -56,24 +74,18 @@ async def processar_lote(
     storage_subdir: str,
     entidade_id: str,
 ) -> tuple[list[ArquivoValidado], list[str], list[dict[str, str]]]:
-    """Valida e grava em disco o lote. Levanta 422 no teto de arquivos (erro de
-    requisição); demais violações são fail-soft — cada arquivo é aceito,
-    duplicado ou rejeitado individualmente, e o lote sempre termina 200 com o
-    resultado por arquivo (mesmo contrato dos dois chamadores originais).
+    """Valida e grava o lote, preservando o contrato fail-soft por arquivo.
 
-    `existing_hashes` é mutado com os hashes dos arquivos aceitos, para que o
-    chamador possa reusá-lo em chamadas subsequentes sem reconsultar o banco.
+    O teto do lote é erro de requisição (422). Violações individuais geram
+    entrada em ``erros``/``duplicados`` e não abortam os demais arquivos.
+    ``existing_hashes`` é atualizado somente após gravação bem-sucedida.
     """
     if not files or len(files) > max_arquivos:
         raise HTTPException(422, f"Envie de 1 a {max_arquivos} arquivos por lote")
-    # Mesma defesa já aplicada ao filename: um segmento de path "achatado" via
-    # .name — sem isso, storage_subdir/entidade_id concatenados sem sanitização
-    # reabririam path traversal clássico para um chamador futuro que (por
-    # engano) passe um valor não confiável (achado do security-auditor).
-    subdir_seguro = Path(storage_subdir).name
-    entidade_segura = Path(entidade_id).name
-    if not subdir_seguro or not entidade_segura or entidade_segura != entidade_id:
-        raise ValueError("storage_subdir/entidade_id inválidos para gravação em disco")
+
+    subdir_seguro = _segmento_storage(storage_subdir, campo="storage_subdir")
+    entidade_segura = _segmento_storage(entidade_id, campo="entidade_id")
+    raiz_upload = Path(settings.UPLOAD_DIR)
 
     from app.routers.documents import _validar_conteudo
 
@@ -87,17 +99,22 @@ async def processar_lote(
         if ext not in extensoes_permitidas:
             erros.append({"arquivo": filename, "erro": "Formato não suportado"})
             continue
+
         content = await upload.read()
         if not content:
             erros.append({"arquivo": filename, "erro": "Arquivo vazio"})
             continue
         if len(content) > settings.MAX_UPLOAD_MB * 1024 * 1024:
-            erros.append({"arquivo": filename, "erro": f"Excede {settings.MAX_UPLOAD_MB} MB"})
+            erros.append(
+                {"arquivo": filename, "erro": f"Excede {settings.MAX_UPLOAD_MB} MB"}
+            )
             continue
+
         digest = hashlib.sha256(content).hexdigest()
         if digest in existing_hashes:
             duplicados.append(filename)
             continue
+
         try:
             mime_real = _validar_conteudo(ext, content)
         except HTTPException as exc:
@@ -109,10 +126,10 @@ async def processar_lote(
             Path(subdir_seguro)
             / f"{now.year}"
             / f"{now.month:02d}"
-            / entidade_id
+            / entidade_segura
             / f"{uuid4()}{ext}"
         )
-        full = Path(settings.UPLOAD_DIR) / rel
+        full = _destino_confinado(raiz_upload, rel)
         full.parent.mkdir(parents=True, exist_ok=True)
         async with aiofiles.open(full, "wb") as target:
             await target.write(content)
