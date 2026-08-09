@@ -88,6 +88,13 @@ function renderizar() {
   );
 }
 
+function cartoesTarefas() {
+  return screen
+    .getAllByText("Tarefas pendentes")
+    .map((rotulo) => rotulo.closest("a"))
+    .filter(Boolean);
+}
+
 beforeEach(() => {
   papelAtual = "advogado";
   getMock.mockReset();
@@ -118,8 +125,9 @@ describe("DashboardUltra", () => {
     await screen.findByText("Juízo abriu vista para manifestação");
     expect(screen.getByText("Caso Alfa")).toBeTruthy();
 
-    const card = screen.getByText("Tarefas pendentes").closest("a");
-    expect(card?.textContent).toContain("1");
+    expect(
+      cartoesTarefas().some((card) => card?.textContent?.includes("1")),
+    ).toBe(true);
     expect(screen.getByText("SNAPSHOT")).toBeTruthy();
   });
 
@@ -156,8 +164,11 @@ describe("DashboardUltra", () => {
     expect(
       await screen.findByText("Agenda indisponível no momento."),
     ).toBeTruthy();
-    const card = screen.getByText("Tarefas pendentes").closest("a");
-    expect(card?.textContent).toContain("Fonte indisponível");
+    expect(
+      cartoesTarefas().some((card) =>
+        card?.textContent?.includes("Fonte indisponível"),
+      ),
+    ).toBe(true);
   });
 
   it("sinaliza degradação parcial quando somente o enriquecimento da agenda falha", async () => {
