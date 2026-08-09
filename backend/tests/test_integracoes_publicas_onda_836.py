@@ -266,14 +266,18 @@ def test_inlabs_zip_rejeita_path_traversal():
 def test_paths_historicos_brasilapi_foram_preservados_e_novas_rotas_existem():
     from app.integrations import routers
 
+    # FastAPI armazena em APIRouter.routes o path já composto com o prefixo do
+    # próprio router. O prefixo /api é acrescentado somente quando main.py monta
+    # esse router; por isso aqui validamos /integracoes/... e o gate OpenAPI
+    # valida o path externo final /api/integracoes/....
     paths = {r.path for r in routers.brasilapi_router.routes}
-    assert "/brasilapi/cnpj/{cnpj}" in paths
-    assert "/brasilapi/cep/{cep}" in paths
-    assert "/cnj/tpu/pesquisar" in paths
-    assert "/tcu/acordaos" in paths
-    assert "/ibge/canonicalizar" in paths
-    assert "/dados-publicos/{fonte}/recursos" in paths
-    assert "/pgfn/divida-ativa/recursos" in paths
-    assert "/querido-diario/{codigo_ibge}" in paths
-    assert "/ide-sisema/feicoes" in paths
+    assert "/integracoes/brasilapi/cnpj/{cnpj}" in paths
+    assert "/integracoes/brasilapi/cep/{cep}" in paths
+    assert "/integracoes/cnj/tpu/pesquisar" in paths
+    assert "/integracoes/tcu/acordaos" in paths
+    assert "/integracoes/ibge/canonicalizar" in paths
+    assert "/integracoes/dados-publicos/{fonte}/recursos" in paths
+    assert "/integracoes/pgfn/divida-ativa/recursos" in paths
+    assert "/integracoes/querido-diario/{codigo_ibge}" in paths
+    assert "/integracoes/ide-sisema/feicoes" in paths
     assert routers.brasilapi_router.prefix == "/integracoes"
