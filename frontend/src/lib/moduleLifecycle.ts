@@ -16,20 +16,32 @@ const CONSOLIDATED_NAV_KEYS = new Set(["knowledge-hub"]);
 
 // Sala Jurídica e Raio-X continuam sendo módulos/rotas canônicos porque isso
 // preserva lifecycle, RBAC, ajuda contextual, manifests e deep links. Porém,
-// quando a própria Entrada já está visível para o papel atual, elas deixam de
-// competir no menu e a Entrada assume o rótulo de gateway único. Para papéis de
-// apoio, que não recebem /entrada pelo RBAC do registry, Sala/Raio-X continuam
-// visíveis exatamente como antes.
+// quando a própria Entrada já está efetivamente visível para o papel atual,
+// elas deixam de competir no menu e a Entrada assume o rótulo de gateway único.
 const ENTRADA_CONSOLIDATED_NAV_KEYS = new Set([
   "sala-juridica",
   "raio-x-processo",
 ]);
 
+function visibleByLifecycle<T extends ModuleLike>(
+  module: T,
+  settings: Record<string, ModuleLifecycleOverride>,
+): boolean {
+  const override = settings[module.key];
+  if (!override) return module.status !== "hidden";
+  if (!override.enabled || override.status === "disabled") return false;
+  if (!override.menu_visible || override.status === "hidden") return false;
+  return true;
+}
+
 export function filterModulesByLifecycle<T extends ModuleLike>(
   modules: T[],
   settings: Record<string, ModuleLifecycleOverride>,
 ): T[] {
-  const entradaVisivel = modules.some((module) => module.key === "entrada");
+  const entradaVisivel = modules.some(
+    (module) =>
+      module.key === "entrada" && visibleByLifecycle(module, settings),
+  );
 
   return modules
     .filter((module) => {
@@ -37,11 +49,7 @@ export function filterModulesByLifecycle<T extends ModuleLike>(
       if (entradaVisivel && ENTRADA_CONSOLIDATED_NAV_KEYS.has(module.key)) {
         return false;
       }
-      const override = settings[module.key];
-      if (!override) return module.status !== "hidden";
-      if (!override.enabled || override.status === "disabled") return false;
-      if (!override.menu_visible || override.status === "hidden") return false;
-      return true;
+      return visibleByLifecycle(module, settings);
     })
     .map((module) => {
       if (!entradaVisivel || module.key !== "entrada") return module;
