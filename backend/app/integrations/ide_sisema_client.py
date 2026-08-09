@@ -19,6 +19,7 @@ from app.integrations.feature_flags import require_enabled
 IDE_SISEMA_OWS = "https://geoserver.meioambiente.mg.gov.br/ows"
 _LAYER_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,180}$")
 _TRANSIENTES = {429, 500, 502, 503, 504}
+_MAX_CAPABILITIES_BYTES = 8 * 1024 * 1024
 
 
 class IdeSisemaError(RuntimeError):
@@ -95,6 +96,12 @@ class IdeSisemaClient:
             },
             accept="application/xml,text/xml",
         )
+        tamanho_declarado = resp.headers.get("content-length")
+        if tamanho_declarado and tamanho_declarado.isdigit():
+            if int(tamanho_declarado) > _MAX_CAPABILITIES_BYTES:
+                raise IdeSisemaError("IDE-Sisema capabilities excede o limite")
+        if len(resp.content) > _MAX_CAPABILITIES_BYTES:
+            raise IdeSisemaError("IDE-Sisema capabilities excede o limite")
         return _parse_capabilities(resp.text)
 
     async def consultar_camadas(
@@ -139,9 +146,11 @@ class IdeSisemaClient:
             raise IdeSisemaError("IDE-Sisema retornou GeoJSON inválido") from exc
         if not isinstance(payload, dict):
             raise IdeSisemaError("IDE-Sisema retornou formato inesperado")
-        payload["proveniencia_ejc"] = {
-            "fonte": "IDE-Sisema — Sisema/MG",
-            "protocolo": "OGC WFS 2.0",
-            "camada": camada,
+        return {
+            "geojson": payload,
+            "proveniencia_ejc": {
+                "fonte": "IDE-Sisema — Sisema/MG",
+                "protocolo": "OGC WFS 2.0",
+                "camada": camada,
+            },
         }
-        return payload
