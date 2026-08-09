@@ -34,6 +34,18 @@ protocolo e considera que foi mais fácil do que fazer fora do sistema.**
 É deliberadamente mais curto que o v2 — contém apenas o que precisa estar pronto **antes** do
 primeiro caso real.
 
+### `leitura-e-geracao-documental.md` — auditoria interna de documentos + IA (2026-08-09)
+
+Diferente das 12 rodadas de julho (feitas às cegas, por HTTPS), esta auditoria leu o
+**código-fonte** e **gerou documentos reais** com o gerador do repositório, inspecionando os
+PDFs página a página. Cobre os quatro caminhos de ingestão, a geração Visual Law e a qualidade
+da IA sobre o material lido.
+
+Achado central: o parecer estratégico que a IA produz ao ler um documento morria dentro de
+`AILog.resposta`, truncado, sem tela que o lesse — corrigido. Traz também o veredito sobre o
+Visual Law (é bom, com um defeito de acentuação no texto fixo da peça) e o que a IA não
+perguntava e agora pergunta (provas necessárias e brechas preliminares).
+
 ### `plano-correcao-v2.md` — backlog de referência
 
 Todos os 40+ achados da auditoria, com evidência e passos de reprodução, organizados em fases.

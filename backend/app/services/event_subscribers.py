@@ -28,6 +28,114 @@ _TIPOS_PUBLICOS_CLIENTE = {"intimacao", "decisao", "audiencia", "movimento"}
 
 
 
+# ── Leitura estratégica de documento → snapshot do caso ──────────────────────
+# Chaves de `analise_estrategica.PROMPT_ANALISE` que interessam ao advogado,
+# mapeadas para o payload documentado em models/case_intelligence.py. O que a
+# IA não produziu simplesmente não entra no payload (lacuna admitida — nunca
+# se inventa chave vazia para "parecer completo").
+
+def _lista(valor) -> list:
+    """Normaliza para lista de itens não vazios (a IA às vezes devolve str)."""
+    if valor is None or valor == "":
+        return []
+    if isinstance(valor, list):
+        return [v for v in valor if v not in (None, "", {}, [])]
+    return [valor]
+
+
+def _payload_leitura_documento(resultado: dict, doc_id: str) -> dict:
+    """Traduz o parecer da IA para o payload de CaseIntelligenceSnapshot.
+
+    Só chaves com conteúdo real entram. `fontes` registra a procedência
+    (leitura do documento + RAG interno) para o advogado saber de onde a
+    análise saiu antes de aprovar no HITL.
+    """
+    estrategia = resultado.get("estrategia")
+    jurimetria = resultado.get("jurimetria") if isinstance(
+        resultado.get("jurimetria"), dict) else {}
+    brechas = resultado.get("brechas_preliminares") if isinstance(
+        resultado.get("brechas_preliminares"), dict) else {}
+
+    riscos = {
+        "itens": _lista(resultado.get("riscos")),
+        "pontos_fracos": _lista(resultado.get("pontos_fracos")),
+        "chance_exito": jurimetria.get("chance_sucesso_percent"),
+    }
+    # Brecha só entra se tiver indício — dict com tudo null não é achado.
+    brechas_uteis = {k: v for k, v in brechas.items()
+                     if k != "observacao" and v not in (None, "", [], {})}
+
+    # Contrato do payload (models/case_intelligence.py): teses.principal e
+    # teses.secundarias são TÍTULOS (str). O objeto completo da tese
+    # (fundamento legal, jurisprudência conferida, força) fica em
+    # teses.detalhe — dentro da mesma chave documentada, sem perder informação
+    # nem inventar chave de topo.
+    teses_itens = _lista(resultado.get("teses_campeas"))
+    titulos = [
+        (t.get("titulo") if isinstance(t, dict) else t) for t in teses_itens
+    ]
+    titulos = [t for t in titulos if t]
+    teses = {
+        "principal": titulos[0] if titulos else None,
+        "secundarias": titulos[1:],
+        "detalhe": [t for t in teses_itens if isinstance(t, dict)],
+    } if titulos else None
+
+    payload = {
+        "documento_id": doc_id,
+        "fatos": resultado.get("sumario_fatos"),
+        "teses": teses,
+        "riscos": {k: v for k, v in riscos.items() if v not in (None, [], "")},
+        "provas": _lista(resultado.get("provas_necessarias")),
+        "pontos_fortes": _lista(resultado.get("pontos_fortes")),
+        "estrategia": estrategia if isinstance(estrategia, dict) else None,
+        "brechas": brechas_uteis or None,
+        "proximos_passos": _lista(resultado.get("proximos_passos")),
+        "alertas": _lista(resultado.get("alertas")),
+        "fontes": ["leitura_documento"] + (
+            ["rag_interno"] if resultado.get("_fontes_rag") else []
+        ),
+    }
+    if resultado.get("_verificacao_citacoes") is not None:
+        payload["verificacao_citacoes"] = resultado["_verificacao_citacoes"]
+    return {k: v for k, v in payload.items() if v not in (None, [], {}, "")}
+
+
+async def _gravar_snapshot_documento(
+    db, *, case_id: str, doc_id: str, resultado, ai_log_id: str,
+) -> None:
+    """Grava o parecer da leitura do documento como snapshot do caso.
+
+    Fail-safe por dois motivos somados: `gravar_snapshot_seguro` já absorve a
+    falha de gravação, e este chamador roda em BackgroundTask — quebrar aqui
+    não pode afetar o upload, que já respondeu 200 ao advogado.
+
+    Snapshot nasce `congelado=False` (HITL: aprovar é ato humano) e
+    `criado_por=None` (origem automática), como manda o service.
+    """
+    if not isinstance(resultado, dict) or resultado.get("erro"):
+        return
+    payload = _payload_leitura_documento(resultado, doc_id)
+    # Sem nenhum conteúdo jurídico além do id do documento, não há parecer a
+    # versionar — evita poluir o histórico do caso com snapshot vazio.
+    if len(payload) <= 2:
+        return
+    try:
+        from app.services import case_intelligence_service as cis
+        await cis.gravar_snapshot_seguro(
+            db,
+            case_id=case_id,
+            origem="documento",
+            payload=cis.compactar_payload(payload),
+            resumo=(resultado.get("sumario_fatos") or
+                    "Leitura estratégica de documento anexado")[:500],
+            ai_log_ids=[ai_log_id],
+            criado_por=None,
+        )
+    except Exception as exc:  # pragma: no cover - defesa dupla
+        logger.warning("Snapshot da leitura documental não gravado: %s", exc)
+
+
 def _patch_documents_background_analysis() -> None:
     """Substitui o hook legado de análise documental por versão sem corte."""
     try:
@@ -40,7 +148,9 @@ def _patch_documents_background_analysis() -> None:
         try:
             from app.services.analise_estrategica import analisar_caso
             from app.core.database import AsyncSessionLocal
-            from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
+            from app.models.ai_log import (
+                AILog, AITipoUso, AIStatusHITL, classificar_risco_ia,
+            )
             from sqlalchemy import text as _sql
             from uuid import uuid4 as _uuid4
             import json as _json
@@ -65,8 +175,9 @@ def _patch_documents_background_analysis() -> None:
                 fontes = None
                 if isinstance(resultado, dict) and resultado.get("_fontes_rag"):
                     fontes = _json.dumps(resultado["_fontes_rag"], ensure_ascii=False)[:2000]
+                log_id = str(_uuid4())
                 log = AILog(
-                    id=str(_uuid4()),
+                    id=log_id,
                     user_id=user_id,
                     case_id=case_id,
                     tipo_uso=AITipoUso.analise_caso,
@@ -74,10 +185,26 @@ def _patch_documents_background_analysis() -> None:
                     prompt_sanitizado=f"[auto] analise estrategica do documento {doc_id}",
                     resposta=_json.dumps(resultado, ensure_ascii=False)[:8000],
                     fontes_rag=fontes,
+                    # O hook original (routers/documents.py) classifica o risco;
+                    # esta cópia patcheada não classificava — e é ELA que roda
+                    # em produção, então todo AILog de análise documental
+                    # nascia sem risco_ia. Restaurado para não divergir do irmão.
+                    risco_ia=classificar_risco_ia("analise_juridica"),
                     status_hitl=AIStatusHITL.gerado,
                 )
                 db.add(log)
                 await db.commit()
+
+                # A leitura estratégica do documento vira SNAPSHOT DO CASO.
+                # Antes, o parecer existia só dentro de AILog.resposta (cortado
+                # em 8.000 caracteres, sem nenhuma tela que o lesse): a IA lia
+                # o documento como advogado e ninguém via o resultado. Agora
+                # segue o mesmo caminho de triagem/intake/motor_peca e aparece
+                # em GET /cases/{case_id}/inteligencia.
+                await _gravar_snapshot_documento(
+                    db, case_id=case_id, doc_id=doc_id,
+                    resultado=resultado, ai_log_id=log_id,
+                )
         except Exception as exc:
             logger.warning("Hook analise doc sem corte falhou: %s", exc)
 

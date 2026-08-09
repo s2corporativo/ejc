@@ -40,6 +40,12 @@ ORIGENS_SNAPSHOT: tuple[str, ...] = (
     "triagem", "intake", "raio_x", "motor_peca", "manual", "matriz_teses",
     "orquestrador",  # FASE 5 — LegalCaseOrchestrator (linha do tempo de estados)
     "sala_juridica",  # conversão/vínculo da Sala Jurídica → caso oficial
+    # Leitura estratégica de um DOCUMENTO anexado a um caso já existente
+    # (analise_estrategica.analisar_caso disparada no upload do GED). Antes
+    # desta origem o resultado só existia dentro de AILog.resposta, truncado
+    # em 8.000 caracteres e sem nenhuma tela que o lesse — o parecer nascia e
+    # morria no log (auditoria de documentos/IA, 2026-08).
+    "documento",
 )
 
 
