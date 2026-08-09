@@ -137,12 +137,16 @@ function areaCanonica(areaSlug: string): AreaResumo | undefined {
   return AREAS_CANONICAS.find((area) => area.slug === areaSlug);
 }
 
+function temChavePropria(objeto: object, chave: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(objeto, chave);
+}
+
 function ramoRegistrado(slug: string): RamoConfig | undefined {
-  return Object.hasOwn(RAMOS, slug) ? RAMOS[slug] : undefined;
+  return temChavePropria(RAMOS, slug) ? RAMOS[slug] : undefined;
 }
 
 function aliasDaArea(areaSlug: string): string | undefined {
-  return Object.hasOwn(HUB_POR_AREA, areaSlug)
+  return temChavePropria(HUB_POR_AREA, areaSlug)
     ? HUB_POR_AREA[areaSlug]
     : undefined;
 }
