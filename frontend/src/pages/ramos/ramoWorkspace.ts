@@ -64,12 +64,14 @@ const RELACOES_VISUAIS: Record<string, RelacaoVisualArea[]> = {
       label: "Societário",
       descricao:
         "Classificação canônica própria; o núcleo empresarial oferece contexto e ferramentas correlatas sem reclassificar o caso.",
+      workspace: "/areas-de-atuacao/societario",
     },
     {
       slug: "contratual",
       label: "Contratual",
       descricao:
         "Especialidade transversal; contratos podem pertencer a diferentes áreas conforme a relação jurídica.",
+      workspace: "/areas-de-atuacao/contratual",
     },
   ],
   administrativo: [
@@ -78,6 +80,7 @@ const RELACOES_VISUAIS: Record<string, RelacaoVisualArea[]> = {
       label: "Licitações",
       descricao:
         "Classificação canônica própria, apresentada como especialidade relacionada ao Direito Administrativo.",
+      workspace: "/areas-de-atuacao/licitacoes",
     },
   ],
   familia: [
@@ -86,6 +89,7 @@ const RELACOES_VISUAIS: Record<string, RelacaoVisualArea[]> = {
       label: "Sucessões",
       descricao:
         "Classificação canônica própria, apresentada como especialidade relacionada ao núcleo de Família.",
+      workspace: "/areas-de-atuacao/sucessoes",
     },
   ],
 };
@@ -126,14 +130,14 @@ export function relacoesDoWorkspace(cfg: RamoConfig): RelacaoVisualArea[] {
 export function temFerramentasWorkspace(cfg: RamoConfig): boolean {
   return Boolean(
     cfg.ferramentas.length > 0 ||
-    cfg.comparadorBacen ||
-    cfg.liquidacaoTrabalhista ||
-    cfg.tributarioFiscal ||
-    cfg.previdenciarioSimulacao ||
-    cfg.autosAmbientais ||
-    cfg.ambientalEstrategia ||
-    cfg.sociedadesCliente ||
-    cfg.lgpdRegistros,
+      cfg.comparadorBacen ||
+      cfg.liquidacaoTrabalhista ||
+      cfg.tributarioFiscal ||
+      cfg.previdenciarioSimulacao ||
+      cfg.autosAmbientais ||
+      cfg.ambientalEstrategia ||
+      cfg.sociedadesCliente ||
+      cfg.lgpdRegistros,
   );
 }
 
@@ -146,8 +150,8 @@ export function temAnaliseWorkspace(cfg: RamoConfig): boolean {
 export function temReferenciasWorkspace(cfg: RamoConfig): boolean {
   return Boolean(
     (cfg.subareas?.length ?? 0) > 0 ||
-    (cfg.ferramentasExternas?.length ?? 0) > 0 ||
-    GUIAS.some((chave) => Boolean(cfg[chave])),
+      (cfg.ferramentasExternas?.length ?? 0) > 0 ||
+      GUIAS.some((chave) => Boolean(cfg[chave])),
   );
 }
 
