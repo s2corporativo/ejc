@@ -472,8 +472,8 @@ export default function RamoBase() {
   );
   const podeCriarCaso = Boolean(
     podeAcessarArea &&
-      role &&
-      (ROLES.clientes as readonly string[]).includes(role),
+    role &&
+    (ROLES.clientes as readonly string[]).includes(role),
   );
   const [aba, setAba] = useState<WorkspaceTabId>("visao");
   const [casos, setCasos] = useState<Case[]>([]);
