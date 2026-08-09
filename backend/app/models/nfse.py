@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import enum
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.orm import validates
 
 from app.core.database import Base
 
@@ -84,3 +86,34 @@ class NotaFiscalServico(Base):
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    @validates("status")
+    def _classificar_cancelamento(self, key: str, value: str) -> str:
+        """Mantém a evidência sincronizada com toda transição futura.
+
+        Os routers já fazem o ato material correto: provider externo só marca
+        `cancelada` após a chamada de cancelamento; provider manual apenas
+        encerra o registro local. O model transforma essa diferença em dado
+        persistente e consultável, evitando interpretação fiscal ambígua.
+        """
+        status = getattr(value, "value", value)
+        if status == NFSeStatus.cancelada.value:
+            if (self.provider or "").lower() == "manual":
+                self.cancelamento_tipo = "registro_local"
+                self.cancelamento_fiscal_confirmado = False
+                self.cancelamento_confirmado_em = None
+            else:
+                self.cancelamento_tipo = "fiscal_provider"
+                self.cancelamento_fiscal_confirmado = True
+                self.cancelamento_confirmado_em = datetime.now(timezone.utc)
+        elif status in {
+            NFSeStatus.rascunho.value,
+            NFSeStatus.processando.value,
+            NFSeStatus.autorizada.value,
+            NFSeStatus.rejeitada.value,
+        }:
+            # Transições não-canceladas não carregam evidência antiga.
+            self.cancelamento_tipo = None
+            self.cancelamento_fiscal_confirmado = False
+            self.cancelamento_confirmado_em = None
+        return status
