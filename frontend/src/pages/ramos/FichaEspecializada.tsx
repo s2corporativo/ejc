@@ -10,6 +10,10 @@ function rotulo(v: string) {
   return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export function valorObrigatorioAusente(valor: unknown): boolean {
+  return valor === undefined || valor === null || valor === "";
+}
+
 export default function FichaEspecializada({
   cfg,
   casos,
@@ -31,7 +35,8 @@ export default function FichaEspecializada({
       return;
     }
     const obrigatorio = cfg.campos.find(
-      (campo) => campo.obrigatorio && !form[campo.nome],
+      (campo) =>
+        campo.obrigatorio && valorObrigatorioAusente(form[campo.nome]),
     );
     if (obrigatorio) {
       toast.error(`Campo obrigatório: ${obrigatorio.label}`);
@@ -127,7 +132,7 @@ export default function FichaEspecializada({
               {campo.tipo === "select" ? (
                 <select
                   className="input"
-                  value={form[campo.nome] || ""}
+                  value={form[campo.nome] ?? ""}
                   onChange={(e) =>
                     setForm({ ...form, [campo.nome]: e.target.value })
                   }
@@ -143,7 +148,7 @@ export default function FichaEspecializada({
                 <textarea
                   className="input"
                   rows={3}
-                  value={form[campo.nome] || ""}
+                  value={form[campo.nome] ?? ""}
                   placeholder={campo.placeholder}
                   onChange={(e) =>
                     setForm({ ...form, [campo.nome]: e.target.value })
@@ -166,7 +171,7 @@ export default function FichaEspecializada({
                   type={campo.tipo}
                   step={campo.tipo === "number" ? "0.01" : undefined}
                   placeholder={campo.placeholder}
-                  value={form[campo.nome] || ""}
+                  value={form[campo.nome] ?? ""}
                   onChange={(e) =>
                     setForm({ ...form, [campo.nome]: e.target.value })
                   }
