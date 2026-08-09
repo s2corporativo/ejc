@@ -31,13 +31,15 @@ const MODOS: Array<{
   {
     id: "raio-x",
     label: "Raio-X",
-    descricao: "Examinar documentos e evidências antes de abrir ou vincular o caso.",
+    descricao:
+      "Examinar documentos e evidências antes de abrir ou vincular o caso.",
     icon: ScanSearch,
   },
   {
     id: "sala",
     label: "Sala Jurídica",
-    descricao: "Conversar, estruturar fatos, provas, teses e estratégia jurídica.",
+    descricao:
+      "Conversar, estruturar fatos, provas, teses e estratégia jurídica.",
     icon: Sparkles,
   },
 ];
@@ -79,7 +81,9 @@ export default function EntradaUnica() {
   const user = useAuth((state) => state.user);
   const [searchParams] = useSearchParams();
   const bruto = searchParams.get("modo");
-  const candidato = ehModoEntrada(bruto) ? bruto : modoPadraoParaRole(user?.role);
+  const candidato = ehModoEntrada(bruto)
+    ? bruto
+    : modoPadraoParaRole(user?.role);
   const modo = modoPermitidoParaRole(candidato, user?.role)
     ? candidato
     : modoPadraoParaRole(user?.role);
@@ -96,7 +100,8 @@ export default function EntradaUnica() {
             Entrada Jurídica
           </p>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            Uma única porta para começar, analisar e estruturar o trabalho jurídico.
+            Uma única porta para começar, analisar e estruturar o trabalho
+            jurídico.
           </p>
         </div>
         <nav
