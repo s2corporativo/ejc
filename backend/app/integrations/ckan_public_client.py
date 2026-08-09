@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict, dataclass
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
 import httpx
 
@@ -34,6 +35,13 @@ _CKAN_LABELS = {
     "mj": "Consumidor.gov.br/SENACON — Dados Abertos MJ",
     "cvm": "CVM Dados Abertos",
     "tse": "TSE Dados Abertos",
+}
+
+_CKAN_RESOURCE_DOMAINS: dict[str, tuple[str, ...]] = {
+    "ibama": ("ibama.gov.br",),
+    "mj": ("mj.gov.br",),
+    "cvm": ("cvm.gov.br",),
+    "tse": ("tse.jus.br",),
 }
 
 _UA = "EJC/1.0 (+https://depaulateixeira.adv.br; public-data-client)"
@@ -67,6 +75,25 @@ class CkanPublicClient:
         self.source = source
         self.base_url = CKAN_BASES[source]
         self.timeout = httpx.Timeout(timeout_s)
+
+    def _url_recurso_permitida(self, url: str) -> bool:
+        """Aceita somente HTTPS em domínio oficial da fonte CKAN selecionada."""
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return False
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if (
+            parsed.scheme.lower() != "https"
+            or not host
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            return False
+        return any(
+            host == dominio or host.endswith(f".{dominio}")
+            for dominio in _CKAN_RESOURCE_DOMAINS[self.source]
+        )
 
     async def _get(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
         require_enabled(self.source, _CKAN_LABELS[self.source])
@@ -160,7 +187,7 @@ class CkanPublicClient:
                     continue
                 url = str(rec.get("url") or "").strip()
                 rec_id = str(rec.get("id") or "").strip()
-                if not url or not rec_id or not url.startswith("https://"):
+                if not url or not rec_id or not self._url_recurso_permitida(url):
                     continue
                 recursos.append(CkanResource(
                     source=self.source,
