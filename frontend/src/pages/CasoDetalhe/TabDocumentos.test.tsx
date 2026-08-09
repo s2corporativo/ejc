@@ -17,12 +17,10 @@ import TabDocumentos from "./TabDocumentos";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
+  const promise = new Promise<T>((res) => {
     resolve = res;
-    reject = rej;
   });
-  return { promise, resolve, reject };
+  return { promise, resolve };
 }
 
 describe("TabDocumentos — vínculo canônico", () => {
@@ -63,7 +61,7 @@ describe("TabDocumentos — vínculo canônico", () => {
       await Promise.resolve();
     });
 
-    expect(await screen.findByText("Contrato social")).toBeTruthy();
+    expect(screen.getByText("Contrato social")).toBeTruthy();
     expect(get).toHaveBeenCalledWith(
       "/cases/case-1/documentos/candidatos",
       expect.objectContaining({
@@ -75,9 +73,7 @@ describe("TabDocumentos — vínculo canônico", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(post).toHaveBeenCalledWith(
-      "/cases/case-1/documentos/d1/vincular",
-    );
+    expect(post).toHaveBeenCalledWith("/cases/case-1/documentos/d1/vincular");
   });
 
   it("mantém visível o aviso quando o candidato pertence a outro caso", async () => {
@@ -86,7 +82,11 @@ describe("TabDocumentos — vínculo canônico", () => {
         return Promise.resolve({
           data: {
             data: [
-              { id: "d-outro", titulo: "Procuração", case_id: "case-origem" },
+              {
+                id: "d-outro",
+                titulo: "Documento de outro caso",
+                case_id: "case-origem",
+              },
             ],
             total: 1,
           },
@@ -98,14 +98,14 @@ describe("TabDocumentos — vínculo canônico", () => {
     render(<TabDocumentos caseId="case-1" />);
     fireEvent.change(
       screen.getByPlaceholderText("Buscar documento por título ou arquivo…"),
-      { target: { value: "procuração" } },
+      { target: { value: "documento" } },
     );
     await act(async () => {
       vi.advanceTimersByTime(450);
       await Promise.resolve();
     });
 
-    expect(screen.getByText("Procuração")).toBeTruthy();
+    expect(screen.getByText("Documento de outro caso")).toBeTruthy();
     expect(screen.getByText(/Já vinculado a outro caso/)).toBeTruthy();
   });
 
@@ -157,7 +157,10 @@ describe("TabDocumentos — vínculo canônico", () => {
       tentativas += 1;
       if (tentativas === 1) return Promise.reject(new Error("offline"));
       return Promise.resolve({
-        data: { data: [{ id: "d2", titulo: "Procuração" }], total: 1 },
+        data: {
+          data: [{ id: "d2", titulo: "Procuração recuperada" }],
+          total: 1,
+        },
       });
     });
 
@@ -174,14 +177,12 @@ describe("TabDocumentos — vínculo canônico", () => {
     expect(
       screen.getByText("Não foi possível buscar documentos disponíveis."),
     ).toBeTruthy();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Tentar novamente" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
     await act(async () => {
       vi.advanceTimersByTime(450);
       await Promise.resolve();
     });
-    expect(await screen.findByText("Procuração")).toBeTruthy();
+    expect(screen.getByText("Procuração recuperada")).toBeTruthy();
   });
 
   it("avisa quando há mais resultados server-side do que a primeira página", async () => {
@@ -202,8 +203,6 @@ describe("TabDocumentos — vínculo canônico", () => {
       vi.advanceTimersByTime(450);
       await Promise.resolve();
     });
-    expect(
-      screen.getByText(/37 documentos correspondem à busca/),
-    ).toBeTruthy();
+    expect(screen.getByText(/37 documentos correspondem à busca/)).toBeTruthy();
   });
 });
