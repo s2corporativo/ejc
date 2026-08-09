@@ -195,7 +195,11 @@ export default function Jurimetria() {
           value={taxa != null ? `${(taxa * 100).toFixed(1)}%` : "—"}
           sub="procedentes ÷ decididas"
         />
-        <StatCard label="Áreas" value={area.length} sub="com vínculos de tese" />
+        <StatCard
+          label="Áreas"
+          value={area.length}
+          sub="com vínculos de tese"
+        />
         <StatCard label="Tribunais" value={trib.length} sub="no escritório" />
         <StatCard
           label="Base Interna"
@@ -258,7 +262,9 @@ export default function Jurimetria() {
             <span>
               MG/JEC aprovados: {mgCoverage?.documentos_aprovados ?? "—"}
             </span>
-            <span>Última atualização: {fmtData(mgCoverage?.ultima_atualizacao)}</span>
+            <span>
+              Última atualização: {fmtData(mgCoverage?.ultima_atualizacao)}
+            </span>
           </div>
           {mgCoverage?.colecoes?.length > 0 && (
             <div className="overflow-x-auto">
@@ -268,8 +274,12 @@ export default function Jurimetria() {
                     <th className="py-2 pr-3 font-medium">Coleção medida</th>
                     <th className="py-2 px-3 font-medium text-right">Docs</th>
                     <th className="py-2 px-3 font-medium text-right">Chunks</th>
-                    <th className="py-2 px-3 font-medium text-right">Indexados</th>
-                    <th className="py-2 pl-3 font-medium text-right">Fonte validada</th>
+                    <th className="py-2 px-3 font-medium text-right">
+                      Indexados
+                    </th>
+                    <th className="py-2 pl-3 font-medium text-right">
+                      Fonte validada
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -563,7 +573,9 @@ export default function Jurimetria() {
                 <p className="text-2xl font-bold text-danger-700">
                   {predicao.desfavoraveis ?? "—"}
                 </p>
-                <p className="text-xs text-danger-600">Desfechos desfavoráveis</p>
+                <p className="text-xs text-danger-600">
+                  Desfechos desfavoráveis
+                </p>
               </div>
               <div className="text-center p-3 bg-gray-50 rounded-lg border border-black/[0.05]">
                 <p className="text-2xl font-bold text-gray-700">
