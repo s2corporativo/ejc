@@ -17,6 +17,17 @@ def _case(*, status="aberto", prioridade="media", risco=None):
     return SimpleNamespace(status=status, prioridade=prioridade, risco=risco)
 
 
+def _where_sql(query) -> str:
+    """Inspeciona somente o predicado de autorização/filtro do SELECT.
+
+    A entidade ORM inteira aparece na projeção do SELECT, portanto procurar um
+    nome de coluna no SQL completo confunde "coluna selecionada" com "coluna
+    usada como filtro". O contrato que interessa para RBAC/ownership é o WHERE.
+    """
+    clause = query.whereclause
+    return "" if clause is None else str(clause)
+
+
 def test_areas_empresariais_sao_explicitas_e_sem_coringa():
     assert {
         "empresarial",
@@ -41,24 +52,33 @@ def test_risco_critico_exige_caso_aberto_e_sinal_objetivo():
 
 
 def test_query_de_advogado_restringe_empresas_e_casos_a_vinculo():
-    company_sql = str(_visible_company_query(_user()))
-    case_sql = str(_visible_business_cases_query(_user(), ["company-1"]))
+    company_where = _where_sql(_visible_company_query(_user()))
+    case_where = _where_sql(_visible_business_cases_query(_user(), ["company-1"]))
 
-    assert "clients.responsavel_id" in company_sql
-    assert "cases.advogado_responsavel_id" in company_sql
-    assert "cases.advogado_auxiliar_id" in company_sql
-    assert "cases.advogado_responsavel_id" in case_sql
-    assert "cases.advogado_auxiliar_id" in case_sql
-    assert "cases.client_id" in case_sql
+    assert "clients.responsavel_id" in company_where
+    assert "cases.advogado_responsavel_id" in company_where
+    assert "cases.advogado_auxiliar_id" in company_where
+    assert "cases.advogado_responsavel_id" in case_where
+    assert "cases.advogado_auxiliar_id" in case_where
+    assert "cases.client_id" in case_where
 
 
 def test_gestao_nao_recebe_filtro_de_advogado_individual():
-    company_sql = str(_visible_company_query(_user("socio")))
-    case_sql = str(_visible_business_cases_query(_user("socio"), ["company-1"]))
+    company_where = _where_sql(_visible_company_query(_user("socio")))
+    case_where = _where_sql(
+        _visible_business_cases_query(_user("socio"), ["company-1"])
+    )
 
-    assert "clients.responsavel_id" not in company_sql
-    assert "cases.advogado_responsavel_id" not in case_sql
-    assert "cases.advogado_auxiliar_id" not in case_sql
+    assert "clients.responsavel_id" not in company_where
+    assert "cases.advogado_responsavel_id" not in company_where
+    assert "cases.advogado_auxiliar_id" not in company_where
+    assert "cases.advogado_responsavel_id" not in case_where
+    assert "cases.advogado_auxiliar_id" not in case_where
+    # Gestão continua limitada ao conjunto de empresas explicitamente fornecido
+    # e às áreas empresariais; remover o ownership individual não amplia para
+    # casos de outros clientes.
+    assert "cases.client_id" in case_where
+    assert "cases.area" in case_where
 
 
 def test_payload_empresarial_nao_expoe_pii_de_contato_documental():
