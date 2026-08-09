@@ -41,6 +41,9 @@ def test_gate_atual_exige_status_vigente_em_legislacao():
         assert f"kd.extra->>'{chave}'" in _FILTRO_VIGENCIA_ATUAL_RAG
     assert "LIKE '%legisl%'" in _FILTRO_VIGENCIA_ATUAL_RAG
     assert "<> 'vigente'" in _FILTRO_VIGENCIA_ATUAL_RAG
+    # COALESCE termina em string vazia: ausência de status também é diferente
+    # de `vigente` e, portanto, permanece fail-closed no direito atual.
+    assert ",''))" in _FILTRO_VIGENCIA_ATUAL_RAG
 
 
 def test_gate_historico_preserva_controles_e_libera_so_vigencia_juridica():
