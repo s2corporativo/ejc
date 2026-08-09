@@ -24,6 +24,39 @@ ficam sob JWT e rate limit no gateway já montado em `app/integrations/routers.p
 | IDE-Sisema/MG | `integrations/ide_sisema_client.py` | Ambiental/geoespacial | WFS 2.0, camada e BBOX validados |
 | INLABS/DOU XML | `integrations/inlabs_parser.py` | processamento estruturado do DOU | sem automação de login; exige conferência na versão certificada |
 
+## Feature flags e ativação segura
+
+Integração externa nova nasce **default OFF**. O contrato está centralizado em
+`integrations/feature_flags.py`; o cliente verifica a flag antes de abrir conexão
+externa. A referência operacional está em
+`docs/INTEGRACOES_PUBLICAS_ONDA_836.env.example`.
+
+| Fonte | Flag |
+|---|---|
+| CNJ SGT/TPU | `CNJ_SGT_ENABLED` |
+| TCU | `TCU_OPEN_DATA_ENABLED` |
+| IBGE | `IBGE_LOCALIDADES_ENABLED` |
+| IBAMA | `IBAMA_OPEN_DATA_ENABLED` |
+| Consumidor.gov/SENACON | `CONSUMIDOR_GOV_OPEN_DATA_ENABLED` |
+| CVM | `CVM_OPEN_DATA_ENABLED` |
+| TSE | `TSE_OPEN_DATA_ENABLED` |
+| PGFN | `PGFN_OPEN_DATA_ENABLED` |
+| Querido Diário | `QUERIDO_DIARIO_ENABLED` |
+| IDE-Sisema | `IDE_SISEMA_ENABLED` |
+
+Ativação recomendada: **uma fonte por vez**, smoke real na VPS e observação de
+latência/erros. Se uma fonte apresentar quebra de contrato, indisponibilidade ou
+questão de termos de uso, `FLAG=false` é o rollback imediato antes de qualquer
+reversão de código.
+
+### TCU e `.env` legado
+
+O deploy preserva `.env` existente e ambientes antigos podem manter
+`JURIS_IMPORT_FONTES=lexml,stj`. Por isso a Onda #836 não exige reescrever esse
+CSV: quando `TCU_OPEN_DATA_ENABLED=true`, `tcu` é adicionado logicamente às
+fontes ativas. Quando a flag volta a `false`, `tcu` é removido mesmo que alguém
+o tenha incluído no CSV. Isso preserva configuração antiga e o kill-switch.
+
 ## Rotas
 
 O objeto historicamente chamado `brasilapi_router` permanece com o mesmo nome
@@ -44,13 +77,20 @@ Rotas adicionadas:
 - `GET /api/integracoes/ide-sisema/camadas`
 - `GET /api/integracoes/ide-sisema/feicoes`
 
-## RAG / jurisprudência
+## RAG / jurisprudência — TCU
 
 O TCU foi integrado ao importador já existente em
 `/api/conhecimento/importar-jurisprudencia`. A fonte `tcu` usa o contrato
 `JulgadoNormalizado`, entra na deduplicação e no mesmo pipeline de auditoria/RAG
 de STJ, TJMG e LexML. A busca on-demand tem teto de cinco páginas de 100
 registros para não varrer o acervo inteiro.
+
+Dois requisitos de rastreabilidade são explícitos:
+
+1. o identificador citável preserva a chave completa do TCU (por exemplo,
+   `AC-123-2026-P`) em vez do número simples que se repete entre anos/colegiados;
+2. indisponibilidade da API é propagada ao job e registrada como erro, nunca
+   convertida em falso “sucesso com zero resultados”.
 
 ## INLABS
 
@@ -61,7 +101,8 @@ cria segredo novo. O parser aceita XML/ZIP já obtido por fluxo autorizado, com:
 - teto de tamanho compactado e descompactado;
 - limite de arquivos;
 - bloqueio de path traversal;
-- normalização de metadados;
+- normalização de metadados do schema real (`identifica`, `pubName`, `artType`,
+  `name` como identificador interno);
 - marca explícita `requer_conferencia_certificada=True`.
 
 O monitor DOU atual via `in.gov.br` permanece intacto como caminho operacional.
@@ -78,15 +119,21 @@ O monitor DOU atual via `in.gov.br` permanece intacto como caminho operacional.
   públicas complementares, não substitutos semânticos do CAR.
 - Falha de uma fonte externa devolve erro controlado sem stack trace ou corpo do
   upstream para o cliente.
+- Flags default OFF oferecem rollback por fonte sem alteração de código.
 
 ## Testes
 
 `backend/tests/test_integracoes_publicas_onda_836.py` cobre clientes, parsers,
-limites, proveniência, allowlists, preservação das URLs BrasilAPI e registro do
-TCU no importador RAG. Toda rede é simulada por `httpx.MockTransport`.
+limites, proveniência, allowlists, feature flags default OFF, configuração TCU
+com `.env` legado, propagação de indisponibilidade TCU, identificação citável,
+schema real INLABS, preservação das URLs BrasilAPI e registro do TCU no
+importador RAG. Toda rede é simulada por `httpx.MockTransport`.
 
 ## Rollback
 
-Não há migration nem alteração de schema. O rollback é a reversão dos commits
-da Issue #836/PR correspondente. As rotas antigas de DataJud/DJEN/BrasilAPI
-mantêm seus paths externos e podem ser testadas pela suíte histórica.
+Primeiro nível: desligar somente a flag da fonte afetada e reiniciar o serviço
+que carrega o `.env`, conforme o procedimento operacional padrão do EJC.
+
+Segundo nível: reverter o PR da Issue #836. Não há migration nem alteração de
+schema. As rotas antigas de DataJud/DJEN/BrasilAPI mantêm seus paths externos e
+continuam cobertas pela suíte histórica.
