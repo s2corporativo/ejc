@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe("Checklists — erro explícito", () => {
-  it("não apresenta falha da API como lista vazia", async () => {
+  it("não apresenta falha da API como lista vazia nem oferece criação sem carga válida", async () => {
     getMock.mockRejectedValueOnce(new Error("falha fictícia"));
 
     render(<Checklists />);
@@ -31,6 +31,9 @@ describe("Checklists — erro explícito", () => {
         screen.getByText("Não foi possível carregar os checklists."),
       ).toBeTruthy(),
     );
-    expect(screen.queryByText(/nenhum checklist/i)).toBeNull();
+    expect(screen.queryByText(/nenhum template ainda/i)).toBeNull();
+
+    const botao = screen.getByRole("button", { name: /novo template/i });
+    expect((botao as HTMLButtonElement).disabled).toBe(true);
   });
 });
