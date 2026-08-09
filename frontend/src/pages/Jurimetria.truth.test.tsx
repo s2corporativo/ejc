@@ -4,11 +4,17 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import Jurimetria from "./Jurimetria";
 
 const getMock = vi.fn();
+let papelAtual = "socio";
 
 vi.mock("../lib/api", () => ({
   default: {
     get: (...args: unknown[]) => getMock(...args),
   },
+}));
+
+vi.mock("../stores/auth", () => ({
+  useAuth: (selector: (state: { user: { role: string } }) => unknown) =>
+    selector({ user: { role: papelAtual } }),
 }));
 
 function resposta(url: string) {
@@ -86,12 +92,13 @@ function foiChamado(prefixo: string) {
 }
 
 beforeEach(() => {
+  papelAtual = "socio";
   getMock.mockReset();
   getMock.mockImplementation((url: string) => Promise.resolve(resposta(url)));
 });
 
 describe("Jurimetria — verdade da fonte", () => {
-  it("mostra fonte interna e cobertura real", async () => {
+  it("mostra fonte interna e cobertura real para sócio", async () => {
     render(<Jurimetria />);
 
     await waitFor(() => {
@@ -117,6 +124,23 @@ describe("Jurimetria — verdade da fonte", () => {
     expect(
       screen.getByPlaceholderText("Opcional — não filtra a base atual"),
     ).toBeTruthy();
+  });
+
+  it("não chama métricas sócio+ para advogado e mantém métricas gerais", async () => {
+    papelAtual = "advogado";
+    render(<Jurimetria />);
+
+    await waitFor(() => {
+      expect(getMock).toHaveBeenCalledWith("/jurimetria/interno/stats");
+    });
+
+    expect(foiChamado("/jurimetria/desfechos")).toBe(false);
+    expect(foiChamado("/jurimetria/cobertura-rag")).toBe(false);
+    expect(foiChamado("/jurimetria/cobertura-mg-jec")).toBe(false);
+    expect(foiChamado("/jurimetria/interno/benchmarks")).toBe(false);
+    expect(foiChamado("/jurimetria/interno/analise-prospectiva")).toBe(false);
+    expect(screen.getByText("Métricas consolidadas restritas")).toBeTruthy();
+    expect(screen.getByText("123")).toBeTruthy();
   });
 
   it("calcula histórico pelo endpoint canônico", async () => {
