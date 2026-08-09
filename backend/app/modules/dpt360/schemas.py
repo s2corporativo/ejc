@@ -68,6 +68,7 @@ class DptDashboardResponse(BaseModel):
     cases: list[DptCaseSummary] = Field(default_factory=list)
     deadlines: list[DptDeadlineSummary] = Field(default_factory=list)
     priorities: list[DptPriorityItem] = Field(default_factory=list)
+    radar_por_area: dict[str, int] | None = None
     coverage: Literal["complete"] = "complete"
     notes: list[str] = Field(default_factory=list)
 
