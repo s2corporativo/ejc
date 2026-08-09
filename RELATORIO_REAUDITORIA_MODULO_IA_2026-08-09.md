@@ -264,10 +264,94 @@ Defesas e Revisões, Raio-X, Governança da IA, Painel de Provedores, Biblioteca
 
 ## 5. RAG, base de conhecimento e jurimetria (MG/JEC)
 
-*(Consolidação da frente específica — ver relatório da frente na descrição do PR; esta seção
-resume o que a IA efetivamente sabe, o fluxo de retrieval e o estado real da jurimetria.)*
+### 5.1 O que a IA efetivamente sabe
 
-<!-- SEÇÃO 5: PREENCHIDA AO FIM DA FRENTE RAG -->
+- **Legislação real**: 37 diplomas federais do catálogo Planalto, **chunkados por artigo**
+  (cabeçalho `Art. N — <lei>`, que é o que o `citation_check` procura) —
+  `ingestors/planalto.py:50-148,259-296`. CF/88, CC, CPC, CLT, CDC, CP, CPP, CTN, Lei
+  9.099/95, LGPD, Lei 14.133/21, Maria da Penha, etc. **Zero norma estadual (MG/ALMG) e zero
+  municipal (Betim)**; sem Lei 8.666/93 (contratos legados).
+- **Precedente qualificado curado**: **24 súmulas ativas** (de 27 reconstruídas, conferidas em
+  2026-07-18: 12 TST, 11 STJ, 3 Súmulas Vinculantes STF) — `sumulas_ingestion.py:33-226`. As
+  3 não-ativas viram teses arquivadas e são revogadas ativamente. **Zero súmula TJMG, zero
+  enunciado FONAJE, zero tema repetitivo/repercussão geral** — a lacuna mais grave para um
+  escritório cujo core é JEC/MG.
+- **Crawlers agendados** (todos ON por default, rodando no container da API): Planalto (dom),
+  STJ (sáb), TJMG (sáb — **só acórdãos de 2º grau**; sentenças de 1º grau e monocráticas
+  inalcançáveis, `tjmg.py:11-18`), LexML (sáb), Câmara/Senado (diário — mas ver R-1 da §6:
+  o do Senado descarta tudo), DJEN (diário, categoria restrita com escopo por cliente),
+  ANPD/RFB — `scheduler.py:1233-1300`.
+- **Bíblia EJC**: 398 documentos **100% fictícios** (84 situações-padrão, 269 modelos de
+  peça, governança) com `extra.ficticio=true` — **excluídos por default de toda busca**
+  (`_FILTRO_FICTICIO_RAG`, `ai_service.py:111`); só entram na geração de peças como modelos
+  de forma (`PECAS_RAG_MODELOS_ENABLED`, top-3). É metodologia, não fundamentação — o próprio
+  aviso interno veda citar jurisprudência a partir dela.
+- **Zero doutrina** (categoria existe, nada alimenta) e **zero fonte normativa de Direito
+  Veterinário** (nicho real do titular, presente só em 3 situações fictícias).
+
+### 5.2 Motor de retrieval (engenharia boa, confirmada)
+
+Função única `buscar_contexto_rag` (`ai_service.py:300-466`): embeddings
+**e5-large 1024d locais** (fastembed in-process, pin exato, prefixos `query:`/`passage:`
+condicionais ao E5, gate de sanidade de dimensão sem baixar pesos) → HNSW
+(`ix_knowledge_chunks_embedding_hnsw`, `ef_search=100` por transação, `RAG_MIN_SIM=0.55`) →
+fusão RRF k=60 com perna pg_trgm (e FTS português **desligado** por default) → rerank leve
+sempre ativo (bônus de autoridade/confiança/vigência; cross-encoder real desligado — o único
+multilíngue do fastembed é CC-BY-NC, incompatível com uso comercial). Fallback textual ILIKE
+com um warning por processo. Isolamento por cliente **fail-closed** em todas as pernas
+(categorias restritas exigem `client_id` do caso); vigência de versão, quarentena de súmulas
+e exclusão de fictícios aplicadas em todo caminho. Tudo-ou-nada na contagem de vetores
+(correção do incidente dos 26k chunks órfãos); auto-reembed horário.
+
+### 5.3 Os três riscos altos do RAG
+
+| # | Achado | Evidência |
+|---|---|---|
+| **G (alto)** | **Norma revogada não é bloqueada**: `knowledge_governance` calcula `blocks_current_law` (`code=="revogada"`) e **ninguém consome** — ausente de `ai_service`, `citation_check` e `citation_gate`; no reranker, revogada é só **−0.08 de score**, contra o próprio cabeçalho do arquivo ("norma marcada como revogada não fundamenta resposta atual"). O commit 23f2a07 reconheceu e adiou o bloqueio; **1.479 documentos de legislação com `legal_status_unverified`** | `knowledge_governance.py:234`; `reranker.py:11,44`; `ai_service.py:114-126` (verificado por grep direto) |
+| **H (alto)** | **`RAG_EXIGIR_APROVADO` é quase no-op**: listener ORM `before_insert/before_update` carimba `rag_status="aprovado"` em praticamente todo `KnowledgeDoc` (política literal `"knowledge_module_always_approved"`), registrado globalmente. Na prática o gate só filtra o que um humano **explicitamente recusou** — não é a quarentena de acervo legado que o comentário da config promete | `knowledge_autoapproval.py:30,107-110`; `services/__init__.py:7` (verificado por grep direto); `config.py:608-614` |
+| **I (médio-alto)** | **Projeto de lei tratado como norma vigente**: proposições Câmara/Senado entram com `rag_status="aprovado"`, `confianca="alta"`, e `inferir_autoridade` classifica `proposicao_legislativa` como `oficial_normativa` **peso 100** (o teste é `"legisl" in cat`, que casa) — no rerank, PL pode superar lei vigente | `camara.py:60-67`; `senado.py:64-70`; `knowledge_governance.py:174-175` |
+
+### 5.4 Metadados e demais achados
+
+- **Sem coluna de área/ramo**: o chunk só tem `doc_id/chunk_index/pagina/conteudo/embedding`;
+  todo metadado jurídico vive no doc pai, e área/vigência/autoridade só em `extra` JSONB —
+  o retrieval **não filtra por matéria**, só por `categoria` (que mistura tipo documental com
+  coleção MG) (`models/rag.py:22-94`).
+- **Painéis descrevem um sistema que não está no ar**: guardrail afirma "embeddings rodam em
+  serviço interno isolado" — **não existe serviço `embeddings` no compose** (provider é
+  `local`, in-process) e o `/ia-saude` recomenda o worker que o guardrail declara já cumprido
+  (`ia_governanca.py:541` vs `docker-compose.yml`); gates de ingestão descritos como OFF no
+  seed são ON na config (`base_juridica_seed.py:52-70` vs `config.py:440,459,496`).
+- Ingestão de URL extrai HTML por regex (sem boilerplate removal) — polui chunks
+  (`rag.py:264-268`). FTS português e HyDE prontos e testados, nunca ligados/medidos.
+  Mock residual: `app/data/mock_db/jurisprudencia.json` (1 ementa fake com link inexistente)
+  ainda consumida por `core/victory_vault.py:31`.
+
+### 5.5 Geometria MG/JEC e jurimetria — estrutura correta sobre dado inexistente
+
+- **Geometria** (`GET /ia-governanca/jurisprudencia-mg/geometria`, `ia_governanca.py:548-569`):
+  contrato **declarativo estático** (nenhuma contagem). Das 8 coleções anunciadas,
+  **3 não são produzidas por nenhum código** (`sentencas_jec_tjmg`, `teses_internas_escritorio`,
+  `pecas_aprovadas_escritorio` — só existem na própria lista). Allowlist de domínios oficiais
+  bem construída (hostname normalizado + HTTPS, anti-spoofing). A `main` atual adiciona
+  `services/rag_coverage.py` (§6-A) com contagens reais por coleção — passo na direção certa.
+- **Jurimetria**: 100% derivada da base interna (`cases` encerrados com `resultado`,
+  `tese_caso_links`) — **nada vem do RAG, do TJMG ou do DataJud**. Salvaguardas genuinamente
+  boas: `MIN_AMOSTRA=5` com recusa explícita de número abaixo disso ("estatística inventada
+  viola o padrão OAB"), distribuição bruta sempre exposta, `classe_filtrada: False` honesto
+  (não existe coluna de classe processual). **Mas as tabelas nascem vazias** — sem seed, sem
+  histórico, o sistema não tem jurimetria de MG/JEC: tem taxa de êxito dos próprios casos do
+  escritório, sem classe, sem comarca normalizada. O nome promete mais do que o dado entrega.
+- `ingestao_saude.py` é o mecanismo honesto do conjunto (vereditos por **resultado**:
+  `nunca_produziu`, `parou_de_produzir`, `dormente`) — nascido do incidente DJEN; falta
+  estender aos radares (§6.3).
+
+### 5.6 Vigência — estado da frente ativa
+
+A triagem de vigência (commit 23f2a07) entregou só a metade somente-leitura
+(`scripts/relatorio_vigencia_legislacao.py`); o bloqueio no gate foi conscientemente adiado.
+A família de branches `stabilization/rag-vigencia-*` do Codex (§6-A) ataca exatamente esse
+buraco — **o risco G deve ser tratado lá**, não em PR paralelo.
 
 ---
 
@@ -436,6 +520,26 @@ intervalo 4d5d4f1..ffc9cbb, exceto onde anotado acima.
 14. **[P2] `GROQ_MODEL_LARGE`**: apontar para modelo de janela maior ou remover o fallback
     no-op; limpar comentários/doc do llama descontinuado; verificar `sabia-4` contra o
     catálogo Maritaca antes de ligar `MARITACA_ENABLED`.
+
+**RAG e base de conhecimento (a partir da §5):**
+
+15. **[P0] Consumir `blocks_current_law`** (risco G): norma com `legal_status="revogada"`
+    deve ser excluída do retrieval de fundamentação (ou bloqueada no citation gate) — atacar
+    dentro da frente ativa de vigência (`stabilization/rag-vigencia-*`), não em PR paralelo.
+16. **[P0] Corrigir a auto-aprovação ORM** (risco H): trocar a política
+    `always_approved` por aprovação explícita nas categorias jurídicas (legislação,
+    jurisprudência, súmula), mantendo auto-aprovação só para referência interna — e alinhar o
+    comentário de `config.py:608-614` ao comportamento real.
+17. **[P1] Rebaixar `proposicao_legislativa`** (risco I): autoridade própria (não
+    `oficial_normativa` 100), `confianca` média e aviso "projeto de lei — não é norma
+    vigente" no chunk; corrigir o teste `"legisl" in cat`.
+18. **[P1] Encher a base MG/JEC**: enunciados FONAJE (domínio já na allowlist), súmulas do
+    TJMG e temas repetitivos STJ/STF são o próximo corpus curado — hoje o recorte central do
+    escritório tem **zero** precedente qualificado; remover da geometria (ou implementar) as
+    3 coleções aspiracionais.
+19. **[P2] Coluna indexada de área/ramo** em `knowledge_docs` para filtro por matéria no
+    retrieval; corrigir os painéis que descrevem sistema inexistente (guardrail de embeddings
+    isolados, gates "OFF" que são ON) e remover o mock `jurisprudencia.json`.
 
 ---
 
