@@ -4,7 +4,7 @@
 // recorrente e contencioso especializado — com referência às ferramentas reais
 // do sistema (Sociedades do Cliente, análise IA de contrato, contratos com
 // alerta de vencimento) e checklist de Due Diligence persistido localmente.
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router";
 import {
   BookOpen,
@@ -20,6 +20,8 @@ import {
   Lock,
   Lightbulb,
 } from "lucide-react";
+import { canRoleAccessPath } from "../config/moduleRegistry";
+import { useAuth } from "../stores/auth";
 
 // ── Seção colapsável (mesmo padrão dos demais guias, com badge de valor) ─────
 function Sec({
@@ -129,7 +131,13 @@ const ITEMS = [
   "Consolidar relatório de riscos com contingências valoradas (red flags e condições de fechamento)",
 ];
 
+export function podeAcessarDpt360(role?: string | null): boolean {
+  return Boolean(role && canRoleAccessPath(role, "/dpt360"));
+}
+
 export default function GuiaEmpresarial() {
+  const { user } = useAuth();
+  const podeAbrirDpt360 = podeAcessarDpt360(user?.role);
   const [checks, setChecks] = useState<boolean[]>(() => {
     try {
       return JSON.parse(localStorage.getItem(CHK_KEY) || "[]");
@@ -158,6 +166,26 @@ export default function GuiaEmpresarial() {
         (receita recorrente de mensalistas) e o contencioso especializado
         (defesa de interesses).
       </p>
+
+      {podeAbrirDpt360 && (
+        <Link
+          to="/dpt360"
+          className="card flex items-start gap-3 p-4 transition hover:border-gold-300 hover:bg-gold-50/30"
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold-50 text-gold-700">
+            <Briefcase size={18} />
+          </span>
+          <span>
+            <strong className="block text-sm text-navy">
+              Abrir DPT Empresarial 360
+            </strong>
+            <span className="mt-1 block text-xs leading-5 text-slate-500">
+              Cockpit transversal para empresas: diagnóstico, radar, obrigações,
+              inteligência e relatórios, reutilizando os dados canônicos do EJC.
+            </span>
+          </span>
+        </Link>
+      )}
 
       {/* ── PILAR 1 ─────────────────────────────────────────────────────── */}
       <Sec
