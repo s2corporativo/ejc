@@ -47,6 +47,7 @@ class Socio(Base):
     data_entrada = Column(Date, nullable=False)
     data_saida = Column(Date)
     ativo = Column(Boolean, nullable=False, default=True)
+    meta_produtividade = Column(Numeric(12, 2), nullable=True)
     observacoes = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
@@ -55,20 +56,22 @@ class Socio(Base):
 
 
 class SocioHistorico(Base):
-    """Snapshot imutável das mutações do quadro societário.
-
-    Não substitui contrato social/Junta Comercial; serve como trilha interna do
-    EJC para demonstrar quem alterou participação, pró-labore, regime e estado.
-    """
+    """Snapshot imutável das mutações do quadro societário."""
 
     __tablename__ = "socios_historico"
 
     id = Column(String(36), primary_key=True)
     socio_id = Column(
-        String(36), ForeignKey("socios.id", ondelete="RESTRICT"), nullable=False, index=True
+        String(36),
+        ForeignKey("socios.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     alterado_por = Column(
-        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     motivo = Column(Text, nullable=False)
     dados_antes = Column(Text, nullable=True)
