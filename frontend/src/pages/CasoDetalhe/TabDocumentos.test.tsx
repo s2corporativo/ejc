@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../components/Toast", () => ({
@@ -87,20 +94,26 @@ describe("TabDocumentos — vínculo canônico", () => {
     });
 
     render(<TabDocumentos caseId="case-1" />);
-    const input = screen.getByPlaceholderText("Buscar documento por título ou arquivo…");
+    const input = screen.getByPlaceholderText(
+      "Buscar documento por título ou arquivo…",
+    );
     fireEvent.change(input, { target: { value: "antiga" } });
     await act(async () => vi.advanceTimersByTime(450));
     fireEvent.change(input, { target: { value: "nova" } });
     await act(async () => vi.advanceTimersByTime(450));
 
     await act(async () => {
-      nova.resolve({ data: { data: [{ id: "n", titulo: "Resultado novo" }], total: 1 } });
+      nova.resolve({
+        data: { data: [{ id: "n", titulo: "Resultado novo" }], total: 1 },
+      });
       await Promise.resolve();
     });
     expect(screen.getByText("Resultado novo")).toBeTruthy();
 
     await act(async () => {
-      antiga.resolve({ data: { data: [{ id: "a", titulo: "Resultado antigo" }], total: 1 } });
+      antiga.resolve({
+        data: { data: [{ id: "a", titulo: "Resultado antigo" }], total: 1 },
+      });
       await Promise.resolve();
     });
     expect(screen.queryByText("Resultado antigo")).toBeNull();
@@ -130,8 +143,12 @@ describe("TabDocumentos — vínculo canônico", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText("Não foi possível buscar documentos disponíveis.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(
+      screen.getByText("Não foi possível buscar documentos disponíveis."),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Tentar novamente" }),
+    );
     await act(async () => {
       vi.advanceTimersByTime(450);
       await Promise.resolve();
@@ -157,6 +174,8 @@ describe("TabDocumentos — vínculo canônico", () => {
       vi.advanceTimersByTime(450);
       await Promise.resolve();
     });
-    expect(screen.getByText(/37 documentos correspondem à busca/)).toBeTruthy();
+    expect(
+      screen.getByText(/37 documentos correspondem à busca/),
+    ).toBeTruthy();
   });
 });
