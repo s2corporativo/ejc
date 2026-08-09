@@ -2,6 +2,25 @@ import { useEffect, useState } from "react";
 import { ExternalLink, Radar, ShieldAlert } from "lucide-react";
 import { getDptRadarToday, type DptRadarToday } from "./radarApi";
 
+const AREA_ORDER = [
+  "tributario",
+  "ambiental",
+  "administrativo",
+  "trabalhista",
+  "lgpd_ia",
+  "geral",
+];
+
+function orderedAreas(data: DptRadarToday): Array<[string, number]> {
+  return Object.entries(data.por_area).sort(([left], [right]) => {
+    const leftIndex = AREA_ORDER.indexOf(left);
+    const rightIndex = AREA_ORDER.indexOf(right);
+    const safeLeft = leftIndex < 0 ? AREA_ORDER.length : leftIndex;
+    const safeRight = rightIndex < 0 ? AREA_ORDER.length : rightIndex;
+    return safeLeft - safeRight || left.localeCompare(right, "pt-BR");
+  });
+}
+
 export default function DptRadar() {
   const [data, setData] = useState<DptRadarToday | null>(null);
   const [error, setError] = useState(false);
@@ -29,6 +48,8 @@ export default function DptRadar() {
       </div>
     );
 
+  const areas = orderedAreas(data);
+
   return (
     <div className="space-y-4">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
@@ -48,25 +69,25 @@ export default function DptRadar() {
           </div>
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-          {[
-            "tributario",
-            "ambiental",
-            "administrativo",
-            "trabalhista",
-            "lgpd_ia",
-          ].map((area) => (
-            <div
-              key={area}
-              className="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.03]"
-            >
-              <div className="text-xs font-semibold capitalize text-slate-500">
-                {area.replace("_", "/")}
+          {areas.length ? (
+            areas.map(([area, total]) => (
+              <div
+                key={area}
+                className="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.03]"
+              >
+                <div className="text-xs font-semibold capitalize text-slate-500">
+                  {area.replaceAll("_", "/")}
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+                  {total}
+                </div>
               </div>
-              <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-                {data.por_area[area] || 0}
-              </div>
+            ))
+          ) : (
+            <div className="text-sm text-slate-400">
+              Nenhuma área classificada no período.
             </div>
-          ))}
+          )}
         </div>
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-xs leading-5 text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
           <ShieldAlert className="mr-1 inline h-3.5 w-3.5" />
