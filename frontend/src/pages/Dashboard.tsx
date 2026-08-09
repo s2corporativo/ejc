@@ -44,8 +44,8 @@ export default function Dashboard() {
                 </span>
               </div>
               <p className="mt-0.5 truncate text-[10px] text-slate-500 dark:text-slate-400">
-                Intimações Comunica PJe/DJEN e sincronização processual vinculada
-                ao caso.
+                Intimações Comunica PJe/DJEN e sincronização processual
+                vinculada ao caso.
               </p>
             </div>
           </div>
