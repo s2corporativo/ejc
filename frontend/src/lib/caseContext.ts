@@ -1,6 +1,6 @@
 /** Rotas e payloads contextuais compartilhados pelos fluxos de caso. */
-export function caseTabPath(caseId: string, tab = "resumo"): string {
-  return `/casos/${encodeURIComponent(caseId)}?tab=${encodeURIComponent(tab)}`;
+export function caminhoAbaCaso(idCaso: string, aba = "resumo"): string {
+  return `/casos/${encodeURIComponent(idCaso)}?tab=${encodeURIComponent(aba)}`;
 }
 
 /**
@@ -9,7 +9,7 @@ export function caseTabPath(caseId: string, tab = "resumo"): string {
  * registrada apenas como adapter/redirect para favoritos antigos.
  */
 export function caseJourneyPath(caseId: string): string {
-  return caseTabPath(caseId, "resumo");
+  return caminhoAbaCaso(caseId, "resumo");
 }
 
 export function readCaseContext(params: URLSearchParams): string | undefined {
