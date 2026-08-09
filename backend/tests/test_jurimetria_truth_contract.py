@@ -67,6 +67,50 @@ async def test_analise_prospectiva_omite_taxa_com_amostra_decidida_baixa(monkeyp
     assert r["confianca"] == "insuficiente"
 
 
+class _ScalarResult:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar(self):
+        return self.value
+
+
+class _MappingsResult:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def mappings(self):
+        return self
+
+    def all(self):
+        return self.rows
+
+
+class _StatsDB:
+    def __init__(self):
+        self.calls = 0
+
+    async def execute(self, _stmt):
+        self.calls += 1
+        if self.calls == 1:
+            return _ScalarResult(123)
+        return _MappingsResult(
+            [
+                {"tribunal": "TJMG", "total": 12},
+                {"tribunal": "STJ", "total": 3},
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_stats_internos_retorna_total_real_sem_derivar_do_top_15():
+    r = await jurimetria_extra.stats_internos(db=_StatsDB(), cu=object())
+
+    assert r["total_com_tribunal"] == 123
+    assert sum(item["total"] for item in r["por_tribunal"]) == 15
+    assert r["fonte"] == "base interna"
+
+
 def test_rotas_internas_e_aliases_legados_coexistem():
     from app.main import app
 
