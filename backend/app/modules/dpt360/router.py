@@ -31,7 +31,19 @@ async def dashboard(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["advogado"])),
 ) -> DptDashboardResponse:
-    return await build_dashboard(db, cu)
+    result = await build_dashboard(db, cu)
+    radar = await build_today_radar(db, cu, hours=24)
+    result.metrics.mudancas_juridicas_hoje = int(radar["total_publicacoes"])
+    result.metrics.empresas_potencialmente_impactadas = int(
+        radar["empresas_potencialmente_impactadas"]
+    )
+    result.radar_por_area = {
+        str(area): int(total) for area, total in (radar.get("por_area") or {}).items()
+    }
+    result.notes.append(
+        "Radar do dashboard usa publicações coletadas nas últimas 24h; vigência permanece a confirmar até o gate canônico de vigência do RAG ser reconciliado."
+    )
+    return result
 
 
 @router.get("/companies/{client_id}", response_model=DptCompanyProfile)
