@@ -10,6 +10,8 @@ from typing import Any
 
 import httpx
 
+from app.integrations.feature_flags import require_enabled
+
 
 TCU_ACORDAOS_URL = "https://dados-abertos.apps.tcu.gov.br/api/acordao/recupera-acordaos"
 _TRANSIENTES = {429, 500, 502, 503, 504}
@@ -44,6 +46,7 @@ class TcuPublicClient:
     async def listar_acordaos(
         self, *, inicio: int = 0, quantidade: int = 50
     ) -> list[dict[str, Any]]:
+        require_enabled("tcu", "TCU Dados Abertos")
         inicio = max(0, int(inicio))
         quantidade = max(1, min(int(quantidade), 100))
         ultimo: Exception | None = None
