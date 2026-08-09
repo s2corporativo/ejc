@@ -29,6 +29,7 @@ jobs:
 
           prearm="$APP_DIR/data/.rag_vigencia_prearm_v1"
           marker="$APP_DIR/data/.rag_vigencia_activated_v1"
+          env_file="$APP_DIR/.env"
           deployed="$(sudo cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
 
           if [ -z "$deployed" ] || [ "$deployed" != "$TARGET_SHA" ]; then
@@ -39,35 +40,99 @@ jobs:
             echo "::error::Ativação RAG: prearm ausente; recuso ativar gate estrito."
             exit 1
           fi
-          if sudo test -f "$marker"; then
-            echo "Gate de vigência já ativado anteriormente; nenhuma ação necessária."
-            exit 0
-          fi
           if ! grep -q 'RAG_EXIGIR_VIGENCIA_VERIFICADA' "$APP_DIR/backend/app/core/config.py"; then
             echo "::error::Ativação RAG: código publicado não contém o gate de vigência."
             exit 1
           fi
-          ocorrencias_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$APP_DIR/.env" || true)"
-          if [ "$ocorrencias_false" != "1" ]; then
-            echo "::error::Ativação RAG: .env não está pré-armado em false."
+          sudo test -f "$env_file" || {
+            echo "::error::Ativação RAG: .env de produção ausente."
+            exit 1
+          }
+
+          # Um marcador antigo só autoriza fast-path se a configuração REAL
+          # continuar canônica e ativa. Caso contrário, reexecutamos o fluxo.
+          if sudo test -f "$marker"; then
+            total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+            true_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=true$' "$env_file" || true)"
+            if [ "$total" = "1" ] && [ "$true_count" = "1" ]; then
+              echo "Gate de vigência já ativado e configuração canônica; nenhuma ação necessária."
+              exit 0
+            fi
+            echo "::warning::Ativação RAG: marcador existe, mas .env divergiu; revalidando rollout."
+          fi
+
+          total_false="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+          false_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=false$' "$env_file" || true)"
+          if [ "$total_false" != "1" ] || [ "$false_count" != "1" ]; then
+            echo "::error::Ativação RAG: .env não está pré-armado canonicamente em false."
             exit 1
           fi
 
+          # Troca UMA chave do .env de forma atômica. O destino nunca é
+          # truncado in-place: montamos/validamos um candidato no mesmo
+          # filesystem, guardamos rollback 0600 e só então fazemos rename.
           set_flag() {
             valor="$1"
-            uid="$(sudo stat -c %u "$APP_DIR/.env")"
-            gid="$(sudo stat -c %g "$APP_DIR/.env")"
-            mode="$(sudo stat -c %a "$APP_DIR/.env")"
-            tmp="$(mktemp)"
-            sudo cat "$APP_DIR/.env" > "$tmp"
-            chmod 600 "$tmp"
-            if grep -q '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$tmp"; then
-              sed -i "s/^RAG_EXIGIR_VIGENCIA_VERIFICADA=.*/RAG_EXIGIR_VIGENCIA_VERIFICADA=${valor}/" "$tmp"
-            else
-              printf '\nRAG_EXIGIR_VIGENCIA_VERIFICADA=%s\n' "$valor" >> "$tmp"
+            uid="$(sudo stat -c %u "$env_file")"
+            gid="$(sudo stat -c %g "$env_file")"
+            mode="$(sudo stat -c %a "$env_file")"
+            work="$(mktemp)"
+            candidate="$APP_DIR/.env.rag-vigencia.new"
+            backup="$APP_DIR/.env.rag-vigencia.rollback"
+
+            cleanup_flag() {
+              rm -f "$work"
+              sudo rm -f "$candidate"
+            }
+
+            sudo cat "$env_file" | awk -v value="$valor" '
+              BEGIN { seen = 0 }
+              /^RAG_EXIGIR_VIGENCIA_VERIFICADA=/ {
+                if (!seen) {
+                  print "RAG_EXIGIR_VIGENCIA_VERIFICADA=" value
+                  seen = 1
+                }
+                next
+              }
+              { print }
+              END {
+                if (!seen) print "RAG_EXIGIR_VIGENCIA_VERIFICADA=" value
+              }
+            ' > "$work" || { cleanup_flag; return 1; }
+            chmod 600 "$work"
+
+            sudo rm -f "$candidate" "$backup"
+            sudo install -o "$uid" -g "$gid" -m "$mode" "$work" "$candidate" || {
+              cleanup_flag
+              return 1
+            }
+            candidate_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$candidate" || true)"
+            candidate_value="$(sudo grep -c "^RAG_EXIGIR_VIGENCIA_VERIFICADA=${valor}$" "$candidate" || true)"
+            if [ "$candidate_total" != "1" ] || [ "$candidate_value" != "1" ]; then
+              echo "::error::Ativação RAG: candidato de .env não ficou canônico."
+              cleanup_flag
+              return 1
             fi
-            sudo install -o "$uid" -g "$gid" -m "$mode" "$tmp" "$APP_DIR/.env"
-            rm -f "$tmp"
+
+            sudo cp -p "$env_file" "$backup" || { cleanup_flag; return 1; }
+            sudo chmod 600 "$backup"
+            if ! sudo mv -f "$candidate" "$env_file"; then
+              cleanup_flag
+              sudo rm -f "$backup"
+              return 1
+            fi
+
+            final_total="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
+            final_value="$(sudo grep -c "^RAG_EXIGIR_VIGENCIA_VERIFICADA=${valor}$" "$env_file" || true)"
+            if [ "$final_total" != "1" ] || [ "$final_value" != "1" ]; then
+              echo "::error::Ativação RAG: prova pós-rename falhou; restaurando backup."
+              sudo mv -f "$backup" "$env_file"
+              cleanup_flag
+              return 1
+            fi
+
+            sudo rm -f "$backup"
+            cleanup_flag
           }
 
           flag_changed=0
@@ -122,6 +187,8 @@ jobs:
           docker compose exec -T backend python -c \
             'from app.core.config import get_settings; assert get_settings().RAG_EXIGIR_VIGENCIA_VERIFICADA is True'
 
+          # Marcador somente após backfill, restart, health/SHA e leitura da
+          # configuração terem sido comprovados.
           printf '%s\n' "$TARGET_SHA" | sudo tee "$marker" >/dev/null
           sudo chmod 600 "$marker"
           flag_changed=0
