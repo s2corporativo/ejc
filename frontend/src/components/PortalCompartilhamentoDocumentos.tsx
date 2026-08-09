@@ -34,9 +34,9 @@ export default function PortalCompartilhamentoDocumentos() {
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
-  const [filtro, setFiltro] = useState<"todos" | "publicados" | "nao_publicados">(
-    "todos",
-  );
+  const [filtro, setFiltro] = useState<
+    "todos" | "publicados" | "nao_publicados"
+  >("todos");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,7 +48,9 @@ export default function PortalCompartilhamentoDocumentos() {
       ]);
       setDocs(asList<DocumentoPortal>(docsResp.data));
       const lista = asList<ClienteMini>(clientsResp.data);
-      setClientes(Object.fromEntries(lista.map((cliente) => [cliente.id, cliente])));
+      setClientes(
+        Object.fromEntries(lista.map((cliente) => [cliente.id, cliente])),
+      );
     } catch (e: any) {
       setError(true);
       toast.error(
@@ -71,8 +73,11 @@ export default function PortalCompartilhamentoDocumentos() {
       if (filtro === "nao_publicados" && doc.publicado_portal) return false;
       if (!termo) return true;
       const cliente = clientes[doc.client_id];
-      const nome = cliente?.nome || cliente?.razao_social || cliente?.email || "";
-      return `${doc.titulo} ${doc.filename} ${nome}`.toLowerCase().includes(termo);
+      const nome =
+        cliente?.nome || cliente?.razao_social || cliente?.email || "";
+      return `${doc.titulo} ${doc.filename} ${nome}`
+        .toLowerCase()
+        .includes(termo);
     });
   }, [busca, clientes, docs, filtro]);
 
@@ -113,7 +118,8 @@ export default function PortalCompartilhamentoDocumentos() {
       toast.success(data.detail || "Compartilhamento atualizado.");
     } catch (e: any) {
       toast.error(
-        e?.response?.data?.detail || "Não foi possível atualizar o compartilhamento.",
+        e?.response?.data?.detail ||
+          "Não foi possível atualizar o compartilhamento.",
       );
     } finally {
       setBusy(null);
@@ -140,8 +146,9 @@ export default function PortalCompartilhamentoDocumentos() {
             </div>
             <p className="mt-1 text-xs leading-5">
               Classificação de confidencialidade e visibilidade no Portal são
-              controles independentes. Apenas documentos <b>normais</b> podem ser
-              publicados; a ação fica registrada em auditoria e pode ser revogada.
+              controles independentes. Apenas documentos <b>normais</b> podem
+              ser publicados; a ação fica registrada em auditoria e pode ser
+              revogada.
             </p>
           </div>
         </div>
@@ -166,7 +173,11 @@ export default function PortalCompartilhamentoDocumentos() {
           <option value="publicados">Publicados</option>
           <option value="nao_publicados">Não publicados</option>
         </select>
-        <button className="btn-secondary" onClick={() => void load()} disabled={loading}>
+        <button
+          className="btn-secondary"
+          onClick={() => void load()}
+          disabled={loading}
+        >
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           Atualizar
         </button>
@@ -193,13 +204,20 @@ export default function PortalCompartilhamentoDocumentos() {
               {rows.map((doc) => {
                 const cliente = clientes[doc.client_id];
                 const clienteNome =
-                  cliente?.nome || cliente?.razao_social || cliente?.email || "Cliente vinculado";
+                  cliente?.nome ||
+                  cliente?.razao_social ||
+                  cliente?.email ||
+                  "Cliente vinculado";
                 const elegivel = doc.confidencialidade === "normal";
                 return (
                   <tr key={doc.id}>
                     <td>
-                      <div className="font-medium text-slate-800">{doc.titulo}</div>
-                      <div className="text-[11px] text-slate-400">{doc.filename}</div>
+                      <div className="font-medium text-slate-800">
+                        {doc.titulo}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {doc.filename}
+                      </div>
                     </td>
                     <td className="text-slate-600">{clienteNome}</td>
                     <td>
@@ -227,15 +245,30 @@ export default function PortalCompartilhamentoDocumentos() {
                     </td>
                     <td className="text-right">
                       <button
-                        className={doc.publicado_portal ? "btn-secondary text-xs" : "btn-primary text-xs"}
-                        disabled={busy === doc.id || (!doc.publicado_portal && !elegivel)}
-                        title={!elegivel && !doc.publicado_portal ? "Reclassifique como normal antes de publicar" : undefined}
+                        className={
+                          doc.publicado_portal
+                            ? "btn-secondary text-xs"
+                            : "btn-primary text-xs"
+                        }
+                        disabled={
+                          busy === doc.id ||
+                          (!doc.publicado_portal && !elegivel)
+                        }
+                        title={
+                          !elegivel && !doc.publicado_portal
+                            ? "Reclassifique como normal antes de publicar"
+                            : undefined
+                        }
                         onClick={() => void alterar(doc)}
                       >
                         {doc.publicado_portal ? (
-                          <><EyeOff className="h-3.5 w-3.5" /> Revogar</>
+                          <>
+                            <EyeOff className="h-3.5 w-3.5" /> Revogar
+                          </>
                         ) : (
-                          <><Eye className="h-3.5 w-3.5" /> Publicar</>
+                          <>
+                            <Eye className="h-3.5 w-3.5" /> Publicar
+                          </>
                         )}
                       </button>
                     </td>
