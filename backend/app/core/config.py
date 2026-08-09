@@ -616,6 +616,26 @@ class Settings(BaseSettings):
     # (gravado pelo próprio seed corrigido). Protege contra reintrodução de
     # conteúdo não conferido por outra via (ingestão manual futura, por ex.).
     RAG_SUMULAS_QUARENTENA: bool = True
+    # Situação JURÍDICA na recuperação (Issue #636). `rag_status` (curadoria) e
+    # vigência da norma são campos DISTINTOS: um documento pode estar aprovado
+    # para o RAG e, ao mesmo tempo, estar revogado ou com vigência nunca
+    # conferida. A exclusão do que está REVOGADO é incondicional (não tem
+    # flag). Esta flag governa o caso duvidoso: com true (default), documento de
+    # LEGISLAÇÃO cuja vigência a fonte não declarou — o que
+    # knowledge_governance.inferir_situacao_juridica classifica como
+    # 'vigencia_nao_verificada' — também fica FORA da recuperação.
+    # Default true porque o lado seguro é não servir como fundamentação atual
+    # uma norma que ninguém conferiu; disponibilidade não prevalece sobre
+    # fundamentação jurídica não validada (mesma escolha de RAG_EXIGIR_APROVADO
+    # e RAG_SUMULAS_QUARENTENA). O filtro é recortado por categoria de
+    # legislação: súmulas, jurisprudência, doutrina, modelos e peças internas
+    # (para os quais a inferência devolve 'nao_aplicavel') seguem recuperáveis,
+    # assim como as versões históricas (a inferência devolve 'historica').
+    # `proposicao_legislativa` cai no recorte e não grava vigência: fica fora de
+    # forma PERMANENTE e intencional — projeto em tramitação não é lei vigente.
+    # Desligue (false) apenas como medida temporária, enquanto os ingestores não
+    # tiverem propagado `extra.legal_status` para o acervo já existente.
+    RAG_EXIGIR_VIGENCIA_VERIFICADA: bool = True
     # Ingestão do seed de súmulas (sumulas_ingestion.py) — RECONSTRUÍDO na
     # auditoria RAG: os 27 verbetes foram reconferidos individualmente contra
     # fonte oficial (STF/STJ/TST). Súmulas cancelada/suspensa são marcadas e
