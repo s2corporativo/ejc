@@ -38,52 +38,81 @@ const TIPOS_PECA_MINUTA = [
   "parecer",
 ];
 
+export function modalidadeSelecionada(
+  modalidades: any[],
+  indice: string,
+): any | undefined {
+  if (indice === "") return undefined;
+  const numero = Number(indice);
+  if (!Number.isInteger(numero) || numero < 0) return undefined;
+  return modalidades[numero];
+}
+
 export function ComparadorBacen() {
-  const [mods, setMods] = useState<any[]>([]);
+  const [modalidades, setModalidades] = useState<any[]>([]);
   const [periodo, setPeriodo] = useState("");
-  const [idx, setIdx] = useState("");
+  const [indice, setIndice] = useState("");
   const [taxa, setTaxa] = useState("");
-  const [res, setRes] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [resultado, setResultado] = useState<any>(null);
+  const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState("");
 
   useEffect(() => {
     api
       .get("/analise-bancaria/modalidades")
-      .then((r) => {
-        setMods(r.data?.modalidades ?? []);
-        setPeriodo(r.data?.periodo ?? "");
+      .then((resposta) => {
+        setModalidades(resposta.data?.modalidades ?? []);
+        setPeriodo(resposta.data?.periodo ?? "");
       })
-      .catch(() => {});
+      .catch(() => {
+        setModalidades([]);
+        setPeriodo("");
+        setErro(
+          "Não foi possível carregar as modalidades do BACEN. Tente novamente mais tarde.",
+        );
+      });
   }, []);
 
+  const alterarModalidade = (novoIndice: string) => {
+    setIndice(novoIndice);
+    setResultado(null);
+    setErro("");
+  };
+
   const comparar = async () => {
-    const sel = mods[Number(idx)];
-    if (!sel) {
+    const selecionada = modalidadeSelecionada(modalidades, indice);
+    if (!selecionada) {
       setErro("Selecione a modalidade.");
       return;
     }
-    setLoading(true);
+    setCarregando(true);
     setErro("");
-    setRes(null);
+    setResultado(null);
     try {
-      const r = await api.get("/analise-bancaria/taxa-media", {
-        params: { modalidade: sel.modalidade, segmento: sel.segmento, periodo },
+      const resposta = await api.get("/analise-bancaria/taxa-media", {
+        params: {
+          modalidade: selecionada.modalidade,
+          segmento: selecionada.segmento,
+          periodo,
+        },
       });
-      setRes(r.data);
+      setResultado(resposta.data);
     } catch (e: any) {
       setErro(e.response?.data?.detail || "Falha ao consultar o BACEN.");
     } finally {
-      setLoading(false);
+      setCarregando(false);
     }
   };
 
-  const t = parseFloat((taxa || "").replace(",", "."));
-  const media = res?.ao_mes?.media;
-  const acima = res && !Number.isNaN(t) && media != null ? t > media : null;
-  const diff =
-    res && !Number.isNaN(t) && media != null
-      ? ((t - media) / media) * 100
+  const taxaContrato = parseFloat((taxa || "").replace(",", "."));
+  const media = resultado?.ao_mes?.media;
+  const acima =
+    resultado && !Number.isNaN(taxaContrato) && media != null
+      ? taxaContrato > media
+      : null;
+  const diferencaPercentual =
+    resultado && !Number.isNaN(taxaContrato) && media != null && media !== 0
+      ? ((taxaContrato - media) / media) * 100
       : null;
 
   return (
@@ -92,22 +121,22 @@ export function ComparadorBacen() {
         📈 Comparador de Juros (BACEN)
       </h2>
       <p className="text-xs text-slate-500 mb-3">
-        Compara a taxa do contrato com a média de mercado do Banco Central, por
-        modalidade.
+        Compara a taxa do contrato com a média de mercado retornada pela consulta
+        ao Banco Central, por modalidade e período.
       </p>
       <div className="grid sm:grid-cols-3 gap-2 items-end">
         <div className="sm:col-span-2">
           <label className="label">Modalidade</label>
           <select
             className="input w-full text-sm"
-            value={idx}
-            onChange={(e) => setIdx(e.target.value)}
+            value={indice}
+            onChange={(e) => alterarModalidade(e.target.value)}
           >
             <option value="">Selecione…</option>
-            {mods.map((m, i) => (
+            {modalidades.map((modalidade, i) => (
               <option key={i} value={i}>
-                {(m.segmento || "").includes("FÍSICA") ? "PF" : "PJ"} ·{" "}
-                {m.modalidade}
+                {(modalidade.segmento || "").includes("FÍSICA") ? "PF" : "PJ"} ·{" "}
+                {modalidade.modalidade}
               </option>
             ))}
           </select>
@@ -124,31 +153,33 @@ export function ComparadorBacen() {
       </div>
       <button
         onClick={comparar}
-        disabled={loading}
+        disabled={carregando}
         className="btn-gold text-sm mt-2"
       >
-        {loading ? "Consultando BACEN…" : "Comparar"}
+        {carregando ? "Consultando BACEN…" : "Comparar"}
       </button>
       {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
-      {res && (
+      {resultado && (
         <div className="mt-3 space-y-2 text-sm">
           <p className="text-xs text-slate-500">
-            Mercado em {res.periodo} · {res.instituicoes} instituições · fonte:
-            BACEN
+            Mercado em {resultado.periodo} · {resultado.instituicoes} instituições
+            · fonte de dados: BACEN
           </p>
           <div className="grid grid-cols-3 gap-2 text-center">
             {[
-              ["Mínima", res.ao_mes?.min],
-              ["Média", res.ao_mes?.media],
-              ["Máxima", res.ao_mes?.max],
-            ].map(([l, v]: any) => (
-              <div key={l} className="bg-slate-50 rounded-lg p-2">
-                <p className="text-[11px] text-slate-500">{l} (% a.m.)</p>
-                <p className="font-bold text-slate-800">{v}%</p>
+              ["Mínima", resultado.ao_mes?.min],
+              ["Média", resultado.ao_mes?.media],
+              ["Máxima", resultado.ao_mes?.max],
+            ].map(([rotuloTaxa, valor]: any) => (
+              <div key={rotuloTaxa} className="bg-slate-50 rounded-lg p-2">
+                <p className="text-[11px] text-slate-500">
+                  {rotuloTaxa} (% a.m.)
+                </p>
+                <p className="font-bold text-slate-800">{valor}%</p>
               </div>
             ))}
           </div>
-          {acima !== null && (
+          {acima !== null && diferencaPercentual !== null && (
             <div
               className={`rounded-lg p-3 text-sm font-medium ${
                 acima
@@ -156,18 +187,17 @@ export function ComparadorBacen() {
                   : "bg-success-50 text-success-700"
               }`}
             >
-              Sua taxa de <b>{t.toFixed(2)}% a.m.</b> está{" "}
+              A taxa informada de <b>{taxaContrato.toFixed(2)}% a.m.</b> está{" "}
               <b>
-                {Math.abs(diff!).toFixed(0)}% {acima ? "ACIMA" : "abaixo"}
+                {Math.abs(diferencaPercentual).toFixed(0)}% {acima ? "ACIMA" : "abaixo"}
               </b>{" "}
-              da média de mercado.
-              {acima &&
-                " — possível indício de abusividade (verificar caso a caso)."}
+              da média retornada para a modalidade e período consultados.
             </div>
           )}
           <p className="text-[11px] text-warn-700">
-            ⚠ Indicador de apoio. A média do BACEN não define abusividade
-            automaticamente — análise do advogado é necessária.
+            ⚠ Comparação estatística de apoio. O resultado não conclui, por si
+            só, abusividade, validade contratual ou direito à revisão; a análise
+            jurídica e fática pelo advogado permanece obrigatória.
           </p>
         </div>
       )}
@@ -182,38 +212,39 @@ export function AnaliseDocumentoArea({
   area: string;
   casos: Case[];
 }) {
-  const [casoSel, setCasoSel] = useState("");
+  const [casoSelecionado, setCasoSelecionado] = useState("");
   const [tipoPeca, setTipoPeca] = useState("");
   const [acao, setAcao] = useState("");
   const [minuta, setMinuta] = useState("");
   const [texto, setTexto] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [res, setRes] = useState<any>(null);
+  const [analisando, setAnalisando] = useState(false);
+  const [salvandoCaso, setSalvandoCaso] = useState(false);
+  const [resultado, setResultado] = useState<any>(null);
   const [erro, setErro] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
+  const arquivoRef = useRef<HTMLInputElement>(null);
+  const salvandoCasoRef = useRef(false);
 
-  const analisar = async (file?: File) => {
-    setLoading(true);
+  const analisar = async (arquivo?: File) => {
+    setAnalisando(true);
     setErro("");
-    setRes(null);
+    setResultado(null);
     try {
-      const fd = new FormData();
-      fd.append("area", area);
-      if (file) fd.append("file", file);
-      else if (texto.trim().length >= 120) fd.append("texto", texto);
+      const formulario = new FormData();
+      formulario.append("area", area);
+      if (arquivo) formulario.append("file", arquivo);
+      else if (texto.trim().length >= 120) formulario.append("texto", texto);
       else {
         setErro("Cole o texto (mín. 120 caracteres) ou envie um PDF.");
-        setLoading(false);
         return;
       }
-      const r = await api.post("/analise-bancaria/contrato", fd, {
+      const resposta = await api.post("/analise-bancaria/contrato", formulario, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      setRes(r.data);
+      setResultado(resposta.data);
     } catch (e: any) {
       setErro(mensagemErroIA(e, "Não foi possível analisar o documento."));
     } finally {
-      setLoading(false);
+      setAnalisando(false);
     }
   };
 
@@ -225,29 +256,36 @@ export function AnaliseDocumentoArea({
         : "bg-slate-100 text-slate-600";
 
   const resumoTexto = () => {
-    if (!res) return "";
-    const cl = (res.clausulas_questionaveis ?? [])
-      .map((x: any) => `- [${x.risco}] ${x.clausula}`)
+    if (!resultado) return "";
+    const clausulas = (resultado.clausulas_questionaveis ?? [])
+      .map((item: any) => `- [${item.risco}] ${item.clausula}`)
       .join("\n");
-    const tf = (res.tarifas_encargos ?? [])
-      .map((x: any) => `- [${x.risco}] ${x.item}: ${x.motivo}`)
+    const tarifas = (resultado.tarifas_encargos ?? [])
+      .map((item: any) => `- [${item.risco}] ${item.item}: ${item.motivo}`)
       .join("\n");
-    return `ANÁLISE (${area}) — ${res.resumo || ""}\n\nTarifas/encargos:\n${tf}\n\nCláusulas questionáveis:\n${cl}\n\n${res.proxima_acao || ""}`;
+    return `ANÁLISE (${area}) — ${resultado.resumo || ""}\n\nTarifas/encargos:\n${tarifas}\n\nCláusulas questionáveis:\n${clausulas}\n\n${resultado.proxima_acao || ""}`;
   };
 
   const salvarNoCaso = async () => {
-    if (!casoSel) {
+    if (salvandoCasoRef.current) return;
+    if (!casoSelecionado) {
       setAcao("Selecione um caso.");
       return;
     }
+    salvandoCasoRef.current = true;
+    setSalvandoCaso(true);
+    setAcao("");
     try {
-      await api.post(`/cases/${casoSel}/movimentos`, {
+      await api.post(`/cases/${casoSelecionado}/movimentos`, {
         tipo: "nota",
         descricao: resumoTexto().slice(0, 4000),
       });
       setAcao("✓ Análise salva no histórico do caso.");
     } catch {
       setAcao("Falha ao salvar.");
+    } finally {
+      salvandoCasoRef.current = false;
+      setSalvandoCaso(false);
     }
   };
 
@@ -291,28 +329,28 @@ export function AnaliseDocumentoArea({
       </p>
       <div className="flex flex-wrap gap-2 mb-2">
         <input
-          ref={fileRef}
+          ref={arquivoRef}
           type="file"
           accept="application/pdf"
           className="hidden"
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void analisar(f);
+            const arquivo = e.target.files?.[0];
+            if (arquivo) void analisar(arquivo);
           }}
         />
         <button
-          onClick={() => fileRef.current?.click()}
-          disabled={loading}
+          onClick={() => arquivoRef.current?.click()}
+          disabled={analisando}
           className="btn-gold text-sm"
         >
           📄 Enviar PDF
         </button>
         <button
           onClick={() => void analisar()}
-          disabled={loading}
+          disabled={analisando}
           className="btn-secondary text-sm"
         >
-          {loading ? "Analisando…" : "Analisar texto colado"}
+          {analisando ? "Analisando…" : "Analisar texto colado"}
         </button>
       </div>
       <textarea
@@ -325,99 +363,110 @@ export function AnaliseDocumentoArea({
         onChange={(e) => setTexto(e.target.value)}
       />
       {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
-      {res && (
+      {resultado && (
         <div className="mt-4 space-y-3 text-sm">
-          {res.resumo && <p className="text-slate-700">{res.resumo}</p>}
-          {res.juros && (
+          {resultado.resumo && (
+            <p className="text-slate-700">{resultado.resumo}</p>
+          )}
+          {resultado.juros && (
             <div className="bg-slate-50 rounded-lg p-3">
               <p className="text-xs font-semibold text-slate-500 uppercase">
                 Juros
               </p>
               <p className="text-slate-700">
-                Taxa: <b>{res.juros.taxa_identificada || "não identificada"}</b>{" "}
-                · Capitalização: {res.juros.capitalizacao}
+                Taxa:{" "}
+                <b>{resultado.juros.taxa_identificada || "não identificada"}</b>{" "}
+                · Capitalização: {resultado.juros.capitalizacao}
               </p>
-              {res.juros.observacao && (
+              {resultado.juros.observacao && (
                 <p className="text-xs text-slate-500 mt-1">
-                  {res.juros.observacao}
+                  {resultado.juros.observacao}
                 </p>
               )}
             </div>
           )}
-          {(res.tarifas_encargos ?? []).length > 0 && (
+          {(resultado.tarifas_encargos ?? []).length > 0 && (
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
                 Tarifas / encargos
               </p>
-              {res.tarifas_encargos.map((t: any, i: number) => (
+              {resultado.tarifas_encargos.map((tarifa: any, i: number) => (
                 <div
                   key={i}
                   className="flex items-start gap-2 py-1 text-xs border-b border-slate-50"
                 >
                   <span
-                    className={`px-1.5 py-0.5 rounded-full font-medium ${riscoCor(t.risco)}`}
+                    className={`px-1.5 py-0.5 rounded-full font-medium ${riscoCor(tarifa.risco)}`}
                   >
-                    {t.risco}
+                    {tarifa.risco}
                   </span>
                   <span className="text-slate-700">
-                    <b>{t.item}</b> — {t.motivo}
+                    <b>{tarifa.item}</b> — {tarifa.motivo}
                   </span>
                 </div>
               ))}
             </div>
           )}
-          {(res.clausulas_questionaveis ?? []).length > 0 && (
+          {(resultado.clausulas_questionaveis ?? []).length > 0 && (
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
                 Cláusulas questionáveis
               </p>
-              {res.clausulas_questionaveis.map((cq: any, i: number) => (
-                <div
-                  key={i}
-                  className="py-1.5 text-xs border-b border-slate-50"
-                >
-                  <span
-                    className={`px-1.5 py-0.5 rounded-full font-medium ${riscoCor(cq.risco)}`}
+              {resultado.clausulas_questionaveis.map(
+                (clausula: any, i: number) => (
+                  <div
+                    key={i}
+                    className="py-1.5 text-xs border-b border-slate-50"
                   >
-                    {cq.risco}
-                  </span>
-                  <span className="text-slate-700 ml-2">{cq.clausula}</span>
-                  {cq.fundamento && (
-                    <span className="text-slate-400 block mt-0.5">
-                      Fundamento: {cq.fundamento}
+                    <span
+                      className={`px-1.5 py-0.5 rounded-full font-medium ${riscoCor(clausula.risco)}`}
+                    >
+                      {clausula.risco}
                     </span>
-                  )}
-                </div>
-              ))}
+                    <span className="text-slate-700 ml-2">
+                      {clausula.clausula}
+                    </span>
+                    {clausula.fundamento && (
+                      <span className="text-slate-400 block mt-0.5">
+                        Fundamento: {clausula.fundamento}
+                      </span>
+                    )}
+                  </div>
+                ),
+              )}
             </div>
           )}
-          {(res.pontos_de_atencao ?? []).length > 0 && (
+          {(resultado.pontos_de_atencao ?? []).length > 0 && (
             <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
-              {res.pontos_de_atencao.map((p: string, i: number) => (
-                <li key={i}>{p}</li>
+              {resultado.pontos_de_atencao.map((ponto: string, i: number) => (
+                <li key={i}>{ponto}</li>
               ))}
             </ul>
           )}
-          {res.proxima_acao && (
+          {resultado.proxima_acao && (
             <p className="text-xs text-success-700 bg-success-50 rounded-lg p-2">
-              ➡ {res.proxima_acao}
+              ➡ {resultado.proxima_acao}
             </p>
           )}
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
             <select
               className="input text-xs flex-1 min-w-[160px]"
-              value={casoSel}
-              onChange={(e) => setCasoSel(e.target.value)}
+              value={casoSelecionado}
+              onChange={(e) => setCasoSelecionado(e.target.value)}
             >
               <option value="">Vincular a um caso…</option>
-              {casos.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {(c as any).numero_interno} — {c.titulo}
+              {casos.map((caso) => (
+                <option key={caso.id} value={caso.id}>
+                  {caso.numero_interno} — {caso.titulo}
                 </option>
               ))}
             </select>
-            <button onClick={salvarNoCaso} className="btn-secondary text-xs">
-              💾 Salvar no caso
+            <button
+              onClick={salvarNoCaso}
+              disabled={salvandoCaso}
+              className="btn-secondary text-xs disabled:opacity-50"
+            >
+              {salvandoCaso ? "Salvando…" : "💾 Salvar no caso"}
             </button>
             <select
               className="input text-xs min-w-[150px]"
@@ -426,9 +475,9 @@ export function AnaliseDocumentoArea({
               title="Tipo de peça (escolha do advogado — obrigatório)"
             >
               <option value="">Tipo de peça…</option>
-              {TIPOS_PECA_MINUTA.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {TIPOS_PECA_MINUTA.map((tipo) => (
+                <option key={tipo} value={tipo}>
+                  {tipo}
                 </option>
               ))}
             </select>
@@ -452,9 +501,9 @@ export function AnaliseDocumentoArea({
               />
             </div>
           )}
-          {res._aviso && (
+          {resultado._aviso && (
             <p className="text-[11px] text-warn-700 border-t border-warn-100 pt-2">
-              ⚠ {res._aviso}
+              ⚠ {resultado._aviso}
             </p>
           )}
         </div>
