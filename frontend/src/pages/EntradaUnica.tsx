@@ -14,8 +14,8 @@ import {
   useModuleLifecycleStore,
   type ModuleLifecycleOverride,
 } from "../stores/moduleLifecycle";
+import EntradaRelato from "./EntradaRelato";
 
-const EntradaRelato = lazy(() => import("./EntradaRelato"));
 const RaioXProcesso = lazy(() => import("./RaioXProcesso"));
 const SalaJuridica = lazy(() => import("./SalaJuridica"));
 
