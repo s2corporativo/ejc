@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import asyncio
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from pathlib import PurePosixPath
+from urllib.parse import unquote, urljoin, urlparse
 
 import httpx
 
@@ -22,6 +23,7 @@ PGFN_DADOS_ABERTOS = (
 )
 _TRANSIENTES = {429, 500, 502, 503, 504}
 _ALLOWED_SUFFIXES = (".csv", ".zip", ".7z", ".gz")
+_ALLOWED_SEGMENTS = frozenset({"download", "dadosabertos", "dados-abertos"})
 
 
 class PgfnOpenDataError(RuntimeError):
@@ -61,13 +63,13 @@ def _link_oficial(href: str) -> bool:
 
 
 def _parece_recurso(url: str, texto: str) -> bool:
-    alvo = f"{url} {texto}".lower()
-    return (
-        any(ext in alvo for ext in _ALLOWED_SUFFIXES)
-        or "dadosabertos" in alvo
-        or "dados-abertos" in alvo
-        or "download" in alvo
-    )
+    """Reconhece recurso pelo path, sem falso positivo por substring no texto."""
+    try:
+        path = unquote(urlparse(url).path).lower()
+    except ValueError:
+        return False
+    partes = {p for p in PurePosixPath(path).parts if p not in {"/", ""}}
+    return path.endswith(_ALLOWED_SUFFIXES) or bool(partes & _ALLOWED_SEGMENTS)
 
 
 class PgfnOpenDataClient:
