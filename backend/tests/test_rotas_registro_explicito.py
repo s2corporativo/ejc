@@ -77,6 +77,19 @@ ADICOES_INTENCIONAIS = {
     ("/api/processo-eletronico/credenciais", "GET"),
     ("/api/processo-eletronico/credenciais", "POST"),
     ("/api/processo-eletronico/credenciais/{credencial_id}/testar", "POST"),
+    # Issue #836: onda de fontes públicas oficiais, já integrada na main pelo
+    # PR #887. O PR #905 preserva explicitamente essas rotas ao acrescentar os
+    # contratos canônicos de Jurimetria abaixo.
+    ("/api/integracoes/cnj/tpu/versao", "GET"),
+    ("/api/integracoes/cnj/tpu/pesquisar", "GET"),
+    ("/api/integracoes/tcu/acordaos", "GET"),
+    ("/api/integracoes/ibge/municipios/{uf}", "GET"),
+    ("/api/integracoes/ibge/canonicalizar", "GET"),
+    ("/api/integracoes/dados-publicos/{fonte}/recursos", "GET"),
+    ("/api/integracoes/pgfn/divida-ativa/recursos", "GET"),
+    ("/api/integracoes/querido-diario/{codigo_ibge}", "GET"),
+    ("/api/integracoes/ide-sisema/camadas", "GET"),
+    ("/api/integracoes/ide-sisema/feicoes", "GET"),
     # PR #905: jurimetria passa a expor, de forma explícita, apenas métricas
     # internas e cobertura agregada do RAG. Os aliases /ext legados permanecem,
     # mas estes são os contratos canônicos novos e deliberados.
