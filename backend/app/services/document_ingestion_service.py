@@ -127,6 +127,6 @@ async def preparar_ingestao_documento_local(
         filename=nome_original,
         ext=ext,
         mimetype=mimetype,
-        filepath=str(rel),
+        filepath=rel.as_posix(),
         storage=storage,
     )
