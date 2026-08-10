@@ -9,6 +9,7 @@ UNIT_DIR="${HOME}/.config/systemd/user"
 UNIT="$UNIT_DIR/ejc-ci-fallback.service"
 CRON_MARK='# EJC_CI_FALLBACK_998'
 LOG_DIR="${HOME}/.cache/ejc-ci-fallback"
+WATCHER_PATH="${EJC_FALLBACK_PATH:-$PATH}"
 mkdir -p "$LOG_DIR"; chmod 700 "$LOG_DIR" 2>/dev/null || true
 
 fail(){ echo "[fallback-activate] ERRO: $*" >&2; exit 1; }
@@ -22,6 +23,12 @@ esac
   || fail "ambiente de produção ativo"
 [ ! -e /opt/ejc/.deployed_sha ] && [ ! -e /opt/ejc/.env ] \
   || fail "host contém marcadores da instalação produtiva /opt/ejc"
+case "$WATCHER_PATH" in
+  *$'\n'*|*$'\r'*|*"'"*|*%*) fail "PATH contém caractere inseguro para scheduler autônomo" ;;
+esac
+case "$ROOT$LOG_DIR$REPO" in
+  *$'\n'*|*$'\r'*|*"'"*|*%*) fail "ROOT/LOG_DIR/REPO contém caractere inseguro para scheduler autônomo" ;;
+esac
 
 remove_cron() {
   command -v crontab >/dev/null 2>&1 || return 0
@@ -67,14 +74,38 @@ NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 git fetch --quiet origin main || fail "não foi possível atualizar origin/main"
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || fail "main local não corresponde à origin/main"
 
+cron_persistente() {
+  command -v crontab >/dev/null 2>&1 || return 1
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -x cron >/dev/null 2>&1 && return 0
+    pgrep -x crond >/dev/null 2>&1 && return 0
+  fi
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl is-active --quiet cron 2>/dev/null && return 0
+    systemctl is-active --quiet crond 2>/dev/null && return 0
+  fi
+  return 1
+}
+
+systemd_user_persistente() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  command -v loginctl >/dev/null 2>&1 || return 1
+  systemctl --user show-environment >/dev/null 2>&1 || return 1
+  [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true)" = "yes" ]
+}
+
+# Preferimos cron quando o daemon está comprovadamente ativo: não depende da
+# sessão de login. systemd --user só é aceito com linger=yes, condição que
+# garante persistência após logout/reboot sem manter uma sessão humana aberta.
 SCHEDULER=""
-if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
-  SCHEDULER=systemd
-elif command -v crontab >/dev/null 2>&1; then
+if cron_persistente; then
   SCHEDULER=cron
+elif systemd_user_persistente; then
+  SCHEDULER=systemd
 else
-  fail "sem systemd --user e sem crontab; não há scheduler local seguro disponível"
+  fail "sem scheduler persistente: requer cron/crond ativo ou systemd --user com linger=yes"
 fi
+ok "scheduler persistente selecionado: $SCHEDULER"
 
 # Prova mínima do executor ANTES de alterar a política da main. O gate full será
 # executado por SHA de PR, mas a ativação só prossegue se o host já consegue
@@ -109,6 +140,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$ROOT
+Environment="PATH=$WATCHER_PATH"
 Environment=EJC_REPO=$REPO
 Environment=EJC_FALLBACK_AUTO_MERGE=1
 Environment=EJC_ALLOW_PYTHON_MISMATCH=0
@@ -146,13 +178,14 @@ ok "branch protection apontada para EJC Local Full Gate"
 
 if [ "$SCHEDULER" = "systemd" ]; then
   systemctl --user enable --now ejc-ci-fallback.service
+  systemctl --user is-enabled --quiet ejc-ci-fallback.service
   systemctl --user is-active --quiet ejc-ci-fallback.service
-  ok "watcher ativado via systemd --user"
+  ok "watcher persistente ativado via systemd --user (linger=yes)"
 else
-  LINE="*/5 * * * * cd '$ROOT' && EJC_REPO='$REPO' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
+  LINE="*/5 * * * * PATH='$WATCHER_PATH' cd '$ROOT' && EJC_REPO='$REPO' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 /usr/bin/env bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
   { crontab -l 2>/dev/null || true; echo "$LINE"; } | crontab -
   (crontab -l 2>/dev/null || true) | grep -qF "$CRON_MARK"
-  ok "watcher ativado via crontab (5 min)"
+  ok "watcher persistente ativado via cron (5 min)"
 fi
 
 trap - EXIT
