@@ -62,6 +62,10 @@ mkdir -p "$REPORT_DIR"
 SHA="$(git rev-parse HEAD)"
 printf 'sha=%s\nstarted_at=%s\n' "$SHA" "$(date -u +%FT%TZ)" > "$REPORT_DIR/metadata.txt"
 
+log "Autoauditoria do isolamento do runner/fallback"
+bash scripts/tests/test_ci_fallback_isolation.sh \
+  2>&1 | tee "$REPORT_DIR/ci-fallback-isolation.log"
+
 log "Release Gate P0"
 bash scripts/ci_guard.sh 2>&1 | tee "$REPORT_DIR/ci-guard.log"
 bash scripts/tests/test_backup_wrapper.sh 2>&1 | tee "$REPORT_DIR/backup-wrapper.log"
