@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$ROOT/scripts/ejc-local-first.sh"
-[ -x "$SCRIPT" ] || { echo "script local-first ausente ou não executável" >&2; exit 1; }
+[ -f "$SCRIPT" ] || { echo "script local-first ausente" >&2; exit 1; }
 
 TMP="$(mktemp -d)"
 cleanup() {
@@ -55,7 +55,14 @@ tar -tzf "$CP/untracked-safe.tar.gz" | grep -q '^novo.txt$'
 env "${ENV_COMMON[@]}" scripts/ejc-local-first.sh validate fast | grep -q 'dummy-ci mode=fast'
 
 git remote add origin https://invalid.invalid/ejc.git
+env "${ENV_COMMON[@]}" scripts/ejc-local-first.sh status >/dev/null 2>&1
+grep -q '^offline$' "$TMP/recovery/repo/mode"
 env "${ENV_COMMON[@]}" scripts/ejc-local-first.sh sync >/dev/null 2>&1
 grep -q '^offline$' "$TMP/recovery/repo/mode"
+
+if env EJC_PRODUCTION_DIR="$TMP/repo" EJC_RECOVERY_ROOT="$TMP/recovery-prod" scripts/ejc-local-first.sh checkpoint >/dev/null 2>&1; then
+  echo "checkpoint deveria ter sido bloqueado no diretório de produção" >&2
+  exit 1
+fi
 
 echo "test_ejc_local_first: OK"
