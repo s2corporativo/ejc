@@ -83,7 +83,16 @@ def _texto_limitado(
 def _validar_dados(
     ingestao: IngestaoDocumentoLocal,
     dados: DadosPersistenciaDocumento,
-) -> tuple[str, str | None, str, str | None, str | None, str | None, str | None]:
+) -> tuple[
+    str,
+    str | None,
+    str,
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+]:
     titulo = _texto_limitado(
         dados.titulo or ingestao.filename,
         campo="titulo",
