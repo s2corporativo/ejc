@@ -17,6 +17,16 @@ def test_modo_fallback_exige_autorizacao_registrada_998():
     assert "ATO ADMINISTRATIVO PROTEGIDO" in src
 
 
+def test_execucao_sem_argumento_e_somente_leitura():
+    src = PROTECTION.read_text(encoding="utf-8")
+
+    assert 'MODO="${1:---verificar}"' in src
+    assert 'MODO="${1:---cloud}"' not in src
+    assert "DEFAULT seguro" in src
+    assert "Sem argumento" in src and "não altera a proteção" in src
+    assert 'STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$$"' in src
+
+
 def test_ativador_canonico_injeta_autorizacao_sem_bypass():
     src = ACTIVATE.read_text(encoding="utf-8")
 
