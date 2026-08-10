@@ -91,7 +91,8 @@ def test_postgresql_promovivel_e_16_loopback_e_scram():
 
 def test_ci_local_pina_auditoria_e_prepara_schema_no_restore_drill():
     src = _text("scripts/ci-local.sh")
-    assert "pip-audit==2.10.0" in src
+    assert 'PIP_AUDIT_VERSION="${PIP_AUDIT_VERSION:-2.10.0}"' in src
+    assert '"$build_dir/bin/python" -m pip install -q "pip-audit==$PIP_AUDIT_VERSION"' in src
     continuity = src[src.index("run_continuity() {") : src.index("run_ui_extra() {")]
     assert '"$PY" -m alembic upgrade head' in continuity
     assert "restore_drill.py" in continuity
@@ -237,7 +238,8 @@ def test_ci_local_cobre_paridade_minima_dos_gates_atuais():
     src = _text("scripts/ci-local.sh")
     required = [
         '"$PY" -m ruff check',
-        "pip-audit==2.10.0",
+        'PIP_AUDIT_VERSION="${PIP_AUDIT_VERSION:-2.10.0}"',
+        '"$PIP_AUDIT_BIN" -r requirements.txt --desc',
         "--cov-fail-under=65",
         "app.eval.run_eval --smoke",
         "app.eval.agent_trajectory",
