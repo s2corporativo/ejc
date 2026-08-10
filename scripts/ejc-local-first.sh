@@ -23,8 +23,10 @@ CI_MODE="${EJC_LOCAL_CI_MODE:-full}"
 repo_name="$(basename "$ROOT")"
 STATE_DIR="$RECOVERY_ROOT/$repo_name"
 CHECKPOINT_DIR="$STATE_DIR/checkpoints"
-mkdir -p "$CHECKPOINT_DIR"
-chmod 700 "$RECOVERY_ROOT" "$STATE_DIR" "$CHECKPOINT_DIR" 2>/dev/null || true
+PENDING_TASK_DIR="$STATE_DIR/pending-tasks"
+SYNCED_TASK_DIR="$STATE_DIR/synced-tasks"
+mkdir -p "$CHECKPOINT_DIR" "$PENDING_TASK_DIR" "$SYNCED_TASK_DIR"
+chmod 700 "$RECOVERY_ROOT" "$STATE_DIR" "$CHECKPOINT_DIR" "$PENDING_TASK_DIR" "$SYNCED_TASK_DIR" 2>/dev/null || true
 
 log() { printf '[ejc-local-first] %s\n' "$*"; }
 warn() { printf '[ejc-local-first] AVISO: %s\n' "$*" >&2; }
@@ -59,6 +61,73 @@ remote_available() {
 sensitive_path() {
   local p="$1"
   printf '%s\n' "$p" | grep -Eiq '(^|/)(\.env($|\.)|[^/]*\.(pem|key|p12|pfx|jks|keystore)$|id_rsa($|\.)|id_ed25519($|\.)|[^/]*(credential|credentials|secret|secrets)[^/]*)'
+}
+
+register_task() {
+  assert_not_production
+  local title="${1:-}" scope="${2:-}" ts branch sha slug file
+  [ -n "$title" ] || die "informe um título técnico para o registro local da tarefa."
+  [ -n "$scope" ] || scope="Escopo registrado localmente durante indisponibilidade do GitHub; detalhar no relatório/Issue ao sincronizar."
+  if printf '%s\n%s\n' "$title" "$scope" | grep -Eiq '(BEGIN (RSA|OPENSSH|PRIVATE) KEY|password[[:space:]]*=|secret[[:space:]]*=|token[[:space:]]*=|api[_-]?key[[:space:]]*=)'; then
+    die "o registro local parece conter segredo. Registre somente escopo técnico, nunca credenciais."
+  fi
+  ts="$(date -u +'%Y%m%dT%H%M%SZ')"
+  branch="$(current_branch)"
+  sha="$(git rev-parse HEAD)"
+  slug="$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//;s/-$//' | cut -c1-48)"
+  [ -n "$slug" ] || slug="tarefa"
+  file="$PENDING_TASK_DIR/${ts}-${slug}.md"
+  cat > "$file" <<EOF
+# $title
+
+- criado_em_utc: $ts
+- branch: $branch
+- sha_base: $sha
+- origem: contingencia-local-first
+- sincronizacao: pendente
+
+## Escopo
+
+$scope
+
+## Regras
+
+- não contém segredo, PII real ou documento de cliente;
+- deve ser convertido/vinculado a Issue e PR quando o GitHub estiver disponível;
+- o registro local não autoriza bypass de testes, revisão, backup, rollback ou proteção de produção.
+EOF
+  chmod 600 "$file" 2>/dev/null || true
+  printf '%s\n' "$file" > "$STATE_DIR/last-task"
+  log "tarefa registrada localmente: $file"
+}
+
+sync_pending_tasks() {
+  local task title output destination
+  command -v gh >/dev/null 2>&1 || { warn "gh ausente; registros locais de tarefa permanecem pendentes para sincronização posterior."; return 0; }
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$REMOTE_TIMEOUT" gh auth status >/dev/null 2>&1 || { warn "gh sem autenticação utilizável; registros de tarefa permanecem locais."; return 0; }
+  else
+    gh auth status >/dev/null 2>&1 || { warn "gh sem autenticação utilizável; registros de tarefa permanecem locais."; return 0; }
+  fi
+
+  while IFS= read -r -d '' task; do
+    title="$(sed -n '1s/^# //p' "$task")"
+    [ -n "$title" ] || { warn "registro local sem título válido: $task"; continue; }
+    if command -v timeout >/dev/null 2>&1; then
+      output="$(timeout "$REMOTE_TIMEOUT" gh issue create --title "$title" --body-file "$task" 2>/dev/null || true)"
+    else
+      output="$(gh issue create --title "$title" --body-file "$task" 2>/dev/null || true)"
+    fi
+    if printf '%s' "$output" | grep -Eq '^https?://'; then
+      destination="$SYNCED_TASK_DIR/$(basename "$task")"
+      mv "$task" "$destination"
+      printf '%s\n' "$output" > "$destination.issue-url"
+      chmod 600 "$destination" "$destination.issue-url" 2>/dev/null || true
+      log "registro local sincronizado como Issue: $output"
+    else
+      warn "não foi possível criar Issue para $(basename "$task"); registro permanece pendente."
+    fi
+  done < <(find "$PENDING_TASK_DIR" -maxdepth 1 -type f -name '*.md' -print0 | sort -z)
 }
 
 checkpoint() {
@@ -156,10 +225,12 @@ sync_remote() {
 
   if [ "$branch" = "DETACHED" ]; then
     warn "HEAD destacado: fetch concluído, publicação automática bloqueada."
+    sync_pending_tasks
     return 0
   fi
   if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
     warn "branch protegida '$branch': fetch concluído; push automático bloqueado."
+    sync_pending_tasks
     return 0
   fi
 
@@ -170,6 +241,7 @@ sync_remote() {
     log "divergência $REMOTE/$branch: behind=$behind ahead=$ahead"
     if [ "$behind" != "0" ]; then
       warn "remoto avançou; não faço reset/rebase/merge automático. O trabalho local permanece preservado e pode continuar offline."
+      sync_pending_tasks
       return 0
     fi
   else
@@ -183,26 +255,29 @@ sync_remote() {
     else
       write_mode offline
       warn "push falhou; tratado como indisponibilidade do GitHub. Trabalho preservado localmente."
+      return 0
     fi
   else
     log "AUTO_PUSH=0: fetch concluído; publicação adiada."
   fi
+  sync_pending_tasks
 }
 
 status_cmd() {
-  local branch sha
+  local branch sha pending_count
   branch="$(current_branch)"
   sha="$(git rev-parse --short=12 HEAD)"
+  pending_count="$(find "$PENDING_TASK_DIR" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')"
   log "root=$ROOT"
   log "branch=$branch sha=$sha"
-  log "recovery=$STATE_DIR"
+  log "recovery=$STATE_DIR pending_tasks=$pending_count"
   git status --short
   if remote_available; then
     write_mode online
     log "remoto '$REMOTE': disponível (mode=online)"
   else
     write_mode offline
-    warn "remoto '$REMOTE': indisponível (mode=offline). Continue com checkpoint/validate; não bloqueie a tarefa por GitHub."
+    warn "remoto '$REMOTE': indisponível (mode=offline). Continue com register/checkpoint/validate; não bloqueie a tarefa por GitHub."
   fi
 }
 
@@ -215,18 +290,20 @@ work() {
 
 case "$CMD" in
   status) status_cmd ;;
+  register) register_task "${1:-}" "${2:-}" ;;
   checkpoint) checkpoint ;;
   validate) validate "${1:-$CI_MODE}" ;;
   sync) sync_remote ;;
   work) work "${1:-$CI_MODE}" ;;
   *)
     cat >&2 <<'USAGE'
-Uso: scripts/ejc-local-first.sh <comando> [modo]
-  status                 mostra estado local e disponibilidade do remoto
-  checkpoint             cria snapshot recuperável local, sem depender da rede
-  validate [modo]        checkpoint + scripts/ci-local.sh (full|backend|frontend|fast)
-  sync                   checkpoint + fetch/push best-effort, nunca force/rebase/reset
-  work [modo]            validate + sync; GitHub indisponível não interrompe o ciclo
+Uso: bash scripts/ejc-local-first.sh <comando> [argumentos]
+  status                        mostra estado local e disponibilidade do remoto
+  register "titulo" "escopo"    registra tarefa local quando Issue não puder ser criada
+  checkpoint                    cria snapshot recuperável local, sem depender da rede
+  validate [modo]               checkpoint + scripts/ci-local.sh (full|backend|frontend|fast)
+  sync                          checkpoint + fetch/push/Issue best-effort, nunca force/rebase/reset
+  work [modo]                   validate + sync; GitHub indisponível não interrompe o ciclo
 USAGE
     exit 2
     ;;
