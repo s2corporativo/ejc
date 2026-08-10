@@ -96,3 +96,26 @@ formal automaticamente.
 Decida e siga sem pedir autorização repetida para arquivos, testes, refatorações ou comandos
 seguros necessários ao objetivo. Pare diante de ambiguidade material, alteração irreversível,
 produção, credencial, segredo, dado real ou conflito com decisão permanente do titular.
+
+## Falha de GitHub e fallback local
+
+Falha de GitHub, GitHub Actions, API ou runner **não paralisa o ciclo técnico** e não exige que o
+titular escolha manualmente um caminho alternativo.
+
+1. Quando a falha for claramente transitória (5xx, timeout, rate limit, runner indisponível ou
+   cancelamento de infraestrutura), tente novamente no máximo duas vezes.
+2. Persistindo a falha, continue em branch/worktree local isolado e reproduza o gate com
+   `scripts/ci-local.sh`.
+3. Use o modo mínimo que reproduz o erro e, depois da correção, rode `full`; antes de considerar
+   uma integração de maior risco pronta, rode `parity` quando a infraestrutura local suportar.
+4. **Nunca** crie commit temporário, `postinstall`, dependência, hook, alteração de workflow ou
+   falha deliberada apenas para fazer o GitHub revelar um diagnóstico que possa ser produzido
+   localmente.
+5. Logs e artefatos de diagnóstico ficam fora do repositório por padrão.
+6. Se um gate obrigatório não puder ser executado por indisponibilidade também da rede ou de uma
+   dependência externa, ele permanece pendente; não é convertido em sucesso por conveniência.
+7. Quando o GitHub voltar, atualize a base, sincronize a branch e use os checks remotos como
+   confirmação independente. Indisponibilidade remota nunca autoriza escrita direta na `main`,
+   bypass de proteção ou deploy de branch não integrada.
+
+Procedimento detalhado: `docs/CI_SEM_GITHUB.md`.
