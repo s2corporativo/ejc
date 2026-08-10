@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="${APP_DIR:-/opt/ejc}"
 DOMAIN="${EJC_DOMAIN:-ejc.depaulateixeira.adv.br}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
@@ -8,81 +9,31 @@ MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
 REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-1}"
-PRODUCTION_LOCK_ROOT="/run/lock/ejc"
-PRODUCTION_LOCK_FILE="$PRODUCTION_LOCK_ROOT/deploy.lock"
-DEPLOY_LOCK_ROOT="${EJC_DEPLOY_LOCK_ROOT:-$PRODUCTION_LOCK_ROOT}"
-DEPLOY_LOCK_FILE="${EJC_DEPLOY_LOCK_FILE:-$DEPLOY_LOCK_ROOT/deploy.lock}"
 
 log() { echo "[$(date '+%F %T')] $*"; }
 timestamp() { date +"%Y%m%d_%H%M%S"; }
 die_policy() { printf 'ERRO DE POLÍTICA: %s\n' "$*" >&2; exit 2; }
-canon() { realpath -m -- "$1"; }
 
 case "$REQUIRE_PREDEPLOY_BACKUP" in 0|1) ;; *) die_policy "REQUIRE_PREDEPLOY_BACKUP deve ser 0 ou 1";; esac
 case "$ENSURE_DAILY_BACKUP" in 0|1) ;; *) die_policy "ENSURE_DAILY_BACKUP deve ser 0 ou 1";; esac
 if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ] && [ "$ENSURE_DAILY_BACKUP" != "1" ]; then
   die_policy "ENSURE_DAILY_BACKUP=0 é incompatível com REQUIRE_PREDEPLOY_BACKUP=1"
 fi
-for cmd in flock realpath stat; do
-  command -v "$cmd" >/dev/null 2>&1 || die_policy "$cmd é obrigatório para serializar deploys"
-done
 
-APP_DIR_CANON="$(canon "$APP_DIR")"
-DEPLOY_LOCK_ROOT_CANON="$(canon "$DEPLOY_LOCK_ROOT")"
-DEPLOY_LOCK_FILE_CANON="$(canon "$DEPLOY_LOCK_FILE")"
-PRODUCTION_MODE=0
-case "$APP_DIR_CANON" in
-  /opt/ejc|/opt/ejc/*) PRODUCTION_MODE=1 ;;
+[ -f "$SCRIPT_DIR/deploy_lock.sh" ] || die_policy "scripts/deploy_lock.sh ausente"
+# shellcheck source=deploy_lock.sh
+source "$SCRIPT_DIR/deploy_lock.sh"
+lock_rc=0
+ejc_deploy_lock_acquire "$APP_DIR" || lock_rc=$?
+case "$lock_rc" in
+  0) ;;
+  75)
+    log "Outro deploy EJC já está em execução; nenhuma mutação foi iniciada."
+    exit 75
+    ;;
+  *) die_policy "não foi possível adquirir/revalidar mutex host-level" ;;
 esac
-
-if [ "$PRODUCTION_MODE" = "1" ]; then
-  [ "$DEPLOY_LOCK_ROOT_CANON" = "$PRODUCTION_LOCK_ROOT" ] \
-    || die_policy "em /opt/ejc o mutex é fixo em $PRODUCTION_LOCK_ROOT; override recusado"
-  [ "$DEPLOY_LOCK_FILE_CANON" = "$PRODUCTION_LOCK_FILE" ] \
-    || die_policy "em /opt/ejc o arquivo de mutex é fixo em $PRODUCTION_LOCK_FILE; override recusado"
-  [ -S /var/run/docker.sock ] || die_policy "/var/run/docker.sock ausente; não é possível vincular o mutex ao grupo do Docker"
-  docker_gid="$(stat -c %g /var/run/docker.sock)"
-  [[ "$docker_gid" =~ ^[0-9]+$ ]] || die_policy "GID do docker.sock inválido"
-
-  if [ "$(id -u)" -eq 0 ]; then
-    install -d -m 0770 -o root -g "$docker_gid" "$PRODUCTION_LOCK_ROOT"
-    [ -e "$PRODUCTION_LOCK_FILE" ] || : > "$PRODUCTION_LOCK_FILE"
-    chown root:"$docker_gid" "$PRODUCTION_LOCK_FILE"
-    chmod 0660 "$PRODUCTION_LOCK_FILE"
-  else
-    command -v sudo >/dev/null 2>&1 || die_policy "sudo é necessário para provisionar $PRODUCTION_LOCK_ROOT"
-    sudo -n install -d -m 0770 -o root -g "$docker_gid" "$PRODUCTION_LOCK_ROOT" \
-      || die_policy "não foi possível provisionar o mutex host-level"
-    if ! sudo -n test -e "$PRODUCTION_LOCK_FILE"; then
-      sudo -n touch "$PRODUCTION_LOCK_FILE" || die_policy "não foi possível criar o mutex host-level"
-    fi
-    sudo -n chown root:"$docker_gid" "$PRODUCTION_LOCK_FILE" \
-      || die_policy "não foi possível ajustar owner/group do mutex"
-    sudo -n chmod 0660 "$PRODUCTION_LOCK_FILE" \
-      || die_policy "não foi possível ajustar permissão do mutex"
-  fi
-else
-  [ ! -L "$DEPLOY_LOCK_ROOT" ] || die_policy "EJC_DEPLOY_LOCK_ROOT não pode ser symlink"
-  [ ! -L "$DEPLOY_LOCK_FILE" ] || die_policy "EJC_DEPLOY_LOCK_FILE não pode ser symlink"
-  case "$DEPLOY_LOCK_ROOT_CANON" in
-    /|"$APP_DIR_CANON"|"$APP_DIR_CANON"/*|/opt/ejc|/opt/ejc/*)
-      die_policy "raiz do mutex deve ficar fora de APP_DIR e /opt/ejc: $DEPLOY_LOCK_ROOT_CANON" ;;
-  esac
-  [[ "$DEPLOY_LOCK_FILE_CANON" == "$DEPLOY_LOCK_ROOT_CANON/"* ]] \
-    || die_policy "arquivo de mutex deve ser descendente da raiz dedicada"
-  mkdir -p "$DEPLOY_LOCK_ROOT_CANON"
-  chmod 700 "$DEPLOY_LOCK_ROOT_CANON" || die_policy "não foi possível restringir raiz do mutex"
-  umask 077
-  [ -e "$DEPLOY_LOCK_FILE_CANON" ] || : > "$DEPLOY_LOCK_FILE_CANON"
-  chmod 600 "$DEPLOY_LOCK_FILE_CANON" || die_policy "não foi possível restringir mutex"
-fi
-
-[ ! -L "$DEPLOY_LOCK_FILE_CANON" ] || die_policy "arquivo de mutex não pode ser symlink"
-exec 9>>"$DEPLOY_LOCK_FILE_CANON"
-if ! flock -n 9; then
-  log "Outro deploy EJC já está em execução; nenhuma mutação foi iniciada."
-  exit 75
-fi
+DEPLOY_LOCK_ROOT_CANON="$EJC_DEPLOY_LOCK_ROOT_RESOLVED"
 
 cd "$APP_DIR"
 
@@ -200,6 +151,7 @@ if [ "$REQUIRE_PREDEPLOY_BACKUP" = "0" ]; then
 fi
 [ -f .env ] || { echo "Arquivo .env ausente em ${APP_DIR}" >&2; exit 1; }
 
+# Identidade e composição são preflight read-only.
 GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
 [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] \
   || die_policy "TARGET_SHA/HEAD deve ser SHA-1 completo de 40 caracteres hexadecimais; release sem identidade verificável foi bloqueada"
@@ -207,6 +159,7 @@ export GIT_SHA
 log "Versão a publicar: ${GIT_SHA}"
 docker compose config --quiet
 
+# Continuidade é aprovada ANTES da primeira escrita em .env/imagens/runtime.
 log "Verificando pré-requisitos de backup"
 BACKUP_SAIDA=""
 if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
@@ -231,6 +184,7 @@ else
   log "AVISO: backup pré-deploy não executou; contingência permissiva explícita seguirá sem prova nova."
 fi
 
+# Um único snapshot protegido serve ao deploy e ao migrador de valores obsoletos.
 umask 077
 cp -- .env "$ENV_ROLLBACK_FILE"
 chmod 600 "$ENV_ROLLBACK_FILE"
