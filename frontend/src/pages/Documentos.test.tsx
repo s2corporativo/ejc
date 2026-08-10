@@ -1,7 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import Documentos from "./Documentos";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({
   role: "estagiario",
@@ -48,6 +52,8 @@ vi.mock("../components/Toast", () => ({
     info: vi.fn(),
   },
 }));
+
+import Documentos from "./Documentos";
 
 const DOCUMENTO = {
   id: "doc-1",
@@ -104,9 +110,7 @@ beforeEach(() => {
   prepararApi();
 });
 
-afterEach(() => {
-  cleanup();
-});
+afterEach(cleanup);
 
 describe("Documentos — vínculo com caso", () => {
   it("expõe a ação para papel jurídico autorizado", async () => {
