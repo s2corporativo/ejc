@@ -1,8 +1,8 @@
-"""Google Drive adapter: path direto, segurança e compensação.
+"""Google Drive adapter: config, path direto, segurança e compensação.
 
 Os testes não acessam Google/rclone real. O contrato externo é simulado na
-fronteira `_run`, provando quais comandos seriam executados e impedindo que uma
-regressão volte a varrer a árvore inteira para documentos novos.
+fronteira `_run`/`subprocess.run`, provando quais comandos seriam executados e
+impedindo regressão para varredura recursiva em documentos novos.
 """
 from __future__ import annotations
 
@@ -21,6 +21,61 @@ def _ok(*, stdout: str = ""):
 
 def _erro(code: int = 1):
     return SimpleNamespace(returncode=code, stdout="", stderr="detalhe-sensivel")
+
+
+def _drive_habilitado(monkeypatch):
+    monkeypatch.setattr(gd, "_drive_available", lambda: True)
+
+
+def test_config_padrao_alinha_com_volume_montado_no_compose(monkeypatch):
+    monkeypatch.delenv("RCLONE_CONFIG", raising=False)
+    assert gd._rclone_conf_path() == "/root/.config/rclone/rclone.conf"
+
+
+def test_rclone_config_env_sobrescreve_padrao(monkeypatch):
+    monkeypatch.setenv("RCLONE_CONFIG", "/run/ejc/rclone/custom.conf")
+    assert gd._rclone_conf_path() == "/run/ejc/rclone/custom.conf"
+
+
+def test_disponibilidade_e_avaliada_em_runtime(monkeypatch):
+    monkeypatch.setenv("RCLONE_CONFIG", "/run/ejc/rclone/rclone.conf")
+    monkeypatch.setattr(gd.shutil, "which", lambda nome: "/usr/bin/rclone" if nome == "rclone" else None)
+    monkeypatch.setattr(gd.os.path, "isfile", lambda path: path == "/run/ejc/rclone/rclone.conf")
+    monkeypatch.setattr(gd.os, "access", lambda path, mode: path == "/run/ejc/rclone/rclone.conf")
+
+    assert gd._drive_available() is True
+
+    monkeypatch.setattr(gd.os.path, "isfile", lambda path: False)
+    assert gd._drive_available() is False
+
+
+def test_run_passa_mesma_config_explicitamente_ao_rclone(monkeypatch):
+    monkeypatch.setenv("RCLONE_CONFIG", "/run/ejc/rclone/rclone.conf")
+    capturado: list[list[str]] = []
+
+    def fake_subprocess_run(cmd, **kwargs):
+        del kwargs
+        capturado.append(list(cmd))
+        return _ok()
+
+    monkeypatch.setattr(gd.subprocess, "run", fake_subprocess_run)
+
+    gd._run(["rclone", "lsd", "gdrive:EJC-Documentos"])
+
+    assert capturado == [
+        [
+            "rclone",
+            "--config",
+            "/run/ejc/rclone/rclone.conf",
+            "lsd",
+            "gdrive:EJC-Documentos",
+        ]
+    ]
+
+
+def test_run_rejeita_comando_que_nao_seja_rclone():
+    with pytest.raises(ValueError, match="somente comandos rclone"):
+        gd._run(["bash", "-lc", "echo proibido"])
 
 
 def test_case_folder_token_exige_uuid_e_nao_aceita_segmento_arbitrario():
@@ -44,7 +99,7 @@ def test_remote_path_rejeita_traversal_absoluto_e_remote_injetado():
 
 
 def test_upload_usa_copyto_e_stat_exato_sem_varredura_recursiva(monkeypatch):
-    monkeypatch.setattr(gd, "DRIVE_AVAILABLE", True)
+    _drive_habilitado(monkeypatch)
     comandos: list[list[str]] = []
 
     def fake_run(cmd, timeout=gd.RCLONE_TIMEOUT):
@@ -74,8 +129,32 @@ def test_upload_usa_copyto_e_stat_exato_sem_varredura_recursiva(monkeypatch):
     assert all("-R" not in cmd for cmd in comandos)
 
 
+def test_upload_compensa_objeto_quando_copy_falha(monkeypatch):
+    _drive_habilitado(monkeypatch)
+    comandos: list[list[str]] = []
+
+    def fake_run(cmd, timeout=gd.RCLONE_TIMEOUT):
+        del timeout
+        comandos.append(list(cmd))
+        if cmd[1] == "copyto":
+            return _erro(6)
+        return _ok()
+
+    monkeypatch.setattr(gd, "_run", fake_run)
+
+    with pytest.raises(RuntimeError, match="upload falhou"):
+        gd.upload_file(
+            b"conteudo",
+            f"{uuid4()}.pdf",
+            "application/pdf",
+            gd.case_folder_token(str(uuid4())),
+        )
+
+    assert any(cmd[1] == "deletefile" for cmd in comandos)
+
+
 def test_upload_compensa_objeto_quando_pos_check_falha(monkeypatch):
-    monkeypatch.setattr(gd, "DRIVE_AVAILABLE", True)
+    _drive_habilitado(monkeypatch)
     comandos: list[list[str]] = []
 
     def fake_run(cmd, timeout=gd.RCLONE_TIMEOUT):
@@ -99,7 +178,7 @@ def test_upload_compensa_objeto_quando_pos_check_falha(monkeypatch):
 
 
 def test_download_com_remote_path_nao_executa_lsjson_recursivo(monkeypatch):
-    monkeypatch.setattr(gd, "DRIVE_AVAILABLE", True)
+    _drive_habilitado(monkeypatch)
     comandos: list[list[str]] = []
 
     def fake_run(cmd, timeout=gd.RCLONE_TIMEOUT):
@@ -123,7 +202,7 @@ def test_download_com_remote_path_nao_executa_lsjson_recursivo(monkeypatch):
 
 
 def test_delete_com_remote_path_e_operacao_direta(monkeypatch):
-    monkeypatch.setattr(gd, "DRIVE_AVAILABLE", True)
+    _drive_habilitado(monkeypatch)
     comandos: list[list[str]] = []
     remote_path = f"casos/{uuid4()}/{uuid4()}.pdf"
 
@@ -143,7 +222,7 @@ def test_delete_com_remote_path_e_operacao_direta(monkeypatch):
 
 
 def test_fallback_legado_varre_somente_quando_remote_path_esta_ausente(monkeypatch):
-    monkeypatch.setattr(gd, "DRIVE_AVAILABLE", True)
+    _drive_habilitado(monkeypatch)
     comandos: list[list[str]] = []
     path_legado = "geral/arquivo-legado.pdf"
 
@@ -166,7 +245,7 @@ def test_fallback_legado_varre_somente_quando_remote_path_esta_ausente(monkeypat
 
 
 def test_nonzero_no_download_nao_e_classificado_como_404(monkeypatch):
-    monkeypatch.setattr(gd, "DRIVE_AVAILABLE", True)
+    _drive_habilitado(monkeypatch)
 
     def fake_run(cmd, timeout=gd.RCLONE_TIMEOUT):
         del cmd, timeout
