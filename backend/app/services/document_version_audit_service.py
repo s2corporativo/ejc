@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -26,6 +26,7 @@ class AuditoriaVersionamentoDocumental:
     predecessores_ausentes: int
     predecessores_fora_grupo: int
     predecessores_contexto_divergente: int
+    cadeias_ciclicas: int
     versoes_invalidas: int
 
     @property
@@ -42,6 +43,7 @@ class AuditoriaVersionamentoDocumental:
                 self.predecessores_ausentes,
                 self.predecessores_fora_grupo,
                 self.predecessores_contexto_divergente,
+                self.cadeias_ciclicas,
                 self.versoes_invalidas,
             )
         )
@@ -49,6 +51,48 @@ class AuditoriaVersionamentoDocumental:
 
 def _grupo_canonico(model=Document):
     return func.coalesce(model.versao_grupo_id, model.id)
+
+
+async def _contar_cadeias_ciclicas(db: AsyncSession) -> int:
+    """Conta origens cuja cadeia de predecessor alcança um ciclo.
+
+    O caminho é mantido dentro do PostgreSQL somente durante o SELECT. Nenhum ID
+    é retornado ao caller; o resultado é uma única contagem agregada. A recursão
+    para uma origem termina assim que encontra repetição ou predecessor nulo/
+    ausente, evitando loop infinito mesmo com histórico corrompido.
+    """
+
+    stmt = text(
+        """
+        WITH RECURSIVE cadeia AS (
+            SELECT
+                d.id AS origem_id,
+                d.id AS atual_id,
+                d.versao_anterior_id AS anterior_id,
+                ARRAY[d.id]::varchar[] AS caminho,
+                FALSE AS ciclo
+            FROM documents AS d
+            WHERE d.versao_anterior_id IS NOT NULL
+
+            UNION ALL
+
+            SELECT
+                c.origem_id,
+                p.id AS atual_id,
+                p.versao_anterior_id AS anterior_id,
+                c.caminho || p.id,
+                p.id = ANY(c.caminho) AS ciclo
+            FROM cadeia AS c
+            JOIN documents AS p ON p.id = c.anterior_id
+            WHERE c.anterior_id IS NOT NULL
+              AND NOT c.ciclo
+        )
+        SELECT COUNT(DISTINCT origem_id)
+        FROM cadeia
+        WHERE ciclo
+        """
+    )
+    return int((await db.scalar(stmt)) or 0)
 
 
 async def auditar_versionamento_documental(
@@ -146,6 +190,8 @@ async def auditar_versionamento_documental(
         )
     ) or 0
 
+    cadeias_ciclicas = await _contar_cadeias_ciclicas(db)
+
     versoes_invalidas = await db.scalar(
         select(func.count(Document.id)).where(
             or_(
@@ -164,5 +210,6 @@ async def auditar_versionamento_documental(
         predecessores_ausentes=int(predecessores_ausentes),
         predecessores_fora_grupo=int(predecessores_fora_grupo),
         predecessores_contexto_divergente=int(predecessores_contexto_divergente),
+        cadeias_ciclicas=int(cadeias_ciclicas),
         versoes_invalidas=int(versoes_invalidas),
     )
