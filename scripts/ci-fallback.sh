@@ -31,7 +31,14 @@ case "$(realpath "$ROOT" 2>/dev/null || printf '%s' "$ROOT")" in
 esac
 [ "${APP_ENV:-}" != "production" ] && [ "${EJC_ENV:-}" != "production" ] \
   || die "ambiente de produção ativo"
+[ ! -e /opt/ejc/.deployed_sha ] && [ ! -e /opt/ejc/.env ] \
+  || die "host contém marcadores da instalação produtiva /opt/ejc"
 [ "$(id -u)" -ne 0 ] || die "fallback promovível não roda como root"
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(ejc_backend|ejc_db|ejc_frontend|ejc_redis)$'; then
+    die "containers canônicos do EJC ativos; host não é elegível para CI de PR"
+  fi
+fi
 
 command -v git >/dev/null 2>&1 || die "git ausente"
 command -v jq >/dev/null 2>&1 || die "jq ausente"
