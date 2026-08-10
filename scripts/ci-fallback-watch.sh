@@ -10,6 +10,10 @@ INFRA_RETRY_BASE_SECONDS="${EJC_FALLBACK_INFRA_RETRY_SECONDS:-300}"
 INFRA_RETRY_MAX_SECONDS="${EJC_FALLBACK_INFRA_RETRY_MAX_SECONDS:-1800}"
 GREEN_RECHECK_SECONDS="${EJC_FALLBACK_GREEN_RECHECK_SECONDS:-1800}"
 PR_LIMIT="${EJC_FALLBACK_PR_LIMIT:-500}"
+EVIDENCE_MAX_SHAS="${EJC_FALLBACK_EVIDENCE_MAX_SHAS:-200}"
+EVIDENCE_MAX_AGE_DAYS="${EJC_FALLBACK_EVIDENCE_MAX_AGE_DAYS:-30}"
+EVIDENCE_ATTEMPTS_PER_SHA="${EJC_FALLBACK_EVIDENCE_ATTEMPTS_PER_SHA:-5}"
+MAINTENANCE_INTERVAL_SECONDS="${EJC_FALLBACK_MAINTENANCE_INTERVAL_SECONDS:-86400}"
 ONCE=0
 [ "${1:-}" != "--once" ] || ONCE=1
 
@@ -23,7 +27,8 @@ REPO="${EJC_REPO:-s2corporativo/ejc}"
 CACHE_ROOT="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/ejc-ci-fallback}"
 STATE_ROOT="$CACHE_ROOT/state"
 EVIDENCE_ROOT="${EJC_CI_EVIDENCE_ROOT:-$CACHE_ROOT/evidence}"
-DRAIN_FILE="${EJC_FALLBACK_DRAIN_FILE:-${XDG_CACHE_HOME:-${HOME}/.cache}/ejc-ci-fallback/draining}"
+DRAIN_FILE="${EJC_FALLBACK_DRAIN_FILE:-$CACHE_ROOT/draining}"
+MAINTENANCE_STAMP="$STATE_ROOT/.last-maintenance-epoch"
 mkdir -p "$STATE_ROOT" "$EVIDENCE_ROOT"
 chmod 700 "$CACHE_ROOT" "$STATE_ROOT" "$EVIDENCE_ROOT" 2>/dev/null || true
 
@@ -35,6 +40,33 @@ atomic_text() {
   printf '%s\n' "$value" > "$tmp"
   chmod 600 "$tmp" 2>/dev/null || true
   mv "$tmp" "$file"
+}
+
+maybe_maintain_state() {
+  local now last=0
+  now="$(date +%s)"
+  if [ -s "$MAINTENANCE_STAMP" ]; then
+    last="$(cat "$MAINTENANCE_STAMP" 2>/dev/null || echo 0)"
+    [[ "$last" =~ ^[0-9]+$ ]] || last=0
+  fi
+  [ $((now - last)) -ge "$MAINTENANCE_INTERVAL_SECONDS" ] || return 0
+
+  # ci_evidence.py respeita locks por SHA e nunca segue symlinks.
+  if python3 "$ROOT/scripts/ci_evidence.py" prune \
+      --root "$EVIDENCE_ROOT" \
+      --max-shas "$EVIDENCE_MAX_SHAS" \
+      --max-age-days "$EVIDENCE_MAX_AGE_DAYS" \
+      --attempts-per-sha "$EVIDENCE_ATTEMPTS_PER_SHA" \
+      >"$STATE_ROOT/maintenance-last.json" 2>"$STATE_ROOT/maintenance-last.err"; then
+    # Marcadores de estado não são evidência autoritativa; expirados podem ser
+    # removidos e, no pior caso, causam uma revalidação segura.
+    find "$STATE_ROOT" -maxdepth 1 -type f \
+      \( -name '*.result' -o -name '*.infra-retry.json' -o -name 'pr-*.json' \) \
+      -mtime "+$EVIDENCE_MAX_AGE_DAYS" -delete 2>/dev/null || true
+    atomic_text "$MAINTENANCE_STAMP" "$now"
+  else
+    echo "[fallback-watch] manutenção local falhou; execução de CI continua, sem apagar evidência." >&2
+  fi
 }
 
 local_evidence_green() {
@@ -115,6 +147,7 @@ run_cycle() {
     echo "[fallback-watch] drain ativo; ciclo pulado sem acessar PRs." >&2
     return 0
   fi
+  maybe_maintain_state
   if ! gh auth status >/dev/null 2>&1; then
     echo "[fallback-watch] gh indisponível/não autenticado neste ciclo; nova tentativa depois." >&2
     return 0
@@ -165,7 +198,6 @@ run_cycle() {
       rc=$?
       set -e
       if [ "$rc" -eq 75 ]; then
-        # Outro executor já detém o lock do SHA; não classificar como falha.
         continue
       fi
       write_pr_state "$pr_state" "$pr" "$sha" "$updated_at" "$merge_state" "$now" "green-sync-rc-$rc"
