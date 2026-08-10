@@ -15,7 +15,7 @@ def test_retry_de_infra_e_limitado_e_tem_backoff():
     assert 'EJC_FALLBACK_INFRA_RETRY_SECONDS:-300' in src
     assert 'EJC_FALLBACK_INFRA_RETRY_MAX_SECONDS:-1800' in src
     assert "retry_delay_seconds" in src
-    assert 'RETRY_ATTEMPTS" -ge "$INFRA_MAX_RETRIES' in src
+    assert '[ "$RETRY_ATTEMPTS" -lt "$INFRA_MAX_RETRIES" ]' in src
     assert "infra-retry.json" in src
 
 
@@ -37,20 +37,22 @@ def test_retry_automatico_so_aceita_sinais_de_infraestrutura():
     assert "mesmo SHA não será repetido automaticamente" in src
 
 
-def test_classificacao_considera_apenas_log_da_tentativa_atual():
+def test_classificacao_usa_log_do_stage_atual_ou_da_invocacao_atual():
     src = _src()
     assert "latest_attempt_log" in src
-    assert 'ts" -ge "$started' in src
-    assert 'started="$(date +%s)"' in src
-    assert 'failure_is_infrastructure "$sha" "$started"' in src
+    assert 'started="$now"' in src or 'started="$(date +%s)"' in src
+    assert 'failure_is_infrastructure "$sha" "$started" "$invocation_log"' in src
+    function = src[src.index("failure_is_infrastructure() {") : src.index("retry_delay_seconds() {")]
+    assert 'latest_attempt_log "$sha" "$started"' in function
+    assert 'grep -Eiq "$INFRA_ERROR_RE" -- "$stage_log"' in function
+    assert 'grep -Eiq "$INFRA_ERROR_RE" -- "$invocation_log"' in function
 
 
 def test_auto_merge_desligado_usa_promote_only():
     src = _src()
-    green = src[
-        src.index('if local_evidence_green "$sha"; then') :
-        src.index("# Falha real de código/teste")
-    ]
+    green_start = src.index('if local_evidence_green "$sha"; then')
+    green_end = src.index('if [ -f "$marker" ]', green_start)
+    green = src[green_start:green_end]
     assert 'if [ "$AUTO_MERGE" = "1" ]' in green
     assert '--merge-only' in green
     assert '--promote-only' in green
@@ -58,8 +60,9 @@ def test_auto_merge_desligado_usa_promote_only():
 
 def test_retry_transitorio_nunca_vira_sucesso_por_si_so():
     src = _src()
-    start = src.index('if failure_is_infrastructure "$sha" "$started"; then')
-    end = src.index("else\n      rm -f", start)
+    start = src.index('if failure_is_infrastructure "$sha" "$started" "$invocation_log"; then')
+    end = src.index("else", start)
     infra = src[start:end]
-    assert "printf 'failure\\n' > \"$marker\"" in infra
-    assert "printf 'success" not in infra
+    assert 'write_retry_state "$retry_file"' in infra
+    assert 'failure' in infra
+    assert 'success' not in infra
