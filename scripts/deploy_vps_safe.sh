@@ -8,7 +8,7 @@ MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
 # Segurança por default: uma invocação local não pode ser menos segura que o
-# workflow cloud. Contingência permissiva exige `REQUIRE_PREDEPLOY_BACKUP=0` explícito.
+# workflow cloud. Contingência permissiva exige opt-out explícito.
 REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-1}"
 DEPLOY_LOCK_ROOT="${EJC_DEPLOY_LOCK_ROOT:-${XDG_RUNTIME_DIR:-${HOME:-/tmp}/.cache}/ejc-deploy}"
 DEPLOY_LOCK_FILE="${EJC_DEPLOY_LOCK_FILE:-$DEPLOY_LOCK_ROOT/deploy.lock}"
@@ -67,6 +67,8 @@ OLD_FRONTEND_REF=""
 OLD_BACKEND_TAG=""
 OLD_WORKER_TAG=""
 OLD_FRONTEND_TAG=""
+OLD_GIT_SHA=""
+IMAGES_MUTATED=0
 DEPLOY_MUTATED=0
 
 cleanup_rollback_tags() {
@@ -85,7 +87,16 @@ _restore_image() {
     docker tag "$image_id" "$target_ref"
   else
     log "ERRO CRÍTICO: imagem ou referência anterior de ${label} indisponível."
+    return 1
   fi
+}
+
+restore_previous_image_refs() {
+  local rc=0
+  _restore_image "$OLD_BACKEND_TAG" "$OLD_BACKEND_IMAGE" "$OLD_BACKEND_REF" "backend" || rc=1
+  _restore_image "$OLD_WORKER_TAG" "$OLD_WORKER_IMAGE" "$OLD_WORKER_REF" "worker" || rc=1
+  _restore_image "$OLD_FRONTEND_TAG" "$OLD_FRONTEND_IMAGE" "$OLD_FRONTEND_REF" "frontend" || rc=1
+  return "$rc"
 }
 
 rollback() {
@@ -94,17 +105,23 @@ rollback() {
   set +e
 
   if [ "$DEPLOY_MUTATED" != "1" ]; then
-    log "Falha antes de qualquer mutação do runtime (rc=${original_rc}); aplicação anterior permanece intacta."
+    if [ "$IMAGES_MUTATED" = "1" ]; then
+      if restore_previous_image_refs; then
+        log "Falha antes da troca do runtime (rc=${original_rc}); referências de imagem anteriores restauradas sem reiniciar containers."
+      else
+        log "ERRO CRÍTICO: falha antes da troca do runtime e restauração das referências de imagem ficou incompleta."
+      fi
+    else
+      log "Falha antes de qualquer mutação de imagem/runtime (rc=${original_rc}); aplicação anterior permanece intacta."
+    fi
     cleanup_rollback_tags
     exit "$original_rc"
   fi
 
-  log "Deploy falhou (rc=${original_rc}). Restaurando backend, worker e frontend."
+  log "Deploy falhou (rc=${original_rc}). Restaurando imagens e runtime anteriores."
   export GIT_SHA="${OLD_GIT_SHA:-desconhecido}"
   log "Rollback publica novamente o commit anterior: ${GIT_SHA}"
-  _restore_image "$OLD_BACKEND_TAG" "$OLD_BACKEND_IMAGE" "$OLD_BACKEND_REF" "backend"
-  _restore_image "$OLD_WORKER_TAG" "$OLD_WORKER_IMAGE" "$OLD_WORKER_REF" "worker"
-  _restore_image "$OLD_FRONTEND_TAG" "$OLD_FRONTEND_IMAGE" "$OLD_FRONTEND_REF" "frontend"
+  restore_previous_image_refs || log "ERRO CRÍTICO: uma ou mais referências anteriores não puderam ser restauradas."
 
   RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate \
     backend worker frontend
@@ -133,6 +150,15 @@ if [ "$REQUIRE_PREDEPLOY_BACKUP" = "0" ]; then
 fi
 [ -f .env ] || { echo "Arquivo .env ausente em ${APP_DIR}" >&2; exit 1; }
 
+# Identidade é pré-condição da release e precisa ser conhecida antes de qualquer
+# migração de .env, build, tag ou mutação de runtime.
+GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
+[[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] \
+  || die_policy "TARGET_SHA/HEAD deve ser SHA-1 completo de 40 caracteres hexadecimais; release sem identidade verificável foi bloqueada"
+export GIT_SHA
+log "Versão a publicar: ${GIT_SHA}"
+
+# Migra somente valores OBSOLETOS do .env preservado. Idempotente e sem imprimir segredos.
 if [ -f scripts/migrar_env_obsoletos.sh ]; then
   bash scripts/migrar_env_obsoletos.sh .env | while IFS= read -r linha; do
     log "$linha"
@@ -140,16 +166,6 @@ if [ -f scripts/migrar_env_obsoletos.sh ]; then
 fi
 # Valida sintaxe/interpolação sem persistir config expandida nem segredos.
 docker compose config --quiet
-
-# Identidade do código é requisito de release. Sem Git/TARGET_SHA não existe
-# prova de que o container publicado corresponde ao artefato validado.
-GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
-[ -n "$GIT_SHA" ] || {
-  log "ERRO CRÍTICO: TARGET_SHA ausente e .git indisponível; deploy bloqueado antes de build/mutação."
-  exit 2
-}
-export GIT_SHA
-log "Versão a publicar: ${GIT_SHA}"
 
 OLD_BACKEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_backend 2>/dev/null || true)"
 OLD_WORKER_IMAGE="$(docker inspect -f '{{.Image}}' ejc_worker 2>/dev/null || true)"
@@ -194,24 +210,26 @@ else
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
   if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
     log "ERRO CRÍTICO: backup pré-deploy obrigatório falhou."
-    log "Deploy bloqueado antes de qualquer mutação do runtime."
+    log "Deploy bloqueado antes de build/troca do runtime."
     false
   fi
   log "AVISO: backup pré-deploy não executou (credenciais ou config incompleta)."
   log "AVISO: modo de contingência permissivo; deploy prossegue sem prova nova de backup."
 fi
 
-DEPLOY_MUTATED=1
-
 OLD_GIT_SHA="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \
   ejc_backend 2>/dev/null | sed -n 's/^GIT_SHA=//p' | head -1)"
 log "Versão atualmente publicada: ${OLD_GIT_SHA:-indisponível}"
 
+# A partir daqui builds podem mover tags locais. Se falharem antes da troca de
+# containers, restauramos apenas as referências de imagem — sem downtime.
+IMAGES_MUTATED=1
 log "Build frontend"
 docker compose build frontend
 log "Build backend e worker"
 docker compose build backend worker
 
+# Expand/contract: a aplicação antiga continua atendendo durante a migration.
 if [ "$RUN_MIGRATIONS" = "1" ]; then
   log "Aplicando migration expand-only antes da troca da API"
   docker compose run --rm --no-deps -T backend alembic upgrade head
@@ -219,6 +237,9 @@ else
   log "Nenhuma migration pendente; schema preservado."
 fi
 
+# Primeiro ponto em que o runtime pode mudar. A partir daqui uma falha exige
+# recriação dos containers anteriores, não apenas restauração de tags.
+DEPLOY_MUTATED=1
 log "Subindo backend novo sem migration automática no entrypoint"
 RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend
 backend_ok=0
