@@ -30,7 +30,7 @@ def test_validacoes_de_pr_backup_e_rag_usam_runner_hospedado():
     )
     for bloco in (backup, rag):
         assert "runs-on: ubuntu-latest" in bloco
-        assert "self-hosted" not in bloco
+        assert "ejc-vps" not in bloco
 
 
 def test_codmods_de_branch_nao_rodam_no_host_de_producao():
@@ -40,7 +40,31 @@ def test_codmods_de_branch_nao_rodam_no_host_de_producao():
     ):
         texto = _read(nome)
         assert "runs-on: ubuntu-latest" in texto
-        assert "self-hosted" not in texto
+        assert "ejc-vps" not in texto
+
+
+def test_gates_bloqueantes_usam_runner_ci_isolado_e_nunca_ejc_vps():
+    workflows = (
+        "ci.yml",
+        "governanca.yml",
+        "ejc-release-gate.yml",
+        "architecture-inventory.yml",
+        "continuity-ui-gates.yml",
+    )
+    for nome in workflows:
+        texto = _read(nome)
+        assert "ejc-ci" in texto, nome
+        assert "ejc-ci-isolado" in texto, nome
+        assert "runs-on: ubuntu-latest" not in texto, nome
+        assert "runs-on: [self-hosted, ejc-vps]" not in texto, nome
+
+
+def test_fallback_recusa_runner_produtivo_e_forks():
+    texto = _read("ci-fallback-selfhosted.yml")
+    assert "ejc-ci-isolado" in texto
+    assert "ejc-vps" not in texto
+    assert "head_repository.full_name" in texto
+    assert "persist-credentials: false" in texto
 
 
 def test_jobs_manuais_que_alcancam_producao_exigem_main():
