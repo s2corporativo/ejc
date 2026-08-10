@@ -97,6 +97,24 @@ async def test_promocao_move_staging_para_destino_final_no_mesmo_diretorio(tmp_p
     assert not staging.caminho.exists()
 
 
+async def test_promocao_nao_sobrescreve_destino_existente(tmp_path):
+    staging = await receber_em_staging(
+        _StreamRastreado(b"novo"),
+        diretorio=tmp_path,
+        suffix=".txt",
+        max_bytes=1024,
+    )
+    final = tmp_path / "documento-final.txt"
+    final.write_bytes(b"original")
+
+    with pytest.raises(FileExistsError, match="já existe"):
+        promover_staging(staging, final)
+
+    assert final.read_bytes() == b"original"
+    assert staging.caminho.read_bytes() == b"novo"
+    descartar_staging(staging)
+
+
 async def test_promocao_entre_diretorios_e_rejeitada_sem_mover_staging(tmp_path):
     origem = tmp_path / "origem"
     destino = tmp_path / "destino"
@@ -115,7 +133,10 @@ async def test_promocao_entre_diretorios_e_rejeitada_sem_mover_staging(tmp_path)
     descartar_staging(staging)
 
 
-@pytest.mark.parametrize("suffix", ["../.pdf", "/.pdf", ".pdf/fora", "\\fora.pdf"])
+@pytest.mark.parametrize(
+    "suffix",
+    ["../.pdf", "/.pdf", ".pdf/fora", "\\fora.pdf"],
+)
 async def test_suffix_inseguro_e_rejeitado_antes_de_criar_staging(tmp_path, suffix):
     with pytest.raises(ValueError, match="suffix inválido"):
         await receber_em_staging(
