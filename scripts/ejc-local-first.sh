@@ -12,7 +12,8 @@ cd "$ROOT"
 CMD="${1:-status}"
 shift || true
 
-PRODUCTION_DIR="${EJC_PRODUCTION_DIR:-/opt/ejc}"
+DEFAULT_PRODUCTION_DIR="/opt/ejc"
+PRODUCTION_DIR="${EJC_PRODUCTION_DIR:-$DEFAULT_PRODUCTION_DIR}"
 RECOVERY_ROOT="${EJC_RECOVERY_ROOT:-${HOME:-/tmp}/.local/state/ejc-recovery}"
 REMOTE="${EJC_GIT_REMOTE:-origin}"
 REMOTE_TIMEOUT="${EJC_GIT_TIMEOUT:-8}"
@@ -34,9 +35,10 @@ die() { printf '[ejc-local-first] ERRO: %s\n' "$*" >&2; exit 2; }
 
 real_root="$(realpath "$ROOT" 2>/dev/null || printf '%s' "$ROOT")"
 real_prod="$(realpath "$PRODUCTION_DIR" 2>/dev/null || printf '%s' "$PRODUCTION_DIR")"
+real_default_prod="$(realpath "$DEFAULT_PRODUCTION_DIR" 2>/dev/null || printf '%s' "$DEFAULT_PRODUCTION_DIR")"
 assert_not_production() {
-  if [ "$real_root" = "$real_prod" ] && [ "${EJC_ALLOW_PRODUCTION_WORKTREE:-0}" != "1" ]; then
-    die "checkout atual é o diretório de produção ($real_prod). Desenvolvimento local-first é bloqueado aqui."
+  if [ "$real_root" = "$real_default_prod" ] || [ "$real_root" = "$real_prod" ]; then
+    die "checkout atual coincide com diretório de produção protegido ($real_root). O fluxo local-first não opera em produção."
   fi
 }
 
@@ -63,23 +65,37 @@ sensitive_path() {
   printf '%s\n' "$p" | grep -Eiq '(^|/)(\.env($|\.)|[^/]*\.(pem|key|p12|pfx|jks|keystore)$|id_rsa($|\.)|id_ed25519($|\.)|[^/]*(credential|credentials|secret|secrets)[^/]*)'
 }
 
+contains_sensitive_text() {
+  local text="$1"
+  if printf '%s\n' "$text" | grep -Ei '(BEGIN (RSA|OPENSSH|EC|PRIVATE) KEY|password[[:space:]]*=|secret[[:space:]]*=|token[[:space:]]*=|api[_-]?key[[:space:]]*=)' >/dev/null; then
+    return 0
+  fi
+  if printf '%s\n' "$text" | grep -Ei '([[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}|[0-9]{3}\.[0-9]{3}\.[0-9]{3}-[0-9]{2}|[0-9]{2}\.[0-9]{3}\.[0-9]{3}/[0-9]{4}-[0-9]{2}|\(?[0-9]{2}\)?[[:space:]-]?[0-9]{4,5}-[0-9]{4})' >/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
 register_task() {
   assert_not_production
-  local title="${1:-}" scope="${2:-}" ts branch sha slug file
+  local title="${1:-}" scope="${2:-}" ts branch sha short_sha slug task_id file
   [ -n "$title" ] || die "informe um título técnico para o registro local da tarefa."
   [ -n "$scope" ] || scope="Escopo registrado localmente durante indisponibilidade do GitHub; detalhar no relatório/Issue ao sincronizar."
-  if printf '%s\n%s\n' "$title" "$scope" | grep -Eiq '(BEGIN (RSA|OPENSSH|PRIVATE) KEY|password[[:space:]]*=|secret[[:space:]]*=|token[[:space:]]*=|api[_-]?key[[:space:]]*=)'; then
-    die "o registro local parece conter segredo. Registre somente escopo técnico, nunca credenciais."
+  if contains_sensitive_text "$title" || contains_sensitive_text "$scope"; then
+    die "o registro local parece conter segredo ou PII. Registre somente escopo técnico anonimizado."
   fi
   ts="$(date -u +'%Y%m%dT%H%M%SZ')"
   branch="$(current_branch)"
   sha="$(git rev-parse HEAD)"
+  short_sha="$(git rev-parse --short=12 HEAD)"
   slug="$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//;s/-$//' | cut -c1-48)"
   [ -n "$slug" ] || slug="tarefa"
-  file="$PENDING_TASK_DIR/${ts}-${slug}.md"
+  task_id="${ts}-${short_sha}-${slug}-${BASHPID}-${RANDOM}"
+  file="$PENDING_TASK_DIR/${task_id}.md"
   cat > "$file" <<EOF
 # $title
 
+- local_task_id: $task_id
 - criado_em_utc: $ts
 - branch: $branch
 - sha_base: $sha
@@ -98,11 +114,32 @@ $scope
 EOF
   chmod 600 "$file" 2>/dev/null || true
   printf '%s\n' "$file" > "$STATE_DIR/last-task"
+  chmod 600 "$STATE_DIR/last-task" 2>/dev/null || true
   log "tarefa registrada localmente: $file"
 }
 
+find_existing_issue() {
+  local marker="$1" result
+  [ -n "$marker" ] || return 0
+  if command -v timeout >/dev/null 2>&1; then
+    result="$(timeout "$REMOTE_TIMEOUT" gh issue list --state all --search "$marker in:body" --limit 20 --json url,body --jq "[.[] | select(.body | contains(\"$marker\")) | .url][0] // \"\"" 2>/dev/null || true)"
+  else
+    result="$(gh issue list --state all --search "$marker in:body" --limit 20 --json url,body --jq "[.[] | select(.body | contains(\"$marker\")) | .url][0] // \"\"" 2>/dev/null || true)"
+  fi
+  printf '%s' "$result"
+}
+
+mark_task_synced() {
+  local task="$1" url="$2" destination
+  destination="$SYNCED_TASK_DIR/$(basename "$task")"
+  mv "$task" "$destination"
+  printf '%s\n' "$url" > "$destination.issue-url"
+  chmod 600 "$destination" "$destination.issue-url" 2>/dev/null || true
+  log "registro local sincronizado como Issue: $url"
+}
+
 sync_pending_tasks() {
-  local task title output destination
+  local task title marker output existing
   command -v gh >/dev/null 2>&1 || { warn "gh ausente; registros locais de tarefa permanecem pendentes para sincronização posterior."; return 0; }
   if command -v timeout >/dev/null 2>&1; then
     timeout "$REMOTE_TIMEOUT" gh auth status >/dev/null 2>&1 || { warn "gh sem autenticação utilizável; registros de tarefa permanecem locais."; return 0; }
@@ -112,20 +149,33 @@ sync_pending_tasks() {
 
   while IFS= read -r -d '' task; do
     title="$(sed -n '1s/^# //p' "$task")"
+    marker="$(sed -n 's/^- local_task_id: //p' "$task")"
     [ -n "$title" ] || { warn "registro local sem título válido: $task"; continue; }
+    [ -n "$marker" ] || { warn "registro local sem local_task_id: $task"; continue; }
+
+    existing="$(find_existing_issue "$marker")"
+    if printf '%s' "$existing" | grep -E '^https?://' >/dev/null; then
+      mark_task_synced "$task" "$existing"
+      continue
+    fi
+
     if command -v timeout >/dev/null 2>&1; then
       output="$(timeout "$REMOTE_TIMEOUT" gh issue create --title "$title" --body-file "$task" 2>/dev/null || true)"
     else
       output="$(gh issue create --title "$title" --body-file "$task" 2>/dev/null || true)"
     fi
-    if printf '%s' "$output" | grep -Eq '^https?://'; then
-      destination="$SYNCED_TASK_DIR/$(basename "$task")"
-      mv "$task" "$destination"
-      printf '%s\n' "$output" > "$destination.issue-url"
-      chmod 600 "$destination" "$destination.issue-url" 2>/dev/null || true
-      log "registro local sincronizado como Issue: $output"
+    if printf '%s' "$output" | grep -E '^https?://' >/dev/null; then
+      mark_task_synced "$task" "$output"
+      continue
+    fi
+
+    # Se o POST tiver sido aceito mas a resposta tiver se perdido, a busca pelo
+    # marcador evita criar outra Issue na próxima sincronização.
+    existing="$(find_existing_issue "$marker")"
+    if printf '%s' "$existing" | grep -E '^https?://' >/dev/null; then
+      mark_task_synced "$task" "$existing"
     else
-      warn "não foi possível criar Issue para $(basename "$task"); registro permanece pendente."
+      warn "não foi possível confirmar Issue para $(basename "$task"); registro permanece pendente."
     fi
   done < <(find "$PENDING_TASK_DIR" -maxdepth 1 -type f -name '*.md' -print0 | sort -z)
 }
@@ -155,17 +205,17 @@ checkpoint() {
 
   while IFS= read -r -d '' file; do
     if sensitive_path "$file"; then
-      printf '%s\n' "$file" >> "$skipped"
+      printf 'sensitive-path sha256=%s\n' "$(printf '%s' "$file" | sha256sum | cut -d' ' -f1)" >> "$skipped"
       continue
     fi
     if [ -L "$file" ]; then
-      printf '%s\n' "$file (symlink)" >> "$skipped"
+      printf 'symlink sha256=%s\n' "$(printf '%s' "$file" | sha256sum | cut -d' ' -f1)" >> "$skipped"
       continue
     fi
     if [ -f "$file" ]; then
       size="$(wc -c < "$file" 2>/dev/null || printf '0')"
       if [ "$size" -gt "$MAX_UNTRACKED_BYTES" ]; then
-        printf '%s\n' "$file (>${MAX_UNTRACKED_BYTES} bytes)" >> "$skipped"
+        printf 'oversized sha256=%s bytes=%s\n' "$(printf '%s' "$file" | sha256sum | cut -d' ' -f1)" "$size" >> "$skipped"
         continue
       fi
       printf '%s\0' "$file" >> "$safe_list"
@@ -187,10 +237,11 @@ checkpoint() {
   )
   chmod 600 "$dir"/* 2>/dev/null || true
   printf '%s\n' "$dir" > "$STATE_DIR/last-checkpoint"
+  chmod 600 "$STATE_DIR/last-checkpoint" 2>/dev/null || true
 
   log "checkpoint local criado: $dir"
   if [ -s "$skipped" ]; then
-    warn "arquivos não rastreados potencialmente sensíveis/grandes foram deliberadamente excluídos do snapshot; os nomes estão em skipped-untracked.txt."
+    warn "arquivos não rastreados sensíveis/grandes/symlinks foram excluídos; skipped-untracked.txt guarda somente motivo e hash do nome."
   fi
 }
 
