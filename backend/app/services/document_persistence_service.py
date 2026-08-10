@@ -131,6 +131,21 @@ def _validar_dados(
     )
 
 
+def _validar_conteudo(
+    conteudo: ConteudoDocumentoPreparado,
+) -> ConteudoDocumentoPreparado:
+    if conteudo.ocr_text is not None and not isinstance(conteudo.ocr_text, str):
+        raise PersistenciaDocumentoInvalidaError("ocr_text inválido")
+    if not isinstance(conteudo.ocr_utilizado, bool):
+        raise PersistenciaDocumentoInvalidaError("ocr_utilizado inválido")
+    if (
+        conteudo.metadados_extraidos is not None
+        and not isinstance(conteudo.metadados_extraidos, dict)
+    ):
+        raise PersistenciaDocumentoInvalidaError("metadados_extraidos inválidos")
+    return conteudo
+
+
 async def _rollback_sem_mascarar(db: AsyncSession) -> None:
     try:
         await db.rollback()
@@ -149,47 +164,50 @@ async def persistir_documento_local(
 ) -> Document:
     """Persiste um documento local e confirma a UoW somente após commit.
 
-    A função entra no context manager da ingestão. É seguro o caller também
-    manter um ``async with ingestao`` externo durante OCR: a saída aninhada vê
-    estado confirmado e não remove o arquivo.
+    A função assume a responsabilidade pelo staging desde a entrada no contexto:
+    falha de metadado, versionamento, audit ou commit compensa o arquivo. É seguro
+    o caller também manter um ``async with ingestao`` externo durante OCR; a saída
+    aninhada vê estado confirmado/compensado e é idempotente.
     """
 
-    (
-        titulo,
-        tipo,
-        source,
-        case_id,
-        client_id,
-        uploaded_by,
-        user_role,
-        predecessor,
-    ) = _validar_dados(ingestao, dados)
     conteudo = conteudo or ConteudoDocumentoPreparado()
-
-    documento = Document(
-        id=ingestao.doc_id,
-        case_id=case_id,
-        client_id=client_id,
-        titulo=titulo,
-        tipo=tipo,
-        filename=ingestao.filename,
-        filepath=ingestao.filepath,
-        mimetype=ingestao.mimetype,
-        size_bytes=ingestao.size_bytes,
-        source=source,
-        confidencialidade=dados.confidencialidade,
-        ocr_text=conteudo.ocr_text,
-        ocr_utilizado=bool(conteudo.ocr_utilizado),
-        metadados_extraidos=(
-            dict(conteudo.metadados_extraidos)
-            if conteudo.metadados_extraidos is not None
-            else None
-        ),
-        uploaded_by=uploaded_by,
-    )
 
     async with ingestao:
         try:
+            (
+                titulo,
+                tipo,
+                source,
+                case_id,
+                client_id,
+                uploaded_by,
+                user_role,
+                predecessor,
+            ) = _validar_dados(ingestao, dados)
+            conteudo = _validar_conteudo(conteudo)
+
+            documento = Document(
+                id=ingestao.doc_id,
+                case_id=case_id,
+                client_id=client_id,
+                titulo=titulo,
+                tipo=tipo,
+                filename=ingestao.filename,
+                filepath=ingestao.filepath,
+                mimetype=ingestao.mimetype,
+                size_bytes=ingestao.size_bytes,
+                source=source,
+                confidencialidade=dados.confidencialidade,
+                ocr_text=conteudo.ocr_text,
+                ocr_utilizado=conteudo.ocr_utilizado,
+                metadados_extraidos=(
+                    dict(conteudo.metadados_extraidos)
+                    if conteudo.metadados_extraidos is not None
+                    else None
+                ),
+                uploaded_by=uploaded_by,
+            )
+
             # Adicionar antes de preparar versão é intencional: C1 usa
             # ``db.no_autoflush`` e prova que nenhum INSERT prematuro ocorre.
             db.add(documento)
