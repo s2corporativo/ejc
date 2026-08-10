@@ -27,16 +27,14 @@ export const AVISO_FERRAMENTA_NAO_HOMOLOGADA =
   "Ferramenta não homologada — em revisão jurídica; resultado não deve ser usado profissionalmente.";
 
 /**
- * Traduz o `detail` array do Pydantic (422 de validação) em orientação útil:
- * "Verifique o campo X: <msg>". Sem `loc` legível, devolve o texto genérico
- * de revisão dos dados. Nunca devolve objeto.
+ * Traduz o `detail` array do Pydantic (422 de validação) em orientação útil.
+ * Nunca devolve objeto nem concatena payload arbitrário do servidor.
  */
 function mensagemValidacao(detail: unknown[]): string {
   const generica = "Verifique os dados informados e tente novamente.";
   const primeiro = detail[0];
   if (!primeiro || typeof primeiro !== "object") return generica;
   const { loc, msg } = primeiro as { loc?: unknown; msg?: unknown };
-  // `loc` costuma ser ["query", "data_marco"] — o último item é o campo.
   const campo = Array.isArray(loc)
     ? [...loc].reverse().find((p) => typeof p === "string" && p !== "query")
     : undefined;
@@ -48,25 +46,62 @@ function mensagemValidacao(detail: unknown[]): string {
   return texto ? `Verifique os dados informados: ${texto}` : generica;
 }
 
+function detailDaResposta(err: unknown): {
+  status?: number;
+  detail?: unknown;
+} {
+  const response = (
+    err as
+      | { response?: { status?: number; data?: { detail?: unknown } } }
+      | undefined
+  )?.response;
+  return { status: response?.status, detail: response?.data?.detail };
+}
+
+function mensagemObjeto(detail: unknown): string | null {
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return null;
+  const mensagem = (detail as { mensagem?: unknown }).mensagem;
+  return typeof mensagem === "string" && mensagem.trim()
+    ? mensagem.trim()
+    : null;
+}
+
+function mensagemSegura(texto: string): string | null {
+  const value = texto.trim();
+  if (!value || value.length > 400 || MARCADORES_TECNICOS.test(value)) return null;
+  return value;
+}
+
+/**
+ * Normalizador genérico para erros HTTP exibidos em superfícies jurídicas.
+ * Aceita somente formas conhecidas: `detail` string, `detail.mensagem` e array
+ * de validação Pydantic. Conteúdo técnico ou objeto arbitrário cai no fallback.
+ */
+export function mensagemErroHttp(err: unknown, fallback: string): string {
+  const { status, detail } = detailDaResposta(err);
+  if (status === 422 && Array.isArray(detail)) return mensagemValidacao(detail);
+  if (typeof detail === "string") return mensagemSegura(detail) ?? fallback;
+  const mensagem = mensagemObjeto(detail);
+  return mensagem ? (mensagemSegura(mensagem) ?? fallback) : fallback;
+}
+
 /**
  * Extrai mensagem amigável de erro das calculadoras de ramo.
  * Trata o bloqueio 503 `detail.codigo === "ferramenta_nao_homologada"` com
- * mensagem controlada (nunca erro genérico), traduz o array de validação do
- * Pydantic e evita renderizar `detail` objeto como filho React (crash).
+ * mensagem controlada e delega as demais formas ao normalizador HTTP comum.
  */
 export function mensagemErroFerramenta(
   err: unknown,
   fallback: string = "Falha no cálculo",
 ): string {
-  const resp = (
+  const response = (
     err as
       | { response?: { status?: number; data?: { detail?: unknown } } }
       | undefined
   )?.response;
-  const detail = resp?.data?.detail as
-    { codigo?: unknown; mensagem?: unknown } | unknown[] | string | undefined;
+  const detail = response?.data?.detail;
   if (
-    resp?.status === 503 &&
+    response?.status === 503 &&
     detail &&
     typeof detail === "object" &&
     !Array.isArray(detail) &&
@@ -74,19 +109,7 @@ export function mensagemErroFerramenta(
   ) {
     return MENSAGEM_FERRAMENTA_NAO_HOMOLOGADA;
   }
-  if (typeof detail === "string" && detail.trim()) return detail;
-  // Validação do Pydantic: campo obrigatório ausente/valor inválido.
-  if (Array.isArray(detail) && detail.length > 0) {
-    return mensagemValidacao(detail);
-  }
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
+  return mensagemErroHttp(err, fallback);
 }
 
 /**
@@ -98,32 +121,11 @@ export function mensagemErroIA(
   err: unknown,
   fallback: string = MENSAGEM_IA_INDISPONIVEL,
 ): string {
-  const resp = (
-    err as
-      | { response?: { status?: number; data?: { detail?: unknown } } }
-      | undefined
-  )?.response;
-  // 422 (validação Pydantic, detail em array) não é "IA indisponível":
-  // orientar a revisar os dados em vez de mandar procurar o administrador.
-  if (resp?.status === 422 && Array.isArray(resp?.data?.detail)) {
+  const { status, detail } = detailDaResposta(err);
+  if (status === 422 && Array.isArray(detail)) {
     return "Verifique os dados informados e tente novamente.";
   }
-  const resposta = resp?.data;
-  let detail: unknown = resposta?.detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    detail = (detail as { mensagem: string }).mensagem;
-  }
-  if (
-    typeof detail === "string" &&
-    detail.trim() &&
-    detail.length <= 400 &&
-    !MARCADORES_TECNICOS.test(detail)
-  ) {
-    return detail;
-  }
-  return fallback;
+  if (typeof detail === "string") return mensagemSegura(detail) ?? fallback;
+  const mensagem = mensagemObjeto(detail);
+  return mensagem ? (mensagemSegura(mensagem) ?? fallback) : fallback;
 }
