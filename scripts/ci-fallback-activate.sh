@@ -57,6 +57,10 @@ remove_watcher() {
       rm -f "$UNIT" || rc=1
       systemctl --user daemon-reload >/dev/null 2>&1 || rc=1
     fi
+  elif [ -e "$UNIT" ]; then
+    # Uma unit persistida sem systemctl disponível não pode ser considerada
+    # desativada. Preserve-a como evidência e falhe fechado.
+    rc=1
   fi
   remove_cron || rc=1
   return "$rc"
