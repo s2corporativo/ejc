@@ -14,6 +14,16 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "ci_evidence.py"
 AUTH_SCRIPT = ROOT / "scripts" / "github-app-auth.sh"
+REQUIRED_LOGS = {
+    "backend.log",
+    "eval.log",
+    "frontend.log",
+    "p0.log",
+    "governanca.log",
+    "architecture.log",
+    "continuity.log",
+    "ui-extra.log",
+}
 
 
 def _load_module():
@@ -24,19 +34,18 @@ def _load_module():
     return module
 
 
-def test_success_pointer_e_hashes_detectam_adulteracao(tmp_path: Path):
-    ev = _load_module()
-    sha = "a" * 40
-    root = tmp_path / "evidence"
-    attempt = ev.start_attempt(root, sha, "feature/x", 42)
-    log = attempt / "backend.log"
-    log.write_bytes(b"ok\n" * 4096)
+def _write_success_logs(attempt: Path) -> None:
+    for name in REQUIRED_LOGS:
+        (attempt / name).write_text(f"ok-{name}\n", encoding="utf-8")
 
-    summary = ev.finish_attempt(
+
+def _finish_success(ev, root: Path, sha: str, attempt: Path, ref: str = "feature/x") -> Path:
+    _write_success_logs(attempt)
+    return ev.finish_attempt(
         attempt,
         root / sha,
         sha,
-        "feature/x",
+        ref,
         42,
         "success",
         None,
@@ -44,9 +53,18 @@ def test_success_pointer_e_hashes_detectam_adulteracao(tmp_path: Path):
         True,
     )
 
+
+def test_success_pointer_e_hashes_detectam_adulteracao(tmp_path: Path):
+    ev = _load_module()
+    sha = "a" * 40
+    root = tmp_path / "evidence"
+    attempt = ev.start_attempt(root, sha, "feature/x", 42)
+    summary = _finish_success(ev, root, sha, attempt)
+
     assert summary.is_file()
     assert ev.verify_success(root / sha, sha) is True
 
+    log = attempt / "backend.log"
     log.write_bytes(log.read_bytes() + b"tamper\n")
     assert ev.verify_success(root / sha, sha) is False
 
@@ -87,7 +105,7 @@ def test_latest_attempt_e_restrito_a_attempts(tmp_path: Path):
     assert found == log.resolve()
 
     (root / sha / "latest-attempt.json").write_text(
-        json.dumps({"target_sha": sha, "attempt": "../outside"}),
+        json.dumps({"schema": 1, "target_sha": sha, "attempt": "../outside"}),
         encoding="utf-8",
     )
     assert ev.latest_log(root / sha, sha, 0) is None
@@ -112,18 +130,7 @@ def test_prune_remove_sha_antigo_mas_preserva_sha_travado(tmp_path: Path):
 
     for sha in (old_sha, locked_sha, recent_sha):
         attempt = ev.start_attempt(root, sha, "feature/prune", 1)
-        (attempt / "backend.log").write_text("ok\n", encoding="utf-8")
-        ev.finish_attempt(
-            attempt,
-            root / sha,
-            sha,
-            "feature/prune",
-            1,
-            "success",
-            None,
-            0,
-            True,
-        )
+        _finish_success(ev, root, sha, attempt, "feature/prune")
 
     old_time = time.time() - 60 * 86400
     for sha in (old_sha, locked_sha):
@@ -153,18 +160,7 @@ def test_prune_quarentena_nao_remove_namespace_recriado_do_mesmo_sha(
 
     for sha in (old_sha, recent_sha):
         attempt = ev.start_attempt(root, sha, "feature/race", 1)
-        (attempt / "backend.log").write_text("ok\n", encoding="utf-8")
-        ev.finish_attempt(
-            attempt,
-            root / sha,
-            sha,
-            "feature/race",
-            1,
-            "success",
-            None,
-            0,
-            True,
-        )
+        _finish_success(ev, root, sha, attempt, "feature/race")
 
     old_time = time.time() - 60 * 86400
     for path in (root / old_sha).rglob("*"):
@@ -193,28 +189,18 @@ def test_prune_quarentena_nao_remove_namespace_recriado_do_mesmo_sha(
     assert not list(root.glob(f".prune-{old_sha}-*"))
 
 
-def test_prune_preserva_attempt_referenciado_por_latest_success(tmp_path: Path):
+def test_prune_preserva_historico_referenciado_sem_revalidar_verde_stale(tmp_path: Path):
     ev = _load_module()
     sha = "2" * 40
     root = tmp_path / "evidence"
     success = ev.start_attempt(root, sha, "feature/keep", 1)
-    (success / "backend.log").write_text("ok\n", encoding="utf-8")
-    ev.finish_attempt(
-        success,
-        root / sha,
-        sha,
-        "feature/keep",
-        1,
-        "success",
-        None,
-        0,
-        True,
-    )
+    _finish_success(ev, root, sha, success, "feature/keep")
+    assert ev.verify_success(root / sha, sha) is True
 
-    stale = ev.start_attempt(root, sha, "feature/keep", 1)
-    (stale / "backend.log").write_text("failed\n", encoding="utf-8")
+    failed = ev.start_attempt(root, sha, "feature/keep", 1)
+    (failed / "backend.log").write_text("failed\n", encoding="utf-8")
     ev.finish_attempt(
-        stale,
+        failed,
         root / sha,
         sha,
         "feature/keep",
@@ -224,14 +210,17 @@ def test_prune_preserva_attempt_referenciado_por_latest_success(tmp_path: Path):
         1,
         False,
     )
+    assert ev.verify_success(root / sha, sha) is False
 
     old_time = time.time() - 60 * 86400
     os.utime(success, (old_time, old_time))
-    os.utime(stale, (old_time, old_time))
+    os.utime(failed, (old_time, old_time))
     ev.prune_evidence(root, max_shas=10, max_age_days=30, attempts_per_sha=1)
 
     assert success.exists()
-    assert ev.verify_success(root / sha, sha) is True
+    assert failed.exists()
+    assert (root / sha / "latest-success.json").is_file()
+    assert ev.verify_success(root / sha, sha) is False
 
 
 def test_chave_do_app_exige_permissoes_owner_only(tmp_path: Path):
@@ -243,7 +232,7 @@ def test_chave_do_app_exige_permissoes_owner_only(tmp_path: Path):
     key.chmod(0o644)
     cmd = (
         f"source {AUTH_SCRIPT!s}; "
-        "EJC_FALLBACK_APP_PRIVATE_KEY_FILE=\"$1\"; "
+        'EJC_FALLBACK_APP_PRIVATE_KEY_FILE="$1"; '
         "_ejc_validate_private_key >/dev/null"
     )
     denied = subprocess.run(["bash", "-c", cmd, "_", str(key)], check=False)
