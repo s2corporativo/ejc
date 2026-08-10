@@ -7,12 +7,32 @@ RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
 MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
-REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-0}"
+# Segurança por default: uma invocação local não pode ser menos segura que o
+# workflow cloud. Contingência permissiva exige `REQUIRE_PREDEPLOY_BACKUP=0` explícito.
+REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-1}"
+DEPLOY_LOCK_ROOT="${EJC_DEPLOY_LOCK_ROOT:-${XDG_RUNTIME_DIR:-${HOME:-/tmp}/.cache}/ejc-deploy}"
+DEPLOY_LOCK_FILE="${EJC_DEPLOY_LOCK_FILE:-$DEPLOY_LOCK_ROOT/deploy.lock}"
+
+log() { echo "[$(date '+%F %T')] $*"; }
+timestamp() { date +"%Y%m%d_%H%M%S"; }
+
+case "$REQUIRE_PREDEPLOY_BACKUP" in 0|1) ;; *) echo "REQUIRE_PREDEPLOY_BACKUP deve ser 0 ou 1" >&2; exit 2;; esac
+case "$ENSURE_DAILY_BACKUP" in 0|1) ;; *) echo "ENSURE_DAILY_BACKUP deve ser 0 ou 1" >&2; exit 2;; esac
+if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ] && [ "$ENSURE_DAILY_BACKUP" != "1" ]; then
+  echo "ENSURE_DAILY_BACKUP=0 é incompatível com o modo seguro REQUIRE_PREDEPLOY_BACKUP=1." >&2
+  exit 2
+fi
+
+command -v flock >/dev/null 2>&1 || { echo "flock é obrigatório para serializar deploys locais." >&2; exit 2; }
+mkdir -p "$DEPLOY_LOCK_ROOT"
+chmod 700 "$DEPLOY_LOCK_ROOT" 2>/dev/null || true
+exec 9>"$DEPLOY_LOCK_FILE"
+if ! flock -n 9; then
+  log "Outro deploy EJC já está em execução; nenhuma mutação foi iniciada."
+  exit 75
+fi
 
 cd "$APP_DIR"
-
-timestamp() { date +"%Y%m%d_%H%M%S"; }
-log() { echo "[$(date '+%F %T')] $*"; }
 
 ROLLBACK_SUFFIX="$(timestamp)"
 OLD_BACKEND_IMAGE=""
@@ -57,10 +77,6 @@ rollback() {
   fi
 
   log "Deploy falhou (rc=${original_rc}). Restaurando backend, worker e frontend."
-  # O rollback recria os containers a partir das imagens ANTERIORES, mas o
-  # GIT_SHA exportado ainda é o do deploy que falhou — sem isto, o backend
-  # restaurado anunciaria em /api/health o SHA que NÃO está rodando, que é
-  # exatamente a mentira que esta instrumentação existe para evitar.
   export GIT_SHA="${OLD_GIT_SHA:-desconhecido}"
   log "Rollback publica novamente o commit anterior: ${GIT_SHA}"
   _restore_image "$OLD_BACKEND_TAG" "$OLD_BACKEND_IMAGE" "$OLD_BACKEND_REF" "backend"
@@ -89,22 +105,28 @@ EOF
 fi
 
 log "EJC deploy seguro iniciado para ${DOMAIN}"
+if [ "$REQUIRE_PREDEPLOY_BACKUP" = "0" ]; then
+  log "AVISO CRÍTICO: REQUIRE_PREDEPLOY_BACKUP=0 foi definido explicitamente; contingência sem prova nova de backup está habilitada."
+fi
 [ -f .env ] || { echo "Arquivo .env ausente em ${APP_DIR}" >&2; exit 1; }
 
-# Migra valores OBSOLETOS do .env preservado (modelo Groq depreciado etc.).
-# O .env sobrevive ao deploy por desenho, então trocar o default no código não
-# alcança a VPS. Idempotente, com backup 600 e sem imprimir segredos.
 if [ -f scripts/migrar_env_obsoletos.sh ]; then
   bash scripts/migrar_env_obsoletos.sh .env | while IFS= read -r linha; do
     log "$linha"
   done
 fi
-# SYS-097 (correção originada no PR #497, adotada aqui): validar a composição
-# SEM persistir a config expandida. O antigo `docker compose config >/tmp/...txt`
-# gravava TODOS os segredos interpolados (senha do Postgres, chaves de API,
-# tokens) em claro num arquivo world-readable de /tmp que nunca era removido —
-# a cada deploy. `--quiet` valida sintaxe e interpolação sem emitir nada.
+# Valida sintaxe/interpolação sem persistir config expandida nem segredos.
 docker compose config --quiet
+
+# Identidade do código é requisito de release. Sem Git/TARGET_SHA não existe
+# prova de que o container publicado corresponde ao artefato validado.
+GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
+[ -n "$GIT_SHA" ] || {
+  log "ERRO CRÍTICO: TARGET_SHA ausente e .git indisponível; deploy bloqueado antes de build/mutação."
+  exit 2
+}
+export GIT_SHA
+log "Versão a publicar: ${GIT_SHA}"
 
 OLD_BACKEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_backend 2>/dev/null || true)"
 OLD_WORKER_IMAGE="$(docker inspect -f '{{.Image}}' ejc_worker 2>/dev/null || true)"
@@ -132,9 +154,6 @@ fi
 trap rollback ERR
 
 log "Verificando pré-requisitos de backup"
-# O gate bloqueia SOMENTE se a prova LOCAL cifrada falhar (backup.sh != 0).
-# Offsite falho com prova local presente → exit 0 + "offsite_ok": false no
-# JSON: o deploy prossegue com AVISO GRAVE no log e no step summary.
 BACKUP_SAIDA=""
 if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
@@ -160,37 +179,16 @@ else
 fi
 
 DEPLOY_MUTATED=1
-# SHA do commit sendo publicado: entra no container via docker-compose.yml e é
-# conferido no /api/health depois da troca. Sem isso não havia como provar qual
-# código está no ar — a origem do "minha alteração não aparece no sistema".
-GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || echo desconhecido)}"
-[ -z "$GIT_SHA" ] && GIT_SHA="desconhecido"
-if [ "$GIT_SHA" = "desconhecido" ]; then
-  # O workflow exclui .git/ do rsync, então numa execução MANUAL na VPS sem
-  # TARGET_SHA não há como saber o commit. O deploy continua válido — o que
-  # se perde é a PROVA. Avisa alto e desliga a conferência, em vez de comparar
-  # duas incógnitas e imprimir "confirmado: desconhecido", que seria um falso
-  # positivo justamente no caminho mais sujeito a erro.
-  log "AVISO: commit indeterminado (sem TARGET_SHA e sem .git)."
-  log "AVISO: a conferência do commit publicado fica INDISPONÍVEL neste deploy."
-  log "AVISO: informe TARGET_SHA=<sha> para ter a prova de qual código subiu."
-fi
-export GIT_SHA
-log "Commit a publicar: ${GIT_SHA}"
 
-# SHA que está no ar AGORA — usado pelo rollback para republicar a verdade.
 OLD_GIT_SHA="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \
   ejc_backend 2>/dev/null | sed -n 's/^GIT_SHA=//p' | head -1)"
-log "Commit atualmente publicado: ${OLD_GIT_SHA:-indisponível}"
+log "Versão atualmente publicada: ${OLD_GIT_SHA:-indisponível}"
 
 log "Build frontend"
 docker compose build frontend
 log "Build backend e worker"
 docker compose build backend worker
 
-# Expand/contract: a aplicação antiga atende enquanto a imagem nova executa a
-# migration em container efêmero. O schema expandido permanece compatível com o
-# backend/worker anteriores se for necessário restaurar as imagens.
 if [ "$RUN_MIGRATIONS" = "1" ]; then
   log "Aplicando migration expand-only antes da troca da API"
   docker compose run --rm --no-deps -T backend alembic upgrade head
@@ -210,28 +208,15 @@ for _ in $(seq 1 12); do
 done
 [ "$backend_ok" = "1" ] || { log "Backend não respondeu em 60s"; exit 1; }
 
-# PROVA do commit publicado: o backend precisa se identificar com o MESMO SHA
-# que acabou de ser construído. Divergência aqui significa container antigo em
-# pé (imagem reaproveitada, --force-recreate sem rebuild, bind mount apontando
-# para outro diretório) — o deploy responderia "ok" com o código velho no ar.
 COMMIT_NO_AR="$(curl -fsS http://127.0.0.1:8000/api/health 2>/dev/null \
   | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-if [ "$GIT_SHA" = "desconhecido" ]; then
-  # Sem SHA de referência não há o que conferir; o aviso já foi dado no início.
-  log "Conferência do commit publicado PULADA (commit de origem indeterminado)."
-elif [ "$COMMIT_NO_AR" = "$GIT_SHA" ]; then
-  log "Commit publicado confirmado pelo /api/health: ${COMMIT_NO_AR}"
+if [ "$COMMIT_NO_AR" = "$GIT_SHA" ]; then
+  log "Versão publicada confirmada pelo /api/health: ${COMMIT_NO_AR}"
 elif [ -z "$COMMIT_NO_AR" ] || [ "$COMMIT_NO_AR" = "desconhecido" ]; then
-  # O backend construído a partir deste commit SEMPRE expõe o campo. Resposta
-  # sem SHA significa container antigo ainda em pé, imagem errada ou build que
-  # não pegou — exatamente o que esta verificação existe para detectar. Falhar
-  # aqui aciona o rollback; aceitar seria declarar sucesso sem prova nenhuma.
-  log "ERRO CRÍTICO: /api/health respondeu sem o commit (valor: '${COMMIT_NO_AR:-vazio}')."
-  log "O container em pé não é o que acabou de ser construído."
+  log "ERRO CRÍTICO: /api/health respondeu sem a identidade do artefato (valor: '${COMMIT_NO_AR:-vazio}')."
   exit 1
 else
-  log "ERRO CRÍTICO: backend no ar declara commit ${COMMIT_NO_AR}, esperado ${GIT_SHA}."
-  log "O container não está executando o código recém-construído."
+  log "ERRO CRÍTICO: backend no ar declara ${COMMIT_NO_AR}, esperado ${GIT_SHA}."
   exit 1
 fi
 
@@ -248,15 +233,10 @@ if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
       log "Deploy será revertido para preservar a política de continuidade."
       false
     fi
-    log "AVISO: ativação/verificação do backup diário falhou; deploy não será revertido."
-    log "AVISO: investigue as credenciais BACKUP_GOOGLE_DRIVE_* no .env da VPS."
+    log "AVISO: ativação/verificação do backup diário falhou; deploy não será revertido por contingência explícita."
   fi
 else
-  if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
-    log "ERRO CRÍTICO: ENSURE_DAILY_BACKUP=0 é incompatível com REQUIRE_PREDEPLOY_BACKUP=1."
-    false
-  fi
-  log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia diária ignorada por contingência."
+  log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia diária ignorada por contingência explícita."
 fi
 
 if [ "$RUN_SEEDS" = "1" ]; then
