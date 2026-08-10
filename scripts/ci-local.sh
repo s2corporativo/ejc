@@ -45,6 +45,15 @@ _cleanup() {
 }
 trap _cleanup EXIT
 
+run_local_first_selftest() {
+  [ -f scripts/ejc-local-first.sh ] || return 0
+  [ -f scripts/test_ejc_local_first.sh ] || die "scripts/test_ejc_local_first.sh ausente"
+  log "Validando mecanismo local-first…"
+  bash -n scripts/ejc-local-first.sh scripts/test_ejc_local_first.sh
+  bash scripts/test_ejc_local_first.sh
+  ok "Local-first OK"
+}
+
 # ── Postgres com pgvector ────────────────────────────────────────────────────
 start_pg() {
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
@@ -124,6 +133,7 @@ run_frontend() {
 }
 
 log "EJC CI local — modo: $MODE"
+run_local_first_selftest
 case "$MODE" in
   full)     run_backend 1; run_frontend ;;
   backend)  run_backend 1 ;;
@@ -131,4 +141,4 @@ case "$MODE" in
   frontend) run_frontend ;;
   *) die "modo inválido: $MODE (use: full | backend | frontend | fast)" ;;
 esac
-ok "CI local concluído com sucesso — pode fazer push/deploy."
+ok "CI local concluído com sucesso — pode sincronizar/publicar pela política local-first."
