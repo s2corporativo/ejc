@@ -108,7 +108,14 @@ function prepararApi(documentos = [DOCUMENTO]): void {
     return Promise.reject(new Error(`GET inesperado: ${url}`));
   });
   mocks.post.mockResolvedValue({ data: {} });
-  mocks.patch.mockResolvedValue({ data: {} });
+  mocks.patch.mockImplementation((url: string, payload: Record<string, unknown>) =>
+    Promise.resolve({
+      data: {
+        ...DOCUMENTO,
+        ...(url === "/documents/doc-1" ? payload : {}),
+      },
+    }),
+  );
 }
 
 async function renderizar(): Promise<void> {
