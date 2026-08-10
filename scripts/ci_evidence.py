@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """Evidência local imutável do fallback de CI do EJC.
 
-Este módulo não conhece GitHub nem executa testes. Ele é responsável somente por:
+Responsabilidades:
 - criar tentativas isoladas por SHA;
-- escrever ponteiros/summary de forma atômica;
-- calcular hashes de logs em streaming;
-- verificar integridade de uma evidência de sucesso;
-- localizar o log mais recente da tentativa atual.
+- escrever ponteiros/summary atomicamente;
+- calcular hashes em streaming;
+- verificar integridade da prova de sucesso;
+- localizar o log da tentativa atual;
+- podar evidências antigas sem seguir symlinks nem remover SHA em execução.
 
-Complexidade: O(total de bytes dos logs) em tempo e O(1 MiB) de memória adicional
-por hashing, independentemente do tamanho da suíte.
+Hashing: O(total de bytes) em tempo e O(1 MiB) de memória adicional.
+Prune: O(S + F_removidos), onde S é o número de SHAs armazenados.
 """
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -21,6 +23,7 @@ import pathlib
 import secrets
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -35,6 +38,14 @@ def _validate_sha(value: str) -> str:
     if len(value) != 40 or any(ch not in "0123456789abcdef" for ch in value):
         raise ValueError("SHA deve conter exatamente 40 caracteres hexadecimais minúsculos")
     return value
+
+
+def _is_sha_dir(path: pathlib.Path) -> bool:
+    try:
+        _validate_sha(path.name)
+    except ValueError:
+        return False
+    return path.is_dir() and not path.is_symlink()
 
 
 def _hash_file(path: pathlib.Path) -> tuple[str, int]:
@@ -72,6 +83,23 @@ def _resolve_child(base: pathlib.Path, relative: str) -> pathlib.Path:
     if resolved != base and base not in resolved.parents:
         raise ValueError("caminho escapou da raiz de evidência")
     return resolved
+
+
+def _remove_tree_no_follow(path: pathlib.Path) -> None:
+    """Remove árvore previamente validada sem atravessar symlinks."""
+    if path.is_symlink():
+        path.unlink()
+        return
+    with os.scandir(path) as entries:
+        for entry in entries:
+            child = pathlib.Path(entry.path)
+            if entry.is_symlink():
+                child.unlink()
+            elif entry.is_dir(follow_symlinks=False):
+                _remove_tree_no_follow(child)
+            else:
+                child.unlink()
+    path.rmdir()
 
 
 def start_attempt(root: pathlib.Path, sha: str, ref: str, pr: int | None) -> pathlib.Path:
@@ -224,6 +252,77 @@ def latest_log(sha_root: pathlib.Path, sha: str, started_epoch: int) -> pathlib.
     return best
 
 
+def _protected_attempt_names(sha_root: pathlib.Path) -> set[str]:
+    protected: set[str] = set()
+    for pointer_name, key in (("latest-success.json", "summary"), ("latest-attempt.json", "attempt")):
+        pointer = sha_root / pointer_name
+        if not pointer.is_file() or pointer.is_symlink():
+            continue
+        try:
+            obj = json.loads(pointer.read_text(encoding="utf-8"))
+            rel = pathlib.PurePosixPath(str(obj[key]))
+            if rel.is_absolute() or ".." in rel.parts:
+                continue
+            if len(rel.parts) >= 2 and rel.parts[0] == "attempts":
+                protected.add(rel.parts[1])
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            continue
+    return protected
+
+
+def prune_evidence(
+    root: pathlib.Path,
+    max_shas: int,
+    max_age_days: int,
+    attempts_per_sha: int,
+) -> dict[str, int]:
+    if max_shas < 1 or max_age_days < 1 or attempts_per_sha < 1:
+        raise ValueError("limites de retenção devem ser >= 1")
+    root = root.resolve()
+    if not root.is_dir() or root.is_symlink():
+        return {"removed_shas": 0, "removed_attempts": 0, "skipped_locked": 0}
+
+    cutoff = time.time() - max_age_days * 86400
+    sha_dirs = [path for path in root.iterdir() if _is_sha_dir(path)]
+    sha_dirs.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    keep_by_count = {path.name for path in sha_dirs[:max_shas]}
+    stats = {"removed_shas": 0, "removed_attempts": 0, "skipped_locked": 0}
+
+    for sha_root in sha_dirs:
+        lock_path = sha_root / ".lock"
+        lock_path.touch(mode=0o600, exist_ok=True)
+        with lock_path.open("a+") as lock:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                stats["skipped_locked"] += 1
+                continue
+
+            if sha_root.name not in keep_by_count and sha_root.stat().st_mtime < cutoff:
+                _remove_tree_no_follow(sha_root)
+                stats["removed_shas"] += 1
+                continue
+
+            attempts = sha_root / "attempts"
+            if not attempts.is_dir() or attempts.is_symlink():
+                continue
+            protected = _protected_attempt_names(sha_root)
+            attempt_dirs = [path for path in attempts.iterdir() if path.is_dir() and not path.is_symlink()]
+            attempt_dirs.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+            kept_non_protected = 0
+            for attempt in attempt_dirs:
+                if attempt.name in protected:
+                    continue
+                if kept_non_protected < attempts_per_sha:
+                    kept_non_protected += 1
+                    continue
+                if attempt.stat().st_mtime >= cutoff:
+                    continue
+                _remove_tree_no_follow(attempt)
+                stats["removed_attempts"] += 1
+    return stats
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -253,6 +352,12 @@ def _parser() -> argparse.ArgumentParser:
     log.add_argument("--sha-root", required=True, type=pathlib.Path)
     log.add_argument("--sha", required=True)
     log.add_argument("--started-epoch", required=True, type=int)
+
+    prune = sub.add_parser("prune")
+    prune.add_argument("--root", required=True, type=pathlib.Path)
+    prune.add_argument("--max-shas", type=int, default=200)
+    prune.add_argument("--max-age-days", type=int, default=30)
+    prune.add_argument("--attempts-per-sha", type=int, default=5)
     return parser
 
 
@@ -284,6 +389,19 @@ def main(argv: list[str] | None = None) -> int:
             if path is None:
                 return 1
             print(path)
+            return 0
+        if args.command == "prune":
+            print(
+                json.dumps(
+                    prune_evidence(
+                        args.root,
+                        args.max_shas,
+                        args.max_age_days,
+                        args.attempts_per_sha,
+                    ),
+                    sort_keys=True,
+                )
+            )
             return 0
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
         print(f"[ci-evidence] ERRO: {exc}", file=sys.stderr)
