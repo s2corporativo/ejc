@@ -62,8 +62,6 @@ _ejc_deploy_lock_prepare_production() {
   [[ "$docker_gid" =~ ^[0-9]+$ ]] \
     || { _ejc_deploy_lock_error "GID do docker.sock inválido"; return 2; }
 
-  # O diretório NÃO é group-writable. Membros do grupo Docker conseguem abrir
-  # o arquivo 0660, mas não podem renomear/unlinkar/substituir seu inode.
   if [ -e "$EJC_DEPLOY_PRODUCTION_LOCK_ROOT" ]; then
     [ ! -L "$EJC_DEPLOY_PRODUCTION_LOCK_ROOT" ] \
       || { _ejc_deploy_lock_error "diretório existente do mutex é symlink"; return 2; }
@@ -98,7 +96,6 @@ _ejc_deploy_lock_prepare_production() {
   export EJC_DEPLOY_LOCK_ROOT_RESOLVED EJC_DEPLOY_LOCK_FILE_RESOLVED
 }
 
-# Adquire ou revalida o lock fixo no FD 9. Retorna 75 quando ocupado.
 ejc_deploy_lock_acquire_production() {
   local path_inode fd_inode inherited_target
   _ejc_deploy_lock_prepare_production || return $?
@@ -136,4 +133,10 @@ ejc_deploy_lock_acquire_production() {
   EJC_DEPLOY_LOCK_FD=9
   export EJC_DEPLOY_LOCK_FD
   return 0
+}
+
+# Compatibilidade interna durante a consolidação: argumentos são deliberadamente
+# ignorados. O caminho produtivo permanece fixo e nenhum APP_DIR/env o altera.
+ejc_deploy_lock_acquire() {
+  ejc_deploy_lock_acquire_production
 }
