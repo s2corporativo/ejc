@@ -67,6 +67,13 @@ def _calcular_sync(
     filepath: str,
     expected_size: int | None,
 ) -> HashDocumentoCalculado:
+    if expected_size is not None and (
+        isinstance(expected_size, bool)
+        or not isinstance(expected_size, int)
+        or expected_size < 0
+    ):
+        raise ValueError("expected_size inválido")
+
     caminho = _resolver_path_local(upload_root, filepath)
 
     flags = os.O_RDONLY
@@ -84,11 +91,8 @@ def _calcular_sync(
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise HashArquivoIndisponivelError("arquivo local indisponível para hash")
-        if expected_size is not None:
-            if isinstance(expected_size, bool) or not isinstance(expected_size, int) or expected_size < 0:
-                raise ValueError("expected_size inválido")
-            if info.st_size != expected_size:
-                raise HashMetadataMismatchError("tamanho físico diverge do metadado documental")
+        if expected_size is not None and info.st_size != expected_size:
+            raise HashMetadataMismatchError("tamanho físico diverge do metadado documental")
 
         digest = hashlib.sha256()
         total = 0
