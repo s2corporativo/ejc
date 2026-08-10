@@ -257,8 +257,11 @@ async def anexar_documentos(
             resultado = jsonable_encoder(extraido)
             if isinstance(texto_sana, str) and texto_sana.strip():
                 resultado["_texto_sanitizado"] = texto_sana[:200_000]
-        except Exception as exc:  # extração nunca bloqueia o anexo em si
-            resultado = {"ok": False, "erro": str(exc)[:300]}
+        except Exception:  # extração nunca bloqueia o anexo em si
+            # Fail-soft para o usuário, fail-safe para persistência: exceções de
+            # parser/filesystem podem carregar path, nome de arquivo, host ou
+            # PII. O detalhe técnico não pertence ao resultado documental.
+            resultado = {"ok": False, "erro_codigo": "extracao_indisponivel"}
         anexo = LegalChatAttachment(
             id=str(uuid4()),
             session_id=sessao.id,
@@ -274,9 +277,8 @@ async def anexar_documentos(
         db.add(anexo)
         novos.append(anexo)
 
-    # Achado F2: este endpoint nunca teve audit log de upload, ao contrário do
-    # equivalente em raio_x.py — mesma classe de gap que o PATCH/Kanban do
-    # PR #791 (caminho paralelo sem a guarda do irmão).
+    # O WORM prova o ato por IDs/contagens. Filename e mensagem livre continuam
+    # somente na resposta HTTP efêmera para correção do lote pelo usuário.
     await criar_audit_log(
         db, user_id=user.id, user_role=svc._role(user),
         acao="UPLOAD", entidade="legal_chat_sessions",
@@ -287,8 +289,8 @@ async def anexar_documentos(
         ),
         dados_depois={
             "anexos": [a.id for a in novos],
-            "duplicados": duplicados,
-            "erros": erros,
+            "duplicados_count": len(duplicados),
+            "erros_count": len(erros),
         },
     )
     await db.commit()
