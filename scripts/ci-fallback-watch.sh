@@ -8,6 +8,8 @@ AUTO_MERGE="${EJC_FALLBACK_AUTO_MERGE:-1}"
 INFRA_MAX_RETRIES="${EJC_FALLBACK_INFRA_MAX_RETRIES:-3}"
 INFRA_RETRY_BASE_SECONDS="${EJC_FALLBACK_INFRA_RETRY_SECONDS:-300}"
 INFRA_RETRY_MAX_SECONDS="${EJC_FALLBACK_INFRA_RETRY_MAX_SECONDS:-1800}"
+GREEN_RECHECK_SECONDS="${EJC_FALLBACK_GREEN_RECHECK_SECONDS:-1800}"
+PR_LIMIT="${EJC_FALLBACK_PR_LIMIT:-500}"
 ONCE=0
 [ "${1:-}" != "--once" ] || ONCE=1
 
@@ -15,48 +17,43 @@ case "$(realpath "$ROOT" 2>/dev/null || printf '%s' "$ROOT")" in
   /opt/ejc|/opt/ejc/*) echo "[fallback-watch] recusado em produção /opt/ejc" >&2; exit 1;;
 esac
 [ "$(id -u)" -ne 0 ] || { echo "[fallback-watch] não roda como root" >&2; exit 1; }
-command -v gh >/dev/null 2>&1 || { echo "[fallback-watch] gh ausente" >&2; exit 1; }
-command -v jq >/dev/null 2>&1 || { echo "[fallback-watch] jq ausente" >&2; exit 1; }
+for cmd in gh jq python3 git; do command -v "$cmd" >/dev/null 2>&1 || { echo "[fallback-watch] $cmd ausente" >&2; exit 1; }; done
+[ -f "$ROOT/scripts/ci_evidence.py" ] || { echo "[fallback-watch] ci_evidence.py ausente" >&2; exit 1; }
 REPO="${EJC_REPO:-s2corporativo/ejc}"
-STATE_ROOT="${EJC_CI_STATE_ROOT:-${HOME}/.cache/ejc-ci-state}"
-EVIDENCE_ROOT="${EJC_CI_EVIDENCE_ROOT:-${HOME}/.cache/ejc-ci-evidence}"
+CACHE_ROOT="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/ejc-ci-fallback}"
+STATE_ROOT="$CACHE_ROOT/state"
+EVIDENCE_ROOT="${EJC_CI_EVIDENCE_ROOT:-$CACHE_ROOT/evidence}"
+DRAIN_FILE="${EJC_FALLBACK_DRAIN_FILE:-${XDG_CACHE_HOME:-${HOME}/.cache}/ejc-ci-fallback/draining}"
 mkdir -p "$STATE_ROOT" "$EVIDENCE_ROOT"
-chmod 700 "$STATE_ROOT" "$EVIDENCE_ROOT" 2>/dev/null || true
+chmod 700 "$CACHE_ROOT" "$STATE_ROOT" "$EVIDENCE_ROOT" 2>/dev/null || true
 
-# Só sinais inequívocos de infraestrutura externa entram em retry automático.
-# Falha de pytest/typecheck/lint/build sem estes sinais é falha real do SHA e
-# permanece retida até novo commit. HTTP 429/5xx isolado NÃO basta, pois o
-# próprio EJC possui testes funcionais que exercitam respostas HTTP.
 INFRA_ERROR_RE='Could not resolve host|Temporary failure in name resolution|Name or service not known|EAI_AGAIN|ECONNRESET|ETIMEDOUT|ENETUNREACH|TLS handshake timeout|Connection timed out|Read timed out|Could not fetch URL|npm ERR!.*(EAI_AGAIN|ECONNRESET|ETIMEDOUT|429 Too Many Requests|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout)|registry\.npmjs\.org.*(EAI_AGAIN|ECONNRESET|ETIMEDOUT|429|502|503|504)|pypi\.org.*(Temporary failure|timed out|429|502|503|504)|files\.pythonhosted\.org.*(Temporary failure|timed out|429|502|503|504)|github\.com.*(Could not resolve|timed out|429|502|503|504)'
 
+atomic_text() {
+  local file="$1" value="$2" tmp="$file.tmp.$$"
+  umask 077
+  printf '%s\n' "$value" > "$tmp"
+  chmod 600 "$tmp" 2>/dev/null || true
+  mv "$tmp" "$file"
+}
+
 local_evidence_green() {
-  local sha="$1" summary="$EVIDENCE_ROOT/$1/summary.json"
-  [ -s "$summary" ] || return 1
-  jq -e --arg sha "$sha" '.target_sha == $sha and .result == "success"' "$summary" >/dev/null 2>&1
+  local sha="$1"
+  python3 "$ROOT/scripts/ci_evidence.py" verify \
+    --sha-root "$EVIDENCE_ROOT/$sha" --sha "$sha" >/dev/null 2>&1
 }
 
 latest_attempt_log() {
-  local sha="$1" started="$2" dir="$EVIDENCE_ROOT/$1"
-  [ -d "$dir" ] || return 1
-  local file ts best="" best_ts=0
-  for file in "$dir"/*.log; do
-    [ -f "$file" ] || continue
-    ts="$(stat -c %Y "$file" 2>/dev/null || echo 0)"
-    [ "$ts" -ge "$started" ] || continue
-    if [ "$ts" -ge "$best_ts" ]; then
-      best="$file"
-      best_ts="$ts"
-    fi
-  done
-  [ -n "$best" ] || return 1
-  printf '%s\n' "$best"
+  local sha="$1" started="$2"
+  python3 "$ROOT/scripts/ci_evidence.py" latest-log \
+    --sha-root "$EVIDENCE_ROOT/$sha" --sha "$sha" --started-epoch "$started" 2>/dev/null
 }
 
 failure_is_infrastructure() {
   local sha="$1" started="$2" logfile
   logfile="$(latest_attempt_log "$sha" "$started" 2>/dev/null || true)"
   [ -n "$logfile" ] || return 1
-  grep -Eiq "$INFRA_ERROR_RE" "$logfile"
+  grep -Eiq "$INFRA_ERROR_RE" -- "$logfile"
 }
 
 retry_delay_seconds() {
@@ -82,15 +79,42 @@ read_retry_state() {
 }
 
 write_retry_state() {
-  local file="$1" sha="$2" attempts="$3" now="$4"
+  local file="$1" sha="$2" attempts="$3" now="$4" tmp="$file.tmp.$$"
   umask 077
   jq -n --arg sha "$sha" --argjson attempts "$attempts" --argjson last_epoch "$now" \
-    '{sha:$sha,classification:"infrastructure",attempts:$attempts,last_epoch:$last_epoch}' > "$file"
+    '{sha:$sha,classification:"infrastructure",attempts:$attempts,last_epoch:$last_epoch}' > "$tmp"
+  chmod 600 "$tmp" 2>/dev/null || true
+  mv "$tmp" "$file"
+}
+
+pr_state_due() {
+  local file="$1" fingerprint="$2" now="$3"
+  [ -s "$file" ] || return 0
+  local old_fingerprint last_epoch
+  old_fingerprint="$(jq -r '.fingerprint // ""' "$file" 2>/dev/null || true)"
+  last_epoch="$(jq -r '.last_processed_epoch // 0' "$file" 2>/dev/null || echo 0)"
+  [ "$old_fingerprint" != "$fingerprint" ] && return 0
+  [ $((now - last_epoch)) -ge "$GREEN_RECHECK_SECONDS" ]
+}
+
+write_pr_state() {
+  local file="$1" pr="$2" sha="$3" updated="$4" merge_state="$5" now="$6" result="$7" tmp="$file.tmp.$$"
+  local fingerprint="$sha|$updated|$merge_state|$AUTO_MERGE"
+  umask 077
+  jq -n \
+    --argjson pr "$pr" --arg sha "$sha" --arg updated "$updated" \
+    --arg merge_state "$merge_state" --arg fingerprint "$fingerprint" \
+    --arg result "$result" --argjson last_processed_epoch "$now" \
+    '{schema:1,pr:$pr,sha:$sha,updated_at:$updated,merge_state:$merge_state,fingerprint:$fingerprint,result:$result,last_processed_epoch:$last_processed_epoch}' > "$tmp"
+  chmod 600 "$tmp" 2>/dev/null || true
+  mv "$tmp" "$file"
 }
 
 run_cycle() {
-  # Falha da API/GitHub não derruba o daemon: o trabalho fica local e uma nova
-  # tentativa ocorre no próximo ciclo. Nunca convertemos indisponibilidade em verde.
+  if [ -e "$DRAIN_FILE" ]; then
+    echo "[fallback-watch] drain ativo; ciclo pulado sem acessar PRs." >&2
+    return 0
+  fi
   if ! gh auth status >/dev/null 2>&1; then
     echo "[fallback-watch] gh indisponível/não autenticado neste ciclo; nova tentativa depois." >&2
     return 0
@@ -100,8 +124,6 @@ run_cycle() {
     return 0
   fi
 
-  # O watcher é instalado somente sobre a main limpa. Mantenha o motor local
-  # fast-forward para receber correções já integradas, sem reset/force.
   if [ "$(git branch --show-current)" != "main" ] || [ -n "$(git status --porcelain)" ]; then
     echo "[fallback-watch] checkout deixou de ser main limpa; ciclo recusado." >&2
     return 0
@@ -112,37 +134,44 @@ run_cycle() {
   fi
 
   local prs_json
-  prs_json="$(gh pr list --repo "$REPO" --base main --state open --limit 100 \
+  prs_json="$(gh pr list --repo "$REPO" --base main --state open --limit "$PR_LIMIT" \
     --json number,headRefOid,isDraft,mergeStateStatus,updatedAt 2>/dev/null || true)"
   if [ -z "$prs_json" ]; then
     echo "[fallback-watch] API de PR indisponível neste ciclo." >&2
     return 0
   fi
 
-  printf '%s' "$prs_json" | jq -r '.[] | select(.isDraft == false) | [.number,.headRefOid,.mergeStateStatus] | @tsv' |
-  while IFS=$'\t' read -r pr sha merge_state; do
+  printf '%s' "$prs_json" | jq -r '.[] | select(.isDraft == false) | [.number,.headRefOid,.mergeStateStatus,.updatedAt] | @tsv' |
+  while IFS=$'\t' read -r pr sha merge_state updated_at; do
     [ -n "$pr" ] || continue
     marker="$STATE_ROOT/$sha.result"
     retry_file="$STATE_ROOT/$sha.infra-retry.json"
+    pr_state="$STATE_ROOT/pr-$pr.json"
+    now="$(date +%s)"
+    fingerprint="$sha|$updated_at|$merge_state|$AUTO_MERGE"
 
-    # Evidência local integral é a fonte para decidir se a suíte pesada precisa
-    # repetir. Metadados/reviews/API podem mudar sem mudar o SHA e são reavaliados
-    # sem repetir backend/frontend.
     if local_evidence_green "$sha"; then
-      printf 'success\n' > "$marker"
+      atomic_text "$marker" success
       rm -f "$retry_file"
-      if [ "$AUTO_MERGE" = "1" ]; then
-        bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge-only || true
-      else
-        # Revalida governança e ressincroniza status, mas NÃO tenta merge.
-        bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --promote-only || true
+      if ! pr_state_due "$pr_state" "$fingerprint" "$now"; then
+        continue
       fi
+      set +e
+      if [ "$AUTO_MERGE" = "1" ]; then
+        bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge-only
+      else
+        bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --promote-only
+      fi
+      rc=$?
+      set -e
+      if [ "$rc" -eq 75 ]; then
+        # Outro executor já detém o lock do SHA; não classificar como falha.
+        continue
+      fi
+      write_pr_state "$pr_state" "$pr" "$sha" "$updated_at" "$merge_state" "$now" "green-sync-rc-$rc"
       continue
     fi
 
-    # Falha real de código/teste sem evidência integral continua retida. Uma
-    # falha classificada como infraestrutura pode repetir no mesmo SHA somente
-    # até o teto configurado e respeitando backoff exponencial.
     if [ -f "$marker" ] && grep -qx 'failure' "$marker"; then
       if [ ! -s "$retry_file" ]; then
         [ "${EJC_FALLBACK_RETRY_FAILED:-0}" = "1" ] || continue
@@ -152,7 +181,6 @@ run_cycle() {
           echo "[fallback-watch] PR #$pr atingiu $RETRY_ATTEMPTS retries de infraestrutura; retido até novo SHA." >&2
           continue
         fi
-        now="$(date +%s)"
         delay="$(retry_delay_seconds "$RETRY_ATTEMPTS")"
         if [ $((now - RETRY_LAST_EPOCH)) -lt "$delay" ]; then
           continue
@@ -161,7 +189,7 @@ run_cycle() {
     fi
 
     echo "[fallback-watch] validando PR #$pr ($sha, mergeState=$merge_state)"
-    started="$(date +%s)"
+    started="$now"
     set +e
     if [ "$AUTO_MERGE" = "1" ]; then
       bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge
@@ -171,18 +199,20 @@ run_cycle() {
     rc=$?
     set -e
 
-    # Se a suíte completa gerou summary success, uma falha posterior de
-    # governança mutável/status/API NÃO transforma o código em reprovado. O
-    # próximo ciclo fará merge-only/promote-only e revalidará metadados.
+    if [ "$rc" -eq 75 ]; then
+      atomic_text "$marker" pending
+      continue
+    fi
+
     if local_evidence_green "$sha"; then
-      printf 'success\n' > "$marker"
+      atomic_text "$marker" success
       rm -f "$retry_file"
+      write_pr_state "$pr_state" "$pr" "$sha" "$updated_at" "$merge_state" "$(date +%s)" "suite-success"
       continue
     fi
 
     if [ "$rc" -eq 0 ]; then
-      # Exit 0 sem summary integral nunca é suficiente para promover o SHA.
-      printf 'pending\n' > "$marker"
+      atomic_text "$marker" pending
       continue
     fi
 
@@ -191,7 +221,7 @@ run_cycle() {
       attempts=$((RETRY_ATTEMPTS + 1))
       now="$(date +%s)"
       write_retry_state "$retry_file" "$sha" "$attempts" "$now"
-      printf 'failure\n' > "$marker"
+      atomic_text "$marker" failure
       if [ "$attempts" -lt "$INFRA_MAX_RETRIES" ]; then
         delay="$(retry_delay_seconds "$attempts")"
         echo "[fallback-watch] PR #$pr falhou por infraestrutura; retry $attempts/$INFRA_MAX_RETRIES após ${delay}s." >&2
@@ -200,7 +230,7 @@ run_cycle() {
       fi
     else
       rm -f "$retry_file"
-      printf 'failure\n' > "$marker"
+      atomic_text "$marker" failure
       echo "[fallback-watch] PR #$pr reprovou em teste/gate real; mesmo SHA não será repetido automaticamente." >&2
     fi
   done
