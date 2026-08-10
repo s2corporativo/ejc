@@ -108,6 +108,34 @@ def test_orquestrador_trusted_nao_pode_ser_substituido_por_directory_write():
     assert 'bash "$source_dir/scripts/ci-local.sh"' not in run
 
 
+def test_root_of_trust_do_control_plane_e_fechado_e_verificado_por_acl():
+    source = _text()
+    common = _block(source, "validate_common() {", "worker_runtime_preflight() {")
+
+    trusted_files = (
+        "scripts/ci-local.sh",
+        "scripts/ci-fallback.sh",
+        "scripts/ci-worker-isolation.sh",
+        "scripts/ci-fallback-watch.sh",
+        "scripts/ci-fallback-activate.sh",
+        "scripts/ci_evidence.py",
+        "scripts/ci_activation_journal.py",
+        "scripts/github-app-auth.sh",
+        "scripts/governanca/branch-protection.sh",
+        "scripts/governanca/ci-local-governanca.sh",
+    )
+    for path in trusted_files:
+        assert f'"$TRUST_ROOT/{path}"' in common
+
+    for directory in ("scripts", "scripts/governanca"):
+        assert f'"$TRUST_ROOT/{directory}"' in common
+
+    assert 'sudo -n -u "$WORKER_USER" -- test -w "$trusted"' in common
+    assert 'sudo -n -u "$WORKER_USER" -- test -w "$trusted_dir"' in common
+    assert "worker consegue alterar root of trust" in common
+    assert "worker consegue substituir componente do root of trust via diretório" in common
+
+
 def test_worker_so_recebe_escrita_em_backend_frontend_e_estado_efemero():
     source = _text()
     prepare = _block(source, "prepare_stage_source() {", "run_stage() {")
