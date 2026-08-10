@@ -31,7 +31,7 @@ Nunca colocar no fluxo de contingência:
 - documentos de clientes;
 - PII real em registro técnico de tarefa.
 
-O snapshot local usa `umask 077`, diretórios `0700` e arquivos `0600`. Arquivos não rastreados com nomes sensíveis, symlinks e arquivos acima do limite configurado são deliberadamente excluídos do snapshot.
+O snapshot local usa `umask 077`, diretórios `0700` e arquivos `0600`. Arquivos não rastreados com nomes sensíveis, symlinks e arquivos acima do limite configurado são deliberadamente excluídos do snapshot. Arquivos rastreados/staged que correspondam a padrões sensíveis (.env, chaves) têm seus diffs filtrados. Se o histórico commitado contiver arquivos sensíveis, o git bundle é bloqueado para evitar vazamento de segredos.
 
 ## Comando canônico
 
@@ -151,7 +151,7 @@ O caminho de produção permanece `scripts/deploy_vps_safe.sh` ou a esteira que 
 - rollback de imagens;
 - checagem pós-deploy.
 
-Quando GitHub/Actions estiver indisponível, a alternativa autorizada é executar o mesmo `scripts/deploy_vps_safe.sh` diretamente no checkout de produção previamente confirmado, nunca copiar arquivos manualmente e nunca editar produção fora desse procedimento. O deploy de contingência deve usar o SHA exato já validado localmente (`TARGET_SHA`) e `REQUIRE_PREDEPLOY_BACKUP=1`.
+Quando GitHub/Actions estiver indisponível, a entrega deve ser preservada via checkpoint e CI local. Sem canal automatizado disponível, o trabalho permanece validado localmente (checkpoint + CI local verde) e a sincronização (push/sync) é feita quando o GitHub voltar. O deploy ocorre somente pela esteira automatizada normal após CI verde na main — não por execução manual de `scripts/deploy_vps_safe.sh` fora do workflow.
 
 Essa contingência não autoriza um agente sem acesso operacional seguro à VPS a inventar caminho, credencial ou estado. O agente deve usar o acesso já conectado/disponível; se não houver canal operacional, mantém a entrega validada e sincroniza quando houver canal seguro, sem solicitar ou expor segredo.
 

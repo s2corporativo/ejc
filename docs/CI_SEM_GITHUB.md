@@ -23,10 +23,10 @@ O GitHub continua como histórico remoto e destino de sincronização. O trabalh
 Executa a validação de backend e frontend fora do GitHub Actions:
 
 ```bash
-scripts/ci-local.sh            # tudo (backend + banco + frontend)
-scripts/ci-local.sh backend    # só backend (com banco)
-scripts/ci-local.sh frontend   # só frontend
-scripts/ci-local.sh fast       # backend sem banco, ciclo rápido
+bash scripts/ci-local.sh            # tudo (backend + banco + frontend)
+bash scripts/ci-local.sh backend    # só backend (com banco)
+bash scripts/ci-local.sh frontend   # só frontend
+bash scripts/ci-local.sh fast       # backend sem banco, ciclo rápido
 ```
 
 No modo com banco:

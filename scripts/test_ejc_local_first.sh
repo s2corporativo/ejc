@@ -86,6 +86,27 @@ if grep -q '.env.local' "$ARCHIVE_LIST"; then
   exit 1
 fi
 
+# Achado 3a: .env rastreado incluído em diff staged não deve vazar conteúdo sensível.
+echo "SECRET_KEY=should-not-leak" > .env
+git add .env
+env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh checkpoint
+CP_TRACKED="$(cat "$TMP/recovery/repo/last-checkpoint")"
+if grep -q 'SECRET_KEY=should-not-leak' "$CP_TRACKED/index.patch"; then
+  echo "segredo de .env rastreado vazou no checkpoint (index.patch)" >&2
+  exit 1
+fi
+grep -q 'tracked-sensitive sha256=' "$CP_TRACKED/skipped-untracked.txt"
+
+# Achado 3b: segredo já commitado no histórico deve bloquear bundle.
+git commit -qm 'INSEGURO: commitar .env com segredo (só para teste)'
+env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh checkpoint
+CP_HISTORY="$(cat "$TMP/recovery/repo/last-checkpoint")"
+if [ -f "$CP_HISTORY/repository.bundle" ]; then
+  echo "bundle não deveria ter sido criado quando histórico tem .env" >&2
+  exit 1
+fi
+grep -q 'bundle-blocked' "$CP_HISTORY/skipped-untracked.txt"
+
 VALIDATE_OUTPUT="$(env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh validate fast)"
 grep -q 'dummy-ci mode=fast' <<< "$VALIDATE_OUTPUT"
 
@@ -104,7 +125,17 @@ if [ "${1:-}" = "auth" ] && [ "${2:-}" = "status" ]; then
 fi
 if [ "${1:-}" = "issue" ] && [ "${2:-}" = "list" ]; then
   if [ -f "$STATE/created" ]; then
-    printf 'https://example.invalid/issues/1\n'
+    marker=""
+    prev=""
+    for arg in "$@"; do
+      if [ "$prev" = "--search" ]; then
+        marker="${arg% in:body}"
+      fi
+      prev="$arg"
+    done
+    printf '[{"url":"https://example.invalid/issues/1","body":"%s"}]\n' "$marker"
+  else
+    printf '[]\n'
   fi
   exit 0
 fi
@@ -159,11 +190,17 @@ env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh register \
   "Fallback offline" "Preservar tarefa quando o remoto não responder."
 OFFLINE_TASK="$(cat "$TMP/recovery/repo/last-task")"
 git remote set-url origin https://invalid.invalid/ejc.git
+
+# Achado 7: desabilitar prompts de credencial git durante testes offline.
+export GIT_TERMINAL_PROMPT=0
+
 env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh status >/dev/null 2>&1
 grep -q '^offline$' "$TMP/recovery/repo/mode"
 env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh sync >/dev/null 2>&1
 grep -q '^offline$' "$TMP/recovery/repo/mode"
 test -f "$OFFLINE_TASK"
+
+unset GIT_TERMINAL_PROMPT
 
 # Nem uma variável legada de override pode liberar o checkout definido como produção.
 if env EJC_PRODUCTION_DIR="$TMP/repo" EJC_ALLOW_PRODUCTION_WORKTREE=1 \

@@ -67,7 +67,7 @@ sensitive_path() {
 
 contains_sensitive_text() {
   local text="$1"
-  if printf '%s\n' "$text" | grep -Ei '(BEGIN (RSA|OPENSSH|EC|PRIVATE) KEY|password[[:space:]]*=|secret[[:space:]]*=|token[[:space:]]*=|api[_-]?key[[:space:]]*=)' >/dev/null; then
+  if printf '%s\n' "$text" | grep -Ei '(BEGIN (RSA|OPENSSH|EC|PRIVATE) KEY|password[[:space:]]*=|secret[[:space:]]*=|token[[:space:]]*=|api[-_]?key[[:space:]]*=)' >/dev/null; then
     return 0
   fi
   if printf '%s\n' "$text" | grep -Ei '([[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}|[0-9]{3}\.[0-9]{3}\.[0-9]{3}-[0-9]{2}|[0-9]{2}\.[0-9]{3}\.[0-9]{3}/[0-9]{4}-[0-9]{2}|\(?[0-9]{2}\)?[[:space:]-]?[0-9]{4,5}-[0-9]{4})' >/dev/null; then
@@ -121,10 +121,11 @@ EOF
 find_existing_issue() {
   local marker="$1" result
   [ -n "$marker" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
   if command -v timeout >/dev/null 2>&1; then
-    result="$(timeout "$REMOTE_TIMEOUT" gh issue list --state all --search "$marker in:body" --limit 20 --json url,body --jq "[.[] | select(.body | contains(\"$marker\")) | .url][0] // \"\"" 2>/dev/null || true)"
+    result="$(timeout "$REMOTE_TIMEOUT" gh issue list --state all --search "$marker in:body" --limit 20 --json url,body 2>/dev/null | jq -r --arg marker "$marker" '[.[] | select(.body | contains($marker)) | .url][0] // ""' 2>/dev/null || printf '')"
   else
-    result="$(gh issue list --state all --search "$marker in:body" --limit 20 --json url,body --jq "[.[] | select(.body | contains(\"$marker\")) | .url][0] // \"\"" 2>/dev/null || true)"
+    result="$(gh issue list --state all --search "$marker in:body" --limit 20 --json url,body 2>/dev/null | jq -r --arg marker "$marker" '[.[] | select(.body | contains($marker)) | .url][0] // ""' 2>/dev/null || printf '')"
   fi
   printf '%s' "$result"
 }
@@ -146,6 +147,10 @@ sync_pending_tasks() {
   else
     gh auth status >/dev/null 2>&1 || { warn "gh sem autenticação utilizável; registros de tarefa permanecem locais."; return 0; }
   fi
+
+  local task_list_tmp
+  task_list_tmp="$(mktemp)"
+  find "$PENDING_TASK_DIR" -maxdepth 1 -type f -name '*.md' -print0 | sort -z > "$task_list_tmp"
 
   while IFS= read -r -d '' task; do
     title="$(sed -n '1s/^# //p' "$task")"
@@ -177,30 +182,68 @@ sync_pending_tasks() {
     else
       warn "não foi possível confirmar Issue para $(basename "$task"); registro permanece pendente."
     fi
-  done < <(find "$PENDING_TASK_DIR" -maxdepth 1 -type f -name '*.md' -print0 | sort -z)
+  done < "$task_list_tmp"
+  rm -f "$task_list_tmp"
 }
 
 checkpoint() {
   assert_not_production
-  local ts sha short dir list safe_list skipped size file
+  local ts sha short dir list safe_list skipped size file suffix attempt
   ts="$(date -u +'%Y%m%dT%H%M%SZ')"
   sha="$(git rev-parse HEAD)"
   short="$(git rev-parse --short=12 HEAD)"
-  dir="$CHECKPOINT_DIR/${ts}-${short}"
-  mkdir -p "$dir"
+
+  # Evitar colisão: incluir sufixo único e tentar criação atômica.
+  suffix="${BASHPID}-${RANDOM}"
+  dir="$CHECKPOINT_DIR/${ts}-${short}-${suffix}"
+  attempt=0
+  while [ -e "$dir" ]; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 100 ] || die "não foi possível criar diretório de checkpoint único após 100 tentativas."
+    suffix="${BASHPID}-${RANDOM}-${attempt}"
+    dir="$CHECKPOINT_DIR/${ts}-${short}-${suffix}"
+  done
+
+  mkdir "$dir"
   chmod 700 "$dir"
 
   printf '%s\n' "$sha" > "$dir/base-sha.txt"
   current_branch > "$dir/branch.txt"
   printf '%s\n' "$repo_name" > "$dir/repository.txt"
   git status --porcelain=v1 --untracked-files=no > "$dir/status.txt"
-  git diff --binary HEAD > "$dir/tracked-working-tree.patch"
-  git diff --cached --binary > "$dir/index.patch"
+
+  # Inicializar arquivo de skipped antes de qualquer filtragem.
+  skipped="$dir/skipped-untracked.txt"
+  : > "$skipped"
+
+  # Filtrar arquivos sensíveis dos diffs rastreados/staged.
+  local changed_tracked changed_staged safe_changed_list
+  changed_tracked="$dir/tracked-changed.list0"
+  changed_staged="$dir/staged-changed.list0"
+  safe_changed_list="$dir/safe-changed.list0"
+  : > "$changed_tracked"; : > "$changed_staged"; : > "$safe_changed_list"
+
+  git diff --name-only -z HEAD > "$changed_tracked"
+  git diff --cached --name-only -z > "$changed_staged"
+  cat "$changed_tracked" "$changed_staged" | sort -uz > "$safe_changed_list"
+
+  while IFS= read -r -d '' file; do
+    if sensitive_path "$file"; then
+      printf 'tracked-sensitive sha256=%s\n' "$(printf '%s' "$file" | sha256sum | cut -d' ' -f1)" >> "$skipped"
+      # Não incluir conteúdo sensível — registrar apenas que foi filtrado.
+      printf '# FILTERED: arquivo sensível %s excluído do checkpoint\n' "$file" >> "$dir/tracked-working-tree.patch"
+      printf '# FILTERED: arquivo sensível %s excluído do checkpoint\n' "$file" >> "$dir/index.patch"
+    else
+      git diff --binary HEAD -- "$file" >> "$dir/tracked-working-tree.patch"
+      git diff --cached --binary -- "$file" >> "$dir/index.patch"
+    fi
+  done < "$safe_changed_list"
+
+  rm -f "$changed_tracked" "$changed_staged" "$safe_changed_list"
 
   list="$dir/untracked-all.list0"
   safe_list="$dir/untracked-safe.list0"
-  skipped="$dir/skipped-untracked.txt"
-  : > "$list"; : > "$safe_list"; : > "$skipped"
+  : > "$list"; : > "$safe_list"
   git ls-files --others --exclude-standard -z > "$list"
 
   while IFS= read -r -d '' file; do
@@ -226,9 +269,19 @@ checkpoint() {
     tar --null -T "$safe_list" -czf "$dir/untracked-safe.tar.gz"
   fi
 
-  # Bundle contém somente histórico já commitado; working tree fica nos patches/tar locais.
-  git bundle create "$dir/repository.bundle" --branches --tags >/dev/null 2>&1 || \
-    git bundle create "$dir/repository.bundle" HEAD >/dev/null 2>&1
+  # Bundle: verificar se histórico commitado tem arquivos sensíveis.
+  # Se encontrar .env ou chaves no histórico, bloquear o bundle.
+  local bundle_blocked=""
+  if git log --all --name-only --format="" | grep -Eiq '(^|/)(\.env($|\.).*|[^/]*\.(pem|key|p12|pfx|jks|keystore)$)'; then
+    bundle_blocked="1"
+    printf 'bundle-blocked: histórico contém arquivos sensíveis; bundle não criado\n' >> "$skipped"
+    warn "histórico Git contém nomes de arquivos sensíveis (.env, chaves); bundle bloqueado para proteger segredos. Checkpoint preserva apenas diffs seguros."
+  fi
+
+  if [ -z "$bundle_blocked" ]; then
+    git bundle create "$dir/repository.bundle" --branches --tags >/dev/null 2>&1 || \
+      git bundle create "$dir/repository.bundle" HEAD >/dev/null 2>&1
+  fi
 
   rm -f "$list" "$safe_list"
   (
