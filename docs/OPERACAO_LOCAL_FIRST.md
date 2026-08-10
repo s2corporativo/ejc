@@ -8,12 +8,13 @@ A ordem operacional passa a ser:
 
 1. checkout DEV isolado;
 2. Git local como fonte imediata do trabalho;
-3. checkpoint recuperável fora da árvore do repositório;
-4. validação com `scripts/ci-local.sh`;
-5. GitHub apenas como sincronização/espelho quando estiver disponível;
-6. produção somente pelo mecanismo de deploy seguro existente.
+3. registro local da tarefa quando Issue não puder ser criada;
+4. checkpoint recuperável fora da árvore do repositório;
+5. validação com `scripts/ci-local.sh`;
+6. GitHub apenas como sincronização/espelho quando estiver disponível;
+7. produção somente pelo mecanismo de deploy seguro existente.
 
-O GitHub continua útil para colaboração, histórico remoto, PRs e espelho. Ele deixa de ser requisito para preservar trabalho, executar testes ou continuar uma tarefa já iniciada.
+O GitHub continua útil para colaboração, histórico remoto, PRs e espelho. Ele deixa de ser requisito para preservar trabalho, executar testes ou continuar uma tarefa autorizada.
 
 ## Regra de segurança
 
@@ -27,7 +28,8 @@ Nunca colocar no fluxo de contingência:
 - credenciais;
 - tokens;
 - dumps de banco com dados reais;
-- documentos de clientes.
+- documentos de clientes;
+- PII real em registro técnico de tarefa.
 
 O snapshot local usa `umask 077`, diretórios `0700` e arquivos `0600`. Arquivos não rastreados com nomes sensíveis, symlinks e arquivos acima do limite configurado são deliberadamente excluídos do snapshot.
 
@@ -37,6 +39,7 @@ Use `bash` explicitamente para que o procedimento não dependa da preservação 
 
 ```bash
 bash scripts/ejc-local-first.sh status
+bash scripts/ejc-local-first.sh register "titulo tecnico" "escopo sem segredo ou PII real"
 bash scripts/ejc-local-first.sh checkpoint
 bash scripts/ejc-local-first.sh validate full
 bash scripts/ejc-local-first.sh sync
@@ -45,7 +48,23 @@ bash scripts/ejc-local-first.sh work full
 
 ### `status`
 
-Mostra branch, SHA, working tree e disponibilidade do remoto. A indisponibilidade do remoto é aviso, não falha do trabalho local.
+Mostra branch, SHA, working tree, quantidade de registros locais pendentes e disponibilidade do remoto. A indisponibilidade do remoto é aviso, não falha do trabalho local.
+
+### `register`
+
+É usado somente quando a tarefa autorizada precisa começar e o GitHub não permite criar Issue.
+
+O registro fica em:
+
+```text
+${EJC_RECOVERY_ROOT:-$HOME/.local/state/ejc-recovery}/<repositorio>/pending-tasks/
+```
+
+Ele contém título técnico, escopo, branch, SHA e data. Não deve conter segredo, PII real ou documento de cliente. O script rejeita padrões óbvios de segredo antes de gravar.
+
+Quando `sync` detecta o GitHub disponível, tenta converter os registros pendentes em Issues usando `gh` **somente se** o CLI já estiver instalado e autenticado. Se `gh` estiver ausente, desautenticado ou falhar, os registros permanecem intactos para tentativa posterior; não há perda nem exclusão silenciosa.
+
+Esse é o mecanismo **store-and-forward** da rastreabilidade: indisponibilidade externa não bloqueia a escrita autorizada, mas a rastreabilidade permanente é reconciliada quando o serviço volta.
 
 ### `checkpoint`
 
@@ -88,7 +107,7 @@ Se o GitHub estiver indisponível:
 
 - grava `mode=offline` no estado local;
 - não falha a tarefa;
-- não perde o checkpoint;
+- não perde checkpoint nem registro de tarefa;
 - não executa reset/rebase/merge;
 - continua permitindo validação local.
 
@@ -98,7 +117,8 @@ Se o remoto estiver disponível:
 - nunca faz force push;
 - nunca publica `main`/`master`;
 - se a branch remota avançou, apenas informa divergência e preserva o trabalho local;
-- se a branch não está atrás do remoto, pode publicar a branch normalmente.
+- se a branch não está atrás do remoto, pode publicar a branch normalmente;
+- tenta sincronizar os registros locais pendentes como Issues sem transformar falha dessa etapa em perda do trabalho.
 
 O push best-effort pode ser desligado com:
 
@@ -141,13 +161,14 @@ Quando uma operação do GitHub falhar:
 
 1. não repetir indefinidamente a mesma chamada;
 2. classificar se a falha é apenas remota ou se afeta o código local;
-3. preservar o estado com `checkpoint`;
-4. continuar análise, edição e testes no checkout DEV;
-5. usar `scripts/ci-local.sh` como gate;
-6. tentar `sync` novamente somente quando for útil para publicação;
-7. não pedir ao titular para intervir se existir uma alternativa local segura;
-8. só parar quando a alternativa exigiria operação irreversível, segredo não disponível ou violação de LGPD/segurança.
+3. registrar a tarefa localmente se ainda não houver Issue;
+4. preservar o estado com `checkpoint`;
+5. continuar análise, edição e testes no checkout DEV;
+6. usar `scripts/ci-local.sh` como gate;
+7. tentar `sync` novamente somente quando for útil para publicação;
+8. não pedir ao titular para intervir se existir uma alternativa local segura;
+9. só parar quando a alternativa exigiria operação irreversível, segredo não disponível ou violação de LGPD/segurança.
 
 ## Rollback do próprio mecanismo local-first
 
-A adoção é reversível porque não altera schema, banco ou runtime. Para deixar de usar o fluxo, basta não chamar `scripts/ejc-local-first.sh`; `scripts/ci-local.sh` e o deploy seguro continuam independentes.
+A adoção é reversível porque não altera schema, banco ou runtime. Para deixar de usar o fluxo, basta não chamar `scripts/ejc-local-first.sh`; `scripts/ci-local.sh` e o deploy seguro continuam independentes. Registros/checkpoints locais podem ser mantidos para auditoria ou removidos posteriormente por rotina controlada, nunca por limpeza destrutiva automática.
