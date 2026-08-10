@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # CI LOCAL do EJC — paridade dos gates de CI fora do GitHub Actions.
-# Usa somente banco efêmero; nunca aponta para produção.
+# Usa exclusivamente estado e banco efêmeros fora do checkout; nunca produção.
 set -euo pipefail
+umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -17,11 +18,14 @@ VENV_DIR=""
 PGDATA="${PGDATA:-$STATE_ROOT/pgdata-${$}}"
 REPORT_ROOT="${EJC_CI_REPORT_ROOT:-$STATE_ROOT/reports}"
 REPORT_DIR="${EJC_CI_REPORT_DIR:-$REPORT_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-${$}}"
+TOOLS_ROOT="${EJC_CI_TOOLS_ROOT:-$STATE_ROOT/tools}"
 DBU="${EJC_CI_DB_USER:-ejc_user}"
 DBP="${EJC_CI_DB_PASSWORD:-ejc_pass}"
 DBN="${EJC_CI_DB_NAME:-ejc_db}"
 PYTHON_BIN="${PYTHON_BIN:-}"
 NODE_MAJOR_REQUIRED="${NODE_MAJOR_REQUIRED:-22}"
+PIP_AUDIT_VERSION="2.10.0"
+FRONTEND_BUILD_VALIDATED=0
 
 log() { printf '\n\033[1;36m[ci-local]\033[0m %s\n' "$*"; }
 ok()  { printf '\033[1;32m✔ %s\033[0m\n' "$*"; }
@@ -29,6 +33,26 @@ die() { printf '\033[1;31mERRO: %s\033[0m\n' "$*" >&2; exit 1; }
 
 canon() {
   if command -v realpath >/dev/null 2>&1; then realpath -m "$1"; else printf '%s\n' "$1"; fi
+}
+
+assert_outside_repo_prod() {
+  local path="$1" label="$2" resolved root_resolved home_resolved
+  resolved="$(canon "$path")"
+  root_resolved="$(canon "$ROOT")"
+  home_resolved="$(canon "${HOME:-/__no_home__}")"
+  case "$resolved" in
+    /|"$home_resolved"|/opt/ejc|/opt/ejc/*|"$root_resolved"|"$root_resolved"/*)
+      die "$label deve ficar fora do checkout, HOME raiz e /opt/ejc: $resolved"
+      ;;
+  esac
+}
+
+assert_under_state() {
+  local path="$1" label="$2" resolved state_resolved
+  resolved="$(canon "$path")"
+  state_resolved="$(canon "$STATE_ROOT")"
+  [[ "$resolved" == "$state_resolved/"* ]] \
+    || die "$label deve permanecer sob STATE_ROOT para limpeza segura: $resolved"
 }
 
 safe_remove_tree() {
@@ -64,8 +88,17 @@ if [ "$(id -u)" -eq 0 ] && [ "${EJC_ALLOW_ROOT_DIAGNOSTIC:-0}" != "1" ]; then
   die "CI local promovível não roda como root. EJC_ALLOW_ROOT_DIAGNOSTIC=1 serve apenas para diagnóstico não-promovível."
 fi
 
-mkdir -p "$STATE_ROOT" "$REPORT_DIR"
-chmod 700 "$STATE_ROOT" "$REPORT_DIR" 2>/dev/null || true
+command -v flock >/dev/null 2>&1 || die "flock ausente"
+assert_outside_repo_prod "$STATE_ROOT" "STATE_ROOT"
+assert_under_state "$PGDATA" "PGDATA"
+assert_under_state "$REPORT_ROOT" "REPORT_ROOT"
+assert_under_state "$REPORT_DIR" "REPORT_DIR"
+assert_under_state "$TOOLS_ROOT" "TOOLS_ROOT"
+if [ -n "$VENV_DIR_OVERRIDE" ]; then
+  assert_outside_repo_prod "$VENV_DIR_OVERRIDE" "VENV_DIR"
+fi
+mkdir -p "$STATE_ROOT" "$REPORT_DIR" "$TOOLS_ROOT"
+chmod 700 "$STATE_ROOT" "$REPORT_DIR" "$TOOLS_ROOT" 2>/dev/null || true
 
 PG_MODE=""
 PGBIN=""
@@ -136,21 +169,62 @@ resolve_venv_dir() {
 ensure_venv() {
   choose_python
   resolve_venv_dir
-  if [ "${CI_SKIP_PIP:-0}" = "1" ] && [ ! -x "$VENV_DIR/bin/python" ]; then
-    die "CI_SKIP_PIP=1 solicitado, mas o venv hermético não existe: $VENV_DIR"
+  local ready="$VENV_DIR/.ejc-ready" lock="$VENV_DIR.lock"
+  if [ "${CI_SKIP_PIP:-0}" = "1" ] && { [ ! -x "$VENV_DIR/bin/python" ] || [ ! -f "$ready" ]; }; then
+    die "CI_SKIP_PIP=1 solicitado, mas o venv hermético não existe ou não está completo: $VENV_DIR"
   fi
+
+  exec 7>"$lock"
+  flock 7
   if [ ! -x "$VENV_DIR/bin/python" ]; then
     log "Criando venv hermético em $VENV_DIR…"
     mkdir -p "$(dirname "$VENV_DIR")"
     "$PYTHON_BIN" -m venv "$VENV_DIR"
   fi
+
   if [ "${CI_SKIP_PIP:-0}" = "1" ]; then
     log "CI_SKIP_PIP=1 — reutilizando venv do mesmo runtime + requirements hash."
-  else
-    log "Instalando dependências Python bloqueadas…"
+  elif [ ! -f "$ready" ] || [ "${CI_FORCE_PIP:-0}" = "1" ]; then
+    log "Instalando dependências Python bloqueadas no runtime da aplicação…"
     "$VENV_DIR/bin/python" -m pip install -q --upgrade pip
     "$VENV_DIR/bin/python" -m pip install -q -r backend/requirements.txt
+    "$VENV_DIR/bin/python" -m pip check >/dev/null
+    local tmp_ready="$ready.tmp.$$"
+    printf 'python=%s\nrequirements_sha256=%s\n' \
+      "$($VENV_DIR/bin/python -c 'import sys; print(sys.version.split()[0])')" \
+      "$($PYTHON_BIN -c 'import hashlib,pathlib; print(hashlib.sha256(pathlib.Path("backend/requirements.txt").read_bytes()).hexdigest())')" \
+      > "$tmp_ready"
+    chmod 600 "$tmp_ready" 2>/dev/null || true
+    mv "$tmp_ready" "$ready"
+  else
+    log "Venv da aplicação já materializado para este runtime + requirements hash."
+    "$VENV_DIR/bin/python" -m pip check >/dev/null
   fi
+  flock -u 7
+}
+
+ensure_pip_audit() {
+  choose_python
+  local py_version tool_dir ready lock
+  py_version="$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
+  tool_dir="$TOOLS_ROOT/pip-audit-${PIP_AUDIT_VERSION}-py${py_version//./_}"
+  ready="$tool_dir/.ejc-ready"
+  lock="$tool_dir.lock"
+
+  exec 6>"$lock"
+  flock 6
+  if [ ! -x "$tool_dir/bin/pip-audit" ] || [ ! -f "$ready" ]; then
+    log "Materializando pip-audit em venv de tooling separado…"
+    if [ -d "$tool_dir" ]; then safe_remove_tree "$tool_dir"; fi
+    "$PYTHON_BIN" -m venv "$tool_dir"
+    "$tool_dir/bin/python" -m pip install -q --upgrade pip
+    "$tool_dir/bin/python" -m pip install -q "pip-audit==${PIP_AUDIT_VERSION}"
+    "$tool_dir/bin/python" -m pip check >/dev/null
+    printf 'pip-audit=%s\npython=%s\n' "$PIP_AUDIT_VERSION" "$py_version" > "$ready"
+    chmod 600 "$ready" 2>/dev/null || true
+  fi
+  PIP_AUDIT_BIN="$tool_dir/bin/pip-audit"
+  flock -u 6
 }
 
 check_node() {
@@ -225,8 +299,8 @@ run_backend() {
   (cd backend && "$PY" -c "from app.core.config import get_settings; from fastembed.rerank.cross_encoder import TextCrossEncoder; s=get_settings(); nomes={m['model'] for m in TextCrossEncoder.list_supported_models()}; assert s.RAG_RERANK_MODEL in nomes, s.RAG_RERANK_MODEL; print(s.RAG_RERANK_MODEL)")
   log "Ruff…"; (cd backend && "$PY" -m ruff check app --output-format=concise) | tee "$REPORT_DIR/ruff.log"
   log "pip-audit 2.10.0…"
-  "$PY" -m pip install -q 'pip-audit==2.10.0'
-  (cd backend && "$VENV_DIR/bin/pip-audit" -r requirements.txt --desc) | tee "$REPORT_DIR/pip-audit.log"
+  ensure_pip_audit
+  (cd backend && "$PIP_AUDIT_BIN" -r requirements.txt --desc) | tee "$REPORT_DIR/pip-audit.log"
   log "Alembic upgrade head…"; (cd backend && "$PY" -m alembic upgrade head)
   log "Pytest completo com banco + cobertura >=65%…"
   (cd backend && "$PY" -m pytest tests -q --tb=short --maxfail=25 --cov=app --cov-report=term-missing:skip-covered --cov-report="xml:$REPORT_DIR/backend-coverage.xml" --cov-fail-under=65) \
@@ -250,6 +324,7 @@ run_frontend() {
   log "Frontend: Vitest…"; (cd frontend && npm run test -- --reporter=dot) | tee "$REPORT_DIR/vitest.log"
   log "Frontend: npm audit high…"; (cd frontend && npm audit --audit-level=high) | tee "$REPORT_DIR/npm-audit.log"
   log "Frontend: typecheck/build…"; (cd frontend && npm run build) | tee "$REPORT_DIR/frontend-build.log"
+  FRONTEND_BUILD_VALIDATED=1
   ok "Frontend CI equivalente OK"
 }
 
@@ -281,6 +356,7 @@ run_continuity() {
   local PY="$VENV_DIR/bin/python"
   export RESTORE_DRILL_ALLOW=1
   export RESTORE_DRILL_REPORT="${RESTORE_DRILL_REPORT:-$REPORT_DIR/restore-drill-report.json}"
+  assert_under_state "$RESTORE_DRILL_REPORT" "RESTORE_DRILL_REPORT"
   log "Continuidade: preparando schema migrado em banco novo…"
   (cd backend && "$PY" -m alembic upgrade head)
   log "Continuidade: prova integral backup/restore…"
@@ -295,7 +371,11 @@ run_ui_extra() {
   check_node
   [ -d frontend/node_modules ] || (cd frontend && npm ci --no-audit --no-fund)
   log "Frontend extra: ESLint…"; (cd frontend && npm run lint:eslint) | tee "$REPORT_DIR/eslint.log"
-  log "Frontend extra: build…"; (cd frontend && npm run build) | tee "$REPORT_DIR/ui-build.log"
+  if [ "$FRONTEND_BUILD_VALIDATED" -eq 0 ]; then
+    log "Frontend extra: build independente…"; (cd frontend && npm run build) | tee "$REPORT_DIR/ui-build.log"
+  else
+    log "Frontend extra: reutilizando build já validado no mesmo processo/SHA."
+  fi
   log "Frontend extra: Playwright/Chromium sem instalação privilegiada de pacotes do SO…"
   (cd frontend && npm install --no-save --package-lock=false playwright@1.56.1)
   (cd frontend && npx playwright install chromium)
