@@ -103,6 +103,32 @@ CONTEXT_P0='EJC Local / P0 Guard'
 CONTEXT_GOV='EJC Local / Governança'
 CONTEXT_FULL='EJC Local Full Gate'
 STATUS_SYNC_PENDING=0
+GOV_WORKTREE=""
+WORKTREE=""
+
+cleanup_worktrees() {
+  set +e
+  if [ -n "${GOV_WORKTREE:-}" ] && git worktree list --porcelain | grep -Fqx "worktree $GOV_WORKTREE"; then
+    git worktree remove --force "$GOV_WORKTREE" >/dev/null 2>&1 || true
+  fi
+  if [ -n "${WORKTREE:-}" ] && git worktree list --porcelain | grep -Fqx "worktree $WORKTREE"; then
+    git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_worktrees EXIT
+
+preflight_app_credential() {
+  [ "$POST_STATUS" -eq 1 ] || return 0
+  local name='EJC Local Credential Preflight' payload result app_id
+  payload="$(jq -cn --arg name "$name" --arg sha "$SHA" '{name:$name,head_sha:$sha,status:"completed",conclusion:"neutral",output:{title:$name,summary:"validação da identidade do GitHub App antes do gate pesado"}}')"
+  if ! result="$(printf '%s' "$payload" | gh api -X POST "repos/$REPO/check-runs" -H 'Accept: application/vnd.github+json' --input - 2>/dev/null)"; then
+    die "credencial gh não consegue criar Check Run; use token de instalação do GitHub App dedicado antes de executar a suíte"
+  fi
+  app_id="$(printf '%s' "$result" | jq -r '.app.id // -1')"
+  [ "$app_id" = "$FALLBACK_APP_ID" ] \
+    || die "credencial gh pertence ao app_id=$app_id, esperado=$FALLBACK_APP_ID; suíte não iniciada"
+  log "Credencial do GitHub App validada (app_id=$app_id) antes da suíte."
+}
 
 post_full_check() {
   local state="$1" description="$2" payload result app_id
@@ -168,18 +194,19 @@ local_evidence_is_green() {
 
 revalidate_governance_for_merge() {
   [ -n "$PR" ] || return 1
-  local gov_parent gov_work rc
+  local gov_parent rc
   gov_parent="$WORKTREE_PARENT/merge-governance"
   mkdir -p "$gov_parent"
-  gov_work="$gov_parent/${SHA:0:12}-$$"
-  [ ! -e "$gov_work" ] || die "worktree temporário de governança já existe: $gov_work"
-  git worktree add --detach "$gov_work" "$SHA" >/dev/null
+  GOV_WORKTREE="$gov_parent/${SHA:0:12}-$$"
+  [ ! -e "$GOV_WORKTREE" ] || die "worktree temporário de governança já existe: $GOV_WORKTREE"
+  git worktree add --detach "$GOV_WORKTREE" "$SHA" >/dev/null
   set +e
-  (cd "$gov_work" && EJC_PR_NUMBER="$PR" EJC_GOV_REQUIRE_PR=1 \
+  (cd "$GOV_WORKTREE" && EJC_PR_NUMBER="$PR" EJC_GOV_REQUIRE_PR=1 \
     bash scripts/governanca/ci-local-governanca.sh) >/dev/null 2>&1
   rc=$?
   set -e
-  git worktree remove --force "$gov_work" >/dev/null 2>&1 || true
+  git worktree remove --force "$GOV_WORKTREE" >/dev/null 2>&1 || true
+  GOV_WORKTREE=""
   return "$rc"
 }
 
@@ -247,6 +274,8 @@ attempt_merge() {
   fi
 }
 
+preflight_app_credential
+
 if [ "$PROMOTE_ONLY" -eq 1 ]; then
   [ -n "$PR" ] || die "--promote-only exige --pr"
   refresh_status_from_evidence
@@ -262,14 +291,6 @@ fi
 WORKTREE="$WORKTREE_PARENT/${SHA:0:12}-$$"
 EVIDENCE="$EVIDENCE_ROOT/$SHA"
 mkdir -p "$EVIDENCE"; chmod 700 "$EVIDENCE" 2>/dev/null || true
-
-cleanup() {
-  set +e
-  if git worktree list --porcelain | grep -Fqx "worktree $WORKTREE"; then
-    git worktree remove --force "$WORKTREE" >/dev/null 2>&1
-  fi
-}
-trap cleanup EXIT
 
 git worktree add --detach "$WORKTREE" "$SHA" >/dev/null
 
