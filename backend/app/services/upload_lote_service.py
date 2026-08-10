@@ -19,6 +19,7 @@ import aiofiles
 from fastapi import HTTPException, UploadFile
 
 from app.core.config import get_settings
+from app.services.document_content_policy import validar_conteudo
 
 settings = get_settings()
 
@@ -87,8 +88,6 @@ async def processar_lote(
     entidade_segura = _segmento_storage(entidade_id, campo="entidade_id")
     raiz_upload = Path(settings.UPLOAD_DIR)
 
-    from app.routers.documents import _validar_conteudo
-
     validos: list[ArquivoValidado] = []
     duplicados: list[str] = []
     erros: list[dict[str, str]] = []
@@ -116,7 +115,7 @@ async def processar_lote(
             continue
 
         try:
-            mime_real = _validar_conteudo(ext, content)
+            mime_real = validar_conteudo(ext, content)
         except HTTPException as exc:
             erros.append({"arquivo": filename, "erro": str(exc.detail)[:300]})
             continue
