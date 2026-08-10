@@ -2,17 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   destinoModo,
   ehModoEntrada,
-  modoPadraoParaRole,
-  podeUsarRelato,
+  normalizarModoEntrada,
 } from "./EntradaUnica";
 
 describe("Entrada Única — contrato dos modos", () => {
-  it("mantém relato como padrão apenas para advogado+", () => {
-    expect(modoPadraoParaRole("advogado")).toBe("relato");
-    expect(modoPadraoParaRole("socio")).toBe("relato");
-    expect(modoPadraoParaRole("estagiario")).toBe("sala");
-    expect(modoPadraoParaRole("advogado_auxiliar")).toBe("sala");
-    expect(podeUsarRelato("financeiro")).toBe(false);
+  it("usa relato como modo canônico quando não há modo ou ele é inválido", () => {
+    expect(normalizarModoEntrada(null)).toBe("relato");
+    expect(normalizarModoEntrada("qualquer")).toBe("relato");
   });
 
   it("aceita apenas os três modos declarados", () => {
