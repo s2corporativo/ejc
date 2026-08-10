@@ -109,7 +109,6 @@ jobs:
           test ! -e /opt/ejc/.env
           test ! -e /opt/ejc/.deployed_sha
           case "$GITHUB_WORKSPACE" in /opt/ejc|/opt/ejc/*) exit 1;; esac
-          bash scripts/ci-fallback.sh EJC_CI_GUARD_ONLY=1 >/dev/null 2>&1 || true
           EJC_CI_GUARD_ONLY=1 bash scripts/ci-fallback.sh
 
       - name: Executar fallback completo
