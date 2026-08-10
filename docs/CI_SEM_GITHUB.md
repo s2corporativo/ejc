@@ -1,12 +1,24 @@
 # CI sem custo — rodando a validação fora do GitHub Actions
 
+## Regra operacional atual
+
+O EJC adota **local-first**: o checkout DEV + Git local + `scripts/ci-local.sh` são o caminho primário de desenvolvimento e validação. GitHub/GitHub Actions são sincronização e colaboração secundárias; indisponibilidade do remoto não deve bloquear checkpoint, edição ou testes locais.
+
+Use o orquestrador:
+
+```bash
+scripts/ejc-local-first.sh work full
+```
+
+Ele cria checkpoint recuperável, roda o CI local e tenta sincronizar a branch em best-effort. Se o GitHub estiver indisponível, entra em modo offline sem reset/rebase/force e mantém o trabalho preservado. Procedimento completo: `docs/OPERACAO_LOCAL_FIRST.md`.
+
 ## Por que
 
 O **repositório privado no GitHub é grátis** — o que cobra é o **GitHub Actions**
 (as máquinas na nuvem que rodavam os testes a cada push). O plano grátis dá um
 teto mensal de minutos; a suíte do EJC (~8 min) rodava a cada push e estourava,
 bloqueando o CI (os jobs morriam em ~2s sem runner). **Solução: manter o código
-no GitHub (grátis) e rodar a validação de graça no seu VPS/máquina.**
+no GitHub e rodar a validação de graça no seu VPS/máquina.**
 
 ## O CI local (`scripts/ci-local.sh`)
 
@@ -36,8 +48,10 @@ Você já tem Docker no VPS (usa docker-compose pro EJC). Lá o script usa o Doc
 automaticamente:
 
 ```bash
-cd /caminho/do/ejc && git pull && scripts/ci-local.sh
+cd /caminho/do/ejc && scripts/ejc-local-first.sh work full
 ```
+
+O `git pull` não é mais pré-condição para validar. Sincronização remota ocorre somente quando o remoto estiver disponível e sem operações destrutivas.
 
 ## Gate automático antes do push (opcional)
 
@@ -80,4 +94,4 @@ on:
 Se quiser manter os checks bonitos de PR no GitHub **sem pagar minutos**, dá para
 registrar um **self-hosted runner** no VPS (Settings → Actions → Runners) e trocar
 `runs-on: ubuntu-latest` por `runs-on: self-hosted` nos workflows — a computação
-passa a ser do seu VPS (Actions minutes = 0). Peça que eu preparo o passo a passo.
+passa a ser do seu VPS (Actions minutes = 0).
