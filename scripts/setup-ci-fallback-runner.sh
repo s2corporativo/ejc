@@ -5,6 +5,7 @@ set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/s2corporativo/ejc}"
 RUNNER_TOKEN="${RUNNER_TOKEN:-${1:-}}"
+GH_TOKEN_LOCAL="${GH_TOKEN:-}"
 RUNNER_NAME="${RUNNER_NAME:-ejc-ci-fallback}"
 RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,linux,ejc-ci,ejc-ci-isolado}"
 RUNNER_USER="${RUNNER_USER:-ejcci}"
@@ -20,7 +21,6 @@ ok() { printf '\033[1;32m✔ %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31mERRO: %s\033[0m\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" = "0" ] || die "Rode o bootstrap como root."
-[ -n "$RUNNER_TOKEN" ] || die "RUNNER_TOKEN ausente. Forneça-o apenas por variável de ambiente."
 [ "${APP_ENV:-}" != "production" ] || die "APP_ENV=production: host recusado."
 [ ! -e /opt/ejc/.env ] || die "/opt/ejc/.env detectado: não instalar CI em produção."
 [ ! -e /opt/ejc/.deployed_sha ] || die "/opt/ejc/.deployed_sha detectado: não instalar CI em produção."
@@ -40,6 +40,22 @@ case "$(uname -m)" in
   aarch64|arm64) ARCH=arm64 ;;
   *) die "arquitetura não suportada: $(uname -m)" ;;
 esac
+
+# Para operação autônoma, um GH_TOKEN com permissão administrativa de Actions
+# pode gerar o token temporário de registro sem copiar segredo para arquivo/log.
+# RUNNER_TOKEN continua aceito como opção de bootstrap pontual.
+if [ -z "$RUNNER_TOKEN" ] && [ -n "$GH_TOKEN_LOCAL" ]; then
+  REPO_SLUG="${REPO_URL#https://github.com/}"
+  REPO_SLUG="${REPO_SLUG%.git}"
+  log "Obtendo token temporário de registro pela API do GitHub…"
+  RUNNER_TOKEN="$(curl -fsSL -X POST \
+    -H 'Accept: application/vnd.github+json' \
+    -H "Authorization: Bearer $GH_TOKEN_LOCAL" \
+    -H 'X-GitHub-Api-Version: 2022-11-28' \
+    "https://api.github.com/repos/${REPO_SLUG}/actions/runners/registration-token" \
+    | jq -r '.token // empty')"
+fi
+[ -n "$RUNNER_TOKEN" ] || die "Defina RUNNER_TOKEN temporário ou GH_TOKEN com permissão para registrar runner; nunca grave o token em arquivo ou log."
 
 service_name_from_file() {
   [ -s "$RUNNER_HOME/.service" ] && tr -d '\r\n' < "$RUNNER_HOME/.service" || true
