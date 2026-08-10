@@ -12,12 +12,19 @@
 #
 # Requisitos: gh autenticado com permissão de admin no repositório.
 # A alteração é reversível e salva backup em var/ (gitignored).
+#
+# ATO ADMINISTRATIVO PROTEGIDO: o modo --fallback só pode ser aplicado conforme
+# decisão expressa e registrada do titular. A autorização vigente está na Issue
+# #998; o ativador canônico injeta EJC_FALLBACK_AUTHORIZATION=998. Esta trava
+# não serve para contornar checks: ela apenas troca o executor obrigatório,
+# preservando strict, reviews, CODEOWNERS e todas as demais proteções.
 # =============================================================================
 set -euo pipefail
 
 REPO="${EJC_REPO:-s2corporativo/ejc}"
 BRANCH="${EJC_BRANCH:-main}"
 MODO="${1:---cloud}"
+FALLBACK_AUTHORIZATION="${EJC_FALLBACK_AUTHORIZATION:-}"
 
 falhar() { echo ""; echo "ABORTADO: $1"; exit 1; }
 ok() { echo "  [ok] $1"; }
@@ -108,7 +115,10 @@ case "$MODO" in
   --dry-run) PAYLOAD="$PAYLOAD_CLOUD"; LABEL="cloud" ;;
   --dry-run-fallback) PAYLOAD="$PAYLOAD_FALLBACK"; LABEL="fallback local" ;;
   --cloud) PAYLOAD="$PAYLOAD_CLOUD"; LABEL="cloud" ;;
-  --fallback) PAYLOAD="$PAYLOAD_FALLBACK"; LABEL="fallback local" ;;
+  --fallback)
+    [ "$FALLBACK_AUTHORIZATION" = "998" ] \
+      || falhar "modo --fallback exige EJC_FALLBACK_AUTHORIZATION=998 (decisão registrada na Issue #998)"
+    PAYLOAD="$PAYLOAD_FALLBACK"; LABEL="fallback local" ;;
   *) falhar "modo inválido: $MODO" ;;
 esac
 
@@ -161,5 +171,6 @@ Leitura esperada em ambos os modos:
 
 Modo --cloud: cinco contexts canônicos do Actions.
 Modo --fallback: somente o context `EJC Local Full Gate`, produzido pelo fallback
-local completo após validação real do SHA em worktree isolado.
+local completo após validação real do SHA em worktree isolado. A aplicação desse
+modo exige autorização registrada da Issue #998.
 FIM
