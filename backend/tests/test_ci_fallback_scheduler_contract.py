@@ -74,16 +74,43 @@ def test_disable_e_transacao_drain_restore_remove():
     assert "rm -f \"$ACTIVE_FILE\" \"$PROTECTION_BACKUP\" \"$DRAIN_FILE\"" in block
 
 
-def test_rollback_de_enable_cobre_hooks_protecao_e_watcher():
+def test_rollback_de_enable_cobre_hooks_protecao_watcher_e_drain():
     src = ACTIVATE.read_text(encoding="utf-8")
     assert 'HOOKS_BACKUP="$LOG_DIR/core-hooks-path.before"' in src
     assert "restore_hooks_path()" in src
     assert "HOOKS_CHANGED=1" in src
     assert src.index("PROTECTION_CHANGED=1") < src.index("branch-protection.sh --fallback")
     rollback = src[src.index("rollback_activation() {") : src.index("trap rollback_activation EXIT")]
-    assert "remove_watcher" in rollback
+    assert "create_drain_marker" in rollback
+    assert "flock -w 120 9" in rollback
+    assert "if ! remove_watcher" in rollback
+    assert rollback.index("if ! remove_watcher") < rollback.index("branch-protection.sh --restore")
     assert "branch-protection.sh --restore" in rollback
     assert "restore_hooks_path" in rollback
+    assert 'rm -f "$ACTIVE_FILE" "$DRAIN_FILE"' in rollback
+    # Não pode haver cleanup de active/drain antes de provar a remoção do watcher.
+    assert rollback.index("if ! remove_watcher") < rollback.index('rm -f "$ACTIVE_FILE" "$DRAIN_FILE"')
+
+
+def test_watcher_e_marcado_instalado_antes_das_validacoes_pos_start():
+    src = ACTIVATE.read_text(encoding="utf-8")
+    systemd = src[src.index('if [ "$SCHEDULER" = "systemd" ]') : src.index("else\n  LINE=")]
+    assert systemd.index("systemctl --user enable --now ejc-ci-fallback.service") < systemd.index("WATCHER_INSTALLED=1")
+    assert systemd.index("WATCHER_INSTALLED=1") < systemd.index("systemctl --user is-enabled --quiet ejc-ci-fallback.service")
+    assert systemd.index("WATCHER_INSTALLED=1") < systemd.index("systemctl --user is-active --quiet ejc-ci-fallback.service")
+
+    cron = src[src.index("else\n  LINE=") : src.index("trap - EXIT")]
+    assert cron.index("| crontab -") < cron.index("WATCHER_INSTALLED=1")
+    assert cron.index("WATCHER_INSTALLED=1") < cron.index('grep -qF "$CRON_MARK"')
+
+
+def test_estado_ativo_e_gravado_antes_de_iniciar_executor():
+    src = ACTIVATE.read_text(encoding="utf-8")
+    write = src.index('write_active_state "$SCHEDULER"')
+    start_systemd = src.index("systemctl --user enable --now ejc-ci-fallback.service")
+    install_cron = src.index("| crontab -", src.index("else\n  LINE="))
+    assert write < start_systemd
+    assert write < install_cron
 
 
 def test_scheduler_impede_execucoes_sobrepostas():
@@ -111,7 +138,11 @@ def test_hooks_path_e_preservado_exclusivamente_no_escopo_local():
 
 
 def _remove_watcher_harness(
-    tmp_path: Path, *, unit_exists: bool, include_systemctl: bool
+    tmp_path: Path,
+    *,
+    unit_exists: bool,
+    include_systemctl: bool,
+    disable_fails: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     src = ACTIVATE.read_text(encoding="utf-8")
     funcs = src[src.index("remove_cron() {") : src.index("restore_hooks_path() {")]
@@ -129,11 +160,13 @@ def _remove_watcher_harness(
 
     if include_systemctl:
         systemctl = bin_dir / "systemctl"
+        disable_rc = 1 if disable_fails else 0
         systemctl.write_text(
             "#!/bin/sh\n"
             f"printf '%s\\n' \"$*\" >> {calls!s}\n"
             "case \"$*\" in\n"
             "  *is-active*|*is-enabled*) exit 1 ;;\n"
+            f"  *disable*--now*) exit {disable_rc} ;;\n"
             "esac\n"
             "exit 0\n",
             encoding="utf-8",
@@ -180,3 +213,17 @@ def test_remove_watcher_com_unit_e_sem_systemctl_falha_fechado(tmp_path: Path):
     unit = tmp_path / "ejc-ci-fallback.service"
     assert unit.exists()
     assert result.returncode != 0
+
+
+def test_remove_watcher_preserva_unit_quando_disable_falha(tmp_path: Path):
+    result, calls = _remove_watcher_harness(
+        tmp_path,
+        unit_exists=True,
+        include_systemctl=True,
+        disable_fails=True,
+    )
+    unit = tmp_path / "ejc-ci-fallback.service"
+    assert result.returncode != 0
+    assert unit.exists()
+    logged = calls.read_text(encoding="utf-8") if calls.exists() else ""
+    assert "disable --now ejc-ci-fallback.service" in logged
