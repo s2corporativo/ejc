@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_fallback_nao_publica_contexts_canônicos_do_actions():
+def test_fallback_nao_publica_contexts_canonicos_do_actions():
     fallback = (ROOT / "scripts" / "ci-fallback.sh").read_text(encoding="utf-8")
     protection = (
         ROOT / "scripts" / "governanca" / "branch-protection.sh"
@@ -29,21 +29,23 @@ def test_fallback_nao_publica_contexts_canônicos_do_actions():
         "EJC Local / Frontend",
         "EJC Local / P0 Guard",
         "EJC Local / Governança",
+        "EJC Local / Arquitetura",
+        "EJC Local / Continuidade",
+        "EJC Local / UI Extra",
         "EJC Local Full Gate",
     )
     for context in local_contexts:
         assert context in fallback
 
-    # O gate promovível usa required_status_checks.checks vinculado ao app_id.
-    # Statuses clássicos dos subgates são apenas observabilidade.
     build = protection[
         protection.index("build_fallback_payload() {") : protection.index(
             'if [ "$MODO" = "--contextos" ]'
         )
     ]
-    assert 'checks: [' in build
-    assert '{context: "EJC Local Full Gate", app_id: $app_id}' in build
-    assert 'contexts:' not in build
+    compact = "".join(build.split())
+    assert "checks:[" in compact
+    assert 'context:"EJCLocalFullGate",app_id:$app_id' in compact
+    assert "contexts:" not in compact
 
 
 def test_watcher_sem_auto_merge_repromove_status_sem_tentar_integracao():
@@ -56,6 +58,6 @@ def test_watcher_sem_auto_merge_repromove_status_sem_tentar_integracao():
 
     approved = watcher[watcher.index('if local_evidence_green "$sha"; then') :]
     approved = approved[: approved.index("continue")]
-    assert 'if [ "$AUTO_MERGE" = "1" ]; then' in approved
+    assert 'if [ "$AUTO_MERGE" = "1" ]' in approved
     assert "--merge-only" in approved
     assert "--promote-only" in approved
