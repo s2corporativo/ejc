@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # Reproduz as travas objetivas de .github/workflows/governanca.yml fora do Actions.
+# O script executado é o root of trust do controlador; EJC_GOV_SOURCE_ROOT aponta
+# para o snapshot do PR que será apenas lido, nunca executado por este processo.
+# Complexidade: O(B) sobre bytes dos arquivos alterados.
 set -euo pipefail
+umask 077
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TRUST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="${EJC_GOV_SOURCE_ROOT:-$TRUST_ROOT}"
+ROOT="$(cd "$ROOT" && pwd -P)"
 cd "$ROOT"
 BASE="${EJC_GOV_BASE:-origin/main}"
 REQUIRE_PR="${EJC_GOV_REQUIRE_PR:-1}"
@@ -14,9 +20,10 @@ warn() { echo "[governanca-local] AVISO: $*" >&2; }
 ok() { echo "[governanca-local] ok: $*"; }
 
 case "$(realpath "$ROOT" 2>/dev/null || printf '%s' "$ROOT")" in
-  /opt/ejc|/opt/ejc/*) fail "recusado em /opt/ejc (produção)" ;;
+  /opt/ejc|/opt/ejc/*) fail "source root recusado em /opt/ejc (produção)" ;;
 esac
 [ "${APP_ENV:-}" != "production" ] && [ "${EJC_ENV:-}" != "production" ] || fail "ambiente de produção ativo"
+[ -e "$ROOT/.git" ] || fail "source root não é checkout/worktree Git"
 
 git rev-parse --verify "$BASE" >/dev/null 2>&1 || fail "base $BASE ausente; atualize o clone antes da validação"
 git diff --name-only -z "$BASE...HEAD" > "$TMP" || fail "não foi possível enumerar arquivos alterados"
@@ -30,9 +37,10 @@ RESERVATION_CHANGED=0
 SENSITIVE_CHANGED=0
 GOV_CHANGED=0
 FUNCTIONAL_CHANGED=0
-PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|scripts/(ci-local\.sh|ci-fallback[^/]*\.sh|governanca/(branch-protection|ci-local-governanca)\.sh)|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
-PADRAO_GOV='^(CLAUDE\.md|AGENTS\.md|\.claude/|\.github/workflows/governanca\.yml|docs/GOVERNANCA_IA\.md|docs/GOVERNANCA_FASE2\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md|scripts/(ci-local\.sh|ci-fallback[^/]*\.sh|governanca/(branch-protection|ci-local-governanca)\.sh))'
-PADROES='(AKIA[0-9A-Z]{16})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(sk-[A-Za-z0-9]{20,})|(ghp_[A-Za-z0-9]{30,})|(xox[baprs]-[A-Za-z0-9-]{10,})'
+ROOT_OF_TRUST='scripts/(ci-local\.sh|ci-fallback[^/]*\.sh|ci-worker-isolation\.sh|ci_evidence\.py|github-app-auth\.sh|governanca/(branch-protection|ci-local-governanca)\.sh)'
+PADRAO_SENSIVEL="^(\\.github/workflows/|\\.claude/|${ROOT_OF_TRUST}|backend/app/core/(security|config|auth|permissions)[^/]*\\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))"
+PADRAO_GOV="^(CLAUDE\\.md|AGENTS\\.md|\\.claude/|\\.github/workflows/governanca\\.yml|docs/GOVERNANCA_IA\\.md|docs/GOVERNANCA_FASE2\\.md|docs/FLUXO_DE_DESENVOLVIMENTO\\.md|${ROOT_OF_TRUST})"
+PADROES='(AKIA[0-9A-Z]{16})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(sk-[A-Za-z0-9_-]{20,})|(github_pat_[A-Za-z0-9_]{30,})|(gh[pousr]_[A-Za-z0-9]{30,})|(xox[baprs]-[A-Za-z0-9-]{10,})'
 ACHOU=0
 
 while IFS= read -r -d '' f; do
@@ -102,4 +110,4 @@ if [ "$GOV_CHANGED" -eq 1 ] && [ "$FUNCTIONAL_CHANGED" -eq 1 ]; then
 fi
 
 ok "branch de origem: ${BRANCH:-detached}"
-ok "Governança local aprovada"
+ok "Governança local aprovada contra source root explícito"
