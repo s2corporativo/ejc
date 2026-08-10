@@ -161,6 +161,8 @@ def test_ci_local_mantem_pg_loopback_scram_estado_confinado_e_tooling_separado()
     assert "assert_state_root" in src
     assert 'assert_state_child "$PGDATA" "PGDATA"' in src
     assert 'assert_state_child "$REPORT_DIR" "REPORT_DIR"' in src
+    assert 'PIP_AUDIT_VERSION="${PIP_AUDIT_VERSION:-2.10.0}"' in src
+    assert '"$build_dir/bin/python" -m pip install -q "pip-audit==$PIP_AUDIT_VERSION"' in src
     assert 'tool_dir="$STATE_ROOT/tools/pip-audit-' in src
     assert 'PIP_AUDIT_BIN="$tool_dir/bin/pip-audit"' in src
     assert "rm -rf" not in src
@@ -189,12 +191,12 @@ def test_watcher_preserva_retencao_incremental_e_classifica_falha_pre_stage():
 
 def test_ativacao_valida_worker_antes_da_protecao_e_disable_restaura_antes_de_remover_produtor():
     src = _text("scripts/ci-fallback-activate.sh")
-    pos_worker = src.index("ci-worker-isolation.sh\" preflight")
+    pos_worker = src.index("ci-worker-isolation.sh preflight")
     pos_fallback = src.index("branch-protection.sh --fallback")
     assert pos_worker < pos_fallback
     assert "create_drain" in src
-    assert "install_watcher \"$SCHEDULER\"" in src
-    assert src.index("install_watcher \"$SCHEDULER\"") < pos_fallback
+    assert 'install_watcher "$SCHEDULER"' in src
+    assert src.index('install_watcher "$SCHEDULER"') < pos_fallback
 
     disable = src[src.index('if [ "$MODE" = --disable ]') : src.index('[ "$MODE" = --enable ]')]
     assert "flock -w 120 8" in disable
@@ -233,7 +235,8 @@ def test_ci_local_cobre_paridade_minima_dos_gates_atuais():
     src = _text("scripts/ci-local.sh")
     required = [
         '"$PY" -m ruff check',
-        "pip-audit==2.10.0",
+        'PIP_AUDIT_VERSION="${PIP_AUDIT_VERSION:-2.10.0}"',
+        '"$PIP_AUDIT_BIN" -r requirements.txt --desc',
         "--cov-fail-under=65",
         "app.eval.run_eval --smoke",
         "app.eval.agent_trajectory",
