@@ -7,10 +7,10 @@ RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
 MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
-# Segurança por default: uma invocação local não pode ser menos segura que o
-# workflow cloud. Contingência permissiva exige opt-out explícito.
 REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-1}"
-DEPLOY_LOCK_ROOT="${EJC_DEPLOY_LOCK_ROOT:-${XDG_RUNTIME_DIR:-${HOME:-/tmp}/.cache}/ejc-deploy}"
+PRODUCTION_LOCK_ROOT="/run/lock/ejc"
+PRODUCTION_LOCK_FILE="$PRODUCTION_LOCK_ROOT/deploy.lock"
+DEPLOY_LOCK_ROOT="${EJC_DEPLOY_LOCK_ROOT:-$PRODUCTION_LOCK_ROOT}"
 DEPLOY_LOCK_FILE="${EJC_DEPLOY_LOCK_FILE:-$DEPLOY_LOCK_ROOT/deploy.lock}"
 
 log() { echo "[$(date '+%F %T')] $*"; }
@@ -23,33 +23,67 @@ case "$ENSURE_DAILY_BACKUP" in 0|1) ;; *) die_policy "ENSURE_DAILY_BACKUP deve s
 if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ] && [ "$ENSURE_DAILY_BACKUP" != "1" ]; then
   die_policy "ENSURE_DAILY_BACKUP=0 é incompatível com REQUIRE_PREDEPLOY_BACKUP=1"
 fi
-
-for cmd in flock realpath; do
-  command -v "$cmd" >/dev/null 2>&1 || die_policy "$cmd é obrigatório para serializar deploys locais"
+for cmd in flock realpath stat; do
+  command -v "$cmd" >/dev/null 2>&1 || die_policy "$cmd é obrigatório para serializar deploys"
 done
 
-# O mutex não pode residir na árvore que o próprio deploy sincroniza/substitui.
-# Isso evita que rsync/checkout/rollback apague ou troque o inode do lock.
-[ ! -L "$DEPLOY_LOCK_ROOT" ] || die_policy "EJC_DEPLOY_LOCK_ROOT não pode ser symlink"
-[ ! -L "$DEPLOY_LOCK_FILE" ] || die_policy "EJC_DEPLOY_LOCK_FILE não pode ser symlink"
 APP_DIR_CANON="$(canon "$APP_DIR")"
 DEPLOY_LOCK_ROOT_CANON="$(canon "$DEPLOY_LOCK_ROOT")"
 DEPLOY_LOCK_FILE_CANON="$(canon "$DEPLOY_LOCK_FILE")"
-case "$DEPLOY_LOCK_ROOT_CANON" in
-  /|"$APP_DIR_CANON"|"$APP_DIR_CANON"/*|/opt/ejc|/opt/ejc/*)
-    die_policy "raiz do mutex deve ficar fora de APP_DIR e /opt/ejc: $DEPLOY_LOCK_ROOT_CANON"
-    ;;
+PRODUCTION_MODE=0
+case "$APP_DIR_CANON" in
+  /opt/ejc|/opt/ejc/*) PRODUCTION_MODE=1 ;;
 esac
-[[ "$DEPLOY_LOCK_FILE_CANON" == "$DEPLOY_LOCK_ROOT_CANON/"* ]] \
-  || die_policy "arquivo de mutex deve ser descendente da raiz dedicada: $DEPLOY_LOCK_FILE_CANON"
 
-mkdir -p "$DEPLOY_LOCK_ROOT_CANON"
-chmod 700 "$DEPLOY_LOCK_ROOT_CANON" 2>/dev/null \
-  || die_policy "não foi possível restringir permissões da raiz do mutex"
-umask 077
-exec 9>"$DEPLOY_LOCK_FILE_CANON"
-chmod 600 "$DEPLOY_LOCK_FILE_CANON" 2>/dev/null \
-  || die_policy "não foi possível restringir permissões do mutex"
+# Em produção o namespace do mutex é FIXO e host-level. Variar por HOME,
+# XDG_RUNTIME_DIR ou usuário Unix reabriria concorrência no mesmo Docker daemon.
+if [ "$PRODUCTION_MODE" = "1" ]; then
+  [ "$DEPLOY_LOCK_ROOT_CANON" = "$PRODUCTION_LOCK_ROOT" ] \
+    || die_policy "em /opt/ejc o mutex é fixo em $PRODUCTION_LOCK_ROOT; override recusado"
+  [ "$DEPLOY_LOCK_FILE_CANON" = "$PRODUCTION_LOCK_FILE" ] \
+    || die_policy "em /opt/ejc o arquivo de mutex é fixo em $PRODUCTION_LOCK_FILE; override recusado"
+  [ -S /var/run/docker.sock ] || die_policy "/var/run/docker.sock ausente; não é possível vincular o mutex ao grupo do Docker"
+  docker_gid="$(stat -c %g /var/run/docker.sock)"
+  [[ "$docker_gid" =~ ^[0-9]+$ ]] || die_policy "GID do docker.sock inválido"
+
+  # Provisiona root:<grupo-do-docker>, 0770/0660. Usuários diferentes que podem
+  # controlar o mesmo daemon Docker abrem o MESMO inode e respeitam o flock.
+  if [ "$(id -u)" -eq 0 ]; then
+    install -d -m 0770 -o root -g "$docker_gid" "$PRODUCTION_LOCK_ROOT"
+    [ -e "$PRODUCTION_LOCK_FILE" ] || : > "$PRODUCTION_LOCK_FILE"
+    chown root:"$docker_gid" "$PRODUCTION_LOCK_FILE"
+    chmod 0660 "$PRODUCTION_LOCK_FILE"
+  else
+    command -v sudo >/dev/null 2>&1 || die_policy "sudo é necessário para provisionar $PRODUCTION_LOCK_ROOT"
+    sudo -n install -d -m 0770 -o root -g "$docker_gid" "$PRODUCTION_LOCK_ROOT" \
+      || die_policy "não foi possível provisionar o mutex host-level"
+    if ! sudo -n test -e "$PRODUCTION_LOCK_FILE"; then
+      sudo -n touch "$PRODUCTION_LOCK_FILE" || die_policy "não foi possível criar o mutex host-level"
+    fi
+    sudo -n chown root:"$docker_gid" "$PRODUCTION_LOCK_FILE" \
+      || die_policy "não foi possível ajustar owner/group do mutex"
+    sudo -n chmod 0660 "$PRODUCTION_LOCK_FILE" \
+      || die_policy "não foi possível ajustar permissão do mutex"
+  fi
+else
+  # Ambiente hermético/teste pode sobrescrever a raiz, sempre fora da aplicação.
+  [ ! -L "$DEPLOY_LOCK_ROOT" ] || die_policy "EJC_DEPLOY_LOCK_ROOT não pode ser symlink"
+  [ ! -L "$DEPLOY_LOCK_FILE" ] || die_policy "EJC_DEPLOY_LOCK_FILE não pode ser symlink"
+  case "$DEPLOY_LOCK_ROOT_CANON" in
+    /|"$APP_DIR_CANON"|"$APP_DIR_CANON"/*|/opt/ejc|/opt/ejc/*)
+      die_policy "raiz do mutex deve ficar fora de APP_DIR e /opt/ejc: $DEPLOY_LOCK_ROOT_CANON" ;;
+  esac
+  [[ "$DEPLOY_LOCK_FILE_CANON" == "$DEPLOY_LOCK_ROOT_CANON/"* ]] \
+    || die_policy "arquivo de mutex deve ser descendente da raiz dedicada"
+  mkdir -p "$DEPLOY_LOCK_ROOT_CANON"
+  chmod 700 "$DEPLOY_LOCK_ROOT_CANON" || die_policy "não foi possível restringir raiz do mutex"
+  umask 077
+  [ -e "$DEPLOY_LOCK_FILE_CANON" ] || : > "$DEPLOY_LOCK_FILE_CANON"
+  chmod 600 "$DEPLOY_LOCK_FILE_CANON" || die_policy "não foi possível restringir mutex"
+fi
+
+[ ! -L "$DEPLOY_LOCK_FILE_CANON" ] || die_policy "arquivo de mutex não pode ser symlink"
+exec 9>>"$DEPLOY_LOCK_FILE_CANON"
 if ! flock -n 9; then
   log "Outro deploy EJC já está em execução; nenhuma mutação foi iniciada."
   exit 75
@@ -68,15 +102,25 @@ OLD_BACKEND_TAG=""
 OLD_WORKER_TAG=""
 OLD_FRONTEND_TAG=""
 OLD_GIT_SHA=""
+ENV_ROLLBACK_FILE="$DEPLOY_LOCK_ROOT_CANON/env.rollback.$$"
+ROLLBACK_ARMED=0
+ENV_MUTATED=0
 IMAGES_MUTATED=0
 DEPLOY_MUTATED=0
 
 cleanup_rollback_tags() {
   for tag in "${OLD_BACKEND_TAG:-}" "${OLD_WORKER_TAG:-}" "${OLD_FRONTEND_TAG:-}"; do
-    if [ -n "$tag" ]; then
-      docker image rm "$tag" >/dev/null 2>&1 || true
-    fi
+    [ -n "$tag" ] || continue
+    docker image rm "$tag" >/dev/null 2>&1 || true
   done
+}
+
+restore_env() {
+  [ "$ENV_MUTATED" = "1" ] || return 0
+  [ -s "$ENV_ROLLBACK_FILE" ] || { log "ERRO CRÍTICO: snapshot transacional do .env ausente."; return 1; }
+  cp -- "$ENV_ROLLBACK_FILE" .env || return 1
+  chmod 600 .env || return 1
+  log ".env anterior restaurado a partir do snapshot transacional protegido."
 }
 
 _restore_image() {
@@ -99,41 +143,53 @@ restore_previous_image_refs() {
   return "$rc"
 }
 
-rollback() {
-  local original_rc=$?
-  trap - ERR
+rollback_transaction() {
+  local original_rc="$1"
   set +e
 
-  if [ "$DEPLOY_MUTATED" != "1" ]; then
-    if [ "$IMAGES_MUTATED" = "1" ]; then
-      if restore_previous_image_refs; then
-        log "Falha antes da troca do runtime (rc=${original_rc}); referências de imagem anteriores restauradas sem reiniciar containers."
-      else
-        log "ERRO CRÍTICO: falha antes da troca do runtime e restauração das referências de imagem ficou incompleta."
-      fi
+  # Restaure configuração antes de recriar containers antigos.
+  restore_env || log "ERRO CRÍTICO: restauração do .env ficou incompleta."
+
+  if [ "$DEPLOY_MUTATED" = "1" ]; then
+    log "Deploy falhou (rc=${original_rc}). Restaurando imagens e runtime anteriores."
+    export GIT_SHA="${OLD_GIT_SHA:-desconhecido}"
+    restore_previous_image_refs || log "ERRO CRÍTICO: restauração de referências de imagem ficou incompleta."
+    RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend worker frontend
+    sleep 8
+    if bash "$APP_DIR/scripts/post_deploy_check.sh"; then
+      log "Rollback confirmado pelo post-deploy check."
     else
-      log "Falha antes de qualquer mutação de imagem/runtime (rc=${original_rc}); aplicação anterior permanece intacta."
+      log "ERRO CRÍTICO: runtime anterior restaurado, mas post-deploy check falhou."
+    fi
+    log "Tags de rollback preservadas para investigação: ${OLD_BACKEND_TAG:-sem-backend-tag} ${OLD_WORKER_TAG:-sem-worker-tag} ${OLD_FRONTEND_TAG:-sem-frontend-tag}"
+  elif [ "$IMAGES_MUTATED" = "1" ]; then
+    if restore_previous_image_refs; then
+      log "Falha antes da troca do runtime (rc=${original_rc}); referências de imagem anteriores restauradas sem reiniciar containers."
+    else
+      log "ERRO CRÍTICO: restauração das referências de imagem ficou incompleta."
     fi
     cleanup_rollback_tags
-    exit "$original_rc"
-  fi
-
-  log "Deploy falhou (rc=${original_rc}). Restaurando imagens e runtime anteriores."
-  export GIT_SHA="${OLD_GIT_SHA:-desconhecido}"
-  log "Rollback publica novamente o commit anterior: ${GIT_SHA}"
-  restore_previous_image_refs || log "ERRO CRÍTICO: uma ou mais referências anteriores não puderam ser restauradas."
-
-  RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate \
-    backend worker frontend
-  sleep 8
-  if bash "$APP_DIR/scripts/post_deploy_check.sh"; then
-    log "Rollback confirmado pelo post-deploy check."
   else
-    log "ERRO CRÍTICO: imagens anteriores restauradas, mas o post-deploy check falhou."
+    log "Falha antes de build/cutover (rc=${original_rc}); runtime anterior permaneceu intacto."
+    cleanup_rollback_tags
   fi
-  log "Tags de rollback preservadas para investigação: ${OLD_BACKEND_TAG:-sem-backend-tag} ${OLD_WORKER_TAG:-sem-worker-tag} ${OLD_FRONTEND_TAG:-sem-frontend-tag}"
-  exit "$original_rc"
+  rm -f -- "$ENV_ROLLBACK_FILE" >/dev/null 2>&1 || true
 }
+
+on_exit() {
+  local rc=$?
+  trap - EXIT INT TERM HUP
+  if [ "$rc" -ne 0 ] && [ "$ROLLBACK_ARMED" = "1" ]; then
+    rollback_transaction "$rc"
+  elif [ "$rc" -eq 0 ]; then
+    rm -f -- "$ENV_ROLLBACK_FILE" >/dev/null 2>&1 || true
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 if [ "$RUN_MIGRATIONS" = "1" ] && [ "$MIGRATIONS_BACKWARD_COMPATIBLE" != "1" ]; then
   cat >&2 <<'EOF'
@@ -150,22 +206,52 @@ if [ "$REQUIRE_PREDEPLOY_BACKUP" = "0" ]; then
 fi
 [ -f .env ] || { echo "Arquivo .env ausente em ${APP_DIR}" >&2; exit 1; }
 
-# Identidade é pré-condição da release e precisa ser conhecida antes de qualquer
-# migração de .env, build, tag ou mutação de runtime.
+# Identidade e composição são preflight read-only.
 GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
 [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] \
   || die_policy "TARGET_SHA/HEAD deve ser SHA-1 completo de 40 caracteres hexadecimais; release sem identidade verificável foi bloqueada"
 export GIT_SHA
 log "Versão a publicar: ${GIT_SHA}"
+docker compose config --quiet
 
-# Migra somente valores OBSOLETOS do .env preservado. Idempotente e sem imprimir segredos.
+# P0: backup fail-closed ANTES de migrar .env, criar tags ou buildar.
+log "Verificando pré-requisitos de backup"
+BACKUP_SAIDA=""
+if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
+  [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
+  log "Backup pré-deploy concluído."
+  if printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": false'; then
+    BACKUP_OFFSITE_DESTINO="$(printf '%s' "$BACKUP_SAIDA" | sed -n 's/.*"destino": "\([^"]*\)".*/\1/p')"
+    BACKUP_OFFSITE_ERRO="$(printf '%s' "$BACKUP_SAIDA" | sed -n 's/.*"offsite_erro": "\([^"]*\)".*/\1/p')"
+    AVISO_OFFSITE="AVISO GRAVE: backup offsite falhou (destino ${BACKUP_OFFSITE_DESTINO:-desconhecido}): ${BACKUP_OFFSITE_ERRO:-erro não informado} — deploy prossegue com prova local; corrija o destino offsite"
+    log "$AVISO_OFFSITE"
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+      printf '> :warning: %s\n' "$AVISO_OFFSITE" >>"$GITHUB_STEP_SUMMARY"
+    fi
+  fi
+else
+  [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
+  if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
+    log "ERRO CRÍTICO: backup pré-deploy obrigatório falhou."
+    log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
+    exit 1
+  fi
+  log "AVISO: backup pré-deploy não executou; contingência permissiva explícita seguirá sem prova nova."
+fi
+
+# Snapshot do .env depois do backup e antes da primeira mutação de configuração.
+umask 077
+cp -- .env "$ENV_ROLLBACK_FILE"
+chmod 600 "$ENV_ROLLBACK_FILE"
+ROLLBACK_ARMED=1
+
 if [ -f scripts/migrar_env_obsoletos.sh ]; then
+  ENV_MUTATED=1
   bash scripts/migrar_env_obsoletos.sh .env | while IFS= read -r linha; do
     log "$linha"
   done
+  docker compose config --quiet
 fi
-# Valida sintaxe/interpolação sem persistir config expandida nem segredos.
-docker compose config --quiet
 
 OLD_BACKEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_backend 2>/dev/null || true)"
 OLD_WORKER_IMAGE="$(docker inspect -f '{{.Image}}' ejc_worker 2>/dev/null || true)"
@@ -190,46 +276,16 @@ if [ -n "$OLD_FRONTEND_IMAGE" ]; then
   docker tag "$OLD_FRONTEND_IMAGE" "$OLD_FRONTEND_TAG"
 fi
 
-trap rollback ERR
-
-log "Verificando pré-requisitos de backup"
-BACKUP_SAIDA=""
-if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
-  [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
-  log "Backup pré-deploy concluído."
-  if printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": false'; then
-    BACKUP_OFFSITE_DESTINO="$(printf '%s' "$BACKUP_SAIDA" | sed -n 's/.*"destino": "\([^"]*\)".*/\1/p')"
-    BACKUP_OFFSITE_ERRO="$(printf '%s' "$BACKUP_SAIDA" | sed -n 's/.*"offsite_erro": "\([^"]*\)".*/\1/p')"
-    AVISO_OFFSITE="AVISO GRAVE: backup offsite falhou (destino ${BACKUP_OFFSITE_DESTINO:-desconhecido}): ${BACKUP_OFFSITE_ERRO:-erro não informado} — deploy prossegue com prova local; corrija o destino offsite"
-    log "$AVISO_OFFSITE"
-    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-      printf '> :warning: %s\n' "$AVISO_OFFSITE" >>"$GITHUB_STEP_SUMMARY"
-    fi
-  fi
-else
-  [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
-  if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
-    log "ERRO CRÍTICO: backup pré-deploy obrigatório falhou."
-    log "Deploy bloqueado antes de build/troca do runtime."
-    false
-  fi
-  log "AVISO: backup pré-deploy não executou (credenciais ou config incompleta)."
-  log "AVISO: modo de contingência permissivo; deploy prossegue sem prova nova de backup."
-fi
-
 OLD_GIT_SHA="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \
   ejc_backend 2>/dev/null | sed -n 's/^GIT_SHA=//p' | head -1)"
 log "Versão atualmente publicada: ${OLD_GIT_SHA:-indisponível}"
 
-# A partir daqui builds podem mover tags locais. Se falharem antes da troca de
-# containers, restauramos apenas as referências de imagem — sem downtime.
 IMAGES_MUTATED=1
 log "Build frontend"
 docker compose build frontend
 log "Build backend e worker"
 docker compose build backend worker
 
-# Expand/contract: a aplicação antiga continua atendendo durante a migration.
 if [ "$RUN_MIGRATIONS" = "1" ]; then
   log "Aplicando migration expand-only antes da troca da API"
   docker compose run --rm --no-deps -T backend alembic upgrade head
@@ -237,8 +293,6 @@ else
   log "Nenhuma migration pendente; schema preservado."
 fi
 
-# Primeiro ponto em que o runtime pode mudar. A partir daqui uma falha exige
-# recriação dos containers anteriores, não apenas restauração de tags.
 DEPLOY_MUTATED=1
 log "Subindo backend novo sem migration automática no entrypoint"
 RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend
@@ -275,9 +329,9 @@ if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
     if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
       log "ERRO CRÍTICO: ativação/verificação obrigatória do backup diário falhou."
       log "Deploy será revertido para preservar a política de continuidade."
-      false
+      exit 1
     fi
-    log "AVISO: ativação/verificação do backup diário falhou; deploy não será revertido por contingência explícita."
+    log "AVISO: ativação/verificação do backup diário falhou; contingência explícita mantém o deploy."
   fi
 else
   log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia diária ignorada por contingência explícita."
@@ -311,6 +365,7 @@ RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate frontend
 sleep 8
 EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
 
-trap - ERR
+ROLLBACK_ARMED=0
+rm -f -- "$ENV_ROLLBACK_FILE"
 cleanup_rollback_tags
 log "Deploy seguro concluído com sucesso."
