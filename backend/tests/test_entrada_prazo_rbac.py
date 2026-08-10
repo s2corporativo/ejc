@@ -17,6 +17,7 @@ from app.core.database import Base
 from app.models.case import Case, CaseMovimento
 from app.models.client import Client
 from app.models.deadline import Deadline
+from app.models.document import Document
 from app.models.document_intake import DocumentIntakeBatch, DocumentIntakeItem
 from app.models.user import User, UserRole
 from app.schemas.entrada import CriarCasoEntradaRequest
@@ -27,6 +28,7 @@ _TABELAS = [
     Client.__table__,
     Case.__table__,
     CaseMovimento.__table__,
+    Document.__table__,
     DocumentIntakeBatch.__table__,
     DocumentIntakeItem.__table__,
     Deadline.__table__,
