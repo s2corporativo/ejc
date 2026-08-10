@@ -27,7 +27,7 @@ case "$WATCHER_PATH" in
   *$'\n'*|*$'\r'*|*"'"*|*%*) fail "PATH contém caractere inseguro para scheduler autônomo" ;;
 esac
 case "$ROOT$LOG_DIR$REPO" in
-  *$'\n'*|*$'\r'*|*"'"*|*%*) fail "ROOT/LOG_DIR/REPO contém caractere inseguro para scheduler autônomo" ;;
+  *$'\n'*|*$'\r'*|*"'"*|*%*|*[[:space:]]*) fail "ROOT/LOG_DIR/REPO contém caractere inseguro para scheduler autônomo" ;;
 esac
 
 remove_cron() {
@@ -182,7 +182,7 @@ if [ "$SCHEDULER" = "systemd" ]; then
   systemctl --user is-active --quiet ejc-ci-fallback.service
   ok "watcher persistente ativado via systemd --user (linger=yes)"
 else
-  LINE="*/5 * * * * PATH='$WATCHER_PATH' cd '$ROOT' && EJC_REPO='$REPO' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 /usr/bin/env bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
+  LINE="*/5 * * * * cd '$ROOT' && /usr/bin/env PATH='$WATCHER_PATH' EJC_REPO='$REPO' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
   { crontab -l 2>/dev/null || true; echo "$LINE"; } | crontab -
   (crontab -l 2>/dev/null || true) | grep -qF "$CRON_MARK"
   ok "watcher persistente ativado via cron (5 min)"
