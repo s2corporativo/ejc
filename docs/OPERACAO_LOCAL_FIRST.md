@@ -164,7 +164,7 @@ Quando GitHub/Actions estiver indisponível, a contingência é:
 3. sincronizar (push/sync) quando o GitHub voltar;
 4. aguardar a esteira automatizada de deploy após CI verde na `main`.
 
-**Não há canal autorizado de deploy manual em contingência.** A orientação deve ser preservar a entrega (checkpoint + CI local verde) e aguardar a esteira automatizada após CI verde na main. Essa contingência não autoriza um agente sem acesso operacional seguro à VPS a inventar caminho, credencial ou estado. O agente deve usar o acesso já conectado/disponível; se não houver canal operacional, mantém a entrega validada e sincroniza quando houver canal seguro, sem solicitar ou expor segredo.
+**Não há canal autorizado de deploy manual em contingência.** Essa contingência não autoriza um agente sem acesso operacional seguro à VPS a inventar caminho, credencial ou estado. O agente deve usar o acesso já conectado/disponível; se não houver canal operacional, mantém a entrega validada e sincroniza quando houver canal seguro, sem solicitar ou expor segredo.
 
 ## Política para agentes de IA
 
