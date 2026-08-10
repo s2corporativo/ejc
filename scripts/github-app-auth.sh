@@ -8,6 +8,10 @@
 # - o token é limitado ao repositório EJC e à permissão checks:write;
 # - o token é renovado antes do limite de 1 hora do GitHub.
 set -euo pipefail
+# O runner usa `printf ... | ejc_github_app_gh_api`. Sem lastpipe, a função roda
+# em subshell e o token renovado se perde a cada chamada. Em scripts não
+# interativos/job-control off, lastpipe mantém o último estágio no shell atual.
+shopt -s lastpipe 2>/dev/null || true
 
 EJC_GITHUB_API_VERSION="${EJC_GITHUB_API_VERSION:-2026-03-10}"
 _EJC_APP_TOKEN=""
@@ -88,8 +92,6 @@ _ejc_mint_installation_token() {
   request_body="$(jq -cn --arg repo "$repo_name" \
     '{repositories:[$repo],permissions:{checks:"write"}}')"
 
-  # curl recebe o JWT por stdin/config, evitando expô-lo na linha de comando.
-  # A resposta fica somente em memória e nunca é impressa em caso de falha.
   response="$({
     printf 'silent\nshow-error\nfail\n'
     printf 'request = "POST"\n'
