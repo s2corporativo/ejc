@@ -47,11 +47,17 @@ env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh register \
 TASK="$(cat "$TMP/recovery/repo/last-task")"
 test -f "$TASK"
 grep -q '^# Fallback técnico$' "$TASK"
+grep -q '^\- local_task_id: ' "$TASK"
 grep -q '^\- sincronizacao: pendente$' "$TASK"
 
 if env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh register \
   "Segredo proibido" "api_key=valor-nao-deve-ser-registrado" >/dev/null 2>&1; then
   echo "registro com aparência de segredo deveria ter sido bloqueado" >&2
+  exit 1
+fi
+if env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh register \
+  "PII proibida" "Contato cliente@example.com" >/dev/null 2>&1; then
+  echo "registro com PII óbvia deveria ter sido bloqueado" >&2
   exit 1
 fi
 
@@ -61,7 +67,11 @@ test -f "$CP/tracked-working-tree.patch"
 test -f "$CP/untracked-safe.tar.gz"
 test -f "$CP/repository.bundle"
 test -f "$CP/SHA256SUMS"
-grep -q '.env.local' "$CP/skipped-untracked.txt"
+grep -q '^sensitive-path sha256=' "$CP/skipped-untracked.txt"
+if grep -q '.env.local' "$CP/skipped-untracked.txt"; then
+  echo "nome sensível bruto não pode ficar no metadata do checkpoint" >&2
+  exit 1
+fi
 ARCHIVE_LIST="$TMP/untracked-safe.list"
 tar -tzf "$CP/untracked-safe.tar.gz" > "$ARCHIVE_LIST"
 grep -q '^novo.txt$' "$ARCHIVE_LIST"
@@ -73,15 +83,67 @@ fi
 VALIDATE_OUTPUT="$(env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh validate fast)"
 grep -q 'dummy-ci mode=fast' <<< "$VALIDATE_OUTPUT"
 
-git remote add origin https://invalid.invalid/ejc.git
+# Remoto local saudável + gh falso: simula POST aceito com resposta perdida.
+git init --bare -q "$TMP/remote.git"
+git remote add origin "$TMP/remote.git"
+git push -q -u origin feat/test-fallback
+git --git-dir="$TMP/remote.git" symbolic-ref HEAD refs/heads/feat/test-fallback
+mkdir -p "$TMP/bin" "$TMP/gh-state"
+cat > "$TMP/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+STATE="${GH_FAKE_STATE:?}"
+if [ "${1:-}" = "auth" ] && [ "${2:-}" = "status" ]; then
+  exit 0
+fi
+if [ "${1:-}" = "issue" ] && [ "${2:-}" = "list" ]; then
+  if [ -f "$STATE/created" ]; then
+    printf 'https://example.invalid/issues/1\n'
+  fi
+  exit 0
+fi
+if [ "${1:-}" = "issue" ] && [ "${2:-}" = "create" ]; then
+  printf '1\n' >> "$STATE/create-count"
+  touch "$STATE/created"
+  # Simula criação remota bem-sucedida, mas perda/timeout da resposta local.
+  exit 124
+fi
+exit 2
+EOF
+chmod +x "$TMP/bin/gh"
+
+SYNC_ENV=(
+  "${ENV_COMMON[@]}"
+  EJC_LOCAL_FIRST_AUTO_PUSH=0
+  PATH="$TMP/bin:$PATH"
+  GH_FAKE_STATE="$TMP/gh-state"
+)
+env "${SYNC_ENV[@]}" bash scripts/ejc-local-first.sh sync >/dev/null
+SYNCED_TASK="$TMP/recovery/repo/synced-tasks/$(basename "$TASK")"
+test -f "$SYNCED_TASK"
+test -f "$SYNCED_TASK.issue-url"
+test "$(wc -l < "$TMP/gh-state/create-count" | tr -d ' ')" = "1"
+
+# Recoloca o mesmo registro como pendente: busca por local_task_id deve encontrá-lo
+# antes de novo POST, mantendo exatamente uma criação.
+cp "$SYNCED_TASK" "$TMP/recovery/repo/pending-tasks/$(basename "$TASK")"
+env "${SYNC_ENV[@]}" bash scripts/ejc-local-first.sh sync >/dev/null
+test "$(wc -l < "$TMP/gh-state/create-count" | tr -d ' ')" = "1"
+
+# Nova tarefa + remoto DNS inválido: deve permanecer local e marcar modo offline.
+env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh register \
+  "Fallback offline" "Preservar tarefa quando o remoto não responder."
+OFFLINE_TASK="$(cat "$TMP/recovery/repo/last-task")"
+git remote set-url origin https://invalid.invalid/ejc.git
 env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh status >/dev/null 2>&1
 grep -q '^offline$' "$TMP/recovery/repo/mode"
 env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh sync >/dev/null 2>&1
 grep -q '^offline$' "$TMP/recovery/repo/mode"
-test -f "$TASK"
+test -f "$OFFLINE_TASK"
 
-if env EJC_PRODUCTION_DIR="$TMP/repo" EJC_RECOVERY_ROOT="$TMP/recovery-prod" \
-  bash scripts/ejc-local-first.sh checkpoint >/dev/null 2>&1; then
+# Nem uma variável legada de override pode liberar o checkout definido como produção.
+if env EJC_PRODUCTION_DIR="$TMP/repo" EJC_ALLOW_PRODUCTION_WORKTREE=1 \
+  EJC_RECOVERY_ROOT="$TMP/recovery-prod" bash scripts/ejc-local-first.sh checkpoint >/dev/null 2>&1; then
   echo "checkpoint deveria ter sido bloqueado no diretório de produção" >&2
   exit 1
 fi
