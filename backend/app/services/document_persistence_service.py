@@ -2,7 +2,7 @@
 
 Esta camada conecta a UoW física ao ``Document``/AuditLog sem assumir
 responsabilidades de autorização, OCR ou seleção de tipo jurídico. O caller deve
-entregar contexto já autorizado e, se houver extração, conteúdo já sanitizado.
+entregar contexto já autorizado e, se houver extração, ``ocr_text`` já sanitizado.
 
 Invariante central:
 
@@ -12,6 +12,10 @@ Não existe ``await`` entre o retorno bem-sucedido de ``db.commit()`` e
 ``ingestao.confirmar()``. Assim, depois que o banco confirma o registro, a UoW
 é marcada como confirmada imediatamente e o context manager não pode compensar
 um arquivo cujo ``Document`` já foi commitado.
+
+Importante: esta camada persiste somente atributos confirmados no model atual de
+``Document``. SHA-256, malware status, OCR-used e metadados extraídos continuam
+fora do model até migration canônica futura.
 """
 from __future__ import annotations
 
@@ -37,11 +41,9 @@ class PersistenciaDocumentoInvalidaError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class ConteudoDocumentoPreparado:
-    """Resultado de extração já sanitizado pelo caller."""
+    """Texto de OCR já sanitizado pelo caller."""
 
     ocr_text: str | None = None
-    ocr_utilizado: bool = False
-    metadados_extraidos: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +55,6 @@ class DadosPersistenciaDocumento:
     client_id: str | None = None
     uploaded_by: str | None = None
     user_role: str | None = None
-    source: str = "upload"
     documento_anterior_id: str | None = None
 
 
@@ -86,7 +87,6 @@ def _validar_dados(
 ) -> tuple[
     str,
     str | None,
-    str,
     str | None,
     str | None,
     str | None,
@@ -99,13 +99,8 @@ def _validar_dados(
         limite=255,
         obrigatorio=True,
     )
-    tipo = _texto_limitado(dados.tipo, campo="tipo", limite=100)
-    source = _texto_limitado(
-        dados.source,
-        campo="source",
-        limite=50,
-        obrigatorio=True,
-    )
+    # Document.tipo é String(50) no model atual; não ampliar por service.
+    tipo = _texto_limitado(dados.tipo, campo="tipo", limite=50)
     case_id = _texto_limitado(dados.case_id, campo="case_id", limite=36)
     client_id = _texto_limitado(dados.client_id, campo="client_id", limite=36)
     uploaded_by = _texto_limitado(dados.uploaded_by, campo="uploaded_by", limite=36)
@@ -122,7 +117,6 @@ def _validar_dados(
     return (
         titulo,
         tipo,
-        source,
         case_id,
         client_id,
         uploaded_by,
@@ -136,13 +130,6 @@ def _validar_conteudo(
 ) -> ConteudoDocumentoPreparado:
     if conteudo.ocr_text is not None and not isinstance(conteudo.ocr_text, str):
         raise PersistenciaDocumentoInvalidaError("ocr_text inválido")
-    if not isinstance(conteudo.ocr_utilizado, bool):
-        raise PersistenciaDocumentoInvalidaError("ocr_utilizado inválido")
-    if (
-        conteudo.metadados_extraidos is not None
-        and not isinstance(conteudo.metadados_extraidos, dict)
-    ):
-        raise PersistenciaDocumentoInvalidaError("metadados_extraidos inválidos")
     return conteudo
 
 
@@ -177,7 +164,6 @@ async def persistir_documento_local(
             (
                 titulo,
                 tipo,
-                source,
                 case_id,
                 client_id,
                 uploaded_by,
@@ -196,15 +182,8 @@ async def persistir_documento_local(
                 filepath=ingestao.filepath,
                 mimetype=ingestao.mimetype,
                 size_bytes=ingestao.size_bytes,
-                source=source,
                 confidencialidade=dados.confidencialidade,
                 ocr_text=conteudo.ocr_text,
-                ocr_utilizado=conteudo.ocr_utilizado,
-                metadados_extraidos=(
-                    dict(conteudo.metadados_extraidos)
-                    if conteudo.metadados_extraidos is not None
-                    else None
-                ),
                 uploaded_by=uploaded_by,
             )
 
@@ -238,6 +217,7 @@ async def persistir_documento_local(
                     "tipo": tipo,
                     "confidencialidade": dados.confidencialidade.value,
                     "versao": documento.versao,
+                    "size_bytes": ingestao.size_bytes,
                     "storage": "local",
                     "malware_scan_status": ingestao.malware_scan_status.value,
                 },
