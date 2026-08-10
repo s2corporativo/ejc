@@ -16,6 +16,8 @@ ok() { echo "[governanca-local] ok: $*"; }
 case "$(realpath "$ROOT" 2>/dev/null || printf '%s' "$ROOT")" in
   /opt/ejc|/opt/ejc/*) fail "recusado em /opt/ejc (produção)" ;;
 esac
+[ "${APP_ENV:-}" != "production" ] && [ "${EJC_ENV:-}" != "production" ] \
+  || fail "ambiente de produção ativo"
 
 git rev-parse --verify "$BASE" >/dev/null 2>&1 || fail "base $BASE ausente; atualize o clone antes da validação"
 git diff --name-only "$BASE...HEAD" > "$TMP"
@@ -66,16 +68,19 @@ else
   warn "modo pre-push: descrição do PR não exigida"
 fi
 
-PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
+# CI/CD, branch protection e fallback são superfície de segurança tanto quanto
+# autenticação/upload. Qualquer alteração nessas portas exige registro literal
+# de auditoria antes de status promovível.
+PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|scripts/(ci-local\.sh|ci-fallback[^/]*\.sh|governanca/(branch-protection|ci-local-governanca)\.sh)|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
 if grep -Eq "$PADRAO_SENSIVEL" "$TMP"; then
   printf '%s' "$PR_BODY" | grep -qi 'security-auditor: executado' \
     || fail "mudança sensível sem registro literal 'security-auditor: executado'"
   ok "security-auditor registrado"
 fi
 
-PADRAO_GOV='^(CLAUDE\.md|AGENTS\.md|\.claude/|\.github/workflows/governanca\.yml|docs/GOVERNANCA_IA\.md|docs/GOVERNANCA_FASE2\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md)'
+PADRAO_GOV='^(CLAUDE\.md|AGENTS\.md|\.claude/|\.github/workflows/governanca\.yml|docs/GOVERNANCA_IA\.md|docs/GOVERNANCA_FASE2\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md|scripts/(ci-local\.sh|ci-fallback[^/]*\.sh|governanca/(branch-protection|ci-local-governanca)\.sh))'
 if grep -Eq "$PADRAO_GOV" "$TMP" && grep -Eq '^(backend/app/|frontend/src/)' "$TMP"; then
-  warn "PR mistura governança e código funcional; revisão de escopo reforçada necessária"
+  warn "PR mistura governança/CI e código funcional; revisão de escopo reforçada necessária"
 fi
 
 ok "branch de origem: ${BRANCH:-detached}"
