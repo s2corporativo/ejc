@@ -16,9 +16,11 @@ def test_backend_e_continuidade_encerram_seus_bancos_efemeros():
     backend = _block(src, "run_backend() {", "run_eval() {")
     continuity = _block(src, "run_continuity() {", "run_ui_extra() {")
 
-    assert "ensure_venv; start_pg" in backend
+    assert "ensure_venv" in backend
+    assert "ensure_pip_audit" in backend
+    assert "start_pg" in backend
     assert "stop_pg" in backend
-    assert backend.index("start_pg") < backend.index("stop_pg")
+    assert backend.index("ensure_venv") < backend.index("start_pg") < backend.index("stop_pg")
 
     assert "ensure_venv; start_pg" in continuity
     assert "stop_pg" in continuity
@@ -33,12 +35,36 @@ def test_stop_pg_reseta_estado_e_porta_dinamica_entre_estagios():
     assert 'PGBIN=""' in stop
     assert '[ -n "$PG_PORT_OVERRIDE" ] || PG_PORT=""' in stop
 
-    # Quando o usuário não fixa PG_PORT, o próximo start_pg precisa escolher
-    # outra porta livre; isso impede backend e restore de reutilizarem o mesmo
-    # servidor apenas por estarem no mesmo processo `full`.
     assert 'PG_PORT_OVERRIDE="${PG_PORT:-}"' in src
     assert 'PG_PORT="$PG_PORT_OVERRIDE"' in src
     assert 's.bind(("127.0.0.1", 0))' in src
+
+
+def test_postgres_local_exige_major_16_loopback_e_scram():
+    src = CI_LOCAL.read_text(encoding="utf-8")
+    start = _block(src, "start_pg() {", "run_backend() {")
+
+    assert 'pg_major="$(' in start
+    assert '[ "$pg_major" != "16" ]' in start
+    assert 'EJC_ALLOW_POSTGRES_MISMATCH' in start
+    assert "--auth-host=scram-sha-256" in start
+    assert "--auth-local=trust" in start
+    assert "listen_addresses=127.0.0.1" in start
+    assert 'PGPASSWORD="$DBP"' in start
+
+
+def test_estado_mutavel_e_confinado_ao_state_root():
+    src = CI_LOCAL.read_text(encoding="utf-8")
+
+    assert "assert_state_root()" in src
+    assert "assert_state_child()" in src
+    assert 'assert_state_child "$PGDATA" "PGDATA"' in src
+    assert 'assert_state_child "$REPORT_ROOT" "REPORT_ROOT"' in src
+    assert 'assert_state_child "$REPORT_DIR" "REPORT_DIR"' in src
+    assert '[ -z "$VENV_DIR_OVERRIDE" ] || assert_state_child "$VENV_DIR_OVERRIDE" "VENV_DIR"' in src
+    assert 'assert_state_child "$RESTORE_DRILL_REPORT" "RESTORE_DRILL_REPORT"' in src
+    assert "STATE_ROOT não pode ser symlink" in src
+    assert "rm -rf" not in src
 
 
 def test_full_executa_backend_antes_de_continuidade_com_ciclo_independente():
