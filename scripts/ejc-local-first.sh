@@ -192,8 +192,8 @@ checkpoint() {
 
   printf '%s\n' "$sha" > "$dir/base-sha.txt"
   current_branch > "$dir/branch.txt"
-  printf '%s\n' "$ROOT" > "$dir/source-root.txt"
-  git status --porcelain=v1 > "$dir/status.txt"
+  printf '%s\n' "$repo_name" > "$dir/repository.txt"
+  git status --porcelain=v1 --untracked-files=no > "$dir/status.txt"
   git diff --binary HEAD > "$dir/tracked-working-tree.patch"
   git diff --cached --binary > "$dir/index.patch"
 
@@ -248,10 +248,10 @@ checkpoint() {
 validate() {
   assert_not_production
   local mode="${1:-$CI_MODE}"
-  [ -x scripts/ci-local.sh ] || die "scripts/ci-local.sh ausente ou não executável."
+  [ -f scripts/ci-local.sh ] || die "scripts/ci-local.sh ausente."
   checkpoint
-  log "executando CI local: scripts/ci-local.sh $mode"
-  scripts/ci-local.sh "$mode"
+  log "executando CI local: bash scripts/ci-local.sh $mode"
+  bash scripts/ci-local.sh "$mode"
   log "CI local verde."
 }
 
@@ -301,6 +301,11 @@ sync_remote() {
   fi
 
   if [ "$AUTO_PUSH" = "1" ]; then
+    if [ -n "$(git status --porcelain=v1)" ]; then
+      warn "working tree possui alterações não commitadas; push automático do HEAD foi recusado. O checkpoint preserva o estado local."
+      sync_pending_tasks
+      return 0
+    fi
     if git push "$REMOTE" "HEAD:refs/heads/$branch"; then
       log "branch sincronizada sem force: $REMOTE/$branch"
     else
