@@ -61,7 +61,9 @@ remove_watcher() {
       unit_aplicavel=1
     fi
     if [ "$unit_aplicavel" -eq 1 ]; then
-      systemctl --user disable --now ejc-ci-fallback.service >/dev/null 2>&1 || rc=1
+      if ! systemctl --user disable --now ejc-ci-fallback.service >/dev/null 2>&1; then
+        return 1
+      fi
     fi
     if [ -e "$UNIT" ]; then
       rm -f "$UNIT" || rc=1
@@ -288,13 +290,28 @@ rollback_activation() {
   trap - EXIT
   set +e
   if [ "$rc" -ne 0 ]; then
-    [ "$WATCHER_INSTALLED" -eq 0 ] || remove_watcher >/dev/null 2>&1 || true
-    if [ "$PROTECTION_CHANGED" -eq 1 ] && [ -s "$PROTECTION_BACKUP" ]; then
-      EJC_BRANCH_PROTECTION_BACKUP="$PROTECTION_BACKUP" \
-        bash scripts/governanca/branch-protection.sh --restore >/dev/null 2>&1 || true
+    if [ "$WATCHER_INSTALLED" -eq 1 ]; then
+      create_drain_marker >/dev/null 2>&1 || exit "$rc"
+      exec 9>"$LOCK_FILE"
+      flock -w 120 9 >/dev/null 2>&1 || exit "$rc"
+      if ! remove_watcher >/dev/null 2>&1; then
+        exit "$rc"
+      fi
+      WATCHER_INSTALLED=0
     fi
-    [ "$HOOKS_CHANGED" -eq 0 ] || restore_hooks_path >/dev/null 2>&1 || true
-    rm -f "$DRAIN_FILE" "$ACTIVE_FILE"
+    if [ "$PROTECTION_CHANGED" -eq 1 ] && [ -s "$PROTECTION_BACKUP" ]; then
+      if ! EJC_BRANCH_PROTECTION_BACKUP="$PROTECTION_BACKUP" \
+          bash scripts/governanca/branch-protection.sh --restore >/dev/null 2>&1; then
+        exit "$rc"
+      fi
+      PROTECTION_CHANGED=0
+    fi
+    if [ "$HOOKS_CHANGED" -eq 1 ]; then
+      restore_hooks_path >/dev/null 2>&1 || exit "$rc"
+      HOOKS_CHANGED=0
+    fi
+    rm -f "$ACTIVE_FILE" "$DRAIN_FILE"
+    [ -e "$PROTECTION_BACKUP" ] && rm -f "$PROTECTION_BACKUP"
   fi
   exit "$rc"
 }
@@ -306,6 +323,10 @@ EJC_FALLBACK_APP_ID="$FALLBACK_APP_ID" \
 EJC_BRANCH_PROTECTION_BACKUP="$PROTECTION_BACKUP" \
   bash scripts/governanca/branch-protection.sh --fallback
 ok "required status checks apontados para EJC Local Full Gate/App $FALLBACK_APP_ID"
+
+# Registre o estado antes de iniciar qualquer executor. Em falha posterior,
+# active.json + drain permanecem até a remoção do watcher ser comprovada.
+write_active_state "$SCHEDULER"
 
 if [ "$SCHEDULER" = "systemd" ]; then
   mkdir -p "$UNIT_DIR"
@@ -337,18 +358,17 @@ WantedBy=default.target
 UNIT
   systemctl --user daemon-reload
   systemctl --user enable --now ejc-ci-fallback.service
+  WATCHER_INSTALLED=1
   systemctl --user is-enabled --quiet ejc-ci-fallback.service
   systemctl --user is-active --quiet ejc-ci-fallback.service
-  WATCHER_INSTALLED=1
   ok "watcher persistente ativado via systemd --user"
 else
   LINE="*/5 * * * * cd '$ROOT' && /usr/bin/env PATH='$WATCHER_PATH' EJC_REPO='$REPO' EJC_CI_STATE_ROOT='$CACHE_ROOT' EJC_FALLBACK_DRAIN_FILE='$DRAIN_FILE' EJC_FALLBACK_APP_ID='$FALLBACK_APP_ID' EJC_FALLBACK_INSTALLATION_ID='$INSTALLATION_ID' EJC_FALLBACK_APP_PRIVATE_KEY_FILE='$APP_KEY_FILE' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 flock -n '$LOCK_FILE' bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
   { crontab -l 2>/dev/null || true; echo "$LINE"; } | crontab -
-  (crontab -l 2>/dev/null || true) | grep -qF "$CRON_MARK"
   WATCHER_INSTALLED=1
+  (crontab -l 2>/dev/null || true) | grep -qF "$CRON_MARK"
   ok "watcher persistente ativado via cron (5 min, lock exclusivo)"
 fi
 
-write_active_state "$SCHEDULER"
 trap - EXIT
 ok "fallback local autônomo ativo; GitHub Actions deixou de ser dependência de execução do CI"
