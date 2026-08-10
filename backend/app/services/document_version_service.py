@@ -81,6 +81,10 @@ async def preparar_nova_versao(
     ``transaction-level`` e portanto só protege corretamente se este método e o
     INSERT/commit do novo ``Document`` ocorrerem na mesma transação/sessão.
 
+    ``no_autoflush`` torna a função segura mesmo quando o caller já adicionou o
+    novo ``Document`` à sessão: nenhuma query pode inserir a linha prematuramente
+    com versão/grupo ainda não validados.
+
     A ausência de UNIQUE(grupo, versão) é tratada fail-closed: grupos que já
     possuem numeração duplicada não recebem novas versões até auditoria/backfill.
     """
@@ -90,84 +94,91 @@ async def preparar_nova_versao(
     if documento.id == documento_anterior_id:
         raise DocumentoVersaoError("documento não pode versionar a si mesmo")
 
-    anterior = (
+    with db.no_autoflush:
+        anterior = (
+            await db.execute(
+                select(Document)
+                .where(
+                    Document.id == documento_anterior_id,
+                    Document.deleted_at.is_(None),
+                )
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if anterior is None:
+            raise DocumentoAnteriorNaoEncontradoError("documento predecessor indisponível")
+
+        if documento.case_id != anterior.case_id or documento.client_id != anterior.client_id:
+            raise DocumentoContextoDivergenteError("versões pertencem a contextos diferentes")
+
+        grupo_id = anterior.versao_grupo_id or anterior.id
+
+        # Lock de transação, liberado automaticamente em commit/rollback. Colisões
+        # do hash apenas serializam grupos não relacionados; não reduzem segurança.
         await db.execute(
-            select(Document)
-            .where(
-                Document.id == documento_anterior_id,
+            select(
+                func.pg_advisory_xact_lock(
+                    func.hashtextextended(grupo_id, 0)
+                )
+            )
+        )
+
+        escopo = _escopo_grupo(grupo_id)
+
+        # Um grupo histórico cruzando caso/cliente é inconsistente e não deve ser
+        # prolongado silenciosamente. ``IS DISTINCT FROM`` trata NULL corretamente.
+        contexto_invalido = (
+            await db.execute(
+                select(Document.id)
+                .where(
+                    escopo,
+                    or_(
+                        Document.case_id.is_distinct_from(anterior.case_id),
+                        Document.client_id.is_distinct_from(anterior.client_id),
+                    ),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if contexto_invalido is not None:
+            raise DocumentoGrupoInconsistenteError(
+                "grupo documental possui contexto inconsistente"
+            )
+
+        versao_duplicada = (
+            await db.execute(
+                select(Document.versao)
+                .where(escopo)
+                .group_by(Document.versao)
+                .having(func.count(Document.id) > 1)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if versao_duplicada is not None:
+            raise DocumentoGrupoInconsistenteError(
+                "grupo documental possui numeração duplicada"
+            )
+
+        maior_versao = await db.scalar(
+            select(func.max(Document.versao)).where(escopo)
+        )
+        maior_versao_ativa = await db.scalar(
+            select(func.max(Document.versao)).where(
+                escopo,
                 Document.deleted_at.is_(None),
             )
-            .with_for_update()
         )
-    ).scalar_one_or_none()
-    if anterior is None:
-        raise DocumentoAnteriorNaoEncontradoError("documento predecessor indisponível")
 
-    if documento.case_id != anterior.case_id or documento.client_id != anterior.client_id:
-        raise DocumentoContextoDivergenteError("versões pertencem a contextos diferentes")
-
-    grupo_id = anterior.versao_grupo_id or anterior.id
-
-    # Lock de transação, liberado automaticamente em commit/rollback. Colisões
-    # do hash apenas serializam grupos não relacionados; não reduzem segurança.
-    await db.execute(
-        select(
-            func.pg_advisory_xact_lock(
-                func.hashtextextended(grupo_id, 0)
+        versao_anterior = anterior.versao or 1
+        if maior_versao_ativa is None or versao_anterior != maior_versao_ativa:
+            raise DocumentoAnteriorObsoletoError(
+                "documento predecessor não é a versão vigente"
             )
-        )
-    )
 
-    escopo = _escopo_grupo(grupo_id)
-
-    # Um grupo histórico cruzando caso/cliente é inconsistente e não deve ser
-    # prolongado silenciosamente. ``IS DISTINCT FROM`` trata NULL corretamente.
-    contexto_invalido = (
-        await db.execute(
-            select(Document.id)
-            .where(
-                escopo,
-                or_(
-                    Document.case_id.is_distinct_from(anterior.case_id),
-                    Document.client_id.is_distinct_from(anterior.client_id),
-                ),
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if contexto_invalido is not None:
-        raise DocumentoGrupoInconsistenteError("grupo documental possui contexto inconsistente")
-
-    versao_duplicada = (
-        await db.execute(
-            select(Document.versao)
-            .where(escopo)
-            .group_by(Document.versao)
-            .having(func.count(Document.id) > 1)
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if versao_duplicada is not None:
-        raise DocumentoGrupoInconsistenteError("grupo documental possui numeração duplicada")
-
-    maior_versao = await db.scalar(
-        select(func.max(Document.versao)).where(escopo)
-    )
-    maior_versao_ativa = await db.scalar(
-        select(func.max(Document.versao)).where(
-            escopo,
-            Document.deleted_at.is_(None),
-        )
-    )
-
-    versao_anterior = anterior.versao or 1
-    if maior_versao_ativa is None or versao_anterior != maior_versao_ativa:
-        raise DocumentoAnteriorObsoletoError("documento predecessor não é a versão vigente")
-
-    proxima_versao = int(maior_versao or 1) + 1
-    documento.versao = proxima_versao
-    documento.versao_grupo_id = grupo_id
-    documento.versao_anterior_id = anterior.id
+        proxima_versao = int(maior_versao or 1) + 1
+        documento.versao = proxima_versao
+        documento.versao_grupo_id = grupo_id
+        documento.versao_anterior_id = anterior.id
 
     return VersaoDocumentoPreparada(
         grupo_id=grupo_id,
