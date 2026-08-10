@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Executa a seção MUTÁVEL do workflow de produção sob um único mutex host-level:
-# rsync → owner/mode do .env → deploy_vps_safe.sh.
+# rsync → deploy_vps_safe.sh.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,6 +25,9 @@ command -v realpath >/dev/null 2>&1 || fail "realpath ausente"
 command -v rsync >/dev/null 2>&1 || fail "rsync ausente"
 command -v sudo >/dev/null 2>&1 || fail "sudo ausente"
 [ -f "$ROOT/scripts/deploy_lock.sh" ] || fail "scripts/deploy_lock.sh ausente no checkout aprovado"
+[ -r "$APP_DIR/.env" ] || fail "$APP_DIR/.env precisa estar legível pelo usuário dedicado do runner antes do deploy"
+[ "$(stat -c %a "$APP_DIR/.env" 2>/dev/null)" = "600" ] \
+  || fail "$APP_DIR/.env deve estar em modo 0600 antes do deploy"
 
 runner_canon="$(canon "$RUNNER_TEMP_SAFE")"
 state_canon="$(canon "$STATE_FILE")"
@@ -47,7 +50,7 @@ write_phase pre_sync
 # shellcheck source=deploy_lock.sh
 source "$ROOT/scripts/deploy_lock.sh"
 lock_rc=0
-ejc_deploy_lock_acquire "$APP_DIR" || lock_rc=$?
+ejc_deploy_lock_acquire_production || lock_rc=$?
 case "$lock_rc" in
   0) ;;
   75)
@@ -72,16 +75,11 @@ sudo -n rsync -a --delete \
   "$ROOT/" "$APP_DIR/"
 write_phase sync_completed
 
-# O .env é preservado pelo rsync e deve permanecer legível apenas pelo runner
-# dedicado (root continua tendo acesso por privilégio do SO).
-sudo -n chown "$(id -u):$(id -g)" "$APP_DIR/.env"
-sudo -n chmod 600 "$APP_DIR/.env"
-[ "$(stat -c %a "$APP_DIR/.env")" = "600" ] || fail ".env não ficou 0600"
-[ "$(stat -c %u:%g "$APP_DIR/.env")" = "$(id -u):$(id -g)" ] \
-  || fail ".env não ficou sob o usuário/grupo do runner"
+# O rsync exclui o .env. Não alteramos owner/mode durante a transação: a
+# permissão já foi validada antes de tocar produção.
+[ -r "$APP_DIR/.env" ] || fail "$APP_DIR/.env deixou de ser legível após o rsync"
+[ "$(stat -c %a "$APP_DIR/.env")" = "600" ] || fail "$APP_DIR/.env perdeu o modo 0600 após o rsync"
 
-# EJC_DEPLOY_LOCK_FD=9 foi exportado pelo helper; o filho revalida que o FD
-# herdado aponta para o MESMO inode/path e executa flock -n no próprio FD.
 cd "$APP_DIR"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}" \
 MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}" \
