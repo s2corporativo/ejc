@@ -35,8 +35,6 @@ case "$APP_DIR_CANON" in
   /opt/ejc|/opt/ejc/*) PRODUCTION_MODE=1 ;;
 esac
 
-# Em produção o namespace do mutex é FIXO e host-level. Variar por HOME,
-# XDG_RUNTIME_DIR ou usuário Unix reabriria concorrência no mesmo Docker daemon.
 if [ "$PRODUCTION_MODE" = "1" ]; then
   [ "$DEPLOY_LOCK_ROOT_CANON" = "$PRODUCTION_LOCK_ROOT" ] \
     || die_policy "em /opt/ejc o mutex é fixo em $PRODUCTION_LOCK_ROOT; override recusado"
@@ -46,8 +44,6 @@ if [ "$PRODUCTION_MODE" = "1" ]; then
   docker_gid="$(stat -c %g /var/run/docker.sock)"
   [[ "$docker_gid" =~ ^[0-9]+$ ]] || die_policy "GID do docker.sock inválido"
 
-  # Provisiona root:<grupo-do-docker>, 0770/0660. Usuários diferentes que podem
-  # controlar o mesmo daemon Docker abrem o MESMO inode e respeitam o flock.
   if [ "$(id -u)" -eq 0 ]; then
     install -d -m 0770 -o root -g "$docker_gid" "$PRODUCTION_LOCK_ROOT"
     [ -e "$PRODUCTION_LOCK_FILE" ] || : > "$PRODUCTION_LOCK_FILE"
@@ -66,7 +62,6 @@ if [ "$PRODUCTION_MODE" = "1" ]; then
       || die_policy "não foi possível ajustar permissão do mutex"
   fi
 else
-  # Ambiente hermético/teste pode sobrescrever a raiz, sempre fora da aplicação.
   [ ! -L "$DEPLOY_LOCK_ROOT" ] || die_policy "EJC_DEPLOY_LOCK_ROOT não pode ser symlink"
   [ ! -L "$DEPLOY_LOCK_FILE" ] || die_policy "EJC_DEPLOY_LOCK_FILE não pode ser symlink"
   case "$DEPLOY_LOCK_ROOT_CANON" in
@@ -147,7 +142,6 @@ rollback_transaction() {
   local original_rc="$1"
   set +e
 
-  # Restaure configuração antes de recriar containers antigos.
   restore_env || log "ERRO CRÍTICO: restauração do .env ficou incompleta."
 
   if [ "$DEPLOY_MUTATED" = "1" ]; then
@@ -206,7 +200,6 @@ if [ "$REQUIRE_PREDEPLOY_BACKUP" = "0" ]; then
 fi
 [ -f .env ] || { echo "Arquivo .env ausente em ${APP_DIR}" >&2; exit 1; }
 
-# Identidade e composição são preflight read-only.
 GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
 [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] \
   || die_policy "TARGET_SHA/HEAD deve ser SHA-1 completo de 40 caracteres hexadecimais; release sem identidade verificável foi bloqueada"
@@ -214,7 +207,6 @@ export GIT_SHA
 log "Versão a publicar: ${GIT_SHA}"
 docker compose config --quiet
 
-# P0: backup fail-closed ANTES de migrar .env, criar tags ou buildar.
 log "Verificando pré-requisitos de backup"
 BACKUP_SAIDA=""
 if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
@@ -239,7 +231,6 @@ else
   log "AVISO: backup pré-deploy não executou; contingência permissiva explícita seguirá sem prova nova."
 fi
 
-# Snapshot do .env depois do backup e antes da primeira mutação de configuração.
 umask 077
 cp -- .env "$ENV_ROLLBACK_FILE"
 chmod 600 "$ENV_ROLLBACK_FILE"
@@ -247,7 +238,7 @@ ROLLBACK_ARMED=1
 
 if [ -f scripts/migrar_env_obsoletos.sh ]; then
   ENV_MUTATED=1
-  bash scripts/migrar_env_obsoletos.sh .env | while IFS= read -r linha; do
+  bash scripts/migrar_env_obsoletos.sh .env --backup-path "$ENV_ROLLBACK_FILE" | while IFS= read -r linha; do
     log "$linha"
   done
   docker compose config --quiet
