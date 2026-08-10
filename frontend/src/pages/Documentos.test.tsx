@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   patch: vi.fn(),
   delete: vi.fn(),
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastInfo: vi.fn(),
 }));
 
 vi.mock("../lib/api", () => ({
@@ -47,9 +50,9 @@ vi.mock("../components/CaseFilterChip", () => ({
 
 vi.mock("../components/Toast", () => ({
   toast: {
-    error: vi.fn(),
-    success: vi.fn(),
-    info: vi.fn(),
+    error: mocks.toastError,
+    success: mocks.toastSuccess,
+    info: mocks.toastInfo,
   },
 }));
 
@@ -66,6 +69,14 @@ const DOCUMENTO = {
   created_at: "2026-08-10T12:00:00Z",
 };
 
+const DOCUMENTO_2 = {
+  ...DOCUMENTO,
+  id: "doc-2",
+  titulo: "Petição teste",
+  filename: "peticao.pdf",
+  tipo: "peticao",
+};
+
 const CASO = {
   id: "case-1",
   numero_interno: "EJC-001",
@@ -73,11 +84,16 @@ const CASO = {
   client_id: "client-1",
 };
 
-function prepararApi(): void {
+function prepararApi(documentos = [DOCUMENTO]): void {
   mocks.get.mockImplementation((url: string) => {
     if (url === "/documents/") {
       return Promise.resolve({
-        data: { data: [DOCUMENTO], total: 1, page: 1, page_size: 50 },
+        data: {
+          data: documentos,
+          total: documentos.length,
+          page: 1,
+          page_size: 50,
+        },
       });
     }
     if (url === "/cases/") {
@@ -92,13 +108,27 @@ function prepararApi(): void {
     return Promise.reject(new Error(`GET inesperado: ${url}`));
   });
   mocks.post.mockResolvedValue({ data: {} });
+  mocks.patch.mockResolvedValue({ data: {} });
 }
 
-async function renderizarESelecionar(): Promise<void> {
+async function renderizar(): Promise<void> {
   render(<Documentos />);
   await screen.findByText("Contrato teste");
-  fireEvent.click(screen.getByLabelText("Selecionar Contrato teste"));
-  await screen.findByText("1 selecionado(s)");
+}
+
+async function selecionar(titulo = "Contrato teste"): Promise<void> {
+  fireEvent.click(screen.getByLabelText(`Selecionar ${titulo}`));
+  await screen.findByText(/selecionado\(s\)/i);
+}
+
+async function abrirModalVinculo(): Promise<HTMLSelectElement> {
+  fireEvent.click(screen.getByRole("button", { name: /Vincular ao caso/i }));
+  await screen.findByText(/Vincular ao caso — .* documento\(s\)/i);
+  const seletor = screen
+    .getByText("Caso de destino")
+    .parentElement?.querySelector("select");
+  expect(seletor).not.toBeNull();
+  return seletor as HTMLSelectElement;
 }
 
 beforeEach(() => {
@@ -107,47 +137,74 @@ beforeEach(() => {
   mocks.post.mockReset();
   mocks.patch.mockReset();
   mocks.delete.mockReset();
+  mocks.toastError.mockReset();
+  mocks.toastSuccess.mockReset();
+  mocks.toastInfo.mockReset();
   prepararApi();
 });
 
 afterEach(cleanup);
 
-describe("Documentos — vínculo com caso", () => {
-  it("expõe a ação para papel jurídico autorizado", async () => {
-    mocks.role = "estagiario";
+describe("Documentos — RBAC de vínculo", () => {
+  it.each([
+    "superadmin",
+    "admin",
+    "socio",
+    "advogado",
+    "advogado_auxiliar",
+    "estagiario",
+  ])("expõe a ação para papel jurídico autorizado: %s", async (role) => {
+    mocks.role = role;
 
-    await renderizarESelecionar();
+    await renderizar();
+    await selecionar();
 
     expect(
       screen.getByRole("button", { name: /Vincular ao caso/i }),
     ).toBeTruthy();
   });
 
-  it("não expõe a ação para papel fora do contrato backend", async () => {
-    mocks.role = "financeiro";
+  it.each(["financeiro", "secretaria", "cliente_externo"])(
+    "oculta a ação para papel fora do contrato backend: %s",
+    async (role) => {
+      mocks.role = role;
 
-    await renderizarESelecionar();
+      await renderizar();
+      await selecionar();
 
-    expect(
-      screen.queryByRole("button", { name: /Vincular ao caso/i }),
-    ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /Vincular ao caso/i }),
+      ).toBeNull();
+    },
+  );
+});
+
+describe("Documentos — mutações", () => {
+  it("PATCH de metadados nunca envia case_id", async () => {
+    await renderizar();
+    fireEvent.click(screen.getByTitle("Editar metadados"));
+
+    const titulo = await screen.findByDisplayValue("Contrato teste");
+    fireEvent.change(titulo, { target: { value: "Contrato revisado" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => {
+      expect(mocks.patch).toHaveBeenCalledWith("/documents/doc-1", {
+        titulo: "Contrato revisado",
+      });
+    });
+    const payload = mocks.patch.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("case_id");
   });
 
-  it("usa o POST canônico em vez de PATCH de case_id", async () => {
+  it("usa o POST canônico para vínculo por documento", async () => {
     mocks.role = "advogado";
 
-    await renderizarESelecionar();
-    fireEvent.click(screen.getByRole("button", { name: /Vincular ao caso/i }));
+    await renderizar();
+    await selecionar();
+    const seletor = await abrirModalVinculo();
 
-    await screen.findByText(/Vincular ao caso — 1 documento\(s\)/i);
-    const seletor = screen
-      .getByText("Caso de destino")
-      .parentElement?.querySelector("select");
-    expect(seletor).not.toBeNull();
-
-    fireEvent.change(seletor as HTMLSelectElement, {
-      target: { value: CASO.id },
-    });
+    fireEvent.change(seletor, { target: { value: CASO.id } });
     fireEvent.click(screen.getByRole("button", { name: "Vincular todos" }));
 
     await waitFor(() => {
@@ -155,9 +212,41 @@ describe("Documentos — vínculo com caso", () => {
         "/cases/case-1/documentos/doc-1/vincular",
       );
     });
-    expect(mocks.patch).not.toHaveBeenCalledWith(
-      expect.stringContaining("/documents/doc-1"),
-      expect.objectContaining({ case_id: expect.anything() }),
-    );
+  });
+
+  it("preserva falha isolada e resume vínculo parcial", async () => {
+    mocks.role = "advogado";
+    prepararApi([DOCUMENTO, DOCUMENTO_2]);
+    mocks.post
+      .mockResolvedValueOnce({ data: {} })
+      .mockRejectedValueOnce({
+        response: { data: { detail: "Documento já vinculado" } },
+      });
+
+    await renderizar();
+    await selecionar("Contrato teste");
+    fireEvent.click(screen.getByLabelText("Selecionar Petição teste"));
+    await screen.findByText("2 selecionado(s)");
+    const seletor = await abrirModalVinculo();
+
+    fireEvent.change(seletor, { target: { value: CASO.id } });
+    fireEvent.click(screen.getByRole("button", { name: "Vincular todos" }));
+
+    await waitFor(() => {
+      expect(mocks.post).toHaveBeenNthCalledWith(
+        1,
+        "/cases/case-1/documentos/doc-1/vincular",
+      );
+      expect(mocks.post).toHaveBeenNthCalledWith(
+        2,
+        "/cases/case-1/documentos/doc-2/vincular",
+      );
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        expect.stringContaining("1 vinculado(s), 1 falhou(aram)"),
+      );
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        expect.stringContaining("Documento já vinculado"),
+      );
+    });
   });
 });
