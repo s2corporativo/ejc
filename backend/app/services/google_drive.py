@@ -1,62 +1,122 @@
-"""Google Drive service — upload, download, delete de documentos.
+"""Google Drive storage adapter baseado exclusivamente em rclone.
 
-Autenticação: rclone (OAuth2, token renovado automaticamente).
-O rclone deve estar configurado em /root/.config/rclone/rclone.conf
-com o remote [gdrive]. O token é gerenciado pelo rclone.
+O módulo é deliberadamente SÍNCRONO: chamadas a subprocesso devem ser feitas
+por ``asyncio.to_thread`` na camada assíncrona. Isso mantém o adapter simples e
+impede que um ``subprocess.run`` bloqueie o event loop do FastAPI.
+
+Documentos novos persistem ``remote_path`` no GED e, por isso, download/delete
+são endereçados diretamente. A resolução recursiva por ID existe somente como
+fallback de compatibilidade para registros legados que não guardavam o path.
 """
-import os
+from __future__ import annotations
+
 import json
 import logging
-import tempfile
+import os
+import shutil
 import subprocess
+import tempfile
+from pathlib import PurePosixPath
 from typing import Optional
+from uuid import UUID
 
 logger = logging.getLogger("ejc.drive")
 
-RCLONE_REMOTE   = "gdrive"
-RCLONE_CONF     = os.getenv("RCLONE_CONFIG", "/opt/ejc/config/rclone.conf")
-# Pasta base no Drive para documentos do EJC
-BASE_FOLDER     = "EJC-Documentos"
-RCLONE_TIMEOUT  = 120  # segundos por operação
+RCLONE_REMOTE = "gdrive"
+RCLONE_CONF = os.getenv("RCLONE_CONFIG", "/opt/ejc/config/rclone.conf")
+BASE_FOLDER = "EJC-Documentos"
+RCLONE_TIMEOUT = 120
 
-# Mapeamento de folder_id (env var) → subfolder no Drive
-# Os IDs antigos (service account) são ignorados; usamos nomes de pastas
 _FOLDER_NAMES: dict[str, str] = {
-    os.getenv("DRIVE_FOLDER_CASOS",       "__casos__"):       "casos",
-    os.getenv("DRIVE_FOLDER_PECAS",       "__pecas__"):       "pecas",
-    os.getenv("DRIVE_FOLDER_CONTRATOS",   "__contratos__"):   "contratos",
-    os.getenv("DRIVE_FOLDER_CLIENTES",    "__clientes__"):    "clientes",
-    os.getenv("DRIVE_FOLDER_HONORARIOS",  "__honorarios__"):  "honorarios",
-    os.getenv("DRIVE_FOLDER_COMPROVANTES","__comprovantes__"):"comprovantes",
-    os.getenv("DRIVE_FOLDER_TEMPLATES",   "__templates__"):   "templates",
-    os.getenv("DRIVE_FOLDER_BACKUP",      "__backup__"):      "backups",
+    os.getenv("DRIVE_FOLDER_CASOS", "__casos__"): "casos",
+    os.getenv("DRIVE_FOLDER_PECAS", "__pecas__"): "pecas",
+    os.getenv("DRIVE_FOLDER_CONTRATOS", "__contratos__"): "contratos",
+    os.getenv("DRIVE_FOLDER_CLIENTES", "__clientes__"): "clientes",
+    os.getenv("DRIVE_FOLDER_HONORARIOS", "__honorarios__"): "honorarios",
+    os.getenv("DRIVE_FOLDER_COMPROVANTES", "__comprovantes__"): "comprovantes",
+    os.getenv("DRIVE_FOLDER_TEMPLATES", "__templates__"): "templates",
+    os.getenv("DRIVE_FOLDER_BACKUP", "__backup__"): "backups",
 }
 
-DRIVE_AVAILABLE = os.path.exists(RCLONE_CONF) and bool(
-    subprocess.run(["which", "rclone"], capture_output=True).returncode == 0
-)
+DRIVE_AVAILABLE = os.path.exists(RCLONE_CONF) and shutil.which("rclone") is not None
 
 
 class DriveIndisponivelError(RuntimeError):
-    """Google Drive não configurado/indisponível (rclone ausente ou sem
-    rclone.conf). Os endpoints /documents/drive/* convertem em 503 controlado —
-    antes vazava como RuntimeError genérico → 500."""
+    """Storage remoto indisponível ou não configurado."""
+
+
+class DriveObjetoNaoEncontradoError(FileNotFoundError):
+    """Objeto remoto não localizado no caminho/ID informado."""
+
+
+def case_folder_token(case_id: str) -> str:
+    """Token interno determinístico para ``casos/<uuid>``.
+
+    O valor nunca vem do cliente HTTP: é construído a partir do ID de caso já
+    autorizado. Validar como UUID evita criar segmentos arbitrários no remote.
+    """
+
+    try:
+        normalizado = str(UUID(str(case_id)))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ValueError("case_id inválido para storage remoto") from exc
+    return f"case:{normalizado}"
 
 
 def _subfolder(folder_id: Optional[str]) -> str:
-    """Converte folder_id (env var) em nome de subpasta legível."""
+    if folder_id and folder_id.startswith("case:"):
+        return f"casos/{case_folder_token(folder_id[5:])[5:]}"
     if folder_id and folder_id in _FOLDER_NAMES:
         return _FOLDER_NAMES[folder_id]
     return "geral"
 
 
+def _nome_remoto_seguro(filename: str) -> str:
+    """Reduz filename a um único segmento sem controles."""
+
+    nome = PurePosixPath((filename or "documento").replace("\\", "/")).name
+    nome = "".join(ch for ch in nome if ch >= " " and ch != "\x7f").strip()
+    if not nome or nome in {".", ".."}:
+        return "documento"
+    return nome[:255]
+
+
+def _remote_rel_seguro(remote_path: str) -> str:
+    """Valida path relativo persistido antes de interpolá-lo no remote rclone."""
+
+    bruto = str(remote_path or "").strip().replace("\\", "/")
+    path = PurePosixPath(bruto)
+    if not bruto or path.is_absolute() or any(p in {"", ".", ".."} for p in path.parts):
+        raise ValueError("remote_path inválido")
+    if ":" in bruto:
+        raise ValueError("remote_path não pode conter ':'")
+    return str(path)
+
+
 def _rclone_path(subfolder: str, filename: str = "") -> str:
-    base = f"{RCLONE_REMOTE}:{BASE_FOLDER}/{subfolder}"
-    return f"{base}/{filename}" if filename else base
+    base = f"{RCLONE_REMOTE}:{BASE_FOLDER}/{_remote_rel_seguro(subfolder)}"
+    return f"{base}/{_nome_remoto_seguro(filename)}" if filename else base
 
 
-def _run(cmd: list[str], timeout: int = RCLONE_TIMEOUT) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+def _rclone_path_rel(remote_path: str) -> str:
+    return f"{RCLONE_REMOTE}:{BASE_FOLDER}/{_remote_rel_seguro(remote_path)}"
+
+
+def _run(cmd: list[str], timeout: int = RCLONE_TIMEOUT) -> subprocess.CompletedProcess[str]:
+    """Executa rclone sem shell e com timeout duro."""
+
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _exigir_disponivel() -> None:
+    if not DRIVE_AVAILABLE:
+        raise DriveIndisponivelError("Google Drive/rclone não configurado")
 
 
 def upload_file(
@@ -65,120 +125,149 @@ def upload_file(
     mime_type: str,
     folder_id: Optional[str] = None,
 ) -> dict:
-    """Faz upload de bytes para o Drive. Retorna {id, name, webViewLink, webContentLink}."""
-    if not DRIVE_AVAILABLE:
-        raise DriveIndisponivelError("rclone não configurado — execute: rclone config create gdrive drive")
+    """Faz upload de bytes e devolve ID + path remoto persistível.
+
+    ``mime_type`` permanece no contrato porque o GED é a fonte do MIME validado;
+    o rclone não precisa desse valor para a cópia atual.
+    """
+
+    del mime_type
+    _exigir_disponivel()
 
     subfolder = _subfolder(folder_id)
-    dest_path  = _rclone_path(subfolder)
-    dest_file  = _rclone_path(subfolder, filename)
+    nome = _nome_remoto_seguro(filename)
+    dest_dir = _rclone_path(subfolder)
+    dest_file = _rclone_path(subfolder, nome)
 
-    # Garantir que a subpasta existe
-    _run(["rclone", "mkdir", dest_path])
+    mkdir = _run(["rclone", "mkdir", dest_dir])
+    if mkdir.returncode != 0:
+        raise RuntimeError(f"rclone mkdir falhou: {mkdir.stderr[:300]}")
 
-    # Escrever bytes em arquivo temporário e fazer upload
-    with tempfile.NamedTemporaryFile(delete=False, suffix="_" + filename) as tmp:
+    suffix = PurePosixPath(nome).suffix[:16]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
 
     try:
-        r = _run(["rclone", "copyto", tmp_path, dest_file])
-        if r.returncode != 0:
-            raise RuntimeError(f"rclone upload: {r.stderr[:300]}")
+        copied = _run(["rclone", "copyto", tmp_path, dest_file])
+        if copied.returncode != 0:
+            raise RuntimeError(f"rclone upload falhou: {copied.stderr[:300]}")
     finally:
-        os.unlink(tmp_path)
-
-    # Obter ID do arquivo no Drive via lsjson
-    r2 = _run(["rclone", "lsjson", dest_path, "--include", filename])
-    file_id = ""
-    if r2.returncode == 0 and r2.stdout.strip():
         try:
-            entries = json.loads(r2.stdout)
-            if entries:
-                file_id = entries[0].get("ID", "")
-        except Exception:
-            logger.warning(
-                "[drive] falha ao ler ID do arquivo em %s (segue sem file_id)",
-                dest_path, exc_info=True,
-            )
+            os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
 
+    # O objeto é conhecido pelo path exato; --stat evita listar a pasta inteira.
+    stat = _run(["rclone", "lsjson", dest_file, "--stat"])
+    if stat.returncode != 0:
+        raise RuntimeError(f"rclone lsjson --stat falhou: {stat.stderr[:300]}")
+    try:
+        info = json.loads(stat.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("rclone lsjson --stat devolveu JSON inválido") from exc
+
+    file_id = str(info.get("ID") or "")
+    remote_path = f"{subfolder}/{nome}"
     return {
         "id": file_id,
-        "name": filename,
-        "webViewLink":    f"https://drive.google.com/file/d/{file_id}/view" if file_id else "",
-        "webContentLink": f"https://drive.google.com/uc?id={file_id}" if file_id else "",
+        "name": nome,
+        "remote_path": remote_path,
+        "webViewLink": (
+            f"https://drive.google.com/file/d/{file_id}/view" if file_id else ""
+        ),
+        "webContentLink": (
+            f"https://drive.google.com/uc?id={file_id}" if file_id else ""
+        ),
     }
 
 
 def get_file_link(file_id: str) -> dict:
-    """Retorna metadados de um arquivo pelo ID do Drive."""
+    """Monta links a partir do ID já persistido, sem I/O remoto."""
+
     if not file_id:
-        return {"id": "", "name": "", "webViewLink": "", "webContentLink": "", "size": 0}
+        return {
+            "id": "",
+            "webViewLink": "",
+            "webContentLink": "",
+        }
     return {
-        "id":             file_id,
-        "name":           "",
-        "webViewLink":    f"https://drive.google.com/file/d/{file_id}/view",
+        "id": file_id,
+        "webViewLink": f"https://drive.google.com/file/d/{file_id}/view",
         "webContentLink": f"https://drive.google.com/uc?id={file_id}",
-        "size":           0,
     }
 
 
 def _resolver_path_por_id(file_id: str) -> str:
-    """Resolve o caminho (remote:BASE/subpasta/arquivo) de um arquivo a partir do
-    seu ID do Drive. O rclone não endereça arquivo por ID diretamente com a
-    config de path deste projeto, então varremos a pasta base recursivamente
-    (lsjson -R) e casamos o campo ID → Path. Levanta RuntimeError se não achar."""
+    """Fallback LEGADO O(N) para registros sem ``remote_path`` persistido."""
+
+    _exigir_disponivel()
     if not file_id:
         raise ValueError("file_id vazio")
     base = f"{RCLONE_REMOTE}:{BASE_FOLDER}"
-    r = _run(["rclone", "lsjson", "-R", "--files-only", base])
-    if r.returncode != 0:
-        raise RuntimeError(f"rclone lsjson falhou ao resolver ID {file_id}: {r.stderr[:200]}")
+    result = _run(["rclone", "lsjson", "-R", "--files-only", base])
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"rclone lsjson legado falhou para ID {file_id}: {result.stderr[:200]}"
+        )
     try:
-        entries = json.loads(r.stdout or "[]")
-    except Exception as e:
-        raise RuntimeError(f"rclone lsjson devolveu JSON inválido: {e}")
-    alvo = next((e for e in entries if e.get("ID") == file_id), None)
+        entries = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("rclone lsjson legado devolveu JSON inválido") from exc
+    alvo = next((entry for entry in entries if entry.get("ID") == file_id), None)
     if alvo is None:
-        raise RuntimeError(f"Arquivo ID {file_id} não encontrado em {BASE_FOLDER}")
-    return f"{base}/{alvo.get('Path', '')}"
+        raise DriveObjetoNaoEncontradoError(
+            f"Arquivo ID {file_id} não encontrado em {BASE_FOLDER}"
+        )
+    path = str(alvo.get("Path") or "")
+    if not path:
+        raise DriveObjetoNaoEncontradoError("Objeto remoto sem Path")
+    return _rclone_path_rel(path)
 
 
-def download_file(file_id: str) -> tuple[bytes, str]:
-    """Baixa o conteúdo de um arquivo pelo ID do Drive (modo BYTES).
+def _resolver_objeto(file_id: str, remote_path: Optional[str]) -> str:
+    if remote_path:
+        return _rclone_path_rel(remote_path)
+    return _resolver_path_por_id(file_id)
 
-    Resolve o path pelo ID e usa `rclone copyto` para um arquivo temporário lido
-    em modo binário — nunca `rclone cat` com re-encode em texto (corromperia
-    PDF/DOCX)."""
-    if not DRIVE_AVAILABLE:
-        raise DriveIndisponivelError("rclone não configurado")
-    src = _resolver_path_por_id(file_id)
+
+def download_file(
+    file_id: str,
+    *,
+    remote_path: Optional[str] = None,
+) -> bytes:
+    """Baixa objeto por path O(1); ID recursivo só para legado."""
+
+    _exigir_disponivel()
+    src = _resolver_objeto(file_id, remote_path)
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp_path = tmp.name
     try:
-        r = _run(["rclone", "copyto", src, tmp_path], timeout=RCLONE_TIMEOUT)
-        if r.returncode != 0:
-            raise RuntimeError(f"rclone download: {r.stderr[:200]}")
-        with open(tmp_path, "rb") as f:
-            return f.read(), "application/octet-stream"
+        result = _run(["rclone", "copyto", src, tmp_path])
+        if result.returncode != 0:
+            stderr = result.stderr[:300]
+            raise DriveObjetoNaoEncontradoError(
+                f"Falha ao baixar objeto remoto: {stderr}"
+            )
+        with open(tmp_path, "rb") as handle:
+            return handle.read()
     finally:
-        if os.path.exists(tmp_path):
+        try:
             os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
 
 
-def delete_file(file_id: str) -> None:
-    """Remove um arquivo do Drive pelo ID (exclusão REAL — LGPD art. 18, V).
+def delete_file(
+    file_id: str,
+    *,
+    remote_path: Optional[str] = None,
+) -> None:
+    """Remove objeto remoto; nunca converte falha em sucesso silencioso."""
 
-    Resolve o path pelo ID (lsjson -R) e apaga com `rclone deletefile`. NÃO é
-    no-op silencioso: se o arquivo não puder ser removido, levanta RuntimeError
-    para o chamador saber que o dado permanece no Drive (o caller decide como
-    tratar — ex.: manter o registro/alertar em vez de assumir eliminação)."""
-    if not DRIVE_AVAILABLE:
-        raise DriveIndisponivelError(f"rclone não configurado — arquivo {file_id} NÃO removido do Drive")
-    if not file_id:
-        raise ValueError("delete_file: file_id vazio")
-    dest = _resolver_path_por_id(file_id)
-    r = _run(["rclone", "deletefile", dest])
-    if r.returncode != 0:
-        raise RuntimeError(f"rclone deletefile falhou para {file_id}: {r.stderr[:200]}")
-    logger.info("[Drive] delete_file(%s): removido (%s)", file_id, dest)
+    _exigir_disponivel()
+    dest = _resolver_objeto(file_id, remote_path)
+    result = _run(["rclone", "deletefile", dest])
+    if result.returncode != 0:
+        raise RuntimeError(f"rclone deletefile falhou: {result.stderr[:300]}")
+    logger.info("[Drive] objeto removido do storage remoto")
