@@ -14,6 +14,8 @@ PGVECTOR_IMAGE="${PGVECTOR_IMAGE:-pgvector/pgvector:pg16}"
 STATE_ROOT="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}/ejc-ci-local}"
 VENV_DIR_OVERRIDE="${VENV_DIR:-}"
 VENV_DIR=""
+PIP_AUDIT_VERSION="${PIP_AUDIT_VERSION:-2.10.0}"
+PIP_AUDIT_BIN=""
 PGDATA="${PGDATA:-$STATE_ROOT/pgdata-${$}}"
 REPORT_ROOT="${EJC_CI_REPORT_ROOT:-$STATE_ROOT/reports}"
 REPORT_DIR="${EJC_CI_REPORT_DIR:-$REPORT_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-${$}}"
@@ -22,6 +24,7 @@ DBP="${EJC_CI_DB_PASSWORD:-ejc_pass}"
 DBN="${EJC_CI_DB_NAME:-ejc_db}"
 PYTHON_BIN="${PYTHON_BIN:-}"
 NODE_MAJOR_REQUIRED="${NODE_MAJOR_REQUIRED:-22}"
+REPORT_RETENTION_DAYS="${EJC_CI_REPORT_RETENTION_DAYS:-14}"
 
 log() { printf '\n\033[1;36m[ci-local]\033[0m %s\n' "$*"; }
 ok()  { printf '\033[1;32m✔ %s\033[0m\n' "$*"; }
@@ -86,15 +89,20 @@ fi
 if [ "$(id -u)" -eq 0 ] && [ "${EJC_ALLOW_ROOT_DIAGNOSTIC:-0}" != "1" ]; then
   die "CI local promovível não roda como root. EJC_ALLOW_ROOT_DIAGNOSTIC=1 serve apenas para diagnóstico não-promovível."
 fi
+[[ "$REPORT_RETENTION_DAYS" =~ ^[1-9][0-9]*$ ]] || die "EJC_CI_REPORT_RETENTION_DAYS deve ser inteiro >=1"
 
 assert_state_root
 assert_state_child "$PGDATA" "PGDATA"
 assert_state_child "$REPORT_ROOT" "REPORT_ROOT"
 assert_state_child "$REPORT_DIR" "REPORT_DIR"
 [ -z "$VENV_DIR_OVERRIDE" ] || assert_state_child "$VENV_DIR_OVERRIDE" "VENV_DIR"
-mkdir -p "$STATE_ROOT" "$REPORT_DIR"
+mkdir -p "$STATE_ROOT" "$REPORT_ROOT" "$REPORT_DIR"
 [ ! -L "$STATE_ROOT" ] || die "STATE_ROOT não pode ser symlink"
-chmod 700 "$STATE_ROOT" "$REPORT_DIR" 2>/dev/null || true
+chmod 700 "$STATE_ROOT" "$REPORT_ROOT" "$REPORT_DIR" 2>/dev/null || true
+
+while IFS= read -r -d '' old_report; do
+  safe_remove_tree "$old_report"
+done < <(find "$REPORT_ROOT" -mindepth 1 -maxdepth 1 -type d -mtime "+$REPORT_RETENTION_DAYS" -print0 2>/dev/null || true)
 
 PG_MODE=""
 PGBIN=""
@@ -139,30 +147,102 @@ choose_python() {
   fi
 }
 
+python_runtime_key() {
+  "$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info.major}_{sys.version_info.minor}_{sys.version_info.micro}")'
+}
+
 resolve_venv_dir() {
   [ -n "$VENV_DIR" ] && return 0
   if [ -n "$VENV_DIR_OVERRIDE" ]; then VENV_DIR="$VENV_DIR_OVERRIDE"; return 0; fi
   [ -f backend/requirements.txt ] || die "backend/requirements.txt ausente"
-  local req_hash py_version py_key
+  local req_hash py_key
   req_hash="$($PYTHON_BIN -c 'import hashlib,pathlib; print(hashlib.sha256(pathlib.Path("backend/requirements.txt").read_bytes()).hexdigest()[:16])')"
-  py_version="$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
-  py_key="${py_version//./_}"
+  py_key="$(python_runtime_key)"
   VENV_DIR="$STATE_ROOT/venv-py${py_key}-${req_hash}"
   assert_state_child "$VENV_DIR" "VENV_DIR"
 }
 
 ensure_venv() {
   choose_python; resolve_venv_dir
-  if [ "${CI_SKIP_PIP:-0}" = "1" ] && [ ! -x "$VENV_DIR/bin/python" ]; then die "CI_SKIP_PIP=1 solicitado, mas o venv hermético não existe: $VENV_DIR"; fi
-  if [ ! -x "$VENV_DIR/bin/python" ]; then
-    log "Criando venv hermético em $VENV_DIR…"; mkdir -p "$(dirname "$VENV_DIR")"; "$PYTHON_BIN" -m venv "$VENV_DIR"
+  local ready="$VENV_DIR/.ejc-ready" lock_file="$VENV_DIR.lock" build_dir="${VENV_DIR}.build.$$.$RANDOM"
+  assert_state_child "$lock_file" "VENV_LOCK"
+  assert_state_child "$build_dir" "VENV_BUILD"
+  mkdir -p "$(dirname "$VENV_DIR")"
+  [ ! -L "$VENV_DIR" ] || die "VENV_DIR não pode ser symlink"
+
+  exec {venv_lock_fd}>"$lock_file"
+  flock "$venv_lock_fd"
+  if [ -x "$VENV_DIR/bin/python" ] && [ -s "$ready" ]; then
+    flock -u "$venv_lock_fd"
+    eval "exec ${venv_lock_fd}>&-"
+    log "Reutilizando venv imutável do mesmo runtime + requirements hash."
+    return 0
   fi
-  if [ "${CI_SKIP_PIP:-0}" = "1" ]; then log "CI_SKIP_PIP=1 — reutilizando venv do mesmo runtime + requirements hash."
-  else
-    log "Instalando dependências Python bloqueadas…"
-    "$VENV_DIR/bin/python" -m pip install -q --upgrade pip
-    "$VENV_DIR/bin/python" -m pip install -q -r backend/requirements.txt
+  if [ "${CI_SKIP_PIP:-0}" = "1" ]; then
+    flock -u "$venv_lock_fd"; eval "exec ${venv_lock_fd}>&-"
+    die "CI_SKIP_PIP=1 solicitado, mas o venv hermético pronto não existe: $VENV_DIR"
   fi
+
+  [ ! -e "$VENV_DIR" ] || safe_remove_tree "$VENV_DIR"
+  safe_remove_tree "$build_dir"
+  log "Construindo venv hermético imutável em $build_dir…"
+  if ! (
+    "$PYTHON_BIN" -m venv "$build_dir" \
+      && "$build_dir/bin/python" -m pip install -q --upgrade pip \
+      && "$build_dir/bin/python" -m pip install -q -r backend/requirements.txt \
+      && "$build_dir/bin/python" -m pip check >/dev/null \
+      && printf 'python=%s\nrequirements_sha256=%s\n' \
+          "$("$build_dir/bin/python" -c 'import platform; print(platform.python_version())')" \
+          "$(sha256sum backend/requirements.txt | awk '{print $1}')" > "$build_dir/.ejc-ready"
+  ); then
+    safe_remove_tree "$build_dir"
+    flock -u "$venv_lock_fd"; eval "exec ${venv_lock_fd}>&-"
+    die "falha ao construir venv hermético"
+  fi
+  chmod 600 "$build_dir/.ejc-ready" 2>/dev/null || true
+  mv "$build_dir" "$VENV_DIR"
+  flock -u "$venv_lock_fd"
+  eval "exec ${venv_lock_fd}>&-"
+  ok "Venv imutável promovido atomicamente: $VENV_DIR"
+}
+
+ensure_pip_audit() {
+  choose_python
+  local py_key tool_dir ready lock_file build_dir
+  py_key="$(python_runtime_key)"
+  tool_dir="$STATE_ROOT/tools/pip-audit-${PIP_AUDIT_VERSION}-py${py_key}"
+  ready="$tool_dir/.ejc-ready"
+  lock_file="$tool_dir.lock"
+  build_dir="${tool_dir}.build.$$.$RANDOM"
+  assert_state_child "$tool_dir" "PIP_AUDIT_VENV"
+  assert_state_child "$lock_file" "PIP_AUDIT_LOCK"
+  assert_state_child "$build_dir" "PIP_AUDIT_BUILD"
+  mkdir -p "$STATE_ROOT/tools"
+  [ ! -L "$tool_dir" ] || die "tool venv do pip-audit não pode ser symlink"
+
+  exec {tool_lock_fd}>"$lock_file"
+  flock "$tool_lock_fd"
+  if [ ! -x "$tool_dir/bin/pip-audit" ] || [ ! -s "$ready" ]; then
+    [ ! -e "$tool_dir" ] || safe_remove_tree "$tool_dir"
+    safe_remove_tree "$build_dir"
+    log "Construindo tool-venv pip-audit==$PIP_AUDIT_VERSION…"
+    if ! (
+      "$PYTHON_BIN" -m venv "$build_dir" \
+        && "$build_dir/bin/python" -m pip install -q --upgrade pip \
+        && "$build_dir/bin/python" -m pip install -q "pip-audit==$PIP_AUDIT_VERSION" \
+        && "$build_dir/bin/python" -m pip check >/dev/null \
+        && "$build_dir/bin/pip-audit" --version > "$build_dir/.ejc-ready"
+    ); then
+      safe_remove_tree "$build_dir"
+      flock -u "$tool_lock_fd"; eval "exec ${tool_lock_fd}>&-"
+      die "falha ao construir tool-venv do pip-audit"
+    fi
+    chmod 600 "$build_dir/.ejc-ready" 2>/dev/null || true
+    mv "$build_dir" "$tool_dir"
+  fi
+  PIP_AUDIT_BIN="$tool_dir/bin/pip-audit"
+  flock -u "$tool_lock_fd"
+  eval "exec ${tool_lock_fd}>&-"
 }
 
 check_node() {
@@ -222,15 +302,15 @@ start_pg() {
 }
 
 run_backend() {
-  ensure_venv; start_pg
+  ensure_venv; ensure_pip_audit; start_pg
   local PY="$VENV_DIR/bin/python"
   log "Sintaxe dos scripts críticos de produção…"; bash -n scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh
   log "Compatibilidade dos modelos RAG (sem baixar pesos)…"
   (cd backend && "$PY" -c "from app.services.embedding_service import validar_modelo_local; ok,msg=validar_modelo_local(); print(msg); raise SystemExit(0 if ok else 1)")
   (cd backend && "$PY" -c "from app.core.config import get_settings; from fastembed.rerank.cross_encoder import TextCrossEncoder; s=get_settings(); nomes={m['model'] for m in TextCrossEncoder.list_supported_models()}; assert s.RAG_RERANK_MODEL in nomes, s.RAG_RERANK_MODEL; print(s.RAG_RERANK_MODEL)")
   log "Ruff…"; (cd backend && "$PY" -m ruff check app --output-format=concise) | tee "$REPORT_DIR/ruff.log"
-  log "pip-audit 2.10.0…"; "$PY" -m pip install -q 'pip-audit==2.10.0'
-  (cd backend && "$VENV_DIR/bin/pip-audit" -r requirements.txt --desc) | tee "$REPORT_DIR/pip-audit.log"
+  log "pip-audit $PIP_AUDIT_VERSION em tool-venv isolado…"
+  (cd backend && "$PIP_AUDIT_BIN" -r requirements.txt --desc) | tee "$REPORT_DIR/pip-audit.log"
   log "Alembic upgrade head…"; (cd backend && "$PY" -m alembic upgrade head)
   log "Pytest completo com banco + cobertura >=65%…"
   (cd backend && "$PY" -m pytest tests -q --tb=short --maxfail=25 --cov=app --cov-report=term-missing:skip-covered --cov-report="xml:$REPORT_DIR/backend-coverage.xml" --cov-fail-under=65) | tee "$REPORT_DIR/backend-tests.log"
