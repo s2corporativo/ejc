@@ -76,7 +76,7 @@ log "Instalando dependências do host dedicado"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-  curl tar jq ca-certificates git \
+  curl tar jq ca-certificates git sudo \
   python3 python3-venv python3-pip \
   postgresql-client libmagic1 poppler-utils tesseract-ocr \
   libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
