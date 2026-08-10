@@ -7,7 +7,15 @@ import pytest
 from fastapi import HTTPException
 
 from app.services import document_ingestion_service as svc
-from app.services.document_storage_uow import EstadoStorageLocal
+from app.services.document_storage_uow import (
+    EstadoStorageInvalidoError,
+    EstadoStorageLocal,
+)
+from app.services.malware_scan_service import (
+    MalwareScanIndisponivelError,
+    MalwareScanStatus,
+    ResultadoMalwareScan,
+)
 
 
 class StreamBytes:
@@ -24,6 +32,25 @@ class StreamBytes:
         chunk = self._conteudo[self._offset:fim]
         self._offset = fim
         return chunk
+
+
+class ScannerFalso:
+    def __init__(self, status: MalwareScanStatus) -> None:
+        self.status = status
+        self.caminho_recebido: Path | None = None
+
+    async def escanear(self, caminho: Path) -> ResultadoMalwareScan:
+        self.caminho_recebido = caminho
+        assert caminho.exists()
+        assert caminho.name.startswith(".")
+        assert caminho.name.endswith(".uploading")
+        return ResultadoMalwareScan(self.status)
+
+
+class ScannerIndisponivel:
+    async def escanear(self, caminho: Path) -> ResultadoMalwareScan:
+        assert caminho.exists()
+        raise MalwareScanIndisponivelError("scanner antimalware indisponível")
 
 
 @pytest.mark.asyncio
@@ -46,6 +73,7 @@ async def test_prepara_id_path_mime_e_hash_server_side(tmp_path: Path, monkeypat
     assert ing.filename == "parte-sentinela.pdf"
     assert ing.ext == ".pdf"
     assert ing.mimetype == "application/pdf"
+    assert ing.malware_scan_status is MalwareScanStatus.NAO_SOLICITADO
     assert ing.filepath.startswith("2026/08/")
     assert ing.filepath.endswith(".pdf")
     assert "parte-sentinela" not in ing.filepath
@@ -115,6 +143,73 @@ async def test_mime_invalido_compensa_staging(tmp_path: Path, monkeypatch):
     assert exc.value.status_code == 415
     assert not list(tmp_path.rglob("*.uploading"))
     assert not list(tmp_path.rglob(".*.uploading"))
+
+
+@pytest.mark.asyncio
+async def test_scanner_limpo_recebe_staging_antes_da_promocao(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(svc, "validar_conteudo", lambda ext, amostra: "application/pdf")
+    scanner = ScannerFalso(MalwareScanStatus.LIMPO)
+
+    ing = await svc.preparar_ingestao_documento_local(
+        StreamBytes(b"%PDF-clean"),
+        filename="arquivo.pdf",
+        upload_root=tmp_path,
+        max_bytes=1024,
+        scanner=scanner,
+    )
+
+    assert ing.malware_scan_status is MalwareScanStatus.LIMPO
+    assert scanner.caminho_recebido is not None
+    assert scanner.caminho_recebido.exists()
+    assert not ing.full_path.exists()
+
+    async with ing:
+        ing.promover()
+        with pytest.raises(EstadoStorageInvalidoError):
+            _ = ing.storage.caminho_staging_para_validacao
+        ing.confirmar()
+
+    assert ing.full_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_scanner_infectado_bloqueia_e_remove_quarentena(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(svc, "validar_conteudo", lambda ext, amostra: "application/pdf")
+    scanner = ScannerFalso(MalwareScanStatus.INFECTADO)
+
+    with pytest.raises(svc.MalwareDetectadoError, match="política antimalware"):
+        await svc.preparar_ingestao_documento_local(
+            StreamBytes(b"%PDF-conteudo-bloqueado"),
+            filename="arquivo.pdf",
+            upload_root=tmp_path,
+            max_bytes=1024,
+            scanner=scanner,
+        )
+
+    assert scanner.caminho_recebido is not None
+    assert not scanner.caminho_recebido.exists()
+    assert not list(tmp_path.rglob(".*.uploading"))
+    assert not list(tmp_path.rglob("*.pdf"))
+
+
+@pytest.mark.asyncio
+async def test_scanner_solicitado_indisponivel_falha_fechado_e_limpa_staging(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setattr(svc, "validar_conteudo", lambda ext, amostra: "application/pdf")
+
+    with pytest.raises(MalwareScanIndisponivelError):
+        await svc.preparar_ingestao_documento_local(
+            StreamBytes(b"%PDF-scanner-offline"),
+            filename="arquivo.pdf",
+            upload_root=tmp_path,
+            max_bytes=1024,
+            scanner=ScannerIndisponivel(),
+        )
+
+    assert not list(tmp_path.rglob(".*.uploading"))
+    assert not list(tmp_path.rglob("*.pdf"))
 
 
 @pytest.mark.asyncio
