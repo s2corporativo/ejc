@@ -34,9 +34,16 @@ def test_fallback_nao_publica_contexts_canônicos_do_actions():
     for context in local_contexts:
         assert context in fallback
 
-    # A proteção fallback exige somente o agregado; statuses detalhados locais
-    # são observabilidade e não podem virar dependência permanente da main.
-    assert '"contexts": [\n      "EJC Local Full Gate"\n    ]' in protection
+    # O gate promovível usa required_status_checks.checks vinculado ao app_id.
+    # Statuses clássicos dos subgates são apenas observabilidade.
+    build = protection[
+        protection.index("build_fallback_payload() {") : protection.index(
+            'if [ "$MODO" = "--contextos" ]'
+        )
+    ]
+    assert 'checks: [' in build
+    assert '{context: "EJC Local Full Gate", app_id: $app_id}' in build
+    assert 'contexts:' not in build
 
 
 def test_watcher_sem_auto_merge_repromove_status_sem_tentar_integracao():
@@ -47,8 +54,6 @@ def test_watcher_sem_auto_merge_repromove_status_sem_tentar_integracao():
     assert "--promote-only" in watcher
     assert "PROMOTE_ONLY=1" in fallback
 
-    # O ramo AUTO_MERGE=0 precisa usar promote-only; merge-only fica exclusivo
-    # do ramo que deliberadamente permite tentativa de integração.
     approved = watcher[watcher.index('if local_evidence_green "$sha"; then') :]
     approved = approved[: approved.index("continue")]
     assert 'if [ "$AUTO_MERGE" = "1" ]; then' in approved
