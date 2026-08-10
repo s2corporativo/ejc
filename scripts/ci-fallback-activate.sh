@@ -66,7 +66,7 @@ Type=simple
 WorkingDirectory=$ROOT
 Environment=EJC_REPO=$REPO
 Environment=EJC_FALLBACK_AUTO_MERGE=1
-ExecStart=$ROOT/scripts/ci-fallback-watch.sh
+ExecStart=/usr/bin/env bash $ROOT/scripts/ci-fallback-watch.sh
 Restart=always
 RestartSec=20
 StandardOutput=append:$LOG_DIR/watcher.log
@@ -79,7 +79,7 @@ UNIT
   systemctl --user enable --now ejc-ci-fallback.service
   ok "watcher ativado via systemd --user"
 elif command -v crontab >/dev/null 2>&1; then
-  LINE="*/5 * * * * cd '$ROOT' && EJC_REPO='$REPO' EJC_FALLBACK_AUTO_MERGE=1 '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
+  LINE="*/5 * * * * cd '$ROOT' && EJC_REPO='$REPO' EJC_FALLBACK_AUTO_MERGE=1 bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
   { crontab -l 2>/dev/null || true; echo "$LINE"; } | crontab -
   ok "watcher ativado via crontab (5 min)"
 else
