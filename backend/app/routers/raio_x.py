@@ -33,6 +33,7 @@ from app.schemas.raio_x import (
     RaioXIdentificacaoRevisada,
     RaioXUpdate,
 )
+from app.services.document_access_policy import confidencialidades_visiveis
 from app.services.raio_x_advogado_service import analise_advogado_caso
 from app.services.raio_x_export_service import gerar_docx, gerar_pdf
 from app.services.raio_x_service import (
@@ -263,7 +264,13 @@ async def contextual(
     if not case:
         raise HTTPException(404, "Caso não encontrado")
     docs = (
-        await db.execute(select(Document).where(Document.case_id == case_id, Document.deleted_at.is_(None)))
+        await db.execute(
+            select(Document).where(
+                Document.case_id == case_id,
+                Document.deleted_at.is_(None),
+                Document.confidencialidade.in_(confidencialidades_visiveis(user)),
+            )
+        )
     ).scalars().all()
     deadlines = (
         await db.execute(select(Deadline).where(Deadline.case_id == case_id, Deadline.deleted_at.is_(None)))
