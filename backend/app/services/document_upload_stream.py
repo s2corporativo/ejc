@@ -82,8 +82,8 @@ def _descartar_caminho_best_effort(caminho: Path) -> None:
     except FileNotFoundError:
         pass
     except OSError:
-        # Não inclui path/filename no log para evitar replicar contexto de storage.
-        logger.error("Falha ao remover staging documental após erro", exc_info=True)
+        # O path não é logado; nem traceback é emitido para evitar path interno.
+        logger.error("Falha ao remover staging documental após erro")
 
 
 def promover_staging(arquivo: UploadEmStaging, destino_final: Path) -> None:
