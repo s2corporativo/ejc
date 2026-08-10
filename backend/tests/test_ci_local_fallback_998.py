@@ -48,26 +48,64 @@ def test_fallback_recusa_producao_root_e_exige_sha_atualizado():
     assert '"${APP_ENV:-}" != "production"' in src
     assert '"${EJC_ENV:-}" != "production"' in src
     assert '"$(id -u)" -ne 0' in src
+    assert "ejc_worker" in src
     assert 'git merge-base --is-ancestor origin/main "$SHA"' in src
     assert 'git worktree add --detach "$WORKTREE" "$SHA"' in src
     assert '"$(git rev-parse FETCH_HEAD)" = "$SHA"' in src
+
+
+def test_status_promovivel_recusa_python_divergente():
+    src = _text("scripts/ci-fallback.sh")
+    assert 'EJC_ALLOW_PYTHON_MISMATCH:-0}" = "1"' in src
+    assert "não pode publicar status promovível" in src
+    assert "EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh backend" in src
+    assert "EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh eval" in src
+    assert "EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh continuity" in src
 
 
 def test_ci_local_recusa_host_produtivo_e_expoe_pg_so_no_loopback():
     src = _text("scripts/ci-local.sh")
     assert "/opt/ejc/.deployed_sha" in src
     assert "/opt/ejc/.env" in src
-    for name in ("ejc_backend", "ejc_db", "ejc_frontend", "ejc_redis"):
+    for name in ("ejc_backend", "ejc_worker", "ejc_db", "ejc_frontend", "ejc_redis"):
         assert name in src
     assert '127.0.0.1:$PG_PORT:5432' in src
     assert '-p "$PG_PORT:5432"' not in src
+    assert 's.bind(("127.0.0.1", 0))' in src
 
 
-def test_contexto_full_so_fica_verde_depois_de_todos_os_gates():
+def test_ci_local_guarda_estado_fora_do_repositorio_e_nao_usa_rm_rf():
+    src = _text("scripts/ci-local.sh")
+    assert "XDG_CACHE_HOME" in src
+    assert "STATE_ROOT" in src
+    assert "REPORT_DIR" in src
+    assert "safe_remove_tree" in src
+    assert "find \"$path\" -depth -mindepth 1 -delete" in src
+    assert "rm -rf" not in src
+    assert '.ci-restore-drill-report.json' not in src
+
+
+def test_ci_local_pina_auditoria_e_prepara_schema_no_restore_drill():
+    src = _text("scripts/ci-local.sh")
+    assert "pip-audit==2.10.0" in src
+    continuity = src[src.index("run_continuity() {") : src.index("run_ui_extra() {")]
+    assert '"$PY" -m alembic upgrade head' in continuity
+    assert "restore_drill.py" in continuity
+    assert continuity.index("alembic upgrade head") < continuity.index("restore_drill.py")
+
+
+def test_browser_local_nao_tenta_instalacao_privilegiada_do_so():
+    src = _text("scripts/ci-local.sh")
+    ui = src[src.index("run_ui_extra() {") : src.index("run_fast() {")]
+    assert "playwright install chromium" in ui
+    assert "--with-deps" not in ui
+    assert "sudo" not in ui
+    assert "apt-get" not in ui
+
+
+def test_contexto_full_so_e_publicado_apos_todos_os_gates_e_governanca_atual():
     src = _text("scripts/ci-fallback.sh")
-    success = 'post_status success "$CONTEXT_FULL"'
-    assert src.count(success) == 1
-    pos_success = src.index(success)
+    pos_publish = src.rindex("publish_success_statuses")
     for marker in (
         "run_stage backend",
         "run_stage eval",
@@ -77,17 +115,26 @@ def test_contexto_full_so_fica_verde_depois_de_todos_os_gates():
         "run_stage architecture",
         "run_stage continuity",
         "run_stage ui-extra",
+        "revalidate_governance_for_merge",
     ):
         assert marker in src
-        assert src.index(marker) < pos_success
+        assert src.index(marker) < pos_publish
 
 
 def test_falha_de_stage_publica_failure_e_nao_success_parcial():
     src = _text("scripts/ci-fallback.sh")
-    block = src[src.index("run_stage() {") : src.index("# Chamamos scripts via bash")]
+    block = src[src.index("run_stage() {") : src.index("# Para execução promovível")]
     assert 'post_status failure "$context"' in block
     assert 'post_status failure "$CONTEXT_FULL"' in block
     assert "post_status success" not in block
+
+
+def test_status_api_indisponivel_nao_interrompe_prova_local():
+    src = _text("scripts/ci-fallback.sh")
+    post = src[src.index("post_status() {") : src.index("publish_success_statuses() {")]
+    assert "STATUS_SYNC_PENDING=1" in post
+    assert "return 0" in post
+    assert "evidência local será preservada" in post
 
 
 def test_logs_completos_ficam_locais_e_resumo_guarda_hashes():
@@ -100,25 +147,28 @@ def test_logs_completos_ficam_locais_e_resumo_guarda_hashes():
     assert "gh pr comment" not in src
 
 
-def test_merge_so_usa_gate_full_do_sha_exato_e_respeita_excecoes():
+def test_merge_only_exige_evidencia_local_do_sha_e_revalida_governanca():
     src = _text("scripts/ci-fallback.sh")
-    assert "full_gate_is_green" in src
-    assert 'select(.context == $c)][0].state' in src
-    assert 'headRefOid)" = "$SHA"' in src
-    assert "retencao-humana" in src
-    assert "migration potencialmente destrutiva" in src
-    assert 'repos/$REPO/pulls/$PR/merge' in src
-    assert '-f sha="$SHA"' in src
+    assert "local_evidence_is_green" in src
+    assert '.target_sha == $sha and .result == "success"' in src
+    assert "revalidate_governance_for_merge" in src
+    attempt = src[src.index("attempt_merge() {") : src.index('if [ "$MERGE_ONLY" -eq 1 ]')]
+    assert attempt.index("local_evidence_is_green") < attempt.index("revalidate_governance_for_merge")
+    assert attempt.index("revalidate_governance_for_merge") < attempt.index("publish_success_statuses")
+    assert 'headRefOid)" = "$SHA"' in attempt
+    assert "retencao-humana" in attempt
+    assert "migration potencialmente destrutiva" in attempt
+    assert 'repos/$REPO/pulls/$PR/merge' in attempt
+    assert '-f sha="$SHA"' in attempt
 
 
-def test_watcher_nao_repete_suite_aprovada_e_reavalia_merge():
+def test_watcher_usa_evidencia_local_para_nao_repetir_suite_aprovada():
     src = _text("scripts/ci-fallback-watch.sh")
-    success_block_start = src.index("if [ -f \"$marker\" ] && grep -qx 'success'")
-    success_block_end = src.index("fi", success_block_start)
-    block = src[success_block_start:success_block_end]
-    assert "--merge-only" in block
-    assert 'bash "$ROOT/scripts/ci-fallback.sh"' in src
+    assert "local_evidence_green" in src
+    assert "--merge-only" in src
     assert "EJC_FALLBACK_RETRY_FAILED" in src
+    assert "Exit 0 sem summary integral nunca é suficiente" in src
+    assert "failure" in src
 
 
 def test_watcher_nao_morre_com_api_fora_e_so_atualiza_main_por_fast_forward():
@@ -180,7 +230,7 @@ def test_ci_local_cobre_paridade_minima_dos_workflows_atuais():
     src = _text("scripts/ci-local.sh")
     required = [
         '"$PY" -m ruff check',
-        "pip-audit",
+        "pip-audit==2.10.0",
         "--cov-fail-under=65",
         "app.eval.run_eval --smoke",
         "app.eval.agent_trajectory",
@@ -194,7 +244,7 @@ def test_ci_local_cobre_paridade_minima_dos_workflows_atuais():
         "test_generate_architecture_inventory",
         "restore_drill.py",
         "npm run lint:eslint",
-        "playwright install --with-deps chromium",
+        "playwright install chromium",
         "npm run test:responsive",
         "npm run test:premium-responsive",
     ]
@@ -202,12 +252,14 @@ def test_ci_local_cobre_paridade_minima_dos_workflows_atuais():
         assert marker in src, marker
 
 
-def test_governanca_local_replica_travas_criticas_sem_segredos():
+def test_governanca_local_replica_travas_e_trata_ci_como_superficie_sensivel():
     src = _text("scripts/governanca/ci-local-governanca.sh")
     assert "MIGRATION_RESERVATIONS.md" in src
     assert "PRIVATE KEY" in src
-    assert "\.env" in src
+    assert "\\.env" in src
     assert "security-auditor: executado" in src
+    assert "scripts/(ci-local\\.sh|ci-fallback" in src
+    assert "branch-protection" in src
     assert 'BRANCH" != "main"' in src
     assert "Issue vinculada" in src
     assert "Riscos residuais" in src
