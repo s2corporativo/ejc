@@ -17,6 +17,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.client_ownership import (
     obter_cliente_autorizado,
@@ -668,6 +669,24 @@ async def converter_em_caso(
             status_code=403,
             detail="Seu perfil pode analisar documentos, mas não possui autorização para criar casos oficiais.",
         )
+
+    # Idempotência concorrente: o objeto recebido pelo router pode estar stale.
+    # O lock pessimista serializa todas as conversões da MESMA análise; após a
+    # primeira transação comitar, a segunda relê `convertido_case_id` sob lock e
+    # devolve o mesmo caso em vez de criar um segundo caso oficial.
+    locked = await db.execute(
+        select(RaioXAnalise)
+        .options(selectinload(RaioXAnalise.documentos))
+        .where(
+            RaioXAnalise.id == analise.id,
+            RaioXAnalise.deleted_at.is_(None),
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    analise = locked.scalar_one_or_none()
+    if analise is None:
+        raise HTTPException(404, "Análise Raio-X não encontrada")
     if analise.convertido_case_id:
         return {"case_id": analise.convertido_case_id, "ja_convertido": True}
 
