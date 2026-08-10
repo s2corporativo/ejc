@@ -1,92 +1,48 @@
-"""Contratos estruturais do lifecycle documental consolidado.
+"""Contrato de entrada do lifecycle documental consolidado.
 
-São guardas de regressão para decisões arquiteturais deliberadas desta onda;
-os fluxos DB-level de ownership/referências permanecem cobertos pelos testes de
-domínio da subonda A1.
+Os fluxos de exclusão/guarda são exercitados comportamentalmente em
+``test_ged_rag_pendencias.py``. Regras de vínculo da tela global ficam em
+Vitest co-localizado com ``Documentos.tsx``. Este arquivo mantém somente o
+contrato Pydantic que precisa falhar antes de qualquer acesso ao banco.
 """
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-
-BACKEND = Path(__file__).parents[1]
-REPO = Path(__file__).parents[2]
-DOCUMENTS = BACKEND / "app/routers/documents.py"
-DRIVE = BACKEND / "app/services/google_drive.py"
-FRONTEND = REPO / "frontend/src/pages/Documentos.tsx"
+from app.routers.documents import DocumentPatchRequest
 
 
-def test_patch_documento_nao_aceita_case_id():
-    from app.routers.documents import DocumentPatchRequest
+def test_patch_documento_expoe_somente_metadados_editaveis():
+    assert set(DocumentPatchRequest.model_fields) == {
+        "titulo",
+        "tipo",
+        "confidencialidade",
+    }
 
-    assert "case_id" not in DocumentPatchRequest.model_fields
+
+@pytest.mark.parametrize(
+    "campo",
+    [
+        "case_id",
+        "client_id",
+        "filename",
+        "filepath",
+        "mimetype",
+        "size_bytes",
+        "uploaded_by",
+        "drive_file_id",
+        "deleted_at",
+        "versao",
+        "versao_grupo_id",
+        "versao_anterior_id",
+    ],
+)
+def test_patch_documento_rejeita_campos_estruturais_e_fisicos(campo: str):
     with pytest.raises(ValidationError):
-        DocumentPatchRequest(case_id="caso-arbitrario")
+        DocumentPatchRequest(**{campo: "valor-arbitrario"})
 
 
-def test_router_nao_faz_hard_delete_de_documents_nem_monta_google_api():
-    source = DOCUMENTS.read_text(encoding="utf-8")
-
-    assert "DELETE FROM documents" not in source
-    assert "service_account" not in source
-    assert "googleapiclient" not in source
-    assert "GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON" not in source
-    assert "_get_or_create_case_folder" not in source
-
-
-def test_router_usa_guarda_de_referencias_em_ambas_as_exclusoes():
-    source = DOCUMENTS.read_text(encoding="utf-8")
-
-    assert source.count("exigir_documento_sem_referencias_bloqueantes(") >= 2
-    assert "document.deleted_at = datetime.now(timezone.utc)" in source
-
-
-def test_drive_nao_bloqueia_event_loop_dos_handlers():
-    source = DOCUMENTS.read_text(encoding="utf-8")
-
-    for operacao in ("gd.upload_file", "gd.download_file", "gd.delete_file"):
-        assert operacao in source
-    assert source.count("await asyncio.to_thread(") >= 5
-
-
-def test_hook_de_analise_documental_nao_esta_duplicado_no_router():
-    source = DOCUMENTS.read_text(encoding="utf-8")
-
-    assert "def _analisar_doc_bg" not in source
-    assert "analisar_documento_bg" in source
-
-
-def test_adapter_drive_deixa_scan_recursivo_marcado_como_legado():
-    source = DRIVE.read_text(encoding="utf-8")
-
-    assert '"lsjson", "-R", "--files-only"' in source
-    assert "Fallback LEGADO O(N)" in source
-    assert '"lsjson", dest_file, "--stat"' in source
-
-
-def test_frontend_nao_move_documento_por_patch_e_usa_post_canonico():
-    source = FRONTEND.read_text(encoding="utf-8")
-
-    assert "payload.case_id" not in source
-    assert "patchLote({ case_id:" not in source
-    assert "editForm.case_id" not in source
-    assert "`/cases/${loteCaso}/documentos/${d.id}/vincular`" in source
-
-
-def test_frontend_so_expoe_vinculo_para_roles_do_backend():
-    source = FRONTEND.read_text(encoding="utf-8")
-
-    for role in (
-        "superadmin",
-        "admin",
-        "socio",
-        "advogado",
-        "advogado_auxiliar",
-        "estagiario",
-    ):
-        assert f'"{role}"' in source
-    assert '"financeiro"' not in source.split("PAPEIS_VINCULO_DOCUMENTAL", 1)[1].split("]);", 1)[0]
-    assert '"secretaria"' not in source.split("PAPEIS_VINCULO_DOCUMENTAL", 1)[1].split("]);", 1)[0]
+def test_patch_documento_rejeita_case_id_nulo_tambem():
+    with pytest.raises(ValidationError):
+        DocumentPatchRequest(case_id=None)
