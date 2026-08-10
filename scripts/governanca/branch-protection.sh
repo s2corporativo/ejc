@@ -28,6 +28,7 @@ API="repos/$REPO/branches/$BRANCH/protection/required_status_checks"
 
 falhar() { printf '\nABORTADO: %s\n' "$1" >&2; exit 1; }
 ok() { printf '  [ok] %s\n' "$1"; }
+aviso() { printf '  [aviso] %s\n' "$1" >&2; }
 
 command -v gh >/dev/null 2>&1 || falhar "GitHub CLI (gh) não encontrado."
 command -v jq >/dev/null 2>&1 || falhar "jq não encontrado."
@@ -63,15 +64,39 @@ get_status_checks() {
   gh api "$API" -H 'Accept: application/vnd.github+json'
 }
 
+status_checks_match_payload() {
+  local current="$1" payload="$2" expected actual
+  expected="$(printf '%s' "$payload" | canonical_for_compare)" || return 1
+  actual="$(printf '%s' "$current" | normalize_status_checks | canonical_for_compare)" || return 1
+  [ "$actual" = "$expected" ]
+}
+
 apply_status_checks() {
-  local payload="$1" response expected actual
-  response="$(printf '%s' "$payload" | gh api -X PATCH "$API" \
-    -H 'Accept: application/vnd.github+json' --input -)" \
-    || falhar "falha ao atualizar required status checks"
-  expected="$(printf '%s' "$payload" | canonical_for_compare)"
-  actual="$(printf '%s' "$response" | normalize_status_checks | canonical_for_compare)"
-  [ "$actual" = "$expected" ] \
-    || falhar "GitHub retornou required status checks diferentes do payload solicitado"
+  local payload="$1" response current
+
+  # PATCH pode ser aplicado no servidor e a conexão cair antes da resposta.
+  # Nesse caso, repetir cegamente/acionar rollback cria um estado ambíguo.
+  # Sempre reconciliamos por GET antes de declarar falha.
+  if response="$(printf '%s' "$payload" | gh api -X PATCH "$API" \
+      -H 'Accept: application/vnd.github+json' --input - 2>/dev/null)"; then
+    if status_checks_match_payload "$response" "$payload"; then
+      return 0
+    fi
+    aviso "resposta do PATCH divergiu do estado solicitado; executando read-after-write"
+  else
+    aviso "PATCH não retornou resposta confiável; verificando estado efetivo no GitHub"
+  fi
+
+  current="$(get_status_checks 2>/dev/null)" || {
+    aviso "não foi possível reconciliar required status checks após PATCH ambíguo"
+    return 1
+  }
+  if status_checks_match_payload "$current" "$payload"; then
+    ok "estado solicitado confirmado por read-after-write"
+    return 0
+  fi
+  aviso "estado efetivo não corresponde ao payload solicitado"
+  return 1
 }
 
 save_current_status_checks() {
@@ -104,7 +129,8 @@ restore_saved_status_checks() {
   payload="$(jq -c '.payload' "$BACKUP_FILE")"
   printf '%s' "$payload" | jq -e '.strict == true and (.checks | type == "array")' >/dev/null \
     || falhar "snapshot de required status checks inválido"
-  apply_status_checks "$payload"
+  apply_status_checks "$payload" \
+    || falhar "não foi possível restaurar/reconciliar required status checks anteriores"
   ok "required status checks anteriores restaurados exatamente"
 }
 
@@ -156,7 +182,8 @@ case "$MODO" in
     exit 0
     ;;
   --cloud)
-    apply_status_checks "$PAYLOAD_CLOUD"
+    apply_status_checks "$PAYLOAD_CLOUD" \
+      || falhar "não foi possível aplicar/reconciliar os cinco required checks cloud"
     ok "cinco required checks cloud restaurados; demais proteções não foram tocadas"
     ;;
   --fallback)
@@ -165,10 +192,9 @@ case "$MODO" in
     save_current_status_checks
     PAYLOAD_FALLBACK="$(build_fallback_payload)"
     if ! apply_status_checks "$PAYLOAD_FALLBACK"; then
-      # `apply_status_checks` normalmente encerra; este bloco documenta a
-      # intenção de rollback caso sua implementação deixe de ser fatal no futuro.
+      aviso "ativação fallback não pôde ser confirmada; restaurando snapshot anterior"
       restore_saved_status_checks || true
-      falhar "não foi possível aplicar proteção fallback"
+      falhar "não foi possível aplicar/reconciliar proteção fallback"
     fi
     ok "EJC Local Full Gate vinculado ao GitHub App id=$FALLBACK_APP_ID"
     ;;
