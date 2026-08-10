@@ -3,7 +3,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+cleanup_tmp() {
+  set +e
+  if [ -d "$TMP" ]; then
+    find "$TMP" -depth -mindepth 1 -delete >/dev/null 2>&1 || true
+    rmdir "$TMP" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_tmp EXIT
 BIN="$TMP/bin"
 LOG="$TMP/docker.log"
 APP="$TMP/app"
@@ -62,7 +69,7 @@ run_case() {
   grep -q '^ps --format {{.Names}}$' "$LOG" || fail "container não foi verificado"
   grep -q "$expected_command" "$LOG" || fail "runner esperado não foi chamado"
   grep -q 'from app.services import backup_service' "$TMP/stdin.py" || \
-    fail "wrapper não delegou ao módulo canônico backup_service"
+    fail "wrapper não delegou ao motor canônico"
   grep -q 'configuracao_status' "$TMP/stdin.py" || \
     fail "configuração não é validada antes do backup"
   grep -q 'credencial_dedicada_configurada' "$TMP/stdin.py" || \
@@ -73,11 +80,20 @@ run_case() {
   execute_line="$(grep -n 'executar_backup' "$TMP/stdin.py" | head -1 | cut -d: -f1)"
   [ "$config_line" -lt "$execute_line" ] || \
     fail "backup é iniciado antes do gate de configuração"
-  # Contrato PR #480: prova LOCAL cifrada é sempre exigida; offsite falho vira
-  # "parcial" (aceito), salvo BACKUP_OFFSITE_OBRIGATORIO=true.
-  grep -q 'local_ok' "$TMP/stdin.py" || fail "prova local cifrada não é exigida"
-  grep -q 'BACKUP_OFFSITE_OBRIGATORIO' "$TMP/stdin.py" || \
-    fail "política offsite obrigatório não é respeitada"
+
+  # P0 Staff: os `.enc` atuais nascem em TemporaryDirectory; portanto
+  # `local_ok`/artefatos gerados NÃO provam retenção recuperável após retorno.
+  # Pré-deploy só fica verde com offsite confirmado.
+  grep -q 'encrypted_generated' "$TMP/stdin.py" || fail "produção dos artefatos cifrados não é conferida"
+  grep -q 'offsite_ok = bool(result.get("offsite_ok"))' "$TMP/stdin.py" || \
+    fail "prova offsite não é lida do resultado"
+  grep -q 'and offsite_ok' "$TMP/stdin.py" || \
+    fail "gate pré-deploy ainda pode aprovar sem retenção offsite"
+  grep -q 'artefatos_cifrados_gerados' "$TMP/stdin.py" || \
+    fail "saída não diferencia geração temporária de retenção offsite"
+  if grep -q 'deploy prossegue com prova local\|BACKUP_OFFSITE_OBRIGATORIO' "$TMP/stdin.py"; then
+    fail "wrapper ainda admite falso verde baseado em prova local temporária"
+  fi
   grep -q '_db.dump.enc' "$TMP/stdin.py" || fail "artefato do banco não é exigido"
   grep -q '_uploads.tar.gz.enc' "$TMP/stdin.py" || fail "artefato de uploads não é exigido"
   if grep -q 'drive_file_id\|result.get("erro")' "$TMP/stdin.py"; then
@@ -91,8 +107,6 @@ run_case 0 0 0 '^compose run --rm --no-deps -T backend python -$'
 grep -q '^compose config$' "$LOG" || fail "compose não foi validado no fallback"
 grep -q 'Backend parado' "$TMP/err" || fail "fallback não foi registrado"
 
-# Padrões executáveis do fluxo em claro são proibidos. Comentários explicativos
-# não geram falso positivo.
 if grep -Eq \
   '^[[:space:]]*rclone[[:space:]]|^[[:space:]]*docker exec .*pg_dump|ejc_db_.*sql\.gz|ejc_uploads_.*tar\.gz' \
   "$ROOT/scripts/backup.sh"; then
@@ -115,4 +129,4 @@ if grep -q 'result.get("erro")\|drive_file_id' "$ACTIVATOR"; then
 fi
 
 bash -n "$ROOT/scripts/backup.sh" "$ACTIVATOR"
-echo "[backup-wrapper-test] OK — backup e ativação exigem criptografia e identidade dedicada, sem fallback inseguro."
+echo "[backup-wrapper-test] OK — pré-deploy exige cifragem + retenção offsite recuperável, sem falso local_ok."
