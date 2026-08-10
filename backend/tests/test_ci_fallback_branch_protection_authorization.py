@@ -66,7 +66,7 @@ def test_snapshot_de_branch_protection_fica_fora_do_repo_e_rejeita_redirecioname
     assert "snapshot deve permanecer confinado sob EJC_CI_STATE_ROOT" in src
     assert "snapshot não pode ser gravado dentro do repositório" in src
     assert "componente symlink no caminho" in src
-    assert "snapshot recusado: arquivo é symlink" in src
+    assert "assert_no_symlink_component" in src
     assert "var/required-status-checks-anterior.json" not in src
 
 
