@@ -7,7 +7,7 @@ cd "$ROOT"
 BASE="${EJC_GOV_BASE:-origin/main}"
 REQUIRE_PR="${EJC_GOV_REQUIRE_PR:-1}"
 TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+trap 'rm -f "$TMP" "$TMP.grep.err"' EXIT
 
 fail() { echo "[governanca-local] ERRO: $*" >&2; exit 1; }
 warn() { echo "[governanca-local] AVISO: $*" >&2; }
@@ -32,9 +32,9 @@ GOV_CHANGED=0
 FUNCTIONAL_CHANGED=0
 PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|scripts/(ci-local\.sh|ci-fallback[^/]*\.sh|governanca/(branch-protection|ci-local-governanca)\.sh)|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
 PADRAO_GOV='^(CLAUDE\.md|AGENTS\.md|\.claude/|\.github/workflows/governanca\.yml|docs/GOVERNANCA_IA\.md|docs/GOVERNANCA_FASE2\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md|scripts/(ci-local\.sh|ci-fallback[^/]*\.sh|governanca/(branch-protection|ci-local-governanca)\.sh))'
-
 PADROES='(AKIA[0-9A-Z]{16})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(sk-[A-Za-z0-9]{20,})|(ghp_[A-Za-z0-9]{30,})|(xox[baprs]-[A-Za-z0-9-]{10,})'
 ACHOU=0
+
 while IFS= read -r -d '' f; do
   case "$f" in
     backend/alembic/versions/*) MIGRATION_CHANGED=1 ;;
@@ -50,17 +50,16 @@ while IFS= read -r -d '' f; do
   esac
 
   [ -f "$f" ] || continue
-  if ! grep -EIn "$PADROES" -- "$f" >/dev/null 2>"$TMP.grep.err"; then
-    rc=$?
-    if [ "$rc" -ne 1 ]; then
-      cat "$TMP.grep.err" >&2 || true
-      fail "falha ao varrer possível segredo em caminho alterado"
-    fi
-  else
-    echo "[governanca-local] possível segredo: $f" >&2
-    ACHOU=1
-  fi
-  rm -f "$TMP.grep.err"
+  set +e
+  grep -EIn "$PADROES" -- "$f" >/dev/null 2>"$TMP.grep.err"
+  rc=$?
+  set -e
+  case "$rc" in
+    0) echo "[governanca-local] possível segredo: $f" >&2; ACHOU=1 ;;
+    1) : ;;
+    *) cat "$TMP.grep.err" >&2 || true; fail "falha ao varrer possível segredo em caminho alterado" ;;
+  esac
+  : > "$TMP.grep.err"
 done < "$TMP"
 
 if [ "$MIGRATION_CHANGED" -eq 1 ] && [ "$RESERVATION_CHANGED" -ne 1 ]; then
