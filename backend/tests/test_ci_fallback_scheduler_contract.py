@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -96,27 +98,94 @@ def test_scheduler_impede_execucoes_sobrepostas():
 def test_hooks_path_e_preservado_exclusivamente_no_escopo_local():
     src = ACTIVATE.read_text(encoding="utf-8")
 
-    # Leitura, gravação e restauração devem usar --local. Assim, se houver apenas
-    # core.hooksPath global, a ativação registra __UNSET__ e a desativação remove
-    # somente o override local, sem copiar o valor global para .git/config.
+    # Toda operação sobre core.hooksPath precisa declarar explicitamente o
+    # escopo local; isso rejeita regressões para --global, --worktree ou --file.
+    hooks_config_lines = [
+        line
+        for line in src.splitlines()
+        if "git config" in line and "core.hooksPath" in line
+    ]
+    assert hooks_config_lines
+    assert all("--local" in line for line in hooks_config_lines)
+    assert all("--global" not in line for line in hooks_config_lines)
+    assert all("--worktree" not in line for line in hooks_config_lines)
+    assert all("--file" not in line for line in hooks_config_lines)
+
     assert "git config --local --get core.hooksPath" in src
     assert "git config --local core.hooksPath .githooks" in src
     assert "git config --local --unset-all core.hooksPath" in src
-    restore = src[src.index("restore_hooks_path() {") : src.index('if [ "$MODE" = "--disable" ]')]
-    assert "git config --local core.hooksPath" in restore
-    assert "git config core.hooksPath" not in restore
 
 
-def test_remove_watcher_nao_falha_quando_unit_nunca_foi_instalada():
+def _remove_watcher_harness(tmp_path: Path, *, unit_exists: bool, include_systemctl: bool) -> tuple[subprocess.CompletedProcess[str], Path]:
     src = ACTIVATE.read_text(encoding="utf-8")
-    block = src[src.index("remove_watcher() {") : src.index("restore_hooks_path() {")]
+    funcs = src[src.index("remove_cron() {") : src.index("restore_hooks_path() {")]
 
-    assert 'unit_aplicavel=0' in block
-    assert '[ -f "$UNIT" ]' in block
-    assert "systemctl --user is-active --quiet ejc-ci-fallback.service" in block
-    assert "systemctl --user is-enabled --quiet ejc-ci-fallback.service" in block
-    assert 'if [ "$unit_aplicavel" -eq 1 ]; then' in block
-    # O disable não pode ser executado de forma incondicional antes do teste.
-    assert block.index('if [ "$unit_aplicavel" -eq 1 ]; then') < block.index(
-        "systemctl --user disable --now ejc-ci-fallback.service"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "systemctl.calls"
+    unit = tmp_path / "ejc-ci-fallback.service"
+    if unit_exists:
+        unit.write_text("[Service]\n", encoding="utf-8")
+
+    # O teste não depende de crontab real do host.
+    crontab = bin_dir / "crontab"
+    crontab.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    crontab.chmod(0o755)
+
+    if include_systemctl:
+        systemctl = bin_dir / "systemctl"
+        systemctl.write_text(
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$*\" >> {calls!s}\n"
+            "case \"$*\" in\n"
+            "  *is-active*|*is-enabled*) exit 1 ;;\n"
+            "esac\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        systemctl.chmod(0o755)
+
+    harness = tmp_path / "harness.sh"
+    harness.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f"UNIT={str(unit)!r}\n"
+        "CRON_MARK='# EJC_CI_FALLBACK_998'\n"
+        f"{funcs}\n"
+        "remove_watcher\n",
+        encoding="utf-8",
     )
+    harness.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:/usr/bin:/bin"
+    result = subprocess.run(
+        ["bash", str(harness)],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result, calls
+
+
+def test_remove_watcher_sem_unit_nao_chama_disable(tmp_path: Path):
+    result, calls = _remove_watcher_harness(
+        tmp_path, unit_exists=False, include_systemctl=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    logged = calls.read_text(encoding="utf-8") if calls.exists() else ""
+    assert "disable --now ejc-ci-fallback.service" not in logged
+
+
+def test_remove_watcher_com_unit_e_sem_systemctl_falha_fechado(tmp_path: Path):
+    result, _ = _remove_watcher_harness(
+        tmp_path, unit_exists=True, include_systemctl=False
+    )
+
+    # Sem systemctl, a função não deve fingir que desabilitou uma unit existente.
+    # A unit permanece como evidência de que o pré-requisito não foi satisfeito.
+    unit = tmp_path / "ejc-ci-fallback.service"
+    assert unit.exists()
+    assert result.returncode != 0
