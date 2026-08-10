@@ -109,10 +109,10 @@ snapshot_source() {
   log "Criando checkpoint de código $id"
   if git -C "$base" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     # Snapshot versionável: tracked files + alterações locais, nunca untracked
-    # como .env/uploads. O tar comum abaixo preserva a árvore atual dos tracked.
+    # como .env/uploads. A base do tar é definida ANTES da lista de arquivos.
     local list="$dir/tracked-files.txt"
     git -C "$base" ls-files -z > "$list"
-    tar --null -T "$list" -C "$base" -czf "$archive" \
+    tar -C "$base" --null -T "$list" -czf "$archive" \
       || die "checkpoint Git falhou"
   else
     tar -C "$base" -czf "$archive" \
