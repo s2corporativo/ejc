@@ -82,6 +82,9 @@ async def test_preflight_detecta_anomalias_sem_persistir_dados():
 
             invalido = str(uuid4())
 
+            ciclo_a = str(uuid4())
+            ciclo_b = str(uuid4())
+
             db.add_all(
                 [
                     # Grupo limpo de controle.
@@ -110,13 +113,30 @@ async def test_preflight_detecta_anomalias_sem_persistir_dados():
                     ),
                     # Numeração inválida: não existe CHECK no schema atual.
                     _doc(invalido, grupo_id=invalido, versao=0),
+                    # Nós criados primeiro sem predecessor; a aresta cíclica é
+                    # aplicada após flush para respeitar a FK durante INSERT.
+                    _doc(ciclo_a, grupo_id=ciclo_a, versao=1),
+                    _doc(ciclo_b, grupo_id=ciclo_a, versao=2),
                 ]
             )
             await db.flush()
 
+            await db.execute(
+                text(
+                    "UPDATE documents SET versao_anterior_id = :b WHERE id = :a"
+                ),
+                {"a": ciclo_a, "b": ciclo_b},
+            )
+            await db.execute(
+                text(
+                    "UPDATE documents SET versao_anterior_id = :a WHERE id = :b"
+                ),
+                {"a": ciclo_a, "b": ciclo_b},
+            )
+
             depois = await auditar_versionamento_documental(db)
 
-            assert depois.total_documentos == baseline.total_documentos + 13
+            assert depois.total_documentos == baseline.total_documentos + 15
             assert depois.documentos_sem_grupo == baseline.documentos_sem_grupo + 1
             assert depois.numeracoes_duplicadas == baseline.numeracoes_duplicadas + 1
             assert (
@@ -130,6 +150,8 @@ async def test_preflight_detecta_anomalias_sem_persistir_dados():
                 depois.predecessores_contexto_divergente
                 == baseline.predecessores_contexto_divergente + 1
             )
+            # As duas origens do grupo sintético alcançam o ciclo A <-> B.
+            assert depois.cadeias_ciclicas == baseline.cadeias_ciclicas + 2
             assert depois.versoes_invalidas == baseline.versoes_invalidas + 1
             assert depois.apto_para_constraint is False
 
