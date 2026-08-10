@@ -15,10 +15,10 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import BinaryIO, Protocol
 from uuid import uuid4
 
-import aiofiles
+from aiofiles.threadpool import wrap as envolver_arquivo_assincrono
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,26 @@ def _descartar_caminho_best_effort(caminho: Path) -> None:
         logger.error("Falha ao remover staging documental após erro")
 
 
+def _criar_staging_aberto(caminho: Path) -> BinaryIO:
+    """Cria inode 0600, O_EXCL, antes do primeiro ponto de cancelamento async.
+
+    A criação síncrona é deliberada e mínima: evita a corrida em que uma thread
+    de ``open(..., 'x')`` pudesse criar o arquivo depois do ``finally`` de uma
+    coroutine cancelada. ``O_CLOEXEC`` reduz herança acidental do descritor.
+    """
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    fd = os.open(caminho, flags, 0o600)
+    try:
+        return os.fdopen(fd, "wb")
+    except BaseException:
+        os.close(fd)
+        _descartar_caminho_best_effort(caminho)
+        raise
+
+
 def promover_staging(arquivo: UploadEmStaging, destino_final: Path) -> None:
     """Promove no mesmo diretório sem aceitar sobrescrita conhecida."""
 
@@ -107,9 +127,10 @@ async def receber_em_staging(
 ) -> UploadEmStaging:
     """Recebe o upload em chunks com memória O(CHUNK_UPLOAD_BYTES).
 
-    O limite é verificado antes de cada escrita. Em qualquer exceção — inclusive
-    cancelamento da coroutine — o staging é removido no ``finally`` sem mascarar
-    a exceção/cancelamento original caso o próprio cleanup falhe.
+    O inode 0600 é criado de modo síncrono/atômico antes do primeiro ``await``.
+    Depois disso, somente as operações de escrita são delegadas ao threadpool.
+    Em qualquer exceção ou cancelamento o path é removido sem mascarar a falha
+    original.
     """
 
     if max_bytes < 0:
@@ -122,26 +143,25 @@ async def receber_em_staging(
     amostra = bytearray()
     total = 0
     concluido = False
+    arquivo_sync = _criar_staging_aberto(staging)
+    target = envolver_arquivo_assincrono(arquivo_sync)
 
     try:
-        async with aiofiles.open(staging, "xb") as target:
-            # Minimiza exposição caso o umask do processo seja mais permissivo.
-            os.chmod(staging, 0o600)
-            while True:
-                chunk = await upload.read(CHUNK_UPLOAD_BYTES)
-                if not chunk:
-                    break
-                novo_total = total + len(chunk)
-                if novo_total > max_bytes:
-                    raise UploadExcedeLimiteError(max_bytes)
+        while True:
+            chunk = await upload.read(CHUNK_UPLOAD_BYTES)
+            if not chunk:
+                break
+            novo_total = total + len(chunk)
+            if novo_total > max_bytes:
+                raise UploadExcedeLimiteError(max_bytes)
 
-                digest.update(chunk)
-                if len(amostra) < AMOSTRA_MAGIC_BYTES:
-                    faltam = AMOSTRA_MAGIC_BYTES - len(amostra)
-                    amostra.extend(chunk[:faltam])
+            digest.update(chunk)
+            if len(amostra) < AMOSTRA_MAGIC_BYTES:
+                faltam = AMOSTRA_MAGIC_BYTES - len(amostra)
+                amostra.extend(chunk[:faltam])
 
-                await target.write(chunk)
-                total = novo_total
+            await target.write(chunk)
+            total = novo_total
 
         if total == 0:
             raise UploadVazioError("arquivo vazio")
@@ -154,5 +174,10 @@ async def receber_em_staging(
             amostra_inicial=bytes(amostra),
         )
     finally:
-        if not concluido:
-            _descartar_caminho_best_effort(staging)
+        # O descritor já existia antes de qualquer await, então pode ser fechado
+        # deterministicamente mesmo quando o cancelamento ocorre no primeiro read.
+        try:
+            arquivo_sync.close()
+        finally:
+            if not concluido:
+                _descartar_caminho_best_effort(staging)
