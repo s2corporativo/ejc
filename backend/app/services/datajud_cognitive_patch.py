@@ -1,5 +1,12 @@
 # ── app/services/datajud_cognitive_patch.py ───────────────────────────────────
-"""Integra DataJud ao RAG nativo preservando os fluxos existentes."""
+"""Integra DataJud ao RAG nativo preservando os fluxos existentes.
+
+A integração de movimentações é somente informacional/cognitiva. Enquanto o
+motor auditável por regime da Issue #968 não estiver integrado, nenhum caminho
+DataJud pode materializar ``Deadline`` ou calcular vencimento a partir da data
+do movimento. Isso evita depender da ordem de instalação de um único wrapper
+para preservar o HITL jurídico.
+"""
 from __future__ import annotations
 
 import logging
@@ -12,13 +19,19 @@ from app.core.config import get_settings
 
 logger = logging.getLogger("ejc.datajud.cognitive_patch")
 _INSTALADO = False
+PRAZO_DATAJUD_MOTIVO_BLOQUEIO = (
+    "calculo_automatico_bloqueado_ate_motor_auditavel_por_regime"
+)
 
 
 def _numero_limpo(valor: str | None) -> str:
     return re.sub(r"\D", "", valor or "")
 
 
-async def _fonte_exata(numero_cnj: str, tribunal_alias: str | None = None) -> dict | None:
+async def _fonte_exata(
+    numero_cnj: str,
+    tribunal_alias: str | None = None,
+) -> dict | None:
     from app.services import datajud_service as dj
 
     settings = get_settings()
@@ -55,11 +68,13 @@ async def _consultar_movimentos_exatos(
     for movimento in source.get("movimentos") or []:
         descricao = (movimento.get("nome") or "").strip()
         if descricao:
-            movimentos.append({
-                "data": movimento.get("dataHora") or "",
-                "codigo": movimento.get("codigo"),
-                "descricao": descricao,
-            })
+            movimentos.append(
+                {
+                    "data": movimento.get("dataHora") or "",
+                    "codigo": movimento.get("codigo"),
+                    "descricao": descricao,
+                }
+            )
     movimentos.sort(key=lambda item: item["data"])
     return movimentos
 
@@ -87,6 +102,7 @@ async def _consultar_processo_exato(numero_cnj: str) -> dict | None:
 async def _alimentar_sem_quebrar(db, case) -> None:
     try:
         from app.services.datajud_cognitive_feed import alimentar_caso
+
         async with db.begin_nested():
             await alimentar_caso(db, case, embutir_vetores=False)
     except Exception as exc:
@@ -97,6 +113,30 @@ async def _alimentar_sem_quebrar(db, case) -> None:
         )
 
 
+async def _criar_deadline_bloqueado(*_args, **_kwargs) -> None:
+    """Fail-safe: DataJud não cria prazo fatal sem termo/regime auditáveis."""
+    return None
+
+
+async def _sincronizar_prazos_bloqueado(
+    _caso_id: str,
+    _numero_cnj: str,
+    _db,
+) -> dict[str, Any]:
+    """Mantém contrato do endpoint sem produzir ``Deadline``.
+
+    A sincronização de movimentos continua ativa. O endpoint de prazos informa
+    explicitamente que a revisão humana é necessária até a conclusão da #968.
+    """
+    return {
+        "criados": 0,
+        "encontrados": 0,
+        "erro": None,
+        "revisao_necessaria": True,
+        "motivo": PRAZO_DATAJUD_MOTIVO_BLOQUEIO,
+    }
+
+
 def _instalar_wrappers() -> None:
     from app.services import datajud_service as dj
 
@@ -104,7 +144,6 @@ def _instalar_wrappers() -> None:
         return
     original_upsert = dj.upsert_movimentos_no_caso
     original_sync = dj.sincronizar_caso
-    original_detectar = dj._detectar_prazos_criticos
 
     async def upsert_com_feed(db, case, movimentos):
         resultado = await original_upsert(db, case, movimentos)
@@ -116,12 +155,10 @@ def _instalar_wrappers() -> None:
         await _alimentar_sem_quebrar(db, case)
         return resultado
 
-    def detectar_sem_criar_prazo(descricao, data_evento):
-        sugestoes = original_detectar(descricao, data_evento)
-        if sugestoes:
-            logger.info(
-                "DataJud detectou possível providência, mas nenhum prazo foi criado automaticamente."
-            )
+    def detectar_sem_criar_prazo(_descricao, _data_evento):
+        # Não executa a heurística legada nem para "sugerir": ela usa a data do
+        # movimento como base e não conhece regime/termo inicial. O movimento
+        # segue disponível no feed cognitivo para revisão do advogado.
         return []
 
     dj.consultar_movimentos = _consultar_movimentos_exatos
@@ -129,14 +166,18 @@ def _instalar_wrappers() -> None:
     dj.upsert_movimentos_no_caso = upsert_com_feed
     dj.sincronizar_caso = sync_com_feed
     dj._detectar_prazos_criticos = detectar_sem_criar_prazo
+    dj._criar_deadline_automatico = _criar_deadline_bloqueado
+    dj.sincronizar_prazos_datajud = _sincronizar_prazos_bloqueado
 
     try:
         from app.routers import cases as cases_router
+
         cases_router._dj_sync = sync_com_feed
     except Exception as exc:
         logger.warning("Não foi possível atualizar cases._dj_sync: %s", exc)
     try:
         from app.services import datajud_sync_service as sync_clientes
+
         sync_clientes.consultar_movimentos = _consultar_movimentos_exatos
         sync_clientes.upsert_movimentos_no_caso = upsert_com_feed
     except Exception as exc:
@@ -147,16 +188,16 @@ def _instalar_wrappers() -> None:
 
 def _registrar_categoria_restrita() -> None:
     from app.services import ai_service
+
     if "andamento_processual" not in ai_service._RESTRICTED_CATS:
         ai_service._RESTRICTED_CATS.append("andamento_processual")
-
-
 
 
 async def _job_feed_datajud() -> None:
     try:
         from app.core.database import AsyncSessionLocal
         from app.services.datajud_cognitive_feed import alimentar_lote
+
         async with AsyncSessionLocal() as db:
             resultado = await alimentar_lote(db, limite=100)
         logger.info("Job feed DataJud: %s", resultado)
