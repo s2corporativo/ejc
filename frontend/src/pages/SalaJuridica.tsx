@@ -2,11 +2,8 @@
  * Sala Jurídica Conversacional (V1) — porta de entrada da IA no EJC.
  *
  * Layout chat-first (V1.1): a conversa domina a tela numa coluna ampla e
- * centralizada (estilo chat de fronteira); sessões (esquerda) e estado
- * jurídico (direita) são painéis RECOLHÍVEIS; a área de trabalho livre é
- * colapsável e abre automaticamente quando tem conteúdo.
- * Toda IA passa pelo backend (/api/sala-juridica/*), que roda o núcleo único
- * (sanitização LGPD → RAG → AILog → HITL) — esta tela nunca chama modelo.
+ * centralizada; sessões e estado jurídico são painéis recolhíveis.
+ * Toda IA passa pelo backend (/api/sala-juridica/*), que roda o núcleo único.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -36,6 +33,8 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { AREAS_FALLBACK } from "../lib/areaCatalog";
+import { mensagemErroHttp } from "../lib/iaErro";
+import { LatestRequestGate } from "../lib/latestRequest";
 import Markdown from "../components/Markdown";
 import { useAuth } from "../stores/auth";
 import { toast } from "../components/Toast";
@@ -51,15 +50,8 @@ import {
   cn,
 } from "../components/UI";
 
-// Item do gate anti-alucinação de citações (services/verificador_jurisprudencia.py).
-// Status possíveis: verificada | identificada | suspeita | generica | possivelmente_desatualizada.
-// O backend grava a LISTA de itens (LegalChatMessage.citacoes), não o
-// relatório completo — mesmo padrão de fontes/alertas/skills nessa tabela.
 type CitacaoItem = { trecho?: string; tipo?: string; status?: string };
 
-// Achado do app-runner: o status bruto do enum vazava sem tradução
-// ("possivelmente_desatualizada" cru, sem acento). Rótulos curtos, legíveis
-// a um advogado sem contexto do código.
 const STATUS_CITACAO_LABEL: Record<string, string> = {
   identificada: "não conferida na base oficial",
   suspeita: "suspeita de erro",
@@ -84,9 +76,6 @@ type Mensagem = {
   created_at?: string | null;
 };
 
-// Crítica adversarial (Modo Duas IAs) — services/ai/adversarial.py::CriticaAdversarial.
-// Ephemeral: só chega no POST /mensagens, não é persistida na mensagem — por
-// isso vive num estado local à parte, indexado pelo id da mensagem da IA.
 type CriticaAdversarial = {
   disponivel: boolean;
   relatorio?: string | null;
@@ -109,8 +98,6 @@ type Estado = {
   origem?: string | null;
 };
 
-// Conferência prévia da conversão (GET /sala-juridica/{id}/conversao/preview):
-// alertas de conflito EOAB + duplicados, sem expor carteira não autorizada.
 type PreviewConversao = {
   alertas_conflito: Array<{
     tipo: string;
@@ -171,83 +158,80 @@ const MODOS: Array<{ valor: string; rotulo: string }> = [
   { valor: "revisar_documento", rotulo: "Revisar documento" },
 ];
 
-// Ações rápidas: preenchem modo + comando prontos; o advogado revisa/edita o
-// texto antes de enviar (nada dispara IA sem clique explícito em Enviar).
-const ACOES_RAPIDAS: Array<{ rotulo: string; modo: string; comando: string }> =
-  [
-    {
-      rotulo: "Analisar caso",
-      modo: "organizar_fatos",
-      comando:
-        "Analise juridicamente este caso: identifique os fatos relevantes, os pontos controvertidos, a área do Direito e o procedimento aplicável.",
-    },
-    {
-      rotulo: "Criar estratégia",
-      modo: "estrategia_da_parte",
-      comando:
-        "Crie a estratégia para a parte que representamos: teses favoráveis e contrárias, fragilidades, provas faltantes e próximos passos.",
-    },
-    {
-      rotulo: "Elaborar defesa",
-      modo: "elaborar_documento",
-      comando:
-        "Elabore a contestação/defesa completa. Antes de redigir, confirme o que não estiver evidente (polo, objetivo, fase, prazo, juízo).",
-    },
-    {
-      rotulo: "Criar petição",
-      modo: "elaborar_documento",
-      comando:
-        "Transforme esta análise em uma petição completa, com endereçamento, qualificação, fatos, fundamentos, pedidos e valor da causa. Lacunas viram campos [A PREENCHER].",
-    },
-    {
-      rotulo: "Revisar peça",
-      modo: "revisar_documento",
-      comando:
-        "Revise tecnicamente a peça colada na área de trabalho: coerência, fatos, pedidos, fundamentação, competência, valores e contradições.",
-    },
-    {
-      rotulo: "Resumir documentos",
-      modo: "organizar_fatos",
-      comando:
-        "Resuma os documentos anexados, indicando partes, datas, valores, pedidos, prazos e o que está faltando.",
-    },
-    {
-      rotulo: "Criar cronologia",
-      modo: "organizar_fatos",
-      comando:
-        "Monte a cronologia dos fatos, distinguindo comprovado, alegado, inferido e controvertido.",
-    },
-    {
-      rotulo: "Identificar riscos",
-      modo: "detectar_contradicoes",
-      comando:
-        "Localize inconsistências, riscos e fragilidades do caso (processuais, probatórios e financeiros).",
-    },
-    {
-      rotulo: "Listar provas",
-      modo: "analisar_provas",
-      comando:
-        "Liste as provas disponíveis e as provas necessárias, relacionando cada fato à respectiva prova.",
-    },
-    {
-      rotulo: "Pesquisar fundamentos",
-      modo: "pesquisar_direito",
-      comando:
-        "Pesquise os fundamentos jurídicos aplicáveis (legislação e precedentes com fonte verificável).",
-    },
-    {
-      rotulo: "Calcular valores",
-      modo: "organizar_fatos",
-      comando:
-        "Calcule os pedidos e valores envolvidos, explicitando premissas, índices e o que depende de perícia ou confirmação.",
-    },
-    {
-      rotulo: "Perguntas do caso",
-      modo: "conversa_livre",
-      comando:
-        "Faça as perguntas necessárias para completar as informações do caso antes de qualquer peça.",
-    },
-  ];
+const ACOES_RAPIDAS: Array<{ rotulo: string; modo: string; comando: string }> = [
+  {
+    rotulo: "Analisar caso",
+    modo: "organizar_fatos",
+    comando:
+      "Analise juridicamente este caso: identifique os fatos relevantes, os pontos controvertidos, a área do Direito e o procedimento aplicável.",
+  },
+  {
+    rotulo: "Criar estratégia",
+    modo: "estrategia_da_parte",
+    comando:
+      "Crie a estratégia para a parte que representamos: teses favoráveis e contrárias, fragilidades, provas faltantes e próximos passos.",
+  },
+  {
+    rotulo: "Elaborar defesa",
+    modo: "elaborar_documento",
+    comando:
+      "Elabore a contestação/defesa completa. Antes de redigir, confirme o que não estiver evidente (polo, objetivo, fase, prazo, juízo).",
+  },
+  {
+    rotulo: "Criar petição",
+    modo: "elaborar_documento",
+    comando:
+      "Transforme esta análise em uma petição completa, com endereçamento, qualificação, fatos, fundamentos, pedidos e valor da causa. Lacunas viram campos [A PREENCHER].",
+  },
+  {
+    rotulo: "Revisar peça",
+    modo: "revisar_documento",
+    comando:
+      "Revise tecnicamente a peça colada na área de trabalho: coerência, fatos, pedidos, fundamentação, competência, valores e contradições.",
+  },
+  {
+    rotulo: "Resumir documentos",
+    modo: "organizar_fatos",
+    comando:
+      "Resuma os documentos anexados, indicando partes, datas, valores, pedidos, prazos e o que está faltando.",
+  },
+  {
+    rotulo: "Criar cronologia",
+    modo: "organizar_fatos",
+    comando:
+      "Monte a cronologia dos fatos, distinguindo comprovado, alegado, inferido e controvertido.",
+  },
+  {
+    rotulo: "Identificar riscos",
+    modo: "detectar_contradicoes",
+    comando:
+      "Localize inconsistências, riscos e fragilidades do caso (processuais, probatórios e financeiros).",
+  },
+  {
+    rotulo: "Listar provas",
+    modo: "analisar_provas",
+    comando:
+      "Liste as provas disponíveis e as provas necessárias, relacionando cada fato à respectiva prova.",
+  },
+  {
+    rotulo: "Pesquisar fundamentos",
+    modo: "pesquisar_direito",
+    comando:
+      "Pesquise os fundamentos jurídicos aplicáveis (legislação e precedentes com fonte verificável).",
+  },
+  {
+    rotulo: "Calcular valores",
+    modo: "organizar_fatos",
+    comando:
+      "Calcule os pedidos e valores envolvidos, explicitando premissas, índices e o que depende de perícia ou confirmação.",
+  },
+  {
+    rotulo: "Perguntas do caso",
+    modo: "conversa_livre",
+    comando:
+      "Faça as perguntas necessárias para completar as informações do caso antes de qualquer peça.",
+  },
+];
 
 const ABAS_ESTADO = [
   "fatos",
@@ -274,7 +258,6 @@ export default function SalaJuridica() {
   const navigate = useNavigate();
   const [sessoes, setSessoes] = useState<Sessao[]>([]);
   const [ativa, setAtiva] = useState<Sessao | null>(null);
-  // Crítica adversarial por mensagem da IA (ephemeral — ver tipo acima).
   const [criticas, setCriticas] = useState<Record<string, CriticaAdversarial>>(
     {},
   );
@@ -309,69 +292,89 @@ export default function SalaJuridica() {
   const [vincRevisado, setVincRevisado] = useState(false);
   const [vinculando, setVinculando] = useState(false);
   const [exportando, setExportando] = useState(false);
-  // Layout chat-first: painéis laterais recolhíveis + workspace colapsável.
   const [painelSessoes, setPainelSessoes] = useState(true);
   const [painelEstado, setPainelEstado] = useState(true);
   const [workspaceAberto, setWorkspaceAberto] = useState(false);
-  // Conferência prévia da conversão (conflitos/duplicados detectados).
   const [convPreview, setConvPreview] = useState<PreviewConversao | null>(null);
   const [convDuplicado, setConvDuplicado] = useState(false);
+
   const chatRef = useRef<HTMLDivElement>(null);
   const autosaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const convBloqueioServidorRef = useRef(false);
-  // Última edição da área livre ainda não persistida pelo autosave — usada
-  // para descarregar o texto pendente antes de enviar mensagem à IA.
   const autosavePendenteRef = useRef<{
     sessaoId: string;
     valor: string;
   } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  // Espelhos de busca/limite para o carregarLista manter identidade estável.
   const buscaRef = useRef("");
   const limiteRef = useRef(50);
   const buscaInicialRef = useRef(true);
+  const listaGateRef = useRef(new LatestRequestGate());
+  const sessaoGateRef = useRef(new LatestRequestGate());
+  const previewGateRef = useRef(new LatestRequestGate());
+  const clientesGateRef = useRef(new LatestRequestGate());
+  const casosGateRef = useRef(new LatestRequestGate());
+  const sessaoIntencaoRef = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      listaGateRef.current.invalidate();
+      sessaoGateRef.current.invalidate();
+      previewGateRef.current.invalidate();
+      clientesGateRef.current.invalidate();
+      casosGateRef.current.invalidate();
+      if (autosaveRef.current) clearTimeout(autosaveRef.current);
+    },
+    [],
+  );
 
   const carregarLista = useCallback(
-    async (opts?: { q?: string; limit?: number }) => {
-      // Backend aceita q (máx. 200 chars) e limit (1..200) em GET /sala-juridica.
+    async (opts?: { q?: string; limit?: number }): Promise<Sessao[] | null> => {
+      const token = listaGateRef.current.begin();
       const q = (opts?.q ?? buscaRef.current).trim().slice(0, 200);
       const limit = opts?.limit ?? limiteRef.current;
       const params: Record<string, string | number> = { limit };
       if (q) params.q = q;
       const { data } = await api.get<Sessao[]>("/sala-juridica", { params });
+      if (!listaGateRef.current.isCurrent(token)) return null;
       setSessoes(data);
       return data;
     },
     [],
   );
 
-  const abrirSessao = useCallback(async (id: string) => {
+  const abrirSessao = useCallback(async (id: string): Promise<boolean> => {
+    sessaoIntencaoRef.current = id;
+    const token = sessaoGateRef.current.begin();
     const { data } = await api.get<Sessao>(`/sala-juridica/${id}`);
+    if (!sessaoGateRef.current.isCurrent(token)) return false;
     setAtiva(data);
     setWorkspace(data.workspace_texto ?? "");
-    // Workspace abre sozinho quando já tem conteúdo; senão o chat domina.
     setWorkspaceAberto(Boolean(data.workspace_texto?.trim()));
+    return true;
   }, []);
 
   useEffect(() => {
-    (async () => {
+    let mounted = true;
+    void (async () => {
       try {
         const lista = await carregarLista();
-        if (lista.length > 0) await abrirSessao(lista[0].id);
+        if (mounted && lista?.length) await abrirSessao(lista[0].id);
       } catch {
-        toast.error("Falha ao carregar a Sala Jurídica");
+        if (mounted) toast.error("Falha ao carregar a Sala Jurídica");
       } finally {
-        setCarregando(false);
+        if (mounted) setCarregando(false);
       }
     })();
+    return () => {
+      mounted = false;
+    };
   }, [carregarLista, abrirSessao, toast]);
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
   }, [ativa?.mensagens?.length]);
 
-  // Busca server-side com debounce — complementa o filtro em memória
-  // (resposta instantânea) trazendo sessões fora da página carregada.
   useEffect(() => {
     buscaRef.current = busca;
     if (buscaInicialRef.current) {
@@ -385,7 +388,7 @@ export default function SalaJuridica() {
   }, [busca, carregarLista]);
 
   const carregarMais = async () => {
-    const novoLimite = Math.min(limite + 50, 200); // teto do backend
+    const novoLimite = Math.min(limite + 50, 200);
     setLimite(novoLimite);
     limiteRef.current = novoLimite;
     try {
@@ -403,20 +406,19 @@ export default function SalaJuridica() {
     await abrirSessao(data.id);
   };
 
-  // Autosave da área livre (debounce 1,2s) — nunca grava sessão congelada.
   const aoEditarWorkspace = (valor: string) => {
     setWorkspace(valor);
     if (!ativa || ativa.frozen) return;
     autosavePendenteRef.current = { sessaoId: ativa.id, valor };
     if (autosaveRef.current) clearTimeout(autosaveRef.current);
+    const sessaoId = ativa.id;
     autosaveRef.current = setTimeout(async () => {
       try {
-        await api.patch(`/sala-juridica/${ativa.id}`, {
+        await api.patch(`/sala-juridica/${sessaoId}`, {
           workspace_texto: valor,
         });
-        // Só limpa a pendência se nenhuma edição mais nova chegou no meio.
         if (
-          autosavePendenteRef.current?.sessaoId === ativa.id &&
+          autosavePendenteRef.current?.sessaoId === sessaoId &&
           autosavePendenteRef.current.valor === valor
         ) {
           autosavePendenteRef.current = null;
@@ -427,30 +429,41 @@ export default function SalaJuridica() {
     }, 1200);
   };
 
-  // Descarrega o autosave pendente imediatamente, para o backend responder
-  // com o workspace_texto atual (e não a versão anterior ao debounce).
-  const descarregarAutosave = async (sessao: Sessao) => {
+  const descarregarAutosave = async (sessao: Sessao): Promise<boolean> => {
     const pendente = autosavePendenteRef.current;
-    if (!pendente || pendente.sessaoId !== sessao.id || sessao.frozen) return;
+    if (!pendente || pendente.sessaoId !== sessao.id || sessao.frozen) return true;
     if (autosaveRef.current) clearTimeout(autosaveRef.current);
     autosavePendenteRef.current = null;
     try {
       await api.patch(`/sala-juridica/${sessao.id}`, {
         workspace_texto: pendente.valor,
       });
+      return true;
     } catch {
-      toast.error("Falha no salvamento automático");
+      autosavePendenteRef.current = pendente;
+      toast.error(
+        "O workspace não foi salvo. A mensagem não foi enviada para evitar análise com contexto desatualizado.",
+      );
+      return false;
     }
   };
 
   const enviar = async () => {
     if (!ativa || !texto.trim() || enviando) return;
+    const sessaoId = ativa.id;
     const conteudo = texto.trim();
     setTexto("");
     setEnviando(true);
-    await descarregarAutosave(ativa);
+
+    const workspacePersistido = await descarregarAutosave(ativa);
+    if (!workspacePersistido) {
+      setTexto(conteudo);
+      setEnviando(false);
+      return;
+    }
+
     setAtiva((s) =>
-      s
+      s?.id === sessaoId
         ? {
             ...s,
             mensagens: [
@@ -468,26 +481,22 @@ export default function SalaJuridica() {
         : s,
     );
     try {
-      const { data } = await api.post(`/sala-juridica/${ativa.id}/mensagens`, {
+      const { data } = await api.post(`/sala-juridica/${sessaoId}/mensagens`, {
         conteudo,
         modo,
       });
-      // Crítica adversarial (Modo Duas IAs) não é persistida na mensagem —
-      // só chega aqui, no retorno do envio. Sem capturá-la agora, uma nota de
-      // robustez baixa fica invisível ao advogado (achado da auditoria).
       const critica = data?.critica_adversarial as CriticaAdversarial | null;
       const idMsgIa = data?.mensagem_ia?.id as string | undefined;
       if (critica?.disponivel && idMsgIa) {
         setCriticas((prev) => ({ ...prev, [idMsgIa]: critica }));
       }
-      await abrirSessao(ativa.id);
+      if (sessaoIntencaoRef.current === sessaoId) {
+        await abrirSessao(sessaoId);
+      }
       await carregarLista();
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? "Falha ao enviar a mensagem";
-      toast.error(String(detail));
-      setTexto(conteudo);
+      toast.error(mensagemErroHttp(err, "Falha ao enviar a mensagem"));
+      if (sessaoIntencaoRef.current === sessaoId) setTexto(conteudo);
     } finally {
       setEnviando(false);
     }
@@ -495,50 +504,49 @@ export default function SalaJuridica() {
 
   const anexar = async (files: FileList | null) => {
     if (!ativa || !files?.length) return;
+    const sessaoId = ativa.id;
     const form = new FormData();
     Array.from(files).forEach((f) => form.append("files", f));
     try {
       const { data } = await api.post(
-        `/sala-juridica/${ativa.id}/anexos`,
+        `/sala-juridica/${sessaoId}/anexos`,
         form,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        },
+        { headers: { "Content-Type": "multipart/form-data" } },
       );
       const anexados = (data?.anexados ?? []).length;
       toast.success(`${anexados} documento(s) anexado(s) e extraído(s)`);
-      await abrirSessao(ativa.id);
-    } catch {
-      toast.error("Falha no upload dos documentos");
+      if (sessaoIntencaoRef.current === sessaoId) await abrirSessao(sessaoId);
+    } catch (err: unknown) {
+      toast.error(mensagemErroHttp(err, "Falha no upload dos documentos"));
     }
   };
 
   const alternarFavorita = async (s: Sessao) => {
-    await api.patch(`/sala-juridica/${s.id}`, { favorita: !s.favorita });
-    await carregarLista();
+    try {
+      await api.patch(`/sala-juridica/${s.id}`, { favorita: !s.favorita });
+      await carregarLista();
+    } catch (err: unknown) {
+      toast.error(mensagemErroHttp(err, "Falha ao atualizar favorita"));
+    }
   };
 
   const arquivar = async () => {
     if (!ativa) return;
-    await api.post(`/sala-juridica/${ativa.id}/saida`, { acao: "arquivar" });
-    toast.success("Análise arquivada");
-    await carregarLista();
+    try {
+      await api.post(`/sala-juridica/${ativa.id}/saida`, { acao: "arquivar" });
+      toast.success("Análise arquivada");
+      await carregarLista();
+    } catch (err: unknown) {
+      toast.error(mensagemErroHttp(err, "Falha ao arquivar a análise"));
+    }
   };
 
   const abrirWizard = () => {
     if (!ativa) return;
     setConvTitulo(ativa.titulo);
-    // Fatos pré-preenchidos do estado consolidado da conversa — sem isso o
-    // caso nascia com descricao_fatos NULL (o backend aceita `descricao`,
-    // mas o wizard nunca enviava). Limite espelha o schema (max 10_000).
-    // `||` (não `??`): resumo "" (extração automática desligada/falhou) tem
-    // que cair para workspace_texto, não travar num fatos vazio.
     setConvFatos(
       (ativa.estado?.resumo || ativa.workspace_texto || "").slice(0, 10_000),
     );
-    // Área sugerida pela conversa — sem isto o caso nascia sempre "civil"
-    // (achado da auditoria: o valor era só exibido na lista, nunca aplicado
-    // aqui). Cai para "civil" só quando a sessão não sugeriu nenhuma área.
     setConvArea(ativa.area_sugerida || "civil");
     setConvNovoCliente(ativa.cliente_potencial ?? "");
     setConvClienteId(null);
@@ -546,19 +554,21 @@ export default function SalaJuridica() {
     setConvRevisado(false);
     setConvDuplicado(false);
     convBloqueioServidorRef.current = false;
+    previewGateRef.current.invalidate();
     setConvPreview(null);
     setWizardAberto(true);
   };
 
-  // Conferência de conflito/duplicado SEMPRE para a seleção atual do wizard
-  // (nome digitado ou cliente existente), com debounce — preview estático na
-  // abertura deixava passar conflito de nome novo e escondia o checkbox de
-  // duplicado. O servidor revalida na conversão de qualquer forma.
   useEffect(() => {
-    if (!wizardAberto || !ativa) return;
+    if (!wizardAberto || !ativa) {
+      previewGateRef.current.invalidate();
+      return;
+    }
     const sessaoId = ativa.id;
     const nome = convClienteId ? null : convNovoCliente.trim() || null;
+    const gate = previewGateRef.current;
     const t = setTimeout(async () => {
+      const token = gate.begin();
       try {
         const { data } = await api.get<PreviewConversao>(
           `/sala-juridica/${sessaoId}/conversao/preview`,
@@ -569,6 +579,7 @@ export default function SalaJuridica() {
             },
           },
         );
+        if (!gate.isCurrent(token)) return;
         const temAchados =
           data.alertas_conflito.length > 0 ||
           data.clientes_possivelmente_duplicados.length > 0 ||
@@ -581,33 +592,36 @@ export default function SalaJuridica() {
         /* preview indisponível não impede o wizard; servidor ainda barra */
       }
     }, 400);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      gate.invalidate();
+    };
   }, [wizardAberto, ativa, convClienteId, convNovoCliente]);
 
-  // Há achado de duplicidade pendente de reconhecimento explícito? (cliente
-  // novo → homônimos na base; cliente existente → casos ativos dele)
   const temDuplicidade = Boolean(
     convPreview &&
-    (convClienteId == null
-      ? convPreview.clientes_possivelmente_duplicados.length > 0
-      : convPreview.casos_ativos_do_cliente.length > 0),
+      (convClienteId == null
+        ? convPreview.clientes_possivelmente_duplicados.length > 0
+        : convPreview.casos_ativos_do_cliente.length > 0),
   );
 
   const buscarClientes = async (termo: string) => {
     setConvClienteBusca(termo);
-    if (termo.trim().length < 2) {
+    const token = clientesGateRef.current.begin();
+    const normalizado = termo.trim();
+    if (normalizado.length < 2) {
       setConvClientes([]);
       return;
     }
     try {
       const { data } = await api.get("/clients", {
-        params: { search: termo.trim(), page_size: 8 },
+        params: { search: normalizado, page_size: 8 },
       });
-      // GET /clients responde paginado: { data: [...], total, page, page_size }.
+      if (!clientesGateRef.current.isCurrent(token)) return;
       const lista = data?.data ?? data?.items ?? data;
       setConvClientes(Array.isArray(lista) ? lista : []);
     } catch {
-      setConvClientes([]);
+      if (clientesGateRef.current.isCurrent(token)) setConvClientes([]);
     }
   };
 
@@ -622,12 +636,10 @@ export default function SalaJuridica() {
           : convNovoCliente.trim() || null,
         area: convArea,
         titulo_caso: convTitulo.trim(),
-        // Fatos estruturados da conversa acompanham o caso (descricao_fatos).
         descricao: convFatos.trim() || null,
         advogado_responsavel_id: user?.id,
         confirmo_conflito_verificado: convConflito,
         confirmo_dados_revisados: convRevisado,
-        // Gates do servidor: reconhecimento dos achados detectados no preview.
         conflict_confirmed: convConflito,
         duplicate_confirmed: convDuplicado,
       });
@@ -638,24 +650,20 @@ export default function SalaJuridica() {
           : `Caso criado${docs ? ` com ${docs} documento(s)` : ""} — análise congelada para auditoria`,
       );
       setWizardAberto(false);
-      // Próximo passo óbvio: trabalhar o caso recém-criado (paridade com o
-      // Raio-X, que também redireciona após a conversão).
       if (data?.case_id) {
         navigate(`/casos/${data.case_id}`);
         return;
       }
-      await abrirSessao(ativa.id);
+      if (sessaoIntencaoRef.current === ativa.id) await abrirSessao(ativa.id);
       await carregarLista();
     } catch (err: unknown) {
-      // 409 dos gates devolve detail OBJETO {mensagem, alertas…} — além do
-      // toast, os achados entram no preview para a UI exibir os painéis e o
-      // checkbox de reconhecimento (senão o 409 vira beco sem saída).
       const detail = (
         err as {
           response?: {
             data?: {
               detail?:
-                string | ({ mensagem?: string } & Partial<PreviewConversao>);
+                | string
+                | ({ mensagem?: string } & Partial<PreviewConversao>);
             };
           };
         }
@@ -676,11 +684,7 @@ export default function SalaJuridica() {
           bloqueia: true,
         }));
       }
-      const msg =
-        typeof detail === "string"
-          ? detail
-          : (detail?.mensagem ?? "Falha na conversão");
-      toast.error(String(msg));
+      toast.error(mensagemErroHttp(err, "Falha na conversão"));
     } finally {
       setConvertendo(false);
     }
@@ -700,8 +704,8 @@ export default function SalaJuridica() {
       a.download = `sala-juridica-${ativa.id.slice(0, 8)}.${formato}`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Falha na exportação");
+    } catch (err: unknown) {
+      toast.error(mensagemErroHttp(err, "Falha na exportação"));
     } finally {
       setExportando(false);
     }
@@ -712,8 +716,6 @@ export default function SalaJuridica() {
     toast.success("Copiado");
   };
 
-  // Leva o texto gerado para a área livre — de lá o advogado edita à vontade
-  // (o autosave versiona a alteração como qualquer edição manual).
   const levarParaEditor = (conteudo: string) => {
     const novo = workspace.trim() ? `${workspace}\n\n${conteudo}` : conteudo;
     aoEditarWorkspace(novo);
@@ -733,19 +735,21 @@ export default function SalaJuridica() {
 
   const buscarCasos = async (termo: string) => {
     setVincBusca(termo);
-    if (termo.trim().length < 2) {
+    const token = casosGateRef.current.begin();
+    const normalizado = termo.trim();
+    if (normalizado.length < 2) {
       setVincCasos([]);
       return;
     }
     try {
       const { data } = await api.get("/cases", {
-        params: { search: termo.trim(), page_size: 10 },
+        params: { search: normalizado, page_size: 10 },
       });
-      // GET /cases responde paginado: { data: [...], total, page, page_size }.
+      if (!casosGateRef.current.isCurrent(token)) return;
       const lista = data?.data ?? data?.items ?? data;
       setVincCasos(Array.isArray(lista) ? lista : []);
     } catch {
-      setVincCasos([]);
+      if (casosGateRef.current.isCurrent(token)) setVincCasos([]);
     }
   };
 
@@ -766,21 +770,10 @@ export default function SalaJuridica() {
           : "Análise vinculada ao caso — congelada para auditoria",
       );
       setVincAberto(false);
-      // Idempotência: em corrida, o backend devolve o case_id JÁ vinculado —
-      // navegar para o selecionado localmente abriria o caso errado.
       navigate(`/casos/${data?.case_id ?? vincCaseId}`);
       return;
     } catch (err: unknown) {
-      const detail = (
-        err as {
-          response?: { data?: { detail?: string | { mensagem?: string } } };
-        }
-      )?.response?.data?.detail;
-      const msg =
-        typeof detail === "string"
-          ? detail
-          : (detail?.mensagem ?? "Falha ao vincular");
-      toast.error(String(msg));
+      toast.error(mensagemErroHttp(err, "Falha ao vincular"));
     } finally {
       setVinculando(false);
     }
@@ -893,7 +886,6 @@ export default function SalaJuridica() {
           !painelSessoes && !painelEstado && "lg:grid-cols-1",
         )}
       >
-        {/* ── Coluna esquerda: sessões (recolhível) ────────────────────── */}
         {painelSessoes && (
           <aside className="space-y-3">
             <Input
@@ -916,7 +908,7 @@ export default function SalaJuridica() {
                 {g.itens.map((s) => (
                   <button
                     key={s.id}
-                    onClick={() => abrirSessao(s.id)}
+                    onClick={() => void abrirSessao(s.id)}
                     className={cn(
                       "mb-1 w-full rounded-lg border p-2 text-left text-sm transition",
                       ativa?.id === s.id
@@ -966,9 +958,7 @@ export default function SalaJuridica() {
           </aside>
         )}
 
-        {/* ── Centro: chat amplo + área livre colapsável ───────────────── */}
         <section className="flex min-h-[78vh] flex-col gap-3">
-          {/* Barra do chat: toggles dos painéis laterais + título da sessão */}
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <button
               className="rounded p-1 hover:bg-gray-100"
@@ -1003,7 +993,6 @@ export default function SalaJuridica() {
           </div>
           {ativa ? (
             <>
-              {/* Sessão já convertida: o destino natural é o caso oficial. */}
               {ativa.frozen && ativa.convertido_case_id && (
                 <div className="flex flex-wrap items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
                   <FolderInput className="h-4 w-4 shrink-0" />
@@ -1055,7 +1044,6 @@ export default function SalaJuridica() {
                 ref={chatRef}
                 className="flex-1 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3"
               >
-                {/* Coluna de leitura centralizada (estilo chat de fronteira) */}
                 <div className="mx-auto w-full max-w-3xl space-y-3">
                   {(ativa.mensagens ?? []).length === 0 && (
                     <EmptyState
@@ -1131,12 +1119,6 @@ export default function SalaJuridica() {
                           </div>
                         )}
                       {m.autor === "ia" && criticas[m.id] && (
-                        // Token semântico "ai" (não violet-* cru): é a mesma
-                        // família já usada nos demais painéis de IA do
-                        // sistema (ex.: ContextualAIAssistant.tsx) e a única
-                        // com dark mode coberto em index.css — achado do
-                        // app-runner: violet-* cru ficava quase branco no
-                        // tema escuro.
                         <div className="mt-2 rounded border border-ai-200 bg-ai-50 p-2 text-xs text-ai-800">
                           <p className="font-semibold">
                             Crítica adversarial (Modo Duas IAs)
@@ -1273,7 +1255,6 @@ export default function SalaJuridica() {
           )}
         </section>
 
-        {/* ── Direita: anexos + estado jurídico (recolhível) ───────────── */}
         {painelEstado && (
           <aside className="space-y-3">
             <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
@@ -1366,7 +1347,6 @@ export default function SalaJuridica() {
         )}
       </div>
 
-      {/* ── Modal: vincular a caso EXISTENTE ──────────────────────────── */}
       {vincAberto && ativa && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
@@ -1428,7 +1408,6 @@ export default function SalaJuridica() {
         </div>
       )}
 
-      {/* ── Wizard de conversão em caso (conferência obrigatória) ─────── */}
       {wizardAberto && ativa && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
@@ -1440,7 +1419,6 @@ export default function SalaJuridica() {
               recebe cliente, documentos, estado probatório e histórico.
             </p>
 
-            {/* Conferência automática: conflitos EOAB detectados na base */}
             {convPreview && convPreview.alertas_conflito.length > 0 && (
               <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3">
                 <p className="mb-1 flex items-center gap-1 text-xs font-bold text-red-800">
@@ -1512,7 +1490,6 @@ export default function SalaJuridica() {
                 limpar seleção e criar novo cliente
               </button>
             )}
-            {/* Clientes possivelmente duplicados (só ao criar cliente novo) */}
             {convPreview &&
               convClienteId == null &&
               convPreview.clientes_possivelmente_duplicados.length > 0 && (
@@ -1537,7 +1514,6 @@ export default function SalaJuridica() {
                   )}
                 </div>
               )}
-            {/* Casos ATIVOS do cliente existente: possível caso duplicado */}
             {convPreview &&
               convClienteId != null &&
               convPreview.casos_ativos_do_cliente.length > 0 && (
@@ -1572,7 +1548,6 @@ export default function SalaJuridica() {
                 value={convArea}
                 onChange={(e) => setConvArea(e.target.value)}
               >
-                {/* AREAS_FALLBACK espelha o enum CaseArea do backend. */}
                 {AREAS_FALLBACK.map((a) => (
                   <option key={a.slug} value={a.slug}>
                     {a.nome}
