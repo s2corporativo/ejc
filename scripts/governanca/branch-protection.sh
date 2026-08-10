@@ -135,13 +135,23 @@ echo "1. Backup da configuracao atual"
 mkdir -p var
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 BACKUP="var/branch-protection-anterior-$STAMP.json"
-if gh api "repos/$REPO/branches/$BRANCH/protection" > "$BACKUP" 2>/dev/null; then
+BACKUP_ERR="$(mktemp)"
+cleanup_backup_err() { rm -f "$BACKUP_ERR"; }
+trap cleanup_backup_err EXIT
+if gh api "repos/$REPO/branches/$BRANCH/protection" > "$BACKUP" 2>"$BACKUP_ERR"; then
   cp "$BACKUP" var/branch-protection-anterior.json
   ok "salvo em $BACKUP"
-else
-  echo "null" > "$BACKUP"; cp "$BACKUP" var/branch-protection-anterior.json
+elif grep -Eq '(^|[^0-9])404([^0-9]|$)|HTTP 404|Not Found' "$BACKUP_ERR"; then
+  echo "null" > "$BACKUP"
+  cp "$BACKUP" var/branch-protection-anterior.json
   ok "branch sem protecao anterior (backup null)"
+else
+  cat "$BACKUP_ERR" >&2 || true
+  rm -f "$BACKUP"
+  falhar "nao foi possivel ler a protecao atual de $BRANCH; backup estável preservado e nada foi alterado"
 fi
+rm -f "$BACKUP_ERR"
+trap - EXIT
 
 echo ""
 echo "2. Aplicando protecao: $LABEL"
