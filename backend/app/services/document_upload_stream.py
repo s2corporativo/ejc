@@ -10,6 +10,7 @@ final depois das validações de domínio (duplicidade, MIME, autorização etc.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -17,8 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Protocol
 from uuid import uuid4
-
-from aiofiles.threadpool import wrap as envolver_arquivo_assincrono
 
 logger = logging.getLogger(__name__)
 
@@ -87,12 +86,7 @@ def _descartar_caminho_best_effort(caminho: Path) -> None:
 
 
 def _criar_staging_aberto(caminho: Path) -> BinaryIO:
-    """Cria inode 0600, O_EXCL, antes do primeiro ponto de cancelamento async.
-
-    A criação síncrona é deliberada e mínima: evita a corrida em que uma thread
-    de ``open(..., 'x')`` pudesse criar o arquivo depois do ``finally`` de uma
-    coroutine cancelada. ``O_CLOEXEC`` reduz herança acidental do descritor.
-    """
+    """Cria inode 0600, O_EXCL, antes do primeiro ponto de cancelamento async."""
 
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_CLOEXEC"):
@@ -104,6 +98,31 @@ def _criar_staging_aberto(caminho: Path) -> BinaryIO:
         os.close(fd)
         _descartar_caminho_best_effort(caminho)
         raise
+
+
+async def _aguardar_io_thread(func, *args):
+    """Conclui a operação de disco antes de propagar cancelamento do request.
+
+    ``asyncio.to_thread`` não interrompe a chamada síncrona que já começou.
+    Fechar/unlinkar o arquivo enquanto essa thread ainda escreve criaria outra
+    corrida. Por isso o cancelamento externo é adiado somente até a operação de
+    I/O corrente terminar; em seguida ele é propagado normalmente.
+    """
+
+    tarefa = asyncio.create_task(asyncio.to_thread(func, *args))
+    try:
+        return await asyncio.shield(tarefa)
+    except asyncio.CancelledError:
+        try:
+            await tarefa
+        finally:
+            raise
+
+
+async def _escrever_chunk(arquivo: BinaryIO, chunk: bytes) -> None:
+    escritos = await _aguardar_io_thread(arquivo.write, chunk)
+    if escritos != len(chunk):
+        raise OSError("escrita incompleta no staging documental")
 
 
 def promover_staging(arquivo: UploadEmStaging, destino_final: Path) -> None:
@@ -128,9 +147,9 @@ async def receber_em_staging(
     """Recebe o upload em chunks com memória O(CHUNK_UPLOAD_BYTES).
 
     O inode 0600 é criado de modo síncrono/atômico antes do primeiro ``await``.
-    Depois disso, somente as operações de escrita são delegadas ao threadpool.
-    Em qualquer exceção ou cancelamento o path é removido sem mascarar a falha
-    original.
+    Depois disso, as escritas são delegadas ao executor e concluídas antes de
+    propagar eventual cancelamento. Em qualquer falha o path é removido sem
+    mascarar a exceção original.
     """
 
     if max_bytes < 0:
@@ -144,7 +163,6 @@ async def receber_em_staging(
     total = 0
     concluido = False
     arquivo_sync = _criar_staging_aberto(staging)
-    target = envolver_arquivo_assincrono(arquivo_sync)
 
     try:
         while True:
@@ -160,12 +178,15 @@ async def receber_em_staging(
                 faltam = AMOSTRA_MAGIC_BYTES - len(amostra)
                 amostra.extend(chunk[:faltam])
 
-            await target.write(chunk)
+            await _escrever_chunk(arquivo_sync, chunk)
             total = novo_total
 
         if total == 0:
             raise UploadVazioError("arquivo vazio")
 
+        # BufferedWriter pode manter bytes no buffer; flush também respeita o
+        # mesmo protocolo de cancelamento antes de devolver o staging ao caller.
+        await _aguardar_io_thread(arquivo_sync.flush)
         concluido = True
         return UploadEmStaging(
             caminho=staging,
@@ -174,8 +195,7 @@ async def receber_em_staging(
             amostra_inicial=bytes(amostra),
         )
     finally:
-        # O descritor já existia antes de qualquer await, então pode ser fechado
-        # deterministicamente mesmo quando o cancelamento ocorre no primeiro read.
+        # Nenhuma operação de thread fica pendente quando chegamos aqui.
         try:
             arquivo_sync.close()
         finally:
