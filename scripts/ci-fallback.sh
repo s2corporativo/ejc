@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Fallback autônomo de CI do EJC.
-# Executa validação completa em worktree isolado e publica evidência por SHA.
-# O gate promovível é um Check Run vinculado a GitHub App dedicado; statuses
-# clássicos são apenas informativos e nunca satisfazem a branch protection.
+# Control plane do fallback autônomo do EJC.
+# IMPORTANTE: código do PR nunca executa neste UID. Stages de aplicação rodam
+# via ci-worker-isolation.sh sob usuário dedicado e snapshot novo por stage.
 set -euo pipefail
 umask 077
 
@@ -61,16 +60,10 @@ for cmd in git jq flock python3; do
   command -v "$cmd" >/dev/null 2>&1 || die "$cmd ausente"
 done
 [ -f "$ROOT/scripts/ci_evidence.py" ] || die "scripts/ci_evidence.py ausente"
+[ -f "$ROOT/scripts/ci-worker-isolation.sh" ] || die "scripts/ci-worker-isolation.sh ausente"
 command -v gh >/dev/null 2>&1 || { [ "$POST_STATUS" -eq 0 ] || die "gh ausente"; }
 if [ "$POST_STATUS" -eq 1 ]; then
-  gh auth status >/dev/null 2>&1 || die "gh de usuário não autenticado no host"
-  command -v docker >/dev/null 2>&1 || die "Docker é obrigatório para fallback promovível"
-  docker info >/dev/null 2>&1 || die "Docker não acessível; fallback promovível exige PostgreSQL efêmero hermético"
-fi
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(ejc_backend|ejc_worker|ejc_db|ejc_frontend|ejc_redis)$'; then
-    die "containers canônicos do EJC ativos; host não é elegível para CI de PR"
-  fi
+  gh auth status >/dev/null 2>&1 || die "gh de usuário não autenticado no control plane"
 fi
 
 REPO="${EJC_REPO:-}"
@@ -83,9 +76,9 @@ fi
 FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"
 INSTALLATION_ID="${EJC_FALLBACK_APP_INSTALLATION_ID:-${EJC_FALLBACK_INSTALLATION_ID:-}}"
 if [ "$POST_STATUS" -eq 1 ]; then
-  [[ "$FALLBACK_APP_ID" =~ ^[1-9][0-9]*$ ]] || die "EJC_FALLBACK_APP_ID numérico (>0) é obrigatório para gate promovível"
-  [[ "$INSTALLATION_ID" =~ ^[1-9][0-9]*$ ]] || die "EJC_FALLBACK_APP_INSTALLATION_ID numérico (>0) é obrigatório"
-  [ -n "${EJC_FALLBACK_APP_PRIVATE_KEY_FILE:-}" ] || die "EJC_FALLBACK_APP_PRIVATE_KEY_FILE é obrigatório para renovar a credencial do App"
+  [[ "$FALLBACK_APP_ID" =~ ^[1-9][0-9]*$ ]] || die "EJC_FALLBACK_APP_ID numérico (>0) obrigatório"
+  [[ "$INSTALLATION_ID" =~ ^[1-9][0-9]*$ ]] || die "EJC_FALLBACK_APP_INSTALLATION_ID numérico (>0) obrigatório"
+  [ -n "${EJC_FALLBACK_APP_PRIVATE_KEY_FILE:-}" ] || die "EJC_FALLBACK_APP_PRIVATE_KEY_FILE obrigatório"
   export EJC_FALLBACK_APP_INSTALLATION_ID="$INSTALLATION_ID"
   # shellcheck source=github-app-auth.sh
   source "$ROOT/scripts/github-app-auth.sh"
@@ -100,13 +93,16 @@ assert_state_path "$EVIDENCE_ROOT" "EVIDENCE_ROOT"
 mkdir -p "$STATE_ROOT" "$WORKTREE_PARENT" "$EVIDENCE_ROOT"
 chmod 700 "$STATE_ROOT" "$WORKTREE_PARENT" "$EVIDENCE_ROOT" 2>/dev/null || true
 
+# O worker é uma fronteira obrigatória, não fallback opcional.
+bash "$ROOT/scripts/ci-worker-isolation.sh" preflight || die "worker isolado não atende aos invariantes de segurança"
+
 git fetch --quiet origin main || die "não foi possível atualizar origin/main"
 
 HEAD_REF=""
 SHA=""
 if [ -n "$PR" ]; then
-  [ "$POST_STATUS" -eq 1 ] || die "--pr exige gh/status habilitado"
-  META="$(gh pr view "$PR" --repo "$REPO" --json headRefName,headRefOid,baseRefName,isDraft,state)" || die "não foi possível ler metadados do PR #$PR"
+  [ "$POST_STATUS" -eq 1 ] || die "--pr exige integração remota habilitada"
+  META="$(gh pr view "$PR" --repo "$REPO" --json headRefName,headRefOid,baseRefName,isDraft,state)" || die "não foi possível ler PR #$PR"
   [ "$(printf '%s' "$META" | jq -r .state)" = "OPEN" ] || die "PR #$PR não está aberto"
   [ "$(printf '%s' "$META" | jq -r .baseRefName)" = "main" ] || die "PR #$PR não tem base main"
   HEAD_REF="$(printf '%s' "$META" | jq -r .headRefName)"
@@ -123,15 +119,14 @@ else
   HEAD_REF="$(git branch --show-current || true)"
 fi
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die "SHA alvo inválido: $SHA"
-git merge-base --is-ancestor origin/main "$SHA" || die "head $SHA está atrás da main atual; atualize/reconcilie antes de validar"
+git merge-base --is-ancestor origin/main "$SHA" || die "head $SHA está atrás da main atual; reconcilie antes de validar"
 
 SHA_EVIDENCE="$EVIDENCE_ROOT/$SHA"
 mkdir -p "$SHA_EVIDENCE/attempts"
 chmod 700 "$SHA_EVIDENCE" "$SHA_EVIDENCE/attempts" 2>/dev/null || true
-LOCK_FILE="$SHA_EVIDENCE/.lock"
-exec 9>"$LOCK_FILE"
+exec 9>"$SHA_EVIDENCE/.lock"
 if ! flock -n 9; then
-  warn "já existe validação/promoção ativa para $SHA; operação adiada"
+  warn "já existe validação/promoção ativa para $SHA"
   exit 75
 fi
 
@@ -145,38 +140,31 @@ STATUS_SYNC_PENDING=0
 FULL_CHECK_ID=""
 FULL_CHECK_EXTERNAL_ID=""
 GOV_WORKTREE=""
-WORKTREE=""
 ATTEMPT_DIR=""
 
-cleanup_worktrees() {
+cleanup() {
   set +e
   if [ -n "${GOV_WORKTREE:-}" ] && git worktree list --porcelain | grep -Fqx "worktree $GOV_WORKTREE"; then
     git worktree remove --force "$GOV_WORKTREE" >/dev/null 2>&1 || true
-  fi
-  if [ -n "${WORKTREE:-}" ] && git worktree list --porcelain | grep -Fqx "worktree $WORKTREE"; then
-    git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
   fi
   if [ "$POST_STATUS" -eq 1 ] && declare -F ejc_github_app_clear >/dev/null 2>&1; then
     ejc_github_app_clear || true
   fi
 }
-trap cleanup_worktrees EXIT
+trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
 preflight_app_credential() {
   [ "$POST_STATUS" -eq 1 ] || return 0
-  if ! ejc_github_app_refresh; then
-    die "credencial efêmera do GitHub App não pôde ser emitida"
-  fi
-  log "Credencial efêmera do GitHub App emitida; Checks API será validada pelo gate canônico."
+  ejc_github_app_refresh || die "credencial efêmera do GitHub App não pôde ser emitida"
+  log "credencial efêmera do GitHub App validada"
 }
 
 post_full_check() {
   local state="$1" description="$2" payload result app_id head_sha name conclusion id external_id
   [ "$POST_STATUS" -eq 1 ] || return 0
   [ -n "$FULL_CHECK_EXTERNAL_ID" ] || FULL_CHECK_EXTERNAL_ID="ejc-fallback:$SHA:promotion:$(date +%s)-$$"
-
   case "$state" in
     pending)
       payload="$(jq -cn --arg name "$CONTEXT_FULL" --arg sha "$SHA" --arg external_id "$FULL_CHECK_EXTERNAL_ID" --arg summary "${description:0:60000}" '{name:$name,head_sha:$sha,status:"in_progress",external_id:$external_id,output:{title:$name,summary:$summary}}')"
@@ -192,19 +180,10 @@ post_full_check() {
   esac
 
   if [ -n "$FULL_CHECK_ID" ] && [ "$state" != "pending" ]; then
-    result="$(printf '%s' "$payload" | ejc_github_app_gh_api -X PATCH "repos/$REPO/check-runs/$FULL_CHECK_ID" -H 'Accept: application/vnd.github+json' --input - 2>/dev/null)" || {
-      STATUS_SYNC_PENDING=1
-      warn "não foi possível atualizar o Check Run atual para '$state'"
-      return 75
-    }
+    result="$(printf '%s' "$payload" | ejc_github_app_gh_api -X PATCH "repos/$REPO/check-runs/$FULL_CHECK_ID" -H 'Accept: application/vnd.github+json' --input - 2>/dev/null)" || return 75
   else
-    result="$(printf '%s' "$payload" | ejc_github_app_gh_api -X POST "repos/$REPO/check-runs" -H 'Accept: application/vnd.github+json' --input - 2>/dev/null)" || {
-      STATUS_SYNC_PENDING=1
-      warn "não foi possível criar Check Run '$CONTEXT_FULL=$state'; evidência local preservada"
-      return 75
-    }
+    result="$(printf '%s' "$payload" | ejc_github_app_gh_api -X POST "repos/$REPO/check-runs" -H 'Accept: application/vnd.github+json' --input - 2>/dev/null)" || return 75
   fi
-
   id="$(printf '%s' "$result" | jq -r '.id // empty')"
   app_id="$(printf '%s' "$result" | jq -r '.app.id // -1')"
   head_sha="$(printf '%s' "$result" | jq -r '.head_sha // empty')"
@@ -216,44 +195,34 @@ post_full_check() {
   [ "$head_sha" = "$SHA" ] || return 75
   [ "$name" = "$CONTEXT_FULL" ] || return 75
   [ "$external_id" = "$FULL_CHECK_EXTERNAL_ID" ] || return 75
-  if [ "$state" = "success" ] || [ "$state" = "failure" ]; then
-    [ "$conclusion" = "$state" ] || return 75
-  fi
+  if [ "$state" = success ] || [ "$state" = failure ]; then [ "$conclusion" = "$state" ] || return 75; fi
   FULL_CHECK_ID="$id"
-  return 0
 }
 
 post_status() {
   local state="$1" context="$2" description="$3"
   [ "$POST_STATUS" -eq 1 ] || return 0
-  if [ "$context" = "$CONTEXT_FULL" ]; then
-    post_full_check "$state" "$description"
-    return $?
-  fi
   if ! gh api -X POST "repos/$REPO/statuses/$SHA" -f state="$state" -f context="$context" -f description="${description:0:135}" >/dev/null 2>&1; then
     STATUS_SYNC_PENDING=1
-    warn "não foi possível publicar status informativo '$context=$state'; evidência local preservada"
     return 75
   fi
-  return 0
 }
 
 latest_full_check_id() {
-  [ "$POST_STATUS" -eq 1 ] || return 1
   local checks
-  checks="$(ejc_github_app_gh_api "repos/$REPO/commits/$SHA/check-runs?filter=latest&per_page=100" -H 'Accept: application/vnd.github+json' 2>/dev/null)" || return 1
-  printf '%s' "$checks" | jq -r --arg name "$CONTEXT_FULL" --argjson app_id "$FALLBACK_APP_ID" '[.check_runs[] | select(.name == $name and .app.id == $app_id)] | sort_by(.id) | last | .id // 0'
+  checks="$(ejc_github_app_gh_api --method GET "repos/$REPO/commits/$SHA/check-runs" \
+    -H 'Accept: application/vnd.github+json' \
+    -f check_name="$CONTEXT_FULL" -F app_id="$FALLBACK_APP_ID" -f filter=latest -F per_page=100 2>/dev/null)" || return 1
+  printf '%s' "$checks" | jq -r '.check_runs | sort_by(.id) | last | .id // 0'
 }
 
 full_gate_is_green() {
-  [ "$POST_STATUS" -eq 1 ] || return 1
   [[ "$FULL_CHECK_ID" =~ ^[1-9][0-9]*$ ]] || return 1
   local check latest
   check="$(ejc_github_app_gh_api "repos/$REPO/check-runs/$FULL_CHECK_ID" -H 'Accept: application/vnd.github+json' 2>/dev/null)" || return 1
   printf '%s' "$check" | jq -e --arg name "$CONTEXT_FULL" --arg sha "$SHA" --arg external_id "$FULL_CHECK_EXTERNAL_ID" --argjson app_id "$FALLBACK_APP_ID" '
-      .name == $name and .head_sha == $sha and .external_id == $external_id and
-      .app.id == $app_id and .status == "completed" and .conclusion == "success"
-    ' >/dev/null 2>&1 || return 1
+    .name == $name and .head_sha == $sha and .external_id == $external_id and .app.id == $app_id and .status == "completed" and .conclusion == "success"
+  ' >/dev/null 2>&1 || return 1
   latest="$(latest_full_check_id 2>/dev/null || printf '0')"
   [ "$latest" = "$FULL_CHECK_ID" ]
 }
@@ -279,39 +248,42 @@ finish_attempt() {
   python3 "$ROOT/scripts/ci_evidence.py" "${args[@]}" >/dev/null
 }
 
-revalidate_governance_for_merge() {
-  [ -n "$PR" ] || return 1
-  local gov_parent rc
-  gov_parent="$WORKTREE_PARENT/merge-governance"
-  mkdir -p "$gov_parent"
-  GOV_WORKTREE="$gov_parent/${SHA:0:12}-$$"
-  [ ! -e "$GOV_WORKTREE" ] || die "worktree temporário de governança já existe: $GOV_WORKTREE"
+create_governance_worktree() {
+  [ -z "$GOV_WORKTREE" ] || return 0
+  GOV_WORKTREE="$WORKTREE_PARENT/governance-${SHA:0:12}-$$"
   git worktree add --detach "$GOV_WORKTREE" "$SHA" >/dev/null
+}
+
+run_governance() {
+  local logfile="$1" rc
+  create_governance_worktree
   set +e
-  (cd "$GOV_WORKTREE" && EJC_PR_NUMBER="$PR" EJC_GOV_REQUIRE_PR=1 bash scripts/governanca/ci-local-governanca.sh) >/dev/null 2>&1
+  EJC_GOV_SOURCE_ROOT="$GOV_WORKTREE" EJC_PR_NUMBER="$PR" EJC_GOV_REQUIRE_PR=1 \
+    bash "$ROOT/scripts/governanca/ci-local-governanca.sh" >"$logfile" 2>&1
   rc=$?
   set -e
-  git worktree remove --force "$GOV_WORKTREE" >/dev/null 2>&1 || true
-  GOV_WORKTREE=""
+  return "$rc"
+}
+
+revalidate_governance_for_merge() {
+  [ -n "$PR" ] || return 1
+  local tmp="$STATE_ROOT/governance-revalidate-${SHA:0:12}-$$.log" rc
+  set +e
+  run_governance "$tmp"
+  rc=$?
+  set -e
+  rm -f "$tmp"
   return "$rc"
 }
 
 refresh_status_from_evidence() {
-  [ -n "$PR" ] || return 1
-  local_evidence_is_green || { log "Evidência local completa, atual e íntegra do SHA ausente; status não promovido."; return 1; }
-  revalidate_governance_for_merge || {
-    post_status failure "$CONTEXT_GOV" "governança atual do PR reprovada" || true
-    post_full_check failure "governança atual do PR reprovada" || true
-    log "Governança atual do PR #$PR reprovada; status/merge retidos."
-    return 1
-  }
-  if full_gate_is_green; then
-    return 0
-  fi
+  local_evidence_is_green || { log "evidência atual/íntegra ausente; promoção retida"; return 1; }
+  revalidate_governance_for_merge || { log "governança atual reprovada; promoção retida"; return 1; }
+  if full_gate_is_green; then return 0; fi
   FULL_CHECK_ID=""
   FULL_CHECK_EXTERNAL_ID="ejc-fallback:$SHA:promotion:$(date +%s)-$$"
   publish_success_statuses || return 1
-  full_gate_is_green || { log "Check Run canônico desta promoção não ficou verde/mais recente."; return 1; }
+  full_gate_is_green
 }
 
 verify_branch_protection_for_merge() {
@@ -339,65 +311,77 @@ verify_merge_snapshot() {
   full_gate_is_green || return 1
   verify_branch_protection_for_merge || return 1
   info="$(gh pr view "$PR" --repo "$REPO" --json isDraft,reviewDecision,labels,headRefOid,state)" || return 1
-  [ "$(printf '%s' "$info" | jq -r .state)" = "OPEN" ] || return 1
+  [ "$(printf '%s' "$info" | jq -r .state)" = OPEN ] || return 1
   [ "$(printf '%s' "$info" | jq -r .headRefOid)" = "$SHA" ] || return 1
-  [ "$(printf '%s' "$info" | jq -r .isDraft)" = "false" ] || return 1
+  [ "$(printf '%s' "$info" | jq -r .isDraft)" = false ] || return 1
   review_decision="$(printf '%s' "$info" | jq -r '.reviewDecision // ""')"
-  [ "$review_decision" = "APPROVED" ] || return 1
-  case ",$(printf '%s' "$info" | jq -r '[.labels[].name] | join(",")')," in
-    *,retencao-humana,*) return 1 ;;
-  esac
-  return 0
+  [ "$review_decision" = APPROVED ] || return 1
+  case ",$(printf '%s' "$info" | jq -r '[.labels[].name] | join(",")')," in *,retencao-humana,*) return 1;; esac
 }
 
 attempt_merge() {
   [ "$DO_MERGE" -eq 1 ] && [ -n "$PR" ] || return 0
   refresh_status_from_evidence || return 0
-  verify_merge_snapshot || { log "snapshot final de segurança/review/main reprovado; merge retido."; return 0; }
+  verify_merge_snapshot || { log "snapshot final reprovado; merge retido"; return 0; }
 
   local files_json excecao
-  if ! files_json="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" 2>/dev/null | jq -s 'add')"; then
-    log "lista/diff de arquivos do PR indisponível; merge retido fail-closed"
-    return 0
-  fi
-  printf '%s' "$files_json" | jq -e 'type == "array"' >/dev/null 2>&1 || { log "resposta inválida ao listar arquivos do PR; merge retido"; return 0; }
-
+  files_json="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" 2>/dev/null | jq -s 'add')" || return 0
+  printf '%s' "$files_json" | jq -e 'type == "array"' >/dev/null || return 0
   excecao='^(\.github/|\.claude/|CLAUDE\.md$|AGENTS\.md$|docs/GOVERNANCA|nginx/|docker-compose[^/]*\.yml$|scripts/|.*Dockerfile[^/]*$|backend/requirements[^/]*\.txt$|frontend/package(-lock)?\.json$|frontend/nginx|backend/app/core/|backend/app/middleware|backend/app/routers/(auth|users|api_keys)|backend/app/services/(pii_crypto|ai_gateway)|(^|/)\.env)'
   if printf '%s' "$files_json" | jq -e --arg re "$excecao" '[.[] | select(.filename | test($re))] | length > 0' >/dev/null; then
-    log "PR #$PR toca caminho de exceção §6-A; validação concluída, merge retido."
+    log "PR toca exceção §6-A; merge retido"
     return 0
   fi
-
   if printf '%s' "$files_json" | jq -e '[.[] | select(.filename | startswith("backend/alembic/versions/"))] | length > 0' >/dev/null; then
-    if printf '%s' "$files_json" | jq -e '[.[] | select(.filename | startswith("backend/alembic/versions/")) | select(.patch == null)] | length > 0' >/dev/null; then
-      log "migration com patch indisponível/truncado; merge retido fail-closed"
-      return 0
-    fi
+    printf '%s' "$files_json" | jq -e '[.[] | select(.filename | startswith("backend/alembic/versions/")) | select(.patch == null)] | length == 0' >/dev/null || return 0
     if printf '%s' "$files_json" | jq -r '.[] | select(.filename | startswith("backend/alembic/versions/")) | .patch' | grep -Eiq 'op\.drop_|op\.alter_column|DROP (TABLE|COLUMN|INDEX|CONSTRAINT)|TRUNCATE|DELETE FROM'; then
-      log "PR #$PR contém migration potencialmente destrutiva; merge retido."
+      log "migration potencialmente destrutiva; merge retido"
       return 0
     fi
   fi
-
-  # Segunda leitura imediatamente antes do ato. O SHA no PUT fecha a corrida do
-  # head; branch protection strict fecha avanço da main após esta leitura.
-  verify_merge_snapshot || { log "estado mudou no último instante; merge retido."; return 0; }
+  verify_merge_snapshot || { log "estado mudou antes do merge; retido"; return 0; }
 
   set +e
-  local merge_json rc merged message
+  local merge_json rc
   merge_json="$(gh api -X PUT "repos/$REPO/pulls/$PR/merge" -f merge_method=squash -f sha="$SHA" 2>&1)"
   rc=$?
   set -e
+  [ "$rc" -eq 0 ] || { log "merge recusado por proteção/review/conflito"; return 0; }
+  [ "$(printf '%s' "$merge_json" | jq -r '.merged // false' 2>/dev/null)" = true ] && log "PR #$PR integrado" || log "PR #$PR permaneceu retido"
+}
+
+run_worker_stage() {
+  local key="$1" context="$2" logfile="$ATTEMPT_DIR/${key}.log" rc
+  log "executando $key no worker isolado…"
+  set +e
+  EJC_CI_WORKER_USER="${EJC_CI_WORKER_USER:-}" \
+    EJC_CI_WORKER_ROOT="${EJC_CI_WORKER_ROOT:-/var/tmp/ejc-ci-worker}" \
+    EJC_FALLBACK_APP_PRIVATE_KEY_FILE="${EJC_FALLBACK_APP_PRIVATE_KEY_FILE:-}" \
+    bash "$ROOT/scripts/ci-worker-isolation.sh" run-stage --sha "$SHA" --stage "$key" >"$logfile" 2>&1
+  rc=$?
+  set -e
   if [ "$rc" -ne 0 ]; then
-    log "PR #$PR não elegível ao merge por review/protection/conflito; será reavaliado sem repetir o CI."
-    return 0
+    finish_attempt failure "$key" "$rc" 0 || true
+    post_status failure "$context" "fallback falhou: $key (exit $rc)" || true
+    post_full_check failure "fallback falhou: $key (exit $rc)" || true
+    tail -n 120 "$logfile" >&2 || true
+    return "$rc"
   fi
-  merged="$(printf '%s' "$merge_json" | jq -r '.merged // false' 2>/dev/null || echo false)"
-  message="$(printf '%s' "$merge_json" | jq -r '.message // ""' 2>/dev/null || true)"
-  if [ "$merged" = "true" ]; then
-    log "PR #$PR integrado após fallback local completo."
-  else
-    log "PR #$PR não integrado: ${message:-proteção/review pendente}."
+}
+
+run_governance_stage() {
+  local logfile="$ATTEMPT_DIR/governanca.log" rc
+  log "executando governança trusted contra snapshot somente leitura…"
+  set +e
+  run_governance "$logfile"
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ]; then
+    finish_attempt failure governanca "$rc" 0 || true
+    post_status failure "$CONTEXT_GOV" "governança falhou (exit $rc)" || true
+    post_full_check failure "governança falhou (exit $rc)" || true
+    tail -n 120 "$logfile" >&2 || true
+    return "$rc"
   fi
 }
 
@@ -408,7 +392,6 @@ if [ "$PROMOTE_ONLY" -eq 1 ]; then
   refresh_status_from_evidence
   exit $?
 fi
-
 if [ "$MERGE_ONLY" -eq 1 ]; then
   [ -n "$PR" ] || die "--merge-only exige --pr"
   attempt_merge
@@ -417,62 +400,27 @@ fi
 
 START_ARGS=(start --root "$EVIDENCE_ROOT" --sha "$SHA" --ref "$HEAD_REF")
 [ -z "$PR" ] || START_ARGS+=(--pr "$PR")
-ATTEMPT_DIR="$(python3 "$ROOT/scripts/ci_evidence.py" "${START_ARGS[@]}")" || die "não foi possível iniciar tentativa de evidência"
+ATTEMPT_DIR="$(python3 "$ROOT/scripts/ci_evidence.py" "${START_ARGS[@]}")" || die "não foi possível iniciar tentativa"
 FULL_CHECK_EXTERNAL_ID="ejc-fallback:$SHA:$(basename "$ATTEMPT_DIR")"
 
-WORKTREE="$WORKTREE_PARENT/${SHA:0:12}-$$"
-git worktree add --detach "$WORKTREE" "$SHA" >/dev/null
-
-for c in "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" "$CONTEXT_GOV"; do
-  post_status pending "$c" "CI local isolado em execução" || true
-done
+for c in "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" "$CONTEXT_GOV"; do post_status pending "$c" "CI local em execução" || true; done
 post_full_check pending "CI local isolado em execução" || true
 
-run_stage() {
-  local key="$1" context="$2"; shift 2
-  local logfile="$ATTEMPT_DIR/${key}.log"
-  log "Executando $key…"
-  set +e
-  (cd "$WORKTREE" && "$@") >"$logfile" 2>&1
-  local rc=$?
-  set -e
-  if [ "$rc" -ne 0 ]; then
-    finish_attempt failure "$key" "$rc" 0 || true
-    post_status failure "$context" "fallback local falhou: $key (exit $rc)" || true
-    post_full_check failure "fallback local falhou: $key (exit $rc)" || true
-    tail -n 120 "$logfile" >&2 || true
-    return "$rc"
-  fi
-  return 0
-}
-
-run_stage backend "$CONTEXT_BACKEND" env EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh backend || exit 1
-run_stage eval "$CONTEXT_EVAL" env CI_SKIP_PIP=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh eval || exit 1
-run_stage frontend "$CONTEXT_FRONTEND" bash scripts/ci-local.sh frontend || exit 1
-run_stage p0 "$CONTEXT_P0" bash scripts/ci-local.sh p0 || exit 1
-if [ -n "$PR" ]; then
-  run_stage governanca "$CONTEXT_GOV" env EJC_PR_NUMBER="$PR" EJC_GOV_REQUIRE_PR=1 bash scripts/governanca/ci-local-governanca.sh || exit 1
-else
-  run_stage governanca "$CONTEXT_GOV" env EJC_GOV_REQUIRE_PR=0 bash scripts/governanca/ci-local-governanca.sh || exit 1
-fi
-run_stage architecture "$CONTEXT_FULL" bash scripts/ci-local.sh architecture || exit 1
-run_stage continuity "$CONTEXT_FULL" env CI_SKIP_PIP=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh continuity || exit 1
-run_stage ui-extra "$CONTEXT_FULL" bash scripts/ci-local.sh ui-extra || exit 1
+run_worker_stage backend "$CONTEXT_BACKEND" || exit 1
+run_worker_stage eval "$CONTEXT_EVAL" || exit 1
+run_worker_stage frontend "$CONTEXT_FRONTEND" || exit 1
+run_worker_stage p0 "$CONTEXT_P0" || exit 1
+run_governance_stage || exit 1
+run_worker_stage architecture "$CONTEXT_FULL" || exit 1
+run_worker_stage continuity "$CONTEXT_FULL" || exit 1
+run_worker_stage ui-extra "$CONTEXT_FULL" || exit 1
 
 finish_attempt success "" 0 1
-
-if [ -n "$PR" ] && ! revalidate_governance_for_merge; then
-  post_status failure "$CONTEXT_GOV" "governança atual do PR reprovada" || true
-  post_full_check failure "governança atual do PR reprovada" || true
-  die "governança do PR mudou/reprovou após a suíte"
-fi
-
+revalidate_governance_for_merge || die "governança mudou/reprovou após a suíte"
 if publish_success_statuses && full_gate_is_green; then
-  log "Fallback completo aprovado para $SHA. Evidência local: $SHA_EVIDENCE/latest-success.json"
+  log "fallback completo aprovado para $SHA"
 else
   STATUS_SYNC_PENDING=1
-  warn "suíte local aprovada, mas o Check Run canônico não sincronizou; promoção ficará pendente"
+  warn "suíte local aprovada, mas Check Run canônico não sincronizou"
 fi
-[ "$STATUS_SYNC_PENDING" -eq 0 ] || warn "um ou mais sinais remotos não sincronizaram; watcher poderá republicar sem repetir a suíte"
-
 attempt_merge
