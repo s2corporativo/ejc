@@ -7,7 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 
-const mocks = vi.hoisted(() => ({
+const simulacoes = vi.hoisted(() => ({
   role: "estagiario",
   get: vi.fn(),
   post: vi.fn(),
@@ -20,16 +20,16 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../lib/api", () => ({
   default: {
-    get: mocks.get,
-    post: mocks.post,
-    patch: mocks.patch,
-    delete: mocks.delete,
+    get: simulacoes.get,
+    post: simulacoes.post,
+    patch: simulacoes.patch,
+    delete: simulacoes.delete,
   },
 }));
 
 vi.mock("../stores/auth", () => ({
   useAuth: (selector: (state: { user: { role: string } }) => unknown) =>
-    selector({ user: { role: mocks.role } }),
+    selector({ user: { role: simulacoes.role } }),
 }));
 
 vi.mock("../contexts/useCasoFiltro", () => ({
@@ -50,9 +50,9 @@ vi.mock("../components/CaseFilterChip", () => ({
 
 vi.mock("../components/Toast", () => ({
   toast: {
-    error: mocks.toastError,
-    success: mocks.toastSuccess,
-    info: mocks.toastInfo,
+    error: simulacoes.toastError,
+    success: simulacoes.toastSuccess,
+    info: simulacoes.toastInfo,
   },
 }));
 
@@ -85,7 +85,7 @@ const CASO = {
 };
 
 function prepararApi(documentos = [DOCUMENTO]): void {
-  mocks.get.mockImplementation((url: string) => {
+  simulacoes.get.mockImplementation((url: string) => {
     if (url === "/documents/") {
       return Promise.resolve({
         data: {
@@ -107,14 +107,15 @@ function prepararApi(documentos = [DOCUMENTO]): void {
     }
     return Promise.reject(new Error(`GET inesperado: ${url}`));
   });
-  mocks.post.mockResolvedValue({ data: {} });
-  mocks.patch.mockImplementation((url: string, payload: Record<string, unknown>) =>
-    Promise.resolve({
-      data: {
-        ...DOCUMENTO,
-        ...(url === "/documents/doc-1" ? payload : {}),
-      },
-    }),
+  simulacoes.post.mockResolvedValue({ data: {} });
+  simulacoes.patch.mockImplementation(
+    (url: string, payload: Record<string, unknown>) =>
+      Promise.resolve({
+        data: {
+          ...DOCUMENTO,
+          ...(url === "/documents/doc-1" ? payload : {}),
+        },
+      }),
   );
 }
 
@@ -139,14 +140,14 @@ async function abrirModalVinculo(): Promise<HTMLSelectElement> {
 }
 
 beforeEach(() => {
-  mocks.role = "estagiario";
-  mocks.get.mockReset();
-  mocks.post.mockReset();
-  mocks.patch.mockReset();
-  mocks.delete.mockReset();
-  mocks.toastError.mockReset();
-  mocks.toastSuccess.mockReset();
-  mocks.toastInfo.mockReset();
+  simulacoes.role = "estagiario";
+  simulacoes.get.mockReset();
+  simulacoes.post.mockReset();
+  simulacoes.patch.mockReset();
+  simulacoes.delete.mockReset();
+  simulacoes.toastError.mockReset();
+  simulacoes.toastSuccess.mockReset();
+  simulacoes.toastInfo.mockReset();
   prepararApi();
 });
 
@@ -161,7 +162,7 @@ describe("Documentos — RBAC de vínculo", () => {
     "advogado_auxiliar",
     "estagiario",
   ])("expõe a ação para papel jurídico autorizado: %s", async (role) => {
-    mocks.role = role;
+    simulacoes.role = role;
 
     await renderizar();
     await selecionar();
@@ -174,7 +175,7 @@ describe("Documentos — RBAC de vínculo", () => {
   it.each(["financeiro", "secretaria", "cliente_externo"])(
     "oculta a ação para papel fora do contrato backend: %s",
     async (role) => {
-      mocks.role = role;
+      simulacoes.role = role;
 
       await renderizar();
       await selecionar();
@@ -196,16 +197,16 @@ describe("Documentos — mutações", () => {
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
 
     await waitFor(() => {
-      expect(mocks.patch).toHaveBeenCalledWith("/documents/doc-1", {
+      expect(simulacoes.patch).toHaveBeenCalledWith("/documents/doc-1", {
         titulo: "Contrato revisado",
       });
     });
-    const payload = mocks.patch.mock.calls[0][1] as Record<string, unknown>;
+    const payload = simulacoes.patch.mock.calls[0][1] as Record<string, unknown>;
     expect(payload).not.toHaveProperty("case_id");
   });
 
   it("usa o POST canônico para vínculo por documento", async () => {
-    mocks.role = "advogado";
+    simulacoes.role = "advogado";
 
     await renderizar();
     await selecionar();
@@ -215,16 +216,16 @@ describe("Documentos — mutações", () => {
     fireEvent.click(screen.getByRole("button", { name: "Vincular todos" }));
 
     await waitFor(() => {
-      expect(mocks.post).toHaveBeenCalledWith(
+      expect(simulacoes.post).toHaveBeenCalledWith(
         "/cases/case-1/documentos/doc-1/vincular",
       );
     });
   });
 
   it("preserva falha isolada e resume vínculo parcial", async () => {
-    mocks.role = "advogado";
+    simulacoes.role = "advogado";
     prepararApi([DOCUMENTO, DOCUMENTO_2]);
-    mocks.post
+    simulacoes.post
       .mockResolvedValueOnce({ data: {} })
       .mockRejectedValueOnce({
         response: { data: { detail: "Documento já vinculado" } },
@@ -240,18 +241,18 @@ describe("Documentos — mutações", () => {
     fireEvent.click(screen.getByRole("button", { name: "Vincular todos" }));
 
     await waitFor(() => {
-      expect(mocks.post).toHaveBeenNthCalledWith(
+      expect(simulacoes.post).toHaveBeenNthCalledWith(
         1,
         "/cases/case-1/documentos/doc-1/vincular",
       );
-      expect(mocks.post).toHaveBeenNthCalledWith(
+      expect(simulacoes.post).toHaveBeenNthCalledWith(
         2,
         "/cases/case-1/documentos/doc-2/vincular",
       );
-      expect(mocks.toastError).toHaveBeenCalledWith(
+      expect(simulacoes.toastError).toHaveBeenCalledWith(
         expect.stringContaining("1 vinculado(s), 1 falhou(aram)"),
       );
-      expect(mocks.toastError).toHaveBeenCalledWith(
+      expect(simulacoes.toastError).toHaveBeenCalledWith(
         expect.stringContaining("Documento já vinculado"),
       );
     });
