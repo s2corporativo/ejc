@@ -34,7 +34,12 @@ class StreamBytes:
 
 
 class FakeDB:
-    def __init__(self, *, commit_error: BaseException | None = None, rollback_error: BaseException | None = None):
+    def __init__(
+        self,
+        *,
+        commit_error: BaseException | None = None,
+        rollback_error: BaseException | None = None,
+    ) -> None:
         self.added: list[object] = []
         self.commits = 0
         self.rollbacks = 0
@@ -55,7 +60,11 @@ class FakeDB:
             raise self.rollback_error
 
 
-async def _ingestao(tmp_path: Path, monkeypatch, conteudo: bytes = b"%PDF-1.7\nconteudo"):
+async def _ingestao(
+    tmp_path: Path,
+    monkeypatch,
+    conteudo: bytes = b"%PDF-1.7\nconteudo",
+):
     monkeypatch.setattr(
         ingestion_svc,
         "validar_conteudo",
@@ -90,19 +99,13 @@ async def test_raiz_commitada_confirma_storage_e_audit_minimo(tmp_path: Path, mo
         db,  # type: ignore[arg-type]
         ingestao,
         dados=_dados(),
-        conteudo=ConteudoDocumentoPreparado(
-            ocr_text="texto sanitizado",
-            ocr_utilizado=True,
-            metadados_extraidos={"origem": "teste"},
-        ),
+        conteudo=ConteudoDocumentoPreparado(ocr_text="texto sanitizado"),
     )
 
     assert documento.versao == 1
     assert documento.versao_grupo_id == documento.id
     assert documento.versao_anterior_id is None
     assert documento.ocr_text == "texto sanitizado"
-    assert documento.ocr_utilizado is True
-    assert documento.metadados_extraidos == {"origem": "teste"}
     assert ingestao.storage.estado is EstadoStorageLocal.CONFIRMADO
     assert ingestao.full_path.exists()
     assert db.commits == 1
@@ -142,10 +145,9 @@ async def test_falha_de_commit_faz_rollback_e_compensa_arquivo(tmp_path: Path, m
 
 
 @pytest.mark.asyncio
-async def test_metadado_invalido_e_compensado_antes_de_promocao(tmp_path: Path, monkeypatch):
+async def test_titulo_invalido_compensa_antes_de_promocao(tmp_path: Path, monkeypatch):
     ingestao = await _ingestao(tmp_path, monkeypatch)
     staging = ingestao.storage.caminho_staging_para_validacao
-    assert staging.exists()
     db = FakeDB()
 
     with pytest.raises(PersistenciaDocumentoInvalidaError, match="titulo excede"):
@@ -164,17 +166,35 @@ async def test_metadado_invalido_e_compensado_antes_de_promocao(tmp_path: Path, 
 
 
 @pytest.mark.asyncio
-async def test_conteudo_tipado_invalido_tambem_compensa_staging(tmp_path: Path, monkeypatch):
+async def test_tipo_respeita_limite_real_do_model(tmp_path: Path, monkeypatch):
     ingestao = await _ingestao(tmp_path, monkeypatch)
     db = FakeDB()
 
-    with pytest.raises(PersistenciaDocumentoInvalidaError, match="ocr_utilizado"):
+    with pytest.raises(PersistenciaDocumentoInvalidaError, match="tipo excede"):
+        await persistir_documento_local(
+            db,  # type: ignore[arg-type]
+            ingestao,
+            dados=_dados(tipo="t" * 51),
+        )
+
+    assert db.commits == 0
+    assert db.added == []
+    assert ingestao.storage.estado is EstadoStorageLocal.COMPENSADO
+    assert not list(tmp_path.rglob(".*.uploading"))
+
+
+@pytest.mark.asyncio
+async def test_ocr_text_tipado_invalido_tambem_compensa_staging(tmp_path: Path, monkeypatch):
+    ingestao = await _ingestao(tmp_path, monkeypatch)
+    db = FakeDB()
+
+    with pytest.raises(PersistenciaDocumentoInvalidaError, match="ocr_text"):
         await persistir_documento_local(
             db,  # type: ignore[arg-type]
             ingestao,
             dados=_dados(),
             conteudo=ConteudoDocumentoPreparado(
-                ocr_utilizado="false",  # type: ignore[arg-type]
+                ocr_text=123,  # type: ignore[arg-type]
             ),
         )
 
