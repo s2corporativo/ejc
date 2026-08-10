@@ -23,7 +23,10 @@ from uuid import UUID
 logger = logging.getLogger("ejc.drive")
 
 RCLONE_REMOTE = "gdrive"
-RCLONE_CONF = os.getenv("RCLONE_CONFIG", "/opt/ejc/config/rclone.conf")
+# O Compose monta a configuração do host em /root/.config/rclone. O env
+# RCLONE_CONFIG continua podendo sobrescrever esse caminho, mas o mesmo valor
+# usado no health gate é passado explicitamente a cada subprocesso rclone.
+RCLONE_CONF_DEFAULT = "/root/.config/rclone/rclone.conf"
 BASE_FOLDER = "EJC-Documentos"
 RCLONE_TIMEOUT = 120
 
@@ -38,8 +41,6 @@ _FOLDER_NAMES: dict[str, str] = {
     os.getenv("DRIVE_FOLDER_BACKUP", "__backup__"): "backups",
 }
 
-DRIVE_AVAILABLE = os.path.exists(RCLONE_CONF) and shutil.which("rclone") is not None
-
 
 class DriveIndisponivelError(RuntimeError):
     """Storage remoto indisponível ou não configurado."""
@@ -47,6 +48,26 @@ class DriveIndisponivelError(RuntimeError):
 
 class DriveObjetoNaoEncontradoError(FileNotFoundError):
     """Objeto remoto não localizado no caminho/ID informado."""
+
+
+def _rclone_conf_path() -> str:
+    """Retorna o arquivo de configuração efetivamente usado pelo rclone."""
+
+    configurado = os.getenv("RCLONE_CONFIG")
+    if configurado and configurado.strip():
+        return configurado.strip()
+    return RCLONE_CONF_DEFAULT
+
+
+def _drive_available() -> bool:
+    """Avalia disponibilidade em runtime, depois de volumes/env estarem montados."""
+
+    conf = _rclone_conf_path()
+    return (
+        shutil.which("rclone") is not None
+        and os.path.isfile(conf)
+        and os.access(conf, os.R_OK)
+    )
 
 
 def case_folder_token(case_id: str) -> str:
@@ -111,10 +132,13 @@ def _run(
     cmd: list[str],
     timeout: int = RCLONE_TIMEOUT,
 ) -> subprocess.CompletedProcess[str]:
-    """Executa rclone sem shell e com timeout duro."""
+    """Executa rclone sem shell, com config explícita e timeout duro."""
 
+    if not cmd or cmd[0] != "rclone":
+        raise ValueError("_run aceita somente comandos rclone")
+    comando = ["rclone", "--config", _rclone_conf_path(), *cmd[1:]]
     return subprocess.run(
-        cmd,
+        comando,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -129,17 +153,17 @@ def _erro_operacao(operacao: str, result: subprocess.CompletedProcess[str]) -> R
 
 
 def _exigir_disponivel() -> None:
-    if not DRIVE_AVAILABLE:
+    if not _drive_available():
         raise DriveIndisponivelError("Google Drive/rclone não configurado")
 
 
 def _compensar_objeto(dest_file: str) -> None:
-    """Best effort local ao adapter quando o copy terminou e o pós-check falhou."""
+    """Best effort local ao adapter quando uma gravação remota não fecha íntegra."""
 
     cleanup = _run(["rclone", "deletefile", dest_file])
     if cleanup.returncode != 0:
         logger.critical(
-            "Falha ao compensar objeto remoto após erro pós-upload (exit=%s)",
+            "Falha ao compensar objeto remoto após erro de upload (exit=%s)",
             cleanup.returncode,
         )
 
@@ -176,6 +200,9 @@ def upload_file(
     try:
         copied = _run(["rclone", "copyto", tmp_path, dest_file])
         if copied.returncode != 0:
+            # O nome remoto novo é UUID e exclusivo; remover best-effort é seguro
+            # mesmo quando o provider deixou um objeto parcial.
+            _compensar_objeto(dest_file)
             raise _erro_operacao("upload", copied)
     finally:
         try:
@@ -241,9 +268,7 @@ def _resolver_path_por_id(file_id: str) -> str:
         raise RuntimeError("rclone lsjson legado devolveu JSON inválido") from exc
     alvo = next((entry for entry in entries if entry.get("ID") == file_id), None)
     if alvo is None:
-        raise DriveObjetoNaoEncontradoError(
-            f"Arquivo ID {file_id} não encontrado em {BASE_FOLDER}"
-        )
+        raise DriveObjetoNaoEncontradoError("Arquivo remoto não encontrado")
     path = str(alvo.get("Path") or "")
     if not path:
         raise DriveObjetoNaoEncontradoError("Objeto remoto sem Path")
