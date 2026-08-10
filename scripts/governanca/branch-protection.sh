@@ -23,7 +23,8 @@ BRANCH="${EJC_BRANCH:-main}"
 MODO="${1:---verificar}"
 FALLBACK_AUTHORIZATION="${EJC_FALLBACK_AUTHORIZATION:-}"
 FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"
-BACKUP_FILE="${EJC_BRANCH_PROTECTION_BACKUP:-var/required-status-checks-anterior.json}"
+STATE_ROOT="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/ejc-ci-fallback}"
+BACKUP_FILE="${EJC_BRANCH_PROTECTION_BACKUP:-$STATE_ROOT/required-status-checks-anterior.json}"
 API="repos/$REPO/branches/$BRANCH/protection/required_status_checks"
 
 falhar() { printf '\nABORTADO: %s\n' "$1" >&2; exit 1; }
@@ -99,8 +100,50 @@ apply_status_checks() {
   return 1
 }
 
+validate_backup_path() {
+  local state_abs file_abs dir p repo_root
+  case "$STATE_ROOT" in
+    /*) ;;
+    *) falhar "EJC_CI_STATE_ROOT deve ser caminho absoluto" ;;
+  esac
+  case "$BACKUP_FILE" in
+    /*) ;;
+    *) falhar "snapshot de branch protection deve usar caminho absoluto" ;;
+  esac
+  case "$BACKUP_FILE" in
+    /opt/ejc|/opt/ejc/*) falhar "snapshot de branch protection não pode usar /opt/ejc" ;;
+  esac
+
+  mkdir -p "$STATE_ROOT" || falhar "não foi possível criar EJC_CI_STATE_ROOT"
+  state_abs="$(realpath -m "$STATE_ROOT")" || falhar "não foi possível resolver EJC_CI_STATE_ROOT"
+  file_abs="$(realpath -m "$BACKUP_FILE")" || falhar "não foi possível resolver caminho do snapshot"
+  case "$file_abs" in
+    "$state_abs"/*) ;;
+    *) falhar "snapshot deve permanecer confinado sob EJC_CI_STATE_ROOT" ;;
+  esac
+
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$repo_root" ]; then
+    repo_root="$(realpath -m "$repo_root")"
+    case "$file_abs" in
+      "$repo_root"|"$repo_root"/*) falhar "snapshot não pode ser gravado dentro do repositório" ;;
+    esac
+  fi
+
+  dir="$(dirname "$file_abs")"
+  mkdir -p "$dir" || falhar "não foi possível criar diretório do snapshot"
+  p="$dir"
+  while [ "$p" != "/" ] && [ -n "$p" ]; do
+    [ ! -L "$p" ] || falhar "snapshot recusado: componente symlink no caminho: $p"
+    p="$(dirname "$p")"
+  done
+  [ ! -L "$file_abs" ] || falhar "snapshot recusado: arquivo é symlink"
+  BACKUP_FILE="$file_abs"
+}
+
 save_current_status_checks() {
   local current normalized dir tmp
+  validate_backup_path
   [ ! -e "$BACKUP_FILE" ] \
     || falhar "backup de required status checks já existe: $BACKUP_FILE; recuse sobrescrita e finalize/restaure a ativação anterior"
   current="$(get_status_checks 2>/dev/null)" \
@@ -108,7 +151,6 @@ save_current_status_checks() {
   normalized="$(printf '%s' "$current" | normalize_status_checks)" \
     || falhar "resposta atual de required status checks inválida"
   dir="$(dirname "$BACKUP_FILE")"
-  mkdir -p "$dir"
   chmod 700 "$dir" 2>/dev/null || true
   tmp="$BACKUP_FILE.tmp.$$"
   umask 077
@@ -120,6 +162,7 @@ save_current_status_checks() {
 }
 
 restore_saved_status_checks() {
+  validate_backup_path
   [ -s "$BACKUP_FILE" ] || falhar "snapshot de required status checks ausente: $BACKUP_FILE"
   local repo branch payload
   repo="$(jq -r '.repo // empty' "$BACKUP_FILE")"
