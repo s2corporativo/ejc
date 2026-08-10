@@ -9,6 +9,8 @@ Propriedades:
 - abertura por ``dir_fd`` + ``O_NOFOLLOW`` quando disponível reduz TOCTOU e
   impede seguir symlink no arquivo de lock;
 - arquivo regular, link-count 1 e modo 0600 são invariantes bloqueantes;
+- BACKUP_DIR ausente é erro de infraestrutura: o código nunca cria storage de
+  continuidade silenciosamente;
 - erro de infraestrutura nunca degrada para execução sem lock.
 """
 from __future__ import annotations
@@ -49,30 +51,20 @@ class BackupProcessLock:
         return cls(backup_dir=Path(raw))
 
     def _open_directory(self) -> int:
-        """Abre BACKUP_DIR sem seguir symlink e confirma que é diretório."""
+        """Abre BACKUP_DIR existente sem seguir symlink e valida permissões."""
         flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
         flags |= getattr(os, "O_DIRECTORY", 0)
         flags |= getattr(os, "O_NOFOLLOW", 0)
 
         try:
             fd = os.open(self.backup_dir, flags)
-        except FileNotFoundError:
-            # Criação controlada: não use exist_ok sobre um symlink existente.
-            try:
-                self.backup_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
-            except FileExistsError:
-                pass
-            except OSError as exc:
-                raise BackupLockError(
-                    f"não foi possível criar BACKUP_DIR para o mutex: {exc.strerror or exc}"
-                ) from exc
-            try:
-                fd = os.open(self.backup_dir, flags)
-            except OSError as exc:
-                raise BackupLockError(
-                    f"não foi possível abrir BACKUP_DIR após criação: {exc.strerror or exc}"
-                ) from exc
+        except FileNotFoundError as exc:
+            raise BackupLockError(
+                "BACKUP_DIR ausente; volume de continuidade não está montado"
+            ) from exc
         except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise BackupLockError("BACKUP_DIR não pode ser symlink") from exc
             raise BackupLockError(
                 f"não foi possível abrir BACKUP_DIR com segurança: {exc.strerror or exc}"
             ) from exc
@@ -81,9 +73,6 @@ class BackupProcessLock:
             info = os.fstat(fd)
             if not stat.S_ISDIR(info.st_mode):
                 raise BackupLockError("BACKUP_DIR não é diretório")
-            # Diretório group/world-writable permitiria substituir o inode do
-            # lock entre execuções. Em volume dedicado, isso é configuração
-            # insegura e deve falhar fechado.
             if stat.S_IMODE(info.st_mode) & 0o022:
                 raise BackupLockError(
                     "BACKUP_DIR é gravável por grupo/outros; mutex não é confiável"
@@ -121,8 +110,6 @@ class BackupProcessLock:
             if info.st_nlink != 1:
                 raise BackupLockError("mutex de backup possui hard links")
 
-            # Não corrija silenciosamente owner; só o próprio owner/root pode
-            # normalizar modo. fchmod no FD já aberto evita path race.
             os.fchmod(fd, 0o600)
             after = os.fstat(fd)
             if stat.S_IMODE(after.st_mode) != 0o600:
@@ -175,7 +162,9 @@ class BackupProcessLock:
             os.close(dir_fd)
 
     def __enter__(self) -> "BackupProcessLock":
-        return self.acquire()
+        if self._lock_fd is None:
+            return self.acquire()
+        return self
 
     def __exit__(
         self,
@@ -186,6 +175,11 @@ class BackupProcessLock:
         self.release()
 
 
+def backup_process_lock(backup_dir: str | os.PathLike[str]) -> BackupProcessLock:
+    """Retorna context manager ainda não adquirido para uso com ``with``."""
+    return BackupProcessLock.from_path(backup_dir)
+
+
 def acquire_backup_lock(backup_dir: str | os.PathLike[str]) -> BackupProcessLock:
-    """Factory explícita usada pelo motor/fachada canônica."""
+    """Adquire imediatamente o mutex; caller deve executar ``release``."""
     return BackupProcessLock.from_path(backup_dir).acquire()
