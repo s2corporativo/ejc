@@ -15,18 +15,41 @@ DEPLOY_LOCK_FILE="${EJC_DEPLOY_LOCK_FILE:-$DEPLOY_LOCK_ROOT/deploy.lock}"
 
 log() { echo "[$(date '+%F %T')] $*"; }
 timestamp() { date +"%Y%m%d_%H%M%S"; }
+die_policy() { printf 'ERRO DE POLÍTICA: %s\n' "$*" >&2; exit 2; }
+canon() { realpath -m -- "$1"; }
 
-case "$REQUIRE_PREDEPLOY_BACKUP" in 0|1) ;; *) echo "REQUIRE_PREDEPLOY_BACKUP deve ser 0 ou 1" >&2; exit 2;; esac
-case "$ENSURE_DAILY_BACKUP" in 0|1) ;; *) echo "ENSURE_DAILY_BACKUP deve ser 0 ou 1" >&2; exit 2;; esac
+case "$REQUIRE_PREDEPLOY_BACKUP" in 0|1) ;; *) die_policy "REQUIRE_PREDEPLOY_BACKUP deve ser 0 ou 1";; esac
+case "$ENSURE_DAILY_BACKUP" in 0|1) ;; *) die_policy "ENSURE_DAILY_BACKUP deve ser 0 ou 1";; esac
 if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ] && [ "$ENSURE_DAILY_BACKUP" != "1" ]; then
-  echo "ENSURE_DAILY_BACKUP=0 é incompatível com o modo seguro REQUIRE_PREDEPLOY_BACKUP=1." >&2
-  exit 2
+  die_policy "ENSURE_DAILY_BACKUP=0 é incompatível com REQUIRE_PREDEPLOY_BACKUP=1"
 fi
 
-command -v flock >/dev/null 2>&1 || { echo "flock é obrigatório para serializar deploys locais." >&2; exit 2; }
-mkdir -p "$DEPLOY_LOCK_ROOT"
-chmod 700 "$DEPLOY_LOCK_ROOT" 2>/dev/null || true
-exec 9>"$DEPLOY_LOCK_FILE"
+for cmd in flock realpath; do
+  command -v "$cmd" >/dev/null 2>&1 || die_policy "$cmd é obrigatório para serializar deploys locais"
+done
+
+# O mutex não pode residir na árvore que o próprio deploy sincroniza/substitui.
+# Isso evita que rsync/checkout/rollback apague ou troque o inode do lock.
+[ ! -L "$DEPLOY_LOCK_ROOT" ] || die_policy "EJC_DEPLOY_LOCK_ROOT não pode ser symlink"
+[ ! -L "$DEPLOY_LOCK_FILE" ] || die_policy "EJC_DEPLOY_LOCK_FILE não pode ser symlink"
+APP_DIR_CANON="$(canon "$APP_DIR")"
+DEPLOY_LOCK_ROOT_CANON="$(canon "$DEPLOY_LOCK_ROOT")"
+DEPLOY_LOCK_FILE_CANON="$(canon "$DEPLOY_LOCK_FILE")"
+case "$DEPLOY_LOCK_ROOT_CANON" in
+  /|"$APP_DIR_CANON"|"$APP_DIR_CANON"/*|/opt/ejc|/opt/ejc/*)
+    die_policy "raiz do mutex deve ficar fora de APP_DIR e /opt/ejc: $DEPLOY_LOCK_ROOT_CANON"
+    ;;
+esac
+[[ "$DEPLOY_LOCK_FILE_CANON" == "$DEPLOY_LOCK_ROOT_CANON/"* ]] \
+  || die_policy "arquivo de mutex deve ser descendente da raiz dedicada: $DEPLOY_LOCK_FILE_CANON"
+
+mkdir -p "$DEPLOY_LOCK_ROOT_CANON"
+chmod 700 "$DEPLOY_LOCK_ROOT_CANON" 2>/dev/null \
+  || die_policy "não foi possível restringir permissões da raiz do mutex"
+umask 077
+exec 9>"$DEPLOY_LOCK_FILE_CANON"
+chmod 600 "$DEPLOY_LOCK_FILE_CANON" 2>/dev/null \
+  || die_policy "não foi possível restringir permissões do mutex"
 if ! flock -n 9; then
   log "Outro deploy EJC já está em execução; nenhuma mutação foi iniciada."
   exit 75
