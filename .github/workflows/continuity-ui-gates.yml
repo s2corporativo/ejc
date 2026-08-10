@@ -16,7 +16,7 @@ concurrency:
 jobs:
   backup-restore-drill:
     name: Continuidade — backup cifrado + restore em banco vazio
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ejc-ci, ejc-ci-isolado]
     timeout-minutes: 25
     defaults:
       run:
@@ -29,7 +29,6 @@ jobs:
           POSTGRES_PASSWORD: ejc_pass
           POSTGRES_DB: ejc_db
         ports:
-          # Porta dedicada do PostgreSQL efêmero usado exclusivamente por este job.
           - 55433:5432
         options: >-
           --health-cmd "pg_isready -U ejc_user -d ejc_db"
@@ -52,16 +51,14 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
-      - name: Instalar cliente PostgreSQL e dependências Python
+      - name: Validar cliente PostgreSQL e instalar dependências Python
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-client
+          command -v psql
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
       - name: Preparar banco migrado
         run: |
-          # -p obrigatório porque o serviço efêmero foi publicado em 55433.
           PGPASSWORD=ejc_pass psql -h localhost -p 55433 -U ejc_user -d ejc_db \
             -c "CREATE EXTENSION IF NOT EXISTS vector;" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
@@ -95,13 +92,13 @@ jobs:
 
   frontend-extra-gates:
     name: Frontend — ESLint + browser responsivo
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ejc-ci, ejc-ci-isolado]
     timeout-minutes: 25
     defaults:
       run:
         working-directory: frontend
     env:
-      PLAYWRIGHT_BROWSERS_PATH: "0"
+      PLAYWRIGHT_BROWSERS_PATH: /opt/ejc-ci-browsers
     steps:
       - uses: actions/checkout@v7
 
@@ -121,10 +118,10 @@ jobs:
       - name: Gerar build para teste real de navegador
         run: npm run build
 
-      - name: Instalar Playwright e Chromium compatíveis
+      - name: Instalar Playwright compatível
         run: |
           npm install --no-save --package-lock=false playwright@1.56.1
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
 
       - name: Smoke responsivo do login em Chromium real
         env:
