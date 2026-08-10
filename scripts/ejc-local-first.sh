@@ -190,18 +190,19 @@ sync_remote() {
 }
 
 status_cmd() {
-  local branch sha mode
+  local branch sha
   branch="$(current_branch)"
   sha="$(git rev-parse --short=12 HEAD)"
-  mode="$(cat "$STATE_DIR/mode" 2>/dev/null || printf 'desconhecido')"
   log "root=$ROOT"
   log "branch=$branch sha=$sha"
-  log "recovery=$STATE_DIR mode=$mode"
+  log "recovery=$STATE_DIR"
   git status --short
   if remote_available; then
-    log "remoto '$REMOTE': disponível"
+    write_mode online
+    log "remoto '$REMOTE': disponível (mode=online)"
   else
-    warn "remoto '$REMOTE': indisponível; operação local continua disponível"
+    write_mode offline
+    warn "remoto '$REMOTE': indisponível (mode=offline). Continue com checkpoint/validate; não bloqueie a tarefa por GitHub."
   fi
 }
 
