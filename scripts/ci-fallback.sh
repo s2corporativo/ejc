@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Fallback autônomo de CI do EJC.
-# Executa validação completa em worktree isolado e publica status por SHA.
+# Executa validação completa em worktree isolado e publica evidência por SHA.
+# O gate promovível é Check Run vinculado a GitHub App dedicado; status clássico
+# fica apenas informativo e nunca satisfaz branch protection do fallback.
 # Não usa GitHub Actions e nunca opera /opt/ejc ou banco de produção.
 set -euo pipefail
 
@@ -56,6 +58,11 @@ if [ -z "$REPO" ] && [ "$POST_STATUS" -eq 1 ]; then
   REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 fi
 [ -n "$REPO" ] || REPO="s2corporativo/ejc"
+FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"
+if [ "$POST_STATUS" -eq 1 ]; then
+  [[ "$FALLBACK_APP_ID" =~ ^[1-9][0-9]*$ ]] \
+    || die "EJC_FALLBACK_APP_ID numérico (>0) é obrigatório para gate promovível"
+fi
 
 WORKTREE_PARENT="${EJC_CI_WORKTREE_ROOT:-${HOME}/.cache/ejc-ci-worktrees}"
 EVIDENCE_ROOT="${EJC_CI_EVIDENCE_ROOT:-${HOME}/.cache/ejc-ci-evidence}"
@@ -89,9 +96,6 @@ if ! git merge-base --is-ancestor origin/main "$SHA"; then
   die "head $SHA está atrás da main atual; atualize/reconcilie antes de validar"
 fi
 
-# IMPORTANTE: contexts locais têm namespace próprio e NUNCA reutilizam os nomes
-# dos checks do GitHub Actions. Assim, ao restaurar branch protection --cloud,
-# um status local antigo não pode satisfazer acidentalmente um check de Actions.
 CONTEXT_BACKEND='EJC Local / Backend'
 CONTEXT_EVAL='EJC Local / Eval'
 CONTEXT_FRONTEND='EJC Local / Frontend'
@@ -100,13 +104,42 @@ CONTEXT_GOV='EJC Local / Governança'
 CONTEXT_FULL='EJC Local Full Gate'
 STATUS_SYNC_PENDING=0
 
+post_full_check() {
+  local state="$1" description="$2" payload result app_id
+  [ "$POST_STATUS" -eq 1 ] || return 0
+  case "$state" in
+    pending)
+      payload="$(jq -cn --arg name "$CONTEXT_FULL" --arg sha "$SHA" --arg summary "${description:0:60000}" '{name:$name, head_sha:$sha, status:"in_progress", output:{title:$name,summary:$summary}}')"
+      ;;
+    success|failure)
+      payload="$(jq -cn --arg name "$CONTEXT_FULL" --arg sha "$SHA" --arg conclusion "$state" --arg summary "${description:0:60000}" '{name:$name, head_sha:$sha, status:"completed", conclusion:$conclusion, output:{title:$name,summary:$summary}}')"
+      ;;
+    *) die "estado inválido de check: $state" ;;
+  esac
+  if ! result="$(printf '%s' "$payload" | gh api -X POST "repos/$REPO/check-runs" -H 'Accept: application/vnd.github+json' --input - 2>/dev/null)"; then
+    STATUS_SYNC_PENDING=1
+    warn "não foi possível publicar Check Run '$CONTEXT_FULL=$state'; evidência local será preservada"
+    return 0
+  fi
+  app_id="$(printf '%s' "$result" | jq -r '.app.id // -1')"
+  if [ "$app_id" != "$FALLBACK_APP_ID" ]; then
+    STATUS_SYNC_PENDING=1
+    warn "Check Run emitido por app_id=$app_id, esperado=$FALLBACK_APP_ID; gate não será aceito"
+    return 0
+  fi
+}
+
 post_status() {
   local state="$1" context="$2" description="$3"
   [ "$POST_STATUS" -eq 1 ] || return 0
+  if [ "$context" = "$CONTEXT_FULL" ]; then
+    post_full_check "$state" "$description"
+    return 0
+  fi
   if ! gh api -X POST "repos/$REPO/statuses/$SHA" \
       -f state="$state" -f context="$context" -f description="${description:0:135}" >/dev/null 2>&1; then
     STATUS_SYNC_PENDING=1
-    warn "não foi possível publicar status '$context=$state'; evidência local será preservada para nova tentativa"
+    warn "não foi possível publicar status informativo '$context=$state'; evidência local será preservada"
   fi
   return 0
 }
@@ -115,15 +148,16 @@ publish_success_statuses() {
   for c in "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" "$CONTEXT_GOV"; do
     post_status success "$c" "validado pelo fallback local isolado"
   done
-  post_status success "$CONTEXT_FULL" "todos os gates locais completos aprovados"
+  post_full_check success "todos os gates locais completos aprovados"
 }
 
 full_gate_is_green() {
   [ "$POST_STATUS" -eq 1 ] || return 1
-  local status_json state
-  status_json="$(gh api "repos/$REPO/commits/$SHA/status" 2>/dev/null)" || return 1
-  state="$(printf '%s' "$status_json" | jq -r --arg c "$CONTEXT_FULL" '[.statuses[] | select(.context == $c)][0].state // ""')"
-  [ "$state" = "success" ]
+  local checks
+  checks="$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" 2>/dev/null)" || return 1
+  printf '%s' "$checks" | jq -e --arg c "$CONTEXT_FULL" --argjson app_id "$FALLBACK_APP_ID" '
+    [.check_runs[] | select(.name == $c and .app.id == $app_id and .conclusion == "success")] | length > 0
+  ' >/dev/null 2>&1
 }
 
 local_evidence_is_green() {
@@ -157,13 +191,13 @@ refresh_status_from_evidence() {
   fi
   if ! revalidate_governance_for_merge; then
     post_status failure "$CONTEXT_GOV" "governança atual do PR reprovada"
-    post_status failure "$CONTEXT_FULL" "governança atual do PR reprovada"
+    post_full_check failure "governança atual do PR reprovada"
     log "Governança atual do PR #$PR reprovada; status/merge retidos sem repetir a suíte pesada."
     return 1
   fi
   publish_success_statuses
   if ! full_gate_is_green; then
-    log "status remoto ainda indisponível/não verde; será reavaliado depois."
+    log "Check Run remoto do GitHub App esperado ainda indisponível/não verde; será reavaliado depois."
     return 1
   fi
   return 0
@@ -239,9 +273,10 @@ trap cleanup EXIT
 
 git worktree add --detach "$WORKTREE" "$SHA" >/dev/null
 
-for c in "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" "$CONTEXT_GOV" "$CONTEXT_FULL"; do
+for c in "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" "$CONTEXT_GOV"; do
   post_status pending "$c" "CI local isolado em execução"
 done
+post_full_check pending "CI local isolado em execução"
 
 run_stage() {
   local key="$1" context="$2"; shift 2
@@ -253,15 +288,13 @@ run_stage() {
   set -e
   if [ "$rc" -ne 0 ]; then
     post_status failure "$context" "fallback local falhou: $key (exit $rc)"
-    post_status failure "$CONTEXT_FULL" "fallback local falhou: $key (exit $rc)"
+    post_full_check failure "fallback local falhou: $key (exit $rc)"
     tail -n 120 "$logfile" >&2 || true
     return "$rc"
   fi
   return 0
 }
 
-# Para execução promovível, Python divergente nunca é propagado. Os contexts
-# locais só ficam verdes após TODOS os extras e a governança do PR atual.
 run_stage backend "$CONTEXT_BACKEND" env EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh backend || exit 1
 run_stage eval "$CONTEXT_EVAL" env CI_SKIP_PIP=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh eval || exit 1
 run_stage frontend "$CONTEXT_FRONTEND" bash scripts/ci-local.sh frontend || exit 1
@@ -297,15 +330,14 @@ for p in sorted(root.glob("*.log")):
 (root / "summary.json").write_text(json.dumps(obj, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 PY
 
-# Revalida metadados uma vez mais imediatamente antes de promover o status.
 if [ -n "$PR" ] && ! revalidate_governance_for_merge; then
   post_status failure "$CONTEXT_GOV" "governança atual do PR reprovada"
-  post_status failure "$CONTEXT_FULL" "governança atual do PR reprovada"
+  post_full_check failure "governança atual do PR reprovada"
   die "governança do PR mudou/reprovou após a suíte"
 fi
 
 publish_success_statuses
 log "Fallback completo aprovado para $SHA. Evidência local: $EVIDENCE/summary.json"
-[ "$STATUS_SYNC_PENDING" -eq 0 ] || warn "um ou mais statuses não sincronizaram; watcher tentará novamente sem repetir a suíte"
+[ "$STATUS_SYNC_PENDING" -eq 0 ] || warn "um ou mais sinais não sincronizaram; watcher tentará novamente sem repetir a suíte"
 
 attempt_merge
