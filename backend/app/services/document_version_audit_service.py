@@ -20,6 +20,8 @@ from app.models.document import Document
 class AuditoriaVersionamentoDocumental:
     total_documentos: int
     documentos_sem_grupo: int
+    grupos_sem_raiz_canonica: int
+    raizes_canonicas_invalidas: int
     numeracoes_duplicadas: int
     grupos_contexto_inconsistente: int
     grupos_multiplas_raizes: int
@@ -37,6 +39,8 @@ class AuditoriaVersionamentoDocumental:
             valor == 0
             for valor in (
                 self.documentos_sem_grupo,
+                self.grupos_sem_raiz_canonica,
+                self.raizes_canonicas_invalidas,
                 self.numeracoes_duplicadas,
                 self.grupos_contexto_inconsistente,
                 self.grupos_multiplas_raizes,
@@ -109,6 +113,33 @@ async def auditar_versionamento_documental(
     total_documentos = await db.scalar(select(func.count(Document.id))) or 0
     documentos_sem_grupo = await db.scalar(
         select(func.count(Document.id)).where(Document.versao_grupo_id.is_(None))
+    ) or 0
+
+    grupos_declarados = (
+        select(Document.versao_grupo_id.label("grupo_id"))
+        .where(Document.versao_grupo_id.is_not(None))
+        .distinct()
+        .subquery()
+    )
+    raiz = aliased(Document)
+    grupos_sem_raiz_canonica = await db.scalar(
+        select(func.count())
+        .select_from(grupos_declarados)
+        .outerjoin(raiz, raiz.id == grupos_declarados.c.grupo_id)
+        .where(raiz.id.is_(None))
+    ) or 0
+
+    raizes_canonicas_invalidas = await db.scalar(
+        select(func.count())
+        .select_from(grupos_declarados)
+        .join(raiz, raiz.id == grupos_declarados.c.grupo_id)
+        .where(
+            or_(
+                raiz.versao_grupo_id.is_distinct_from(raiz.id),
+                raiz.versao.is_distinct_from(1),
+                raiz.versao_anterior_id.is_not(None),
+            )
+        )
     ) or 0
 
     slots_duplicados = (
@@ -204,6 +235,8 @@ async def auditar_versionamento_documental(
     return AuditoriaVersionamentoDocumental(
         total_documentos=int(total_documentos),
         documentos_sem_grupo=int(documentos_sem_grupo),
+        grupos_sem_raiz_canonica=int(grupos_sem_raiz_canonica),
+        raizes_canonicas_invalidas=int(raizes_canonicas_invalidas),
         numeracoes_duplicadas=int(numeracoes_duplicadas),
         grupos_contexto_inconsistente=int(grupos_contexto_inconsistente),
         grupos_multiplas_raizes=int(grupos_multiplas_raizes),
