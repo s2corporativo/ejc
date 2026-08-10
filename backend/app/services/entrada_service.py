@@ -33,7 +33,7 @@ from app.core.client_ownership import (
 )
 from app.core.config import get_settings
 from app.core.ownership import is_gestao
-from app.core.security import ROLE_LEVEL
+from app.core.security import EQUIPE_JURIDICA, ROLE_LEVEL
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case, CaseArea, CaseMovimento, CaseStatus
 from app.models.client import Client
@@ -568,15 +568,20 @@ async def criar_caso_do_rascunho(
     db.add(case)
     await db.flush()
 
-    # Documento anexado é documento vinculado — NA MESMA transação do caso
-    # (a classe de defeito "gravação não transacional" do CLAUDE.md).
+    # Documento anexado é documento vinculado — NA MESMA transação do caso.
+    # O lock do batch protege a idempotência deste rascunho; o lock das linhas
+    # de Document protege a cadeia probatória contra OUTROS fluxos concorrentes
+    # que também possam tentar vincular o mesmo documento antes deste commit.
     documentos_vinculados = 0
     if documentos_ids:
         docs = (await db.execute(
-            select(Document).where(
+            select(Document)
+            .where(
                 Document.id.in_(documentos_ids),
                 Document.deleted_at.is_(None),
             )
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )).scalars().all()
         if len(docs) != len(documentos_ids):
             raise HTTPException(422, "documentos_ids contém documento inexistente ou excluído")
@@ -599,17 +604,16 @@ async def criar_caso_do_rascunho(
 
     deadline_id: str | None = None
     if payload.prazo is not None:
-        # B1 (auditoria): o responsável do prazo segue a mesma régua do
-        # responsável do caso — usuário ativo da equipe (piso estagiário);
-        # id inexistente/inativo viraria IntegrityError 500 ou atribuição a
-        # perfil sem acesso.
+        # Atribuição jurídica usa allowlist EXATA. ROLE_LEVEL não pode ser
+        # usado como piso aqui: `financeiro` (nível 4) fica numericamente acima
+        # de `estagiario` (nível 3), mas não integra a equipe jurídica.
         resp_prazo_id = payload.prazo.responsavel_id or payload.advogado_responsavel_id
         if resp_prazo_id != payload.advogado_responsavel_id:
             resp_prazo = await db.get(User, resp_prazo_id)
             if (
                 resp_prazo is None
                 or not getattr(resp_prazo, "is_active", True)
-                or ROLE_LEVEL.get(_role(resp_prazo), 0) < ROLE_LEVEL["estagiario"]
+                or _role(resp_prazo) not in EQUIPE_JURIDICA
             ):
                 raise HTTPException(
                     422, "Responsável do prazo inválido: informe um membro "
