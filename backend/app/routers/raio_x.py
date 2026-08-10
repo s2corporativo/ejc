@@ -511,6 +511,8 @@ async def analisar_documentos(
 
     if novos:
         analise.status = "fila"
+    # O WORM prova o ato por IDs/contagens. Filename e mensagem livre ficam
+    # apenas na resposta HTTP efêmera para orientar a correção do lote.
     await criar_audit_log(
         db,
         user.id,
@@ -524,8 +526,8 @@ async def analisar_documentos(
         ),
         dados_depois={
             "documentos": [doc.id for doc in novos],
-            "duplicados": duplicados,
-            "erros": erros,
+            "duplicados_count": len(duplicados),
+            "erros_count": len(erros),
         },
     )
     await db.commit()
@@ -671,6 +673,8 @@ async def download(
     full = Path(settings.UPLOAD_DIR) / doc.filepath
     if not full.exists():
         raise HTTPException(404, "Arquivo físico indisponível")
+    # registro_id já identifica exatamente o documento; não replicar filename
+    # livre no WORM apenas por ter ocorrido download.
     await criar_audit_log(
         db,
         user.id,
@@ -678,7 +682,6 @@ async def download(
         "DOWNLOAD",
         "raio_x_documentos",
         doc.id,
-        detalhes=doc.nome_original,
     )
     await db.commit()
     return FileResponse(str(full), filename=doc.nome_original, media_type=doc.mimetype)
