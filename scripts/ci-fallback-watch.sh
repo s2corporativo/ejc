@@ -26,18 +26,26 @@ run_cycle() {
   while IFS=$'\t' read -r pr sha merge_state; do
     [ -n "$pr" ] || continue
     marker="$STATE_ROOT/$sha.result"
+
+    # O SHA já passou: não repita a suíte pesada. Se revisão/proteção mudou,
+    # reavalie somente a elegibilidade do merge contra o mesmo status assinado
+    # pelo SHA exato.
     if [ -f "$marker" ] && grep -qx 'success' "$marker"; then
+      if [ "$AUTO_MERGE" = "1" ]; then
+        bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge-only || true
+      fi
       continue
     fi
     if [ -f "$marker" ] && grep -qx 'failure' "$marker" && [ "${EJC_FALLBACK_RETRY_FAILED:-0}" != "1" ]; then
       continue
     fi
+
     echo "[fallback-watch] validando PR #$pr ($sha, mergeState=$merge_state)"
     set +e
     if [ "$AUTO_MERGE" = "1" ]; then
-      "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge
+      bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge
     else
-      "$ROOT/scripts/ci-fallback.sh" --pr "$pr"
+      bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr"
     fi
     rc=$?
     set -e
