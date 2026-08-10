@@ -35,6 +35,75 @@ command -v gh >/dev/null 2>&1 || falhar "GitHub CLI (gh) não encontrado."
 command -v jq >/dev/null 2>&1 || falhar "jq não encontrado."
 gh auth status >/dev/null 2>&1 || falhar "gh não autenticado."
 
+canon() {
+  realpath -m "$1" 2>/dev/null || printf '%s\n' "$1"
+}
+
+# Percorre o caminho bruto, sem canonicalizar antes do teste -L, para não
+# mascarar justamente o symlink que precisa ser rejeitado.
+assert_no_symlink_component() {
+  local path="$1" limit="$2" current parent limit_resolved
+  limit_resolved="$(canon "$limit")"
+  current="$path"
+  case "$current" in
+    /*) ;;
+    *) current="$PWD/$current" ;;
+  esac
+  while :; do
+    [ ! -L "$current" ] \
+      || falhar "snapshot recusado: componente symlink no caminho: $current"
+    [ "$(canon "$current")" != "$limit_resolved" ] || break
+    parent="$(dirname "$current")"
+    [ "$parent" != "$current" ] \
+      || falhar "snapshot não está contido em EJC_CI_STATE_ROOT"
+    current="$parent"
+  done
+}
+
+validate_backup_path() {
+  local repo_root resolved_repo resolved_state resolved_backup backup_dir
+  case "$STATE_ROOT" in
+    /*) ;;
+    *) falhar "EJC_CI_STATE_ROOT deve ser caminho absoluto" ;;
+  esac
+  case "$BACKUP_FILE" in
+    /*) ;;
+    *) falhar "snapshot de branch protection deve usar caminho absoluto" ;;
+  esac
+
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$repo_root" ] \
+    || falhar "não foi possível determinar a raiz do repositório para validar o snapshot"
+  resolved_repo="$(canon "$repo_root")"
+  resolved_state="$(canon "$STATE_ROOT")"
+  resolved_backup="$(canon "$BACKUP_FILE")"
+
+  case "$resolved_backup" in
+    "$resolved_state"/*) ;;
+    *) falhar "snapshot deve permanecer confinado sob EJC_CI_STATE_ROOT" ;;
+  esac
+  case "$resolved_backup" in
+    "$resolved_repo"|"$resolved_repo"/*)
+      falhar "snapshot não pode ser gravado dentro do repositório" ;;
+  esac
+  case "$resolved_backup" in
+    /opt/ejc|/opt/ejc/*)
+      falhar "snapshot de branch protection não pode usar /opt/ejc" ;;
+  esac
+
+  # Verifica os componentes existentes antes de criar diretórios. `mkdir -p`
+  # atravessa symlinks, portanto a checagem precisa antecedê-lo.
+  assert_no_symlink_component "$BACKUP_FILE" "$STATE_ROOT"
+  backup_dir="$(dirname "$BACKUP_FILE")"
+  (umask 077 && mkdir -p "$backup_dir") \
+    || falhar "não foi possível criar diretório do snapshot"
+  chmod 700 "$backup_dir" 2>/dev/null || true
+
+  # Revalidação reduz a janela TOCTOU e também cobre o caminho recém-criado.
+  assert_no_symlink_component "$BACKUP_FILE" "$STATE_ROOT"
+  BACKUP_FILE="$(canon "$BACKUP_FILE")"
+}
+
 normalize_status_checks() {
   jq -c '{
     strict: (.strict == true),
@@ -100,49 +169,8 @@ apply_status_checks() {
   return 1
 }
 
-validate_backup_path() {
-  local state_abs file_abs dir p repo_root
-  case "$STATE_ROOT" in
-    /*) ;;
-    *) falhar "EJC_CI_STATE_ROOT deve ser caminho absoluto" ;;
-  esac
-  case "$BACKUP_FILE" in
-    /*) ;;
-    *) falhar "snapshot de branch protection deve usar caminho absoluto" ;;
-  esac
-  case "$BACKUP_FILE" in
-    /opt/ejc|/opt/ejc/*) falhar "snapshot de branch protection não pode usar /opt/ejc" ;;
-  esac
-
-  mkdir -p "$STATE_ROOT" || falhar "não foi possível criar EJC_CI_STATE_ROOT"
-  state_abs="$(realpath -m "$STATE_ROOT")" || falhar "não foi possível resolver EJC_CI_STATE_ROOT"
-  file_abs="$(realpath -m "$BACKUP_FILE")" || falhar "não foi possível resolver caminho do snapshot"
-  case "$file_abs" in
-    "$state_abs"/*) ;;
-    *) falhar "snapshot deve permanecer confinado sob EJC_CI_STATE_ROOT" ;;
-  esac
-
-  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-  if [ -n "$repo_root" ]; then
-    repo_root="$(realpath -m "$repo_root")"
-    case "$file_abs" in
-      "$repo_root"|"$repo_root"/*) falhar "snapshot não pode ser gravado dentro do repositório" ;;
-    esac
-  fi
-
-  dir="$(dirname "$file_abs")"
-  mkdir -p "$dir" || falhar "não foi possível criar diretório do snapshot"
-  p="$dir"
-  while [ "$p" != "/" ] && [ -n "$p" ]; do
-    [ ! -L "$p" ] || falhar "snapshot recusado: componente symlink no caminho: $p"
-    p="$(dirname "$p")"
-  done
-  [ ! -L "$file_abs" ] || falhar "snapshot recusado: arquivo é symlink"
-  BACKUP_FILE="$file_abs"
-}
-
 save_current_status_checks() {
-  local current normalized dir tmp
+  local current normalized tmp
   validate_backup_path
   [ ! -e "$BACKUP_FILE" ] \
     || falhar "backup de required status checks já existe: $BACKUP_FILE; recuse sobrescrita e finalize/restaure a ativação anterior"
@@ -150,8 +178,6 @@ save_current_status_checks() {
     || falhar "não foi possível ler required status checks atuais; nada será alterado"
   normalized="$(printf '%s' "$current" | normalize_status_checks)" \
     || falhar "resposta atual de required status checks inválida"
-  dir="$(dirname "$BACKUP_FILE")"
-  chmod 700 "$dir" 2>/dev/null || true
   tmp="$BACKUP_FILE.tmp.$$"
   umask 077
   jq -n --arg repo "$REPO" --arg branch "$BRANCH" --argjson payload "$normalized" \
