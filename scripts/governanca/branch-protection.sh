@@ -58,15 +58,16 @@ read -r -d '' PAYLOAD_CLOUD <<'JSON' || true
 }
 JSON
 
-# Em contingência, strict/reviews/CODEOWNERS/conversas permanecem. Só o executor
-# obrigatório muda. app_id=-1 permite que o status externo seja publicado pelo
-# fallback local, sem amarrar o contexto ao GitHub Actions.
+# Em contingência, strict/reviews/CODEOWNERS/conversas permanecem. Só o contexto
+# obrigatório muda. Mantemos o MESMO mecanismo `contexts` já usado pela proteção
+# atual do EJC, agora apontado para o commit status clássico que o fallback local
+# publica após a suíte integral.
 read -r -d '' PAYLOAD_FALLBACK <<'JSON' || true
 {
   "required_status_checks": {
     "strict": true,
-    "checks": [
-      {"context": "EJC Local Full Gate", "app_id": -1}
+    "contexts": [
+      "EJC Local Full Gate"
     ]
   },
   "enforce_admins": true,
@@ -159,6 +160,6 @@ Leitura esperada em ambos os modos:
 - force push e deleção continuam proibidos.
 
 Modo --cloud: cinco contexts canônicos do Actions.
-Modo --fallback: somente `EJC Local Full Gate`, com app_id=-1, produzido pelo
-fallback local completo após validação real do SHA em worktree isolado.
+Modo --fallback: somente o context `EJC Local Full Gate`, produzido pelo fallback
+local completo após validação real do SHA em worktree isolado.
 FIM
