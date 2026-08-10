@@ -1,0 +1,127 @@
+name: CI Fallback Isolado
+
+# Fallback autônomo para indisponibilidade do GitHub-hosted.
+# Só executa automaticamente quando o workflow CI falha ANTES de qualquer
+# step. Falha real de teste não é mascarada nem reclassificada.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "SHA exato a validar (vazio = SHA do disparo manual)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ci-fallback-${{ github.event.workflow_run.head_sha || inputs.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  fallback:
+    name: Fallback — validação completa isolada
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        github.event.workflow_run.conclusion == 'failure'
+      }}
+    runs-on: [self-hosted, linux, ejc-ci, ejc-ci-isolado]
+    timeout-minutes: 75
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /opt/ejc-ci-browsers
+
+    steps:
+      - name: Confirmar que a falha original foi pré-step
+        id: origem
+        shell: bash
+        env:
+          GH_TOKEN_LOCAL: ${{ github.token }}
+          EVENTO: ${{ github.event_name }}
+          RUN_ID_ORIGEM: ${{ github.event.workflow_run.id }}
+          SHA_ORIGEM: ${{ github.event.workflow_run.head_sha }}
+          REPO_ORIGEM: ${{ github.event.workflow_run.head_repository.full_name }}
+          SHA_MANUAL: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENTO" = "workflow_dispatch" ]; then
+            alvo="${SHA_MANUAL:-}"
+            if [ -z "$alvo" ]; then alvo="${GITHUB_SHA}"; fi
+            printf '%s' "$alvo" | grep -Eq '^[0-9a-fA-F]{40}$' \
+              || { echo "::error::SHA manual inválido: $alvo"; exit 1; }
+            echo "executar=true" >> "$GITHUB_OUTPUT"
+            echo "sha=$alvo" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$REPO_ORIGEM" != "$GITHUB_REPOSITORY" ]; then
+            echo "Fork/repositório externo detectado ($REPO_ORIGEM); fallback recusado."
+            echo "executar=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          jobs="$(curl -fsSL \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN_LOCAL" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID_ORIGEM}/jobs?per_page=100")"
+
+          total="$(printf '%s' "$jobs" | jq '.jobs | length')"
+          com_steps="$(printf '%s' "$jobs" | jq '[.jobs[] | select(((.steps // []) | length) > 0)] | length')"
+
+          if [ "$total" -eq 0 ]; then
+            echo "Nenhum job retornado; não há prova suficiente de falha pré-step."
+            echo "executar=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$com_steps" -gt 0 ]; then
+            echo "O CI original executou steps; tratar como falha real, sem fallback automático."
+            echo "executar=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          printf '%s' "$SHA_ORIGEM" | grep -Eq '^[0-9a-fA-F]{40}$' \
+            || { echo "::error::SHA de origem inválido"; exit 1; }
+          echo "Falha pré-step confirmada em $total job(s)."
+          echo "executar=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA_ORIGEM" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exato sem persistir credencial
+        if: steps.origem.outputs.executar == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.origem.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+
+      - name: Provar isolamento antes do código do PR
+        if: steps.origem.outputs.executar == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${APP_ENV:-}" != "production"
+          test ! -e /opt/ejc/.env
+          test ! -e /opt/ejc/.deployed_sha
+          case "$GITHUB_WORKSPACE" in /opt/ejc|/opt/ejc/*) exit 1;; esac
+          bash scripts/ci-fallback.sh EJC_CI_GUARD_ONLY=1 >/dev/null 2>&1 || true
+          EJC_CI_GUARD_ONLY=1 bash scripts/ci-fallback.sh
+
+      - name: Executar fallback completo
+        if: steps.origem.outputs.executar == 'true'
+        shell: bash
+        run: bash scripts/ci-fallback.sh
+
+      - name: Publicar evidência do fallback
+        if: always() && steps.origem.outputs.executar == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-fallback-${{ steps.origem.outputs.sha }}
+          path: .ci-fallback-report
+          if-no-files-found: error
+          retention-days: 14
