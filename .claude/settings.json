@@ -51,7 +51,7 @@
       "Bash(docker compose logs:*)",
       "Bash(docker compose config:*)",
       "Bash(scripts/ci-local.sh:*)",
-      "Bash(scripts/ejc-local-first.sh:*)",
+      "Bash(bash scripts/ejc-local-first.sh:*)",
       "Bash(scripts/ci_guard.sh:*)",
       "Bash(git add *)",
       "Bash(git commit *)",
@@ -139,7 +139,7 @@
           },
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && if [ -x scripts/ejc-local-first.sh ]; then EJC_GIT_TIMEOUT=3 scripts/ejc-local-first.sh status || true; fi",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && if [ -f scripts/ejc-local-first.sh ]; then EJC_GIT_TIMEOUT=3 bash scripts/ejc-local-first.sh status || true; fi",
             "timeout": 10,
             "async": false,
             "statusMessage": "Verificando modo local-first do EJC..."
