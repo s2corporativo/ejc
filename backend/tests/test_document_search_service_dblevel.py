@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import delete, select
@@ -20,12 +21,6 @@ pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_DB_TESTS"),
     reason="requer Postgres com migrations (defina RUN_DB_TESTS=1)",
 )
-
-IDS = [
-    "00000000-0000-0000-0000-000000009901",
-    "00000000-0000-0000-0000-000000009902",
-    "00000000-0000-0000-0000-000000009903",
-]
 
 
 def _doc(doc_id: str, titulo: str, criado: datetime) -> Document:
@@ -46,19 +41,22 @@ async def test_busca_literal_e_paginacao_estavel():
     engine = create_async_engine(get_settings().DATABASE_URL, poolclass=NullPool)
     Session = async_sessionmaker(engine, expire_on_commit=False)
     instante = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
+    ids = [str(uuid4()) for _ in range(3)]
+    id_literal = ids[0]
+    ordem_esperada = sorted(ids, reverse=True)
     try:
         async with Session() as db:
             try:
                 db.add_all(
                     [
-                        _doc(IDS[0], "Contrato 100%_final", instante),
-                        _doc(IDS[1], "Contrato 100XXfinal", instante),
-                        _doc(IDS[2], "Outro documento", instante),
+                        _doc(id_literal, "Contrato 100%_final", instante),
+                        _doc(ids[1], "Contrato 100XXfinal", instante),
+                        _doc(ids[2], "Outro documento", instante),
                     ]
                 )
                 await db.commit()
 
-                base = select(Document).where(Document.id.in_(IDS))
+                base = select(Document).where(Document.id.in_(ids))
 
                 literal = await paginar_documentos(
                     db,
@@ -68,7 +66,7 @@ async def test_busca_literal_e_paginacao_estavel():
                     page_size=20,
                 )
                 assert literal.total == 1
-                assert [d.id for d in literal.itens] == [IDS[0]]
+                assert [d.id for d in literal.itens] == [id_literal]
 
                 primeira = await paginar_documentos(
                     db,
@@ -87,13 +85,13 @@ async def test_busca_literal_e_paginacao_estavel():
 
                 assert primeira.total == 3
                 assert segunda.total == 3
-                assert [d.id for d in primeira.itens] == [IDS[2], IDS[1]]
-                assert [d.id for d in segunda.itens] == [IDS[0]]
+                assert [d.id for d in primeira.itens] == ordem_esperada[:2]
+                assert [d.id for d in segunda.itens] == ordem_esperada[2:]
                 assert set(d.id for d in primeira.itens).isdisjoint(
                     d.id for d in segunda.itens
                 )
             finally:
-                await db.execute(delete(Document).where(Document.id.in_(IDS)))
+                await db.execute(delete(Document).where(Document.id.in_(ids)))
                 await db.commit()
     finally:
         await engine.dispose()
