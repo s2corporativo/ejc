@@ -24,6 +24,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 log() { printf '\n[fallback-ci] %s\n' "$*"; }
+warn() { printf '[fallback-ci] AVISO: %s\n' "$*" >&2; }
 die() { printf '[fallback-ci] ERRO: %s\n' "$*" >&2; exit 1; }
 
 case "$(realpath "$ROOT" 2>/dev/null || printf '%s' "$ROOT")" in
@@ -34,8 +35,11 @@ esac
 [ ! -e /opt/ejc/.deployed_sha ] && [ ! -e /opt/ejc/.env ] \
   || die "host contém marcadores da instalação produtiva /opt/ejc"
 [ "$(id -u)" -ne 0 ] || die "fallback promovível não roda como root"
+if [ "$POST_STATUS" -eq 1 ] && [ "${EJC_ALLOW_PYTHON_MISMATCH:-0}" = "1" ]; then
+  die "EJC_ALLOW_PYTHON_MISMATCH=1 é somente diagnóstico; não pode publicar status promovível"
+fi
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(ejc_backend|ejc_db|ejc_frontend|ejc_redis)$'; then
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(ejc_backend|ejc_worker|ejc_db|ejc_frontend|ejc_redis)$'; then
     die "containers canônicos do EJC ativos; host não é elegível para CI de PR"
   fi
 fi
@@ -50,6 +54,11 @@ if [ -z "$REPO" ] && [ "$POST_STATUS" -eq 1 ]; then
   REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 fi
 [ -n "$REPO" ] || REPO="s2corporativo/ejc"
+
+WORKTREE_PARENT="${EJC_CI_WORKTREE_ROOT:-${HOME}/.cache/ejc-ci-worktrees}"
+EVIDENCE_ROOT="${EJC_CI_EVIDENCE_ROOT:-${HOME}/.cache/ejc-ci-evidence}"
+mkdir -p "$WORKTREE_PARENT" "$EVIDENCE_ROOT"
+chmod 700 "$WORKTREE_PARENT" "$EVIDENCE_ROOT" 2>/dev/null || true
 
 git fetch --quiet origin main || die "não foi possível atualizar origin/main"
 
@@ -84,25 +93,77 @@ CONTEXT_FRONTEND='Frontend — testes + typecheck + build'
 CONTEXT_P0='P0 guard — conflitos e segredos'
 CONTEXT_GOV='Governança — travas de PR'
 CONTEXT_FULL='EJC Local Full Gate'
+STATUS_SYNC_PENDING=0
 
 post_status() {
   local state="$1" context="$2" description="$3"
   [ "$POST_STATUS" -eq 1 ] || return 0
-  gh api -X POST "repos/$REPO/statuses/$SHA" \
-    -f state="$state" -f context="$context" -f description="${description:0:135}" >/dev/null
+  if ! gh api -X POST "repos/$REPO/statuses/$SHA" \
+      -f state="$state" -f context="$context" -f description="${description:0:135}" >/dev/null 2>&1; then
+    STATUS_SYNC_PENDING=1
+    warn "não foi possível publicar status '$context=$state'; evidência local será preservada para nova tentativa"
+  fi
+  return 0
+}
+
+publish_success_statuses() {
+  for c in "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" "$CONTEXT_GOV"; do
+    post_status success "$c" "validado pelo fallback local isolado"
+  done
+  post_status success "$CONTEXT_FULL" "todos os gates locais completos aprovados"
 }
 
 full_gate_is_green() {
   [ "$POST_STATUS" -eq 1 ] || return 1
   local status_json state
-  status_json="$(gh api "repos/$REPO/commits/$SHA/status")" || return 1
+  status_json="$(gh api "repos/$REPO/commits/$SHA/status" 2>/dev/null)" || return 1
   state="$(printf '%s' "$status_json" | jq -r --arg c "$CONTEXT_FULL" '[.statuses[] | select(.context == $c)][0].state // ""')"
   [ "$state" = "success" ]
 }
 
+local_evidence_is_green() {
+  local summary="$EVIDENCE_ROOT/$SHA/summary.json"
+  [ -s "$summary" ] || return 1
+  jq -e --arg sha "$SHA" '.target_sha == $sha and .result == "success"' "$summary" >/dev/null 2>&1
+}
+
+revalidate_governance_for_merge() {
+  [ -n "$PR" ] || return 1
+  local gov_parent gov_work rc
+  gov_parent="$WORKTREE_PARENT/merge-governance"
+  mkdir -p "$gov_parent"
+  gov_work="$gov_parent/${SHA:0:12}-$$"
+  [ ! -e "$gov_work" ] || die "worktree temporário de governança já existe: $gov_work"
+  git worktree add --detach "$gov_work" "$SHA" >/dev/null
+  set +e
+  (cd "$gov_work" && EJC_PR_NUMBER="$PR" EJC_GOV_REQUIRE_PR=1 \
+    bash scripts/governanca/ci-local-governanca.sh) >/dev/null 2>&1
+  rc=$?
+  set -e
+  git worktree remove --force "$gov_work" >/dev/null 2>&1 || true
+  return "$rc"
+}
+
 attempt_merge() {
   [ "$DO_MERGE" -eq 1 ] && [ -n "$PR" ] || return 0
-  full_gate_is_green || { log "EJC Local Full Gate não está verde para o SHA exato; merge não tentado."; return 0; }
+  if ! local_evidence_is_green; then
+    log "Evidência local completa do SHA exato ausente; merge não tentado."
+    return 0
+  fi
+
+  # Metadados do PR podem mudar sem novo SHA. Revalide governança em toda
+  # tentativa de merge para não herdar autorização de uma descrição antiga.
+  if ! revalidate_governance_for_merge; then
+    post_status failure "$CONTEXT_GOV" "governança atual do PR reprovada"
+    post_status failure "$CONTEXT_FULL" "governança atual do PR reprovada"
+    log "Governança atual do PR #$PR reprovada; merge retido sem repetir a suíte pesada."
+    return 0
+  fi
+
+  # Se a API/status caiu durante a suíte, a evidência local continua válida.
+  # Re-publicamos o mesmo resultado somente depois da governança atual passar.
+  publish_success_statuses
+  full_gate_is_green || { log "status remoto ainda indisponível/não verde; merge será reavaliado depois."; return 0; }
 
   local info labels arqs migs patch
   info="$(gh pr view "$PR" --repo "$REPO" --json isDraft,mergeStateStatus,reviewDecision,labels,headRefOid)"
@@ -126,9 +187,6 @@ attempt_merge() {
     fi
   fi
 
-  # A API recebe o SHA esperado: se o PR mover entre a última checagem e a
-  # tentativa de merge, o GitHub recusa. Branch protection/reviews continuam
-  # sendo a autoridade final e não são contornadas.
   set +e
   local merge_json rc merged message
   merge_json="$(gh api -X PUT "repos/$REPO/pulls/$PR/merge" -f merge_method=squash -f sha="$SHA" 2>&1)"
@@ -153,10 +211,6 @@ if [ "$MERGE_ONLY" -eq 1 ]; then
   exit 0
 fi
 
-WORKTREE_PARENT="${EJC_CI_WORKTREE_ROOT:-${HOME}/.cache/ejc-ci-worktrees}"
-EVIDENCE_ROOT="${EJC_CI_EVIDENCE_ROOT:-${HOME}/.cache/ejc-ci-evidence}"
-mkdir -p "$WORKTREE_PARENT" "$EVIDENCE_ROOT"
-chmod 700 "$WORKTREE_PARENT" "$EVIDENCE_ROOT" 2>/dev/null || true
 WORKTREE="$WORKTREE_PARENT/${SHA:0:12}-$$"
 EVIDENCE="$EVIDENCE_ROOT/$SHA"
 mkdir -p "$EVIDENCE"; chmod 700 "$EVIDENCE" 2>/dev/null || true
@@ -192,10 +246,10 @@ run_stage() {
   return 0
 }
 
-# Chamamos scripts via bash para não depender do bit executável preservado por
-# APIs/arquivos montados. Os cinco contexts só ficam verdes após TODOS os extras.
-run_stage backend "$CONTEXT_BACKEND" env EJC_ALLOW_PYTHON_MISMATCH="${EJC_ALLOW_PYTHON_MISMATCH:-0}" bash scripts/ci-local.sh backend || exit 1
-run_stage eval "$CONTEXT_EVAL" env CI_SKIP_PIP=1 EJC_ALLOW_PYTHON_MISMATCH="${EJC_ALLOW_PYTHON_MISMATCH:-0}" bash scripts/ci-local.sh eval || exit 1
+# Para execução promovível, Python divergente nunca é propagado. Os cinco
+# contexts só ficam verdes após TODOS os extras e a governança do PR atual.
+run_stage backend "$CONTEXT_BACKEND" env EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh backend || exit 1
+run_stage eval "$CONTEXT_EVAL" env CI_SKIP_PIP=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh eval || exit 1
 run_stage frontend "$CONTEXT_FRONTEND" bash scripts/ci-local.sh frontend || exit 1
 run_stage p0 "$CONTEXT_P0" bash scripts/ci-local.sh p0 || exit 1
 if [ -n "$PR" ]; then
@@ -204,7 +258,7 @@ else
   run_stage governanca "$CONTEXT_GOV" env EJC_GOV_REQUIRE_PR=0 bash scripts/governanca/ci-local-governanca.sh || exit 1
 fi
 run_stage architecture "$CONTEXT_FULL" bash scripts/ci-local.sh architecture || exit 1
-run_stage continuity "$CONTEXT_FULL" env CI_SKIP_PIP=1 EJC_ALLOW_PYTHON_MISMATCH="${EJC_ALLOW_PYTHON_MISMATCH:-0}" bash scripts/ci-local.sh continuity || exit 1
+run_stage continuity "$CONTEXT_FULL" env CI_SKIP_PIP=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh continuity || exit 1
 run_stage ui-extra "$CONTEXT_FULL" bash scripts/ci-local.sh ui-extra || exit 1
 
 python3 - "$EVIDENCE" "$SHA" "$HEAD_REF" "$PR" <<'PY'
@@ -229,10 +283,15 @@ for p in sorted(root.glob("*.log")):
 (root / "summary.json").write_text(json.dumps(obj, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 PY
 
-for c in "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" "$CONTEXT_GOV"; do
-  post_status success "$c" "validado pelo fallback local isolado"
-done
-post_status success "$CONTEXT_FULL" "todos os gates locais completos aprovados"
+# Revalida metadados uma vez mais imediatamente antes de promover o status.
+if [ -n "$PR" ] && ! revalidate_governance_for_merge; then
+  post_status failure "$CONTEXT_GOV" "governança atual do PR reprovada"
+  post_status failure "$CONTEXT_FULL" "governança atual do PR reprovada"
+  die "governança do PR mudou/reprovou após a suíte"
+fi
+
+publish_success_statuses
 log "Fallback completo aprovado para $SHA. Evidência local: $EVIDENCE/summary.json"
+[ "$STATUS_SYNC_PENDING" -eq 0 ] || warn "um ou mais statuses não sincronizaram; watcher tentará novamente sem repetir a suíte"
 
 attempt_merge
