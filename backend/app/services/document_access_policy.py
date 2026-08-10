@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ownership import role_str, verificar_acesso_caso
 from app.core.security import ROLE_LEVEL
+from app.models.case import Case
 from app.models.document import DocConfidencialidade, Document
 from app.models.user import User
 
@@ -31,21 +32,15 @@ def pode_acessar_confidencialidade(user: User, conf: DocConfidencialidade) -> bo
     return ROLE_LEVEL.get(role_str(user), 0) >= ROLE_LEVEL["socio"]
 
 
-async def exigir_documento_acessivel_no_caso(
+async def exigir_documento_compativel_com_caso(
     db: AsyncSession,
     user: User,
     *,
     document_id: str,
-    case_id: str,
+    case: Case,
 ) -> Document:
-    """Valida ownership do caso, documento ativo, tenant e confidencialidade.
+    """Valida documento ativo, tenant e cofre contra um caso já autorizado."""
 
-    A mensagem de vínculo inválido é deliberadamente genérica para não revelar
-    a qual caso/cliente pertence um ``document_id`` obtido fora do escopo do
-    usuário.
-    """
-
-    case = await verificar_acesso_caso(db, user, case_id)
     doc = (
         await db.execute(
             select(Document).where(
@@ -57,7 +52,7 @@ async def exigir_documento_acessivel_no_caso(
     if doc is None:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
-    if doc.case_id != case_id:
+    if doc.case_id != case.id:
         raise HTTPException(
             status_code=400,
             detail="Documento não pertence ao caso informado",
@@ -75,3 +70,26 @@ async def exigir_documento_acessivel_no_caso(
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
 
     return doc
+
+
+async def exigir_documento_acessivel_no_caso(
+    db: AsyncSession,
+    user: User,
+    *,
+    document_id: str,
+    case_id: str,
+) -> Document:
+    """Valida ownership do caso e delega os invariantes documento↔caso.
+
+    A mensagem de vínculo inválido é deliberadamente genérica para não revelar
+    a qual caso/cliente pertence um ``document_id`` obtido fora do escopo do
+    usuário.
+    """
+
+    case = await verificar_acesso_caso(db, user, case_id)
+    return await exigir_documento_compativel_com_caso(
+        db,
+        user,
+        document_id=document_id,
+        case=case,
+    )
