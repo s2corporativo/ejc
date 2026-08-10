@@ -1,23 +1,19 @@
 // Entrada Única (/entrada) — gateway canônico para iniciar trabalho jurídico.
-// O fluxo de relato/documentos permanece em EntradaRelato. Sala Jurídica e
-// Raio-X continuam como superfícies registradas e protegidas, mas deixam de
-// disputar espaço no menu: o gateway encaminha para as rotas canônicas sem
-// apagar lifecycle, ajuda contextual, ErrorBoundary ou identidade do caso.
+//
+// O RBAC desta rota é definido uma única vez em moduleRegistry/RoleOnly e
+// confirmado pelo backend em /api/entrada. Este componente não replica a
+// matriz de papéis: ele apenas roteia intenções e preserva query/contexto.
+// Sala Jurídica e Raio-X continuam como superfícies canônicas independentes,
+// mantendo lifecycle, ajuda contextual, ErrorBoundary e manifests próprios.
 import { FileText, ScanSearch, Sparkles } from "lucide-react";
 import { Link, Navigate, useSearchParams } from "react-router";
-import { useAuth } from "../stores/auth";
 import EntradaRelato from "./EntradaRelato";
 
-type ModoEntrada = "relato" | "raio-x" | "sala";
+export type ModoEntrada = "relato" | "raio-x" | "sala";
 
-const ROLES_RELATO = new Set(["superadmin", "admin", "socio", "advogado"]);
+const MODO_PADRAO: ModoEntrada = "relato";
 
-const MODOS: Array<{
-  id: ModoEntrada;
-  label: string;
-  descricao: string;
-  icon: typeof FileText;
-}> = [
+const MODOS = [
   {
     id: "relato",
     label: "Relato ou documentos",
@@ -36,25 +32,19 @@ const MODOS: Array<{
     descricao: "Estruturar fatos, provas e estratégia em conversa assistida.",
     icon: Sparkles,
   },
-];
-
-function roleValue(role: unknown): string {
-  if (role && typeof role === "object" && "value" in role) {
-    return String((role as { value?: unknown }).value ?? "");
-  }
-  return String(role ?? "");
-}
-
-export function podeUsarRelato(role: unknown): boolean {
-  return ROLES_RELATO.has(roleValue(role));
-}
-
-export function modoPadraoParaRole(role: unknown): ModoEntrada {
-  return podeUsarRelato(role) ? "relato" : "sala";
-}
+] as const satisfies ReadonlyArray<{
+  id: ModoEntrada;
+  label: string;
+  descricao: string;
+  icon: typeof FileText;
+}>;
 
 export function ehModoEntrada(value: string | null): value is ModoEntrada {
   return value === "relato" || value === "raio-x" || value === "sala";
+}
+
+export function normalizarModoEntrada(value: string | null): ModoEntrada {
+  return ehModoEntrada(value) ? value : MODO_PADRAO;
 }
 
 export function destinoModo(
@@ -71,49 +61,22 @@ export function destinoModo(
 function hrefModo(modo: ModoEntrada, params: URLSearchParams): string {
   const proximos = new URLSearchParams(params);
   proximos.set("modo", modo);
-  const query = proximos.toString();
-  return query ? `/entrada?${query}` : "/entrada";
+  return `/entrada?${proximos.toString()}`;
 }
 
 export default function EntradaUnica() {
-  const user = useAuth((state) => state.user);
   const [searchParams] = useSearchParams();
-  const bruto = searchParams.get("modo");
-  const modo = ehModoEntrada(bruto) ? bruto : modoPadraoParaRole(user?.role);
+  const modoBruto = searchParams.get("modo");
+  const modo = normalizarModoEntrada(modoBruto);
+
+  // URLs com modo desconhecido são normalizadas para uma forma canônica. Isso
+  // evita estado ambíguo em analytics, histórico, testes e links compartilhados.
+  if (modoBruto !== null && !ehModoEntrada(modoBruto)) {
+    return <Navigate replace to={hrefModo(MODO_PADRAO, searchParams)} />;
+  }
 
   if (modo === "sala" || modo === "raio-x") {
     return <Navigate replace to={destinoModo(modo, searchParams)} />;
-  }
-
-  if (!podeUsarRelato(user?.role)) {
-    return (
-      <section className="mx-auto max-w-3xl space-y-4 py-6">
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-400/20 dark:bg-amber-400/10">
-          <h1 className="text-lg font-semibold text-slate-950 dark:text-white">
-            Entrada Única
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            A criação de caso por relato exige perfil de advogado. Seu perfil
-            continua com acesso às superfícies jurídicas já permitidas; escolha
-            Sala Jurídica ou Raio-X de documentos.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              to={hrefModo("sala", searchParams)}
-              className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white dark:bg-white dark:text-slate-950"
-            >
-              Abrir Sala Jurídica
-            </Link>
-            <Link
-              to={hrefModo("raio-x", searchParams)}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-white/15 dark:text-slate-200"
-            >
-              Abrir Raio-X
-            </Link>
-          </div>
-        </div>
-      </section>
-    );
   }
 
   return (
