@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-MODE="${1:---enable}"
+MODE="${1:-}"
 REPO="${EJC_REPO:-s2corporativo/ejc}"
 FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"
 UNIT_DIR="${HOME}/.config/systemd/user"
@@ -11,6 +11,8 @@ UNIT="$UNIT_DIR/ejc-ci-fallback.service"
 CRON_MARK='# EJC_CI_FALLBACK_998'
 LOG_DIR="${HOME}/.cache/ejc-ci-fallback"
 WATCHER_PATH="${EJC_FALLBACK_PATH:-$PATH}"
+HOOKS_BACKUP="$LOG_DIR/core-hooks-path.before"
+LOCK_FILE="$LOG_DIR/watcher.lock"
 mkdir -p "$LOG_DIR"; chmod 700 "$LOG_DIR" 2>/dev/null || true
 
 fail(){ echo "[fallback-activate] ERRO: $*" >&2; exit 1; }
@@ -24,38 +26,58 @@ esac
   || fail "ambiente de produção ativo"
 [ ! -e /opt/ejc/.deployed_sha ] && [ ! -e /opt/ejc/.env ] \
   || fail "host contém marcadores da instalação produtiva /opt/ejc"
-[[ "$FALLBACK_APP_ID" =~ ^[1-9][0-9]*$ ]] \
-  || fail "EJC_FALLBACK_APP_ID numérico (>0) do GitHub App dedicado é obrigatório"
+
 case "$WATCHER_PATH" in
-  *$'\n'*|*$'\r'*|*"'"*|*%*) fail "PATH contém caractere inseguro para scheduler autônomo" ;;
+  *$'\n'*|*$'\r'*|*"'"*|*'"'*|*'\'*|*%*) fail "PATH contém caractere inseguro para scheduler autônomo" ;;
 esac
 case "$ROOT$LOG_DIR$REPO" in
-  *$'\n'*|*$'\r'*|*"'"*|*%*|*[[:space:]]*) fail "ROOT/LOG_DIR/REPO contém caractere inseguro para scheduler autônomo" ;;
+  *$'\n'*|*$'\r'*|*"'"*|*'"'*|*'\'*|*%*|*[[:space:]]*) fail "ROOT/LOG_DIR/REPO contém caractere inseguro para scheduler autônomo" ;;
 esac
 
 remove_cron() {
   command -v crontab >/dev/null 2>&1 || return 0
-  (crontab -l 2>/dev/null || true) | grep -vF "$CRON_MARK" | crontab -
+  local atual filtrado
+  atual="$(crontab -l 2>/dev/null || true)"
+  filtrado="$(printf '%s\n' "$atual" | grep -vF "$CRON_MARK" || true)"
+  printf '%s\n' "$filtrado" | crontab -
 }
 
 remove_watcher() {
+  local rc=0
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user disable --now ejc-ci-fallback.service >/dev/null 2>&1 || true
-    rm -f "$UNIT"
+    systemctl --user disable --now ejc-ci-fallback.service >/dev/null 2>&1 || rc=1
+    rm -f "$UNIT" || rc=1
     systemctl --user daemon-reload >/dev/null 2>&1 || true
   fi
-  remove_cron
+  remove_cron || rc=1
+  return "$rc"
+}
+
+restore_hooks_path() {
+  if [ -f "$HOOKS_BACKUP" ]; then
+    local previous
+    previous="$(cat "$HOOKS_BACKUP")"
+    if [ "$previous" = "__UNSET__" ]; then
+      git config --unset-all core.hooksPath >/dev/null 2>&1 || true
+    else
+      git config core.hooksPath "$previous"
+    fi
+    rm -f "$HOOKS_BACKUP"
+  fi
 }
 
 if [ "$MODE" = "--disable" ]; then
+  remove_watcher || fail "não foi possível remover o watcher; proteção fallback mantida"
   bash scripts/governanca/branch-protection.sh --cloud
-  remove_watcher
+  restore_hooks_path
   ok "fallback desativado e branch protection restaurada para contexts do CI em nuvem"
   exit 0
 fi
-[ "$MODE" = "--enable" ] || fail "use --enable ou --disable"
+[ "$MODE" = "--enable" ] || fail "uso: $0 --enable | --disable"
 
-for c in git gh jq python3 node npm psql; do command -v "$c" >/dev/null 2>&1 || fail "$c ausente"; done
+[[ "$FALLBACK_APP_ID" =~ ^[1-9][0-9]*$ ]] \
+  || fail "EJC_FALLBACK_APP_ID numérico (>0) do GitHub App dedicado é obrigatório"
+for c in git gh jq python3 node npm psql flock; do command -v "$c" >/dev/null 2>&1 || fail "$c ausente"; done
 command -v docker >/dev/null 2>&1 || fail "Docker ausente (fallback promovível exige banco efêmero isolado)"
 docker info >/dev/null 2>&1 || fail "Docker não acessível pelo usuário atual"
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(ejc_backend|ejc_worker|ejc_db|ejc_frontend|ejc_redis)$'; then
@@ -120,7 +142,7 @@ if ! EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh fast >"$log_preflight"
 fi
 ok "preflight local aprovado antes da alteração da branch protection"
 
-remove_watcher
+remove_watcher || fail "não foi possível limpar watcher anterior"
 if [ "$SCHEDULER" = "systemd" ]; then
   mkdir -p "$UNIT_DIR"
   cat > "$UNIT" <<UNIT
@@ -136,8 +158,8 @@ Environment=EJC_REPO=$REPO
 Environment=EJC_FALLBACK_APP_ID=$FALLBACK_APP_ID
 Environment=EJC_FALLBACK_AUTO_MERGE=1
 Environment=EJC_ALLOW_PYTHON_MISMATCH=0
-ExecStart=/usr/bin/env bash $ROOT/scripts/ci-fallback-watch.sh
-Restart=always
+ExecStart=/usr/bin/flock -n $LOCK_FILE /usr/bin/env bash $ROOT/scripts/ci-fallback-watch.sh
+Restart=on-failure
 RestartSec=20
 StandardOutput=append:$LOG_DIR/watcher.log
 StandardError=append:$LOG_DIR/watcher.log
@@ -149,24 +171,37 @@ UNIT
 fi
 
 PROTECTION_CHANGED=0
+HOOKS_CHANGED=0
 rollback_activation() {
   local rc=$?
   trap - EXIT
-  if [ "$rc" -ne 0 ] && [ "$PROTECTION_CHANGED" -eq 1 ]; then
-    echo "[fallback-activate] ativação falhou; restaurando branch protection cloud…" >&2
-    bash scripts/governanca/branch-protection.sh --cloud >/dev/null 2>&1 || true
+  if [ "$rc" -ne 0 ]; then
+    remove_watcher >/dev/null 2>&1 || true
+    if [ "$PROTECTION_CHANGED" -eq 1 ]; then
+      echo "[fallback-activate] ativação falhou; restaurando branch protection cloud…" >&2
+      bash scripts/governanca/branch-protection.sh --cloud >/dev/null 2>&1 || true
+    fi
+    if [ "$HOOKS_CHANGED" -eq 1 ]; then restore_hooks_path >/dev/null 2>&1 || true; fi
   fi
-  if [ "$rc" -ne 0 ]; then remove_watcher; fi
   exit "$rc"
 }
 trap rollback_activation EXIT
 
+if git config --get core.hooksPath >/dev/null 2>&1; then
+  git config --get core.hooksPath > "$HOOKS_BACKUP"
+else
+  printf '%s\n' '__UNSET__' > "$HOOKS_BACKUP"
+fi
+chmod 600 "$HOOKS_BACKUP" 2>/dev/null || true
 git config core.hooksPath .githooks
+HOOKS_CHANGED=1
 ok "pre-push hook local ativado"
 
+# O script de proteção pode aplicar o PUT antes de sua validação final; marque
+# a mutação como potencial antes da chamada para garantir rollback fail-closed.
+PROTECTION_CHANGED=1
 EJC_FALLBACK_AUTHORIZATION=998 EJC_FALLBACK_APP_ID="$FALLBACK_APP_ID" \
   bash scripts/governanca/branch-protection.sh --fallback
-PROTECTION_CHANGED=1
 ok "branch protection apontada para EJC Local Full Gate vinculado ao GitHub App id=$FALLBACK_APP_ID"
 
 if [ "$SCHEDULER" = "systemd" ]; then
@@ -175,10 +210,10 @@ if [ "$SCHEDULER" = "systemd" ]; then
   systemctl --user is-active --quiet ejc-ci-fallback.service
   ok "watcher persistente ativado via systemd --user (linger=yes)"
 else
-  LINE="*/5 * * * * cd '$ROOT' && /usr/bin/env PATH='$WATCHER_PATH' EJC_REPO='$REPO' EJC_FALLBACK_APP_ID='$FALLBACK_APP_ID' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
+  LINE="*/5 * * * * cd '$ROOT' && /usr/bin/env PATH='$WATCHER_PATH' EJC_REPO='$REPO' EJC_FALLBACK_APP_ID='$FALLBACK_APP_ID' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 flock -n '$LOCK_FILE' bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
   { crontab -l 2>/dev/null || true; echo "$LINE"; } | crontab -
   (crontab -l 2>/dev/null || true) | grep -qF "$CRON_MARK"
-  ok "watcher persistente ativado via cron (5 min)"
+  ok "watcher persistente ativado via cron (5 min, lock exclusivo)"
 fi
 
 trap - EXIT
