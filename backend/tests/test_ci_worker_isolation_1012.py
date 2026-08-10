@@ -121,7 +121,6 @@ def test_worker_so_recebe_escrita_em_backend_frontend_e_estado_efemero():
     assert '"$stage_root/home"' in prepare
     assert '"$stage_root/state"' in prepare
     assert '"$stage_root/tmp"' in prepare
-    # Não pode reaparecer ACL rwX recursiva sobre stage_root inteiro.
     assert 'setfacl -Rm "u:${WORKER_USER}:rwX,u:${CONTROLLER_USER}:rwX" "$stage_root"' not in prepare
 
 
@@ -137,14 +136,25 @@ def test_worker_nao_pode_persistir_processos_cron_tmp_ou_home():
     assert "HOME cadastrado do worker é gravável" in common
 
 
-def test_worker_rejeita_utilitario_at_e_exige_pgvector_local():
+def test_worker_exige_postgresql_16_e_extensoes_da_mesma_versao():
     source = _text()
     preflight = _block(source, "worker_runtime_preflight() {", "prepare_stage_source() {")
 
+    assert 'PG_MAJOR_REQUIRED="${EJC_CI_PG_MAJOR_REQUIRED:-16}"' in source
+    assert '[ "$PG_MAJOR_REQUIRED" = "16" ]' in preflight
+    assert 'latest_pg_dir="$(ls -d /usr/lib/postgresql/*/bin' in preflight
+    assert '[ "$latest_pg_dir" = "$PG_BIN_DIR" ]' in preflight
+    for extension in ("vector", "pg_trgm", "pgcrypto"):
+        assert extension in preflight
+    assert "PostgreSQL 16 server não instalado" in preflight
+    assert 'psql_major' in preflight and '[ "$psql_major" = "16" ]' in preflight
+    assert 'pg_dump_major' in preflight and '[ "$pg_dump_major" = "16" ]' in preflight
+
+
+def test_worker_rejeita_utilitario_at():
+    source = _text()
+    preflight = _block(source, "worker_runtime_preflight() {", "prepare_stage_source() {")
     assert "command -v at" in preflight
-    assert "PostgreSQL server local indisponível para worker" in preflight
-    assert "extension/vector.control" in preflight
-    assert "pgvector" in preflight
 
 
 def test_stage_cleanup_e_fail_closed_apos_teste():
