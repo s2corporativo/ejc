@@ -3,14 +3,20 @@
 
 Responsabilidades:
 - criar tentativas isoladas por SHA;
-- escrever ponteiros/summary atomicamente;
-- calcular hashes em streaming;
-- verificar integridade da prova de sucesso;
-- localizar o log da tentativa atual;
+- tornar a tentativa recém-criada a única tentativa promovível;
+- escrever ponteiros/summary atomicamente com fsync;
+- exigir os oito logs do full gate para sucesso;
+- calcular/verificar hashes em streaming;
+- localizar o log relevante da tentativa atual;
 - podar evidências antigas sem seguir symlinks nem remover SHA em execução.
 
-Hashing: O(total de bytes) em tempo e O(1 MiB) de memória adicional.
-Prune: O(S + F_removidos), onde S é o número de SHAs armazenados.
+Invariante central: ``sucesso A -> tentativa B`` invalida A imediatamente, mesmo
+antes de B produzir logs. Assim uma falha posterior nunca reutiliza verde antigo.
+
+Complexidade:
+- start/pointer: O(1);
+- finish/verify: O(B) em tempo, B = bytes dos logs, O(1 MiB) memória adicional;
+- prune: O(S + F_removidos), S = SHAs armazenados.
 """
 from __future__ import annotations
 
@@ -25,25 +31,34 @@ import sys
 import tempfile
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Final
 
-_CHUNK = 1024 * 1024
+_CHUNK: Final[int] = 1024 * 1024
+_REQUIRED_SUCCESS_LOGS: Final[frozenset[str]] = frozenset(
+    {
+        "backend.log",
+        "eval.log",
+        "frontend.log",
+        "p0.log",
+        "governanca.log",
+        "architecture.log",
+        "continuity.log",
+        "ui-extra.log",
+    }
+)
 
 
 def _utc_now() -> str:
-    """Retorna timestamp UTC ISO-8601 com timezone explícito."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _validate_sha(value: str) -> str:
-    """Valida o identificador Git SHA-1 usado como namespace da evidência."""
     if len(value) != 40 or any(ch not in "0123456789abcdef" for ch in value):
         raise ValueError("SHA deve conter exatamente 40 caracteres hexadecimais minúsculos")
     return value
 
 
 def _is_sha_dir(path: pathlib.Path) -> bool:
-    """Retorna True apenas para diretório real cujo nome seja um SHA válido."""
     try:
         _validate_sha(path.name)
     except ValueError:
@@ -52,7 +67,8 @@ def _is_sha_dir(path: pathlib.Path) -> bool:
 
 
 def _hash_file(path: pathlib.Path) -> tuple[str, int]:
-    """Calcula SHA-256 e tamanho em streaming com memória adicional limitada."""
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"arquivo de evidência inválido: {path}")
     digest = hashlib.sha256()
     size = 0
     with path.open("rb") as handle:
@@ -62,10 +78,23 @@ def _hash_file(path: pathlib.Path) -> tuple[str, int]:
     return digest.hexdigest(), size
 
 
+def _fsync_directory(directory: pathlib.Path) -> None:
+    try:
+        fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _atomic_json(path: pathlib.Path, value: dict[str, Any]) -> None:
-    """Persiste JSON com fsync e rename atômico no mesmo filesystem."""
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    os.chmod(path.parent, 0o700)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
     tmp = pathlib.Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -75,24 +104,33 @@ def _atomic_json(path: pathlib.Path, value: dict[str, Any]) -> None:
             os.fsync(handle.fileno())
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
+        _fsync_directory(path.parent)
     finally:
         if tmp.exists():
             tmp.unlink()
 
 
+def _read_json_file(path: pathlib.Path) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"arquivo JSON inválido: {path}")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"JSON precisa ser objeto: {path}")
+    return value
+
+
 def _resolve_child(base: pathlib.Path, relative: str) -> pathlib.Path:
-    """Resolve filho relativo sem permitir path traversal para fora de ``base``."""
     rel = pathlib.PurePosixPath(relative)
     if rel.is_absolute() or ".." in rel.parts:
         raise ValueError("caminho relativo inseguro")
-    resolved = (base / pathlib.Path(*rel.parts)).resolve()
-    if resolved != base and base not in resolved.parents:
+    resolved_base = base.resolve()
+    resolved = (resolved_base / pathlib.Path(*rel.parts)).resolve()
+    if resolved != resolved_base and resolved_base not in resolved.parents:
         raise ValueError("caminho escapou da raiz de evidência")
     return resolved
 
 
 def _remove_tree_no_follow(path: pathlib.Path) -> None:
-    """Remove árvore previamente validada sem atravessar symlinks."""
     if path.is_symlink():
         path.unlink()
         return
@@ -108,8 +146,24 @@ def _remove_tree_no_follow(path: pathlib.Path) -> None:
     path.rmdir()
 
 
+def _attempts_root(sha_root: pathlib.Path) -> pathlib.Path:
+    return (sha_root.resolve() / "attempts").resolve()
+
+
+def _resolve_current_attempt(sha_root: pathlib.Path, sha: str) -> pathlib.Path:
+    sha = _validate_sha(sha)
+    sha_root = sha_root.resolve()
+    pointer = _read_json_file(sha_root / "latest-attempt.json")
+    if pointer.get("schema") != 1 or pointer.get("target_sha") != sha:
+        raise ValueError("latest-attempt não corresponde ao SHA")
+    attempt = _resolve_child(sha_root, str(pointer["attempt"]))
+    attempts_root = _attempts_root(sha_root)
+    if attempts_root not in attempt.parents or attempt.is_symlink() or not attempt.is_dir():
+        raise ValueError("tentativa atual fora da raiz ou inválida")
+    return attempt
+
+
 def start_attempt(root: pathlib.Path, sha: str, ref: str, pr: int | None) -> pathlib.Path:
-    """Cria tentativa única e atualiza atomicamente o ponteiro ``latest-attempt``."""
     sha = _validate_sha(sha)
     raw_root = root.expanduser()
     if raw_root.is_symlink():
@@ -151,22 +205,33 @@ def finish_attempt(
     exit_code: int,
     promote: bool,
 ) -> pathlib.Path:
-    """Finaliza tentativa, hasheia logs e opcionalmente promove sucesso íntegro."""
     sha = _validate_sha(sha)
     attempt = attempt.resolve()
     sha_root = sha_root.resolve()
-    attempts_root = (sha_root / "attempts").resolve()
-    if attempts_root not in attempt.parents:
+    attempts_root = _attempts_root(sha_root)
+    if attempts_root not in attempt.parents or attempt.is_symlink() or not attempt.is_dir():
         raise ValueError("tentativa fora da raiz de evidência")
+    if attempt != _resolve_current_attempt(sha_root, sha):
+        raise ValueError("tentativa stale: outra tentativa já é a atual")
     if result not in {"success", "failure"}:
         raise ValueError("result inválido")
+    if result == "success" and exit_code != 0:
+        raise ValueError("sucesso exige exit_code=0")
     if promote and result != "success":
         raise ValueError("somente sucesso pode atualizar latest-success")
 
+    log_paths = sorted(attempt.glob("*.log"))
+    log_names = {path.name for path in log_paths}
+    if result == "success" and log_names != _REQUIRED_SUCCESS_LOGS:
+        missing = sorted(_REQUIRED_SUCCESS_LOGS - log_names)
+        extra = sorted(log_names - _REQUIRED_SUCCESS_LOGS)
+        raise ValueError(
+            "sucesso exige exatamente os oito logs do full gate; "
+            f"missing={missing}, extra={extra}"
+        )
+
     logs: dict[str, dict[str, int | str]] = {}
-    for path in sorted(attempt.glob("*.log")):
-        if path.is_symlink() or not path.is_file():
-            raise ValueError(f"log inválido: {path.name}")
+    for path in log_paths:
         digest, size = _hash_file(path)
         logs[path.name] = {"sha256": digest, "bytes": size}
 
@@ -189,8 +254,9 @@ def finish_attempt(
         _atomic_json(
             sha_root / "latest-success.json",
             {
-                "schema": 1,
+                "schema": 2,
                 "target_sha": sha,
+                "attempt": attempt.relative_to(sha_root).as_posix(),
                 "summary": summary.relative_to(sha_root).as_posix(),
                 "summary_sha256": summary_hash,
                 "promoted_at": _utc_now(),
@@ -200,29 +266,47 @@ def finish_attempt(
 
 
 def verify_success(sha_root: pathlib.Path, sha: str) -> bool:
-    """Valida ponteiro, summary e todos os logs da última prova de sucesso."""
     sha = _validate_sha(sha)
     sha_root = sha_root.resolve()
-    pointer = sha_root / "latest-success.json"
-    if not pointer.is_file() or pointer.is_symlink():
-        return False
     try:
-        latest = json.loads(pointer.read_text(encoding="utf-8"))
-        if latest.get("target_sha") != sha:
+        current_attempt = _resolve_current_attempt(sha_root, sha)
+        latest = _read_json_file(sha_root / "latest-success.json")
+        if latest.get("schema") != 2 or latest.get("target_sha") != sha:
             return False
+
+        success_attempt = _resolve_child(sha_root, str(latest["attempt"]))
+        if success_attempt != current_attempt:
+            return False
+
         summary = _resolve_child(sha_root, str(latest["summary"]))
-        attempts_root = (sha_root / "attempts").resolve()
-        if attempts_root not in summary.parents or not summary.is_file() or summary.is_symlink():
+        attempts_root = _attempts_root(sha_root)
+        if attempts_root not in summary.parents:
             return False
+        if summary.parent != current_attempt or summary.is_symlink() or not summary.is_file():
+            return False
+
         summary_hash, _ = _hash_file(summary)
         if summary_hash != latest.get("summary_sha256"):
             return False
-        obj = json.loads(summary.read_text(encoding="utf-8"))
-        if obj.get("target_sha") != sha or obj.get("result") != "success" or obj.get("exit_code") != 0:
+
+        obj = _read_json_file(summary)
+        if (
+            obj.get("schema") != 2
+            or obj.get("target_sha") != sha
+            or obj.get("result") != "success"
+            or obj.get("exit_code") != 0
+        ):
             return False
-        for name, meta in (obj.get("logs") or {}).items():
+
+        logs = obj.get("logs")
+        if not isinstance(logs, dict) or set(logs) != _REQUIRED_SUCCESS_LOGS:
+            return False
+        for name in _REQUIRED_SUCCESS_LOGS:
+            meta = logs.get(name)
+            if not isinstance(meta, dict):
+                return False
             path = _resolve_child(summary.parent, name)
-            if path.parent != summary.parent or not path.is_file() or path.is_symlink():
+            if path.parent != summary.parent or path.is_symlink() or not path.is_file():
                 return False
             digest, size = _hash_file(path)
             if digest != meta.get("sha256") or size != int(meta.get("bytes", -1)):
@@ -233,20 +317,19 @@ def verify_success(sha_root: pathlib.Path, sha: str) -> bool:
 
 
 def latest_log(sha_root: pathlib.Path, sha: str, started_epoch: int) -> pathlib.Path | None:
-    """Localiza o log mais recente da tentativa atual iniciado após ``started_epoch``."""
     sha = _validate_sha(sha)
     sha_root = sha_root.resolve()
-    pointer = sha_root / "latest-attempt.json"
-    if not pointer.is_file() or pointer.is_symlink():
-        return None
     try:
-        obj = json.loads(pointer.read_text(encoding="utf-8"))
-        if obj.get("target_sha") != sha:
-            return None
-        attempt = _resolve_child(sha_root, str(obj["attempt"]))
-        attempts_root = (sha_root / "attempts").resolve()
-        if attempts_root not in attempt.parents or not attempt.is_dir() or attempt.is_symlink():
-            return None
+        attempt = _resolve_current_attempt(sha_root, sha)
+        summary_path = attempt / "summary.json"
+        if summary_path.is_file() and not summary_path.is_symlink():
+            summary = _read_json_file(summary_path)
+            if summary.get("target_sha") == sha and summary.get("result") == "failure":
+                stage = summary.get("failed_stage")
+                if isinstance(stage, str) and stage:
+                    candidate = _resolve_child(attempt, f"{stage}.log")
+                    if candidate.parent == attempt and candidate.is_file() and not candidate.is_symlink():
+                        return candidate
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         return None
 
@@ -266,28 +349,34 @@ def latest_log(sha_root: pathlib.Path, sha: str, started_epoch: int) -> pathlib.
 
 
 def _protected_attempt_names(sha_root: pathlib.Path) -> set[str]:
-    """Retorna IDs de tentativas referenciadas pelos ponteiros autoritativos."""
     protected: set[str] = set()
-    for pointer_name, key in (("latest-success.json", "summary"), ("latest-attempt.json", "attempt")):
+    pointer_specs = (
+        ("latest-attempt.json", ("attempt",)),
+        ("latest-success.json", ("attempt", "summary")),
+    )
+    for pointer_name, keys in pointer_specs:
         pointer = sha_root / pointer_name
         if not pointer.is_file() or pointer.is_symlink():
             continue
         try:
-            obj = json.loads(pointer.read_text(encoding="utf-8"))
-            rel = pathlib.PurePosixPath(str(obj[key]))
-            if rel.is_absolute() or ".." in rel.parts:
-                continue
-            if len(rel.parts) >= 2 and rel.parts[0] == "attempts":
-                protected.add(rel.parts[1])
+            obj = _read_json_file(pointer)
+            for key in keys:
+                if key not in obj:
+                    continue
+                rel = pathlib.PurePosixPath(str(obj[key]))
+                if rel.is_absolute() or ".." in rel.parts:
+                    continue
+                if len(rel.parts) >= 2 and rel.parts[0] == "attempts":
+                    protected.add(rel.parts[1])
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
             continue
     return protected
 
 
 def _quarantine_sha_root(root: pathlib.Path, sha_root: pathlib.Path) -> pathlib.Path:
-    """Retira atomicamente um SHA do namespace ativo antes da remoção física."""
     quarantine = root / f".prune-{sha_root.name}-{os.getpid()}-{secrets.token_hex(4)}"
     os.replace(sha_root, quarantine)
+    _fsync_directory(root)
     return quarantine
 
 
@@ -297,13 +386,6 @@ def prune_evidence(
     max_age_days: int,
     attempts_per_sha: int,
 ) -> dict[str, int]:
-    """Aplica retenção lock-aware sem remover evidência ativa ou referenciada.
-
-    Um SHA inteiro é primeiro renomeado atomicamente para um nome de quarentena
-    enquanto seu lock ainda está detido. O lock é então liberado e a quarentena
-    removida. Uma nova execução do mesmo SHA pode recriar o namespace original
-    sem compartilhar inode/diretório com a árvore em descarte.
-    """
     if max_shas < 1 or max_age_days < 1 or attempts_per_sha < 1:
         raise ValueError("limites de retenção devem ser >= 1")
     raw_root = root.expanduser()
@@ -322,8 +404,10 @@ def prune_evidence(
     for sha_root in sha_dirs:
         if not sha_root.exists():
             continue
-        # Captura mtime ANTES de tocar .lock para evitar alterar o timestamp usado na comparação
-        sha_root_mtime = sha_root.stat().st_mtime
+        # O lock pode ser criado agora em namespace legado; preserve o mtime que
+        # determinou a ordenação antes de tocar `.lock`, senão a própria retenção
+        # rejuvenesce o diretório e impede expurgo por idade.
+        sha_mtime = sha_root.stat().st_mtime
         lock_path = sha_root / ".lock"
         lock_path.touch(mode=0o600, exist_ok=True)
         quarantine: pathlib.Path | None = None
@@ -336,7 +420,7 @@ def prune_evidence(
 
             if not sha_root.exists():
                 continue
-            if sha_root.name not in keep_by_count and sha_root_mtime < cutoff:
+            if sha_root.name not in keep_by_count and sha_mtime < cutoff:
                 quarantine = _quarantine_sha_root(root, sha_root)
             else:
                 attempts = sha_root / "attempts"
@@ -363,12 +447,12 @@ def prune_evidence(
 
         if quarantine is not None:
             _remove_tree_no_follow(quarantine)
+            _fsync_directory(root)
             stats["removed_shas"] += 1
     return stats
 
 
 def _parser() -> argparse.ArgumentParser:
-    """Constrói parser de linha de comando sem executar efeitos colaterais."""
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -407,7 +491,6 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Executa subcomandos e converte erros de contrato em exit code 2."""
     args = _parser().parse_args(argv)
     try:
         if args.command == "start":
