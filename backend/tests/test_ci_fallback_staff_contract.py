@@ -54,7 +54,8 @@ def test_disable_restaura_checks_sob_lock_antes_de_remover_scheduler():
 
 def test_branch_protection_altera_somente_required_status_checks():
     src = PROTECTION.read_text(encoding="utf-8")
+    executable = src.split("cat <<'FIM'", 1)[0]
     assert 'required_status_checks' in src
     assert '-X PATCH "$API"' in src
-    assert '-X PUT' not in src
-    assert 'restrictions' not in src.split("cat <<'FIM'", 1)[0]
+    assert '-X PUT' not in executable
+    assert 'restrictions' not in executable

@@ -196,7 +196,7 @@ restore_saved_status_checks() {
   [ "$repo" = "$REPO" ] && [ "$branch" = "$BRANCH" ] \
     || falhar "snapshot pertence a outro repositório/branch"
   payload="$(jq -c '.payload' "$BACKUP_FILE")"
-  printf '%s' "$payload" | jq -e '.strict == true and (.checks | type == "array")' >/dev/null \
+  printf '%s' "$payload" | jq -e '(.strict | type == "boolean") and (.checks | type == "array")' >/dev/null \
     || falhar "snapshot de required status checks inválido"
   apply_status_checks "$payload" \
     || falhar "não foi possível restaurar/reconciliar required status checks anteriores"

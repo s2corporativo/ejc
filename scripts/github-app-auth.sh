@@ -101,7 +101,7 @@ _ejc_mint_installation_token() {
     printf 'header = "Authorization: Bearer %s"\n' "$jwt"
     printf 'header = "Content-Type: application/json"\n'
     printf 'data = %s\n' "$(printf '%s' "$request_body" | jq -Rs .)"
-  } | curl --config - 2>/dev/null)" \
+  } | curl -q --config - 2>/dev/null)" \
     || _ejc_auth_fail "não foi possível obter installation token do GitHub App" || return 1
 
   unset jwt unsigned signature payload request_body

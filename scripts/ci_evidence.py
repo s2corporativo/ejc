@@ -322,6 +322,8 @@ def prune_evidence(
     for sha_root in sha_dirs:
         if not sha_root.exists():
             continue
+        # Captura mtime ANTES de tocar .lock para evitar alterar o timestamp usado na comparação
+        sha_root_mtime = sha_root.stat().st_mtime
         lock_path = sha_root / ".lock"
         lock_path.touch(mode=0o600, exist_ok=True)
         quarantine: pathlib.Path | None = None
@@ -334,7 +336,7 @@ def prune_evidence(
 
             if not sha_root.exists():
                 continue
-            if sha_root.name not in keep_by_count and sha_root.stat().st_mtime < cutoff:
+            if sha_root.name not in keep_by_count and sha_root_mtime < cutoff:
                 quarantine = _quarantine_sha_root(root, sha_root)
             else:
                 attempts = sha_root / "attempts"

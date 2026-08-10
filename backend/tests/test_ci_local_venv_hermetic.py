@@ -26,7 +26,10 @@ def test_venv_e_construido_sob_lock_e_promovido_atomicamente():
     assert '"$build_dir/bin/python" -m pip check' in ensure
     assert '> "$build_dir/.ejc-ready"' in ensure
     assert 'mv "$build_dir" "$VENV_DIR"' in ensure
-    assert ensure.index('mv "$build_dir" "$VENV_DIR"') < ensure.index('flock -u "$venv_lock_fd"')
+    # Localiza a ÚLTIMA ocorrência de flock -u em ensure
+    last_unlock = ensure.rfind('flock -u "$venv_lock_fd"')
+    mv_pos = ensure.index('mv "$build_dir" "$VENV_DIR"')
+    assert mv_pos < last_unlock
 
 
 def test_skip_pip_exige_venv_pronto_e_nao_cria_ambiente_parcial():
@@ -57,3 +60,14 @@ def test_mudanca_de_requirements_separa_ambiente_python():
 
     assert 'VENV_DIR="${VENV_DIR:-$STATE_ROOT/venv-py311}"' not in src
     assert "resolve_venv_dir" in src
+
+
+def test_pgvector_image_exige_referencia_fixada_com_digest():
+    src = CI_LOCAL.read_text(encoding="utf-8")
+    start_pg = src[src.index("start_pg() {") : src.index("pick_pg_port")]
+
+    assert "PGVECTOR_IMAGE" in src
+    assert "@sha256:" in src
+    assert "PGVECTOR_IMAGE deve usar referência fixada com @sha256:" in start_pg
+    assert 'case "$PGVECTOR_IMAGE"' in start_pg
+    assert "*@sha256:*" in start_pg

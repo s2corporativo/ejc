@@ -218,7 +218,7 @@ def test_ativacao_transacional_usa_drain_lock_e_restore_exato():
     assert "flock -w 120 8" in src
     disable = src[src.index('if [ "$MODE" = "--disable" ]') : src.index('[ "$MODE" = "--enable" ]')]
     assert disable.index("branch-protection.sh --restore") < disable.index("remove_watcher")
-    assert "drain mantido" in disable
+    assert "journal/drain preservados para recovery" in disable
     assert "branch-protection.sh --cloud" not in disable
 
 

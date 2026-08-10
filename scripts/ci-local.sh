@@ -10,7 +10,7 @@ MODE="${1:-full}" # full|required|backend|eval|frontend|p0|architecture|continui
 PG_PORT_OVERRIDE="${PG_PORT:-}"
 PG_PORT="$PG_PORT_OVERRIDE"
 PG_CONTAINER="${PG_CONTAINER:-ejc_ci_pg_${$}}"
-PGVECTOR_IMAGE="${PGVECTOR_IMAGE:-pgvector/pgvector:pg16}"
+PGVECTOR_IMAGE="${PGVECTOR_IMAGE:-pgvector/pgvector:pg16@sha256:b02ab52c7c0e98df0c41ea8d7843d5b3a6b7e6f96e75e8dc3e9fae69dcf4c1c2}"
 STATE_ROOT="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}/ejc-ci-local}"
 VENV_DIR_OVERRIDE="${VENV_DIR:-}"
 VENV_DIR=""
@@ -270,6 +270,10 @@ start_pg() {
   pick_pg_port
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     PG_MODE=docker
+    case "$PGVECTOR_IMAGE" in
+      *@sha256:*) ;;
+      *) die "PGVECTOR_IMAGE deve usar referência fixada com @sha256:<digest> para evidência promovível; recebido: $PGVECTOR_IMAGE" ;;
+    esac
     log "Subindo PostgreSQL 16 + pgvector efêmero via Docker em 127.0.0.1:$PG_PORT…"
     docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
     docker run -d --name "$PG_CONTAINER" -e POSTGRES_USER="$DBU" -e POSTGRES_PASSWORD="$DBP" -e POSTGRES_DB="$DBN" -p "127.0.0.1:$PG_PORT:5432" "$PGVECTOR_IMAGE" >/dev/null

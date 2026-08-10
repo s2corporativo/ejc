@@ -35,7 +35,8 @@ chmod 700 "$CACHE_ROOT" "$STATE_ROOT" "$EVIDENCE_ROOT" 2>/dev/null || true
 INFRA_ERROR_RE='Could not resolve host|Temporary failure in name resolution|Name or service not known|EAI_AGAIN|ECONNRESET|ETIMEDOUT|ENETUNREACH|TLS handshake timeout|Connection timed out|Read timed out|Could not fetch URL|npm ERR!.*(EAI_AGAIN|ECONNRESET|ETIMEDOUT|429 Too Many Requests|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout)|registry\.npmjs\.org.*(EAI_AGAIN|ECONNRESET|ETIMEDOUT|429|502|503|504)|pypi\.org.*(Temporary failure|timed out|429|502|503|504)|files\.pythonhosted\.org.*(Temporary failure|timed out|429|502|503|504)|github\.com.*(Could not resolve|timed out|429|502|503|504)'
 
 atomic_text() {
-  local file="$1" value="$2" tmp="$file.tmp.$$"
+  local file="$1" value="$2" tmp
+  tmp="$file.tmp.$$"
   umask 077
   printf '%s\n' "$value" > "$tmp"
   chmod 600 "$tmp" 2>/dev/null || true
@@ -111,7 +112,8 @@ read_retry_state() {
 }
 
 write_retry_state() {
-  local file="$1" sha="$2" attempts="$3" now="$4" tmp="$file.tmp.$$"
+  local file="$1" sha="$2" attempts="$3" now="$4" tmp
+  tmp="$file.tmp.$$"
   umask 077
   jq -n --arg sha "$sha" --argjson attempts "$attempts" --argjson last_epoch "$now" \
     '{sha:$sha,classification:"infrastructure",attempts:$attempts,last_epoch:$last_epoch}' > "$tmp"
@@ -130,8 +132,9 @@ pr_state_due() {
 }
 
 write_pr_state() {
-  local file="$1" pr="$2" sha="$3" updated="$4" merge_state="$5" now="$6" result="$7" tmp="$file.tmp.$$"
+  local file="$1" pr="$2" sha="$3" updated="$4" merge_state="$5" now="$6" result="$7" tmp
   local fingerprint="$sha|$updated|$merge_state|$AUTO_MERGE"
+  tmp="$file.tmp.$$"
   umask 077
   jq -n \
     --argjson pr "$pr" --arg sha "$sha" --arg updated "$updated" \

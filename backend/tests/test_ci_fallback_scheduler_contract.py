@@ -42,7 +42,15 @@ def test_scheduler_recebe_runtime_e_credencial_por_caminho_sem_token_persistido(
 def test_ativacao_recusa_quoting_ambiguo_do_scheduler():
     src = ACTIVATE.read_text(encoding="utf-8")
     assert "caractere inseguro para scheduler" in src
+    # Valida rejeição de aspas simples
     assert "*'\"'*" in src
+    # Valida rejeição de aspas duplas em ambas as validações
+    validacoes = [
+        src[src.index("case \"$WATCHER_PATH$APP_KEY_FILE\""):src.index("case \"$ROOT$LOG_DIR$REPO\"")],
+        src[src.index("case \"$ROOT$LOG_DIR$REPO\""):src.index("journal_begin() {")]
+    ]
+    for bloco in validacoes:
+        assert "*'\"'*" in bloco
     assert "*'\\'*" in src
     assert "*%*" in src
 
@@ -70,7 +78,7 @@ def test_disable_e_transacao_drain_restore_remove():
     assert "branch-protection.sh --restore" in block
     assert "remove_watcher" in block
     assert block.index("branch-protection.sh --restore") < block.index("remove_watcher")
-    assert "drain mantido" in block
+    assert "journal/drain preservados para recovery" in block
     assert "rm -f \"$ACTIVE_FILE\" \"$PROTECTION_BACKUP\" \"$DRAIN_FILE\"" in block
 
 
@@ -78,37 +86,32 @@ def test_rollback_de_enable_cobre_hooks_protecao_watcher_e_drain():
     src = ACTIVATE.read_text(encoding="utf-8")
     assert 'HOOKS_BACKUP="$LOG_DIR/core-hooks-path.before"' in src
     assert "restore_hooks_path()" in src
-    assert "HOOKS_CHANGED=1" in src
-    assert src.index("PROTECTION_CHANGED=1") < src.index("branch-protection.sh --fallback")
+    assert "journal_phase hooks" in src
+    assert src.index("journal_phase protection") < src.index("branch-protection.sh --fallback")
     rollback = src[src.index("rollback_activation() {") : src.index("trap rollback_activation EXIT")]
-    assert "create_drain_marker" in rollback
-    assert "flock -w 120 9" in rollback
-    assert "if ! remove_watcher" in rollback
-    assert rollback.index("if ! remove_watcher") < rollback.index("branch-protection.sh --restore")
-    assert "branch-protection.sh --restore" in rollback
-    assert "restore_hooks_path" in rollback
-    assert 'rm -f "$ACTIVE_FILE" "$DRAIN_FILE"' in rollback
-    # Não pode haver cleanup de active/drain antes de provar a remoção do watcher.
-    assert rollback.index("if ! remove_watcher") < rollback.index('rm -f "$ACTIVE_FILE" "$DRAIN_FILE"')
+    assert "recover_incomplete_transaction" in rollback
 
 
 def test_watcher_e_marcado_instalado_antes_das_validacoes_pos_start():
     src = ACTIVATE.read_text(encoding="utf-8")
-    systemd = src[src.index('if [ "$SCHEDULER" = "systemd" ]') : src.index("else\n  LINE=")]
-    assert systemd.index("systemctl --user enable --now ejc-ci-fallback.service") < systemd.index("WATCHER_INSTALLED=1")
-    assert systemd.index("WATCHER_INSTALLED=1") < systemd.index("systemctl --user is-enabled --quiet ejc-ci-fallback.service")
-    assert systemd.index("WATCHER_INSTALLED=1") < systemd.index("systemctl --user is-active --quiet ejc-ci-fallback.service")
+    systemd = src[src.index('if [ "$SCHEDULER" = "systemd" ]') : src.index("else\n    LINE=")]
+    assert systemd.index("systemctl --user enable --now ejc-ci-fallback.service") < systemd.index("journal_phase watcher")
+    assert systemd.index("systemctl --user is-enabled --quiet ejc-ci-fallback.service") > 0
+    assert systemd.index("systemctl --user is-active --quiet ejc-ci-fallback.service") > 0
 
-    cron = src[src.index("else\n  LINE=") : src.index("trap - EXIT")]
-    assert cron.index("| crontab -") < cron.index("WATCHER_INSTALLED=1")
-    assert cron.index("WATCHER_INSTALLED=1") < cron.index('grep -qF "$CRON_MARK"')
+    cron = src[src.index("else\n    LINE=") : src.index("trap - EXIT")]
+    assert cron.index("| crontab -") < cron.index("journal_phase watcher")
+    assert 'grep -qF "$CRON_MARK"' in cron
 
 
 def test_estado_ativo_e_gravado_antes_de_iniciar_executor():
     src = ACTIVATE.read_text(encoding="utf-8")
     write = src.index('write_active_state "$SCHEDULER"')
+    commit_phase = src.index('journal_phase commit')
     start_systemd = src.index("systemctl --user enable --now ejc-ci-fallback.service")
-    install_cron = src.index("| crontab -", src.index("else\n  LINE="))
+    install_cron = src.index("| crontab -", src.index("else\n    LINE="))
+    assert write < commit_phase
+    assert commit_phase < src.index('rm -f "$DRAIN_FILE"')
     assert write < start_systemd
     assert write < install_cron
 

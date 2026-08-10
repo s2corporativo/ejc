@@ -43,7 +43,7 @@ case "$WATCHER_PATH$APP_KEY_FILE" in
   *$'\n'*|*$'\r'*|*"'"*|*'"'*|*'\'*|*%*) fail "PATH/caminho de chave contém caractere inseguro para scheduler" ;;
 esac
 case "$ROOT$LOG_DIR$REPO" in
-  *$'\n'*|*$'\r'*|*"'"*|*'\'*|*%*|*[[:space:]]*) fail "ROOT/LOG_DIR/REPO contém caractere inseguro para scheduler" ;;
+  *$'\n'*|*$'\r'*|*"'"*|*'"'*|*'\'*|*%*|*[[:space:]]*) fail "ROOT/LOG_DIR/REPO contém caractere inseguro para scheduler" ;;
 esac
 
 journal_begin() {

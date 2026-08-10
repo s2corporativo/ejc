@@ -54,7 +54,9 @@ versão exata do Python + SHA-256 de backend/requirements.txt
 
 ### PostgreSQL
 
-Preferência: `pgvector/pgvector:pg16` em Docker, bind `127.0.0.1:<porta-efêmera>`.
+Preferência: `pgvector/pgvector:pg16@sha256:<digest>` em Docker, bind `127.0.0.1:<porta-efêmera>`.
+
+**Imutabilidade obrigatória**: `PGVECTOR_IMAGE` deve referenciar digest fixado (`@sha256:<valor>`) para evidência promovível. Referências mutáveis (`:tag` sem digest) são rejeitadas antes de iniciar o container. O digest validado é registrado na evidência de cada execução.
 
 Fallback local aceita apenas PostgreSQL major 16 em execução promovível. Host auth é SCRAM; trust fica limitado à conexão local do cluster efêmero. `EJC_ALLOW_POSTGRES_MISMATCH=1` é diagnóstico, não evidência promovível.
 
@@ -258,22 +260,52 @@ O estado operacional usa uma raiz única `EJC_CI_STATE_ROOT`/XDG cache compartil
 
 Ativação é transacional: falha após mudar status checks tenta restaurar o snapshot anterior, watcher e hooks.
 
-## Desativação transacional
+## Desativação transacional e journal durável
 
 ```bash
 bash scripts/ci-fallback-activate.sh --disable
 ```
 
-Ordem:
+Toda ativação e desativação é protegida por **journal durável** (`ci_activation_journal.py`), gravado em `$EJC_CI_STATE_ROOT/activation-transaction.json` com fsync + fsync de diretório. O journal registra cada fase da transação:
 
-1. cria `draining` atomicamente;
-2. adquire o mesmo lock do scheduler/watcher;
-3. restaura **exatamente** os required status checks anteriores;
-4. remove/desabilita watcher;
-5. restaura `core.hooksPath` local;
-6. remove active/snapshot/drain apenas ao concluir.
+**Fases do journal** (ordem):
+- `starting` — transação iniciada, nenhuma mutação ainda
+- `draining` — drain criado (executor bloqueado)
+- `watcher` — scheduler instalado (ou removido, em --disable)
+- `hooks` — core.hooksPath alterado
+- `protection` — required status checks aplicados
+- `commit` — estado ativo gravado (ou removido)
+- `active` — transação completa, journal pode ser removido
 
-Se a restauração da proteção falhar, o drain é removido e o watcher continua instalado. Se a proteção for restaurada mas a remoção do scheduler falhar, o drain **permanece**, fazendo qualquer executor residual virar no-op.
+**Recovery após crash/SIGKILL/reboot/power loss**:
+
+Se `activation-transaction.json` existir após boot, `--disable` executa `recover_incomplete_transaction` idempotentemente:
+
+1. Cria drain (bloqueio imediato de executor);
+2. Adquire lock exclusivo de watcher;
+3. Se `$PROTECTION_BACKUP` existe, restaura required status checks (exige `gh` autenticado);
+4. Remove watcher e scheduler;
+5. Restaura hooks;
+6. Remove active/snapshot/drain;
+7. Remove journal.
+
+**Fail-closed**: falha de API/rede durante recovery preserva journal + drain + watcher + snapshot para retry idempotente. Estado divergente (ex.: journal inválido) exige recovery manual seguro.
+
+**Recovery repetida**: `recover_incomplete_transaction` pode rodar quantas vezes for necessário; cada passo tolera já ter sido executado (idempotência).
+
+**Estados resultantes de crash**:
+- Crash em `draining`: recovery instala drain → restaura → remove.
+- Crash em `watcher`: recovery restaura proteção → remove watcher instalado.
+- Crash em `protection`: recovery restaura proteção nova → remove watcher.
+- Crash em `commit`: recovery limpa estado ativo gravado.
+- Crash em `active`: recovery limpa resíduos (journal vazio).
+
+**Comando de recovery idempotente**:
+```bash
+bash scripts/ci-fallback-activate.sh --disable
+```
+
+O comando detecta journal incompleto e executa recovery automaticamente, mesmo sem `active.json`. Recovery não exige modo especial — o `--disable` padrão já é idempotente e seguro.
 
 ## Segurança e LGPD
 
