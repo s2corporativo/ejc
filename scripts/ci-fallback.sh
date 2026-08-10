@@ -11,6 +11,7 @@ PR=""
 REF=""
 DO_MERGE=0
 MERGE_ONLY=0
+PROMOTE_ONLY=0
 POST_STATUS=1
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -18,8 +19,9 @@ while [ "$#" -gt 0 ]; do
     --ref) REF="${2:-}"; shift 2 ;;
     --merge) DO_MERGE=1; shift ;;
     --merge-only) DO_MERGE=1; MERGE_ONLY=1; shift ;;
+    --promote-only) PROMOTE_ONLY=1; shift ;;
     --no-status) POST_STATUS=0; shift ;;
-    *) echo "uso: $0 [--pr N|--ref REF] [--merge|--merge-only] [--no-status]" >&2; exit 2 ;;
+    *) echo "uso: $0 [--pr N|--ref REF] [--merge|--merge-only|--promote-only] [--no-status]" >&2; exit 2 ;;
   esac
 done
 
@@ -147,26 +149,29 @@ revalidate_governance_for_merge() {
   return "$rc"
 }
 
-attempt_merge() {
-  [ "$DO_MERGE" -eq 1 ] && [ -n "$PR" ] || return 0
+refresh_status_from_evidence() {
+  [ -n "$PR" ] || return 1
   if ! local_evidence_is_green; then
-    log "Evidência local completa do SHA exato ausente; merge não tentado."
-    return 0
+    log "Evidência local completa do SHA exato ausente; status não promovido."
+    return 1
   fi
-
-  # Metadados do PR podem mudar sem novo SHA. Revalide governança em toda
-  # tentativa de merge para não herdar autorização de uma descrição antiga.
   if ! revalidate_governance_for_merge; then
     post_status failure "$CONTEXT_GOV" "governança atual do PR reprovada"
     post_status failure "$CONTEXT_FULL" "governança atual do PR reprovada"
-    log "Governança atual do PR #$PR reprovada; merge retido sem repetir a suíte pesada."
-    return 0
+    log "Governança atual do PR #$PR reprovada; status/merge retidos sem repetir a suíte pesada."
+    return 1
   fi
-
-  # Se a API/status caiu durante a suíte, a evidência local continua válida.
-  # Re-publicamos o mesmo resultado somente depois da governança atual passar.
   publish_success_statuses
-  full_gate_is_green || { log "status remoto ainda indisponível/não verde; merge será reavaliado depois."; return 0; }
+  if ! full_gate_is_green; then
+    log "status remoto ainda indisponível/não verde; será reavaliado depois."
+    return 1
+  fi
+  return 0
+}
+
+attempt_merge() {
+  [ "$DO_MERGE" -eq 1 ] && [ -n "$PR" ] || return 0
+  refresh_status_from_evidence || return 0
 
   local info labels arqs migs patch
   info="$(gh pr view "$PR" --repo "$REPO" --json isDraft,mergeStateStatus,reviewDecision,labels,headRefOid)"
@@ -207,6 +212,12 @@ attempt_merge() {
     log "PR #$PR não integrado: ${message:-proteção/review pendente}."
   fi
 }
+
+if [ "$PROMOTE_ONLY" -eq 1 ]; then
+  [ -n "$PR" ] || die "--promote-only exige --pr"
+  refresh_status_from_evidence
+  exit $?
+fi
 
 if [ "$MERGE_ONLY" -eq 1 ]; then
   [ -n "$PR" ] || die "--merge-only exige --pr"
