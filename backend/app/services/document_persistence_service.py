@@ -19,6 +19,7 @@ fora do model até migration canônica futura.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -134,10 +135,21 @@ def _validar_conteudo(
 
 
 async def _rollback_sem_mascarar(db: AsyncSession) -> None:
+    """Conclui rollback mesmo se houver novo cancelamento durante a limpeza.
+
+    Esta função só é chamada enquanto uma exceção original já está sendo
+    tratada. Cancelamento/erro do próprio rollback nunca substitui essa exceção.
+    """
+
+    tarefa = asyncio.create_task(db.rollback())
     try:
-        await db.rollback()
+        await asyncio.shield(tarefa)
+    except asyncio.CancelledError:
+        try:
+            await tarefa
+        except BaseException:
+            logger.error("Falha ao executar rollback da persistência documental")
     except BaseException:
-        # O erro original do domínio/commit é mais importante para diagnóstico.
         # Não incluir DSN, SQL, errno ou mensagem da exceção de rollback.
         logger.error("Falha ao executar rollback da persistência documental")
 
