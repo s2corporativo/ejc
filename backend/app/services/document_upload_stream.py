@@ -1,0 +1,143 @@
+"""Primitiva de streaming para ingestão documental.
+
+Este módulo não conhece FastAPI, banco, caso, cliente ou regra de negócio do
+GED. Sua responsabilidade é limitada a receber um stream assíncrono, impor um
+teto duro antes de gravar o chunk excedente, calcular SHA-256 incremental e
+manter somente uma pequena amostra inicial para validação por magic bytes.
+
+O arquivo nasce em staging oculto. O chamador só deve promovê-lo ao destino
+final depois das validações de domínio (duplicidade, MIME, autorização etc.).
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
+from uuid import uuid4
+
+import aiofiles
+
+CHUNK_UPLOAD_BYTES = 1024 * 1024
+AMOSTRA_MAGIC_BYTES = 2048
+
+
+class StreamUploadAssincrono(Protocol):
+    async def read(self, size: int = -1) -> bytes: ...
+
+
+class UploadVazioError(ValueError):
+    """O stream terminou sem qualquer byte."""
+
+
+class UploadExcedeLimiteError(ValueError):
+    """O próximo chunk faria o upload ultrapassar o teto configurado."""
+
+    def __init__(self, max_bytes: int) -> None:
+        self.max_bytes = max_bytes
+        super().__init__("upload excede o limite configurado")
+
+
+@dataclass(frozen=True, slots=True)
+class UploadEmStaging:
+    caminho: Path
+    size_bytes: int
+    sha256: str
+    amostra_inicial: bytes
+
+
+def _suffix_seguro(suffix: str) -> str:
+    valor = (suffix or "").lower()
+    if not valor:
+        return ""
+    if (
+        not valor.startswith(".")
+        or len(valor) > 16
+        or "/" in valor
+        or "\\" in valor
+        or valor in {".", ".."}
+    ):
+        raise ValueError("suffix inválido para staging")
+    return valor
+
+
+def descartar_staging(arquivo: UploadEmStaging) -> None:
+    """Remove staging best-effort; ausência já equivale a estado limpo."""
+
+    try:
+        arquivo.caminho.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def promover_staging(arquivo: UploadEmStaging, destino_final: Path) -> None:
+    """Promove dentro do mesmo diretório usando rename atômico do filesystem."""
+
+    origem_parent = arquivo.caminho.parent.resolve()
+    destino_parent = destino_final.parent.resolve()
+    if origem_parent != destino_parent:
+        raise ValueError("staging e destino final precisam compartilhar diretório")
+    os.replace(arquivo.caminho, destino_final)
+
+
+async def receber_em_staging(
+    upload: StreamUploadAssincrono,
+    *,
+    diretorio: Path,
+    suffix: str,
+    max_bytes: int,
+) -> UploadEmStaging:
+    """Recebe o upload em chunks com memória O(CHUNK_UPLOAD_BYTES).
+
+    O limite é verificado antes de cada escrita. Em qualquer exceção — inclusive
+    cancelamento da coroutine — o staging é removido no ``finally``.
+    """
+
+    if max_bytes < 0:
+        raise ValueError("max_bytes não pode ser negativo")
+    suffix = _suffix_seguro(suffix)
+    diretorio.mkdir(parents=True, exist_ok=True)
+    staging = diretorio / f".{uuid4().hex}{suffix}.uploading"
+
+    digest = hashlib.sha256()
+    amostra = bytearray()
+    total = 0
+    concluido = False
+
+    try:
+        async with aiofiles.open(staging, "xb") as target:
+            # Minimiza exposição caso o umask do processo seja mais permissivo.
+            os.chmod(staging, 0o600)
+            while True:
+                chunk = await upload.read(CHUNK_UPLOAD_BYTES)
+                if not chunk:
+                    break
+                novo_total = total + len(chunk)
+                if novo_total > max_bytes:
+                    raise UploadExcedeLimiteError(max_bytes)
+
+                digest.update(chunk)
+                if len(amostra) < AMOSTRA_MAGIC_BYTES:
+                    faltam = AMOSTRA_MAGIC_BYTES - len(amostra)
+                    amostra.extend(chunk[:faltam])
+
+                await target.write(chunk)
+                total = novo_total
+
+        if total == 0:
+            raise UploadVazioError("arquivo vazio")
+
+        concluido = True
+        return UploadEmStaging(
+            caminho=staging,
+            size_bytes=total,
+            sha256=digest.hexdigest(),
+            amostra_inicial=bytes(amostra),
+        )
+    finally:
+        if not concluido:
+            try:
+                staging.unlink()
+            except FileNotFoundError:
+                pass
