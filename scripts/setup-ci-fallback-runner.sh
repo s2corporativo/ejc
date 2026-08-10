@@ -41,22 +41,6 @@ case "$(uname -m)" in
   *) die "arquitetura não suportada: $(uname -m)" ;;
 esac
 
-# Para operação autônoma, um GH_TOKEN com permissão administrativa de Actions
-# pode gerar o token temporário de registro sem copiar segredo para arquivo/log.
-# RUNNER_TOKEN continua aceito como opção de bootstrap pontual.
-if [ -z "$RUNNER_TOKEN" ] && [ -n "$GH_TOKEN_LOCAL" ]; then
-  REPO_SLUG="${REPO_URL#https://github.com/}"
-  REPO_SLUG="${REPO_SLUG%.git}"
-  log "Obtendo token temporário de registro pela API do GitHub…"
-  RUNNER_TOKEN="$(curl -fsSL -X POST \
-    -H 'Accept: application/vnd.github+json' \
-    -H "Authorization: Bearer $GH_TOKEN_LOCAL" \
-    -H 'X-GitHub-Api-Version: 2022-11-28' \
-    "https://api.github.com/repos/${REPO_SLUG}/actions/runners/registration-token" \
-    | jq -r '.token // empty')"
-fi
-[ -n "$RUNNER_TOKEN" ] || die "Defina RUNNER_TOKEN temporário ou GH_TOKEN com permissão para registrar runner; nunca grave o token em arquivo ou log."
-
 service_name_from_file() {
   [ -s "$RUNNER_HOME/.service" ] && tr -d '\r\n' < "$RUNNER_HOME/.service" || true
 }
@@ -92,13 +76,10 @@ log "Instalando dependências do host dedicado"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-  curl tar jq ca-certificates git sudo \
+  curl tar jq ca-certificates git sudo rsync \
   python3 python3-venv python3-pip \
   postgresql-client libmagic1 poppler-utils tesseract-ocr \
-  libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
-  libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
-  libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
-  libxrandr2 libgbm1 libasound2
+  libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0
 
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com | sh
@@ -110,6 +91,22 @@ if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'Number(process.versions.no
   apt-get install -y nodejs
 fi
 
+# Para operação autônoma, um GH_TOKEN com permissão administrativa de Actions
+# pode gerar o token temporário de registro sem copiar segredo para arquivo/log.
+# A obtenção ocorre somente depois de curl+jq estarem instalados.
+if [ -z "$RUNNER_TOKEN" ] && [ -n "$GH_TOKEN_LOCAL" ]; then
+  REPO_SLUG="${REPO_URL#https://github.com/}"
+  REPO_SLUG="${REPO_SLUG%.git}"
+  log "Obtendo token temporário de registro pela API do GitHub…"
+  RUNNER_TOKEN="$(curl -fsSL -X POST \
+    -H 'Accept: application/vnd.github+json' \
+    -H "Authorization: Bearer $GH_TOKEN_LOCAL" \
+    -H 'X-GitHub-Api-Version: 2022-11-28' \
+    "https://api.github.com/repos/${REPO_SLUG}/actions/runners/registration-token" \
+    | jq -r '.token // empty')"
+fi
+[ -n "$RUNNER_TOKEN" ] || die "Defina RUNNER_TOKEN temporário ou GH_TOKEN com permissão para registrar runner; nunca grave o token em arquivo ou log."
+
 if ! id "$RUNNER_USER" >/dev/null 2>&1; then
   useradd -m -s /bin/bash "$RUNNER_USER"
 fi
@@ -119,11 +116,11 @@ usermod -aG docker "$RUNNER_USER"
 # como root; os jobs subsequentes rodam sem privilégio administrativo.
 rm -f "/etc/sudoers.d/99-${RUNNER_USER}" 2>/dev/null || true
 
-log "Pré-instalando Chromium do Playwright em caminho compartilhado"
+log "Instalando dependências e Chromium do Playwright"
 mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
+  npx -y playwright@1.56.1 install --with-deps chromium >/dev/null
 chown -R "$RUNNER_USER:$RUNNER_USER" "$PLAYWRIGHT_BROWSERS_PATH"
-sudo -u "$RUNNER_USER" env PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
-  npx -y playwright@1.56.1 install chromium >/dev/null
 
 if [ -z "$RUNNER_VERSION" ]; then
   RUNNER_VERSION="$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest | jq -r '.tag_name' | sed 's/^v//')"
