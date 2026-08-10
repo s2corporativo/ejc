@@ -14,7 +14,8 @@ APP_KEY_FILE="${EJC_FALLBACK_APP_PRIVATE_KEY_FILE:-}"
 UNIT_DIR="${HOME}/.config/systemd/user"
 UNIT="$UNIT_DIR/ejc-ci-fallback.service"
 CRON_MARK='# EJC_CI_FALLBACK_998'
-LOG_DIR="${HOME}/.cache/ejc-ci-fallback"
+CACHE_ROOT="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/ejc-ci-fallback}"
+LOG_DIR="$CACHE_ROOT"
 WATCHER_PATH="${EJC_FALLBACK_PATH:-$PATH}"
 HOOKS_BACKUP="$LOG_DIR/core-hooks-path.before"
 LOCK_FILE="$LOG_DIR/watcher.lock"
@@ -67,7 +68,6 @@ remove_watcher() {
       systemctl --user daemon-reload >/dev/null 2>&1 || rc=1
     fi
   elif [ -e "$UNIT" ]; then
-    # Uma unit persistida sem systemctl disponível não pode ser considerada removida.
     rc=1
   fi
   remove_cron || rc=1
@@ -117,8 +117,9 @@ write_active_state() {
     --arg installation_id "$INSTALLATION_ID" \
     --arg scheduler "$scheduler" \
     --arg protection_backup "$PROTECTION_BACKUP" \
+    --arg state_root "$CACHE_ROOT" \
     --arg activated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{schema:1,repo:$repo,app_id:$app_id,installation_id:$installation_id,scheduler:$scheduler,protection_backup:$protection_backup,activated_at:$activated_at}' > "$tmp"
+    '{schema:1,repo:$repo,app_id:$app_id,installation_id:$installation_id,scheduler:$scheduler,protection_backup:$protection_backup,state_root:$state_root,activated_at:$activated_at}' > "$tmp"
   chmod 600 "$tmp" 2>/dev/null || true
   mv "$tmp" "$ACTIVE_FILE"
 }
@@ -156,17 +157,12 @@ if [ "$MODE" = "--disable" ]; then
     fail "watcher não drenou em 120s; fallback permanece ativo"
   fi
 
-  # Primeiro restaura exatamente os checks anteriores enquanto nenhum watcher
-  # pode rodar. Se a API falhar, o scheduler permanece instalado; removemos o
-  # drain e o fallback continua operacional ao liberar o lock.
   if ! EJC_BRANCH_PROTECTION_BACKUP="$PROTECTION_BACKUP" \
       bash scripts/governanca/branch-protection.sh --restore; then
     rm -f "$DRAIN_FILE"
     fail "não foi possível restaurar required status checks; watcher preservado"
   fi
 
-  # A partir daqui a proteção cloud/anterior já está ativa. Se a remoção do
-  # scheduler falhar, mantenha DRAIN_FILE: qualquer executor residual fará no-op.
   if ! remove_watcher; then
     fail "checks anteriores restaurados, mas watcher não pôde ser removido; drain mantido para impedir promoção residual"
   fi
@@ -210,7 +206,6 @@ NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 git fetch --quiet origin main || fail "não foi possível atualizar origin/main"
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || fail "main local não corresponde à origin/main"
 
-# Valida a chave fora do repositório e permissões owner-only sem revelar conteúdo.
 # shellcheck source=github-app-auth.sh
 source scripts/github-app-auth.sh
 _ejc_validate_private_key >/dev/null || fail "chave privada do GitHub App não atende à política local"
@@ -259,13 +254,13 @@ done
 ok "sintaxe dos componentes do fallback"
 
 log_preflight="$LOG_DIR/activation-preflight.log"
-if ! EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh fast >"$log_preflight" 2>&1; then
+if ! EJC_CI_STATE_ROOT="$CACHE_ROOT" EJC_ALLOW_PYTHON_MISMATCH=0 \
+    bash scripts/ci-local.sh fast >"$log_preflight" 2>&1; then
   tail -n 100 "$log_preflight" >&2 || true
   fail "preflight local falhou; branch protection não foi alterada"
 fi
 ok "preflight local aprovado antes da alteração da branch protection"
 
-# Prova Checks:write e identidade do App ANTES de alterar a proteção.
 PRE_SHA="$(git rev-parse HEAD)"
 PRE_PAYLOAD="$(jq -cn --arg sha "$PRE_SHA" '{name:"EJC Local Activation Preflight",head_sha:$sha,status:"completed",conclusion:"neutral",output:{title:"EJC Local Activation Preflight",summary:"preflight de credencial antes da troca de required status checks"}}')"
 PRE_RESULT="$(printf '%s' "$PRE_PAYLOAD" | ejc_github_app_gh_api -X POST "repos/$REPO/check-runs" -H 'Accept: application/vnd.github+json' --input - 2>/dev/null)" \
@@ -305,8 +300,6 @@ rollback_activation() {
 }
 trap rollback_activation EXIT
 
-# O snapshot é gravado antes da mutação; o script de proteção altera somente
-# required_status_checks e preserva todas as demais políticas da main.
 PROTECTION_CHANGED=1
 EJC_FALLBACK_AUTHORIZATION=998 \
 EJC_FALLBACK_APP_ID="$FALLBACK_APP_ID" \
@@ -326,6 +319,8 @@ Type=simple
 WorkingDirectory=$ROOT
 Environment="PATH=$WATCHER_PATH"
 Environment="EJC_REPO=$REPO"
+Environment="EJC_CI_STATE_ROOT=$CACHE_ROOT"
+Environment="EJC_FALLBACK_DRAIN_FILE=$DRAIN_FILE"
 Environment="EJC_FALLBACK_APP_ID=$FALLBACK_APP_ID"
 Environment="EJC_FALLBACK_INSTALLATION_ID=$INSTALLATION_ID"
 Environment="EJC_FALLBACK_APP_PRIVATE_KEY_FILE=$APP_KEY_FILE"
@@ -347,7 +342,7 @@ UNIT
   WATCHER_INSTALLED=1
   ok "watcher persistente ativado via systemd --user"
 else
-  LINE="*/5 * * * * cd '$ROOT' && /usr/bin/env PATH='$WATCHER_PATH' EJC_REPO='$REPO' EJC_FALLBACK_APP_ID='$FALLBACK_APP_ID' EJC_FALLBACK_INSTALLATION_ID='$INSTALLATION_ID' EJC_FALLBACK_APP_PRIVATE_KEY_FILE='$APP_KEY_FILE' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 flock -n '$LOCK_FILE' bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
+  LINE="*/5 * * * * cd '$ROOT' && /usr/bin/env PATH='$WATCHER_PATH' EJC_REPO='$REPO' EJC_CI_STATE_ROOT='$CACHE_ROOT' EJC_FALLBACK_DRAIN_FILE='$DRAIN_FILE' EJC_FALLBACK_APP_ID='$FALLBACK_APP_ID' EJC_FALLBACK_INSTALLATION_ID='$INSTALLATION_ID' EJC_FALLBACK_APP_PRIVATE_KEY_FILE='$APP_KEY_FILE' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 flock -n '$LOCK_FILE' bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
   { crontab -l 2>/dev/null || true; echo "$LINE"; } | crontab -
   (crontab -l 2>/dev/null || true) | grep -qF "$CRON_MARK"
   WATCHER_INSTALLED=1
