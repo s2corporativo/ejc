@@ -1,11 +1,14 @@
 # ── app/services/djen_service.py ─────────────────────────────────────────────
-# Captura de intimações/publicações via API Comunica (DJEN/CNJ).
+# Captura operacional de intimações/publicações via API Comunica (DJEN/CNJ).
 # Pública, sem autenticação. Consulta por OAB (número + UF).
 # Docs: https://comunicaapi.pje.jus.br/swagger
 #
-# O sistema NÃO cria prazo automaticamente. Registra a comunicação, vincula ao
-# caso quando o número CNJ coincide, cria movimento e notifica. A definição e a
-# contagem do prazo continuam sendo ato humano.
+# Segurança operacional:
+#  • janela móvel de reconciliação — tolera interrupções curtas do scheduler;
+#  • paginação explícita — nunca assume que 100 itens representam a janela;
+#  • teto de páginas fail-closed — execução incompleta não vira falso sucesso;
+#  • data ausente/inválida permanece ausente — nunca é substituída por "hoje";
+#  • nenhuma comunicação cria prazo automaticamente.
 from __future__ import annotations
 
 import json
@@ -33,6 +36,9 @@ from app.models.user import User
 
 logger = logging.getLogger("ejc.djen")
 BASE = "https://comunicaapi.pje.jus.br/api/v1/comunicacao"
+ITENS_POR_PAGINA = 100
+MAX_PAGINAS = 100
+JANELA_RECONCILIACAO_DIAS = 7
 
 
 @dataclass(slots=True)
@@ -40,12 +46,15 @@ class DjenConsultaResultado:
     """Resposta explícita da fonte externa.
 
     ``fonte_ok=True`` com ``items=[]`` significa consulta válida sem resultado.
-    ``fonte_ok=False`` significa indisponibilidade ou payload inválido.
+    ``fonte_ok=False`` significa indisponibilidade, payload inválido ou leitura
+    incompleta da janela solicitada.
     """
 
     fonte_ok: bool
     items: list[dict] = field(default_factory=list)
     erro: str | None = None
+    paginas: int = 0
+    janela_dias: int = 0
 
     @property
     def recebidas(self) -> int:
@@ -56,6 +65,8 @@ class DjenConsultaResultado:
             "fonte_ok": self.fonte_ok,
             "recebidas": self.recebidas,
             "erro": self.erro,
+            "paginas": self.paginas,
+            "janela_dias": self.janela_dias,
         }
 
 
@@ -77,6 +88,8 @@ class DjenCapturaResultado:
     duplicadas: int
     ignoradas: int
     erro: str | None = None
+    paginas: int = 0
+    janela_dias: int = 0
     emails_pendentes: list[EmailDjenPendente] = field(
         default_factory=list,
         repr=False,
@@ -173,6 +186,8 @@ def resumir_execucao(resultados: list[DjenCapturaResultado]) -> dict:
             "novas": 0,
             "duplicadas": 0,
             "ignoradas": 0,
+            "paginas": 0,
+            "janela_dias": 0,
             "erros": {"nenhuma_oab_configurada": 1},
         }
 
@@ -206,6 +221,11 @@ def resumir_execucao(resultados: list[DjenCapturaResultado]) -> dict:
         "novas": sum(resultado.novas for resultado in resultados),
         "duplicadas": sum(resultado.duplicadas for resultado in resultados),
         "ignoradas": sum(resultado.ignoradas for resultado in resultados),
+        "paginas": sum(resultado.paginas for resultado in resultados),
+        "janela_dias": max(
+            (resultado.janela_dias for resultado in resultados),
+            default=0,
+        ),
         "erros": dict(sorted(erros.items())),
     }
 
@@ -220,6 +240,8 @@ def codificar_resumo_heartbeat(resumo: dict) -> str:
         "novas",
         "duplicadas",
         "ignoradas",
+        "paginas",
+        "janela_dias",
         "erros",
     }
     payload = {chave: resumo[chave] for chave in permitido if chave in resumo}
@@ -275,10 +297,15 @@ def normalizar_processo(numero: str | None) -> str:
     return re.sub(r"\D", "", numero or "")
 
 
-def _parse_data_disp(raw: str | None) -> date:
+def _parse_data_disp(raw: str | None) -> date | None:
+    """Converte a data informada pela fonte sem inventar marco temporal.
+
+    Data ausente ou inválida não aborta a captura, mas permanece ``None`` para
+    impedir que camadas jurídicas tratem a data do servidor como fato da fonte.
+    """
     valor = (raw or "").strip()
     if not valor:
-        return date.today()
+        return None
     try:
         return date.fromisoformat(valor[:10])
     except ValueError:
@@ -293,8 +320,24 @@ def _parse_data_disp(raw: str | None) -> date:
             )
         except ValueError:
             pass
-    logger.warning("DJEN: data de disponibilização inválida; usando hoje")
-    return date.today()
+    logger.warning(
+        "DJEN: data de disponibilização ausente ou inválida; mantendo sem data"
+    )
+    return None
+
+
+def _extrair_items(payload: dict | list) -> list[dict]:
+    if isinstance(payload, dict):
+        items = payload.get("items", [])
+    elif isinstance(payload, list):
+        items = payload
+    else:
+        raise TypeError("payload DJEN sem coleção")
+    if not isinstance(items, list) or any(
+        not isinstance(item, dict) for item in items
+    ):
+        raise TypeError("items DJEN inválidos")
+    return items
 
 
 async def buscar_caso_ativo_por_processo(
@@ -326,37 +369,70 @@ async def buscar_caso_ativo_por_processo(
 async def consultar_oab(
     numero: str,
     uf: str,
-    dias: int = 2,
+    dias: int = JANELA_RECONCILIACAO_DIAS,
 ) -> DjenConsultaResultado:
+    """Consulta paginada com janela sobreposta e sem sucesso truncado."""
+    dias = max(1, min(int(dias), 90))
     fim = date.today()
     inicio = fim - timedelta(days=dias)
-    params = {
+    base_params = {
         "numeroOab": re.sub(r"\D", "", numero),
         "ufOab": uf.upper(),
         "dataDisponibilizacaoInicio": inicio.isoformat(),
         "dataDisponibilizacaoFim": fim.isoformat(),
-        "itensPorPagina": 100,
+        "itensPorPagina": ITENS_POR_PAGINA,
     }
+
+    todos: list[dict] = []
+    vistos: set[str] = set()
+    paginas = 0
     try:
-        payload = await _djen_get(params)
-        if isinstance(payload, dict):
-            items = payload.get("items", [])
-        elif isinstance(payload, list):
-            items = payload
-        else:
-            raise TypeError("payload DJEN sem coleção")
-        if not isinstance(items, list) or any(
-            not isinstance(item, dict) for item in items
-        ):
-            raise TypeError("items DJEN inválidos")
-        return DjenConsultaResultado(fonte_ok=True, items=items)
+        for pagina in range(1, MAX_PAGINAS + 1):
+            payload = await _djen_get({**base_params, "pagina": pagina})
+            lote = _extrair_items(payload)
+            paginas = pagina
+
+            for item in lote:
+                chave = str(item.get("id") or item.get("hash") or "")
+                # Sem id/hash, a captura contabiliza como ignorada. Não usamos
+                # conteúdo como chave para não fundir duas comunicações reais.
+                if chave and chave in vistos:
+                    continue
+                if chave:
+                    vistos.add(chave)
+                todos.append(item)
+
+            if len(lote) < ITENS_POR_PAGINA:
+                return DjenConsultaResultado(
+                    fonte_ok=True,
+                    items=todos,
+                    paginas=paginas,
+                    janela_dias=dias,
+                )
+
+        logger.error(
+            "DJEN: paginação atingiu teto de %s páginas; janela incompleta",
+            MAX_PAGINAS,
+        )
+        return DjenConsultaResultado(
+            fonte_ok=False,
+            items=[],
+            erro="paginacao_truncada",
+            paginas=paginas,
+            janela_dias=dias,
+        )
     except Exception as exc:
         codigo = _classificar_erro_fonte(exc)
         logger.warning(
             "DJEN: consulta à fonte falhou após retries; codigo=%s",
             codigo,
         )
-        return DjenConsultaResultado(fonte_ok=False, erro=codigo)
+        return DjenConsultaResultado(
+            fonte_ok=False,
+            erro=codigo,
+            paginas=paginas,
+            janela_dias=dias,
+        )
 
 
 async def _capturar_configurado(
@@ -389,6 +465,7 @@ async def _capturar_configurado(
         texto = (item.get("texto") or "")[:2000]
         numero_processo = normalizar_processo(
             item.get("numero_processo")
+            or item.get("numeroProcesso")
             or item.get("numeroprocessocommascara")
             or ""
         )
@@ -407,7 +484,11 @@ async def _capturar_configurado(
             id=str(uuid4()),
             comunicacao_id_externo=external_id,
             advogado_id=adv.id,
-            numero_processo=item.get("numero_processo") or numero_processo,
+            numero_processo=(
+                item.get("numero_processo")
+                or item.get("numeroProcesso")
+                or numero_processo
+            ),
             tribunal=item.get("siglaTribunal") or item.get("sigla_tribunal"),
             tipo_comunicacao=(
                 item.get("tipoComunicacao")
@@ -492,6 +573,8 @@ async def _capturar_configurado(
         novas=novas,
         duplicadas=duplicadas,
         ignoradas=ignoradas,
+        paginas=consulta.paginas,
+        janela_dias=consulta.janela_dias,
         emails_pendentes=emails,
     )
 
@@ -499,6 +582,8 @@ async def _capturar_configurado(
 async def capturar_para_advogado(
     db: AsyncSession,
     adv: User,
+    *,
+    dias: int = JANELA_RECONCILIACAO_DIAS,
 ) -> DjenCapturaResultado:
     """Captura uma inscrição em savepoint e registra métricas na task atual.
 
@@ -512,7 +597,11 @@ async def capturar_para_advogado(
             DjenCapturaResultado.sem_configuracao()
         )
 
-    consulta = await consultar_oab(adv.djen_oab_numero, adv.djen_oab_uf)
+    consulta = await consultar_oab(
+        adv.djen_oab_numero,
+        adv.djen_oab_uf,
+        dias=dias,
+    )
     if not consulta.fonte_ok:
         return registrar_resultado_execucao(
             DjenCapturaResultado(
@@ -523,6 +612,8 @@ async def capturar_para_advogado(
                 duplicadas=0,
                 ignoradas=0,
                 erro=consulta.erro,
+                paginas=consulta.paginas,
+                janela_dias=consulta.janela_dias,
             )
         )
 
@@ -532,5 +623,7 @@ async def capturar_para_advogado(
     except Exception:
         logger.error("DJEN: captura interna falhou; codigo=erro_interno")
         resultado = DjenCapturaResultado.falha_interna()
+        resultado.paginas = consulta.paginas
+        resultado.janela_dias = consulta.janela_dias
 
     return registrar_resultado_execucao(resultado)
