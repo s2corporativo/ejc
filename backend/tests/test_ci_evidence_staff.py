@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import fcntl
 import importlib.util
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -45,7 +47,6 @@ def test_success_pointer_e_hashes_detectam_adulteracao(tmp_path: Path):
     assert summary.is_file()
     assert ev.verify_success(root / sha, sha) is True
 
-    # A evidência é content-addressed: qualquer alteração posterior invalida o gate.
     log.write_bytes(log.read_bytes() + b"tamper\n")
     assert ev.verify_success(root / sha, sha) is False
 
@@ -85,7 +86,6 @@ def test_latest_attempt_e_restrito_a_attempts(tmp_path: Path):
     found = ev.latest_log(root / sha, sha, 0)
     assert found == log.resolve()
 
-    # Pointer manipulado tentando escapar da raiz deve falhar fechado.
     (root / sha / "latest-attempt.json").write_text(
         json.dumps({"target_sha": sha, "attempt": "../outside"}),
         encoding="utf-8",
@@ -101,6 +101,87 @@ def test_attempts_sao_unicos_mesmo_no_mesmo_segundo(tmp_path: Path):
     second = ev.start_attempt(root, sha, "feature/a", 1)
     assert first != second
     assert first.parent == second.parent
+
+
+def test_prune_remove_sha_antigo_mas_preserva_sha_travado(tmp_path: Path):
+    ev = _load_module()
+    root = tmp_path / "evidence"
+    old_sha = "e" * 40
+    locked_sha = "f" * 40
+    recent_sha = "1" * 40
+
+    for sha in (old_sha, locked_sha, recent_sha):
+        attempt = ev.start_attempt(root, sha, "feature/prune", 1)
+        (attempt / "backend.log").write_text("ok\n", encoding="utf-8")
+        ev.finish_attempt(
+            attempt,
+            root / sha,
+            sha,
+            "feature/prune",
+            1,
+            "success",
+            None,
+            0,
+            True,
+        )
+
+    old_time = time.time() - 60 * 86400
+    for sha in (old_sha, locked_sha):
+        for path in (root / sha).rglob("*"):
+            if not path.is_symlink():
+                os.utime(path, (old_time, old_time), follow_symlinks=False)
+        os.utime(root / sha, (old_time, old_time))
+
+    lock_path = root / locked_sha / ".lock"
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        stats = ev.prune_evidence(root, max_shas=1, max_age_days=30, attempts_per_sha=1)
+        assert stats["removed_shas"] == 1
+        assert stats["skipped_locked"] == 1
+        assert not (root / old_sha).exists()
+        assert (root / locked_sha).exists()
+        assert (root / recent_sha).exists()
+
+
+def test_prune_preserva_attempt_referenciado_por_latest_success(tmp_path: Path):
+    ev = _load_module()
+    sha = "2" * 40
+    root = tmp_path / "evidence"
+    success = ev.start_attempt(root, sha, "feature/keep", 1)
+    (success / "backend.log").write_text("ok\n", encoding="utf-8")
+    ev.finish_attempt(
+        success,
+        root / sha,
+        sha,
+        "feature/keep",
+        1,
+        "success",
+        None,
+        0,
+        True,
+    )
+
+    stale = ev.start_attempt(root, sha, "feature/keep", 1)
+    (stale / "backend.log").write_text("failed\n", encoding="utf-8")
+    ev.finish_attempt(
+        stale,
+        root / sha,
+        sha,
+        "feature/keep",
+        1,
+        "failure",
+        "backend",
+        1,
+        False,
+    )
+
+    old_time = time.time() - 60 * 86400
+    os.utime(success, (old_time, old_time))
+    os.utime(stale, (old_time, old_time))
+    ev.prune_evidence(root, max_shas=10, max_age_days=30, attempts_per_sha=1)
+
+    assert success.exists()
+    assert ev.verify_success(root / sha, sha) is True
 
 
 def test_chave_do_app_exige_permissoes_owner_only(tmp_path: Path):
