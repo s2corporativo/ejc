@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   AlertTriangle,
@@ -26,6 +26,8 @@ import api, {
   analiseAdvogadoPorAnalise,
   type AnaliseAdvogadoResult,
 } from "../lib/api";
+import { mensagemErroHttp, mensagemErroIA } from "../lib/iaErro";
+import { LatestRequestGate } from "../lib/latestRequest";
 import Markdown from "../components/Markdown";
 import { useAuth } from "../stores/auth";
 import {
@@ -64,8 +66,6 @@ type Relatorio = {
   teses?: unknown[];
   pontos_fortes?: unknown[];
   pontos_fracos?: unknown[];
-  // Status técnico do pipeline (ex.: "número do processo não identificado") —
-  // separado de pontos_fracos, que passou a conter só fraqueza jurídica.
   lacunas_da_analise?: unknown[];
   proximos_passos?: unknown[];
   documentos_pendentes?: unknown[];
@@ -182,28 +182,17 @@ const CONVERSION_ROLES = new Set([
   "advogado_auxiliar",
 ]);
 
-// Estados em que o backend (raio_x.py::converter) aceita transformar o Raio-X
-// em caso. O fluxo padrão termina em "aguardando_conferencia"; exigir só
-// "analise_concluida" (estado que o back nunca persiste) deixava o botão
-// eternamente inerte — o usuário clicava e nada acontecia.
 const STATUS_CONVERTIVEIS = new Set([
   "aguardando_conferencia",
   "em_analise",
   "analise_concluida",
 ]);
 
-// Processamento assíncrono: o POST de análise/reanálise responde na hora com
-// status "fila" e o backend processa em segundo plano (fila →
-// em_processamento → aguardando_conferencia/documentos_pendentes, ou erro).
-// A página acompanha a transição por polling do GET da análise.
 const STATUS_PROCESSANDO = new Set(["fila", "em_processamento"]);
 const POLLING_INTERVALO_MS = 3000;
-// Teto do polling (~5 min por fase) para não consultar o backend para sempre.
 const POLLING_MAX_TENTATIVAS = 100;
+const FILTRO_DEBOUNCE_MS = 300;
 
-// O backend registra a falha com mensagem legível na própria análise
-// (relatorio["erro_processamento"], cf. schemas/raio_x.py); os demais campos
-// são fallback defensivo caso o contrato evolua.
 const extrairErroProcessamento = (analise: Analise): string | null => {
   const relatorio = (analise.relatorio || {}) as Record<string, unknown>;
   const candidato =
@@ -344,14 +333,10 @@ export default function RaioXProcesso() {
   const [actions, setActions] = useState<ContextualAction[]>([]);
   const [actionResult, setActionResult] = useState("");
   const [runningAction, setRunningAction] = useState<string | null>(null);
-
-  // Análise "advogado sênior" (IA agêntica) — operação cara, SOMENTE leitura.
   const [advResult, setAdvResult] = useState<AnaliseAdvogadoResult | null>(
     null,
   );
   const [advLoading, setAdvLoading] = useState(false);
-  // Erro exibido DENTRO do card da análise (o banner global fica fora da
-  // viewport quando o botão está no fim da página).
   const [advError, setAdvError] = useState<string | null>(null);
 
   const [conversion, setConversion] = useState<ConversionPreview | null>(null);
@@ -367,64 +352,116 @@ export default function RaioXProcesso() {
   const [confirmConflict, setConfirmConflict] = useState(false);
   const [confirmText, setConfirmText] = useState("");
 
+  const listGateRef = useRef(new LatestRequestGate());
+  const contextGateRef = useRef(new LatestRequestGate());
+  const detailGateRef = useRef(new LatestRequestGate());
+  const actionsGateRef = useRef(new LatestRequestGate());
+  const actionGateRef = useRef(new LatestRequestGate());
+  const advGateRef = useRef(new LatestRequestGate());
+  const conversionGateRef = useRef(new LatestRequestGate());
+  const selectedIntentRef = useRef<string | null>(null);
+  const busyCountRef = useRef(0);
+
+  const beginBusy = useCallback(() => {
+    busyCountRef.current += 1;
+    setBusy(true);
+  }, []);
+  const endBusy = useCallback(() => {
+    busyCountRef.current = Math.max(0, busyCountRef.current - 1);
+    setBusy(busyCountRef.current > 0);
+  }, []);
+
+  const selectAnalysis = useCallback((analise: Analise | null) => {
+    selectedIntentRef.current = analise?.id ?? null;
+    detailGateRef.current.invalidate();
+    actionGateRef.current.invalidate();
+    advGateRef.current.invalidate();
+    conversionGateRef.current.invalidate();
+    setSelected(analise);
+  }, []);
+
+  useEffect(
+    () => () => {
+      listGateRef.current.invalidate();
+      contextGateRef.current.invalidate();
+      detailGateRef.current.invalidate();
+      actionsGateRef.current.invalidate();
+      actionGateRef.current.invalidate();
+      advGateRef.current.invalidate();
+      conversionGateRef.current.invalidate();
+    },
+    [],
+  );
+
   useEffect(() => {
+    let active = true;
     api
       .get("/areas")
       .then(({ data }) => {
+        if (!active) return;
         const list = Array.isArray(data) ? data : data?.areas;
         if (Array.isArray(list) && list.length) {
           setAreas(list.filter((item: Area) => item.ativo !== false));
         }
       })
       .catch(() => undefined);
+    return () => {
+      active = false;
+    };
   }, []);
 
   const loadList = useCallback(async () => {
+    const token = listGateRef.current.begin();
     const params: Record<string, unknown> = { page_size: 100 };
-    if (search.trim()) params.search = search.trim();
+    const termo = search.trim().slice(0, 200);
+    if (termo) params.search = termo;
     if (riskFilter) params.risco = riskFilter;
     if (urgentFilter) params.urgente = true;
     const [{ data: list }, { data: metric }] = await Promise.all([
       api.get("/raio-x/", { params }),
       api.get("/raio-x/stats"),
     ]);
+    if (!listGateRef.current.isCurrent(token)) return false;
     setItems(list.data || []);
     setStats(metric);
+    return true;
   }, [search, riskFilter, urgentFilter]);
 
   useEffect(() => {
-    let active = true;
-    void (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        if (contextualCaseId) {
-          const { data } = await api.get(
-            `/raio-x/contextual/${contextualCaseId}`,
-          );
-          if (active) setContextual(data);
-        } else {
-          await loadList();
+    const contextGate = contextGateRef.current;
+    const listGate = listGateRef.current;
+    const delay = contextualCaseId ? 0 : FILTRO_DEBOUNCE_MS;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          if (contextualCaseId) {
+            const token = contextGate.begin();
+            const { data } = await api.get(
+              `/raio-x/contextual/${contextualCaseId}`,
+            );
+            if (contextGate.isCurrent(token)) setContextual(data);
+          } else {
+            await loadList();
+          }
+        } catch (err: unknown) {
+          if (contextualCaseId || listGate.isCurrent(listGate.begin() - 1)) {
+            setError(
+              mensagemErroHttp(err, "Não foi possível carregar o Raio-X."),
+            );
+          }
+        } finally {
+          setLoading(false);
         }
-      } catch (err: any) {
-        if (active)
-          setError(
-            err?.response?.data?.detail ||
-              "Não foi possível carregar o Raio-X.",
-          );
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
+      })();
+    }, delay);
     return () => {
-      active = false;
+      window.clearTimeout(timer);
+      contextGate.invalidate();
     };
   }, [contextualCaseId, loadList]);
 
-  // Polling do processamento assíncrono: enquanto a análise aberta estiver em
-  // "fila"/"em_processamento", consulta o GET a cada ~3s até o estado terminal
-  // (com teto de tentativas). O cleanup encerra o timer no unmount ou quando a
-  // análise selecionada muda.
   const selectedId = selected?.id;
   const selectedStatus = selected?.status;
   useEffect(() => {
@@ -436,7 +473,7 @@ export default function RaioXProcesso() {
       tentativas += 1;
       if (tentativas > POLLING_MAX_TENTATIVAS) {
         window.clearInterval(timer);
-        if (ativo) {
+        if (ativo && selectedIntentRef.current === selectedId) {
           setError(
             "O processamento está demorando mais que o esperado. Reabra a análise em instantes para ver o resultado.",
           );
@@ -446,7 +483,7 @@ export default function RaioXProcesso() {
       void api
         .get<Analise>(`/raio-x/${selectedId}`)
         .then(({ data }) => {
-          if (!ativo) return;
+          if (!ativo || selectedIntentRef.current !== selectedId) return;
           setSelected((atual) =>
             atual && atual.id === selectedId ? data : atual,
           );
@@ -465,7 +502,6 @@ export default function RaioXProcesso() {
             void loadList();
           }
         })
-        // Falha transitória de rede não interrompe o acompanhamento.
         .catch(() => undefined);
     }, POLLING_INTERVALO_MS);
     return () => {
@@ -476,6 +512,10 @@ export default function RaioXProcesso() {
 
   useEffect(() => {
     setAdvResult(null);
+    setAdvError(null);
+    actionGateRef.current.invalidate();
+    advGateRef.current.invalidate();
+    conversionGateRef.current.invalidate();
     const identification = selected?.relatorio?.identificacao || {};
     setReview({
       numero_processo: String(
@@ -504,6 +544,7 @@ export default function RaioXProcesso() {
       ),
     });
     if (selected) {
+      selectedIntentRef.current = selected.id;
       setCaseTitle(selected.titulo);
       setNewClientName(selected.potencial_cliente || "");
     }
@@ -511,8 +552,6 @@ export default function RaioXProcesso() {
 
   const report = contextual || selected?.relatorio;
   const identification = report?.identificacao || {};
-  // Análise aberta ainda em processamento assíncrono (fila/em_processamento):
-  // bloqueia ações que gravariam por cima do resultado que está por chegar.
   const processandoAsync = Boolean(
     !contextual && selectedStatus && STATUS_PROCESSANDO.has(selectedStatus),
   );
@@ -522,12 +561,15 @@ export default function RaioXProcesso() {
   );
 
   useEffect(() => {
+    const gate = actionsGateRef.current;
     if (!report) {
+      gate.invalidate();
       setActions([]);
       return;
     }
+    const token = gate.begin();
     const documentType = selected?.documentos?.[0]?.tipo_documento || undefined;
-    api
+    void api
       .get("/ai/skills/contextual", {
         params: {
           surface: "processos",
@@ -541,8 +583,13 @@ export default function RaioXProcesso() {
           limit: 6,
         },
       })
-      .then(({ data }) => setActions(data.actions || []))
-      .catch(() => setActions([]));
+      .then(({ data }) => {
+        if (gate.isCurrent(token)) setActions(data.actions || []);
+      })
+      .catch(() => {
+        if (gate.isCurrent(token)) setActions([]);
+      });
+    return () => gate.invalidate();
   }, [
     report,
     selected,
@@ -552,91 +599,95 @@ export default function RaioXProcesso() {
   ]);
 
   const detail = async (id: string) => {
-    setBusy(true);
+    selectedIntentRef.current = id;
+    const token = detailGateRef.current.begin();
+    beginBusy();
     setError(null);
     setActionResult("");
     try {
       const { data } = await api.get<Analise>(`/raio-x/${id}`);
-      setSelected(data);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao abrir a análise.");
+      if (detailGateRef.current.isCurrent(token)) setSelected(data);
+    } catch (err: unknown) {
+      if (detailGateRef.current.isCurrent(token)) {
+        setError(mensagemErroHttp(err, "Falha ao abrir a análise."));
+      }
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const create = async () => {
     if (newTitle.trim().length < 3) return;
-    setBusy(true);
+    beginBusy();
     setError(null);
     try {
       const { data } = await api.post<Analise>("/raio-x/", {
         titulo: newTitle.trim(),
         potencial_cliente: newClient.trim() || null,
       });
-      setSelected(data);
+      selectAnalysis(data);
       setCreating(false);
       setNewTitle("");
       setNewClient("");
       await loadList();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao criar análise.");
+    } catch (err: unknown) {
+      setError(mensagemErroHttp(err, "Falha ao criar análise."));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const upload = async () => {
     if (!selected || !files.length) return;
-    setBusy(true);
+    const analiseId = selected.id;
+    beginBusy();
     setError(null);
     setMessage(null);
     const body = new FormData();
     files.forEach((file) => body.append("files", file));
     try {
       const { data } = await api.post(
-        `/raio-x/${selected.id}/documentos/analisar`,
+        `/raio-x/${analiseId}/documentos/analisar`,
         body,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        },
+        { headers: { "Content-Type": "multipart/form-data" } },
       );
-      setSelected(data.analise);
-      setFiles([]);
-      const notes = [
-        data.duplicados?.length
-          ? `${data.duplicados.length} duplicado(s) ignorado(s)`
-          : "",
-        data.erros?.length ? `${data.erros.length} arquivo(s) com erro` : "",
-      ].filter(Boolean);
-      // Backend assíncrono responde na hora com a análise em fila; a página
-      // acompanha por polling. Se o backend ainda responder síncrono, mantém
-      // a mensagem de conclusão.
-      const emFila = STATUS_PROCESSANDO.has(String(data.analise?.status || ""));
-      setMessage(
-        `${
-          emFila
-            ? "Documentos enviados. A análise entrou na fila e esta página acompanha o processamento automaticamente."
-            : "Análise concluída."
-        }${notes.length ? ` ${notes.join("; ")}.` : ""}`,
-      );
+      if (selectedIntentRef.current === analiseId) {
+        setSelected(data.analise);
+        setFiles([]);
+        const notes = [
+          data.duplicados?.length
+            ? `${data.duplicados.length} duplicado(s) ignorado(s)`
+            : "",
+          data.erros?.length ? `${data.erros.length} arquivo(s) com erro` : "",
+        ].filter(Boolean);
+        const emFila = STATUS_PROCESSANDO.has(
+          String(data.analise?.status || ""),
+        );
+        setMessage(
+          `${
+            emFila
+              ? "Documentos enviados. A análise entrou na fila e esta página acompanha o processamento automaticamente."
+              : "Análise concluída."
+          }${notes.length ? ` ${notes.join("; ")}.` : ""}`,
+        );
+      }
       await loadList();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao analisar documentos.");
+    } catch (err: unknown) {
+      if (selectedIntentRef.current === analiseId) {
+        setError(mensagemErroHttp(err, "Falha ao analisar documentos."));
+      }
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const downloadDocument = async (documento: Documento) => {
     if (!selected) return;
-    setBusy(true);
+    beginBusy();
     try {
       const response = await api.get(
         `/raio-x/${selected.id}/documentos/${documento.id}/download`,
-        {
-          responseType: "blob",
-        },
+        { responseType: "blob" },
       );
       const href = URL.createObjectURL(response.data);
       const anchor = document.createElement("a");
@@ -644,18 +695,16 @@ export default function RaioXProcesso() {
       anchor.download = documento.nome_original;
       anchor.click();
       URL.revokeObjectURL(href);
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail || "Não foi possível baixar o documento.",
-      );
+    } catch (err: unknown) {
+      setError(mensagemErroHttp(err, "Não foi possível baixar o documento."));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const exportReport = async (format: "pdf" | "docx") => {
     if (!selected) return;
-    setBusy(true);
+    beginBusy();
     setError(null);
     try {
       const response = await api.get(`/raio-x/${selected.id}/exportar`, {
@@ -668,22 +717,22 @@ export default function RaioXProcesso() {
       anchor.download = `raio-x-${selected.id}.${format}`;
       anchor.click();
       URL.revokeObjectURL(href);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
-        err?.response?.data?.detail ||
-          `Falha ao exportar ${format.toUpperCase()}.`,
+        mensagemErroHttp(err, `Falha ao exportar ${format.toUpperCase()}.`),
       );
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const saveReview = async () => {
     if (!selected) return;
-    setBusy(true);
+    const analiseId = selected.id;
+    beginBusy();
     setError(null);
     try {
-      const { data } = await api.patch<Analise>(`/raio-x/${selected.id}`, {
+      const { data } = await api.patch<Analise>(`/raio-x/${analiseId}`, {
         status: "analise_concluida",
         numero_processo: review.numero_processo || null,
         area: review.area,
@@ -711,56 +760,60 @@ export default function RaioXProcesso() {
           conferido_em: new Date().toISOString(),
         },
       });
-      setSelected(data);
-      setMessage(
-        "Conferência humana salva. O relatório está pronto para decisão.",
-      );
+      if (selectedIntentRef.current === analiseId) {
+        setSelected(data);
+        setMessage(
+          "Conferência humana salva. O relatório está pronto para decisão.",
+        );
+      }
       await loadList();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao salvar conferência.");
+    } catch (err: unknown) {
+      if (selectedIntentRef.current === analiseId) {
+        setError(mensagemErroHttp(err, "Falha ao salvar conferência."));
+      }
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const reconsolidate = async (reprocess: boolean) => {
     if (!selected) return;
-    setBusy(true);
+    const analiseId = selected.id;
+    beginBusy();
     setError(null);
     try {
       const { data } = await api.post(
-        `/raio-x/${selected.id}/reanalisar`,
+        `/raio-x/${analiseId}/reanalisar`,
         null,
-        {
-          params: { reprocessar: reprocess },
-        },
+        { params: { reprocessar: reprocess } },
       );
       const analiseAtualizada: Analise = data.analise || data;
-      setSelected(analiseAtualizada);
-      // Reanálise também pode ser assíncrona: entra na fila e o polling
-      // acompanha; mantém a mensagem antiga quando a resposta já vem pronta.
-      const emFila = STATUS_PROCESSANDO.has(
-        String(analiseAtualizada?.status || ""),
-      );
-      setMessage(
-        emFila
-          ? "Reanálise iniciada. Esta página acompanha o processamento automaticamente."
-          : reprocess
-            ? `Documentos reprocessados.${data.erros?.length ? ` ${data.erros.length} erro(s).` : ""}`
-            : "Relatório reconsolidado com os dados existentes.",
-      );
+      if (selectedIntentRef.current === analiseId) {
+        setSelected(analiseAtualizada);
+        const emFila = STATUS_PROCESSANDO.has(
+          String(analiseAtualizada?.status || ""),
+        );
+        setMessage(
+          emFila
+            ? "Reanálise iniciada. Esta página acompanha o processamento automaticamente."
+            : reprocess
+              ? `Documentos reprocessados.${data.erros?.length ? ` ${data.erros.length} erro(s).` : ""}`
+              : "Relatório reconsolidado com os dados existentes.",
+        );
+      }
       await loadList();
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail || "Falha ao reprocessar a análise.",
-      );
+    } catch (err: unknown) {
+      if (selectedIntentRef.current === analiseId) {
+        setError(mensagemErroHttp(err, "Falha ao reprocessar a análise."));
+      }
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const executeAction = async (action: ContextualAction) => {
     if (!report) return;
+    const token = actionGateRef.current.begin();
     setRunningAction(action.name);
     setError(null);
     try {
@@ -778,20 +831,23 @@ export default function RaioXProcesso() {
         phase:
           String(identification.etapa_atual || selected?.fase || "") || null,
       });
-      setActionResult(data.conteudo || "Resultado sem conteúdo.");
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail || "A ação com IA não pôde ser executada.",
-      );
+      if (actionGateRef.current.isCurrent(token)) {
+        setActionResult(data.conteudo || "Resultado sem conteúdo.");
+      }
+    } catch (err: unknown) {
+      if (actionGateRef.current.isCurrent(token)) {
+        setError(
+          mensagemErroIA(err, "A ação com IA não pôde ser executada."),
+        );
+      }
     } finally {
-      setRunningAction(null);
+      if (actionGateRef.current.isCurrent(token)) setRunningAction(null);
     }
   };
 
-  // Análise do advogado (IA): contextual (caso) ou por documentos (analise_id).
-  // Roles idênticos a canConvert (backend _permitido_ia_advogado exclui estagiário).
   const runAdvogadoIA = async () => {
     if (!report || advLoading) return;
+    const token = advGateRef.current.begin();
     setAdvLoading(true);
     setAdvResult(null);
     setAdvError(null);
@@ -801,26 +857,29 @@ export default function RaioXProcesso() {
         : selected
           ? await analiseAdvogadoPorAnalise(selected.id)
           : null;
-      if (data) setAdvResult(data);
-    } catch (err: any) {
-      // 409 (análise preliminar sem caso vinculado), 403 (perfil), 429 etc. —
-      // exibido junto do botão, dentro do card da análise.
-      setAdvError(
-        err?.response?.data?.detail ||
-          "Não foi possível gerar a análise do advogado (IA).",
-      );
+      if (data && advGateRef.current.isCurrent(token)) setAdvResult(data);
+    } catch (err: unknown) {
+      if (advGateRef.current.isCurrent(token)) {
+        setAdvError(
+          mensagemErroIA(
+            err,
+            "Não foi possível gerar a análise do advogado (IA).",
+          ),
+        );
+      }
     } finally {
-      setAdvLoading(false);
+      if (advGateRef.current.isCurrent(token)) setAdvLoading(false);
     }
   };
 
   const saveActionResult = async () => {
     if (!selected || !actionResult.trim()) return;
+    const analiseId = selected.id;
     const previous = Array.isArray(selected.revisao_humana?.analises_ia)
       ? (selected.revisao_humana.analises_ia as unknown[])
       : [];
     try {
-      const { data } = await api.patch<Analise>(`/raio-x/${selected.id}`, {
+      const { data } = await api.patch<Analise>(`/raio-x/${analiseId}`, {
         revisao_humana: {
           ...selected.revisao_humana,
           analises_ia: [
@@ -833,23 +892,33 @@ export default function RaioXProcesso() {
           ],
         },
       });
-      setSelected(data);
-      setMessage("Resultado salvo na revisão interna do Raio-X.");
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail || "Falha ao salvar resultado da IA.",
-      );
+      if (selectedIntentRef.current === analiseId) {
+        setSelected(data);
+        setMessage("Resultado salvo na revisão interna do Raio-X.");
+      }
+    } catch (err: unknown) {
+      if (selectedIntentRef.current === analiseId) {
+        setError(mensagemErroHttp(err, "Falha ao salvar resultado da IA."));
+      }
     }
   };
 
   const openConversion = async () => {
     if (!selected || !canConvert) return;
-    setBusy(true);
+    const analiseId = selected.id;
+    const token = conversionGateRef.current.begin();
+    beginBusy();
     setError(null);
     try {
       const { data } = await api.get<ConversionPreview>(
-        `/raio-x/${selected.id}/conversao/preview`,
+        `/raio-x/${analiseId}/conversao/preview`,
       );
+      if (
+        !conversionGateRef.current.isCurrent(token) ||
+        selectedIntentRef.current !== analiseId
+      ) {
+        return;
+      }
       setConversion(data);
       setSelectedDocumentIds(data.documentos_disponiveis.map((doc) => doc.id));
       setConfirmDuplicate(false);
@@ -857,10 +926,12 @@ export default function RaioXProcesso() {
       setConfirmText("");
       setExistingClientId("");
       setShowConversion(true);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao preparar a conversão.");
+    } catch (err: unknown) {
+      if (conversionGateRef.current.isCurrent(token)) {
+        setError(mensagemErroHttp(err, "Falha ao preparar a conversão."));
+      }
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
@@ -877,7 +948,7 @@ export default function RaioXProcesso() {
 
   const convert = async () => {
     if (!selected || !conversion || !canConvert || !conversionConfirmed) return;
-    setBusy(true);
+    beginBusy();
     setError(null);
     try {
       const { data } = await api.post(`/raio-x/${selected.id}/converter`, {
@@ -905,29 +976,27 @@ export default function RaioXProcesso() {
         "Caso oficial criado com trilha de auditoria. Redirecionando…",
       );
       window.location.assign(`/casos/${data.case_id}`);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao converter em caso.");
+    } catch (err: unknown) {
+      setError(mensagemErroHttp(err, "Falha ao converter em caso."));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
   const archive = async (mode: "arquivar" | "descartar") => {
     if (!selected) return;
-    setBusy(true);
+    beginBusy();
     try {
       await api.post(`/raio-x/${selected.id}/${mode}`);
-      setSelected(null);
+      selectAnalysis(null);
       setMessage(
         mode === "arquivar" ? "Análise arquivada." : "Análise descartada.",
       );
       await loadList();
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.detail || "A operação não pôde ser concluída.",
-      );
+    } catch (err: unknown) {
+      setError(mensagemErroHttp(err, "A operação não pôde ser concluída."));
     } finally {
-      setBusy(false);
+      endBusy();
     }
   };
 
@@ -938,6 +1007,10 @@ export default function RaioXProcesso() {
       </div>
     );
   }
+
+  const prazosDoRelatorio = Array.isArray(report?.prazos)
+    ? report.prazos
+    : undefined;
 
   return (
     <div className="space-y-6">
@@ -964,8 +1037,6 @@ export default function RaioXProcesso() {
             </Link>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {/* Rota alternativa de entrada: quem prefere ANALISAR
-                  CONVERSANDO (e não só ler documentos) vai para a Sala. */}
               <Link to="/sala-juridica">
                 <Button variant="secondary">Analisar conversando</Button>
               </Link>
@@ -999,44 +1070,18 @@ export default function RaioXProcesso() {
       {!contextualCaseId && !selected && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <StatCard
-              label="Análises"
-              value={stats.total}
-              icon={<ScanSearch className="h-5 w-5" />}
-            />
-            <StatCard
-              label="Aguardando conferência"
-              value={stats.pendentes_conferencia}
-              icon={<FileSearch className="h-5 w-5" />}
-              tone="amber"
-            />
-            <StatCard
-              label="Urgentes"
-              value={stats.urgentes || 0}
-              icon={<ShieldCheck className="h-5 w-5" />}
-              tone="amber"
-            />
-            <StatCard
-              label="Risco elevado/crítico"
-              value={stats.risco_elevado_ou_critico || 0}
-              icon={<Filter className="h-5 w-5" />}
-              tone="amber"
-            />
-            <StatCard
-              label="Convertidas"
-              value={stats.convertidos}
-              icon={<FolderInput className="h-5 w-5" />}
-              tone="green"
-            />
+            <StatCard label="Análises" value={stats.total} icon={<ScanSearch className="h-5 w-5" />} />
+            <StatCard label="Aguardando conferência" value={stats.pendentes_conferencia} icon={<FileSearch className="h-5 w-5" />} tone="amber" />
+            <StatCard label="Urgentes" value={stats.urgentes || 0} icon={<ShieldCheck className="h-5 w-5" />} tone="amber" />
+            <StatCard label="Risco elevado/crítico" value={stats.risco_elevado_ou_critico || 0} icon={<Filter className="h-5 w-5" />} tone="amber" />
+            <StatCard label="Convertidas" value={stats.convertidos} icon={<FolderInput className="h-5 w-5" />} tone="green" />
           </div>
 
-          <SectionCard
-            title="Análises preliminares"
-            subtitle="Registros separados da carteira oficial do escritório."
-          >
+          <SectionCard title="Análises preliminares" subtitle="Registros separados da carteira oficial do escritório.">
             <div className="mb-4 grid gap-3 md:grid-cols-[1fr_180px_auto]">
               <input
                 value={search}
+                maxLength={200}
                 onChange={(event) => setSearch(event.target.value)}
                 onKeyDown={(event) => event.key === "Enter" && void loadList()}
                 placeholder="Buscar título, cliente ou número"
@@ -1054,10 +1099,7 @@ export default function RaioXProcesso() {
                 <option value="critico">Crítico</option>
               </select>
               <div className="flex gap-2">
-                <Button
-                  variant={urgentFilter ? "primary" : "secondary"}
-                  onClick={() => setUrgentFilter((value) => !value)}
-                >
+                <Button variant={urgentFilter ? "primary" : "secondary"} onClick={() => setUrgentFilter((value) => !value)}>
                   Somente urgentes
                 </Button>
                 <Button variant="secondary" onClick={() => void loadList()}>
@@ -1066,11 +1108,7 @@ export default function RaioXProcesso() {
               </div>
             </div>
             {!items.length ? (
-              <EmptyState
-                title="Nenhuma análise preliminar"
-                message="Crie um Raio-X e envie um ou mais documentos."
-                icon={ScanSearch}
-              />
+              <EmptyState title="Nenhuma análise preliminar" message="Crie um Raio-X e envie um ou mais documentos." icon={ScanSearch} />
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-white/10">
                 {items.map((item) => (
@@ -1083,21 +1121,12 @@ export default function RaioXProcesso() {
                       <ScanSearch className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-semibold text-slate-950 dark:text-white">
-                        {item.titulo}
-                      </div>
+                      <div className="truncate font-semibold text-slate-950 dark:text-white">{item.titulo}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        {item.potencial_cliente && (
-                          <span>{item.potencial_cliente}</span>
-                        )}
-                        {item.numero_processo && (
-                          <span>• {item.numero_processo}</span>
-                        )}
+                        {item.potencial_cliente && <span>{item.potencial_cliente}</span>}
+                        {item.numero_processo && <span>• {item.numero_processo}</span>}
                         {item.area && <Badge tone="blue">{item.area}</Badge>}
-                        <RiskBadge
-                          value={item.risco_nivel}
-                          urgent={item.prazo_urgente}
-                        />
+                        <RiskBadge value={item.risco_nivel} urgent={item.prazo_urgente} />
                       </div>
                     </div>
                     <StatusBadge value={item.status} />
@@ -1115,37 +1144,20 @@ export default function RaioXProcesso() {
           <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-float dark:border-white/10 dark:bg-slate-900">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Nova análise preliminar</h2>
-              <button onClick={() => setCreating(false)} aria-label="Fechar">
-                <X />
-              </button>
+              <button onClick={() => setCreating(false)} aria-label="Fechar"><X /></button>
             </div>
             <div className="mt-5 space-y-4">
               <label className="block text-sm font-medium">
                 Título
-                <input
-                  value={newTitle}
-                  onChange={(event) => setNewTitle(event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]"
-                  placeholder="Ex.: Processo recebido para avaliação"
-                />
+                <input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]" placeholder="Ex.: Processo recebido para avaliação" />
               </label>
               <label className="block text-sm font-medium">
                 Potencial cliente
-                <input
-                  value={newClient}
-                  onChange={(event) => setNewClient(event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]"
-                  placeholder="Opcional"
-                />
+                <input value={newClient} onChange={(event) => setNewClient(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]" placeholder="Opcional" />
               </label>
               <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={() => setCreating(false)}>
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={() => void create()}
-                  disabled={busy || newTitle.trim().length < 3}
-                >
+                <Button variant="secondary" onClick={() => setCreating(false)}>Cancelar</Button>
+                <Button onClick={() => void create()} disabled={busy || newTitle.trim().length < 3}>
                   {busy && <Loader2 className="h-4 w-4 animate-spin" />} Criar
                 </Button>
               </div>
@@ -1160,66 +1172,29 @@ export default function RaioXProcesso() {
             <SectionCard
               title={selected.titulo}
               subtitle={`${sourceCount} documento(s) · ${humanize(selected.status)}`}
-              actions={
-                <Button variant="ghost" onClick={() => setSelected(null)}>
-                  <X className="h-4 w-4" /> Fechar
-                </Button>
-              }
+              actions={<Button variant="ghost" onClick={() => selectAnalysis(null)}><X className="h-4 w-4" /> Fechar</Button>}
             >
               {selected.convertido_case_id ? (
                 <div className="flex items-center justify-between rounded-xl bg-emerald-50 p-4 text-emerald-800">
-                  <span className="flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5" /> Convertido e preservado
-                    para auditoria.
-                  </span>
-                  <Link
-                    to={`/casos/${selected.convertido_case_id}`}
-                    className="font-semibold"
-                  >
-                    Abrir caso
-                  </Link>
+                  <span className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" /> Convertido e preservado para auditoria.</span>
+                  <Link to={`/casos/${selected.convertido_case_id}`} className="font-semibold">Abrir caso</Link>
                 </div>
               ) : (
                 <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
                   <label className="flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed border-primary-200 bg-primary-50/40 p-4 text-sm text-primary-800 dark:border-primary-400/30 dark:bg-primary-400/10 dark:text-primary-100">
                     <UploadCloud className="h-6 w-6" />
-                    <span className="flex-1">
-                      {files.length
-                        ? `${files.length} arquivo(s) selecionado(s)`
-                        : "Selecione PDF, DOCX, TXT ou imagens"}
-                    </span>
-                    <input
-                      type="file"
-                      multiple
-                      className="hidden"
-                      accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.tiff,.webp"
-                      onChange={(event) =>
-                        setFiles(Array.from(event.target.files || []))
-                      }
-                    />
+                    <span className="flex-1">{files.length ? `${files.length} arquivo(s) selecionado(s)` : "Selecione PDF, DOCX, TXT ou imagens"}</span>
+                    <input type="file" multiple className="hidden" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.tiff,.webp" onChange={(event) => setFiles(Array.from(event.target.files || []))} />
                   </label>
-                  <Button
-                    onClick={() => void upload()}
-                    disabled={!files.length || busy || processandoAsync}
-                  >
-                    {busy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-4 w-4" />
-                    )}{" "}
-                    Analisar lote
+                  <Button onClick={() => void upload()} disabled={!files.length || busy || processandoAsync}>
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analisar lote
                   </Button>
                 </div>
               )}
               {!!selected.documentos.length && (
                 <div className="mt-4 flex flex-wrap gap-2">
                   {selected.documentos.map((doc) => (
-                    <button
-                      key={doc.id}
-                      type="button"
-                      onClick={() => void downloadDocument(doc)}
-                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200"
-                    >
+                    <button key={doc.id} type="button" onClick={() => void downloadDocument(doc)} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200">
                       <FileText className="h-3.5 w-3.5" /> {doc.nome_original}
                     </button>
                   ))}
@@ -1229,31 +1204,16 @@ export default function RaioXProcesso() {
           )}
 
           {processandoAsync && selected && (
-            <div
-              className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-100"
-              role="status"
-            >
+            <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-100" role="status">
               <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
-              <div>
-                <strong>
-                  {selected.status === "fila"
-                    ? "Análise na fila de processamento."
-                    : "Documentos em processamento."}
-                </strong>{" "}
-                Esta página atualiza automaticamente quando o resultado ficar
-                pronto — não é preciso recarregar.
-              </div>
+              <div><strong>{selected.status === "fila" ? "Análise na fila de processamento." : "Documentos em processamento."}</strong> Esta página atualiza automaticamente quando o resultado ficar pronto — não é preciso recarregar.</div>
             </div>
           )}
 
           {!contextual && selected?.status === "erro" && (
             <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-              <div>
-                <strong>O processamento da análise falhou:</strong>{" "}
-                {extrairErroProcessamento(selected) || "erro não especificado."}{" "}
-                Use "Reprocessar" ou envie os documentos novamente.
-              </div>
+              <div><strong>O processamento da análise falhou:</strong> {extrairErroProcessamento(selected) || "erro não especificado."} Use "Reprocessar" ou envie os documentos novamente.</div>
             </div>
           )}
 
@@ -1261,43 +1221,15 @@ export default function RaioXProcesso() {
 
           <div className="grid gap-5 xl:grid-cols-[1.4fr_0.6fr]">
             <div className="space-y-5">
-              <SectionCard
-                title="Síntese executiva"
-                subtitle={
-                  report.aviso || "Conteúdo sujeito à conferência humana."
-                }
-              >
-                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700 dark:text-slate-200">
-                  {String(
-                    report.sintese_executiva_revisada ||
-                      report.sintese_executiva ||
-                      "Síntese não disponível.",
-                  )}
-                </p>
+              <SectionCard title="Síntese executiva" subtitle={report.aviso || "Conteúdo sujeito à conferência humana."}>
+                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700 dark:text-slate-200">{String(report.sintese_executiva_revisada || report.sintese_executiva || "Síntese não disponível.")}</p>
               </SectionCard>
 
               <SectionCard title="Risco e jornada processual">
-                <RiskBadge
-                  value={String(
-                    report.risco_nivel || selected?.risco_nivel || "",
-                  )}
-                  urgent={Boolean(
-                    report.prazo_urgente || selected?.prazo_urgente,
-                  )}
-                />
+                <RiskBadge value={String(report.risco_nivel || selected?.risco_nivel || "")} urgent={Boolean(report.prazo_urgente || selected?.prazo_urgente)} />
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <ReportList
-                    title="Avaliação de risco"
-                    items={
-                      report.avaliacao_risco
-                        ? [report.avaliacao_risco]
-                        : report.riscos
-                    }
-                  />
-                  <ReportList
-                    title="Rito e próximas etapas"
-                    items={report.rito_jornada ? [report.rito_jornada] : []}
-                  />
+                  <ReportList title="Avaliação de risco" items={report.avaliacao_risco ? [report.avaliacao_risco] : report.riscos} />
+                  <ReportList title="Rito e próximas etapas" items={report.rito_jornada ? [report.rito_jornada] : []} />
                 </div>
               </SectionCard>
 
@@ -1305,92 +1237,41 @@ export default function RaioXProcesso() {
                 <ReportList title="Partes" items={report.partes} />
                 <ReportList title="Pedidos" items={report.pedidos} />
                 <ReportList title="Provas" items={report.provas} />
-                <ReportList
-                  title="Prazos potenciais"
-                  items={report.prazos_potenciais || (report as any).prazos}
-                />
-                <ReportList
-                  title="Decisões e determinações"
-                  items={report.decisoes}
-                />
+                <ReportList title="Prazos potenciais" items={report.prazos_potenciais || prazosDoRelatorio} />
+                <ReportList title="Decisões e determinações" items={report.decisoes} />
                 <ReportList title="Contradições" items={report.contradicoes} />
-                <ReportList
-                  title="Pontos fortes"
-                  items={report.pontos_fortes}
-                />
-                <ReportList
-                  title="Pontos frágeis"
-                  items={report.pontos_fracos}
-                />
-                <ReportList
-                  title="Próximos passos"
-                  items={report.proximos_passos}
-                />
-                <ReportList
-                  title="Documentos pendentes"
-                  items={report.documentos_pendentes}
-                />
-                <ReportList
-                  title="Lacunas da análise"
-                  items={report.lacunas_da_analise}
-                />
+                <ReportList title="Pontos fortes" items={report.pontos_fortes} />
+                <ReportList title="Pontos frágeis" items={report.pontos_fracos} />
+                <ReportList title="Próximos passos" items={report.proximos_passos} />
+                <ReportList title="Documentos pendentes" items={report.documentos_pendentes} />
+                <ReportList title="Lacunas da análise" items={report.lacunas_da_analise} />
               </div>
 
               <SectionCard title="Cronologia e matriz fato × prova">
                 <div className="grid gap-4 md:grid-cols-2">
                   <ReportList title="Cronologia" items={report.cronologia} />
-                  <ReportList
-                    title="Fato × prova"
-                    items={report.fatos_provas}
-                  />
+                  <ReportList title="Fato × prova" items={report.fatos_provas} />
                 </div>
               </SectionCard>
 
-              <SectionCard
-                title="Ações com IA"
-                subtitle="Somente ações compatíveis com a área, fase e documento reconhecido."
-              >
+              <SectionCard title="Ações com IA" subtitle="Somente ações compatíveis com a área, fase e documento reconhecido.">
                 {!actions.length ? (
-                  <p className="text-sm text-slate-500">
-                    Nenhuma ação contextual disponível com os dados atuais.
-                  </p>
+                  <p className="text-sm text-slate-500">Nenhuma ação contextual disponível com os dados atuais.</p>
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2">
                     {actions.map((action) => (
-                      <button
-                        key={action.id}
-                        onClick={() => void executeAction(action)}
-                        disabled={Boolean(runningAction)}
-                        className="rounded-xl border border-slate-200 p-3 text-left hover:border-primary-400 disabled:opacity-50 dark:border-white/10"
-                      >
-                        <div className="flex items-center gap-2 font-medium">
-                          <Sparkles className="h-4 w-4 text-primary-600" />{" "}
-                          {action.display_name}
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {action.reason}
-                        </p>
-                        {runningAction === action.name && (
-                          <Loader2 className="mt-2 h-4 w-4 animate-spin" />
-                        )}
+                      <button key={action.id} onClick={() => void executeAction(action)} disabled={Boolean(runningAction)} className="rounded-xl border border-slate-200 p-3 text-left hover:border-primary-400 disabled:opacity-50 dark:border-white/10">
+                        <div className="flex items-center gap-2 font-medium"><Sparkles className="h-4 w-4 text-primary-600" /> {action.display_name}</div>
+                        <p className="mt-1 text-xs text-slate-500">{action.reason}</p>
+                        {runningAction === action.name && <Loader2 className="mt-2 h-4 w-4 animate-spin" />}
                       </button>
                     ))}
                   </div>
                 )}
                 {actionResult && (
                   <div className="mt-4 rounded-xl border border-primary-200 bg-primary-50/40 p-4 dark:border-primary-400/20 dark:bg-primary-400/10">
-                    <p className="whitespace-pre-wrap text-sm leading-7">
-                      {actionResult}
-                    </p>
-                    {!contextualCaseId && selected && (
-                      <Button
-                        className="mt-3"
-                        variant="secondary"
-                        onClick={() => void saveActionResult()}
-                      >
-                        Salvar na revisão interna
-                      </Button>
-                    )}
+                    <p className="whitespace-pre-wrap text-sm leading-7">{actionResult}</p>
+                    {!contextualCaseId && selected && <Button className="mt-3" variant="secondary" onClick={() => void saveActionResult()}>Salvar na revisão interna</Button>}
                   </div>
                 )}
               </SectionCard>
@@ -1399,111 +1280,26 @@ export default function RaioXProcesso() {
                 <SectionCard
                   title="Análise do advogado sênior (IA)"
                   subtitle="Parecer estratégico FIRAC movido pelo agente (dossiê + precedentes). Somente leitura; nada é alterado no caso. Operação cara — rascunho sujeito a revisão humana (OAB)."
-                  actions={
-                    <Button
-                      variant="ai"
-                      onClick={() => void runAdvogadoIA()}
-                      disabled={advLoading}
-                    >
-                      {advLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Scale className="h-4 w-4" />
-                      )}
-                      Análise do advogado (IA)
-                    </Button>
-                  }
+                  actions={<Button variant="ai" onClick={() => void runAdvogadoIA()} disabled={advLoading}>{advLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scale className="h-4 w-4" />} Análise do advogado (IA)</Button>}
                 >
-                  {!advResult && !advLoading && !advError && (
-                    <p className="text-sm text-slate-500">
-                      Gere um parecer do caso como faria um advogado sênior
-                      antes de definir a estratégia.
-                    </p>
-                  )}
-                  {advLoading && (
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
-                      <Loader2 className="h-4 w-4 animate-spin" /> O agente está
-                      analisando o caso… pode levar alguns instantes.
-                    </div>
-                  )}
-                  {advError && !advLoading && (
-                    <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                      {advError}
-                    </div>
-                  )}
-                  {advResult && advResult.status === "indisponivel" && (
-                    <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-                      Recurso de IA do agente desativado no servidor
-                      (AI_AGENT_ENABLED). Solicite a ativação à administração.
-                    </div>
-                  )}
-                  {advResult &&
-                    advResult.status !== "ok" &&
-                    advResult.status !== "indisponivel" && (
-                      <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                        Não foi possível concluir a análise
-                        {advResult.detalhe ? ` (${advResult.detalhe})` : ""}.
+                  {!advResult && !advLoading && !advError && <p className="text-sm text-slate-500">Gere um parecer do caso como faria um advogado sênior antes de definir a estratégia.</p>}
+                  {advLoading && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> O agente está analisando o caso… pode levar alguns instantes.</div>}
+                  {advError && !advLoading && <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{advError}</div>}
+                  {advResult && advResult.status === "indisponivel" && <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />Recurso de IA do agente desativado no servidor (AI_AGENT_ENABLED). Solicite a ativação à administração.</div>}
+                  {advResult && advResult.status !== "ok" && advResult.status !== "indisponivel" && <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />Não foi possível concluir a análise{advResult.detalhe ? ` (${advResult.detalhe})` : ""}.</div>}
+                  {advResult && advResult.status === "ok" && advResult.analise && (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone="amber">RASCUNHO</Badge>
+                        {advResult.revisao_obrigatoria && <Badge tone="orange">Revisão humana obrigatória</Badge>}
+                        {typeof advResult.custo_estimado_brl === "number" && advResult.custo_estimado_brl > 0 && <Badge tone="slate">R$ {advResult.custo_estimado_brl.toFixed(4)}</Badge>}
+                        {advResult.critica_adversarial?.disponivel && typeof advResult.critica_adversarial.nota_robustez === "number" && <Badge tone="blue">Robustez (2ª IA): {advResult.critica_adversarial.nota_robustez}</Badge>}
                       </div>
-                    )}
-                  {advResult &&
-                    advResult.status === "ok" &&
-                    advResult.analise && (
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge tone="amber">RASCUNHO</Badge>
-                          {advResult.revisao_obrigatoria && (
-                            <Badge tone="orange">
-                              Revisão humana obrigatória
-                            </Badge>
-                          )}
-                          {typeof advResult.custo_estimado_brl === "number" &&
-                            advResult.custo_estimado_brl > 0 && (
-                              <Badge tone="slate">
-                                R$ {advResult.custo_estimado_brl.toFixed(4)}
-                              </Badge>
-                            )}
-                          {advResult.critica_adversarial?.disponivel &&
-                            typeof advResult.critica_adversarial
-                              .nota_robustez === "number" && (
-                              <Badge tone="blue">
-                                Robustez (2ª IA):{" "}
-                                {advResult.critica_adversarial.nota_robustez}
-                              </Badge>
-                            )}
-                        </div>
-                        <Markdown
-                          source={advResult.analise}
-                          className="max-h-[32rem] overflow-auto rounded-xl bg-slate-50 p-4 text-sm leading-7 text-slate-800 dark:bg-white/[0.04] dark:text-slate-200"
-                        />
-                        {!!advResult.alertas?.length && (
-                          <ul className="space-y-1 text-xs text-warn-700">
-                            {advResult.alertas.map((a, index) => (
-                              <li
-                                key={index}
-                                className="flex items-start gap-1.5"
-                              >
-                                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{" "}
-                                {a}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        {advResult.critica_adversarial?.disponivel &&
-                          advResult.critica_adversarial.relatorio && (
-                            <details className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
-                              <summary className="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-200">
-                                Crítica adversarial (2ª IA)
-                              </summary>
-                              <p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-slate-600 dark:text-slate-300">
-                                {advResult.critica_adversarial.relatorio}
-                              </p>
-                            </details>
-                          )}
-                      </div>
-                    )}
+                      <Markdown source={advResult.analise} className="max-h-[32rem] overflow-auto rounded-xl bg-slate-50 p-4 text-sm leading-7 text-slate-800 dark:bg-white/[0.04] dark:text-slate-200" />
+                      {!!advResult.alertas?.length && <ul className="space-y-1 text-xs text-warn-700">{advResult.alertas.map((a, index) => <li key={index} className="flex items-start gap-1.5"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {a}</li>)}</ul>}
+                      {advResult.critica_adversarial?.disponivel && advResult.critica_adversarial.relatorio && <details className="rounded-xl border border-slate-200 p-3 dark:border-white/10"><summary className="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-200">Crítica adversarial (2ª IA)</summary><p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-slate-600 dark:text-slate-300">{advResult.critica_adversarial.relatorio}</p></details>}
+                    </div>
+                  )}
                 </SectionCard>
               )}
             </div>
@@ -1512,191 +1308,34 @@ export default function RaioXProcesso() {
               <SectionCard title="Identificação">
                 <dl className="space-y-3 text-sm">
                   {Object.entries(identification).map(([key, value]) => (
-                    <div
-                      key={key}
-                      className="flex justify-between gap-3 border-b border-slate-100 pb-2 dark:border-white/10"
-                    >
+                    <div key={key} className="flex justify-between gap-3 border-b border-slate-100 pb-2 dark:border-white/10">
                       <dt className="text-slate-500">{humanize(key)}</dt>
-                      <dd className="text-right font-medium text-slate-900 dark:text-white">
-                        {stringify(value)}
-                      </dd>
+                      <dd className="text-right font-medium text-slate-900 dark:text-white">{stringify(value)}</dd>
                     </div>
                   ))}
                 </dl>
               </SectionCard>
 
               {!contextual && selected && !selected.convertido_case_id && (
-                <SectionCard
-                  title="Conferência humana"
-                  subtitle="Corrija área, rito, fase e dados essenciais antes da conversão."
-                >
+                <SectionCard title="Conferência humana" subtitle="Corrija área, rito, fase e dados essenciais antes da conversão.">
                   <div className="space-y-3">
-                    <label className="block text-sm font-medium">
-                      Número do processo
-                      <input
-                        value={review.numero_processo}
-                        onChange={(event) =>
-                          setReview((value) => ({
-                            ...value,
-                            numero_processo: event.target.value,
-                          }))
-                        }
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]"
-                      />
-                    </label>
-                    <label className="block text-sm font-medium">
-                      Área
-                      <select
-                        value={review.area}
-                        onChange={(event) =>
-                          setReview((value) => ({
-                            ...value,
-                            area: event.target.value,
-                          }))
-                        }
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-slate-900"
-                      >
-                        {areas.map((area) => (
-                          <option key={area.slug} value={area.slug}>
-                            {area.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {(
-                      [
-                        ["subarea", "Subárea"],
-                        ["rito", "Rito"],
-                        ["fase", "Fase ou etapa"],
-                        ["tribunal", "Tribunal"],
-                        ["orgao", "Órgão"],
-                        ["unidade", "Unidade"],
-                        ["posicao_cliente", "Posição do potencial cliente"],
-                      ] as const
-                    ).map(([field, label]) => (
-                      <label key={field} className="block text-sm font-medium">
-                        {label}
-                        <input
-                          value={review[field]}
-                          onChange={(event) =>
-                            setReview((value) => ({
-                              ...value,
-                              [field]: event.target.value,
-                            }))
-                          }
-                          className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]"
-                        />
-                      </label>
+                    <label className="block text-sm font-medium">Número do processo<input value={review.numero_processo} onChange={(event) => setReview((value) => ({ ...value, numero_processo: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]" /></label>
+                    <label className="block text-sm font-medium">Área<select value={review.area} onChange={(event) => setReview((value) => ({ ...value, area: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-slate-900">{areas.map((area) => <option key={area.slug} value={area.slug}>{area.nome}</option>)}</select></label>
+                    {([ ["subarea", "Subárea"], ["rito", "Rito"], ["fase", "Fase ou etapa"], ["tribunal", "Tribunal"], ["orgao", "Órgão"], ["unidade", "Unidade"], ["posicao_cliente", "Posição do potencial cliente"] ] as const).map(([field, label]) => (
+                      <label key={field} className="block text-sm font-medium">{label}<input value={review[field]} onChange={(event) => setReview((value) => ({ ...value, [field]: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]" /></label>
                     ))}
-                    <label className="block text-sm font-medium">
-                      Síntese revisada
-                      <textarea
-                        rows={8}
-                        value={review.sintese}
-                        onChange={(event) =>
-                          setReview((value) => ({
-                            ...value,
-                            sintese: event.target.value,
-                          }))
-                        }
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-white/10 dark:bg-white/[0.04]"
-                      />
-                    </label>
-                    <Button
-                      className="w-full"
-                      onClick={() => void saveReview()}
-                      disabled={busy || processandoAsync}
-                    >
-                      <CheckCircle2 className="h-4 w-4" /> Salvar conferência
-                    </Button>
+                    <label className="block text-sm font-medium">Síntese revisada<textarea rows={8} value={review.sintese} onChange={(event) => setReview((value) => ({ ...value, sintese: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-white/10 dark:bg-white/[0.04]" /></label>
+                    <Button className="w-full" onClick={() => void saveReview()} disabled={busy || processandoAsync}><CheckCircle2 className="h-4 w-4" /> Salvar conferência</Button>
                   </div>
                 </SectionCard>
               )}
 
               <SectionCard title="Ações">
                 <div className="space-y-2">
-                  {!contextual && selected && (
-                    <>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          variant="secondary"
-                          onClick={() => void exportReport("pdf")}
-                        >
-                          <Download className="h-4 w-4" /> PDF
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={() => void exportReport("docx")}
-                        >
-                          <Download className="h-4 w-4" /> Word
-                        </Button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          variant="ghost"
-                          onClick={() => void reconsolidate(false)}
-                          disabled={busy || processandoAsync}
-                        >
-                          <RefreshCw className="h-4 w-4" /> Reconsolidar
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => void reconsolidate(true)}
-                          disabled={busy || processandoAsync}
-                        >
-                          <RefreshCw className="h-4 w-4" /> Reprocessar
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                  {!contextual &&
-                    selected &&
-                    !selected.convertido_case_id &&
-                    canConvert && (
-                      <>
-                        <Button
-                          className="w-full"
-                          onClick={() => void openConversion()}
-                          disabled={!STATUS_CONVERTIVEIS.has(selected.status)}
-                        >
-                          <FolderInput className="h-4 w-4" /> Transformar em
-                          caso
-                        </Button>
-                        {!STATUS_CONVERTIVEIS.has(selected.status) && (
-                          <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-500/[0.08] dark:text-amber-300">
-                            A conversão libera quando a análise está conferível
-                            (status atual: {humanize(selected.status)}). Conclua
-                            o processamento e a conferência do Raio-X antes de
-                            transformar em caso.
-                          </p>
-                        )}
-                      </>
-                    )}
-                  {!contextual &&
-                    selected &&
-                    !selected.convertido_case_id &&
-                    !canConvert && (
-                      <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-white/[0.04] dark:text-slate-300">
-                        Seu perfil pode revisar o Raio-X, mas a conversão deve
-                        ser feita por advogado autorizado ou pela gestão.
-                      </p>
-                    )}
-                  {!contextual && selected && !selected.convertido_case_id && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        variant="ghost"
-                        onClick={() => void archive("arquivar")}
-                      >
-                        <Archive className="h-4 w-4" /> Arquivar
-                      </Button>
-                      <Button
-                        variant="danger"
-                        onClick={() => void archive("descartar")}
-                      >
-                        <Trash2 className="h-4 w-4" /> Descartar
-                      </Button>
-                    </div>
-                  )}
+                  {!contextual && selected && <><div className="grid grid-cols-2 gap-2"><Button variant="secondary" onClick={() => void exportReport("pdf")}><Download className="h-4 w-4" /> PDF</Button><Button variant="secondary" onClick={() => void exportReport("docx")}><Download className="h-4 w-4" /> Word</Button></div><div className="grid grid-cols-2 gap-2"><Button variant="ghost" onClick={() => void reconsolidate(false)} disabled={busy || processandoAsync}><RefreshCw className="h-4 w-4" /> Reconsolidar</Button><Button variant="ghost" onClick={() => void reconsolidate(true)} disabled={busy || processandoAsync}><RefreshCw className="h-4 w-4" /> Reprocessar</Button></div></>}
+                  {!contextual && selected && !selected.convertido_case_id && canConvert && <><Button className="w-full" onClick={() => void openConversion()} disabled={!STATUS_CONVERTIVEIS.has(selected.status)}><FolderInput className="h-4 w-4" /> Transformar em caso</Button>{!STATUS_CONVERTIVEIS.has(selected.status) && <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-500/[0.08] dark:text-amber-300">A conversão libera quando a análise está conferível (status atual: {humanize(selected.status)}). Conclua o processamento e a conferência do Raio-X antes de transformar em caso.</p>}</>}
+                  {!contextual && selected && !selected.convertido_case_id && !canConvert && <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-white/[0.04] dark:text-slate-300">Seu perfil pode revisar o Raio-X, mas a conversão deve ser feita por advogado autorizado ou pela gestão.</p>}
+                  {!contextual && selected && !selected.convertido_case_id && <div className="grid grid-cols-2 gap-2"><Button variant="ghost" onClick={() => void archive("arquivar")}><Archive className="h-4 w-4" /> Arquivar</Button><Button variant="danger" onClick={() => void archive("descartar")}><Trash2 className="h-4 w-4" /> Descartar</Button></div>}
                 </div>
               </SectionCard>
             </div>
@@ -1707,203 +1346,23 @@ export default function RaioXProcesso() {
       {showConversion && selected && conversion && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-float dark:border-white/10 dark:bg-slate-900">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">
-                  Transformar em caso do escritório
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Revise duplicidades, conflito, cliente, documentos e itens a
-                  transferir.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowConversion(false)}
-                aria-label="Fechar"
-              >
-                <X />
-              </button>
-            </div>
-
-            {conversion.bloqueia && (
-              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                Existem alertas de duplicidade ou conflito. A confirmação é
-                obrigatória e ficará registrada.
-              </div>
-            )}
-            <div className="mt-4">
-              <RiskBadge
-                value={conversion.risco_nivel}
-                urgent={conversion.prazo_urgente}
-              />
-            </div>
-
+            <div className="flex items-start justify-between"><div><h2 className="text-xl font-semibold">Transformar em caso do escritório</h2><p className="mt-1 text-sm text-slate-500">Revise duplicidades, conflito, cliente, documentos e itens a transferir.</p></div><button onClick={() => setShowConversion(false)} aria-label="Fechar"><X /></button></div>
+            {conversion.bloqueia && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Existem alertas de duplicidade ou conflito. A confirmação é obrigatória e ficará registrada.</div>}
+            <div className="mt-4"><RiskBadge value={conversion.risco_nivel} urgent={conversion.prazo_urgente} /></div>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <label className="block text-sm font-medium">
-                Cliente existente
-                <input
-                  value={existingClientId}
-                  onChange={(event) => setExistingClientId(event.target.value)}
-                  className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]"
-                  placeholder="Selecione abaixo ou informe o ID"
-                />
-              </label>
-              <label className="block text-sm font-medium">
-                Nome do novo cliente
-                <input
-                  value={newClientName}
-                  onChange={(event) => setNewClientName(event.target.value)}
-                  disabled={Boolean(existingClientId)}
-                  className="mt-1 w-full rounded-xl border px-3 py-2 disabled:opacity-50 dark:bg-white/[0.04]"
-                />
-              </label>
-              <label className="block text-sm font-medium">
-                CPF do novo cliente
-                <input
-                  value={newClientCpf}
-                  onChange={(event) => setNewClientCpf(event.target.value)}
-                  disabled={Boolean(existingClientId)}
-                  className="mt-1 w-full rounded-xl border px-3 py-2 disabled:opacity-50 dark:bg-white/[0.04]"
-                />
-              </label>
-              <label className="block text-sm font-medium">
-                Título do caso
-                <input
-                  value={caseTitle}
-                  onChange={(event) => setCaseTitle(event.target.value)}
-                  className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]"
-                />
-              </label>
+              <label className="block text-sm font-medium">Cliente existente<input value={existingClientId} onChange={(event) => setExistingClientId(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]" placeholder="Selecione abaixo ou informe o ID" /></label>
+              <label className="block text-sm font-medium">Nome do novo cliente<input value={newClientName} onChange={(event) => setNewClientName(event.target.value)} disabled={Boolean(existingClientId)} className="mt-1 w-full rounded-xl border px-3 py-2 disabled:opacity-50 dark:bg-white/[0.04]" /></label>
+              <label className="block text-sm font-medium">CPF do novo cliente<input value={newClientCpf} onChange={(event) => setNewClientCpf(event.target.value)} disabled={Boolean(existingClientId)} className="mt-1 w-full rounded-xl border px-3 py-2 disabled:opacity-50 dark:bg-white/[0.04]" /></label>
+              <label className="block text-sm font-medium">Título do caso<input value={caseTitle} onChange={(event) => setCaseTitle(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]" /></label>
             </div>
-
-            {!!conversion.clientes_possivelmente_duplicados.length && (
-              <div className="mt-4 rounded-xl border border-slate-200 p-4 dark:border-white/10">
-                <h3 className="text-sm font-semibold">
-                  Clientes semelhantes encontrados
-                </h3>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {conversion.clientes_possivelmente_duplicados.map(
-                    (client, index) => (
-                      <button
-                        type="button"
-                        key={String(client.id || index)}
-                        onClick={() =>
-                          setExistingClientId(String(client.id || ""))
-                        }
-                        className="rounded-lg border border-slate-200 px-3 py-2 text-left text-xs hover:border-primary-400 dark:border-white/10"
-                      >
-                        <strong>{String(client.nome || "Cliente")}</strong>
-                        <span className="ml-2 text-slate-500">
-                          {String(client.id || "")}
-                        </span>
-                      </button>
-                    ),
-                  )}
-                </div>
-              </div>
-            )}
-
-            {!!conversion.alertas_conflito.length && (
-              <ReportList
-                title="Alertas de conflito a revisar"
-                items={conversion.alertas_conflito}
-              />
-            )}
-
-            <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm dark:bg-white/[0.04]">
-              <h3 className="font-semibold">Documentos a incorporar ao GED</h3>
-              <div className="mt-3 space-y-2">
-                {conversion.documentos_disponiveis.map((doc) => (
-                  <label key={doc.id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedDocumentIds.includes(doc.id)}
-                      onChange={() =>
-                        setSelectedDocumentIds((current) =>
-                          current.includes(doc.id)
-                            ? current.filter((item) => item !== doc.id)
-                            : [...current, doc.id],
-                        )
-                      }
-                    />
-                    <span>{doc.nome}</span>
-                    {doc.tipo && <Badge tone="blue">{doc.tipo}</Badge>}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3 rounded-xl bg-slate-50 p-4 text-sm dark:bg-white/[0.04]">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={transferDeadlines}
-                  onChange={(event) =>
-                    setTransferDeadlines(event.target.checked)
-                  }
-                />{" "}
-                Transferir prazos como rascunho não confirmado
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={transferTasks}
-                  onChange={(event) => setTransferTasks(event.target.checked)}
-                />{" "}
-                Transferir próximos passos como tarefas
-              </label>
-            </div>
-
-            {requiresDuplicateConfirmation && (
-              <label className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                <input
-                  className="mt-1"
-                  type="checkbox"
-                  checked={confirmDuplicate}
-                  onChange={(event) =>
-                    setConfirmDuplicate(event.target.checked)
-                  }
-                />{" "}
-                Revisei a possível duplicidade e autorizo a continuidade.
-              </label>
-            )}
-            {requiresConflictConfirmation && (
-              <label className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">
-                <input
-                  className="mt-1"
-                  type="checkbox"
-                  checked={confirmConflict}
-                  onChange={(event) => setConfirmConflict(event.target.checked)}
-                />{" "}
-                Realizei a análise humana de conflito e autorizo a continuidade.
-              </label>
-            )}
-
-            <label className="mt-4 block text-sm font-medium">
-              Confirmação textual
-              <input
-                value={confirmText}
-                onChange={(event) => setConfirmText(event.target.value)}
-                className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]"
-                placeholder="TRANSFORMAR EM CASO DO ESCRITÓRIO"
-              />
-            </label>
-
-            <div className="mt-6 flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => setShowConversion(false)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={() => void convert()}
-                disabled={!conversionConfirmed || busy}
-              >
-                {busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirmar
-                conversão
-              </Button>
-            </div>
+            {!!conversion.clientes_possivelmente_duplicados.length && <div className="mt-4 rounded-xl border border-slate-200 p-4 dark:border-white/10"><h3 className="text-sm font-semibold">Clientes semelhantes encontrados</h3><div className="mt-3 flex flex-wrap gap-2">{conversion.clientes_possivelmente_duplicados.map((client, index) => <button type="button" key={String(client.id || index)} onClick={() => setExistingClientId(String(client.id || ""))} className="rounded-lg border border-slate-200 px-3 py-2 text-left text-xs hover:border-primary-400 dark:border-white/10"><strong>{String(client.nome || "Cliente")}</strong><span className="ml-2 text-slate-500">{String(client.id || "")}</span></button>)}</div></div>}
+            {!!conversion.alertas_conflito.length && <ReportList title="Alertas de conflito a revisar" items={conversion.alertas_conflito} />}
+            <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm dark:bg-white/[0.04]"><h3 className="font-semibold">Documentos a incorporar ao GED</h3><div className="mt-3 space-y-2">{conversion.documentos_disponiveis.map((doc) => <label key={doc.id} className="flex items-center gap-2"><input type="checkbox" checked={selectedDocumentIds.includes(doc.id)} onChange={() => setSelectedDocumentIds((current) => current.includes(doc.id) ? current.filter((item) => item !== doc.id) : [...current, doc.id])} /><span>{doc.nome}</span>{doc.tipo && <Badge tone="blue">{doc.tipo}</Badge>}</label>)}</div></div>
+            <div className="mt-4 space-y-3 rounded-xl bg-slate-50 p-4 text-sm dark:bg-white/[0.04]"><label className="flex items-center gap-2"><input type="checkbox" checked={transferDeadlines} onChange={(event) => setTransferDeadlines(event.target.checked)} /> Transferir prazos como rascunho não confirmado</label><label className="flex items-center gap-2"><input type="checkbox" checked={transferTasks} onChange={(event) => setTransferTasks(event.target.checked)} /> Transferir próximos passos como tarefas</label></div>
+            {requiresDuplicateConfirmation && <label className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><input className="mt-1" type="checkbox" checked={confirmDuplicate} onChange={(event) => setConfirmDuplicate(event.target.checked)} /> Revisei a possível duplicidade e autorizo a continuidade.</label>}
+            {requiresConflictConfirmation && <label className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900"><input className="mt-1" type="checkbox" checked={confirmConflict} onChange={(event) => setConfirmConflict(event.target.checked)} /> Realizei a análise humana de conflito e autorizo a continuidade.</label>}
+            <label className="mt-4 block text-sm font-medium">Confirmação textual<input value={confirmText} onChange={(event) => setConfirmText(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]" placeholder="TRANSFORMAR EM CASO DO ESCRITÓRIO" /></label>
+            <div className="mt-6 flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowConversion(false)}>Cancelar</Button><Button onClick={() => void convert()} disabled={!conversionConfirmed || busy}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirmar conversão</Button></div>
           </div>
         </div>
       )}
