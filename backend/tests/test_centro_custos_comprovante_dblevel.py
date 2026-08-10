@@ -111,7 +111,7 @@ async def _dispose_engine_apos_teste():
     await engine.dispose()
 
 
-async def _payload(case_id: str, document_id: str):
+def _payload(case_id: str, document_id: str):
     from app.models.centro_custo import CentroCustoCategoria, CentroCustoTipo
     from app.routers.centro_custos import CentroCustoIn
 
@@ -146,9 +146,7 @@ async def test_criacao_aceita_comprovante_do_mesmo_caso_e_audita():
         await db.commit()
         try:
             cu = await db.get(User, uid)
-            out = await criar_lancamento(
-                await _payload(case_id, document_id), db=db, cu=cu
-            )
+            out = await criar_lancamento(_payload(case_id, document_id), db=db, cu=cu)
             assert out["case_id"] == case_id
             assert out["comprovante_id"] == document_id
 
@@ -195,9 +193,7 @@ async def test_criacao_rejeita_comprovante_de_outro_caso():
         try:
             cu = await db.get(User, uid)
             with pytest.raises(HTTPException) as exc:
-                await criar_lancamento(
-                    await _payload(case_a, document_id), db=db, cu=cu
-                )
+                await criar_lancamento(_payload(case_a, document_id), db=db, cu=cu)
             assert exc.value.status_code == 400
             assert "não pertence ao caso" in str(exc.value.detail)
             total = (
@@ -237,9 +233,7 @@ async def test_advogado_nao_pode_usar_comprovante_do_cofre():
         try:
             cu = await db.get(User, uid)
             with pytest.raises(HTTPException) as exc:
-                await criar_lancamento(
-                    await _payload(case_id, document_id), db=db, cu=cu
-                )
+                await criar_lancamento(_payload(case_id, document_id), db=db, cu=cu)
             assert exc.value.status_code == 403
             total = (
                 await db.execute(
