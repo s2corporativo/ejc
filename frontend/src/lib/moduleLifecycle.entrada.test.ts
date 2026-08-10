@@ -85,4 +85,26 @@ describe("Entrada Única — consolidação segura de navegação", () => {
       }),
     ).toBe(salaDesabilitada);
   });
+
+  it("aplica lifecycle a subrotas wildcard do DPT360", () => {
+    const dptSubroutes = override("dpt360-subroutes", false);
+
+    expect(
+      lifecycleForPath("/dpt360/radar", {
+        "dpt360-subroutes": dptSubroutes,
+      }),
+    ).toBe(dptSubroutes);
+  });
+
+  it("prefere a rota dinâmica mais específica ao wildcard", () => {
+    const companyDetail = override("dpt360-company-detail", false);
+    const dptSubroutes = override("dpt360-subroutes", true);
+
+    expect(
+      lifecycleForPath("/dpt360/empresas/cliente-123", {
+        "dpt360-company-detail": companyDetail,
+        "dpt360-subroutes": dptSubroutes,
+      }),
+    ).toBe(companyDetail);
+  });
 });
