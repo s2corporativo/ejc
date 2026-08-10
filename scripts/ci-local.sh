@@ -7,7 +7,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 MODE="${1:-full}" # full|required|backend|eval|frontend|p0|architecture|continuity|ui-extra|fast
-PG_PORT="${PG_PORT:-}"
+PG_PORT_OVERRIDE="${PG_PORT:-}"
+PG_PORT="$PG_PORT_OVERRIDE"
 PG_CONTAINER="${PG_CONTAINER:-ejc_ci_pg_${$}}"
 PGVECTOR_IMAGE="${PGVECTOR_IMAGE:-pgvector/pgvector:pg16}"
 STATE_ROOT="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}/ejc-ci-local}"
@@ -68,13 +69,36 @@ chmod 700 "$STATE_ROOT" "$REPORT_DIR" 2>/dev/null || true
 
 PG_MODE=""
 PGBIN=""
+
+stop_pg() {
+  if [ "$PG_MODE" = "docker" ]; then
+    docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 \
+      || die "não foi possível encerrar o PostgreSQL Docker efêmero"
+  elif [ "$PG_MODE" = "local" ] && [ -n "$PGBIN" ] && [ -d "$PGDATA" ]; then
+    "$PGBIN/pg_ctl" -D "$PGDATA" stop -m fast >/dev/null 2>&1 \
+      || die "não foi possível encerrar o PostgreSQL local efêmero"
+  fi
+  if [ -d "$PGDATA" ]; then safe_remove_tree "$PGDATA"; fi
+  PG_MODE=""
+  PGBIN=""
+  [ -n "$PG_PORT_OVERRIDE" ] || PG_PORT=""
+}
+
 _cleanup() {
   set +e
-  if [ "$PG_MODE" = "docker" ]; then docker rm -f "$PG_CONTAINER" >/dev/null 2>&1; fi
+  if [ "$PG_MODE" = "docker" ]; then docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true; fi
   if [ "$PG_MODE" = "local" ] && [ -n "$PGBIN" ] && [ -d "$PGDATA" ]; then
     "$PGBIN/pg_ctl" -D "$PGDATA" stop -m fast >/dev/null 2>&1 || true
   fi
-  if [ -d "$PGDATA" ]; then safe_remove_tree "$PGDATA" || true; fi
+  if [ -d "$PGDATA" ]; then
+    local cdata cstate
+    cdata="$(canon "$PGDATA")"
+    cstate="$(canon "$STATE_ROOT")"
+    if [[ "$cdata" == "$cstate/"* ]]; then
+      find "$PGDATA" -depth -mindepth 1 -delete >/dev/null 2>&1 || true
+      rmdir "$PGDATA" >/dev/null 2>&1 || true
+    fi
+  fi
 }
 trap _cleanup EXIT
 
@@ -207,7 +231,8 @@ run_backend() {
   log "Pytest completo com banco + cobertura >=65%…"
   (cd backend && "$PY" -m pytest tests -q --tb=short --maxfail=25 --cov=app --cov-report=term-missing:skip-covered --cov-report="xml:$REPORT_DIR/backend-coverage.xml" --cov-fail-under=65) \
     | tee "$REPORT_DIR/backend-tests.log"
-  ok "Backend CI equivalente OK"
+  stop_pg
+  ok "Backend CI equivalente OK — banco efêmero encerrado"
 }
 
 run_eval() {
@@ -256,13 +281,14 @@ run_continuity() {
   local PY="$VENV_DIR/bin/python"
   export RESTORE_DRILL_ALLOW=1
   export RESTORE_DRILL_REPORT="${RESTORE_DRILL_REPORT:-$REPORT_DIR/restore-drill-report.json}"
-  log "Continuidade: preparando schema migrado…"
+  log "Continuidade: preparando schema migrado em banco novo…"
   (cd backend && "$PY" -m alembic upgrade head)
   log "Continuidade: prova integral backup/restore…"
   "$PY" -m py_compile scripts/backup/restore_drill.py
   (cd backend && PYTHONPATH=. "$PY" ../scripts/backup/restore_drill.py)
   [ -s "$RESTORE_DRILL_REPORT" ] || die "restore drill não produziu relatório"
-  ok "Continuidade backup/restore OK"
+  stop_pg
+  ok "Continuidade backup/restore OK — banco efêmero independente encerrado"
 }
 
 run_ui_extra() {
