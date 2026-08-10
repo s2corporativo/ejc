@@ -31,16 +31,19 @@ _CHUNK = 1024 * 1024
 
 
 def _utc_now() -> str:
+    """Retorna timestamp UTC ISO-8601 com timezone explícito."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _validate_sha(value: str) -> str:
+    """Valida o identificador Git SHA-1 usado como namespace da evidência."""
     if len(value) != 40 or any(ch not in "0123456789abcdef" for ch in value):
         raise ValueError("SHA deve conter exatamente 40 caracteres hexadecimais minúsculos")
     return value
 
 
 def _is_sha_dir(path: pathlib.Path) -> bool:
+    """Retorna True apenas para diretório real cujo nome seja um SHA válido."""
     try:
         _validate_sha(path.name)
     except ValueError:
@@ -49,6 +52,7 @@ def _is_sha_dir(path: pathlib.Path) -> bool:
 
 
 def _hash_file(path: pathlib.Path) -> tuple[str, int]:
+    """Calcula SHA-256 e tamanho em streaming com memória adicional limitada."""
     digest = hashlib.sha256()
     size = 0
     with path.open("rb") as handle:
@@ -59,6 +63,7 @@ def _hash_file(path: pathlib.Path) -> tuple[str, int]:
 
 
 def _atomic_json(path: pathlib.Path, value: dict[str, Any]) -> None:
+    """Persiste JSON com fsync e rename atômico no mesmo filesystem."""
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     tmp = pathlib.Path(tmp_name)
@@ -76,6 +81,7 @@ def _atomic_json(path: pathlib.Path, value: dict[str, Any]) -> None:
 
 
 def _resolve_child(base: pathlib.Path, relative: str) -> pathlib.Path:
+    """Resolve filho relativo sem permitir path traversal para fora de ``base``."""
     rel = pathlib.PurePosixPath(relative)
     if rel.is_absolute() or ".." in rel.parts:
         raise ValueError("caminho relativo inseguro")
@@ -103,8 +109,12 @@ def _remove_tree_no_follow(path: pathlib.Path) -> None:
 
 
 def start_attempt(root: pathlib.Path, sha: str, ref: str, pr: int | None) -> pathlib.Path:
+    """Cria tentativa única e atualiza atomicamente o ponteiro ``latest-attempt``."""
     sha = _validate_sha(sha)
-    root = root.resolve()
+    raw_root = root.expanduser()
+    if raw_root.is_symlink():
+        raise ValueError("raiz de evidência não pode ser symlink")
+    root = raw_root.resolve()
     sha_root = root / sha
     attempts = sha_root / "attempts"
     attempts.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -141,6 +151,7 @@ def finish_attempt(
     exit_code: int,
     promote: bool,
 ) -> pathlib.Path:
+    """Finaliza tentativa, hasheia logs e opcionalmente promove sucesso íntegro."""
     sha = _validate_sha(sha)
     attempt = attempt.resolve()
     sha_root = sha_root.resolve()
@@ -189,6 +200,7 @@ def finish_attempt(
 
 
 def verify_success(sha_root: pathlib.Path, sha: str) -> bool:
+    """Valida ponteiro, summary e todos os logs da última prova de sucesso."""
     sha = _validate_sha(sha)
     sha_root = sha_root.resolve()
     pointer = sha_root / "latest-success.json"
@@ -221,6 +233,7 @@ def verify_success(sha_root: pathlib.Path, sha: str) -> bool:
 
 
 def latest_log(sha_root: pathlib.Path, sha: str, started_epoch: int) -> pathlib.Path | None:
+    """Localiza o log mais recente da tentativa atual iniciado após ``started_epoch``."""
     sha = _validate_sha(sha)
     sha_root = sha_root.resolve()
     pointer = sha_root / "latest-attempt.json"
@@ -253,6 +266,7 @@ def latest_log(sha_root: pathlib.Path, sha: str, started_epoch: int) -> pathlib.
 
 
 def _protected_attempt_names(sha_root: pathlib.Path) -> set[str]:
+    """Retorna IDs de tentativas referenciadas pelos ponteiros autoritativos."""
     protected: set[str] = set()
     for pointer_name, key in (("latest-success.json", "summary"), ("latest-attempt.json", "attempt")):
         pointer = sha_root / pointer_name
@@ -270,16 +284,33 @@ def _protected_attempt_names(sha_root: pathlib.Path) -> set[str]:
     return protected
 
 
+def _quarantine_sha_root(root: pathlib.Path, sha_root: pathlib.Path) -> pathlib.Path:
+    """Retira atomicamente um SHA do namespace ativo antes da remoção física."""
+    quarantine = root / f".prune-{sha_root.name}-{os.getpid()}-{secrets.token_hex(4)}"
+    os.replace(sha_root, quarantine)
+    return quarantine
+
+
 def prune_evidence(
     root: pathlib.Path,
     max_shas: int,
     max_age_days: int,
     attempts_per_sha: int,
 ) -> dict[str, int]:
+    """Aplica retenção lock-aware sem remover evidência ativa ou referenciada.
+
+    Um SHA inteiro é primeiro renomeado atomicamente para um nome de quarentena
+    enquanto seu lock ainda está detido. O lock é então liberado e a quarentena
+    removida. Uma nova execução do mesmo SHA pode recriar o namespace original
+    sem compartilhar inode/diretório com a árvore em descarte.
+    """
     if max_shas < 1 or max_age_days < 1 or attempts_per_sha < 1:
         raise ValueError("limites de retenção devem ser >= 1")
-    root = root.resolve()
-    if not root.is_dir() or root.is_symlink():
+    raw_root = root.expanduser()
+    if raw_root.is_symlink():
+        raise ValueError("raiz de evidência não pode ser symlink")
+    root = raw_root.resolve()
+    if not root.is_dir():
         return {"removed_shas": 0, "removed_attempts": 0, "skipped_locked": 0}
 
     cutoff = time.time() - max_age_days * 86400
@@ -289,8 +320,11 @@ def prune_evidence(
     stats = {"removed_shas": 0, "removed_attempts": 0, "skipped_locked": 0}
 
     for sha_root in sha_dirs:
+        if not sha_root.exists():
+            continue
         lock_path = sha_root / ".lock"
         lock_path.touch(mode=0o600, exist_ok=True)
+        quarantine: pathlib.Path | None = None
         with lock_path.open("a+") as lock:
             try:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -298,32 +332,41 @@ def prune_evidence(
                 stats["skipped_locked"] += 1
                 continue
 
+            if not sha_root.exists():
+                continue
             if sha_root.name not in keep_by_count and sha_root.stat().st_mtime < cutoff:
-                _remove_tree_no_follow(sha_root)
-                stats["removed_shas"] += 1
-                continue
+                quarantine = _quarantine_sha_root(root, sha_root)
+            else:
+                attempts = sha_root / "attempts"
+                if not attempts.is_dir() or attempts.is_symlink():
+                    continue
+                protected = _protected_attempt_names(sha_root)
+                attempt_dirs = [
+                    path
+                    for path in attempts.iterdir()
+                    if path.is_dir() and not path.is_symlink()
+                ]
+                attempt_dirs.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+                kept_non_protected = 0
+                for attempt in attempt_dirs:
+                    if attempt.name in protected:
+                        continue
+                    if kept_non_protected < attempts_per_sha:
+                        kept_non_protected += 1
+                        continue
+                    if attempt.stat().st_mtime >= cutoff:
+                        continue
+                    _remove_tree_no_follow(attempt)
+                    stats["removed_attempts"] += 1
 
-            attempts = sha_root / "attempts"
-            if not attempts.is_dir() or attempts.is_symlink():
-                continue
-            protected = _protected_attempt_names(sha_root)
-            attempt_dirs = [path for path in attempts.iterdir() if path.is_dir() and not path.is_symlink()]
-            attempt_dirs.sort(key=lambda path: path.stat().st_mtime, reverse=True)
-            kept_non_protected = 0
-            for attempt in attempt_dirs:
-                if attempt.name in protected:
-                    continue
-                if kept_non_protected < attempts_per_sha:
-                    kept_non_protected += 1
-                    continue
-                if attempt.stat().st_mtime >= cutoff:
-                    continue
-                _remove_tree_no_follow(attempt)
-                stats["removed_attempts"] += 1
+        if quarantine is not None:
+            _remove_tree_no_follow(quarantine)
+            stats["removed_shas"] += 1
     return stats
 
 
 def _parser() -> argparse.ArgumentParser:
+    """Constrói parser de linha de comando sem executar efeitos colaterais."""
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -362,6 +405,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Executa subcomandos e converte erros de contrato em exit code 2."""
     args = _parser().parse_args(argv)
     try:
         if args.command == "start":
