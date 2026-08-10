@@ -26,6 +26,7 @@ import { DocumentosStats } from "../components/Dashboards";
 import CaseFilterChip from "../components/CaseFilterChip";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
 import { asList } from "../lib/list";
+import { useAuth } from "../stores/auth";
 
 /** Item de alternativa devolvido pela classificação por IA. */
 type ClassAlternativa = { tipo_key: string; nome: string };
@@ -44,6 +45,15 @@ type ClassResultado = {
   modelo?: string;
   aviso?: string;
 };
+
+const PAPEIS_VINCULO_DOCUMENTAL = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+  "estagiario",
+]);
 
 const CONF_LABEL: Record<string, string> = {
   alta: "Alta confiança",
@@ -110,6 +120,8 @@ const fmtKB = (bytes?: number) =>
 type PendenteUpload = { file: File; titulo: string; erro?: string };
 
 export default function Documentos() {
+  const user = useAuth((state) => state.user);
+  const podeVincularDocumento = PAPEIS_VINCULO_DOCUMENTAL.has(user?.role || "");
   const [data, setData] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(false);
@@ -141,12 +153,12 @@ export default function Documentos() {
   const [dataFim, setDataFim] = useState("");
   const [soPendentes, setSoPendentes] = useState(false);
 
-  // Edição de metadados por linha (PATCH /documents/{id}).
+  // Edição de metadados por linha (PATCH /documents/{id}). Vínculo com caso não
+  // é metadado editável: usa operação de domínio dedicada.
   const [editDoc, setEditDoc] = useState<any | null>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [salvandoEdit, setSalvandoEdit] = useState(false);
 
-  // Ações em lote via PATCH (mesmo padrão sequencial do baixar/excluir).
   const [loteConfModal, setLoteConfModal] = useState(false);
   const [loteConf, setLoteConf] = useState("normal");
   const [loteCasoModal, setLoteCasoModal] = useState(false);
@@ -159,8 +171,6 @@ export default function Documentos() {
   } | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewErro, setPreviewErro] = useState<string | null>(null);
-  // Espelho da object URL ativa p/ revogá-la no unmount (evita vazamento de blob
-  // quando o usuário navega com o preview aberto, sem passar por fecharPreview).
   const previewUrlRef = useRef<string | null>(null);
   previewUrlRef.current = previewUrl;
   useEffect(
@@ -170,7 +180,7 @@ export default function Documentos() {
     [],
   );
 
-  // Seleção múltipla para ações em lote (baixar / excluir em sequência).
+  // Seleção múltipla para ações em lote (baixar / excluir / metadata / vínculo).
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [loteBusy, setLoteBusy] = useState<
     "download" | "delete" | "conf" | "vincular" | null
@@ -183,12 +193,8 @@ export default function Documentos() {
   const [aplicando, setAplicando] = useState(false);
 
   const [erro, setErro] = useState(false);
-  // Guarda de sequência: só a resposta mais recente aplica setData (evita que
-  // a resposta antiga de uma busca com debounce sobrescreva a nova).
   const seq = useRef(0);
 
-  // Modo Caso: `?caso=` na URL vence; sem query, o caso ativo preenche.
-  // GET /documents/ já aceita case_id (fecha o GAP do link_modulo da jornada).
   const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
 
   const load = () => {
@@ -204,7 +210,6 @@ export default function Documentos() {
           confidencialidade: confFiltro || undefined,
           data_inicio: dataInicio || undefined,
           data_fim: dataFim || undefined,
-          // Só envia quando marcado — false filtraria "somente classificados".
           classificacao_pendente: soPendentes || undefined,
           page_size: 50,
         },
@@ -212,7 +217,7 @@ export default function Documentos() {
       .then((r) => {
         if (my !== seq.current) return;
         setData(r.data);
-        setSel(new Set()); // seleção sempre relativa à página carregada
+        setSel(new Set());
       })
       .catch(() => {
         if (my !== seq.current) return;
@@ -220,26 +225,20 @@ export default function Documentos() {
         toast.error("Falha ao carregar documentos");
       });
   };
+
   useEffect(() => {
-    // M12: lista de casos para vincular o documento (torna o gate IDOR efetivo).
     api
       .get("/cases/", { params: { page_size: 200 } })
       .then((r) => setCasos(asList(r.data)))
       .catch(() => {});
-    // Clientes para o filtro por cliente (falha silenciosa: perfis sem acesso
-    // a /clients/ simplesmente não veem o filtro populado).
     api
       .get("/clients/", { params: { page_size: 200 } })
       .then((r) => setClientes(asList(r.data)))
       .catch(() => {});
-    // Tipos do master (mesma fonte da validação do PATCH) + legados, para o
-    // filtro por tipo e para o modal de edição.
     api
       .get("/documents/tipos")
       .then((r) => {
-        const master: TipoDoc[] = Array.isArray(r.data?.data)
-          ? r.data.data
-          : [];
+        const master: TipoDoc[] = Array.isArray(r.data?.data) ? r.data.data : [];
         const chaves = new Set(master.map((t) => t.tipo_key));
         setTipos([
           ...master,
@@ -250,7 +249,6 @@ export default function Documentos() {
         ]);
       })
       .catch(() => {
-        // Fallback aos legados: filtro/edição continuam utilizáveis.
         setTipos(
           TIPOS_LEGADOS.map((k) => ({
             tipo_key: k,
@@ -260,6 +258,7 @@ export default function Documentos() {
         toast.error("Falha ao carregar os tipos de documento");
       });
   }, []);
+
   useEffect(() => {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
@@ -284,16 +283,10 @@ export default function Documentos() {
         ignorados.push(f.name);
         return;
       }
-      // Título automático: nome do arquivo sem a extensão (editável abaixo).
       novos.push({ file: f, titulo: semExtensao(f.name) });
     });
     if (ignorados.length > 0) {
-      // Mensagem completa: QUAIS arquivos foram recusados e QUAIS formatos
-      // servem — a versão antiga ("extensão não permitida") não dizia nem
-      // o arquivo nem a solução (usabilidade §3.5).
-      const formatos = EXTS_UPLOAD.map((e) =>
-        e.replace(".", "").toUpperCase(),
-      ).join(", ");
+      const formatos = EXTS_UPLOAD.map((e) => e.replace(".", "").toUpperCase()).join(", ");
       toast.error(
         ignorados.length === 1
           ? `O arquivo "${ignorados[0]}" não foi aceito. Formatos permitidos: ${formatos}.`
@@ -316,7 +309,6 @@ export default function Documentos() {
     const falhas: PendenteUpload[] = [];
     const avisos: string[] = [];
     let ok = 0;
-    // Endpoint aceita um arquivo por chamada → N chamadas sequenciais.
     for (let i = 0; i < pendentes.length; i++) {
       setProgresso({ done: i, total: pendentes.length });
       const p = pendentes[i];
@@ -333,7 +325,6 @@ export default function Documentos() {
       try {
         const r = await api.post("/documents/upload", fd);
         ok += 1;
-        // Backend avisa quando o formato legado (.doc/.xls) não é indexável.
         if (r.data?.aviso) avisos.push(`${p.titulo}: ${r.data.aviso}`);
       } catch (e: any) {
         falhas.push({
@@ -347,9 +338,7 @@ export default function Documentos() {
     if (ok > 0) load();
     avisos.slice(0, 3).forEach((a) => toast.info(a));
     if (falhas.length === 0) {
-      toast.success(
-        ok === 1 ? "1 documento enviado" : `${ok} documentos enviados`,
-      );
+      toast.success(ok === 1 ? "1 documento enviado" : `${ok} documentos enviados`);
       setPendentes([]);
       setModal(false);
       setForm({ confidencialidade: "normal" });
@@ -357,7 +346,6 @@ export default function Documentos() {
       toast.error(
         `${ok} enviado(s), ${falhas.length} falhou(aram) — revise os itens marcados e reenvie`,
       );
-      // Mantém na fila apenas os que falharam, com o motivo por arquivo.
       setPendentes(falhas);
     }
   };
@@ -383,11 +371,10 @@ export default function Documentos() {
     }
   };
 
-  // ── Pré-visualização (sem download) ───────────────────────────────────────
+  // ── Pré-visualização ───────────────────────────────────────────────────────
   const abrirPreview = async (d: any) => {
     const kind = EXTS_PREVIEW[extDe(d.filename || "")];
     if (!kind) return;
-    // Revoga a object URL de um preview anterior ainda aberto antes de trocar.
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreview({ doc: d, kind });
     setPreviewUrl(null);
@@ -454,9 +441,7 @@ export default function Documentos() {
 
   const excluirSelecionados = async () => {
     if (selDocs.length === 0) return;
-    if (
-      !window.confirm(`Excluir ${selDocs.length} documento(s) selecionado(s)?`)
-    )
+    if (!window.confirm(`Excluir ${selDocs.length} documento(s) selecionado(s)?`))
       return;
     setLoteBusy("delete");
     let ok = 0;
@@ -494,18 +479,9 @@ export default function Documentos() {
     }
   };
 
-  // ── Edição de metadados (PATCH /documents/{id}) ───────────────────────────
-  const patchErroMsg = (e: any) => {
-    const st = e.response?.status;
-    return (
-      e.response?.data?.detail ||
-      (st === 403
-        ? "Sem permissão: mover para o cofre (restrito+) é restrito a sócios."
-        : st === 400
-          ? "Vínculo negado: o caso pertence a outro cliente."
-          : "Falha ao atualizar o documento")
-    );
-  };
+  // ── Edição de metadados (PATCH nunca altera case_id) ──────────────────────
+  const patchErroMsg = (e: any) =>
+    e.response?.data?.detail || "Falha ao atualizar o documento";
 
   const abrirEdicao = (d: any) => {
     setEditDoc(d);
@@ -513,11 +489,9 @@ export default function Documentos() {
       titulo: d.titulo || "",
       tipo: d.tipo || "",
       confidencialidade: d.confidencialidade,
-      case_id: d.case_id || "",
     });
   };
 
-  // Aplica na linha da lista os metadados retornados pelo PATCH.
   const aplicarPatchNaLista = (docId: string, r: any) =>
     setData((prev: any) =>
       prev
@@ -530,7 +504,6 @@ export default function Documentos() {
                     titulo: r.titulo,
                     tipo: r.tipo,
                     confidencialidade: r.confidencialidade,
-                    case_id: r.case_id,
                   }
                 : x,
             ),
@@ -544,7 +517,6 @@ export default function Documentos() {
       toast.error("Título não pode ser vazio");
       return;
     }
-    // Envia apenas o que mudou (PATCH parcial).
     const payload: Record<string, unknown> = {};
     if (editForm.titulo.trim() !== editDoc.titulo)
       payload.titulo = editForm.titulo.trim();
@@ -552,8 +524,6 @@ export default function Documentos() {
       payload.tipo = editForm.tipo || null;
     if (editForm.confidencialidade !== editDoc.confidencialidade)
       payload.confidencialidade = editForm.confidencialidade;
-    if ((editForm.case_id || null) !== (editDoc.case_id || null))
-      payload.case_id = editForm.case_id || null;
     if (Object.keys(payload).length === 0) {
       toast.info("Nenhuma alteração para salvar");
       setEditDoc(null);
@@ -572,21 +542,15 @@ export default function Documentos() {
     }
   };
 
-  // ── Lote via PATCH: alterar confidencialidade / vincular ao caso ──────────
-  // Mesmo padrão do baixar/excluir em lote: sequencial, resumo de falhas por
-  // título. Erros individuais não interrompem os demais itens.
-  const patchLote = async (
-    payload: Record<string, unknown>,
-    acao: "conf" | "vincular",
-  ) => {
+  const alterarConfidencialidadeLote = async () => {
     if (selDocs.length === 0) return;
-    setLoteBusy(acao);
+    setLoteBusy("conf");
     let ok = 0;
     const falhas: string[] = [];
     let ultimoErro = "";
     for (const d of selDocs) {
       try {
-        await api.patch(`/documents/${d.id}`, payload);
+        await api.patch(`/documents/${d.id}`, { confidencialidade: loteConf });
         ok += 1;
       } catch (e: any) {
         falhas.push(d.titulo);
@@ -595,7 +559,6 @@ export default function Documentos() {
     }
     setLoteBusy(null);
     setLoteConfModal(false);
-    setLoteCasoModal(false);
     load();
     if (falhas.length === 0) {
       toast.success(`${ok} documento(s) atualizado(s)`);
@@ -608,8 +571,38 @@ export default function Documentos() {
     }
   };
 
-  // ── Classificação IA (HITL — inalterado) ──────────────────────────────────
-  // Abre o modal e busca a SUGESTÃO de tipo (aplicar=false — nunca grava aqui).
+  const vincularSelecionados = async () => {
+    if (!podeVincularDocumento || selDocs.length === 0 || !loteCaso) return;
+    setLoteBusy("vincular");
+    let ok = 0;
+    const falhas: string[] = [];
+    let ultimoErro = "";
+    for (const d of selDocs) {
+      try {
+        await api.post(`/cases/${loteCaso}/documentos/${d.id}/vincular`);
+        ok += 1;
+      } catch (e: any) {
+        falhas.push(d.titulo);
+        ultimoErro = e.response?.data?.detail || "Vínculo negado";
+      }
+    }
+    setLoteBusy(null);
+    setLoteCasoModal(false);
+    setLoteCaso("");
+    setSel(new Set());
+    load();
+    if (falhas.length === 0) {
+      toast.success(`${ok} documento(s) vinculado(s) ao caso`);
+    } else {
+      toast.error(
+        `${ok} vinculado(s), ${falhas.length} falhou(aram): ${falhas
+          .slice(0, 3)
+          .join(", ")}${falhas.length > 3 ? "…" : ""} — ${ultimoErro}`,
+      );
+    }
+  };
+
+  // ── Classificação IA (HITL) ────────────────────────────────────────────────
   const classificar = async (doc: any) => {
     setClassDoc(doc);
     setClassResult(null);
@@ -629,7 +622,6 @@ export default function Documentos() {
     }
   };
 
-  // Persiste o tipo sugerido (aplicar=true) e atualiza a linha na UI.
   const aplicarTipo = async () => {
     if (!classDoc) return;
     setAplicando(true);
@@ -679,7 +671,6 @@ export default function Documentos() {
           <button
             className="btn-gold"
             onClick={() => {
-              // Modo Caso: pré-seleciona o caso filtrado no vínculo do upload.
               if (casoFiltro && !form.case_id) {
                 setForm((f: any) => ({ ...f, case_id: casoFiltro }));
               }
@@ -804,17 +795,19 @@ export default function Documentos() {
             <Lock size={14} />
             {loteBusy === "conf" ? "Alterando…" : "Alterar confidencialidade"}
           </button>
-          <button
-            className="btn-ghost px-2 py-1"
-            disabled={loteBusy !== null}
-            onClick={() => {
-              setLoteCaso("");
-              setLoteCasoModal(true);
-            }}
-          >
-            <Link2 size={14} />
-            {loteBusy === "vincular" ? "Vinculando…" : "Vincular ao caso"}
-          </button>
+          {podeVincularDocumento && (
+            <button
+              className="btn-ghost px-2 py-1"
+              disabled={loteBusy !== null}
+              onClick={() => {
+                setLoteCaso("");
+                setLoteCasoModal(true);
+              }}
+            >
+              <Link2 size={14} />
+              {loteBusy === "vincular" ? "Vinculando…" : "Vincular ao caso"}
+            </button>
+          )}
           <button
             className="btn-ghost px-2 py-1 text-danger-500"
             disabled={loteBusy !== null}
@@ -975,8 +968,7 @@ export default function Documentos() {
               tabIndex={0}
               onClick={() => fileRef.current?.click()}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ")
-                  fileRef.current?.click();
+                if (e.key === "Enter" || e.key === " ") fileRef.current?.click();
               }}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1086,8 +1078,9 @@ export default function Documentos() {
               ))}
             </select>
             <p className="mt-1 text-xs text-slate-400">
-              Vincular a um caso controla quem pode acessar o documento (sigilo
-              do cliente). Vale para todos os arquivos da fila.
+              O vínculo criado no upload nasce no contexto do caso. Movimentações
+              posteriores usam o fluxo específico de vínculo e nunca o PATCH de
+              metadados.
             </p>
           </div>
           <div>
@@ -1124,7 +1117,7 @@ export default function Documentos() {
         </div>
       </Modal>
 
-      {/* Edição de metadados por linha — PATCH /documents/{id} */}
+      {/* Edição de metadados — case_id não faz parte deste contrato. */}
       <Modal
         open={!!editDoc}
         onClose={() => {
@@ -1201,28 +1194,12 @@ export default function Documentos() {
                 Mover para restrito+ (cofre) exige perfil de sócio.
               </p>
             </div>
-            <div>
-              <label className="label">Caso vinculado</label>
-              <select
-                className="input"
-                value={editForm.case_id || ""}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, case_id: e.target.value })
-                }
-              >
-                <option value="">— Sem vínculo —</option>
-                {casos.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {(c.numero_interno ? c.numero_interno + " — " : "") +
-                      (c.titulo || "Caso")}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-slate-400">
-                Documento de um cliente só pode apontar para caso do mesmo
-                cliente.
+            {editDoc.case_id && (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500">
+                Este documento já pertence a um caso. O vínculo não é editável
+                como metadado para preservar histórico e cadeia probatória.
               </p>
-            </div>
+            )}
           </div>
         )}
       </Modal>
@@ -1246,7 +1223,7 @@ export default function Documentos() {
             <button
               className="btn-primary"
               disabled={loteBusy !== null}
-              onClick={() => patchLote({ confidencialidade: loteConf }, "conf")}
+              onClick={alterarConfidencialidadeLote}
             >
               {loteBusy === "conf" ? "Aplicando..." : "Aplicar a todos"}
             </button>
@@ -1275,55 +1252,58 @@ export default function Documentos() {
         </div>
       </Modal>
 
-      {/* Lote: vincular ao caso */}
-      <Modal
-        open={loteCasoModal}
-        onClose={() => {
-          if (loteBusy === null) setLoteCasoModal(false);
-        }}
-        title={`Vincular ao caso — ${selDocs.length} documento(s)`}
-        footer={
-          <>
-            <button
-              className="btn-ghost"
-              disabled={loteBusy !== null}
-              onClick={() => setLoteCasoModal(false)}
-            >
-              Cancelar
-            </button>
-            <button
-              className="btn-primary"
-              disabled={loteBusy !== null || !loteCaso}
-              onClick={() => patchLote({ case_id: loteCaso }, "vincular")}
-            >
-              {loteBusy === "vincular" ? "Vinculando..." : "Vincular todos"}
-            </button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <div>
-            <label className="label">Caso de destino</label>
-            <select
-              className="input"
-              value={loteCaso}
-              onChange={(e) => setLoteCaso(e.target.value)}
-            >
-              <option value="">Selecione...</option>
-              {casos.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {(c.numero_interno ? c.numero_interno + " — " : "") +
-                    (c.titulo || "Caso")}
-                </option>
-              ))}
-            </select>
+      {/* Lote: vínculo usa a mesma operação de domínio da aba do caso. */}
+      {podeVincularDocumento && (
+        <Modal
+          open={loteCasoModal}
+          onClose={() => {
+            if (loteBusy === null) setLoteCasoModal(false);
+          }}
+          title={`Vincular ao caso — ${selDocs.length} documento(s)`}
+          footer={
+            <>
+              <button
+                className="btn-ghost"
+                disabled={loteBusy !== null}
+                onClick={() => setLoteCasoModal(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn-primary"
+                disabled={loteBusy !== null || !loteCaso}
+                onClick={vincularSelecionados}
+              >
+                {loteBusy === "vincular" ? "Vinculando..." : "Vincular todos"}
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div>
+              <label className="label">Caso de destino</label>
+              <select
+                className="input"
+                value={loteCaso}
+                onChange={(e) => setLoteCaso(e.target.value)}
+              >
+                <option value="">Selecione...</option>
+                {casos.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {(c.numero_interno ? c.numero_interno + " — " : "") +
+                      (c.titulo || "Caso")}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xs text-slate-400">
+              Somente documentos ainda sem caso podem ser adotados por este fluxo.
+              Documento que já integra outro caso permanece no contexto de origem;
+              cada recusa aparece no resumo sem interromper os demais itens.
+            </p>
           </div>
-          <p className="text-xs text-slate-400">
-            Documento de um cliente só pode apontar para caso do mesmo cliente
-            (itens de outros clientes falham no resumo, sem afetar os demais).
-          </p>
-        </div>
-      </Modal>
+        </Modal>
+      )}
 
       <Modal
         open={!!preview}
