@@ -40,10 +40,13 @@ def test_preflight_nomeia_falhas_e_valida_dependencias_do_mutex():
     assert "sudo -n true" in texto
 
 
-def test_env_de_producao_nao_e_world_readable():
+def test_env_de_producao_e_precondicao_read_only_0600():
     tx = TX_SCRIPT.read_text(encoding="utf-8")
-    assert 'sudo -n chmod 600 "$APP_DIR/.env"' in tx
-    assert 'sudo -n chown "$(id -u):$(id -g)" "$APP_DIR/.env"' in tx
+    assert '[ -r "$APP_DIR/.env" ]' in tx
+    assert 'stat -c %a "$APP_DIR/.env"' in tx
+    assert '"600"' in tx
+    assert 'sudo -n chown' not in tx
+    assert 'sudo -n chmod 600 "$APP_DIR/.env"' not in tx
     assert "chmod 644" not in "\n".join(
         line for line in tx.splitlines() if ".env" in line
     )
@@ -58,19 +61,22 @@ def test_sync_e_deploy_compartilham_um_unico_fd_de_lock():
     deploy = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
     assert "run: bash scripts/deploy_workflow_transaction.sh" in workflow
-    assert 'ejc_deploy_lock_acquire "$APP_DIR"' in tx
+    assert "ejc_deploy_lock_acquire_production" in tx
     assert 'EJC_DEPLOY_LOCK_FD=9' in lock
     assert 'export EJC_DEPLOY_LOCK_FD' in lock
     assert 'bash scripts/deploy_vps_safe.sh' in tx
     assert 'source "$SCRIPT_DIR/deploy_lock.sh"' in deploy
     assert 'ejc_deploy_lock_acquire "$APP_DIR"' in deploy
+    assert "ejc_deploy_lock_acquire_production" in lock
 
-    # Produção não pode voltar a depender de namespace por usuário.
     assert 'EJC_DEPLOY_PRODUCTION_LOCK_ROOT="/run/lock/ejc"' in lock
     assert "XDG_RUNTIME_DIR" not in lock
     assert "${HOME" not in lock
     assert "install -d -m 0750 -o root -g" in lock
     assert "-m 0660 -o root -g" in lock
+    assert "stat -Lc '%d:%i'" in lock
+    assert "inode mudou durante abertura" in lock
+    assert "EJC_DEPLOY_LOCK_ROOT:-" not in lock
 
 
 def test_resumo_distingue_fases_sem_confiar_no_outcome_ambiguo_do_step():
@@ -89,9 +95,13 @@ def test_resumo_distingue_fases_sem_confiar_no_outcome_ambiguo_do_step():
 
 def test_prearm_mutavel_reutiliza_mesmo_mutex_e_confere_sha_implantado():
     texto = _texto()
-    prearm = texto[texto.index("- name: Pré-armar gate de vigência") : texto.index("- name: Resumo da implantação")]
+    prearm = texto[
+        texto.index("- name: Pré-armar gate de vigência") : texto.index(
+            "- name: Resumo da implantação"
+        )
+    ]
     assert 'source "$APP_DIR/scripts/deploy_lock.sh"' in prearm
-    assert 'ejc_deploy_lock_acquire "$APP_DIR"' in prearm
+    assert "ejc_deploy_lock_acquire" in prearm
     assert 'deployed="$(sudo cat "$APP_DIR/.deployed_sha"' in prearm
     assert 'deployed" != "$TARGET_SHA"' in prearm
 
@@ -103,6 +113,18 @@ def test_registro_de_sha_acontece_dentro_do_executor_bloqueado():
     assert 'DEPLOYED_SHA_TMP="$APP_DIR/.deployed_sha.new.$$"' in deploy
     assert 'mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deployed_sha"' in deploy
     assert deploy.index("ejc_deploy_lock_acquire") < deploy.index("DEPLOYED_SHA_TMP=")
+
+
+def test_backup_default_e_validado_antes_das_mutacoes_do_executor():
+    deploy = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    backup = deploy.index('BACKUP_SAIDA=""')
+    snapshot = deploy.index('mktemp /tmp/ejc-env-rollback')
+    migrador = deploy.index('migrar_env_obsoletos.sh .env --backup-path')
+    inspect = deploy.index("docker inspect -f '{{.Image}}'")
+    tag = deploy.index('OLD_BACKEND_TAG="ejc-backend:rollback-')
+    build = deploy.index('log "Build frontend"')
+    assert backup < snapshot < migrador < inspect < tag < build
+    assert 'REQUIRE_PREDEPLOY_BACKUP="${REQUIRE_PREDEPLOY_BACKUP:-1}"' in deploy
 
 
 def test_deploy_automatico_so_aceita_ci_da_main():
