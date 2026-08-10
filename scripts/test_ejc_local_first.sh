@@ -62,10 +62,16 @@ test -f "$CP/untracked-safe.tar.gz"
 test -f "$CP/repository.bundle"
 test -f "$CP/SHA256SUMS"
 grep -q '.env.local' "$CP/skipped-untracked.txt"
-tar -tzf "$CP/untracked-safe.tar.gz" | grep -q '^novo.txt$'
-! tar -tzf "$CP/untracked-safe.tar.gz" | grep -q '.env.local'
+ARCHIVE_LIST="$TMP/untracked-safe.list"
+tar -tzf "$CP/untracked-safe.tar.gz" > "$ARCHIVE_LIST"
+grep -q '^novo.txt$' "$ARCHIVE_LIST"
+if grep -q '.env.local' "$ARCHIVE_LIST"; then
+  echo ".env.local não pode entrar no snapshot" >&2
+  exit 1
+fi
 
-env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh validate fast | grep -q 'dummy-ci mode=fast'
+VALIDATE_OUTPUT="$(env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh validate fast)"
+printf '%s\n' "$VALIDATE_OUTPUT" | grep -q 'dummy-ci mode=fast'
 
 git remote add origin https://invalid.invalid/ejc.git
 env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh status >/dev/null 2>&1
