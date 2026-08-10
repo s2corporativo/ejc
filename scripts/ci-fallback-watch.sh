@@ -5,6 +5,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 INTERVAL="${EJC_FALLBACK_INTERVAL_SECONDS:-300}"
 AUTO_MERGE="${EJC_FALLBACK_AUTO_MERGE:-1}"
+INFRA_MAX_RETRIES="${EJC_FALLBACK_INFRA_MAX_RETRIES:-3}"
+INFRA_RETRY_BASE_SECONDS="${EJC_FALLBACK_INFRA_RETRY_SECONDS:-300}"
+INFRA_RETRY_MAX_SECONDS="${EJC_FALLBACK_INFRA_RETRY_MAX_SECONDS:-1800}"
 ONCE=0
 [ "${1:-}" != "--once" ] || ONCE=1
 
@@ -20,10 +23,68 @@ EVIDENCE_ROOT="${EJC_CI_EVIDENCE_ROOT:-${HOME}/.cache/ejc-ci-evidence}"
 mkdir -p "$STATE_ROOT" "$EVIDENCE_ROOT"
 chmod 700 "$STATE_ROOT" "$EVIDENCE_ROOT" 2>/dev/null || true
 
+# Só sinais inequívocos de infraestrutura externa entram em retry automático.
+# Falha de pytest/typecheck/lint/build sem estes sinais é falha real do SHA e
+# permanece retida até novo commit.
+INFRA_ERROR_RE='Could not resolve host|Temporary failure in name resolution|Name or service not known|EAI_AGAIN|ECONNRESET|ETIMEDOUT|ENETUNREACH|TLS handshake timeout|Connection timed out|Read timed out|429 Too Many Requests|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout|Could not fetch URL|npm ERR! code (EAI_AGAIN|ECONNRESET|ETIMEDOUT)|registry\.npmjs\.org.*(EAI_AGAIN|ECONNRESET|ETIMEDOUT)|pypi\.org.*(Temporary failure|timed out|502|503|504)|github\.com.*(Could not resolve|timed out|502|503|504)'
+
 local_evidence_green() {
   local sha="$1" summary="$EVIDENCE_ROOT/$1/summary.json"
   [ -s "$summary" ] || return 1
   jq -e --arg sha "$sha" '.target_sha == $sha and .result == "success"' "$summary" >/dev/null 2>&1
+}
+
+latest_attempt_log() {
+  local sha="$1" started="$2" dir="$EVIDENCE_ROOT/$1"
+  [ -d "$dir" ] || return 1
+  local file ts best="" best_ts=0
+  for file in "$dir"/*.log; do
+    [ -f "$file" ] || continue
+    ts="$(stat -c %Y "$file" 2>/dev/null || echo 0)"
+    [ "$ts" -ge "$started" ] || continue
+    if [ "$ts" -ge "$best_ts" ]; then
+      best="$file"
+      best_ts="$ts"
+    fi
+  done
+  [ -n "$best" ] || return 1
+  printf '%s\n' "$best"
+}
+
+failure_is_infrastructure() {
+  local sha="$1" started="$2" logfile
+  logfile="$(latest_attempt_log "$sha" "$started" 2>/dev/null || true)"
+  [ -n "$logfile" ] || return 1
+  grep -Eiq "$INFRA_ERROR_RE" "$logfile"
+}
+
+retry_delay_seconds() {
+  local attempts="$1" delay="$INFRA_RETRY_BASE_SECONDS" i=1
+  while [ "$i" -lt "$attempts" ]; do
+    delay=$((delay * 2))
+    if [ "$delay" -ge "$INFRA_RETRY_MAX_SECONDS" ]; then
+      delay="$INFRA_RETRY_MAX_SECONDS"
+      break
+    fi
+    i=$((i + 1))
+  done
+  printf '%s\n' "$delay"
+}
+
+read_retry_state() {
+  local file="$1"
+  RETRY_ATTEMPTS=0
+  RETRY_LAST_EPOCH=0
+  [ -s "$file" ] || return 0
+  RETRY_ATTEMPTS="$(jq -r '.attempts // 0' "$file" 2>/dev/null || echo 0)"
+  RETRY_LAST_EPOCH="$(jq -r '.last_epoch // 0' "$file" 2>/dev/null || echo 0)"
+}
+
+write_retry_state() {
+  local file="$1" sha="$2" attempts="$3" now="$4"
+  umask 077
+  jq -n --arg sha "$sha" --argjson attempts "$attempts" --argjson last_epoch "$now" \
+    '{sha:$sha,classification:"infrastructure",attempts:$attempts,last_epoch:$last_epoch}' > "$file"
 }
 
 run_cycle() {
@@ -61,12 +122,14 @@ run_cycle() {
   while IFS=$'\t' read -r pr sha merge_state; do
     [ -n "$pr" ] || continue
     marker="$STATE_ROOT/$sha.result"
+    retry_file="$STATE_ROOT/$sha.infra-retry.json"
 
     # Evidência local integral é a fonte para decidir se a suíte pesada precisa
     # repetir. Metadados/reviews/API podem mudar sem mudar o SHA e são reavaliados
     # sem repetir backend/frontend.
     if local_evidence_green "$sha"; then
       printf 'success\n' > "$marker"
+      rm -f "$retry_file"
       if [ "$AUTO_MERGE" = "1" ]; then
         bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge-only || true
       else
@@ -76,13 +139,28 @@ run_cycle() {
       continue
     fi
 
-    # Falha real de código/teste sem evidência integral continua retida para não
-    # consumir CPU indefinidamente. Retry exige novo SHA ou opt-in operacional.
-    if [ -f "$marker" ] && grep -qx 'failure' "$marker" && [ "${EJC_FALLBACK_RETRY_FAILED:-0}" != "1" ]; then
-      continue
+    # Falha real de código/teste sem evidência integral continua retida. Uma
+    # falha classificada como infraestrutura pode repetir no mesmo SHA somente
+    # até o teto configurado e respeitando backoff exponencial.
+    if [ -f "$marker" ] && grep -qx 'failure' "$marker"; then
+      if [ ! -s "$retry_file" ]; then
+        [ "${EJC_FALLBACK_RETRY_FAILED:-0}" = "1" ] || continue
+      else
+        read_retry_state "$retry_file"
+        if [ "$RETRY_ATTEMPTS" -ge "$INFRA_MAX_RETRIES" ]; then
+          echo "[fallback-watch] PR #$pr atingiu $RETRY_ATTEMPTS retries de infraestrutura; retido até novo SHA." >&2
+          continue
+        fi
+        now="$(date +%s)"
+        delay="$(retry_delay_seconds "$RETRY_ATTEMPTS")"
+        if [ $((now - RETRY_LAST_EPOCH)) -lt "$delay" ]; then
+          continue
+        fi
+      fi
     fi
 
     echo "[fallback-watch] validando PR #$pr ($sha, mergeState=$merge_state)"
+    started="$(date +%s)"
     set +e
     if [ "$AUTO_MERGE" = "1" ]; then
       bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge
@@ -97,14 +175,32 @@ run_cycle() {
     # próximo ciclo fará merge-only/promote-only e revalidará metadados.
     if local_evidence_green "$sha"; then
       printf 'success\n' > "$marker"
+      rm -f "$retry_file"
       continue
     fi
 
     if [ "$rc" -eq 0 ]; then
       # Exit 0 sem summary integral nunca é suficiente para promover o SHA.
       printf 'pending\n' > "$marker"
-    else
+      continue
+    fi
+
+    if failure_is_infrastructure "$sha" "$started"; then
+      read_retry_state "$retry_file"
+      attempts=$((RETRY_ATTEMPTS + 1))
+      now="$(date +%s)"
+      write_retry_state "$retry_file" "$sha" "$attempts" "$now"
       printf 'failure\n' > "$marker"
+      if [ "$attempts" -lt "$INFRA_MAX_RETRIES" ]; then
+        delay="$(retry_delay_seconds "$attempts")"
+        echo "[fallback-watch] PR #$pr falhou por infraestrutura; retry $attempts/$INFRA_MAX_RETRIES após ${delay}s." >&2
+      else
+        echo "[fallback-watch] PR #$pr atingiu o limite de $INFRA_MAX_RETRIES falhas transitórias; nenhum falso verde." >&2
+      fi
+    else
+      rm -f "$retry_file"
+      printf 'failure\n' > "$marker"
+      echo "[fallback-watch] PR #$pr reprovou em teste/gate real; mesmo SHA não será repetido automaticamente." >&2
     fi
   done
 }
