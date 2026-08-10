@@ -87,11 +87,14 @@ if ! git merge-base --is-ancestor origin/main "$SHA"; then
   die "head $SHA está atrás da main atual; atualize/reconcilie antes de validar"
 fi
 
-CONTEXT_BACKEND='Backend — suíte completa + schema/RAG (Postgres pgvector)'
-CONTEXT_EVAL='Eval — smoke dos gold sets (offline, bloqueante)'
-CONTEXT_FRONTEND='Frontend — testes + typecheck + build'
-CONTEXT_P0='P0 guard — conflitos e segredos'
-CONTEXT_GOV='Governança — travas de PR'
+# IMPORTANTE: contexts locais têm namespace próprio e NUNCA reutilizam os nomes
+# dos checks do GitHub Actions. Assim, ao restaurar branch protection --cloud,
+# um status local antigo não pode satisfazer acidentalmente um check de Actions.
+CONTEXT_BACKEND='EJC Local / Backend'
+CONTEXT_EVAL='EJC Local / Eval'
+CONTEXT_FRONTEND='EJC Local / Frontend'
+CONTEXT_P0='EJC Local / P0 Guard'
+CONTEXT_GOV='EJC Local / Governança'
 CONTEXT_FULL='EJC Local Full Gate'
 STATUS_SYNC_PENDING=0
 
@@ -246,8 +249,8 @@ run_stage() {
   return 0
 }
 
-# Para execução promovível, Python divergente nunca é propagado. Os cinco
-# contexts só ficam verdes após TODOS os extras e a governança do PR atual.
+# Para execução promovível, Python divergente nunca é propagado. Os contexts
+# locais só ficam verdes após TODOS os extras e a governança do PR atual.
 run_stage backend "$CONTEXT_BACKEND" env EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh backend || exit 1
 run_stage eval "$CONTEXT_EVAL" env CI_SKIP_PIP=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh eval || exit 1
 run_stage frontend "$CONTEXT_FRONTEND" bash scripts/ci-local.sh frontend || exit 1
