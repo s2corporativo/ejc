@@ -64,14 +64,14 @@ run_cycle() {
 
     # Evidência local integral é a fonte para decidir se a suíte pesada precisa
     # repetir. Metadados/reviews/API podem mudar sem mudar o SHA e são reavaliados
-    # por --merge-only em todo ciclo.
+    # sem repetir backend/frontend.
     if local_evidence_green "$sha"; then
       printf 'success\n' > "$marker"
       if [ "$AUTO_MERGE" = "1" ]; then
         bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge-only || true
       else
-        # Mesmo sem auto-merge, revalida governança e tenta ressincronizar status.
-        bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge-only || true
+        # Revalida governança e ressincroniza status, mas NÃO tenta merge.
+        bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --promote-only || true
       fi
       continue
     fi
@@ -94,7 +94,7 @@ run_cycle() {
 
     # Se a suíte completa gerou summary success, uma falha posterior de
     # governança mutável/status/API NÃO transforma o código em reprovado. O
-    # próximo ciclo fará merge-only e revalidará metadados sem repetir a suíte.
+    # próximo ciclo fará merge-only/promote-only e revalidará metadados.
     if local_evidence_green "$sha"; then
       printf 'success\n' > "$marker"
       continue
