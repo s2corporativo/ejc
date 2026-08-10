@@ -151,7 +151,6 @@ if [ "$REQUIRE_PREDEPLOY_BACKUP" = "0" ]; then
 fi
 [ -f .env ] || { echo "Arquivo .env ausente em ${APP_DIR}" >&2; exit 1; }
 
-# Identidade e composição são preflight read-only.
 GIT_SHA="${TARGET_SHA:-$(git rev-parse HEAD 2>/dev/null || true)}"
 [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] \
   || die_policy "TARGET_SHA/HEAD deve ser SHA-1 completo de 40 caracteres hexadecimais; release sem identidade verificável foi bloqueada"
@@ -159,7 +158,6 @@ export GIT_SHA
 log "Versão a publicar: ${GIT_SHA}"
 docker compose config --quiet
 
-# Continuidade é aprovada ANTES da primeira escrita em .env/imagens/runtime.
 log "Verificando pré-requisitos de backup"
 BACKUP_SAIDA=""
 if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
@@ -184,7 +182,6 @@ else
   log "AVISO: backup pré-deploy não executou; contingência permissiva explícita seguirá sem prova nova."
 fi
 
-# Um único snapshot protegido serve ao deploy e ao migrador de valores obsoletos.
 umask 077
 cp -- .env "$ENV_ROLLBACK_FILE"
 chmod 600 "$ENV_ROLLBACK_FILE"
@@ -309,6 +306,13 @@ RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate frontend
 
 sleep 8
 EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
+
+# Marcador de release é parte da mesma transação/lock do cutover.
+DEPLOYED_SHA_TMP="$APP_DIR/.deployed_sha.new.$$"
+printf '%s\n' "$GIT_SHA" > "$DEPLOYED_SHA_TMP"
+chmod 644 "$DEPLOYED_SHA_TMP"
+mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deployed_sha"
+log "Versão implantada registrada atomicamente em .deployed_sha."
 
 ROLLBACK_ARMED=0
 rm -f -- "$ENV_ROLLBACK_FILE"
