@@ -4,7 +4,7 @@
 #
 # Modos:
 #   --contextos          lista checks reportados no HEAD
-#   --verificar          lê a configuração vigente
+#   --verificar          lê a configuração vigente (DEFAULT seguro)
 #   --dry-run            mostra política cloud (GitHub Actions)
 #   --dry-run-fallback   mostra política fallback local
 #   --cloud              aplica contexts do CI em nuvem
@@ -23,7 +23,7 @@ set -euo pipefail
 
 REPO="${EJC_REPO:-s2corporativo/ejc}"
 BRANCH="${EJC_BRANCH:-main}"
-MODO="${1:---cloud}"
+MODO="${1:---verificar}"
 FALLBACK_AUTHORIZATION="${EJC_FALLBACK_AUTHORIZATION:-}"
 
 falhar() { echo ""; echo "ABORTADO: $1"; exit 1; }
@@ -131,7 +131,7 @@ fi
 
 echo "1. Backup da configuracao atual"
 mkdir -p var
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 BACKUP="var/branch-protection-anterior-$STAMP.json"
 if gh api "repos/$REPO/branches/$BRANCH/protection" > "$BACKUP" 2>/dev/null; then
   cp "$BACKUP" var/branch-protection-anterior.json
@@ -173,4 +173,6 @@ Modo --cloud: cinco contexts canônicos do Actions.
 Modo --fallback: somente o context `EJC Local Full Gate`, produzido pelo fallback
 local completo após validação real do SHA em worktree isolado. A aplicação desse
 modo exige autorização registrada da Issue #998.
+
+Sem argumento, este script executa somente `--verificar` e não altera a proteção.
 FIM
