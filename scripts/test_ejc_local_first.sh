@@ -6,7 +6,12 @@ SCRIPT="$ROOT/scripts/ejc-local-first.sh"
 [ -x "$SCRIPT" ] || { echo "script local-first ausente ou não executável" >&2; exit 1; }
 
 TMP="$(mktemp -d)"
-cleanup() { rm -rf "$TMP"; }
+cleanup() {
+  if [ -d "$TMP" ]; then
+    find "$TMP" -depth -mindepth 1 -delete 2>/dev/null || true
+    rmdir "$TMP" 2>/dev/null || true
+  fi
+}
 trap cleanup EXIT
 
 mkdir -p "$TMP/repo/scripts"
