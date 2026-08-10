@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 MODE="${1:---enable}"
 REPO="${EJC_REPO:-s2corporativo/ejc}"
+FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"
 UNIT_DIR="${HOME}/.config/systemd/user"
 UNIT="$UNIT_DIR/ejc-ci-fallback.service"
 CRON_MARK='# EJC_CI_FALLBACK_998'
@@ -23,6 +24,8 @@ esac
   || fail "ambiente de produção ativo"
 [ ! -e /opt/ejc/.deployed_sha ] && [ ! -e /opt/ejc/.env ] \
   || fail "host contém marcadores da instalação produtiva /opt/ejc"
+[[ "$FALLBACK_APP_ID" =~ ^[1-9][0-9]*$ ]] \
+  || fail "EJC_FALLBACK_APP_ID numérico (>0) do GitHub App dedicado é obrigatório"
 case "$WATCHER_PATH" in
   *$'\n'*|*$'\r'*|*"'"*|*%*) fail "PATH contém caractere inseguro para scheduler autônomo" ;;
 esac
@@ -45,9 +48,6 @@ remove_watcher() {
 }
 
 if [ "$MODE" = "--disable" ]; then
-  # Primeiro restaura a proteção cloud. Se GitHub/API estiver indisponível,
-  # falha aqui e mantém o watcher ativo, evitando deixar a main esperando um
-  # gate local que ninguém mais produz.
   bash scripts/governanca/branch-protection.sh --cloud
   remove_watcher
   ok "fallback desativado e branch protection restaurada para contexts do CI em nuvem"
@@ -68,7 +68,6 @@ if [ "$PYVER" != "3.11" ] && ! command -v python3.11 >/dev/null 2>&1; then fail 
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$NODE_MAJOR" = "22" ] || fail "Node 22 requerido; encontrado $(node --version)"
 
-# A ativação só pode ocorrer a partir da main limpa e exatamente sincronizada.
 [ "$(git branch --show-current)" = "main" ] || fail "ative somente a partir da branch main"
 [ -z "$(git status --porcelain)" ] || fail "checkout local possui alterações; limpe-o antes da ativação"
 git fetch --quiet origin main || fail "não foi possível atualizar origin/main"
@@ -94,9 +93,6 @@ systemd_user_persistente() {
   [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true)" = "yes" ]
 }
 
-# Preferimos cron quando o daemon está comprovadamente ativo: não depende da
-# sessão de login. systemd --user só é aceito com linger=yes, condição que
-# garante persistência após logout/reboot sem manter uma sessão humana aberta.
 SCHEDULER=""
 if cron_persistente; then
   SCHEDULER=cron
@@ -107,9 +103,6 @@ else
 fi
 ok "scheduler persistente selecionado: $SCHEDULER"
 
-# Prova mínima do executor ANTES de alterar a política da main. O gate full será
-# executado por SHA de PR, mas a ativação só prossegue se o host já consegue
-# executar o núcleo local sem produção, Python divergente ou sintaxe quebrada.
 for script in \
   scripts/ci-local.sh \
   scripts/ci-fallback.sh \
@@ -127,8 +120,6 @@ if ! EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh fast >"$log_preflight"
 fi
 ok "preflight local aprovado antes da alteração da branch protection"
 
-# Prepare o watcher antes de alterar branch protection. A proteção só troca
-# depois que sabemos que existe um mecanismo local viável para sustentá-la.
 remove_watcher
 if [ "$SCHEDULER" = "systemd" ]; then
   mkdir -p "$UNIT_DIR"
@@ -142,6 +133,7 @@ Type=simple
 WorkingDirectory=$ROOT
 Environment="PATH=$WATCHER_PATH"
 Environment=EJC_REPO=$REPO
+Environment=EJC_FALLBACK_APP_ID=$FALLBACK_APP_ID
 Environment=EJC_FALLBACK_AUTO_MERGE=1
 Environment=EJC_ALLOW_PYTHON_MISMATCH=0
 ExecStart=/usr/bin/env bash $ROOT/scripts/ci-fallback-watch.sh
@@ -172,9 +164,10 @@ trap rollback_activation EXIT
 git config core.hooksPath .githooks
 ok "pre-push hook local ativado"
 
-EJC_FALLBACK_AUTHORIZATION=998 bash scripts/governanca/branch-protection.sh --fallback
+EJC_FALLBACK_AUTHORIZATION=998 EJC_FALLBACK_APP_ID="$FALLBACK_APP_ID" \
+  bash scripts/governanca/branch-protection.sh --fallback
 PROTECTION_CHANGED=1
-ok "branch protection apontada para EJC Local Full Gate (autorização #998)"
+ok "branch protection apontada para EJC Local Full Gate vinculado ao GitHub App id=$FALLBACK_APP_ID"
 
 if [ "$SCHEDULER" = "systemd" ]; then
   systemctl --user enable --now ejc-ci-fallback.service
@@ -182,7 +175,7 @@ if [ "$SCHEDULER" = "systemd" ]; then
   systemctl --user is-active --quiet ejc-ci-fallback.service
   ok "watcher persistente ativado via systemd --user (linger=yes)"
 else
-  LINE="*/5 * * * * cd '$ROOT' && /usr/bin/env PATH='$WATCHER_PATH' EJC_REPO='$REPO' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
+  LINE="*/5 * * * * cd '$ROOT' && /usr/bin/env PATH='$WATCHER_PATH' EJC_REPO='$REPO' EJC_FALLBACK_APP_ID='$FALLBACK_APP_ID' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
   { crontab -l 2>/dev/null || true; echo "$LINE"; } | crontab -
   (crontab -l 2>/dev/null || true) | grep -qF "$CRON_MARK"
   ok "watcher persistente ativado via cron (5 min)"
