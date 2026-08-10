@@ -14,6 +14,20 @@ def _user(role: str):
     return SimpleNamespace(role=SimpleNamespace(value=role))
 
 
+def _query_max_length(func, parameter_name: str) -> int | None:
+    """Lê MaxLen do FieldInfo sem depender de atributo interno do FastAPI.
+
+    Em FastAPI/Pydantic v2, ``Query(max_length=N)`` armazena a restrição em
+    ``metadata`` (annotated-types.MaxLen), não em ``Query.max_length``.
+    """
+    default = inspect.signature(func).parameters[parameter_name].default
+    for item in getattr(default, "metadata", ()):  # Pydantic v2 FieldInfo
+        value = getattr(item, "max_length", None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
 @pytest.mark.parametrize(
     "role",
     ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"],
@@ -69,8 +83,7 @@ def test_raio_x_download_nao_grava_filename_no_audit_log():
 
 
 def test_raio_x_listagem_impoe_limites_nos_filtros_textuais():
-    assinatura = inspect.signature(raio_x.listar)
-    assert assinatura.parameters["search"].default.max_length == 200
-    assert assinatura.parameters["status"].default.max_length == 40
-    assert assinatura.parameters["area"].default.max_length == 50
-    assert assinatura.parameters["risco"].default.max_length == 30
+    assert _query_max_length(raio_x.listar, "search") == 200
+    assert _query_max_length(raio_x.listar, "status") == 40
+    assert _query_max_length(raio_x.listar, "area") == 50
+    assert _query_max_length(raio_x.listar, "risco") == 30
