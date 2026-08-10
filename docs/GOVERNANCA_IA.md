@@ -3,27 +3,37 @@
 > **Documento canônico.** `CLAUDE.md`, `AGENTS.md` e os demais documentos de processo
 > traduzem estas regras para cada agente. Em caso de divergência, este arquivo prevalece.
 
-Versão: 3.0 — 2026-08-08 — **fluxo autônomo**: merge e deploy automáticos quando todos os
-gates automatizados estiverem verdes; intervenção humana reservada às exceções do §6-A.
+Versão: 3.1 — 2026-08-09 — **fluxo autônomo local-first**: trabalho e validação não param por
+indisponibilidade do GitHub; merge/deploy continuam condicionados aos gates e às exceções do §6-A.
 
 ## 1. Princípio
 
 A governança do EJC existe para proteger produção, dados, validade jurídica e rastreabilidade.
 Ela **não pode impedir diagnóstico, auditoria, revisão ou correção autorizada pelo titular**.
 
-O GitHub é a fonte permanente de verdade do projeto. Pedido direto do titular por chat é
-autorização válida para iniciar diagnóstico somente de leitura; antes de qualquer escrita, a
-decisão, os achados e o escopo devem estar registrados no GitHub por Issue ou Issue-guarda-chuva.
-As decisões, os achados e o escopo devem permanecer rastreáveis por Issue, comentário de revisão
-ou documento versionado. Toda mudança de arquivo deve ocorrer em branch identificável e terminar
-registrada em Pull Request.
+O GitHub permanece a fonte remota permanente de verdade e o destino final da rastreabilidade do
+projeto. Ele, porém, **não é dependência operacional para preservar trabalho ou executar testes**.
+Pedido direto do titular por chat é autorização válida para iniciar diagnóstico somente de leitura.
+Antes de qualquer escrita deve existir registro do objetivo, achados e escopo:
+
+- por Issue/Issue-guarda-chuva, quando o GitHub estiver disponível; ou
+- por registro local de contingência, associado à branch e ao SHA, quando a indisponibilidade do
+  GitHub for comprovada.
+
+O registro local segue modelo **store-and-forward**: não substitui a rastreabilidade permanente e
+deve ser sincronizado como Issue/PR assim que o GitHub voltar. Toda mudança de arquivo ocorre em
+branch identificável; nenhum modo offline autoriza escrever diretamente em `main`/`master`.
+
+As decisões, os achados e o escopo devem permanecer rastreáveis por Issue, comentário de revisão,
+documento versionado ou, durante a contingência, artefato local protegido. Toda mudança deve
+terminar registrada em Pull Request antes de integração permanente à `main`.
 
 A governança deve ser aplicada de forma proporcional ao risco:
 
 - leitura e diagnóstico têm ampla liberdade;
-- escrita exige Issue, branch, rastreabilidade e testes;
+- escrita exige registro de tarefa, branch, rastreabilidade e testes;
 - mudança irreversível exige decisão humana específica;
-- produção, segredos e dados reais permanecem fora do alcance operacional dos agentes.
+- produção, segredos e dados reais permanecem protegidos pelos controles desta governança.
 
 ## 2. Papéis definidos pela tarefa, não pelo modelo
 
@@ -37,7 +47,7 @@ de IA fica permanentemente impedido de implementar ou revisar.
 | **Auditor** | Lê todo o escopo necessário, executa diagnóstico, testes e produz achados verificáveis | Não altera produção nem apresenta hipótese como fato |
 | **Executor** | Implementa correções ou funcionalidades, escreve testes e registra decisões | Não força integração de mudança retida por exceção do §6-A |
 | **Revisor independente** | Revisa diff, segurança, LGPD, validade jurídica, UX e regressão | Não aprova por confiança; exige evidência |
-| **CI/GitHub** | Mantém histórico e executa controles automáticos | Não substitui homologação humana |
+| **CI/GitHub** | Mantém histórico remoto e executa controles adicionais | Não substitui CI local, homologação ou contingência |
 
 O mesmo agente pode auditar e implementar quando isso for expressamente autorizado, desde que
 registre as duas etapas. Toda entrega de risco relevante ou significativo deve receber revisão
@@ -49,11 +59,11 @@ independente antes do merge.
 
 Pode começar imediatamente, sem Issue e sem branch. O auditor pode:
 
-- ler todo o repositório, documentação, histórico e PRs abertos;
+- ler todo o repositório, documentação, histórico e PRs abertos quando acessíveis;
 - examinar arquivos já tocados por outras branches;
 - executar buscas, lint, testes, builds, análise estática e inspeção de dependências;
 - comparar código, documentação, rotas, banco, UX, segurança e regras jurídicas;
-- produzir relatório em chat, Issue, comentário de PR ou documento versionado.
+- produzir relatório em chat, Issue, comentário de PR, documento versionado ou artefato local.
 
 A sobreposição com outro PR **não impede leitura nem diagnóstico**.
 
@@ -61,27 +71,36 @@ A sobreposição com outro PR **não impede leitura nem diagnóstico**.
 
 Quando o titular pede “pente fino”, “corrija tudo”, “auditoria completa com correção” ou comando
 equivalente, o pedido autoriza o diagnóstico sistêmico. Antes de criar branch de implementação,
-alterar arquivo ou produzir commit, deve existir uma **Issue-guarda-chuva**. O trabalho pode usar
-um ou mais PRs organizados por dependência técnica, risco ou facilidade de revisão.
+alterar arquivo ou produzir commit, deve existir uma **Issue-guarda-chuva** ou, se o GitHub estiver
+indisponível, um **registro local de contingência** que será sincronizado posteriormente. O trabalho
+pode usar um ou mais PRs organizados por dependência técnica, risco ou facilidade de revisão.
 
 Achados podem ser corrigidos no mesmo trabalho quando forem:
 
 1. confirmados por evidência;
 2. relacionados ao objetivo sistêmico;
 3. necessários para que a correção principal funcione, seja testável ou não deixe regressão;
-4. documentados no PR, com impacto e rollback.
+4. documentados no PR ou no registro local de contingência, com impacto e rollback.
 
 Achado sem relação causal ou que aumente materialmente o risco deve ser registrado para
 continuidade, mas não precisa interromper o trabalho atual.
 
 ### 3.3 Desenvolvimento focal
 
-Para funcionalidade ou bug específico, permanece o fluxo normal:
+Fluxo normal, com GitHub disponível:
 
 ```text
 pedido/Issue → branch → implementação → testes locais → PR → gates automatizados verdes
             → merge automático → deploy automático (staging quando ativo → produção)
             → health-check + smoke → rollback automático em falha
+```
+
+Fluxo de contingência, com GitHub indisponível:
+
+```text
+pedido → registro local → branch local → checkpoint → implementação → CI local
+      → checkpoint final → sync best-effort quando GitHub voltar → Issue/PR/gates remotos
+      → integração/deploy pelo caminho seguro aplicável
 ```
 
 Uma Issue pode originar mais de um PR quando a divisão reduzir risco, conflito ou tamanho do diff.
@@ -103,16 +122,20 @@ apenas liberar mudança que dependa do risco não resolvido.
 
 Leitura e auditoria podem ocorrer em paralelo sem restrição de arquivos.
 
-Para escrita, arquivo pertencente a PR ativo **não deve ser modificado em outra branch**. Antes de
-editar, o executor deve verificar os PRs concorrentes e escolher uma destas opções:
+Para escrita, arquivo pertencente a PR ativo **não deve ser modificado em outra branch**. Quando o
+GitHub estiver acessível, o executor verifica PRs concorrentes antes de editar. Em contingência
+sem acesso ao remoto, usa a informação local disponível, registra essa limitação e reconcilia a
+branch antes da sincronização/integração.
+
+Quando houver sobreposição confirmada, escolher uma destas opções:
 
 1. consolidar a alteração na mesma branch do PR ativo;
 2. aguardar a integração do PR ativo e atualizar a branch seguinte;
 3. dividir o trabalho por arquivos sem sobreposição;
 4. adiar somente a parte incompatível.
 
-Não é permitido sobrescrever silenciosamente trabalho concorrente. A tarefa deve parar quando a
-escrita alcançar arquivo de outro PR ativo e ainda não existir estratégia explícita de
+Não é permitido sobrescrever silenciosamente trabalho concorrente. A tarefa deve parar somente a
+parte da escrita que alcançar arquivo de outro PR ativo e ainda não possuir estratégia explícita de
 consolidação ou sequência.
 
 ### Migrations
@@ -122,22 +145,28 @@ analisar ou preparar mudança de banco, mas somente uma migration é integrada p
 seguinte deve atualizar a base, conferir o head, ajustar número e `down_revision` e repetir os
 testes antes de ficar pronta para merge.
 
+Em modo offline, migration nova pode ser preparada somente após conferir o head local e deve ser
+revalidada contra o head remoto atual antes de sincronização/merge. Nenhuma reserva local prevalece
+sobre migration que tenha sido integrada remotamente durante a indisponibilidade.
+
 ## 6. Regras de execução
 
 1. Não alterar, commitar ou empurrar diretamente na `main`/`master`.
-2. Merge e deploy ocorrem **automaticamente** quando todos os gates automatizados estiverem
-   verdes e o diff não alcançar exceção do §6-A. Fora dessas condições, a integração espera
-   decisão humana; o agente jamais a contorna.
-3. Toda escrita ocorre em branch identificável e termina registrada em PR. Antes do push, o
-   executor roda os testes locais existentes das áreas afetadas; teste que falhar é investigado
-   e corrigido dentro do escopo antes de o PR ficar elegível.
-4. Auditoria ampla exige Issue-guarda-chuva antes da primeira escrita; não é obrigatório criar uma
-   Issue por achado.
+2. Merge e deploy ocorrem **automaticamente** quando todos os gates aplicáveis estiverem verdes e
+   o diff não alcançar exceção do §6-A. Fora dessas condições, a integração espera a decisão
+   prevista pela governança; o agente jamais contorna os gates.
+3. Toda escrita ocorre em branch identificável. Com GitHub disponível, termina registrada em PR.
+   Em contingência, pode avançar em branch local com registro e checkpoints, mas deve sincronizar
+   Issue/branch/PR antes de integração permanente à `main`. Testes locais são obrigatórios antes de
+   qualquer publicação.
+4. Auditoria ampla exige Issue-guarda-chuva ou registro local de contingência antes da primeira
+   escrita; não é obrigatório criar uma Issue por achado.
 5. Escopo pode ser ampliado para achados relacionados, desde que a ampliação seja registrada.
 6. Correção de bug deve ter teste de regressão quando tecnicamente possível.
 7. Regra jurídica exige fonte oficial, vigência, versão e revisão humana.
 8. Migration exige conferência do head, reserva e validação da cadeia antes do merge.
-9. Não versionar credencial, token, senha, PII real ou documento de cliente.
+9. Não versionar nem copiar para contingência credencial, token, senha, PII real ou documento de
+   cliente.
 10. Não usar comandos destrutivos ou atalhos que eliminem controles de permissão.
 11. Toda entrega de escrita termina com arquivos, comandos, testes, riscos, limitações e rollback.
 12. Chamadas de IA passam pelo gateway; HITL, gate de citações, sanitização de PII e kill-switch
@@ -145,46 +174,62 @@ testes antes de ficar pronta para merge.
 13. Rota nova nasce protegida; endpoint público exige justificativa registrada.
 14. Mudança sensível envolvendo autenticação, permissões, uploads, CI/CD ou configuração exige
     execução e registro do `security-auditor` antes da finalização e do merge.
+15. Falha de GitHub/DNS/Actions é tratada como falha de infraestrutura externa: criar checkpoint,
+    marcar modo offline, continuar trabalho/testes locais e sincronizar posteriormente. Não repetir
+    indefinidamente a mesma chamada remota nem pedir intervenção humana quando houver alternativa
+    local segura.
 
 ## 6-A. Fluxo autônomo — gates e exceções
 
-Decisão permanente do titular (2026-08-08): no ciclo normal de desenvolvimento, **nenhuma
-autorização intermediária é exigida** para análise, Issue, branch, implementação, testes,
-commits, push, abertura/atualização de PR, merge e deploy. O GitHub atua como versionamento,
-auditoria e CI/CD — não como ponto de espera humana.
+Decisões permanentes do titular:
 
-**Gates automatizados obrigatórios (todos verdes para integrar):**
+- 2026-08-08: no ciclo normal de desenvolvimento, **nenhuma autorização intermediária é exigida**
+  para análise, Issue, branch, implementação, testes, commits, push, abertura/atualização de PR,
+  merge e deploy; exceções desta seção permanecem retidas;
+- 2026-08-09: indisponibilidade temporária de GitHub/GitHub Actions **não deve interromper o
+  desenvolvimento**. O executor escolhe automaticamente a alternativa local-first segura e
+  sincroniza quando o serviço remoto voltar, sem reduzir controles de segurança.
 
-1. testes locais executados antes do push;
-2. CI completa (backend + banco/migrations + frontend);
-3. travas de governança (`governanca.yml`) e release gate (`ci_guard.sh`);
-4. pós-merge: deploy com backup prévio, health-check com confirmação de SHA e smoke test
-   (`scripts/post_deploy_check.sh`); staging com gates próprios quando `STAGING_ENABLED=1`;
-5. rollback automático para a última versão estável em falha de deploy.
+O GitHub atua como versionamento remoto, auditoria e CI/CD — não como ponto de espera humana nem
+como requisito para checkpoint ou CI local.
 
-**Exceções — intervenção humana obrigatória** (o workflow `auto-integracao.yml` retém e
-registra o motivo no PR):
+**Gates obrigatórios para integrar/liberar:**
+
+1. testes locais executados sobre o SHA candidato;
+2. CI completa equivalente (backend + banco/migrations + frontend), executada no GitHub quando
+   disponível ou pelo `scripts/ci-local.sh` na contingência; quando o GitHub voltar antes da
+   integração, seus gates remotos complementam a prova local;
+3. travas de governança e release gate (`ci_guard.sh`) aplicáveis ao diff;
+4. revisão independente para entrega de risco relevante/significativo;
+5. deploy com backup prévio, health-check com confirmação de SHA e smoke test
+   (`scripts/post_deploy_check.sh`), staging com gates próprios quando ativo;
+6. rollback automático para a última versão estável em falha de deploy.
+
+**Exceções — intervenção humana obrigatória** (o workflow `auto-integracao.yml`, quando disponível,
+retém e registra o motivo no PR; em contingência o executor preserva a retenção local):
 
 1. migration destrutiva ou irreversível;
 2. risco concreto de perda ou corrupção de dados;
 3. alteração de credenciais ou segredos;
 4. alteração crítica de autenticação/autorização;
 5. impossibilidade de rollback seguro;
-6. alteração estrutural cuja segurança não possa ser validada automaticamente — incluída
-   qualquer mudança em workflows, governança, configuração de agentes, nginx, compose,
-   `scripts/` (esteira executada na VPS), Dockerfiles, dependências (`requirements*.txt`,
-   `package*.json`), núcleo `backend/app/core/`, middlewares, rotas de auth/usuários,
-   `pii_crypto` e `ai_gateway` (a automação não integra mudanças em si mesma nem no que
-   roda com privilégio em produção);
+6. alteração estrutural cuja segurança não possa ser validada automaticamente — incluída qualquer
+   mudança em workflows, governança, configuração de agentes, nginx, compose, `scripts/` (esteira
+   executada na VPS), Dockerfiles, dependências (`requirements*.txt`, `package*.json`), núcleo
+   `backend/app/core/`, middlewares, rotas de auth/usuários, `pii_crypto` e `ai_gateway`;
 7. falha persistente que o agente não consiga resolver autonomamente.
 
-**Concorrência:** segue o §5 — dois agentes não alteram os mesmos arquivos sem estratégia
-explícita de consolidação; arquivo de PR ativo funciona como lock lógico.
+Pedido explícito do titular que decide conscientemente uma dessas exceções constitui a decisão
+humana exigida **para aquela mudança e escopo**, mas não autoriza bypass de testes, revisão,
+backup, rollback ou proteção de produção.
 
-**Rastreabilidade mínima por ciclo:** Issue, PR, commits, resultado de cada gate, artefato de
-decisão de migration, SHA implantado (`.deployed_sha`), tags de rollback e versão anterior.
-Alterações pequenas e relacionadas podem compartilhar Issue e PR — coerência operacional
-prevalece sobre fragmentação.
+**Concorrência:** segue o §5 — dois agentes não alteram os mesmos arquivos sem estratégia explícita
+de consolidação. Em outage, a falta de visibilidade remota é registrada e a reconciliação é
+obrigatória antes de integração.
+
+**Rastreabilidade mínima por ciclo:** Issue ou registro local pendente, branch, checkpoints/commits,
+resultado de cada gate, PR antes da integração permanente, artefato de decisão de migration quando
+aplicável, SHA implantado (`.deployed_sha`), tags/imagens de rollback e versão anterior.
 
 Nada neste modo reduz backup, rollback, integridade de banco, proteção de segredos, HITL,
 citation gate, sanitização de PII ou isolamento entre ambientes.
@@ -193,14 +238,18 @@ citation gate, sanitização de PII ou isolamento entre ambientes.
 
 Permanecem proibidos:
 
-- operar em `/opt/ejc` ou contra banco de produção;
+- desenvolver diretamente no checkout de produção ou operar contra banco de produção fora dos
+  scripts/esteiras explicitamente autorizados e auditados;
 - `git push --force`, `git reset --hard`, `git clean -fd`, `rm -rf` fora de área temporária,
   `docker compose down -v`, `docker volume rm`, `dropdb`, `alembic downgrade base`;
 - `claude --dangerously-skip-permissions`;
-- expor segredo, credencial ou PII em código, log, teste, prompt ou provedor externo;
+- expor segredo, credencial ou PII em código, checkpoint, bundle, log, teste, prompt ou provedor
+  externo;
 - desligar silenciosamente RBAC, isolamento de dados, HITL, citation gate, sanitização de PII ou
   controles de auditoria;
-- usar massa real de cliente em teste ou homologação.
+- usar massa real de cliente em teste ou homologação;
+- usar indisponibilidade do GitHub como justificativa para force-push, bypass de revisão, cópia
+  manual para produção ou alteração direta de `.env`/banco.
 
 Mudança deliberada de política de segurança pode ocorrer somente por pedido explícito do titular,
 com risco, justificativa, teste e rollback documentados.
@@ -209,7 +258,7 @@ com risco, justificativa, teste e rollback documentados.
 
 Antes de uma migration ficar pronta para merge:
 
-1. atualizar a base da branch;
+1. atualizar/reconciliar a base da branch com a fonte remota atual quando acessível;
 2. consultar PRs com migrations;
 3. executar `cd backend && python -m alembic heads`;
 4. reservar ou ajustar o identificador em `backend/alembic/MIGRATION_RESERVATIONS.md`;
@@ -239,9 +288,10 @@ Regra não homologada pode apoiar análise, mas não deve virar documento formal
 
 O pedido direto do titular autoriza todas as ações de diagnóstico e leitura **razoavelmente
 necessárias** ao objetivo. A escrita pode incluir API, migration, autenticação, RBAC, CI/CD,
-Docker, dependência, rota ou código, desde que exista Issue ou Issue-guarda-chuva e a mudança:
+Docker, dependência, rota ou código, desde que exista Issue/Issue-guarda-chuva ou registro local de
+contingência e a mudança:
 
-- permaneça fora de produção;
+- permaneça fora de produção durante desenvolvimento;
 - seja feita em branch;
 - seja reversível ou tenha decisão humana específica quando irreversível;
 - tenha testes e impacto documentados;
@@ -250,16 +300,23 @@ Docker, dependência, rota ou código, desde que exista Issue ou Issue-guarda-ch
   configuração.
 
 O agente não precisa pedir autorização repetida para cada arquivo, comando seguro, teste ou
-refatoração necessária. Deve parar e pedir decisão apenas quando:
+refatoração necessária. Quando uma ferramenta/remoto falhar, deve procurar automaticamente uma
+alternativa segura já disponível (checkout local, checkpoint, CI local, outro conector autorizado)
+antes de interromper o trabalho.
+
+Deve parar e pedir decisão apenas quando:
 
 1. duas interpretações plausíveis produzirem resultados materialmente diferentes;
 2. houver exclusão ou transformação irreversível de dado;
-3. a mudança contrariar decisão permanente do titular;
-4. a execução depender de credencial, produção ou dado real não disponibilizado com segurança.
+3. a mudança contrariar decisão permanente do titular sem novo pedido explícito;
+4. a execução depender de credencial, produção ou dado real não disponibilizado com segurança e
+   não existir canal alternativo já autorizado;
+5. todas as alternativas seguras disponíveis tiverem falhado.
 
 Toda tarefa deve terminar em relatório com arquivos alterados ou “nenhum”, comandos, testes,
 evidências, riscos residuais, limitações, rollback e decisões que exigem ação humana. Tarefa com
-escrita deve começar vinculada a Issue ou Issue-guarda-chuva e terminar em PR.
+escrita deve começar vinculada a Issue/Issue-guarda-chuva ou registro local de contingência e
+terminar em PR antes de integração permanente.
 
 ## 11. Decisões permanentes do titular
 
@@ -267,6 +324,7 @@ Decisão permanente só é reaberta por novo pedido explícito do titular.
 
 | Decisão | Estado | Observação |
 |---|---|---|
+| **Fluxo local-first — falha de GitHub não interrompe desenvolvimento** | Vigente desde 2026-08-09 | Checkpoint + CI local + store-and-forward; sincronização remota posterior. Não reduz gates de produção. |
 | **Fluxo autônomo — merge/deploy automáticos com gates verdes** | Vigente desde 2026-08-08 | Ciclo normal sem intervenção humana; exceções fechadas no §6-A. Reverter exige novo pedido explícito do titular. |
 | **2FA — não implementar por padrão** | Vigente desde 2026-07-26 | `TWO_FACTOR_AUTH_ENABLED` permanece desligado por padrão e o kill-switch é preservado. Auditoria pode registrar o risco, mas não tratá-lo como correção obrigatória contra a decisão do titular. |
 
@@ -290,5 +348,7 @@ coincidir exatamente. Ampliá-la exige decisão do titular.
 - `docs/FLUXO_DE_DESENVOLVIMENTO.md` — fluxos por modo de trabalho;
 - `docs/CRITERIOS_DE_ACEITE.md` — critérios de auditoria do resultado;
 - `docs/RELEASE_CHECKLIST.md` — controles de liberação;
+- `docs/OPERACAO_LOCAL_FIRST.md` — contingência GitHub/DNS/Actions e recuperação local;
+- `docs/CI_SEM_GITHUB.md` — execução dos gates fora do GitHub Actions;
 - `backend/alembic/MIGRATION_RESERVATIONS.md` — coordenação de migrations;
 - `docs/GOVERNANCA_FASE2.md` — automações de governança.
