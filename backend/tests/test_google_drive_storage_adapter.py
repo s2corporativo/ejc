@@ -6,6 +6,7 @@ impedindo regressão para varredura recursiva em documentos novos.
 """
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -39,14 +40,37 @@ def test_rclone_config_env_sobrescreve_padrao(monkeypatch):
 
 def test_disponibilidade_e_avaliada_em_runtime(monkeypatch):
     monkeypatch.setenv("RCLONE_CONFIG", "/run/ejc/rclone/rclone.conf")
-    monkeypatch.setattr(gd.shutil, "which", lambda nome: "/usr/bin/rclone" if nome == "rclone" else None)
-    monkeypatch.setattr(gd.os.path, "isfile", lambda path: path == "/run/ejc/rclone/rclone.conf")
-    monkeypatch.setattr(gd.os, "access", lambda path, mode: path == "/run/ejc/rclone/rclone.conf")
+    monkeypatch.setattr(
+        gd.shutil,
+        "which",
+        lambda nome: "/usr/bin/rclone" if nome == "rclone" else None,
+    )
+    monkeypatch.setattr(
+        gd.os.path,
+        "isfile",
+        lambda path: path == "/run/ejc/rclone/rclone.conf",
+    )
+    monkeypatch.setattr(
+        gd.os,
+        "access",
+        lambda path, mode: path == "/run/ejc/rclone/rclone.conf",
+    )
 
     assert gd._drive_available() is True
 
     monkeypatch.setattr(gd.os.path, "isfile", lambda path: False)
     assert gd._drive_available() is False
+
+
+def test_operacoes_falham_fechado_quando_storage_indisponivel(monkeypatch):
+    monkeypatch.setattr(gd, "_drive_available", lambda: False)
+
+    with pytest.raises(gd.DriveIndisponivelError):
+        gd.upload_file(b"x", "a.pdf", "application/pdf")
+    with pytest.raises(gd.DriveIndisponivelError):
+        gd.download_file("drive-id", remote_path="geral/a.pdf")
+    with pytest.raises(gd.DriveIndisponivelError):
+        gd.delete_file("drive-id", remote_path="geral/a.pdf")
 
 
 def test_run_passa_mesma_config_explicitamente_ao_rclone(monkeypatch):
@@ -96,6 +120,30 @@ def test_remote_path_rejeita_traversal_absoluto_e_remote_injetado():
     ):
         with pytest.raises(ValueError):
             gd._rclone_path_rel(invalido)
+
+
+def test_upload_reduz_filename_com_traversal_a_um_segmento(monkeypatch):
+    _drive_habilitado(monkeypatch)
+    comandos: list[list[str]] = []
+
+    def fake_run(cmd, timeout=gd.RCLONE_TIMEOUT):
+        del timeout
+        comandos.append(list(cmd))
+        if cmd[1] == "lsjson":
+            return _ok(stdout='{"ID":"drive-1"}')
+        return _ok()
+
+    monkeypatch.setattr(gd, "_run", fake_run)
+
+    out = gd.upload_file(
+        b"x",
+        "../../segredo.pdf",
+        "application/pdf",
+    )
+
+    assert out["remote_path"] == "geral/segredo.pdf"
+    assert all(".." not in parte for cmd in comandos for parte in cmd)
+    assert any(cmd[-1].endswith("/geral/segredo.pdf") for cmd in comandos)
 
 
 def test_upload_usa_copyto_e_stat_exato_sem_varredura_recursiva(monkeypatch):
@@ -151,6 +199,41 @@ def test_upload_compensa_objeto_quando_copy_falha(monkeypatch):
         )
 
     assert any(cmd[1] == "deletefile" for cmd in comandos)
+
+
+def test_upload_compensa_objeto_quando_copy_estoura_timeout(monkeypatch):
+    _drive_habilitado(monkeypatch)
+    comandos: list[list[str]] = []
+
+    def fake_run(cmd, timeout=gd.RCLONE_TIMEOUT):
+        comandos.append(list(cmd))
+        if cmd[1] == "copyto":
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+        return _ok()
+
+    monkeypatch.setattr(gd, "_run", fake_run)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        gd.upload_file(
+            b"conteudo",
+            f"{uuid4()}.pdf",
+            "application/pdf",
+            gd.case_folder_token(str(uuid4())),
+        )
+
+    assert any(cmd[1] == "deletefile" for cmd in comandos)
+
+
+def test_compensacao_nao_mascara_falha_quando_deletefile_tambem_expira(monkeypatch):
+    _drive_habilitado(monkeypatch)
+
+    def fake_run(cmd, timeout=gd.RCLONE_TIMEOUT):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+
+    monkeypatch.setattr(gd, "_run", fake_run)
+
+    # Best effort: a compensação registra o problema, mas não propaga outro erro.
+    gd._compensar_objeto("gdrive:EJC-Documentos/geral/arquivo.pdf")
 
 
 def test_upload_compensa_objeto_quando_pos_check_falha(monkeypatch):
