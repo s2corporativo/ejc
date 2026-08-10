@@ -35,8 +35,9 @@ O snapshot local usa `umask 077`, diretórios `0700` e arquivos `0600`. Arquivos
 
 **Proteção de dados sensíveis no checkpoint:**
 - Arquivos rastreados/staged que correspondam a padrões sensíveis (`.env`, chaves `.pem`/`.key`, etc.) têm seus diffs **filtrados** e substituídos por marcador `# FILTERED` nos patches, garantindo que conteúdo sensível nunca seja persistido mesmo quando o arquivo estiver no index ou working tree.
-- Se o histórico commitado contiver nomes de arquivos sensíveis, o git bundle é **bloqueado** para evitar vazamento de segredos através de commits históricos.
-- A filtragem cobre: arquivos rastreados modificados, arquivos staged, arquivos não rastreados, branches, tags e histórico commitado — não apenas `sensitive_path` para arquivos não rastreados.
+- Se o histórico commitado contiver nomes de arquivos sensíveis, o git bundle é **bloqueado** para evitar vazamento de segredos através de commits históricos. Checkpoint preserva apenas diffs seguros quando bundle é bloqueado.
+- A filtragem cobre: arquivos rastreados modificados (working tree), arquivos staged (index), arquivos não rastreados, branches, tags e histórico commitado — não apenas `sensitive_path` para arquivos não rastreados.
+- Testes de regressão cobrem tanto `.env` rastreado quanto conteúdo sensível já commitado no histórico.
 
 ## Comando canônico
 
@@ -145,18 +146,23 @@ A queda do GitHub não interrompe o ciclo depois que os testes locais passaram.
 
 Este script não faz deploy.
 
-O caminho de produção permanece `scripts/deploy_vps_safe.sh` ou a esteira que o invoque, preservando:
+O deploy ocorre **somente pela esteira automatizada** (`deploy-vps.yml` ou workflow equivalente) após CI verde na `main`, preservando:
 
 - backup pré-deploy;
 - `docker compose config --quiet`;
 - build controlado;
-- migrations apenas no modo já protegido pelo script;
+- migrations apenas no modo já protegido;
 - healthcheck;
 - prova do SHA publicado;
 - rollback de imagens;
 - checagem pós-deploy.
 
-Quando GitHub/Actions estiver indisponível, a entrega deve ser preservada via checkpoint e CI local. Sem canal automatizado disponível, o trabalho permanece validado localmente (checkpoint + CI local verde) e a sincronização (push/sync) é feita quando o GitHub voltar. O deploy ocorre **somente pela esteira automatizada** normal após CI verde na main.
+Quando GitHub/Actions estiver indisponível, a contingência é:
+
+1. preservar a entrega via checkpoint e CI local;
+2. manter o trabalho validado localmente (checkpoint + CI local verde);
+3. sincronizar (push/sync) quando o GitHub voltar;
+4. aguardar a esteira automatizada de deploy após CI verde na `main`.
 
 **Não há canal autorizado de deploy manual em contingência.** A orientação deve ser preservar a entrega (checkpoint + CI local verde) e aguardar a esteira automatizada após CI verde na main. Essa contingência não autoriza um agente sem acesso operacional seguro à VPS a inventar caminho, credencial ou estado. O agente deve usar o acesso já conectado/disponível; se não houver canal operacional, mantém a entrega validada e sincroniza quando houver canal seguro, sem solicitar ou expor segredo.
 

@@ -125,9 +125,10 @@ Leitura e auditoria podem ocorrer em paralelo sem restrição de arquivos.
 Para escrita, arquivo pertencente a PR ativo **não deve ser modificado em outra branch**. Quando o
 GitHub estiver acessível, o executor verifica PRs concorrentes antes de editar. Em contingência
 sem acesso ao remoto, **bloqueia ou adia a alteração quando a titularidade (ownership) do arquivo
-não puder ser confirmada remotamente**. Não escrever arquivo baseando-se apenas em informação local;
-exigir metadata remota válida OU estratégia explícita de consolidação (merge/reconciliação) antes
-de escrever. Registrar a limitação de conectividade no relatório/log.
+não puder ser confirmada remotamente**. Não escrever arquivo baseando-se apenas em informação local
+sem metadata remota válida sobre propriedade/conflito. Exigir metadata remota válida OU estratégia
+explícita de consolidação (merge/reconciliação) antes de escrever. Registrar a limitação de
+conectividade no relatório/log.
 
 Quando houver sobreposição confirmada, escolher uma destas opções:
 
