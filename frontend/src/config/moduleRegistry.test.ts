@@ -79,25 +79,31 @@ describe("moduleRegistry", () => {
     ).toBe(false);
   });
 
-  it("destaca a Sala Jurídica e o Financeiro apenas para os perfis autorizados", () => {
+  it("destaca a Entrada Única e o Financeiro apenas para os perfis autorizados", () => {
     const advogado = getProductionNavigation("advogado");
     const socio = getProductionNavigation("socio");
-    expect(
-      advogado.find((item) => item.path === "/sala-juridica")?.essential,
-    ).toBe(true);
+
+    expect(advogado.find((item) => item.path === "/entrada")?.essential).toBe(
+      true,
+    );
+    expect(advogado.some((item) => item.path === "/sala-juridica")).toBe(false);
     expect(advogado.some((item) => item.path === "/financeiro")).toBe(false);
     expect(socio.find((item) => item.path === "/financeiro")?.essential).toBe(
       true,
     );
   });
 
-  it("mantém o Raio-X acessível no menu como apoio da Sala Jurídica", () => {
+  it("mantém o Raio-X canônico e o consolida no menu apenas quando há Entrada", () => {
     const advogado = getProductionNavigation("advogado");
+    const auxiliar = getProductionNavigation("advogado_auxiliar");
     const raioX = STAFF_ROUTES.find((item) => item.path === "/raio-x");
+
     expect(canRoleAccessPath("advogado", "/raio-x")).toBe(true);
     expect(raioX?.showInNav).toBe(true);
     expect(raioX?.essential).toBe(false);
-    expect(advogado.some((item) => item.path === "/raio-x")).toBe(true);
+    expect(advogado.some((item) => item.path === "/raio-x")).toBe(false);
+    expect(auxiliar.some((item) => item.path === "/raio-x")).toBe(true);
+    expect(auxiliar.some((item) => item.path === "/sala-juridica")).toBe(true);
     expect(STAFF_ROUTES.some((item) => item.path === "/sala-analise")).toBe(
       false,
     );
@@ -146,13 +152,13 @@ describe("moduleRegistry", () => {
       .map((m) => m.path);
     expect(essenciais).toEqual([
       "/",
+      "/entrada",
       "/casos",
       "/atividades",
       "/clientes",
       "/documentos",
       "/pecas",
       "/dpt360",
-      "/sala-juridica",
       "/inteligencia",
     ]);
     expect(advogado).not.toContain("/casos/novo");
