@@ -12,6 +12,16 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "ci_evidence.py"
 AUTH_SCRIPT = ROOT / "scripts" / "github-app-auth.sh"
+REQUIRED_LOGS = {
+    "backend.log",
+    "eval.log",
+    "frontend.log",
+    "p0.log",
+    "governanca.log",
+    "architecture.log",
+    "continuity.log",
+    "ui-extra.log",
+}
 
 
 def _load_module():
@@ -22,13 +32,17 @@ def _load_module():
     return module
 
 
+def _write_full_gate_logs(attempt: Path) -> None:
+    for name in REQUIRED_LOGS:
+        (attempt / name).write_bytes((f"ok-{name}\n" * 128).encode())
+
+
 def test_success_pointer_e_hashes_detectam_adulteracao(tmp_path: Path):
     ev = _load_module()
     sha = "a" * 40
     root = tmp_path / "evidence"
     attempt = ev.start_attempt(root, sha, "feature/x", 42)
-    log = attempt / "backend.log"
-    log.write_bytes(b"ok\n" * 4096)
+    _write_full_gate_logs(attempt)
 
     summary = ev.finish_attempt(
         attempt,
@@ -45,7 +59,7 @@ def test_success_pointer_e_hashes_detectam_adulteracao(tmp_path: Path):
     assert summary.is_file()
     assert ev.verify_success(root / sha, sha) is True
 
-    # A evidência é content-addressed: qualquer alteração posterior invalida o gate.
+    log = attempt / "backend.log"
     log.write_bytes(log.read_bytes() + b"tamper\n")
     assert ev.verify_success(root / sha, sha) is False
 
@@ -85,9 +99,8 @@ def test_latest_attempt_e_restrito_a_attempts(tmp_path: Path):
     found = ev.latest_log(root / sha, sha, 0)
     assert found == log.resolve()
 
-    # Pointer manipulado tentando escapar da raiz deve falhar fechado.
     (root / sha / "latest-attempt.json").write_text(
-        json.dumps({"target_sha": sha, "attempt": "../outside"}),
+        json.dumps({"schema": 1, "target_sha": sha, "attempt": "../outside"}),
         encoding="utf-8",
     )
     assert ev.latest_log(root / sha, sha, 0) is None
@@ -101,6 +114,7 @@ def test_attempts_sao_unicos_mesmo_no_mesmo_segundo(tmp_path: Path):
     second = ev.start_attempt(root, sha, "feature/a", 1)
     assert first != second
     assert first.parent == second.parent
+    assert ev.verify_success(root / sha, sha) is False
 
 
 def test_chave_do_app_exige_permissoes_owner_only(tmp_path: Path):
