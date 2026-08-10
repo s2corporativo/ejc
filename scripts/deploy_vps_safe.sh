@@ -19,6 +19,7 @@ case "$ENSURE_DAILY_BACKUP" in 0|1) ;; *) die_policy "ENSURE_DAILY_BACKUP deve s
 if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ] && [ "$ENSURE_DAILY_BACKUP" != "1" ]; then
   die_policy "ENSURE_DAILY_BACKUP=0 é incompatível com REQUIRE_PREDEPLOY_BACKUP=1"
 fi
+command -v mktemp >/dev/null 2>&1 || die_policy "mktemp é obrigatório para snapshot transacional do .env"
 
 [ -f "$SCRIPT_DIR/deploy_lock.sh" ] || die_policy "scripts/deploy_lock.sh ausente"
 # shellcheck source=deploy_lock.sh
@@ -33,7 +34,6 @@ case "$lock_rc" in
     ;;
   *) die_policy "não foi possível adquirir/revalidar mutex host-level" ;;
 esac
-DEPLOY_LOCK_ROOT_CANON="$EJC_DEPLOY_LOCK_ROOT_RESOLVED"
 
 cd "$APP_DIR"
 
@@ -48,7 +48,8 @@ OLD_BACKEND_TAG=""
 OLD_WORKER_TAG=""
 OLD_FRONTEND_TAG=""
 OLD_GIT_SHA=""
-ENV_ROLLBACK_FILE="$DEPLOY_LOCK_ROOT_CANON/env.rollback.$$"
+ENV_ROLLBACK_FILE=""
+DEPLOYED_SHA_TMP="$APP_DIR/.deployed_sha.new.$$"
 ROLLBACK_ARMED=0
 ENV_MUTATED=0
 IMAGES_MUTATED=0
@@ -61,9 +62,15 @@ cleanup_rollback_tags() {
   done
 }
 
+cleanup_temp_files() {
+  [ -z "$ENV_ROLLBACK_FILE" ] || rm -f -- "$ENV_ROLLBACK_FILE" >/dev/null 2>&1 || true
+  rm -f -- "$DEPLOYED_SHA_TMP" >/dev/null 2>&1 || true
+}
+
 restore_env() {
   [ "$ENV_MUTATED" = "1" ] || return 0
-  [ -s "$ENV_ROLLBACK_FILE" ] || { log "ERRO CRÍTICO: snapshot transacional do .env ausente."; return 1; }
+  [ -n "$ENV_ROLLBACK_FILE" ] && [ -s "$ENV_ROLLBACK_FILE" ] \
+    || { log "ERRO CRÍTICO: snapshot transacional do .env ausente."; return 1; }
   cp -- "$ENV_ROLLBACK_FILE" .env || return 1
   chmod 600 .env || return 1
   log ".env anterior restaurado a partir do snapshot transacional protegido."
@@ -118,7 +125,7 @@ rollback_transaction() {
     log "Falha antes de build/cutover (rc=${original_rc}); runtime anterior permaneceu intacto."
     cleanup_rollback_tags
   fi
-  rm -f -- "$ENV_ROLLBACK_FILE" >/dev/null 2>&1 || true
+  cleanup_temp_files
 }
 
 on_exit() {
@@ -126,8 +133,8 @@ on_exit() {
   trap - EXIT INT TERM HUP
   if [ "$rc" -ne 0 ] && [ "$ROLLBACK_ARMED" = "1" ]; then
     rollback_transaction "$rc"
-  elif [ "$rc" -eq 0 ]; then
-    rm -f -- "$ENV_ROLLBACK_FILE" >/dev/null 2>&1 || true
+  else
+    cleanup_temp_files
   fi
   exit "$rc"
 }
@@ -182,7 +189,10 @@ else
   log "AVISO: backup pré-deploy não executou; contingência permissiva explícita seguirá sem prova nova."
 fi
 
-umask 077
+# Snapshot secreto efêmero, 0600, fora da árvore da aplicação e do diretório do
+# mutex. `mktemp` cria O_EXCL; o trap remove em sucesso, falha e sinais tratados.
+ENV_ROLLBACK_FILE="$(umask 077; mktemp /tmp/ejc-env-rollback.XXXXXX)" \
+  || die_policy "não foi possível criar snapshot transacional temporário do .env"
 cp -- .env "$ENV_ROLLBACK_FILE"
 chmod 600 "$ENV_ROLLBACK_FILE"
 ROLLBACK_ARMED=1
@@ -307,14 +317,12 @@ RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate frontend
 sleep 8
 EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
 
-# Marcador de release é parte da mesma transação/lock do cutover.
-DEPLOYED_SHA_TMP="$APP_DIR/.deployed_sha.new.$$"
 printf '%s\n' "$GIT_SHA" > "$DEPLOYED_SHA_TMP"
 chmod 644 "$DEPLOYED_SHA_TMP"
 mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deployed_sha"
 log "Versão implantada registrada atomicamente em .deployed_sha."
 
 ROLLBACK_ARMED=0
-rm -f -- "$ENV_ROLLBACK_FILE"
+cleanup_temp_files
 cleanup_rollback_tags
 log "Deploy seguro concluído com sucesso."
