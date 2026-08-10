@@ -2,17 +2,29 @@
 
 ## Objetivo
 
-O GitHub continua sendo a fonte de verdade para código, Issues, Pull Requests e histórico. O que deixa de ser dependência única é o **GitHub Actions como executor de CI**.
+O GitHub continua sendo a fonte de verdade para código, Issues, Pull Requests, status e histórico. O que deixa de ser dependência única é o **GitHub Actions/runner como executor de CI**.
 
-Durante indisponibilidade, fila sem runner ou falha anterior ao primeiro step, o EJC pode validar o SHA em uma **máquina de desenvolvimento/homologação**, dentro de um `git worktree` isolado, com PostgreSQL 16 + pgvector efêmero. Produção não participa da execução.
+Durante indisponibilidade, fila sem runner ou job encerrado antes do primeiro step, o EJC pode validar o SHA em uma **máquina de desenvolvimento/homologação**, dentro de `git worktree` isolado, com PostgreSQL 16 + pgvector efêmero. Produção não participa da execução.
 
-A decisão do titular está registrada na Issue #998.
+A autorização administrativa deste fallback está registrada na **Issue #998**.
 
-## Componentes
+## Regra de autonomia
 
-### `scripts/ci-local.sh`
+Quando GitHub/Actions falhar por infraestrutura, o agente não deve pedir ao titular que escolha manualmente outra rota. O procedimento é:
 
-Reproduz os gates atuais fora do Actions:
+1. classificar infraestrutura x falha real de código;
+2. continuar trabalho/diagnóstico em cópia ou worktree isolado;
+3. executar o gate local equivalente;
+4. corrigir localmente até verde;
+5. preservar evidência por SHA;
+6. sincronizar status/PR quando a API GitHub estiver disponível;
+7. nunca reduzir branch protection, reviews, CODEOWNERS ou controles jurídicos para “destravar” o fluxo.
+
+Não criar `postinstall`, dependência, workflow, hook ou commit temporário apenas para fazer o Actions revelar um diagnóstico reproduzível localmente.
+
+## `scripts/ci-local.sh`
+
+Reproduz os gates críticos fora do Actions:
 
 ```bash
 bash scripts/ci-local.sh backend       # Postgres/pgvector, Alembic, RAG, Ruff, pip-audit, pytest + cobertura
@@ -26,13 +38,31 @@ bash scripts/ci-local.sh full          # todos os blocos acima
 bash scripts/ci-local.sh fast          # diagnóstico rápido pré-push/preflight
 ```
 
-O modo promovível exige Python 3.11 e Node 22. Incompatibilidade de runtime falha fechada. `EJC_ALLOW_PYTHON_MISMATCH=1` existe apenas para diagnóstico; `scripts/ci-fallback.sh` recusa explicitamente publicar status promovível quando essa variável estiver ativa.
+### Runtime hermético
 
-Estado operacional, venv, PGDATA, relatórios, screenshots e restore report ficam fora do repositório, sob o cache do usuário por padrão. O PostgreSQL efêmero escolhe porta livre e publica somente no loopback (`127.0.0.1`). `pip-audit` usa a mesma versão fixada pelo CI em nuvem (`2.10.0`).
+O modo promovível exige Python 3.11 e Node 22. `EJC_ALLOW_PYTHON_MISMATCH=1` existe apenas para diagnóstico; `scripts/ci-fallback.sh` recusa publicar status promovível quando essa variável estiver ativa.
 
-O script recusa host com marcadores de produção em `/opt/ejc`, containers canônicos do EJC (`backend`, `worker`, `db`, `frontend`, `redis`) ativos ou ambiente `production`. Limpeza temporária é limitada ao diretório de estado do CI; não usa `rm -rf`.
+O venv Python padrão é identificado por:
 
-O gate de browser instala o Chromium do Playwright sem `--with-deps`. Dependência de sistema ausente reprova fechada, em vez de permitir `sudo/apt` silencioso em execução autônoma.
+- versão exata do Python; e
+- SHA-256 de `backend/requirements.txt`.
+
+Assim, uma mudança de requirements cria outro ambiente e impede que pacote removido sobreviva silenciosamente de uma validação anterior. `CI_SKIP_PIP=1` só funciona quando o venv correspondente já existe; caso contrário, falha fechado.
+
+### Isolamento
+
+Estado operacional, venv, PGDATA, relatórios, screenshots e restore report ficam fora do repositório, sob o cache do usuário. O PostgreSQL efêmero escolhe porta livre e publica somente no loopback (`127.0.0.1`). `pip-audit` usa a versão fixada pelo CI cloud (`2.10.0`).
+
+O script recusa:
+
+- `/opt/ejc` e host com marcadores da instalação produtiva;
+- `APP_ENV=production` ou `EJC_ENV=production`;
+- containers canônicos `ejc_backend`, `ejc_worker`, `ejc_db`, `ejc_frontend`, `ejc_redis` ativos;
+- execução promovível como root.
+
+Limpeza temporária é restrita ao `STATE_ROOT` e não usa `rm -rf`.
+
+O gate de browser instala Chromium sem `--with-deps`. Dependência de sistema ausente reprova fechada, em vez de executar `sudo/apt` silenciosamente.
 
 ## Worktree isolado e evidência por SHA
 
@@ -40,48 +70,94 @@ O gate de browser instala o Chromium do Playwright sem `--with-deps`. Dependênc
 
 1. atualiza `origin/main`;
 2. resolve o SHA exato do PR;
-3. exige que a `main` atual seja ancestral do SHA (`strict=true` equivalente);
+3. exige que a `main` atual seja ancestral do SHA;
 4. cria worktree descartável fora do checkout principal;
 5. executa backend, eval, frontend, P0, governança, arquitetura, continuidade e UI responsiva;
 6. guarda logs somente na máquina local, com permissão restrita;
 7. grava `summary.json` com SHA exato, resultado e hashes/tamanhos dos logs;
-8. revalida a governança do **corpo atual do PR** imediatamente antes de promover status;
-9. publica status por SHA quando a API estiver disponível;
+8. revalida a governança do **corpo atual do PR** imediatamente antes da promoção;
+9. publica commit status por SHA quando a API estiver disponível;
 10. remove o worktree ao final.
 
-Nenhum status obrigatório fica verde parcialmente. `EJC Local Full Gate=success` só é publicado depois da suíte integral **e** da revalidação atual da governança.
+O resumo fica em `~/.cache/ejc-ci-evidence/<sha>/summary.json`. Nenhum status obrigatório fica verde parcialmente.
 
-O resumo local fica em `~/.cache/ejc-ci-evidence/<sha>/summary.json`. Ele é a evidência canônica de que a suíte pesada daquele SHA terminou. Os logs completos permanecem locais; o resumo contém hashes SHA-256 e tamanhos, não seu conteúdo.
+## Namespace de status local
 
-### API GitHub falha no meio da suíte
+Statuses locais têm namespace próprio e **nunca reutilizam nomes do GitHub Actions**:
 
-A indisponibilidade da API para publicar `pending`/`success`/`failure` **não interrompe testes locais já em execução**. O fallback registra que a sincronização de status ficou pendente, preserva a evidência local e termina a validação. O watcher pode republicar posteriormente o resultado do mesmo SHA sem repetir a suíte pesada.
+```text
+EJC Local / Backend
+EJC Local / Eval
+EJC Local / Frontend
+EJC Local / P0 Guard
+EJC Local / Governança
+EJC Local Full Gate
+```
 
-Isso não produz falso verde: branch protection continua exigindo o status remoto antes do merge.
+A branch protection em contingência exige somente `EJC Local Full Gate`. Os cinco checks canônicos do Actions continuam exclusivos do modo `--cloud`. Isso impede que um verde local antigo satisfaça acidentalmente um check cloud depois da restauração.
+
+## API GitHub indisponível durante a suíte
+
+Falha ao publicar `pending`, `success` ou `failure` **não interrompe testes locais já em andamento**. O fallback registra a sincronização pendente, preserva a evidência e termina a prova local.
+
+Isso não produz falso verde: branch protection continua exigindo um status remoto antes do merge. Quando a API voltar, a evidência do mesmo SHA pode ser promovida sem repetir a suíte pesada.
+
+## `--promote-only` e `--merge-only`
+
+Metadados do PR podem mudar sem novo commit. Por isso:
+
+### `--promote-only`
+
+- exige `summary.json` local com `target_sha` idêntico e `result=success`;
+- reexecuta a governança contra o corpo atual do PR;
+- republica status;
+- **nunca tenta merge**.
 
 ### `--merge-only`
 
-`--merge-only` não confia apenas em um status remoto antigo. Ele exige:
+Além das regras acima:
 
-- `summary.json` local com `target_sha` idêntico e `result=success`;
-- PR ainda aberto e no mesmo SHA;
-- governança reexecutada contra o corpo atual do PR;
-- ausência de retenção humana e demais exceções;
-- branch protection/reviews satisfeitos.
+- confirma que o PR continua no mesmo SHA;
+- respeita draft e `retencao-humana`;
+- retém caminhos de exceção §6-A;
+- retém migration potencialmente destrutiva;
+- depende de review, CODEOWNERS, branch protection e demais requisitos remotos;
+- merge usa o SHA esperado.
 
-Título, descrição, labels e reviews podem mudar sem novo commit. Por isso a governança é reavaliada em toda tentativa de merge, sem repetir backend/frontend quando o código não mudou.
+Assim, mudança de descrição/labels/review não herda autorização antiga e não exige repetir backend/frontend quando o código permaneceu idêntico.
+
+## Retry automático somente para infraestrutura
+
+O watcher pode repetir o **mesmo SHA** apenas quando o log da tentativa atual contém assinatura inequívoca de falha externa, como:
+
+- DNS/registry (`Could not resolve host`, `EAI_AGAIN`);
+- reset/timeout (`ECONNRESET`, `ETIMEDOUT`);
+- indisponibilidade qualificada de registry/API (`429`, `502`, `503`, `504` associada à operação externa).
+
+O retry tem backoff exponencial e limite de tentativas. Falha de pytest, Ruff, Vitest, typecheck ou build sem assinatura externa é tratada como falha real e fica retida até novo SHA, salvo opt-in operacional explícito.
+
+Retry nunca produz sucesso por si só.
 
 ## Branch protection em contingência
 
-A proteção normal exige os cinco contexts do Actions. Em contingência, `scripts/governanca/branch-protection.sh --fallback` mantém o mesmo mecanismo clássico de `contexts` já usado pelo EJC e troca **somente o contexto obrigatório** para:
+O modo normal exige os cinco contexts do Actions. Em contingência:
+
+```bash
+EJC_FALLBACK_AUTHORIZATION=998 \
+  bash scripts/governanca/branch-protection.sh --fallback
+```
+
+`--fallback` é **ATO ADMINISTRATIVO PROTEGIDO**. Sem `EJC_FALLBACK_AUTHORIZATION=998`, a alteração é recusada. O ativador canônico injeta essa autorização porque a decisão está registrada na Issue #998.
+
+O fallback muda somente o contexto obrigatório para:
 
 ```text
 EJC Local Full Gate
 ```
 
-Esse commit status é produzido pelo fallback somente após a suíte integral. Permanecem inalterados:
+Permanecem ativos:
 
-- `strict=true` (branch atualizada);
+- `strict=true`;
 - `enforce_admins=true`;
 - review obrigatório;
 - CODEOWNERS;
@@ -91,53 +167,56 @@ Esse commit status é produzido pelo fallback somente após a suíte integral. P
 - force-push proibido;
 - deleção da branch protegida proibida.
 
-Para restaurar o executor em nuvem:
+Restauração cloud:
 
 ```bash
 bash scripts/governanca/branch-protection.sh --cloud
 ```
 
-Cada alteração de proteção salva uma cópia anterior em `var/`, que já é ignorado pelo Git.
+Cada alteração salva backup em `var/`, já ignorado pelo Git.
 
 ## Watcher autônomo
 
 `scripts/ci-fallback-watch.sh` percorre PRs abertos e não-draft para `main`.
 
-- um SHA novo sem evidência é validado;
-- falha real de código/teste não entra em loop infinito;
-- novo commit gera novo SHA e nova validação;
-- `summary.json` aprovado é a fonte para saber que a suíte pesada não precisa repetir;
-- se a suíte passou mas status/API ou metadados mutáveis impediram promoção, o SHA continua marcado como código aprovado e o watcher executa `--merge-only` no ciclo seguinte;
-- `--merge-only` revalida a governança atual e tenta republicar status sem repetir backend/frontend;
-- falha da API/fetch não mata o watcher e nunca vira sucesso;
-- a cópia local da `main` só avança por `git merge --ff-only origin/main` e apenas quando está limpa;
-- branch protection/reviews continuam sendo a autoridade final;
-- caminhos de exceção da Governança §6-A e migrations potencialmente destrutivas continuam retidos.
+- SHA novo sem evidência → valida;
+- falha real de código/teste → não repete indefinidamente;
+- falha classificada como infraestrutura → retry limitado com backoff;
+- `summary.json` aprovado → suíte pesada não repete;
+- com `EJC_FALLBACK_AUTO_MERGE=1`, evidência aprovada usa `--merge-only`;
+- com `EJC_FALLBACK_AUTO_MERGE=0`, usa `--promote-only`, portanto nunca tenta integrar;
+- API/fetch fora → daemon permanece vivo, sem converter indisponibilidade em sucesso;
+- `main` local só avança por `git merge --ff-only origin/main` quando limpa.
 
-O watcher não usa a VPS de produção e não instala runner do GitHub.
+O watcher não usa VPS de produção e não instala GitHub runner.
 
-## Ativação reversível
+## Ativação persistente e reversível
 
-Em uma máquina **não produtiva** com clone autenticado do EJC:
+Em máquina **não produtiva** com clone autenticado:
 
 ```bash
 bash scripts/ci-fallback-activate.sh --enable
 ```
 
-A ativação:
+A ativação só prossegue depois de:
 
-1. recusa `/opt/ejc`, `root`, containers canônicos e ambiente marcado como produção;
-2. exige checkout limpo da `main`, exatamente igual a `origin/main`;
-3. verifica `git`, `gh`, `jq`, Python 3.11, Node 22, npm, psql e Docker;
-4. confirma que existe `systemd --user` ou `crontab`;
-5. valida sintaxe de todos os componentes do fallback;
-6. executa `scripts/ci-local.sh fast` com Python canônico **antes** de tocar a branch protection;
-7. ativa `.githooks` para o pré-push;
-8. muda a branch protection para `EJC Local Full Gate`;
-9. instala e confirma o watcher com `EJC_ALLOW_PYTHON_MISMATCH=0`;
-10. se qualquer passo após a troca falhar, tenta restaurar automaticamente o modo cloud.
+1. recusar `/opt/ejc`, root, containers canônicos e ambiente de produção;
+2. exigir checkout limpo da `main`, idêntico a `origin/main`;
+3. validar `git`, `gh`, `jq`, Python 3.11, Node 22, npm, psql e Docker;
+4. comprovar scheduler persistente;
+5. validar sintaxe dos componentes;
+6. executar `scripts/ci-local.sh fast` com Python canônico;
+7. ativar pre-push;
+8. aplicar branch protection fallback com autorização #998;
+9. instalar e confirmar o watcher.
 
-Assim, a proteção nunca é apontada deliberadamente para um host que não passou nem pelo preflight local mínimo. O primeiro SHA de PR ainda precisa passar pela suíte completa para gerar `EJC Local Full Gate=success`.
+### Scheduler
+
+O ativador prefere **cron/crond quando o daemon está comprovadamente ativo**. Se não houver cron persistente, aceita `systemd --user` somente quando `loginctl ... Linger=yes`, evitando dependência de sessão humana aberta.
+
+O PATH do watcher é injetado explicitamente no scheduler. PATH, ROOT, LOG_DIR e REPO com caracteres de quoting ambíguo são recusados. Sem scheduler persistente, a ativação falha **antes** de tocar a branch protection.
+
+Se qualquer etapa falhar após a troca da proteção, o ativador tenta restaurar automaticamente `--cloud`.
 
 Desativação:
 
@@ -145,38 +224,63 @@ Desativação:
 bash scripts/ci-fallback-activate.sh --disable
 ```
 
-A desativação restaura **primeiro** a branch protection cloud e só então encerra o watcher. Se o GitHub/API estiver indisponível e a proteção não puder ser restaurada, o watcher permanece ativo em vez de deixar a `main` esperando um gate sem executor.
+A desativação restaura **primeiro** a branch protection cloud e só depois encerra o watcher. Se GitHub/API impedir a restauração, o watcher permanece ativo para não deixar a `main` exigindo um gate sem executor.
 
 ## Governança local
 
-`scripts/governanca/ci-local-governanca.sh` replica as travas objetivas de migration, segredo, descrição do PR, Issue vinculada e branch protegida. Também trata como superfície sensível:
+`scripts/governanca/ci-local-governanca.sh` replica travas objetivas de migration, segredo, descrição do PR, Issue vinculada e branch protegida.
+
+São superfícies sensíveis, entre outras:
 
 - workflows;
 - `scripts/ci-local.sh`;
 - `scripts/ci-fallback*.sh`;
 - `scripts/governanca/branch-protection.sh`;
 - `scripts/governanca/ci-local-governanca.sh`;
-- autenticação, uploads e outras portas de segurança já previstas.
+- autenticação e uploads.
 
 Mudança nessas áreas exige registro literal `security-auditor: executado` antes de status promovível.
 
 ## Segurança e LGPD
 
-- nunca rodar em `/opt/ejc` nem em host com marcadores/containers canônicos de produção;
+- nunca rodar fallback em `/opt/ejc` ou host produtivo;
 - não apontar `DATABASE_URL` para produção;
-- PostgreSQL é efêmero, loopback-only e recebe somente massa de teste;
-- não versionar token ou credencial; `gh` usa autenticação já existente no host;
-- logs completos não são enviados ao GitHub pelo fallback;
-- falha de pré-requisito, banco, teste, lint, auditoria, restore ou browser é bloqueante;
+- PostgreSQL efêmero, loopback-only e com massa de teste;
+- não versionar token/credencial; `gh` usa autenticação existente no host;
+- logs completos permanecem locais;
+- falha de pré-requisito, banco, lint, teste, auditoria, restore ou browser é bloqueante;
 - nenhuma migration destrutiva é promovida automaticamente;
-- o fallback não substitui HITL, RBAC, LGPD, citation gate ou revisão independente.
+- fallback não substitui HITL, RBAC, LGPD, citation gate nem revisão independente;
+- status local e cloud usam nomes distintos;
+- branch protection fallback só pode ser alterada sob autorização #998.
 
-### Risco residual do status externo
+## Risco residual do commit status externo
 
-Para evitar provisionar uma nova GitHub App/segredo persistente, a contingência usa um contexto clássico de status, igual ao modelo de `contexts` já utilizado pela proteção atual. Uma identidade com permissão suficiente de escrita/status no repositório pode, em tese, tentar publicar o mesmo contexto. Por isso o fallback **não remove** review, CODEOWNERS, aprovação do último push, `strict=true`, conversa resolvida nem SHA exato. Quando o Actions normalizar, `--cloud` restaura imediatamente os cinco contexts originais.
+Para não criar nova GitHub App/segredo persistente, a contingência usa commit status clássico. Uma identidade com permissão suficiente no repositório pode, em tese, tentar publicar o mesmo contexto local. Por isso o fallback mantém como controles independentes:
+
+- review/CODEOWNERS;
+- aprovação do último push;
+- `strict=true`;
+- conversa resolvida;
+- SHA exato;
+- exceções §6-A;
+- retenção de migrations destrutivas.
+
+Quando Actions normalizar, `--cloud` restaura os cinco contexts canônicos, que não colidem com os nomes locais.
 
 ## GitHub Actions durante a contingência
 
-Os workflows podem permanecer habilitados e funcionar como evidência adicional quando houver runner. Um X decorrente de job que não chegou ao primeiro step não é tratado como falha de aplicação. A promoção depende do `EJC Local Full Gate` enquanto a branch protection estiver no modo fallback.
+Os workflows permanecem habilitados como evidência adicional. Um X de job que morreu antes do primeiro step (`steps=null`) é classificado como falha do executor, não como reprovação do código.
 
-Assim não é necessário editar workflows a cada incidente e a reversão para o modo cloud é imediata.
+Enquanto a proteção estiver em modo fallback, a promoção depende de `EJC Local Full Gate`; ao retornar para cloud, depende novamente apenas dos cinco checks canônicos do Actions.
+
+## Bootstrap desta implementação
+
+A própria PR que introduz o fallback altera `scripts/` e branch protection. Por segurança, ela é tratada como exceção §6-A e **não deve auto-integrar a si própria usando o mecanismo que ainda não existe na `main`**.
+
+O primeiro bootstrap exige uma destas condições:
+
+- os checks cloud voltarem a executar e aprovarem a PR; ou
+- um host Linux não produtivo autorizado executar a validação e o procedimento administrativo de bootstrap, preservando reviews e branch protection.
+
+Não usar admin bypass nem reduzir proteções apenas para bootstrap.
