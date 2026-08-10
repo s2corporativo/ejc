@@ -172,9 +172,9 @@ trap rollback_activation EXIT
 git config core.hooksPath .githooks
 ok "pre-push hook local ativado"
 
-bash scripts/governanca/branch-protection.sh --fallback
+EJC_FALLBACK_AUTHORIZATION=998 bash scripts/governanca/branch-protection.sh --fallback
 PROTECTION_CHANGED=1
-ok "branch protection apontada para EJC Local Full Gate"
+ok "branch protection apontada para EJC Local Full Gate (autorização #998)"
 
 if [ "$SCHEDULER" = "systemd" ]; then
   systemctl --user enable --now ejc-ci-fallback.service
