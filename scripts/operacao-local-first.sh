@@ -101,9 +101,10 @@ snapshot_source() {
   local id ts dir archive
   id="$(source_id "$base")"
   ts="$(date +%Y%m%d_%H%M%S)"
-  dir="$SNAPSHOT_ROOT/$ts-$id"
+  mkdir -p "$SNAPSHOT_ROOT"
+  dir="$(mktemp -d "$SNAPSHOT_ROOT/${ts}-${id}.XXXXXX")" \
+    || die "não foi possível criar diretório exclusivo de checkpoint"
   archive="$dir/source.tar.gz"
-  mkdir -p "$dir"
 
   log "Criando checkpoint de código $id"
   if git -C "$base" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
