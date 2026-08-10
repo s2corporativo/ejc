@@ -149,23 +149,42 @@ def test_logs_completos_ficam_locais_e_resumo_guarda_hashes():
 
 def test_merge_only_exige_evidencia_local_do_sha_e_revalida_governanca():
     src = _text("scripts/ci-fallback.sh")
-    assert "local_evidence_is_green" in src
     assert '.target_sha == $sha and .result == "success"' in src
-    assert "revalidate_governance_for_merge" in src
-    attempt = src[src.index("attempt_merge() {") : src.index('if [ "$MERGE_ONLY" -eq 1 ]')]
-    assert attempt.index("local_evidence_is_green") < attempt.index("revalidate_governance_for_merge")
-    assert attempt.index("revalidate_governance_for_merge") < attempt.index("publish_success_statuses")
+
+    refresh = src[
+        src.index("refresh_status_from_evidence() {") : src.index("attempt_merge() {")
+    ]
+    assert refresh.index("local_evidence_is_green") < refresh.index(
+        "revalidate_governance_for_merge"
+    )
+    assert refresh.index("revalidate_governance_for_merge") < refresh.index(
+        "publish_success_statuses"
+    )
+
+    attempt = src[
+        src.index("attempt_merge() {") : src.index('if [ "$PROMOTE_ONLY" -eq 1 ]')
+    ]
+    assert "refresh_status_from_evidence" in attempt
     assert 'headRefOid)" = "$SHA"' in attempt
     assert "retencao-humana" in attempt
     assert "migration potencialmente destrutiva" in attempt
     assert 'repos/$REPO/pulls/$PR/merge' in attempt
     assert '-f sha="$SHA"' in attempt
 
+    promote = src[
+        src.index('if [ "$PROMOTE_ONLY" -eq 1 ]') : src.index(
+            'if [ "$MERGE_ONLY" -eq 1 ]'
+        )
+    ]
+    assert "refresh_status_from_evidence" in promote
+    assert "attempt_merge" not in promote
+
 
 def test_watcher_usa_evidencia_local_para_nao_repetir_suite_aprovada():
     src = _text("scripts/ci-fallback-watch.sh")
     assert "local_evidence_green" in src
     assert "--merge-only" in src
+    assert "--promote-only" in src
     assert "EJC_FALLBACK_RETRY_FAILED" in src
     assert "Exit 0 sem summary integral nunca é suficiente" in src
     assert "failure" in src
