@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Ativa/desativa o fallback local do EJC em máquina NÃO produtiva.
 # A troca é transacional e recuperável após crash: required status checks,
-# watcher, hooks e drain são reconciliados por journal durável.
+# watcher, hooks, worker e drain são reconciliados por journal durável.
 set -euo pipefail
+umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -11,6 +12,8 @@ REPO="${EJC_REPO:-s2corporativo/ejc}"
 FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"
 INSTALLATION_ID="${EJC_FALLBACK_INSTALLATION_ID:-}"
 APP_KEY_FILE="${EJC_FALLBACK_APP_PRIVATE_KEY_FILE:-}"
+WORKER_USER="${EJC_CI_WORKER_USER:-}"
+WORKER_ROOT="${EJC_CI_WORKER_ROOT:-/var/tmp/ejc-ci-worker}"
 UNIT_DIR="${HOME}/.config/systemd/user"
 UNIT="$UNIT_DIR/ejc-ci-fallback.service"
 CRON_MARK='# EJC_CI_FALLBACK_998'
@@ -39,8 +42,8 @@ esac
 [ ! -e /opt/ejc/.deployed_sha ] && [ ! -e /opt/ejc/.env ] \
   || fail "host contém marcadores da instalação produtiva /opt/ejc"
 
-case "$WATCHER_PATH$APP_KEY_FILE" in
-  *$'\n'*|*$'\r'*|*"'"*|*'"'*|*'\'*|*%*) fail "PATH/caminho de chave contém caractere inseguro para scheduler" ;;
+case "$WATCHER_PATH$APP_KEY_FILE$WORKER_USER$WORKER_ROOT" in
+  *$'\n'*|*$'\r'*|*"'"*|*'"'*|*'\'*|*%*) fail "PATH/chave/worker contém caractere inseguro para scheduler" ;;
 esac
 case "$ROOT$LOG_DIR$REPO" in
   *$'\n'*|*$'\r'*|*"'"*|*'\'*|*%*|*[[:space:]]*) fail "ROOT/LOG_DIR/REPO contém caractere inseguro para scheduler" ;;
@@ -143,11 +146,13 @@ write_active_state() {
     --arg repo "$REPO" \
     --arg app_id "$FALLBACK_APP_ID" \
     --arg installation_id "$INSTALLATION_ID" \
+    --arg worker_user "$WORKER_USER" \
+    --arg worker_root "$WORKER_ROOT" \
     --arg scheduler "$scheduler" \
     --arg protection_backup "$PROTECTION_BACKUP" \
     --arg state_root "$CACHE_ROOT" \
     --arg activated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{schema:1,repo:$repo,app_id:$app_id,installation_id:$installation_id,scheduler:$scheduler,protection_backup:$protection_backup,state_root:$state_root,activated_at:$activated_at}' > "$tmp"
+    '{schema:2,repo:$repo,app_id:$app_id,installation_id:$installation_id,worker_user:$worker_user,worker_root:$worker_root,scheduler:$scheduler,protection_backup:$protection_backup,state_root:$state_root,activated_at:$activated_at}' > "$tmp"
   chmod 600 "$tmp" 2>/dev/null || true
   python3 - "$tmp" "$ACTIVE_FILE" <<'PY'
 import os, sys
@@ -189,8 +194,6 @@ recover_incomplete_transaction() {
   exec 7>"$LOCK_FILE"
   flock -w 120 7 || return 1
 
-  # Se existe snapshot de proteção, ele é a autoridade. Falha de API preserva
-  # journal + drain + watcher + snapshot para retry idempotente.
   if [ -s "$PROTECTION_BACKUP" ]; then
     command -v gh >/dev/null 2>&1 || return 1
     gh auth status >/dev/null 2>&1 || return 1
@@ -220,8 +223,9 @@ if [ "$MODE" = "--status" ]; then
     exit 1
   fi
   if [ -s "$ACTIVE_FILE" ]; then
-    printf '[fallback-activate] state=active scheduler=%s draining=%s\n' \
+    printf '[fallback-activate] state=active scheduler=%s worker=%s draining=%s\n' \
       "$(jq -r '.scheduler // "unknown"' "$ACTIVE_FILE")" \
+      "$(jq -r '.worker_user // "unknown"' "$ACTIVE_FILE")" \
       "$([ -e "$DRAIN_FILE" ] && echo yes || echo no)"
     scheduler_present || { echo "[fallback-activate] ERRO: active.json existe, mas scheduler não está ativo" >&2; exit 1; }
     exit 0
@@ -278,7 +282,8 @@ fi
 [[ "$FALLBACK_APP_ID" =~ ^[1-9][0-9]*$ ]] || fail "EJC_FALLBACK_APP_ID numérico (>0) obrigatório"
 [[ "$INSTALLATION_ID" =~ ^[1-9][0-9]*$ ]] || fail "EJC_FALLBACK_INSTALLATION_ID numérico (>0) obrigatório"
 [ -n "$APP_KEY_FILE" ] || fail "EJC_FALLBACK_APP_PRIVATE_KEY_FILE obrigatório"
-for c in git gh jq python3 node npm psql flock docker openssl curl; do command -v "$c" >/dev/null 2>&1 || fail "$c ausente"; done
+[ -n "$WORKER_USER" ] || fail "EJC_CI_WORKER_USER obrigatório"
+for c in git gh jq python3 node npm psql flock docker openssl curl sudo setfacl pgrep getent; do command -v "$c" >/dev/null 2>&1 || fail "$c ausente"; done
 docker info >/dev/null 2>&1 || fail "Docker não acessível pelo usuário atual"
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(ejc_backend|ejc_worker|ejc_db|ejc_frontend|ejc_redis)$'; then
   fail "containers canônicos do EJC ativos; host não é elegível para CI de PR"
@@ -305,7 +310,6 @@ NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 git fetch --quiet origin main || fail "não foi possível atualizar origin/main"
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || fail "main local não corresponde à origin/main"
 
-# shellcheck source=github-app-auth.sh
 source scripts/github-app-auth.sh
 _ejc_validate_private_key >/dev/null || fail "chave privada do GitHub App não atende à política local"
 ejc_github_app_clear
@@ -345,6 +349,7 @@ for script in \
   scripts/ci-fallback.sh \
   scripts/ci-fallback-watch.sh \
   scripts/ci-fallback-activate.sh \
+  scripts/ci-worker-isolation.sh \
   scripts/github-app-auth.sh \
   scripts/governanca/ci-local-governanca.sh \
   scripts/governanca/branch-protection.sh; do
@@ -361,6 +366,17 @@ if ! EJC_CI_STATE_ROOT="$CACHE_ROOT" EJC_ALLOW_PYTHON_MISMATCH=0 \
 fi
 ok "preflight local aprovado antes da alteração da branch protection"
 
+worker_preflight="$LOG_DIR/activation-worker-preflight.log"
+if ! EJC_CI_WORKER_USER="$WORKER_USER" \
+    EJC_CI_WORKER_ROOT="$WORKER_ROOT" \
+    EJC_CI_STATE_ROOT="$CACHE_ROOT" \
+    EJC_FALLBACK_APP_PRIVATE_KEY_FILE="$APP_KEY_FILE" \
+    bash scripts/ci-worker-isolation.sh preflight >"$worker_preflight" 2>&1; then
+  tail -n 100 "$worker_preflight" >&2 || true
+  fail "worker dedicado não atende aos invariantes de isolamento; branch protection não foi alterada"
+fi
+ok "worker dedicado validado antes da alteração da branch protection"
+
 PRE_SHA="$(git rev-parse HEAD)"
 PRE_PAYLOAD="$(jq -cn --arg sha "$PRE_SHA" '{name:"EJC Local Activation Preflight",head_sha:$sha,status:"completed",conclusion:"neutral",output:{title:"EJC Local Activation Preflight",summary:"preflight de credencial antes da troca de required status checks"}}')"
 PRE_RESULT="$(printf '%s' "$PRE_PAYLOAD" | ejc_github_app_gh_api -X POST "repos/$REPO/check-runs" -H 'Accept: application/vnd.github+json' --input - 2>/dev/null)" \
@@ -375,7 +391,7 @@ install_watcher() {
     mkdir -p "$UNIT_DIR"
     cat > "$UNIT" <<UNIT
 [Unit]
-Description=EJC CI fallback watcher (worktree isolado)
+Description=EJC CI fallback watcher (control plane isolado)
 After=network-online.target
 
 [Service]
@@ -388,6 +404,8 @@ Environment="EJC_FALLBACK_DRAIN_FILE=$DRAIN_FILE"
 Environment="EJC_FALLBACK_APP_ID=$FALLBACK_APP_ID"
 Environment="EJC_FALLBACK_INSTALLATION_ID=$INSTALLATION_ID"
 Environment="EJC_FALLBACK_APP_PRIVATE_KEY_FILE=$APP_KEY_FILE"
+Environment="EJC_CI_WORKER_USER=$WORKER_USER"
+Environment="EJC_CI_WORKER_ROOT=$WORKER_ROOT"
 Environment="EJC_FALLBACK_AUTO_MERGE=1"
 Environment="EJC_ALLOW_PYTHON_MISMATCH=0"
 ExecStart=/usr/bin/flock -n $LOCK_FILE /usr/bin/env bash $ROOT/scripts/ci-fallback-watch.sh
@@ -405,15 +423,13 @@ UNIT
     systemctl --user is-active --quiet ejc-ci-fallback.service
     ok "watcher persistente ativado via systemd --user"
   else
-    LINE="*/5 * * * * cd '$ROOT' && /usr/bin/env PATH='$WATCHER_PATH' EJC_REPO='$REPO' EJC_CI_STATE_ROOT='$CACHE_ROOT' EJC_FALLBACK_DRAIN_FILE='$DRAIN_FILE' EJC_FALLBACK_APP_ID='$FALLBACK_APP_ID' EJC_FALLBACK_INSTALLATION_ID='$INSTALLATION_ID' EJC_FALLBACK_APP_PRIVATE_KEY_FILE='$APP_KEY_FILE' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 flock -n '$LOCK_FILE' bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
+    LINE="*/5 * * * * cd '$ROOT' && /usr/bin/env PATH='$WATCHER_PATH' EJC_REPO='$REPO' EJC_CI_STATE_ROOT='$CACHE_ROOT' EJC_FALLBACK_DRAIN_FILE='$DRAIN_FILE' EJC_FALLBACK_APP_ID='$FALLBACK_APP_ID' EJC_FALLBACK_INSTALLATION_ID='$INSTALLATION_ID' EJC_FALLBACK_APP_PRIVATE_KEY_FILE='$APP_KEY_FILE' EJC_CI_WORKER_USER='$WORKER_USER' EJC_CI_WORKER_ROOT='$WORKER_ROOT' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 flock -n '$LOCK_FILE' bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
     { crontab -l 2>/dev/null || true; echo "$LINE"; } | crontab -
     (crontab -l 2>/dev/null || true) | grep -qF "$CRON_MARK"
     ok "watcher persistente ativado via cron (5 min, lock exclusivo)"
   fi
 }
 
-# A partir daqui existe mutação persistente. O journal é criado antes dela e o
-# drain impede qualquer promoção enquanto a transação não chegar a active.
 journal_begin "$SCHEDULER"
 create_drain_marker
 journal_phase draining
@@ -443,6 +459,7 @@ journal_phase hooks
 
 EJC_FALLBACK_AUTHORIZATION=998 \
 EJC_FALLBACK_APP_ID="$FALLBACK_APP_ID" \
+EJC_CI_STATE_ROOT="$CACHE_ROOT" \
 EJC_BRANCH_PROTECTION_BACKUP="$PROTECTION_BACKUP" \
   bash scripts/governanca/branch-protection.sh --fallback
 journal_phase protection
@@ -451,10 +468,8 @@ ok "required status checks apontados para EJC Local Full Gate/App $FALLBACK_APP_
 write_active_state "$SCHEDULER"
 journal_phase commit
 
-# Somente depois de estado ativo durável e proteção confirmada o executor é
-# liberado. Crash antes desta remoção deixa drain+journal e exige recovery.
 rm -f "$DRAIN_FILE"
 journal_phase active
 journal_clear
 trap - EXIT
-ok "fallback local autônomo ativo; GitHub Actions deixou de ser dependência de execução do CI"
+ok "fallback local autônomo ativo; control plane separado do worker e GitHub Actions deixou de ser dependência de execução do CI"
