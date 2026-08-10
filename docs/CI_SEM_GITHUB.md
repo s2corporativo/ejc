@@ -1,83 +1,94 @@
-# CI sem custo — rodando a validação fora do GitHub Actions
+# CI sem dependência de GitHub-hosted
 
-## Por que
+## Princípio
 
-O **repositório privado no GitHub é grátis** — o que cobra é o **GitHub Actions**
-(as máquinas na nuvem que rodavam os testes a cada push). O plano grátis dá um
-teto mensal de minutos; a suíte do EJC (~8 min) rodava a cada push e estourava,
-bloqueando o CI (os jobs morriam em ~2s sem runner). **Solução: manter o código
-no GitHub (grátis) e rodar a validação de graça no seu VPS/máquina.**
+O EJC mantém o GitHub como repositório e plano de controle, mas não deve depender
+exclusivamente de runners `ubuntu-latest` para validar PRs. Quando o GitHub-hosted
+falhar antes do primeiro step, a validação pode migrar para um runner self-hosted
+**dedicado e separado da produção**.
 
-## O CI local (`scripts/ci-local.sh`)
+> Regra de segurança: código de PR/branch não confiável nunca executa no runner
+> `ejc-vps`, no host `/opt/ejc` ou em qualquer máquina que contenha banco,
+> uploads, backups ou `.env` de produção.
 
-Roda exatamente o que o antigo `ci.yml` rodava — backend (Postgres+pgvector →
-`alembic upgrade head` → `pytest` com banco) e frontend (typecheck + build) —
-**sem custo, sem GitHub**.
+## CI local canônico
 
-```bash
-scripts/ci-local.sh            # tudo (backend + banco + frontend)
-scripts/ci-local.sh backend    # só backend (com banco)
-scripts/ci-local.sh frontend   # só frontend
-scripts/ci-local.sh fast       # backend SEM banco (rápido — para pre-push)
-```
-
-- **Postgres:** usa Docker (`pgvector/pgvector:pg16`) se houver; senão sobe um
-  cluster local efêmero com `initdb` (requer `postgresql-16` +
-  `postgresql-16-pgvector`). O banco é criado e destruído a cada execução.
-- **Pré-requisitos:** `python3`, e para o frontend `node`/`npm`. Numa 1ª execução
-  ele cria um venv e instala as dependências; use `CI_SKIP_PIP=1` para re-runs
-  rápidos quando as dependências já estão instaladas.
-- Sai com código ≠ 0 se qualquer etapa falhar (serve de gate real, como o CI).
-
-Validado nesta configuração: **2157 passed, 2 skipped** (suíte completa com banco).
-
-### No VPS
-Você já tem Docker no VPS (usa docker-compose pro EJC). Lá o script usa o Docker
-automaticamente:
+`scripts/ci-local.sh` continua disponível para validação em máquina de
+desenvolvimento ou host de CI isolado:
 
 ```bash
-cd /caminho/do/ejc && git pull && scripts/ci-local.sh
+scripts/ci-local.sh            # backend + banco efêmero + frontend
+scripts/ci-local.sh backend    # backend com banco
+scripts/ci-local.sh frontend   # frontend
+scripts/ci-local.sh fast       # backend rápido, sem banco
 ```
 
-## Gate automático antes do push (opcional)
+O PostgreSQL usado pelo CI é efêmero e utiliza `pgvector/pgvector:pg16` quando
+Docker está disponível.
 
-Ative o hook uma vez e o CI local roda sozinho a cada `git push`:
+## Fallback completo isolado
+
+`scripts/ci-fallback.sh` é o gate de contingência. Ele cobre as famílias dos
+gates oficiais: Release Gate P0, Architecture Inventory, PostgreSQL+pgvector,
+Alembic, Ruff, pip-audit, pytest com cobertura mínima, gold sets, Prettier,
+Vitest, npm audit, ESLint, build, Chromium responsivo e restore drill.
+
+O script falha fechado se detectar sinais de produção, incluindo:
+
+- `APP_ENV=production`;
+- `/opt/ejc/.env`;
+- `/opt/ejc/.deployed_sha`;
+- workspace sob `/opt/ejc`;
+- containers `ejc_backend`, `ejc_db`, `ejc_frontend` ou `ejc_worker`.
+
+Não existe opção documentada de bypass desses guardas.
+
+## Runner dedicado `ejc-ci`
+
+O bootstrap seguro é:
 
 ```bash
-git config core.hooksPath .githooks
+scripts/setup-ci-fallback-runner.sh
 ```
 
-- Por padrão roda o modo `fast` (segundos). Para o gate completo:
-  `EJC_PREPUSH_MODE=full git push`.
-- Pular pontualmente: `git push --no-verify`.
+Ele deve ser executado somente em VM/PC Linux separado da produção. O runner usa
+as labels:
 
-## O que foi desligado no GitHub
-
-Os workflows que rodavam sozinhos (e consumiam minutos) foram postos em
-**manual-only** (`workflow_dispatch`), de forma reversível:
-
-- `.github/workflows/ci.yml` — Backend + Frontend
-- `.github/workflows/ejc-release-gate.yml` — P0 guard
-
-> Observação: os gatilhos de `push`/`pull_request` são lidos do branch **default**
-> (`main`). Então a desativação passa a valer quando esta mudança estiver na
-> `main` — a partir daí, nada roda sozinho no Actions e o "X vermelho" some.
-> `deploy-vps.yml` e `frontend-ci.yml` já eram manuais e ficaram como estavam.
-
-### Reativar o CI na nuvem depois
-Se um dia quiser o CI de volta no GitHub (com billing do Actions ativo), restaure
-os gatilhos originais nos dois arquivos:
-
-```yaml
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+```text
+self-hosted, linux, ejc-ci, ejc-ci-isolado
 ```
 
-### Alternativa: runner self-hosted (grátis, com a UI do GitHub)
-Se quiser manter os checks bonitos de PR no GitHub **sem pagar minutos**, dá para
-registrar um **self-hosted runner** no VPS (Settings → Actions → Runners) e trocar
-`runs-on: ubuntu-latest` por `runs-on: self-hosted` nos workflows — a computação
-passa a ser do seu VPS (Actions minutes = 0). Peça que eu preparo o passo a passo.
+O usuário do runner não recebe `NOPASSWD`. Docker, Node, Python, PostgreSQL
+client e Chromium são preparados no host durante o bootstrap.
+
+Para registrar sem copiar manualmente o token temporário, o bootstrap aceita um
+`GH_TOKEN` fornecido apenas no ambiente, com permissão suficiente para solicitar
+`actions/runners/registration-token`. O token não deve ser gravado em arquivo,
+issue, commit ou log. Também é possível fornecer `RUNNER_TOKEN` temporário.
+
+## Automação de contingência
+
+`.github/workflows/ci-fallback-selfhosted.yml` observa o workflow `CI`. O fallback
+automático só roda quando a API comprova que o CI falhou e nenhum job iniciou
+steps. Se qualquer step tiver executado, a falha é tratada como falha real de
+código/teste e não é mascarada.
+
+O workflow também:
+
+- recusa forks e repositórios externos;
+- faz checkout do SHA exato;
+- usa `persist-credentials:false`;
+- exige o runner `ejc-ci-isolado`;
+- publica artifact de evidência vinculado ao SHA.
+
+## Separação entre CI e produção
+
+- `ejc-ci`: valida código de PR/branch em host isolado;
+- `ejc-vps`: deploy, backup e operações controladas de produção;
+- nunca reutilizar `ejc-vps` como fallback de CI;
+- nunca montar `.env`, uploads, backups ou `/opt/ejc` no runner `ejc-ci`.
+
+## Rollback
+
+Para remover a contingência, reverta o PR que adicionou o workflow/scripts e
+desregistre o runner `ejc-ci`. Nenhuma migration ou dado de produção é afetado.
