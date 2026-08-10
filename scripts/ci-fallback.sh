@@ -61,6 +61,7 @@ fi
 for cmd in git jq flock python3; do
   command -v "$cmd" >/dev/null 2>&1 || die "$cmd ausente"
 done
+[ -f "$ROOT/scripts/ci_evidence.py" ] || die "scripts/ci_evidence.py ausente"
 command -v gh >/dev/null 2>&1 || { [ "$POST_STATUS" -eq 0 ] || die "gh ausente"; }
 if [ "$POST_STATUS" -eq 1 ]; then
   gh auth status >/dev/null 2>&1 || die "gh de usuário não autenticado no host"
@@ -82,8 +83,8 @@ FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"
 if [ "$POST_STATUS" -eq 1 ]; then
   [[ "$FALLBACK_APP_ID" =~ ^[1-9][0-9]*$ ]] \
     || die "EJC_FALLBACK_APP_ID numérico (>0) é obrigatório para gate promovível"
-  [ -n "${EJC_FALLBACK_INSTALLATION_ID:-}" ] \
-    || die "EJC_FALLBACK_INSTALLATION_ID é obrigatório para renovar a credencial do App"
+  [[ "${EJC_FALLBACK_INSTALLATION_ID:-}" =~ ^[1-9][0-9]*$ ]] \
+    || die "EJC_FALLBACK_INSTALLATION_ID numérico (>0) é obrigatório"
   [ -n "${EJC_FALLBACK_APP_PRIVATE_KEY_FILE:-}" ] \
     || die "EJC_FALLBACK_APP_PRIVATE_KEY_FILE é obrigatório para renovar a credencial do App"
   # shellcheck source=github-app-auth.sh
@@ -149,7 +150,6 @@ FULL_CHECK_ID=""
 GOV_WORKTREE=""
 WORKTREE=""
 ATTEMPT_DIR=""
-ATTEMPT_ID=""
 
 cleanup_worktrees() {
   set +e
@@ -163,7 +163,9 @@ cleanup_worktrees() {
     ejc_github_app_clear || true
   fi
 }
-trap cleanup_worktrees EXIT INT TERM HUP
+trap cleanup_worktrees EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 preflight_app_credential() {
   [ "$POST_STATUS" -eq 1 ] || return 0
@@ -268,122 +270,16 @@ full_gate_is_green() {
 }
 
 local_evidence_is_green() {
-  python3 - "$SHA_EVIDENCE" "$SHA" <<'PY'
-from __future__ import annotations
-import hashlib
-import json
-import pathlib
-import sys
-
-base = pathlib.Path(sys.argv[1]).resolve()
-target_sha = sys.argv[2]
-pointer = base / "latest-success.json"
-if not pointer.is_file():
-    raise SystemExit(1)
-try:
-    latest = json.loads(pointer.read_text(encoding="utf-8"))
-    rel = pathlib.PurePosixPath(latest["summary"])
-    if rel.is_absolute() or ".." in rel.parts:
-        raise ValueError("summary path inseguro")
-    summary_path = (base / pathlib.Path(*rel.parts)).resolve()
-    attempts_root = (base / "attempts").resolve()
-    if attempts_root not in summary_path.parents:
-        raise ValueError("summary fora de attempts")
-    raw = summary_path.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != latest["summary_sha256"]:
-        raise ValueError("hash do summary divergente")
-    summary = json.loads(raw)
-    if summary.get("target_sha") != target_sha or summary.get("result") != "success":
-        raise ValueError("summary não corresponde ao SHA/sucesso")
-    for name, meta in (summary.get("logs") or {}).items():
-        log_path = (summary_path.parent / name).resolve()
-        if log_path.parent != summary_path.parent or not log_path.is_file():
-            raise ValueError("log ausente/fora da tentativa")
-        data = log_path.read_bytes()
-        if len(data) != int(meta["bytes"]):
-            raise ValueError("tamanho de log divergente")
-        if hashlib.sha256(data).hexdigest() != meta["sha256"]:
-            raise ValueError("hash de log divergente")
-except Exception:
-    raise SystemExit(1)
-raise SystemExit(0)
-PY
+  python3 "$ROOT/scripts/ci_evidence.py" verify --sha-root "$SHA_EVIDENCE" --sha "$SHA" >/dev/null 2>&1
 }
 
-write_attempt_pointer() {
-  python3 - "$SHA_EVIDENCE" "$ATTEMPT_DIR" "$SHA" <<'PY'
-from __future__ import annotations
-import json
-import os
-import pathlib
-import sys
-from datetime import datetime, timezone
-
-base = pathlib.Path(sys.argv[1]).resolve()
-attempt = pathlib.Path(sys.argv[2]).resolve()
-if base not in attempt.parents:
-    raise SystemExit("attempt fora da raiz de evidência")
-obj = {
-    "schema": 1,
-    "target_sha": sys.argv[3],
-    "attempt": attempt.relative_to(base).as_posix(),
-    "started_at": datetime.now(timezone.utc).isoformat(),
-}
-tmp = base / f".latest-attempt.{os.getpid()}.tmp"
-tmp.write_text(json.dumps(obj, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-os.replace(tmp, base / "latest-attempt.json")
-PY
-}
-
-write_attempt_summary() {
-  local result="$1" failed_stage="${2:-}" exit_code="${3:-0}" promote_latest="${4:-0}"
-  python3 - "$ATTEMPT_DIR" "$SHA_EVIDENCE" "$SHA" "$HEAD_REF" "$PR" "$result" "$failed_stage" "$exit_code" "$promote_latest" <<'PY'
-from __future__ import annotations
-import hashlib
-import json
-import os
-import pathlib
-import sys
-from datetime import datetime, timezone
-
-attempt = pathlib.Path(sys.argv[1]).resolve()
-base = pathlib.Path(sys.argv[2]).resolve()
-obj = {
-    "schema": 2,
-    "target_sha": sys.argv[3],
-    "ref": sys.argv[4],
-    "pr": int(sys.argv[5]) if sys.argv[5] else None,
-    "completed_at": datetime.now(timezone.utc).isoformat(),
-    "result": sys.argv[6],
-    "failed_stage": sys.argv[7] or None,
-    "exit_code": int(sys.argv[8]),
-    "logs": {},
-}
-for p in sorted(attempt.glob("*.log")):
-    data = p.read_bytes()
-    obj["logs"][p.name] = {
-        "sha256": hashlib.sha256(data).hexdigest(),
-        "bytes": len(data),
-    }
-raw = (json.dumps(obj, indent=2, ensure_ascii=False) + "\n").encode()
-summary = attempt / "summary.json"
-tmp_summary = attempt / f".summary.{os.getpid()}.tmp"
-tmp_summary.write_bytes(raw)
-os.replace(tmp_summary, summary)
-
-if sys.argv[9] == "1":
-    rel = summary.relative_to(base).as_posix()
-    latest = {
-        "schema": 1,
-        "target_sha": sys.argv[3],
-        "summary": rel,
-        "summary_sha256": hashlib.sha256(raw).hexdigest(),
-        "promoted_at": datetime.now(timezone.utc).isoformat(),
-    }
-    tmp_latest = base / f".latest-success.{os.getpid()}.tmp"
-    tmp_latest.write_text(json.dumps(latest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(tmp_latest, base / "latest-success.json")
-PY
+finish_attempt() {
+  local result="$1" failed_stage="${2:-}" exit_code="${3:-0}" promote="${4:-0}"
+  local args=(finish --attempt "$ATTEMPT_DIR" --sha-root "$SHA_EVIDENCE" --sha "$SHA" --ref "$HEAD_REF" --result "$result" --exit-code "$exit_code")
+  [ -z "$PR" ] || args+=(--pr "$PR")
+  [ -z "$failed_stage" ] || args+=(--failed-stage "$failed_stage")
+  [ "$promote" -eq 0 ] || args+=(--promote)
+  python3 "$ROOT/scripts/ci_evidence.py" "${args[@]}" >/dev/null
 }
 
 revalidate_governance_for_merge() {
@@ -494,11 +390,10 @@ if [ "$MERGE_ONLY" -eq 1 ]; then
   exit 0
 fi
 
-ATTEMPT_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-ATTEMPT_DIR="$SHA_EVIDENCE/attempts/$ATTEMPT_ID"
-mkdir -p "$ATTEMPT_DIR"
-chmod 700 "$ATTEMPT_DIR" 2>/dev/null || true
-write_attempt_pointer
+START_ARGS=(start --root "$EVIDENCE_ROOT" --sha "$SHA" --ref "$HEAD_REF")
+[ -z "$PR" ] || START_ARGS+=(--pr "$PR")
+ATTEMPT_DIR="$(python3 "$ROOT/scripts/ci_evidence.py" "${START_ARGS[@]}")" \
+  || die "não foi possível iniciar tentativa de evidência"
 
 WORKTREE="$WORKTREE_PARENT/${SHA:0:12}-$$"
 git worktree add --detach "$WORKTREE" "$SHA" >/dev/null
@@ -517,7 +412,7 @@ run_stage() {
   local rc=$?
   set -e
   if [ "$rc" -ne 0 ]; then
-    write_attempt_summary failure "$key" "$rc" 0
+    finish_attempt failure "$key" "$rc" 0 || true
     post_status failure "$context" "fallback local falhou: $key (exit $rc)" || true
     post_full_check failure "fallback local falhou: $key (exit $rc)" || true
     tail -n 120 "$logfile" >&2 || true
@@ -539,10 +434,7 @@ run_stage architecture "$CONTEXT_FULL" bash scripts/ci-local.sh architecture || 
 run_stage continuity "$CONTEXT_FULL" env CI_SKIP_PIP=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh continuity || exit 1
 run_stage ui-extra "$CONTEXT_FULL" bash scripts/ci-local.sh ui-extra || exit 1
 
-# A prova local do código é criada somente depois de todos os gates pesados.
-# O ponteiro latest-success é escrito atomicamente e referencia uma tentativa
-# imutável; uma tentativa posterior que falhe não destrói a evidência anterior.
-write_attempt_summary success "" 0 1
+finish_attempt success "" 0 1
 
 if [ -n "$PR" ] && ! revalidate_governance_for_merge; then
   post_status failure "$CONTEXT_GOV" "governança atual do PR reprovada" || true
