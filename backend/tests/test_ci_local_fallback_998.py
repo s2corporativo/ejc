@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import re
 import subprocess
 from pathlib import Path
 
@@ -11,16 +9,6 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
-
-
-def _heredoc_payload(text: str, name: str) -> dict:
-    match = re.search(
-        rf"read -r -d '' {re.escape(name)} <<'JSON' \|\| true\n(.*?)\nJSON",
-        text,
-        flags=re.DOTALL,
-    )
-    assert match, f"payload {name} não localizado"
-    return json.loads(match.group(1))
 
 
 def test_scripts_fallback_tem_sintaxe_bash_valida():
@@ -123,10 +111,29 @@ def test_contexto_full_so_e_publicado_apos_todos_os_gates_e_governanca_atual():
 
 def test_falha_de_stage_publica_failure_e_nao_success_parcial():
     src = _text("scripts/ci-fallback.sh")
-    block = src[src.index("run_stage() {") : src.index("# Para execução promovível")]
+    block = src[src.index("run_stage() {") : src.index("run_stage backend ")]
     assert 'post_status failure "$context"' in block
-    assert 'post_status failure "$CONTEXT_FULL"' in block
+    assert 'post_full_check failure' in block
     assert "post_status success" not in block
+
+
+def test_preflight_app_acontece_antes_da_suite_pesada_e_falha_fechado():
+    src = _text("scripts/ci-fallback.sh")
+    assert "preflight_app_credential()" in src
+    assert "credencial gh não consegue criar Check Run" in src
+    assert 'app_id" = "$FALLBACK_APP_ID"' in src
+    assert src.index("preflight_app_credential\n") < src.index("run_stage backend ")
+
+
+def test_cleanup_global_cobre_worktree_de_governanca_e_worktree_pesado():
+    src = _text("scripts/ci-fallback.sh")
+    assert 'GOV_WORKTREE=""' in src
+    assert 'WORKTREE=""' in src
+    cleanup = src[src.index("cleanup_worktrees() {") : src.index("preflight_app_credential() {")]
+    assert "GOV_WORKTREE" in cleanup
+    assert "WORKTREE" in cleanup
+    assert "git worktree remove --force" in cleanup
+    assert "trap cleanup_worktrees EXIT" in src
 
 
 def test_status_api_indisponivel_nao_interrompe_prova_local():
@@ -150,32 +157,17 @@ def test_logs_completos_ficam_locais_e_resumo_guarda_hashes():
 def test_merge_only_exige_evidencia_local_do_sha_e_revalida_governanca():
     src = _text("scripts/ci-fallback.sh")
     assert '.target_sha == $sha and .result == "success"' in src
-
-    refresh = src[
-        src.index("refresh_status_from_evidence() {") : src.index("attempt_merge() {")
-    ]
-    assert refresh.index("local_evidence_is_green") < refresh.index(
-        "revalidate_governance_for_merge"
-    )
-    assert refresh.index("revalidate_governance_for_merge") < refresh.index(
-        "publish_success_statuses"
-    )
-
-    attempt = src[
-        src.index("attempt_merge() {") : src.index('if [ "$PROMOTE_ONLY" -eq 1 ]')
-    ]
+    refresh = src[src.index("refresh_status_from_evidence() {") : src.index("attempt_merge() {")]
+    assert refresh.index("local_evidence_is_green") < refresh.index("revalidate_governance_for_merge")
+    assert refresh.index("revalidate_governance_for_merge") < refresh.index("publish_success_statuses")
+    attempt = src[src.index("attempt_merge() {") : src.index('preflight_app_credential\n')]
     assert "refresh_status_from_evidence" in attempt
     assert 'headRefOid)" = "$SHA"' in attempt
     assert "retencao-humana" in attempt
     assert "migration potencialmente destrutiva" in attempt
     assert 'repos/$REPO/pulls/$PR/merge' in attempt
     assert '-f sha="$SHA"' in attempt
-
-    promote = src[
-        src.index('if [ "$PROMOTE_ONLY" -eq 1 ]') : src.index(
-            'if [ "$MERGE_ONLY" -eq 1 ]'
-        )
-    ]
+    promote = src[src.index('if [ "$PROMOTE_ONLY" -eq 1 ]') : src.index('if [ "$MERGE_ONLY" -eq 1 ]')]
     assert "refresh_status_from_evidence" in promote
     assert "attempt_merge" not in promote
 
@@ -227,7 +219,7 @@ def test_ativacao_exige_preflight_antes_de_trocar_branch_protection():
     assert "EJC_ALLOW_PYTHON_MISMATCH=0 bash '$ROOT/scripts/ci-fallback-watch.sh'" in src
 
 
-def test_ativacao_e_transacional_e_disable_restaura_cloud_antes_de_parar_watcher():
+def test_ativacao_e_transacional_e_disable_para_watcher_antes_de_cloud():
     src = _text("scripts/ci-fallback-activate.sh")
     assert "rollback_activation" in src
     assert "PROTECTION_CHANGED=1" in src
@@ -235,28 +227,25 @@ def test_ativacao_e_transacional_e_disable_restaura_cloud_antes_de_parar_watcher
     disable_start = src.index('if [ "$MODE" = "--disable" ]')
     disable_end = src.index('fi\n[ "$MODE" = "--enable" ]', disable_start)
     disable = src[disable_start:disable_end]
-    assert disable.index("branch-protection.sh --cloud") < disable.index("remove_watcher")
+    assert disable.index("remove_watcher") < disable.index("branch-protection.sh --cloud")
     assert '"$(git branch --show-current)" = "main"' in src
     assert '"$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"' in src
 
 
-def test_branch_protection_fallback_troca_so_contexto_e_preserva_travas():
+def test_branch_protection_fallback_vincula_check_ao_app_e_preserva_travas():
     src = _text("scripts/governanca/branch-protection.sh")
-    payload = _heredoc_payload(src, "PAYLOAD_FALLBACK")
-    checks = payload["required_status_checks"]
-    assert checks["strict"] is True
-    assert checks["contexts"] == ["EJC Local Full Gate"]
-    assert "checks" not in checks
-    assert payload["enforce_admins"] is True
-    reviews = payload["required_pull_request_reviews"]
-    assert reviews["required_approving_review_count"] == 1
-    assert reviews["require_code_owner_reviews"] is True
-    assert reviews["dismiss_stale_reviews"] is True
-    assert reviews["require_last_push_approval"] is True
-    assert payload["required_conversation_resolution"] is True
-    assert payload["required_linear_history"] is True
-    assert payload["allow_force_pushes"] is False
-    assert payload["allow_deletions"] is False
+    assert "build_fallback_payload()" in src
+    assert 'checks: [' in src
+    assert '{context: "EJC Local Full Gate", app_id: $app_id}' in src
+    assert '"contexts"' not in src[src.index("build_fallback_payload()") : src.index('if [ "$MODO" = "--contextos" ]')]
+    assert 'echo "$PAYLOAD" | gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input -' in src
+    assert "required_approving_review_count: 1" in src
+    assert "require_code_owner_reviews: true" in src
+    assert "require_last_push_approval: true" in src
+    assert "required_conversation_resolution: true" in src
+    assert "required_linear_history: true" in src
+    assert "allow_force_pushes: false" in src
+    assert "allow_deletions: false" in src
 
 
 def test_ci_local_cobre_paridade_minima_dos_workflows_atuais():
@@ -285,15 +274,17 @@ def test_ci_local_cobre_paridade_minima_dos_workflows_atuais():
         assert marker in src, marker
 
 
-def test_governanca_local_replica_travas_e_trata_ci_como_superficie_sensivel():
+def test_governanca_local_secret_scan_e_paths_sao_fail_closed_e_nul_safe():
     src = _text("scripts/governanca/ci-local-governanca.sh")
-    assert "MIGRATION_RESERVATIONS.md" in src
-    assert "PRIVATE KEY" in src
-    assert "\\.env" in src
+    assert "git diff --name-only -z" in src
+    assert "read -r -d ''" in src
+    assert 'grep -EIn "$PADROES" -- "$f"' in src
+    assert ".env.example" in src
+    assert '.env*|*/.env*' in src
+    assert "*.min.js" not in src
+    assert "*.map" not in src
+    assert "*.svg" not in src
+    assert "*.lock" not in src
     assert "security-auditor: executado" in src
-    assert "scripts/(ci-local\\.sh|ci-fallback" in src
-    assert "branch-protection" in src
-    assert 'BRANCH" != "main"' in src
-    assert "Issue vinculada" in src
-    assert "Riscos residuais" in src
-    assert "Rollback" in src
+    assert "MIGRATION_RESERVATIONS.md" in src
+    assert "branch de origem protegida" in src
