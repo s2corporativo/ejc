@@ -65,7 +65,8 @@ def case_folder_token(case_id: str) -> str:
 
 def _subfolder(folder_id: Optional[str]) -> str:
     if folder_id and folder_id.startswith("case:"):
-        return f"casos/{case_folder_token(folder_id[5:])[5:]}"
+        case_id = str(UUID(folder_id[5:]))
+        return f"casos/{case_id}"
     if folder_id and folder_id in _FOLDER_NAMES:
         return _FOLDER_NAMES[folder_id]
     return "geral"
@@ -86,7 +87,11 @@ def _remote_rel_seguro(remote_path: str) -> str:
 
     bruto = str(remote_path or "").strip().replace("\\", "/")
     path = PurePosixPath(bruto)
-    if not bruto or path.is_absolute() or any(p in {"", ".", ".."} for p in path.parts):
+    if (
+        not bruto
+        or path.is_absolute()
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
         raise ValueError("remote_path inválido")
     if ":" in bruto:
         raise ValueError("remote_path não pode conter ':'")
@@ -102,7 +107,10 @@ def _rclone_path_rel(remote_path: str) -> str:
     return f"{RCLONE_REMOTE}:{BASE_FOLDER}/{_remote_rel_seguro(remote_path)}"
 
 
-def _run(cmd: list[str], timeout: int = RCLONE_TIMEOUT) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: list[str],
+    timeout: int = RCLONE_TIMEOUT,
+) -> subprocess.CompletedProcess[str]:
     """Executa rclone sem shell e com timeout duro."""
 
     return subprocess.run(
@@ -114,9 +122,26 @@ def _run(cmd: list[str], timeout: int = RCLONE_TIMEOUT) -> subprocess.CompletedP
     )
 
 
+def _erro_operacao(operacao: str, result: subprocess.CompletedProcess[str]) -> RuntimeError:
+    """Erro operacional sem copiar stderr/path potencialmente sensível para logs."""
+
+    return RuntimeError(f"rclone {operacao} falhou (exit={result.returncode})")
+
+
 def _exigir_disponivel() -> None:
     if not DRIVE_AVAILABLE:
         raise DriveIndisponivelError("Google Drive/rclone não configurado")
+
+
+def _compensar_objeto(dest_file: str) -> None:
+    """Best effort local ao adapter quando o copy terminou e o pós-check falhou."""
+
+    cleanup = _run(["rclone", "deletefile", dest_file])
+    if cleanup.returncode != 0:
+        logger.critical(
+            "Falha ao compensar objeto remoto após erro pós-upload (exit=%s)",
+            cleanup.returncode,
+        )
 
 
 def upload_file(
@@ -141,7 +166,7 @@ def upload_file(
 
     mkdir = _run(["rclone", "mkdir", dest_dir])
     if mkdir.returncode != 0:
-        raise RuntimeError(f"rclone mkdir falhou: {mkdir.stderr[:300]}")
+        raise _erro_operacao("mkdir", mkdir)
 
     suffix = PurePosixPath(nome).suffix[:16]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -151,7 +176,7 @@ def upload_file(
     try:
         copied = _run(["rclone", "copyto", tmp_path, dest_file])
         if copied.returncode != 0:
-            raise RuntimeError(f"rclone upload falhou: {copied.stderr[:300]}")
+            raise _erro_operacao("upload", copied)
     finally:
         try:
             os.unlink(tmp_path)
@@ -161,24 +186,26 @@ def upload_file(
     # O objeto é conhecido pelo path exato; --stat evita listar a pasta inteira.
     stat = _run(["rclone", "lsjson", dest_file, "--stat"])
     if stat.returncode != 0:
-        raise RuntimeError(f"rclone lsjson --stat falhou: {stat.stderr[:300]}")
+        _compensar_objeto(dest_file)
+        raise _erro_operacao("lsjson --stat", stat)
     try:
         info = json.loads(stat.stdout or "{}")
     except json.JSONDecodeError as exc:
+        _compensar_objeto(dest_file)
         raise RuntimeError("rclone lsjson --stat devolveu JSON inválido") from exc
 
     file_id = str(info.get("ID") or "")
+    if not file_id:
+        _compensar_objeto(dest_file)
+        raise RuntimeError("storage remoto não devolveu ID do objeto")
+
     remote_path = f"{subfolder}/{nome}"
     return {
         "id": file_id,
         "name": nome,
         "remote_path": remote_path,
-        "webViewLink": (
-            f"https://drive.google.com/file/d/{file_id}/view" if file_id else ""
-        ),
-        "webContentLink": (
-            f"https://drive.google.com/uc?id={file_id}" if file_id else ""
-        ),
+        "webViewLink": f"https://drive.google.com/file/d/{file_id}/view",
+        "webContentLink": f"https://drive.google.com/uc?id={file_id}",
     }
 
 
@@ -207,9 +234,7 @@ def _resolver_path_por_id(file_id: str) -> str:
     base = f"{RCLONE_REMOTE}:{BASE_FOLDER}"
     result = _run(["rclone", "lsjson", "-R", "--files-only", base])
     if result.returncode != 0:
-        raise RuntimeError(
-            f"rclone lsjson legado falhou para ID {file_id}: {result.stderr[:200]}"
-        )
+        raise _erro_operacao("lsjson legado", result)
     try:
         entries = json.loads(result.stdout or "[]")
     except json.JSONDecodeError as exc:
@@ -245,10 +270,10 @@ def download_file(
     try:
         result = _run(["rclone", "copyto", src, tmp_path])
         if result.returncode != 0:
-            stderr = result.stderr[:300]
-            raise DriveObjetoNaoEncontradoError(
-                f"Falha ao baixar objeto remoto: {stderr}"
-            )
+            # Não inferir 404 por stderr: timeout, permissão e indisponibilidade
+            # também retornam non-zero. Somente o resolver legado consegue
+            # afirmar ausência por ID com segurança.
+            raise _erro_operacao("download", result)
         with open(tmp_path, "rb") as handle:
             return handle.read()
     finally:
@@ -269,5 +294,5 @@ def delete_file(
     dest = _resolver_objeto(file_id, remote_path)
     result = _run(["rclone", "deletefile", dest])
     if result.returncode != 0:
-        raise RuntimeError(f"rclone deletefile falhou: {result.stderr[:300]}")
+        raise _erro_operacao("deletefile", result)
     logger.info("[Drive] objeto removido do storage remoto")
