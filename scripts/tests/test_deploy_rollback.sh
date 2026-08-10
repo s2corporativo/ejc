@@ -18,6 +18,8 @@ LOG="$TMP/docker.log"
 POST_LOG="$TMP/post.log"
 LOCK_ROOT="$TMP/locks"
 LOCK="$LOCK_ROOT/deploy.lock"
+TEST_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+OLD_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 mkdir -p "$APP/scripts/backup" "$BIN" "$LOCK_ROOT"
 cp "$ROOT/scripts/deploy_vps_safe.sh" "$APP/scripts/deploy_vps_safe.sh"
 : > "$APP/.env"
@@ -61,7 +63,7 @@ if [ "${1:-}" = "inspect" ]; then
       ejc_frontend) echo project-frontend:latest ;;
     esac
   elif [[ "$*" == *"range .Config.Env"* ]]; then
-    echo GIT_SHA=old-sha
+    echo "GIT_SHA=${OLD_SHA_FOR_TEST:?}"
   else
     case "$container" in
       ejc_backend) echo sha256:backend-old ;;
@@ -77,6 +79,11 @@ if [ "${1:-}" = "compose" ] && [ "${2:-}" = "build" ] && \
   exit 42
 fi
 
+if [ "$*" = "compose up -d --no-deps --force-recreate worker" ] && \
+   [ "${FAIL_WORKER_UPDATE:-0}" = "1" ]; then
+  exit 43
+fi
+
 exit 0
 EOF
 
@@ -86,7 +93,7 @@ exit 0
 EOF
 cat > "$BIN/curl" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' '{"status":"ok","commit":"test-sha"}'
+printf '%s\n' "{\"status\":\"ok\",\"commit\":\"${EXPECTED_HEALTH_SHA:?}\"}"
 EOF
 chmod +x "$BIN/docker" "$BIN/sleep" "$BIN/curl"
 
@@ -101,6 +108,8 @@ COMMON_ENV=(
   "EJC_DEPLOY_LOCK_FILE=$LOCK"
   "PATH=$BIN:$PATH"
   "FAKE_DOCKER_LOG=$LOG"
+  "EXPECTED_HEALTH_SHA=$TEST_SHA"
+  "OLD_SHA_FOR_TEST=$OLD_SHA"
 )
 
 # 0) Lock host-level ocupado bloqueia antes de APP_DIR/Docker/runtime.
@@ -156,10 +165,29 @@ set -e
 [ ! -s "$LOG" ] || fail "Docker foi chamado antes da política de migration"
 grep -q "MIGRATIONS_BACKWARD_COMPATIBLE=1" "$TMP/policy.err" || fail "mensagem da política ausente"
 
-# 2) O default do executor é backup obrigatório: não depende do caller/workflow.
+# 2) Identidade inválida é bloqueada antes de migrar .env ou chamar Docker.
+cat > "$APP/scripts/migrar_env_obsoletos.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+echo touched > "$TMP/env-migration-ran"
+EOF
+chmod +x "$APP/scripts/migrar_env_obsoletos.sh"
 : > "$LOG"
 set +e
-env "${COMMON_ENV[@]}" FAIL_BACKUP=1 TARGET_SHA=test-sha ENSURE_DAILY_BACKUP=1 \
+env "${COMMON_ENV[@]}" TARGET_SHA=curto REQUIRE_PREDEPLOY_BACKUP=0 ENSURE_DAILY_BACKUP=0 \
+  bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/sha-invalid.out" 2>"$TMP/sha-invalid.err"
+sha_invalid_rc=$?
+set -e
+[ "$sha_invalid_rc" -eq 2 ] || fail "SHA inválido retornou rc=$sha_invalid_rc, esperado 2"
+[ ! -e "$TMP/env-migration-ran" ] || fail "migrador de .env rodou antes de validar identidade"
+[ ! -s "$LOG" ] || fail "Docker foi chamado antes de validar identidade"
+grep -q 'SHA-1 completo de 40 caracteres' "$TMP/sha-invalid.err" || fail "mensagem de SHA inválido ausente"
+rm -f "$APP/scripts/migrar_env_obsoletos.sh"
+
+# 3) O default do executor é backup obrigatório: não depende do caller/workflow.
+: > "$LOG"
+set +e
+env "${COMMON_ENV[@]}" FAIL_BACKUP=1 TARGET_SHA="$TEST_SHA" ENSURE_DAILY_BACKUP=1 \
   bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/backup-default.out" 2>"$TMP/backup-default.err"
 backup_default_rc=$?
 set -e
@@ -167,27 +195,27 @@ set -e
 ! grep -q '^compose build ' "$LOG" || fail "build iniciou após falha de backup com default seguro"
 grep -q 'backup pré-deploy obrigatório falhou' "$TMP/backup-default.out" || fail "fail-closed default não foi registrado"
 
-# 3) Backup obrigatório explícito falha fechado antes de qualquer build/mutação.
+# 4) Backup obrigatório explícito falha fechado antes de qualquer build/runtime.
 : > "$LOG"
 set +e
 env "${COMMON_ENV[@]}" FAIL_BACKUP=1 REQUIRE_PREDEPLOY_BACKUP=1 \
-  TARGET_SHA=test-sha ENSURE_DAILY_BACKUP=1 \
+  TARGET_SHA="$TEST_SHA" ENSURE_DAILY_BACKUP=1 \
   bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/backup-strict.out" 2>"$TMP/backup-strict.err"
 backup_strict_rc=$?
 set -e
 [ "$backup_strict_rc" -ne 0 ] || fail "backup obrigatório não bloqueou o deploy"
 ! grep -q '^compose build ' "$LOG" || fail "build iniciou após falha de backup obrigatório"
-grep -q 'Falha antes de qualquer mutação do runtime' "$TMP/backup-strict.out" || fail "runtime intacto não foi comprovado"
+! grep -q '^compose up ' "$LOG" || fail "runtime foi reiniciado após falha de backup"
 
-# 4) Contingência exige opt-out explícito e fica visível no log.
+# 5) Contingência exige opt-out explícito e fica visível no log.
 : > "$LOG"
 env "${COMMON_ENV[@]}" FAIL_BACKUP=1 REQUIRE_PREDEPLOY_BACKUP=0 \
-  TARGET_SHA=test-sha ENSURE_DAILY_BACKUP=0 \
+  TARGET_SHA="$TEST_SHA" ENSURE_DAILY_BACKUP=0 \
   bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/backup-contingency.out" 2>"$TMP/backup-contingency.err"
 grep -q '^compose build frontend$' "$LOG" || fail "contingência não prosseguiu para o build"
 grep -q 'REQUIRE_PREDEPLOY_BACKUP=0 foi definido explicitamente' "$TMP/backup-contingency.out" || fail "contingência não ficou destacada"
 
-# 5) Sem Git e sem TARGET_SHA, release é bloqueado antes de build.
+# 6) Sem Git e sem TARGET_SHA, release é bloqueada antes de Docker.
 : > "$LOG"
 set +e
 env "${COMMON_ENV[@]}" REQUIRE_PREDEPLOY_BACKUP=0 ENSURE_DAILY_BACKUP=0 \
@@ -195,13 +223,13 @@ env "${COMMON_ENV[@]}" REQUIRE_PREDEPLOY_BACKUP=0 ENSURE_DAILY_BACKUP=0 \
 sha_rc=$?
 set -e
 [ "$sha_rc" -eq 2 ] || fail "identidade ausente retornou rc=$sha_rc, esperado 2"
-! grep -q '^compose build ' "$LOG" || fail "build iniciou sem identidade de release"
-grep -q 'TARGET_SHA ausente' "$TMP/sha.out" || fail "mensagem de identidade ausente não apareceu"
+[ ! -s "$LOG" ] || fail "Docker foi chamado sem identidade de release"
+grep -q 'SHA-1 completo de 40 caracteres' "$TMP/sha.err" || fail "mensagem de identidade ausente não apareceu"
 
-# 6) Migration expand-only é aplicada antes da troca do backend.
+# 7) Migration expand-only é aplicada antes da troca do backend.
 : > "$LOG"
 env "${COMMON_ENV[@]}" RUN_MIGRATIONS=1 MIGRATIONS_BACKWARD_COMPATIBLE=1 \
-  TARGET_SHA=test-sha RUN_SEEDS=0 ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
+  TARGET_SHA="$TEST_SHA" RUN_SEEDS=0 ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
   bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/order.out" 2>"$TMP/order.err"
 
 migration_line="$(grep -n '^compose run --rm --no-deps -T backend alembic upgrade head$' "$LOG" | cut -d: -f1)"
@@ -213,32 +241,42 @@ worker_line="$(grep -n '^compose up -d --no-deps --force-recreate worker$' "$LOG
 [ "$migration_line" -lt "$backend_line" ] || fail "backend foi trocado antes da migration expand-only"
 [ "$backend_line" -lt "$worker_line" ] || fail "worker foi trocado antes da validação inicial do backend"
 
-# 7) Falha de build restaura as três imagens anteriores e valida rollback.
+# 8) Falha de build restaura tags anteriores, mas não reinicia runtime.
 : > "$LOG"
 : > "$POST_LOG"
 set +e
-env "${COMMON_ENV[@]}" FAIL_FRONTEND_BUILD=1 TARGET_SHA=test-sha \
+env "${COMMON_ENV[@]}" FAIL_FRONTEND_BUILD=1 TARGET_SHA="$TEST_SHA" \
   ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
-  bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/rollback.out" 2>"$TMP/rollback.err"
-rollback_rc=$?
+  bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/build-rollback.out" 2>"$TMP/build-rollback.err"
+build_rc=$?
 set -e
-[ "$rollback_rc" -eq 42 ] || fail "rollback retornou rc=$rollback_rc, esperado 42"
+[ "$build_rc" -eq 42 ] || fail "falha de build retornou rc=$build_rc, esperado 42"
+grep -Eq '^tag ejc-backend:rollback-.* project-backend:latest$' "$LOG" || fail "ref backend anterior não foi restaurada"
+grep -Eq '^tag ejc-worker:rollback-.* project-worker:latest$' "$LOG" || fail "ref worker anterior não foi restaurada"
+grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail "ref frontend anterior não foi restaurada"
+! grep -q '^compose up -d --no-deps --force-recreate backend worker frontend$' "$LOG" || fail "runtime foi reiniciado apesar de build falhar antes do cutover"
+[ ! -s "$POST_LOG" ] || fail "post-check de rollback rodou sem cutover"
+grep -q 'referências de imagem anteriores restauradas sem reiniciar containers' "$TMP/build-rollback.out" || fail "rollback sem downtime não foi registrado"
 
-grep -Eq '^tag sha256:backend-old ejc-backend:rollback-' "$LOG" || fail "tag imutável do backend anterior não foi criada"
-grep -Eq '^tag sha256:worker-old ejc-worker:rollback-' "$LOG" || fail "tag imutável do worker anterior não foi criada"
-grep -Eq '^tag sha256:frontend-old ejc-frontend:rollback-' "$LOG" || fail "tag imutável do frontend anterior não foi criada"
-grep -Eq '^tag ejc-backend:rollback-.* project-backend:latest$' "$LOG" || fail "backend anterior não foi restaurado"
-grep -Eq '^tag ejc-worker:rollback-.* project-worker:latest$' "$LOG" || fail "worker anterior não foi restaurado"
-grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || fail "frontend anterior não foi restaurado"
-grep -q '^compose up -d --no-deps --force-recreate backend worker frontend$' "$LOG" || fail "serviços não foram recriados no rollback"
+# 9) Falha após cutover restaura imagens e runtime anteriores.
+: > "$LOG"
+: > "$POST_LOG"
+set +e
+env "${COMMON_ENV[@]}" FAIL_WORKER_UPDATE=1 TARGET_SHA="$TEST_SHA" \
+  ENSURE_DAILY_BACKUP=0 REQUIRE_PREDEPLOY_BACKUP=0 \
+  bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/runtime-rollback.out" 2>"$TMP/runtime-rollback.err"
+runtime_rc=$?
+set -e
+[ "$runtime_rc" -eq 43 ] || fail "falha pós-cutover retornou rc=$runtime_rc, esperado 43"
+grep -q '^compose up -d --no-deps --force-recreate backend worker frontend$' "$LOG" || fail "runtime anterior não foi recriado"
 grep -q '^post-check$' "$POST_LOG" || fail "post-check do rollback não executou"
-grep -q 'Rollback confirmado pelo post-deploy check' "$TMP/rollback.out" || fail "rollback não registrou confirmação"
+grep -q 'Rollback confirmado pelo post-deploy check' "$TMP/runtime-rollback.out" || fail "rollback de runtime não foi confirmado"
 
-# 8) O workflow de produção também mantém a política explícita.
+# 10) O workflow de produção também mantém a política explícita.
 grep -q 'REQUIRE_PREDEPLOY_BACKUP: "1"' "$ROOT/.github/workflows/deploy-vps.yml" || fail "workflow de produção não exige backup pré-deploy"
 grep -q 'REQUIRE_PREDEPLOY_BACKUP="$REQUIRE_PREDEPLOY_BACKUP"' "$ROOT/.github/workflows/deploy-vps.yml" || fail "workflow não repassa a política ao script"
 
-# 9) Lock real permanece owner-only e fora da árvore da aplicação.
+# 11) Lock real permanece owner-only e fora da árvore da aplicação.
 [ "$(stat -c %a "$LOCK_ROOT")" = "700" ] || fail "raiz do mutex não ficou 700"
 [ "$(stat -c %a "$LOCK")" = "600" ] || fail "mutex não ficou 600"
 case "$(realpath -m "$LOCK")" in
@@ -246,4 +284,4 @@ case "$(realpath -m "$LOCK")" in
 esac
 
 bash -n "$ROOT/scripts/deploy_vps_safe.sh"
-echo "[rollback-test] OK — lock confinado, backup fail-closed, identidade, migration e rollback comprovados."
+echo "[rollback-test] OK — lock, identidade, backup fail-closed, rollback sem downtime e rollback pós-cutover comprovados."
