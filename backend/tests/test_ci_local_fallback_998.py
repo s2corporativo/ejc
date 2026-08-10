@@ -157,12 +157,13 @@ def test_ativacao_e_transacional_e_disable_restaura_cloud_antes_de_parar_watcher
     assert '"$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"' in src
 
 
-def test_branch_protection_fallback_troca_so_executor_e_preserva_travas():
+def test_branch_protection_fallback_troca_so_contexto_e_preserva_travas():
     src = _text("scripts/governanca/branch-protection.sh")
     payload = _heredoc_payload(src, "PAYLOAD_FALLBACK")
     checks = payload["required_status_checks"]
     assert checks["strict"] is True
-    assert checks["checks"] == [{"context": "EJC Local Full Gate", "app_id": -1}]
+    assert checks["contexts"] == ["EJC Local Full Gate"]
+    assert "checks" not in checks
     assert payload["enforce_admins"] is True
     reviews = payload["required_pull_request_reviews"]
     assert reviews["required_approving_review_count"] == 1
