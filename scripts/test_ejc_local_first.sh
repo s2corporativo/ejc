@@ -194,9 +194,9 @@ git remote set-url origin https://invalid.invalid/ejc.git
 # Achado 7: desabilitar prompts de credencial git durante testes offline.
 export GIT_TERMINAL_PROMPT=0
 
-env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh status >/dev/null 2>&1
+env "${ENV_COMMON[@]}" GIT_TERMINAL_PROMPT=0 bash scripts/ejc-local-first.sh status >/dev/null 2>&1
 grep -q '^offline$' "$TMP/recovery/repo/mode"
-env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh sync >/dev/null 2>&1
+env "${ENV_COMMON[@]}" GIT_TERMINAL_PROMPT=0 bash scripts/ejc-local-first.sh sync >/dev/null 2>&1
 grep -q '^offline$' "$TMP/recovery/repo/mode"
 test -f "$OFFLINE_TASK"
 
