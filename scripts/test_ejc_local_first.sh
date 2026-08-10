@@ -71,7 +71,7 @@ if grep -q '.env.local' "$ARCHIVE_LIST"; then
 fi
 
 VALIDATE_OUTPUT="$(env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh validate fast)"
-printf '%s\n' "$VALIDATE_OUTPUT" | grep -q 'dummy-ci mode=fast'
+grep -q 'dummy-ci mode=fast' <<< "$VALIDATE_OUTPUT"
 
 git remote add origin https://invalid.invalid/ejc.git
 env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh status >/dev/null 2>&1
