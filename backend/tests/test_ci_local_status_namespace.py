@@ -37,3 +37,20 @@ def test_fallback_nao_publica_contexts_canônicos_do_actions():
     # A proteção fallback exige somente o agregado; statuses detalhados locais
     # são observabilidade e não podem virar dependência permanente da main.
     assert '"contexts": [\n      "EJC Local Full Gate"\n    ]' in protection
+
+
+def test_watcher_sem_auto_merge_repromove_status_sem_tentar_integracao():
+    fallback = (ROOT / "scripts" / "ci-fallback.sh").read_text(encoding="utf-8")
+    watcher = (ROOT / "scripts" / "ci-fallback-watch.sh").read_text(encoding="utf-8")
+
+    assert "--promote-only" in fallback
+    assert "--promote-only" in watcher
+    assert "PROMOTE_ONLY=1" in fallback
+
+    # O ramo AUTO_MERGE=0 precisa usar promote-only; merge-only fica exclusivo
+    # do ramo que deliberadamente permite tentativa de integração.
+    approved = watcher[watcher.index('if local_evidence_green "$sha"; then') :]
+    approved = approved[: approved.index("continue")]
+    assert 'if [ "$AUTO_MERGE" = "1" ]; then' in approved
+    assert "--merge-only" in approved
+    assert "--promote-only" in approved
