@@ -28,7 +28,6 @@ def test_preflight_sem_worker_falha_antes_de_tocar_host():
         text=True,
         check=False,
     )
-
     assert proc.returncode != 0
     assert "EJC_CI_WORKER_USER obrigatório" in (proc.stdout + proc.stderr)
 
@@ -44,7 +43,7 @@ def test_worker_e_uid_distinto_sem_grupos_privilegiados():
     assert "worker possui sudo não interativo" in block
 
 
-def test_worker_nao_recebe_docker_socket_gh_ou_chave_do_app():
+def test_worker_nao_recebe_docker_socket_gh_chave_ou_evidencia():
     source = _text()
     common = _block(source, "validate_common() {", "worker_runtime_preflight() {")
     run = _block(source, "run_stage() {", 'case "$MODE" in')
@@ -52,6 +51,10 @@ def test_worker_nao_recebe_docker_socket_gh_ou_chave_do_app():
     assert "/var/run/docker.sock" in common
     assert "worker consegue ler a chave privada do GitHub App" in common
     assert "worker consegue ler configuração autenticada do gh" in common
+    assert "worker consegue ler evidência/estado do control plane" in common
+    assert "worker consegue escrever evidência/estado do control plane" in common
+    assert "worker consegue escrever no checkout do control plane" in common
+
     child_env = run[run.index("sudo -n -u") :]
     assert "GH_TOKEN=" not in child_env
     assert "GITHUB_TOKEN=" not in child_env
@@ -60,7 +63,7 @@ def test_worker_nao_recebe_docker_socket_gh_ou_chave_do_app():
     assert "/var/run/docker.sock" not in child_env
 
 
-def test_worker_recebe_ambiente_minimo_e_efemero_por_stage():
+def test_worker_recebe_ambiente_minimo_e_git_safe_directory_exato():
     source = _text()
     run = _block(source, "run_stage() {", 'case "$MODE" in')
 
@@ -71,6 +74,9 @@ def test_worker_recebe_ambiente_minimo_e_efemero_por_stage():
         'XDG_CACHE_HOME="$stage_root/state/cache"',
         'EJC_CI_STATE_ROOT="$stage_root/state"',
         'EJC_CI_REPORT_ROOT="$stage_root/state/reports"',
+        "GIT_CONFIG_COUNT=1",
+        "GIT_CONFIG_KEY_0=safe.directory",
+        'GIT_CONFIG_VALUE_0="$source_dir"',
         "APP_ENV=development",
         "EJC_ENV=development",
         "EJC_ALLOW_PYTHON_MISMATCH=0",
@@ -91,15 +97,32 @@ def test_cada_stage_clona_sha_sem_hardlink_e_remove_origin():
     assert '[ "$(git -C "$source_dir" rev-parse HEAD)" = "$sha" ]' in prepare
 
 
-def test_orquestrador_executado_pelo_worker_vem_do_control_plane():
+def test_orquestrador_trusted_nao_pode_ser_substituido_por_directory_write():
     source = _text()
     prepare = _block(source, "prepare_stage_source() {", "run_stage() {")
     run = _block(source, "run_stage() {", 'case "$MODE" in')
 
     assert 'cp "$TRUST_ROOT/scripts/ci-local.sh" "$trusted_ci"' in prepare
     assert 'chmod 0555 "$trusted_ci"' in prepare
+    assert 'test ! -w "$source_dir"' in prepare
+    assert 'test ! -w "$source_dir/scripts"' in prepare
+    assert 'test ! -w "$trusted_ci"' in prepare
+    assert 'setfacl -m "u:${WORKER_USER}:rx' in prepare
     assert 'bash "$trusted_ci" "$stage"' in run
     assert 'bash "$source_dir/scripts/ci-local.sh"' not in run
+
+
+def test_worker_so_recebe_escrita_em_backend_frontend_e_estado_efemero():
+    source = _text()
+    prepare = _block(source, "prepare_stage_source() {", "run_stage() {")
+
+    assert '"$source_dir/backend"' in prepare
+    assert '"$source_dir/frontend"' in prepare
+    assert '"$stage_root/home"' in prepare
+    assert '"$stage_root/state"' in prepare
+    assert '"$stage_root/tmp"' in prepare
+    # Não pode reaparecer ACL rwX recursiva sobre stage_root inteiro.
+    assert 'setfacl -Rm "u:${WORKER_USER}:rwX,u:${CONTROLLER_USER}:rwX" "$stage_root"' not in prepare
 
 
 def test_worker_nao_pode_persistir_processos_cron_tmp_ou_home():
@@ -132,7 +155,6 @@ def test_stage_cleanup_e_fail_closed_apos_teste():
     assert "kill_worker_processes" in run
     assert "clean_worker_persistence" in run
     assert 'safe_remove_tree "$stage_root"' in run
-    # Mesmo depois do comando retornar zero, a limpeza final é obrigatória.
     last_return = run.rindex('return "$rc"')
     assert run.rindex("kill_worker_processes") < last_return
     assert run.rindex("clean_worker_persistence") < last_return
