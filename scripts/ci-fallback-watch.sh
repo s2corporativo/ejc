@@ -13,23 +13,48 @@ case "$(realpath "$ROOT" 2>/dev/null || printf '%s' "$ROOT")" in
 esac
 [ "$(id -u)" -ne 0 ] || { echo "[fallback-watch] não roda como root" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "[fallback-watch] gh ausente" >&2; exit 1; }
-gh auth status >/dev/null 2>&1 || { echo "[fallback-watch] gh não autenticado" >&2; exit 1; }
-REPO="${EJC_REPO:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}"
+REPO="${EJC_REPO:-s2corporativo/ejc}"
 STATE_ROOT="${EJC_CI_STATE_ROOT:-${HOME}/.cache/ejc-ci-state}"
 mkdir -p "$STATE_ROOT"; chmod 700 "$STATE_ROOT" 2>/dev/null || true
 
 run_cycle() {
-  git fetch --quiet origin main || { echo "[fallback-watch] fetch main falhou" >&2; return 0; }
-  gh pr list --repo "$REPO" --base main --state open --limit 100 \
-    --json number,headRefOid,isDraft,mergeStateStatus,updatedAt \
-    --jq '.[] | select(.isDraft == false) | [.number,.headRefOid,.mergeStateStatus] | @tsv' |
+  # Falha da API/GitHub não derruba o daemon: o trabalho fica local e uma nova
+  # tentativa ocorre no próximo ciclo. Nunca convertemos indisponibilidade em verde.
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "[fallback-watch] gh indisponível/não autenticado neste ciclo; nova tentativa depois." >&2
+    return 0
+  fi
+  if ! git fetch --quiet origin main; then
+    echo "[fallback-watch] GitHub/fetch indisponível neste ciclo; mantendo estado local." >&2
+    return 0
+  fi
+
+  # O watcher é instalado somente sobre a main limpa. Mantenha o motor local
+  # fast-forward para receber correções já integradas, sem reset/force.
+  if [ "$(git branch --show-current)" != "main" ] || [ -n "$(git status --porcelain)" ]; then
+    echo "[fallback-watch] checkout deixou de ser main limpa; ciclo recusado." >&2
+    return 0
+  fi
+  if ! git merge --ff-only origin/main >/dev/null 2>&1; then
+    echo "[fallback-watch] main local não pôde avançar por fast-forward; ciclo recusado." >&2
+    return 0
+  fi
+
+  local prs_json
+  prs_json="$(gh pr list --repo "$REPO" --base main --state open --limit 100 \
+    --json number,headRefOid,isDraft,mergeStateStatus,updatedAt 2>/dev/null || true)"
+  if [ -z "$prs_json" ]; then
+    echo "[fallback-watch] API de PR indisponível neste ciclo." >&2
+    return 0
+  fi
+
+  printf '%s' "$prs_json" | jq -r '.[] | select(.isDraft == false) | [.number,.headRefOid,.mergeStateStatus] | @tsv' |
   while IFS=$'\t' read -r pr sha merge_state; do
     [ -n "$pr" ] || continue
     marker="$STATE_ROOT/$sha.result"
 
     # O SHA já passou: não repita a suíte pesada. Se revisão/proteção mudou,
-    # reavalie somente a elegibilidade do merge contra o mesmo status assinado
-    # pelo SHA exato.
+    # reavalie somente a elegibilidade do merge contra o mesmo gate por SHA.
     if [ -f "$marker" ] && grep -qx 'success' "$marker"; then
       if [ "$AUTO_MERGE" = "1" ]; then
         bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge-only || true
