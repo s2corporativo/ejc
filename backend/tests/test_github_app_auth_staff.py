@@ -40,11 +40,20 @@ def test_private_key_owner_only_e_aceita_sem_expor_conteudo(tmp_path: Path):
     assert secret not in result.stderr
 
 
-def test_auth_usa_token_efemero_e_nao_persiste_credencial():
+def test_auth_usa_token_efemero_escopado_e_nao_persiste_credencial():
     src = AUTH.read_text(encoding="utf-8")
     assert "access_tokens" in src
     assert "_EJC_APP_TOKEN_REFRESH_SECONDS" in src
     assert 'GH_TOKEN="$_EJC_APP_TOKEN" gh api' in src
     assert "curl --config -" in src
+    assert "permissions:{checks:\"write\"}" in src
+    assert "repositories:[$repo]" in src
+    assert "shopt -s lastpipe" in src
     assert "write_text" not in src
-    assert "40" not in src or "token" not in src.lower().split("40", 1)[0][-40:]
+
+    # O GitHub alterou o formato de installation tokens em 2026. O contrato
+    # local valida tipo/comprimento mínimo apenas para rejeitar resposta vazia,
+    # sem assumir o formato legado de 40 caracteres.
+    assert 'length > 20' in src
+    assert 'length == 40' not in src
+    assert 'length != 40' not in src
