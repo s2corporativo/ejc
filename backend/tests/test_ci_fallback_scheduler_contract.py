@@ -91,3 +91,32 @@ def test_scheduler_impede_execucoes_sobrepostas():
     assert "git gh jq python3 node npm psql flock" in src
     assert "flock -n '$LOCK_FILE'" in src
     assert "ExecStart=/usr/bin/flock -n $LOCK_FILE" in src
+
+
+def test_hooks_path_e_preservado_exclusivamente_no_escopo_local():
+    src = ACTIVATE.read_text(encoding="utf-8")
+
+    # Leitura, gravação e restauração devem usar --local. Assim, se houver apenas
+    # core.hooksPath global, a ativação registra __UNSET__ e a desativação remove
+    # somente o override local, sem copiar o valor global para .git/config.
+    assert "git config --local --get core.hooksPath" in src
+    assert "git config --local core.hooksPath .githooks" in src
+    assert "git config --local --unset-all core.hooksPath" in src
+    restore = src[src.index("restore_hooks_path() {") : src.index('if [ "$MODE" = "--disable" ]')]
+    assert "git config --local core.hooksPath" in restore
+    assert "git config core.hooksPath" not in restore
+
+
+def test_remove_watcher_nao_falha_quando_unit_nunca_foi_instalada():
+    src = ACTIVATE.read_text(encoding="utf-8")
+    block = src[src.index("remove_watcher() {") : src.index("restore_hooks_path() {")]
+
+    assert 'unit_aplicavel=0' in block
+    assert '[ -f "$UNIT" ]' in block
+    assert "systemctl --user is-active --quiet ejc-ci-fallback.service" in block
+    assert "systemctl --user is-enabled --quiet ejc-ci-fallback.service" in block
+    assert 'if [ "$unit_aplicavel" -eq 1 ]; then' in block
+    # O disable não pode ser executado de forma incondicional antes do teste.
+    assert block.index('if [ "$unit_aplicavel" -eq 1 ]; then') < block.index(
+        "systemctl --user disable --now ejc-ci-fallback.service"
+    )
