@@ -13,9 +13,18 @@ case "$(realpath "$ROOT" 2>/dev/null || printf '%s' "$ROOT")" in
 esac
 [ "$(id -u)" -ne 0 ] || { echo "[fallback-watch] não roda como root" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "[fallback-watch] gh ausente" >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "[fallback-watch] jq ausente" >&2; exit 1; }
 REPO="${EJC_REPO:-s2corporativo/ejc}"
 STATE_ROOT="${EJC_CI_STATE_ROOT:-${HOME}/.cache/ejc-ci-state}"
-mkdir -p "$STATE_ROOT"; chmod 700 "$STATE_ROOT" 2>/dev/null || true
+EVIDENCE_ROOT="${EJC_CI_EVIDENCE_ROOT:-${HOME}/.cache/ejc-ci-evidence}"
+mkdir -p "$STATE_ROOT" "$EVIDENCE_ROOT"
+chmod 700 "$STATE_ROOT" "$EVIDENCE_ROOT" 2>/dev/null || true
+
+local_evidence_green() {
+  local sha="$1" summary="$EVIDENCE_ROOT/$1/summary.json"
+  [ -s "$summary" ] || return 1
+  jq -e --arg sha "$sha" '.target_sha == $sha and .result == "success"' "$summary" >/dev/null 2>&1
+}
 
 run_cycle() {
   # Falha da API/GitHub não derruba o daemon: o trabalho fica local e uma nova
@@ -53,14 +62,22 @@ run_cycle() {
     [ -n "$pr" ] || continue
     marker="$STATE_ROOT/$sha.result"
 
-    # O SHA já passou: não repita a suíte pesada. Se revisão/proteção mudou,
-    # reavalie somente a elegibilidade do merge contra o mesmo gate por SHA.
-    if [ -f "$marker" ] && grep -qx 'success' "$marker"; then
+    # Evidência local integral é a fonte para decidir se a suíte pesada precisa
+    # repetir. Metadados/reviews/API podem mudar sem mudar o SHA e são reavaliados
+    # por --merge-only em todo ciclo.
+    if local_evidence_green "$sha"; then
+      printf 'success\n' > "$marker"
       if [ "$AUTO_MERGE" = "1" ]; then
+        bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge-only || true
+      else
+        # Mesmo sem auto-merge, revalida governança e tenta ressincronizar status.
         bash "$ROOT/scripts/ci-fallback.sh" --pr "$pr" --merge-only || true
       fi
       continue
     fi
+
+    # Falha real de código/teste sem evidência integral continua retida para não
+    # consumir CPU indefinidamente. Retry exige novo SHA ou opt-in operacional.
     if [ -f "$marker" ] && grep -qx 'failure' "$marker" && [ "${EJC_FALLBACK_RETRY_FAILED:-0}" != "1" ]; then
       continue
     fi
@@ -74,7 +91,21 @@ run_cycle() {
     fi
     rc=$?
     set -e
-    if [ "$rc" -eq 0 ]; then printf 'success\n' > "$marker"; else printf 'failure\n' > "$marker"; fi
+
+    # Se a suíte completa gerou summary success, uma falha posterior de
+    # governança mutável/status/API NÃO transforma o código em reprovado. O
+    # próximo ciclo fará merge-only e revalidará metadados sem repetir a suíte.
+    if local_evidence_green "$sha"; then
+      printf 'success\n' > "$marker"
+      continue
+    fi
+
+    if [ "$rc" -eq 0 ]; then
+      # Exit 0 sem summary integral nunca é suficiente para promover o SHA.
+      printf 'pending\n' > "$marker"
+    else
+      printf 'failure\n' > "$marker"
+    fi
   done
 }
 
