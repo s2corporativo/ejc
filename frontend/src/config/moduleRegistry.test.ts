@@ -79,25 +79,31 @@ describe("moduleRegistry", () => {
     ).toBe(false);
   });
 
-  it("destaca a Sala Jurídica e o Financeiro apenas para os perfis autorizados", () => {
+  it("destaca a Entrada Única e o Financeiro apenas para os perfis autorizados", () => {
     const advogado = getProductionNavigation("advogado");
     const socio = getProductionNavigation("socio");
-    expect(
-      advogado.find((item) => item.path === "/sala-juridica")?.essential,
-    ).toBe(true);
+
+    expect(advogado.find((item) => item.path === "/entrada")?.essential).toBe(
+      true,
+    );
+    expect(advogado.some((item) => item.path === "/sala-juridica")).toBe(false);
     expect(advogado.some((item) => item.path === "/financeiro")).toBe(false);
     expect(socio.find((item) => item.path === "/financeiro")?.essential).toBe(
       true,
     );
   });
 
-  it("mantém o Raio-X acessível no menu como apoio da Sala Jurídica", () => {
+  it("mantém o Raio-X canônico e o consolida no menu apenas quando há Entrada", () => {
     const advogado = getProductionNavigation("advogado");
+    const auxiliar = getProductionNavigation("advogado_auxiliar");
     const raioX = STAFF_ROUTES.find((item) => item.path === "/raio-x");
+
     expect(canRoleAccessPath("advogado", "/raio-x")).toBe(true);
     expect(raioX?.showInNav).toBe(true);
     expect(raioX?.essential).toBe(false);
-    expect(advogado.some((item) => item.path === "/raio-x")).toBe(true);
+    expect(advogado.some((item) => item.path === "/raio-x")).toBe(false);
+    expect(auxiliar.some((item) => item.path === "/raio-x")).toBe(true);
+    expect(auxiliar.some((item) => item.path === "/sala-juridica")).toBe(true);
     expect(STAFF_ROUTES.some((item) => item.path === "/sala-analise")).toBe(
       false,
     );
@@ -146,20 +152,18 @@ describe("moduleRegistry", () => {
       .map((m) => m.path);
     expect(essenciais).toEqual([
       "/",
+      "/entrada",
       "/casos",
       "/atividades",
       "/clientes",
       "/documentos",
       "/pecas",
       "/dpt360",
-      "/sala-juridica",
       "/inteligencia",
     ]);
     expect(advogado).not.toContain("/casos/novo");
     expect(STAFF_ROUTES.some((m) => m.path === "/casos/novo")).toBe(true);
 
-    // As implementações consolidadas continuam disponíveis para rollback e QA,
-    // mas apenas em caminhos internos; as URLs públicas são aliases canônicos.
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
     for (const path of [
       "/legado/prazos",
@@ -186,12 +190,6 @@ describe("moduleRegistry", () => {
   });
 });
 
-// ── Onda 2: os dois radares viraram uma porta ────────────────────────────────
-// O feed de compliance já consolidava Diário Oficial + monitoramento
-// regulatório + autos ambientais; o radar regulatório era o DIGEST da mesma
-// matéria. Duas entradas de menu para a mesma pergunta é atrito — viraram
-// `?modo=feed|digest` de /radar. Este teste trava a consolidação e, sobretudo,
-// que a fusão NÃO alargou quem enxerga o feed de risco.
 describe("radar consolidado", () => {
   it("expõe uma única porta e aposenta as duas rotas antigas", () => {
     const rotas = new Set(STAFF_ROUTES.map((r) => r.path));
@@ -207,10 +205,6 @@ describe("radar consolidado", () => {
   });
 
   it("herda o RBAC mais restritivo dos dois — a fusão não alarga acesso", () => {
-    // A versão anterior deste teste comparava /radar com /compliance/radar.
-    // Como /compliance/radar deixou de ser rota, os dois lados davam `false` e
-    // a asserção passava por VÁCUO — não validava matriz nenhuma. Agora a
-    // matriz de ROLES.compliance é afirmada papel a papel.
     for (const papel of ["superadmin", "admin", "socio", "advogado"]) {
       expect(canRoleAccessPath(papel, "/radar"), papel).toBe(true);
     }
@@ -222,7 +216,6 @@ describe("radar consolidado", () => {
     ]) {
       expect(canRoleAccessPath(papel, "/radar"), papel).toBe(false);
     }
-    // E o portal do cliente jamais alcança o feed de risco do escritório.
     expect(canRoleAccessPath("cliente_externo", "/radar")).toBe(false);
   });
 });
