@@ -11,7 +11,8 @@ PG_PORT="${PG_PORT:-}"
 PG_CONTAINER="${PG_CONTAINER:-ejc_ci_pg_${$}}"
 PGVECTOR_IMAGE="${PGVECTOR_IMAGE:-pgvector/pgvector:pg16}"
 STATE_ROOT="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}/ejc-ci-local}"
-VENV_DIR="${VENV_DIR:-$STATE_ROOT/venv-py311}"
+VENV_DIR_OVERRIDE="${VENV_DIR:-}"
+VENV_DIR=""
 PGDATA="${PGDATA:-$STATE_ROOT/pgdata-${$}}"
 REPORT_ROOT="${EJC_CI_REPORT_ROOT:-$STATE_ROOT/reports}"
 REPORT_DIR="${EJC_CI_REPORT_DIR:-$REPORT_ROOT/$(date -u +%Y%m%dT%H%M%SZ)-${$}}"
@@ -94,15 +95,33 @@ choose_python() {
   fi
 }
 
+resolve_venv_dir() {
+  [ -n "$VENV_DIR" ] && return 0
+  if [ -n "$VENV_DIR_OVERRIDE" ]; then
+    VENV_DIR="$VENV_DIR_OVERRIDE"
+    return 0
+  fi
+  [ -f backend/requirements.txt ] || die "backend/requirements.txt ausente"
+  local req_hash py_version py_key
+  req_hash="$($PYTHON_BIN -c 'import hashlib,pathlib; print(hashlib.sha256(pathlib.Path("backend/requirements.txt").read_bytes()).hexdigest()[:16])')"
+  py_version="$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
+  py_key="${py_version//./_}"
+  VENV_DIR="$STATE_ROOT/venv-py${py_key}-${req_hash}"
+}
+
 ensure_venv() {
   choose_python
+  resolve_venv_dir
+  if [ "${CI_SKIP_PIP:-0}" = "1" ] && [ ! -x "$VENV_DIR/bin/python" ]; then
+    die "CI_SKIP_PIP=1 solicitado, mas o venv hermético não existe: $VENV_DIR"
+  fi
   if [ ! -x "$VENV_DIR/bin/python" ]; then
-    log "Criando venv isolado em $VENV_DIR…"
+    log "Criando venv hermético em $VENV_DIR…"
     mkdir -p "$(dirname "$VENV_DIR")"
     "$PYTHON_BIN" -m venv "$VENV_DIR"
   fi
   if [ "${CI_SKIP_PIP:-0}" = "1" ]; then
-    log "CI_SKIP_PIP=1 — reutilizando dependências locais."
+    log "CI_SKIP_PIP=1 — reutilizando venv do mesmo runtime + requirements hash."
   else
     log "Instalando dependências Python bloqueadas…"
     "$VENV_DIR/bin/python" -m pip install -q --upgrade pip
