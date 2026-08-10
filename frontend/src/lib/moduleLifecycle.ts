@@ -42,25 +42,30 @@ export function filterModulesByLifecycle<T extends ModuleLike>(
     (module) =>
       module.key === "entrada" && visibleByLifecycle(module, settings),
   );
+  const result: T[] = [];
 
-  return modules
-    .filter((module) => {
-      if (CONSOLIDATED_NAV_KEYS.has(module.key)) return false;
-      if (entradaVisivel && ENTRADA_CONSOLIDATED_NAV_KEYS.has(module.key)) {
-        return false;
-      }
-      return visibleByLifecycle(module, settings);
-    })
-    .map((module) => {
-      if (!entradaVisivel || module.key !== "entrada") return module;
-      return {
+  for (const module of modules) {
+    if (CONSOLIDATED_NAV_KEYS.has(module.key)) continue;
+    if (entradaVisivel && ENTRADA_CONSOLIDATED_NAV_KEYS.has(module.key)) {
+      continue;
+    }
+    if (!visibleByLifecycle(module, settings)) continue;
+
+    if (entradaVisivel && module.key === "entrada") {
+      result.push({
         ...module,
         label: "Entrada Única",
         description:
           "Porta principal para iniciar um caso por relato/documentos e acessar Sala Jurídica ou Raio-X.",
         essential: true,
-      } as T;
-    });
+      } as T);
+      continue;
+    }
+
+    result.push(module);
+  }
+
+  return result;
 }
 
 function routePatternToRegex(path: string): RegExp {
@@ -68,6 +73,7 @@ function routePatternToRegex(path: string): RegExp {
     .split("/")
     .map((segment) => {
       if (!segment) return "";
+      if (segment === "*") return ".*";
       if (segment.startsWith(":")) return "[^/]+";
       return segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     })
@@ -75,11 +81,18 @@ function routePatternToRegex(path: string): RegExp {
   return new RegExp(`^${escaped}/?$`);
 }
 
+// O catálogo é estático durante a vida da SPA. Compilar e ordenar os padrões a
+// cada mudança de rota custava O(n log n) e criava n RegExp temporárias. Com a
+// pré-compilação abaixo, o lookup passa a O(n), sem alocação por navegação.
+const MODULE_PATH_MATCHERS = getModuleCatalog()
+  .map((module) => ({ module, regex: routePatternToRegex(module.path) }))
+  .sort((a, b) => b.module.path.length - a.module.path.length);
+
 export function matchModuleByPath(pathname: string) {
-  const candidates = getModuleCatalog()
-    .filter((module) => routePatternToRegex(module.path).test(pathname))
-    .sort((a, b) => b.path.length - a.path.length);
-  return candidates[0] ?? null;
+  return (
+    MODULE_PATH_MATCHERS.find(({ regex }) => regex.test(pathname))?.module ??
+    null
+  );
 }
 
 export function lifecycleForPath(
