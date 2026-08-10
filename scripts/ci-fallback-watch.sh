@@ -25,8 +25,9 @@ chmod 700 "$STATE_ROOT" "$EVIDENCE_ROOT" 2>/dev/null || true
 
 # Só sinais inequívocos de infraestrutura externa entram em retry automático.
 # Falha de pytest/typecheck/lint/build sem estes sinais é falha real do SHA e
-# permanece retida até novo commit.
-INFRA_ERROR_RE='Could not resolve host|Temporary failure in name resolution|Name or service not known|EAI_AGAIN|ECONNRESET|ETIMEDOUT|ENETUNREACH|TLS handshake timeout|Connection timed out|Read timed out|429 Too Many Requests|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout|Could not fetch URL|npm ERR! code (EAI_AGAIN|ECONNRESET|ETIMEDOUT)|registry\.npmjs\.org.*(EAI_AGAIN|ECONNRESET|ETIMEDOUT)|pypi\.org.*(Temporary failure|timed out|502|503|504)|github\.com.*(Could not resolve|timed out|502|503|504)'
+# permanece retida até novo commit. HTTP 429/5xx isolado NÃO basta, pois o
+# próprio EJC possui testes funcionais que exercitam respostas HTTP.
+INFRA_ERROR_RE='Could not resolve host|Temporary failure in name resolution|Name or service not known|EAI_AGAIN|ECONNRESET|ETIMEDOUT|ENETUNREACH|TLS handshake timeout|Connection timed out|Read timed out|Could not fetch URL|npm ERR!.*(EAI_AGAIN|ECONNRESET|ETIMEDOUT|429 Too Many Requests|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout)|registry\.npmjs\.org.*(EAI_AGAIN|ECONNRESET|ETIMEDOUT|429|502|503|504)|pypi\.org.*(Temporary failure|timed out|429|502|503|504)|files\.pythonhosted\.org.*(Temporary failure|timed out|429|502|503|504)|github\.com.*(Could not resolve|timed out|429|502|503|504)'
 
 local_evidence_green() {
   local sha="$1" summary="$EVIDENCE_ROOT/$1/summary.json"
