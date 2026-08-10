@@ -33,12 +33,14 @@ O snapshot local usa `umask 077`, diretórios `0700` e arquivos `0600`. Arquivos
 
 ## Comando canônico
 
+Use `bash` explicitamente para que o procedimento não dependa da preservação do bit executável ao transportar o repositório:
+
 ```bash
-scripts/ejc-local-first.sh status
-scripts/ejc-local-first.sh checkpoint
-scripts/ejc-local-first.sh validate full
-scripts/ejc-local-first.sh sync
-scripts/ejc-local-first.sh work full
+bash scripts/ejc-local-first.sh status
+bash scripts/ejc-local-first.sh checkpoint
+bash scripts/ejc-local-first.sh validate full
+bash scripts/ejc-local-first.sh sync
+bash scripts/ejc-local-first.sh work full
 ```
 
 ### `status`
@@ -101,7 +103,7 @@ Se o remoto estiver disponível:
 O push best-effort pode ser desligado com:
 
 ```bash
-EJC_LOCAL_FIRST_AUTO_PUSH=0 scripts/ejc-local-first.sh sync
+EJC_LOCAL_FIRST_AUTO_PUSH=0 bash scripts/ejc-local-first.sh sync
 ```
 
 ### `work`
@@ -131,7 +133,7 @@ O caminho de produção permanece `scripts/deploy_vps_safe.sh` ou a esteira que 
 
 Quando GitHub/Actions estiver indisponível, a alternativa autorizada é executar o mesmo `scripts/deploy_vps_safe.sh` diretamente no checkout de produção previamente confirmado, nunca copiar arquivos manualmente e nunca editar produção fora desse procedimento. O deploy de contingência deve usar o SHA exato já validado localmente (`TARGET_SHA`) e `REQUIRE_PREDEPLOY_BACKUP=1`.
 
-Não assumir caminhos, credenciais ou estado da VPS: confirmar pelo próprio checkout/ambiente antes de executar. Nenhum segredo deve ser solicitado ou impresso.
+Essa contingência não autoriza um agente sem acesso operacional seguro à VPS a inventar caminho, credencial ou estado. O agente deve usar o acesso já conectado/disponível; se não houver canal operacional, mantém a entrega validada e sincroniza quando houver canal seguro, sem solicitar ou expor segredo.
 
 ## Política para agentes de IA
 
