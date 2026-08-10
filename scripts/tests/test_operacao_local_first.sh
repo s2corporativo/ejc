@@ -8,10 +8,15 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 ROOT="$TMP/ejc"
 SNAPS="$TMP/snaps"
-mkdir -p "$ROOT"/{backend,frontend,scripts,nginx,uploads,data}
+WORK="$TMP/worktrees"
+PROD="$TMP/producao"
+mkdir -p "$ROOT"/{backend,frontend,scripts,nginx,uploads,data,docs,config}
+mkdir -p "$PROD"
 printf 'print("ok")\n' > "$ROOT/backend/a.py"
 printf 'export const x = 1\n' > "$ROOT/frontend/a.ts"
 printf 'services: {}\n' > "$ROOT/docker-compose.yml"
+printf 'documentacao\n' > "$ROOT/docs/a.md"
+printf '{}\n' > "$ROOT/config/a.json"
 printf 'SEGREDO_NAO_DEVE_ENTRAR\n' > "$ROOT/.env"
 printf 'cliente\n' > "$ROOT/uploads/cliente.txt"
 printf 'db\n' > "$ROOT/data/db.txt"
@@ -23,49 +28,75 @@ printf '%s\n' "$1" > "${EJC_TEST_CI_MARKER:?}"
 CI
 chmod +x "$ROOT/scripts/ci-local.sh"
 
-cat > "$ROOT/scripts/backup.sh" <<'BK'
-#!/usr/bin/env bash
-exit 0
-BK
-chmod +x "$ROOT/scripts/backup.sh"
+# Repositório local fictício: o teste não precisa de rede nem GitHub.
+git -C "$ROOT" init -q
+git -C "$ROOT" config user.email teste@local.invalid
+git -C "$ROOT" config user.name "EJC Teste"
+git -C "$ROOT" add backend frontend scripts nginx docs config docker-compose.yml
+git -C "$ROOT" commit -qm inicial
+git -C "$ROOT" switch -c trabalho >/dev/null 2>&1
 
-cat > "$ROOT/scripts/deploy_vps_safe.sh" <<'DEP'
-#!/usr/bin/env bash
-set -euo pipefail
-{
-  printf 'TARGET_SHA=%s\n' "${TARGET_SHA:-}"
-  printf 'APP_DIR=%s\n' "${APP_DIR:-}"
-  printf 'REQUIRE_PREDEPLOY_BACKUP=%s\n' "${REQUIRE_PREDEPLOY_BACKUP:-}"
-} > "${EJC_TEST_DEPLOY_MARKER:?}"
-DEP
-chmod +x "$ROOT/scripts/deploy_vps_safe.sh"
+COMMON=(
+  EJC_ROOT="$ROOT"
+  EJC_WORK_ROOT="$WORK"
+  EJC_SNAPSHOT_ROOT="$SNAPS"
+  EJC_PROD_ROOT="$PROD"
+)
 
-STATUS="$(EJC_ROOT="$ROOT" EJC_SNAPSHOT_ROOT="$SNAPS" bash "$SCRIPT" status)"
-grep -q '^github_required=false$' <<<"$STATUS"
+STATUS="$(env "${COMMON[@]}" bash "$SCRIPT" status)"
+grep -q '^github_required_for_work=false$' <<<"$STATUS"
+grep -q '^workspace_safe=true$' <<<"$STATUS"
 SOURCE_ID="$(sed -n 's/^source_id=//p' <<<"$STATUS")"
-[[ "$SOURCE_ID" == local-* ]]
+[[ "$SOURCE_ID" =~ ^[0-9a-f]{40}$ ]]
 
-SNAP_DIR="$(EJC_ROOT="$ROOT" EJC_SNAPSHOT_ROOT="$SNAPS" bash "$SCRIPT" snapshot | tail -1)"
+# Alteração tracked sem commit muda a identidade para fingerprint local.
+printf 'alterado\n' >> "$ROOT/docs/a.md"
+STATUS_DIRTY="$(env "${COMMON[@]}" bash "$SCRIPT" status)"
+DIRTY_ID="$(sed -n 's/^source_id=//p' <<<"$STATUS_DIRTY")"
+[[ "$DIRTY_ID" == local-* ]]
+git -C "$ROOT" checkout -- docs/a.md
+
+SNAP_DIR="$(env "${COMMON[@]}" bash "$SCRIPT" checkpoint | tail -1)"
 [ -f "$SNAP_DIR/source.tar.gz" ]
 [ -f "$SNAP_DIR/source.tar.gz.sha256" ]
 [ "$(cat "$SNAP_DIR/source_id.txt")" = "$SOURCE_ID" ]
 if tar -tzf "$SNAP_DIR/source.tar.gz" | grep -Eq '(^|/)\.env$|(^|/)uploads/|(^|/)data/'; then
-  echo "snapshot incluiu segredo/dados" >&2
+  echo "checkpoint incluiu segredo/dados" >&2
   exit 1
 fi
 
 CI_MARK="$TMP/ci-mode.txt"
-EJC_TEST_CI_MARKER="$CI_MARK" EJC_ROOT="$ROOT" EJC_SNAPSHOT_ROOT="$SNAPS" EJC_CI_MODE=fast \
+EJC_TEST_CI_MARKER="$CI_MARK" env "${COMMON[@]}" EJC_CI_MODE=fast \
   bash "$SCRIPT" validate >/dev/null
 [ "$(cat "$CI_MARK")" = "fast" ]
 
-DEPLOY_MARK="$TMP/deploy-env.txt"
-EJC_TEST_CI_MARKER="$CI_MARK" EJC_TEST_DEPLOY_MARKER="$DEPLOY_MARK" \
-EJC_ROOT="$ROOT" EJC_SNAPSHOT_ROOT="$SNAPS" EJC_CI_MODE=fast \
-  bash "$SCRIPT" deploy >/dev/null
+# Worktree é criado fora da raiz produtiva e sem acesso remoto.
+PREP="$(env "${COMMON[@]}" bash "$SCRIPT" prepare teste-local | tail -1)"
+[ -d "$PREP" ]
+[[ "$PREP" == "$WORK/"* ]]
 
-grep -q '^TARGET_SHA=local-' "$DEPLOY_MARK"
-grep -q "^APP_DIR=$ROOT$" "$DEPLOY_MARK"
-grep -q '^REQUIRE_PREDEPLOY_BACKUP=1$' "$DEPLOY_MARK"
+# Produção nunca é aceita como workspace, nem para validate/checkpoint.
+if EJC_ROOT="$PROD" EJC_PROD_ROOT="$PROD" bash "$SCRIPT" checkpoint >/dev/null 2>&1; then
+  echo "checkpoint aceitou diretório produtivo" >&2
+  exit 1
+fi
+if EJC_TEST_CI_MARKER="$CI_MARK" EJC_ROOT="$PROD" EJC_PROD_ROOT="$PROD" \
+  bash "$SCRIPT" validate >/dev/null 2>&1; then
+  echo "validate aceitou diretório produtivo" >&2
+  exit 1
+fi
+
+# Remote indisponível é TEMPFAIL (75), preservando a branch e sem force/rewrite.
+git -C "$ROOT" remote add origin "$TMP/remoto-inexistente.git"
+set +e
+env "${COMMON[@]}" bash "$SCRIPT" sync >/dev/null 2>&1
+SYNC_RC=$?
+set -e
+[ "$SYNC_RC" -eq 75 ] || { echo "sync offline deveria retornar 75, retornou $SYNC_RC" >&2; exit 1; }
+[ "$(git -C "$ROOT" branch --show-current)" = "trabalho" ]
+
+# O wrapper não contém caminho de deploy paralelo nem operações Git destrutivas.
+! grep -qE 'git push .*--force|git reset --hard|git clean -fd' "$SCRIPT"
+! grep -qE '^[[:space:]]*deploy\)' "$SCRIPT"
 
 echo "test_operacao_local_first: OK"
