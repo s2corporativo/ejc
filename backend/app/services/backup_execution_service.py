@@ -9,7 +9,7 @@ fachada é a única entrada operacional e não duplica regra de negócio do moto
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,8 @@ from app.services.backup_lock import (
 logger = logging.getLogger("ejc.backup.execution")
 settings = get_settings()
 
+BackupLockStatus = Literal["livre", "ocupado", "indisponivel"]
+
 
 def _busy_result(origem: str) -> dict[str, Any]:
     return {
@@ -35,13 +37,42 @@ def _busy_result(origem: str) -> dict[str, Any]:
 
 
 def _lock_error_result(origem: str) -> dict[str, Any]:
-    # A resposta deliberadamente não inclui filesystem/path/errno.
     return {
         "ok": False,
         "status": "erro_lock",
         "origem": origem,
         "erro": "Não foi possível garantir exclusão mútua do backup.",
     }
+
+
+def status_mutex_backup() -> BackupLockStatus:
+    """Probe instantâneo do mutex compartilhado, sem manter seção crítica.
+
+    É útil apenas para UX/telemetria. Há TOCTOU inevitável entre este probe e
+    um disparo posterior; `executar_backup_exclusivo` continua sendo o gate
+    autoritativo.
+    """
+    try:
+        lock = acquire_backup_lock(settings.BACKUP_DIR)
+    except BackupAlreadyRunning:
+        return "ocupado"
+    except BackupLockError as exc:
+        logger.error(
+            "[Backup] probe do mutex falhou (tipo=%s)",
+            type(exc).__name__,
+        )
+        return "indisponivel"
+    try:
+        return "livre"
+    finally:
+        lock.release()
+
+
+def em_execucao_global() -> bool:
+    """Estado best-effort para UI; combina mutex global e fast-path local."""
+    if backup_service.em_execucao():
+        return True
+    return status_mutex_backup() == "ocupado"
 
 
 async def executar_backup_exclusivo(
