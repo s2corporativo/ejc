@@ -53,6 +53,16 @@ def test_fallback_recusa_producao_root_e_exige_sha_atualizado():
     assert '"$(git rev-parse FETCH_HEAD)" = "$SHA"' in src
 
 
+def test_ci_local_recusa_host_produtivo_e_expoe_pg_so_no_loopback():
+    src = _text("scripts/ci-local.sh")
+    assert "/opt/ejc/.deployed_sha" in src
+    assert "/opt/ejc/.env" in src
+    for name in ("ejc_backend", "ejc_db", "ejc_frontend", "ejc_redis"):
+        assert name in src
+    assert '127.0.0.1:$PG_PORT:5432' in src
+    assert '-p "$PG_PORT:5432"' not in src
+
+
 def test_contexto_full_so_fica_verde_depois_de_todos_os_gates():
     src = _text("scripts/ci-fallback.sh")
     success = 'post_status success "$CONTEXT_FULL"'
@@ -111,9 +121,20 @@ def test_watcher_nao_repete_suite_aprovada_e_reavalia_merge():
     assert "EJC_FALLBACK_RETRY_FAILED" in src
 
 
+def test_watcher_nao_morre_com_api_fora_e_so_atualiza_main_por_fast_forward():
+    src = _text("scripts/ci-fallback-watch.sh")
+    assert "gh auth status" in src
+    assert "GitHub/fetch indisponível" in src
+    assert "API de PR indisponível" in src
+    assert "git merge --ff-only origin/main" in src
+    assert "git reset --hard" not in src
+    assert "git push --force" not in src
+
+
 def test_ativacao_e_reversao_nao_usam_runner_de_producao():
     src = _text("scripts/ci-fallback-activate.sh")
     assert "/opt/ejc" in src
+    assert "/opt/ejc/.deployed_sha" in src
     assert '"$(id -u)" -ne 0' in src
     assert "docker info" in src
     assert "gh auth status" in src
@@ -121,6 +142,19 @@ def test_ativacao_e_reversao_nao_usam_runner_de_producao():
     assert "branch-protection.sh --cloud" in src
     assert "systemctl --user" in src
     assert "self-hosted" not in src.lower()
+
+
+def test_ativacao_e_transacional_e_disable_restaura_cloud_antes_de_parar_watcher():
+    src = _text("scripts/ci-fallback-activate.sh")
+    assert "rollback_activation" in src
+    assert "PROTECTION_CHANGED=1" in src
+    assert "ativação falhou; restaurando branch protection cloud" in src
+    disable_start = src.index('if [ "$MODE" = "--disable" ]')
+    disable_end = src.index('fi\n[ "$MODE" = "--enable" ]', disable_start)
+    disable = src[disable_start:disable_end]
+    assert disable.index("branch-protection.sh --cloud") < disable.index("remove_watcher")
+    assert '"$(git branch --show-current)" = "main"' in src
+    assert '"$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"' in src
 
 
 def test_branch_protection_fallback_troca_so_executor_e_preserva_travas():
@@ -144,7 +178,7 @@ def test_branch_protection_fallback_troca_so_executor_e_preserva_travas():
 def test_ci_local_cobre_paridade_minima_dos_workflows_atuais():
     src = _text("scripts/ci-local.sh")
     required = [
-        "python -m ruff check".replace("python", '"$PY"'),
+        '"$PY" -m ruff check',
         "pip-audit",
         "--cov-fail-under=65",
         "app.eval.run_eval --smoke",
@@ -171,7 +205,7 @@ def test_governanca_local_replica_travas_criticas_sem_segredos():
     src = _text("scripts/governanca/ci-local-governanca.sh")
     assert "MIGRATION_RESERVATIONS.md" in src
     assert "PRIVATE KEY" in src
-    assert "arquivo .env" not in src or "\.env" in src
+    assert "\.env" in src
     assert "security-auditor: executado" in src
     assert 'BRANCH" != "main"' in src
     assert "Issue vinculada" in src
