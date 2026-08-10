@@ -6,6 +6,7 @@ são contornados por esta superfície.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -19,7 +20,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, requer_advogado
+from app.core.security import get_current_user, requer_advogado, requer_equipe_juridica
 from app.models.audit_log import criar_audit_log
 from app.models.legal_chat import LegalChatAttachment, LegalChatSession, SESSION_STATUS
 from app.models.user import User
@@ -32,25 +33,18 @@ from app.schemas.legal_chat import (
     SessaoUpdate,
     VincularCasoRequest,
 )
-from app.services import legal_chat_service as svc
 from app.services import documento_service
+from app.services import legal_chat_service as svc
 from app.services.upload_lote_service import processar_lote
 
 router = APIRouter(prefix="/sala-juridica", tags=["Sala Jurídica Conversacional"])
 settings = get_settings()
-
-# Mesma matriz do módulo no frontend (moduleRegistry ROLES.juridico) e do
-# Raio-X (_permitido): papéis administrativos (financeiro, secretaria) não
-# criam sessões nem disparam IA/análise de documentos da Sala.
-_EQUIPE_JURIDICA = {
-    "superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario",
-}
+logger = logging.getLogger("ejc.sala_juridica")
 
 
 async def exigir_equipe_juridica(user: User = Depends(get_current_user)) -> User:
-    """Gate de módulo da Sala Jurídica — 403 fora da equipe jurídica."""
-    if svc._role(user) not in _EQUIPE_JURIDICA:
-        raise HTTPException(403, "A Sala Jurídica é restrita à equipe jurídica")
+    """Adapter FastAPI do gate compartilhado; sem matriz RBAC duplicada."""
+    requer_equipe_juridica(user, "A Sala Jurídica é restrita à equipe jurídica")
     return user
 
 
@@ -163,7 +157,6 @@ async def enviar_mensagem(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(exigir_equipe_juridica),
 ):
-    # Atos de análise/elaboração jurídica exigem advogado+ (padrão do núcleo).
     requer_advogado(user, "Somente advogados podem usar a análise jurídica de IA")
     sessao = await svc.obter_sessao(db, session_id, user)
     resultado = await svc.enviar_mensagem(db, sessao, payload, user)
@@ -258,7 +251,23 @@ async def anexar_documentos(
             if isinstance(texto_sana, str) and texto_sana.strip():
                 resultado["_texto_sanitizado"] = texto_sana[:200_000]
         except Exception as exc:  # extração nunca bloqueia o anexo em si
-            resultado = {"ok": False, "erro": str(exc)[:300]}
+            # Não persistir nem devolver str(exc): mensagens de parser/provider
+            # podem conter caminho físico, nome de arquivo ou detalhe interno.
+            # O tipo da exceção é suficiente para observabilidade sem PII.
+            logger.warning(
+                "Falha de extração de anexo da Sala Jurídica; "
+                "session_id=%s user_id=%s exception_type=%s",
+                sessao.id,
+                user.id,
+                type(exc).__name__,
+            )
+            resultado = {
+                "ok": False,
+                "erro": (
+                    "Não foi possível extrair o conteúdo deste anexo. "
+                    "O arquivo foi preservado para revisão manual."
+                ),
+            }
         anexo = LegalChatAttachment(
             id=str(uuid4()),
             session_id=sessao.id,
@@ -274,9 +283,6 @@ async def anexar_documentos(
         db.add(anexo)
         novos.append(anexo)
 
-    # Achado F2: este endpoint nunca teve audit log de upload, ao contrário do
-    # equivalente em raio_x.py — mesma classe de gap que o PATCH/Kanban do
-    # PR #791 (caminho paralelo sem a guarda do irmão).
     await criar_audit_log(
         db, user_id=user.id, user_role=svc._role(user),
         acao="UPLOAD", entidade="legal_chat_sessions",
@@ -301,8 +307,6 @@ async def anexar_documentos(
 
 @router.get(
     "/{session_id}/conversao/preview",
-    # Único endpoint de busca por nome livre do router: sem teto, sustenta
-    # varredura da base (ILIKE com curinga à esquerda = seq scan) a cada tecla.
     dependencies=[Depends(rate_limit("sala-juridica-preview", 30))],
 )
 async def conversao_preview(
