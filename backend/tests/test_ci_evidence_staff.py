@@ -143,6 +143,56 @@ def test_prune_remove_sha_antigo_mas_preserva_sha_travado(tmp_path: Path):
         assert (root / recent_sha).exists()
 
 
+def test_prune_quarentena_nao_remove_namespace_recriado_do_mesmo_sha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    ev = _load_module()
+    root = tmp_path / "evidence"
+    old_sha = "3" * 40
+    recent_sha = "4" * 40
+
+    for sha in (old_sha, recent_sha):
+        attempt = ev.start_attempt(root, sha, "feature/race", 1)
+        (attempt / "backend.log").write_text("ok\n", encoding="utf-8")
+        ev.finish_attempt(
+            attempt,
+            root / sha,
+            sha,
+            "feature/race",
+            1,
+            "success",
+            None,
+            0,
+            True,
+        )
+
+    old_time = time.time() - 60 * 86400
+    for path in (root / old_sha).rglob("*"):
+        if not path.is_symlink():
+            os.utime(path, (old_time, old_time), follow_symlinks=False)
+    os.utime(root / old_sha, (old_time, old_time))
+
+    original_remove = ev._remove_tree_no_follow
+    recreated = False
+
+    def recreate_then_remove(path: Path) -> None:
+        nonlocal recreated
+        if path.name.startswith(f".prune-{old_sha}-") and not recreated:
+            recreated = True
+            new_attempt = ev.start_attempt(root, old_sha, "feature/new", 2)
+            (new_attempt / "backend.log").write_text("new\n", encoding="utf-8")
+        original_remove(path)
+
+    monkeypatch.setattr(ev, "_remove_tree_no_follow", recreate_then_remove)
+    stats = ev.prune_evidence(root, max_shas=1, max_age_days=30, attempts_per_sha=1)
+
+    assert recreated is True
+    assert stats["removed_shas"] == 1
+    assert (root / old_sha).is_dir()
+    assert (root / old_sha / "latest-attempt.json").is_file()
+    assert not list(root.glob(f".prune-{old_sha}-*"))
+
+
 def test_prune_preserva_attempt_referenciado_por_latest_success(tmp_path: Path):
     ev = _load_module()
     sha = "2" * 40
