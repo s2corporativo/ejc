@@ -1,0 +1,19 @@
+name: Actions Runner Smoke 1026
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-smoke:
+    name: Runner smoke — ubuntu-slim
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Confirmar alocação do runner
+        run: |
+          printf 'runner-smoke-ok\n'
+          uname -a
