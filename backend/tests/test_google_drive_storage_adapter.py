@@ -125,6 +125,7 @@ def test_download_com_remote_path_nao_executa_lsjson_recursivo(monkeypatch):
 def test_delete_com_remote_path_e_operacao_direta(monkeypatch):
     monkeypatch.setattr(gd, "DRIVE_AVAILABLE", True)
     comandos: list[list[str]] = []
+    remote_path = f"casos/{uuid4()}/{uuid4()}.pdf"
 
     def fake_run(cmd, timeout=gd.RCLONE_TIMEOUT):
         del timeout
@@ -133,18 +134,11 @@ def test_delete_com_remote_path_e_operacao_direta(monkeypatch):
 
     monkeypatch.setattr(gd, "_run", fake_run)
 
-    gd.delete_file(
-        "drive-id",
-        remote_path=f"casos/{uuid4()}/{uuid4()}.pdf",
-    )
+    gd.delete_file("drive-id", remote_path=remote_path)
 
-    assert comandos == [
-        [
-            "rclone",
-            "deletefile",
-            comandos[0][-1],
-        ]
-    ]
+    assert len(comandos) == 1
+    assert comandos[0][:2] == ["rclone", "deletefile"]
+    assert comandos[0][-1] == f"gdrive:EJC-Documentos/{remote_path}"
     assert "-R" not in comandos[0]
 
 
