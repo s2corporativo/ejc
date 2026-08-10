@@ -6,27 +6,36 @@ mesma implementação de segurança: teto do lote, allowlist de extensão, taman
 SHA-256/deduplicação, validação de conteúdo real e gravação confinada em
 ``UPLOAD_DIR``. Construção das entidades, extração/OCR e auditoria permanecem
 nos chamadores porque têm semânticas diferentes.
+
+A recepção física é streaming: nenhum arquivo completo é materializado em
+memória. Cada arquivo nasce em staging oculto, é validado e somente então é
+promovido ao path final gerado pelo servidor.
 """
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-import aiofiles
 from fastapi import HTTPException, UploadFile
 
 from app.core.config import get_settings
 from app.services.document_content_policy import validar_conteudo
+from app.services.document_upload_stream import (
+    UploadExcedeLimiteError,
+    UploadVazioError,
+    descartar_staging,
+    promover_staging,
+    receber_em_staging,
+)
 
 settings = get_settings()
 
 
 @dataclass
 class ArquivoValidado:
-    """Arquivo que passou nas checagens e já foi gravado no storage."""
+    """Arquivo que passou nas checagens e já foi promovido ao storage final."""
 
     nome_original: str
     ext: str
@@ -42,6 +51,7 @@ EXTENSOES_OCR = {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".webp"}
 
 def _segmento_storage(valor: str, *, campo: str) -> str:
     """Aceita somente um segmento simples e nunca ``.``/``..``."""
+
     if not isinstance(valor, str):
         raise ValueError(f"{campo} inválido para gravação em disco")
     segmento = Path(valor).name
@@ -57,6 +67,7 @@ def _segmento_storage(valor: str, *, campo: str) -> str:
 
 def _destino_confinado(root: Path, rel: Path) -> Path:
     """Resolve o destino e prova que ele continua sob a raiz configurada."""
+
     raiz = root.resolve()
     destino = (raiz / rel).resolve()
     try:
@@ -79,14 +90,16 @@ async def processar_lote(
 
     O teto do lote é erro de requisição (422). Violações individuais geram
     entrada em ``erros``/``duplicados`` e não abortam os demais arquivos.
-    ``existing_hashes`` é atualizado somente após gravação bem-sucedida.
+    ``existing_hashes`` é atualizado somente após promoção bem-sucedida.
     """
+
     if not files or len(files) > max_arquivos:
         raise HTTPException(422, f"Envie de 1 a {max_arquivos} arquivos por lote")
 
     subdir_seguro = _segmento_storage(storage_subdir, campo="storage_subdir")
     entidade_segura = _segmento_storage(entidade_id, campo="entidade_id")
     raiz_upload = Path(settings.UPLOAD_DIR)
+    max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
 
     validos: list[ArquivoValidado] = []
     duplicados: list[str] = []
@@ -99,27 +112,6 @@ async def processar_lote(
             erros.append({"arquivo": filename, "erro": "Formato não suportado"})
             continue
 
-        content = await upload.read()
-        if not content:
-            erros.append({"arquivo": filename, "erro": "Arquivo vazio"})
-            continue
-        if len(content) > settings.MAX_UPLOAD_MB * 1024 * 1024:
-            erros.append(
-                {"arquivo": filename, "erro": f"Excede {settings.MAX_UPLOAD_MB} MB"}
-            )
-            continue
-
-        digest = hashlib.sha256(content).hexdigest()
-        if digest in existing_hashes:
-            duplicados.append(filename)
-            continue
-
-        try:
-            mime_real = validar_conteudo(ext, content)
-        except HTTPException as exc:
-            erros.append({"arquivo": filename, "erro": str(exc.detail)[:300]})
-            continue
-
         now = datetime.now(timezone.utc)
         rel = (
             Path(subdir_seguro)
@@ -129,18 +121,49 @@ async def processar_lote(
             / f"{uuid4()}{ext}"
         )
         full = _destino_confinado(raiz_upload, rel)
-        full.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(full, "wb") as target:
-            await target.write(content)
 
-        existing_hashes.add(digest)
+        try:
+            staging = await receber_em_staging(
+                upload,
+                diretorio=full.parent,
+                suffix=ext,
+                max_bytes=max_bytes,
+            )
+        except UploadVazioError:
+            erros.append({"arquivo": filename, "erro": "Arquivo vazio"})
+            continue
+        except UploadExcedeLimiteError:
+            erros.append(
+                {"arquivo": filename, "erro": f"Excede {settings.MAX_UPLOAD_MB} MB"}
+            )
+            continue
+
+        if staging.sha256 in existing_hashes:
+            descartar_staging(staging)
+            duplicados.append(filename)
+            continue
+
+        try:
+            mime_real = validar_conteudo(ext, staging.amostra_inicial)
+        except HTTPException as exc:
+            descartar_staging(staging)
+            erros.append({"arquivo": filename, "erro": str(exc.detail)[:300]})
+            continue
+
+        try:
+            promover_staging(staging, full)
+        except Exception:
+            descartar_staging(staging)
+            raise
+
+        existing_hashes.add(staging.sha256)
         validos.append(
             ArquivoValidado(
                 nome_original=filename,
                 ext=ext,
                 mimetype=mime_real,
-                size_bytes=len(content),
-                sha256=digest,
+                size_bytes=staging.size_bytes,
+                sha256=staging.sha256,
                 filepath=str(rel),
                 ocr_utilizado=ext in EXTENSOES_OCR,
             )
