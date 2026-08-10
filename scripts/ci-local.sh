@@ -51,6 +51,16 @@ run_local_first_selftest() {
   log "Validando mecanismo local-first…"
   bash -n scripts/ejc-local-first.sh scripts/test_ejc_local_first.sh
   bash scripts/test_ejc_local_first.sh
+  python3 - <<'PY'
+import json
+from pathlib import Path
+
+settings = json.loads(Path('.claude/settings.json').read_text(encoding='utf-8'))
+allow = settings.get('permissions', {}).get('allow', [])
+bad = [entry for entry in allow if entry.startswith('Bash(git push')]
+if bad:
+    raise SystemExit(f'permissão direta de git push proibida para agentes: {bad}')
+PY
   ok "Local-first OK"
 }
 
