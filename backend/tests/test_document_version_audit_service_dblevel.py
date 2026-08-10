@@ -65,6 +65,9 @@ async def test_preflight_detecta_anomalias_sem_persistir_dados():
 
             clean = str(uuid4())
             legado = str(uuid4())
+            grupo_sem_raiz = str(uuid4())
+            filho_sem_raiz = str(uuid4())
+            raiz_invalida = str(uuid4())
             duplicado = str(uuid4())
             dup_v2a = str(uuid4())
             dup_v2b = str(uuid4())
@@ -83,6 +86,10 @@ async def test_preflight_detecta_anomalias_sem_persistir_dados():
                 [
                     _doc(clean, grupo_id=clean, versao=1),
                     _doc(legado, grupo_id=None, versao=1),
+                    # Declara grupo cujo id-raiz não existe.
+                    _doc(filho_sem_raiz, grupo_id=grupo_sem_raiz, versao=2),
+                    # A raiz existe, mas não é versão 1.
+                    _doc(raiz_invalida, grupo_id=raiz_invalida, versao=2),
                     _doc(duplicado, grupo_id=duplicado, versao=1),
                     _doc(dup_v2a, grupo_id=duplicado, versao=2, anterior_id=duplicado),
                     _doc(dup_v2b, grupo_id=duplicado, versao=2, anterior_id=duplicado),
@@ -117,8 +124,16 @@ async def test_preflight_detecta_anomalias_sem_persistir_dados():
 
             depois = await auditar_versionamento_documental(db)
 
-            assert depois.total_documentos == baseline.total_documentos + 15
+            assert depois.total_documentos == baseline.total_documentos + 17
             assert depois.documentos_sem_grupo == baseline.documentos_sem_grupo + 1
+            assert (
+                depois.grupos_sem_raiz_canonica
+                == baseline.grupos_sem_raiz_canonica + 1
+            )
+            assert (
+                depois.raizes_canonicas_invalidas
+                == baseline.raizes_canonicas_invalidas + 1
+            )
             assert depois.numeracoes_duplicadas == baseline.numeracoes_duplicadas + 1
             assert (
                 depois.grupos_contexto_inconsistente
