@@ -18,6 +18,8 @@ case "$(realpath "$ROOT" 2>/dev/null || printf '%s' "$ROOT")" in
   /opt/ejc|/opt/ejc/*) fail "recusado em /opt/ejc (produção)" ;;
 esac
 [ "$(id -u)" -ne 0 ] || fail "não execute como root"
+[ "${APP_ENV:-}" != "production" ] && [ "${EJC_ENV:-}" != "production" ] \
+  || fail "ambiente de produção ativo"
 [ ! -e /opt/ejc/.deployed_sha ] && [ ! -e /opt/ejc/.env ] \
   || fail "host contém marcadores da instalação produtiva /opt/ejc"
 
@@ -49,7 +51,7 @@ fi
 for c in git gh jq python3 node npm psql; do command -v "$c" >/dev/null 2>&1 || fail "$c ausente"; done
 command -v docker >/dev/null 2>&1 || fail "Docker ausente (fallback promovível exige banco efêmero isolado)"
 docker info >/dev/null 2>&1 || fail "Docker não acessível pelo usuário atual"
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(ejc_backend|ejc_db|ejc_frontend|ejc_redis)$'; then
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(ejc_backend|ejc_worker|ejc_db|ejc_frontend|ejc_redis)$'; then
   fail "containers canônicos do EJC ativos; host não é elegível para CI de PR"
 fi
 gh auth status >/dev/null 2>&1 || fail "gh não autenticado neste host"
@@ -74,6 +76,26 @@ else
   fail "sem systemd --user e sem crontab; não há scheduler local seguro disponível"
 fi
 
+# Prova mínima do executor ANTES de alterar a política da main. O gate full será
+# executado por SHA de PR, mas a ativação só prossegue se o host já consegue
+# executar o núcleo local sem produção, Python divergente ou sintaxe quebrada.
+for script in \
+  scripts/ci-local.sh \
+  scripts/ci-fallback.sh \
+  scripts/ci-fallback-watch.sh \
+  scripts/governanca/ci-local-governanca.sh \
+  scripts/governanca/branch-protection.sh; do
+  bash -n "$script" || fail "sintaxe inválida em $script"
+done
+ok "sintaxe dos componentes do fallback"
+
+log_preflight="$LOG_DIR/activation-preflight.log"
+if ! EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh fast >"$log_preflight" 2>&1; then
+  tail -n 100 "$log_preflight" >&2 || true
+  fail "preflight local falhou; branch protection não foi alterada"
+fi
+ok "preflight local aprovado antes da alteração da branch protection"
+
 # Prepare o watcher antes de alterar branch protection. A proteção só troca
 # depois que sabemos que existe um mecanismo local viável para sustentá-la.
 remove_watcher
@@ -89,6 +111,7 @@ Type=simple
 WorkingDirectory=$ROOT
 Environment=EJC_REPO=$REPO
 Environment=EJC_FALLBACK_AUTO_MERGE=1
+Environment=EJC_ALLOW_PYTHON_MISMATCH=0
 ExecStart=/usr/bin/env bash $ROOT/scripts/ci-fallback-watch.sh
 Restart=always
 RestartSec=20
@@ -126,7 +149,7 @@ if [ "$SCHEDULER" = "systemd" ]; then
   systemctl --user is-active --quiet ejc-ci-fallback.service
   ok "watcher ativado via systemd --user"
 else
-  LINE="*/5 * * * * cd '$ROOT' && EJC_REPO='$REPO' EJC_FALLBACK_AUTO_MERGE=1 bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
+  LINE="*/5 * * * * cd '$ROOT' && EJC_REPO='$REPO' EJC_FALLBACK_AUTO_MERGE=1 EJC_ALLOW_PYTHON_MISMATCH=0 bash '$ROOT/scripts/ci-fallback-watch.sh' --once >> '$LOG_DIR/watcher.log' 2>&1 $CRON_MARK"
   { crontab -l 2>/dev/null || true; echo "$LINE"; } | crontab -
   (crontab -l 2>/dev/null || true) | grep -qF "$CRON_MARK"
   ok "watcher ativado via crontab (5 min)"
