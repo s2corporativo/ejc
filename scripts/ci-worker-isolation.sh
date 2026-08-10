@@ -62,7 +62,7 @@ validate_common() {
   [ -n "$WORKER_USER" ] || fail "EJC_CI_WORKER_USER obrigatório"
   [[ "$PG_MAJOR_REQUIRED" =~ ^[1-9][0-9]*$ ]] || fail "EJC_CI_PG_MAJOR_REQUIRED inválido"
   id "$WORKER_USER" >/dev/null 2>&1 || fail "usuário worker inexistente: $WORKER_USER"
-  local worker_uid worker_groups root_real home_real passwd_home gh_cfg
+  local worker_uid worker_groups root_real home_real passwd_home gh_cfg trusted trusted_dir
   worker_uid="$(id -u "$WORKER_USER")"
   [ "$worker_uid" -ne 0 ] || fail "worker não pode ser root"
   [ "$worker_uid" -ne "$CONTROLLER_UID" ] || fail "worker precisa de UID distinto do controlador"
@@ -104,12 +104,31 @@ validate_common() {
   if sudo -n -u "$WORKER_USER" -- test -w "$TRUST_ROOT"; then
     fail "worker consegue escrever no checkout do control plane"
   fi
+
+  # Root of trust fechado do control plane. Validar cada arquivo individualmente
+  # é necessário porque uma ACL direta pode conceder escrita mesmo quando o pai
+  # não é gravável. Os diretórios também são verificados para impedir substituição
+  # por rename/unlink de componentes trusted.
+  for trusted_dir in \
+    "$TRUST_ROOT/scripts" \
+    "$TRUST_ROOT/scripts/governanca"; do
+    [ -d "$trusted_dir" ] || fail "diretório do root of trust ausente: $trusted_dir"
+    if sudo -n -u "$WORKER_USER" -- test -w "$trusted_dir"; then
+      fail "worker consegue substituir componente do root of trust via diretório: $trusted_dir"
+    fi
+  done
+
   for trusted in \
     "$TRUST_ROOT/scripts/ci-local.sh" \
     "$TRUST_ROOT/scripts/ci-fallback.sh" \
     "$TRUST_ROOT/scripts/ci-worker-isolation.sh" \
+    "$TRUST_ROOT/scripts/ci-fallback-watch.sh" \
+    "$TRUST_ROOT/scripts/ci-fallback-activate.sh" \
     "$TRUST_ROOT/scripts/ci_evidence.py" \
-    "$TRUST_ROOT/scripts/github-app-auth.sh"; do
+    "$TRUST_ROOT/scripts/ci_activation_journal.py" \
+    "$TRUST_ROOT/scripts/github-app-auth.sh" \
+    "$TRUST_ROOT/scripts/governanca/branch-protection.sh" \
+    "$TRUST_ROOT/scripts/governanca/ci-local-governanca.sh"; do
     [ -e "$trusted" ] || fail "root of trust ausente: $trusted"
     if sudo -n -u "$WORKER_USER" -- test -w "$trusted"; then
       fail "worker consegue alterar root of trust: $trusted"
