@@ -43,11 +43,20 @@ remove_cron() {
 }
 
 remove_watcher() {
-  local rc=0
+  local rc=0 unit_aplicavel=0
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user disable --now ejc-ci-fallback.service >/dev/null 2>&1 || rc=1
-    rm -f "$UNIT" || rc=1
-    systemctl --user daemon-reload >/dev/null 2>&1 || true
+    if [ -f "$UNIT" ] \
+      || systemctl --user is-active --quiet ejc-ci-fallback.service 2>/dev/null \
+      || systemctl --user is-enabled --quiet ejc-ci-fallback.service 2>/dev/null; then
+      unit_aplicavel=1
+    fi
+    if [ "$unit_aplicavel" -eq 1 ]; then
+      systemctl --user disable --now ejc-ci-fallback.service >/dev/null 2>&1 || rc=1
+    fi
+    if [ -e "$UNIT" ]; then
+      rm -f "$UNIT" || rc=1
+      systemctl --user daemon-reload >/dev/null 2>&1 || rc=1
+    fi
   fi
   remove_cron || rc=1
   return "$rc"
@@ -58,9 +67,9 @@ restore_hooks_path() {
     local previous
     previous="$(cat "$HOOKS_BACKUP")"
     if [ "$previous" = "__UNSET__" ]; then
-      git config --unset-all core.hooksPath >/dev/null 2>&1 || true
+      git config --local --unset-all core.hooksPath >/dev/null 2>&1 || true
     else
-      git config core.hooksPath "$previous"
+      git config --local core.hooksPath "$previous"
     fi
     rm -f "$HOOKS_BACKUP"
   fi
@@ -187,13 +196,15 @@ rollback_activation() {
 }
 trap rollback_activation EXIT
 
-if git config --get core.hooksPath >/dev/null 2>&1; then
-  git config --get core.hooksPath > "$HOOKS_BACKUP"
+# Leia apenas o escopo local. Um valor global de core.hooksPath não deve ser
+# materializado dentro do repositório durante ativação/desativação.
+if git config --local --get core.hooksPath >/dev/null 2>&1; then
+  git config --local --get core.hooksPath > "$HOOKS_BACKUP"
 else
   printf '%s\n' '__UNSET__' > "$HOOKS_BACKUP"
 fi
 chmod 600 "$HOOKS_BACKUP" 2>/dev/null || true
-git config core.hooksPath .githooks
+git config --local core.hooksPath .githooks
 HOOKS_CHANGED=1
 ok "pre-push hook local ativado"
 
