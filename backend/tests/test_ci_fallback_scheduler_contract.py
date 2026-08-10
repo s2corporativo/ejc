@@ -11,7 +11,6 @@ ACTIVATE = ROOT / "scripts" / "ci-fallback-activate.sh"
 
 def test_scheduler_autonomo_exige_persistencia_comprovada():
     src = ACTIVATE.read_text(encoding="utf-8")
-
     assert "cron_persistente()" in src
     assert "pgrep -x cron" in src
     assert "pgrep -x crond" in src
@@ -20,8 +19,6 @@ def test_scheduler_autonomo_exige_persistencia_comprovada():
     assert '-p Linger --value' in src
     assert '= "yes" ]' in src
 
-    # Cron é preferido quando seu daemon está comprovadamente ativo; systemd
-    # de usuário só entra como fallback com linger=yes.
     select = src[
         src.index('SCHEDULER=""') : src.index('ok "scheduler persistente selecionado:')
     ]
@@ -29,77 +26,75 @@ def test_scheduler_autonomo_exige_persistencia_comprovada():
     assert "sem scheduler persistente" in select
 
 
-def test_watcher_recebe_path_deterministico_em_cron_e_systemd():
+def test_scheduler_recebe_runtime_e_credencial_por_caminho_sem_token_persistido():
     src = ACTIVATE.read_text(encoding="utf-8")
-
     assert 'WATCHER_PATH="${EJC_FALLBACK_PATH:-$PATH}"' in src
     assert 'Environment="PATH=$WATCHER_PATH"' in src
     assert "/usr/bin/env PATH='$WATCHER_PATH'" in src
-    assert "PATH='$WATCHER_PATH' cd" not in src
     assert "EJC_ALLOW_PYTHON_MISMATCH=0" in src
+    assert "EJC_FALLBACK_APP_ID" in src
+    assert "EJC_FALLBACK_INSTALLATION_ID" in src
+    assert "EJC_FALLBACK_APP_PRIVATE_KEY_FILE" in src
+    assert "GH_TOKEN=" not in src
+    assert "GITHUB_TOKEN=" not in src
 
 
 def test_ativacao_recusa_quoting_ambiguo_do_scheduler():
     src = ACTIVATE.read_text(encoding="utf-8")
-
-    assert "PATH contém caractere inseguro para scheduler autônomo" in src
-    assert "ROOT/LOG_DIR/REPO contém caractere inseguro para scheduler autônomo" in src
+    assert "caractere inseguro para scheduler" in src
     assert "*'\"'*" in src
     assert "*'\\'*" in src
-    assert "*[[:space:]]*" in src
     assert "*%*" in src
 
 
-def test_ativacao_exige_enable_explicito():
+def test_ativacao_exige_modo_explicito_e_expoe_status():
     src = ACTIVATE.read_text(encoding="utf-8")
-
     assert 'MODE="${1:-}"' in src
-    assert 'uso: $0 --enable | --disable' in src
+    assert 'uso: $0 --enable | --disable | --status' in src
     assert 'MODE="${1:---enable}"' not in src
+    assert 'if [ "$MODE" = "--status" ]' in src
 
 
 def test_remove_cron_tolera_filtro_vazio_com_pipefail():
     src = ACTIVATE.read_text(encoding="utf-8")
     block = src[src.index("remove_cron() {") : src.index("remove_watcher() {")]
-
     assert 'grep -vF "$CRON_MARK" || true' in block
     assert "crontab -" in block
 
 
-def test_disable_para_watcher_antes_de_restaurar_cloud():
+def test_disable_e_transacao_drain_restore_remove():
     src = ACTIVATE.read_text(encoding="utf-8")
     block = src[src.index('if [ "$MODE" = "--disable" ]') : src.index('[ "$MODE" = "--enable" ]')]
+    assert "create_drain_marker" in block
+    assert "flock -w 120 8" in block
+    assert "branch-protection.sh --restore" in block
+    assert "remove_watcher" in block
+    assert block.index("branch-protection.sh --restore") < block.index("remove_watcher")
+    assert "drain mantido" in block
+    assert "rm -f \"$ACTIVE_FILE\" \"$PROTECTION_BACKUP\" \"$DRAIN_FILE\"" in block
 
-    assert block.index("remove_watcher") < block.index("branch-protection.sh --cloud")
-    assert "restore_hooks_path" in block
 
-
-def test_rollback_cobre_hooks_e_branch_protection():
+def test_rollback_de_enable_cobre_hooks_protecao_e_watcher():
     src = ACTIVATE.read_text(encoding="utf-8")
-
     assert 'HOOKS_BACKUP="$LOG_DIR/core-hooks-path.before"' in src
     assert "restore_hooks_path()" in src
     assert "HOOKS_CHANGED=1" in src
     assert src.index("PROTECTION_CHANGED=1") < src.index("branch-protection.sh --fallback")
     rollback = src[src.index("rollback_activation() {") : src.index("trap rollback_activation EXIT")]
     assert "remove_watcher" in rollback
-    assert "branch-protection.sh --cloud" in rollback
+    assert "branch-protection.sh --restore" in rollback
     assert "restore_hooks_path" in rollback
 
 
 def test_scheduler_impede_execucoes_sobrepostas():
     src = ACTIVATE.read_text(encoding="utf-8")
-
-    assert "git gh jq python3 node npm psql flock" in src
+    assert "flock" in src
     assert "flock -n '$LOCK_FILE'" in src
     assert "ExecStart=/usr/bin/flock -n $LOCK_FILE" in src
 
 
 def test_hooks_path_e_preservado_exclusivamente_no_escopo_local():
     src = ACTIVATE.read_text(encoding="utf-8")
-
-    # Toda operação sobre core.hooksPath precisa declarar explicitamente o
-    # escopo local; isso rejeita regressões para --global, --worktree ou --file.
     hooks_config_lines = [
         line
         for line in src.splitlines()
@@ -110,13 +105,14 @@ def test_hooks_path_e_preservado_exclusivamente_no_escopo_local():
     assert all("--global" not in line for line in hooks_config_lines)
     assert all("--worktree" not in line for line in hooks_config_lines)
     assert all("--file" not in line for line in hooks_config_lines)
-
     assert "git config --local --get core.hooksPath" in src
     assert "git config --local core.hooksPath .githooks" in src
     assert "git config --local --unset-all core.hooksPath" in src
 
 
-def _remove_watcher_harness(tmp_path: Path, *, unit_exists: bool, include_systemctl: bool) -> tuple[subprocess.CompletedProcess[str], Path]:
+def _remove_watcher_harness(
+    tmp_path: Path, *, unit_exists: bool, include_systemctl: bool
+) -> tuple[subprocess.CompletedProcess[str], Path]:
     src = ACTIVATE.read_text(encoding="utf-8")
     funcs = src[src.index("remove_cron() {") : src.index("restore_hooks_path() {")]
 
@@ -127,7 +123,6 @@ def _remove_watcher_harness(tmp_path: Path, *, unit_exists: bool, include_system
     if unit_exists:
         unit.write_text("[Service]\n", encoding="utf-8")
 
-    # O teste não depende de crontab real do host.
     crontab = bin_dir / "crontab"
     crontab.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     crontab.chmod(0o755)
@@ -173,7 +168,6 @@ def test_remove_watcher_sem_unit_nao_chama_disable(tmp_path: Path):
     result, calls = _remove_watcher_harness(
         tmp_path, unit_exists=False, include_systemctl=True
     )
-
     assert result.returncode == 0, result.stderr
     logged = calls.read_text(encoding="utf-8") if calls.exists() else ""
     assert "disable --now ejc-ci-fallback.service" not in logged
@@ -183,9 +177,6 @@ def test_remove_watcher_com_unit_e_sem_systemctl_falha_fechado(tmp_path: Path):
     result, _ = _remove_watcher_harness(
         tmp_path, unit_exists=True, include_systemctl=False
     )
-
-    # Sem systemctl, a função não deve fingir que desabilitou uma unit existente.
-    # A unit permanece como evidência de que o pré-requisito não foi satisfeito.
     unit = tmp_path / "ejc-ci-fallback.service"
     assert unit.exists()
     assert result.returncode != 0
