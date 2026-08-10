@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import threading
 from io import BytesIO
 
 import pytest
@@ -12,6 +13,7 @@ from app.services.document_upload_stream import (
     CHUNK_UPLOAD_BYTES,
     UploadExcedeLimiteError,
     UploadVazioError,
+    _aguardar_io_thread,
     descartar_staging,
     promover_staging,
     receber_em_staging,
@@ -92,6 +94,28 @@ async def test_cancelamento_no_primeiro_await_nao_deixa_uploading_residual(tmp_p
         await tarefa
 
     assert list(tmp_path.iterdir()) == []
+
+
+async def test_cancelamento_aguarda_io_thread_terminar_antes_de_propagar():
+    iniciou = threading.Event()
+    liberar = threading.Event()
+
+    def io_bloqueado() -> int:
+        iniciou.set()
+        liberar.wait(timeout=2)
+        return 7
+
+    tarefa = asyncio.create_task(_aguardar_io_thread(io_bloqueado))
+    while not iniciou.is_set():
+        await asyncio.sleep(0)
+
+    tarefa.cancel()
+    await asyncio.sleep(0)
+    assert not tarefa.done()
+
+    liberar.set()
+    with pytest.raises(asyncio.CancelledError):
+        await tarefa
 
 
 async def test_limite_e_verificado_antes_de_gravar_chunk_excedente(tmp_path):
