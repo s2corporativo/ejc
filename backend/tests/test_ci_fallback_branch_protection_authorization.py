@@ -41,12 +41,24 @@ def test_fallback_branch_protection_exige_check_vinculado_a_app():
     src = PROTECTION.read_text(encoding="utf-8")
 
     assert 'FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"' in src
-    assert '"checks"' not in src  # payload é construído com jq, não JSON estático inseguro
     assert 'checks: [' in src
     assert '{context: "EJC Local Full Gate", app_id: $app_id}' in src
     assert '(.required_status_checks.contexts // []) == []' in src
     assert '.required_status_checks.checks[0].app_id == $app_id' in src
     assert "app_id=-1" in src
+    # O mesmo PAYLOAD construído acima é o corpo aplicado ao endpoint autoritativo.
+    assert 'echo "$PAYLOAD" | gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input -' in src
+
+
+def test_backup_da_protecao_falha_fechado_fora_de_404():
+    src = PROTECTION.read_text(encoding="utf-8")
+
+    assert 'BACKUP_ERR="$(mktemp)"' in src
+    assert "HTTP 404" in src and "Not Found" in src
+    assert "backup estável preservado e nada foi alterado" in src
+    backup_block = src[src.index('echo "1. Backup da configuracao atual"') : src.index('echo "2. Aplicando protecao: $LABEL"')]
+    assert backup_block.index("gh api") < backup_block.index("HTTP 404")
+    assert "rm -f \"$BACKUP\"" in backup_block
 
 
 def test_full_gate_publica_check_run_e_valida_app_id():
