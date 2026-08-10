@@ -15,6 +15,7 @@ def _auditoria(**overrides) -> AuditoriaVersionamentoDocumental:
         "predecessores_ausentes": 0,
         "predecessores_fora_grupo": 0,
         "predecessores_contexto_divergente": 0,
+        "cadeias_ciclicas": 0,
         "versoes_invalidas": 0,
     }
     dados.update(overrides)
@@ -34,6 +35,7 @@ def test_qualquer_anomalia_bloqueia_constraint():
         "predecessores_ausentes",
         "predecessores_fora_grupo",
         "predecessores_contexto_divergente",
+        "cadeias_ciclicas",
         "versoes_invalidas",
     ]
     for campo in campos:
@@ -51,6 +53,7 @@ def test_resultado_expoe_somente_contagens_agregadas():
         "predecessores_ausentes",
         "predecessores_fora_grupo",
         "predecessores_contexto_divergente",
+        "cadeias_ciclicas",
         "versoes_invalidas",
     }
     assert all(isinstance(valor, int) for valor in payload.values())
