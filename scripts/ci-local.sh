@@ -28,6 +28,17 @@ esac
 if [ "${APP_ENV:-}" = "production" ] || [ "${EJC_ENV:-}" = "production" ]; then
   die "CI local recusado com ambiente de produção ativo."
 fi
+if [ -e /opt/ejc/.deployed_sha ] || [ -e /opt/ejc/.env ]; then
+  die "CI local recusado: host contém marcadores da instalação produtiva /opt/ejc."
+fi
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -Eq '^(ejc_backend|ejc_db|ejc_frontend|ejc_redis)$'; then
+    die "CI local recusado: containers canônicos do EJC estão ativos neste host."
+  fi
+fi
+if [ "$(id -u)" -eq 0 ] && [ "${EJC_ALLOW_ROOT_DIAGNOSTIC:-0}" != "1" ]; then
+  die "CI local promovível não roda como root. EJC_ALLOW_ROOT_DIAGNOSTIC=1 serve apenas para diagnóstico não-promovível."
+fi
 
 PG_MODE=""
 PGBIN=""
@@ -90,7 +101,7 @@ start_pg() {
     docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
     docker run -d --name "$PG_CONTAINER" \
       -e POSTGRES_USER="$DBU" -e POSTGRES_PASSWORD="$DBP" -e POSTGRES_DB="$DBN" \
-      -p "$PG_PORT:5432" "$PGVECTOR_IMAGE" >/dev/null
+      -p "127.0.0.1:$PG_PORT:5432" "$PGVECTOR_IMAGE" >/dev/null
     for _ in $(seq 1 45); do
       docker exec "$PG_CONTAINER" pg_isready -U "$DBU" -d "$DBN" >/dev/null 2>&1 && break
       sleep 1
