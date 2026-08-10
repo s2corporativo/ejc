@@ -131,8 +131,9 @@ class DocumentStorageUnitOfWork:
                     self._destino_final.unlink()
                 except FileNotFoundError:
                     pass
-            else:  # pragma: no cover - defesa para estado futuro desconhecido
-                raise EstadoStorageInvalidoError("estado de storage desconhecido")
+            else:  # defesa para estado futuro desconhecido
+                logger.error("Estado inesperado ao compensar storage documental local")
+                return False
         except OSError:
             logger.error("Falha ao compensar storage documental local")
             return False
