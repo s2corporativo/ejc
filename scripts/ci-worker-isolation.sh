@@ -13,6 +13,7 @@ WORKER_ROOT="${EJC_CI_WORKER_ROOT:-/var/tmp/ejc-ci-worker}"
 SAFE_PATH="${EJC_CI_WORKER_PATH:-/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin}"
 CONTROLLER_USER="$(id -un)"
 CONTROLLER_UID="$(id -u)"
+CONTROLLER_STATE_ROOT="${EJC_CI_STATE_ROOT:-}"
 
 fail() { printf '[ci-worker] ERRO: %s\n' "$*" >&2; exit 1; }
 log() { printf '[ci-worker] %s\n' "$*" >&2; }
@@ -32,9 +33,6 @@ safe_remove_tree() {
 }
 
 kill_worker_processes() {
-  # Worker é conta dedicada exclusivamente ao fallback. kill(-1) como o próprio
-  # UID encerra qualquer daemon/fork que um teste tenha deixado, sem poder tocar
-  # processos do controlador/outros usuários.
   sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" \
     /bin/sh -c 'kill -KILL -1 2>/dev/null || true' >/dev/null 2>&1 || true
   sleep 0.1
@@ -46,8 +44,6 @@ kill_worker_processes() {
 clean_worker_persistence() {
   local worker_uid
   worker_uid="$(id -u "$WORKER_USER")"
-  # A conta é dedicada: nenhum arquivo legítimo desse UID deve persistir nos
-  # diretórios temporários globais entre stages.
   for base in /tmp /dev/shm; do
     [ -d "$base" ] || continue
     sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" \
@@ -61,7 +57,7 @@ clean_worker_persistence() {
 validate_common() {
   [ -n "$WORKER_USER" ] || fail "EJC_CI_WORKER_USER obrigatório"
   id "$WORKER_USER" >/dev/null 2>&1 || fail "usuário worker inexistente: $WORKER_USER"
-  local worker_uid worker_groups root_real home_real passwd_home
+  local worker_uid worker_groups root_real home_real passwd_home gh_cfg
   worker_uid="$(id -u "$WORKER_USER")"
   [ "$worker_uid" -ne 0 ] || fail "worker não pode ser root"
   [ "$worker_uid" -ne "$CONTROLLER_UID" ] || fail "worker precisa de UID distinto do controlador"
@@ -70,7 +66,7 @@ validate_common() {
     fail "worker pertence a grupo privilegiado: $worker_groups"
   fi
 
-  for command_name in sudo git setfacl python3 pgrep; do
+  for command_name in sudo git setfacl python3 pgrep getent; do
     command -v "$command_name" >/dev/null 2>&1 || fail "$command_name ausente"
   done
   sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" /usr/bin/true \
@@ -86,8 +82,6 @@ validate_common() {
     fail "worker consegue escrever no Docker socket"
   fi
 
-  # A conta não pode possuir HOME persistente gravável. O processo recebe HOME
-  # efêmero por stage; isto impede ~/.config, systemd user units e cache lateral.
   passwd_home="$(getent passwd "$WORKER_USER" | cut -d: -f6)"
   [ -n "$passwd_home" ] || fail "HOME cadastrado do worker não localizado"
   if [ -e "$passwd_home" ] && sudo -n -u "$WORKER_USER" -- test -w "$passwd_home"; then
@@ -102,12 +96,38 @@ validate_common() {
       ;;
   esac
 
+  # O worker pode ler código público/privado do checkout se as permissões do SO
+  # permitirem, mas jamais pode alterar o root of trust do controlador.
+  if sudo -n -u "$WORKER_USER" -- test -w "$TRUST_ROOT"; then
+    fail "worker consegue escrever no checkout do control plane"
+  fi
+  for trusted in \
+    "$TRUST_ROOT/scripts/ci-local.sh" \
+    "$TRUST_ROOT/scripts/ci-fallback.sh" \
+    "$TRUST_ROOT/scripts/ci-worker-isolation.sh" \
+    "$TRUST_ROOT/scripts/ci_evidence.py" \
+    "$TRUST_ROOT/scripts/github-app-auth.sh"; do
+    [ -e "$trusted" ] || fail "root of trust ausente: $trusted"
+    if sudo -n -u "$WORKER_USER" -- test -w "$trusted"; then
+      fail "worker consegue alterar root of trust: $trusted"
+    fi
+  done
+
+  if [ -n "$CONTROLLER_STATE_ROOT" ] && [ -e "$CONTROLLER_STATE_ROOT" ]; then
+    if sudo -n -u "$WORKER_USER" -- test -r "$CONTROLLER_STATE_ROOT"; then
+      fail "worker consegue ler evidência/estado do control plane"
+    fi
+    if sudo -n -u "$WORKER_USER" -- test -w "$CONTROLLER_STATE_ROOT"; then
+      fail "worker consegue escrever evidência/estado do control plane"
+    fi
+  fi
+
   if [ -n "${EJC_FALLBACK_APP_PRIVATE_KEY_FILE:-}" ] && [ -e "$EJC_FALLBACK_APP_PRIVATE_KEY_FILE" ]; then
     if sudo -n -u "$WORKER_USER" -- test -r "$EJC_FALLBACK_APP_PRIVATE_KEY_FILE"; then
       fail "worker consegue ler a chave privada do GitHub App"
     fi
   fi
-  local gh_cfg="${GH_CONFIG_DIR:-${HOME:-}/.config/gh}/hosts.yml"
+  gh_cfg="${GH_CONFIG_DIR:-${HOME:-}/.config/gh}/hosts.yml"
   if [ -n "$gh_cfg" ] && [ -e "$gh_cfg" ] && sudo -n -u "$WORKER_USER" -- test -r "$gh_cfg"; then
     fail "worker consegue ler configuração autenticada do gh"
   fi
@@ -134,8 +154,6 @@ worker_runtime_preflight() {
   node_major="$(sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" node -p 'process.versions.node.split(".")[0]')"
   [ "$node_major" = "22" ] || fail "worker exige Node 22"
 
-  # Worker não recebe Docker. O PostgreSQL de teste roda localmente sob o mesmo
-  # UID, sem socket privilegiado e sem compartilhar estado entre stages.
   sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" bash -c \
     'ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1' \
     || fail "PostgreSQL server local indisponível para worker"
@@ -145,7 +163,7 @@ worker_runtime_preflight() {
 }
 
 prepare_stage_source() {
-  local sha="$1" stage="$2" stage_root="$3" source_dir="$4" temp_ref trusted_ci
+  local sha="$1" stage="$2" stage_root="$3" source_dir="$4" temp_ref trusted_ci writable
   [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || fail "SHA inválido"
   temp_ref="refs/heads/__ejc_ci_${sha:0:12}_${stage}_$$"
   git -C "$TRUST_ROOT" cat-file -e "$sha^{commit}" || fail "SHA não existe no repositório controlador"
@@ -165,15 +183,31 @@ prepare_stage_source() {
 
   mkdir -p "$stage_root/home" "$stage_root/state" "$stage_root/tmp"
   chmod 0700 "$stage_root/home" "$stage_root/state" "$stage_root/tmp"
-  setfacl -Rm "u:${WORKER_USER}:rwX,u:${CONTROLLER_USER}:rwX" "$stage_root"
-  setfacl -Rdm "u:${WORKER_USER}:rwx,u:${CONTROLLER_USER}:rwx" "$stage_root"
 
-  # O orquestrador executado pelo worker é uma cópia do root of trust do
-  # controlador, não `scripts/ci-local.sh` potencialmente alterado no PR.
+  # O worker só atravessa a raiz/snapshot. Não pode renomear `scripts/` nem
+  # substituir o ci-local trusted via permissão de diretório.
+  setfacl -m "u:${WORKER_USER}:rx,u:${CONTROLLER_USER}:rwx,m::rwx" "$stage_root"
+  setfacl -m "u:${WORKER_USER}:rx,u:${CONTROLLER_USER}:rwx,m::rwx" "$source_dir"
+  [ -d "$source_dir/scripts" ] || fail "snapshot sem diretório scripts"
+  setfacl -m "u:${WORKER_USER}:rx,u:${CONTROLLER_USER}:rwx,m::rwx" "$source_dir/scripts"
+
+  # Apenas superfícies que precisam criar build/cache/pycache são graváveis.
+  for writable in "$source_dir/backend" "$source_dir/frontend" "$stage_root/home" "$stage_root/state" "$stage_root/tmp"; do
+    [ -d "$writable" ] || continue
+    setfacl -Rm "u:${WORKER_USER}:rwX,u:${CONTROLLER_USER}:rwX,m::rwx" "$writable"
+    setfacl -Rdm "u:${WORKER_USER}:rwx,u:${CONTROLLER_USER}:rwx,m::rwx" "$writable"
+  done
+
   trusted_ci="$source_dir/scripts/.ejc-ci-local-controller.sh"
   cp "$TRUST_ROOT/scripts/ci-local.sh" "$trusted_ci"
   chmod 0555 "$trusted_ci"
-  setfacl -m "u:${WORKER_USER}:rx,m::rx" "$trusted_ci"
+  setfacl -m "u:${WORKER_USER}:rx,u:${CONTROLLER_USER}:rx,m::rx" "$trusted_ci"
+
+  # Prova negativa imediata: diretório e arquivo trusted não podem ser
+  # substituídos pelo worker mesmo que o arquivo seja read-only.
+  sudo -n -u "$WORKER_USER" -- test ! -w "$source_dir" || fail "worker consegue renomear itens na raiz do snapshot"
+  sudo -n -u "$WORKER_USER" -- test ! -w "$source_dir/scripts" || fail "worker consegue substituir scripts trusted por directory write"
+  sudo -n -u "$WORKER_USER" -- test ! -w "$trusted_ci" || fail "worker consegue escrever no ci-local trusted"
 }
 
 run_stage() {
@@ -209,14 +243,15 @@ run_stage() {
 
   prepare_stage_source "$sha" "$stage" "$stage_root" "$source_dir"
 
-  # env -i elimina GH_TOKEN, APP key path, SSH_AUTH_SOCK, HOME/XDG do controlador
-  # e qualquer segredo de aplicação. O stage só conhece massa/credenciais CI locais.
   set +e
   sudo -n -u "$WORKER_USER" -- /usr/bin/env -i \
     HOME="$stage_root/home" \
     TMPDIR="$stage_root/tmp" \
     XDG_CACHE_HOME="$stage_root/state/cache" \
     PATH="$SAFE_PATH" \
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0=safe.directory \
+    GIT_CONFIG_VALUE_0="$source_dir" \
     APP_ENV=development \
     EJC_ENV=development \
     EJC_ALLOW_PYTHON_MISMATCH=0 \
@@ -227,8 +262,6 @@ run_stage() {
   rc=$?
   set -e
 
-  # Nenhum filho/daemon/cache global do worker sobrevive ao stage. Se a limpeza
-  # de processo falhar, o gate falha mesmo que os testes tenham retornado zero.
   kill_worker_processes
   clean_worker_persistence
   return "$rc"
