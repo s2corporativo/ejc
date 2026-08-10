@@ -138,6 +138,9 @@ CONTEXT_EVAL='EJC Local / Eval'
 CONTEXT_FRONTEND='EJC Local / Frontend'
 CONTEXT_P0='EJC Local / P0 Guard'
 CONTEXT_GOV='EJC Local / Governança'
+CONTEXT_ARCH='EJC Local / Arquitetura'
+CONTEXT_CONT='EJC Local / Continuidade'
+CONTEXT_UI='EJC Local / UI Extra'
 CONTEXT_FULL='EJC Local Full Gate'
 STATUS_SYNC_PENDING=0
 FULL_CHECK_ID=""
@@ -264,7 +267,9 @@ full_gate_is_green() {
 
 publish_success_statuses() {
   local c
-  for c in "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" "$CONTEXT_GOV"; do
+  for c in \
+    "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" \
+    "$CONTEXT_GOV" "$CONTEXT_ARCH" "$CONTEXT_CONT" "$CONTEXT_UI"; do
     post_status success "$c" "validado pelo fallback local isolado" || true
   done
   post_full_check success "todos os gates locais completos aprovados"
@@ -294,8 +299,13 @@ run_governance() {
   local logfile="$1" rc
   create_governance_worktree
   set +e
-  EJC_GOV_SOURCE_ROOT="$GOV_WORKTREE" EJC_PR_NUMBER="$PR" EJC_GOV_REQUIRE_PR=1 \
-    bash "$ROOT/scripts/governanca/ci-local-governanca.sh" >"$logfile" 2>&1
+  if [ -n "$PR" ]; then
+    EJC_GOV_SOURCE_ROOT="$GOV_WORKTREE" EJC_PR_NUMBER="$PR" EJC_GOV_REQUIRE_PR=1 \
+      bash "$ROOT/scripts/governanca/ci-local-governanca.sh" >"$logfile" 2>&1
+  else
+    EJC_GOV_SOURCE_ROOT="$GOV_WORKTREE" EJC_GOV_REQUIRE_PR=0 \
+      bash "$ROOT/scripts/governanca/ci-local-governanca.sh" >"$logfile" 2>&1
+  fi
   rc=$?
   set -e
   return "$rc"
@@ -480,7 +490,9 @@ START_ARGS=(start --root "$EVIDENCE_ROOT" --sha "$SHA" --ref "$HEAD_REF")
 ATTEMPT_DIR="$(python3 "$ROOT/scripts/ci_evidence.py" "${START_ARGS[@]}")" || die "não foi possível iniciar tentativa de evidência"
 FULL_CHECK_EXTERNAL_ID="ejc-fallback:$SHA:$(basename "$ATTEMPT_DIR")"
 
-for c in "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" "$CONTEXT_GOV"; do
+for c in \
+  "$CONTEXT_BACKEND" "$CONTEXT_EVAL" "$CONTEXT_FRONTEND" "$CONTEXT_P0" \
+  "$CONTEXT_GOV" "$CONTEXT_ARCH" "$CONTEXT_CONT" "$CONTEXT_UI"; do
   post_status pending "$c" "CI local isolado em execução" || true
 done
 post_full_check pending "CI local isolado em execução" || true
@@ -490,9 +502,9 @@ run_worker_stage eval "$CONTEXT_EVAL" || exit 1
 run_worker_stage frontend "$CONTEXT_FRONTEND" || exit 1
 run_worker_stage p0 "$CONTEXT_P0" || exit 1
 run_governance_stage || exit 1
-run_worker_stage architecture "$CONTEXT_FULL" || exit 1
-run_worker_stage continuity "$CONTEXT_FULL" || exit 1
-run_worker_stage ui-extra "$CONTEXT_FULL" || exit 1
+run_worker_stage architecture "$CONTEXT_ARCH" || exit 1
+run_worker_stage continuity "$CONTEXT_CONT" || exit 1
+run_worker_stage ui-extra "$CONTEXT_UI" || exit 1
 
 finish_attempt success "" 0 1
 
@@ -502,12 +514,16 @@ if [ -n "$PR" ] && ! revalidate_governance_for_merge; then
   die "governança do PR mudou/reprovou após a suíte"
 fi
 
-if publish_success_statuses && full_gate_is_green; then
-  log "Fallback completo aprovado para $SHA. Evidência local atual: $SHA_EVIDENCE/latest-success.json"
+if [ "$POST_STATUS" -eq 1 ]; then
+  if publish_success_statuses && full_gate_is_green; then
+    log "Fallback completo aprovado para $SHA. Evidência local atual: $SHA_EVIDENCE/latest-success.json"
+  else
+    STATUS_SYNC_PENDING=1
+    warn "suíte local aprovada, mas Check Run canônico não sincronizou; merge permanece bloqueado"
+  fi
+  [ "$STATUS_SYNC_PENDING" -eq 0 ] || warn "um ou mais sinais remotos não sincronizaram; watcher poderá republicar sem repetir a suíte"
 else
-  STATUS_SYNC_PENDING=1
-  warn "suíte local aprovada, mas Check Run canônico não sincronizou; merge permanece bloqueado"
+  log "Fallback local aprovado para $SHA sem publicação remota (--no-status)."
 fi
-[ "$STATUS_SYNC_PENDING" -eq 0 ] || warn "um ou mais sinais remotos não sincronizaram; watcher poderá republicar sem repetir a suíte"
 
 attempt_merge
