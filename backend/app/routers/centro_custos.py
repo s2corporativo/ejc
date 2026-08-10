@@ -19,6 +19,7 @@ from app.models.user import User
 from app.models.case import Case
 from app.models.centro_custo import CentroCusto, CentroCustoTipo, CentroCustoCategoria
 from app.models.audit_log import criar_audit_log
+from app.services.document_access_policy import exigir_documento_compativel_com_caso
 
 router = APIRouter(prefix="/centro-custos", tags=["Centro de Custos"])
 
@@ -60,6 +61,7 @@ class CentroCustoPatch(BaseModel):
 def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
 
+
 def _ids_casos_visiveis(user: User):
     """IDs dos casos em que o usuário atua como responsável/auxiliar (espelha
     fees._ids_casos_do_usuario) — usado para escopar a listagem sem case_id."""
@@ -74,6 +76,7 @@ def _ids_casos_visiveis(user: User):
         )
         .scalar_subquery()
     )
+
 
 def _out(c: CentroCusto) -> dict:
     return {
@@ -137,9 +140,38 @@ async def criar_lancamento(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
-    await verificar_acesso_caso(db, cu, req.case_id)
+
+    # Acesso ao caso é provado uma única vez e o objeto autorizado é reutilizado
+    # na validação do comprovante. Documento de outro caso/cliente ou de cofre
+    # acima do papel atual falha fechado antes de qualquer escrita financeira.
+    case = await verificar_acesso_caso(db, cu, req.case_id)
+    if req.comprovante_id:
+        await exigir_documento_compativel_com_caso(
+            db,
+            cu,
+            document_id=req.comprovante_id,
+            case=case,
+        )
+
     c = CentroCusto(id=str(uuid4()), created_by=cu.id, **req.model_dump())
     db.add(c)
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "CREATE",
+        "centro_custos",
+        c.id,
+        dados_depois={
+            "case_id": req.case_id,
+            "tipo": req.tipo.value,
+            "categoria": req.categoria.value,
+            "valor": str(_money(req.valor)),
+            "moeda": req.moeda,
+            "pago": req.pago,
+            "comprovante_id": req.comprovante_id,
+        },
+    )
     await db.commit()
     return _out(c)
 
