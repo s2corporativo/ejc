@@ -56,6 +56,20 @@ def test_snapshot_de_status_checks_recusa_sobrescrita_e_restore_valida_repositor
     assert "apply_status_checks" in src
 
 
+def test_snapshot_de_branch_protection_fica_fora_do_repo_e_rejeita_redirecionamento():
+    src = PROTECTION.read_text(encoding="utf-8")
+    assert 'STATE_ROOT="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/ejc-ci-fallback}"' in src
+    assert 'BACKUP_FILE="${EJC_BRANCH_PROTECTION_BACKUP:-$STATE_ROOT/required-status-checks-anterior.json}"' in src
+    assert "validate_backup_path()" in src
+    assert "EJC_CI_STATE_ROOT deve ser caminho absoluto" in src
+    assert "snapshot de branch protection deve usar caminho absoluto" in src
+    assert "snapshot deve permanecer confinado sob EJC_CI_STATE_ROOT" in src
+    assert "snapshot não pode ser gravado dentro do repositório" in src
+    assert "componente symlink no caminho" in src
+    assert "assert_no_symlink_component" in src
+    assert "var/required-status-checks-anterior.json" not in src
+
+
 def test_full_gate_publica_check_run_exato_e_valida_app_sha_nome_conclusao():
     src = FALLBACK.read_text(encoding="utf-8")
     assert 'FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"' in src
