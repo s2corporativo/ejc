@@ -186,12 +186,26 @@ def test_ativacao_e_reversao_nao_usam_runner_de_producao():
     assert "/opt/ejc" in src
     assert "/opt/ejc/.deployed_sha" in src
     assert '"$(id -u)" -ne 0' in src
+    assert '"${APP_ENV:-}" != "production"' in src
+    assert "ejc_worker" in src
     assert "docker info" in src
     assert "gh auth status" in src
     assert "branch-protection.sh --fallback" in src
     assert "branch-protection.sh --cloud" in src
     assert "systemctl --user" in src
     assert "self-hosted" not in src.lower()
+
+
+def test_ativacao_exige_preflight_antes_de_trocar_branch_protection():
+    src = _text("scripts/ci-fallback-activate.sh")
+    assert "activation-preflight.log" in src
+    assert "EJC_ALLOW_PYTHON_MISMATCH=0 bash scripts/ci-local.sh fast" in src
+    assert "sintaxe dos componentes do fallback" in src
+    pos_fast = src.index("bash scripts/ci-local.sh fast")
+    pos_fallback = src.index("branch-protection.sh --fallback")
+    assert pos_fast < pos_fallback
+    assert "Environment=EJC_ALLOW_PYTHON_MISMATCH=0" in src
+    assert "EJC_ALLOW_PYTHON_MISMATCH=0 bash '$ROOT/scripts/ci-fallback-watch.sh'" in src
 
 
 def test_ativacao_e_transacional_e_disable_restaura_cloud_antes_de_parar_watcher():
