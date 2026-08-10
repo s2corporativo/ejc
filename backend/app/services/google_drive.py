@@ -158,9 +158,13 @@ def _exigir_disponivel() -> None:
 
 
 def _compensar_objeto(dest_file: str) -> None:
-    """Best effort local ao adapter quando uma gravação remota não fecha íntegra."""
+    """Best effort: tenta eliminar objeto parcial sem mascarar a falha original."""
 
-    cleanup = _run(["rclone", "deletefile", dest_file])
+    try:
+        cleanup = _run(["rclone", "deletefile", dest_file])
+    except (subprocess.TimeoutExpired, OSError):
+        logger.critical("Falha de infraestrutura ao compensar objeto remoto")
+        return
     if cleanup.returncode != 0:
         logger.critical(
             "Falha ao compensar objeto remoto após erro de upload (exit=%s)",
@@ -204,6 +208,11 @@ def upload_file(
             # mesmo quando o provider deixou um objeto parcial.
             _compensar_objeto(dest_file)
             raise _erro_operacao("upload", copied)
+    except subprocess.TimeoutExpired:
+        # Timeout não prova que o provider não gravou nada. Como o destino novo
+        # é UUID-único, a compensação fail-safe não remove objeto pré-existente.
+        _compensar_objeto(dest_file)
+        raise
     finally:
         try:
             os.unlink(tmp_path)
