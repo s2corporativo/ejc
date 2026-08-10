@@ -10,7 +10,11 @@ shift || true
 
 WORKER_USER="${EJC_CI_WORKER_USER:-}"
 WORKER_ROOT="${EJC_CI_WORKER_ROOT:-/var/tmp/ejc-ci-worker}"
-SAFE_PATH="${EJC_CI_WORKER_PATH:-/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin}"
+PG_MAJOR_REQUIRED="${EJC_CI_PG_MAJOR_REQUIRED:-16}"
+PG_BIN_DIR="/usr/lib/postgresql/${PG_MAJOR_REQUIRED}/bin"
+PG_EXTENSION_DIR="/usr/share/postgresql/${PG_MAJOR_REQUIRED}/extension"
+BASE_SAFE_PATH="${EJC_CI_WORKER_PATH:-/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin}"
+SAFE_PATH="$PG_BIN_DIR:$BASE_SAFE_PATH"
 CONTROLLER_USER="$(id -un)"
 CONTROLLER_UID="$(id -u)"
 CONTROLLER_STATE_ROOT="${EJC_CI_STATE_ROOT:-}"
@@ -56,6 +60,7 @@ clean_worker_persistence() {
 
 validate_common() {
   [ -n "$WORKER_USER" ] || fail "EJC_CI_WORKER_USER obrigatório"
+  [[ "$PG_MAJOR_REQUIRED" =~ ^[1-9][0-9]*$ ]] || fail "EJC_CI_PG_MAJOR_REQUIRED inválido"
   id "$WORKER_USER" >/dev/null 2>&1 || fail "usuário worker inexistente: $WORKER_USER"
   local worker_uid worker_groups root_real home_real passwd_home gh_cfg
   worker_uid="$(id -u "$WORKER_USER")"
@@ -96,8 +101,6 @@ validate_common() {
       ;;
   esac
 
-  # O worker pode ler código público/privado do checkout se as permissões do SO
-  # permitirem, mas jamais pode alterar o root of trust do controlador.
   if sudo -n -u "$WORKER_USER" -- test -w "$TRUST_ROOT"; then
     fail "worker consegue escrever no checkout do control plane"
   fi
@@ -138,7 +141,17 @@ worker_runtime_preflight() {
   kill_worker_processes
   clean_worker_persistence
 
-  local command_name
+  [ "$PG_MAJOR_REQUIRED" = "16" ] || fail "fallback promovível do EJC exige PostgreSQL 16"
+  [ -x "$PG_BIN_DIR/initdb" ] || fail "PostgreSQL 16 server não instalado em $PG_BIN_DIR"
+  local latest_pg_dir extension command_name
+  latest_pg_dir="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)"
+  [ "$latest_pg_dir" = "$PG_BIN_DIR" ] \
+    || fail "runtime PostgreSQL efetivo divergente: esperado $PG_BIN_DIR, encontrado ${latest_pg_dir:-nenhum}"
+  for extension in vector pg_trgm pgcrypto; do
+    [ -f "$PG_EXTENSION_DIR/$extension.control" ] \
+      || fail "extensão PostgreSQL 16 ausente: $extension"
+  done
+
   for command_name in bash python3.11 node npm psql pg_dump git find; do
     sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" \
       /usr/bin/env bash -c 'command -v "$1" >/dev/null' _ "$command_name" \
@@ -148,18 +161,17 @@ worker_runtime_preflight() {
     fail "utilitário at disponível ao worker; remova/bloqueie agendamento persistente nessa conta dedicada"
   fi
 
-  local pyver node_major
+  local pyver node_major psql_major pg_dump_major
   pyver="$(sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" python3.11 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
   [ "$pyver" = "3.11" ] || fail "worker não possui Python 3.11"
   node_major="$(sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" node -p 'process.versions.node.split(".")[0]')"
   [ "$node_major" = "22" ] || fail "worker exige Node 22"
+  psql_major="$(sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" psql --version | sed -E 's/.* ([0-9]+).*/\1/')"
+  pg_dump_major="$(sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" pg_dump --version | sed -E 's/.* ([0-9]+).*/\1/')"
+  [ "$psql_major" = "16" ] || fail "psql do worker não é versão 16"
+  [ "$pg_dump_major" = "16" ] || fail "pg_dump do worker não é versão 16"
 
-  sudo -n -u "$WORKER_USER" -- /usr/bin/env -i PATH="$SAFE_PATH" bash -c \
-    'ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1' \
-    || fail "PostgreSQL server local indisponível para worker"
-  [ -n "$(find /usr/share/postgresql -path '*/extension/vector.control' -print -quit 2>/dev/null || true)" ] \
-    || fail "extensão pgvector não instalada para PostgreSQL local"
-  log "preflight aprovado: UID separado, sem sudo/Docker/credenciais/HOME persistente"
+  log "preflight aprovado: UID separado, Python 3.11, Node 22, PostgreSQL 16+pgvector, sem sudo/Docker/credenciais"
 }
 
 prepare_stage_source() {
@@ -183,15 +195,11 @@ prepare_stage_source() {
 
   mkdir -p "$stage_root/home" "$stage_root/state" "$stage_root/tmp"
   chmod 0700 "$stage_root/home" "$stage_root/state" "$stage_root/tmp"
-
-  # O worker só atravessa a raiz/snapshot. Não pode renomear `scripts/` nem
-  # substituir o ci-local trusted via permissão de diretório.
   setfacl -m "u:${WORKER_USER}:rx,u:${CONTROLLER_USER}:rwx,m::rwx" "$stage_root"
   setfacl -m "u:${WORKER_USER}:rx,u:${CONTROLLER_USER}:rwx,m::rwx" "$source_dir"
   [ -d "$source_dir/scripts" ] || fail "snapshot sem diretório scripts"
   setfacl -m "u:${WORKER_USER}:rx,u:${CONTROLLER_USER}:rwx,m::rwx" "$source_dir/scripts"
 
-  # Apenas superfícies que precisam criar build/cache/pycache são graváveis.
   for writable in "$source_dir/backend" "$source_dir/frontend" "$stage_root/home" "$stage_root/state" "$stage_root/tmp"; do
     [ -d "$writable" ] || continue
     setfacl -Rm "u:${WORKER_USER}:rwX,u:${CONTROLLER_USER}:rwX,m::rwx" "$writable"
@@ -203,8 +211,6 @@ prepare_stage_source() {
   chmod 0555 "$trusted_ci"
   setfacl -m "u:${WORKER_USER}:rx,u:${CONTROLLER_USER}:rx,m::rx" "$trusted_ci"
 
-  # Prova negativa imediata: diretório e arquivo trusted não podem ser
-  # substituídos pelo worker mesmo que o arquivo seja read-only.
   sudo -n -u "$WORKER_USER" -- test ! -w "$source_dir" || fail "worker consegue renomear itens na raiz do snapshot"
   sudo -n -u "$WORKER_USER" -- test ! -w "$source_dir/scripts" || fail "worker consegue substituir scripts trusted por directory write"
   sudo -n -u "$WORKER_USER" -- test ! -w "$trusted_ci" || fail "worker consegue escrever no ci-local trusted"
