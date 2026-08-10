@@ -1,6 +1,7 @@
 """Contrato da primitiva de streaming documental."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from io import BytesIO
 
@@ -29,6 +30,21 @@ class _StreamRastreado:
         return self._buffer.read(size)
 
 
+class _StreamBloqueado:
+    """Expõe o primeiro ponto de cancelamento depois da criação do inode."""
+
+    def __init__(self):
+        self.leitura_iniciada = asyncio.Event()
+        self.liberar = asyncio.Event()
+
+    async def read(self, size: int = -1) -> bytes:
+        if size < 0:
+            raise AssertionError("leitura ilimitada proibida")
+        self.leitura_iniciada.set()
+        await self.liberar.wait()
+        return b"conteudo"
+
+
 async def test_streaming_usa_chunks_limitados_hash_incremental_e_amostra(tmp_path):
     conteudo = b"a" * (CHUNK_UPLOAD_BYTES * 2 + 37)
     stream = _StreamRastreado(conteudo)
@@ -52,6 +68,30 @@ async def test_streaming_usa_chunks_limitados_hash_incremental_e_amostra(tmp_pat
 
     descartar_staging(staging)
     assert not staging.caminho.exists()
+
+
+async def test_cancelamento_no_primeiro_await_nao_deixa_uploading_residual(tmp_path):
+    stream = _StreamBloqueado()
+    tarefa = asyncio.create_task(
+        receber_em_staging(
+            stream,
+            diretorio=tmp_path,
+            suffix=".pdf",
+            max_bytes=1024,
+        )
+    )
+
+    await stream.leitura_iniciada.wait()
+    criados = list(tmp_path.iterdir())
+    assert len(criados) == 1
+    assert criados[0].name.endswith(".pdf.uploading")
+    assert criados[0].stat().st_mode & 0o777 == 0o600
+
+    tarefa.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await tarefa
+
+    assert list(tmp_path.iterdir()) == []
 
 
 async def test_limite_e_verificado_antes_de_gravar_chunk_excedente(tmp_path):
