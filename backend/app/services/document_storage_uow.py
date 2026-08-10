@@ -99,6 +99,14 @@ class DocumentStorageUnitOfWork:
         return self._staging.amostra_inicial
 
     @property
+    def caminho_staging_para_validacao(self) -> Path:
+        """Path interno legível apenas enquanto o arquivo segue em quarentena."""
+
+        if self._estado is not EstadoStorageLocal.STAGING:
+            raise EstadoStorageInvalidoError("storage não está em staging")
+        return self._staging.caminho
+
+    @property
     def destino_final(self) -> Path:
         return self._destino_final
 
