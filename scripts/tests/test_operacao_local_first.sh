@@ -5,7 +5,14 @@ SCRIPT="${1:-scripts/operacao-local-first.sh}"
 [ -f "$SCRIPT" ] || { echo "script ausente: $SCRIPT" >&2; exit 1; }
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+safe_cleanup() {
+  if [ -d "$TMP" ]; then
+    find "$TMP" -depth -mindepth 1 -delete
+    rmdir "$TMP"
+  fi
+}
+trap safe_cleanup EXIT
+
 ROOT="$TMP/ejc"
 SNAPS="$TMP/snaps"
 WORK="$TMP/worktrees"
@@ -49,6 +56,12 @@ grep -q '^workspace_safe=true$' <<<"$STATUS"
 SOURCE_ID="$(sed -n 's/^source_id=//p' <<<"$STATUS")"
 [[ "$SOURCE_ID" =~ ^[0-9a-f]{40}$ ]]
 
+# Untracked NÃO faz parte do checkpoint Git: não altera a identidade nem entra no tar.
+printf 'nao versionado\n' > "$ROOT/backend/untracked.py"
+STATUS_UNTRACKED="$(env "${COMMON[@]}" bash "$SCRIPT" status)"
+UNTRACKED_ID="$(sed -n 's/^source_id=//p' <<<"$STATUS_UNTRACKED")"
+[ "$UNTRACKED_ID" = "$SOURCE_ID" ]
+
 # Alteração tracked sem commit muda a identidade para fingerprint local.
 printf 'alterado\n' >> "$ROOT/docs/a.md"
 STATUS_DIRTY="$(env "${COMMON[@]}" bash "$SCRIPT" status)"
@@ -56,14 +69,18 @@ DIRTY_ID="$(sed -n 's/^source_id=//p' <<<"$STATUS_DIRTY")"
 [[ "$DIRTY_ID" == local-* ]]
 git -C "$ROOT" checkout -- docs/a.md
 
-SNAP_DIR="$(env "${COMMON[@]}" bash "$SCRIPT" checkpoint | tail -1)"
-[ -f "$SNAP_DIR/source.tar.gz" ]
-[ -f "$SNAP_DIR/source.tar.gz.sha256" ]
-[ "$(cat "$SNAP_DIR/source_id.txt")" = "$SOURCE_ID" ]
-if tar -tzf "$SNAP_DIR/source.tar.gz" | grep -Eq '(^|/)\.env$|(^|/)uploads/|(^|/)data/'; then
-  echo "checkpoint incluiu segredo/dados" >&2
-  exit 1
-fi
+SNAP_DIR_1="$(env "${COMMON[@]}" bash "$SCRIPT" checkpoint | tail -1)"
+SNAP_DIR_2="$(env "${COMMON[@]}" bash "$SCRIPT" checkpoint | tail -1)"
+[ "$SNAP_DIR_1" != "$SNAP_DIR_2" ]
+for SNAP_DIR in "$SNAP_DIR_1" "$SNAP_DIR_2"; do
+  [ -f "$SNAP_DIR/source.tar.gz" ]
+  [ -f "$SNAP_DIR/source.tar.gz.sha256" ]
+  [ "$(cat "$SNAP_DIR/source_id.txt")" = "$SOURCE_ID" ]
+  if tar -tzf "$SNAP_DIR/source.tar.gz" | grep -Eq '(^|/)\.env$|(^|/)uploads/|(^|/)data/|backend/untracked\.py$'; then
+    echo "checkpoint incluiu segredo/dados/untracked" >&2
+    exit 1
+  fi
+done
 
 CI_MARK="$TMP/ci-mode.txt"
 EJC_TEST_CI_MARKER="$CI_MARK" env "${COMMON[@]}" EJC_CI_MODE=fast \
