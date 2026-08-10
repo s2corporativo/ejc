@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# EJC — wrapper operacional do backup nativo cifrado.
+# EJC — wrapper operacional do backup nativo cifrado para pré-deploy.
 #
-# O fluxo legado de pg_dump/tar + rclone em claro foi removido. Banco, uploads e
-# documentos contêm PII e não podem sair da VPS nem permanecer em retenção local
-# sem criptografia. A implementação canônica vive em backup_service.py.
+# IMPORTANTE: o motor atual gera os artefatos `.enc` em TemporaryDirectory e
+# remove esse diretório ao concluir. Portanto `local_ok` prova apenas que a
+# cifragem ocorreu durante o ciclo; NÃO prova retenção local recuperável após o
+# retorno da função. Até o motor persistir cópia cifrada em BACKUP_DIR, o
+# pré-deploy exige `offsite_ok=true` para existir prova recuperável.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/ejc}"
@@ -14,10 +16,6 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 2
 fi
 
-# O programa é enviado por STDIN: chave, senha e tokens nunca entram no argv.
-# Com a API saudável, reutiliza-se a imagem em produção. Em crash-loop/container
-# parado, usa-se um container efêmero da imagem anterior, com o mesmo env_file e
-# volumes, para que um deploy corretivo ainda tenha prova pré-deploy.
 if docker ps --format '{{.Names}}' | grep -qx "$APP_CONTAINER"; then
   runner=(docker exec -i "$APP_CONTAINER" python -)
 else
@@ -36,7 +34,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
 
 from app.core.database import AsyncSessionLocal
 from app.services import backup_service
@@ -54,9 +51,7 @@ async def main() -> int:
     config = backup_service.configuracao_status()
     auth_mode = str(config.get("auth_mode") or "")
     destino = str(config.get("destino") or "gdrive")
-    offsite_obrigatorio = bool(config.get("offsite_obrigatorio"))
 
-    # Gate LOCAL: sem isto não existe prova cifrada — bloqueia SEMPRE.
     problems: list[str] = []
     required_local = {
         "enabled": "agendamento desabilitado",
@@ -67,24 +62,21 @@ async def main() -> int:
         if not bool(config.get(field)):
             problems.append(message)
 
-    # Gate OFFSITE: só bloqueia com BACKUP_OFFSITE_OBRIGATORIO=true; caso
-    # contrário problemas de destino viram aviso (a prova local sustenta o
-    # deploy) e a execução abaixo registra a falha offsite como "parcial".
-    offsite_problems: list[str] = []
+    # O gate pré-deploy exige destino offsite utilizável SEM depender do valor
+    # BACKUP_OFFSITE_OBRIGATORIO. Hoje o motor não mantém os `.enc` em
+    # BACKUP_DIR após o retorno; aceitar offsite indisponível seria falso verde.
     if destino == "rclone":
         if not bool(config.get("rclone_remote_configurado")):
-            offsite_problems.append("remote rclone ausente (BACKUP_RCLONE_REMOTE)")
+            problems.append("remote rclone ausente (BACKUP_RCLONE_REMOTE)")
         if not bool(config.get("rclone_disponivel")):
-            offsite_problems.append("binário rclone indisponível")
+            problems.append("binário rclone indisponível")
     else:
         if not bool(config.get("pasta_configurada")):
-            offsite_problems.append("pasta de destino ausente")
+            problems.append("pasta de destino ausente")
         if not bool(config.get("credencial_dedicada_configurada")):
-            offsite_problems.append("credencial exclusiva ausente")
+            problems.append("credencial exclusiva ausente")
         if auth_mode == "inherit":
-            offsite_problems.append("modo inherit não atende à segregação de credenciais")
-    if offsite_obrigatorio:
-        problems.extend(offsite_problems)
+            problems.append("modo inherit não atende à segregação de credenciais")
 
     if problems:
         print(
@@ -114,13 +106,14 @@ async def main() -> int:
     names = [str(item.get("nome") or "") for item in artifacts]
     has_db = any(name.endswith("_db.dump.enc") for name in names)
     has_uploads = any(name.endswith("_uploads.tar.gz.enc") for name in names)
-    local_ok = bool(result.get("local_ok")) and has_db and has_uploads
+    encrypted_generated = bool(result.get("local_ok")) and has_db and has_uploads
     offsite_ok = bool(result.get("offsite_ok"))
     offsite_erro = str(result.get("offsite_erro") or "") or None
-    # Gate do deploy: exige a prova LOCAL completa (banco + uploads cifrados)
-    # e respeita o resultado do serviço ("parcial" por offsite falho continua
-    # ok=True quando BACKUP_OFFSITE_OBRIGATORIO=false).
-    complete = bool(result.get("ok")) and local_ok
+
+    # Prova promovível = ciclo do motor OK + artefatos cifrados produzidos +
+    # retenção OFFSITE confirmada. `local_ok` sozinho não é suficiente enquanto
+    # backup_service usar TemporaryDirectory para os artefatos `.enc`.
+    complete = bool(result.get("ok")) and encrypted_generated and offsite_ok
 
     safe = {
         "ok": complete,
@@ -131,20 +124,13 @@ async def main() -> int:
         "duracao_segundos": result.get("duracao_segundos"),
         "banco_cifrado": has_db,
         "uploads_cifrados": has_uploads,
+        "artefatos_cifrados_gerados": encrypted_generated,
         "credencial_dedicada": bool(config.get("credencial_dedicada_configurada")),
         "auth_mode": auth_mode,
         "destino": destino,
-        "local_ok": local_ok,
         "offsite_ok": offsite_ok,
         "offsite_erro": offsite_erro,
     }
-    if complete and not offsite_ok:
-        print(
-            f"AVISO GRAVE: backup offsite falhou (destino {destino}): "
-            f"{offsite_erro or 'erro não informado'} — deploy prossegue com "
-            "prova local; corrija o destino offsite",
-            file=sys.stderr,
-        )
     print(json.dumps(safe, ensure_ascii=False, sort_keys=True))
     return 0 if complete else 1
 
