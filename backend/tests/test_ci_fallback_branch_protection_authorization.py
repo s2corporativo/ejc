@@ -70,18 +70,24 @@ def test_snapshot_de_branch_protection_fica_fora_do_repo_e_rejeita_redirecioname
     assert "var/required-status-checks-anterior.json" not in src
 
 
-def test_full_gate_publica_check_run_exato_e_valida_app_sha_nome_conclusao():
+def test_full_gate_usa_exclusivamente_check_run_exato_do_app():
     src = FALLBACK.read_text(encoding="utf-8")
     assert 'FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"' in src
-    assert 'repos/$REPO/check-runs' in src
-    assert 'repos/$REPO/statuses/$SHA' in src
-    assert 'if [ "$context" = "$CONTEXT_FULL" ]' in src
+    assert 'repos/$REPO/commits/$SHA/check-runs' in src
     assert 'check-runs/$FULL_CHECK_ID' in src
     assert '.app.id // -1' in src
     assert '.head_sha // empty' in src
     assert '.name // empty' in src
     assert '.conclusion // empty' in src
-    assert 'commits/$SHA/check-runs?per_page=100' not in src
+    assert '.external_id // empty' in src
+
+    status_fn = src[src.index("post_status() {") : src.index("latest_full_check_id() {")]
+    assert 'repos/$REPO/statuses/$SHA' in status_fn
+    assert "CONTEXT_FULL" not in status_fn
+
+    publish = src[src.index("publish_success_statuses() {") : src.index("local_evidence_is_green() {")]
+    assert 'post_full_check success' in publish
+    assert 'post_status success "$CONTEXT_FULL"' not in publish
 
 
 def test_ativador_propaga_identidade_do_app_sem_token_persistido():
