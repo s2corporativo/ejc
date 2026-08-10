@@ -31,6 +31,29 @@ canon() {
   if command -v realpath >/dev/null 2>&1; then realpath -m "$1"; else printf '%s\n' "$1"; fi
 }
 
+assert_state_root() {
+  local resolved root_resolved home_resolved
+  resolved="$(canon "$STATE_ROOT")"
+  root_resolved="$(canon "$ROOT")"
+  home_resolved="$(canon "${HOME:-/__no_home__}")"
+  case "$resolved" in
+    /|/opt/ejc|/opt/ejc/*|"$root_resolved"|"$root_resolved"/*|"$home_resolved")
+      die "STATE_ROOT inseguro: $resolved"
+      ;;
+  esac
+}
+
+assert_state_child() {
+  local path="$1" label="$2" resolved state_resolved root_resolved
+  resolved="$(canon "$path")"
+  state_resolved="$(canon "$STATE_ROOT")"
+  root_resolved="$(canon "$ROOT")"
+  [[ "$resolved" == "$state_resolved/"* ]] || die "$label deve ficar sob STATE_ROOT: $resolved"
+  case "$resolved" in
+    /opt/ejc|/opt/ejc/*|"$root_resolved"|"$root_resolved"/*) die "$label aponta para caminho protegido: $resolved" ;;
+  esac
+}
+
 safe_remove_tree() {
   local path="${1:-}" croot cstate
   [ -n "$path" ] || return 0
@@ -64,7 +87,13 @@ if [ "$(id -u)" -eq 0 ] && [ "${EJC_ALLOW_ROOT_DIAGNOSTIC:-0}" != "1" ]; then
   die "CI local promovível não roda como root. EJC_ALLOW_ROOT_DIAGNOSTIC=1 serve apenas para diagnóstico não-promovível."
 fi
 
+assert_state_root
+assert_state_child "$PGDATA" "PGDATA"
+assert_state_child "$REPORT_ROOT" "REPORT_ROOT"
+assert_state_child "$REPORT_DIR" "REPORT_DIR"
+[ -z "$VENV_DIR_OVERRIDE" ] || assert_state_child "$VENV_DIR_OVERRIDE" "VENV_DIR"
 mkdir -p "$STATE_ROOT" "$REPORT_DIR"
+[ ! -L "$STATE_ROOT" ] || die "STATE_ROOT não pode ser symlink"
 chmod 700 "$STATE_ROOT" "$REPORT_DIR" 2>/dev/null || true
 
 PG_MODE=""
@@ -72,11 +101,9 @@ PGBIN=""
 
 stop_pg() {
   if [ "$PG_MODE" = "docker" ]; then
-    docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 \
-      || die "não foi possível encerrar o PostgreSQL Docker efêmero"
+    docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || die "não foi possível encerrar o PostgreSQL Docker efêmero"
   elif [ "$PG_MODE" = "local" ] && [ -n "$PGBIN" ] && [ -d "$PGDATA" ]; then
-    "$PGBIN/pg_ctl" -D "$PGDATA" stop -m fast >/dev/null 2>&1 \
-      || die "não foi possível encerrar o PostgreSQL local efêmero"
+    "$PGBIN/pg_ctl" -D "$PGDATA" stop -m fast >/dev/null 2>&1 || die "não foi possível encerrar o PostgreSQL local efêmero"
   fi
   if [ -d "$PGDATA" ]; then safe_remove_tree "$PGDATA"; fi
   PG_MODE=""
@@ -87,13 +114,10 @@ stop_pg() {
 _cleanup() {
   set +e
   if [ "$PG_MODE" = "docker" ]; then docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true; fi
-  if [ "$PG_MODE" = "local" ] && [ -n "$PGBIN" ] && [ -d "$PGDATA" ]; then
-    "$PGBIN/pg_ctl" -D "$PGDATA" stop -m fast >/dev/null 2>&1 || true
-  fi
+  if [ "$PG_MODE" = "local" ] && [ -n "$PGBIN" ] && [ -d "$PGDATA" ]; then "$PGBIN/pg_ctl" -D "$PGDATA" stop -m fast >/dev/null 2>&1 || true; fi
   if [ -d "$PGDATA" ]; then
     local cdata cstate
-    cdata="$(canon "$PGDATA")"
-    cstate="$(canon "$STATE_ROOT")"
+    cdata="$(canon "$PGDATA")"; cstate="$(canon "$STATE_ROOT")"
     if [[ "$cdata" == "$cstate/"* ]]; then
       find "$PGDATA" -depth -mindepth 1 -delete >/dev/null 2>&1 || true
       rmdir "$PGDATA" >/dev/null 2>&1 || true
@@ -105,13 +129,9 @@ trap _cleanup EXIT
 choose_python() {
   if [ -n "$PYTHON_BIN" ]; then
     command -v "$PYTHON_BIN" >/dev/null || die "PYTHON_BIN=$PYTHON_BIN não encontrado"
-  elif command -v python3.11 >/dev/null 2>&1; then
-    PYTHON_BIN=python3.11
-  elif command -v python3 >/dev/null 2>&1; then
-    PYTHON_BIN=python3
-  else
-    die "python3 ausente"
-  fi
+  elif command -v python3.11 >/dev/null 2>&1; then PYTHON_BIN=python3.11
+  elif command -v python3 >/dev/null 2>&1; then PYTHON_BIN=python3
+  else die "python3 ausente"; fi
   local version
   version="$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
   if [ "$version" != "3.11" ] && [ "${EJC_ALLOW_PYTHON_MISMATCH:-0}" != "1" ]; then
@@ -121,31 +141,23 @@ choose_python() {
 
 resolve_venv_dir() {
   [ -n "$VENV_DIR" ] && return 0
-  if [ -n "$VENV_DIR_OVERRIDE" ]; then
-    VENV_DIR="$VENV_DIR_OVERRIDE"
-    return 0
-  fi
+  if [ -n "$VENV_DIR_OVERRIDE" ]; then VENV_DIR="$VENV_DIR_OVERRIDE"; return 0; fi
   [ -f backend/requirements.txt ] || die "backend/requirements.txt ausente"
   local req_hash py_version py_key
   req_hash="$($PYTHON_BIN -c 'import hashlib,pathlib; print(hashlib.sha256(pathlib.Path("backend/requirements.txt").read_bytes()).hexdigest()[:16])')"
   py_version="$($PYTHON_BIN -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
   py_key="${py_version//./_}"
   VENV_DIR="$STATE_ROOT/venv-py${py_key}-${req_hash}"
+  assert_state_child "$VENV_DIR" "VENV_DIR"
 }
 
 ensure_venv() {
-  choose_python
-  resolve_venv_dir
-  if [ "${CI_SKIP_PIP:-0}" = "1" ] && [ ! -x "$VENV_DIR/bin/python" ]; then
-    die "CI_SKIP_PIP=1 solicitado, mas o venv hermético não existe: $VENV_DIR"
-  fi
+  choose_python; resolve_venv_dir
+  if [ "${CI_SKIP_PIP:-0}" = "1" ] && [ ! -x "$VENV_DIR/bin/python" ]; then die "CI_SKIP_PIP=1 solicitado, mas o venv hermético não existe: $VENV_DIR"; fi
   if [ ! -x "$VENV_DIR/bin/python" ]; then
-    log "Criando venv hermético em $VENV_DIR…"
-    mkdir -p "$(dirname "$VENV_DIR")"
-    "$PYTHON_BIN" -m venv "$VENV_DIR"
+    log "Criando venv hermético em $VENV_DIR…"; mkdir -p "$(dirname "$VENV_DIR")"; "$PYTHON_BIN" -m venv "$VENV_DIR"
   fi
-  if [ "${CI_SKIP_PIP:-0}" = "1" ]; then
-    log "CI_SKIP_PIP=1 — reutilizando venv do mesmo runtime + requirements hash."
+  if [ "${CI_SKIP_PIP:-0}" = "1" ]; then log "CI_SKIP_PIP=1 — reutilizando venv do mesmo runtime + requirements hash."
   else
     log "Instalando dependências Python bloqueadas…"
     "$VENV_DIR/bin/python" -m pip install -q --upgrade pip
@@ -154,10 +166,8 @@ ensure_venv() {
 }
 
 check_node() {
-  command -v npm >/dev/null 2>&1 || die "npm ausente"
-  command -v node >/dev/null 2>&1 || die "node ausente"
-  local major
-  major="$(node -p 'process.versions.node.split(".")[0]')"
+  command -v npm >/dev/null 2>&1 || die "npm ausente"; command -v node >/dev/null 2>&1 || die "node ausente"
+  local major; major="$(node -p 'process.versions.node.split(".")[0]')"
   [ "$major" = "$NODE_MAJOR_REQUIRED" ] || die "Node $(node --version) detectado; esperado major $NODE_MAJOR_REQUIRED."
 }
 
@@ -182,31 +192,27 @@ start_pg() {
     PG_MODE=docker
     log "Subindo PostgreSQL 16 + pgvector efêmero via Docker em 127.0.0.1:$PG_PORT…"
     docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
-    docker run -d --name "$PG_CONTAINER" \
-      -e POSTGRES_USER="$DBU" -e POSTGRES_PASSWORD="$DBP" -e POSTGRES_DB="$DBN" \
-      -p "127.0.0.1:$PG_PORT:5432" "$PGVECTOR_IMAGE" >/dev/null
-    for _ in $(seq 1 45); do
-      docker exec "$PG_CONTAINER" pg_isready -U "$DBU" -d "$DBN" >/dev/null 2>&1 && break
-      sleep 1
-    done
+    docker run -d --name "$PG_CONTAINER" -e POSTGRES_USER="$DBU" -e POSTGRES_PASSWORD="$DBP" -e POSTGRES_DB="$DBN" -p "127.0.0.1:$PG_PORT:5432" "$PGVECTOR_IMAGE" >/dev/null
+    for _ in $(seq 1 45); do docker exec "$PG_CONTAINER" pg_isready -U "$DBU" -d "$DBN" >/dev/null 2>&1 && break; sleep 1; done
     docker exec "$PG_CONTAINER" pg_isready -U "$DBU" -d "$DBN" >/dev/null 2>&1 || die "PostgreSQL efêmero não ficou pronto"
   else
     PG_MODE=local
     PGBIN="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)"
     [ -n "$PGBIN" ] || die "Sem Docker e sem PostgreSQL local com pgvector."
+    local pg_major
+    pg_major="$("$PGBIN/postgres" --version | sed -n 's/.* \([0-9][0-9]*\)\..*/\1/p')"
+    if [ "$pg_major" != "16" ] && [ "${EJC_ALLOW_POSTGRES_MISMATCH:-0}" != "1" ]; then
+      die "PostgreSQL local major $pg_major detectado; o CI canônico exige 16."
+    fi
     log "Subindo cluster PostgreSQL local efêmero em 127.0.0.1:$PG_PORT…"
-    safe_remove_tree "$PGDATA"
-    mkdir -p "$PGDATA"
-    "$PGBIN/initdb" -D "$PGDATA" -U "$DBU" --auth=trust >/dev/null
+    safe_remove_tree "$PGDATA"; mkdir -p "$PGDATA"
+    "$PGBIN/initdb" -D "$PGDATA" -U "$DBU" --auth-local=trust --auth-host=scram-sha-256 --pwfile=<(printf '%s\n' "$DBP") >/dev/null
     "$PGBIN/pg_ctl" -D "$PGDATA" -o "-p $PG_PORT -c listen_addresses=127.0.0.1" -l "$PGDATA/pg.log" start >/dev/null
-    for _ in $(seq 1 45); do "$PGBIN/pg_isready" -h 127.0.0.1 -p "$PG_PORT" -U "$DBU" >/dev/null 2>&1 && break; sleep 1; done
-    "$PGBIN/createdb" -h 127.0.0.1 -p "$PG_PORT" -U "$DBU" "$DBN" >/dev/null 2>&1 || true
+    for _ in $(seq 1 45); do PGPASSWORD="$DBP" "$PGBIN/pg_isready" -h 127.0.0.1 -p "$PG_PORT" -U "$DBU" >/dev/null 2>&1 && break; sleep 1; done
+    PGPASSWORD="$DBP" "$PGBIN/createdb" -h 127.0.0.1 -p "$PG_PORT" -U "$DBU" "$DBN" >/dev/null 2>&1 || true
   fi
-  PGPASSWORD="$DBP" psql -h 127.0.0.1 -p "$PG_PORT" -U "$DBU" -d "$DBN" \
-    -v ON_ERROR_STOP=1 \
-    -c "CREATE EXTENSION IF NOT EXISTS vector;" \
-    -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
-    -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" >/dev/null
+  PGPASSWORD="$DBP" psql -h 127.0.0.1 -p "$PG_PORT" -U "$DBU" -d "$DBN" -v ON_ERROR_STOP=1 \
+    -c "CREATE EXTENSION IF NOT EXISTS vector;" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" >/dev/null
   export APP_ENV=development
   export DATABASE_URL="postgresql+asyncpg://$DBU:$DBP@127.0.0.1:$PG_PORT/$DBN"
   export DATABASE_URL_SYNC="postgresql://$DBU:$DBP@127.0.0.1:$PG_PORT/$DBN"
@@ -218,26 +224,21 @@ start_pg() {
 run_backend() {
   ensure_venv; start_pg
   local PY="$VENV_DIR/bin/python"
-  log "Sintaxe dos scripts críticos de produção…"
-  bash -n scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh
+  log "Sintaxe dos scripts críticos de produção…"; bash -n scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh
   log "Compatibilidade dos modelos RAG (sem baixar pesos)…"
   (cd backend && "$PY" -c "from app.services.embedding_service import validar_modelo_local; ok,msg=validar_modelo_local(); print(msg); raise SystemExit(0 if ok else 1)")
   (cd backend && "$PY" -c "from app.core.config import get_settings; from fastembed.rerank.cross_encoder import TextCrossEncoder; s=get_settings(); nomes={m['model'] for m in TextCrossEncoder.list_supported_models()}; assert s.RAG_RERANK_MODEL in nomes, s.RAG_RERANK_MODEL; print(s.RAG_RERANK_MODEL)")
   log "Ruff…"; (cd backend && "$PY" -m ruff check app --output-format=concise) | tee "$REPORT_DIR/ruff.log"
-  log "pip-audit 2.10.0…"
-  "$PY" -m pip install -q 'pip-audit==2.10.0'
+  log "pip-audit 2.10.0…"; "$PY" -m pip install -q 'pip-audit==2.10.0'
   (cd backend && "$VENV_DIR/bin/pip-audit" -r requirements.txt --desc) | tee "$REPORT_DIR/pip-audit.log"
   log "Alembic upgrade head…"; (cd backend && "$PY" -m alembic upgrade head)
   log "Pytest completo com banco + cobertura >=65%…"
-  (cd backend && "$PY" -m pytest tests -q --tb=short --maxfail=25 --cov=app --cov-report=term-missing:skip-covered --cov-report="xml:$REPORT_DIR/backend-coverage.xml" --cov-fail-under=65) \
-    | tee "$REPORT_DIR/backend-tests.log"
-  stop_pg
-  ok "Backend CI equivalente OK — banco efêmero encerrado"
+  (cd backend && "$PY" -m pytest tests -q --tb=short --maxfail=25 --cov=app --cov-report=term-missing:skip-covered --cov-report="xml:$REPORT_DIR/backend-coverage.xml" --cov-fail-under=65) | tee "$REPORT_DIR/backend-tests.log"
+  stop_pg; ok "Backend CI equivalente OK — banco efêmero encerrado"
 }
 
 run_eval() {
-  ensure_venv
-  local PY="$VENV_DIR/bin/python"
+  ensure_venv; local PY="$VENV_DIR/bin/python"
   log "Eval smoke dos gold sets…"; (cd backend && "$PY" -m app.eval.run_eval --smoke) | tee "$REPORT_DIR/eval-gold.log"
   log "Eval de trajetória do agente…"; (cd backend && "$PY" -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0) | tee "$REPORT_DIR/eval-trajectory.log"
   ok "Eval offline OK"
@@ -265,14 +266,9 @@ run_architecture() {
   ensure_venv
   local PY="$VENV_DIR/bin/python" out
   out="$(mktemp -d "$STATE_ROOT/architecture-${$}.XXXXXX")"
-  log "Architecture Inventory: testes…"
-  "$PY" -m unittest scripts.tests.test_generate_architecture_inventory scripts.tests.test_refine_architecture_inventory -v \
-    | tee "$REPORT_DIR/architecture-tests.log"
-  log "Architecture Inventory: geração/refino…"
-  "$PY" scripts/generate_architecture_inventory.py --output "$out" --check
-  "$PY" scripts/refine_architecture_inventory.py --output "$out" --check
-  safe_remove_tree "$out"
-  ok "Architecture Inventory OK"
+  log "Architecture Inventory: testes…"; "$PY" -m unittest scripts.tests.test_generate_architecture_inventory scripts.tests.test_refine_architecture_inventory -v | tee "$REPORT_DIR/architecture-tests.log"
+  log "Architecture Inventory: geração/refino…"; "$PY" scripts/generate_architecture_inventory.py --output "$out" --check; "$PY" scripts/refine_architecture_inventory.py --output "$out" --check
+  safe_remove_tree "$out"; ok "Architecture Inventory OK"
 }
 
 run_continuity() {
@@ -281,14 +277,11 @@ run_continuity() {
   local PY="$VENV_DIR/bin/python"
   export RESTORE_DRILL_ALLOW=1
   export RESTORE_DRILL_REPORT="${RESTORE_DRILL_REPORT:-$REPORT_DIR/restore-drill-report.json}"
-  log "Continuidade: preparando schema migrado em banco novo…"
-  (cd backend && "$PY" -m alembic upgrade head)
-  log "Continuidade: prova integral backup/restore…"
-  "$PY" -m py_compile scripts/backup/restore_drill.py
-  (cd backend && PYTHONPATH=. "$PY" ../scripts/backup/restore_drill.py)
+  assert_state_child "$RESTORE_DRILL_REPORT" "RESTORE_DRILL_REPORT"
+  log "Continuidade: preparando schema migrado em banco novo…"; (cd backend && "$PY" -m alembic upgrade head)
+  log "Continuidade: prova integral backup/restore…"; "$PY" -m py_compile scripts/backup/restore_drill.py; (cd backend && PYTHONPATH=. "$PY" ../scripts/backup/restore_drill.py)
   [ -s "$RESTORE_DRILL_REPORT" ] || die "restore drill não produziu relatório"
-  stop_pg
-  ok "Continuidade backup/restore OK — banco efêmero independente encerrado"
+  stop_pg; ok "Continuidade backup/restore OK — banco efêmero independente encerrado"
 }
 
 run_ui_extra() {
@@ -306,8 +299,7 @@ run_ui_extra() {
 }
 
 run_fast() {
-  ensure_venv
-  local PY="$VENV_DIR/bin/python"
+  ensure_venv; local PY="$VENV_DIR/bin/python"
   (cd backend && "$PY" -m ruff check app --output-format=concise)
   (cd backend && "$PY" -m pytest tests -q --ignore-glob='*dblevel*')
   ok "Fast gate OK"
