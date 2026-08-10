@@ -11,6 +11,7 @@ final depois das validações de domínio (duplicidade, MIME, autorização etc.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,8 @@ from typing import Protocol
 from uuid import uuid4
 
 import aiofiles
+
+logger = logging.getLogger(__name__)
 
 CHUNK_UPLOAD_BYTES = 1024 * 1024
 AMOSTRA_MAGIC_BYTES = 2048
@@ -63,7 +66,7 @@ def _suffix_seguro(suffix: str) -> str:
 
 
 def descartar_staging(arquivo: UploadEmStaging) -> None:
-    """Remove staging best-effort; ausência já equivale a estado limpo."""
+    """Remove staging; ausência é idempotente, outros erros são propagados."""
 
     try:
         arquivo.caminho.unlink()
@@ -71,13 +74,27 @@ def descartar_staging(arquivo: UploadEmStaging) -> None:
         pass
 
 
+def _descartar_caminho_best_effort(caminho: Path) -> None:
+    """Cleanup de exceção/cancelamento sem mascarar a falha original."""
+
+    try:
+        caminho.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        # Não inclui path/filename no log para evitar replicar contexto de storage.
+        logger.error("Falha ao remover staging documental após erro", exc_info=True)
+
+
 def promover_staging(arquivo: UploadEmStaging, destino_final: Path) -> None:
-    """Promove dentro do mesmo diretório usando rename atômico do filesystem."""
+    """Promove no mesmo diretório sem aceitar sobrescrita conhecida."""
 
     origem_parent = arquivo.caminho.parent.resolve()
     destino_parent = destino_final.parent.resolve()
     if origem_parent != destino_parent:
         raise ValueError("staging e destino final precisam compartilhar diretório")
+    if os.path.lexists(destino_final):
+        raise FileExistsError("destino final de upload já existe")
     os.replace(arquivo.caminho, destino_final)
 
 
@@ -91,7 +108,8 @@ async def receber_em_staging(
     """Recebe o upload em chunks com memória O(CHUNK_UPLOAD_BYTES).
 
     O limite é verificado antes de cada escrita. Em qualquer exceção — inclusive
-    cancelamento da coroutine — o staging é removido no ``finally``.
+    cancelamento da coroutine — o staging é removido no ``finally`` sem mascarar
+    a exceção/cancelamento original caso o próprio cleanup falhe.
     """
 
     if max_bytes < 0:
@@ -137,7 +155,4 @@ async def receber_em_staging(
         )
     finally:
         if not concluido:
-            try:
-                staging.unlink()
-            except FileNotFoundError:
-                pass
+            _descartar_caminho_best_effort(staging)
