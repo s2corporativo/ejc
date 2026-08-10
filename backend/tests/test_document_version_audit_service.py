@@ -9,6 +9,8 @@ def _auditoria(**overrides) -> AuditoriaVersionamentoDocumental:
     dados = {
         "total_documentos": 10,
         "documentos_sem_grupo": 0,
+        "grupos_sem_raiz_canonica": 0,
+        "raizes_canonicas_invalidas": 0,
         "numeracoes_duplicadas": 0,
         "grupos_contexto_inconsistente": 0,
         "grupos_multiplas_raizes": 0,
@@ -29,6 +31,8 @@ def test_apto_para_constraint_quando_todas_as_anomalias_sao_zero():
 def test_qualquer_anomalia_bloqueia_constraint():
     campos = [
         "documentos_sem_grupo",
+        "grupos_sem_raiz_canonica",
+        "raizes_canonicas_invalidas",
         "numeracoes_duplicadas",
         "grupos_contexto_inconsistente",
         "grupos_multiplas_raizes",
@@ -47,6 +51,8 @@ def test_resultado_expoe_somente_contagens_agregadas():
     assert set(payload) == {
         "total_documentos",
         "documentos_sem_grupo",
+        "grupos_sem_raiz_canonica",
+        "raizes_canonicas_invalidas",
         "numeracoes_duplicadas",
         "grupos_contexto_inconsistente",
         "grupos_multiplas_raizes",
