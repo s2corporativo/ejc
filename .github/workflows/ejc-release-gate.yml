@@ -73,6 +73,12 @@ jobs:
           bash scripts/tests/test_selfhosted_runner_setup.sh \
             | tee runner-setup-test.log
 
+      - name: Provar isolamento do fallback de CI
+        shell: bash
+        run: |
+          bash scripts/tests/test_ci_fallback_isolation.sh \
+            | tee ci-fallback-isolation-test.log
+
       - name: Publicar diagnósticos P0
         if: always()
         uses: actions/upload-artifact@v7
@@ -83,6 +89,7 @@ jobs:
             backup-wrapper-test.log
             deploy-rollback-test.log
             runner-setup-test.log
+            ci-fallback-isolation-test.log
           if-no-files-found: warn
           retention-days: 7
 
