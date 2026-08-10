@@ -21,7 +21,7 @@ cat > "$TMP/repo/scripts/ci-local.sh" <<'EOF'
 set -euo pipefail
 printf 'dummy-ci mode=%s\n' "${1:-full}"
 EOF
-chmod +x "$TMP/repo/scripts/ci-local.sh"
+# Deliberadamente sem chmod: validate deve chamar o CI por `bash`.
 
 cd "$TMP/repo"
 git init -q
@@ -67,6 +67,12 @@ test -f "$CP/tracked-working-tree.patch"
 test -f "$CP/untracked-safe.tar.gz"
 test -f "$CP/repository.bundle"
 test -f "$CP/SHA256SUMS"
+test -f "$CP/repository.txt"
+test ! -e "$CP/source-root.txt"
+if grep -q '.env.local' "$CP/status.txt"; then
+  echo "status do checkpoint não deve guardar nome de untracked sensível" >&2
+  exit 1
+fi
 grep -q '^sensitive-path sha256=' "$CP/skipped-untracked.txt"
 if grep -q '.env.local' "$CP/skipped-untracked.txt"; then
   echo "nome sensível bruto não pode ficar no metadata do checkpoint" >&2
@@ -129,6 +135,24 @@ test "$(wc -l < "$TMP/gh-state/create-count" | tr -d ' ')" = "1"
 cp "$SYNCED_TASK" "$TMP/recovery/repo/pending-tasks/$(basename "$TASK")"
 env "${SYNC_ENV[@]}" bash scripts/ejc-local-first.sh sync >/dev/null
 test "$(wc -l < "$TMP/gh-state/create-count" | tr -d ' ')" = "1"
+
+# Branch local avança, mas working tree fica sujo: push automático deve ser recusado.
+echo ahead > ahead.txt
+git add ahead.txt
+git commit -qm 'test: commit local à frente'
+echo dirty >> tracked.txt
+LOCAL_HEAD="$(git rev-parse HEAD)"
+REMOTE_HEAD_BEFORE="$(git --git-dir="$TMP/remote.git" rev-parse refs/heads/feat/test-fallback)"
+test "$LOCAL_HEAD" != "$REMOTE_HEAD_BEFORE"
+DIRTY_SYNC_ENV=(
+  "${ENV_COMMON[@]}"
+  EJC_LOCAL_FIRST_AUTO_PUSH=1
+  PATH="$TMP/bin:$PATH"
+  GH_FAKE_STATE="$TMP/gh-state"
+)
+env "${DIRTY_SYNC_ENV[@]}" bash scripts/ejc-local-first.sh sync >/dev/null
+REMOTE_HEAD_AFTER="$(git --git-dir="$TMP/remote.git" rev-parse refs/heads/feat/test-fallback)"
+test "$REMOTE_HEAD_AFTER" = "$REMOTE_HEAD_BEFORE"
 
 # Nova tarefa + remoto DNS inválido: deve permanecer local e marcar modo offline.
 env "${ENV_COMMON[@]}" bash scripts/ejc-local-first.sh register \
