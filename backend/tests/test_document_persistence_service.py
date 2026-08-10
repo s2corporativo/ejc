@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,20 @@ class FakeDB:
         self.rollbacks += 1
         if self.rollback_error is not None:
             raise self.rollback_error
+
+
+class BlockingRollbackDB(FakeDB):
+    def __init__(self) -> None:
+        super().__init__(commit_error=RuntimeError("erro-original-commit"))
+        self.rollback_started = asyncio.Event()
+        self.rollback_release = asyncio.Event()
+        self.rollback_finished = asyncio.Event()
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
+        self.rollback_started.set()
+        await self.rollback_release.wait()
+        self.rollback_finished.set()
 
 
 async def _ingestao(
@@ -220,6 +235,37 @@ async def test_falha_de_rollback_nao_mascara_erro_de_commit(tmp_path: Path, monk
         )
 
     assert "erro-interno-rollback" not in str(exc.value)
+    assert db.rollbacks == 1
+    assert ingestao.storage.estado is EstadoStorageLocal.COMPENSADO
+    assert not ingestao.full_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_cancelamento_durante_rollback_aguarda_limpeza_e_preserva_erro_original(
+    tmp_path: Path,
+    monkeypatch,
+):
+    ingestao = await _ingestao(tmp_path, monkeypatch)
+    db = BlockingRollbackDB()
+
+    tarefa = asyncio.create_task(
+        persistir_documento_local(
+            db,  # type: ignore[arg-type]
+            ingestao,
+            dados=_dados(),
+        )
+    )
+    await asyncio.wait_for(db.rollback_started.wait(), timeout=2)
+
+    tarefa.cancel()
+    await asyncio.sleep(0)
+    assert not db.rollback_finished.is_set()
+
+    db.rollback_release.set()
+    with pytest.raises(RuntimeError, match="erro-original-commit"):
+        await tarefa
+
+    assert db.rollback_finished.is_set()
     assert db.rollbacks == 1
     assert ingestao.storage.estado is EstadoStorageLocal.COMPENSADO
     assert not ingestao.full_path.exists()
