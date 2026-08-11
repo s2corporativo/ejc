@@ -153,9 +153,11 @@ como base para vedar a promessa de resultado ao cliente. **Verificado na fonte o
 do Estatuto da Advocacia (Lei 8.906/1994), não do Código de Ética, e seu inciso XXIX trata de
 infração disciplinar por erro reiterado que evidencie inépcia profissional — matéria distinta.** O
 fundamento correto para a vedação é o **Provimento OAB nº 205/2021, art. 6º e parágrafo único**
-(publicidade da advocacia), que veda expressamente "a menção à promessa de resultados" em qualquer
-publicidade. Os documentos citados não foram reescritos — permanecem como registro histórico da
-auditoria original; a citação correta vale para qualquer uso futuro do achado.
+(publicidade da advocacia), aprovado pelo Conselho Pleno do Conselho Federal da OAB e em vigor
+desde a publicação, sem revogação posterior conhecida em 11/08/2026 — que veda expressamente "a
+menção à promessa de resultados" em qualquer publicidade. Os documentos citados não foram
+reescritos — permanecem como registro histórico da auditoria original; a citação correta vale para
+qualquer uso futuro do achado.
 *(achado originado nas Partes 4/8/9; citação corrigida na revisão do PR #1060, Parte 15)*
 
 ---

@@ -188,7 +188,13 @@ meses de uma vez. Para um escritório que cobra em parcelas — o caso normal �
 é simplesmente incorreto.
 
 **Correção sugerida.** `recebido_mes` deve somar `fee_payments.valor` por
-`date_trunc('month', data_pagamento)`, e `a_receber` deve ser `fees.valor - SUM(pagamentos)`.
+`date_trunc('month', data_pagamento)`, relacionando cada pagamento ao seu `fee_id` e excluindo
+honorário com `deleted_at` preenchido. `a_receber` deve ser
+`GREATEST(fees.valor - SUM(pagamentos válidos), 0)`, restrito a `fees.status IN ('pendente',
+'atrasado')` e ao período em aberto — o `GREATEST` evita valor negativo quando o pagamento
+excede o contratado (ver FIN-05). Teste de regressão: pagamento parcial, pagamento que excede o
+contratado, pagamento em honorário excluído (não deve contar) e quitação que atravessa a virada
+do mês.
 
 ---
 
@@ -261,7 +267,9 @@ competência (`financeiro_consolidado.py:105`) — é a classe "painéis diverge
 identificada na auditoria externa, agora localizada no código.
 
 **Correção sugerida.** Aplicar `comp_filter` aos quatro agregados e ao `por_categoria`, ou
-renomear os campos para dizer o que são (`total_fixo_geral`). Preferível a primeira.
+renomear os campos para dizer o que são (`total_fixo_geral`). Preferível a primeira. Teste de
+regressão: dados em duas competências distintas, conferir que os quatro agregados e o
+`por_categoria` respondem só pela competência pedida.
 
 ---
 
@@ -280,8 +288,11 @@ consolidado. Não dá erro, não avisa: o dinheiro simplesmente sai do relatóri
 `pattern=r"^\d{4}-\d{2}$"` no Query da entrada (`financeiro_consolidado.py:46`) — a validação
 existe na leitura e falta justamente na escrita.
 
-**Correção sugerida.** Schema Pydantic para o corpo com `competencia: str = Field(pattern=r"^\d{4}-\d{2}$")`,
-e migration de saneamento para as linhas já gravadas fora do padrão (verificar antes se existem).
+**Correção sugerida.** Schema Pydantic para o corpo — o padrão `^\d{4}-\d{2}$` sozinho não basta:
+aceita `2026-13` e `2026-00`. Valide o mês no intervalo 01–12 (`Field` com validador customizado,
+ou trocar por um tipo de data e formatar na saída), e migration de saneamento para as linhas já
+gravadas fora do padrão (verificar antes se existem). Teste de regressão para `2026-00`, `2026-13`
+e `0000-00`.
 
 ---
 
@@ -299,8 +310,11 @@ e adiante (`fees.py:264-268`) `fee.status = FeeStatus.pago` sem conferir o statu
 no `recebido_mes` do consolidado. Também não há teto: nada impede registrar pagamento acima do
 valor contratado.
 
-**Correção sugerida.** Recusar pagamento em honorário `cancelado` (409) e avisar (ou recusar)
-quando a soma exceder o valor contratado.
+**Correção sugerida.** Recusar pagamento em honorário `cancelado` (409). Para o teto, "avisar" não
+basta — duas requisições concorrentes podem passar pela verificação antes de qualquer uma gravar e
+juntas excederem o contratado. Recalcule a soma dentro da MESMA transação do `INSERT` do
+pagamento (ou aplique uma constraint que sirva de garantia final) e rejeite com 409 quando o total
+ultrapassar `fees.valor` — rejeição atômica, não aviso best-effort.
 
 ---
 
@@ -319,7 +333,10 @@ sem excluir a descrição. Um lançamento `tipo='custas_despesas'` cuja descriç
 `recebido_mes`. Simétrico no bloco `previsto`.
 
 **Correção sugerida.** Classificar por `tipo` e usar a descrição só como fallback para linhas
-legadas sem o label do enum — não como critério paralelo.
+legadas sem o label do enum — não como critério paralelo. Teste de regressão: lançamento
+`tipo='custas_despesas'` com descrição contendo "sucumbência" deve contar uma única vez (em
+custas, não nos dois), e o fallback por descrição deve continuar funcionando para linha legada
+sem o enum.
 
 ---
 
@@ -330,7 +347,10 @@ como `body.get("valor", 0)` sem tipo nem sinal; `status` e `tipo` são texto liv
 Nenhuma chamada a `criar_audit_log` em todo o arquivo — enquanto `fees.py` registra auditoria em
 criação, alteração, pagamento e cancelamento (`fees.py:177,215,270,304`).
 
-**Impacto.** Valor negativo, string, ou `status` fora do vocabulário passam direto. E alteração de
+**Impacto.** A coluna `valor` é `NUMERIC` no banco, então string não numérica (`"abc"`) é
+rejeitada na gravação — não é um buraco aberto para qualquer texto. O que passa direto é: valor
+NEGATIVO (nada valida sinal), string NUMÉRICA que o driver converte silenciosamente, e `status`/
+`tipo` fora do vocabulário esperado (`VARCHAR` livre, sem enum nem `CHECK`). E alteração de
 despesa do escritório não deixa rastro de quem mudou o quê — assimetria difícil de justificar num
 módulo financeiro. Detalhe menor no mesmo arquivo: `updates["updated_at"] = "NOW()"`
 (`despesas.py:228`) é um bind param que a query não usa (o SQL já tem `updated_at = NOW()` literal).
