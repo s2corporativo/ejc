@@ -53,6 +53,19 @@ def test_postgres_local_exige_major_16_loopback_e_scram():
     assert 'PGPASSWORD="$DBP"' in start
 
 
+def test_postgres_docker_valida_major_real_16_antes_das_extensoes():
+    src = CI_LOCAL.read_text(encoding="utf-8")
+    start = _block(src, "start_pg() {", "run_backend() {")
+    docker = start[start.index("PG_MODE=docker") : start.index("else\n    PG_MODE=local")]
+
+    assert "SHOW server_version_num" in docker
+    assert 'pg_docker_major="$((pg_version_num / 10000))"' in docker
+    assert '[ "$pg_docker_major" = "16" ]' in docker
+    assert "PostgreSQL Docker major" in docker
+    assert docker.index("pg_isready") < docker.index("SHOW server_version_num")
+    assert start.index("SHOW server_version_num") < start.index("CREATE EXTENSION IF NOT EXISTS vector")
+
+
 def test_estado_mutavel_e_confinado_ao_state_root():
     src = CI_LOCAL.read_text(encoding="utf-8")
 
