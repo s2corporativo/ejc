@@ -123,6 +123,17 @@ class EmitirIn(BaseModel):
     valor: Decimal | None = None
     descricao: str | None = None
     competencia: str | None = Field(default=None, description="YYYY-MM-DD; default = hoje")
+    # NFS-02 (auditoria jul/2026): tributabilidade/retenção do ISS dependem do
+    # TOMADOR e do MUNICÍPIO dele — não são propriedade fixa do emitente. Por
+    # padrão usa a config do escritório (NFSE_TRIB_ISSQN_DEFAULT/
+    # NFSE_TIPO_RETENCAO_ISS_DEFAULT); sobreponha aqui só quando o tomador
+    # desta nota exigir retenção diferente do padrão.
+    trib_issqn: int | None = Field(
+        default=None, description="Sobrepõe o tribISSQN padrão desta nota."
+    )
+    tipo_retencao_iss: int | None = Field(
+        default=None, description="Sobrepõe o tpRetISSQN padrão desta nota."
+    )
 
     @model_validator(mode="after")
     def _valida(self):
@@ -677,6 +688,7 @@ async def emitir_nfse(
     pedido = NFSePedidoEmissao(
         referencia=referencia, tomador=tomador,
         descricao=descricao, valor=Decimal(str(valor)), competencia=body.competencia,
+        trib_issqn=body.trib_issqn, tipo_retencao_iss=body.tipo_retencao_iss,
     )
     try:
         resultado = await provider.emitir(pedido)

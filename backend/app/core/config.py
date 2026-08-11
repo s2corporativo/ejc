@@ -9,6 +9,14 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import secrets
 
+# NFS-01/NFS-02 (auditoria jul/2026, Issue de correção): valores aceitos de
+# NFSE_REGIME_TRIBUTARIO. Cada um mapeia para opSimpNac/regEspTrib da DPS
+# dentro do adapter (services/nfse/nuvem_fiscal.py) — este módulo só valida a
+# STRING escolhida pelo titular/contador, nunca decide qual regime é o real.
+NFSE_REGIMES_TRIBUTARIOS_VALIDOS = frozenset({
+    "simples_nacional", "lucro_presumido", "lucro_real",
+})
+
 
 class Settings(BaseSettings):
     # ── Aplicação ─────────────────────────────────────────────────────────
@@ -431,6 +439,21 @@ class Settings(BaseSettings):
     NFSE_ITEM_LC116: str = "17.14"       # item da lista LC 116/03 (advocacia)
     NFSE_CTRIB_NAC: str = ""             # cTribNac (GET /nfse/cidades/3106200). A confirmar.
     NFSE_TIMEOUT: int = 60               # timeout (s) das chamadas ao provedor
+    # NFS-01/NFS-02 (auditoria jul/2026): regime tributário e tributação/
+    # retenção de ISS NÃO têm default seguro — o código chutava "1"/"1"/"0"
+    # fixos no adapter independente do regime real do escritório e da condição
+    # do TOMADOR/MUNICÍPIO em cada nota. CONFIRME com o contador antes de
+    # preencher. Ficam SEM valor por padrão de propósito: se NFSE_ENABLED=true
+    # e algum destes faltar, o boot FALHA (ver _validar_seguranca_producao) em
+    # vez de emitir DPS com base de cálculo errada.
+    NFSE_REGIME_TRIBUTARIO: str = ""     # simples_nacional | lucro_presumido | lucro_real
+    # tribISSQN padrão (tributável/isento/imune) quando a nota não sobrepõe.
+    NFSE_TRIB_ISSQN_DEFAULT: int | None = None
+    # tpRetISSQN padrão (retido/não retido) quando a nota não sobrepõe — a
+    # regra final depende do tomador/município (LC 116/2003 art. 6º;
+    # LC 123/2006 art. 21 §4º), então isto é só o "caso comum": quando o
+    # tomador exigir retenção, sobreponha por nota (POST /nfse/emitir).
+    NFSE_TIPO_RETENCAO_ISS_DEFAULT: int | None = None
 
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)
@@ -1064,6 +1087,45 @@ class Settings(BaseSettings):
         elif not self.SECRET_KEY:
             # Desenvolvimento: gera chave efêmera para não travar o ambiente local.
             self.SECRET_KEY = secrets.token_urlsafe(64)
+
+        # ── NFS-e — regime tributário e ISSQN não podem ficar implícitos ──────
+        # NFS-01/NFS-02 (auditoria jul/2026): o adapter tinha "regTrib":
+        # {"opSimpNac": 1, "regEspTrib": 0} e "tribISSQN"/"tpRetISSQN" FIXOS,
+        # independente do regime tributário real do escritório (que o contador
+        # ainda não confirmou) e da condição do tomador/município de cada nota.
+        # Isto NÃO decide o valor certo — só impede o valor ERRADO de ficar
+        # ligado por omissão. Roda para QUALQUER ambiente (não só produção):
+        # NFSE_MODO=homologacao ainda monta e envia a DPS ao provedor.
+        if self.NFSE_ENABLED:
+            faltantes_nfse = [
+                nome for nome, valor in (
+                    ("NFSE_REGIME_TRIBUTARIO", self.NFSE_REGIME_TRIBUTARIO),
+                    ("NFSE_TRIB_ISSQN_DEFAULT", self.NFSE_TRIB_ISSQN_DEFAULT),
+                    ("NFSE_TIPO_RETENCAO_ISS_DEFAULT", self.NFSE_TIPO_RETENCAO_ISS_DEFAULT),
+                )
+                if valor is None or valor == ""
+            ]
+            if faltantes_nfse:
+                raise ValueError(
+                    "NFSE_ENABLED=true exige " + ", ".join(faltantes_nfse) + " no "
+                    ".env. CONFIRME com o contador antes de preencher — não são "
+                    "valores técnicos livres: NFSE_REGIME_TRIBUTARIO decide "
+                    "opSimpNac/regEspTrib da DPS (o regime tributário REAL do "
+                    "escritório); NFSE_TRIB_ISSQN_DEFAULT/"
+                    "NFSE_TIPO_RETENCAO_ISS_DEFAULT são o default de "
+                    "tributabilidade/retenção do ISS quando a nota não "
+                    "especifica — a regra final depende do TOMADOR e do "
+                    "MUNICÍPIO dele (LC 116/2003 art. 6º; LC 123/2006 art. 21 "
+                    "§4º) e pode ser sobreposta por nota em POST /nfse/emitir. "
+                    "Sem essa confirmação, mantenha NFSE_ENABLED=false."
+                )
+            if self.NFSE_REGIME_TRIBUTARIO not in NFSE_REGIMES_TRIBUTARIOS_VALIDOS:
+                raise ValueError(
+                    "NFSE_REGIME_TRIBUTARIO inválido "
+                    f"({self.NFSE_REGIME_TRIBUTARIO!r}). Use um de: "
+                    + ", ".join(sorted(NFSE_REGIMES_TRIBUTARIOS_VALIDOS)) + "."
+                )
+
         if self.APP_ENV != "production" and (not self.PII_ENCRYPTION_KEY or not self.PII_HASH_KEY):
             # Só em desenvolvimento: chave efêmera para não travar o ambiente local.
             from cryptography.fernet import Fernet

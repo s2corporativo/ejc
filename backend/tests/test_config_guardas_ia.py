@@ -147,3 +147,72 @@ def test_producao_soberania_on_mas_maritaca_off_nao_valida():
         MARITACA_MODEL="sabia-4",
     ))
     assert s.MARITACA_EXIGIR_SOBERANIA is True
+
+
+# ── Guarda: NFS-e não pode chutar regime tributário/ISSQN (NFS-01/NFS-02) ──────
+#
+# Achado da auditoria: "regTrib": {"opSimpNac": 1, "regEspTrib": 0} e
+# "tribISSQN"/"tpRetISSQN" eram FIXOS no adapter, independente do regime
+# tributário real do escritório (decisão do contador, ainda não tomada) e da
+# condição do tomador/município de cada nota. Esta correção NÃO decide o valor
+# certo — só impede o valor ERRADO de ficar ligado por omissão.
+
+def test_producao_nfse_enabled_sem_regime_tributario_falha():
+    """NFSE_ENABLED=true sem NFSE_REGIME_TRIBUTARIO → boot FALHA."""
+    with pytest.raises(ValueError, match="NFSE_REGIME_TRIBUTARIO"):
+        Settings(**_prod_kwargs(
+            NFSE_ENABLED=True,
+            NFSE_TRIB_ISSQN_DEFAULT=1,
+            NFSE_TIPO_RETENCAO_ISS_DEFAULT=1,
+        ))
+
+
+def test_producao_nfse_enabled_sem_defaults_issqn_falha():
+    """NFSE_ENABLED=true sem os defaults de ISSQN → boot FALHA (mesmo com o
+    regime tributário presente — as três configs são exigidas juntas)."""
+    with pytest.raises(ValueError, match="NFSE_TRIB_ISSQN_DEFAULT"):
+        Settings(**_prod_kwargs(
+            NFSE_ENABLED=True,
+            NFSE_REGIME_TRIBUTARIO="simples_nacional",
+        ))
+
+
+def test_desenvolvimento_nfse_enabled_sem_config_falha_tambem():
+    """O guarda de NFS-e NÃO é exclusivo de produção — liga em qualquer
+    ambiente, porque NFSE_MODO=homologacao ainda monta e envia a DPS ao
+    provedor (mesmo padrão de risco de dev ou prod)."""
+    with pytest.raises(ValueError, match="NFSE_ENABLED=true exige"):
+        Settings(_env_file=None, APP_ENV="development", NFSE_ENABLED=True)
+
+
+def test_producao_nfse_enabled_regime_invalido_falha():
+    """Valor fora do enum aceito também falha — nunca aceita string livre que
+    poderia mascarar um regime chutado."""
+    with pytest.raises(ValueError, match="NFSE_REGIME_TRIBUTARIO inválido"):
+        Settings(**_prod_kwargs(
+            NFSE_ENABLED=True,
+            NFSE_REGIME_TRIBUTARIO="isento_de_tudo",
+            NFSE_TRIB_ISSQN_DEFAULT=1,
+            NFSE_TIPO_RETENCAO_ISS_DEFAULT=1,
+        ))
+
+
+def test_producao_nfse_enabled_com_config_completa_ok():
+    """Com as três definições fiscais presentes e válidas, o boot passa."""
+    s = Settings(**_prod_kwargs(
+        NFSE_ENABLED=True,
+        NFSE_REGIME_TRIBUTARIO="simples_nacional",
+        NFSE_TRIB_ISSQN_DEFAULT=1,
+        NFSE_TIPO_RETENCAO_ISS_DEFAULT=1,
+    ))
+    assert s.NFSE_REGIME_TRIBUTARIO == "simples_nacional"
+    assert s.NFSE_TRIB_ISSQN_DEFAULT == 1
+    assert s.NFSE_TIPO_RETENCAO_ISS_DEFAULT == 1
+
+
+def test_nfse_desligado_nao_exige_config_fiscal():
+    """NFSE_ENABLED=false (default) não exige nada — módulo GATED, off por
+    padrão; o guarda só liga quando alguém decide ativar a emissão real."""
+    s = Settings(_env_file=None, APP_ENV="development")
+    assert s.NFSE_ENABLED is False
+    assert s.NFSE_REGIME_TRIBUTARIO == ""

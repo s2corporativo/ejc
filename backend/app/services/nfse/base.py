@@ -33,7 +33,14 @@ class NFSeTomador(BaseModel):
 
 class NFSePedidoEmissao(BaseModel):
     """Pedido de emissão de uma NFS-e. Campos fiscais omitidos usam o default
-    da configuração do escritório (alíquota ISS, item LC116, cTribNac)."""
+    da configuração do escritório (alíquota ISS, item LC116, cTribNac).
+
+    `trib_issqn`/`tipo_retencao_iss` (NFS-02, auditoria jul/2026): tributabilidade
+    e retenção do ISS não são propriedade fixa do emitente — dependem do TOMADOR
+    e do MUNICÍPIO dele (LC 116/2003 art. 6º; LC 123/2006 art. 21 §4º). O default
+    vem da configuração do escritório (NFSE_TRIB_ISSQN_DEFAULT/
+    NFSE_TIPO_RETENCAO_ISS_DEFAULT); sobreponha aqui quando o tomador exigir
+    retenção nesta nota específica."""
     referencia: str = Field(description="Chave de idempotência (evita nota duplicada)")
     tomador: NFSeTomador
     descricao: str
@@ -42,6 +49,14 @@ class NFSePedidoEmissao(BaseModel):
     item_lista_servico: str | None = None       # LC 116/03 (default: config)
     cod_tributacao_nacional: str | None = None   # cTribNac (default: config)
     aliquota_iss: Decimal | None = None          # % (default: config)
+    trib_issqn: int | None = Field(
+        default=None,
+        description="tribISSQN desta nota (1=tributável etc.). Default: NFSE_TRIB_ISSQN_DEFAULT.",
+    )
+    tipo_retencao_iss: int | None = Field(
+        default=None,
+        description="tpRetISSQN desta nota (retido/não retido). Default: NFSE_TIPO_RETENCAO_ISS_DEFAULT.",
+    )
 
 
 class NFSeResultado(BaseModel):

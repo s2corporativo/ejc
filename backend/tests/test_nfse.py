@@ -49,6 +49,12 @@ def nfse_ligado(monkeypatch):
     monkeypatch.setattr(s, "NFSE_EMITENTE_MUN_IBGE", "3106200")
     monkeypatch.setattr(s, "NFSE_ISS_ALIQUOTA", 5.0)
     monkeypatch.setattr(s, "NFSE_CTRIB_NAC", "010701")
+    # NFS-01/NFS-02: regime tributário e ISSQN padrão agora são config
+    # obrigatória (sem chute) — precisam estar presentes para o adapter
+    # montar a DPS nos testes que exercitam _montar_dps/emitir().
+    monkeypatch.setattr(s, "NFSE_REGIME_TRIBUTARIO", "simples_nacional")
+    monkeypatch.setattr(s, "NFSE_TRIB_ISSQN_DEFAULT", 1)
+    monkeypatch.setattr(s, "NFSE_TIPO_RETENCAO_ISS_DEFAULT", 1)
     nuvem_fiscal._token_cache.clear()
     return s
 
@@ -165,6 +171,67 @@ async def test_emitir_monta_dps_homologacao(nfse_ligado, monkeypatch):
     assert inf["serv"]["cServ"]["cItemListaServico"] == "17.14"
     assert inf["valores"]["vServPrest"]["vServ"] == 1500.0
     assert inf["valores"]["trib"]["tribMun"]["pAliq"] == 5.0
+
+
+# ── NFS-01/NFS-02 (auditoria jul/2026): regime tributário e ISSQN nunca fixos ──
+
+async def test_emitir_dps_regime_e_issqn_vem_da_config(nfse_ligado, monkeypatch):
+    """regTrib/tribISSQN/tpRetISSQN vêm de NFSE_REGIME_TRIBUTARIO/
+    NFSE_TRIB_ISSQN_DEFAULT/NFSE_TIPO_RETENCAO_ISS_DEFAULT — nunca "1"/"1"/"0"
+    fixos no adapter. Sem override no pedido, usa o default de configuração."""
+    capturado: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/token":
+            return httpx.Response(200, json={"access_token": TOKEN, "expires_in": 3600})
+        capturado.update(json.loads(request.content))
+        return httpx.Response(200, json={"id": "nf_d", "status": "processando"})
+
+    prov = _provider_com_handler(monkeypatch, handler)
+    await prov.emitir(_pedido())
+
+    inf = capturado["infDPS"]
+    assert inf["prest"]["regTrib"] == {"opSimpNac": 3, "regEspTrib": 0}  # simples_nacional (fixture)
+    trib = inf["valores"]["trib"]["tribMun"]
+    assert trib["tribISSQN"] == 1     # NFSE_TRIB_ISSQN_DEFAULT da fixture
+    assert trib["tpRetISSQN"] == 1    # NFSE_TIPO_RETENCAO_ISS_DEFAULT da fixture
+
+
+async def test_emitir_dps_pedido_sobrepoe_retencao_iss_por_nota(nfse_ligado, monkeypatch):
+    """Quem emite pode sobrepor tribISSQN/tpRetISSQN por nota (POST /nfse/emitir)
+    quando o TOMADOR desta nota exigir retenção — sem mudar a config global."""
+    capturado: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/token":
+            return httpx.Response(200, json={"access_token": TOKEN, "expires_in": 3600})
+        capturado.update(json.loads(request.content))
+        return httpx.Response(200, json={"id": "nf_r", "status": "processando"})
+
+    prov = _provider_com_handler(monkeypatch, handler)
+    await prov.emitir(_pedido(trib_issqn=1, tipo_retencao_iss=2))
+
+    trib = capturado["infDPS"]["valores"]["trib"]["tribMun"]
+    assert trib["tribISSQN"] == 1
+    assert trib["tpRetISSQN"] == 2    # sobreposto pelo pedido, não o default (1)
+
+
+async def test_emitir_sem_regime_tributario_falha_fechado(nfse_ligado, monkeypatch):
+    """Defesa em profundidade: se a config perder o regime tributário em
+    runtime (ex.: settings mutados sem reiniciar o processo), o adapter
+    RECUSA emitir em vez de voltar ao "1"/"1"/"0" chutado do código antigo."""
+    monkeypatch.setattr(get_settings(), "NFSE_REGIME_TRIBUTARIO", "")
+    prov = _provider_com_handler(monkeypatch, lambda r: httpx.Response(500))
+    with pytest.raises(NFSeConfigError, match="NFSE_REGIME_TRIBUTARIO"):
+        await prov.emitir(_pedido())
+
+
+async def test_emitir_sem_defaults_issqn_falha_fechado(nfse_ligado, monkeypatch):
+    """Mesma defesa em profundidade para os defaults de ISSQN (não só regime)."""
+    monkeypatch.setattr(get_settings(), "NFSE_TRIB_ISSQN_DEFAULT", None)
+    prov = _provider_com_handler(monkeypatch, lambda r: httpx.Response(500))
+    with pytest.raises(NFSeConfigError, match="NFSE_TRIB_ISSQN_DEFAULT"):
+        await prov.emitir(_pedido())
 
 
 async def test_emitir_producao_tpamb_1(nfse_ligado, monkeypatch):
