@@ -74,7 +74,7 @@ cai em véspera de feriado/fim de semana.
 
 ---
 
-### PRZ-02 (P0) — O recesso do art. 220 não é aplicado em nenhum caminho real de criação de prazo
+### PRZ-02 (P0) — O recesso do art. 220 não é aplicado nos dois caminhos que o advogado usa para criar prazo
 
 **Evidência:** a função tem o parâmetro e a documentação diz quando usá-lo —
 `backend/app/services/deadline_calculator.py`:
@@ -89,17 +89,21 @@ def prazo_dias_uteis(data_inicio, dias, tribunal=None, em_dobro=False, aplicar_r
 ```
 
 Quem passa `aplicar_recesso=True`:
-- `backend/app/services/motor_peca_service.py:379` e `:772` (caminho da IA / motor de peças)
+- `backend/app/services/motor_peca_service.py:379` e `:772` — e o `:772` é
+  **`confirmar_e_criar_prazo` (`:667`), que TAMBÉM persiste um `Deadline`** (`:840`), após
+  confirmação humana do termo inicial. É a implementação de referência correta, no mesmo repositório.
 - `backend/app/services/evento_processual.py:107`
 - `backend/app/routers/ramos.py:1614` (comparativo com/sem, deliberado)
 
 Quem **não** passa — isto é, usa o default `False`:
-- `backend/app/routers/deadlines.py:73` — `POST /deadlines/calcular` (a calculadora da tela)
-- `backend/app/routers/deadlines.py:200` — `POST /deadlines` (criação do prazo de verdade)
-- `backend/app/routers/intimacoes.py:396` e `_calcular_sugestao` (caminho DJEN)
+- `backend/app/routers/deadlines.py:200` — `POST /deadlines`, que **persiste** o prazo;
+- `backend/app/routers/intimacoes.py:396` (aceitar prazo da intimação), que também **persiste**;
+- `backend/app/routers/deadlines.py:73` — `POST /deadlines/calcular`, que **não persiste**, mas
+  exibe ao advogado uma projeção divergente da régua usada pelo motor de peças.
 
-**Impacto.** Os três caminhos por onde um prazo processual realmente nasce no sistema suspendem
-apenas 20/12–06/01, enquanto o art. 220 suspende até 20/01. Todo prazo processual cuja contagem
+**Impacto.** Dos três caminhos que persistem prazo, dois — a criação manual e o aceite de
+intimação, que são os que o advogado usa no dia a dia — suspendem apenas 20/12–06/01, enquanto o
+art. 220 suspende até 20/01. O terceiro (motor de peças) faz certo. Todo prazo processual cuja contagem
 atravessa 07/01–20/01 é calculado com dias úteis a mais do que a lei admite, e vence antes do
 devido. Pior que o erro: **a mesma pergunta tem duas respostas no mesmo sistema** — o motor de
 peças e o agente de IA respondem por uma régua, a tela de Prazos por outra. Um prazo conferido
@@ -188,28 +192,44 @@ meses de uma vez. Para um escritório que cobra em parcelas — o caso normal �
 
 ---
 
-### FIN-02 (P1) — Não existe motor de recorrência
+### FIN-02 (P1) — O gerador de recorrentes multiplica despesas a cada execução
 
 **Evidência:** `office_expenses` tem as colunas `recorrente` e `recorrencia`, gravadas em
 `backend/app/routers/despesas.py:178-200` e filtráveis em `GET /despesas?recorrente=true`
 (`despesas.py:73,90-92`).
 
-Os únicos arquivos que tocam `office_expenses` em todo o backend são
-`routers/despesas.py`, `routers/relatorio.py` e `routers/financeiro_consolidado.py` — nenhuma
-tarefa Celery, nenhum job de scheduler, nenhum service.
+No **backend** não há job: os únicos arquivos que tocam `office_expenses` no código de execução
+(`backend/app`) são `routers/despesas.py`, `routers/relatorio.py` e
+`routers/financeiro_consolidado.py` — nenhuma tarefa Celery, nenhum scheduler.
 
-**Impacto.** "Recorrente" é hoje um rótulo, não um comportamento. Aluguel, salários e assinaturas
-marcados como recorrentes **não geram a despesa do mês seguinte**. Como o consolidado filtra
-despesa por `competencia = :comp` (`financeiro_consolidado.py:96,105`), a virada do mês zera as
-despesas até alguém redigitar tudo à mão — e nesse intervalo o painel mostra **caixa e margem
-inflados**, porque as receitas do mês entram e os custos fixos não. É provável que isso explique
-parte do "está tudo zerado" observado na tela.
+**Mas a geração existe, no frontend.** `frontend/src/pages/DespesasRecorrentes.tsx:70-96`
+implementa `gerarProximoMes()`, que percorre as despesas com `recorrente=true` e faz um `POST
+/despesas` por linha para a competência escolhida — e **grava cada cópia também com
+`recorrente: true`**:
 
-**Correção sugerida.** Job mensal idempotente que materializa a despesa da competência seguinte a
-partir das marcadas como recorrentes (chave única por `(origem_id, competencia)` para não
-duplicar em reexecução), ou — mais simples e defensável — o consolidado projetar as recorrentes
-vigentes quando não houver lançamento na competência, deixando claro na resposta o que é
-lançamento e o que é projeção.
+```tsx
+for (const d of recorrentes) {
+  await api.post("/despesas", { ...d, recorrente: true, competencia: targetComp });
+}
+```
+
+**Impacto — crescimento exponencial, não ausência.** Como a cópia nasce marcada como recorrente,
+ela entra no conjunto que a **próxima** geração vai clonar: 10 despesas fixas viram 20 no mês
+seguinte, 40 no outro. E não há deduplicação por `(descricao, competencia)`: clicar duas vezes em
+"Gerar lançamentos" para a mesma competência duplica tudo de novo, sem aviso.
+
+O efeito no consolidado é o oposto do que se esperaria de um módulo "que não gera nada":
+**despesa inflada e caixa subestimado**, agravando a cada mês em que alguém usar o botão.
+
+**Correção sugerida.** Separar *template* de *lançamento*: a despesa recorrente é o modelo
+(`recorrente=true`) e as cópias geradas nascem com `recorrente=false` e `origem_id` apontando para
+o modelo, com índice único `(origem_id, competencia)` fechando a idempotência no banco. A geração
+deve migrar para o backend, onde a unicidade é aplicável. Teste de regressão obrigatório: gerar
+duas vezes a mesma competência e conferir que a segunda é no-op.
+
+**Nota de retificação:** a primeira redação deste achado afirmava que a recorrência era "só um
+rótulo, sem motor". Estava errado — o motor existe no frontend, e o defeito é o oposto do
+descrito. O erro veio de procurar apenas no backend. Apontado na revisão do PR #1060.
 
 ---
 
@@ -337,8 +357,8 @@ no caso.
 
 ## Lacunas desta auditoria
 
-Cinco frentes paralelas foram despachadas e todas foram interrompidas por limite de sessão da API
-antes de produzir resultado. Ficaram **não auditados**, e nada deve ser presumido sobre eles:
+As frentes paralelas despachadas foram todas interrompidas por limite de sessão da API antes de
+produzir resultado. Ficaram **não auditados** os seis grupos abaixo, e nada deve ser presumido sobre eles:
 
 - **NFS-e** (`backend/app/routers/nfse.py`, 842 linhas) — a pergunta central em aberto é se emite
   nota de verdade ou só grava registro local. O `main.py:416` a descreve como "GATED, homologação".

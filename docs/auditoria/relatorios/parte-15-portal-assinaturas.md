@@ -14,8 +14,14 @@ Assinaturas Eletrônicas (natureza da assinatura, trilha, fluxo).
 
 Este era um dos cinco "achados que não podem se perder" do `README.md` da auditoria, em aberto
 desde a Parte 9: existe métrica de "chance de êxito" em produção, e **precisava ser confirmado
-que não é exposta ao cliente no portal** — Código de Ética da OAB, art. 6º, parágrafo único, e
-art. 34, XXIX (é vedado ao advogado prometer resultado).
+que não é exposta ao cliente no portal**.
+
+**Fundamento correto, e uma retificação.** A vedação a prometer resultado está no **Provimento OAB
+nº 205/2021, art. 6º e parágrafo único** (publicidade da advocacia), em vigor: é vedada, em
+qualquer publicidade, a menção à promessa de resultados. A primeira redação repetia a citação do
+`README.md` da auditoria — "Código de Ética da OAB, art. 6º, parágrafo único, e art. 34, XXIX" —,
+que aponta para a Lei 8.906/1994 (Estatuto), cujo art. 34, XXIX trata de matéria diversa.
+Corrigido na revisão do PR #1060.
 
 **Confirmado: não é exposta.** Há duas barreiras independentes.
 
@@ -150,13 +156,36 @@ do Nginx —, com o motivo dito no comentário: "este IP é evidência probatór
 (MP 2.200-2)".
 
 **Enquadramento.** Não é assinatura qualificada ICP-Brasil, e o código não afirma que seja. É
-assinatura eletrônica com trilha de evidências, cuja validade entre as partes decorre do art. 10,
-§2º, da MP 2.200-2/2001 — modelo normal e defensável para documento entre escritório e cliente.
+assinatura eletrônica com trilha de evidências. O art. 10, §2º, da MP 2.200-2/2001 admite meios
+diversos da ICP-Brasil **desde que admitidos como válidos pelas partes ou aceitos pela pessoa a
+quem o documento for oposto** — a validade é condicionada, não automática — modelo normal e defensável para documento entre escritório e cliente.
 Para o que exige forma qualificada (peticionamento no PJe, por exemplo), **não serve**, e o
 módulo não se propõe a isso.
 
 **Recomendação de produto, não defeito:** a interface deveria dizer ao signatário qual é a
 natureza do que ele está assinando. Não auditei a tela do portal para verificar se diz.
+
+### ASS-00 (P0) — O signatário não consegue ler o documento que assina
+
+**Evidência:** `frontend/src/pages/portal/PortalAssinaturas.tsx` exibe título e hash abreviado e
+consome apenas `GET /signatures/` e `POST /signatures/{id}/assinar`. Não há link de download nem
+visualização — não existe `href`, `download` ou `pdf` na tela. O backend, na listagem
+(`signatures.py:121-189`), devolve metadados, não o conteúdo do arquivo.
+
+Ao mesmo tempo, a confirmação apresentada ao cliente registra que *"serão registrados:
+identificação, data/hora, IP e hash do arquivo"* e o fluxo pede o aceite.
+
+**Impacto.** O cliente declara aceite de um documento que o sistema não lhe mostra. Isso é anterior
+ao ASS-01: não se trata de provar que o arquivo não mudou, e sim de que **não há prova de que o
+signatário teve acesso ao conteúdo** — que é o pressuposto da manifestação de vontade. Para um
+aceite eletrônico cuja validade depende da admissão pelas partes (MP 2.200-2/2001, art. 10, §2º),
+é o ponto mais frágil da trilha.
+
+**Correção sugerida.** Servir o documento ao signatário no próprio fluxo (download ou visualizador
+inline, autorizado pelo mesmo gate de `client_id`), e registrar na trilha o momento do acesso ao
+conteúdo, não só o do aceite.
+
+**Achado incorporado da revisão do PR #1060** — não constava da primeira redação.
 
 ### ASS-01 (P1) — O hash não é reconferido no momento da assinatura
 

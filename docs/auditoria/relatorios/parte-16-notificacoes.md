@@ -51,16 +51,17 @@ E o model (`backend/app/models/notification.py:12-34`) não tem `expires_at`, `a
 qualquer chave de deduplicação. Os campos são `lida` e `lida_em` — e nada, em nenhum lugar do
 backend, apaga ou arquiva notificação lida ou antiga.
 
-**Impacto.** O sino é um acumulador monotônico. As 141 não lidas observadas não são um defeito de
-um gerador específico: são o resultado esperado de um sistema que só cria e nunca compacta. Existe
+**Impacto.** O sino é um acumulador monotônico. As 141 não lidas **relatadas pelo titular** (observação de tela, não verificada por esta auditoria)
+não são defeito de um gerador específico: são o resultado esperado de um sistema que só cria e nunca compacta. Existe
 `POST /notifications/ler-todas` (`notifications.py:139`), então dá para zerar o contador — mas isso
 é o usuário limpando à mão o que o sistema deveria administrar.
 
 **Ângulo LGPD, que é o mais sério aqui.** `Notification.mensagem` é `Text` livre e os geradores
 escrevem contexto de caso nele (o alerta de prazo grava o título do prazo, que costuma
 identificar a parte). Sem política de retenção, essas linhas ficam indefinidamente numa tabela que
-ninguém revisa — minimização e retenção são exigências do art. 6º, III e V, da LGPD, e hoje não há
-mecanismo que as atenda.
+ninguém revisa — a minimização é exigência do art. 6º, III, da LGPD (Lei 13.709/2018, vigente desde 18/09/2020) e a
+eliminação após o término do tratamento é exigência do art. 16 — nenhuma das duas tem mecanismo
+aqui. (O art. 6º, V trata de qualidade dos dados; a primeira redação o citava por engano.)
 
 **Correção sugerida.** Retenção com purga de lidas após N dias e arquivamento de não lidas
 antigas; e, para os alertas repetitivos, chave de deduplicação (`user_id`, `tipo`, entidade de
@@ -120,7 +121,9 @@ for dias, piso, flag in [(7, 4, "alerta_7d_enviado"),
 
 O comentário registra o bug que essa forma corrigiu: antes, faixas sem piso faziam um prazo criado
 perto do vencimento satisfazer as três de uma vez e disparar "e-mail/WhatsApp/push em triplicata".
-Com piso mais flag, cada prazo recebe no máximo três avisos ao longo da vida, um por marco.
+Com piso mais flag, cada prazo recebe no máximo três avisos de *aproximação*, um por marco — mais,
+eventualmente, um quarto aviso de *vencimento*, disparado por `_marcar_prazos_vencidos`, que usa
+guarda própria (a transição `pendente→vencido`) e não reaproveita as flags de faixa.
 
 `_marcar_prazos_vencidos` roda 07:10, antes, e transiciona `pendente→vencido` com guarda de
 idempotência no próprio `UPDATE` (`WHERE id=:id AND status='pendente'`), disparando um único

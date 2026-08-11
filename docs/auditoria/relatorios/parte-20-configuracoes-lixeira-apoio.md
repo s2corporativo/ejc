@@ -9,7 +9,7 @@ escritório (a Parte 17 tinha visto apenas o RBAC).
 
 ---
 
-## CFG-01 (P1) — Desligar um módulo esconde o menu; a API continua aberta
+## CFG-01 (P2) — O desligamento de módulo é aplicado no frontend; a API continua aberta
 
 **Evidência.** `SystemModuleSetting` é gravado por `PUT /system-modules/settings/{key}`
 (`routers/module_settings.py:79-137`), com `require_admin`, proteção de módulos estruturais
@@ -21,16 +21,21 @@ Os únicos arquivos do backend que tocam o model são o próprio router, seu sch
 configuração, não uma consulta ao ajuste. **Nenhum middleware, dependency ou router consulta
 `SystemModuleSetting` para bloquear coisa alguma.**
 
-Do outro lado, o frontend consome: `stores/moduleLifecycle.ts` carrega `GET
-/system-modules/settings` (confirmado em `frontend/src/stores/moduleLifecycle.test.ts:30`).
+Do outro lado, o frontend **aplica de verdade**: `stores/moduleLifecycle.ts` carrega `GET
+/system-modules/settings`, e `frontend/src/components/ModuleLifecycleGate.tsx:49-59` envolve a área
+staff e **redireciona** (`Navigate`) quando `enabled=false` ou `status="disabled"` — então link
+salvo e navegação direta também são barrados, não só o item de menu.
 
-**Impacto.** Desligar um módulo é um ato de interface. Os endpoints daquele módulo continuam
-respondendo normalmente a qualquer usuário com o papel adequado — por chamada direta à API, por
-link salvo, ou por qualquer cliente que não seja o menu. O administrador que desliga um módulo
-tem motivo para acreditar que o desligou.
+**Impacto.** O que resta aberto é a API: um cliente HTTP autenticado com o papel adequado alcança
+os endpoints do módulo desligado. Segundo `docs/auditorias/module_lifecycle_20260710.md:45-51`,
+esse é o desenho declarado — gate de rota no frontend, RBAC autoritativo no backend —, o que
+rebaixa o achado de defeito para **lacuna de defesa em profundidade**.
 
-O risco não é hipotético: a lista de módulos é onde se desliga aquilo que ainda não está pronto
-para uso. Um módulo desligado por estar incompleto continua gravando no banco.
+Ainda assim vale registrar: a lista de módulos é onde se desliga o que não está pronto, e nesse
+caso "não pronto" costuma significar que gravar é indesejável, não só navegar.
+
+**Nota de retificação:** a primeira redação classificava isto como P1 e afirmava que link salvo
+passava. Estava errado — o `ModuleLifecycleGate` cobre esse caso. Apontado na revisão do PR #1060.
 
 **Correção sugerida.** Um dependency global que consulte os ajustes (com cache curto) e devolva
 404/503 nos prefixos desligados, respeitando `PROTECTED_MODULE_KEYS`. O gate `menu_visible` pode
@@ -38,24 +43,40 @@ seguir só visual, mas `enabled=false` precisa fechar a porta.
 
 ---
 
-## LIX-01 (P1) — Não existe purga definitiva; a lixeira é permanente
+## LIX-01 (P1) — A lixeira não purga, e o expurgo que existe não cobre as entidades dela
 
 **Evidência.** `routers/trash.py` tem exatamente dois endpoints: `GET /trash/` (`:39`) e
 `POST /trash/{entidade}/{id}/restaurar` (`:62`). Não há rota de exclusão definitiva em nenhum
 lugar do arquivo — que tem 79 linhas no total.
 
-**Impacto — LGPD.** As nove entidades da lixeira incluem `Client`, `Case`, `Document` e `Fee`
-(`trash.py:24-33`): nome, CPF/CNPJ, dados de caso e valores. Excluir um cliente marca
-`deleted_at` e nada mais. Não existe caminho no sistema para eliminar de fato o dado.
+**O que existe** (e a primeira redação deste achado ignorou):
 
-Isso colide com o art. 18, VI da LGPD (direito do titular à eliminação) e com o art. 16 (o dado
-deve ser eliminado após o término do tratamento). Um pedido de exclusão feito por um cliente hoje
-**não pode ser atendido pelo sistema** — só por acesso direto ao banco, que a governança do
-projeto proíbe (regra 9).
+- **`POST /clients/{client_id}/esquecimento`** (`backend/app/routers/clients.py:914`) com
+  `services/client_anonimizacao.py` — anonimização irreversível do titular, com verificação prévia
+  de bloqueios (`/esquecimento/bloqueios`, `clients.py:892`) e trilha. É o atendimento ao art. 18,
+  VI da LGPD, e **funciona** para o cliente.
+- **`_purgar_dados_lgpd`** (`backend/app/services/scheduler.py:1165`) — retenção por
+  `RETENCAO_CLIENTE_ANOS` (default 5), mas aplica **soft delete** (`UPDATE clients SET deleted_at
+  = NOW()`), não eliminação.
+- **`entrada_expurgo_service.expurgar_rascunhos_entrada_unica`** — `db.delete()` real, porém
+  restrito a rascunhos órfãos da Entrada Única.
+
+**O que falta, e é o achado.** Nenhum desses caminhos toca as **outras oito entidades da lixeira**
+(`trash.py:24-33`: `Case`, `Document`, `LegalDoc`, `Fee`, `Procuracao`, `EnvironmentalCase`,
+`Task`). Um caso, um documento ou um honorário enviado à lixeira permanece indefinidamente, e a
+retenção de cliente só troca um estado por outro dentro da mesma tabela. O art. 16 da LGPD (Lei
+13.709/2018, vigente desde 18/09/2020) exige eliminação após o término do tratamento — e para
+essas entidades não há política declarada nem mecanismo.
 
 **Ressalva honesta:** guarda documental tem prazos próprios, e apagar dado de caso encerrado não é
-decisão de software. O achado não é "falta um botão de apagar" — é que não existe **nenhum**
-mecanismo, nem para o que já passou de qualquer prazo, nem para atender pedido de titular.
+decisão de software. O achado é a ausência de política e de caminho para as entidades restantes,
+não a ausência de um botão.
+
+**Nota de retificação:** a primeira redação afirmava que "não existe caminho no sistema para
+eliminar de fato o dado" e que um pedido de titular "não pode ser atendido". Estava errado — o
+fluxo de esquecimento existe e atende. O erro veio de concluir pela ausência olhando só
+`trash.py`, contrariando a regra do próprio `CLAUDE.md` de confirmar antes de afirmar que algo não
+existe. Apontado na revisão do PR #1060.
 
 **Correção sugerida.** Purga definitiva restrita a `superadmin`, com motivo obrigatório, trilha e
 confirmação — e uma política de retenção declarada que diga o que pode ser purgado e quando.

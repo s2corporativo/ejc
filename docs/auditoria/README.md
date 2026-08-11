@@ -10,8 +10,8 @@ são reproduzíveis pela API, mas as causas no código precisam ser confirmadas 
 
 **Atualização de agosto/2026:** as Partes 14 a 20 foram feitas **com** acesso ao código-fonte e
 localizam causas, não só sintomas. A consolidação está em
-`FECHAMENTO-auditoria-codigo-2026-08.md`. Dois dos cinco achados destacados abaixo já foram
-resolvidos por ela.
+`FECHAMENTO-auditoria-codigo-2026-08.md`. Um dos cinco achados destacados abaixo já foi resolvido por ela (a métrica de "chance de
+êxito"); a correção do prefixo `/v1/` consta em "Retificações", não naquela lista.
 
 ---
 

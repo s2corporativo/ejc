@@ -5,8 +5,10 @@
 chamada foi feita a produção.** Todo achado tem evidência `arquivo:linha`, conferida por leitura
 direta do arquivo — não pelo graphify.
 
-**Diferença em relação às Partes 1 a 13.** Aquelas foram feitas por fora: HTTPS contra o ambiente
-de produção, sem acesso ao repositório. Podiam reproduzir sintomas, não localizar causas. Esta
+**Diferença em relação às Partes 1 a 12.** Aquelas foram feitas por fora: HTTPS contra o ambiente
+de produção, sem acesso ao repositório. Podiam reproduzir sintomas, não localizar causas. (A Parte
+13 é exceção: rodou a stack completa em Docker, com o código-fonte, e foi a primeira confirmação em
+runtime.) Esta
 auditoria lê o código e, em três casos, fecha achados que estavam abertos desde julho.
 
 ---
@@ -14,8 +16,7 @@ auditoria lê o código e, em três casos, fecha achados que estavam abertos des
 ## O que esta auditoria resolveu de pendências antigas
 
 **A "chance de êxito" não vaza para o cliente.** Era um dos cinco achados destacados no
-`README.md`, aberto desde a Parte 9, com risco ético relevante (Código de Ética da OAB, art. 6º,
-parágrafo único, e art. 34, XXIX). Há duas barreiras independentes: o portal devolve allowlist de
+`README.md`, aberto desde a Parte 9, com risco ético relevante (Provimento OAB nº 205/2021, art. 6º). Há duas barreiras independentes: o portal devolve allowlist de
 seis campos factuais em vez do objeto do caso, e a tela que exibe a métrica é `STAFF_ROUTES` com
 `roles: ROLES.compliance`, enquanto o `AuthMiddleware` restringe `cliente_externo` a seis prefixos
 de path que não incluem `/api/triagem/`. *(Parte 15)*

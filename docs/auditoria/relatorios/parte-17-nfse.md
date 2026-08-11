@@ -40,6 +40,12 @@ contador.** É o núcleo desta parte.
 },
 ```
 
+**Ressalva de verificação:** a leitura de que `opSimpNac: 1` significa optante do Simples Nacional
+vem do comentário no próprio código; `docs/NFSE_VIABILIDADE.md:96` registra que os valores desses
+enums ainda carecem de confirmação contra o schema oficial da DPS. O achado permanece porque o
+valor está **fixo** independentemente do significado — mas a semântica exata precisa ser conferida
+na fonte oficial antes da correção.
+
 **Impacto.** O regime tributário do emitente está fixo no código, não em configuração. Se o
 escritório não for optante do Simples Nacional, **toda nota emitida declara regime errado** — e o
 próprio comentário registra a consequência: muda a base de cálculo da DPS. Documento fiscal com
@@ -211,5 +217,5 @@ cálculo de pró-labore, e a trilha de auditoria de alteração de quotas.
 
 **Recomendação de sequência para o titular:** NFS-01 e NFS-02 são decisões de contador, não de
 programador. Valem uma conversa antes de qualquer linha de código — e antes de `NFSE_ENABLED=true`
-em produção. O módulo está tecnicamente pronto para emitir; o que falta é confirmar **o que** ele
-vai declarar.
+em produção. O fluxo está implementado para **homologação**; não está pronto para produção enquanto NFS-01 e
+NFS-02 seguirem abertos. O que falta não é código — é confirmar **o que** ele vai declarar.
