@@ -135,7 +135,10 @@ async def create_pending_item(
     current_user: User = Depends(get_current_user),
 ):
     await _exigir_cliente_visivel(db, current_user, client_id)
-    if body.case_id:
+    # `is not None` (não truthy) — "" também precisa validar: client_pending_
+    # items.case_id não tem FK, então "" passava direto pro INSERT como
+    # referência inválida (nem NULL nem caso real). Achado do CodeRabbit.
+    if body.case_id is not None:
         await _validar_case_do_cliente(db, client_id, body.case_id)
     result = await db.execute(
         text("""INSERT INTO client_pending_items
@@ -154,9 +157,12 @@ async def create_pending_item(
         }
     )
     row = dict(result.mappings().first())
+    # Sem PII/conteúdo no audit log (imutável — migration 131 WORM): título é
+    # texto livre do usuário e pode conter dado sensível do caso/cliente.
+    # Achado do Codex no PR #1063.
     await criar_audit_log(db, current_user.id, current_user.role.value,
                           "CREATE", "client_pending_items", row["id"],
-                          detalhes=f"cliente {client_id}: {body.title}")
+                          detalhes=f"cliente {client_id}, type={body.type}")
     await db.commit()
     return row
 
@@ -205,10 +211,16 @@ async def delete_pending_item(
     current_user: User = Depends(get_current_user),
 ):
     await _exigir_cliente_visivel(db, current_user, client_id)
-    await db.execute(
-        text("UPDATE client_pending_items SET deleted_at=NOW() WHERE id=:id AND client_id=:cid"),
+    # Só grava o audit log (imutável) se uma linha foi de fato afetada — sem
+    # isto, id inexistente/já excluído/de outro cliente gravava um "DELETE"
+    # no WORM sem nenhuma exclusão real ter ocorrido (achado do Codex).
+    result = await db.execute(
+        text("UPDATE client_pending_items SET deleted_at=NOW() "
+             "WHERE id=:id AND client_id=:cid AND deleted_at IS NULL"),
         {"id": item_id, "cid": client_id}
     )
+    if result.rowcount == 0:
+        raise HTTPException(404, "Item not found")
     await criar_audit_log(db, current_user.id, current_user.role.value,
                           "DELETE", "client_pending_items", item_id,
                           detalhes=f"cliente {client_id}")

@@ -94,17 +94,18 @@ async def cliente_id_visivel(db: AsyncSession, user: User, client_id: str) -> bo
     (única fonte da regra de vínculo por caso) — auditoria de agosto/2026
     (achado 10) encontrou essa mesma checagem reimplementada em SQL cru em
     3 routers, já divergentes entre si (secretaria com visão total num lugar,
-    sem no outro)."""
-    if visao_total_clientes(user):
-        return True
-    row = (
-        await db.execute(
-            select(Client.id).where(
-                Client.id == client_id,
-                Client.id.in_(ids_clientes_visiveis(user)),
-            )
-        )
-    ).first()
+    sem no outro).
+
+    Visão total (gestão/secretaria) dispensa a checagem de VÍNCULO, mas não a
+    de EXISTÊNCIA: sem confirmar que o cliente existe e não está soft-deleted,
+    um chamador com `client_id` bruto (ex. pending_items.py, cujo
+    `client_pending_items.client_id` não tem FK) conseguiria criar/listar
+    registros para um UUID arbitrário sob visão total — achado do Codex no
+    PR #1063."""
+    condicoes = [Client.id == client_id, Client.deleted_at.is_(None)]
+    if not visao_total_clientes(user):
+        condicoes.append(Client.id.in_(ids_clientes_visiveis(user)))
+    row = (await db.execute(select(Client.id).where(*condicoes))).first()
     return row is not None
 
 

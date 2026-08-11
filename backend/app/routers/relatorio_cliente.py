@@ -15,11 +15,17 @@ from app.core.security import get_current_user
 from app.models.client import Client
 from app.models.user import User
 
-_FIN_ADV = {"superadmin", "admin", "socio", "financeiro", "advogado"}
+# secretaria incluída pelo achado 8 da auditoria: tem visão total do CRM
+# (client_ownership.visao_total_clientes) mas caía neste gate de topo e
+# recebia 403 antes de chegar ao gate de titularidade — a correção de
+# titularidade sozinha (abaixo) não bastava, o teto do endpoint também
+# precisava mudar (achado do Codex: o teste anterior chamava o handler direto
+# e não pegou que _FIN_ADV ainda barrava secretaria na rota real).
+_FIN_ADV = {"superadmin", "admin", "socio", "financeiro", "advogado", "secretaria"}
 
 
 def _req_fin_adv(cu: User = Depends(get_current_user)) -> User:
-    # Relatório financeiro + PII (CPF/CNPJ) do cliente: só gestão/financeiro/advogado.
+    # Relatório financeiro + PII (CPF/CNPJ) do cliente: gestão/secretaria/financeiro/advogado.
     if cu.role.value not in _FIN_ADV:
         raise HTTPException(status_code=403, detail="Acesso restrito a gestão/financeiro/advogado")
     return cu

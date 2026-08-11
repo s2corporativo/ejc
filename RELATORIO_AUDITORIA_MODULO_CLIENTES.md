@@ -1,5 +1,15 @@
 # Auditoria do módulo Clientes — agosto/2026
 
+> **Nota de status (atualizada)**: este arquivo é a **linha de base pré-remediação**
+> — o diagnóstico como encontrado, comitado sem alterar código. Os 12 achados abaixo
+> foram implementados em commits **posteriores** deste mesmo PR (`fix(clientes):
+> implementa as 12 correções...` e os commits de correção subsequentes), com teste
+> de regressão por achado. O corpo do PR tem o resumo do que foi de fato corrigido,
+> as decisões tomadas e os achados adicionais levantados pela revisão
+> (security-auditor, code-reviewer, CodeRabbit, Codex). Este documento permanece
+> como registro do estado encontrado — não o edito achado a achado para não misturar
+> "o que a auditoria viu" com "o que foi corrigido depois".
+
 **Escopo**: CRM de clientes ponta a ponta — routers `clients.py`, `dossie_cliente.py`,
 `relatorio_cliente.py`, `pending_items.py`, `sociedades_cliente.py`; services
 `conflito_service.py`, `client_anonimizacao.py`, `pii_crypto` (uso); model/schema
@@ -9,8 +19,9 @@ testes correlatos em `backend/tests/`.
 
 **Método**: leitura integral dos arquivos citados, cruzamento frontend↔backend↔schema
 de banco (migrations) e verificação de cada achado no código — nenhum item abaixo é
-inferência sem evidência. Auditoria **somente leitura**: nenhuma correção aplicada
-neste PR; cada achado indica a correção recomendada.
+inferência sem evidência. Auditoria **somente leitura** no momento em que foi
+escrita: nenhuma correção aplicada neste commit; cada achado indica a correção
+recomendada (posteriormente aplicada — ver nota acima).
 
 ---
 
@@ -19,7 +30,9 @@ neste PR; cada achado indica a correção recomendada.
 O núcleo do CRUD de clientes está bem construído: o cutover de PII (migration 112)
 gravou CPF/CNPJ apenas cifrado (Fernet) + índice cego (HMAC), a segregação de
 carteira (sigilo interno LGPD/EOAB) cobre listagem, detalhe, escrita e criação de
-acesso ao portal, e há trilha de auditoria em toda escrita. Porém a auditoria
+acesso ao portal, e há trilha de auditoria em toda escrita do CRUD principal de
+clientes (`clients.py`) — **exceção**: `pending-items` não gerava audit log até
+esta auditoria (achado 9), corrigido nos commits posteriores. Porém a auditoria
 encontrou **1 achado crítico** (dois endpoints centrais quebrados por referência a
 colunas dropadas — a ficha do cliente não abre), **2 achados altos** (rebaixamento
 silencioso do alerta ético de conflito e vazamento de CPF/CNPJ em claro sem rate

@@ -340,8 +340,13 @@ async def test_listar_status_invalido_retorna_422():
 # ── Achado 8: secretaria e financeiro veem relatório de qualquer cliente ───
 
 async def test_relatorio_financeiro_secretaria_e_financeiro_veem_qualquer_cliente():
+    """Cobre as DUAS camadas de autorização do endpoint: a dependency de topo
+    (_req_fin_adv, restringe por papel) e o gate de titularidade por registro
+    (_cliente_visivel). Chamar só o handler (sem passar por _req_fin_adv)
+    escondia que o teto do router ainda barrava secretaria mesmo depois do
+    gate de titularidade já liberar — achado do Codex no PR #1063."""
     from app.core.database import AsyncSessionLocal
-    from app.routers.relatorio_cliente import relatorio_financeiro_cliente
+    from app.routers.relatorio_cliente import _req_fin_adv, relatorio_financeiro_cliente
 
     tok = f"Fin{uuid4().hex[:6]}"
     async with AsyncSessionLocal() as db:
@@ -353,6 +358,13 @@ async def test_relatorio_financeiro_secretaria_e_financeiro_veem_qualquer_client
         try:
             u_secretaria = await _carregar_user(db, secretaria)
             u_financeiro = await _carregar_user(db, financeiro)
+
+            # Camada 1: dependency de topo não pode rejeitar quem o achado 8
+            # pretende liberar.
+            assert _req_fin_adv(u_secretaria) is u_secretaria
+            assert _req_fin_adv(u_financeiro) is u_financeiro
+
+            # Camada 2: gate de titularidade por registro.
             assert (await relatorio_financeiro_cliente(cli, db, u_secretaria))["cliente"]["id"] == cli
             assert (await relatorio_financeiro_cliente(cli, db, u_financeiro))["cliente"]["id"] == cli
         finally:

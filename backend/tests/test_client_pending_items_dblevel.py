@@ -121,6 +121,28 @@ async def test_criar_pending_item_case_id_precisa_pertencer_ao_cliente():
                           user_ids=[socio])
 
 
+async def test_criar_pending_item_case_id_vazio_tambem_valida():
+    """Achado do CodeRabbit: `if body.case_id:` (truthy) deixava "" passar
+    direto pro INSERT sem validar — client_pending_items.case_id não tem FK,
+    então gravava referência inválida em vez de rejeitar com 422."""
+    from app.core.database import AsyncSessionLocal
+    from app.routers.pending_items import PendingItemCreate, create_pending_item
+
+    tok = f"PiVazio{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db)
+        cli = await _criar_cliente(db, f"Cliente PiVazio {tok}")
+        await db.commit()
+        try:
+            u_socio = await _carregar_user(db, socio)
+            with pytest.raises(HTTPException) as exc:
+                await create_pending_item(
+                    cli, PendingItemCreate(title="X", case_id=""), db, u_socio)
+            assert exc.value.status_code == 422
+        finally:
+            await _limpar(db, client_ids=[cli], user_ids=[socio])
+
+
 async def test_atualizar_pending_item_rejeita_null_explicito_em_campo_not_null():
     """title/type/status são NOT NULL na tabela; {"status": null} não pode
     passar da validação Pydantic e virar UPDATE ... SET status=NULL (500 sem
@@ -206,5 +228,66 @@ async def test_criar_e_atualizar_pending_item_gera_audit_log():
                 "SELECT acao FROM audit_logs WHERE registro_id = :rid ORDER BY created_at"
             ), {"rid": criado["id"]})).scalars().all()
             assert "CREATE" in logs and "UPDATE" in logs
+        finally:
+            await _limpar(db, client_ids=[cli], user_ids=[socio])
+
+
+async def test_pending_items_rejeita_client_id_inexistente_mesmo_sob_visao_total():
+    """Achado do Codex: visão total (gestão/secretaria) dispensava a checagem
+    de EXISTÊNCIA do cliente, não só a de vínculo — client_pending_items.
+    client_id não tem FK, então um client_id arbitrário criava registro órfão
+    e listagens de cliente inexistente devolviam 200 em vez de 404."""
+    from app.core.database import AsyncSessionLocal
+    from app.routers.pending_items import PendingItemCreate, create_pending_item, list_pending_items
+
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db)
+        await db.commit()
+        try:
+            u_socio = await _carregar_user(db, socio)
+            client_id_inexistente = str(uuid4())
+
+            with pytest.raises(HTTPException) as exc:
+                await list_pending_items(client_id_inexistente, None, db, u_socio)
+            assert exc.value.status_code == 404
+
+            with pytest.raises(HTTPException) as exc:
+                await create_pending_item(
+                    client_id_inexistente, PendingItemCreate(title="X"), db, u_socio)
+            assert exc.value.status_code == 404
+
+            # Nenhum registro órfão deve ter sido criado.
+            orfaos = (await db.execute(text(
+                "SELECT COUNT(*) FROM client_pending_items WHERE client_id = :cid"
+            ), {"cid": client_id_inexistente})).scalar()
+            assert orfaos == 0
+        finally:
+            await _limpar(db, user_ids=[socio])
+
+
+async def test_delete_pending_item_inexistente_nao_grava_audit_log():
+    """Achado do Codex: o UPDATE (soft delete) sem WHERE afetar linha alguma
+    ainda gravava um audit log "DELETE" e devolvia {"ok": True} — o log
+    (imutável, WORM) passava a afirmar uma exclusão que nunca aconteceu."""
+    from app.core.database import AsyncSessionLocal
+    from app.routers.pending_items import delete_pending_item
+
+    tok = f"PiDel{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db)
+        cli = await _criar_cliente(db, f"Cliente PiDel {tok}")
+        await db.commit()
+        try:
+            u_socio = await _carregar_user(db, socio)
+            item_id_inexistente = str(uuid4())
+
+            with pytest.raises(HTTPException) as exc:
+                await delete_pending_item(cli, item_id_inexistente, db, u_socio)
+            assert exc.value.status_code == 404
+
+            logs = (await db.execute(text(
+                "SELECT COUNT(*) FROM audit_logs WHERE registro_id = :rid"
+            ), {"rid": item_id_inexistente})).scalar()
+            assert logs == 0
         finally:
             await _limpar(db, client_ids=[cli], user_ids=[socio])
