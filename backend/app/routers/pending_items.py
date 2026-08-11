@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.client_ownership import visao_total_clientes
+from app.core.client_ownership import cliente_id_visivel
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
@@ -46,48 +46,55 @@ class PendingItemCreate(BaseModel):
 
 
 class PendingItemUpdate(BaseModel):
+    # case_id aceita null explícito (desvincular do caso) — só quando NÃO-null
+    # precisa apontar para caso do mesmo cliente (checado no handler, mesma
+    # validação de PendingItemCreate).
+    case_id: Optional[str] = None
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     description: Optional[str] = None
     type: Optional[str] = None
     status: Optional[str] = None
     due_date: Optional[date] = None
 
+    # title/type/status são NOT NULL na tabela (client_pending_items). Como
+    # são Optional aqui só para permitir OMITIR o campo num PATCH parcial,
+    # `null` explícito precisa ser rejeitado — sem isto, {"status": null}
+    # passava a validação e virava UPDATE ... SET status=NULL, estourando a
+    # constraint em 500 sem tratamento (achado do code-reviewer).
+    @field_validator("title")
+    @classmethod
+    def _valida_title(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            raise ValueError("title não pode ser nulo")
+        return v
+
     @field_validator("type")
     @classmethod
     def _valida_type(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in _TIPOS_VALIDOS:
+        if v is None:
+            raise ValueError("type não pode ser nulo")
+        if v not in _TIPOS_VALIDOS:
             raise ValueError(f"type inválido; use um de: {sorted(_TIPOS_VALIDOS)}")
         return v
 
     @field_validator("status")
     @classmethod
     def _valida_status(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in _STATUS_VALIDOS:
+        if v is None:
+            raise ValueError("status não pode ser nulo")
+        if v not in _STATUS_VALIDOS:
             raise ValueError(f"status inválido; use um de: {sorted(_STATUS_VALIDOS)}")
         return v
 
 
 async def _exigir_cliente_visivel(db: AsyncSession, cu: User, client_id: str) -> None:
-    """Gate de visibilidade do cliente (ownership): gestão e secretaria (visão
-    total do CRM, client_ownership canônico — antes esta cópia local só dava
-    passe livre à gestão, deixando a secretaria sem ver pendências do próprio
-    funil que opera; achado da auditoria) veem tudo; demais só clientes de que
-    são responsáveis OU em cujos casos atuam. 404 (não 403) para não confirmar
-    a existência de cliente alheio. Sem isso, qualquer usuário listava/alterava
-    pendências de qualquer cliente (IDOR)."""
-    if visao_total_clientes(cu):
-        return
-    row = (await db.execute(text("""
-        SELECT 1 FROM clients cl
-        WHERE cl.id = :cid AND cl.deleted_at IS NULL
-          AND (cl.responsavel_id = :uid
-               OR EXISTS (SELECT 1 FROM cases c
-                          WHERE c.client_id = cl.id AND c.deleted_at IS NULL
-                            AND (c.advogado_responsavel_id = :uid
-                                 OR c.advogado_auxiliar_id = :uid)))
-        LIMIT 1
-    """), {"cid": client_id, "uid": cu.id})).first()
-    if row is None:
+    """Gate de titularidade (client_ownership canônico — antes esta era uma
+    cópia local em SQL cru que só dava passe livre à gestão, deixando a
+    secretaria sem ver pendências do próprio funil que opera; achado da
+    auditoria). 404 (não 403) para não confirmar a existência de cliente
+    alheio. Sem isso, qualquer usuário listava/alterava pendências de
+    qualquer cliente (IDOR)."""
+    if not await cliente_id_visivel(db, cu, client_id):
         raise HTTPException(404, "Cliente não encontrado")
 
 
@@ -170,6 +177,8 @@ async def update_pending_item(
     mudancas = body.model_dump(exclude_unset=True)
     if not mudancas:
         return {"ok": True}
+    if "case_id" in mudancas and mudancas["case_id"] is not None:
+        await _validar_case_do_cliente(db, client_id, mudancas["case_id"])
 
     sets = []
     params = {"id": item_id}

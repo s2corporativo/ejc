@@ -86,6 +86,28 @@ def visao_total_clientes(user: User) -> bool:
     return is_gestao(user) or role_str(user) in _CLIENTES_VISAO_TOTAL
 
 
+async def cliente_id_visivel(db: AsyncSession, user: User, client_id: str) -> bool:
+    """Mesmo gate de ``pode_ver_cliente``, para quando só se tem o ``client_id``
+    (sem o ``Client`` carregado) — caso de handlers que agregam dados em SQL
+    cru (dossiê, relatório financeiro, pending-items) e não querem uma segunda
+    consulta ORM completa só para o gate. Reusa ``ids_clientes_visiveis``
+    (única fonte da regra de vínculo por caso) — auditoria de agosto/2026
+    (achado 10) encontrou essa mesma checagem reimplementada em SQL cru em
+    3 routers, já divergentes entre si (secretaria com visão total num lugar,
+    sem no outro)."""
+    if visao_total_clientes(user):
+        return True
+    row = (
+        await db.execute(
+            select(Client.id).where(
+                Client.id == client_id,
+                Client.id.in_(ids_clientes_visiveis(user)),
+            )
+        )
+    ).first()
+    return row is not None
+
+
 def ids_clientes_visiveis(user: User):
     """Subquery com os IDs de clientes da carteira do usuário — espelho SQL de
     ``pode_ver_cliente`` para filtrar LISTAGENS em uma única query (mesmo padrão

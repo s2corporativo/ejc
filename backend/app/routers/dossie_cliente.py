@@ -13,7 +13,7 @@ segue 404/403 como antes.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.client_ownership import visao_total_clientes
+from app.core.client_ownership import cliente_id_visivel
 from app.core.database import get_db
 from app.core.degradacao import ColetorDeSecoes, executar_secao
 from app.core.security import get_current_user
@@ -67,27 +67,6 @@ async def _carregar_documentos(db: AsyncSession, client_id: str) -> dict:
     return {"recentes": [dict(d) for d in rows], "total": int(total)}
 
 
-async def _cliente_visivel_dossie(db: AsyncSession, cu: User, client_id: str) -> bool:
-    """Gate de titularidade (mesmo racional de relatorio_cliente/pending_items
-    e do client_ownership canônico): gestão e secretaria (visao_total_clientes)
-    veem tudo; demais só quando responsável pelo cliente OU atuam em ao menos
-    um caso não excluído dele. Consulta em SQL cru (não ORM) para casar com o
-    restante do arquivo, que agrega tudo via `text()`."""
-    if visao_total_clientes(cu):
-        return True
-    row = (await db.execute(text("""
-        SELECT 1 FROM clients cl
-        WHERE cl.id = :cid AND cl.deleted_at IS NULL
-          AND (cl.responsavel_id = :uid
-               OR EXISTS (SELECT 1 FROM cases c
-                          WHERE c.client_id = cl.id AND c.deleted_at IS NULL
-                            AND (c.advogado_responsavel_id = :uid
-                                 OR c.advogado_auxiliar_id = :uid)))
-        LIMIT 1
-    """), {"cid": client_id, "uid": cu.id})).first()
-    return row is not None
-
-
 async def _carregar_honorarios(db: AsyncSession, client_id: str) -> dict:
     hon = (await db.execute(text("""
         SELECT COALESCE(SUM(valor),0) AS total,
@@ -130,15 +109,15 @@ async def dossie_cliente(
     # (achado da auditoria). ia-analise já agrega o mesmo histórico (casos +
     # financeiro) sob este exato gate — o dossiê passa a ser consistente com
     # ele, não mais restritivo.
-    if not await _cliente_visivel_dossie(db, cu, client_id):
+    if not await cliente_id_visivel(db, cu, client_id):
         raise HTTPException(404, "Cliente não encontrado")
-    from app.services.pii_crypto import decrypt as _pii_decrypt
-    try:
-        doc = _pii_decrypt(cli_row["cpf_enc"]) or _pii_decrypt(cli_row["cnpj_enc"])
-    except ValueError:
-        from app.models.client import PII_INDECIFRAVEL
-        doc = PII_INDECIFRAVEL
-    cli = {**dict(cli_row), "cpf_cnpj": doc}
+    # Reusa Client.documento_plain (decifra resiliente por-linha, mesmo
+    # fallback PII_INDECIFRAVEL) em vez de duplicar a lógica de decrypt aqui —
+    # instância transiente (não persistida, não consulta o banco) só para
+    # aproveitar a property já testada do model.
+    from app.models.client import Client as _Client
+    cli_transiente = _Client(cpf_enc=cli_row["cpf_enc"], cnpj_enc=cli_row["cnpj_enc"])
+    cli = {**dict(cli_row), "cpf_cnpj": cli_transiente.documento_plain}
     del cli["cpf_enc"], cli["cnpj_enc"]
 
     secoes = ColetorDeSecoes("dossie_cliente", db)

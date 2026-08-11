@@ -121,6 +121,69 @@ async def test_criar_pending_item_case_id_precisa_pertencer_ao_cliente():
                           user_ids=[socio])
 
 
+async def test_atualizar_pending_item_rejeita_null_explicito_em_campo_not_null():
+    """title/type/status são NOT NULL na tabela; {"status": null} não pode
+    passar da validação Pydantic e virar UPDATE ... SET status=NULL (500 sem
+    tratamento) — achado do code-reviewer."""
+    from pydantic import ValidationError
+    from app.routers.pending_items import PendingItemUpdate
+
+    with pytest.raises(ValidationError):
+        PendingItemUpdate(title=None)
+    with pytest.raises(ValidationError):
+        PendingItemUpdate(type=None)
+    with pytest.raises(ValidationError):
+        PendingItemUpdate(status=None)
+    # Omitir o campo (não enviá-lo) continua válido — só null explícito falha.
+    ok = PendingItemUpdate(description="apenas isso mudou")
+    assert ok.model_dump(exclude_unset=True) == {"description": "apenas isso mudou"}
+
+
+async def test_atualizar_pending_item_case_id_editavel_e_validado():
+    from app.core.database import AsyncSessionLocal
+    from app.routers.pending_items import (
+        PendingItemCreate, PendingItemUpdate, create_pending_item, update_pending_item,
+    )
+
+    tok = f"PiCase{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db)
+        cli_a = await _criar_cliente(db, f"Cliente A {tok}")
+        cli_b = await _criar_cliente(db, f"Cliente B {tok}")
+        caso_de_a = await _criar_caso(db, cli_a, f"Caso A {tok}")
+        caso_de_b = await _criar_caso(db, cli_b, f"Caso B {tok}")
+        await db.commit()
+        try:
+            u_socio = await _carregar_user(db, socio)
+            criado = await create_pending_item(
+                cli_a, PendingItemCreate(title="X"), db, u_socio)
+
+            # Vincular a um caso do MESMO cliente: ok.
+            await update_pending_item(
+                cli_a, criado["id"], PendingItemUpdate(case_id=caso_de_a), db, u_socio)
+            row = (await db.execute(text(
+                "SELECT case_id FROM client_pending_items WHERE id = :id"
+            ), {"id": criado["id"]})).mappings().first()
+            assert row["case_id"] == caso_de_a
+
+            # Vincular a caso de OUTRO cliente: 422.
+            with pytest.raises(HTTPException) as exc:
+                await update_pending_item(
+                    cli_a, criado["id"], PendingItemUpdate(case_id=caso_de_b), db, u_socio)
+            assert exc.value.status_code == 422
+
+            # Desvincular (case_id=None explícito): ok.
+            await update_pending_item(
+                cli_a, criado["id"], PendingItemUpdate(case_id=None), db, u_socio)
+            row = (await db.execute(text(
+                "SELECT case_id FROM client_pending_items WHERE id = :id"
+            ), {"id": criado["id"]})).mappings().first()
+            assert row["case_id"] is None
+        finally:
+            await _limpar(db, case_ids=[caso_de_a, caso_de_b], client_ids=[cli_a, cli_b],
+                          user_ids=[socio])
+
+
 async def test_criar_e_atualizar_pending_item_gera_audit_log():
     from app.core.database import AsyncSessionLocal
     from app.routers.pending_items import (

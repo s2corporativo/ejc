@@ -8,7 +8,7 @@ em vez de responder 500 e deixar a tela em branco (achado da auditoria).
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.client_ownership import visao_total_clientes
+from app.core.client_ownership import cliente_id_visivel
 from app.core.database import get_db
 from app.core.degradacao import ColetorDeSecoes
 from app.core.security import get_current_user
@@ -26,27 +26,17 @@ def _req_fin_adv(cu: User = Depends(get_current_user)) -> User:
 
 
 async def _cliente_visivel(db: AsyncSession, cu: User, client_id: str) -> bool:
-    """Ownership do cliente (mesmo racional de sociedades_cliente._cliente_visivel):
-    gestão e secretaria (visão total do CRM, client_ownership canônico) veem
-    tudo; financeiro vê o relatório financeiro de QUALQUER cliente — é a razão
-    de _FIN_ADV incluir o papel (achado da auditoria: a autorização de topo
+    """financeiro vê o relatório financeiro de QUALQUER cliente — é a razão de
+    _FIN_ADV incluir o papel (achado da auditoria: a autorização de topo
     permitia financeiro chamar o endpoint, mas o gate de titularidade nunca
     deixava passar — financeiro nunca é responsável pelo cliente nem advogado
-    de caso; a permissão era morta na prática). Demais (advogado/auxiliar)
-    precisam ser responsáveis pelo cliente OU atuar em caso dele."""
-    if visao_total_clientes(cu) or cu.role.value == "financeiro":
+    de caso; a permissão era morta na prática). Regra própria deste relatório
+    (não faz parte do gate genérico), então soma-se ao gate canônico
+    (client_ownership.cliente_id_visivel: gestão/secretaria veem tudo; demais
+    precisam ser responsáveis pelo cliente OU atuar em caso dele)."""
+    if cu.role.value == "financeiro":
         return True
-    row = (await db.execute(text("""
-        SELECT 1 FROM clients cl
-        WHERE cl.id = :cid AND cl.deleted_at IS NULL
-          AND (cl.responsavel_id = :uid
-               OR EXISTS (SELECT 1 FROM cases c
-                          WHERE c.client_id = cl.id AND c.deleted_at IS NULL
-                            AND (c.advogado_responsavel_id = :uid
-                                 OR c.advogado_auxiliar_id = :uid)))
-        LIMIT 1
-    """), {"cid": client_id, "uid": cu.id})).first()
-    return row is not None
+    return await cliente_id_visivel(db, cu, client_id)
 
 
 async def _carregar_honorarios(db: AsyncSession, client_id: str) -> list[dict]:
