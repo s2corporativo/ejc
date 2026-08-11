@@ -185,12 +185,12 @@ def test_watcher_reexecuta_apenas_falha_qualificada_de_infraestrutura():
         "GREEN_RECHECK_SECONDS",
         "pr_state_due",
         "failure_is_infrastructure",
-        "invocation_log",
         "latest_attempt_log",
         "GitHub/fetch indisponível",
         "git merge --ff-only origin/main",
     ):
         assert marker in src
+    assert "invocation_log" not in src
     assert "git reset --hard" not in src
     assert "git push --force" not in src
     assert "reprovou em teste/gate real; mesmo SHA não será repetido automaticamente" in src
