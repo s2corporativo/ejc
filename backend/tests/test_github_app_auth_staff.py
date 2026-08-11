@@ -48,9 +48,31 @@ def test_auth_usa_token_efemero_escopado_e_nao_persiste_credencial():
     assert 'GH_TOKEN="$_EJC_APP_TOKEN" gh api' in conteudo_script
     assert "curl -q --config -" in conteudo_script
     assert "permissions:{checks:\"write\"}" in conteudo_script
+    assert 'local repo_name="${repo#*/}"' in conteudo_script
+    assert '--arg repo "$repo_name"' in conteudo_script
     assert "repositories:[$repo]" in conteudo_script
+    assert '--arg repo "$repo"' not in conteudo_script
     assert "shopt -s lastpipe" in conteudo_script
     assert "write_text" not in conteudo_script
+
+    # Para EJC_REPO=s2corporativo/ejc, a API de installation token exige o nome
+    # do repositório ("ejc"), não o identificador owner/repo completo.
+    resultado_payload = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'repo="s2corporativo/ejc"; repo_name="${repo#*/}"; '
+            "jq -cn --arg repo \"$repo_name\" "
+            "'{repositories:[$repo],permissions:{checks:\"write\"}}'",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert resultado_payload.returncode == 0, resultado_payload.stderr
+    assert resultado_payload.stdout.strip() == (
+        '{"repositories":["ejc"],"permissions":{"checks":"write"}}'
+    )
 
     # O GitHub alterou o formato de installation tokens em 2026. O contrato
     # local valida tipo/comprimento mínimo apenas para rejeitar resposta vazia,
