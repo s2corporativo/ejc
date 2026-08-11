@@ -5,6 +5,7 @@ import {
   ShieldCheck,
   Clock,
   FileText,
+  Eye,
 } from "lucide-react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
@@ -36,6 +37,11 @@ export default function PortalAssinaturas() {
   const [loading, setLoading] = useState(true);
   const [comprovante, setComprovante] = useState<Comprovante | null>(null);
   const [signing, setSigning] = useState<string | null>(null);
+  const [visualizando, setVisualizando] = useState<string | null>(null);
+  // Documentos que o cliente já abriu nesta sessão — condição mínima para
+  // liberar o botão Assinar (achado ASS-00: antes o cliente confirmava "li e
+  // concordo" sem nenhum jeito de ler o conteúdo).
+  const [visualizados, setVisualizados] = useState<Set<string>>(new Set());
 
   const load = () => {
     setLoading(true);
@@ -47,6 +53,27 @@ export default function PortalAssinaturas() {
   useEffect(() => {
     load();
   }, []);
+
+  const verDocumento = async (s: any) => {
+    setVisualizando(s.id);
+    try {
+      const r = await api.get(`/signatures/${s.id}/documento`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data as Blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      // O object URL some com o navegador — não revogamos aqui de propósito,
+      // a aba aberta ainda depende dele para renderizar o PDF.
+      setVisualizados((prev) => new Set(prev).add(s.id));
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail ||
+          "Não foi possível abrir o documento. Tente novamente.",
+      );
+    } finally {
+      setVisualizando(null);
+    }
+  };
 
   const assinar = async (s: any) => {
     if (
@@ -192,14 +219,30 @@ export default function PortalAssinaturas() {
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => assinar(s)}
-                  disabled={signing === s.id}
-                  className="btn-primary text-sm px-4 py-2 flex-shrink-0"
-                >
-                  <PenLine className="w-3.5 h-3.5" />
-                  {signing === s.id ? "Assinando…" : "Assinar"}
-                </button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => verDocumento(s)}
+                    disabled={visualizando === s.id}
+                    className="btn-secondary text-sm px-3 py-2"
+                    title="Abrir o documento antes de assinar"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    {visualizando === s.id ? "Abrindo…" : "Ver documento"}
+                  </button>
+                  <button
+                    onClick={() => assinar(s)}
+                    disabled={signing === s.id || !visualizados.has(s.id)}
+                    title={
+                      visualizados.has(s.id)
+                        ? undefined
+                        : "Abra o documento antes de assinar"
+                    }
+                    className="btn-primary text-sm px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <PenLine className="w-3.5 h-3.5" />
+                    {signing === s.id ? "Assinando…" : "Assinar"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

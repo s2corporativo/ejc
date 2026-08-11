@@ -126,6 +126,7 @@ ROTAS_PORTAL_PERMITIDAS = [
     "/api/notifications/marcar-todas",
     "/api/signatures",
     "/api/signatures/sig-id/assinar",
+    "/api/signatures/sig-id/documento",
     "/api/users/me",
     "/api/auth/alterar-senha",
     "/api/health",
@@ -302,4 +303,15 @@ async def test_signatures_assinar_exige_cliente_externo():
 
     with pytest.raises(HTTPException) as exc:
         await assinar(sig_id="x", request=None, db=_DBNoop(), cu=_staff())
+    assert exc.value.status_code == 403
+
+
+async def test_signatures_documento_exige_cliente_externo():
+    """Prova (ASS-00): GET /signatures/{id}/documento — que serve o CONTEÚDO
+    do documento antes da assinatura — é ato do cliente igual a `assinar`;
+    staff → 403 antes de qualquer acesso a banco/disco."""
+    from app.routers.signatures import visualizar_documento
+
+    with pytest.raises(HTTPException) as exc:
+        await visualizar_documento(sig_id="x", db=_DBNoop(), cu=_staff())
     assert exc.value.status_code == 403

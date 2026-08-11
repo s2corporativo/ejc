@@ -383,6 +383,58 @@ async def test_signatures_listar_e_assinar_isolam_por_cliente():
             await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
 
 
+async def test_signatures_documento_isola_por_cliente_e_serve_conteudo(monkeypatch, tmp_path):
+    """ASS-00 — Prova que GET /signatures/{id}/documento (endpoint que serve o
+    CONTEÚDO do documento antes da assinatura, criado para corrigir o achado
+    de que o cliente confirmava "li e concordo" sem nenhum jeito de ler):
+      • A abre o PRÓPRIO documento pendente de assinatura → FileResponse
+        apontando para o arquivo físico real (não erro, não vazio);
+      • A forjando o id da solicitação de B → 404 (mesmo gate de `assinar`).
+    """
+    from app.core.config import get_settings
+    from app.core.database import AsyncSessionLocal
+    from app.routers.signatures import visualizar_documento
+    from fastapi.responses import FileResponse
+
+    # UPLOAD_DIR gravável (o default /app/uploads não é gravável no CI runner)
+    # — mesmo padrão de test_intake_documento_caso_dblevel.py.
+    monkeypatch.setattr(get_settings(), "UPLOAD_DIR", str(tmp_path))
+
+    tok = uuid4().hex[:6]
+    async with AsyncSessionLocal() as db:
+        cli_a = await _criar_cliente(db, f"Cliente A {tok}")
+        cli_b = await _criar_cliente(db, f"Cliente B {tok}")
+        ua = await _criar_portal_user(db, cli_a)
+        doc_a = await _criar_documento(db, cli_a, None, f"proc-A-{tok}", "normal")
+        doc_b = await _criar_documento(db, cli_b, None, f"proc-B-{tok}", "normal")
+        sig_a = await _criar_signature(db, cli_a, doc_a, "pendente")
+        sig_b = await _criar_signature(db, cli_b, doc_b, "pendente")
+        await db.commit()
+
+        # Arquivo físico real no caminho que _criar_documento gravou
+        # (fp="2026/07/<doc_id>.pdf") — a rota precisa achar o arquivo p/
+        # provar que serve conteúdo de verdade, não só metadados.
+        subdir = tmp_path / "2026" / "07"
+        subdir.mkdir(parents=True, exist_ok=True)
+        (subdir / f"{doc_a}.pdf").write_bytes(b"%PDF-1.4 conteudo de teste ASS-00")
+
+        try:
+            user_a = await _carregar_user(db, ua)
+
+            # POSITIVO: A abre o próprio documento pendente de assinatura.
+            resp = await visualizar_documento(sig_id=sig_a, db=db, cu=user_a)
+            assert isinstance(resp, FileResponse)
+            assert resp.path == str(subdir / f"{doc_a}.pdf")
+
+            # IDOR: A forjando a solicitação de B → 404 (mesmo gate de `assinar`,
+            # nunca vaza o conteúdo do documento de outro cliente do portal).
+            with pytest.raises(HTTPException) as exc:
+                await visualizar_documento(sig_id=sig_b, db=db, cu=user_a)
+            assert exc.value.status_code == 404
+        finally:
+            await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Cross-carteira entre advogados: o chat sigiloso do caso não é lido por
 # qualquer membro do escritório — só responsável/auxiliar/gestão (ownership).

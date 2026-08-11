@@ -31,3 +31,12 @@ def test_criar_solicitacao_exige_staff_nao_cliente_externo():
     linha_roles = next(l for l in src.splitlines() if "require_roles" in l)
     assert "advogado" in linha_roles and "socio" in linha_roles
     assert "cliente_externo" not in linha_roles
+
+
+def test_visualizar_documento_exige_cliente_externo_e_filtra_ownership():
+    """ASS-00: o Portal exigia "li e concordo" sem servir o CONTEÚDO do
+    documento em lugar nenhum (só título + hash em GET /signatures/). Este
+    endpoint fecha o gap replicando EXATAMENTE o gate de `assinar`."""
+    src = inspect.getsource(sig.visualizar_documento)
+    assert "cliente_externo" in src
+    assert "SignatureRequest.client_id == cu.client_id" in src

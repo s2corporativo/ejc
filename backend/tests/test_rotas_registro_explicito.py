@@ -113,6 +113,11 @@ ADICOES_INTENCIONAIS = {
     ("/api/dpt360/intake/opportunities", "GET"),
     ("/api/dpt360/intake/opportunities", "POST"),
     ("/api/dpt360/actions", "POST"),
+    # Issue ASS-00: o Portal do Cliente pedia "li e concordo" sem servir o
+    # CONTEÚDO do documento em lugar nenhum (só título + hash em GET
+    # /signatures/). Endpoint serve o arquivo com o MESMO gate de ownership de
+    # POST /signatures/{id}/assinar (SignatureRequest.client_id == cliente).
+    ("/api/signatures/{sig_id}/documento", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
