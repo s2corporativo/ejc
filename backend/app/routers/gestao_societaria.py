@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.models.audit_log import criar_audit_log
 from app.models.user import User
 from app.models.socio import Socio, DistribuicaoLucro, RegimeSocio
 from app.modules.auditoria.middleware import registrar_acao
@@ -41,6 +42,15 @@ class SocioPatch(BaseModel):
     data_saida:              Optional[_date] = None
     meta_produtividade:      Optional[float] = None # Seção 8.270
     observacoes:             Optional[str]   = None
+
+
+# Allowlist explícita do que o PATCH pode alterar — defesa em profundidade:
+# mesmo que `SocioPatch` ganhe um campo novo no futuro, ele só vira gravável
+# aqui depois de uma decisão consciente (SOC-01).
+_SOCIO_PATCH_CAMPOS = {
+    "participacao_percentual", "regime", "pro_labore", "ativo",
+    "data_saida", "meta_produtividade", "observacoes",
+}
 
 
 class DistribuicaoIn(BaseModel):
@@ -114,14 +124,39 @@ async def atualizar_socio(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    if not _is_socio(cu):
-        raise HTTPException(403)
+    # SOC-01: alterar participação/pró-labore de um sócio exige o MESMO nível
+    # que cadastrar um sócio novo (admin+) — antes bastava ser sócio (nível
+    # menor), o que permitia a um sócio alterar a própria fatia ou a de
+    # qualquer colega sem privilégio de admin.
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["admin"]:
+        raise HTTPException(403, "Apenas administradores podem alterar sócios")
     s = (await db.execute(select(Socio).where(Socio.id == socio_id))).scalar_one_or_none()
     if not s:
         raise HTTPException(404)
-    for campo, valor in req.model_dump(exclude_none=True).items():
+
+    dados = req.model_dump(exclude_none=True)
+    campos_invalidos = set(dados) - _SOCIO_PATCH_CAMPOS
+    if campos_invalidos:
+        raise HTTPException(422, f"Campos não permitidos no PATCH: {sorted(campos_invalidos)}")
+
+    dados_antes = {
+        "participacao_percentual": float(s.participacao_percentual),
+        "pro_labore": float(s.pro_labore) if s.pro_labore else None,
+    }
+    for campo, valor in dados.items():
         setattr(s, campo, valor)
     s.updated_at = datetime.now(timezone.utc)
+    dados_depois = {
+        "participacao_percentual": float(s.participacao_percentual),
+        "pro_labore": float(s.pro_labore) if s.pro_labore else None,
+    }
+    # Auditoria na MESMA transação: se o log falhar, a alteração não commita
+    # sem rastro (commit único abaixo).
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "UPDATE", "socios", socio_id,
+        detalhes=f"campos alterados: {sorted(dados)}",
+        dados_antes=dados_antes, dados_depois=dados_depois,
+    )
     await db.commit()
     return _out_socio(s)
 
