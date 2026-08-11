@@ -139,15 +139,28 @@ async def test_post_deadlines_aplica_recesso_para_tipo_processual():
 @pytest.mark.anyio
 async def test_post_deadlines_nao_aplica_recesso_para_tipo_administrativo():
     """Guarda-corpo do achado: a correção NÃO pode virar suspensão universal —
-    prazo administrativo/decadencial NUNCA se suspende no recesso (docstring
-    de prazo_dias_uteis). Mesmo que o payload force dias_uteis=True num tipo
-    não-processual, aplicar_recesso deve permanecer False."""
+    esta correção (PRZ-02, aplicar_recesso) NÃO estende a suspensão INTEGRAL
+    do art. 220 a tipo != processual. Mesmo que o payload force dias_uteis=True
+    num tipo não-processual, aplicar_recesso deve permanecer False.
+
+    Nota de retificação (review Codex em PR #1079, não corrigida aqui): esta
+    asserção NÃO significa "zero recesso" — prazo_dias_uteis() sempre chama
+    eh_dia_util(forense=True), que exclui o recesso PARCIAL legado
+    (RECESSO_FORENSE, 20/12-06/01) independente de aplicar_recesso. Pra este
+    caso concreto (2025-12-15 + 10 dias úteis), sem NENHUM recesso o resultado
+    seria 2025-12-30, não 2026-01-14 — um prazo administrativo mostrado ~15
+    dias mais tarde do que a lei permite, se o tipo realmente não deve ter
+    suspensão alguma. Esse é um comportamento PRÉ-EXISTENTE de
+    deadline_calculator.py (forense=True é hardcoded em prazo_dias_uteis,
+    nunca foi parametrizável por tipo) — fora do escopo desta correção
+    (PRZ-02 só endereça a suspensão INTEGRAL do art. 220 para processual).
+    Rastreado em Issue dedicada."""
     from app.routers.deadlines import criar
     from app.schemas.deadline import DeadlineCreate
 
     db = _FakeDB()
     payload = DeadlineCreate(
-        titulo="Defesa administrativa — teste sem recesso",
+        titulo="Defesa administrativa — teste sem recesso INTEGRAL",
         tipo="administrativo",
         data_intimacao=TERMO_INICIAL_RECESSO,
         dias_prazo=DIAS_RECESSO,
@@ -155,7 +168,9 @@ async def test_post_deadlines_nao_aplica_recesso_para_tipo_administrativo():
     )
     resp = await criar(payload=payload, db=db, cu=_user())
 
-    assert resp.data_prazo == date(2026, 1, 14)  # SEM recesso (correto p/ este tipo)
+    # SEM a suspensão INTEGRAL do art. 220 (correto p/ este tipo) — mas ainda
+    # COM o recesso parcial legado do forense=True (ver nota acima).
+    assert resp.data_prazo == date(2026, 1, 14)
 
 
 @pytest.mark.anyio
@@ -188,3 +203,98 @@ async def test_post_deadlines_converge_com_referencia_do_motor_de_pecas():
     )
 
     assert resp.data_prazo == referencia_motor_peca
+
+
+@pytest.mark.anyio
+async def test_post_deadlines_registra_recesso_na_base_legal():
+    """Review Codex em PR #1079: a base_legal persistida precisa registrar que
+    a suspensão do art. 220 foi aplicada — sem isso não dava pra reconstruir
+    depois por que a data saiu diferente do CPC art. 219 puro."""
+    from app.routers.deadlines import criar
+    from app.schemas.deadline import DeadlineCreate
+
+    db = _FakeDB()
+    resp = await criar(
+        payload=DeadlineCreate(
+            titulo="Contestação — teste base_legal",
+            tipo="processual",
+            data_intimacao=TERMO_INICIAL_RECESSO,
+            dias_prazo=DIAS_RECESSO,
+            dias_uteis=True,
+        ),
+        db=db, cu=_user(),
+    )
+    assert "CPC art. 219" in resp.base_legal
+    assert "recesso forense integral (CPC art. 220)" in resp.base_legal
+
+
+@pytest.mark.anyio
+async def test_post_deadlines_administrativo_nao_registra_recesso_na_base_legal():
+    """Contraprova: tipo que não recebe a suspensão integral não tem a nota
+    do art. 220 na base_legal (senão o registro mentiria sobre o cálculo)."""
+    from app.routers.deadlines import criar
+    from app.schemas.deadline import DeadlineCreate
+
+    db = _FakeDB()
+    resp = await criar(
+        payload=DeadlineCreate(
+            titulo="Defesa administrativa — teste base_legal",
+            tipo="administrativo",
+            data_intimacao=TERMO_INICIAL_RECESSO,
+            dias_prazo=DIAS_RECESSO,
+            dias_uteis=True,
+        ),
+        db=db, cu=_user(),
+    )
+    assert "art. 220" not in resp.base_legal
+
+
+@pytest.mark.anyio
+async def test_calculadora_converge_com_criacao_para_prazo_processual():
+    """Review Codex em PR #1079: antes desta correção, POST /deadlines/calcular
+    (a prévia que Prazos.tsx mostra ao advogado) nunca aplicava a suspensão do
+    art. 220, então divergia da data realmente persistida por POST /deadlines
+    para o MESMO (data_inicio, dias, tribunal) — advogado via 2026-01-14 na
+    prévia e 2026-01-28 gravado, resultados contraditórios no mesmo fluxo."""
+    from app.routers.deadlines import calcular, criar
+    from app.schemas.deadline import CalcularPrazoRequest, DeadlineCreate
+
+    previa = await calcular(
+        req=CalcularPrazoRequest(
+            data_inicio=TERMO_INICIAL_RECESSO, dias=DIAS_RECESSO,
+            dias_uteis=True, tipo="processual",
+        ),
+        cu=_user(),
+    )
+
+    db = _FakeDB()
+    criado = await criar(
+        payload=DeadlineCreate(
+            titulo="Contestação — teste convergência calculadora",
+            tipo="processual",
+            data_intimacao=TERMO_INICIAL_RECESSO,
+            dias_prazo=DIAS_RECESSO,
+            dias_uteis=True,
+        ),
+        db=db, cu=_user(),
+    )
+
+    assert previa["data_vencimento"] == criado.data_prazo == date(2026, 1, 28)
+
+
+@pytest.mark.anyio
+async def test_calculadora_tipo_administrativo_nao_aplica_recesso_integral():
+    """Contraprova simétrica na calculadora: tipo != processual não recebe a
+    suspensão INTEGRAL do art. 220 (mesma política de POST /deadlines)."""
+    from app.routers.deadlines import calcular
+    from app.schemas.deadline import CalcularPrazoRequest
+
+    previa = await calcular(
+        req=CalcularPrazoRequest(
+            data_inicio=TERMO_INICIAL_RECESSO, dias=DIAS_RECESSO,
+            dias_uteis=True, tipo="administrativo",
+        ),
+        cu=_user(),
+    )
+    assert previa["data_vencimento"] == date(2026, 1, 14)
+    assert "recesso forense integral" not in previa["modo"]
