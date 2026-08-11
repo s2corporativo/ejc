@@ -11,7 +11,7 @@
 from __future__ import annotations
 import re
 
-# Vedação de promessa de resultado (Código de Ética OAB, art. 34, e provimentos).
+# Vedação de promessa de resultado (Provimento OAB nº 205/2021, art. 6º).
 _RE_PROMESSAS = [
     re.compile(r"garant\w*\s+(?:de\s+|o\s+|a\s+)?(?:êxito|exito|resultado|vitória|vitoria|sucesso|ganho)", re.I),
     re.compile(r"certeza\s+de\s+(?:êxito|exito|vitória|vitoria|sucesso|ganhar)", re.I),
