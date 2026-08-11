@@ -371,7 +371,7 @@ cobertos depois, nas Partes 15 a 20 do mesmo PR, e nada deve ser presumido sobre
 - **Estimador de honorários OAB** (`honorarios_oab.py`, 456 linhas — usa IA/RAG sobre a tabela da OAB).
 - **Assinaturas eletrônicas** — natureza da assinatura e valor probatório (MP 2.200-2/2001).
 - **Portal do Cliente** — isolamento por cliente (IDOR) e, em especial, se a métrica de "chance de
-  êxito" vaza para o cliente (Código de Ética da OAB, art. 34, XXIX).
+  êxito" vaza para o cliente (Provimento OAB nº 205/2021, art. 6º — vedação a promessa de resultado).
 - **Notificações, Configurações, Lixeira, Central de Diagnóstico, Checklists, Produtividade.**
 
 Uma correção de rumo em relação à auditoria externa: o **prefixo `/v1/` duplicado não existe mais**

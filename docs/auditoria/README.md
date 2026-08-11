@@ -147,6 +147,17 @@ fundamento da revisão humana de IA, seguindo o que o próprio sistema afirma. *
 oficial: aquele provimento dispõe sobre publicidade e informação da advocacia**, não sobre IA.
 *(Parte 10)*
 
+**Fundamento da vedação a promessa de resultado.** As Partes 4, 8 e 9, o `plano-correcao-v2.md` e o
+`plano-lancamento-v3.md` citam "Código de Ética da OAB, art. 6º, parágrafo único, e art. 34, XXIX"
+como base para vedar a promessa de resultado ao cliente. **Verificado na fonte oficial: o art. 34 é
+do Estatuto da Advocacia (Lei 8.906/1994), não do Código de Ética, e seu inciso XXIX trata de
+infração disciplinar por erro reiterado que evidencie inépcia profissional — matéria distinta.** O
+fundamento correto para a vedação é o **Provimento OAB nº 205/2021, art. 6º e parágrafo único**
+(publicidade da advocacia), que veda expressamente "a menção à promessa de resultados" em qualquer
+publicidade. Os documentos citados não foram reescritos — permanecem como registro histórico da
+auditoria original; a citação correta vale para qualquer uso futuro do achado.
+*(achado originado nas Partes 4/8/9; citação corrigida na revisão do PR #1060, Parte 15)*
+
 ---
 
 ## Nota sobre credenciais
