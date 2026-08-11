@@ -148,6 +148,47 @@ async def test_superadmin_pode_alterar_socio():
     assert db.commits == 1
 
 
+async def test_auditoria_reflete_campos_realmente_alterados():
+    """PATCH que só troca `regime` e `ativo` tem que gravar ESSES campos no
+    snapshot de auditoria — não participação/pró-labore inalterados (achado
+    de review em PR #1071: snapshot fixo escondia a real mudança feita)."""
+    s = _socio()
+    db = _FakeDB([s])
+    await atualizar_socio(
+        socio_id="socio1",
+        req=SocioPatch(regime=RegimeSocio.resultado, ativo=False),
+        db=db, cu=_user(UserRole.admin, "admin1"),
+    )
+    logs = [o for o in db.added if isinstance(o, AuditLog)]
+    assert len(logs) == 1
+    log = logs[0]
+    assert set(log.dados_antes) == {"regime", "ativo"}
+    assert set(log.dados_depois) == {"regime", "ativo"}
+    assert log.dados_antes == {"regime": "misto", "ativo": True}
+    assert log.dados_depois == {"regime": "resultado", "ativo": False}
+    # participação/pró-labore nem entram no snapshot — não foram tocados
+    assert "participacao_percentual" not in log.dados_antes
+    assert "pro_labore" not in log.dados_antes
+
+
+async def test_auditoria_campo_sem_valor_previo_nao_quebra():
+    """`meta_produtividade` não é coluna mapeada no model `Socio` (só existe
+    em runtime se algum PATCH anterior no mesmo processo já a setou como
+    atributo Python solto) — o snapshot não pode estourar AttributeError na
+    primeira vez que o campo é alterado."""
+    s = _socio()
+    db = _FakeDB([s])
+    out = await atualizar_socio(
+        socio_id="socio1",
+        req=SocioPatch(meta_produtividade=5000.0),
+        db=db, cu=_user(UserRole.admin, "admin1"),
+    )
+    assert out["meta_produtividade"] == 5000.0
+    logs = [o for o in db.added if isinstance(o, AuditLog)]
+    assert logs[0].dados_antes == {"meta_produtividade": None}
+    assert logs[0].dados_depois == {"meta_produtividade": 5000.0}
+
+
 async def test_socio_inexistente_404():
     db = _FakeDB([None])
     with pytest.raises(HTTPException) as exc:

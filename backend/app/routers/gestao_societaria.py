@@ -62,6 +62,16 @@ class DistribuicaoIn(BaseModel):
 def _is_socio(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["socio"]
 
+def _serializar_campo_socio(valor):
+    """JSON-serializável para qualquer campo de `Socio` usado no snapshot de auditoria."""
+    if isinstance(valor, Decimal):
+        return float(valor)
+    if isinstance(valor, _date):
+        return valor.isoformat()
+    if hasattr(valor, "value"):  # Enum (RegimeSocio)
+        return valor.value
+    return valor
+
 def _out_socio(s: Socio) -> dict:
     return {
         "id": s.id, "user_id": s.user_id,
@@ -139,17 +149,15 @@ async def atualizar_socio(
     if campos_invalidos:
         raise HTTPException(422, f"Campos não permitidos no PATCH: {sorted(campos_invalidos)}")
 
-    dados_antes = {
-        "participacao_percentual": float(s.participacao_percentual),
-        "pro_labore": float(s.pro_labore) if s.pro_labore else None,
-    }
+    # Snapshot construído a partir dos campos REALMENTE enviados no PATCH — não
+    # só participação/pró-labore, senão um PATCH que só troca `regime` ou
+    # `ativo` grava antes/depois idênticos e o rastro de auditoria não serve
+    # pra nada nesse caso (achado do review em PR #1071).
+    dados_antes = {campo: _serializar_campo_socio(getattr(s, campo, None)) for campo in dados}
     for campo, valor in dados.items():
         setattr(s, campo, valor)
     s.updated_at = datetime.now(timezone.utc)
-    dados_depois = {
-        "participacao_percentual": float(s.participacao_percentual),
-        "pro_labore": float(s.pro_labore) if s.pro_labore else None,
-    }
+    dados_depois = {campo: _serializar_campo_socio(getattr(s, campo, None)) for campo in dados}
     # Auditoria na MESMA transação: se o log falhar, a alteração não commita
     # sem rastro (commit único abaixo).
     await criar_audit_log(
