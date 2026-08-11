@@ -429,12 +429,48 @@ async def test_endpoint_emitir_sucesso_persiste_e_audita(nfse_ligado, monkeypatc
     # Nota persistida + audit ANTES (NFSE_EMITIR) e DEPOIS (NFSE_EMITIDA).
     notas = [o for o in db.added if isinstance(o, NotaFiscalServico)]
     assert len(notas) == 1 and notas[0].fee_id == "f1"
-    acoes = sorted(o.acao for o in db.added if o.__class__.__name__ == "AuditLog")
+    logs = [o for o in db.added if o.__class__.__name__ == "AuditLog"]
+    acoes = sorted(o.acao for o in logs)
     assert acoes == ["NFSE_EMITIDA", "NFSE_EMITIR"]
     assert db.commits >= 2
     # Pedido montado com a referência do honorário e valor do fee.
     assert fake.emitido[0].referencia == "fee-f1"
     assert str(fake.emitido[0].valor) == "1500"
+
+    # NFS-01/NFS-02 (review Codex em PR #1074): a trilha NFSE_EMITIR registra
+    # a escolha fiscal EFETIVA (regime + tribISSQN/tpRetISSQN resolvidos),
+    # não só valor/descrição — sem isso não dava pra saber depois se a DPS
+    # usou o default de config ou uma sobreposição por nota.
+    log_emitir = next(o for o in logs if o.acao == "NFSE_EMITIR")
+    assert log_emitir.dados_depois["regime_tributario"] == "simples_nacional"
+    assert log_emitir.dados_depois["trib_issqn"] == 1
+    assert log_emitir.dados_depois["tipo_retencao_iss"] == 1
+    assert log_emitir.dados_depois["trib_issqn_sobreposto_por_nota"] is False
+    assert log_emitir.dados_depois["tipo_retencao_iss_sobreposto_por_nota"] is False
+
+
+async def test_endpoint_emitir_audita_sobreposicao_por_nota(nfse_ligado, monkeypatch):
+    """Quando a nota sobrepõe trib_issqn/tipo_retencao_iss, a trilha reflete o
+    valor da SOBREPOSIÇÃO, não o default de config, e marca a flag."""
+    from app.routers import nfse as router_mod
+    from app.services.nfse import NFSeResultado
+
+    resultado = NFSeResultado(status="processando", provider_id="nf_new",
+                              ambiente="homologacao", numero=None)
+    fake = _FakeProvider(resultado)
+    monkeypatch.setattr("app.services.nfse.get_provider", lambda: fake)
+
+    db = _FakeDB(objs={("Fee", "f1"): _fee(), ("Client", "c1"): _cliente()},
+                 scalar_result=None)
+    body = router_mod.EmitirIn(fee_id="f1", trib_issqn=2, tipo_retencao_iss=2)
+    await router_mod.emitir_nfse(body, db=db, cu=_socio())
+
+    log_emitir = next(o for o in db.added
+                      if o.__class__.__name__ == "AuditLog" and o.acao == "NFSE_EMITIR")
+    assert log_emitir.dados_depois["trib_issqn"] == 2
+    assert log_emitir.dados_depois["tipo_retencao_iss"] == 2
+    assert log_emitir.dados_depois["trib_issqn_sobreposto_por_nota"] is True
+    assert log_emitir.dados_depois["tipo_retencao_iss_sobreposto_por_nota"] is True
 
 
 async def test_endpoint_emitir_avulso_exige_tomador():

@@ -210,6 +210,29 @@ def test_producao_nfse_enabled_com_config_completa_ok():
     assert s.NFSE_TIPO_RETENCAO_ISS_DEFAULT == 1
 
 
+def test_producao_nfse_enabled_trib_issqn_zero_falha():
+    """tribISSQN/tpRetISSQN 0 ou negativo é sempre tecnicamente inválido —
+    códigos do leiaute nacional da DPS começam em 1 (review Codex em PR #1074:
+    campos aceitavam qualquer int, inclusive 0/-1)."""
+    with pytest.raises(ValueError, match="NFSE_TRIB_ISSQN_DEFAULT inválido"):
+        Settings(**_prod_kwargs(
+            NFSE_ENABLED=True,
+            NFSE_REGIME_TRIBUTARIO="simples_nacional",
+            NFSE_TRIB_ISSQN_DEFAULT=0,
+            NFSE_TIPO_RETENCAO_ISS_DEFAULT=1,
+        ))
+
+
+def test_producao_nfse_enabled_tipo_retencao_negativo_falha():
+    with pytest.raises(ValueError, match="NFSE_TIPO_RETENCAO_ISS_DEFAULT inválido"):
+        Settings(**_prod_kwargs(
+            NFSE_ENABLED=True,
+            NFSE_REGIME_TRIBUTARIO="simples_nacional",
+            NFSE_TRIB_ISSQN_DEFAULT=1,
+            NFSE_TIPO_RETENCAO_ISS_DEFAULT=-1,
+        ))
+
+
 def test_nfse_desligado_nao_exige_config_fiscal():
     """NFSE_ENABLED=false (default) não exige nada — módulo GATED, off por
     padrão; o guarda só liga quando alguém decide ativar a emissão real."""

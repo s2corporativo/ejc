@@ -1125,6 +1125,20 @@ class Settings(BaseSettings):
                     f"({self.NFSE_REGIME_TRIBUTARIO!r}). Use um de: "
                     + ", ".join(sorted(NFSE_REGIMES_TRIBUTARIOS_VALIDOS)) + "."
                 )
+            # Códigos do leiaute nacional da DPS começam em 1 — 0/negativo é
+            # sempre tecnicamente inválido, independente de qual for o
+            # conjunto fechado exato (ainda não confirmado com o provedor;
+            # ver docs/NFSE_VIABILIDADE.md). Review Codex em PR #1074.
+            if self.NFSE_TRIB_ISSQN_DEFAULT is not None and self.NFSE_TRIB_ISSQN_DEFAULT < 1:
+                raise ValueError(
+                    f"NFSE_TRIB_ISSQN_DEFAULT inválido ({self.NFSE_TRIB_ISSQN_DEFAULT!r}) "
+                    "— códigos tribISSQN do leiaute nacional começam em 1."
+                )
+            if self.NFSE_TIPO_RETENCAO_ISS_DEFAULT is not None and self.NFSE_TIPO_RETENCAO_ISS_DEFAULT < 1:
+                raise ValueError(
+                    f"NFSE_TIPO_RETENCAO_ISS_DEFAULT inválido ({self.NFSE_TIPO_RETENCAO_ISS_DEFAULT!r}) "
+                    "— códigos tpRetISSQN do leiaute nacional começam em 1."
+                )
 
         if self.APP_ENV != "production" and (not self.PII_ENCRYPTION_KEY or not self.PII_HASH_KEY):
             # Só em desenvolvimento: chave efêmera para não travar o ambiente local.

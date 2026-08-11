@@ -49,12 +49,19 @@ class NFSePedidoEmissao(BaseModel):
     item_lista_servico: str | None = None       # LC 116/03 (default: config)
     cod_tributacao_nacional: str | None = None   # cTribNac (default: config)
     aliquota_iss: Decimal | None = None          # % (default: config)
+    # ge=1: códigos do leiaute nacional da DPS começam em 1 — 0/negativo é
+    # sempre inválido. O conjunto FECHADO exato (limite superior) ainda não
+    # está confirmado com o provedor (docs/NFSE_VIABILIDADE.md, "a confirmar
+    # na implementação") — não travamos um teto aqui pra não rejeitar por
+    # engano um código válido que ainda não documentamos (review Codex em
+    # PR #1074; correção parcial — teto fica para quando o schema oficial
+    # for confirmado).
     trib_issqn: int | None = Field(
-        default=None,
+        default=None, ge=1,
         description="tribISSQN desta nota (1=tributável etc.). Default: NFSE_TRIB_ISSQN_DEFAULT.",
     )
     tipo_retencao_iss: int | None = Field(
-        default=None,
+        default=None, ge=1,
         description="tpRetISSQN desta nota (retido/não retido). Default: NFSE_TIPO_RETENCAO_ISS_DEFAULT.",
     )
 
