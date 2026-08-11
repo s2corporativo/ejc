@@ -2536,6 +2536,7 @@
   "method": "POST",
   "auth_deps": [
    "HTTPBearer",
+   "_dep",
    "_req_clientes",
    "get_current_user",
    "get_db"

@@ -11,13 +11,17 @@ from sqlalchemy.exc import IntegrityError, DataError
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel  # noqa: E402 (module-level p/ _ResolverClienteReq)
 
+from app.core.client_ownership import (
+    ids_clientes_visiveis,
+    pode_ver_cliente as _pode_ver_cliente_canonico,
+    visao_total_clientes,
+)
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles
-from app.core.ownership import is_gestao
 from app.models.user import User
 from app.models.client import Client, ClientStatus
-from app.models.case import Case
+from app.models.case import Case, CaseStatus
 from app.models.audit_log import criar_audit_log
 from app.schemas.client import (
     ClientCreate, ClientUpdate, ClientResponse, ConflitoCheckRequest,
@@ -45,18 +49,16 @@ def _req_clientes_leitura(cu: User = Depends(get_current_user)) -> User:
     return cu
 
 
-# Papéis operacionais de atendimento/recepção que precisam da carteira INTEIRA
-# para triar leads e operar o funil do CRM — restringi-los quebraria o fluxo
-# legítimo. A segregação de sigilo (achado de auditoria: advogado via nome+CPF+
-# CNPJ da carteira de OUTROS advogados) incide sobre advogado/advogado_auxiliar.
-# financeiro/estagiario/advogado_auxiliar nem chegam aqui (fora de _CLIENTES).
-_CLIENTES_VISAO_TOTAL = {"secretaria"}
-
-
 def _filtro_visibilidade_cliente(q, cu: User):
     """Segregação de titularidade de clientes (sigilo interno — LGPD/EOAB).
 
-    Espelha cases._filtro_visibilidade / ownership.is_gestao:
+    Delega ao gate canônico (app.core.client_ownership) — achado da auditoria:
+    esta função reimplementava em ORM a mesma regra que já existe em
+    client_ownership.ids_clientes_visiveis/visao_total_clientes, e as cópias
+    já haviam divergido (secretaria com visão total aqui, mas não nos
+    sub-recursos de cliente). Mantida como wrapper, com o mesmo nome, para não
+    tocar nos call sites.
+
       - Gestão (socio/admin/superadmin) e a recepção (secretaria) veem TODA a
         base — necessidade operacional do CRM/funil.
       - advogado/advogado_auxiliar veem apenas clientes vinculados a si:
@@ -67,54 +69,24 @@ def _filtro_visibilidade_cliente(q, cu: User):
     NÃO deve ser aplicado ao endpoint /checar-conflito (nem a detectar_conflito),
     que por dever ético (EOAB arts. 34-35) precisa cruzar a base inteira.
     """
-    if is_gestao(cu) or cu.role.value in _CLIENTES_VISAO_TOTAL:
+    if visao_total_clientes(cu):
         return q
-    casos_do_advogado = (
-        select(Case.client_id)
-        .where(
-            Case.client_id.is_not(None),
-            Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id,
-            ),
-        )
-    )
-    return q.where(or_(
-        Client.responsavel_id == cu.id,
-        Client.id.in_(casos_do_advogado),
-    ))
+    return q.where(Client.id.in_(ids_clientes_visiveis(cu)))
 
 
 async def _pode_ver_cliente(cu: User, client: Client, db: AsyncSession) -> bool:
     """Titularidade (sigilo interno) para UM cliente já carregado.
 
-    Versão row-level de _filtro_visibilidade_cliente — mesma regra, aplicada às
-    rotas de detalhe (GET /{id}, /ia-analise) e ao find-or-create (/resolver),
-    que operam sobre um único registro e não passam pelo filtro da query da
-    listagem. Gestão (socio/admin/superadmin) e a recepção (secretaria) veem
-    toda a base; advogado/advogado_auxiliar só veem o cliente quando:
-      • são o responsavel_id do próprio Client; OU
-      • há ao menos um caso NÃO excluído em que são advogado responsável/auxiliar.
+    Delega ao gate canônico (app.core.client_ownership.pode_ver_cliente) —
+    mesmo racional de _filtro_visibilidade_cliente acima. Versão row-level,
+    aplicada às rotas de detalhe (GET /{id}, /ia-analise) e ao find-or-create
+    (/resolver), que operam sobre um único registro e não passam pelo filtro
+    da query da listagem.
 
     NÃO deve ser usado nos endpoints de conflito de interesses, que por dever
     ético (EOAB arts. 34-35) precisam cruzar a base inteira.
     """
-    if is_gestao(cu) or cu.role.value in _CLIENTES_VISAO_TOTAL:
-        return True
-    if client.responsavel_id == cu.id:
-        return True
-    vinculo = (await db.execute(
-        select(Case.id).where(
-            Case.client_id == client.id,
-            Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id,
-            ),
-        ).limit(1)
-    )).first()
-    return vinculo is not None
+    return await _pode_ver_cliente_canonico(db, cu, client)
 
 
 class _ResolverClienteReq(BaseModel):
@@ -193,7 +165,12 @@ async def resolver_cliente(
     return {"id": novo.id, "nome": novo.nome_exibicao, "criado": True}
 
 
-@router.post("/verificar-conflito")
+# Rate limit + máscara de documento: mesma mitigação de /checar-conflito
+# (PR #528) — este endpoint TAMBÉM cruza a base inteira por dever ético e
+# devolvia CPF/CNPJ em claro sem throttle (achado da auditoria: permitia
+# reconstruir a carteira alheia com documento completo, em massa).
+@router.post("/verificar-conflito",
+             dependencies=[Depends(rate_limit("verificar-conflito", 10))])
 async def verificar_conflito(
     req: ConflitoCheckRequest,
     db: AsyncSession = Depends(get_db),
@@ -205,12 +182,20 @@ async def verificar_conflito(
     """
     # Lógica extraída para conflito_service (reutilizada no cadastro).
     from app.services.conflito_service import detectar_conflito
+    from app.services.pii_crypto import mascarar_documento
 
     resultado = await detectar_conflito(
         db, nome=req.nome, cpf=req.cpf, cnpj=req.cnpj,
         parte_contraria=req.parte_contraria,
     )
-    achados = resultado["achados"]
+    # PII: mascara o documento nos achados — mesmo racional de /checar-conflito
+    # (clients.py). Quem precisa do documento completo abre a ficha do cliente,
+    # onde o gate de titularidade se aplica normalmente.
+    achados = [
+        {**a, "documento": mascarar_documento(a["documento"])}
+        if "documento" in a else a
+        for a in resultado["achados"]
+    ]
     classificacao = resultado["classificacao"]
     conflito_grave = resultado["bloqueio"]
 
@@ -235,9 +220,14 @@ async def verificar_conflito(
     }
 
 
-# Casos considerados "ativos" para fins de conflito (CaseStatus).
+# Casos considerados "ativos" (representação em curso) para fins de conflito.
+# Derivado do CaseStatus vigente — não hardcoded — para não envelhecer quando
+# o enum mudar (achado da auditoria: a versão anterior listava status extintos
+# pela migration 126 e o alerta ético nunca atingia nível "crítico").
 # encerrado/arquivado NÃO contam como conflito crítico.
-_STATUS_ATIVOS = {"triagem", "ativo", "suspenso", "acordo"}
+_STATUS_ATIVOS = {s.value for s in CaseStatus} - {
+    CaseStatus.encerrado.value, CaseStatus.arquivado.value,
+}
 
 
 # Rate limit também mitiga enumeração de CPF/CNPJ via tentativas em massa.
@@ -261,13 +251,14 @@ async def checar_conflito(
 
     PII: o NOME sai completo — é o dever ético (o advogado precisa saber com
     quem é o conflito, e sem o nome o alerta é inacionável). O CPF/CNPJ sai
-    apenas MASCARADO (`documento_mascarado`). O endpoint é o único que cruza a
-    base inteira ignorando a segregação de carteira, então devolver documento
-    em claro entregaria PII de cliente de outro advogado a quem não tem
-    titularidade. Quem precisa do documento completo abre a ficha do cliente —
+    apenas MASCARADO (`documento_mascarado`). Este endpoint (e /verificar-
+    conflito, mesmo racional) cruza a base inteira ignorando a segregação de
+    carteira, então devolver documento em claro entregaria PII de cliente de
+    outro advogado a quem não tem titularidade. Quem precisa do documento
+    completo abre a ficha do cliente —
     lá o gate de titularidade se aplica normalmente.
     """
-    from app.services.conflito_service import detectar_conflito
+    from app.services.conflito_service import _padrao_like, detectar_conflito
     from app.services.pii_crypto import mascarar_documento, normalizar_documento
     from app.models.case_parte import CaseParte
 
@@ -340,7 +331,10 @@ async def checar_conflito(
             " ", "")
         conds.append(norm_expr == doc_norm)
     if req.nome and len(req.nome.strip()) >= 4:
-        conds.append(CaseParte.nome.ilike(f"%{req.nome.strip()}%"))
+        # Wildcards do input escapados (mesmo helper de conflito_service e
+        # raio_x_service) — sem isto, "____" casa qualquer nome com 4+
+        # caracteres e contorna o piso de 4 chars (achado da auditoria).
+        conds.append(CaseParte.nome.ilike(_padrao_like(req.nome.strip()), escape="\\"))
 
     if conds:
         q = (
@@ -429,6 +423,15 @@ async def listar(
             condicoes.append(Client.cnpj_hash == hash_documento(dig))
         q = q.where(or_(*condicoes))
     if status_f:
+        # Valor fora do enum estourava DataError→500 no bind (achado da
+        # auditoria; vocabulário de status é fonte recorrente de armadilha
+        # neste sistema). 422 explícito, mesmo padrão dos schemas do módulo.
+        if status_f not in {s.value for s in ClientStatus}:
+            raise HTTPException(
+                status_code=422,
+                detail=f"status inválido; use um de: "
+                       f"{sorted(s.value for s in ClientStatus)}",
+            )
         q = q.where(Client.status == status_f)
     q = q.order_by(Client.created_at.desc())
 
@@ -676,6 +679,8 @@ async def atualizar(
 @router.delete("/{client_id}", response_model=MsgResponse)
 async def remover(
     client_id: str,
+    forcar: bool = Query(
+        False, description="Confirma exclusão mesmo com caso em representação ativa"),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["admin", "socio"])),
 ):
@@ -684,8 +689,38 @@ async def remover(
     )).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+    # Mesmo bloqueio da anonimização LGPD (art. 17): cliente em representação
+    # ativa não deve ser removido sem decisão explícita — o escritório tem
+    # dever profissional de identificar o cliente enquanto atua por ele.
+    # forcar=true prossegue e fica registrado na auditoria (achado da
+    # auditoria: a exclusão não verificava dependências, diferente da
+    # anonimização que já faz essa checagem).
+    from app.services.client_anonimizacao import verificar_bloqueios
+    bloqueios = await verificar_bloqueios(db, client_id)
+    if bloqueios and not forcar:
+        raise HTTPException(status_code=409, detail={
+            "mensagem": "Exclusão bloqueada — resolva as pendências ou "
+                        "confirme com forcar=true (decisão registrada em auditoria).",
+            "bloqueios": bloqueios,
+        })
+
     c.deleted_at = datetime.now(timezone.utc)
-    await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "clients", client_id)
+
+    # Desativa login do Portal vinculado — sem isto, o cliente "removido"
+    # continuava acessando casos/documentos/financeiro via /portal (achado da
+    # auditoria: diferente da anonimização LGPD, que já desativa o portal).
+    usuarios_portal = (await db.execute(
+        select(User).where(User.client_id == client_id, User.is_active.is_(True))
+    )).scalars().all()
+    for u in usuarios_portal:
+        u.is_active = False
+
+    detalhes = "Cliente removido (soft delete)."
+    if bloqueios:
+        detalhes += f" FORÇADO apesar de {len(bloqueios)} bloqueio(s) ativo(s)."
+    await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "clients",
+                          client_id, detalhes=detalhes)
     await db.commit()
     return MsgResponse(detail="Cliente removido")
 

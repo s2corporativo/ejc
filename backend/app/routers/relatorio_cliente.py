@@ -6,12 +6,13 @@ agregações independentes. Uma que falhe devolve lista vazia, entra em
 em vez de responder 500 e deixar a tela em branco (achado da auditoria).
 """
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from app.core.client_ownership import visao_total_clientes
 from app.core.database import get_db
 from app.core.degradacao import ColetorDeSecoes
 from app.core.security import get_current_user
-from app.core.ownership import is_gestao
+from app.models.client import Client
 from app.models.user import User
 
 _FIN_ADV = {"superadmin", "admin", "socio", "financeiro", "advogado"}
@@ -26,9 +27,14 @@ def _req_fin_adv(cu: User = Depends(get_current_user)) -> User:
 
 async def _cliente_visivel(db: AsyncSession, cu: User, client_id: str) -> bool:
     """Ownership do cliente (mesmo racional de sociedades_cliente._cliente_visivel):
-    gestão vê tudo; demais precisam ser responsáveis pelo cliente OU atuar em caso
-    dele. Impede advogado/financeiro de puxar relatório+PII de cliente alheio."""
-    if is_gestao(cu):
+    gestão e secretaria (visão total do CRM, client_ownership canônico) veem
+    tudo; financeiro vê o relatório financeiro de QUALQUER cliente — é a razão
+    de _FIN_ADV incluir o papel (achado da auditoria: a autorização de topo
+    permitia financeiro chamar o endpoint, mas o gate de titularidade nunca
+    deixava passar — financeiro nunca é responsável pelo cliente nem advogado
+    de caso; a permissão era morta na prática). Demais (advogado/auxiliar)
+    precisam ser responsáveis pelo cliente OU atuar em caso dele."""
+    if visao_total_clientes(cu) or cu.role.value == "financeiro":
         return True
     row = (await db.execute(text("""
         SELECT 1 FROM clients cl
@@ -85,15 +91,23 @@ async def relatorio_financeiro_cliente(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    cli = (await db.execute(text("""
-        SELECT id, nome, email, telefone, whatsapp, COALESCE(cpf, cnpj) AS cpf_cnpj FROM clients
-        WHERE id = :cid AND deleted_at IS NULL
-    """), {"cid": client_id})).mappings().first()
-    if not cli:
+    # Cutover C6/LGPD: cpf/cnpj não existem mais em texto puro (migration 112).
+    # Carrega via ORM para usar documento_plain (decifra resiliente) — a query
+    # em SQL bruto anterior referenciava colunas dropadas e o relatório
+    # inteiro respondia 500 (achado crítico da auditoria).
+    cli_obj = (await db.execute(
+        select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not cli_obj:
         raise HTTPException(404, "Cliente não encontrado")
     if not await _cliente_visivel(db, cu, client_id):
         # 404 (não 403) para não confirmar a existência de cliente alheio.
         raise HTTPException(404, "Cliente não encontrado")
+    cli = {
+        "id": cli_obj.id, "nome": cli_obj.nome_exibicao,
+        "email": cli_obj.email, "telefone": cli_obj.telefone,
+        "whatsapp": cli_obj.whatsapp, "cpf_cnpj": cli_obj.documento_plain,
+    }
 
     secoes = ColetorDeSecoes("relatorio_financeiro_cliente", db)
     fees = await secoes.tentar("honorarios", _carregar_honorarios(db, client_id), padrao=[])
@@ -148,7 +162,7 @@ async def relatorio_financeiro_cliente(
             })
 
     return {
-        "cliente": dict(cli),
+        "cliente": cli,
         "resumo": {
             "total": total, "recebido": recebido, "pendente": pendente, "atrasado": atrasado,
             "honorarios_contratuais": contratual, "honorarios_exito": exito,
