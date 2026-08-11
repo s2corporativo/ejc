@@ -75,6 +75,13 @@ usa para `SECRET_KEY` e chaves de PII em produção.
 }
 ```
 
+**Base legal.** LC 116/2003, art. 6º: Municípios e o DF podem, por lei municipal, atribuir ao
+**tomador** a responsabilidade pela retenção e recolhimento do ISS — e o tomador responde pelo
+imposto ainda que não tenha retido. Para optante do Simples Nacional há regra própria (LC 123/2006,
+art. 21, §4º): o tomador aplica a alíquota efetiva informada **no documento fiscal**; se a NFS-e
+não a informar, aplica-se a maior alíquota do anexo. Ou seja, o campo depende também do município
+do tomador — o que reforça que não pode ser constante.
+
 **Impacto.** A retenção do ISS não é uma propriedade do emitente: depende do tomador e do
 município. Há tomadores pessoa jurídica legalmente obrigados a reter o ISS na fonte. Com
 `tpRetISSQN` fixo em "não retido", **a nota emitida para esse tomador sai errada** — e a

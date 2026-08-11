@@ -13,7 +13,8 @@ Assinaturas Eletrônicas (natureza da assinatura, trilha, fluxo).
 ## O achado principal: a chance de êxito NÃO vaza para o cliente
 
 Este era um dos cinco "achados que não podem se perder" do `README.md` da auditoria, em aberto
-desde a Parte 9: existe métrica de "chance de êxito" em produção, e **precisava ser confirmado
+desde a Parte 9. A métrica de "chance de êxito" **está presente no código analisado** (a Parte 9 a
+observou em produção; esta auditoria não acessou produção), e precisava ser confirmado
 que não é exposta ao cliente no portal**.
 
 **Fundamento correto, e uma retificação.** A vedação a prometer resultado está no **Provimento OAB
