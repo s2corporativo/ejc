@@ -279,6 +279,12 @@ start_pg() {
     docker run -d --name "$PG_CONTAINER" -e POSTGRES_USER="$DBU" -e POSTGRES_PASSWORD="$DBP" -e POSTGRES_DB="$DBN" -p "127.0.0.1:$PG_PORT:5432" "$PGVECTOR_IMAGE" >/dev/null
     for _ in $(seq 1 45); do docker exec "$PG_CONTAINER" pg_isready -U "$DBU" -d "$DBN" >/dev/null 2>&1 && break; sleep 1; done
     docker exec "$PG_CONTAINER" pg_isready -U "$DBU" -d "$DBN" >/dev/null 2>&1 || die "PostgreSQL efêmero não ficou pronto"
+    local pg_version_num pg_docker_major
+    pg_version_num="$(PGPASSWORD="$DBP" psql -h 127.0.0.1 -p "$PG_PORT" -U "$DBU" -d "$DBN" -Atqc 'SHOW server_version_num;' 2>/dev/null)" \
+      || die "não foi possível validar a versão real do PostgreSQL Docker efêmero"
+    [[ "$pg_version_num" =~ ^[0-9]+$ ]] || die "server_version_num inválido no PostgreSQL Docker: $pg_version_num"
+    pg_docker_major="$((pg_version_num / 10000))"
+    [ "$pg_docker_major" = "16" ] || die "PostgreSQL Docker major $pg_docker_major detectado; o CI canônico exige 16."
   else
     PG_MODE=local
     PGBIN="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)"
