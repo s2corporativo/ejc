@@ -111,23 +111,32 @@ if [ "$SENSITIVE_CHANGED" -eq 1 ]; then
   EVIDENCE_DIR="${EJC_CI_STATE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/ejc-ci-fallback}/security-auditor-evidence"
   HEAD_SHA="$(git rev-parse HEAD)"
   EVIDENCE_FILE="$EVIDENCE_DIR/$HEAD_SHA.json"
+  CONTROLLER_UID="$(id -u)"
 
-  if [ -s "$EVIDENCE_FILE" ]; then
-    EVIDENCE_SHA="$(jq -r '.head_sha // ""' "$EVIDENCE_FILE" 2>/dev/null || true)"
-    EVIDENCE_RESULT="$(jq -r '.result // ""' "$EVIDENCE_FILE" 2>/dev/null || true)"
-    if [ "$EVIDENCE_SHA" = "$HEAD_SHA" ] && [ "$EVIDENCE_RESULT" = "completed" ]; then
-      ok "security-auditor evidenciado para SHA $HEAD_SHA"
-    else
-      fail "evidência de security-auditor inválida ou SHA divergente (esperado $HEAD_SHA, encontrado $EVIDENCE_SHA)"
-    fi
-  else
-    if printf '%s' "$PR_BODY" | grep -qi 'security-auditor: executado'; then
-      warn "security-auditor registrado apenas por marcador literal (evidência autenticada preferível)"
-      ok "security-auditor registrado (via PR_BODY, não evidência autenticada)"
-    else
-      fail "mudança sensível sem evidência de security-auditor vinculada ao HEAD SHA nem marcador no PR"
-    fi
-  fi
+  [ -d "$EVIDENCE_DIR" ] || fail "mudança sensível sem diretório de evidência autenticada do security-auditor"
+  [ ! -L "$EVIDENCE_DIR" ] || fail "diretório de evidência do security-auditor não pode ser symlink"
+  [ "$(stat -c '%u' "$EVIDENCE_DIR" 2>/dev/null || printf 'invalid')" = "$CONTROLLER_UID" ] \
+    || fail "diretório de evidência do security-auditor não pertence ao controlador"
+  [ $((8#$(stat -c '%a' "$EVIDENCE_DIR" 2>/dev/null || printf '777') & 8#022)) -eq 0 ] \
+    || fail "diretório de evidência do security-auditor é gravável por grupo/outros"
+
+  [ -f "$EVIDENCE_FILE" ] && [ ! -L "$EVIDENCE_FILE" ] \
+    || fail "mudança sensível sem evidência autenticada de security-auditor vinculada ao HEAD SHA"
+  [ "$(stat -c '%u' "$EVIDENCE_FILE" 2>/dev/null || printf 'invalid')" = "$CONTROLLER_UID" ] \
+    || fail "evidência do security-auditor não pertence ao controlador"
+  [ $((8#$(stat -c '%a' "$EVIDENCE_FILE" 2>/dev/null || printf '777') & 8#022)) -eq 0 ] \
+    || fail "evidência do security-auditor é gravável por grupo/outros"
+
+  EVIDENCE_SHA="$(jq -r '.head_sha // ""' "$EVIDENCE_FILE" 2>/dev/null || true)"
+  EVIDENCE_RESULT="$(jq -r '.result // ""' "$EVIDENCE_FILE" 2>/dev/null || true)"
+  EVIDENCE_ISSUER="$(jq -r '.issuer // ""' "$EVIDENCE_FILE" 2>/dev/null || true)"
+  [ "$EVIDENCE_SHA" = "$HEAD_SHA" ] \
+    || fail "evidência de security-auditor com SHA divergente (esperado $HEAD_SHA, encontrado $EVIDENCE_SHA)"
+  [ "$EVIDENCE_RESULT" = "completed" ] \
+    || fail "security-auditor não concluído com resultado positivo para o HEAD SHA"
+  [ "$EVIDENCE_ISSUER" = "security-auditor" ] \
+    || fail "evidência não emitida pela identidade security-auditor"
+  ok "security-auditor evidenciado de forma fail-closed para SHA $HEAD_SHA"
 fi
 
 if [ "$GOV_CHANGED" -eq 1 ] && [ "$FUNCTIONAL_CHANGED" -eq 1 ]; then
