@@ -53,8 +53,11 @@ lugar do arquivo — que tem 79 linhas no total.
 
 - **`POST /clients/{client_id}/esquecimento`** (`backend/app/routers/clients.py:914`) com
   `services/client_anonimizacao.py` — anonimização irreversível do titular, com verificação prévia
-  de bloqueios (`/esquecimento/bloqueios`, `clients.py:892`) e trilha. É o atendimento ao art. 18,
-  VI da LGPD, e **funciona** para o cliente.
+  de bloqueios (`/esquecimento/bloqueios`, `clients.py:892`) e trilha. **Escopo limitado, porém:**
+  `anonimizar_cliente` sobrescreve os campos diretos do cliente, mas preserva `cidade` e `estado`,
+  e não alcança conteúdo textual pessoal que esteja em registros relacionados. A cobertura de
+  teste é parcial e depende de `RUN_DB_TESTS=1`. É um caminho de atendimento ao art. 18, VI da
+  LGPD — não uma garantia de eliminação integral.
 - **`_purgar_dados_lgpd`** (`backend/app/services/scheduler.py:1165`) — retenção por
   `RETENCAO_CLIENTE_ANOS` (default 5), mas aplica **soft delete** (`UPDATE clients SET deleted_at
   = NOW()`), não eliminação.
@@ -62,8 +65,8 @@ lugar do arquivo — que tem 79 linhas no total.
   restrito a rascunhos órfãos da Entrada Única.
 
 **O que falta, e é o achado.** Nenhum desses caminhos toca as **outras oito entidades da lixeira**
-(`trash.py:24-33`: `Case`, `Document`, `LegalDoc`, `Fee`, `Procuracao`, `EnvironmentalCase`,
-`Task`). Um caso, um documento ou um honorário enviado à lixeira permanece indefinidamente, e a
+(`trash.py:24-33`: `Case`, `Deadline`, `Document`, `LegalDoc`, `Fee`, `Procuracao`,
+`EnvironmentalCase`, `Task`). Um caso, um documento ou um honorário enviado à lixeira permanece indefinidamente, e a
 retenção de cliente só troca um estado por outro dentro da mesma tabela. O art. 16 da LGPD (Lei
 13.709/2018, vigente desde 18/09/2020) exige eliminação após o término do tratamento — e para
 essas entidades não há política declarada nem mecanismo.

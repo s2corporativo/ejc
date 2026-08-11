@@ -218,10 +218,13 @@ ela entra no conjunto que a **próxima** geração vai clonar: 10 despesas fixas
 seguinte, 40 no outro. E não há deduplicação por `(descricao, competencia)`: clicar duas vezes em
 "Gerar lançamentos" para a mesma competência duplica tudo de novo, sem aviso.
 
-O efeito no consolidado é o oposto do que se esperaria de um módulo "que não gera nada":
-**despesa inflada e caixa subestimado**, agravando a cada mês em que alguém usar o botão.
+O efeito no consolidado é o oposto do que se esperaria de um módulo "que não gera nada". As cópias
+nascem com `status: "pendente"`, e o `caixa_periodo` só subtrai despesa com `status='pago'`
+(`financeiro_consolidado.py`) — então o impacto imediato é **inflar as despesas lançadas e o
+`a_pagar`**, não reduzir o caixa. O caixa só é atingido quando alguém quitar as duplicatas. O erro
+se agrava a cada mês em que o botão for usado.
 
-**Correção sugerida.** Separar *template* de *lançamento*: a despesa recorrente é o modelo
+**Correção sugerida.** Separar *modelo* de *lançamento*: a despesa recorrente é o modelo
 (`recorrente=true`) e as cópias geradas nascem com `recorrente=false` e `origem_id` apontando para
 o modelo, com índice único `(origem_id, competencia)` fechando a idempotência no banco. A geração
 deve migrar para o backend, onde a unicidade é aplicável. Teste de regressão obrigatório: gerar
@@ -358,7 +361,8 @@ no caso.
 ## Lacunas desta auditoria
 
 As frentes paralelas despachadas foram todas interrompidas por limite de sessão da API antes de
-produzir resultado. Ficaram **não auditados** os seis grupos abaixo, e nada deve ser presumido sobre eles:
+produzir resultado. Ficaram **fora do escopo desta Parte 14** os seis grupos abaixo — todos
+cobertos depois, nas Partes 15 a 20 do mesmo PR, e nada deve ser presumido sobre eles:
 
 - **NFS-e** (`backend/app/routers/nfse.py`, 842 linhas) — a pergunta central em aberto é se emite
   nota de verdade ou só grava registro local. O `main.py:416` a descreve como "GATED, homologação".

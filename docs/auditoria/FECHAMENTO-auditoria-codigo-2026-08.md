@@ -46,9 +46,10 @@ do request. *(Partes 15 e 16)*
 | **PRZ-02** | 14 | O recesso do art. 220 (20/12–20/01) não é aplicado em nenhum dos três caminhos por onde um prazo realmente nasce (calculadora, criação manual, DJEN), embora o motor de peças e o agente de IA o apliquem. A mesma pergunta tem duas respostas no sistema. |
 | **SOC-01** | 18 | Cadastrar sócio exige `admin` (nível 8); **alterar** exige apenas `socio` (nível 7), e o `PATCH` aceita qualquer campo, incluindo `participacao_percentual` e `pro_labore`. Um sócio pode alterar a própria participação e a dos demais — sem trilha alguma. |
 | **NFS-01** | 17 | Regime tributário fixado em código como Simples Nacional optante. Se o escritório não for optante, toda nota declara regime errado — o próprio comentário registra que isso muda a base de cálculo da DPS. |
-| **NFS-02** | 17 | Retenção de ISS fixada em "não retido" e operação fixada em "tributável". Retenção depende do **tomador**; nota para tomador obrigado a reter sai errada. |
+| **NFS-02** | 17 | Retenção de ISS fixada em "não retido" e operação fixada em "tributável". Retenção depende do **tomador** (LC 116/2003, art. 6º); nota para tomador obrigado a reter sai errada. |
+| **ASS-00** | 15 | O signatário não consegue ler o documento que assina: a tela do portal mostra título e hash, sem download nem visualização, e a listagem do backend devolve metadados. Não há prova de acesso ao conteúdo — pressuposto da manifestação de vontade. |
 
-**Sequência recomendada.** SOC-01 primeiro: é o único P0 cuja correção é pequena e não depende de
+**Sequência recomendada.** SOC-01 e ASS-00 primeiro. SOC-01 é o único P0 cuja correção é pequena e não depende de
 ninguém de fora (elevar o gate do `PATCH`, restringir campos por allowlist, registrar trilha).
 PRZ-01 e PRZ-02 em seguida, com teste de regressão — são regra jurídica e a governança exige fonte,
 vigência e teste. NFS-01 e NFS-02 são **decisão de contador**, não de programador: valem uma
@@ -74,14 +75,17 @@ conversa antes de qualquer código e antes de `NFSE_ENABLED=true` em produção.
 | SOC-03 | 18 | A soma de 100% só é validada na distribuição, nunca na escrita — o quadro pode ser gravado somando 150%. |
 | HON-01 | 19 | O estimador de IA não passa pelo citation gate; a proteção contra inventar item da tabela OAB é instrução de prompt. |
 | DIA-01 | 19 | `/diagnostico/central` reporta `backup_offsite` ligado e desligado na mesma resposta, no campo que o próprio código chama de "único mitigante do ponto único de falha do banco". |
-| CFG-01 | 20 | Desligar um módulo esconde o menu; a API continua aberta. |
 | LIX-01 | 20 | Não existe purga definitiva — pedido de exclusão de titular não pode ser atendido pelo sistema (LGPD art. 16 e art. 18, VI). |
 | LIX-02 | 20 | A restauração é de uma linha só, sem as relações; somada à exclusão que não cascateia, produz inconsistência nos dois sentidos. |
 
 ### P2
 
 FIN-05, FIN-06, FIN-07 *(14)* · PRZ-04 *(14)* · POR-02, POR-03, ASS-03 *(15)* · NFS-05 *(17)* ·
-SOC-04 *(18)* · HON-02 *(19)* · LIX-03, PRO-01, CON-01 *(20)*. Detalhe em cada parte.
+SOC-04 *(18)* · HON-02 *(19)* · **CFG-01**, LIX-03, PRO-01, CON-01 *(20)*. Detalhe em cada parte.
+
+*(CFG-01 foi rebaixado de P1 para P2 na revisão do PR #1060: o `ModuleLifecycleGate` do frontend
+redireciona rotas de módulo desligado, restando apenas o acesso por cliente HTTP direto — que é o
+desenho declarado.)*
 
 ---
 

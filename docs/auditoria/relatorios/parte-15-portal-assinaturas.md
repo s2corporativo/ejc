@@ -186,6 +186,13 @@ aceite eletrônico cuja validade depende da admissão pelas partes (MP 2.200-2/2
 inline, autorizado pelo mesmo gate de `client_id`), e registrar na trilha o momento do acesso ao
 conteúdo, não só o do aceite.
 
+**E a declaração de leitura não é persistida.** A interface pede que o cliente confirme que
+"LEU e CONCORDA", mas o `POST /signatures/{id}/assinar` envia apenas o identificador: nada no
+`SignatureRequest` registra a declaração nem a versão do termo aceito. A trilha prova autoria,
+integridade e contexto — não prova a **admissão do meio** que o art. 10, §2º, da MP 2.200-2/2001
+exige. Enquanto esse registro não existir, o enquadramento correto é "potencialmente admissível se
+a condição legal for atendida", não "válida entre as partes".
+
 **Achado incorporado da revisão do PR #1060** — não constava da primeira redação.
 
 ### ASS-01 (P1) — O hash não é reconferido no momento da assinatura
@@ -210,7 +217,7 @@ com arquivo trocado no intervalo.
 cancelamento nem campo de validade no fluxo.
 
 **Impacto.** Solicitação criada por engano, ou para o documento errado, fica pendente para sempre
-e não pode ser retirada do portal do cliente. Não há prazo de validade nem cobrança automática.
+e não pode ser retirada do portal do cliente. Não há prazo de validade nem lembrete automático.
 Numa disputa, "pendente há oito meses" é um estado que o sistema não sabe distinguir de
 "aguardando o cliente".
 
