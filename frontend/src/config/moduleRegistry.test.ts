@@ -25,6 +25,29 @@ describe("moduleRegistry", () => {
     expect(areas?.path).toBe("/areas-de-atuacao");
   });
 
+  it("registra o DPT Empresarial 360 como workspace essencial sem alargar RBAC", () => {
+    const dpt = STAFF_ROUTES.find((route) => route.key === "dpt360");
+    expect(dpt?.path).toBe("/dpt360");
+    expect(dpt?.showInNav).toBe(true);
+    expect(dpt?.essential).toBe(true);
+    expect(STAFF_ROUTES.some((route) => route.path === "/dpt360/*")).toBe(true);
+
+    for (const role of ["superadmin", "admin", "socio", "advogado"]) {
+      expect(canRoleAccessPath(role, "/dpt360"), role).toBe(true);
+      expect(canRoleAccessPath(role, "/dpt360/empresas"), role).toBe(true);
+    }
+    for (const role of [
+      "advogado_auxiliar",
+      "estagiario",
+      "financeiro",
+      "secretaria",
+      "cliente_externo",
+    ]) {
+      expect(canRoleAccessPath(role, "/dpt360"), role).toBe(false);
+      expect(canRoleAccessPath(role, "/dpt360/empresas"), role).toBe(false);
+    }
+  });
+
   it("não possui aliases duplicados nem aliases sobre rotas canônicas", () => {
     const aliases = LEGACY_REDIRECTS.map((redirect) => redirect.from);
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
@@ -111,7 +134,7 @@ describe("moduleRegistry", () => {
 
   it("mantém o menu enxuto e o modo essencial por perfil", () => {
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
-      expect(getProductionNavigation(role).length).toBeLessThanOrEqual(17);
+      expect(getProductionNavigation(role).length).toBeLessThanOrEqual(18);
       expect(
         getProductionNavigation(role).some((m) => m.path === "/ferramentas"),
       ).toBe(true);
@@ -128,6 +151,7 @@ describe("moduleRegistry", () => {
       "/clientes",
       "/documentos",
       "/pecas",
+      "/dpt360",
       "/sala-juridica",
       "/inteligencia",
     ]);

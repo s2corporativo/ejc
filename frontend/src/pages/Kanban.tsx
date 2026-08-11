@@ -4,6 +4,7 @@ import { ChevronDown } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { Spinner, PageHeader, ErrorState } from "../components/UI";
+import { toast } from "../components/Toast";
 
 interface KanbanCol {
   id: string;
@@ -111,7 +112,13 @@ export default function Kanban() {
         kanban_column: colName,
         kanban_position: pos,
       });
-    } catch {
+    } catch (err: unknown) {
+      // Colunas de arquivamento/encerramento exigem o endpoint dedicado
+      // (gate de papel + pós-mortem) — o cartão volta ao lugar; sem o aviso,
+      // o "não aconteceu nada" parece bug, não uma recusa deliberada.
+      const detail = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail;
+      if (typeof detail === "string") toast.error(detail);
       await loadCasos();
     }
   };

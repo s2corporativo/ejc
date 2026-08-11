@@ -28,9 +28,3 @@ novos_modulos.router.include_router(defesas_revisoes.router)
 # implementação legada foi removida do router avançado — sem sombreamento).
 novos_modulos.router.include_router(defesas_revisoes_pacote_seguro.router)
 novos_modulos.router.include_router(defesas_revisoes_avancado.router)
-
-# Timeline e saúde operacional são fachadas de leitura do workspace canônico.
-# O router complementar herda o prefixo /cases e mantém ownership no backend.
-from app.routers import case_timeline, cases  # noqa: E402
-
-cases.router.include_router(case_timeline.router)

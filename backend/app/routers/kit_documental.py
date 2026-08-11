@@ -1,13 +1,13 @@
 # ── app/routers/kit_documental.py ────────────────────────────────────────────
 # P0.3 — Kit documental inicial do caso: POST /cases/{case_id}/kit-documental.
-# Gera (determinístico, sem LLM) procuração + contrato de honorários com
-# referência OAB/MG + checklist documental, SEMPRE como rascunho (HITL).
-# Restrito a advogado+ (ato jurídico), com ownership do caso e rate limit.
+# Também abriga as portas HTTP de vínculo de documento existente ao caso; a
+# regra fica em service dedicado, preservando o router já registrado em /cases.
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,8 +17,15 @@ from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, requer_advogado
 from app.models.client import Client
 from app.models.user import User
+from app.services.document_analysis_hook import analisar_documento_bg
+from app.services.document_case_link_service import (
+    buscar_documentos_vinculaveis,
+    obter_ocr_documento_vinculado,
+    vincular_documento_existente,
+)
 from app.services.geracao_documental import gerar_kit_inicial
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/cases", tags=["Kit Documental"])
 
 _PODERES_VALIDOS = {"ad_judicia", "ad_judicia_et_extra", "especiais"}
@@ -74,9 +81,74 @@ async def gerar_kit_documental(
 
     p = payload or KitDocumentalIn()
     return await gerar_kit_inicial(
-        db, case, cli, cu,
+        db,
+        case,
+        cli,
+        cu,
         tipo_poderes=p.tipo_poderes,
         permite_substabelecimento=p.permite_substabelecimento,
         poderes_especiais=p.poderes_especiais,
         forcar_novo=p.forcar_novo,
     )
+
+
+@router.get(
+    "/{case_id}/documentos/candidatos",
+    tags=["Documentos do Caso"],
+    dependencies=[Depends(rate_limit("case-document-candidates", 30))],
+)
+async def listar_documentos_candidatos(
+    case_id: str,
+    search: str = Query("", max_length=200),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Lista somente documentos visíveis e ainda não vinculados ao caso."""
+    return await buscar_documentos_vinculaveis(
+        db,
+        cu,
+        case_id,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.post(
+    "/{case_id}/documentos/{document_id}/vincular",
+    tags=["Documentos do Caso"],
+    dependencies=[Depends(rate_limit("case-document-link", 30))],
+)
+async def vincular_documento_ao_caso(
+    case_id: str,
+    document_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Vincula documento solto e dispara a mesma análise estratégica do upload."""
+    resultado = await vincular_documento_existente(db, cu, case_id, document_id)
+
+    # O vínculo já foi commitado no service. A análise é fail-safe, como no
+    # upload direto: indisponibilidade de IA não desfaz o ato documental.
+    if resultado.get("alterado"):
+        try:
+            ocr_text = await obter_ocr_documento_vinculado(db, case_id, document_id)
+            if ocr_text:
+                background_tasks.add_task(
+                    analisar_documento_bg,
+                    case_id,
+                    ocr_text,
+                    document_id,
+                    cu.id,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Falha ao preparar análise pós-vínculo do documento %s: %s",
+                document_id,
+                exc,
+            )
+
+    return resultado

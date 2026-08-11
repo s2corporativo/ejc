@@ -18,6 +18,9 @@ concurrency:
 jobs:
   monitor:
     name: Produção — saúde do backup diário
+    # Schedule sempre usa a branch default. Execução manual só pode alcançar a
+    # VPS quando disparada da main; branch arbitrária é recusada no job.
+    if: github.event_name == 'schedule' || github.ref_name == 'main'
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 10
     env:
@@ -25,6 +28,8 @@ jobs:
       BACKUP_MAX_AGE_HOURS: "30"
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: main
 
       - name: Verificar configuração, recência, status e artefatos
         id: health
