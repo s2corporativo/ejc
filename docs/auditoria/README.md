@@ -8,6 +8,11 @@ superadmin, mais análise estática dos bundles JavaScript publicados. **Sem ace
 ao servidor por SSH, ou a navegador.** Isso delimita o alcance de tudo o que está aqui: os achados
 são reproduzíveis pela API, mas as causas no código precisam ser confirmadas por quem tem o repositório.
 
+**Atualização de agosto/2026:** as Partes 14 a 20 foram feitas **com** acesso ao código-fonte e
+localizam causas, não só sintomas. A consolidação está em
+`FECHAMENTO-auditoria-codigo-2026-08.md`. Dois dos cinco achados destacados abaixo já foram
+resolvidos por ela.
+
 ---
 
 ## Por onde começar
@@ -22,6 +27,15 @@ são reproduzíveis pela API, mas as causas no código precisam ser confirmadas 
 ---
 
 ## Os documentos
+
+### `FECHAMENTO-auditoria-codigo-2026-08.md` — auditoria de CÓDIGO (agosto/2026)
+
+Consolidação das Partes 14 a 20, a primeira leitura feita **com** o repositório em mãos. Lista
+única de achados por severidade, o que foi resolvido de pendências antigas, o que está bom e deve
+ser preservado, e as limitações do trabalho.
+
+Diferente de tudo o que veio antes: as Partes 1 a 13 reproduziam sintomas de fora; estas localizam
+causas no código, com evidência `arquivo:linha`.
 
 ### `plano-lancamento-v3.md` — PLANO ATIVO
 
@@ -76,6 +90,13 @@ Inclui o checklist de pré-operação e o método do "primeiro caso real".
 | `parte-11-apis-sincronizacao.md` | **DJEN nunca capturou nada**; prefixo `/v1/` duplicado; 15 calculadoras órfãs |
 | `parte-12-falsos-positivos.md` | **11 falsos positivos** com 3 causas-raiz; retificação do número de peças |
 | `parte-13-homologacao-dinamica.md` | Primeira homologação com stack real (Docker) e código-fonte; confirma os P0 do PR #652 em runtime; achado novo: `/legal-docs/{id}/validar` quebra com 500 sem provedor de IA e é isso que trava `/aprovar` |
+| `parte-14-financeiro-prazos-intimacoes.md` | **Auditoria de código.** Termo inicial do prazo DJEN (art. 224 §2); recesso do art. 220 não aplicado; consolidado ignora pagamentos parciais; recorrentes sem motor |
+| `parte-15-portal-assinaturas.md` | **Auditoria de código.** Chance de êxito NÃO vaza ao cliente; sem IDOR no portal; hash não reconferido ao assinar |
+| `parte-16-notificacoes.md` | **Auditoria de código.** Sino é acumulador sem retenção (LGPD); `notificar()` comita a sessão do chamador; alertas de prazo são idempotentes |
+| `parte-17-nfse.md` | **Auditoria de código.** Emite de verdade (Nuvem Fiscal); regime tributário e retenção de ISS fixos em código |
+| `parte-18-gestao-societaria.md` | **Auditoria de código.** Sócio nível 7 altera participação de qualquer sócio sem trilha; 100% só validado na distribuição |
+| `parte-19-estimador-oab-diagnostico.md` | **Auditoria de código.** Causa-raiz da contradição do `backup_offsite`; estimador sem citation gate |
+| `parte-20-configuracoes-lixeira-apoio.md` | **Auditoria de código.** Desligar módulo só esconde o menu; lixeira sem purga definitiva (LGPD) |
 
 ---
 
@@ -97,9 +118,12 @@ sem súmula, jurisprudência ou doutrina. *(Parte 8)*
 **O sistema mente sobre os próprios números.** Dashboard informa "0 peças aguardando revisão" com
 100% em rascunho; filtro `status=ativo` retorna vazio com 8 casos cadastrados. *(Parte 12)*
 
-**Há uma métrica de "chance de êxito" ativa em produção.** Percentual em destaque com barra colorida
-na tela do caso. Precisa ser confirmado que não é exposta ao cliente no portal — Código de Ética da
-OAB, art. 6º, parágrafo único, e art. 34, XXIX. *(Parte 9)*
+**~~Há uma métrica de "chance de êxito" ativa em produção.~~ RESOLVIDO — não vaza ao cliente.**
+A métrica existe na tela do advogado, mas a auditoria de código confirmou duas barreiras
+independentes: o portal devolve allowlist de seis campos factuais em vez do objeto do caso, e a
+tela é `STAFF_ROUTES` com `roles: ROLES.compliance`, enquanto o `AuthMiddleware` restringe
+`cliente_externo` a seis prefixos que não incluem `/api/triagem/`. O risco remanescente é de uso
+humano, não de software. *(Parte 9 → resolvido na Parte 15)*
 
 ---
 
@@ -113,8 +137,10 @@ permanece real, com alcance uma ordem de grandeza menor. Esse erro, porém, reve
 legítimo: **a exclusão de um caso não cascateia para suas peças.** *(Parte 12)*
 
 **Rotas "inexistentes".** As rotas `despesas`, `office-contracts` e `partner-withdrawals` foram
-reportadas nas Partes 8 e 9 como não existentes. Na verdade estão montadas com **prefixo `/v1/`
-duplicado** (`/api/v1/v1/despesas`). *(Parte 11)*
+reportadas nas Partes 8 e 9 como não existentes. Na verdade estavam montadas com **prefixo `/v1/`
+duplicado** (`/api/v1/v1/despesas`). *(Parte 11)* — **Já corrigido no repositório:** todos os
+routers financeiros declaram prefixo simples e `grep -rn 'prefix="/v1' backend/app` não retorna
+nada. *(confirmado na Parte 14)*
 
 **Citação normativa.** As Partes 3 a 9 repetiram a citação do "Provimento OAB 205/2021" como
 fundamento da revisão humana de IA, seguindo o que o próprio sistema afirma. **Verificado na fonte
