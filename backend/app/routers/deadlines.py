@@ -197,8 +197,13 @@ async def criar(
     base = payload.base_legal
     if not data_prazo and payload.dias_prazo and payload.data_intimacao:
         if payload.dias_uteis:
+            # PRZ-02 (CPC art. 220): suspensão INTEGRAL do recesso 20/12–20/01
+            # incide sobre prazo PROCESSUAL em dias úteis; nunca sobre
+            # decadencial/administrativo corrido (que usa prazo_dias_corridos,
+            # sem este parâmetro — comportamento já correto abaixo).
             data_prazo = prazo_dias_uteis(payload.data_intimacao, payload.dias_prazo,
-                                          tribunal=payload.tribunal, em_dobro=payload.dobro)
+                                          tribunal=payload.tribunal, em_dobro=payload.dobro,
+                                          aplicar_recesso=(payload.tipo == "processual"))
             base = base or (
                 f"{payload.dias_prazo} dias úteis em dobro (CPC art. 183/229)"
                 if payload.dobro else f"{payload.dias_prazo} dias úteis (CPC art. 219)"
