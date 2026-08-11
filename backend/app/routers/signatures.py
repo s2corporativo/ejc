@@ -60,6 +60,21 @@ async def criar_solicitacao(
     if not doc:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
+    # Confidencialidade (achado do review Codex em PR #1076): o cliente só
+    # enxerga documento "normal" em qualquer outro caminho do GED
+    # (documents.listar/download aplicam o mesmo filtro para cliente_externo,
+    # ver app/routers/documents.py). Sem este gate, um documento
+    # interno/restrito/confidencial/segredo_justica vinculado a uma
+    # solicitação viraria acessível ao portal por um caminho alternativo às
+    # regras do cofre — falha rápido aqui, antes de notificar o cliente.
+    if doc.confidencialidade.value != "normal":
+        raise HTTPException(
+            status_code=403,
+            detail="Documento não elegível para o Portal do Cliente "
+                   f"(confidencialidade={doc.confidencialidade.value}); "
+                   "só documentos 'normal' podem ir a assinatura eletrônica.",
+        )
+
     # Valida que o documento pertence ao cliente (direto via doc.client_id ou pelo
     # caso vinculado) ANTES de notificar o portal — senão notifica-se o cliente
     # sobre um documento de OUTRO cliente (vazamento).
@@ -223,6 +238,17 @@ async def visualizar_documento(
     ))).scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    # Defesa em profundidade: `criar_solicitacao` já exige confidencialidade
+    # "normal" para aceitar a solicitação, mas o documento pode ter sido
+    # reclassificado (PATCH /documents/{id}) depois da criação — confere de
+    # novo aqui, no momento de servir o conteúdo (achado do review Codex).
+    if doc.confidencialidade.value != "normal":
+        raise HTTPException(
+            status_code=403,
+            detail="Documento não elegível para o Portal do Cliente "
+                   f"(confidencialidade={doc.confidencialidade.value})",
+        )
 
     from app.core.config import get_settings as _gs
     full_path = f"{_gs().UPLOAD_DIR}/{doc.filepath}"

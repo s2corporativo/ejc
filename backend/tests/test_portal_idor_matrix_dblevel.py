@@ -435,6 +435,36 @@ async def test_signatures_documento_isola_por_cliente_e_serve_conteudo(monkeypat
             await _limpar(db, client_ids=[cli_a, cli_b], user_ids=[ua])
 
 
+async def test_signatures_documento_confidencial_e_negado_ao_portal(monkeypatch, tmp_path):
+    """Achado do review Codex em PR #1076: GET /signatures/{id}/documento
+    ignorava Document.confidencialidade, abrindo um caminho alternativo às
+    regras do cofre (o mesmo cliente NUNCA vê documento confidencial/restrito/
+    segredo_justica via documents.listar/download — ver
+    app/routers/documents.py, _verificar_acesso_documento). Prova que o novo
+    gate nega o acesso mesmo com ownership de client_id correto."""
+    from app.core.config import get_settings
+    from app.core.database import AsyncSessionLocal
+    from app.routers.signatures import visualizar_documento
+
+    monkeypatch.setattr(get_settings(), "UPLOAD_DIR", str(tmp_path))
+
+    tok = uuid4().hex[:6]
+    async with AsyncSessionLocal() as db:
+        cli = await _criar_cliente(db, f"Cliente Confidencial {tok}")
+        u = await _criar_portal_user(db, cli)
+        doc = await _criar_documento(db, cli, None, f"proc-conf-{tok}", "confidencial")
+        sig = await _criar_signature(db, cli, doc, "pendente")
+        await db.commit()
+
+        try:
+            user = await _carregar_user(db, u)
+            with pytest.raises(HTTPException) as exc:
+                await visualizar_documento(sig_id=sig, db=db, cu=user)
+            assert exc.value.status_code == 403
+        finally:
+            await _limpar(db, client_ids=[cli], user_ids=[u])
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Cross-carteira entre advogados: o chat sigiloso do caso não é lido por
 # qualquer membro do escritório — só responsável/auxiliar/gestão (ownership).

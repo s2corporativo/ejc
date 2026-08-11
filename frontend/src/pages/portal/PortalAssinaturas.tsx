@@ -31,6 +31,24 @@ interface Comprovante {
 const fmtDataHora = (d?: string | null) =>
   d ? new Date(d).toLocaleString("pt-BR") : "—";
 
+// responseType blob: erros 4xx/5xx chegam como Blob JSON — extrai o `detail`
+// legível para o toast (mesmo padrão de Pecas.tsx/TabPecas.tsx; achado do
+// review Codex em PR #1076 — sem isto, 404/410 do endpoint viravam sempre a
+// mensagem genérica de retry, escondendo a causa real).
+async function blobErrorDetail(e: any): Promise<string | undefined> {
+  let detail = e.response?.data?.detail;
+  if (!detail && e.response?.data instanceof Blob) {
+    try {
+      detail = JSON.parse(await e.response.data.text())?.detail;
+    } catch {
+      /* corpo não-JSON — usa mensagem padrão do chamador */
+    }
+  }
+  return typeof detail === "object" && detail !== null
+    ? (detail.mensagem ?? JSON.stringify(detail).slice(0, 200))
+    : detail;
+}
+
 export default function PortalAssinaturas() {
   const { user } = useAuth();
   const [rows, setRows] = useState<any[]>([]);
@@ -56,18 +74,42 @@ export default function PortalAssinaturas() {
 
   const verDocumento = async (s: any) => {
     setVisualizando(s.id);
+    // Abre a aba SINCRONAMENTE dentro do clique — Safari (e outros
+    // bloqueadores de pop-up) recusa window.open() disparado depois de um
+    // await (achado do review Codex em PR #1076: o "Assinar" liberava mesmo
+    // quando a aba nunca abriu, porque o catch nunca disparava). Sem
+    // noopener/noreferrer aqui de propósito: o destino é conteúdo blob: da
+    // MESMA origem gerado por nós, não um link externo — o risco que essas
+    // flags mitigam (reverse tabnabbing via window.opener) não se aplica, e
+    // precisamos da referência para navegar a aba depois do fetch.
+    const aba = window.open("", "_blank");
+    if (!aba) {
+      toast.error(
+        "Não foi possível abrir uma nova aba — verifique o bloqueador de pop-ups do navegador.",
+      );
+      setVisualizando(null);
+      return;
+    }
     try {
       const r = await api.get(`/signatures/${s.id}/documento`, {
         responseType: "blob",
       });
       const url = URL.createObjectURL(r.data as Blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      // O object URL some com o navegador — não revogamos aqui de propósito,
-      // a aba aberta ainda depende dele para renderizar o PDF.
+      aba.location.href = url;
+      // Revoga o object URL depois que a aba carrega o conteúdo — GED aceita
+      // upload de até 50MB; sem revogar, abrir vários documentos retém
+      // centenas de MB até a aba do portal recarregar (achado do review).
+      const liberar = () => URL.revokeObjectURL(url);
+      aba.addEventListener("load", liberar, { once: true });
+      // Fallback: nem todo navegador propaga o `load` de forma confiável p/
+      // conteúdo embutido (ex.: visualizador de PDF nativo) — libera de
+      // qualquer forma depois de um tempo generoso, sem correr com o render.
+      window.setTimeout(liberar, 60_000);
       setVisualizados((prev) => new Set(prev).add(s.id));
     } catch (e: any) {
+      aba.close();
       toast.error(
-        e?.response?.data?.detail ||
+        (await blobErrorDetail(e)) ||
           "Não foi possível abrir o documento. Tente novamente.",
       );
     } finally {
@@ -199,7 +241,7 @@ export default function PortalAssinaturas() {
             {pendentes.map((s) => (
               <div
                 key={s.id}
-                className="px-5 py-4 flex items-center justify-between gap-4"
+                className="px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4"
               >
                 <div className="flex items-start gap-3 min-w-0">
                   <div className="w-8 h-8 bg-warn-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -219,7 +261,10 @@ export default function PortalAssinaturas() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                {/* flex-wrap: em telas estreitas (320-375px) os dois botões
+                    quebram linha em vez de estourar o card (achado do review
+                    Codex em PR #1076). */}
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap sm:flex-shrink-0">
                   <button
                     onClick={() => verDocumento(s)}
                     disabled={visualizando === s.id}
