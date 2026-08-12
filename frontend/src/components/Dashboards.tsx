@@ -443,6 +443,12 @@ export function ClientesStats() {
   const lista: any[] = d.data || [];
   const total = d.total ?? lista.length;
   if (total === 0) return null;
+  // Escopo do componente: a API não entrega contagem por tipo/status — as
+  // contagens PF/PJ são da fatia retornada (máx page_size). Quando a fatia
+  // cobre 100% da base (total <= página), elas representam a base inteira;
+  // caso contrário, o rótulo declara o escopo real para não inflar o KPI
+  // (auditoria 12/08/2026: PF+PJ da página podiam divergir do total).
+  const fatia_cobre_tudo = total <= lista.length;
   const ativos = lista.filter((c) => String(c.status) === "ativo").length;
   const leads = lista.filter((c) => String(c.status) === "lead").length;
   const pj = lista.filter((c) => String(c.tipo) === "PJ").length;
@@ -486,6 +492,11 @@ export function ClientesStats() {
           value={pj}
           icon={Building2}
           accent="purple"
+          sub={
+            fatia_cobre_tudo
+              ? undefined
+              : `Da página exibida (${lista.length} de ${total})`
+          }
         />
       </KpiGrid>
       {barras.length > 0 && (
