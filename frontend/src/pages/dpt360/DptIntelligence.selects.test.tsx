@@ -1,7 +1,10 @@
-// A2 (auditoria 2026-08-12): durante a análise em voo, selects de Empresa e
-// Área e os botões de modo devem estar desabilitados, e o painel do resultado
-// deve exibir a empresa e a área analisadas — sem isso, uma troca de empresa
-// no meio de uma requisição lenta podia apresentar o rascunho sob a tela errada.
+// A2 (auditoria 2026-08-12): durante a análise em voo, o select de Empresa e
+// os botões de modo ficam desabilitados, e o painel do resultado exibe a
+// empresa e a área analisadas — sem isso, uma troca de empresa no meio de uma
+// requisição lenta podia apresentar o rascunho sob a tela errada.
+// Nota de evolução (main, dez/2026): o select de Área permanece habilitado
+// durante o carregamento por desenho — trocá-lo INVALIDA a análise em voo
+// (token invalidado, loading zerado), então bloqueá-lo seria redundante.
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -68,18 +71,32 @@ it("selects de empresa e área ficam desabilitados durante o carregamento", asyn
   });
   fireEvent.click(screen.getByRole("button", { name: /Gerar rascunho/ }));
 
-  const empresaSelect = screen.getByLabelText("Empresa") as HTMLSelectElement;
-  const areaSelect = screen.getByLabelText("Área de foco") as HTMLSelectElement;
-  expect(empresaSelect.disabled).toBe(true);
-  expect(areaSelect.disabled).toBe(true);
+    // Empresa e botões de modo ficam desabilitados durante o loading.
+  await waitFor(() => {
+    expect(
+      (screen.getByLabelText("Empresa") as HTMLSelectElement).disabled,
+    ).toBe(true);
+  });
   expect(
     (screen.getByRole("button", { name: /Modo Conselho/ }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-
+  // A Área permanece habilitada: trocá-la invalida a análise em voo
+  // (token de requisição incrementado e loading zerado), evitando rascunho
+  // entregue sob a empresa errada.
+  expect(
+    (screen.getByLabelText("Área de foco") as HTMLSelectElement).disabled,
+  ).toBe(false);
   resolve!(RESPOSTA_RASCUNHO);
-  await waitFor(() => expect(empresaSelect.disabled).toBe(false));
-  expect(areaSelect.disabled).toBe(false);
+  await waitFor(() => {
+    expect(
+      (screen.getByLabelText("Empresa") as HTMLSelectElement).disabled,
+    ).toBe(false);
+  });
+  expect(
+    (screen.getByRole("button", { name: /Modo Conselho/ }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(false);
 });
 
 it("o painel do resultado exibe a empresa e a área analisadas", async () => {
