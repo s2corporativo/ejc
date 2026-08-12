@@ -145,18 +145,6 @@ async def build_executive_report(
     today = datetime.now(timezone.utc).date()
     future = [item for item in deadlines if item.data_prazo >= today]
 
-<<<<<<< ours
-    # "principais_riscos" também tem teto próprio (10) e precisa entrar na
-    # mesma verificação de cobertura que casos/prazos/alertas — do contrário
-    # uma empresa com mais de 10 riscos críticos teria a lista cortada sem aviso.
-    if len(critical) > 10:
-        secoes_truncadas.append("riscos atuais (mais de 10)")
-
-    cobertura_notas = [f"Recorte agregado do cockpit: {note}" for note in dashboard.notes]
-    cobertura_notas.extend(
-        [f"Seção truncada no teto próprio: {label}." for label in secoes_truncadas]
-    )
-=======
     # Duas fontes distintas de truncamento, ambas precisam refletir em
     # "cobertura_completa": (1) o dashboard agregado tem teto de empresas/casos/
     # prazos — se ele já veio parcial, este relatório herda a lacuna; (2) mesmo
@@ -166,7 +154,7 @@ async def build_executive_report(
     # silêncio se o teto local não entrasse na mesma verificação.
     secoes_truncadas: list[str] = []
     if len(critical) > 10:
-        secoes_truncadas.append("riscos atuais")
+        secoes_truncadas.append("riscos atuais (mais de 10)")
     if len(future) > 20:
         secoes_truncadas.append("providências futuras")
     if len(cases) > 30:
@@ -182,7 +170,6 @@ async def build_executive_report(
             "Seções deste relatório excederam o teto de itens e foram cortadas: "
             + ", ".join(secoes_truncadas) + "."
         )
->>>>>>> theirs
 
     return {
         "client_id": client_id,

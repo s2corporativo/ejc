@@ -268,10 +268,33 @@ export default function NovoCasoWizard({
       fechar();
       nav(`/casos/${novo.id}/jornada`);
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao criar o caso");
+      toast.error(extrairErroCriacaoCaso(e));
     } finally {
       setCriandoCaso(false);
     }
+  };
+
+  // E02 (auditoria funcional): erros 422 do FastAPI/Pydantic chegam como
+  // {detail: [{loc, msg}]} — extrair o nome do campo para o usuário corrigir
+  // exatamente o ponto em vez de receber a string bruta do validador.
+  const extrairErroCriacaoCaso = (e: any): string => {
+    const resp = e?.response?.data;
+    const status = e?.response?.status;
+    const detail = resp?.detail;
+    if (Array.isArray(detail) && detail.length) {
+      return detail
+        .map((d: any) => {
+          const loc = Array.isArray(d?.loc) ? d.loc : [];
+          const campo = loc.length ? String(loc[loc.length - 1]) : null;
+          const rotulo = campo ? campo.replace(/_/g, " ") : null;
+          return rotulo ? `${rotulo}: ${String(d.msg ?? d)}` : String(d.msg ?? d);
+        })
+        .join("; ");
+    }
+    if (typeof detail === "string" && detail) return detail;
+    if (status === 422 || status === 400)
+      return "Algum campo está em formato inválido ou ausente. Revise os campos destacados e tente novamente.";
+    return e?.response?.data?.detail || "Erro ao criar o caso";
   };
 
   const nomeCliente = (c: Client) => c.nome || c.razao_social || "Sem nome";

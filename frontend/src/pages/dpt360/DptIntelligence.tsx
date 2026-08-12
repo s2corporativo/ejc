@@ -182,12 +182,7 @@ export default function DptIntelligence({
             <select
               value={area}
               onChange={(e) => trocarArea(e.target.value)}
-<<<<<<< ours
-              disabled={loading}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-950"
-=======
               className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-slate-950"
->>>>>>> theirs
             >
               {[
                 "empresarial",
