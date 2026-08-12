@@ -80,7 +80,8 @@ describe("DataJudBusca — contexto do caso", () => {
     );
 
     const erro = await screen.findByText("Falha controlada de sincronização");
-    expect(erro.closest("div")?.className).toContain("text-danger-700");
+    const erroEl = screen.getByText("Falha controlada de sincronização").closest("p");
+    expect(erroEl?.className).toContain("text-danger-700");
     expect(screen.queryByText(/Sincronizado:/)).toBeNull();
   });
 });
