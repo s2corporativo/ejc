@@ -29,8 +29,8 @@ O que a auditoria encontrou de fato relevante são **dois problemas de correçã
 ### Médio-Alto
 
 **A3 — "Hoje" calculado em UTC diverge do resto do sistema de prazos.**
-`dashboard_service.py:167-169` e `report_service.py:70` usam `datetime.now(timezone.utc).date()` para classificar prazo vencido/crítico/próximo, enquanto o resto do domínio de prazos usa fuso de Brasília (`scheduler.py:40`, `routers/deadlines.py:121`). Entre ~21h e 00h no horário de Brasília, um prazo que só vence "amanhã" no Brasil já aparece "vencido"/"crítico" no cockpit DPT três horas antes de aparecer assim na tela de Prazos — reproduz a classe de defeito "painéis que divergem entre si" já catalogada na auditoria externa (`docs/auditoria/README.md`).
-*Recomendação*: usar o mesmo fuso (`America/Sao_Paulo`) em todo o módulo.
+`dashboard_service.py:167-169` e `report_service.py:70` usam `datetime.now(timezone.utc).date()` para classificar prazo vencido/crítico/próximo, enquanto o resto do domínio de prazos usa fuso de Brasília (`scheduler.py:40`, `routers/deadlines.py:121`). Como Brasília é UTC−3 (sem horário de verão desde 2019), entre 21h e 23h59 no horário de Brasília o relógio UTC já virou o dia seguinte. Nessa janela, um prazo que vence **hoje** no Brasil (ainda com horas pela frente até a meia-noite local) já é classificado "vencido"/"crítico" no cockpit DPT — até três horas antes de a data realmente virar em Brasília. (Confirmado por simulação: às 21:00 BRT, um prazo com vencimento no dia corrente já cai em `overdue=True`; um prazo com vencimento no dia seguinte permanece `overdue=False`, nível "alto" — não "vencido"/"crítico" como uma leitura apressada do offset sugeriria.) Reproduz a classe de defeito "painéis que divergem entre si" já catalogada na auditoria externa (`docs/auditoria/README.md`).
+*Recomendação*: usar o mesmo fuso (`America/Sao_Paulo`) em todo o módulo; cobrir com teste de fronteira às 21:00 BRT comparando prazo de hoje vs. amanhã.
 
 ### Médio
 
@@ -40,8 +40,9 @@ O que a auditoria encontrou de fato relevante são **dois problemas de correçã
 **A5 — Resolução de escopo (visibilidade por usuário) repetida a cada carregamento do cockpit.**
 `router.py:35-52` — um único `GET /dpt360/dashboard` dispara `build_dashboard` (que já roda as queries de visibilidade duas vezes internamente) seguido de `build_today_radar` (que roda as mesmas duas consultas de novo) — ~8 idas ao banco repetindo a mesma resolução de escopo por requisição. Oportunidade de simplificação: computar uma vez e injetar nos dois serviços.
 
-**A6 — Índices ausentes nos filtros usados por todo o módulo.**
-`Client.deleted_at`/`Client.tipo` (base de quase todo endpoint do DPT) e `DiarioOficialAlerta.created_at`/`.case_id` (usados por `radar_service.py` e `report_service.py`) não têm índice dedicado — só `data_publicacao`/`lido` existem na migration 022. Como a tabela de alertas cresce continuamente via job automático, cada chamada a `/dpt360/dashboard`, `/radar/today` e `/reports/executive/*` faz scan sequencial.
+**A6 — Índices ausentes nos filtros usados por todo o módulo (risco potencial, não medido).**
+`Client.deleted_at`/`Client.tipo` (base de quase todo endpoint do DPT) e `DiarioOficialAlerta.created_at`/`.case_id` (usados por `radar_service.py` e `report_service.py`) não têm índice dedicado — só `data_publicacao`/`lido` existem na migration 022. Isso não foi confirmado com `EXPLAIN (ANALYZE, BUFFERS)` nesta auditoria, então não afirmo scan sequencial comprovado — é risco de plano ineficiente à medida que a tabela de alertas cresce (alimentada continuamente por job automático), afetando `/dpt360/dashboard`, `/radar/today` e `/reports/executive/*`.
+*Recomendação*: validar com `EXPLAIN (ANALYZE, BUFFERS)` sobre dados representativos antes de decidir se o índice é necessário.
 
 **A7 — Radar cobre só 5 das 12 áreas de negócio do dashboard.**
 `radar_service.py:19-33` (`AREA_TERMS`/`AREA_CASE_ALIASES`) não tem entrada para `contratual`, `societario`, `bancario`, `agrario`, `agronegocio`, `empresarial` (presentes em `BUSINESS_AREAS`, `dashboard_service.py:24-37`). Empresa cujo único caso vinculado é de uma dessas áreas nunca aciona `impact_level` — `empresas_potencialmente_impactadas` fica estruturalmente incompleto para essas áreas, sem alerta da lacuna.
@@ -54,7 +55,9 @@ O que a auditoria encontrou de fato relevante são **dois problemas de correçã
 **A10 (frontend) — `model.ts` é código morto.** Nenhum componente do módulo o importa; só `model.test.ts` o exercita, criando falsa sensação de cobertura sobre um caminho que a UI real não usa (a UI trabalha com os tipos pré-agregados de `api.ts`). Remover, ou religar se a duplicação do item A9 for endereçada por ele.
 
 **A11 (segurança/LGPD) — PII de lead do intake é legível por endpoint irmão sem RBAC específico e sem log de leitura.**
-`intake_service.py` grava `mensagem`/`contato`/`email`/`telefone` em texto plano em `DocumentIntakeBatch.resultado`, e a fila do DPT (`GET /dpt360/intake/opportunities`) filtra esses campos deliberadamente — mas o mesmo `batch_id` pode ser lido por inteiro via `GET /api/entrada-universal/{batch_id}` (`routers/entrada_universal.py:441-444`), cujo gate é só ownership/`is_gestao`, sem RBAC do DPT e sem log de leitura. Não é IDOR entre usuários (criação já é RBAC-gated), mas contradiz a minimização declarada no código e deixa leitura de PII de terceiro sem trilha — relevante para responsabilização LGPD quando a origem é o site público.
+`intake_service.py` grava `mensagem`/`contato`/`email`/`telefone` em texto plano em `DocumentIntakeBatch.resultado`, e a fila do DPT (`GET /dpt360/intake/opportunities`) filtra esses campos deliberadamente — mas o mesmo `batch_id` pode ser lido por inteiro via `GET /api/entrada-universal/{batch_id}` (`routers/entrada_universal.py:441-444`), cujo gate é só ownership/`is_gestao`, sem RBAC do DPT e sem log de leitura. Não é IDOR entre usuários (criação já é RBAC-gated), mas contradiz a minimização declarada no código e deixa leitura de PII de terceiro sem trilha — relevante para responsabilização LGPD (Lei nº 13.709/2018, texto oficial em planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709compilado.htm, em vigor integralmente desde 2020) quando a origem é o site público, notadamente os arts. 6º (princípios, inclusive minimização), 37 (registro das operações de tratamento) e 46 (medidas de segurança contra acesso não autorizado).
+*Limite desta conclusão*: é evidência de auditoria estática sobre este endpoint específico. O fluxo de IA do módulo (`run_dpt_action`) e a sanitização de PII antes do `ai_gateway` **não foram validados em runtime** nesta auditoria — não há teste HTTP de integração nem teste próprio de `run_dpt_action` que confirme, mesmo mockado, que o contexto minimizado chega sanitizado ao orquestrador (ver gap #2 e #5 em "Cobertura de testes").
+*Recomendação*: RBAC específico do DPT na leitura do intake e log de cada leitura são obrigatórios na remediação, não opcionais — junto de teste de regressão HTTP cobrindo isolamento, resposta minimizada e trilha de auditoria. Cifrar os campos de contato em repouso é defesa adicional; não substitui autorização e log de acesso.
 
 ### Baixo / Informativo
 
@@ -64,14 +67,16 @@ O que a auditoria encontrou de fato relevante são **dois problemas de correçã
 - **A15** — Valor de enum morto: `origem: Literal[..., "acionejus"]` em `intake_schemas.py` sempre é rejeitado por `field_validator`, mas aparece como aceito no schema/OpenAPI.
 - **A16** — `ensure_dpt360_registered` (`dpt360_registry.py:39-42`) depende implicitamente de ser síncrona (atômica no event loop) para não ter race condition; premissa não documentada.
 - **A17 (frontend)** — Sinalização de prioridade só por cor (`Dpt360Workspace.tsx:184-192`), falha leve de acessibilidade (WCAG 1.4.1).
-- **A18 (frontend)** — `useEffect` de fetch sem guarda de cleanup em `DptOpportunities.tsx` e em `Dpt360Workspace.tsx:519-529` (inofensivo no React 18, mas inconsistente com o padrão já usado em `CompanyLegalTwin`/`DptDiagnosis`/`DptRadar`).
+- **A18 (frontend)** — `useEffect` de fetch sem guarda de cleanup em `DptOpportunities.tsx` e em `Dpt360Workspace.tsx:519-529` (inofensivo no React 18, mas inconsistente com o padrão já usado em `CompanyLegalTwin`/`DptDiagnosis`/`DptRadar`). Adicionalmente, o botão "Atualizar" de `DptOpportunities.tsx:62-68` não desabilita durante `loading` e `load()` não descarta resposta obsoleta — cliques repetidos disparam requisições concorrentes e uma resposta antiga pode sobrescrever `items` depois de uma mais recente já ter chegado (`Dpt360Workspace` não tem esse caminho porque desabilita o botão equivalente durante o carregamento).
 - **A19 (frontend)** — Drift visual: `Dpt360Workspace.tsx` usa `dark:bg-slate-950/40` onde as outras 10 telas do módulo usam `dark:bg-white/[0.03]`.
 
 ## Cobertura de testes
 
-Suítes existentes executadas nesta auditoria — todas verdes:
-- Backend: `pytest tests/test_dpt360_*.py` — **29 passed** (7 arquivos: dashboard, intake, radar, ai_protocol, security_hardening, company_profile, diagnostic_readiness).
-- Frontend: `vitest run src/pages/dpt360/` — **5 passed** (só `model.test.ts`).
+Suítes existentes executadas nesta auditoria — todas verdes. Execução local, não em CI (o CI do repositório estava indisponível por falha de cobrança/provisionamento de runner no GitHub nesta janela — ver PR, não relacionado à correção destes testes):
+- Commit/ref auditado: `ffc9cbb4bb20054987009f58d2b7a7b4e1818811` (`main` no momento da auditoria).
+- Backend: diretório `backend/`, venv Python 3.11 dedicado (`pip install -r requirements.txt`), comando `python -m pytest tests/test_dpt360_*.py -v` — **29 passed** (7 arquivos: dashboard, intake, radar, ai_protocol, security_hardening, company_profile, diagnostic_readiness).
+- Frontend: diretório `frontend/`, `npm ci` (Node 22.22 conforme `ci.yml`), comando `npx vitest run src/pages/dpt360/` — **5 passed** (só `model.test.ts`).
+- Saída bruta completa dos comandos não foi arquivada nesta auditoria (só o resumo final passed/failed) — reexecutar os comandos acima reproduz o resultado.
 
 Gaps relevantes identificados (nenhum teste foi criado nesta auditoria):
 
