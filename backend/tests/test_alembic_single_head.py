@@ -129,5 +129,11 @@ def test_ejc_skills_uso_encadeia_apos_publicacao_explicita():
 
 
 def test_preliminares_encadeiam_apos_consolidacao_fontes():
-    revision = _script_directory().get_revision("140_preliminares_fundacao_schema")
-    assert revision.down_revision == "138_consolida_fontes_ingestao"
+    # Consolidado em 2026-08-12: a bifurcação 138 → {139, 140} foi linearizada
+    # em 138 → 139 → 140 (o schema das frentes é independente: 139 altera
+    # document_intake_batches e 140 cria/dropa apenas tabelas preliminares).
+    revisao_139 = _script_directory().get_revision("139_dpt360_ciclo_vida_lgpd")
+    assert revisao_139.down_revision == "138_consolida_fontes_ingestao"
+    revisao_140 = _script_directory().get_revision("140_preliminares_fundacao_schema")
+    assert revisao_140.down_revision == "139_dpt360_ciclo_vida_lgpd"
+    assert _script_directory().get_heads() == [HEAD_REVISION]
