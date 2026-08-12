@@ -23,6 +23,7 @@ from app.services.ai.core.agent_registry import AGENT_REGISTRY
 from app.services.ai.core.skill_registry import listar_skills
 from app.services.ai.core.ejc_skill_catalog import native_skill_coverage
 from app.core.rate_limit import rate_limit
+from app.core.ai_errors import http_erro_ia
 
 router = APIRouter(prefix="/ai/core", tags=["IA — Núcleo Único"])
 
@@ -112,12 +113,15 @@ async def core_chat(
     db: AsyncSession = Depends(get_db),
 ):
     _staff_only(cu)
-    return await orchestrator.run(
-        db=db, user=cu, task_type="chat", domain=body.domain,
-        mensagem=body.mensagem, case_id=body.case_id,
-        params=_native_params(None, body.module_key, body.surface),
-        nivel_inteligencia=body.nivel_inteligencia,
-    )
+    try:
+        return await orchestrator.run(
+            db=db, user=cu, task_type="chat", domain=body.domain,
+            mensagem=body.mensagem, case_id=body.case_id,
+            params=_native_params(None, body.module_key, body.surface),
+            nivel_inteligencia=body.nivel_inteligencia,
+        )
+    except Exception as e:
+        raise http_erro_ia(e, 502, contexto="ai/core/chat")
 
 
 @router.post("/task", dependencies=[Depends(rate_limit("ai-core-task", 15))])
@@ -127,14 +131,17 @@ async def core_task(
     db: AsyncSession = Depends(get_db),
 ):
     _staff_only(cu)
-    return await orchestrator.run(
-        db=db, user=cu, task_type=body.task_type, domain=body.domain,
-        mensagem=body.mensagem, case_id=body.case_id,
-        document_id=body.document_id, process_id=body.process_id,
-        params=_native_params(body.params, body.module_key, body.surface),
-        usar_rag=body.usar_rag,
-        nivel_inteligencia=body.nivel_inteligencia,
-    )
+    try:
+        return await orchestrator.run(
+            db=db, user=cu, task_type=body.task_type, domain=body.domain,
+            mensagem=body.mensagem, case_id=body.case_id,
+            document_id=body.document_id, process_id=body.process_id,
+            params=_native_params(body.params, body.module_key, body.surface),
+            usar_rag=body.usar_rag,
+            nivel_inteligencia=body.nivel_inteligencia,
+        )
+    except Exception as e:
+        raise http_erro_ia(e, 502, contexto="ai/core/task")
 
 
 @router.post("/analyze", dependencies=[Depends(rate_limit("ai-core-analyze", 15))])
@@ -144,14 +151,17 @@ async def core_analyze(
     db: AsyncSession = Depends(get_db),
 ):
     _staff_only(cu)
-    return await orchestrator.run(
-        db=db, user=cu, task_type=f"{body.domain}_analysis", domain=body.domain,
-        mensagem=body.mensagem, case_id=body.case_id,
-        document_id=body.document_id, process_id=body.process_id,
-        params=_native_params(body.params, body.module_key, body.surface),
-        usar_rag=body.usar_rag,
-        nivel_inteligencia=body.nivel_inteligencia,
-    )
+    try:
+        return await orchestrator.run(
+            db=db, user=cu, task_type=f"{body.domain}_analysis", domain=body.domain,
+            mensagem=body.mensagem, case_id=body.case_id,
+            document_id=body.document_id, process_id=body.process_id,
+            params=_native_params(body.params, body.module_key, body.surface),
+            usar_rag=body.usar_rag,
+            nivel_inteligencia=body.nivel_inteligencia,
+        )
+    except Exception as e:
+        raise http_erro_ia(e, 502, contexto="ai/core/analyze")
 
 
 @router.post("/generate", dependencies=[Depends(rate_limit("ai-core-generate", 15))])
@@ -162,13 +172,15 @@ async def core_generate(
 ):
     _staff_only(cu)
     task = "legal_draft" if body.tipo in ("minuta", "peca") else body.tipo
-    return await orchestrator.run(
-        db=db, user=cu, task_type=task, mensagem=body.mensagem,
-        case_id=body.case_id,
-        params=_native_params(body.params, body.module_key, body.surface),
-        nivel_inteligencia=body.nivel_inteligencia,
-    )
-
+    try:
+        return await orchestrator.run(
+            db=db, user=cu, task_type=task, mensagem=body.mensagem,
+            case_id=body.case_id,
+            params=_native_params(body.params, body.module_key, body.surface),
+            nivel_inteligencia=body.nivel_inteligencia,
+        )
+    except Exception as e:
+        raise http_erro_ia(e, 502, contexto="ai/core/generate")
 
 @router.post("/report", dependencies=[Depends(rate_limit("ai-core-report", 10))])
 async def core_report(
@@ -177,12 +189,15 @@ async def core_report(
     db: AsyncSession = Depends(get_db),
 ):
     _staff_only(cu)
-    return await orchestrator.run(
-        db=db, user=cu, task_type="report", domain=body.domain,
-        mensagem=body.mensagem or f"Gere o relatório executivo do domínio {body.domain}.",
-        case_id=body.case_id,
-        params=_native_params(body.params, body.module_key, body.surface),
-    )
+    try:
+        return await orchestrator.run(
+            db=db, user=cu, task_type="report", domain=body.domain,
+            mensagem=body.mensagem or f"Gere o relatório executivo do domínio {body.domain}.",
+            case_id=body.case_id,
+            params=_native_params(body.params, body.module_key, body.surface),
+        )
+    except Exception as e:
+        raise http_erro_ia(e, 502, contexto="ai/core/report")
 
 
 # ── Introspecção (staff) — metadados apenas; nunca prompts/handlers internos ──
