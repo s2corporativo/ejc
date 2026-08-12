@@ -13,7 +13,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import select, update
 
 from app.core.config import get_settings
 from app.models.audit_log import criar_audit_log
