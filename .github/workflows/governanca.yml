@@ -8,10 +8,6 @@ name: Governanca
 # harmoniza documentação de governança e código funcional no mesmo PR.
 #
 # Complementa — não substitui — o "EJC Release Gate" (scripts/ci_guard.sh).
-#
-# TEMPORÁRIO (Issue #1089): cobrança da conta GitHub falhando, sem alocação
-# de runner GitHub-hosted. Rodando no self-hosted `ejc-vps` até normalizar —
-# reverter para `ubuntu-latest` assim que a cobrança for restabelecida.
 on:
   pull_request:
 
@@ -25,7 +21,7 @@ concurrency:
 jobs:
   governanca:
     name: Governança — travas de PR
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
