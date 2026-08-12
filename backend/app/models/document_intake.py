@@ -27,11 +27,12 @@ class DocumentIntakeBatch(Base):
     ciclo_vida_estado = Column(
         String(32),
         nullable=False,
-        default="triagem_pendente",
+        server_default="triagem_pendente",
         index=True,
     )
     ciclo_vida_updated_at = Column(
         DateTime(timezone=True),
+        nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
     )

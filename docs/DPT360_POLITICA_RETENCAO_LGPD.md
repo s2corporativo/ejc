@@ -10,7 +10,7 @@
 
 ## Estados canônicos
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                                                                         │
 │  TRIAGEM_PENDENTE ──(análise)──→ TRIAGEM_CONCLUIDA ──(rejeitar)──→ DESCARTADA
@@ -140,7 +140,7 @@ Payload:
 - Qualquer outro: 422 Unprocessable Entity
 
 **Ação**:
-1. Verificar RBAC (require_gestao ou require_admin)
+1. Verificar RBAC (superadmin, admin ou socio)
 2. Sob `SELECT ... FOR UPDATE`:
    - Revalidar estado atual do batch
    - Revalidar case_id IS NULL
@@ -185,8 +185,8 @@ Payload:
 - [ ] Nenhum email/telefone/mensagem de oportunidade descartada/expirada escapa para AuditLog
 - [ ] AuditLog de ANONIMIZAR/EXPURGAR não contém dados pessoais
 - [ ] Revalidação sob lock: impede TOCTOU entre seleção e modificação
-- [ ] Invariante: case_id = 'convertida' nunca é tocada
-- [ ] RBAC: só `gestao` ou `admin` pode mudar `ciclo_vida_estado` manualmente
+- [ ] Invariante: oportunidade com `case_id` preenchido ou `ciclo_vida_estado = 'convertida'` nunca é alterada nem expurgada
+- [ ] RBAC: só `superadmin`, `admin` e `socio` podem mudar `ciclo_vida_estado` manualmente
 - [ ] Dry-run disponível: jobs têm `dry_run=True` para teste antes de `dry_run=False`
 
 ## Plano de implementação

@@ -162,7 +162,7 @@ async def mudar_ciclo_vida_oportunidade(
     batch_id: str,
     payload: DptCicloVidaMudarEstadoRequest,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
 ) -> DptCicloVidaMudarEstadoResponse:
     """Muda estado de oportunidade DPT360 (triagem → concluída → descartada, etc).
 

@@ -42,6 +42,7 @@ TRANSICOES_VALIDAS = {
 PRAZO_TRIAGEM_PENDENTE = 30  # Até análise ou expiração
 PRAZO_TRIAGEM_CONCLUIDA = 90  # Após análise
 PRAZO_DESCARTADA = 30  # Antes de anonimizar
+PRAZO_ANONIMIZADA = 30  # Antes de expurgar
 
 
 async def mudar_estado(
@@ -117,7 +118,7 @@ async def mudar_estado(
         await db.execute(
             update(DocumentIntakeBatch)
             .where(DocumentIntakeBatch.id == batch_id)
-            .values(**dados_atualizacao)
+            .values(dados_atualizacao)
         )
 
         detalhes_auditoria = f"Transição {estado_atual} → {novo_estado}"
@@ -223,10 +224,12 @@ async def anonimizar_oportunidade(
         await db.execute(
             update(DocumentIntakeBatch)
             .where(DocumentIntakeBatch.id == batch_id)
-            .values(
-                resultado=resultado,
-                anonimizada_em=agora,
-            )
+            .values({
+                DocumentIntakeBatch.resultado: resultado,
+                DocumentIntakeBatch.anonimizada_em: agora,
+                DocumentIntakeBatch.ciclo_vida_estado: ESTADO_ANONIMIZADA,
+                DocumentIntakeBatch.ciclo_vida_updated_at: agora,
+            })
         )
 
         await criar_audit_log(
@@ -333,7 +336,9 @@ async def expurgar_oportunidade(
                 bytes_liberados += doc.size_bytes or 0
                 await db.delete(doc)
                 documentos_removidos += 1
-            await db.delete(item)
+                await db.delete(item)
+            elif doc is None:
+                await db.delete(item)
 
         await db.delete(batch_travado)
 
@@ -455,7 +460,7 @@ async def job_expurgar_oportunidades(
     """
     try:
         agora = datetime.now(timezone.utc)
-        corte = agora - timedelta(days=PRAZO_DESCARTADA)
+        corte = agora - timedelta(days=PRAZO_ANONIMIZADA)
 
         batches = (
             await db.execute(
