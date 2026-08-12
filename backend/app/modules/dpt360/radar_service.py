@@ -5,16 +5,19 @@ from datetime import datetime, timedelta, timezone
 import re
 from typing import Any
 
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ownership import is_gestao
+from app.models.case import Case
+from app.models.client import Client, ClientTipo
 from app.models.diario_oficial import DiarioOficialAlerta
 from app.models.user import User
 from app.modules.dpt360.access_scope import visible_alerts_query
-from app.modules.dpt360.dashboard_service import (
-    _value,
-    _visible_business_cases_query,
-    _visible_company_query,
-)
+from app.modules.dpt360.dashboard_service import BUSINESS_AREAS, _value
+
+RADAR_CLASSIFICATION_LIMIT = 300
+RADAR_ITEM_LIMIT = 100
 
 AREA_TERMS: dict[str, tuple[str, ...]] = {
     "tributario": ("tribut", "receita federal", "pgfn", "icms", "iss", "ibs", "cbs", "imposto",
@@ -36,8 +39,18 @@ AREA_CASE_ALIASES = {
 
 def _normalize(value: str | None) -> str:
     raw = (value or "").lower()
-    raw = raw.replace("ç", "c").replace("ã", "a").replace("á", "a").replace("â", "a")
-    raw = raw.replace("é", "e").replace("ê", "e").replace("í", "i").replace("ó", "o")
+    raw = (
+        raw.replace("ç", "c")
+        .replace("ã", "a")
+        .replace("á", "a")
+        .replace("â", "a")
+    )
+    raw = (
+        raw.replace("é", "e")
+        .replace("ê", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+    )
     raw = raw.replace("ô", "o").replace("õ", "o").replace("ú", "u")
     return re.sub(r"\s+", " ", raw).strip()
 
@@ -61,6 +74,38 @@ def impact_level(area: str, company_case_areas: set[str]) -> str | None:
     return None
 
 
+def _visible_company_area_query(user: User):
+    """Retorna apenas os campos necessários ao impacto do Radar.
+
+    Evita reidratar Client e Case completos depois do dashboard. Para advogado,
+    somente casos em que é responsável/auxiliar entram no índice; para gestão,
+    todos os casos empresariais de clientes PJ visíveis pelo contrato DPT.
+    """
+    query = (
+        select(
+            Client.id.label("client_id"),
+            Client.razao_social.label("razao_social"),
+            Client.nome_fantasia.label("nome_fantasia"),
+            Case.area.label("area"),
+        )
+        .join(Case, Case.client_id == Client.id)
+        .where(
+            Client.deleted_at.is_(None),
+            Client.tipo == ClientTipo.PJ,
+            Case.deleted_at.is_(None),
+            Case.area.in_(BUSINESS_AREAS),
+        )
+    )
+    if is_gestao(user):
+        return query
+    return query.where(
+        or_(
+            Case.advogado_responsavel_id == user.id,
+            Case.advogado_auxiliar_id == user.id,
+        )
+    )
+
+
 async def build_today_radar(
     db: AsyncSession,
     user: User,
@@ -70,30 +115,39 @@ async def build_today_radar(
     hours = max(1, min(hours, 168))
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
 
+    alert_query = visible_alerts_query(user).where(
+        DiarioOficialAlerta.created_at >= since
+    )
+    alert_count_sq = (
+        alert_query.with_only_columns(DiarioOficialAlerta.id)
+        .order_by(None)
+        .subquery()
+    )
+    total_publicacoes = int(
+        (await db.execute(select(func.count()).select_from(alert_count_sq))).scalar()
+        or 0
+    )
+
     rows = (
         await db.execute(
-            visible_alerts_query(user)
-            .where(DiarioOficialAlerta.created_at >= since)
-            .order_by(
+            alert_query.order_by(
                 DiarioOficialAlerta.data_publicacao.desc().nullslast(),
                 DiarioOficialAlerta.created_at.desc(),
-            )
-            .limit(300)
+            ).limit(RADAR_CLASSIFICATION_LIMIT)
         )
     ).scalars().all()
 
-    companies = (await db.execute(_visible_company_query(user))).scalars().all()
-    company_ids = [item.id for item in companies]
-    cases = []
-    if company_ids:
-        cases = (
-            await db.execute(_visible_business_cases_query(user, company_ids))
-        ).scalars().all()
+    coverage_partial = total_publicacoes > len(rows)
 
+    company_area_rows = (await db.execute(_visible_company_area_query(user))).all()
     areas_by_company: dict[str, set[str]] = defaultdict(set)
-    for case in cases:
-        areas_by_company[case.client_id].add(_value(case.area))
-    company_by_id = {item.id: item for item in companies}
+    company_names: dict[str, str] = {}
+    for company_id, razao_social, nome_fantasia, area in company_area_rows:
+        company_id_str = str(company_id)
+        areas_by_company[company_id_str].add(_value(area))
+        company_names[company_id_str] = (
+            razao_social or nome_fantasia or "Empresa sem razão social"
+        )
 
     area_counts: Counter[str] = Counter()
     items: list[dict[str, Any]] = []
@@ -107,39 +161,48 @@ async def build_today_radar(
             level = impact_level(area, case_areas)
             if level is None:
                 continue
-            company = company_by_id.get(company_id)
-            if company is None:
-                continue
             impacted_company_ids.add(company_id)
-            impacts.append({
-                "client_id": company_id,
-                "empresa": company.razao_social or company.nome_fantasia or "Empresa sem razão social",
-                "aderencia": level,
-                "fundamento": f"A empresa possui caso canônico na área {area}; requer análise jurídica humana.",
-                "status": "possivel_impacto",
-            })
-        items.append({
-            "id": str(row.id),
-            "fonte": row.fonte,
-            "titulo": row.titulo,
-            "resumo": row.resumo,
-            "link": row.link,
-            "data_publicacao": row.data_publicacao,
-            "area": area,
-            "estado_conhecimento": "CLASSIFICADO",
-            "vigencia": "a_confirmar",
-            "rag": "nao_promovido_por_este_endpoint",
-            "impactos": impacts,
-        })
+            impacts.append(
+                {
+                    "client_id": company_id,
+                    "empresa": company_names[company_id],
+                    "aderencia": level,
+                    "fundamento": (
+                        f"A empresa possui caso canônico na área {area}; "
+                        "requer análise jurídica humana."
+                    ),
+                    "status": "possivel_impacto",
+                }
+            )
+        items.append(
+            {
+                "id": str(row.id),
+                "fonte": row.fonte,
+                "titulo": row.titulo,
+                "resumo": row.resumo,
+                "link": row.link,
+                "data_publicacao": row.data_publicacao,
+                "area": area,
+                "estado_conhecimento": "CLASSIFICADO",
+                "vigencia": "a_confirmar",
+                "rag": "nao_promovido_por_este_endpoint",
+                "impactos": impacts,
+            }
+        )
 
     return {
         "generated_at": datetime.now(timezone.utc),
         "periodo_horas": hours,
-        "total_publicacoes": len(rows),
+        "total_publicacoes": total_publicacoes,
+        "publicacoes_classificadas": len(rows),
         "por_area": dict(area_counts),
         "empresas_potencialmente_impactadas": len(impacted_company_ids),
-        "itens": items[:100],
+        "itens": items[:RADAR_ITEM_LIMIT],
+        "cobertura": "parcial" if coverage_partial else "completa",
         "fontes_ativas": ["diario_oficial_alertas: DOU/DOE-MG"],
         "dependencias_pendentes": ["PR #895: gate de vigência RAG"],
-        "regra_impacto": "Aderência só é exibida quando existe sinal objetivo no perfil/casos da empresa. Possível impacto não significa irregularidade.",
+        "regra_impacto": (
+            "Aderência só é exibida quando existe sinal objetivo no perfil/casos "
+            "da empresa. Possível impacto não significa irregularidade."
+        ),
     }

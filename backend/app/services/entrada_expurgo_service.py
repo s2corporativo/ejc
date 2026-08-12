@@ -14,6 +14,11 @@
 # Document pode ter sido vinculado por um caminho independente do batch;
 # defesa em profundidade, dupla checagem no nível do Document).
 #
+# Oportunidades DPT360 NÃO são rascunhos abandonados da Entrada Única. Elas
+# possuem finalidade e ciclo de vida próprios e, portanto, ficam fora deste
+# job genérico. A política definitiva de retenção/anonimização dessas
+# oportunidades é tratada separadamente na Issue #1086.
+#
 # A checagem sozinha não basta: entre a seleção (sem lock) e o delete, uma
 # conversão concorrente (POST /entrada/{id}/criar-caso) pode commitar e
 # vincular exatamente o batch/Document que está sendo apagado (TOCTOU —
@@ -27,7 +32,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.core.config import get_settings
 from app.models.document import Document
@@ -41,10 +46,15 @@ _STATUS_EXPURGAVEIS = ("erro", "concluido")
 async def expurgar_rascunhos_entrada_unica(
     db, dias: int = 30, dry_run: bool = True
 ) -> dict[str, Any]:
-    """Expurga (ou apenas conta, se `dry_run`) batches da Entrada Única
+    """Expurga (ou apenas conta, se `dry_run`) batches da Entrada Única.
 
-    Seleciona `DocumentIntakeBatch` com `case_id IS NULL` E `status IN
-    ('erro', 'concluido')` E `updated_at < corte` (corte = agora - dias).
+    Seleciona `DocumentIntakeBatch` com `case_id IS NULL`, `status IN
+    ('erro', 'concluido')`, modalidade diferente de `dpt360_oportunidade` e
+    `updated_at < corte` (corte = agora - dias).
+
+    Oportunidades DPT360 são excluídas deste job porque não são rascunhos da
+    Entrada Única. Isso evita data loss; a retenção própria da oportunidade é
+    responsabilidade da política específica registrada na Issue #1086.
 
     Para cada batch qualificado, resolve os `Document`s pelos
     `DocumentIntakeItem`s do lote e confirma DE NOVO, no nível do Document,
@@ -70,6 +80,10 @@ async def expurgar_rascunhos_entrada_unica(
                     select(DocumentIntakeBatch).where(
                         DocumentIntakeBatch.case_id.is_(None),
                         DocumentIntakeBatch.status.in_(_STATUS_EXPURGAVEIS),
+                        or_(
+                            DocumentIntakeBatch.modalidade.is_(None),
+                            DocumentIntakeBatch.modalidade != "dpt360_oportunidade",
+                        ),
                         DocumentIntakeBatch.updated_at < corte,
                     )
                 )
@@ -118,7 +132,8 @@ async def expurgar_rascunhos_entrada_unica(
                         "[entrada_expurgo] batch %s órfão mas Document %s tem "
                         "case_id/client_id preenchido — Document preservado, "
                         "batch pulado nesta execução",
-                        batch.id, doc.id,
+                        batch.id,
+                        doc.id,
                     )
                     documentos_do_batch = None
                     break
@@ -160,10 +175,15 @@ async def expurgar_rascunhos_entrada_unica(
                     .execution_options(populate_existing=True)
                 )
             ).scalar_one_or_none()
-            if batch_travado is None or batch_travado.case_id is not None:
+            if (
+                batch_travado is None
+                or batch_travado.case_id is not None
+                or batch_travado.modalidade == "dpt360_oportunidade"
+            ):
                 logger.warning(
-                    "[entrada_expurgo] batch %s convertido/removido entre a "
-                    "seleção e o expurgo — pulado nesta execução", batch.id,
+                    "[entrada_expurgo] batch %s convertido/removido/protegido "
+                    "entre a seleção e o expurgo — pulado nesta execução",
+                    batch.id,
                 )
                 continue
 
@@ -186,7 +206,9 @@ async def expurgar_rascunhos_entrada_unica(
                     logger.warning(
                         "[entrada_expurgo] Document %s vinculado entre a "
                         "seleção e o expurgo (batch %s) — batch pulado "
-                        "nesta execução", doc.id, batch.id,
+                        "nesta execução",
+                        doc.id,
+                        batch.id,
                     )
                     pular_batch = True
                     break
@@ -219,7 +241,8 @@ async def expurgar_rascunhos_entrada_unica(
                     logger.warning(
                         "[entrada_expurgo] filepath fora de UPLOAD_DIR para "
                         "Document %s — registro removido, arquivo físico "
-                        "NÃO tocado", doc.id,
+                        "NÃO tocado",
+                        doc.id,
                     )
                 else:
                     try:
@@ -231,7 +254,8 @@ async def expurgar_rascunhos_entrada_unica(
                             "[entrada_expurgo] falha ao remover arquivo "
                             "físico de %s (%s) — registro será removido do "
                             "banco mesmo assim",
-                            doc.id, exc,
+                            doc.id,
+                            exc,
                         )
                 bytes_liberados += doc.size_bytes or 0
                 await db.delete(doc)
@@ -257,7 +281,9 @@ async def expurgar_rascunhos_entrada_unica(
             logger.info(
                 "[entrada_expurgo] %d batch(es) e %d documento(s) expurgados "
                 "(%d bytes liberados)",
-                batches_removidos, documentos_removidos, bytes_liberados,
+                batches_removidos,
+                documentos_removidos,
+                bytes_liberados,
             )
         return resultado
     except Exception as exc:  # nunca derruba o job (padrão route_usage.expurgar_antigos)

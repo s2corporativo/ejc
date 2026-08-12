@@ -26,12 +26,14 @@ export type DptRadarToday = {
   generated_at: string;
   periodo_horas: number;
   total_publicacoes: number;
+  publicacoes_classificadas: number;
   por_area: Record<string, number>;
   empresas_potencialmente_impactadas: number;
   itens: DptRadarItem[];
   fontes_ativas: string[];
   dependencias_pendentes: string[];
   regra_impacto: string;
+  cobertura: "completa" | "parcial";
 };
 
 export async function getDptRadarToday(hours = 24): Promise<DptRadarToday> {
