@@ -1,4 +1,4 @@
-"""139_preliminares_fundacao_schema — Fase 1 da fusão Sala Jurídica + Raio-X.
+"""140_preliminares_fundacao_schema — Fase 1 da fusão Sala Jurídica + Raio-X.
 
 Cobertura estática sempre roda. Com RUN_DB_TESTS=1, sobe banco descartável em
 138, aplica somente 139, valida as quatro tabelas novas e prova downgrade para
@@ -16,7 +16,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 MIGRATION_PATH = (
-    BACKEND_DIR / "alembic" / "versions" / "139_preliminares_fundacao_schema.py"
+    BACKEND_DIR / "alembic" / "versions" / "140_preliminares_fundacao_schema.py"
 )
 
 PRELIMINAR_TABELAS = {
@@ -66,8 +66,8 @@ def _script_directory() -> ScriptDirectory:
 
 def test_migration_139_encadeia_em_138_e_e_o_head():
     script = _script_directory()
-    assert script.get_heads() == ["139_preliminares_fundacao_schema"]
-    revisao = script.get_revision("139_preliminares_fundacao_schema")
+    assert script.get_heads() == ["140_preliminares_fundacao_schema"]
+    revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "138_consolida_fontes_ingestao"
 
 
@@ -154,7 +154,7 @@ def test_upgrade_139_e_downgrade_138_preservam_tabelas_legadas():
         finally:
             engine.dispose()
 
-        rodar_alembic("upgrade", "139_preliminares_fundacao_schema")
+        rodar_alembic("upgrade", "140_preliminares_fundacao_schema")
         engine = create_engine(sync_url)
         try:
             inspector = inspect(engine)
