@@ -26,11 +26,10 @@ describe("Checklists — erro explícito", () => {
 
     render(<Checklists />);
 
-    await waitFor(() =>
-      expect(
-        screen.getByText("Não foi possível carregar os checklists."),
-      ).toBeTruthy(),
+    const erro = await screen.findByText(
+      /Não foi possível carregar os checklists/i,
     );
+    expect(erro).toBeTruthy();
     expect(screen.queryByText(/nenhum template ainda/i)).toBeNull();
 
     const botao = screen.getByRole("button", { name: /novo template/i });
