@@ -438,10 +438,63 @@ async def processar(
         raise HTTPException(500, f"Falha ao processar o lote: {str(exc)[:180]}")
 
 
+# ── A11 (auditoria 2026-08-12, LGPD art. 37): chaves do resultado do lote que
+# carregam dado pessoal extraído pela IA (partes, CPF/CNPJ, identificação
+# processual e resumo com fatos pessoais). A presença de qualquer valor não-vazio
+# em qualquer uma delas configura leitura de PII no GET do lote.
+_CHAVES_PII_LOTE: tuple[str, ...] = (
+    "partes",
+    "dados_pessoais",
+    "identificacao_processual",
+    "resumo_executivo",
+)
+
+
+def _lote_contem_pii(resultado: dict) -> bool:
+    """Detecta PII no resultado do lote sem inventar: só chaves canônicas do
+    payload produzido por `/processar` com valor não-vazio (dict com qualquer
+    valor, lista não-vazia ou string não-vazia). `texto_consolidado` é texto
+    integral dos originais — já auditado no UPLOAD — e fica de fora para não
+    duplicar o evento de leitura.
+    """
+    for chave in _CHAVES_PII_LOTE:
+        valor = resultado.get(chave) if isinstance(resultado, dict) else None
+        if isinstance(valor, dict) and any(valor.values()):
+            return True
+        if isinstance(valor, (list, str)) and valor:
+            return True
+    return False
+
+
 @router.get("/{batch_id}")
 async def obter_lote(batch_id: str, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     batch = await _acesso_batch(db, cu, batch_id)
-    return batch.resultado or {"batch_id": batch.id, "status": batch.status, "nivel_prontidao": batch.nivel_prontidao}
+    resultado = batch.resultado or {
+        "batch_id": batch.id, "status": batch.status, "nivel_prontidao": batch.nivel_prontidao,
+    }
+    # A11: o lote é visível a toda a equipe (verificação de acesso por caso ou
+    # `created_by`), então quem lê o resultado com PII nem sempre é o criador.
+    # Leitura de dado pessoal sem registro em auditoria viola o art. 37 da LGPD
+    # (registro de operações com dados pessoais). O criador não registra o
+    # evento aqui: ele já responde pelo UPLOAD do lote.
+    if _lote_contem_pii(resultado) and batch.created_by != cu.id:
+        try:
+            await criar_audit_log(
+                db,
+                user_id=cu.id,
+                user_role=_role_value(cu),
+                acao="LEITURA_PII",
+                entidade="document_intake_batch",
+                registro_id=batch.id,
+                detalhes=(
+                    "Leitura do resultado de lote universal contendo dado pessoal "
+                    "extraído (partes, dados pessoais, identificação processual ou "
+                    "resumo)."
+                ),
+            )
+        except Exception:  # falha de auditoria nunca bloqueia a leitura
+            logger.exception("Falha ao registrar leitura de PII do lote %s", batch.id)
+    return resultado
 
 
 @router.post("/{batch_id}/preparar-pacote")

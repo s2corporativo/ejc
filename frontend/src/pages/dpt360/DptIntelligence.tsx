@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BrainCircuit, ClipboardCheck, ShieldAlert } from "lucide-react";
 import {
   runDptAction,
@@ -42,19 +42,22 @@ export default function DptIntelligence({
   companies,
   initialAction = "conselho",
   initialClientId,
+  initialArea,
 }: {
   companies: DptCompany[];
   initialAction?: DptAction;
   initialClientId?: string;
+  initialArea?: string;
 }) {
   const fallbackClientId = companies[0]?.id || "";
   const [action, setAction] = useState<DptAction>(initialAction);
   const [clientId, setClientId] = useState(initialClientId || fallbackClientId);
   const [question, setQuestion] = useState("");
-  const [area, setArea] = useState("empresarial");
+  const [area, setArea] = useState(initialArea || "empresarial");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<DptActionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestToken = useRef(0);
 
   // Sincroniza o pai quando o diagnóstico troca de empresa. A seleção manual
   // feita dentro do Motor não participa deste efeito e não é revertida.
@@ -67,6 +70,29 @@ export default function DptIntelligence({
     }
   }, [companies, initialClientId]);
 
+  // Toda troca de área — vinda do pai (Diagnóstico) ou escolhida manualmente
+  // no select — precisa invalidar a análise em voo: sem isso, uma resposta
+  // tardia sobrescreveria a tela com o rascunho de um domínio que o usuário
+  // já não está mais analisando. `setLoading(false)` é essencial aqui: a
+  // requisição antiga terá seu próprio `finally` pulado (token não bate mais)
+  // e, sem este reset, o botão ficaria desabilitado indefinidamente.
+  const trocarArea = useCallback((novaArea: string) => {
+    requestToken.current += 1;
+    setArea(novaArea);
+    setResult(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  // Mesmo princípio para a área: quando o pai (Diagnóstico) troca o tipo
+  // selecionado, a análise de IA deve incidir sobre essa mesma área — nunca
+  // sobre "empresarial" por omissão enquanto o usuário pediu outra coisa.
+  useEffect(() => {
+    if (initialArea) {
+      trocarArea(initialArea);
+    }
+  }, [initialArea, trocarArea]);
+
   useEffect(() => {
     if (!companies.some((company) => company.id === clientId)) {
       setClientId(fallbackClientId);
@@ -75,19 +101,26 @@ export default function DptIntelligence({
 
   async function submit() {
     if (!clientId || question.trim().length < 3) return;
+    const token = ++requestToken.current;
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      setResult(
-        await runDptAction({ action, client_id: clientId, question, area }),
-      );
+      const response = await runDptAction({
+        action,
+        client_id: clientId,
+        question,
+        area,
+      });
+      if (requestToken.current === token) setResult(response);
     } catch {
-      setError(
-        "Não foi possível executar a análise. Nenhuma conclusão foi presumida.",
-      );
+      if (requestToken.current === token) {
+        setError(
+          "Não foi possível executar a análise. Nenhuma conclusão foi presumida.",
+        );
+      }
     } finally {
-      setLoading(false);
+      if (requestToken.current === token) setLoading(false);
     }
   }
 
@@ -115,6 +148,7 @@ export default function DptIntelligence({
               key={item.value}
               type="button"
               onClick={() => setAction(item.value)}
+              disabled={loading}
               className={`rounded-xl border p-4 text-left transition ${action === item.value ? "border-amber-300 bg-amber-50/60 dark:border-amber-400/30 dark:bg-amber-400/10" : "border-slate-200 dark:border-white/10"}`}
             >
               <div className="text-sm font-semibold text-slate-900 dark:text-white">
@@ -133,7 +167,8 @@ export default function DptIntelligence({
             <select
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-slate-950"
+              disabled={loading}
+              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-950"
             >
               {companies.map((company) => (
                 <option key={company.id} value={company.id}>
@@ -146,8 +181,9 @@ export default function DptIntelligence({
             Área de foco
             <select
               value={area}
-              onChange={(e) => setArea(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-slate-950"
+              onChange={(e) => trocarArea(e.target.value)}
+              disabled={loading}
+              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-950"
             >
               {[
                 "empresarial",
@@ -202,6 +238,12 @@ export default function DptIntelligence({
               <ShieldAlert className="h-4 w-4 text-amber-600" /> Rascunho
               jurídico — revisão humana obrigatória
             </div>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-white/5 dark:text-slate-300">
+              {companies.find((company) => company.id === clientId)?.nome ||
+                "Empresa não identificada"}
+              {" — "}
+              {area}
+            </span>
             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">
               {result.status_hitl}
             </span>

@@ -100,6 +100,18 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
           Não foi possível montar o relatório; nenhum conteúdo foi inventado.
         </div>
       ) : null}
+      {report?.cobertura === "parcial" ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <div className="font-semibold">Resultados parciais</div>
+          {report.notas_cobertura.length ? (
+            <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs text-amber-700">
+              {report.notas_cobertura.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
       {report ? (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
           <div className="flex items-center justify-between gap-3">
