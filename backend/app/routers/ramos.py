@@ -3941,7 +3941,7 @@ _MODALIDADES_PARCELAMENTO = {
 async def trib_parcelamento(
     valor_total_debito: float = Query(..., gt=0),
     parcelas: int = Query(60, gt=0),
-    modalidade: str = "pert",
+    modalidade: str = "parcelamento_comum",
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Simulação SIMPLIFICADA de parcelamento tributário por modalidade."""
@@ -4134,8 +4134,15 @@ async def trib_regime_tributario(
 _REFORMA_CRONOGRAMA = {
     "2026": "Fase-teste: CBS 0,9% + IBS 0,1%, compensáveis com PIS/COFINS "
             "(dispensa de recolhimento para quem cumprir as obrigações acessórias).",
-    "2027": "CBS em alíquota cheia substitui PIS/COFINS (extintos); Imposto Seletivo (IS) "
-            "entra em vigor; IPI zerado, exceto Zona Franca de Manaus; IBS a 0,1%.",
+    "2027": "CBS cobrada com alíquota reduzida em 0,1 ponto percentual (ainda NÃO plena) "
+            "substitui PIS/COFINS (extintos); Imposto Seletivo (IS) entra em vigor; IPI "
+            "zerado, exceto para produtos cuja industrialização seja também incentivada na "
+            "Zona Franca de Manaus (mantido para preservar a competitividade da ZFM, mesmo "
+            "se o produto concorrente for fabricado fora dela); IBS mantido em 0,1%. Sem "
+            "redução de ICMS/ISS.",
+    "2028": "Continuidade do regime de 2027: CBS ainda com alíquota reduzida em 0,1 ponto "
+            "percentual (não plena); IBS mantido em 0,1%; IS e extinção de PIS/COFINS seguem "
+            "vigentes. Ainda sem redução de ICMS/ISS — a transição proporcional só começa em 2029.",
     "2029": "Início da transição do IBS: ICMS e ISS reduzidos a 90% das alíquotas; "
             "IBS sobe proporcionalmente.",
     "2030": "ICMS/ISS a 80% — IBS continua subindo.",
@@ -4159,7 +4166,7 @@ async def trib_reforma_tributaria(
     receita_bruta_anual: float = Query(..., gt=0),
     regime_atual: Literal["simples", "lucro_presumido", "lucro_real"] = "simples",
     atividade: Literal["comercio", "industria", "servicos", "financeiro", "imobiliario"] = "servicos",
-    ano_analise: Literal["2026", "2027", "2029", "2030", "2031", "2032", "2033"] = "2026",
+    ano_analise: Literal["2026", "2027", "2028", "2029", "2030", "2031", "2032", "2033"] = "2026",
     cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Informativo estruturado da transição CBS/IBS (EC 132/2023 · LC 214/2025)."""
@@ -4199,7 +4206,10 @@ async def trib_reforma_tributaria(
         },
         "base": "EC 132/2023 · LC 214/2025 · ADCT arts. 125-133 (cronograma de transição).",
         "aviso": "INFORMATIVO — regulamentações complementares em edição; alíquotas de referência "
-                 "serão fixadas por resolução do Senado. Revisão humana obrigatória.",
+                 "serão fixadas por resolução do Senado. Regimes específicos (financeiro, "
+                 "imobiliário, combustíveis, cesta básica e outros da LC 214/2025) têm regras "
+                 "próprias que podem divergir deste cronograma geral — não cobertos por esta "
+                 "estimativa. Revisão humana obrigatória.",
     }
 
 

@@ -19,6 +19,22 @@ const KINDS: Array<{ value: DptDiagnosticKind; label: string }> = [
   { value: "governanca_ia", label: "Governança de IA" },
 ];
 
+// O Motor Jurídico (DptIntelligence) só aceita um subconjunto de domínios
+// (backend/app/modules/dpt360/intelligence_service.py:_ALLOWED_DOMAINS).
+// "completo" e "governanca_ia" não têm domínio próprio ali — mapeamento
+// explícito para "empresarial" em vez do fallback silencioso do backend,
+// para que a escolha do usuário não seja perdida sem aviso.
+const AREA_BY_KIND: Record<DptDiagnosticKind, string> = {
+  completo: "empresarial",
+  tributario: "tributario",
+  ambiental: "ambiental",
+  administrativo: "administrativo",
+  trabalhista: "trabalhista",
+  contratual: "contratual",
+  lgpd: "lgpd",
+  governanca_ia: "empresarial",
+};
+
 export default function DptDiagnosis({
   companies,
 }: {
@@ -153,6 +169,7 @@ export default function DptDiagnosis({
         companies={companies}
         initialAction="diagnostico"
         initialClientId={clientId}
+        initialArea={AREA_BY_KIND[kind]}
       />
     </div>
   );

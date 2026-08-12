@@ -126,3 +126,32 @@ describe("ramosConfig — tipos societários (empresarial)", () => {
     expect(campo?.opcoes).toContain("SLU");
   });
 });
+
+describe("ramosConfig — reforma tributária e parcelamento", () => {
+  it("a ferramenta de reforma tributária oferece 2028 entre os anos de análise", () => {
+    const ferramenta = RAMOS.tributario.ferramentas.find(
+      (f) => f.id === "reforma-tributaria",
+    );
+    const campo = ferramenta?.campos.find((c) => c.nome === "ano_analise");
+    expect(campo).toBeTruthy();
+    expect(campo?.opcoes).toEqual([
+      "2026",
+      "2027",
+      "2028",
+      "2029",
+      "2030",
+      "2031",
+      "2032",
+      "2033",
+    ]);
+  });
+
+  it("o parcelamento tributário não abre com PERT (programa extinto) como padrão", () => {
+    const ferramenta = RAMOS.tributario.ferramentas.find(
+      (f) => f.id === "parcelamento",
+    );
+    const campo = ferramenta?.campos.find((c) => c.nome === "modalidade");
+    expect(campo?.default).toBe("parcelamento_comum");
+    expect(campo?.opcoes).toContain("pert");
+  });
+});

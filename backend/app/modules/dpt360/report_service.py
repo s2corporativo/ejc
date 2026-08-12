@@ -42,15 +42,31 @@ async def build_executive_report(
     # e omitindo empresas antigas com histórico). Agora os casos e prazos são
     # consultados diretamente pelo client_id, com teto e flag de truncamento
     # próprios por seção.
-    cases = (
+    case_rows = (
         await db.execute(
             _visible_business_cases_query(user, [client_id])
             .order_by(Case.created_at.desc())
             .limit(31)
         )
     ).scalars().all()
-    cases_truncated = len(cases) > 30
-    cases = cases[:30]
+    cases_truncated = len(case_rows) > 30
+    # Convertido para o schema aqui, uma vez só: _visible_business_cases_query
+    # devolve instâncias ORM de Case, sem model_dump() — usado tanto para
+    # calcular risco crítico quanto para o campo "casos" da resposta.
+    cases = [
+        DptCaseSummary(
+            id=case.id,
+            client_id=case.client_id,
+            titulo=case.titulo,
+            area=_value(case.area),
+            status=_value(case.status),
+            prioridade=_value(case.prioridade),
+            risco=case.risco,
+            proxima_acao=case.proxima_acao,
+            proxima_acao_prazo=case.proxima_acao_prazo,
+        )
+        for case in case_rows[:30]
+    ]
     case_ids = {item.id for item in cases}
 
     deadline_rows = (
@@ -129,6 +145,12 @@ async def build_executive_report(
     today = datetime.now(timezone.utc).date()
     future = [item for item in deadlines if item.data_prazo >= today]
 
+    # "principais_riscos" também tem teto próprio (10) e precisa entrar na
+    # mesma verificação de cobertura que casos/prazos/alertas — do contrário
+    # uma empresa com mais de 10 riscos críticos teria a lista cortada sem aviso.
+    if len(critical) > 10:
+        secoes_truncadas.append("riscos atuais (mais de 10)")
+
     cobertura_notas = [f"Recorte agregado do cockpit: {note}" for note in dashboard.notes]
     cobertura_notas.extend(
         [f"Seção truncada no teto próprio: {label}." for label in secoes_truncadas]
@@ -151,20 +173,7 @@ async def build_executive_report(
                 item.label for item in profile.twin if item.status == "sem_dados"
             ],
         },
-        "casos": [
-            DptCaseSummary(
-                id=case.id,
-                client_id=case.client_id,
-                titulo=case.titulo,
-                area=_value(case.area),
-                status=_value(case.status),
-                prioridade=_value(case.prioridade),
-                risco=case.risco,
-                proxima_acao=case.proxima_acao,
-                proxima_acao_prazo=case.proxima_acao_prazo,
-            ).model_dump()
-            for case in cases[:30]
-        ],
+        "casos": [item.model_dump() for item in cases],
         "mudancas_juridicas_relevantes": changes[:30],
         "cobertura": "parcial" if (secoes_truncadas or dashboard.coverage == "partial") else "completa",
         "notas_cobertura": cobertura_notas,
