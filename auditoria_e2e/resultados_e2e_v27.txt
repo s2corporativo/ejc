@@ -1,0 +1,8 @@
+PASS  T01-1  Endpoint protegido sem token → 401
+PASS  T01-2  Login admin retorna 200
+PASS  T01-3  /users/me com token retorna perfil
+PASS  T01-4  Perfil identifica role
+PASS  T01-5  OpenAPI servida
+PASS  T01-6  Status da camada de IA
+PASS  T01-7  Endpoint RAG acessível
+ABORT: cliente não criado — 409 {"detail":"CPF/CNPJ já cadastrado"}

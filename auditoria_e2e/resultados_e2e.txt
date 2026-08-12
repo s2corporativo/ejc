@@ -1,0 +1,25 @@
+PASS  T01-1  Endpoint protegido sem token → 401
+PASS  T01-2  Login admin retorna 200
+PASS  T01-3  /users/me com token retorna perfil
+PASS  T01-4  Perfil identifica role
+PASS  T01-5  OpenAPI servida
+PASS  T01-6  Status da camada de IA
+PASS  T01-7  Endpoint RAG acessível
+FAIL  T04-1  Criar cliente retorna 201/200  << 422 {"detail":[{"type":"value_error","loc":["body","origem"],"msg":"Value error, origem inválida; use uma de: ['escritorio', 'indicacao', 'outro', 'redes_
+FAIL  T04-2  Buscar cliente por prefixo  << 200 {'data': [], 'total': 0, 'page': 1, 'page_size': 20}
+FAIL  T04-3  Atualizar cliente  << 404 {"detail":"Cliente não encontrado"}
+FAIL  T04-4  Duplicidade de CNPJ rejeitada (409/422)  << 201 {"tipo":"PJ","nome":null,"cpf":null,"data_nascimento":null,"profissao":null,"razao_social":"TESTE_EJC_AUDITORIA_2026 Cli
+FAIL  T05-1  Criar caso retorna 201/200  << 422 {"detail":[{"type":"string_type","loc":["body","client_id"],"msg":"Input should be a valid string","input":null}]}
+FAIL  T05-2  Consultar caso criado  << 404 {"detail":"Caso não encontrado"}
+FAIL  T05-3  Atualizar caso (próxima ação)  << 404 {"detail":"Caso não encontrado"}
+PASS  T05-4  Caso sem client_id rejeitado (422)
+PASS  T06-1  Criar prazo (deadline) retorna 201/200
+PASS  T06-2  Criar segundo prazo
+PASS  T06-3  Listar prazos com busca
+PASS  T07-1  Criar tarefa no caso
+PASS  T07-2  Listar tarefas do caso
+Traceback (most recent call last):
+  File "/home/ubuntu/ejc/auditoria_e2e/testes_e2e.py", line 161, in <module>
+    r = post("/documents/upload",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: post() got an unexpected keyword argument 'headers'
