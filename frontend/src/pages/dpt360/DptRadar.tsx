@@ -63,7 +63,12 @@ export default function DptRadar() {
             </h2>
             <p className="mt-1 text-sm text-slate-500">
               {data.total_publicacoes} publicação(ões) coletada(s) nas últimas{" "}
-              {data.periodo_horas}h · {data.empresas_potencialmente_impactadas}{" "}
+              {data.periodo_horas}h
+              {data.coverage === "partial" && (
+                <span className="ml-2 inline-block rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">
+                  Resultados truncados
+                </span>
+              )} · {data.empresas_potencialmente_impactadas}{" "}
               empresa(s) com possível impacto objetivo.
             </p>
           </div>

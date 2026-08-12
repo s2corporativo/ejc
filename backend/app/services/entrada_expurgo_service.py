@@ -70,7 +70,10 @@ async def expurgar_rascunhos_entrada_unica(
                     select(DocumentIntakeBatch).where(
                         DocumentIntakeBatch.case_id.is_(None),
                         DocumentIntakeBatch.status.in_(_STATUS_EXPURGAVEIS),
-                        DocumentIntakeBatch.modalidade != "dpt360_oportunidade",
+                        (
+                            (DocumentIntakeBatch.modalidade.is_(None))
+                            | (DocumentIntakeBatch.modalidade != "dpt360_oportunidade")
+                        ),
                         DocumentIntakeBatch.updated_at < corte,
                     )
                 )
