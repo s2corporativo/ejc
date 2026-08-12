@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
@@ -12,7 +13,6 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
   const [arquivo, setArquivo] = useState<"ativos" | "arquivados" | "todos">(
     "ativos",
   );
-  // Modal de arquivamento (substitui o prompt() nativo por UI do projeto).
   const [arqPid, setArqPid] = useState<string | null>(null);
   const [arqMotivo, setArqMotivo] = useState("");
   const [arqSaving, setArqSaving] = useState(false);
@@ -107,6 +107,11 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Falha ao desarquivar");
     }
+  };
+
+  const dataJudHref = (numeroCnj: string) => {
+    const params = new URLSearchParams({ numero: numeroCnj, caso: caseId });
+    return `/datajud?${params.toString()}`;
   };
 
   return (
@@ -290,6 +295,14 @@ export default function TabProcessos({ caseId }: { caseId: string }) {
                   <p className="text-xs text-gray-400 mt-0.5">
                     Valor da causa: {fmtMoney(p.valor_causa)}
                   </p>
+                )}
+                {p.numero_cnj && (
+                  <Link
+                    to={dataJudHref(p.numero_cnj)}
+                    className="mt-2 inline-flex text-xs font-medium text-primary-700 hover:underline"
+                  >
+                    Consultar no DataJud e sincronizar com este caso
+                  </Link>
                 )}
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">

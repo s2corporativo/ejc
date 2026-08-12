@@ -5,6 +5,7 @@ import {
   STAFF_ROUTES,
   canRoleAccessPath,
   getNavigationModules,
+  routePatternMatches,
 } from "./moduleRegistry";
 
 function getProductionNavigation(role: string) {
@@ -35,6 +36,10 @@ describe("moduleRegistry", () => {
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
       expect(canRoleAccessPath(role, "/dpt360"), role).toBe(true);
       expect(canRoleAccessPath(role, "/dpt360/empresas"), role).toBe(true);
+      expect(
+        canRoleAccessPath(role, "/dpt360/empresas/cliente-123"),
+        role,
+      ).toBe(true);
     }
     for (const role of [
       "advogado_auxiliar",
@@ -45,7 +50,45 @@ describe("moduleRegistry", () => {
     ]) {
       expect(canRoleAccessPath(role, "/dpt360"), role).toBe(false);
       expect(canRoleAccessPath(role, "/dpt360/empresas"), role).toBe(false);
+      expect(
+        canRoleAccessPath(role, "/dpt360/empresas/cliente-123"),
+        role,
+      ).toBe(false);
     }
+  });
+
+  it("faz matching de parâmetros dinâmicos sem aceitar profundidade indevida", () => {
+    expect(routePatternMatches("/clientes/:clientId", "/clientes/abc")).toBe(
+      true,
+    );
+    expect(routePatternMatches("/clientes/:clientId", "/clientes/abc/x")).toBe(
+      false,
+    );
+    expect(routePatternMatches("/casos/:id/jornada", "/casos/42/jornada")).toBe(
+      true,
+    );
+    expect(routePatternMatches("/dpt360/*", "/dpt360/empresas/abc")).toBe(true);
+  });
+
+  it("espelha RBAC do dossiê dinâmico de cliente", () => {
+    for (const role of ["superadmin", "admin", "socio", "advogado", "secretaria"]) {
+      expect(canRoleAccessPath(role, "/clientes/cliente-123"), role).toBe(true);
+    }
+    for (const role of ["financeiro", "estagiario", "advogado_auxiliar"]) {
+      expect(canRoleAccessPath(role, "/clientes/cliente-123"), role).toBe(false);
+    }
+  });
+
+  it("mantém Entrada Jurídica como porta visível sem prometer IA à secretaria", () => {
+    const entrada = STAFF_ROUTES.find((route) => route.key === "entrada");
+    expect(entrada?.label).toBe("Entrada Jurídica");
+    expect(entrada?.essential).toBe(true);
+    expect(canRoleAccessPath("advogado", "/entrada")).toBe(true);
+    expect(canRoleAccessPath("secretaria", "/entrada")).toBe(true);
+    expect(canRoleAccessPath("financeiro", "/entrada")).toBe(false);
+    expect(STAFF_ROUTES.find((route) => route.key === "caso-novo")?.showInNav).toBe(
+      false,
+    );
   });
 
   it("não possui aliases duplicados nem aliases sobre rotas canônicas", () => {

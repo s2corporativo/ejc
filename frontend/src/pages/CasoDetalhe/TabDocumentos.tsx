@@ -1,10 +1,16 @@
-// ── Aba Documentos do caso — upload e vínculo embutidos (Tela C, Bloco 3.2) ──
+// ── Aba Documentos do caso — upload, vínculo, solicitação e assinatura ────────
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileUp, Link2, Search } from "lucide-react";
+import {
+  FileSignature,
+  FileUp,
+  Link2,
+  Search,
+  Send,
+} from "lucide-react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
-import { Empty } from "../../components/UI";
+import { Empty, Modal } from "../../components/UI";
 import { useAuth } from "../../stores/auth";
 
 const PAPEIS_VINCULO_DOCUMENTAL = new Set([
@@ -14,6 +20,16 @@ const PAPEIS_VINCULO_DOCUMENTAL = new Set([
   "advogado",
   "advogado_auxiliar",
   "estagiario",
+]);
+
+// POST /casos/{case_id}/solicitacoes-documentos e POST /signatures/ exigem
+// advogado+ no backend. A UI espelha a allowlist para não prometer ação que o
+// backend recusará; o backend permanece a fonte de verdade.
+const PAPEIS_ATO_ADVOGADO = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
 ]);
 
 async function baixarDoc(docId: string, filename: string) {
@@ -71,9 +87,26 @@ type DocumentoCandidato = {
   created_at?: string | null;
 };
 
+type SolicitacaoItem = {
+  id: string;
+  nome: string;
+  descricao?: string | null;
+  status: string;
+  documento_id?: string | null;
+};
+
+type SolicitacaoDocumento = {
+  id: string;
+  mensagem?: string | null;
+  status: string;
+  created_at?: string | null;
+  itens: SolicitacaoItem[];
+};
+
 export default function TabDocumentos({ caseId }: { caseId: string }) {
   const user = useAuth((state) => state.user);
   const podeVincularDocumento = PAPEIS_VINCULO_DOCUMENTAL.has(user?.role || "");
+  const podePraticarAto = PAPEIS_ATO_ADVOGADO.has(user?.role || "");
   const [docs, setDocs] = useState<any[]>([]);
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [titulo, setTitulo] = useState("");
@@ -93,6 +126,17 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
   const [vinculandoId, setVinculandoId] = useState<string | null>(null);
   const buscaSeq = useRef(0);
 
+  const [solicitacoes, setSolicitacoes] = useState<SolicitacaoDocumento[]>([]);
+  const [solicitando, setSolicitando] = useState(false);
+  const [modalSolicitacao, setModalSolicitacao] = useState(false);
+  const [solicitacaoForm, setSolicitacaoForm] = useState({
+    nome: "",
+    descricao: "",
+    mensagem: "",
+  });
+  const [caseClientId, setCaseClientId] = useState<string | null>(null);
+  const [assinandoId, setAssinandoId] = useState<string | null>(null);
+
   const carregar = useCallback(() => {
     api
       .get(`/documents/?case_id=${caseId}`)
@@ -100,17 +144,49 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
       .catch(() => setDocs([]));
   }, [caseId]);
 
+  const carregarSolicitacoes = useCallback(() => {
+    if (!podePraticarAto) {
+      setSolicitacoes([]);
+      return;
+    }
+    api
+      .get(`/casos/${caseId}/solicitacoes-documentos`)
+      .then((r) => setSolicitacoes(asList<SolicitacaoDocumento>(r.data)))
+      .catch(() => setSolicitacoes([]));
+  }, [caseId, podePraticarAto]);
+
   useEffect(() => {
     carregar();
-  }, [carregar]);
+    carregarSolicitacoes();
+  }, [carregar, carregarSolicitacoes]);
+
+  // A assinatura precisa do client_id, mas o contexto nunca confia em dado
+  // vindo do browser: o GET /cases/{id} já aplica ownership e fornece o vínculo.
+  useEffect(() => {
+    if (!podePraticarAto) {
+      setCaseClientId(null);
+      return;
+    }
+    let ativo = true;
+    api
+      .get(`/cases/${caseId}`)
+      .then((r) => {
+        if (!ativo) return;
+        const clientId = r.data?.client_id;
+        setCaseClientId(typeof clientId === "string" && clientId ? clientId : null);
+      })
+      .catch(() => {
+        if (ativo) setCaseClientId(null);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [caseId, podePraticarAto]);
 
   useEffect(() => {
     const termo = buscaVinculo.trim();
     const seq = ++buscaSeq.current;
     let ativo = true;
-
-    // Resultados pertencem ao par caseId+termo. Limpar imediatamente impede
-    // que um botão de contexto anterior seja acionado durante debounce/rede.
     setResultadosVinculo([]);
     setTotalVinculo(0);
     setErroBuscaVinculo(null);
@@ -201,12 +277,76 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
     }
   };
 
+  const criarSolicitacao = async () => {
+    const nome = solicitacaoForm.nome.trim();
+    if (!nome) {
+      toast.error("Informe qual documento o cliente deve enviar.");
+      return;
+    }
+    setSolicitando(true);
+    try {
+      await api.post(`/casos/${caseId}/solicitacoes-documentos`, {
+        itens: [
+          {
+            nome,
+            descricao: solicitacaoForm.descricao.trim() || undefined,
+          },
+        ],
+        mensagem: solicitacaoForm.mensagem.trim() || undefined,
+      });
+      toast.success(
+        "Solicitação enviada pelo fluxo oficial do Caso e disponibilizada ao Portal do Cliente.",
+      );
+      setModalSolicitacao(false);
+      setSolicitacaoForm({ nome: "", descricao: "", mensagem: "" });
+      carregarSolicitacoes();
+    } catch (error) {
+      toast.error(
+        detalheErro(error, "Não foi possível solicitar o documento ao cliente."),
+      );
+    } finally {
+      setSolicitando(false);
+    }
+  };
+
+  const solicitarAssinatura = async (docId: string) => {
+    if (!caseClientId) {
+      toast.error("Este caso não possui cliente válido para solicitar assinatura.");
+      return;
+    }
+    setAssinandoId(docId);
+    try {
+      await api.post("/signatures/", {
+        document_id: docId,
+        client_id: caseClientId,
+      });
+      toast.success("Solicitação de assinatura enviada ao Portal do Cliente.");
+    } catch (error) {
+      toast.error(
+        detalheErro(error, "Não foi possível solicitar a assinatura."),
+      );
+    } finally {
+      setAssinandoId(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="card p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-slate-700">
-          Anexar documento ao caso
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-700">
+            Anexar documento ao caso
+          </h3>
+          {podePraticarAto && (
+            <button
+              type="button"
+              onClick={() => setModalSolicitacao(true)}
+              className="btn-secondary flex items-center gap-1 text-xs"
+            >
+              <Send className="h-3.5 w-3.5" /> Solicitar ao cliente
+            </button>
+          )}
+        </div>
         <div
           role="button"
           tabIndex={0}
@@ -277,6 +417,44 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
           </button>
         </div>
       </div>
+
+      {podePraticarAto && solicitacoes.length > 0 && (
+        <div className="card p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-slate-700">
+              Solicitações ao cliente
+            </h3>
+            <span className="text-xs text-slate-400">{solicitacoes.length}</span>
+          </div>
+          <div className="space-y-2">
+            {solicitacoes.map((solicitacao) => (
+              <div
+                key={solicitacao.id}
+                className="rounded-lg border border-slate-100 p-3 text-sm"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-slate-800">
+                    {solicitacao.itens.map((item) => item.nome).join(", ")}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {solicitacao.status}
+                  </span>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {solicitacao.itens.map((item) => (
+                    <span
+                      key={item.id}
+                      className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                    >
+                      {item.nome}: {item.status}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {podeVincularDocumento && (
         <div className="card p-4 space-y-3">
@@ -378,24 +556,116 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
         {docs.map((d, i) => (
           <div
             key={d.id || i}
-            className="card p-3 flex justify-between items-center text-sm cursor-pointer transition-colors duration-150 hover:bg-slate-50"
+            className="card flex cursor-pointer items-center justify-between gap-3 p-3 text-sm transition-colors duration-150 hover:bg-slate-50"
             onClick={() =>
               baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
             }
             title="Clique para baixar"
           >
-            <span className="text-gray-800">
-              {d.titulo || d.filename || d.nome_arquivo}
-            </span>
-            <span className="text-gray-400 text-xs">
-              {d.tipo_peca || d.tipo}
-            </span>
+            <div className="min-w-0 flex-1">
+              <span className="block truncate text-gray-800">
+                {d.titulo || d.filename || d.nome_arquivo}
+              </span>
+              <span className="text-gray-400 text-xs">
+                {d.tipo_peca || d.tipo}
+              </span>
+            </div>
+            {podePraticarAto && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void solicitarAssinatura(d.id);
+                }}
+                disabled={!caseClientId || assinandoId === d.id}
+                className="btn-secondary flex shrink-0 items-center gap-1 text-xs disabled:opacity-50"
+                title="Solicitar assinatura ao cliente pelo Portal"
+              >
+                <FileSignature className="h-3.5 w-3.5" />
+                {assinandoId === d.id ? "Solicitando…" : "Solicitar assinatura"}
+              </button>
+            )}
           </div>
         ))}
         {docs.length === 0 && (
           <Empty message="Nenhum documento vinculado a este caso" />
         )}
       </div>
+
+      <Modal
+        open={modalSolicitacao}
+        onClose={() => !solicitando && setModalSolicitacao(false)}
+        title="Solicitar documento ao cliente"
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label">Documento solicitado</label>
+            <input
+              className="input w-full text-sm"
+              maxLength={255}
+              value={solicitacaoForm.nome}
+              onChange={(event) =>
+                setSolicitacaoForm((atual) => ({
+                  ...atual,
+                  nome: event.target.value,
+                }))
+              }
+              placeholder="Ex.: comprovante de residência atualizado"
+            />
+          </div>
+          <div>
+            <label className="label">Orientação específica (opcional)</label>
+            <textarea
+              className="input min-h-24 w-full text-sm"
+              maxLength={2000}
+              value={solicitacaoForm.descricao}
+              onChange={(event) =>
+                setSolicitacaoForm((atual) => ({
+                  ...atual,
+                  descricao: event.target.value,
+                }))
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Mensagem ao cliente (opcional)</label>
+            <textarea
+              className="input min-h-20 w-full text-sm"
+              maxLength={4000}
+              value={solicitacaoForm.mensagem}
+              onChange={(event) =>
+                setSolicitacaoForm((atual) => ({
+                  ...atual,
+                  mensagem: event.target.value,
+                }))
+              }
+            />
+          </div>
+          <p className="text-xs text-slate-500">
+            O pedido será registrado no Caso, auditado pelo backend e ficará
+            disponível na área Documentos do Portal do Cliente. O upload do
+            cliente retornará ao GED deste mesmo Caso.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={solicitando}
+              onClick={() => setModalSolicitacao(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={solicitando || !solicitacaoForm.nome.trim()}
+              onClick={() => void criarSolicitacao()}
+            >
+              {solicitando ? "Enviando…" : "Enviar solicitação"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

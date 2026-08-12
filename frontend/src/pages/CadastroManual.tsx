@@ -5,6 +5,7 @@
 // automaticamente quando a conexão volta (evento `online`), no mount da página
 // ou pelo botão "Enviar pendentes agora".
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { CloudOff, RotateCw, Trash2, Wifi, WifiOff } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
@@ -164,7 +165,6 @@ type CasoForm = {
   parte_contraria: string;
   valor_causa: string;
   descricao_fatos: string;
-  // "+ Criar cliente novo junto"
   criar_cliente: boolean;
   novo_tipo: "PF" | "PJ";
   novo_nome: string;
@@ -210,9 +210,6 @@ function limparVazios(obj: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-// Campos exclusivos de cada tipo: ao alternar PF↔PJ no formulário, valores já
-// digitados do outro tipo ficariam no estado e iriam no payload (ex.: cliente
-// PF com cnpj/razão social). Removidos na montagem do payload.
 const CAMPOS_SO_PJ = ["razao_social", "cnpj", "nome_fantasia"];
 const CAMPOS_SO_PF = ["nome", "cpf", "data_nascimento", "profissao"];
 
@@ -226,11 +223,6 @@ function payloadCliente(f: {
   return base;
 }
 
-/**
- * Normaliza valor monetário digitado à brasileira para o Decimal do backend:
- * "1.234,56" → "1234.56"; "1.500" (ponto de MILHAR, sem vírgula) → "1500";
- * "1234.56" (decimal com ponto) fica como está.
- */
 function normalizarValor(v: string): string {
   const s = v.trim();
   if (s.includes(",")) return s.replace(/\./g, "").replace(",", ".");
@@ -238,7 +230,6 @@ function normalizarValor(v: string): string {
   return s;
 }
 
-/** Validação local espelhando o backend (router clients + validators). */
 function validarClienteLocal(f: {
   tipo: "PF" | "PJ";
   nome?: string;
@@ -266,7 +257,19 @@ const STATUS_FILA: Record<ItemFila["status"], { label: string; cls: string }> =
     erro: { label: "Erro", cls: "bg-danger-50 text-danger-700" },
   };
 
+function nomeCliente(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "";
+  const c = raw as Record<string, unknown>;
+  for (const key of ["nome", "razao_social", "nome_fantasia", "nome_exibicao"]) {
+    const value = c[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 export default function CadastroManual() {
+  const [searchParams] = useSearchParams();
+  const clientIdContexto = searchParams.get("client_id")?.trim() || null;
   const {
     rascunhoCliente,
     rascunhoCaso,
@@ -285,9 +288,6 @@ export default function CadastroManual() {
   } = useCadastroManualStore();
   const usuarioId = useAuth((s) => s.user?.id);
 
-  // Vincula o estado persistido ao usuário logado ANTES de qualquer envio:
-  // fila/rascunhos de OUTRO usuário na mesma estação são descartados (nunca
-  // enviados com o token da sessão atual) — aviso claro quando isso ocorre.
   useEffect(() => {
     if (!usuarioId) return;
     const descartados = vincularUsuario(usuarioId);
@@ -298,7 +298,9 @@ export default function CadastroManual() {
     }
   }, [usuarioId, vincularUsuario]);
 
-  const [aba, setAba] = useState<"cliente" | "caso">("cliente");
+  const [aba, setAba] = useState<"cliente" | "caso">(
+    clientIdContexto ? "caso" : "cliente",
+  );
   const [online, setOnline] = useState<boolean>(navigator.onLine);
   const [formCliente, setFormCliente] = useState<ClienteForm>({
     ...CLIENTE_VAZIO,
@@ -307,13 +309,74 @@ export default function CadastroManual() {
   const [formCaso, setFormCaso] = useState<CasoForm>({
     ...CASO_VAZIO,
     ...(rascunhoCaso as Partial<CasoForm>),
+    ...(clientIdContexto ? { client_id: "", criar_cliente: false } : {}),
   });
   const [erroCliente, setErroCliente] = useState<string | null>(null);
   const [erroCaso, setErroCaso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [descartando, setDescartando] = useState<ItemFila | null>(null);
+  const [clienteContextoNome, setClienteContextoNome] = useState<string | null>(
+    null,
+  );
+  const [clienteContextoValido, setClienteContextoValido] = useState(false);
+  const [clienteContextoCarregando, setClienteContextoCarregando] = useState(
+    Boolean(clientIdContexto),
+  );
 
-  // Transporte injetado no store: sempre o axios central (lib/api.ts).
+  // Contexto vindo da Ficha Mestra nunca é autorização por URL. O GET de
+  // detalhe reaplica RBAC/ownership do backend antes de fixar o client_id no
+  // formulário manual. Enquanto valida, o id não entra no payload.
+  useEffect(() => {
+    if (!clientIdContexto) {
+      setClienteContextoNome(null);
+      setClienteContextoValido(false);
+      setClienteContextoCarregando(false);
+      return;
+    }
+    let ativo = true;
+    setClienteContextoCarregando(true);
+    setClienteContextoValido(false);
+    setErroCaso(null);
+    setAba("caso");
+    setFormCaso((atual) => ({
+      ...atual,
+      client_id: "",
+      criar_cliente: false,
+    }));
+    api
+      .get(`/clients/${clientIdContexto}`)
+      .then((r) => {
+        if (!ativo) return;
+        const nome = nomeCliente(r.data) || "Cliente selecionado";
+        setClienteContextoNome(nome);
+        setClienteContextoValido(true);
+        setFormCaso((atual) => {
+          const proximo = {
+            ...atual,
+            client_id: clientIdContexto,
+            criar_cliente: false,
+          };
+          setRascunhoCaso(proximo);
+          return proximo;
+        });
+      })
+      .catch(() => {
+        if (!ativo) return;
+        setClienteContextoNome(null);
+        setClienteContextoValido(false);
+        setFormCaso((atual) => ({ ...atual, client_id: "" }));
+        setErroCaso(
+          "O cliente informado não está disponível para o seu perfil. Retorne à sua carteira ou abra a Entrada Jurídica sem esse vínculo.",
+        );
+      })
+      .finally(() => {
+        if (ativo) setClienteContextoCarregando(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [clientIdContexto, setRascunhoCaso]);
+
   const post: PostFn = useCallback(
     async (path, body) => (await api.post(path, body)).data,
     [],
@@ -322,11 +385,9 @@ export default function CadastroManual() {
   const sincronizandoRef = useRef(false);
   const rodarSync = useCallback(async () => {
     if (!navigator.onLine || sincronizandoRef.current) return;
-    if (!usuarioId) return; // sem sessão resolvida, nada é enviado
+    if (!usuarioId) return;
     sincronizandoRef.current = true;
     try {
-      // Garantia final antes do envio (o effect acima já rodou no mount, mas
-      // o evento `online` pode disparar após troca de conta em outra aba).
       vincularUsuario(usuarioId);
       const r = await sincronizar(post);
       for (const item of r.enviados) {
@@ -339,7 +400,6 @@ export default function CadastroManual() {
     }
   }, [sincronizar, post, usuarioId, vincularUsuario]);
 
-  // Lista de clientes: online atualiza o cache persistido; offline usa o cache.
   const atualizarCacheClientes = useCallback(() => {
     if (!navigator.onLine) return;
     api
@@ -356,9 +416,6 @@ export default function CadastroManual() {
       });
   }, [setClientesCache]);
 
-  // Gatilhos de sync: mount + evento online (que também renova o cache de
-  // clientes — sem isso, quem montou a página offline ficaria com o select
-  // desatualizado até remontar). Indicador de conexão.
   useEffect(() => {
     const aoConectar = () => {
       setOnline(true);
@@ -376,7 +433,6 @@ export default function CadastroManual() {
     };
   }, [rodarSync, atualizarCacheClientes]);
 
-  // ── Auto-save dos rascunhos a cada mudança ─────────────────────────────────
   const mudarCliente = (patch: Partial<ClienteForm>) => {
     setFormCliente((f) => {
       const novo = { ...f, ...patch };
@@ -397,11 +453,15 @@ export default function CadastroManual() {
     limparRascunhoCliente();
   };
   const resetCaso = () => {
-    setFormCaso(CASO_VAZIO);
-    limparRascunhoCaso();
+    const proximo =
+      clientIdContexto && clienteContextoValido
+        ? { ...CASO_VAZIO, client_id: clientIdContexto }
+        : CASO_VAZIO;
+    setFormCaso(proximo);
+    setRascunhoCaso(proximo);
+    if (!clientIdContexto) limparRascunhoCaso();
   };
 
-  // ── Submits ────────────────────────────────────────────────────────────────
   const submitCliente = async () => {
     setErroCliente(null);
     const invalido = validarClienteLocal(formCliente);
@@ -424,8 +484,6 @@ export default function CadastroManual() {
     } catch (err) {
       const c = classificarErro(err);
       if (c.acao === "pendente") {
-        // Erro de REDE no meio do envio: enfileira (sem duplicidade — não
-        // chegou ao servidor) e mantém o fluxo do usuário.
         enfileirar("cliente", payload);
         resetCliente();
         toast.info(MSG_FILA);
@@ -439,6 +497,14 @@ export default function CadastroManual() {
 
   const submitCaso = async () => {
     setErroCaso(null);
+    if (clientIdContexto && !clienteContextoValido) {
+      setErroCaso(
+        clienteContextoCarregando
+          ? "Aguarde a validação do cliente selecionado."
+          : "O cliente informado não está disponível para o seu perfil.",
+      );
+      return;
+    }
     if (!formCaso.titulo.trim()) {
       setErroCaso("Informe o título do caso.");
       return;
@@ -533,7 +599,6 @@ export default function CadastroManual() {
       } catch (errCaso) {
         const c = classificarErro(errCaso);
         if (c.acao === "pendente") {
-          // Cliente (se houve) já foi criado com id real; só o caso fica na fila.
           enfileirar("caso", { ...payloadCaso, client_id: clientId });
           resetCaso();
           toast.info(MSG_FILA);
@@ -557,12 +622,21 @@ export default function CadastroManual() {
 
   const pendentes = fila.filter((f) => f.status !== "erro").length;
   const comErro = fila.length - pendentes;
+  const clienteContextoForaCache = Boolean(
+    clientIdContexto &&
+      clienteContextoValido &&
+      !clientesCache.some((c) => c.id === clientIdContexto),
+  );
 
   return (
     <div>
       <PageHeader
         title="Cadastro Manual"
-        subtitle="Cadastre clientes e abra casos sem IA — com fila offline quando faltar conexão."
+        subtitle={
+          clienteContextoValido && clienteContextoNome
+            ? `Abra um novo caso para ${clienteContextoNome}, sem IA.`
+            : "Cadastre clientes e abra casos sem IA — com fila offline quando faltar conexão."
+        }
         actions={
           <span
             className={cn(
@@ -599,8 +673,9 @@ export default function CadastroManual() {
             key={t.k}
             type="button"
             onClick={() => setAba(t.k)}
+            disabled={Boolean(clientIdContexto) && t.k === "cliente"}
             className={cn(
-              "rounded-xl px-4 py-2 text-sm font-medium transition-colors",
+              "rounded-xl px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
               aba === t.k
                 ? "bg-primary-600 text-white"
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200",
@@ -831,7 +906,11 @@ export default function CadastroManual() {
       {aba === "caso" && (
         <SectionCard
           title="Novo caso"
-          subtitle="Rascunho salvo automaticamente neste navegador."
+          subtitle={
+            clienteContextoValido && clienteContextoNome
+              ? `Cliente definido pela Ficha Mestra: ${clienteContextoNome}.`
+              : "Rascunho salvo automaticamente neste navegador."
+          }
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="lg:col-span-2">
@@ -863,37 +942,57 @@ export default function CadastroManual() {
               </label>
               <select
                 className="input"
-                disabled={formCaso.criar_cliente}
+                disabled={
+                  formCaso.criar_cliente ||
+                  Boolean(clientIdContexto) ||
+                  clienteContextoCarregando
+                }
                 value={formCaso.client_id}
                 onChange={(e) => mudarCaso({ client_id: e.target.value })}
               >
-                <option value="">— Selecione —</option>
+                <option value="">
+                  {clienteContextoCarregando
+                    ? "Validando cliente…"
+                    : "— Selecione —"}
+                </option>
+                {clienteContextoForaCache && clientIdContexto && (
+                  <option value={clientIdContexto}>
+                    {clienteContextoNome || "Cliente selecionado"}
+                  </option>
+                )}
                 {clientesCache.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.nome}
                   </option>
                 ))}
               </select>
-              {!online && (
+              {clientIdContexto && clienteContextoValido && (
+                <p className="mt-1 text-[11px] text-primary-600">
+                  Vínculo validado pelo backend e fixado pela Ficha Mestra.
+                </p>
+              )}
+              {!online && !clientIdContexto && (
                 <p className="mt-1 text-[11px] text-slate-400">
                   Offline: lista usa o último cache de clientes salvo.
                 </p>
               )}
             </div>
-            <div className="flex items-end pb-1">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={formCaso.criar_cliente}
-                  onChange={(e) =>
-                    mudarCaso({ criar_cliente: e.target.checked })
-                  }
-                />
-                + Criar cliente novo junto
-              </label>
-            </div>
+            {!clientIdContexto && (
+              <div className="flex items-end pb-1">
+                <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={formCaso.criar_cliente}
+                    onChange={(e) =>
+                      mudarCaso({ criar_cliente: e.target.checked })
+                    }
+                  />
+                  + Criar cliente novo junto
+                </label>
+              </div>
+            )}
 
-            {formCaso.criar_cliente && (
+            {formCaso.criar_cliente && !clientIdContexto && (
               <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-dashed border-slate-300 p-4">
                 <div className="mb-3 flex gap-2">
                   {(["PF", "PJ"] as const).map((t) => (
@@ -1093,7 +1192,11 @@ export default function CadastroManual() {
           )}
 
           <div className="mt-5 flex items-center gap-2">
-            <Button type="button" onClick={submitCaso} disabled={salvando}>
+            <Button
+              type="button"
+              onClick={submitCaso}
+              disabled={salvando || clienteContextoCarregando}
+            >
               {online ? "Abrir caso" : "Salvar na fila offline"}
             </Button>
             <Button type="button" variant="secondary" onClick={resetCaso}>

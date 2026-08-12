@@ -20,26 +20,22 @@ import {
 } from "../config/moduleRegistry";
 import { useAuth } from "../stores/auth";
 
-const CATEGORIES: { title: string; description: string; keys: string[] }[] = [
+export const CATEGORIAS_FERRAMENTAS: {
+  title: string;
+  description: string;
+  keys: string[];
+}[] = [
   {
     title: "Inteligência e conhecimento",
     description: "Bases de conteúdo e apoio à produção jurídica.",
-    // CONSOLIDAÇÃO CONHECIMENTO 2026-07: Biblioteca, Memória Institucional e
-    // Wiki foram unificadas na aba "Conhecimento" da Inteligência (item fixo
-    // do menu principal). Restam aqui apenas os prompts operacionais.
     keys: ["prompts"],
   },
   {
     title: "Compliance e governança",
     description: "Governança institucional, trilhas e avaliação de risco.",
-    keys: [
-      "governanca-ia",
-      "auditoria",
-      "radar-compliance",
-      "radar-regulatorio",
-      "mapa-modulos",
-      "lixeira",
-    ],
+    // Radar foi consolidado em uma única rota/chave canônica. Não manter
+    // referências às antigas radar-compliance/radar-regulatorio.
+    keys: ["governanca-ia", "auditoria", "radar", "mapa-modulos", "lixeira"],
   },
   {
     title: "Monitoramento",
@@ -72,8 +68,6 @@ export default function Ferramentas() {
   const navigate = useNavigate();
   const user = useAuth((state) => state.user);
   const [busca, setBusca] = useState("");
-  // Deep-link do Dashboard (FerramentasRapidas): ?abrir=defesas já chega
-  // com o painel "Defesas e Revisões" expandido, sem clique extra.
   const [searchParams] = useSearchParams();
   const [defesasOpen, setDefesasOpen] = useState(
     searchParams.get("abrir") === "defesas",
@@ -88,7 +82,7 @@ export default function Ferramentas() {
   const termo = busca.trim().toLowerCase();
   const groups = useMemo(
     () =>
-      CATEGORIES.map((category) => ({
+      CATEGORIAS_FERRAMENTAS.map((category) => ({
         ...category,
         modules: category.keys
           .map((key) => modulesByKey.get(key))
@@ -133,7 +127,7 @@ export default function Ferramentas() {
       <div className="mx-auto max-w-7xl space-y-4">
         <PageHeader
           title="Mais Ferramentas"
-          subtitle="Recursos complementares organizados por finalidade. A rotina principal continua dentro do caso e da Jornada."
+          subtitle="Recursos complementares organizados por finalidade. A rotina principal continua dentro do Caso."
           eyebrow="Catálogo de ferramentas"
         />
 
