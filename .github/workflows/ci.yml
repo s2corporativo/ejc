@@ -6,14 +6,9 @@ name: CI
 # os checks deste workflow e do "EJC Release Gate" devem ser obrigatórios na
 # proteção da branch main.
 
-# TEMPORÁRIO (Issue #1089): a cobrança da conta GitHub está falhando e o
-# GitHub não aloca runner GitHub-hosted (job falha em segundos, runner_id 0,
-# em qualquer PR/branch). Enquanto isso durar, os jobs abaixo rodam no runner
-# self-hosted `ejc-vps` — a mesma máquina do deploy de produção — em vez do
-# runner GitHub-hosted efêmero de costume. Isso quebra o isolamento de
-# produção que este comentário descrevia antes; risco aceito explicitamente
-# pelo titular (ver Issue #1089). Reverter para `ubuntu-latest` nos três jobs
-# assim que a cobrança for restabelecida.
+# CI em runners GitHub-hosted, efêmeros e isolados da produção. Os jobs
+# independentes executam em paralelo; o runner `ejc-vps` fica reservado a
+# deploy, backup real e demais operações do ambiente oficial.
 on:
   pull_request:
   push:
@@ -30,7 +25,7 @@ concurrency:
 jobs:
   db-validation:
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -168,7 +163,7 @@ jobs:
 
   eval-smoke:
     name: Eval — smoke dos gold sets (offline, bloqueante)
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
@@ -196,7 +191,7 @@ jobs:
 
   frontend-build:
     name: Frontend — testes + typecheck + build
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
       run:
