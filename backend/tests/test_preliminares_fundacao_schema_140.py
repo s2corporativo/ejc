@@ -65,10 +65,17 @@ def _script_directory() -> ScriptDirectory:
 
 
 def test_migration_139_encadeia_em_138_e_e_o_head():
+    # Consolidado em 2026-08-12: bifurcação 138 → {139, 140} linearizada em
+    # 138 → 139 → 140 (frete independente: 139 altera document_intake_batches,
+    # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
     assert script.get_heads() == ["140_preliminares_fundacao_schema"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
-    assert revisao.down_revision == "138_consolida_fontes_ingestao"
+    assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
+    assert (
+        script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision
+        == "138_consolida_fontes_ingestao"
+    )
 
 
 def test_migration_139_e_estritamente_aditiva_sobre_o_legado():
@@ -136,7 +143,7 @@ def test_upgrade_139_e_downgrade_138_preservam_tabelas_legadas():
             "SCHEMA_CHECK_DATABASE_URL": sync_url,
         }
         resultado = subprocess.run(
-            ["python", "-m", "alembic", *args],
+            [str(BACKEND_DIR / "venv" / "bin" / "python"), "-m", "alembic", *args],
             cwd=BACKEND_DIR,
             env=env,
             capture_output=True,
@@ -154,6 +161,9 @@ def test_upgrade_139_e_downgrade_138_preservam_tabelas_legadas():
         finally:
             engine.dispose()
 
+        # Cadeia linearizada: aplica primeiro 139 (ciclo de vida LGPD) e depois
+        # 140 (fundação preliminares), validando a ordem real da migração.
+        rodar_alembic("upgrade", "139_dpt360_ciclo_vida_lgpd")
         rodar_alembic("upgrade", "140_preliminares_fundacao_schema")
         engine = create_engine(sync_url)
         try:

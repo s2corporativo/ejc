@@ -7,14 +7,20 @@ a fases posteriores e exigem branches próprias.
 
 Revision ID: 140_preliminares_fundacao_schema
 Revises: 138_consolida_fontes_ingestao
+Consolidado: 139_dpt360_ciclo_vida_lgpd
 """
 
+revision = "140_preliminares_fundacao_schema"
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "140_preliminares_fundacao_schema"
-down_revision = "138_consolida_fontes_ingestao"
+# Consolidado em 2026-08-12: a bifurcação 138 → {139, 140} foi linearizada
+# porque as frentes são independentes no schema — 139 altera apenas
+# document_intake_batches (ciclo de vida LGPD) e 140 cria/dropa apenas as
+# tabelas preliminares. A ordem 138 → 139 → 140 é segura e restaura o
+# head único exigido pelos gates de governança de migrations.
+down_revision = "139_dpt360_ciclo_vida_lgpd"
 branch_labels = None
 depends_on = None
 
