@@ -65,6 +65,8 @@ async def build_today_radar(
     user: User,
     *,
     hours: int = 24,
+    _companies: list | None = None,
+    _cases: list | None = None,
 ) -> dict[str, Any]:
     hours = max(1, min(hours, 168))
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -77,17 +79,26 @@ async def build_today_radar(
                 DiarioOficialAlerta.data_publicacao.desc().nullslast(),
                 DiarioOficialAlerta.created_at.desc(),
             )
-            .limit(300)
+            .limit(301)
         )
     ).scalars().all()
 
-    companies = (await db.execute(_visible_company_query(user))).scalars().all()
+    truncated = len(rows) > 300
+    rows = rows[:300]
+
+    if _companies is None:
+        companies = (await db.execute(_visible_company_query(user))).scalars().all()
+    else:
+        companies = _companies
     company_ids = [item.id for item in companies]
     cases = []
     if company_ids:
-        cases = (
-            await db.execute(_visible_business_cases_query(user, company_ids))
-        ).scalars().all()
+        if _cases is None:
+            cases = (
+                await db.execute(_visible_business_cases_query(user, company_ids))
+            ).scalars().all()
+        else:
+            cases = _cases
 
     areas_by_company: dict[str, set[str]] = defaultdict(set)
     for case in cases:
@@ -138,6 +149,7 @@ async def build_today_radar(
         "por_area": dict(area_counts),
         "empresas_potencialmente_impactadas": len(impacted_company_ids),
         "itens": items[:100],
+        "coverage": "partial" if truncated else "complete",
         "fontes_ativas": ["diario_oficial_alertas: DOU/DOE-MG"],
         "dependencias_pendentes": ["PR #895: gate de vigência RAG"],
         "regra_impacto": "Aderência só é exibida quando existe sinal objetivo no perfil/casos da empresa. Possível impacto não significa irregularidade.",
