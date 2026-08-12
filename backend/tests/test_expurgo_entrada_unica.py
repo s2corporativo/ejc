@@ -300,6 +300,8 @@ async def test_batch_modalidade_null_e_expurgado(sessao_db, upload_dir):
     assert resultado["bytes_liberados"] == 150
     assert await sessao_db.get(DocumentIntakeBatch, "b1") is None
     assert await sessao_db.get(Document, "d1") is None
+    assert await sessao_db.get(DocumentIntakeItem, "i1") is None
+    assert not (upload_dir / "2026/08/d1.pdf").exists()
 
 
 @pytest.mark.anyio
