@@ -125,7 +125,10 @@ def test_mesma_secao_falhando_duas_vezes_nao_duplica_o_nome():
 
 _CLIENTE = {
     "id": "cli-1", "nome": "Fulano", "email": None, "telefone": None,
-    "whatsapp": None, "tipo": "pf", "created_at": None, "cpf_cnpj": None,
+    "whatsapp": None, "tipo": "pf", "created_at": None,
+    # Cutover C6/LGPD (migration 112): dossie_cliente lê cpf_enc/cnpj_enc
+    # (cifrado) e decifra em Python — não há mais coluna cpf/cnpj em claro.
+    "cpf_enc": None, "cnpj_enc": None,
 }
 
 

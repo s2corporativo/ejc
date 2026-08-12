@@ -11,12 +11,12 @@ O CLIENTE é a única seção não degradável: sem ele não há dossiê, e a re
 segue 404/403 como antes.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.client_ownership import cliente_id_visivel
 from app.core.database import get_db
 from app.core.degradacao import ColetorDeSecoes, executar_secao
 from app.core.security import get_current_user
-from app.core.ownership import is_gestao
 from app.models.user import User
 
 router = APIRouter(prefix="/clients/{client_id}/dossie", tags=["Dossiê do Cliente"])
@@ -87,19 +87,38 @@ async def dossie_cliente(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    # IDOR: este dossiê agrega TODOS os casos/prazos/documentos/honorários do
-    # cliente. Como é uma visão consolidada por cliente (não por caso), filtrar
-    # caso a caso não impede o vazamento dos demais casos do mesmo cliente.
-    # Escolha: restringir à gestão (sócio+), que já enxerga todos os casos.
-    if not is_gestao(cu):
-        raise HTTPException(403, "Acesso restrito à gestão (sócio+)")
-    cli = (await db.execute(text("""
+    # Cutover C6/LGPD: cpf/cnpj não existem mais em texto puro (migration 112)
+    # — só cifrados (cpf_enc/cnpj_enc). A query anterior ainda referenciava as
+    # colunas dropadas e o dossiê inteiro respondia 500 (achado crítico da
+    # auditoria). Decifra em Python (mesmo helper das properties do model).
+    cli_row = (await db.execute(text("""
         SELECT id, nome, email, telefone, whatsapp, tipo, created_at,
-               COALESCE(cpf, cnpj) AS cpf_cnpj
+               cpf_enc, cnpj_enc
         FROM clients WHERE id = :cid AND deleted_at IS NULL
     """), {"cid": client_id})).mappings().first()
-    if not cli:
+    if not cli_row:
         raise HTTPException(404, "Cliente não encontrado")
+    # IDOR: este dossiê agrega TODOS os casos/prazos/documentos/honorários do
+    # cliente — visão consolidada por CLIENTE, não por caso. Gate = mesmo
+    # limiar de titularidade usado no restante do módulo (detalhe do cliente,
+    # /ia-analise, relatório financeiro, pending-items): gestão/secretaria
+    # veem tudo; advogado/auxiliar só quando é responsável pelo cliente ou
+    # atua em ao menos um caso não excluído dele. Antes o dossiê era
+    # gestão-only enquanto a rota /clientes ficava liberada a advogado e
+    # secretaria — 403 estrutural mesmo para cliente da própria carteira
+    # (achado da auditoria). ia-analise já agrega o mesmo histórico (casos +
+    # financeiro) sob este exato gate — o dossiê passa a ser consistente com
+    # ele, não mais restritivo.
+    if not await cliente_id_visivel(db, cu, client_id):
+        raise HTTPException(404, "Cliente não encontrado")
+    # Reusa Client.documento_plain (decifra resiliente por-linha, mesmo
+    # fallback PII_INDECIFRAVEL) em vez de duplicar a lógica de decrypt aqui —
+    # instância transiente (não persistida, não consulta o banco) só para
+    # aproveitar a property já testada do model.
+    from app.models.client import Client as _Client
+    cli_transiente = _Client(cpf_enc=cli_row["cpf_enc"], cnpj_enc=cli_row["cnpj_enc"])
+    cli = {**dict(cli_row), "cpf_cnpj": cli_transiente.documento_plain}
+    del cli["cpf_enc"], cli["cnpj_enc"]
 
     secoes = ColetorDeSecoes("dossie_cliente", db)
     casos = await secoes.tentar("casos", _carregar_casos(db, client_id), padrao=[])
@@ -130,7 +149,7 @@ async def dossie_cliente(
     )
 
     return {
-        "cliente": dict(cli),
+        "cliente": cli,
         "resumo": {
             "total_casos": len(casos),
             "prazos_proximos": len(prazos),

@@ -1,35 +1,112 @@
 """Client pending items CRUD"""
-from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from datetime import date
 from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.client_ownership import cliente_id_visivel
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.ownership import is_gestao
+from app.models.audit_log import criar_audit_log
 from app.models.user import User
 
 router = APIRouter(prefix="/clients", tags=["pending-items"])
 
+# Vocabulário fechado — espelha as opções do formulário (DossieCliente.tsx:
+# PENDING_STATUS_LABEL e o <select> de tipo). Payload fora disso vira 422 em
+# vez de gravar valor arbitrário que o front não sabe rotular/colorir.
+_TIPOS_VALIDOS = {"documento", "informacao", "assinatura", "pagamento"}
+_STATUS_VALIDOS = {"pendente", "solicitado", "recebido", "em_analise", "concluido"}
+
+
+class PendingItemCreate(BaseModel):
+    case_id: Optional[str] = None
+    type: str = "documento"
+    title: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = None
+    status: str = "pendente"
+    due_date: Optional[date] = None
+
+    @field_validator("type")
+    @classmethod
+    def _valida_type(cls, v: str) -> str:
+        if v not in _TIPOS_VALIDOS:
+            raise ValueError(f"type inválido; use um de: {sorted(_TIPOS_VALIDOS)}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def _valida_status(cls, v: str) -> str:
+        if v not in _STATUS_VALIDOS:
+            raise ValueError(f"status inválido; use um de: {sorted(_STATUS_VALIDOS)}")
+        return v
+
+
+class PendingItemUpdate(BaseModel):
+    # case_id aceita null explícito (desvincular do caso) — só quando NÃO-null
+    # precisa apontar para caso do mesmo cliente (checado no handler, mesma
+    # validação de PendingItemCreate).
+    case_id: Optional[str] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    type: Optional[str] = None
+    status: Optional[str] = None
+    due_date: Optional[date] = None
+
+    # title/type/status são NOT NULL na tabela (client_pending_items). Como
+    # são Optional aqui só para permitir OMITIR o campo num PATCH parcial,
+    # `null` explícito precisa ser rejeitado — sem isto, {"status": null}
+    # passava a validação e virava UPDATE ... SET status=NULL, estourando a
+    # constraint em 500 sem tratamento (achado do code-reviewer).
+    @field_validator("title")
+    @classmethod
+    def _valida_title(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            raise ValueError("title não pode ser nulo")
+        return v
+
+    @field_validator("type")
+    @classmethod
+    def _valida_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            raise ValueError("type não pode ser nulo")
+        if v not in _TIPOS_VALIDOS:
+            raise ValueError(f"type inválido; use um de: {sorted(_TIPOS_VALIDOS)}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def _valida_status(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            raise ValueError("status não pode ser nulo")
+        if v not in _STATUS_VALIDOS:
+            raise ValueError(f"status inválido; use um de: {sorted(_STATUS_VALIDOS)}")
+        return v
+
 
 async def _exigir_cliente_visivel(db: AsyncSession, cu: User, client_id: str) -> None:
-    """Gate de visibilidade do cliente (ownership): gestão vê tudo; demais só
-    clientes de que são responsáveis OU em cujos casos atuam. 404 (não 403) para
-    não confirmar a existência de cliente alheio. Sem isso, qualquer usuário
-    listava/alterava pendências de qualquer cliente (IDOR)."""
-    if is_gestao(cu):
-        return
-    row = (await db.execute(text("""
-        SELECT 1 FROM clients cl
-        WHERE cl.id = :cid AND cl.deleted_at IS NULL
-          AND (cl.responsavel_id = :uid
-               OR EXISTS (SELECT 1 FROM cases c
-                          WHERE c.client_id = cl.id AND c.deleted_at IS NULL
-                            AND (c.advogado_responsavel_id = :uid
-                                 OR c.advogado_auxiliar_id = :uid)))
-        LIMIT 1
-    """), {"cid": client_id, "uid": cu.id})).first()
-    if row is None:
+    """Gate de titularidade (client_ownership canônico — antes esta era uma
+    cópia local em SQL cru que só dava passe livre à gestão, deixando a
+    secretaria sem ver pendências do próprio funil que opera; achado da
+    auditoria). 404 (não 403) para não confirmar a existência de cliente
+    alheio. Sem isso, qualquer usuário listava/alterava pendências de
+    qualquer cliente (IDOR)."""
+    if not await cliente_id_visivel(db, cu, client_id):
         raise HTTPException(404, "Cliente não encontrado")
+
+
+async def _validar_case_do_cliente(db: AsyncSession, client_id: str, case_id: str) -> None:
+    """Impede vincular a pendência a um caso de OUTRO cliente (achado da
+    auditoria: case_id não era conferido contra o cliente da URL)."""
+    row = (await db.execute(text("""
+        SELECT 1 FROM cases WHERE id = :case_id AND client_id = :cid
+          AND deleted_at IS NULL
+    """), {"case_id": case_id, "cid": client_id})).first()
+    if row is None:
+        raise HTTPException(422, "case_id não pertence a este cliente")
 
 
 @router.get("/{client_id}/pending-items")
@@ -53,13 +130,16 @@ async def list_pending_items(
 @router.post("/{client_id}/pending-items", status_code=201)
 async def create_pending_item(
     client_id: str,
-    body: dict = Body(...),
+    body: PendingItemCreate,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     await _exigir_cliente_visivel(db, current_user, client_id)
-    if not body.get('title'):
-        raise HTTPException(422, 'Campo obrigatório: title')
+    # `is not None` (não truthy) — "" também precisa validar: client_pending_
+    # items.case_id não tem FK, então "" passava direto pro INSERT como
+    # referência inválida (nem NULL nem caso real). Achado do CodeRabbit.
+    if body.case_id is not None:
+        await _validar_case_do_cliente(db, client_id, body.case_id)
     result = await db.execute(
         text("""INSERT INTO client_pending_items
             (client_id, case_id, type, title, description, status, due_date, created_by)
@@ -67,43 +147,58 @@ async def create_pending_item(
             RETURNING *"""),
         {
             "cid": client_id,
-            "case_id": body.get("case_id"),
-            "type": body.get("type", "documento"),
-            "title": body.get("title"),
-            "desc": body.get("description"),
-            "status": body.get("status", "pendente"),
-            "due": body.get("due_date"),
+            "case_id": body.case_id,
+            "type": body.type,
+            "title": body.title,
+            "desc": body.description,
+            "status": body.status,
+            "due": body.due_date,
             "created_by": str(current_user.id),
         }
     )
+    row = dict(result.mappings().first())
+    # Sem PII/conteúdo no audit log (imutável — migration 131 WORM): título é
+    # texto livre do usuário e pode conter dado sensível do caso/cliente.
+    # Achado do Codex no PR #1063.
+    await criar_audit_log(db, current_user.id, current_user.role.value,
+                          "CREATE", "client_pending_items", row["id"],
+                          detalhes=f"cliente {client_id}, type={body.type}")
     await db.commit()
-    return dict(result.mappings().first())
+    return row
 
 
 @router.patch("/{client_id}/pending-items/{item_id}")
 async def update_pending_item(
     client_id: str,
     item_id: str,
-    body: dict = Body(...),
+    body: PendingItemUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     await _exigir_cliente_visivel(db, current_user, client_id)
     result = await db.execute(text("SELECT id FROM client_pending_items WHERE id=:id AND client_id=:cid AND deleted_at IS NULL"), {"id": item_id, "cid": client_id})
     if not result.fetchone():
         raise HTTPException(404, "Item not found")
 
+    mudancas = body.model_dump(exclude_unset=True)
+    if not mudancas:
+        return {"ok": True}
+    if "case_id" in mudancas and mudancas["case_id"] is not None:
+        await _validar_case_do_cliente(db, client_id, mudancas["case_id"])
+
     sets = []
     params = {"id": item_id}
-    for field in ["title", "description", "type", "status", "due_date"]:
-        if field in body:
-            sets.append(f"{field}=:{field}")
-            params[field] = body[field]
-    if body.get("status") == "concluido":
+    for field, value in mudancas.items():
+        sets.append(f"{field}=:{field}")
+        params[field] = value
+    if mudancas.get("status") == "concluido":
         sets.append("completed_at=NOW()")
     sets.append("updated_at=NOW()")
 
     await db.execute(text(f"UPDATE client_pending_items SET {','.join(sets)} WHERE id=:id"), params)
+    await criar_audit_log(db, current_user.id, current_user.role.value,
+                          "UPDATE", "client_pending_items", item_id,
+                          detalhes=f"cliente {client_id}: {', '.join(mudancas)}")
     await db.commit()
     return {"ok": True}
 
@@ -113,12 +208,21 @@ async def delete_pending_item(
     client_id: str,
     item_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     await _exigir_cliente_visivel(db, current_user, client_id)
-    await db.execute(
-        text("UPDATE client_pending_items SET deleted_at=NOW() WHERE id=:id AND client_id=:cid"),
+    # Só grava o audit log (imutável) se uma linha foi de fato afetada — sem
+    # isto, id inexistente/já excluído/de outro cliente gravava um "DELETE"
+    # no WORM sem nenhuma exclusão real ter ocorrido (achado do Codex).
+    result = await db.execute(
+        text("UPDATE client_pending_items SET deleted_at=NOW() "
+             "WHERE id=:id AND client_id=:cid AND deleted_at IS NULL"),
         {"id": item_id, "cid": client_id}
     )
+    if result.rowcount == 0:
+        raise HTTPException(404, "Item not found")
+    await criar_audit_log(db, current_user.id, current_user.role.value,
+                          "DELETE", "client_pending_items", item_id,
+                          detalhes=f"cliente {client_id}")
     await db.commit()
     return {"ok": True}
