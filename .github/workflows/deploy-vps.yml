@@ -1,8 +1,8 @@
 # Deploy automático do EJC no runner instalado na própria VPS.
 #
 # Após a CI de push na main concluir com sucesso, o runner local confere o SHA,
-# classifica somente as migrations pendentes, sincroniza o checkout aprovado e
-# executa backup → build → migration expand-only → troca → health → rollback.
+# classifica somente as migrations pendentes e executa uma transação host-level:
+# rsync → backup → build → migration expand-only → troca → health → rollback.
 # Não usa SSH, senha de root, chave privada ou rsync remoto.
 name: Deploy VPS
 
@@ -27,10 +27,6 @@ concurrency:
 
 jobs:
   deploy:
-    # A CI da main chega por push (fluxo clássico) ou por workflow_dispatch
-    # (redisparo do Auto-integracao após merge automático — o push feito pelo
-    # GITHUB_TOKEN não gera evento). O filtro `branches: [main]` do gatilho
-    # garante que só corridas da main chegam aqui em ambos os casos.
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref_name == 'main') ||
       (github.event_name == 'workflow_run' &&
@@ -69,6 +65,7 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+
       - name: Confirmar SHA e runtime de produção
         shell: bash
         run: |
@@ -89,20 +86,18 @@ jobs:
             reprovar "workspace pertence ao uid '${dono:-desconhecido}', nem ao runner nem a root — não confio nele para executar git"
           fi
 
-          [ -d /opt/ejc ] ||
-            reprovar "/opt/ejc não existe ou não é diretório"
-          [ -f /opt/ejc/.env ] ||
-            reprovar "/opt/ejc/.env ausente ou ilegível para o usuário do runner"
+          [ -d /opt/ejc ] || reprovar "/opt/ejc não existe ou não é diretório"
+          [ -f /opt/ejc/.env ] || reprovar "/opt/ejc/.env ausente ou ilegível para o usuário do runner"
           docker ps --format '{{.Names}}' 2>/dev/null | grep -qx ejc_db ||
             reprovar "container ejc_db fora do ar, ou o runner não alcança o socket do Docker"
-          command -v python3 >/dev/null ||
-            reprovar "python3 ausente no PATH do runner"
-          command -v rsync >/dev/null ||
-            reprovar "rsync ausente no PATH do runner"
+          command -v python3 >/dev/null || reprovar "python3 ausente no PATH do runner"
+          command -v rsync >/dev/null || reprovar "rsync ausente no PATH do runner"
+          command -v flock >/dev/null || reprovar "flock ausente no PATH do runner"
+          command -v sudo >/dev/null || reprovar "sudo ausente no PATH do runner"
+          sudo -n true >/dev/null 2>&1 || reprovar "sudo não está disponível em modo não interativo"
+          [ -f scripts/deploy_lock.sh ] || reprovar "scripts/deploy_lock.sh ausente no checkout aprovado"
+          [ -f scripts/deploy_workflow_transaction.sh ] || reprovar "scripts/deploy_workflow_transaction.sh ausente no checkout aprovado"
 
-          # Defesa pós-ativação: se o gate jurídico já foi promovido para true,
-          # qualquer drift do .env deve abortar ANTES do rsync/build/restart.
-          # Só contamos a chave; o conteúdo do .env nunca é impresso.
           APP_DIR=/opt/ejc
           activated_marker="$APP_DIR/data/.rag_vigencia_activated_v1"
           env_file="$APP_DIR/.env"
@@ -115,7 +110,7 @@ jobs:
           fi
 
           [ "$erros" -eq 0 ] || exit 1
-          echo "Pré-voo aprovado — HEAD $head_local, /opt/ejc e ejc_db presentes."
+          echo "Pré-voo aprovado — HEAD $head_local, /opt/ejc e runtime presentes."
 
       - name: Classificar migrations pendentes
         id: migrations
@@ -170,55 +165,15 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # A partir deste passo /opt/ejc pode ter sido alterado. O id é usado no
-      # resumo para não declarar produção intacta quando o rsync falha no meio.
-      - name: Sincronizar checkout aprovado para /opt/ejc
+      # ÚNICA seção mutável principal. O mesmo FD/lock cobre o rsync, o .env e
+      # todo deploy_vps_safe.sh; concorrência GitHub + manual não se intercalam.
+      - name: Sincronizar e implantar sob mutex host-level
         id: sync
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo rsync -a --delete \
-            --exclude '.git/' \
-            --exclude '.env' --exclude '.env.*' \
-            --exclude '**/.env' --exclude '**/.env.*' \
-            --exclude '.deployed_sha' \
-            --exclude 'uploads/' --exclude 'backups/' \
-            --exclude 'logs/' --exclude 'data/' --exclude 'storage/' \
-            --exclude 'secrets/' --exclude 'certs/' --exclude 'tmp/' \
-            --exclude 'node_modules/' --exclude 'frontend/node_modules/' \
-            --exclude 'frontend/dist/' --exclude 'graphify-out/' \
-            --exclude 'vps-tools/' --exclude '*.log' \
-            ./ /opt/ejc/
-
-      - name: Restringir acesso ao .env preservado
-        shell: bash
-        run: |
-          set -euo pipefail
-          # O deploy precisa ler e eventualmente migrar valores obsoletos do
-          # .env. Em vez de torná-lo world-readable (0644), o arquivo fica sob
-          # o usuário dedicado do runner e modo 0600. root continua tendo acesso.
-          sudo chown "$(id -u):$(id -g)" /opt/ejc/.env
-          sudo chmod 600 /opt/ejc/.env
-          test "$(stat -c %a /opt/ejc/.env)" = "600"
-          test "$(stat -c %u:%g /opt/ejc/.env)" = "$(id -u):$(id -g)"
-
-      - name: Deploy seguro com política calculada
         env:
           RUN_MIGRATIONS: ${{ steps.migrations.outputs.run_migrations }}
           MIGRATIONS_BACKWARD_COMPATIBLE: ${{ steps.migrations.outputs.backward_compatible }}
         shell: bash
-        run: |
-          cd /opt/ejc
-          RUN_MIGRATIONS="$RUN_MIGRATIONS" \
-          MIGRATIONS_BACKWARD_COMPATIBLE="$MIGRATIONS_BACKWARD_COMPATIBLE" \
-          RUN_SEEDS="$RUN_SEEDS" \
-          REQUIRE_PREDEPLOY_BACKUP="$REQUIRE_PREDEPLOY_BACKUP" \
-          bash scripts/deploy_vps_safe.sh
-
-      - name: Registrar versão implantada
-        run: |
-          printf '%s\n' "$TARGET_SHA" | sudo tee /opt/ejc/.deployed_sha >/dev/null
-          sudo chmod 644 /opt/ejc/.deployed_sha
+        run: bash scripts/deploy_workflow_transaction.sh
 
       - name: Verificação local e pública pós-deploy
         run: |
@@ -228,23 +183,33 @@ jobs:
             https://ejc.depaulateixeira.adv.br/api/health
 
       - name: Smoke test pós-deploy
-        # Frontend + API locais e públicos, endpoint de login, compilação dos
-        # módulos críticos. Falha aqui NÃO dispara o rollback do deploy (a troca
-        # já foi validada pelo health com SHA); ela reprova o workflow para que
-        # a falha fique visível e acionável.
         run: bash /opt/ejc/scripts/post_deploy_check.sh
 
       # P0.1 — pré-armamento transicional do gate jurídico de vigência.
-      # Fica DENTRO do Deploy VPS para usar exatamente o TARGET_SHA implantado e
-      # a mesma serialização do deploy, sem criar workflow concorrente que possa
-      # cancelar uma execução pendente. Depois que o gate for ativado, o marcador
-      # de ativação faz esta etapa apenas validar/preservar o estado true.
+      # A mutação do .env adquire o MESMO mutex host-level e confirma primeiro
+      # que .deployed_sha ainda é o TARGET_SHA desta execução.
       - name: Pré-armar gate de vigência em modo compatível
         shell: bash
         run: |
           set -euo pipefail
 
           APP_DIR=/opt/ejc
+          [ -f "$APP_DIR/scripts/deploy_lock.sh" ] || {
+            echo "::error::Prearm RAG: deploy_lock.sh ausente."
+            exit 2
+          }
+          source "$APP_DIR/scripts/deploy_lock.sh"
+          lock_rc=0
+          ejc_deploy_lock_acquire "$APP_DIR" || lock_rc=$?
+          if [ "$lock_rc" -eq 75 ]; then
+            echo "::error::Prearm RAG: outro deploy iniciou; mutação pós-deploy foi retida."
+            exit 75
+          fi
+          [ "$lock_rc" -eq 0 ] || {
+            echo "::error::Prearm RAG: não foi possível adquirir mutex host-level."
+            exit 2
+          }
+
           marker="$APP_DIR/data/.rag_vigencia_prearm_v1"
           activated_marker="$APP_DIR/data/.rag_vigencia_activated_v1"
           env_file="$APP_DIR/.env"
@@ -269,9 +234,6 @@ jobs:
                   echo "::error::Prearm RAG interrompido após abrir a janela de alteração, mas backup não está disponível."
                 fi
               else
-                # Se o backup foi criado mas a janela de alteração ainda não
-                # abriu, o .env segue intacto: remova a cópia de segredo em vez
-                # de tentar restaurá-la (ela pode até estar parcial).
                 sudo rm -f "$backup"
               fi
               if sudo test -f "$marker"; then
@@ -299,8 +261,6 @@ jobs:
             false
           }
 
-          # Depois da ativação definitiva, nunca rebaixe true→false em deploys
-          # futuros. O marcador ativo só é aceito junto da configuração REAL.
           if sudo test -f "$activated_marker"; then
             total_true="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=' "$env_file" || true)"
             true_count="$(sudo grep -c '^RAG_EXIGIR_VIGENCIA_VERIFICADA=true$' "$env_file" || true)"
@@ -329,8 +289,6 @@ jobs:
           gid="$(sudo stat -c %g "$env_file")"
           mode="$(sudo stat -c %a "$env_file")"
 
-          # Nunca imprime o .env. O awk preserva todas as demais linhas,
-          # remove duplicatas da chave e grava UMA ocorrência canônica=false.
           sudo cat "$env_file" | awk '
             BEGIN { seen = 0 }
             /^RAG_EXIGIR_VIGENCIA_VERIFICADA=/ {
@@ -358,8 +316,6 @@ jobs:
 
           sudo cp -p "$env_file" "$backup"
           sudo chmod 600 "$backup"
-          # Marque a janela de rollback ANTES do rename: um INT/TERM entre o mv
-          # e a atribuição posterior deixaria o .env trocado sem restauração.
           alterado=1
           sudo mv -f "$candidate" "$env_file"
 
@@ -379,28 +335,31 @@ jobs:
         if: always()
         env:
           JOB_STATUS: ${{ job.status }}
-          SYNC_OUTCOME: ${{ steps.sync.outcome }}
           REVISAO_ANTERIOR: ${{ steps.migrations.outputs.current_revision }}
           MIGRATIONS_PENDENTES: ${{ steps.migrations.outputs.pending_count }}
         run: |
+          state_file="$RUNNER_TEMP/ejc-deploy-tx-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.state"
+          tx_state="$(cat "$state_file" 2>/dev/null || echo absent)"
           {
             echo "## Deploy VPS"
             echo
             if [ "$JOB_STATUS" = "success" ]; then
               echo "- Resultado: **implantado**"
-            elif [ -z "$SYNC_OUTCOME" ] || [ "$SYNC_OUTCOME" = "skipped" ]; then
+            elif [ "$tx_state" = "absent" ] || [ "$tx_state" = "pre_sync" ]; then
               echo "- Resultado: **abortado antes de tocar produção** (\`$JOB_STATUS\`)"
               echo "  — nada foi implantado; \`/opt/ejc\` está como estava."
-            elif [ "$SYNC_OUTCOME" = "success" ]; then
-              echo "- Resultado: **FALHOU APÓS TOCAR PRODUÇÃO** (\`$JOB_STATUS\`)"
-              echo "  — \`/opt/ejc\` já foi reescrito e o deploy pode ter migrado o schema."
-              echo "  O rollback automático restaura imagens, **não** a árvore nem o banco."
-              echo "  Verifique o estado real antes de reexecutar."
-            else
-              echo "- Resultado: **ESTADO INCERTO** — a sincronização não concluiu (\`$SYNC_OUTCOME\`)."
+            elif [ "$tx_state" = "sync_started" ]; then
+              echo "- Resultado: **ESTADO INCERTO** — a sincronização não concluiu."
               echo "  O \`rsync --delete\` pode ter reescrito ou apagado parte de \`/opt/ejc\`"
               echo "  antes de falhar. **Não presuma que produção está intacta**."
+            elif [ "$tx_state" = "sync_completed" ] || [ "$tx_state" = "deploy_completed" ]; then
+              echo "- Resultado: **FALHOU APÓS TOCAR PRODUÇÃO** (\`$JOB_STATUS\`)"
+              echo "  — \`/opt/ejc\` já foi sincronizado; consulte o log do executor para saber se o rollback de runtime foi acionado."
+              echo "  O rollback automático não desfaz o rsync nem migrations já aplicadas."
+            else
+              echo "- Resultado: **ESTADO DESCONHECIDO** — marcador de fase inválido: \`$tx_state\`."
             fi
+            echo "- Fase transacional: \`$tx_state\`"
             echo "- Target SHA: \`$TARGET_SHA\`"
             echo "- Revisão anterior: \`$REVISAO_ANTERIOR\`"
             echo "- Migrations pendentes: \`$MIGRATIONS_PENDENTES\`"
@@ -412,3 +371,4 @@ jobs:
         shell: bash
         run: |
           mkdir -p /opt/ejc && printf '%s' "$TARGET_SHA" > /opt/ejc/.deploy_last_sha
+          rm -f "$state_file"
