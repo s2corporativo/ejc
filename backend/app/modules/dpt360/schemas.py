@@ -5,6 +5,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+# Estados permitidos para transição manual (sem auto/TOCTOU)
+ESTADOS_TRANSICAO_MANUAL = Literal["triagem_pendente", "triagem_concluida", "descartada"]
+
 DptDiagnosticKind = Literal[
     "completo",
     "tributario",
@@ -178,3 +181,22 @@ class DptOpportunityQueueItem(BaseModel):
     origem: str | None = None
     urgencia_declarada: str | None = None
     campanha_ref: str | None = None
+
+
+# Ciclo de vida LGPD (Issue #1086)
+class DptCicloVidaMudarEstadoRequest(BaseModel):
+    novo_estado: ESTADOS_TRANSICAO_MANUAL = Field(
+        ..., description="Estado alvo da transição manual"
+    )
+    motivo: str | None = Field(
+        default=None, description="Motivo da mudança de estado"
+    )
+
+
+class DptCicloVidaMudarEstadoResponse(BaseModel):
+    sucesso: bool | None = None
+    batch_id: str | None = None
+    estado_anterior: str | None = None
+    estado_novo: str | None = None
+    erro: str | None = None
+    permitidas: list[str] | None = None

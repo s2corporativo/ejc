@@ -16,11 +16,14 @@ from app.modules.dpt360.intake_service import (
     list_inbound_opportunities,
 )
 from app.modules.dpt360.intelligence_service import run_dpt_action
+from app.modules.dpt360.lifecycle_service import mudar_estado
 from app.modules.dpt360.radar_service import build_today_radar
 from app.modules.dpt360.report_service import build_executive_report
 from app.modules.dpt360.schemas import (
     DptActionRequest,
     DptActionResponse,
+    DptCicloVidaMudarEstadoRequest,
+    DptCicloVidaMudarEstadoResponse,
     DptCompanyProfile,
     DptDashboardResponse,
     DptDiagnosticKind,
@@ -46,6 +49,12 @@ async def dashboard(
     result.radar_por_area = {
         str(area): int(total) for area, total in (radar.get("por_area") or {}).items()
     }
+    if radar.get("cobertura") == "parcial":
+        result.notes.append(
+            "Radar: a contagem total de publicações é exata, mas classificação por "
+            "área e impacto usam no máximo 300 alertas recentes; o recorte está "
+            "explicitamente sinalizado como parcial."
+        )
     result.notes.append(
         "Radar do dashboard usa publicações coletadas nas últimas 24h; vigência permanece a confirmar até o gate canônico de vigência do RAG ser reconciliado."
     )
@@ -142,3 +151,37 @@ async def run_action(
     if result is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
     return result
+
+
+@router.post(
+    "/oportunidades/{batch_id}/ciclo-vida",
+    response_model=DptCicloVidaMudarEstadoResponse,
+    dependencies=[Depends(rate_limit("dpt360-ciclo-vida", 10))],
+)
+async def mudar_ciclo_vida_oportunidade(
+    batch_id: str,
+    payload: DptCicloVidaMudarEstadoRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+) -> DptCicloVidaMudarEstadoResponse:
+    """Muda estado de oportunidade DPT360 (triagem → concluída → descartada, etc).
+
+    Apenas staff (gestão/admin) pode mudar estados manualmente.
+    Transitions são validadas pela política LGPD (Issue #1086).
+    """
+    if cu.role is None:
+        raise HTTPException(status_code=403, detail="Papel não definido")
+
+    resultado = await mudar_estado(
+        db,
+        user_id=cu.id,
+        user_role=cu.role.value if hasattr(cu.role, "value") else str(cu.role),
+        batch_id=batch_id,
+        novo_estado=payload.novo_estado,
+        motivo=payload.motivo,
+    )
+
+    if resultado.get("erro"):
+        raise HTTPException(status_code=422, detail=resultado)
+
+    return DptCicloVidaMudarEstadoResponse(**resultado)

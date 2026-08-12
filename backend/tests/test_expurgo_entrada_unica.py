@@ -273,3 +273,60 @@ async def test_resultado_sem_batches_qualificados_tem_mais_antigo_none(
 
     assert resultado["batches_removidos"] == 0
     assert resultado["mais_antigo_dias"] is None
+
+
+# ── modalidade filter (Issue #1082): excluir apenas dpt360_oportunidade ────────
+
+@pytest.mark.anyio
+async def test_batch_modalidade_null_e_expurgado(sessao_db, upload_dir):
+    """Batch com modalidade=NULL (de entrada_unica padrão) deve ser expurgado
+    quando fora da janela de retenção, pois não é uma oportunidade DPT360.
+    SQL semantics: NULL != 'dpt360_oportunidade' é UNKNOWN, mas usamos
+    (IS NULL OR !=) para incluir NULL no resultado."""
+    batch, doc, item = await _semear(
+        sessao_db, upload_dir,
+        batch_status="concluido", batch_updated_at=_velho(45),
+        size_bytes=150,
+    )
+    # Verificar que modalidade é NULL
+    assert batch.modalidade is None
+
+    resultado = await expurgar_rascunhos_entrada_unica(
+        sessao_db, dias=30, dry_run=False,
+    )
+
+    assert resultado["batches_removidos"] == 1
+    assert resultado["documentos_removidos"] == 1
+    assert resultado["bytes_liberados"] == 150
+    assert await sessao_db.get(DocumentIntakeBatch, "b1") is None
+    assert await sessao_db.get(Document, "d1") is None
+    assert await sessao_db.get(DocumentIntakeItem, "i1") is None
+    assert not (upload_dir / "2026/08/d1.pdf").exists()
+
+
+@pytest.mark.anyio
+async def test_batch_modalidade_dpt360_oportunidade_nao_e_expurgado(sessao_db, upload_dir):
+    """Batch com modalidade='dpt360_oportunidade' (leads DPT360) não deve ser
+    expurgado mesmo fora da janela de retenção. O filtro preserva DPT360 leads
+    para análise posterior (Issue #1082)."""
+    engine = sessao_db.get_bind()
+    # Semear e depois atualizar modalidade (pois o modelo não oferece default)
+    batch, doc, item = await _semear(
+        sessao_db, upload_dir,
+        batch_status="concluido", batch_updated_at=_velho(45),
+        size_bytes=150,
+    )
+    batch.modalidade = "dpt360_oportunidade"
+    await sessao_db.merge(batch)
+    await sessao_db.commit()
+
+    resultado = await expurgar_rascunhos_entrada_unica(
+        sessao_db, dias=30, dry_run=False,
+    )
+
+    # DPT360 leads não devem ser tocadas
+    assert resultado["batches_removidos"] == 0
+    assert resultado["documentos_removidos"] == 0
+    assert await sessao_db.get(DocumentIntakeBatch, "b1") is not None
+    assert await sessao_db.get(Document, "d1") is not None
+    assert (upload_dir / "2026/08/d1.pdf").exists()
