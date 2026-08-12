@@ -46,7 +46,9 @@ from app.services.upload_lote_service import processar_lote
 settings = get_settings()
 router = APIRouter(prefix="/raio-x", tags=["Raio-X do Processo"])
 
-EXTENSOES = {".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".tiff", ".webp"}
+# Markdown entra como texto plano — aceito na análise Raio-X
+# (auditoria 12/08/2026: .md era rejeitado como formato não suportado).
+EXTENSOES = {".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".tiff", ".webp"}
 MAX_ARQUIVOS = 20
 
 

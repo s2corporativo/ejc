@@ -267,6 +267,17 @@ _BADGE_FATOR = {
     "honorario_atrasado": ("atencao", "Honorário em atraso"),
     "sem_posmortem": ("info", "Sem pós-mortem registrado"),
 }
+# Orientação de ação por fator — exibe no detalhe/badge como o advogado
+# resolve o alerta (auditoria 12/08/2026: o gate "Sem procuração ativa"
+# não orientava onde registrar a procuração para ativar o gate).
+_BADGE_ORIENTACAO: dict[str, str] = {
+    "sem_procuracao": (
+        "Registre a procuração formalmente na aba Procurações do caso "
+        "(Clientes → caso → subtab Procurações) para que o gate de "
+        "procuração vigente seja ativado. Documentos anexados em outro "
+        "módulo não habilitam este gate."
+    ),
+}
 
 
 def badge_estagnacao(dias_parado: int) -> Optional[dict]:
@@ -302,8 +313,9 @@ def montar_badges(fatores: list[dict], dias_parado: int,
         if codigo == "sem_movimentacao":
             continue  # já coberto pelo badge de estagnação acima
         sev, label = _BADGE_FATOR.get(codigo, ("info", codigo))
+        detalhe = (f.get("detalhe") or "") or _BADGE_ORIENTACAO.get(codigo, "")
         badges.append({"codigo": codigo, "severidade": sev, "label": label,
-                       "detalhe": f.get("detalhe") or "", "pulsante": sev == "critica"})
+                       "detalhe": detalhe, "pulsante": sev == "critica"})
     return badges
 
 

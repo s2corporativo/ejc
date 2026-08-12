@@ -248,21 +248,38 @@ def _montar_mensagem_ia(
     if linhas:
         partes.append("[HISTÓRICO DA CONVERSA]\n" + "\n\n".join(reversed(linhas)))
 
-    # Anexos: nome + síntese compacta da extração estruturada, com teto por
-    # anexo e teto total.
+    # Anexos: nome + síntese compacta da extração estruturada + TEXTO INTEGRAL
+    # sanitizado do documento extraído na ingestão (campo `_texto_sanitizado`
+    # dentro de resultado_analise, preservado pelo upload). É o texto integral
+    # que ancora a resposta da IA nos documentos anexados: sem ele, o prompt
+    # continha apenas a síntese estruturada e o modelo respondia que "não
+    # recebeu os documentos" mesmo com anexos na sessão (auditoria 12/08/2026).
+    # Anexos antigos, sem o campo, seguem funcionando só com a síntese.
     blocos_anexos: list[str] = []
+    blocos_texto: list[str] = []
     total = 0
     for a in anexos or []:
-        sintese = json.dumps(
-            a.resultado_analise or {}, ensure_ascii=False, separators=(",", ":")
-        )[:_ANEXO_MAX_CHARS]
+        analise = a.resultado_analise if isinstance(a.resultado_analise, dict) else {}
+        sintese = json.dumps(analise, ensure_ascii=False, separators=(",", ":"))[:_ANEXO_MAX_CHARS]
         bloco = f"- {a.nome_original}: {sintese}"
         if total + len(bloco) > _ANEXOS_MAX_CHARS_TOTAL:
             break
         blocos_anexos.append(bloco)
         total += len(bloco)
+        texto = analise.get("_texto_sanitizado")
+        if isinstance(texto, str) and texto.strip():
+            bloco_t = f"### {a.nome_original}\n{(texto.strip())[:_ANEXO_MAX_CHARS]}"
+            if total + len(bloco_t) > _ANEXOS_MAX_CHARS_TOTAL:
+                break
+            blocos_texto.append(bloco_t)
+            total += len(bloco_t)
     if blocos_anexos:
         partes.append("[DOCUMENTOS ANEXADOS]\n" + "\n".join(blocos_anexos))
+    if blocos_texto:
+        partes.append(
+            "[DOCUMENTOS ANEXADOS — TEXTO INTEGRAL EXTRAÍDO]\n"
+            + "\n\n---\n\n".join(blocos_texto)
+        )
 
     partes.append(payload.conteudo)
     return "\n\n".join(partes)

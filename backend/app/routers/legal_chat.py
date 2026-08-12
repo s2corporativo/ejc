@@ -55,8 +55,10 @@ async def exigir_equipe_juridica(user: User = Depends(get_current_user)) -> User
 
 
 MAX_ARQUIVOS = 10
+# Markdown entra como texto plano — aceito nos anexos da Sala Jurídica
+# (auditoria 12/08/2026: .md era rejeitado como formato não suportado).
 EXTENSOES = {
-    ".pdf", ".docx", ".doc", ".txt", ".xml", ".xlsx", ".csv",
+    ".pdf", ".docx", ".doc", ".txt", ".md", ".xml", ".xlsx", ".csv",
     ".png", ".jpg", ".jpeg", ".tiff", ".webp",
 }
 

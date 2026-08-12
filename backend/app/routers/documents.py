@@ -34,7 +34,9 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["Documentos / GED"])
 
-EXTENSOES_PERMITIDAS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".txt", ".xml"}
+EXTENSOES_PERMITIDAS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".txt", ".md", ".xml"}
+# Markdown entra como texto plano: aceito na ingestão universal e no GED
+# (auditoria 12/08/2026: .md era rejeitado com "Formato não suportado").
 # Legados sem extrator de texto (sem lib p/ binário OLE): upload aceito, mas o
 # response avisa que o conteúdo não é indexável (ver bloco final do upload()).
 FORMATOS_SEM_INDEXACAO = {".doc", ".xls"}
@@ -59,7 +61,9 @@ MIME_POR_EXTENSAO: dict[str, set[str]] = {
     ".jpeg": {"image/jpeg"},
     ".png":  {"image/png"},
     # NF-e/XML: libmagic pode reportar application/xml, text/xml ou text/plain
-    ".xml":  {"application/xml", "text/xml", "text/plain"},
+    ".xml": {"application/xml", "text/xml", "text/plain"},
+    # Markdown: libmagic pode reportar text/plain (texto puro) ou text/markdown
+    ".md": {"text/plain", "text/markdown"},
 }
 
 

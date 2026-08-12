@@ -67,7 +67,9 @@ def extrair_texto(filepath: str, mimetype: str | None) -> str | None:
         if "xml" in mt or filepath.lower().endswith(".xml"):
             res = extrair_xml(filepath)
             return res.get("texto") if res else None
-        if mt.startswith("text/") or filepath.endswith(".txt"):
+        # Markdown: texto plano (libmagic pode reportar text/plain ou
+        # text/markdown) — leitura UTF-8 direta, como .txt (auditoria 12/08/2026).
+        if mt.startswith("text/") or filepath.lower().endswith((".txt", ".md")):
             with open(filepath, encoding="utf-8", errors="ignore") as f:
                 return f.read()[:MAX_OCR_CHARS]
     except Exception as e:
