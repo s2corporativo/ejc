@@ -7,6 +7,8 @@ export type DptExecutiveReport = {
   generated_at: string;
   status: "rascunho";
   requer_revisao: boolean;
+  cobertura_completa: boolean;
+  cobertura_notas: string[];
   situacao_juridica: Array<Record<string, unknown>>;
   principais_riscos: Array<Record<string, unknown>>;
   providencias_futuras: Array<Record<string, unknown>>;
