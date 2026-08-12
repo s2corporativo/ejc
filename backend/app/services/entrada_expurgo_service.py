@@ -27,7 +27,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.core.config import get_settings
 from app.models.document import Document
@@ -70,9 +70,9 @@ async def expurgar_rascunhos_entrada_unica(
                     select(DocumentIntakeBatch).where(
                         DocumentIntakeBatch.case_id.is_(None),
                         DocumentIntakeBatch.status.in_(_STATUS_EXPURGAVEIS),
-                        (
-                            (DocumentIntakeBatch.modalidade.is_(None))
-                            | (DocumentIntakeBatch.modalidade != "dpt360_oportunidade")
+                        or_(
+                            DocumentIntakeBatch.modalidade.is_(None),
+                            DocumentIntakeBatch.modalidade != "dpt360_oportunidade",
                         ),
                         DocumentIntakeBatch.updated_at < corte,
                     )
