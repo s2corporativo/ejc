@@ -30,12 +30,18 @@ concurrency:
 jobs:
   prova:
     name: Produção — flags efetivas, restauração e rollback
+    # workflow_dispatch permite escolher ref. Como este job executa scripts
+    # dentro do backend de produção, somente a main pode alcançar a VPS.
+    if: github.ref_name == 'main'
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
+    environment: production
     env:
       APP_CONTAINER: ejc_backend
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: main
 
       # ── 1. Flags efetivas ────────────────────────────────────────────────
       - name: Flags efetivas do processo em produção
@@ -98,9 +104,6 @@ jobs:
           import os, re, subprocess
           from urllib.parse import unquote, urlparse
 
-          # Nomes gerados pelos dois drills do repo: <origem>_drill_<hex12> e
-          # <origem>_restore_<hex12>. O filtro é por REGEX exata, não por LIKE:
-          # dropar banco por prefixo solto é como se perde produção.
           PADRAO = re.compile(r"^.+_(drill|restore)_[0-9a-f]{12}$")
 
           u = urlparse(os.environ["DATABASE_URL_SYNC"])
@@ -127,8 +130,6 @@ jobs:
           fi
 
       # ── 2b. Impacto de ligar o modo estrito de citações ──────────────────
-      # Informativo: nunca derruba o job. Serve para a decisão de virar
-      # CITACOES_MODO_ESTRITO com número em mãos (docs/ai/DECISAO_CITACOES_MODO_ESTRITO.md).
       - name: Medir impacto de CITACOES_MODO_ESTRITO
         continue-on-error: true
         shell: bash
@@ -144,11 +145,6 @@ jobs:
           cat modo-estrito-impacto.json
 
       # ── 3. Insumos do rollback ───────────────────────────────────────────
-      # `deploy_vps_safe.sh` faz rollback re-taggeando a imagem que estava
-      # rodando ANTES do deploy — insumo capturado em tempo de execução, não
-      # persistido. O que dá para afirmar sem derrubar produção é que os três
-      # containers existem com imagem resolvível e que o compose é válido;
-      # sem isso o rollback cairia no "ERRO CRÍTICO: imagem indisponível".
       - name: Insumos do rollback (sem executar rollback)
         id: rollback
         shell: bash
@@ -164,7 +160,7 @@ jobs:
               problemas+=("$c aponta para imagem inexistente localmente")
             fi
           done
-          if ! (cd /opt/ejc && docker compose config >/dev/null 2>&1); then
+          if ! (cd /opt/ejc && docker compose config --quiet); then
             problemas+=("docker compose config inválido em /opt/ejc")
           fi
           python3 - "${problemas[@]+"${problemas[@]}"}" > rollback-insumos.json <<'PY'

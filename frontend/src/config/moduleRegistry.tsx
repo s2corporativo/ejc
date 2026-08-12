@@ -7,6 +7,7 @@ import {
   BookOpen,
   Bot,
   Briefcase,
+  BriefcaseBusiness,
   CalendarClock,
   CheckSquare,
   ClipboardPen,
@@ -88,6 +89,7 @@ export type LegacyRedirect = {
 };
 
 const Dashboard = lazy(() => import("../pages/Dashboard"));
+const Dpt360Workspace = lazy(() => import("../pages/dpt360/Dpt360Workspace"));
 const Clientes = lazy(() => import("../pages/Clientes"));
 const CadastroManual = lazy(() => import("../pages/CadastroManual"));
 const DossieCliente = lazy(() => import("../pages/DossieCliente"));
@@ -172,6 +174,63 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "dashboard",
     sensitive: false,
     backendPrefixes: ["/api/dashboard", "/api/health"],
+  },
+  // DPT Empresarial 360: workspace especializado dentro do EJC. A Onda 1
+  // compõe somente endpoints canônicos já autenticados e não cria schema,
+  // backend paralelo ou outro núcleo de IA.
+  {
+    key: "dpt360",
+    path: "/dpt360",
+    label: "DPT Empresarial 360",
+    description:
+      "Cockpit de inteligência, prevenção e gestão jurídica empresarial.",
+    group: "Pesquisar & IA",
+    icon: BriefcaseBusiness,
+    component: Dpt360Workspace,
+    roles: ROLES.compliance,
+    showInNav: true,
+    essential: true,
+    order: 1,
+    helpKey: "dpt360",
+    sensitive: true,
+    usesAI: true,
+    backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
+  },
+  // Navegação interna do mesmo workspace React; não é outra SPA/topbar/login.
+  {
+    key: "dpt360-subroutes",
+    path: "/dpt360/*",
+    label: "DPT Empresarial 360",
+    description: "Navegação interna do workspace empresarial.",
+    group: "Pesquisar & IA",
+    icon: BriefcaseBusiness,
+    component: Dpt360Workspace,
+    roles: ROLES.compliance,
+    showInNav: false,
+    status: "hidden",
+    helpKey: "dpt360",
+    sensitive: true,
+    usesAI: true,
+    backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
+  },
+  // Empresa 360 possui rota dinâmica explícita para que guards de integridade
+  // reconheçam links canônicos /dpt360/empresas/:clientId. O wildcard segue
+  // atendendo as demais subrotas internas do mesmo workspace.
+  {
+    key: "dpt360-company-detail",
+    path: "/dpt360/empresas/:clientId",
+    label: "Empresa 360",
+    description: "Visão jurídica empresarial do cliente pessoa jurídica.",
+    group: "Pesquisar & IA",
+    icon: BriefcaseBusiness,
+    component: Dpt360Workspace,
+    roles: ROLES.compliance,
+    showInNav: false,
+    status: "hidden",
+    helpKey: "dpt360",
+    sensitive: true,
+    usesAI: true,
+    backendPrefixes: ["/api/clients", "/api/cases", "/api/deadlines"],
   },
   // Entrada Única (Bloco 3, docs/DESENHO_BLOCO3_TELAS.md): porta de entrada
   // principal de casos — relato + documentos → análise → confirmação → caso.
@@ -1090,6 +1149,12 @@ export function getHelpModuleKey(pathname: string): string | null {
   const match = candidates.find((module) => {
     const base = routeBase(module.path);
     if (base === "/") return pathname === "/";
+    if (base.endsWith("/*")) {
+      const wildcardBase = base.slice(0, -2);
+      return (
+        pathname === wildcardBase || pathname.startsWith(`${wildcardBase}/`)
+      );
+    }
     return pathname === base || pathname.startsWith(`${base}/`);
   });
   return match?.helpKey ?? null;
@@ -1110,7 +1175,14 @@ export function canRoleAccessPath(
   route: string,
 ): boolean {
   const pathname = route.split("?")[0] || "/";
-  const module = STAFF_ROUTES.find((item) => item.path === pathname);
+  const module = STAFF_ROUTES.find((item) => {
+    if (item.path === pathname) return true;
+    if (item.path.endsWith("/*")) {
+      const wildcardBase = item.path.slice(0, -2);
+      return pathname.startsWith(`${wildcardBase}/`);
+    }
+    return false;
+  });
   if (!module?.roles) return Boolean(module);
   return Boolean(role && module.roles.includes(role));
 }

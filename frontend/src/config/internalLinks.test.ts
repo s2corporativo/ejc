@@ -82,6 +82,67 @@ function normalize(raw: string): string | null {
   return p;
 }
 
+function segmentMatches(routeSegment: string, linkSegment: string): boolean {
+  return (
+    routeSegment.startsWith(":") ||
+    linkSegment === DYN ||
+    routeSegment === linkSegment
+  );
+}
+
+function routeMatches(routePath: string, pathname: string): boolean {
+  const routeSegs = routePath.split("/").filter(Boolean);
+  const linkSegs = pathname.split("/").filter(Boolean);
+  if (routePath === "/" || pathname === "/") return routePath === pathname;
+
+  // React Router usa `*` terminal para rotas-filhas do mesmo workspace. O
+  // validador precisa reconhecer o mesmo contrato; tratar `*` como texto
+  // literal gera falso link morto para destinos válidos como /dpt360/radar.
+  const wildcardIndex = routeSegs.indexOf("*");
+  if (wildcardIndex >= 0) {
+    if (wildcardIndex !== routeSegs.length - 1) return false;
+    const prefix = routeSegs.slice(0, wildcardIndex);
+    if (linkSegs.length < prefix.length) return false;
+    return prefix.every((seg, i) => segmentMatches(seg, linkSegs[i]));
+  }
+
+  if (routeSegs.length !== linkSegs.length) return false;
+  return routeSegs.every((seg, i) => segmentMatches(seg, linkSegs[i]));
+}
+
+function isKnown(pathname: string): boolean {
+  if (pathname === "/") return true; // dashboard
+  return KNOWN_ROUTES.some((route) => routeMatches(route, pathname));
+}
+
+describe("links internos do frontend", () => {
+  it("a varredura encontra um volume plausível de links (sanidade do extrator)", () => {
+    const sites = collectLinks();
+    expect(sites.length).toBeGreaterThan(20);
+  });
+
+  it("reconhece wildcard terminal sem aceitar prefixo diferente", () => {
+    expect(routeMatches("/dpt360/*", "/dpt360/radar")).toBe(true);
+    expect(routeMatches("/dpt360/*", "/dpt360/empresas/123")).toBe(true);
+    expect(routeMatches("/dpt360/*", "/outro/radar")).toBe(false);
+    expect(routeMatches("/dpt360/*/invalido", "/dpt360/radar/invalido")).toBe(
+      false,
+    );
+  });
+
+  it("todo link/navigate/href interno aponta para rota registrada (sem link morto)", () => {
+    const mortos = collectLinks().filter((s) => !isKnown(s.pathname));
+    const linhas = mortos.map(
+      (s) => `  ${s.pathname}  <- ${s.file}:${s.line} (raw: ${s.raw})`,
+    );
+    expect(
+      mortos,
+      `${mortos.length} link(s) interno(s) sem rota correspondente:\n${linhas.join("\n")}\n` +
+        "Corrija o destino, registre a rota no moduleRegistry ou adicione um LEGACY_REDIRECT.",
+    ).toEqual([]);
+  });
+});
+
 function collectLinks(): LinkSite[] {
   const sites: LinkSite[] = [];
   for (const file of walk(SRC_DIR)) {
@@ -101,38 +162,3 @@ function collectLinks(): LinkSite[] {
   }
   return sites;
 }
-
-function routeMatches(routePath: string, pathname: string): boolean {
-  const routeSegs = routePath.split("/").filter(Boolean);
-  const linkSegs = pathname.split("/").filter(Boolean);
-  if (routePath === "/" || pathname === "/") return routePath === pathname;
-  if (routeSegs.length !== linkSegs.length) return false;
-  return routeSegs.every(
-    (seg, i) =>
-      seg.startsWith(":") || linkSegs[i] === DYN || seg === linkSegs[i],
-  );
-}
-
-function isKnown(pathname: string): boolean {
-  if (pathname === "/") return true; // dashboard
-  return KNOWN_ROUTES.some((route) => routeMatches(route, pathname));
-}
-
-describe("links internos do frontend", () => {
-  it("a varredura encontra um volume plausível de links (sanidade do extrator)", () => {
-    const sites = collectLinks();
-    expect(sites.length).toBeGreaterThan(20);
-  });
-
-  it("todo link/navigate/href interno aponta para rota registrada (sem link morto)", () => {
-    const mortos = collectLinks().filter((s) => !isKnown(s.pathname));
-    const linhas = mortos.map(
-      (s) => `  ${s.pathname}  <- ${s.file}:${s.line} (raw: ${s.raw})`,
-    );
-    expect(
-      mortos,
-      `${mortos.length} link(s) interno(s) sem rota correspondente:\n${linhas.join("\n")}\n` +
-        "Corrija o destino, registre a rota no moduleRegistry ou adicione um LEGACY_REDIRECT.",
-    ).toEqual([]);
-  });
-});

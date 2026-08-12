@@ -22,7 +22,8 @@ concurrency:
 jobs:
   validar:
     name: Validar ativação, idempotência e rollback
-    runs-on: [self-hosted, ejc-vps]
+    # Teste determinístico de PR em runner hospedado; nunca na VPS de produção.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -48,8 +49,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          target_sha="$(git rev-parse HEAD)"
-          remote_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          dono="$(stat -c %u "$GITHUB_WORKSPACE")"
+          if [ "$dono" != "$(id -u)" ] && [ "$dono" != "0" ]; then
+            echo "::error::Workspace do runner pertence ao uid $dono; recusando confiar no repositório."
+            exit 1
+          fi
+          target_sha="$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)"
+          remote_main="$(git -c safe.directory="$GITHUB_WORKSPACE" ls-remote origin refs/heads/main | awk '{print $1}')"
           test -n "$target_sha"
           test "$target_sha" = "${{ github.sha }}"
           test "$target_sha" = "$remote_main"
