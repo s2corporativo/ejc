@@ -7,8 +7,6 @@ export type DptExecutiveReport = {
   generated_at: string;
   status: "rascunho";
   requer_revisao: boolean;
-  cobertura_completa: boolean;
-  cobertura_notas: string[];
   situacao_juridica: Array<Record<string, unknown>>;
   principais_riscos: Array<Record<string, unknown>>;
   providencias_futuras: Array<Record<string, unknown>>;
@@ -18,6 +16,10 @@ export type DptExecutiveReport = {
   recomendacoes: string[];
   proximos_passos: string[];
   nota: string;
+  // A1 (auditoria 2026-08-12): qualquer seção truncada no teto próprio ou no
+  // recorte agregado do cockpit entra aqui — nunca é apresentado recorte como completo.
+  cobertura: "completa" | "parcial";
+  notas_cobertura: string[];
 };
 
 export async function getDptExecutiveReport(

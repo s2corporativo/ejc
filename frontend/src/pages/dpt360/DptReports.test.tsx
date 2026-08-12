@@ -30,8 +30,8 @@ function relatorioBase(overrides: Partial<Record<string, unknown>> = {}) {
     generated_at: "2026-08-12T00:00:00Z",
     status: "rascunho" as const,
     requer_revisao: true,
-    cobertura_completa: true,
-    cobertura_notas: [],
+    cobertura: "completa" as const,
+    notas_cobertura: [],
     situacao_juridica: [],
     principais_riscos: [],
     providencias_futuras: [],
@@ -65,21 +65,21 @@ async function gerarRelatorio() {
 
 describe("DptReports — aviso de cobertura parcial", () => {
   it("não mostra aviso quando a cobertura está completa", async () => {
-    getReportMock.mockResolvedValue(relatorioBase({ cobertura_completa: true }));
+    getReportMock.mockResolvedValue(relatorioBase({ cobertura: "completa" }));
     await gerarRelatorio();
     await waitFor(() => expect(screen.getByText(/Revisão obrigatória/i)).toBeTruthy());
-    expect(screen.queryByText(/Cobertura parcial/i)).toBeNull();
+    expect(screen.queryByText(/Resultados parciais/i)).toBeNull();
   });
 
   it("mostra aviso e as notas quando a cobertura está parcial", async () => {
     getReportMock.mockResolvedValue(
       relatorioBase({
-        cobertura_completa: false,
-        cobertura_notas: ["carteira truncada em 200 empresas"],
+        cobertura: "parcial",
+        notas_cobertura: ["carteira truncada em 200 empresas"],
       }),
     );
     await gerarRelatorio();
-    await waitFor(() => expect(screen.getByText(/Cobertura parcial/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Resultados parciais/i)).toBeTruthy());
     expect(screen.getByText(/carteira truncada em 200 empresas/)).toBeTruthy();
   });
 });

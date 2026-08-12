@@ -148,6 +148,7 @@ export default function DptIntelligence({
               key={item.value}
               type="button"
               onClick={() => setAction(item.value)}
+              disabled={loading}
               className={`rounded-xl border p-4 text-left transition ${action === item.value ? "border-amber-300 bg-amber-50/60 dark:border-amber-400/30 dark:bg-amber-400/10" : "border-slate-200 dark:border-white/10"}`}
             >
               <div className="text-sm font-semibold text-slate-900 dark:text-white">
@@ -166,7 +167,8 @@ export default function DptIntelligence({
             <select
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-slate-950"
+              disabled={loading}
+              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-950"
             >
               {companies.map((company) => (
                 <option key={company.id} value={company.id}>
@@ -180,7 +182,8 @@ export default function DptIntelligence({
             <select
               value={area}
               onChange={(e) => trocarArea(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-slate-950"
+              disabled={loading}
+              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-950"
             >
               {[
                 "empresarial",
@@ -235,6 +238,12 @@ export default function DptIntelligence({
               <ShieldAlert className="h-4 w-4 text-amber-600" /> Rascunho
               jurídico — revisão humana obrigatória
             </div>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-white/5 dark:text-slate-300">
+              {companies.find((company) => company.id === clientId)?.nome ||
+                "Empresa não identificada"}
+              {" — "}
+              {area}
+            </span>
             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">
               {result.status_hitl}
             </span>
