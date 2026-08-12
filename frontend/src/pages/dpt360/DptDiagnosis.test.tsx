@@ -56,6 +56,31 @@ describe("DptDiagnosis → DptIntelligence — sincronização de área", () => 
     fireEvent.change(tipoSelect, { target: { value: "tributario" } });
 
     await waitFor(() => expect(selecionarArea().value).toBe("tributario"));
+
+    // Cobre o contrato real enviado ao Motor Jurídico, não só o estado visual
+    // do seletor — é o que o backend efetivamente recebe em runDptAction.
+    runActionMock.mockResolvedValue({
+      action: "diagnostico",
+      client_id: "c1",
+      conteudo: "",
+      fontes: [],
+      citacoes: [],
+      alertas: [],
+      is_rascunho: true,
+      requer_revisao: true,
+      status_hitl: "gerado",
+      aviso_hitl: "Revisão humana obrigatória.",
+    });
+    const textarea = screen.getByPlaceholderText(/Ex\.:/i);
+    fireEvent.change(textarea, { target: { value: "Analisar riscos tributários" } });
+    const botao = screen.getByRole("button", { name: /gerar rascunho/i });
+    await act(async () => {
+      botao.click();
+    });
+    await waitFor(() => expect(runActionMock).toHaveBeenCalled());
+    expect(runActionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ area: "tributario" }),
+    );
   });
 
   it("descarta o rascunho anterior quando o tipo de diagnóstico muda", async () => {
