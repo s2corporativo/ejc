@@ -128,6 +128,7 @@ export default function Pecas() {
   const [aprovacao, setAprovacao] = useState<{
     doc: LegalDoc;
     observacoes: string;
+    erro?: string; // E05: validação do backend exibida DENTRO do dialog
   } | null>(null);
   const [aprovando, setAprovando] = useState(false);
   const [form, setForm] = useState<any>({
@@ -312,10 +313,19 @@ export default function Pecas() {
   // Um só ato no backend (POST /conferir-e-assinar): valida juridicamente se
   // preciso, registra a revisão HITL e assina — tudo numa transação.
   const aprovarPeca = async () => {
+    // E05 (auditoria funcional): quando o backend rejeita (422 — ex.: score de
+    // validação jurídica abaixo do mínimo), o dialog PERMANECE aberto com a
+    // causa exata dentro dele (campo obrigatório e feedback no próprio dialog),
+    // em vez de fechar/avancar com erro silencioso e o usuário sem saber o quê
+    // corrigir.
     if (!aprovacao) return;
     const observacoes = aprovacao.observacoes.trim();
-    if (!observacoes) return;
+    if (!observacoes) {
+      setAprovacao({ ...aprovacao, erro: "As observações da revisão são obrigatórias." });
+      return;
+    }
     setAprovando(true);
+    setAprovacao({ ...aprovacao, erro: undefined });
     try {
       await api.post(`/legal-docs/${aprovacao.doc.id}/conferir-e-assinar`, {
         observacoes,
@@ -324,7 +334,15 @@ export default function Pecas() {
       toast.success("Peça conferida e assinada com revisão humana registrada");
       load();
     } catch (e: any) {
-      toast.error(errDetail(e, "Falha ao conferir e assinar a peça"));
+      const msg = errDetail(e, "Falha ao conferir e assinar a peça");
+      // Erro de validação (422) fica visível DENTRO do dialog; o usuário
+      // corrige e reenvia. Erros genéricos vão para o toast.
+      const status = e?.response?.status;
+      if (status === 422) {
+        setAprovacao({ ...aprovacao, erro: msg });
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setAprovando(false);
     }
@@ -1187,10 +1205,18 @@ export default function Pecas() {
           placeholder="Observações da revisão (obrigatório)"
           value={aprovacao?.observacoes || ""}
           onChange={(e) =>
+            // E05: limpa o erro em exibição ao digitar
             aprovacao &&
-            setAprovacao({ ...aprovacao, observacoes: e.target.value })
+            setAprovacao({ ...aprovacao, observacoes: e.target.value, erro: undefined })
           }
         />
+        {/* E05 (auditoria funcional): causa exata da rejeição do backend
+          (ex.: validação jurídica com score abaixo do mínimo) exibida no dialog */}
+        {aprovacao?.erro && (
+          <div className="mt-3 rounded-lg border border-danger-300 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+            <strong>Não foi possível aprovar:</strong> {aprovacao.erro}
+          </div>
+        )}
         <div className="flex justify-end gap-2 mt-4">
           <button className="btn-ghost" onClick={() => setAprovacao(null)}>
             Cancelar

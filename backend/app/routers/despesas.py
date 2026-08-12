@@ -3,9 +3,11 @@ import io
 from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import Optional
+from datetime import date
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
@@ -165,38 +167,58 @@ async def export_despesas_csv(
     )
 
 
+class DespesaCreate(BaseModel):
+    # E03 (auditoria funcional): substitui a validação bruta por dict; Pydantic
+    # devolve 422 descritivo (campo, tipo e valor esperado) em vez de 500
+    # silencioso quando a categoria é vazia/inválida.
+    categoria: str = Field(..., min_length=1, max_length=100,
+                           description="Categoria da despesa (não vazia)")
+    subcategoria: Optional[str] = Field(None, max_length=100)
+    tipo: Optional[str] = Field("fixo", max_length=50)
+    descricao: str = Field(..., min_length=1, max_length=500,
+                           description="Descrição da despesa (não vazia)")
+    valor: float = Field(..., gt=0, description="Valor em reais, maior que zero")
+    vencimento: Optional[date] = None
+    pago_em: Optional[date] = None
+    recorrente: Optional[bool] = False
+    recorrencia: Optional[str] = Field(None, max_length=100)
+    status: Optional[str] = Field("pendente", max_length=50)
+    competencia: Optional[str] = None
+
+
 @router.post("", status_code=201)
 async def create_despesa(
-    body: dict = Body(...),
+    body: DespesaCreate,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    for field in ["categoria", "descricao", "valor"]:
-        if field not in body:
-            raise HTTPException(status_code=422, detail=f"Campo obrigatório: {field}")
 
     result = await db.execute(text("""
         INSERT INTO office_expenses
             (categoria, subcategoria, tipo, descricao, valor, vencimento, pago_em,
              recorrente, recorrencia, status, competencia, created_by)
         VALUES
-            (:categoria, :subcategoria, :tipo, :descricao, :valor, :vencimento, :pago_em,
+            (:categoria, :subcategoria, :tipo, :descricao, :valor,
+             NULLIF(:vencimento, '')::date, NULLIF(:pago_em, '')::date,
              :recorrente, :recorrencia, :status, :competencia, :created_by)
         RETURNING id, categoria, subcategoria, tipo, descricao, valor,
                   vencimento, pago_em, recorrente, recorrencia, status,
                   competencia, created_at
     """), {
-        "categoria": body.get("categoria"),
-        "subcategoria": body.get("subcategoria"),
-        "tipo": body.get("tipo", "fixo"),
-        "descricao": body.get("descricao"),
-        "valor": body.get("valor", 0),
-        "vencimento": body.get("vencimento"),
-        "pago_em": body.get("pago_em"),
-        "recorrente": body.get("recorrente", False),
-        "recorrencia": body.get("recorrencia"),
-        "status": body.get("status", "pendente"),
-        "competencia": body.get("competencia"),
+        "categoria": body.categoria,
+        "subcategoria": body.subcategoria,
+        "tipo": body.tipo,
+        "descricao": body.descricao,
+        "valor": float(body.valor),
+        # E03: asyncpg exige objetos date/None (não str) para colunas date.
+        # Pydantic já valida o formato ISO; a conversão aqui evita o
+        # 500 silencioso "str object has no attribute toordinal".
+        "vencimento": body.vencimento.isoformat() if body.vencimento else None,
+        "pago_em": body.pago_em.isoformat() if body.pago_em else None,
+        "recorrente": bool(body.recorrente),
+        "recorrencia": body.recorrencia,
+        "status": body.status,
+        "competencia": body.competencia,
         "created_by": current_user.id,
     })
     await db.commit()
