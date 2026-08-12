@@ -68,8 +68,9 @@ export default function DptRadar() {
                 <span className="ml-2 inline-block rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">
                   Classificação parcial
                 </span>
-              )} · {data.empresas_potencialmente_impactadas}{" "}
-              empresa(s) com possível impacto objetivo.
+              )}{" "}
+              · {data.empresas_potencialmente_impactadas} empresa(s) com
+              possível impacto objetivo.
             </p>
             <p className="mt-1 text-xs text-slate-400">
               {data.publicacoes_classificadas} de {data.total_publicacoes}{" "}
