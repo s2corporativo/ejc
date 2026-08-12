@@ -1,11 +1,11 @@
-"""139_preliminares_fundacao_schema — fundação aditiva da fusão Sala + Raio-X.
+"""140_preliminares_fundacao_schema — fundação aditiva da fusão Sala + Raio-X.
 
 Cria o schema unificado para análises preliminares sem alterar, copiar ou
 remover as tabelas legadas. Nesta fase, `raio_x_*` e `legal_chat_*` continuam
 sendo a fonte de verdade em runtime. Backfill, dual-write e cutover pertencem
 a fases posteriores e exigem branches próprias.
 
-Revision ID: 139_preliminares_fundacao_schema
+Revision ID: 140_preliminares_fundacao_schema
 Revises: 138_consolida_fontes_ingestao
 """
 
@@ -13,7 +13,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "139_preliminares_fundacao_schema"
+revision = "140_preliminares_fundacao_schema"
 down_revision = "138_consolida_fontes_ingestao"
 branch_labels = None
 depends_on = None
