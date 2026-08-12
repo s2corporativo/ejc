@@ -145,6 +145,7 @@ async def build_executive_report(
     today = datetime.now(timezone.utc).date()
     future = [item for item in deadlines if item.data_prazo >= today]
 
+<<<<<<< ours
     # "principais_riscos" também tem teto próprio (10) e precisa entrar na
     # mesma verificação de cobertura que casos/prazos/alertas — do contrário
     # uma empresa com mais de 10 riscos críticos teria a lista cortada sem aviso.
@@ -155,6 +156,33 @@ async def build_executive_report(
     cobertura_notas.extend(
         [f"Seção truncada no teto próprio: {label}." for label in secoes_truncadas]
     )
+=======
+    # Duas fontes distintas de truncamento, ambas precisam refletir em
+    # "cobertura_completa": (1) o dashboard agregado tem teto de empresas/casos/
+    # prazos — se ele já veio parcial, este relatório herda a lacuna; (2) mesmo
+    # com o dashboard completo, as seções deste relatório têm teto próprio
+    # (10 riscos, 20 providências, 30 casos, 30 mudanças, 500 alertas na janela)
+    # — uma empresa com mais itens do que isso teria seções cortadas em
+    # silêncio se o teto local não entrasse na mesma verificação.
+    secoes_truncadas: list[str] = []
+    if len(critical) > 10:
+        secoes_truncadas.append("riscos atuais")
+    if len(future) > 20:
+        secoes_truncadas.append("providências futuras")
+    if len(cases) > 30:
+        secoes_truncadas.append("casos")
+    if len(changes) > 30:
+        secoes_truncadas.append("mudanças jurídicas relevantes")
+    if len(rows) > 500:
+        secoes_truncadas.append("alertas do período (mais de 500 no intervalo)")
+
+    cobertura_notas = list(dashboard.notes)
+    if secoes_truncadas:
+        cobertura_notas.append(
+            "Seções deste relatório excederam o teto de itens e foram cortadas: "
+            + ", ".join(secoes_truncadas) + "."
+        )
+>>>>>>> theirs
 
     return {
         "client_id": client_id,
@@ -163,6 +191,12 @@ async def build_executive_report(
         "generated_at": datetime.now(timezone.utc),
         "status": "rascunho",
         "requer_revisao": True,
+        # O relatório deriva casos/prazos do payload agregado do dashboard, que
+        # tem teto de itens. Quando o dashboard reporta cobertura parcial, este
+        # relatório pode estar omitindo casos/prazos mais antigos da empresa —
+        # o rascunho precisa dizer isso, não parecer completo por omissão.
+        "cobertura_completa": dashboard.coverage == "complete" and not secoes_truncadas,
+        "cobertura_notas": cobertura_notas,
         "situacao_juridica": [item.model_dump() for item in profile.health],
         "principais_riscos": [item.model_dump() for item in critical[:10]],
         "providencias_futuras": [item.model_dump() for item in future[:20]],
