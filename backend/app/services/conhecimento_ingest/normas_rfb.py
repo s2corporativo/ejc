@@ -43,6 +43,8 @@ TERMOS_PADRAO = [
     "IRPF",
     "Simples Nacional",
     "PIS COFINS",
+    "Reforma Tributária IBS CBS",
+    "LC 214/2025",
 ]
 
 MAX_DOCS_POR_EXECUCAO = 20   # teto de atos processados por execução

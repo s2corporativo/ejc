@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileText, ShieldCheck } from "lucide-react";
+import { FileText, ShieldAlert, ShieldCheck } from "lucide-react";
 import type { DptCompany } from "./api";
 import DptPortalGuard from "./DptPortalGuard";
 import { getDptExecutiveReport, type DptExecutiveReport } from "./reportApi";
@@ -115,6 +115,20 @@ export default function DptReports({ companies }: { companies: DptCompany[] }) {
               <ShieldCheck className="h-3.5 w-3.5" /> Revisão obrigatória
             </span>
           </div>
+          {!report.cobertura_completa ? (
+            <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-300">
+              <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Cobertura parcial: a carteira empresarial usada para montar
+                este relatório excedeu o teto de itens do dashboard. Casos ou
+                prazos mais antigos desta empresa podem estar fora do
+                rascunho.
+                {report.cobertura_notas.length
+                  ? ` ${report.cobertura_notas.join(" ")}`
+                  : ""}
+              </span>
+            </div>
+          ) : null}
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               ["Riscos atuais", report.principais_riscos.length],

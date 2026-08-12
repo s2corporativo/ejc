@@ -77,6 +77,12 @@ async def build_executive_report(
         "generated_at": datetime.now(timezone.utc),
         "status": "rascunho",
         "requer_revisao": True,
+        # O relatório deriva casos/prazos do payload agregado do dashboard, que
+        # tem teto de itens. Quando o dashboard reporta cobertura parcial, este
+        # relatório pode estar omitindo casos/prazos mais antigos da empresa —
+        # o rascunho precisa dizer isso, não parecer completo por omissão.
+        "cobertura_completa": dashboard.coverage == "complete",
+        "cobertura_notas": list(dashboard.notes),
         "situacao_juridica": [item.model_dump() for item in profile.health],
         "principais_riscos": [item.model_dump() for item in critical[:10]],
         "providencias_futuras": [item.model_dump() for item in future[:20]],

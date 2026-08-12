@@ -42,16 +42,18 @@ export default function DptIntelligence({
   companies,
   initialAction = "conselho",
   initialClientId,
+  initialArea,
 }: {
   companies: DptCompany[];
   initialAction?: DptAction;
   initialClientId?: string;
+  initialArea?: string;
 }) {
   const fallbackClientId = companies[0]?.id || "";
   const [action, setAction] = useState<DptAction>(initialAction);
   const [clientId, setClientId] = useState(initialClientId || fallbackClientId);
   const [question, setQuestion] = useState("");
-  const [area, setArea] = useState("empresarial");
+  const [area, setArea] = useState(initialArea || "empresarial");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<DptActionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +68,15 @@ export default function DptIntelligence({
       setClientId(initialClientId);
     }
   }, [companies, initialClientId]);
+
+  // Mesmo princípio para a área: quando o pai (Diagnóstico) troca o tipo
+  // selecionado, a análise de IA deve incidir sobre essa mesma área — nunca
+  // sobre "empresarial" por omissão enquanto o usuário pediu outra coisa.
+  useEffect(() => {
+    if (initialArea) {
+      setArea(initialArea);
+    }
+  }, [initialArea]);
 
   useEffect(() => {
     if (!companies.some((company) => company.id === clientId)) {

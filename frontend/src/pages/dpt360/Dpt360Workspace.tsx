@@ -26,7 +26,12 @@ import {
 } from "lucide-react";
 import { Link, NavLink, useLocation } from "react-router";
 import { Empty, ErrorState, Spinner } from "../../components/UI";
-import { getDptDashboard, type DptCompany, type DptDashboard } from "./api";
+import {
+  getDptCompanyProfile,
+  getDptDashboard,
+  type DptCompany,
+  type DptDashboard,
+} from "./api";
 import CompanyLegalTwin from "./CompanyLegalTwin";
 import DptFeatureRouter from "./DptFeatureRouter";
 
@@ -354,12 +359,14 @@ function CompaniesView({ data }: { data: DptDashboard }) {
   );
 }
 
+type CompanyDetailHeader = Pick<DptCompany, "id" | "nome" | "cidade" | "estado">;
+
 function CompanyDetail({
   data,
   company,
 }: {
   data: DptDashboard;
-  company: DptCompany;
+  company: CompanyDetailHeader;
 }) {
   const cases = data.cases.filter((item) => item.client_id === company.id);
   const caseIds = new Set(cases.map((item) => item.id));
@@ -463,6 +470,55 @@ function CompanyDetail({
   );
 }
 
+// A carteira do dashboard é limitada a um teto de empresas (payload agregado).
+// Uma empresa fora desse teto ainda existe e responde em /companies/{id}; sem
+// este fallback o deep link mentia "não encontrada" para qualquer empresa
+// além do corte.
+function CompanyDetailByIdFallback({
+  data,
+  clientId,
+}: {
+  data: DptDashboard;
+  clientId: string;
+}) {
+  const [company, setCompany] = useState<CompanyDetailHeader | null>(null);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setCompany(null);
+    setNotFound(false);
+    getDptCompanyProfile(clientId)
+      .then((profile) => {
+        if (!active) return;
+        setCompany({
+          id: profile.id,
+          nome: profile.nome,
+          cidade: profile.cidade,
+          estado: profile.estado,
+        });
+      })
+      .catch(() => active && setNotFound(true));
+    return () => {
+      active = false;
+    };
+  }, [clientId]);
+
+  if (notFound) {
+    return (
+      <ErrorState message="Empresa não encontrada na carteira empresarial visível." />
+    );
+  }
+  if (!company) {
+    return (
+      <div className="grid min-h-[240px] place-items-center">
+        <Spinner />
+      </div>
+    );
+  }
+  return <CompanyDetail data={data} company={company} />;
+}
+
 function CasesView({ data }: { data: DptDashboard }) {
   const companies = useMemo(
     () => new Map(data.companies.map((item) => [item.id, item.nome])),
@@ -558,7 +614,7 @@ export default function Dpt360Workspace() {
     content = company ? (
       <CompanyDetail data={data} company={company} />
     ) : (
-      <ErrorState message="Empresa não encontrada na carteira empresarial visível." />
+      <CompanyDetailByIdFallback data={data} clientId={segments[1]} />
     );
   } else if (segments[0] === "casos") {
     content = <CasesView data={data} />;

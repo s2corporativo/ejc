@@ -174,7 +174,7 @@ TASK_TYPE_PARA_AGENTE: dict[str, str] = {
 _KEYWORDS_PARA_AGENTE: list[tuple[tuple[str, ...], str]] = [
     (("extrato", "tarifa bancária", "busca e apreensão", "revisional"), "BankForensicsAgent"),
     (("cdc", "código de defesa do consumidor", "codigo de defesa do consumidor", "relação de consumo", "vício do produto", "vicio do produto", "propaganda enganosa"), "ConsumerLawAgent"),
-    (("execução fiscal", "execucao fiscal", "certidão de dívida ativa", "certidao de divida ativa", "icms", "decadência tributária", "decadencia tributaria", "tributár"), "TaxLawAgent"),
+    (("execução fiscal", "execucao fiscal", "certidão de dívida ativa", "certidao de divida ativa", "icms", "decadência tributária", "decadencia tributaria", "tributár", "reforma tributária", "reforma tributaria", "ibs", "cbs", "imposto seletivo", "split payment", "lc 214/2025"), "TaxLawAgent"),
     (("inss", "aposentadoria", "auxílio-doença", "auxilio-doenca", "benefício previdenciário", "beneficio previdenciario", "cnis", "previdenciár"), "SocialSecurityAgent"),
     (("recuperação judicial", "recuperacao judicial", "falência", "falencia", "dissolução de sociedade", "dissolucao de sociedade", "apuração de haveres", "societár"), "CorporateLawAgent"),
     (("reclamatória trabalhista", "reclamatoria trabalhista", "verbas rescisórias", "verbas rescisorias", "horas extras", "vínculo empregatício", "vinculo empregaticio", "aviso prévio", "aviso previo", "fgts", "trabalhist", "clt"), "LaborLawAgent"),
