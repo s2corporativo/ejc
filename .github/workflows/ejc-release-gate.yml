@@ -1,15 +1,7 @@
 name: EJC Release Gate
 
-# Gate P0. Impede conflitos, segredos, CORS inseguro, backup em claro e
-# rollback não comprovado.
-#
-# TEMPORÁRIO (Issue #1089): cobrança da conta GitHub falhando, sem alocação
-# de runner GitHub-hosted. Rodando no self-hosted `ejc-vps` até normalizar —
-# reverter para `ubuntu-latest` assim que a cobrança for restabelecida. Os
-# scripts executados aqui (ci_guard.sh, test_backup_wrapper.sh,
-# test_deploy_rollback.sh, test_selfhosted_runner_setup.sh) foram conferidos:
-# rodam em diretório mktemp isolado com docker/curl/sleep fakes, sem tocar
-# /opt/ejc, ejc_db ou .env reais.
+# Gate P0 em runner GitHub-hosted e isolado da produção. Impede conflitos,
+# segredos, CORS inseguro, backup em claro e rollback não comprovado.
 on:
   pull_request:
   push:
@@ -26,7 +18,7 @@ concurrency:
 jobs:
   p0-guard:
     name: P0 guard — conflitos e segredos
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
