@@ -4206,7 +4206,10 @@ async def trib_reforma_tributaria(
         },
         "base": "EC 132/2023 · LC 214/2025 · ADCT arts. 125-133 (cronograma de transição).",
         "aviso": "INFORMATIVO — regulamentações complementares em edição; alíquotas de referência "
-                 "serão fixadas por resolução do Senado. Revisão humana obrigatória.",
+                 "serão fixadas por resolução do Senado. Regimes específicos (financeiro, "
+                 "imobiliário, combustíveis, cesta básica e outros da LC 214/2025) têm regras "
+                 "próprias que podem divergir deste cronograma geral — não cobertos por esta "
+                 "estimativa. Revisão humana obrigatória.",
     }
 
 

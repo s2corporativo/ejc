@@ -91,4 +91,49 @@ describe("DptDiagnosis → DptIntelligence — sincronização de área", () => 
       expect(screen.queryByText("Rascunho tributário")).toBeNull(),
     );
   });
+
+  it("libera o botão (loading) e ignora resposta tardia quando a área muda com análise em voo", async () => {
+    let resolvePendente!: (value: unknown) => void;
+    runActionMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePendente = resolve;
+      }) as any,
+    );
+    await act(async () => {
+      render(<DptDiagnosis companies={[EMPRESA]} />);
+    });
+    await waitFor(() => expect(getReadinessMock).toHaveBeenCalled());
+
+    const textarea = screen.getByPlaceholderText(/Ex\.:/i);
+    fireEvent.change(textarea, { target: { value: "Analisar riscos tributários" } });
+    const botao = () => screen.getByRole("button", { name: /gerar rascunho|analisando/i });
+    await act(async () => {
+      botao().click();
+    });
+    expect(botao().hasAttribute("disabled")).toBe(true);          // análise em voo
+
+    // Troca de tipo com a requisição ainda pendente: não pode ficar travado.
+    const tipoSelect = screen.getByLabelText(/Tipo de diagnóstico/i);
+    fireEvent.change(tipoSelect, { target: { value: "ambiental" } });
+    await waitFor(() =>
+      expect(botao().hasAttribute("disabled")).toBe(false),
+    );
+
+    // A resposta tardia da consulta abandonada (tributário) não pode aparecer.
+    await act(async () => {
+      resolvePendente({
+        action: "diagnostico",
+        client_id: "c1",
+        conteudo: "Rascunho tributário atrasado",
+        fontes: [],
+        citacoes: [],
+        alertas: [],
+        is_rascunho: true,
+        requer_revisao: true,
+        status_hitl: "gerado",
+        aviso_hitl: "Revisão humana obrigatória.",
+      });
+    });
+    expect(screen.queryByText("Rascunho tributário atrasado")).toBeNull();
+  });
 });

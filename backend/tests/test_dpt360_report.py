@@ -80,6 +80,16 @@ def _dashboard(*, coverage="complete", notes=None, cases=None) -> DptDashboardRe
     )
 
 
+def _alerta(i: int) -> SimpleNamespace:
+    # Sem termo de nenhuma área cadastrada: classify_area -> "geral" ->
+    # impact_level sempre None -> nunca entra em "changes". Isola o teste no
+    # teto de RAW ROWS buscadas, sem interferir no teto de 30 "mudanças".
+    return SimpleNamespace(
+        id=f"alerta-{i}", keyword_match=None, titulo="Publicação genérica",
+        resumo=None, fonte="DOU", data_publicacao=None, link=None,
+    )
+
+
 def _patch_profile(monkeypatch, profile):
     async def fake(*_a, **_kw):
         return profile
@@ -123,6 +133,33 @@ async def test_cobertura_incompleta_por_truncamento_local_mesmo_com_dashboard_co
     assert resultado["cobertura_completa"] is False
     assert len(resultado["casos"]) == 30           # teto do relatório respeitado
     assert any("cortadas" in nota for nota in resultado["cobertura_notas"])
+
+
+async def test_cobertura_completa_com_exatamente_500_alertas_no_periodo(monkeypatch):
+    """Achado do review: 500 alertas pode ser o TOTAL real do intervalo, não
+    truncamento — só marcar parcial quando exceder o teto exibido (500)."""
+    _patch_profile(monkeypatch, _profile())
+    _patch_dashboard(monkeypatch, _dashboard(coverage="complete"))
+    db = _FakeDB(rows=[_alerta(i) for i in range(500)])
+    resultado = await report_service.build_executive_report(db, _USER, "c1")
+    assert resultado["cobertura_completa"] is True
+
+
+async def test_cobertura_incompleta_com_501_alertas_no_periodo(monkeypatch):
+    _patch_profile(monkeypatch, _profile())
+    _patch_dashboard(monkeypatch, _dashboard(coverage="complete"))
+    db = _FakeDB(rows=[_alerta(i) for i in range(501)])
+    resultado = await report_service.build_executive_report(db, _USER, "c1")
+    assert resultado["cobertura_completa"] is False
+    assert any("alertas do período" in nota for nota in resultado["cobertura_notas"])
+
+
+async def test_cobertura_completa_com_499_alertas_no_periodo(monkeypatch):
+    _patch_profile(monkeypatch, _profile())
+    _patch_dashboard(monkeypatch, _dashboard(coverage="complete"))
+    db = _FakeDB(rows=[_alerta(i) for i in range(499)])
+    resultado = await report_service.build_executive_report(db, _USER, "c1")
+    assert resultado["cobertura_completa"] is True
 
 
 async def test_relatorio_ausente_para_empresa_fora_do_escopo(monkeypatch):

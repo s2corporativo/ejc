@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BrainCircuit, ClipboardCheck, ShieldAlert } from "lucide-react";
 import {
   runDptAction,
@@ -57,9 +57,6 @@ export default function DptIntelligence({
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<DptActionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Invalida qualquer análise em voo quando a área muda no meio do caminho —
-  // sem isso, uma resposta tardia poderia sobrescrever a tela com o rascunho
-  // de um domínio que o usuário já não está mais analisando.
   const requestToken = useRef(0);
 
   // Sincroniza o pai quando o diagnóstico troca de empresa. A seleção manual
@@ -73,19 +70,28 @@ export default function DptIntelligence({
     }
   }, [companies, initialClientId]);
 
+  // Toda troca de área — vinda do pai (Diagnóstico) ou escolhida manualmente
+  // no select — precisa invalidar a análise em voo: sem isso, uma resposta
+  // tardia sobrescreveria a tela com o rascunho de um domínio que o usuário
+  // já não está mais analisando. `setLoading(false)` é essencial aqui: a
+  // requisição antiga terá seu próprio `finally` pulado (token não bate mais)
+  // e, sem este reset, o botão ficaria desabilitado indefinidamente.
+  const trocarArea = useCallback((novaArea: string) => {
+    requestToken.current += 1;
+    setArea(novaArea);
+    setResult(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
   // Mesmo princípio para a área: quando o pai (Diagnóstico) troca o tipo
   // selecionado, a análise de IA deve incidir sobre essa mesma área — nunca
   // sobre "empresarial" por omissão enquanto o usuário pediu outra coisa.
-  // O rascunho anterior é descartado junto: sem isso, um resultado tributário
-  // continuaria na tela rotulado como se fosse a análise da área nova.
   useEffect(() => {
     if (initialArea) {
-      requestToken.current += 1;
-      setArea(initialArea);
-      setResult(null);
-      setError(null);
+      trocarArea(initialArea);
     }
-  }, [initialArea]);
+  }, [initialArea, trocarArea]);
 
   useEffect(() => {
     if (!companies.some((company) => company.id === clientId)) {
@@ -173,7 +179,7 @@ export default function DptIntelligence({
             Área de foco
             <select
               value={area}
-              onChange={(e) => setArea(e.target.value)}
+              onChange={(e) => trocarArea(e.target.value)}
               className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-white/10 dark:bg-slate-950"
             >
               {[

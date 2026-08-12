@@ -40,7 +40,7 @@ async def build_executive_report(
                 DiarioOficialAlerta.data_publicacao.desc().nullslast(),
                 DiarioOficialAlerta.created_at.desc(),
             )
-            .limit(500)
+            .limit(501)
         )
     ).scalars().all()
 
@@ -86,7 +86,7 @@ async def build_executive_report(
         secoes_truncadas.append("casos")
     if len(changes) > 30:
         secoes_truncadas.append("mudanças jurídicas relevantes")
-    if len(rows) >= 500:
+    if len(rows) > 500:
         secoes_truncadas.append("alertas do período (mais de 500 no intervalo)")
 
     cobertura_notas = list(dashboard.notes)

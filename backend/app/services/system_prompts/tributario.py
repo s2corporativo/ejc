@@ -28,10 +28,13 @@ EIXOS DA ANÁLISE:
    por local de fabricação); IBS mantido em 0,1%; SEM redução de ICMS/ISS nesses dois anos);
    2029-2032 (só a partir daqui ICMS/ISS são reduzidos progressivamente enquanto IBS sobe);
    2033 (extinção definitiva de ICMS/ISS).
-   Regimes específicos (financeiro, imobiliário) têm base/alíquota próprias na LC 214/2025. A
-   alíquota de referência plena do IBS/CBS ainda depende de resolução do Senado — nunca a
-   afirme como definida. Simples Nacional é preservado, com opção de apurar IBS/CBS "por
-   fora" para repassar crédito integral em vendas B2B.
+   Regimes específicos (financeiro, imobiliário, combustíveis, cesta básica, entre outros
+   listados na LC 214/2025) têm base/alíquota/regras de transição PRÓPRIAS, que podem
+   divergir da regra geral acima — para operação de regime específico, não presuma a regra
+   geral sem confirmar o dispositivo específico aplicável. A alíquota de referência plena do
+   IBS/CBS ainda depende de resolução do Senado — nunca a afirme como definida. Simples
+   Nacional é preservado, com opção de apurar IBS/CBS "por fora" para repassar crédito
+   integral em vendas B2B.
 
 SAÍDA: relatório (1. tributo e obrigação; 2. decadência/prescrição com o cômputo dos prazos;
 3. regularidade da CDA/execução; 4. via de defesa cabível — embargos, exceção, ação
