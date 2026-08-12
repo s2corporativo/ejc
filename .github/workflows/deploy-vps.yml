@@ -53,6 +53,22 @@ jobs:
       # self-hosted runner isso não deve virar confiança global persistente.
       # A exceção é concedida por comando e somente após validar o dono do
       # workspace, evitando reabrir execução de .git/config não confiável.
+      - name: Idempotência por SHA — pular se o commit já está implantado
+        shell: bash
+        run: |
+          set -uo pipefail
+          LAST_SHA=""
+          [ -f /opt/ejc/.deploy_last_sha ] && LAST_SHA="$(cat /opt/ejc/.deploy_last_sha)" || true
+          if [ "$LAST_SHA" = "$TARGET_SHA" ]; then
+            echo "SHA $TARGET_SHA já implantado no último deploy bem-sucedido; pulando para evitar retrabalho."
+            {
+              echo "## Deploy VPS — pulado (idempotência)";
+              echo "";
+              echo "O commit \`$TARGET_SHA\` já está implantado desde o deploy anterior bem-sucedido. Não há retrabalho a fazer.";
+              echo "O marcador fica em \`/opt/ejc/.deploy_last_sha\` na VPS e é atualizado ao final de cada deploy com sucesso.";
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
       - name: Confirmar SHA e runtime de produção
         shell: bash
         run: |
@@ -391,3 +407,8 @@ jobs:
             echo "- Seeds: \`$RUN_SEEDS\`"
             echo "- Backup pré-deploy obrigatório: \`$REQUIRE_PREDEPLOY_BACKUP\`"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Registrar SHA implantado (após conclusão do deploy)
+        if: always() && success()
+        shell: bash
+        run: |
+          mkdir -p /opt/ejc && printf '%s' "$TARGET_SHA" > /opt/ejc/.deploy_last_sha
