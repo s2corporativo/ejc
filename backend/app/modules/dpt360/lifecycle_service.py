@@ -1,8 +1,11 @@
-# ── app/modules/dpt360/lifecycle_service.py ──────────────────────────────────
-# Ciclo de vida e retenção LGPD de oportunidades DPT360 (Issue #1086).
-#
-# Máquina de estados, anonimização, expurgo automático, com proteção TOCTOU
-# e auditoria sem PII.
+"""Ciclo de vida e retenção LGPD de oportunidades DPT360 (Issue #1086).
+
+Máquina de estados canônica com 7 estados (triagem_pendente → triagem_concluida → descartada/expirada → anonimizada → expurgada).
+Anonimização automática via job (remove email/telefone/mensagem/contato após 30 dias de descarte).
+Expurgo automático via job (deleta records anonimizados após 30 dias).
+Proteção TOCTOU via SELECT...FOR UPDATE com populate_existing=True.
+Auditoria WORM sem PII (apenas metadados de transição).
+"""
 from __future__ import annotations
 
 import logging
