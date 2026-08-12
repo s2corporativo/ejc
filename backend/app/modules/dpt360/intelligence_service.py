@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.dpt_diagnostico import DptDiagnosticEstado
 from app.models.user import User
 from app.modules.dpt360.company_service import get_company_profile
+from app.modules.dpt360.diagnostic_service import build_diagnostic_readiness
 from app.modules.dpt360.schemas import DptActionRequest, DptActionResponse
 from app.services.ai.core.dpt360_protocol import build_dpt_instruction, parse_structured_content
 from app.services.ai.core.dpt360_registry import ensure_dpt360_registered
@@ -107,6 +109,35 @@ async def run_dpt_action(
     citations = result.get("citacoes") or []
     if not isinstance(citations, list):
         citations = [citations]
+
+    # Persistência do diagnóstico (migração 141): ao executar a action
+    # `diagnostico`, grava-se o run em estado `rascunho` para o histórico e
+    # para o contador "diagnósticos pendentes" do dashboard. HITL mantido:
+    # `requer_revisao=True` e nenhum run nasce revisado.
+    if request.action == "diagnostico":
+        readiness = await build_diagnostic_readiness(
+            db, user, request.client_id, "completo", persistir=True
+        )
+        if readiness is not None:
+            # Marca o run criado como coberto pela análise de IA desta action.
+            await db.flush()
+            from sqlalchemy import select  # noqa: E402
+
+            from app.models.dpt_diagnostico import DptDiagnosticRun  # noqa: E402
+
+            stmt = (
+                select(DptDiagnosticRun)
+                .where(
+                    DptDiagnosticRun.client_id == request.client_id,
+                    DptDiagnosticRun.tipo == "completo",
+                    DptDiagnosticRun.estado == DptDiagnosticEstado.rascunho.value,
+                )
+                .order_by(DptDiagnosticRun.created_at.desc())
+                .limit(1)
+            )
+            ultimo_run = (await db.execute(stmt)).scalar_one_or_none()
+            if ultimo_run is not None:
+                ultimo_run.estado = DptDiagnosticEstado.em_revisao.value
 
     return DptActionResponse(
         action=request.action,

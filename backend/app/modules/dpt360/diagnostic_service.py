@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.dpt_diagnostico import DptDiagnosticEstado, DptDiagnosticRun
 from app.models.user import User
 from app.modules.dpt360.company_service import get_company_profile
 from app.modules.dpt360.schemas import (
@@ -110,7 +112,14 @@ async def build_diagnostic_readiness(
     user: User,
     client_id: str,
     kind: DptDiagnosticKind = "completo",
+    persistir: bool = True,
 ) -> DptDiagnosticReadiness | None:
+    """Calcula a prontidão do diagnóstico e, opcionalmente, grava o run.
+
+    O parâmetro `persistir` existe para permitir chamadas de sondagem (probe)
+    sem gerar registros — o frontend usa a rota apenas para leitura de
+    evidências e o run é criado apenas quando a análise é de fato iniciada.
+    """
     if kind not in DIAGNOSTIC_AREAS:
         # Defesa para chamadas internas fora do FastAPI. A rota pública já usa
         # Literal e devolve 422 antes de chegar aqui.
@@ -140,16 +149,33 @@ async def build_diagnostic_readiness(
             )
         )
 
-    return DptDiagnosticReadiness(
+    readiness = DptDiagnosticReadiness(
         client_id=client_id,
         tipo=kind,
         generated_at=datetime.now(timezone.utc),
         areas=areas,
         pode_iniciar_analise=True,
-        persistencia="nao_habilitada_nesta_pilha",
+        persistencia="habilitada",
         motivo_persistencia=(
-            "A governança Alembic do EJC exige que migration nova parta diretamente do head canônico da main; "
-            "esta entrega não cria migration concorrente."
+            "Registro criado em estado rascunho; a revisão humana (HITL) permanece obrigatória "
+            "antes de qualquer entrega ao cliente."
         ),
         hitl="obrigatorio",
     )
+
+    # Persistência do diagnóstico (migração 141 — tabela dpt_diagnosticos).
+    # O run nasce em `rascunho` e `requer_revisao=True`, coerente com o HITL
+    # obrigatório — persistir não significa entregar.
+    run = DptDiagnosticRun(
+        client_id=client_id,
+        tipo=kind,
+        areas_json=json.dumps(
+            [area.model_dump() for area in areas], ensure_ascii=False
+        ),
+        estado=DptDiagnosticEstado.rascunho.value,
+        requer_revisao=True,
+        created_by=user.id,
+    )
+    db.add(run)
+
+    return readiness

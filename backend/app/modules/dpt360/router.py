@@ -79,10 +79,15 @@ async def company_profile(
 async def diagnostic_readiness(
     client_id: str,
     kind: DptDiagnosticKind = Query(default="completo"),
+    persistir: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(DPT_ROLES)),
 ) -> DptDiagnosticReadiness:
-    result = await build_diagnostic_readiness(db, cu, client_id, kind)
+    # GET é leitura por padrão (sem efeitos colaterais): o run só é gravado
+    # quando a análise é de fato iniciada (persistir=True, ex.: via POST).
+    result = await build_diagnostic_readiness(
+        db, cu, client_id, kind, persistir=persistir
+    )
     if result is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
     return result
