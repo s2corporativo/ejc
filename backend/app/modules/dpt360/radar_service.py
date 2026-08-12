@@ -149,7 +149,7 @@ async def build_today_radar(
         "por_area": dict(area_counts),
         "empresas_potencialmente_impactadas": len(impacted_company_ids),
         "itens": items[:100],
-        "coverage": "partial" if truncated else "complete",
+        "cobertura": "parcial" if truncated else "completa",
         "fontes_ativas": ["diario_oficial_alertas: DOU/DOE-MG"],
         "dependencias_pendentes": ["PR #895: gate de vigência RAG"],
         "regra_impacto": "Aderência só é exibida quando existe sinal objetivo no perfil/casos da empresa. Possível impacto não significa irregularidade.",

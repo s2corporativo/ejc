@@ -32,7 +32,7 @@ export type DptRadarToday = {
   fontes_ativas: string[];
   dependencias_pendentes: string[];
   regra_impacto: string;
-  coverage?: "complete" | "partial";
+  cobertura?: "completa" | "parcial";
 };
 
 export async function getDptRadarToday(hours = 24): Promise<DptRadarToday> {

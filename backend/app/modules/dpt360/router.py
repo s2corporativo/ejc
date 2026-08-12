@@ -57,7 +57,7 @@ async def dashboard(
     result.radar_por_area = {
         str(area): int(total) for area, total in (radar.get("por_area") or {}).items()
     }
-    if radar.get("coverage") == "partial":
+    if radar.get("cobertura") == "parcial":
         result.notes.append(
             "Radar: resultados truncados para melhor desempenho (máximo 300 alertas); use /dpt360/radar/today para a lista completa."
         )

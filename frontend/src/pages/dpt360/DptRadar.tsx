@@ -64,7 +64,7 @@ export default function DptRadar() {
             <p className="mt-1 text-sm text-slate-500">
               {data.total_publicacoes} publicação(ões) coletada(s) nas últimas{" "}
               {data.periodo_horas}h
-              {data.coverage === "partial" && (
+              {data.cobertura === "parcial" && (
                 <span className="ml-2 inline-block rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">
                   Resultados truncados
                 </span>
