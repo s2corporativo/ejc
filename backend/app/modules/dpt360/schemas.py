@@ -178,3 +178,20 @@ class DptOpportunityQueueItem(BaseModel):
     origem: str | None = None
     urgencia_declarada: str | None = None
     campanha_ref: str | None = None
+
+
+# Ciclo de vida LGPD (Issue #1086)
+class DptCicloVidaMudarEstadoRequest(BaseModel):
+    novo_estado: str = Field(..., description="triagem_concluida, descartada, etc.")
+    motivo: str | None = Field(
+        default=None, description="Motivo da mudança de estado"
+    )
+
+
+class DptCicloVidaMudarEstadoResponse(BaseModel):
+    sucesso: bool | None = None
+    batch_id: str | None = None
+    estado_anterior: str | None = None
+    estado_novo: str | None = None
+    erro: str | None = None
+    permitidas: list[str] | None = None
