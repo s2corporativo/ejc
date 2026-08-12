@@ -3,6 +3,7 @@
 # Resolve (task_type, domain, mensagem) → agente interno + TarefaIA + flags.
 # Determinístico de propósito: roteamento auditável, testável e sem custo.
 from __future__ import annotations
+import re
 from dataclasses import dataclass
 
 from app.services.system_prompts import TarefaIA
@@ -170,11 +171,20 @@ TASK_TYPE_PARA_AGENTE: dict[str, str] = {
     "relatorio": "CaseAgent",
 }
 
+def _msg_tem_termo(msg: str, termo: str) -> bool:
+    """Substring comum, mas com fronteira de palavra para siglas curtas (≤3
+    caracteres, sem espaço) — sem isso "ibs"/"cbs"/"cdc" casam com qualquer
+    palavra que os contenha como substring (ex.: "ICBS", "cbsistema")."""
+    if len(termo) <= 3 and " " not in termo:
+        return re.search(rf"\b{re.escape(termo)}\b", msg) is not None
+    return termo in msg
+
+
 # Fallback por keywords na MENSAGEM (ordem importa: mais específico primeiro).
 _KEYWORDS_PARA_AGENTE: list[tuple[tuple[str, ...], str]] = [
     (("extrato", "tarifa bancária", "busca e apreensão", "revisional"), "BankForensicsAgent"),
     (("cdc", "código de defesa do consumidor", "codigo de defesa do consumidor", "relação de consumo", "vício do produto", "vicio do produto", "propaganda enganosa"), "ConsumerLawAgent"),
-    (("execução fiscal", "execucao fiscal", "certidão de dívida ativa", "certidao de divida ativa", "icms", "decadência tributária", "decadencia tributaria", "tributár", "reforma tributária", "reforma tributaria", "ibs", "cbs", "imposto seletivo", "split payment", "lc 214/2025"), "TaxLawAgent"),
+    (("execução fiscal", "execucao fiscal", "certidão de dívida ativa", "certidao de divida ativa", "icms", "decadência tributária", "decadencia tributaria", "tributár", "reforma tributária", "reforma tributaria", "ibs", "cbs", "imposto seletivo", "split payment", "lc 214", "lei complementar 214"), "TaxLawAgent"),
     (("inss", "aposentadoria", "auxílio-doença", "auxilio-doenca", "benefício previdenciário", "beneficio previdenciario", "cnis", "previdenciár"), "SocialSecurityAgent"),
     (("recuperação judicial", "recuperacao judicial", "falência", "falencia", "dissolução de sociedade", "dissolucao de sociedade", "apuração de haveres", "societár"), "CorporateLawAgent"),
     (("reclamatória trabalhista", "reclamatoria trabalhista", "verbas rescisórias", "verbas rescisorias", "horas extras", "vínculo empregatício", "vinculo empregaticio", "aviso prévio", "aviso previo", "fgts", "trabalhist", "clt"), "LaborLawAgent"),
@@ -265,7 +275,7 @@ def classify_intent(
     if nome_agente is None:
         msg = (mensagem or "").lower()
         for palavras, agente in _KEYWORDS_PARA_AGENTE:
-            if any(p in msg for p in palavras):
+            if any(_msg_tem_termo(msg, p) for p in palavras):
                 nome_agente = agente
                 break
     if nome_agente is None:

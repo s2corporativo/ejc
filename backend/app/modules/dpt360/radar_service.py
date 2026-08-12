@@ -17,7 +17,8 @@ from app.modules.dpt360.dashboard_service import (
 )
 
 AREA_TERMS: dict[str, tuple[str, ...]] = {
-    "tributario": ("tribut", "receita federal", "pgfn", "icms", "iss", "ibs", "cbs", "imposto", "contribuicao"),
+    "tributario": ("tribut", "receita federal", "pgfn", "icms", "iss", "ibs", "cbs", "imposto",
+                   "contribuicao", "imposto seletivo", "split payment", "lc 214"),
     "ambiental": ("ambient", "ibama", "conama", "semad", "feam", "ief", "igam", "copam", "licenciamento", "residuo"),
     "administrativo": ("licit", "contrato administrativo", "tcu", "pncp", "administracao publica", "sancao administrativa"),
     "trabalhista": ("trabalh", "emprego", "empregado", "sst", "seguranca do trabalho", "ministerio do trabalho", "fgts"),

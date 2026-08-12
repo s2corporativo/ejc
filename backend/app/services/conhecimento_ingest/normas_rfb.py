@@ -37,14 +37,18 @@ logger = logging.getLogger("ejc.conhecimento.normas_rfb")
 BASE = "https://normas.receita.fazenda.gov.br/sijut2consulta"
 
 # Termos padrão — ramo tributário atendido pelo escritório (Betim/MG).
-# Sobrescrevível via NORMAS_RFB_TERMOS (.env, CSV).
+# Sobrescrevível via NORMAS_RFB_TERMOS (.env, CSV). Ordem importa: um termo com
+# muitos resultados pode sozinho esgotar MAX_DOCS_POR_EXECUCAO e os termos
+# seguintes nem chegam a ser consultados nesta execução (ver
+# test_ingerir_rfb_teto_de_docs) — os termos da reforma tributária vêm cedo na
+# lista para não ficarem permanentemente famintos atrás dos demais.
 TERMOS_PADRAO = [
+    "Reforma Tributária IBS CBS",
+    "LC 214/2025",
     "Solução de Consulta ISS",
     "IRPF",
     "Simples Nacional",
     "PIS COFINS",
-    "Reforma Tributária IBS CBS",
-    "LC 214/2025",
 ]
 
 MAX_DOCS_POR_EXECUCAO = 20   # teto de atos processados por execução

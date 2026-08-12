@@ -1040,6 +1040,16 @@ async def test_simples_e_parcelamento_com_vigencia_tabela():
     assert p["vigencia_tabela"] and p["fonte"]
 
 
+async def test_parcelamento_default_e_parcelamento_comum_nao_pert():
+    """PERT está encerrado desde 2017; o padrão do parâmetro `modalidade` não
+    pode reabrir um programa extinto silenciosamente para quem não escolher."""
+    padrao = await ramos.trib_parcelamento(valor_total_debito=60_000.0, parcelas=60, cu=None)
+    esperado = ramos._MODALIDADES_PARCELAMENTO["parcelamento_comum"]["rotulo"]
+    pert = ramos._MODALIDADES_PARCELAMENTO["pert"]["rotulo"]
+    assert padrao["modalidade"] == esperado
+    assert padrao["modalidade"] != pert
+
+
 async def test_ambiental_exige_uf():
     with pytest.raises(HTTPException) as e:
         await ramos.amb_reserva_legal(area_imovel_ha=100.0, uf="XYZ", bioma="cerrado", cu=None)
@@ -1339,6 +1349,22 @@ async def test_reforma_tributaria_estimativa_nao_vinculante():
     # Ferramenta INFORMATIVA (não é minuta de cálculo): valida só os metadados.
     assert r["fontes"] and r["vigencia_regra"] and r["versao_regra"] == "2026-07"
     assert "Revisão humana obrigatória" in r["aviso"]
+
+
+async def test_reforma_tributaria_aceita_2028_e_nao_descreve_cbs_plena():
+    """2028 não pode ficar fora do Literal nem cair no marco de outro ano; e a
+    CBS de 2027-2028 é cobrada com alíquota REDUZIDA (0,1pp), não "plena" —
+    ADCT 126 (EC 132/2023), confirmado na fonte oficial da Receita Federal."""
+    r = await ramos.trib_reforma_tributaria(
+        receita_bruta_anual=1_000_000.0, regime_atual="simples",
+        atividade="servicos", ano_analise="2028", cu=None)
+    assert r["ano_analise"] == "2028"
+    assert r["marco_do_ano"] == ramos._REFORMA_CRONOGRAMA["2028"]
+    for ano in ("2027", "2028"):
+        marco = ramos._REFORMA_CRONOGRAMA[ano].lower()
+        assert "cbs plena" not in marco and "cbs em alíquota cheia" not in marco
+        assert "reduzida em 0,1 ponto percentual" in marco
+        assert "sem redução de icms/iss" in marco
 
 
 async def test_auto_infracao_ambiental_prescricao_dec_6514():

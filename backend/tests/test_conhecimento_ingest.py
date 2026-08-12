@@ -434,6 +434,16 @@ async def test_ingerir_rfb_termos_configuraveis_default(monkeypatch):
     assert rfb._termos(s) == ["ICMS", "ITBI"]
 
 
+def test_termos_da_reforma_tributaria_tem_prioridade_no_default():
+    """test_ingerir_rfb_teto_de_docs prova que um termo sozinho pode esgotar
+    MAX_DOCS_POR_EXECUCAO antes dos termos seguintes serem consultados nesta
+    execução — os termos da reforma precisam vir cedo na lista padrão para não
+    ficarem permanentemente atrás dos termos históricos (ISS/IRPF/Simples/PIS-
+    COFINS) numa execução real."""
+    assert rfb.TERMOS_PADRAO[0] == "Reforma Tributária IBS CBS"
+    assert rfb.TERMOS_PADRAO[1] == "LC 214/2025"
+
+
 # ── 6. Idempotência (dedup por chave_origem) ──────────────────────────────────
 
 async def test_segunda_rodada_vira_inalterados(monkeypatch):

@@ -20,6 +20,7 @@ import {
   LibraryBig,
   Radar,
   RefreshCcw,
+  ShieldAlert,
   ShieldCheck,
   Wrench,
   type LucideIcon,
@@ -364,9 +365,15 @@ type CompanyDetailHeader = Pick<DptCompany, "id" | "nome" | "cidade" | "estado">
 function CompanyDetail({
   data,
   company,
+  possivelmenteFora,
 }: {
   data: DptDashboard;
   company: CompanyDetailHeader;
+  // true quando a empresa não estava no payload agregado do dashboard (veio
+  // do fallback por ID): os casos/prazos abaixo, filtrados desse mesmo
+  // payload, podem estar zerados só porque a empresa ficou fora do teto —
+  // não porque ela realmente não tem casos/prazos.
+  possivelmenteFora?: boolean;
 }) {
   const cases = data.cases.filter((item) => item.client_id === company.id);
   const caseIds = new Set(cases.map((item) => item.id));
@@ -396,6 +403,14 @@ function CompanyDetail({
           </Link>
         </div>
       </Card>
+      {possivelmenteFora ? (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-300">
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Cobertura indisponível: esta empresa está fora do teto de itens do
+          dashboard agregado. Casos e prazos abaixo podem aparecer zerados sem
+          que isso signifique ausência real — confira pelo cadastro canônico.
+        </div>
+      ) : null}
       <CompanyLegalTwin clientId={company.id} />
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
@@ -407,7 +422,9 @@ function CompanyDetail({
           </div>
           {cases.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">
-              Nenhum caso empresarial relacionado foi encontrado.
+              {possivelmenteFora
+                ? "Cobertura indisponível: esta empresa está fora da amostra agregada do dashboard. Abra os casos pelo cadastro canônico."
+                : "Nenhum caso empresarial relacionado foi encontrado."}
             </p>
           ) : (
             <div className="mt-3 divide-y divide-slate-100 dark:divide-white/10">
@@ -440,8 +457,9 @@ function CompanyDetail({
           </div>
           {deadlines.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">
-              Nenhuma pendência temporal vinculada aos casos empresariais foi
-              encontrada.
+              {possivelmenteFora
+                ? "Cobertura indisponível: esta empresa está fora da amostra agregada do dashboard. Abra os prazos pelo cadastro canônico."
+                : "Nenhuma pendência temporal vinculada aos casos empresariais foi encontrada."}
             </p>
           ) : (
             <div className="mt-3 divide-y divide-slate-100 dark:divide-white/10">
@@ -483,11 +501,14 @@ function CompanyDetailByIdFallback({
 }) {
   const [company, setCompany] = useState<CompanyDetailHeader | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
     setCompany(null);
     setNotFound(false);
+    setLoadError(false);
     getDptCompanyProfile(clientId)
       .then((profile) => {
         if (!active) return;
@@ -498,15 +519,32 @@ function CompanyDetailByIdFallback({
           estado: profile.estado,
         });
       })
-      .catch(() => active && setNotFound(true));
+      .catch((err: unknown) => {
+        if (!active) return;
+        const status = (err as { response?: { status?: number } } | undefined)
+          ?.response?.status;
+        if (status === 404) {
+          setNotFound(true);
+        } else {
+          setLoadError(true);
+        }
+      });
     return () => {
       active = false;
     };
-  }, [clientId]);
+  }, [clientId, attempt]);
 
   if (notFound) {
     return (
       <ErrorState message="Empresa não encontrada na carteira empresarial visível." />
+    );
+  }
+  if (loadError) {
+    return (
+      <ErrorState
+        message="Não foi possível consultar a empresa agora. Nenhuma conclusão foi presumida — tente novamente."
+        onRetry={() => setAttempt((value) => value + 1)}
+      />
     );
   }
   if (!company) {
@@ -516,7 +554,7 @@ function CompanyDetailByIdFallback({
       </div>
     );
   }
-  return <CompanyDetail data={data} company={company} />;
+  return <CompanyDetail data={data} company={company} possivelmenteFora />;
 }
 
 function CasesView({ data }: { data: DptDashboard }) {

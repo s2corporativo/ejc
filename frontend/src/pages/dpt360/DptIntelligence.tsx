@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BrainCircuit, ClipboardCheck, ShieldAlert } from "lucide-react";
 import {
   runDptAction,
@@ -57,6 +57,10 @@ export default function DptIntelligence({
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<DptActionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Invalida qualquer análise em voo quando a área muda no meio do caminho —
+  // sem isso, uma resposta tardia poderia sobrescrever a tela com o rascunho
+  // de um domínio que o usuário já não está mais analisando.
+  const requestToken = useRef(0);
 
   // Sincroniza o pai quando o diagnóstico troca de empresa. A seleção manual
   // feita dentro do Motor não participa deste efeito e não é revertida.
@@ -72,9 +76,14 @@ export default function DptIntelligence({
   // Mesmo princípio para a área: quando o pai (Diagnóstico) troca o tipo
   // selecionado, a análise de IA deve incidir sobre essa mesma área — nunca
   // sobre "empresarial" por omissão enquanto o usuário pediu outra coisa.
+  // O rascunho anterior é descartado junto: sem isso, um resultado tributário
+  // continuaria na tela rotulado como se fosse a análise da área nova.
   useEffect(() => {
     if (initialArea) {
+      requestToken.current += 1;
       setArea(initialArea);
+      setResult(null);
+      setError(null);
     }
   }, [initialArea]);
 
@@ -86,19 +95,26 @@ export default function DptIntelligence({
 
   async function submit() {
     if (!clientId || question.trim().length < 3) return;
+    const token = ++requestToken.current;
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      setResult(
-        await runDptAction({ action, client_id: clientId, question, area }),
-      );
+      const response = await runDptAction({
+        action,
+        client_id: clientId,
+        question,
+        area,
+      });
+      if (requestToken.current === token) setResult(response);
     } catch {
-      setError(
-        "Não foi possível executar a análise. Nenhuma conclusão foi presumida.",
-      );
+      if (requestToken.current === token) {
+        setError(
+          "Não foi possível executar a análise. Nenhuma conclusão foi presumida.",
+        );
+      }
     } finally {
-      setLoading(false);
+      if (requestToken.current === token) setLoading(false);
     }
   }
 

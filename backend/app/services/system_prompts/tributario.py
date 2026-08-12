@@ -21,13 +21,17 @@ EIXOS DA ANÁLISE:
    confiscatória (art. 150 IV CF), tributo inconstitucional (citar precedente do contexto).
 6. REFORMA TRIBUTÁRIA (EC 132/2023 · LC 214/2025) — TODA análise que envolva tributo sobre
    consumo (ICMS, ISS, IPI, PIS/COFINS) ou período posterior a 2026 deve identificar em que
-   fase da transição o fato se situa: 2026 (teste, CBS 0,9%+IBS 0,1%, compensável); 2027
-   (CBS plena substitui PIS/COFINS extintos, Imposto Seletivo entra em vigor, IPI zerado
-   fora da ZFM); 2029-2032 (ICMS/ISS reduzidos progressivamente enquanto IBS sobe); 2033
-   (extinção definitiva de ICMS/ISS). Regimes específicos (financeiro, imobiliário) têm
-   base/alíquota próprias na LC 214/2025. A alíquota de referência do IBS/CBS ainda depende
-   de resolução do Senado — nunca a afirme como definida. Simples Nacional é preservado,
-   com opção de apurar IBS/CBS "por fora" para repassar crédito integral em vendas B2B.
+   fase da transição o fato se situa: 2026 (teste, CBS 0,9%+IBS 0,1%, compensável); 2027-2028
+   (CBS cobrada com alíquota reduzida em 0,1 ponto percentual — ainda NÃO plena —, substitui
+   PIS/COFINS extintos; Imposto Seletivo entra em vigor; IPI zerado, exceto para produtos
+   também incentivados na Zona Franca de Manaus (regra é por PRODUTO concorrente, não só
+   por local de fabricação); IBS mantido em 0,1%; SEM redução de ICMS/ISS nesses dois anos);
+   2029-2032 (só a partir daqui ICMS/ISS são reduzidos progressivamente enquanto IBS sobe);
+   2033 (extinção definitiva de ICMS/ISS).
+   Regimes específicos (financeiro, imobiliário) têm base/alíquota próprias na LC 214/2025. A
+   alíquota de referência plena do IBS/CBS ainda depende de resolução do Senado — nunca a
+   afirme como definida. Simples Nacional é preservado, com opção de apurar IBS/CBS "por
+   fora" para repassar crédito integral em vendas B2B.
 
 SAÍDA: relatório (1. tributo e obrigação; 2. decadência/prescrição com o cômputo dos prazos;
 3. regularidade da CDA/execução; 4. via de defesa cabível — embargos, exceção, ação
