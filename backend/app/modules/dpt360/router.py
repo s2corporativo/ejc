@@ -8,11 +8,7 @@ from app.core.rate_limit import rate_limit
 from app.core.security import require_roles
 from app.models.user import User
 from app.modules.dpt360.company_service import get_company_profile
-from app.modules.dpt360.dashboard_service import (
-    build_dashboard,
-    _visible_business_cases_query,
-    _visible_company_query,
-)
+from app.modules.dpt360.dashboard_service import build_dashboard
 from app.modules.dpt360.diagnostic_service import build_diagnostic_readiness
 from app.modules.dpt360.intake_schemas import DptInboundOpportunity, DptInboundOpportunityOut
 from app.modules.dpt360.intake_service import (
@@ -42,14 +38,7 @@ async def dashboard(
     cu: User = Depends(require_roles(DPT_ROLES)),
 ) -> DptDashboardResponse:
     result = await build_dashboard(db, cu)
-
-    companies = (await db.execute(_visible_company_query(cu))).scalars().all()
-    company_ids = [c.id for c in companies]
-    cases = []
-    if company_ids:
-        cases = (await db.execute(_visible_business_cases_query(cu, company_ids))).scalars().all()
-
-    radar = await build_today_radar(db, cu, hours=24, _companies=companies, _cases=cases)
+    radar = await build_today_radar(db, cu, hours=24)
     result.metrics.mudancas_juridicas_hoje = int(radar["total_publicacoes"])
     result.metrics.empresas_potencialmente_impactadas = int(
         radar["empresas_potencialmente_impactadas"]
@@ -59,7 +48,9 @@ async def dashboard(
     }
     if radar.get("cobertura") == "parcial":
         result.notes.append(
-            "Radar: resultados truncados para melhor desempenho (máximo 300 alertas); use /dpt360/radar/today para a lista completa."
+            "Radar: a contagem total de publicações é exata, mas classificação por "
+            "área e impacto usam no máximo 300 alertas recentes; o recorte está "
+            "explicitamente sinalizado como parcial."
         )
     result.notes.append(
         "Radar do dashboard usa publicações coletadas nas últimas 24h; vigência permanece a confirmar até o gate canônico de vigência do RAG ser reconciliado."
