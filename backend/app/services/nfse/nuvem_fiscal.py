@@ -27,7 +27,7 @@ from decimal import Decimal
 
 import httpx
 
-from app.core.config import get_settings
+from app.core.config import NFSE_REGIMES_TRIBUTARIOS_VALIDOS, get_settings
 
 from .base import (
     NFSeConfigError,
@@ -41,6 +41,26 @@ logger = logging.getLogger("ejc.nfse")
 
 # Margem (s) subtraída do expires_in para renovar o token antes de expirar.
 _MARGEM_TOKEN_S = 60
+
+# NFS-01 (auditoria jul/2026): tradução TÉCNICA de NFSE_REGIME_TRIBUTARIO →
+# (opSimpNac, regEspTrib) do leiaute nacional da DPS. Isto NÃO decide qual é o
+# regime real do escritório (isso é NFSE_REGIME_TRIBUTARIO, no .env, escolhido
+# pelo titular com o contador) — só traduz a escolha já feita para os códigos
+# do schema. opSimpNac reflete SOMENTE a opção pelo Simples Nacional (LC
+# 123/2006): "lucro_presumido"/"lucro_real" são regimes de IRPJ, irrelevantes
+# para opSimpNac, então ambos caem em "1 = não optante". regEspTrib fica
+# "0 = Nenhum" para as três opções — nenhuma delas afirma um regime especial de
+# ISS (ex.: sociedade uniprofissional/"sociedade de profissionais", LC 116/03
+# art. 9º §§1º-3º); se o escritório tiver essa condição, é uma configuração que
+# esta correção NÃO cobre — sinalizar ao contador antes de assumi-la.
+_REGIME_TRIBUTARIO_MAP: dict[str, tuple[int, int]] = {
+    "simples_nacional": (3, 0),   # optante ME/EPP (advocacia não pode ser MEI — LC 123/2006 art. 18-A §4º)
+    "lucro_presumido": (1, 0),    # não optante pelo Simples Nacional
+    "lucro_real": (1, 0),         # não optante pelo Simples Nacional
+}
+assert set(_REGIME_TRIBUTARIO_MAP) == NFSE_REGIMES_TRIBUTARIOS_VALIDOS, (
+    "_REGIME_TRIBUTARIO_MAP dessincronizado de NFSE_REGIMES_TRIBUTARIOS_VALIDOS"
+)
 
 # Cache de token no nível do MÓDULO (não da instância): get_provider() cria uma
 # instância nova por requisição, mas o token deve ser reaproveitado entre elas.
@@ -77,6 +97,12 @@ class NuvemFiscalProvider(NFSeProvider):
         self._mun_ibge = (s.NFSE_EMITENTE_MUN_IBGE or "").strip()
         self._timeout = float(s.NFSE_TIMEOUT or 60)
         self._ambiente = "producao" if (s.NFSE_MODO or "").lower() == "producao" else "homologacao"
+        # NFS-01/NFS-02: cacheados no __init__ (mesmo padrão de client_id/secret
+        # acima) — get_provider() cria uma instância nova por requisição, então
+        # isto sempre reflete a config corrente.
+        self._regime_tributario = (s.NFSE_REGIME_TRIBUTARIO or "").strip()
+        self._trib_issqn_default = s.NFSE_TRIB_ISSQN_DEFAULT
+        self._tipo_retencao_iss_default = s.NFSE_TIPO_RETENCAO_ISS_DEFAULT
 
     # ── Config guard ───────────────────────────────────────────────────────────
 
@@ -95,6 +121,35 @@ class NuvemFiscalProvider(NFSeProvider):
                 "certificado A1 no painel do provedor e a confirmação das "
                 "definições fiscais (alíquota ISS, item LC116, cTribNac) com o "
                 "contador."
+            )
+
+    def _exigir_definicoes_fiscais(self) -> None:
+        """NFS-01/NFS-02 (auditoria jul/2026): regime tributário e tributação/
+        retenção de ISS padrão — exigidos só para EMITIR (as demais operações
+        não montam a DPS). O boot já falha com NFSE_ENABLED=true e config
+        ausente (Settings._validar_seguranca_producao); este guard é defesa em
+        profundidade para o caso de a config mudar em runtime (ex.: settings
+        cacheados/sobrescritos por teste) sem reiniciar o processo.
+        """
+        if self._regime_tributario and self._regime_tributario not in _REGIME_TRIBUTARIO_MAP:
+            raise NFSeConfigError(
+                f"NFSE_REGIME_TRIBUTARIO inválido: {self._regime_tributario!r}. "
+                "Use um de: " + ", ".join(sorted(_REGIME_TRIBUTARIO_MAP)) + "."
+            )
+        faltando = []
+        if not self._regime_tributario:
+            faltando.append("NFSE_REGIME_TRIBUTARIO")
+        if self._trib_issqn_default is None:
+            faltando.append("NFSE_TRIB_ISSQN_DEFAULT")
+        if self._tipo_retencao_iss_default is None:
+            faltando.append("NFSE_TIPO_RETENCAO_ISS_DEFAULT")
+        if faltando:
+            raise NFSeConfigError(
+                "NFS-e não configurada — faltam: " + ", ".join(faltando) + ". "
+                "CONFIRME com o contador antes de preencher: o regime "
+                "tributário REAL do escritório e a tributação/retenção padrão "
+                "do ISS (esta última pode ser sobreposta por nota em "
+                "POST /nfse/emitir, quando o tomador exigir retenção)."
             )
 
     # ── OAuth2 (token cacheado) ────────────────────────────────────────────────
@@ -198,6 +253,17 @@ class NuvemFiscalProvider(NFSeProvider):
         aliq = pedido.aliquota_iss if pedido.aliquota_iss is not None else Decimal(str(s.NFSE_ISS_ALIQUOTA or 0))
         compet = pedido.competencia or date.today().isoformat()
 
+        # NFS-01/NFS-02: nada fixo aqui — _exigir_definicoes_fiscais() já
+        # garantiu que _regime_tributario é uma chave válida e que os defaults
+        # de ISS existem (config ou pedido). Ver comentário de
+        # _REGIME_TRIBUTARIO_MAP para o porquê de cada tradução.
+        op_simp_nac, reg_esp_trib = _REGIME_TRIBUTARIO_MAP[self._regime_tributario]
+        trib_issqn = pedido.trib_issqn if pedido.trib_issqn is not None else self._trib_issqn_default
+        tp_ret_issqn = (
+            pedido.tipo_retencao_iss if pedido.tipo_retencao_iss is not None
+            else self._tipo_retencao_iss_default
+        )
+
         doc = re.sub(r"\D", "", tom.documento or "")
         toma: dict = {
             "xNome": tom.nome,
@@ -220,9 +286,10 @@ class NuvemFiscalProvider(NFSeProvider):
             "dCompet": compet,
             "prest": {
                 "CNPJ": self._cnpj,
-                # regTrib padrão (Simples Nacional optante) — CONFIRMAR com o
-                # contador antes de produção; muda a base de cálculo da DPS.
-                "regTrib": {"opSimpNac": 1, "regEspTrib": 0},
+                # regTrib vem de NFSE_REGIME_TRIBUTARIO — CONFIRMADO com o
+                # contador na configuração (nunca chutado aqui); muda a base
+                # de cálculo da DPS. Ver _REGIME_TRIBUTARIO_MAP.
+                "regTrib": {"opSimpNac": op_simp_nac, "regEspTrib": reg_esp_trib},
             },
             "toma": toma,
             "serv": {
@@ -237,10 +304,17 @@ class NuvemFiscalProvider(NFSeProvider):
                 "vServPrest": {"vServ": round(float(pedido.valor), 2)},
                 "trib": {
                     "tribMun": {
-                        "tribISSQN": 1,            # 1 = operação tributável
+                        # tribISSQN/tpRetISSQN dependem do TOMADOR e do
+                        # MUNICÍPIO dele (LC 116/2003 art. 6º; LC 123/2006
+                        # art. 21 §4º) — nunca propriedade fixa do emitente.
+                        # Default de config (NFSE_TRIB_ISSQN_DEFAULT/
+                        # NFSE_TIPO_RETENCAO_ISS_DEFAULT), sobreponível por
+                        # nota (pedido.trib_issqn/tipo_retencao_iss) quando o
+                        # tomador exigir retenção.
+                        "tribISSQN": trib_issqn,
                         "cLocIncid": cmun_prest,
                         "pAliq": round(float(aliq), 4),
-                        "tpRetISSQN": 1,           # 1 = ISS não retido
+                        "tpRetISSQN": tp_ret_issqn,
                     }
                 },
             },
@@ -287,6 +361,7 @@ class NuvemFiscalProvider(NFSeProvider):
 
     async def emitir(self, pedido: NFSePedidoEmissao) -> NFSeResultado:
         self._exigir_config()
+        self._exigir_definicoes_fiscais()
         corpo = self._montar_dps(pedido)
         js = await self._api("POST", "/nfse/dps", json=corpo)
         return self._parse_resultado(js)
