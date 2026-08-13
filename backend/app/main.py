@@ -65,13 +65,11 @@ from app.routers import credential_vault  # Cofre de Credenciais (superadmin)
 from app.routers import curadoria_renomada
 from app.routers import dashboard
 from app.routers import data_room
-from app.routers import data_room_v4
 from app.routers import datajud
 from app.routers import deadlines
 from app.routers import despesas
 from app.routers import diagnostico
 from app.routers import diario_oficial
-from app.routers import diplomacia_v3
 from app.routers import documento_ia
 from app.routers import raio_x
 from app.routers import legal_chat
@@ -94,7 +92,6 @@ from app.routers import ia_agente
 from app.routers import ia_citacoes
 from app.routers import ia_defensiva
 from app.routers import ia_especializada
-from app.routers import ia_extra
 from app.routers import ia_governanca
 from app.routers import ia_provider_metrics
 from app.routers import ia_saude
@@ -102,14 +99,13 @@ from app.routers import indice_risco
 from app.routers import indices
 from app.routers import infosimples_receita
 from app.routers import infosimples_tjmg
+from app.routers import intelligence
 from app.routers import car  # CAR/SICAR via conector Infosimples (reuso)
 from app.routers import transparencia  # CGU Portal da Transparência (sanções) — GATED
 # PNCP removido completamente (licitações desativadas)
 from app.routers import nfse
-from app.routers import intelligence_v3
 from app.routers import intimacoes
 from app.routers import jurimetria
-from app.routers import jurimetria_extra
 from app.routers import juris_import
 from app.routers import datajud_intelligence
 from app.routers import jurisprudencia_externa
@@ -137,7 +133,6 @@ from app.routers import office_contracts
 from app.routers import partner_withdrawals
 from app.routers import peca_geracao
 from app.routers import precedentes_jurisprudencia
-from app.routers import peca_geracao_router
 from app.routers import pending_items
 from app.routers import pix
 from app.routers import portal
@@ -176,14 +171,11 @@ from app.routers import ambiental_estrategia
 from app.routers import tasks
 from app.routers import templates
 from app.routers import teses
-from app.routers import teses_v4
 from app.routers import timesheet
 from app.routers import trash
 from app.routers import users
 from app.routers import utils
 from app.routers import validador_juridico
-from app.routers import veredito_ia_router
-from app.routers import victory_vault_router
 from app.routers import visual_law
 from app.routers import whatsapp
 from app.routers import workflow
@@ -375,12 +367,10 @@ app.include_router(curadoria_renomada.router, prefix=API)
 app.include_router(dashboard.router, prefix=API)
 app.include_router(dpt360_router, prefix=API)
 app.include_router(data_room.router, prefix=API)
-app.include_router(data_room_v4.router, prefix=API)
 app.include_router(datajud.router, prefix=API)
 app.include_router(deadlines.router, prefix=API)
 app.include_router(despesas.router, prefix=API)
 app.include_router(diario_oficial.router, prefix=API)
-app.include_router(diplomacia_v3.router, prefix=API)
 app.include_router(documento_ia.router, prefix=API)
 app.include_router(raio_x.router, prefix=API)
 app.include_router(legal_chat.router, prefix=API)
@@ -403,7 +393,6 @@ app.include_router(ia_agente.router, prefix=API)
 app.include_router(ia_citacoes.router, prefix=API)
 app.include_router(ia_defensiva.router, prefix=API)
 app.include_router(ia_especializada.router, prefix=API)
-app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router antes não montado → 8 chamadas frontend em 404
 app.include_router(ia_governanca.router, prefix=API)
 app.include_router(ia_saude.router, prefix=API)
 app.include_router(ia_saude.router_status, prefix=API)  # GET /api/ia/status
@@ -415,10 +404,8 @@ app.include_router(car.router, prefix=API)  # CAR/SICAR via Infosimples (consult
 app.include_router(transparencia.router, prefix=API)  # CGU sanções CEIS/CNEP/CEPIM — GATED (default off)
 # PNCP removido — licitações desativadas no EJC
 app.include_router(nfse.router, prefix=API)  # NFS-e (emissão fiscal GATED, homologação) — migração 085
-app.include_router(intelligence_v3.router, prefix=API)
 app.include_router(intimacoes.router, prefix=API)
 app.include_router(jurimetria.router, prefix=API)
-app.include_router(jurimetria_extra.router, prefix=API)  # A5: router antes órfão (404 silencioso)
 app.include_router(juris_import.router, prefix=API)
 app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
@@ -444,7 +431,6 @@ app.include_router(observabilidade.router, prefix=API)
 app.include_router(office_contracts.router, prefix=API)
 app.include_router(partner_withdrawals.router, prefix=API)
 app.include_router(peca_geracao.router, prefix=API)
-app.include_router(peca_geracao_router.router, prefix=API)
 app.include_router(pending_items.router, prefix=API)
 app.include_router(pix.router, prefix=API)
 app.include_router(portal.router, prefix=API)
@@ -472,6 +458,7 @@ app.include_router(                       # antes: peca_geracao.include_router(.
     advogado_estilo.router, prefix=API + "/pecas")
 app.include_router(                       # antes: append em rag.router.routes (prefixo absoluto)
     rag_governance.router, prefix=API)
+app.include_router(intelligence.router, prefix=API)  # Intelligence canônico (consolidação: intelligence_v3 → intelligence)
 app.include_router(                       # antes: andamentos.include_router(...)
     datajud_intelligence.router, prefix=API + "/casos")
 app.include_router(                       # antes: append em ia_governanca.router.routes
@@ -501,14 +488,11 @@ app.include_router(ambiental_estrategia.router, prefix=API)  # vertical Ambienta
 app.include_router(tasks.router, prefix=API)
 app.include_router(templates.router, prefix=API)
 app.include_router(teses.router, prefix=API)
-app.include_router(teses_v4.router, prefix=API)
 app.include_router(timesheet.router, prefix=API)
 app.include_router(trash.router, prefix=API)
 app.include_router(users.router, prefix=API)
 app.include_router(utils.router, prefix=API)
 app.include_router(validador_juridico.router, prefix=API)
-app.include_router(veredito_ia_router.router, prefix=API)
-app.include_router(victory_vault_router.router, prefix=API)
 app.include_router(visual_law.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
 app.include_router(workflow.router, prefix=API)

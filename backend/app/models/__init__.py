@@ -69,6 +69,7 @@ from app.models import centro_custo        # noqa
 from app.models import checklist           # noqa
 from app.models import contrato_societario # noqa
 from app.models import data_room           # noqa
+from app.models import dataroom_teses_v4_compat  # noqa  # models ORM arquivados com os routers _dead_code (PR #1115) — registro em Base.metadata mantido p/ Alembic/gate schema
 from app.models import diario_oficial      # noqa
 from app.models import dossie_estrategico  # noqa
 from app.models import jurisprudencia_interna  # noqa

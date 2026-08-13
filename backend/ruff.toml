@@ -1,3 +1,8 @@
+exclude = [
+  "app/routers/_dead_code",
+  "tests/_dead_code",
+]
+
 target-version = "py311"
 line-length = 120
 

@@ -1,5 +1,5 @@
 // ── RadarLegislativo — projetos de lei reais (Dados Abertos da Câmara) ───────
-// Consome GET /intelligence-v3/radar/legislativo (backend filtra proposições
+// Consome GET /intelligence/radar/legislativo (backend filtra proposições
 // recentes pelas keywords estratégicas do escritório). Antes este componente
 // exibia dados mockados e não era montado em nenhuma rota.
 import { useEffect, useState } from "react";
@@ -25,7 +25,7 @@ export default function RadarLegislativo() {
     setLoading(true);
     setErro(false);
     api
-      .get("/intelligence-v3/radar/legislativo")
+      .get("/intelligence/radar/legislativo")
       .then((r) => setAlertas(r.data?.alertas_legislativos ?? []))
       .catch(() => setErro(true))
       .finally(() => setLoading(false));
