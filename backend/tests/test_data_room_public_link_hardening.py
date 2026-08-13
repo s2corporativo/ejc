@@ -139,6 +139,14 @@ async def test_criacao_de_link_persiste_hash_e_exibe_token_uma_unica_vez(
         return room
 
     monkeypatch.setattr("app.routers.data_room._gate_room", _gate_ok)
+    # FIX-001: a sala do teste tem documento para permitir gerar link.
+    async def _qtd_sala_com_documento(*_args, **_kwargs):
+        return 1
+
+    monkeypatch.setattr(
+        "app.routers.data_room._qtd_documentos_da_sala",
+        _qtd_sala_com_documento,
+    )
     monkeypatch.setattr(
         "app.routers.data_room.secrets.token_urlsafe",
         lambda _n: "token-claro-criado",

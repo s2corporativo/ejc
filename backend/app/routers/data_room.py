@@ -290,6 +290,20 @@ def _user_agent_seguro(request: Request) -> str | None:
     return ua[:500] if ua else None
 
 
+async def _qtd_documentos_da_sala(
+    db: AsyncSession,
+    room_id: str,
+) -> int:
+    """FIX-001: documentos na sala, isolável para teste (mock simples)."""
+    return (
+        await db.execute(
+            select(func.count(DataRoomArquivo.id)).where(
+                DataRoomArquivo.data_room_id == room_id
+            )
+        )
+    ).scalar() or 0
+
+
 async def _obter_room_interno(
     db: AsyncSession,
     cu: User,
@@ -565,6 +579,18 @@ async def gerar_link(
     if not _pode_editar(cu):
         raise HTTPException(403)
     await _obter_room_interno(db, cu, room_id)
+
+    # FIX-001 — sala sem documentos nunca gera link externo (evita link órfão
+    # e o erro não tratado no frontend, que quebrava a aba inteira).
+    n_arquivos = await _qtd_documentos_da_sala(db, room_id)
+    if n_arquivos == 0:
+        raise HTTPException(
+            422,
+            detail=(
+                "Sala sem documentos: adicione ao menos um documento à sala "
+                "antes de gerar um link de acesso externo."
+            ),
+        )
 
     token = secrets.token_urlsafe(48)
     expira = datetime.now(timezone.utc) + timedelta(hours=req.expira_horas)
