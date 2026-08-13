@@ -99,3 +99,18 @@ class CalcularPrazoRequest(BaseModel):
     dias_uteis: bool = True
     dobro: bool = False                      # prazo em dobro (CPC 180/183/186/229)
     tribunal: Optional[str] = None           # suspensões por tribunal (portarias)
+    # PRZ-02 (review Codex em PR #1079): sem `tipo`, a calculadora não tinha
+    # como saber se devia aplicar a suspensão do recesso do art. 220 — ficava
+    # sempre em desacordo com POST /deadlines para o mesmo prazo processual
+    # que atravessasse 20/12-20/01. Default "processual" espelha o default de
+    # DeadlineCreate.tipo (mesma política dos dois endpoints por padrão).
+    tipo: str = "processual"
+
+    @field_validator("tipo")
+    @classmethod
+    def _tipo_valido(cls, v: str) -> str:
+        from app.models.deadline import DeadlineTipo
+        validos = {m.value for m in DeadlineTipo}
+        if v not in validos:
+            raise ValueError(f"tipo inválido: use um de {sorted(validos)}")
+        return v

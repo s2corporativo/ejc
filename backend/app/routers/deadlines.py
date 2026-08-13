@@ -70,10 +70,18 @@ def _filtro_escopo_prazos(q, cu: User):
 async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_user)):
     """Calculadora rápida de prazo (sem persistir)."""
     if req.dias_uteis:
+        # PRZ-02 (review Codex em PR #1079): mesma política de POST /deadlines
+        # — só prazo tipo=processual recebe a suspensão INTEGRAL do recesso do
+        # CPC art. 220. Sem isto, a prévia da calculadora divergia da data
+        # persistida na criação para o mesmo (data_inicio, dias, tribunal).
+        aplicar_recesso = req.tipo == "processual"
         vencimento = prazo_dias_uteis(req.data_inicio, req.dias,
-                                      tribunal=req.tribunal, em_dobro=req.dobro)
+                                      tribunal=req.tribunal, em_dobro=req.dobro,
+                                      aplicar_recesso=aplicar_recesso)
         modo = ("dias úteis EM DOBRO (CPC art. 183/229)" if req.dobro
                 else "dias úteis (CPC art. 219)")
+        if aplicar_recesso:
+            modo += " + recesso forense integral (CPC art. 220)"
     else:
         # Prazo em dobro é dos prazos processuais em dias úteis; não incide sobre
         # prazo administrativo corrido (Lei 9.784) — ignorado aqui de propósito.
@@ -197,12 +205,24 @@ async def criar(
     base = payload.base_legal
     if not data_prazo and payload.dias_prazo and payload.data_intimacao:
         if payload.dias_uteis:
+            # PRZ-02 (CPC art. 220): suspensão INTEGRAL do recesso 20/12–20/01
+            # incide sobre prazo PROCESSUAL em dias úteis; nunca sobre
+            # decadencial/administrativo corrido (que usa prazo_dias_corridos,
+            # sem este parâmetro — comportamento já correto abaixo).
+            aplicar_recesso = payload.tipo == "processual"
             data_prazo = prazo_dias_uteis(payload.data_intimacao, payload.dias_prazo,
-                                          tribunal=payload.tribunal, em_dobro=payload.dobro)
+                                          tribunal=payload.tribunal, em_dobro=payload.dobro,
+                                          aplicar_recesso=aplicar_recesso)
             base = base or (
                 f"{payload.dias_prazo} dias úteis em dobro (CPC art. 183/229)"
                 if payload.dobro else f"{payload.dias_prazo} dias úteis (CPC art. 219)"
             )
+            # PRZ-02 (review Codex em PR #1079): sem isto, a base_legal
+            # persistida não registrava que a suspensão do art. 220 foi
+            # aplicada — impossível reconstruir depois por que a data saiu
+            # diferente do CPC art. 219 puro (14 dias corridos "a menos").
+            if aplicar_recesso:
+                base += " + recesso forense integral (CPC art. 220)"
         else:
             data_prazo = prazo_dias_corridos(payload.data_intimacao, payload.dias_prazo, tribunal=payload.tribunal)
             base = base or f"{payload.dias_prazo} dias corridos (Lei 9.784)"

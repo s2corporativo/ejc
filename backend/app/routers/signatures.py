@@ -5,10 +5,12 @@
 # especial (CPC art. 105) — adequado para procurações e contratos.
 from __future__ import annotations
 import hashlib
+import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +59,21 @@ async def criar_solicitacao(
     ))).scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    # Confidencialidade (achado do review Codex em PR #1076): o cliente só
+    # enxerga documento "normal" em qualquer outro caminho do GED
+    # (documents.listar/download aplicam o mesmo filtro para cliente_externo,
+    # ver app/routers/documents.py). Sem este gate, um documento
+    # interno/restrito/confidencial/segredo_justica vinculado a uma
+    # solicitação viraria acessível ao portal por um caminho alternativo às
+    # regras do cofre — falha rápido aqui, antes de notificar o cliente.
+    if doc.confidencialidade.value != "normal":
+        raise HTTPException(
+            status_code=403,
+            detail="Documento não elegível para o Portal do Cliente "
+                   f"(confidencialidade={doc.confidencialidade.value}); "
+                   "só documentos 'normal' podem ir a assinatura eletrônica.",
+        )
 
     # Valida que o documento pertence ao cliente (direto via doc.client_id ou pelo
     # caso vinculado) ANTES de notificar o portal — senão notifica-se o cliente
@@ -186,6 +203,73 @@ async def listar(
             "assinado_em": s.assinado_em, "created_at": s.created_at,
         })
     return {"data": out}
+
+
+@router.get("/{sig_id}/documento")
+async def visualizar_documento(
+    sig_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Serve o CONTEÚDO do documento vinculado à solicitação — pressuposto de
+    qualquer manifestação de vontade válida (MP 2.200-2/2001, art. 10 §2º: o
+    meio alternativo de assinatura só vale quando admitido pelas partes, o que
+    pressupõe acesso ao que se admite). Antes deste endpoint, o Portal listava
+    só título + hash abreviado (GET /signatures/) e o cliente confirmava
+    "li e concordo" sem ter como ler (achado ASS-00).
+
+    Mesmo gate de isolamento de `assinar` — client_id da solicitação bate com
+    o client_id do login (defesa contra IDOR entre clientes do portal).
+    """
+    if cu.role != UserRole.cliente_externo:
+        raise HTTPException(status_code=403,
+                            detail="Apenas o cliente acessa pelo Portal")
+    sr = (await db.execute(select(SignatureRequest).where(
+        SignatureRequest.id == sig_id,
+        SignatureRequest.client_id == cu.client_id,   # isolamento
+        SignatureRequest.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not sr:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+
+    doc = (await db.execute(select(Document).where(
+        Document.id == sr.document_id, Document.deleted_at.is_(None)
+    ))).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    # Defesa em profundidade: `criar_solicitacao` já exige confidencialidade
+    # "normal" para aceitar a solicitação, mas o documento pode ter sido
+    # reclassificado (PATCH /documents/{id}) depois da criação — confere de
+    # novo aqui, no momento de servir o conteúdo (achado do review Codex).
+    if doc.confidencialidade.value != "normal":
+        raise HTTPException(
+            status_code=403,
+            detail="Documento não elegível para o Portal do Cliente "
+                   f"(confidencialidade={doc.confidencialidade.value})",
+        )
+
+    from app.core.config import get_settings as _gs
+    full_path = f"{_gs().UPLOAD_DIR}/{doc.filepath}"
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=410, detail="Arquivo físico não encontrado")
+
+    # Registro do acesso ANTES da assinatura — próprio audit_log já existente
+    # (LGPD/MP 2.200-2: evidência de que o signatário teve acesso ao conteúdo).
+    # Coluna dedicada em signature_requests (ex.: documento_visualizado_em)
+    # ficaria mais consultável, mas exige migration — fora do escopo desta
+    # correção mínima (ver PR/Issue).
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "VISUALIZAR", "signature_requests", sig_id,
+        detalhes=f"acesso ao documento antes da assinatura: {doc.titulo}",
+    )
+    await db.commit()
+
+    return FileResponse(
+        full_path, filename=doc.filename,
+        media_type=doc.mimetype or "application/octet-stream",
+    )
 
 
 @router.post("/{sig_id}/assinar")

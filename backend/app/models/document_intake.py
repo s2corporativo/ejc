@@ -23,23 +23,6 @@ class DocumentIntakeBatch(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    # Ciclo de vida LGPD para oportunidades DPT360 (Issue #1086)
-    ciclo_vida_estado = Column(
-        String(32),
-        nullable=False,
-        server_default="triagem_pendente",
-        index=True,
-    )
-    ciclo_vida_updated_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-    anonimizada_em = Column(DateTime(timezone=True), nullable=True, index=True)
-    triagem_concluida_por = Column(String(36), nullable=True)
-    triagem_concluida_em = Column(DateTime(timezone=True), nullable=True)
-
     items = relationship(
         "DocumentIntakeItem",
         back_populates="batch",
