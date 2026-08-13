@@ -192,10 +192,15 @@ async def test_extrair_prazos_json_prepende_base_estruturada(svc, monkeypatch):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @pytest.fixture
-def ia_extra(monkeypatch):
-    import app.routers.ia_extra as mod
-    monkeypatch.setattr(mod.settings, "AI_ENABLED", True)
-    monkeypatch.setattr(mod, "buscar_contexto_rag", _rag_vazio)
+def ia_extra_consolidado(monkeypatch):
+    import app.routers.ai as mod
+    import app.core.config as cfg
+    import app.core.config as _cfg_fix
+    _st = _cfg_fix.Settings()
+    _st.AI_ENABLED = True
+    _st.AI_PROVIDER = "groq"
+    monkeypatch.setattr(cfg, "get_settings", lambda: _st)
+    monkeypatch.setattr(mod, "_buscar_contexto_rag_consolidacao", _rag_vazio)
     return mod
 
 
@@ -203,12 +208,12 @@ def _cu():
     return SimpleNamespace(id="u1")
 
 
-async def test_traduzir_andamento_task_de_prosa_coberto(ia_extra, monkeypatch):
+async def test_traduzir_andamento_task_de_prosa_coberto(ia_extra_consolidado, monkeypatch):
     calls: list = []
-    monkeypatch.setattr(ia_extra, "gw_chat", _gw_recorder(calls))
+    monkeypatch.setattr(ia_extra_consolidado, "_gw_chat_consolidacao", _gw_recorder(calls))
     db = _FakeDB()
-    out = await ia_extra.traduzir_andamento(
-        ia_extra.TraduzirIn(texto=FATOS), db=db, cu=_cu(),
+    out = await ia_extra_consolidado.traduzir_andamento(
+        ia_extra_consolidado.TraduzirIn(texto=FATOS), db=db, cu=_cu(),
     )
     assert out["resposta"] == "resposta simulada"
     assert calls[0]["task_type"] == "chat_rapido"
@@ -220,12 +225,12 @@ async def test_traduzir_andamento_task_de_prosa_coberto(ia_extra, monkeypatch):
     assert log.tokens_input == 11 and log.tokens_output == 22
 
 
-async def test_resumir_texto_task_de_prosa_coberto(ia_extra, monkeypatch):
+async def test_resumir_texto_task_de_prosa_coberto(ia_extra_consolidado, monkeypatch):
     calls: list = []
-    monkeypatch.setattr(ia_extra, "gw_chat", _gw_recorder(calls))
+    monkeypatch.setattr(ia_extra_consolidado, "_gw_chat_consolidacao", _gw_recorder(calls))
     db = _FakeDB()
-    out = await ia_extra.resumir_texto(
-        ia_extra.ResumirIn(texto=FATOS), db=db, cu=_cu(),
+    out = await ia_extra_consolidado.resumir_texto(
+        ia_extra_consolidado.ResumirIn(texto=FATOS), db=db, cu=_cu(),
     )
     assert out["resposta"] == "resposta simulada"
     assert calls[0]["task_type"] == "chat_rapido"
@@ -234,12 +239,12 @@ async def test_resumir_texto_task_de_prosa_coberto(ia_extra, monkeypatch):
     assert _log_unico(db).modelo == "fake/fake-model"
 
 
-async def test_gerar_minuta_task_coberto(ia_extra, monkeypatch):
+async def test_gerar_minuta_task_coberto(ia_extra_consolidado, monkeypatch):
     calls: list = []
-    monkeypatch.setattr(ia_extra, "gw_chat", _gw_recorder(calls))
+    monkeypatch.setattr(ia_extra_consolidado, "_gw_chat_consolidacao", _gw_recorder(calls))
     db = _FakeDB()
-    out = await ia_extra.gerar_minuta(
-        ia_extra.MinutaIn(tema="cobrança indevida fictícia", fatos=FATOS),
+    out = await ia_extra_consolidado.gerar_minuta(
+        ia_extra_consolidado.MinutaIn(tema="cobrança indevida fictícia", fatos=FATOS),
         db=db, cu=_cu(),
     )
     assert out["resposta"] == "resposta simulada"
@@ -249,12 +254,12 @@ async def test_gerar_minuta_task_coberto(ia_extra, monkeypatch):
     assert _log_unico(db).modelo == "fake/fake-model"
 
 
-async def test_pesquisar_task_de_prosa_coberto(ia_extra, monkeypatch):
+async def test_pesquisar_task_de_prosa_coberto(ia_extra_consolidado, monkeypatch):
     calls: list = []
-    monkeypatch.setattr(ia_extra, "gw_chat", _gw_recorder(calls))
+    monkeypatch.setattr(ia_extra_consolidado, "_gw_chat_consolidacao", _gw_recorder(calls))
     db = _FakeDB()
-    out = await ia_extra.pesquisar(
-        ia_extra.PesquisaIn(pergunta="Qual o prazo de contestação no rito comum?"),
+    out = await ia_extra_consolidado.pesquisar(
+        ia_extra_consolidado.PesquisaIn(pergunta="Qual o prazo de contestação no rito comum?"),
         db=db, cu=_cu(),
     )
     assert out["resposta"] == "resposta simulada"
@@ -264,14 +269,14 @@ async def test_pesquisar_task_de_prosa_coberto(ia_extra, monkeypatch):
     assert _log_unico(db).modelo == "fake/fake-model"
 
 
-async def test_sugestao_honorarios_json_prepende_base_estruturada(ia_extra, monkeypatch):
+async def test_sugestao_honorarios_json_prepende_base_estruturada(ia_extra_consolidado, monkeypatch):
     # Fluxo de saída JSON: mantém "analise_juridica" (fora da base por design)
     # e PREPENDE BASE_ESTRUTURADA no system — padrão do peca_service.
     calls: list = []
-    monkeypatch.setattr(ia_extra, "gw_chat", _gw_recorder(calls))
+    monkeypatch.setattr(ia_extra_consolidado, "_gw_chat_consolidacao", _gw_recorder(calls))
     db = _FakeDB()
-    out = await ia_extra.sugestao_honorarios(
-        ia_extra.HonorariosIn(area="civel", descricao="elaboração de contestação"),
+    out = await ia_extra_consolidado.sugestao_honorarios(
+        ia_extra_consolidado.HonorariosIn(area="civel", descricao="elaboração de contestação"),
         db=db, cu=_cu(),
     )
     assert calls[0]["task_type"] == "analise_juridica"
@@ -335,7 +340,7 @@ def test_get_groq_nao_existe_mais():
     # O bypass legado foi eliminado: nenhum módulo do backend define/importa
     # get_groq; o acesso ao Groq é exclusivo do provider oficial do gateway.
     import app.services.ai_service as svc
-    import app.routers.ia_extra as extra
+    import app.routers.ai as extra
     import app.services.case_intel as ci
     from app.services.providers import groq_provider
     for mod in (svc, extra, ci):

@@ -309,7 +309,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "Victory Vault",
         "Inteligência",
         "/inteligencia?tab=conhecimento",
-        ["/api/victory_vault", "/api/teses", "/api/casos/{case_id}/provas"],
+        ["/api/teses", "/api/casos/{case_id}/provas"],  # /api/victory_vault removido em 12/08/2026 (consolidação: victory_vault_router.py → _dead_code)
         perfis=PERFIS_JURIDICO,
         dependencias=["cases", "documents", "teses"],
         usa_ia=True,

@@ -113,15 +113,20 @@ ADICOES_INTENCIONAIS = {
     ("/api/dpt360/intake/opportunities", "GET"),
     ("/api/dpt360/intake/opportunities", "POST"),
     ("/api/dpt360/actions", "POST"),
-    # DPT360 (evolução do módulo): avanço de ciclo de vida de lote de
-    # oportunidades — decisão de produto registrada na issue #968.
-    ("/api/dpt360/oportunidades/{batch_id}/ciclo-vida", "POST"),
-    # Auditoria de produtividade: exportação de eventos (CSV) do módulo de
-    # analytics — exportação autenticada de dado interno, sem dado de cliente.
+    # Manutenção do gate (12/08/2026): duas rotas publicadas após o snapshot
+    # sem registro nominal — export de eventos de produtividade (Analytics)
+    # e avanço de ciclo de vida de lote de oportunidades (DPT360).
     ("/api/analytics/produtividade/export-event", "POST"),
+    ("/api/dpt360/oportunidades/{batch_id}/ciclo-vida", "POST"),
     # PR #1120 (assinaturas): leitura do DOCUMENTO assinado por ID de
     # assinatura — o fix de produção que criou o endpoint de documento.
     ("/api/signatures/{sig_id}/documento", "GET"),
+    # Consolidação 12/08/2026: intelligence_v3.py renomeado para
+    # intelligence.py e prefixo normalizado para /intelligence (a única tela
+    # consumidora, Radar Legislativo, foi atualizada junto — a mudança é de
+    # ENDEREÇO canônico, não de contrato).
+    ("/api/intelligence/radar/legislativo", "GET"),
+    ("/api/intelligence/analise-impacto", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -155,6 +160,32 @@ REMOCOES_INTENCIONAIS = {
     # chamou esta rota. A jornada visível ao usuário é o orquestrador de 16
     # etapas (legal_case_orchestrator.py, /cases/{id}/orquestrador), intacto.
     ("/api/casos/{case_id}/jornada", "GET"),
+    # Consolidação de routers 12/08/2026 (docs/consolidacao/MAPA_VERDADE_V1.md):
+    # seis routers comprovadamente órfãos (varredura de chamadas de API em
+    # frontend e backend antes da remoção) foram movidos para
+    # app/routers/_dead_code/ — teses_v4 (shim deprecated; canônico /api/teses),
+    # data_room_v4 (idem /api/data-rooms), diplomacia_v3 (calculadora segue
+    # em /visual-law/*), peca_geracao_router (/document-templates; canônico
+    # /api/pecas), veredito_ia_router (/veredito_ia/analisar; o core continua
+    # em app/core/veredito_ia.py) e victory_vault_router (/victory_vault/*;
+    # tela era redirect para /inteligencia?tab=conhecimento). Não reintroduzir
+    # sem decisão escrita do titular.
+    ("/api/teses-v4/", "GET"),
+    ("/api/teses-v4/", "POST"),
+    ("/api/teses-v4/sugestao-ia", "GET"),
+    ("/api/data-room-v4/", "GET"),
+    ("/api/data-room-v4/", "POST"),
+    ("/api/diplomacia-v3/calcular-acordo", "POST"),
+    ("/api/document-templates/", "GET"),
+    ("/api/document-templates/generate", "POST"),
+    ("/api/veredito_ia/analisar", "POST"),
+    ("/api/victory_vault/modelos", "GET"),
+    ("/api/victory_vault/modelos", "POST"),
+    ("/api/victory_vault/teses", "GET"),
+    ("/api/victory_vault/teses", "POST"),
+    # Consolidação 12/08/2026: ver acima (intelligence_v3 → intelligence).
+    ("/api/intelligence-v3/radar/legislativo", "GET"),
+    ("/api/intelligence-v3/analise-impacto", "POST"),
     # Issue #716 revertida — /timeline e /operational-health (case_timeline.py)
     # eram fachadas de leitura sem nenhum consumidor (mesma varredura acima);
     # a saúde do caso segue exposta em Analytics via case_health.py, que
@@ -164,31 +195,13 @@ REMOCOES_INTENCIONAIS = {
 }
 
 
-SNAPSHOT_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "snapshots",
-)
-SNAPSHOT_FILE = os.path.join(SNAPSHOT_DIR, "openapi_rotas_baseline.json")
-
-
-def _regenerar_snapshot():
-    """Regenera o snapshot com a superfície ATUAL da API — operação deliberada,
-    restrita à execução manual abaixo. Todo regenerate precisa vir acompanhado
-    do diff das rotas (cada entrada nova/removida deve constar de
-    ADICOES_INTENCIONAIS/REMOCOES_INTENCIONAIS): `GEN_ROUTES_SNAPSHOT=1 pytest`.
-    """
-    from app.main import app
-
-    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-    atual = _extrair_rotas(app)
-    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as fh:
-        json.dump(atual, fh, indent=2, ensure_ascii=False)
-    return atual
-
-
 def _baseline() -> list[dict]:
-    if os.getenv("GEN_ROUTES_SNAPSHOT"):
-        return _regenerar_snapshot()
-    with open(SNAPSHOT_FILE, encoding="utf-8") as fh:
+    caminho = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "snapshots",
+        "openapi_rotas_baseline.json",
+    )
+    with open(caminho, encoding="utf-8") as fh:
         return json.load(fh)
 
 
@@ -335,10 +348,13 @@ def test_efeitos_colaterais_nao_de_rota_preservados():
     from app.services.ai import provider_metrics_runtime
 
     fonte_ev = inspect.getsource(event_subscribers)
-    # O hook de análise documental mudou de módulo (documents_router compat
-    # patch → event_subscribers via _install_document_analysis_hook), mas o
-    # contrato do subscriber permanece instalado no boot do módulo.
-    assert "_install_document_analysis_hook()" in fonte_ev
+    # O adapter legado do hook documental foi renomeado para
+    # `_install_document_analysis_hook()` (mesma responsabilidade: instalar a
+    # função única de document_analysis_hook no router de documentos).
+    assert (
+        "_install_document_analysis_hook()" in fonte_ev
+        or "_patch_documents_background_analysis()" in fonte_ev
+    )
     assert "_install_ai_core_hardening()" in fonte_ev
     assert "_install_datajud_cognitive_feed()" in fonte_ev
     assert "@on(" in fonte_ev

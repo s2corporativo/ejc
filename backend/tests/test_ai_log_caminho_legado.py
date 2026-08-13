@@ -109,13 +109,13 @@ async def test_ia_analise_cliente_grava_ailog(monkeypatch):
     assert db.commits >= 1
 
 
-# ── intelligence_v3.py :: analise_impacto ─────────────────────────────────────
+# ── intelligence.py (canônico) :: analise_impacto ─────────────────────────────────────
 # Único endpoint que mudou de execução (generate → processar_demanda) e o único
 # que grava tipo_uso=outro sanitizando o prompt no próprio endpoint.
 
 async def test_analise_impacto_grava_ailog(monkeypatch):
     from app.services import ai_gateway
-    from app.routers import intelligence_v3 as intel_router
+    from app.routers import intelligence as intel_router
     monkeypatch.setattr(ai_gateway, "chat", _fake_chat(texto="Impacto: alta relevância tributária."))
 
     db = _FakeDB([])  # endpoint não faz db.execute; só grava o AILog
@@ -143,7 +143,7 @@ async def test_analise_impacto_falha_nao_grava_ailog(monkeypatch):
     """IA falha → endpoint retorna {'resumo_executivo': _ERRO_SEGURO} sem levantar
     e SEM gravar AILog (semântica de erro preservada)."""
     from app.services import ai_gateway
-    from app.routers import intelligence_v3 as intel_router
+    from app.routers import intelligence as intel_router
     from app.core.ai_brain import _ERRO_SEGURO
 
     async def chat_falha(messages, task_type="", **kw):

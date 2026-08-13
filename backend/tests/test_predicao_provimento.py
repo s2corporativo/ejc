@@ -1,4 +1,4 @@
-"""Análise prospectiva interna (jurimetria_extra) — honestidade estatística.
+"""Análise prospectiva interna (jurimetria) — honestidade estatística.
 
 Auditoria IA 2026-08-08:
   - n decidido < MIN_AMOSTRA (=5) => taxa None + aviso (nunca inventa número);
@@ -7,7 +7,7 @@ Auditoria IA 2026-08-08:
     digitada nunca entra no cálculo (classe_filtrada=False, apenas ecoada);
   - fonte permanece 'base interna' (nunca DataJud/externo).
 """
-from app.routers import jurimetria_extra
+from app.routers import jurimetria
 from app.services.jurimetria import MIN_AMOSTRA
 
 
@@ -37,9 +37,9 @@ async def test_amostra_decidida_insuficiente_devolve_none_e_aviso(monkeypatch):
         }
     ]
     monkeypatch.setattr(
-        jurimetria_extra, "_por_resultado", _fake_por_resultado(por, 1)
+        jurimetria, "_por_resultado", _fake_por_resultado(por, 1)
     )
-    out = await jurimetria_extra.analise_prospectiva(
+    out = await jurimetria.analise_prospectiva(
         classe="Procedimento Comum",
         tribunal="TJMG",
         dias_estimados=0,
@@ -79,9 +79,9 @@ async def test_amostra_suficiente_exclui_acordos_do_denominador(monkeypatch):
         },
     ]
     monkeypatch.setattr(
-        jurimetria_extra, "_por_resultado", _fake_por_resultado(por, 8)
+        jurimetria, "_por_resultado", _fake_por_resultado(por, 8)
     )
-    out = await jurimetria_extra.analise_prospectiva(
+    out = await jurimetria.analise_prospectiva(
         classe="Execução Fiscal",
         tribunal="TJMG",
         dias_estimados=120,
@@ -110,11 +110,11 @@ async def test_limiar_exato_min_amostra_decidida_ja_calcula(monkeypatch):
         }
     ]
     monkeypatch.setattr(
-        jurimetria_extra,
+        jurimetria,
         "_por_resultado",
         _fake_por_resultado(por, MIN_AMOSTRA),
     )
-    out = await jurimetria_extra.analise_prospectiva(
+    out = await jurimetria.analise_prospectiva(
         classe="",
         tribunal="",
         dias_estimados=0,
