@@ -328,21 +328,28 @@ def test_preparar_diploma_rejeita_pagina_errada():
 # ══════════════════════════════════════════════════════════════════════════
 
 def _com_marcacao_no_preambulo(html: str, marcacao: str) -> str:
-    """Insere a marcação onde o Planalto a publica: junto da ementa, antes do
-    Art. 1º."""
-    ancora = "<p>O&nbsp;PRESIDENTE DA REPÚBLICA"
+    """Insere a marcação nas duas primeiras linhas não vazias do preâmbulo
+    (epígrafe + título do diploma) — o único recorte que o contrato P0.1 #636
+    aceita como prova positiva de situação: `_cabecalho_situacao` olha só a
+    epígrafe e o marcador imediatamente associado; anotação deslocada para a
+    ementa/corpo é ignorada por decisão de FAIL-CLOSED."""
+    ancora = "LEI Nº 8.078, DE 11 DE SETEMBRO DE 1990."
     assert ancora in html
-    return html.replace(ancora, f"<p>{marcacao}</p>\n{ancora}", 1)
+    # marcador ANTES do título, na própria linha — dentro do recorte de duas
+    # linhas do `_cabecalho_situacao` (epígrafe + marcador imediatamente
+    # associado). É o formato do cabeçalho oficial: "LEI Nº ... (Revogada ...)".
+    return html.replace(ancora, f"<p>{marcacao}</p>\n<p><strong>{ancora}", 1)
 
 
 def test_texto_compilado_sem_marcacao_infere_vigente(blocos):
-    """Ausência de marcação de revogação num preâmbulo IDENTIFICÁVEL de texto
-    COMPILADO = o que a fonte publica como em vigor. É inferência por AUSÊNCIA,
-    então o carimbo é `legal_status_inferido_em` — não pode se apresentar como
-    conferência que não houve. A governança classifica isso como
-    'vigencia_nao_verificada' e o gate estrito rejeita."""
+    """FAIL-CLOSED (P0.1 #636): silêncio de um preâmbulo IDENTIFICÁVEL de texto
+    compilado NÃO é mais promovido a vigência positiva — ausência de marcação
+    não é conferência. O status permanece `vigencia_nao_verificada` com carimbo
+    de INFERÊNCIA (`legal_status_inferido_em`); só leitura positiva do cabeçalho
+    imediato grava `legal_status_verificado_em`. A governança classifica
+    inferência como 'vigencia_nao_verificada' e o gate estrito rejeita."""
     vigencia = pl.situacao_juridica(blocos)
-    assert vigencia["legal_status"] == "vigente"
+    assert vigencia["legal_status"] == "vigencia_nao_verificada"
     assert vigencia["legal_status_origem"] == "planalto:texto_compilado"
     assert vigencia["legal_status_inferido_em"]
     assert "legal_status_verificado_em" not in vigencia
@@ -351,9 +358,12 @@ def test_texto_compilado_sem_marcacao_infere_vigente(blocos):
 def test_anotacao_de_artigo_revogado_nao_revoga_o_diploma(texto, blocos):
     """O corpo do compilado traz '(Revogado pela Lei ...)' por ARTIGO (o § 3º da
     fixture). Ler isso como revogação do diploma marcaria todo código como
-    revogado — por isso o escopo é o PREÂMBULO."""
+    revogado — por isso o escopo é o PREÂMBULO. Anotação por artigo não revoga
+    o diploma e não se transforma em leitura positiva de vigência: o status
+    permanece `vigencia_nao_verificada` (inferência por ausência), que é o que
+    o P0.1 #636 exige."""
     assert "(Revogado pela Lei nº 99.999, de 2020)" in texto
-    assert pl.situacao_juridica(blocos)["legal_status"] == "vigente"
+    assert pl.situacao_juridica(blocos)["legal_status"] == "vigencia_nao_verificada"
 
 
 @pytest.mark.parametrize("marcacao", [
@@ -374,11 +384,31 @@ def test_marcacao_no_preambulo_declara_revogada(html, marcacao):
     assert "legal_status_inferido_em" not in vigencia
 
 
+def test_marcacao_deslocada_para_a_ementa_nao_revoga_o_diploma(html):
+    """Companheiro FAIL-CLOSED do teste anterior: a marcação inserida onde o
+    teste antigo a colocava (após a ementa, antes do Art. 1º) fica FORA do
+    recorte de duas linhas do `_cabecalho_situacao` — narrativa posterior não
+    revoga o diploma; permanece `vigencia_nao_verificada` até conferência.
+    É exatamente o comportamento que o P0.1 #636 fixou."""
+    ancora = "<p>O&nbsp;PRESIDENTE DA REPÚBLICA"
+    assert ancora in html
+    deslocado = html.replace(
+        ancora, f"<p>(Revogada pela Lei nº 14.133, de 2021)</p>\n{ancora}", 1)
+    blocos = pl.dividir_artigos(pl.extrair_texto_planalto(deslocado))
+    vigencia = pl.situacao_juridica(blocos)
+    assert vigencia["legal_status"] == "vigencia_nao_verificada"
+    assert "legal_status_verificado_em" not in vigencia
+
+
 def test_ementa_que_revoga_outra_norma_nao_se_declara_revogada(html):
     """Forma ATIVA ('Revoga a Lei X') é a norma revogando OUTRA — não casa."""
     blocos = dividir_artigos(extrair_texto_planalto(
         _com_marcacao_no_preambulo(html, "Revoga a Lei nº 8.666, de 1993.")))
-    assert pl.situacao_juridica(blocos)["legal_status"] == "vigente"
+    # forma ATIVA = a norma revoga OUTRA; não é leitura positiva do próprio
+    # diploma → permanece `vigencia_nao_verificada` (inferida), não 'vigente'
+    vigencia = pl.situacao_juridica(blocos)
+    assert vigencia["legal_status"] == "vigencia_nao_verificada"
+    assert "legal_status_verificado_em" not in vigencia
 
 
 @pytest.mark.parametrize("blocos_sem_preambulo", [
@@ -413,7 +443,10 @@ async def test_ingestao_grava_vigencia_declarada_no_extra(pipeline_mockado):
     chamadas, _ = pipeline_mockado
     await sl.executar_seed_legislacao(_FakeDB(), apenas="cdc")
     extra = chamadas[-1]["extra"]
-    assert extra["legal_status"] == "vigente"
+    # FAIL-CLOSED (P0.1 #636): sem leitura positiva no cabeçalho, o recorte do
+    # CDC não grava 'vigente' — permanece `vigencia_nao_verificada` com carimbo
+    # de inferência; a governança o exclui da recuperação até conferência
+    assert extra["legal_status"] == "vigencia_nao_verificada"
     assert extra["legal_status"] in LEGAL_STATUS_VALUES
     assert extra["legal_status_origem"] == "planalto:texto_compilado"
     assert extra["legal_status_inferido_em"]

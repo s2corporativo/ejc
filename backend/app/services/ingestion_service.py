@@ -264,17 +264,40 @@ _CAMPOS_VIGENCIA = (
 )
 
 
-def _vigencia_de_curadoria(anterior: dict) -> bool:
-    """A vigência registrada é uma decisão humana explicitamente rastreada?
+# Status DECISIVOS cujo sentido é NEGATIVO (restritivo): nenhum re-feed pode
+# devolver silenciosamente uma norma com esses registros a 'vigente' — a
+# restauração de vigência exige prova positiva de curadoria.
+_VIGENCIA_DECISIVA_NEGATIVA = {"revogada", "parcialmente_revogada", "suspensa", "nao_aplicavel", "historica"}
 
-    Só preservamos o bloco quando há um `legal_status` decisório E a origem foi
-    gravada pelo fluxo de curadoria (`curadoria` ou `curadoria:<user>`).
-    Ausência de origem é ausência de prova de autoria humana: registros legados
-    sem proveniência e estados automáticos continuam atualizáveis pela fonte.
-    `vigencia_nao_verificada` também nunca conta como decisão humana.
+
+def _vigencia_de_curadoria(anterior: dict) -> bool:
+    """A vigência registrada deve sobreviver ao re-feed do ingestor?
+
+    Duas famílias são preservadas, por razões distintas:
+
+      1. Status DECISIVOS NEGATIVOS (`revogada`, `parcialmente_revogada`,
+         `suspensa`, `nao_aplicavel`, `historica`): a direção segura é
+         RESTRINGIR — nenhum re-feed (Planalto, LexML, DataJud) pode devolver
+         sozinho uma norma a 'vigente'. O ingestor escreve sua PRÓPRIA leitura
+         ('planalto:texto_compilado', 'lexml:registro') a cada execução, e um
+         recorte silencioso não revoga uma norma que o acervo já carrega como
+         restrita; reverter para 'vigente' deixaria o painel com estado
+         incoerente com a governança.
+      2. Qualquer status com proveniência de CURADORIA (`curadoria` ou
+         `curadoria:<user>`): decisão humana explicitamente rastreada, sempre
+         preservada — inclusive 'vigente' rebaixado/confirmado pelo painel.
+
+    Ausência de origem sobre estados NEUTROS/POSITIVOS não comprovados
+    (`vigente` sem curadoria, `vigencia_nao_verificada` legada) continua
+    atualizável pela fonte — senão a primeira leitura automática congelaria o
+    documento e nenhum re-feed poderia corrigi-lo.
     """
     status = str(anterior.get("legal_status") or "").strip().lower()
-    if not status or status == "vigencia_nao_verificada":
+    if not status:
+        return False
+    if status in _VIGENCIA_DECISIVA_NEGATIVA:
+        return True
+    if status == "vigencia_nao_verificada":
         return False
     origem = str(anterior.get("legal_status_origem") or "").strip().lower()
     return origem == ORIGEM_VIGENCIA_CURADORIA or origem.startswith(

@@ -148,6 +148,22 @@ _FILTRO_REVOGADA_RAG = (
 # inferido permanecem no acervo/histórico, mas não entram como autoridade atual.
 # Versões históricas (`kd.vigente=false`) continuam acessíveis quando o call site
 # pede `incluir_historico=True`; conteúdo não legislativo também não é afetado.
+#
+# NOTA OPERACIONAL (recorte de categoria): `LIKE '%legisl%'` alcança também a
+# categoria `proposicao_legislativa` (ingestores da Câmara e do Senado), que
+# NÃO grava vigência — proposição é projeto em tramitação e fica FORA da
+# recuperação enquanto a flag estiver ligada. É intencional e PERMANENTE:
+# nenhum re-feed resolve, a exclusão é estrutural (ver config.py).
+# Situação declarada pelo painel de curadoria (mesma precedência de leitura
+# de `inferir_situacao_juridica`): o vocabulário reconhecido no SQL NÃO pode
+# ser maior que `LEGAL_STATUS_VALUES` da governança — senão o gate deixaria
+# passar como declarado algo que a governança considera não verificado.
+# `vigencia_nao_verificada` JAMAIS conta como vigência declarada.
+_SQL_SITUACAO_DECLARADA = (
+    "('vigente','parcialmente_revogada','revogada','suspensa',"
+    "'nao_aplicavel','historica')"
+)
+
 _FILTRO_VIGENCIA_VERIFICADA_RAG = (
     "AND NOT (COALESCE(kd.vigente, false) = true "
     "AND lower(COALESCE(kd.categoria,'')) LIKE '%legisl%' "
