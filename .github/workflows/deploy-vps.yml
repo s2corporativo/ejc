@@ -228,6 +228,9 @@ jobs:
             if [ "$concluido" != "1" ]; then
               if [ "$alterado" = "1" ]; then
                 if sudo test -f "$backup"; then
+                  # A cópia parcial (cp -p já gravou bytes) é segura de usar:
+                  # ela pode até estar parcial, mas a validação pós-rename
+                  # reprova qualquer candidato não canônico e o rename é atomic.
                   echo "::warning::Prearm RAG interrompido; restaurando .env a partir do backup 0600."
                   sudo mv -f "$backup" "$env_file"
                 else
