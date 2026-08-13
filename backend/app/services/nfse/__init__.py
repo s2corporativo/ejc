@@ -51,12 +51,22 @@ def get_provider() -> NFSeProvider:
 
 
 def configurado() -> bool:
-    """True se as credenciais/empresa mínimas estão presentes (sem tocar rede)."""
+    """True se as credenciais/empresa mínimas E as definições fiscais
+    obrigatórias (NFS-01/NFS-02) estão presentes (sem tocar rede).
+
+    Sem as três definições fiscais, `configured: true` seria um sinal falso —
+    o módulo pareceria pronto para ativar, mas o próximo boot com
+    NFSE_ENABLED=true falharia em _validar_seguranca_producao (achado do
+    review Codex em PR #1074).
+    """
     s = get_settings()
     return bool(
         s.NFSE_NUVEMFISCAL_CLIENT_ID
         and s.NFSE_NUVEMFISCAL_CLIENT_SECRET
         and s.NFSE_EMITENTE_CNPJ
+        and s.NFSE_REGIME_TRIBUTARIO
+        and s.NFSE_TRIB_ISSQN_DEFAULT is not None
+        and s.NFSE_TIPO_RETENCAO_ISS_DEFAULT is not None
     )
 
 

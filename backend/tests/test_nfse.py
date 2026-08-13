@@ -49,6 +49,12 @@ def nfse_ligado(monkeypatch):
     monkeypatch.setattr(s, "NFSE_EMITENTE_MUN_IBGE", "3106200")
     monkeypatch.setattr(s, "NFSE_ISS_ALIQUOTA", 5.0)
     monkeypatch.setattr(s, "NFSE_CTRIB_NAC", "010701")
+    # NFS-01/NFS-02: regime tributário e ISSQN padrão agora são config
+    # obrigatória (sem chute) — precisam estar presentes para o adapter
+    # montar a DPS nos testes que exercitam _montar_dps/emitir().
+    monkeypatch.setattr(s, "NFSE_REGIME_TRIBUTARIO", "simples_nacional")
+    monkeypatch.setattr(s, "NFSE_TRIB_ISSQN_DEFAULT", 1)
+    monkeypatch.setattr(s, "NFSE_TIPO_RETENCAO_ISS_DEFAULT", 1)
     nuvem_fiscal._token_cache.clear()
     return s
 
@@ -165,6 +171,67 @@ async def test_emitir_monta_dps_homologacao(nfse_ligado, monkeypatch):
     assert inf["serv"]["cServ"]["cItemListaServico"] == "17.14"
     assert inf["valores"]["vServPrest"]["vServ"] == 1500.0
     assert inf["valores"]["trib"]["tribMun"]["pAliq"] == 5.0
+
+
+# ── NFS-01/NFS-02 (auditoria jul/2026): regime tributário e ISSQN nunca fixos ──
+
+async def test_emitir_dps_regime_e_issqn_vem_da_config(nfse_ligado, monkeypatch):
+    """regTrib/tribISSQN/tpRetISSQN vêm de NFSE_REGIME_TRIBUTARIO/
+    NFSE_TRIB_ISSQN_DEFAULT/NFSE_TIPO_RETENCAO_ISS_DEFAULT — nunca "1"/"1"/"0"
+    fixos no adapter. Sem override no pedido, usa o default de configuração."""
+    capturado: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/token":
+            return httpx.Response(200, json={"access_token": TOKEN, "expires_in": 3600})
+        capturado.update(json.loads(request.content))
+        return httpx.Response(200, json={"id": "nf_d", "status": "processando"})
+
+    prov = _provider_com_handler(monkeypatch, handler)
+    await prov.emitir(_pedido())
+
+    inf = capturado["infDPS"]
+    assert inf["prest"]["regTrib"] == {"opSimpNac": 3, "regEspTrib": 0}  # simples_nacional (fixture)
+    trib = inf["valores"]["trib"]["tribMun"]
+    assert trib["tribISSQN"] == 1     # NFSE_TRIB_ISSQN_DEFAULT da fixture
+    assert trib["tpRetISSQN"] == 1    # NFSE_TIPO_RETENCAO_ISS_DEFAULT da fixture
+
+
+async def test_emitir_dps_pedido_sobrepoe_retencao_iss_por_nota(nfse_ligado, monkeypatch):
+    """Quem emite pode sobrepor tribISSQN/tpRetISSQN por nota (POST /nfse/emitir)
+    quando o TOMADOR desta nota exigir retenção — sem mudar a config global."""
+    capturado: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/token":
+            return httpx.Response(200, json={"access_token": TOKEN, "expires_in": 3600})
+        capturado.update(json.loads(request.content))
+        return httpx.Response(200, json={"id": "nf_r", "status": "processando"})
+
+    prov = _provider_com_handler(monkeypatch, handler)
+    await prov.emitir(_pedido(trib_issqn=1, tipo_retencao_iss=2))
+
+    trib = capturado["infDPS"]["valores"]["trib"]["tribMun"]
+    assert trib["tribISSQN"] == 1
+    assert trib["tpRetISSQN"] == 2    # sobreposto pelo pedido, não o default (1)
+
+
+async def test_emitir_sem_regime_tributario_falha_fechado(nfse_ligado, monkeypatch):
+    """Defesa em profundidade: se a config perder o regime tributário em
+    runtime (ex.: settings mutados sem reiniciar o processo), o adapter
+    RECUSA emitir em vez de voltar ao "1"/"1"/"0" chutado do código antigo."""
+    monkeypatch.setattr(get_settings(), "NFSE_REGIME_TRIBUTARIO", "")
+    prov = _provider_com_handler(monkeypatch, lambda r: httpx.Response(500))
+    with pytest.raises(NFSeConfigError, match="NFSE_REGIME_TRIBUTARIO"):
+        await prov.emitir(_pedido())
+
+
+async def test_emitir_sem_defaults_issqn_falha_fechado(nfse_ligado, monkeypatch):
+    """Mesma defesa em profundidade para os defaults de ISSQN (não só regime)."""
+    monkeypatch.setattr(get_settings(), "NFSE_TRIB_ISSQN_DEFAULT", None)
+    prov = _provider_com_handler(monkeypatch, lambda r: httpx.Response(500))
+    with pytest.raises(NFSeConfigError, match="NFSE_TRIB_ISSQN_DEFAULT"):
+        await prov.emitir(_pedido())
 
 
 async def test_emitir_producao_tpamb_1(nfse_ligado, monkeypatch):
@@ -362,12 +429,48 @@ async def test_endpoint_emitir_sucesso_persiste_e_audita(nfse_ligado, monkeypatc
     # Nota persistida + audit ANTES (NFSE_EMITIR) e DEPOIS (NFSE_EMITIDA).
     notas = [o for o in db.added if isinstance(o, NotaFiscalServico)]
     assert len(notas) == 1 and notas[0].fee_id == "f1"
-    acoes = sorted(o.acao for o in db.added if o.__class__.__name__ == "AuditLog")
+    logs = [o for o in db.added if o.__class__.__name__ == "AuditLog"]
+    acoes = sorted(o.acao for o in logs)
     assert acoes == ["NFSE_EMITIDA", "NFSE_EMITIR"]
     assert db.commits >= 2
     # Pedido montado com a referência do honorário e valor do fee.
     assert fake.emitido[0].referencia == "fee-f1"
     assert str(fake.emitido[0].valor) == "1500"
+
+    # NFS-01/NFS-02 (review Codex em PR #1074): a trilha NFSE_EMITIR registra
+    # a escolha fiscal EFETIVA (regime + tribISSQN/tpRetISSQN resolvidos),
+    # não só valor/descrição — sem isso não dava pra saber depois se a DPS
+    # usou o default de config ou uma sobreposição por nota.
+    log_emitir = next(o for o in logs if o.acao == "NFSE_EMITIR")
+    assert log_emitir.dados_depois["regime_tributario"] == "simples_nacional"
+    assert log_emitir.dados_depois["trib_issqn"] == 1
+    assert log_emitir.dados_depois["tipo_retencao_iss"] == 1
+    assert log_emitir.dados_depois["trib_issqn_sobreposto_por_nota"] is False
+    assert log_emitir.dados_depois["tipo_retencao_iss_sobreposto_por_nota"] is False
+
+
+async def test_endpoint_emitir_audita_sobreposicao_por_nota(nfse_ligado, monkeypatch):
+    """Quando a nota sobrepõe trib_issqn/tipo_retencao_iss, a trilha reflete o
+    valor da SOBREPOSIÇÃO, não o default de config, e marca a flag."""
+    from app.routers import nfse as router_mod
+    from app.services.nfse import NFSeResultado
+
+    resultado = NFSeResultado(status="processando", provider_id="nf_new",
+                              ambiente="homologacao", numero=None)
+    fake = _FakeProvider(resultado)
+    monkeypatch.setattr("app.services.nfse.get_provider", lambda: fake)
+
+    db = _FakeDB(objs={("Fee", "f1"): _fee(), ("Client", "c1"): _cliente()},
+                 scalar_result=None)
+    body = router_mod.EmitirIn(fee_id="f1", trib_issqn=2, tipo_retencao_iss=2)
+    await router_mod.emitir_nfse(body, db=db, cu=_socio())
+
+    log_emitir = next(o for o in db.added
+                      if o.__class__.__name__ == "AuditLog" and o.acao == "NFSE_EMITIR")
+    assert log_emitir.dados_depois["trib_issqn"] == 2
+    assert log_emitir.dados_depois["tipo_retencao_iss"] == 2
+    assert log_emitir.dados_depois["trib_issqn_sobreposto_por_nota"] is True
+    assert log_emitir.dados_depois["tipo_retencao_iss_sobreposto_por_nota"] is True
 
 
 async def test_endpoint_emitir_avulso_exige_tomador():

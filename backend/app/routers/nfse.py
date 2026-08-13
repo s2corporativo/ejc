@@ -123,6 +123,18 @@ class EmitirIn(BaseModel):
     valor: Decimal | None = None
     descricao: str | None = None
     competencia: str | None = Field(default=None, description="YYYY-MM-DD; default = hoje")
+    # NFS-02 (auditoria jul/2026): tributabilidade/retenção do ISS dependem do
+    # TOMADOR e do MUNICÍPIO dele — não são propriedade fixa do emitente. Por
+    # padrão usa a config do escritório (NFSE_TRIB_ISSQN_DEFAULT/
+    # NFSE_TIPO_RETENCAO_ISS_DEFAULT); sobreponha aqui só quando o tomador
+    # desta nota exigir retenção diferente do padrão.
+    # ge=1: ver comentário equivalente em NFSePedidoEmissao (app/services/nfse/base.py).
+    trib_issqn: int | None = Field(
+        default=None, ge=1, description="Sobrepõe o tribISSQN padrão desta nota."
+    )
+    tipo_retencao_iss: int | None = Field(
+        default=None, ge=1, description="Sobrepõe o tpRetISSQN padrão desta nota."
+    )
 
     @model_validator(mode="after")
     def _valida(self):
@@ -659,11 +671,28 @@ async def emitir_nfse(
 
     # Audit ANTES (durável): registra a INTENÇÃO de emitir antes de tocar o
     # provedor — se a chamada externa falhar, a tentativa fica na trilha.
+    # NFS-01/NFS-02 (review Codex em PR #1074): registra também a escolha
+    # fiscal EFETIVA (regime + tribISSQN/tpRetISSQN já resolvidos, override de
+    # nota ou default de config) — sem isso, depois de emitir/rejeitar não
+    # havia como saber localmente se a DPS usou o default ou uma sobreposição.
+    _cfg_fiscal = get_settings()
+    trib_issqn_efetivo = (
+        body.trib_issqn if body.trib_issqn is not None else _cfg_fiscal.NFSE_TRIB_ISSQN_DEFAULT
+    )
+    tipo_retencao_efetivo = (
+        body.tipo_retencao_iss if body.tipo_retencao_iss is not None
+        else _cfg_fiscal.NFSE_TIPO_RETENCAO_ISS_DEFAULT
+    )
     await criar_audit_log(
         db, cu.id, _role(cu), "NFSE_EMITIR", "nfse", nota.id,
         detalhes=f"ref={referencia} ambiente={ambiente_atual}",
         dados_depois={"referencia": referencia, "fee_id": body.fee_id,
-                      "valor": str(valor), "descricao": descricao},
+                      "valor": str(valor), "descricao": descricao,
+                      "regime_tributario": _cfg_fiscal.NFSE_REGIME_TRIBUTARIO,
+                      "trib_issqn": trib_issqn_efetivo,
+                      "tipo_retencao_iss": tipo_retencao_efetivo,
+                      "trib_issqn_sobreposto_por_nota": body.trib_issqn is not None,
+                      "tipo_retencao_iss_sobreposto_por_nota": body.tipo_retencao_iss is not None},
     )
     try:
         await db.commit()   # reserva a referência (UNIQUE fecha a corrida)
@@ -677,6 +706,7 @@ async def emitir_nfse(
     pedido = NFSePedidoEmissao(
         referencia=referencia, tomador=tomador,
         descricao=descricao, valor=Decimal(str(valor)), competencia=body.competencia,
+        trib_issqn=body.trib_issqn, tipo_retencao_iss=body.tipo_retencao_iss,
     )
     try:
         resultado = await provider.emitir(pedido)
