@@ -109,7 +109,7 @@ def test_prearm_mutavel_reutiliza_mesmo_mutex_e_confere_sha_implantado():
     ]
     assert 'source "$APP_DIR/scripts/deploy_lock.sh"' in prearm
     assert "ejc_deploy_lock_acquire" in prearm
-    assert 'deployed="$(sudo cat "$APP_DIR/.deployed_sha"' in prearm
+    assert 'deployed="$(sudo cat "$APP_DIR/.deploy_last_sha"' in prearm
     assert 'deployed" != "$TARGET_SHA"' in prearm
 
 
@@ -117,8 +117,8 @@ def test_registro_de_sha_acontece_dentro_do_executor_bloqueado():
     workflow = _texto()
     deploy = DEPLOY_SCRIPT.read_text(encoding="utf-8")
     assert "Registrar versão implantada" not in workflow
-    assert 'DEPLOYED_SHA_TMP="$APP_DIR/.deployed_sha.new.$$"' in deploy
-    assert 'mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deployed_sha"' in deploy
+    assert 'DEPLOYED_SHA_TMP="$APP_DIR/.deploy_last_sha.new.$$"' in deploy
+    assert 'mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deploy_last_sha"' in deploy
     assert deploy.index("ejc_deploy_lock_acquire") < deploy.index("DEPLOYED_SHA_TMP=")
 
 

@@ -67,8 +67,8 @@ jobs:
           set -euo pipefail
           test -d /opt/ejc
           test -f /opt/ejc/.env
-          test -f /opt/ejc/.deployed_sha
-          test "$(tr -d '\r\n' < /opt/ejc/.deployed_sha)" = "$TARGET_SHA"
+          test -f /opt/ejc/.deploy_last_sha
+          test "$(tr -d '\r\n' < /opt/ejc/.deploy_last_sha)" = "$TARGET_SHA"
           docker ps --format '{{.Names}}' | grep -qx ejc_backend
           docker ps --format '{{.Names}}' | grep -qx ejc_worker
           cd /opt/ejc

@@ -49,7 +49,7 @@ OLD_WORKER_TAG=""
 OLD_FRONTEND_TAG=""
 OLD_GIT_SHA=""
 ENV_ROLLBACK_FILE=""
-DEPLOYED_SHA_TMP="$APP_DIR/.deployed_sha.new.$$"
+DEPLOYED_SHA_TMP="$APP_DIR/.deploy_last_sha.new.$$"
 ROLLBACK_ARMED=0
 ENV_MUTATED=0
 IMAGES_MUTATED=0
@@ -319,8 +319,8 @@ EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
 
 printf '%s\n' "$GIT_SHA" > "$DEPLOYED_SHA_TMP"
 chmod 644 "$DEPLOYED_SHA_TMP"
-mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deployed_sha"
-log "Versão implantada registrada atomicamente em .deployed_sha."
+mv -f -- "$DEPLOYED_SHA_TMP" "$APP_DIR/.deploy_last_sha"
+log "Versão implantada registrada atomicamente em .deploy_last_sha."
 
 ROLLBACK_ARMED=0
 cleanup_temp_files

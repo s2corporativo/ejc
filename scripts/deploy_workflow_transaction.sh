@@ -65,7 +65,7 @@ sudo -n rsync -a --delete \
   --exclude '.git/' \
   --exclude '.env' --exclude '.env.*' \
   --exclude '**/.env' --exclude '**/.env.*' \
-  --exclude '.deployed_sha' \
+  --exclude '.deploy_last_sha' \
   --exclude 'uploads/' --exclude 'backups/' \
   --exclude 'logs/' --exclude 'data/' --exclude 'storage/' \
   --exclude 'secrets/' --exclude 'certs/' --exclude 'tmp/' \

@@ -238,7 +238,7 @@ env "${COMMON_ENV[@]}" FAIL_BACKUP=1 REQUIRE_PREDEPLOY_BACKUP=0 \
   bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/backup-contingency.out" 2>"$TMP/backup-contingency.err"
 grep -q '^compose build frontend$' "$LOG" || fail "contingência não prosseguiu para o build"
 grep -q 'REQUIRE_PREDEPLOY_BACKUP=0 foi definido explicitamente' "$TMP/backup-contingency.out" || fail "contingência não ficou destacada"
-[ "$(cat "$APP/.deployed_sha")" = "$TEST_SHA" ] || fail ".deployed_sha não foi registrado dentro do deploy"
+[ "$(cat "$APP/.deploy_last_sha")" = "$TEST_SHA" ] || fail ".deploy_last_sha não foi registrado dentro do deploy"
 
 # 5) Sem Git e sem TARGET_SHA, release é bloqueada antes de Docker.
 : > "$LOG"
