@@ -19,7 +19,8 @@ from typing import Optional
 from app.core.taxonomia import AREAS_ANALISE_DOCUMENTAL, SENTINELA_OUTRO, normalizar_area
 from app.schemas.document_intake import (
     CampoExtraido, CasoExtraido, ClienteExtraido, DocumentoIntakeResult,
-    ParteExtraida, PedidoExtraido, PrazoExtraido, RiscoExtraido, TeseSugerida,
+    ParteExtraida, PedidoExtraido, PrazoExtraido, ProvaExtraida, RiscoExtraido,
+    TeseSugerida,
 )
 from app.services import ai_gateway, ocr_service
 from app.services.extracao_estruturada import extrair_estruturas, parse_data_br
@@ -45,7 +46,8 @@ ESQUEMA = """Responda APENAS com um JSON válido nesta forma exata (use null qua
  "diagnostico": {"pontos_fortes": [], "pontos_fracos": [], "riscos": [], "oportunidades": []},
  "brechas_processuais": {"prescricao": null, "decadencia": null, "incompetencia": null, "ilegitimidade": null, "nulidades": [], "falhas_documentais": [], "ausencia_de_provas": null, "teses_defensivas": []},
  "prazos": [{"tipo": null, "data_base": null, "termo_final": null, "fatal": false, "base_legal": null}],
- "estrategia": {"medidas_cabiveis": [], "recursos": [], "acoes": [], "producao_de_provas": [], "negociacao": []},
+ "estrategia": {"medidas_cabiveis": [], "recursos": [], "acoes": [], "negociacao": []},
+ "provas_necessarias": [{"titulo": null, "tipo": null, "fato_probando": null, "ja_disponivel": false}],
  "valor_causa_estimado": null,
  "complexidade_atos": null,
  "campos_v2": {
@@ -66,6 +68,13 @@ ESQUEMA = """Responda APENAS com um JSON válido nesta forma exata (use null qua
   DATA FATAL exatamente como consta, no formato "dd/mm/aaaa" ou "aaaa-mm-dd"; "tipo" =
   o nome do prazo (ex.: "contestação", "recurso", "audiência"). Se o documento NÃO
   trouxer uma data fatal clara, deixe "prazos" como [] — NUNCA calcule nem invente datas.
+- "provas_necessarias": o que o advogado ainda precisa PROVAR e como. Para cada
+  fato controvertido do documento, um item: "titulo" = a prova (ex.: "contrato
+  assinado", "laudo pericial de insalubridade"); "tipo" = documental, pericial,
+  testemunhal, inspecao ou depoimento_pessoal; "fato_probando" = QUAL fato
+  aquela prova demonstra; "ja_disponivel" = true somente se a prova JÁ consta
+  do documento lido, false se ainda precisa ser obtida. Sem fato controvertido
+  identificável, devolva [] — não encha a lista com provas genéricas.
 - valores monetários como número (sem R$), ou null.
 - Em "campos_v2" (R4 — rastreabilidade da extração): para CADA campo,
   "trecho_origem" = citação LITERAL e CURTA (máx. 15 palavras) copiada do
@@ -239,6 +248,39 @@ def _prazos_extraidos(llm: dict) -> list["PrazoExtraido"]:
     return saida
 
 
+def _provas_extraidas(llm: dict) -> list["ProvaExtraida"]:
+    """`provas_necessarias` do LLM → list[ProvaExtraida].
+
+    Até a auditoria de documentos/IA (2026-08) este campo do contrato tipado
+    era MORTO: `DocumentoIntakeResult.provas` existia, nenhum código jamais
+    instanciava `ProvaExtraida` e o esquema do prompt sequer pedia provas de
+    forma estruturada — a pergunta mais prática do advogado ("o que eu ainda
+    preciso provar?") não chegava a lugar nenhum.
+
+    Fail-safe como o resto do módulo: item malformado é descartado, nunca
+    levanta.
+    """
+    itens = llm.get("provas_necessarias")
+    if not isinstance(itens, list):
+        return []
+    saida: list = []
+    for item in itens:
+        if not isinstance(item, dict):
+            continue
+        titulo = _txt(item.get("titulo"))
+        if not titulo:
+            continue  # prova sem nome não é acionável
+        try:
+            saida.append(ProvaExtraida(
+                titulo=titulo,
+                tipo=_txt(item.get("tipo")),
+                finalidade=_txt(item.get("fato_probando")),
+            ))
+        except Exception:
+            continue
+    return saida
+
+
 def _montar_intake_result(
     dados: Optional[dict],
     dados_estruturados: Optional[dict],
@@ -362,6 +404,11 @@ def _montar_intake_result(
         prazos = []
 
     try:
+        provas = _provas_extraidas(llm)
+    except Exception:
+        provas = []
+
+    try:
         return DocumentoIntakeResult(
             tipo_documento=_txt(tipo_documento),
             confianca_classificacao=_flt(confianca_classificacao),
@@ -369,6 +416,7 @@ def _montar_intake_result(
             caso=caso,
             partes=partes,
             pedidos=pedidos,
+            provas=provas,
             prazos=prazos,
             riscos=riscos,
             teses=teses,

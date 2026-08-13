@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Mutex host-level do deploy EJC.
 #
-# PRODUÇÃO: caminho imutável /run/lock/ejc/deploy.lock. Não depende de HOME,
-# XDG_RUNTIME_DIR, APP_DIR nem variável de ambiente. O workflow adquire o lock
+# PRODUÇÃO: caminho imutável /run/lock/ejc/deploy.lock. Não depende de diretórios de usuário, APP_DIR nem variável de ambiente. O workflow adquire o lock
 # antes do rsync e o executor filho revalida o FD herdado.
 #
 # Este arquivo é sourceable e não altera opções `set` do caller.

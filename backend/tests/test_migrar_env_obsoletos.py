@@ -217,5 +217,11 @@ class TestWiringNosDeploys:
         assert "migrar_env_obsoletos.sh" in conteudo
 
     def test_workflow_de_deploy_usa_o_script_seguro(self):
+        # A cadeia de produção é: workflow → deploy_workflow_transaction.sh
+        # (mutex + estado transacional) → deploy_vps_safe.sh (publicação).
         wf = (RAIZ / ".github" / "workflows" / "deploy-vps.yml").read_text(encoding="utf-8")
-        assert "scripts/deploy_vps_safe.sh" in wf
+        assert "scripts/deploy_workflow_transaction.sh" in wf
+        tx = (
+            RAIZ / "scripts" / "deploy_workflow_transaction.sh"
+        ).read_text(encoding="utf-8")
+        assert "bash scripts/deploy_vps_safe.sh" in tx

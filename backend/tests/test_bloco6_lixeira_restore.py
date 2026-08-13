@@ -40,6 +40,12 @@ class _FakeDB:
     async def execute(self, *a, **k):
         return self.res
 
+    async def scalar(self, *a, **k):
+        # O router usa db.scalar(select(func.count())...) para o total de
+        # soft-deleted; o fake não tem rows parametrizadas — o router só
+        # usa o valor para paginação, nunca para a assertiva central.
+        return 0
+
     def add(self, obj):
         self.added.append(obj)
 

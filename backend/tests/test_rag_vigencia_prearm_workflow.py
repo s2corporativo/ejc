@@ -63,14 +63,17 @@ def test_prearm_fica_dentro_do_deploy_e_nao_cria_workflow_concorrente():
 
 
 def test_preflight_pos_ativacao_ocorre_antes_de_tocar_producao():
+    # Desenho vigente: o pré-voo ("Confirmar SHA e runtime de produção")
+    # verifica o marker de ativação ANTES de qualquer mutação pós-deploy,
+    # e o pré-armamento é o último passo antes do resumo da implantação.
     texto = _texto()
     inicio_passo = texto.index("- name: Confirmar SHA e runtime de produção")
     indice_marker = texto.index('.rag_vigencia_activated_v1', inicio_passo)
-    indice_sync = texto.index("- name: Sincronizar checkout aprovado para /opt/ejc")
-    indice_deploy = texto.index("- name: Deploy seguro com política calculada")
+    indice_sync = texto.index("- name: Sincronizar e implantar sob mutex host-level")
     indice_prearm = texto.index("- name: Pré-armar gate de vigência em modo compatível")
+    indice_resumo = texto.index("- name: Resumo da implantação")
 
-    assert inicio_passo < indice_marker < indice_sync < indice_deploy < indice_prearm
+    assert inicio_passo < indice_marker < indice_sync < indice_prearm < indice_resumo
 
 
 def test_preflight_marker_ativo_reprova_drift_false_e_aceita_true(tmp_path: Path):
@@ -241,11 +244,15 @@ def test_gate_sha_falha_se_deployed_sha_diverge_e_aceita_sha_igual(tmp_path: Pat
 
 
 def test_prearm_usa_o_mesmo_target_sha_registrado_pelo_deploy():
+    # Desenho vigente: a transação de deploy (deploy_workflow_transaction.sh
+    # → deploy_vps_safe.sh) grava .deployed_sha atomicamente ao final da
+    # publicação; o pré-armamento confirma que /opt/ejc comprova o MESMO
+    # TARGET_SHA antes de tocar o .env, e registra a prova canônica no marker.
     texto = _texto()
-    indice_registro = texto.index('printf \'%s\\n\' "$TARGET_SHA" | sudo tee /opt/ejc/.deployed_sha')
+    indice_publicacao = texto.index("- name: Sincronizar e implantar sob mutex host-level")
     indice_prearm = texto.index("- name: Pré-armar gate de vigência em modo compatível")
     trecho = _trecho_prearm()
-    assert indice_registro < indice_prearm
+    assert indice_publicacao < indice_prearm
     assert 'deployed" != "$TARGET_SHA"' in trecho
     assert 'printf \'%s\\n\' "$TARGET_SHA" | sudo tee "$marker"' in trecho
 
