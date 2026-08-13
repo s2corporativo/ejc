@@ -1,3 +1,11 @@
+"""Contrato do hook de análise documental — OCR integral, sem cortes.
+
+O router legado ainda é grande e sensível; o app aplica, no startup, uma
+substituição explícita do hook de background para enviar `ocr_text` completo
+ao pipeline moderno, centralizado em `document_analysis_hook`. Este teste
+protege a correção contra regressão.
+"""
+
 from types import SimpleNamespace
 
 import pytest
@@ -6,6 +14,8 @@ from app.core import database
 from app.models import ai_log
 from app.routers import documents
 from app.services import analise_estrategica
+from app.services import event_subscribers
+from app.services import document_analysis_hook
 
 
 class _Result:
@@ -38,6 +48,10 @@ class _FakeSession:
         return None
 
 
+async def _stub_snapshot(*args, **kwargs):
+    return None
+
+
 @pytest.mark.asyncio
 async def test_hook_de_upload_envia_ocr_integral_para_analise(monkeypatch):
     capturado = {}
@@ -46,9 +60,22 @@ async def test_hook_de_upload_envia_ocr_integral_para_analise(monkeypatch):
         capturado.update(kwargs)
         return {"sumario_fatos": "minuta"}
 
+    # O hook centralizado resolve TODAS as dependências pelo módulo próprio —
+    # o monkeypatch precisa cobrir o namespace de `document_analysis_hook`,
+    # não apenas o módulo de origem (`database`/`ai_log`).
     monkeypatch.setattr(database, "AsyncSessionLocal", lambda: _FakeSession())
-    monkeypatch.setattr(analise_estrategica, "analisar_caso", _analisar_caso)
+    monkeypatch.setattr(document_analysis_hook, "AsyncSessionLocal",
+                        lambda: _FakeSession())
+    monkeypatch.setattr(document_analysis_hook, "analisar_caso", _analisar_caso)
+    monkeypatch.setattr(document_analysis_hook, "_gravar_snapshot_documento",
+                        _stub_snapshot)
     monkeypatch.setattr(ai_log, "AILog", lambda **kwargs: kwargs)
+    monkeypatch.setattr(document_analysis_hook, "classificar_risco_ia",
+                        lambda *a, **k: "baixo")
+
+    # Garante o contrato vigente: o boot instala o hook centralizado
+    # (document_analysis_hook.analisar_documento_bg) no símbolo legado do router.
+    event_subscribers._install_document_analysis_hook()
 
     ocr_longo = (
         "INICIO DOS FATOS\n"
