@@ -1,24 +1,30 @@
 # ── app/services/djen_service.py ─────────────────────────────────────────────
-# Captura de intimações/publicações via API Comunica (DJEN/CNJ).
+# Captura operacional de intimações/publicações via API Comunica (DJEN/CNJ).
 # Pública, sem autenticação. Consulta por OAB (número + UF).
 # Docs: https://comunicaapi.pje.jus.br/swagger
 #
-# O sistema NÃO cria prazo automaticamente. Registra a comunicação, vincula ao
-# caso quando o número CNJ coincide, cria movimento e notifica. A definição e a
-# contagem do prazo continuam sendo ato humano.
+# Segurança operacional:
+#  • janela móvel de reconciliação — tolera interrupções curtas do scheduler;
+#  • paginação explícita — nunca assume que 100 itens representam a janela;
+#  • teto de páginas fail-closed — execução incompleta não vira falso sucesso;
+#  • data ausente/inválida permanece ausente — nunca é substituída por "hoje";
+#  • comunicação externa é deduplicada atomicamente no PostgreSQL;
+#  • vinculação automática só ocorre quando há um único caso ativo compatível;
+#  • nenhuma comunicação cria prazo automaticamente.
 from __future__ import annotations
 
 import json
 import logging
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import (
     retry,
@@ -33,6 +39,9 @@ from app.models.user import User
 
 logger = logging.getLogger("ejc.djen")
 BASE = "https://comunicaapi.pje.jus.br/api/v1/comunicacao"
+ITENS_POR_PAGINA = 100
+MAX_PAGINAS = 100
+JANELA_RECONCILIACAO_DIAS = 7
 
 
 @dataclass(slots=True)
@@ -40,12 +49,15 @@ class DjenConsultaResultado:
     """Resposta explícita da fonte externa.
 
     ``fonte_ok=True`` com ``items=[]`` significa consulta válida sem resultado.
-    ``fonte_ok=False`` significa indisponibilidade ou payload inválido.
+    ``fonte_ok=False`` significa indisponibilidade, payload inválido ou leitura
+    incompleta da janela solicitada.
     """
 
     fonte_ok: bool
     items: list[dict] = field(default_factory=list)
     erro: str | None = None
+    paginas: int = 0
+    janela_dias: int = 0
 
     @property
     def recebidas(self) -> int:
@@ -56,6 +68,8 @@ class DjenConsultaResultado:
             "fonte_ok": self.fonte_ok,
             "recebidas": self.recebidas,
             "erro": self.erro,
+            "paginas": self.paginas,
+            "janela_dias": self.janela_dias,
         }
 
 
@@ -77,6 +91,8 @@ class DjenCapturaResultado:
     duplicadas: int
     ignoradas: int
     erro: str | None = None
+    paginas: int = 0
+    janela_dias: int = 0
     emails_pendentes: list[EmailDjenPendente] = field(
         default_factory=list,
         repr=False,
@@ -173,6 +189,8 @@ def resumir_execucao(resultados: list[DjenCapturaResultado]) -> dict:
             "novas": 0,
             "duplicadas": 0,
             "ignoradas": 0,
+            "paginas": 0,
+            "janela_dias": 0,
             "erros": {"nenhuma_oab_configurada": 1},
         }
 
@@ -206,6 +224,11 @@ def resumir_execucao(resultados: list[DjenCapturaResultado]) -> dict:
         "novas": sum(resultado.novas for resultado in resultados),
         "duplicadas": sum(resultado.duplicadas for resultado in resultados),
         "ignoradas": sum(resultado.ignoradas for resultado in resultados),
+        "paginas": sum(resultado.paginas for resultado in resultados),
+        "janela_dias": max(
+            (resultado.janela_dias for resultado in resultados),
+            default=0,
+        ),
         "erros": dict(sorted(erros.items())),
     }
 
@@ -220,6 +243,8 @@ def codificar_resumo_heartbeat(resumo: dict) -> str:
         "novas",
         "duplicadas",
         "ignoradas",
+        "paginas",
+        "janela_dias",
         "erros",
     }
     payload = {chave: resumo[chave] for chave in permitido if chave in resumo}
@@ -275,10 +300,100 @@ def normalizar_processo(numero: str | None) -> str:
     return re.sub(r"\D", "", numero or "")
 
 
-def _parse_data_disp(raw: str | None) -> date:
+def _numero_processo_item(item: dict) -> str:
+    """Extrai o número CNJ de um item sem assumir um único nome de campo."""
+    numero = normalizar_processo(
+        item.get("numero_processo")
+        or item.get("numeroProcesso")
+        or item.get("numeroprocessocommascara")
+        or ""
+    )
+    if numero:
+        return numero
+    return normalizar_processo(extrair_numero_cnj(item.get("texto") or ""))
+
+
+def _indexar_casos_unicos(casos: list[Case]) -> tuple[dict[str, Case], int]:
+    """Indexa apenas números CNJ que apontam para exatamente um caso ativo.
+
+    Mais de um caso ativo com o mesmo número é situação ambígua: nenhuma
+    vinculação automática é feita. O item continua capturado para revisão.
+    """
+    por_numero: dict[str, list[Case]] = defaultdict(list)
+    for caso in casos:
+        numero = normalizar_processo(caso.numero_processo)
+        if numero:
+            por_numero[numero].append(caso)
+
+    unicos = {
+        numero: encontrados[0]
+        for numero, encontrados in por_numero.items()
+        if len(encontrados) == 1
+    }
+    ambiguos = sum(1 for encontrados in por_numero.values() if len(encontrados) > 1)
+    return unicos, ambiguos
+
+
+async def buscar_casos_ativos_por_processos(
+    db: AsyncSession,
+    numeros: set[str],
+) -> dict[str, Case]:
+    """Resolve todos os vínculos do lote com uma única consulta ao banco.
+
+    Sem migration disponível nesta etapa, normalizamos o número na expressão
+    SQL. Isso troca o antigo custo O(itens × casos) por um scan por captura.
+    Índice normalizado fica para a migration estrutural posterior da #968.
+    """
+    alvos = {normalizar_processo(numero) for numero in numeros}
+    alvos.discard("")
+    if not alvos:
+        return {}
+
+    numero_normalizado = func.regexp_replace(
+        Case.numero_processo,
+        r"\D",
+        "",
+        "g",
+    )
+    casos = (
+        await db.execute(
+            select(Case).where(
+                Case.deleted_at.is_(None),
+                Case.numero_processo.isnot(None),
+                Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+                numero_normalizado.in_(alvos),
+            )
+        )
+    ).scalars().all()
+    unicos, ambiguos = _indexar_casos_unicos(list(casos))
+    if ambiguos:
+        logger.warning(
+            "DJEN: %s número(s) de processo com vínculo ambíguo; sem auto-vinculação",
+            ambiguos,
+        )
+    return unicos
+
+
+async def buscar_caso_ativo_por_processo(
+    db: AsyncSession,
+    numero: str | None,
+) -> Case | None:
+    """Adapter compatível; novos lotes usam ``buscar_casos_ativos_por_processos``."""
+    alvo = normalizar_processo(numero)
+    if not alvo:
+        return None
+    return (await buscar_casos_ativos_por_processos(db, {alvo})).get(alvo)
+
+
+def _parse_data_disp(raw: str | None) -> date | None:
+    """Converte a data informada pela fonte sem inventar marco temporal.
+
+    Data ausente ou inválida não aborta a captura, mas permanece ``None`` para
+    impedir que camadas jurídicas tratem a data do servidor como fato da fonte.
+    """
     valor = (raw or "").strip()
     if not valor:
-        return date.today()
+        return None
     try:
         return date.fromisoformat(valor[:10])
     except ValueError:
@@ -293,70 +408,119 @@ def _parse_data_disp(raw: str | None) -> date:
             )
         except ValueError:
             pass
-    logger.warning("DJEN: data de disponibilização inválida; usando hoje")
-    return date.today()
-
-
-async def buscar_caso_ativo_por_processo(
-    db: AsyncSession,
-    numero: str | None,
-) -> Case | None:
-    alvo = normalizar_processo(numero)
-    if not alvo:
-        return None
-    casos = (
-        await db.execute(
-            select(Case).where(
-                Case.deleted_at.is_(None),
-                Case.numero_processo.isnot(None),
-                Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
-            )
-        )
-    ).scalars().all()
-    return next(
-        (
-            caso
-            for caso in casos
-            if normalizar_processo(caso.numero_processo) == alvo
-        ),
-        None,
+    logger.warning(
+        "DJEN: data de disponibilização ausente ou inválida; mantendo sem data"
     )
+    return None
+
+
+def _extrair_items(payload: dict | list) -> list[dict]:
+    if isinstance(payload, dict):
+        items = payload.get("items", [])
+    elif isinstance(payload, list):
+        items = payload
+    else:
+        raise TypeError("payload DJEN sem coleção")
+    if not isinstance(items, list) or any(
+        not isinstance(item, dict) for item in items
+    ):
+        raise TypeError("items DJEN inválidos")
+    return items
 
 
 async def consultar_oab(
     numero: str,
     uf: str,
-    dias: int = 2,
+    dias: int = JANELA_RECONCILIACAO_DIAS,
 ) -> DjenConsultaResultado:
+    """Consulta paginada com janela sobreposta e sem sucesso truncado."""
+    dias = max(1, min(int(dias), 90))
     fim = date.today()
     inicio = fim - timedelta(days=dias)
-    params = {
+    base_params = {
         "numeroOab": re.sub(r"\D", "", numero),
         "ufOab": uf.upper(),
         "dataDisponibilizacaoInicio": inicio.isoformat(),
         "dataDisponibilizacaoFim": fim.isoformat(),
-        "itensPorPagina": 100,
+        "itensPorPagina": ITENS_POR_PAGINA,
     }
+
+    todos: list[dict] = []
+    vistos: set[str] = set()
+    paginas = 0
     try:
-        payload = await _djen_get(params)
-        if isinstance(payload, dict):
-            items = payload.get("items", [])
-        elif isinstance(payload, list):
-            items = payload
-        else:
-            raise TypeError("payload DJEN sem coleção")
-        if not isinstance(items, list) or any(
-            not isinstance(item, dict) for item in items
-        ):
-            raise TypeError("items DJEN inválidos")
-        return DjenConsultaResultado(fonte_ok=True, items=items)
+        for pagina in range(1, MAX_PAGINAS + 1):
+            payload = await _djen_get({**base_params, "pagina": pagina})
+            lote = _extrair_items(payload)
+            paginas = pagina
+
+            for item in lote:
+                chave = str(item.get("id") or item.get("hash") or "")
+                # Sem id/hash, a captura contabiliza como ignorada. Não usamos
+                # conteúdo como chave para não fundir duas comunicações reais.
+                if chave and chave in vistos:
+                    continue
+                if chave:
+                    vistos.add(chave)
+                todos.append(item)
+
+            if len(lote) < ITENS_POR_PAGINA:
+                return DjenConsultaResultado(
+                    fonte_ok=True,
+                    items=todos,
+                    paginas=paginas,
+                    janela_dias=dias,
+                )
+
+        logger.error(
+            "DJEN: paginação atingiu teto de %s páginas; janela incompleta",
+            MAX_PAGINAS,
+        )
+        return DjenConsultaResultado(
+            fonte_ok=False,
+            items=[],
+            erro="paginacao_truncada",
+            paginas=paginas,
+            janela_dias=dias,
+        )
     except Exception as exc:
         codigo = _classificar_erro_fonte(exc)
         logger.warning(
             "DJEN: consulta à fonte falhou após retries; codigo=%s",
             codigo,
         )
-        return DjenConsultaResultado(fonte_ok=False, erro=codigo)
+        return DjenConsultaResultado(
+            fonte_ok=False,
+            erro=codigo,
+            paginas=paginas,
+            janela_dias=dias,
+        )
+
+
+def _stmt_inserir_comunicacao(valores: dict):
+    """INSERT idempotente: somente o vencedor da corrida cria efeitos derivados."""
+    return (
+        pg_insert(DjenComunicacao)
+        .values(**valores)
+        .on_conflict_do_nothing(
+            index_elements=[DjenComunicacao.comunicacao_id_externo]
+        )
+        .returning(DjenComunicacao.id)
+    )
+
+
+async def _emails_usuarios(
+    db: AsyncSession,
+    user_ids: set[str],
+) -> dict[str, str]:
+    if not user_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(User.id, User.email).where(User.id.in_(user_ids))
+        )
+    ).all()
+    return {str(user_id): email for user_id, email in rows if email}
 
 
 async def _capturar_configurado(
@@ -369,33 +533,31 @@ async def _capturar_configurado(
     ignoradas = 0
     emails: list[EmailDjenPendente] = []
 
+    processos = {
+        numero
+        for item in consulta.items
+        if (numero := _numero_processo_item(item))
+    }
+    casos_por_processo = await buscar_casos_ativos_por_processos(db, processos)
+    responsaveis = {
+        str(caso.advogado_responsavel_id)
+        for caso in casos_por_processo.values()
+        if caso.advogado_responsavel_id
+        and str(caso.advogado_responsavel_id) != str(adv.id)
+    }
+    emails_por_usuario = await _emails_usuarios(db, responsaveis)
+
+    from app.services.notification_service import criar_notificacao_interna
+
     for item in consulta.items:
         external_id = str(item.get("id") or item.get("hash") or "")
         if not external_id:
             ignoradas += 1
             continue
 
-        existente = (
-            await db.execute(
-                select(DjenComunicacao).where(
-                    DjenComunicacao.comunicacao_id_externo == external_id
-                )
-            )
-        ).scalar_one_or_none()
-        if existente:
-            duplicadas += 1
-            continue
-
         texto = (item.get("texto") or "")[:2000]
-        numero_processo = normalizar_processo(
-            item.get("numero_processo")
-            or item.get("numeroprocessocommascara")
-            or ""
-        )
-        if not numero_processo:
-            numero_processo = normalizar_processo(extrair_numero_cnj(texto))
-
-        caso = await buscar_caso_ativo_por_processo(db, numero_processo)
+        numero_processo = _numero_processo_item(item)
+        caso = casos_por_processo.get(numero_processo) if numero_processo else None
         if caso:
             marcador = (
                 "\n[vinculação automática ao caso pelo nº do processo "
@@ -403,25 +565,42 @@ async def _capturar_configurado(
             )
             texto = texto[: 2000 - len(marcador)] + marcador
 
-        comunicacao = DjenComunicacao(
-            id=str(uuid4()),
-            comunicacao_id_externo=external_id,
-            advogado_id=adv.id,
-            numero_processo=item.get("numero_processo") or numero_processo,
-            tribunal=item.get("siglaTribunal") or item.get("sigla_tribunal"),
-            tipo_comunicacao=(
-                item.get("tipoComunicacao")
-                or item.get("tipo_comunicacao")
-                or ""
-            )[:60],
-            data_disponibilizacao=_parse_data_disp(
-                item.get("data_disponibilizacao")
-                or item.get("dataDisponibilizacao")
-            ),
-            texto_resumo=texto,
-            case_id=caso.id if caso else None,
+        tribunal = item.get("siglaTribunal") or item.get("sigla_tribunal")
+        tipo_comunicacao = (
+            item.get("tipoComunicacao")
+            or item.get("tipo_comunicacao")
+            or ""
+        )[:60]
+        numero_fonte = (
+            item.get("numero_processo")
+            or item.get("numeroProcesso")
+            or numero_processo
+            or None
         )
-        db.add(comunicacao)
+        comunicacao_id = str(uuid4())
+        inserido = (
+            await db.execute(
+                _stmt_inserir_comunicacao(
+                    {
+                        "id": comunicacao_id,
+                        "comunicacao_id_externo": external_id,
+                        "advogado_id": adv.id,
+                        "numero_processo": numero_fonte,
+                        "tribunal": tribunal,
+                        "tipo_comunicacao": tipo_comunicacao,
+                        "data_disponibilizacao": _parse_data_disp(
+                            item.get("data_disponibilizacao")
+                            or item.get("dataDisponibilizacao")
+                        ),
+                        "texto_resumo": texto,
+                        "case_id": caso.id if caso else None,
+                    }
+                )
+            )
+        ).scalar_one_or_none()
+        if not inserido:
+            duplicadas += 1
+            continue
 
         if caso:
             db.add(
@@ -430,14 +609,12 @@ async def _capturar_configurado(
                     case_id=caso.id,
                     tipo="intimacao",
                     descricao=(
-                        f"📨 Intimação DJEN ({comunicacao.tribunal}): "
-                        f"{comunicacao.tipo_comunicacao} — tratar na tela "
+                        f"📨 Intimação DJEN ({tribunal}): "
+                        f"{tipo_comunicacao} — tratar na tela "
                         "Intimações [vinculação automática pelo nº do processo]"
                     ),
                 )
             )
-
-        from app.services.notification_service import criar_notificacao_interna
 
         destinatario_id = (
             caso.advogado_responsavel_id
@@ -446,9 +623,8 @@ async def _capturar_configurado(
         )
         titulo = "📨 Nova intimação no DJEN"
         mensagem = (
-            f"{comunicacao.tribunal or 'Tribunal'} · proc. "
-            f"{comunicacao.numero_processo or '—'} · "
-            f"{comunicacao.tipo_comunicacao}"
+            f"{tribunal or 'Tribunal'} · proc. "
+            f"{numero_fonte or '—'} · {tipo_comunicacao}"
             + (
                 " · vinculada automaticamente ao caso (conferir)"
                 if caso
@@ -464,14 +640,11 @@ async def _capturar_configurado(
             link="/intimacoes",
         )
 
-        if destinatario_id == adv.id:
-            email_destino = adv.email
-        else:
-            email_destino = (
-                await db.execute(
-                    select(User.email).where(User.id == destinatario_id)
-                )
-            ).scalar_one_or_none()
+        email_destino = (
+            adv.email
+            if str(destinatario_id) == str(adv.id)
+            else emails_por_usuario.get(str(destinatario_id))
+        )
         if email_destino:
             emails.append(
                 EmailDjenPendente(
@@ -492,6 +665,8 @@ async def _capturar_configurado(
         novas=novas,
         duplicadas=duplicadas,
         ignoradas=ignoradas,
+        paginas=consulta.paginas,
+        janela_dias=consulta.janela_dias,
         emails_pendentes=emails,
     )
 
@@ -499,6 +674,8 @@ async def _capturar_configurado(
 async def capturar_para_advogado(
     db: AsyncSession,
     adv: User,
+    *,
+    dias: int = JANELA_RECONCILIACAO_DIAS,
 ) -> DjenCapturaResultado:
     """Captura uma inscrição em savepoint e registra métricas na task atual.
 
@@ -512,7 +689,11 @@ async def capturar_para_advogado(
             DjenCapturaResultado.sem_configuracao()
         )
 
-    consulta = await consultar_oab(adv.djen_oab_numero, adv.djen_oab_uf)
+    consulta = await consultar_oab(
+        adv.djen_oab_numero,
+        adv.djen_oab_uf,
+        dias=dias,
+    )
     if not consulta.fonte_ok:
         return registrar_resultado_execucao(
             DjenCapturaResultado(
@@ -523,6 +704,8 @@ async def capturar_para_advogado(
                 duplicadas=0,
                 ignoradas=0,
                 erro=consulta.erro,
+                paginas=consulta.paginas,
+                janela_dias=consulta.janela_dias,
             )
         )
 
@@ -532,5 +715,7 @@ async def capturar_para_advogado(
     except Exception:
         logger.error("DJEN: captura interna falhou; codigo=erro_interno")
         resultado = DjenCapturaResultado.falha_interna()
+        resultado.paginas = consulta.paginas
+        resultado.janela_dias = consulta.janela_dias
 
     return registrar_resultado_execucao(resultado)

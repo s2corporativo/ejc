@@ -1,6 +1,6 @@
 # ── app/routers/intimacoes.py ────────────────────────────────────────────────
 # Intimações capturadas do DJEN — tratamento humano obrigatório.
-# O job do scheduler captura; aqui o advogado processa.
+# O job do scheduler captura; aqui o advogado revisa e decide.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
@@ -25,106 +25,43 @@ from app.services.djen_service import (
 
 router = APIRouter(prefix="/intimacoes", tags=["Intimações DJEN"])
 
-_HEURISTICAS_PRAZO: list[tuple[tuple[str, ...], int, str, str]] = [
-    (
-        ("embargos de declaração", "embargos de declaracao"),
-        5,
-        "embargos de declaração",
-        "CPC, art. 1.023 — 5 dias úteis",
-    ),
-    (
-        ("contestação", "contestacao", "contestar"),
-        15,
-        "contestação",
-        "CPC, art. 335 — 15 dias úteis",
-    ),
-    (
-        ("apelação", "apelacao", "recurso"),
-        15,
-        "apelação/recurso",
-        "CPC, art. 1.003, §5º — 15 dias úteis",
-    ),
-    (
-        ("manifestação", "manifestacao", "despacho"),
-        5,
-        "manifestação/despacho",
-        "CPC, art. 218, §3º — 5 dias úteis (prazo supletivo, na ausência de "
-        "prazo legal ou judicial específico)",
-    ),
-]
+PRAZO_DJEN_MOTIVO_BLOQUEIO = (
+    "calculo_automatico_bloqueado_ate_motor_auditavel_por_regime"
+)
 
 
 def _calcular_sugestao(c: DjenComunicacao) -> dict:
-    """Calcula sugestão de prazo sem persistir ou substituir conferência humana."""
-    from app.services.deadline_calculator import prazo_dias_uteis
+    """Expõe a pendência de revisão sem fabricar termo inicial ou vencimento.
 
-    texto = f"{c.tipo_comunicacao or ''} {c.texto_resumo or ''}".lower()
-
-    tipo_detectado = None
-    dias = 15
-    fundamentacao = None
-    casou = False
-    for termos, prazo, rotulo, artigo in _HEURISTICAS_PRAZO:
-        if any(termo in texto for termo in termos):
-            tipo_detectado = rotulo
-            dias = prazo
-            fundamentacao = artigo
-            casou = True
-            break
-
-    if not casou:
-        tipo_detectado = "não identificado"
-        dias = 15
-        fundamentacao = None
-
-    base = c.data_disponibilizacao
-    if isinstance(base, datetime):
-        base = base.date()
-    if base is None:
-        return {
-            "disponivel": False,
-            "com_id": c.id,
-            "numero_processo": c.numero_processo,
-            "case_id": c.case_id,
-            "tipo_detectado": tipo_detectado,
-            "dias": dias,
-            "data_base": None,
-            "data_sugerida": None,
-            "fundamentacao": fundamentacao,
-            "casou": casou,
-            "aviso": (
-                "Intimação sem data de disponibilização — não é possível sugerir "
-                "prazo automaticamente. Informe o termo inicial manualmente."
-            ),
-        }
-
-    data_sugerida = prazo_dias_uteis(base, dias, tribunal=c.tribunal)
-
-    aviso = (
-        "Sugestão automática — confirme o tipo, o termo inicial e o prazo na "
-        "publicação original antes de cadastrar. Não substitui a conferência "
-        "do advogado responsável."
-    )
-    if not casou:
-        aviso = (
-            "Tipo de intimação não identificado automaticamente. Prazo padrão "
-            "de 15 dias úteis apresentado apenas como referência — defina o "
-            "prazo correto conforme a publicação. "
-            + aviso
-        )
+    A comunicação capturada ainda não possui, no schema atual, os marcos
+    separados de publicação e termo inicial nem o regime processual auditável.
+    A data de disponibilização é preservada somente como fato da fonte e nunca
+    é reutilizada como ``data_base`` de cálculo.
+    """
+    disponibilizacao = c.data_disponibilizacao
+    if isinstance(disponibilizacao, datetime):
+        disponibilizacao = disponibilizacao.date()
 
     return {
-        "disponivel": True,
+        "disponivel": False,
         "com_id": c.id,
         "numero_processo": c.numero_processo,
         "case_id": c.case_id,
-        "tipo_detectado": tipo_detectado,
-        "dias": dias,
-        "data_base": base,
-        "data_sugerida": data_sugerida,
-        "fundamentacao": fundamentacao,
-        "casou": casou,
-        "aviso": aviso,
+        "tipo_detectado": "revisão necessária",
+        "dias": None,
+        "data_base": None,
+        "data_sugerida": None,
+        "data_disponibilizacao": disponibilizacao,
+        "fundamentacao": None,
+        "casou": False,
+        "revisao_necessaria": True,
+        "motivo": PRAZO_DJEN_MOTIVO_BLOQUEIO,
+        "aviso": (
+            "Cálculo automático temporariamente bloqueado: disponibilização, "
+            "publicação, termo inicial e regime processual precisam ser "
+            "conferidos na comunicação oficial. Informe o vencimento final "
+            "manualmente somente após essa conferência."
+        ),
     }
 
 
@@ -144,6 +81,8 @@ async def _carregar_comunicacao(
 
 
 class AceitarPrazoRequest(BaseModel):
+    # ``dias`` é preservado apenas por compatibilidade de contrato; sem termo
+    # inicial/regime auditáveis o backend rejeita seu uso para cálculo.
     dias: Optional[int] = None
     data_prazo: Optional[date] = None
     titulo: Optional[str] = None
@@ -183,6 +122,10 @@ async def listar(
                 "texto": (comunicacao.texto_resumo or "")[:500],
                 "case_id": comunicacao.case_id,
                 "processada": comunicacao.processada,
+                "prazo_sugerido_status": (
+                    comunicacao.prazo_sugerido_status or "nenhum"
+                ),
+                "prazo_deadline_id": comunicacao.prazo_deadline_id,
             }
             for comunicacao in rows
         ],
@@ -289,18 +232,40 @@ async def processar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    comunicacao = (
-        await db.execute(
-            select(DjenComunicacao).where(DjenComunicacao.id == com_id)
+    from app.models.audit_log import criar_audit_log
+
+    comunicacao = await _carregar_comunicacao(com_id, db, cu)
+    if comunicacao.case_id:
+        await verificar_acesso_caso(db, cu, comunicacao.case_id)
+
+    decisao_prazo = comunicacao.prazo_sugerido_status or "nenhum"
+    if decisao_prazo not in {"aceito", "recusado"}:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Revise a necessidade de prazo antes de marcar a intimação como "
+                "tratada: aceite um vencimento conferido ou registre a recusa."
+            ),
         )
-    ).scalar_one_or_none()
-    if not comunicacao or (
-        not is_gestao(cu) and comunicacao.advogado_id != cu.id
-    ):
-        raise HTTPException(status_code=404, detail="Comunicação não encontrada")
+
+    if comunicacao.processada:
+        return {"detail": "Intimação já estava marcada como tratada"}
+
     comunicacao.processada = True
     comunicacao.processada_por = cu.id
     comunicacao.processada_em = datetime.now(timezone.utc)
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "UPDATE",
+        "djen_comunicacoes",
+        comunicacao.id,
+        dados_depois={
+            "processada": True,
+            "decisao_prazo": decisao_prazo,
+        },
+    )
     await db.commit()
     return {"detail": "Intimação marcada como tratada"}
 
@@ -338,7 +303,6 @@ async def aceitar_prazo(
     cu: User = Depends(get_current_user),
 ):
     from app.models.audit_log import criar_audit_log
-    from app.services.deadline_calculator import prazo_dias_uteis
 
     payload = payload or AceitarPrazoRequest()
     comunicacao = await _carregar_comunicacao(com_id, db, cu)
@@ -375,50 +339,39 @@ async def aceitar_prazo(
             }
 
     sugestao = _calcular_sugestao(comunicacao)
-    base = comunicacao.data_disponibilizacao
-    if isinstance(base, datetime):
-        base = base.date()
 
-    if payload.data_prazo is not None:
-        data_prazo = payload.data_prazo
-        base_legal = (
-            sugestao.get("fundamentacao") or "Prazo informado manualmente"
-        )
-    elif payload.dias is not None:
-        if base is None:
+    if payload.data_prazo is None:
+        if payload.dias is not None:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    "Intimação sem data de disponibilização — informe "
-                    "data_prazo diretamente."
+                    "Cálculo por quantidade de dias está bloqueado até a "
+                    "implantação do motor auditável por regime e termo inicial. "
+                    "Informe data_prazo após conferência da publicação oficial."
                 ),
             )
-        data_prazo = prazo_dias_uteis(
-            base,
-            payload.dias,
-            tribunal=comunicacao.tribunal,
-        )
-        base_legal = (
-            sugestao.get("fundamentacao") or f"{payload.dias} dias úteis"
-        )
-    else:
-        if not sugestao.get("disponivel"):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "Não há sugestão de prazo disponível — informe dias ou "
-                    "data_prazo."
-                ),
-            )
-        data_prazo = sugestao["data_sugerida"]
-        base_legal = sugestao.get("fundamentacao") or (
-            f"{sugestao['dias']} dias úteis (sugestão automática)"
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Não há vencimento automático disponível. Informe data_prazo "
+                "após conferir publicação, termo inicial, regime e calendário."
+            ),
         )
 
+    data_prazo = payload.data_prazo
+    base_legal = "Vencimento informado manualmente após revisão humana"
     titulo = payload.titulo or (
-        f"{sugestao.get('tipo_detectado') or 'Prazo'} — "
-        f"proc. {comunicacao.numero_processo or 's/ número'}"
+        f"Prazo DJEN — proc. {comunicacao.numero_processo or 's/ número'}"
     )[:255]
+
+    disponibilizacao = comunicacao.data_disponibilizacao
+    if isinstance(disponibilizacao, datetime):
+        disponibilizacao = disponibilizacao.date()
+    metadado_disponibilizacao = (
+        f" Disponibilização capturada: {disponibilizacao.isoformat()}."
+        if disponibilizacao
+        else " Disponibilização não disponível/validada na fonte capturada."
+    )
 
     prazo = Deadline(
         id=str(uuid4()),
@@ -426,13 +379,14 @@ async def aceitar_prazo(
         tipo="processual",
         prioridade=payload.prioridade or "alta",
         descricao=(
-            "Prazo gerado a partir de intimação DJEN "
-            f"({comunicacao.tribunal or 'tribunal n/d'}). "
-            f"{sugestao.get('aviso') or ''}"
+            "Prazo vinculado a intimação DJEN após informação manual do "
+            f"vencimento pelo usuário.{metadado_disponibilizacao} "
+            f"{sugestao['aviso']}"
         ).strip(),
         data_prazo=data_prazo,
-        data_intimacao=base,
-        base_legal=base_legal[:255] if base_legal else None,
+        # Disponibilização não é tratada como intimação/termo inicial.
+        data_intimacao=None,
+        base_legal=base_legal,
         case_id=comunicacao.case_id,
         responsavel_id=(
             payload.responsavel_id
@@ -453,12 +407,16 @@ async def aceitar_prazo(
         "CREATE",
         "deadlines",
         prazo.id,
-        dados_depois={"origem": "djen", "com_id": comunicacao.id},
+        dados_depois={
+            "origem": "djen",
+            "com_id": comunicacao.id,
+            "modo": "vencimento_manual_revisado",
+        },
     )
     await db.commit()
     await db.refresh(prazo)
     return {
-        "detail": "Prazo aceito e cadastrado",
+        "detail": "Prazo manual conferido e cadastrado",
         "criado": True,
         "deadline_id": prazo.id,
         "data_prazo": prazo.data_prazo,
@@ -473,10 +431,31 @@ async def recusar_prazo(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    from app.models.audit_log import criar_audit_log
+
     comunicacao = await _carregar_comunicacao(com_id, db, cu)
     if comunicacao.case_id:
         await verificar_acesso_caso(db, cu, comunicacao.case_id)
+
+    if comunicacao.prazo_sugerido_status == "aceito" and comunicacao.prazo_deadline_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Esta intimação já possui prazo aceito. Revise o prazo cadastrado "
+                "antes de alterar a decisão sobre a comunicação."
+            ),
+        )
+
     comunicacao.prazo_sugerido_status = "recusado"
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "UPDATE",
+        "djen_comunicacoes",
+        comunicacao.id,
+        dados_depois={"prazo_sugerido_status": "recusado"},
+    )
     await db.commit()
     return {
         "detail": "Prazo recusado — nenhum prazo será gerado para esta intimação",
@@ -516,5 +495,7 @@ async def capturar_agora(
         "recebidas": resultado.recebidas,
         "duplicadas": resultado.duplicadas,
         "ignoradas": resultado.ignoradas,
+        "paginas": resultado.paginas,
+        "janela_dias": resultado.janela_dias,
         "detail": f"{resultado.novas} intimação(ões) nova(s)",
     }
