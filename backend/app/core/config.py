@@ -9,6 +9,15 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import secrets
 
+# NFS-01/NFS-02 (auditoria jul/2026, Issue de correção): valores aceitos de
+# NFSE_REGIME_TRIBUTARIO. Cada um mapeia para opSimpNac/regEspTrib da DPS
+# dentro do adapter (services/nfse/nuvem_fiscal.py) — este módulo só valida a
+# STRING escolhida pelo titular/contador, nunca decide qual regime é o real.
+NFSE_REGIMES_TRIBUTARIOS_VALIDOS = frozenset({
+    "simples_nacional", "lucro_presumido", "lucro_real",
+})
+
+
 
 class Settings(BaseSettings):
     # ── Aplicação ─────────────────────────────────────────────────────────
@@ -430,7 +439,24 @@ class Settings(BaseSettings):
     NFSE_ISS_ALIQUOTA: float = 0.0       # alíquota ISS advocacia em Betim (%). A confirmar.
     NFSE_ITEM_LC116: str = "17.14"       # item da lista LC 116/03 (advocacia)
     NFSE_CTRIB_NAC: str = ""             # cTribNac (GET /nfse/cidades/3106200). A confirmar.
-    NFSE_TIMEOUT: int = 60               # timeout (s) das chamadas ao provedor
+    NFSE_TIMEOUT: int = 60
+    # NFS-01/NFS-02 (auditoria jul/2026): regime tributário e tributação/
+    # retenção de ISS NÃO têm default seguro — o código chutava "1"/"1"/"0"
+    # fixos no adapter independente do regime real do escritório e da condição
+    # do TOMADOR/MUNICÍPIO em cada nota. CONFIRME com o contador antes de
+    # preencher. Ficam SEM valor por padrão de propósito: se NFSE_ENABLED=true
+    # e algum destes faltar, o boot FALHA (ver _validar_seguranca_producao) em
+    # vez de emitir DPS com base de cálculo errada.
+    NFSE_REGIME_TRIBUTARIO: str = ""     # simples_nacional | lucro_presumido | lucro_real
+    # tribISSQN padrão (tributável/isento/imune) quando a nota não sobrepõe.
+    NFSE_TRIB_ISSQN_DEFAULT: int | None = None
+    # tpRetISSQN padrão (retido/não retido) quando a nota não sobrepõe — a
+    # regra final depende do tomador/município (LC 116/2003 art. 6º;
+    # LC 123/2006 art. 21 §4º), então isto é só o "caso comum": quando o
+    # tomador exigir retenção, sobreponha por nota (POST /nfse/emitir).
+    NFSE_TIPO_RETENCAO_ISS_DEFAULT: int | None = None
+
+               # timeout (s) das chamadas ao provedor
 
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)
