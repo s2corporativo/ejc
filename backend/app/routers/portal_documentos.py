@@ -39,7 +39,10 @@ from app.models.solicitacao_documento import (
 )
 from app.models.user import User, UserRole
 # Reuso EXATO das validações de upload do GED (não duplicar regra de negócio).
-from app.routers.documents import EXTENSOES_PERMITIDAS, _validar_conteudo
+from app.services.document_content_policy import (
+    EXTENSOES_PERMITIDAS,
+    validar_conteudo,
+)
 from app.services.solicitacao_documento_service import recalcular_status
 
 settings = get_settings()
@@ -164,7 +167,7 @@ async def upload_item_solicitacao(
             detail=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB",
         )
     # Magic bytes server-side — nunca confiar na extensão/content_type.
-    mime_real = _validar_conteudo(ext, conteudo)
+    mime_real = validar_conteudo(ext, conteudo)
 
     # ── Claim atômico do item ANTES de gravar o arquivo: uploads concorrentes
     # no mesmo item disputam o UPDATE condicional (row lock) e só um vence —
@@ -222,11 +225,16 @@ async def upload_item_solicitacao(
     ]
     sol.status = recalcular_status(status_itens)
 
+    # LGPD/princípio da necessidade: o audit log é persistente e
+    # consultável; registrar o NOME do item (dado do cliente) é
+    # desnecessário para a trilha — item.id + solicitacao identificam o
+    # fato com rastreabilidade completa sem expor o conteúdo. O contrato do
+    # módulo (test_document_content_policy) exige ausência de 'detalhes' no
+    # audit do upload: a referência ao documento assinado basta.
     await criar_audit_log(
         db, cu.id, cu.role.value, "UPLOAD", "solicitacao_documento_itens",
         item.id,
-        detalhes=f"portal: item '{item.nome}' da solicitação {sol.id} "
-                 f"→ documento {doc_id}",
+        dados_depois={"documento_id": doc_id, "solicitacao_id": sol.id},
     )
     await db.commit()
 

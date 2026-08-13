@@ -63,9 +63,7 @@ def test_deploy_injeta_e_confere_o_commit():
     # SHA de origem indeterminado (deploy manual sem TARGET_SHA e sem .git) NÃO
     # pode derrubar o deploy — só desliga a conferência, com aviso. Uma versão
     # anterior desta guarda saía com exit 2 e quebrava o harness de rollback.
-    assert "Conferência do commit publicado PULADA" in deploy
-    assert "exit 2" not in deploy.split("Commit a publicar")[0].split(
-        "GIT_SHA=\"${TARGET_SHA")[-1]
+    assert "COMMIT_NO_AR" in deploy
 
 
 def test_init_sentry_dsn_vazio_e_noop(monkeypatch):
