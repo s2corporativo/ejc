@@ -113,6 +113,15 @@ ADICOES_INTENCIONAIS = {
     ("/api/dpt360/intake/opportunities", "GET"),
     ("/api/dpt360/intake/opportunities", "POST"),
     ("/api/dpt360/actions", "POST"),
+    # DPT360 (evolução do módulo): avanço de ciclo de vida de lote de
+    # oportunidades — decisão de produto registrada na issue #968.
+    ("/api/dpt360/oportunidades/{batch_id}/ciclo-vida", "POST"),
+    # Auditoria de produtividade: exportação de eventos (CSV) do módulo de
+    # analytics — exportação autenticada de dado interno, sem dado de cliente.
+    ("/api/analytics/produtividade/export-event", "POST"),
+    # PR #1120 (assinaturas): leitura do DOCUMENTO assinado por ID de
+    # assinatura — o fix de produção que criou o endpoint de documento.
+    ("/api/signatures/{sig_id}/documento", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -155,13 +164,31 @@ REMOCOES_INTENCIONAIS = {
 }
 
 
+SNAPSHOT_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "snapshots",
+)
+SNAPSHOT_FILE = os.path.join(SNAPSHOT_DIR, "openapi_rotas_baseline.json")
+
+
+def _regenerar_snapshot():
+    """Regenera o snapshot com a superfície ATUAL da API — operação deliberada,
+    restrita à execução manual abaixo. Todo regenerate precisa vir acompanhado
+    do diff das rotas (cada entrada nova/removida deve constar de
+    ADICOES_INTENCIONAIS/REMOCOES_INTENCIONAIS): `GEN_ROUTES_SNAPSHOT=1 pytest`.
+    """
+    from app.main import app
+
+    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+    atual = _extrair_rotas(app)
+    with open(SNAPSHOT_FILE, "w", encoding="utf-8") as fh:
+        json.dump(atual, fh, indent=2, ensure_ascii=False)
+    return atual
+
+
 def _baseline() -> list[dict]:
-    caminho = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "snapshots",
-        "openapi_rotas_baseline.json",
-    )
-    with open(caminho, encoding="utf-8") as fh:
+    if os.getenv("GEN_ROUTES_SNAPSHOT"):
+        return _regenerar_snapshot()
+    with open(SNAPSHOT_FILE, encoding="utf-8") as fh:
         return json.load(fh)
 
 
@@ -308,7 +335,10 @@ def test_efeitos_colaterais_nao_de_rota_preservados():
     from app.services.ai import provider_metrics_runtime
 
     fonte_ev = inspect.getsource(event_subscribers)
-    assert "_patch_documents_background_analysis()" in fonte_ev
+    # O hook de análise documental mudou de módulo (documents_router compat
+    # patch → event_subscribers via _install_document_analysis_hook), mas o
+    # contrato do subscriber permanece instalado no boot do módulo.
+    assert "_install_document_analysis_hook()" in fonte_ev
     assert "_install_ai_core_hardening()" in fonte_ev
     assert "_install_datajud_cognitive_feed()" in fonte_ev
     assert "@on(" in fonte_ev
