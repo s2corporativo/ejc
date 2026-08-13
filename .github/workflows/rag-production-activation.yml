@@ -22,8 +22,8 @@ concurrency:
 jobs:
   validar:
     name: Validar ativação, idempotência e rollback
-    # Custo zero: roda no runner da VPS (política 2026-08 — ver test_self_hosted_runner_isolation).
-    runs-on: [self-hosted, ejc-vps]
+    # Teste determinístico de PR em runner hospedado; nunca na VPS de produção.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7

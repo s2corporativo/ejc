@@ -1,12 +1,4 @@
-"""Contrato de runners (política 2026-08, custo zero no GitHub Actions).
-
-Decisão do titular (ago/2026): todos os workflows recorrentes rodam no runner
-self-hosted `ejc-vps` para não consumir minutos pagos de Actions em repositório
-privado. Risco residual aceito: código de branch de PR executa na VPS que também
-hospeda a produção — mitigação exigida: repositório privado, sem PR de fork
-externo, e runner em usuário sem privilégio. Os codemods one-shot (waves) seguem
-em runner hospedado por serem descartáveis e estarem desativados.
-"""
+"""Contrato: código de PR/branch não confiável nunca executa na VPS de produção."""
 
 from pathlib import Path
 
@@ -25,7 +17,7 @@ def _job_block(texto: str, inicio: str, fim: str | None = None) -> str:
     return bloco
 
 
-def test_validacoes_de_pr_backup_e_rag_usam_runner_proprio_sem_custo():
+def test_validacoes_de_pr_backup_e_rag_usam_runner_hospedado():
     backup = _job_block(
         _read("backup-gdrive-activation.yml"),
         "  validar:\n",
@@ -37,33 +29,8 @@ def test_validacoes_de_pr_backup_e_rag_usam_runner_proprio_sem_custo():
         "  ativar-producao:\n",
     )
     for bloco in (backup, rag):
-        assert "runs-on: [self-hosted, ejc-vps]" in bloco
-        assert "ubuntu-latest" not in bloco
-
-
-def test_workflows_recorrentes_nao_consomem_minutos_pagos():
-    # Todo workflow que dispara em pull_request/push/schedule roda no runner
-    # próprio; ubuntu-latest só é tolerado nos codemods one-shot desativados.
-    recorrentes = (
-        "ci.yml",
-        "ejc-release-gate.yml",
-        "frontend-ci.yml",
-        "probe-apis.yml",
-        "governanca.yml",
-        "auto-integracao.yml",
-        "continuity-ui-gates.yml",
-        "architecture-inventory.yml",
-        "main-provenance.yml",
-        "release-certification.yml",
-        "backup-gdrive-activation.yml",
-        "rag-production-activation.yml",
-        "production-backup-monitor.yml",
-        "deploy-staging.yml",
-        "deploy-vps.yml",
-        "producao-prova-continuidade.yml",
-    )
-    for nome in recorrentes:
-        assert "ubuntu-latest" not in _read(nome), nome
+        assert "runs-on: ubuntu-latest" in bloco
+        assert "self-hosted" not in bloco
 
 
 def test_codmods_de_branch_nao_rodam_no_host_de_producao():

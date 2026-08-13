@@ -21,7 +21,7 @@ concurrency:
 jobs:
   governanca:
     name: Governança — travas de PR
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7

@@ -37,7 +37,7 @@ concurrency:
 jobs:
   contract-tests:
     name: Contrato da certificação
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -62,7 +62,7 @@ jobs:
     name: Certificar pacote real
     if: github.event_name == 'workflow_dispatch'
     needs: contract-tests
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       MANIFEST_PATH: ${{ inputs.manifest_path }}

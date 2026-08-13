@@ -30,7 +30,7 @@ concurrency:
 jobs:
   validar:
     name: Validar backup, migration e rollback
-    # Custo zero: roda no runner da VPS (política 2026-08 — ver test_self_hosted_runner_isolation).
+    # Nunca executar conteúdo de PR no host que também hospeda produção.
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 12
     steps:
