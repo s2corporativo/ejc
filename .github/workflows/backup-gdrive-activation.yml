@@ -1,7 +1,9 @@
 # EJC — validação e prova manual do backup diário cifrado no Google Drive.
 #
-# Em Pull Request, executa somente testes determinísticos em runner hospedado
-# pelo GitHub. A VPS de produção só é alcançada por execução manual na main.
+# Em Pull Request, executa somente testes determinísticos offline (validação de
+# sintaxe, wrapper cifrado e migração/rollback) no runner self-hosted `ejc-vps`
+# (VPS Contabo) — zero minutos do GitHub. A prova integral cifrada contra o
+# Google Drive só ocorre por execução manual na main (job `comprovar-producao`).
 name: Backup Google Drive — validar e comprovar
 
 on:
@@ -29,7 +31,7 @@ jobs:
   validar:
     name: Validar backup, migration e rollback
     # Nunca executar conteúdo de PR no host que também hospeda produção.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v7

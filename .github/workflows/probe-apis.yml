@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   probe:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

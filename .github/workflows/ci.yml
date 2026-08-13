@@ -6,9 +6,10 @@ name: CI
 # os checks deste workflow e do "EJC Release Gate" devem ser obrigatórios na
 # proteção da branch main.
 
-# CI em runners GitHub-hosted, efêmeros e isolados da produção. Os jobs
-# independentes executam em paralelo; o runner `ejc-vps` fica reservado a
-# deploy, backup real e demais operações do ambiente oficial.
+# CI no runner self-hosted `ejc-vps` (VPS Contabo) — zero minutos do GitHub.
+# O PostgreSQL dos testes é um container Docker efêmero na porta 55432, isolado
+# do ejc_db de produção (credenciais e porta diferentes). Os jobs independentes
+# executam em paralelo na mesma VPS.
 on:
   pull_request:
   push:
@@ -25,28 +26,20 @@ concurrency:
 jobs:
   db-validation:
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: ejc_user
-          POSTGRES_PASSWORD: ejc_pass
-          POSTGRES_DB: ejc_db
-        ports:
-          # Porta dedicada do serviço efêmero deste job. O valor alto mantém
-          # compatibilidade com os scripts existentes e evita acoplamento.
-          - 55432:5432
-        options: >-
-          --health-cmd "pg_isready -U ejc_user -d ejc_db"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 15
+
+      # Nota de arquitetura: em runner self-hosted o bloco `services:` do GitHub
+      # Actions não é suportado — o PostgreSQL efêmero é criado via Docker no
+      # primeiro step do job e removido na limpeza, isolando o CI do ejc_db de
+      # produção (credenciais e porta diferentes da VPS).
+
     env:
+      CI_PG_CONTAINER: ejc-ci-pg
+      CI_PG_PORT: "55432"
       DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:55432/ejc_db
       DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:55432/ejc_db
       SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@localhost:55432/ejc_db
@@ -54,6 +47,28 @@ jobs:
       RUN_DB_TESTS: "1"
     steps:
       - uses: actions/checkout@v7
+
+      - name: PostgreSQL pgvector efêmero (porta dedicada do CI, sem tocar produção)
+        run: |
+          set -o pipefail
+          docker rm -f "$CI_PG_CONTAINER" >/dev/null 2>&1 || true
+          docker run -d \
+            --name "$CI_PG_CONTAINER" \
+            -p "${CI_PG_PORT}:5432" \
+            -e POSTGRES_USER=ejc_user \
+            -e POSTGRES_PASSWORD=ejc_pass \
+            -e POSTGRES_DB=ejc_db \
+            --health-cmd "pg_isready -U ejc_user -d ejc_db" \
+            --health-interval 5s \
+            --health-timeout 5s \
+            --health-retries 30 \
+            pgvector/pgvector:pg16
+          for i in $(seq 1 60); do
+            [ "$(docker inspect --format='{{.State.Health.Status}}' "$CI_PG_CONTAINER")" = "healthy" ] && break
+            sleep 2
+          done
+          [ "$(docker inspect --format='{{.State.Health.Status}}' "$CI_PG_CONTAINER")" = "healthy" ] || { docker logs "$CI_PG_CONTAINER"; exit 1; }
+          echo "PostgreSQL CI pronto na porta ${CI_PG_PORT}"
 
       - name: Validar sintaxe dos scripts críticos de produção
         working-directory: .
@@ -160,10 +175,12 @@ jobs:
             backend-coverage.xml
           if-no-files-found: warn
           retention-days: 7
-
+      - name: Remover PostgreSQL efêmero do CI (liberar porta 55432)
+        if: always()
+        run: docker rm -f "$CI_PG_CONTAINER" >/dev/null 2>&1 || true
   eval-smoke:
     name: Eval — smoke dos gold sets (offline, bloqueante)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 15
     defaults:
       run:
@@ -191,7 +208,7 @@ jobs:
 
   frontend-build:
     name: Frontend — testes + typecheck + build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 25
     defaults:
       run:
