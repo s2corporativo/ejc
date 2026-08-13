@@ -13,7 +13,6 @@ import pytest
 from app.core import database
 from app.models import ai_log
 from app.routers import documents
-from app.services import analise_estrategica
 from app.services import event_subscribers
 from app.services import document_analysis_hook
 
