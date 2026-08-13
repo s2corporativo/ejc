@@ -1,9 +1,10 @@
 name: EJC Release Gate
 
-# Gate P0 no runner self-hosted `ejc-vps` (VPS Contabo) — zero minutos do GitHub.
+# Gate P0 em executor nao produtivo `ubuntu-latest` (cota gratuita do GitHub).
 # Só executa verificações estáticas e testes determinísticos offline; nunca
 # altera o ambiente de produção. Impede conflitos, segredos, CORS inseguro,
-# backup em claro e rollback não comprovado.
+# backup em claro e rollback não comprovado. Código de PR nunca executa
+# no runner self-hosted `ejc-vps`.
 on:
   pull_request:
   push:
@@ -20,8 +21,8 @@ concurrency:
 jobs:
   p0-guard:
     name: P0 guard — conflitos e segredos
-    runs-on: [self-hosted, ejc-vps]
-    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
