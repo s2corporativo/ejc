@@ -3,6 +3,11 @@
 A rotina é deliberadamente assíncrona e tolerante a falha: o vínculo/upload do
 GED já foi persistido antes da análise. Qualquer indisponibilidade de IA vira
 warning e não desfaz o ato documental. AILog/HITL permanecem obrigatórios.
+
+A análise jurídica não termina no log: quando produz conteúdo útil, também gera
+um CaseIntelligenceSnapshot append-only, não aprovado, ligado ao AILog. Assim o
+parecer pago pelo escritório vira inteligência revisável do caso em vez de ficar
+preso no log truncado de auditoria.
 """
 from __future__ import annotations
 
@@ -19,13 +24,110 @@ from app.services.analise_estrategica import analisar_caso
 logger = logging.getLogger(__name__)
 
 
+def _lista(valor) -> list:
+    """Normaliza saída variável do LLM para lista sem itens vazios."""
+    if valor in (None, ""):
+        return []
+    if isinstance(valor, list):
+        return [item for item in valor if item not in (None, "", {}, [])]
+    return [valor]
+
+
+def payload_snapshot_documento(resultado: dict, doc_id: str) -> dict:
+    """Converte o parecer estratégico para o contrato do snapshot do caso.
+
+    Só inclui informação realmente produzida. Campo ausente permanece ausente;
+    brecha ou tese não é inventada para preencher um formato.
+    """
+    estrategia = resultado.get("estrategia")
+    jurimetria = (
+        resultado.get("jurimetria")
+        if isinstance(resultado.get("jurimetria"), dict)
+        else {}
+    )
+
+    riscos = {
+        "itens": _lista(resultado.get("riscos")),
+        "pontos_fracos": _lista(resultado.get("pontos_fracos")),
+        "chance_exito": jurimetria.get("chance_sucesso_percent"),
+    }
+    riscos = {chave: valor for chave, valor in riscos.items() if valor not in (None, [], "")}
+
+    teses_brutas = _lista(resultado.get("teses_campeas"))
+    titulos = [
+        (item.get("titulo") if isinstance(item, dict) else item)
+        for item in teses_brutas
+    ]
+    titulos = [titulo for titulo in titulos if titulo]
+    teses = None
+    if titulos:
+        teses = {
+            "principal": titulos[0],
+            "secundarias": titulos[1:],
+            "detalhe": [item for item in teses_brutas if isinstance(item, dict)],
+        }
+
+    payload = {
+        "documento_id": doc_id,
+        "fatos": resultado.get("sumario_fatos"),
+        "teses": teses,
+        "riscos": riscos or None,
+        "pontos_fortes": _lista(resultado.get("pontos_fortes")),
+        "estrategia": estrategia if isinstance(estrategia, dict) else None,
+        "proximos_passos": _lista(resultado.get("proximos_passos")),
+        "alertas": _lista(resultado.get("alertas")),
+        "fontes": ["leitura_documento"]
+        + (["rag_interno"] if resultado.get("_fontes_rag") else []),
+    }
+    if resultado.get("_verificacao_citacoes") is not None:
+        payload["verificacao_citacoes"] = resultado["_verificacao_citacoes"]
+    return {
+        chave: valor
+        for chave, valor in payload.items()
+        if valor not in (None, [], {}, "")
+    }
+
+
+async def _gravar_snapshot_documento(
+    db,
+    *,
+    case_id: str,
+    doc_id: str,
+    resultado,
+    ai_log_id: str,
+) -> None:
+    """Versiona o parecer no caso sem quebrar o upload se a gravação falhar."""
+    if not isinstance(resultado, dict) or resultado.get("erro"):
+        return
+    payload = payload_snapshot_documento(resultado, doc_id)
+    # documento_id + fontes, sozinhos, não constituem parecer jurídico útil.
+    conteudo_juridico = set(payload) - {"documento_id", "fontes", "verificacao_citacoes"}
+    if not conteudo_juridico:
+        return
+
+    from app.services import case_intelligence_service as cis
+
+    await cis.gravar_snapshot_seguro(
+        db,
+        case_id=case_id,
+        origem="documento",
+        payload=cis.compactar_payload(payload),
+        resumo=(
+            resultado.get("sumario_fatos")
+            or "Leitura estratégica de documento anexado"
+        )[:500],
+        ai_log_ids=[ai_log_id],
+        criado_por=None,
+    )
+
+
 async def analisar_documento_bg(
     case_id: str,
     ocr_text: str,
     doc_id: str,
     user_id: str,
 ) -> None:
-    """Analisa documento com OCR no contexto do caso e registra AILog/HITL."""
+    """Analisa OCR no contexto do caso, registra AILog e snapshot HITL."""
     try:
         async with AsyncSessionLocal() as db:
             row = await db.execute(
@@ -51,8 +153,9 @@ async def analisar_documento_bg(
             if isinstance(resultado, dict) and resultado.get("_fontes_rag"):
                 fontes = json.dumps(resultado["_fontes_rag"], ensure_ascii=False)[:2000]
 
+            log_id = str(uuid4())
             log = AILog(
-                id=str(uuid4()),
+                id=log_id,
                 user_id=user_id,
                 case_id=case_id,
                 tipo_uso=AITipoUso.analise_caso,
@@ -65,5 +168,13 @@ async def analisar_documento_bg(
             )
             db.add(log)
             await db.commit()
+
+            await _gravar_snapshot_documento(
+                db,
+                case_id=case_id,
+                doc_id=doc_id,
+                resultado=resultado,
+                ai_log_id=log_id,
+            )
     except Exception as exc:  # fail-safe: ato documental já foi persistido
         logger.warning("Hook analise doc falhou: %s", exc)
