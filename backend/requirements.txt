@@ -49,7 +49,8 @@ httpx==0.27.0
 requests==2.34.2
 groq==1.5.0
 boto3==1.34.144
-botocore==1.34.165
+botocore==1.34.162  # fix 2026-08-13: 1.34.165 nunca foi publicada no PyPI;
+                         # 1.34.162 é a versão par de boto3==1.34.144 (lock compatível)
 tenacity==8.2.3  # datajud_service.py, djen_service.py (retry)
 
 # Google Drive (documents.py)

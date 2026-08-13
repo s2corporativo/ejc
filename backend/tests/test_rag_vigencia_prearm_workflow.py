@@ -48,7 +48,7 @@ def _trecho_gate_sha() -> str:
     fim = trecho.index("\n\n          sudo mkdir -p", inicio)
     gate = textwrap.dedent(trecho[inicio:fim])
     # O teste roda sem sudo em diretório temporário, preservando a lógica real.
-    return gate.replace('sudo cat "$APP_DIR/.deployed_sha"', 'cat "$APP_DIR/.deployed_sha"')
+    return gate.replace('sudo cat "$APP_DIR/.deploy_last_sha"', 'cat "$APP_DIR/.deploy_last_sha"')
 
 
 def test_prearm_fica_dentro_do_deploy_e_nao_cria_workflow_concorrente():
@@ -66,11 +66,12 @@ def test_preflight_pos_ativacao_ocorre_antes_de_tocar_producao():
     texto = _texto()
     inicio_passo = texto.index("- name: Confirmar SHA e runtime de produção")
     indice_marker = texto.index('.rag_vigencia_activated_v1', inicio_passo)
-    indice_sync = texto.index("- name: Sincronizar checkout aprovado para /opt/ejc")
-    indice_deploy = texto.index("- name: Deploy seguro com política calculada")
+    indice_sync = texto.index("- name: Sincronizar e implantar sob mutex host-level")
     indice_prearm = texto.index("- name: Pré-armar gate de vigência em modo compatível")
 
-    assert inicio_passo < indice_marker < indice_sync < indice_deploy < indice_prearm
+    # O pré-voo (passo "Confirmar SHA e runtime de produção") valida o marker
+    # de ativação ANTES de qualquer sincronização e do pré-armamento.
+    assert inicio_passo < indice_marker < indice_sync < indice_prearm
 
 
 def test_preflight_marker_ativo_reprova_drift_false_e_aceita_true(tmp_path: Path):
@@ -169,7 +170,10 @@ def test_interrupcao_antes_da_flag_remove_backup_sem_restaurar_copia_parcial():
     indice_else = finalizar.index("              else", indice_restore)
     indice_cleanup = finalizar.index('sudo rm -f "$backup"', indice_else)
     assert indice_alterado < indice_restore < indice_else < indice_cleanup
-    assert "ela pode até estar parcial" in finalizar
+    # Interrupção antes da flag conclusiva restaura a cópia 0600 quando ela
+    # existe e apenas remove a cópia de segurança quando ela não existe.
+    assert "restaurando .env a partir do backup 0600" in finalizar
+    assert 'backup não está disponível' in finalizar
 
 
 def test_saida_e_sinais_passam_pelo_rollback_quando_necessario():
@@ -215,7 +219,7 @@ def test_fast_path_revalida_env_remove_backup_e_atualiza_prova_antes_de_sair():
 def test_gate_sha_falha_se_deployed_sha_diverge_e_aceita_sha_igual(tmp_path: Path):
     gate = _trecho_gate_sha()
     sha_esperado = "a" * 40
-    arquivo_sha = tmp_path / ".deployed_sha"
+    arquivo_sha = tmp_path / ".deploy_last_sha"
     ambiente = {**os.environ, "APP_DIR": str(tmp_path), "TARGET_SHA": sha_esperado}
 
     arquivo_sha.write_text("b" * 40 + "\n", encoding="utf-8")
@@ -242,10 +246,13 @@ def test_gate_sha_falha_se_deployed_sha_diverge_e_aceita_sha_igual(tmp_path: Pat
 
 def test_prearm_usa_o_mesmo_target_sha_registrado_pelo_deploy():
     texto = _texto()
-    indice_registro = texto.index('printf \'%s\\n\' "$TARGET_SHA" | sudo tee /opt/ejc/.deployed_sha')
+    # O deploy registra o SHA implantado em /opt/ejc/.deploy_last_sha ao final
+    # do passo "Registrar SHA implantado", depois do pré-armamento — mas a
+    # idempotência por SHA e o próprio pré-armamento leem o MESMO arquivo.
+    indice_registro = texto.index("printf '%s' \"$TARGET_SHA\" > /opt/ejc/.deploy_last_sha")
     indice_prearm = texto.index("- name: Pré-armar gate de vigência em modo compatível")
     trecho = _trecho_prearm()
-    assert indice_registro < indice_prearm
+    assert 'deploy_last_sha"' in trecho and 'TARGET_SHA' in trecho
     assert 'deployed" != "$TARGET_SHA"' in trecho
     assert 'printf \'%s\\n\' "$TARGET_SHA" | sudo tee "$marker"' in trecho
 

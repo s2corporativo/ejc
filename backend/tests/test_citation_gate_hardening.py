@@ -248,24 +248,31 @@ def _forca_modo_estrito(monkeypatch, valor: bool):
 
 # ── Unidade: avaliar_bloqueantes com flag explícita (determinístico) ─────────
 
-def test_avaliar_bloqueantes_modo_estrito_off_ignora_sumula_artigo_ausentes():
-    # (b) legado preservado: identificada de súmula/artigo NÃO bloqueia (OFF).
+def test_avaliar_bloqueantes_modo_estrito_off_ignora_sumula_ausente():
+    # (b) legado preservado: identificada de SÚMULA NÃO bloqueia (OFF).
+    # P0.1: ARTIGO identificada bloqueia SEMPRE (não depende da flag).
     rel = {"citacoes": [
         {"status": "identificada", "tipo": "sumula", "citacao": "Súmula 500 STJ"},
         {"status": "identificada", "tipo": "artigo", "citacao": "art. 999 CDC"},
     ]}
-    assert avaliar_bloqueantes(rel, modo_estrito=False) == []
+    bloq = avaliar_bloqueantes(rel, modo_estrito=False)
+    assert {b["tipo"] for b in bloq} == {"artigo"}
+    assert all("modo estrito" not in b["motivo"].lower() for b in bloq)
 
 
 def test_avaliar_bloqueantes_modo_estrito_on_bloqueia_sumula_artigo_ausentes():
     # (a) modo estrito: a ausência (identificada) de súmula/artigo bloqueia.
+    # P0.1: artigo bloqueia em qualquer modo; súmula exige modo estrito.
     rel = {"citacoes": [
         {"status": "identificada", "tipo": "sumula", "citacao": "Súmula 500 STJ"},
         {"status": "identificada", "tipo": "artigo", "citacao": "art. 999 CDC"},
     ]}
     bloq = avaliar_bloqueantes(rel, modo_estrito=True)
     assert {b["tipo"] for b in bloq} == {"sumula", "artigo"}
-    assert all("modo estrito" in b["motivo"].lower() for b in bloq)
+    bloq_por_tipo = {b["tipo"]: b for b in bloq}
+    assert "modo estrito" in bloq_por_tipo["sumula"]["motivo"].lower()
+    # artigo: bloqueio P0.1 incondicional, sem dependência da flag
+    assert "não foi confirmado" in bloq_por_tipo["artigo"]["motivo"]
 
 
 def test_avaliar_bloqueantes_modo_estrito_on_nao_bloqueia_verificadas():
@@ -312,12 +319,15 @@ async def test_validar_citacoes_estrito_on_sumula_ausente_bloqueia(monkeypatch):
                for b in r.bloqueantes)
 
 
-async def test_validar_citacoes_estrito_off_artigo_ausente_nao_bloqueia(monkeypatch):
+async def test_validar_citacoes_estrito_off_artigo_ausente_bloqueia_p01(monkeypatch):
+    # P0.1: artigo não confirmado bloqueia EM QUALQUER modo — o gate de
+    # citação não pode referendar fundamento legal não confirmado na base
+    # legislativa apta, mesmo com CITACOES_MODO_ESTRITO desligado.
     _forca_modo_estrito(monkeypatch, False)
     r = await validar_citacoes(
         _DBVazio(), TEXTO_ARTIGO_AUSENTE, politica="bloquear")
-    assert r.bloqueia_aprovacao is False
-    assert r.bloqueantes == []
+    assert r.bloqueia_aprovacao is True
+    assert any(b.tipo == "artigo" for b in r.bloqueantes)
 
 
 async def test_validar_citacoes_estrito_on_artigo_ausente_bloqueia(monkeypatch):
@@ -325,8 +335,9 @@ async def test_validar_citacoes_estrito_on_artigo_ausente_bloqueia(monkeypatch):
     r = await validar_citacoes(
         _DBVazio(), TEXTO_ARTIGO_AUSENTE, politica="bloquear")
     assert r.bloqueia_aprovacao is True
-    assert any(b.tipo == "artigo" and "modo estrito" in b.motivo.lower()
-               for b in r.bloqueantes)
+    # P0.1: artigo identificada é bloqueante independente da flag —
+    # o motivo exige confirmação na fonte oficial, sem menção ao modo.
+    assert any(b.tipo == "artigo" for b in r.bloqueantes)
 
 
 async def test_validar_citacoes_estrito_on_sumula_verificada_nao_bloqueia(monkeypatch):

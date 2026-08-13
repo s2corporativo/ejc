@@ -40,6 +40,15 @@ class _FakeDB:
     async def execute(self, *a, **k):
         return self.res
 
+    async def scalar(self, *a, **k):
+        # O router lista o total via db.scalar(select(func.count())) — o fake
+        # reutiliza a mesma resposta: se execute retorna coleção, scalar devolve
+        # o tamanho (mesma semântica de contagem de soft-deleted).
+        return len(self.res._muitos) if self.res._muitos else 0
+
+    def scalars(self, *a, **k):
+        return self.res
+
     def add(self, obj):
         self.added.append(obj)
 

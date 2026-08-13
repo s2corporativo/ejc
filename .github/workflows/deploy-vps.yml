@@ -187,7 +187,8 @@ jobs:
 
       # P0.1 — pré-armamento transicional do gate jurídico de vigência.
       # A mutação do .env adquire o MESMO mutex host-level e confirma primeiro
-      # que .deployed_sha ainda é o TARGET_SHA desta execução.
+      # que .deploy_last_sha (registro pós-conclusão do deploy) ainda é o
+      # TARGET_SHA desta execução.
       - name: Pré-armar gate de vigência em modo compatível
         shell: bash
         run: |
@@ -249,7 +250,7 @@ jobs:
           trap 'exit 130' INT
           trap 'exit 143' TERM
 
-          deployed="$(sudo cat "$APP_DIR/.deployed_sha" 2>/dev/null || true)"
+          deployed="$(sudo cat "$APP_DIR/.deploy_last_sha" 2>/dev/null || true)"
           if [ -z "$deployed" ] || [ "$deployed" != "$TARGET_SHA" ]; then
             echo "::error::Prearm RAG: /opt/ejc não comprova o TARGET_SHA que este Deploy VPS implantou."
             false
