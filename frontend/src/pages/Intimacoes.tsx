@@ -26,22 +26,24 @@ import { toast } from "../components/Toast";
 
 type PrazoStatus = "nenhum" | "sugerido" | "aceito" | "recusado";
 
-// Resposta de GET /intimacoes/{id}/prazo-sugerido (fluxo de prazo assistido).
-// Campos alinhados a `_calcular_sugestao` + status/deadline do backend.
+// Resposta de GET /intimacoes/{id}/prazo-sugerido.
+// Na contenção P0 da #968, o backend não calcula vencimento: ele expõe a
+// pendência para revisão e aceita somente a data final conferida pelo usuário.
 interface PrazoSugerido {
   disponivel: boolean;
   tipo_detectado?: string | null;
   dias?: number | null;
   data_sugerida?: string | null;
   data_base?: string | null;
+  data_disponibilizacao?: string | null;
   fundamentacao?: string | null;
   aviso?: string | null;
+  revisao_necessaria?: boolean;
+  motivo?: string | null;
   prazo_sugerido_status: PrazoStatus;
   prazo_deadline_id?: string | null;
 }
 
-// Estado local do prazo assistido por intimação (a listagem não devolve estes
-// campos, então semeamos a partir do GET e atualizamos ao aceitar/recusar).
 interface PrazoLocal {
   status: PrazoStatus;
   deadlineId: string | null;
@@ -58,10 +60,10 @@ const PRAZO_BADGE: Record<
   PrazoStatus,
   { tone: "slate" | "amber" | "green" | "red"; label: string }
 > = {
-  nenhum: { tone: "slate", label: "Sem prazo" },
-  sugerido: { tone: "amber", label: "Prazo sugerido" },
+  nenhum: { tone: "amber", label: "Revisão pendente" },
+  sugerido: { tone: "amber", label: "Revisão pendente" },
   aceito: { tone: "green", label: "Prazo aceito" },
-  recusado: { tone: "red", label: "Prazo recusado" },
+  recusado: { tone: "red", label: "Sem prazo — revisado" },
 };
 
 export default function Intimacoes() {
@@ -75,6 +77,7 @@ export default function Intimacoes() {
     com: any;
     dados: PrazoSugerido;
   } | null>(null);
+  const [dataManual, setDataManual] = useState("");
   const [prazos, setPrazos] = useState<Record<string, PrazoLocal>>({});
   const [status, setStatus] = useState<StatusCaptura | null>(null);
 
@@ -102,6 +105,12 @@ export default function Intimacoes() {
     (com.prazo_sugerido_status as PrazoStatus | undefined) ??
     "nenhum";
 
+  const fecharRevisao = () => {
+    if (salvando) return;
+    setSugestao(null);
+    setDataManual("");
+  };
+
   const capturar = async () => {
     setLoading(true);
     try {
@@ -119,13 +128,22 @@ export default function Intimacoes() {
   };
 
   const processar = async (id: string) => {
-    await api.post(`/intimacoes/${id}/processar`);
-    load();
+    try {
+      const { data } = await api.post(`/intimacoes/${id}/processar`);
+      toast.success(data.detail || "Intimação marcada como tratada.");
+      load();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail ||
+          "Revise a necessidade de prazo antes de marcar como tratada.",
+      );
+    }
   };
 
-  // Prazo assistido — passo 1: buscar a sugestão (modo leitura, não persiste).
-  const sugerirPrazo = async (com: any) => {
+  // Passo 1: carrega os dados de revisão. Não persiste e não calcula prazo.
+  const revisarPrazo = async (com: any) => {
     setSugerindo(com.id);
+    setDataManual("");
     try {
       const { data } = await api.get<PrazoSugerido>(
         `/intimacoes/${com.id}/prazo-sugerido`,
@@ -141,20 +159,29 @@ export default function Intimacoes() {
     } catch (e: any) {
       toast.error(
         e.response?.data?.detail ||
-          "Não foi possível calcular a sugestão de prazo.",
+          "Não foi possível carregar a revisão desta intimação.",
       );
     } finally {
       setSugerindo(null);
     }
   };
 
-  // Passo 2a: aceitar — cria o Deadline no caso e marca status "aceito".
+  // Passo 2a: aceita uma data final conferida e cria o Deadline vinculado.
   const aceitarPrazo = async () => {
     if (!sugestao) return;
-    const { com } = sugestao;
+    const { com, dados } = sugestao;
+    if (!dados.disponivel && !dataManual) {
+      toast.error("Informe o vencimento conferido antes de aceitar o prazo.");
+      return;
+    }
+
     setSalvando("aceitar");
     try {
-      const { data } = await api.post(`/intimacoes/${com.id}/aceitar-prazo`);
+      const payload = dados.disponivel ? undefined : { data_prazo: dataManual };
+      const { data } = await api.post(
+        `/intimacoes/${com.id}/aceitar-prazo`,
+        payload,
+      );
       setPrazos((p) => ({
         ...p,
         [com.id]: { status: "aceito", deadlineId: data.deadline_id ?? null },
@@ -165,20 +192,18 @@ export default function Intimacoes() {
           : `Prazo cadastrado para ${fmtDate(data.data_prazo)}.`,
       );
       setSugestao(null);
+      setDataManual("");
+      load();
     } catch (e: any) {
-      // 422: intimação sem caso vinculado (ou sem base para calcular o prazo).
-      const detalhe =
-        e.response?.status === 422
-          ? e.response?.data?.detail ||
-            "Intimação sem caso vinculado — vincule um caso antes de gerar o prazo."
-          : e.response?.data?.detail || "Não foi possível cadastrar o prazo.";
-      toast.error(detalhe);
+      toast.error(
+        e.response?.data?.detail || "Não foi possível cadastrar o prazo.",
+      );
     } finally {
       setSalvando(null);
     }
   };
 
-  // Passo 2b: recusar — nenhum Deadline é criado, apenas marca "recusado".
+  // Passo 2b: registra explicitamente que a comunicação não gerará prazo.
   const recusarPrazo = async () => {
     if (!sugestao) return;
     const { com } = sugestao;
@@ -189,11 +214,13 @@ export default function Intimacoes() {
         ...p,
         [com.id]: { status: "recusado", deadlineId: null },
       }));
-      toast.info(data.detail || "Prazo recusado — nenhum prazo será gerado.");
+      toast.info(data.detail || "Revisão concluída sem geração de prazo.");
       setSugestao(null);
+      setDataManual("");
+      load();
     } catch (e: any) {
       toast.error(
-        e.response?.data?.detail || "Não foi possível recusar o prazo.",
+        e.response?.data?.detail || "Não foi possível registrar a decisão.",
       );
     } finally {
       setSalvando(null);
@@ -202,7 +229,9 @@ export default function Intimacoes() {
 
   const sugestaoAtual = sugestao ? statusDe(sugestao.com) : "nenhum";
   const podeAceitar =
-    sugestao?.dados.disponivel && sugestaoAtual !== "recusado";
+    sugestaoAtual !== "recusado" &&
+    sugestaoAtual !== "aceito" &&
+    Boolean(sugestao?.dados.disponivel || dataManual);
 
   return (
     <div>
@@ -228,7 +257,6 @@ export default function Intimacoes() {
         }
       />
 
-      {/* Status da última captura automática (DJEN) */}
       <div className="card mb-5 flex flex-wrap items-center justify-between gap-3 p-4">
         <div className="flex items-center gap-3">
           <span
@@ -287,6 +315,7 @@ export default function Intimacoes() {
           const st = statusDe(c);
           const badge = PRAZO_BADGE[st];
           const local = prazos[c.id];
+          const revisaoConcluida = st === "aceito" || st === "recusado";
           return (
             <div
               key={c.id}
@@ -317,7 +346,9 @@ export default function Intimacoes() {
                     onClick={() => nav("/prazos")}
                   >
                     <CalendarClock size={12} />
-                    {local?.deadlineId ? "Ver prazo cadastrado" : "Ver prazos"}
+                    {local?.deadlineId || c.prazo_deadline_id
+                      ? "Ver prazo cadastrado"
+                      : "Ver prazos"}
                   </button>
                 )}
               </div>
@@ -325,22 +356,26 @@ export default function Intimacoes() {
                 <button
                   className="btn-ghost text-xs"
                   disabled={sugerindo === c.id}
-                  onClick={() => sugerirPrazo(c)}
+                  onClick={() => revisarPrazo(c)}
                 >
                   {sugerindo === c.id ? (
                     <Loader2 size={13} className="animate-spin" />
-                  ) : st === "aceito" || st === "recusado" ? (
+                  ) : revisaoConcluida ? (
                     <ExternalLink size={13} />
                   ) : (
                     <CalendarClock size={13} />
                   )}{" "}
-                  {st === "aceito" || st === "recusado"
-                    ? "Revisar prazo"
-                    : "Sugerir prazo"}
+                  Revisar prazo
                 </button>
                 {!c.processada && (
                   <button
-                    className="btn-primary text-xs"
+                    className="btn-primary text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!revisaoConcluida}
+                    title={
+                      revisaoConcluida
+                        ? "Marcar intimação como tratada"
+                        : "Revise primeiro se a intimação gera prazo"
+                    }
                     onClick={() => processar(c.id)}
                   >
                     <CheckCircle2 size={13} /> Tratada
@@ -352,11 +387,10 @@ export default function Intimacoes() {
         })}
       </div>
 
-      {/* Prazo assistido — sugestão do backend (heurística/base legal DJEN) */}
       <Modal
         open={!!sugestao}
-        onClose={() => (salvando ? null : setSugestao(null))}
-        title="Prazo assistido"
+        onClose={fecharRevisao}
+        title="Revisão de prazo"
         size="md"
         footer={
           <>
@@ -370,10 +404,14 @@ export default function Intimacoes() {
                   <XCircle className="h-4 w-4" />
                 )
               }
-              disabled={salvando !== null || sugestaoAtual === "recusado"}
+              disabled={
+                salvando !== null ||
+                sugestaoAtual === "recusado" ||
+                sugestaoAtual === "aceito"
+              }
               onClick={recusarPrazo}
             >
-              Recusar
+              Não gera prazo
             </Button>
             <Button
               type="button"
@@ -388,7 +426,7 @@ export default function Intimacoes() {
               disabled={salvando !== null || !podeAceitar}
               onClick={aceitarPrazo}
             >
-              {sugestaoAtual === "aceito" ? "Aceito" : "Aceitar prazo"}
+              {sugestaoAtual === "aceito" ? "Prazo aceito" : "Cadastrar prazo"}
             </Button>
           </>
         }
@@ -438,7 +476,7 @@ export default function Intimacoes() {
 
                 {sugestao.dados.data_base && (
                   <div className="text-xs text-slate-500">
-                    Termo inicial (disponibilização):{" "}
+                    Termo inicial conferido:{" "}
                     <span className="font-medium text-slate-700">
                       {fmtDate(sugestao.dados.data_base)}
                     </span>
@@ -459,14 +497,43 @@ export default function Intimacoes() {
                   title="Confira antes de aceitar o prazo"
                 >
                   {sugestao.dados.aviso ||
-                    "Sugestão automática — a contagem do prazo é de responsabilidade do advogado. Confira a intimação e a base legal."}
+                    "A contagem do prazo exige conferência da comunicação oficial e revisão do advogado responsável."}
                 </Alert>
               </>
             ) : (
-              <Alert variant="warning" title="Sem sugestão automática">
-                {sugestao.dados.aviso ||
-                  "Não foi possível calcular um prazo a partir desta intimação (sem data de disponibilização ou tipo não reconhecido). Cadastre o prazo manualmente na tela de Prazos ou recuse."}
-              </Alert>
+              <>
+                <Alert variant="warning" title="Cálculo automático bloqueado">
+                  {sugestao.dados.aviso ||
+                    "Confira a publicação, o termo inicial, o regime processual e o calendário aplicável antes de informar o vencimento."}
+                </Alert>
+
+                {sugestao.dados.data_disponibilizacao && (
+                  <div className="text-xs text-slate-500">
+                    Disponibilização capturada (não usada como termo inicial):{" "}
+                    <span className="font-medium text-slate-700">
+                      {fmtDate(sugestao.dados.data_disponibilizacao)}
+                    </span>
+                  </div>
+                )}
+
+                {sugestaoAtual !== "aceito" && sugestaoAtual !== "recusado" && (
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold text-slate-700">
+                      Vencimento conferido manualmente
+                    </span>
+                    <input
+                      type="date"
+                      className="input w-full"
+                      value={dataManual}
+                      onChange={(event) => setDataManual(event.target.value)}
+                    />
+                    <span className="mt-1 block text-xs text-slate-500">
+                      Informe somente após conferir a comunicação oficial. O EJC
+                      não calcula esta data a partir da disponibilização.
+                    </span>
+                  </label>
+                )}
+              </>
             )}
           </div>
         )}
