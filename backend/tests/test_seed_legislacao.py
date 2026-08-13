@@ -328,21 +328,25 @@ def test_preparar_diploma_rejeita_pagina_errada():
 # ══════════════════════════════════════════════════════════════════════════
 
 def _com_marcacao_no_preambulo(html: str, marcacao: str) -> str:
-    """Insere a marcação onde o Planalto a publica: junto da ementa, antes do
-    Art. 1º."""
-    ancora = "<p>O&nbsp;PRESIDENTE DA REPÚBLICA"
+    """Insere a marcação onde o Planalto a publica: logo abaixo da epígrafe do
+    diploma, dentro da janela de duas linhas não vazias que
+    `_cabecalho_situacao` considera. O `_preambulo` começa na primeira linha
+    útil (o título da compilação na fixture) e a janela cobre exatamente a
+    epígrafe mais a linha imediatamente associada — posição padrão do selo
+    de vigência na página oficial."""
+    ancora = "<p><strong>LEI Nº 8.078, DE 11 DE SETEMBRO DE 1990.</strong></p>"
     assert ancora in html
     return html.replace(ancora, f"<p>{marcacao}</p>\n{ancora}", 1)
 
 
-def test_texto_compilado_sem_marcacao_infere_vigente(blocos):
-    """Ausência de marcação de revogação num preâmbulo IDENTIFICÁVEL de texto
-    COMPILADO = o que a fonte publica como em vigor. É inferência por AUSÊNCIA,
-    então o carimbo é `legal_status_inferido_em` — não pode se apresentar como
-    conferência que não houve. A governança classifica isso como
-    'vigencia_nao_verificada' e o gate estrito rejeita."""
+def test_texto_compilado_sem_marcacao_nao_declara_vigente(blocos):
+    """FAIL-CLOSED (post bf29bd3e): a ausência de marcação de revogação num
+    preâmbulo identificável NÃO é prova positiva de vigência — inferir 'vigente'
+    por ausência era o defeito corrigido pelo PR #642. Sem declaração positiva
+    no cabeçalho imediato, o resultado é `vigencia_nao_verificada` com carimbo
+    de inferência, e o gate estrito rejeita o documento até curadoria."""
     vigencia = pl.situacao_juridica(blocos)
-    assert vigencia["legal_status"] == "vigente"
+    assert vigencia["legal_status"] == "vigencia_nao_verificada"
     assert vigencia["legal_status_origem"] == "planalto:texto_compilado"
     assert vigencia["legal_status_inferido_em"]
     assert "legal_status_verificado_em" not in vigencia
@@ -351,9 +355,10 @@ def test_texto_compilado_sem_marcacao_infere_vigente(blocos):
 def test_anotacao_de_artigo_revogado_nao_revoga_o_diploma(texto, blocos):
     """O corpo do compilado traz '(Revogado pela Lei ...)' por ARTIGO (o § 3º da
     fixture). Ler isso como revogação do diploma marcaria todo código como
-    revogado — por isso o escopo é o PREÂMBULO."""
+    revogado — por isso o escopo é o PREÂMBULO. A anotação de artigo não pode
+    ser promovida a situação do diploma (FAIL-CLOSED)."""
     assert "(Revogado pela Lei nº 99.999, de 2020)" in texto
-    assert pl.situacao_juridica(blocos)["legal_status"] == "vigente"
+    assert pl.situacao_juridica(blocos)["legal_status"] == "vigencia_nao_verificada"
 
 
 @pytest.mark.parametrize("marcacao", [
@@ -375,10 +380,12 @@ def test_marcacao_no_preambulo_declara_revogada(html, marcacao):
 
 
 def test_ementa_que_revoga_outra_norma_nao_se_declara_revogada(html):
-    """Forma ATIVA ('Revoga a Lei X') é a norma revogando OUTRA — não casa."""
+    """Forma ATIVA ('Revoga a Lei X') é a norma revogando OUTRA — não casa
+    com a revogação do próprio diploma. FAIL-CLOSED: não declarar 'vigente'
+    por ausência de revogação própria."""
     blocos = dividir_artigos(extrair_texto_planalto(
         _com_marcacao_no_preambulo(html, "Revoga a Lei nº 8.666, de 1993.")))
-    assert pl.situacao_juridica(blocos)["legal_status"] == "vigente"
+    assert pl.situacao_juridica(blocos)["legal_status"] == "vigencia_nao_verificada"
 
 
 @pytest.mark.parametrize("blocos_sem_preambulo", [
@@ -413,7 +420,9 @@ async def test_ingestao_grava_vigencia_declarada_no_extra(pipeline_mockado):
     chamadas, _ = pipeline_mockado
     await sl.executar_seed_legislacao(_FakeDB(), apenas="cdc")
     extra = chamadas[-1]["extra"]
-    assert extra["legal_status"] == "vigente"
+    # Sem declaração positiva no cabeçalho da fixture: FAIL-CLOSED devolve
+    # 'vigencia_nao_verificada' inferido (o gate exclui da recuperação).
+    assert extra["legal_status"] == "vigencia_nao_verificada"
     assert extra["legal_status"] in LEGAL_STATUS_VALUES
     assert extra["legal_status_origem"] == "planalto:texto_compilado"
     assert extra["legal_status_inferido_em"]
