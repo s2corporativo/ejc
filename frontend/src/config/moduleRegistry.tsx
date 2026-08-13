@@ -1029,6 +1029,40 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     to: "/inteligencia?tab=conhecimento",
     reason: "Wiki foi unificada na aba Conhecimento da Inteligência.",
   },
+  // FIX-003 (QA 13/08/2026): atalhos históricos do catálogo de ferramentas
+  // ainda referenciavam rotas que não existem, gerando 404. Agora
+  // redirecionam para os módulos canônicos vivos (LegacyRedirect preserva
+  // query e hash da URL de origem).
+  {
+    from: "/leads",
+    to: "/crm-leads",
+    reason: "O funil de leads vive no workspace CRM de leads.",
+  },
+  {
+    from: "/raiox",
+    to: "/raio-x",
+    reason: "O Raio-X de documentos usa a rota canônica /raio-x.",
+  },
+  {
+    from: "/diario",
+    to: "/diario-oficial",
+    reason: "O Diário Oficial usa a rota canônica /diario-oficial.",
+  },
+  {
+    from: "/workflows",
+    to: "/workflow",
+    reason: "Workflows usa a rota canônica singular /workflow.",
+  },
+  {
+    from: "/entrada-caso",
+    to: "/entrada",
+    reason: "A Entrada de Caso (avançada) vive na rota /entrada.",
+  },
+  {
+    from: "/defesas",
+    to: "/ferramentas",
+    reason: "Defesas e Revisões é um painel dentro de Mais Ferramentas.",
+  },
 ];
 
 function routeBase(path: string): string {

@@ -86,8 +86,17 @@ export default function DataRoom() {
   };
 
   const gerarLink = async () => {
-    await api.post(`/data-rooms/${aberta.id}/links`, { expira_horas: 72 });
-    abrir(aberta.id);
+    // FIX-001 — erro tratado com mensagem legível; a aba nunca quebra.
+    try {
+      await api.post(`/data-rooms/${aberta.id}/links`, { expira_horas: 72 });
+      abrir(aberta.id);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Não foi possível gerar o link de acesso.";
+      toast.error(String(msg));
+    }
   };
 
   const copiar = (token: string) => {
@@ -248,7 +257,16 @@ export default function DataRoom() {
                 <h3 className="font-semibold text-sm text-gray-500 uppercase">
                   Links de acesso ({aberta.links?.length ?? 0})
                 </h3>
-                <button onClick={gerarLink} className="btn-secondary text-xs">
+                <button
+                  onClick={gerarLink}
+                  disabled={(aberta.arquivos?.length ?? 0) === 0}
+                  title={
+                    (aberta.arquivos?.length ?? 0) === 0
+                      ? "Adicione ao menos um documento à sala para gerar um link."
+                      : "Gera um link de acesso válido por 72 horas"
+                  }
+                  className="btn-secondary text-xs"
+                >
                   + Gerar link (72h)
                 </button>
               </div>
