@@ -60,13 +60,15 @@ def test_deploy_injeta_e_confere_o_commit():
     # O rollback republica o SHA ANTERIOR: sem isso a imagem restaurada
     # anunciaria o commit que acabou de falhar.
     assert "OLD_GIT_SHA" in deploy
-    # SHA de origem indeterminado (deploy manual sem TARGET_SHA e sem .git) NÃO
-    # pode derrubar o deploy — só desliga a conferência, com aviso. Uma versão
-    # anterior desta guarda saía com exit 2 e quebrava o harness de rollback.
-    assert "Conferência do commit publicado PULADA" in deploy
-    assert "exit 2" not in deploy.split("Commit a publicar")[0].split(
-        "GIT_SHA=\"${TARGET_SHA")[-1]
-
+    # Identidade do artefato: SHA-1 completo de 40 hex é OBRIGATÓRIO — release
+    # sem identidade verificável é bloqueada por die_policy (exit 2), e o
+    # /api/health confere o commit publicado contra o GIT_SHA esperado. Uma
+    # versão anterior desta guarda apenas "pulava" a conferência com aviso; a
+    # política atual é mais forte e mantém o espírito da guarda (sem identidade,
+    # não há publicação).
+    assert "release sem identidade verificável foi bloqueada" in deploy
+    assert "COMMIT_NO_AR" in deploy, "o deploy confere o commit no /api/health"
+    assert "exit 2" in deploy
 
 def test_init_sentry_dsn_vazio_e_noop(monkeypatch):
     """init_sentry() com SENTRY_DSN vazio é no-op e não levanta."""

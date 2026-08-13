@@ -70,7 +70,14 @@ def test_sync_e_deploy_compartilham_um_unico_fd_de_lock():
     assert "ejc_deploy_lock_acquire_production" in lock
 
     assert 'EJC_DEPLOY_PRODUCTION_LOCK_ROOT="/run/lock/ejc"' in lock
-    assert "XDG_RUNTIME_DIR" not in lock
+    # A menção a XDG_RUNTIME_DIR hoje existe apenas em comentário documental
+    # ("Não depende de HOME, XDG_RUNTIME_DIR, APP_DIR nem variável de
+    # ambiente"); o corpo executável não pode depender dele.
+    corpo = "\n".join(
+        linha for linha in lock.split("\n")
+        if linha.strip() and not linha.strip().startswith("#")
+    )
+    assert "XDG_RUNTIME_DIR" not in corpo
     assert "${HOME" not in lock
     assert "install -d -m 0750 -o root -g" in lock
     assert "-m 0660 -o root -g" in lock

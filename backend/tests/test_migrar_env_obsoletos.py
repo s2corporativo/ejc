@@ -217,5 +217,9 @@ class TestWiringNosDeploys:
         assert "migrar_env_obsoletos.sh" in conteudo
 
     def test_workflow_de_deploy_usa_o_script_seguro(self):
+        # O pipeline aprovado entra por deploy_workflow_transaction.sh, que
+        # executa deploy_vps_safe.sh (linha 88) e migrar_env_obsoletos.sh (linha 68).
         wf = (RAIZ / ".github" / "workflows" / "deploy-vps.yml").read_text(encoding="utf-8")
-        assert "scripts/deploy_vps_safe.sh" in wf
+        assert "scripts/deploy_workflow_transaction.sh" in wf, (
+            "o workflow deve implantar via deploy_workflow_transaction.sh"
+        )
