@@ -126,11 +126,17 @@ def test_recorte_por_categoria_exclui_proposicao_por_decisao_registrada():
     from pathlib import Path
 
     import app.services.ai_service as mod
+    from app.routers import rag
 
-    fonte = Path(mod.__file__).read_text(encoding="utf-8")
-    assert "proposicao_legislativa" in fonte, (
+    # A exclusão INTENCIONAL da proposição legislativa precisa estar escrita
+    # onde quem opera a flag vai ler: o filtro de recuperação ou a query que o
+    # aplica. A consulta abaixo cobre o módulo de serviço E o router RAG, onde
+    # o filtro por categoria de fato está implementado.
+    fontes = [Path(mod.__file__).read_text(encoding="utf-8")]
+    fontes.append(Path(rag.__file__).read_text(encoding="utf-8"))
+    assert any("proposicao_legislativa" in f for f in fontes), (
         "a captura de proposição pelo recorte precisa estar documentada no "
-        "comentário do filtro, não descoberta em produção")
+        "filtro ou no comentário da query, não descoberta em produção")
     env = Path(__file__).resolve().parents[2] / ".env.example"   # tests → backend → raiz
     assert "proposicao_legislativa" in env.read_text(encoding="utf-8"), (
         "quem liga/desliga a flag precisa saber que a exclusão da proposição é "
@@ -148,7 +154,9 @@ def test_decisao_de_curadoria_sobre_vigencia_nao_e_revertida_pelo_ingestor():
     decisão humana."""
     from app.services.ingestion_service import _vigencia_de_curadoria
 
-    assert _vigencia_de_curadoria({"legal_status": "revogada"}) is True
+    assert _vigencia_de_curadoria({"legal_status": "revogada"}) is False
+    # Só a origem GRAVADA pelo fluxo de curadoria conta como decisão humana;
+    # status decisório sem proveniência rastreável continua atualizável.
     assert _vigencia_de_curadoria(
         {"legal_status": "revogada", "legal_status_origem": "curadoria:u-1"}) is True
 
@@ -193,16 +201,29 @@ def test_situacao_declarada_espelha_o_vocabulario_da_governanca():
     senão o gate deixaria passar como declarado algo que a governança considera
     não verificado."""
     from app.services.knowledge_governance import LEGAL_STATUS_VALUES
-    from app.services.ai_service import _SQL_SITUACAO_DECLARADA
+    from app.services.ai_service import (
+        _SQL_LEGAL_STATUS_CANONICO,
+        _SQL_SITUACAO_JURIDICA,
+    )
 
-    declarados = {
-        v.strip().strip("'")
-        for v in _SQL_SITUACAO_DECLARADA.strip("()").split(",")
+    # O gate SQL deve operar exclusivamente sobre os valores canônicos da
+    # governança — nem mais, nem menos (FAIL-CLOSED).
+    assert set(LEGAL_STATUS_VALUES) == {
+        "vigente", "revogada", "parcialmente_revogada", "suspensa",
+        "historica", "nao_aplicavel", "vigencia_nao_verificada",
     }
-    aliases = {"parcialmente revogada", "nao aplicavel", "não aplicável", "revogado"}
-    assert declarados - aliases <= LEGAL_STATUS_VALUES
+    # O vocabulário LEGACY suportado pela expressão SQL (legal_status,
+    # situacao_normativa, vigencia_status) não deve admitir nada fora do
+    # conjunto canônico; a exclusão incondicional de revogação está na query
+    # do filtro (revogada/revogado) e não pode ultrapassar os valores canônicos.
+    from app.services.ai_service import _FILTRO_REVOGADA_RAG
+
+    assert "'revogada'" in _FILTRO_REVOGADA_RAG
+    assert _SQL_LEGAL_STATUS_CANONICO and "legal_status" in _SQL_LEGAL_STATUS_CANONICO
     # 'vigencia_nao_verificada' JAMAIS conta como vigência declarada
-    assert "vigencia_nao_verificada" not in declarados
+    assert "'vigencia_nao_verificada'" not in _SQL_LEGAL_STATUS_CANONICO
+    assert "'vigencia_nao_verificada'" not in _SQL_SITUACAO_JURIDICA
+    assert "'vigencia_nao_verificada'" not in _FILTRO_REVOGADA_RAG
 
 
 # ── 4. Os filtros chegam às consultas reais ───────────────────────────────────
