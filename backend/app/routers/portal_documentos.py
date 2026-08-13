@@ -10,9 +10,9 @@
 #   • _exigir_cliente: role cliente_externo + client_id — o middleware já
 #     confina o perfil a /api/portal/*, este é o gate por endpoint;
 #   • isolamento por client_id em TODA query (nunca expõe dados de terceiros);
-#   • upload reutiliza a política canônica de ingestão (extensão + magic bytes),
-#     teto MAX_UPLOAD_MB e path gerado pelo servidor — o nome do cliente nunca
-#     vira caminho físico;
+#   • upload reusa EXATAMENTE as validações de documents.py (extensões
+#     permitidas, teto MAX_UPLOAD_MB, magic bytes server-side, arquivo salvo
+#     como uploads/AAAA/MM/<uuid>.<ext> — o nome do cliente NUNCA vira path);
 #   • audit log em toda escrita; rate limit por rota.
 from __future__ import annotations
 
@@ -38,10 +38,8 @@ from app.models.solicitacao_documento import (
     SolicitacaoDocumentoItem,
 )
 from app.models.user import User, UserRole
-from app.services.document_content_policy import (
-    exigir_extensao_permitida,
-    validar_conteudo,
-)
+# Reuso EXATO das validações de upload do GED (não duplicar regra de negócio).
+from app.routers.documents import EXTENSOES_PERMITIDAS, _validar_conteudo
 from app.services.solicitacao_documento_service import recalcular_status
 
 settings = get_settings()
@@ -154,8 +152,11 @@ async def upload_item_solicitacao(
             status_code=422, detail="Este documento já foi enviado"
         )
 
-    # ── Política canônica de conteúdo ────────────────────────────────────────
-    ext = exigir_extensao_permitida(file.filename)
+    # ── Validações de upload — MESMAS de documents.py ────────────────────────
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in EXTENSOES_PERMITIDAS:
+        raise HTTPException(status_code=422, detail=f"Extensão não permitida: {ext}")
+
     conteudo = await file.read()
     if len(conteudo) > settings.MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(
@@ -163,7 +164,7 @@ async def upload_item_solicitacao(
             detail=f"Arquivo excede {settings.MAX_UPLOAD_MB}MB",
         )
     # Magic bytes server-side — nunca confiar na extensão/content_type.
-    mime_real = validar_conteudo(ext, conteudo)
+    mime_real = _validar_conteudo(ext, conteudo)
 
     # ── Claim atômico do item ANTES de gravar o arquivo: uploads concorrentes
     # no mesmo item disputam o UPDATE condicional (row lock) e só um vence —
@@ -221,22 +222,11 @@ async def upload_item_solicitacao(
     ]
     sol.status = recalcular_status(status_itens)
 
-    # WORM minimizado: o nome do item/arquivo pode conter nome, CPF ou número
-    # processual. IDs e estado são suficientes para reconstruir o ato sem
-    # replicar conteúdo potencialmente pessoal na trilha imutável.
     await criar_audit_log(
-        db,
-        cu.id,
-        cu.role.value,
-        "UPLOAD",
-        "solicitacao_documento_itens",
+        db, cu.id, cu.role.value, "UPLOAD", "solicitacao_documento_itens",
         item.id,
-        dados_depois={
-            "solicitacao_id": sol.id,
-            "case_id": sol.case_id,
-            "documento_id": doc_id,
-            "status_solicitacao": sol.status,
-        },
+        detalhes=f"portal: item '{item.nome}' da solicitação {sol.id} "
+                 f"→ documento {doc_id}",
     )
     await db.commit()
 
