@@ -107,6 +107,11 @@ _SEM_MODEL_INTENCIONAL = {
     "modelos_documentos", "office_contracts", "office_expenses",
     "partner_withdrawals", "portal_mensagens", "pricing_rules",
     "score_juridico", "teses_vitoriosas",
+    # Consolidado 12/08/2026: tabelas do esquema legado v4 (teses_v4 /
+    # data_room_v4, arquivados em _dead_code). O schema é mantido pela
+    # migration 114 (leitura apenas, compatibilidade de backfill) —
+    # sem model ORM por design.
+    "dataroom_salas", "teses_juridicas_v4",
     # Contador atômico de numeração de peças (migration 090): tabela-utilitária
     # de 2 colunas (area PK, ultimo) acessada só via UPSERT ... RETURNING em
     # app.services.peca_numeracao — um model ORM não agregaria (nunca é lido via

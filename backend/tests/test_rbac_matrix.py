@@ -263,7 +263,7 @@ def test_discover_gates_resolve_checagem_inline_de_nivel():
 
 def test_discover_gates_resolve_alias_de_modulo_e_helper_booleano():
     """`system_modules.py`: `_gestores = require_roles([...])` a nível de
-    módulo, usado como `Depends(_gestores)`. `data_room_v4.py`:
+    módulo, usado como `Depends(_gestores)`. `data_room.py`:
     `_pode_editar(cu)` retorna bool comparando ROLE_LEVEL, chamado via
     `if not _pode_editar(cu): raise 403`."""
     gates = rm.discover_gates(ROUTERS_DIR)
@@ -271,7 +271,7 @@ def test_discover_gates_resolve_alias_de_modulo_e_helper_booleano():
     assert mapa is not None
     assert mapa.min_level == rm.ROLE_LEVEL["socio"]
 
-    salas = next((g for g in gates if g.method == "GET" and g.path == "/api/data-room-v4/"), None)
+    salas = next((g for g in gates if g.method == "GET" and g.path == "/api/data-rooms"), None)
     assert salas is not None
     assert salas.min_level == rm.ROLE_LEVEL["advogado"]
 
@@ -311,7 +311,7 @@ def test_discover_gates_resolve_gate_de_router_inteiro():
     "sem gate" (qualquer autenticado passa) quando na verdade nega
     secretaria/cliente_externo."""
     gates = rm.discover_gates(ROUTERS_DIR)
-    alvo = next((g for g in gates if g.method == "GET" and g.path == "/api/jurimetria/ext/stats"), None)
+    alvo = next((g for g in gates if g.method == "GET" and g.path == "/api/jurimetria/por-area"), None)
     assert alvo is not None
     assert alvo.min_level == rm.ROLE_LEVEL["estagiario"]
     assert alvo.permite("secretaria") is False
@@ -426,9 +426,9 @@ def test_via_depends_false_para_checagem_no_corpo_do_handler():
 def test_via_depends_true_para_gate_de_router_inteiro():
     """`dependencies=[Depends(...)]` do ROUTER inteiro também é Depends() —
     roda antes da validação de query de toda rota do arquivo, mesmo quando a
-    rota em si não declara Depends próprio (`jurimetria_extra.py`)."""
+    rota em si não declara Depends próprio (`despesas.py`)."""
     gates = rm.discover_gates(ROUTERS_DIR)
-    alvo = next((g for g in gates if g.method == "GET" and g.path == "/api/jurimetria/ext/stats"), None)
+    alvo = next((g for g in gates if g.method == "GET" and g.path == "/api/despesas/resumo"), None)
     assert alvo is not None
     assert alvo.via_depends is True
 

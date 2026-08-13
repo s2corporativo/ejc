@@ -287,7 +287,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "Base de Conhecimento e RAG",
         "Inteligência",
         "/inteligencia?tab=conhecimento",
-        ["/api/rag", "/api/rag/knowledge-base", "/api/teses", "/api/teses-v4", "/api/sumulas", "/api/jurisprudencias", "/api/jurisprudencia-externa"],
+        ["/api/rag", "/api/rag/knowledge-base", "/api/teses", "/api/sumulas", "/api/jurisprudencias", "/api/jurisprudencia-externa"],  # /api/teses-v4 removido em 12/08/2026 (consolidação: teses_v4.py → _dead_code; contrato canônico /api/teses)
         perfis=PERFIS_GESTAO + ["advogado"],
         dependencias=["database", "pgvector", "embedding_service", "storage"],
         usa_ia=True,
@@ -309,7 +309,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
         "Victory Vault",
         "Inteligência",
         "/inteligencia?tab=conhecimento",
-        ["/api/victory_vault", "/api/teses", "/api/casos/{case_id}/provas"],
+        ["/api/teses", "/api/casos/{case_id}/provas"],  # /api/victory_vault removido em 12/08/2026 (consolidação: victory_vault_router.py → _dead_code)
         perfis=PERFIS_JURIDICO,
         dependencias=["cases", "documents", "teses"],
         usa_ia=True,

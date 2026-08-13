@@ -238,15 +238,15 @@ def test_ficha_triagem_exigir_piso_estagiario_passa():
 
 # ── jurimetria_extra.py / memoria_institucional.py — dependencies _req_staff ─
 
-def test_jurimetria_extra_req_staff_financeiro_403():
-    from app.routers.jurimetria_extra import _req_staff
+def test_jurimetria_consolidado_req_staff_financeiro_403():
+    from app.routers.jurimetria import _req_staff
     with pytest.raises(HTTPException) as exc:
         _req_staff(_u(UserRole.financeiro))
     assert exc.value.status_code == 403
 
 
-def test_jurimetria_extra_req_staff_estagiario_passa():
-    from app.routers.jurimetria_extra import _req_staff
+def test_jurimetria_consolidado_req_staff_estagiario_passa():
+    from app.routers.jurimetria import _req_staff
     assert _req_staff(_u(UserRole.estagiario)).role == UserRole.estagiario
 
 
@@ -269,7 +269,6 @@ _HELPERS_BOOL = [
     ("app.routers.dossie_estrategico", "_pode_ver"),
     ("app.routers.advogado_estilo", "_pode_usar_estilo"),
     ("app.routers.teses", "_is_staff"),
-    ("app.routers.teses_v4", "_is_staff"),
     ("app.routers.jurisprudencia_interna", "_is_staff"),
     ("app.routers.jurisprudencia_externa", "_is_staff"),
     ("app.routers.precedentes_jurisprudencia", "_is_staff"),
@@ -423,14 +422,14 @@ def test_grandfather_nao_cobre_os_15_arquivos_corrigidos():
     # de corrigir).
     arquivos_corrigidos = {
         "peca_geracao.py", "dossie_estrategico.py", "provas.py",
-        "advogado_estilo.py", "teses.py", "teses_v4.py",
+        "advogado_estilo.py", "teses.py",
         "jurisprudencia_interna.py", "jurisprudencia_externa.py",
-        "precedentes_jurisprudencia.py", "jurimetria.py", "jurimetria_extra.py",
+        "precedentes_jurisprudencia.py", "jurimetria.py",
         "memoria_institucional.py", "consumidor_monitor.py", "ficha_triagem.py",
         "novos_modulos.py",
     }
     assert arquivos_corrigidos.isdisjoint(_GRANDFATHER_ISSUE_694)
-    assert len(arquivos_corrigidos) == 15
+    assert len(arquivos_corrigidos) == 13  # 15 − 2 (teses_v4.py e jurimetria_extra.py arquivados em _dead_code)
 
 
 # ── Os gates compartilhados só valem chamados no CORPO ────────────────────────

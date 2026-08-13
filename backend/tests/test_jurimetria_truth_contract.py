@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.routers import jurimetria, jurimetria_extra
+from app.routers import jurimetria
 
 
 def test_taxa_decidida_exclui_acordo_e_pendente_do_denominador():
@@ -20,8 +20,8 @@ async def test_analise_prospectiva_nao_conta_acordo_como_vitoria(monkeypatch):
             {"resultado_raw": "acordo", "total": 7},
         ]
 
-    monkeypatch.setattr(jurimetria_extra, "_por_resultado", _fake_por_resultado)
-    r = await jurimetria_extra.analise_prospectiva(
+    monkeypatch.setattr(jurimetria, "_por_resultado", _fake_por_resultado)
+    r = await jurimetria.analise_prospectiva(
         classe="1116",
         tribunal="TJMG",
         dias_estimados=365,
@@ -53,8 +53,8 @@ async def test_analise_prospectiva_inclui_aliases_exito_e_derrota(monkeypatch):
             {"resultado_raw": "acordo", "total": 4},
         ]
 
-    monkeypatch.setattr(jurimetria_extra, "_por_resultado", _fake_por_resultado)
-    r = await jurimetria_extra.analise_prospectiva(
+    monkeypatch.setattr(jurimetria, "_por_resultado", _fake_por_resultado)
+    r = await jurimetria.analise_prospectiva(
         classe="",
         tribunal="TJMG",
         dias_estimados=0,
@@ -78,8 +78,8 @@ async def test_analise_prospectiva_omite_taxa_com_amostra_decidida_baixa(monkeyp
             {"resultado_raw": "acordo", "total": 17},
         ]
 
-    monkeypatch.setattr(jurimetria_extra, "_por_resultado", _fake_por_resultado)
-    r = await jurimetria_extra.analise_prospectiva(
+    monkeypatch.setattr(jurimetria, "_por_resultado", _fake_por_resultado)
+    r = await jurimetria.analise_prospectiva(
         classe="",
         tribunal="TJMG",
         dias_estimados=0,
@@ -132,7 +132,7 @@ class _StatsDB:
 
 @pytest.mark.asyncio
 async def test_stats_internos_retorna_total_real_sem_derivar_do_top_15():
-    r = await jurimetria_extra.stats_internos(db=_StatsDB(), cu=object())
+    r = await jurimetria.stats_internos(db=_StatsDB(), cu=object())
 
     assert r["total_com_tribunal"] == 123
     assert sum(item["total"] for item in r["por_tribunal"]) == 15

@@ -191,8 +191,8 @@ function Surface({
     <section className={cn("ejc-ultra-surface", className)}>
       <header className="ejc-ultra-surface__header">
         <div>
-          {eyebrow && <span>{eyebrow}</span>}
-          <h2>{title}</h2>
+          {eyebrow && <span className="be-bronze-accent">{eyebrow}</span>}
+          <h2 className="be-section-title">{title}</h2>
         </div>
         {action}
       </header>
@@ -444,12 +444,12 @@ export default function DashboardUltra() {
       <section className="ejc-ultra-hero">
         <div className="ejc-ultra-hero__grid" aria-hidden="true" />
         <div className="ejc-ultra-hero__content">
-          <div className="ejc-ultra-hero__eyebrow">
+          <div className={cn("ejc-ultra-hero__eyebrow", "be-hero-eyebrow")}>
             <Radar aria-hidden="true" />
             <span>Legal Operations Command Center</span>
             <i>SNAPSHOT</i>
           </div>
-          <h1>Bom trabalho, {firstName}.</h1>
+          <h1 className="be-hero-title">Bom trabalho, {firstName}.</h1>
           <p>
             Uma visão única de casos, prazos, tarefas e movimentações para
             decidir o que exige atenção agora. Dados carregados ao abrir a tela.

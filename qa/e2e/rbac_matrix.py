@@ -128,6 +128,12 @@ _GATES_COMPARTILHADOS: dict[str, "GateInfo"] = {
     "requer_equipe_juridica": (
         "local_membership", list(EQUIPE_JURIDICA), ROLE_LEVEL["estagiario"],
     ),
+    # Consolidado 12/08/2026: o bloco do jurimetria_extra.py fundido em
+    # jurimetria.py chama o helper ALIASADO `_je_requer_equipe_juridica`
+    # (mesma semântica; prefixo _je_ para evitar colisão de nomes).
+    "_je_requer_equipe_juridica": (
+        "local_membership", list(EQUIPE_JURIDICA), ROLE_LEVEL["estagiario"],
+    ),
 }
 
 # Espelha app/core/auth_middleware.py::PREFIXOS_PUBLICOS filtrados para o

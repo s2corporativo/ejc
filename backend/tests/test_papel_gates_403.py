@@ -16,15 +16,15 @@ def _user(role: UserRole, uid: str = "u1") -> User:
 
 # ── jurimetria_extra: métricas de êxito (sócio) e staff ────────────────────────
 
-def test_jurimetria_extra_req_staff_barra_cliente():
-    from app.routers.jurimetria_extra import _req_staff
+def test_jurimetria_consolidado_req_staff_barra_cliente():
+    from app.routers.jurimetria import _req_staff
     with pytest.raises(HTTPException) as exc:
         _req_staff(_user(UserRole.cliente_externo))
     assert exc.value.status_code == 403
 
 
-def test_jurimetria_extra_req_socio_barra_advogado():
-    from app.routers.jurimetria_extra import _req_socio
+def test_jurimetria_consolidado_req_socio_barra_advogado():
+    from app.routers.jurimetria import _req_socio
     with pytest.raises(HTTPException) as exc:
         _req_socio(_user(UserRole.advogado))
     assert exc.value.status_code == 403

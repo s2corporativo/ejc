@@ -29,53 +29,114 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 # Routers
-from app.routers import agenda_eventos
-from app.routers import ai
-from app.routers import ai_core
-from app.routers import anexos
-from app.routers import ai_skills
-from app.routers import ai_tools
-from app.routers import analise_bancaria
-from app.routers import analytics
-from app.routers import advogado_estilo
-from app.routers import andamentos
-from app.routers import areas
-from app.routers import atendimentos
-from app.routers import atividades
+# ── Autenticação E Segurança ──
 from app.routers import audit
 from app.routers import auth
 from app.routers import backup_admin
-from app.routers import bank_analysis
-from app.routers import calculadoras
-from app.routers import calendar_feed
+from app.routers import credential_vault  # Cofre de Credenciais (superadmin)
+
+# ── Casos, Partes E Áreas De Atuação ──
 from app.routers import case_intelligence
 from app.routers import case_partes
 from app.routers import cases
 from app.routers import caso_areas
-from app.routers import centro_custos
-from app.routers import cerebro
 from app.routers import checklists
+from app.routers import conversao_caso
+
+# ── Clientes E Atendimento ──
+from app.routers import atendimentos
 from app.routers import clients
+
+# ── Agenda, Prazos E Atividades ──
+from app.routers import agenda_eventos
+from app.routers import andamentos
+from app.routers import atividades
+from app.routers import calendar_feed
+from app.routers import deadlines
+from app.routers import intimacoes
+from app.routers import kanban
+from app.routers import suspensoes
+
+# ── Documentos E Peças Jurídicas ──
+from app.routers import anexos
+from app.routers import documents
+from app.routers import juris_import
+from app.routers import jurisprudencia_externa
+from app.routers import jurisprudencia_interna
+from app.routers import kit_documental
+from app.routers import legal_docs
+from app.routers import provas
+from app.routers import templates
+
+# ── Financeiro E Honorários ──
+from app.routers import centro_custos
+from app.routers import contratos_societarios
+from app.routers import despesas
+from app.routers import honorarios_oab
+from app.routers import nfse
+from app.routers import pix
+
+# ── Inteligência Jurídica E Ia ──
+from app.routers import ai
+from app.routers import ai_core
+from app.routers import ai_skills
+from app.routers import ai_tools
+from app.routers import cerebro
+from app.routers import ia_agente
+from app.routers import ia_citacoes
+from app.routers import ia_defensiva
+from app.routers import ia_especializada
+from app.routers import ia_governanca
+from app.routers import ia_provider_metrics
+from app.routers import ia_saude
+from app.routers import sumulas
+from app.routers import teses
+
+# ── Jurimetria E Conhecimento ──
+from app.routers import curadoria_renomada
+from app.routers import jurimetria
+
+# ── Integrações E Fontes Públicas ──
+from app.routers import datajud
+from app.routers import datajud_intelligence
+from app.routers import processo_eletronico
+
+# ── Rag E Base De Conhecimento ──
+from app.routers import rag
+from app.routers import rag_governance
+
+# ── Analytics, Arquitetura E Diagnóstico ──
+from app.routers import analytics
+from app.routers import architecture
+from app.routers import diagnostico
+
+# ── Visual E Produção ──
+from app.routers import advogado_estilo
+from app.routers import calculadoras
+from app.routers import dashboard
+from app.routers import indices
+from app.routers import visual_law
+
+# ── Radar Legislativo ──
+from app.routers import radar_legislativo
+
+# ── Portais E Entrada ──
+from app.routers import entrada
+from app.routers import portal
+
+# ── Restantes ──
+from app.routers import ambiental_estrategia
+from app.routers import analise_bancaria
+from app.routers import api_keys as api_keys_router
+from app.routers import areas
+from app.routers import bank_analysis
+from app.routers import car  # CAR/SICAR via conector Infosimples (reuso)
 from app.routers import compliance
 from app.routers import consumidor_monitor
 from app.routers import conteudo
-from app.routers import contratos_societarios
-from app.routers import conversao_caso
-from app.routers import credential_vault  # Cofre de Credenciais (superadmin)
-from app.routers import curadoria_renomada
-from app.routers import dashboard
 from app.routers import data_room
-from app.routers import data_room_v4
-from app.routers import datajud
-from app.routers import deadlines
-from app.routers import despesas
-from app.routers import diagnostico
 from app.routers import diario_oficial
-from app.routers import diplomacia_v3
 from app.routers import documento_ia
-from app.routers import raio_x
-from app.routers import legal_chat
-from app.routers import documents
 from app.routers import dossie_cliente
 from app.routers import dossie_estrategico
 from app.routers import environmental
@@ -85,106 +146,66 @@ from app.routers import exito_rateio
 from app.routers import export
 from app.routers import extratos
 from app.routers import fees
+from app.routers import ficha_triagem
 from app.routers import financeiro_consolidado
 from app.routers import gestao_societaria
 from app.routers import google_drive_knowledge
 from app.routers import honorarios_calc
 from app.routers import ia_adversarial
-from app.routers import ia_agente
-from app.routers import ia_citacoes
-from app.routers import ia_defensiva
-from app.routers import ia_especializada
-from app.routers import ia_extra
-from app.routers import ia_governanca
-from app.routers import ia_provider_metrics
-from app.routers import ia_saude
 from app.routers import indice_risco
-from app.routers import indices
 from app.routers import infosimples_receita
 from app.routers import infosimples_tjmg
-from app.routers import car  # CAR/SICAR via conector Infosimples (reuso)
-from app.routers import transparencia  # CGU Portal da Transparência (sanções) — GATED
-# PNCP removido completamente (licitações desativadas)
-from app.routers import nfse
-from app.routers import intelligence_v3
-from app.routers import intimacoes
-from app.routers import jurimetria
-from app.routers import jurimetria_extra
-from app.routers import juris_import
-from app.routers import datajud_intelligence
-from app.routers import jurisprudencia_externa
-from app.routers import honorarios_oab
 from app.routers import intake
-from app.routers import entrada
-from app.routers import triagem_entrevista
-from app.routers import ficha_triagem
-from app.routers import jurisprudencia_interna
-from app.routers import kanban
-from app.routers import kit_documental
-from app.routers import legal_docs
+from app.routers import intelligence
+from app.routers import legal_chat
+from app.routers import lgpd_registros
 from app.routers import matriz_teses
 from app.routers import memoria_institucional
 from app.routers import mensagens
 from app.routers import module_help
+from app.routers import module_settings
 from app.routers import motor_peca
 from app.routers import movimentos
 from app.routers import noticias
 from app.routers import notifications
 from app.routers import novos_modulos
-from app.routers import orquestrador
 from app.routers import observabilidade
 from app.routers import office_contracts
+from app.routers import orquestrador
 from app.routers import partner_withdrawals
 from app.routers import peca_geracao
-from app.routers import precedentes_jurisprudencia
-from app.routers import peca_geracao_router
 from app.routers import pending_items
-from app.routers import pix
-from app.routers import portal
 from app.routers import portal_documentos
-from app.routers import solicitacoes_documentos
+from app.routers import precedentes_jurisprudencia
+from app.routers import previdenciario_beneficio
 from app.routers import processes
 from app.routers import procuracoes
 from app.routers import produtividade
 from app.routers import prompts
 from app.routers import prompts_juridicos
 from app.routers import qualidade
-from app.routers import rag
-from app.routers import rag_governance
 from app.routers import rag_public
-from app.routers import api_keys as api_keys_router
-from app.routers import regulatorio
-from app.routers import radar_legislativo
+from app.routers import raio_x
 from app.routers import ramos
-from app.routers import previdenciario_beneficio
+from app.routers import regulatorio
 from app.routers import relatorio
 from app.routers import relatorio_cliente
-from app.routers import lgpd_registros
 from app.routers import score_juridico
 from app.routers import search
 from app.routers import signatures
 from app.routers import sociedades_cliente
-from app.routers import provas
-from app.routers import processo_eletronico
-from app.routers import sumulas
-from app.routers import suspensoes
+from app.routers import solicitacoes_documentos
 from app.routers import system_modules
-from app.routers import module_settings
-from app.routers import tributario_fiscal
-from app.routers import trabalhista_liquidacao
-from app.routers import ambiental_estrategia
 from app.routers import tasks
-from app.routers import templates
-from app.routers import teses
-from app.routers import teses_v4
 from app.routers import timesheet
+from app.routers import trabalhista_liquidacao
+from app.routers import transparencia  # CGU Portal da Transparência (sanções) — GATED
 from app.routers import trash
+from app.routers import triagem_entrevista
+from app.routers import tributario_fiscal
 from app.routers import users
 from app.routers import utils
 from app.routers import validador_juridico
-from app.routers import veredito_ia_router
-from app.routers import victory_vault_router
-from app.routers import visual_law
 from app.routers import whatsapp
 from app.routers import workflow
 from app.routers import architecture
@@ -375,12 +396,10 @@ app.include_router(curadoria_renomada.router, prefix=API)
 app.include_router(dashboard.router, prefix=API)
 app.include_router(dpt360_router, prefix=API)
 app.include_router(data_room.router, prefix=API)
-app.include_router(data_room_v4.router, prefix=API)
 app.include_router(datajud.router, prefix=API)
 app.include_router(deadlines.router, prefix=API)
 app.include_router(despesas.router, prefix=API)
 app.include_router(diario_oficial.router, prefix=API)
-app.include_router(diplomacia_v3.router, prefix=API)
 app.include_router(documento_ia.router, prefix=API)
 app.include_router(raio_x.router, prefix=API)
 app.include_router(legal_chat.router, prefix=API)
@@ -403,7 +422,6 @@ app.include_router(ia_agente.router, prefix=API)
 app.include_router(ia_citacoes.router, prefix=API)
 app.include_router(ia_defensiva.router, prefix=API)
 app.include_router(ia_especializada.router, prefix=API)
-app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router antes não montado → 8 chamadas frontend em 404
 app.include_router(ia_governanca.router, prefix=API)
 app.include_router(ia_saude.router, prefix=API)
 app.include_router(ia_saude.router_status, prefix=API)  # GET /api/ia/status
@@ -415,10 +433,9 @@ app.include_router(car.router, prefix=API)  # CAR/SICAR via Infosimples (consult
 app.include_router(transparencia.router, prefix=API)  # CGU sanções CEIS/CNEP/CEPIM — GATED (default off)
 # PNCP removido — licitações desativadas no EJC
 app.include_router(nfse.router, prefix=API)  # NFS-e (emissão fiscal GATED, homologação) — migração 085
-app.include_router(intelligence_v3.router, prefix=API)
+app.include_router(intelligence.router, prefix=API)
 app.include_router(intimacoes.router, prefix=API)
 app.include_router(jurimetria.router, prefix=API)
-app.include_router(jurimetria_extra.router, prefix=API)  # A5: router antes órfão (404 silencioso)
 app.include_router(juris_import.router, prefix=API)
 app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
@@ -444,7 +461,6 @@ app.include_router(observabilidade.router, prefix=API)
 app.include_router(office_contracts.router, prefix=API)
 app.include_router(partner_withdrawals.router, prefix=API)
 app.include_router(peca_geracao.router, prefix=API)
-app.include_router(peca_geracao_router.router, prefix=API)
 app.include_router(pending_items.router, prefix=API)
 app.include_router(pix.router, prefix=API)
 app.include_router(portal.router, prefix=API)
@@ -501,14 +517,11 @@ app.include_router(ambiental_estrategia.router, prefix=API)  # vertical Ambienta
 app.include_router(tasks.router, prefix=API)
 app.include_router(templates.router, prefix=API)
 app.include_router(teses.router, prefix=API)
-app.include_router(teses_v4.router, prefix=API)
 app.include_router(timesheet.router, prefix=API)
 app.include_router(trash.router, prefix=API)
 app.include_router(users.router, prefix=API)
 app.include_router(utils.router, prefix=API)
 app.include_router(validador_juridico.router, prefix=API)
-app.include_router(veredito_ia_router.router, prefix=API)
-app.include_router(victory_vault_router.router, prefix=API)
 app.include_router(visual_law.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
 app.include_router(workflow.router, prefix=API)

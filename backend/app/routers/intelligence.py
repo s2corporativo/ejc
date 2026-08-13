@@ -13,7 +13,7 @@ from app.models.user import User
 from app.services.radar_poder import radar_poder
 from app.core.ai_brain import ai_brain
 
-router = APIRouter(prefix="/intelligence-v3", tags=["Intelligence"])
+router = APIRouter(prefix="/intelligence", tags=["Intelligence"])
 
 @router.get("/radar/legislativo", dependencies=[Depends(rate_limit("radar-legislativo", 10))])
 async def radar_legislativo(cu: User = Depends(get_current_user)):
