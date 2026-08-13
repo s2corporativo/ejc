@@ -1,3 +1,4 @@
+import pytest
 """Testes LEGADOS do router diplomacia_v3.py (arquivado em _dead_code na consolidação de 12/08/2026). Não coletados pelo pytest (prefixo
 `legacy_`) — mantidos como documentação da semântica removida (calcular-acordo com Selic BCB) e para eventual restauração."""
 

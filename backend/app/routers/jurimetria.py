@@ -478,7 +478,7 @@ async def _por_resultado(db: AsyncSession, tribunal: Optional[str] = None):
     total = sum(r["total"] for r in rows) or 0
     return total, [
         {
-            "resultado": _RESULTADO_LABEL.get(r["resultado"], r["resultado"]),
+            "resultado": RESULTADO_LABEL.get(r["resultado"], r["resultado"]),
             "resultado_raw": r["resultado"],
             "total": int(r["total"]),
             "pct": round(r["total"] / total * 100, 1) if total else 0,

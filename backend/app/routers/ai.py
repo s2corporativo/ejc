@@ -1031,14 +1031,10 @@ async def detectar_prazos(
     return resultado
 
 # ── Imports do módulo consolidado (ia_extra) ────────────────────────────────
-# Necessários APENAS pelo bloco consolidado abaixo: não mexer sem checar o
-# bloco `CONSOLIDAÇÃO 12/08/2026`.
 logger = _logger  # alias para o bloco consolidado
-
 import json as _json_consolidacao
 from uuid import uuid4 as _uuid4_consolidacao
 from pydantic import BaseModel as _BaseModel_consolidacao, Field as _Field_consolidacao
-from app.core.config import get_settings as _get_settings_consolidacao
 from app.models.ai_log import (
     AITipoUso as _AITipoUso_consolidacao,
     classificar_risco_ia as _classificar_risco_ia_consolidacao,
@@ -1056,52 +1052,23 @@ from app.services.ai_gateway import (
 from app.services.legal_base import BASE_ESTRUTURADA as _BASE_ESTRUTURADA_consolidacao
 from app.services.sanitizer import sanitizar_pii as _sanitizar_pii_consolidacao
 from app.services.ai_guard import sanitizar_ou_abortar as _sanitizar_ou_abortar_consolidacao
-
-# ── Imports do módulo consolidado (ia_extra) ────────────────────────────────
-# Necessários APENAS pelo bloco consolidado abaixo: não mexer sem checar o
-# bloco `CONSOLIDAÇÃO 12/08/2026`.
-import json as _json_consolidacao
-from uuid import uuid4 as _uuid4_consolidacao
-from pydantic import BaseModel as _BaseModel_consolidacao, Field as _Field_consolidacao
-from app.core.config import get_settings as _get_settings_consolidacao
-
 import importlib
-
 class _SettingsProxyConslidacao:
     """Proxy: expõe os atributos de settings ao bloco consolidado.
     Resolve get_settings() via lookup de módulo a cada acesso, para que os
     testes possam aplicar monkeypatch em app.core.config.get_settings."""
-
     def __getattr__(self, attr: str):
         _cfg = importlib.import_module("app.core.config")
         return getattr(_cfg.get_settings(), attr)
-
 _settings_consolidacao = _SettingsProxyConslidacao()
 
-from app.models.ai_log import (
-    AITipoUso as _AITipoUso_consolidacao,
-    classificar_risco_ia as _classificar_risco_ia_consolidacao,
-)
-from app.services.ai_service import (
-    buscar_contexto_rag as _buscar_contexto_rag_consolidacao,
-    _modelo_log as _modelo_log_consolidacao,
-    _tokens_input as _tokens_input_consolidacao,
-    _tokens_output as _tokens_output_consolidacao,
-)
-from app.services.ai_gateway import (
-    chat as _gw_chat_consolidacao,
-    GatewayResponse as _GatewayResponse_consolidacao,
-)
-from app.services.legal_base import BASE_ESTRUTURADA as _BASE_ESTRUTURADA_consolidacao
-from app.services.sanitizer import sanitizar_pii as _sanitizar_pii_consolidacao
-from app.services.ai_guard import sanitizar_ou_abortar as _sanitizar_ou_abortar_consolidacao
 # ══ CONSOLIDAÇÃO 12/08/2026: conteúdo migrado de ia_extra.py ══
 # Origem: app/routers/ia_extra.py (Onda 2 — IA jurídica). Prefixo /ai
 # idêntico ao canônico; a divisão era puramente física. Endpoints,
 # prompts e regras de rate limit PRESERVADOS sem alteração semântica.
 
 
-async def _ia(system: str, user: str, task_type: str = "analise_juridica", temperature: float = 0.2, max_tokens: int = 1200, nivel: str = "alto") -> tuple[str, GatewayResponse]:
+async def _ia(system: str, user: str, task_type: str = "analise_juridica", temperature: float = 0.2, max_tokens: int = 1200, nivel: str = "alto") -> tuple[str, _GatewayResponse_consolidacao]:
     resp = await _gw_chat_consolidacao(
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         task_type=task_type,
