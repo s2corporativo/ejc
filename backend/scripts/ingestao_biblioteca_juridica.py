@@ -2,10 +2,8 @@
 """Ingestão governada da Biblioteca Jurídica EJC.
 
 O script é deliberadamente fail-closed: qualquer inconsistência de autenticidade,
-proveniência, metadado obrigatório ou classificação impede ``--execute``.
-Documentos jurídicos de alta confiança só entram quando a própria origem declarada
-é compatível com autoridade jurídica e, para jurisprudência oficial, há referência
-oficial rastreável em domínio institucional admitido.
+proveniência, metadado obrigatório, classificação ou grafo impede ``--execute``.
+Nenhum documento é autoaprovado: todo lote entra como PENDENTE de curadoria.
 """
 from __future__ import annotations
 
@@ -35,6 +33,7 @@ AUTORIDADE_VOCAB = {
     "normativa", "vinculante", "jurisprudencial", "persuasiva", "doutrinaria",
     "analitica", "modelo_sem_autoridade",
 }
+DERIVADOS_EXIGEM_FONTE = {"tese_juridica", "bloco_argumentativo", "pedido_juridico"}
 
 TRIBUNAL_PAT = re.compile(
     r"\b(STF|STJ|TCU|TST|TSE|STM|TJMG|TJ[A-Z]{2}|TRF\s?-?\s?[1-6]|TRT\s?-?\s?\d{1,2})\b",
@@ -88,6 +87,16 @@ def load_piloto(base_dir: str):
     return docs
 
 
+def load_grafo(path: str | None) -> dict:
+    if not path or not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as f:
+        loaded = yaml.safe_load(f) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError("arquivo de grafo deve conter objeto YAML")
+    return loaded
+
+
 def _host_oficial(url: str) -> bool:
     try:
         host = (urlparse(url).hostname or "").lower().rstrip(".")
@@ -96,7 +105,7 @@ def _host_oficial(url: str) -> bool:
     return bool(host) and any(host == suf or host.endswith("." + suf) for suf in OFFICIAL_DOMAIN_SUFFIXES)
 
 
-def _urls_oficiais(body: str, d: dict) -> list[str]:
+def _urls(body: str, d: dict) -> list[str]:
     urls = list(URL_PAT.findall(body or ""))
     for key in ("link_official", "fonte_oficial", "url_oficial"):
         if d.get(key):
@@ -109,6 +118,10 @@ def _urls_oficiais(body: str, d: dict) -> list[str]:
             if u:
                 urls.append(str(u))
     return sorted(set(urls))
+
+
+def _urls_oficiais(body: str, d: dict) -> list[str]:
+    return [u for u in _urls(body, d) if _host_oficial(u)]
 
 
 def categoria_rag(d: dict) -> str:
@@ -200,8 +213,8 @@ def validar(docs):
         tipo = d.get("tipo_camada")
         origem = d.get("origem_conteudo")
         autoridade = d.get("autoridade_juridica")
-        urls = _urls_oficiais(body, d)
-        urls_validas = [u for u in urls if _host_oficial(u)]
+        urls = _urls(body, d)
+        urls_validas = _urls_oficiais(body, d)
 
         if tipo == "jurisprudencia_estruturada":
             if origem not in {"fonte_oficial", "jurisprudencia_oficial"}:
@@ -225,6 +238,17 @@ def validar(docs):
             if nc == "ALTA" and not urls_validas:
                 erros.append(f"[{path}] fonte_primaria ALTA sem URL oficial")
 
+        if tipo in DERIVADOS_EXIGEM_FONTE and not (d.get("fontes_utilizadas") or urls):
+            erros.append(f"[{path}] conteúdo derivado exige fontes_utilizadas ou URL rastreável")
+
+        if tipo == "modelo_peca" and autoridade != "modelo_sem_autoridade":
+            erros.append(f"[{path}] modelo de peça não pode possuir autoridade jurídica própria")
+
+        if origem in {"analise_IA", "modelo_IA"} and autoridade not in {"analitica", "modelo_sem_autoridade"}:
+            erros.append(f"[{path}] conteúdo de IA deve ter autoridade analítica ou modelo_sem_autoridade")
+        if origem == "modelo_IA" and sc != 0:
+            erros.append(f"[{path}] modelo_IA deve ter score_autoridade=0")
+
         if origem in {"fonte_oficial", "jurisprudencia_oficial", "legislacao"} and urls and not urls_validas:
             erros.append(f"[{path}] origem declarada oficial, mas nenhuma URL pertence a domínio institucional permitido")
 
@@ -240,7 +264,8 @@ def validar(docs):
 
 
 def build_extra(d):
-    """Monta o JSONB canônico. Ingestão do lote nasce PENDENTE até curadoria."""
+    """Monta JSONB canônico. Ingestão do lote nasce PENDENTE até curadoria."""
+    fontes = d.get("fontes_utilizadas") or _urls(d.get("__body", ""), d)
     extra = {
         "tipo_camada": d["tipo_camada"],
         "canonical_id": d["canonical_id"],
@@ -252,7 +277,8 @@ def build_extra(d):
         "nivel_confiaca": str(d["nivel_confiaca"]).upper(),
         "data_pesquisa": d["data_pesquisa"],
         "gerado_por_IA": bool(d.get("gerado_por_IA")),
-        "fontes_utilizadas": d.get("fontes_utilizadas") or [],
+        "fontes_utilizadas": fontes,
+        "relacoes": d.get("__relacoes") or [],
         "rag_status": "pendente",
         "requires_human_review": True,
         "human_reviewed": False,
@@ -272,6 +298,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--execute", action="store_true", help="Executa a ingestão real")
     ap.add_argument("--dir", default=None, help="Diretório raiz do lote (autodetectado se omitido)")
+    ap.add_argument("--graph", default=None, help="YAML do grafo; se omitido usa <dir>/grafico_relacoes.yaml quando existir")
     args = ap.parse_args()
 
     base = args.dir or ("/lote_piloto" if os.path.isdir("/lote_piloto") else "/home/ubuntu/lote_piloto")
@@ -283,20 +310,43 @@ def main():
         sys.exit(2)
 
     erros = validar(docs)
+
+    graph_path = args.graph or os.path.join(base, "grafico_relacoes.yaml")
+    if os.path.isfile(graph_path):
+        try:
+            grafo = load_grafo(graph_path)
+            _cand = ["/app", "/opt/ejc/backend", "/home/ubuntu/ejc/backend", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]
+            for _c in _cand:
+                if os.path.isdir(os.path.join(_c, "app")) and _c not in sys.path:
+                    sys.path.insert(0, _c)
+            from app.services.legal_graph import indexar_relacoes, validar_grafo
+            ids = {str(d.get("canonical_id") or "").strip() for d in docs if d.get("canonical_id")}
+            erros_grafo = validar_grafo(grafo, ids)
+            erros.extend(f"[GRAFO] {e}" for e in erros_grafo)
+            if not erros_grafo:
+                indice = indexar_relacoes(grafo)
+                for d in docs:
+                    d["__relacoes"] = indice.get(str(d.get("canonical_id") or ""), [])
+                print(f"[grafo validado: {len(grafo.get('arestas') or [])} arestas]")
+        except Exception as exc:
+            erros.append(f"[GRAFO] falha ao carregar/validar: {exc}")
+    else:
+        print("[INFO] grafo não fornecido; documentos serão ingeridos sem relações canônicas")
+
     for e in erros:
         print("ERRO:", e)
     if erros:
         print(f"[BLOQUEADO] {len(erros)} problema(s) detectado(s). Nenhuma ingestão será executada.")
         sys.exit(3)
 
-    print("[validação OK: metadados, proveniência, classificação e fontes oficiais compatíveis]")
+    print("[validação OK: metadados, proveniência, classificação, fontes e grafo compatíveis]")
     if not args.execute:
         print("\n[DRY-RUN] Nenhuma inserção realizada. Para ingerir na base do EJC:")
         for d in sorted(docs, key=lambda x: x["canonical_id"]):
             print(f"  ingest {d['canonical_id']} | categoria={categoria_rag(d)} | {d['__file']}")
         return
 
-    _cand = ["/app", "/opt/ejc/backend", "/home/ubuntu/ejc/backend"]
+    _cand = ["/app", "/opt/ejc/backend", "/home/ubuntu/ejc/backend", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]
     for _c in _cand:
         if os.path.isdir(_c) and os.path.isdir(os.path.join(_c, "app")):
             sys.path.insert(0, _c)
@@ -305,7 +355,7 @@ def main():
         from app.services.ingestion_service import upsert_documento
         from app.services.legal_chunker import chunk_documento_juridico
     except Exception as exc2:
-        print(f"[FALHA] Não foi possível importar upsert_documento: {exc2}")
+        print(f"[FALHA] Não foi possível importar serviços do EJC: {exc2}")
         sys.exit(2)
 
     import asyncio
