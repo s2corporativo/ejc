@@ -1,8 +1,15 @@
-# GRAFO DE RELAÇÕES — LOTE PILOTO (24 temas, 24 documentos canônicos)
-# Bibliotecas Jurídica Inteligente do EJC
-# Relacionamentos: fundamentado_por, cita, diverge_de, contratese_de, complementar_a
-# Formato: cada nó é um canonical_id; arestas nomeadas indicam dependência conceitual.
-# Gerado em: 13/08/2026 — dados de origem: RELATORIO_AUDITORIA_LOTE_PILOTO.md
+# GRAFO DE RELAÇÕES — LOTE PILOTO
+# Status: documental; relações só podem influenciar retrieval após aprovação RAG
+# de origem e destino. Atualizado em 14/08/2026 após auditoria de segurança.
+
+politica:
+  exigir_origem_aprovada: true
+  exigir_destino_aprovado: true
+  usar_para_elevar_autoridade_sem_validacao: false
+  observacao: >-
+    O grafo descreve relações conceituais. Ele não transforma tese, modelo ou
+    documento derivado em fonte de autoridade e não substitui a verificação da
+    fonte primária correspondente.
 
 nos:
   - TESE-TRIB-000001
@@ -34,48 +41,60 @@ arestas:
   - origem: JUR-TRIB-000003
     tipo: fundamentado_por
     destino: TESE-TRIB-000001
-    observacao: Exclusão do ICMS reduz a base de PIS/COFINS, fundamento material da recuperação monofásica
+    status: pendente_validacao_dos_nos
+    observacao: Exclusão do ICMS reduz a base de PIS/COFINS, fundamento material relacionado à recuperação monofásica.
   - origem: TESE-TRIB-000001
     tipo: complementar_a
     destino: JUR-TRIB-000006
-    observacao: Compensação é o instrumento processual-tributário da restituição monofásica
+    status: pendente_validacao_dos_nos
+    observacao: Compensação pode constituir instrumento de aproveitamento de crédito tributário, conforme o caso concreto.
   - origem: JUR-TRIB-000002
     tipo: complementar_a
     destino: TESE-TRIB-000001
-    observacao: Prescrição quinquenal baliza o período da repetição de indébito
+    status: pendente_validacao_dos_nos
+    observacao: Prescrição quinquenal pode balizar o período discutido na repetição de indébito.
   - origem: TESE-AMBI-000007
     tipo: diverge_de
     destino: TESE-AMBI-000008
-    observacao: Responsabilidade administrativa (culpa em sentido lato, Súmula 618 STJ) × responsabilidade civil objetiva (art. 14 §1º Lei 6.938/81)
+    status: pendente_validacao_dos_nos
+    observacao: Diferenciar responsabilidade administrativa sancionadora de responsabilidade civil ambiental.
   - origem: JUR-ADMI-000010
     tipo: complementar_a
     destino: TESE-ADMI-000009
-    observacao: Prescrição da pretensão punitiva administrativa (Tema 953 STJ) × proporcionalidade e gradação (Lei 9.784/99)
+    status: pendente_validacao_dos_nos
+    observacao: Prescrição punitiva e proporcionalidade/gradação são questões distintas que podem coexistir na defesa administrativa.
   - origem: TESE-LICI-000011
     tipo: complementar_a
     destino: TESE-LICI-000013
-    observacao: Habilitação/qualificação técnica × julgamento em pregão eletrônico
+    status: pendente_validacao_dos_nos
+    observacao: Habilitação/qualificação técnica e julgamento da proposta são etapas distintas do procedimento licitatório.
   - origem: TESE-LICI-000012
     tipo: diverge_de
     destino: TESE-LICI-000013
-    observacao: Dispensa × pregão: regimes distintos; fracionamento de dispensa gera nulidade do certame
+    status: pendente_validacao_dos_nos
+    observacao: Dispensa e pregão pertencem a regimes procedimentais diferentes; qualquer conclusão de nulidade exige análise normativa e fática específica.
   - origem: JUR-EMPR-000015
-    tipo: diverge_de
+    tipo: complementar_a
     destino: TESE-EMPR-000014
-    observacao: Efeitos da recuperação judicial protegem a massa, mas não eliminam a desconsideração por abuso demonstrado
+    status: pendente_validacao_dos_nos
+    observacao: Recuperação judicial e desconsideração da personalidade jurídica podem interagir, mas possuem pressupostos próprios.
   - origem: JUR-CONS-000017
     tipo: complementar_a
     destino: JUR-CONS-000016
-    observacao: Fraude PIX opera dentro do regime de responsabilidade objetiva do fortuito interno (Tema 1046 STJ)
+    status: pendente_validacao_origem
+    observacao: Fraudes envolvendo PIX devem ser comparadas ao regime do fortuito interno do Tema 466/STJ e da Súmula 479/STJ, sem aplicação automática.
   - origem: JUR-CONS-000018
     tipo: diverge_de
     destino: JUR-CONS-000016
-    observacao: Negativação indevida × fraude bancária: regimes probatórios e de dano distintos
+    status: pendente_validacao_origem
+    observacao: Negativação indevida e fraude bancária possuem objetos, danos e regimes probatórios que não devem ser confundidos.
   - origem: TESE-PROC-000022
     tipo: complementar_a
     destino: JUR-PROC-000024
-    observacao: Tutela de urgência frequentemente requerida na discussão de honorários em execução
+    status: pendente_validacao_dos_nos
+    observacao: Tutela provisória e honorários podem coexistir no mesmo processo, mas uma matéria não fundamenta automaticamente a outra.
   - origem: JUR-TRAB-000020
     tipo: complementar_a
     destino: TESE-TRAB-000021
-    observacao: Responsabilidade subsidiária do tomador e prescrição são eixos defensivos da relação trabalhista empresarial
+    status: pendente_validacao_dos_nos
+    observacao: Responsabilidade do tomador e prescrição são eixos autônomos de análise trabalhista.
