@@ -64,7 +64,25 @@ def test_mudanca_de_requirements_separa_ambiente_python():
 
 def test_pgvector_image_exige_referencia_fixada_com_digest():
     src = CI_LOCAL.read_text(encoding="utf-8")
-    start_pg = src[src.index("start_pg() {") : src.index("pick_pg_port")]
+    # O helper pick_pg_port é declarado ANTES de start_pg nesta versão; a
+    # região relevante termina na próxima fronteira de função (linha começando
+    # por nome+parênteses em coluna 1 após o início de start_pg).
+    start_pg_start = src.index("start_pg() {")
+    rest = src[start_pg_start + len("start_pg() {") :]
+    func_end = rest.find("\n") + 1
+    while rest[func_end :].strip() and not (
+        rest[func_end :].splitlines()[0]
+        if rest[func_end :].strip()
+        else ""
+    ).endswith("() {"):
+        nl = rest.find("\n", func_end)
+        if nl < 0:
+            break
+        line = rest[nl + 1 :].splitlines()[0] if rest[nl + 1 :].strip() else ""
+        if line.startswith(("run_", "ensure_", "check_", "stop_", "main_")) or line.endswith("() {"):
+            break
+        func_end = nl + 1
+    start_pg = src[start_pg_start : start_pg_start + func_end]
 
     assert "PGVECTOR_IMAGE" in src
     assert "@sha256:" in src

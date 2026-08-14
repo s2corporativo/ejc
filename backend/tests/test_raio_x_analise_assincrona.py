@@ -125,9 +125,18 @@ class _FakeSessionTask:
     async def __aexit__(self, *args):
         return False
 
+    def _e_lock_de_analise(self, stmt):
+        # Consultas com for_update (admissão/erro/progresso) sempre carregam a
+        # análise; apenas consultas sem lock listam os documentos restantes.
+        try:
+            for_update = getattr(stmt, "_for_update_arg", None)
+            return for_update is not None
+        except Exception:  # noqa: BLE001
+            return False
+
     async def execute(self, stmt):
         self.queries += 1
-        if self.queries == 1:
+        if self._e_lock_de_analise(stmt):
             if self.falhar_primeira:
                 raise RuntimeError("banco indisponível (simulado)")
             return _FakeResult(self.analise)

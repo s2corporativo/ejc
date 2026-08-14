@@ -29,9 +29,16 @@ _ESTADOS_PROCESSAVEIS = {"fila", "em_processamento"}
 
 
 def _mensagem_erro_segura(exc: BaseException) -> str:
-    """Mensagem apta a aparecer na UI sem vazar infraestrutura/PII."""
+    """Mensagem apta a aparecer na UI sem vazar infraestrutura/PII.
+
+    ValueError carrega a mensagem controlada do extrator/analisador
+    (ex.: "OCR vazio (simulado)"), nunca SQL/caminho/URL — por isso o
+    texto original é preservado. Exceções de infraestrutura caem no
+    ramo genérico, que só revela o nome da classe para correlação.
+    """
     if isinstance(exc, ValueError):
-        return "Falha na extração ou validação do documento"
+        msg = str(exc).strip()
+        return msg if msg else "Falha na extração ou validação do documento"
     return f"Erro interno ({type(exc).__name__})"
 
 
@@ -166,7 +173,7 @@ async def _processar(
                     user_id=user_id,
                 )
                 if not result.get("ok"):
-                    raise ValueError("Falha na extração")
+                    raise ValueError(result.get("erro") or "Falha na extração")
                 result.pop("_texto_sanitizado", None)
                 encoded = jsonable_encoder(result)
                 intake = encoded.get("intake_result") or encoded

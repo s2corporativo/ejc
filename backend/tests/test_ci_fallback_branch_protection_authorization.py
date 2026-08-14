@@ -36,7 +36,15 @@ def test_ativador_injeta_autorizacao_e_snapshot_exato_sem_bypass():
 
 def test_fallback_branch_protection_vincula_check_ao_app_sem_reescrever_restante():
     src = PROTECTION.read_text(encoding="utf-8")
-    executable = src.split("cat <<'FIM'", 1)[0]
+    # Região executável: do início até o segundo heredoc (rodapé de uso),
+    # com os comentários de cabeçalho/rodapé expurgados — eles documentam
+    # explicitamente que "restrictions" NÃO é alterado, então sua presença
+    # textual em comentário não é reescrita de política.
+    executable_parts = src.split("cat <<'FIM'")
+    executable = executable_parts[0] + executable_parts[1].split("FIM", 1)[1]
+    executable = "\n".join(
+        linha for linha in executable.splitlines() if not linha.strip().startswith("#")
+    )
     assert 'FALLBACK_APP_ID="${EJC_FALLBACK_APP_ID:-}"' in src
     assert 'protection/required_status_checks' in src
     assert 'checks: [{context:"EJC Local Full Gate", app_id:$app_id}]' in src

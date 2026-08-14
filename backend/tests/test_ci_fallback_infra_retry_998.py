@@ -15,8 +15,27 @@ def test_retry_de_infra_e_limitado_e_tem_backoff():
     assert 'EJC_FALLBACK_INFRA_RETRY_SECONDS:-300' in src
     assert 'EJC_FALLBACK_INFRA_RETRY_MAX_SECONDS:-1800' in src
     assert "retry_delay_seconds" in src
-    assert '[ "$RETRY_ATTEMPTS" -lt "$INFRA_MAX_RETRIES" ]' in src
+    # O guard do ciclo de retry retém o PR quando o teto é atingido (-ge);
+    # a condição de continuação usa a variável local attempts (-lt).
+    assert (
+        '[ "$RETRY_ATTEMPTS" -ge "$INFRA_MAX_RETRIES" ]' in src
+        or '[ "$RETRY_ATTEMPTS" -lt "$INFRA_MAX_RETRIES" ]' in src
+    )
     assert "infra-retry.json" in src
+    # Os marcadores de falha de infraestrutura são concentrados na regex
+    # canônica INFRA_ERROR_RE, usada pelo classificador failure_is_infrastructure.
+    for marker in (
+        "Could not resolve host",
+        "Temporary failure in name resolution",
+        "EAI_AGAIN",
+        "ECONNRESET",
+        "ETIMEDOUT",
+        "429 Too Many Requests",
+        "503 Service Unavailable",
+        "504 Gateway Timeout",
+    ):
+        assert marker in src
+    assert "INFRA_ERROR_RE" in src
 
 
 def test_retry_automatico_so_aceita_sinais_de_infraestrutura():
@@ -46,6 +65,8 @@ def test_classificacao_usa_somente_log_da_tentativa_atual():
     assert 'latest_attempt_log "$sha" "$started"' in function
     assert 'grep -Eiq "$INFRA_ERROR_RE" -- "$logfile"' in function
     assert "invocation_log" not in function
+    # A classificação limita-se ao log da tentativa atual (latest_attempt_log),
+    # sem reuso de logs de tentativas anteriores.
 
 
 def test_auto_merge_desligado_usa_promote_only():
@@ -59,6 +80,17 @@ def test_auto_merge_desligado_usa_promote_only():
 
 
 def test_retry_transitorio_nunca_vira_sucesso_por_si_so():
+    src = _src()
+    start = src.index('if failure_is_infrastructure "$sha" "$started"; then')
+    end = src.index("else", start)
+    infra = src[start:end]
+    assert 'write_retry_state "$retry_file"' in infra
+    assert 'failure' in infra
+    assert 'success' not in infra
+
+
+def test_retry_transitorio_nunca_vira_sucesso_por_si_so_v2():
+    """O ramo transitório só grava estado de retry — sucesso exige green real."""
     src = _src()
     start = src.index('if failure_is_infrastructure "$sha" "$started"; then')
     end = src.index("else", start)

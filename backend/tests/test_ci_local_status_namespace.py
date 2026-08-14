@@ -57,7 +57,10 @@ def test_watcher_sem_auto_merge_repromove_status_sem_tentar_integracao():
     assert "PROMOTE_ONLY=1" in fallback
 
     approved = watcher[watcher.index('if local_evidence_green "$sha"; then') :]
-    approved = approved[: approved.index("continue")]
+    # O script atual insere um "continue" de skip no guard de pr_state_due ANTES
+    # do bloco de decisão; a região relevante termina no registro de estado da
+    # mesma superfície de aprovação (write_pr_state).
+    approved = approved[: approved.index("write_pr_state")]
     assert 'if [ "$AUTO_MERGE" = "1" ]' in approved
     assert "--merge-only" in approved
     assert "--promote-only" in approved
