@@ -21,20 +21,22 @@ def test_quarentena_rebaixa_aprovado_para_pendente():
     assert novo["quarantine_active"] is True
 
 
-def test_quarentena_preserva_recusa_humana():
+def test_quarentena_preserva_recusa_humana_e_hitl():
     novo, _ = MOD.aplicar_quarentena_extra(
         {"rag_status": "recusado", "human_reviewed": True},
         quando="2026-08-14T20:00:00-03:00",
     )
     assert novo["rag_status"] == "recusado"
+    assert novo["human_reviewed"] is True
     assert novo["quarantine_active"] is True
 
 
-def test_transformacao_e_idempotente_com_mesmo_carimbo():
+def test_transformacao_e_idempotente_mesmo_com_novo_horario():
     primeiro, _ = MOD.aplicar_quarentena_extra({}, quando="2026-08-14T20:00:00-03:00")
-    segundo, mudou = MOD.aplicar_quarentena_extra(primeiro, quando="2026-08-14T20:00:00-03:00")
+    segundo, mudou = MOD.aplicar_quarentena_extra(primeiro, quando="2026-08-15T09:00:00-03:00")
     assert segundo == primeiro
     assert mudou is False
+    assert segundo["quarantined_at"] == "2026-08-14T20:00:00-03:00"
 
 
 def test_lote_tem_24_ids_unicos():
