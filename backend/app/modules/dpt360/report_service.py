@@ -111,14 +111,6 @@ async def build_executive_report(
     changes_truncated = len(rows) > 500
     rows = rows[:500]
 
-    secoes_truncadas: list[str] = []
-    if cases_truncated:
-        secoes_truncadas.append("casos (mais de 30)")
-    if deadlines_truncated:
-        secoes_truncadas.append("providências futuras (mais de 20)")
-    if changes_truncated:
-        secoes_truncadas.append("alertas do período (mais de 500 no intervalo)")
-
     changes: list[dict[str, Any]] = []
     for row in rows:
         area = classify_area(row.keyword_match, row.titulo, row.resumo)
@@ -157,11 +149,13 @@ async def build_executive_report(
         secoes_truncadas.append("riscos atuais (mais de 10)")
     if len(future) > 20:
         secoes_truncadas.append("providências futuras")
-    if len(cases) > 30:
-        secoes_truncadas.append("casos")
+    if cases_truncated:
+        secoes_truncadas.append("casos (mais de 30)")
+    if deadlines_truncated:
+        secoes_truncadas.append("prazos confirmados (mais de 20)")
     if len(changes) > 30:
-        secoes_truncadas.append("mudanças jurídicas relevantes")
-    if len(rows) > 500:
+        secoes_truncadas.append("mudanças jurídicas relevantes (mais de 30)")
+    if changes_truncated:
         secoes_truncadas.append("alertas do período (mais de 500 no intervalo)")
 
     cobertura_notas = list(dashboard.notes)
