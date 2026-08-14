@@ -303,6 +303,7 @@ def main():
             break
     try:
         from app.services.ingestion_service import upsert_documento
+        from app.services.legal_chunker import chunk_documento_juridico
     except Exception as exc2:
         print(f"[FALHA] Não foi possível importar upsert_documento: {exc2}")
         sys.exit(2)
@@ -314,6 +315,9 @@ def main():
         for d in docs:
             extra = build_extra(d)
             titulo = (d.get("__body") or "").split("\n")[0].lstrip("#").strip() or d["canonical_id"]
+            chunks_juridicos = chunk_documento_juridico(
+                d["__body"], tipo_camada=d["tipo_camada"], categoria=categoria_rag(d)
+            )
             async with AsyncSessionLocal() as db:
                 try:
                     resultado = await upsert_documento(
@@ -328,6 +332,7 @@ def main():
                         confianca="alta" if d.get("nivel_confiaca") == "ALTA" else "media",
                         client_id=None,
                         embutir_vetores=True,
+                        chunks=chunks_juridicos,
                     )
                     await db.commit()
                     print(f"[{resultado}] {d['canonical_id']} | pendente de curadoria")
