@@ -744,6 +744,7 @@ async def converter_em_caso(
         proxima_acao="Revisar a análise convertida do Raio-X e definir a próxima providência",
     )
     db.add(case)
+    await db.flush()  # Garante INSERT INTO cases antes do snapshot (FK case_intelligence_snapshots_case_id_fkey)
 
     snapshot = CaseIntelligenceSnapshot(
         id=str(uuid4()),
