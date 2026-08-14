@@ -67,20 +67,13 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
   },
   {
     label: "Estratégia",
+    // Fase 3 (QA / unificação): as 9 sub-abas anteriores foram consolidadas
+    // em 4 — teses (com "Sugeridas pela IA"), indicadores (jurisprudência RAG,
+    // precedentes, score e risco), dossiê e ferramentas (com IA Defensiva).
     tab: "teses",
     icon: Scale,
-    descricao: "Teses, riscos, precedentes e decisão jurídica.",
-    tabs: [
-      "teses",
-      "teses-sugeridas",
-      "jurisprudencia",
-      "precedentes",
-      "risco",
-      "score",
-      "dossie",
-      "iaDefensiva",
-      "ferramentas",
-    ],
+    descricao: "Teses, indicadores, dossiê e ferramentas de decisão jurídica.",
+    tabs: ["teses", "indicadores", "dossie", "ferramentas"],
   },
   {
     label: "Financeiro",
@@ -94,6 +87,14 @@ export const CASE_NAV_SECTIONS: readonly CaseNavSection[] = [
 // Abas que deixaram de existir como destino próprio. O conteúdo do
 // "orquestrador" foi promovido à Visão (aba resumo) — o deep-link antigo
 // continua resolvendo via redirecionamento em CasoDetalhe.
+// Fase 3 (QA / unificação): sub-abas de Estratégia consolidadas —
+// deep-links antigos continuam resolvendo para a nova aba destino.
 export const LEGACY_CASE_TAB_REDIRECTS: Record<string, string> = {
   orquestrador: "resumo",
+  "teses-sugeridas": "teses",
+  jurisprudencia: "indicadores",
+  precedentes: "indicadores",
+  score: "indicadores",
+  risco: "indicadores",
+  iaDefensive: "ferramentas",
 };

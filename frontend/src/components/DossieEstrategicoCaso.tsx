@@ -2,7 +2,7 @@
 // Dossiê Estratégico como TELA ÚNICA: módulos determinísticos (linha do tempo,
 // mapa probatório, riscos, teses) sempre disponíveis — o advogado PENSA antes
 // de produzir — e, por fim, a análise estratégica gerada por IA (HITL).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Sparkles,
   FileDown,
@@ -186,6 +186,14 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
   const [loadingDossie, setLoadingDossie] = useState(true);
   const [historico, setHistorico] = useState<DossieMeta[]>([]);
   const [gerando, setGerando] = useState(false);
+  // FIX-004 (Fase 3 / QA): o backend já trata falha (devolve conteúdo de erro
+  // em vez de travar), mas a geração pode demorar 2-3 min com retries do
+  // axios (sem timeout global proposital). O frontend agora dá feedback
+  // explícito: após 90s o rótulo muda e um aviso persistente aparece —
+  // o usuário sabe que o processo segue em andamento (não está "travado").
+  const [gerandoHaTempo, setGerandoHaTempo] = useState(false);
+  const gerarRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { gerarRef.current && clearTimeout(gerarRef.current); }, []);
   const [aprovando, setAprovando] = useState(false);
   const [faltantes, setFaltantes] = useState<ProvaFaltante[] | null>(null);
   const [avisoFaltantes, setAvisoFaltantes] = useState<string | null>(null);
@@ -247,6 +255,9 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
 
   const gerar = async () => {
     setGerando(true);
+    gerarRef.current && clearTimeout(gerarRef.current);
+    setGerandoHaTempo(false);
+    gerarRef.current = setTimeout(() => setGerandoHaTempo(true), 90_000);
     try {
       const r = await api.post(`/dossie/${caseId}/gerar`, {});
       setDossie(r.data);
@@ -257,6 +268,8 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
       toast.error(mensagemErroIA(err, "Não foi possível gerar o dossiê."));
     } finally {
       setGerando(false);
+      setGerandoHaTempo(false);
+      gerarRef.current && clearTimeout(gerarRef.current);
     }
   };
 
@@ -344,11 +357,20 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
               {!iaDisponivel
                 ? "IA não ativada"
                 : gerando
-                  ? "Gerando…"
+                  ? gerandoHaTempo
+                    ? "Gerando… (pode levar alguns minutos)"
+                    : "Gerando…"
                   : "Gerar análise (IA)"}
             </Button>
           </span>
         </div>
+        {gerando && (
+          <p className="text-xs text-slate-500 mt-2">
+            {gerandoHaTempo
+              ? "A geração ainda está em andamento — os provedores de IA podem demorar alguns minutos. Não feche a página; o resultado aparecerá automaticamente ou será sinalizado em caso de falha."
+              : "Analisando o caso com IA… isso pode levar até alguns minutos."}
+          </p>
+        )}
       </div>
 
       {loadingModulos ? (

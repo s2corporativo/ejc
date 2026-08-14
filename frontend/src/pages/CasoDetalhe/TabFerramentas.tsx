@@ -9,6 +9,7 @@ import {
 } from "../../lib/iaErro";
 import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
 import AnaliseEstrategica from "../../components/AnaliseEstrategica";
+import IaDefensivaCaso from "./IaDefensivaCaso";
 import { Spinner } from "../../components/UI";
 import type { Case } from "../../types";
 import { ramosDaArea } from "../ramos/ramosConfig";
@@ -525,6 +526,10 @@ export default function TabFerramentas({ caso }: { caso: Case }) {
 
       {/* Análise de Contrato IA — sempre disponível */}
       <AnaliseContratoIA caseId={caso.id} />
+      {/* IA Defensiva (Fase 3 / QA): antes aba própria "iaDefensiva" — agora
+          embutida aqui, pois é ferramenta de trabalho estratégica do caso.
+          Mantém HITL, histórico de revisões e trilha de auditoria. */}
+      <IaDefensivaCaso caso={caso} />
     </div>
   );
 }
