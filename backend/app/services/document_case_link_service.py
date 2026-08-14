@@ -19,6 +19,10 @@ from app.models.document import Document, DocConfidencialidade
 from app.models.legal_doc import LegalDoc
 from app.models.prova import Prova
 from app.models.user import User
+from app.services.document_reference_guard import (
+    EscopoGuardaDocumento,
+    exigir_documento_sem_referencias_bloqueantes,
+)
 from app.services.status_transicao import avancar_status_por_evento
 
 _COFRE_EQUIPE = {DocConfidencialidade.normal, DocConfidencialidade.interno}
@@ -54,6 +58,7 @@ async def _gate_documento_origem(
 
 
 def _ref_protocolo_ativo(document_id_col):
+    """Predicado SQL de elegibilidade, aplicado antes de count/offset/limit."""
     return (
         select(LegalDoc.id)
         .where(
@@ -65,6 +70,7 @@ def _ref_protocolo_ativo(document_id_col):
 
 
 def _ref_prova_ativa(document_id_col):
+    """Predicado SQL de elegibilidade, aplicado antes de count/offset/limit."""
     return (
         select(Prova.id)
         .where(
@@ -239,46 +245,15 @@ async def vincular_documento_existente(
             ),
         )
 
-    # Não incluir título/nome da peça ou da prova: dados legados podem conter
-    # referências cross-tenant sem FK e a mensagem de conflito não deve vazar
-    # metadados de outro caso.
-    ref = (
-        await db.execute(
-            select(LegalDoc.id)
-            .where(
-                LegalDoc.protocolo_comprovante_doc_id == document_id,
-                LegalDoc.deleted_at.is_(None),
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if ref:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Documento está associado a um comprovante de protocolo ativo "
-                "e não pode ser vinculado por este fluxo."
-            ),
-        )
-
-    prova = (
-        await db.execute(
-            select(Prova.id)
-            .where(
-                Prova.document_id == document_id,
-                Prova.deleted_at.is_(None),
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if prova:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Documento está associado a uma prova ativa e não pode ser "
-                "vinculado por este fluxo."
-            ),
-        )
+    # A política de referências vive fora do router e é compartilhável por
+    # delete, Drive e demais portas do lifecycle. Para vínculo, preserva o
+    # contrato F3.2 já homologado: protocolo e Prova são bloqueantes.
+    await exigir_documento_sem_referencias_bloqueantes(
+        db,
+        document_id,
+        acao="vinculado por este fluxo",
+        escopo=EscopoGuardaDocumento.VINCULO,
+    )
 
     if doc.client_id and doc.client_id != target_case.client_id:
         raise HTTPException(
