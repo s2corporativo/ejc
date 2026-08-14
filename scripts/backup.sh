@@ -1,32 +1,20 @@
 #!/usr/bin/env bash
-# EJC — wrapper operacional do backup cifrado/exclusivo.
-#
-# Não executa pg_dump/tar próprio. Todo caller entra pela fachada Python que
-# adquire `flock` no volume `backups_data` antes de chamar o motor canônico.
+# EJC — wrapper operacional do backup nativo cifrado para pré-deploy.
 #
 # IMPORTANTE: o motor atual gera os artefatos `.enc` em TemporaryDirectory e
 # remove esse diretório ao concluir. Portanto `local_ok` prova apenas que a
 # cifragem ocorreu durante o ciclo; NÃO prova retenção local recuperável após o
-# retorno da função. Até o motor persistir cópia cifrada em BACKUP_DIR, este
-# wrapper só aprova quando `offsite_ok=true` (prova recuperável).
+# retorno da função. Até o motor persistir cópia cifrada em BACKUP_DIR, o
+# pré-deploy exige `offsite_ok=true` para existir prova recuperável.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/ejc}"
 APP_CONTAINER="${APP_CONTAINER:-ejc_backend}"
-BACKUP_ORIGEM="${BACKUP_ORIGEM:-pre_deploy}"
 
-case "$BACKUP_ORIGEM" in
-  pre_deploy|agendado|manual|operacional) ;;
-  *)
-    echo "[backup] BACKUP_ORIGEM inválida." >&2
-    exit 2
-    ;;
-esac
-
-command -v docker >/dev/null 2>&1 || {
+if ! command -v docker >/dev/null 2>&1; then
   echo "[backup] Docker não encontrado." >&2
   exit 2
-}
+fi
 
 if docker ps --format '{{.Names}}' | grep -qx "$APP_CONTAINER"; then
   runner=(docker exec -i "$APP_CONTAINER" python -)
@@ -36,17 +24,16 @@ else
     exit 2
   }
   cd "$APP_DIR"
-  docker compose config --quiet
+  docker compose config >/dev/null
   runner=(docker compose run --rm --no-deps -T backend python -)
-  echo "[backup] Backend parado; usando imagem existente em container efêmero." >&2
+  echo "[backup] Backend parado; usando imagem anterior em container efêmero." >&2
 fi
 
-BACKUP_ORIGEM="$BACKUP_ORIGEM" "${runner[@]}" <<'PY'
+"${runner[@]}" <<'PY'
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 
 from app.core.database import AsyncSessionLocal
 from app.services import backup_execution_service, backup_service
@@ -61,17 +48,17 @@ def _safe_artifact(item: dict) -> dict:
 
 
 async def main() -> int:
-    origem = (os.getenv("BACKUP_ORIGEM") or "operacional").strip()
     config = backup_service.configuracao_status()
     auth_mode = str(config.get("auth_mode") or "")
     destino = str(config.get("destino") or "gdrive")
 
     problems: list[str] = []
-    required = {
+    required_local = {
+        "enabled": "agendamento desabilitado",
         "chave_configurada": "chave de criptografia ausente",
         "pg_dump_disponivel": "pg_dump indisponível",
     }
-    for field, message in required.items():
+    for field, message in required_local.items():
         if not bool(config.get(field)):
             problems.append(message)
 
@@ -98,6 +85,7 @@ async def main() -> int:
                     "ok": False,
                     "status": "configuracao_insegura",
                     "problemas": problems,
+                    "auth_mode": auth_mode or "indisponível",
                     "destino": destino,
                 },
                 ensure_ascii=False,
@@ -109,7 +97,7 @@ async def main() -> int:
     async with AsyncSessionLocal() as db:
         result = await backup_execution_service.executar_backup_exclusivo(
             db,
-            origem=origem,
+            origem="pre_deploy",
             usuario_id=None,
             usuario_role="sistema",
         )
@@ -126,11 +114,14 @@ async def main() -> int:
     # retenção OFFSITE confirmada. `local_ok` sozinho não é suficiente enquanto
     # backup_service usar TemporaryDirectory para os artefatos `.enc`.
     complete = bool(result.get("ok")) and encrypted_generated and offsite_ok
+
     safe = {
         "ok": complete,
         "status": result.get("status"),
-        "origem": origem,
+        "origem": result.get("origem"),
+        "avisos": result.get("avisos") or [],
         "artefatos": artifacts,
+        "duracao_segundos": result.get("duracao_segundos"),
         "banco_cifrado": has_db,
         "uploads_cifrados": has_uploads,
         "artefatos_cifrados_gerados": encrypted_generated,
@@ -138,6 +129,7 @@ async def main() -> int:
         "auth_mode": auth_mode,
         "destino": destino,
         "offsite_ok": offsite_ok,
+        "offsite_erro": offsite_erro,
     }
     print(json.dumps(safe, ensure_ascii=False, sort_keys=True))
     return 0 if complete else 1

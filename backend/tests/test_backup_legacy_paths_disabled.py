@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-REPO = ROOT.parent
+REPO = ROOT
 
 
 def _text(relative: str) -> str:
@@ -68,6 +68,18 @@ def test_wrapper_operacional_nao_implementa_dump_ou_tar_proprio():
     wrapper = _text("scripts/backup.sh")
     assert "backup_execution_service.executar_backup_exclusivo" in wrapper
     assert "backup_service.executar_backup(" not in wrapper
-    assert "pg_dump" not in wrapper
-    assert "tar cz" not in wrapper
+    # O wrapper de main mantém apenas a chave de mensagem de diagnóstico
+    # `"pg_dump_disponivel"` no JSON de pré-requisitos — não executa pg_dump/tar.
+    # Linhas de comentário também são excluídas da verificação de comandos.
+    linhas = [
+        linha for linha in wrapper.splitlines()
+        if not linha.lstrip().startswith("#")
+    ]
+    corpo = (
+        "\n".join(linhas)
+        .replace('"pg_dump_disponivel"', '""')
+        .replace('"pg_dump indisponível"', '""')
+    )
+    assert "pg_dump" not in corpo, "wrapper não deve executar pg_dump"
+    assert "tar cz" not in corpo, "wrapper não deve executar tar cz"
     assert "and offsite_ok" in wrapper

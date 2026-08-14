@@ -5,9 +5,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SERVICES = ROOT / "app" / "services"
-ROUTERS = ROOT / "app" / "routers"
-SCRIPTS = ROOT.parent / "scripts"
+SERVICES = ROOT / "backend" / "app" / "services"
+ROUTERS = ROOT / "backend" / "app" / "routers"
+SCRIPTS = ROOT / "scripts"
 
 
 def _text(path: Path) -> str:
