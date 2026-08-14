@@ -19,7 +19,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user
+from app.core.security import get_current_user, requer_equipe_juridica
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.deadline import Deadline
@@ -33,6 +33,7 @@ from app.schemas.raio_x import (
     RaioXIdentificacaoRevisada,
     RaioXUpdate,
 )
+from app.services.document_access_policy import confidencialidades_visiveis
 from app.services.raio_x_advogado_service import analise_advogado_caso
 from app.services.raio_x_export_service import gerar_docx, gerar_pdf
 from app.services.raio_x_service import (
@@ -56,8 +57,9 @@ def _role(user: User) -> str:
     return user.role.value if hasattr(user.role, "value") else str(user.role)
 
 
-def _permitido(user: User) -> bool:
-    return _role(user) in {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"}
+def _exigir_acesso_raio_x(user: User) -> None:
+    """Gate compartilhado da equipe jurídica, sem matriz local divergente."""
+    requer_equipe_juridica(user, "Perfil sem acesso ao Raio-X")
 
 
 # Análise "advogado" (IA agêntica) é operação CARA (até 8 passos, ~R$2/exec):
@@ -67,6 +69,7 @@ def _permitido_ia_advogado(user: User) -> bool:
 
 
 async def _obter(db: AsyncSession, analise_id: str, user: User) -> RaioXAnalise:
+    _exigir_acesso_raio_x(user)
     analise = (
         await db.execute(
             select(RaioXAnalise)
@@ -81,11 +84,6 @@ async def _obter(db: AsyncSession, analise_id: str, user: User) -> RaioXAnalise:
     return analise
 
 
-# Teto de staleness do processamento assíncrono (Onda 1). O pipeline leva
-# 71–87s em produção; muito além disso, o worker morreu sem marcar `erro`
-# (kill -9, OOM, deploy no meio) e a análise ficaria presa em
-# fila/em_processamento para sempre — 409 permanente nos endpoints de
-# análise (achado baixo da auditoria de segurança desta branch).
 PROCESSAMENTO_TIMEOUT_MINUTOS = 30
 
 
@@ -104,12 +102,7 @@ def _processamento_preso(analise: RaioXAnalise) -> bool:
 
 
 def _destravar_analise_presa(analise: RaioXAnalise) -> None:
-    """Registra o desfecho `erro` da execução morta antes de aceitar o novo lote.
-
-    O caminho normal de erro é a própria task marcar o estado; este é o
-    plano B para execução que morreu sem desfecho. A mensagem segue o mesmo
-    contrato sanitizado de raio_x_tasks (string legível, sem detalhe interno).
-    """
+    """Registra o desfecho `erro` da execução morta antes de aceitar o novo lote."""
     relatorio = dict(analise.relatorio or {})
     relatorio["erro_processamento"] = (
         "Processamento anterior expirou sem concluir "
@@ -144,8 +137,7 @@ def _aplicar_identificacao(analise: RaioXAnalise) -> None:
 
 @router.get("/stats")
 async def stats(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    if not _permitido(user):
-        raise HTTPException(403, "Perfil sem acesso ao Raio-X")
+    _exigir_acesso_raio_x(user)
     base = select(RaioXAnalise).where(RaioXAnalise.deleted_at.is_(None))
     if not is_gestao(user):
         base = base.where(RaioXAnalise.created_by == user.id)
@@ -181,18 +173,17 @@ async def stats(db: AsyncSession = Depends(get_db), user: User = Depends(get_cur
 
 @router.get("/")
 async def listar(
-    search: Optional[str] = None,
-    status: Optional[str] = None,
-    area: Optional[str] = None,
-    risco: Optional[str] = None,
+    search: Optional[str] = Query(default=None, max_length=200),
+    status: Optional[str] = Query(default=None, max_length=40),
+    area: Optional[str] = Query(default=None, max_length=50),
+    risco: Optional[str] = Query(default=None, max_length=30),
     urgente: Optional[bool] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not _permitido(user):
-        raise HTTPException(403, "Perfil sem acesso ao Raio-X")
+    _exigir_acesso_raio_x(user)
     query = select(RaioXAnalise).where(RaioXAnalise.deleted_at.is_(None))
     if not is_gestao(user):
         query = query.where(RaioXAnalise.created_by == user.id)
@@ -235,8 +226,7 @@ async def criar(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not _permitido(user):
-        raise HTTPException(403, "Perfil sem acesso ao Raio-X")
+    _exigir_acesso_raio_x(user)
     now = datetime.now(timezone.utc)
     analise = RaioXAnalise(
         id=str(uuid4()),
@@ -268,6 +258,7 @@ async def contextual(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _exigir_acesso_raio_x(user)
     await verificar_acesso_caso(db, user, case_id)
     case = (
         await db.execute(select(Case).where(Case.id == case_id, Case.deleted_at.is_(None)))
@@ -275,7 +266,13 @@ async def contextual(
     if not case:
         raise HTTPException(404, "Caso não encontrado")
     docs = (
-        await db.execute(select(Document).where(Document.case_id == case_id, Document.deleted_at.is_(None)))
+        await db.execute(
+            select(Document).where(
+                Document.case_id == case_id,
+                Document.deleted_at.is_(None),
+                Document.confidencialidade.in_(confidencialidades_visiveis(user)),
+            )
+        )
     ).scalars().all()
     deadlines = (
         await db.execute(select(Deadline).where(Deadline.case_id == case_id, Deadline.deleted_at.is_(None)))
@@ -346,17 +343,9 @@ async def contextual_analise_advogado(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Análise "advogado sênior" (IA agêntica) do Raio-X contextual de um caso.
-
-    Operação de IA deliberada e cara — POST separado do GET contextual (que
-    permanece idêntico, sem IA). Atrás de AI_AGENT_ENABLED: com a flag OFF o
-    serviço devolve status "indisponivel" e nada muda no sistema.
-    """
     if not _permitido_ia_advogado(user):
         raise HTTPException(403, "Perfil sem acesso à análise do advogado (IA)")
     resultado = await analise_advogado_caso(db, user, case_id)
-    # Audita TODO desfecho (ok/indisponivel/erro) — operação de IA cara não passa
-    # sem trilha (rate-limit/custo consumidos mesmo em falha).
     await criar_audit_log(
         db, user.id, _role(user), "AI_USE", "raio_x_contextual", case_id,
         detalhes=f"Análise do advogado (IA) — Raio-X contextual [{resultado.get('status')}]",
@@ -400,13 +389,6 @@ async def atualizar(
         identification = dict(report.get("identificacao") or {})
         reviewed_identification = review.get("identificacao")
         if isinstance(reviewed_identification, dict):
-            # Issue #695 (mass assignment): `identification` é dict livre vindo
-            # do cliente. Sem allowlist, `setattr(analise, key, value)` escrevia
-            # em QUALQUER coluna do model (status, deleted_at, created_by, id,
-            # titulo...), incl. travar o registro como "convertido_em_caso" sem
-            # nunca ter sido convertido. Allowlist explícita, fail-closed: chave
-            # fora do conjunto é 422 nomeando o que foi rejeitado (não ignorada
-            # em silêncio) — mesmo espírito de ramos.py:340-349 (AI-121).
             campos_permitidos = RaioXIdentificacaoRevisada.model_fields.keys()
             rejeitados = sorted(
                 k for k in reviewed_identification if k not in campos_permitidos
@@ -418,8 +400,6 @@ async def atualizar(
                     + ", ".join(rejeitados),
                 )
             try:
-                # Mesmos validadores de comprimento de RaioXUpdate para estes
-                # campos (ex.: titulo de 8 KB não passa mais por aqui).
                 identificacao_validada = RaioXIdentificacaoRevisada(**reviewed_identification)
             except ValidationError as exc:
                 raise HTTPException(
@@ -467,13 +447,6 @@ async def analisar_documentos(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Recebe o lote, persiste os documentos e ENFILEIRA a análise (Onda 1).
-
-    A extração + IA (71–87s em produção) roda fora do request, em
-    app/tasks/raio_x_tasks.py: aqui só validação barata, gravação em disco e
-    despacho. Estados observáveis via GET: fila → em_processamento →
-    aguardando_conferencia | documentos_pendentes | erro.
-    """
     analise = await _obter(db, analise_id, user)
     if analise.status == "convertido_em_caso":
         raise HTTPException(409, "Análise já convertida; o relatório está congelado")
@@ -495,7 +468,6 @@ async def analisar_documentos(
 
     novos: list[RaioXDocumento] = []
     for arquivo in validos:
-        # Documento PENDENTE: resultado_analise vazio até a task preencher.
         doc = RaioXDocumento(
             id=str(uuid4()),
             analise_id=analise.id,
@@ -572,8 +544,6 @@ async def reanalisar(
         _destravar_analise_presa(analise)
     errors: list[dict[str, str]] = []
     if reprocessar and analise.documentos:
-        # Reprocessamento refaz OCR + IA de todos os documentos — operação
-        # longa, vai para a fila (Onda 1); o request só enfileira e responde.
         analise.status = "fila"
         await criar_audit_log(
             db,
@@ -601,7 +571,6 @@ async def reanalisar(
             "reprocessado": True,
             "processamento": processamento,
         }
-    # Reconsolidação síncrona (sem IA, barata): comportamento anterior mantido.
     analise.relatorio = consolidar_relatorio(list(analise.documentos))
     _aplicar_identificacao(analise)
     preview = await preview_conversao(db, analise)
@@ -629,13 +598,6 @@ async def analise_advogado_por_documentos(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Análise "advogado sênior" (IA agêntica) sobre uma análise preliminar por
-    documentos: injeta o relatório consolidado do Raio-X como contexto.
-
-    Exige caso vinculado (a análise preliminar é isolada de casos): o agente
-    precisa de um caso para RBAC/ownership e para o modo de sanitização LGPD
-    derivado da área. Sem caso vinculado → 409 orientando a conversão.
-    """
     if not _permitido_ia_advogado(user):
         raise HTTPException(403, "Perfil sem acesso à análise do advogado (IA)")
     analise = await _obter(db, analise_id, user)
@@ -650,7 +612,6 @@ async def analise_advogado_por_documentos(
     resultado = await analise_advogado_caso(
         db, user, case_id, base_relatorio=base_relatorio,
     )
-    # Audita TODO desfecho (ok/indisponivel/erro) — ver endpoint contextual.
     await criar_audit_log(
         db, user.id, _role(user), "AI_USE", "raio_x_analises", analise_id,
         detalhes=f"Análise do advogado (IA) — Raio-X por documentos [{resultado.get('status')}]",
@@ -680,7 +641,7 @@ async def download(
         "DOWNLOAD",
         "raio_x_documentos",
         doc.id,
-        detalhes=doc.nome_original,
+        detalhes="Download de documento preliminar do Raio-X",
     )
     await db.commit()
     return FileResponse(str(full), filename=doc.nome_original, media_type=doc.mimetype)
