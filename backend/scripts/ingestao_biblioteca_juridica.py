@@ -34,6 +34,7 @@ AUTORIDADE_VOCAB = {
     "analitica", "modelo_sem_autoridade",
 }
 DERIVADOS_EXIGEM_FONTE = {"tese_juridica", "bloco_argumentativo", "pedido_juridico"}
+AUTORIDADES_QUE_NAO_ADMITEM_SIMULACAO = {"normativa", "vinculante", "jurisprudencial", "persuasiva"}
 
 TRIBUNAL_PAT = re.compile(
     r"\b(STF|STJ|TCU|TST|TSE|STM|TJMG|TJ[A-Z]{2}|TRF\s?-?\s?[1-6]|TRT\s?-?\s?\d{1,2})\b",
@@ -45,9 +46,14 @@ PROCESSO_PAT = re.compile(
     r"(?:n[ºo°.]*\s*)?[\d.]+(?:\s*/\s*[A-Z]{2})?\b",
     re.I,
 )
+# Marcadores de fonte/processo SIMULADO. Deliberadamente não casa uma mera nota
+# de auditoria como "a versão anterior continha referências simuladas" e não se
+# aplica a modelo_peca sem autoridade, que pode usar exemplos fictícios isolados.
 SIMULACAO_PAT = re.compile(
-    r"\b(simulad[oa]|fict[ií]ci[oa]|exemplo\s+hipot[eé]tico|url\s+de\s+exemplo|"
-    r"processo\s+inventado|julgado\s+inventado)\b",
+    r"(?:\burl\s+(?:oficial\s*:\s*)?simulad[oa]s?\b|"
+    r"\b(?:processo|julgado|precedente|fonte)\s+(?:simulad[oa]s?|fict[ií]ci[oa]s?|inventad[oa]s?)\b|"
+    r"\(\s*simulad[oa]s?\s*,?\s*fonte\s+oficial\b|"
+    r"\burl\s+de\s+exemplo\b|\bexemplo\s+hipot[eé]tico\b)",
     re.I,
 )
 URL_PAT = re.compile(r"https?://[^\s)>\]]+", re.I)
@@ -207,14 +213,14 @@ def validar(docs):
         if cid:
             ids.add(cid)
 
-        if SIMULACAO_PAT.search(body):
-            erros.append(f"[{path}] conteúdo contém marcador de simulação/fictício; proibido em base de autoridade")
-
         tipo = d.get("tipo_camada")
         origem = d.get("origem_conteudo")
         autoridade = d.get("autoridade_juridica")
         urls = _urls(body, d)
         urls_validas = _urls_oficiais(body, d)
+
+        if autoridade in AUTORIDADES_QUE_NAO_ADMITEM_SIMULACAO and SIMULACAO_PAT.search(body):
+            erros.append(f"[{path}] fonte/processo simulado é proibido em conteúdo com autoridade jurídica")
 
         if tipo == "jurisprudencia_estruturada":
             if origem not in {"fonte_oficial", "jurisprudencia_oficial"}:
