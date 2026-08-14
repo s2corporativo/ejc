@@ -108,7 +108,14 @@ raise SystemExit(3)
     return gh
 
 
-def _run(tmp_path: Path, scenario="success", protection=None, authorization="998", branch="main"):
+def _run(
+    tmp_path: Path,
+    scenario="success",
+    protection=None,
+    authorization="998",
+    branch="main",
+    repo="s2corporativo/ejc",
+):
     tmp_path.mkdir(parents=True, exist_ok=True)
     _write_fake_gh(tmp_path)
     env = os.environ.copy()
@@ -119,9 +126,10 @@ def _run(tmp_path: Path, scenario="success", protection=None, authorization="998
             "FAKE_GH_LOG": str(tmp_path / "log"),
             "FAKE_GH_PAYLOAD": str(tmp_path / "payload"),
             "FAKE_GH_SCENARIO": scenario,
-            "FAKE_GH_PROTECTION": json.dumps(protection or _protection()),
+            "FAKE_GH_PROTECTION": json.dumps(_protection() if protection is None else protection),
             "EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION": authorization,
             "EJC_BRANCH": branch,
+            "EJC_REPO": repo,
         }
     )
     result = subprocess.run(
@@ -137,7 +145,7 @@ def _run(tmp_path: Path, scenario="success", protection=None, authorization="998
     return result, log
 
 
-def test_bootstrap_exige_autorizacao_e_main(tmp_path):
+def test_bootstrap_exige_autorizacao_main_e_repo_canonico(tmp_path):
     result, log = _run(tmp_path, authorization="")
     assert result.returncode != 0
     assert "exige EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION=998" in result.stderr
@@ -146,6 +154,11 @@ def test_bootstrap_exige_autorizacao_e_main(tmp_path):
     result, log = _run(tmp_path / "branch", branch="feature")
     assert result.returncode != 0
     assert "bootstrap autorizado somente para main" in result.stderr
+    assert "-X PUT" not in log
+
+    result, log = _run(tmp_path / "repo", repo="someone/another-repo")
+    assert result.returncode != 0
+    assert "bootstrap autorizado somente para s2corporativo/ejc" in result.stderr
     assert "-X PUT" not in log
 
 
@@ -190,14 +203,25 @@ def test_bootstrap_reconcilia_put_com_falha_de_transporte(tmp_path):
     assert log.rstrip().endswith("repos/s2corporativo/ejc/branches/main/protection -H Accept: application/vnd.github+json")
 
 
-def test_bootstrap_rejeita_baseline_divergente(tmp_path):
+def test_bootstrap_rejeita_baseline_divergente_ou_incompleto(tmp_path):
+    reviews_sem_bypass = {
+        "dismiss_stale_reviews": True,
+        "require_code_owner_reviews": True,
+        "required_approving_review_count": 1,
+        "require_last_push_approval": True,
+    }
     bad_cases = [
+        {},
+        _protection(required_pull_request_reviews=reviews_sem_bypass),
         _protection(
             required_pull_request_reviews={
-                "dismiss_stale_reviews": True,
-                "require_code_owner_reviews": True,
-                "required_approving_review_count": 1,
-                "require_last_push_approval": True,
+                **reviews_sem_bypass,
+                "bypass_pull_request_allowances": {"users": [], "teams": []},
+            }
+        ),
+        _protection(
+            required_pull_request_reviews={
+                **reviews_sem_bypass,
                 "bypass_pull_request_allowances": {"users": [{"login": "admin"}], "teams": [], "apps": []},
             }
         ),
