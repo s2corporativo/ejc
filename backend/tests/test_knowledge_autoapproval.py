@@ -1,12 +1,14 @@
-"""Política de aprovação automática da Base de Conhecimento."""
+"""Política central de disponibilidade da Base de Conhecimento."""
 from sqlalchemy import event
 
 from app.models.rag import KnowledgeDoc
 from app.services.knowledge_autoapproval import (
     POLITICA,
+    POLITICA_CONFIANCA_BLOQUEADA,
     POLITICA_DECISAO_HUMANA,
     POLITICA_QUARENTENA,
     POLITICA_REVISAO_PENDENTE,
+    POLITICA_STATUS_EXPLICITO,
     _aprovar_no_flush,
     aplicar_aprovacao_automatica,
 )
@@ -21,23 +23,43 @@ def _doc(extra=None) -> KnowledgeDoc:
     )
 
 
-def test_documento_pendente_vira_aprovado():
-    doc = _doc({"rag_status": "pendente", "confidence_level": "alta"})
+def test_documento_sem_status_explicito_mantem_compatibilidade_autoaprovada():
+    doc = _doc({"confidence_level": "alta"})
     extra = aplicar_aprovacao_automatica(doc)
 
     assert extra["rag_status"] == "aprovado"
     assert extra["confidence_level"] == "alta"
     assert extra["auto_approval"]["policy"] == POLITICA
-    assert extra["auto_approval"]["previous_rag_status"] == "pendente"
+    assert extra["auto_approval"]["previous_rag_status"] is None
+    assert "approved_at" in extra["auto_approval"]
 
 
-def test_bloqueio_legado_nao_impede_uso_pela_ia():
+def test_status_pendente_explicito_nao_e_autoaprovado():
+    doc = _doc({"rag_status": "pendente", "confidence_level": "alta"})
+    extra = aplicar_aprovacao_automatica(doc)
+
+    assert extra["rag_status"] == "pendente"
+    assert extra["confidence_level"] == "alta"
+    assert extra["auto_approval"]["policy"] == POLITICA_STATUS_EXPLICITO
+    assert "approved_at" not in extra["auto_approval"]
+
+
+def test_status_bloqueado_explicito_e_confianca_bloqueada_sao_preservados():
     doc = _doc({"rag_status": "bloqueado", "confidence_level": "bloqueado"})
     extra = aplicar_aprovacao_automatica(doc)
 
-    assert extra["rag_status"] == "aprovado"
-    assert extra["confidence_level"] == "media"
-    assert extra["auto_approval"]["previous_confidence_level"] == "bloqueado"
+    assert extra["rag_status"] == "bloqueado"
+    assert extra["confidence_level"] == "bloqueado"
+    assert extra["auto_approval"]["policy"] == POLITICA_STATUS_EXPLICITO
+
+
+def test_confianca_bloqueada_sem_status_nao_e_autoaprovada():
+    doc = _doc({"confidence_level": "bloqueado"})
+    extra = aplicar_aprovacao_automatica(doc)
+
+    assert extra["rag_status"] == "bloqueado"
+    assert extra["confidence_level"] == "bloqueado"
+    assert extra["auto_approval"]["policy"] == POLITICA_CONFIANCA_BLOQUEADA
 
 
 def test_metadados_de_fonte_nao_sao_falsificados():
@@ -100,7 +122,7 @@ def test_recusa_humana_nao_vira_aprovacao():
     assert aplicar_aprovacao_automatica(doc_sem)["rag_status"] == "aprovado"
 
 
-def test_quarentena_temos_precedencia_sobre_revisao_e_status_aprovado():
+def test_quarentena_tem_precedencia_sobre_revisao_e_status_aprovado():
     doc = _doc({
         "requires_human_review": True,
         "human_reviewed": True,
