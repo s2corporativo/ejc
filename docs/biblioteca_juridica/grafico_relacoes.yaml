@@ -1,0 +1,81 @@
+# GRAFO DE RELAÇÕES — LOTE PILOTO (24 temas, 24 documentos canônicos)
+# Bibliotecas Jurídica Inteligente do EJC
+# Relacionamentos: fundamentado_por, cita, diverge_de, contratese_de, complementar_a
+# Formato: cada nó é um canonical_id; arestas nomeadas indicam dependência conceitual.
+# Gerado em: 13/08/2026 — dados de origem: RELATORIO_AUDITORIA_LOTE_PILOTO.md
+
+nos:
+  - TESE-TRIB-000001
+  - JUR-TRIB-000002
+  - JUR-TRIB-000003
+  - JUR-TRIB-000004
+  - JUR-TRIB-000005
+  - JUR-TRIB-000006
+  - TESE-AMBI-000007
+  - TESE-AMBI-000008
+  - TESE-ADMI-000009
+  - JUR-ADMI-000010
+  - TESE-LICI-000011
+  - TESE-LICI-000012
+  - TESE-LICI-000013
+  - TESE-EMPR-000014
+  - JUR-EMPR-000015
+  - JUR-CONS-000016
+  - JUR-CONS-000017
+  - JUR-CONS-000018
+  - JUR-CONS-000019
+  - JUR-TRAB-000020
+  - TESE-TRAB-000021
+  - TESE-PROC-000022
+  - TESE-PROC-000023
+  - JUR-PROC-000024
+
+arestas:
+  - origem: JUR-TRIB-000003
+    tipo: fundamentado_por
+    destino: TESE-TRIB-000001
+    observacao: Exclusão do ICMS reduz a base de PIS/COFINS, fundamento material da recuperação monofásica
+  - origem: TESE-TRIB-000001
+    tipo: complementar_a
+    destino: JUR-TRIB-000006
+    observacao: Compensação é o instrumento processual-tributário da restituição monofásica
+  - origem: JUR-TRIB-000002
+    tipo: complementar_a
+    destino: TESE-TRIB-000001
+    observacao: Prescrição quinquenal baliza o período da repetição de indébito
+  - origem: TESE-AMBI-000007
+    tipo: diverge_de
+    destino: TESE-AMBI-000008
+    observacao: Responsabilidade administrativa (culpa em sentido lato, Súmula 618 STJ) × responsabilidade civil objetiva (art. 14 §1º Lei 6.938/81)
+  - origem: JUR-ADMI-000010
+    tipo: complementar_a
+    destino: TESE-ADMI-000009
+    observacao: Prescrição da pretensão punitiva administrativa (Tema 953 STJ) × proporcionalidade e gradação (Lei 9.784/99)
+  - origem: TESE-LICI-000011
+    tipo: complementar_a
+    destino: TESE-LICI-000013
+    observacao: Habilitação/qualificação técnica × julgamento em pregão eletrônico
+  - origem: TESE-LICI-000012
+    tipo: diverge_de
+    destino: TESE-LICI-000013
+    observacao: Dispensa × pregão: regimes distintos; fracionamento de dispensa gera nulidade do certame
+  - origem: JUR-EMPR-000015
+    tipo: diverge_de
+    destino: TESE-EMPR-000014
+    observacao: Efeitos da recuperação judicial protegem a massa, mas não eliminam a desconsideração por abuso demonstrado
+  - origem: JUR-CONS-000017
+    tipo: complementar_a
+    destino: JUR-CONS-000016
+    observacao: Fraude PIX opera dentro do regime de responsabilidade objetiva do fortuito interno (Tema 1046 STJ)
+  - origem: JUR-CONS-000018
+    tipo: diverge_de
+    destino: JUR-CONS-000016
+    observacao: Negativação indevida × fraude bancária: regimes probatórios e de dano distintos
+  - origem: TESE-PROC-000022
+    tipo: complementar_a
+    destino: JUR-PROC-000024
+    observacao: Tutela de urgência frequentemente requerida na discussão de honorários em execução
+  - origem: JUR-TRAB-000020
+    tipo: complementar_a
+    destino: TESE-TRAB-000021
+    observacao: Responsabilidade subsidiária do tomador e prescrição são eixos defensivos da relação trabalhista empresarial
