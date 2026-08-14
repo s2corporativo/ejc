@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from types import SimpleNamespace
+from app.core.config import Settings
 from uuid import uuid4
 
 import pytest
@@ -68,9 +68,11 @@ async def test_arquivamento_humano_durante_ocr_prevalece(monkeypatch, tmp_path):
     iniciou_extracao = asyncio.Event()
     liberar_extracao = asyncio.Event()
 
+    _settings_reais = Settings()
+    _settings_reais.UPLOAD_DIR = str(tmp_path)
     monkeypatch.setattr(
         "app.core.config.get_settings",
-        lambda: SimpleNamespace(UPLOAD_DIR=str(tmp_path)),
+        lambda: _settings_reais,
     )
 
     async def _extrair(*args, **kwargs):
