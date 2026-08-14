@@ -8,7 +8,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -21,6 +21,13 @@ from app.models.document import Document, DocConfidencialidade
 from app.models.audit_log import criar_audit_log
 
 router = APIRouter(prefix="/portal", tags=["Portal do Cliente"])
+
+# Movimentações visíveis ao cliente no Portal: atos processuais oficiais.
+# ``ia`` (triagem interna) e ``nota`` (anotação de estratégia do escritório)
+# são internas — nunca devem aparecer em nenhuma resposta do Portal.
+TIPOS_MOVIMENTOS_PORTAL = (
+    "peticao", "decisao", "audiencia", "intimacao", "andamento_oficial"
+)
 
 
 def _exigir_cliente(cu: User) -> str:
@@ -55,7 +62,10 @@ async def meus_casos(
         sub = select(
             CaseMovimento.case_id, CaseMovimento.data_evento,
             CaseMovimento.descricao, rn,
-        ).where(CaseMovimento.case_id.in_(case_ids)).subquery()
+        ).where(
+            CaseMovimento.case_id.in_(case_ids),
+            CaseMovimento.tipo.in_(TIPOS_MOVIMENTOS_PORTAL),
+        ).subquery()
         movs = (await db.execute(
             select(sub.c.case_id, sub.c.data_evento, sub.c.descricao)
             .where(sub.c.rn == 1)
@@ -92,8 +102,10 @@ async def caso_detalhe(
         raise HTTPException(status_code=404, detail="Caso não encontrado")
 
     movs = (await db.execute(
-        select(CaseMovimento).where(CaseMovimento.case_id == case_id)
-        .order_by(CaseMovimento.data_evento.desc()).limit(50)
+        select(CaseMovimento).where(
+            CaseMovimento.case_id == case_id,
+            CaseMovimento.tipo.in_(TIPOS_MOVIMENTOS_PORTAL),
+        ).order_by(CaseMovimento.data_evento.desc()).limit(50)
     )).scalars().all()
 
     prazos = (await db.execute(
@@ -125,13 +137,19 @@ async def documentos(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Apenas docs do cliente com confidencialidade NORMAL (liberados)."""
+    """Docs do cliente com confidencialidade NORMAL E publicado_portal=true
+    (ato EXPLÍCITO — Issue #698). Exceção: o próprio upload do cliente pelo
+    Portal nasce visível a ele mesmo, sem depender de ato do escritório."""
     client_id = _exigir_cliente(cu)
     rows = (await db.execute(
         select(Document).where(
             Document.client_id == client_id,
             Document.deleted_at.is_(None),
             Document.confidencialidade == DocConfidencialidade.normal,
+            or_(
+                Document.publicado_portal.is_(True),
+                Document.uploaded_by == cu.id,
+            ),
         ).order_by(Document.created_at.desc())
     )).scalars().all()
     return {"data": [

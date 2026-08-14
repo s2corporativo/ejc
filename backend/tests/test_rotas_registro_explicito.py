@@ -56,6 +56,10 @@ ADICOES_INTENCIONAIS = {
     ("/api/diagnostico/integridade", "GET"),
     # PR #547: decisão explícita de publicar/despublicar arquivo no Data Room.
     ("/api/data-rooms/{room_id}/arquivos/{arquivo_id}/publicacao", "PATCH"),
+    # Issue #698: ato EXPLÍCITO de publicação/despublicação ao Portal do
+    # Cliente, separado do PATCH de metadados comuns — mesmo desenho do
+    # PR #547 para o Data Room (linha acima), agora para documents.
+    ("/api/documents/{doc_id}/publicacao-portal", "PATCH"),
     # PR #622 (Bloco 2): conferência e assinatura da peça em um ato só, no lugar
     # da cadeia validar → marcar HITL → aprovar. Não substitui os endpoints
     # antigos, que o frontend ainda usa.

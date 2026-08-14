@@ -174,6 +174,52 @@ def _keyword_literal(call: ast.Call, name: str):
     return None
 
 
+def _alter_column_is_expand_only(call: ast.Call) -> tuple[bool, str]:
+    """Aprova ``op.alter_column`` somente quando ``type_`` for widening
+    estrita e estática em relação a ``existing_type`` (ex.: String(10)→
+    String(15)). Retorna (False, motivo) em qualquer outro caso."""
+    type_ = None
+    existing = None
+    for keyword in call.keywords:
+        if keyword.arg == "type_":
+            type_ = keyword.value
+        elif keyword.arg == "existing_type":
+            existing = keyword.value
+    if not isinstance(type_, ast.Call) or not isinstance(existing, ast.Call):
+        return False, "alter_column sem type_/existing_type estáticos"
+    name = _type_name(type_.func)
+    if name is None or name not in {"String", "Integer", "BigInteger", "Numeric"}:
+        return False, f"alter_column com tipo {name} fora do padrão de widening"
+    t_args = [a for a in type_.args if isinstance(a, ast.Constant)]
+    e_args = [a for a in existing.args if isinstance(a, ast.Constant)]
+    if not (t_args and e_args):
+        return False, "alter_column sem tamanho estático comparável"
+    try:
+        t_size = int(t_args[0].value)
+        e_size = int(e_args[0].value)
+    except (TypeError, ValueError):
+        return False, "alter_column com tamanho não numérico"
+    if name == "Numeric":
+        # Numeric(precision, scale): exige precision maior E scale igual
+        t_scale = int(t_args[1].value) if len(t_args) > 1 else 0
+        e_scale = int(e_args[1].value) if len(e_args) > 1 else 0
+        if not (t_size > e_size and t_scale == e_scale):
+            return False, "alter_column Numeric sem widening estrita"
+        return True, ""
+    if t_size <= e_size:
+        return False, f"alter_column sem widening estrita ({e_size}→{t_size})"
+    return True, ""
+
+
+def _type_name(func: ast.AST) -> str | None:
+    """Resolve ``String`` de ``sa.String(...)`` ou ``String(...)``."""
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        return func.attr
+    return None
+
+
 def _column_is_expand_only(call: ast.Call) -> tuple[bool, str]:
     if len(call.args) < 2 or not isinstance(call.args[1], ast.Call):
         return False, "add_column sem Column estática"
@@ -356,7 +402,7 @@ def _classify(revision: Revision) -> tuple[list[str], str]:
         "drop_column",
         "drop_index",
         "drop_constraint",
-        "alter_column",
+        "alter_column",  # tratado por handler próprio (widening estática)
         "rename_table",
         "batch_alter_table",
         "create_unique_constraint",
@@ -401,6 +447,14 @@ def _classify(revision: Revision) -> tuple[list[str], str]:
                 findings.append(
                     f"linha {line}: índice UNIQUE exige revisão de dados/lock"
                 )
+        elif op_name == "alter_column":
+            # Expansão pura de tamanho (VARCHAR(n)→VARCHAR(m), n<m) é
+            # expand-only por construção: PostgreSQL nunca recusa dados
+            # existentes em widening. Qualquer outra alteração de coluna
+            # segue exigindo revisão humana.
+            widening, motivo = _alter_column_is_expand_only(node)
+            if not widening:
+                findings.append(f"linha {line}: {motivo}")
         elif op_name in review_required:
             findings.append(f"linha {line}: op.{op_name} exige revisão")
         elif op_name not in allowed:

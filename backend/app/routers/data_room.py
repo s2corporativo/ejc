@@ -14,6 +14,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.publicacao_externa import confidencialidade_str, pode_publicar_externamente
 from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.rate_limit import consumir
 from app.core.security import ROLE_LEVEL, get_current_user
@@ -64,24 +65,11 @@ def _hash_token(token: str) -> str:
 
 
 def _confidencialidade(doc: Document) -> str:
-    return str(
-        getattr(doc.confidencialidade, "value", doc.confidencialidade) or ""
-    ).lower()
+    return confidencialidade_str(doc)
 
 
 def _pode_publicar_externamente(u: User, doc: Document) -> bool:
-    """Política explícita de publicação, separada do acesso interno ao cofre."""
-    conf = _confidencialidade(doc)
-    nivel = ROLE_LEVEL.get(u.role.value, 0)
-    if conf == DocConfidencialidade.normal.value:
-        return nivel >= ROLE_LEVEL["advogado"]
-    if conf in {
-        DocConfidencialidade.restrito.value,
-        DocConfidencialidade.confidencial.value,
-    }:
-        return nivel >= ROLE_LEVEL["socio"]
-    # Documento interno e segredo de justiça nunca são publicados por link.
-    return False
+    return pode_publicar_externamente(u, doc)
 
 
 def _arquivo_publicavel(arquivo: DataRoomArquivo, doc: Document) -> bool:

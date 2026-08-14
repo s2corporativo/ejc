@@ -1,6 +1,6 @@
 # ── app/models/document.py ───────────────────────────────────────────────────
 from __future__ import annotations
-from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Integer, ForeignKey
+from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Integer, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -38,6 +38,17 @@ class Document(Base):
     case_id   = Column(String(36), ForeignKey("cases.id"),   nullable=True, index=True)
     client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
     uploaded_by = Column(String(36), nullable=True)
+
+    # Publicação explícita no Portal do Cliente (Issue #698, migration 136).
+    # Reclassificar para "normal" NÃO publica sozinho — o Portal exige
+    # confidencialidade=normal E publicado_portal=true. Mesmo desenho do
+    # Data Room (DataRoomArquivo.publicado_externamente/publicado_por/
+    # publicado_em), mas aqui é publicação ao TITULAR autenticado, não link
+    # público. publicado_por é NULL quando o próprio cliente é quem enviou o
+    # documento pelo Portal (auto-visível ao dono, sem ato do escritório).
+    publicado_portal = Column(Boolean, nullable=False, default=False, server_default="false")
+    publicado_por     = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    publicado_em      = Column(DateTime(timezone=True), nullable=True)
 
     # Versionamento (G3): histórico de revisões do mesmo documento.
     # versao_grupo_id agrupa todas as versões de um mesmo documento original.

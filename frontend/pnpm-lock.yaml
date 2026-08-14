@@ -15,7 +15,7 @@ importers:
         specifier: ^3.6.0
         version: 3.6.0
       lucide-react:
-        specifier: ^1.24.0
+        specifier: ^1.29.0
         version: 1.31.0(react@19.2.8)
       qrcode:
         specifier: ^1.5.4
@@ -49,10 +49,10 @@ importers:
         specifier: ^19.2.3
         version: 19.2.4(@types/react@19.2.18)
       '@typescript-eslint/eslint-plugin':
-        specifier: ^8.64.0
+        specifier: ^8.66.0
         version: 8.67.0(@typescript-eslint/parser@8.67.0(eslint@10.8.1(jiti@1.21.7))(typescript@5.9.3))(eslint@10.8.1(jiti@1.21.7))(typescript@5.9.3)
       '@typescript-eslint/parser':
-        specifier: ^8.64.0
+        specifier: ^8.66.0
         version: 8.67.0(eslint@10.8.1(jiti@1.21.7))(typescript@5.9.3)
       '@vitejs/plugin-react':
         specifier: ^6.0.5
@@ -67,7 +67,7 @@ importers:
         specifier: ^7.1.1
         version: 7.1.1(eslint@10.8.1(jiti@1.21.7))
       globals:
-        specifier: ^17.7.0
+        specifier: ^17.9.0
         version: 17.11.0
       jsdom:
         specifier: ^30.0.1

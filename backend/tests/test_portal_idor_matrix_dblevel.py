@@ -87,14 +87,15 @@ async def _criar_caso(db, client_id: str, titulo: str, resp_id: str | None = Non
     return case_id
 
 
-async def _criar_documento(db, client_id: str, case_id: str | None, titulo: str, confid: str = "normal") -> str:
+async def _criar_documento(db, client_id: str, case_id: str | None, titulo: str, confid: str = "normal",
+                            publicado_portal: bool = False) -> str:
     doc_id = str(uuid4())
     await db.execute(
         text(
             "INSERT INTO documents (id, titulo, filename, filepath, client_id, "
-            "case_id, confidencialidade) VALUES "
+            "case_id, confidencialidade, publicado_portal) VALUES "
             "(:id, :titulo, :fn, :fp, :cid, :case, "
-            " CAST(:conf AS docconfidencialidade))"
+            " CAST(:conf AS docconfidencialidade), :pub)"
         ),
         {
             "id": doc_id,
@@ -104,6 +105,7 @@ async def _criar_documento(db, client_id: str, case_id: str | None, titulo: str,
             "cid": client_id,
             "case": case_id,
             "conf": confid,
+            "pub": publicado_portal,
         },
     )
     return doc_id
@@ -240,9 +242,11 @@ async def test_caso_detalhe_e_meus_casos_isolam_por_cliente():
 
 
 async def test_documentos_portal_apenas_normais_do_proprio_cliente():
-    """Prova: A recebe só o próprio documento NORMAL. Não recebe: (a) o próprio
-    documento CONFIDENCIAL (filtro de confidencialidade) nem (b) o documento
-    normal de B (isolamento por client_id)."""
+    """Prova: A recebe só o próprio documento NORMAL PUBLICADO NO PORTAL (ato
+    explícito — Issue #698). Não recebe: (a) o próprio documento CONFIDENCIAL
+    (filtro de confidencialidade), (b) o próprio documento normal AINDA NÃO
+    publicado (sem publicação explícita nada vaza ao Portal) nem (c) o
+    documento normal de B (isolamento por client_id)."""
     from app.core.database import AsyncSessionLocal
     from app.routers.portal import documentos
 
@@ -251,14 +255,18 @@ async def test_documentos_portal_apenas_normais_do_proprio_cliente():
         cli_a = await _criar_cliente(db, f"Cliente A {tok}")
         cli_b = await _criar_cliente(db, f"Cliente B {tok}")
         ua = await _criar_portal_user(db, cli_a)
-        doc_a_normal = await _criar_documento(db, cli_a, None, f"A-normal-{tok}", "normal")
+        doc_a_normal = await _criar_documento(db, cli_a, None, f"A-normal-{tok}", "normal",
+                                              publicado_portal=True)
+        doc_a_nao_pub = await _criar_documento(db, cli_a, None, f"A-npub-{tok}", "normal",
+                                               publicado_portal=False)
         doc_a_conf = await _criar_documento(db, cli_a, None, f"A-conf-{tok}", "confidencial")
         doc_b_normal = await _criar_documento(db, cli_b, None, f"B-normal-{tok}", "normal")
         await db.commit()
         try:
             user_a = await _carregar_user(db, ua)
             ids = {d["id"] for d in (await documentos(db=db, cu=user_a))["data"]}
-            assert doc_a_normal in ids  # POSITIVO
+            assert doc_a_normal in ids  # POSITIVO: normal E publicado no Portal (ato explícito)
+            assert doc_a_nao_pub not in ids  # Issue #698: normal SEM publicação explícita fica invisível
             assert doc_a_conf not in ids  # confidencial não vaza p/ portal
             assert doc_b_normal not in ids  # doc de terceiro não vaza
         finally:
