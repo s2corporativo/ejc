@@ -54,7 +54,7 @@ jobs:
       - name: Ausencia de segredo versionado
         shell: bash
         run: |
-          PADROES='(AKIA[0-9A-Z]{16})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(sk-[A-Za-z0-9]{20,})|(ghp_[A-Za-z0-9]{30,})|(xox[baprs]-[A-Za-z0-9-]{10,})'
+          PADROES='(AKIA[0-9A-Z]{16})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(sk-[A-Za-z0-9]{20,})|(github_pat_[A-Za-z0-9_]{20,})|(ghp_[A-Za-z0-9]{30,})|(gho_[A-Za-z0-9]{30,})|(ghu_[A-Za-z0-9]{30,})|(ghs_[A-Za-z0-9]{30,})|(ghr_[A-Za-z0-9]{30,})|(xox[baprs]-[A-Za-z0-9-]{10,})'
           ACHOU=0
           while IFS= read -r f; do
             [ -f "$f" ] || continue
@@ -62,9 +62,18 @@ jobs:
               *.lock|*.min.js|*.map|*.svg) continue;;
               *.env.example|.env.example) continue;;
             esac
-            if grep -EIn "$PADROES" "$f" >/dev/null 2>&1; then
+            ERRO_GREP="$RUNNER_TEMP/segredo-grep.err"
+            : > "$ERRO_GREP"
+            if grep -EIn "$PADROES" -- "$f" >/dev/null 2>"$ERRO_GREP"; then
               echo "::error file=$f::possivel segredo versionado"
               ACHOU=1
+            else
+              RC_GREP=$?
+              if [ "$RC_GREP" -gt 1 ]; then
+                cat "$ERRO_GREP" >&2
+                echo "::error file=$f::falha ao ler arquivo durante varredura de segredos"
+                exit "$RC_GREP"
+              fi
             fi
           done < "$RUNNER_TEMP/alterados.txt"
           if grep -Eq '(^|/)\.env$|(^|/)\.env\.(local|production|prod)$' "$RUNNER_TEMP/alterados.txt"; then
