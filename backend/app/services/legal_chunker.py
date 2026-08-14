@@ -21,13 +21,20 @@ def _normalizar(texto: str) -> str:
     return texto.strip()
 
 
+def _com_prefixo(texto: str, prefixo: str) -> str:
+    prefixo = (prefixo or "").strip()
+    if not prefixo or texto.startswith(prefixo):
+        return texto
+    return f"{prefixo}\n\n{texto}"
+
+
 def _agrupar_paragrafos(texto: str, max_chars: int, prefixo: str = "") -> list[str]:
     """Agrupa parágrafos sem cortar frases por tamanho quando possível."""
     texto = _normalizar(texto)
     if not texto:
         return []
     if len(texto) <= max_chars:
-        return [texto]
+        return [_com_prefixo(texto, prefixo)]
 
     paragrafos = [p.strip() for p in re.split(r"\n\s*\n", texto) if p.strip()]
     saida: list[str] = []
@@ -59,8 +66,7 @@ def _agrupar_paragrafos(texto: str, max_chars: int, prefixo: str = "") -> list[s
         saida.append(atual)
 
     if prefixo:
-        prefixo = prefixo.strip()
-        return [c if c.startswith(prefixo) else f"{prefixo}\n\n{c}" for c in saida]
+        return [_com_prefixo(c, prefixo) for c in saida]
     return saida
 
 
@@ -101,8 +107,11 @@ def _chunk_legislacao(texto: str, max_chars: int) -> list[str]:
     texto = _normalizar(texto)
     if not texto:
         return []
-    # Captura início de artigo em formatos usuais: Art. 14, Artigo 5º, Art. 85-A.
-    marcas = list(re.finditer(r"(?im)^(?:art\.?|artigo)\s*\d+[ºo°ª]?(?:-[A-Z])?\b.*$", texto))
+    # Captura: Art. 14, Artigo 5º, Art. 85-A. Lookahead evita falha de \b após "º".
+    marcas = list(re.finditer(
+        r"(?im)^(?:art\.?|artigo)\s*\d+[ºo°ª]?(?:-[A-Z])?(?=\s|[.,;:()\-]|$).*$",
+        texto,
+    ))
     if not marcas:
         return _chunk_markdown(texto, max_chars)
 
@@ -140,8 +149,6 @@ def chunk_documento_juridico(
     if tipo == "fonte_primaria" or "legislacao" in cat:
         return _chunk_legislacao(texto, max_chars)
 
-    # Jurisprudência, teses, argumentos, pedidos e modelos do Manus são
-    # documentos estruturados; heading deve permanecer junto do conteúdo.
     if tipo in {
         "jurisprudencia_estruturada", "tese_juridica", "bloco_argumentativo",
         "pedido_juridico", "modelo_peca",
