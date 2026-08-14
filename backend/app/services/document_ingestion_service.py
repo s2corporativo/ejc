@@ -2,7 +2,7 @@
 
 Esta camada concentra somente responsabilidades físicas e determinísticas do
 upload GED: nome original como metadado, extensão allowlisted, ID/path gerados
-pelo servidor, recepção streaming, SHA-256 e MIME derivado do conteúdo.
+pelo servidor, recepção streaming, SHA-256, MIME e gate antimalware opcional.
 
 Autorização, tipo jurídico, confidencialidade, OCR, versionamento, persistência
 ``Document`` e AuditLog continuam fora desta etapa até o cutover do router.
@@ -22,6 +22,15 @@ from app.services.document_content_policy import (
 )
 from app.services.document_storage_uow import DocumentStorageUnitOfWork
 from app.services.document_upload_stream import StreamUploadAssincrono
+from app.services.malware_scan_service import (
+    MalwareScanStatus,
+    ScannerMalware,
+    escanear_se_solicitado,
+)
+
+
+class MalwareDetectadoError(RuntimeError):
+    """Arquivo bloqueado por veredito antimalware; não expõe assinatura."""
 
 
 def normalizar_nome_original(filename: str | None, fallback: str) -> str:
@@ -52,6 +61,7 @@ class IngestaoDocumentoLocal:
     ext: str
     mimetype: str
     filepath: str
+    malware_scan_status: MalwareScanStatus
     storage: DocumentStorageUnitOfWork
 
     @property
@@ -91,13 +101,17 @@ async def preparar_ingestao_documento_local(
     filename: str | None,
     upload_root: Path,
     max_bytes: int,
+    scanner: ScannerMalware | None = None,
     agora: datetime | None = None,
 ) -> IngestaoDocumentoLocal:
     """Prepara upload GED sem persistir banco ou expor path derivado do cliente.
 
-    Em falha de magic bytes/MIME o staging é compensado antes de propagar o
-    erro da política de conteúdo. O caller deve usar o retorno como ``async with``
-    e chamar ``confirmar()`` somente após commit de ``Document`` + AuditLog.
+    A ordem é deliberada: streaming -> MIME -> antimalware em staging. Somente o
+    caller pode promover depois que todas essas validações concluírem. Scanner
+    ausente produz ``not_requested``; scanner injetado e indisponível propaga
+    erro fail-closed. Em qualquer falha, o staging é compensado antes do retorno.
+    O caller deve usar o retorno como ``async with`` e chamar ``confirmar()``
+    somente após commit de ``Document`` + AuditLog.
     """
 
     ext = exigir_extensao_permitida(filename)
@@ -118,6 +132,12 @@ async def preparar_ingestao_documento_local(
     )
     try:
         mimetype = validar_conteudo(ext, storage.amostra_inicial)
+        scan = await escanear_se_solicitado(
+            storage.caminho_staging_para_validacao,
+            scanner=scanner,
+        )
+        if scan.status is MalwareScanStatus.INFECTADO:
+            raise MalwareDetectadoError("arquivo bloqueado pela política antimalware")
     except BaseException:
         storage.compensar()
         raise
@@ -128,5 +148,6 @@ async def preparar_ingestao_documento_local(
         ext=ext,
         mimetype=mimetype,
         filepath=rel.as_posix(),
+        malware_scan_status=scan.status,
         storage=storage,
     )

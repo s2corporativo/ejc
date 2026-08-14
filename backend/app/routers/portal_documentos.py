@@ -10,9 +10,9 @@
 #   • _exigir_cliente: role cliente_externo + client_id — o middleware já
 #     confina o perfil a /api/portal/*, este é o gate por endpoint;
 #   • isolamento por client_id em TODA query (nunca expõe dados de terceiros);
-#   • upload reusa EXATAMENTE as validações de documents.py (extensões
-#     permitidas, teto MAX_UPLOAD_MB, magic bytes server-side, arquivo salvo
-#     como uploads/AAAA/MM/<uuid>.<ext> — o nome do cliente NUNCA vira path);
+#   • upload reutiliza a política canônica de ingestão (extensão + magic bytes),
+#     teto MAX_UPLOAD_MB e path gerado pelo servidor — o nome do cliente nunca
+#     vira caminho físico;
 #   • audit log em toda escrita; rate limit por rota.
 from __future__ import annotations
 
@@ -155,11 +155,8 @@ async def upload_item_solicitacao(
             status_code=422, detail="Este documento já foi enviado"
         )
 
-    # ── Validações de upload — MESMAS de documents.py ────────────────────────
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in EXTENSOES_PERMITIDAS:
-        raise HTTPException(status_code=422, detail=f"Extensão não permitida: {ext}")
-
+    # ── Política canônica de conteúdo ────────────────────────────────────────
+    ext = exigir_extensao_permitida(file.filename)
     conteudo = await file.read()
     if len(conteudo) > settings.MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(
@@ -225,16 +222,24 @@ async def upload_item_solicitacao(
     ]
     sol.status = recalcular_status(status_itens)
 
-    # LGPD/princípio da necessidade: o audit log é persistente e
-    # consultável; registrar o NOME do item (dado do cliente) é
-    # desnecessário para a trilha — item.id + solicitacao identificam o
-    # fato com rastreabilidade completa sem expor o conteúdo. O contrato do
-    # módulo (test_document_content_policy) exige ausência de 'detalhes' no
-    # audit do upload: a referência ao documento assinado basta.
+    # LGPD/princípio da necessidade: o audit log é persistente e consultável;
+    # registrar o NOME do item/arquivo (dado do cliente) é desnecessário —
+    # IDs e estado bastam para reconstruir o ato sem expor conteúdo pessoal.
+    # O contrato do módulo (test_document_content_policy) exige ausência de
+    # 'detalhes' no audit do upload: a referência ao documento assinado basta.
     await criar_audit_log(
-        db, cu.id, cu.role.value, "UPLOAD", "solicitacao_documento_itens",
+        db,
+        cu.id,
+        cu.role.value,
+        "UPLOAD",
+        "solicitacao_documento_itens",
         item.id,
-        dados_depois={"documento_id": doc_id, "solicitacao_id": sol.id},
+        dados_depois={
+            "solicitacao_id": sol.id,
+            "case_id": sol.case_id,
+            "documento_id": doc_id,
+            "status_solicitacao": sol.status,
+        },
     )
     await db.commit()
 
