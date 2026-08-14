@@ -7,7 +7,7 @@ from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -589,69 +589,9 @@ async def _gerar_teses(
 
 
 # ── E04 (auditoria funcional): geração assíncrona com polling ───────────
-# A geração leva ~35s no provedor local e o frontend tinha timeout de 30s
-# (o navegador descartava respostas 200 válidas). Novo fluxo: POST /motor/async
-# retorna um task_id imediatamente e GET /motor/async/{task_id} devolve o
-# status (pendente|em_execucao|concluido|erro) com o resultado final.
-
-from fastapi import BackgroundTasks
-
-_TAREFAS_MOTOR: dict[str, dict] = {}
-
-
-async def _executar_tarefa_motor(task_id: str, req: MotorTesesRequest):
-    """Executa a geração em background e grava o estado no store em memória."""
-    _TAREFAS_MOTOR[task_id]["status"] = "em_execucao"
-    try:
-        async for dbsess in get_db():
-            resultado = await _gerar_teses(req, dbsess, _TAREFAS_MOTOR[task_id]["user"])
-            _TAREFAS_MOTOR[task_id]["status"] = "concluido"
-            _TAREFAS_MOTOR[task_id]["resultado"] = resultado
-            return
-    except HTTPException as exc:
-        _TAREFAS_MOTOR[task_id]["status"] = "erro"
-        _TAREFAS_MOTOR[task_id]["erro"] = exc.detail
-    except Exception:
-        logger.exception("Falha na geração assíncrona de teses (task %s)", task_id)
-        _TAREFAS_MOTOR[task_id]["status"] = "erro"
-        _TAREFAS_MOTOR[task_id]["erro"] = "Falha interna na geração de teses"
-
-
-@router.post("/motor/async", dependencies=[Depends(rate_limit("teses-motor-async", 15))])
-async def motor_teses_async(
-    req: MotorTesesRequest,
-    background: BackgroundTasks,
-    cu: User = Depends(get_current_user),
-):
-    """
-    E04: inicia a geração de teses em background e retorna o task_id de
-    imediato (sem esperar os ~35s do provedor de IA). O frontend faz polling
-    em GET /motor/async/{task_id} a cada 2s até "concluido" ou "erro".
-    """
-    import uuid as _uuid
-    task_id = _uuid.uuid4().hex
-    _TAREFAS_MOTOR[task_id] = {"status": "pendente", "user": cu,
-                               "criado_em": __import__("datetime").datetime.utcnow().isoformat()}
-    background.add_task(_executar_tarefa_motor, task_id, req)
-    return {"task_id": task_id, "status": "pendente",
-            "_aviso": "RASCUNHO — revisão obrigatória do advogado (OAB)."}
-
-
-@router.get("/motor/async/{task_id}")
-async def motor_teses_async_status(
-    task_id: str,
-    cu: User = Depends(get_current_user),
-):
-    """E04: status da geração assíncrona; retorna {status, resultado|erro}."""
-    tarefa = _TAREFAS_MOTOR.get(task_id)
-    if not tarefa:
-        raise HTTPException(404, "Tarefa de geração inexistente ou expirada")
-    if tarefa.get("user") is not None and tarefa["user"].id != cu.id and not _pode_editar(cu):
-        raise HTTPException(403)
-    return {"task_id": task_id, "status": tarefa["status"],
-            "resultado": tarefa.get("resultado"), "erro": tarefa.get("erro")}
-
-
+# Implementação robusta em P2.2b abaixo (com RBAC, verificação de ownership,
+# lock de thread, TTL de 10 min e resposta estruturada). A rota síncrona é
+# mantida por compatibilidade.
 @router.post("/motor", dependencies=[Depends(rate_limit("teses-motor", 15))])
 async def motor_teses(
     req: MotorTesesRequest,
@@ -668,7 +608,6 @@ async def motor_teses(
 # ── P2.2b — Geração assíncrona com polling (E04) ────────────────────────────
 import secrets as _secrets
 import threading as _threading
-from fastapi import BackgroundTasks
 
 _motor_tasks: dict[str, dict] = {}
 _motor_lock = _threading.Lock()
