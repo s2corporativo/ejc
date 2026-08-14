@@ -1,119 +1,215 @@
-# Guia de Execução em Produção — Ingestão da Biblioteca Jurídica e Verificação de Logs
+# Guia Seguro de Produção — Biblioteca Jurídica do EJC
 
-**Autor:** Manus AI · **Data:** 14/08/2026 · **Script:** `backend/scripts/ingestao_biblioteca_juridica.py` · **PR:** [#1139](https://github.com/s2corporativo/ejc/pull/1139)
+**Revisão:** 14/08/2026  
+**Estado:** lote piloto em quarentena; não homologado para fundamentação automática.
 
-## 1. Pré-requisitos na VPS de produção
+Este guia substitui a versão anterior. A sequência abaixo é deliberadamente conservadora: **não ingerir, aprovar ou reativar o lote enquanto a validação fail-closed e a revisão humana não forem concluídas.**
 
-A execução real do script depende de três condições: o branch `biblioteca-juridica-lote-piloto` mesclado e implantado na VPS, o arquivo `.env` de produção existente (o `DATABASE_URL` e `DATABASE_URL_SYNC` já estão definidos no `backend/app/core/config.py` com valores de produção no `.env` real) e acesso shell ao servidor (usuário com `sudo` e grupo `docker`, se a implantação for via containers). Nenhum parâmetro novo é necessário no `.env`: o script lê as mesmas variáveis do backend (incluindo `EMBEDDINGS_ENABLED=true` e `EMBEDDINGS_PROVIDER=local`, necessárias para a geração dos embeddings de 1024 dimensões).
+## 1. Pré-condições
 
-## 2. Execução passo a passo
+Antes de qualquer ação sobre o banco de produção:
 
-```bash
-# 1. Acessar a VPS e entrar no diretório do EJC
-ssh usuario@vps-ejc
-cd /opt/ejc          # ou o diretório onde o repositório está clonado
-git pull origin main # garantir a versão com a PR #1139 mesclada
-git checkout biblioteca-juridica-lote-piloto  # se a PR ainda não foi mesclada
+1. o hardening do RAG deve estar mesclado e implantado;
+2. o código implantado deve ser identificável pelo SHA de produção;
+3. os testes do branch devem ter execução real, não apenas `startup_failure` do GitHub Actions;
+4. deve existir backup recente e restaurável conforme o procedimento de continuidade do EJC;
+5. nenhuma etapa deste guia exige expor ou copiar valores do `.env`.
 
-# 2. Rebuild/reattach do container do backend (se deploy via Docker)
-docker compose build backend && docker compose up -d backend
+Enquanto essas condições não forem atendidas, a ação correta é manter o PR sem merge e o lote sem nova ingestão.
 
-# 3. Validar sem gravar nada (dry-run) — sem banco, pode rodar em qualquer ambiente
-python3 backend/scripts/ingestao_biblioteca_juridica.py
+## 2. Quarentenar versões do lote que já possam existir no PostgreSQL
 
-# 4. Executar a ingestão real no ambiente do backend (recomendado)
-docker compose exec backend \
-  python3 backend/scripts/ingestao_biblioteca_juridica.py --execute
+O hardening inclui `scripts/quarentenar_biblioteca_juridica_piloto.py` dentro da imagem do backend.
 
-# Alternativa sem container (executar diretamente na VPS com as variáveis do .env)
-export $(grep -v '^#' .env | xargs)
-python3 backend/scripts/ingestao_biblioteca_juridica.py --execute
-```
-
-O modo `--execute` insere/atualiza cada documento pelo `upsert_documento`, que já implementa deduplicação por `(client_id, chave_origem, vigente=true)`: a reexecução do script é idempotente e apenas marca os documentos como `[atualizado]` sem criar duplicatas nem reprocessar chunks já embutidos. Os 24 documentos são gravados na base pública do escritório (`client_id=NULL`) com `chave_origem` igual ao `canonical_id` (ex.: `TESE-TRIB-000001`).
-
-## 3. Saída esperada
-
-Cada documento retorna uma linha `[novo | atualizado | inalterado] <canonical_id>`, valores literais do `upsert_documento`. Um lote novo e limpo deve exibir 24 linhas `[novo]`. Falhas de embedding aparecem como erros individuais por documento, mas a ingestão continua nos demais (o fallback de busca ILIKE/trgm permanece funcional pelo gate `emb_disponivel`). As categorias novas `tese_juridica`, `bloco_argumentativo` e `pedido_juridico` não constam do bloqueio de categorias restritas (que exige `client_id` para dados de cliente), portanto a ingestão global `client_id=NULL` é permitida; se o deploy ainda não reconhecer as categorias novas, o script as mapeia para `jurisprudencia_stj` e `modelo_documento_juridico`, categorias já existentes.
-
-## 4. Verificação dos logs do banco de dados
-
-O PostgreSQL em produção é o container `db` do compose (usuário `ejc_user`, banco `ejc_db`). A verificação pode ser feita em três níveis:
-
-### 4.1 Contagem de documentos (confirmar a ingestão)
+### 2.1 Dry-run obrigatório
 
 ```bash
-docker compose exec db psql -U ejc_user -d ejc_db -c "
-SELECT categoria, COUNT(*) AS docs,
-       COUNT(*) FILTER (WHERE embedding_ready IS TRUE) AS com_embedding
-FROM knowledge_docs WHERE vigente = TRUE
-  AND origem_conteudo IN ('fonte_oficial','jurisprudencia_oficial','legislacao')
-GROUP BY categoria ORDER BY docs DESC;"
+docker exec -i ejc_backend \
+  python scripts/quarentenar_biblioteca_juridica_piloto.py
 ```
 
-Nota: ajuste os nomes de colunas conforme a migração vigente (`knowledge_docs.extra->>'categoria'`, `chunk_status` etc.) — o comando exato pode ser refinado com `\d knowledge_docs` dentro do psql.
+O comando apenas lê os 24 `canonical_id` conhecidos e informa quais registros seriam alterados. Não persiste mudanças.
 
-### 4.2 Logs de consulta do PostgreSQL (ver o que o RAG buscou)
+### 2.2 Aplicação
 
-Ative temporariamente o log de instruções (custo baixo de desempenho para janelas curtas) e leia o log do container:
+Somente após conferir o dry-run:
 
 ```bash
-# Ativar log_statement para a sessão corrente do backend
-docker compose exec db psql -U ejc_user -d ejc_db \
-  -c "ALTER SYSTEM SET log_statement = 'all'; SELECT pg_reload_conf();"
-
-# Acompanhar em tempo real
-docker compose logs -f db --since 5m | grep -Ei "statement:|duration:"
-
-# Desativar depois da verificação
-docker compose exec db psql -U ejc_user -d ejc_db \
-  -c "ALTER SYSTEM SET log_statement = 'none'; SELECT pg_reload_conf();"
+docker exec -i ejc_backend \
+  python scripts/quarentenar_biblioteca_juridica_piloto.py --execute
 ```
 
-### 4.3 Logs de aplicação do backend (ingestão e embeddings)
+Efeito esperado:
+
+- documentos aprovados do lote passam para `rag_status=pendente`;
+- `requires_human_review=true`;
+- `human_reviewed=false` nos registros que não estejam formalmente recusados;
+- recusas humanas permanecem recusadas e sua trilha HITL é preservada;
+- `quarantine_active=true` e motivo/data são registrados;
+- nenhum documento, chunk, embedding ou versão histórica é apagado.
+
+A operação é idempotente: repetir o script não renova o carimbo da quarentena nem cria novas versões.
+
+## 3. Verificar a quarentena no banco sem expor conteúdo jurídico
+
+Use apenas metadados:
 
 ```bash
-docker compose logs backend --since 10m | grep -Ei "ingest|rag|embedding|knowledge"
+docker exec -i ejc_db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+SELECT
+  COALESCE(extra->>'canonical_id', chave_origem) AS canonical_id,
+  extra->>'rag_status' AS rag_status,
+  extra->>'quarantine_active' AS quarantine_active,
+  extra->>'requires_human_review' AS requires_human_review,
+  vigente
+FROM knowledge_docs
+WHERE deleted_at IS NULL
+  AND (
+    chave_origem LIKE 'TESE-%'
+    OR chave_origem LIKE 'JUR-%'
+  )
+ORDER BY canonical_id;"
 ```
 
-O backend grava em `LOG_LEVEL=INFO` (padrão do `config.py`); para detalhamento máximo durante a ingestão, defina temporariamente `LOG_LEVEL=DEBUG` no `.env` e faça `docker compose restart backend`.
+**Atenção:** os nomes das variáveis no shell dependem do ambiente do administrador. Não imprimir senhas, `DATABASE_URL`, tokens ou o conteúdo integral do JSONB em logs compartilhados.
 
-### 4.4 Confirmação rápida do lote
+Para conferir apenas o lote piloto com precisão, prefira consultar os 24 IDs listados no próprio script de quarentena.
+
+## 4. Revalidar o corpus no checkout, fora da base ativa
+
+A validação deve apontar explicitamente para os arquivos versionados:
 
 ```bash
-docker compose exec db psql -U ejc_user -d ejc_db -c "
-SELECT extra->>'canonical_id' AS id, titulo, categoria, revisado
-FROM knowledge_docs WHERE vigente = TRUE
-  AND extra->>'canonical_id' LIKE '%0000%';"
+python3 backend/scripts/ingestao_biblioteca_juridica.py \
+  --dir docs/biblioteca_juridica \
+  --graph docs/biblioteca_juridica/grafico_relacoes.yaml
 ```
 
-## 5. Riscos e ressalvas operacionais
+Esse comando é dry-run. Ele verifica, entre outros pontos:
 
-| Ponto | Mitigação |
-|---|---|
-| `log_statement='all'` em janela longa degrada desempenho | Usar apenas por 5–10 minutos durante a verificação |
-| Embeddings demandam CPU/memória do container backend | Executar fora do horário de pico ou monitorar `docker stats` |
-| `client_id=NULL` grava na base pública do escritório | Confirmar que os 24 temas são de domínio público do escritório (são) |
-| Reexecução do script | Idempotente por dedup `chave_origem`; sem risco de duplicação |
-| Documento MEDIA (Tema 9) | Pode ser mantido fora da base ou marcado `revisado=false` conforme política do painel de governança |
+- front-matter canônico;
+- unicidade de `canonical_id`;
+- vocabulário de origem/autoridade/confiança;
+- coerência entre camada e autoridade;
+- fonte institucional para jurisprudência ALTA;
+- ausência de processo/fonte simulada em conteúdo de autoridade;
+- proveniência de teses, argumentos e pedidos;
+- modelos de IA sem autoridade e com score 0;
+- classificação de jurisprudência por tribunal;
+- integridade referencial do grafo.
 
-## 6. Monitoramento automático de CPU/memória durante a ingestão
+Enquanto qualquer registro falhar, o script encerra com código de erro e **nenhuma ingestão deve ser realizada**.
 
-O script `backend/scripts/monitor_ingestao.py` coleta métricas do container `ejc_backend` a cada 5 segundos (CPU %, memória usada/total/%, tráfego de rede e disco, além da memória total do host para detectar risco de OOM global), grava CSV e emite alertas quando os limiares forem excedidos. Parâmetros configuráveis por variável de ambiente: `ALERTA_CPU` (90%), `ALERTA_MEM` (85%), `TETO_MEM_MB` (2048) e `MONITOR_PARA_SEM_INGESTAO` (encerra quando nenhum processo de ingestão estiver ativo no backend).
+## 5. Curadoria jurídica individual
+
+Cada documento destinado à base ativa deve passar por revisão humana e possuir, conforme a natureza:
+
+- fonte primária oficial ou precedente verificável;
+- identificação correta do tribunal, processo/tema/súmula, relator e datas quando aplicáveis;
+- tese efetivamente extraída da decisão, não apenas de resumo de terceiro;
+- status de vigência quando normativo;
+- jurisprudência favorável e contrária quando o tema for controvertido;
+- `distinguishing`, limitações, fatos e provas necessários;
+- relação explícita com as fontes utilizadas.
+
+A aprovação deve ocorrer pelo fluxo de governança do EJC. **Não editar o JSONB diretamente para transformar `pendente` em `aprovado`.**
+
+## 6. Preparar um lote saneado para ingestão
+
+Somente depois de todos os documentos do lote selecionado passarem pelo dry-run e pela revisão humana documental.
+
+Como o diretório `docs/` não é copiado para a imagem do backend, materialize o lote validado temporariamente no contêiner, sem alterar volumes persistentes:
 
 ```bash
-# Iniciar o monitor em segundo plano e rodar a ingestão
-nohup python3 backend/scripts/monitor_ingestao.py > /tmp/monitor_ingestao.log 2>&1 &
-python3 backend/scripts/ingestao_biblioteca_juridica.py --execute
-
-# Acompanhar alertas em tempo real
-tail -f /tmp/monitor_ingestao/monitor_ingestao_*.txt
-
-# Uma coleta instantânea para diagnóstico rápido
-python3 backend/scripts/monitor_ingestao.py --instantaneo
-
-# Limitar a janela de coleta (ex.: 30 minutos)
-python3 backend/scripts/monitor_ingestao.py --duracao-min 30 --intervalo 5
+docker exec ejc_backend rm -rf /tmp/biblioteca_juridica_validada
+docker cp docs/biblioteca_juridica/. \
+  ejc_backend:/tmp/biblioteca_juridica_validada/
 ```
 
-Os CSVs gerados (`/tmp/monitor_ingestao/metrics_ejc_backend_*.csv`) podem ser plotados com matplotlib/pandas para relatório pós-ingestão ou mantidos como evidência de auditoria. Para monitoramento contínuo e permanente (não apenas durante a ingestão), o repositório já oferece o perfil `observability` (Langfuse self-hosted, opt-in) e `docker stats`/`cAdvisor` podem ser acoplados sem alterar o compose padrão; a alternativa nativa mais simples é a healthcheck já existente do backend (`api/health` a cada 30s), que garante detecção de container indisponível.
+Primeiro execute novo dry-run dentro da mesma imagem que fará a ingestão:
+
+```bash
+docker exec -i ejc_backend \
+  python scripts/ingestao_biblioteca_juridica.py \
+  --dir /tmp/biblioteca_juridica_validada \
+  --graph /tmp/biblioteca_juridica_validada/grafico_relacoes.yaml
+```
+
+Apenas com retorno zero e evidência de curadoria, a ingestão poderá ser feita:
+
+```bash
+docker exec -i ejc_backend \
+  python scripts/ingestao_biblioteca_juridica.py \
+  --execute \
+  --dir /tmp/biblioteca_juridica_validada \
+  --graph /tmp/biblioteca_juridica_validada/grafico_relacoes.yaml
+```
+
+Mesmo nesse modo, os registros são inseridos como `rag_status=pendente`. A ingestão não substitui a aprovação humana.
+
+Após o procedimento:
+
+```bash
+docker exec ejc_backend rm -rf /tmp/biblioteca_juridica_validada
+```
+
+## 7. Verificação pós-ingestão
+
+Verifique apenas estado e indexação:
+
+```bash
+docker exec -i ejc_db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+SELECT
+  COALESCE(extra->>'canonical_id', chave_origem) AS canonical_id,
+  categoria,
+  status_indexacao,
+  extra->>'rag_status' AS rag_status,
+  extra->>'confidence_level' AS confidence_level,
+  vigente
+FROM knowledge_docs
+WHERE deleted_at IS NULL
+  AND extra ? 'canonical_id'
+ORDER BY canonical_id;"
+```
+
+Não existe coluna `embedding_ready` em `knowledge_docs`. A vetorização é controlada por `status_indexacao`, enquanto os vetores residem nos `knowledge_chunks`.
+
+Para conferir cobertura dos chunks:
+
+```bash
+docker exec -i ejc_db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+SELECT
+  kd.id,
+  COALESCE(kd.extra->>'canonical_id', kd.chave_origem) AS canonical_id,
+  COUNT(kc.id) AS chunks,
+  COUNT(kc.embedding) AS chunks_com_embedding
+FROM knowledge_docs kd
+LEFT JOIN knowledge_chunks kc ON kc.doc_id = kd.id
+WHERE kd.deleted_at IS NULL
+  AND kd.extra ? 'canonical_id'
+GROUP BY kd.id, canonical_id
+ORDER BY canonical_id;"
+```
+
+## 8. O que não fazer
+
+- Não executar `ALTER SYSTEM SET log_statement='all'` apenas para acompanhar a ingestão; isso pode registrar conteúdo sensível e aumentar carga/volume de logs.
+- Não usar `export $(grep .env ...)`; essa técnica é frágil para valores com espaços/caracteres especiais e aumenta o risco de exposição acidental de segredos.
+- Não usar `--execute` apenas porque o arquivo declara `nivel_confiaca: ALTA`.
+- Não aprovar por SQL direto.
+- Não tratar modelo ou texto de IA como jurisprudência.
+- Não reativar `CITACOES_MODO_ESTRITO` apenas para mascarar lacunas de curadoria; primeiro medir cobertura e corrigir a base.
+
+## 9. Critério de conclusão
+
+O hardening técnico pode ser considerado implantado quando:
+
+1. CI/testes do commit realmente executarem e passarem;
+2. produção estiver no SHA aprovado;
+3. dry-run da quarentena for revisado e a quarentena aplicada;
+4. a consulta de metadados comprovar que o lote antigo não está ativo;
+5. cada documento revalidado passar pelo dry-run fail-closed;
+6. a aprovação humana ocorrer pelo fluxo de governança;
+7. uma consulta RAG controlada comprovar que documento `pendente`, `recusado`, revogado ou não validado não aparece como fonte de fundamentação.
+
+Até esse ponto, a política correta é **falhar para o lado seguro**.
