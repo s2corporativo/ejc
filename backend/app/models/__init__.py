@@ -7,6 +7,7 @@ from app.models.process import Process
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus, DeadlinePrioridade
 from app.models.document import Document, DocConfidencialidade
 from app.models.document_intake import DocumentIntakeBatch, DocumentIntakeItem
+from app.models.document_rescan import DocumentHashRescanBatch, DocumentHashRescanItem
 from app.models.raio_x import RaioXAnalise, RaioXDocumento
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
 from app.models.fee import Fee, FeePayment, FeeTipo, FeeStatus
@@ -34,7 +35,7 @@ __all__ = [
     "Case", "CaseMovimento", "CaseArea", "CaseStatus", "CaseFase", "CasePrioridade",
     "Process",
     "Deadline", "DeadlineTipo", "DeadlineStatus", "DeadlinePrioridade",
-    "Document", "DocConfidencialidade", "DocumentIntakeBatch", "DocumentIntakeItem",
+    "Document", "DocConfidencialidade", "DocumentIntakeBatch", "DocumentIntakeItem", "DocumentHashRescanBatch", "DocumentHashRescanItem",
     "RaioXAnalise", "RaioXDocumento",
     "LegalDoc", "PecaTipo", "PecaStatus",
     "Fee", "FeePayment", "FeeTipo", "FeeStatus",
