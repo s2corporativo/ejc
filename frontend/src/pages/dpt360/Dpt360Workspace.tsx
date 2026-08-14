@@ -17,15 +17,13 @@ import {
   FileSearch,
   Gavel,
   Gauge,
-  LibraryBig,
   Radar,
   RefreshCcw,
   ShieldAlert,
   ShieldCheck,
-  Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { Link, NavLink, useLocation } from "react-router";
+import { Link, NavLink, useLocation, useNavigate } from "react-router";
 import { Empty, ErrorState, Spinner } from "../../components/UI";
 import {
   getDptCompanyProfile,
@@ -36,6 +34,12 @@ import {
 import CompanyLegalTwin from "./CompanyLegalTwin";
 import DptFeatureRouter from "./DptFeatureRouter";
 
+// Fase 4 (QA / refinamento): navegação reduzida de 10 para 8 itens. "Ferramentas"
+// deixa de ser item de topo — as ferramentas continuam na Visão Executiva e no
+// mais-ferramentas do escritório. "Biblioteca" volta ao Conhecimento canônico
+// (/inteligencia?tab=conhecimento), conforme a regra de governança do
+// DptFeatureRouter. Os caminhos removidos continuam resolvendo para o destino
+// canônico, para não quebrar deep-links antigos.
 const NAV_ITEMS: Array<{ path: string; label: string; icon: LucideIcon }> = [
   { path: "/dpt360", label: "Visão Executiva", icon: Gauge },
   { path: "/dpt360/empresas", label: "Empresas", icon: Building2 },
@@ -50,12 +54,49 @@ const NAV_ITEMS: Array<{ path: string; label: string; icon: LucideIcon }> = [
     label: "Inteligência Jurídica",
     icon: BrainCircuit,
   },
-  { path: "/dpt360/ferramentas", label: "Ferramentas", icon: Wrench },
   { path: "/dpt360/casos", label: "Casos", icon: Gavel },
   { path: "/dpt360/obrigacoes", label: "Obrigações", icon: CalendarClock },
-  { path: "/dpt360/biblioteca", label: "Biblioteca", icon: LibraryBig },
   { path: "/dpt360/relatorios", label: "Relatórios", icon: BookOpen },
 ];
+
+// Deep-links legados da navegação anterior do DPT 360 → destino canônico.
+const LEGACY_DPT360_REDIRECTS: Record<string, string> = {
+  ferramentas: "/dpt360",
+  biblioteca: "/inteligencia?tab=conhecimento",
+};
+
+// Redirect suave de deep-link legado: troca a URL para o destino canônico
+// com um aviso discreto — mantém acessibilidade (o usuário vê para onde foi).
+function DptLegacyRedirect({
+  from,
+  to,
+}: {
+  from: string;
+  to: string;
+  base?: string;
+}) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const handle = setTimeout(() => void navigate(to, { replace: true }), 600);
+    return () => clearTimeout(handle);
+  }, [to, navigate]);
+  return (
+    <div className="grid min-h-[240px] place-items-center rounded-2xl border border-dashed border-slate-300 p-8 text-center dark:border-white/15">
+      <p className="text-sm text-slate-600 dark:text-slate-300">
+        Esta seção foi consolidada na nova navegação do DPT 360.
+      </p>
+      <p className="mt-2 text-xs text-slate-400">
+        Abrindo <strong>“{from === "ferramentas" ? "Ferramentas → Visão Executiva" : "Biblioteca → Conhecimento"}“</strong>…
+      </p>
+      <Link
+        to={to}
+        className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white dark:bg-white dark:text-slate-950"
+      >
+        Abrir agora <ArrowRight className="h-4 w-4" />
+      </Link>
+    </div>
+  );
+}
 
 const RADAR_AREAS = [
   { label: "Tributário", key: "tributario" },
@@ -656,6 +697,18 @@ export default function Dpt360Workspace() {
     );
   } else if (segments[0] === "casos") {
     content = <CasesView data={data} />;
+  } else if (segments[0] in LEGACY_DPT360_REDIRECTS) {
+    // Deep-link legado da navegação antiga: retorna ao destino canônico em
+    // vez de deixar a URL morta ou exibir página de erro.
+    return (
+      <div className="min-h-[360px]">
+        <DptLegacyRedirect
+          from={segments[0]}
+          to={LEGACY_DPT360_REDIRECTS[segments[0]]}
+          base="/dpt360"
+        />
+      </div>
+    );
   } else {
     content = <DptFeatureRouter name={segments[0]} data={data} />;
   }
