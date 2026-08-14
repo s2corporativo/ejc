@@ -35,15 +35,17 @@ def aplicar_quarentena_extra(extra: dict | None, *, quando: str) -> tuple[dict, 
     """Transformação pura e idempotente do JSONB de governança."""
     anterior = dict(extra or {})
     novo = dict(anterior)
-    # Uma recusa humana é mais restritiva e nunca deve ser rebaixada para pendente.
-    if str(anterior.get("rag_status") or "").lower() != "recusado":
+    recusado = str(anterior.get("rag_status") or "").lower() == "recusado"
+    # Uma recusa humana já é mais restritiva: preserva status e sua trilha HITL.
+    if not recusado:
         novo["rag_status"] = "pendente"
+        novo["human_reviewed"] = False
     novo["requires_human_review"] = True
-    novo["human_reviewed"] = False
     novo["quarantine_active"] = True
     novo["quarantine_reason"] = MOTIVO
-    novo["quarantined_at"] = quando
-    novo["quarantined_by"] = "quarentenar_biblioteca_juridica_piloto.py"
+    # Não renova o carimbo a cada execução: repetição da mesma operação é no-op.
+    novo["quarantined_at"] = anterior.get("quarantined_at") or quando
+    novo["quarantined_by"] = anterior.get("quarantined_by") or "quarentenar_biblioteca_juridica_piloto.py"
     return novo, novo != anterior
 
 
