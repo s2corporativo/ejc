@@ -75,12 +75,19 @@ function extrairDetail(data: unknown): string | null {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
     // Formato 422 do Pydantic: [{loc, msg, ...}]
+    // E02 (auditoria funcional): nomear o campo pelo último elemento de `loc`
+    // para o usuário saber exatamente qual campo corrigir.
     const msgs = detail
-      .map((d) =>
-        d && typeof d === "object" && "msg" in d
-          ? String((d as { msg: unknown }).msg)
-          : null,
-      )
+      .map((d) => {
+        if (!d || typeof d !== "object") return null;
+        const dd = d as { loc?: unknown; msg?: unknown };
+        const loc = Array.isArray(dd.loc) ? dd.loc : [];
+        const campo = loc.length ? String(loc[loc.length - 1]) : null;
+        const msg = dd.msg !== undefined ? String(dd.msg) : null;
+        if (!msg) return null;
+        const rotulo = campo ? `${campo.replace(/_/g, " ")}: ` : "";
+        return rotulo + msg;
+      })
       .filter(Boolean);
     if (msgs.length) return msgs.join("; ");
   }

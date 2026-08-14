@@ -7,7 +7,7 @@ from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -487,18 +487,19 @@ def _parse_json_motor(txt: str):
     return None
 
 
-@router.post("/motor", dependencies=[Depends(rate_limit("teses-motor", 15))])
-async def motor_teses(
+async def _gerar_teses(
     req: MotorTesesRequest,
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
-):
-    """
-    Motor de teses: recupera jurisprudência + súmulas + precedentes internos +
-    doutrina + teses vencedoras do escritório e gera teses ESTRUTURADAS com
-    viabilidade (alta/media/baixa) + fundamentação + contra-argumento.
-    REGRAS: não inventa julgado/artigo; nunca promete resultado; tudo é RASCUNHO.
-    """
+    db: AsyncSession,
+    cu: User,
+) -> dict:
+    # E04 (auditoria funcional): corpo da geração extraído para função pura de
+    # serviço, compartilhada pela rota síncrona (/motor) e pela assíncrona
+    # (/motor/async + status) — o frontend agora faz polling em vez de esperar
+    # a resposta síncrona, evitando o timeout de 30s do navegador.
+    # Motor de teses: recupera jurisprudência + súmulas + precedentes internos +
+    # doutrina + teses vencedoras do escritório e gera teses ESTRUTURADAS com
+    # viabilidade (alta/media/baixa) + fundamentação + contra-argumento.
+    # REGRAS: não inventa julgado/artigo; nunca promete resultado; tudo é RASCUNHO.
     if not _pode_editar(cu):
         raise HTTPException(403)
 
@@ -585,3 +586,122 @@ async def motor_teses(
     data["modelo"] = f"{resp.provedor}/{resp.modelo}"
     data["_aviso"] = "Teses geradas por IA — RASCUNHO. Verifique cada julgado/artigo e revise antes de usar (OAB)."
     return data
+
+
+# ── E04 (auditoria funcional): geração assíncrona com polling ───────────
+# Implementação robusta em P2.2b abaixo (com RBAC, verificação de ownership,
+# lock de thread, TTL de 10 min e resposta estruturada). A rota síncrona é
+# mantida por compatibilidade.
+@router.post("/motor", dependencies=[Depends(rate_limit("teses-motor", 15))])
+async def motor_teses(
+    req: MotorTesesRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Rota síncrona do Motor de Teses (mantida por compatibilidade — clientes
+    antigos e testes dependem dela). Preferir /motor/async para chamadas de UI.
+    """
+    return await _gerar_teses(req, db, cu)
+
+
+# ── P2.2b — Geração assíncrona com polling (E04) ────────────────────────────
+import secrets as _secrets
+import threading as _threading
+
+_motor_tasks: dict[str, dict] = {}
+_motor_lock = _threading.Lock()
+_MOTOR_TASK_TTL = 600  # 10 minutos — depois o status é descartado
+
+
+class MotorTesesAsyncResponse(_BM):
+    task_id: str
+    status: str  # pendente | em_andamento | concluido | erro
+    criado_em: str
+    estimativa_segundos: int | None = 60
+
+
+def _expurgar_tarefas_motor() -> None:
+    # Descarta tarefas concluídas/erro/estouradas do TTL — evita vazamento de
+    # memória em uso intenso (resultado já entregue ao frontend no polling).
+    agora = __import__("time").time()
+    with _motor_lock:
+        expiradas = [tid for tid, t in _motor_tasks.items()
+                     if t["status"] in ("concluido", "erro") or agora - t["criado_ts"] > _MOTOR_TASK_TTL]
+        for tid in expiradas:
+            del _motor_tasks[tid]
+
+
+async def _executar_tese_task(task_id: str, req: MotorTesesRequest, db: AsyncSession, cu: User) -> None:
+    try:
+        with _motor_lock:
+            if task_id in _motor_tasks:
+                _motor_tasks[task_id]["status"] = "em_andamento"
+        data = await _gerar_teses(req, db, cu)
+        with _motor_lock:
+            if task_id in _motor_tasks:
+                _motor_tasks[task_id].update({"status": "concluido", "resultado": data})
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha na geração assíncrona de teses (task %s)", task_id)
+        with _motor_lock:
+            if task_id in _motor_tasks:
+                _motor_tasks[task_id]["status"] = "erro"
+
+
+@router.post("/motor/async", response_model=MotorTesesAsyncResponse,
+             dependencies=[Depends(rate_limit("teses-motor", 15))])
+async def motor_teses_async(
+    req: MotorTesesRequest,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Geração assíncrona do Motor de Teses: cria uma tarefa e devolve um task_id
+    imediatamente (202). O frontend consulta o status por polling em
+    GET /motor/async/{task_id} até concluido/erro. O resultado fica em memória
+    (com TTL de 10 minutos) — sem dependência de fila externa.
+    REGRAS: não inventa julgado/artigo; nunca promete resultado; tudo é RASCUNHO.
+    """
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    # Validação de acesso ANTES de criar a tarefa (mesma regra da rota síncrona).
+    if req.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        from app.services.ai_service import _escopo_cliente_do_caso  # noqa: F401
+        await verificar_acesso_caso(db, cu, req.case_id)
+
+    task_id = _secrets.token_hex(12)
+    criado_em = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    with _motor_lock:
+        _motor_tasks[task_id] = {
+            "status": "pendente", "criado_ts": __import__("time").time(),
+            "criado_em": criado_em.isoformat(),
+        }
+        _expurgar_tarefas_motor()
+    background.add_task(_executar_tese_task, task_id, req, db, cu)
+    return MotorTesesAsyncResponse(
+        task_id=task_id, status="pendente", criado_em=criado_em.isoformat())
+
+
+@router.get("/motor/async/{task_id}")
+async def motor_teses_async_status(
+    task_id: str,
+    cu: User = Depends(get_current_user),
+):
+    """
+    Status do motor assíncrono de teses: {task_id, status, resultado?, criado_em}.
+    status: pendente | em_andamento | concluido | erro (404 se task_id inexistente).
+    """
+    with _motor_lock:
+        task = _motor_tasks.get(task_id)
+    if task is None:
+        raise HTTPException(404, "Tarefa não encontrada ou expirada (TTL 10 min)")
+    out = {
+        "task_id": task_id, "status": task["status"], "criado_em": task["criado_em"],
+    }
+    if task["status"] == "concluido":
+        out["resultado"] = task["resultado"]
+    return out

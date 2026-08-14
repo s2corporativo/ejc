@@ -99,7 +99,9 @@ export default function BadgesAlerta({
             "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
             SEVERIDADE_CLASSES[badge.severidade] ?? SEVERIDADE_CLASSES.info,
             badge.severidade === "critica" && badge.pulsante && "animate-pulse",
+            badge.detalhe && "cursor-help",
           )}
+          data-testid={`badge-alerta-${badge.codigo}`}
         >
           {badge.label}
         </span>

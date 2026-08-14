@@ -3,7 +3,7 @@
 // com viabilidade Alta/Média/Baixa, ancoradas em jurisprudência/súmulas/precedentes
 // internos/doutrina (RAG). Tudo é RASCUNHO — revisão obrigatória do advogado.
 import { useState } from "react";
-import { Sparkles, Scale, ShieldAlert, BookMarked } from "lucide-react";
+import { Sparkles, Scale, ShieldAlert, BookMarked, Loader2 } from "lucide-react";
 import api from "../lib/api";
 
 const VIAB: Record<string, { label: string; cls: string; dot: string }> = {
@@ -29,6 +29,7 @@ export default function MotorTeses({ caso }: { caso: any }) {
   const [erro, setErro] = useState("");
   const [polo, setPolo] = useState("autor");
   const [r, setR] = useState<any>(null);
+  const [progresso, setProgresso] = useState("");
 
   const gerar = async () => {
     if (!caso?.descricao_fatos || caso.descricao_fatos.length < 20) {
@@ -37,33 +38,70 @@ export default function MotorTeses({ caso }: { caso: any }) {
       );
       return;
     }
+    // E04 (auditoria funcional): geração assíncrona com polling — o backend
+    // devolve task_id imediatamente e a geração roda em background (tipicamente
+    // 30-60s em modelo local). O frontend consulta o status a cada 2s até
+    // "concluido"/"erro", com janela total de 3 minutos. Nunca mais "30s e
+    // interrompida" para uma geração que terminou com 200 OK no servidor.
     setLoading(true);
     setErro("");
     setR(null);
+    setProgresso("Solicitando a geração…");
+    const JANELA_MS = 180_000;
+    const POLL_MS = 2_000;
+    const started = Date.now();
     try {
-      const { data } = await api.post(
-        "/teses/motor",
-        {
-          area: caso.area,
-          descricao_fatos: caso.descricao_fatos,
-          case_id: caso.id,
-          polo,
-        },
-        { signal: AbortSignal.timeout(30000) },
-      );
-      setR(data);
+      const { data: task } = await api.post("/teses/motor/async", {
+        area: caso.area,
+        descricao_fatos: caso.descricao_fatos,
+        case_id: caso.id,
+        polo,
+      });
+      const task_id: string = task.task_id;
+      const aguardar = (ms: number) =>
+        new Promise((res) => setTimeout(res, ms));
+      let status = "pendente";
+      while (status === "pendente" || status === "em_andamento") {
+        if (Date.now() - started > JANELA_MS) {
+          throw Object.assign(new Error("tempo_excedido"), { nome: "tempo_excedido" });
+        }
+        setProgresso(
+          status === "pendente" ? "Fila de processamento…" : "Consultando jurisprudência, súmulas e doutrina…",
+        );
+        await aguardar(POLL_MS);
+        const { data } = await api.get(`/teses/motor/async/${task_id}`);
+        status = data.status;
+        if (status === "concluido") {
+          setR(data.resultado);
+          setProgresso("");
+          setLoading(false);
+          return;
+        }
+      }
+      throw Object.assign(new Error("falha_geracao"), { nome: "falha_geracao" });
     } catch (e: any) {
-      const isTimeout =
-        e?.code === "ERR_CANCELED" ||
-        e?.name === "CanceledError" ||
-        e?.name === "TimeoutError";
-      setErro(
-        isTimeout
-          ? "A geração de teses demorou mais que o esperado (30s) e foi interrompida. Tente novamente."
-          : e.response?.data?.detail ||
-              "Falha ao gerar teses (a IA pode estar indisponível).",
-      );
+      if (e?.nome === "tempo_excedido") {
+        setErro(
+          "A geração de teses ultrapassou 3 minutos. A tarefa pode ainda estar em andamento no servidor — tente novamente em alguns instantes.",
+        );
+      } else if (e?.nome === "falha_geracao") {
+        setErro(
+          "A geração de teses terminou sem resultado. Verifique se a IA está configurada e tente novamente.",
+        );
+      } else {
+        const isTimeout =
+          e?.code === "ERR_CANCELED" ||
+          e?.name === "CanceledError" ||
+          e?.name === "TimeoutError";
+        setErro(
+          isTimeout
+            ? "A conexão com o servidor foi interrompida. Tente novamente."
+            : e.response?.data?.detail ||
+                "Falha ao gerar teses (a IA pode estar indisponível).",
+        );
+      }
     } finally {
+      setProgresso("");
       setLoading(false);
     }
   };
@@ -95,8 +133,16 @@ export default function MotorTeses({ caso }: { caso: any }) {
           <option value="reu">Polo: Réu</option>
         </select>
         <button className="btn-gold text-sm" disabled={loading} onClick={gerar}>
-          <Sparkles size={14} /> {loading ? "Gerando teses…" : "Gerar teses"}
+          {loading ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Sparkles size={14} />
+          )}
+          {loading ? "Gerando teses…" : "Gerar teses"}
         </button>
+        {loading && progresso && (
+          <span className="text-[11px] text-slate-500">{progresso}</span>
+        )}
       </div>
       {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
 
