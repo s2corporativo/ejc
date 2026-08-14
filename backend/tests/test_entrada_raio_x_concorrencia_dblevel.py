@@ -72,6 +72,35 @@ async def _criar_cliente_e_caso_externo(db, *, user_id: str) -> tuple[str, str]:
 
 async def _semear_entrada() -> tuple[str, str, str, str, str]:
     async with AsyncSessionLocal() as db:
+        await db.execute(
+            text(
+                "DELETE FROM case_intelligence_snapshots "
+                "WHERE case_id IN (SELECT id FROM cases "
+                "WHERE titulo = 'Caso concorrente da Entrada')"
+            )
+        )
+        await db.execute(
+            text(
+                "DELETE FROM document_intake_items WHERE batch_id IN "
+                "(SELECT id FROM document_intake_batches WHERE resultado::text LIKE '%entrada_unica%')"
+            )
+        )
+        await db.execute(
+            text(
+                "DELETE FROM document_intake_batches WHERE resultado::text LIKE '%entrada_unica%'"
+            )
+        )
+        await db.execute(text("DELETE FROM documents WHERE titulo = 'Documento disputado'"))
+        await db.execute(
+            text(
+                "DELETE FROM cases WHERE titulo IN "
+                "('Caso concorrente da Entrada', 'Caso externo da corrida')"
+            )
+        )
+        await db.execute(
+            text("DELETE FROM clients WHERE nome = 'Cliente Externo da Corrida'")
+        )
+        await db.commit()
         user_id = await _criar_advogado(db, prefixo="entrada-race")
         external_client_id, external_case_id = await _criar_cliente_e_caso_externo(
             db, user_id=user_id
@@ -179,6 +208,48 @@ async def test_entrada_revalida_documento_sob_lock_antes_de_vincular():
 
 async def _semear_raio_x() -> tuple[str, str]:
     async with AsyncSessionLocal() as db:
+        await db.execute(
+            text(
+                "DELETE FROM case_intelligence_snapshots "
+                "WHERE case_id IN (SELECT id FROM cases "
+                "WHERE advogado_responsavel_id IN "
+                "(SELECT id FROM users WHERE email LIKE 'raiox-race-%'))"
+            )
+        )
+        await db.execute(
+            text(
+                "DELETE FROM case_intelligence_snapshots "
+                "WHERE case_id IN (SELECT id FROM cases "
+                "WHERE advogado_responsavel_id IN "
+                "(SELECT id FROM users WHERE email LIKE 'raiox-race-%')) "
+                "OR criado_por IN (SELECT id FROM users WHERE email LIKE 'raiox-race-%')"
+            )
+        )
+        await db.execute(
+            text(
+                "UPDATE raio_x_analises SET convertido_case_id = NULL "
+                "WHERE titulo = 'Raio-X concorrente'"
+            )
+        )
+        await db.execute(
+            text(
+                "DELETE FROM cases "
+                "WHERE advogado_responsavel_id IN "
+                "(SELECT id FROM users WHERE email LIKE 'raiox-race-%')"
+            )
+        )
+        await db.execute(
+            text(
+                "DELETE FROM clients "
+                "WHERE responsavel_id IN (SELECT id FROM users WHERE email LIKE 'raiox-race-%')"
+            )
+        )
+        await db.execute(
+            text(
+                "DELETE FROM raio_x_analises WHERE titulo = 'Raio-X concorrente'"
+            )
+        )
+        await db.commit()
         user_id = await _criar_advogado(db, prefixo="raiox-race")
         analise_id = str(uuid4())
         db.add(
@@ -204,7 +275,7 @@ def _payload_raio_x() -> RaioXConverterRequest:
     return RaioXConverterRequest(
         cliente={"modo": "novo", "nome": f"Cliente RX {uuid4().hex[:8]}"},
         caso={
-            "titulo": "Caso convertido uma única vez",
+            "titulo": f"Caso convertido uma única vez {uuid4().hex[:8]}",
             "area": "civil",
             "prioridade": "media",
             "case_type": "judicial",
@@ -245,7 +316,7 @@ async def test_raio_x_duas_conversoes_concorrentes_criam_um_unico_caso():
         analise = await db_check.get(RaioXAnalise, analise_id)
         casos = (
             await db_check.execute(
-                select(Case).where(Case.titulo == "Caso convertido uma única vez")
+                select(Case).where(Case.id == primeiro["case_id"])
             )
         ).scalars().all()
 
