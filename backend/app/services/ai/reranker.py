@@ -156,7 +156,7 @@ def _normalizar_status_legal(extra: dict[str, Any], vigente_no_ejc: bool) -> str
 
 
 async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
-    """Carrega metadados jurídicos em uma consulta e exclui revogação atual."""
+    """Carrega metadados jurídicos e elimina quarentena/revogação do ranking."""
     ids = {str(item.get("doc_id")) for item in candidatos if item.get("doc_id")}
     if not ids:
         return candidatos
@@ -187,6 +187,12 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
                 str(item.get("doc_id")),
                 (dict(item.get("extra") or {}), True, item.get("tribunal"), None),
             )
+            if bool(extra.get("quarantine_active")):
+                logger.info(
+                    "RAG excluiu documento em quarentena ativa: doc_id=%s",
+                    item.get("doc_id"),
+                )
+                continue
             status = _normalizar_status_legal(extra, vigente)
             item["extra"] = extra
             item["tribunal"] = (
@@ -295,7 +301,9 @@ def _query_alignment_bonus(candidate: dict, extra: dict[str, Any], consulta: str
     tribunal = _compactar_sigla(
         candidate.get("tribunal") or extra.get("tribunal") or ""
     )
-    tribunais_query = {tribunal_id for tribunal_id in _TRIBUNAIS if tribunal_id in q_compact}
+    tribunais_query = {
+        tribunal_id for tribunal_id in _TRIBUNAIS if tribunal_id in q_compact
+    }
     if tribunais_query:
         bonus += (
             0.012
