@@ -96,3 +96,24 @@ FROM knowledge_docs WHERE vigente = TRUE
 | `client_id=NULL` grava na base pública do escritório | Confirmar que os 24 temas são de domínio público do escritório (são) |
 | Reexecução do script | Idempotente por dedup `chave_origem`; sem risco de duplicação |
 | Documento MEDIA (Tema 9) | Pode ser mantido fora da base ou marcado `revisado=false` conforme política do painel de governança |
+
+## 6. Monitoramento automático de CPU/memória durante a ingestão
+
+O script `backend/scripts/monitor_ingestao.py` coleta métricas do container `ejc_backend` a cada 5 segundos (CPU %, memória usada/total/%, tráfego de rede e disco, além da memória total do host para detectar risco de OOM global), grava CSV e emite alertas quando os limiares forem excedidos. Parâmetros configuráveis por variável de ambiente: `ALERTA_CPU` (90%), `ALERTA_MEM` (85%), `TETO_MEM_MB` (2048) e `MONITOR_PARA_SEM_INGESTAO` (encerra quando nenhum processo de ingestão estiver ativo no backend).
+
+```bash
+# Iniciar o monitor em segundo plano e rodar a ingestão
+nohup python3 backend/scripts/monitor_ingestao.py > /tmp/monitor_ingestao.log 2>&1 &
+python3 backend/scripts/ingestao_biblioteca_juridica.py --execute
+
+# Acompanhar alertas em tempo real
+tail -f /tmp/monitor_ingestao/monitor_ingestao_*.txt
+
+# Uma coleta instantânea para diagnóstico rápido
+python3 backend/scripts/monitor_ingestao.py --instantaneo
+
+# Limitar a janela de coleta (ex.: 30 minutos)
+python3 backend/scripts/monitor_ingestao.py --duracao-min 30 --intervalo 5
+```
+
+Os CSVs gerados (`/tmp/monitor_ingestao/metrics_ejc_backend_*.csv`) podem ser plotados com matplotlib/pandas para relatório pós-ingestão ou mantidos como evidência de auditoria. Para monitoramento contínuo e permanente (não apenas durante a ingestão), o repositório já oferece o perfil `observability` (Langfuse self-hosted, opt-in) e `docker stats`/`cAdvisor` podem ser acoplados sem alterar o compose padrão; a alternativa nativa mais simples é a healthcheck já existente do backend (`api/health` a cada 30s), que garante detecção de container indisponível.
