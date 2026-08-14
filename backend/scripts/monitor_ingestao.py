@@ -53,24 +53,37 @@ def _cmd(args):
         return ""
 
 
+def _parse_mem(valor):
+    """Converte '170.1MiB' / '11.68GiB' (sem espaço) em MiB."""
+    import re as _re
+    m = _re.match(r"^([0-9.,]+)\s*([A-Za-z]+)$", (valor or "0").strip())
+    if not m:
+        return 0.0
+    v = float(m.group(1).replace(",", "."))
+    u = m.group(2).upper()
+    return v if u == "MIB" else v * 1024 if u == "GIB" else v / 1024
+
+
 def docker_stats_once():
-    """Retorna métricas atuais do container via `docker stats --no-stream`."""
+    """Retorna métricas atuais do container via `docker stats --no-stream` (formato JSON)."""
+    import json as _json
     out = _cmd(["docker", "stats", CONTAINER, "--no-stream",
-                "--format", "{{.Name}};{{.CPUPerc}};{{.MemUsage}};{{.MemPerc}};{{.NetIO}};{{.BlockIO}}"])
+                "--format", "{{json .}}"])
     linha = (out or "").strip().splitlines()[-1]
     if not linha:
         return None
-    nome, cpu, mem, memperc, net, blk = [c.strip() for c in linha.split(";")]
-    mem_usada, mem_total = mem.split("/")
-    mem_usada_mb = _mb(mem_usada)
-    mem_total_mb = _mb(mem_total)
+    try:
+        j = _json.loads(linha)
+    except ValueError:
+        return None
+    mem_usada, mem_total = (j.get("MemUsage") or "0/0").split("/")
     return {
-        "cpu_pct": cpu.rstrip("%"),
-        "mem_usada_mb": mem_usada_mb,
-        "mem_total_mb": mem_total_mb,
-        "mem_pct": memperc.rstrip("%"),
-        "net": net,
-        "blk": blk,
+        "cpu_pct": (j.get("CPUPerc") or "").rstrip("%"),
+        "mem_usada_mb": _parse_mem(mem_usada),
+        "mem_total_mb": _parse_mem(mem_total),
+        "mem_pct": (j.get("MemPerc") or "").rstrip("%"),
+        "net": j.get("NetIO", ""),
+        "blk": j.get("BlockIO", ""),
     }
 
 

@@ -140,10 +140,10 @@ def build_extra(d):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--execute", action="store_true", help="Executa a ingestão real")
-    ap.add_argument("--dir", default="/home/ubuntu/lote_piloto", help="Diretório raiz do lote")
+    ap.add_argument("--dir", default=None, help="Diretório raiz do lote (autodetectado se omitido)")
     args = ap.parse_args()
 
-    base = args.dir
+    base = args.dir or ("/lote_piloto" if os.path.isdir("/lote_piloto") else "/home/ubuntu/lote_piloto")
     docs = load_piloto(base)
     print(f"[{len(docs)} documentos carregados de {base}]")
 
@@ -163,7 +163,13 @@ def main():
         return
 
     # Modo execução: depende do ambiente do EJC (sys.path do backend).
-    sys.path.insert(0, "/home/ubuntu/ejc/backend")
+    # Caminho resolvido em runtime: funciona tanto no sandbox (/home/ubuntu/ejc/backend)
+    # quanto na VPS/container do EJC (/opt/ejc/backend ou /app).
+    _cand = ["/app", "/opt/ejc/backend", "/home/ubuntu/ejc/backend"]
+    for _c in _cand:
+        if os.path.isdir(_c) and os.path.isdir(os.path.join(_c, "app")):
+            sys.path.insert(0, _c)
+            break
     try:
         from app.services.ingestion_service import upsert_documento
     except Exception as exc2:  # noqa: BLE001
@@ -191,6 +197,7 @@ def main():
                         client_id=None,  # base publica do escritório (globalmente única)
                         embutir_vetores=True,
                     )
+                    await db.commit()
                     print(f"[{resultado}] {d['canonical_id']}")
                 except Exception as exc:  # noqa: BLE001
                     print(f"[ERRO] {d['canonical_id']}: {exc}")
