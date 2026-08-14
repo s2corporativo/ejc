@@ -52,28 +52,26 @@ A operação é idempotente: repetir o script não renova o carimbo da quarenten
 
 ## 3. Verificar a quarentena no banco sem expor conteúdo jurídico
 
-Use apenas metadados:
+Use apenas metadados. As variáveis são expandidas **dentro do contêiner `ejc_db`**:
 
 ```bash
-docker exec -i ejc_db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+docker exec -i ejc_db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT
-  COALESCE(extra->>'canonical_id', chave_origem) AS canonical_id,
-  extra->>'rag_status' AS rag_status,
-  extra->>'quarantine_active' AS quarantine_active,
-  extra->>'requires_human_review' AS requires_human_review,
+  COALESCE(extra->>''canonical_id'', chave_origem) AS canonical_id,
+  extra->>''rag_status'' AS rag_status,
+  extra->>''quarantine_active'' AS quarantine_active,
+  extra->>''requires_human_review'' AS requires_human_review,
   vigente
 FROM knowledge_docs
 WHERE deleted_at IS NULL
   AND (
-    chave_origem LIKE 'TESE-%'
-    OR chave_origem LIKE 'JUR-%'
+    chave_origem LIKE ''TESE-%''
+    OR chave_origem LIKE ''JUR-%''
   )
-ORDER BY canonical_id;"
+ORDER BY canonical_id;"'
 ```
 
-**Atenção:** os nomes das variáveis no shell dependem do ambiente do administrador. Não imprimir senhas, `DATABASE_URL`, tokens ou o conteúdo integral do JSONB em logs compartilhados.
-
-Para conferir apenas o lote piloto com precisão, prefira consultar os 24 IDs listados no próprio script de quarentena.
+Não imprimir senhas, `DATABASE_URL`, tokens ou o conteúdo integral do JSONB em logs compartilhados. Para conferir apenas o lote piloto com precisão, prefira consultar os 24 IDs listados no próprio script de quarentena.
 
 ## 4. Revalidar o corpus no checkout, fora da base ativa
 
@@ -155,21 +153,21 @@ docker exec ejc_backend rm -rf /tmp/biblioteca_juridica_validada
 
 ## 7. Verificação pós-ingestão
 
-Verifique apenas estado e indexação:
+Verifique apenas estado e indexação, com as variáveis resolvidas dentro do banco:
 
 ```bash
-docker exec -i ejc_db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+docker exec -i ejc_db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT
-  COALESCE(extra->>'canonical_id', chave_origem) AS canonical_id,
+  COALESCE(extra->>''canonical_id'', chave_origem) AS canonical_id,
   categoria,
   status_indexacao,
-  extra->>'rag_status' AS rag_status,
-  extra->>'confidence_level' AS confidence_level,
+  extra->>''rag_status'' AS rag_status,
+  extra->>''confidence_level'' AS confidence_level,
   vigente
 FROM knowledge_docs
 WHERE deleted_at IS NULL
-  AND extra ? 'canonical_id'
-ORDER BY canonical_id;"
+  AND extra ? ''canonical_id''
+ORDER BY canonical_id;"'
 ```
 
 Não existe coluna `embedding_ready` em `knowledge_docs`. A vetorização é controlada por `status_indexacao`, enquanto os vetores residem nos `knowledge_chunks`.
@@ -177,18 +175,18 @@ Não existe coluna `embedding_ready` em `knowledge_docs`. A vetorização é con
 Para conferir cobertura dos chunks:
 
 ```bash
-docker exec -i ejc_db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+docker exec -i ejc_db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 SELECT
   kd.id,
-  COALESCE(kd.extra->>'canonical_id', kd.chave_origem) AS canonical_id,
+  COALESCE(kd.extra->>''canonical_id'', kd.chave_origem) AS canonical_id,
   COUNT(kc.id) AS chunks,
   COUNT(kc.embedding) AS chunks_com_embedding
 FROM knowledge_docs kd
 LEFT JOIN knowledge_chunks kc ON kc.doc_id = kd.id
 WHERE kd.deleted_at IS NULL
-  AND kd.extra ? 'canonical_id'
+  AND kd.extra ? ''canonical_id''
 GROUP BY kd.id, canonical_id
-ORDER BY canonical_id;"
+ORDER BY canonical_id;"'
 ```
 
 ## 8. O que não fazer
