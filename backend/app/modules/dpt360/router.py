@@ -90,6 +90,11 @@ async def diagnostic_readiness(
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada")
+    # O run é gravado apenas quando a análise é de fato iniciada (persistir
+    # =True); nesses casos o commit é obrigatório — a sessão injetada por
+    # get_db NÃO faz commit automático e o registro seria perdido.
+    if persistir:
+        await db.commit()
     return result
 
 

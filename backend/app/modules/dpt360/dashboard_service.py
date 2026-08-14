@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ownership import is_gestao
 from app.models.case import Case, CaseStatus
 from app.models.client import Client, ClientTipo
-from app.models.dpt_diagnostico import DptDiagnosticRun
+from app.models.dpt_diagnostico import DptDiagnosticEstado, DptDiagnosticRun
 from app.models.deadline import Deadline, DeadlineStatus
 from app.models.user import User
 from app.modules.dpt360.schemas import (
@@ -172,6 +172,8 @@ async def build_dashboard(db: AsyncSession, user: User) -> DptDashboardResponse:
                 select(func.count(DptDiagnosticRun.id)).where(
                     DptDiagnosticRun.client_id.in_(all_company_ids),
                     DptDiagnosticRun.requer_revisao.is_(True),
+                    DptDiagnosticRun.estado
+                    != DptDiagnosticEstado.descartado.value,
                 )
             )
         ).scalar()

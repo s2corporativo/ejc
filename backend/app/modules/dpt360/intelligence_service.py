@@ -138,6 +138,9 @@ async def run_dpt_action(
             ultimo_run = (await db.execute(stmt)).scalar_one_or_none()
             if ultimo_run is not None:
                 ultimo_run.estado = DptDiagnosticEstado.em_revisao.value
+            # Persiste o run gravado e a transição para em_revisao — o POST
+            # /dpt360/actions não faz commit automático da sessão.
+            await db.commit()
 
     return DptActionResponse(
         action=request.action,
