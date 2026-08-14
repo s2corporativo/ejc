@@ -2,6 +2,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.routers.rag_governance import (
+    _deve_retirar_quarentena,
     _registrar_decisao_revisao,
     _retirar_quarentena,
 )
@@ -10,7 +11,28 @@ from app.routers.rag_governance import (
 AGORA = "2026-08-14T23:30:00+00:00"
 
 
-def test_retirada_de_quarentena_exige_confirmacao_contemporanea_da_fonte():
+def test_conferir_fonte_agora_solicita_retirada_quando_quarentena_ativa():
+    assert _deve_retirar_quarentena(
+        {"quarantine_active": True},
+        confirmar_fonte_agora=True,
+        retirar_explicito=False,
+    ) is True
+
+
+def test_conferir_fonte_fora_de_quarentena_nao_cria_retirada_artificial():
+    assert _deve_retirar_quarentena(
+        {"quarantine_active": False},
+        confirmar_fonte_agora=True,
+        retirar_explicito=False,
+    ) is False
+
+
+def test_flag_explicita_ainda_exige_confirmacao_da_fonte_na_retirada_real():
+    assert _deve_retirar_quarentena(
+        {"quarantine_active": True},
+        confirmar_fonte_agora=False,
+        retirar_explicito=True,
+    ) is True
     with pytest.raises(HTTPException) as exc:
         _retirar_quarentena(
             {"quarantine_active": True, "rag_status": "pendente"},
