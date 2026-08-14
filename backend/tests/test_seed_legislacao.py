@@ -489,7 +489,7 @@ async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html, _en
     from app.core.database import AsyncSessionLocal
     from app.services.citation_check import _existe_artigo
 
-    slug, chave = "cdcteste", "planalto:cdcteste"
+    slug, chave = "cdc", "planalto:cdc"
     monkeypatch.setattr(pl, "CATALOGO", [_lei_teste(slug)])
 
     paginas = {"v": html}
@@ -514,6 +514,24 @@ async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html, _en
                 "SELECT count(*) FROM knowledge_chunks WHERE doc_id = :d"),
                 {"d": docs[0].id})).scalar()
             assert n_db == n_chunks_1 > 0
+            # AI-056/RAG-04: o gate RAG é fail-closed — o doc recém-semeado
+            # só entra na recuperação após a curadoria manual de vigência
+            # (RAG_EXIGIR_VIGENCIA_VERIFICADA=True): legal_status canônico
+            # 'vigente', origem não vazia, legal_status_verificado_em
+            # preenchido e legal_status_inferido_em NULL, como na produção.
+            await db.execute(sql(
+                "UPDATE knowledge_docs SET extra = COALESCE(extra, '{}') "
+                "|| :aj "
+                "WHERE id = :d"),
+                {"d": docs[0].id,
+                 "aj": '{"rag_status": "aprovado", "human_reviewed": true, '
+                       '"confidence_level": "alta", '
+                       '"legal_status": "vigente", '
+                       '"legal_status_verificado_em": '
+                       '"2026-08-14T00:00:00+00:00", '
+                       '"legal_status_inferido_em": null}'})
+            await db.commit()
+
             # smoke do gate anti-alucinação: "Art. 6" e "Art. 10." do recorte,
             # confirmados APENAS contra o diploma citado (AI-056).
             assert await _existe_artigo(db, "6", "lei nº 8.078/90") is not None
@@ -541,6 +559,22 @@ async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html, _en
             docs = await _docs(db, chave)
             assert [d.versao for d in docs] == [1, 2]
             assert [d.vigente for d in docs] == [False, True]
+            # A nova versão também nasce sem curadoria de vigência: a
+            # curadoria manual precisa ser revalidada na versão vigente,
+            # como ocorre no fluxo real de governança do módulo.
+            doc_vigente = next(d for d in docs if d.vigente)
+            await db.execute(sql(
+                "UPDATE knowledge_docs SET extra = COALESCE(extra, '{}') "
+                "|| :aj "
+                "WHERE id = :d"),
+                {"d": doc_vigente.id,
+                 "aj": '{"rag_status": "aprovado", "human_reviewed": true, '
+                       '"confidence_level": "alta", '
+                       '"legal_status": "vigente", '
+                       '"legal_status_verificado_em": '
+                       '"2026-08-14T00:00:00+00:00", '
+                       '"legal_status_inferido_em": null}'})
+            await db.commit()
             assert await _existe_artigo(db, "11", "lei 8.078/90") is not None
     finally:
         await _limpar(chave)

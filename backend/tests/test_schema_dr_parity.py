@@ -410,7 +410,7 @@ def test_upgrade_head_reconstroi_banco_vazio_real():
             "SCHEMA_CHECK_DATABASE_URL": sync_url,
         }
         resultado = subprocess.run(
-            [str(BACKEND_DIR / "venv" / "bin" / "python"), "-m", "alembic", "upgrade", "head"],
+            [__import__('sys').executable, "-m", "alembic", "upgrade", "head"],
             cwd=BACKEND_DIR, env=env, capture_output=True, text=True,
         )
         assert resultado.returncode == 0, resultado.stderr or resultado.stdout

@@ -143,7 +143,7 @@ def test_upgrade_139_e_downgrade_138_preservam_tabelas_legadas():
             "SCHEMA_CHECK_DATABASE_URL": sync_url,
         }
         resultado = subprocess.run(
-            [str(BACKEND_DIR / "venv" / "bin" / "python"), "-m", "alembic", *args],
+            [__import__('sys').executable, "-m", "alembic", *args],
             cwd=BACKEND_DIR,
             env=env,
             capture_output=True,
