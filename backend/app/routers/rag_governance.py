@@ -90,6 +90,26 @@ def _agora_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _deve_retirar_quarentena(
+    extra_atual: dict | None,
+    *,
+    confirmar_fonte_agora: bool,
+    retirar_explicito: bool,
+) -> bool:
+    """A confirmação contemporânea da fonte libera a quarentena sem aprovar.
+
+    O frontend já possui a ação "Conferir fonte agora". Quando o documento está
+    em quarentena, essa ação é suficiente para solicitar a retirada, mantendo o
+    documento pendente de uma segunda decisão humana. A flag explícita continua
+    disponível para clientes administrativos/API.
+    """
+    extra = dict(extra_atual or {})
+    return bool(
+        retirar_explicito
+        or (confirmar_fonte_agora and extra.get("quarantine_active"))
+    )
+
+
 def _retirar_quarentena(
     extra_atual: dict | None,
     *,
@@ -202,7 +222,7 @@ async def atualizar_governanca_documento(
 
     values = payload.model_dump(exclude_none=True)
     confirm_now = bool(values.pop("confirmar_fonte_agora", False))
-    release_quarantine = bool(values.pop("retirar_quarentena", False))
+    release_explicit = bool(values.pop("retirar_quarentena", False))
     link_official = values.pop("link_official", None)
 
     if (
@@ -231,6 +251,11 @@ async def atualizar_governanca_documento(
         extra["last_verified_at"] = timestamp
         extra["verified_by"] = str(cu.id)
 
+    release_quarantine = _deve_retirar_quarentena(
+        extra,
+        confirmar_fonte_agora=confirm_now,
+        retirar_explicito=release_explicit,
+    )
     if release_quarantine:
         extra = _retirar_quarentena(
             extra,
