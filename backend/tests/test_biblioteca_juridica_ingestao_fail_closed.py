@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 from pathlib import Path
 
 
@@ -142,3 +143,16 @@ def test_ia_nao_pode_receber_autoridade_jurisprudencial():
     d = _doc(gerado_por_IA=True)
     erros = MOD.validar([d])
     assert any("gerado por IA" in e for e in erros)
+
+
+def test_execute_tem_transacao_unica_e_commit_so_no_final():
+    """Regressão P0: falha no documento N não pode deixar 1..N-1 commitados."""
+    fonte = inspect.getsource(MOD.main)
+    assert fonte.count("async with AsyncSessionLocal() as db") == 1
+    assert fonte.count("await db.commit()") == 1
+    assert fonte.count("await db.rollback()") == 1
+    pos_sessao = fonte.index("async with AsyncSessionLocal() as db")
+    pos_loop = fonte.index("for d in docs", pos_sessao)
+    pos_commit = fonte.index("await db.commit()", pos_loop)
+    assert pos_sessao < pos_loop < pos_commit
+    assert "rollback integral executado" in fonte
