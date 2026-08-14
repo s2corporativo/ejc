@@ -40,7 +40,7 @@ from app.models.solicitacao_documento import (
 from app.models.user import User, UserRole
 # Reuso EXATO das validações de upload do GED (não duplicar regra de negócio).
 from app.services.document_content_policy import (
-    EXTENSOES_PERMITIDAS,
+    exigir_extensao_permitida,
     validar_conteudo,
 )
 from app.services.solicitacao_documento_service import recalcular_status
