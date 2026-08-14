@@ -109,6 +109,7 @@ raise SystemExit(3)
 
 
 def _run(tmp_path: Path, scenario="success", protection=None, authorization="998", branch="main"):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     _write_fake_gh(tmp_path)
     env = os.environ.copy()
     env.update(
