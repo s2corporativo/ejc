@@ -1,16 +1,16 @@
 """Política de aprovação automática da Base de Conhecimento.
 
-``KnowledgeDoc`` criado ou alterado pelo EJC fica disponível para o RAG com
+``KnowledgeDoc`` criado ou alterado pelo EJC pode ficar disponível para o RAG com
 ``rag_status=aprovado``. A regra é aplicada no nível ORM, portanto alcança
 importações manuais, PDF, URL, fontes oficiais, seeds e demais ingestores que
 usam o modelo nativo do EJC.
 
-EXCEÇÃO OBRIGATÓRIA (auditoria 2026-07-26, achado AI-079): documento marcado
-``requires_human_review=True`` que ainda não foi revisado
-(``human_reviewed`` falsy) NUNCA é auto-aprovado — o rag_status explícito do
-ingestor (ex.: ``pendente`` no feed cognitivo do DataJud) é preservado, e a
-promoção a ``aprovado`` só acontece por ato explícito da governança
-(ia_governanca / revisão de conhecimento).
+EXCEÇÕES OBRIGATÓRIAS:
+- documento com ``requires_human_review=True`` e sem ``human_reviewed`` nunca é
+  autoaprovado;
+- documento com ``quarantine_active=True`` nunca é autoaprovado, mesmo que já
+  tenha sido revisado anteriormente. A quarentena precisa ser retirada por ato
+  explícito de governança antes de uma nova aprovação.
 
 A aprovação significa autorização para recuperação pela inteligência jurídica;
 não transforma uma fonte não oficial em fonte oficial e não remove as regras de
@@ -28,11 +28,9 @@ from app.models.rag import KnowledgeDoc
 from app.services.knowledge_governance import inferir_autoridade
 
 POLITICA = "knowledge_module_always_approved"
-# AI-079: docs aguardando revisão humana ficam FORA da auto-aprovação.
 POLITICA_REVISAO_PENDENTE = "human_review_required_not_auto_approved"
-# Documento JÁ revisado por humano: o status escolhido pelo revisor prevalece
-# sobre a auto-aprovação (inclusive uma recusa).
 POLITICA_DECISAO_HUMANA = "human_decision_respected"
+POLITICA_QUARENTENA = "quarantine_active_not_auto_approved"
 _CONFIANCAS_VALIDAS = {"alta", "media", "baixa"}
 
 
@@ -43,7 +41,7 @@ def _texto(valor: Any) -> str:
 def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
     """Aplica aprovação e metadados mínimos de governança ao documento.
 
-    ``confidence_level=bloqueado`` também impediria a recuperação mesmo com
+    ``confidence_level=bloqueado`` impediria recuperação mesmo com
     ``rag_status=aprovado``; por isso é normalizado para ``media``. Confianças
     válidas já definidas (alta/media/baixa) são preservadas.
 
@@ -76,19 +74,16 @@ def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
     if "legisl" in _texto(documento.categoria):
         extra.setdefault("legal_status", "vigencia_nao_verificada")
 
-    # AI-079: pendência de revisão humana BLOQUEIA a auto-aprovação. 'aprovado'
-    # sem human_reviewed é rebaixado a 'pendente' (nenhum ingestor pode gravar
-    # aprovação junto com requires_human_review); status explícitos não-aprovados
-    # (ex.: 'disponivel_informativo') são preservados.
-    #
-    # DECISÃO HUMANA MANDA (review do Codex no PR #496): quando `human_reviewed`
-    # está marcado, o status escolhido pelo revisor é RESPEITADO — inclusive
-    # `recusado`. Sem esta cláusula, a auto-aprovação caía no `else` e
-    # transformava uma RECUSA em 'aprovado', liberando ao RAG justamente o
-    # documento que o curador rejeitou.
+    # QUARENTENA tem precedência sobre revisão/autoaprovação. Uma recusa humana
+    # já é mais restritiva e é preservada; qualquer outro estado fica pendente.
+    quarentena = bool(extra.get("quarantine_active"))
     requer_revisao = bool(extra.get("requires_human_review"))
     revisado = bool(extra.get("human_reviewed"))
-    if requer_revisao and not revisado:
+    if quarentena:
+        if _texto(extra.get("rag_status")) != "recusado":
+            extra["rag_status"] = "pendente"
+        auditoria["policy"] = POLITICA_QUARENTENA
+    elif requer_revisao and not revisado:
         if _texto(extra.get("rag_status")) in ("", "aprovado"):
             extra["rag_status"] = "pendente"
         auditoria["policy"] = POLITICA_REVISAO_PENDENTE
@@ -98,6 +93,7 @@ def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
         auditoria["policy"] = POLITICA_DECISAO_HUMANA
     else:
         extra["rag_status"] = "aprovado"
+
     extra["confidence_level"] = confianca
     extra["auto_approval"] = auditoria
     documento.extra = extra
