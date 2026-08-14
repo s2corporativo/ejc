@@ -8,9 +8,11 @@ umask 077
 REPO="${EJC_REPO:-s2corporativo/ejc}"
 BRANCH="${EJC_BRANCH:-main}"
 AUTH="${EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION:-}"
+GITHUB_ACTIONS_APP_ID=15368
 
 fail() { printf 'ABORTADO: %s\n' "$1" >&2; exit 1; }
 ok() { printf '[ok] %s\n' "$1"; }
+aviso() { printf '[aviso] %s\n' "$1" >&2; }
 
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI (gh) ausente"
 command -v jq >/dev/null 2>&1 || fail "jq ausente"
@@ -21,21 +23,26 @@ gh auth status >/dev/null 2>&1 || fail "gh não autenticado"
 BRANCH_API="repos/$REPO/branches/$BRANCH"
 PROTECTION_API="repos/$REPO/branches/$BRANCH/protection"
 
-branch_json="$(gh api "$BRANCH_API" -H 'Accept: application/vnd.github+json')" \
-  || fail "não foi possível ler a branch"
-protected="$(printf '%s' "$branch_json" | jq -r '.protected // false')"
-[ "$protected" = "false" ] \
-  || fail "branch já possui proteção; recuso sobrescrever política existente"
+assert_branch_unprotected() {
+  local branch_json
+  branch_json="$(gh api "$BRANCH_API" -H 'Accept: application/vnd.github+json')" \
+    || fail "não foi possível ler a branch"
+  printf '%s' "$branch_json" | jq -e '
+    has("protected") and
+    (.protected | type == "boolean") and
+    (.protected == false)
+  ' >/dev/null || fail "estado de proteção ausente, ambíguo ou já protegido; recuso sobrescrever política existente"
+}
 
-payload="$(jq -cn '{
+payload="$(jq -cn --argjson app_id "$GITHUB_ACTIONS_APP_ID" '{
   required_status_checks: {
     strict: true,
-    contexts: [
-      "Backend — suíte completa + schema/RAG (Postgres pgvector)",
-      "Eval — smoke dos gold sets (offline, bloqueante)",
-      "Frontend — testes + typecheck + build",
-      "P0 guard — conflitos e segredos",
-      "Governança — travas de PR"
+    checks: [
+      {context:"Backend — suíte completa + schema/RAG (Postgres pgvector)", app_id:$app_id},
+      {context:"Eval — smoke dos gold sets (offline, bloqueante)", app_id:$app_id},
+      {context:"Frontend — testes + typecheck + build", app_id:$app_id},
+      {context:"P0 guard — conflitos e segredos", app_id:$app_id},
+      {context:"Governança — travas de PR", app_id:$app_id}
     ]
   },
   enforce_admins: true,
@@ -43,7 +50,8 @@ payload="$(jq -cn '{
     dismiss_stale_reviews: true,
     require_code_owner_reviews: true,
     required_approving_review_count: 1,
-    require_last_push_approval: true
+    require_last_push_approval: true,
+    bypass_pull_request_allowances: {users:[], teams:[], apps:[]}
   },
   restrictions: null,
   required_linear_history: true,
@@ -55,33 +63,56 @@ payload="$(jq -cn '{
   allow_fork_syncing: false
 }')"
 
-# PUT é deliberadamente usado somente neste bootstrap: a branch foi comprovada
-# desprotegida. O fluxo normal continua alterando apenas required_status_checks.
-printf '%s' "$payload" | gh api -X PUT "$PROTECTION_API" \
-  -H 'Accept: application/vnd.github+json' --input - >/dev/null \
-  || fail "falha ao aplicar proteção completa"
+protection_matches_payload() {
+  local current="$1"
+  printf '%s' "$current" | jq -e --argjson app_id "$GITHUB_ACTIONS_APP_ID" '
+    (.required_status_checks.strict == true) and
+    ((.required_status_checks.checks // []) | sort_by(.context, .app_id) == ([
+      {context:"Backend — suíte completa + schema/RAG (Postgres pgvector)", app_id:$app_id},
+      {context:"Eval — smoke dos gold sets (offline, bloqueante)", app_id:$app_id},
+      {context:"Frontend — testes + typecheck + build", app_id:$app_id},
+      {context:"P0 guard — conflitos e segredos", app_id:$app_id},
+      {context:"Governança — travas de PR", app_id:$app_id}
+    ] | sort_by(.context, .app_id))) and
+    (.enforce_admins.enabled == true) and
+    (.required_pull_request_reviews.dismiss_stale_reviews == true) and
+    (.required_pull_request_reviews.require_code_owner_reviews == true) and
+    (.required_pull_request_reviews.required_approving_review_count >= 1) and
+    (.required_pull_request_reviews.require_last_push_approval == true) and
+    (((.required_pull_request_reviews.bypass_pull_request_allowances.users // []) | length) == 0) and
+    (((.required_pull_request_reviews.bypass_pull_request_allowances.teams // []) | length) == 0) and
+    (((.required_pull_request_reviews.bypass_pull_request_allowances.apps // []) | length) == 0) and
+    (.restrictions == null) and
+    (.required_linear_history.enabled == true) and
+    (.allow_force_pushes.enabled == false) and
+    (.allow_deletions.enabled == false) and
+    (.block_creations.enabled == false) and
+    (.required_conversation_resolution.enabled == true) and
+    (.lock_branch.enabled == false) and
+    (.allow_fork_syncing.enabled == false)
+  ' >/dev/null
+}
 
-current="$(gh api "$PROTECTION_API" -H 'Accept: application/vnd.github+json')" \
-  || fail "proteção aplicada, mas read-after-write falhou"
+reconcile_protection() {
+  local current
+  current="$(gh api "$PROTECTION_API" -H 'Accept: application/vnd.github+json')" \
+    || fail "não foi possível reconciliar a proteção após a tentativa de PUT"
+  protection_matches_payload "$current" \
+    || fail "estado efetivo não corresponde ao baseline fail-closed"
+}
 
-printf '%s' "$current" | jq -e '
-  (.required_status_checks.strict == true) and
-  ((.required_status_checks.contexts // []) | sort == ([
-    "Backend — suíte completa + schema/RAG (Postgres pgvector)",
-    "Eval — smoke dos gold sets (offline, bloqueante)",
-    "Frontend — testes + typecheck + build",
-    "P0 guard — conflitos e segredos",
-    "Governança — travas de PR"
-  ] | sort)) and
-  (.enforce_admins.enabled == true) and
-  (.required_pull_request_reviews.dismiss_stale_reviews == true) and
-  (.required_pull_request_reviews.require_code_owner_reviews == true) and
-  (.required_pull_request_reviews.required_approving_review_count >= 1) and
-  (.required_pull_request_reviews.require_last_push_approval == true) and
-  (.required_linear_history.enabled == true) and
-  (.allow_force_pushes.enabled == false) and
-  (.allow_deletions.enabled == false) and
-  (.required_conversation_resolution.enabled == true)
-' >/dev/null || fail "estado efetivo não corresponde ao baseline fail-closed"
+# Dupla leitura fail-closed: a segunda ocorre imediatamente antes da mutação e
+# reduz a janela TOCTOU. Se outra restauração já estiver visível, o PUT não roda.
+assert_branch_unprotected
+assert_branch_unprotected
 
+# PUT é deliberadamente usado somente neste bootstrap. Mesmo se a conexão cair
+# depois de o GitHub aplicar a política, a decisão final vem do GET de
+# reconciliação, nunca do status de transporte isoladamente.
+if ! printf '%s' "$payload" | gh api -X PUT "$PROTECTION_API" \
+    -H 'Accept: application/vnd.github+json' --input - >/dev/null; then
+  aviso "PUT não retornou resposta confiável; reconciliando estado efetivo"
+fi
+
+reconcile_protection
 ok "proteção completa da main restaurada e confirmada por read-after-write"
