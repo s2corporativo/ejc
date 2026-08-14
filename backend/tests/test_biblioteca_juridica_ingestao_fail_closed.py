@@ -34,10 +34,69 @@ def _doc(**overrides):
     return base
 
 
-def test_simulacao_bloqueia_documento_oficial():
+def test_simulacao_bloqueia_documento_com_autoridade():
     d = _doc(__body="Tribunal: STJ\nREsp 1.199.782/PR\nURL Simulada: https://processo.stj.jus.br/SCON/")
     erros = MOD.validar([d])
-    assert any("simulação" in e for e in erros)
+    assert any("simulado" in e.lower() for e in erros)
+
+
+def test_marcador_simulado_entre_parenteses_tambem_bloqueia():
+    d = _doc(
+        __body=(
+            "Tribunal: STJ\nREsp 1.199.782/PR\n"
+            "https://processo.stj.jus.br/SCON/ (Simulado, fonte oficial: stj.jus.br)"
+        )
+    )
+    erros = MOD.validar([d])
+    assert any("simulado" in e.lower() for e in erros)
+
+
+def test_nota_historica_de_auditoria_nao_e_falso_positivo():
+    d = _doc(
+        __body=(
+            "Tribunal: STJ\nREsp 1.199.782/PR\n"
+            "Fonte: https://processo.stj.jus.br/SCON/\n"
+            "Nota: a versão anterior continha referências simuladas e foi substituída."
+        )
+    )
+    erros = MOD.validar([d])
+    assert not any("simulado" in e.lower() for e in erros)
+
+
+def test_modelo_ficticio_sem_autoridade_pode_existir_como_estrutura():
+    d = _doc(
+        tipo_camada="modelo_peca",
+        canonical_id="MOD-TEST-000001",
+        origem_conteudo="modelo_IA",
+        autoridade_juridica="modelo_sem_autoridade",
+        score_autoridade=0,
+        nivel_confiaca="BAIXA",
+        gerado_por_IA=True,
+        tribunal=None,
+        link_official=None,
+        last_verified_at=None,
+        __body="MODELO DIDÁTICO. Processo fictício 0000000-00.0000.0.00.0000. Não usar como fonte.",
+    )
+    erros = MOD.validar([d])
+    assert erros == []
+
+
+def test_modelo_ia_com_score_de_autoridade_e_bloqueado():
+    d = _doc(
+        tipo_camada="modelo_peca",
+        canonical_id="MOD-TEST-000002",
+        origem_conteudo="modelo_IA",
+        autoridade_juridica="modelo_sem_autoridade",
+        score_autoridade=10,
+        nivel_confiaca="BAIXA",
+        gerado_por_IA=True,
+        tribunal=None,
+        link_official=None,
+        last_verified_at=None,
+        __body="Modelo didático sem valor de fonte jurídica.",
+    )
+    erros = MOD.validar([d])
+    assert any("score_autoridade=0" in e for e in erros)
 
 
 def test_jurisprudencia_alta_sem_url_oficial_bloqueia():
