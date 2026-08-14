@@ -1,52 +1,76 @@
-# Biblioteca Jurídica Inteligente — EJC (Fonte de Verdade Versionada)
+# Biblioteca Jurídica Inteligente — EJC
 
-Este diretório contém a fonte de verdade versionada da Biblioteca Jurídica Inteligente do EJC, iniciada com o **Lote Piloto de 24 temas** (13/08/2026). Os arquivos-fonte em Markdown são ingeridos na base RAG de produção pelo script `backend/scripts/ingestao_biblioteca_juridica.py`, que utiliza o `upsert_documento` existente (versionamento, deduplicação por `chave_origem` e geração de embeddings).
+> **STATUS ATUAL: CORPUS EM QUARENTENA / NÃO HOMOLOGADO PARA FUNDAMENTAÇÃO AUTOMÁTICA.**
+>
+> A auditoria de segurança de 14/08/2026 revogou a homologação anterior do lote piloto. Os arquivos deste diretório são artefatos versionados de trabalho; a presença no GitHub **não** significa que uma tese, julgado ou metadado esteja juridicamente validado.
+
+O lote piloto contém 24 documentos distribuídos por oito áreas. O registro `JUR-CONS-000016` foi reconstruído após a auditoria identificar referência simulada e metadados incorretos na versão anterior. Os demais registros permanecem pendentes de revalidação individual.
+
+## Regra de autoridade
+
+A cadeia operacional do EJC é:
+
+**fonte oficial validada → precedente validado → tese derivada → bloco argumentativo → pedido → modelo → texto gerado por IA.**
+
+Documentos derivados, modelos e textos de IA não criam autoridade jurídica por repetição ou similaridade.
 
 ## Estrutura
 
-```
+```text
 docs/biblioteca_juridica/
-├── README.md                          (este arquivo)
-├── RELATORIO_AUDITORIA_LOTE_PILOTO.md (auditoria do lote: quantitativos, índice canônico, regras de verificação)
-├── grafico_relacoes.yaml              (grafo conceitual: fundamentado_por, cita, diverge_de, complementar_a)
-├── quarentena/                        (documentos reprovados — vazia no piloto)
-└── {area}/                            (tributario, ambiental, administrativo, licitacoes, empresarial,
-    NN_tema.md                          consumidor_bancario, trabalhista_empresarial, processual_civil)
+├── README.md
+├── RELATORIO_AUDITORIA_LOTE_PILOTO.md
+├── GUIA_EXECUCAO_PRODUCAO.md
+├── grafico_relacoes.yaml
+└── {area}/
+    └── NN_tema.md
 ```
 
-## Padrão de metadados (front-matter YAML obrigatório)
+O `grafico_relacoes.yaml` descreve relações conceituais. Relação de grafo não eleva a autoridade de nenhum nó e só pode ser usada operacionalmente quando os documentos relacionados estiverem aprovados no RAG.
 
-| Chave | Exemplo |
+## Metadados canônicos mínimos
+
+| Chave | Regra |
 |---|---|
-| `tipo_camada` | tese_juridica, jurisprudencia_estruturada, bloco_argumentativo, pedido_juridico, modelo_peca |
-| `canonical_id` | TESE-TRIB-000001 (único no lote; TIPO-AREA-NNNNNN) |
-| `origem_conteudo` | fonte_oficial, jurisprudencia_oficial, legislacao |
-| `autoridade_juridica` | vinculante, jurisprudencial, persuasiva, doutrinaria |
-| `authority_level` | precedente_vinculante, jurisprudencia_oficial, ... (valores de knowledge_governance) |
-| `score_autoridade` | 0–100 (90 repetitivo; 95 vinculante; 100 súmula vinculante) |
-| `area_juridica` | tributario, ambiental, administrativo, licitacoes, empresarial, consumidor_bancario, trabalhista_empresarial, processual_civil |
-| `nivel_confiaca` | ALTA, MEDIA, BAIXA |
-| `data_pesquisa` | DD/MM/AAAA |
-| `gerado_por_IA` | false (conteúdo verificado) |
+| `tipo_camada` | `fonte_primaria`, `jurisprudencia_estruturada`, `tese_juridica`, `bloco_argumentativo`, `pedido_juridico` ou `modelo_peca` |
+| `canonical_id` | identificador único e estável |
+| `origem_conteudo` | origem real do conteúdo; nunca promover IA/modelo a fonte oficial |
+| `autoridade_juridica` | normativa, vinculante, jurisprudencial, persuasiva, doutrinária, analítica ou sem autoridade |
+| `score_autoridade` | 0–100; modelo de IA deve permanecer em 0 |
+| `area_juridica` | área canônica do lote |
+| `nivel_confiaca` | ALTA, MEDIA ou BAIXA; confiança não substitui fonte |
+| `data_pesquisa` | data da pesquisa/verificação |
+| `gerado_por_IA` | identifica conteúdo gerado por IA |
+| `fontes_utilizadas` | obrigatório para teses, argumentos e pedidos derivados |
 
-## Uso
+Jurisprudência de confiança ALTA deve possuir fonte institucional rastreável e data de verificação. Conteúdo de autoridade não pode conter processo, precedente ou URL simulados.
+
+## Validação local segura
+
+A validação deve ser feita explicitamente sobre este diretório:
 
 ```bash
-# Validação (dry-run) — sem banco de dados
-python3 backend/scripts/ingestao_biblioteca_juridica.py
-
-# Ingestão real na base de produção (requer DATABASE_URL e ambiente do backend)
-python3 backend/scripts/ingestao_biblioteca_juridica.py --execute
+python3 backend/scripts/ingestao_biblioteca_juridica.py \
+  --dir docs/biblioteca_juridica \
+  --graph docs/biblioteca_juridica/grafico_relacoes.yaml
 ```
 
-## Regras de governança
+**Resultado esperado enquanto houver registros não saneados:** saída `BLOQUEADO` e código diferente de zero. Isso é comportamento correto, não defeito.
 
-Nenhum documento deste diretório ingressa na base de produção sem passar pela validação do script (metadados canônicos completos, `canonical_id` único, score 0–100, confiança no vocabulário). Julgados citados exigem URL oficial da fonte e data de verificação. Documentos reprovados vão para `quarentena/` com motivo registrado no relatório de auditoria do lote. A cadeia conceitual (fonte primária → jurisprudência estruturada → tese → bloco argumentativo → pedido → modelo) é rastreada em `grafico_relacoes.yaml`.
+O modo `--execute` não deve ser utilizado enquanto o lote não passar integralmente pela validação e pela revisão humana. Mesmo quando executado, o script grava os documentos como `rag_status=pendente`; ele não concede aprovação automática.
 
-## Lote Piloto — resumo
+## Quarentena de versões eventualmente já ingeridas
 
-| Indicador | Valor |
+Após o hardening ser implantado, o script `backend/scripts/quarentenar_biblioteca_juridica_piloto.py` deve ser usado primeiro em dry-run e, somente após conferir os IDs, em `--execute`. Ele preserva documentos, chunks, embeddings, histórico e recusas humanas; apenas retira o lote da base ativa até revalidação.
+
+Consulte `GUIA_EXECUCAO_PRODUCAO.md` para a sequência operacional completa.
+
+## Estado do lote piloto
+
+| Indicador | Estado |
 |---|---|
-| Documentos canônicos | 24 (14 teses + 10 registros de jurisprudência estruturada) |
-| Confiança ALTA / MEDIA / BAIXA | 23 / 1 / 0 |
-| Quarentena | 0 documentos |
+| Arquivos canônicos | 24 |
+| Homologação jurídica do conjunto | **REVOGADA** |
+| Documentos liberados automaticamente por este diretório | **0** |
+| JUR-CONS-000016 | corrigido com Tema 466/STJ e Súmula 479/STJ; ainda sujeito à curadoria |
+| Demais 23 registros | pendentes de revalidação individual |
