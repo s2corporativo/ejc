@@ -393,32 +393,17 @@ export default function RamosHub() {
         </p>
       </div>
 
+      {/* Fase 4 (QA / refinamento): a seção "Favoritas" renderizava os mesmos
+          cards que já aparecem nos grupos da taxonomia — a mesma área em dois
+          lugares da página. As favoritas continuam destacadas com ★ nos
+          próprios grupos e permanecem filtráveis pela busca; a preferência
+          local segue persistida em ejc:areas-favoritas:v1. */}
       {favoritas.length > 0 && (
-        <section className="space-y-3" aria-labelledby="areas-favoritas">
-          <div>
-            <h2
-              id="areas-favoritas"
-              className="text-sm font-bold text-slate-900 dark:text-white"
-            >
-              Favoritas
-            </h2>
-            <p className="text-xs text-slate-500">
-              Preferência local deste navegador; não altera cadastro, caso ou
-              permissão.
-            </p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {favoritas.map((area) => (
-              <AreaCard
-                key={`fav-${area.slug}`}
-                area={area}
-                favorito
-                onFavorito={alternarFavorito}
-                podeCriarCaso={podeCriarCaso}
-              />
-            ))}
-          </div>
-        </section>
+        <p className="-mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+          {favoritas.length === 1
+            ? "1 área favorita destacada abaixo com ★"
+            : `${favoritas.length} áreas favoritas destacadas abaixo com ★`}
+        </p>
       )}
 
       {GRUPOS_AREAS.map((grupo) => {
@@ -426,11 +411,19 @@ export default function RamosHub() {
           (area) => grupoDaArea(area.slug)?.id === grupo.id,
         );
         if (doGrupo.length === 0) return null;
+        const temFavoritas = doGrupo.some((area) =>
+          favoritos.includes(area.slug),
+        );
         return (
           <section key={grupo.id} className="space-y-3">
             <div>
               <h2 className="text-sm font-bold text-slate-900 dark:text-white">
                 {grupo.titulo}
+                {temFavoritas && (
+                  <span className="ml-2 text-xs font-normal text-ouro" aria-hidden="true">
+                    ★ favorita{favoritas.length > 1 ? "s" : ""}
+                  </span>
+                )}
               </h2>
               <p className="text-xs text-slate-500">{grupo.descricao}</p>
             </div>
