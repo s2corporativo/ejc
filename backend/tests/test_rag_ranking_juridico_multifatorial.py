@@ -1,3 +1,4 @@
+import inspect
 from datetime import datetime, timezone
 
 from app.services.ai import reranker
@@ -89,3 +90,10 @@ def test_norma_revogada_continua_penalizada():
         "fraude bancária",
     )
     assert item["governance_factors"]["situacao_juridica"] < 0
+
+
+def test_quarentena_e_gate_duro_antes_do_ranking():
+    fonte = inspect.getsource(reranker._hidratar_governanca)
+    assert 'extra.get("quarantine_active")' in fonte
+    assert "continue" in fonte
+    assert "quarentena ativa" in fonte
