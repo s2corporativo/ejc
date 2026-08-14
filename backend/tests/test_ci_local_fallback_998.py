@@ -75,7 +75,10 @@ def test_governanca_e_trusted_e_le_apenas_snapshot_do_pr():
     assert "ci-worker-isolation" in gov
     assert "ci_evidence" in gov
     assert "github-app-auth" in gov
-    assert "security-auditor: executado" in gov
+    # A auditoria de segurança usa diretório de evidência autenticada do
+    # security-auditor vinculado ao HEAD SHA (não imprime marcador fixo).
+    assert "security-auditor-evidence" in gov
+    assert "EVIDENCE_SHA" in gov
     assert "git diff --name-only -z" in gov
     assert 'git show HEAD:"$f"' in gov
 
@@ -150,9 +153,10 @@ def test_branch_protection_live_e_verificada_antes_do_merge():
     block = _block(src, "verify_branch_protection_for_merge() {", "verify_merge_snapshot() {")
     for marker in (
         ".required_status_checks.strict==true",
-        "EJC Local Full Gate",
+        ".required_status_checks.checks[]?",
+        '.context==$name and .app_id==$app_id',
         ".enforce_admins.enabled==true",
-        "required_approving_review_count",
+        ".required_pull_request_reviews.required_approving_review_count",
         "require_code_owner_reviews",
         "require_last_push_approval",
         "required_conversation_resolution.enabled==true",
@@ -198,7 +202,13 @@ def test_watcher_reexecuta_apenas_falha_qualificada_de_infraestrutura():
 
 def test_branch_protection_modifica_somente_required_status_checks():
     src = _text("scripts/governanca/branch-protection.sh")
-    executable = src.split("cat <<'FIM'", 1)[0]
+    # Região executável expurgando comentários: o cabeçalho/rodapé citam
+    # "restrictions" apenas para documentar que NÃO a alteram.
+    executable_parts = src.split("cat <<'FIM'")
+    executable = executable_parts[0] + executable_parts[1].split("FIM", 1)[1]
+    executable = "\n".join(
+        linha for linha in executable.splitlines() if not linha.strip().startswith("#")
+    )
     assert "protection/required_status_checks" in executable
     assert 'gh api -X PATCH "$API"' in executable
     assert "-X PUT" not in executable
