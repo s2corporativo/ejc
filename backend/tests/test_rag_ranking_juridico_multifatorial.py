@@ -1,7 +1,10 @@
+from datetime import datetime, timezone
+
 from app.services.ai import reranker
 
 
 def _candidate(**overrides):
+    hoje = datetime.now(timezone.utc).date().isoformat()
     base = {
         "doc_id": "doc-1",
         "chunk_id": "chunk-1",
@@ -13,7 +16,7 @@ def _candidate(**overrides):
         "extra": {
             "score_autoridade": 90,
             "area_juridica": "consumidor_bancario",
-            "last_verified_at": "2026-08-14",
+            "last_verified_at": hoje,
         },
         "situacao_juridica": {"code": "nao_aplicavel", "label": "Não aplicável", "warning": False},
     }
@@ -38,7 +41,7 @@ def test_aderencia_de_tribunal_e_area_e_auditavel():
 def test_verificacao_recente_nao_confunde_com_data_do_julgamento():
     recente, _ = reranker._enrich(_candidate(), "fraude bancária")
     antigo_extra = dict(_candidate()["extra"])
-    antigo_extra["last_verified_at"] = "2018-01-01"
+    antigo_extra["last_verified_at"] = "2010-01-01"
     antigo, _ = reranker._enrich(_candidate(extra=antigo_extra), "fraude bancária")
     assert recente["governance_factors"]["verificacao_recente"] > antigo["governance_factors"]["verificacao_recente"]
 
