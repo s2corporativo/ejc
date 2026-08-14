@@ -36,7 +36,7 @@ import asyncio
 import json
 
 from app.core.database import AsyncSessionLocal
-from app.services import backup_service
+from app.services import backup_execution_service, backup_service
 
 
 def _safe_artifact(item: dict) -> dict:
@@ -95,7 +95,7 @@ async def main() -> int:
         return 1
 
     async with AsyncSessionLocal() as db:
-        result = await backup_service.executar_backup(
+        result = await backup_execution_service.executar_backup_exclusivo(
             db,
             origem="pre_deploy",
             usuario_id=None,

@@ -16,7 +16,6 @@
 #  09:00 seg — Procurações vencendo em 30 dias
 #  09:15 — Alertas de vencimento societário
 from __future__ import annotations
-import asyncio
 import logging
 from uuid import uuid4
 from datetime import date, timedelta
@@ -1304,20 +1303,21 @@ def start_scheduler():
     s.add_job(_sincronizar_feriados_brasilapi,
               CronTrigger(day_of_week="mon", hour=0, minute=15),
               id="feriados_brasilapi", replace_existing=True)
-    s.add_job(_backup_banco,          CronTrigger(hour=2, minute=0),  id="backup",    replace_existing=True)
     s.add_job(_auditoria_processos,   CronTrigger(day_of_week="mon", hour=8, minute=15),  id="auditoria",  replace_existing=True)
     s.add_job(_monitor_diario_oficial, CronTrigger(hour=6, minute=0),                      id="dou_monitor", replace_existing=True)
     s.add_job(_alertar_contratos,     CronTrigger(day_of_week="mon", hour=9, minute=30),  id="contratos",  replace_existing=True)
     # (removido job duplicado id="retencao_ia" — _purgar_logs_ia já agendado em id="purga_ia")
 
-    # Backup diário cifrado → Google Drive (services/backup_service.py).
-    # Gate interno BACKUP_ENABLED (default False — opt-in). O scheduler roda em
+    # Backup diário cifrado → Google Drive, exclusivamente pela fachada
+    # backup_execution_service (gate BACKUP_ENABLED, opt-in). O scheduler roda em
     # America/Sao_Paulo; BACKUP_HORA_UTC é UTC, então o trigger declara a
-    # própria timezone. Convive com o job legado id="backup" (dump local 02h).
-    from app.services.backup_service import hora_backup_utc, job_backup_drive
+    # própria timezone. A execução canônica é job_backup_drive_exclusivo
+    # (mutex global + trilha de auditoria; origem "agendado").
+    from app.services.backup_service import hora_backup_utc
+    from app.services.backup_execution_service import job_backup_drive_exclusivo
     _bk_hora, _bk_min = hora_backup_utc()
     s.add_job(
-        job_backup_drive,
+        job_backup_drive_exclusivo,
         CronTrigger(hour=_bk_hora, minute=_bk_min, timezone="UTC"),
         id="backup_drive", replace_existing=True,
     )
@@ -1369,105 +1369,6 @@ def start_scheduler():
 
     s.start()
     logger.info("[Scheduler] Iniciado — %d jobs agendados", len(s.get_jobs()))
-
-
-async def _backup_banco():
-    """
-    02h00 — dump pg_dump do banco e upload offsite via rclone (se configurado).
-    Roda dentro do container postgres (docker compose exec) via subprocess no HOST.
-    Aqui, registramos o evento no log e verificamos se o dump do dia já existe.
-    O backup efetivo é executado pelo script scripts/backup.sh no HOST via cron.
-    """
-    import os
-    import glob as _glob
-    from datetime import date as _date
-
-    backup_dir = settings.BACKUP_DIR
-    hoje = _date.today().strftime("%Y-%m-%d")
-    padrao = os.path.join(backup_dir, f"ejc_backup_{hoje}*.sql.gz")
-    arquivos = _glob.glob(padrao)
-
-    if arquivos:
-        logger.info(f"[Backup] Dump do dia {hoje} já existe: {arquivos[0]}")
-        return
-
-    # Backup do dia não encontrado — tentar pg_dump diretamente se disponível
-    import subprocess
-    import shutil
-    pg_dump = shutil.which("pg_dump")
-    if not pg_dump:
-        logger.warning(
-            "[Backup] pg_dump não encontrado no container backend. "
-            "Configure cron no HOST: ver scripts/backup.sh"
-        )
-        return
-
-    try:
-        from urllib.parse import urlparse
-        url = urlparse(settings.DATABASE_URL_SYNC)
-        os.makedirs(backup_dir, exist_ok=True)
-        destino = os.path.join(backup_dir, f"ejc_backup_{hoje}.sql.gz")
-        env = {**os.environ, "PGPASSWORD": url.password or ""}
-        cmd_dump = [
-            pg_dump, "-h", url.hostname, "-p", str(url.port or 5432),
-            "-U", url.username, "-d", url.path.lstrip("/"), "-Fc",
-        ]
-        with open(destino, "wb") as f:
-            # subprocess.run é bloqueante: rodando dentro de coroutine do
-            # AsyncIOScheduler travaria o event loop de toda a API por dezenas
-            # de segundos. to_thread joga a chamada num worker thread.
-            r = await asyncio.to_thread(
-                subprocess.run, cmd_dump, stdout=f, env=env, timeout=300
-            )
-        if r.returncode == 0:
-            tamanho_mb = os.path.getsize(destino) / (1024 * 1024)
-            logger.info(f"[Backup] Dump criado: {destino} ({tamanho_mb:.1f} MB)")
-        else:
-            logger.error(f"[Backup] pg_dump retornou código {r.returncode}")
-            return
-
-        # Upload offsite via rclone (se BACKUP_REMOTE configurado)
-        if settings.BACKUP_REMOTE:
-            rclone = shutil.which("rclone")
-            if rclone:
-                r2 = await asyncio.to_thread(
-                    subprocess.run,
-                    [rclone, "copy", destino, settings.BACKUP_REMOTE],
-                    timeout=120,
-                )
-                if r2.returncode == 0:
-                    logger.info(f"[Backup] Upload p/ {settings.BACKUP_REMOTE} OK")
-                else:
-                    logger.warning(f"[Backup] rclone upload falhou (código {r2.returncode})")
-            else:
-                # BACKUP_REMOTE configurado mas rclone ausente: o backup NÃO está
-                # indo offsite — não deixar isso silencioso (risco de perda total).
-                logger.warning(
-                    "[Backup] BACKUP_REMOTE definido mas 'rclone' não está "
-                    "instalado — backup permanece SÓ local (sem cópia offsite)."
-                )
-
-        # Rotação: remove dumps locais mais antigos que BACKUP_RETENTION_DAYS dias.
-        try:
-            import time as _time
-            corte = _time.time() - (settings.BACKUP_RETENTION_DAYS * 86400)
-            removidos = 0
-            for caminho in _glob.glob(os.path.join(backup_dir, "ejc_backup_*.sql.gz")):
-                try:
-                    if os.path.getmtime(caminho) < corte:
-                        os.remove(caminho)
-                        removidos += 1
-                except OSError:
-                    continue
-            if removidos:
-                logger.info(
-                    f"[Backup] Rotação: {removidos} dump(s) > "
-                    f"{settings.BACKUP_RETENTION_DAYS}d removido(s)"
-                )
-        except Exception as e:
-            logger.warning(f"[Backup] Rotação falhou (não-fatal): {e}")
-    except Exception as e:
-        logger.error(f"[Backup] Falha no backup: {e}")
 
 
 async def _recarregar_feriados():
