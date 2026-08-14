@@ -193,7 +193,15 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
   // o usuário sabe que o processo segue em andamento (não está "travado").
   const [gerandoHaTempo, setGerandoHaTempo] = useState(false);
   const gerarRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { gerarRef.current && clearTimeout(gerarRef.current); }, []);
+  // Cleanup vinculado ao caseId (review CodeRabbit): troca de caso sem
+  // desmontagem limpa o timer da geração anterior, evitando rótulo
+  // "pode levar alguns minutos" na tela do novo caso.
+  useEffect(
+    () => () => {
+      gerarRef.current && clearTimeout(gerarRef.current);
+    },
+    [caseId],
+  );
   const [aprovando, setAprovando] = useState(false);
   const [faltantes, setFaltantes] = useState<ProvaFaltante[] | null>(null);
   const [avisoFaltantes, setAvisoFaltantes] = useState<string | null>(null);

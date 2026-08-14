@@ -97,4 +97,5 @@ export const LEGACY_CASE_TAB_REDIRECTS: Record<string, string> = {
   score: "indicadores",
   risco: "indicadores",
   iaDefensive: "ferramentas",
+  iaDefensiva: "ferramentas",
 };
