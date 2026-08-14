@@ -69,9 +69,13 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     # 138 → 139 → 140 (frete independente: 139 altera document_intake_batches,
     # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
-    assert script.get_heads() == ["140_preliminares_fundacao_schema"]
+    assert script.get_heads() == ["141_dpt360_diagnostico"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
+    assert (
+        script.get_revision("141_dpt360_diagnostico").down_revision
+        == "140_preliminares_fundacao_schema"
+    )
     assert (
         script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision
         == "138_consolida_fontes_ingestao"

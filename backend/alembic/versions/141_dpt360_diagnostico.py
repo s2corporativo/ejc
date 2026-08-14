@@ -38,7 +38,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
-        op.f("ix_dpt_diagnosticos_client_id"),
+        "ix_dpt_diagnosticos_client_id",
         "dpt_diagnosticos",
         ["client_id"],
         unique=False,
@@ -46,5 +46,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_dpt_diagnosticos_client_id"), table_name="dpt_diagnosticos")
+    op.drop_index("ix_dpt_diagnosticos_client_id", table_name="dpt_diagnosticos")
     op.drop_table("dpt_diagnosticos")
