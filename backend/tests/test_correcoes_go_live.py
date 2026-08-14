@@ -443,7 +443,11 @@ async def test_drive_download_sem_rclone_503(monkeypatch):
     from app.routers import documents as docs_mod
 
     async def gate_ok(*a, **k):
-        return {"id": "doc1"}
+        return types.SimpleNamespace(
+            id="doc1", drive_file_id="drv1", filepath="contrato.pdf",
+            filename="contrato.pdf", mimetype="application/pdf",
+            confidencialidade=types.SimpleNamespace(value="interna"),
+        )
     monkeypatch.setattr(docs_mod, "_gate_drive_doc", gate_ok)
 
     def indisponivel(*a, **k):
@@ -460,8 +464,17 @@ async def test_drive_delete_sem_rclone_503(monkeypatch):
     from app.routers import documents as docs_mod
 
     async def gate_ok(*a, **k):
-        return {"id": "doc1"}
+        return types.SimpleNamespace(
+            id="doc1", drive_file_id="drv1", filepath="contrato.pdf",
+            filename="contrato.pdf", mimetype="application/pdf",
+            confidencialidade=types.SimpleNamespace(value="interna"),
+        )
     monkeypatch.setattr(docs_mod, "_gate_drive_doc", gate_ok)
+    async def _sem_referencias(*a, **k):
+        return None
+    monkeypatch.setattr(
+        docs_mod, "exigir_documento_sem_referencias_bloqueantes",
+        _sem_referencias)
 
     def indisponivel(*a, **k):
         raise docs_mod.gd.DriveIndisponivelError("rclone não configurado")
@@ -477,14 +490,14 @@ async def test_drive_download_content_disposition_sanitizado(monkeypatch):
     from app.routers import documents as docs_mod
 
     async def gate_ok(*a, **k):
-        return {"id": "doc1"}
+        return types.SimpleNamespace(
+            id="doc1", drive_file_id="drv1", filepath="contrato.pdf",
+            filename='peti"ção; ré\r\nplica.pdf', mimetype="application/pdf",
+            confidencialidade=types.SimpleNamespace(value="interna"),
+        )
     monkeypatch.setattr(docs_mod, "_gate_drive_doc", gate_ok)
     monkeypatch.setattr(docs_mod.gd, "download_file",
-                        lambda fid: (_PDF, "application/pdf"))
-    monkeypatch.setattr(
-        docs_mod.gd, "get_file_link",
-        lambda fid: {"name": 'peti"ção; ré\r\nplica.pdf'},
-    )
+                        lambda fid, *, remote_path=None: _PDF)
 
     resp = await docs_mod.download_documento(
         "drv1", db=_FakeDB(), current_user=_cu_socio())
