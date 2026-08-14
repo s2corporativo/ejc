@@ -341,33 +341,45 @@ async def test_drive_upload_conteudo_diverge_da_extensao_415():
     assert exc.value.status_code == 415
 
 
-async def test_drive_upload_persiste_mime_do_servidor(monkeypatch):
-    """Content-type do cliente (text/html → XSS armazenado no download-proxy)
-    é IGNORADO: persiste o MIME derivado dos magic bytes."""
+async def test_drive_upload_persiste_mime_do_servidor_no_document_orm(monkeypatch):
+    """Content-Type do cliente é ignorado; MIME real fica no Document canônico."""
+    from app.models.document import Document
     from app.routers import documents as docs_mod
 
-    monkeypatch.setattr(
-        docs_mod.gd, "upload_file",
-        lambda content, nome, mime, folder: {"id": "drv1", "webViewLink": "http://x"},
-    )
+    mimes_upload: list[str] = []
 
-    class _DB(_FakeDB):
-        def __init__(self):
-            super().__init__()
-            self.params = None
+    def _fake_upload(conteudo, nome, mime, pasta):
+        mimes_upload.append(mime)
+        del conteudo, pasta
+        return {
+            "id": "drv1",
+            "remote_path": f"geral/{nome}",
+            "webViewLink": "https://drive.invalid/view/drv1",
+            "webContentLink": "https://drive.invalid/download/drv1",
+        }
 
-        async def execute(self, stmt, params=None, *a, **k):
-            self.params = params
-            return _Res(None)
+    monkeypatch.setattr(docs_mod.gd, "upload_file", _fake_upload)
 
-    db = _DB()
+    db = _FakeDB()
     pdf = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"
     resp = await docs_mod.upload_para_drive(
         file=_upload_file("contrato.pdf", pdf, "text/html"),
-        case_id=None, descricao=None, db=db, current_user=_cu(),
+        case_id=None,
+        descricao=None,
+        db=db,
+        current_user=_cu(),
     )
+
+    documentos = [obj for obj in db.added if isinstance(obj, Document)]
     assert resp["drive_file_id"] == "drv1"
-    assert db.params["mimetype"] == "application/pdf"   # nunca text/html
+    assert mimes_upload == ["application/pdf"]
+    assert len(documentos) == 1
+    document = documentos[0]
+    assert document.mimetype == "application/pdf"
+    assert document.mimetype != "text/html"
+    assert document.drive_file_id == "drv1"
+    assert document.filepath.startswith("drive://geral/")
+    assert db.committed == 1
 
 
 # ── 5. Config — SECRET_KEY mínima em produção ────────────────────────────────
