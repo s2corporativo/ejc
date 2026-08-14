@@ -16,11 +16,6 @@ import { asList } from "../lib/list";
 import { areaLabel, useAreas } from "../lib/areas";
 import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { useIaStatus } from "../lib/iaStatus";
-import MotorTeses from "../components/MotorTeses";
-import MatrizRisco from "../components/visual/MatrizRisco";
-import BadgesAlerta from "../components/visual/BadgesAlerta";
-import CalculadoraAcordo from "../components/visual/CalculadoraAcordo";
-import AnaliseEstrategica from "../components/AnaliseEstrategica";
 import ContextualAIAssistant from "../components/ContextualAIAssistant";
 import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
@@ -45,6 +40,8 @@ import {
   Badge,
   Empty,
 } from "../components/UI";
+import BadgesAlerta from "../components/visual/BadgesAlerta";
+import CalculadoraAcordo from "../components/visual/CalculadoraAcordo";
 import { useAuth } from "../stores/auth";
 import {
   CASE_NAV_SECTIONS,
@@ -52,11 +49,11 @@ import {
 } from "../config/caseNav";
 import { RAMOS } from "./ramos/ramosConfig";
 import type { FerramentaConfig } from "./ramos/ramosConfig";
-import TabRisco from "./CasoDetalhe/TabRisco";
-import TabScore from "./CasoDetalhe/TabScore";
 import TabPartes from "./CasoDetalhe/TabPartes";
 import TabFerramentas from "./CasoDetalhe/TabFerramentas";
 import TabResumo, { AvisoCasoEncerrado } from "./CasoDetalhe/TabResumo";
+import TabTeses from "./CasoDetalhe/TabTeses";
+import TabIndicadoresJuridicos from "./CasoDetalhe/TabIndicadoresJuridicos";
 import IaDefensivaCaso from "./CasoDetalhe/IaDefensivaCaso";
 import TabMemoria from "./CasoDetalhe/TabMemoria";
 import TabProcessos from "./CasoDetalhe/TabProcessos";
@@ -90,17 +87,18 @@ export const TABS = [
   { key: "financeiro", label: "Financeiro" },
   { key: "custos", label: "Centro de Custos" },
   { key: "liquidez", label: "Acordo & Liquidez" },
+  // Fase 3 (QA / unificação Estratégia): as sub-abas "teses-sugeridas",
+  // "jurisprudencia", "precedentes", "score" e "risco" foram consolidadas em
+  // "teses" (com seção "Sugeridas pela IA") e "indicadores". O deep-link antigo
+  // continua funcionando via LEGACY_CASE_TAB_REDIRECTS.
   { key: "teses", label: "Teses" },
-  { key: "teses-sugeridas", label: "Teses sugeridas" },
-  { key: "jurisprudencia", label: "Jurisprudência" },
-  { key: "precedentes", label: "Precedentes" },
-  { key: "score", label: "Score Jurídico" },
-  { key: "risco", label: "Índice de Risco" },
+  { key: "indicadores", label: "Indicadores" },
   { key: "memoria", label: "Memória" },
   // Aba "Jurimetria" por caso removida do menu: era um stub "em implementação".
   // A jurimetria é agregada e vive no menu Jurimetria (/inteligencia).
   { key: "dossie", label: "Dossiê Estratégico" },
-  { key: "iaDefensiva", label: "IA Defensiva" },
+  // Fase 3 (QA / unificação Estratégia): "IA Defensiva" foi embutida na aba
+  // "⚡ Ferramentas" — mesma natureza de ferramenta de trabalho do caso.
   { key: "ferramentas", label: "⚡ Ferramentas" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
@@ -300,99 +298,20 @@ function TabChecklists({ caseId }: { caseId: string }) {
 // ── Tab: Score Jurídico ──────────────────────────────────────────────────────
 // ── Tab: Índice de Risco ─────────────────────────────────────────────────────
 // ── Tab: Jurisprudência (RAG) ─────────────────────────────────────────────────
-function TabJurisprudencia({ caseId, caso }: { caseId: string; caso: Case }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
-
-  const buscar = async () => {
-    const q = query || caso.descricao_fatos || "";
-    if (!q.trim()) return;
-    setLoading(true);
-    setSearched(true);
-    try {
-      const { data } = await api.get("/rag/buscar", {
-        params: { q, limite: 10 },
-      });
-      setResults(data?.resultados ?? []);
-    } catch {
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <h2 className="font-semibold">Jurisprudência via RAG</h2>
-      <div className="flex gap-2">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && buscar()}
-          placeholder="Buscar jurisprudência relevante para este caso..."
-          className="input flex-1 text-sm"
-        />
-        <button
-          onClick={buscar}
-          disabled={loading}
-          className="btn-primary text-sm"
-        >
-          {loading ? "Buscando..." : "🔍 Buscar"}
-        </button>
-      </div>
-      {!searched && caso.descricao_fatos && (
-        <button
-          onClick={buscar}
-          className="text-sm text-primary-600 hover:underline"
-        >
-          Buscar jurisprudência relevante automaticamente
-        </button>
-      )}
-      <div className="space-y-3">
-        {results.map((r, i) => (
-          <div key={i} className="card p-4">
-            <div className="flex justify-between mb-2">
-              <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded">
-                {r.categoria}
-              </span>
-              <span className="text-xs text-gray-400">
-                Relevância: {(r.score * 100).toFixed(0)}%
-              </span>
-            </div>
-            <p className="text-sm text-gray-700 leading-relaxed">
-              {r.conteudo}
-            </p>
-            {r.fonte && (
-              <p className="text-xs text-gray-400 mt-2">Fonte: {r.fonte}</p>
-            )}
-          </div>
-        ))}
-        {searched && results.length === 0 && !loading && (
-          <Empty message="Nenhum resultado encontrado para esta busca" />
-        )}
-        {!searched && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Digite um termo para buscar jurisprudência na base de conhecimento
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── Tab genérico: lista simples ──────────────────────────────────────────────
 function TabLista({
   titulo,
   endpoint,
   renderItem,
   empty,
+  valorCausa,
 }: {
   titulo: string;
   endpoint: string;
   renderItem: (item: any) => React.JSX.Element;
   empty: string;
+  /** Valor da causa do caso (opcional) — exibe resumo determinístico. */
+  valorCausa?: number | null;
 }) {
   const [items, setItems] = useState<any[]>([]);
   useEffect(() => {
@@ -401,11 +320,31 @@ function TabLista({
       .then((r) => setItems(asList(r.data)))
       .catch(() => {});
   }, [endpoint]);
+  // Fase 3 (FIX-003 / visibilidade): o valor da causa do caso não aparecia em
+  // lugar algum do Financeiro — soma determinística dos lançamentos (sem IA).
+  const total = items.reduce((acc, it) => acc + (Number(it.valor) || 0), 0);
+  const pago = items
+    .filter((it) => it.pago === true || it.status === "pago")
+    .reduce((acc, it) => acc + (Number(it.valor) || 0), 0);
   return (
     <div className="space-y-4">
-      <h2 className="font-semibold">
-        {titulo} ({items.length})
-      </h2>
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <h2 className="font-semibold">
+          {titulo} ({items.length})
+        </h2>
+        <span className="text-xs text-gray-400">
+          Total {fmtMoney(total)} · {fmtMoney(pago)} recebido(s) ·{" "}
+          {fmtMoney(total - pago)} pendente(s)
+        </span>
+      </div>
+      {valorCausa ? (
+        <div className="card p-3 bg-navy-50 border border-navy-100 text-sm">
+          <span className="text-slate-500">Valor da causa do caso: </span>
+          <strong className="font-medium text-slate-800">
+            {fmtMoney(valorCausa)}
+          </strong>
+        </div>
+      ) : null}
       <div className="space-y-2">
         {items.map((item, i) => (
           <div key={item.id || i}>{renderItem(item)}</div>
@@ -653,103 +592,6 @@ interface TeseSugerida {
   tribunal: string | null;
 }
 
-interface TesesSugeridasResp {
-  case_id: string;
-  estrategia: string | null;
-  area: string | null;
-  palavras_chave: string[];
-  total: number;
-  teses: TeseSugerida[];
-}
-
-function TabTesesSugeridas({ caseId }: { caseId: string }) {
-  const [loading, setLoading] = useState(true);
-  const [resp, setResp] = useState<TesesSugeridasResp | null>(null);
-
-  useEffect(() => {
-    let ativo = true;
-    setLoading(true);
-    api
-      .get<TesesSugeridasResp>(`/cases/${caseId}/teses-sugeridas`, {
-        params: { k: 5 },
-      })
-      .then((r) => {
-        if (ativo) setResp(r.data);
-      })
-      .catch(() => {
-        if (ativo) {
-          setResp(null);
-          toast.error("Falha ao carregar teses sugeridas.");
-        }
-      })
-      .finally(() => {
-        if (ativo) setLoading(false);
-      });
-    return () => {
-      ativo = false;
-    };
-  }, [caseId]);
-
-  if (loading) return <Spinner />;
-
-  const teses = resp?.teses ?? [];
-  if (!resp || resp.total === 0 || teses.length === 0) {
-    return <Empty message="Nenhuma tese aderente encontrada" />;
-  }
-
-  const pctExito = (taxa: number | null): string =>
-    taxa == null ? "—" : `${Math.round(taxa * 100)}%`;
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="font-semibold">Teses sugeridas</h2>
-        <p className="text-xs text-slate-400">
-          Teses do Banco de Teses mais aderentes a este caso, ranqueadas por
-          desempenho histórico. Rascunho de apoio — revisão humana obrigatória
-          (OAB).
-          {resp.palavras_chave.length > 0 && (
-            <> Palavras-chave: {resp.palavras_chave.join(", ")}.</>
-          )}
-        </p>
-      </div>
-
-      <div className="space-y-3">
-        {teses.map((t) => (
-          <div key={t.id} className="card p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="font-medium text-sm text-slate-800">
-                  {t.titulo}
-                </h3>
-                {t.tema && (
-                  <p className="text-xs text-slate-400 mt-0.5">{t.tema}</p>
-                )}
-              </div>
-              {t.ramo && <Badge tone="purple">{t.ramo}</Badge>}
-            </div>
-
-            {t.resumo && (
-              <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                {t.resumo}
-              </p>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              <Badge tone="green">Êxito {pctExito(t.taxa_sucesso)}</Badge>
-              <Badge tone="slate">{t.vezes_venceu ?? 0} vitória(s)</Badge>
-              {typeof t.vezes_usada === "number" && (
-                <Badge tone="slate">{t.vezes_usada} uso(s)</Badge>
-              )}
-              {t.tribunal && <Badge tone="slate">{t.tribunal}</Badge>}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // Fase 1 — "Dados do caso" numa linha recolhível: o conteúdo clássico do
 // Resumo (TabResumo, com todas as ações) permanece integral, mas recolhido
 // para que a próxima ação do orquestrador domine a Visão sem clique adicional.
@@ -868,12 +710,8 @@ export default function CasoDetalhe() {
         return <TabEtiquetas caseId={id} />;
       case "checklists":
         return <TabChecklists caseId={id} />;
-      case "score":
-        return <TabScore caseId={id} />;
-      case "risco":
-        return <TabRisco caseId={id} />;
-      case "jurisprudencia":
-        return <TabJurisprudencia caseId={id} caso={caso} />;
+      
+      
       case "documentos":
         // Tela C: upload embutido na aba — a ação acontece dentro do caso.
         return <TabDocumentos caseId={id} />;
@@ -942,6 +780,7 @@ export default function CasoDetalhe() {
           <TabLista
             titulo="Honorários e Pagamentos"
             endpoint={`/fees/?case_id=${id}`}
+            valorCausa={caso.valor_causa ?? caso.processo_principal?.valor_causa ?? null}
             empty="Nenhum lançamento financeiro"
             renderItem={(f) => (
               <div className="card p-3 flex justify-between items-center text-sm">
@@ -964,6 +803,7 @@ export default function CasoDetalhe() {
           <TabLista
             titulo="Centro de Custos"
             endpoint={`/centro-custos?case_id=${id}`}
+            valorCausa={caso.valor_causa ?? caso.processo_principal?.valor_causa ?? null}
             empty="Nenhum lançamento de custo"
             renderItem={(c) => (
               <div className="card p-3 flex justify-between items-center text-sm">
@@ -992,68 +832,14 @@ export default function CasoDetalhe() {
           />
         );
       case "teses":
-        return (
-          <div className="space-y-4">
-            <MotorTeses caso={caso} />
-            <TabLista
-              titulo="Teses Vinculadas"
-              endpoint={`/teses/casos/${id}`}
-              empty="Nenhuma tese vinculada a este caso"
-              renderItem={(t) => (
-                <div className="card p-3 text-sm">
-                  <span className="font-medium text-gray-800">
-                    {t.titulo || t.tese_id || t.id}
-                  </span>
-                  {t.descricao && (
-                    <p className="text-gray-500 text-xs mt-1">{t.descricao}</p>
-                  )}
-                </div>
-              )}
-            />
-          </div>
-        );
-      case "teses-sugeridas":
-        return <TabTesesSugeridas caseId={id} />;
-      case "precedentes":
-        return (
-          <TabLista
-            titulo="Precedentes Internos (jurisprudência do escritório na área)"
-            endpoint={`/jurisprudencias?area=${encodeURIComponent(caso.area || "")}&per_page=50`}
-            empty="Nenhuma jurisprudência interna cadastrada nesta área"
-            renderItem={(j) => (
-              <div className="card p-3 text-sm">
-                <div className="flex justify-between items-start gap-2">
-                  <span className="font-medium text-gray-800">{j.titulo}</span>
-                  {j.tribunal && (
-                    <span className="text-xs text-gray-400 shrink-0">
-                      {j.tribunal}
-                    </span>
-                  )}
-                </div>
-                {j.ementa && (
-                  <p className="text-gray-600 text-xs mt-1">
-                    {j.ementa.slice(0, 180)}
-                    {j.ementa.length > 180 ? "…" : ""}
-                  </p>
-                )}
-                <div className="flex gap-2 mt-1 text-xs text-gray-400">
-                  {j.area_juridica && <span>{j.area_juridica}</span>}
-                  {j.resultado && <span>· {j.resultado}</span>}
-                  {j.favorito && <span>· ★</span>}
-                  {typeof j.vezes_citada === "number" && (
-                    <span>· {j.vezes_citada}× citada</span>
-                  )}
-                </div>
-              </div>
-            )}
-          />
-        );
+        return <TabTeses caso={caso} />;
+      case "indicadores":
+        return <TabIndicadoresJuridicos caseId={id} caso={caso} />;
       case "memoria":
         return <TabMemoria caseId={id} />;
       case "dossie":
         return <DossieEstrategicoCaso caseId={id} />;
-      case "iaDefensiva":
-        return <IaDefensivaCaso caso={caso} />;
+      
       case "ferramentas":
         return <TabFerramentas caso={caso} />;
       default:
@@ -1136,8 +922,11 @@ export default function CasoDetalhe() {
             <BadgesAlerta caseId={caso.id} className="mt-2" />
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+            {/* Fase 3 (QA): "IA do caso" leva à aba Teses — o assistente
+                contextual (ContextualAIAssistant) segue disponível em todas
+                as abas do caso, inclusive nesta. */}
             <button
-              onClick={() => setSearchParams({ tab: "iaDefensiva" })}
+              onClick={() => setSearchParams({ tab: "teses" })}
               className="btn-secondary h-9 text-xs"
             >
               <Sparkles size={14} /> IA do caso
