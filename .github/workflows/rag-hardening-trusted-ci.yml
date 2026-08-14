@@ -1,0 +1,113 @@
+name: RAG Hardening — trusted self-hosted validation
+
+# TEMPORÁRIO: valida somente este branch confiável no runner self-hosted, sem
+# executar código de PRs arbitrários. Remover antes do merge.
+on:
+  push:
+    branches: [agent/rag-juridico-hardening]
+    paths:
+      - ".github/workflows/rag-hardening-trusted-ci.yml"
+      - "backend/app/services/ai/reranker.py"
+      - "backend/app/services/legal_base.py"
+      - "backend/app/services/legal_chunker.py"
+      - "backend/app/services/legal_graph.py"
+      - "backend/scripts/ingestao_biblioteca_juridica.py"
+      - "backend/scripts/quarentenar_biblioteca_juridica_piloto.py"
+      - "backend/tests/test_biblioteca_juridica_ingestao_fail_closed.py"
+      - "backend/tests/test_legal_base.py"
+      - "backend/tests/test_legal_chunker.py"
+      - "backend/tests/test_legal_graph.py"
+      - "backend/tests/test_quarentena_biblioteca_juridica.py"
+      - "backend/tests/test_rag_ranking_juridico_multifatorial.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rag-hardening-trusted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: RAG jurídico — validação isolada no self-hosted
+    runs-on: self-hosted
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Resolver imagem de dependências sem tocar no container produtivo
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$(docker inspect --format='{{.Image}}' ejc_backend 2>/dev/null || true)"
+          if [ -z "$image" ]; then
+            echo "Imagem do backend não pôde ser derivada do container ejc_backend." >&2
+            exit 2
+          fi
+          echo "EJC_TEST_IMAGE=$image" >> "$GITHUB_ENV"
+          echo "Usando somente a imagem imutável $image; nenhum container produtivo será alterado."
+
+      - name: Sintaxe Python dos arquivos alterados
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none \
+            -e APP_ENV=development \
+            -e DATABASE_URL='postgresql+asyncpg://ci:ci@127.0.0.1:9/isolado' \
+            -v "$GITHUB_WORKSPACE/backend/app:/app/app:ro" \
+            -v "$GITHUB_WORKSPACE/backend/scripts:/app/scripts:ro" \
+            --entrypoint python "$EJC_TEST_IMAGE" -m py_compile \
+              app/services/ai/reranker.py \
+              app/services/legal_base.py \
+              app/services/legal_chunker.py \
+              app/services/legal_graph.py \
+              scripts/ingestao_biblioteca_juridica.py \
+              scripts/quarentenar_biblioteca_juridica_piloto.py
+
+      - name: Ruff — erros objetivos do escopo alterado
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none \
+            -e APP_ENV=development \
+            -e DATABASE_URL='postgresql+asyncpg://ci:ci@127.0.0.1:9/isolado' \
+            -v "$GITHUB_WORKSPACE/backend/app:/app/app:ro" \
+            -v "$GITHUB_WORKSPACE/backend/scripts:/app/scripts:ro" \
+            -v "$GITHUB_WORKSPACE/backend/tests:/app/tests:ro" \
+            -v "$GITHUB_WORKSPACE/backend/ruff.toml:/app/ruff.toml:ro" \
+            --entrypoint python "$EJC_TEST_IMAGE" -m ruff check \
+              app/services/ai/reranker.py \
+              app/services/legal_base.py \
+              app/services/legal_chunker.py \
+              app/services/legal_graph.py \
+              scripts/ingestao_biblioteca_juridica.py \
+              scripts/quarentenar_biblioteca_juridica_piloto.py \
+              tests/test_biblioteca_juridica_ingestao_fail_closed.py \
+              tests/test_legal_chunker.py \
+              tests/test_legal_graph.py \
+              tests/test_quarentena_biblioteca_juridica.py \
+              tests/test_rag_ranking_juridico_multifatorial.py
+
+      - name: Pytest — regressões jurídicas/RAG selecionadas
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none \
+            -e APP_ENV=development \
+            -e DATABASE_URL='postgresql+asyncpg://ci:ci@127.0.0.1:9/isolado' \
+            -e DATABASE_URL_SYNC='postgresql://ci:ci@127.0.0.1:9/isolado' \
+            -v "$GITHUB_WORKSPACE/backend/app:/app/app:ro" \
+            -v "$GITHUB_WORKSPACE/backend/scripts:/app/scripts:ro" \
+            -v "$GITHUB_WORKSPACE/backend/tests:/app/tests:ro" \
+            -v "$GITHUB_WORKSPACE/backend/conftest.py:/app/conftest.py:ro" \
+            --entrypoint python "$EJC_TEST_IMAGE" -m pytest -q \
+              tests/test_legal_base.py \
+              tests/test_biblioteca_juridica_ingestao_fail_closed.py \
+              tests/test_legal_chunker.py \
+              tests/test_legal_graph.py \
+              tests/test_quarentena_biblioteca_juridica.py \
+              tests/test_rag_ranking_juridico_multifatorial.py
