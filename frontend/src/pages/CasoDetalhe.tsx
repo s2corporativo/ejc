@@ -304,11 +304,14 @@ function TabLista({
   endpoint,
   renderItem,
   empty,
+  valorCausa,
 }: {
   titulo: string;
   endpoint: string;
   renderItem: (item: any) => React.JSX.Element;
   empty: string;
+  /** Valor da causa do caso (opcional) — exibe resumo determinístico. */
+  valorCausa?: number | null;
 }) {
   const [items, setItems] = useState<any[]>([]);
   useEffect(() => {
@@ -317,11 +320,31 @@ function TabLista({
       .then((r) => setItems(asList(r.data)))
       .catch(() => {});
   }, [endpoint]);
+  // Fase 3 (FIX-003 / visibilidade): o valor da causa do caso não aparecia em
+  // lugar algum do Financeiro — soma determinística dos lançamentos (sem IA).
+  const total = items.reduce((acc, it) => acc + (Number(it.valor) || 0), 0);
+  const pago = items
+    .filter((it) => it.pago === true || it.status === "pago")
+    .reduce((acc, it) => acc + (Number(it.valor) || 0), 0);
   return (
     <div className="space-y-4">
-      <h2 className="font-semibold">
-        {titulo} ({items.length})
-      </h2>
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <h2 className="font-semibold">
+          {titulo} ({items.length})
+        </h2>
+        <span className="text-xs text-gray-400">
+          Total {fmtMoney(total)} · {fmtMoney(pago)} recebido(s) ·{" "}
+          {fmtMoney(total - pago)} pendente(s)
+        </span>
+      </div>
+      {valorCausa ? (
+        <div className="card p-3 bg-navy-50 border border-navy-100 text-sm">
+          <span className="text-slate-500">Valor da causa do caso: </span>
+          <strong className="font-medium text-slate-800">
+            {fmtMoney(valorCausa)}
+          </strong>
+        </div>
+      ) : null}
       <div className="space-y-2">
         {items.map((item, i) => (
           <div key={item.id || i}>{renderItem(item)}</div>
@@ -757,6 +780,7 @@ export default function CasoDetalhe() {
           <TabLista
             titulo="Honorários e Pagamentos"
             endpoint={`/fees/?case_id=${id}`}
+            valorCausa={caso.valor_causa ?? caso.processo_principal?.valor_causa ?? null}
             empty="Nenhum lançamento financeiro"
             renderItem={(f) => (
               <div className="card p-3 flex justify-between items-center text-sm">
@@ -779,6 +803,7 @@ export default function CasoDetalhe() {
           <TabLista
             titulo="Centro de Custos"
             endpoint={`/centro-custos?case_id=${id}`}
+            valorCausa={caso.valor_causa ?? caso.processo_principal?.valor_causa ?? null}
             empty="Nenhum lançamento de custo"
             renderItem={(c) => (
               <div className="card p-3 flex justify-between items-center text-sm">
