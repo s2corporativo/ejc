@@ -22,17 +22,16 @@ BASE_IDENTIDADE = (
 )
 
 # Variante curta para etapas intermediárias/estruturadas. O objetivo é permitir
-# identificação de QUESTÕES JURÍDICAS antes do RAG sem permitir que a LLM fabrique
-# a autoridade que será pesquisada na etapa seguinte.
+# identificação de questões jurídicas antes do RAG sem permitir que a LLM
+# fabrique a autoridade que será pesquisada na etapa seguinte.
 BASE_ESTRUTURADA = (
-    "[REGRAS-ESTRUTURADAS] Regras invioláveis: a IA NÃO É FONTE DO DIREITO. "
-    "Antes do retrieval, identifique apenas questões, requisitos, fatos relevantes, "
-    "provas e hipóteses jurídicas; NÃO preencha autoridade específica com conhecimento "
-    "paramétrico. Lei, artigo, súmula, tema, jurisprudência, número de processo, relator, "
-    "data, prazo ou URL só podem ser reproduzidos se estiverem EXPLICITAMENTE presentes "
-    "nos dados/fontes fornecidos nesta própria etapa. Se não estiverem, use 'verificar' "
-    "ou 'base jurídica insuficiente'. NUNCA invente fatos e NUNCA prometa resultado. "
-    "Estas regras NÃO alteram o formato solicitado: responda EXATAMENTE no formato da tarefa."
+    "[REGRAS-ESTRUTURADAS] A IA NÃO É FONTE DO DIREITO. Antes do retrieval, "
+    "identifique apenas questões, requisitos, fatos e provas. NUNCA invente lei, "
+    "súmula, jurisprudência, número de processo, datas, prazos, fatos ou URLs. "
+    "Só reproduza autoridade específica se estiver EXPLICITAMENTE nos dados/fontes "
+    "desta etapa; não use memória do modelo. Se não estiver, diga que não sabe e "
+    "escreva 'verificar' ou 'base jurídica insuficiente'. NUNCA prometa resultado. "
+    "Preserve EXATAMENTE o formato solicitado pela tarefa."
 )
 
 _TASKS_COM_BASE = {
