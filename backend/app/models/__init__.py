@@ -75,6 +75,7 @@ from app.models import dossie_estrategico  # noqa
 from app.models import jurisprudencia_interna  # noqa
 from app.models import legal_chat            # noqa
 from app.models import preliminar             # noqa  (fusão aditiva Sala Jurídica + Raio-X — migração 139)
+from app.models import dpt_diagnostico       # noqa  (persistência DPT360 — migração 141)
 from app.models import prompt_juridico     # noqa
 from app.models import socio               # noqa
 from app.models import sociedade_cliente   # noqa

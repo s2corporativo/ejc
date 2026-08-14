@@ -169,8 +169,8 @@ class DptDiagnosticReadiness(BaseModel):
     generated_at: datetime
     areas: list[DptDiagnosticAreaReadiness] = Field(default_factory=list)
     pode_iniciar_analise: bool = True
-    persistencia: Literal["nao_habilitada_nesta_pilha"]
-    motivo_persistencia: str
+    persistencia: Literal["habilitada", "nao_habilitada_nesta_pilha"] = "habilitada"
+    motivo_persistencia: str = ""
     hitl: Literal["obrigatorio"] = "obrigatorio"
 
 

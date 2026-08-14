@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ownership import is_gestao
 from app.models.case import Case, CaseStatus
 from app.models.client import Client, ClientTipo
+from app.models.dpt_diagnostico import DptDiagnosticEstado, DptDiagnosticRun
 from app.models.deadline import Deadline, DeadlineStatus
 from app.models.user import User
 from app.modules.dpt360.schemas import (
@@ -159,6 +160,21 @@ async def build_dashboard(db: AsyncSession, user: User) -> DptDashboardResponse:
                 select(func.count())
                 .select_from(all_cases_sq)
                 .where(_critical_case_sql(all_cases_sq))
+            )
+        ).scalar()
+        or 0
+    )
+
+    # Diagnósticos 360 pendentes de revisão (HITL) em empresas visíveis.
+    global_pending_diagnostics = int(
+        (
+            await db.execute(
+                select(func.count(DptDiagnosticRun.id)).where(
+                    DptDiagnosticRun.client_id.in_(all_company_ids),
+                    DptDiagnosticRun.requer_revisao.is_(True),
+                    DptDiagnosticRun.estado
+                    != DptDiagnosticEstado.descartado.value,
+                )
             )
         ).scalar()
         or 0
@@ -375,7 +391,7 @@ async def build_dashboard(db: AsyncSession, user: User) -> DptDashboardResponse:
             providencias_proximas=global_upcoming_count,
             mudancas_juridicas_hoje=None,
             empresas_potencialmente_impactadas=None,
-            diagnosticos_pendentes=None,
+            diagnosticos_pendentes=global_pending_diagnostics,
         ),
         companies=company_payload,
         cases=case_payload,
