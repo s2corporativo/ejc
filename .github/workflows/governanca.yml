@@ -125,7 +125,7 @@ jobs:
           CORPO: ${{ github.event.pull_request.body }}
         shell: bash
         run: |
-          PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
+          PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|scripts/governanca/branch-protection-bootstrap\.sh$|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
           SENSIVEL=$(grep -Ec "$PADRAO_SENSIVEL" "$RUNNER_TEMP/alterados.txt" || true)
           if [ "$SENSIVEL" -gt 0 ]; then
             if ! printf '%s' "$CORPO" | grep -qi 'security-auditor: executado'; then
@@ -140,7 +140,7 @@ jobs:
       - name: Alteracao de governanca isolada
         shell: bash
         run: |
-          PADRAO_GOV='^(CLAUDE\.md|AGENTS\.md|\.claude/|\.github/workflows/governanca\.yml|docs/GOVERNANCA_IA\.md|docs/GOVERNANCA_FASE2\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md)'
+          PADRAO_GOV='^(CLAUDE\.md|AGENTS\.md|\.claude/|\.github/workflows/governanca\.yml|scripts/governanca/branch-protection-bootstrap\.sh$|docs/GOVERNANCA_IA\.md|docs/GOVERNANCA_FASE2\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md)'
           GOV=$(grep -Ec "$PADRAO_GOV" "$RUNNER_TEMP/alterados.txt" || true)
           COD=$(grep -Ec '^(backend/app/|frontend/src/)' "$RUNNER_TEMP/alterados.txt" || true)
           if [ "$GOV" -gt 0 ] && [ "$COD" -gt 0 ]; then
