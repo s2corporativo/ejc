@@ -5,7 +5,8 @@
 set -euo pipefail
 umask 077
 
-REPO="${EJC_REPO:-s2corporativo/ejc}"
+CANONICAL_REPO="s2corporativo/ejc"
+REPO="${EJC_REPO:-$CANONICAL_REPO}"
 BRANCH="${EJC_BRANCH:-main}"
 AUTH="${EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION:-}"
 GITHUB_ACTIONS_APP_ID=15368
@@ -18,6 +19,7 @@ command -v gh >/dev/null 2>&1 || fail "GitHub CLI (gh) ausente"
 command -v jq >/dev/null 2>&1 || fail "jq ausente"
 gh auth status >/dev/null 2>&1 || fail "gh não autenticado"
 [ "$AUTH" = "998" ] || fail "exige EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION=998"
+[ "$REPO" = "$CANONICAL_REPO" ] || fail "bootstrap autorizado somente para $CANONICAL_REPO"
 [ "$BRANCH" = "main" ] || fail "bootstrap autorizado somente para main"
 
 BRANCH_API="repos/$REPO/branches/$BRANCH"
@@ -79,9 +81,14 @@ protection_matches_payload() {
     (.required_pull_request_reviews.require_code_owner_reviews == true) and
     (.required_pull_request_reviews.required_approving_review_count >= 1) and
     (.required_pull_request_reviews.require_last_push_approval == true) and
-    (((.required_pull_request_reviews.bypass_pull_request_allowances.users // []) | length) == 0) and
-    (((.required_pull_request_reviews.bypass_pull_request_allowances.teams // []) | length) == 0) and
-    (((.required_pull_request_reviews.bypass_pull_request_allowances.apps // []) | length) == 0) and
+    ((.required_pull_request_reviews.bypass_pull_request_allowances | type) == "object") and
+    (.required_pull_request_reviews.bypass_pull_request_allowances | has("users") and has("teams") and has("apps")) and
+    ((.required_pull_request_reviews.bypass_pull_request_allowances.users | type) == "array") and
+    ((.required_pull_request_reviews.bypass_pull_request_allowances.teams | type) == "array") and
+    ((.required_pull_request_reviews.bypass_pull_request_allowances.apps | type) == "array") and
+    ((.required_pull_request_reviews.bypass_pull_request_allowances.users | length) == 0) and
+    ((.required_pull_request_reviews.bypass_pull_request_allowances.teams | length) == 0) and
+    ((.required_pull_request_reviews.bypass_pull_request_allowances.apps | length) == 0) and
     (.restrictions == null) and
     (.required_linear_history.enabled == true) and
     (.allow_force_pushes.enabled == false) and
