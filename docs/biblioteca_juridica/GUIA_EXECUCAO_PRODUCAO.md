@@ -113,6 +113,41 @@ Cada documento destinado à base ativa deve passar por revisão humana e possuir
 
 A aprovação deve ocorrer pelo fluxo de governança do EJC. **Não editar o JSONB diretamente para transformar `pendente` em `aprovado`.**
 
+### 5.1 Fluxo obrigatório para documento em quarentena
+
+A quarentena e a aprovação são estados independentes. Um documento quarantined não pode ser aprovado diretamente.
+
+**Etapa A — revalidar a fonte e retirar a quarentena:**
+
+- na tela de Governança, a ação existente **“Conferir fonte agora”** grava a nova data/revisor;
+- se `quarantine_active=true`, essa mesma confirmação retira a quarentena;
+- o resultado continua obrigatoriamente `rag_status=pendente`, `requires_human_review=true` e `human_reviewed=false`.
+
+A API administrativa também aceita explicitamente:
+
+```json
+PATCH /api/rag/governanca/docs/{doc_id}
+{
+  "confirmar_fonte_agora": true,
+  "retirar_quarentena": true
+}
+```
+
+A flag `retirar_quarentena` sozinha não basta: sem confirmação contemporânea da fonte a operação é rejeitada.
+
+**Etapa B — decisão humana separada:**
+
+```json
+POST /api/rag/governanca/docs/{doc_id}/revisar
+{
+  "aprovado": true
+}
+```
+
+Para rejeitar, usar `"aprovado": false`. A rejeição pode ser registrada mesmo durante a quarentena e é preservada como decisão mais restritiva.
+
+A decisão grava no JSONB operacional do RAG `human_reviewed`, revisor, data e `rag_status`; o listener ORM não pode mais promover silenciosamente `pendente`, `bloqueado` ou `recusado` para aprovado.
+
 ## 6. Preparar um lote saneado para ingestão
 
 Somente depois de todos os documentos do lote selecionado passarem pelo dry-run e pela revisão humana documental.
@@ -144,7 +179,7 @@ docker exec -i ejc_backend \
   --graph /tmp/biblioteca_juridica_validada/grafico_relacoes.yaml
 ```
 
-Mesmo nesse modo, os registros são inseridos como `rag_status=pendente`. A ingestão não substitui a aprovação humana.
+O lote é transacional: existe um único `commit` depois que todos os documentos terminam. Qualquer falha antes disso executa rollback integral, impedindo ingestão parcial. Mesmo quando a transação termina com sucesso, os registros são inseridos como `rag_status=pendente`; ingestão não equivale a aprovação.
 
 Após o procedimento:
 
@@ -210,7 +245,7 @@ O hardening técnico pode ser considerado implantado quando:
 3. dry-run da quarentena for revisado e a quarentena aplicada;
 4. a consulta de metadados comprovar que o lote antigo não está ativo;
 5. cada documento revalidado passar pelo dry-run fail-closed;
-6. a aprovação humana ocorrer pelo fluxo de governança;
-7. uma consulta RAG controlada comprovar que documento `pendente`, `recusado`, revogado ou não validado não aparece como fonte de fundamentação.
+6. a confirmação da fonte e a aprovação humana ocorrerem como ações separadas;
+7. uma consulta RAG controlada comprovar que documento `pendente`, `recusado`, `bloqueado`, quarantined, revogado ou não validado não aparece como fonte de fundamentação.
 
 Até esse ponto, a política correta é **falhar para o lado seguro**.
