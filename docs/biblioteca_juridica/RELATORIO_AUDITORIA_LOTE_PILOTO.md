@@ -1,60 +1,92 @@
-# EJC — Relatório de Auditoria do Lote Piloto da Biblioteca Jurídica Inteligente
+# EJC — Auditoria de Segurança do Lote Piloto da Biblioteca Jurídica
 
-**Data:** 13/08/2026 · **Escopo:** 24 temas jurídicos de alta relevância para a advocacia empresarial · **Fontes:** oficiais (STJ, STF, Planalto, TCU, BCB) · **Método:** pesquisa bidirecional com verificação de existência, conferência de atributos, coerência da tese e registro de divergências.
+**Status atual:** QUARENTENA / NÃO HOMOLOGADO PARA FUNDAMENTAÇÃO AUTOMÁTICA  
+**Revisão de segurança:** 14/08/2026
 
-## 1. Quantitativos exigidos
+## 1. Conclusão executiva
 
-| Indicador | Valor |
-|---|---|
-| Documentos canônicos produzidos | 24 |
-| Temas por área | Tributário 6 · Ambiental 2 · Administrativo 2 · Licitações 3 · Empresarial 2 · Consumidor/Bancário 4 · Trabalhista Empresarial 2 · Processual Civil 3 |
-| Documentos por camada | Teses jurídicas (tese_juridica): 14 · Jurisprudência estruturada (jurisprudencia_estruturada): 10 |
-| Nível de confiança | ALTA: 23 · MEDIA: 1 (Tema 9, prescrição punitiva administrativa) · BAIXA: 0 |
-| Julgados confirmados no lote (subseções de jurisprudência verificada) | 62+ subseções com metadados completos |
-| Documentos em quarentena | 0 (nenhum dado essencial não verificável persistiu; observações pontuais registradas por tema) |
-| Duplicidade de canonical_id | 0 (verificação única por ID) |
+O relatório anterior declarava o lote piloto integralmente verificado e apto à ingestão. Essa conclusão foi revogada após auditoria do código e do corpus encontrar, no registro `JUR-CONS-000016`, URL expressamente marcada como simulada, metadados incorretos de precedente e associação equivocada de tema repetitivo.
 
-## 2. Índice canônico do lote
+A partir desta revisão, **nenhum documento do lote piloto deve adquirir autoridade operacional apenas por constar neste diretório ou por declarar `nivel_confiaca: ALTA`**. A aprovação no RAG depende do gate de governança do EJC e de validação individual de proveniência.
 
-| # | Canonical ID | Área | Tema | Camada | Confiança |
+O script `backend/scripts/ingestao_biblioteca_juridica.py` passou a operar em modo fail-closed: inconsistência de fonte, metadado, classificação ou marcador de simulação encerra a validação com código de erro e impede `--execute`.
+
+## 2. Inventário legado do lote
+
+O lote permanece com 24 documentos canônicos distribuídos nas áreas Tributário, Ambiental, Administrativo, Licitações, Empresarial, Consumidor/Bancário, Trabalhista Empresarial e Processual Civil. O inventário serve apenas para controle de arquivos; **não equivale a certificação jurídica**.
+
+| # | Canonical ID | Área | Tema resumido | Camada | Status após auditoria |
 |---|---|---|---|---|---|
-| 1 | TESE-TRIB-000001 | tributario | Monofasia de PIS/COFINS — restituição | tese_juridica | ALTA |
-| 2 | JUR-TRIB-000002 | tributario | Prescrição quinquenal tributária (RE 566.621; Tema 616) | jurisprudencia_estruturada | ALTA |
-| 3 | JUR-TRIB-000003 | tributario | Exclusão do ICMS da base de PIS/COFINS (Tema 69 STF; RE 1.293.906) | jurisprudencia_estruturada | ALTA |
-| 4 | JUR-TRIB-000004 | tributario | IPI — insumo (Tema 779 STJ) | jurisprudencia_estruturada | ALTA |
-| 5 | JUR-TRIB-000005 | tributario | Execução fiscal — SISBAJUD e limites da penhora | jurisprudencia_estruturada | ALTA |
-| 6 | JUR-TRIB-000006 | tributario | Compensação tributária (art. 170-A CTN; LC 104/2001) | jurisprudencia_estruturada | ALTA |
-| 7 | TESE-AMBI-000007 | ambiental | Multa ambiental contra pessoa jurídica (Súmula 618 STJ) | tese_juridica | ALTA |
-| 8 | TESE-AMBI-000008 | ambiental | Responsabilidade civil ambiental objetiva (art. 14 §1º Lei 6.938/81) | tese_juridica | ALTA |
-| 9 | TESE-ADMI-000009 | administrativo | Sanções administrativas — proporcionalidade (Lei 9.784/99) | tese_juridica | ALTA |
-| 10 | JUR-ADMI-000010 | administrativo | Prescrição da pretensão punitiva administrativa (Tema 953 STJ) | jurisprudencia_estruturada | MEDIA |
-| 11 | TESE-LICI-000011 | licitacoes | Habilitação jurídica e qualificação técnica (Lei 14.133/21) | tese_juridica | ALTA |
-| 12 | TESE-LICI-000012 | licitacoes | Dispensa de licitação e fracionamento (art. 75) | tese_juridica | ALTA |
-| 13 | TESE-LICI-000013 | licitacoes | Pregão eletrônico — julgamento e desclassificação | tese_juridica | ALTA |
-| 14 | TESE-EMPR-000014 | empresarial | Desconsideração da personalidade jurídica (Tema 1.210 STJ) | tese_juridica | ALTA |
-| 15 | JUR-EMPR-000015 | empresarial | Recuperação judicial — stay period e créditos tributários | jurisprudencia_estruturada | ALTA |
-| 16 | JUR-CONS-000016 | consumidor_bancario | Fraude bancária — fortuito interno (Tema 1046 STJ; Súmula 479) | jurisprudencia_estruturada | ALTA |
-| 17 | JUR-CONS-000017 | consumidor_bancario | Fraude PIX e MED (Res. BCB 1/2021) | jurisprudencia_estruturada | ALTA |
-| 18 | JUR-CONS-000018 | consumidor_bancario | Negativação indevida — dano moral in re ipsa | jurisprudencia_estruturada | ALTA |
-| 19 | JUR-CONS-000019 | consumidor_bancario | Revisional — taxa média (REsp 1.061.530; Súmula 541 STF) | jurisprudencia_estruturada | ALTA |
-| 20 | JUR-TRAB-000020 | trabalhista_empresarial | Responsabilidade subsidiária do tomador (Tema 725 STF) | jurisprudencia_estruturada | ALTA |
-| 21 | TESE-TRAB-000021 | trabalhista_empresarial | Prescrição trabalhista (Tema 290 STF; Lei 14.457/2022) | tese_juridica | ALTA |
-| 22 | TESE-PROC-000022 | processual_civil | Tutela de urgência e de evidência (arts. 300 e 311 CPC) | tese_juridica | ALTA |
-| 23 | TESE-PROC-000023 | processual_civil | Intimações eletrônicas e prazos (art. 272 CPC; Lei 11.419/2006) | tese_juridica | ALTA |
-| 24 | JUR-PROC-000024 | processual_civil | Honorários advocatícios (arts. 85–87 CPC) | jurisprudencia_estruturada | ALTA |
+| 1 | TESE-TRIB-000001 | tributario | Monofasia PIS/COFINS | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 2 | JUR-TRIB-000002 | tributario | Prescrição tributária | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 3 | JUR-TRIB-000003 | tributario | ICMS na base PIS/COFINS | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 4 | JUR-TRIB-000004 | tributario | IPI / conceito de insumo | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 5 | JUR-TRIB-000005 | tributario | Execução fiscal / SISBAJUD | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 6 | JUR-TRIB-000006 | tributario | Compensação tributária | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 7 | TESE-AMBI-000007 | ambiental | Multa ambiental | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 8 | TESE-AMBI-000008 | ambiental | Responsabilidade civil ambiental | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 9 | TESE-ADMI-000009 | administrativo | Sanções administrativas | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 10 | JUR-ADMI-000010 | administrativo | Prescrição punitiva administrativa | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 11 | TESE-LICI-000011 | licitacoes | Habilitação e qualificação técnica | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 12 | TESE-LICI-000012 | licitacoes | Dispensa e fracionamento | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 13 | TESE-LICI-000013 | licitacoes | Pregão eletrônico | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 14 | TESE-EMPR-000014 | empresarial | Desconsideração da personalidade jurídica | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 15 | JUR-EMPR-000015 | empresarial | Recuperação judicial | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 16 | JUR-CONS-000016 | consumidor_bancario | Fraude bancária / fortuito interno | jurisprudencia_estruturada | CORRIGIDO; AINDA SUJEITO À CURADORIA RAG |
+| 17 | JUR-CONS-000017 | consumidor_bancario | Fraude PIX / MED | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 18 | JUR-CONS-000018 | consumidor_bancario | Negativação indevida | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 19 | JUR-CONS-000019 | consumidor_bancario | Revisional bancária | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 20 | JUR-TRAB-000020 | trabalhista_empresarial | Responsabilidade do tomador | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
+| 21 | TESE-TRAB-000021 | trabalhista_empresarial | Prescrição trabalhista | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 22 | TESE-PROC-000022 | processual_civil | Tutelas provisórias | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 23 | TESE-PROC-000023 | processual_civil | Intimações e prazos | tese_juridica | PENDENTE DE REVALIDAÇÃO |
+| 24 | JUR-PROC-000024 | processual_civil | Honorários advocatícios | jurisprudencia_estruturada | PENDENTE DE REVALIDAÇÃO |
 
-## 3. Regras de auditoria aplicadas
+## 3. Correção confirmada — JUR-CONS-000016
 
-Cada documento do lote foi produzido por pesquisa bidirecional com quatro verificações obrigatórias: **existência** (número de processo, tribunal, relator e resultado conferidos em fonte oficial), **coerência da tese** (tese extraída da fundamentação e do dispositivo, não apenas da ementa), **divergência registrada** (entendimento favorável e contrário mapeados em tabela própria) e **rastreabilidade** (URL oficial, fonte e data de verificação em cada julgado). Dados que não puderam ser confirmados foram marcados como não confirmados na seção "Divergências e Problemas" do respectivo documento, e nenhum dado essencial não verificável persistiu no lote.
+A versão anterior associava fraude bancária a tema repetitivo incorreto e continha links marcados como simulados. O registro foi reconstruído com base na fonte oficial do STJ.
 
-## 4. Observações de qualidade
+Referência operacional adotada:
 
-O Tema 9 (prescrição da pretensão punitiva administrativa, Tema 953 STJ) recebeu confiança MÉDIA em razão de divergências encontradas entre fontes secundárias sobre os desdobramentos supervenientes do tema, que exigem conferência final no inteiro teor oficial antes do uso em peça de alto risco. Nos Temas 7 e 8 (ambiental), alguns julgados foram confirmados por ementas oficiais reproduzidas em base doutrinária idônea (Dizer o Direito), com recomendação de conferência do inteiro teor na base do STJ. No Tema 14 (empresarial), foi corrigida a designação "Tema 184 STJ": o repetitivo vigente sobre desconsideração da personalidade jurídica é o **Tema 1.210 STJ** (REsp 1.873.187 e REsp 1.873.811, Segunda Seção, 07/05/2026), conforme notícia oficial do próprio STJ de 11/06/2026. No Tema 21 (trabalhista), o regime atual adotado segue a Lei 14.457/2022 (prescrição semestral de crédito trabalhista não exercido na Justiça do Trabalho), que substituiu as propostas anteriores.
+- **Tema Repetitivo 466/STJ**;
+- REsp 1.197.929/PR e REsp 1.199.782/PR;
+- Segunda Seção;
+- Relator Ministro Luis Felipe Salomão;
+- julgamento em 24/08/2011;
+- Súmula 479/STJ como consolidação sumular da tese.
 
-## 5. Integração com o RAG do EJC
+O arquivo correspondente contém as URLs oficiais utilizadas e a data da última verificação.
 
-Os 24 documentos seguem o padrão canônico de metadados definido no relatório de diagnóstico (tipo_camada, canonical_id, origem_conteudo, autoridade_juridica, authority_level, score_autoridade, area_juridica, nivel_confiaca, data_pesquisa) e estão prontos para ingestão pelo script `backend/scripts/ingestao_biblioteca_juridica.py`, que utiliza o upsert existente do EJC (`upsert_documento`), grava os metadados no JSONB `extra` e mapeia as novas categorias `tese_juridica`, `bloco_argumentativo` e `pedido_juridico`. O grafo de relações (arestras fundamentado_por, cita, diverge_de, complementar_a) está versionado em `docs/biblioteca_juridica/grafico_relacoes.yaml`.
+## 4. Regras obrigatórias para retirada da quarentena
 
-## 6. Próximos lotes sugeridos
+Cada documento deverá, individualmente:
 
-Para completar a cobertura das áreas prioritárias, os próximos lotes podem aprofundar blocos argumentativos (ARG) e biblioteca de pedidos (PED) a partir das teses deste piloto, expandir os temas ambientais e trabalhistas (que têm apenas 2 registros cada) e incorporar a camada de modelos de peças, aproveitando a categoria RAG `modelo_documento_juridico` já existente no EJC.
+1. possuir front-matter canônico e `canonical_id` único;
+2. declarar origem e autoridade compatíveis com sua natureza;
+3. não conter marcador de simulação, exemplo fictício ou processo inventado;
+4. quando jurisprudencial, identificar tribunal e referência verificável;
+5. quando de confiança ALTA, possuir fonte oficial rastreável;
+6. ter data de verificação;
+7. ser ingerido inicialmente como `rag_status: pendente`;
+8. passar por revisão humana antes de receber `rag_status: aprovado`;
+9. permanecer sujeito aos gates de vigência e de citação do EJC.
+
+## 5. Mudança de política
+
+Fica revogada a regra implícita de que um lote produzido por pesquisa ou IA pode ingressar na base ativa por autodeclaração de confiança.
+
+A hierarquia operacional passa a ser:
+
+**fonte oficial validada → precedente validado → tese derivada → bloco argumentativo → pedido → modelo → texto gerado por IA.**
+
+Conteúdo derivado não cria autoridade jurídica própria.
+
+## 6. Estado do grafo
+
+`grafico_relacoes.yaml` permanece um artefato documental. Relações que dependam de documentos ainda em quarentena não constituem prova jurídica e não devem elevar score de autoridade no retrieval até que ambos os nós relacionados estejam aprovados.
+
+## 7. Critério para declarar o lote homologado
+
+O lote somente poderá voltar a ser descrito como “homologado” quando a validação fail-closed terminar sem erro e todos os documentos destinados à fundamentação tiverem aprovação humana registrada no RAG.
+
+Até lá, a descrição correta é: **corpus de trabalho em processo de revalidação**.
