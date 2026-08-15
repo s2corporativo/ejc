@@ -71,7 +71,7 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     script = _script_directory()
     # Consolidado em 2026-08-15 (PR #1149): cadeia linearizada até
     # 143_signature_documento_visualizado (coluna aditiva em signature_requests).
-    assert script.get_heads() == ["143_signature_documento_visualizado"]
+    assert script.get_heads() == ["144_alembic_version_varchar128"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (
@@ -85,6 +85,10 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     assert (
         script.get_revision("143_signature_documento_visualizado").down_revision
         == "142_document_hash_rescan"
+    )
+    assert (
+        script.get_revision("144_alembic_version_varchar128").down_revision
+        == "143_signature_documento_visualizado"
     )
     assert (
         script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision
