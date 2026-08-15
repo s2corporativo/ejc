@@ -98,6 +98,34 @@ def test_ci_usa_postgres_efemero_isolado_com_limpeza():
     assert "pgvector/pgvector:pg16" in ci
 
 
+FORK_GUARD = (
+    "if: github.event_name != 'pull_request' || "
+    "github.event.pull_request.head.repo.full_name == github.repository"
+)
+
+JOBS_VALIDACAO = {
+    "ci.yml": ("  db-validation:\n", "  eval-smoke:\n", "  frontend-build:\n"),
+    "ejc-release-gate.yml": ("  p0-guard:\n",),
+    "governanca.yml": ("  governanca:\n",),
+    "continuity-ui-gates.yml": ("  backup-restore-drill:\n", "  frontend-extra-gates:\n"),
+    "backup-gdrive-activation.yml": ("  validar:\n",),
+}
+
+
+def test_jobs_de_validacao_tem_trava_de_fork():
+    """Controle compensatório 3, agora enforcado em código (não só política):
+    em evento pull_request, o job só executa quando a branch vem do próprio
+    repositório — código de fork externo nunca alcança o runner self-hosted
+    de produção (parecer security-auditor de 15/08/2026, achado ALTO-1)."""
+    for nome, jobs in JOBS_VALIDACAO.items():
+        texto = _read(nome)
+        for job in jobs:
+            bloco = _job_block(texto, job)
+            assert FORK_GUARD in bloco[:600], (
+                f"{nome} job {job.strip()} sem trava de fork no runner de produção"
+            )
+
+
 def test_jobs_manuais_que_alcancam_producao_exigem_main():
     backup = _read("backup-gdrive-activation.yml")
     rag = _read("rag-production-activation.yml")

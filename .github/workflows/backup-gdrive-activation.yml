@@ -31,8 +31,13 @@ concurrency:
 
 jobs:
   validar:
+    # Trava de fork: em evento pull_request, só executa quando a branch vem
+    # deste mesmo repositório — código de fork externo nunca alcança o runner
+    # self-hosted de produção.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Validar backup, migration e rollback
-    # Nunca executar conteúdo de PR no host que também hospeda produção.
+    # Runner self-hosted por decisão do titular (15/08/2026, cota gratuita);
+    # trava de fork abaixo impede conteúdo de fork externo neste host.
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
     steps:

@@ -29,6 +29,10 @@ concurrency:
 
 jobs:
   db-validation:
+    # Trava de fork: em evento pull_request, só executa quando a branch vem
+    # deste mesmo repositório — código de fork externo nunca alcança o runner
+    # self-hosted de produção.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 45
@@ -182,6 +186,10 @@ jobs:
         if: always()
         run: docker rm -f "$CI_PG_CONTAINER" >/dev/null 2>&1 || true
   eval-smoke:
+    # Trava de fork: em evento pull_request, só executa quando a branch vem
+    # deste mesmo repositório — código de fork externo nunca alcança o runner
+    # self-hosted de produção.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Eval — smoke dos gold sets (offline, bloqueante)
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
@@ -210,6 +218,10 @@ jobs:
         run: python -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0
 
   frontend-build:
+    # Trava de fork: em evento pull_request, só executa quando a branch vem
+    # deste mesmo repositório — código de fork externo nunca alcança o runner
+    # self-hosted de produção.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Frontend — testes + typecheck + build
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 40

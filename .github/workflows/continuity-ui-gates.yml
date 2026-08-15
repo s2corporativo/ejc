@@ -15,6 +15,10 @@ concurrency:
 
 jobs:
   backup-restore-drill:
+    # Trava de fork: em evento pull_request, só executa quando a branch vem
+    # deste mesmo repositório — código de fork externo nunca alcança o runner
+    # self-hosted de produção.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Continuidade — backup cifrado + restore em banco vazio
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 25
@@ -94,6 +98,10 @@ jobs:
           retention-days: 14
 
   frontend-extra-gates:
+    # Trava de fork: em evento pull_request, só executa quando a branch vem
+    # deste mesmo repositório — código de fork externo nunca alcança o runner
+    # self-hosted de produção.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Frontend — ESLint + browser responsivo
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 25

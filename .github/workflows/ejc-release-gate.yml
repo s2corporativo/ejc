@@ -3,8 +3,8 @@ name: EJC Release Gate
 # Gate P0 no runner self-hosted `ejc-vps` (cota gratuita — decisao do titular 15/08/2026).
 # Só executa verificações estáticas e testes determinísticos offline; nunca
 # altera o ambiente de produção. Impede conflitos, segredos, CORS inseguro,
-# backup em claro e rollback não comprovado. Código de PR nunca executa
-# no runner self-hosted `ejc-vps`.
+# backup em claro e rollback não comprovado. Trava de fork no job: código de
+# fork externo não executa aqui.
 on:
   pull_request:
   push:
@@ -20,6 +20,10 @@ concurrency:
 
 jobs:
   p0-guard:
+    # Trava de fork: em evento pull_request, só executa quando a branch vem
+    # deste mesmo repositório — código de fork externo nunca alcança o runner
+    # self-hosted de produção.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: P0 guard — conflitos e segredos
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30

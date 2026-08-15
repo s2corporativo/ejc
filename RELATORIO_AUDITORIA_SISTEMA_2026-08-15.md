@@ -135,6 +135,20 @@ correção não é apagar, é etiquetar. Com essa autorização, esta sessão ap
 3. Dry-run do script de ingestão validado sobre os arquivos reclassificados (23×
    `modelo_documento_juridico`); testes-meta de workflows (37) e os 10 novos passam.
 
+**Parecer de segurança sobre a reversão de runner** (rodada dedicada do `security-auditor`
+sobre o diff de CI): os controles de YAML são reais (Postgres efêmero verificado, nenhum
+`secrets.*` referenciado por job de validação, `permissions: contents: read` em todos), e a
+trava de fork — que era só política — foi **fechada em código nesta sessão**: todos os 8 jobs
+de validação agora têm `if` que bloqueia execução de PR vindo de fork, guardado por teste novo
+no contrato. **Permanece um risco residual de host que só o titular resolve na VPS**: o runner
+`ghrunner` está no grupo `docker` e tem `sudo NOPASSWD:ALL`
+(`scripts/setup-selfhosted-runner.sh:109-114`) — com isso, um step de PR malicioso poderia
+alcançar containers de produção ou ler `/opt/ejc/.env` (chaves PII/JWT). Mitigação recomendada:
+remover `NOPASSWD:ALL` (os jobs de validação não usam `sudo`), avaliar tirar o runner do grupo
+`docker` (exige daemon dedicado/rootless para o Postgres efêmero) e conferir em Settings →
+Actions → General que "Fork pull request workflows" exige aprovação. Enquanto isso não for
+feito, a operação na cota gratuita implica aceite explícito desse risco.
+
 **Pendências que continuam com o titular:** reativar na interface do GitHub os workflows
 `disabled_manually` (`governanca.yml`, `auto-integracao.yml`, `continuity-ui-gates.yml` etc. —
 API desta sessão não reativa); confirmar que o runner `ejc-vps` está ativo na VPS
