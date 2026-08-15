@@ -78,9 +78,27 @@ Viola a regra 5 ("toda regra jurídica precisa de fonte oficial, vigência e tes
 
 ## 7. Saúde do código (testes, lint, build)
 
-_Resultados da rodada desta auditoria (ambiente da sessão, não CI):_
+_Resultados da rodada desta auditoria (ambiente da sessão em `180fa77`, não CI; ambiente sem Postgres → 265 skips `*_dblevel` por design):_
 
-<!-- QA_RESULTS -->
+| Verificação | Resultado |
+|---|---|
+| pytest backend | **5 failed** / 5.563 passed / 265 skipped (+79 subtests) — e **1 erro de coleta** (abaixo) |
+| ruff (0.6.9, config do repo) | 0 violações |
+| `npm ci` | **FALHA** — lockfile dessincronizado |
+| `npm run lint` (tsc --noEmit) | 0 erros |
+| vitest | **3 failed** / 558 passed (561) |
+| `npm run build` (tsc + vite) | OK (7,46s) |
+
+**Detalhe das falhas (todas determinísticas, de código — não de ambiente):**
+
+1. **Erro de coleta que quebra `pytest` local sem banco** — `backend/tests/test_document_rescan_integracao_dblevel.py:23` usa `pytest.skip(...)` a nível de módulo sem `allow_module_level=True`; com o `pytest==9.0.3` pinado, a suíte inteira morre em `Interrupted: 1 error during collection`. Os outros 70 arquivos `*_dblevel` usam `pytest.mark.skipif` (padrão correto); só este destoa. O CI não enxerga porque define `RUN_DB_TESTS=1`. *(Entrou com a fiação do rescan SHA-256, #1144.)*
+2. **2 falhas de recesso/prazo administrativo** — `tests/test_deadlines_recesso_art220.py`: prazo administrativo calcula `2025-12-30` onde o teste espera `2026-01-14`. A área é exatamente a do commit mais recente da `main` (`180fa77`, PRZ-03/#1146, "recesso não afeta prazos não judiciais") — regressão ou teste desatualizado que o CI morto deixou passar.
+3. **Drift de política de conteúdo** — `tests/test_document_content_policy.py:58`: extensão `.md` existe só em `routers/documents.py` (`EXTENSOES_PERMITIDAS`), fora da política canônica — paridade quebrada.
+4. **2 falhas de registro de rotas** — `tests/test_rotas_registro_explicito.py`: `POST /api/teses/motor/async` e `GET /api/teses/motor/async/{task_id}` (motor de teses assíncrono, #1132) não foram declaradas em `ADICOES_INTENCIONAIS`; contagem 851 ≠ 849.
+5. **Lockfile do frontend dessincronizado** — `40723ce` (#1137) alterou `frontend/package.json` para `"globals": "^17.9.0"` **sem regenerar** `package-lock.json` (preso em 17.7.0). `npm ci` falha → **o job `frontend-build` do CI quebraria aqui assim que o CI voltar**.
+6. **3 falhas de vitest** — `src/stores/cadastroManual.test.ts:130` (mensagem de 422 agora prefixa o campo: `"area: Área inválida"` vs `"Área inválida"` esperado) e `src/pages/CasoDetalhe/TabDocumentos.contexto.test.tsx` (2 testes: botões "Solicitar ao cliente" e "Solicitar assinatura" não existem mais no DOM do componente atual).
+
+**Leitura conjunta:** as 8-9 quebras acima são recentes e coincidem com a janela em que o CI parou de rodar (12–15/08) — é o custo direto do achado A3: sem gates, regressões entram na `main` sem serem vistas. Nenhuma foi corrigida nesta auditoria (fora de escopo; viram Issues próprias).
 
 ## 8. Recomendações priorizadas
 
