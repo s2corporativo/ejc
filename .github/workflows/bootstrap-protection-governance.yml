@@ -1,27 +1,40 @@
 name: Bootstrap protection governance
 
 on:
-  pull_request:
-    paths:
-      - 'scripts/governanca/branch-protection-bootstrap.sh'
-      - '.github/workflows/bootstrap-protection-governance.yml'
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   security-review-required:
     name: Bootstrap protection — security auditor
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Exigir revisão de segurança registrada
+      - name: Validar revisão de segurança a partir de workflow confiável
         env:
           CORPO: ${{ github.event.pull_request.body }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
-          printf '%s' "$CORPO" | grep -qi 'security-auditor: executado' || {
-            echo "::error::alteração do bootstrap de proteção exige security-auditor: executado"
-            exit 1
-          }
-          echo "security-auditor registrado para mudança no bootstrap de proteção."
+          set -euo pipefail
+          ALTERADOS="$RUNNER_TEMP/alterados-bootstrap.txt"
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files?per_page=100" \
+            --jq '.[].filename' > "$ALTERADOS"
+
+          if grep -Fxq 'scripts/governanca/branch-protection-bootstrap.sh' "$ALTERADOS" \
+             || grep -Fxq '.github/workflows/bootstrap-protection-governance.yml' "$ALTERADOS"; then
+            printf '%s' "$CORPO" | grep -qi 'security-auditor: executado' || {
+              echo "::error::alteração do bootstrap de proteção exige security-auditor: executado"
+              exit 1
+            }
+            echo "security-auditor registrado para mudança no bootstrap de proteção."
+          else
+            echo "PR não altera o bootstrap de proteção; gate satisfeito sem executar código do PR."
+          fi
