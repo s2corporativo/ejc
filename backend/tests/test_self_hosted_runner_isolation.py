@@ -1,42 +1,14 @@
-"""Contrato de runners do CI (revisado em 15/08/2026 por decisão do titular).
+"""Contrato: código de PR/branch não confiável nunca executa na VPS de produção.
 
-Histórico: até 13/08/2026 o contrato exigia `ubuntu-latest` para validação de
-PR ("código de PR nunca executa na VPS"). A cota gratuita GitHub-hosted do
-repositório esgotou (spending limit $0) e TODO o CI ficou inoperante entre
-12 e 15/08 (`startup_failure`, 0 jobs) — sem gates, regressões entraram na
-main sem serem vistas. O titular decidiu operar 100% na cota gratuita, e o
-único executor gratuito e ilimitado disponível é o runner self-hosted
-`ejc-vps` (Issue #1147 / relatório de auditoria de 15/08).
-
-Contrato vigente:
-1. Jobs de validação de PR executam em `[self-hosted, ejc-vps]`.
-2. Controles compensatórios obrigatórios (guardados por estes testes):
-   a. nenhum job acessível por PR usa `environment: production` — código de
-      PR não alcança os segredos do ambiente de produção;
-   b. o banco dos testes do CI é um Postgres efêmero em Docker na porta
-      dedicada 55432, com credenciais próprias e limpeza ao final — nunca o
-      `ejc_db` de produção;
-   c. jobs manuais que alcançam produção continuam restritos a main
-      (`workflow_dispatch`/schedule) com `environment: production`.
-3. O repositório não aceita fork externo: todo PR nasce de agente da própria
-   conta. Se isso mudar (colaborador externo/fork), este contrato precisa ser
-   revisto ANTES — código de terceiro não pode executar na VPS.
-"""
+Executor elegível para validação de PR: `ubuntu-latest` (cota gratuita do
+GitHub, spending limit $0) — nunca `[self-hosted, ejc-vps]`, que hospeda
+produção. Jobs manuais que tocam produção continuam exigindo main e
+`environment: production` no host produtivo."""
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WF = ROOT / ".github" / "workflows"
-
-RUNNER_PROD = "runs-on: [self-hosted, ejc-vps]"
-
-# Workflows cujos jobs de validação (PR/push) devem usar o runner gratuito.
-WORKFLOWS_VALIDACAO = (
-    "ci.yml",
-    "ejc-release-gate.yml",
-    "governanca.yml",
-    "continuity-ui-gates.yml",
-)
 
 
 def _read(name: str) -> str:
@@ -50,80 +22,65 @@ def _job_block(texto: str, inicio: str, fim: str | None = None) -> str:
     return bloco
 
 
-def test_validacao_roda_no_runner_self_hosted_da_cota_gratuita():
-    """Todos os jobs de validação usam o runner self-hosted; nenhum job de
-    workflow de validação depende de executor GitHub-hosted pago/limitado."""
-    for nome in WORKFLOWS_VALIDACAO:
-        texto = _read(nome)
-        assert RUNNER_PROD in texto, f"{nome} sem o runner da cota gratuita"
-        assert "runs-on: ubuntu-latest" not in texto, (
-            f"{nome} ainda depende de executor GitHub-hosted (cota esgotada "
-            "deixa o workflow em startup_failure)"
-        )
-
-
-def test_job_de_pr_do_backup_usa_runner_gratuito_sem_environment_producao():
-    backup_validar = _job_block(
+def test_validacao_de_pr_do_backup_usa_runner_nao_produtivo():
+    """O job `validar` de PR do backup-gdrive deve rodar em executor não
+    produtivo (`ubuntu-latest`), isolado da VPS de produção."""
+    backup = _job_block(
         _read("backup-gdrive-activation.yml"),
         "  validar:\n",
         "  comprovar-producao:\n",
     )
-    assert RUNNER_PROD in backup_validar
-    assert "environment: production" not in backup_validar
+    assert "runs-on: ubuntu-latest" in backup
+    assert "self-hosted" not in backup
+    # O job de produção (comprovar-producao) permanece no host produtivo,
+    # gated por workflow_dispatch em main com environment production.
     bloco_prod = _job_block(
         _read("backup-gdrive-activation.yml"),
         "  comprovar-producao:\n",
     )
-    assert RUNNER_PROD in bloco_prod
+    assert "runs-on: [self-hosted, ejc-vps]" in bloco_prod
     assert "environment: production" in bloco_prod
 
 
-def test_jobs_de_validacao_nao_usam_environment_de_producao():
-    """Controle compensatório 2a: código de PR não recebe os segredos do
-    environment de produção, mesmo executando no host produtivo."""
-    for nome in WORKFLOWS_VALIDACAO:
-        assert "environment: production" not in _read(nome), (
-            f"{nome} expõe environment de produção a job de validação"
-        )
-
-
-def test_ci_usa_postgres_efemero_isolado_com_limpeza():
-    """Controle compensatório 2b: o CI nunca toca o ejc_db de produção —
-    Postgres efêmero em container próprio, porta dedicada e remoção ao final."""
-    ci = _read("ci.yml")
-    assert 'CI_PG_CONTAINER: ejc-ci-pg' in ci
-    assert 'CI_PG_PORT: "55432"' in ci
-    assert "localhost:55432/ejc_db" in ci
-    assert 'docker rm -f "$CI_PG_CONTAINER"' in ci
-    assert "pgvector/pgvector:pg16" in ci
-
-
-FORK_GUARD = (
-    "if: github.event_name != 'pull_request' || "
-    "github.event.pull_request.head.repo.full_name == github.repository"
-)
-
-JOBS_VALIDACAO = {
-    "ci.yml": ("  db-validation:\n", "  eval-smoke:\n", "  frontend-build:\n"),
-    "ejc-release-gate.yml": ("  p0-guard:\n",),
-    "governanca.yml": ("  governanca:\n",),
-    "continuity-ui-gates.yml": ("  backup-restore-drill:\n", "  frontend-extra-gates:\n"),
-    "backup-gdrive-activation.yml": ("  validar:\n",),
-}
-
-
-def test_jobs_de_validacao_tem_trava_de_fork():
-    """Controle compensatório 3, agora enforcado em código (não só política):
-    em evento pull_request, o job só executa quando a branch vem do próprio
-    repositório — código de fork externo nunca alcança o runner self-hosted
-    de produção (parecer security-auditor de 15/08/2026, achado ALTO-1)."""
-    for nome, jobs in JOBS_VALIDACAO.items():
+def test_workflows_de_validacao_de_pr_nao_rodam_no_host_de_producao():
+    """Nenhum workflow que valida PR pode usar o runner de produção
+    `[self-hosted, ejc-vps]` em job acessível por Pull Request. Workflows com
+    bloco de produção manual (comprovar-producao/ativar-producao/prova)
+    permanecem no host produtivo, mas esses blocos são gated por
+    workflow_dispatch em main com environment production (testado em separado).
+    Por isso o bloco de produção é excluído do `fim` aqui apenas quando o
+    arquivo contém um job manual de produção; se o restante do arquivo
+    (parte que dispara em PR) ainda contiver o runner de produção, o teste
+    reprova."""
+    PROD_JOBS = ("  comprovar-producao:\n", "  ativar-producao:\n", "  prova:\n")
+    for nome in (
+        "ci.yml",
+        "ejc-release-gate.yml",
+        "backup-gdrive-activation.yml",
+        "architecture-refactor-wave1.yml",
+        "architecture-refactor-wave2.yml",
+    ):
         texto = _read(nome)
-        for job in jobs:
-            bloco = _job_block(texto, job)
-            assert FORK_GUARD in bloco[:600], (
-                f"{nome} job {job.strip()} sem trava de fork no runner de produção"
-            )
+        # Remover o bloco de produção manual (gated por workflow_dispatch em
+        # main + environment production — testado em separado) antes de
+        # verificar que a parte de PR está limpa. O bloco só é removido quando
+        # o nome do job aparece como chave de job sob "jobs:" (linha iniciando
+        # com 2 espaços após "jobs:"), nunca dentro de listas de paths.
+        parte_pr = texto
+        idx_jobs = texto.find("jobs:\n")
+        if idx_jobs != -1:
+            corpo = texto[idx_jobs:]
+            for prod_job in PROD_JOBS:
+                prod_idx = corpo.find(prod_job)
+                if prod_idx == 0 or (prod_idx != -1 and corpo[prod_idx - 1] == "\n"):
+                    parte_pr = texto[: idx_jobs + prod_idx]
+                    break
+        assert "runs-on: [self-hosted, ejc-vps]" not in parte_pr, (
+            f"{nome} expõe job de PR no runner de produção"
+        )
+        assert "runs-on: ubuntu-latest" in texto, (
+            f"{nome} sem executor elegível ubuntu-latest"
+        )
 
 
 def test_jobs_manuais_que_alcancam_producao_exigem_main():
@@ -158,12 +115,12 @@ def test_workflows_de_producao_fazem_checkout_da_main_ou_sha_aprovado():
 
 def test_operacoes_manuais_sensiveis_usam_environment_de_producao():
     """Operações que alcançam produção (backup, RAG, continuidade) permanecem
-    restritas ao host produtivo com `environment: production` — parte do
-    contrato preservada sem alteração."""
+    restritas ao host produtivo com `environment: production` — parte segura do
+    contrato que este teste protege contra enfraquecimento."""
     backup = _job_block(_read("backup-gdrive-activation.yml"), "  comprovar-producao:\n")
     rag = _job_block(_read("rag-production-activation.yml"), "  ativar-producao:\n")
     continuidade = _job_block(_read("producao-prova-continuidade.yml"), "  prova:\n")
 
     for bloco in (backup, rag, continuidade):
-        assert RUNNER_PROD in bloco
+        assert "runs-on: [self-hosted, ejc-vps]" in bloco
         assert "environment: production" in bloco

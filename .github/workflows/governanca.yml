@@ -20,12 +20,8 @@ concurrency:
 
 jobs:
   governanca:
-    # Trava de fork: em evento pull_request, só executa quando a branch vem
-    # deste mesmo repositório — código de fork externo nunca alcança o runner
-    # self-hosted de produção.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Governança — travas de PR
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7

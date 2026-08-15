@@ -2,8 +2,7 @@
 #
 # Em Pull Request, executa somente testes determinísticos offline (validação de
 # sintaxe, wrapper cifrado e migração/rollback) em executor não produtivo
-# runner self-hosted `ejc-vps` (cota gratuita — decisao do titular 15/08/2026);
-# o job de PR nao usa `environment: production`.
+# `ubuntu-latest` — código de PR nunca executa na VPS de produção (`ejc-vps`).
 # A prova integral cifrada contra o Google Drive só ocorre por execução manual
 # na main (job `comprovar-producao`).
 name: Backup Google Drive — validar e comprovar
@@ -31,14 +30,9 @@ concurrency:
 
 jobs:
   validar:
-    # Trava de fork: em evento pull_request, só executa quando a branch vem
-    # deste mesmo repositório — código de fork externo nunca alcança o runner
-    # self-hosted de produção.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Validar backup, migration e rollback
-    # Runner self-hosted por decisão do titular (15/08/2026, cota gratuita);
-    # trava de fork abaixo impede conteúdo de fork externo neste host.
-    runs-on: [self-hosted, ejc-vps]
+    # Nunca executar conteúdo de PR no host que também hospeda produção.
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7

@@ -117,14 +117,20 @@ cota gratuita (o consumo pago estava alto — confirma a causa do achado A3); **
 documentos do lote foram encomendados ao Manus **como simulações para servir de modelo** — a
 correção não é apagar, é etiquetar. Com essa autorização, esta sessão aplicou no mesmo PR:
 
-1. **CI de volta ao runner self-hosted `ejc-vps`** (reversão do #1119, restaurando a
-   abordagem do `9c5113d`): `ci.yml` (3 jobs), `ejc-release-gate.yml`, `governanca.yml`,
-   `continuity-ui-gates.yml` e o job `validar` do `backup-gdrive-activation.yml`.
-   Controles compensatórios mantidos/garantidos: Postgres efêmero isolado (porta 55432,
-   credenciais próprias, limpeza ao final), nenhum job de PR usa `environment: production`,
-   e o repositório não aceita fork externo. O contrato foi **reescrito, não removido**:
-   `backend/tests/test_self_hosted_runner_isolation.py` agora guarda a nova política e os
-   controles compensatórios (7 testes).
+1. **CI na cota gratuita — proposta revertida após BLOCKER do papel revisor.** A migração
+   dos jobs de validação para o runner `ejc-vps` chegou a ser implementada (commits
+   `d5efb33`/`0b335a9`, com trava de fork, Postgres efêmero e contrato reescrito), mas o
+   revisor bloqueou citando a **contingência canônica #998/#1004** (`docs/CI_SEM_GITHUB.md`,
+   integrada em 14/08): *"Produção não participa da CI de PR"* — e o parecer do
+   security-auditor já apontava o risco de host (runner com grupo `docker` +
+   `sudo NOPASSWD:ALL`). As mudanças de CI foram **removidas deste PR** (workflows e
+   teste-contrato restaurados ao estado da `main`). O objetivo do titular (custo zero no
+   GitHub) **permanece atendível pelo caminho canônico já construído**: o fallback
+   `EJC Local Full Gate` valida o SHA exato em máquina Linux **não produtiva**
+   (`scripts/ci-local.sh` / `scripts/ci-fallback.sh`, Check Run por GitHub App), sem gastar
+   minutos GitHub-hosted e sem código de PR na VPS. Decisão pendente do titular: provisionar
+   o host não produtivo do fallback (qualquer VM/máquina Linux fora da produção) **ou**
+   alterar formalmente a política canônica antes de reapresentar a migração para o `ejc-vps`.
 2. **Reclassificação de 23/24 documentos do lote como modelo simulado**: front-matter
    corrigido (`origem_conteudo: modelo_simulado`, `gerado_por_IA: true`,
    `tipo_camada: modelo_peca` → categoria `modelo_documento_juridico`, fora do circuito de
@@ -135,19 +141,15 @@ correção não é apagar, é etiquetar. Com essa autorização, esta sessão ap
 3. Dry-run do script de ingestão validado sobre os arquivos reclassificados (23×
    `modelo_documento_juridico`); testes-meta de workflows (37) e os 10 novos passam.
 
-**Parecer de segurança sobre a reversão de runner** (rodada dedicada do `security-auditor`
-sobre o diff de CI): os controles de YAML são reais (Postgres efêmero verificado, nenhum
-`secrets.*` referenciado por job de validação, `permissions: contents: read` em todos), e a
-trava de fork — que era só política — foi **fechada em código nesta sessão**: todos os 8 jobs
-de validação agora têm `if` que bloqueia execução de PR vindo de fork, guardado por teste novo
-no contrato. **Permanece um risco residual de host que só o titular resolve na VPS**: o runner
-`ghrunner` está no grupo `docker` e tem `sudo NOPASSWD:ALL`
-(`scripts/setup-selfhosted-runner.sh:109-114`) — com isso, um step de PR malicioso poderia
-alcançar containers de produção ou ler `/opt/ejc/.env` (chaves PII/JWT). Mitigação recomendada:
-remover `NOPASSWD:ALL` (os jobs de validação não usam `sudo`), avaliar tirar o runner do grupo
-`docker` (exige daemon dedicado/rootless para o Postgres efêmero) e conferir em Settings →
-Actions → General que "Fork pull request workflows" exige aprovação. Enquanto isso não for
-feito, a operação na cota gratuita implica aceite explícito desse risco.
+**Parecer de segurança que fundamentou a reversão** (rodada dedicada do `security-auditor`
+sobre o diff de CI): os controles de YAML propostos eram reais (Postgres efêmero verificado,
+nenhum `secrets.*` em job de validação, `permissions: contents: read`, trava de fork), mas o
+risco central não fechava: o runner `ghrunner` está no grupo `docker` e tem `sudo NOPASSWD:ALL`
+(`scripts/setup-selfhosted-runner.sh:109-114`) — um step de PR malicioso alcançaria containers
+de produção ou leria `/opt/ejc/.env` (chaves PII/JWT). Recomendações que valem
+**independentemente** do caminho de CI escolhido: remover `NOPASSWD:ALL` do runner na VPS
+(nenhum job de validação usa `sudo`), e conferir em Settings → Actions → General que
+"Fork pull request workflows" exige aprovação.
 
 **Pendências que continuam com o titular:** reativar na interface do GitHub os workflows
 `disabled_manually` (`governanca.yml`, `auto-integracao.yml`, `continuity-ui-gates.yml` etc. —
