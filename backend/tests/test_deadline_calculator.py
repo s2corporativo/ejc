@@ -72,3 +72,28 @@ def test_calcular_prescricao_tabela():
     assert "206" in r["base_legal"]
     assert calcular_prescricao("pretensao_geral", date(2020, 1, 15))["data_limite"] == date(2030, 1, 15)
     assert calcular_prescricao("inexistente", date(2020, 1, 1)) is None
+
+
+# ── PRZ-03 (issue #1080): recesso forense parcial não afeta prazo não judicial ─
+
+def test_recesso_parcial_nao_afeta_prazo_administrativo():
+    """Prazo administrativo em dias úteis (Lei 9.784 art. 59) NÃO sofre o
+    recesso forense parcial 20/12–06/01 — ele é próprio do Poder Judiciário
+    (Lei 5.010/1966 art. 62, I; Res. CNJ 241/2016 art. 1º).
+    Início seg 15/12/2025; 10 dias úteis sem recesso → qua 30/12/2025."""
+    assert prazo_dias_uteis(date(2025, 12, 15), 10, forense=False) == date(2025, 12, 30)
+
+
+def test_recesso_parcial_continua_afetando_prazo_judicial():
+    """Prazo judicial em dias úteis (default) CONTINUA suspendendo no recesso
+    parcial 20/12–06/01 — comportamento histórico preservado."""
+    assert prazo_dias_uteis(date(2025, 12, 15), 10, forense=True) == date(2026, 1, 14)
+    # default = judicial: mesmo resultado sem passar o parâmetro
+    assert prazo_dias_uteis(date(2025, 12, 15), 10) == date(2026, 1, 14)
+
+
+def test_eh_dia_util_recesso_parcial_controlavel():
+    """eh_dia_util dentro do recesso parcial responde ao parâmetro forense."""
+    dentro = date(2025, 12, 24)   # quarta dentro do recesso 20/12–06/01
+    assert eh_dia_util(dentro, forense=True) is False
+    assert eh_dia_util(dentro, forense=False) is True

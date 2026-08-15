@@ -74,10 +74,16 @@ async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_use
         # — só prazo tipo=processual recebe a suspensão INTEGRAL do recesso do
         # CPC art. 220. Sem isto, a prévia da calculadora divergia da data
         # persistida na criação para o mesmo (data_inicio, dias, tribunal).
-        aplicar_recesso = req.tipo == "processual"
+        # PRZ-03 (issue #1080): o recesso forense PARCIAL 20/12–06/01
+        # (Lei 5.010/1966 art. 62, I; Res. CNJ 241/2016 art. 1º) é do Poder
+        # Judiciário — prazos administrativos fora dele (tipo != processual)
+        # não o sofrem. Forense alinha-se ao tipo, como a suspensão integral.
+        judicial = req.tipo == "processual"
+        aplicar_recesso = judicial
         vencimento = prazo_dias_uteis(req.data_inicio, req.dias,
                                       tribunal=req.tribunal, em_dobro=req.dobro,
-                                      aplicar_recesso=aplicar_recesso)
+                                      aplicar_recesso=aplicar_recesso,
+                                      forense=judicial)
         modo = ("dias úteis EM DOBRO (CPC art. 183/229)" if req.dobro
                 else "dias úteis (CPC art. 219)")
         if aplicar_recesso:
@@ -209,10 +215,14 @@ async def criar(
             # incide sobre prazo PROCESSUAL em dias úteis; nunca sobre
             # decadencial/administrativo corrido (que usa prazo_dias_corridos,
             # sem este parâmetro — comportamento já correto abaixo).
-            aplicar_recesso = payload.tipo == "processual"
+            # PRZ-03 (issue #1080): recesso forense PARCIAL 20/12–06/01 também
+            # só incide sobre prazos judiciais — forense alinha-se ao tipo.
+            judicial = payload.tipo == "processual"
+            aplicar_recesso = judicial
             data_prazo = prazo_dias_uteis(payload.data_intimacao, payload.dias_prazo,
                                           tribunal=payload.tribunal, em_dobro=payload.dobro,
-                                          aplicar_recesso=aplicar_recesso)
+                                          aplicar_recesso=aplicar_recesso,
+                                          forense=judicial)
             base = base or (
                 f"{payload.dias_prazo} dias úteis em dobro (CPC art. 183/229)"
                 if payload.dobro else f"{payload.dias_prazo} dias úteis (CPC art. 219)"

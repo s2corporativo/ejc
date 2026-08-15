@@ -1345,7 +1345,10 @@ async def adm_criar(body: AdminIn, db: AsyncSession = Depends(get_db),
         if tipo == "recurso_multa_transito":
             data["prazo_recurso_1a_inst"] = prazo_dias_corridos(dn, 30)
         elif tipo in ("recurso_multa_ambiental","recurso_multa_tributaria","recurso_multa_trabalhista_adm"):
-            data["prazo_recurso_1a_inst"] = prazo_dias_uteis(dn, 10)   # Lei 9.784 art. 59
+            # Lei 9.784/99 art. 59: recurso administrativo de 10 dias ÚTEIS.
+            # PRZ-03 (issue #1080): fora do Poder Judiciário — sem recesso
+            # forense 20/12–06/01 (Lei 5.010/1966 art. 62, I; Res. CNJ 241/2016).
+            data["prazo_recurso_1a_inst"] = prazo_dias_uteis(dn, 10, forense=False)
         if data.get("data_ato_coator"):
             data["prazo_ms"] = prazo_dias_corridos(data["data_ato_coator"], 120)  # MS: 120 dias
     a = AdminCase(id=str(uuid4()), **data)
