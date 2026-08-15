@@ -53,6 +53,12 @@ lugar certo, mas os legados de maior risco continuam fora do `ResponseValidator`
 
 ---
 
+> **Status das correções (15/08, autorizado pelo titular por chat):** os achados
+> **P0-1, P0-2, P1-1, P1-2 e P1-3** foram corrigidos nesta mesma branch, com teste de
+> regressão em `backend/tests/test_system_prompts_vigencia_legal.py` (13 testes).
+> Os demais achados seguem abertos e viram Issues próprias — os que alteram RBAC ou
+> comportamento de runtime aguardam decisão do titular (§8).
+
 ## 2. Achados P0 — conteúdo jurídico errado entregue como fonte
 
 ### P0-1. `prazos.py` ensina contagem trabalhista revogada (dias corridos)
@@ -228,12 +234,16 @@ disso quando consultada. Correção é pontual (2 linhas + teste de invariante d
 
 ## 7. Plano de correção recomendado (ordem de prioridade)
 
-1. **Imediato (P0)** — corrigir `prazos.py` (CLT/JEC dias úteis; conferir contagem IBAMA
-   em fonte oficial) + teste de invariante do conteúdo do prompt. Uma linha errada aqui
-   contamina toda a função de maior risco do sistema.
-2. **P1 jurídico** — corrigir `honorarios.py` (CED 2015, art. 23 EOAB, Provimento
-   205/2021); incluir Lei 14.905/2024 em `civel`/`contratual`/`padrao_ouro`; ressalvas
-   nas Súmulas 437/331 TST; Lei 14.879/2024 nos templates.
+1. ~~**Imediato (P0)** — corrigir `prazos.py`~~ **FEITO nesta branch**: CLT art. 775 e
+   JEC art. 12-A passam a dias úteis; RO 8 e ED 5 trabalhistas em dias úteis; recesso
+   estendido ao prazo trabalhista (CLT art. 775-A); contagem administrativa/IBAMA
+   corrigida para dias corridos (Lei 9.784/1999 art. 66) em `prazos.py` e `ambiental.py`,
+   com instrução de confirmar norma específica do órgão.
+2. **P1 jurídico** — ~~`honorarios.py` (CED 2015, art. 23 EOAB, Provimento 205/2021);
+   Lei 14.905/2024 em `civel`/`contratual`/`padrao_ouro`~~ **FEITO nesta branch**
+   (Lei 14.879/2024 também entrou na cláusula de foro de `honorarios.py`).
+   **Pendente:** ressalvas nas Súmulas 437/331 TST e Lei 14.879/2024 nos templates
+   de contrato (`templates_documentos.py`).
 3. **P1 governança** — `exige_fonte=True` em CaseAgent/EJCCoordinator (ou citation_check
    sempre que houver citação); `requer_advogado` em `/revisar`, `/aprovar`,
    `/conferir-e-assinar` e no HITL de peça, com segregação autor≠revisor; hardening no

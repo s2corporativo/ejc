@@ -31,7 +31,11 @@ PADRAO_OURO_PECA = """
    e teto da multa.
 6. DOS PEDIDOS escalonados em letras (a, b, c, ...), com subitens (ex.: e.1,
    e.2...) quando um pedido tiver desdobramentos; cada pedido condenatório deve
-   indicar valor, índice de correção monetária e termo inicial dos juros.
+   indicar valor, índice de correção monetária e termo inicial dos juros — regra
+   supletiva da Lei 14.905/2024, vigente desde 30/08/2024: correção pelo IPCA
+   (CC art. 389, § único) e juros pela taxa legal = SELIC deduzido o IPCA
+   (CC art. 406, §1º), salvo convenção ou lei especial; para período anterior à
+   vigência, indique a regra da época e o marco de transição, sem presumir 1% ao mês.
 7. VALOR DA CAUSA com memória de soma EXPLÍCITA dos pedidos econômicos
    (art. 292 do Código de Processo Civil).
 8. Ao final da peça, seção "RELAÇÃO DE DOCUMENTOS ANEXOS": para cada prova do
