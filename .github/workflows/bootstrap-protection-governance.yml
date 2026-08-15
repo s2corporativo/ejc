@@ -1,0 +1,27 @@
+name: Bootstrap protection governance
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/governanca/branch-protection-bootstrap.sh'
+      - '.github/workflows/bootstrap-protection-governance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  security-review-required:
+    name: Bootstrap protection — security auditor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Exigir revisão de segurança registrada
+        env:
+          CORPO: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          printf '%s' "$CORPO" | grep -qi 'security-auditor: executado' || {
+            echo "::error::alteração do bootstrap de proteção exige security-auditor: executado"
+            exit 1
+          }
+          echo "security-auditor registrado para mudança no bootstrap de proteção."
