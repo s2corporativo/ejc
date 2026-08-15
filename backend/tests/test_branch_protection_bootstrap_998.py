@@ -8,6 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "governanca" / "branch-protection-bootstrap.sh"
+BOOTSTRAP_WORKFLOW = ROOT / ".github" / "workflows" / "bootstrap-protection-governance.yml"
+GOVERNANCE_WORKFLOW = ROOT / ".github" / "workflows" / "governanca.yml"
 RULESET_NAME = "EJC main protection bootstrap #998"
 INTEGRATION_ID = 15368
 CONTEXTS = [
@@ -16,6 +18,7 @@ CONTEXTS = [
     "Frontend — testes + typecheck + build",
     "P0 guard — conflitos e segredos",
     "Governança — travas de PR",
+    "Bootstrap protection — security auditor",
 ]
 
 
@@ -34,7 +37,7 @@ def _expected_ruleset() -> dict:
             {
                 "type": "pull_request",
                 "parameters": {
-                    "allowed_merge_methods": ["merge", "squash", "rebase"],
+                    "allowed_merge_methods": ["squash", "rebase"],
                     "dismiss_stale_reviews_on_push": True,
                     "require_code_owner_review": True,
                     "require_last_push_approval": True,
@@ -92,7 +95,7 @@ if endpoint.endswith("/branches/main"):
 
 if "/rulesets?" in endpoint:
     exists = state.exists() and state.read_text(encoding="utf-8") == "created"
-    if scenario == "existing" or exists:
+    if scenario.startswith("existing") or exists:
         print(json.dumps([{"id": 998, "name": expected["name"], "enforcement": "active"}]))
     elif scenario == "duplicate":
         print(json.dumps([
@@ -114,6 +117,8 @@ if endpoint.endswith("/rulesets/998"):
 if endpoint.endswith("/rulesets") and method == "POST":
     payload = sys.stdin.read()
     payload_file.write_text(payload, encoding="utf-8")
+    if scenario == "post_rejected":
+        raise SystemExit(1)
     state.write_text("created", encoding="utf-8")
     if scenario == "transport_after_apply":
         raise SystemExit(1)
@@ -200,6 +205,7 @@ def test_bootstrap_cria_ruleset_aditivo_sem_put_patch_delete(tmp_path):
     rules = {rule["type"]: rule for rule in payload["rules"]}
     assert {"deletion", "non_fast_forward", "required_linear_history", "pull_request", "required_status_checks"} == set(rules)
     pull_request = rules["pull_request"]["parameters"]
+    assert sorted(pull_request["allowed_merge_methods"]) == ["rebase", "squash"]
     assert pull_request["dismiss_stale_reviews_on_push"] is True
     assert pull_request["require_code_owner_review"] is True
     assert pull_request["require_last_push_approval"] is True
@@ -239,9 +245,34 @@ def test_bootstrap_reconcilia_falha_de_transporte_apos_criacao(tmp_path):
     assert "rulesets/998" in log
 
 
+def test_bootstrap_post_rejeitado_falha_fechado_sem_estado(tmp_path):
+    result, log = _run(tmp_path, scenario="post_rejected")
+    assert result.returncode != 0
+    assert "POST não retornou resposta confiável" in result.stderr
+    assert "esperado exatamente um ruleset canônico após bootstrap; encontrados 0" in result.stderr
+    assert "-X POST" in log
+    assert not (tmp_path / "state").exists()
+
+
 def test_bootstrap_nao_tem_mutacao_destrutiva_de_branch_protection():
     src = SCRIPT.read_text(encoding="utf-8")
     assert "branches/$BRANCH/protection" not in src
     assert "-X PUT" not in src
     assert "-X PATCH" not in src
     assert "-X DELETE" not in src
+
+
+def test_bootstrap_security_gate_usa_workflow_confiavel_e_contexto_bloqueante():
+    workflow = BOOTSTRAP_WORKFLOW.read_text(encoding="utf-8")
+    script = SCRIPT.read_text(encoding="utf-8")
+    governanca = GOVERNANCE_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "pull_request_target:" in workflow
+    assert "types: [opened, synchronize, reopened, edited]" in workflow
+    assert "actions/checkout" not in workflow
+    assert "gh api --paginate" in workflow
+    assert "Bootstrap protection — security auditor" in workflow
+    assert "Bootstrap protection — security auditor" in script
+    assert "scripts/governanca/branch-protection-bootstrap.sh" in workflow
+    assert "types: [opened, synchronize, reopened, edited]" in governanca
+    assert "scripts/governanca/branch-protection-bootstrap\\.sh" in governanca
