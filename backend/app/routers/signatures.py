@@ -256,10 +256,12 @@ async def visualizar_documento(
         raise HTTPException(status_code=410, detail="Arquivo físico não encontrado")
 
     # Registro do acesso ANTES da assinatura — próprio audit_log já existente
-    # (LGPD/MP 2.200-2: evidência de que o signatário teve acesso ao conteúdo).
-    # Coluna dedicada em signature_requests (ex.: documento_visualizado_em)
-    # ficaria mais consultável, mas exige migration — fora do escopo desta
-    # correção mínima (ver PR/Issue).
+    # (LGPD/MP 2.200-2: evidência de que o signatário teve acesso ao conteúdo)
+    # MAIS a coluna dedicada `documento_visualizado_em` (ASS-01, Issue #1081):
+    # só a 1ª visualização fixa o timestamp (defesa contra forjar
+    # visualização véspera da assinatura repetindo GET /documento).
+    if sr.documento_visualizado_em is None:
+        sr.documento_visualizado_em = datetime.now(timezone.utc)
     await criar_audit_log(
         db, cu.id, cu.role.value, "VISUALIZAR", "signature_requests", sig_id,
         detalhes=f"acesso ao documento antes da assinatura: {doc.titulo}",
@@ -294,7 +296,18 @@ async def assinar(
         raise HTTPException(status_code=404, detail="Solicitação não encontrada")
     if sr.status != SignatureStatus.pendente:
         raise HTTPException(status_code=409, detail="Já processada")
-
+    # ASS-01 (Issue #1081): exige que o documento tenha sido visualizado NESTA
+    # solicitação — a checagem antiga vivia só no frontend (client-side) e
+    # qualquer chamada direta (curl/devtools) a assinava sem consentimento
+    # informado. O timestamp é gravado pelo GET /documento (1ª visualização)
+    # e o comprovante repete a data para rastreabilidade da evidência.
+    if sr.documento_visualizado_em is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Assinatura recusada: o documento ainda não foi "
+                   "visualizado. Abra o documento antes de assinar "
+                   "(GET /signatures/{id}/documento).",
+        )
     sr.status = SignatureStatus.assinado
     sr.assinado_em = datetime.now(timezone.utc)
     sr.assinado_por_user = cu.id
@@ -314,4 +327,9 @@ async def assinar(
                 "assinado_em": sr.assinado_em.isoformat(),
                 "hash_documento": sr.hash_sha256,
                 "ip": sr.ip,
+                # ASS-01 (Issue #1081): a visualização prévia comprovada
+                "documento_visualizado_em": (
+                    sr.documento_visualizado_em.isoformat()
+                    if sr.documento_visualizado_em else None
+                ),
             }}
