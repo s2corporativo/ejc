@@ -35,12 +35,17 @@ class SocioIn(BaseModel):
 
 
 class SocioPatch(BaseModel):
+    # PRZ/1077: campos desconhecidos são REJEITADOS (não ignorados em silêncio) —
+    # antes, um campo extra que não existe como coluna no model `Socio` era aceito
+    # e ecoado na resposta como se tivesse sido salvo, embora jamais persistisse
+    # ("phantom save"). Com `extra='forbid'`, o parser devolve 422 imediatamente,
+    # antes de qualquer commit ou auditoria.
+    model_config = {"extra": "forbid"}
     participacao_percentual: Optional[float] = Field(None, gt=0, le=1)
     regime:                  Optional[RegimeSocio] = None
     pro_labore:              Optional[float] = None
     ativo:                   Optional[bool]  = None
     data_saida:              Optional[_date] = None
-    meta_produtividade:      Optional[float] = None # Seção 8.270
     observacoes:             Optional[str]   = None
 
 
@@ -49,7 +54,7 @@ class SocioPatch(BaseModel):
 # aqui depois de uma decisão consciente (SOC-01).
 _SOCIO_PATCH_CAMPOS = {
     "participacao_percentual", "regime", "pro_labore", "ativo",
-    "data_saida", "meta_produtividade", "observacoes",
+    "data_saida", "observacoes",
 }
 
 
@@ -81,7 +86,6 @@ def _out_socio(s: Socio) -> dict:
         "oab_numero": s.oab_numero, "oab_uf": s.oab_uf,
         "data_entrada": s.data_entrada.isoformat() if s.data_entrada else None,
         "data_saida": s.data_saida.isoformat() if s.data_saida else None,
-        "meta_produtividade": float(s.meta_produtividade) if hasattr(s, 'meta_produtividade') and s.meta_produtividade else 0.0,
         "ativo": s.ativo, "observacoes": s.observacoes,
     }
 

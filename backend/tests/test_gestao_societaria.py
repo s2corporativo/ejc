@@ -175,22 +175,45 @@ async def test_auditoria_reflete_campos_realmente_alterados():
     assert "pro_labore" not in log.dados_antes
 
 
-async def test_auditoria_campo_sem_valor_previo_nao_quebra():
-    """`meta_produtividade` não é coluna mapeada no model `Socio` (só existe
-    em runtime se algum PATCH anterior no mesmo processo já a setou como
-    atributo Python solto) — o snapshot não pode estourar AttributeError na
-    primeira vez que o campo é alterado."""
+async def test_patch_campo_sem_coluna_no_banco_rejeitado_422():
+    """Regressão #1077: `meta_produtividade` NÃO é coluna do model `Socio`
+    (nem há migration que a crie) — se o PATCH aceitasse o campo, ele virava
+    atributo Python solto: o `setattr` nunca era persistido, mas a resposta
+    ecoava o valor como se tivesse sido salvo ("phantom save" — o valor
+    desaparecia no próximo reload do banco). Removido de `SocioPatch`, de
+    `_SOCIO_PATCH_CAMPOS` e de `_out_socio`; o campo enviado agora é rejeitado
+    com 422 antes de qualquer commit/auditoria."""
+    # O campo não pertence mais ao schema (nem à allowlist interna do router)
+    assert "meta_produtividade" not in SocioPatch.model_fields
+    from pydantic import ValidationError as _PydanticVE
+    # Extra='forbid' no schema: o parser rejeita o campo com ValidationError,
+    # que o FastAPI converte em 422 no endpoint real — ANTES de qualquer
+    # consulta, commit ou auditoria (payload nunca chega ao handler).
     s = _socio()
     db = _FakeDB([s])
-    out = await atualizar_socio(
+    for ruim in [{"meta_produtividade": 5000.0, "regime": "misto"},
+                 {"meta_produtividade": 5000.0}]:
+        with pytest.raises(_PydanticVE):
+            SocioPatch.model_validate(ruim)
+    # Nenhum efeito colateral em memória: o PATCH legítimo não toca o campo
+    await atualizar_socio(
         socio_id="socio1",
-        req=SocioPatch(meta_produtividade=5000.0),
+        req=SocioPatch(regime=RegimeSocio.resultado),
         db=db, cu=_user(UserRole.admin, "admin1"),
     )
-    assert out["meta_produtividade"] == 5000.0
-    logs = [o for o in db.added if isinstance(o, AuditLog)]
-    assert logs[0].dados_antes == {"meta_produtividade": None}
-    assert logs[0].dados_depois == {"meta_produtividade": 5000.0}
+    assert db.commits == 1
+    assert not hasattr(s, "meta_produtividade")
+    # Reload do banco: o sócio recarregado segue sem o campo
+    s2 = _socio()
+    db = _FakeDB([s2])
+    await atualizar_socio(
+        socio_id="socio1",
+        req=SocioPatch(regime=RegimeSocio.resultado),
+        db=db, cu=_user(UserRole.admin, "admin1"),
+    )
+    assert db.commits == 1
+    out = {"id": s2.id, "regime": s2.regime.value}
+    assert "meta_produtividade" not in out
 
 
 async def test_socio_inexistente_404():
