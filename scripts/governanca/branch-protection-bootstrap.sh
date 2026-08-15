@@ -27,9 +27,6 @@ gh auth status >/dev/null 2>&1 || fail "gh não autenticado"
 BRANCH_API="repos/$REPO/branches/$BRANCH"
 RULESETS_API="repos/$REPO/rulesets"
 
-# Confirma que o alvo existe. Não exige protected=false: criar um ruleset é
-# aditivo e seguro mesmo se outro administrador restaurar a proteção legada
-# concorrentemente.
 gh api "$BRANCH_API" -H 'Accept: application/vnd.github+json' >/dev/null \
   || fail "não foi possível ler a branch canônica"
 
@@ -51,7 +48,7 @@ payload="$(jq -cn --arg name "$RULESET_NAME" --argjson integration_id "$GITHUB_A
     {
       type:"pull_request",
       parameters:{
-        allowed_merge_methods:["merge","squash","rebase"],
+        allowed_merge_methods:["squash","rebase"],
         dismiss_stale_reviews_on_push:true,
         require_code_owner_review:true,
         require_last_push_approval:true,
@@ -68,7 +65,8 @@ payload="$(jq -cn --arg name "$RULESET_NAME" --argjson integration_id "$GITHUB_A
           {context:"Eval — smoke dos gold sets (offline, bloqueante)", integration_id:$integration_id},
           {context:"Frontend — testes + typecheck + build", integration_id:$integration_id},
           {context:"P0 guard — conflitos e segredos", integration_id:$integration_id},
-          {context:"Governança — travas de PR", integration_id:$integration_id}
+          {context:"Governança — travas de PR", integration_id:$integration_id},
+          {context:"Bootstrap protection — security auditor", integration_id:$integration_id}
         ],
         strict_required_status_checks_policy:true
       }
@@ -88,6 +86,7 @@ ruleset_matches_payload() {
     (.conditions.ref_name.exclude == []) and
     ([.rules[].type] | sort == (["deletion","non_fast_forward","pull_request","required_linear_history","required_status_checks"] | sort)) and
     ((.rules[] | select(.type == "pull_request") | .parameters) as $pr |
+      (($pr.allowed_merge_methods | sort) == (["rebase","squash"] | sort)) and
       ($pr.dismiss_stale_reviews_on_push == true) and
       ($pr.require_code_owner_review == true) and
       ($pr.require_last_push_approval == true) and
@@ -101,7 +100,8 @@ ruleset_matches_payload() {
         {context:"Eval — smoke dos gold sets (offline, bloqueante)", integration_id:$integration_id},
         {context:"Frontend — testes + typecheck + build", integration_id:$integration_id},
         {context:"P0 guard — conflitos e segredos", integration_id:$integration_id},
-        {context:"Governança — travas de PR", integration_id:$integration_id}
+        {context:"Governança — travas de PR", integration_id:$integration_id},
+        {context:"Bootstrap protection — security auditor", integration_id:$integration_id}
       ] | sort_by(.context,.integration_id))))
   ' >/dev/null
 }
