@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from alembic import op
 
 revision = "138_consolida_fontes_ingestao"
-down_revision = "132_processo_eletronico_mni"
+down_revision = "136_document_publicacao_portal"
 branch_labels = None
 depends_on = None
 
