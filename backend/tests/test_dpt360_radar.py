@@ -110,3 +110,59 @@ async def test_radar_completo_usa_indice_minimo_de_empresa_e_caso():
     assert result["empresas_potencialmente_impactadas"] == 1
     assert result["itens"][0]["impactos"][0]["client_id"] == "c1"
     assert result["itens"][0]["impactos"][0]["empresa"] == "Empresa A"
+
+
+@pytest.mark.anyio
+async def test_radar_reusa_indice_de_empresa_e_areas_fornecido_pelo_chamador():
+    """DER-01 (#1084): quando o chamador (dashboard) já computou o índice
+    empresa-areas visível pela mesma RBAC, o radar o reutiliza em vez de
+    reexecutar a query de área visível — reduzindo a hidratação duplicada.
+    O índice é copiado para manter imutabilidade do estado interno."""
+    user = SimpleNamespace(id="u1", role="admin")
+    alerts = [_alert(1, titulo="IBAMA publica regra de licenciamento ambiental")]
+    db = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                _scalar_result(1),
+                _scalars_result(alerts),
+            ]
+        )
+    )
+
+    fornecido_areas = {"c2": {"ambiental"}}
+    fornecido_names = {"c2": "Empresa B"}
+    result = await build_today_radar(
+        db, user, hours=24, company_areas=fornecido_areas, company_names=fornecido_names
+    )
+
+    # Somente 2 execuções de SQL: contagem total + alertas; a query de área
+    # visível NÃO é reexecutada quando o índice é fornecido.
+    assert db.execute.call_count == 2
+    assert result["por_area"] == {"ambiental": 1}
+    assert result["empresas_potencialmente_impactadas"] == 1
+    assert result["itens"][0]["impactos"][0]["client_id"] == "c2"
+    assert result["itens"][0]["impactos"][0]["empresa"] == "Empresa B"
+    # O índice interno não compartilha o objeto do chamador (imutabilidade).
+    assert result["itens"][0]["impactos"][0]["empresa"] != fornecido_names  # cópia independente
+
+
+@pytest.mark.anyio
+async def test_radar_segue_computando_indice_sem_chamador_externo():
+    """DER-01: chamadores isolados do radar (endpoint /radar) continuam
+    computando o índice por conta própria — contrato original preservado."""
+    user = SimpleNamespace(id="u1", role="admin")
+    alerts = [_alert(1, titulo="IBAMA publica regra de licenciamento ambiental")]
+    db = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                _scalar_result(1),
+                _scalars_result(alerts),
+                _rows_result([("c1", "Empresa A", None, "ambiental")]),
+            ]
+        )
+    )
+
+    result = await build_today_radar(db, user, hours=24)
+
+    assert db.execute.call_count == 3
+    assert result["empresas_potencialmente_impactadas"] == 1
