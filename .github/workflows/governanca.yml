@@ -10,6 +10,7 @@ name: Governanca
 # Complementa — não substitui — o "EJC Release Gate" (scripts/ci_guard.sh).
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
@@ -125,7 +126,7 @@ jobs:
           CORPO: ${{ github.event.pull_request.body }}
         shell: bash
         run: |
-          PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
+          PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|scripts/governanca/branch-protection-bootstrap\.sh|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
           SENSIVEL=$(grep -Ec "$PADRAO_SENSIVEL" "$RUNNER_TEMP/alterados.txt" || true)
           if [ "$SENSIVEL" -gt 0 ]; then
             if ! printf '%s' "$CORPO" | grep -qi 'security-auditor: executado'; then
