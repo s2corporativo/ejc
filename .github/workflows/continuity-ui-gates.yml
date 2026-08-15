@@ -16,7 +16,7 @@ concurrency:
 jobs:
   backup-restore-drill:
     name: Continuidade — backup cifrado + restore em banco vazio
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 25
     defaults:
       run:
@@ -95,7 +95,7 @@ jobs:
 
   frontend-extra-gates:
     name: Frontend — ESLint + browser responsivo
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 25
     defaults:
       run:

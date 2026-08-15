@@ -110,7 +110,39 @@ _Resultados da rodada desta auditoria (ambiente da sessão em `180fa77`, não CI
 6. **[MÉDIO PRAZO] Fechar o desvio de processo**: remover do `GUIA_EXECUCAO_PRODUCAO.md` as instruções de checkout/export de `.env` na VPS; tratar "merge local na VPS" como exceção registrada, não como procedimento; testes de regressão para os dois scripts.
 7. **[HIGIENE] Excluir os ~50 workflows temporários** (`tmp-*`, `*-temp`, `_apply-*`, `format-*`) já desligados.
 
-## 9. Riscos residuais e limitações
+## 9. Adendo — decisões do titular e correções aplicadas (15/08, mesma sessão)
+
+Após a entrega do relatório, o titular decidiu por chat: **(a)** o GitHub deve operar 100% na
+cota gratuita (o consumo pago estava alto — confirma a causa do achado A3); **(b)** os
+documentos do lote foram encomendados ao Manus **como simulações para servir de modelo** — a
+correção não é apagar, é etiquetar. Com essa autorização, esta sessão aplicou no mesmo PR:
+
+1. **CI de volta ao runner self-hosted `ejc-vps`** (reversão do #1119, restaurando a
+   abordagem do `9c5113d`): `ci.yml` (3 jobs), `ejc-release-gate.yml`, `governanca.yml`,
+   `continuity-ui-gates.yml` e o job `validar` do `backup-gdrive-activation.yml`.
+   Controles compensatórios mantidos/garantidos: Postgres efêmero isolado (porta 55432,
+   credenciais próprias, limpeza ao final), nenhum job de PR usa `environment: production`,
+   e o repositório não aceita fork externo. O contrato foi **reescrito, não removido**:
+   `backend/tests/test_self_hosted_runner_isolation.py` agora guarda a nova política e os
+   controles compensatórios (7 testes).
+2. **Reclassificação de 23/24 documentos do lote como modelo simulado**: front-matter
+   corrigido (`origem_conteudo: modelo_simulado`, `gerado_por_IA: true`,
+   `tipo_camada: modelo_peca` → categoria `modelo_documento_juridico`, fora do circuito de
+   jurisprudência; `nivel_confiaca: BAIXA`) + banner "MODELO SIMULADO — NÃO CITAR COMO
+   JURISPRUDÊNCIA" no corpo. Regressão: `backend/tests/test_biblioteca_juridica_metadados_modelo.py`.
+   O arquivo `consumidor_bancario/14_*` **não** foi tocado — pertence ao PR ativo #1143
+   (regra 4), que já o corrige e quarentena.
+3. Dry-run do script de ingestão validado sobre os arquivos reclassificados (23×
+   `modelo_documento_juridico`); testes-meta de workflows (37) e os 10 novos passam.
+
+**Pendências que continuam com o titular:** reativar na interface do GitHub os workflows
+`disabled_manually` (`governanca.yml`, `auto-integracao.yml`, `continuity-ui-gates.yml` etc. —
+API desta sessão não reativa); confirmar que o runner `ejc-vps` está ativo na VPS
+(`sudo systemctl status 'actions.runner.*'`); integrar #1140 (branch protection — atualizar os
+cinco contexts exigidos se necessário) e #1143 (quarentena); executar a quarentena em produção
+se a ingestão tiver rodado.
+
+## 10. Riscos residuais e limitações
 
 - **Não foi possível confirmar se a ingestão rodou em produção** (sem acesso ao banco de produção, por regra). A prioridade nº 1 depende dessa verificação humana.
 - A causa exata do `startup_failure` (cota de minutos vs. outra restrição de billing) não é visível pela API com as credenciais da sessão — os sintomas (0 jobs, qualquer SHA, só em `ubuntu-latest`, `deploy-staging` self-hosted também sem jobs via `workflow_run`) apontam para billing/limite, mas a confirmação está em Settings → Billing do GitHub.

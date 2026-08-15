@@ -1,14 +1,17 @@
 ---
-tipo_camada: jurisprudencia_estruturada
+tipo_camada: modelo_peca
 canonical_id: JUR-TRIB-000002
-origem_conteudo: fonte_oficial
+origem_conteudo: modelo_simulado
 autoridade_juridica: jurisprudencial
 authority_level: jurisprudencia_oficial
 score_autoridade: 10
 area_juridica: tributario
-nivel_confiaca: ALTA
+nivel_confiaca: BAIXA
 data_pesquisa: 2026/08/14
-gerado_por_IA: false---
+gerado_por_IA: true
+---
+
+> **MODELO SIMULADO — NÃO CITAR COMO JURISPRUDÊNCIA.** Documento gerado por IA (Manus, lote piloto 08/2026) para servir de **modelo estrutural** de peça/tese. Julgados, números de processo, URLs e datas podem não ser reais e **não foram verificados em fonte oficial**. Uso em peça real exige verificação integral e aprovação humana.
 
 # BIBLIOTECA_JURIDICA_EJC — [Direito Tributário] — [Prescrição quinquenal tributária — RE 566.621/SC (Tema 17 STF) e Tema 616 STF]
 

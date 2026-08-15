@@ -6,11 +6,14 @@ name: CI
 # os checks deste workflow e do "EJC Release Gate" devem ser obrigatórios na
 # proteção da branch main.
 
-# Validacoes de PR: executor nao produtivo `ubuntu-latest` dentro da cota
-# gratuita (spending limit $0) — codigo de PR nunca executa na VPS de
-# producao (`ejc-vps`). O PostgreSQL dos testes e um container Docker efemero
-# na porta 55432, isolado do ejc_db de producao (credenciais e porta
-# diferentes). Os jobs independentes executam em paralelo.
+# Validacoes de PR: runner self-hosted `ejc-vps` (decisao do titular,
+# 15/08/2026 — operar 100% na cota gratuita; a cota GitHub-hosted esgotada
+# deixou o CI inoperante de 12 a 15/08). Controles compensatorios: o repo nao
+# aceita fork externo (todo PR nasce de agente da propria conta), o PostgreSQL
+# dos testes e um container Docker efemero na porta 55432 isolado do ejc_db de
+# producao (credenciais e porta diferentes), e jobs de PR nao recebem o
+# environment de producao. Contrato guardado por
+# backend/tests/test_self_hosted_runner_isolation.py.
 on:
   pull_request:
   push:
@@ -27,7 +30,7 @@ concurrency:
 jobs:
   db-validation:
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 45
     defaults:
       run:
@@ -35,8 +38,7 @@ jobs:
 
       # Nota de arquitetura: o PostgreSQL efêmero é criado via Docker no
       # primeiro step do job e removido na limpeza, isolando o CI do ejc_db de
-      # produção (credenciais e porta diferentes da VPS). Não utiliza o runner
-      # self-hosted de produção: código de PR nunca executa no `ejc-vps`.
+      # produção (credenciais e porta diferentes da VPS).
 
     env:
       CI_PG_CONTAINER: ejc-ci-pg
@@ -181,7 +183,7 @@ jobs:
         run: docker rm -f "$CI_PG_CONTAINER" >/dev/null 2>&1 || true
   eval-smoke:
     name: Eval — smoke dos gold sets (offline, bloqueante)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
     defaults:
       run:
@@ -209,7 +211,7 @@ jobs:
 
   frontend-build:
     name: Frontend — testes + typecheck + build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 40
     defaults:
       run:

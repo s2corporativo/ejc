@@ -2,7 +2,8 @@
 #
 # Em Pull Request, executa somente testes determinísticos offline (validação de
 # sintaxe, wrapper cifrado e migração/rollback) em executor não produtivo
-# `ubuntu-latest` — código de PR nunca executa na VPS de produção (`ejc-vps`).
+# runner self-hosted `ejc-vps` (cota gratuita — decisao do titular 15/08/2026);
+# o job de PR nao usa `environment: production`.
 # A prova integral cifrada contra o Google Drive só ocorre por execução manual
 # na main (job `comprovar-producao`).
 name: Backup Google Drive — validar e comprovar
@@ -32,7 +33,7 @@ jobs:
   validar:
     name: Validar backup, migration e rollback
     # Nunca executar conteúdo de PR no host que também hospeda produção.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7

@@ -1,6 +1,6 @@
 name: EJC Release Gate
 
-# Gate P0 em executor nao produtivo `ubuntu-latest` (cota gratuita do GitHub).
+# Gate P0 no runner self-hosted `ejc-vps` (cota gratuita — decisao do titular 15/08/2026).
 # Só executa verificações estáticas e testes determinísticos offline; nunca
 # altera o ambiente de produção. Impede conflitos, segredos, CORS inseguro,
 # backup em claro e rollback não comprovado. Código de PR nunca executa
@@ -21,7 +21,7 @@ concurrency:
 jobs:
   p0-guard:
     name: P0 guard — conflitos e segredos
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
     steps:
       - name: Checkout
