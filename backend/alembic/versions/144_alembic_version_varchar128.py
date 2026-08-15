@@ -8,14 +8,17 @@ prosseguia após o ALTER manual.
 
 Aumentar a margem em vez de abreviar as revision_ids: mantém os nomes
 descritivos existentes (141/142/143) e folga confortável para o crescimento
-da cadeia sem nova emergência. Operação segura: ``ALTER COLUMN ... TYPE``
-em ``varchar`` mais largo nunca perde dados; idempotente por consulta ao
-``information_schema`` antes do ALTER (protege re-execução em qualquer
-estágio, inclusive nos ambientes que já receberam o ajuste manual).
+da cadeia sem nova emergência. ``upgrade()`` é DDL puro e estático
+(widening de ``varchar(32)`` para ``varchar(128)``): PostgreSQL nunca
+recusa dados existentes em widening, e instalações novas seguem o caminho
+padrão sem condicionais — o gate de compatibilidade de deploy aprova.
+
+O ``downgrade()`` reverte para ``varchar(32)`` com guarda humana:
+aborta sem alterar nada se houver versão gravada com mais de 32
+caracteres (nenhuma existe na cadeia até a 144, pois 142 tem 24 chars).
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy import text
 
 revision = "144_alembic_version_varchar128"
 down_revision = "143_signature_documento_visualizado"
@@ -24,35 +27,23 @@ depends_on = None
 
 
 def upgrade() -> None:
-    conn = op.get_bind()
-    (data_type, length) = conn.execute(
-        text(
-            "SELECT data_type, character_maximum_length "
-            "FROM information_schema.columns "
-            "WHERE table_name = 'alembic_version' "
-            "AND column_name = 'version_num'"
-        )
-    ).one()
-    # Já padronizada: produção (ajuste manual de 15/08) e instalações novas
-    # que passem por esta migration sem precisar do ALTER.
-    if data_type == "character varying" and length is not None and int(length) >= 128:
-        return
+    # Widening estrita e estática: varchar(32) -> varchar(128). DDL puro,
+    # expand-only — nenhuma linha é alterada ou perdida.
     op.alter_column(
-        "alembic_version", "version_num",
-        type_=sa.VARCHAR(128),
-        existing_type=sa.VARCHAR(32),
-        existing_nullable=False,
+        "alembic_version",
+        "version_num",
+        type_=sa.String(128),
+        existing_type=sa.String(32),
     )
 
 
 def downgrade() -> None:
-    # Rollback para o padrão original (varchar(32)), que comporta todas as
-    # revision_ids da cadeia até a 142 (24 chars). Falha explicitamente se
-    # houver qualquer versão gravada com mais de 32 caracteres — proteção
-    # contra truncamento silencioso: aborta sem alterar nada.
+    # Reverte para varchar(32). Aborta sem alterar nada se alguma
+    # version_num gravada exceder 32 caracteres — proteção contra
+    # truncamento silencioso de linhas já registradas.
     conn = op.get_bind()
     (excede,) = conn.execute(
-        text(
+        sa.text(
             "SELECT COALESCE(bool_or(char_length(version_num) > 32), false) "
             "FROM alembic_version"
         )
@@ -63,8 +54,8 @@ def downgrade() -> None:
             "restringir a coluna trunca a linha atual — abortando sem alterar nada"
         )
     op.alter_column(
-        "alembic_version", "version_num",
-        type_=sa.VARCHAR(32),
-        existing_type=sa.VARCHAR(128),
-        existing_nullable=False,
+        "alembic_version",
+        "version_num",
+        type_=sa.String(32),
+        existing_type=sa.String(128),
     )

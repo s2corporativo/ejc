@@ -22,7 +22,11 @@ from fastapi import HTTPException
 from app.models.audit_log import AuditLog
 from app.models.socio import RegimeSocio, Socio
 from app.models.user import User, UserRole
-from app.routers.gestao_societaria import SocioPatch, atualizar_socio
+from app.routers.gestao_societaria import (
+    SocioIn, SocioPatch,
+    atualizar_socio, cadastrar_socio, aprovar_distribuicao, calcular_distribuicao,
+)
+from app.models.socio import DistribuicaoLucro
 
 
 # ── Fakes (sem banco, padrão test_sociedades_cliente.py) ──────────────────────
@@ -210,3 +214,88 @@ async def test_patch_so_altera_campos_da_allowlist():
 
     campos_schema = set(SocioPatch.model_fields)
     assert campos_schema == _SOCIO_PATCH_CAMPOS
+
+
+# ── Cadastro de sócio e aprovação de distribuição: commit único (SOC-02/DST-01) ──
+
+async def test_cadastro_socio_commit_unico_com_auditoria():
+    """POST /sociedade/socios: a auditoria é gravada na MESMA transação do
+    cadastro (padrão criado no SOC-01) — antes, registrar_acao commitava o log
+    em transação separada e o cadastro podia persistir sem rastro.
+    Critério de aceite da issue #1073: db.commits == 1."""
+    req = SocioIn(
+        user_id="novosocio", participacao_percentual=0.1,
+        data_entrada=date(2026, 1, 1),
+    )
+    # execute: consulta do "existe?" retorna None; add registra o sócio
+    db = _FakeDB([None])
+    out = await cadastrar_socio(req=req, db=db, cu=_user(UserRole.admin, "admin1"))
+    assert out["user_id"] == "novosocio"
+    assert out["participacao_percentual"] == 0.1
+    assert len(db.added) == 2  # Socio + AuditLog na mesma sessão
+    socio, log = db.added
+    assert isinstance(socio, Socio)
+    assert isinstance(log, AuditLog)
+    assert log.acao == "CREATE"
+    assert log.entidade == "socios"
+    assert log.registro_id == socio.id
+    assert log.user_id == "admin1"
+    assert log.dados_depois["user_id"] == "novosocio"
+    # Critério de aceite: um único commit cobre cadastro + auditoria
+    assert db.commits == 1
+
+
+async def test_cadastro_socio_duplicado_nao_audita():
+    """Usuário já sócio → 409 e NADA é adicionado à sessão (nem audit log),
+    com zero commits."""
+    db = _FakeDB([_socio(user_id="duplicado", id="s2")])
+    with pytest.raises(HTTPException) as exc:
+        await cadastrar_socio(
+            req=SocioIn(user_id="duplicado", participacao_percentual=0.05,
+                        data_entrada=date(2026, 1, 1)),
+            db=db, cu=_user(UserRole.admin, "admin1"),
+        )
+    assert exc.value.status_code == 409
+    assert db.commits == 0
+    assert db.added == []
+
+
+async def test_aprovar_distribuicao_commit_unico_com_auditoria():
+    """POST /sociedade/distribuicao/{id}/aprovar: auditoria na MESMA transação
+    da aprovação (padrão criado no SOC-01) — antes, registrar_acao commitava
+    o log em transação separada.
+    Critério de aceite da issue #1073: db.commits == 1."""
+    d = DistribuicaoLucro(
+        id="dist1", mes_referencia="2026-01", valor_total=Decimal("10000.00"),
+        socios_json="[]", created_by="admin1", status="calculado",
+    )
+    db = _FakeDB([d])
+    out = await aprovar_distribuicao(dist_id="dist1", db=db,
+                                     cu=_user(UserRole.admin, "admin1"))
+    assert out["status"] == "aprovado"
+    assert d.status == "aprovado"
+    assert d.aprovado_por == "admin1"
+    logs = [o for o in db.added if isinstance(o, AuditLog)]
+    assert len(logs) == 1
+    log = logs[0]
+    assert log.acao == "UPDATE"
+    assert log.entidade == "distribuicao_lucro"
+    assert log.registro_id == "dist1"
+    assert log.dados_antes == {"status": "calculado"}
+    assert log.dados_depois == {"status": "aprovado"}
+    # Critério de aceite: um único commit cobre aprovação + auditoria
+    assert db.commits == 1
+
+
+async def test_aprovar_distribuicao_fora_de_calculado_nao_audita():
+    """Distribuição já aprovada → 422 e nenhum commit/audit."""
+    d = DistribuicaoLucro(id="dist1", mes_referencia="2026-01",
+                          valor_total=Decimal("10000.00"), status="aprovado",
+                          socios_json="[]", created_by="admin1")
+    db = _FakeDB([d])
+    with pytest.raises(HTTPException) as exc:
+        await aprovar_distribuicao(dist_id="dist1", db=db,
+                                   cu=_user(UserRole.admin, "admin1"))
+    assert exc.value.status_code == 422
+    assert db.commits == 0
+    assert db.added == []
