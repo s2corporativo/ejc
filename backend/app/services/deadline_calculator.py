@@ -165,9 +165,12 @@ def eh_dia_util(d: date, forense: bool = True, tribunal: str | None = None,
 
     aplicar_recesso=True considera TODA a janela do recesso do CPC art. 220
     (20/12 a 20/01, inclusive) como não útil — para PRAZOS PROCESSUAIS em dias
-    úteis (não usar em prazos decadenciais/corridos administrativos). O default
-    False preserva o comportamento histórico (recesso parcial 20/12–06/01 via
-    RECESSO_FORENSE quando forense=True).
+    úteis (não usar em prazos decadenciais/corridos administrativos).
+    forense=True exclui o recesso forense PARCIAL de 20/12 a 06/01
+    (feriado forense da Justiça da União — Lei 5.010/1966, art. 62, I;
+    período reproduzível pelos TJs — Resolução CNJ 241/2016, art. 1º).
+    Aplica-se APENAS a prazos no âmbito do Poder Judiciário; para prazos
+    administrativos fora do Judiciário (ex.: Lei 9.784/1999) usar forense=False.
     """
     if d.weekday() >= 5:        # 5=sábado, 6=domingo
         return False
@@ -202,10 +205,11 @@ def dia_util_anterior(d: date, forense: bool = True, tribunal: str | None = None
 # ── Cálculo de prazos ─────────────────────────────────────────────────────────
 
 def prazo_dias_uteis(data_inicio: date, dias: int, tribunal: str | None = None,
-                     em_dobro: bool = False, aplicar_recesso: bool = False) -> date:
+                     em_dobro: bool = False, aplicar_recesso: bool = False,
+                     forense: bool = True) -> date:
     """
-    Prazo processual em dias ÚTEIS (CPC art. 219 / CLT art. 775).
-    Exclui o dia do início; conta apenas dias úteis forenses.
+    Prazo em dias ÚTEIS (CPC art. 219 / CLT art. 775 / Lei 9.784 art. 59).
+    Exclui o dia do início; conta apenas dias úteis.
     Se `tribunal` for informado, desconsidera também os dias suspensos por ele.
 
     aplicar_recesso=True aplica a suspensão INTEGRAL do recesso do CPC art. 220
@@ -213,6 +217,15 @@ def prazo_dias_uteis(data_inicio: date, dias: int, tribunal: str | None = None,
     PRAZOS PROCESSUAIS. O default False mantém o comportamento histórico
     (retrocompatibilidade) e NUNCA deve mudar: prazos decadenciais e corridos
     administrativos não se suspendem no recesso.
+
+    forense=True (default) exclui o recesso forense PARCIAL de 20/12 a 06/01 —
+    recesso do expediente do PODER JUDICIÁRIO (Lei 5.010/1966, art. 62, I;
+    Resolução CNJ 241/2016, art. 1º). Para prazos administrativos FORA do
+    Judiciário (ex.: recurso de 10 dias úteis da Lei 9.784/1999), passar
+    forense=False, pois o recesso forense não suspende esses prazos.
+    PRZ-03: antes `forense=True` era hardcoded dentro da função (mesmo quando
+    aplicar_recesso=False), suspendendo parcialmente prazos administrativos —
+    corrigido tornando `forense` parâmetro explícito.
 
     em_dobro=True DOBRA a quantidade de dias — prazo em dobro do CPC:
       • art. 180 — Ministério Público;
@@ -230,7 +243,7 @@ def prazo_dias_uteis(data_inicio: date, dias: int, tribunal: str | None = None,
     contados = 0
     while contados < dias:
         atual += timedelta(days=1)
-        if eh_dia_util(atual, forense=True, tribunal=tribunal,
+        if eh_dia_util(atual, forense=forense, tribunal=tribunal,
                        aplicar_recesso=aplicar_recesso):
             contados += 1
     return atual
