@@ -18,7 +18,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 APP_DIR = BACKEND_DIR / "app"
-HEAD_REVISION = "141_dpt360_diagnostico"
+HEAD_REVISION = "142_document_hash_rescan"
 
 RAW_SQL_TABLES_ESPERADAS = {
     "agenda_eventos", "areas", "case_ambiental", "case_etiquetas",
@@ -30,7 +30,12 @@ RAW_SQL_TABLES_ESPERADAS = {
     "pricing_rules", "score_juridico", "teses_vitoriosas",
 }
 VIEWS_ESPERADAS = {"vw_atividades"}
-FALSOS_POSITIVOS_SQL = {"alembic_version", "pg_extension", "pg_stat_activity"}
+FALSOS_POSITIVOS_SQL = {
+    "alembic_version", "pg_extension", "pg_stat_activity",
+    # CTE recursiva do versionamento documental (``WITH RECURSIVE cadeia``),
+    # não é tabela real — introduzida no GED (#1134).
+    "cadeia",
+}
 _RUIDO_SQL = {
     "information_schema", "unnest", "generate_series", "jsonb_each",
     "jsonb_array_elements", "jsonb_array_elements_text",
