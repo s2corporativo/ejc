@@ -131,6 +131,10 @@ ADICOES_INTENCIONAIS = {
     # ENDEREÇO canônico, não de contrato).
     ("/api/intelligence/radar/legislativo", "GET"),
     ("/api/intelligence/analise-impacto", "POST"),
+    # PR #1132 (14/08/2026): motor de teses assíncrono — o frontend passou a
+    # fazer polling de status em vez de esperar a resposta síncrona (E02–E09).
+    ("/api/teses/motor/async", "POST"),
+    ("/api/teses/motor/async/{task_id}", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui

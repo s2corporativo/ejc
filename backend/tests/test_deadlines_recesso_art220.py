@@ -143,18 +143,11 @@ async def test_post_deadlines_nao_aplica_recesso_para_tipo_administrativo():
     do art. 220 a tipo != processual. Mesmo que o payload force dias_uteis=True
     num tipo não-processual, aplicar_recesso deve permanecer False.
 
-    Nota de retificação (review Codex em PR #1079, não corrigida aqui): esta
-    asserção NÃO significa "zero recesso" — prazo_dias_uteis() sempre chama
-    eh_dia_util(forense=True), que exclui o recesso PARCIAL legado
-    (RECESSO_FORENSE, 20/12-06/01) independente de aplicar_recesso. Pra este
-    caso concreto (2025-12-15 + 10 dias úteis), sem NENHUM recesso o resultado
-    seria 2025-12-30, não 2026-01-14 — um prazo administrativo mostrado ~15
-    dias mais tarde do que a lei permite, se o tipo realmente não deve ter
-    suspensão alguma. Esse é um comportamento PRÉ-EXISTENTE de
-    deadline_calculator.py (forense=True é hardcoded em prazo_dias_uteis,
-    nunca foi parametrizável por tipo) — fora do escopo desta correção
-    (PRZ-02 só endereça a suspensão INTEGRAL do art. 220 para processual).
-    Rastreado em Issue dedicada."""
+    Nota histórica: a retificação do review Codex em PR #1079 apontava que o
+    recesso PARCIAL legado (forense=True hardcoded) inflava este prazo
+    administrativo para 2026-01-14 — o correto sem nenhum recesso é
+    2025-12-30. Isso foi RESOLVIDO pelo PR #1146 (PRZ-03): forense=False
+    passou a ser passado para prazo_dias_uteis() em tipo administrativo."""
     from app.routers.deadlines import criar
     from app.schemas.deadline import DeadlineCreate
 
@@ -168,9 +161,9 @@ async def test_post_deadlines_nao_aplica_recesso_para_tipo_administrativo():
     )
     resp = await criar(payload=payload, db=db, cu=_user())
 
-    # SEM a suspensão INTEGRAL do art. 220 (correto p/ este tipo) — mas ainda
-    # COM o recesso parcial legado do forense=True (ver nota acima).
-    assert resp.data_prazo == date(2026, 1, 14)
+    # SEM a suspensão INTEGRAL do art. 220 E SEM o recesso forense parcial
+    # (PRZ-03: forense=False para administrativo) — resultado correto p/ tipo.
+    assert resp.data_prazo == date(2025, 12, 30)
 
 
 @pytest.mark.anyio
@@ -296,5 +289,6 @@ async def test_calculadora_tipo_administrativo_nao_aplica_recesso_integral():
         ),
         cu=_user(),
     )
-    assert previa["data_vencimento"] == date(2026, 1, 14)
+    # SEM suspensão INTEGRAL (art. 220) E SEM recesso forense parcial (PRZ-03).
+    assert previa["data_vencimento"] == date(2025, 12, 30)
     assert "recesso forense integral" not in previa["modo"]

@@ -21,6 +21,7 @@ EXTENSOES_PERMITIDAS: set[str] = {
     ".xlsx",
     ".xls",
     ".txt",
+    ".md",
     ".xml",
 }
 
@@ -47,6 +48,8 @@ MIME_POR_EXTENSAO: dict[str, frozenset[str]] = {
     ".jpeg": frozenset({"image/jpeg"}),
     ".png": frozenset({"image/png"}),
     ".xml": frozenset({"application/xml", "text/xml", "text/plain"}),
+    # Markdown entra como texto plano: aceito na ingestão universal e no GED.
+    ".md": frozenset({"text/plain", "text/markdown"}),
 }
 
 

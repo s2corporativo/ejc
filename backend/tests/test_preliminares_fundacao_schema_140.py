@@ -69,7 +69,9 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     # 138 → 139 → 140 (frete independente: 139 altera document_intake_batches,
     # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
-    assert script.get_heads() == ["142_document_hash_rescan"]
+    # Consolidado em 2026-08-15 (PR #1149): cadeia linearizada até
+    # 143_signature_documento_visualizado (coluna aditiva em signature_requests).
+    assert script.get_heads() == ["143_signature_documento_visualizado"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (
@@ -79,6 +81,10 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     assert (
         script.get_revision("142_document_hash_rescan").down_revision
         == "141_dpt360_diagnostico"
+    )
+    assert (
+        script.get_revision("143_signature_documento_visualizado").down_revision
+        == "142_document_hash_rescan"
     )
     assert (
         script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision

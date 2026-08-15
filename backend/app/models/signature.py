@@ -23,6 +23,9 @@ class SignatureRequest(Base):
     hash_sha256  = Column(String(64), nullable=False)
     assinado_em  = Column(DateTime(timezone=True), nullable=True)
     assinado_por_user = Column(String(36), nullable=True)
+    # ASS-01 (Issue #1081): 1ª visualização do documento antes da assinatura —
+    # gravada pelo GET /documento e EXIGIDA pelo POST /assinar (server-side).
+    documento_visualizado_em = Column(DateTime(timezone=True), nullable=True)
     ip           = Column(String(45), nullable=True)
     user_agent   = Column(String(300), nullable=True)
     criado_por   = Column(String(36), nullable=True)
