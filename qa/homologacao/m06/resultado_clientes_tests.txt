@@ -8,14 +8,14 @@
 [PASS] edicao_anti_phantom — PATCH 200 GET 200
 [PASS] inativacao — status=inativo
 [PASS] relatorio_lgpd — HTTP 200
-[PASS] docs_portal_cliente_autenticado — HTTP 200
+[FAIL] docs_portal_cliente_autenticado — HTTP 403
 [PASS] docs_portal_admin_fora_escopo — HTTP 403 (admin não é cliente do portal)
 [PASS] caso_criado — HTTP 201
 [PASS] contratos_societarios — HTTP 404 (endpoint societário por cliente: ausente/404 — verificar rota real)
 [PASS] honorarios_lista — HTTP 200
 [PASS] exclusao_soft — HTTP 200 {"detail":"Cliente removido"}
 [PASS] excluido_oculto — HTTP 404
-[PASS] trash_lista — HTTP 200 ids=['896c9b82-31b2-4b12-9552-afd1f10e6c02', 'a39fe9d5-683a-408a-bc47-3387d1ac6223', 'b3c5f4b0-178a-4770-bca6-9fc9f7c61550']
+[PASS] trash_lista — HTTP 200 ids=['4ca64cfb-f171-461c-a339-abde6814837c']
 [PASS] trash_restaura — HTTP 200 {"detail":"Registro restaurado"}
 [PASS] anti_phantom_restauracao — HTTP 200
 [PASS] permissao_secretaria_criar — HTTP 201 (matriz permite)

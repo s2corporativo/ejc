@@ -135,6 +135,10 @@ ADICOES_INTENCIONAIS = {
     # fazer polling de status em vez de esperar a resposta síncrona (E02–E09).
     ("/api/teses/motor/async", "POST"),
     ("/api/teses/motor/async/{task_id}", "GET"),
+    # Homologação M08 (16/08/2026): edição de parte processual com auditoria —
+    # PATCH /cases/{case_id}/partes/{parte_id} não existia (só listagem,
+    # criação e remoção). Contrato novo e deliberado.
+    ("/api/cases/{case_id}/partes/{parte_id}", "PATCH"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui

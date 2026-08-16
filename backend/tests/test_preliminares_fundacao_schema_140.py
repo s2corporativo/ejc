@@ -82,13 +82,13 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
         script.get_revision("142_document_hash_rescan").down_revision
         == "141_dpt360_diagnostico"
     )
-    assert (
-        script.get_revision("144a_alembic_version_widening").down_revision
-        == "142_document_hash_rescan"
-    )
+    # Consolidado na homologação M02/M11 (16/08/2026): o widening
+    # varchar(32)->128 (antiga migration ``144a``) foi fundido no upgrade da
+    # 143 — o guard ``test_migration_numbering_guard.py`` rejeita prefixo
+    # não numérico.
     assert (
         script.get_revision("143_signature_documento_visualizado").down_revision
-        == "144a_alembic_version_widening"
+        == "142_document_hash_rescan"
     )
     assert (
         script.get_revision("144_alembic_version_varchar128").down_revision

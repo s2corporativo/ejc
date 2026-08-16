@@ -13,9 +13,13 @@ da cadeia sem nova emergência. ``upgrade()`` é DDL puro e estático
 recusa dados existentes em widening, e instalações novas seguem o caminho
 padrão sem condicionais — o gate de compatibilidade de deploy aprova.
 
-O ``downgrade()`` reverte para ``varchar(32)`` com guarda humana:
-aborta sem alterar nada se houver versão gravada com mais de 32
-caracteres (nenhuma existe na cadeia até a 144, pois 142 tem 24 chars).
+**Homologação M02/M11 (16/08/2026):** o widening foi consolidado no upgrade
+da ``143`` (onde precisa rodar, antes da gravação do ``revision_id`` de 35
+caracteres). Esta migration executa o widening novamente como operação
+idempotente — PostgreSQL aceita widening já aplicado sem alterar nada — e
+preserva o ``downgrade()`` no-op seguro: estreitar aqui rejeitaria a
+própria transação de downgrade, pois o Alembic grava a ``revision_id`` de
+destino antes de executar o corpo.
 """
 from alembic import op
 import sqlalchemy as sa

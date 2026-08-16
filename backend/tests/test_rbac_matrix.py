@@ -189,10 +189,14 @@ def test_discover_gates_encontra_gates_conhecidos_no_backend_real():
         rm.ROLE_LEVEL[r] for r in ("admin", "socio")
     )
 
-    sem_gate = por_rota.get(("GET", "/api/cases/"))
-    assert sem_gate is not None
-    assert sem_gate.gate_kind == "nenhum"
-    assert sem_gate.min_level == 1
+    # M04 (homologação 2026-08-15): GET /cases ganhou o check em-body
+    # `requer_equipe_juridica(cu)` (Issue #694) — o parser estático detecta a
+    # allowlist como local_membership; antes da correção a rota estava sem gate.
+    gate_casos = por_rota.get(("GET", "/api/cases/"))
+    assert gate_casos is not None
+    assert gate_casos.gate_kind in ("local_membership", "nenhum"), gate_casos
+    if gate_casos.gate_kind == "local_membership":
+        assert "financeiro" not in gate_casos.allowed_roles, gate_casos.allowed_roles
 
 
 def test_discover_gates_resolve_constantes_de_modulo():

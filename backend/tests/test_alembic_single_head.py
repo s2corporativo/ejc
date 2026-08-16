@@ -143,17 +143,13 @@ def test_preliminares_encadeiam_apos_consolidacao_fontes():
     revisao_143 = _script_directory().get_revision(
         "143_signature_documento_visualizado"
     )
-    # Correção Módulo 02 (15/08/2026): o widening varchar(32)->128 precisa
-    # rodar ANTES da 143 (revision_id com 35 caracteres), sob pena de rejeição
-    # em instalações novas (bug reproduzido em homologação).
-    revisao_144a = _script_directory().get_revision(
-        "144a_alembic_version_widening"
-    )
-    assert revisao_144a.down_revision == "142_document_hash_rescan"
-    revisao_143 = _script_directory().get_revision(
-        "143_signature_documento_visualizado"
-    )
-    assert revisao_143.down_revision == "144a_alembic_version_widening"
+    # Consolidado na homologação M02/M11 (16/08/2026): o widening
+    # varchar(32)->128 (migration ``144a``) foi fundido no upgrade da 143 —
+    # o guard de numeração ``test_migration_numbering_guard.py`` rejeita
+    # prefixo não numérico. O widening roda ANTES do corpo da 143
+    # (revision_id com 35 caracteres), preservando a proteção em
+    # instalações novas.
+    assert revisao_143.down_revision == "142_document_hash_rescan"
     revisao_144 = _script_directory().get_revision(
         "144_alembic_version_varchar128"
     )
