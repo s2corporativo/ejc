@@ -15,7 +15,9 @@ export default function CaseFilterChip({
   onRemove: () => void;
 }) {
   const { pathname } = useLocation();
-  const travadoNoCaso = /^\/casos\/(?!novo(?:\/|$))[^/]+(?:\/|$)/.test(pathname);
+  const travadoNoCaso = /^\/casos\/(?!novo(?:\/|$))[^/]+(?:\/|$)/.test(
+    pathname,
+  );
 
   return (
     <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-medium text-primary-800">

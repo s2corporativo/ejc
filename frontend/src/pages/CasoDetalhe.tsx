@@ -710,8 +710,7 @@ export default function CasoDetalhe() {
         return <TabEtiquetas caseId={id} />;
       case "checklists":
         return <TabChecklists caseId={id} />;
-      
-      
+
       case "documentos":
         // Tela C: upload embutido na aba — a ação acontece dentro do caso.
         return <TabDocumentos caseId={id} />;
@@ -780,7 +779,9 @@ export default function CasoDetalhe() {
           <TabLista
             titulo="Honorários e Pagamentos"
             endpoint={`/fees/?case_id=${id}`}
-            valorCausa={caso.valor_causa ?? caso.processo_principal?.valor_causa ?? null}
+            valorCausa={
+              caso.valor_causa ?? caso.processo_principal?.valor_causa ?? null
+            }
             empty="Nenhum lançamento financeiro"
             renderItem={(f) => (
               <div className="card p-3 flex justify-between items-center text-sm">
@@ -803,7 +804,9 @@ export default function CasoDetalhe() {
           <TabLista
             titulo="Centro de Custos"
             endpoint={`/centro-custos?case_id=${id}`}
-            valorCausa={caso.valor_causa ?? caso.processo_principal?.valor_causa ?? null}
+            valorCausa={
+              caso.valor_causa ?? caso.processo_principal?.valor_causa ?? null
+            }
             empty="Nenhum lançamento de custo"
             renderItem={(c) => (
               <div className="card p-3 flex justify-between items-center text-sm">
@@ -839,7 +842,7 @@ export default function CasoDetalhe() {
         return <TabMemoria caseId={id} />;
       case "dossie":
         return <DossieEstrategicoCaso caseId={id} />;
-      
+
       case "ferramentas":
         return <TabFerramentas caso={caso} />;
       default:

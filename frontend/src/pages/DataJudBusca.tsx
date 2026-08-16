@@ -51,7 +51,9 @@ export default function DataJudBusca() {
   const [mensagemSincronizacao, setMensagemSincronizacao] = useState<
     string | null
   >(null);
-  const [erroSincronizacao, setErroSincronizacao] = useState<string | null>(null);
+  const [erroSincronizacao, setErroSincronizacao] = useState<string | null>(
+    null,
+  );
 
   // React Router pode reaproveitar o mesmo componente entre deep-links de
   // processos diferentes. O campo precisa acompanhar o parâmetro canônico.

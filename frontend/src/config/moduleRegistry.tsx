@@ -1071,7 +1071,10 @@ function routeBase(path: string): string {
 }
 
 /** Matcher mínimo compatível com os padrões registrados no EJC (:param e /*). */
-export function routePatternMatches(pattern: string, pathname: string): boolean {
+export function routePatternMatches(
+  pattern: string,
+  pathname: string,
+): boolean {
   if (pattern === pathname) return true;
   if (pattern.endsWith("/*")) {
     const base = pattern.slice(0, -2);
@@ -1111,7 +1114,8 @@ export function getHelpModuleKey(pathname: string): string | null {
   const match = candidates.find((module) => {
     const base = routeBase(module.path);
     if (base === "/") return pathname === "/";
-    if (module.path.includes(":")) return routePatternMatches(module.path, pathname);
+    if (module.path.includes(":"))
+      return routePatternMatches(module.path, pathname);
     if (base.endsWith("/*")) {
       const wildcardBase = base.slice(0, -2);
       return (

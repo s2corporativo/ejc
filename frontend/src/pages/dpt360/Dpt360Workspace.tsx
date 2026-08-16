@@ -86,7 +86,15 @@ function DptLegacyRedirect({
         Esta seção foi consolidada na nova navegação do DPT 360.
       </p>
       <p className="mt-2 text-xs text-slate-400">
-        Abrindo <strong>“{from === "ferramentas" ? "Ferramentas → Visão Executiva" : "Biblioteca → Conhecimento"}“</strong>…
+        Abrindo{" "}
+        <strong>
+          “
+          {from === "ferramentas"
+            ? "Ferramentas → Visão Executiva"
+            : "Biblioteca → Conhecimento"}
+          “
+        </strong>
+        …
       </p>
       <Link
         to={to}
@@ -401,7 +409,10 @@ function CompaniesView({ data }: { data: DptDashboard }) {
   );
 }
 
-type CompanyDetailHeader = Pick<DptCompany, "id" | "nome" | "cidade" | "estado">;
+type CompanyDetailHeader = Pick<
+  DptCompany,
+  "id" | "nome" | "cidade" | "estado"
+>;
 
 function CompanyDetail({
   data,

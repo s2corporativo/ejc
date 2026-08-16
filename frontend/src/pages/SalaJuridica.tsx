@@ -158,80 +158,81 @@ const MODOS: Array<{ valor: string; rotulo: string }> = [
   { valor: "revisar_documento", rotulo: "Revisar documento" },
 ];
 
-const ACOES_RAPIDAS: Array<{ rotulo: string; modo: string; comando: string }> = [
-  {
-    rotulo: "Analisar caso",
-    modo: "organizar_fatos",
-    comando:
-      "Analise juridicamente este caso: identifique os fatos relevantes, os pontos controvertidos, a área do Direito e o procedimento aplicável.",
-  },
-  {
-    rotulo: "Criar estratégia",
-    modo: "estrategia_da_parte",
-    comando:
-      "Crie a estratégia para a parte que representamos: teses favoráveis e contrárias, fragilidades, provas faltantes e próximos passos.",
-  },
-  {
-    rotulo: "Elaborar defesa",
-    modo: "elaborar_documento",
-    comando:
-      "Elabore a contestação/defesa completa. Antes de redigir, confirme o que não estiver evidente (polo, objetivo, fase, prazo, juízo).",
-  },
-  {
-    rotulo: "Criar petição",
-    modo: "elaborar_documento",
-    comando:
-      "Transforme esta análise em uma petição completa, com endereçamento, qualificação, fatos, fundamentos, pedidos e valor da causa. Lacunas viram campos [A PREENCHER].",
-  },
-  {
-    rotulo: "Revisar peça",
-    modo: "revisar_documento",
-    comando:
-      "Revise tecnicamente a peça colada na área de trabalho: coerência, fatos, pedidos, fundamentação, competência, valores e contradições.",
-  },
-  {
-    rotulo: "Resumir documentos",
-    modo: "organizar_fatos",
-    comando:
-      "Resuma os documentos anexados, indicando partes, datas, valores, pedidos, prazos e o que está faltando.",
-  },
-  {
-    rotulo: "Criar cronologia",
-    modo: "organizar_fatos",
-    comando:
-      "Monte a cronologia dos fatos, distinguindo comprovado, alegado, inferido e controvertido.",
-  },
-  {
-    rotulo: "Identificar riscos",
-    modo: "detectar_contradicoes",
-    comando:
-      "Localize inconsistências, riscos e fragilidades do caso (processuais, probatórios e financeiros).",
-  },
-  {
-    rotulo: "Listar provas",
-    modo: "analisar_provas",
-    comando:
-      "Liste as provas disponíveis e as provas necessárias, relacionando cada fato à respectiva prova.",
-  },
-  {
-    rotulo: "Pesquisar fundamentos",
-    modo: "pesquisar_direito",
-    comando:
-      "Pesquise os fundamentos jurídicos aplicáveis (legislação e precedentes com fonte verificável).",
-  },
-  {
-    rotulo: "Calcular valores",
-    modo: "organizar_fatos",
-    comando:
-      "Calcule os pedidos e valores envolvidos, explicitando premissas, índices e o que depende de perícia ou confirmação.",
-  },
-  {
-    rotulo: "Perguntas do caso",
-    modo: "conversa_livre",
-    comando:
-      "Faça as perguntas necessárias para completar as informações do caso antes de qualquer peça.",
-  },
-];
+const ACOES_RAPIDAS: Array<{ rotulo: string; modo: string; comando: string }> =
+  [
+    {
+      rotulo: "Analisar caso",
+      modo: "organizar_fatos",
+      comando:
+        "Analise juridicamente este caso: identifique os fatos relevantes, os pontos controvertidos, a área do Direito e o procedimento aplicável.",
+    },
+    {
+      rotulo: "Criar estratégia",
+      modo: "estrategia_da_parte",
+      comando:
+        "Crie a estratégia para a parte que representamos: teses favoráveis e contrárias, fragilidades, provas faltantes e próximos passos.",
+    },
+    {
+      rotulo: "Elaborar defesa",
+      modo: "elaborar_documento",
+      comando:
+        "Elabore a contestação/defesa completa. Antes de redigir, confirme o que não estiver evidente (polo, objetivo, fase, prazo, juízo).",
+    },
+    {
+      rotulo: "Criar petição",
+      modo: "elaborar_documento",
+      comando:
+        "Transforme esta análise em uma petição completa, com endereçamento, qualificação, fatos, fundamentos, pedidos e valor da causa. Lacunas viram campos [A PREENCHER].",
+    },
+    {
+      rotulo: "Revisar peça",
+      modo: "revisar_documento",
+      comando:
+        "Revise tecnicamente a peça colada na área de trabalho: coerência, fatos, pedidos, fundamentação, competência, valores e contradições.",
+    },
+    {
+      rotulo: "Resumir documentos",
+      modo: "organizar_fatos",
+      comando:
+        "Resuma os documentos anexados, indicando partes, datas, valores, pedidos, prazos e o que está faltando.",
+    },
+    {
+      rotulo: "Criar cronologia",
+      modo: "organizar_fatos",
+      comando:
+        "Monte a cronologia dos fatos, distinguindo comprovado, alegado, inferido e controvertido.",
+    },
+    {
+      rotulo: "Identificar riscos",
+      modo: "detectar_contradicoes",
+      comando:
+        "Localize inconsistências, riscos e fragilidades do caso (processuais, probatórios e financeiros).",
+    },
+    {
+      rotulo: "Listar provas",
+      modo: "analisar_provas",
+      comando:
+        "Liste as provas disponíveis e as provas necessárias, relacionando cada fato à respectiva prova.",
+    },
+    {
+      rotulo: "Pesquisar fundamentos",
+      modo: "pesquisar_direito",
+      comando:
+        "Pesquise os fundamentos jurídicos aplicáveis (legislação e precedentes com fonte verificável).",
+    },
+    {
+      rotulo: "Calcular valores",
+      modo: "organizar_fatos",
+      comando:
+        "Calcule os pedidos e valores envolvidos, explicitando premissas, índices e o que depende de perícia ou confirmação.",
+    },
+    {
+      rotulo: "Perguntas do caso",
+      modo: "conversa_livre",
+      comando:
+        "Faça as perguntas necessárias para completar as informações do caso antes de qualquer peça.",
+    },
+  ];
 
 const ABAS_ESTADO = [
   "fatos",
@@ -431,7 +432,8 @@ export default function SalaJuridica() {
 
   const descarregarAutosave = async (sessao: Sessao): Promise<boolean> => {
     const pendente = autosavePendenteRef.current;
-    if (!pendente || pendente.sessaoId !== sessao.id || sessao.frozen) return true;
+    if (!pendente || pendente.sessaoId !== sessao.id || sessao.frozen)
+      return true;
     if (autosaveRef.current) clearTimeout(autosaveRef.current);
     autosavePendenteRef.current = null;
     try {
@@ -600,9 +602,9 @@ export default function SalaJuridica() {
 
   const temDuplicidade = Boolean(
     convPreview &&
-      (convClienteId == null
-        ? convPreview.clientes_possivelmente_duplicados.length > 0
-        : convPreview.casos_ativos_do_cliente.length > 0),
+    (convClienteId == null
+      ? convPreview.clientes_possivelmente_duplicados.length > 0
+      : convPreview.casos_ativos_do_cliente.length > 0),
   );
 
   const buscarClientes = async (termo: string) => {
@@ -662,8 +664,7 @@ export default function SalaJuridica() {
           response?: {
             data?: {
               detail?:
-                | string
-                | ({ mensagem?: string } & Partial<PreviewConversao>);
+                string | ({ mensagem?: string } & Partial<PreviewConversao>);
             };
           };
         }

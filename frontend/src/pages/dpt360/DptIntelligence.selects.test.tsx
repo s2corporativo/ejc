@@ -62,7 +62,10 @@ afterEach(() => {
 it("selects de empresa e área ficam desabilitados durante o carregamento", async () => {
   let resolve: (v: unknown) => void;
   runActionMock.mockImplementationOnce(
-    () => new Promise((res) => { resolve = res; }),
+    () =>
+      new Promise((res) => {
+        resolve = res;
+      }),
   );
 
   render(<DptIntelligence {...defaultProps} />);
@@ -71,7 +74,7 @@ it("selects de empresa e área ficam desabilitados durante o carregamento", asyn
   });
   fireEvent.click(screen.getByRole("button", { name: /Gerar rascunho/ }));
 
-    // Empresa e botões de modo ficam desabilitados durante o loading.
+  // Empresa e botões de modo ficam desabilitados durante o loading.
   await waitFor(() => {
     expect(
       (screen.getByLabelText("Empresa") as HTMLSelectElement).disabled,

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import api from "../lib/api";
 import DataJudBusca from "./DataJudBusca";
@@ -80,7 +86,9 @@ describe("DataJudBusca — contexto do caso", () => {
     );
 
     const erro = await screen.findByText("Falha controlada de sincronização");
-    const erroEl = screen.getByText("Falha controlada de sincronização").closest("p");
+    const erroEl = screen
+      .getByText("Falha controlada de sincronização")
+      .closest("p");
     expect(erroEl?.className).toContain("text-danger-700");
     expect(screen.queryByText(/Sincronizado:/)).toBeNull();
   });

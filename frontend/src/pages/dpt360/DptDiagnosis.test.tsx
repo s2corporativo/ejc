@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DptCompany } from "./api";
 import DptDiagnosis from "./DptDiagnosis";
@@ -72,7 +78,9 @@ describe("DptDiagnosis → DptIntelligence — sincronização de área", () => 
       aviso_hitl: "Revisão humana obrigatória.",
     });
     const textarea = screen.getByPlaceholderText(/Ex\.:/i);
-    fireEvent.change(textarea, { target: { value: "Analisar riscos tributários" } });
+    fireEvent.change(textarea, {
+      target: { value: "Analisar riscos tributários" },
+    });
     const botao = screen.getByRole("button", { name: /gerar rascunho/i });
     await act(async () => {
       botao.click();
@@ -102,12 +110,16 @@ describe("DptDiagnosis → DptIntelligence — sincronização de área", () => 
     await waitFor(() => expect(getReadinessMock).toHaveBeenCalled());
 
     const textarea = screen.getByPlaceholderText(/Ex\.:/i);
-    fireEvent.change(textarea, { target: { value: "Analisar riscos tributários" } });
+    fireEvent.change(textarea, {
+      target: { value: "Analisar riscos tributários" },
+    });
     const botao = screen.getByRole("button", { name: /gerar rascunho/i });
     await act(async () => {
       botao.click();
     });
-    await waitFor(() => expect(screen.getByText("Rascunho tributário")).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText("Rascunho tributário")).toBeTruthy(),
+    );
 
     const tipoSelect = screen.getByLabelText(/Tipo de diagnóstico/i);
     fireEvent.change(tipoSelect, { target: { value: "ambiental" } });
@@ -130,19 +142,20 @@ describe("DptDiagnosis → DptIntelligence — sincronização de área", () => 
     await waitFor(() => expect(getReadinessMock).toHaveBeenCalled());
 
     const textarea = screen.getByPlaceholderText(/Ex\.:/i);
-    fireEvent.change(textarea, { target: { value: "Analisar riscos tributários" } });
-    const botao = () => screen.getByRole("button", { name: /gerar rascunho|analisando/i });
+    fireEvent.change(textarea, {
+      target: { value: "Analisar riscos tributários" },
+    });
+    const botao = () =>
+      screen.getByRole("button", { name: /gerar rascunho|analisando/i });
     await act(async () => {
       botao().click();
     });
-    expect(botao().hasAttribute("disabled")).toBe(true);          // análise em voo
+    expect(botao().hasAttribute("disabled")).toBe(true); // análise em voo
 
     // Troca de tipo com a requisição ainda pendente: não pode ficar travado.
     const tipoSelect = screen.getByLabelText(/Tipo de diagnóstico/i);
     fireEvent.change(tipoSelect, { target: { value: "ambiental" } });
-    await waitFor(() =>
-      expect(botao().hasAttribute("disabled")).toBe(false),
-    );
+    await waitFor(() => expect(botao().hasAttribute("disabled")).toBe(false));
 
     // A resposta tardia da consulta abandonada (tributário) não pode aparecer.
     await act(async () => {

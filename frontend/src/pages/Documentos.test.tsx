@@ -201,7 +201,10 @@ describe("Documentos — mutações", () => {
         titulo: "Contrato revisado",
       });
     });
-    const payload = simulacoes.patch.mock.calls[0][1] as Record<string, unknown>;
+    const payload = simulacoes.patch.mock.calls[0][1] as Record<
+      string,
+      unknown
+    >;
     expect(payload).not.toHaveProperty("case_id");
   });
 
@@ -225,11 +228,9 @@ describe("Documentos — mutações", () => {
   it("preserva falha isolada e resume vínculo parcial", async () => {
     simulacoes.role = "advogado";
     prepararApi([DOCUMENTO, DOCUMENTO_2]);
-    simulacoes.post
-      .mockResolvedValueOnce({ data: {} })
-      .mockRejectedValueOnce({
-        response: { data: { detail: "Documento já vinculado" } },
-      });
+    simulacoes.post.mockResolvedValueOnce({ data: {} }).mockRejectedValueOnce({
+      response: { data: { detail: "Documento já vinculado" } },
+    });
 
     await renderizar();
     await selecionar("Contrato teste");
