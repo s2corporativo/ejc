@@ -947,3 +947,9 @@ PROBLEMA: bateria m35_financeiro_tests.py executa apenas seção 1 (3 PASS) e SA
 Hipótese: o comando `cd /home/ubuntu/ejc_repo && PYTHONPATH=... python3 -u ... > /tmp/m35_out.txt 2>&1; echo "EXIT $?"` rodou mas apenas 3 cenários — talvez bateria esteja truncada? wc -l = 288 linhas, completa.
 VERIFICAR: rodar `python3 -c "exec(open('scripts/inventory/m35_financeiro_tests.py').read()); print('secoes:', [s for s in dir() if s.startswith('secao_')])"` — melhor: rodar bateria em sessão shell NOVA.
 Após corrigir: rerun completo esperado ~28 cenários; relatório qa/homologacao/m35/RELATORIO_MODULO_M35.md; commit "M35 homologação..."; depois M36 (timesheet: /api/time-entries? verificar prefix em routers; time_entries table: id, case_id, user_id, data, minutos, descricao, faturavel, fee_id).
+
+## M36 superfície confirmada (Timesheet e Produtividade)
+- `/api/timesheet/casos/{id}` GET (lista + total_horas + horas_a_faturar; verificar_acesso_caso), POST / (EntryIn: case_id, data, minutos 1-1440, descricao 3-500, faturavel), POST /caso/{id}/faturar (FaturarIn: valor_hora>0, data_vencimento; consolida horas pendentes em Fee por_hora; 422 se vazio), DELETE /{id} (MsgResponse). Gate: _req_fat = fin+adm só p/ faturar.
+- `/api/analytics/produtividade` GET ?periodo=7d|30d|90d|365d — só socio+ (ROLE_LEVEL socio), por_advogado/por_area/trend.
+- Tabela time_entries: id, case_id, user_id, data, minutos, descricao, faturavel, fee_id.
+- PROMPT 36 cobre: lançamentos, duração, início/fim, advogado, cliente, processo, faturável, relatórios, produtividade, edição, permissões. Nota: sistema NÃO tem início/fim por lançamento (apenas data+minutos) — documentar como diferença de escopo (total_duration não existe).
