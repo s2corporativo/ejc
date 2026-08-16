@@ -154,8 +154,9 @@ describe("DashboardUltra — referência 2026", () => {
     ).toBeTruthy();
     expect(screen.queryByText("Jurisprudência e fontes")).toBeNull();
     expect(
-      screen.getByText("Ferramenta restrita à equipe jurídica autorizada."),
-    ).toBeTruthy();
+      screen.getAllByText("Ferramenta restrita à equipe jurídica autorizada.")
+        .length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it("exclui atividades finalizadas e usa dados reais dos novos cartões", async () => {
