@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate-reference-ui:
@@ -14,8 +14,10 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - name: Checkout
+      - name: Checkout feature branch
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Node 22.22
         uses: actions/setup-node@v6
@@ -26,6 +28,39 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Format reference UI changes
+        run: >-
+          npx prettier --write
+          src/components/LayoutReference.tsx
+          src/components/SidebarWeekCalendar.tsx
+          src/pages/DashboardUltra.tsx
+          src/pages/DashboardUltra.test.tsx
+          src/pages/AssistenteIA.tsx
+          src/App.tsx
+          src/main.tsx
+          src/styles/ejc-reference-2026.css
+
+      - name: Commit formatting if needed
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            frontend/src/components/LayoutReference.tsx \
+            frontend/src/components/SidebarWeekCalendar.tsx \
+            frontend/src/pages/DashboardUltra.tsx \
+            frontend/src/pages/DashboardUltra.test.tsx \
+            frontend/src/pages/AssistenteIA.tsx \
+            frontend/src/App.tsx \
+            frontend/src/main.tsx \
+            frontend/src/styles/ejc-reference-2026.css
+          if git diff --cached --quiet; then
+            echo "Reference UI files already formatted."
+          else
+            git commit -m "style(frontend): formatar arquivos do redesign de referência"
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          fi
 
       - name: Check formatting of reference UI changes only
         run: >-
