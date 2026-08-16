@@ -561,3 +561,36 @@ Corrigido: validador saudável com fontes RAG simuladas (PASS), jurimetria via _
 Ainda verificar: DV do CNJ de teste — run pode falhar se "1234567-60.2026.8.13.0001" não for DV válido (módulo 97 base 100). Validar ao rodar; se FAIL, calcular DV real via função.
 Após PASS total: commit "M24 veracidade jurídica N/N PASS", reportar usuário (formato padrão), avançar M25 (PROMPT 25 em /home/ubuntu/upload/Pasted_content_76.txt, linha ~732: precedentes/jurisprudência/citações).
 Push remoto ainda bloqueado (GH_TOKEN expirado) — commits locais; usuário refaz push no final.
+
+## M24 — Veracidade Jurídica da IA ✅ HOMOLOGADO 22/22
+Dataset sintético controlado (EJC_QA), 9 cenários. Prova determinística dos motores locais de veracidade (sem dependência de provedor LLM):
+
+1. response_validator.validar — gate anti-alucinação completo: citação verdadeira (Lei 9.307 art. 4º) validada sem bloqueio; cenários falsos (lei inexistente, artigo inexistente, súmula inexistente, jurisprudência inexistente) todos flaggados com revisão=True; fundamentação sem fonte recebe prefixo "SEM BASE VERIFICÁVEL"; texto saudável com âncora RAG não flaggado indevidamente.
+2. Vedações OAB: promessa de resultado detectada; tese neutra não flaggada indevidamente.
+3. Jurimetria honesta: critério declarado ("casos encerrados/arquivados com resultado registrado") e amostra n=0 idêntica à fonte da verdade (SQL bruto direto); com n=0, taxa_exito=None — nunca inventa probabilidade.
+4. DV CNJ (ISO 7064 mod 97): aceita DV correto (DD=11), rejeita adulterado (DD=61) e malformado.
+5. Endpoints /api/documentos-ia/analisar: 9 cenários, todos 422 (validação local de payload antes da IA) — sem stack trace.
+
+Commit: ace3376d (branch homologacao-m07-2026-08-16).
+Próximo: M25 — PROMPT 25 (~linha 732 do Pasted_content_76.txt). Ler seção e executar.
+
+## M25 — Precedentes, Jurisprudência e Citações (em execução)
+
+### Superfícies confirmadas (rotas reais)
+- `/api/jurisprudencias` CRUD interno (get_current_user + allowlist leitura equipe jurídica; edição advogado+; delete socio+) — issue #694.
+- `/api/jurisprudencia-externa/buscar` (LexML/TJMG paralelos, return_exceptions fail-safe), `/fontes` (lexml/tjmg/datajud), `/precedentes/buscar` (roteador dedicado, rate_limit).
+- `/api/ai/citacoes/verificar` (verificador rigoroso sem LLM; texto ≤200k; consultar_datajud opcional).
+- `/api/qualidade/verificar-citacoes` (citation_check legado; require_roles estagiario+).
+- `/api/legal-docs/{doc}/jurisprudencia-check` (_auditar_jurisprudencia_peca: CNJ regex + URL oficial + súmula identificada; citação sem id → problema; _fonte_juris_validada: KnowledgeDoc jurisprudência + fonte_validada + confidence alta/media + rag_status aprovado/disponível).
+- `/api/teses` campo tribunal; `/teses/busca-avancada` filtra por tribunal.
+
+### Ações realizadas no M25 (com prova)
+1. Seed Planalto CPC+CF88 via `scripts/seed_legislacao` (1072 artigos CPC, 409 CF). Probes: `_existe_artigo('489','CPC')` → 'Código de Processo Civil (Lei 13.105/2015)'.
+2. Correção de dados m25_fix_vigencia_seeds.py: gate RAG fail-closed exige legal_status='vigente' + origem + verificado_em + SEM legal_status_inferido_em; ingestor planalto marca 'vigencia_nao_verificada' com inferência → docs legítimos ficavam fora do retrieval. Fix declara proveniência 'planalto_oficial' (não inferência) e limpa inferred. Idempotente, escopo só planalto:cpc/planalto:cf88.
+3. Sem súmulas na base (0 sumula:*) — súmula não ingerida fica 'identificada' (não confirmada) — comportamento correto, nunca 'verificada'.
+4. LexML público fora/404 no sandbox — tratar como fonte externa indisponível (buscar_lexml retorna [] em exceção).
+
+### Bateria
+- scripts/inventory/m25_precedentes_tests.py reescrita completa: rotas corretas (jurisprudencia-externa hífen), status snake_case, expectations reais (art.489 CPC + art.5º CF verificadas=2 score 100; súmula 9999 suspeita; DV inválido suspeito score 0).
+
+### Resultado M25: AGUARDANDO EXECUÇÃO
