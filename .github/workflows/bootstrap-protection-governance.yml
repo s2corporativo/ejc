@@ -16,25 +16,40 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Validar revisão de segurança a partir de workflow confiável
+      - name: Validar atestação de segurança imutável no HEAD
         env:
-          CORPO: ${{ github.event.pull_request.body }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
           set -euo pipefail
           ALTERADOS="$RUNNER_TEMP/alterados-bootstrap.txt"
+          REVIEWS="$RUNNER_TEMP/reviews-bootstrap.json"
+
           gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files?per_page=100" \
             --jq '.[].filename' > "$ALTERADOS"
 
           if grep -Fxq 'scripts/governanca/branch-protection-bootstrap.sh' "$ALTERADOS" \
              || grep -Fxq '.github/workflows/bootstrap-protection-governance.yml' "$ALTERADOS"; then
-            printf '%s' "$CORPO" | grep -qi 'security-auditor: executado' || {
-              echo "::error::alteração do bootstrap de proteção exige security-auditor: executado"
+            gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews?per_page=100" > "$REVIEWS"
+
+            jq -e --arg sha "$HEAD_SHA" '
+              [ .[]
+                | select(.user.login == "coderabbitai[bot]")
+                | select(.commit_id == $sha)
+              ]
+              | sort_by(.submitted_at)
+              | last
+              | select(. != null)
+              | select(.state == "APPROVED" or .state == "COMMENTED")
+              | select((.body // "") | test("Actionable comments posted:"; "i") | not)
+            ' "$REVIEWS" >/dev/null || {
+              echo "::error::alteração do bootstrap exige revisão independente do CodeRabbit no HEAD exato, sem CHANGES_REQUESTED nem findings acionáveis"
               exit 1
             }
-            echo "security-auditor registrado para mudança no bootstrap de proteção."
+
+            echo "Atestação de segurança independente confirmada no HEAD $HEAD_SHA."
           else
             echo "PR não altera o bootstrap de proteção; gate satisfeito sem executar código do PR."
           fi
