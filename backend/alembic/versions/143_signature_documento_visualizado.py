@@ -13,7 +13,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "143_signature_documento_visualizado"
-down_revision = "142_document_hash_rescan"
+down_revision = "144a_alembic_version_widening"
 branch_labels = None
 depends_on = None
 

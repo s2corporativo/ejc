@@ -38,24 +38,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Reverte para varchar(32). Aborta sem alterar nada se alguma
-    # version_num gravada exceder 32 caracteres — proteção contra
-    # truncamento silencioso de linhas já registradas.
-    conn = op.get_bind()
-    (excede,) = conn.execute(
-        sa.text(
-            "SELECT COALESCE(bool_or(char_length(version_num) > 32), false) "
-            "FROM alembic_version"
-        )
-    ).one()
-    if excede:
-        raise RuntimeError(
-            "downgrade 144: existe versão gravada com mais de 32 caracteres; "
-            "restringir a coluna trunca a linha atual — abortando sem alterar nada"
-        )
-    op.alter_column(
-        "alembic_version",
-        "version_num",
-        type_=sa.String(32),
-        existing_type=sa.String(128),
-    )
+    # Widening virtualmente permanente: a migration ``143`` (revision_id com
+    # 35 caracteres) segue esta na cadeia de downgrade. O Alembic grava a
+    # revision_id de DESTINO (143) antes de executar este corpo — estreitar
+    # aqui rejeitaria a transação mesmo com o banco "limpo" (bug reproduzido
+    # no Módulo 02, 15/08/2026). Como widening não tem custo de dados e
+    # varchar(128) cabe confortavelmente o histórico, o estreitamento é
+    # desabilitado: downgrade é no-op seguro e idempotente.
+    pass

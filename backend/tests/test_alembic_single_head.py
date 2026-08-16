@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "144_alembic_version_varchar128"
+HEAD_REVISION = "145_drop_orphan_db_only_columns"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -143,9 +143,23 @@ def test_preliminares_encadeiam_apos_consolidacao_fontes():
     revisao_143 = _script_directory().get_revision(
         "143_signature_documento_visualizado"
     )
-    assert revisao_143.down_revision == "142_document_hash_rescan"
+    # Correção Módulo 02 (15/08/2026): o widening varchar(32)->128 precisa
+    # rodar ANTES da 143 (revision_id com 35 caracteres), sob pena de rejeição
+    # em instalações novas (bug reproduzido em homologação).
+    revisao_144a = _script_directory().get_revision(
+        "144a_alembic_version_widening"
+    )
+    assert revisao_144a.down_revision == "142_document_hash_rescan"
+    revisao_143 = _script_directory().get_revision(
+        "143_signature_documento_visualizado"
+    )
+    assert revisao_143.down_revision == "144a_alembic_version_widening"
     revisao_144 = _script_directory().get_revision(
         "144_alembic_version_varchar128"
     )
     assert revisao_144.down_revision == "143_signature_documento_visualizado"
+    revisao_145 = _script_directory().get_revision(
+        "145_drop_orphan_db_only_columns"
+    )
+    assert revisao_145.down_revision == "144_alembic_version_varchar128"
     assert _script_directory().get_heads() == [HEAD_REVISION]
