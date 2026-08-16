@@ -74,6 +74,23 @@ def impact_level(area: str, company_case_areas: set[str]) -> str | None:
     return None
 
 
+def _areas_by_company_from_rows(rows: list) -> tuple[dict[str, set[str]], dict[str, str]]:
+    """DER-01: compõe o índice empresa-areas e nomes a partir do resultado bruto
+    da query de área visível, evitando que o dashboard (que já possui esse
+    índice pela mesma RBAC) reexecute a consulta. O índice só pode ser
+    originado por _visible_company_area_query ou pelo próprio radar.
+    """
+    areas_by_company: dict[str, set[str]] = defaultdict(set)
+    company_names: dict[str, str] = {}
+    for client_id, razao_social, nome_fantasia, area in rows:
+        client_id_str = str(client_id)
+        areas_by_company[client_id_str].add(_value(area))
+        company_names[client_id_str] = (
+            razao_social or nome_fantasia or "Empresa sem razão social"
+        )
+    return areas_by_company, company_names
+
+
 def _visible_company_area_query(user: User):
     """Retorna apenas os campos necessários ao impacto do Radar.
 
@@ -111,6 +128,8 @@ async def build_today_radar(
     user: User,
     *,
     hours: int = 24,
+    company_areas: dict[str, set[str]] | None = None,
+    company_names: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     hours = max(1, min(hours, 168))
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -139,15 +158,16 @@ async def build_today_radar(
 
     coverage_partial = total_publicacoes > len(rows)
 
-    company_area_rows = (await db.execute(_visible_company_area_query(user))).all()
-    areas_by_company: dict[str, set[str]] = defaultdict(set)
-    company_names: dict[str, str] = {}
-    for company_id, razao_social, nome_fantasia, area in company_area_rows:
-        company_id_str = str(company_id)
-        areas_by_company[company_id_str].add(_value(area))
-        company_names[company_id_str] = (
-            razao_social or nome_fantasia or "Empresa sem razão social"
-        )
+    if company_areas is not None and company_names is not None:
+        # DER-01: índice empresa-areas já computado pelo chamador (mesmo filtro
+        # RBAC visível); evita reexecutar a query de área visível na mesma
+        # requisição do dashboard. O índice deve ter sido derivado de
+        # _visible_company_area_query para manter a paridade de escopo.
+        areas_by_company = {key: set(value) for key, value in company_areas.items()}
+        company_names = dict(company_names)
+    else:
+        company_area_rows = (await db.execute(_visible_company_area_query(user))).all()
+        areas_by_company, company_names = _areas_by_company_from_rows(company_area_rows)
 
     area_counts: Counter[str] = Counter()
     items: list[dict[str, Any]] = []

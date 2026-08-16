@@ -17,7 +17,11 @@ from app.modules.dpt360.intake_service import (
 )
 from app.modules.dpt360.intelligence_service import run_dpt_action
 from app.modules.dpt360.lifecycle_service import mudar_estado
-from app.modules.dpt360.radar_service import build_today_radar
+from app.modules.dpt360.radar_service import (
+    _areas_by_company_from_rows,
+    _visible_company_area_query,
+    build_today_radar,
+)
 from app.modules.dpt360.report_service import build_executive_report
 from app.modules.dpt360.schemas import (
     DptActionRequest,
@@ -41,7 +45,14 @@ async def dashboard(
     cu: User = Depends(require_roles(DPT_ROLES)),
 ) -> DptDashboardResponse:
     result = await build_dashboard(db, cu)
-    radar = await build_today_radar(db, cu, hours=24)
+    # DER-01: o índice empresa-areas visível é computado uma única vez e
+    # reutilizado pelo radar, evitando reexecutar a mesma query RBAC na mesma
+    # requisição. O escopo é idêntico ao que o radar calcularia sozinho.
+    company_area_rows = (await db.execute(_visible_company_area_query(cu))).all()
+    company_areas, company_names = _areas_by_company_from_rows(company_area_rows)
+    radar = await build_today_radar(
+        db, cu, hours=24, company_areas=company_areas, company_names=company_names
+    )
     result.metrics.mudancas_juridicas_hoje = int(radar["total_publicacoes"])
     result.metrics.empresas_potencialmente_impactadas = int(
         radar["empresas_potencialmente_impactadas"]

@@ -22,7 +22,11 @@ from fastapi import HTTPException
 from app.models.audit_log import AuditLog
 from app.models.socio import RegimeSocio, Socio
 from app.models.user import User, UserRole
-from app.routers.gestao_societaria import SocioPatch, atualizar_socio
+from app.routers.gestao_societaria import (
+    SocioIn, SocioPatch,
+    atualizar_socio, cadastrar_socio, aprovar_distribuicao, calcular_distribuicao,
+)
+from app.models.socio import DistribuicaoLucro
 
 
 # ── Fakes (sem banco, padrão test_sociedades_cliente.py) ──────────────────────
@@ -171,22 +175,45 @@ async def test_auditoria_reflete_campos_realmente_alterados():
     assert "pro_labore" not in log.dados_antes
 
 
-async def test_auditoria_campo_sem_valor_previo_nao_quebra():
-    """`meta_produtividade` não é coluna mapeada no model `Socio` (só existe
-    em runtime se algum PATCH anterior no mesmo processo já a setou como
-    atributo Python solto) — o snapshot não pode estourar AttributeError na
-    primeira vez que o campo é alterado."""
+async def test_patch_campo_sem_coluna_no_banco_rejeitado_422():
+    """Regressão #1077: `meta_produtividade` NÃO é coluna do model `Socio`
+    (nem há migration que a crie) — se o PATCH aceitasse o campo, ele virava
+    atributo Python solto: o `setattr` nunca era persistido, mas a resposta
+    ecoava o valor como se tivesse sido salvo ("phantom save" — o valor
+    desaparecia no próximo reload do banco). Removido de `SocioPatch`, de
+    `_SOCIO_PATCH_CAMPOS` e de `_out_socio`; o campo enviado agora é rejeitado
+    com 422 antes de qualquer commit/auditoria."""
+    # O campo não pertence mais ao schema (nem à allowlist interna do router)
+    assert "meta_produtividade" not in SocioPatch.model_fields
+    from pydantic import ValidationError as _PydanticVE
+    # Extra='forbid' no schema: o parser rejeita o campo com ValidationError,
+    # que o FastAPI converte em 422 no endpoint real — ANTES de qualquer
+    # consulta, commit ou auditoria (payload nunca chega ao handler).
     s = _socio()
     db = _FakeDB([s])
-    out = await atualizar_socio(
+    for ruim in [{"meta_produtividade": 5000.0, "regime": "misto"},
+                 {"meta_produtividade": 5000.0}]:
+        with pytest.raises(_PydanticVE):
+            SocioPatch.model_validate(ruim)
+    # Nenhum efeito colateral em memória: o PATCH legítimo não toca o campo
+    await atualizar_socio(
         socio_id="socio1",
-        req=SocioPatch(meta_produtividade=5000.0),
+        req=SocioPatch(regime=RegimeSocio.resultado),
         db=db, cu=_user(UserRole.admin, "admin1"),
     )
-    assert out["meta_produtividade"] == 5000.0
-    logs = [o for o in db.added if isinstance(o, AuditLog)]
-    assert logs[0].dados_antes == {"meta_produtividade": None}
-    assert logs[0].dados_depois == {"meta_produtividade": 5000.0}
+    assert db.commits == 1
+    assert not hasattr(s, "meta_produtividade")
+    # Reload do banco: o sócio recarregado segue sem o campo
+    s2 = _socio()
+    db = _FakeDB([s2])
+    await atualizar_socio(
+        socio_id="socio1",
+        req=SocioPatch(regime=RegimeSocio.resultado),
+        db=db, cu=_user(UserRole.admin, "admin1"),
+    )
+    assert db.commits == 1
+    out = {"id": s2.id, "regime": s2.regime.value}
+    assert "meta_produtividade" not in out
 
 
 async def test_socio_inexistente_404():
@@ -210,3 +237,88 @@ async def test_patch_so_altera_campos_da_allowlist():
 
     campos_schema = set(SocioPatch.model_fields)
     assert campos_schema == _SOCIO_PATCH_CAMPOS
+
+
+# ── Cadastro de sócio e aprovação de distribuição: commit único (SOC-02/DST-01) ──
+
+async def test_cadastro_socio_commit_unico_com_auditoria():
+    """POST /sociedade/socios: a auditoria é gravada na MESMA transação do
+    cadastro (padrão criado no SOC-01) — antes, registrar_acao commitava o log
+    em transação separada e o cadastro podia persistir sem rastro.
+    Critério de aceite da issue #1073: db.commits == 1."""
+    req = SocioIn(
+        user_id="novosocio", participacao_percentual=0.1,
+        data_entrada=date(2026, 1, 1),
+    )
+    # execute: consulta do "existe?" retorna None; add registra o sócio
+    db = _FakeDB([None])
+    out = await cadastrar_socio(req=req, db=db, cu=_user(UserRole.admin, "admin1"))
+    assert out["user_id"] == "novosocio"
+    assert out["participacao_percentual"] == 0.1
+    assert len(db.added) == 2  # Socio + AuditLog na mesma sessão
+    socio, log = db.added
+    assert isinstance(socio, Socio)
+    assert isinstance(log, AuditLog)
+    assert log.acao == "CREATE"
+    assert log.entidade == "socios"
+    assert log.registro_id == socio.id
+    assert log.user_id == "admin1"
+    assert log.dados_depois["user_id"] == "novosocio"
+    # Critério de aceite: um único commit cobre cadastro + auditoria
+    assert db.commits == 1
+
+
+async def test_cadastro_socio_duplicado_nao_audita():
+    """Usuário já sócio → 409 e NADA é adicionado à sessão (nem audit log),
+    com zero commits."""
+    db = _FakeDB([_socio(user_id="duplicado", id="s2")])
+    with pytest.raises(HTTPException) as exc:
+        await cadastrar_socio(
+            req=SocioIn(user_id="duplicado", participacao_percentual=0.05,
+                        data_entrada=date(2026, 1, 1)),
+            db=db, cu=_user(UserRole.admin, "admin1"),
+        )
+    assert exc.value.status_code == 409
+    assert db.commits == 0
+    assert db.added == []
+
+
+async def test_aprovar_distribuicao_commit_unico_com_auditoria():
+    """POST /sociedade/distribuicao/{id}/aprovar: auditoria na MESMA transação
+    da aprovação (padrão criado no SOC-01) — antes, registrar_acao commitava
+    o log em transação separada.
+    Critério de aceite da issue #1073: db.commits == 1."""
+    d = DistribuicaoLucro(
+        id="dist1", mes_referencia="2026-01", valor_total=Decimal("10000.00"),
+        socios_json="[]", created_by="admin1", status="calculado",
+    )
+    db = _FakeDB([d])
+    out = await aprovar_distribuicao(dist_id="dist1", db=db,
+                                     cu=_user(UserRole.admin, "admin1"))
+    assert out["status"] == "aprovado"
+    assert d.status == "aprovado"
+    assert d.aprovado_por == "admin1"
+    logs = [o for o in db.added if isinstance(o, AuditLog)]
+    assert len(logs) == 1
+    log = logs[0]
+    assert log.acao == "UPDATE"
+    assert log.entidade == "distribuicao_lucro"
+    assert log.registro_id == "dist1"
+    assert log.dados_antes == {"status": "calculado"}
+    assert log.dados_depois == {"status": "aprovado"}
+    # Critério de aceite: um único commit cobre aprovação + auditoria
+    assert db.commits == 1
+
+
+async def test_aprovar_distribuicao_fora_de_calculado_nao_audita():
+    """Distribuição já aprovada → 422 e nenhum commit/audit."""
+    d = DistribuicaoLucro(id="dist1", mes_referencia="2026-01",
+                          valor_total=Decimal("10000.00"), status="aprovado",
+                          socios_json="[]", created_by="admin1")
+    db = _FakeDB([d])
+    with pytest.raises(HTTPException) as exc:
+        await aprovar_distribuicao(dist_id="dist1", db=db,
+                                   cu=_user(UserRole.admin, "admin1"))
+    assert exc.value.status_code == 422
+    assert db.commits == 0
+    assert db.added == []

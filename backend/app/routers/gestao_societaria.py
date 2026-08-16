@@ -35,12 +35,17 @@ class SocioIn(BaseModel):
 
 
 class SocioPatch(BaseModel):
+    # PRZ/1077: campos desconhecidos são REJEITADOS (não ignorados em silêncio) —
+    # antes, um campo extra que não existe como coluna no model `Socio` era aceito
+    # e ecoado na resposta como se tivesse sido salvo, embora jamais persistisse
+    # ("phantom save"). Com `extra='forbid'`, o parser devolve 422 imediatamente,
+    # antes de qualquer commit ou auditoria.
+    model_config = {"extra": "forbid"}
     participacao_percentual: Optional[float] = Field(None, gt=0, le=1)
     regime:                  Optional[RegimeSocio] = None
     pro_labore:              Optional[float] = None
     ativo:                   Optional[bool]  = None
     data_saida:              Optional[_date] = None
-    meta_produtividade:      Optional[float] = None # Seção 8.270
     observacoes:             Optional[str]   = None
 
 
@@ -49,7 +54,7 @@ class SocioPatch(BaseModel):
 # aqui depois de uma decisão consciente (SOC-01).
 _SOCIO_PATCH_CAMPOS = {
     "participacao_percentual", "regime", "pro_labore", "ativo",
-    "data_saida", "meta_produtividade", "observacoes",
+    "data_saida", "observacoes",
 }
 
 
@@ -81,7 +86,6 @@ def _out_socio(s: Socio) -> dict:
         "oab_numero": s.oab_numero, "oab_uf": s.oab_uf,
         "data_entrada": s.data_entrada.isoformat() if s.data_entrada else None,
         "data_saida": s.data_saida.isoformat() if s.data_saida else None,
-        "meta_produtividade": float(s.meta_produtividade) if hasattr(s, 'meta_produtividade') and s.meta_produtividade else 0.0,
         "ativo": s.ativo, "observacoes": s.observacoes,
     }
 
@@ -122,8 +126,16 @@ async def cadastrar_socio(
         raise HTTPException(409, "Usuário já é sócio")
     s = Socio(id=str(uuid4()), **req.model_dump())
     db.add(s)
+    # SOC-02: auditoria na MESMA transação do cadastro — antes, registrar_acao
+    # commitava o log em transação separada: se o processo caísse entre os dois
+    # commits, o sócio persistia SEM rastro de auditoria.
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "CREATE", "socios", s.id,
+        detalhes=f"Sócio {s.user_id} cadastrado",
+        dados_antes={},
+        dados_depois=_out_socio(s),
+    )
     await db.commit()
-    await registrar_acao(db, cu.id, "criar", "socios", s.id, f"Sócio {s.user_id} cadastrado")
     return _out_socio(s)
 
 
@@ -287,10 +299,18 @@ async def aprovar_distribuicao(
         raise HTTPException(404)
     if d.status != "calculado":
         raise HTTPException(422, f"Distribuição já está '{d.status}'")
+    # DST-01: auditoria na MESMA transação da aprovação — antes, registrar_acao
+    # commitava o log em transação separada: se o processo caísse entre os dois
+    # commits, a aprovação persistia SEM rastro de auditoria.
+    status_antes = d.status
     d.status = "aprovado"
     d.aprovado_por = cu.id
     d.aprovado_em  = datetime.now(timezone.utc)
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "UPDATE", "distribuicao_lucro", dist_id,
+        detalhes=f"Distribuição {d.mes_referencia} aprovada",
+        dados_antes={"status": status_antes},
+        dados_depois={"status": d.status},
+    )
     await db.commit()
-    await registrar_acao(db, cu.id, "aprovar", "distribuicao_lucro", dist_id,
-                         f"Distribuição {d.mes_referencia} aprovada")
     return {"id": dist_id, "status": "aprovado"}
