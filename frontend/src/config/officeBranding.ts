@@ -35,8 +35,12 @@ const officeAiUrl = normalizeHttpUrl(
 export const officeBranding = Object.freeze({
   officeName:
     readPublicEnv(import.meta.env.VITE_EJC_OFFICE_NAME) || DEFAULT_OFFICE_NAME,
+  // Logomarca DT (monograma dourado "De Paula Teixeira Advocacia", fundo
+  // transparente) — substituiu a imagem antiga em 16/08/2026. Para trocar de
+  // logo em runtime, definir VITE_EJC_LOGO_PATH no .env (rota de /brand/).
   logoPath:
-    readPublicEnv(import.meta.env.VITE_EJC_LOGO_PATH) || "/brand/logo-hd.png",
+    readPublicEnv(import.meta.env.VITE_EJC_LOGO_PATH) ||
+    "/brand/de-paula-teixeira-dt.png",
   whatsappNumber,
   contactEmail,
   officeAiUrl,

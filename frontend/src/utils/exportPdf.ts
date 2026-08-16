@@ -96,7 +96,7 @@ export function exportPdf(
 </head>
 <body>
   <div class="letterhead">
-    <img class="brand-logo" src="${window.location.origin}/brand/logo-hd.png"
+    <img class="brand-logo" src="${window.location.origin}/brand/de-paula-teixeira-dt.png"
          alt="" onerror="this.style.display='none'" />
     <div>
       <div class="brand">De Paula Teixeira Advogados Associados</div>
