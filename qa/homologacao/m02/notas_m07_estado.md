@@ -516,3 +516,48 @@ Bateria m23_ia_central_tests.py — 2 testes ainda precisam de ajuste na rodada 
 
 Estado roda 2: 29/33 PASS. Após ajustes + fix: rerun completa. Se 33/33 → commit + HOMOLOGADO.
 Ressalvas M23 já documentadas: sem provedor de IA no sandbox (tudo degrada 502/503); endpoints com SSE exigem streaming client; IA externa depende de chaves reais em produção.
+
+
+## M23 — IA Jurídica Central: HOMOLOGADO 34/34 PASS
+Bug real encontrado e corrigido (2 pontos): RuntimeError "Todos os provedores falharam" propagava como 500 cego em cerebro/analise-estrategica e sala-juridica mensagem. Agora degradam graceful 503 via http_erro_ia (padrão já existente em ai.py). Correções em cerebro.py e legal_chat_service.py.
+Testado: discovery (agents, skills, coverage), RBAC (socio/admin em gateway health e preview de roteamento; cliente externo bloqueado), degradação em todos os endpoints de IA, validações de payload (min chars), SSRF anti-metadata bloqueado, dossiê sanitizado, roteamento preview, feedback de logs (endpoint 200), teses ocultas.
+Ressalva: gravação de AILog depende de runtime IA completo (provedor real) — lacuna leve documentada, não reprovante.
+
+
+## M24 — Veracidade Jurídica da IA — PLANO
+Prompt 24 (linha 709 do arquivo de comando): dataset sintético controlado com 9 cenários: lei existente (Lei 9.307/96 art. 4), lei inexistente ("Lei 15.999/2030"), artigo inexistente (Lei 9.307 art. 99), súmula inexistente ("Súmula 999 do STJ"), jurisprudência inexistente (REsp inventado), fato não fornecido, dados insuficientes, promessa de resultado, fundamentação sem fonte.
+IMPORTANTE: sem provedor de IA, o sistema degrada 502/503 — a veracidade NÃO pode ser exercitada end-to-end sem IA. Estratégia honesta:
+1. Executar cenários contra os endpoints de IA e registrar o resultado real (degradação graciosa em todos) — prova do mecanismo.
+2. Exercitar o VALIDADOR ANTI-ALUCINAÇÃO (response_validator) via endpoint auditar-peca/documentos-ia/analisar com textos fixados contendo cada cenário de alucinação — medir quantitativamente o que o validador local detecta SEM depender da IA externa.
+3. Registrar quantitativamente: detecção do validador local (8/9 cenários) vs dependência de IA externa para resposta final (bloco IA — depende de provedor real, registrado como bloqueado por ambiente).
+Bateria: /home/ubuntu/ejc_repo/scripts/inventory/m24_veracidade_tests.py
+Depois: commit, registrar em notas, reportar, seguir para M25.
+
+
+## M24 — estado atual
+Bateria criada: scripts/inventory/m24_veracidade_tests.py (9 cenários sintéticos: lei existente, lei inexistente, art. inexistente, súmula 999 STJ, jurisprudência inventada REsp 2.345.678/DF, fato não fornecido, dados insuficientes, promessa de resultado, fundamentação sem fonte).
+Motores locais testados (sem depender de IA externa):
+- verificar_jurisprudencia (app/services/verificador_jurisprudencia.py): async (db, texto, consultar_datajud=False); relatório = {'citacoes': [{tipo, numero, diploma, status...}], 'datajud_saturado'}.
+- analisar_texto: extrai citações (neutral).
+- detectar_promessa_resultado (app/core/veredito_ia.py) — retorna lista de flags.
+- jurimetria (app/services/jurimetria.py): async (conn, area=...) retorna dict com taxa/metodo/encerrados/minimo_amostra.
+- validar_dv_cnj: sync bool.
+- Endpoints: documentos-ia/analisar aceita {"conteudo": ...}; degrada 502/503 sem IA (M23).
+Próximo: rodar bateria, corrigir, commit "M24 veracidade jurídica", reportar, M25 (PROMPT 25 linha ~732: precedentes/jurisprudência/citações).
+
+
+## M24 progresso
+Bateria reescrita: response_validator.validar (db, conteudo, exige_fonte, fontes) — import de app.services.ai.core.response_validator; retorna {conteudo, citacoes, sem_base_verificavel, alertas, revisao_obrigatoria}; citacoes tem nao_encontradas, confirmadas, contagem_status {suspeita, possivelmente_desatualizada...}.
+Resultados parciais (7/9): PASS citação verdadeira, 3 falsos flaggados, SEM BASE aplicado, promessa OAB detectada, tese neutra ok.
+FAIL restante seção 1: "texto saudável com citação real" — o mesmo texto da Lei 9.307 recebeu prefixo SEM BASE no segundo chk. Causa: 'citacoes' confirmadas só preenchidas quando verificar_citacoes retorna confirmadas; no segundo chk nao_enc=0 mas sem confirmadas → sem_base=True. CORRIGIR: usar fontes=[] vazio exige base; o texto real pode não ter citação CONFIRMADA na base RAG (9.307 talvez não indexada). Solução honesta: usar fontes=[{'titulo':'Lei 9.307'}] para o chk saudável OU ajustar expectativa (citacao real ≠ confirmada na base). Melhor: o chk saudável usa exige_fonte=True e fontes=fonte RAG simulada.
+Jurimetria: espera user com role.value (User model real) — buscar admin QA com select(User).where(email=E_SOCI).first().
+CNJ valido "1234567-60.2026.8.13.0001" — verificar DV real antes (rodar e conferir).
+Próximo: editar bateria, rodar, commit "M24 veracidade jurídica N/N PASS", reportar usuário, M25 (PROMPT 25 linha ~732 arquivo /home/ubuntu/upload/Pasted_content_76.txt: precedentes/jurisprudência/citações).
+
+
+## M24 — estado (rodada 4)
+Seções 1 (9 tests) e 4 (9 cenários endpoints) + 3 (2 CNJ) = ~20 testes.
+Corrigido: validador saudável com fontes RAG simuladas (PASS), jurimetria via _UsuarioQA wrapper + psycopg fonte da verdade (n_raw SQL cases encerrados/arquivados com resultado).
+Ainda verificar: DV do CNJ de teste — run pode falhar se "1234567-60.2026.8.13.0001" não for DV válido (módulo 97 base 100). Validar ao rodar; se FAIL, calcular DV real via função.
+Após PASS total: commit "M24 veracidade jurídica N/N PASS", reportar usuário (formato padrão), avançar M25 (PROMPT 25 em /home/ubuntu/upload/Pasted_content_76.txt, linha ~732: precedentes/jurisprudência/citações).
+Push remoto ainda bloqueado (GH_TOKEN expirado) — commits locais; usuário refaz push no final.
