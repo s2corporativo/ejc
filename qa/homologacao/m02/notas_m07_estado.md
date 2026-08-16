@@ -774,3 +774,35 @@ Correções a fazer na bateria:
 4. Se S5 falhar (vínculo), checar schema do POST vincular-caso (fields: case_id, resultado, observacao — conferir nomes exatos)
 Servidor: pgrep -f "uvicorn app.main:app"; reiniciar com nohup ... env_shell.sh uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &; sleep 10; curl health/ready
 Nota: DELETE tese talvez requeira role socio (linha 330: if not _pode_editar). Se _pode_editar = advogado+, advogado deveria passar. O 403 pode ser do rate limit (gateway retorna 403?) — rate limit retorna 429 normalmente. Verificar.
+
+### M30 — Matriz de Teses HOMOLOGADO (commit d44e4848)
+31 cenários: 30 PASS / 1 defeito CONFIRMADO (não corrigido — busca-avancada com taxa_minima=0.0 silencia teses com taxa_sucesso NULL; correção sugerida: or_(taxa>=0, is_none) quando taxa_minima==0) / 2 N/A-PROVADO (RAG sem súmulas na base). Relatório: qa/homologacao/m30/RELATORIO_MODULO_M30.md. Bateria: scripts/inventory/m30_matriz_teses_tests.py.
+Próximo: M31 — Índice de Risco (linha 871 do arquivo de comando).
+
+### M31 superfícies mapeadas (Índice de Risco — PROMPT 31)
+PROMPT 31 audita: fórmula, inputs, pesos, origem dos dados, limites, explicabilidade, persistência, atualização, frontend. Não apresentar score como garantia.
+**Motor 1 — indice_risco (router próprio)** `app/routers/indice_risco.py` prefix `/cases/{case_id}/indice-risco`:
+- GET "" — verificar_acesso_caso (IDOR); retorna {"atual": {indice_risco, risco_nivel, risco_fatores}, "historico": 20 últimos de indice_risco_historico (indice, nivel, fatores, calculado_por, created_at)}.
+- POST /recalcular — requer_advogado + ownership. Fórmula SQL sobre dados objetivos: prazos_vencidos (deadlines pendentes/vencidos com data<hoje) +15 por prazo (teto 30); total_docs==0 +15 (sem_documentos); valor_causa >500k +10, >100k +5; idade>3 anos +10; teto 100; níveis: ≤25 baixo, ≤50 medio, ≤75 alto, >75 critico. Persiste em indice_risco_historico (calculado_por='sistema') + UPDATE cases.indice_risco/riscos... + criar_audit_log UPDATE/indice_risco.
+- FRONTEND: procurar componente que consome /indice-risco em frontend/src (grep indice-risco).
+**Motor 2 — case_health (service Bloco D)** `app/services/case_health.py`: score 100 base, descontos determinísticos com fator+impacto+detalhe: prazo vencido −20; prazo crítico ≤7d sem ciência −10; >30d sem movimentação −15; sem procuração ativa −10; honorário atrasado −10; encerrado sem lições_aprendidas −5; clamp [0,100]; classificação: ≥80 saudavel, ≥60 atencao, ≥40 risco, <40 critico; retorna fatores com impacto por dedução (explicabilidade), dias_parado, saudavel flag. ranking_saude: piores primeiro, filtro de acesso por ownership (pode_ver_todos admin+), distribuição, score_medio.
+**Analytics** `app/routers/analytics.py` prefix /api/analytics(?): endpoints jurimetria, taskscore, funil, rentabilidade, onboarding, case-health (GET /case-health ranking via ranking_saude, GET /case-health/{case_id} calcular_score_caso; linha 122 pode_ver_todos check).
+Nota M28/M29 já provaram integração do case_health no dossiê (riscos). M31 foca nos DOIS motores + frontend + vedação de garantia.
+
+### M31 rodada em andamento (bateria scripts/inventory/m31_risco_tests.py)
+Rodada 2: 19/26 PASS, 7 FAIL restantes. Causas conhecidas dos FAILs:
+1. pgsql() helper NÃO aceita params → queries com :cid retornam vazio/erro silencioso. CORRIGIR: def pgsql(query, params=None) e passar params em execute(_text(query), params or {}) — usar dict de params.
+2. fee QA (criar_fee): POST /api/fees falhou — schema exige descricao (não opcional), tipo fixo (não exito com valor) e data_vencimento. Usar: {"descricao":"QA M31","tipo":"fixo","valor":5000,"data_vencimento":(hoje-3d).isoformat(),"status":"atrasado","case_id":...}
+3. valor_alto FAIL: UPDATE cases SET valor_causa... pgsql sem params falhou também. Corrigir helper + usar col nome certo 'valor_causa' (existe).
+4. clamp global FAIL: mesmo motivo — prazos criados? criar_prazo pode ter falhado sem params do deadline schema. Verificar schema deadlines (criar_prazo ok na rodada? indices subiram: 15→30→45 = prazos OK). clamp: 14 prazos = 15+30(teto fator)+9? teto fator 30 + 15 sem_docs = 45 nunca chega 100 porque teto 30! 15+30+... não: clamp global min(30,prazos*15)=30 máx do fator prazo. Total máx = 30(prazos)+15(sem_docs)+10(valor)+10(antigo) = 65 — nunca 100! Isso é uma limitação real da fórmula (ou bug de design). Se clamp nunca é atingível, reportar como limitação/resalva e ajustar teste: saturar com valor_alto+processo_antigo → 15+30+10+10=65 nivel alto (≤75). Nível crítico (>75) é INATINGÍVEL com os fatores atuais → resalva de fórmula. Testar com valor+antigo: esperar 65, nível alto.
+5. processo_antigo FAIL: UPDATE created_at falhou por params; created_at existe? cases cols mostradas não incluíam created_at mas existe (model Case tem). Corrigir helper.
+Tabelas confirmadas: indice_risco_historico(id,case_id,indice,nivel,fatores,calculado_por,observacao,created_at); audit_logs(id,user_id,user_role,ip,acao,entidade,registro_id,dados_antes,dados_depois,detalhes,created_at); cases tem risco, risco_nivel? (espelho usa campos 'risco'/'risco_nivel' — router escreve indice_risco,risco_nivel,risco_fatores,risco_atualizado_em mas colunas reais são risco? Verificar: o GET retorna atual.indice_risco — mapeamento via SQL text SELECT indice_risco → coluna deve existir OU é alias? information_schema não mostrou indice_risco. Rodada 1 PASSou o GET (atual.indice_risco not None)... informação_schema listou 25 primeiras colunas apenas. OK presumir colunas risco*/indice_risco existem depois.
+Fee: descricao obrigatória; caso_health honorario atrasado query usa FeeStatus.atrasado.
+Próximo: corrigir helper, fee schema, clamp test para expectativa real (65/alto + resalva crítico inatingível), rerun.
+
+### M31 rodada 4: 25/26 PASS, 1 FAIL restante
+Último FAIL: "espelhamento cases: [{'risco': None, 'risco_nivel': 'alto'}]"
+- risco_nivel='alto' OK (nível espelhado existe), mas coluna 'risco' = NULL.
+- Preciso verificar quais colunas o recalcular realmente atualiza: provável 'indice_risco' e 'risco_fatores' (não 'risco'). information_schema não listou 'risco' entre as primeiras 25 colunas, mas listou valor_causa... A saída mostra risco_nivel='alto' → o espelho real é indice_risco/risco_nivel. Corrigir teste: consultar coluna(s) reais do recalcular SQL no router (grep "risco =" ou UPDATE cases in indice_risco.py).
+Após corrigir → M31 homologado. Depois: escrever relatório /home/ubuntu/ejc_repo/qa/homologacao/m31/RELATORIO_MODULO_M31.md, commit, e partir para M32.
+M32 próximo PROMPT na linha 893 do /home/ubuntu/upload/Pasted_content_76.txt.
