@@ -369,6 +369,16 @@ async def test_signatures_listar_e_assinar_isolam_por_cliente():
         doc_b = await _criar_documento(db, cli_b, None, f"proc-B-{tok}", "normal")
         sig_a = await _criar_signature(db, cli_a, doc_a, "pendente")
         sig_b = await _criar_signature(db, cli_b, doc_b, "pendente")
+        # Este teste mede segregação/IDOR, não o pré-requisito de leitura.
+        # A regra de visualização prévia é coberta especificamente por
+        # test_assinatura_visualizacao_previa.py e permanece obrigatória no router.
+        await db.execute(
+            text(
+                "UPDATE signature_requests "
+                "SET documento_visualizado_em = now() WHERE id = :id"
+            ),
+            {"id": sig_a},
+        )
         await db.commit()
         try:
             user_a = await _carregar_user(db, ua)
