@@ -107,3 +107,52 @@ Aguardando execução final. Esperado: 46/46 PASS.
 
 ## M11 bateria bug de recriação
 Segundo POST /api/cases retornou id None — verificar schema (talvez 422: "area" enum? área tributario ok; parte_contraria ok; proxima_acao ok... talvez 403 rate? Não). Investigar resposta. Possível: segundo caso criado imediatamente após o primeiro com mesmo client_id — validação de duplicidade? Improvável. Ver resposta HTTP.
+
+
+## M12 superfície (andamentos)
+- `backend/app/routers/andamentos.py` (prefix /casos): POST /{case_id}/andamentos/sincronizar (DataJud sync upsert em case_movimentos, ownership + rate 5/min, 503 se DATAJUD_ENABLED=false), GET /{case_id}/andamentos/status (booleans config + alias tribunal).
+- `backend/app/routers/movimentos.py` (prefix /movimentos): GET /recentes (dashboard, escopo carteira).
+- Movimentos CRUD interno já coberto no M07 (POST /cases/{id}/movimentos, lista, exclusão). M12 foca: sincronização DataJud (origem, data, descrição, processo, ordenação, duplicidade/idempotência, atualizações automáticas, auditoria) + status + recentes.
+- case_movimentos tabela: ver colunas (data_movimento, descricao, tipo, ordem?).
+
+
+## M12 detalhes técnicos confirmados
+Rota interna de movimentos: POST /api/cases/{case_id}/movimentos (json: tipo, descricao, data_evento — timestamp ISO com Z OK; PATCH /movimentos/{id} edita; DELETE exclui da tabela case_movimentos). Tabela case_movimentos: id, case_id, tipo(varchar30), descricao(text), data_evento(tz, default now()), created_by, created_at, resumo_ia. Sem coluna ordem (ordenação via data_evento).
+
+DataJud: DATAJUD_ENABLED=false e DATAJUD_API_KEY vazio no .env local. POST sincronizar: 503 claro se desativado/sem chave; 422 se caso sem numero_processo; TribunalNaoMapeadoError→422; HTTPError→502; upsert dedup hash(data[:10]|descricao); audit SYNC em case_movimentos. GET status: enabled/configured/numero_processo/tribunal_alias (sem segredos). Dashboard: GET /api/movimentos/recentes (limit 15-50; equipe vê só casos próprios).
+
+Bateria M12 escrita: scripts/inventory/m12_andamentos_tests.py. Testes: criação, autor, data/desc, edição, ordenação por data_evento, duplicidade textual aceita, data inválida 422, estagiário cria/financeiro bloqueado, exclusão, auditoria, status DataJud sem segredos, sync 503 desativado, /recentes sem vazar, upsert idempotente (estrutural).
+
+Clientes/casos QA M11: cliente "EJC_QA Cliente M11" (CNPJ 12345678000195 → reutiliza cliente M09 ae6dc2dc... se já existir), caso "EJC_QA M11 Caso A".
+
+Push: remoto voltou a funcionar? GH_TOKEN expirado — branches homologacao-m02..m06 já pushadas antes do reset; commits M07-M11 locais (a reconfirmar push).
+
+
+## M12 descoberta: rotas 404
+POST /api/cases/{id}/movimentos → 404 (caminho errado). GET status → 404. O PASS "movimento criado 201" veio do M07? Não — M12 é script novo. Verificar rota exata usada no M07 (m07_casos_tests.py) para movimentos e andamentos status.
+
+
+## M12 gaps confirmados no código
+Cases.py: apenas GET listagem e POST criação de movimentos (com event_bus emitir movimento.criado). NÃO existem PATCH/DELETE de movimento — lacunas REAIS (edição e exclusão de movimento inexistem). DataJud sync via POST /api/cases/{id}/sincronizar-processo (dentro cases.py), não /andamentos/sincronizar; andamentos.router (/casos/{id}/andamentos/status|sincronizar) existe mas andamentos.router é montado com prefix=API → /api/casos/{id}/andamentos/status (PORTUGUÊS). M07 roteava tudo em /api/cases/{id}/* (cases.py). Verificar onde andamentos.router foi montado (linha 342 main.py: include_router(andamentos.router, prefix=API) → rotas /api/casos/... OK para andamentos router). Meu M12 usou /api/cases/{id}/andamentos/status → 404 pois cases.py registra /cases (inglês). Corrigir: usar /api/casos/{id}/andamentos/status E /api/casos/{id}/andamentos/sincronizar. Movimentos CRUD: criar (POST /cases/{id}/movimentos), listar (GET /cases/{id}/movimentos), editar/excluir INEXISTENTES → corrigir casos.py adicionando PATCH e DELETE (audit CREATE/UPDATE/DELETE + event_bus).
+
+
+## M12 correções em andamento
+Adicionado em backend/app/routers/cases.py: editar_movimento (PATCH /cases/{id}/movimentos/{mid}) e excluir_movimento (DELETE) com guarda de acesso do caso, 404 endurecido e auditoria UPDATE/DELETE em case_movimentos. Import de MovimentoUpdate adicionado (linha 46). FALTAM: (1) definir class MovimentoUpdate em backend/app/schemas/case.py (após MovimentoCreate, linha ~258): tipo Optional[str]=None, descricao Optional[str]=None, data_evento Optional[datetime]=None — verificar import datetime no schema; (2) criar_movimento NÃO usa payload.data_evento (m.data_evento sempre default now()) — adicionar m.data_evento=payload.data_evento se MovimentoCreate ganhar data_evento Optional; (3) ordenação do GET listar_movimentos é by created_at desc — prompt pede ordenação; deixar data_evento desc seria melhor (ordenar eventos cronologicamente). Deps: datetime em schemas/case.py já tem? verificar. Depois: reiniciar uvicorn (reload? pkill + restart), rodar bateria M12 corrigida (rotas andamentos: usar /api/casos/{id}/andamentos/status e /api/casos/{id}/andamentos/sincronizar — router em português; ou usar /api/cases/{id}/sincronizar-processo para o sync real). Movimentos/recentes OK.
+
+
+## M12 rotas confirmadas no OpenAPI
+GET/POST /api/cases/{id}/movimentos; PATCH/DELETE /api/cases/{id}/movimentos/{mid} (NOSSAS, M12); POST /api/cases/{id}/sincronizar-processo (sync DataJud real); /api/casos/{id}/andamentos/{status|sincronizar|inteligencia|alimentar-ia} (router pt); GET /api/movimentos/recentes. Corrigir bateria m12_andamentos_tests.py: usar essas rotas; status com admin; sync desativado via /api/cases/{id}/sincronizar-processo → 503 claro (DATAJUD_ENABLED false). Movimentos/recentes já correto na bateria.
+
+
+## M12 estado completo (antes da última rodada)
+Correções já aplicadas no código: cases.py ganhou editar_movimento (PATCH) + excluir_movimento (DELETE) com audit UPDATE/DELETE; schemas: MovimentoCreate.data_evento opcional + MovimentoUpdate; listagem ordenada por data_evento desc. Bateria m12_andamentos_tests.py corrigida (rotas status/sincronizar pt; sync 422 sem CNJ; CNJ via PATCH; /recentes lista direta).
+
+PENDENCIAS para a próxima rodada:
+1. A bateria referencia _gen_cnj() que NÃO EXISTE no script — criar função que gera CNJ válido módulo 97 (reusar a do M07: m07_casos_tests.py tem cnj_valido() — copiar/adaptar).
+2. GAP REAL encontrado: criar_movimento NÃO registra audit log (só PATCH/DELETE que acabei de criar). CORRIGIR: adicionar await criar_audit_log(db, cu.id, _role, "CREATE", "case_movimentos", case_id, dados_depois={...}) em criar_movimento, depois restart uvicorn.
+3. Estagiário 404: estagiário está fora da carteira (advogado_responsavel=advogado admin). Guard _filtro_visibilidade devolve 404 uniforme — comportamento LGPD correto, não é bug; o teste foi ajustado para esperar 201 "dentro do escopo" → vai continuar 404 pois estagiário não é responsável/auxiliar. Ajustar teste para aceitar 404 uniforme OU atribuir estagiário como auxiliar. Preferir: aceitar 404 uniforme (404 in allowed) — mudar chk para r.status_code == 404 = fora da carteira bloqueado; e testar estagiário DENTRO do escopo seria atribuir estagiario_id ao caso... o schema CaseUpdate não tem advogado_auxiliar? M07: verificar CaseUpdate campos (advogado_responsavel_id existe; auxiliar não vi). Simples: estagiário 404 é correto (fora da carteira) — ajustar expectativa.
+4. Auditoria CREATE movimento: espera 'CREATE/INSERT/MOV' — depois da correção 2, usar chk direto na ação 'CREATE' da entidade case_movimentos.
+5. /recentes: verificar formato da resposta real (lista? wrapper?) no 14 — já ajustado para lista direta, mas confirmar.
+6. M12 bateria roda com env_shell python3. Servidor uvicorn em 45001, log /tmp/uvicorn.log.
+7. Após M12: commit (branch homologacao-m06 ou criar homologacao-m12-andamentos-2026-08-16 a partir da m06?), depois M13 (intimações).
+8. M07-M11 baterias: re-push pendente das branches ao final (usuário pediu continuar local e refazer pushes ao final).
