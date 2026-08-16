@@ -1,0 +1,68 @@
+name: Fix Backend Regressions (temporary)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-signature-idor-fixture:
+    if: github.head_ref == 'feat/reference-dashboard-systemwide-20260816'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Ajustar massa do teste IDOR sem enfraquecer gate de visualização
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('backend/tests/test_portal_idor_matrix_dblevel.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        sig_a = await _criar_signature(db, cli_a, doc_a, "pendente")
+          sig_b = await _criar_signature(db, cli_b, doc_b, "pendente")
+          await db.commit()
+          '''
+          new = '''        sig_a = await _criar_signature(db, cli_a, doc_a, "pendente")
+          sig_b = await _criar_signature(db, cli_b, doc_b, "pendente")
+          # Este teste mede segregação/IDOR, não o pré-requisito de leitura.
+          # A regra de visualização prévia é coberta especificamente por
+          # test_assinatura_visualizacao_previa.py e permanece obrigatória no router.
+          await db.execute(
+              text(
+                  "UPDATE signature_requests "
+                  "SET documento_visualizado_em = now() WHERE id = :id"
+              ),
+              {"id": sig_a},
+          )
+          await db.commit()
+          '''
+          if old not in text:
+              raise SystemExit('Trecho esperado não encontrado; abortando sem editar.')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Validar sintaxe
+        run: python -m py_compile backend/tests/test_portal_idor_matrix_dblevel.py backend/alembic/env.py backend/alembic/versions/143_signature_documento_visualizado.py backend/alembic/versions/144_alembic_version_varchar128.py
+
+      - name: Commit da correção
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/tests/test_portal_idor_matrix_dblevel.py
+          if git diff --cached --quiet; then
+            echo 'Nenhuma alteração pendente.'
+            exit 0
+          fi
+          git commit -m 'test(security): preparar visualização no cenário positivo de assinatura'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
