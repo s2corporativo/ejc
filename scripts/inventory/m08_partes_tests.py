@@ -153,6 +153,23 @@ chk("CPF válido aceito 201", r.status_code == 201, f"HTTP {r.status_code} {r.te
 
 # ── 3. duplicidade CPF/CNPJ ────────────────────────────────────────────────
 print("== 3. duplicidade ==")
+# Setup idempotente: garante uma parte ATIVA com CPF_VALIDO no caso ANTES do
+# teste de duplicidade — sem isto o cenário dependia de resíduo de runs
+# anteriores e falhava em execução limpa (regressão de homologação final).
+r = requests.get(f"{BASE}/api/cases/{CASO}/partes", headers=h(ADMIN), timeout=15)
+data_dup = r.json() if r.status_code == 200 else []
+if not any(
+        d.get("cpf_cnpj") == CPF_VALIDO and d.get("ativo", True) is not False
+        for d in data_dup):
+    p = {"tipo": "reu", "nome": "EJC_QA Base Duplicidade CPF",
+         "cpf_cnpj": CPF_VALIDO}
+    rb = requests.post(f"{BASE}/api/cases/{CASO}/partes", json=p,
+                       headers=h(ADMIN), timeout=15)
+    chk("setup base duplicidade (201)", rb.status_code in (201, 409),
+        f"HTTP {rb.status_code} {rb.text[:80]}")
+    BASE_DUP_ID = rb.json().get("id") if rb.status_code == 201 else None
+else:
+    BASE_DUP_ID = None
 p = {"tipo": "terceiro", "nome": "EJC_QA Duplicata CPF", "cpf_cnpj": CPF_VALIDO}
 r = requests.post(f"{BASE}/api/cases/{CASO}/partes", json=p, headers=h(ADMIN),
                   timeout=15)

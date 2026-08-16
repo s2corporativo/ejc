@@ -118,10 +118,7 @@ chk("peça: caso inexistente rejeitado (404)", r.status_code == 404,
     f"{r.status_code} {r.text[:80]}")
 
 # caso de outro usuário (cliente_externo sem acesso ao caso)
-rc = requests.post(f"{BASE}/api/auth/login", json={
-    "email": "ejc_qa_auth_cliente@golocal.ejc", "password": SENHA},
-    headers={"X-Forwarded-For": "127.0.0.1"}, timeout=15)
-hc = {"Authorization": f"Bearer {rc.json()['access_token']}",
+hc = {"Authorization": f"Bearer {tok('ejc_qa_auth_cliente@golocal.ejc')}",
       "X-Forwarded-For": "127.0.0.1"}
 r = requests.post(f"{BASE}/api/legal-docs", json={
     "titulo": "EJC_QA invasão", "tipo_peca": "parecer",

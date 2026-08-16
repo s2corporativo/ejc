@@ -90,7 +90,12 @@ def cliente_qa_id():
 
 
 def caso_qa_id():
-    c = db("SELECT id FROM cases WHERE titulo ILIKE '%EJC_QA%' ORDER BY created_at DESC LIMIT 1")
+    # Caso da carteira do advogado QA (atribuído e ativo) — a consulta genérica
+    # por 'EJC_QA%' retornava caso de outro módulo/cliente e gerava 403.
+    c = db("SELECT id FROM cases "
+           "WHERE advogado_responsavel_id=(SELECT id FROM users "
+           "WHERE email='ejc_qa_auth_advogado@golocal.ejc') "
+           "AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1")
     return c.strip() if c else None
 
 
@@ -232,6 +237,19 @@ r = requests.patch(f"{BASE}/api/agenda-eventos/00000000-0000-0000-0000-000000000
 chk("agenda: edição de inexistente 404", r.status_code == 404, f"{r.status_code}")
 
 # ── 5. AGENDA: conflitos (double-booking) ───────────────────────────────────
+# Idempotência: remove resíduos de corridas anteriores no slot de conflito
+# (bateria não controla exclusão no fim; runs repetidos acumulavam itens e o
+# cenário "AVISA 1 conflito" falhava com 5+ avisos).
+for _t in ("EJC_QA conflito A", "EJC_QA conflito B", "EJC_QA sem hora",
+           "EJC_QA pós-concluído"):
+    for _r in db(f"SELECT id FROM agenda_eventos WHERE titulo='{_t}' "
+                 "AND deleted_at IS NULL AND concluido IS NOT TRUE").split("\n"):
+        if _r.strip():
+            try:
+                requests.delete(f"{BASE}/api/agenda-eventos/{_r.strip()}",
+                                headers=H("advogado"), timeout=15)
+            except Exception:
+                pass
 r1 = requests.post(f"{BASE}/api/agenda-eventos", json={
     "titulo": "EJC_QA conflito A", "tipo": "reuniao",
     "data_evento": "2026-12-18", "hora": "11:00"},

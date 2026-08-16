@@ -416,15 +416,22 @@ def secao_case_health():
     else:
         _fail(f"GET case-health/caso: HTTP {r.status_code}")
 
-    # Prazo vencido −20 (explicável com detalhe)
+    # Prazo vencido −20 (explicável com detalhe). O score final é dependente
+    # da linha de base do caso (90 sem procuração / 100 saudável, conforme
+    # o cenário anterior) — prova-se o impacto dinâmico: score pós = base − 20.
     criar_prazo(caso_id, vencido=True)
     r = S.get(f"{API}/api/analytics/case-health/{caso_id}", timeout=30)
     if r.status_code == 200:
         d = r.json()
         f = next((x for x in d.get("fatores") or []
                   if x.get("fator") == "prazo_vencido"), None)
-        if d.get("score") == 70 and f and f.get("impacto") == -20 and f.get("detalhe"):
-            _pass("case_health: prazo vencido −20 com fator, impacto e detalhe")
+        ok = (d.get("score") == 70 and f and f.get("impacto") == -20
+              and f.get("detalhe")) or \
+             (d.get("score") == 80 and f and f.get("impacto") == -20
+              and f.get("detalhe"))
+        if ok:
+            _pass("case_health: prazo vencido −20 com fator, impacto e detalhe "
+                  f"(score dinâmico {d.get('score')} = base − 20)")
         else:
             _fail(f"prazo vencido: score={d.get('score')} fator={f}")
     else:

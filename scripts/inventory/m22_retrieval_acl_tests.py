@@ -9,7 +9,39 @@ import os
 import sys
 import time
 import json
+import signal
+import subprocess
 import requests
+
+
+def _restart_uvicorn() -> None:
+    """Reinicia o uvicorn local quando o servidor cai durante a bateria
+    (earlyoom mata o processo sob carga de embeddings)."""
+    subprocess.run(["pkill", "-f", "uvicorn app.main:app"])
+    time.sleep(2)
+    subprocess.Popen(
+        "cd /home/ubuntu/ejc_repo/backend && nohup "
+        "/home/ubuntu/ejc_repo/scripts/inventory/env_shell.sh uvicorn "
+        "app.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &",
+        shell=True)
+    for _ in range(14):
+        time.sleep(1)
+        try:
+            if requests.get(f"{BASE}/api/health", timeout=4).status_code == 200:
+                return
+        except requests.ConnectionError:
+            pass
+
+
+def busca_rag(params: dict, email: str, timeout: int = 60) -> requests.Response:
+    """GET /api/rag/buscar com retry único + restart do servidor."""
+    try:
+        return S.get(f"{BASE}/api/rag/buscar", params=params, headers=H(email),
+                     timeout=timeout)
+    except requests.ConnectionError:
+        _restart_uvicorn()
+        return S.get(f"{BASE}/api/rag/buscar", params=params, headers=H(email),
+                     timeout=timeout)
 
 BASE = "http://127.0.0.1:8000"
 S = requests.Session()
@@ -222,10 +254,8 @@ time.sleep(12)
 
 # ═══════════════════ 2. BUSCA SEMÂNTICA COM RELEVÂNCIA ═══════════════════
 db("2. busca semântica com relevância")
-r = S.get(f"{BASE}/api/rag/buscar",
-          params={"q": "benefícios previdenciários do INSS",
-                  "limite": 6},
-          headers=H(E_ADV), timeout=60)
+r = busca_rag({"q": "benefícios previdenciários do INSS",
+                  "limite": 6}, E_ADV, timeout=60)
 j = r.json() if r.status_code == 200 else {}
 res = j.get("resultados", [])
 res_d1 = next((x for x in res if x.get("doc_id") == d1_id), None) if d1_id else None
@@ -237,10 +267,8 @@ chk("busca semântica: 200, modo declarado e resultado com relevância (modo tex
 # ═══════════════════ 3. FILTROS POR CATEGORIA ════════════════════════════
 db("3. filtros por categoria")
 if d1_id:
-    r = S.get(f"{BASE}/api/rag/buscar",
-              params={"q": "cláusulas penais e obrigações de entrega",
-                      "limite": 10, "categorias": "jurisprudencia"},
-              headers=H(E_ADV), timeout=60)
+    r = busca_rag({"q": "cláusulas penais e obrigações de entrega",
+                      "limite": 10, "categorias": "jurisprudencia"}, E_ADV, timeout=60)
     j = r.json() if r.status_code == 200 else {}
     res = j.get("resultados", [])
     chk("filtro categorias: devolve apenas a categoria solicitada",
@@ -249,10 +277,8 @@ if d1_id:
             for x in res),
         f"{r.status_code} n={len(res)} {str(res[:2])[:150]}")
 
-    r = S.get(f"{BASE}/api/rag/buscar",
-              params={"q": "cláusulas penais e obrigações de entrega",
-                      "limite": 10, "categorias": "norma_revogada"},
-              headers=H(E_ADV), timeout=60)
+    r = busca_rag({"q": "cláusulas penais e obrigações de entrega",
+                      "limite": 10, "categorias": "norma_revogada"}, E_ADV, timeout=60)
     j = r.json() if r.status_code == 200 else {}
     res = j.get("resultados", [])
     chk("filtro categorias inexistente: lista vazia",
@@ -262,29 +288,21 @@ if d1_id:
 # ═══════════════════ 4. TOP-K / LIMITE ════════════════════════════════════
 db("4. top-k")
 if d1_id:
-    r = S.get(f"{BASE}/api/rag/buscar",
-              params={"q": "revisão benefícios", "limite": 1},
-              headers=H(E_ADV), timeout=60)
+    r = busca_rag({"q": "revisão benefícios", "limite": 1}, E_ADV, timeout=60)
     j = r.json() if r.status_code == 200 else {}
     res = j.get("resultados", [])
     chk("top-k limite=1: no máximo 1 resultado",
         r.status_code == 200 and len(res) <= 1, f"{len(res)}")
-    r = S.get(f"{BASE}/api/rag/buscar",
-              params={"q": "revisão benefícios", "limite": 0},
-              headers=H(E_ADV), timeout=30)
+    r = busca_rag({"q": "revisão benefícios", "limite": 0}, E_ADV, timeout=30)
     chk("top-k limite=0 rejeitado: 422",
         r.status_code == 422, f"{r.status_code}")
-    r = S.get(f"{BASE}/api/rag/buscar",
-              params={"q": "revisão benefícios", "limite": 50},
-              headers=H(E_ADV), timeout=30)
+    r = busca_rag({"q": "revisão benefícios", "limite": 50}, E_ADV, timeout=30)
     chk("top-k limite>20 rejeitado: 422",
         r.status_code == 422, f"{r.status_code}")
 
 # ═══════════════════ 5. PERMISSÕES (papel) ═══════════════════════════════
 db("5. permissões por papel")
-r = S.get(f"{BASE}/api/rag/buscar",
-          params={"q": "revisão benefícios", "limite": 3},
-          headers=H(E_FIN), timeout=30)
+r = busca_rag({"q": "revisão benefícios", "limite": 3}, E_FIN, timeout=30)
 chk("financeiro: busca RAG autorizada (200) — papel de leitura",
     r.status_code == 200, f"{r.status_code}")
 r = S.post(f"{BASE}/api/rag/ingest", json={
@@ -296,15 +314,11 @@ r = S.post(f"{BASE}/api/rag/ingest", json={
 chk("financeiro bloqueado na INGESTÃO RAG: 403",
     r.status_code == 403, f"{r.status_code}")
 
-r = S.get(f"{BASE}/api/rag/buscar",
-          params={"q": "revisão benefícios", "limite": 3},
-          headers=H(E_CLI), timeout=30)
+r = busca_rag({"q": "revisão benefícios", "limite": 3}, E_CLI, timeout=30)
 chk("cliente externo bloqueado na busca RAG: 403",
     r.status_code == 403, f"{r.status_code}")
 
-r = S.get(f"{BASE}/api/rag/buscar",
-          params={"q": "revisão benefícios", "limite": 3},
-          headers=H(E_ADV), timeout=30)
+r = busca_rag({"q": "revisão benefícios", "limite": 3}, E_ADV, timeout=30)
 chk("advogado autorizado na busca RAG: 200",
     r.status_code == 200, f"{r.status_code}")
 
@@ -386,10 +400,8 @@ if not _SKIP_SECTIONS:
 else:
     print("[M22] seções 1-6 SKIPPED (modo part B — START_FROM=7)")
 
-r = S.get(f"{BASE}/api/rag/buscar",
-          params={"q": "cláusulas penais e obrigações de entrega",
-                  "limite": 20},
-          headers=H(E_ADV), timeout=60)
+r = busca_rag({"q": "cláusulas penais e obrigações de entrega",
+                  "limite": 20}, E_ADV, timeout=60)
 j = r.json() if r.status_code == 200 else {}
 res = j.get("resultados", [])
 vedado = any(x.get("doc_id") == d2_id for x in res)
@@ -415,10 +427,8 @@ if d1_id:
         r.status_code == 403, f"{r.status_code}")
 
     # doc excluído não deve aparecer na busca
-    r = S.get(f"{BASE}/api/rag/buscar",
-              params={"q": "benefícios previdenciários do INSS",
-                      "limite": 20},
-              headers=H(E_ADV), timeout=60)
+    r = busca_rag({"q": "benefícios previdenciários do INSS",
+                      "limite": 20}, E_ADV, timeout=60)
     j = r.json() if r.status_code == 200 else {}
     res = j.get("resultados", [])
     recuperado = any(x.get("doc_id") == d1_id for x in res)
@@ -436,18 +446,14 @@ if d1_id:
 
 # ═══════════════════ 8. HISTÓRICO (incluir_historico) ════════════════════
 db("8. versões históricas")
-r = S.get(f"{BASE}/api/rag/buscar",
-          params={"q": "revisão benefícios", "limite": 3,
-                  "incluir_historico": "true"},
-          headers=H(E_ADV), timeout=60)
+r = busca_rag({"q": "revisão benefícios", "limite": 3,
+                  "incluir_historico": "true"}, E_ADV, timeout=60)
 chk("busca com incluir_historico=true: acessível e consistente",
     r.status_code == 200, f"{r.status_code} {r.text[:80]}")
 
 # ═══════════════════ 9. CORPUS FICTÍCIO EXCLUÍDO ═════════════════════════
 db("9. corpus fictício (Bíblia EJC) excluído por padrão")
-r = S.get(f"{BASE}/api/rag/buscar",
-          params={"q": "estrutura petição inicial modelo", "limite": 20},
-          headers=H(E_ADV), timeout=60)
+r = busca_rag({"q": "estrutura petição inicial modelo", "limite": 20}, E_ADV, timeout=60)
 j = r.json() if r.status_code == 200 else {}
 res = j.get("resultados", [])
 ficticio = any((x.get("extra") or {}).get("ficticio", False) if isinstance(x.get("extra"), dict)
@@ -491,9 +497,7 @@ if d2_id:
             env=dict(os.environ, PGPASSWORD="ejc"),
             check=False, capture_output=True, text=True)
         time.sleep(10)
-        r2 = S.get(f"{BASE}/api/rag/buscar",
-                   params={"q": "cláusula de arbitragem Lei 9.307", "limite": 6},
-                   headers=H(E_ADV), timeout=60)
+        r2 = busca_rag({"q": "cláusula de arbitragem Lei 9.307", "limite": 6}, E_ADV, timeout=60)
         j2 = r2.json() if r2.status_code == 200 else {}
         res2 = j2.get("resultados", [])
         # D2 é client-restrito: sem escopo ele não aparece na busca REST —

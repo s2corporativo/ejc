@@ -44,15 +44,26 @@ def check(nome, ok, motivo=""):
         print(f"FAIL {nome} — {motivo}")
 
 
+TOKENS_M05 = {}
+
+
 def login(email):
-    r = S.post(f"{BASE}/api/auth/login", json={"email": email, "password": SENHA},
-               headers=HDR, timeout=10)
-    if r.status_code == 429:
-        print("rate-limit: aguardando 20s e revalidando...")
-        time.sleep(20)
+    if email in TOKENS_M05:
+        return TOKENS_M05[email]
+    time.sleep(18)
+    r = None
+    for _ in range(3):
         r = S.post(f"{BASE}/api/auth/login", json={"email": email, "password": SENHA},
                    headers=HDR, timeout=10)
-    return r.json()["access_token"]
+        if r.status_code == 429:
+            print("rate-limit: aguardando 45s e revalidando...")
+            time.sleep(45)
+            continue
+        r.raise_for_status()
+        TOKENS_M05[email] = r.json()["access_token"]
+        return TOKENS_M05[email]
+    raise SystemExit(
+        f"rate limit persistente em {email}: {r.text[:200] if r is not None else ''}")
 
 
 def tok(email):
