@@ -1,0 +1,205 @@
+name: Validate Reference UI (temporary)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  validate-reference-ui:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Node 22.22.2
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.22.2
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply review hardening
+        working-directory: .
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if new in text:
+                  return False
+              if old not in text:
+                  raise SystemExit(f"Trecho esperado não encontrado em {path}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+              return True
+
+          # Layout: feedback de erro e estado local consistente ao marcar notificações.
+          replace_once(
+              "frontend/src/components/LayoutReference.tsx",
+              'import SecurityMenu from "./SecurityMenu";\n',
+              'import SecurityMenu from "./SecurityMenu";\nimport { toast } from "./Toast";\n',
+          )
+          replace_once(
+              "frontend/src/components/LayoutReference.tsx",
+              '''                    onClick={() =>\n                      api\n                        .post("/notifications/ler-todas")\n                        .then(() => setNotifCount(0))\n                    }''',
+              '''                    onClick={() => {\n                      api\n                        .post("/notifications/ler-todas")\n                        .then(() => {\n                          setNotifCount(0);\n                          setNotifications((items) =>\n                            items.map((item) => ({ ...item, lida: true })),\n                          );\n                        })\n                        .catch(() => {\n                          toast.error(\n                            "Não foi possível marcar as notificações como lidas.",\n                          );\n                        });\n                    }}''',
+          )
+
+          # Dashboard: não expor pergunta jurídica na URL; robustez de payloads externos.
+          replace_once(
+              "frontend/src/pages/DashboardUltra.tsx",
+              '  nome: string;\n',
+              '  nome?: string;\n',
+          )
+          replace_once(
+              "frontend/src/pages/DashboardUltra.tsx",
+              '''    navigate(\n      `/inteligencia?tab=assistente&sub=rapido&q=${encodeURIComponent(q)}`,\n    );''',
+              '''    navigate("/inteligencia?tab=assistente&sub=rapido", {\n      state: { perguntaRapida: q },\n    });''',
+          )
+          replace_once(
+              "frontend/src/pages/DashboardUltra.tsx",
+              '''function isFinalActivity(status?: string) {\n  return FINAL_ACTIVITY_STATUSES.has((status || "").toLowerCase());\n}\n''',
+              '''function isFinalActivity(status?: string) {\n  return FINAL_ACTIVITY_STATUSES.has((status || "").toLowerCase());\n}\n\nfunction formatNewsDate(value?: string) {\n  if (!value) return "";\n  const date = new Date(value);\n  if (Number.isNaN(date.getTime())) return "";\n  return new Intl.DateTimeFormat("pt-BR", {\n    day: "2-digit",\n    month: "short",\n  }).format(date);\n}\n''',
+          )
+          replace_once(
+              "frontend/src/pages/DashboardUltra.tsx",
+              '<strong>{client.nome}</strong>',
+              '<strong>{client.nome || "Cliente sem nome"}</strong>',
+          )
+          replace_once(
+              "frontend/src/pages/DashboardUltra.tsx",
+              '{client.nome.trim().charAt(0).toUpperCase() || "C"}',
+              '{client.nome?.trim().charAt(0).toUpperCase() || "C"}',
+          )
+          replace_once(
+              "frontend/src/pages/DashboardUltra.tsx",
+              '''                  <time>\n                    {item.data\n                      ? new Intl.DateTimeFormat("pt-BR", {\n                          day: "2-digit",\n                          month: "short",\n                        }).format(new Date(item.data))\n                      : ""}\n                  </time>''',
+              '''                  <time>{formatNewsDate(item.data)}</time>''',
+          )
+
+          # Assistente: recebe texto por router state, sem histórico/referrer/telemetria de URL.
+          replace_once(
+              "frontend/src/pages/AssistenteIA.tsx",
+              'import { useSearchParams } from "react-router";',
+              'import { useLocation } from "react-router";',
+          )
+          replace_once(
+              "frontend/src/pages/AssistenteIA.tsx",
+              '''  const [searchParams] = useSearchParams();\n  const [tool, setTool] = useState<Tool>("pesquisa");''',
+              '''  const location = useLocation();\n  const navigationState = location.state as { perguntaRapida?: string } | null;\n  const [tool, setTool] = useState<Tool>("pesquisa");''',
+          )
+          replace_once(
+              "frontend/src/pages/AssistenteIA.tsx",
+              '''  const [texto, setTexto] = useState(() => searchParams.get("q") || "");''',
+              '''  const [texto, setTexto] = useState(\n    () => navigationState?.perguntaRapida || "",\n  );''',
+          )
+          replace_once(
+              "frontend/src/pages/AssistenteIA.tsx",
+              '''  // `q` é preenchido pelo campo de pergunta rápida do dashboard. O conteúdo\n  // não é enviado automaticamente: o profissional ainda revisa e confirma\n  // explicitamente o envio dentro da ferramenta de IA.''',
+              '''  // A pergunta rápida chega pelo state interno do React Router, sem ser\n  // exposta na URL. O conteúdo não é enviado automaticamente: o profissional\n  // ainda revisa e confirma explicitamente o envio dentro da ferramenta de IA.''',
+          )
+
+          # Calendário: contraste e estado selecionado não dependente apenas de cor.
+          replace_once(
+              "frontend/src/styles/ejc-reference-2026.css",
+              '''.ejc-sidebar-month__grid button.is-outside {\n  color: #c1c9d3;\n}\n\n.ejc-sidebar-month__grid button[aria-current="date"] {''',
+              '''.ejc-sidebar-month__grid button.is-outside {\n  color: #64748b;\n}\n\n.ejc-sidebar-month__grid button.is-selected {\n  color: var(--ejc-ref-navy-900);\n  background: var(--ejc-ref-blue-100);\n  font-weight: 700;\n  box-shadow: inset 0 0 0 1px #aac5e5;\n}\n\n.ejc-sidebar-month__grid button[aria-current="date"] {''',
+          )
+
+          # Textos secundários: mínimo prático de 10px e cinza com contraste AA em branco.
+          css = Path("frontend/src/styles/ejc-reference-2026.css")
+          text = css.read_text(encoding="utf-8")
+          replacements = {
+              "color: #95a1b0;\n  font-size: 8px;": "color: #56677c;\n  font-size: 10px;",
+              "color: #7b899a;\n  font-size: 8.5px;": "color: #56677c;\n  font-size: 10px;",
+              "font-size: 9px;\n  text-align: right;": "font-size: 10px;\n  text-align: right;",
+              "font-size: 9px;\n  font-weight: 700;": "font-size: 10px;\n  font-weight: 700;",
+              "font-size: 9px;\n  font-weight: 600;": "font-size: 10px;\n  font-weight: 600;",
+              "font-size: 9px;\n}\n\n.ejc-reference-ai-box": "font-size: 10px;\n}\n\n.ejc-reference-ai-box",
+              "font-size: 8.5px;\n  font-weight: 600;": "font-size: 10px;\n  font-weight: 600;",
+              "font-size: 8.5px;\n}\n\n.ejc-reference-legend": "font-size: 10px;\n}\n\n.ejc-reference-legend",
+              "font-size: 9px;\n}\n\n.ejc-reference-agenda-row": "font-size: 10px;\n}\n\n.ejc-reference-agenda-row",
+              "color: #8592a2;\n  font-size: 8px;": "color: #56677c;\n  font-size: 10px;",
+              "color: #6f7d90;\n  font-size: 9px;": "color: #56677c;\n  font-size: 10px;",
+              "color: #44566d;\n  font-size: 8.5px;": "color: #44566d;\n  font-size: 10px;",
+              "font-size: 9px;\n  font-weight: 650;": "font-size: 10px;\n  font-weight: 650;",
+              "font-size: 8.5px;\n}\n\n.ejc-reference-workflow__step small": "font-size: 10px;\n}\n\n.ejc-reference-workflow__step small",
+              "color: #8592a2;\n  font-size: 7.5px;": "color: #56677c;\n  font-size: 10px;",
+              "color: #99a8ba;": "color: #64748b;",
+              "font-size: 9px;\n  font-weight: 600;": "font-size: 10px;\n  font-weight: 600;",
+              "color: #8491a1;\n  font-size: 7.5px;": "color: #56677c;\n  font-size: 10px;",
+              "color: #6f7d8f;\n  font-size: 7.5px;": "color: #56677c;\n  font-size: 10px;",
+              "color: #8a97a7;\n  font-size: 9px;": "color: #56677c;\n  font-size: 10px;",
+              "color: #8b97a5;\n  font-size: 8.5px;": "color: #56677c;\n  font-size: 10px;",
+          }
+          changed = False
+          for old, new in replacements.items():
+              if old in text:
+                  text = text.replace(old, new)
+                  changed = True
+          if changed:
+              css.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Format changed files
+        run: >-
+          npx prettier --write
+          src/components/LayoutReference.tsx
+          src/pages/DashboardUltra.tsx
+          src/pages/DashboardUltra.test.tsx
+          src/pages/AssistenteIA.tsx
+          src/styles/ejc-reference-2026.css
+
+      - name: Commit review hardening if needed
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            frontend/src/components/LayoutReference.tsx \
+            frontend/src/pages/DashboardUltra.tsx \
+            frontend/src/pages/DashboardUltra.test.tsx \
+            frontend/src/pages/AssistenteIA.tsx \
+            frontend/src/styles/ejc-reference-2026.css
+          if git diff --cached --quiet; then
+            echo "Review hardening already applied."
+          else
+            git commit -m "fix(frontend): endurecer privacidade e acessibilidade do redesign"
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          fi
+
+      - name: Check formatting of reference UI changes only
+        run: >-
+          npx prettier --check
+          src/components/LayoutReference.tsx
+          src/components/SidebarWeekCalendar.tsx
+          src/pages/DashboardUltra.tsx
+          src/pages/DashboardUltra.test.tsx
+          src/pages/AssistenteIA.tsx
+          src/App.tsx
+          src/main.tsx
+          src/styles/ejc-reference-2026.css
+
+      - name: Dashboard regression tests
+        run: npx vitest run src/pages/DashboardUltra.test.tsx src/pages/Dashboard.test.tsx
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npx vite build
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
