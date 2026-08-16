@@ -1,14 +1,17 @@
-"""Mantém ``alembic_version.version_num`` padronizada em ``varchar(128)``.
+"""Alembic ``alembic_version.version_num`` padronizada em ``varchar(128)``.
 
-A ponte ``142a_alembic_version_128`` agora realiza o widening antes da revision
-143, resolvendo instalações limpas. Esta revision 144 permanece na cadeia por
-compatibilidade com ambientes que já a registraram e reafirma o tipo esperado.
+A revision 143 possui identificador com mais de 32 caracteres. Para bancos
+limpos, ``alembic/env.py`` garante preventivamente que a tabela interna de
+versão já tenha capacidade suficiente antes de qualquer migration ser gravada.
+Esta revision permanece como declaração canônica e expand-only do schema de
+metadados para ambientes legados que ainda cheguem à cadeia com varchar(32).
 
-O downgrade é deliberadamente não destrutivo: o alvo imediato é
-``143_signature_documento_visualizado``, cujo identificador possui 35 caracteres.
-Reduzir a coluna para varchar(32) antes de o Alembic gravar esse alvo tornaria o
-próprio rollback impossível. A redução segura para varchar(32) ocorre somente no
-downgrade da ponte 142a, depois que a cadeia já voltou a uma revision curta.
+O ``upgrade()`` é widening estática 32→128 e não altera dados de negócio.
+O ``downgrade()`` não reduz a coluna: o alvo imediato é a própria revision 143,
+cujo identificador não cabe em varchar(32). Encolher aqui faria o Alembic falhar
+quando tentasse registrar a revisão de destino. Manter varchar(128) no rollback
+é compatível, não destrutivo e preserva a capacidade de continuar a navegação
+da cadeia para trás.
 """
 
 from alembic import op
@@ -21,17 +24,19 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Idempotente quanto ao tipo efetivo: reafirma varchar(128), necessário
-    # também para instalações que chegaram à 143 por correção operacional antiga.
+    # Widening estrita e estática: varchar(32) -> varchar(128). O bootstrap do
+    # env.py pode já ter ampliado fisicamente a coluna; repetir o TYPE 128 no
+    # PostgreSQL é seguro e mantém esta migration compatível com o gate de deploy.
     op.alter_column(
         "alembic_version",
         "version_num",
         type_=sa.String(128),
-        existing_type=sa.String(128),
+        existing_type=sa.String(32),
     )
 
 
 def downgrade() -> None:
-    # Não reduzir aqui: após este método o Alembic precisa gravar a revision 143
-    # (35 caracteres). A ponte 142a executa a redução quando for seguro.
+    # Intencionalmente não encolhe para varchar(32): ao concluir o downgrade
+    # desta revision, o Alembic precisa gravar ``143_signature_documento_visualizado``
+    # (35 caracteres). Reduzir antes dessa gravação quebraria o próprio rollback.
     pass
