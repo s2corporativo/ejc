@@ -114,7 +114,8 @@ function mockSucesso() {
     if (url === "/dashboard/") return Promise.resolve(dashboardOk);
     if (url === "/atividades") return Promise.resolve(atividadesOk);
     if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-    if (url === "/clients/?page_size=4&status=ativo") return Promise.resolve(clientesOk);
+    if (url === "/clients/?page_size=4&status=ativo")
+      return Promise.resolve(clientesOk);
     if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
     if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
     return Promise.reject(new Error(`URL inesperada: ${url}`));
@@ -171,10 +172,12 @@ describe("DashboardUltra — referência 2026", () => {
 
   it("expõe falha do dashboard em vez de inventar prazos ou carteira", async () => {
     getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/") return Promise.reject(new Error("dashboard off"));
+      if (url === "/dashboard/")
+        return Promise.reject(new Error("dashboard off"));
       if (url === "/atividades") return Promise.resolve(atividadesOk);
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/clients/?page_size=4&status=ativo") return Promise.resolve(clientesOk);
+      if (url === "/clients/?page_size=4&status=ativo")
+        return Promise.resolve(clientesOk);
       if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
       if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
@@ -190,9 +193,11 @@ describe("DashboardUltra — referência 2026", () => {
   it("expõe falha de atividades e não mascara a agenda como vazia", async () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/dashboard/") return Promise.resolve(dashboardOk);
-      if (url === "/atividades") return Promise.reject(new Error("atividades off"));
+      if (url === "/atividades")
+        return Promise.reject(new Error("atividades off"));
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/clients/?page_size=4&status=ativo") return Promise.resolve(clientesOk);
+      if (url === "/clients/?page_size=4&status=ativo")
+        return Promise.resolve(clientesOk);
       if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
       if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
@@ -202,15 +207,19 @@ describe("DashboardUltra — referência 2026", () => {
     expect(
       await screen.findByText("Atividades temporariamente indisponíveis."),
     ).toBeTruthy();
-    expect(screen.getByText("Agenda temporariamente indisponível.")).toBeTruthy();
+    expect(
+      screen.getByText("Agenda temporariamente indisponível."),
+    ).toBeTruthy();
   });
 
   it("sinaliza degradação parcial quando somente o enriquecimento da agenda falha", async () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/dashboard/") return Promise.resolve(dashboardOk);
       if (url === "/atividades") return Promise.resolve(atividadesOk);
-      if (url === "/agenda-eventos/") return Promise.reject(new Error("agenda off"));
-      if (url === "/clients/?page_size=4&status=ativo") return Promise.resolve(clientesOk);
+      if (url === "/agenda-eventos/")
+        return Promise.reject(new Error("agenda off"));
+      if (url === "/clients/?page_size=4&status=ativo")
+        return Promise.resolve(clientesOk);
       if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
       if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
@@ -228,14 +237,20 @@ describe("DashboardUltra — referência 2026", () => {
       if (url === "/dashboard/") return Promise.resolve(dashboardOk);
       if (url === "/atividades") return Promise.resolve(atividadesOk);
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/clients/?page_size=4&status=ativo") return Promise.reject(new Error("clients off"));
-      if (url === "/noticias?limit=4") return Promise.reject(new Error("news off"));
+      if (url === "/clients/?page_size=4&status=ativo")
+        return Promise.reject(new Error("clients off"));
+      if (url === "/noticias?limit=4")
+        return Promise.reject(new Error("news off"));
       if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
     renderizar();
-    expect(await screen.findByText("Clientes temporariamente indisponíveis.")).toBeTruthy();
-    expect(screen.getByText("Notícias temporariamente indisponíveis.")).toBeTruthy();
+    expect(
+      await screen.findByText("Clientes temporariamente indisponíveis."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Notícias temporariamente indisponíveis."),
+    ).toBeTruthy();
   });
 });

@@ -137,7 +137,10 @@ export default function SidebarWeekCalendar() {
               key={key}
               type="button"
               onClick={() => openDay(day)}
-              className={`${outside ? "is-outside " : ""}${selected && !today ? "is-selected" : ""}`.trim() || undefined}
+              className={
+                `${outside ? "is-outside " : ""}${selected && !today ? "is-selected" : ""}`.trim() ||
+                undefined
+              }
               aria-current={today ? "date" : undefined}
               aria-label={`${format(day, "EEEE, dd 'de' MMMM", { locale: ptBR })}${
                 hasActivity ? ", possui compromissos" : ""

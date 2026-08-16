@@ -23,7 +23,11 @@ import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
 import SidebarWeekCalendar from "./SidebarWeekCalendar";
 import { Tooltip, cn } from "./UI";
-import { officeBranding, getMailtoUrl, getWhatsAppUrl } from "../config/officeBranding";
+import {
+  officeBranding,
+  getMailtoUrl,
+  getWhatsAppUrl,
+} from "../config/officeBranding";
 import {
   getHelpModuleKey,
   getNavigationModules,
@@ -89,10 +93,14 @@ export default function LayoutReference() {
   const user = useAuth((state) => state.user);
   const { disponivel: iaDisponivel } = useIaStatus();
   const lifecycleSettings = useModuleLifecycleStore((state) => state.settings);
-  const { sidebarCollapsed: collapsed, setSidebarCollapsed } = usePreferencesStore();
+  const { sidebarCollapsed: collapsed, setSidebarCollapsed } =
+    usePreferencesStore();
   const location = useLocation();
   const navigate = useNavigate();
-  const moduleKey = useMemo(() => getHelpModuleKey(location.pathname), [location.pathname]);
+  const moduleKey = useMemo(
+    () => getHelpModuleKey(location.pathname),
+    [location.pathname],
+  );
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -147,7 +155,10 @@ export default function LayoutReference() {
     );
   }, [visible]);
 
-  const primaryKeys = useMemo(() => new Set(primary.map((item) => item.key)), [primary]);
+  const primaryKeys = useMemo(
+    () => new Set(primary.map((item) => item.key)),
+    [primary],
+  );
   const secondary = useMemo(
     () => visible.filter((item) => !primaryKeys.has(item.key)),
     [primaryKeys, visible],
@@ -211,7 +222,11 @@ export default function LayoutReference() {
             <Menu className="h-5 w-5" />
           </button>
 
-          <Link to="/" className="hidden shrink-0 items-center md:flex" aria-label="Ir para o início do EJC">
+          <Link
+            to="/"
+            className="hidden shrink-0 items-center md:flex"
+            aria-label="Ir para o início do EJC"
+          >
             <img
               src={officeBranding.logoPath}
               alt={officeBranding.officeName}
@@ -226,13 +241,20 @@ export default function LayoutReference() {
               className="ejc-header-search flex w-full max-w-[650px] items-center gap-3 px-3.5 text-left text-sm"
             >
               <Search className="h-4 w-4 shrink-0" />
-              <span className="hidden truncate sm:inline">Buscar clientes, casos, documentos, peças…</span>
+              <span className="hidden truncate sm:inline">
+                Buscar clientes, casos, documentos, peças…
+              </span>
               <span className="truncate sm:hidden">Buscar…</span>
-              <kbd className="ml-auto hidden px-1.5 py-0.5 text-[10px] font-medium sm:block">⌘ K</kbd>
+              <kbd className="ml-auto hidden px-1.5 py-0.5 text-[10px] font-medium sm:block">
+                ⌘ K
+              </kbd>
             </button>
           </div>
 
-          <div className="ejc-header-clock" aria-label={`${clock.dateText}, ${clock.subtext}`}>
+          <div
+            className="ejc-header-clock"
+            aria-label={`${clock.dateText}, ${clock.subtext}`}
+          >
             <CalendarDays aria-hidden="true" />
             <span>
               <strong>{clock.dateText}</strong>
@@ -245,12 +267,27 @@ export default function LayoutReference() {
           <button
             type="button"
             onClick={() => setPrivacyMode((value) => !value)}
-            className={cn("icon-btn hidden sm:flex", privacyMode && "bg-primary-50 text-primary-700")}
-            title={privacyMode ? "Desativar modo privacidade" : "Ativar modo privacidade"}
+            className={cn(
+              "icon-btn hidden sm:flex",
+              privacyMode && "bg-primary-50 text-primary-700",
+            )}
+            title={
+              privacyMode
+                ? "Desativar modo privacidade"
+                : "Ativar modo privacidade"
+            }
             aria-pressed={privacyMode}
-            aria-label={privacyMode ? "Desativar modo privacidade" : "Ativar modo privacidade"}
+            aria-label={
+              privacyMode
+                ? "Desativar modo privacidade"
+                : "Ativar modo privacidade"
+            }
           >
-            {privacyMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {privacyMode ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
           </button>
 
           <div className="relative">
@@ -271,12 +308,16 @@ export default function LayoutReference() {
             {notifOpen && (
               <div className="card absolute right-0 mt-2 w-80 overflow-hidden py-0 shadow-float animate-pop">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                  <div className="text-sm font-semibold text-slate-950">Notificações</div>
+                  <div className="text-sm font-semibold text-slate-950">
+                    Notificações
+                  </div>
                   <button
                     type="button"
                     className="text-xs font-medium text-primary-700 hover:text-primary-900"
                     onClick={() =>
-                      api.post("/notifications/ler-todas").then(() => setNotifCount(0))
+                      api
+                        .post("/notifications/ler-todas")
+                        .then(() => setNotifCount(0))
                     }
                   >
                     Marcar lidas
@@ -284,7 +325,9 @@ export default function LayoutReference() {
                 </div>
                 <div className="max-h-96 overflow-y-auto">
                   {notifications.length === 0 ? (
-                    <div className="px-4 py-8 text-center text-sm text-slate-400">Sem notificações</div>
+                    <div className="px-4 py-8 text-center text-sm text-slate-400">
+                      Sem notificações
+                    </div>
                   ) : (
                     notifications.map((notification) => (
                       <button
@@ -299,8 +342,12 @@ export default function LayoutReference() {
                           !notification.lida && "bg-primary-50/60",
                         )}
                       >
-                        <div className="text-sm font-medium text-slate-900">{notification.titulo}</div>
-                        <div className="mt-1 line-clamp-2 text-xs text-slate-500">{notification.mensagem}</div>
+                        <div className="text-sm font-medium text-slate-900">
+                          {notification.titulo}
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-xs text-slate-500">
+                          {notification.mensagem}
+                        </div>
                       </button>
                     ))
                   )}
@@ -330,8 +377,17 @@ export default function LayoutReference() {
         )}
       >
         <div className="flex items-center justify-between px-3 pt-3 md:hidden">
-          <img src={officeBranding.logoPath} alt={officeBranding.officeName} className="h-9 w-auto max-w-[170px] object-contain" />
-          <button type="button" className="icon-btn h-8 w-8" onClick={() => setMobileOpen(false)} aria-label="Fechar menu">
+          <img
+            src={officeBranding.logoPath}
+            alt={officeBranding.officeName}
+            className="h-9 w-auto max-w-[170px] object-contain"
+          />
+          <button
+            type="button"
+            className="icon-btn h-8 w-8"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Fechar menu"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -352,9 +408,18 @@ export default function LayoutReference() {
                     aria-expanded={moreOpen}
                   >
                     <span>Mais</span>
-                    <ChevronDown className={cn("h-3 w-3 transition-transform", !moreOpen && "-rotate-90")} />
+                    <ChevronDown
+                      className={cn(
+                        "h-3 w-3 transition-transform",
+                        !moreOpen && "-rotate-90",
+                      )}
+                    />
                   </button>
-                  {moreOpen && <div className="mt-1 space-y-1">{secondary.map(renderNavItem)}</div>}
+                  {moreOpen && (
+                    <div className="mt-1 space-y-1">
+                      {secondary.map(renderNavItem)}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -364,22 +429,46 @@ export default function LayoutReference() {
         {!collapsed && <SidebarWeekCalendar />}
 
         <div className="border-t border-slate-200 bg-white">
-          <div className={cn("ejc-sidebar-contacts", collapsed && "flex-col px-2")}> 
+          <div
+            className={cn("ejc-sidebar-contacts", collapsed && "flex-col px-2")}
+          >
             {whatsappUrl ? (
-              <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="ejc-sidebar-contact is-whatsapp" aria-label="Abrir WhatsApp">
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ejc-sidebar-contact is-whatsapp"
+                aria-label="Abrir WhatsApp"
+              >
                 <MessageCircle className="h-5 w-5" aria-hidden="true" />
               </a>
             ) : (
-              <button type="button" className="ejc-sidebar-contact is-disabled" disabled title="WhatsApp institucional não configurado" aria-label="WhatsApp não configurado">
+              <button
+                type="button"
+                className="ejc-sidebar-contact is-disabled"
+                disabled
+                title="WhatsApp institucional não configurado"
+                aria-label="WhatsApp não configurado"
+              >
                 <MessageCircle className="h-5 w-5" aria-hidden="true" />
               </button>
             )}
             {mailtoUrl ? (
-              <a href={mailtoUrl} className="ejc-sidebar-contact" aria-label="Enviar e-mail">
+              <a
+                href={mailtoUrl}
+                className="ejc-sidebar-contact"
+                aria-label="Enviar e-mail"
+              >
                 <Mail className="h-5 w-5" aria-hidden="true" />
               </a>
             ) : (
-              <button type="button" className="ejc-sidebar-contact is-disabled" disabled title="E-mail institucional não configurado" aria-label="E-mail não configurado">
+              <button
+                type="button"
+                className="ejc-sidebar-contact is-disabled"
+                disabled
+                title="E-mail institucional não configurado"
+                aria-label="E-mail não configurado"
+              >
                 <Mail className="h-5 w-5" aria-hidden="true" />
               </button>
             )}
@@ -387,7 +476,12 @@ export default function LayoutReference() {
         </div>
       </aside>
 
-      <div className={cn("relative z-10 flex min-h-screen flex-col pt-[72px] transition-all", contentMargin)}>
+      <div
+        className={cn(
+          "relative z-10 flex min-h-screen flex-col pt-[72px] transition-all",
+          contentMargin,
+        )}
+      >
         <IaStatusBanner />
         <CaseContextBar />
         <main className="ejc-modern-scope flex-1 px-3 py-4 md:px-5 md:py-5">

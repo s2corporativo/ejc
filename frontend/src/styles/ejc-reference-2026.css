@@ -28,7 +28,8 @@
   --ejc-ref-success-soft: #eaf8f0;
   --ejc-ref-info: #2f7dd1;
   --ejc-ref-info-soft: #edf5ff;
-  --ejc-ref-shadow: 0 1px 2px rgba(15, 35, 60, 0.025), 0 7px 24px -20px rgba(15, 35, 60, 0.28);
+  --ejc-ref-shadow:
+    0 1px 2px rgba(15, 35, 60, 0.025), 0 7px 24px -20px rgba(15, 35, 60, 0.28);
   --ejc-ref-shadow-float: 0 18px 45px -30px rgba(15, 35, 60, 0.34);
 }
 
@@ -270,7 +271,10 @@ html:not(.dark) .sidebar-bronze > div:last-child .text-slate-400 {
   border-radius: 9px;
   background: #ffffff;
   color: var(--ejc-ref-navy-900);
-  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
 }
 
 .ejc-sidebar-contact:hover {
@@ -444,7 +448,9 @@ html:not(.dark) .ejc-modern-scope .card:hover {
 }
 
 html:not(.dark) .ejc-modern-scope .input,
-html:not(.dark) .ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]),
+html:not(.dark)
+  .ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]),
 html:not(.dark) .ejc-modern-scope select,
 html:not(.dark) .ejc-modern-scope textarea {
   border-color: var(--ejc-ref-line-strong) !important;
@@ -455,7 +461,9 @@ html:not(.dark) .ejc-modern-scope textarea {
 }
 
 html:not(.dark) .ejc-modern-scope .input:focus,
-html:not(.dark) .ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):focus,
+html:not(.dark)
+  .ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):focus,
 html:not(.dark) .ejc-modern-scope select:focus,
 html:not(.dark) .ejc-modern-scope textarea:focus {
   border-color: #7ba5d6 !important;
@@ -555,7 +563,10 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 
 .ejc-reference-dashboard__top {
   display: grid;
-  grid-template-columns: minmax(250px, 0.86fr) minmax(350px, 1.12fr) minmax(300px, 1fr);
+  grid-template-columns: minmax(250px, 0.86fr) minmax(350px, 1.12fr) minmax(
+      300px,
+      1fr
+    );
   gap: 14px;
 }
 
@@ -740,9 +751,15 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   background: var(--ejc-ref-info);
 }
 
-.ejc-reference-accent-row.is-danger::before { background: var(--ejc-ref-danger); }
-.ejc-reference-accent-row.is-warning::before { background: var(--ejc-ref-warning); }
-.ejc-reference-accent-row.is-success::before { background: var(--ejc-ref-success); }
+.ejc-reference-accent-row.is-danger::before {
+  background: var(--ejc-ref-danger);
+}
+.ejc-reference-accent-row.is-warning::before {
+  background: var(--ejc-ref-warning);
+}
+.ejc-reference-accent-row.is-success::before {
+  background: var(--ejc-ref-success);
+}
 
 .ejc-reference-tabs {
   display: flex;
@@ -914,7 +931,9 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   border-bottom: 1px solid #edf1f5;
 }
 
-.ejc-reference-agenda-row:last-child { border-bottom: 0; }
+.ejc-reference-agenda-row:last-child {
+  border-bottom: 0;
+}
 
 .ejc-reference-date-tile {
   width: 34px;
@@ -947,7 +966,9 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   border-bottom: 1px solid #edf1f5;
 }
 
-.ejc-reference-client-row:last-child { border-bottom: 0; }
+.ejc-reference-client-row:last-child {
+  border-bottom: 0;
+}
 
 .ejc-reference-client-row > div {
   min-width: 0;
@@ -1104,7 +1125,9 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   border-bottom: 1px solid #edf1f5;
 }
 
-.ejc-reference-news-row:last-child { border-bottom: 0; }
+.ejc-reference-news-row:last-child {
+  border-bottom: 0;
+}
 
 .ejc-reference-news-row > span:first-child {
   width: 27px;
@@ -1167,7 +1190,11 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 }
 
 /* Banner PJe da rota inicial: converte o bloco em faixa discreta. */
-html:not(.dark) main.ejc-modern-scope > div > div > div:first-child.rounded-2xl {
+html:not(.dark)
+  main.ejc-modern-scope
+  > div
+  > div
+  > div:first-child.rounded-2xl {
   border-radius: 9px !important;
   box-shadow: none !important;
 }
