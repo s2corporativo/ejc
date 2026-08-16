@@ -144,7 +144,10 @@ async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo,
         KnowledgeDoc.chave_origem == chave,
         KnowledgeDoc.deleted_at.is_(None),
         KnowledgeDoc.vigente.is_(True),
-    ))).scalar_one()
+    ).order_by(KnowledgeDoc.created_at.desc()).limit(1))).scalars().first()
+    if doc is None:
+        raise HTTPException(status_code=500,
+            detail="Documento ingerido não localizado após o upsert")
     await db.commit()
     if emb_disponivel() and doc.status_indexacao != "indexado":
         await agendar_indexacao(doc.id, background_tasks)
