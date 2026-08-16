@@ -743,3 +743,34 @@ Padrão bateria: scripts/inventory/m28_template... usar pattern de m28: _TOKENS 
 Bateria: scripts/inventory/m29_dossie_estrategico_tests.py — 22 cenários, rodadas com fixes: imports corrigidos (sanitizer), secao_hitl token reemitido, secoes_json verificado via DB (dossies_estrategicos), tuple unpacking corrigido, AsyncSessionLocal import local. Última rodada: 19 PASS/1 FAIL/2 N/A — aguardando resultado da rodada com fix do import.
 Fatos-chave do sistema: dossiê nasce rascunho (revisão obrigatória); gerar exige advogado+; aprovação exige sócio (arquiva aprovados anteriores); read = EQUIPE_JURIDICA (financeiro excluído #694); /modulos determinísticos (linha_do_tempo, mapa_probatorio, riscos/case_health, teses); sanitização PII + abort em residual + pseudonimização entidades; PDF WeasyPrint; auditoria audit_logs entidade='dossie_estrategico'. Fallback sem IA: 'IA indisponível' + JSON bruto + secoes_json; modelo_ia='—'.
 Após baterir OK: escrever relatório em qa/homologacao/m29/RELATORIO_MODULO_M29.md (formato do M28), commit, e avançar para M30 (PROMPT 30 — ler arquivo de comando: grep -n "PROMPT 30" /home/ubuntu/upload/Pasted_content_76.txt).
+
+### M30 superfícies mapeadas (Matriz de Teses)
+**Matriz (caso-específica)** — `app/routers/matriz_teses.py`, prefix `/cases/{case_id}/matriz-teses`:
+- `POST /cases/{case_id}/matriz-teses/montar` — requer_advogado; rate limit 5/min; MontarMatrizIn (area max 60, fatos max 30000); area SEMPRE normalizada via taxonomia canônica (fora do canônico → 422 com areas_validas); fatos <20 chars → 422; sanitizar_pii ANTES do service; monta via mts.montar_matriz.
+- `GET .../matriz-teses` — matriz persistida (status rascunho; questoes, teses candidatas ordenadas por forca.desc, precedentes, vinculos EvidenceLink).
+- `POST .../teses/{tese_id}/aprovar` e `/descartar` — HITL advogado+, rate 15/min, AuditLog no service; _decidir usa aprovar_tese(db, tese_id, cu, decisao, case_id).
+- Service montar_matriz: decompor_questoes (IA via gw_chat, fallback VAZIO quando AI_ENABLED=false — SEM invenção; avisos AVISO_FALHA_PARSE), pesquisar_por_questao (AuthorityRecords por questão, precedentes só da questão vinculada), Banco de Teses (ativas da área, max 20), Provas do caso → fatos_relacionados/provas/vinculos; calcular_forca determinístico; gravar_snapshot_seguro origem="matriz_teses" (fontes: matriz_teses/banco_teses/rag).
+- Model Tese: teses (titulo, descricao, fundamentacao, jurisprudencia, contra_argumento, area_juridica, tribunal, magistrado, tags, tipo enum TeseTipo, status TeseStatus, vezes_usada/venceu/perdeu, taxa_sucesso, soft-delete).
+**Banco de Teses** — `app/routers/teses.py` prefix `/teses`: GET list, POST (201, advogado+ _pode_editar=ROLE_LEVEL>=advogado), GET ranking, GET busca-avancada (q, area, tribunal, taxa_minima 0-1, status, tipo; allowlist EQUIPE_JURIDICA exata), GET casos/{case_id} (links por caso), GET/DELETE /{tese_id}, PATCH /{tese_id}, POST vincular-caso, POST sugerir-ia (rate 15), POST motor (rate 15) e motor/async.
+**RAG de teses** — teses do banco podem ser ingestidas no RAG (categoria tese?). M25 ingestão Planalto ok. Verificar se há ingestão de teses para retrieval na matriz (pesquisar_por_questao usa RAG/authorities).
+**Versionamento** — updated_at no PATCH do banco; matriz gravada via gravar_snapshot_seguro (versionado case_intelligence, M28 já provou append-only).
+Bateria pattern: mesma de M29 (env_shell.sh, loop compartilhado, authed, rate sleeps). Usuários: socio/advogado/estagiario/financeiro/cliente/secretaria QA (EjcQa2026!SenhaForte). Advogado UUID: 4701ecbf-cf9b-422f-b75a-b906814b8213. Client EJC_QA via GET /api/clients.
+
+### M30 rodada 1 (servidor caiu no meio — connection refused; reiniciar uvicorn e rerun)
+Bateria: scripts/inventory/m30_matriz_teses_tests.py
+Resultados parciais rodada 1:
+- S1 cadastro: 10/10 PASS (campos preservados; tese criada com id salvo)
+- S2 classificação: 2 FAILs fixáveis: (a) PATCH status "revogada" → TeseStatus enum aceita rascunho/ativa/arquivada (não revogada) — usar "arquivada"; (b) DELETE 403 — DELETE exige _pode_editar (advogado+) e o teste usava advogado... DELETE retornou 403 pois? DELETE endpoint talvez use _pode_editar cu (advogado token OK)... na verdade falhou ANTES (PATCH retornou... o DELETE pegou 403 porque advogado autenticado ok). Investigar: DELETE pode exigir socio? Check code: arquivar_tese linha 330+: if not _pode_editar → 403. Advogado deve passar. Possível causa: rate limit 429 → 403? Não. Ou o token advogado cacheado era do fluxo anterior com login ok. Ajustar: verificar o corpo da resposta DELETE 403.
+- S3 fundamentos: 2/2 PASS
+- S4 busca: 1 FAIL fixável — busca avançada não achou a tese QA: possível rate limit 429 retornando texto de erro (verificar status do r na bateria: se 429, retry). Também pode ser que a busca use ilike e a tese está em outro estado (criada OK, ativa). Corrigir com retry no 429.
+- S5 vínculo: seção não executou (crash do ConnectionRefused); verificar depois
+- S6 matriz: PASS matriz rascunho, 1 tese candidata, forca score, sem precedentes RAG (esperado), GET persistida
+- S7 HITL: advogado aprovou (PASS); depois servidor caiu
+- S9 versionamento: não chegou
+Correções a fazer na bateria:
+1. PATCH status usar "arquivada" em vez de "revogada"; restaurar a "ativa"
+2. Adicionar retry 429 na busca-avancada e GET tese
+3. Investigar DELETE 403 (imprimir r.text; se exigir socio, aceitar como design OU ajustar)
+4. Se S5 falhar (vínculo), checar schema do POST vincular-caso (fields: case_id, resultado, observacao — conferir nomes exatos)
+Servidor: pgrep -f "uvicorn app.main:app"; reiniciar com nohup ... env_shell.sh uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &; sleep 10; curl health/ready
+Nota: DELETE tese talvez requeira role socio (linha 330: if not _pode_editar). Se _pode_editar = advogado+, advogado deveria passar. O 403 pode ser do rate limit (gateway retorna 403?) — rate limit retorna 429 normalmente. Verificar.
