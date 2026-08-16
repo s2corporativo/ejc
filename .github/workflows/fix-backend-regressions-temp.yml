@@ -27,27 +27,28 @@ jobs:
 
           path = Path('backend/tests/test_portal_idor_matrix_dblevel.py')
           text = path.read_text(encoding='utf-8')
-          old = '''        sig_a = await _criar_signature(db, cli_a, doc_a, "pendente")
-          sig_b = await _criar_signature(db, cli_b, doc_b, "pendente")
-          await db.commit()
-          '''
-          new = '''        sig_a = await _criar_signature(db, cli_a, doc_a, "pendente")
-          sig_b = await _criar_signature(db, cli_b, doc_b, "pendente")
-          # Este teste mede segregação/IDOR, não o pré-requisito de leitura.
-          # A regra de visualização prévia é coberta especificamente por
-          # test_assinatura_visualizacao_previa.py e permanece obrigatória no router.
-          await db.execute(
-              text(
-                  "UPDATE signature_requests "
-                  "SET documento_visualizado_em = now() WHERE id = :id"
-              ),
-              {"id": sig_a},
-          )
-          await db.commit()
-          '''
-          if old not in text:
-              raise SystemExit('Trecho esperado não encontrado; abortando sem editar.')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          if 'SET documento_visualizado_em = now() WHERE id = :id' not in text:
+              lines = text.splitlines()
+              marker = 'sig_b = await _criar_signature(db, cli_b, doc_b, "pendente")'
+              indexes = [i for i, line in enumerate(lines) if marker in line]
+              if len(indexes) != 1:
+                  raise SystemExit(f'Marcador inesperado: {len(indexes)} ocorrência(s).')
+              i = indexes[0]
+              indent = lines[i][: len(lines[i]) - len(lines[i].lstrip())]
+              extra = [
+                  f'{indent}# Este teste mede segregação/IDOR, não o pré-requisito de leitura.',
+                  f'{indent}# A regra de visualização prévia é coberta especificamente por',
+                  f'{indent}# test_assinatura_visualizacao_previa.py e permanece obrigatória no router.',
+                  f'{indent}await db.execute(',
+                  f'{indent}    text(',
+                  f'{indent}        "UPDATE signature_requests "',
+                  f'{indent}        "SET documento_visualizado_em = now() WHERE id = :id"',
+                  f'{indent}    ),',
+                  f'{indent}    {{"id": sig_a}},',
+                  f'{indent})',
+              ]
+              lines[i + 1:i + 1] = extra
+              path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
 
       - name: Validar sintaxe
