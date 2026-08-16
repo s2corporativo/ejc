@@ -719,3 +719,27 @@ Snapshots do DB pós-rodadas: secao_versao cria 3 ok. Em secao_hitl, criar_snaps
 
 ### M28 rodada 7 — secao_hitl ownership
 HITL snapshot criado (v1, congelado=False). FAIL atual: aprovação advogado retorna 403 "Sem permissão para este caso" = gate ABAC verificar_acesso_caso (não é role; requer_advogado passou). Correção: criar os casos QA com responsavel_id do usuário advogado QA (ejc_qa_auth_advogado@golocal.ejc; ID externo tipo 'U-xxxx' — obter via GET /api/users ou DB users.id). Mesmo motivo para secao_isolamento "caso B não criado". User.id formato: prefixo U- (confirmar: responsavel_id do cliente = 'U-c23b7d23').
+
+### M28 — HOMOLOGADO (commit 43327a7d)
+29/29 cenários executáveis PASS, 2 N/A-PROVADO. Bateria: scripts/inventory/m28_case_intelligence_tests.py. Report: qa/homologacao/m28/RELATORIO_MODULO_M28.md.
+Lições da bateria: (1) casos QA precisam de client_id + area + advogado_responsavel_id (gate ABAC); (2) usar loop asyncio compartilhado (_correr) para asyncpg; (3) reemitir token advogado antes de GET sensível (JWT expira dentro da bateria longa); (4) rate-limit 429 com retry sleep(45).
+Próximo: M29 — Dossiê Estratégico (PROMPT 29 linha ~817).
+
+### M29 superfícies mapeadas (dossie_estrategico)
+Prefixo API real: /api/dossie (router prefix="/dossie", mounted prefix=API). Endpoints:
+- POST /{case_id}/gerar (201) — _pode_gerar: ROLE_LEVEL>=advogado; verificar_acesso_caso; gera rascunho via IA (gw_chat, sanitizar_pii + validar_sem_pii antes de envio, entidades pseudonimizadas, custo BRL, AILog); payload inclui "modulos" determinísticos; sem IA → conteúdo fallback dados brutos.
+- GET /{case_id} — último dossiê (sem modulos embutidos de propósito), 404 se nenhum; guard _pode_ver=EQUIPE_JURIDICA (financeiro bloqueado - Issue #694).
+- GET /{case_id}/modulos — determinísticos custo zero: linha_do_tempo, mapa_probatorio, riscos (case_health), teses estruturadas; funciona sem dossiê gerado.
+- GET /{case_id}/historico — versões desc, sem conteúdo.
+- PATCH /{case_id}/{dossie_id}/aprovar — HITL: _pode_aprovar >=socio; arquiva aprovados anteriores do mesmo caso; 400 se arquivado; registrar_acao (auditoria).
+- GET /{case_id}/{dossie_id}/pdf — export WeasyPrint, _pode_ver + verificar_acesso_caso.
+Model DossieEstrategico: case_id FK CASCADE, versao int, titulo, conteudo_texto/html, secoes_json, status enum (rascunho, aprovado, arquivado), modelo_ia, provedor_ia, tokens_usados, gerado_por, aprovado_por/em, created/updated.
+Serviço gerar_dossie: agrega caso+financeiro+atendimentos+checklists, rag jurisprudencia, próxima versão = max+1, sanitização PII com abort em residual.
+EQUIPE_JURIDICA do core.security — financeiro excluído.
+Casos QA: usar _cliente_id + advogado_responsavel_id=4701ecbf... para acesso do advogado (ABAC). Usuário socio: ejc_qa_auth_socio, advogado: ejc_qa_auth_advogado, financeiro: ejc_qa_auth_financeiro, estagiario: ejc_qa_auth_estagiario, cliente: ejc_qa_auth_cliente, secretaria: ejc_qa_auth_secretaria. Senha: EjcQa2026!SenhaForte.
+Padrão bateria: scripts/inventory/m28_template... usar pattern de m28: _TOKENS memo, authed(role), S sessão sem content-type, rate limit sleep(16)/retry(45), PASS/FAIL/N/A lists separadas, _correr loop compartilhado.
+
+### M29 estado (rodamas 1-4)
+Bateria: scripts/inventory/m29_dossie_estrategico_tests.py — 22 cenários, rodadas com fixes: imports corrigidos (sanitizer), secao_hitl token reemitido, secoes_json verificado via DB (dossies_estrategicos), tuple unpacking corrigido, AsyncSessionLocal import local. Última rodada: 19 PASS/1 FAIL/2 N/A — aguardando resultado da rodada com fix do import.
+Fatos-chave do sistema: dossiê nasce rascunho (revisão obrigatória); gerar exige advogado+; aprovação exige sócio (arquiva aprovados anteriores); read = EQUIPE_JURIDICA (financeiro excluído #694); /modulos determinísticos (linha_do_tempo, mapa_probatorio, riscos/case_health, teses); sanitização PII + abort em residual + pseudonimização entidades; PDF WeasyPrint; auditoria audit_logs entidade='dossie_estrategico'. Fallback sem IA: 'IA indisponível' + JSON bruto + secoes_json; modelo_ia='—'.
+Após baterir OK: escrever relatório em qa/homologacao/m29/RELATORIO_MODULO_M29.md (formato do M28), commit, e avançar para M30 (PROMPT 30 — ler arquivo de comando: grep -n "PROMPT 30" /home/ubuntu/upload/Pasted_content_76.txt).
