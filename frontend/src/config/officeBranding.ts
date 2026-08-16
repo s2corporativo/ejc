@@ -49,7 +49,7 @@ export const officeBranding = Object.freeze({
     readPublicEnv(import.meta.env.VITE_EJC_DAILY_MESSAGE) ||
     DEFAULT_DAILY_MESSAGE,
   dailyMessageSource:
-    readPublicEnv(import.meta.env.VITE_EJC_DAILY_SOURCE) ||
+    readPublicEnv(import.meta.env.VITE_EJC_DAILY_MESSAGE_SOURCE) ||
     DEFAULT_DAILY_SOURCE,
 });
 
