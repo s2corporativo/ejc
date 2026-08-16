@@ -953,3 +953,11 @@ Após corrigir: rerun completo esperado ~28 cenários; relatório qa/homologacao
 - `/api/analytics/produtividade` GET ?periodo=7d|30d|90d|365d — só socio+ (ROLE_LEVEL socio), por_advogado/por_area/trend.
 - Tabela time_entries: id, case_id, user_id, data, minutos, descricao, faturavel, fee_id.
 - PROMPT 36 cobre: lançamentos, duração, início/fim, advogado, cliente, processo, faturável, relatórios, produtividade, edição, permissões. Nota: sistema NÃO tem início/fim por lançamento (apenas data+minutos) — documentar como diferença de escopo (total_duration não existe).
+
+## CAMPANHA CONCLUÍDA (16/08 ~20:45)
+Todos os módulos M01-M36 homologados. Branch: homologacao-m07-2026-08-16. Últimos commits: ffce34de (M34 26/26), 637cc8c0 (M35 18/18 + fix PATCH despesas date), e7132d57 (M36 23/23). Push remoto pendente (usuário pediu fazer ao final; GH_TOKEN estava expirado antes).
+Resultados finais por módulo (do task_overview + últimos módulos):
+M01-M32 todos HOMOLOGADOS (ver progress anterior); M33 43 PASS + 1 N/A-PROVADO (taxa-media-bcb IA off); M34 26/26 (1 N/A-RBAC advogado-off-caso); M35 18/18 (fix PATCH despesas DataError aplicado); M36 23/23.
+Relatórios: qa/homologacao/m33/..36/RELATORIO_MODULO_M3X.md. Baterias em scripts/inventory/.
+Faltam: relatório final consolidado M36/RELATORIO_FINAL_CONSOLIDADO.md (Fase 4), entrega ao usuário.
+Bugs reais corrigidos na campanha (resumo): M06 portal cliente client_id; M08 case_partes PATCH/DELETE/validação; M10 UPLOAD_DIR env; M12 movimentos PATCH/DELETE/audit + data_evento; M13 gate DJEN capturar-agora; M14 DeadlineResponse data_conclusao; M22/M25/M33 CAST jsonb; M33 CET bissecção; M35 PATCH despesas date.
