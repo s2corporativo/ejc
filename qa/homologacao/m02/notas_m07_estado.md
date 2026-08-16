@@ -922,3 +922,12 @@ Estado bateria: 41 PASS, 3 FAIL — (a) CET faixa já corrigido com ref TIR inde
 ### M33 rerun 20:08 — 42 PASS, 1 FAIL (CET valor 45.85 != ref 47.40)
 Due-diligence template: CORRIGIDO e comprovado PASS (BUG REAL resolvido — `:items::jsonb` era sintaxe inválida p/ PostgreSQL, corrigido p/ `CAST(:items AS jsonb)` em sociedades_cliente.py l.179 e novos_modulos.py l.199/217/297/407). taxa-media-bcb: N/A-PROVADO (IA off).
 CET: sistema usa `dias/365` com datas REAIS (add_months mantém day-of-month), minha ref de bissecção usou `28+30k` fixo — divergência por day-count. Sistema correto (d/365 = norma CET). Corrigir ref da bateria p/ replicar add_months real (liberação 2026-01-01, vencimentos 2026-02-01 +1m). Falta: reproduzir ref correta e ajustar bateria.
+
+## M34 superfície confirmada (Honorários e Propostas)
+- `/api/fees` (fees.py): GET / (filtros page, status, client_id, case_id, competencia AAAA-MM 422), GET /resumo (KPIs pendente/atrasado/recebido_mes), POST / (FeeCreate: tipo[fixo|exito|misto|por_hora|custas_despesas|sucumbencia], descricao, valor, percentual_exito, data_vencimento, client_id, case_id, observacoes), PATCH /{id} (FeeUpdate), POST /{id}/pagamentos (FeePaymentCreate: valor, data_pagamento, forma[pix|transferencia|dinheiro|cartao] → quita quando soma >= valor, status→pago), DELETE /{id} (soft), req: _req_financeiro_mutacao (financeiro+), leitura _filtro_fees_lista (financeiro vê tudo; outros só casos próprios).
+- Modelos: Fee (fees), FeePayment (fee_payments), FeeCobrancaEnvio (réguas). FeeStatus: pendente|pago|atrasado|cancelado. Valor Numeric(14,2) = precisão monetária 2 casas.
+- `/api/honorarios-calc`: GET /cases/{id}/provisionamento, /cases/{id}/teto-etico.
+- `/api/honorarios-oab`: GET /tabela, POST /estimar, itens OAB CRUD (GET/POST /itens, POST /itens/{id}/encerrar-vigencia), POST /casos/{id}/proposta/sugerir (determinístico, faixas), POST /casos/{id}/proposta (rascunho v201 com validada/aviso), GET /casos/{id}/proposta (vigente+histórico), POST /propostas/{id}/aprovar (congela), POST /propostas/{id}/rejeitar (motivo).
+- `/api/honorarios-exito`: GET /POST /{fee_id}/rateio.
+- Proposta: fee_proposal_service (versao=max+1, ownership caso, substituida).
+- Casos QA: usar CASO principal 89b9b439-9ba2-462a-ab99-7dcf1c54cc86 + cliente 9e6cd7cd.
