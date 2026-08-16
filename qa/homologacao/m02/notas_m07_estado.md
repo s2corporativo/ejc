@@ -318,3 +318,19 @@ Correções já feitas na bateria: radar=/proposicoes, exclusão tese=sócio 204
 
 ### Causa raiz RAG docs 500 (M20)
 Hardening patch app/services/ai_core_hardening_patch.py substitui o endpoint da rota "listar_docs" por _listar_docs_escopado com assinatura "db=None, cu=None" (sem Depends!). Assim FastAPI não injeta sessão nem usuário → db=None → AttributeError no db.execute. BUG REAL introduzido pelo patch de escopo: perde as dependências de injeção ao trocar o endpoint sem reaplicar os Depend(). Corrigir o patch: manter Depends(get_db)/Depends(get_current_user) no endpoint substituto (usar Depends explicitamente: db: AsyncSession = Depends(get_db) etc.), OU restaurar o dependant original (route.dependant) mantendo o endpoint escopado.
+
+
+## M20 HOMOLOGADO — 35/35 PASS (16/08) — commit biblioteca 35/35
+Bateria: scripts/inventory/m20_biblioteca_tests.py. Cobriu: jurisprudência interna CRUD completo (criação com validações de título min5/ementa min20, detalhe, PATCH favorito, busca com filtros busca+tribunal+área, filtro sem resultado lista vazia, classificação IA graceful 502 sem provedor, secretaria bloqueada 403), jurisprudência externa (/buscar ?q&fonte, /buscar/lexml, /buscar/tjmg, /fontes, POST /importar 201), teses CRUD (cadastro, detalhe, busca com filtros, busca-avancada, ranking, vincular-caso, listagem por caso, edição, sugerir-ia graceful 502, arquivamento sócio+ 204, advogado 403), radar legislativo /proposicoes (câmara/senado/almg + validação pattern de fonte e min_length do termo), RAG (/docs, /buscar, /status, /monitor-legislativo).
+CORREÇÃO CRÍTICA: GET /api/rag/docs retornava 500 — hardening patch _listar_docs_escopado substituía o endpoint sem declarar Depends(get_db)/Depends(get_current_user) → db=None. Corrigido em app/services/ai_core_hardening_patch.py (Depends no topo do módulo; servidor reiniciado; bateria reprovou até a correção, validando o fix).
+PROMPT 21 a seguir (verificar arquivo mestre linha ~620+).
+
+
+## M21 superfície descoberta (16/08) — Ingestão RAG
+Router /api/rag (rag.py): POST /ingest-pdf (UploadFile file + Form titulo/categoria/tribunal/confianca; usa ocr_service extrair_texto_pdf: PyMuPDF texto nativo + Tesseract nas páginas imagem; magic bytes validados antes do parser; ocr CPU-bound em thread; resposta inclui ocr.paginas/paginas_ocr/ocr_disponivel), POST /ingest-url (?), POST /ingest (152), _indexar_doc_bg (102 — background).
+Service ingestion_service.py: CHUNK_TAMANHO=1200, CHUNK_OVERLAP=150; chunk_texto (fronteira de frase), chunk_texto_com_paginas (com nº página); fetch com retry/backoff exponencial + anti-SSRF _validar_sem_ssrf; upsert_documento idempotente (vigência: versão anterior vigente=False preservada como histórico); executar_ingestao (slug/descrição/categoria_rag/coro_fn, registra fonte + execução); registrar_fonte/marcar_execucao.
+Models rag.py: KnowledgeDoc (status_indexacao default 'pendente'; colunas titulo/categoria/fonte/tribunal/client_id/case_id/status_indexacao), KnowledgeChunk, FonteIngestao.
+Embeddings: embedding_service.py — provider local (fastembed multilingual-e5-large 1024d) ou http; disponivel() checa; 500 em /rag/docs já corrigido (Depends patch M20).
+Tesseract: verificar se instalado no sandbox (tesseract --version); OCR 'somente quando necessário' = páginas sem texto → paginas_ocr>0.
+Testes M21: gerar PDF teste com pymupdf (texto nativo) e PDF só-imagem (OCR), upload /ingest-pdf (201, metadados, chunks, status pendente→indexado), ingest-url (URL inválida/SSRF 422), /ingest texto, /docs listar (metadados), /status, embeddings locais (validar se vetor gerado; se não, graceful), retry (fetch com URL que falha), chunking unitário (chunk_texto 1200/150), idempotência upsert.
+M21-M29 prompts: M22=? M23=? — arquivo mestre linhas 620+.
