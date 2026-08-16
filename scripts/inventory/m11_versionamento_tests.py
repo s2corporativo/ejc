@@ -15,15 +15,66 @@ FIN_E = "ejc_qa_auth_financeiro@golocal.ejc"
 CLI_E = "ejc_qa_auth_cliente@golocal.ejc"
 PWD = "EjcQa2026!SenhaForte"
 
-# Cliente/caso QA reutilizáveis (EJC_QA M10) — mesmo cliente
-CLIENT_ID = "bb0282fe-7309-4d3b-8de8-53855474e33a"
-CASE_ID   = "0df98ca6-662d-4a48-b5b0-025e955b4370"
-CASE_ID_2 = "78369b41-8287-49ba-8820-4079184c40e6"  # mesmo cliente, caso distinto
-
 # ── carteira: garantir que o advogado QA tenha acesso aos casos QA ────────
 ADV_UUID = "4701ecbf-cf9b-422f-b75a-b906814b8213"
+
+# Cliente/caso QA — criados dinamicamente se não existirem (DB reconstruído)
 S = S_.Session()
 S.headers.update({"X-Forwarded-For": "127.0.0.1"})
+CLIENT_ID = None
+CASE_ID = None
+CASE_ID_2 = None
+def criar_recursos_qa():
+    global CLIENT_ID, CASE_ID, CASE_ID_2
+    adm_h = _h(ADM_E)
+    _r = S.get(f"{BASE}/api/clients", headers=adm_h, params={"q": "EJC_QA Cliente M11"}, timeout=30)
+    if _r.status_code != 200:
+        print("GET clientes:", _r.status_code, _r.text[:200])
+    _cli = (_r.json().get("data") or [None])[0]
+    if _cli:
+        CLIENT_ID = _cli["id"]
+    else:
+        _r = S.post(f"{BASE}/api/clients", json={
+            "tipo": "PJ", "nome": "EJC_QA Cliente M11",
+            "razao_social": "EJC_QA CLIENTE M11 LTDA",
+            "cnpj": "12345678000195", "email": "ejc.qa.m11@gmail.com"},
+            headers=adm_h, timeout=30)
+        CLIENT_ID = _r.json().get("id")
+    print("cliente QA:", CLIENT_ID)
+
+    def achar_caso():
+        _r = S.get(f"{BASE}/api/cases", headers=adm_h,
+                   params={"page_size": 100}, timeout=30)
+        for c in (_r.json().get("data") or []):
+            if c.get("client_id") == CLIENT_ID and "EJC_QA M11" in c.get("titulo", ""):
+                return c["id"]
+        return None
+
+    CASE_ID = achar_caso()
+    if not CASE_ID:
+        _r = S.post(f"{BASE}/api/cases", json={
+            "titulo": "EJC_QA M11 Caso A", "area": "tributario",
+            "client_id": CLIENT_ID, "parte_contraria": "EJC_QA",
+            "descricao_fatos": "EJC_QA", "proxima_acao": "EJC_QA"},
+            headers=adm_h, timeout=30)
+        if _r.status_code != 201:
+            raise SystemExit(f"caso A não criado: status={_r.status_code} body={_r.text[:300]}")
+        CASE_ID = _r.json().get("id")
+    _r = S.post(f"{BASE}/api/cases", json={
+        "titulo": f"EJC_QA M11 Caso B {random.randint(1,99999)}", "area": "tributario",
+        "client_id": CLIENT_ID, "parte_contraria": "EJC_QA",
+        "descricao_fatos": "EJC_QA", "proxima_acao": "EJC_QA"},
+        headers=adm_h, timeout=30)
+    if _r.status_code != 201:
+        print("POST caso B:", _r.status_code, _r.text[:200])
+    CASE_ID_2 = _r.json().get("id") if isinstance(_r.json(), dict) else None
+    if not CASE_ID_2:
+        raise SystemExit(f"caso B não criado: status={_r.status_code} body={_r.text[:300]}")
+    print("casos QA:", CASE_ID[:8], CASE_ID_2[:8])
+    for _cid in (CASE_ID, CASE_ID_2):
+        _r = S.patch(f"{BASE}/api/cases/{_cid}", headers=adm_h,
+                     json={"advogado_responsavel_id": ADV_UUID}, timeout=30)
+        print("ajuste carteira:", _cid[:8], _r.status_code, _r.text[:60])
 _TOKENS = {}
 
 def _h(email):
@@ -49,9 +100,15 @@ def chk(nome, ok, motivo=""):
     print(("PASS" if ok else "FAIL"), f"{nome} — {motivo or ''}")
     return ok
 
+PDF_GEN = "/home/ubuntu/ejc_repo/scripts/inventory/gen_test_files.py"
+
 def mk_pdf(payload: bytes):
+    """PDF mínimo com magic bytes real (application/pdf) + payload rastreável."""
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    tmp.write(b"%PDF-1.4 fake\n" + payload)
+    head = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+            b"2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\n"
+            b"trailer<</Root 1 0 R>>\n%%EOF\n")
+    tmp.write(head + payload)
     tmp.close()
     return tmp.name
 
@@ -67,12 +124,7 @@ TIT_V1 = f"EJC_QA M11 Doc Versionado {random.randint(10000,99999)}"   # título 
 TIT_V2 = TIT_V1  # mesmo título → deve criar versão 2
 TIT_ALT = f"EJC_QA M11 Doc Alternativo {random.randint(10000,99999)}"
 TIT_SEM_CASO = f"EJC_QA M11 Sem Caso {random.randint(10000,99999)}"
-
-adm = h(ADM_E)
-for _cid in (CASE_ID, CASE_ID_2):
-    _r = S.patch(f"{BASE}/api/cases/{_cid}", headers=adm,
-                 json={"advogado_responsavel_id": ADV_UUID}, timeout=30)
-    print("ajuste carteira:", _cid[:8], _r.status_code, _r.text[:60])
+ADM_TOKEN = h(ADM_E)
 
 def upload(email, path, titulo, caso=None, cliente=None, conf="normal", extra_headers=None):
     headers = dict(h(email) or {})
@@ -138,6 +190,7 @@ def audit_actions(doc_id):
 
 # ═══════════════════════════ BATERIA ══════════════════════════════════════════
 if __name__ == "__main__":
+    criar_recursos_qa()
     f1, f2, f3, f_alt, f_sem = (mk_pdf(C1), mk_pdf(C2), mk_pdf(C3), mk_pdf(C_ALT), mk_pdf(C_ALT))
     try:
         print("M11 — bateria de versionamento documental")
@@ -225,7 +278,7 @@ if __name__ == "__main__":
         # primeiro exclui v3 (última), depois tenta v1 (raiz, tem filha).
         grp_latest = max(grupo_rows(v1_id), key=lambda x: x["versao"])
         v_latest = grp_latest["id"]
-        r_del3 = S.delete(f"{BASE}/api/documents/{v_latest}", headers=adm, timeout=30)
+        r_del3 = S.delete(f"{BASE}/api/documents/{v_latest}", headers=ADM_TOKEN, timeout=30)
         chk("exclusão v3 (mais recente) permite", r_del3.status_code == 200,
             f"HTTP {r_del3.status_code} {r_del3.text[:60]}")
         d3_del = doc_row(v_latest)
@@ -233,7 +286,7 @@ if __name__ == "__main__":
             f"deleted_at={d3_del['deleted_at'] if d3_del else 'n/a'}")
         # v1 é raiz da cadeia (v2 aponta para ela via versao_anterior_id) →
         # guard de referências bloqueia exclusão (proteção de integridade).
-        r_del1 = S.delete(f"{BASE}/api/documents/{v1_id}", headers=adm, timeout=30)
+        r_del1 = S.delete(f"{BASE}/api/documents/{v1_id}", headers=ADM_TOKEN, timeout=30)
         chk("exclusão v1 (raiz da cadeia) bloqueada — 409", r_del1.status_code == 409,
             f"HTTP {r_del1.status_code} {r_del1.text[:80]}")
         d1_unchanged = doc_row(v1_id)
@@ -245,7 +298,7 @@ if __name__ == "__main__":
         # ── 14. restauração da versão excluída: via /trash/{entidade}/{id}/restaurar
         # (documents suportado na lixeira geral, admin/sócio+)
         r_trash = S.post(f"{BASE}/api/trash/documents/{v_latest}/restaurar",
-                         headers=adm, timeout=30)
+                         headers=ADM_TOKEN, timeout=30)
         d3_rest = doc_row(v_latest)
         chk("restauração v3 via /trash/documents/{id}/restaurar",
             r_trash.status_code == 200 and d3_rest and not d3_rest["deleted_at"],
@@ -280,7 +333,7 @@ if __name__ == "__main__":
             d_sc2 and d_sc2["versao"] == 1,
             "docs sem caso não formam cadeia de versão — lacuna documentada")
         # ── 17. PATCH de metadados não altera versão ────────────────────────
-        r_patch = S.patch(f"{BASE}/api/documents/{v1_id}", headers=adm,
+        r_patch = S.patch(f"{BASE}/api/documents/{v1_id}", headers=ADM_TOKEN,
                           json={"titulo": f"{TIT_V1} (revisado)"}, timeout=30)
         chk("patch metadados 200", r_patch.status_code == 200, f"HTTP {r_patch.status_code}")
         d1p = doc_row(v1_id)
@@ -303,7 +356,7 @@ if __name__ == "__main__":
         chk("auditoria v2 UPLOAD (autor distinto)", "UPLOAD" in a2, f"{a2}")
         chk("auditoria v3 UPLOAD", "UPLOAD" in a3, f"{a3}")
         # ── 21. payload de listagem não expõe versão (GAP documentado) ──────
-        r_list = S.get(f"{BASE}/api/documents/", headers=adm, params={"case_id": CASE_ID}, timeout=30)
+        r_list = S.get(f"{BASE}/api/documents/", headers=ADM_TOKEN, params={"case_id": CASE_ID}, timeout=30)
         lst = r_list.json().get("data", [])
         item = next((x for x in lst if x["id"] == v1_id), None)
         tem_versao = item and ("versao" in item or "versao_grupo_id" in item)

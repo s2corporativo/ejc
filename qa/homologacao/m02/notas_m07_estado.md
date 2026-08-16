@@ -95,3 +95,15 @@ Uvicorn: session uv, log /tmp/uvicorn.log. Banco local ejc/ejc. Branch atual hom
 1. `PermissionError: [Errno 13] /app` — settings.UPLOAD_DIR default '/app/uploads' (docker). .env local com UPLOAD_DIR=/home/ubuntu/ejc_repo/data/uploads NÃO carregado pelo uvicorn da session uv. CORRIGIR: export UPLOAD_DIR antes de startar uvicorn (matar e re-startar com env_shell). Mesmo fix para kit documental auto (gera PDF no /app).
 2. Uploads 415: meu PDF/XLSX sintéticos não detectados como application/pdf/vnd.openxmlformats — gerar arquivos REAIS mínimos (PDF %PDF-1.4 via pypdf? pdf2 não instalado — usar string %PDF-1.4 + %EOF pode bastar SE libmagic detectar; na real libmagic detecta '%PDF' → application/pdf. Verificar por que 500 antes de 415 (o primeiro PDF deu 500 por /app; segundo XLSX deu 415 porque meu header zip fake não corresponde ao mime esperado).
 Plano: (a) restart uvicorn com UPLOAD_DIR exportado; (b) gerar PDF real mínimo (pypdf ou fitz se disponível, senão %PDF-1.4 simples testar com libmagic localmente), xlsx real via zipfile com [Content_Types].xml mínimo, png real mínimo (IHDR+IDAT+IEND via PIL.Image); (c) rerun.
+
+
+## M10 CONCLUÍDO (27/27 PASS) — commit "M10 documentos/GED: bateria 27/27"
+Correções: UPLOAD_DIR exportado no start do uvicorn (bug 500 PermissionError /app — variável de ambiente de deploy não carregada localmente; código íntegro). Bateria usa arquivos REAIS (gen_test_files.py: PDF/XLSX/PNG mínimos validados por libmagic). Auditoria usa ações UPLOAD/UPDATE/DELETE/DOWNLOAD (não CREATE).
+
+## M11 revalidação (em andamento)
+Bateria m11_versionamento_tests.py reescrita para ser auto-suficiente (cria cliente/caso QA dinamicamente, mk_pdf com header real %PDF-1.4 detectado como application/pdf). Correção de bug: S session usada antes da definição — corrigido.
+Aguardando execução final. Esperado: 46/46 PASS.
+
+
+## M11 bateria bug de recriação
+Segundo POST /api/cases retornou id None — verificar schema (talvez 422: "area" enum? área tributario ok; parte_contraria ok; proxima_acao ok... talvez 403 rate? Não). Investigar resposta. Possível: segundo caso criado imediatamente após o primeiro com mesmo client_id — validação de duplicidade? Improvável. Ver resposta HTTP.
