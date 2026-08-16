@@ -13,12 +13,7 @@ const PAPEIS_SOLICITACAO = new Set([
   "advogado",
 ]);
 
-const PAPEIS_ASSINATURA = new Set([
-  "superadmin",
-  "admin",
-  "socio",
-  "advogado",
-]);
+const PAPEIS_ASSINATURA = new Set(["superadmin", "admin", "socio", "advogado"]);
 
 type DocumentoContextual = {
   id?: string | null;
@@ -156,7 +151,10 @@ export default function CaseDocumentActions({
       }
     } catch (error) {
       toast.error(
-        detalheErro(error, "Não foi possível solicitar o documento ao cliente."),
+        detalheErro(
+          error,
+          "Não foi possível solicitar o documento ao cliente.",
+        ),
       );
     } finally {
       setEnviandoSolicitacao(false);
