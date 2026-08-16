@@ -9,16 +9,16 @@ O consentimento informado com valor probatório (MP 2.200-2/2001, art. 10
 Migration puramente aditiva: coluna ``timestamp nullable``; não altera
 linhas existentes nem interfere no gate de deploy (catraca 132+).
 
-A revision anterior amplia ``alembic_version.version_num`` antes desta migration,
-pois este identificador possui 35 caracteres e excede o varchar(32) padrão do
-Alembic em instalações limpas.
+A capacidade da tabela interna ``alembic_version`` para este revision_id longo
+é garantida de forma idempotente por ``alembic/env.py`` antes da execução da
+cadeia, sem inserir uma revision intermediária fora da numeração canônica.
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 revision = "143_signature_documento_visualizado"
-down_revision = "142a_alembic_version_128"
+down_revision = "142_document_hash_rescan"
 branch_labels = None
 depends_on = None
 
