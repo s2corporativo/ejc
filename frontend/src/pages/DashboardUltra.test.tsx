@@ -26,7 +26,6 @@ const dashboardOk = {
       total: 3,
       ativos: 2,
       por_status: { ativo: 2, encerrado: 1 },
-      por_area: [{ area: "civil", total: 3 }],
     },
     prazos: { vencidos: 1, criticos_3d: 1, proximos_7d: 2 },
     degradado: [],
@@ -40,6 +39,7 @@ const atividadesOk = {
       tipo: "tarefa",
       fonte: "tarefa",
       titulo: "Tarefa pendente",
+      descricao: "Caso Alfa",
       date: "2099-01-02",
       status: "pendente",
     },
@@ -51,6 +51,14 @@ const atividadesOk = {
       date: "2099-01-03",
       status: "concluida",
     },
+    {
+      id: "i1",
+      tipo: "intimacao",
+      fonte: "djen",
+      titulo: "Intimação pendente",
+      date: "2099-01-04",
+      status: "pendente",
+    },
   ],
 };
 
@@ -58,16 +66,47 @@ const agendaOk = {
   data: [{ id: "t1", tipo: "audiencia", hora: "09:30", local: "Fórum" }],
 };
 
-const movimentosOk = {
-  data: [
-    {
-      id: "m1",
-      tipo: "despacho",
-      descricao: "Juízo abriu vista para manifestação",
-      case_title: "Caso Alfa",
-      data_movimento: "2099-01-01T10:00:00",
-    },
-  ],
+const clientesOk = {
+  data: {
+    data: [
+      {
+        id: "c1",
+        nome: "Cliente Alfa",
+        status: "ativo",
+        email: "cliente@example.com",
+      },
+    ],
+  },
+};
+
+const noticiasOk = {
+  data: {
+    itens: [
+      {
+        titulo: "STJ publica nova atualização",
+        resumo: "Resumo da notícia",
+        fonte: "STJ",
+        link: "https://example.com/noticia",
+      },
+    ],
+  },
+};
+
+const defesasOk = {
+  data: {
+    modalidades: [
+      {
+        codigo: "multa_transito",
+        titulo: "Recurso de multa de trânsito",
+        descricao: "Defesa prévia e recursos administrativos.",
+      },
+      {
+        codigo: "revisao_contratual",
+        titulo: "Revisão de contrato",
+        descricao: "Leitura estruturada do contrato.",
+      },
+    ],
+  },
 };
 
 function mockSucesso() {
@@ -75,7 +114,9 @@ function mockSucesso() {
     if (url === "/dashboard/") return Promise.resolve(dashboardOk);
     if (url === "/atividades") return Promise.resolve(atividadesOk);
     if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-    if (url === "/movimentos/recentes") return Promise.resolve(movimentosOk);
+    if (url === "/clients/?page_size=4&status=ativo") return Promise.resolve(clientesOk);
+    if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
+    if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
     return Promise.reject(new Error(`URL inesperada: ${url}`));
   });
 }
@@ -88,13 +129,6 @@ function renderizar() {
   );
 }
 
-function cartoesTarefas() {
-  return screen
-    .getAllByText("Tarefas pendentes")
-    .map((rotulo) => rotulo.closest("a"))
-    .filter(Boolean);
-}
-
 beforeEach(() => {
   papelAtual = "advogado";
   getMock.mockReset();
@@ -103,106 +137,104 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-describe("DashboardUltra", () => {
-  it("aplica RBAC aos comandos rápidos", async () => {
+describe("DashboardUltra — referência 2026", () => {
+  it("aplica RBAC às ferramentas jurídicas sem esconder o estado explicativo", async () => {
     papelAtual = "advogado";
     const primeira = renderizar();
-    expect(await screen.findByText("Novo caso por documento")).toBeTruthy();
-    expect(screen.getByText("Inteligência jurídica")).toBeTruthy();
+    expect(await screen.findByText("Jurisprudência e fontes")).toBeTruthy();
+    expect(screen.getByText("Recurso de Multa de Trânsito")).toBeTruthy();
     primeira.unmount();
 
     papelAtual = "cliente_externo";
     renderizar();
-    await screen.findByText("Agenda e prazos");
-    expect(screen.queryByText("Novo caso por documento")).toBeNull();
-    expect(screen.queryByText("Importar documento")).toBeNull();
-    expect(screen.queryByText("Inteligência jurídica")).toBeNull();
+    expect(
+      await screen.findByText(
+        "Inteligência Jurídica disponível apenas aos perfis jurídicos autorizados.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Jurisprudência e fontes")).toBeNull();
+    expect(
+      screen.getByText("Ferramenta restrita à equipe jurídica autorizada."),
+    ).toBeTruthy();
   });
 
-  it("exclui tarefas finalizadas da contagem pendente e preserva descrição da movimentação", async () => {
+  it("exclui atividades finalizadas e usa dados reais dos novos cartões", async () => {
     renderizar();
 
-    await screen.findByText("Juízo abriu vista para manifestação");
-    expect(screen.getByText("Caso Alfa")).toBeTruthy();
-
-    expect(
-      cartoesTarefas().some((card) => card?.textContent?.includes("1")),
-    ).toBe(true);
-    expect(screen.getByText("SNAPSHOT")).toBeTruthy();
+    expect(await screen.findByText("Tarefa pendente")).toBeTruthy();
+    expect(screen.queryByText("Tarefa concluída")).toBeNull();
+    expect(screen.getByText("Cliente Alfa")).toBeTruthy();
+    expect(screen.getByText("STJ publica nova atualização")).toBeTruthy();
+    expect(screen.getByText("Ativo")).toBeTruthy();
   });
 
-  it("expõe falha do dashboard em vez de inventar indicadores", async () => {
+  it("expõe falha do dashboard em vez de inventar prazos ou carteira", async () => {
     getMock.mockImplementation((url: string) => {
-      if (url === "/dashboard/")
-        return Promise.reject(new Error("dashboard off"));
+      if (url === "/dashboard/") return Promise.reject(new Error("dashboard off"));
       if (url === "/atividades") return Promise.resolve(atividadesOk);
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/movimentos/recentes") return Promise.resolve(movimentosOk);
+      if (url === "/clients/?page_size=4&status=ativo") return Promise.resolve(clientesOk);
+      if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
+      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
     renderizar();
     await waitFor(() => {
-      expect(
-        screen.getAllByText("Fonte indisponível").length,
-      ).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText("— prazos vencidos")).toBeTruthy();
     });
-    expect(screen.getByText("Prazos indisponíveis")).toBeTruthy();
+    expect(screen.getByText("Dados da carteira indisponíveis.")).toBeTruthy();
   });
 
   it("expõe falha de atividades e não mascara a agenda como vazia", async () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/dashboard/") return Promise.resolve(dashboardOk);
-      if (url === "/atividades")
-        return Promise.reject(new Error("atividades off"));
+      if (url === "/atividades") return Promise.reject(new Error("atividades off"));
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/movimentos/recentes") return Promise.resolve(movimentosOk);
+      if (url === "/clients/?page_size=4&status=ativo") return Promise.resolve(clientesOk);
+      if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
+      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
     renderizar();
     expect(
-      await screen.findByText("Agenda indisponível no momento."),
+      await screen.findByText("Atividades temporariamente indisponíveis."),
     ).toBeTruthy();
-    expect(
-      cartoesTarefas().some((card) =>
-        card?.textContent?.includes("Fonte indisponível"),
-      ),
-    ).toBe(true);
+    expect(screen.getByText("Agenda temporariamente indisponível.")).toBeTruthy();
   });
 
   it("sinaliza degradação parcial quando somente o enriquecimento da agenda falha", async () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/dashboard/") return Promise.resolve(dashboardOk);
       if (url === "/atividades") return Promise.resolve(atividadesOk);
-      if (url === "/agenda-eventos/")
-        return Promise.reject(new Error("agenda off"));
-      if (url === "/movimentos/recentes") return Promise.resolve(movimentosOk);
+      if (url === "/agenda-eventos/") return Promise.reject(new Error("agenda off"));
+      if (url === "/clients/?page_size=4&status=ativo") return Promise.resolve(clientesOk);
+      if (url === "/noticias?limit=4") return Promise.resolve(noticiasOk);
+      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
     renderizar();
     expect(
-      await screen.findByText(
-        /Horário, local e subtipo dos compromissos podem estar indisponíveis/i,
-      ),
+      await screen.findByText(/Horário\/local podem estar incompletos/i),
     ).toBeTruthy();
     expect(screen.getByText("Tarefa pendente")).toBeTruthy();
   });
 
-  it("expõe falha de movimentações", async () => {
+  it("mantém estados de erro independentes para clientes e notícias", async () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/dashboard/") return Promise.resolve(dashboardOk);
       if (url === "/atividades") return Promise.resolve(atividadesOk);
       if (url === "/agenda-eventos/") return Promise.resolve(agendaOk);
-      if (url === "/movimentos/recentes")
-        return Promise.reject(new Error("mov off"));
+      if (url === "/clients/?page_size=4&status=ativo") return Promise.reject(new Error("clients off"));
+      if (url === "/noticias?limit=4") return Promise.reject(new Error("news off"));
+      if (url === "/defesas-revisoes/meta") return Promise.resolve(defesasOk);
       return Promise.reject(new Error("inesperado"));
     });
 
     renderizar();
-    expect(
-      await screen.findByText("Movimentações indisponíveis."),
-    ).toBeTruthy();
+    expect(await screen.findByText("Clientes temporariamente indisponíveis.")).toBeTruthy();
+    expect(screen.getByText("Notícias temporariamente indisponíveis.")).toBeTruthy();
   });
 });
