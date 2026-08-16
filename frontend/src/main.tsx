@@ -16,6 +16,9 @@ import "./styles/premium-dashboard.css";
 // sem alterar regras de negócio, rotas, RBAC ou contratos de API.
 import "./styles/saas-ultra-v2.css";
 import "./styles/saas-ultra-accessibility.css";
+// Design de referência aprovado em 16/08/2026. Importado por último para
+// repintar o shell e os componentes existentes sem alterar a lógica das telas.
+import "./styles/ejc-reference-2026.css";
 
 initTheme();
 
