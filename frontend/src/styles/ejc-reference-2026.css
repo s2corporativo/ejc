@@ -351,8 +351,8 @@ html:not(.dark) .sidebar-bronze > div:last-child .text-slate-400 {
 
 .ejc-sidebar-month__weekdays {
   margin-bottom: 4px;
-  color: #95a1b0;
-  font-size: 8px;
+  color: #56677c;
+  font-size: 10px;
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;
@@ -374,7 +374,14 @@ html:not(.dark) .sidebar-bronze > div:last-child .text-slate-400 {
 }
 
 .ejc-sidebar-month__grid button.is-outside {
-  color: #c1c9d3;
+  color: #64748b;
+}
+
+.ejc-sidebar-month__grid button.is-selected {
+  color: var(--ejc-ref-navy-900);
+  background: var(--ejc-ref-blue-100);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px #aac5e5;
 }
 
 .ejc-sidebar-month__grid button[aria-current="date"] {
@@ -410,7 +417,7 @@ html:not(.dark) .sidebar-bronze > div:last-child .text-slate-400 {
   padding-top: 10px;
   border-top: 1px solid #edf1f5;
   color: #24518a;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
 }
 
@@ -624,7 +631,7 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   gap: 4px;
   flex: 0 0 auto;
   color: #24518a;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
 }
 
@@ -714,8 +721,8 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 .ejc-reference-row__copy small {
   margin-top: 2px;
   overflow: hidden;
-  color: #7b899a;
-  font-size: 8.5px;
+  color: #56677c;
+  font-size: 10px;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -724,14 +731,14 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 .ejc-reference-row__meta {
   flex: 0 0 auto;
   color: #65758a;
-  font-size: 9px;
+  font-size: 10px;
   text-align: right;
 }
 
 .ejc-reference-row__meta strong {
   display: block;
   color: var(--ejc-ref-danger);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -800,7 +807,7 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 .ejc-reference-ai-copy {
   margin: 0 0 10px;
   color: #6f7e90;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .ejc-reference-ai-box {
@@ -855,7 +862,7 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   border: 1px solid var(--ejc-ref-line);
   border-radius: 7px;
   color: #45576d;
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 600;
 }
 
@@ -907,7 +914,7 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   align-items: center;
   gap: 7px;
   color: #65758a;
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .ejc-reference-legend i {
@@ -918,7 +925,7 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 
 .ejc-reference-legend strong {
   color: #253952;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .ejc-reference-agenda-row {
@@ -991,8 +998,8 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 
 .ejc-reference-client-row small {
   margin-top: 2px;
-  color: #8592a2;
-  font-size: 8px;
+  color: #56677c;
+  font-size: 10px;
 }
 
 .ejc-reference-client-status {
@@ -1010,8 +1017,8 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 
 .ejc-reference-feature-intro {
   margin: 0;
-  color: #6f7d90;
-  font-size: 9px;
+  color: #56677c;
+  font-size: 10px;
   line-height: 1.5;
 }
 
@@ -1026,7 +1033,7 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   align-items: center;
   gap: 7px;
   color: #44566d;
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .ejc-reference-feature-list svg {
@@ -1045,7 +1052,7 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   padding: 9px 10px;
   border-top: 1px solid #edf1f5;
   color: #24518a;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 650;
 }
 
@@ -1096,19 +1103,19 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 
 .ejc-reference-workflow__step strong {
   color: #2c4059;
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .ejc-reference-workflow__step small {
   margin-top: 2px;
-  color: #8592a2;
-  font-size: 7.5px;
+  color: #56677c;
+  font-size: 10px;
   line-height: 1.35;
 }
 
 .ejc-reference-workflow__arrow {
   align-self: center;
-  color: #99a8ba;
+  color: #64748b;
 }
 
 .ejc-reference-workflow__arrow svg {
@@ -1154,20 +1161,20 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
 
 .ejc-reference-news-row strong {
   color: #2b3f58;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
 }
 
 .ejc-reference-news-row small {
   margin-top: 2px;
-  color: #8491a1;
-  font-size: 7.5px;
+  color: #56677c;
+  font-size: 10px;
 }
 
 .ejc-reference-news-row > em,
 .ejc-reference-news-row > time {
-  color: #6f7d8f;
-  font-size: 7.5px;
+  color: #56677c;
+  font-size: 10px;
   font-style: normal;
   white-space: nowrap;
 }
@@ -1177,15 +1184,15 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a::after {
   display: grid;
   place-items: center;
   padding: 14px;
-  color: #8a97a7;
-  font-size: 9px;
+  color: #56677c;
+  font-size: 10px;
   text-align: center;
 }
 
 .ejc-reference-footer {
   padding: 8px 0 2px;
-  color: #8b97a5;
-  font-size: 8.5px;
+  color: #56677c;
+  font-size: 10px;
   text-align: center;
 }
 

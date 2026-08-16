@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { useLocation } from "react-router";
 import Markdown from "../components/Markdown";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
@@ -49,13 +49,16 @@ const PERFIS = [
 
 export default function AssistenteIA() {
   const { disponivel: iaDisponivel, mensagem: iaMensagem } = useIaStatus();
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const navigationState = location.state as { perguntaRapida?: string } | null;
   const [tool, setTool] = useState<Tool>("pesquisa");
   const [perfil, setPerfil] = useState("juridica");
-  // `q` é preenchido pelo campo de pergunta rápida do dashboard. O conteúdo
-  // não é enviado automaticamente: o profissional ainda revisa e confirma
-  // explicitamente o envio dentro da ferramenta de IA.
-  const [texto, setTexto] = useState(() => searchParams.get("q") || "");
+  // A pergunta rápida chega pelo state interno do React Router, sem ser
+  // exposta na URL. O conteúdo não é enviado automaticamente: o profissional
+  // ainda revisa e confirma explicitamente o envio dentro da ferramenta de IA.
+  const [texto, setTexto] = useState(
+    () => navigationState?.perguntaRapida || "",
+  );
   const [tema, setTema] = useState("");
   const [tipoPeca, setTipoPeca] = useState("petição inicial");
   const [area, setArea] = useState("");

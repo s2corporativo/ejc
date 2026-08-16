@@ -62,7 +62,7 @@ interface AgendaEvent {
 
 interface ClientItem {
   id: string;
-  nome: string;
+  nome?: string;
   status?: string;
   email?: string;
   telefone?: string;
@@ -168,6 +168,16 @@ function formatDayMeta(item: Pick<ActivityItem, "date" | "hora">) {
 
 function isFinalActivity(status?: string) {
   return FINAL_ACTIVITY_STATUSES.has((status || "").toLowerCase());
+}
+
+function formatNewsDate(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+  }).format(date);
 }
 
 function isTask(item: ActivityItem) {
@@ -400,9 +410,9 @@ export default function DashboardUltra() {
   const submitQuickQuestion = () => {
     const q = quickQuestion.trim();
     if (!q) return;
-    navigate(
-      `/inteligencia?tab=assistente&sub=rapido&q=${encodeURIComponent(q)}`,
-    );
+    navigate("/inteligencia?tab=assistente&sub=rapido", {
+      state: { perguntaRapida: q },
+    });
   };
 
   return (
@@ -737,7 +747,7 @@ export default function DashboardUltra() {
                 className="ejc-reference-client-row"
               >
                 <div>
-                  <strong>{client.nome}</strong>
+                  <strong>{client.nome || "Cliente sem nome"}</strong>
                   <small>
                     {client.email ||
                       client.telefone ||
@@ -753,7 +763,7 @@ export default function DashboardUltra() {
                       : "Cliente"
                   }
                 >
-                  {client.nome.trim().charAt(0).toUpperCase() || "C"}
+                  {client.nome?.trim().charAt(0).toUpperCase() || "C"}
                 </span>
               </Link>
             ))
@@ -894,14 +904,7 @@ export default function DashboardUltra() {
                     </small>
                   </span>
                   <em>{item.fonte || "Fonte"}</em>
-                  <time>
-                    {item.data
-                      ? new Intl.DateTimeFormat("pt-BR", {
-                          day: "2-digit",
-                          month: "short",
-                        }).format(new Date(item.data))
-                      : ""}
-                  </time>
+                  <time>{formatNewsDate(item.data)}</time>
                 </>
               );
               return item.link ? (

@@ -21,6 +21,7 @@ import IaStatusBanner from "./IaStatusBanner";
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
 import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
+import { toast } from "./Toast";
 import SidebarWeekCalendar from "./SidebarWeekCalendar";
 import { Tooltip, cn } from "./UI";
 import {
@@ -314,11 +315,21 @@ export default function LayoutReference() {
                   <button
                     type="button"
                     className="text-xs font-medium text-primary-700 hover:text-primary-900"
-                    onClick={() =>
+                    onClick={() => {
                       api
                         .post("/notifications/ler-todas")
-                        .then(() => setNotifCount(0))
-                    }
+                        .then(() => {
+                          setNotifCount(0);
+                          setNotifications((items) =>
+                            items.map((item) => ({ ...item, lida: true })),
+                          );
+                        })
+                        .catch(() => {
+                          toast.error(
+                            "Não foi possível marcar as notificações como lidas.",
+                          );
+                        });
+                    }}
                   >
                     Marcar lidas
                   </button>
