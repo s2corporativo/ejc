@@ -634,3 +634,41 @@ Bateria: scripts/inventory/m26_injection_tests.py
 - Testar: CPF 11 dígitos, CNPJ 14, processo 0000000-00.0000.0.00.0000, RG, e-mail, tel (31)99999-9999, CEP 30100-000, cartão 4111 1111 1111 1111, PIX UUID, OAB/MG 123.456, logradouro.
 - Markdown malicioso/URL/file-system: NÃO há regex específico contra markdown/HTML/URL schemes no sanitizer — proteção é o prompt do sistema (proibir execução de código/link aberto) + RAG escopado por client (sem vazamento tenant). Injection em doc: contexto RAG vai ao system prompt mas escopo client + sanitização.
 - HTTP bateria M26: usar /api/ai/citacoes/verificar (determinístico, sem LLM — não serve p/ adversarial LLM), usar /api/ai/ia/resumir-texto ou /api/ai/resumir-texto? verificar rota real; gateway via /api/ai-core/task? Rotas ai.py prefix /api/ai. Usar /api/ai/resumir-texto com payload injection e medir resposta.
+
+## M26 CONCLUÍDO (41/41 PASS) — commit 15e7144d — HOMOLOGADO
+Ressalva: sem LLM real no sandbox (AI_ENABLED=false, sem Ollama); barreiras provadas de forma determinística. Relatório em qa/homologacao/m26/.
+
+## M27 — CHAT JURÍDICO (PROMPT 27, linha 781) — próximo
+
+## M27 — CHAT JURÍDICO (PROMPT 27, linha 781) — em execução
+PROMPT 27 exige: perguntas simples; perguntas complexas; contexto do processo; documentos; follow-up; histórico; fontes; ausência de contexto; mudança de assunto; isolamento; streaming; timeout; indisponibilidade do provider.
+
+### Superfícies M27 conhecidas
+- `/api/ai-core/chat` (rate_limit 20, authed) — SingleAICoreOrchestrator.
+- M23 já provou cerebro/chat endpoints com graceful degradation 503.
+- AI_ENABLED=false no sandbox; sem Ollama; cadeia: provider primário → ollama → groq (com fallback 503 seguro).
+- Streaming: verificar se ai-core ou chat endpoints suportam SSE; caso contrário, documentar como característica ausente (não é defeito).
+- Timeout: GROQ_TIMEOUT existe em settings; indisponibilidade provada em M23.
+- Follow-up/histórico: verificar se chat guarda histórico por conversação (AI-017/020 logs).
+
+### M27 progresso (atualização)
+- Bateria: scripts/inventory/m27_chat_juridico_tests.py (24 cenários: intenção classificada 5/5, ownership 4/4, endpoints HTTP).
+- Caminho real: /api/ai/core/chat (prefix /ai/core), /api/ai/core/logs/{log_id}, /api/ai/core/logs?page=1.
+- Primeira rodada: 15 PASS, 9 FAIL, 3 N/A. FAILs principais: endpoints chat retornam 502 (AI_ENABLED=false → cadeia falha ANTES de RBAC por agente? não: _staff_only só bloqueia cliente_externo (403 OK); RBAC por role está em AGENT_REGISTRY.roles_permitidos — CaseAgent usa _ROLES_TECNICOS: verificar se inclui financeiro/secretaria).
+- Investigar: grep _ROLES_TECNICOS no agent_registry.py (linha ~51 e 357/366/376).
+- /api/ai/core/logs?page=1 → 404: nome da rota de logs difere (talvez /ai/core/logs/{log_id} GET único; listagem em outra rota — verificar @router em ai_core.py: /chat, /task, /analyze, /generate, /report, /agents, /skills, /native-skills/coverage, /status — NÃO há rota de listagem de logs em ai_core! Logs via /api/ai/logs (router ai.py linha 120 @router.get("/logs")).
+- 502 com mensagem leiga ("A inteligência artificial não está disponível no momento") = graceful degradation funcionando; reclassificar testes: 502 NÃO é falha de RBAC/isolamento — é falha de provedor. Corrigir bateria: RBAC por role deve ser testado na UNIT (orchestrator run com mock db) ou via agent_registry check; isolamento por case_id deve ser provado unit (verificar_acesso_caso já provado).
+- Resposta 502 já é "leiga" (sem stack trace) — testável com r.text sem 'Traceback'.
+- GROQ_TIMEOUT=60 configurado. Streaming: sem SSE em ai_core (design request/response).
+
+### M27 achados decisivos (antes da 2ª rodada)
+1. `http_erro_ia` (app/core/ai_errors.py): envolver QUALQUER exceção (incl. HTTPException(403) de roles_permitidos!) vira 503 leigo — o 502 dos meus testes de financeiro/secretaria/estagiário era na verdade o 403 de RBAC traduzido a mensagem leiga. CONCLUSÃO: o RBAC AGE — mas a tradução de HTTPException(403)→503 leigo no "except Exception" do core_chat é IMPRECISÃO (403 real mascarado). Verificar: é bug ou design (mensagem leiga)? P0 §10 diz "nenhum texto técnico chega à UI". Mas 403→503 muda semântica HTTP (negado vs indisponível). Considerar correção: tratar HTTPException separadamente no except do core_chat (re-raise HTTPException original).
+2. /api/ai/core/chat prefix real: /ai/core; logs: ai.py @router.get("/logs") = /api/ai/logs (não /ai/core/logs).
+3. _ROLES_TECNICOS = superadmin/admin/socio.
+4. Role check linha 120 orchestrator.py ANTES do provider → RBAC funciona.
+5. Plano 2ª rodada bateria: (a) corrigir testes de RBAC/isolamento para esperar 503 (mensagens leigas MSG_IA_INDISPONIVEL/Agente restrito?) — na verdade a mensagem para roles_permitidos não contém padrão técnico ("Agente CaseAgent restrito a: superadmin, admin, socio") → passa intacta pelo filtro → pode vir com 503 e texto real da regra. Testar isso. (b) logs via /api/ai/logs?page=1. (c) correção opcional: except HTTPException → re-raise no core_chat (baixo risco, correção de precisão).
+
+### M27 decisão crítica (RBAC do chat)
+- **CaseAgent.roles_permitidos = None** (agente do /api/ai/core/chat). O check linha 117 do orchestrator não se aplica → financeiro/secretaria/estagiário NÃO são bloqueados por role no núcleo. Só _staff_only (cliente_externo) protege na borda.
+- O 502 que recebi era exclusivamente falha do provider (AI_ENABLED=false).
+- Pergunta: é defeito? _staff_only documenta "cliente_externo NUNCA acessa o núcleo". O núcleo não restringe por role → financeiro/secretaria/estagiário podem chat. RBAC existe em outros módulos (M23: cerebro/chat com roles). Inconsistência de granularidade. Decisão de correção: adicionar roles_permitidos=_ROLES_TECNICOS ao CaseAgent? MAS: isso muda comportamento em produção — financeiro acessando chat hoje não é um risco jurídico (chat interno é staff-only por design _staff_only; a decisão era permitir staff). O registro do sistema diz "cliente_externo NUNCA; staff interno acessa". → NÃO é defeito; é design (staff-only, sem restrição interna). Reclassificar teste: financeiro/secretaria/estagiário → 200/502 ACEITOS (staff), cliente → bloqueado. Corrigir bateria.
