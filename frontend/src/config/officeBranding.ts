@@ -36,7 +36,8 @@ export const officeBranding = Object.freeze({
   officeName:
     readPublicEnv(import.meta.env.VITE_EJC_OFFICE_NAME) || DEFAULT_OFFICE_NAME,
   logoPath:
-    readPublicEnv(import.meta.env.VITE_EJC_LOGO_PATH) || "/brand/logo-hd.png",
+    readPublicEnv(import.meta.env.VITE_EJC_LOGO_PATH) ||
+    "/brand/ejc-wordmark.svg",
   whatsappNumber,
   contactEmail,
   officeAiUrl,
@@ -48,7 +49,7 @@ export const officeBranding = Object.freeze({
     readPublicEnv(import.meta.env.VITE_EJC_DAILY_MESSAGE) ||
     DEFAULT_DAILY_MESSAGE,
   dailyMessageSource:
-    readPublicEnv(import.meta.env.VITE_EJC_DAILY_MESSAGE_SOURCE) ||
+    readPublicEnv(import.meta.env.VITE_EJC_DAILY_SOURCE) ||
     DEFAULT_DAILY_SOURCE,
 });
 
