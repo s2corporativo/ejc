@@ -672,3 +672,50 @@ PROMPT 27 exige: perguntas simples; perguntas complexas; contexto do processo; d
 - **CaseAgent.roles_permitidos = None** (agente do /api/ai/core/chat). O check linha 117 do orchestrator não se aplica → financeiro/secretaria/estagiário NÃO são bloqueados por role no núcleo. Só _staff_only (cliente_externo) protege na borda.
 - O 502 que recebi era exclusivamente falha do provider (AI_ENABLED=false).
 - Pergunta: é defeito? _staff_only documenta "cliente_externo NUNCA acessa o núcleo". O núcleo não restringe por role → financeiro/secretaria/estagiário podem chat. RBAC existe em outros módulos (M23: cerebro/chat com roles). Inconsistência de granularidade. Decisão de correção: adicionar roles_permitidos=_ROLES_TECNICOS ao CaseAgent? MAS: isso muda comportamento em produção — financeiro acessando chat hoje não é um risco jurídico (chat interno é staff-only por design _staff_only; a decisão era permitir staff). O registro do sistema diz "cliente_externo NUNCA; staff interno acessa". → NÃO é defeito; é design (staff-only, sem restrição interna). Reclassificar teste: financeiro/secretaria/estagiário → 200/502 ACEITOS (staff), cliente → bloqueado. Corrigir bateria.
+
+## M27 CONCLUÍDO (22/25 PASS, 3 N/A-PROVADO) — commit M27 — HOMOLOGADO
+Ressalva: LLM inativo (AI_ENABLED=false, sem Ollama). Relatório em qa/homologacao/m27/.
+## M28 — INTELIGÊNCIA DO CASO (PROMPT 28, linha 806) — próximo
+
+## M28 — INTELIGÊNCIA DO CASO (Case Intelligence) — superfície mapeada
+PROMPT 28: fatos; provas; pedidos; teses; riscos; contradições; lacunas; estratégias; snapshots; atualização; fontes.
+
+### Arquitetura
+- Model: `CaseIntelligenceSnapshot` (table case_intelligence_snapshots), JSONB payload, versao incremental por caso (índice único case_id+versao), congelado=False por default, HITL aprovação advogado.
+- Router: /api/cases/{case_id}/inteligencia (GET list/último+histórico), /{snapshot_id} (GET completo), /{snapshot_id}/aprovar (POST, requer_advogado, 409 se já congelado). Todos com verificar_acesso_caso.
+- Payload documentado: area, fatos, teses {principal, secundarias}, riscos, provas, prazos_projetados, peca_sugerida, checklist, fontes. (raio_x produz também: fatos_provas, cronologia, contradicoes, pedidos, proximos_passos, confianca_global, raio_x_analise_id).
+- Escritores de snapshot: intake (linha 438, gravar_snapshot_seguro), matriz_teses_service (linha 483), raio_x_service._snapshot_payload (linha 617), legal_case_orchestrator (origem "orquestrador"), sala_juridica, documento (document_analysis_hook).
+- triagem_caso (case_intel.py, chamada background em POST /api/cases) gera inteligência em CAMPOS DO CASE (teses_secundarias, provas_necessarias, pontos_fracos, riscos) — NÃO grava snapshot; origem triagem via raio_x/... (verificar).
+- case_intel.triagem_caso sanitize PII antes do gateway; SYS prompt diz não inventar.
+- Snapshots: raio_x = fonte rica (contradições/pedidos/lacunas via checklist). Intake = snapshot origem intake.
+- M28 bateria deve: criar caso QA com fatos≥20 chars; disparar intake/raio-x p/ gerar snapshot; ou criar manual (origem manual) com payload canônico completo; GET inteligência; GET snapshot; aprovação advogado (ok); aprovação estagiário/financeiro (403); aprovação duplicada (409); aprovação sócio (requer_advogado → bloqueado? verificar limite); caso de terceiro 403/404; snapshot de outro caso 404; congelado imutável (não existe PATCH — verificar).
+
+### Estado atual
+- Uvicorn rodando (porta 8000, health ok). OOM anterior resolvido (3.9GB RAM).
+- Branch: homologacao-m07-2026-08-16; últimos commits M27 (cdfe4379), M26 (15e7144d), M25.
+- Casos QA de módulos anteriores existem; caso QA M06/M07: criar caso QA novo com descricao_fatos≥20 chars p/ M28 (EJC_QA_*).
+- AI_ENABLED=false → endpoints que dependem de IA (raio_x, intake completo) degradam com 503 seguro (prova em M27).
+
+### M28 progresso detalhado (rodada 1 executada)
+- Bateria: scripts/inventory/m28_case_intelligence_tests.py. Rodada 1: 14 PASS, 2 FAIL, 2 N/A.
+- FAIL 1: secao_hitl — sem snapshots no BD (0). Correção: criar snapshot via criar_snapshot(service) antes dos testes HITL.
+- FAIL 2: criar_caso_qa → 422 missing "area" field. Correção: adicionar "area": "civil" no POST /api/cases.
+- Estrutura da bateria: secao_contrato (12 chk), secao_snapshot_manual (1), secao_hitl (aprovar advogado→congelado, duplicada 409, estagiario/financeiro/cliente 403), secao_versao (criar 3 snapshots unit → v1/v2/v3, append-only, sem UPDATE no service), secao_isolamento (caso terceiro 403/404, caso B cross-case), secao_automaticos (intake 503 quando IA off).
+- Rodada 2 pendente: corrigir area e hitl seed, rerun, depois relatório qa/homologacao/m28/RELATORIO_MODULO_M28.md, commit, atualizar notas (próximo M29 PROMPT 29 linha ~813).
+- M25/M26/M27 já HOMOLOGADOS. M28 é atual.
+- Uvicorn: pgrep -f "uvicorn app.main:app"; reiniciar se necessário via env_shell.sh; health: curl http://127.0.0.1:8000/api/health/ready
+
+### M28 rodada 3-4: problema asyncpg cross-loop
+- AsyncSessionLocal engine (asyncpg) fica vinculado ao primeiro event loop em que uma conexão foi criada. Qualquer loop novo depois → RuntimeError "Future attached to a different loop".
+- Correção adotada na bateria M28 (funciona): UM único loop compartilhado por toda a bateria async: asyncio.set_event_loop(shared_loop) no início do main e loop.run_until_complete() para cada seção; não criar loops novos.
+- M28 atual: 20 PASS, 1 FAIL (cross-loop), 2 N/A. Falta: converter secao_versao + secao_hitl + secao_isolamento para o loop compartilhado; secao_hitl também precisa da seção leitura (GET snapshot via endpoint) para completar PROMPT 28 — adicionar GET /inteligencia e GET snapshot completo sobre o caso HITL.
+- Bateria path: scripts/inventory/m28_case_intelligence_tests.py
+
+### M28 rodada 5
+Loop compartilhado resolveu asyncpg (v1/v2/v3 PASS). Único FAIL restante: secao_hitl — criar_snapshot retorna None para o caso EJC_QA_M28_HITL. Probe isolado (asyncio.run próprio) cria OK com commit. Diferença: na bateria, dentro de secao_versao primeiro _correr(gravar) roda e dá db.commit(); em hitl, criar_snapshot retorna None — causa provável: criar_snapshot trata colisão de versão (case já tem snapshots de corridas anteriores? Não, caso novo) OU retorna None quando payload falha validação interna OU db.rollback no with. PRÓXIMO PASSO: inspecionar source de criar_snapshot (app/services/case_intelligence_service.py) para ver quando retorna None; testar na bateria com commit explícito e print de erro.
+
+### M28 rodada 6 — debug secao_hitl
+Snapshots do DB pós-rodadas: secao_versao cria 3 ok. Em secao_hitl, criar_snapshot NÃO gera exceção (print debug não apareceu) mas snap_db fica None. HIPÓTESE MAIS PROVÁVEL: `global snap_db` dentro de async def aninhada + _correr (run_until_complete em loop compartilhado) — atribuição ao global de fato funciona em CPython, MAS se _correr executar a coroutine e ela lançar, _fail 'falha ao criar' seria mostrado. Como não é: a coroutine roda até o fim e snap_db=None significa que o `snap_db = await criar_snapshot(...)` atribuiu None (criar_snapshot retorna None)? Source mostra que só retorna snap OU raise. EXCETO se houver outro criar_snapshot importado? `from app.services.case_intelligence_service import criar_snapshot` — ok. OUTRA possibilidade: snap_db é nome de variável global no módulo; secao_versao (linha ~323) tem `snap1, snap2, snap3, tot, ult = _correr(gravar())` — gravar() usa variáveis LOCAIS, ok. MAS secao_hitl prepara() usa GLOBAL snap_db — e SEÇÃO LEITURA (174) ou outra seção anterior também... não há outra. DECISÃO: simplificar eliminando o global — secao_hitl retornará (caso_id, snap_id) via _correr(preparar()) que retorna os valores, como secao_versao.
+
+### M28 rodada 7 — secao_hitl ownership
+HITL snapshot criado (v1, congelado=False). FAIL atual: aprovação advogado retorna 403 "Sem permissão para este caso" = gate ABAC verificar_acesso_caso (não é role; requer_advogado passou). Correção: criar os casos QA com responsavel_id do usuário advogado QA (ejc_qa_auth_advogado@golocal.ejc; ID externo tipo 'U-xxxx' — obter via GET /api/users ou DB users.id). Mesmo motivo para secao_isolamento "caso B não criado". User.id formato: prefixo U- (confirmar: responsavel_id do cliente = 'U-c23b7d23').
