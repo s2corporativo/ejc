@@ -594,3 +594,43 @@ Próximo: M25 — PROMPT 25 (~linha 732 do Pasted_content_76.txt). Ler seção e
 - scripts/inventory/m25_precedentes_tests.py reescrita completa: rotas corretas (jurisprudencia-externa hífen), status snake_case, expectations reais (art.489 CPC + art.5º CF verificadas=2 score 100; súmula 9999 suspeita; DV inválido suspeito score 0).
 
 ### Resultado M25: AGUARDANDO EXECUÇÃO
+
+## M25 CONCLUÍDO (39/39 PASS) — commit 9f31c46f + relatório qa/homologacao/m25/
+Ressalvas M25: sem súmulas na base (identificada, nunca verificada — defensivo); LexML fora do ar (fail-safe OK); correção de dados m25_fix_vigencia_seeds.py (proveniência oficial planalto:cpc/planalto:cf88, idempotente).
+
+## M26 — Prompt Injection e Segurança da IA (próximo)
+PROMPT 26 no arquivo de comando mestre (linha ~790). Superfícies prováveis: /api/ai/* (cerebro, ia, chat), prompt injection no RAG/IA, filtragem, auditoria de inputs. Roteiro: ler PROMPT 26, mapear routers, bateria scripts/inventory/m26_injection_tests.py.
+
+## M26 — Segurança Adversarial da IA (PROMPT 26, linha 758)
+Testar: injection direta; injection em documento; system prompt extraction; vazamento entre tenants; tool calling indevido; SQL; filesystem; URLs; markdown malicioso; instruções escondidas em documentos. Quantificar.
+
+### Superfícies confirmadas
+- `app/services/ai_guard.py`: sanitizar_ou_abortar (barreira de entrada, não aborta: sanitiza + registra PII residual, sem vazar valores); registrar_ai_log (erro propaga).
+- `app/services/ai_gateway.py`: _sanitizar_mensagens_externo (barreira FINAL antes de provider externo — mascara CPF/CNPJ/processo/RG/e-mail/tel/CEP/cartão/PIX; valida_sem_pii residual → bloqueio LOCAL_COMPLETO/aborta externo); _pseudonimizar_messages_externo (marcadores reversíveis, mapa só em memória); executar_tarefa_ia: SYSTEM_PROMPTS + contexto RAG anexado ao system prompt; cadeia local antes de externo (OLLAMA_ENABLED); LOCAL_COMPLETO restringe cadeia ao local; ai_cache dedup.
+- `app/routers/ai.py`: endpoints /citacoes/verificar, /analisar-caso, /resumir-documento, /auditar-peca, /analisar-contrato, /detectar-prazos, /traduzir-andamento, /resumir-texto, /gerar-minuta, /pesquisar, /sugestao-honorarios — todos usam sanitizar_ou_abortar na entrada.
+- `app/routers/ai_tools.py`: /executar (cliente_externo bloqueado por _bloquear_cliente_externo; ownership verificar_acesso_caso; escopo RAG client; sanitização antes do LLM).
+- `app/routers/ia_especializada.py`: sanitizar_ou_abortar na pergunta.
+- `app/routers/teses.py:380`: /teses/sugerir-ia sanitiza descrição.
+- `app/services/ai/core/orchestrator.py`: SingleAICoreOrchestrator — cliente_externo → 403; RBAC por agente (roles_permitidos); verificar_acesso_caso por case_id.
+- `app/services/ai/adversarial.py`: CriticaAdversarial + criticar_peca (crítica adversarial de peças — nota robustez; NÃO é proteção de input).
+- NÃO há ferramentas de SQL/fs/URL expostas pelo gateway (executar_tarefa_ia = LLM chat com system prompt; sem tool calling direto executável). Tool calling: app/services/ai/agent/tools/* (agent loop com HITL fail-closed se Redis fora).
+- settings: AI_EXTERNAL_PROVIDERS_ALLOWED (kill-switch), GROQ/ANTHROPIC/Ollama configurados (.env local tem chaves).
+
+### Estratégia M26 (quantificar sem depender de LLM externo quando possível)
+1. Determinístico: sanitizer.py funções (CPF/CNPJ/processo/RG/e-mail/tel/CEP/cartão/PIX; validar_sem_pii residual; nomes_proteger).
+2. ai_guard sanitizar_ou_abortar retorna (texto_limpo, houve_remocao) — PII de tenants diferentes no mesmo prompt → removido (vazamento tenant mitigado via remoção).
+3. Endpoints HTTP reais com payloads injection: verificar que resposta do LLM não revela system prompt (comparar estrutura); document injection: /resumir-documento ou legal_docs check — texto de documento com instruções escondidas enviado ao LLM (medir via resposta se possível); markdown malicioso (HTML/script/<! em texto); URL schemes (file:// /etc/passwd, javascript:) em texto enviado.
+4. System prompt: SYSTEM_PROMPTS em app/services/system_prompts.py — não exposto por endpoint; /status não revela.
+5. Quantificação: tabela cenários × barreira acionada × residual pós-barreira.
+Bateria: scripts/inventory/m26_injection_tests.py
+
+### sanitizer.py detalhes (M26)
+- _PATTERNS índice: 0=CPF ([CPF]), 1=CNPJ ([CNPJ]), 2=processo CNJ ([PROCESSO]), 3=RG, 4=EMAIL, 5=TELEFONE, 6=CEP, 7=CARTAO, 8=CHAVE_PIX, 9=OAB, 10=ENDERECO (Rua/Avenida/Av./Travessa/Alameda/Praça/Rodovia/Estrada + nome capitalizado, APPEND-ONLY, nunca reordenar).
+- _NASCIMENTO: "nascido em/nascimento" + data → [DATA_NASC].
+- sanitizar_pii: aplica TODOS (CPF/CNPJ mascarados p/ externo); nomes_proteger → [PARTE_N].
+- sanitizar_pii_interno: pula CPF/CNPJ (_PATTERNS[2:]); para uso local.
+- validar_sem_pii: segunda barreira, retorna lista de tipos residuais; validar_sem_pii_interno exclui CPF/CNPJ.
+- PII residual na barreira de entrada NÃO aborta (log apenas); barreira FINAL do gateway (ai_gateway) aborta/força local se residual em provider externo.
+- Testar: CPF 11 dígitos, CNPJ 14, processo 0000000-00.0000.0.00.0000, RG, e-mail, tel (31)99999-9999, CEP 30100-000, cartão 4111 1111 1111 1111, PIX UUID, OAB/MG 123.456, logradouro.
+- Markdown malicioso/URL/file-system: NÃO há regex específico contra markdown/HTML/URL schemes no sanitizer — proteção é o prompt do sistema (proibir execução de código/link aberto) + RAG escopado por client (sem vazamento tenant). Injection em doc: contexto RAG vai ao system prompt mas escopo client + sanitização.
+- HTTP bateria M26: usar /api/ai/citacoes/verificar (determinístico, sem LLM — não serve p/ adversarial LLM), usar /api/ai/ia/resumir-texto ou /api/ai/resumir-texto? verificar rota real; gateway via /api/ai-core/task? Rotas ai.py prefix /api/ai. Usar /api/ai/resumir-texto com payload injection e medir resposta.
