@@ -70,6 +70,11 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # M04 (homologação 2026-08-15): mesmo allowlist do CREATE — acervo de
+    # peças restrito à equipe jurídica/gestão.
+    if cu.role.value not in ("superadmin", "admin", "socio", "advogado"):
+        raise HTTPException(status_code=403,
+                            detail="Modelos restritos à equipe jurídica/gestão")
     q = select(DocTemplate).where(
         DocTemplate.deleted_at.is_(None), DocTemplate.ativo == True,
     ).order_by(DocTemplate.titulo)
@@ -93,6 +98,10 @@ async def detalhe(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # M04 (homologação 2026-08-15): mesmo allowlist do CREATE.
+    if cu.role.value not in ("superadmin", "admin", "socio", "advogado"):
+        raise HTTPException(status_code=403,
+                            detail="Modelos restritos à equipe jurídica/gestão")
     t = (await db.execute(select(DocTemplate).where(
         DocTemplate.id == tpl_id, DocTemplate.deleted_at.is_(None)
     ))).scalar_one_or_none()

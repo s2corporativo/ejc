@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, require_roles, ROLE_LEVEL
+from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
+                                 requer_equipe_juridica, EQUIPE_JURIDICA)
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.audit_log import criar_audit_log
@@ -94,6 +95,10 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # M04 (homologação 2026-08-15): gate EXATO de equipe jurídica no corpo —
+    # require_roles(EQUIPE_JURIDICA) deixaria financeiro passar pelo fallback
+    # hierárquico (Issue #694).
+    requer_equipe_juridica(cu)
     q = select(Case).where(Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
     # Filtro por advogado: aplicado APÓS _filtro_visibilidade — para socio+
@@ -159,6 +164,8 @@ async def stats_casos(
     - encerrados = status == 'encerrado'
     - por_area  = contagem por área sobre o MESMO conjunto (nenhuma área some).
     """
+    # M04 (homologação 2026-08-15): mesmo gate exato do listador.
+    requer_equipe_juridica(cu)
     base_q = _filtro_visibilidade(
         select(Case).where(Case.deleted_at.is_(None)), cu
     )

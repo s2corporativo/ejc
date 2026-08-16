@@ -45,8 +45,12 @@ def _ve_todos(user: User) -> bool:
 @router.get("/clientes.csv")
 async def export_clientes(db: AsyncSession = Depends(get_db),
                           cu: User = Depends(get_current_user)):
-    if cu.role.value == "cliente_externo":
-        raise HTTPException(403, "Não autorizado")
+    # M04 (homologação 2026-08-15): exportação de cadastro de clientes (com
+    # CPF/CNPJ em claro) restrita a gestão e financeiro — LGPD mínimo acesso.
+    if cu.role.value not in ("superadmin", "admin", "socio", "financeiro"):
+        raise HTTPException(status_code=403,
+                            detail="Exportação de clientes restrita a gestão "
+                                   "e financeiro")
     rows = (await db.execute(
         select(Client).where(Client.deleted_at.is_(None))
         .order_by(Client.created_at.desc())

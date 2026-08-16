@@ -360,6 +360,17 @@ async def atualizar(
             raise HTTPException(status_code=400, detail="Não pode desativar a si mesmo")
         if "role" in mudancas:
             _validar_atribuicao_role(cu, mudancas["role"])
+            # M04 (homologação 2026-08-15): anti-lockout — o admin (e o
+            # superadmin) não pode rebaixar o próprio perfil, pois isso pode
+            # ser usado para burlar audit/autorização ou trancar a gestão.
+            if cu.id == user_id and _nivel(mudancas["role"]) < _nivel(cu.role):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Não é permitido rebaixar o próprio perfil",)
+        elif "is_active" in mudancas and mudancas.get("is_active") is True and cu.id == user_id:
+            # auto-reativação não faz sentido e mascara manipulação
+            raise HTTPException(status_code=400,
+                                detail="Não é permitido ativar o próprio perfil")
 
     for key, value in mudancas.items():
         setattr(user, key, value)
