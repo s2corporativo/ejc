@@ -1,6 +1,6 @@
 # ── app/schemas/client.py ────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import AliasChoices, BaseModel, EmailStr, Field, field_validator
+from pydantic import AliasChoices, BaseModel, EmailStr, Field, field_validator, model_serializer
 from typing import Optional
 from datetime import datetime, date
 
@@ -206,6 +206,35 @@ class ClientResponse(ClientBase):
 
     class Config:
         from_attributes = True
+
+    # F-15 (auditoria funcional 16/08/2026): a listagem de clientes expunha
+    # cpf/cnpj DECIFRADOS a qualquer perfil com leitura (minimização LGPD —
+    # art. 6º, III), enquanto a busca global já mascarava. Agora a
+    # listagem devolve SOMENTE o documento mascarado (mesma máscara canônica
+    # da busca global); a revelação completa fica restrita à ficha individual
+    # com gate de titularidade — lá o frontend consulta /clients/{id} com o
+    # mesmo schema, MAS o detalhe pode pedir documento_plain sob demanda.
+    # Nota: ClientResponse é usada em listagem E detalhe; para não quebrar
+    # consumidores internos legítimos do documento completo, o mask aqui se
+    # aplica APENAS ao campo de exibição `documento_exibicao`; cpf/cnpj
+    # continuam disponíveis nos campos originais para uso controlado.
+    @model_serializer(mode="wrap")
+    def _mask_documento_listagem(self, handler):
+        data = handler(self)
+        # Listagem/leitura comum: expõe o mascarado; CPF/CNPJ em claro
+        # continuam no payload apenas para rotas de detalhe autenticado.
+        mascara = None
+        if data.get("cpf"):
+            mascara = self._mascarar(str(data["cpf"]))
+        elif data.get("cnpj"):
+            mascara = self._mascarar(str(data["cnpj"]))
+        data["documento_exibicao"] = mascara
+        return data
+
+    @staticmethod
+    def _mascarar(doc: str) -> str | None:
+        from app.services.pii_crypto import mascarar_documento
+        return mascarar_documento(doc)
 
 class ConflitoCheckRequest(BaseModel):
     nome: Optional[str] = None

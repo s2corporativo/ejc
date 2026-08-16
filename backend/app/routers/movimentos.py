@@ -35,6 +35,8 @@ async def recentes(
         text(f"""
             SELECT m.id, m.case_id, m.tipo, m.descricao,
                    COALESCE(m.data_evento, m.created_at) AS quando,
+                   m.created_at AS created_at,
+                   m.data_evento AS data_evento,
                    c.titulo AS case_titulo, c.numero_interno
             FROM case_movimentos m
             JOIN cases c ON c.id = m.case_id

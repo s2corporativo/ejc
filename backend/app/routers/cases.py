@@ -386,11 +386,18 @@ async def atualizar(
     # para o mesmo destino. Sair deles (reabertura) continua livre por PATCH.
     if mudancas.get("status") in ("arquivado", "encerrado") and \
             mudancas["status"] != status_anterior:
+        # F-12 (auditoria funcional 16/08/2026): a mensagem anterior expunha a
+        # rota interna da API ("Use POST /cases/{id}/arquivar") ao usuário.
+        # Texto de negócio visível; o caminho técnico permanece só neste código.
         raise HTTPException(
             status_code=422,
             detail=(
-                "Use POST /cases/{id}/arquivar" if mudancas["status"] == "arquivado"
-                else "Use POST /cases/{id}/encerrar (exige pós-mortem)"
+                "O arquivamento de caso possui fluxo próprio com validações "
+                "adicionais. Use a ação 'Arquivar caso' na ficha do caso."
+                if mudancas["status"] == "arquivado"
+                else "O encerramento de caso possui fluxo próprio, com "
+                     "pós-mortem obrigatório. Use a ação 'Encerrar caso' "
+                     "na ficha do caso."
             ),
         )
 
