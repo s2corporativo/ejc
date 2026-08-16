@@ -931,3 +931,19 @@ CET: sistema usa `dias/365` com datas REAIS (add_months mantém day-of-month), m
 - `/api/honorarios-exito`: GET /POST /{fee_id}/rateio.
 - Proposta: fee_proposal_service (versao=max+1, ownership caso, substituida).
 - Casos QA: usar CASO principal 89b9b439-9ba2-462a-ab99-7dcf1c54cc86 + cliente 9e6cd7cd.
+
+### M35 BUG REAL: PATCH /api/despesas/{id} 500
+DataError asyncpg "'str' object has no attribute 'toordinal'" — update_despesa (despesas.py l.237+) passa string ISO para coluna date, sem a conversão que o POST usa (.isoformat() também é str! O POST converte date→str e... não, POST converte para isoformat string — mas funcionou porque NULLIF(:vencimento,'')::date; o INSERT casta em date). O PATCH SQL não tem o cast ::date → DataError. Correção: converter date no Python (datetime.date.fromisoformat) ou cast no SQL.
+
+## M35 EM ANDAMENTO (16/08 ~20:05)
+Bateria: scripts/inventory/m35_financeiro_tests.py. Client/login email correto: ejc_qa_auth_cliente@golocal.ejc (para role cliente_externo). CASO=89b9b439..., CLIENTE=9e6cd7cd..., COMP=2026-08.
+BUG CORRIGIDO: PATCH /api/despesas/{id} 500 (DataError toordinal — str date). Fix em despesas.py l.244-259 (converte vencimento/pago_em p/ date via fromisoformat; 422 p/ formato inválido; '' → None).
+Próximos passos: (1) reiniciar uvicorn (pkill ok isolado), (2) rerun bateria M35 (28 cenários esperados), (3) relatório qa/homologacao/m35/RELATORIO_MODULO_M35.md, (4) commit, (5) M36 timesheet.
+M35 superfície: /api/despesas (resumo, GET filtros, export/csv BOM, POST, PATCH, DELETE; _req_fin: fin+), /api/financeiro/consolidado (mesmo gate), /api/relatorio/mensal (_GESTOR_FIN), /api/clients/{id}/relatorio-financeiro (advogado/fin via _req_fin_adv, documento_plain migration 112), fees já cobertos no M34. office_expenses tem recorrente/recorrencia/competencia/status. Inadimplência: status atrasado em fees (job recalcula). Auditoria: /api/audit.
+
+## M35 progresso (16/08 ~20:15)
+Fix PATCH despesas APPLICADO e salvo em backend/app/routers/despesas.py (l.244-259). Uvicorn reiniciado (porta 8000, log /tmp/uvicorn.log).
+PROBLEMA: bateria m35_financeiro_tests.py executa apenas seção 1 (3 PASS) e SAI com código 0, sem traceback. Causa suspeita: shell da sessão "ejc4" ou buffer. Linhas 116-117 usam `despesa_id` dentro de `if desp_id:` — correto. Seção 2+ nunca executa. Rerun com 2>/dev/null redirecionado; EXIT 0.
+Hipótese: o comando `cd /home/ubuntu/ejc_repo && PYTHONPATH=... python3 -u ... > /tmp/m35_out.txt 2>&1; echo "EXIT $?"` rodou mas apenas 3 cenários — talvez bateria esteja truncada? wc -l = 288 linhas, completa.
+VERIFICAR: rodar `python3 -c "exec(open('scripts/inventory/m35_financeiro_tests.py').read()); print('secoes:', [s for s in dir() if s.startswith('secao_')])"` — melhor: rodar bateria em sessão shell NOVA.
+Após corrigir: rerun completo esperado ~28 cenários; relatório qa/homologacao/m35/RELATORIO_MODULO_M35.md; commit "M35 homologação..."; depois M36 (timesheet: /api/time-entries? verificar prefix em routers; time_entries table: id, case_id, user_id, data, minutos, descricao, faturavel, fee_id).

@@ -242,6 +242,19 @@ async def update_despesa(
     allowed = ["categoria", "subcategoria", "tipo", "descricao", "valor",
                "vencimento", "pago_em", "recorrente", "recorrencia", "status", "competencia"]
     updates = {k: v for k, v in body.items() if k in allowed}
+    # asyncpg exige objetos date/None (não str) para colunas date — mesmo
+    # tratamento do create (E03). String vazia/null → None; inválida → 422.
+    for _k in ("vencimento", "pago_em"):
+        if _k in updates and isinstance(updates[_k], str):
+            v = updates[_k].strip()
+            if not v:
+                updates[_k] = None
+            else:
+                try:
+                    updates[_k] = date.fromisoformat(v)
+                except ValueError:
+                    raise HTTPException(
+                        422, f"{_k} inválido: use formato AAAA-MM-DD")
     if not updates:
         raise HTTPException(status_code=422, detail="Nenhum campo válido para atualizar")
 
