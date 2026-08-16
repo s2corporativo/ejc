@@ -87,6 +87,8 @@ class DeadlineResponse(BaseModel):
     responsavel_id: Optional[str] = None
     ciencia_confirmada: bool
     confirmado: bool = True
+    data_conclusao: Optional[datetime] = None
+    concluido_por: Optional[str] = None
     origem: Optional[str] = None
     origem_documento_id: Optional[str] = None
     created_at: datetime
