@@ -1,0 +1,92 @@
+name: Fix Reference PR (temporary)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  format-and-verify:
+    if: github.head_ref == 'feat/reference-dashboard-systemwide-20260816'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Node 22.22.2
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.22.2
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Format touched frontend files
+        working-directory: frontend
+        run: |
+          npx prettier --write \
+            src/pages/CasoDetalhe/CaseDocumentActions.tsx \
+            src/pages/CasoDetalhe/TabDocumentos.tsx \
+            src/stores/cadastroManual.test.ts \
+            src/config/officeBranding.ts
+
+      - name: Align Node runtime with jsdom engine
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          for name in (
+              '.github/workflows/ci.yml',
+              '.github/workflows/frontend-ci.yml',
+              '.github/workflows/continuity-ui-gates.yml',
+          ):
+              path = Path(name)
+              if not path.exists():
+                  continue
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('node-version: "22.22.0"', 'node-version: "22.22.2"')
+              text = text.replace('node-version: 22.22.0', 'node-version: 22.22.2')
+              path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Targeted frontend regression tests
+        working-directory: frontend
+        run: |
+          npx vitest run \
+            src/stores/cadastroManual.test.ts \
+            src/pages/CasoDetalhe/TabDocumentos.test.tsx \
+            src/pages/CasoDetalhe/TabDocumentos.contexto.test.tsx \
+            --reporter=dot
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Verify formatting
+        working-directory: frontend
+        run: npm run format:check
+
+      - name: Remove temporary workflow and commit verified fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/fix-reference-pr-temp.yml
+          if git diff --quiet; then
+            echo 'No corrections pending.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(frontend): validar ações contextuais, branding e runtime Node'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
