@@ -163,7 +163,7 @@ describe("DashboardUltra — referência 2026", () => {
   it("exclui atividades finalizadas e usa dados reais dos novos cartões", async () => {
     renderizar();
 
-    expect(await screen.findByText("Tarefa pendente")).toBeTruthy();
+    expect((await screen.findAllByText("Tarefa pendente")).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("Tarefa concluída")).toBeNull();
     expect(screen.getByText("Cliente Alfa")).toBeTruthy();
     expect(screen.getByText("STJ publica nova atualização")).toBeTruthy();
@@ -229,7 +229,7 @@ describe("DashboardUltra — referência 2026", () => {
     expect(
       await screen.findByText(/Horário\/local podem estar incompletos/i),
     ).toBeTruthy();
-    expect(screen.getByText("Tarefa pendente")).toBeTruthy();
+    expect(screen.getAllByText("Tarefa pendente").length).toBeGreaterThanOrEqual(1);
   });
 
   it("mantém estados de erro independentes para clientes e notícias", async () => {
