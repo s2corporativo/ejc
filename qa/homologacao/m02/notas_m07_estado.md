@@ -156,3 +156,71 @@ PENDENCIAS para a próxima rodada:
 6. M12 bateria roda com env_shell python3. Servidor uvicorn em 45001, log /tmp/uvicorn.log.
 7. Após M12: commit (branch homologacao-m06 ou criar homologacao-m12-andamentos-2026-08-16 a partir da m06?), depois M13 (intimações).
 8. M07-M11 baterias: re-push pendente das branches ao final (usuário pediu continuar local e refazer pushes ao final).
+
+
+# M13 — Intimações DJEN (em andamento)
+Bateria: scripts/inventory/m13_intimacoes_tests.py (28 testes). 1ª rodada: 25/28 PASS.
+FAILs: (1) cliente externo listar → 403 "Portal do Cliente" (esperava 200/0) — ajustar teste p/ aceitar 403? ou investigar decorator. (2) sugestão keys reais = aviso, case_id, casou, com_id, data_base, data_disponibilizacao, data_sugerida, dias, disponivel, fundamentacao, motivo, numero_processo, revisao_necessaria, tipo_detectado — ajustar chk p/ revisao_necessaria+aviso. (3) capturar-agora: DJEN_INGEST_ENABLED=false NÃO é checado em capturar_para_advogado (só scheduler) — com OAB tenta HTTP real → http_4xx (chave vazia). FIX: adicionar gate DJEN_INGEST_ENABLED no capturar-agora → 503 claro (corrigir backend, reiniciar uvicorn).
+Surface M13: GET /api/intimacoes/?apenas_pendentes (is_gestao vê todos, demais advogado_id); GET /status-captura; POST /{com}/processar (422 se prazo não decidido); POST /sugerir-prazo, GET /prazo-sugerido; POST /aceitar-prazo (data_prazo manual obrigatório, case_id obrigatório 422); POST /recusar-prazo (409 se aceito); POST /capturar-agora (OAB 422). Entidade audit: djen_comunicacoes (UPDATE); CREATE deadline origem=djen. Aceite idempotente (criado=false).
+DjenComunicacao cols: id, comunicacao_id_externo, advogado_id, numero_processo, tribunal, tipo_comunicacao, data_disponibilizacao, texto_resumo, case_id, processada, processada_por, processada_em, prazo_sugerido_status (nenhum|sugerido|aceito|recusado), prazo_deadline_id, created_at.
+Próximos: corrigir 3 FAILs (sugestão chk; cliente externo; gate DJEN no capturar-agora) → rerun → commit → relatório m13 → M14 Prazos.
+Nota: capturar_para_advogado fica em backend/app/services/*djen*.py — localizar e editar.
+Requisitos M14: prazos CRUD, regime dias úteis/corridos, termo inicial intimação, vencimentos, alertas vencendo (hoje, em X dias), vencidos, recálculo por regime/tribunal.
+
+
+## M13 correções aplicadas (3 FAILs → reexecutar bateria)
+1. Bateria: cliente externo chk → aceitar 403 (rota restrita ao Portal do Cliente) OU 200/0. Feito.
+2. Bateria: chk sugestão → campos reais: aviso, revisao_necessaria, fundamentacao, disponivel, data_sugerida, dias. revisao_necessaria=True esperado. Feito.
+3. Backend djen_service.py: gate DJEN_INGEST_ENABLED adicionado no capturar_para_advogado (linha ~689, import local get_settings) → retorna fonte_ok=False erro=feature_desabilitada → router intimacoes traduz para 503 claro. Feito.
+Uvicorn reiniciado (pid novo, ready OK). Próximo: python3 m13_intimacoes_tests.py → esperado 28/28 → commit → relatório qa/homologacao/m13/RELATORIO_MODULO_13 → M14 Prazos (deadlines.py: CRUD + regime dias úteis/corridos + termo inicial + vencendo + vencidos).
+Bateria M14 a escrever: prazos (deadlines) CRUD, criação manual + via intimação aceita, data_prazo inválida 422, vencendo (hoje/7/30d), vencidos, recálculo regime (prazo_dias_uteis x prazo_dias_corridos), auditoria, RBAC (carteira), exclusão/restauração.
+
+
+# M14 — Prazos (deadlines) — superfície mapeada
+Router: /api/deadlines (prefix="/deadlines", tags=Prazos), main.py line 371.
+Rotas: POST /calcular (calculadora, não persiste; campos: data_inicio, dias, dias_uteis=true, dobro=false, tribunal=None, tipo=processual) → {data_vencimento, modo, dias_uteis_restantes}. GET / (page, page_size max 200, status=pendente, case_id, tipo, apenas_meus; default status='pendente') → {data: [..+dias_restantes+urgencia(vencido<0,critico<=3,atencao<=7,normal), total, page, page_size}. GET /export.csv (status, case_id, tipo; BOM UTF-8, ';' pt-BR; teto 5000). POST / 201 (DeadlineCreate: titulo, tipo, prioridade=media, data_prazo OU data_intimacao+dias_prazo, dias_uteis=true, dobro, tribunal, base_legal, descricao, case_id, responsavel_id; validator enum tipo/prioridade → 422; se não tem case_id→verificar_acesso_caso; responsavel_id default=cu.id; audit CREATE). PATCH /{id} (update parcial; baixa p/ concluido carimba data_conclusao+concluido_por e audit PRAZO_CONCLUIDO). PATCH /{id}/confirmar (rascunho extraído por IA → PRAZO_CONFIRMADO audit). POST /{id}/ciencia. DELETE /{id}.
+Filtros escopo (não-gestão): prazos dos próprios casos (responsável/auxiliar) OU responsavel_id=cu OU case_id=NULL. Gestão vê tudo. ordena por data_prazo ASC.
+Enums: tipo (processual etc.), prioridade, status (pendente, concluido, cancelado, rascunho?). Deadline model: titulo, tipo, prioridade, status, data_prazo, data_intimacao, base_legal, descricao, case_id, responsavel_id, confirmed(?), concluido_por, data_conclusao, deleted_at.
+Calculadora: prazo_dias_uteis(dia_ini, dias, tribunal, em_dobro, aplicar_recesso, forense) suspende recesso 20/12-20/01 p/ processual; prazo_dias_corridos p/ administrativos (prorrogação fim de semana/feriado via Lei 9.784 art.66).
+M14 bateria deve cobrir: POST /calcular (úteis com recesso, corridos, dobro), POST create (manual e com cálculo automático dias+intimação), enum inválido 422, data_prazo ausente 422, UPDATE parcial, PATCH confirmar, DELETE com lixeira, GET listar (default pendente; filtros; escopo não-gestão), CSV export, urgência vencido/critico/atencao, RBAC (advogado_auxiliar vê; estagiário/financeiro não?), auditoria CREATE/PRAZO_CONCLUIDO/UPDATE.
+Recursos QA: CASE_ID do M13 (caso com CNJ) — buscar via GET /api/cases?advogado? Não: caso criado pelo admin. Usar DB: SELECT id FROM cases WHERE deleted_at IS NULL LIMIT 1 (cliente mesmo do QA cliente). advogado QA = ejc_qa_auth_advogado@golocal.ejc (precisa ser responsável/auxiliar do caso p/ ver prazo — M13 setou advogado_responsavel_id=adv para o caso).
+Depois M14: commit → relatório m14 → M15 Honorários.
+
+
+# M14 CONCLUÍDO — 33/33 PASS (HOMOLOGADO)
+Commit `601925b1`. Correção M14: `DeadlineResponse` (backend/app/schemas/deadline.py) agora expõe `data_conclusao` + `concluido_por` (baixa carimbava os campos mas a API não os retornava — rastreabilidade da baixa).
+Fatos-chave M14: calculadora processual 10d úteis de 2026-09-01 → 2026-09-16; dobro → 2026-09-30; recesso: 5d de 2026-12-10 → 2026-12-17 (termina antes do recesso); administrativo corrido → 2026-12-21. Novo prazo vem confirmado=True por default; POST /deadlines/{id}/confirmar exige confirmado=false (teste forçou via DB UPDATE deadlines SET confirmado=false). Auditoria: CREATE + PRAZO_CONCLUIDO; PRAZO_CONFIRMADO + CIENCIA_PRAZO. Export CSV com BOM UTF-8 e separador ';'. Exportação /export.csv em export.py.
+Bateria: scripts/inventory/m14_prazos_tests.py (33/33). Debug probe: scripts/inventory/debug_m14_baixa.py.
+Padrão bateria: chk(desc, ok, extra) + FALHAS; env: /home/ubuntu/ejc_repo/scripts/inventory/env_shell.sh python3 ...; login c/ retry automático + sleep 20*retry em 429; rate limit login 10/min.
+Branch homologacao-m07-2026-08-16 (acumula M07..M14).
+
+# M15 HONORÁRIOS — superfície mapeada (16/08/2026)
+- `fees.py` (314 lin, base path ~ /fees): GET / (listar), GET /resumo, POST / (201), PATCH /{fee_id}, POST /{fee_id}/pagamentos (201), DELETE /{fee_id}.
+- `exito_rateio.py` (148 lin): GET /{fee_id}/rateio, POST /{fee_id}/rateio (201).
+- `honorarios_calc.py` (106 lin): GET /honorarios/cases/{case_id}/provisionamento (prefix /honorarios?), GET .../teto-etico.
+- `honorarios_oab.py` (456 lin): GET /tabela, POST /estimar (rate_limit honorarios-estimar 15), GET/POST /itens, POST /itens/{item_id}/encerrar-vigencia, POST /casos/{case_id}/proposta/sugerir, POST /casos/{case_id}/proposta, GET /casos/{case_id}/proposta, POST /propostas/{proposta_id}/aprovar, POST /propostas/{proposta_id}/rejeitar.
+- `export.py` linha 187: GET /honorarios.csv.
+- Prompt M15: criar/edição/exclusão, êxito/sucumbencia, percentual, múltiplos pagamentos, rateio, provisionamento por caso, teto ético, tabela OAB, estimativas, proposta sugerir/aprovar/rejeitar, RBAC financeiro, auditoria.
+- Recursos QA: caso principal (advogado = responsável ID 4701ecbf-*; cliente QA CPF 12345678909 id 9e6cd7cd...), caso secundário multi-cliente criado no M08 (cliente PJ EJC_QA), caso probe M14 (CPF probe).
+- Depois de M15: M16 financeiro, M17 contratos, M18 societário, M19 RAG/IA, M20 segurança, ... até M36 relatório final. Push de branches pendente ao final (remoto OK, token válido novamente? — branches m04-m06 já em remoto).
+
+
+# M15 superfície (Calendário Forense)
+IMPORTANTE: M15 no comando mestre = "CALENDÁRIO FORENSE, FERIADOS E SUSPENSÕES" (não honorários — honorários é M34, PROMPT 34 linha 946).
+Componentes: `deadline_calculator.py` (pure/sync: FERIADOS_FIXOS nacionais dia/mês, RECESSO_FORENSE 20/12–06/01 [Lei 5.010/66 art.62 I], feriados móveis (Carnaval/Páscoa/Corpus via ano), _FERIADOS_DB municipais/estaduais via tabela `feriados` [id,nome,tipo=nacional|estadual|municipal|forense,movel], suspensões por tribunal via suspensoes_tribunal + dc.carregar_suspensoes_db).
+Endpoints: /api/suspensoes/tribunais (GET sugestões), /api/suspensoes/ (GET listar, POST criar 201 com auditoria, DELETE), /api/suspensoes/simular (POST: data_inicio, dias 1..3650, contagem uteis|corridos, tribunal opcional; uteis=dc.prazo_dias_uteis, corridos=prazo_dias_corridos prorrogar_fim True Lei 9.784/99 art.66 §1º; NÃO grava). Tabela feriados tem seed (seed_all) — Betim MG.
+Feriados endpoints: sem CRUD público (carregados do DB no startup + scheduler diário; brasilapi sync _sincronizar_feriados_brasilapi).
+Calculadora: forense=True (default) exclui recesso 20/12–06/01 + feriados; forense=False (administrativo) não exclui recesso forense.
+Já provado no M14: calculadora nacional+recesso; M15 deve provar: feriados nacionais fixos+ móveis (2026), suspensão por tribunal aplicada, comarca/municipal (Betim), forense vs administrativo, tribunal=None, simular endpoints, recesso.
+
+
+# M15 estado (16/08)
+Bateria: scripts/inventory/m15_calendario_tests.py — fixada: (1) expectativa forense 14/12+5u = 2027-01-07 (recesso 20/12–06/01 correto), (2) admin corrido 14/12+5 = 19/12 sáb → prorrogar_fim → 21/12 seg (correto, Lei 9.784/99 art.66 §1º), (3) trib endpoints usam {"tribunais":[...]}, (4) feriado municipal sintético 20/11/2026 via psql db() + dc.carregar_feriados_db() (asyncio.run). 34/36 no run anterior (2 falhas: seed p/ memória e efeito no cálculo). Run final pendente após última edição.
+Sequência após M15: M16 Agenda/Tarefas (PROMPT 16), M17 Produção Jurídica/Peças, M18 Templates, M19 Perfil/Estilo, M20 Biblioteca Jurídica, M21 Ingestão RAG, M22 Retrieval RAG/ACL, M23 IA Jurídica Central, M24 Veracidade, M25 Precedentes, M26 Prompt Injection, M27 Chat, M28 Inteligência do Caso, M29 Dossiê Estratégico, M34 Honorários (fim). Relatórios em qa/homologacao/m01, m02... Padrão: commit por módulo em homologacao-m07-2026-08-16; push pendente (remoto OK: branches m04-m06 em origin).
+Notas-chave de ambiente: uvicorn via nohup + env_shell em /home/ubuntu/ejc_repo/backend porta 8000, log /tmp/uvicorn.log; restart: kill $(pgrep -f "uvicorn app.main:app"); sleep; nohup. DB: ejc/ejc@localhost/ejc, PGPASSWORD=ejc. Rate limit login 10/min (header X-Forwarded-For: 127.0.0.1 fixo).
+
+
+# M15 estado 2 (16/08, 35/36)
+Último FAIL: limpeza do feriado sintético. Suspeita: set_feriados_db({}) não limpou o conjunto OU f-string do chk avalia argumentos antes (v=23 veio da avaliação pré-chk do extra com set ainda carregado — mas chk também recomputa e retorna False). Verificar se dc.set_feriados_db aponta para o MESMO módulo (import alias pode criar referência ao objeto do module dict, é o mesmo). Debug real: print len(dc._FERIADOS_DB) após set_feriados_db({}).
+Nota matemática: 16/11+3 úteis = 19/11; +4 úteis = 23/11 (20/11 feriado suspende) — confirmado pela bateria.
+M16: Prompt no arquivo /home/ubuntu/upload/Pasted_content_76.txt linha ~484 (PROMPT 16 — buscar "Módulo 16\|Módulo 016" via grep -n "PROMPT 16").
