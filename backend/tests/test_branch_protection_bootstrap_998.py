@@ -276,3 +276,17 @@ def test_bootstrap_security_gate_usa_workflow_confiavel_e_contexto_bloqueante():
     assert "scripts/governanca/branch-protection-bootstrap.sh" in workflow
     assert "types: [opened, synchronize, reopened, edited]" in governanca
     assert "scripts/governanca/branch-protection-bootstrap\\.sh" in governanca
+
+
+def test_security_gate_rejeita_marcador_autodeclarado_e_vincula_revisao_ao_head():
+    workflow = BOOTSTRAP_WORKFLOW.read_text(encoding="utf-8")
+    governanca = GOVERNANCE_WORKFLOW.read_text(encoding="utf-8")
+
+    for src in (workflow, governanca):
+        assert "security-auditor: executado" not in src
+        assert "pulls/$PR_NUMBER/reviews?per_page=100" in src
+        assert 'select(.user.login == "coderabbitai[bot]")' in src
+        assert "select(.commit_id == $sha)" in src
+        assert '.state == "APPROVED" or .state == "COMMENTED"' in src
+        assert 'test("Actionable comments posted:"; "i") | not' in src
+        assert "HEAD_SHA" in src
