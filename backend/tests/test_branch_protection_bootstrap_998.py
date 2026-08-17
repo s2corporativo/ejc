@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "governanca" / "branch-protection-bootstrap.sh"
 BOOTSTRAP_WORKFLOW = ROOT / ".github" / "workflows" / "bootstrap-protection-governance.yml"
-GOVERNANCE_WORKFLOW = ROOT / ".github" / "workflows" / "governanca.yml"
+GOVERNANCE_WORKFLOW = ROOT / ".github" / "workflows" / "governanca-v2.yml"
 RULESET_NAME = "EJC main protection bootstrap #998"
 INTEGRATION_ID = 15368
 CONTEXTS = [
@@ -275,7 +275,8 @@ def test_bootstrap_security_gate_usa_workflow_confiavel_e_contexto_bloqueante():
     assert "Bootstrap protection — security auditor" in script
     assert "scripts/governanca/branch-protection-bootstrap.sh" in workflow
     assert ".github/workflows/bootstrap-protection-governance.yml" in workflow
-    assert ".github/workflows/governanca.yml" in workflow
+    assert ".github/workflows/governanca-v2.yml" in workflow
+    assert "name: Governança — travas de PR" in governanca
     assert "types: [opened, synchronize, reopened, edited]" in governanca
     assert "scripts/governanca/branch-protection-bootstrap\\.sh" in governanca
 
