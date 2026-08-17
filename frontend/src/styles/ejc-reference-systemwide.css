@@ -29,8 +29,7 @@
   --ejc-system-radius-md: 10px;
   --ejc-system-radius-lg: 12px;
   --ejc-system-shadow:
-    0 1px 2px rgba(15, 35, 60, 0.025),
-    0 8px 24px -22px rgba(15, 35, 60, 0.32);
+    0 1px 2px rgba(15, 35, 60, 0.025), 0 8px 24px -22px rgba(15, 35, 60, 0.32);
   --ejc-system-shadow-float: 0 18px 48px -34px rgba(15, 35, 60, 0.42);
 }
 
@@ -87,7 +86,11 @@ html:not(.dark) .ejc-modern-scope .text-gray-400 {
 html:not(.dark) main.ejc-modern-scope {
   padding-top: 18px !important;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.48), rgba(248, 250, 252, 0) 120px),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.48),
+      rgba(248, 250, 252, 0) 120px
+    ),
     var(--ejc-system-canvas) !important;
 }
 
@@ -182,8 +185,12 @@ html:not(.dark) .sidebar-bronze .sidebar-group-label {
 /* -------------------------------------------------------------------------- */
 
 html:not(.dark) .ejc-modern-scope :where(.card, .section-card),
-html:not(.dark) .ejc-modern-scope [class*="rounded-xl"][class*="border"][class*="bg-white"],
-html:not(.dark) .ejc-modern-scope [class*="rounded-2xl"][class*="border"][class*="bg-white"] {
+html:not(.dark)
+  .ejc-modern-scope
+  [class*="rounded-xl"][class*="border"][class*="bg-white"],
+html:not(.dark)
+  .ejc-modern-scope
+  [class*="rounded-2xl"][class*="border"][class*="bg-white"] {
   border-color: var(--ejc-system-border) !important;
   border-radius: var(--ejc-system-radius-md) !important;
   background: var(--ejc-system-surface) !important;
@@ -267,8 +274,12 @@ html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) a.bg-primary-600 {
 
 html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) .btn-primary:hover,
 html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) .btn-gold:hover,
-html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) button.bg-primary-600:hover,
-html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) a.bg-primary-600:hover {
+html:not(.dark)
+  :where(.ejc-modern-scope, .min-h-screen)
+  button.bg-primary-600:hover,
+html:not(.dark)
+  :where(.ejc-modern-scope, .min-h-screen)
+  a.bg-primary-600:hover {
   background: var(--ejc-system-navy-hover) !important;
 }
 
@@ -338,7 +349,10 @@ html:not(.dark) .ejc-modern-scope :where(.filter-bar, .filters, .toolbar) {
   box-shadow: none !important;
 }
 
-html:not(.dark) .ejc-modern-scope :where(.pagination, nav[aria-label*="Paginação" i]) button {
+html:not(.dark)
+  .ejc-modern-scope
+  :where(.pagination, nav[aria-label*="Paginação" i])
+  button {
   border-color: var(--ejc-system-border) !important;
   border-radius: 7px !important;
   background: #fff;
@@ -366,11 +380,15 @@ html:not(.dark) .ejc-modern-scope :where(.tabs, .tab-list, .subtabs) {
   border-color: var(--ejc-system-border) !important;
 }
 
-html:not(.dark) .ejc-modern-scope :where(.tab-active, .is-active)[class*="text-primary"] {
+html:not(.dark)
+  .ejc-modern-scope
+  :where(.tab-active, .is-active)[class*="text-primary"] {
   color: var(--ejc-system-navy) !important;
 }
 
-html:not(.dark) .ejc-modern-scope :where(.breadcrumb, [aria-label="breadcrumb" i]) {
+html:not(.dark)
+  .ejc-modern-scope
+  :where(.breadcrumb, [aria-label="breadcrumb" i]) {
   color: #78879a;
 }
 
@@ -399,11 +417,22 @@ html:not(.dark) .ejc-modern-scope .bg-primary-100 {
   background: #eff6ff !important;
 }
 
-html:not(.dark) .ejc-modern-scope :where(.text-primary-500, .text-primary-600, .text-primary-700, .text-primary-800, .text-primary-900, .text-ouro-profundo) {
+html:not(.dark)
+  .ejc-modern-scope
+  :where(
+    .text-primary-500,
+    .text-primary-600,
+    .text-primary-700,
+    .text-primary-800,
+    .text-primary-900,
+    .text-ouro-profundo
+  ) {
   color: var(--ejc-system-navy-hover) !important;
 }
 
-html:not(.dark) .ejc-modern-scope :where(.border-primary-100, .border-primary-200, .border-ouro-claro) {
+html:not(.dark)
+  .ejc-modern-scope
+  :where(.border-primary-100, .border-primary-200, .border-ouro-claro) {
   border-color: #d9e6f4 !important;
 }
 
@@ -437,7 +466,9 @@ html:not(.dark) .menu-item:hover {
 /* Kanban, timelines, listas operacionais e blocos arrastáveis                 */
 /* -------------------------------------------------------------------------- */
 
-html:not(.dark) .ejc-modern-scope :where(.kanban-column, .kanban-lane, .timeline-panel) {
+html:not(.dark)
+  .ejc-modern-scope
+  :where(.kanban-column, .kanban-lane, .timeline-panel) {
   border-color: var(--ejc-system-border) !important;
   background: #f7f9fc !important;
   box-shadow: none !important;
@@ -475,11 +506,17 @@ html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a:hover {
 
 html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div {
   background:
-    radial-gradient(circle at 18% 22%, rgba(37, 99, 169, 0.055), transparent 32%),
+    radial-gradient(
+      circle at 18% 22%,
+      rgba(37, 99, 169, 0.055),
+      transparent 32%
+    ),
     linear-gradient(180deg, #fff, #f8fafc);
 }
 
-html:not(.dark) .min-h-screen.bg-canvas [class*="rounded-xl"][class*="bg-white"] {
+html:not(.dark)
+  .min-h-screen.bg-canvas
+  [class*="rounded-xl"][class*="bg-white"] {
   border-color: var(--ejc-system-border) !important;
   box-shadow: var(--ejc-system-shadow) !important;
 }
