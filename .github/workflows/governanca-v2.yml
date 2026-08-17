@@ -8,13 +8,15 @@ name: Governanca v2
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read
   pull-requests: read
 
 concurrency:
-  group: governanca-v2-${{ github.ref }}
+  group: governanca-v2-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -28,13 +30,17 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Arquivos alterados no PR
         id: diff
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         shell: bash
         run: |
-          git fetch --quiet origin "${{ github.base_ref }}"
-          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > "$RUNNER_TEMP/alterados.txt"
+          git fetch --quiet origin "$BASE_REF"
+          git diff --name-only "origin/$BASE_REF...HEAD" > "$RUNNER_TEMP/alterados.txt"
           echo "--- arquivos alterados ---"
           cat "$RUNNER_TEMP/alterados.txt"
 
@@ -144,9 +150,9 @@ jobs:
               | last
               | select(. != null)
               | select(.state == "APPROVED" or .state == "COMMENTED")
-              | select((.body // "") | test("Actionable comments posted:"; "i") | not)
+              | select((.body // "") | test("(^|\\r?\\n)Actionable comments posted:[[:space:]]*0[[:space:]]*(\\r?$|\\r?\\n)"; "i"))
             ' "$REVIEWS" >/dev/null || {
-              echo "::error::PR sensível exige revisão independente do CodeRabbit vinculada ao HEAD exato, sem CHANGES_REQUESTED nem findings acionáveis"
+              echo "::error::PR sensível exige revisão independente do CodeRabbit vinculada ao HEAD exato, com atestação explícita de zero findings"
               exit 1
             }
             echo "Revisão de segurança independente confirmada no HEAD $HEAD_SHA."
@@ -167,10 +173,12 @@ jobs:
           fi
 
       - name: Branch nao e main
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         shell: bash
         run: |
-          if [ "${{ github.head_ref }}" = "main" ] || [ "${{ github.head_ref }}" = "master" ]; then
+          if [ "$HEAD_REF" = "main" ] || [ "$HEAD_REF" = "master" ]; then
             echo "::error::PR originado de branch protegida."
             exit 1
           fi
-          echo "Branch de origem: ${{ github.head_ref }}"
+          echo "Branch de origem: $HEAD_REF"
