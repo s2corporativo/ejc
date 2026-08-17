@@ -50,7 +50,20 @@ deployment_policy = "human_reviewed_drop"
 
 def _codigo_refere(coluna: str) -> bool:
     import pathlib
-    appdir = pathlib.Path(__file__).resolve().parents[3] / "app"
+
+    # Este arquivo fica em backend/alembic/versions/. O pacote da aplicação é
+    # backend/app/. Usar parents[3] apontava para a raiz do checkout/container
+    # e fazia a guarda varrer também backend/alembic/, encontrando as próprias
+    # migrations que citam os nomes das colunas. Isso gerava falso positivo e
+    # bloqueava o Alembic antes de qualquer alteração. Restrinja a varredura ao
+    # pacote da aplicação, que é exatamente o escopo descrito nesta migration.
+    backend_root = pathlib.Path(__file__).resolve().parents[2]
+    appdir = backend_root / "app"
+    if not appdir.is_dir():
+        raise RuntimeError(
+            f"Guarda da migration 145 não encontrou o pacote da aplicação em {appdir}."
+        )
+
     pattern = re.compile(r"\b" + re.escape(coluna) + r"\b")
     for py in appdir.rglob("*.py"):
         if py.name.startswith(("test_", "_")):
