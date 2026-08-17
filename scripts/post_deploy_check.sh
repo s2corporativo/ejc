@@ -20,15 +20,27 @@ check_http_code() {
   echo "OK: $url -> $code"
 }
 
+check_container_running() {
+  local container="$1"
+  local running
+  running="$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true)"
+  [ "$running" = "true" ] || fail "$container ausente ou não está em execução"
+  echo "OK: $container em execução"
+}
+
 echo "== EJC post-deploy check =="
 echo "Dominio: ${DOMAIN}"
 
-docker ps --format '{{.Names}} {{.Status}}' | grep -E '^ejc_(backend|db|frontend) ' || fail "containers EJC ausentes"
+for container in ejc_backend ejc_db ejc_frontend ejc_worker ejc_redis; do
+  check_container_running "$container"
+done
 
 check_http_code "${LOCAL_FRONTEND}/" "200"
 check_http_code "${LOCAL_API}/api/health" "200"
+check_http_code "${LOCAL_API}/api/health/ready" "200"
 check_http_code "${BASE_URL}/" "200"
 check_http_code "${BASE_URL}/api/health" "200"
+check_http_code "${BASE_URL}/api/health/ready" "200"
 
 login_code="$(curl -k -sS -o /tmp/ejc_login_check.json -w "%{http_code}" \
   -H "Content-Type: application/json" \
