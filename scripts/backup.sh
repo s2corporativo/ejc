@@ -16,7 +16,13 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 2
 fi
 
-if docker ps --format '{{.Names}}' | grep -qx "$APP_CONTAINER"; then
+# `docker ps` também lista containers em restart loop. Nessa condição `docker
+# exec` é recusado e o backup pré-deploy ficava bloqueado justamente durante
+# recuperação de incidentes. Só usa exec quando o estado é efetivamente
+# `running`; qualquer outro estado cai para a imagem existente em container
+# efêmero, sem alterar o runtime defeituoso.
+BACKEND_STATE="$(docker inspect -f '{{.State.Status}}' "$APP_CONTAINER" 2>/dev/null || true)"
+if [ "$BACKEND_STATE" = "running" ]; then
   runner=(docker exec -i "$APP_CONTAINER" python -)
 else
   [ -d "$APP_DIR" ] || {
@@ -26,7 +32,7 @@ else
   cd "$APP_DIR"
   docker compose config >/dev/null
   runner=(docker compose run --rm --no-deps -T backend python -)
-  echo "[backup] Backend parado; usando imagem anterior em container efêmero." >&2
+  echo "[backup] Backend indisponível para exec (estado: ${BACKEND_STATE:-ausente}); usando imagem existente em container efêmero." >&2
 fi
 
 "${runner[@]}" <<'PY'

@@ -1,3 +1,5 @@
+FROM rclone/rclone:1.75.0 AS rclone_runtime
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -19,9 +21,14 @@ WORKDIR /app
 #                      in-container (scheduler.py, job 02h00) invoca. `libpq-dev`
 #                      traz só headers/libpq, NÃO o cliente — sem isto o backup
 #                      era no-op (pg_dump: command not found).
+#
+# rclone NÃO vem mais do apt do Debian: a versão disponível no runtime de
+# produção ficou defasada e deixou de autenticar no remote OneDrive, embora a
+# mesma configuração funcionasse com rclone atual. O binário Go é copiado da
+# imagem oficial e fixado em versão para build reproduzível.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       build-essential curl libpq-dev postgresql-client rclone \
+       build-essential curl libpq-dev postgresql-client \
        libmagic1 \
        poppler-utils \
        tesseract-ocr tesseract-ocr-por \
@@ -29,6 +36,9 @@ RUN apt-get update \
        shared-mime-info fonts-dejavu-core \
        antiword \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=rclone_runtime /usr/local/bin/rclone /usr/local/bin/rclone
+RUN rclone version | grep -q '^rclone v1\.75\.0$'
 
 COPY requirements.txt .
 RUN pip install --upgrade pip \
