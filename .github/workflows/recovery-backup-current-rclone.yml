@@ -1,0 +1,80 @@
+name: Recovery Backup Current Rclone
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/recovery-backup-current-rclone.yml
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Extrair rclone atual para uso somente neste ciclo
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull rclone/rclone:latest >/dev/null
+          tmp_container="ejc_rclone_extract_${GITHUB_RUN_ID}"
+          docker create --name "$tmp_container" rclone/rclone:latest version >/dev/null
+          docker cp "$tmp_container:/usr/local/bin/rclone" "$RUNNER_TEMP/rclone"
+          docker rm -f "$tmp_container" >/dev/null
+          chmod 0755 "$RUNNER_TEMP/rclone"
+          "$RUNNER_TEMP/rclone" version | head -n1
+
+      - name: Executar backup cifrado e exigir confirmação offsite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /opt/ejc
+          docker compose run --rm --no-deps -T \
+            -v "$RUNNER_TEMP/rclone:/usr/local/bin/rclone:ro" \
+            backend python - <<'PY'
+          from __future__ import annotations
+          import asyncio, json
+          from app.core.database import AsyncSessionLocal
+          from app.services import backup_execution_service, backup_service
+
+          def safe_artifact(item: dict) -> dict:
+              return {
+                  "nome": item.get("nome"),
+                  "bytes_original": item.get("bytes_original"),
+                  "bytes_cifrado": item.get("bytes_cifrado"),
+              }
+
+          async def main() -> int:
+              config = backup_service.configuracao_status()
+              print("backup_destination=" + str(config.get("destino") or "unknown"))
+              print("rclone_available=" + str(bool(config.get("rclone_disponivel"))).lower())
+              async with AsyncSessionLocal() as db:
+                  result = await backup_execution_service.executar_backup_exclusivo(
+                      db,
+                      origem="recovery_pre_migration",
+                      usuario_id=None,
+                      usuario_role="sistema",
+                  )
+              artifacts = [safe_artifact(x) for x in (result.get("artefatos") or [])]
+              names = [str(x.get("nome") or "") for x in artifacts]
+              has_db = any(x.endswith("_db.dump.enc") for x in names)
+              has_uploads = any(x.endswith("_uploads.tar.gz.enc") for x in names)
+              safe = {
+                  "ok": bool(result.get("ok")) and bool(result.get("offsite_ok")) and has_db and has_uploads,
+                  "status": result.get("status"),
+                  "offsite_ok": bool(result.get("offsite_ok")),
+                  "banco_cifrado": has_db,
+                  "uploads_cifrados": has_uploads,
+                  "artefatos": artifacts,
+                  "duracao_segundos": result.get("duracao_segundos"),
+              }
+              print(json.dumps(safe, ensure_ascii=False, sort_keys=True))
+              return 0 if safe["ok"] else 1
+
+          raise SystemExit(asyncio.run(main()))
+          PY
