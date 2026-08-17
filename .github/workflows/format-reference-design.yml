@@ -1,0 +1,51 @@
+name: Format Reference Design
+
+on:
+  push:
+    branches:
+      - feature/reference-design-systemwide-20260817
+    paths:
+      - frontend/src/main.tsx
+      - frontend/src/styles/ejc-reference-systemwide.css
+      - .github/workflows/format-reference-design.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          ref: feature/reference-design-systemwide-20260817
+
+      - name: Setup Node 22.22
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.22.2"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Format only reference design files
+        working-directory: frontend
+        run: npx prettier --write src/main.tsx src/styles/ejc-reference-systemwide.css
+
+      - name: Commit formatting when needed
+        run: |
+          if git diff --quiet; then
+            echo "Nenhuma alteração de formatação necessária."
+            exit 0
+          fi
+          git config user.name "EJC UI Formatter"
+          git config user.email "ui-formatter@ejc.local"
+          git add frontend/src/main.tsx frontend/src/styles/ejc-reference-systemwide.css
+          git commit -m "style(ui): aplicar Prettier ao design de referência"
+          git push origin HEAD:feature/reference-design-systemwide-20260817
