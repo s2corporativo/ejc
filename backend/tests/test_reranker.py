@@ -195,13 +195,17 @@ from unittest import mock
 
 @contextmanager
 def _simular_banco_indisponivel():
-    """Simula a falha da hidratação de governança (banco/DB indisponível)."""
-    from app.core.database import AsyncSessionLocal
+    """Simula a falha da hidratação de governança (banco/DB indisponível).
 
+    O patch deve atingir o objeto AsyncSessionLocal do módulo reranker
+    (rr), que é o usado de fato por ``_hidratar_governanca`` — patchar
+    ``app.core.database`` não garante efeito, pois o reranker mantém
+    referência própria ao objeto importado.
+    """
     def _explodir(*_args, **_kwargs):
         raise RuntimeError("banco indisponível (simulado)")
 
-    with mock.patch.object(AsyncSessionLocal, "__call__", _explodir):
+    with mock.patch.object(rr, "AsyncSessionLocal", _explodir):
         yield
 
 
