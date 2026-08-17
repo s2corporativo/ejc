@@ -40,11 +40,14 @@ def test_preflight_nomeia_falhas_e_valida_dependencias_do_mutex():
     assert "sudo -n true" in texto
 
 
-def test_env_de_producao_e_precondicao_read_only_0600():
+def test_env_de_producao_permanece_proprietario_root_0600_sem_exigir_leitura_do_runner():
     tx = TX_SCRIPT.read_text(encoding="utf-8")
-    assert '[ -r "$APP_DIR/.env" ]' in tx
-    assert 'stat -c %a "$APP_DIR/.env"' in tx
-    assert '"600"' in tx
+    assert tx.count('sudo -n test -r "$APP_DIR/.env"') == 2
+    assert tx.count("sudo -n stat -c '%u:%g:%a' \"$APP_DIR/.env\"") == 2
+    assert tx.count('= "0:0:600"') == 2
+    assert "root:root em modo 0600 antes do deploy" in tx
+    assert "root:root em modo 0600 após o rsync" in tx
+    assert '[ -r "$APP_DIR/.env" ]' not in tx
     assert 'sudo -n chown' not in tx
     assert 'sudo -n chmod 600 "$APP_DIR/.env"' not in tx
     assert "chmod 644" not in "\n".join(
