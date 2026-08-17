@@ -1,0 +1,130 @@
+name: Apply Backup Runtime Fix
+
+on:
+  push:
+    branches:
+      - fix/backup-rclone-runtime-20260817
+    paths:
+      - .github/workflows/apply-backup-runtime-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/backup-rclone-runtime-20260817
+
+      - name: Aplicar fallback de container e testes de regressão
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          backup = Path('scripts/backup.sh')
+          text = backup.read_text()
+          old = '''if docker ps --format '{{.Names}}' | grep -qx "$APP_CONTAINER"; then
+            runner=(docker exec -i "$APP_CONTAINER" python -)
+          else
+            [ -d "$APP_DIR" ] || {
+              echo "[backup] APP_DIR inexistente: $APP_DIR" >&2
+              exit 2
+            }
+            cd "$APP_DIR"
+            docker compose config >/dev/null
+            runner=(docker compose run --rm --no-deps -T backend python -)
+            echo "[backup] Backend parado; usando imagem anterior em container efêmero." >&2
+          fi'''.replace('          ', '')
+          new = '''# `docker ps` também lista containers em restart loop. Nessa condição `docker
+          # exec` é recusado e o backup pré-deploy ficava bloqueado justamente durante
+          # recuperação de incidentes. Só usa exec quando o estado é efetivamente
+          # `running`; qualquer outro estado cai para a imagem existente em container
+          # efêmero, sem alterar o runtime defeituoso.
+          BACKEND_STATE="$(docker inspect -f '{{.State.Status}}' "$APP_CONTAINER" 2>/dev/null || true)"
+          if [ "$BACKEND_STATE" = "running" ]; then
+            runner=(docker exec -i "$APP_CONTAINER" python -)
+          else
+            [ -d "$APP_DIR" ] || {
+              echo "[backup] APP_DIR inexistente: $APP_DIR" >&2
+              exit 2
+            }
+            cd "$APP_DIR"
+            docker compose config >/dev/null
+            runner=(docker compose run --rm --no-deps -T backend python -)
+            echo "[backup] Backend indisponível para exec (estado: ${BACKEND_STATE:-ausente}); usando imagem existente em container efêmero." >&2
+          fi'''.replace('          ', '')
+          if old not in text:
+              raise SystemExit('bloco esperado de scripts/backup.sh não encontrado')
+          backup.write_text(text.replace(old, new, 1))
+
+          test = Path('scripts/tests/test_backup_wrapper.sh')
+          t = test.read_text()
+          old_fake = '''if [ "${1:-}" = "ps" ]; then
+            if [ "${FAKE_BACKEND_RUNNING:-1}" = "1" ]; then
+              echo ejc_backend
+            fi
+            exit 0
+          fi'''.replace('          ', '')
+          new_fake = '''if [ "${1:-}" = "inspect" ] && [ "${2:-}" = "-f" ]; then
+            printf '%s\\n' "${FAKE_BACKEND_STATE:-running}"
+            exit 0
+          fi'''.replace('          ', '')
+          if old_fake not in t:
+              raise SystemExit('fake docker esperado não encontrado')
+          t = t.replace(old_fake, new_fake, 1)
+          t = t.replace(
+              'local expected="$1" fake_rc="$2" running="$3" expected_command="$4"',
+              'local expected="$1" fake_rc="$2" state="$3" expected_command="$4"',
+              1,
+          )
+          t = t.replace(
+              'FAKE_BACKEND_RUNNING="$running" \\\n',
+              'FAKE_BACKEND_STATE="$state" \\\n',
+              1,
+          )
+          t = t.replace(
+              "grep -q '^ps --format {{.Names}}$' \"$LOG\" || fail \"container não foi verificado\"",
+              "grep -q '^inspect -f {{.State.Status}} ejc_backend$' \"$LOG\" || fail \"estado do container não foi verificado\"",
+              1,
+          )
+          t = t.replace('run_case 0 0 1 ', 'run_case 0 0 running ', 1)
+          t = t.replace('run_case 1 1 1 ', 'run_case 1 1 running ', 1)
+          t = t.replace('run_case 0 0 0 ', 'run_case 0 0 restarting ', 1)
+          t = t.replace(
+              "grep -q 'Backend parado' \"$TMP/err\" || fail \"fallback não foi registrado\"",
+              "grep -q 'Backend indisponível para exec (estado: restarting)' \"$TMP/err\" || fail \"fallback de restart loop não foi registrado\"",
+              1,
+          )
+          marker = "bash -n \"$ROOT/scripts/backup.sh\" \"$ACTIVATOR\"\n"
+          addition = '''DOCKERFILE="$ROOT/backend/Dockerfile"
+          grep -q '^FROM rclone/rclone:1.75.0 AS rclone_runtime$' "$DOCKERFILE" || \\
+            fail "runtime não fixa a versão homologada do rclone"
+          grep -q '^COPY --from=rclone_runtime /usr/local/bin/rclone /usr/local/bin/rclone$' "$DOCKERFILE" || \\
+            fail "binário oficial do rclone não é copiado para o backend"
+          if grep -Eq 'postgresql-client[[:space:]]+rclone' "$DOCKERFILE"; then
+            fail "rclone voltou a depender do pacote apt defasado"
+          fi
+
+          '''.replace('          ', '')
+          if marker not in t:
+              raise SystemExit('marcador final do teste não encontrado')
+          t = t.replace(marker, addition + marker, 1)
+          test.write_text(t)
+          PY
+
+          bash scripts/tests/test_backup_wrapper.sh
+          bash -n scripts/backup.sh
+
+      - name: Commit da correção
+        shell: bash
+        run: |
+          git config user.name "EJC Recovery Fix"
+          git config user.email "recovery-fix@ejc.local"
+          git add scripts/backup.sh scripts/tests/test_backup_wrapper.sh
+          git commit -m "fix(backup): fallback seguro em restart loop"
+          git push origin HEAD:fix/backup-rclone-runtime-20260817
