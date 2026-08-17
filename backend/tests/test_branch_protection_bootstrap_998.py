@@ -212,6 +212,7 @@ def test_bootstrap_cria_ruleset_aditivo_sem_put_patch_delete(tmp_path):
     assert pull_request["required_approving_review_count"] >= 1
     assert pull_request["required_review_thread_resolution"] is True
     checks = rules["required_status_checks"]["parameters"]
+    assert checks["do_not_enforce_on_create"] is False
     assert checks["strict_required_status_checks_policy"] is True
     assert checks["required_status_checks"] == [
         {"context": context, "integration_id": INTEGRATION_ID} for context in CONTEXTS
@@ -268,6 +269,8 @@ def test_bootstrap_security_gate_usa_workflow_confiavel_e_contexto_bloqueante():
     governanca = GOVERNANCE_WORKFLOW.read_text(encoding="utf-8")
 
     assert "pull_request_target:" in workflow
+    assert "pull_request_review:" in workflow
+    assert "types: [submitted]" in workflow
     assert "types: [opened, synchronize, reopened, edited]" in workflow
     assert "actions/checkout" not in workflow
     assert "gh api --paginate" in workflow
@@ -292,5 +295,6 @@ def test_security_gate_rejeita_marcador_autodeclarado_e_vincula_revisao_ao_head(
         assert 'select(.user.login == "coderabbitai[bot]")' in src
         assert "select(.commit_id == $sha)" in src
         assert '.state == "APPROVED" or .state == "COMMENTED"' in src
-        assert 'test("Actionable comments posted:"; "i") | not' in src
+        assert 'Actionable comments posted:[[:space:]]*0' in src
+        assert 'test("Actionable comments posted:"; "i") | not' not in src
         assert "HEAD_SHA" in src
