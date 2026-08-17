@@ -85,7 +85,7 @@ python-docx==1.2.0
 fpdf2==2.7.9  # LEGADO: visual_law_pdf.py migrou para weasyprint (tema central); sem consumidores em app/ — remover em limpeza futura
 openpyxl==3.1.5
 xlrd==2.0.2                    # extração de texto de .xls legado (ocr_service)
-qrcode[pil]==7.4.2
+qrcode[pil]==8.2
 Pillow==12.3.0
 pillow-heif==1.4.0
 opencv-python-headless==4.11.0.86  # correção de perspectiva sem dependência GUI
