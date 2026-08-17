@@ -50,7 +50,6 @@ jobs:
 
           text = Path(sys.argv[1]).read_text(errors="replace")
           patterns = {
-              "traceback": r"Traceback \\\(most recent call last\\\)",
               "module_not_found": r"ModuleNotFoundError",
               "import_error": r"ImportError",
               "syntax_error": r"SyntaxError",
@@ -58,17 +57,32 @@ jobs:
               "db_operational_error": r"OperationalError",
               "db_undefined_table": r"UndefinedTable|relation .* does not exist",
               "db_undefined_column": r"UndefinedColumn|column .* does not exist",
-              "connection_refused": r"Connection refused|connection refused",
-              "permission_denied": r"Permission denied|permission denied",
+              "connection_refused": r"Connection refused",
+              "permission_denied": r"Permission denied",
               "missing_file": r"No such file or directory",
-              "alembic": r"alembic|Alembic",
+              "alembic": r"alembic",
               "oom": r"out of memory|OOMKilled|Killed process",
               "generic_exception": r"Exception|ERROR|CRITICAL",
           }
           print(f"log_bytes={len(text.encode(errors='ignore'))}")
           for name, pattern in patterns.items():
               print(f"fingerprint_{name}={len(re.findall(pattern, text, flags=re.I))}")
+
+          # Só emite identificadores de schema/revisão; nunca valores de linha,
+          # parâmetros SQL, e-mails, tokens ou conteúdo de cliente.
+          relations = set(re.findall(r'relation ["\']([A-Za-z0-9_.-]+)["\'] does not exist', text, re.I))
+          columns = set(re.findall(r'column ["\']?([A-Za-z_][A-Za-z0-9_.]*)["\']? does not exist', text, re.I))
+          revisions = set(re.findall(r'(?:revision|version_num)[^A-Za-z0-9_]+([0-9]{3}[A-Za-z0-9_-]{2,})', text, re.I))
+          print("missing_relations=" + ",".join(sorted(relations)) if relations else "missing_relations=none")
+          print("missing_columns=" + ",".join(sorted(columns)) if columns else "missing_columns=none")
+          print("referenced_revisions=" + ",".join(sorted(revisions)) if revisions else "referenced_revisions=none")
           PY
+
+      - name: Estado Alembic e objetos-chave sem dados
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec ejc_db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atq -c "SELECT version_num FROM alembic_version ORDER BY version_num"' | sed 's/^/alembic_version=/'
 
       - name: Dependências de infraestrutura visíveis
         shell: bash
