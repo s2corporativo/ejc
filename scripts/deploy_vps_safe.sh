@@ -170,12 +170,12 @@ BACKUP_SAIDA=""
 if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
   log "Backup pré-deploy concluído."
-if printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": false'; then
+if printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*false'; then
   log "ERRO CRÍTICO: backup retornou offsite_ok=false; retenção recuperável fora da VPS não foi comprovada."
   log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
   exit 1
 fi
-if ! printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": true'; then
+if ! printf '%s' "$BACKUP_SAIDA" | grep -Eq '"offsite_ok"[[:space:]]*:[[:space:]]*true'; then
   log "ERRO CRÍTICO: saída do backup não contém confirmação explícita offsite_ok=true."
   log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
   exit 1
