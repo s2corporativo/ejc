@@ -170,15 +170,16 @@ BACKUP_SAIDA=""
 if BACKUP_SAIDA="$(bash scripts/backup.sh)"; then
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
   log "Backup pré-deploy concluído."
-  if printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": false'; then
-    BACKUP_OFFSITE_DESTINO="$(printf '%s' "$BACKUP_SAIDA" | sed -n 's/.*"destino": "\([^"]*\)".*/\1/p')"
-    BACKUP_OFFSITE_ERRO="$(printf '%s' "$BACKUP_SAIDA" | sed -n 's/.*"offsite_erro": "\([^"]*\)".*/\1/p')"
-    AVISO_OFFSITE="AVISO GRAVE: backup offsite falhou (destino ${BACKUP_OFFSITE_DESTINO:-desconhecido}): ${BACKUP_OFFSITE_ERRO:-erro não informado} — deploy prossegue com prova local; corrija o destino offsite"
-    log "$AVISO_OFFSITE"
-    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-      printf '> :warning: %s\n' "$AVISO_OFFSITE" >>"$GITHUB_STEP_SUMMARY"
-    fi
-  fi
+if printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": false'; then
+  log "ERRO CRÍTICO: backup retornou offsite_ok=false; retenção recuperável fora da VPS não foi comprovada."
+  log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
+  exit 1
+fi
+if ! printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": true'; then
+  log "ERRO CRÍTICO: saída do backup não contém confirmação explícita offsite_ok=true."
+  log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
+  exit 1
+fi
 else
   [ -n "$BACKUP_SAIDA" ] && printf '%s\n' "$BACKUP_SAIDA"
   if [ "$REQUIRE_PREDEPLOY_BACKUP" = "1" ]; then
