@@ -36,11 +36,11 @@ jobs:
       - name: Arquivos alterados no PR
         id: diff
         env:
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         shell: bash
         run: |
-          git fetch --quiet origin "$BASE_REF"
-          git diff --name-only "origin/$BASE_REF...HEAD" > "$RUNNER_TEMP/alterados.txt"
+          git cat-file -e "$BASE_SHA^{commit}"
+          git diff --name-only "$BASE_SHA...HEAD" > "$RUNNER_TEMP/alterados.txt"
           echo "--- arquivos alterados ---"
           cat "$RUNNER_TEMP/alterados.txt"
 
