@@ -1,0 +1,44 @@
+name: GDrive Worker Probe
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/gdrive-worker-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Provar credencial existente no worker e acesso Drive sem escrita
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec -i \
+            -e BACKUP_DESTINO=gdrive \
+            -e BACKUP_GOOGLE_DRIVE_AUTH_MODE=service_account \
+            -e BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE=/app/secrets/ejc-backup-drive.json \
+            ejc_worker python - <<'PY'
+          import os
+          from app.core.config import get_settings
+          from app.services import backup_drive_auth
+
+          path = os.environ.get("BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "")
+          print("worker_mounted_service_account_exists=" + str(os.path.isfile(path)).lower())
+          print("worker_mounted_service_account_readable=" + str(os.path.isfile(path) and os.access(path, os.R_OK)).lower())
+          if not os.path.isfile(path):
+              raise SystemExit("service account não encontrada no mount do worker")
+          folder = (get_settings().BACKUP_DRIVE_FOLDER_ID or "").strip()
+          if not folder:
+              raise SystemExit("pasta Drive de backup ausente")
+          service = backup_drive_auth.build_client()
+          meta = service.files().get(fileId=folder, fields="id", supportsAllDrives=True).execute()
+          print("worker_gdrive_folder_read_ok=" + str(bool(meta.get("id"))).lower())
+          PY
