@@ -1,5 +1,6 @@
 name: Fix Deploy Offsite JSON Match
 
+# Workflow temporário: remove-se após aplicar e validar o patch.
 on:
   push:
     branches:
