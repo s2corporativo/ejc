@@ -26,8 +26,8 @@ command -v rsync >/dev/null 2>&1 || fail "rsync ausente"
 command -v sudo >/dev/null 2>&1 || fail "sudo ausente"
 [ -f "$ROOT/scripts/deploy_lock.sh" ] || fail "scripts/deploy_lock.sh ausente no checkout aprovado"
 sudo -n test -r "$APP_DIR/.env" || fail "$APP_DIR/.env precisa permanecer legível por root via sudo antes do deploy"
-[ "$(sudo -n stat -c %a "$APP_DIR/.env" 2>/dev/null)" = "600" ] \
-  || fail "$APP_DIR/.env deve estar em modo 0600 antes do deploy"
+[ "$(sudo -n stat -c '%u:%g:%a' "$APP_DIR/.env" 2>/dev/null)" = "0:0:600" ] \
+  || fail "$APP_DIR/.env deve permanecer root:root em modo 0600 antes do deploy"
 
 runner_canon="$(canon "$RUNNER_TEMP_SAFE")"
 state_canon="$(canon "$STATE_FILE")"
@@ -78,7 +78,8 @@ write_phase sync_completed
 # O rsync exclui o .env. Não alteramos owner/mode durante a transação: o
 # segredo continua root-owned 0600 e só é validado por sudo não interativo.
 sudo -n test -r "$APP_DIR/.env" || fail "$APP_DIR/.env deixou de ser legível por root após o rsync"
-[ "$(sudo -n stat -c %a "$APP_DIR/.env")" = "600" ] || fail "$APP_DIR/.env perdeu o modo 0600 após o rsync"
+[ "$(sudo -n stat -c '%u:%g:%a' "$APP_DIR/.env" 2>/dev/null)" = "0:0:600" ] \
+  || fail "$APP_DIR/.env deve permanecer root:root em modo 0600 após o rsync"
 
 cd "$APP_DIR"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}" \
