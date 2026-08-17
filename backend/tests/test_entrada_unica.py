@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
-from app.models.case import Case, CaseMovimento, CaseStatus
+from app.models.case import Case, CaseMovimento, CaseParte, CaseStatus
 from app.models.client import Client
 from app.models.deadline import Deadline
 from app.models.document import DocConfidencialidade, Document
@@ -130,6 +130,7 @@ _TABELAS = [
     User.__table__, Client.__table__, Case.__table__, CaseMovimento.__table__,
     Document.__table__, DocumentIntakeBatch.__table__,
     DocumentIntakeItem.__table__, Deadline.__table__,
+    CaseParte.__table__,
 ]
 
 
