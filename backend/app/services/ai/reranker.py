@@ -150,7 +150,10 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
     """Carrega metadados dos documentos em uma única consulta.
 
     O SQL de retrieval permanece enxuto; a governança é anexada após a seleção do
-    pool. Em caso de indisponibilidade do banco, devolve os candidatos originais.
+    pool. Em caso de indisponibilidade do banco, aplica o fail-closed (#985-G):
+    norma sem governança verificada não fundamenta decisão atual — apenas
+    candidatos não-normativos (jurisprudência, doutrina, peças internas) são
+    mantidos, para não zerar o ranking por completo.
     """
     ids = {str(item.get("doc_id")) for item in candidatos if item.get("doc_id")}
     if not ids:
@@ -191,13 +194,17 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
                     "revogada",
                 },
             }
-            # Uma norma REVOGADA cadastrada como versão atual não pode chegar ao
-            # modelo. Uma versão histórica permanece disponível quando o chamador
-            # pediu explicitamente incluir_historico (vigente_no_ejc=False).
-            if status == "revogada" and vigente:
+            # Fail-closed (issue #985-G): uma norma sem registro verificável no
+            # banco (vigência não verificada) não pode fundamentar decisão atual;
+            # uma norma REVOGADA como versão atual também não. Uma versão
+            # histórica permanece disponível apenas quando o chamador pediu
+            # explicitamente incluir_historico (vigente_no_ejc=False).
+            if status in {"vigencia_nao_verificada", "revogada", "suspensa"} and vigente:
                 logger.info(
-                    "RAG excluiu norma revogada da fundamentação atual: doc_id=%s",
+                    "RAG excluiu norma não verificada/revogada/suspensa da "
+                    "fundamentação atual: doc_id=%s status=%s",
                     item.get("doc_id"),
+                    status,
                 )
                 continue
             hydrated.append(item)
