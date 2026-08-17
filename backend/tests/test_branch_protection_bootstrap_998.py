@@ -6,13 +6,13 @@ import subprocess
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "scripts" / "governanca" / "branch-protection-bootstrap.sh"
-BOOTSTRAP_WORKFLOW = ROOT / ".github" / "workflows" / "bootstrap-protection-governance.yml"
-GOVERNANCE_WORKFLOW = ROOT / ".github" / "workflows" / "governanca-v2.yml"
-RULESET_NAME = "EJC main protection bootstrap #998"
-INTEGRATION_ID = 15368
-CONTEXTS = [
+RAIZ = Path(__file__).resolve().parents[2]
+SCRIPT_BOOTSTRAP = RAIZ / "scripts" / "governanca" / "branch-protection-bootstrap.sh"
+FLUXO_BOOTSTRAP = RAIZ / ".github" / "workflows" / "bootstrap-protection-governance.yml"
+FLUXO_GOVERNANCA = RAIZ / ".github" / "workflows" / "governanca-v2.yml"
+NOME_CONJUNTO_REGRAS = "EJC main protection bootstrap #998"
+ID_INTEGRACAO = 15368
+CONTEXTOS = [
     "Backend — suíte completa + schema/RAG (Postgres pgvector)",
     "Eval — smoke dos gold sets (offline, bloqueante)",
     "Frontend — testes + typecheck + build",
@@ -22,10 +22,10 @@ CONTEXTS = [
 ]
 
 
-def _expected_ruleset() -> dict:
+def _conjunto_regras_esperado() -> dict:
     return {
         "id": 998,
-        "name": RULESET_NAME,
+        "name": NOME_CONJUNTO_REGRAS,
         "target": "branch",
         "enforcement": "active",
         "bypass_actors": [],
@@ -50,8 +50,8 @@ def _expected_ruleset() -> dict:
                 "parameters": {
                     "do_not_enforce_on_create": False,
                     "required_status_checks": [
-                        {"context": context, "integration_id": INTEGRATION_ID}
-                        for context in CONTEXTS
+                        {"context": contexto, "integration_id": ID_INTEGRACAO}
+                        for contexto in CONTEXTOS
                     ],
                     "strict_required_status_checks_policy": True,
                 },
@@ -60,8 +60,8 @@ def _expected_ruleset() -> dict:
     }
 
 
-def _write_fake_gh(tmp_path: Path) -> None:
-    gh = tmp_path / "gh"
+def _escrever_gh_falso(caminho_temporario: Path) -> None:
+    gh = caminho_temporario / "gh"
     gh.write_text(
         r'''#!/usr/bin/env python3
 import json
@@ -69,60 +69,60 @@ import os
 import pathlib
 import sys
 
-args = sys.argv[1:]
-scenario = os.environ.get("FAKE_GH_SCENARIO", "success")
-log = pathlib.Path(os.environ["FAKE_GH_LOG"])
-state = pathlib.Path(os.environ["FAKE_GH_STATE"])
-payload_file = pathlib.Path(os.environ["FAKE_GH_PAYLOAD"])
-expected = json.loads(os.environ["FAKE_GH_RULESET"])
+argumentos = sys.argv[1:]
+cenario = os.environ.get("FAKE_GH_SCENARIO", "success")
+registro = pathlib.Path(os.environ["FAKE_GH_LOG"])
+estado = pathlib.Path(os.environ["FAKE_GH_STATE"])
+arquivo_payload = pathlib.Path(os.environ["FAKE_GH_PAYLOAD"])
+esperado = json.loads(os.environ["FAKE_GH_RULESET"])
 
-with log.open("a", encoding="utf-8") as fh:
-    fh.write(" ".join(args) + "\n")
+with registro.open("a", encoding="utf-8") as arquivo:
+    arquivo.write(" ".join(argumentos) + "\n")
 
-if args[:2] == ["auth", "status"]:
+if argumentos[:2] == ["auth", "status"]:
     raise SystemExit(0)
-if not args or args[0] != "api":
+if not argumentos or argumentos[0] != "api":
     raise SystemExit(2)
 
-endpoint = next((arg for arg in args[1:] if arg.startswith("repos/")), "")
-method = "GET"
-if "-X" in args:
-    method = args[args.index("-X") + 1]
+endpoint = next((argumento for argumento in argumentos[1:] if argumento.startswith("repos/")), "")
+metodo = "GET"
+if "-X" in argumentos:
+    metodo = argumentos[argumentos.index("-X") + 1]
 
 if endpoint.endswith("/branches/main"):
     print('{"name":"main","protected":false}')
     raise SystemExit(0)
 
 if "/rulesets?" in endpoint:
-    exists = state.exists() and state.read_text(encoding="utf-8") == "created"
-    if scenario.startswith("existing") or exists:
-        print(json.dumps([{"id": 998, "name": expected["name"], "enforcement": "active"}]))
-    elif scenario == "duplicate":
+    existe = estado.exists() and estado.read_text(encoding="utf-8") == "created"
+    if cenario.startswith("existing") or existe:
+        print(json.dumps([{"id": 998, "name": esperado["name"], "enforcement": "active"}]))
+    elif cenario == "duplicate":
         print(json.dumps([
-            {"id": 998, "name": expected["name"], "enforcement": "active"},
-            {"id": 999, "name": expected["name"], "enforcement": "active"},
+            {"id": 998, "name": esperado["name"], "enforcement": "active"},
+            {"id": 999, "name": esperado["name"], "enforcement": "active"},
         ]))
     else:
         print("[]")
     raise SystemExit(0)
 
 if endpoint.endswith("/rulesets/998"):
-    current = expected
-    if scenario == "existing_divergent":
-        current = json.loads(json.dumps(expected))
-        current["rules"] = [rule for rule in current["rules"] if rule["type"] != "pull_request"]
-    print(json.dumps(current))
+    atual = esperado
+    if cenario == "existing_divergent":
+        atual = json.loads(json.dumps(esperado))
+        atual["rules"] = [regra for regra in atual["rules"] if regra["type"] != "pull_request"]
+    print(json.dumps(atual))
     raise SystemExit(0)
 
-if endpoint.endswith("/rulesets") and method == "POST":
+if endpoint.endswith("/rulesets") and metodo == "POST":
     payload = sys.stdin.read()
-    payload_file.write_text(payload, encoding="utf-8")
-    if scenario == "post_rejected":
+    arquivo_payload.write_text(payload, encoding="utf-8")
+    if cenario == "post_rejected":
         raise SystemExit(1)
-    state.write_text("created", encoding="utf-8")
-    if scenario == "transport_after_apply":
+    estado.write_text("created", encoding="utf-8")
+    if cenario == "transport_after_apply":
         raise SystemExit(1)
-    print(json.dumps(expected))
+    print(json.dumps(esperado))
     raise SystemExit(0)
 
 raise SystemExit(3)
@@ -132,169 +132,216 @@ raise SystemExit(3)
     gh.chmod(0o755)
 
 
-def _run(
-    tmp_path: Path,
+def _executar(
+    caminho_temporario: Path,
     *,
-    scenario: str = "success",
-    authorization: str = "998",
-    repo: str = "s2corporativo/ejc",
-    branch: str = "main",
+    cenario: str = "success",
+    autorizacao: str = "998",
+    repositorio: str = "s2corporativo/ejc",
+    ramo: str = "main",
 ):
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    _write_fake_gh(tmp_path)
-    env = os.environ.copy()
-    env.update(
+    caminho_temporario.mkdir(parents=True, exist_ok=True)
+    _escrever_gh_falso(caminho_temporario)
+    ambiente = os.environ.copy()
+    ambiente.update(
         {
-            "PATH": f"{tmp_path}:{env['PATH']}",
-            "FAKE_GH_SCENARIO": scenario,
-            "FAKE_GH_LOG": str(tmp_path / "log"),
-            "FAKE_GH_STATE": str(tmp_path / "state"),
-            "FAKE_GH_PAYLOAD": str(tmp_path / "payload"),
-            "FAKE_GH_RULESET": json.dumps(_expected_ruleset()),
-            "EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION": authorization,
-            "EJC_REPO": repo,
-            "EJC_BRANCH": branch,
+            "PATH": f"{caminho_temporario}:{ambiente['PATH']}",
+            "FAKE_GH_SCENARIO": cenario,
+            "FAKE_GH_LOG": str(caminho_temporario / "log"),
+            "FAKE_GH_STATE": str(caminho_temporario / "state"),
+            "FAKE_GH_PAYLOAD": str(caminho_temporario / "payload"),
+            "FAKE_GH_RULESET": json.dumps(_conjunto_regras_esperado()),
+            "EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION": autorizacao,
+            "EJC_REPO": repositorio,
+            "EJC_BRANCH": ramo,
         }
     )
-    result = subprocess.run(
-        ["bash", str(SCRIPT)],
-        cwd=ROOT,
-        env=env,
+    resultado = subprocess.run(
+        ["bash", str(SCRIPT_BOOTSTRAP)],
+        cwd=RAIZ,
+        env=ambiente,
         text=True,
         capture_output=True,
         check=False,
     )
-    log_path = tmp_path / "log"
-    log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
-    return result, log
+    caminho_registro = caminho_temporario / "log"
+    registro = caminho_registro.read_text(encoding="utf-8") if caminho_registro.exists() else ""
+    return resultado, registro
 
 
-def test_bootstrap_exige_autorizacao_repo_e_main(tmp_path):
-    result, log = _run(tmp_path / "auth", authorization="")
-    assert result.returncode != 0
-    assert "exige EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION=998" in result.stderr
-    assert "-X POST" not in log
+def _extrair_blocos_run(conteudo: str) -> list[str]:
+    linhas = conteudo.splitlines()
+    blocos: list[str] = []
+    indice = 0
+    while indice < len(linhas):
+        linha = linhas[indice]
+        if linha.lstrip() == "run: |":
+            recuo_run = len(linha) - len(linha.lstrip())
+            indice += 1
+            linhas_bloco: list[str] = []
+            while indice < len(linhas):
+                candidata = linhas[indice]
+                if candidata.strip():
+                    recuo_candidata = len(candidata) - len(candidata.lstrip())
+                    if recuo_candidata <= recuo_run:
+                        break
+                linhas_bloco.append(candidata)
+                indice += 1
+            recuos = [
+                len(linha_bloco) - len(linha_bloco.lstrip())
+                for linha_bloco in linhas_bloco
+                if linha_bloco.strip()
+            ]
+            recuo_conteudo = min(recuos) if recuos else recuo_run + 2
+            blocos.append("\n".join(linha_bloco[recuo_conteudo:] for linha_bloco in linhas_bloco))
+            continue
+        indice += 1
+    return blocos
 
-    result, log = _run(tmp_path / "repo", repo="someone/another-repo")
-    assert result.returncode != 0
-    assert "bootstrap autorizado somente para s2corporativo/ejc" in result.stderr
-    assert "-X POST" not in log
 
-    result, log = _run(tmp_path / "branch", branch="feature")
-    assert result.returncode != 0
-    assert "bootstrap autorizado somente para main" in result.stderr
-    assert "-X POST" not in log
+def _validar_sintaxe_bash_dos_blocos_run(conteudo: str) -> None:
+    blocos = _extrair_blocos_run(conteudo)
+    assert blocos, "workflow sem blocos run: | para validar"
+    for bloco in blocos:
+        resultado = subprocess.run(
+            ["bash", "-n"],
+            input=bloco,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert resultado.returncode == 0, resultado.stderr
 
 
-def test_bootstrap_cria_ruleset_aditivo_sem_put_patch_delete(tmp_path):
-    result, log = _run(tmp_path)
-    assert result.returncode == 0, result.stderr
-    assert "-X POST repos/s2corporativo/ejc/rulesets" in log
-    assert "-X PUT" not in log
-    assert "-X PATCH" not in log
-    assert "-X DELETE" not in log
+def test_bootstrap_exige_autorizacao_repositorio_e_main(tmp_path):
+    resultado, registro = _executar(tmp_path / "auth", autorizacao="")
+    assert resultado.returncode != 0
+    assert "exige EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION=998" in resultado.stderr
+    assert "-X POST" not in registro
+
+    resultado, registro = _executar(tmp_path / "repo", repositorio="someone/another-repo")
+    assert resultado.returncode != 0
+    assert "bootstrap autorizado somente para s2corporativo/ejc" in resultado.stderr
+    assert "-X POST" not in registro
+
+    resultado, registro = _executar(tmp_path / "branch", ramo="feature")
+    assert resultado.returncode != 0
+    assert "bootstrap autorizado somente para main" in resultado.stderr
+    assert "-X POST" not in registro
+
+
+def test_bootstrap_cria_conjunto_regras_aditivo_sem_put_patch_delete(tmp_path):
+    resultado, registro = _executar(tmp_path)
+    assert resultado.returncode == 0, resultado.stderr
+    assert "-X POST repos/s2corporativo/ejc/rulesets" in registro
+    assert "-X PUT" not in registro
+    assert "-X PATCH" not in registro
+    assert "-X DELETE" not in registro
 
     payload = json.loads((tmp_path / "payload").read_text(encoding="utf-8"))
-    assert payload["name"] == RULESET_NAME
+    assert payload["name"] == NOME_CONJUNTO_REGRAS
     assert payload["enforcement"] == "active"
     assert payload["bypass_actors"] == []
     assert payload["conditions"]["ref_name"] == {
         "include": ["refs/heads/main"],
         "exclude": [],
     }
-    rules = {rule["type"]: rule for rule in payload["rules"]}
-    assert {"deletion", "non_fast_forward", "required_linear_history", "pull_request", "required_status_checks"} == set(rules)
-    pull_request = rules["pull_request"]["parameters"]
-    assert sorted(pull_request["allowed_merge_methods"]) == ["rebase", "squash"]
-    assert pull_request["dismiss_stale_reviews_on_push"] is True
-    assert pull_request["require_code_owner_review"] is True
-    assert pull_request["require_last_push_approval"] is True
-    assert pull_request["required_approving_review_count"] >= 1
-    assert pull_request["required_review_thread_resolution"] is True
-    checks = rules["required_status_checks"]["parameters"]
-    assert checks["do_not_enforce_on_create"] is False
-    assert checks["strict_required_status_checks_policy"] is True
-    assert checks["required_status_checks"] == [
-        {"context": context, "integration_id": INTEGRATION_ID} for context in CONTEXTS
+    regras = {regra["type"]: regra for regra in payload["rules"]}
+    assert {"deletion", "non_fast_forward", "required_linear_history", "pull_request", "required_status_checks"} == set(regras)
+    regra_pull_request = regras["pull_request"]["parameters"]
+    assert sorted(regra_pull_request["allowed_merge_methods"]) == ["rebase", "squash"]
+    assert regra_pull_request["dismiss_stale_reviews_on_push"] is True
+    assert regra_pull_request["require_code_owner_review"] is True
+    assert regra_pull_request["require_last_push_approval"] is True
+    assert regra_pull_request["required_approving_review_count"] >= 1
+    assert regra_pull_request["required_review_thread_resolution"] is True
+    verificacoes = regras["required_status_checks"]["parameters"]
+    assert verificacoes["do_not_enforce_on_create"] is False
+    assert verificacoes["strict_required_status_checks_policy"] is True
+    assert verificacoes["required_status_checks"] == [
+        {"context": contexto, "integration_id": ID_INTEGRACAO} for contexto in CONTEXTOS
     ]
 
 
-def test_bootstrap_e_idempotente_e_recusa_ruleset_divergente(tmp_path):
-    result, log = _run(tmp_path / "ok", scenario="existing")
-    assert result.returncode == 0, result.stderr
-    assert "já estava ativo e íntegro" in result.stdout
-    assert "-X POST" not in log
+def test_bootstrap_e_idempotente_e_recusa_conjunto_regras_divergente(tmp_path):
+    resultado, registro = _executar(tmp_path / "ok", cenario="existing")
+    assert resultado.returncode == 0, resultado.stderr
+    assert "já estava ativo e íntegro" in resultado.stdout
+    assert "-X POST" not in registro
 
-    result, log = _run(tmp_path / "bad", scenario="existing_divergent")
-    assert result.returncode != 0
-    assert "diverge do baseline" in result.stderr
-    assert "-X POST" not in log
-
-
-def test_bootstrap_falha_fechado_em_nome_canônico_duplicado(tmp_path):
-    result, log = _run(tmp_path, scenario="duplicate")
-    assert result.returncode != 0
-    assert "mais de um ruleset com nome canônico" in result.stderr
-    assert "-X POST" not in log
+    resultado, registro = _executar(tmp_path / "bad", cenario="existing_divergent")
+    assert resultado.returncode != 0
+    assert "diverge do baseline" in resultado.stderr
+    assert "-X POST" not in registro
 
 
-def test_bootstrap_reconcilia_falha_de_transporte_apos_criacao(tmp_path):
-    result, log = _run(tmp_path, scenario="transport_after_apply")
-    assert result.returncode == 0, result.stderr
-    assert "POST não retornou resposta confiável" in result.stderr
-    assert "-X POST" in log
-    assert "rulesets/998" in log
+def test_bootstrap_falha_fechado_em_nome_canonico_duplicado(tmp_path):
+    resultado, registro = _executar(tmp_path, cenario="duplicate")
+    assert resultado.returncode != 0
+    assert "mais de um ruleset com nome canônico" in resultado.stderr
+    assert "-X POST" not in registro
+
+
+def test_bootstrap_reconcilia_falha_transporte_apos_criacao(tmp_path):
+    resultado, registro = _executar(tmp_path, cenario="transport_after_apply")
+    assert resultado.returncode == 0, resultado.stderr
+    assert "POST não retornou resposta confiável" in resultado.stderr
+    assert "-X POST" in registro
+    assert "rulesets/998" in registro
 
 
 def test_bootstrap_post_rejeitado_falha_fechado_sem_estado(tmp_path):
-    result, log = _run(tmp_path, scenario="post_rejected")
-    assert result.returncode != 0
-    assert "POST não retornou resposta confiável" in result.stderr
-    assert "esperado exatamente um ruleset canônico após bootstrap; encontrados 0" in result.stderr
-    assert "-X POST" in log
+    resultado, registro = _executar(tmp_path, cenario="post_rejected")
+    assert resultado.returncode != 0
+    assert "POST não retornou resposta confiável" in resultado.stderr
+    assert "esperado exatamente um ruleset canônico após bootstrap; encontrados 0" in resultado.stderr
+    assert "-X POST" in registro
     assert not (tmp_path / "state").exists()
 
 
-def test_bootstrap_nao_tem_mutacao_destrutiva_de_branch_protection():
-    src = SCRIPT.read_text(encoding="utf-8")
-    assert "branches/$BRANCH/protection" not in src
-    assert "-X PUT" not in src
-    assert "-X PATCH" not in src
-    assert "-X DELETE" not in src
+def test_bootstrap_nao_tem_mutacao_destrutiva_protecao_branch():
+    fonte = SCRIPT_BOOTSTRAP.read_text(encoding="utf-8")
+    assert "branches/$BRANCH/protection" not in fonte
+    assert "-X PUT" not in fonte
+    assert "-X PATCH" not in fonte
+    assert "-X DELETE" not in fonte
 
 
 def test_bootstrap_security_gate_usa_workflow_confiavel_e_contexto_bloqueante():
-    workflow = BOOTSTRAP_WORKFLOW.read_text(encoding="utf-8")
-    script = SCRIPT.read_text(encoding="utf-8")
-    governanca = GOVERNANCE_WORKFLOW.read_text(encoding="utf-8")
+    fluxo_bootstrap = FLUXO_BOOTSTRAP.read_text(encoding="utf-8")
+    script = SCRIPT_BOOTSTRAP.read_text(encoding="utf-8")
+    governanca = FLUXO_GOVERNANCA.read_text(encoding="utf-8")
 
-    assert "pull_request_target:" in workflow
-    assert "pull_request_review:" in workflow
-    assert "types: [submitted]" in workflow
-    assert "types: [opened, synchronize, reopened, edited]" in workflow
-    assert "actions/checkout" not in workflow
-    assert "gh api --paginate" in workflow
-    assert "Bootstrap protection — security auditor" in workflow
+    assert "pull_request_target:" in fluxo_bootstrap
+    assert "pull_request_review:" in fluxo_bootstrap
+    assert "types: [submitted]" in fluxo_bootstrap
+    assert "types: [opened, synchronize, reopened, edited]" in fluxo_bootstrap
+    assert "actions/checkout" not in fluxo_bootstrap
+    assert "gh api --paginate" in fluxo_bootstrap
+    assert "Bootstrap protection — security auditor" in fluxo_bootstrap
     assert "Bootstrap protection — security auditor" in script
-    assert "scripts/governanca/branch-protection-bootstrap.sh" in workflow
-    assert ".github/workflows/bootstrap-protection-governance.yml" in workflow
-    assert ".github/workflows/governanca-v2.yml" in workflow
+    assert "scripts/governanca/branch-protection-bootstrap.sh" in fluxo_bootstrap
+    assert ".github/workflows/bootstrap-protection-governance.yml" in fluxo_bootstrap
+    assert ".github/workflows/governanca-v2.yml" in fluxo_bootstrap
     assert "name: Governança — travas de PR" in governanca
     assert "types: [opened, synchronize, reopened, edited]" in governanca
     assert "scripts/governanca/branch-protection-bootstrap\\.sh" in governanca
 
+    _validar_sintaxe_bash_dos_blocos_run(fluxo_bootstrap)
+    _validar_sintaxe_bash_dos_blocos_run(governanca)
+
 
 def test_security_gate_rejeita_marcador_autodeclarado_e_vincula_revisao_ao_head():
-    workflow = BOOTSTRAP_WORKFLOW.read_text(encoding="utf-8")
-    governanca = GOVERNANCE_WORKFLOW.read_text(encoding="utf-8")
+    fluxo_bootstrap = FLUXO_BOOTSTRAP.read_text(encoding="utf-8")
+    governanca = FLUXO_GOVERNANCA.read_text(encoding="utf-8")
 
-    for src in (workflow, governanca):
-        assert "security-auditor: executado" not in src
-        assert "pulls/$PR_NUMBER/reviews?per_page=100" in src
-        assert "| jq -s 'add'" in src
-        assert 'select(.user.login == "coderabbitai[bot]")' in src
-        assert "select(.commit_id == $sha)" in src
-        assert '.state == "APPROVED" or .state == "COMMENTED"' in src
-        assert 'Actionable comments posted:[[:space:]]*0' in src
-        assert 'test("Actionable comments posted:"; "i") | not' not in src
-        assert "HEAD_SHA" in src
+    for fonte in (fluxo_bootstrap, governanca):
+        assert "security-auditor: executado" not in fonte
+        assert "pulls/$PR_NUMBER/reviews?per_page=100" in fonte
+        assert "| jq -s 'add'" in fonte
+        assert 'select(.user.login == "coderabbitai[bot]")' in fonte
+        assert "select(.commit_id == $sha)" in fonte
+        assert '.state == "APPROVED" or .state == "COMMENTED"' in fonte
+        assert 'Actionable comments posted:[[:space:]]*0' in fonte
+        assert 'test("Actionable comments posted:"; "i") | not' not in fonte
+        assert "HEAD_SHA" in fonte
