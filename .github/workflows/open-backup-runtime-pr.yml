@@ -1,0 +1,48 @@
+name: Open Backup Runtime PR
+
+on:
+  push:
+    branches:
+      - fix/backup-rclone-runtime-20260817
+    paths:
+      - .github/workflows/open-backup-runtime-pr.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Abrir PR se ainda não existir
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head fix/backup-rclone-runtime-20260817 --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            echo "pr_number=$existing"
+            exit 0
+          fi
+          gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --head fix/backup-rclone-runtime-20260817 \
+            --title 'fix(backup): corrigir restart loop e atualizar rclone do runtime' \
+            --body-file - <<'EOF'
+          ## Diagnóstico confirmado
+          O deploy do design foi bloqueado pelo gate de continuidade. Em produção foi confirmado que o wrapper tentava `docker exec` com o backend em restart loop e que o rclone do pacote apt estava defasado. A configuração offsite existente foi validada com rclone 1.75.0 e backup cifrado real com `offsite_ok=true`.
+
+          ## Correções
+          - `docker exec` somente com backend em estado `running`;
+          - fallback para container efêmero quando backend está restarting/parado;
+          - rclone 1.75.0 pinado a partir da imagem oficial no Dockerfile;
+          - teste de regressão para restart loop e versão do rclone;
+          - documentação operacional do incidente.
+
+          ## Segurança
+          Sem credenciais, `.env`, migration, RBAC, autenticação ou alteração de dados. Backup continua fail-closed com cifragem e retenção offsite obrigatórias. Rollback por reversão do PR.
+          EOF
