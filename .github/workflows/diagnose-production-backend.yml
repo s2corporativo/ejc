@@ -29,6 +29,7 @@ jobs:
           echo "container=ejc_backend"
           docker ps -a --filter name='^/ejc_backend$' --format 'status={{.Status}} image={{.Image}} names={{.Names}}'
           docker inspect ejc_backend --format 'restart_count={{.RestartCount}} image_ref={{.Config.Image}} state_status={{.State.Status}} running={{.State.Running}} restarting={{.State.Restarting}} oom_killed={{.State.OOMKilled}} dead={{.State.Dead}} exit_code={{.State.ExitCode}} error={{json .State.Error}} started_at={{.State.StartedAt}} finished_at={{.State.FinishedAt}}' || true
+          docker image inspect ejc-backend --format 'image_created={{.Created}} image_id={{.Id}}' || true
           if docker inspect ejc_backend --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' >/tmp/health-status 2>/dev/null; then
             printf 'health=%s\n' "$(cat /tmp/health-status)"
           fi
@@ -38,39 +39,68 @@ jobs:
             echo 'compose_config=error'
           fi
 
-      - name: Classificar erros recentes sem expor logs
+      - name: Configuração operacional não sensível do backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, subprocess
+          env = json.loads(subprocess.check_output([
+              "docker", "inspect", "ejc_backend", "--format", "{{json .Config.Env}}"
+          ], text=True))
+          wanted = {"APP_ENV", "RUN_MIGRATIONS", "GIT_SHA"}
+          values = {}
+          for item in env:
+              if "=" not in item:
+                  continue
+              key, value = item.split("=", 1)
+              if key in wanted:
+                  values[key] = value
+          for key in sorted(wanted):
+              print(f"{key.lower()}={values.get(key, '<ausente>')}")
+          PY
+
+      - name: Classificar ciclo atual sem expor logs
         shell: bash
         run: |
           set -euo pipefail
           raw="$RUNNER_TEMP/ejc-backend-recent.log"
-          docker logs --tail 500 ejc_backend >"$raw" 2>&1 || true
+          docker logs --tail 800 ejc_backend >"$raw" 2>&1 || true
           python3 - "$raw" <<'PY'
           import re, sys
           from pathlib import Path
 
           text = Path(sys.argv[1]).read_text(errors="replace")
-          patterns = {
-              "module_not_found": r"ModuleNotFoundError",
-              "import_error": r"ImportError",
-              "syntax_error": r"SyntaxError",
-              "validation_error": r"ValidationError",
-              "db_operational_error": r"OperationalError",
-              "db_undefined_table": r"UndefinedTable|relation .* does not exist",
-              "db_undefined_column": r"UndefinedColumn|column .* does not exist",
-              "connection_refused": r"Connection refused",
-              "permission_denied": r"Permission denied",
-              "missing_file": r"No such file or directory",
-              "alembic": r"alembic",
-              "oom": r"out of memory|OOMKilled|Killed process",
-              "generic_exception": r"Exception|ERROR|CRITICAL",
-          }
-          print(f"log_bytes={len(text.encode(errors='ignore'))}")
-          for name, pattern in patterns.items():
-              print(f"fingerprint_{name}={len(re.findall(pattern, text, flags=re.I))}")
-          relations = set(re.findall(r'relation ["\']([A-Za-z0-9_.-]+)["\'] does not exist', text, re.I))
-          columns = set(re.findall(r'column ["\']?([A-Za-z_][A-Za-z0-9_.]*)["\']? does not exist', text, re.I))
-          print("missing_relations=" + ",".join(sorted(relations)) if relations else "missing_relations=none")
-          print("missing_columns=" + ",".join(sorted(columns)) if columns else "missing_columns=none")
+          marker = text.rfind("[entrypoint]")
+          current = text[marker:] if marker >= 0 else text[-12000:]
+          print(f"current_cycle_bytes={len(current.encode(errors='ignore'))}")
+          for label, pattern in {
+              "runs_migrations": r"RUN_MIGRATIONS ativo",
+              "skips_migrations": r"pulando migrations",
+              "seed_admin": r"Semeando usuário admin",
+              "starts_uvicorn": r"Iniciando uvicorn",
+              "alembic_upgrade": r"alembic upgrade head",
+              "assertion": r"AssertionError",
+              "undefined_table": r"UndefinedTable|relation .* does not exist",
+              "undefined_column": r"UndefinedColumn|column .* does not exist",
+              "programming_error": r"ProgrammingError",
+              "operational_error": r"OperationalError",
+          }.items():
+              print(f"current_{label}={len(re.findall(pattern, current, flags=re.I))}")
+          relations = set(re.findall(r'relation ["\']([A-Za-z0-9_.-]+)["\'] does not exist', current, re.I))
+          columns = set(re.findall(r'column ["\']?([A-Za-z_][A-Za-z0-9_.]*)["\']? does not exist', current, re.I))
+          print("current_missing_relations=" + ",".join(sorted(relations)) if relations else "current_missing_relations=none")
+          print("current_missing_columns=" + ",".join(sorted(columns)) if columns else "current_missing_columns=none")
+          # Assinaturas técnicas sanitizadas; sem SQL, parâmetros ou valores de negócio.
+          signatures = set()
+          for line in current.splitlines():
+              if "sqlalchemy.exc." in line or "asyncpg.exceptions." in line or "alembic.util.exc." in line:
+                  line = re.sub(r"https?://\S+", "[URL]", line)
+                  line = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+", "[EMAIL]", line)
+                  line = re.sub(r"\[[^\]]*parameters[^\]]*\]", "[PARAMS]", line, flags=re.I)
+                  signatures.add(line[:500])
+          for idx, line in enumerate(sorted(signatures)[:8], start=1):
+              print(f"error_signature_{idx}={line}")
           PY
 
       - name: Estado Alembic e schema essencial via worker saudável
