@@ -1,0 +1,111 @@
+name: Fix Mobile Sidebar (temporary)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.head_ref == 'feat/reference-dashboard-systemwide-20260816'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Node 22.22.2
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.22.2
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências
+        working-directory: frontend
+        run: npm ci
+
+      - name: Separar compactação desktop da gaveta móvel
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/src/components/LayoutReference.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          old_import = 'import { filterModulesByLifecycle } from "../lib/moduleLifecycle";'
+          new_import = old_import + '\nimport { isSidebarNavigationCollapsed } from "../lib/sidebarNavigation";'
+          if 'isSidebarNavigationCollapsed' not in text:
+              if text.count(old_import) != 1:
+                  raise SystemExit('Import anchor inesperado.')
+              text = text.replace(old_import, new_import, 1)
+
+          anchor = '  const contentMargin = collapsed ? "md:ml-[4.75rem]" : "md:ml-[15.5rem]";'
+          insertion = anchor + '\n  const navCollapsed = isSidebarNavigationCollapsed(collapsed, mobileOpen);'
+          if 'const navCollapsed = isSidebarNavigationCollapsed' not in text:
+              if text.count(anchor) != 1:
+                  raise SystemExit('Anchor de layout inesperado.')
+              text = text.replace(anchor, insertion, 1)
+
+          replacements = [
+              ('            collapsed ? "justify-center px-0" : "",',
+               '            navCollapsed ? "justify-center px-0" : "",'),
+              ('        {!collapsed && <span className="truncate">{label}</span>}',
+               '        {!navCollapsed && <span className="truncate">{label}</span>}'),
+              ('    return collapsed ? (', '    return navCollapsed ? ('),
+              ('              {collapsed ? (', '              {navCollapsed ? ('),
+              ('        {!collapsed && <SidebarWeekCalendar />}',
+               '        {!navCollapsed && <SidebarWeekCalendar />}'),
+              ('            className={cn("ejc-sidebar-contacts", collapsed && "flex-col px-2")}',
+               '            className={cn("ejc-sidebar-contacts", navCollapsed && "flex-col px-2")}'),
+          ]
+          for old, new in replacements:
+              if old in text:
+                  if text.count(old) != 1:
+                      raise SystemExit(f'Replacement anchor duplicado: {old}')
+                  text = text.replace(old, new, 1)
+              elif new not in text:
+                  raise SystemExit(f'Anchor não encontrado: {old}')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Formatar arquivos tocados
+        working-directory: frontend
+        run: |
+          npx prettier --write \
+            src/components/LayoutReference.tsx \
+            src/lib/sidebarNavigation.ts \
+            src/lib/sidebarNavigation.test.ts
+
+      - name: Teste de regressão da navegação móvel
+        working-directory: frontend
+        run: npx vitest run src/lib/sidebarNavigation.test.ts --reporter=dot
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Formatação global
+        working-directory: frontend
+        run: npm run format:check
+
+      - name: Commit verificado
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add frontend/src/components/LayoutReference.tsx frontend/src/lib/sidebarNavigation.ts frontend/src/lib/sidebarNavigation.test.ts
+          if git diff --cached --quiet; then
+            echo 'Nenhuma alteração pendente.'
+            exit 0
+          fi
+          git commit -m 'fix(frontend): manter rótulos na gaveta móvel'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
