@@ -215,7 +215,7 @@ export default function DashboardLegalTechPremium() {
               <LayoutDashboard className="h-5 w-5" />
               <span>Dashboard</span>
             </a>
-            <a href="/triagem" className="lt-nav-item">
+            <a href="/raio-x" className="lt-nav-item">
               <Scale className="h-5 w-5" />
               <span>Triagem e Raio-X</span>
             </a>
