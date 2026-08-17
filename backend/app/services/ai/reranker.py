@@ -26,6 +26,10 @@ from app.core.database import AsyncSessionLocal
 from app.models.rag import KnowledgeDoc
 from app.services.knowledge_governance import inferir_autoridade
 
+def _norm(value: Any) -> str:
+    """Cópia local do normalizador de categorias (knowledge_governance._norm)."""
+    return str(value or "").strip().lower().replace("_", " ")
+
 logger = logging.getLogger("ejc.ai.reranker")
 settings = get_settings()
 
@@ -199,11 +203,20 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
             hydrated.append(item)
         return hydrated
     except Exception as exc:
+        # Fail-closed (issue #985-G): se a governança não pode ser consultada,
+        # um candidato normativo pode estar revogado/suspenso sem que saibamos.
+        # Norma não verificada não fundamenta decisão atual — mantêm-se apenas
+        # candidatos não-normativos (jurisprudência, doutrina, peças internas)
+        # para não zerar o ranking por completo.
         logger.warning(
-            "Governança documental indisponível no reranking (%s) — mantendo candidatos",
+            "Governança documental indisponível no reranking (%s) — "
+            "fail-closed: mantendo apenas candidatos não-normativos",
             str(exc)[:180],
         )
-        return candidatos
+        return [
+            c for c in candidatos
+            if "legisl" not in _norm(str(c.get("categoria") or ""))
+        ]
 
 
 def _confidence_bonus(candidate: dict) -> float:

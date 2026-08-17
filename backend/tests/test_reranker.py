@@ -185,3 +185,50 @@ async def test_buscar_contexto_rag_encaminha_pelo_reranker(monkeypatch):
     assert out is sentinela
     assert capturado["limite"] == 6
     assert capturado["consulta"] == "dano moral"
+
+
+# ── fail-closed da hidratação de governança (#985-G) ─────────────────────────
+
+from contextlib import contextmanager
+from unittest import mock
+
+
+@contextmanager
+def _simular_banco_indisponivel():
+    """Simula a falha da hidratação de governança (banco/DB indisponível)."""
+    from app.core.database import AsyncSessionLocal
+
+    def _explodir(*_args, **_kwargs):
+        raise RuntimeError("banco indisponível (simulado)")
+
+    with mock.patch.object(AsyncSessionLocal, "__call__", _explodir):
+        yield
+
+
+async def test_hidratacao_indisponivel_nao_vaza_norma_fail_closed():
+    """Issue #985-G: se a hidratação de governança do reranker falhar, o caminho
+    NÃO é fail-open. Norma não pode fundamentar decisão atual sem a governança
+    verificada; candidatos não-normativos são mantidos para não zerar o ranking."""
+    candidatos = [
+        {"doc_id": "norma-x", "categoria": "legislacao",
+         "content": "artigo de lei", "score": 0.9},
+        {"doc_id": "juris-y", "categoria": "jurisprudencia",
+         "content": "acordao do stj", "score": 0.8},
+    ]
+    with _simular_banco_indisponivel():
+        resultado = await rr._hidratar_governanca(candidatos)
+    ids = {c["doc_id"] for c in resultado}
+    assert "norma-x" not in ids, "VAZAMENTO: norma recuperada sem governança"
+    assert "juris-y" in ids, "efeito colateral: ranking zerado por completo"
+
+
+async def test_hidratacao_indisponivel_mantem_legislacao_sem_categoria():
+    """permanece candidato não normativo mesmo com a governança fora do ar
+    permanece mesmo com a governança fora do ar."""
+    candidatos = [
+        {"doc_id": "doutrina-z", "categoria": "doutrina",
+         "content": "manual de direito", "score": 0.7},
+    ]
+    with _simular_banco_indisponivel():
+        resultado = await rr._hidratar_governanca(candidatos)
+    assert [c["doc_id"] for c in resultado] == ["doutrina-z"]

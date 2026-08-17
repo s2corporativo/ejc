@@ -187,13 +187,18 @@ async def _fonte_artigo(
     if cond is None:
         return None
     vigencia_sql = "TRUE" if vigente else "FALSE"
+    # Fix #985-G: o gate de revogação da governança (blocks_current_law) é
+    # aplicado também no lookup de artigos. Norma revogada nunca fundamenta
+    # decisão atual — nem na variante "existe_artigo" (vigente=True).
     row = (
         await db.execute(
             text(
                 "SELECT kd.id, kd.titulo, kd.chave_origem, kd.versao, "
                 "kd.vigente, kd.fonte FROM knowledge_chunks kc "
                 "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
-                f"WHERE kd.deleted_at IS NULL AND kd.vigente = {vigencia_sql} "
+                "WHERE kd.deleted_at IS NULL "
+                f"AND kd.vigente = {vigencia_sql} "
+                f"{'AND COALESCE((kd.extra->>\'legal_status\'), \'\') <> \'revogada\' ' if vigente else ''}"
                 "AND kd.categoria LIKE 'legislacao%' "
                 + cond
                 + "AND kc.conteudo ~* :artigo_re "

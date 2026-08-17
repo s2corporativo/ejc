@@ -1,0 +1,21 @@
+{
+  "gerado_em": "2026-08-17T13:17:29.235423",
+  "skills": [
+    {
+      "name": "prescricao-decadencia",
+      "display_name": "Nome antigo",
+      "description": "Descrição antiga",
+      "system_prompt": "Prompt antigo sem a instrução de mérito (versão pré-Issue #554).",
+      "area": "estrategia",
+      "version": 1
+    },
+    {
+      "name": "simulador-defesa-adversarial",
+      "display_name": "Nome antigo",
+      "description": "Descrição antiga",
+      "system_prompt": "Prompt antigo sem a instrução de mérito (versão pré-Issue #554).",
+      "area": "estrategia",
+      "version": 1
+    }
+  ]
+}

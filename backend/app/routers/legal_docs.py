@@ -599,7 +599,15 @@ async def revisar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Registro de revisão humana — desbloqueia aprovação de peça IA."""
+    """Registro de revisão humana — desbloqueia aprovação de peça IA.
+
+    Fix #984: o registro de revisão é o único desbloqueio do gate de status da
+    peça e exige papel jurídico (advogado/sócio) mais o gate antialucinação de
+    citações (aplicar_gate_hitl), alinhando-se ao caminho rigoroso
+    conferir-e-assinar. Citação bloqueante → 409 sem override; verificação fora
+    do ar em política bloqueante → 503 (fail-closed).
+    """
+    requer_advogado(cu, detail="Registro de revisão de peça é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
@@ -609,6 +617,29 @@ async def revisar(
         raise HTTPException(status_code=404, detail="Peça não encontrada")
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
+
+    if payload.aprovado:
+        validacao = await _ultima_validacao_peca(db, d)
+        ai_log_id = validacao.get("ai_log_id")
+        if ai_log_id:
+            log = (await db.execute(
+                select(AILog).where(AILog.id == ai_log_id).with_for_update()
+            )).scalar_one_or_none()
+            if log is not None:
+                if log.user_id != cu.id and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL.get("socio", 0):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Sem permissão para revisar este log",
+                    )
+                from app.services.citation_gate import aplicar_gate_hitl
+                await aplicar_gate_hitl(
+                    db, log, "revisado", False, None, cu,
+                )
+                log.status_hitl = AIStatusHITL.revisado
+                log.revisado_por = cu.id
+                log.revisado_em = datetime.now(timezone.utc)
+                await db.flush()
+                validacao = await _ultima_validacao_peca(db, d)
 
     d.human_reviewed = payload.aprovado
     d.revisor_id = cu.id

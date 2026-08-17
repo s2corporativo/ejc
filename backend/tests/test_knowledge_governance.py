@@ -97,7 +97,34 @@ def test_duplicidade_e_conflito_sao_separados():
 
 @pytest.mark.asyncio
 async def test_reranker_enriquece_citacao_mesmo_desabilitado(monkeypatch):
+    """A hidratação de governança consulta o banco — mockar a sessão local
+    impede que o teste dependa de DNS/Postgres (fragilidade pré-existente).
+    O candidato legislação vigente deve sair com autoridade oficial e a
+    situação jurídica normalizada."""
     monkeypatch.setattr(reranker, "disponivel", lambda: False)
+    from unittest import mock
+    from unittest.mock import AsyncMock
+
+    from unittest.mock import MagicMock as _MG
+
+    fake_session = AsyncMock()
+    # await db.execute(...) devolve um objeto cujo .all() é síncrono.
+    exec_result = _MG()
+    exec_result.all.return_value = [("d1", {"rag_status": "aprovado"}, True)]
+    fake_session.execute.return_value = exec_result
+    async def _aenter(_self):
+        return fake_session
+
+    async def _aexit(_self, *a):
+        return False
+
+    from unittest.mock import MagicMock
+
+    # async_sessionmaker() é sincrona e devolve o async context manager da sessão;
+    # por isso a factory é um MagicMock comum (não AsyncMock) que devolve o ctx.
+    fake_ctx = type("FakeCtx", (), {"__aenter__": _aenter, "__aexit__": _aexit})()
+    fake_factory = MagicMock(return_value=fake_ctx)
+
     candidates = [
         {
             "doc_id": "d1",
@@ -110,9 +137,13 @@ async def test_reranker_enriquece_citacao_mesmo_desabilitado(monkeypatch):
             "confianca": "alta",
         }
     ]
-
-    result = await reranker.rerank("consulta", candidates, 1)
+    # O patch precisa ser feito no módulo consumidor (reranker), que importa
+    # AsyncSessionLocal diretamente; patchar app.core.database não o alcança.
+    with mock.patch.object(reranker, "AsyncSessionLocal", fake_factory):
+        result = await reranker.rerank("consulta", candidates, 1)
 
     assert result[0]["autoridade"]["code"] == "oficial_normativa"
     assert result[0]["citacao"]["versao"] == 2
     assert result[0]["citacao"]["documento_id"] == "d1"
+    assert result[0]["situacao_juridica"]["code"] == "nao_aplicavel"
+    assert result[0]["vigente_no_ejc"] is True

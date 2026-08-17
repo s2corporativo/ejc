@@ -128,6 +128,44 @@ def _doc_sem_caso():
     )
 
 
+def test_revisar_exige_papel_juridico_e_gate_de_citacoes():
+    """Fix #984: /revisar exige requer_advogado e aplica o gate antialucinação
+    (aplicar_gate_hitl) antes de registrar a aprovação — mesma garantia do
+    conferir-e-assinar. Citação bloqueante → 409; verificação fora → 503."""
+    src = _source("app/routers/legal_docs.py")
+    bloco = _function_source(src, "revisar")
+    assert "requer_advogado(" in bloco, "revisar deve exigir papel jurídico"
+    assert "aplicar_gate_hitl" in bloco, "revisar deve rodar o gate de citações"
+    assert "_ultima_validacao_peca" in bloco, "revisar deve achar o AILog corrente"
+
+
+async def test_revisar_sem_papel_juridico_rejeita_com_403(monkeypatch):
+    """Fix #984 (execução): não-advogado recebe 403 no /revisar."""
+    from app.routers import legal_docs
+
+    def fake_requer_advogado(u, detail=None):
+        raise HTTPException(status_code=403, detail=detail)
+
+    monkeypatch.setattr(legal_docs, "requer_advogado", fake_requer_advogado)
+
+    async def _nada(*a, **k):
+        raise AssertionError("não deve prosseguir além do gate de papel")
+
+    for alvo in ("get_db", "verificar_acesso_caso", "criar_audit_log"):
+        monkeypatch.setattr(legal_docs, alvo, _nada)
+
+    cu = types.SimpleNamespace(id="u-2", role=types.SimpleNamespace(value="estagiario"))
+    with pytest.raises(HTTPException) as exc:
+        await legal_docs.revisar(
+            "doc-x", legal_docs.LegalDocRevisao(aprovado=True, notas="ok"),
+            background=types.SimpleNamespace(add_task=lambda *a: None),
+            db=types.SimpleNamespace(execute=lambda *a: _Res(None),
+                                     commit=_nada, refresh=_nada),
+            cu=cu,
+        )
+    assert exc.value.status_code == 403
+
+
 async def test_validar_sem_provedor_de_ia_nao_estoura_500_cru(monkeypatch):
     from app.routers import legal_docs
 
