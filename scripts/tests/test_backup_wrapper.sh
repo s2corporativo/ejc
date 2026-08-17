@@ -15,6 +15,7 @@ BIN="$TMP/bin"
 LOG="$TMP/docker.log"
 APP="$TMP/app"
 ACTIVATOR="$ROOT/scripts/backup/ativar_backup.sh"
+DEPLOY="$ROOT/scripts/deploy_vps_safe.sh"
 mkdir -p "$BIN" "$APP"
 : > "$APP/docker-compose.yml"
 
@@ -22,10 +23,8 @@ cat > "$BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${FAKE_DOCKER_LOG:?}"
-if [ "${1:-}" = "ps" ]; then
-  if [ "${FAKE_BACKEND_RUNNING:-1}" = "1" ]; then
-    echo ejc_backend
-  fi
+if [ "${1:-}" = "inspect" ] && [ "${2:-}" = "-f" ]; then
+  printf '%s\n' "${FAKE_BACKEND_STATE:-running}"
   exit 0
 fi
 if [ "${1:-}" = "exec" ]; then
@@ -51,7 +50,7 @@ fail() {
 }
 
 run_case() {
-  local expected="$1" fake_rc="$2" running="$3" expected_command="$4"
+  local expected="$1" fake_rc="$2" state="$3" expected_command="$4"
   : > "$LOG"
   : > "$TMP/stdin.py"
   set +e
@@ -59,14 +58,14 @@ run_case() {
   FAKE_DOCKER_LOG="$LOG" \
   FAKE_STDIN_LOG="$TMP/stdin.py" \
   FAKE_BACKUP_RC="$fake_rc" \
-  FAKE_BACKEND_RUNNING="$running" \
+  FAKE_BACKEND_STATE="$state" \
   APP_DIR="$APP" \
   APP_CONTAINER=ejc_backend \
   bash "$ROOT/scripts/backup.sh" >"$TMP/out" 2>"$TMP/err"
   local rc=$?
   set -e
   [ "$rc" -eq "$expected" ] || fail "rc=$rc, esperado $expected"
-  grep -q '^ps --format {{.Names}}$' "$LOG" || fail "container não foi verificado"
+  grep -q '^inspect -f {{.State.Status}} ejc_backend$' "$LOG" || fail "estado do container não foi verificado"
   grep -q "$expected_command" "$LOG" || fail "runner esperado não foi chamado"
   grep -q 'from app.services import backup_service' "$TMP/stdin.py" || \
     fail "wrapper não delegou ao motor canônico"
@@ -82,15 +81,16 @@ run_case() {
     fail "backup é iniciado antes do gate de configuração"
 
   # P0 Staff: os `.enc` atuais nascem em TemporaryDirectory; portanto
-  # `local_ok`/artefatos gerados NÃO provam retenção recuperável após retorno.
-  # Pré-deploy só fica verde com offsite confirmado.
+  # `local_ok`/artefatos gerados NÃO provam persistência local após retorno.
+  # O pré-deploy só fica verde com transferência offsite confirmada pelo motor.
+  # Política de retenção do remote e teste de restauração são controles separados.
   grep -q 'encrypted_generated' "$TMP/stdin.py" || fail "produção dos artefatos cifrados não é conferida"
   grep -q 'offsite_ok = bool(result.get("offsite_ok"))' "$TMP/stdin.py" || \
-    fail "prova offsite não é lida do resultado"
+    fail "confirmação de transferência offsite não é lida do resultado"
   grep -q 'and offsite_ok' "$TMP/stdin.py" || \
-    fail "gate pré-deploy ainda pode aprovar sem retenção offsite"
+    fail "gate pré-deploy ainda pode aprovar sem transferência offsite confirmada"
   grep -q 'artefatos_cifrados_gerados' "$TMP/stdin.py" || \
-    fail "saída não diferencia geração temporária de retenção offsite"
+    fail "saída não diferencia geração temporária de envio offsite"
   if grep -q 'deploy prossegue com prova local\|BACKUP_OFFSITE_OBRIGATORIO' "$TMP/stdin.py"; then
     fail "wrapper ainda admite falso verde baseado em prova local temporária"
   fi
@@ -101,11 +101,49 @@ run_case() {
   fi
 }
 
-run_case 0 0 1 '^exec -i ejc_backend python -$'
-run_case 1 1 1 '^exec -i ejc_backend python -$'
-run_case 0 0 0 '^compose run --rm --no-deps -T backend python -$'
+run_case 0 0 running '^exec -i ejc_backend python -$'
+run_case 1 1 running '^exec -i ejc_backend python -$'
+run_case 0 0 restarting '^compose run --rm --no-deps -T backend python -$'
 grep -q '^compose config$' "$LOG" || fail "compose não foi validado no fallback"
-grep -q 'Backend parado' "$TMP/err" || fail "fallback não foi registrado"
+grep -q 'Backend indisponível para exec (estado: restarting)' "$TMP/err" || fail "fallback de restart loop não foi registrado"
+
+# Integração do caller: mesmo que um wrapper defeituoso retorne exit 0 com
+# offsite_ok=false, o deploy precisa falhar ANTES de build/up/tag ou qualquer
+# mutação de runtime. A fixture é deliberadamente compacta para cobrir JSON sem
+# espaços após os dois-pontos.
+DEPLOY_CASE="$TMP/deploy-case"
+DEPLOY_APP="$TMP/deploy-app"
+mkdir -p "$DEPLOY_CASE" "$DEPLOY_APP/scripts"
+cp "$DEPLOY" "$DEPLOY_CASE/deploy.sh"
+cat > "$DEPLOY_CASE/deploy_lock.sh" <<'EOF'
+ejc_deploy_lock_acquire() { return 0; }
+EOF
+cat > "$DEPLOY_APP/scripts/backup.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' '{"ok":true,"offsite_ok":false,"destino":"rclone"}'
+exit 0
+EOF
+chmod +x "$DEPLOY_APP/scripts/backup.sh"
+: > "$DEPLOY_APP/.env"
+: > "$DEPLOY_APP/docker-compose.yml"
+: > "$TMP/deploy-docker.log"
+set +e
+PATH="$BIN:$PATH" \
+FAKE_DOCKER_LOG="$TMP/deploy-docker.log" \
+FAKE_STDIN_LOG="$TMP/deploy-stdin.py" \
+APP_DIR="$DEPLOY_APP" \
+TARGET_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+REQUIRE_PREDEPLOY_BACKUP=1 \
+ENSURE_DAILY_BACKUP=1 \
+bash "$DEPLOY_CASE/deploy.sh" >"$TMP/deploy-out" 2>"$TMP/deploy-err"
+deploy_rc=$?
+set -e
+[ "$deploy_rc" -ne 0 ] || fail "deploy aceitou offsite_ok=false"
+grep -q 'offsite_ok=false' "$TMP/deploy-out" || \
+  fail "deploy não registrou bloqueio por ausência de transferência offsite confirmada"
+if grep -Eq '^compose build|^compose up|^tag ' "$TMP/deploy-docker.log"; then
+  fail "deploy iniciou mutação de imagem/runtime após offsite_ok=false"
+fi
 
 if grep -Eq \
   '^[[:space:]]*rclone[[:space:]]|^[[:space:]]*docker exec .*pg_dump|ejc_db_.*sql\.gz|ejc_uploads_.*tar\.gz' \
@@ -128,5 +166,31 @@ if grep -q 'result.get("erro")\|drive_file_id' "$ACTIVATOR"; then
   fail "ativador publica erro operacional ou identificador do Drive"
 fi
 
-bash -n "$ROOT/scripts/backup.sh" "$ACTIVATOR"
-echo "[backup-wrapper-test] OK — pré-deploy exige cifragem + retenção offsite recuperável, sem falso local_ok."
+DOCKERFILE="$ROOT/backend/Dockerfile"
+grep -q '^FROM rclone/rclone:1.75.0 AS rclone_runtime$' "$DOCKERFILE" || \
+  fail "runtime não fixa a versão homologada do rclone"
+grep -q '^COPY --from=rclone_runtime /usr/local/bin/rclone /usr/local/bin/rclone$' "$DOCKERFILE" || \
+  fail "binário oficial do rclone não é copiado para o backend"
+python3 - "$DOCKERFILE" <<'PY_DOCKERFILE'
+import re
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text()
+blocks = re.findall(
+    r"apt-get install -y.*?rm -rf /var/lib/apt/lists/\*",
+    text,
+    flags=re.S,
+)
+if not blocks:
+    raise SystemExit("bloco apt-get install não encontrado")
+token = re.compile(r"(?<![A-Za-z0-9_-])rclone(?![A-Za-z0-9_-])")
+if any(token.search(block) for block in blocks):
+    raise SystemExit("rclone voltou ao bloco apt-get install")
+expected = r"RUN rclone version | grep -q '^rclone v1\.75\.0$'"
+if expected not in text:
+    raise SystemExit("assert de versão exata do rclone foi removido/alterado")
+PY_DOCKERFILE
+
+bash -n "$ROOT/scripts/backup.sh" "$DEPLOY" "$ACTIVATOR"
+echo "[backup-wrapper-test] OK — pré-deploy exige cifragem + transferência offsite confirmada, sem falso local_ok."
