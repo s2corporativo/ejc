@@ -81,7 +81,7 @@ Closes #
 - [ ] Backup/restore considerado antes de alteração destrutiva
 - [ ] Nenhum `DROP`, exclusão física ou cutover irreversível sem plano aprovado
 
-## Riscos residuais e limitações
+## Riscos residuais
 
 <!-- O que este PR não resolve, o que pode quebrar, o que depende de ambiente. -->
 
