@@ -55,7 +55,7 @@ lugar certo, mas os legados de maior risco continuam fora do `ResponseValidator`
 
 > **Status das correções (15/08, autorizado pelo titular por chat):** os achados
 > **P0-1, P0-2, P1-1, P1-2 e P1-3** foram corrigidos nesta mesma branch, com teste de
-> regressão em `backend/tests/test_system_prompts_vigencia_legal.py` (13 testes).
+> regressão em `backend/tests/test_system_prompts_vigencia_legal.py` (11 testes).
 > Os demais achados seguem abertos e viram Issues próprias — os que alteram RBAC ou
 > comportamento de runtime aguardam decisão do titular (§8).
 
