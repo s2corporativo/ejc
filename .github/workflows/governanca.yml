@@ -10,9 +10,11 @@ name: Governanca
 # Complementa — não substitui — o "EJC Release Gate" (scripts/ci_guard.sh).
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: governanca-${{ github.ref }}
@@ -23,6 +25,8 @@ jobs:
     name: Governança — travas de PR
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -122,17 +126,33 @@ jobs:
 
       - name: Revisao de seguranca registrada
         env:
-          CORPO: ${{ github.event.pull_request.body }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
-          PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
+          set -euo pipefail
+          PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|scripts/governanca/branch-protection-bootstrap\.sh|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
           SENSIVEL=$(grep -Ec "$PADRAO_SENSIVEL" "$RUNNER_TEMP/alterados.txt" || true)
           if [ "$SENSIVEL" -gt 0 ]; then
-            if ! printf '%s' "$CORPO" | grep -qi 'security-auditor: executado'; then
-              echo "::error::PR sensível altera autenticação, permissões, uploads, CI/CD ou configuração sem registrar 'security-auditor: executado' no corpo do PR."
+            REVIEWS="$RUNNER_TEMP/security-reviews.json"
+            gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews?per_page=100" \
+              | jq -s 'add' > "$REVIEWS"
+            jq -e --arg sha "$HEAD_SHA" '
+              [ .[]
+                | select(.user.login == "coderabbitai[bot]")
+                | select(.commit_id == $sha)
+              ]
+              | sort_by(.submitted_at)
+              | last
+              | select(. != null)
+              | select(.state == "APPROVED" or .state == "COMMENTED")
+              | select((.body // "") | test("Actionable comments posted:"; "i") | not)
+            ' "$REVIEWS" >/dev/null || {
+              echo "::error::PR sensível exige revisão independente do CodeRabbit vinculada ao HEAD exato, sem CHANGES_REQUESTED nem findings acionáveis"
               exit 1
-            fi
-            echo "Revisão security-auditor registrada para alteração sensível."
+            }
+            echo "Revisão de segurança independente confirmada no HEAD $HEAD_SHA."
           else
             echo "PR não altera superfície que exija security-auditor obrigatório."
           fi
