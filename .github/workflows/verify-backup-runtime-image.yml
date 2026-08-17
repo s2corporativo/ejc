@@ -1,0 +1,35 @@
+name: Verify Backup Runtime Image
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/verify-backup-runtime-image.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch da correção
+        uses: actions/checkout@v7
+        with:
+          ref: fix/backup-rclone-runtime-20260817
+
+      - name: Build real do backend
+        run: docker build -t ejc-backend-rclone-verification:local backend
+
+      - name: Verificar rclone na imagem construída
+        run: |
+          set -euo pipefail
+          version="$(docker run --rm --entrypoint rclone ejc-backend-rclone-verification:local version | head -n1)"
+          echo "$version"
+          [ "$version" = "rclone v1.75.0" ]
+
+      - name: Limpeza
+        if: always()
+        run: docker image rm -f ejc-backend-rclone-verification:local >/dev/null 2>&1 || true
