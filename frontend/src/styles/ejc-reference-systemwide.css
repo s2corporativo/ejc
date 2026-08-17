@@ -46,7 +46,7 @@ html:not(.dark) #root {
 
 html:not(.dark) body {
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 }
 
 html:not(.dark) .ejc-modern-scope {
