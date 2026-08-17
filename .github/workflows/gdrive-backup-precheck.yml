@@ -1,0 +1,42 @@
+name: GDrive Backup Precheck
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/gdrive-backup-precheck.yml
+
+permissions:
+  contents: read
+
+jobs:
+  precheck:
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validar credencial e pasta dedicadas do Google Drive sem escrita
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f /opt/ejc/docker-compose.yml run --rm --no-deps -T \
+            -e BACKUP_DESTINO=gdrive backend python - <<'PY'
+          from app.core.config import get_settings
+          from app.services import backup_drive_auth, backup_service
+
+          settings = get_settings()
+          status = backup_service.configuracao_status()
+          print("backup_enabled=" + str(bool(status.get("enabled"))).lower())
+          print("folder_configured=" + str(bool(status.get("pasta_configurada"))).lower())
+          print("dedicated_credential_configured=" + str(bool(status.get("credencial_dedicada_configurada"))).lower())
+          print("auth_mode=" + str(status.get("auth_mode") or "unknown"))
+          print("destination=" + str(status.get("destino") or "unknown"))
+          folder = (settings.BACKUP_DRIVE_FOLDER_ID or "").strip()
+          if not folder:
+              raise SystemExit("Pasta dedicada de backup não configurada")
+          service = backup_drive_auth.build_client()
+          service.files().get(fileId=folder, fields="id", supportsAllDrives=True).execute()
+          print("gdrive_read_probe_ok=true")
+          PY
