@@ -3,8 +3,9 @@
 import os
 import sys
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
+
 from alembic import context
+from sqlalchemy import Column, MetaData, String, Table, engine_from_config, inspect, pool, text
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -50,6 +51,62 @@ _COLUNAS_VIVAS_FORA_DO_ORM: set[tuple[str, str]] = {
     ("knowledge_chunks", "categoria"),
     ("checklist_templates", "tipo_demanda"),
 }
+
+# Alembic cria a tabela interna ``alembic_version`` com VARCHAR(32) por padrão.
+# A revision 143 possui identificador maior que 32 caracteres; em banco limpo,
+# esperar a migration 144 para ampliar a coluna é tarde demais, pois o Alembic
+# precisa gravar a própria 143 antes de chegar à 144. O bootstrap abaixo atua
+# SOMENTE na tabela de metadados do Alembic, antes da cadeia de migrations:
+# cria-a já com margem suficiente ou amplia de forma idempotente instalações
+# antigas. Não toca tabelas/dados jurídicos e não altera a numeração da cadeia.
+_ALEMBIC_VERSION_LENGTH = 128
+
+
+def _ensure_alembic_version_capacity(connection) -> None:
+    """Garante capacidade para revision IDs longas antes de ``run_migrations``.
+
+    A correção é deliberadamente restrita ao PostgreSQL, banco suportado pelo
+    EJC em produção/CI. Widening de VARCHAR é não destrutivo. Em ambientes já
+    adequados, a função não emite ALTER.
+    """
+    if connection.dialect.name != "postgresql":
+        return
+
+    inspector = inspect(connection)
+    if not inspector.has_table("alembic_version"):
+        metadata = MetaData()
+        version_table = Table(
+            "alembic_version",
+            metadata,
+            Column(
+                "version_num",
+                String(_ALEMBIC_VERSION_LENGTH),
+                nullable=False,
+                primary_key=True,
+            ),
+        )
+        version_table.create(connection, checkfirst=True)
+        return
+
+    columns = {
+        column["name"]: column
+        for column in inspector.get_columns("alembic_version")
+    }
+    version_column = columns.get("version_num")
+    if version_column is None:
+        raise RuntimeError(
+            "alembic_version existe sem a coluna version_num; "
+            "estado de metadados inválido — intervenção manual necessária"
+        )
+
+    current_length = getattr(version_column["type"], "length", None)
+    if current_length is not None and current_length < _ALEMBIC_VERSION_LENGTH:
+        connection.execute(
+            text(
+                "ALTER TABLE alembic_version "
+                "ALTER COLUMN version_num TYPE VARCHAR(128)"
+            )
+        )
 
 
 def include_name(name, type_, parent_names):
@@ -114,8 +171,16 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        # Executa e confirma o bootstrap isoladamente antes de o Alembic iniciar
+        # a própria transação de migrations. Assim uma instalação limpa já nasce
+        # apta a registrar a revision 143, e ambientes existentes só sofrem
+        # widening quando realmente necessário.
+        with connection.begin():
+            _ensure_alembic_version_capacity(connection)
+
         context.configure(
-            connection=connection, target_metadata=target_metadata,
+            connection=connection,
+            target_metadata=target_metadata,
             include_name=include_name,
             include_object=include_object,
         )

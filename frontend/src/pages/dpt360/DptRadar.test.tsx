@@ -16,7 +16,7 @@ const DADOS: DptRadarToday = {
   generated_at: "2026-08-12T00:00:00Z",
   periodo_horas: 24,
   total_publicacoes: 7,
-  por_area: { tributario: 4, ambiental: 2, "lgpd_ia": 1 },
+  por_area: { tributario: 4, ambiental: 2, lgpd_ia: 1 },
   empresas_potencialmente_impactadas: 3,
   itens: [],
   fontes_ativas: ["DOU"],
@@ -51,8 +51,8 @@ describe("DptRadar", () => {
     const posicoes = cards.map((card) =>
       screen.getByText(card).closest("div")?.parentElement?.innerHTML
         ? screen.getByText(card).parentElement?.parentElement
-            ? 1
-            : -1
+          ? 1
+          : -1
         : -1,
     );
     // As três áreas renderizadas existem na ordem temática esperada.
@@ -64,9 +64,7 @@ describe("DptRadar", () => {
   it("exibe aviso de impacto até a reconciliação do gate #895", async () => {
     mockRadar.mockResolvedValue(DADOS);
     await act(async () => render(<DptRadar />));
-    await waitFor(() =>
-      screen.getByText(/Vigência permanece “a confirmar”/),
-    );
+    await waitFor(() => screen.getByText(/Vigência permanece “a confirmar”/));
   });
 
   it("exibe estado de erro sem presumir mudanças jurídicas", async () => {

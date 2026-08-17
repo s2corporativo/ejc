@@ -65,9 +65,13 @@ async function gerarRelatorio() {
 
 describe("DptReports — aviso de cobertura parcial", () => {
   it("não mostra aviso quando a cobertura está completa", async () => {
-    getReportMock.mockResolvedValue(relatorioBase({ cobertura_completa: true }));
+    getReportMock.mockResolvedValue(
+      relatorioBase({ cobertura_completa: true }),
+    );
     await gerarRelatorio();
-    await waitFor(() => expect(screen.getByText(/Revisão obrigatória/i)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/Revisão obrigatória/i)).toBeTruthy(),
+    );
     expect(screen.queryByText(/Cobertura parcial/i)).toBeNull();
   });
 
@@ -79,7 +83,9 @@ describe("DptReports — aviso de cobertura parcial", () => {
       }),
     );
     await gerarRelatorio();
-    await waitFor(() => expect(screen.getByText(/Cobertura parcial/i)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/Cobertura parcial/i)).toBeTruthy(),
+    );
     expect(screen.getByText(/carteira truncada em 200 empresas/)).toBeTruthy();
   });
 });

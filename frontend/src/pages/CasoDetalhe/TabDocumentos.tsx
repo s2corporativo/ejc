@@ -6,6 +6,7 @@ import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
 import { Empty } from "../../components/UI";
 import { useAuth } from "../../stores/auth";
+import CaseDocumentActions from "./CaseDocumentActions";
 
 const PAPEIS_VINCULO_DOCUMENTAL = new Set([
   "superadmin",
@@ -277,6 +278,8 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
           </button>
         </div>
       </div>
+
+      <CaseDocumentActions caseId={caseId} docs={docs} />
 
       {podeVincularDocumento && (
         <div className="card p-4 space-y-3">

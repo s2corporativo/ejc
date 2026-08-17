@@ -3,7 +3,13 @@
 // com viabilidade Alta/Média/Baixa, ancoradas em jurisprudência/súmulas/precedentes
 // internos/doutrina (RAG). Tudo é RASCUNHO — revisão obrigatória do advogado.
 import { useState } from "react";
-import { Sparkles, Scale, ShieldAlert, BookMarked, Loader2 } from "lucide-react";
+import {
+  Sparkles,
+  Scale,
+  ShieldAlert,
+  BookMarked,
+  Loader2,
+} from "lucide-react";
 import api from "../lib/api";
 
 const VIAB: Record<string, { label: string; cls: string; dot: string }> = {
@@ -63,10 +69,14 @@ export default function MotorTeses({ caso }: { caso: any }) {
       let status = "pendente";
       while (status === "pendente" || status === "em_andamento") {
         if (Date.now() - started > JANELA_MS) {
-          throw Object.assign(new Error("tempo_excedido"), { nome: "tempo_excedido" });
+          throw Object.assign(new Error("tempo_excedido"), {
+            nome: "tempo_excedido",
+          });
         }
         setProgresso(
-          status === "pendente" ? "Fila de processamento…" : "Consultando jurisprudência, súmulas e doutrina…",
+          status === "pendente"
+            ? "Fila de processamento…"
+            : "Consultando jurisprudência, súmulas e doutrina…",
         );
         await aguardar(POLL_MS);
         const { data } = await api.get(`/teses/motor/async/${task_id}`);
@@ -78,7 +88,9 @@ export default function MotorTeses({ caso }: { caso: any }) {
           return;
         }
       }
-      throw Object.assign(new Error("falha_geracao"), { nome: "falha_geracao" });
+      throw Object.assign(new Error("falha_geracao"), {
+        nome: "falha_geracao",
+      });
     } catch (e: any) {
       if (e?.nome === "tempo_excedido") {
         setErro(

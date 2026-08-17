@@ -67,10 +67,10 @@ describe("CadastroManual — cliente fixado pela Ficha Mestra", () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() =>
-      expect(api.get).toHaveBeenCalledWith("/clients/c1"),
-    );
-    expect(screen.getByText(/Cliente definido pela Ficha Mestra/i)).toBeTruthy();
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith("/clients/c1"));
+    expect(
+      screen.getByText(/Cliente definido pela Ficha Mestra/i),
+    ).toBeTruthy();
     expect(screen.queryByText("+ Criar cliente novo junto")).toBeNull();
 
     const selectCliente = campoPorRotulo("Cliente *", "select");
@@ -107,9 +107,6 @@ describe("CadastroManual — cliente fixado pela Ficha Mestra", () => {
         }),
       );
     });
-    expect(api.post).not.toHaveBeenCalledWith(
-      "/clients/",
-      expect.anything(),
-    );
+    expect(api.post).not.toHaveBeenCalledWith("/clients/", expect.anything());
   });
 });

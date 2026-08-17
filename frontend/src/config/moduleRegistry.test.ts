@@ -71,11 +71,19 @@ describe("moduleRegistry", () => {
   });
 
   it("espelha RBAC do dossiê dinâmico de cliente", () => {
-    for (const role of ["superadmin", "admin", "socio", "advogado", "secretaria"]) {
+    for (const role of [
+      "superadmin",
+      "admin",
+      "socio",
+      "advogado",
+      "secretaria",
+    ]) {
       expect(canRoleAccessPath(role, "/clientes/cliente-123"), role).toBe(true);
     }
     for (const role of ["financeiro", "estagiario", "advogado_auxiliar"]) {
-      expect(canRoleAccessPath(role, "/clientes/cliente-123"), role).toBe(false);
+      expect(canRoleAccessPath(role, "/clientes/cliente-123"), role).toBe(
+        false,
+      );
     }
   });
 
@@ -86,9 +94,9 @@ describe("moduleRegistry", () => {
     expect(canRoleAccessPath("advogado", "/entrada")).toBe(true);
     expect(canRoleAccessPath("secretaria", "/entrada")).toBe(true);
     expect(canRoleAccessPath("financeiro", "/entrada")).toBe(false);
-    expect(STAFF_ROUTES.find((route) => route.key === "caso-novo")?.showInNav).toBe(
-      false,
-    );
+    expect(
+      STAFF_ROUTES.find((route) => route.key === "caso-novo")?.showInNav,
+    ).toBe(false);
   });
 
   it("não possui aliases duplicados nem aliases sobre rotas canônicas", () => {

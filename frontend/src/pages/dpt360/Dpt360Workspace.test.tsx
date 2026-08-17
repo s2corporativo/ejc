@@ -78,7 +78,9 @@ describe("Dpt360Workspace — Empresa 360 fora do teto do dashboard", () => {
     expect(getProfileMock).toHaveBeenCalledWith("empresa-fora-do-teto");
     // Cobertura indisponível deve aparecer — casos/prazos vêm de um payload
     // truncado que não contém esta empresa; "0" não pode virar "nenhum caso".
-    expect(screen.getAllByText(/Cobertura indisponível/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/Cobertura indisponível/i).length,
+    ).toBeGreaterThan(0);
   });
 
   it("mostra 'não encontrada' apenas quando a API responde 404", async () => {
@@ -88,7 +90,9 @@ describe("Dpt360Workspace — Empresa 360 fora do teto do dashboard", () => {
     });
     await waitFor(() =>
       expect(
-        screen.getByText(/Empresa não encontrada na carteira empresarial visível/i),
+        screen.getByText(
+          /Empresa não encontrada na carteira empresarial visível/i,
+        ),
       ).toBeTruthy(),
     );
   });

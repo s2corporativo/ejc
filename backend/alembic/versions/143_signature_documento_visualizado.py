@@ -8,7 +8,12 @@ O consentimento informado com valor probatório (MP 2.200-2/2001, art. 10
 
 Migration puramente aditiva: coluna ``timestamp nullable``; não altera
 linhas existentes nem interfere no gate de deploy (catraca 132+).
+
+A capacidade da tabela interna ``alembic_version`` para este revision_id longo
+é garantida de forma idempotente por ``alembic/env.py`` antes da execução da
+cadeia, sem inserir uma revision intermediária fora da numeração canônica.
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -16,6 +21,7 @@ revision = "143_signature_documento_visualizado"
 down_revision = "142_document_hash_rescan"
 branch_labels = None
 depends_on = None
+
 
 def upgrade() -> None:
     op.add_column(
@@ -26,6 +32,7 @@ def upgrade() -> None:
             nullable=True,
         ),
     )
+
 
 def downgrade() -> None:
     # Coluna sem dados semânticos vinculados (só registra a 1ª visualização

@@ -732,7 +732,9 @@ export default function Casos() {
           const loc = Array.isArray(d?.loc) ? d.loc : [];
           const campo = loc.length ? String(loc[loc.length - 1]) : null;
           const rotulo = campo ? campo.replace(/_/g, " ") : null;
-          return rotulo ? `${rotulo}: ${String(d.msg ?? d)}` : String(d.msg ?? d);
+          return rotulo
+            ? `${rotulo}: ${String(d.msg ?? d)}`
+            : String(d.msg ?? d);
         })
         .join("; ");
     }

@@ -123,11 +123,11 @@ describe("cadastroManual — fila offline", () => {
     expect(fila[0].status).toBe("erro");
   });
 
-  it("(c2) 422 do Pydantic (detail em lista) vira mensagem legível", () => {
+  it("(c2) 422 do Pydantic (detail em lista) identifica o campo e a mensagem", () => {
     const c = classificarErro(
       erroHttp(422, [{ loc: ["body", "area"], msg: "Área inválida" }]),
     );
-    expect(c).toEqual({ acao: "erro", mensagem: "Área inválida" });
+    expect(c).toEqual({ acao: "erro", mensagem: "area: Área inválida" });
   });
 
   it("(c3) timeout/5xx (ambíguo) vira 'erro' pedindo verificação manual, sem reenvio", async () => {

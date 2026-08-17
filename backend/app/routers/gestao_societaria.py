@@ -18,7 +18,6 @@ from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
 from app.models.socio import Socio, DistribuicaoLucro, RegimeSocio
-from app.modules.auditoria.middleware import registrar_acao
 
 router = APIRouter(prefix="/sociedade", tags=["Gestão Societária"])
 

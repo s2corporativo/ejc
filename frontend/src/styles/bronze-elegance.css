@@ -9,16 +9,20 @@
 
 :root {
   /* ── Novas variáveis da camada Bronze & Elegance ── */
-  --be-bronze: #b8860b;          /* Bronze Brilhante — acento principal */
-  --be-bronze-dark: #8b6914;     /* Bronze profundo (hover) */
-  --be-bronze-light: #d4a631;    /* Bronze claro (destaque) */
-  --be-champagne: #f5e6d3;       /* Champagne — superfícies quentes */
-  --be-off-white: #fafaf8;       /* Off-white — canvas do app */
-  --be-charcoal: #2c2c2c;        /* Preto profundo — texto principal */
-  --be-beige-line: #eaddcf;      /* Filete bege para bordas discretas */
+  --be-bronze: #b8860b; /* Bronze Brilhante — acento principal */
+  --be-bronze-dark: #8b6914; /* Bronze profundo (hover) */
+  --be-bronze-light: #d4a631; /* Bronze claro (destaque) */
+  --be-champagne: #f5e6d3; /* Champagne — superfícies quentes */
+  --be-off-white: #fafaf8; /* Off-white — canvas do app */
+  --be-charcoal: #2c2c2c; /* Preto profundo — texto principal */
+  --be-beige-line: #eaddcf; /* Filete bege para bordas discretas */
   /* Gradiente do hero "sala de reuniões" (bronze → sépia profundo) */
-  --be-hero-gradient:
-    linear-gradient(120deg, #2c2418 0%, #4a3a26 45%, #6f5711 100%);
+  --be-hero-gradient: linear-gradient(
+    120deg,
+    #2c2418 0%,
+    #4a3a26 45%,
+    #6f5711 100%
+  );
 }
 
 /* ── Tipografia de exibição (serifada, luxo) ── */
@@ -45,12 +49,16 @@
   border: 1px solid var(--be-beige-line, #e5eaf0);
   border-top: 2px solid var(--be-bronze, #c9a227);
   border-radius: 14px;
-  box-shadow: 0 1px 2px rgba(24, 16, 8, 0.04),
+  box-shadow:
+    0 1px 2px rgba(24, 16, 8, 0.04),
     0 6px 16px -4px rgba(24, 16, 8, 0.05);
-  transition: box-shadow 0.3s ease, transform 0.3s ease;
+  transition:
+    box-shadow 0.3s ease,
+    transform 0.3s ease;
 }
 .be-card-luxo:hover {
-  box-shadow: 0 2px 4px rgba(24, 16, 8, 0.05),
+  box-shadow:
+    0 2px 4px rgba(24, 16, 8, 0.05),
     0 10px 24px -6px rgba(184, 134, 11, 0.14);
 }
 .be-champagne-surface {
@@ -67,8 +75,11 @@
   height: 2px;
   width: 44px;
   border-radius: 1px;
-  background: linear-gradient(90deg, var(--be-bronze, #b8860b),
-    var(--be-champagne, #f5e6d3));
+  background: linear-gradient(
+    90deg,
+    var(--be-bronze, #b8860b),
+    var(--be-champagne, #f5e6d3)
+  );
 }
 .be-btn-bronze {
   background: linear-gradient(135deg, #b8860b 0%, #8b6914 110%);
@@ -77,7 +88,9 @@
   letter-spacing: 0.08em;
   font-weight: 600;
   border-radius: 10px;
-  transition: filter 0.25s ease, transform 0.25s ease;
+  transition:
+    filter 0.25s ease,
+    transform 0.25s ease;
 }
 .be-btn-bronze:hover {
   filter: brightness(1.08);

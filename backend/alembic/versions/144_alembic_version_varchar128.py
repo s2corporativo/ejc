@@ -1,22 +1,19 @@
 """Alembic ``alembic_version.version_num`` padronizada em ``varchar(128)``.
 
-Correção do deploy de 15/08/2026: o ``alembic upgrade`` da migration
-``143_signature_documento_visualizado`` (revision_id com 35 caracteres)
-estourava o ``varchar(32)`` original da coluna, rejeitando a transação em
-ambientes novos ou reinstalações limpas — o banco do deploy em produção só
-prosseguia após o ALTER manual.
+A revision 143 possui identificador com mais de 32 caracteres. Para bancos
+limpos, ``alembic/env.py`` garante preventivamente que a tabela interna de
+versão já tenha capacidade suficiente antes de qualquer migration ser gravada.
+Esta revision permanece como declaração canônica e expand-only do schema de
+metadados para ambientes legados que ainda cheguem à cadeia com varchar(32).
 
-Aumentar a margem em vez de abreviar as revision_ids: mantém os nomes
-descritivos existentes (141/142/143) e folga confortável para o crescimento
-da cadeia sem nova emergência. ``upgrade()`` é DDL puro e estático
-(widening de ``varchar(32)`` para ``varchar(128)``): PostgreSQL nunca
-recusa dados existentes em widening, e instalações novas seguem o caminho
-padrão sem condicionais — o gate de compatibilidade de deploy aprova.
-
-O ``downgrade()`` reverte para ``varchar(32)`` com guarda humana:
-aborta sem alterar nada se houver versão gravada com mais de 32
-caracteres (nenhuma existe na cadeia até a 144, pois 142 tem 24 chars).
+O ``upgrade()`` é widening estática 32→128 e não altera dados de negócio.
+O ``downgrade()`` não reduz a coluna: o alvo imediato é a própria revision 143,
+cujo identificador não cabe em varchar(32). Encolher aqui faria o Alembic falhar
+quando tentasse registrar a revisão de destino. Manter varchar(128) no rollback
+é compatível, não destrutivo e preserva a capacidade de continuar a navegação
+da cadeia para trás.
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -27,8 +24,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Widening estrita e estática: varchar(32) -> varchar(128). DDL puro,
-    # expand-only — nenhuma linha é alterada ou perdida.
+    # Widening estrita e estática: varchar(32) -> varchar(128). O bootstrap do
+    # env.py pode já ter ampliado fisicamente a coluna; repetir o TYPE 128 no
+    # PostgreSQL é seguro e mantém esta migration compatível com o gate de deploy.
     op.alter_column(
         "alembic_version",
         "version_num",
@@ -38,24 +36,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Reverte para varchar(32). Aborta sem alterar nada se alguma
-    # version_num gravada exceder 32 caracteres — proteção contra
-    # truncamento silencioso de linhas já registradas.
-    conn = op.get_bind()
-    (excede,) = conn.execute(
-        sa.text(
-            "SELECT COALESCE(bool_or(char_length(version_num) > 32), false) "
-            "FROM alembic_version"
-        )
-    ).one()
-    if excede:
-        raise RuntimeError(
-            "downgrade 144: existe versão gravada com mais de 32 caracteres; "
-            "restringir a coluna trunca a linha atual — abortando sem alterar nada"
-        )
-    op.alter_column(
-        "alembic_version",
-        "version_num",
-        type_=sa.String(32),
-        existing_type=sa.String(128),
-    )
+    # Intencionalmente não encolhe para varchar(32): ao concluir o downgrade
+    # desta revision, o Alembic precisa gravar ``143_signature_documento_visualizado``
+    # (35 caracteres). Reduzir antes dessa gravação quebraria o próprio rollback.
+    pass

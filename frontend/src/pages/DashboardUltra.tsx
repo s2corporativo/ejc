@@ -1,44 +1,34 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  Activity,
+  AlertTriangle,
   ArrowRight,
-  BrainCircuit,
-  CalendarClock,
+  Bell,
+  CalendarDays,
   CheckCircle2,
-  CircleAlert,
-  Clock3,
-  FilePlus2,
-  FolderKanban,
+  CircleDot,
+  ClipboardCheck,
+  FileCheck2,
+  FileText,
   Gavel,
-  Import,
   ListTodo,
-  Plus,
-  Radar,
+  Newspaper,
   Scale,
+  Send,
+  ShieldCheck,
   Sparkles,
-  UserPlus,
   Users,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import api from "../lib/api";
 import { asList } from "../lib/list";
-import {
-  NOVO_CASO_DOCUMENTO_PATH,
-  NOVO_CASO_MANUAL_PATH,
-} from "../lib/novoCaso";
 import { useAuth } from "../stores/auth";
-import { Badge, cn } from "../components/UI";
 
 interface DashboardPayload {
   casos?: {
     por_status?: Record<string, number>;
-    por_area?: Array<{ area?: string; total?: number }>;
     total?: number;
     ativos?: number;
-    arquivados?: number;
-    encerrados?: number;
   };
   prazos?: {
     vencidos?: number;
@@ -70,20 +60,29 @@ interface AgendaEvent {
   local?: string;
 }
 
-interface MovementItem {
-  id?: string;
-  titulo?: string;
-  descricao?: string;
-  tipo?: string;
+interface ClientItem {
+  id: string;
+  nome?: string;
   status?: string;
+  email?: string;
+  telefone?: string;
+  whatsapp?: string;
+}
+
+interface NewsItem {
+  titulo?: string;
+  resumo?: string;
+  fonte?: string;
   data?: string;
-  created_at?: string;
-  data_movimento?: string;
-  case_id?: string;
-  case_title?: string;
-  case_number?: string;
-  numero_processo?: string;
-  cliente_nome?: string;
+  link?: string;
+}
+
+interface DefesasMeta {
+  modalidades?: Array<{
+    codigo?: string;
+    titulo?: string;
+    descricao?: string;
+  }>;
 }
 
 const FINAL_ACTIVITY_STATUSES = new Set([
@@ -91,16 +90,11 @@ const FINAL_ACTIVITY_STATUSES = new Set([
   "concluida",
   "tratada",
   "cancelado",
+  "cancelada",
   "arquivado",
+  "arquivada",
   "encerrado",
-]);
-
-const CREATE_CASE_ROLES = new Set([
-  "superadmin",
-  "admin",
-  "socio",
-  "advogado",
-  "secretaria",
+  "encerrada",
 ]);
 
 const LEGAL_ROLES = new Set([
@@ -113,56 +107,92 @@ const LEGAL_ROLES = new Set([
 ]);
 
 const STATUS_COLORS = [
-  "#c9a227",
-  "#182534",
-  "#a67c34",
-  "#7a8794",
-  "#d8dee5",
-  "#e5ce7f",
+  "#17985a",
+  "#62c489",
+  "#e89a1b",
+  "#df3f49",
+  "#8090a5",
+  "#2f7dd1",
 ];
 
-function formatArea(value?: string) {
+function formatLabel(value?: string) {
   if (!value) return "Outros";
   return value
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function formatDateTime(value?: string) {
-  if (!value) return "Data não informada";
-  const parsed = new Date(value.includes("T") ? value : `${value}T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) return "Data não informada";
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "short",
-    hour: value.includes("T") ? "2-digit" : undefined,
-    minute: value.includes("T") ? "2-digit" : undefined,
-  }).format(parsed);
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-function dateKey(value?: string) {
-  return value?.slice(0, 10) ?? "";
+function parseDate(value?: string, time?: string) {
+  if (!value) return null;
+  const day = value.slice(0, 10);
+  const hour = /^\d{2}:\d{2}/.test(time || "")
+    ? String(time).slice(0, 5)
+    : "12:00";
+  const parsed = new Date(`${day}T${hour}:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function activityTimestamp(item: Pick<ActivityItem, "date" | "hora">) {
+  return parseDate(item.date, item.hora)?.getTime() ?? Number.POSITIVE_INFINITY;
+}
+
+function formatDayMeta(item: Pick<ActivityItem, "date" | "hora">) {
+  const parsed = parseDate(item.date, item.hora);
+  if (!parsed)
+    return { day: "—", month: "", relative: "", time: item.hora || "" };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(parsed);
+  target.setHours(0, 0, 0, 0);
+  const diff = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  const relative = diff === 0 ? "Hoje" : diff === 1 ? "Amanhã" : "";
+
+  return {
+    day: String(parsed.getDate()).padStart(2, "0"),
+    month: new Intl.DateTimeFormat("pt-BR", { month: "short" })
+      .format(parsed)
+      .replace(".", "")
+      .toUpperCase(),
+    relative,
+    time: item.hora?.slice(0, 5) || "",
+  };
 }
 
 function isFinalActivity(status?: string) {
   return FINAL_ACTIVITY_STATUSES.has((status || "").toLowerCase());
 }
 
-function agendaTimestamp(item: Pick<ActivityItem, "date" | "hora">) {
-  if (!item.date) return Number.POSITIVE_INFINITY;
-  const data = item.date.slice(0, 10);
-  const hora = /^\d{2}:\d{2}/.test(item.hora || "")
-    ? String(item.hora).slice(0, 5)
-    : "12:00";
-  const parsed = new Date(`${data}T${hora}:00`);
-  return Number.isNaN(parsed.getTime())
-    ? Number.POSITIVE_INFINITY
-    : parsed.getTime();
+function formatNewsDate(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+  }).format(date);
+}
+
+function isTask(item: ActivityItem) {
+  return item.tipo === "tarefa" || item.fonte === "tarefa";
+}
+
+function isIntimation(item: ActivityItem) {
+  const kind =
+    `${item.tipo || ""} ${item.subtipo || ""} ${item.fonte || ""}`.toLowerCase();
+  return kind.includes("intimacao") || kind.includes("intimação");
 }
 
 function buildDonutGradient(entries: Array<{ value: number; color: string }>) {
   const total = entries.reduce((sum, entry) => sum + entry.value, 0);
-  if (total <= 0) return "conic-gradient(#e5e7eb 0 100%)";
+  if (total <= 0) return "conic-gradient(#e6ebf1 0 100%)";
   let cursor = 0;
   return `conic-gradient(${entries
     .map((entry, index) => {
@@ -174,126 +204,119 @@ function buildDonutGradient(entries: Array<{ value: number; color: string }>) {
     .join(", ")})`;
 }
 
-function Surface({
+function Card({
   title,
-  eyebrow,
+  icon: Icon,
   action,
   children,
-  className,
+  className = "",
 }: {
   title: string;
-  eyebrow?: string;
+  icon: LucideIcon;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
   return (
-    <section className={cn("ejc-ultra-surface", className)}>
-      <header className="ejc-ultra-surface__header">
-        <div>
-          {eyebrow && <span className="be-bronze-accent">{eyebrow}</span>}
-          <h2 className="be-section-title">{title}</h2>
+    <section className={`ejc-reference-card ${className}`}>
+      <header className="ejc-reference-card__header">
+        <div className="ejc-reference-card__title">
+          <Icon aria-hidden="true" />
+          <span>{title}</span>
         </div>
         {action}
       </header>
-      <div className="ejc-ultra-surface__body">{children}</div>
+      <div className="ejc-reference-divider" />
+      <div className="ejc-reference-card__body">{children}</div>
     </section>
   );
 }
 
-function Metric({
-  label,
-  value,
-  helper,
-  icon: Icon,
+function MoreLink({
   to,
-  loading,
-  unavailable,
-  tone = "default",
+  children = "Ver todos",
 }: {
-  label: string;
-  value: number | null;
-  helper: string;
-  icon: LucideIcon;
   to: string;
-  loading: boolean;
-  unavailable: boolean;
-  tone?: "default" | "attention" | "success" | "tech";
+  children?: ReactNode;
 }) {
   return (
-    <Link
-      to={to}
-      className={cn(
-        "ejc-ultra-metric",
-        `is-${tone}`,
-        unavailable && "is-muted",
-      )}
-    >
-      <span className="ejc-ultra-metric__icon">
-        <Icon aria-hidden="true" />
-      </span>
-      <span className="ejc-ultra-metric__copy">
-        <small>{label}</small>
-        {loading ? (
-          <i
-            className="ejc-ultra-skeleton"
-            role="status"
-            aria-label="Carregando"
-          />
-        ) : (
-          <strong>{unavailable ? "—" : (value ?? 0)}</strong>
-        )}
-        <em>{unavailable ? "Fonte indisponível" : helper}</em>
-      </span>
-      <ArrowRight className="ejc-ultra-metric__arrow" aria-hidden="true" />
+    <Link to={to} className="ejc-reference-card__action">
+      {children} <ArrowRight aria-hidden="true" />
     </Link>
   );
 }
 
+function Empty({ children }: { children: ReactNode }) {
+  return <div className="ejc-reference-empty">{children}</div>;
+}
+
 export default function DashboardUltra() {
+  const navigate = useNavigate();
   const user = useAuth((state) => state.user);
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [agendaEvents, setAgendaEvents] = useState<AgendaEvent[]>([]);
-  const [movements, setMovements] = useState<MovementItem[]>([]);
+  const [clients, setClients] = useState<ClientItem[]>([]);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [defesasMeta, setDefesasMeta] = useState<DefesasMeta | null>(null);
+  const [taskTab, setTaskTab] = useState<"tarefas" | "intimacoes">("tarefas");
+  const [quickQuestion, setQuickQuestion] = useState("");
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState({
     dashboard: false,
     activities: false,
     agenda: false,
-    movements: false,
+    clients: false,
+    news: false,
   });
 
   useEffect(() => {
     let active = true;
     setLoading(true);
+
     Promise.allSettled([
       api.get("/dashboard/"),
       api.get("/atividades", { params: { apenas_pendentes: false } }),
       api.get("/agenda-eventos/", { params: { page_size: 500 } }),
-      api.get("/movimentos/recentes", { params: { limit: 8 } }),
+      api.get("/clients/?page_size=4&status=ativo"),
+      api.get("/noticias?limit=4"),
+      api.get("/defesas-revisoes/meta"),
     ])
       .then(
-        ([dashboardResult, activitiesResult, agendaResult, movementResult]) => {
+        ([
+          dashboardResult,
+          activitiesResult,
+          agendaResult,
+          clientsResult,
+          newsResult,
+          defesasResult,
+        ]) => {
           if (!active) return;
+
           setFailed({
             dashboard: dashboardResult.status === "rejected",
             activities: activitiesResult.status === "rejected",
             agenda: agendaResult.status === "rejected",
-            movements: movementResult.status === "rejected",
+            clients: clientsResult.status === "rejected",
+            news: newsResult.status === "rejected",
           });
-          if (dashboardResult.status === "fulfilled") {
+
+          if (dashboardResult.status === "fulfilled")
             setDashboard(dashboardResult.value.data);
-          }
-          if (activitiesResult.status === "fulfilled") {
+          if (activitiesResult.status === "fulfilled")
             setActivities(asList(activitiesResult.value.data));
-          }
-          if (agendaResult.status === "fulfilled") {
+          if (agendaResult.status === "fulfilled")
             setAgendaEvents(asList(agendaResult.value.data));
-          }
-          if (movementResult.status === "fulfilled") {
-            setMovements(asList(movementResult.value.data));
-          }
+          if (clientsResult.status === "fulfilled")
+            setClients(asList<ClientItem>(clientsResult.value.data));
+          if (newsResult.status === "fulfilled")
+            setNews(
+              asList<NewsItem>(
+                newsResult.value.data?.itens ?? newsResult.value.data,
+              ),
+            );
+          if (defesasResult.status === "fulfilled")
+            setDefesasMeta(defesasResult.value.data);
         },
       )
       .finally(() => {
@@ -306,31 +329,40 @@ export default function DashboardUltra() {
   }, []);
 
   const degraded = new Set(dashboard?.degradado || []);
-  const casesUnavailable = failed.dashboard || degraded.has("casos");
   const deadlinesUnavailable = failed.dashboard || degraded.has("prazos");
-  const tasksUnavailable = failed.activities;
+  const casesUnavailable = failed.dashboard || degraded.has("casos");
 
   const pendingTasks = useMemo(
     () =>
       activities.filter(
-        (item) =>
-          (item.tipo === "tarefa" || item.fonte === "tarefa") &&
-          !isFinalActivity(item.status),
-      ).length,
+        (item) => isTask(item) && !isFinalActivity(item.status),
+      ),
     [activities],
   );
 
+  const pendingIntimations = useMemo(
+    () =>
+      activities.filter(
+        (item) => isIntimation(item) && !isFinalActivity(item.status),
+      ),
+    [activities],
+  );
+
+  const todayTasks = useMemo(() => {
+    const today = localDateKey();
+    return pendingTasks.filter((item) => item.date?.slice(0, 10) === today)
+      .length;
+  }, [pendingTasks]);
+
   const agendaMap = useMemo(() => {
     const map = new Map<string, AgendaEvent>();
-    for (const event of agendaEvents) {
-      if (event.id) map.set(event.id, event);
-    }
+    for (const event of agendaEvents) if (event.id) map.set(event.id, event);
     return map;
   }, [agendaEvents]);
 
   const upcomingAgenda = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
     return activities
       .map((item) => {
         const event = item.id ? agendaMap.get(item.id) : undefined;
@@ -342,34 +374,18 @@ export default function DashboardUltra() {
         };
       })
       .filter((item) => {
-        if (!item.date || isFinalActivity(item.status)) return false;
-        const parsed = new Date(
-          item.date.includes("T") ? item.date : `${item.date}T12:00:00`,
-        );
-        return parsed >= today;
+        const parsed = parseDate(item.date, item.hora);
+        return parsed && parsed >= start && !isFinalActivity(item.status);
       })
-      .sort((a, b) => agendaTimestamp(a) - agendaTimestamp(b))
-      .slice(0, 6);
+      .sort((a, b) => activityTimestamp(a) - activityTimestamp(b))
+      .slice(0, 3);
   }, [activities, agendaMap]);
-
-  const areas = useMemo(
-    () =>
-      (dashboard?.casos?.por_area || [])
-        .map((item) => ({
-          label: formatArea(item.area),
-          value: Number(item.total || 0),
-        }))
-        .filter((item) => item.value > 0)
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 6),
-    [dashboard],
-  );
 
   const statusEntries = useMemo(
     () =>
       Object.entries(dashboard?.casos?.por_status || {})
         .map(([label, value], index) => ({
-          label: formatArea(label),
+          label: formatLabel(label),
           value: Number(value || 0),
           color: STATUS_COLORS[index % STATUS_COLORS.length],
         }))
@@ -382,445 +398,542 @@ export default function DashboardUltra() {
     () => buildDonutGradient(statusEntries),
     [statusEntries],
   );
-  const maxArea = Math.max(1, ...areas.map((item) => item.value));
-  const totalCases = Number(dashboard?.casos?.total || 0);
-  const firstName = user?.full_name?.split(" ")[0] || "colega";
-  const canCreateCase = CREATE_CASE_ROLES.has(user?.role || "");
+  const taskItems = taskTab === "tarefas" ? pendingTasks : pendingIntimations;
   const canUseLegal = LEGAL_ROLES.has(user?.role || "");
+  const contractFeature = defesasMeta?.modalidades?.find(
+    (item) => item.codigo === "revisao_contratual",
+  );
+  const trafficFeature = defesasMeta?.modalidades?.find(
+    (item) => item.codigo === "multa_transito",
+  );
 
-  const quickActions = [
-    ...(canCreateCase
-      ? [
-          {
-            to: NOVO_CASO_DOCUMENTO_PATH,
-            label: "Novo caso por documento",
-            detail: "IA extrai e estrutura os dados",
-            icon: FilePlus2,
-          },
-          {
-            to: NOVO_CASO_MANUAL_PATH,
-            label: "Novo caso manual",
-            detail: "Cadastro direto e controlado",
-            icon: Plus,
-          },
-          {
-            to: "/clientes",
-            label: "Clientes",
-            detail: "Cadastro e histórico de atendimento",
-            icon: UserPlus,
-          },
-        ]
-      : []),
-    {
-      to: "/atividades?view=calendario",
-      label: "Agenda e prazos",
-      detail: "Central operacional do dia",
-      icon: CalendarClock,
-    },
-    ...(canUseLegal
-      ? [
-          {
-            to: "/entrada",
-            label: "Importar documento",
-            detail: "Entrada única de documentos",
-            icon: Import,
-          },
-          {
-            to: "/inteligencia",
-            label: "Inteligência jurídica",
-            detail: "Análise, estratégia e pesquisa",
-            icon: BrainCircuit,
-          },
-        ]
-      : []),
-  ].slice(0, 6);
-
-  const riskCount =
-    Number(dashboard?.prazos?.vencidos || 0) +
-    Number(dashboard?.prazos?.criticos_3d || 0);
+  const submitQuickQuestion = () => {
+    const q = quickQuestion.trim();
+    if (!q) return;
+    navigate("/inteligencia?tab=assistente&sub=rapido", {
+      state: { perguntaRapida: q },
+    });
+  };
 
   return (
-    <div className="ejc-ultra-dashboard">
-      <section className="ejc-ultra-hero">
-        <div className="ejc-ultra-hero__grid" aria-hidden="true" />
-        <div className="ejc-ultra-hero__content">
-          <div className={cn("ejc-ultra-hero__eyebrow", "be-hero-eyebrow")}>
-            <Radar aria-hidden="true" />
-            <span>Legal Operations Command Center</span>
-            <i>SNAPSHOT</i>
-          </div>
-          <h1 className="be-hero-title">Bom trabalho, {firstName}.</h1>
-          <p>
-            Uma visão única de casos, prazos, tarefas e movimentações para
-            decidir o que exige atenção agora. Dados carregados ao abrir a tela.
-          </p>
-          <div className="ejc-ultra-hero__actions">
-            {canCreateCase && (
-              <Link
-                to={NOVO_CASO_DOCUMENTO_PATH}
-                className="ejc-ultra-primary-action"
-              >
-                <Sparkles aria-hidden="true" />
-                Abrir caso com documento
-              </Link>
-            )}
-            <Link to="/casos" className="ejc-ultra-secondary-action">
-              <FolderKanban aria-hidden="true" />
-              Ver carteira
-            </Link>
-          </div>
-        </div>
-        <div
-          className="ejc-ultra-hero__signal"
-          aria-label="Resumo de atenção operacional"
+    <div className="ejc-reference-dashboard">
+      <div className="ejc-reference-dashboard__top">
+        <Card
+          title="Prioridades"
+          icon={ClipboardCheck}
+          action={<MoreLink to="/atividades">Ver todas</MoreLink>}
         >
-          <div className="ejc-ultra-orbit" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="ejc-ultra-hero__signal-copy">
-            <small>Índice de atenção</small>
-            <strong>{deadlinesUnavailable ? "—" : riskCount}</strong>
-            <span>
-              {deadlinesUnavailable
-                ? "Prazos indisponíveis"
-                : riskCount > 0
-                  ? "itens de prazo requerem revisão"
-                  : "operação sem prazo crítico detectado"}
+          <Link
+            to="/atividades?tipo=prazo"
+            className="ejc-reference-row ejc-reference-accent-row is-danger"
+          >
+            <span className="ejc-reference-row__icon is-danger">
+              <Scale aria-hidden="true" />
             </span>
-          </div>
-        </div>
-      </section>
+            <span className="ejc-reference-row__copy">
+              <strong>
+                {deadlinesUnavailable
+                  ? "—"
+                  : (dashboard?.prazos?.vencidos ?? 0)}{" "}
+                prazos vencidos
+              </strong>
+              <small>Exigem conferência e atuação imediata</small>
+            </span>
+            <ArrowRight size={12} aria-hidden="true" />
+          </Link>
+          <Link
+            to="/atividades?tipo=prazo"
+            className="ejc-reference-row ejc-reference-accent-row is-warning"
+          >
+            <span className="ejc-reference-row__icon is-warning">
+              <AlertTriangle aria-hidden="true" />
+            </span>
+            <span className="ejc-reference-row__copy">
+              <strong>
+                {deadlinesUnavailable
+                  ? "—"
+                  : (dashboard?.prazos?.criticos_3d ?? 0)}{" "}
+                prazos críticos em 3 dias
+              </strong>
+              <small>Janela operacional curta</small>
+            </span>
+            <ArrowRight size={12} aria-hidden="true" />
+          </Link>
+          <Link
+            to="/atividades?tipo=tarefa"
+            className="ejc-reference-row ejc-reference-accent-row"
+          >
+            <span className="ejc-reference-row__icon">
+              <CalendarDays aria-hidden="true" />
+            </span>
+            <span className="ejc-reference-row__copy">
+              <strong>
+                {failed.activities ? "—" : todayTasks} tarefas para hoje
+              </strong>
+              <small>Atividades pendentes com data de hoje</small>
+            </span>
+            <ArrowRight size={12} aria-hidden="true" />
+          </Link>
+          <Link
+            to="/atividades?tipo=intimacao"
+            className="ejc-reference-row ejc-reference-accent-row is-success"
+          >
+            <span className="ejc-reference-row__icon is-success">
+              <Bell aria-hidden="true" />
+            </span>
+            <span className="ejc-reference-row__copy">
+              <strong>
+                {failed.activities ? "—" : pendingIntimations.length} intimações
+                pendentes
+              </strong>
+              <small>Comunicações processuais a tratar</small>
+            </span>
+            <ArrowRight size={12} aria-hidden="true" />
+          </Link>
+        </Card>
 
-      <section
-        className="ejc-ultra-metrics"
-        aria-label="Indicadores operacionais"
-      >
-        <Metric
-          label="Casos ativos"
-          value={dashboard?.casos?.ativos ?? null}
-          helper="carteira em andamento"
-          icon={Scale}
-          to="/casos?status=ativo"
-          loading={loading}
-          unavailable={casesUnavailable}
-          tone="tech"
-        />
-        <Metric
-          label="Prazos em 7 dias"
-          value={dashboard?.prazos?.proximos_7d ?? null}
-          helper="janela operacional imediata"
-          icon={CalendarClock}
-          to="/atividades?tipo=prazo"
-          loading={loading}
-          unavailable={deadlinesUnavailable}
-          tone={riskCount > 0 ? "attention" : "default"}
-        />
-        <Metric
-          label="Tarefas pendentes"
-          value={pendingTasks}
-          helper="ações ainda não concluídas"
+        <Card
+          title="Tarefas e Intimações"
           icon={ListTodo}
-          to="/atividades?tipo=tarefa"
-          loading={loading}
-          unavailable={tasksUnavailable}
-        />
-        <Metric
-          label="Total da carteira"
-          value={dashboard?.casos?.total ?? null}
-          helper="casos registrados no EJC"
-          icon={Gavel}
-          to="/casos"
-          loading={loading}
-          unavailable={casesUnavailable}
-          tone="success"
-        />
-      </section>
-
-      <div className="ejc-ultra-main-grid">
-        <Surface
-          eyebrow="Prioridade"
-          title="Radar operacional"
-          className="ejc-ultra-radar-panel"
-          action={
-            <Link to="/atividades" className="ejc-ultra-text-link">
-              Abrir central <ArrowRight aria-hidden="true" />
-            </Link>
-          }
+          action={<MoreLink to="/atividades">Ver todas</MoreLink>}
         >
-          <div className="ejc-ultra-priority-list">
-            <Link
-              to="/atividades?tipo=prazo"
-              className="ejc-ultra-priority is-critical"
+          <div
+            className="ejc-reference-tabs"
+            role="tablist"
+            aria-label="Tarefas e intimações"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskTab === "tarefas"}
+              className={taskTab === "tarefas" ? "is-active" : undefined}
+              onClick={() => setTaskTab("tarefas")}
             >
-              <span className="ejc-ultra-priority__icon">
-                <CircleAlert aria-hidden="true" />
-              </span>
-              <span>
-                <small>Prazos vencidos</small>
-                <strong>
-                  {deadlinesUnavailable
-                    ? "—"
-                    : (dashboard?.prazos?.vencidos ?? 0)}
-                </strong>
-              </span>
-              <em>tratar primeiro</em>
-            </Link>
-            <Link
-              to="/atividades?tipo=prazo"
-              className="ejc-ultra-priority is-warning"
+              Tarefas
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskTab === "intimacoes"}
+              className={taskTab === "intimacoes" ? "is-active" : undefined}
+              onClick={() => setTaskTab("intimacoes")}
             >
-              <span className="ejc-ultra-priority__icon">
-                <Clock3 aria-hidden="true" />
-              </span>
-              <span>
-                <small>Críticos em 3 dias</small>
-                <strong>
-                  {deadlinesUnavailable
-                    ? "—"
-                    : (dashboard?.prazos?.criticos_3d ?? 0)}
-                </strong>
-              </span>
-              <em>janela curta</em>
-            </Link>
-            <Link
-              to="/atividades?tipo=tarefa"
-              className="ejc-ultra-priority is-neutral"
-            >
-              <span className="ejc-ultra-priority__icon">
-                <CheckCircle2 aria-hidden="true" />
-              </span>
-              <span>
-                <small>Tarefas pendentes</small>
-                <strong>{tasksUnavailable ? "—" : pendingTasks}</strong>
-              </span>
-              <em>organizar execução</em>
-            </Link>
-          </div>
-
-          <div className="ejc-ultra-agenda-head">
-            <div>
-              <span>Próximos compromissos</span>
-              <small>agenda real do EJC</small>
-            </div>
+              Intimações
+            </button>
           </div>
           {loading ? (
-            <div className="ejc-ultra-list-loading">Carregando agenda…</div>
+            <Empty>Carregando atividades…</Empty>
           ) : failed.activities ? (
-            <div className="ejc-ultra-empty">
-              Agenda indisponível no momento.
-            </div>
-          ) : upcomingAgenda.length === 0 ? (
-            <div className="ejc-ultra-empty">
-              Nenhuma atividade futura encontrada.
-            </div>
+            <Empty>Atividades temporariamente indisponíveis.</Empty>
+          ) : taskItems.length === 0 ? (
+            <Empty>Nenhum item pendente nesta aba.</Empty>
           ) : (
-            <div className="ejc-ultra-agenda-list">
-              {failed.agenda && (
-                <div className="ejc-ultra-empty" role="status">
-                  Horário, local e subtipo dos compromissos podem estar
-                  indisponíveis no momento.
-                </div>
-              )}
-              {upcomingAgenda.map((item, index) => {
-                const destination = item.case_id
-                  ? `/casos/${item.case_id}`
-                  : "/atividades";
-                return (
-                  <Link
-                    key={item.id || `${dateKey(item.date)}-${index}`}
-                    to={destination}
-                    className="ejc-ultra-agenda-item"
-                  >
-                    <span className="ejc-ultra-agenda-item__date">
-                      {formatDateTime(item.date)}
-                    </span>
-                    <span className="ejc-ultra-agenda-item__copy">
-                      <strong>
-                        {item.titulo || item.caso_titulo || "Atividade"}
-                      </strong>
-                      <small>
-                        {[
-                          item.hora,
-                          item.local,
-                          formatArea(item.subtipo || item.tipo),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </small>
-                    </span>
-                    <ArrowRight aria-hidden="true" />
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </Surface>
-
-        <Surface eyebrow="Carteira" title="Distribuição dos casos">
-          {loading ? (
-            <div className="ejc-ultra-portfolio-loading">
-              Carregando carteira…
-            </div>
-          ) : casesUnavailable ? (
-            <div className="ejc-ultra-empty">Dados de casos indisponíveis.</div>
-          ) : totalCases === 0 ? (
-            <div className="ejc-ultra-empty">Nenhum caso registrado.</div>
-          ) : (
-            <div className="ejc-ultra-portfolio">
-              <div className="ejc-ultra-donut-wrap">
-                <div
-                  className="ejc-ultra-donut"
-                  style={{ background: donutGradient }}
-                  aria-label={`${totalCases} casos no total`}
+            taskItems.slice(0, 4).map((item, index) => {
+              const meta = formatDayMeta(item);
+              return (
+                <Link
+                  key={item.id || `${item.titulo}-${index}`}
+                  to={
+                    item.case_id
+                      ? `/casos/${item.case_id}`
+                      : taskTab === "tarefas"
+                        ? "/atividades?tipo=tarefa"
+                        : "/atividades?tipo=intimacao"
+                  }
+                  className="ejc-reference-row"
                 >
-                  <div>
-                    <small>Total</small>
-                    <strong>{totalCases}</strong>
-                    <span>casos</span>
-                  </div>
-                </div>
-                <div className="ejc-ultra-status-legend">
-                  {statusEntries.slice(0, 5).map((item) => (
-                    <div key={item.label}>
-                      <i style={{ backgroundColor: item.color }} />
-                      <span>{item.label}</span>
-                      <strong>{item.value}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="ejc-ultra-area-bars">
-                <div className="ejc-ultra-area-bars__title">
-                  <span>Áreas de atuação</span>
-                  <Badge tone="ouro">Top {areas.length}</Badge>
-                </div>
-                {areas.length === 0 ? (
-                  <div className="ejc-ultra-empty">
-                    Sem distribuição por área.
-                  </div>
-                ) : (
-                  areas.map((item) => (
-                    <div className="ejc-ultra-area-row" key={item.label}>
-                      <div>
-                        <span>{item.label}</span>
-                        <strong>{item.value}</strong>
-                      </div>
-                      <div className="ejc-ultra-area-track">
-                        <i
-                          style={{
-                            width: `${Math.max(6, (item.value / maxArea) * 100)}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+                  <span className="ejc-reference-task-dot" aria-hidden="true" />
+                  <span className="ejc-reference-row__copy">
+                    <strong>
+                      {item.titulo ||
+                        (taskTab === "tarefas" ? "Tarefa" : "Intimação")}
+                    </strong>
+                    <small>
+                      {item.caso_titulo ||
+                        item.descricao ||
+                        formatLabel(item.subtipo || item.tipo)}
+                    </small>
+                  </span>
+                  <span className="ejc-reference-row__meta">
+                    {meta.relative && <strong>{meta.relative}</strong>}
+                    <span>{meta.time || `${meta.day} ${meta.month}`}</span>
+                  </span>
+                </Link>
+              );
+            })
           )}
-        </Surface>
+        </Card>
+
+        <Card
+          title="Inteligência Jurídica"
+          icon={Sparkles}
+          action={
+            canUseLegal ? (
+              <MoreLink to="/inteligencia">Abrir completa</MoreLink>
+            ) : undefined
+          }
+        >
+          {canUseLegal ? (
+            <>
+              <p className="ejc-reference-ai-copy">
+                Pergunte algo rápido ou abra uma ferramenta jurídica
+                especializada.
+              </p>
+              <div className="ejc-reference-ai-box">
+                <textarea
+                  value={quickQuestion}
+                  onChange={(event) => setQuickQuestion(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      (event.ctrlKey || event.metaKey) &&
+                      event.key === "Enter"
+                    )
+                      submitQuickQuestion();
+                  }}
+                  placeholder="Digite sua pergunta ou descreva o que precisa (ex.: jurisprudência sobre dano moral em acidente de trânsito)…"
+                  aria-label="Pergunta rápida para a Inteligência Jurídica"
+                />
+                <button
+                  type="button"
+                  className="ejc-reference-ai-send"
+                  onClick={submitQuickQuestion}
+                  disabled={!quickQuestion.trim()}
+                  aria-label="Abrir pergunta na Inteligência Jurídica"
+                >
+                  <Send aria-hidden="true" />
+                </button>
+              </div>
+              <div className="ejc-reference-ai-shortcuts">
+                <Link
+                  to="/inteligencia?tab=conhecimento&sub=pesquisa"
+                  className="ejc-reference-ai-shortcut"
+                >
+                  <Scale aria-hidden="true" /> Jurisprudência e fontes
+                </Link>
+                <Link
+                  to="/inteligencia?tab=producao&sub=analise"
+                  className="ejc-reference-ai-shortcut"
+                >
+                  <FileText aria-hidden="true" /> Analisar / produzir peça
+                </Link>
+                <Link
+                  to="/inteligencia?tab=assistente&sub=rapido"
+                  className="ejc-reference-ai-shortcut"
+                >
+                  <ListTodo aria-hidden="true" /> Resumo rápido
+                </Link>
+                <Link
+                  to="/inteligencia?tab=assistente&sub=agente"
+                  className="ejc-reference-ai-shortcut"
+                >
+                  <ShieldCheck aria-hidden="true" /> Análise aprofundada
+                </Link>
+              </div>
+            </>
+          ) : (
+            <Empty>
+              Inteligência Jurídica disponível apenas aos perfis jurídicos
+              autorizados.
+            </Empty>
+          )}
+        </Card>
       </div>
 
-      <div className="ejc-ultra-bottom-grid">
-        <Surface
-          eyebrow="Timeline"
-          title="Movimentações recentes"
+      <div className="ejc-reference-dashboard__middle">
+        <Card
+          title="Radar Operacional"
+          icon={Gavel}
+          action={<MoreLink to="/casos">Ver carteira</MoreLink>}
+        >
+          {loading ? (
+            <Empty>Carregando radar…</Empty>
+          ) : casesUnavailable ? (
+            <Empty>Dados da carteira indisponíveis.</Empty>
+          ) : statusEntries.length === 0 ? (
+            <Empty>Nenhum caso com status para exibir.</Empty>
+          ) : (
+            <div className="ejc-reference-donut-wrap">
+              <div
+                className="ejc-reference-donut"
+                style={{ background: donutGradient }}
+                aria-label={`${dashboard?.casos?.total ?? 0} casos na carteira`}
+              />
+              <div className="ejc-reference-legend">
+                {statusEntries.slice(0, 5).map((item) => (
+                  <div key={item.label}>
+                    <i style={{ background: item.color }} />
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card
+          title="Agenda e Prazos"
+          icon={CalendarDays}
           action={
-            <Link to="/casos" className="ejc-ultra-text-link">
-              Ver casos <ArrowRight aria-hidden="true" />
-            </Link>
+            <MoreLink to="/atividades?view=calendario">Ver agenda</MoreLink>
           }
         >
           {loading ? (
-            <div className="ejc-ultra-list-loading">
-              Carregando movimentações…
-            </div>
-          ) : failed.movements ? (
-            <div className="ejc-ultra-empty">Movimentações indisponíveis.</div>
-          ) : movements.length === 0 ? (
-            <div className="ejc-ultra-empty">Nenhuma movimentação recente.</div>
+            <Empty>Carregando agenda…</Empty>
+          ) : failed.activities ? (
+            <Empty>Agenda temporariamente indisponível.</Empty>
+          ) : upcomingAgenda.length === 0 ? (
+            <Empty>Nenhum compromisso futuro encontrado.</Empty>
           ) : (
-            <div className="ejc-ultra-timeline">
-              {movements.slice(0, 6).map((movement, index) => {
-                const date =
-                  movement.data_movimento ||
-                  movement.created_at ||
-                  movement.data;
-                const destination = movement.case_id
-                  ? `/casos/${movement.case_id}`
-                  : "/casos";
-                return (
-                  <Link
-                    key={movement.id || `${date}-${index}`}
-                    to={destination}
-                    className="ejc-ultra-timeline__item"
-                  >
-                    <span className="ejc-ultra-timeline__node">
-                      <Activity aria-hidden="true" />
-                    </span>
-                    <span className="ejc-ultra-timeline__copy">
-                      <small>{formatDateTime(date)}</small>
-                      <strong>
-                        {movement.descricao ||
-                          movement.titulo ||
-                          formatArea(movement.tipo) ||
-                          "Movimentação"}
-                      </strong>
-                      <em>
-                        {movement.case_title ||
-                          movement.cliente_nome ||
-                          movement.case_number ||
-                          movement.numero_processo ||
-                          "Caso relacionado"}
-                      </em>
-                    </span>
-                  </Link>
-                );
-              })}
+            upcomingAgenda.map((item, index) => {
+              const meta = formatDayMeta(item);
+              return (
+                <Link
+                  key={item.id || `${item.titulo}-${index}`}
+                  to={item.case_id ? `/casos/${item.case_id}` : "/atividades"}
+                  className="ejc-reference-agenda-row"
+                >
+                  <span className="ejc-reference-date-tile">
+                    <strong>{meta.day}</strong>
+                    <small>{meta.month}</small>
+                  </span>
+                  <span className="ejc-reference-row__copy">
+                    <strong>
+                      {item.titulo || item.caso_titulo || "Atividade"}
+                    </strong>
+                    <small>
+                      {[
+                        item.caso_titulo,
+                        item.local,
+                        formatLabel(item.subtipo || item.tipo),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </small>
+                  </span>
+                  <span className="ejc-reference-row__meta">
+                    <span>{meta.time || "—"}</span>
+                  </span>
+                </Link>
+              );
+            })
+          )}
+          {failed.agenda && !failed.activities && (
+            <div
+              className="ejc-reference-empty"
+              style={{ minHeight: 28, padding: 4 }}
+            >
+              Horário/local podem estar incompletos.
             </div>
           )}
-        </Surface>
+        </Card>
 
-        <Surface
-          eyebrow="Comandos"
-          title="Acesso rápido"
-          className="ejc-ultra-command-panel"
+        <Card
+          title="Clientes"
+          icon={Users}
+          action={<MoreLink to="/clientes">Ver todos</MoreLink>}
         >
-          <div className="ejc-ultra-command-grid">
-            {quickActions.map(({ to, label, detail, icon: Icon }) => (
+          {loading ? (
+            <Empty>Carregando clientes…</Empty>
+          ) : failed.clients ? (
+            <Empty>Clientes temporariamente indisponíveis.</Empty>
+          ) : clients.length === 0 ? (
+            <Empty>Nenhum cliente ativo encontrado.</Empty>
+          ) : (
+            clients.slice(0, 4).map((client) => (
               <Link
-                to={to}
-                key={`${to}-${label}`}
-                className="ejc-ultra-command"
+                key={client.id}
+                to={`/clientes/${client.id}`}
+                className="ejc-reference-client-row"
               >
-                <span>
-                  <Icon aria-hidden="true" />
+                <div>
+                  <strong>{client.nome || "Cliente sem nome"}</strong>
+                  <small>
+                    {client.email ||
+                      client.telefone ||
+                      client.whatsapp ||
+                      formatLabel(client.status)}
+                  </small>
+                </div>
+                <span
+                  className="ejc-reference-client-status"
+                  title={
+                    client.status
+                      ? `Status: ${formatLabel(client.status)}`
+                      : "Cliente"
+                  }
+                >
+                  {client.nome?.trim().charAt(0).toUpperCase() || "C"}
                 </span>
-                <strong>{label}</strong>
-                <small>{detail}</small>
-                <ArrowRight aria-hidden="true" />
               </Link>
-            ))}
-          </div>
-          <div className="ejc-ultra-command-foot">
-            <Zap aria-hidden="true" />
-            <span>
-              Interface orientada a decisão: atalhos levam aos módulos
-              existentes e respeitam RBAC.
-            </span>
-          </div>
-        </Surface>
+            ))
+          )}
+        </Card>
+
+        <Card
+          title="Revisão de Contratos"
+          icon={FileCheck2}
+          action={
+            canUseLegal ? (
+              <MoreLink to="/ferramentas?abrir=defesas">Abrir módulo</MoreLink>
+            ) : undefined
+          }
+        >
+          {canUseLegal ? (
+            <>
+              <p className="ejc-reference-feature-intro">
+                {contractFeature?.descricao ||
+                  "Leitura estruturada de cláusulas, riscos, desequilíbrio, rescisão e recomposição."}
+              </p>
+              <div className="ejc-reference-feature-list">
+                <span>
+                  <CheckCircle2 aria-hidden="true" /> Inventário de cláusulas e
+                  obrigações
+                </span>
+                <span>
+                  <CheckCircle2 aria-hidden="true" /> Riscos, documentos
+                  faltantes e estratégia
+                </span>
+                <span>
+                  <CheckCircle2 aria-hidden="true" /> Saída revisável com
+                  validação humana
+                </span>
+              </div>
+              <Link
+                to="/ferramentas?abrir=defesas"
+                className="ejc-reference-feature-cta"
+              >
+                Nova revisão <ArrowRight aria-hidden="true" />
+              </Link>
+            </>
+          ) : (
+            <Empty>Ferramenta restrita à equipe jurídica autorizada.</Empty>
+          )}
+        </Card>
       </div>
 
-      <div className="ejc-ultra-privacy-note">
-        <Users aria-hidden="true" />
-        <span>
-          Dashboard operacional compartilhado — sem informações financeiras.
-        </span>
+      <div className="ejc-reference-dashboard__bottom">
+        <Card
+          title="Recurso de Multa de Trânsito"
+          icon={CircleDot}
+          action={
+            canUseLegal ? (
+              <MoreLink to="/ferramentas?abrir=defesas">Abrir módulo</MoreLink>
+            ) : undefined
+          }
+        >
+          {canUseLegal ? (
+            <>
+              <p className="ejc-reference-feature-intro">
+                {trafficFeature?.descricao ||
+                  "Fluxo assistido para defesa prévia e recursos administrativos de trânsito."}
+              </p>
+              <div className="ejc-reference-workflow">
+                <div className="ejc-reference-workflow__step">
+                  <span>
+                    <CircleDot aria-hidden="true" />
+                  </span>
+                  <strong>Dados da multa</strong>
+                  <small>Notificação, auto e documentos</small>
+                </div>
+                <span className="ejc-reference-workflow__arrow">
+                  <ArrowRight aria-hidden="true" />
+                </span>
+                <div className="ejc-reference-workflow__step">
+                  <span>
+                    <ShieldCheck aria-hidden="true" />
+                  </span>
+                  <strong>Análise de defesa</strong>
+                  <small>Prazo, vícios e fundamentos</small>
+                </div>
+                <span className="ejc-reference-workflow__arrow">
+                  <ArrowRight aria-hidden="true" />
+                </span>
+                <div className="ejc-reference-workflow__step">
+                  <span>
+                    <FileText aria-hidden="true" />
+                  </span>
+                  <strong>Gerar rascunho</strong>
+                  <small>Peça com revisão obrigatória</small>
+                </div>
+                <span className="ejc-reference-workflow__arrow">
+                  <ArrowRight aria-hidden="true" />
+                </span>
+                <div className="ejc-reference-workflow__step">
+                  <span>
+                    <Send aria-hidden="true" />
+                  </span>
+                  <strong>Revisão e uso</strong>
+                  <small>Conferência jurídica antes do protocolo</small>
+                </div>
+              </div>
+              <Link
+                to="/ferramentas?abrir=defesas"
+                className="ejc-reference-feature-cta"
+              >
+                Iniciar novo recurso <ArrowRight aria-hidden="true" />
+              </Link>
+            </>
+          ) : (
+            <Empty>Ferramenta restrita à equipe jurídica autorizada.</Empty>
+          )}
+        </Card>
+
+        <Card
+          title="Últimas Notícias Jurídicas"
+          icon={Newspaper}
+          action={<MoreLink to="/noticias">Ver todas</MoreLink>}
+        >
+          {loading ? (
+            <Empty>Carregando notícias…</Empty>
+          ) : failed.news ? (
+            <Empty>Notícias temporariamente indisponíveis.</Empty>
+          ) : news.length === 0 ? (
+            <Empty>Nenhuma notícia disponível no momento.</Empty>
+          ) : (
+            news.slice(0, 4).map((item, index) => {
+              const content = (
+                <>
+                  <span>
+                    <Newspaper aria-hidden="true" />
+                  </span>
+                  <span>
+                    <strong>{item.titulo || "Atualização jurídica"}</strong>
+                    <small>
+                      {item.resumo || "Abra para consultar a fonte de origem."}
+                    </small>
+                  </span>
+                  <em>{item.fonte || "Fonte"}</em>
+                  <time>{formatNewsDate(item.data)}</time>
+                </>
+              );
+              return item.link ? (
+                <a
+                  key={`${item.link}-${index}`}
+                  href={item.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ejc-reference-news-row"
+                >
+                  {content}
+                </a>
+              ) : (
+                <div
+                  key={`${item.titulo}-${index}`}
+                  className="ejc-reference-news-row"
+                >
+                  {content}
+                </div>
+              );
+            })
+          )}
+        </Card>
       </div>
+
+      <footer className="ejc-reference-footer">
+        © {new Date().getFullYear()} EJC — Ecossistema Jurídico Clóvis · De
+        Paula Teixeira Advogados
+      </footer>
     </div>
   );
 }

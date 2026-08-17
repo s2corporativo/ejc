@@ -37,12 +37,7 @@ type ClienteContexto = {
   nome: string;
 };
 
-const PAPEIS_ENTRADA_IA = new Set([
-  "superadmin",
-  "admin",
-  "socio",
-  "advogado",
-]);
+const PAPEIS_ENTRADA_IA = new Set(["superadmin", "admin", "socio", "advogado"]);
 
 function asLista<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) return payload as T[];
@@ -62,7 +57,12 @@ function mensagemDeErro(err: unknown, fallback: string): string {
 function nomeClienteContexto(raw: unknown): string {
   if (!raw || typeof raw !== "object") return "";
   const cliente = raw as Record<string, unknown>;
-  for (const campo of ["nome", "razao_social", "nome_fantasia", "nome_exibicao"]) {
+  for (const campo of [
+    "nome",
+    "razao_social",
+    "nome_fantasia",
+    "nome_exibicao",
+  ]) {
     const valor = cliente[campo];
     if (typeof valor === "string" && valor.trim()) return valor.trim();
   }
@@ -100,9 +100,8 @@ function EntradaInteligente() {
   const [usuarios, setUsuarios] = useState<User[]>([]);
   const [criando, setCriando] = useState(false);
   const [erro409, setErro409] = useState<string | null>(null);
-  const [clienteContexto, setClienteContexto] = useState<ClienteContexto | null>(
-    null,
-  );
+  const [clienteContexto, setClienteContexto] =
+    useState<ClienteContexto | null>(null);
   const [clienteContextoInvalido, setClienteContextoInvalido] = useState(false);
 
   // Cliente vindo da Ficha Mestra: o GET canônico aplica RBAC/ownership. O ID

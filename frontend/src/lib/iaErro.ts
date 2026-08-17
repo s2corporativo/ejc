@@ -59,7 +59,8 @@ function detailDaResposta(err: unknown): {
 }
 
 function mensagemObjeto(detail: unknown): string | null {
-  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return null;
+  if (!detail || typeof detail !== "object" || Array.isArray(detail))
+    return null;
   const mensagem = (detail as { mensagem?: unknown }).mensagem;
   return typeof mensagem === "string" && mensagem.trim()
     ? mensagem.trim()
@@ -68,7 +69,8 @@ function mensagemObjeto(detail: unknown): string | null {
 
 function mensagemSegura(texto: string): string | null {
   const value = texto.trim();
-  if (!value || value.length > 400 || MARCADORES_TECNICOS.test(value)) return null;
+  if (!value || value.length > 400 || MARCADORES_TECNICOS.test(value))
+    return null;
   return value;
 }
 

@@ -30,7 +30,9 @@ describe("DptPortalGuard", () => {
 
   it("linka para o Data Room canônico", () => {
     renderGuard();
-    const link = screen.getByRole("link", { name: /Abrir Data Room canônico/i });
+    const link = screen.getByRole("link", {
+      name: /Abrir Data Room canônico/i,
+    });
     expect(link.getAttribute("href")).toBe("/data-room");
   });
 });

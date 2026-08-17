@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 let role = "advogado";
@@ -35,7 +41,9 @@ vi.mock("./EntradaUnica/TelaEnvio", () => ({
 
 vi.mock("./EntradaUnica/Confirmacao", () => ({
   Confirmacao: ({ proposta }: { proposta: { clienteId?: string | null } }) => (
-    <div data-testid="cliente-confirmacao">{proposta.clienteId || "sem-cliente"}</div>
+    <div data-testid="cliente-confirmacao">
+      {proposta.clienteId || "sem-cliente"}
+    </div>
   ),
 }));
 
@@ -48,7 +56,9 @@ beforeEach(() => {
   postMock.mockReset();
   getMock.mockImplementation((url: string) => {
     if (url === "/clients/c1") {
-      return Promise.resolve({ data: { id: "c1", nome: "Cliente Autorizado" } });
+      return Promise.resolve({
+        data: { id: "c1", nome: "Cliente Autorizado" },
+      });
     }
     if (url === "/entrada-universal/meta") return Promise.resolve({ data: {} });
     if (url === "/users/") return Promise.resolve({ data: [] });
@@ -81,7 +91,8 @@ describe("Entrada Jurídica — contexto e RBAC", () => {
   it("não inicia a IA enquanto o client_id da URL ainda não foi validado", async () => {
     getMock.mockImplementation((url: string) => {
       if (url === "/clients/c1") return new Promise(() => {});
-      if (url === "/entrada-universal/meta") return Promise.resolve({ data: {} });
+      if (url === "/entrada-universal/meta")
+        return Promise.resolve({ data: {} });
       return Promise.resolve({ data: {} });
     });
 

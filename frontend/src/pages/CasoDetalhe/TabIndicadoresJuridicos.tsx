@@ -28,10 +28,13 @@ export default function TabIndicadoresJuridicos({
     let ativo = true;
     setLoadingPrec(true);
     api
-      .get(`/jurisprudencias?area=${encodeURIComponent(caso.area || "")}&per_page=50`)
+      .get(
+        `/jurisprudencias?area=${encodeURIComponent(caso.area || "")}&per_page=50`,
+      )
       .then((r) => {
         const data = r.data;
-        if (ativo) setPrecedentes(Array.isArray(data) ? data : data?.data ?? []);
+        if (ativo)
+          setPrecedentes(Array.isArray(data) ? data : (data?.data ?? []));
       })
       .catch(() => {})
       .finally(() => {
@@ -121,7 +124,8 @@ export default function TabIndicadoresJuridicos({
       {/* ── Precedentes internos ──────────────────────────────────────── */}
       <section className="space-y-2">
         <h2 className="font-semibold">
-          Precedentes internos{precedentes.length > 0 ? ` (${precedentes.length})` : ""}
+          Precedentes internos
+          {precedentes.length > 0 ? ` (${precedentes.length})` : ""}
         </h2>
         <p className="text-xs text-slate-400">
           Jurisprudência do escritório na área do caso

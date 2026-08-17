@@ -238,7 +238,9 @@ export default function Documentos() {
     api
       .get("/documents/tipos")
       .then((r) => {
-        const master: TipoDoc[] = Array.isArray(r.data?.data) ? r.data.data : [];
+        const master: TipoDoc[] = Array.isArray(r.data?.data)
+          ? r.data.data
+          : [];
         const chaves = new Set(master.map((t) => t.tipo_key));
         setTipos([
           ...master,
@@ -286,7 +288,9 @@ export default function Documentos() {
       novos.push({ file: f, titulo: semExtensao(f.name) });
     });
     if (ignorados.length > 0) {
-      const formatos = EXTS_UPLOAD.map((e) => e.replace(".", "").toUpperCase()).join(", ");
+      const formatos = EXTS_UPLOAD.map((e) =>
+        e.replace(".", "").toUpperCase(),
+      ).join(", ");
       toast.error(
         ignorados.length === 1
           ? `O arquivo "${ignorados[0]}" não foi aceito. Formatos permitidos: ${formatos}.`
@@ -338,7 +342,9 @@ export default function Documentos() {
     if (ok > 0) load();
     avisos.slice(0, 3).forEach((a) => toast.info(a));
     if (falhas.length === 0) {
-      toast.success(ok === 1 ? "1 documento enviado" : `${ok} documentos enviados`);
+      toast.success(
+        ok === 1 ? "1 documento enviado" : `${ok} documentos enviados`,
+      );
       setPendentes([]);
       setModal(false);
       setForm({ confidencialidade: "normal" });
@@ -441,7 +447,9 @@ export default function Documentos() {
 
   const excluirSelecionados = async () => {
     if (selDocs.length === 0) return;
-    if (!window.confirm(`Excluir ${selDocs.length} documento(s) selecionado(s)?`))
+    if (
+      !window.confirm(`Excluir ${selDocs.length} documento(s) selecionado(s)?`)
+    )
       return;
     setLoteBusy("delete");
     let ok = 0;
@@ -968,7 +976,8 @@ export default function Documentos() {
               tabIndex={0}
               onClick={() => fileRef.current?.click()}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") fileRef.current?.click();
+                if (e.key === "Enter" || e.key === " ")
+                  fileRef.current?.click();
               }}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1078,9 +1087,9 @@ export default function Documentos() {
               ))}
             </select>
             <p className="mt-1 text-xs text-slate-400">
-              O vínculo criado no upload nasce no contexto do caso. Movimentações
-              posteriores usam o fluxo específico de vínculo e nunca o PATCH de
-              metadados.
+              O vínculo criado no upload nasce no contexto do caso.
+              Movimentações posteriores usam o fluxo específico de vínculo e
+              nunca o PATCH de metadados.
             </p>
           </div>
           <div>
@@ -1297,9 +1306,10 @@ export default function Documentos() {
               </select>
             </div>
             <p className="text-xs text-slate-400">
-              Somente documentos ainda sem caso podem ser adotados por este fluxo.
-              Documento que já integra outro caso permanece no contexto de origem;
-              cada recusa aparece no resumo sem interromper os demais itens.
+              Somente documentos ainda sem caso podem ser adotados por este
+              fluxo. Documento que já integra outro caso permanece no contexto
+              de origem; cada recusa aparece no resumo sem interromper os demais
+              itens.
             </p>
           </div>
         </Modal>
