@@ -68,7 +68,7 @@ google-auth==2.55.1
 # pywebpush em qualquer versão. NÃO subir para 2.x sem migrar para o caminho
 # assíncrono E revalidar o install num venv limpo.
 pywebpush==1.14.1
-py-vapid==1.9.2
+py-vapid==1.9.4
 
 # Documents and exports
 aiofiles==25.1.0
