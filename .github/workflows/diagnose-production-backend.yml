@@ -67,22 +67,52 @@ jobs:
           print(f"log_bytes={len(text.encode(errors='ignore'))}")
           for name, pattern in patterns.items():
               print(f"fingerprint_{name}={len(re.findall(pattern, text, flags=re.I))}")
-
-          # Só emite identificadores de schema/revisão; nunca valores de linha,
-          # parâmetros SQL, e-mails, tokens ou conteúdo de cliente.
           relations = set(re.findall(r'relation ["\']([A-Za-z0-9_.-]+)["\'] does not exist', text, re.I))
           columns = set(re.findall(r'column ["\']?([A-Za-z_][A-Za-z0-9_.]*)["\']? does not exist', text, re.I))
-          revisions = set(re.findall(r'(?:revision|version_num)[^A-Za-z0-9_]+([0-9]{3}[A-Za-z0-9_-]{2,})', text, re.I))
           print("missing_relations=" + ",".join(sorted(relations)) if relations else "missing_relations=none")
           print("missing_columns=" + ",".join(sorted(columns)) if columns else "missing_columns=none")
-          print("referenced_revisions=" + ",".join(sorted(revisions)) if revisions else "referenced_revisions=none")
           PY
 
-      - name: Estado Alembic e objetos-chave sem dados
+      - name: Estado Alembic e schema essencial sem dados
         shell: bash
         run: |
           set -euo pipefail
-          docker exec ejc_db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atq -c "SELECT version_num FROM alembic_version ORDER BY version_num"' | sed 's/^/alembic_version=/'
+          docker exec ejc_db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atq <<"SQL"
+          SELECT ''alembic_version='' || version_num FROM alembic_version ORDER BY version_num;
+          SELECT ''current_database='' || current_database();
+          SELECT ''search_path='' || current_setting(''search_path'');
+          SELECT ''users_regclass='' || COALESCE(to_regclass(''public.users'')::text, ''missing'');
+          SELECT ''knowledge_chunks_regclass='' || COALESCE(to_regclass(''public.knowledge_chunks'')::text, ''missing'');
+          SELECT ''public_table_count='' || count(*) FROM information_schema.tables WHERE table_schema=''public'' AND table_type=''BASE TABLE'';
+          SQL'
+
+      - name: Comparar destino lógico de banco sem expor credenciais
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, subprocess
+          from urllib.parse import urlparse
+
+          env = json.loads(subprocess.check_output([
+              "docker", "inspect", "ejc_backend", "--format", "{{json .Config.Env}}"
+          ], text=True))
+          vals = {}
+          for item in env:
+              if "=" in item:
+                  k, v = item.split("=", 1)
+                  if k in {"DATABASE_URL", "DATABASE_URL_SYNC"}:
+                      vals[k] = v
+          for key in ("DATABASE_URL", "DATABASE_URL_SYNC"):
+              value = vals.get(key, "")
+              if not value:
+                  print(f"{key.lower()}_configured=false")
+                  continue
+              parsed = urlparse(value)
+              print(f"{key.lower()}_configured=true")
+              print(f"{key.lower()}_host={parsed.hostname or 'none'}")
+              print(f"{key.lower()}_database={(parsed.path or '/').lstrip('/') or 'none'}")
+          PY
 
       - name: Dependências de infraestrutura visíveis
         shell: bash
