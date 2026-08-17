@@ -1,0 +1,181 @@
+name: Recover Production Migration 145
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/recover-production-migration-145.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recover-production-migration-145
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Pré-condições fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(docker inspect ejc_backend --format '{{.State.Status}}')"
+          [ "$state" = "restarting" ] || { echo "backend_state_unexpected=$state"; exit 1; }
+          docker exec -i ejc_worker python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect, text
+
+          engine = create_engine(os.environ["DATABASE_URL_SYNC"])
+          with engine.connect() as conn:
+              version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+              user_cols = {c["name"] for c in inspect(conn).get_columns("users", schema="public")}
+              chunk_cols = {c["name"] for c in inspect(conn).get_columns("knowledge_chunks", schema="public")}
+              assert version == "144_alembic_version_varchar128", version
+              assert "password_changed_at" not in user_cols
+              assert "embedding_legacy_768" in chunk_cols
+              print("preconditions_ok=true")
+          PY
+
+      - name: Extrair rclone atual efêmero
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull rclone/rclone:latest >/dev/null
+          tmp_container="ejc_rclone_recovery_${GITHUB_RUN_ID}"
+          docker create --name "$tmp_container" rclone/rclone:latest version >/dev/null
+          docker cp "$tmp_container:/usr/local/bin/rclone" "$RUNNER_TEMP/rclone"
+          docker rm -f "$tmp_container" >/dev/null
+          chmod 0755 "$RUNNER_TEMP/rclone"
+          "$RUNNER_TEMP/rclone" version | head -n1
+
+      - name: Backup cifrado offsite obrigatório imediatamente antes da correção
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /opt/ejc
+          docker compose run --rm --no-deps -T \
+            -v "$RUNNER_TEMP/rclone:/usr/local/bin/rclone:ro" \
+            backend python - <<'PY'
+          import asyncio, json
+          from app.core.database import AsyncSessionLocal
+          from app.services import backup_execution_service
+
+          async def main():
+              async with AsyncSessionLocal() as db:
+                  result = await backup_execution_service.executar_backup_exclusivo(
+                      db,
+                      origem="recovery_migration_145",
+                      usuario_id=None,
+                      usuario_role="sistema",
+                  )
+              names = [str(x.get("nome") or "") for x in (result.get("artefatos") or [])]
+              ok = (
+                  bool(result.get("ok"))
+                  and bool(result.get("offsite_ok"))
+                  and any(x.endswith("_db.dump.enc") for x in names)
+                  and any(x.endswith("_uploads.tar.gz.enc") for x in names)
+              )
+              print(json.dumps({
+                  "backup_ok": ok,
+                  "offsite_ok": bool(result.get("offsite_ok")),
+                  "status": result.get("status"),
+                  "db_artifact": any(x.endswith("_db.dump.enc") for x in names),
+                  "uploads_artifact": any(x.endswith("_uploads.tar.gz.enc") for x in names),
+              }, sort_keys=True))
+              raise SystemExit(0 if ok else 1)
+
+          asyncio.run(main())
+          PY
+
+      - name: Parar apenas o backend em loop
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /opt/ejc
+          docker compose stop backend
+          [ "$(docker inspect ejc_backend --format '{{.State.Running}}')" = "false" ]
+          echo 'backend_stopped=true'
+
+      - name: Restaurar forma pré-migration esperada sem dados semânticos
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /opt/ejc
+          docker compose run --rm --no-deps -T backend python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect, text
+
+          engine = create_engine(os.environ["DATABASE_URL_SYNC"])
+          with engine.begin() as conn:
+              version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+              user_cols = {c["name"] for c in inspect(conn).get_columns("users", schema="public")}
+              chunk_cols = {c["name"] for c in inspect(conn).get_columns("knowledge_chunks", schema="public")}
+              assert version == "144_alembic_version_varchar128", version
+              assert "password_changed_at" not in user_cols
+              assert "embedding_legacy_768" in chunk_cols
+              conn.execute(text("ALTER TABLE users ADD COLUMN password_changed_at TIMESTAMP WITH TIME ZONE NULL"))
+          print("compatibility_column_restored=true")
+          PY
+
+      - name: Aplicar migration 145 original e homologada
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /opt/ejc
+          docker compose run --rm --no-deps -T backend python -m alembic upgrade head
+
+      - name: Verificar schema final antes de religar API
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec -i ejc_worker python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect, text
+
+          engine = create_engine(os.environ["DATABASE_URL_SYNC"])
+          with engine.connect() as conn:
+              version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+              user_cols = {c["name"] for c in inspect(conn).get_columns("users", schema="public")}
+              chunk_cols = {c["name"] for c in inspect(conn).get_columns("knowledge_chunks", schema="public")}
+              assert version == "145_drop_orphan_db_only_columns", version
+              assert "password_changed_at" not in user_cols
+              assert "embedding_legacy_768" not in chunk_cols
+              print("schema_recovery_ok=true")
+          PY
+
+      - name: Reiniciar backend e exigir healthchecks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /opt/ejc
+          docker compose start backend
+          healthy=0
+          for _ in $(seq 1 24); do
+            sleep 5
+            if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1 \
+              && curl -fsS http://127.0.0.1:8000/api/health/ready >/dev/null 2>&1; then
+              healthy=1
+              break
+            fi
+          done
+          if [ "$healthy" != "1" ]; then
+            echo 'backend_health_recovered=false'
+            docker inspect ejc_backend --format 'status={{.State.Status}} running={{.State.Running}} restarting={{.State.Restarting}} exit={{.State.ExitCode}} restart_count={{.RestartCount}}'
+            exit 1
+          fi
+          echo 'backend_health_recovered=true'
+          docker inspect ejc_backend --format 'status={{.State.Status}} running={{.State.Running}} restarting={{.State.Restarting}} restart_count={{.RestartCount}}'
+
+      - name: Hotfix operacional temporário do rclone no container atual
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker cp "$RUNNER_TEMP/rclone" ejc_backend:/usr/local/bin/rclone
+          docker exec ejc_backend /usr/local/bin/rclone version | head -n1
+          echo 'current_backend_rclone_hotfix=true'
