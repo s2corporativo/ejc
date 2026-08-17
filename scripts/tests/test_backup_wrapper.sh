@@ -15,6 +15,7 @@ BIN="$TMP/bin"
 LOG="$TMP/docker.log"
 APP="$TMP/app"
 ACTIVATOR="$ROOT/scripts/backup/ativar_backup.sh"
+DEPLOY="$ROOT/scripts/deploy_vps_safe.sh"
 mkdir -p "$BIN" "$APP"
 : > "$APP/docker-compose.yml"
 
@@ -105,6 +106,43 @@ run_case 0 0 restarting '^compose run --rm --no-deps -T backend python -$'
 grep -q '^compose config$' "$LOG" || fail "compose não foi validado no fallback"
 grep -q 'Backend indisponível para exec (estado: restarting)' "$TMP/err" || fail "fallback de restart loop não foi registrado"
 
+# Integração do caller: mesmo que um wrapper defeituoso retorne exit 0 com
+# offsite_ok=false, o deploy precisa falhar ANTES de build/up/tag ou qualquer
+# mutação de runtime.
+DEPLOY_CASE="$TMP/deploy-case"
+DEPLOY_APP="$TMP/deploy-app"
+mkdir -p "$DEPLOY_CASE" "$DEPLOY_APP/scripts"
+cp "$DEPLOY" "$DEPLOY_CASE/deploy.sh"
+cat > "$DEPLOY_CASE/deploy_lock.sh" <<'EOF'
+ejc_deploy_lock_acquire() { return 0; }
+EOF
+cat > "$DEPLOY_APP/scripts/backup.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' '{"ok": true, "offsite_ok": false, "destino": "rclone"}'
+exit 0
+EOF
+chmod +x "$DEPLOY_APP/scripts/backup.sh"
+: > "$DEPLOY_APP/.env"
+: > "$DEPLOY_APP/docker-compose.yml"
+: > "$TMP/deploy-docker.log"
+set +e
+PATH="$BIN:$PATH" \
+FAKE_DOCKER_LOG="$TMP/deploy-docker.log" \
+FAKE_STDIN_LOG="$TMP/deploy-stdin.py" \
+APP_DIR="$DEPLOY_APP" \
+TARGET_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+REQUIRE_PREDEPLOY_BACKUP=1 \
+ENSURE_DAILY_BACKUP=1 \
+bash "$DEPLOY_CASE/deploy.sh" >"$TMP/deploy-out" 2>"$TMP/deploy-err"
+deploy_rc=$?
+set -e
+[ "$deploy_rc" -ne 0 ] || fail "deploy aceitou offsite_ok=false"
+grep -q 'offsite_ok=false' "$TMP/deploy-out" || \
+  fail "deploy não registrou bloqueio por ausência de retenção offsite"
+if grep -Eq '^compose build|^compose up|^tag ' "$TMP/deploy-docker.log"; then
+  fail "deploy iniciou mutação de imagem/runtime após offsite_ok=false"
+fi
+
 if grep -Eq \
   '^[[:space:]]*rclone[[:space:]]|^[[:space:]]*docker exec .*pg_dump|ejc_db_.*sql\.gz|ejc_uploads_.*tar\.gz' \
   "$ROOT/scripts/backup.sh"; then
@@ -131,9 +169,26 @@ grep -q '^FROM rclone/rclone:1.75.0 AS rclone_runtime$' "$DOCKERFILE" || \
   fail "runtime não fixa a versão homologada do rclone"
 grep -q '^COPY --from=rclone_runtime /usr/local/bin/rclone /usr/local/bin/rclone$' "$DOCKERFILE" || \
   fail "binário oficial do rclone não é copiado para o backend"
-if grep -Eq 'postgresql-client[[:space:]]+rclone' "$DOCKERFILE"; then
-  fail "rclone voltou a depender do pacote apt defasado"
-fi
+python3 - "$DOCKERFILE" <<'PY_DOCKERFILE'
+import re
+import sys
+from pathlib import Path
 
-bash -n "$ROOT/scripts/backup.sh" "$ACTIVATOR"
+text = Path(sys.argv[1]).read_text()
+blocks = re.findall(
+    r"apt-get install -y.*?rm -rf /var/lib/apt/lists/\*",
+    text,
+    flags=re.S,
+)
+if not blocks:
+    raise SystemExit("bloco apt-get install não encontrado")
+token = re.compile(r"(?<![A-Za-z0-9_-])rclone(?![A-Za-z0-9_-])")
+if any(token.search(block) for block in blocks):
+    raise SystemExit("rclone voltou ao bloco apt-get install")
+expected = r"RUN rclone version | grep -q '^rclone v1\.75\.0$'"
+if expected not in text:
+    raise SystemExit("assert de versão exata do rclone foi removido/alterado")
+PY_DOCKERFILE
+
+bash -n "$ROOT/scripts/backup.sh" "$DEPLOY" "$ACTIVATOR"
 echo "[backup-wrapper-test] OK — pré-deploy exige cifragem + retenção offsite recuperável, sem falso local_ok."
