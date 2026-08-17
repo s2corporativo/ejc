@@ -12,6 +12,7 @@ FLUXO_BOOTSTRAP = RAIZ / ".github" / "workflows" / "bootstrap-protection-governa
 FLUXO_GOVERNANCA = RAIZ / ".github" / "workflows" / "governanca-v2.yml"
 NOME_CONJUNTO_REGRAS = "EJC main protection bootstrap #998"
 ID_INTEGRACAO = 15368
+ID_CONJUNTO_REGRAS_FALSO = 481516
 CONTEXTOS = [
     "Backend — suíte completa + schema/RAG (Postgres pgvector)",
     "Eval — smoke dos gold sets (offline, bloqueante)",
@@ -24,7 +25,7 @@ CONTEXTOS = [
 
 def _conjunto_regras_esperado() -> dict:
     return {
-        "id": 998,
+        "id": ID_CONJUNTO_REGRAS_FALSO,
         "name": NOME_CONJUNTO_REGRAS,
         "target": "branch",
         "enforcement": "active",
@@ -75,6 +76,7 @@ registro = pathlib.Path(os.environ["FAKE_GH_LOG"])
 estado = pathlib.Path(os.environ["FAKE_GH_STATE"])
 arquivo_payload = pathlib.Path(os.environ["FAKE_GH_PAYLOAD"])
 esperado = json.loads(os.environ["FAKE_GH_RULESET"])
+id_conjunto_regras = esperado["id"]
 
 with registro.open("a", encoding="utf-8") as arquivo:
     arquivo.write(" ".join(argumentos) + "\n")
@@ -96,17 +98,17 @@ if endpoint.endswith("/branches/main"):
 if "/rulesets?" in endpoint:
     existe = estado.exists() and estado.read_text(encoding="utf-8") == "created"
     if cenario.startswith("existing") or existe:
-        print(json.dumps([{"id": 998, "name": esperado["name"], "enforcement": "active"}]))
+        print(json.dumps([{"id": id_conjunto_regras, "name": esperado["name"], "enforcement": "active"}]))
     elif cenario == "duplicate":
         print(json.dumps([
-            {"id": 998, "name": esperado["name"], "enforcement": "active"},
-            {"id": 999, "name": esperado["name"], "enforcement": "active"},
+            {"id": id_conjunto_regras, "name": esperado["name"], "enforcement": "active"},
+            {"id": id_conjunto_regras + 1, "name": esperado["name"], "enforcement": "active"},
         ]))
     else:
         print("[]")
     raise SystemExit(0)
 
-if endpoint.endswith("/rulesets/998"):
+if endpoint.endswith(f"/rulesets/{id_conjunto_regras}"):
     atual = esperado
     if cenario == "existing_divergent":
         atual = json.loads(json.dumps(esperado))
@@ -287,7 +289,7 @@ def test_bootstrap_reconcilia_falha_transporte_apos_criacao(tmp_path):
     assert resultado.returncode == 0, resultado.stderr
     assert "POST não retornou resposta confiável" in resultado.stderr
     assert "-X POST" in registro
-    assert "rulesets/998" in registro
+    assert f"rulesets/{ID_CONJUNTO_REGRAS_FALSO}" in registro
 
 
 def test_bootstrap_post_rejeitado_falha_fechado_sem_estado(tmp_path):
@@ -307,9 +309,9 @@ def test_bootstrap_nao_tem_mutacao_destrutiva_protecao_branch():
     assert "-X DELETE" not in fonte
 
 
-def test_bootstrap_security_gate_usa_workflow_confiavel_e_contexto_bloqueante():
+def test_bootstrap_gate_seguranca_usa_fluxo_confiavel_e_contexto_bloqueante():
     fluxo_bootstrap = FLUXO_BOOTSTRAP.read_text(encoding="utf-8")
-    script = SCRIPT_BOOTSTRAP.read_text(encoding="utf-8")
+    fonte_bootstrap = SCRIPT_BOOTSTRAP.read_text(encoding="utf-8")
     governanca = FLUXO_GOVERNANCA.read_text(encoding="utf-8")
 
     assert "pull_request_target:" in fluxo_bootstrap
@@ -319,7 +321,7 @@ def test_bootstrap_security_gate_usa_workflow_confiavel_e_contexto_bloqueante():
     assert "actions/checkout" not in fluxo_bootstrap
     assert "gh api --paginate" in fluxo_bootstrap
     assert "Bootstrap protection — security auditor" in fluxo_bootstrap
-    assert "Bootstrap protection — security auditor" in script
+    assert "Bootstrap protection — security auditor" in fonte_bootstrap
     assert "scripts/governanca/branch-protection-bootstrap.sh" in fluxo_bootstrap
     assert ".github/workflows/bootstrap-protection-governance.yml" in fluxo_bootstrap
     assert ".github/workflows/governanca-v2.yml" in fluxo_bootstrap
@@ -331,7 +333,7 @@ def test_bootstrap_security_gate_usa_workflow_confiavel_e_contexto_bloqueante():
     _validar_sintaxe_bash_dos_blocos_run(governanca)
 
 
-def test_security_gate_rejeita_marcador_autodeclarado_e_vincula_revisao_ao_head():
+def test_gate_seguranca_rejeita_marcador_autodeclarado_e_vincula_revisao_ao_head():
     fluxo_bootstrap = FLUXO_BOOTSTRAP.read_text(encoding="utf-8")
     governanca = FLUXO_GOVERNANCA.read_text(encoding="utf-8")
 
