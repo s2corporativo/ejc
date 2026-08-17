@@ -1,0 +1,75 @@
+name: Diagnose Current Rclone Auth
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/diagnose-current-rclone-auth.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Estado do rclone atual sem expor configuração
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "backend_state=$(docker inspect ejc_backend --format '{{.State.Status}}')"
+          docker exec ejc_backend rclone version | head -n1 | sed 's/^/backend_/'
+          remote="$(docker inspect ejc_backend --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^BACKUP_RCLONE_REMOTE=//p' | head -n1)"
+          [ -n "$remote" ] || { echo 'remote_configured=false'; exit 1; }
+          echo 'remote_configured=true'
+          err="$RUNNER_TEMP/backend-rclone.err"
+          if docker exec ejc_backend rclone about "$remote" >/dev/null 2>"$err"; then
+            echo 'backend_rclone_about_ok=true'
+          else
+            echo 'backend_rclone_about_ok=false'
+            python3 - "$err" <<'PY'
+          import re, sys
+          from pathlib import Path
+          text = Path(sys.argv[1]).read_text(errors='replace').lower()
+          for name, pattern in {
+              'unauthenticated': r'unauthenticated|invalid_grant|unauthorized',
+              'forbidden': r'forbidden|403|access denied',
+              'not_found': r'not found|404|itemnotfound',
+              'network': r'timeout|connection|dns|tls',
+          }.items():
+              print(f"backend_error_{name}={str(bool(re.search(pattern, text))).lower()}")
+          PY
+          fi
+
+      - name: Provar mesma configuração com rclone oficial 1.75.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="$(docker inspect ejc_backend --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^BACKUP_RCLONE_REMOTE=//p' | head -n1)"
+          docker pull rclone/rclone:1.75.0 >/dev/null
+          docker run --rm rclone/rclone:1.75.0 version | head -n1 | sed 's/^/official_/'
+          err="$RUNNER_TEMP/official-rclone.err"
+          if docker run --rm --volumes-from ejc_backend \
+              -e RCLONE_CONFIG=/root/.config/rclone/rclone.conf \
+              rclone/rclone:1.75.0 about "$remote" >/dev/null 2>"$err"; then
+            echo 'official_rclone_about_ok=true'
+          else
+            echo 'official_rclone_about_ok=false'
+            python3 - "$err" <<'PY'
+          import re, sys
+          from pathlib import Path
+          text = Path(sys.argv[1]).read_text(errors='replace').lower()
+          for name, pattern in {
+              'unauthenticated': r'unauthenticated|invalid_grant|unauthorized',
+              'forbidden': r'forbidden|403|access denied',
+              'not_found': r'not found|404|itemnotfound',
+              'network': r'timeout|connection|dns|tls',
+          }.items():
+              print(f"official_error_{name}={str(bool(re.search(pattern, text))).lower()}")
+          PY
+            exit 1
+          fi
