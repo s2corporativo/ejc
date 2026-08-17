@@ -81,15 +81,16 @@ run_case() {
     fail "backup é iniciado antes do gate de configuração"
 
   # P0 Staff: os `.enc` atuais nascem em TemporaryDirectory; portanto
-  # `local_ok`/artefatos gerados NÃO provam retenção recuperável após retorno.
-  # Pré-deploy só fica verde com offsite confirmado.
+  # `local_ok`/artefatos gerados NÃO provam persistência local após retorno.
+  # O pré-deploy só fica verde com transferência offsite confirmada pelo motor.
+  # Política de retenção do remote e teste de restauração são controles separados.
   grep -q 'encrypted_generated' "$TMP/stdin.py" || fail "produção dos artefatos cifrados não é conferida"
   grep -q 'offsite_ok = bool(result.get("offsite_ok"))' "$TMP/stdin.py" || \
-    fail "prova offsite não é lida do resultado"
+    fail "confirmação de transferência offsite não é lida do resultado"
   grep -q 'and offsite_ok' "$TMP/stdin.py" || \
-    fail "gate pré-deploy ainda pode aprovar sem retenção offsite"
+    fail "gate pré-deploy ainda pode aprovar sem transferência offsite confirmada"
   grep -q 'artefatos_cifrados_gerados' "$TMP/stdin.py" || \
-    fail "saída não diferencia geração temporária de retenção offsite"
+    fail "saída não diferencia geração temporária de envio offsite"
   if grep -q 'deploy prossegue com prova local\|BACKUP_OFFSITE_OBRIGATORIO' "$TMP/stdin.py"; then
     fail "wrapper ainda admite falso verde baseado em prova local temporária"
   fi
@@ -108,7 +109,8 @@ grep -q 'Backend indisponível para exec (estado: restarting)' "$TMP/err" || fai
 
 # Integração do caller: mesmo que um wrapper defeituoso retorne exit 0 com
 # offsite_ok=false, o deploy precisa falhar ANTES de build/up/tag ou qualquer
-# mutação de runtime.
+# mutação de runtime. A fixture é deliberadamente compacta para cobrir JSON sem
+# espaços após os dois-pontos.
 DEPLOY_CASE="$TMP/deploy-case"
 DEPLOY_APP="$TMP/deploy-app"
 mkdir -p "$DEPLOY_CASE" "$DEPLOY_APP/scripts"
@@ -118,7 +120,7 @@ ejc_deploy_lock_acquire() { return 0; }
 EOF
 cat > "$DEPLOY_APP/scripts/backup.sh" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' '{"ok": true, "offsite_ok": false, "destino": "rclone"}'
+printf '%s\n' '{"ok":true,"offsite_ok":false,"destino":"rclone"}'
 exit 0
 EOF
 chmod +x "$DEPLOY_APP/scripts/backup.sh"
@@ -138,7 +140,7 @@ deploy_rc=$?
 set -e
 [ "$deploy_rc" -ne 0 ] || fail "deploy aceitou offsite_ok=false"
 grep -q 'offsite_ok=false' "$TMP/deploy-out" || \
-  fail "deploy não registrou bloqueio por ausência de retenção offsite"
+  fail "deploy não registrou bloqueio por ausência de transferência offsite confirmada"
 if grep -Eq '^compose build|^compose up|^tag ' "$TMP/deploy-docker.log"; then
   fail "deploy iniciou mutação de imagem/runtime após offsite_ok=false"
 fi
@@ -191,4 +193,4 @@ if expected not in text:
 PY_DOCKERFILE
 
 bash -n "$ROOT/scripts/backup.sh" "$DEPLOY" "$ACTIVATOR"
-echo "[backup-wrapper-test] OK — pré-deploy exige cifragem + retenção offsite recuperável, sem falso local_ok."
+echo "[backup-wrapper-test] OK — pré-deploy exige cifragem + transferência offsite confirmada, sem falso local_ok."
