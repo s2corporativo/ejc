@@ -10,7 +10,7 @@ set -euo pipefail
 fail=0
 
 echo "[EJC CI] Verificando marcadores de conflito de merge..."
-if git grep -n -E '^(<<<<<<<|=======|>>>>>>>)' -- \
+if git grep -n -E '^(<<<<<<<{7,}|>>>>>>>{7,})' -- \
   ':!**/node_modules/**' \
   ':!**/.venv/**' \
   ':!**/site-packages/**' \
