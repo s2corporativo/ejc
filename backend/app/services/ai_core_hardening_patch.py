@@ -18,6 +18,13 @@ from __future__ import annotations
 import functools
 import logging
 
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.security import get_current_user
+from app.models.user import User
+
 logger = logging.getLogger("ejc.ai.core.hardening")
 _INSTALADO = False
 
@@ -112,8 +119,8 @@ async def _listar_docs_escopado(
     page: int = 1,
     page_size: int = 20,
     categoria: str | None = None,
-    db=None,
-    cu=None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
 ):
     """Contrato seguro de GET /rag/docs.
 
@@ -178,7 +185,14 @@ async def _listar_docs_escopado(
 
 
 def _instalar_listagem_rag_escopada() -> None:
-    """Substitui o callable da rota antes de o router ser incluído no FastAPI."""
+    """Substitui o callable da rota antes de o router ser incluído no FastAPI.
+
+    IMPORTANTE: apenas trocar route.endpoint/remove o analisador de
+    dependências (Depends) do endpoint original, deixando `db` e `cu` como
+    `None` em runtime (bug que derrubava GET /rag/docs com 500). Por isso
+    o endpoint substituto declara explicitamente as mesmas dependências
+    (get_db e get_current_user) no topo do módulo.
+    """
     from app.routers import rag
 
     if getattr(rag.router, "_ejc_docs_scope_installed", False):
@@ -188,7 +202,8 @@ def _instalar_listagem_rag_escopada() -> None:
     for route in rag.router.routes:
         if getattr(route, "name", "") == "listar_docs":
             route.endpoint = _listar_docs_escopado
-            route.dependant.call = _listar_docs_escopado
+            if route.dependant is not None:
+                route.dependant.call = _listar_docs_escopado
             encontrada = True
             break
     if not encontrada:

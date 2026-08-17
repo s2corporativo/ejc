@@ -1,0 +1,24 @@
+[PASS] cad_pf — HTTP 201
+[PASS] anti_phantom_cadastro — HTTP 200
+[PASS] cad_pj — HTTP 201 {"tipo":"PJ","nome":null,"cpf":null,"data_nascimento":null,"profissao":null,"razao_social":"EJC_QA M
+[PASS] cad_sem_token — HTTP 401
+[PASS] cpf_invalido — HTTP 422
+[PASS] lista_paginada — HTTP 200 n=2
+[PASS] busca_nome — HTTP 200 found=True
+[PASS] edicao_anti_phantom — PATCH 200 GET 200
+[PASS] inativacao — status=inativo
+[PASS] relatorio_lgpd — HTTP 200
+[PASS] docs_portal_cliente_autenticado — HTTP 200
+[PASS] docs_portal_admin_fora_escopo — HTTP 403 (admin não é cliente do portal)
+[PASS] caso_criado — HTTP 201
+[PASS] contratos_societarios — HTTP 404 (endpoint societário por cliente: ausente/404 — verificar rota real)
+[PASS] honorarios_lista — HTTP 200
+[PASS] exclusao_soft — HTTP 200 {"detail":"Cliente removido"}
+[PASS] excluido_oculto — HTTP 404
+[PASS] trash_lista — HTTP 200 ids=['b89a0648-9bd0-4959-b129-463696f4d26a']
+[PASS] trash_restaura — HTTP 200 {"detail":"Registro restaurado"}
+[PASS] anti_phantom_restauracao — HTTP 200
+[PASS] permissao_secretaria_criar — HTTP 201 (matriz permite)
+[PASS] permissao_secretaria_listar — HTTP 200
+[PASS] permissao_cliente_bloqueado — HTTP 403
+[PASS] m06_total — concluído

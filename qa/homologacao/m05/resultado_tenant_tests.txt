@@ -1,0 +1,6 @@
+[PASS] mt_advogado_ve_c1 — caso C1 visível
+[PASS] mt_advogado_nao_ve_id_c2 — HTTP 404
+[PASS] mt_portal_cliente_isolado — HTTP 200 (porta do portal)
+[PASS] mt_export_advogado_bloqueado — HTTP 403
+[PASS] mt_advogado_nao_ve_cliente_c2 — HTTP 404
+[PASS] mt_total — provas concluídas

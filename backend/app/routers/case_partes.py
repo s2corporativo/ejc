@@ -10,8 +10,28 @@ from app.core.security import get_current_user
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
+from app.services.validators_service import validar_cpf, validar_cnpj
+from fastapi import HTTPException
+
+TIPOS_PARTE = {"autor", "reu", "terceiro", "advogado", "procurador"}
 
 router = APIRouter(prefix="/cases/{case_id}/partes", tags=["Partes Processuais"])
+
+
+class ParteUpdate(BaseModel):
+    """M08: partes carregam PII — atualização exige auditoria UPDATE e
+    validação de CPF/CNPJ; campos omitidos não são alterados."""
+    tipo: Optional[str] = None
+    papel_processual: Optional[str] = None
+    nome: Optional[str] = None
+    cpf_cnpj: Optional[str] = None
+    qualificacao: Optional[str] = None
+    email: Optional[str] = None
+    telefone: Optional[str] = None
+    representante_legal: Optional[str] = None
+    oab: Optional[str] = None
+    client_id: Optional[str] = None
+    observacoes: Optional[str] = None
 
 
 class ParteCreate(BaseModel):
@@ -59,6 +79,30 @@ async def criar_parte(
     cu: User = Depends(get_current_user),
 ):
     await verificar_acesso_caso(db, cu, case_id)
+    # M08: validação de tipo e CPF/CNPJ (PII — rejeição explícita, 422)
+    if body.tipo not in TIPOS_PARTE:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tipo de parte inválido: aceita {sorted(TIPOS_PARTE)}",
+        )
+    if body.cpf_cnpj:
+        cpf_nu = body.cpf_cnpj.strip()
+        if len(cpf_nu) == 11 and not validar_cpf(cpf_nu):
+            raise HTTPException(status_code=422, detail="CPF inválido")
+        if len(cpf_nu) == 14 and not validar_cnpj(cpf_nu):
+            raise HTTPException(status_code=422, detail="CNPJ inválido")
+    # Duplicidade: mesmo CPF/CNPJ não pode existir duas vezes ativas no caso
+    if body.cpf_cnpj and body.cpf_cnpj.strip():
+        dup = await db.execute(
+            text("SELECT id FROM case_partes WHERE case_id = :cid AND "
+                 "ativo = true AND cpf_cnpj = :cpf"),
+            {"cid": case_id, "cpf": body.cpf_cnpj.strip()},
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(
+                status_code=409,
+                detail="Já existe parte ativa neste caso com este CPF/CNPJ",
+            )
     result = await db.execute(
         text("""
             INSERT INTO case_partes
@@ -92,9 +136,66 @@ async def remover_parte(
     cu: User = Depends(get_current_user),
 ):
     await verificar_acesso_caso(db, cu, case_id)
-    await db.execute(
-        text("UPDATE case_partes SET ativo = false WHERE id = :id AND case_id = :cid"),
+    # M08: DELETE endurecido — 404 quando a parte não existe ou já está
+    # inativa (antes, um update que afetava zero linhas passava em silêncio).
+    res = await db.execute(
+        text("UPDATE case_partes SET ativo = false, updated_at = now() "
+             "WHERE id = :id AND case_id = :cid AND ativo = true "
+             "RETURNING id"),
         {"id": parte_id, "cid": case_id},
     )
+    if not res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Parte não encontrada")
     await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "case_partes", parte_id)
     await db.commit()
+
+
+@router.patch("/{parte_id}")
+async def atualizar_parte(
+    case_id: str,
+    parte_id: str,
+    body: ParteUpdate,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """M08: edição de parte com auditoria UPDATE e validação de CPF/CNPJ."""
+    await verificar_acesso_caso(db, cu, case_id)
+    campos = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not campos:
+        raise HTTPException(status_code=422, detail="Nada a atualizar")
+    if "tipo" in campos and campos["tipo"] not in TIPOS_PARTE:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tipo de parte inválido: aceita {sorted(TIPOS_PARTE)}",
+        )
+    if "cpf_cnpj" in campos and campos["cpf_cnpj"]:
+        cpf_nu = campos["cpf_cnpj"].strip()
+        if len(cpf_nu) == 11 and not validar_cpf(cpf_nu):
+            raise HTTPException(status_code=422, detail="CPF inválido")
+        if len(cpf_nu) == 14 and not validar_cnpj(cpf_nu):
+            raise HTTPException(status_code=422, detail="CNPJ inválido")
+        dup = await db.execute(
+            text("SELECT id FROM case_partes WHERE case_id = :cid AND "
+                 "ativo = true AND cpf_cnpj = :cpf AND id <> :pid"),
+            {"cid": case_id, "cpf": cpf_nu, "pid": parte_id},
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(
+                status_code=409,
+                detail="Já existe parte ativa neste caso com este CPF/CNPJ",
+            )
+    sets = ["updated_at = now()"] + [f"{k} = :{k}" for k in campos]
+    res = await db.execute(
+        text("UPDATE case_partes SET " + ", ".join(sets)
+             + " WHERE id = :pid AND case_id = :cid AND ativo = true "
+             + "RETURNING id"),
+        {"pid": parte_id, "cid": case_id, **campos},
+    )
+    if not res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Parte não encontrada")
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "UPDATE", "case_partes", parte_id,
+        detalhes=f"Campos atualizados: {sorted(campos)}",
+    )
+    await db.commit()
+    return {"id": parte_id, "message": "Parte atualizada"}

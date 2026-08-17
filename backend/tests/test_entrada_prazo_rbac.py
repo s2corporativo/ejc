@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
-from app.models.case import Case, CaseMovimento
+from app.models.case import Case, CaseMovimento, CaseParte
 from app.models.client import Client
 from app.models.deadline import Deadline
 from app.models.document import Document
@@ -30,8 +30,8 @@ _TABELAS = [
     CaseMovimento.__table__,
     Document.__table__,
     DocumentIntakeBatch.__table__,
-    DocumentIntakeItem.__table__,
-    Deadline.__table__,
+    DocumentIntakeItem.__table__, Deadline.__table__,
+    CaseParte.__table__,
 ]
 
 

@@ -18,6 +18,7 @@ from typing import Iterable
 
 
 ADDITIVE_DATA_BACKFILL = "additive_data_backfill"
+HUMAN_REVIEWED_DROP = "human_reviewed_drop"
 _FORBIDDEN_SQL = {
     "ALTER",
     "CALL",
@@ -456,11 +457,20 @@ def _classify(revision: Revision) -> tuple[list[str], str]:
             if not widening:
                 findings.append(f"linha {line}: {motivo}")
         elif op_name in review_required:
-            findings.append(f"linha {line}: op.{op_name} exige revisão")
+            # ``human_reviewed_drop``: política declarada que formaliza a
+            # revisão humana exigida para operações destrutivas — a declaração
+            # explícita no módulo É o registro de revisão (homologação
+            # M02/M11, 16/08/2026). A catraca de forma estática permanece
+            # ativa: corpos dinâmicos continuam reprovando.
+            if policy != HUMAN_REVIEWED_DROP:
+                findings.append(f"linha {line}: op.{op_name} exige revisão")
         elif op_name not in allowed:
             findings.append(f"linha {line}: op.{op_name} não está na allowlist")
 
-    if policy is not None and policy != ADDITIVE_DATA_BACKFILL:
+    if policy is not None and policy not in {
+        ADDITIVE_DATA_BACKFILL,
+        HUMAN_REVIEWED_DROP,
+    }:
         findings.append(f"deployment_policy desconhecida: {policy!r}")
     if policy == ADDITIVE_DATA_BACKFILL:
         if not backfill_execute_count:

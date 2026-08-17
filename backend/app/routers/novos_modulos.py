@@ -196,7 +196,7 @@ async def upsert_ambiental(
             UPDATE case_ambiental SET
                 subtype=:subtype, numero_auto=:numero_auto, orgao_autuador=:orgao,
                 data_auto=:data_auto, prazo_defesa=:prazo_defesa, valor_multa=:valor_multa,
-                infracoes=:infracoes::jsonb, licenca_tipo=:lic_tipo, licenca_numero=:lic_num,
+                infracoes=CAST(:infracoes AS jsonb), licenca_tipo=:lic_tipo, licenca_numero=:lic_num,
                 licenca_validade=:lic_val, licenca_orgao=:lic_orgao,
                 car_numero=:car_num, reserva_legal_ha=:rl_ha, app_area_ha=:app_ha,
                 tcfa_cnpj=:tcfa_cnpj, tcfa_atividade=:tcfa_at, tcfa_vencimento=:tcfa_ven,
@@ -214,7 +214,7 @@ async def upsert_ambiental(
                  credito_carbono_ton, observacoes)
             VALUES
                 (gen_random_uuid()::text, :cid, :subtype, :numero_auto, :orgao,
-                 :data_auto, :prazo_defesa, :valor_multa, :infracoes::jsonb, :lic_tipo,
+                 :data_auto, :prazo_defesa, :valor_multa, CAST(:infracoes AS jsonb), :lic_tipo,
                  :lic_num, :lic_val, :lic_orgao, :car_num, :rl_ha, :app_ha,
                  :tcfa_cnpj, :tcfa_at, :tcfa_ven, :tcfa_val, :carbono, :obs)
         """), {**_ambiental_params(body), "cid": case_id})
@@ -294,7 +294,7 @@ async def criar_template(
     import json
     r = await db.execute(text("""
         INSERT INTO due_diligence_templates (id, name, dd_type, items, created_by)
-        VALUES (gen_random_uuid()::text, :name, :dd_type, :items::jsonb, :uid)
+        VALUES (gen_random_uuid()::text, :name, :dd_type, CAST(:items AS jsonb), :uid)
         RETURNING id
     """), {
         "name": body.name, "dd_type": body.dd_type,
@@ -404,7 +404,7 @@ async def cofre_sensibilidade(
     res = await db.execute(text("""
         UPDATE documents
         SET sensitivity_level = :sl,
-            access_users = :au::jsonb,
+            access_users = CAST(:au AS jsonb),
             watermark = :wm,
             updated_at = NOW()
         WHERE id = :did AND deleted_at IS NULL

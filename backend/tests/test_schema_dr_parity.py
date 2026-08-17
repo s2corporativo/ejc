@@ -18,7 +18,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 APP_DIR = BACKEND_DIR / "app"
-HEAD_REVISION = "144_alembic_version_varchar128"
+HEAD_REVISION = "145_drop_orphan_db_only_columns"
 
 RAW_SQL_TABLES_ESPERADAS = {
     "agenda_eventos", "areas", "case_ambiental", "case_etiquetas",

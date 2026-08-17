@@ -3,7 +3,7 @@ const DEFAULT_OFFICE_NAME = "EJC — Ecossistema Jurídico Clóvis";
 const DEFAULT_DAILY_MESSAGE =
   "Organização, clareza e responsabilidade em cada decisão.";
 const DEFAULT_DAILY_SOURCE = "Mensagem institucional";
-const DEFAULT_LOGO_PATH = "/brand/ejc-wordmark.svg";
+const DEFAULT_LOGO_PATH = "/brand/de-paula-teixeira-dt.png";
 const LEGACY_DEFAULT_LOGO_PATH = "/brand/logo-hd.png";
 
 function readPublicEnv(value: string | undefined): string {
@@ -47,6 +47,10 @@ const configuredLogoPath = readPublicEnv(import.meta.env.VITE_EJC_LOGO_PATH);
 export const officeBranding = Object.freeze({
   officeName:
     readPublicEnv(import.meta.env.VITE_EJC_OFFICE_NAME) || DEFAULT_OFFICE_NAME,
+  // Logomarca DT (monograma dourado "De Paula Teixeira Advocacia", PNG
+  // transparente) — default desde 16/08/2026 (homologação m07). O .env
+  // VITE_EJC_LOGO_PATH prevalece; o caminho legado logo-hd.png também é
+  // resolvido como default para instalações antigas (resolveLogoPath).
   logoPath: resolveLogoPath(configuredLogoPath),
   whatsappNumber,
   contactEmail,

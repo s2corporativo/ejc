@@ -216,7 +216,7 @@ export default function Clientes() {
                   </td>
                   <td className="px-4 py-3">{c.tipo}</td>
                   <td className="px-4 py-3 text-slate-500">
-                    {c.cpf || c.cnpj || "—"}
+                    {c.documento_exibicao || c.cpf || c.cnpj || "—"}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button

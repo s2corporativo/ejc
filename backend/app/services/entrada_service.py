@@ -36,6 +36,7 @@ from app.core.ownership import is_gestao
 from app.core.security import EQUIPE_JURIDICA, ROLE_LEVEL
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case, CaseArea, CaseMovimento, CaseStatus
+from app.models.case_parte import CaseParte
 from app.models.client import Client
 from app.models.deadline import Deadline
 from app.models.document import DocConfidencialidade, Document
@@ -567,6 +568,35 @@ async def criar_caso_do_rascunho(
     )
     db.add(case)
     await db.flush()
+
+    # F-08 (auditoria funcional 16/08/2026): a parte contrária informada na
+    # confirmação da Entrada Única ficava APENAS como texto livre do caso
+    # (Case.parte_contraria), sem registro estruturado em case_partes — peças,
+    # procurações e verificação de conflito perdiam a informação. Agora o
+    # fluxo cria os registros estruturados na MESMA transação: o "reu"
+    # (parte contrária em texto livre) e, quando há cliente, o "autor"
+    # vinculado ao client_id (paridade com o cadastro manual de caso).
+    if payload.parte_contraria and payload.parte_contraria.strip():
+        db.add(CaseParte(
+            id=str(uuid4()),
+            case_id=case.id,
+            tipo="reu",
+            nome=payload.parte_contraria.strip(),
+            ativo=True,
+            created_by=user.id,
+            observacoes="Cadastrada automaticamente pela Entrada Única.",
+        ))
+    if client is not None:
+        db.add(CaseParte(
+            id=str(uuid4()),
+            case_id=case.id,
+            tipo="autor",
+            nome=client.nome_exibicao or "",
+            client_id=client.id,
+            ativo=True,
+            created_by=user.id,
+            observacoes="Vinculado automaticamente pela Entrada Única.",
+        ))
 
     # Documento anexado é documento vinculado — NA MESMA transação do caso.
     # O lock do batch protege a idempotência deste rascunho; o lock das linhas

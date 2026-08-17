@@ -135,6 +135,15 @@ ADICOES_INTENCIONAIS = {
     # fazer polling de status em vez de esperar a resposta síncrona (E02–E09).
     ("/api/teses/motor/async", "POST"),
     ("/api/teses/motor/async/{task_id}", "GET"),
+    # Homologação M08 (16/08/2026): edição de parte processual com auditoria —
+    # PATCH /cases/{case_id}/partes/{parte_id} não existia (só listagem,
+    # criação e remoção). Contrato novo e deliberado.
+    ("/api/cases/{case_id}/partes/{parte_id}", "PATCH"),
+    # Homologação M12 (16/08/2026): edição e remoção de movimentações — CRUD
+    # completo de andamentos com auditoria, criado para saneamento dos
+    # bloqueios e datas inconsistentes do banco real.
+    ("/api/cases/{case_id}/movimentos/{movimento_id}", "PATCH"),
+    ("/api/cases/{case_id}/movimentos/{movimento_id}", "DELETE"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -255,10 +264,34 @@ def test_paridade_openapi_com_snapshot_anterior():
         f"rota(s) removida(s) por decisão do escritório voltaram: {ressuscitadas}"
     )
 
+    # Mudanças INTENCIONAIS de dependências de auth posteriores ao snapshot.
+    # Cada entrada declara (chave, auth_deps esperado); rota divergente fora
+    # desta lista continua reprovando — a trava existe para pegar alteração
+    # de permissão silenciosa, e cada exceção precisa de decisão escrita.
+    # Tuple de pares (chave, auth_deps esperado) — não usar dict: a lista de
+    # deps não é hashável. Divergência diferente da declarada continua
+    # reprovando.
+    AUTH_ALTERACOES_INTENCIONAIS = (
+        # Homologação M20 (16/08/2026): correção crítica — o endpoint
+        # substituto _listar_docs_escopado (GET /api/rag/docs) perdia os
+        # Depends de db e cu na substituição por side effect, derrubando a
+        # listagem com 500. Declarou get_db/get_current_user no topo:
+        # a rota deixa de ser anônima e passa a exigir autenticação com
+        # escopo de ownership (gestão vê tudo; demais usuários veem público,
+        # do próprio cliente e de casos sem atribuição ou nos quais atuam).
+        # Decisão deliberada, não achado — a listagem expunha títulos de
+        # documentos internos de qualquer caso.
+        (("/api/rag/docs", "GET"), ["HTTPBearer", "get_current_user", "get_db"]),
+    )
+
     divergentes = [
         (k, chaves_base[k]["auth_deps"], chaves_atual[k]["auth_deps"])
         for k in sorted(set(chaves_base) & set(chaves_atual))
         if chaves_base[k]["auth_deps"] != chaves_atual[k]["auth_deps"]
+        and not any(
+            k == chave and deps == chaves_atual[k]["auth_deps"]
+            for chave, deps in AUTH_ALTERACOES_INTENCIONAIS
+        )
     ]
     assert not divergentes, f"dependências de auth alteradas: {divergentes[:5]}"
     assert len(base) == 826

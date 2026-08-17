@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, require_roles, ROLE_LEVEL
+from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
+                                 requer_equipe_juridica)
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.audit_log import criar_audit_log
@@ -42,6 +43,7 @@ from app.core.status_caso import (
 from app.services.ia_parser import titulo_e_json_bruto
 from app.schemas.case import (
     CaseCreate, CaseUpdate, CaseResponse, CaseDetail, MovimentoCreate,
+    MovimentoUpdate,
     CaseDeleteRequest,
 )
 from app.schemas.common import MsgResponse
@@ -94,6 +96,10 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # M04 (homologação 2026-08-15): gate EXATO de equipe jurídica no corpo —
+    # require_roles(EQUIPE_JURIDICA) deixaria financeiro passar pelo fallback
+    # hierárquico (Issue #694).
+    requer_equipe_juridica(cu)
     q = select(Case).where(Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
     # Filtro por advogado: aplicado APÓS _filtro_visibilidade — para socio+
@@ -159,6 +165,8 @@ async def stats_casos(
     - encerrados = status == 'encerrado'
     - por_area  = contagem por área sobre o MESMO conjunto (nenhuma área some).
     """
+    # M04 (homologação 2026-08-15): mesmo gate exato do listador.
+    requer_equipe_juridica(cu)
     base_q = _filtro_visibilidade(
         select(Case).where(Case.deleted_at.is_(None)), cu
     )
@@ -378,11 +386,18 @@ async def atualizar(
     # para o mesmo destino. Sair deles (reabertura) continua livre por PATCH.
     if mudancas.get("status") in ("arquivado", "encerrado") and \
             mudancas["status"] != status_anterior:
+        # F-12 (auditoria funcional 16/08/2026): a mensagem anterior expunha a
+        # rota interna da API ("Use POST /cases/{id}/arquivar") ao usuário.
+        # Texto de negócio visível; o caminho técnico permanece só neste código.
         raise HTTPException(
             status_code=422,
             detail=(
-                "Use POST /cases/{id}/arquivar" if mudancas["status"] == "arquivado"
-                else "Use POST /cases/{id}/encerrar (exige pós-mortem)"
+                "O arquivamento de caso possui fluxo próprio com validações "
+                "adicionais. Use a ação 'Arquivar caso' na ficha do caso."
+                if mudancas["status"] == "arquivado"
+                else "O encerramento de caso possui fluxo próprio, com "
+                     "pós-mortem obrigatório. Use a ação 'Encerrar caso' "
+                     "na ficha do caso."
             ),
         )
 
@@ -693,7 +708,7 @@ async def listar_movimentos(
     rows = (await db.execute(
         select(CaseMovimento)
         .where(CaseMovimento.case_id == case_id)
-        .order_by(CaseMovimento.created_at.desc())
+        .order_by(CaseMovimento.data_evento.desc())
         .limit(100)
     )).scalars().all()
     return [
@@ -718,9 +733,18 @@ async def criar_movimento(
         raise HTTPException(status_code=404, detail="Caso não encontrado ou sem permissão")
     m = CaseMovimento(
         id=str(uuid4()), case_id=case_id,
-        tipo=payload.tipo, descricao=payload.descricao, created_by=cu.id,
+        tipo=payload.tipo, descricao=payload.descricao,
+        data_evento=payload.data_evento, created_by=cu.id,
     )
     db.add(m)
+    await db.commit()
+    # M12 (homologação 2026-08-16): auditoria CREATE do movimento.
+    _role_c = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+    await criar_audit_log(
+        db, cu.id, _role_c, "CREATE", "case_movimentos", case_id,
+        dados_depois={"movimento_id": m.id, "tipo": m.tipo,
+                      "descricao": (m.descricao or "")[:100]},
+    )
     await db.commit()
     # Event bus: dispara tradução IA do andamento (subscriber) — fail-safe.
     background.add_task(
@@ -728,6 +752,75 @@ async def criar_movimento(
         {"tipo": m.tipo, "case_id": case_id}, cu.id,
     )
     return {"id": m.id, "detail": "Movimento registrado"}
+
+
+@router.patch("/{case_id}/movimentos/{movimento_id}")
+async def editar_movimento(
+    case_id: str,
+    movimento_id: str,
+    payload: MovimentoUpdate,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """M12 (homologação 2026-08-16): edição de movimento da timeline.
+    Patch parcial (só campos informados); guarda de acesso do caso;
+    auditoria UPDATE. created_at/created_by nunca mudam (proveniência).
+    """
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    if not (await db.execute(q)).scalar_one_or_none():
+        raise HTTPException(status_code=404,
+                            detail="Caso não encontrado ou sem permissão")
+    q = select(CaseMovimento).where(CaseMovimento.id == movimento_id,
+                                    CaseMovimento.case_id == case_id)
+    m = (await db.execute(q)).scalars().first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Movimento não encontrado")
+    if payload.tipo is not None:
+        m.tipo = payload.tipo
+    if payload.descricao is not None:
+        m.descricao = payload.descricao
+    if payload.data_evento is not None:
+        m.data_evento = payload.data_evento
+    await db.commit()
+    _role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+    await criar_audit_log(
+        db, cu.id, _role, "UPDATE", "case_movimentos", case_id,
+        dados_depois={"movimento_id": movimento_id, "tipo": m.tipo,
+                      "descricao": m.descricao[:100]},
+    )
+    await db.commit()
+    return {"id": m.id, "detail": "Movimento atualizado"}
+
+
+@router.delete("/{case_id}/movimentos/{movimento_id}")
+async def excluir_movimento(
+    case_id: str,
+    movimento_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """M12 (homologação 2026-08-16): exclusão de movimento da timeline.
+    Hard delete (movimento não tem referências externas). Endurecido:
+    movimento inexistente ou fora do caso retorna 404 (nunca 200)."""
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    if not (await db.execute(q)).scalar_one_or_none():
+        raise HTTPException(status_code=404,
+                            detail="Caso não encontrado ou sem permissão")
+    q = select(CaseMovimento).where(CaseMovimento.id == movimento_id,
+                                    CaseMovimento.case_id == case_id)
+    m = (await db.execute(q)).scalars().first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Movimento não encontrado")
+    await db.delete(m)
+    _role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+    await criar_audit_log(
+        db, cu.id, _role, "DELETE", "case_movimentos", case_id,
+        dados_depois={"movimento_id": movimento_id},
+    )
+    await db.commit()
+    return {"detail": "Movimento removido"}
 
 
 # ═══ DataJud: sincronização de movimentos oficiais ═══
@@ -752,8 +845,21 @@ async def sincronizar_processo(
     if not case.numero_processo:
         raise HTTPException(status_code=422,
                             detail="Caso sem número de processo CNJ cadastrado")
-
-    novos = await _dj_sync(db, case)
+    from app.services import datajud_service as _djs
+    try:
+        novos = await _dj_sync(db, case)
+    except _djs.DataJudDesabilitadoError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except _djs.TribunalNaoMapeadoError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:  # M12: falha externa nunca vira stack trace; 502 claro
+        import logging as _lg
+        _lg.getLogger("ejc.cases").warning(
+            "sincronizar-processo falhou para %s: %s", case_id,
+            f"{type(e).__name__}: {str(e)[:180]}")
+        raise HTTPException(
+            status_code=502,
+            detail="Falha ao consultar o DataJud. Verifique a conexão/chave e tente novamente.")
     await db.commit()
     return {"movimentos_novos": novos,
             "detail": f"{novos} movimento(s) oficial(is) importado(s)"

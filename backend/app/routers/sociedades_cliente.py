@@ -176,7 +176,7 @@ async def semear_template_due_diligence(
 
     novo_id = (await db.execute(text("""
         INSERT INTO due_diligence_templates (id, name, dd_type, items, created_by)
-        VALUES (gen_random_uuid()::text, :name, :dd, :items::jsonb, :uid)
+        VALUES (gen_random_uuid()::text, :name, :dd, CAST(:items AS jsonb), :uid)
         RETURNING id
     """), {
         "name": NOME_TEMPLATE, "dd": GATILHO,

@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ai_errors import http_erro_ia
 from app.core.client_ownership import (
     obter_cliente_autorizado,
     pode_ver_caso_resumido,
@@ -324,22 +325,27 @@ async def enviar_mensagem(
     # Import tardio: mantém o service importável em testes sem stack de IA.
     from app.services.ai.core.orchestrator import run_ai_task
 
-    resultado = await run_ai_task(
-        db=db,
-        user=user,
-        task_type=MODO_TASK_TYPE[payload.modo],
-        mensagem=_montar_mensagem_ia(payload, sessao, historico, anexos),
-        case_id=sessao.convertido_case_id,
-        params={
-            "module_key": "sala-juridica",
-            "surface": "sala_juridica",
-            # Anexa o padrão obrigatório da Sala ao system prompt do agente
-            # (system_prompts/sala_juridica.py) — nunca via mensagem do usuário.
-            "prompt_extra": "sala_juridica",
-        },
-        usar_rag=payload.usar_rag,
-    )
-
+    try:
+        resultado = await run_ai_task(
+            db=db,
+            user=user,
+            task_type=MODO_TASK_TYPE[payload.modo],
+            mensagem=_montar_mensagem_ia(payload, sessao, historico, anexos),
+            case_id=sessao.convertido_case_id,
+            params={
+                "module_key": "sala-juridica",
+                "surface": "sala_juridica",
+                # Anexa o padrão obrigatório da Sala ao system prompt do agente
+                # (system_prompts/sala_juridica.py) — nunca via mensagem do usuário.
+                "prompt_extra": "sala_juridica",
+            },
+            usar_rag=payload.usar_rag,
+        )
+    except RuntimeError as e:  # cadeia de provedores esgotada → degradação graciosa
+        raise http_erro_ia(
+            f"Sala jurídica: serviço de IA indisponível: {str(e)[:180]}", 503)
+    except HTTPException:
+        raise
     custo = Decimal(str(resultado.get("custo_estimado_brl") or 0))
     # Achado do code-reviewer (docs/PLANO_FUSAO_CASO_UNICO.md): resultado["citacoes"]
     # é o RELATÓRIO do gate anti-alucinação (response_validator.py: dict com

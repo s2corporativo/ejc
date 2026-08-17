@@ -1,0 +1,183 @@
+=== TOTAL router modules: 155
+=== orphan routers (existem, mas NÃO importados no main.py): 5
+  - defesas_revisoes
+  - defesas_revisoes_avancado
+  - defesas_revisoes_pacote_seguro
+  - entrada_universal
+  - entrada_universal_vinculo
+=== importados sem arquivo: ['asyncio', 'logging', 'os']
+=== registered mas sem import declarado: ['api_keys_router']
+=== duplicate APIRouter prefixes: {'/system-modules': ['module_settings', 'system_modules'], '/entrada-universal': ['entrada_universal', 'entrada_universal_vinculo'], '/ia-governanca': ['ia_provider_metrics', 'ia_governanca'], '/clients': ['clients', 'pending_items'], '/ia': ['ia_adversarial', 'ia_saude', 'ia_citacoes', 'ia_agente'], '/cases': ['cases', 'kit_documental'], '/analytics': ['produtividade', 'analytics'], '/portal': ['portal', 'portal_documentos'], '/ai': ['ai', 'ai_tools']}
+=== variable-prefix registrations:
+  agenda_eventos -> API
+  ai -> API
+  ai_core -> API
+  anexos -> API
+  ai_skills -> API
+  ai_tools -> API
+  analise_bancaria -> API
+  analytics -> API
+  andamentos -> API
+  areas -> API
+  atendimentos -> API
+  atividades -> API
+  audit -> API
+  auth -> API
+  backup_admin -> API
+  bank_analysis -> API
+  calculadoras -> API
+  calendar_feed -> API
+  case_intelligence -> API
+  case_partes -> API
+  cases -> API
+  caso_areas -> API
+  centro_custos -> API
+  cerebro -> API
+  checklists -> API
+  clients -> API
+  compliance -> API
+  consumidor_monitor -> API
+  conteudo -> API
+  contratos_societarios -> API
+  conversao_caso -> API
+  credential_vault -> API
+  curadoria_renomada -> API
+  dashboard -> API
+  data_room -> API
+  datajud -> API
+  deadlines -> API
+  despesas -> API
+  diario_oficial -> API
+  documento_ia -> API
+  raio_x -> API
+  legal_chat -> API
+  documents -> API
+  dossie_cliente -> API
+  dossie_estrategico -> API
+  environmental -> API
+  etiquetas -> API
+  evolution_webhook -> API
+  exito_rateio -> API
+  export -> API
+  extratos -> API
+  fees -> API
+  financeiro_consolidado -> API
+  gestao_societaria -> API
+  google_drive_knowledge -> API
+  honorarios_calc -> API
+  ia_adversarial -> API
+  ia_agente -> API
+  ia_citacoes -> API
+  ia_defensiva -> API
+  ia_especializada -> API
+  ia_governanca -> API
+  ia_saude -> API
+  indice_risco -> API
+  indices -> API
+  infosimples_receita -> API
+  infosimples_tjmg -> API
+  car -> API
+  transparencia -> API
+  nfse -> API
+  intimacoes -> API
+  jurimetria -> API
+  juris_import -> API
+  jurisprudencia_externa -> API
+  jurisprudencia_interna -> API
+  kanban -> API
+  kit_documental -> API
+  legal_docs -> API
+  matriz_teses -> API
+  orquestrador -> API
+  memoria_institucional -> API
+  honorarios_oab -> API
+  intake -> API
+  triagem_entrevista -> API
+  entrada -> API
+  ficha_triagem -> API
+  mensagens -> API
+  module_help -> API
+  motor_peca -> API
+  movimentos -> API
+  noticias -> API
+  notifications -> API
+  novos_modulos -> API
+  observabilidade -> API
+  office_contracts -> API
+  partner_withdrawals -> API
+  peca_geracao -> API
+  pending_items -> API
+  pix -> API
+  portal -> API
+  portal_documentos -> API
+  solicitacoes_documentos -> API
+  processes -> API
+  procuracoes -> API
+  produtividade -> API
+  prompts -> API
+  prompts_juridicos -> API
+  qualidade -> API
+  rag -> API
+  rag_public -> API
+  intelligence -> API
+  api_keys_router -> API
+  regulatorio -> API
+  radar_legislativo -> API
+  ramos -> API
+  previdenciario_beneficio -> API
+  relatorio -> API
+  relatorio_cliente -> API
+  score_juridico -> API
+  search -> API
+  signatures -> API
+  sociedades_cliente -> API
+  provas -> API
+  processo_eletronico -> API
+  lgpd_registros -> API
+  sumulas -> API
+  suspensoes -> API
+  system_modules -> API
+  diagnostico -> API
+  module_settings -> API
+  tributario_fiscal -> API
+  trabalhista_liquidacao -> API
+  ambiental_estrategia -> API
+  tasks -> API
+  templates -> API
+  teses -> API
+  timesheet -> API
+  trash -> API
+  users -> API
+  utils -> API
+  validador_juridico -> API
+  visual_law -> API
+  whatsapp -> API
+  workflow -> API
+  architecture -> API
+=== duplicate paths across files (sem considerar prefix):
+  /: [('notifications', ['get']), ('prompts', ['post', 'get']), ('clients', ['get', 'post']), ('audit', ['get']), ('cases', ['get', 'post']), ('deadlines', ['get', 'post']), ('suspensoes', ['get', 'post']), ('search', ['get']), ('users', ['get', 'post']), ('raio_x', ['get', 'post']), ('timesheet', ['post']), ('procuracoes', ['get', 'post']), ('legal_docs', ['get', 'post']), ('dashboard', ['get']), ('tasks', ['get', 'post']), ('templates', ['get', 'post']), ('module_help', ['get', 'post']), ('fees', ['get', 'post']), ('agenda_eventos', ['get', 'post']), ('intimacoes', ['get']), ('bank_analysis', ['get']), ('trash', ['get']), ('environmental', ['get', 'post']), ('signatures', ['post', 'get']), ('peca_geracao', ['get']), ('documents', ['get'])]
+  /analisar: [('ia_defensiva', ['post']), ('documento_ia', ['post']), ('defesas_revisoes', ['post']), ('entrada', ['post']), ('motor_peca', ['post'])]
+  /buscar: [('jurisprudencia_externa', ['get']), ('rag', ['get']), ('precedentes_jurisprudencia', ['post'])]
+  /calcular: [('deadlines', ['post']), ('trabalhista_liquidacao', ['post']), ('score_juridico', ['post'])]
+  /casos/{case_id}: [('workflow', ['get']), ('checklists', ['get']), ('timesheet', ['get']), ('portal', ['get']), ('teses', ['get'])]
+  /consolidado: [('financeiro_consolidado', ['get']), ('centro_custos', ['get'])]
+  /dashboard: [('atendimentos', ['get']), ('ia_saude', ['get']), ('ia_governanca', ['get'])]
+  /demonstrativo: [('car', ['post']), ('peca_geracao', ['post'])]
+  /docs/{doc_id}: [('rag', ['delete']), ('rag_governance', ['get', 'patch'])]
+  /executar: [('ai_tools', ['post']), ('backup_admin', ['post'])]
+  /fontes: [('jurisprudencia_externa', ['get']), ('ia_governanca', ['get'])]
+  /gerar: [('anexos', ['post']), ('peca_geracao', ['post']), ('motor_peca', ['post'])]
+  /me: [('users', ['get']), ('advogado_estilo', ['get'])]
+  /meta: [('entrada_universal', ['get']), ('defesas_revisoes', ['get']), ('peca_geracao', ['get'])]
+  /resumo: [('despesas', ['get']), ('fees', ['get'])]
+  /simular: [('suspensoes', ['post']), ('ambiental_estrategia', ['post'])]
+  /socios/{socio_id}: [('gestao_societaria', ['patch']), ('sociedades_cliente', ['patch', 'delete'])]
+  /stats: [('rag', ['get']), ('atendimentos', ['get']), ('cases', ['get']), ('raio_x', ['get'])]
+  /status: [('rag', ['get']), ('nfse', ['get']), ('whatsapp', ['get']), ('ia_defensiva', ['get']), ('validador_juridico', ['get']), ('infosimples_tjmg', ['get']), ('transparencia', ['get']), ('google_drive_knowledge', ['get']), ('rag_public', ['get']), ('ai_core', ['get']), ('ai_tools', ['get']), ('cerebro', ['get']), ('backup_admin', ['get'])]
+  /templates: [('workflow', ['get', 'post']), ('checklists', ['get', 'post'])]
+  /templates/{template_id}: [('workflow', ['delete']), ('checklists', ['delete'])]
+  /teses: [('cerebro', ['get']), ('curadoria_renomada', ['get'])]
+  /upload: [('bank_analysis', ['post']), ('documents', ['post'])]
+  /{case_id}: [('dossie_estrategico', ['get']), ('cases', ['get', 'patch', 'delete'])]
+  /{doc_id}: [('legal_docs', ['get', 'patch', 'delete']), ('documents', ['delete', 'patch'])]
+  /{prompt_id}/executar: [('prompts', ['post']), ('prompts_juridicos', ['post'])]

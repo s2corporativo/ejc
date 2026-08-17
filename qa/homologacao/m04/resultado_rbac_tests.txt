@@ -1,0 +1,65 @@
+[PASS] token_admin — login admin
+[PASS] criar_usuario_socio — {"detail":"Email já cadastrado"}
+[PASS] criar_usuario_advogado — {"detail":"Email já cadastrado"}
+[PASS] criar_usuario_estagiario — {"detail":"Email já cadastrado"}
+[PASS] criar_usuario_financeiro — {"detail":"Email já cadastrado"}
+[PASS] criar_usuario_secretaria — {"detail":"Email já cadastrado"}
+[PASS] token_admin — login admin
+[PASS] token_socio — login socio
+[PASS] token_advogado — login advogado
+[PASS] token_estagiario — login estagiario
+[PASS] token_financeiro — login financeiro
+[PASS] token_secretaria — login secretaria
+[PASS] token_cliente — login cliente
+[PASS] admin_list_users|admin — HTTP 200 (esperado 200)
+[PASS] admin_list_users|socio|socio — HTTP 403 (esperado 403)
+[PASS] admin_list_users|financeiro|financeiro — HTTP 403 (esperado 403)
+[PASS] admin_list_users|cliente|cliente — HTTP 403 (esperado 403)
+[PASS] casos|admin|admin — HTTP 200 (esperado [200, 404])
+[PASS] casos|advogado|advogado — HTTP 200 (esperado [200, 404])
+[PASS] casos|estagiario|estagiario — HTTP 200 (esperado [200, 404])
+[PASS] casos|financeiro|financeiro — HTTP 403 (esperado 403)
+[PASS] casos|cliente|cliente — HTTP 403 (esperado 403)
+[PASS] system_modules|admin|admin — HTTP 200 (esperado [200, 404])
+[PASS] system_modules|advogado|advogado — HTTP 403 (esperado 403)
+[PASS] auditoria|admin|admin — HTTP 200 (esperado [200, 404])
+[PASS] auditoria|estagiario|estagiario — HTTP 403 (esperado 403)
+[PASS] trash|socio|socio — HTTP 200 (esperado [200, 404])
+[PASS] trash|advogado|advogado — HTTP 403 (esperado 403)
+[PASS] trash|estagiario|estagiario — HTTP 403 (esperado 403)
+[PASS] export_clientes|admin|admin — HTTP 200 (esperado [200, 404])
+[PASS] export_clientes|advogado|advogado — HTTP 403 (esperado 403)
+[PASS] export_clientes|secretaria|secretaria — HTTP 403 (esperado 403)
+[PASS] teses|admin|admin — HTTP 200 (esperado [200, 404])
+[PASS] teses|advogado|advogado — HTTP 200 (esperado [200, 404])
+[PASS] teses|estagiario|estagiario — HTTP 200 (esperado [200, 404])
+[PASS] teses|financeiro|financeiro — HTTP 403 (esperado 403)
+[PASS] teses|secretaria|secretaria — HTTP 403 (esperado 403)
+[PASS] teses|cliente|cliente — HTTP 403 (esperado 403)
+[PASS] templates|admin|admin — HTTP 200 (esperado [200, 404])
+[PASS] templates|advogado|advogado — HTTP 200 (esperado [200, 404])
+[PASS] templates|estagiario|estagiario — HTTP 403 (esperado 403)
+[PASS] templates|financeiro|financeiro — HTTP 403 (esperado 403)
+[PASS] templates|secretaria|secretaria — HTTP 403 (esperado 403)
+[PASS] teses_maior|financeiro|financeiro — HTTP 403 (esperado 403)
+[PASS] teses_maior|secretaria|secretaria — HTTP 403 (esperado 403)
+[PASS] teses_escrita|estagiario|estagiario — HTTP 403 (esperado 403)
+[PASS] me|admin|admin — HTTP 200 (esperado 200)
+[PASS] me|socio|socio — HTTP 200 (esperado 200)
+[PASS] me|advogado|advogado — HTTP 200 (esperado 200)
+[PASS] me|estagiario|estagiario — HTTP 200 (esperado 200)
+[PASS] me|financeiro|financeiro — HTTP 200 (esperado 200)
+[PASS] me|secretaria|secretaria — HTTP 200 (esperado 200)
+[PASS] me|cliente|cliente — HTTP 200 (esperado 200)
+[PASS] security_self|advogado — HTTP 200
+[PASS] cliente_bloqueado/api/system-modules/mapa|cliente — HTTP 403 (esperado 403)
+[PASS] cliente_bloqueado/api/audit/|cliente — HTTP 403 (esperado 403)
+[PASS] cliente_bloqueado/api/teses?page_size=2|cliente — HTTP 403 (esperado 403)
+[PASS] cliente_bloqueado/api/templates/|cliente — HTTP 403 (esperado 403)
+[PASS] admin_nao_rebaixa_self — HTTP 400
+[PASS] escalar_criar_user|advogado|advogado — HTTP 403 (esperado 403)
+[PASS] escalar_criar_user|secretaria|secretaria — HTTP 403 (esperado 403)
+[PASS] sociedades_leitura|estagiario|estagiario — HTTP 200 (esperado [200, 404])
+[PASS] sociedades_escrita|estagiario|estagiario — HTTP 403 (esperado 403)
+[PASS] teses_auth|anonimo|None — HTTP 401 (esperado 401)
+[PASS] teses_auth|cliente|cliente — HTTP 403 (esperado 403)

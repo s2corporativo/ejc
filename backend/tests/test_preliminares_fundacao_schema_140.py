@@ -69,9 +69,9 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     # 138 → 139 → 140 (frete independente: 139 altera document_intake_batches,
     # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
-    # Consolidado em 2026-08-15 (PR #1149): cadeia linearizada até
-    # 143_signature_documento_visualizado (coluna aditiva em signature_requests).
-    assert script.get_heads() == ["144_alembic_version_varchar128"]
+    # Correção Módulo 02 (15/08/2026): widening 144a roda antes da 143;
+    # HEAD = 145_drop_orphan_db_only_columns.
+    assert script.get_heads() == ["145_drop_orphan_db_only_columns"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (
@@ -82,6 +82,10 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
         script.get_revision("142_document_hash_rescan").down_revision
         == "141_dpt360_diagnostico"
     )
+    # Consolidado na homologação M02/M11 (16/08/2026): o widening
+    # varchar(32)->128 (antiga migration ``144a``) foi fundido no upgrade da
+    # 143 — o guard ``test_migration_numbering_guard.py`` rejeita prefixo
+    # não numérico.
     assert (
         script.get_revision("143_signature_documento_visualizado").down_revision
         == "142_document_hash_rescan"
@@ -89,6 +93,10 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     assert (
         script.get_revision("144_alembic_version_varchar128").down_revision
         == "143_signature_documento_visualizado"
+    )
+    assert (
+        script.get_revision("145_drop_orphan_db_only_columns").down_revision
+        == "144_alembic_version_varchar128"
     )
     assert (
         script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision

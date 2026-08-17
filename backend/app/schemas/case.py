@@ -256,6 +256,13 @@ class CaseDetail(CaseResponse):
 class MovimentoCreate(BaseModel):
     tipo: str
     descricao: str
+    data_evento: Optional[datetime] = None  # M12: data do evento; default = now()
+
+class MovimentoUpdate(BaseModel):
+    """Edição parcial de um movimento: apenas campos informados mudam. M12."""
+    tipo: Optional[str] = None
+    descricao: Optional[str] = None
+    data_evento: Optional[datetime] = None
 
 
 # ── R2 — Arquivamento e exclusão segura ──────────────────────────────────────

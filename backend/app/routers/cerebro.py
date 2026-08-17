@@ -5,6 +5,7 @@ Centraliza IA, Banco de Teses, Jurisprudência, Legislação e Conhecimento Inte
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from app.core.ai_errors import http_erro_ia
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
@@ -32,14 +33,19 @@ async def analise_estrategica(payload: dict, db: AsyncSession = Depends(get_db),
     instrucao_skill = skill_router.get_skill_instruction(ramo)
 
     contexto_completo = f"{instrucao_skill}\n\nContexto do Caso: {texto_caso}"
-    res = await orchestrator.run(
-        db=db,
-        user=cu,
-        task_type="case_analysis",
-        domain="estrategia",
-        mensagem=contexto_completo,
-        case_id=payload.get("case_id"),
-    )
+    try:
+        res = await orchestrator.run(
+            db=db,
+            user=cu,
+            task_type="case_analysis",
+            domain="estrategia",
+            mensagem=contexto_completo,
+            case_id=payload.get("case_id"),
+        )
+    except RuntimeError as e:  # cadeia de provedores esgotada → degradação graciosa
+        raise http_erro_ia(f"Serviço de IA indisponível: {str(e)[:180]}", 503)
+    except HTTPException:
+        raise
 
     # Shape legado preservado (analise.{analise_principal,analise_critica,...});
     # campos do núcleo ACRESCENTADOS (log_id, aviso_hitl, is_rascunho, modelo).

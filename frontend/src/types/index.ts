@@ -19,6 +19,10 @@ export interface Client {
   cpf?: string;
   razao_social?: string;
   cnpj?: string;
+  // F-15 (auditoria 16/08/2026): CPF/CNPJ mascarado para exibição na listagem
+  // (mesma máscara canônica do backend). O documento completo permanece
+  // restrito à ficha individual com gate de titularidade.
+  documento_exibicao?: string | null;
   email?: string;
   telefone?: string;
   whatsapp?: string;
