@@ -1,0 +1,55 @@
+name: Rclone Latest Probe
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/rclone-latest-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Testar remote com rclone atual sem listar arquivos
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="$(docker inspect ejc_backend --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^BACKUP_RCLONE_REMOTE=//p' | head -n1)"
+          if [ -z "$remote" ]; then
+            echo 'remote_configured=false'
+            exit 1
+          fi
+          echo 'remote_configured=true'
+          docker pull rclone/rclone:latest >/dev/null
+          version="$(docker run --rm rclone/rclone:latest version | head -n1)"
+          echo "ephemeral_${version}"
+          err="$RUNNER_TEMP/rclone-probe.err"
+          if docker run --rm --volumes-from ejc_backend \
+              -e RCLONE_CONFIG=/root/.config/rclone/rclone.conf \
+              rclone/rclone:latest about "$remote" >/dev/null 2>"$err"; then
+            echo 'rclone_latest_about_ok=true'
+          else
+            echo 'rclone_latest_about_ok=false'
+            python3 - "$err" <<'PY'
+          import re, sys
+          from pathlib import Path
+          text = Path(sys.argv[1]).read_text(errors='replace').lower()
+          categories = {
+              'unauthenticated': r'unauthenticated|invalid_grant|unauthorized',
+              'not_found': r'not found|itemnotfound|404',
+              'forbidden': r'forbidden|access denied|403',
+              'network': r'timeout|connection|dns|tls',
+              'unsupported': r'not support|unsupported',
+          }
+          for name, pattern in categories.items():
+              print(f"probe_error_{name}={str(bool(re.search(pattern, text))).lower()}")
+          PY
+            exit 1
+          fi
