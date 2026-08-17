@@ -82,13 +82,15 @@ def test_workflow_reexecuta_quando_review_e_submetida_no_head_exato():
     assert "pull_request_review:" in texto
     assert "types: [submitted]" in texto
     assert "ref: ${{ github.event.pull_request.head.sha }}" in texto
-    assert "BASE_REF: ${{ github.event.pull_request.base.ref }}" in texto
+    assert "BASE_SHA: ${{ github.event.pull_request.base.sha }}" in texto
+    assert 'git diff --name-only "$BASE_SHA...HEAD"' in texto
     assert "HEAD_REF: ${{ github.event.pull_request.head.ref }}" in texto
 
 
 def test_checkout_nao_persiste_credencial_do_github_token():
     texto = WORKFLOW_PATH.read_text(encoding="utf-8")
     assert "persist-credentials: false" in texto
+    assert "git fetch --quiet origin" not in texto
 
 
 # ── A isenção existe, é allowlist fechada, e só se aplica onde deve ──────────
