@@ -1,0 +1,46 @@
+name: Recovery Precheck 145
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/recovery-precheck.yml
+
+permissions:
+  contents: read
+
+jobs:
+  precheck:
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verificar efeitos esperados da migration 145 sem alterar banco
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec -i ejc_worker python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, inspect, text
+
+          engine = create_engine(os.environ["DATABASE_URL_SYNC"])
+          with engine.connect() as conn:
+              version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+              inspector = inspect(conn)
+              user_cols = {c["name"] for c in inspector.get_columns("users", schema="public")}
+              chunk_cols = {c["name"] for c in inspector.get_columns("knowledge_chunks", schema="public")}
+              print(f"alembic_version={version}")
+              print("users_password_changed_at_exists=" + str("password_changed_at" in user_cols).lower())
+              print("knowledge_chunks_embedding_legacy_768_exists=" + str("embedding_legacy_768" in chunk_cols).lower())
+              print("migration_145_effects_already_present=" + str(
+                  "password_changed_at" not in user_cols and "embedding_legacy_768" not in chunk_cols
+              ).lower())
+          PY
+
+      - name: Conferir que a imagem atual conhece a revisão 145
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f /opt/ejc/docker-compose.yml run --rm --no-deps -T backend python -m alembic heads
