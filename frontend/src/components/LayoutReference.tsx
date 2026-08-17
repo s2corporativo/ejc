@@ -37,6 +37,7 @@ import {
 import { ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { useIaStatus } from "../lib/iaStatus";
 import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
+import { isSidebarNavigationCollapsed } from "../lib/sidebarNavigation";
 import api from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
@@ -167,6 +168,7 @@ export default function LayoutReference() {
 
   const sidebarWidth = collapsed ? "md:w-[4.75rem]" : "md:w-[15.5rem]";
   const contentMargin = collapsed ? "md:ml-[4.75rem]" : "md:ml-[15.5rem]";
+  const navCollapsed = isSidebarNavigationCollapsed(collapsed, mobileOpen);
   const clock = formatClock(now);
   const whatsappUrl = getWhatsAppUrl();
   const mailtoUrl = getMailtoUrl();
@@ -183,17 +185,17 @@ export default function LayoutReference() {
         className={({ isActive }) =>
           cn(
             "sidebar-nav-item flex items-center gap-3 px-3 transition-colors",
-            collapsed ? "justify-center px-0" : "",
+            navCollapsed ? "justify-center px-0" : "",
             isActive && "is-active",
           )
         }
       >
         <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-        {!collapsed && <span className="truncate">{label}</span>}
+        {!navCollapsed && <span className="truncate">{label}</span>}
       </NavLink>
     );
 
-    return collapsed ? (
+    return navCollapsed ? (
       <Tooltip key={item.path} label={label}>
         {content}
       </Tooltip>
@@ -408,7 +410,7 @@ export default function LayoutReference() {
 
           {secondary.length > 0 && (
             <div className="mt-3 border-t border-slate-100 pt-2">
-              {collapsed ? (
+              {navCollapsed ? (
                 <div className="space-y-1">{secondary.map(renderNavItem)}</div>
               ) : (
                 <>
@@ -437,11 +439,14 @@ export default function LayoutReference() {
           )}
         </nav>
 
-        {!collapsed && <SidebarWeekCalendar />}
+        {!navCollapsed && <SidebarWeekCalendar />}
 
         <div className="border-t border-slate-200 bg-white">
           <div
-            className={cn("ejc-sidebar-contacts", collapsed && "flex-col px-2")}
+            className={cn(
+              "ejc-sidebar-contacts",
+              navCollapsed && "flex-col px-2",
+            )}
           >
             {whatsappUrl ? (
               <a
