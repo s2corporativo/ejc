@@ -1,0 +1,176 @@
+name: Governanca v2
+
+# Travas automáticas de governança sobre cada Pull Request, derivadas de
+# docs/GOVERNANCA_IA.md e docs/FLUXO_DE_DESENVOLVIMENTO.md.
+# Este workflow substitui operacionalmente o workflow legado governanca.yml,
+# que está disabled_manually no repositório. O contexto bloqueante permanece
+# exatamente "Governança — travas de PR" para compatibilidade com o ruleset.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: governanca-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governanca:
+    name: Governança — travas de PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Arquivos alterados no PR
+        id: diff
+        shell: bash
+        run: |
+          git fetch --quiet origin "${{ github.base_ref }}"
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > "$RUNNER_TEMP/alterados.txt"
+          echo "--- arquivos alterados ---"
+          cat "$RUNNER_TEMP/alterados.txt"
+
+      - name: Migration exige reserva registrada
+        shell: bash
+        run: |
+          if grep -Eq '^backend/alembic/versions/' "$RUNNER_TEMP/alterados.txt"; then
+            echo "Migration detectada no PR."
+            if ! grep -q 'backend/alembic/MIGRATION_RESERVATIONS.md' "$RUNNER_TEMP/alterados.txt"; then
+              echo "::error::PR cria ou altera migration sem atualizar backend/alembic/MIGRATION_RESERVATIONS.md. Ver docs/GOVERNANCA_IA.md."
+              exit 1
+            fi
+            echo "Reserva atualizada no mesmo PR."
+          else
+            echo "Nenhuma migration neste PR."
+          fi
+
+      - name: Ausencia de segredo versionado
+        shell: bash
+        run: |
+          PADROES='(AKIA[0-9A-Z]{16})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(sk-[A-Za-z0-9]{20,})|(github_pat_[A-Za-z0-9_]{20,})|(ghp_[A-Za-z0-9]{30,})|(gho_[A-Za-z0-9]{30,})|(ghu_[A-Za-z0-9]{30,})|(ghs_[A-Za-z0-9]{30,})|(ghr_[A-Za-z0-9]{30,})|(xox[baprs]-[A-Za-z0-9-]{10,})'
+          ACHOU=0
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              *.lock|*.min.js|*.map|*.svg) continue;;
+              *.env.example|.env.example) continue;;
+            esac
+            ERRO_GREP="$RUNNER_TEMP/segredo-grep.err"
+            : > "$ERRO_GREP"
+            if grep -EIn "$PADROES" -- "$f" >/dev/null 2>"$ERRO_GREP"; then
+              echo "::error file=$f::possivel segredo versionado"
+              ACHOU=1
+            else
+              RC_GREP=$?
+              if [ "$RC_GREP" -gt 1 ]; then
+                cat "$ERRO_GREP" >&2
+                echo "::error file=$f::falha ao ler arquivo durante varredura de segredos"
+                exit "$RC_GREP"
+              fi
+            fi
+          done < "$RUNNER_TEMP/alterados.txt"
+          if grep -Eq '(^|/)\.env$|(^|/)\.env\.(local|production|prod)$' "$RUNNER_TEMP/alterados.txt"; then
+            echo "::error::arquivo .env versionado no PR"
+            ACHOU=1
+          fi
+          [ "$ACHOU" -eq 0 ] || exit 1
+          echo "Nenhum segredo detectado."
+
+      - name: Autor do PR
+        env:
+          AUTOR: ${{ github.event.pull_request.user.login }}
+        shell: bash
+        run: |
+          echo "Autor: $AUTOR"
+
+      - name: Descricao do PR preenchida
+        # Isenção fechada somente para dependabot. As demais travas continuam.
+        if: >-
+          ${{
+            !(
+              contains(fromJSON('["dependabot[bot]"]'), github.event.pull_request.user.login)
+              && contains(fromJSON('["dependabot[bot]"]'), github.actor)
+            )
+          }}
+        env:
+          CORPO: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          FALTA=0
+          while IFS= read -r SECAO; do
+            [ -z "$SECAO" ] && continue
+            printf '%s' "$CORPO" | grep -qi -- "$SECAO" \
+              || { echo "::error::secao ausente na descricao do PR: $SECAO"; FALTA=1; }
+          done <<'SECOES'
+          Issue vinculada
+          Solução
+          Testes executados
+          Riscos residuais
+          Rollback
+          SECOES
+          printf '%s' "$CORPO" | grep -Eq '#[0-9]+' \
+            || { echo "::error::PR sem Issue vinculada (referencia #<numero>)"; FALTA=1; }
+          [ "$FALTA" -eq 0 ] || exit 1
+          echo "Descricao do PR completa."
+
+      - name: Revisao de seguranca registrada
+        env:
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|scripts/governanca/branch-protection-bootstrap\.sh|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
+          SENSIVEL=$(grep -Ec "$PADRAO_SENSIVEL" "$RUNNER_TEMP/alterados.txt" || true)
+          if [ "$SENSIVEL" -gt 0 ]; then
+            REVIEWS="$RUNNER_TEMP/security-reviews.json"
+            gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews?per_page=100" \
+              | jq -s 'add' > "$REVIEWS"
+            jq -e --arg sha "$HEAD_SHA" '
+              [ .[]
+                | select(.user.login == "coderabbitai[bot]")
+                | select(.commit_id == $sha)
+              ]
+              | sort_by(.submitted_at)
+              | last
+              | select(. != null)
+              | select(.state == "APPROVED" or .state == "COMMENTED")
+              | select((.body // "") | test("Actionable comments posted:"; "i") | not)
+            ' "$REVIEWS" >/dev/null || {
+              echo "::error::PR sensível exige revisão independente do CodeRabbit vinculada ao HEAD exato, sem CHANGES_REQUESTED nem findings acionáveis"
+              exit 1
+            }
+            echo "Revisão de segurança independente confirmada no HEAD $HEAD_SHA."
+          else
+            echo "PR não altera superfície que exija security-auditor obrigatório."
+          fi
+
+      - name: Alteracao de governanca isolada
+        shell: bash
+        run: |
+          PADRAO_GOV='^(CLAUDE\.md|AGENTS\.md|\.claude/|\.github/workflows/(governanca|governanca-v2)\.yml|docs/GOVERNANCA_IA\.md|docs/GOVERNANCA_FASE2\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md)'
+          GOV=$(grep -Ec "$PADRAO_GOV" "$RUNNER_TEMP/alterados.txt" || true)
+          COD=$(grep -Ec '^(backend/app/|frontend/src/)' "$RUNNER_TEMP/alterados.txt" || true)
+          if [ "$GOV" -gt 0 ] && [ "$COD" -gt 0 ]; then
+            echo "::warning::PR mistura governança e código funcional. Na governança v2, isso é permitido quando a mesma correção sistêmica exige harmonização entre regra e implementação. Reforce escopo, testes, riscos e rollback na revisão."
+          else
+            echo "Escopo sem mistura entre governança e código funcional."
+          fi
+
+      - name: Branch nao e main
+        shell: bash
+        run: |
+          if [ "${{ github.head_ref }}" = "main" ] || [ "${{ github.head_ref }}" = "master" ]; then
+            echo "::error::PR originado de branch protegida."
+            exit 1
+          fi
+          echo "Branch de origem: ${{ github.head_ref }}"
