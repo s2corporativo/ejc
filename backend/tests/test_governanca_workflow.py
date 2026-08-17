@@ -189,14 +189,22 @@ def test_mistura_governanca_codigo_emite_aviso_em_portugues():
     assert "no review" not in bloco
 
 
-def test_alteracao_sensivel_exige_registro_do_security_auditor():
+def test_alteracao_sensivel_exige_atestacao_independente_no_head():
     bloco = _steps()["Revisao de seguranca registrada"]
     assert "PADRAO_SENSIVEL=" in bloco
     assert "\\.github/workflows/" in bloco
     assert "\\.claude/" in bloco
-    assert "security-auditor: executado" in bloco
+    assert "scripts/governanca/branch-protection-bootstrap\\.sh" in bloco
+    assert "security-auditor: executado" not in bloco
+    assert "github.event.pull_request.body" not in bloco
+    assert "pulls/$PR_NUMBER/reviews?per_page=100" in bloco
+    assert "| jq -s 'add'" in bloco
+    assert 'select(.user.login == "coderabbitai[bot]")' in bloco
+    assert "select(.commit_id == $sha)" in bloco
+    assert '.state == "APPROVED" or .state == "COMMENTED"' in bloco
+    assert 'test("Actionable comments posted:"; "i") | not' in bloco
+    assert "HEAD_SHA" in bloco
     assert "exit 1" in bloco
-    assert "github.event.pull_request.body" in bloco
 
 
 # ── docs/GOVERNANCA_FASE2.md referencia o canônico, não duplica a regra ──────
