@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "governanca.yml"
+WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "governanca-v2.yml"
 DOC_PATH = REPO_ROOT / "docs" / "GOVERNANCA_IA.md"
 
 # Travas que precisam continuar valendo incondicionalmente, com ou sem bot.
@@ -30,7 +30,7 @@ STEP_COM_EXCECAO = "Descricao do PR preenchida"
 def _steps() -> dict[str, str]:
     """Mapa nome do step → corpo bruto do step (regex sobre o YAML fonte)."""
     texto = WORKFLOW_PATH.read_text(encoding="utf-8")
-    assert "\n    steps:" in texto, "governanca.yml não declara `steps:` no job"
+    assert "\n    steps:" in texto, "governanca-v2.yml não declara `steps:` no job"
     job = texto.split("\n    steps:", 1)[1]
     blocos = re.split(r"\n      - name: ", job)[1:]
     passos: dict[str, str] = {}
@@ -74,7 +74,7 @@ def test_workflow_tem_todos_os_steps_esperados():
     passos = _steps()
     esperados = set(STEPS_SEM_EXCECAO) | {STEP_COM_EXCECAO, "Autor do PR"}
     faltando = esperados - passos.keys()
-    assert not faltando, f"steps ausentes em governanca.yml: {faltando}"
+    assert not faltando, f"steps ausentes em governanca-v2.yml: {faltando}"
 
 
 # ── A isenção existe, é allowlist fechada, e só se aplica onde deve ──────────
@@ -168,6 +168,7 @@ def test_classificacao_governanca_cobre_workflow_e_documento_fase2():
 
     caminhos_governanca = (
         ".github/workflows/governanca.yml",
+        ".github/workflows/governanca-v2.yml",
         "docs/GOVERNANCA_FASE2.md",
         "docs/GOVERNANCA_IA.md",
         "AGENTS.md",
