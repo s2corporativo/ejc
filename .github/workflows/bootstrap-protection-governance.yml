@@ -46,9 +46,9 @@ jobs:
               | last
               | select(. != null)
               | select(.state == "APPROVED" or .state == "COMMENTED")
-              | select((.body // "") | test("Actionable comments posted:"; "i") | not)
+              | select((.body // "") | test("(^|\\r?\\n)Actionable comments posted:[[:space:]]*0[[:space:]]*(\\r?$|\\r?\\n)"; "i"))
             ' "$REVIEWS" >/dev/null || {
-              echo "::error::alteração do bootstrap exige revisão independente do CodeRabbit no HEAD exato, sem CHANGES_REQUESTED nem findings acionáveis"
+              echo "::error::alteração do bootstrap exige revisão independente do CodeRabbit no HEAD exato, com atestação explícita de zero findings"
               exit 1
             }
 
