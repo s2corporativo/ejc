@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import (get_current_user, require_roles, ROLE_LEVEL,
-                                 requer_equipe_juridica, EQUIPE_JURIDICA)
+                                 requer_equipe_juridica)
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.audit_log import criar_audit_log
