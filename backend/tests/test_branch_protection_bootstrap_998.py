@@ -274,6 +274,8 @@ def test_bootstrap_security_gate_usa_workflow_confiavel_e_contexto_bloqueante():
     assert "Bootstrap protection — security auditor" in workflow
     assert "Bootstrap protection — security auditor" in script
     assert "scripts/governanca/branch-protection-bootstrap.sh" in workflow
+    assert ".github/workflows/bootstrap-protection-governance.yml" in workflow
+    assert ".github/workflows/governanca.yml" in workflow
     assert "types: [opened, synchronize, reopened, edited]" in governanca
     assert "scripts/governanca/branch-protection-bootstrap\\.sh" in governanca
 
@@ -285,6 +287,7 @@ def test_security_gate_rejeita_marcador_autodeclarado_e_vincula_revisao_ao_head(
     for src in (workflow, governanca):
         assert "security-auditor: executado" not in src
         assert "pulls/$PR_NUMBER/reviews?per_page=100" in src
+        assert "| jq -s 'add'" in src
         assert 'select(.user.login == "coderabbitai[bot]")' in src
         assert "select(.commit_id == $sha)" in src
         assert '.state == "APPROVED" or .state == "COMMENTED"' in src
