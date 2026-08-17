@@ -22,7 +22,8 @@ jobs:
           ref: feature/reference-design-systemwide-20260817
 
       - name: Apply Stylelint-safe value
-        run: sed -i 's/text-rendering: optimizeLegibility;/text-rendering: optimizelegibility;/' frontend/src/styles/ejc-reference-systemwide.css
+        run: |
+          sed -i 's/text-rendering: optimizeLegibility;/text-rendering: optimizelegibility;/' frontend/src/styles/ejc-reference-systemwide.css
 
       - name: Commit fix
         run: |
