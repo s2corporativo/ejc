@@ -88,7 +88,7 @@ xlrd==2.0.2                    # extração de texto de .xls legado (ocr_service
 qrcode[pil]==7.4.2
 Pillow==12.3.0
 pillow-heif==1.4.0
-opencv-python-headless==4.11.0.86  # correção de perspectiva sem dependência GUI
+opencv-python-headless==5.0.0.93  # correção de perspectiva sem dependência GUI
 pdf2image==1.17.0
 pytesseract==0.3.13
 defusedxml==0.7.1  # parse SEGURO de XML de terceiros (NF-e) — mitiga XXE/billion laughs (ocr_service.py, services/fiscal/nfe_parser.py)
