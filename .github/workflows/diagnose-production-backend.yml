@@ -1,0 +1,83 @@
+name: Diagnose Production Backend
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/diagnose-production-backend.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-production-backend
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout diagnóstico
+        uses: actions/checkout@v7
+
+      - name: Estado seguro do runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "container=ejc_backend"
+          docker ps -a --filter name='^/ejc_backend$' --format 'status={{.Status}} image={{.Image}} names={{.Names}}'
+          docker inspect ejc_backend --format 'restart_count={{.RestartCount}} image_ref={{.Config.Image}} state_status={{.State.Status}} running={{.State.Running}} restarting={{.State.Restarting}} oom_killed={{.State.OOMKilled}} dead={{.State.Dead}} exit_code={{.State.ExitCode}} error={{json .State.Error}} started_at={{.State.StartedAt}} finished_at={{.State.FinishedAt}}' || true
+          if docker inspect ejc_backend --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' >/tmp/health-status 2>/dev/null; then
+            printf 'health=%s\n' "$(cat /tmp/health-status)"
+          fi
+          if (cd /opt/ejc && docker compose config --quiet); then
+            echo 'compose_config=ok'
+          else
+            echo 'compose_config=error'
+          fi
+
+      - name: Classificar erros recentes sem expor logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="$RUNNER_TEMP/ejc-backend-recent.log"
+          docker logs --tail 500 ejc_backend >"$raw" 2>&1 || true
+          python3 - "$raw" <<'PY'
+          import re, sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text(errors="replace")
+          patterns = {
+              "traceback": r"Traceback \\\(most recent call last\\\)",
+              "module_not_found": r"ModuleNotFoundError",
+              "import_error": r"ImportError",
+              "syntax_error": r"SyntaxError",
+              "validation_error": r"ValidationError",
+              "db_operational_error": r"OperationalError",
+              "db_undefined_table": r"UndefinedTable|relation .* does not exist",
+              "db_undefined_column": r"UndefinedColumn|column .* does not exist",
+              "connection_refused": r"Connection refused|connection refused",
+              "permission_denied": r"Permission denied|permission denied",
+              "missing_file": r"No such file or directory",
+              "alembic": r"alembic|Alembic",
+              "oom": r"out of memory|OOMKilled|Killed process",
+              "generic_exception": r"Exception|ERROR|CRITICAL",
+          }
+          print(f"log_bytes={len(text.encode(errors='ignore'))}")
+          for name, pattern in patterns.items():
+              print(f"fingerprint_{name}={len(re.findall(pattern, text, flags=re.I))}")
+          PY
+
+      - name: Dependências de infraestrutura visíveis
+        shell: bash
+        run: |
+          set -euo pipefail
+          for c in ejc_db ejc_redis ejc_worker ejc_frontend ejc_backend; do
+            if docker inspect "$c" >/dev/null 2>&1; then
+              docker inspect "$c" --format "${c}: status={{.State.Status}} running={{.State.Running}} restarting={{.State.Restarting}} oom={{.State.OOMKilled}} exit={{.State.ExitCode}} restart_count={{.RestartCount}}"
+            else
+              echo "${c}: ausente"
+            fi
+          done
