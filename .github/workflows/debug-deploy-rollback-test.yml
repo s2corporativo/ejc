@@ -1,0 +1,23 @@
+name: Debug Deploy Rollback Test
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/debug-deploy-rollback-test.yml
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/backup-rclone-runtime-20260817
+      - name: Executar teste isolado com trace
+        shell: bash
+        run: bash -x scripts/tests/test_deploy_rollback.sh
