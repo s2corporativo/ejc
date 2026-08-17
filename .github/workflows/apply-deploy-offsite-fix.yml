@@ -1,0 +1,61 @@
+name: Apply Deploy Offsite Fix
+
+on:
+  push:
+    branches:
+      - fix/backup-rclone-runtime-20260817
+    paths:
+      - .github/workflows/apply-deploy-offsite-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/backup-rclone-runtime-20260817
+
+      - name: Endurecer caller e validar regressão
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/deploy_vps_safe.sh')
+          text = path.read_text()
+          start_marker = '  log "Backup pré-deploy concluído."\n'
+          else_marker = 'else\n  [ -n "$BACKUP_SAIDA" ] && printf \'%s\\n\' "$BACKUP_SAIDA"\n'
+          start = text.index(start_marker)
+          end = text.index(else_marker, start)
+          replacement = '''  log "Backup pré-deploy concluído."
+          if printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": false'; then
+            log "ERRO CRÍTICO: backup retornou offsite_ok=false; retenção recuperável fora da VPS não foi comprovada."
+            log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
+            exit 1
+          fi
+          if ! printf '%s' "$BACKUP_SAIDA" | grep -q '"offsite_ok": true'; then
+            log "ERRO CRÍTICO: saída do backup não contém confirmação explícita offsite_ok=true."
+            log "Deploy bloqueado antes de qualquer mutação de .env/imagens/runtime."
+            exit 1
+          fi
+          '''.replace('          ', '')
+          path.write_text(text[:start] + replacement + text[end:])
+          PY
+
+          bash scripts/tests/test_backup_wrapper.sh
+          bash -n scripts/deploy_vps_safe.sh scripts/backup.sh
+
+      - name: Commit da correção
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "EJC Review Fix"
+          git config user.email "review-fix@ejc.local"
+          git add scripts/deploy_vps_safe.sh
+          git commit -m "fix(deploy): bloquear ausência de confirmação offsite"
+          git push origin HEAD:fix/backup-rclone-runtime-20260817
