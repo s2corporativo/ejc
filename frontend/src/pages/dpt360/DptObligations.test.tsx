@@ -95,8 +95,6 @@ describe("DptObligations", () => {
     screen.getByText(/Empresa Exemplo S\.A\./);
     screen.getByText(/2026-08-20/);
     const link = screen.getByRole("link", { name: /Apresentar contestação/i });
-    expect(link.getAttribute("href")).toBe(
-      "/atividades?tipo=prazo&caso=k1",
-    );
+    expect(link.getAttribute("href")).toBe("/atividades?tipo=prazo&caso=k1");
   });
 });

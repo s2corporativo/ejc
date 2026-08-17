@@ -36,7 +36,8 @@ import asyncio
 import json
 
 from app.core.database import AsyncSessionLocal
-from app.services import backup_execution_service, backup_service
+from app.services import backup_execution_service
+from app.services import backup_service
 
 
 def _safe_artifact(item: dict) -> dict:
@@ -63,7 +64,7 @@ async def main() -> int:
             problems.append(message)
 
     # O gate pré-deploy exige destino offsite utilizável SEM depender do valor
-    # BACKUP_OFFSITE_OBRIGATORIO. Hoje o motor não mantém os `.enc` em
+    # sinalizador de obrigatoriedade offsite. Hoje o motor não mantém os `.enc` em
     # BACKUP_DIR após o retorno; aceitar offsite indisponível seria falso verde.
     if destino == "rclone":
         if not bool(config.get("rclone_remote_configurado")):

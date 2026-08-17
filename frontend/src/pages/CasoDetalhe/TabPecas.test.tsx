@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
 vi.mock("../Pecas", () => ({
-  default: () => <div data-testid="workspace-pecas">Workspace completo de Peças</div>,
+  default: () => (
+    <div data-testid="workspace-pecas">Workspace completo de Peças</div>
+  ),
 }));
 
 import TabPecas from "./TabPecas";

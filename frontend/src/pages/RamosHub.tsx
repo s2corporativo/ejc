@@ -420,7 +420,10 @@ export default function RamosHub() {
               <h2 className="text-sm font-bold text-slate-900 dark:text-white">
                 {grupo.titulo}
                 {temFavoritas && (
-                  <span className="ml-2 text-xs font-normal text-ouro" aria-hidden="true">
+                  <span
+                    className="ml-2 text-xs font-normal text-ouro"
+                    aria-hidden="true"
+                  >
                     ★ favorita{favoritas.length > 1 ? "s" : ""}
                   </span>
                 )}

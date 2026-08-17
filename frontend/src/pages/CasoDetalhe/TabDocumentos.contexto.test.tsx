@@ -33,7 +33,9 @@ describe("TabDocumentos — ações contextuais do caso", () => {
         return Promise.resolve({ data: { data: [] } });
       }
       if (url === "/cases/case-1") {
-        return Promise.resolve({ data: { id: "case-1", client_id: "client-1" } });
+        return Promise.resolve({
+          data: { id: "case-1", client_id: "client-1" },
+        });
       }
       return Promise.resolve({ data: [] });
     });
@@ -45,7 +47,9 @@ describe("TabDocumentos — ações contextuais do caso", () => {
   });
 
   it("solicita documento pelo fluxo canônico do Caso", async () => {
-    const post = vi.spyOn(api, "post").mockResolvedValue({ data: { id: "s1" } });
+    const post = vi
+      .spyOn(api, "post")
+      .mockResolvedValue({ data: { id: "s1" } });
     render(<TabDocumentos caseId="case-1" />);
 
     fireEvent.click(
@@ -74,13 +78,17 @@ describe("TabDocumentos — ações contextuais do caso", () => {
   });
 
   it("solicita assinatura sem pedir novamente cliente e documento", async () => {
-    const post = vi.spyOn(api, "post").mockResolvedValue({ data: { id: "sig-1" } });
+    const post = vi
+      .spyOn(api, "post")
+      .mockResolvedValue({ data: { id: "sig-1" } });
     render(<TabDocumentos caseId="case-1" />);
 
     const botao = await screen.findByRole("button", {
       name: /Solicitar assinatura/,
     });
-    await waitFor(() => expect((botao as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((botao as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(botao);
 
     await waitFor(() => {

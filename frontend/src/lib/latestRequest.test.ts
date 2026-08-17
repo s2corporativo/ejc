@@ -25,7 +25,11 @@ describe("mensagemErroHttp", () => {
   it("aceita detail string seguro", () => {
     expect(
       mensagemErroHttp(
-        { response: { data: { detail: "Conclua a conferência antes de seguir" } } },
+        {
+          response: {
+            data: { detail: "Conclua a conferência antes de seguir" },
+          },
+        },
         "fallback",
       ),
     ).toBe("Conclua a conferência antes de seguir");
@@ -58,7 +62,11 @@ describe("mensagemErroHttp", () => {
     ).toBe("fallback");
     expect(
       mensagemErroHttp(
-        { response: { data: { detail: "provider timeout em http://localhost" } } },
+        {
+          response: {
+            data: { detail: "provider timeout em http://localhost" },
+          },
+        },
         "fallback",
       ),
     ).toBe("fallback");

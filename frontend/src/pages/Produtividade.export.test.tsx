@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
@@ -78,16 +84,16 @@ describe("Produtividade — exportação auditada", () => {
     fireEvent.click(screen.getByRole("button", { name: "7 dias" }));
 
     await waitFor(() =>
-      expect((screen.getByTitle("Exportar CSV") as HTMLButtonElement).disabled).toBe(
-        true,
-      ),
+      expect(
+        (screen.getByTitle("Exportar CSV") as HTMLButtonElement).disabled,
+      ).toBe(true),
     );
 
     resolver({ data: dados("7d") });
     await waitFor(() =>
-      expect((screen.getByTitle("Exportar CSV") as HTMLButtonElement).disabled).toBe(
-        false,
-      ),
+      expect(
+        (screen.getByTitle("Exportar CSV") as HTMLButtonElement).disabled,
+      ).toBe(false),
     );
   });
 
@@ -105,7 +111,10 @@ describe("Produtividade — exportação auditada", () => {
         { periodo: "30d", formato: "csv", linhas: 1 },
       ),
     );
-    expect(csvMock).toHaveBeenCalledWith(expect.any(Array), "produtividade-30d");
+    expect(csvMock).toHaveBeenCalledWith(
+      expect.any(Array),
+      "produtividade-30d",
+    );
   });
 
   it("não registra exportação PDF quando o navegador bloqueia a janela", async () => {

@@ -11,7 +11,7 @@ import { Spinner } from "./components/UI";
 import ErrorBoundary from "./components/ErrorBoundary";
 import EntradaUniversalGlobal from "./components/EntradaUniversalGlobal";
 import FlowEnhancements from "./components/FlowEnhancements";
-import Layout from "./components/Layout";
+import LayoutReference from "./components/LayoutReference";
 import LegacyRedirect from "./components/LegacyRedirect";
 import PortalLayout from "./components/PortalLayout";
 import ProviderPanelShortcut from "./components/ProviderPanelShortcut";
@@ -127,7 +127,7 @@ export default function App() {
                 <Protected>
                   <StaffOnly>
                     <>
-                      <Layout />
+                      <LayoutReference />
                       <EntradaUniversalGlobal />
                       <FlowEnhancements />
                       <ProviderPanelShortcut />

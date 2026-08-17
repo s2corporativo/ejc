@@ -1,12 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import {
-  Briefcase,
-  ChevronDown,
-  Link2,
-  Search,
-  UserPlus,
-} from "lucide-react";
+import { Briefcase, ChevronDown, Link2, Search, UserPlus } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAreas } from "../lib/areas";
@@ -23,8 +17,6 @@ const CASE_TYPES: { k: string; l: string }[] = [
 ];
 
 const soDigitos = (v: string) => v.replace(/\D/g, "");
-
-
 
 /**
  * Wizard "Novo Caso" em 2 passos: (1) localizar/deduplicar o cliente por
@@ -232,7 +224,9 @@ export default function NovoCasoWizard({
           const loc = Array.isArray(d?.loc) ? d.loc : [];
           const campo = loc.length ? String(loc[loc.length - 1]) : null;
           const rotulo = campo ? campo.replace(/_/g, " ") : null;
-          return rotulo ? `${rotulo}: ${String(d.msg ?? d)}` : String(d.msg ?? d);
+          return rotulo
+            ? `${rotulo}: ${String(d.msg ?? d)}`
+            : String(d.msg ?? d);
         })
         .join("; ");
     }
@@ -571,7 +565,6 @@ export default function NovoCasoWizard({
                 ativos.
               </p>
             </div>
-
           </div>
 
           <div className="mt-5 flex justify-between">

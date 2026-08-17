@@ -260,7 +260,12 @@ const STATUS_FILA: Record<ItemFila["status"], { label: string; cls: string }> =
 function nomeCliente(raw: unknown): string {
   if (!raw || typeof raw !== "object") return "";
   const c = raw as Record<string, unknown>;
-  for (const key of ["nome", "razao_social", "nome_fantasia", "nome_exibicao"]) {
+  for (const key of [
+    "nome",
+    "razao_social",
+    "nome_fantasia",
+    "nome_exibicao",
+  ]) {
     const value = c[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
@@ -624,8 +629,8 @@ export default function CadastroManual() {
   const comErro = fila.length - pendentes;
   const clienteContextoForaCache = Boolean(
     clientIdContexto &&
-      clienteContextoValido &&
-      !clientesCache.some((c) => c.id === clientIdContexto),
+    clienteContextoValido &&
+    !clientesCache.some((c) => c.id === clientIdContexto),
   );
 
   return (

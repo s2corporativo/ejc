@@ -25,7 +25,9 @@ describe("DptTools", () => {
     );
     // Nenhuma ferramenta aparece como indisponível; os ícones de
     // verificação verde têm aria-hidden e o texto fica em sr-only.
-    expect(screen.queryByRole("img", { name: "Indisponível", hidden: true })).toBeNull();
+    expect(
+      screen.queryByRole("img", { name: "Indisponível", hidden: true }),
+    ).toBeNull();
   });
 
   it("apresenta a evidência de backend por área", () => {

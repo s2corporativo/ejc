@@ -321,7 +321,10 @@ export default function Pecas() {
     if (!aprovacao) return;
     const observacoes = aprovacao.observacoes.trim();
     if (!observacoes) {
-      setAprovacao({ ...aprovacao, erro: "As observações da revisão são obrigatórias." });
+      setAprovacao({
+        ...aprovacao,
+        erro: "As observações da revisão são obrigatórias.",
+      });
       return;
     }
     setAprovando(true);
@@ -1207,7 +1210,11 @@ export default function Pecas() {
           onChange={(e) =>
             // E05: limpa o erro em exibição ao digitar
             aprovacao &&
-            setAprovacao({ ...aprovacao, observacoes: e.target.value, erro: undefined })
+            setAprovacao({
+              ...aprovacao,
+              observacoes: e.target.value,
+              erro: undefined,
+            })
           }
         />
         {/* E05 (auditoria funcional): causa exata da rejeição do backend

@@ -78,7 +78,9 @@ afterEach(cleanup);
 
 describe("Sala Jurídica — consistência workspace → IA", () => {
   it("não envia mensagem à IA quando o flush do workspace falha", async () => {
-    patchMock.mockRejectedValueOnce(new Error("falha simulada de persistência"));
+    patchMock.mockRejectedValueOnce(
+      new Error("falha simulada de persistência"),
+    );
 
     render(
       <MemoryRouter initialEntries={["/sala-juridica"]}>
@@ -87,7 +89,9 @@ describe("Sala Jurídica — consistência workspace → IA", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("Contexto salvo anteriormente.")).toBeTruthy();
+      expect(
+        screen.getByDisplayValue("Contexto salvo anteriormente."),
+      ).toBeTruthy();
     });
 
     fireEvent.change(

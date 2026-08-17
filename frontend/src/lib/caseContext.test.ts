@@ -8,9 +8,7 @@ import {
 
 describe("contexto do caso", () => {
   it("abre a visão canônica do caso recém-criado", () => {
-    expect(caseJourneyPath("caso 123")).toBe(
-      "/casos/caso%20123?tab=resumo",
-    );
+    expect(caseJourneyPath("caso 123")).toBe("/casos/caso%20123?tab=resumo");
   });
 
   it("gera deep-link de aba sem perder encoding do caso", () => {

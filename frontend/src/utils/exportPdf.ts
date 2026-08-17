@@ -119,7 +119,8 @@ export function exportPdf(
   // Quando o chamador precisa aguardar uma auditoria antes de gerar o relatório,
   // ele pode abrir a janela sincronicamente no clique e passá-la aqui. `null`
   // significa popup já bloqueado e NÃO deve disparar uma segunda tentativa tardia.
-  const w = targetWindow === undefined ? window.open("", "_blank") : targetWindow;
+  const w =
+    targetWindow === undefined ? window.open("", "_blank") : targetWindow;
   if (!w) return false;
   w.document.write(html);
   w.document.close();

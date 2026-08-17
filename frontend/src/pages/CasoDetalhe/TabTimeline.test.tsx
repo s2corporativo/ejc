@@ -81,7 +81,9 @@ describe("TabTimeline — composer de andamentos e timesheet", () => {
   });
 
   it("converte horas para minutos e envia o contrato canônico do timesheet", async () => {
-    const post = vi.spyOn(api, "post").mockResolvedValue({ data: { id: "ts-1" } });
+    const post = vi
+      .spyOn(api, "post")
+      .mockResolvedValue({ data: { id: "ts-1" } });
     render(<TabTimeline caseId="case-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: /Lançar horas/ }));
