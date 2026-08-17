@@ -78,14 +78,14 @@ export default {
         },
         // Legal Tech Premium — cores modernas para sistema jurídico
         legal: {
-          institutional: "#0B1F3A",    // Azul-marinho
-          action: "#2563EB",           // Azul elétrico
-          ai: "#7C3AED",               // Violeta
-          success: "#0F9D8A",          // Verde-petróleo
-          warning: "#D97706",          // Âmbar
-          danger: "#DC2626",           // Vermelho
-          text: "#172033",             // Grafite
-          muted: "#667085",            // Cinza médio
+          institutional: "#0B1F3A", // Azul-marinho
+          action: "#2563EB", // Azul elétrico
+          ai: "#7C3AED", // Violeta
+          success: "#0F9D8A", // Verde-petróleo
+          warning: "#D97706", // Âmbar
+          danger: "#DC2626", // Vermelho
+          text: "#172033", // Grafite
+          muted: "#667085", // Cinza médio
         },
         // bronze/gold — legados repintados: bronze=neutro slate com pontas
         // douradas pálidas; gold=amarelo #FFD166 (acento da referência)
@@ -283,7 +283,8 @@ export default {
         card: "0 1px 2px rgba(24,16,8,0.03), 0 4px 16px -4px rgba(24,16,8,0.05)",
         "card-hover":
           "0 2px 4px rgba(24,16,8,0.04), 0 10px 28px -8px rgba(24,16,8,0.09)",
-        float: "0 4px 12px rgba(24,16,8,0.07), 0 18px 40px -8px rgba(24,16,8,0.14)",
+        float:
+          "0 4px 12px rgba(24,16,8,0.07), 0 18px 40px -8px rgba(24,16,8,0.14)",
         logo: "0 2px 8px rgba(24,16,8,0.10)",
         // Sombra do botão primário ouro (profundidade sem borda)
         gold: "0 6px 16px rgba(111,87,17,0.22)",

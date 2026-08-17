@@ -1,6 +1,6 @@
 /**
  * DashboardLegalTechPremium — Componente de demonstração
- * 
+ *
  * Implementa o estilo Legal Tech Premium conforme especificação:
  * - Fundo branco com profundidade discreta
  * - Menu lateral branco com logo centralizada
@@ -177,7 +177,10 @@ export default function DashboardLegalTechPremium() {
             <Sparkles className="h-4 w-4 lt-text-ai" />
           </button>
 
-          <button className="relative lt-btn lt-btn-secondary" title="Notificações">
+          <button
+            className="relative lt-btn lt-btn-secondary"
+            title="Notificações"
+          >
             <Bell className="h-4 w-4" />
             <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#DC2626] px-1 text-[10px] font-semibold text-white">
               3
@@ -197,7 +200,10 @@ export default function DashboardLegalTechPremium() {
       <aside className="lt-sidebar">
         {/* Logo Centralizada */}
         <div className="lt-sidebar-logo">
-          <img src="/brand/de-paula-teixeira-logo.jpg" alt="De Paula Teixeira" />
+          <img
+            src="/brand/de-paula-teixeira-logo.jpg"
+            alt="De Paula Teixeira"
+          />
         </div>
 
         {/* Navegação */}
@@ -394,8 +400,8 @@ export default function DashboardLegalTechPremium() {
               <div className="lt-ai-section">
                 <div className="lt-ai-label">Análise Recente</div>
                 <p className="lt-ai-text">
-                  Documento processual analisado com 94% de confiança. 
-                  Prazo crítico identificado: 3 dias úteis.
+                  Documento processual analisado com 94% de confiança. Prazo
+                  crítico identificado: 3 dias úteis.
                 </p>
                 <div className="lt-ai-actions">
                   <button className="lt-btn lt-btn-primary lt-btn-sm">
@@ -411,7 +417,14 @@ export default function DashboardLegalTechPremium() {
               </div>
               <div className="lt-ai-section">
                 <div className="lt-ai-label">Recomendações</div>
-                <ul className="lt-text-sm lt-text-secondary lt-flex-center lt-flex-gap-8" style={{ flexDirection: "column", alignItems: "flex-start", gap: "8px" }}>
+                <ul
+                  className="lt-text-sm lt-text-secondary lt-flex-center lt-flex-gap-8"
+                  style={{
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                    gap: "8px",
+                  }}
+                >
                   <li>• Revisar petição inicial do caso #2847</li>
                   <li>• Atualizar status do caso #2901</li>
                 </ul>
