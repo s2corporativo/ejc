@@ -246,15 +246,46 @@ else:
 # dossiê de caso (visibilidade do contexto que a IA enxerga) — usa um caso QA
 # criado por sócio; advogado precisa ter acesso (verificar_acesso_caso).
 # Descobre um caso do socio:
-r = S.get(f"{BASE}/api/cases", params={"page": 1, "page_size": 3},
+r = S.get(f"{BASE}/api/cases", params={"page": 1, "page_size": 50},
           headers=H(E_SOCIO), timeout=30)
+# advogado QA precisa ter acesso ao caso (verificar_acesso_caso):
+# preferência = caso com advogado_responsavel_id = advogado QA.
+# O ID do advogado QA é descoberto listando casos dele (listagem do próprio
+# advogado só retorna os da carteira).
+r_adv = S.get(f"{BASE}/api/cases", params={"page": 1, "page_size": 5},
+             headers=H(E_ADV), timeout=30)
+adv_cases = []
+if r_adv.status_code == 200:
+    j_adv = r_adv.json()
+    adv_cases = (j_adv if isinstance(j_adv, list) else
+                 j_adv.get("data", j_adv.get("itens", [])) or [])
 caso_id = None
 if r.status_code == 200:
     j = r.json()
     candidatos = (j if isinstance(j, list) else
-                  j.get("itens", j.get("cases", j.get("data", []))))
+                  j.get("data", j.get("itens", j.get("cases", []))))
+    adv_ids = {c.get("id") for c in adv_cases if isinstance(c, dict)}
     if isinstance(candidatos, list) and candidatos:
-        caso_id = candidatos[0].get("id") or candidatos[0].get("case_id")
+        # 1) caso atribuído ao advogado QA (carteira)
+        for c in candidatos:
+            if c.get("id") in adv_ids:
+                caso_id = c.get("id")
+                break
+        # 2) caso com advogado_responsavel_id igual a qualquer ID da carteira
+        if not caso_id:
+            for c in candidatos:
+                if c.get("advogado_responsavel_id") in adv_ids:
+                    caso_id = c.get("id") or c.get("case_id")
+                    break
+        # 3) qualquer caso QA ativo (cliente EJC_QA)
+        if not caso_id:
+            for c in candidatos:
+                cli = str(c.get("cliente") or c.get("cliente_nome") or "")
+                if "EJC_QA" in cli:
+                    caso_id = c.get("id") or c.get("case_id")
+                    break
+        if not caso_id:
+            caso_id = candidatos[0].get("id") or candidatos[0].get("case_id")
 if caso_id:
     r = S.get(f"{BASE}/api/ai/dossie/{caso_id}", headers=H(E_ADV), timeout=30)
     chk("ai/dossie: dossiê sanitizado do caso (visão do que a IA enxerga)",

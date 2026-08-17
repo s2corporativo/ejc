@@ -15,7 +15,7 @@
 [PASS] honorarios_lista — HTTP 200
 [PASS] exclusao_soft — HTTP 200 {"detail":"Cliente removido"}
 [PASS] excluido_oculto — HTTP 404
-[PASS] trash_lista — HTTP 200 ids=['97af0222-eccf-4dca-910c-a4ec6bbef48e']
+[PASS] trash_lista — HTTP 200 ids=['b89a0648-9bd0-4959-b129-463696f4d26a']
 [PASS] trash_restaura — HTTP 200 {"detail":"Registro restaurado"}
 [PASS] anti_phantom_restauracao — HTTP 200
 [PASS] permissao_secretaria_criar — HTTP 201 (matriz permite)
