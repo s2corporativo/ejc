@@ -136,7 +136,8 @@ jobs:
           SENSIVEL=$(grep -Ec "$PADRAO_SENSIVEL" "$RUNNER_TEMP/alterados.txt" || true)
           if [ "$SENSIVEL" -gt 0 ]; then
             REVIEWS="$RUNNER_TEMP/security-reviews.json"
-            gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews?per_page=100" > "$REVIEWS"
+            gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews?per_page=100" \
+              | jq -s 'add' > "$REVIEWS"
             jq -e --arg sha "$HEAD_SHA" '
               [ .[]
                 | select(.user.login == "coderabbitai[bot]")
