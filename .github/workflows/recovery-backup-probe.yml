@@ -1,0 +1,27 @@
+name: Recovery Backup Probe
+
+on:
+  push:
+    branches:
+      - diagnostic/prod-backend-20260817
+    paths:
+      - .github/workflows/recovery-backup-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Executar backup obrigatório por container efêmero
+        shell: bash
+        env:
+          APP_DIR: /opt/ejc
+          APP_CONTAINER: __force_ephemeral_backup__
+        run: |
+          set -euo pipefail
+          bash scripts/backup.sh
