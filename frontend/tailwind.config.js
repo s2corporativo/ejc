@@ -76,6 +76,17 @@ export default {
           100: "#F1F5F9",
           50: "#F8FAFC",
         },
+        // Legal Tech Premium — cores modernas para sistema jurídico
+        legal: {
+          institutional: "#0B1F3A",    // Azul-marinho
+          action: "#2563EB",           // Azul elétrico
+          ai: "#7C3AED",               // Violeta
+          success: "#0F9D8A",          // Verde-petróleo
+          warning: "#D97706",          // Âmbar
+          danger: "#DC2626",           // Vermelho
+          text: "#172033",             // Grafite
+          muted: "#667085",            // Cinza médio
+        },
         // bronze/gold — legados repintados: bronze=neutro slate com pontas
         // douradas pálidas; gold=amarelo #FFD166 (acento da referência)
         bronze: {

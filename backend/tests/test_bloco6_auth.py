@@ -82,7 +82,7 @@ def test_login_senha_incorreta_401():
     user = types.SimpleNamespace(
         id="u1", role=types.SimpleNamespace(value="advogado"),
         hashed_password=get_password_hash("senha-correta"),
-        totp_enabled=False,
+        # totp_enabled removido — 2FA desativado
     )
     app, _ = _montar(user=user)
     client = TestClient(app)

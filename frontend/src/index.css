@@ -1,3 +1,6 @@
+/* Importa Legal Tech Premium Design System */
+@import "./styles/legal-tech-premium.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -37,6 +40,18 @@
     --ejc-chart-4: #e8dfd3;
     --ejc-chart-5: #8f7117;
     --ejc-chart-6: #e5ce7f;
+    
+    /* Legal Tech Premium — sobreposição opcional das variáveis LT */
+    --lt-bg-primary: #FFFFFF;
+    --lt-bg-secondary: #F7F9FC;
+    --lt-institutional: #0B1F3A;
+    --lt-action: #2563EB;
+    --lt-ai: #7C3AED;
+    --lt-success: #0F9D8A;
+    --lt-warning: #D97706;
+    --lt-danger: #DC2626;
+    --lt-text-primary: #172033;
+    --lt-text-secondary: #667085;
   }
 
   /* ── Tema ESCURO (classe `dark` no <html> — stores/theme.ts) ──
