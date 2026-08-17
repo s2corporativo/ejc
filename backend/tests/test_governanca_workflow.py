@@ -77,6 +77,20 @@ def test_workflow_tem_todos_os_steps_esperados():
     assert not faltando, f"steps ausentes em governanca-v2.yml: {faltando}"
 
 
+def test_workflow_reexecuta_quando_review_e_submetida_no_head_exato():
+    texto = WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert "pull_request_review:" in texto
+    assert "types: [submitted]" in texto
+    assert "ref: ${{ github.event.pull_request.head.sha }}" in texto
+    assert "BASE_REF: ${{ github.event.pull_request.base.ref }}" in texto
+    assert "HEAD_REF: ${{ github.event.pull_request.head.ref }}" in texto
+
+
+def test_checkout_nao_persiste_credencial_do_github_token():
+    texto = WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert "persist-credentials: false" in texto
+
+
 # ── A isenção existe, é allowlist fechada, e só se aplica onde deve ──────────
 
 
@@ -203,9 +217,17 @@ def test_alteracao_sensivel_exige_atestacao_independente_no_head():
     assert 'select(.user.login == "coderabbitai[bot]")' in bloco
     assert "select(.commit_id == $sha)" in bloco
     assert '.state == "APPROVED" or .state == "COMMENTED"' in bloco
-    assert 'test("Actionable comments posted:"; "i") | not' in bloco
+    assert "Actionable comments posted:[[:space:]]*0" in bloco
+    assert 'test("Actionable comments posted:"; "i") | not' not in bloco
     assert "HEAD_SHA" in bloco
     assert "exit 1" in bloco
+
+
+def test_atestacao_rejeita_marcador_ausente_ou_contagem_nao_zero():
+    bloco = _steps()["Revisao de seguranca registrada"]
+    assert "Actionable comments posted:[[:space:]]*0" in bloco
+    assert "atestado explícita de zero findings" not in bloco
+    assert "atestação explícita de zero findings" in bloco
 
 
 # ── docs/GOVERNANCA_FASE2.md referencia o canônico, não duplica a regra ──────
