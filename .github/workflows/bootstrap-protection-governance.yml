@@ -31,8 +31,10 @@ jobs:
             --jq '.[].filename' > "$ALTERADOS"
 
           if grep -Fxq 'scripts/governanca/branch-protection-bootstrap.sh' "$ALTERADOS" \
-             || grep -Fxq '.github/workflows/bootstrap-protection-governance.yml' "$ALTERADOS"; then
-            gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews?per_page=100" > "$REVIEWS"
+             || grep -Fxq '.github/workflows/bootstrap-protection-governance.yml' "$ALTERADOS" \
+             || grep -Fxq '.github/workflows/governanca.yml' "$ALTERADOS"; then
+            gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews?per_page=100" \
+              | jq -s 'add' > "$REVIEWS"
 
             jq -e --arg sha "$HEAD_SHA" '
               [ .[]
