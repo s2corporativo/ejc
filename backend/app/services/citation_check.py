@@ -197,9 +197,13 @@ async def _fonte_artigo(
                 "kd.vigente, kd.fonte FROM knowledge_chunks kc "
                 "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
                 "WHERE kd.deleted_at IS NULL "
-                f"AND kd.vigente = {vigencia_sql} "
-                f"{'AND COALESCE((kd.extra->>\'legal_status\'), \'\') <> \'revogada\' ' if vigente else ''}"
-                "AND kd.categoria LIKE 'legislacao%' "
+                "AND kd.vigente = " + str(vigencia_sql) + " "
+                + (
+                    "AND COALESCE((kd.extra->>'legal_status'), '') <> 'revogada' "
+                    if vigente
+                    else ""
+                )
+                + "AND kd.categoria LIKE 'legislacao%' "
                 + cond
                 + "AND kc.conteudo ~* :artigo_re "
                 + _filtros_gate_rag(False)
