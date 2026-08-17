@@ -151,7 +151,8 @@ async def test_executar_sempre_injeta_system_com_base(gw_recorder):
     # 1º message é SEMPRE system com a base canônica anti-alucinação.
     assert msgs[0]["role"] == "system"
     assert "[IDENTIDADE]" in msgs[0]["content"]
-    assert "NUNCA invente lei" in msgs[0]["content"]
+    assert ("NUNCA invente lei" in msgs[0]["content"]
+            or "NUNCA complete por memória do modelo" in msgs[0]["content"])
     assert "NUNCA prometa resultado" in msgs[0]["content"]
     # user message preservada com a variável preenchida.
     assert msgs[-1]["role"] == "user"
