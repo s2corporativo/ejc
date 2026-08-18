@@ -60,10 +60,10 @@ def _claude(prompt_key, model, mt, temp, just):
 CONFIGURACOES: dict[TarefaIA, ConfiguracaoIA] = {
     TarefaIA.TRIAGEM: _groq("triagem", 1200, 0.1, "Classificação estruturada — rota econômica"),
     TarefaIA.RESUMO: _groq("resumo", 900, 0.2, "Sumarização simples — rota econômica"),
-    TarefaIA.PRAZOS: _claude("prazos", _RAPIDO, 1200, 0.0, "Prazo fatal — precisão (temp 0)"),
+    TarefaIA.PRAZOS: _claude("prazos", _COMPLEXO, 1200, 0.0, "Prazo fatal — precisão (temp 0) + modelo forte (A-4)"),
     TarefaIA.HONORARIOS: _claude("honorarios", _RAPIDO, 1800, 0.1, "Honorários OAB/MG"),
     TarefaIA.AUDIENCIA: _claude("audiencia", _RAPIDO, 2000, 0.2, "Preparação de audiência"),
-    TarefaIA.RAG_QUERY: _claude("rag_query", _RAPIDO, 1500, 0.1, "Síntese de RAG"),
+    TarefaIA.RAG_QUERY: _claude("rag_query", _COMPLEXO, 2500, 0.1, "Síntese de RAG — fundamentação vira resposta (A-4)"),
     TarefaIA.ANALISE_CASO: _claude("analise_caso", _COMPLEXO, 4000, 0.1, "Análise estratégica"),
     TarefaIA.DOSSIE: _claude("analise_caso", _COMPLEXO, 5000, 0.1, "Dossiê completo"),
     TarefaIA.MINUTAS: _claude("minutas", _COMPLEXO, 6000, 0.15, "Redação de peças"),

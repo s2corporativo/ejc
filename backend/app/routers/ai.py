@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ai_errors import http_erro_ia
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, requer_advogado, ROLE_LEVEL
 from app.models.user import User
 from app.models.case import Case
 from app.models.ai_log import AILog, AIStatusHITL
@@ -209,6 +209,12 @@ async def atualizar_hitl(
         raise HTTPException(status_code=404, detail="Log não encontrado")
     if log.user_id != cu.id and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
         raise HTTPException(status_code=403, detail="Sem permissão para revisar este log")
+
+    # P1-5 (auditoria 15/08): revisar a saída da IA é ato de advogado — a regra
+    # anterior olhava só a titularidade do log, então o próprio autor (de qualquer
+    # papel) podia marcar como revisada a saída que ele mesmo gerou.
+    if req.status in ("revisado", "aplicado"):
+        requer_advogado(cu, detail="Revisar saída de IA é restrito a advogados")
 
 
     # Validação de peça só pode ser revisada/aplicada se ainda corresponder à

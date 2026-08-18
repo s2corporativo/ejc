@@ -413,6 +413,14 @@ async def chat(
         task_type, provider_force, model_override, provider_preferido, model_preferido
     )
 
+    if not cadeia:
+        # Sem candidato elegível: kill-switch externo ligado e nenhum provider
+        # local disponível. Falha honesta, sem tocar em rede externa.
+        raise RuntimeError(
+            f"Nenhum provedor de IA elegível para task={task_type}. "
+            "Verifique AI_EXTERNAL_PROVIDERS_ALLOWED e a disponibilidade do Ollama."
+        )
+
     # ── Modo 1 (LOCAL_COMPLETO) — sigilo reforçado: a tarefa NUNCA pode ir a
     # provider externo (nem pseudonimizada). Filtra a cadeia para providers
     # LOCAIS; sem local elegível → bloqueio SEGURO (não vaza o conteúdo).
@@ -759,9 +767,12 @@ def _resolver_cadeia(
         if _provider_elegivel(p)
     ]
 
-    if not cadeia:
-        # Último recurso: Groq sem checar chave (vai falhar com erro claro)
-        cadeia = [("groq", model_override)]
+    # FAIL-CLOSED (auditoria 15/08, P1-6): cadeia vazia permanece vazia. A versão
+    # anterior sintetizava ("groq", model_override) como "último recurso", o que
+    # podia tentar provider EXTERNO mesmo com AI_EXTERNAL_PROVIDERS_ALLOWED=false
+    # — o kill-switch tem de valer aqui, e não só no patch instalado pelo boot da
+    # API (que o worker Celery não carregava). Quem chama trata a cadeia vazia
+    # com erro explícito.
     return cadeia
 
 

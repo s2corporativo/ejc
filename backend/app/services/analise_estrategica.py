@@ -328,6 +328,7 @@ async def analisar_caso(
                 {"role": "user", "content": "Faça a análise completa agora."},
             ],
             task_type="estrategia",
+            nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
             temperature=0.3,
             max_tokens=3000,
             entidades=entidades,

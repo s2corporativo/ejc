@@ -7,6 +7,14 @@ qualidade jurídica das respostas. Somente leitura. Complementa
 
 ---
 
+> **Status (18/08, autorizado pelo titular — "corrija tudo"):** os achados **A-1, A-3, A-4,
+> P1-4, P1-5, P1-6, P1-7, P1-8** e os P2 jurídicos remanescentes foram **corrigidos** nesta
+> branch, com testes de regressão (`test_governanca_ia_auditoria_1150.py`, ampliação de
+> `test_system_prompts_vigencia_legal.py`). Suíte do backend: **5.648 passando, 0 falhas**.
+> Continuam **em aberto** A-2 (ingestão da base — operação de ambiente), A-8 (gold set — exige
+> curadoria jurídica humana) e A-5/A-7 (unificação do contrato de API — quebra o frontend,
+> precisa de janela própria). Detalhe por item na §7.
+
 ## 1. Veredito
 
 **As APIs de IA estão seguras e íntegras; o que limita o sistema não é a arquitetura, é a
@@ -202,3 +210,41 @@ volume real da base RAG ingerida nem telemetria de uso (fonte de verdade:
 `GET /ia-governanca/provedores`). As contagens de endpoints, de arquivos que passam
 `nivel_inteligencia`, de súmulas e de diplomas foram apuradas por varredura no repositório e
 estão reproduzíveis pelos comandos citados em cada seção.
+
+
+---
+
+## 7. O que foi corrigido (18/08)
+
+| Item | O que mudou | Onde |
+|---|---|---|
+| **A-1** | `nivel_inteligencia="alto"` nas 7 etapas da peça, no Motor de Peça e na análise estratégica — FIRAC e fonte por premissa passam a valer onde mais importa | `peca_service.py`, `motor_peca_service.py`, `analise_estrategica.py` |
+| **A-3** | Orçamento de contexto de ~19.400 → **~62.000 caracteres** (dossiê 24k, documento 18k, 10 chunks de 2k) | `ai/core/context_builder.py` |
+| **A-4** | `PRAZOS` e `RAG_QUERY` saem do modelo rápido para o `_COMPLEXO`; RAG_QUERY também ganha teto de 2.500 tokens | `system_prompts/router.py` |
+| **P1-4** | `CaseAgent` (default do classificador), `EJCCoordinatorAgent` e `FinanceAgent` passam a `exige_fonte=True` + skill `validate_citations` | `ai/core/agent_registry.py` |
+| **P1-5** | `requer_advogado` em `/revisar`, `/aprovar`, `/conferir-e-assinar` e no HITL do AILog (`revisado`/`aplicado`) | `routers/legal_docs.py`, `routers/ai.py` |
+| **P1-6** | Fail-closed **internalizado** em `_resolver_cadeia` (some o fallback sintético ao Groq) + erro explícito na cadeia vazia + `event_subscribers` carregado no worker Celery | `ai_gateway.py`, `core/celery_app.py` |
+| **P1-7** | Gate de aprovação HITL consulta o DataJud quando `DATAJUD_ENABLED` | `citation_gate.py` |
+| **P1-8** | `_formatar_fontes` passa a entregar tribunal, versão, data, situação jurídica (com ⚠ na vigência duvidosa) e URL oficial; trecho por fonte de 800 → 1.500 caracteres | `ai_service.py` |
+| **P2** | Súmula 437/TST com ressalva do art. 71 §4º; Súmula 331 com ressalva do Tema 725/ADPF 324; ACP art. 16 como Tema 1075 decidido; foro de eleição com pertinência (Lei 14.879/2024) nos templates; triagem ampliada de 7 para 22 áreas + "Outra"; **sigilo profissional nomeado no BASE_PROMPT** | `trabalhista.py`, `constitucional.py`, `templates_documentos.py`, `triagem.py`, `base.py` |
+| **CI** | A vedação explícita "NUNCA invente lei, súmula, jurisprudência ou número de processo" voltou à `BASE_IDENTIDADE` — a barreira retrieval-first a tinha só em substância, e o contrato de teste a cobrava na forma | `legal_base.py` |
+
+### Efeito sobre o nível de inteligência jurídica
+
+A geração de peça deixa de rodar no protocolo raso: passa a estruturar por FIRAC, a exigir
+dispositivo/súmula por premissa, a receber ~3× mais contexto do caso e a enxergar tribunal,
+data e vigência de cada fonte. O prazo fatal sai do modelo rápido. Os limites que **permanecem**
+são os que não se resolvem por configuração: a base verificável de 27 súmulas e 41 diplomas
+(A-2) e a ausência de gold set para calibrar recuperação (A-8).
+
+### Decisões embutidas, para conferência do titular
+
+1. **Custo por requisição sobe** — mais contexto, modelo forte em prazos e FIRAC na peça. Foi a
+   consequência aceita ao autorizar A-1/A-3/A-4; os valores de orçamento ficaram em ~8% da
+   janela de 200k, deliberadamente conservadores, e são um ponto de ajuste fácil.
+2. **Quem aprova peça mudou** — revisar/aprovar/assinar e marcar saída de IA como revisada
+   passaram a exigir papel de advogado. Quem não for advogado perde essas ações **hoje**; vale
+   avisar a equipe antes do deploy.
+3. **`legal_base.py` pertence ao PR #1143.** A correção do CI tocou esse arquivo por ser a
+   única forma de fechar o verde sem afrouxar o teste anti-alucinação — é aditiva e não remove
+   nada do desenho do #1143, mas exige coordenação antes de integrar os dois PRs.

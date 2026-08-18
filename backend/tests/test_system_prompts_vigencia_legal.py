@@ -95,3 +95,59 @@ def test_prompts_nao_presumem_juros_de_um_por_cento_ao_mes():
     for prompt in (PROMPT_CIVEL, PADRAO_OURO_PECA):
         assert "presum" in prompt.lower()
         assert "1% ao mês" in prompt
+
+
+# --- P2 remanescentes (auditoria de 2026-08-18) ----------------------------
+
+def test_sumula_437_tst_tem_ressalva_pos_reforma():
+    """Art. 71 §4º (red. Lei 13.467/2017) superou parcialmente a Súmula 437."""
+    from app.services.system_prompts.trabalhista import PROMPT_TRABALHISTA
+
+    assert "Súmula 437 TST" in PROMPT_TRABALHISTA
+    assert "art. 71 §4º" in PROMPT_TRABALHISTA
+    assert "Lei 13.467/2017" in PROMPT_TRABALHISTA
+
+
+def test_sumula_331_tst_ressalva_tema_725_do_stf():
+    """ADPF 324/Tema 725: terceirização de atividade-fim é lícita."""
+    from app.services.system_prompts.trabalhista import PROMPT_TRABALHISTA
+
+    assert "Tema 725" in PROMPT_TRABALHISTA or "ADPF 324" in PROMPT_TRABALHISTA
+
+
+def test_acp_artigo_16_nao_e_tratado_como_debate_aberto():
+    """STF decidiu no Tema 1075 (2021) — não é mais controvérsia."""
+    from app.services.system_prompts.constitucional import PROMPT_CONSTITUCIONAL
+
+    assert "debate atual do STF" not in PROMPT_CONSTITUCIONAL
+    assert "Tema 1075" in PROMPT_CONSTITUCIONAL
+
+
+def test_foro_de_eleicao_nos_templates_exige_pertinencia():
+    """CPC art. 63, red. Lei 14.879/2024."""
+    from app.services.system_prompts.templates_documentos import (
+        TEMPLATE_CONFISSAO_DIVIDA,
+        TEMPLATE_DISTRATO,
+    )
+
+    for template in (TEMPLATE_CONFISSAO_DIVIDA, TEMPLATE_DISTRATO):
+        assert "comarca_foro" in template
+        assert "Lei 14.879/2024" in template
+        assert "PERTINENTE" in template or "pertinência" in template
+
+
+def test_triagem_cobre_alem_das_sete_areas_iniciais():
+    """Caso tributário/imobiliário não pode ser forçado na área mais próxima."""
+    from app.services.system_prompts.triagem import PROMPT_TRIAGEM
+
+    for area in ("Tributário", "Empresarial", "Imobiliário", "Administrativo"):
+        assert area in PROMPT_TRIAGEM
+    assert "NUNCA force o caso na área mais próxima" in PROMPT_TRIAGEM
+
+
+def test_base_nomeia_o_sigilo_profissional():
+    """EOAB art. 7º, II — o dever não estava nomeado na barreira ética."""
+    from app.services.system_prompts.base import BASE_PROMPT
+
+    assert "SIGILO" in BASE_PROMPT.upper()
+    assert "EOAB art. 7" in BASE_PROMPT

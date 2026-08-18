@@ -121,7 +121,9 @@ async def test_context_builder_repassa_escopo_do_cliente_ao_rag(monkeypatch):
         usar_rag=True,
     )
     assert capturado["scope_client_id"] == "cliente-escopo-1"
-    assert capturado["limite"] == 6
+    # O invariante é "o context_builder repassa o seu limite configurado",
+    # não o número em si — o orçamento foi ampliado na auditoria de 18/08 (A-3).
+    assert capturado["limite"] == context_builder._LIMITE_RAG
     assert "Dossiê sanitizado" in ctx.texto
 
 

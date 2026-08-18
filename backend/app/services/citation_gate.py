@@ -173,7 +173,15 @@ async def validar_citacoes(
         inicios = sorted(a["span"][0] for a in achados)
         texto = texto[:inicios[MAX_CITACOES_POR_VERIFICACAO]]
 
-    rel = await verificar_jurisprudencia(db, texto)
+    # Auditoria de 2026-08-18 (A/P1-7): no caminho de APROVAÇÃO HITL a verificação
+    # consulta o DataJud. Sem isso, um julgado inventado porém bem-formado (nº CNJ
+    # com DV válido + tribunal + data) fica "identificada" e não bloqueia — só o
+    # revisor humano o barraria. A consulta é fail-safe por construção (teto de
+    # consultas por chamada, timeout curto, falha degrada para "identificada") e
+    # é opt-in por ambiente: sem DATAJUD_ENABLED o verificador ignora o pedido.
+    rel = await verificar_jurisprudencia(
+        db, texto, consultar_datajud=get_settings().DATAJUD_ENABLED,
+    )
 
     bloqueantes = [CitacaoBloqueante(**b) for b in avaliar_bloqueantes(rel)]
     motivos: list[str] = []

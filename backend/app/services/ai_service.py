@@ -520,14 +520,37 @@ async def buscar_contexto_rag(
 
 
 def _formatar_fontes(fontes: list[dict]) -> str:
+    """Formata as fontes do RAG para o prompt.
+
+    Auditoria de 2026-08-18 (A/P1-8): a recuperação já traz URL oficial, versão,
+    tribunal, data de atualização e situação jurídica, mas a formatação antiga
+    entregava ao modelo apenas título/categoria/fonte — sem isso ele não tem como
+    citar com identificação completa nem sinalizar vigência. Todos os campos além
+    de título/categoria são opcionais (o reranker, que enriquece tribunal e
+    situação, é opt-in), por isso cada um entra de forma defensiva.
+    """
     if not fontes:
         return "[FONTES]\nNenhuma fonte encontrada na base de conhecimento.\n"
     linhas = ["[FONTES]"]
     for i, f in enumerate(fontes, start=1):
+        meta = [str(f.get("categoria") or "sem categoria")]
+        if f.get("tribunal"):
+            meta.append(str(f["tribunal"]))
+        if f.get("versao"):
+            meta.append(f"versão {f['versao']}")
+        if f.get("atualizado_em"):
+            meta.append(f"atualizado em {f['atualizado_em']}")
+        situacao = f.get("situacao_juridica")
+        if isinstance(situacao, dict) and situacao.get("label"):
+            rotulo = str(situacao["label"])
+            # Vigência duvidosa vai marcada: o revisor precisa ver o alerta e o
+            # modelo precisa saber que não pode tratar a fonte como pacífica.
+            meta.append(f"⚠ {rotulo}" if situacao.get("warning") else rotulo)
+        if f.get("fonte"):
+            meta.append(f"fonte oficial: {f['fonte']}")
         linhas.append(
-            f"[Fonte {i}] {f['titulo']} ({f['categoria']}"
-            + (f" — {f['fonte']}" if f.get('fonte') else "")
-            + f")\n{f['conteudo'][:800]}\n"
+            f"[Fonte {i}] {f['titulo']} ({' | '.join(meta)})"
+            f"\n{f['conteudo'][:1500]}\n"
         )
     return "\n".join(linhas)
 

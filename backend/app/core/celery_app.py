@@ -26,6 +26,13 @@ celery_app = Celery(
     include=[
         "app.tasks.rag_tasks", "app.tasks.vault_sync",
         "app.tasks.processo_eletronico_tasks", "app.tasks.raio_x_tasks",
+        # event_subscribers instala o registro único de providers e a telemetria
+        # de provedores. Sem este import o worker rodava SEM eles (auditoria
+        # 15/08, P1-6): as chamadas de IA das tasks (ex.: raio_x → documento_
+        # service → ai_gateway.chat) não apareciam em /ia-governanca/provedores.
+        # O fail-closed do kill-switch já não depende disto — foi internalizado
+        # em ai_gateway._resolver_cadeia —, mas o registro e a telemetria sim.
+        "app.services.event_subscribers",
     ],
 )
 

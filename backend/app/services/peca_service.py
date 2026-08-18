@@ -852,6 +852,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="analise_juridica",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         temperature=0.1,
         max_tokens=600,
         entidades=entidades,
@@ -896,6 +897,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="analise_juridica",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         temperature=0.15,
         max_tokens=1000,
         entidades=entidades,
@@ -955,6 +957,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="analise_juridica",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         temperature=0.1,
         max_tokens=1200,
         entidades=entidades,
@@ -984,6 +987,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="analise_juridica",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         temperature=0.2,
         max_tokens=1500,
         entidades=entidades,
@@ -1013,6 +1017,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="analise_juridica",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         temperature=0.2,
         max_tokens=1000,
         entidades=entidades,
@@ -1126,6 +1131,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="elaboracao_peca",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         # Fase B (#3): amostragem por perfil de complexidade. A peça padrão-ouro
         # (fatos numerados + subseções + relação de anexos) é longa — o teto do
         # perfil "comum"/"completa" (8000) evita truncar antes dos pedidos/valor da
@@ -1190,6 +1196,7 @@ async def gerar_peca_pipeline(
                         )},
                     ],
                     task_type="elaboracao_peca",
+                    nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
                     temperature=perfil["temperature"],
                     max_tokens=perfil["max_tokens"],
                     entidades=entidades,

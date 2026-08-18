@@ -17,10 +17,10 @@ from dataclasses import dataclass, field
 logger = logging.getLogger("ejc.ai.core.context")
 
 # Orçamentos de caracteres por bloco (prompt enxuto e previsível).
-_MAX_DOSSIE = 8000
-_MAX_DOC = 6000
-_MAX_RAG_CHUNK = 900
-_LIMITE_RAG = 6
+_MAX_DOSSIE = 24000
+_MAX_DOC = 18000
+_MAX_RAG_CHUNK = 2000
+_LIMITE_RAG = 10
 
 
 @dataclass

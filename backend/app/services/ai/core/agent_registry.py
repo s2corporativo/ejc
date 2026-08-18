@@ -45,16 +45,20 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         descricao="Coordenador nativo do EJC: delega ao especialista e combina método do ramo com método do módulo.",
         dominios=["ejc", "coordenacao", "modulo"],
         tarefa_padrao=TarefaIA.ANALISE_CASO,
+        exige_fonte=True,  # conteúdo de mérito exige fonte (A/P1-4)
         prompt_key="analise_caso",
-        skills=_skills("resolve_native_skills", "retrieve_rag_sources"),
+        skills=_skills("resolve_native_skills", "retrieve_rag_sources",
+                       "validate_citations"),
     ),
     "CaseAgent": AgenteInterno(
         nome="CaseAgent",
         descricao="Análise estratégica de casos: fatos, teses, riscos e providências.",
         dominios=["casos", "estrategia", "analise"],
         tarefa_padrao=TarefaIA.ANALISE_CASO,
+        exige_fonte=True,  # conteúdo de mérito exige fonte (A/P1-4)
         prompt_key="analise_caso",
-        skills=_skills("build_case_context", "retrieve_rag_sources"),
+        skills=_skills("build_case_context", "retrieve_rag_sources",
+                       "validate_citations"),
     ),
     "ProcessAgent": AgenteInterno(
         nome="ProcessAgent",
@@ -120,8 +124,10 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         descricao="Honorários e análise financeira de casos (tabela OAB/MG, contratos).",
         dominios=["financeiro", "honorarios"],
         tarefa_padrao=TarefaIA.HONORARIOS,
+        exige_fonte=True,  # conteúdo de mérito exige fonte (A/P1-4)
         prompt_key="honorarios",
-        skills=_skills("build_case_context", "analyze_financial_case", "estimate_ai_cost"),
+        skills=_skills("build_case_context", "analyze_financial_case", "estimate_ai_cost",
+                       "validate_citations"),
     ),
     "BankForensicsAgent": AgenteInterno(
         nome="BankForensicsAgent",
