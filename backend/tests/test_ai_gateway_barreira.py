@@ -71,3 +71,54 @@ async def test_provider_local_nao_passa_pela_sanitizacao(monkeypatch):
         "ollama", None, orig, None, None, 0.2, 128
     )
     assert envio is orig and pii is False
+
+
+# ── Defesa em profundidade: resposta vazia nunca é "sucesso" (18/08) ────────
+# Cada provider já levanta RuntimeError em resposta vazia (Ollama/Groq/
+# Maritaca/Anthropic, corrigidos individualmente). _chamar_com_barreira é a
+# FONTE ÚNICA que toda chamada atravessa — esta guarda pega qualquer provider,
+# atual ou futuro, cujo caminho de resposta escape à checagem individual.
+
+async def test_resposta_vazia_do_provider_levanta_em_vez_de_virar_sucesso(monkeypatch):
+    async def _fake_vazio(*a, **k):
+        return "", {"input_tokens": 1, "output_tokens": 0, "model": "x"}
+
+    monkeypatch.setattr(gw, "_chamar_provedor", _fake_vazio)
+    with pytest.raises(RuntimeError, match="resposta vazia"):
+        await gw._chamar_com_barreira(
+            "ollama", None, [{"role": "user", "content": "x"}], None, None, 0.2, 128
+        )
+
+
+async def test_resposta_so_com_espacos_tambem_e_barrada(monkeypatch):
+    """Espaço/quebra de linha não é conteúdo — mesma guarda, .strip() cobre."""
+    async def _fake_espacos(*a, **k):
+        return "   \n  ", {"input_tokens": 1, "output_tokens": 0, "model": "x"}
+
+    monkeypatch.setattr(gw, "_chamar_provedor", _fake_espacos)
+    with pytest.raises(RuntimeError, match="resposta vazia"):
+        await gw._chamar_com_barreira(
+            "ollama", None, [{"role": "user", "content": "x"}], None, None, 0.2, 128
+        )
+
+
+async def test_a_barreira_de_resposta_vazia_aciona_o_fallback_da_cadeia(monkeypatch):
+    """A guarda não é só um raise isolado: precisa reaproveitar o mecanismo de
+    fallback já existente em chat() — provider vazio some, o próximo responde."""
+    chamadas = {"n": 0}
+
+    async def _fake_prov(provider, model, messages, temp, maxt):
+        chamadas["n"] += 1
+        if provider == "ollama":
+            return "", {"input_tokens": 1, "output_tokens": 0, "model": "vazio"}
+        return "resposta real", {"input_tokens": 1, "output_tokens": 5, "model": "bom"}
+
+    monkeypatch.setattr(gw, "_chamar_provedor", _fake_prov)
+    monkeypatch.setattr(gw, "_resolver_cadeia",
+                        lambda *a, **k: [("ollama", None), ("groq", None)])
+    monkeypatch.setattr(gw.settings, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", False)
+
+    resp = await gw.chat([{"role": "user", "content": "oi"}], task_type="resumo")
+    assert resp.texto == "resposta real"
+    assert resp.fallback_ativado is True
+    assert chamadas["n"] == 2

@@ -95,6 +95,11 @@ async def chat(messages: list[dict], model: str | None,
     if not choices:
         raise RuntimeError("Maritaca retornou resposta vazia")
     texto = (choices[0].get("message") or {}).get("content") or ""
+    # `content` ausente/None caía no `or ""` e virava "sucesso" com texto
+    # vazio — cacheado pelo TTL inteiro, fallback nunca disparava (auditoria
+    # de segurança, 18/08; mesma classe de bug corrigida no Ollama/Groq).
+    if not texto.strip():
+        raise RuntimeError(f"Maritaca retornou conteúdo vazio — modelo {mdl}")
     return texto, _usage(data, mdl)
 
 

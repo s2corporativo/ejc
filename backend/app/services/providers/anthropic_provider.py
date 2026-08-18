@@ -16,7 +16,6 @@
 # parâmetros temperature/top_p/top_k foram REMOVIDOS (HTTP 400 se enviados).
 # O controle de raciocínio passa a ser thinking adaptativo + output_config.effort.
 from __future__ import annotations
-import os
 import asyncio
 
 from app.core.config import get_settings
@@ -38,9 +37,21 @@ def _is_modern(model: str) -> bool:
 
 
 def _api_key() -> str:
-    """Chave Anthropic: prioriza a Settings tipada (.env carregado pelo pydantic);
-    cai para os.getenv (ex.: docker env_file exporta no ambiente do processo)."""
-    return get_settings().ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
+    """Chave Anthropic: SÓ a Settings tipada — nunca os.getenv como fallback.
+
+    `.env` já chega aqui: pydantic-settings carrega `.env` em Settings no boot,
+    então quando a credencial NUNCA foi cadastrada no Cofre, ANTHROPIC_API_KEY
+    já tem o valor do `.env` (credential_vault_service.aplicar_overlay só
+    sobrescreve o campo quando há registro ativo ou histórico).
+
+    O fallback a os.getenv existia aqui e ANULAVA a revogação: ao revogar uma
+    credencial já cadastrada, aplicar_overlay grava "" em Settings de propósito
+    ("revogada — sem fallback ao .env"), mas `"" or os.getenv(...)` cai de
+    volta no valor do processo (docker-compose exporta `.env` via env_file) —
+    a chave revogada pelo Cofre continuava sendo usada até o próximo restart
+    do container (auditoria de segurança, 18/08).
+    """
+    return get_settings().ANTHROPIC_API_KEY or ""
 
 
 def _default_model() -> str:
@@ -299,6 +310,12 @@ async def chat(messages: list[dict], model: str | None,
     if getattr(respostas[-1], "stop_reason", None) == "pause_turn":
         # Teto de continuações excedido → degradação graciosa com aviso.
         texto += _AVISO_BUSCA_PARCIAL
+    # Resposta só com blocos "thinking"/tool e nenhum "text" produz texto=""
+    # em silêncio — vira "sucesso" vazio, cacheado pelo TTL inteiro sem o
+    # fallback disparar (auditoria de segurança, 18/08; mesma classe de bug
+    # corrigida no Ollama/Groq/Maritaca).
+    if not texto.strip():
+        raise RuntimeError(f"Anthropic retornou conteúdo vazio — modelo {mdl}")
     usage = {
         "model": mdl,
         "input_tokens": _somar_usage(respostas, "input_tokens"),

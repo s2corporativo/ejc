@@ -49,6 +49,13 @@ async def chat(
     if not resp.choices:
         raise RuntimeError("Groq retornou resposta vazia")
     texto = resp.choices[0].message.content
+    # `content` pode vir None (ex.: resposta cortada por tool-call/filtro de
+    # conteúdo) sem `choices` estar vazio — escapava desta guarda e virava
+    # "sucesso" com texto vazio, cacheado pelo TTL inteiro sem o fallback
+    # nunca disparar (auditoria de segurança, 18/08; mesma classe de bug já
+    # corrigida no Ollama na auditoria de provedores, 18/08).
+    if not (texto or "").strip():
+        raise RuntimeError(f"Groq retornou conteúdo vazio — modelo {model}")
     usage = {
         "input_tokens":  resp.usage.prompt_tokens if resp.usage else None,
         "output_tokens": resp.usage.completion_tokens if resp.usage else None,

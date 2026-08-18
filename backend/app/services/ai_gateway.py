@@ -315,6 +315,15 @@ async def _chamar_com_barreira(provider, model, messages, modo_sanitizacao,
             raise _ProviderPulado(residual)
     texto, usage = await _chamar_provedor(provider, model, messages_envio,
                                           temperature, max_tokens)
+    # Defesa em profundidade (auditoria de segurança, 18/08): cada provider já
+    # levanta RuntimeError em resposta vazia/None (Ollama/Groq/Maritaca/
+    # Anthropic, corrigidos individualmente), mas esta é a FONTE ÚNICA que
+    # toda chamada atravessa — um provider novo, ou um caminho de resposta que
+    # escape à guarda individual, não deve conseguir virar "sucesso" vazio
+    # aqui. Reaproveita o mecanismo de fallback já existente no chamador
+    # (chat()): RuntimeError → tenta o próximo provedor da cadeia.
+    if not (texto or "").strip():
+        raise RuntimeError(f"Provider '{provider}' retornou resposta vazia")
     # Reidratação LOCAL: só a resposta DEVOLVIDA recupera o dado real; a versão
     # pseudonimizada (texto_para_log) é a que vai à observabilidade.
     texto_para_log = texto

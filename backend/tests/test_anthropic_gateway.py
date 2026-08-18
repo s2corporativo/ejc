@@ -210,3 +210,29 @@ def test_precos_oficiais_corrigidos():
     assert _PRECOS_ANTHROPIC_USD_MM["claude-opus-4-8"] == {"input": 5.00, "output": 25.00}
     assert _PRECOS_ANTHROPIC_USD_MM["claude-sonnet-5"] == {"input": 3.00, "output": 15.00}
     assert _PRECOS_ANTHROPIC_USD_MM["claude-haiku-4-5"] == {"input": 1.00, "output": 5.00}
+
+
+# ── Revogação de credencial pelo Cofre (auditoria de segurança, 18/08) ───────
+# O Cofre grava "" em Settings.ANTHROPIC_API_KEY ao revogar uma credencial já
+# cadastrada (comportamento deliberado: revogar não deve deixar fallback ao
+# .env). O provider tinha um fallback a os.getenv que ANULAVA essa revogação:
+# como o docker-compose exporta o .env no ambiente do processo (env_file), a
+# chave revogada continuava sendo usada até o próximo restart do container.
+
+def test_chave_revogada_nao_cai_no_env_do_processo(monkeypatch):
+    """Settings com "" (revogada) NUNCA deve resolver para o valor do processo,
+    mesmo que ANTHROPIC_API_KEY esteja setada no ambiente (docker env_file)."""
+    from app.services.providers import anthropic_provider as ap
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-vazada-do-ambiente-do-processo")
+    assert ap._api_key() == ""
+
+
+def test_chave_valida_na_settings_e_usada_normalmente(monkeypatch):
+    """Uso legítimo (credencial válida na Settings, vinda do Cofre ou do .env
+    carregado pelo pydantic) continua funcionando — o fix não quebra o caminho são."""
+    from app.services.providers import anthropic_provider as ap
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-valor-valido")
+    assert ap._api_key() == "sk-ant-valor-valido"

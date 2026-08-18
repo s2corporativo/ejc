@@ -53,7 +53,7 @@ async def verificar_citacoes_juris(
         db, req.texto, consultar_datajud=req.consultar_datajud)
 
 
-@router.post("/analisar-caso")
+@router.post("/analisar-caso", dependencies=[Depends(rate_limit("ia-analisar-caso", 15))])
 async def analisar(
     req: AnalisarCasoRequest,
     db: AsyncSession = Depends(get_db),
@@ -68,6 +68,15 @@ async def analisar(
             status_code=422,
             detail="Descreva os fatos com mais detalhes (mín. 30 caracteres)",
         )
+    # IDOR (auditoria de IA 18/08): case_id chegava a analisar_caso() sem
+    # ownership. Dentro do serviço ele abre o ESCOPO RAG restrito do cliente
+    # do caso (peça_interna/precedente_interno/comunicacao_processual) e monta
+    # o DOSSIÊ inteiro (fatos, prazos, honorários, peças, histórico) dentro do
+    # prompt — qualquer usuário autenticado lia caso de carteira alheia só
+    # informando o id. Mesmo gate que /dossie, /teses-ocultas e /auditar-peca.
+    if req.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, req.case_id)
     resultado = await analisar_caso(
         db, cu.id, req.descricao_fatos, req.area,
         nomes_proteger=req.nomes_proteger, case_id=req.case_id,
@@ -103,7 +112,7 @@ async def dossie_caso(
     return dossie
 
 
-@router.post("/resumir-documento")
+@router.post("/resumir-documento", dependencies=[Depends(rate_limit("ia-resumir-documento", 15))])
 async def resumir(
     req: ResumirDocRequest,
     db: AsyncSession = Depends(get_db),
@@ -111,6 +120,12 @@ async def resumir(
 ):
     if len(req.texto.strip()) < 50:
         raise HTTPException(status_code=422, detail="Texto muito curto")
+    # Sem leitura de dado do caso (o texto vem no corpo), mas sem ownership
+    # o AILog é gravado como se pertencesse a um caso alheio — poluição da
+    # trilha de auditoria daquele caso (auditoria de IA 18/08).
+    if req.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, req.case_id)
     resultado = await resumir_documento(db, cu.id, req.texto, case_id=req.case_id)
     if "erro" in resultado:
         raise http_erro_ia(resultado["erro"], 502)
@@ -394,8 +409,13 @@ from pydantic import BaseModel as _BM, Field as _Field
 from typing import Optional as _Opt, List as _List
 
 
+# Mesmo teto de app/schemas/ai.py._MAX_TEXTO_IA (200.000 chars, replica
+# VerificarCitacoesRequest) — auditoria de segurança 18/08.
+_MAX_TEXTO_IA_LOCAL = 200_000
+
+
 class TesesOcultasReq(_BM):
-    descricao_fatos: str
+    descricao_fatos: str = _Field(..., max_length=_MAX_TEXTO_IA_LOCAL)
     area: str
     tese_principal: _Opt[str] = None
     nomes_proteger: _List[str] = []
@@ -403,29 +423,29 @@ class TesesOcultasReq(_BM):
 
 
 class AuditarPecaReq(_BM):
-    conteudo: _Opt[str] = None           # texto direto OU...
+    conteudo: _Opt[str] = _Field(None, max_length=_MAX_TEXTO_IA_LOCAL)   # texto direto OU...
     peca_id:  _Opt[str] = None           # ...id de LegalDoc (busca no GED)
     tipo_peca: str
     case_id: _Opt[str] = None
 
 
 class AudienciaReq(_BM):
-    resumo_caso: str
+    resumo_caso: str = _Field(..., max_length=_MAX_TEXTO_IA_LOCAL)
     tipo_audiencia: str = "instrução"
     nomes_proteger: _List[str] = []
     case_id: _Opt[str] = None
 
 
 class AnaliseContratoReq(_BM):
-    texto_contrato: str
+    texto_contrato: str = _Field(..., max_length=_MAX_TEXTO_IA_LOCAL)
     tipo_contrato: str = "geral"
     nomes_proteger: _List[str] = []
     case_id: _Opt[str] = None
-    texto_contrato_2: _Opt[str] = None   # segunda minuta (modo comparação)
+    texto_contrato_2: _Opt[str] = _Field(None, max_length=_MAX_TEXTO_IA_LOCAL)   # segunda minuta (modo comparação)
     modo: _Opt[str] = None               # "comparacao" → compara cláusula a cláusula
 
 
-@router.post("/teses-ocultas")
+@router.post("/teses-ocultas", dependencies=[Depends(rate_limit("ia-teses-ocultas", 15))])
 async def teses_ocultas(
     req: TesesOcultasReq,
     db: AsyncSession = Depends(get_db),
@@ -451,7 +471,7 @@ async def teses_ocultas(
     return r
 
 
-@router.post("/auditar-peca")
+@router.post("/auditar-peca", dependencies=[Depends(rate_limit("ia-auditar-peca", 10))])
 async def auditar(
     req: AuditarPecaReq,
     db: AsyncSession = Depends(get_db),
@@ -493,7 +513,7 @@ async def auditar(
     return r
 
 
-@router.post("/preparar-audiencia")
+@router.post("/preparar-audiencia", dependencies=[Depends(rate_limit("ia-preparar-audiencia", 15))])
 async def audiencia(
     req: AudienciaReq,
     db: AsyncSession = Depends(get_db),
@@ -502,6 +522,10 @@ async def audiencia(
     """Assistente de Audiência (ECJ) — kit de preparação."""
     if len(req.resumo_caso.strip()) < 50:
         raise HTTPException(status_code=422, detail="Forneça o resumo do caso")
+    # Mesma integridade de trilha de auditoria do /resumir-documento acima.
+    if req.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, req.case_id)
     r = await preparar_audiencia(
         db, cu.id, req.resumo_caso, req.tipo_audiencia,
         req.nomes_proteger, req.case_id,
@@ -594,7 +618,7 @@ class AssistenteCasoReq(_BM):
     modo: _Opt[str] = "geral"  # geral|resumo|riscos|teses|audiencia|documentos|peticao
 
 
-@router.post("/casos/{case_id}/assistente")
+@router.post("/casos/{case_id}/assistente", dependencies=[Depends(rate_limit("ia-assistente-estrategico", 15))])
 async def assistente_estrategico(
     case_id: str,
     req: AssistenteCasoReq,
@@ -714,7 +738,7 @@ class DualIAReq(_BM):
     model2:     _Opt[str] = None   # override modelo IA-2
 
 
-@router.post("/casos/{case_id}/dual")
+@router.post("/casos/{case_id}/dual", dependencies=[Depends(rate_limit("ia-dual", 10))])
 async def dual_ia(
     case_id: str,
     req: DualIAReq,
@@ -834,7 +858,7 @@ class VisualLawReq(_BM):
     tipo: str = "timeline"  # timeline|fluxo_status|partes|prazos
 
 
-@router.post("/caso/{case_id}/visual-law")
+@router.post("/caso/{case_id}/visual-law", dependencies=[Depends(rate_limit("ia-visual-law", 10))])
 async def visual_law(
     case_id: str,
     req: VisualLawReq,
@@ -876,7 +900,7 @@ class EstrategiaReq(_BM):
     foco: _Opt[str] = "geral"  # geral|defesa|recurso|acordo|execucao
 
 
-@router.post("/caso/{case_id}/estrategia")
+@router.post("/caso/{case_id}/estrategia", dependencies=[Depends(rate_limit("ia-motor-estrategia", 10))])
 async def motor_estrategia(
     case_id: str,
     req: EstrategiaReq,
@@ -985,7 +1009,7 @@ REGRAS:
     }
 
 
-@router.post("/analisar-contrato")
+@router.post("/analisar-contrato", dependencies=[Depends(rate_limit("ia-analisar-contrato", 15))])
 async def analisar_contrato_endpoint(
     req: AnaliseContratoReq,
     db: AsyncSession = Depends(get_db),
@@ -1003,6 +1027,10 @@ async def analisar_contrato_endpoint(
                 status_code=422,
                 detail="Modo comparação exige 'texto_contrato_2' (mín. 100 caracteres)",
             )
+    # Mesma integridade de trilha de auditoria dos demais endpoints acima.
+    if req.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, req.case_id)
     r = await analisar_contrato(
         db, cu.id, req.texto_contrato, req.tipo_contrato,
         req.nomes_proteger, req.case_id,
@@ -1012,7 +1040,7 @@ async def analisar_contrato_endpoint(
         raise http_erro_ia(r["erro"], 502)
     return r
 
-@router.post("/detectar-prazos")
+@router.post("/detectar-prazos", dependencies=[Depends(rate_limit("ia-detectar-prazos", 15))])
 async def detectar_prazos(
     req: ResumirDocRequest,
     db: AsyncSession = Depends(get_db),
