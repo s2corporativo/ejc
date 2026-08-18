@@ -67,6 +67,9 @@ export default function NovoCasoWizard({
   const [criandoCaso, setCriandoCaso] = useState(false);
   // Erro inline do campo título (validação junto ao campo, além do toast).
   const [tituloErro, setTituloErro] = useState<string | null>(null);
+  // Sigilo reforçado de IA (Issue #1194): booleano fora do Record<string,string>
+  // de `caso` — vai direto no payload, sem passar pelo filtro "v !== ''".
+  const [sigiloReforcado, setSigiloReforcado] = useState(false);
   // Busca por nome pode trazer homônimos que NÃO são o cliente: sem esta
   // saída, o usuário ficava preso (o form de criação só abria com 0 achados).
   const [cadastrarNovo, setCadastrarNovo] = useState(false);
@@ -87,6 +90,7 @@ export default function NovoCasoWizard({
     setCadastrarNovo(false);
     setNovoCliente({ nome: "", email: "", telefone: "" });
     setTituloErro(null);
+    setSigiloReforcado(false);
     setCaso({
       titulo: "",
       area: "civil",
@@ -193,7 +197,10 @@ export default function NovoCasoWizard({
     setCriandoCaso(true);
     try {
       // POST /cases/ — mesmo endpoint do modal completo; campos vazios omitidos.
-      const payload: Record<string, unknown> = { client_id: cliente.id };
+      const payload: Record<string, unknown> = {
+        client_id: cliente.id,
+        sigilo_reforcado: sigiloReforcado,
+      };
       for (const [k, v] of Object.entries(caso)) {
         if (v !== "") payload[k] = v;
       }
@@ -491,6 +498,20 @@ export default function NovoCasoWizard({
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={sigiloReforcado}
+                  onChange={(e) => setSigiloReforcado(e.target.checked)}
+                />
+                Sigilo reforçado — caso de crime sexual ou envolve menor
+              </label>
+              <p className="mt-1 text-xs text-slate-400">
+                A IA deste caso passa a exigir provedor local (Ollama); nenhum
+                conteúdo dele vai a provedor externo, nem pseudonimizado.
+              </p>
             </div>
             <div>
               <label className="label">Tipo de caso</label>

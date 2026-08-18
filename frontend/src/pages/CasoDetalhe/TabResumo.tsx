@@ -297,6 +297,7 @@ export default function TabResumo({
   const [novoMov, setNovoMov] = useState("");
   const [encModal, setEncModal] = useState(false);
   const [encLoading, setEncLoading] = useState(false);
+  const [sigiloSalvando, setSigiloSalvando] = useState(false);
   const [enc, setEnc] = useState({
     resultado: "exito_total",
     motivo_resultado: "",
@@ -463,6 +464,28 @@ export default function TabResumo({
       .get(`/cases/${caso.id}/movimentos`)
       .then((r) => setMovs(asList(r.data)))
       .catch(() => {});
+  };
+
+  // Sigilo reforçado de IA (Issue #1194): único jeito de o piso LOCAL_COMPLETO
+  // da sanitization_policy alcançar um caso real de crime sexual/menor — área
+  // do caso não tem granularidade para isso. PATCH direto + reload, mesmo
+  // padrão de AvisoCasoEncerrado.reabrir().
+  const toggleSigilo = async (marcar: boolean) => {
+    setSigiloSalvando(true);
+    try {
+      await api.patch(`/cases/${caso.id}`, { sigilo_reforcado: marcar });
+      toast.success(
+        marcar
+          ? "Sigilo reforçado ativado — a IA deste caso passa a exigir provedor local."
+          : "Sigilo reforçado desativado.",
+      );
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Falha ao atualizar sigilo reforçado",
+      );
+      setSigiloSalvando(false);
+    }
   };
 
   const syncDataJud = async () => {
@@ -646,6 +669,32 @@ export default function TabResumo({
                 <span className="text-slate-400">Risco:</span>{" "}
                 <RiskBadge value={caso.risco_nivel || caso.risco} />
               </div>
+            )}
+            {["superadmin", "admin", "socio", "advogado"].includes(
+              user?.role || "",
+            ) ? (
+              <div className="col-span-2 flex items-center gap-1.5">
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={!!caso.sigilo_reforcado}
+                    disabled={sigiloSalvando}
+                    onChange={(e) => toggleSigilo(e.target.checked)}
+                  />
+                  <span className="text-slate-400">
+                    Sigilo reforçado (crime sexual/menor) — IA só via provedor
+                    local
+                  </span>
+                </label>
+              </div>
+            ) : (
+              caso.sigilo_reforcado && (
+                <div className="col-span-2">
+                  <span className="badge bg-danger-50 text-danger-700 border border-danger-200">
+                    🔒 Sigilo reforçado — IA restrita a provedor local
+                  </span>
+                </div>
+              )
             )}
             <div>
               <span className="text-slate-400">Parte contrária:</span>{" "}

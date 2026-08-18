@@ -52,6 +52,7 @@ export interface Case {
   prioridade: string;
   risco?: string;
   risco_nivel?: string;
+  sigilo_reforcado?: boolean;
   numero_processo?: string;
   tribunal?: string;
   comarca?: string;
