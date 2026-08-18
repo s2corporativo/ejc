@@ -24,7 +24,7 @@ from fastapi import HTTPException
 from app.services.system_prompts import SYSTEM_PROMPTS, TarefaIA, get_configuracao
 from app.services.system_prompts.inventario import impressao as prompt_versao
 from app.services.ai.provider_policy import AIProviderPolicy
-from app.services.ai.sanitization_policy import rotulo_de_sigilo_reforcado
+from app.services.ai.sanitization_policy import rotulo_de_sigilo_reforcado, modo_sigilo_do_caso
 from app.services.ai.core.intent_classifier import classify_intent
 from app.services.ai.core.agent_registry import AGENT_REGISTRY
 from app.services.ai.core.ejc_skill_catalog import resolve_native_skill_plan
@@ -235,8 +235,18 @@ class SingleAICoreOrchestrator:
         # crítica — justamente a peça de maior risco jurídico ficava sem a
         # segunda leitura. O gateway aplica `reforcar_sigilo`, então o modo aqui
         # só pode ELEVAR o piso, nunca rebaixá-lo.
-        modo_sigilo = None
-        if rotulo_sigiloso:
+        #
+        # `caso.sigilo_reforcado` vem ANTES da área/rótulo — ver docstring de
+        # `modo_sigilo_do_caso` para o porquê (área sozinha não tem granularidade
+        # para crimes sexuais/menores desde a redução do piso do AI-019).
+        modo_sigilo = modo_sigilo_do_caso(caso)
+        if modo_sigilo:
+            logger.info(
+                "[sigilo] caso %s marcado sigilo_reforcado=True → modo "
+                "LOCAL_COMPLETO no gateway; roteamento segue como '%s'",
+                getattr(caso, "id", None), gateway_task,
+            )
+        elif rotulo_sigiloso:
             from app.services.ai.sanitization_policy import modo_para_task
             modo_sigilo = modo_para_task(rotulo_sigiloso)
             logger.info(

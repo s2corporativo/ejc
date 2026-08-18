@@ -45,10 +45,10 @@ _PAPEIS_ESCRITA = ("superadmin", "admin", "socio", "advogado")
     roles=_PAPEIS_ESCRITA,
 )
 async def gerar_minuta_peca(args: dict, ctx: AgentContext) -> dict:
-    await verificar_acesso_caso(ctx.db, ctx.user, ctx.case_id)
+    caso = await verificar_acesso_caso(ctx.db, ctx.user, ctx.case_id)
     from app.services.ai.entidades_caso import entidades_do_caso
     from app.services.ai_gateway import executar_tarefa_ia
-    from app.services.ai.sanitization_policy import modo_para_task
+    from app.services.ai.sanitization_policy import modo_para_task, modo_sigilo_do_caso
     from app.services.system_prompts.router import TarefaIA
 
     tipo = (args.get("tipo") or "peça").strip()
@@ -59,7 +59,14 @@ async def gerar_minuta_peca(args: dict, ctx: AgentContext) -> dict:
     # S1: o roteamento por TarefaIA.MINUTAS não pode ignorar o SIGILO da ÁREA do
     # caso. Passa o modo derivado da área; executar_tarefa_ia REFORÇA (nunca
     # rebaixa) — caso LOCAL_COMPLETO nunca vai a provider externo.
-    modo_area = modo_para_task(ctx.area or "")
+    #
+    # `caso.sigilo_reforcado` tem prioridade (achado do security-auditor,
+    # Issue #1194): hoje rodar_agente() já aborta a sessão inteira ANTES de
+    # chegar aqui quando a flag está marcada (defesa em profundidade #1), mas
+    # esta tool não dependia disso por si — só do `ctx.area`, que não cobre
+    # crimes sexuais/menores desde a redução do piso. Reforça por conta própria
+    # (defesa em profundidade #2), caso o gate de entrada do loop mude no futuro.
+    modo_area = modo_sigilo_do_caso(caso) or modo_para_task(ctx.area or "")
     resultado = await executar_tarefa_ia(
         TarefaIA.MINUTAS, mensagem, case_id=ctx.case_id,
         user_id=ctx.user.id, db=ctx.db, nivel_inteligencia="alto",

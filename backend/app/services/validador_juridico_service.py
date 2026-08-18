@@ -542,6 +542,22 @@ async def validar_rascunho_juridico(
         documentos=_formatar_documentos(payload.documentos),
     )
 
+    # Achado do security-auditor (Issue #1194): este módulo chama o gateway em
+    # paralelo a orchestrator.py/agent/loop.py — que já consultam
+    # Case.sigilo_reforcado — mas nunca fazia essa checagem. Auditoria de peça
+    # num caso de crime sexual/menor ia pseudonimizada ao externo mesmo com a
+    # flag marcada.
+    modo_sigilo = None
+    if payload.case_id:
+        from sqlalchemy import text as _text
+        row = (await db.execute(
+            _text("SELECT sigilo_reforcado FROM cases WHERE id = :cid AND deleted_at IS NULL"),
+            {"cid": payload.case_id},
+        )).first()
+        if row and row[0]:
+            from app.services.ai.sanitization_policy import ModoSanitizacao
+            modo_sigilo = ModoSanitizacao.LOCAL_COMPLETO
+
     resp = await chat(
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -551,6 +567,7 @@ async def validar_rascunho_juridico(
         temperature=0.05,
         max_tokens=3200,
         nivel_inteligencia=payload.nivel_inteligencia or "alto",
+        modo_sanitizacao=modo_sigilo,
     )
 
     if legal_doc_id:

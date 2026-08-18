@@ -33,6 +33,15 @@ class _Res:
         # probatório — lista vazia cai no caminho de placeholders.
         return []
 
+    def first(self):
+        # Achado do security-auditor (Issue #1194): analisar_caso/
+        # detectar_teses_ocultas passaram a consultar
+        # "SELECT sigilo_reforcado FROM cases WHERE id = :cid" via .first().
+        # None = "sem linha encontrada" → caminho seguro de sigilo=False, o
+        # mesmo default do Case fictício usado por estes testes (não têm
+        # sigilo_reforcado marcado).
+        return None
+
 
 class _FakeDB:
     """execute() sempre devolve o mesmo Case; add() captura as linhas gravadas."""

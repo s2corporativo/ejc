@@ -6,11 +6,13 @@ toca rede. Contrato:
   - consistência: mesma entidade → mesmo marcador; distintas → índices distintos;
   - relação preservada ("[CLIENTE_1] processa [PARTE_CONTRARIA_1]");
   - texto pseudonimizado sem PII estrutural residual;
-  - modo_para_task: `criminal` MANTIDO em LOCAL_COMPLETO (auditoria 2026-07-06 —
-    nomes de vítima/testemunha não estruturais não podem sair da VPS); demais
-    (analise_caso/resumo/triagem/tarefa desconhecida) → EXTERNO_PSEUDONIMIZADO;
-    override via AI_SANITIZATION_MODE_MAP respeitado; piso LOCAL_COMPLETO
-    permanece não-rebaixável por override.
+  - modo_para_task: `menores`/`crimes_sexuais` MANTIDOS em LOCAL_COMPLETO
+    (decisão do titular, 18/08 — reduz o piso do AI-019 a essas duas áreas;
+    nomes de vítima/testemunha não estruturais não podem sair da VPS);
+    `criminal`/`penal`/`familia`/`saude` voltaram a EXTERNO_PSEUDONIMIZADO
+    (mesmo tratamento normal das demais áreas); override via
+    AI_SANITIZATION_MODE_MAP respeitado; piso LOCAL_COMPLETO permanece
+    não-rebaixável por override.
 """
 from __future__ import annotations
 
@@ -123,14 +125,18 @@ def test_pseudonimizar_mensagens_estado_compartilhado():
 # ── modo_para_task ────────────────────────────────────────────────────────────
 
 def test_modo_default_por_tarefa():
-    # Auditoria máxima (2026-07-26, AI-019): áreas SENSÍVEIS voltam a
-    # LOCAL_COMPLETO por padrão — pseudonimização protege a identidade direta,
-    # mas fatos raros dessas áreas permitem reidentificação.
-    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
-    assert modo_para_task("penal") == ModoSanitizacao.LOCAL_COMPLETO
-    assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO
-    assert modo_para_task("saude") == ModoSanitizacao.LOCAL_COMPLETO
-    assert modo_para_task("CRIMINAL") == ModoSanitizacao.LOCAL_COMPLETO  # case-insensitive
+    # Decisão do titular (18/08): reduz o piso do AI-019 a crimes sexuais e
+    # menores/infância e juventude — pseudonimização protege a identidade
+    # direta, mas fatos raros dessas DUAS áreas permitem reidentificação.
+    assert modo_para_task("menores") == ModoSanitizacao.LOCAL_COMPLETO
+    assert modo_para_task("crimes_sexuais") == ModoSanitizacao.LOCAL_COMPLETO
+    assert modo_para_task("infancia_juventude") == ModoSanitizacao.LOCAL_COMPLETO
+    assert modo_para_task("MENORES") == ModoSanitizacao.LOCAL_COMPLETO  # case-insensitive
+    # Demais áreas sensíveis do AI-019 original voltaram ao tratamento normal.
+    assert modo_para_task("criminal") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
+    assert modo_para_task("penal") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
+    assert modo_para_task("familia") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
+    assert modo_para_task("saude") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
     assert modo_para_task("analise_caso") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
     # Tarefas simples migradas de MASCARAMENTO irreversível → pseudonimização.
     assert modo_para_task("resumo") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
@@ -145,24 +151,25 @@ def test_modo_override_por_config(monkeypatch):
     st = get_settings()
     monkeypatch.setattr(
         st, "AI_SANITIZATION_MODE_MAP",
-        '{"familia":"local_completo","analise_caso":"mascaramento"}',
+        '{"menores":"local_completo","analise_caso":"mascaramento"}',
     )
-    assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO      # já é o default (AI-019)
+    assert modo_para_task("menores") == ModoSanitizacao.LOCAL_COMPLETO      # já é o default
     assert modo_para_task("analise_caso") == ModoSanitizacao.MASCARAMENTO   # sobrepõe default
-    # criminal sem override → default LOCAL_COMPLETO (auditoria 2026-07-26, AI-019).
-    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
+    # crimes_sexuais sem override → default LOCAL_COMPLETO (decisão do titular, 18/08).
+    assert modo_para_task("crimes_sexuais") == ModoSanitizacao.LOCAL_COMPLETO
 
 
 def test_area_sensivel_nao_e_rebaixavel_por_override(monkeypatch):
-    """AI-019: o piso LOCAL_COMPLETO das áreas sensíveis NÃO pode ser rebaixado
-    para provider externo via AI_SANITIZATION_MODE_MAP (fail-closed)."""
+    """Decisão do titular (18/08): o piso LOCAL_COMPLETO de crimes sexuais e
+    menores NÃO pode ser rebaixado para provider externo via
+    AI_SANITIZATION_MODE_MAP (fail-closed)."""
     st = get_settings()
     monkeypatch.setattr(
         st, "AI_SANITIZATION_MODE_MAP",
-        '{"criminal":"externo_pseudonimizado","familia":"mascaramento"}',
+        '{"crimes_sexuais":"externo_pseudonimizado","menores":"mascaramento"}',
     )
-    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
-    assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO
+    assert modo_para_task("crimes_sexuais") == ModoSanitizacao.LOCAL_COMPLETO
+    assert modo_para_task("menores") == ModoSanitizacao.LOCAL_COMPLETO
 
 
 def test_modo_override_invalido_cai_no_default(monkeypatch):
@@ -177,8 +184,9 @@ def test_modo_override_invalido_cai_no_default(monkeypatch):
 # ── Piso LOCAL_COMPLETO — agora OPT-IN por override (decisão 2026-07-06) ───────
 
 def test_criminal_reforcavel_para_local_completo_via_override(monkeypatch):
-    """`criminal` passou a EXTERNO_PSEUDONIMIZADO por decisão de produto, mas o
-    escritório pode REFORÇAR o sigilo de volta a LOCAL_COMPLETO via config."""
+    """`criminal` é EXTERNO_PSEUDONIMIZADO por decisão do titular (18/08), mas
+    o escritório pode REFORÇAR o sigilo de volta a LOCAL_COMPLETO via config
+    (ex.: um caso criminal específico que envolva também matéria sexual)."""
     st = get_settings()
     monkeypatch.setattr(
         st, "AI_SANITIZATION_MODE_MAP",

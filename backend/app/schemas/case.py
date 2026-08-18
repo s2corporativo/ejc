@@ -102,6 +102,11 @@ class CaseCreate(BaseModel):
     case_type: Optional[str] = "judicial"
     extrajudicial_type: Optional[str] = None
     has_judicial_process: Optional[bool] = False
+    # Sigilo reforçado de IA (migration 146, Issue #1194): marcado pelo
+    # advogado na triagem quando o caso envolve crime sexual ou menor —
+    # única forma confiável de o piso LOCAL_COMPLETO da sanitization_policy
+    # alcançar o caso real (área/task_type não têm essa granularidade).
+    sigilo_reforcado: Optional[bool] = False
     # FASE 2 (opcional): honorários do cadastro → contrato do kit preenchido.
     honorarios: Optional[HonorariosCreate] = None
 
@@ -148,6 +153,7 @@ class CaseUpdate(BaseModel):
     has_judicial_process: Optional[bool] = None
     kanban_column: Optional[str] = None
     kanban_position: Optional[int] = None
+    sigilo_reforcado: Optional[bool] = None
 
     @field_validator("numero_processo")
     @classmethod
@@ -216,6 +222,7 @@ class CaseResponse(BaseModel):
     fase: str
     prioridade: str
     risco: Optional[str] = None
+    sigilo_reforcado: bool = False
     proxima_acao: Optional[str] = None
     proxima_acao_prazo: Optional[datetime] = None
     numero_processo: Optional[str] = None

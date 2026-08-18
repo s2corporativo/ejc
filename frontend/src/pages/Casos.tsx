@@ -69,6 +69,7 @@ import {
   SkeletonTable,
   Button,
   fmtDate,
+  SigiloReforcadoField,
 } from "../components/UI";
 import { useAuth } from "../stores/auth";
 import { CasosStats } from "../components/Dashboards";
@@ -1326,6 +1327,10 @@ export default function Casos() {
               <option value="critica">Crítica</option>
             </select>
           </div>
+          <SigiloReforcadoField
+            checked={!!form.sigilo_reforcado}
+            onChange={(v) => setForm({ ...form, sigilo_reforcado: v })}
+          />
           <div>
             <label className="label">Tipo de caso</label>
             <select

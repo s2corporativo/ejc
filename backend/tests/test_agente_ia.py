@@ -875,6 +875,57 @@ class TestLoopSigiloArea:
         assert loop_env.ailog_calls == []        # nada logado
         assert any(t == "erro" for t, _ in eventos)
 
+    async def test_caso_sigilo_reforcado_fail_closed_mesmo_com_area_normal(self, loop_env):
+        """Achado do security-auditor (Issue #1194): desde que o piso LOCAL_COMPLETO
+        foi reduzido a crimes sexuais/menores, `Case.area` não tem granularidade
+        para essas categorias — um caso real só pode ser `criminal` (agora
+        EXTERNO_PSEUDONIMIZADO). Sem `Case.sigilo_reforcado`, um caso de crime
+        sexual contra menor cadastrado como `area=criminal` vazava ao externo.
+        Aqui a área é normal e NENHUM override está setado — só o campo do caso
+        decide."""
+        async def fake_acesso(db, user, case_id):
+            return SimpleNamespace(
+                client_id="c1", area=SimpleNamespace(value="criminal"),
+                sigilo_reforcado=True, id="case-sensivel",
+            )
+
+        loop_env.monkeypatch.setattr(loop_env.loop, "verificar_acesso_caso", fake_acesso)
+        chamou = {"n": 0}
+
+        def _chat(*a, **k):
+            chamou["n"] += 1
+            return _async(_turno("x", [], "end_turn"))
+
+        loop_env.monkeypatch.setattr(loop_env.gw, "chat_agentico", _chat)
+        eventos, on_event = _coletor()
+        r = await loop_env.loop.rodar_agente(
+            db=None, user=_user(), case_id="c1", mensagem="x", on_event=on_event)
+        assert r == {"status": "erro", "detalhe": "caso_sigiloso_exige_ia_local"}
+        assert chamou["n"] == 0
+        assert loop_env.ailog_calls == []
+
+    async def test_caso_sem_sigilo_reforcado_e_area_normal_segue_externo(self, loop_env):
+        """Regressão inversa: caso `criminal` GERAL, sem a flag marcada, continua
+        indo ao externo — a redução do piso pedida pelo titular não pode virar
+        bloqueio universal do criminal de novo."""
+        async def fake_acesso(db, user, case_id):
+            return SimpleNamespace(
+                client_id="c1", area=SimpleNamespace(value="criminal"),
+                sigilo_reforcado=False, id="case-normal",
+            )
+
+        loop_env.monkeypatch.setattr(loop_env.loop, "verificar_acesso_caso", fake_acesso)
+        chamou = {"n": 0}
+
+        def _chat(*a, **k):
+            chamou["n"] += 1
+            return _async(_turno("x", [], "end_turn"))
+
+        loop_env.monkeypatch.setattr(loop_env.gw, "chat_agentico", _chat)
+        r = await loop_env.loop.rodar_agente(db=None, user=_user(), case_id="c1", mensagem="x")
+        assert r["status"] != "erro"
+        assert chamou["n"] == 1
+
 
 class TestLoopDegradacaoPII:
     async def test_pii_residual_em_tool_result_degrada_e_continua(self, loop_env):

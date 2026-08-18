@@ -235,6 +235,29 @@ _SQL_CONFIANCA = (
 )
 
 
+async def _modo_sigilo_caso(db: AsyncSession, case_id: str | None):
+    """LOCAL_COMPLETO quando o caso está marcado `sigilo_reforcado`, senão None.
+
+    Achado do security-auditor (Issue #1194): este módulo (`ai_service.py`)
+    chama o gateway em paralelo a `orchestrator.py`/`agent/loop.py` — que já
+    consultam `Case.sigilo_reforcado` via `modo_sigilo_do_caso` — mas nunca
+    fazia essa checagem. Um caso de crime sexual/menor analisado por aqui
+    (`analisar_caso`, `detectar_teses_ocultas`, `auditar_peca`,
+    `preparar_audiencia`, `analisar_contrato`) ia pseudonimizado ao externo
+    mesmo com a flag marcada. Lookup leve (mesmo padrão de
+    `_escopo_cliente_do_caso`), não o ORM inteiro."""
+    if not case_id:
+        return None
+    row = (await db.execute(
+        text("SELECT sigilo_reforcado FROM cases WHERE id = :cid AND deleted_at IS NULL"),
+        {"cid": case_id},
+    )).first()
+    if not row or not row[0]:
+        return None
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+    return ModoSanitizacao.LOCAL_COMPLETO
+
+
 async def _escopo_cliente_do_caso(db: AsyncSession, case_id: str | None) -> str | None:
     """Escopo de isolamento do RAG (Bloco 5): retorna o client_id do caso, para
     que o conteúdo RESTRITO (peças/precedentes internos) do PRÓPRIO cliente seja
@@ -624,12 +647,16 @@ async def _gateway_text(
     nivel: str = "alto",
     model_override: str | None = None,
     entidades: dict[str, list[str]] | None = None,
+    modo_sanitizacao=None,
 ) -> tuple[str, GatewayResponse]:
     """Chamada centralizada ao AI Gateway, mantendo metadados para logs HITL.
 
     `entidades` (opcional): nomes próprios do caso para pseudonimização
     REVERSÍVEL no gateway (só surte efeito em tasks EXTERNO_PSEUDONIMIZADO). None
-    (default) = só PII estrutural, sem quebrar os call sites existentes."""
+    (default) = só PII estrutural, sem quebrar os call sites existentes.
+
+    `modo_sanitizacao` (opcional): repassado ao gateway, que só ELEVA o piso
+    (`reforcar_sigilo`) — ver `_modo_sigilo_caso`."""
     provider_override = "groq" if model_override else None
     resp = await gw_chat(
         messages=[
@@ -643,6 +670,7 @@ async def _gateway_text(
         provider_override=provider_override,
         nivel_inteligencia=nivel,
         entidades=entidades,
+        modo_sanitizacao=modo_sanitizacao,
     )
     return resp.texto, resp
 
@@ -697,6 +725,7 @@ async def analisar_caso(
     # Escopo de isolamento por cliente (Bloco 5): restrito ao client_id do caso.
     # None quando não há caso → RAG fail-closed (sem conteúdo restrito).
     escopo_cli = await _escopo_cliente_do_caso(db, case_id)
+    modo_sigilo = await _modo_sigilo_caso(db, case_id)
 
     # 2. RAG — recuperar contexto da base
     fontes = await buscar_contexto_rag(
@@ -755,6 +784,7 @@ async def analisar_caso(
             SYSTEM_ANALISE_CASO, prompt_usuario,
             task_type="estrategia", temperature=0.15, max_tokens=2600,
             nivel="alto", model_override=modelo_override,
+            modo_sanitizacao=modo_sigilo,
         )
     except Exception as e:
         logger.error(f"AI Gateway falhou: {e}")
@@ -1025,6 +1055,7 @@ async def detectar_teses_ocultas(
             SYSTEM_TESES_OCULTAS, user_msg,
             task_type="estrategia", temperature=0.2, max_tokens=2400, nivel="alto",
             entidades=entidades,
+            modo_sanitizacao=await _modo_sigilo_caso(db, case_id),
         )
         # LGPD — AILog.prompt_sanitizado é "SEM PII". Com `entidades` o user_msg
         # tem nomes em claro (o gateway só os pseudonimiza no envio ao externo);
@@ -1058,6 +1089,7 @@ async def auditar_peca(
         conteudo, resp = await _gateway_text(
             SYSTEM_AUDITOR_PECA, user_msg,
             task_type="auditoria_peca", temperature=0.15, max_tokens=2400, nivel="alto",
+            modo_sanitizacao=await _modo_sigilo_caso(db, case_id),
         )
         await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,
                       pii, [], resp, case_id)
@@ -1082,6 +1114,7 @@ async def preparar_audiencia(
         conteudo, resp = await _gateway_text(
             SYSTEM_AUDIENCIA, user_msg,
             task_type="estrategia", temperature=0.2, max_tokens=2400, nivel="alto",
+            modo_sanitizacao=await _modo_sigilo_caso(db, case_id),
         )
         await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,
                       pii, [], resp, case_id)
@@ -1211,6 +1244,7 @@ async def analisar_contrato(
             system, user_msg,
             task_type="auditoria_peca", temperature=0.15,
             max_tokens=3200 if comparacao else 2800, nivel="alto",
+            modo_sanitizacao=await _modo_sigilo_caso(db, case_id),
         )
         await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,
                       pii, fontes, resp, case_id)

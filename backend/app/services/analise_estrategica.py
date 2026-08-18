@@ -299,9 +299,25 @@ async def analisar_caso(
     # (ou helper sem entidades), cai no mascaramento IRREVERSÍVEL legado via
     # nomes_proteger. entidades_do_caso é fail-safe (nunca levanta).
     entidades = None
+    modo_sigilo = None
     if db is not None and case_id:
         from app.services.ai.entidades_caso import entidades_do_caso
         entidades = await entidades_do_caso(db, case_id) or None
+        # Achado do security-auditor (Issue #1194): esta função é chamada por
+        # /cases/{id}/analisar (botão "Análise estratégica com IA" na ficha do
+        # caso) E pelo hook automático de upload de documento
+        # (document_analysis_hook.py) — nenhum dos dois passava por
+        # orchestrator.py/agent/loop.py, que já consultam Case.sigilo_reforcado.
+        # Um caso de crime sexual/menor ia pseudonimizado ao externo mesmo com
+        # a flag marcada.
+        from sqlalchemy import text as _text
+        _row = (await db.execute(
+            _text("SELECT sigilo_reforcado FROM cases WHERE id = :cid AND deleted_at IS NULL"),
+            {"cid": case_id},
+        )).first()
+        if _row and _row[0]:
+            from app.services.ai.sanitization_policy import ModoSanitizacao
+            modo_sigilo = ModoSanitizacao.LOCAL_COMPLETO
 
     # LGPD — sanitiza a PII ESTRUTURAL (CPF/CNPJ/processo/e-mail…) e aplica a
     # SEGUNDA BARREIRA (validar_sem_pii) ANTES de qualquer envio ao LLM. Quando há
@@ -335,6 +351,7 @@ async def analisar_caso(
             temperature=0.3,
             max_tokens=3000,
             entidades=entidades,
+            modo_sanitizacao=modo_sigilo,
         )
         resultado = _parse_json_robusto(resp.texto)
         if not resultado:

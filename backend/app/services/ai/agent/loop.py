@@ -278,7 +278,9 @@ async def rodar_agente(
     """
     settings = get_settings()
 
-    from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
+    from app.services.ai.sanitization_policy import (
+        ModoSanitizacao, modo_para_task, modo_sigilo_do_caso,
+    )
     from app.services.ai.entidades_caso import entidades_do_caso
     from app.services.ai_gateway import chat_agentico, _ProviderPulado
     from app.services.ai_guard import registrar_ai_log
@@ -293,8 +295,9 @@ async def rodar_agente(
 
     # S1: MODO de sanitização derivado da ÁREA/sigilo REAL do caso (não do rótulo
     # de roteamento). Um caso de sigilo reforçado (LOCAL_COMPLETO) NUNCA pode ir a
-    # provider externo.
-    modo_sanitizacao = modo_para_task(area_label)
+    # provider externo. `caso.sigilo_reforcado` tem prioridade sobre `area_label`
+    # (ver docstring de `modo_sigilo_do_caso`).
+    modo_sanitizacao = modo_sigilo_do_caso(caso) or modo_para_task(area_label)
 
     # S1 fail-closed: o caminho agêntico só tem provider EXTERNO (Anthropic); caso
     # sigiloso → aborta ANTES de qualquer envio (nunca vai ao externo).

@@ -5,7 +5,7 @@ import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAreas } from "../lib/areas";
 import { toast } from "./Toast";
-import { Badge, Button, Modal, Spinner } from "./UI";
+import { Badge, Button, Modal, SigiloReforcadoField, Spinner } from "./UI";
 import type { Client } from "../types";
 
 // Taxonomia canônica de áreas: GET /areas via useAreas() (lib/areas.ts),
@@ -67,6 +67,9 @@ export default function NovoCasoWizard({
   const [criandoCaso, setCriandoCaso] = useState(false);
   // Erro inline do campo título (validação junto ao campo, além do toast).
   const [tituloErro, setTituloErro] = useState<string | null>(null);
+  // Sigilo reforçado de IA (Issue #1194): booleano fora do Record<string,string>
+  // de `caso` — vai direto no payload, sem passar pelo filtro "v !== ''".
+  const [sigiloReforcado, setSigiloReforcado] = useState(false);
   // Busca por nome pode trazer homônimos que NÃO são o cliente: sem esta
   // saída, o usuário ficava preso (o form de criação só abria com 0 achados).
   const [cadastrarNovo, setCadastrarNovo] = useState(false);
@@ -87,6 +90,7 @@ export default function NovoCasoWizard({
     setCadastrarNovo(false);
     setNovoCliente({ nome: "", email: "", telefone: "" });
     setTituloErro(null);
+    setSigiloReforcado(false);
     setCaso({
       titulo: "",
       area: "civil",
@@ -193,7 +197,10 @@ export default function NovoCasoWizard({
     setCriandoCaso(true);
     try {
       // POST /cases/ — mesmo endpoint do modal completo; campos vazios omitidos.
-      const payload: Record<string, unknown> = { client_id: cliente.id };
+      const payload: Record<string, unknown> = {
+        client_id: cliente.id,
+        sigilo_reforcado: sigiloReforcado,
+      };
       for (const [k, v] of Object.entries(caso)) {
         if (v !== "") payload[k] = v;
       }
@@ -492,6 +499,10 @@ export default function NovoCasoWizard({
                 ))}
               </select>
             </div>
+            <SigiloReforcadoField
+              checked={sigiloReforcado}
+              onChange={setSigiloReforcado}
+            />
             <div>
               <label className="label">Tipo de caso</label>
               <select

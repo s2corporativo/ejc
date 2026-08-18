@@ -33,6 +33,18 @@
 # fatos raros e combinações de eventos dessas áreas permitem reidentificação.
 # Esses defaults são um PISO não-rebaixável por override (fail-closed sem IA
 # local); exceção exige mudança de código revisada, não configuração.
+#
+# DECISÃO DO TITULAR (18/08, por chat, em resposta à pergunta sobre IA
+# indisponível nas 9 áreas de sigilo reforçado): "Fica só a questão de crimes
+# sexuais, e com menores. O resto pode ficar normal. Pseudonimizado." — reduz o
+# piso LOCAL_COMPLETO a **crimes sexuais e casos envolvendo menores/infância e
+# juventude** (o risco de reidentificação por combinação de fatos raros que
+# justificou o AI-019 é maior justamente aí: vítima/réu identificável por
+# poucos detalhes, e o dano de uma reidentificação errada é o mais grave do
+# sistema). Penal/criminal geral, família, saúde, médico e violência
+# (inclusive doméstica) voltam ao tratamento "normal" do resto do sistema —
+# EXTERNO_PSEUDONIMIZADO, não MASCARAMENTO nem bloqueio: pseudonimiza,
+# reidrata a resposta localmente, nunca sai PII real do VPS.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
@@ -59,23 +71,28 @@ class ModoSanitizacao(str, Enum):
 # receber qualquer um dos dois. Comparação é feita sobre o task_type ORIGINAL
 # (antes da normalização por aliases do gateway).
 _MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
-    # ── ÁREAS SENSÍVEIS → LOCAL_COMPLETO (auditoria máxima 2026-07-26, AI-019).
-    # Reverte a decisão de 2026-07-17 (achado A-1): mesmo com pseudonimização
-    # forte, em penal/família/saúde/menores/violência a COMBINAÇÃO de fatos
-    # raros e eventos permite reidentificação sem nenhum identificador direto —
-    # o conteúdo dessas áreas NÃO sai do VPS por padrão. Consequência operacional
-    # deliberada (fail-closed): sem Ollama on-prem ativo, a IA dessas áreas fica
-    # INDISPONÍVEL (scripts/subir-ia-local.sh para habilitar IA local). O piso de
-    # segurança em modo_para_task impede rebaixar estes defaults por override.
-    "criminal": ModoSanitizacao.LOCAL_COMPLETO,
-    "penal": ModoSanitizacao.LOCAL_COMPLETO,
-    "familia": ModoSanitizacao.LOCAL_COMPLETO,
-    "saude": ModoSanitizacao.LOCAL_COMPLETO,
-    "medico": ModoSanitizacao.LOCAL_COMPLETO,
+    # ── SIGILO REFORÇADO → LOCAL_COMPLETO (decisão do titular, 18/08: reduz o
+    # piso do AI-019 a crimes sexuais e casos com menores/infância e juventude
+    # — ver decisão datada acima). Consequência operacional deliberada
+    # (fail-closed): sem Ollama on-prem ativo, a IA dessas DUAS áreas fica
+    # INDISPONÍVEL (scripts/subir-ia-local.sh para habilitar IA local). O piso
+    # de segurança em modo_para_task impede rebaixar estes defaults por
+    # override.
+    "crimes_sexuais": ModoSanitizacao.LOCAL_COMPLETO,
     "menores": ModoSanitizacao.LOCAL_COMPLETO,
     "infancia_juventude": ModoSanitizacao.LOCAL_COMPLETO,
-    "violencia": ModoSanitizacao.LOCAL_COMPLETO,
-    "violencia_domestica": ModoSanitizacao.LOCAL_COMPLETO,
+    # Penal/criminal geral, família, saúde, médico e violência (achado AI-019
+    # original) voltaram ao tratamento normal do resto do sistema por decisão
+    # do titular (18/08) — explícitas aqui (em vez de cair no fallback) para
+    # que a intenção fique registrada e não dependa do valor de
+    # `_MODO_FALLBACK` mudar no futuro.
+    "criminal": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "penal": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "familia": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "saude": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "medico": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "violencia": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "violencia_domestica": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     # Modo 2+3 — pseudonimização reversível + reidratação (análise/minuta).
     "analise_caso": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "dossie": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
@@ -174,6 +191,12 @@ def normalizar_rotulo(valor: str | None) -> str:
 # "criminal", "direito familiar" (adjetivo) não casava "familia". O radical cobre
 # as três de uma vez. Só marcam PARA CIMA: o pior caso de um falso positivo é
 # exigir IA local numa área que aceitaria externo — nunca o contrário.
+# NOTA (18/08): esta tabela mapeia radical → CHAVE DE ÁREA canônica, não
+# radical → LOCAL_COMPLETO. Quem decide LOCAL_COMPLETO vs EXTERNO_PSEUDONIMIZADO
+# é `_MODO_DEFAULT_POR_TASK` (acima) para a chave resolvida — várias das chaves
+# aqui (familia, criminal, penal, saude, medico, violencia*) hoje resolvem para
+# EXTERNO_PSEUDONIMIZADO. A tabela continua útil para identificar/rotular a
+# área mesmo quando ela não é sigilo reforçado.
 _RADICAIS_SIGILO_REFORCADO: tuple[tuple[str, str], ...] = (
     ("famili", "familia"),          # familia, familiar, familiares
     ("crimin", "criminal"),         # criminal, criminais, criminalista
@@ -183,12 +206,33 @@ _RADICAIS_SIGILO_REFORCADO: tuple[tuple[str, str], ...] = (
     ("menor", "menores"),           # menor, menores
     ("infan", "infancia_juventude"),   # infancia, infantil, infanto
     ("juven", "infancia_juventude"),   # juventude, juvenil
+    # Achado do security-auditor (Issue #1194): "criança"/"adolescente" são
+    # vocabulário comum de família/infância e não tinham radical próprio — só
+    # eram cobertos incidentalmente quando o texto TAMBÉM continha "infantil"/
+    # "menor"/"juvenil".
+    ("crianc", "infancia_juventude"),  # crianca, criancas
+    ("adolescen", "infancia_juventude"),  # adolescente, adolescencia
     ("violen", "violencia"),        # violencia, violento
     ("domestic", "violencia_domestica"),
     ("divorcio", "familia"),        # divórcio é matéria de família
-    ("guarda", "familia"),          # guarda de menor
+    ("guarda", "familia"),          # guarda de menor (o token "menor" à parte
+                                     # já cobre o caso pelo radical "menor")
     ("alimento", "familia"),        # pensão alimentícia
     ("habeas", "penal"),            # habeas corpus
+    # Crimes sexuais (decisão do titular, 18/08) — continuam sigilo reforçado
+    # mesmo fora de "criminal"/"penal" geral (agora normais). "sexual" sozinho
+    # cobre a maioria das expressões compostas do vocabulário jurídico
+    # ("crime sexual", "abuso sexual", "violência sexual", "importunação
+    # sexual", "assédio sexual" — o split por "_" isola o token "sexual").
+    ("sexual", "crimes_sexuais"),
+    ("estupro", "crimes_sexuais"),
+    ("pedofil", "crimes_sexuais"),  # pedofilia, pedófilo, pedófila
+    # Achado do security-auditor: terminologia legada do CP pré-Lei 12.015/2009
+    # ("atentado violento ao pudor") e formas que não contêm o radical "sexual"
+    # ou "estupro" isoladamente.
+    ("libidinos", "crimes_sexuais"),  # ato libidinoso
+    ("pudor", "crimes_sexuais"),      # atentado violento ao pudor (CP pré-2009)
+    ("vulneravel", "crimes_sexuais"),  # estupro/ato libidinoso de vulnerável
 )
 
 
@@ -246,6 +290,19 @@ def reforcar_sigilo(base: ModoSanitizacao,
     return base
 
 
+def modo_sigilo_do_caso(caso) -> ModoSanitizacao | None:
+    """LOCAL_COMPLETO quando `Case.sigilo_reforcado` estiver marcado, senão None.
+
+    Ponto único da leitura de `caso.sigilo_reforcado` (migration 146, achado do
+    security-auditor sobre a Issue #1194): desde que o piso LOCAL_COMPLETO foi
+    reduzido a crimes sexuais/menores (decisão do titular, 18/08), a ÁREA
+    sozinha não tem granularidade para essas duas categorias — sem este campo
+    explícito no caso, nenhum chamador (orchestrator, agent/loop) resolvia o
+    modo certo. `caso` é lido de forma duck-typed (`getattr`) para não acoplar
+    este módulo ao model `Case`."""
+    return ModoSanitizacao.LOCAL_COMPLETO if getattr(caso, "sigilo_reforcado", False) else None
+
+
 def modo_para_task(task_type: str) -> ModoSanitizacao:
     """Retorna o ModoSanitizacao para `task_type` (default + override de config).
 
@@ -255,18 +312,33 @@ def modo_para_task(task_type: str) -> ModoSanitizacao:
     IGNORADO (com aviso) — o dado não pode ser rebaixado para externo por
     configuração. Reforçar (qualquer tarefa → LOCAL_COMPLETO) é sempre permitido.
 
-    NOTA (auditoria 2026-07-26, AI-019): as áreas sensíveis (criminal/penal,
-    família, saúde, menores, violência) têm default LOCAL_COMPLETO e, pelo piso
-    acima, NÃO podem ser rebaixadas para externo via AI_SANITIZATION_MODE_MAP.
+    NOTA (decisão do titular, 18/08): só crimes sexuais e menores/infância e
+    juventude têm default LOCAL_COMPLETO; pelo piso acima, essas DUAS áreas
+    NÃO podem ser rebaixadas para externo via AI_SANITIZATION_MODE_MAP.
     Reforçar (qualquer tarefa → LOCAL_COMPLETO) segue sempre permitido. Tarefa
     não mapeada em nenhum dos dois → `_MODO_FALLBACK` (EXTERNO_PSEUDONIMIZADO,
-    reversível e seguro)."""
+    reversível e seguro).
+
+    Um rótulo composto pode casar MAIS de uma chave (ex.: "violencia_sexual"
+    casa "violencia" — normal — E "crimes_sexuais" — sigilo reforçado, via
+    `_chaves_candidatas`). Por isso o default NÃO é "a primeira chave que
+    bater": é a mais restritiva entre todas as candidatas que baterem —
+    LOCAL_COMPLETO nunca perde para uma chave normal encontrada antes dela na
+    string (mesma lógica de "só marcam PARA CIMA" da tabela de radicais)."""
     task = normalizar_rotulo(task_type)
-    padrao = _MODO_FALLBACK
-    for chave in _chaves_candidatas(task):
-        if chave in _MODO_DEFAULT_POR_TASK:
-            padrao = _MODO_DEFAULT_POR_TASK[chave]
-            break
+    modos_batidos = [
+        _MODO_DEFAULT_POR_TASK[chave]
+        for chave in _chaves_candidatas(task)
+        if chave in _MODO_DEFAULT_POR_TASK
+    ]
+    # A mais restritiva vence: LOCAL_COMPLETO nunca perde para uma chave normal
+    # encontrada antes dela na string. Sem candidata alguma, cai no fallback.
+    if ModoSanitizacao.LOCAL_COMPLETO in modos_batidos:
+        padrao = ModoSanitizacao.LOCAL_COMPLETO
+    elif modos_batidos:
+        padrao = modos_batidos[0]
+    else:
+        padrao = _MODO_FALLBACK
     over = _overrides()
     if task in over:
         escolhido = over[task]
