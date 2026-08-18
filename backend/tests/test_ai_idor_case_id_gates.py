@@ -190,3 +190,81 @@ async def test_analisar_contrato_barra_case_id_de_outro_advogado(monkeypatch):
         await ai_router.analisar_contrato_endpoint(req, _FakeDB(), _user())
     assert exc.value.status_code == 403
     assert chamado["sim"] is False
+
+
+async def test_auditar_peca_com_conteudo_direto_barra_case_id_de_outro_advogado(monkeypatch):
+    """O gate de /auditar-peca só rodava no caminho `peca_id` (via
+    doc.case_id) — com `conteudo` direto, req.case_id passava sem checagem."""
+    from app.routers import ai as ai_router
+    from app.routers.ai import AuditarPecaReq
+
+    _bloquear_acesso(monkeypatch)
+    chamado = _servico_nunca_deveria_rodar(monkeypatch, ai_router, "auditar_peca")
+
+    req = AuditarPecaReq(
+        conteudo="Conteúdo fictício de petição com mais de cem caracteres " * 3,
+        tipo_peca="contestacao",
+        case_id="caso-de-outro-advogado",
+    )
+    with pytest.raises(HTTPException) as exc:
+        await ai_router.auditar(req, _FakeDB(), _user())
+    assert exc.value.status_code == 403
+    assert chamado["sim"] is False
+
+
+# ── Gate hierárquico onde cabia allowlist exata (auditoria 18/08) ───────────
+# ROLE_LEVEL["financeiro"]=4 fica ACIMA de ROLE_LEVEL["estagiario"]=3 — um gate
+# escrito como `ROLE_LEVEL.get(...) < ROLE_LEVEL["estagiario"]` deixa o papel
+# financeiro passar pela porta de entrada de superfície jurídica (mesmo
+# defeito que EQUIPE_JURIDICA/requer_equipe_juridica, Issue #694, existe para
+# fechar). O ownership do caso já barrava o acesso de fato; aqui a checagem é
+# da FORMA do gate — role errado é rejeitado ANTES de qualquer consulta ao caso.
+
+def _financeiro() -> User:
+    return User(id="u-financeiro-1", role=UserRole.financeiro)
+
+
+async def test_assistente_estrategico_rejeita_financeiro_antes_do_ownership():
+    from app.routers import ai as ai_router
+    from app.routers.ai import AssistenteCasoReq
+
+    req = AssistenteCasoReq(pergunta="Pergunta ficticia com mais de cinco caracteres.")
+    with pytest.raises(HTTPException) as exc:
+        await ai_router.assistente_estrategico(
+            "caso-qualquer", req, _FakeDB(), _financeiro(),
+        )
+    assert exc.value.status_code == 403
+
+
+async def test_visual_law_rejeita_financeiro(monkeypatch):
+    from app.routers import ai as ai_router
+    from app.routers.ai import VisualLawReq
+
+    req = VisualLawReq(tipo="timeline")
+    with pytest.raises(HTTPException) as exc:
+        await ai_router.visual_law("caso-qualquer", req, _FakeDB(), _financeiro())
+    assert exc.value.status_code == 403
+
+
+async def test_assistente_estrategico_ainda_libera_estagiario_no_gate_de_papel(monkeypatch):
+    """O gate de PAPEL não pode ficar mais restritivo que antes para quem já
+    tinha acesso — só fecha o vazamento do financeiro."""
+    from app.routers import ai as ai_router
+    from app.routers.ai import AssistenteCasoReq
+
+    async def fake_execute(*a, **k):
+        class _R:
+            def scalar_one_or_none(self):
+                return None
+        return _R()
+
+    db = _FakeDB()
+    db.execute = fake_execute
+
+    req = AssistenteCasoReq(pergunta="Pergunta ficticia com mais de cinco caracteres.")
+    with pytest.raises(HTTPException) as exc:
+        await ai_router.assistente_estrategico(
+            "caso-inexistente", req, db, User(id="u-estag-1", role=UserRole.estagiario),
+        )
+    # Passa do gate de PAPEL (não é 403 de papel) — 404 é o caso não existir.
+    assert exc.value.status_code == 404

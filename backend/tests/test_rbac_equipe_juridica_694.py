@@ -364,7 +364,9 @@ _GRANDFATHER_ISSUE_694: dict[str, frozenset[str]] = {
     "entrada_universal.py": frozenset({"meta", "processar"}),
     "checklists.py": frozenset({"_pode_editar"}),
     "prompts_juridicos.py": frozenset({"listar_prompts"}),
-    "ai.py": frozenset({"assistente_estrategico", "visual_law"}),
+    # ai.py::assistente_estrategico e ai.py::visual_law corrigidos na
+    # auditoria de segurança das APIs de IA (18/08) — migrados para
+    # requer_equipe_juridica (allowlist exata).
     "users.py": frozenset({"obter_avatar"}),
 }
 

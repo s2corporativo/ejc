@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ai_errors import http_erro_ia
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, requer_advogado, ROLE_LEVEL
+from app.core.security import (
+    get_current_user, requer_advogado, requer_equipe_juridica, ROLE_LEVEL,
+)
 from app.models.user import User
 from app.models.case import Case
 from app.models.ai_log import AILog, AIStatusHITL
@@ -507,6 +509,14 @@ async def auditar(
         raise HTTPException(status_code=422, detail="Informe 'conteudo' ou 'peca_id'")
     if len(conteudo) < 100:
         raise HTTPException(status_code=422, detail="Peça muito curta para auditar")
+    # O gate acima só roda no caminho `peca_id` (via doc.case_id). Com
+    # `conteudo` direto, req.case_id passava sem checagem — o AILog era
+    # gravado como se pertencesse a um caso alheio (auditoria de segurança,
+    # 18/08). Redundante e barato no caminho peca_id (mesmo case_id já
+    # verificado); necessário no caminho conteudo.
+    if case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, case_id)
     r = await auditar_peca(db, cu.id, conteudo, req.tipo_peca, case_id)
     if "erro" in r:
         raise http_erro_ia(r["erro"], 502)
@@ -630,8 +640,12 @@ async def assistente_estrategico(
     Acessa o dossiê completo automaticamente e responde apenas sobre aquele processo.
     Usa AI Gateway (Ollama local prioritário, Groq como fallback).
     """
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403)
+    # Gate hierárquico (auditoria de segurança, 18/08): ROLE_LEVEL numérico
+    # deixava "financeiro" (nível 4) passar por estar ACIMA de "estagiario"
+    # (nível 3) — mesmo defeito que EQUIPE_JURIDICA/requer_equipe_juridica
+    # (Issue #694) existe para fechar. O ownership do caso, logo abaixo,
+    # já barrava o acesso de fato; isto fecha a FORMA do gate.
+    requer_equipe_juridica(cu, "Acesso restrito à equipe jurídica")
 
     # Verifica acesso ao caso
     caso = (await db.execute(
@@ -900,8 +914,8 @@ async def visual_law(
     O frontend renderiza o código com a biblioteca mermaid.js.
     Tipos: timeline | fluxo_status | partes | prazos
     """
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
-        raise HTTPException(403)
+    # Mesmo gate corrigido de assistente_estrategico acima (auditoria 18/08).
+    requer_equipe_juridica(cu, "Acesso restrito à equipe jurídica")
 
     # Ownership (gate canônico): o diagrama materializa o dossiê — partes,
     # cronologia, prazos e valores. Sem isto, qualquer perfil de estagiário+
