@@ -58,7 +58,9 @@ const BLOQUEIO_409 = {
 };
 
 beforeEach(() => {
-  vi.mocked(api.get).mockResolvedValue({ data: { data: [PECA], total: 1, page: 1, page_size: 50 } });
+  vi.mocked(api.get).mockResolvedValue({
+    data: { data: [PECA], total: 1, page: 1, page_size: 50 },
+  });
   vi.mocked(api.post).mockReset();
 });
 
@@ -133,9 +135,7 @@ describe("Peças — gate de citações na aprovação", () => {
       screen.getByRole("button", { name: /Aprovar assumindo as citações/i }),
     );
 
-    await waitFor(() =>
-      expect(vi.mocked(api.post).mock.calls.length).toBe(2),
-    );
+    await waitFor(() => expect(vi.mocked(api.post).mock.calls.length).toBe(2));
     const [rota, corpo] = vi.mocked(api.post).mock.calls[1];
     expect(rota).toBe("/legal-docs/doc-1/conferir-e-assinar");
     expect(corpo).toMatchObject({
