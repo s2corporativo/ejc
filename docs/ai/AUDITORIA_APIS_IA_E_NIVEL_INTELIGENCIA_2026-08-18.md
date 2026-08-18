@@ -1,0 +1,204 @@
+# Auditoria das APIs de IA e do nível de inteligência jurídica
+
+**Data:** 18 de agosto de 2026 · **Base:** branch `claude/auditoria-ia-juridica-c2tbf2` (head `f50e15c`)
+**Escopo:** superfície de APIs de IA (contratos, RBAC, coerência) e os determinantes mensuráveis da
+qualidade jurídica das respostas. Somente leitura. Complementa
+`AUDITORIA_ESTRUTURA_IA_2026-08-15.md` (governança/segurança) pelo eixo **capacidade**.
+
+---
+
+## 1. Veredito
+
+**As APIs de IA estão seguras e íntegras; o que limita o sistema não é a arquitetura, é a
+capacidade efetivamente ligada.** Três medições resumem o diagnóstico:
+
+| Medida | Valor apurado | Leitura |
+|---|---|---|
+| Protocolo de raciocínio sênior (FIRAC) | **default "padrao" = desligado**; 22 de 64 arquivos que usam o gateway o acionam | A geração de peça **não** aciona |
+| Base jurídica verificável | **27 súmulas + 41 diplomas legais** | Repertório de estagiário, não de escritório |
+| Contexto entregue ao modelo | **~19.400 caracteres (~5k tokens)** de uma janela de 200k | Usa ~2,5% da capacidade do modelo |
+
+O EJC construiu um carro bem projetado — gateway único, HITL inegociável, gate de citações
+fail-closed, 109 endpoints com RBAC — e o abasteceu com pouco combustível. **O teto da
+inteligência jurídica hoje é imposto por configuração e por tamanho de base, não por limitação
+de modelo.** Nenhum dos três limites acima exige refatoração: são flag, ingestão e orçamento.
+
+---
+
+## 2. APIs de IA — auditoria da superfície
+
+### 2.1 Números
+
+**109 endpoints** de IA em 19 routers:
+
+| Router | Endpoints | | Router | Endpoints |
+|---|---:|---|---|---:|
+| `ai.py` | 25 | | `ia_governanca.py` | 11 |
+| `legal_chat.py` | 13 | | `ai_core.py` | 9 |
+| `rag.py` | 12 | | `rag_governance.py` | 8 |
+| `peca_geracao.py` | 5 | | `ai_skills.py` | 5 |
+| `ia_defensiva.py` | 4 | | `documento_ia.py` | 3 |
+| demais (9 routers) | 14 | | | |
+
+### 2.2 O que está certo
+
+- **RBAC universal.** Nenhum endpoint de IA sem dependência de identidade: 100 usos de
+  `get_current_user`, mais `require_roles` (16), `_require_admin_socio` (12),
+  `requer_equipe_juridica` (7) e `requer_advogado` (5).
+- **A única API "pública" não é pública.** `rag_public.py` exige API key com escopo
+  (`require_api_key("knowledge:write")`), tem rate limit próprio por chave e valida a URL de
+  callback com fixação de IP (`_url_com_ip_fixado`) — defesa contra SSRF em ingestão externa,
+  bem acima da média.
+- **Contrato de governança carimbado no núcleo**: toda resposta do orquestrador sai com
+  `is_rascunho`, `requer_revisao`, `status_hitl` e `aviso_hitl`.
+
+### 2.3 [P1] Superfície fragmentada — mesma capacidade em cinco portas
+
+A funcionalidade se repete em endpoints distintos, com contratos diferentes:
+
+| Capacidade | Endpoints que a oferecem |
+|---|---|
+| **Analisar caso** | `/ai/analisar-caso`, `/ai/core/analyze`, `/ai/casos/{id}/assistente`, `/ia-especializada/{perfil}`, `/ia-defensiva/analisar` |
+| **Chat jurídico** | `/ai/core/chat`, `/sala-juridica`, `/ia/agente/stream` |
+| **Gerar peça/minuta** | `/pecas/gerar`, `/ai/gerar-minuta`, `/ai/core/generate`, `/cases/{id}/motor-peca` |
+| **Resumir** | `/ai/resumir-texto`, `/ai/resumir-documento`, `/documentos-ia/analisar` |
+
+Consequência prática: a qualidade da resposta **depende da porta escolhida pelo frontend**, não
+da pergunta — porque cada porta usa (ou não) o orquestrador, o RAG e o protocolo de raciocínio.
+É a mesma dívida 5.2 vista pelo lado do contrato: não é só "migrar callers", é **um contrato
+público por capacidade**.
+
+### 2.4 [P2] Prefixos incoerentes: `/ai` e `/ia` convivem
+
+`/ai`, `/ai/core`, `/ai/skills` (inglês) coexistem com `/ia`, `/ia-governanca`, `/ia-defensiva`,
+`/ia-especializada`, `/ia-saude` (português), mais `/rag`, `/pecas`, `/sala-juridica`,
+`/documentos-ia`. Num repositório cuja convenção é português (regra do `CLAUDE.md`), quem
+integra precisa adivinhar o idioma do prefixo. Some-se a superfície dupla `/api` + `/api/v1`
+(armadilha já conhecida) e o resultado é que **uma mesma capacidade tem quatro grafias válidas**.
+
+---
+
+## 3. Nível de inteligência jurídica — o que foi medido
+
+### 3.1 [P0] O protocolo de raciocínio sênior existe, é bom, e vem desligado
+
+`ai_gateway.py:51-71` define três níveis:
+
+- **`padrao`** — "Responda com objetividade, precisão e foco prático."
+- **`alto`** — FIRAC completo: fatos separados de inferências e lacunas, questão central,
+  **regra com o dispositivo/súmula/precedente que a sustenta**, aplicação, conclusão.
+- **`maximo`** — FIRAC + leitura adversarial, hipóteses concorrentes, preliminares/mérito/prova/
+  quantum/acordo/risco, e **cada premissa com fonte ou marcada "verificar fonte"**.
+
+O que a medição mostra:
+
+| Constatação | Evidência |
+|---|---|
+| O default do gateway é **`padrao`** | `ai_gateway.py:101` — `nivel = (nivel_inteligencia or "padrao").lower()` |
+| O orquestrador canônico opta por **`alto`** | `ai/core/orchestrator.py:89` |
+| **A geração de peça não opta** | `peca_service.py`, `motor_peca_service.py`, `analise_estrategica.py`: **zero** ocorrências de `nivel_inteligencia` |
+| Cobertura do parâmetro | **22 de 64** arquivos que usam o gateway o passam — ~66% roda em `padrao` |
+| **`maximo` nunca é acionado em produção** | só aparece como parâmetro opcional de API em `ia_defensiva` e `validador_juridico` |
+
+Ou seja: **a peça — a saída de maior valor e maior risco — é redigida no nível que não exige
+FIRAC nem fonte por premissa.** O modo que faria a IA raciocinar como advogado sênior está
+implementado, testado no desenho e ocioso. Ligar isso é mudança de uma linha por serviço.
+
+### 3.2 [P1] Base verificável do tamanho de um estagiário
+
+O gate de citações e o RAG só confirmam o que existe na base curada. Ela é:
+
+- **27 súmulas** conferidas verbete a verbete (3 STF + 12 STJ + 12 TST), `sumulas_ingestion.py`;
+- **41 diplomas legais** com URL oficial no catálogo Planalto (CF/88, CC, CPC, CLT, CDC, CP,
+  CPP, ECA e outros);
+- **398 documentos fictícios** da Bíblia EJC — excluídos do RAG por padrão (e corretamente).
+
+Um escritório de contencioso trabalha com centenas de súmulas e OJs, teses de repetitivos e
+repercussão geral, e jurisprudência local. Com 27 verbetes, **quase toda citação correta que a
+IA produzir cairá como "não confirmada"** — e é exatamente por isso que o modo estrito de
+citações permanece desligado (decisão de 2026-07-29). O gate não está frouxo: a base é que está
+vazia. Enquanto isso não mudar, o gate protege pouco e atrapalha um pouco.
+
+Existem ingestores prontos e sem uso pleno para STJ, TJMG, Câmara, Senado, LexML e DJEN — a
+capacidade de encher a base já está escrita.
+
+### 3.3 [P1] O modelo forte está no lugar certo, com duas exceções caras
+
+`system_prompts/router.py:60-82` roteia por tarefa:
+
+- **`claude-opus-4-8`** (topo) para análise de caso, dossiê, minutas e **todos os 21 ramos** —
+  escolha correta;
+- **`claude-haiku-4-5`** para **`PRAZOS`** (justificativa no código: "prazo fatal — precisão") e
+  para **`RAG_QUERY`** ("síntese de RAG", 1.500 tokens);
+- **Groq `gpt-oss-120b`** para triagem e resumo — risco jurídico baixo, decisão defensável.
+
+As duas exceções são as que doem: **prazo fatal** é a tarefa de maior consequência do escritório
+(perder prazo é dano irreversível), e **`RAG_QUERY` é o momento em que a fundamentação recuperada
+vira resposta jurídica** — ambos no modelo rápido. Temperatura 0.0 em prazos ajuda na
+determinismo, mas não compensa capacidade de raciocínio.
+
+### 3.4 [P1] O modelo enxerga ~2,5% do que poderia
+
+Orçamento de contexto em `ai/core/context_builder.py:20-23`:
+
+| Bloco | Limite |
+|---|---|
+| Dossiê do caso | 8.000 caracteres |
+| Documento (OCR) | 6.000 caracteres |
+| RAG | 6 chunks × 900 caracteres = 5.400 |
+| **Total** | **~19.400 caracteres ≈ 5k tokens** |
+
+Contra uma janela de 200k tokens do Opus. Um caso real — petição inicial, contestação, laudo,
+decisões — não cabe em 8.000 caracteres; 900 caracteres por chunk cortam um artigo de lei com
+seu parágrafo. **A IA não está "raciocinando mal": ela está raciocinando sobre um resumo.**
+Ampliar esse orçamento é a alavanca de maior efeito por menor esforço em todo o sistema.
+
+### 3.5 [P2] Recuperação conservadora e sem calibração
+
+`RAG_MIN_SIM=0.55`, 6 chunks, **reranker, FTS e HyDE desligados** (`config.py:572,586,592`),
+mais os gates `RAG_EXIGIR_APROVADO` e `RAG_EXIGIR_VIGENCIA_VERIFICADA`. Cada trava isolada está
+certa; somadas, entregam poucas fontes e curtas. E o gold set jurídico real — que destravaria
+essas chaves com número em vez de palpite — continua ausente.
+
+---
+
+## 4. Achados priorizados
+
+| # | Sev. | Achado | Correção |
+|---|---|---|---|
+| A-1 | **P0** | Peça e análise estratégica rodam em `padrao` (sem FIRAC, sem fonte por premissa) | Passar `nivel_inteligencia="alto"` em `peca_service`, `motor_peca_service`, `analise_estrategica` |
+| A-2 | P1 | Base verificável com 27 súmulas e 41 leis | Ligar os ingestores prontos (STJ, TJMG, LexML, Câmara, Senado) e medir cobertura |
+| A-3 | P1 | Contexto limitado a ~5k tokens de 200k | Elevar `_MAX_DOSSIE`, `_MAX_DOC`, `_MAX_RAG_CHUNK` e `_LIMITE_RAG` |
+| A-4 | P1 | `PRAZOS` e `RAG_QUERY` no modelo rápido | Promover ao `_COMPLEXO` (ou justificar por medição) |
+| A-5 | P1 | Cinco portas para a mesma capacidade, com qualidade desigual | Contrato público por capacidade; legadas viram alias |
+| A-6 | P2 | Nível `maximo` implementado e nunca usado | Habilitar por opt-in em parecer e crítica adversarial |
+| A-7 | P2 | Prefixos `/ai` e `/ia` (+ `/api` e `/api/v1`) | Padronizar em português; manter legado como alias |
+| A-8 | P2 | Retrieval sem calibração e sem gold set | Criar o gold set e medir antes de ligar FTS/HyDE/reranker |
+
+**Ordem recomendada:** A-1 (uma linha por serviço, efeito imediato na peça) → A-3 (orçamento) →
+A-4 (modelo em prazos) → A-2 (base) → A-8 (medir) → A-5/A-7 (contrato) → A-6.
+
+---
+
+## 5. Resposta direta à pergunta
+
+**Qual é hoje o nível de inteligência jurídica?** No caminho canônico (chat do núcleo, sala
+jurídica, defesas), é **bom**: Opus, FIRAC ativo, RAG com escopo do cliente, validação de
+citações, HITL. No caminho que mais importa para o escritório — **gerar a peça** — é
+**mediano**: modelo forte, mas sem protocolo de raciocínio sênior, com contexto de ~5k tokens e
+fundamentação conferida contra 27 súmulas.
+
+A distância entre os dois não é de arquitetura nem de modelo: é de **três configurações e uma
+ingestão**. Este relatório não corrige nada — cada item vira Issue própria, e os que mudam
+comportamento de produção (A-1, A-3, A-4) dependem de decisão do titular sobre custo por
+requisição, já que elevar nível, contexto e modelo eleva o custo por peça.
+
+---
+
+## 6. Limitações
+
+Auditoria de código no head `f50e15c`, sem acesso a produção: não foram lidos flags efetivos,
+volume real da base RAG ingerida nem telemetria de uso (fonte de verdade:
+`GET /ia-governanca/provedores`). As contagens de endpoints, de arquivos que passam
+`nivel_inteligencia`, de súmulas e de diplomas foram apuradas por varredura no repositório e
+estão reproduzíveis pelos comandos citados em cada seção.
