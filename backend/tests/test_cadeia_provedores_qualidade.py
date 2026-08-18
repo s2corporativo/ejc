@@ -108,12 +108,18 @@ def test_elegibilidade_do_gateway_honra_o_kill_switch_do_groq(monkeypatch):
 # ── Efeito colateral de não haver IA local ───────────────────────────────────
 
 def test_areas_de_sigilo_reforcado_sao_nomeadas():
-    """Sem IA local, a IA destas áreas fica indisponível — fail-closed."""
+    """Sem IA local, a IA destas áreas fica indisponível — fail-closed. Piso
+    reduzido a crimes sexuais e menores/infância e juventude (decisão do
+    titular, 18/08) — as demais áreas do AI-019 original (criminal, família,
+    saúde, violência) voltaram ao tratamento normal e NÃO devem mais aparecer
+    aqui."""
     from app.services.ai.sanitization_policy import areas_que_exigem_ia_local
 
     areas = areas_que_exigem_ia_local()
-    for area in ("criminal", "familia", "saude", "menores", "violencia"):
+    for area in ("crimes_sexuais", "menores", "infancia_juventude"):
         assert area in areas, area
+    for area in ("criminal", "familia", "saude", "violencia", "violencia_domestica", "penal", "medico"):
+        assert area not in areas, area
 
 
 def test_painel_de_saude_avisa_quando_essas_areas_ficam_sem_ia(monkeypatch):

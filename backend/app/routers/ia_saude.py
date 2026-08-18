@@ -307,11 +307,12 @@ async def estado_operacional(
             "api_url_configurada": bool(str(cfg.EMBEDDINGS_API_URL or "").strip()),
             "fastembed_instalado_no_backend": fastembed_instalado,
         },
-        # Efeito colateral VISÍVEL de não ter IA local (auditoria de 18/08):
-        # as áreas de sigilo reforçado (criminal, família, saúde, menores,
-        # violência) são fail-closed — o conteúdo não sai do VPS. Sem provedor
-        # local elegível, a IA dessas áreas fica INDISPONÍVEL, e hoje isso só
-        # se descobria quando um advogado tentava usar e recebia erro.
+        # Efeito colateral VISÍVEL de não ter IA local (auditoria de 18/08,
+        # piso reduzido pelo titular no mesmo dia a crimes sexuais e menores/
+        # infância e juventude): essas áreas de sigilo reforçado são
+        # fail-closed — o conteúdo não sai do VPS. Sem provedor local
+        # elegível, a IA delas fica INDISPONÍVEL, e hoje isso só se descobria
+        # quando um advogado tentava usar e recebia erro.
         "sigilo_reforcado": _estado_sigilo_reforcado(),
         # P2-13 (auditoria de IA 18/08): idade dos dados jurídicos EMBUTIDOS no
         # código (teto de súmulas, reconferência do seed). Sem isso, o dado

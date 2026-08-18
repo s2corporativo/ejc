@@ -215,11 +215,12 @@ class TestModosSanitizacaoGateway:
         assert CPF_FAKE not in str(logados.get("output_text", ""))
         assert CPF_FAKE not in str(logados.get("input_messages", ""))
 
-    async def test_criminal_default_local_completo_bloqueia_sem_ollama(self, s, monkeypatch):
-        """Auditoria máxima (2026-07-26, AI-019): `criminal` volta a LOCAL_COMPLETO
-        por DEFAULT — mesmo pseudonimizado, o conteúdo penal permite reidentificação
-        por combinação de fatos raros. Sem Ollama, a tarefa BLOQUEIA (fail-closed) e
-        o provider externo NUNCA é chamado; mensagem de erro não vaza PII."""
+    async def test_menores_default_local_completo_bloqueia_sem_ollama(self, s, monkeypatch):
+        """Decisão do titular (18/08): reduz o piso do AI-019 a crimes sexuais
+        e menores/infância e juventude — mesmo pseudonimizado, esse conteúdo
+        permite reidentificação por combinação de fatos raros. Sem Ollama, a
+        tarefa BLOQUEIA (fail-closed) e o provider externo NUNCA é chamado;
+        mensagem de erro não vaza PII."""
         from app.services import ai_gateway
 
         chamadas: list = []
@@ -232,13 +233,38 @@ class TestModosSanitizacaoGateway:
 
         with pytest.raises(RuntimeError) as exc:
             await ai_gateway.chat(
-                [{"role": "user", "content": f"Defesa criminal do CPF {CPF_FAKE}."}],
-                task_type="criminal",
+                [{"role": "user", "content": f"Caso de menor, CPF do responsável {CPF_FAKE}."}],
+                task_type="menores",
             )
         msg = str(exc.value)
         assert "local" in msg.lower()
         assert CPF_FAKE not in msg      # mensagem segura
         assert chamadas == []           # externo nunca tocado
+
+    async def test_criminal_geral_agora_e_externo_por_padrao(self, s, monkeypatch):
+        """Decisão do titular (18/08): criminal/penal GERAL (fora de crimes
+        sexuais) voltou ao tratamento normal — não bloqueia mais sem Ollama,
+        vai pseudonimizado ao externo como qualquer outra área comum."""
+        from app.services import ai_gateway
+
+        capturado: dict = {}
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            capturado["provider"] = provider
+            capturado["conteudo"] = " ".join(m.get("content", "") for m in messages)
+            return "Parecer criminal pronto.", {
+                "model": model or provider, "input_tokens": 2, "output_tokens": 3,
+            }
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+
+        await ai_gateway.chat(
+            [{"role": "user", "content": f"Defesa criminal do CPF {CPF_FAKE}."}],
+            task_type="criminal",
+        )
+        assert capturado["provider"] in ("anthropic", "groq")   # chegou ao externo
+        assert CPF_FAKE not in capturado["conteudo"]             # pseudonimizado, não bloqueado
+        assert "[CPF_1]" in capturado["conteudo"]
 
     async def test_local_completo_via_override_bloqueia_sem_ollama(self, s, monkeypatch):
         """O MECANISMO LOCAL_COMPLETO permanece: se o escritório REFORÇAR criminal
@@ -362,12 +388,15 @@ class TestModosSanitizacaoGateway:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestExecutarTarefaIAModos:
-    async def test_criminal_default_local_completo_bloqueia_sem_ollama(self, s, monkeypatch):
-        """AI-019 (2026-07-26): `criminal` em executar_tarefa_ia é LOCAL_COMPLETO
-        por DEFAULT — sem Ollama, bloqueia fail-closed e o externo NUNCA é chamado.
-        Espelha o chat()."""
+    async def test_menores_default_local_completo_bloqueia_sem_ollama(self, s, monkeypatch):
+        """Decisão do titular (18/08): em executar_tarefa_ia, "menores" segue
+        LOCAL_COMPLETO por DEFAULT — sem Ollama, bloqueia fail-closed e o
+        externo NUNCA é chamado. Espelha o chat(). Não há membro TarefaIA
+        dedicado a "menores" (o enum cobre ÁREAS DE PRÁTICA, não sigilo); o
+        rótulo chega como string simples, e `get_configuracao` já cai no
+        DEFAULT com segurança para uma chave fora do enum — o que se testa
+        aqui é a resolução de `modo_sanitizacao`, não o prompt escolhido."""
         from app.services import ai_gateway
-        from app.services.system_prompts import TarefaIA
 
         chamadas: list = []
 
@@ -379,10 +408,34 @@ class TestExecutarTarefaIAModos:
 
         with pytest.raises(RuntimeError) as exc:
             await ai_gateway.executar_tarefa_ia(
-                TarefaIA.CRIMINAL, f"Defesa do CPF {CPF_FAKE}.",
+                "menores", f"Caso de menor, CPF do responsável {CPF_FAKE}.",
             )
         assert CPF_FAKE not in str(exc.value)   # mensagem segura
         assert chamadas == []                   # externo nunca tocado
+
+    async def test_criminal_geral_agora_e_externo_por_padrao(self, s, monkeypatch):
+        """Espelha o chat(): criminal/penal geral voltou ao tratamento normal
+        em executar_tarefa_ia também (decisão do titular, 18/08)."""
+        from app.services import ai_gateway
+        from app.services.system_prompts import TarefaIA
+
+        capturado: dict = {}
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            capturado["provider"] = provider
+            capturado["conteudo"] = " ".join(m.get("content", "") for m in messages)
+            return "Parecer criminal pronto.", {
+                "model": model or provider, "input_tokens": 2, "output_tokens": 3,
+            }
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+
+        await ai_gateway.executar_tarefa_ia(
+            TarefaIA.CRIMINAL, f"Defesa do CPF {CPF_FAKE}.",
+        )
+        assert capturado["provider"] in ("anthropic", "groq")
+        assert CPF_FAKE not in capturado["conteudo"]
+        assert "[CPF_1]" in capturado["conteudo"]
 
     async def test_criminal_local_completo_via_override_usa_ollama(self, s, monkeypatch):
         """Mecanismo LOCAL_COMPLETO preservado em executar_tarefa_ia: reforçado por

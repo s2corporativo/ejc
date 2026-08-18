@@ -893,8 +893,8 @@ def _fontes_rag_busca_web(buscas_web: int, fontes_web: list[dict],
 # ── Política de modo de sanitização (compartilhada por chat() e
 #    executar_tarefa_ia() — fonte única para não divergirem) ────────────────────
 _MSG_BLOQUEIO_LOCAL_COMPLETO = (
-    "Esta tarefa é de área com SIGILO REFORÇADO (criminal, família, saúde, "
-    "menores, violência): por política do escritório o conteúdo não sai do "
+    "Esta tarefa é de área com SIGILO REFORÇADO (crimes sexuais, menores/"
+    "infância e juventude): por política do escritório o conteúdo não sai do "
     "servidor, e nenhuma IA local está disponível para atendê-la. "
     "Há duas saídas, e ambas são decisão do titular: (1) subir a IA local "
     "(profile 'ia-local' do docker-compose + OLLAMA_ENABLED=true); ou "

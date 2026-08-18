@@ -1,19 +1,30 @@
 """Piso de sigilo por área (AI-019) — regressão da consolidação 2026-07-29.
 
-O orquestrador converte `TarefaIA.FAMILIA` em "estrategia" ANTES de chamar o
-gateway (`_TAREFA_PARA_GATEWAY`), e é o gateway que resolve o modo de
-sanitização pelo `task_type`. Sem o piso, o rótulo da área sensível se perde no
-meio da cadeia e o conteúdo sai do VPS como EXTERNO_PSEUDONIMIZADO.
+O orquestrador converte `TarefaIA.MENORES`/tarefas de mérito em rótulos como
+"estrategia" ANTES de chamar o gateway (`_TAREFA_PARA_GATEWAY`), e é o gateway
+que resolve o modo de sanitização pelo `task_type`. Sem o piso, o rótulo da
+área sensível se perde no meio da cadeia e o conteúdo sai do VPS como
+EXTERNO_PSEUDONIMIZADO.
 
 Os testes de ponta a ponta abaixo CAPTURAM o `task_type` que efetivamente chega
 ao gateway — provar a política só na função de policy não bastaria, porque o
 achado original era justamente a transformação intermediária.
 
 Regressão específica desta consolidação: a resolução era lookup de chave EXATA
-sobre `.strip().lower()`, então "família" (acentuado), "Direito de Família" e
-"familia_analysis" — este último é o `task_type` que `/api/ai-core/analyze`
-monta como f"{domain}_analysis" — NÃO batiam com a chave "familia" e caíam no
-fallback externo. Dados todos fictícios; nenhum teste toca rede.
+sobre `.strip().lower()`, então "menores" (acentuado em variantes), "Vara da
+Infância e Juventude" e "menores_analysis" — este último é o `task_type` que
+`/api/ai-core/analyze` monta como f"{domain}_analysis" — NÃO batiam com a
+chave "menores" e caíam no fallback externo. Dados todos fictícios; nenhum
+teste toca rede.
+
+ATUALIZAÇÃO (18/08, decisão do titular): o piso LOCAL_COMPLETO foi reduzido a
+crimes sexuais e menores/infância e juventude — família, saúde, médico,
+criminal/penal geral e violência (inclusive doméstica) voltaram a
+EXTERNO_PSEUDONIMIZADO. Os exemplos "família" usados como área sensível de
+referência na consolidação original foram trocados por "menores"/"crimes
+sexuais" (o mecanismo testado — normalização, piso não-rebaixável, roteamento
+preservado, autoridade da área do caso — é o mesmo; só a lista de áreas
+restritas mudou). Ver `app/services/ai/sanitization_policy.py`.
 """
 from __future__ import annotations
 
@@ -57,17 +68,21 @@ class TestNormalizarRotulo:
 # ── 2. Piso de sigilo por área ───────────────────────────────────────────────
 
 AREAS_SIGILOSAS = [
-    "familia", "família", "Família", "Direito de Família", "familia_analysis",
-    "família_analysis", "direito_de_familia", "penal", "criminal",
-    "criminal_analysis", "saude", "saúde", "plano de saude", "medico",
-    "menores", "violencia", "violência doméstica", "infancia_juventude",
-    "vara da infancia e juventude",
+    "menores", "Menores", "menores_analysis", "Menores_analysis",
+    "infancia_juventude", "vara da infancia e juventude",
+    "crimes_sexuais", "crime sexual", "crimes sexuais", "Crime Sexual",
+    "abuso sexual", "estupro", "estupro de vulneravel", "pedofilia",
 ]
 
 AREAS_NAO_SIGILOSAS = [
     "trabalhista", "civel", "cível", "estrategia", "analise_caso",
     "analise_juridica", "empresarial", "tributario", "ambiental",
     "consumidor", "imobiliario", "sucessoes", "chat", "resumo",
+    # Voltaram ao tratamento normal por decisão do titular (18/08): só
+    # crimes sexuais e menores continuam LOCAL_COMPLETO.
+    "familia", "família", "Direito de Família", "familia_analysis",
+    "penal", "criminal", "criminal_analysis", "saude", "saúde",
+    "plano de saude", "medico", "violencia", "violência doméstica",
 ]
 
 
@@ -90,32 +105,40 @@ class TestModoParaTask:
 
 class TestRotuloDeSigiloReforcado:
     def test_devolve_chave_canonica_e_nao_o_texto_cru(self):
-        """O gateway precisa da CHAVE do mapa; devolver "Direito de Família"
-        cru faria o gateway reconsultar um rótulo que ele não conhece."""
-        assert rotulo_de_sigilo_reforcado("Direito de Família") == "familia"
+        """O gateway precisa da CHAVE do mapa; devolver "Vara da Infância e
+        Juventude" cru faria o gateway reconsultar um rótulo que ele não
+        conhece."""
+        assert rotulo_de_sigilo_reforcado("Vara da Infância e Juventude") == \
+            "infancia_juventude"
 
     def test_respeita_a_ordem_dos_rotulos(self):
-        assert rotulo_de_sigilo_reforcado("trabalhista", "familia") == "familia"
+        assert rotulo_de_sigilo_reforcado("trabalhista", "menores") == "menores"
 
     def test_none_quando_nenhuma_area_e_sensivel(self):
         assert rotulo_de_sigilo_reforcado("trabalhista", "civel", None) is None
 
+    def test_area_normal_apos_reducao_do_piso_nao_e_sigilosa(self):
+        """Família/saúde/violência voltaram a EXTERNO_PSEUDONIMIZADO (decisão
+        do titular, 18/08) — não devem mais aparecer como sigilo reforçado."""
+        assert rotulo_de_sigilo_reforcado("familia", "saude", "violencia") is None
+
     def test_ignora_rotulos_vazios(self):
-        assert rotulo_de_sigilo_reforcado("", None, "familia") == "familia"
+        assert rotulo_de_sigilo_reforcado("", None, "menores") == "menores"
 
 
 class TestOverrideNaoRebaixa:
-    @pytest.mark.parametrize("chave_override", ["familia", "família", "Família"])
+    @pytest.mark.parametrize("chave_override", ["menores", "Menores"])
     def test_override_nao_rebaixa_area_sensivel(self, monkeypatch, chave_override):
-        """AI_SANITIZATION_MODE_MAP não pode mandar família para externo — nem
-        escrevendo a chave com acento para escapar da normalização."""
+        """AI_SANITIZATION_MODE_MAP não pode mandar menores para externo —
+        nem escrevendo a chave com variação de caixa para tentar escapar da
+        normalização."""
         st = get_settings()
         monkeypatch.setattr(
             st, "AI_SANITIZATION_MODE_MAP",
             '{"%s": "externo_pseudonimizado"}' % chave_override,
         )
-        assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO
-        assert modo_para_task("família") == ModoSanitizacao.LOCAL_COMPLETO
+        assert modo_para_task("menores") == ModoSanitizacao.LOCAL_COMPLETO
+        assert modo_para_task("Menores") == ModoSanitizacao.LOCAL_COMPLETO
 
     def test_override_pode_reforcar_area_comum(self, monkeypatch):
         st = get_settings()
@@ -183,27 +206,33 @@ async def _rodar(task_type: str, domain: str | None = None):
 
 
 class TestPisoChegaAoGateway:
-    async def test_familia_nao_vira_estrategia_no_gateway(self, gateway_espiao):
-        """Achado AI-019: TarefaIA.FAMILIA era convertida em "estrategia" e
-        perdia o piso. O gateway precisa receber "familia"."""
-        await _rodar("familia", "familia")
+    async def test_menores_nao_vira_estrategia_no_gateway(self, gateway_espiao):
+        """Achado AI-019: TarefaIA.MENORES era convertida em "estrategia" e
+        perdia o piso. O gateway precisa receber "menores"."""
+        await _rodar("menores", "menores")
         assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
         assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
 
-    async def test_dominio_acentuado_nao_escapa_do_piso(self, gateway_espiao):
+    async def test_dominio_com_caixa_variada_nao_escapa_do_piso(self, gateway_espiao):
         """Regressão do bypass por string livre: `domain` vem de campo aberto
-        (Field(max_length=60)) e a UI em português manda "Família"."""
-        await _rodar("chat", "Família")
+        (Field(max_length=60)) e a UI em português manda "Menores"."""
+        await _rodar("chat", "Menores")
         assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
 
     async def test_dominio_em_texto_livre_nao_escapa_do_piso(self, gateway_espiao):
-        await _rodar("chat", "Direito de Família")
+        await _rodar("chat", "Vara da Infância e Juventude")
         assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
 
     async def test_task_type_do_endpoint_analyze_nao_escapa(self, gateway_espiao):
         """/api/ai-core/analyze monta task_type = f"{domain}_analysis"."""
-        await _rodar("familia_analysis", "familia")
+        await _rodar("menores_analysis", "menores")
         assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
+
+    async def test_area_reduzida_do_piso_nao_e_mais_local(self, gateway_espiao):
+        """Família voltou a EXTERNO_PSEUDONIMIZADO (decisão do titular,
+        18/08) — não pode mais chegar como LOCAL_COMPLETO no gateway."""
+        await _rodar("chat", "Direito de Família")
+        assert gateway_espiao["modo"] != ModoSanitizacao.LOCAL_COMPLETO
 
     async def test_area_comum_mantem_o_roteamento_original(self, gateway_espiao):
         """O piso não pode reescrever o rótulo de área não sensível — isso
@@ -235,7 +264,7 @@ class TestGatewayBloqueiaExternoEmAreaSensivel:
 
         monkeypatch.setattr(ai_gateway, "_chamar_provedor", explode)
 
-        for rotulo in ("familia", "família", "Direito de Família"):
+        for rotulo in ("menores", "Menores", "Vara da Infância e Juventude"):
             with pytest.raises(RuntimeError):
                 await ai_gateway.chat(
                     [{"role": "user", "content": "Caso fictício de guarda."}],
@@ -252,14 +281,14 @@ class TestAreaDoCasoEAutoritativa:
     escapava do piso e levava dossiê, documentos e RAG ao provider externo. O
     caminho agêntico (ai/agent/loop.py) já lia `caso.area`; este não."""
 
-    async def test_caso_de_familia_sem_domain_nao_escapa(self, gateway_espiao, monkeypatch):
+    async def test_caso_de_menores_sem_domain_nao_escapa(self, gateway_espiao, monkeypatch):
         from types import SimpleNamespace as NS
 
         from app.core import ownership
         from app.services.ai.core.orchestrator import orchestrator
 
         async def fake_acesso(db, cu, case_id):
-            return NS(id=case_id, area=NS(value="familia"))
+            return NS(id=case_id, area=NS(value="menores"))
 
         monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
         await orchestrator.run(
@@ -277,7 +306,7 @@ class TestAreaDoCasoEAutoritativa:
         from app.services.ai.core.orchestrator import orchestrator
 
         async def fake_acesso(db, cu, case_id):
-            return NS(id=case_id, area=NS(value="criminal"))
+            return NS(id=case_id, area=NS(value="crimes_sexuais"))
 
         monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
         await orchestrator.run(
@@ -285,6 +314,26 @@ class TestAreaDoCasoEAutoritativa:
             case_id="caso-ficticio-2", mensagem="Analise este caso fictício.",
         )
         assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
+
+    async def test_caso_de_area_sensivel_reduzida_agora_segue_externo(
+            self, gateway_espiao, monkeypatch):
+        """Criminal geral voltou a EXTERNO_PSEUDONIMIZADO (decisão do
+        titular, 18/08) — a área do caso continua autoritativa, só que agora
+        aponta para o modo normal."""
+        from types import SimpleNamespace as NS
+
+        from app.core import ownership
+        from app.services.ai.core.orchestrator import orchestrator
+
+        async def fake_acesso(db, cu, case_id):
+            return NS(id=case_id, area=NS(value="criminal"))
+
+        monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
+        await orchestrator.run(
+            db=object(), user=_advogado(), task_type="chat", domain=None,
+            case_id="caso-ficticio-2b", mensagem="Analise este caso fictício.",
+        )
+        assert gateway_espiao["modo"] != ModoSanitizacao.LOCAL_COMPLETO
 
     async def test_caso_de_area_comum_segue_externo(self, gateway_espiao, monkeypatch):
         from types import SimpleNamespace as NS
@@ -307,18 +356,18 @@ class TestAreaDoCasoEAutoritativa:
 
 class TestVariantesMorfologicas:
     @pytest.mark.parametrize("rotulo", [
-        "pericia medica", "perícia médica", "direito familiar",
-        "antecedentes criminais", "habeas corpus", "divorcio consensual",
-        "guarda de menor", "infanto-juvenil", "acao de alimentos",
-        "empregada domestica", "vara criminal", "juizado da infancia",
+        "guarda de menor", "infanto-juvenil", "juizado da infancia",
+        "vara da infancia e juventude", "crime sexual", "abuso sexual",
+        "estupro de vulneravel", "violencia sexual", "pedofilia",
+        "exploracao sexual infantil", "importunacao sexual",
     ])
     def test_variante_de_area_sensivel_e_local(self, rotulo):
         assert modo_para_task(rotulo) == ModoSanitizacao.LOCAL_COMPLETO
 
     @pytest.mark.parametrize("rotulo", [
-        "fam​ilia",      # zero-width space
-        "fam­ilia",      # soft hyphen
-        "‎familia",      # left-to-right mark
+        "men​ores",      # zero-width space
+        "men­ores",      # soft hyphen
+        "‎menores",      # left-to-right mark
     ])
     def test_caractere_invisivel_nao_contorna_o_piso(self, rotulo):
         assert modo_para_task(rotulo) == ModoSanitizacao.LOCAL_COMPLETO
@@ -326,6 +375,12 @@ class TestVariantesMorfologicas:
     @pytest.mark.parametrize("rotulo", [
         "trabalhista", "civel", "tributario", "empresarial", "ambiental",
         "consumidor", "imobiliario", "administrativo",
+        # Voltaram ao tratamento normal por decisão do titular (18/08):
+        # radicais que hoje resolvem para família/criminal/penal/médico
+        # geral, sem token de menor/sexual.
+        "pericia medica", "perícia médica", "direito familiar",
+        "antecedentes criminais", "habeas corpus", "divorcio consensual",
+        "acao de alimentos", "empregada domestica", "vara criminal",
     ])
     def test_area_comum_continua_externa(self, rotulo):
         assert modo_para_task(rotulo) != ModoSanitizacao.LOCAL_COMPLETO
@@ -348,7 +403,7 @@ class TestSigiloNaoQuebraRoteamento:
         from app.services.ai.core.orchestrator import orchestrator
 
         async def fake_acesso(db, cu, case_id):
-            return NS(id=case_id, area=NS(value="familia"))
+            return NS(id=case_id, area=NS(value="menores"))
 
         monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
         await orchestrator.run(
@@ -398,6 +453,6 @@ class TestModoSanitizacaoSoEleva:
         with pytest.raises(RuntimeError):
             await ai_gateway.chat(
                 [{"role": "user", "content": "Caso fictício."}],
-                task_type="familia",
+                task_type="menores",
                 modo_sanitizacao=ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
             )
