@@ -317,3 +317,46 @@ Cada provedor retorna `elegivel`, `motivo_inelegivel`, `modelo_configurado`,
 `atencao` / `operacional`), taxa de sucesso, latência e custo. **Sistema 100% = os quatro com
 `motivo_inelegivel: null` e status `operacional`** (ou `configurado_sem_uso`, se ainda não houve
 tráfego). Qualquer outro estado agora vem com a causa escrita.
+
+---
+
+## 9. Dívida 5.2 fechada — peça e análise passam pela validação canônica
+
+**O achado.** As duas saídas de maior valor jurídico do sistema — a minuta de peça
+(`peca_service.gerar_peca_pipeline`) e a análise estratégica (`analise_estrategica.analisar_caso`)
+— eram as únicas que **não** passavam pelo `response_validator`. Rodavam apenas o
+`citation_check`, isolado. Consequência prática, medida no código:
+
+| Proteção do núcleo | Orquestrador | Peça (antes) | Análise (antes) |
+|---|---|---|---|
+| Citações contra a base oficial | sim | sim | sim |
+| Grounding ao vivo (nº CNJ, faixa de súmula, redação superada) | sim | **não** | **não** |
+| Promessa de resultado (vedação OAB) | sim | **não** | **não** |
+| Marca "SEM BASE VERIFICÁVEL" | sim | **não** | **não** |
+| Carimbo HITL (`is_rascunho`/`requer_revisao`/`status_hitl`) | sim | parcial (só texto de aviso) | **não** |
+
+Ou seja: uma minuta que prometesse êxito ao cliente saía do sistema sem nenhum alerta, e uma
+peça sem uma única âncora verificável era entregue com a mesma aparência de uma peça
+fundamentada.
+
+**A correção.** Ambas passaram a chamar `response_validator.validar(db, ..., exige_fonte=True,
+fontes=...)` — a mesma função, com os mesmos parâmetros que o orquestrador usa — e a terminar com
+`hitl_policy.aplicar()`. Duas decisões de forma, tomadas por diferença de suporte:
+
+- **Peça** tem corpo de texto, então a marca "SEM BASE VERIFICÁVEL" vai no **corpo do documento**
+  — e é o documento marcado que é persistido em `LegalDoc.conteudo` e em `AILog.resposta`. O
+  revisor não tem como não ver.
+- **Análise** é JSON, sem corpo para prefixar: os alertas do validador entram na **mesma lista
+  `alertas`** que a interface já renderiza (somados aos do modelo, nunca substituindo), e as
+  flags viram `sem_base_verificavel` / `revisao_obrigatoria`.
+
+Em ambas, o teor **não é reescrito**: promessa de resultado vira alerta, nunca correção
+silenciosa — reescrever esconderia do revisor exatamente o que ele precisa corrigir. E ambas são
+fail-safe: validação indisponível não derruba a entrega, vira alerta e revisão obrigatória.
+
+**Superfície.** O `PecaGeneratorModal` ganhou o painel "Alertas da validação jurídica", ao lado do
+painel anti-alucinação que já existia — sem ele os alertas chegariam ao payload e morreriam lá.
+
+**Regressão.** `backend/tests/test_peca_analise_validacao_hitl.py` (9 testes) cobre carimbo HITL,
+promessa de resultado alertada sem reescrita, marca de ausência de âncora persistida no banco,
+citação confirmada como âncora suficiente e o comportamento fail-safe.

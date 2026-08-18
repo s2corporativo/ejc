@@ -339,16 +339,44 @@ async def analisar_caso(
             return {"erro": "Falha ao parsear resposta da IA"}
         if isinstance(resultado, dict):
             resultado["_fontes_rag"] = _fontes_rag
-            # A3 (auditoria 2026-06-30): verifica súmulas/artigos citados contra a
-            # base oficial e anexa o relatório — anti-alucinação (regra absoluta).
+            # A3 (auditoria 2026-06-30) + dívida 5.2 (auditoria 2026-08-18): a
+            # análise passa pela validação canônica do núcleo — citações contra a
+            # base oficial (anti-alucinação), grounding, promessa de resultado
+            # (vedação OAB) e ausência de âncora verificável. Fail-safe: falha na
+            # validação não derruba a análise, vira alerta ao revisor humano.
+            alertas_validacao: list[str] = []
             if db is not None:
                 try:
-                    from app.services.citation_check import verificar_citacoes
-                    resultado["_verificacao_citacoes"] = await verificar_citacoes(
-                        db, json.dumps(resultado, ensure_ascii=False)
+                    from app.services.ai.core import response_validator
+                    validacao = await response_validator.validar(
+                        db,
+                        json.dumps(resultado, ensure_ascii=False),
+                        exige_fonte=True,
+                        fontes=_fontes_rag,
                     )
+                    resultado["_verificacao_citacoes"] = validacao["citacoes"]
+                    resultado["sem_base_verificavel"] = validacao["sem_base_verificavel"]
+                    resultado["revisao_obrigatoria"] = validacao["revisao_obrigatoria"]
+                    alertas_validacao = list(validacao["alertas"])
                 except Exception as _e:
-                    logger.warning("citation_check (analise) falhou: %s", _e)
+                    logger.warning("validação da análise falhou: %s", _e)
+                    alertas_validacao = [
+                        "Validação automática indisponível — confira manualmente "
+                        "as citações e a ausência de promessa de resultado (OAB)."
+                    ]
+                    resultado["revisao_obrigatoria"] = True
+            # Os alertas do validador entram na MESMA lista que a interface já
+            # renderiza; a análise não tem corpo de texto para prefixar.
+            if alertas_validacao:
+                atuais = resultado.get("alertas")
+                atuais = list(atuais) if isinstance(atuais, list) else (
+                    [atuais] if isinstance(atuais, str) and atuais.strip() else []
+                )
+                resultado["alertas"] = atuais + alertas_validacao
+            # Carimbo HITL canônico: análise estratégica é rascunho como
+            # qualquer outra saída do núcleo de IA.
+            from app.services.ai.core import hitl_policy
+            resultado = hitl_policy.aplicar(resultado)
         return resultado
     except Exception as e:
         logger.error(f"Erro na análise estratégica: {e}")
