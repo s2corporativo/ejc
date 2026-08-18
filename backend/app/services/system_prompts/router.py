@@ -62,7 +62,9 @@ CONFIGURACOES: dict[TarefaIA, ConfiguracaoIA] = {
     TarefaIA.RESUMO: _groq("resumo", 900, 0.2, "Sumarização simples — rota econômica"),
     TarefaIA.PRAZOS: _claude("prazos", _COMPLEXO, 1200, 0.0, "Prazo fatal — precisão (temp 0) + modelo forte (A-4)"),
     TarefaIA.HONORARIOS: _claude("honorarios", _RAPIDO, 1800, 0.1, "Honorários OAB/MG"),
-    TarefaIA.AUDIENCIA: _claude("audiencia", _RAPIDO, 2000, 0.2, "Preparação de audiência"),
+    # Audiência é ato irrepetível e o roteiro traz as perguntas escritas na
+    # íntegra: modelo forte e teto maior (auditoria de 18/08).
+    TarefaIA.AUDIENCIA: _claude("audiencia", _COMPLEXO, 3000, 0.2, "Preparação de audiência"),
     TarefaIA.RAG_QUERY: _claude("rag_query", _COMPLEXO, 2500, 0.1, "Síntese de RAG — fundamentação vira resposta (A-4)"),
     TarefaIA.ANALISE_CASO: _claude("analise_caso", _COMPLEXO, 4000, 0.1, "Análise estratégica"),
     TarefaIA.DOSSIE: _claude("analise_caso", _COMPLEXO, 5000, 0.1, "Dossiê completo"),

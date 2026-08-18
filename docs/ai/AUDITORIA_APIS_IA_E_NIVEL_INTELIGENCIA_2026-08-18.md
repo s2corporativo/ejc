@@ -397,3 +397,78 @@ repasse por módulo — sem ele o filtro existiria e nunca atuaria.
 **Regressão.** 5 testes novos em `backend/tests/test_rag_isolation.py`: categoria escopada,
 fragmento SQL (incluindo a tolerância a `case_id IS NULL`), filtro presente com caso, consulta
 inalterada sem caso, e o repasse nos cinco call sites.
+
+---
+
+## 11. P2-13 fechado — alarme de envelhecimento dos dados jurídicos embutidos
+
+Duas verdades jurídicas do sistema não vivem no banco nem em fonte consultada ao vivo: são
+constantes Python, conferidas à mão numa data e nunca mais. O problema não é existirem — é o
+silêncio quando envelhecem.
+
+- **`SUMULA_TETO`** (`verificador_jurisprudencia.py`) — o número da última súmula editada por
+  tribunal. Súmula ACIMA do teto é marcada como provável alucinação. Envelhecido o teto, uma
+  súmula **nova e verdadeira** passa a ser acusada de inexistente. Esse falso positivo é pior que
+  o falso negativo: desacredita o gate inteiro aos olhos do advogado, que passa a ignorá-lo.
+- **`DATA_CONFERENCIA`** (`sumulas_ingestion.py`) — a data em que cada verbete do seed foi
+  reconferido contra fonte oficial. Súmula cancelada depois disso segue indexada como vigente.
+
+**A correção.** `services/vigencia_dados_juridicos.py` mede a idade de cada constante contra um
+limite de 180 dias e devolve o alerta **com o arquivo a reconferir** — alarme sem endereço não é
+acionável. Data ilegível conta como vencida: não saber a idade do dado é exatamente o estado que
+o alarme existe para eliminar.
+
+Dois consumidores:
+
+1. **`GET /ia-saude/estado-operacional`** ganhou a seção `base_juridica` (itens, dias desde a
+   conferência, alertas, `desatualizado`).
+2. **O próprio gate**: com o teto vencido, o aviso de súmula acima da faixa deixa de afirmar
+   *"provavelmente não existe"* e passa a dizer que a tabela não é reconferida desde a data X,
+   mandando confirmar na fonte oficial. O gate continua marcando a citação como suspeita — muda o
+   que ele **afirma** ao revisor, que é o que evita descartar súmula verdadeira.
+
+**Regressão.** `backend/tests/test_vigencia_dados_juridicos.py` (7 testes), com `hoje` injetado
+para não depender do relógio, cobrindo os dois comportamentos do gate.
+
+---
+
+## 12. P2 fechado — os quatro prompts rasos que serviam agentes de mérito
+
+A auditoria mediu quatro chaves de prompt que entregavam a agentes jurídicos ou **uma frase** ou
+o **prompt de outra tarefa**:
+
+| Chave | Agente | Antes | Agora |
+|---|---|---|---|
+| `bancario` | BankForensicsAgent | uma frase no `__init__.py` | módulo próprio, 10 eixos |
+| `seguranca_lgpd` | DigitalLGPDAgent | uma frase no `__init__.py` | módulo próprio, 9 eixos |
+| `pesquisa_juridica` | RAGResearchAgent | prompt de análise de caso | método de pesquisa com fonte |
+| `audiencia` | rota de audiência | prompt de análise de caso | roteiro de sala por rito |
+
+As duas últimas eram erro de **forma**, não só de profundidade: quem pede pesquisa recebia um
+relatório estratégico de nove seções, e quem preparava audiência recebia a mesma coisa — nenhum
+dos dois é o que se usa na hora.
+
+O que cada um passou a exigir:
+
+- **Bancário** ancora a tese na **data do contrato** (capitalização após 31/03/2000 — Súmula 539
+  STJ; tarifas por período), separa o que é abusivo do que só parece (Súmula 382 STJ: 12% ao ano
+  não é abusivo por si), traz fortuito interno (Súmula 479 STJ), comissão de permanência (Súmula
+  472 STJ), busca e apreensão (Dec.-Lei 911/1969) e a regra supletiva da Lei 14.905/2024. Onde a
+  referência exige conferência (temas repetitivos de tarifas, resolução CMN vigente), o prompt
+  manda confirmar em vez de completar com número plausível.
+- **LGPD/Digital** obriga a nomear controlador e operador antes de atribuir responsabilidade,
+  trata **consentimento como uma base entre várias** (e a mais frágil), separa o regime do dado
+  sensível (art. 11), e registra que o **sigilo profissional do advogado é dever autônomo e mais
+  restritivo** que a LGPD — base legal de tratamento não autoriza revelar o que o sigilo protege.
+  Inclui a regra de que a própria resposta nunca reproduz o segredo que analisa.
+- **Audiência** identifica o **rito antes do roteiro** (CPC, CLT 843-852, JEC, CPP 400-405) e
+  entrega as perguntas escritas na íntegra, com pena de confissão (CPC 385 §1º), contradita
+  (CPC 457 §1º) e o que **consignar em ata** — o protesto é o que preserva a matéria para o
+  recurso. Por ser ato irrepetível, passou do modelo econômico para o forte (3.000 tokens).
+- **Pesquisa jurídica** impõe hierarquia de fontes (com o rol vinculante do CPC art. 927),
+  conferência de vigência e de superação, **contraponto obrigatório** (pesquisa que só confirma a
+  hipótese do cliente é armadilha), grau de confiança declarado e a marca "SEM BASE VERIFICÁVEL
+  NO CONTEXTO" no lugar de completar com número plausível.
+
+**Regressão.** `backend/tests/test_system_prompts_profundidade.py` (8 testes): prompt próprio por
+chave, piso de profundidade, honestidade epistêmica, e as âncoras específicas de cada área.

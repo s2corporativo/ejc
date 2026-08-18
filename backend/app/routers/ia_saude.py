@@ -18,6 +18,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.ai_log import AILog
 from app.models.user import User
+from app.services import vigencia_dados_juridicos
 
 router = APIRouter(prefix="/ia-saude", tags=["IA — Saúde (Admin)"])
 
@@ -285,6 +286,11 @@ async def estado_operacional(
             "api_url_configurada": bool(str(cfg.EMBEDDINGS_API_URL or "").strip()),
             "fastembed_instalado_no_backend": fastembed_instalado,
         },
+        # P2-13 (auditoria de IA 18/08): idade dos dados jurídicos EMBUTIDOS no
+        # código (teto de súmulas, reconferência do seed). Sem isso, o dado
+        # envelhece em silêncio e o gate antialucinação passa a errar contra
+        # súmula nova e verdadeira.
+        "base_juridica": vigencia_dados_juridicos.estado(),
         "hitl": {
             "total_logs": total_logs,
             "por_status": status_map,
