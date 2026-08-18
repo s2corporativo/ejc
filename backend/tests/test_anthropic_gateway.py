@@ -236,3 +236,30 @@ def test_chave_valida_na_settings_e_usada_normalmente(monkeypatch):
 
     monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-valor-valido")
     assert ap._api_key() == "sk-ant-valor-valido"
+
+
+# ── Deadline: SDK sem retry próprio, o fallback é entre PROVIDERS (18/08) ────
+# Sem asyncio.timeout global na cadeia do gateway, o retry INTERNO do SDK (até
+# 2x por padrão em erro transitório) multiplicava o pior caso de latência POR
+# PROVIDER antes mesmo do próximo da cadeia ser tentado. A resiliência real é
+# o fallback entre providers DIFERENTES que o gateway já faz.
+
+def test_client_anthropic_desliga_retry_proprio_do_sdk(monkeypatch):
+    import anthropic as _anthropic_sdk
+
+    from app.services.providers import anthropic_provider as ap
+
+    capturado = {}
+    classe_original = _anthropic_sdk.Anthropic
+
+    def _fake_anthropic(**kwargs):
+        capturado.update(kwargs)
+        return classe_original(**kwargs)
+
+    monkeypatch.setattr(_anthropic_sdk, "Anthropic", _fake_anthropic)
+    monkeypatch.setattr(ap, "_client", None)
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_ENABLED", True)
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-teste")
+
+    ap._get_client()
+    assert capturado.get("max_retries") == 0

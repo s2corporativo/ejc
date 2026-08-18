@@ -19,7 +19,12 @@ def get_client() -> AsyncGroq:
     if _client is None:
         if not settings.GROQ_API_KEY:
             raise RuntimeError("GROQ_API_KEY não configurada")
-        _client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        # max_retries=0 (auditoria de segurança, 18/08): mesma razão do
+        # provider Anthropic — retentar o MESMO provider que acabou de falhar
+        # não ganha resiliência (o fallback entre providers do gateway já
+        # cobre isso) e só multiplica o pior caso de latência antes do
+        # próximo da cadeia ser tentado.
+        _client = AsyncGroq(api_key=settings.GROQ_API_KEY, max_retries=0)
     return _client
 
 

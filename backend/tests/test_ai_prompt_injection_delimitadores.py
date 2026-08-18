@@ -90,3 +90,13 @@ def test_ia_especializada_nao_injeta_rag_no_system():
     assert '"content": sys}' in bloco or '"content": sys,' in bloco
     # A concatenação antiga (`sys += ... Contexto da base`) não pode voltar.
     assert 'sys += "\\n\\nContexto da base de conhecimento' not in src
+
+
+# ── Deadline: SDK sem retry próprio (auditoria de segurança 18/08) ──────────
+# Sem asyncio.timeout global na cadeia, o retry INTERNO do SDK multiplicava o
+# pior caso de latência POR PROVIDER — a resiliência real é o fallback entre
+# providers DIFERENTES que o gateway já faz.
+
+def test_client_groq_desliga_retry_proprio_do_sdk():
+    bloco = _source("app/services/providers/groq_provider.py")
+    assert "AsyncGroq(api_key=settings.GROQ_API_KEY, max_retries=0)" in bloco

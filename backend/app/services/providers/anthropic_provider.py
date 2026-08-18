@@ -70,6 +70,14 @@ def _get_client():
         _client = anthropic.Anthropic(
             api_key=api_key,
             timeout=float(get_settings().ANTHROPIC_TIMEOUT_SECONDS),
+            # max_retries=0 (auditoria de segurança, 18/08): o SDK reintenta
+            # até 2x por padrão em erro transitório — sem deadline global na
+            # cadeia do gateway, isso multiplicava o pior caso de latência
+            # POR PROVIDER antes mesmo de tentar o próximo da cadeia. A
+            # resiliência real é o fallback entre PROVIDERES DIFERENTES que o
+            # gateway já faz; retentar o MESMO provider que acabou de falhar
+            # não ganha nada e só segura o request.
+            max_retries=0,
         )
     return _client
 
