@@ -80,6 +80,7 @@ registro = raiz_estado / "log"
 arquivo_lock = raiz_estado / "remote-ref-lock"
 arquivo_ruleset = raiz_estado / "ruleset.json"
 arquivo_payload = raiz_estado / "payload.json"
+diretorio_barreira = raiz_estado / "barreira-leitura-vazia"
 esperado = json.loads(os.environ["FAKE_GH_RULESET"])
 id_conjunto_regras = esperado["id"]
 
@@ -97,7 +98,8 @@ if "-X" in argumentos:
     metodo = argumentos[argumentos.index("-X") + 1]
 
 if endpoint.endswith("/branches/main"):
-    print(json.dumps({"name": "main", "protected": False, "commit": {"sha": "a" * 40}}))
+    sha = "invalido" if cenario == "invalid_branch_sha" else "a" * 40
+    print(json.dumps({"name": "main", "protected": False, "commit": {"sha": sha}}))
     raise SystemExit(0)
 
 if endpoint.endswith("/git/refs") and metodo == "POST":
@@ -127,6 +129,14 @@ if "/rulesets?" in endpoint:
     elif cenario.startswith("existing") or arquivo_ruleset.exists():
         print(json.dumps([{"id": id_conjunto_regras, "name": esperado["name"], "enforcement": "active"}]))
     else:
+        if cenario == "concurrent" and not arquivo_lock.exists():
+            diretorio_barreira.mkdir(exist_ok=True)
+            (diretorio_barreira / str(os.getpid())).write_text("pronto", encoding="utf-8")
+            limite = time.monotonic() + 3
+            while len(list(diretorio_barreira.iterdir())) < 2:
+                if time.monotonic() >= limite:
+                    raise SystemExit(4)
+                time.sleep(0.01)
         print("[]")
     raise SystemExit(0)
 
@@ -145,9 +155,6 @@ if endpoint.endswith("/rulesets") and metodo == "POST":
     arquivo_payload.write_text(payload, encoding="utf-8")
     if cenario == "post_rejected":
         raise SystemExit(1)
-    # Amplia a janela para que o segundo processo exercite a espera pelo owner.
-    if cenario == "concurrent":
-        time.sleep(0.25)
     arquivo_ruleset.write_text(json.dumps(esperado), encoding="utf-8")
     if cenario == "transport_after_apply":
         raise SystemExit(1)
@@ -172,7 +179,6 @@ def _ambiente(diretorio_bin: Path, compartilhado: Path, cenario: str) -> dict[st
             "EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION": "998",
             "EJC_REPO": "s2corporativo/ejc",
             "EJC_BRANCH": "main",
-            "EJC_BOOTSTRAP_LOCK_SHA": SHA_FALSO,
             "EJC_BOOTSTRAP_LOCK_WAIT_ATTEMPTS": "20",
             "EJC_BOOTSTRAP_LOCK_WAIT_SECONDS": "0.05",
         }
@@ -267,6 +273,14 @@ def test_bootstrap_exige_autorizacao_repositorio_e_main(tmp_path):
     assert "-X POST" not in registro
 
 
+def test_bootstrap_exige_sha_valido_retornado_pela_api_da_main(tmp_path):
+    resultado, registro, _ = _executar(tmp_path, cenario="invalid_branch_sha")
+    assert resultado.returncode != 0
+    assert "API da main não contém SHA válido" in resultado.stderr
+    assert "git/refs" not in registro
+    assert "-X POST repos/s2corporativo/ejc/rulesets" not in registro
+
+
 def test_bootstrap_cria_ruleset_sob_lock_remoto_sem_mutacao_destrutiva(tmp_path):
     resultado, registro, compartilhado = _executar(tmp_path)
     assert resultado.returncode == 0, resultado.stderr
@@ -276,6 +290,12 @@ def test_bootstrap_cria_ruleset_sob_lock_remoto_sem_mutacao_destrutiva(tmp_path)
     assert "-X PATCH" not in registro
     assert "-X DELETE" not in registro
     assert (compartilhado / "remote-ref-lock").exists()
+
+    payload_lock = json.loads((compartilhado / "remote-ref-lock").read_text(encoding="utf-8"))
+    assert payload_lock == {
+        "ref": "refs/tags/ejc-bootstrap-ruleset-lock-998",
+        "sha": SHA_FALSO,
+    }
 
     payload = json.loads((compartilhado / "payload.json").read_text(encoding="utf-8"))
     regras = {regra["type"]: regra for regra in payload["rules"]}
@@ -367,6 +387,7 @@ def test_bootstrap_duas_execucoes_distribuidas_fazem_exatamente_um_post(tmp_path
     assert registro.count("-X POST repos/s2corporativo/ejc/git/refs") == 2
     assert registro.count("-X POST repos/s2corporativo/ejc/rulesets") == 1
     assert (compartilhado / "ruleset.json").exists()
+    assert len(list((compartilhado / "barreira-leitura-vazia").iterdir())) == 2
 
 
 def test_bootstrap_nao_usa_lock_local_nem_mutacao_branch_protection():
@@ -374,6 +395,8 @@ def test_bootstrap_nao_usa_lock_local_nem_mutacao_branch_protection():
     assert "flock" not in fonte
     assert "refs/tags/ejc-bootstrap-ruleset-lock-998" in fonte
     assert 'repos/$REPO/git/refs' in fonte
+    assert "EJC_BOOTSTRAP_LOCK_SHA" not in fonte
+    assert "git rev-parse HEAD" not in fonte
     assert "branches/$BRANCH/protection" not in fonte
     assert "-X PUT" not in fonte
     assert "-X PATCH" not in fonte
