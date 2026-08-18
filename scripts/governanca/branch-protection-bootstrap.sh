@@ -12,6 +12,11 @@ BRANCH="${EJC_BRANCH:-main}"
 AUTH="${EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION:-}"
 RULESET_NAME="EJC main protection bootstrap #998"
 GITHUB_ACTIONS_INTEGRATION_ID=15368
+LOCK_REF="refs/tags/ejc-bootstrap-ruleset-lock-998"
+LOCK_REF_ENDPOINT="repos/$REPO/git/ref/tags/ejc-bootstrap-ruleset-lock-998"
+LOCK_REFS_ENDPOINT="repos/$REPO/git/refs"
+LOCK_WAIT_ATTEMPTS="${EJC_BOOTSTRAP_LOCK_WAIT_ATTEMPTS:-15}"
+LOCK_WAIT_SECONDS="${EJC_BOOTSTRAP_LOCK_WAIT_SECONDS:-2}"
 
 fail() { printf 'ABORTADO: %s\n' "$1" >&2; exit 1; }
 ok() { printf '[ok] %s\n' "$1"; }
@@ -23,12 +28,21 @@ gh auth status >/dev/null 2>&1 || fail "gh não autenticado"
 [ "$AUTH" = "998" ] || fail "exige EJC_BRANCH_PROTECTION_BOOTSTRAP_AUTHORIZATION=998"
 [ "$REPO" = "$CANONICAL_REPO" ] || fail "bootstrap autorizado somente para $CANONICAL_REPO"
 [ "$BRANCH" = "main" ] || fail "bootstrap autorizado somente para main"
+[[ "$LOCK_WAIT_ATTEMPTS" =~ ^[1-9][0-9]*$ ]] || fail "EJC_BOOTSTRAP_LOCK_WAIT_ATTEMPTS inválido"
 
 BRANCH_API="repos/$REPO/branches/$BRANCH"
 RULESETS_API="repos/$REPO/rulesets"
 
-gh api "$BRANCH_API" -H 'Accept: application/vnd.github+json' >/dev/null \
+branch_json="$(gh api "$BRANCH_API" -H 'Accept: application/vnd.github+json')" \
   || fail "não foi possível ler a branch canônica"
+lock_sha="${EJC_BOOTSTRAP_LOCK_SHA:-}"
+if [ -z "$lock_sha" ]; then
+  lock_sha="$(printf '%s' "$branch_json" | jq -r '.commit.sha // empty')"
+fi
+if ! [[ "$lock_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  lock_sha="$(git rev-parse HEAD 2>/dev/null || true)"
+fi
+[[ "$lock_sha" =~ ^[0-9a-fA-F]{40}$ ]] || fail "não foi possível determinar SHA válido para o lock remoto"
 
 payload="$(jq -cn --arg name "$RULESET_NAME" --argjson integration_id "$GITHUB_ACTIONS_INTEGRATION_ID" '{
   name: $name,
@@ -112,39 +126,88 @@ find_ruleset_ids() {
     | jq -r --arg name "$RULESET_NAME" '.[] | select(.name == $name) | .id'
 }
 
-reconcile_ruleset() {
-  local ids count id current
-  ids="$(find_ruleset_ids)" || fail "não foi possível listar rulesets para reconciliação"
-  count="$(printf '%s\n' "$ids" | sed '/^$/d' | wc -l | tr -d ' ')"
-  [ "$count" -eq 1 ] || fail "esperado exatamente um ruleset canônico após bootstrap; encontrados $count"
+count_ruleset_ids() {
+  printf '%s\n' "$1" | sed '/^$/d' | wc -l | tr -d ' '
+}
+
+validate_single_ruleset() {
+  local ids="$1" id current
   id="$(printf '%s\n' "$ids" | sed '/^$/d')"
   current="$(gh api "$RULESETS_API/$id" -H 'Accept: application/vnd.github+json')" \
-    || fail "não foi possível ler ruleset canônico após bootstrap"
+    || fail "não foi possível ler ruleset canônico"
   ruleset_matches_payload "$current" \
-    || fail "ruleset efetivo diverge do baseline fail-closed"
+    || fail "ruleset canônico diverge do baseline fail-closed"
+}
+
+reconcile_ruleset() {
+  local ids count
+  ids="$(find_ruleset_ids)" || fail "não foi possível listar rulesets para reconciliação"
+  count="$(count_ruleset_ids "$ids")"
+  [ "$count" -eq 1 ] || fail "esperado exatamente um ruleset canônico após bootstrap; encontrados $count"
+  validate_single_ruleset "$ids"
+}
+
+wait_for_concurrent_owner() {
+  local tentativa ids count
+  aviso "lock remoto já existe; aguardando owner concluir e reconciliando estado"
+  for ((tentativa=1; tentativa<=LOCK_WAIT_ATTEMPTS; tentativa++)); do
+    ids="$(find_ruleset_ids)" || fail "não foi possível listar rulesets durante espera do lock remoto"
+    count="$(count_ruleset_ids "$ids")"
+    if [ "$count" -gt 1 ]; then
+      fail "mais de um ruleset canônico apareceu durante concorrência; intervenção administrativa necessária"
+    fi
+    if [ "$count" -eq 1 ]; then
+      validate_single_ruleset "$ids"
+      ok "concorrente concluiu ruleset canônico íntegro sob lock remoto"
+      return 0
+    fi
+    sleep "$LOCK_WAIT_SECONDS"
+  done
+  fail "lock remoto existe sem ruleset canônico íntegro; possível lock stale, intervenção administrativa necessária"
 }
 
 existing_ids="$(find_ruleset_ids)" || fail "não foi possível listar rulesets existentes"
-existing_count="$(printf '%s\n' "$existing_ids" | sed '/^$/d' | wc -l | tr -d ' ')"
+existing_count="$(count_ruleset_ids "$existing_ids")"
 if [ "$existing_count" -gt 1 ]; then
   fail "mais de um ruleset com nome canônico; intervenção administrativa necessária"
 fi
 if [ "$existing_count" -eq 1 ]; then
-  existing_id="$(printf '%s\n' "$existing_ids" | sed '/^$/d')"
-  existing_json="$(gh api "$RULESETS_API/$existing_id" -H 'Accept: application/vnd.github+json')" \
-    || fail "não foi possível ler ruleset canônico existente"
-  ruleset_matches_payload "$existing_json" \
-    || fail "ruleset canônico já existe, mas diverge do baseline; recuso sobrescrever"
+  validate_single_ruleset "$existing_ids"
   ok "ruleset canônico já estava ativo e íntegro"
   exit 0
 fi
 
-# POST cria uma política nova e aditiva. Não há PUT/PATCH/DELETE neste bootstrap,
-# portanto uma proteção legada restaurada concorrentemente não é substituída.
+# Serialização distribuída: a criação de uma Git ref fixa é atômica no GitHub.
+# Apenas quem cria a ref pode entrar na seção crítica que contém o POST do ruleset.
+# A ref é mantida como sentinela após sucesso; removê-la exigiria provar ownership.
+lock_payload="$(jq -cn --arg ref "$LOCK_REF" --arg sha "$lock_sha" '{ref:$ref, sha:$sha}')"
+if ! printf '%s' "$lock_payload" | gh api -X POST "$LOCK_REFS_ENDPOINT" \
+    -H 'Accept: application/vnd.github+json' --input - >/dev/null 2>&1; then
+  if gh api "$LOCK_REF_ENDPOINT" -H 'Accept: application/vnd.github+json' >/dev/null 2>&1; then
+    wait_for_concurrent_owner
+    exit 0
+  fi
+  fail "não foi possível adquirir lock remoto e a ref-sentinela não existe; falha de permissão/transporte"
+fi
+
+# Revalida dentro da seção crítica para cobrir criadores legados/administrativos
+# que possam ter criado o ruleset entre a primeira leitura e a aquisição do lock.
+existing_ids="$(find_ruleset_ids)" || fail "não foi possível reler rulesets após adquirir lock remoto"
+existing_count="$(count_ruleset_ids "$existing_ids")"
+if [ "$existing_count" -gt 1 ]; then
+  fail "mais de um ruleset canônico após adquirir lock remoto; intervenção administrativa necessária"
+fi
+if [ "$existing_count" -eq 1 ]; then
+  validate_single_ruleset "$existing_ids"
+  ok "ruleset canônico foi criado concorrentemente e está íntegro"
+  exit 0
+fi
+
+# POST cria política nova e aditiva. Não há PUT/PATCH/DELETE de branch protection.
 if ! printf '%s' "$payload" | gh api -X POST "$RULESETS_API" \
     -H 'Accept: application/vnd.github+json' --input - >/dev/null; then
   aviso "POST não retornou resposta confiável; reconciliando estado efetivo"
 fi
 
 reconcile_ruleset
-ok "ruleset fail-closed da main criado e confirmado sem sobrescrever proteção concorrente"
+ok "ruleset fail-closed da main criado e confirmado sob lock remoto atômico"
