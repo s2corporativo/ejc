@@ -607,14 +607,22 @@ class Settings(BaseSettings):
     # HyDE (Hypothetical Document Embeddings): gera uma "resposta hipotética"
     # curta e barata e a EMBUTE na busca vetorial — melhora o recall quando o
     # vocabulário do caso novo difere do registrado. Fail-safe: erro/timeout →
-    # usa a consulta original. Default OFF (liga após medir; +1 chamada barata/busca).
-    RAG_HYDE_ENABLED: bool = False
+    # usa a consulta original.
+    # Ligado por padrão (decisão do titular, 18/08 — "nível de inteligência
+    # altíssimo"): custa uma chamada extra barata (task_type "resumo", tier
+    # econômico) por busca RAG, e só afeta a perna DENSA — a lexical/FTS segue
+    # com a consulta real, então não há como HyDE piorar recall, só somar.
+    RAG_HYDE_ENABLED: bool = True
     # Perna lexical FULL-TEXT (tsvector 'portuguese', BM25-like) no híbrido RRF,
     # além do pg_trgm — melhor para termos raros/citações exatas (art./súmula/nº
     # CNJ). Usa o índice GIN pré-existente ix_knowledge_chunks_conteudo_fts
     # (migration 001) — não requer migration nova. Fail-safe: erro → só
-    # semântico+trigram. Default OFF até validar em produção.
-    RAG_FTS_ENABLED: bool = False
+    # semântico+trigram.
+    # Ligado por padrão (decisão do titular, 18/08): é uma perna ADITIVA à
+    # fusão RRF — no pior caso (erro/ausência de match) o resultado é idêntico
+    # ao de antes; no melhor caso, acha a citação exata (nº de artigo/súmula/
+    # processo) que a busca semântica sozinha pode não ranquear no topo.
+    RAG_FTS_ENABLED: bool = True
     # Grounding de citações (auditoria IA 2026-07-17, O-5): além do citation_check
     # contra a base interna, o validador confere as citações com o verificador
     # rigoroso. As checagens são LOCAIS (dígito verificador do nº CNJ, faixa de

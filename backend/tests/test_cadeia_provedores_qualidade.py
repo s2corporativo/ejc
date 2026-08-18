@@ -140,3 +140,18 @@ def test_mensagem_de_bloqueio_diz_as_duas_saidas():
     assert "OLLAMA_ENABLED=true" in msg
     assert "AI_SANITIZATION_MODE_MAP" in msg
     assert "decisão do titular" in msg
+
+
+# ── Retrieval RAG: pernas aditivas ligadas por padrão (18/08) ───────────────
+
+def test_hyde_e_fts_nascem_ligados():
+    """Decisão do titular: nível de inteligência altíssimo. Ambas as pernas são
+    ADITIVAS à fusão RRF e fail-safe (erro cai no comportamento de antes) — não
+    há como piorar recall, só somar candidato. O reranker continua OFF: é o
+    único item aqui genuinamente bloqueado (licença não comercial do único
+    cross-encoder multilíngue do fastembed pinado; o MIT precisa de eval em
+    corpus jurídico pt-BR antes de entrar)."""
+    s = Settings()
+    assert s.RAG_HYDE_ENABLED is True
+    assert s.RAG_FTS_ENABLED is True
+    assert s.RAG_RERANK_ENABLED is False

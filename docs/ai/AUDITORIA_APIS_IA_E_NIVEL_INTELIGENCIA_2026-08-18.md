@@ -655,3 +655,52 @@ chamador, kill-switch do Groq nas três definições, e o aviso das áreas sem I
 reescritos em `test_anthropic_gateway.py` e `test_roteamento_gateway.py`, que fixavam o
 comportamento antigo ("soberania local primeiro") e agora fixam o novo — com um teste extra
 provando que, fora do mérito, a ordem configurada continua sendo respeitada.
+
+---
+
+## 16. Retrieval RAG — duas pernas aditivas ligadas por padrão
+
+Última rodada da auditoria (18/08): com a cadeia de provedores e o piso de raciocínio já
+corrigidos (§15), o próximo alavancador de qualidade era o **retrieval** — de nada adianta o
+modelo mais forte raciocinando sobre um contexto pior do que podia ser.
+
+Duas pernas do RRF híbrido existiam no código, prontas e testadas, e vinham **desligadas por
+padrão** só por não terem sido validadas em produção:
+
+- **`RAG_FTS_ENABLED`** — perna léxica full-text (tsvector `portuguese`, estilo BM25), melhor que
+  a busca semântica para termos raros e citações exatas (número de artigo, súmula, processo CNJ).
+  Usa o índice GIN já existente (migration 001) — **sem migration nova**.
+- **`RAG_HYDE_ENABLED`** — gera uma "resposta hipotética" curta e barata e a embute na busca
+  vetorial, melhorando o recall quando o vocabulário do caso novo diverge do registrado. Custa uma
+  chamada extra barata (tier econômico) por busca.
+
+Ambas são **aditivas** à fusão RRF (somam candidato, nunca removem) e **fail-safe** (erro cai no
+comportamento de antes — nunca derruba a busca). Não há como esta mudança piorar recall; no pior
+caso, o resultado é idêntico ao de antes.
+
+**O que ficou explicitamente de fora, e por quê:** `RAG_RERANK_ENABLED` continua desligado. O
+único cross-encoder multilíngue do fastembed pinado tem licença **CC-BY-NC-4.0**, incompatível
+com uso empresarial; o alternativo com licença MIT (`BAAI/bge-reranker-base`) "não deve ser
+ativado sem medir qualidade no corpus jurídico em português" — é a única trava desta rodada que
+não é uma questão de configuração, é uma decisão que precisa de dado de avaliação que não existe
+ainda. Ligá-lo às cegas poderia **piorar** o ranking (reranker treinado majoritariamente em
+inglês, sem eval em PT-BR jurídico), o oposto do que foi pedido.
+
+**Regressão.** `backend/tests/test_cadeia_provedores_qualidade.py` ganhou o teste que fixa os três
+defaults juntos (HyDE e FTS ligados, rerank desligado com o motivo).
+
+### Itens que seguem fora do alcance de código (revalidados nesta rodada)
+
+- **A-2** (base verificável rasa: 27 súmulas / 41 diplomas) — populá-la exige **curadoria
+  jurídica** de conteúdo oficial verificado. Não é tarefa de código: escrever "súmulas" ou
+  "diplomas" novos sem fonte oficial conferida violaria a própria regra que a auditoria inteira
+  existe para proteger (`NUNCA invente lei, súmula, jurisprudência`). Fica para ingestão de
+  documentos reais, sob revisão de advogado.
+- **A-8** (gold set real) — mesma razão: exige curadoria de advogado sobre casos reais.
+- **DataJud/grounding ao vivo** (`DATAJUD_ENABLED`, `AI_GROUNDING_DATAJUD_ENABLED`) — seguem OFF
+  por padrão: são rede externa ao CNJ, e toda integração externa nasce opt-in neste repositório
+  (regra de design do CLAUDE.md). Ligar exige decisão operacional (rate limit público, chave se
+  houver) — não é ajuste de qualidade unilateral.
+- **`CITACOES_MODO_ESTRITO`** — permanece `False` por desenho: o próprio comentário do código
+  avisa que ligá-lo antes de a base estar abrangente (ver A-2) geraria falso-positivo em citação
+  real ainda não ingerida. Ligar isso agora **pioraria** a experiência, não melhoraria.
