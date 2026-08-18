@@ -112,6 +112,9 @@ class Settings(BaseSettings):
     MAX_UPLOAD_MB: int = 50
 
     # ── IA — Groq (dados sanitizados antes de envio — LGPD) ──────────────
+    # Simetria com ANTHROPIC_ENABLED/MARITACA_ENABLED/OLLAMA_ENABLED: sem esta
+    # flag, desligar o Groq exigia APAGAR a chave (auditoria de provedores, 18/08).
+    GROQ_ENABLED: bool = True
     GROQ_API_KEY: str = ""
     # AI-043 (auditoria 2026-07-26): llama-3.3-70b-versatile foi DEPRECIADO pela
     # Groq (anúncio 17/06/2026; deixa de ser servido em ago/2026 nos tiers

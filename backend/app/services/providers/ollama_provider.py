@@ -59,6 +59,14 @@ async def chat(
             r.raise_for_status()
             data = r.json()
             texto = data.get("message", {}).get("content", "")
+            # Groq e Maritaca já levantavam nesse caso; o Ollama devolvia ""
+            # como SUCESSO. Como ele é o primeiro da cadeia, a resposta vazia
+            # virava resposta final e o fallback nunca disparava (auditoria de
+            # provedores, 18/08).
+            if not (texto or "").strip():
+                raise RuntimeError(
+                    f"Ollama retornou resposta vazia — modelo {model}"
+                )
             usage = {
                 "input_tokens":  data.get("prompt_eval_count"),
                 "output_tokens": data.get("eval_count"),
@@ -71,6 +79,8 @@ async def chat(
         raise RuntimeError(f"Ollama timeout ({to}s) — modelo {model} muito lento")
     except httpx.HTTPStatusError as e:
         raise RuntimeError(f"Ollama HTTP {e.response.status_code} — {model}")
+    except RuntimeError:
+        raise  # já é diagnóstico nosso (ex.: resposta vazia) — não re-embrulhar
     except Exception as e:
         raise RuntimeError(f"Ollama indisponível: {e}")
 

@@ -248,3 +248,72 @@ são os que não se resolvem por configuração: a base verificável de 27 súmu
 3. **`legal_base.py` pertence ao PR #1143.** A correção do CI tocou esse arquivo por ser a
    única forma de fechar o verde sem afrouxar o teste anti-alucinação — é aditiva e não remove
    nada do desenho do #1143, mas exige coordenação antes de integrar os dois PRs.
+
+
+---
+
+## 8. Módulo de provedores e chaves de API (auditoria de 18/08)
+
+Verificação dedicada dos quatro provedores — **Anthropic (Claude), Maritaca (Sabiá), Groq e
+Ollama** — e do caminho que a chave percorre até a chamada.
+
+### 8.1 Como a chave chega ao provedor (está correto)
+
+Há **duas fontes** e elas convergem, o que costuma ser a origem de "cadastrei a chave e não
+funciona":
+
+1. **`.env`** — base, lida pelo `Settings` (pydantic-settings, cache em `get_settings()`);
+2. **Cofre de Credenciais** — `ANTHROPIC_API_KEY`, `GROQ_API_KEY` e `MARITACA_API_KEY` estão
+   registrados em `credential_registry.py` e o cofre aplica um **overlay sobre o mesmo
+   singleton de Settings**: na API pelo lifespan (`main.py:267`, com falha graciosa que mantém
+   os valores do `.env`) e no worker Celery por handler de `task_prerun` com TTL de 45s
+   (`tasks/vault_sync.py`).
+
+Ou seja: **chave salva no cofre vale para o gateway**, inclusive no worker — que é um processo
+separado e não enxerga o overlay da API. Este ponto estava certo e foi confirmado.
+
+### 8.2 Habilitação por provedor
+
+`provider_elegivel()` (`ai/provider_registry.py`) é fonte única e checa, por provedor: flag
+própria + chave + kill-switch global `AI_EXTERNAL_PROVIDERS_ALLOWED`. Ollama, por ser local,
+depende só de `OLLAMA_ENABLED`.
+
+Travas de conformidade confirmadas: **Maritaca** só é soberana com duas condições juntas
+(`MARITACA_MODEL` regional **e** `MARITACA_EXIGIR_SOBERANIA=true` — os defaults **não** são
+soberanos); **Groq** exige `GROQ_ZDR_VERIFIED` e, para áudio, `AUDIO_TRANSCRIPTION_DPA_APPROVED`.
+Ambas documentadas no `.env.example`.
+
+### 8.3 Três lacunas encontradas — e corrigidas
+
+| # | Lacuna | Efeito | Correção |
+|---|---|---|---|
+| **PV-1** | **Ollama tratava resposta vazia como sucesso** (Groq e Maritaca já levantavam) | Como o Ollama é o **primeiro da cadeia**, uma resposta vazia dele virava a resposta final e **o fallback nunca disparava** — o usuário recebia vazio em vez de o sistema cair para o Anthropic | `ollama_provider.py`: resposta em branco levanta `RuntimeError`; `except RuntimeError: raise` evita re-embrulhar o diagnóstico |
+| **PV-2** | **Groq não tinha flag `ENABLED`** — único dos quatro | Desligar o Groq exigia **apagar a chave**; não havia como suspendê-lo temporariamente | `GROQ_ENABLED: bool = True` em `config.py`, exposto no `.env.example` e incorporado à elegibilidade |
+| **PV-3** | O painel dizia só **`elegivel: false`** | O operador não sabia **o que faltava**: chave ausente? flag do provedor? kill-switch global? | `motivo_inelegivel()` no registro + campo `motivo_inelegivel` em `GET /ia-governanca/provedores`, acumulando todas as faltas |
+
+Testes: `tests/test_provedores_ia_auditoria.py` (8 casos — diagnóstico por falta, acúmulo de
+faltas, simetria das flags, e o fallback do Ollama com resposta vazia).
+
+### 8.4 O que **não** dá para verificar daqui
+
+O que falta para o sistema estar "100%" **não é código, é ambiente** — e não tenho (nem devo
+ter) acesso a ele:
+
+- **quais chaves estão de fato preenchidas** em produção (`.env` do VPS ou cofre). O repositório
+  não versiona `.env`, corretamente;
+- **se as chaves são válidas** (crédito, cota, escopo) — o cofre tem testadores próprios por
+  credencial, que são a via para isso;
+- **se o Ollama está de pé** e com os modelos baixados (`deepseek-r1:8b`, `qwen2.5:14b`,
+  `gemma3:9b`) — sem isso o primeiro provedor da cadeia falha sempre e tudo cai para o externo.
+
+**Como conferir em produção, agora que o painel explica a inelegibilidade:**
+
+```
+GET /api/ia-governanca/provedores
+```
+
+Cada provedor retorna `elegivel`, `motivo_inelegivel`, `modelo_configurado`,
+`ordem_prioridade`, `status` (`desabilitado` / `configurado_sem_uso` / `indisponivel` /
+`atencao` / `operacional`), taxa de sucesso, latência e custo. **Sistema 100% = os quatro com
+`motivo_inelegivel: null` e status `operacional`** (ou `configurado_sem_uso`, se ainda não houve
+tráfego). Qualquer outro estado agora vem com a causa escrita.

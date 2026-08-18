@@ -12,7 +12,11 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.ai_provider_metric import AIProviderMetric
 from app.models.user import User
-from app.services.ai.provider_registry import PROVIDERS_SUPORTADOS, provider_elegivel
+from app.services.ai.provider_registry import (
+    PROVIDERS_SUPORTADOS,
+    motivo_inelegivel,
+    provider_elegivel,
+)
 
 router = APIRouter(prefix="/ia-governanca", tags=["IA — Provedores (Admin)"])
 
@@ -181,6 +185,9 @@ async def painel_provedores(
                 "provider": provider,
                 "modelo_configurado": _modelo_configurado(provider),
                 "elegivel": elegivel,
+                # Sem isto o painel dizia só "desabilitado", sem distinguir
+                # chave ausente de flag desligada ou kill-switch global.
+                "motivo_inelegivel": None if elegivel else motivo_inelegivel(provider),
                 "ordem_prioridade": prioridade.index(provider) + 1 if provider in prioridade else None,
                 "status": _status_operacional(
                     elegivel, tentativas, falhas_provider, sucessos_provider
