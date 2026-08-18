@@ -472,3 +472,50 @@ O que cada um passou a exigir:
 
 **Regressão.** `backend/tests/test_system_prompts_profundidade.py` (8 testes): prompt próprio por
 chave, piso de profundidade, honestidade epistêmica, e as âncoras específicas de cada área.
+
+---
+
+## 13. Dívida 5.3 — inventário canônico de prompts e rastreabilidade de versão
+
+**O achado.** Dezenas de prompts espalhados por módulos, sem lugar único que dissesse quais
+existem, quem os consome e **qual versão produziu determinada saída**. Duas consequências:
+
+- um erro jurídico numa peça não é rastreável até a instrução que o causou;
+- chave **fantasma** (consumida por um agente e ausente do registro) faz o núcleo cair no prompt
+  `default` — o advogado recebe resposta genérica onde deveria haver especialização, sem nenhum
+  erro visível. É a pior classe de falha: silenciosa e plausível.
+
+**A correção.** `system_prompts/inventario.py` monta o inventário **derivado** — nunca digitado.
+Lê `SYSTEM_PROMPTS`, `PROMPT_EXTRAS`, o `AGENT_REGISTRY` e o router; uma lista escrita à mão
+envelheceria como qualquer outra constante, que é o problema que o módulo existe para resolver.
+Cada linha traz chave, tipo, **versão** (sha256 truncado do conteúdo), tamanho, consumidores e a
+marca de órfão.
+
+A versão não é semântica: muda quando o texto muda — exatamente a pergunta a responder
+("a peça de ontem saiu deste prompt ou do anterior?").
+
+**O inventário já achou uma coisa ao ser escrito:** a chave `dossie` existia em `SYSTEM_PROMPTS` e
+não era consumida por ninguém — o router usava `analise_caso` para a tarefa `DOSSIE`. Passou a
+consumir a própria chave (hoje com o mesmo texto, então sem mudança de comportamento), o que
+zera os órfãos e permite que o dossiê divirja depois sem mexer no router.
+
+**Onde aparece.**
+
+- `GET /ia-governanca/prompts-sistema` (admin/sócio) — inventário completo, com `orfaos` e
+  `fantasmas`. Distinto de `/ia-governanca/prompts`, que lista os prompts jurídicos do usuário.
+- A saída do orquestrador carrega `prompt_key` e `prompt_versao`.
+- O payload de conclusão da peça carrega `prompt_versao` — a impressão do prompt **final**
+  montado (perfil de complexidade + especialização de área + padrão ouro), que é o texto que de
+  fato redigiu a minuta.
+
+**O que ficou de fora, e por quê.** Gravar a versão numa **coluna do `ai_logs`** exige migration.
+O repositório tem head único e `test_alembic_single_head.py` fixa o head à mão — "dois PRs com
+migration conflitam ali por construção" (`MIGRATION_RESERVATIONS.md`). Como este PR não tem
+migration nenhuma, criar uma agora custaria conflito garantido com qualquer PR de schema em
+andamento, por um ganho que já está 90% entregue: a versão é calculada num lugar só
+(`inventario.impressao`) e chega ao consumidor da resposta. **A coluna é uma tarefa de um PR
+dedicado**, e a decisão de quando fazê-la é do titular.
+
+**Regressão.** `backend/tests/test_inventario_prompts.py` (8 testes): cobertura do registro,
+ausência de fantasmas e de órfãos, estabilidade da impressão, e a chegada da versão às duas
+superfícies de saída.

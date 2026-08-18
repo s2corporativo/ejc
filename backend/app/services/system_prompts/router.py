@@ -67,7 +67,10 @@ CONFIGURACOES: dict[TarefaIA, ConfiguracaoIA] = {
     TarefaIA.AUDIENCIA: _claude("audiencia", _COMPLEXO, 3000, 0.2, "Preparação de audiência"),
     TarefaIA.RAG_QUERY: _claude("rag_query", _COMPLEXO, 2500, 0.1, "Síntese de RAG — fundamentação vira resposta (A-4)"),
     TarefaIA.ANALISE_CASO: _claude("analise_caso", _COMPLEXO, 4000, 0.1, "Análise estratégica"),
-    TarefaIA.DOSSIE: _claude("analise_caso", _COMPLEXO, 5000, 0.1, "Dossiê completo"),
+    # A chave "dossie" existe em SYSTEM_PROMPTS (hoje com o mesmo texto de
+    # "analise_caso") e não era consumida por ninguém — órfã. Consumi-la aqui
+    # não muda o texto atual e permite que o dossiê divirja sem mexer no router.
+    TarefaIA.DOSSIE: _claude("dossie", _COMPLEXO, 5000, 0.1, "Dossiê completo"),
     TarefaIA.MINUTAS: _claude("minutas", _COMPLEXO, 6000, 0.15, "Redação de peças"),
     TarefaIA.AMBIENTAL: _claude("ambiental", _COMPLEXO, 4000, 0.1, "Direito ambiental técnico"),
     TarefaIA.TRABALHISTA: _claude("trabalhista", _COMPLEXO, 3500, 0.1, "CLT + TST"),

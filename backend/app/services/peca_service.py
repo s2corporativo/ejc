@@ -1116,6 +1116,12 @@ async def gerar_peca_pipeline(
         + "\nSe houver MODELOS DE REFERÊNCIA, use-os apenas como guia de "
         "estrutura/tese — jamais como fonte factual ou jurisprudencial."
     )
+    # Rastreabilidade do prompt (dívida 5.3): a minuta é montada a partir de
+    # vários blocos (perfil de complexidade, especialização de área, padrão
+    # ouro). A impressão digital do texto FINAL é o que permite dizer, meses
+    # depois, com qual instrução aquela peça foi redigida.
+    from app.services.system_prompts.inventario import impressao as _impressao
+    prompt_versao_peca = _impressao(system_redator)
     r7 = await gw_chat(
         messages=[
             {"role": "system", "content": system_redator},
@@ -1391,6 +1397,7 @@ async def gerar_peca_pipeline(
         "pii_removida": houve_pii,
         "tokens_totais": (log.tokens_input or 0) + (log.tokens_output or 0),
         "verificacao_citacoes": verificacao_citacoes,
+        "prompt_versao": prompt_versao_peca,
         "alertas": alertas_validacao,
         "sem_base_verificavel": sem_base_verificavel,
         "revisao_obrigatoria": revisao_obrigatoria,

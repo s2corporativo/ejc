@@ -469,6 +469,23 @@ async def governanca_prompts(db: AsyncSession = Depends(get_db), cu: User = Depe
     } for p in rows]}
 
 
+@router.get("/prompts-sistema")
+async def governanca_prompts_sistema(cu: User = Depends(get_current_user)):
+    """Inventário canônico dos prompts do NÚCLEO (código), com versão por conteúdo.
+
+    Distinto de `/prompts`, que lista os prompts jurídicos criados pelo usuário
+    no banco. Aqui estão as instruções que o núcleo injeta como `system`:
+    a `versao` é a impressão digital do texto — é ela que responde "a peça de
+    ontem saiu deste prompt ou do anterior?" (dívida 5.3 da auditoria de IA).
+    `orfaos` = registrados e não consumidos; `fantasmas` = consumidos por
+    agente/tarefa e ausentes do registro (caem no prompt `default` em silêncio).
+    """
+    _require_admin_socio(cu)
+    from app.services.system_prompts.inventario import resumo
+
+    return resumo()
+
+
 @router.get("/fontes")
 async def fontes_ingestao(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     _require_admin_socio(cu)

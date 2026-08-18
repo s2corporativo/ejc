@@ -144,6 +144,10 @@ ADICOES_INTENCIONAIS = {
     # bloqueios e datas inconsistentes do banco real.
     ("/api/cases/{case_id}/movimentos/{movimento_id}", "PATCH"),
     ("/api/cases/{case_id}/movimentos/{movimento_id}", "DELETE"),
+    # Auditoria de IA 18/08 (dívida 5.3): inventário canônico dos prompts do
+    # NÚCLEO (código), com versão por conteúdo. Distinto de /prompts, que lista
+    # os prompts jurídicos do usuário no banco. Somente admin/sócio.
+    ("/api/ia-governanca/prompts-sistema", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
