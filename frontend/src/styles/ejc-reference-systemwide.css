@@ -1,0 +1,551 @@
+/*
+ * EJC — Reference Systemwide 2026
+ * Camada visual FINAL do sistema, baseada no dashboard de referência aprovado.
+ *
+ * Objetivo: fazer páginas antigas e novas convergirem para o mesmo idioma visual
+ * sem alterar RBAC, rotas, contratos de API, regras de negócio ou persistência.
+ * A camada é deliberadamente mais forte no tema claro; o dark mode permanece
+ * funcional com seus tokens atuais para reduzir risco de regressão.
+ */
+
+:root {
+  --ejc-system-canvas: #f8fafc;
+  --ejc-system-surface: #ffffff;
+  --ejc-system-surface-soft: #f6f8fb;
+  --ejc-system-border: #e2e8f0;
+  --ejc-system-border-strong: #d4dde8;
+  --ejc-system-navy: #0b2a55;
+  --ejc-system-navy-hover: #123968;
+  --ejc-system-blue: #2563a9;
+  --ejc-system-blue-soft: #eef5fd;
+  --ejc-system-ink: #16243a;
+  --ejc-system-muted: #64748b;
+  --ejc-system-subtle: #94a3b8;
+  --ejc-system-success: #17985a;
+  --ejc-system-warning: #e89a1b;
+  --ejc-system-danger: #df3f49;
+  --ejc-system-radius-xs: 6px;
+  --ejc-system-radius-sm: 8px;
+  --ejc-system-radius-md: 10px;
+  --ejc-system-radius-lg: 12px;
+  --ejc-system-shadow:
+    0 1px 2px rgba(15, 35, 60, 0.025), 0 8px 24px -22px rgba(15, 35, 60, 0.32);
+  --ejc-system-shadow-float: 0 18px 48px -34px rgba(15, 35, 60, 0.42);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Base, tipografia e densidade                                                */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark),
+html:not(.dark) body,
+html:not(.dark) #root {
+  background: var(--ejc-system-canvas);
+  color: var(--ejc-system-ink);
+}
+
+html:not(.dark) body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizelegibility;
+}
+
+html:not(.dark) .ejc-modern-scope {
+  color: var(--ejc-system-ink);
+}
+
+html:not(.dark) .ejc-modern-scope h1 {
+  color: var(--ejc-system-ink) !important;
+  font-size: clamp(1.1rem, 1.6vw, 1.45rem) !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.025em !important;
+}
+
+html:not(.dark) .ejc-modern-scope h2 {
+  color: #20324a !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.015em;
+}
+
+html:not(.dark) .ejc-modern-scope h3,
+html:not(.dark) .ejc-modern-scope h4 {
+  color: #2a3d56 !important;
+  font-weight: 650 !important;
+}
+
+html:not(.dark) .ejc-modern-scope p,
+html:not(.dark) .ejc-modern-scope .text-slate-500,
+html:not(.dark) .ejc-modern-scope .text-gray-500 {
+  color: var(--ejc-system-muted) !important;
+}
+
+html:not(.dark) .ejc-modern-scope .text-slate-400,
+html:not(.dark) .ejc-modern-scope .text-gray-400 {
+  color: #8795a8 !important;
+}
+
+html:not(.dark) main.ejc-modern-scope {
+  padding-top: 18px !important;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.48),
+      rgba(248, 250, 252, 0) 120px
+    ),
+    var(--ejc-system-canvas) !important;
+}
+
+html:not(.dark) main.ejc-modern-scope > div {
+  width: 100%;
+  max-width: 1600px !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Shell: linhas finas, superfícies brancas, navegação discreta                */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) header.fixed.inset-x-0.top-0 {
+  border-bottom: 1px solid var(--ejc-system-border) !important;
+  background: rgba(255, 255, 255, 0.985) !important;
+  box-shadow: 0 6px 22px -22px rgba(15, 35, 60, 0.7) !important;
+}
+
+html:not(.dark) .ejc-header-search {
+  height: 42px !important;
+  border: 1px solid var(--ejc-system-border) !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  color: #738196 !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) .ejc-header-search:hover {
+  border-color: #c7d3e1 !important;
+  background: #fbfdff !important;
+}
+
+html:not(.dark) .ejc-header-search:focus-visible {
+  border-color: #8fb1d8 !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 169, 0.07) !important;
+}
+
+html:not(.dark) .ejc-header-clock {
+  border-color: var(--ejc-system-border) !important;
+}
+
+html:not(.dark) .sidebar-bronze {
+  border-right: 1px solid var(--ejc-system-border) !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) .sidebar-bronze nav {
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+}
+
+html:not(.dark) .sidebar-bronze .sidebar-nav-item {
+  min-height: 40px;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  color: #34475f !important;
+  font-size: 12px !important;
+  font-weight: 560 !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) .sidebar-bronze .sidebar-nav-item svg {
+  color: #29415f !important;
+  stroke-width: 1.65 !important;
+}
+
+html:not(.dark) .sidebar-bronze .sidebar-nav-item:hover {
+  border-color: transparent !important;
+  background: #f5f8fc !important;
+  color: var(--ejc-system-navy) !important;
+}
+
+html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active {
+  border-color: #dce8f6 !important;
+  background: var(--ejc-system-blue-soft) !important;
+  color: var(--ejc-system-navy) !important;
+  font-weight: 650 !important;
+}
+
+html:not(.dark) .sidebar-bronze .sidebar-nav-item.is-active svg {
+  color: #174a91 !important;
+}
+
+html:not(.dark) .sidebar-bronze .sidebar-group-label {
+  color: #97a4b4 !important;
+  font-weight: 650 !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Superfícies: cards, painéis, stat cards e caixas de conteúdo                */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) .ejc-modern-scope :where(.card, .section-card),
+html:not(.dark)
+  .ejc-modern-scope
+  [class*="rounded-xl"][class*="border"][class*="bg-white"],
+html:not(.dark)
+  .ejc-modern-scope
+  [class*="rounded-2xl"][class*="border"][class*="bg-white"] {
+  border-color: var(--ejc-system-border) !important;
+  border-radius: var(--ejc-system-radius-md) !important;
+  background: var(--ejc-system-surface) !important;
+  box-shadow: var(--ejc-system-shadow) !important;
+}
+
+html:not(.dark) .ejc-modern-scope :where(.card, .section-card):hover {
+  border-color: #d3dde9 !important;
+}
+
+html:not(.dark) .ejc-modern-scope .section-card > :first-child,
+html:not(.dark) .ejc-modern-scope .card > header,
+html:not(.dark) .ejc-modern-scope .card-header {
+  border-color: #edf1f5 !important;
+}
+
+html:not(.dark) .ejc-modern-scope .shadow-sm,
+html:not(.dark) .ejc-modern-scope .shadow,
+html:not(.dark) .ejc-modern-scope .shadow-md,
+html:not(.dark) .ejc-modern-scope .shadow-card,
+html:not(.dark) .ejc-modern-scope .shadow-soft {
+  box-shadow: var(--ejc-system-shadow) !important;
+}
+
+html:not(.dark) .ejc-modern-scope .shadow-lg,
+html:not(.dark) .ejc-modern-scope .shadow-xl,
+html:not(.dark) .ejc-modern-scope .shadow-float {
+  box-shadow: var(--ejc-system-shadow-float) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Formulários                                                                  */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) .ejc-modern-scope :where(.input, input, select, textarea),
+html:not(.dark) .min-h-screen :where(.input, input, select, textarea) {
+  border-color: var(--ejc-system-border-strong) !important;
+  border-radius: var(--ejc-system-radius-sm) !important;
+  background: #fff !important;
+  color: var(--ejc-system-ink) !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) .ejc-modern-scope input[type="checkbox"],
+html:not(.dark) .ejc-modern-scope input[type="radio"],
+html:not(.dark) .min-h-screen input[type="checkbox"],
+html:not(.dark) .min-h-screen input[type="radio"] {
+  accent-color: var(--ejc-system-navy);
+}
+
+html:not(.dark) .ejc-modern-scope :where(input, select, textarea):focus,
+html:not(.dark) .min-h-screen :where(input, select, textarea):focus {
+  border-color: #7fa6d4 !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 169, 0.075) !important;
+}
+
+html:not(.dark) .ejc-modern-scope :where(input, textarea)::placeholder,
+html:not(.dark) .min-h-screen :where(input, textarea)::placeholder {
+  color: #9aa6b5 !important;
+}
+
+html:not(.dark) .ejc-modern-scope :where(.label, label),
+html:not(.dark) .min-h-screen :where(.label, label) {
+  color: #55667b;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Botões e ações                                                               */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) .btn-primary,
+html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) .btn-gold,
+html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) button.bg-primary-600,
+html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) a.bg-primary-600 {
+  border-color: var(--ejc-system-navy) !important;
+  background: var(--ejc-system-navy) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) .btn-primary:hover,
+html:not(.dark) :where(.ejc-modern-scope, .min-h-screen) .btn-gold:hover,
+html:not(.dark)
+  :where(.ejc-modern-scope, .min-h-screen)
+  button.bg-primary-600:hover,
+html:not(.dark)
+  :where(.ejc-modern-scope, .min-h-screen)
+  a.bg-primary-600:hover {
+  background: var(--ejc-system-navy-hover) !important;
+}
+
+html:not(.dark) .ejc-modern-scope :where(.btn-secondary, .btn-outline),
+html:not(.dark) .min-h-screen :where(.btn-secondary, .btn-outline) {
+  border: 1px solid var(--ejc-system-border-strong) !important;
+  background: #fff !important;
+  color: #3d5068 !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) .ejc-modern-scope :where(.btn-secondary, .btn-outline):hover,
+html:not(.dark) .min-h-screen :where(.btn-secondary, .btn-outline):hover {
+  background: #f7f9fc !important;
+  color: var(--ejc-system-navy) !important;
+}
+
+html:not(.dark) .ejc-modern-scope .icon-btn,
+html:not(.dark) .min-h-screen .icon-btn {
+  border-color: transparent;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) .ejc-modern-scope .icon-btn:hover,
+html:not(.dark) .min-h-screen .icon-btn:hover {
+  border-color: var(--ejc-system-border) !important;
+  background: #f5f8fc !important;
+  color: var(--ejc-system-navy) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tabelas, listas, filtros e paginação                                        */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) .ejc-modern-scope :where(table, .table) {
+  border-collapse: separate;
+  border-spacing: 0;
+  color: #34475f;
+}
+
+html:not(.dark) .ejc-modern-scope :where(table, .table) thead,
+html:not(.dark) .ejc-modern-scope :where(table, .table) th {
+  background: #f6f8fb !important;
+  color: #506177 !important;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+}
+
+html:not(.dark) .ejc-modern-scope :where(table, .table) th,
+html:not(.dark) .ejc-modern-scope :where(table, .table) td {
+  border-color: #e9eef4 !important;
+}
+
+html:not(.dark) .ejc-modern-scope :where(table, .table) tbody tr {
+  background: #fff;
+}
+
+html:not(.dark) .ejc-modern-scope :where(table, .table) tbody tr:hover {
+  background: #f8fafc !important;
+}
+
+html:not(.dark) .ejc-modern-scope :where(.filter-bar, .filters, .toolbar) {
+  border-color: var(--ejc-system-border) !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark)
+  .ejc-modern-scope
+  :where(.pagination, nav[aria-label*="Paginação" i])
+  button {
+  border-color: var(--ejc-system-border) !important;
+  border-radius: 7px !important;
+  background: #fff;
+  color: #52637a;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Abas, breadcrumbs e navegação contextual                                    */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) .ejc-modern-scope [role="tablist"] {
+  border-color: var(--ejc-system-border) !important;
+}
+
+html:not(.dark) .ejc-modern-scope [role="tab"] {
+  color: #65758a;
+}
+
+html:not(.dark) .ejc-modern-scope [role="tab"][aria-selected="true"] {
+  color: var(--ejc-system-navy) !important;
+  font-weight: 650;
+}
+
+html:not(.dark) .ejc-modern-scope :where(.tabs, .tab-list, .subtabs) {
+  border-color: var(--ejc-system-border) !important;
+}
+
+html:not(.dark)
+  .ejc-modern-scope
+  :where(.tab-active, .is-active)[class*="text-primary"] {
+  color: var(--ejc-system-navy) !important;
+}
+
+html:not(.dark)
+  .ejc-modern-scope
+  :where(.breadcrumb, [aria-label="breadcrumb" i]) {
+  color: #78879a;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Badges e estados — fundos suaves, sem saturação excessiva                   */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) .ejc-modern-scope .bg-success-50 {
+  background: #eaf8f0 !important;
+}
+
+html:not(.dark) .ejc-modern-scope .bg-warn-50,
+html:not(.dark) .ejc-modern-scope .bg-amber-50 {
+  background: #fff7e8 !important;
+}
+
+html:not(.dark) .ejc-modern-scope .bg-danger-50,
+html:not(.dark) .ejc-modern-scope .bg-red-50 {
+  background: #fff0f1 !important;
+}
+
+html:not(.dark) .ejc-modern-scope .bg-info-50,
+html:not(.dark) .ejc-modern-scope .bg-blue-50,
+html:not(.dark) .ejc-modern-scope .bg-primary-50,
+html:not(.dark) .ejc-modern-scope .bg-primary-100 {
+  background: #eff6ff !important;
+}
+
+html:not(.dark)
+  .ejc-modern-scope
+  :where(
+    .text-primary-500,
+    .text-primary-600,
+    .text-primary-700,
+    .text-primary-800,
+    .text-primary-900,
+    .text-ouro-profundo
+  ) {
+  color: var(--ejc-system-navy-hover) !important;
+}
+
+html:not(.dark)
+  .ejc-modern-scope
+  :where(.border-primary-100, .border-primary-200, .border-ouro-claro) {
+  border-color: #d9e6f4 !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Modais, dropdowns, command palette, popovers e drawers                      */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) :where([role="dialog"], [role="menu"], .dropdown, .popover) {
+  border-color: var(--ejc-system-border) !important;
+  border-radius: var(--ejc-system-radius-md) !important;
+  background: #fff !important;
+  color: var(--ejc-system-ink) !important;
+  box-shadow: var(--ejc-system-shadow-float) !important;
+}
+
+html:not(.dark) [role="menu"] :where(button, a):hover {
+  background: #f5f8fc !important;
+}
+
+html:not(.dark) .menu-item {
+  border-radius: 7px !important;
+  color: #40536b !important;
+}
+
+html:not(.dark) .menu-item:hover {
+  background: #f5f8fc !important;
+  color: var(--ejc-system-navy) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Kanban, timelines, listas operacionais e blocos arrastáveis                 */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark)
+  .ejc-modern-scope
+  :where(.kanban-column, .kanban-lane, .timeline-panel) {
+  border-color: var(--ejc-system-border) !important;
+  background: #f7f9fc !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) .ejc-modern-scope :where(.kanban-card, .timeline-card) {
+  border: 1px solid var(--ejc-system-border) !important;
+  border-radius: 9px !important;
+  background: #fff !important;
+  box-shadow: 0 1px 2px rgba(15, 35, 60, 0.025) !important;
+}
+
+html:not(.dark) .ejc-modern-scope :where(.kanban-card, .timeline-card):hover {
+  border-color: #ccd8e6 !important;
+  box-shadow: var(--ejc-system-shadow) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Portal do Cliente e login                                                    */
+/* -------------------------------------------------------------------------- */
+
+html:not(.dark) .ejc-modern-scope > header:not(.fixed) {
+  border-color: var(--ejc-system-border) !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a {
+  color: #5f7086;
+}
+
+html:not(.dark) .ejc-modern-scope > header:not(.fixed) nav a:hover {
+  color: var(--ejc-system-navy);
+}
+
+html:not(.dark) .min-h-screen.bg-canvas > .brand-watermark + div {
+  background:
+    radial-gradient(
+      circle at 18% 22%,
+      rgba(37, 99, 169, 0.055),
+      transparent 32%
+    ),
+    linear-gradient(180deg, #fff, #f8fafc);
+}
+
+html:not(.dark)
+  .min-h-screen.bg-canvas
+  [class*="rounded-xl"][class*="bg-white"] {
+  border-color: var(--ejc-system-border) !important;
+  box-shadow: var(--ejc-system-shadow) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Responsividade e acessibilidade                                             */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  html:not(.dark) main.ejc-modern-scope {
+    padding: 14px 12px 22px !important;
+  }
+
+  html:not(.dark) .ejc-modern-scope :where(.card, .section-card) {
+    border-radius: 9px !important;
+  }
+
+  html:not(.dark) .ejc-modern-scope :where(table, .table) {
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.dark) .ejc-modern-scope *,
+  html:not(.dark) .sidebar-bronze *,
+  html:not(.dark) header.fixed.inset-x-0.top-0 * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
