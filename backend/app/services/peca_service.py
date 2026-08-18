@@ -910,7 +910,12 @@ async def gerar_peca_pipeline(
     query_rag = f"{area_direito} {tipo_peca_final} {fatos_limpos[:200]}"
     # limite=10: a base de conhecimento é alimentada pelo escritório (julgados,
     # pareceres, docs regulatórios) — peça padrão-ouro consome mais acervo.
-    fontes = await buscar_contexto_rag(db, query_rag, limite=10, scope_client_id=scope_client_id)
+    fontes = await buscar_contexto_rag(
+        db, query_rag, limite=10, scope_client_id=scope_client_id,
+        # Comunicação processual de OUTRO caso do mesmo cliente não fundamenta
+        # esta peça (auditoria, dívida 5.5).
+        scope_case_id=case_id,
+    )
     rag_txt = ""
     if fontes:
         linhas = [

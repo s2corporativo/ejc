@@ -276,7 +276,10 @@ async def analisar_caso(
             from app.services.ai_service import buscar_contexto_rag
             _q = " ".join(x for x in [area, titulo, (fatos or objeto or texto_documento or "")[:300]] if x)
             _chunks = await buscar_contexto_rag(
-                db, _q, limite=6, modo_or=True, scope_client_id=scope_client_id
+                db, _q, limite=6, modo_or=True, scope_client_id=scope_client_id,
+                # Comunicação processual de OUTRO caso do mesmo cliente não é
+                # contexto desta análise (auditoria, dívida 5.5).
+                scope_case_id=case_id,
             )
             if _chunks:
                 _blocos = []

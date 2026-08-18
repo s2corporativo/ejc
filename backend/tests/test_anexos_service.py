@@ -222,7 +222,7 @@ async def test_razoes_referencia_docs_grounding_e_nivel(monkeypatch):
     async def fake_escopo(db, case_id):
         return "cli-1"
 
-    async def fake_rag(db, consulta, limite=6, scope_client_id=None):
+    async def fake_rag(db, consulta, limite=6, scope_client_id=None, **kw):
         cap["rag_scope"] = scope_client_id
         return [{"titulo": "CDC art. 14", "conteudo": "Responsabilidade objetiva do fornecedor."}]
 
@@ -284,7 +284,7 @@ async def test_razoes_sem_rag_nao_inventa_sinaliza(monkeypatch):
     async def fake_escopo(db, case_id):
         return None
 
-    async def fake_rag(db, consulta, limite=6, scope_client_id=None):
+    async def fake_rag(db, consulta, limite=6, scope_client_id=None, **kw):
         return []
 
     async def fake_chat(*, messages, **kw):

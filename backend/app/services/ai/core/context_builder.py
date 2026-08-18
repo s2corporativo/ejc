@@ -186,6 +186,9 @@ async def montar_contexto(
                 mensagem,
                 limite=_LIMITE_RAG,
                 scope_client_id=scope_client_id,
+                # Isolamento por caso: a comunicação processual de OUTRO caso
+                # do mesmo cliente não é contexto deste (auditoria, dívida 5.5).
+                scope_case_id=case_id,
             )
         except Exception as exc:
             ctx.fontes = []

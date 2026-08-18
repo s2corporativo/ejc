@@ -75,7 +75,10 @@ async def gerar_checklist_ia(db: AsyncSession, case_id: str, gatilho: str = "ger
 
     from app.services.ai_service import buscar_contexto_rag
     consulta = f"{area} {fase} requisitos petição documentos obrigatórios diligências pressupostos prazos"
-    ctx = await buscar_contexto_rag(db, consulta, limite=6, scope_client_id=caso["client_id"])
+    ctx = await buscar_contexto_rag(
+        db, consulta, limite=6, scope_client_id=caso["client_id"],
+        scope_case_id=case_id,
+    )
     ctx_txt = "\n".join("- " + (str(c.get("conteudo") or "")[:300]) for c in (ctx or []))
 
     limpo, _ = sanitizar_pii(f"Área: {area}. Fase: {fase}. Gatilho: {gatilho}. "

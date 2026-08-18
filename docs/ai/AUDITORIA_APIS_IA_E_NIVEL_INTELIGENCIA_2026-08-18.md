@@ -360,3 +360,40 @@ painel anti-alucinação que já existia — sem ele os alertas chegariam ao pay
 **Regressão.** `backend/tests/test_peca_analise_validacao_hitl.py` (9 testes) cobre carimbo HITL,
 promessa de resultado alertada sem reescrita, marca de ausência de âncora persistida no banco,
 citação confirmada como âncora suficiente e o comportamento fail-safe.
+
+---
+
+## 10. Dívida 5.5 fechada — isolamento do RAG por CASO
+
+**O achado.** O ingestor do DJEN (`ingestors/djen.py`) grava `case_id` em cada comunicação
+processual e o comentário do próprio código diz por quê: *"recuperável apenas dentro do caso e do
+cliente donos do processo"*. A recuperação nunca usou esse campo — o único filtro era
+`kd.client_id = :scope_cli`. Consequência: a intimação do **caso A** entrava como contexto do
+**caso B do mesmo cliente**. Um contrato escrito no ingest e não cumprido na leitura.
+
+Isso não é só ruído: o modelo recebe prazo, ato e órgão de OUTRO processo no mesmo bloco de
+"fontes internas" e pode fundamentar a peça deste caso com o andamento daquele.
+
+**A correção.** `buscar_contexto_rag` ganhou `scope_case_id`, aplicado nas **quatro pernas** da
+recuperação (vetorial, trigram, FTS e o fallback ILIKE):
+
+```sql
+AND (kd.categoria <> ALL(:case_cats) OR kd.case_id IS NULL OR kd.case_id = :scope_case)
+```
+
+Duas escolhas explícitas:
+
+- **Documento sem `case_id`** (acervo antigo, ingestão manual) continua visível no escopo do
+  cliente. Cortá-lo derrubaria recall de conteúdo legítimo, e o vínculo por cliente já é
+  garantido pelo filtro anterior.
+- **Sem `scope_case_id`, nada muda.** Consulta de nível cliente (dossiê, pesquisa ampla) segue
+  exatamente como antes — o filtro só existe quando há caso no escopo.
+
+Isso torna o repasse do `scope_case_id` a peça crítica, então ele foi ligado em todos os call
+sites que sabem em que caso estão: `context_builder` (orquestrador), `peca_service`,
+`analise_estrategica`, `anexos_service` e `checklist_ia`. Um teste de regressão cobra esse
+repasse por módulo — sem ele o filtro existiria e nunca atuaria.
+
+**Regressão.** 5 testes novos em `backend/tests/test_rag_isolation.py`: categoria escopada,
+fragmento SQL (incluindo a tolerância a `case_id IS NULL`), filtro presente com caso, consulta
+inalterada sem caso, e o repasse nos cinco call sites.
