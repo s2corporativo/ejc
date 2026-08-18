@@ -83,16 +83,24 @@ async def executar_ia(
     # Bloco 5 (continuação): case_id existia mas sem checagem de ownership.
     escopo_cli = None
     entidades = None
+    modo_sigilo = None
     if req.case_id:
         from app.core.ownership import verificar_acesso_caso
         from app.services.ai_service import _escopo_cliente_do_caso
         from app.services.ai.entidades_caso import entidades_do_caso
-        await verificar_acesso_caso(db, cu, req.case_id)
+        from app.services.ai.sanitization_policy import modo_sigilo_do_caso
+        caso = await verificar_acesso_caso(db, cu, req.case_id)
         escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
         # Nomes do caso → marcadores reversíveis quando a tarefa vai a provider
         # externo em modo pseudonimizado (executar_tarefa_ia decide o modo pelo
         # `tarefa`); em MASCARAMENTO o gateway ignora `entidades` (sem efeito).
         entidades = await entidades_do_caso(db, req.case_id)
+        # Achado do security-auditor (Issue #1194): esta rota chamava
+        # executar_tarefa_ia sem `modo_sanitizacao` — mesma classe de bug que a
+        # migration 146 fechou em orchestrator.py/agent/loop.py, reproduzida
+        # aqui porque `verificar_acesso_caso` já busca o Case e o retorno era
+        # descartado.
+        modo_sigilo = modo_sigilo_do_caso(caso)
 
     # Guarda LGPD (auditoria 2026-07-02): mensagem livre do usuário ia direto ao
     # provedor externo sem sanitização — aborta se sobrar PII estrutural.
@@ -112,6 +120,7 @@ async def executar_ia(
             contexto_rag=contexto_rag, user_id=cu.id, db=db,
             nivel_inteligencia=req.nivel_inteligencia,
             entidades=entidades or None,
+            modo_sanitizacao=modo_sigilo,
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))

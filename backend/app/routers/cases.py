@@ -401,6 +401,20 @@ async def atualizar(
             ),
         )
 
+    # Achado do security-auditor (Issue #1194): `sigilo_reforcado` é o único
+    # mecanismo que faz o piso LOCAL_COMPLETO de IA (crimes sexuais/menores)
+    # alcançar um caso real — o PATCH genérico aceitava a mudança de qualquer
+    # usuário com acesso ao caso (dono/coadjuvante), sem o mesmo gate de papel
+    # que o frontend já aplicava só na interface. Mesmo papel de
+    # _ARQUIVAMENTO_ROLES (decisão sensível o bastante para exigir advogado+).
+    if "sigilo_reforcado" in mudancas and \
+            mudancas["sigilo_reforcado"] != bool(c.sigilo_reforcado) and \
+            (cu.role.value if hasattr(cu.role, "value") else str(cu.role)) not in _ARQUIVAMENTO_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Alterar o sigilo reforçado de IA exige papel de advogado, sócio ou administrador.",
+        )
+
     for k, v in mudancas.items():
         setattr(c, k, v)
     # Só sobra a saída de "arquivado" por aqui (entrada é bloqueada acima) —
