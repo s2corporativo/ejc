@@ -283,6 +283,20 @@ def modo_para_task(task_type: str) -> ModoSanitizacao:
     return padrao
 
 
+def areas_que_exigem_ia_local() -> list[str]:
+    """Rótulos cujo modo default é LOCAL_COMPLETO — só a IA local pode atendê-los.
+
+    Sem provedor local elegível, a IA dessas áreas fica INDISPONÍVEL: é
+    fail-closed deliberado (o dado sensível não sai do VPS). O problema não é a
+    regra, é ela ser invisível — hoje só se descobre quando um advogado tenta
+    usar a IA num caso de família e recebe um erro. Ver ia_saude.
+    """
+    return sorted(
+        chave for chave, modo in _MODO_DEFAULT_POR_TASK.items()
+        if modo == ModoSanitizacao.LOCAL_COMPLETO
+    )
+
+
 def rotulo_de_sigilo_reforcado(*rotulos: str | None) -> str | None:
     """Primeiro rótulo, na ordem dada, que exige LOCAL_COMPLETO — já CANONIZADO.
 

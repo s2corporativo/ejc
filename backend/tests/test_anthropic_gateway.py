@@ -141,11 +141,28 @@ def test_gateway_tarefa_complexa_inclui_claude(monkeypatch):
     assert any(p == "groq" for p, _ in cadeia)             # fallback preservado
 
 
-def test_gateway_prioridade_ollama_primeiro(monkeypatch):
+def test_gateway_tarefa_de_merito_comeca_pelo_modelo_forte(monkeypatch):
+    """Decisão do titular (18/08): trabalho jurídico de mérito começa pelo
+    provedor de raciocínio profundo, mesmo com a IA local ligada.
+
+    Antes, o gateway ordenava só por AI_PROVIDER_PRIORITY — e com o default
+    antigo ("ollama,...") um modelo local de 8-14B redigia a peça e o Claude
+    virava fallback. A AIProviderPolicy já decidia o contrário para tarefa
+    complexa; quem valia era o gateway."""
     _prep(monkeypatch, tem_chave=True, ollama=True)
     cadeia = g._resolver_cadeia("elaboracao_peca", provider_force=None, model_override=None)
-    assert cadeia[0][0] == "ollama"                        # soberania local primeiro
-    assert any(p == "anthropic" for p, _ in cadeia)
+    assert cadeia[0] == ("anthropic", g.settings.ANTHROPIC_MODEL_COMPLEXO)
+    # A IA local permanece na cadeia como rede de segurança.
+    assert any(p == "ollama" for p, _ in cadeia)
+
+
+def test_gateway_fora_do_merito_respeita_a_ordem_configurada(monkeypatch):
+    """A promoção vale para MÉRITO. Fora dele, quem manda é AI_PROVIDER_PRIORITY
+    — é assim que o operador escolhe local-first (soberania de dados)."""
+    _prep(monkeypatch, tem_chave=True, ollama=True)
+    monkeypatch.setattr(g.settings, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    cadeia = g._resolver_cadeia("resumo", provider_force=None, model_override=None)
+    assert cadeia[0][0] == "ollama"
 
 
 def test_gateway_pula_claude_sem_chave(monkeypatch):

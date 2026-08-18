@@ -227,6 +227,20 @@ class Settings(BaseSettings):
     AI_ACCEPT_EXTERNAL_WITHOUT_SANITIZATION: bool = False
     # True = toda saída de IA é rascunho com revisão humana obrigatória (OAB).
     AI_REQUIRE_HITL: bool = True
+    # ── Piso do nível de raciocínio (decisão do titular, 18/08) ───────────
+    # O gateway aplicava "padrao" quando o chamador não pedia nível — e a
+    # maioria dos call sites não pedia. O protocolo de raciocínio sênior
+    # (FIRAC, fonte por premissa, contraditório) existia e ficava desligado
+    # justamente nas chamadas que mais precisam dele.
+    #
+    # Agora o PISO vem daqui, por perfil de tarefa; quem passa nível explícito
+    # continua mandando. Valores: padrao | alto | maximo (ver
+    # ai_gateway.NIVEL_INTELIGENCIA_PROMPTS).
+    #
+    # Custo: "maximo" produz resposta mais longa e cara. É deliberado — para
+    # trabalho jurídico de mérito, a resposta rasa custa mais caro que o token.
+    AI_NIVEL_INTELIGENCIA_MERITO: str = "maximo"   # peça, análise, estratégia
+    AI_NIVEL_INTELIGENCIA_PADRAO: str = "alto"     # demais tarefas de prosa
     # Sala Jurídica: extração automática do estado jurídico consolidado após
     # cada resposta (roda no provider LOCAL via task_type "resumo" — custo
     # zero; falha degrada para o merge de fontes, nunca bloqueia a resposta).
@@ -267,7 +281,15 @@ class Settings(BaseSettings):
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     # Maritaca antes do groq: para tarefa jurídica PT-BR o Sabiá rankeia acima
     # de um generalista; só entra na cadeia se elegível (ENABLED + chave).
-    AI_PROVIDER_PRIORITY: str = "ollama,anthropic,maritaca,groq"
+    #
+    # Ordem por QUALIDADE (decisão do titular, 18/08): o modelo forte atende
+    # primeiro. O default anterior era "ollama,..." — um modelo local de 8-14B
+    # na frente do Claude para redigir peça e analisar caso. O docker-compose de
+    # produção já corrigia isso por env; o default do CÓDIGO não, e valia para
+    # tudo que roda fora do compose (dev, testes, scripts, deploy alternativo).
+    # Ollama fica por último: é rede de segurança para o caso de os externos
+    # caírem ou de PII residual barrar a saída do dado (ver provider_policy).
+    AI_PROVIDER_PRIORITY: str = "anthropic,maritaca,groq,ollama"
     # ── Níveis de sanitização de PII por tipo de tarefa (LGPD art. 33/46) ─────
     # JSON OPCIONAL (string) mapeando task_type → modo de sanitização, que
     # SOBREPÕE o default de app/services/ai/sanitization_policy.py. Modos:
@@ -702,14 +724,20 @@ class Settings(BaseSettings):
     # ── Ollama — modelos locais (soberania total, sem custo por token) ────
     # Instalar: ollama pull qwen2.5:14b && ollama pull deepseek-r1:8b etc.
     OLLAMA_BASE_URL: str = "http://ollama:11434"
-    # Default True: cadeia de fallback do ai_gateway (_resolver_cadeia/chat)
-    # já trata Ollama indisponível/sem host de forma graciosa — connection
-    # refused/DNS falha rápido, ollama_provider.chat() levanta RuntimeError
-    # que o loop de `chat()` captura e segue para o próximo provedor
-    # (Anthropic/Groq) sem quebrar a requisição do usuário. Sem um serviço
-    # "ollama" no docker-compose, isso só passa a valer quando um for
-    # provisionado — até lá, cai direto para o próximo provedor.
-    OLLAMA_ENABLED: bool = True
+    # Default False (decisão do titular, 18/08). O Ollama é a IA LOCAL: existe
+    # para soberania de dados — é o único provedor que pode ver conteúdo com PII
+    # residual, porque não sai do VPS (ver provider_policy). Ele NÃO tem relação
+    # com a chave da Groq nem com qualquer provedor externo.
+    #
+    # Só serve quando há um serviço Ollama de pé: o stack padrão NÃO o sobe (é
+    # o profile opt-in "ia-local" do docker-compose), e o compose de produção já
+    # passava OLLAMA_ENABLED=false justamente porque apontar a cadeia para um
+    # provider morto só gerava tentativa-e-fallback a cada tarefa. O default do
+    # código passa a dizer a mesma coisa que a produção sempre disse.
+    #
+    # Para ligar a IA local: `docker compose --profile ia-local up -d` e
+    # OLLAMA_ENABLED=true. Enquanto estiver false, a cadeia usa só os externos.
+    OLLAMA_ENABLED: bool = False
     # Modelos disponíveis por categoria (ajuste ao hardware disponível)
     OLLAMA_MODEL_ANALISE: str = "deepseek-r1:8b"     # análise jurídica profunda
     OLLAMA_MODEL_PETICAO:  str = "qwen2.5:14b"       # elaboração de peças

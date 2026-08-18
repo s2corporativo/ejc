@@ -556,3 +556,102 @@ trabalho para fora do sistema, que é exatamente o critério de lançamento dest
 seguros do schema) e `frontend/src/pages/Pecas.citacoes.test.tsx` (4: o 409 vira decisão no
 dialog, override não sai sem justificativa, override sai com ela, e aprovação normal não manda
 override nenhum).
+
+---
+
+## 15. Cadeia de provedores e piso de raciocínio — o que puxava a inteligência para baixo
+
+O titular perguntou, em 18/08, por que o **Ollama** aparecia na configuração ("não sei se é pra
+rodar a chave Grok, ou se não tem necessidade dele"), informou que as chaves de **Anthropic,
+Maritaca e Groq estão preenchidas e válidas**, e pediu que o nível de inteligência fosse
+**altíssimo**.
+
+### O que o Ollama é (e o que ele não é)
+
+O Ollama **não tem relação nenhuma com a chave da Groq**, nem com qualquer provedor externo. Ele
+é a **IA local**: roda modelos abertos dentro do próprio VPS. Existe por um motivo específico — é
+o único provedor que pode ver conteúdo que **não pode sair do servidor**.
+
+Isso não é teórico. `sanitization_policy` classifica nove rótulos como **sigilo reforçado**
+(`criminal`, `penal`, `familia`, `saude`, `medico`, `menores`, `infancia_juventude`, `violencia`,
+`violencia_domestica`): nessas áreas o conteúdo não vai a provedor externo nem pseudonimizado,
+porque a combinação de fatos raros permite reidentificação sem identificador direto. A regra é
+fail-closed: **sem IA local, a IA dessas áreas fica indisponível**.
+
+> **Decisão pendente do titular.** O escritório atende Família e Criminal — estão na identidade do
+> próprio prompt. Hoje, em produção, a IA **não atende** essas áreas, e isso não estava visível em
+> lugar nenhum. São duas saídas, e as duas são decisão do titular: **(a)** subir a IA local
+> (`docker compose --profile ia-local up -d` + `OLLAMA_ENABLED=true`), ou **(b)** decidir que essas
+> áreas podem ir a provedor externo **pseudonimizado**, ajustando `AI_SANITIZATION_MODE_MAP`.
+> Não tomei essa decisão: ela é de sigilo profissional e de dado pessoal sensível.
+
+Fora dessas áreas, o Ollama não é necessário — e é por isso que o desligamento pedido é seguro.
+
+### Três defaults que puxavam a qualidade para baixo
+
+| O que | Antes | Agora |
+|---|---|---|
+| `AI_PROVIDER_PRIORITY` | `ollama,anthropic,maritaca,groq` | `anthropic,maritaca,groq,ollama` |
+| `OLLAMA_ENABLED` | `True` | `False` (opt-in, como toda integração do repo) |
+| Piso de raciocínio | `"padrao"` para quem não pedisse nível | mérito `maximo`, demais prosa `alto` |
+
+O primeiro item era o mais caro: **um modelo local de 8-14B na frente do Claude** para redigir
+peça e analisar caso. O `docker-compose` de produção já corrigia isso por env — e o comentário de
+`ROTEAMENTO_PROVIDER_MEDIO` no próprio `config.py` registrava o motivo ("o stack de produção não
+sobe ollama... apontar o tier médio para provider morto só gerava tentativa-e-fallback a cada
+tarefa"). O **default do código** é que continuava dizendo o contrário, e ele vale para tudo que
+roda fora do compose: dev, testes, scripts, um deploy alternativo.
+
+O terceiro item é o que mais muda na prática, porque **atinge produção**: `_aplicar_nivel` usava
+`nivel_inteligencia or "padrao"`, e a maior parte dos call sites chama o gateway sem pedir nível.
+O protocolo de raciocínio sênior (FIRAC, fonte por premissa, contraditório) existia e ficava
+desligado justamente nas chamadas que mais precisam dele. Agora o piso vem por **perfil de
+tarefa**:
+
+- **mérito jurídico** (`analise_juridica`, `elaboracao_peca`, `estrategia`, `auditoria_peca`,
+  `analise_contrato`, `jurimetria`, `critica_adversarial`) → `maximo`;
+- **demais tarefas de prosa** → `alto`;
+- **saída JSON** (`prazos`, `honorarios`, `triagem`) e **econômicas** (`resumo`, `chat_rapido`) →
+  `padrao`. Nas de JSON o valor está na fidelidade do formato, e instrução de raciocínio em prosa
+  disputaria com o "SAÍDA OBRIGATÓRIA — JSON" do próprio prompt; elas já foram elevadas pelo outro
+  caminho, o **modelo forte**.
+
+Custo: `maximo` produz resposta mais longa e mais cara. É deliberado e é o que foi pedido — para
+trabalho jurídico de mérito, a resposta rasa custa mais caro que o token. Ambos os pisos são
+configuráveis (`AI_NIVEL_INTELIGENCIA_MERITO`, `AI_NIVEL_INTELIGENCIA_PADRAO`).
+
+### Duas fontes de verdade que divergiam
+
+- **Ordem da cadeia.** A `AIProviderPolicy` decidia "tarefa complexa → Anthropic priorizado" e o
+  `ai_gateway` **ignorava** essa decisão, resolvendo a cadeia só por `AI_PROVIDER_PRIORITY`. Quem
+  valia era o gateway. Agora a regra é uma só, aplicada no gateway; fora do mérito, a ordem
+  configurada continua mandando (é assim que se escolhe local-first).
+- **Elegibilidade de provedor.** Havia três cópias da regra (gateway, policy, registry) e só a do
+  registry checava `GROQ_ENABLED` — o kill-switch do Groq só valia depois que
+  `provider_registry_runtime.instalar()` trocava as funções. Fora do runtime (testes, scripts,
+  worker sem o patch) a policy dizia "elegível" para provedor desligado. As duas definições
+  estáticas passaram a delegar ao registry.
+
+### O que exige ação fora do código
+
+**O `.env` do VPS sobrescreve o default do código.** Não tenho (nem devo ter) acesso a ele, então:
+
+1. `AI_PROVIDER_PRIORITY` e `OLLAMA_ENABLED` — o `docker-compose.yml` já passa os valores certos
+   (`anthropic,maritaca,groq,ollama` e `false`) para backend e worker. **Nada a fazer**, a não ser
+   conferir que o `.env` não os sobrescreve de volta.
+2. `AI_NIVEL_INTELIGENCIA_MERITO` / `AI_NIVEL_INTELIGENCIA_PADRAO` — **novos**; não estão no `.env`
+   nem no compose, então o default do código (`maximo`/`alto`) vale imediatamente após o deploy.
+3. Conferir o estado real em `GET /api/ia-governanca/provedores`: sistema "100%" = Anthropic,
+   Maritaca e Groq com `motivo_inelegivel: null`. O Ollama aparecerá como inelegível — é o
+   esperado enquanto a IA local não for necessária.
+4. **`ANTHROPIC_MODEL_COMPLEXO` está em `claude-opus-4-8`.** Não troquei: apontar para um modelo a
+   que a conta talvez não tenha acesso derrubaria toda a IA jurídica de uma vez. Se o titular
+   quiser o modelo mais capaz disponível na conta, é uma linha de `.env` — e a conferência de
+   acesso tem que vir antes.
+
+**Regressão.** `backend/tests/test_cadeia_provedores_qualidade.py` (13 testes): defaults de
+configuração, piso por perfil de tarefa (incluindo aliases), preservação do nível explícito do
+chamador, kill-switch do Groq nas três definições, e o aviso das áreas sem IA. Mais dois testes
+reescritos em `test_anthropic_gateway.py` e `test_roteamento_gateway.py`, que fixavam o
+comportamento antigo ("soberania local primeiro") e agora fixam o novo — com um teste extra
+provando que, fora do mérito, a ordem configurada continua sendo respeitada.

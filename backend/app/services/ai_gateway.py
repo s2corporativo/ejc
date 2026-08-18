@@ -89,6 +89,40 @@ def _normalizar_task_type(task_type: str) -> str:
 # em 3 blocos — mutuamente exclusivo com JSON; aplicá-lo quebraria o parse.
 _TAREFAS_SAIDA_ESTRUTURADA = {"triagem", "prazos", "honorarios"}
 
+# Tarefas de MÉRITO jurídico: raciocínio sobre direito aplicado ao caso. São as
+# que justificam o nível mais alto — e eram as que mais caíam em "padrao",
+# porque o piso só existia no orquestrador e a maior parte dos call sites
+# chama o gateway direto (auditoria de 18/08).
+_TAREFAS_MERITO = {
+    "analise_juridica", "elaboracao_peca", "estrategia", "auditoria_peca",
+    "analise_contrato", "jurimetria", "critica_adversarial",
+}
+
+# Tarefas econômicas: resumir/triar/responder rápido. FIRAC aqui não melhora o
+# resultado — muda o gênero do texto (um resumo vira análise) e ainda queima
+# token. Mesmo conjunto da AIProviderPolicy.
+_TAREFAS_ECONOMICAS = {"resumo", "triagem", "chat_rapido"}
+
+
+def _nivel_piso(task_label: str | None) -> str:
+    """Piso de raciocínio quando o chamador não pede nível explicitamente.
+
+    Tarefa de saída ESTRUTURADA (JSON) fica em "padrao": o valor ali está na
+    fidelidade do formato, e instrução de raciocínio em prosa disputa com o
+    "SAÍDA OBRIGATÓRIA — JSON" do próprio prompt. Essas tarefas já foram
+    elevadas por outro caminho — o modelo forte (ver system_prompts/router.py).
+    """
+    cfg = get_settings()
+    # `task_label` chega no vocabulário ORIGINAL do call site ("redacao_peca",
+    # "analise_caso"...): normaliza para o canônico antes de classificar, senão
+    # o alias escapa do perfil de mérito.
+    task = _normalizar_task_type((task_label or "").strip().lower())
+    if task in _TAREFAS_SAIDA_ESTRUTURADA or task in _TAREFAS_ECONOMICAS:
+        return "padrao"
+    if task in _TAREFAS_MERITO:
+        return (cfg.AI_NIVEL_INTELIGENCIA_MERITO or "maximo").strip().lower()
+    return (cfg.AI_NIVEL_INTELIGENCIA_PADRAO or "alto").strip().lower()
+
 # Níveis/modos que só fazem sentido em tarefas de PROSA.
 _NIVEIS_APENAS_PROSA = {"executivo"}
 
@@ -98,7 +132,9 @@ def _aplicar_nivel(
     nivel_inteligencia: str | None,
     task_label: str | None = None,
 ) -> list[dict]:
-    nivel = (nivel_inteligencia or "padrao").lower()
+    # Sem nível explícito, vale o PISO da tarefa — nunca mais o mais raso só
+    # porque o call site não se lembrou de pedir.
+    nivel = (nivel_inteligencia or _nivel_piso(task_label)).lower()
     # Modo de prosa (ex.: executivo) em tarefa de saída estruturada (JSON):
     # IGNORA o modo com aviso — nunca quebrar o parse downstream.
     if nivel in _NIVEIS_APENAS_PROSA and (task_label or "") in _TAREFAS_SAIDA_ESTRUTURADA:
@@ -673,28 +709,28 @@ def ia_disponivel() -> bool:
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
 def _provider_elegivel(provider: str) -> bool:
-    """Elegibilidade por provedor (mesmas regras da AIProviderPolicy)."""
-    if provider == "ollama":
-        return bool(settings.OLLAMA_ENABLED)
-    if provider == "anthropic":
-        return bool(
-            settings.ANTHROPIC_ENABLED and settings.ANTHROPIC_API_KEY
-            and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
-        )
-    if provider == "groq":
-        return bool(settings.GROQ_API_KEY and settings.AI_EXTERNAL_PROVIDERS_ALLOWED)
-    if provider == "maritaca":
-        return bool(
-            settings.MARITACA_ENABLED and settings.MARITACA_API_KEY
-            and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
-        )
-    return False
+    """Elegibilidade por provedor — delega ao registry, que é a fonte única.
+
+    Havia três cópias desta regra (aqui, na AIProviderPolicy e no registry) e
+    elas divergiam: as duas primeiras não checavam GROQ_ENABLED, então o
+    kill-switch do Groq só valia se o patch de runtime tivesse sido instalado.
+    Em runtime, `provider_registry_runtime.instalar()` já substituía esta
+    função pela do registry; agora a definição ESTÁTICA diz o mesmo, para não
+    haver duas verdades fora do runtime (testes, scripts, worker sem patch).
+    """
+    from app.services.ai.provider_registry import provider_elegivel
+
+    return provider_elegivel(provider)
 
 
 def _ordenar_por_prioridade(providers: list[str]) -> list[str]:
     """Ordena a lista pela AI_PROVIDER_PRIORITY (csv); desconhecidos vão ao fim
     mantendo a ordem original do TASK_ROUTING."""
-    prioridade = [p.strip().lower() for p in (settings.AI_PROVIDER_PRIORITY or "").split(",") if p.strip()]
+    prioridade = [
+        p.strip().lower()
+        for p in (get_settings().AI_PROVIDER_PRIORITY or "").split(",")
+        if p.strip()
+    ]
 
     def _chave(p: str) -> int:
         return prioridade.index(p) if p in prioridade else len(prioridade)
@@ -747,6 +783,15 @@ def _resolver_cadeia(
 
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
     candidatos = _ordenar_por_prioridade([p for p, _ in base])
+
+    # Tarefa de mérito jurídico começa pelo provedor de raciocínio profundo.
+    # A AIProviderPolicy já decidia isso ("tarefa complexa — Anthropic
+    # priorizado") e o gateway a IGNORAVA, resolvendo a cadeia só por
+    # AI_PROVIDER_PRIORITY: duas fontes de verdade divergentes, e quem valia
+    # era a do gateway (auditoria de 18/08). Agora a regra é uma só. A
+    # elegibilidade e a barreira de PII continuam sendo aplicadas abaixo.
+    if task_type in _TAREFAS_MERITO and "anthropic" in candidatos:
+        candidatos = ["anthropic"] + [p for p in candidatos if p != "anthropic"]
 
     # Roteamento inteligente: promove o provider proposto à frente SE elegível e
     # SE participa da cadeia da tarefa (não inventa provedor fora do TASK_ROUTING).
@@ -839,8 +884,13 @@ def _fontes_rag_busca_web(buscas_web: int, fontes_web: list[dict],
 # ── Política de modo de sanitização (compartilhada por chat() e
 #    executar_tarefa_ia() — fonte única para não divergirem) ────────────────────
 _MSG_BLOQUEIO_LOCAL_COMPLETO = (
-    "Esta tarefa exige processamento por IA local (sigilo reforçado) "
-    "e nenhum provedor local está disponível — habilite o Ollama."
+    "Esta tarefa é de área com SIGILO REFORÇADO (criminal, família, saúde, "
+    "menores, violência): por política do escritório o conteúdo não sai do "
+    "servidor, e nenhuma IA local está disponível para atendê-la. "
+    "Há duas saídas, e ambas são decisão do titular: (1) subir a IA local "
+    "(profile 'ia-local' do docker-compose + OLLAMA_ENABLED=true); ou "
+    "(2) decidir que esta área pode ir a provedor externo pseudonimizado, "
+    "ajustando AI_SANITIZATION_MODE_MAP. Enquanto isso, use a IA fora desta área."
 )
 
 
