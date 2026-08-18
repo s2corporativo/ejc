@@ -12,19 +12,31 @@ logger = logging.getLogger("ejc.ai.groq")
 settings = get_settings()
 
 _client: Optional[AsyncGroq] = None
+# Chave que foi usada para CONSTRUIR o `_client` cacheado — ver mesmo comentário
+# em anthropic_provider._get_client(). O SDK grava a key dentro do objeto no
+# momento da construção; comparar com a chave ATUAL de Settings é o único jeito
+# de saber se o client ficou obsoleto.
+_client_api_key: Optional[str] = None
 
 
 def get_client() -> AsyncGroq:
-    global _client
-    if _client is None:
-        if not settings.GROQ_API_KEY:
+    global _client, _client_api_key
+    api_key = settings.GROQ_API_KEY
+    # Reconstrói sempre que a chave muda — cobre revogação e rotação (achado
+    # da revisão de segurança, 18/08: client cacheado por PROCESSO seguia
+    # enviando a chave antiga após revogação pelo Cofre, até o restart).
+    if _client is None or _client_api_key != api_key:
+        if not api_key:
+            _client = None
+            _client_api_key = None
             raise RuntimeError("GROQ_API_KEY não configurada")
         # max_retries=0 (auditoria de segurança, 18/08): mesma razão do
         # provider Anthropic — retentar o MESMO provider que acabou de falhar
         # não ganha resiliência (o fallback entre providers do gateway já
         # cobre isso) e só multiplica o pior caso de latência antes do
         # próximo da cadeia ser tentado.
-        _client = AsyncGroq(api_key=settings.GROQ_API_KEY, max_retries=0)
+        _client = AsyncGroq(api_key=api_key, max_retries=0)
+        _client_api_key = api_key
     return _client
 
 
@@ -101,14 +113,24 @@ async def transcrever(
         raise ValueError("Mídia vazia.")
     model = model or settings.GROQ_TRANSCRIPTION_MODEL
     client = get_client()
-    resp = await client.audio.transcriptions.create(
-        file=(filename, file_bytes),
-        model=model,
-        language=language,
-        response_format="json",
-        temperature=0.0,
-        timeout=timeout or settings.AUDIO_TRANSCRIPTION_TIMEOUT,
-    )
+    try:
+        resp = await client.audio.transcriptions.create(
+            file=(filename, file_bytes),
+            model=model,
+            language=language,
+            response_format="json",
+            temperature=0.0,
+            timeout=timeout or settings.AUDIO_TRANSCRIPTION_TIMEOUT,
+        )
+    except GroqError as e:
+        # Mesmo padrão de chat() acima (achado da revisão de segurança sobre
+        # a auditoria de IA, 18/08): era o único caminho deste provider que
+        # ainda deixava a exceção crua do SDK propagar.
+        status = getattr(e, "status_code", None)
+        raise RuntimeError(
+            f"Groq API (transcrição) falhou ({type(e).__name__}"
+            + (f", HTTP {status}" if status else "") + ")"
+        ) from None
     texto = (getattr(resp, "text", None) or "").strip()
     if not texto:
         raise RuntimeError("Groq retornou transcrição vazia")

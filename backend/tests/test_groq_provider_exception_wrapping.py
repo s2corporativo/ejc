@@ -64,3 +64,36 @@ async def test_erro_sem_status_code_nao_quebra(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Groq API falhou"):
         await gp.chat(messages=[{"role": "user", "content": "oi"}])
+
+
+# ── transcrever() tinha o mesmo gap (achado da revisão de segurança, 18/08) ─
+
+class _FakeTranscriptions:
+    def __init__(self, excecao):
+        self._excecao = excecao
+
+    async def create(self, **kwargs):
+        raise self._excecao
+
+
+class _FakeAudio:
+    def __init__(self, excecao):
+        self.transcriptions = _FakeTranscriptions(excecao)
+
+
+class _FakeClientTranscricao:
+    def __init__(self, excecao):
+        self.audio = _FakeAudio(excecao)
+
+
+async def test_transcrever_embrulha_erro_do_sdk_sem_ecoar_conteudo(monkeypatch):
+    segredo = "nome do cliente e numero de processo ditos no audio"
+    excecao_do_sdk = GroqError(f"falha: {segredo}")
+    monkeypatch.setattr(gp, "get_client", lambda: _FakeClientTranscricao(excecao_do_sdk))
+
+    with pytest.raises(RuntimeError) as exc:
+        await gp.transcrever(b"audio-fake-bytes", "audio.mp3")
+
+    msg = str(exc.value)
+    assert "Groq API (transcrição) falhou" in msg
+    assert segredo not in msg

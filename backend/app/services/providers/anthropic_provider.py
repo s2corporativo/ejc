@@ -21,6 +21,10 @@ import asyncio
 from app.core.config import get_settings
 
 _client = None
+# Chave que foi usada para CONSTRUIR o `_client` cacheado — não a chave atual
+# de Settings. O SDK grava a key dentro do objeto no momento da construção;
+# comparar as duas é o único jeito de saber se o client ficou obsoleto.
+_client_api_key: str | None = None
 
 # Modelos que usam a superfície nova da API (sem temperature; adaptive thinking).
 _MODERN_PREFIXES = (
@@ -59,13 +63,24 @@ def _default_model() -> str:
 
 
 def _get_client():
-    global _client
+    global _client, _client_api_key
     if not get_settings().ANTHROPIC_ENABLED:
         raise RuntimeError("Provider Anthropic desabilitado (ANTHROPIC_ENABLED=false)")
-    if _client is None:
+    api_key = _api_key()
+    # Reconstrói o client sempre que a chave RESOLVIDA muda — cobre revogação
+    # (Settings passa a "") e rotação (Settings passa a um valor novo). Achado
+    # da revisão de segurança sobre o fix anterior (18/08): remover o
+    # fallback a os.getenv em _api_key() não bastava — o SDK grava a key
+    # DENTRO do client no momento da construção, e o client era cacheado por
+    # PROCESSO (`--workers 1`). Revogar pelo Cofre zerava Settings, mas o
+    # client já construído seguia enviando a chave antiga em toda chamada até
+    # o próximo restart do container. Comprovado com PoC: client reconstruído
+    # só no restart, chave revogada continuava "válida" indefinidamente.
+    if _client is None or _client_api_key != api_key:
         import anthropic  # import tardio: só quando realmente usado
-        api_key = _api_key()
         if not api_key:
+            _client = None
+            _client_api_key = None
             raise RuntimeError("ANTHROPIC_API_KEY não configurada")
         _client = anthropic.Anthropic(
             api_key=api_key,
@@ -79,6 +94,7 @@ def _get_client():
             # não ganha nada e só segura o request.
             max_retries=0,
         )
+        _client_api_key = api_key
     return _client
 
 

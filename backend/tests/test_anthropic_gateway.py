@@ -238,6 +238,69 @@ def test_chave_valida_na_settings_e_usada_normalmente(monkeypatch):
     assert ap._api_key() == "sk-ant-valor-valido"
 
 
+# ── Revogação com CLIENT JÁ CONSTRUÍDO (achado da revisão de segurança sobre
+# o fix acima, 18/08): _api_key() sozinha não bastava. O SDK grava a chave
+# DENTRO do objeto client no momento da construção, e o client é cacheado por
+# PROCESSO (`--workers 1`) — revogar pelo Cofre zerava Settings, mas o client
+# já construído seguia mandando a chave ANTIGA em toda chamada até o restart.
+# Comprovado por PoC na revisão: client reconstruído só no restart.
+
+def _fake_anthropic_sdk(monkeypatch):
+    """Fake do construtor `anthropic.Anthropic` que só grava a api_key
+    recebida — sem tocar rede, sem validar formato."""
+    import anthropic as _sdk
+    from app.services.providers import anthropic_provider as ap
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            self.api_key = kwargs.get("api_key")
+
+    monkeypatch.setattr(_sdk, "Anthropic", _FakeClient)
+    monkeypatch.setattr(ap, "_client", None)
+    monkeypatch.setattr(ap, "_client_api_key", None)
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_ENABLED", True)
+    return ap
+
+
+def test_client_ja_construido_e_revogado_nao_continua_servindo_a_chave_velha(monkeypatch):
+    ap = _fake_anthropic_sdk(monkeypatch)
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-VALIDA-inicial")
+    client1 = ap._get_client()
+    assert client1.api_key == "sk-ant-VALIDA-inicial"
+
+    # Revogação pelo Cofre: Settings passa a "".
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "")
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY não configurada"):
+        ap._get_client()
+    # Fail-closed: a chave revogada NUNCA mais deve ser servida por um client
+    # cacheado, nem mesmo o mesmo objeto de antes.
+    assert ap._client is None
+
+
+def test_rotacao_de_credencial_reconstroi_o_client_com_a_chave_nova(monkeypatch):
+    ap = _fake_anthropic_sdk(monkeypatch)
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-chave-A")
+    client1 = ap._get_client()
+    assert client1.api_key == "sk-ant-chave-A"
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-chave-B")
+    client2 = ap._get_client()
+    assert client2.api_key == "sk-ant-chave-B"
+    assert client2 is not client1  # não é o mesmo objeto reaproveitado
+
+
+def test_sem_mudanca_de_chave_o_client_e_reaproveitado(monkeypatch):
+    """A correção não pode custar reconstruir o client em TODA chamada."""
+    ap = _fake_anthropic_sdk(monkeypatch)
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-estavel")
+    client1 = ap._get_client()
+    client2 = ap._get_client()
+    assert client1 is client2
+
+
 # ── Deadline: SDK sem retry próprio, o fallback é entre PROVIDERS (18/08) ────
 # Sem asyncio.timeout global na cadeia do gateway, o retry INTERNO do SDK (até
 # 2x por padrão em erro transitório) multiplicava o pior caso de latência POR

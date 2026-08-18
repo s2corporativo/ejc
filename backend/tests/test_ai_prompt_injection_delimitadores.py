@@ -99,4 +99,4 @@ def test_ia_especializada_nao_injeta_rag_no_system():
 
 def test_client_groq_desliga_retry_proprio_do_sdk():
     bloco = _source("app/services/providers/groq_provider.py")
-    assert "AsyncGroq(api_key=settings.GROQ_API_KEY, max_retries=0)" in bloco
+    assert "AsyncGroq(api_key=api_key, max_retries=0)" in bloco

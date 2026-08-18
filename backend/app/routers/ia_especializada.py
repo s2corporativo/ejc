@@ -2,7 +2,8 @@
    Comercial · Atendimento · Jurídica · Financeira · Societária.
 """
 from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -53,10 +54,20 @@ async def listar_perfis(cu: User = Depends(get_current_user)):
     return {"perfis": [{"id": k, "label": v["label"]} for k, v in PERFIS.items()]}
 
 
+# Teto de 200.000 chars — mesmo valor de schemas/ai.py._MAX_TEXTO_IA (achado
+# da revisão de segurança sobre a auditoria de IA, 18/08): este endpoint
+# recebia `body: dict = Body(...)` cru, sem schema Pydantic nem teto de
+# tamanho, chamando ai_gateway.chat direto — exatamente a classe de payload
+# sem limite que o resto da auditoria fechou em outros endpoints.
+class ConsultaIaEspecializadaReq(BaseModel):
+    pergunta: str = Field(..., max_length=200_000)
+    nivel_inteligencia: str | None = None
+
+
 @router.post("/{perfil}", dependencies=[Depends(rate_limit("ia-especializada", 15))])
 async def consultar(
     perfil: str,
-    body: dict = Body(...),
+    body: ConsultaIaEspecializadaReq,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -66,8 +77,8 @@ async def consultar(
     cfg = PERFIS.get(perfil)
     if not cfg:
         raise HTTPException(404, f"Perfil inválido. Use: {', '.join(PERFIS)}")
-    pergunta = (body.get("pergunta") or "").strip()
-    nivel = (body.get("nivel_inteligencia") or "alto").strip()
+    pergunta = (body.pergunta or "").strip()
+    nivel = (body.nivel_inteligencia or "alto").strip()
     if len(pergunta) < 3:
         raise HTTPException(422, "Pergunta muito curta")
 
