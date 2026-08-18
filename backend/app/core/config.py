@@ -1178,6 +1178,17 @@ class Settings(BaseSettings):
                 "uma chave estável no .env para persistir.",
                 stacklevel=2,
             )
+        # ANTHROPIC_EFFORT não era validado em lugar nenhum (auditoria de
+        # segurança, 18/08): um typo só quebrava na PRIMEIRA chamada real ao
+        # Claude (anthropic_provider usa o valor cru em extra_body.output_
+        # config.effort), não no boot. Vale para toda tarefa/task_type — falha
+        # cedo, num só lugar, em vez de na hora errada em produção.
+        self.ANTHROPIC_EFFORT = (self.ANTHROPIC_EFFORT or "high").strip().lower()
+        if self.ANTHROPIC_EFFORT not in ("low", "medium", "high"):
+            raise ValueError(
+                f"ANTHROPIC_EFFORT inválido: '{self.ANTHROPIC_EFFORT}'. "
+                "Use 'low', 'medium' ou 'high'."
+            )
         return self
 
     model_config = SettingsConfigDict(

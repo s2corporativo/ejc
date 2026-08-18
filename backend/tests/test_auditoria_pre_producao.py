@@ -421,3 +421,29 @@ def test_desenvolvimento_nao_exige_tamanho():
 
     s = Settings(APP_ENV="development", SECRET_KEY="curta")
     assert s.SECRET_KEY == "curta"
+
+
+# ── ANTHROPIC_EFFORT validado no boot, não só na primeira chamada (18/08) ───
+# anthropic_provider usa o valor cru em extra_body.output_config.effort — um
+# typo só quebrava na primeira chamada real ao Claude, não no boot. Vale em
+# QUALQUER ambiente (não é gate de produção, é domínio de valor).
+
+def test_anthropic_effort_invalido_falha_no_boot():
+    from app.core.config import Settings
+
+    with pytest.raises(ValueError, match="ANTHROPIC_EFFORT inválido"):
+        Settings(ANTHROPIC_EFFORT="hgih")  # typo
+
+
+def test_anthropic_effort_normaliza_maiusculas_e_espacos():
+    from app.core.config import Settings
+
+    s = Settings(ANTHROPIC_EFFORT="  HIGH  ")
+    assert s.ANTHROPIC_EFFORT == "high"
+
+
+def test_anthropic_effort_aceita_os_tres_valores_validos():
+    from app.core.config import Settings
+
+    for valor in ("low", "medium", "high"):
+        assert Settings(ANTHROPIC_EFFORT=valor).ANTHROPIC_EFFORT == valor

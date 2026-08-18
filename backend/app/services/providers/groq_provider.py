@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from groq import AsyncGroq
+from groq import AsyncGroq, GroqError
 from app.core.config import get_settings
 
 logger = logging.getLogger("ejc.ai.groq")
@@ -44,13 +44,26 @@ async def chat(
         model = settings.GROQ_MODEL_LARGE
 
     client = get_client()
-    resp = await client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=timeout or settings.GROQ_TIMEOUT,
-    )
+    try:
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout or settings.GROQ_TIMEOUT,
+        )
+    except GroqError as e:
+        # Mesmo padrão de anthropic_provider/maritaca_provider (auditoria de
+        # segurança, 18/08): era o ÚNICO provider que não embrulhava a
+        # exceção do SDK — str(e) do SDK pode ecoar trecho da requisição
+        # (mensagem malformada, corpo do erro) e chegar a log/observabilidade
+        # sem barreira. Mensagem CURTA e segura: tipo + status, sem corpo,
+        # sem stack. `from None` corta a cadeia de exceção original.
+        status = getattr(e, "status_code", None)
+        raise RuntimeError(
+            f"Groq API falhou ({type(e).__name__}"
+            + (f", HTTP {status}" if status else "") + ")"
+        ) from None
     if not resp.choices:
         raise RuntimeError("Groq retornou resposta vazia")
     texto = resp.choices[0].message.content
