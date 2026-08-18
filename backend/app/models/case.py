@@ -88,6 +88,14 @@ class Case(Base):
     fase      = Column(SAEnum(CaseFase), nullable=False, default=CaseFase.pre_processual)
     prioridade = Column(SAEnum(CasePrioridade), nullable=False, default=CasePrioridade.media)
     risco     = Column(String(20), nullable=True)   # baixo | medio | alto
+    # Sigilo reforçado de IA (migration 146, Issue #1194): `area` não tem
+    # granularidade para crime sexual/menor (só "criminal"/"familia"), e
+    # nenhuma rota passa task_type de texto livre com essas palavras — sem
+    # este campo explícito, o piso LOCAL_COMPLETO da sanitization_policy fica
+    # inalcançável para casos reais. Setado pelo advogado na triagem, nunca
+    # inferido por palavra-chave; consultado com prioridade máxima antes da
+    # área em orchestrator.py/agent/loop.py.
+    sigilo_reforcado = Column(Boolean, nullable=False, default=False)
 
     # Processo judicial
     numero_processo = Column(String(30), nullable=True, index=True)

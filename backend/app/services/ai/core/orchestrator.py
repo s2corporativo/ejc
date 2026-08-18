@@ -235,8 +235,23 @@ class SingleAICoreOrchestrator:
         # crítica — justamente a peça de maior risco jurídico ficava sem a
         # segunda leitura. O gateway aplica `reforcar_sigilo`, então o modo aqui
         # só pode ELEVAR o piso, nunca rebaixá-lo.
+        #
+        # `Case.sigilo_reforcado` (migration 146, achado do security-auditor
+        # sobre a Issue #1194) vem ANTES da área/rótulo: desde que o piso
+        # LOCAL_COMPLETO foi reduzido a crimes sexuais/menores, `area_do_caso`
+        # só tem valores genéricos ("criminal"/"familia") sem granularidade
+        # para essas duas categorias — sem este campo explícito, NENHUM caso
+        # real chegava a `rotulo_de_sigilo_reforcado` com o rótulo certo.
         modo_sigilo = None
-        if rotulo_sigiloso:
+        if getattr(caso, "sigilo_reforcado", False):
+            from app.services.ai.sanitization_policy import ModoSanitizacao
+            modo_sigilo = ModoSanitizacao.LOCAL_COMPLETO
+            logger.info(
+                "[sigilo] caso %s marcado sigilo_reforcado=True → modo "
+                "LOCAL_COMPLETO no gateway; roteamento segue como '%s'",
+                getattr(caso, "id", None), gateway_task,
+            )
+        elif rotulo_sigiloso:
             from app.services.ai.sanitization_policy import modo_para_task
             modo_sigilo = modo_para_task(rotulo_sigiloso)
             logger.info(

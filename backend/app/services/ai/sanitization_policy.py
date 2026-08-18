@@ -206,6 +206,12 @@ _RADICAIS_SIGILO_REFORCADO: tuple[tuple[str, str], ...] = (
     ("menor", "menores"),           # menor, menores
     ("infan", "infancia_juventude"),   # infancia, infantil, infanto
     ("juven", "infancia_juventude"),   # juventude, juvenil
+    # Achado do security-auditor (Issue #1194): "criança"/"adolescente" são
+    # vocabulário comum de família/infância e não tinham radical próprio — só
+    # eram cobertos incidentalmente quando o texto TAMBÉM continha "infantil"/
+    # "menor"/"juvenil".
+    ("crianc", "infancia_juventude"),  # crianca, criancas
+    ("adolescen", "infancia_juventude"),  # adolescente, adolescencia
     ("violen", "violencia"),        # violencia, violento
     ("domestic", "violencia_domestica"),
     ("divorcio", "familia"),        # divórcio é matéria de família
@@ -221,6 +227,12 @@ _RADICAIS_SIGILO_REFORCADO: tuple[tuple[str, str], ...] = (
     ("sexual", "crimes_sexuais"),
     ("estupro", "crimes_sexuais"),
     ("pedofil", "crimes_sexuais"),  # pedofilia, pedófilo, pedófila
+    # Achado do security-auditor: terminologia legada do CP pré-Lei 12.015/2009
+    # ("atentado violento ao pudor") e formas que não contêm o radical "sexual"
+    # ou "estupro" isoladamente.
+    ("libidinos", "crimes_sexuais"),  # ato libidinoso
+    ("pudor", "crimes_sexuais"),      # atentado violento ao pudor (CP pré-2009)
+    ("vulneravel", "crimes_sexuais"),  # estupro/ato libidinoso de vulnerável
 )
 
 

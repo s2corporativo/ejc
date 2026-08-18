@@ -294,7 +294,17 @@ async def rodar_agente(
     # S1: MODO de sanitização derivado da ÁREA/sigilo REAL do caso (não do rótulo
     # de roteamento). Um caso de sigilo reforçado (LOCAL_COMPLETO) NUNCA pode ir a
     # provider externo.
-    modo_sanitizacao = modo_para_task(area_label)
+    #
+    # `Case.sigilo_reforcado` (migration 146, achado do security-auditor sobre
+    # a Issue #1194) tem prioridade sobre `area_label`: desde que o piso
+    # LOCAL_COMPLETO foi reduzido a crimes sexuais/menores, `area` só tem
+    # valores genéricos ("criminal"/"familia") sem granularidade para essas
+    # duas categorias — sem o campo explícito, nenhum caso real chegava aqui
+    # com o modo certo.
+    if getattr(caso, "sigilo_reforcado", False):
+        modo_sanitizacao = ModoSanitizacao.LOCAL_COMPLETO
+    else:
+        modo_sanitizacao = modo_para_task(area_label)
 
     # S1 fail-closed: o caminho agêntico só tem provider EXTERNO (Anthropic); caso
     # sigiloso → aborta ANTES de qualquer envio (nunca vai ao externo).

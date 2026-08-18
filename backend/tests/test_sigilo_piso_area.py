@@ -351,6 +351,48 @@ class TestAreaDoCasoEAutoritativa:
         )
         assert gateway_espiao["modo"] != ModoSanitizacao.LOCAL_COMPLETO
 
+    async def test_caso_sigilo_reforcado_prevalece_sobre_area_normal(
+            self, gateway_espiao, monkeypatch):
+        """Achado do security-auditor (Issue #1194): `area="criminal"` é o único
+        valor real que um caso de crime sexual contra menor pode ter no cadastro
+        hoje (sem granularidade própria) — e "criminal" geral é normal desde a
+        redução do piso. Sem `Case.sigilo_reforcado`, esse caso vazava ao
+        externo. O campo explícito tem prioridade sobre a área."""
+        from types import SimpleNamespace as NS
+
+        from app.core import ownership
+        from app.services.ai.core.orchestrator import orchestrator
+
+        async def fake_acesso(db, cu, case_id):
+            return NS(id=case_id, area=NS(value="criminal"), sigilo_reforcado=True)
+
+        monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
+        await orchestrator.run(
+            db=object(), user=_advogado(), task_type="chat", domain=None,
+            case_id="caso-ficticio-3b", mensagem="Analise este caso fictício.",
+        )
+        assert gateway_espiao["modo"] == ModoSanitizacao.LOCAL_COMPLETO
+
+    async def test_caso_sem_sigilo_reforcado_area_criminal_segue_externo(
+            self, gateway_espiao, monkeypatch):
+        """Regressão inversa: `sigilo_reforcado=False` (o default) num caso
+        `criminal` GERAL não pode virar bloqueio — é exatamente o tratamento
+        normal que o titular pediu para o criminal fora de crimes sexuais."""
+        from types import SimpleNamespace as NS
+
+        from app.core import ownership
+        from app.services.ai.core.orchestrator import orchestrator
+
+        async def fake_acesso(db, cu, case_id):
+            return NS(id=case_id, area=NS(value="criminal"), sigilo_reforcado=False)
+
+        monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
+        await orchestrator.run(
+            db=object(), user=_advogado(), task_type="chat", domain=None,
+            case_id="caso-ficticio-3c", mensagem="Analise este caso fictício.",
+        )
+        assert gateway_espiao["modo"] != ModoSanitizacao.LOCAL_COMPLETO
+
 
 # ── 6. Variantes morfológicas e caracteres invisíveis ────────────────────────
 
@@ -360,6 +402,11 @@ class TestVariantesMorfologicas:
         "vara da infancia e juventude", "crime sexual", "abuso sexual",
         "estupro de vulneravel", "violencia sexual", "pedofilia",
         "exploracao sexual infantil", "importunacao sexual",
+        # Achado do security-auditor (Issue #1194): vocabulário sem radical
+        # próprio antes desta correção.
+        "abuso de crianca", "maus tratos contra crianca",
+        "exploracao de adolescente", "atentado violento ao pudor",
+        "ato libidinoso com menor",
     ])
     def test_variante_de_area_sensivel_e_local(self, rotulo):
         assert modo_para_task(rotulo) == ModoSanitizacao.LOCAL_COMPLETO

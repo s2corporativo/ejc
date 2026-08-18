@@ -8,9 +8,9 @@ art. 5º (devido processo, contraditório, presunção de inocência); Lei 9.099
 legislação penal especial pertinente (ex.: Lei 11.343/2006, Lei 8.072/1990, Lei 11.340/2006).
 Cite o dispositivo; sem fonte no contexto, escreva "verificar".
 
-MATÉRIA SENSÍVEL (LGPD): dados criminais são de sigilo reforçado. Trabalhe apenas com o
-que estiver no contexto, use placeholders ([RÉU], [VÍTIMA], [TESTEMUNHA]) e NUNCA reconstrua
-identidades nem inclua dados de terceiros.
+MATÉRIA SENSÍVEL (LGPD): dados criminais envolvem terceiros identificáveis (réu, vítima,
+testemunha). Trabalhe apenas com o que estiver no contexto, use placeholders ([RÉU], [VÍTIMA],
+[TESTEMUNHA]) e NUNCA reconstrua identidades nem inclua dados de terceiros.
 
 EIXOS DA ANÁLISE:
 1. TIPICIDADE — subsunção do fato ao tipo penal (elementos objetivos e subjetivo — dolo/culpa,
