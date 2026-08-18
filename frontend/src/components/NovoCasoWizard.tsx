@@ -5,7 +5,7 @@ import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAreas } from "../lib/areas";
 import { toast } from "./Toast";
-import { Badge, Button, Modal, Spinner } from "./UI";
+import { Badge, Button, Modal, SigiloReforcadoField, Spinner } from "./UI";
 import type { Client } from "../types";
 
 // Taxonomia canônica de áreas: GET /areas via useAreas() (lib/areas.ts),
@@ -499,20 +499,10 @@ export default function NovoCasoWizard({
                 ))}
               </select>
             </div>
-            <div className="sm:col-span-2">
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={sigiloReforcado}
-                  onChange={(e) => setSigiloReforcado(e.target.checked)}
-                />
-                Sigilo reforçado — caso de crime sexual ou envolve menor
-              </label>
-              <p className="mt-1 text-xs text-slate-400">
-                A IA deste caso passa a exigir provedor local (Ollama); nenhum
-                conteúdo dele vai a provedor externo, nem pseudonimizado.
-              </p>
-            </div>
+            <SigiloReforcadoField
+              checked={sigiloReforcado}
+              onChange={setSigiloReforcado}
+            />
             <div>
               <label className="label">Tipo de caso</label>
               <select

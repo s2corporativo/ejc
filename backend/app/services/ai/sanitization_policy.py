@@ -290,6 +290,19 @@ def reforcar_sigilo(base: ModoSanitizacao,
     return base
 
 
+def modo_sigilo_do_caso(caso) -> ModoSanitizacao | None:
+    """LOCAL_COMPLETO quando `Case.sigilo_reforcado` estiver marcado, senão None.
+
+    Ponto único da leitura de `caso.sigilo_reforcado` (migration 146, achado do
+    security-auditor sobre a Issue #1194): desde que o piso LOCAL_COMPLETO foi
+    reduzido a crimes sexuais/menores (decisão do titular, 18/08), a ÁREA
+    sozinha não tem granularidade para essas duas categorias — sem este campo
+    explícito no caso, nenhum chamador (orchestrator, agent/loop) resolvia o
+    modo certo. `caso` é lido de forma duck-typed (`getattr`) para não acoplar
+    este módulo ao model `Case`."""
+    return ModoSanitizacao.LOCAL_COMPLETO if getattr(caso, "sigilo_reforcado", False) else None
+
+
 def modo_para_task(task_type: str) -> ModoSanitizacao:
     """Retorna o ModoSanitizacao para `task_type` (default + override de config).
 
@@ -313,19 +326,19 @@ def modo_para_task(task_type: str) -> ModoSanitizacao:
     LOCAL_COMPLETO nunca perde para uma chave normal encontrada antes dela na
     string (mesma lógica de "só marcam PARA CIMA" da tabela de radicais)."""
     task = normalizar_rotulo(task_type)
-    padrao = _MODO_FALLBACK
-    primeira_candidata: ModoSanitizacao | None = None
-    for chave in _chaves_candidatas(task):
-        modo = _MODO_DEFAULT_POR_TASK.get(chave)
-        if modo is None:
-            continue
-        if primeira_candidata is None:
-            primeira_candidata = modo
-        if modo == ModoSanitizacao.LOCAL_COMPLETO:
-            primeira_candidata = ModoSanitizacao.LOCAL_COMPLETO
-            break
-    if primeira_candidata is not None:
-        padrao = primeira_candidata
+    modos_batidos = [
+        _MODO_DEFAULT_POR_TASK[chave]
+        for chave in _chaves_candidatas(task)
+        if chave in _MODO_DEFAULT_POR_TASK
+    ]
+    # A mais restritiva vence: LOCAL_COMPLETO nunca perde para uma chave normal
+    # encontrada antes dela na string. Sem candidata alguma, cai no fallback.
+    if ModoSanitizacao.LOCAL_COMPLETO in modos_batidos:
+        padrao = ModoSanitizacao.LOCAL_COMPLETO
+    elif modos_batidos:
+        padrao = modos_batidos[0]
+    else:
+        padrao = _MODO_FALLBACK
     over = _overrides()
     if task in over:
         escolhido = over[task]

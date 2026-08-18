@@ -369,6 +369,34 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cn("input", props.className)} />;
 }
 
+// Checkbox de sigilo reforçado de IA (Issue #1194) — mesmo campo em qualquer
+// form de criação/edição de caso; centraliza o texto e o estilo para os dois
+// formulários (NovoCasoWizard, Casos.tsx) não divergirem.
+export function SigiloReforcadoField({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="sm:col-span-2">
+      <label className="flex items-center gap-2 text-sm text-slate-600">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        Sigilo reforçado — caso de crime sexual ou envolve menor
+      </label>
+      <p className="mt-1 text-xs text-slate-400">
+        A IA deste caso passa a exigir provedor local (Ollama); nenhum conteúdo
+        dele vai a provedor externo, nem pseudonimizado.
+      </p>
+    </div>
+  );
+}
+
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={cn("input", props.className)} />;
 }

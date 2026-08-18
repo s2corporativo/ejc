@@ -69,6 +69,7 @@ import {
   SkeletonTable,
   Button,
   fmtDate,
+  SigiloReforcadoField,
 } from "../components/UI";
 import { useAuth } from "../stores/auth";
 import { CasosStats } from "../components/Dashboards";
@@ -1326,22 +1327,10 @@ export default function Casos() {
               <option value="critica">Crítica</option>
             </select>
           </div>
-          <div className="sm:col-span-2">
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={!!form.sigilo_reforcado}
-                onChange={(e) =>
-                  setForm({ ...form, sigilo_reforcado: e.target.checked })
-                }
-              />
-              Sigilo reforçado — caso de crime sexual ou envolve menor
-            </label>
-            <p className="mt-1 text-xs text-slate-400">
-              A IA deste caso passa a exigir provedor local (Ollama); nenhum
-              conteúdo dele vai a provedor externo, nem pseudonimizado.
-            </p>
-          </div>
+          <SigiloReforcadoField
+            checked={!!form.sigilo_reforcado}
+            onChange={(v) => setForm({ ...form, sigilo_reforcado: v })}
+          />
           <div>
             <label className="label">Tipo de caso</label>
             <select
