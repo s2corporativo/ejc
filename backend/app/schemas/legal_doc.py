@@ -48,6 +48,13 @@ class LegalDocRevisao(BaseModel):
 class LegalDocAprovacao(BaseModel):
     # BUG-08: aprovação HITL. Para peça ai_generated, observacoes é obrigatório.
     observacoes: Optional[str] = None
+    # P2-9 (auditoria de IA 18/08): o gate antialucinação devolve 409 quando há
+    # citação bloqueante. Sem estes campos, `conferir-e-assinar` era um beco sem
+    # saída — o advogado via o erro e não tinha por onde seguir, nem para
+    # assumir a responsabilidade por escrito. O override é o MESMO do
+    # PATCH /ai/logs/{id}/hitl: exige justificativa e fica auditado.
+    override_citacoes: bool = False
+    justificativa_override: Optional[str] = None
 
 class LegalDocProtocolo(BaseModel):
     # Registro do comprovante de protocolo (peticionamento manual). numero_protocolo

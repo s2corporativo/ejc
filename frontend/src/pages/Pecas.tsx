@@ -6,6 +6,7 @@ import {
   Plus,
   Sparkles,
   ShieldCheck,
+  ShieldAlert,
   Eye,
   FileDown,
   LayoutTemplate,
@@ -115,6 +116,17 @@ const FILA: { key: string; label: string; desc: string }[] = [
 // Espelha STATUS_EXIGE_REVISAO do backend (legal_docs.py).
 const STATUS_POS_APROVACAO = new Set(["aprovada", "final", "protocolada"]);
 
+// Corpo do 409 do gate antialucinação (citation_gate.aplicar_gate_hitl):
+// citações que a base oficial não confirmou e que impedem a aprovação enquanto
+// não forem corrigidas — ou assumidas por override justificado.
+type CitacaoBloqueio = {
+  mensagem?: string;
+  politica?: string;
+  score?: number;
+  motivos?: string[];
+  bloqueantes?: { rotulo?: string; aviso?: string; status?: string }[];
+};
+
 export default function Pecas() {
   const { disponivel: iaDisponivel } = useIaStatus();
   const [data, setData] = useState<Paged<LegalDoc> | null>(null);
@@ -129,6 +141,12 @@ export default function Pecas() {
     doc: LegalDoc;
     observacoes: string;
     erro?: string; // E05: validação do backend exibida DENTRO do dialog
+    // P2-9 (auditoria de IA 18/08): o gate antialucinação devolve 409 com as
+    // citações bloqueantes. Antes, o advogado via só a mensagem de erro e o
+    // fluxo morria ali. Agora o 409 vira decisão: corrigir a peça ou assumir
+    // por escrito o override, que fica auditado no backend.
+    bloqueio?: CitacaoBloqueio;
+    justificativa?: string;
   } | null>(null);
   const [aprovando, setAprovando] = useState(false);
   const [form, setForm] = useState<any>({
@@ -327,11 +345,29 @@ export default function Pecas() {
       });
       return;
     }
+    // Override do gate de citações: só vai quando o advogado JÁ viu o bloqueio
+    // e escreveu a justificativa — o backend a exige e a registra em auditoria.
+    const justificativa = (aprovacao.justificativa || "").trim();
+    if (aprovacao.bloqueio && !justificativa) {
+      setAprovacao({
+        ...aprovacao,
+        erro:
+          "Para aprovar apesar das citações não confirmadas, justifique por " +
+          "escrito — a justificativa fica registrada em auditoria.",
+      });
+      return;
+    }
     setAprovando(true);
     setAprovacao({ ...aprovacao, erro: undefined });
     try {
       await api.post(`/legal-docs/${aprovacao.doc.id}/conferir-e-assinar`, {
         observacoes,
+        ...(aprovacao.bloqueio
+          ? {
+              override_citacoes: true,
+              justificativa_override: justificativa,
+            }
+          : {}),
       });
       setAprovacao(null);
       toast.success("Peça conferida e assinada com revisão humana registrada");
@@ -341,7 +377,24 @@ export default function Pecas() {
       // Erro de validação (422) fica visível DENTRO do dialog; o usuário
       // corrige e reenvia. Erros genéricos vão para o toast.
       const status = e?.response?.status;
-      if (status === 422) {
+      const detail = e?.response?.data?.detail;
+      if (status === 409 && detail?.erro === "citacoes_nao_verificadas") {
+        // O 409 do gate NÃO é fim de linha: mostra o que bloqueou e abre o
+        // caminho do override justificado, no mesmo dialog.
+        setAprovacao({
+          ...aprovacao,
+          bloqueio: {
+            mensagem: detail.mensagem,
+            politica: detail.politica,
+            score: detail.score,
+            motivos: Array.isArray(detail.motivos) ? detail.motivos : [],
+            bloqueantes: Array.isArray(detail.bloqueantes)
+              ? detail.bloqueantes
+              : [],
+          },
+          erro: undefined,
+        });
+      } else if (status === 422) {
         setAprovacao({ ...aprovacao, erro: msg });
       } else {
         toast.error(msg);
@@ -1217,6 +1270,53 @@ export default function Pecas() {
             })
           }
         />
+        {/* P2-9: citações que a base oficial não confirmou. O texto NÃO é
+          reescrito — o advogado corrige a peça ou assume o override por
+          escrito, e a justificativa vai para a trilha de auditoria. */}
+        {aprovacao?.bloqueio && (
+          <div className="mt-3 rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
+            <div className="mb-1 flex items-center gap-2 text-sm font-bold text-amber-800">
+              <ShieldAlert size={16} />
+              Citações não confirmadas na base oficial
+              {typeof aprovacao.bloqueio.score === "number" && (
+                <span className="font-normal">
+                  (confiabilidade {Math.round(aprovacao.bloqueio.score)}/100)
+                </span>
+              )}
+            </div>
+            <p className="mb-2 text-xs text-amber-800">
+              {aprovacao.bloqueio.mensagem ||
+                "O gate antialucinação encontrou citações que não pôde confirmar."}
+            </p>
+            {!!aprovacao.bloqueio.bloqueantes?.length && (
+              <ul className="mb-2 list-disc space-y-1 pl-5 text-xs text-amber-800">
+                {aprovacao.bloqueio.bloqueantes.map((b, i) => (
+                  <li key={i}>
+                    <strong>{b.rotulo || "citação"}</strong>
+                    {b.aviso ? ` — ${b.aviso}` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mb-2 text-xs text-amber-900">
+              Corrija a peça e tente de novo, ou justifique a aprovação assim
+              mesmo — a justificativa fica registrada em auditoria com o seu
+              nome.
+            </p>
+            <textarea
+              className="input min-h-[70px] text-xs"
+              placeholder="Justificativa para aprovar apesar das citações não confirmadas (obrigatória)"
+              value={aprovacao.justificativa || ""}
+              onChange={(e) =>
+                setAprovacao({
+                  ...aprovacao,
+                  justificativa: e.target.value,
+                  erro: undefined,
+                })
+              }
+            />
+          </div>
+        )}
         {/* E05 (auditoria funcional): causa exata da rejeição do backend
           (ex.: validação jurídica com score abaixo do mínimo) exibida no dialog */}
         {aprovacao?.erro && (
@@ -1234,7 +1334,11 @@ export default function Pecas() {
             onClick={aprovarPeca}
           >
             <ShieldCheck size={15} />{" "}
-            {aprovando ? "Aprovando..." : "Aprovar peça"}
+            {aprovando
+              ? "Aprovando..."
+              : aprovacao?.bloqueio
+                ? "Aprovar assumindo as citações"
+                : "Aprovar peça"}
           </button>
         </div>
       </Modal>

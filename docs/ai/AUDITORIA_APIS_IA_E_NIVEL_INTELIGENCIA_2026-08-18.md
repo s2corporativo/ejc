@@ -519,3 +519,40 @@ dedicado**, e a decisão de quando fazê-la é do titular.
 **Regressão.** `backend/tests/test_inventario_prompts.py` (8 testes): cobertura do registro,
 ausência de fantasmas e de órfãos, estabilidade da impressão, e a chegada da versão às duas
 superfícies de saída.
+
+---
+
+## 14. P2-9 fechado — o 409 do gate de citações deixou de ser beco sem saída
+
+**O achado, e ele era pior do que a auditoria descreveu.** O gate antialucinação devolve **409**
+quando a peça cita o que a base oficial não confirma, e o backend já tinha o override auditável
+(`override_citacoes` + `justificativa_override`) em `PATCH /ai/logs/{id}/hitl`. Mas o caminho que
+o advogado usa de fato — `POST /legal-docs/{id}/conferir-e-assinar`, o **único** caminho de
+aprovação de peça na tela de Peças — chamava o gate com o override **fixo em `False`**:
+
+```python
+await aplicar_gate_hitl(db, log, "revisado", False, None, cu)
+```
+
+Ou seja: com política `bloquear` (o default) e uma citação bloqueante, a peça ficava **impossível
+de aprovar pela interface**. O advogado via uma mensagem de erro e o fluxo morria ali — sem
+corrigir, sem assumir, sem trilha. Um gate que não pode ser respondido não protege: ele empurra o
+trabalho para fora do sistema, que é exatamente o critério de lançamento deste projeto.
+
+**A correção, nas duas pontas.**
+
+- **Backend** — `LegalDocAprovacao` ganhou `override_citacoes` (default `False`) e
+  `justificativa_override`; `conferir-e-assinar` repassa os dois ao `aplicar_gate_hitl`, que
+  continua exigindo justificativa (422 se vazia) e registrando o override em `fontes_rag` e em
+  `audit_logs`. A decisão também entra no detalhe do `APROVAR_HITL`. **Nada foi afrouxado**: quem
+  não pede override não recebe override, e o override sem justificativa continua rejeitado.
+- **Frontend** — o dialog de aprovação em `Pecas.tsx` passou a tratar o 409: mostra as citações
+  bloqueantes com o aviso de cada uma e a confiabilidade, e abre o campo de justificativa. O botão
+  muda para "Aprovar assumindo as citações", e o envio só ocorre com a justificativa escrita. O
+  texto da peça **não é reescrito** — corrigir ou assumir é decisão do advogado, e é ela que fica
+  registrada com o nome dele.
+
+**Regressão.** `backend/tests/test_legal_doc_flow_contract.py` (+2: repasse do override e defaults
+seguros do schema) e `frontend/src/pages/Pecas.citacoes.test.tsx` (4: o 409 vira decisão no
+dialog, override não sai sem justificativa, override sai com ela, e aprovação normal não manda
+override nenhum).

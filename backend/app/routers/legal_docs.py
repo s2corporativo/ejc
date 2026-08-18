@@ -816,7 +816,13 @@ async def conferir_e_assinar(
                     detail="Sem permissão para revisar este log",
                 )
             from app.services.citation_gate import aplicar_gate_hitl
-            await aplicar_gate_hitl(db, log, "revisado", False, None, cu)
+            # O override chega do próprio ato de assinar (P2-9): sem ele, uma
+            # citação bloqueante fechava o único caminho de aprovação da peça.
+            # `aplicar_gate_hitl` continua exigindo justificativa e auditando.
+            await aplicar_gate_hitl(
+                db, log, "revisado", bool(payload.override_citacoes),
+                payload.justificativa_override, cu,
+            )
             log.status_hitl = AIStatusHITL.revisado
             log.revisado_por = cu.id
             log.revisado_em = datetime.now(timezone.utc)
@@ -845,7 +851,8 @@ async def conferir_e_assinar(
         db, cu.id, cu.role.value, "APROVAR_HITL", "legal_docs", doc_id,
         detalhes=(
             f"conferir-e-assinar; ai_generated={d.ai_generated}; "
-            f"validou_agora={validou_agora}; ai_log_id={ai_log_id}"
+            f"validou_agora={validou_agora}; ai_log_id={ai_log_id}; "
+            f"override_citacoes={bool(payload.override_citacoes)}"
         ),
     )
     await db.commit()
