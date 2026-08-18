@@ -1,10 +1,14 @@
-"""Política: todo KnowledgeDoc do módulo nasce aprovado para o RAG."""
+"""Política central de disponibilidade da Base de Conhecimento."""
 from sqlalchemy import event
 
 from app.models.rag import KnowledgeDoc
 from app.services.knowledge_autoapproval import (
     POLITICA,
+    POLITICA_CONFIANCA_BLOQUEADA,
+    POLITICA_DECISAO_HUMANA,
+    POLITICA_QUARENTENA,
     POLITICA_REVISAO_PENDENTE,
+    POLITICA_STATUS_EXPLICITO,
     _aprovar_no_flush,
     aplicar_aprovacao_automatica,
 )
@@ -19,23 +23,43 @@ def _doc(extra=None) -> KnowledgeDoc:
     )
 
 
-def test_documento_pendente_vira_aprovado():
-    doc = _doc({"rag_status": "pendente", "confidence_level": "alta"})
+def test_documento_sem_status_explicito_mantem_compatibilidade_autoaprovada():
+    doc = _doc({"confidence_level": "alta"})
     extra = aplicar_aprovacao_automatica(doc)
 
     assert extra["rag_status"] == "aprovado"
     assert extra["confidence_level"] == "alta"
     assert extra["auto_approval"]["policy"] == POLITICA
-    assert extra["auto_approval"]["previous_rag_status"] == "pendente"
+    assert extra["auto_approval"]["previous_rag_status"] is None
+    assert "approved_at" in extra["auto_approval"]
 
 
-def test_bloqueio_legado_nao_impede_uso_pela_ia():
+def test_status_pendente_explicito_nao_e_autoaprovado():
+    doc = _doc({"rag_status": "pendente", "confidence_level": "alta"})
+    extra = aplicar_aprovacao_automatica(doc)
+
+    assert extra["rag_status"] == "pendente"
+    assert extra["confidence_level"] == "alta"
+    assert extra["auto_approval"]["policy"] == POLITICA_STATUS_EXPLICITO
+    assert "approved_at" not in extra["auto_approval"]
+
+
+def test_status_bloqueado_explicito_e_confianca_bloqueada_sao_preservados():
     doc = _doc({"rag_status": "bloqueado", "confidence_level": "bloqueado"})
     extra = aplicar_aprovacao_automatica(doc)
 
-    assert extra["rag_status"] == "aprovado"
-    assert extra["confidence_level"] == "media"
-    assert extra["auto_approval"]["previous_confidence_level"] == "bloqueado"
+    assert extra["rag_status"] == "bloqueado"
+    assert extra["confidence_level"] == "bloqueado"
+    assert extra["auto_approval"]["policy"] == POLITICA_STATUS_EXPLICITO
+
+
+def test_confianca_bloqueada_sem_status_nao_e_autoaprovada():
+    doc = _doc({"confidence_level": "bloqueado"})
+    extra = aplicar_aprovacao_automatica(doc)
+
+    assert extra["rag_status"] == "bloqueado"
+    assert extra["confidence_level"] == "bloqueado"
+    assert extra["auto_approval"]["policy"] == POLITICA_CONFIANCA_BLOQUEADA
 
 
 def test_metadados_de_fonte_nao_sao_falsificados():
@@ -48,56 +72,79 @@ def test_metadados_de_fonte_nao_sao_falsificados():
 
     assert extra["fonte_validada"] is False
     assert extra["requires_human_review"] is True
-    # AI-079 (auditoria 2026-07-26): pendência de revisão humana BLOQUEIA a
-    # auto-aprovação — o doc fica 'pendente' até promoção pela governança.
     assert extra["rag_status"] == "pendente"
     assert extra["auto_approval"]["policy"] == POLITICA_REVISAO_PENDENTE
 
 
 def test_revisao_pendente_preserva_status_explicito_e_nao_auto_aprova():
-    """AI-079: com requires_human_review e sem human_reviewed, o rag_status
-    explícito do ingestor é PRESERVADO; após a revisão humana
-    (human_reviewed=True), a política normal volta a valer."""
     doc = _doc({"requires_human_review": True, "rag_status": "pendente"})
     extra = aplicar_aprovacao_automatica(doc)
     assert extra["rag_status"] == "pendente"
 
-    # 'aprovado' SEM human_reviewed é rebaixado — nenhum ingestor pode gravar
-    # aprovação junto com requires_human_review (bypass fechado).
     doc2 = _doc({"requires_human_review": True, "rag_status": "aprovado"})
     extra2 = aplicar_aprovacao_automatica(doc2)
     assert extra2["rag_status"] == "pendente"
 
-    # Status explícito NÃO-aprovado do ingestor é preservado.
-    doc2b = _doc({"requires_human_review": True,
-                  "rag_status": "disponivel_informativo"})
+    doc2b = _doc({
+        "requires_human_review": True,
+        "rag_status": "disponivel_informativo",
+    })
     extra2b = aplicar_aprovacao_automatica(doc2b)
     assert extra2b["rag_status"] == "disponivel_informativo"
 
-    # Revisão humana concluída: o status ESCOLHIDO pelo revisor prevalece.
-    doc3 = _doc({"requires_human_review": True, "human_reviewed": True,
-                 "rag_status": "pendente"})
+    doc3 = _doc({
+        "requires_human_review": True,
+        "human_reviewed": True,
+        "rag_status": "pendente",
+    })
     extra3 = aplicar_aprovacao_automatica(doc3)
     assert extra3["rag_status"] == "pendente"
+    assert extra3["auto_approval"]["policy"] == POLITICA_DECISAO_HUMANA
 
 
 def test_recusa_humana_nao_vira_aprovacao():
-    """Regressão (review Codex no PR #496): com human_reviewed=True o listener
-    caía no `else` e forçava 'aprovado' — transformando uma RECUSA do curador em
-    liberação para o RAG. A decisão humana tem de prevalecer."""
-    doc = _doc({"requires_human_review": True, "human_reviewed": True,
-                "rag_status": "recusado"})
+    doc = _doc({
+        "requires_human_review": True,
+        "human_reviewed": True,
+        "rag_status": "recusado",
+    })
     extra = aplicar_aprovacao_automatica(doc)
     assert extra["rag_status"] == "recusado"
 
-    # Revisor aprovou explicitamente → aprovado.
-    doc_ok = _doc({"requires_human_review": True, "human_reviewed": True,
-                   "rag_status": "aprovado"})
+    doc_ok = _doc({
+        "requires_human_review": True,
+        "human_reviewed": True,
+        "rag_status": "aprovado",
+    })
     assert aplicar_aprovacao_automatica(doc_ok)["rag_status"] == "aprovado"
 
-    # Revisado sem status algum → default 'aprovado' (comportamento legado).
     doc_sem = _doc({"human_reviewed": True})
     assert aplicar_aprovacao_automatica(doc_sem)["rag_status"] == "aprovado"
+
+
+def test_quarentena_tem_precedencia_sobre_revisao_e_status_aprovado():
+    doc = _doc({
+        "requires_human_review": True,
+        "human_reviewed": True,
+        "rag_status": "aprovado",
+        "quarantine_active": True,
+    })
+    extra = aplicar_aprovacao_automatica(doc)
+    assert extra["rag_status"] == "pendente"
+    assert extra["quarantine_active"] is True
+    assert extra["auto_approval"]["policy"] == POLITICA_QUARENTENA
+
+
+def test_quarentena_preserva_recusa_humana_mais_restritiva():
+    doc = _doc({
+        "requires_human_review": True,
+        "human_reviewed": True,
+        "rag_status": "recusado",
+        "quarantine_active": True,
+    })
+    extra = aplicar_aprovacao_automatica(doc)
+    assert extra["rag_status"] == "recusado"
+    assert extra["auto_approval"]["policy"] == POLITICA_QUARENTENA
 
 
 def test_listener_orm_esta_registrado():

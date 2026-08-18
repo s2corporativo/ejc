@@ -360,6 +360,9 @@ encargos moratórios pactuados.
 
 CLÁUSULA 5ª — DO FORO
 Fica eleito o foro da Comarca de {comarca_foro}, com renúncia a qualquer outro.
+[Preencha comarca_foro com foro PERTINENTE ao domicílio das partes ou ao local da
+obrigação — CPC art. 63, red. Lei 14.879/2024: foro aleatório é ineficaz e pode ser
+reconhecido de ofício.]
 
 E, por estarem assim justas e acordadas, firmam o presente em duas vias, na
 presença das testemunhas abaixo.
@@ -418,6 +421,8 @@ uma da outra em razão dele.
 
 CLÁUSULA 4ª — DO FORO
 Fica eleito o foro da Comarca de {comarca_foro} para dirimir eventuais dúvidas.
+[comarca_foro deve guardar pertinência com o domicílio das partes ou o local da
+obrigação — CPC art. 63, red. Lei 14.879/2024.]
 
 E, por estarem assim justas e acordadas, firmam o presente em duas vias.
 

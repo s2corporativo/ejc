@@ -1,4 +1,3 @@
-```
 # Dependencies
 node_modules/
 
@@ -69,4 +68,11 @@ htmlcov/
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-```
+
+# Índice auxiliar do graphify — regenerado pelos hooks de sessão (~190 MB de
+# cache AST). É índice, não fonte da verdade: versionar só incharia o repo.
+graphify-out/
+backend/graphify-out/
+
+# Backups gravados em runtime pelo seed de skills — podem conter dados.
+backend/app/seeds/backups/

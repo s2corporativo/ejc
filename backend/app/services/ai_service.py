@@ -72,6 +72,38 @@ _RESTRICTED_CATS = ["peca_interna", "peca_escritorio", "precedente_interno",
 # EXCLUÍDO da busca — fecha o vazamento cruzado entre clientes.
 _FILTRO_ESCOPO_RAG = "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id = :scope_cli)"
 
+# ── Isolamento por CASO (dívida 5.2/5.5 da auditoria de IA 2026-08-15) ────────
+# O isolamento por cliente não basta para a comunicação processual: o ingestor
+# (ingestors/djen.py) grava case_id justamente porque a intimação "só pode ser
+# recuperável dentro do caso e do cliente donos do processo" — mas a
+# recuperação nunca usava esse campo. Resultado: a intimação do caso A do
+# cliente X entrava como contexto do caso B do MESMO cliente X. Contexto de
+# outro processo é ruído no melhor caso e erro de fato no pior (prazo/ato de
+# outro processo citado como se fosse deste).
+#
+# Quando o call site sabe em que caso está (`scope_case_id`), a comunicação
+# processual de OUTRO caso é excluída. Documento sem case_id (acervo antigo,
+# ingestão manual) continua visível no escopo do cliente — recuo de recall aqui
+# seria pior que o ruído, e o vínculo por cliente permanece garantido pelo
+# filtro acima. Sem `scope_case_id`, o comportamento é o de antes.
+_CASE_SCOPED_CATS = ["comunicacao_processual"]
+_FILTRO_CASO_RAG = (
+    "AND (kd.categoria <> ALL(:case_cats) OR kd.case_id IS NULL "
+    "OR kd.case_id = :scope_case)"
+)
+
+
+def _filtro_caso_rag(scope_case_id: str | None) -> str:
+    """Fragmento SQL de isolamento por caso — vazio quando não há caso no escopo."""
+    return _FILTRO_CASO_RAG if scope_case_id else ""
+
+
+def _params_caso_rag(scope_case_id: str | None) -> dict:
+    return (
+        {"case_cats": _CASE_SCOPED_CATS, "scope_case": scope_case_id}
+        if scope_case_id else {}
+    )
+
 # Versionamento (migration 068): por padrão só a versão VIGENTE de cada
 # documento entra na busca RAG. `:incl_hist` (bool) permite incluir versões
 # históricas (auditoria de citações antigas, pesquisa de evolução de tese).
@@ -220,7 +252,8 @@ async def _escopo_cliente_do_caso(db: AsyncSession, case_id: str | None) -> str 
 
 
 async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_client_id=None,
-                          incluir_historico=False, incluir_ficticio=False):
+                          incluir_historico=False, incluir_ficticio=False,
+                          scope_case_id=None):
     """Busca híbrida: funde ranking SEMÂNTICO (pgvector) + LEXICAL (pg_trgm) via
     Reciprocal Rank Fusion (RRF). Aditivo — se a parte lexical falhar, devolve o
     semântico intacto. k=60 é o padrão de RRF."""
@@ -237,7 +270,8 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
     try:
         params = {"q": consulta[:300], "lim": max(limite * 3, 12),
                   "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
-                  "incl_hist": incluir_historico}
+                  "incl_hist": incluir_historico,
+                  **_params_caso_rag(scope_case_id)}
         filtro = ""
         if categorias:
             filtro = "AND kd.categoria = ANY(:cats)"
@@ -252,6 +286,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
               AND similarity(kc.conteudo, :q) > 0.05
               {filtro}
               {_FILTRO_ESCOPO_RAG}
+              {_filtro_caso_rag(scope_case_id)}
               {_FILTRO_VIGENTE_RAG}
               {_filtros_gate_rag(incluir_ficticio)}
             ORDER BY sim DESC
@@ -280,7 +315,8 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
         try:
             params_f = {"q": consulta[:300], "lim": max(limite * 3, 12),
                         "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
-                        "incl_hist": incluir_historico}
+                        "incl_hist": incluir_historico,
+                        **_params_caso_rag(scope_case_id)}
             filtro_f = ""
             if categorias:
                 filtro_f = "AND kd.categoria = ANY(:cats)"
@@ -297,6 +333,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                       @@ plainto_tsquery('portuguese', :q)
                   {filtro_f}
                   {_FILTRO_ESCOPO_RAG}
+                  {_filtro_caso_rag(scope_case_id)}
                   {_FILTRO_VIGENTE_RAG}
                   {_filtros_gate_rag(incluir_ficticio)}
                 ORDER BY rank DESC
@@ -355,6 +392,7 @@ async def buscar_contexto_rag(
     scope_client_id: str | None = None,
     incluir_historico: bool = False,
     incluir_ficticio: bool = False,
+    scope_case_id: str | None = None,
 ) -> list[dict]:
     """
     Busca semântica na base de conhecimento via pgvector.
@@ -413,7 +451,8 @@ async def buscar_contexto_rag(
             vec = vetores[0]
             params_v: dict = {"vec": str(vec), "lim": _n_pool, "max_dist": _rag_max_dist(),
                               "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
-                              "incl_hist": incluir_historico}
+                              "incl_hist": incluir_historico,
+                              **_params_caso_rag(scope_case_id)}
             filtro_cat_v = ""
             if categorias:
                 filtro_cat_v = "AND kd.categoria = ANY(:cats)"
@@ -429,6 +468,7 @@ async def buscar_contexto_rag(
                   AND (kc.embedding <=> :vec) <= :max_dist
                   {filtro_cat_v}
                   {_FILTRO_ESCOPO_RAG}
+                  {_filtro_caso_rag(scope_case_id)}
                   {_FILTRO_VIGENTE_RAG}
                   {_filtros_gate_rag(incluir_ficticio)}
                 ORDER BY kc.embedding <=> :vec
@@ -459,7 +499,7 @@ async def buscar_contexto_rag(
                     # e corta em `limite` (rerank off → devolve o RRF[:limite]).
                     fundidos = await _fundir_lexical(db, consulta, resultados, _n_pool, categorias,
                                                      scope_client_id, incluir_historico,
-                                                     incluir_ficticio)
+                                                     incluir_ficticio, scope_case_id)
                     return await _reranker.rerank(consulta, fundidos, limite)
                 # Sem vetores gravados ainda → cai no textual abaixo
             except Exception as e:
@@ -487,6 +527,7 @@ async def buscar_contexto_rag(
     params["restr_cats"] = _RESTRICTED_CATS
     params["scope_cli"] = scope_client_id or ""
     params["incl_hist"] = incluir_historico
+    params.update(_params_caso_rag(scope_case_id))
 
     sql = text(f"""
         SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
@@ -497,6 +538,7 @@ async def buscar_contexto_rag(
           {cond_termos}
           {filtro_cat}
           {_FILTRO_ESCOPO_RAG}
+          {_filtro_caso_rag(scope_case_id)}
           {_FILTRO_VIGENTE_RAG}
           {_filtros_gate_rag(incluir_ficticio)}
         LIMIT :lim
@@ -520,14 +562,37 @@ async def buscar_contexto_rag(
 
 
 def _formatar_fontes(fontes: list[dict]) -> str:
+    """Formata as fontes do RAG para o prompt.
+
+    Auditoria de 2026-08-18 (A/P1-8): a recuperação já traz URL oficial, versão,
+    tribunal, data de atualização e situação jurídica, mas a formatação antiga
+    entregava ao modelo apenas título/categoria/fonte — sem isso ele não tem como
+    citar com identificação completa nem sinalizar vigência. Todos os campos além
+    de título/categoria são opcionais (o reranker, que enriquece tribunal e
+    situação, é opt-in), por isso cada um entra de forma defensiva.
+    """
     if not fontes:
         return "[FONTES]\nNenhuma fonte encontrada na base de conhecimento.\n"
     linhas = ["[FONTES]"]
     for i, f in enumerate(fontes, start=1):
+        meta = [str(f.get("categoria") or "sem categoria")]
+        if f.get("tribunal"):
+            meta.append(str(f["tribunal"]))
+        if f.get("versao"):
+            meta.append(f"versão {f['versao']}")
+        if f.get("atualizado_em"):
+            meta.append(f"atualizado em {f['atualizado_em']}")
+        situacao = f.get("situacao_juridica")
+        if isinstance(situacao, dict) and situacao.get("label"):
+            rotulo = str(situacao["label"])
+            # Vigência duvidosa vai marcada: o revisor precisa ver o alerta e o
+            # modelo precisa saber que não pode tratar a fonte como pacífica.
+            meta.append(f"⚠ {rotulo}" if situacao.get("warning") else rotulo)
+        if f.get("fonte"):
+            meta.append(f"fonte oficial: {f['fonte']}")
         linhas.append(
-            f"[Fonte {i}] {f['titulo']} ({f['categoria']}"
-            + (f" — {f['fonte']}" if f.get('fonte') else "")
-            + f")\n{f['conteudo'][:800]}\n"
+            f"[Fonte {i}] {f['titulo']} ({' | '.join(meta)})"
+            f"\n{f['conteudo'][:1500]}\n"
         )
     return "\n".join(linhas)
 

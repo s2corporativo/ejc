@@ -69,6 +69,11 @@ STATUS_DESATUALIZADA = "possivelmente_desatualizada"
 #   STJ: Súmula 676 · TST: Súmula 463
 SUMULA_TETO: dict[str, int] = {"STF": 736, "STF-V": 61, "STJ": 676, "TST": 463}
 _SUMULA_TETO_DEFAULT = max(SUMULA_TETO.values())  # órgão não informado no texto
+# Data da última conferência dos tetos acima contra fonte oficial. Um teto
+# vencido acusa de alucinação súmula NOVA e verdadeira (P2-13 da auditoria de
+# 18/08) — por isso, vencido o prazo, o aviso passa a ressalvar isso ao revisor
+# em vez de afirmar que a súmula "provavelmente não existe".
+SUMULA_TETO_CONFERIDO_EM = "2026-07-18"
 
 # Consulta ativa ao DataJud (opt-in): no MÁXIMO 5 números CNJ consultados por
 # verificação (evita estourar o rate limit público do CNJ em textos longos) e
@@ -500,9 +505,23 @@ async def verificar_jurisprudencia(
             if num_i < 1 or (teto and num_i > teto):
                 status = STATUS_SUSPEITA
                 ref = chave_teto or "tribunais superiores"
-                aviso = _AVISO_SUSPEITA.format(
-                    motivo=f"Súmula {c['numero']} fora da faixa plausível de {ref} "
-                           f"(1 a {teto}) — provavelmente não existe")
+                from app.services.vigencia_dados_juridicos import (
+                    teto_de_sumula_vencido,
+                )
+                if num_i >= 1 and teto_de_sumula_vencido():
+                    # O teto está desatualizado: a súmula pode ser nova e real.
+                    ressalva = (
+                        f"acima do teto conhecido de {ref} (1 a {teto}), MAS a "
+                        f"tabela de tetos não é reconferida desde "
+                        f"{SUMULA_TETO_CONFERIDO_EM} — confirme na fonte oficial "
+                        "antes de tratar como inexistente"
+                    )
+                else:
+                    ressalva = (
+                        f"Súmula {c['numero']} fora da faixa plausível de {ref} "
+                        f"(1 a {teto}) — provavelmente não existe"
+                    )
+                aviso = _AVISO_SUSPEITA.format(motivo=ressalva)
             else:
                 fonte = await _existe_sumula(db, c["numero"],
                                              c["tribunal"] if c["tribunal"] in

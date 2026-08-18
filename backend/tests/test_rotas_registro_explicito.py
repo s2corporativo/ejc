@@ -144,6 +144,10 @@ ADICOES_INTENCIONAIS = {
     # bloqueios e datas inconsistentes do banco real.
     ("/api/cases/{case_id}/movimentos/{movimento_id}", "PATCH"),
     ("/api/cases/{case_id}/movimentos/{movimento_id}", "DELETE"),
+    # Auditoria de IA 18/08 (dívida 5.3): inventário canônico dos prompts do
+    # NÚCLEO (código), com versão por conteúdo. Distinto de /prompts, que lista
+    # os prompts jurídicos do usuário no banco. Somente admin/sócio.
+    ("/api/ia-governanca/prompts-sistema", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -282,6 +286,36 @@ def test_paridade_openapi_com_snapshot_anterior():
         # Decisão deliberada, não achado — a listagem expunha títulos de
         # documentos internos de qualquer caso.
         (("/api/rag/docs", "GET"), ["HTTPBearer", "get_current_user", "get_db"]),
+        # Auditoria de segurança de IA (18/08): 12 endpoints que chamam
+        # provedor de IA (custo real por chamada) não tinham @rate_limit —
+        # o único determinístico sem LLM da vizinhança (/citacoes/verificar)
+        # tinha. `_dep` é o fechamento devolvido por rate_limit(); entra como
+        # sub-dependency ANTES de get_current_user na ordem de extração porque
+        # está em `dependencies=` do decorator, não na assinatura do handler.
+        (("/api/ai/analisar-caso", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/resumir-documento", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/teses-ocultas", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/auditar-peca", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/preparar-audiencia", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/casos/{case_id}/assistente", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/casos/{case_id}/dual", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/caso/{case_id}/visual-law", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/caso/{case_id}/estrategia", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/analisar-contrato", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ai/detectar-prazos", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        (("/api/ia-defensiva/analisar", "POST"),
+         ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
     )
 
     divergentes = [

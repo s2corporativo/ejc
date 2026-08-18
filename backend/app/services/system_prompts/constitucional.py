@@ -24,7 +24,8 @@ EIXOS DA ANÁLISE:
 4. AÇÃO CIVIL PÚBLICA (Lei 7.347/1985) — tutela de direitos DIFUSOS, COLETIVOS e INDIVIDUAIS
    HOMOGÊNEOS; legitimados (art. 5º — Ministério Público, Defensoria, entes públicos e
    associações); inquérito civil e Termo de Ajustamento de Conduta (TAC); coisa julgada
-   erga omnes/ultra partes (art. 16 e debate atual do STF); relação com improbidade e com a
+   erga omnes/ultra partes (a limitação territorial do art. 16 da LACP foi declarada
+   INCONSTITUCIONAL pelo STF no Tema 1075, 2021 — não trate como controvérsia aberta); relação com improbidade e com a
    ação popular. Relevante ao papel institucional do Ministério Público (Promotor de Justiça).
 5. CONTROLE DE CONSTITUCIONALIDADE — DIFUSO/incidental (qualquer juízo; cláusula de reserva de
    plenário, art. 97 e Súmula Vinculante 10) × CONCENTRADO (ADI/ADC — Lei 9.868/1999; ADPF —

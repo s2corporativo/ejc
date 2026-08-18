@@ -16,12 +16,15 @@
 # parâmetros temperature/top_p/top_k foram REMOVIDOS (HTTP 400 se enviados).
 # O controle de raciocínio passa a ser thinking adaptativo + output_config.effort.
 from __future__ import annotations
-import os
 import asyncio
 
 from app.core.config import get_settings
 
 _client = None
+# Chave que foi usada para CONSTRUIR o `_client` cacheado — não a chave atual
+# de Settings. O SDK grava a key dentro do objeto no momento da construção;
+# comparar as duas é o único jeito de saber se o client ficou obsoleto.
+_client_api_key: str | None = None
 
 # Modelos que usam a superfície nova da API (sem temperature; adaptive thinking).
 _MODERN_PREFIXES = (
@@ -38,9 +41,21 @@ def _is_modern(model: str) -> bool:
 
 
 def _api_key() -> str:
-    """Chave Anthropic: prioriza a Settings tipada (.env carregado pelo pydantic);
-    cai para os.getenv (ex.: docker env_file exporta no ambiente do processo)."""
-    return get_settings().ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
+    """Chave Anthropic: SÓ a Settings tipada — nunca os.getenv como fallback.
+
+    `.env` já chega aqui: pydantic-settings carrega `.env` em Settings no boot,
+    então quando a credencial NUNCA foi cadastrada no Cofre, ANTHROPIC_API_KEY
+    já tem o valor do `.env` (credential_vault_service.aplicar_overlay só
+    sobrescreve o campo quando há registro ativo ou histórico).
+
+    O fallback a os.getenv existia aqui e ANULAVA a revogação: ao revogar uma
+    credencial já cadastrada, aplicar_overlay grava "" em Settings de propósito
+    ("revogada — sem fallback ao .env"), mas `"" or os.getenv(...)` cai de
+    volta no valor do processo (docker-compose exporta `.env` via env_file) —
+    a chave revogada pelo Cofre continuava sendo usada até o próximo restart
+    do container (auditoria de segurança, 18/08).
+    """
+    return get_settings().ANTHROPIC_API_KEY or ""
 
 
 def _default_model() -> str:
@@ -48,18 +63,38 @@ def _default_model() -> str:
 
 
 def _get_client():
-    global _client
+    global _client, _client_api_key
     if not get_settings().ANTHROPIC_ENABLED:
         raise RuntimeError("Provider Anthropic desabilitado (ANTHROPIC_ENABLED=false)")
-    if _client is None:
+    api_key = _api_key()
+    # Reconstrói o client sempre que a chave RESOLVIDA muda — cobre revogação
+    # (Settings passa a "") e rotação (Settings passa a um valor novo). Achado
+    # da revisão de segurança sobre o fix anterior (18/08): remover o
+    # fallback a os.getenv em _api_key() não bastava — o SDK grava a key
+    # DENTRO do client no momento da construção, e o client era cacheado por
+    # PROCESSO (`--workers 1`). Revogar pelo Cofre zerava Settings, mas o
+    # client já construído seguia enviando a chave antiga em toda chamada até
+    # o próximo restart do container. Comprovado com PoC: client reconstruído
+    # só no restart, chave revogada continuava "válida" indefinidamente.
+    if _client is None or _client_api_key != api_key:
         import anthropic  # import tardio: só quando realmente usado
-        api_key = _api_key()
         if not api_key:
+            _client = None
+            _client_api_key = None
             raise RuntimeError("ANTHROPIC_API_KEY não configurada")
         _client = anthropic.Anthropic(
             api_key=api_key,
             timeout=float(get_settings().ANTHROPIC_TIMEOUT_SECONDS),
+            # max_retries=0 (auditoria de segurança, 18/08): o SDK reintenta
+            # até 2x por padrão em erro transitório — sem deadline global na
+            # cadeia do gateway, isso multiplicava o pior caso de latência
+            # POR PROVIDER antes mesmo de tentar o próximo da cadeia. A
+            # resiliência real é o fallback entre PROVIDERES DIFERENTES que o
+            # gateway já faz; retentar o MESMO provider que acabou de falhar
+            # não ganha nada e só segura o request.
+            max_retries=0,
         )
+        _client_api_key = api_key
     return _client
 
 
@@ -299,6 +334,12 @@ async def chat(messages: list[dict], model: str | None,
     if getattr(respostas[-1], "stop_reason", None) == "pause_turn":
         # Teto de continuações excedido → degradação graciosa com aviso.
         texto += _AVISO_BUSCA_PARCIAL
+    # Resposta só com blocos "thinking"/tool e nenhum "text" produz texto=""
+    # em silêncio — vira "sucesso" vazio, cacheado pelo TTL inteiro sem o
+    # fallback disparar (auditoria de segurança, 18/08; mesma classe de bug
+    # corrigida no Ollama/Groq/Maritaca).
+    if not texto.strip():
+        raise RuntimeError(f"Anthropic retornou conteúdo vazio — modelo {mdl}")
     usage = {
         "model": mdl,
         "input_tokens": _somar_usage(respostas, "input_tokens"),

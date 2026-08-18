@@ -852,6 +852,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="analise_juridica",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         temperature=0.1,
         max_tokens=600,
         entidades=entidades,
@@ -896,6 +897,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="analise_juridica",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         temperature=0.15,
         max_tokens=1000,
         entidades=entidades,
@@ -908,7 +910,12 @@ async def gerar_peca_pipeline(
     query_rag = f"{area_direito} {tipo_peca_final} {fatos_limpos[:200]}"
     # limite=10: a base de conhecimento é alimentada pelo escritório (julgados,
     # pareceres, docs regulatórios) — peça padrão-ouro consome mais acervo.
-    fontes = await buscar_contexto_rag(db, query_rag, limite=10, scope_client_id=scope_client_id)
+    fontes = await buscar_contexto_rag(
+        db, query_rag, limite=10, scope_client_id=scope_client_id,
+        # Comunicação processual de OUTRO caso do mesmo cliente não fundamenta
+        # esta peça (auditoria, dívida 5.5).
+        scope_case_id=case_id,
+    )
     rag_txt = ""
     if fontes:
         linhas = [
@@ -955,6 +962,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="analise_juridica",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         temperature=0.1,
         max_tokens=1200,
         entidades=entidades,
@@ -984,6 +992,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="analise_juridica",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         temperature=0.2,
         max_tokens=1500,
         entidades=entidades,
@@ -1013,6 +1022,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="analise_juridica",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         temperature=0.2,
         max_tokens=1000,
         entidades=entidades,
@@ -1106,6 +1116,12 @@ async def gerar_peca_pipeline(
         + "\nSe houver MODELOS DE REFERÊNCIA, use-os apenas como guia de "
         "estrutura/tese — jamais como fonte factual ou jurisprudencial."
     )
+    # Rastreabilidade do prompt (dívida 5.3): a minuta é montada a partir de
+    # vários blocos (perfil de complexidade, especialização de área, padrão
+    # ouro). A impressão digital do texto FINAL é o que permite dizer, meses
+    # depois, com qual instrução aquela peça foi redigida.
+    from app.services.system_prompts.inventario import impressao as _impressao
+    prompt_versao_peca = _impressao(system_redator)
     r7 = await gw_chat(
         messages=[
             {"role": "system", "content": system_redator},
@@ -1126,6 +1142,7 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="elaboracao_peca",
+        nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
         # Fase B (#3): amostragem por perfil de complexidade. A peça padrão-ouro
         # (fatos numerados + subseções + relação de anexos) é longa — o teto do
         # perfil "comum"/"completa" (8000) evita truncar antes dos pedidos/valor da
@@ -1190,6 +1207,7 @@ async def gerar_peca_pipeline(
                         )},
                     ],
                     task_type="elaboracao_peca",
+                    nivel_inteligencia="alto",  # FIRAC + fonte por premissa (auditoria 18/08, A-1)
                     temperature=perfil["temperature"],
                     max_tokens=perfil["max_tokens"],
                     entidades=entidades,
@@ -1233,25 +1251,48 @@ async def gerar_peca_pipeline(
     # Resposta "final" para AILog/payload: a da revisão quando aplicada.
     r_final = r_rev if (autocritica_info or {}).get("revisao_aplicada") and r_rev else r7
 
-    # A3 (auditoria 2026-06-30): verifica as citações (súmulas/artigos) contra a
-    # base oficial e anexa o relatório — anti-alucinação (regra absoluta OAB).
-    # Fail-safe: falha na verificação não impede a entrega da minuta.
+    # A3 (auditoria 2026-06-30) + dívida 5.2 (auditoria 2026-08-18): a minuta
+    # passa pela MESMA validação canônica do núcleo (response_validator) que o
+    # orquestrador aplica às demais saídas — citações contra a base oficial
+    # (anti-alucinação, regra absoluta OAB), grounding, detecção de promessa de
+    # resultado (vedação OAB) e marcação "SEM BASE VERIFICÁVEL" quando a peça
+    # não tem NENHUMA âncora (nem fonte RAG, nem citação confirmada).
+    # Fail-safe: falha na validação não impede a entrega da minuta — vira alerta.
     verificacao_citacoes = None
+    alertas_validacao: list[str] = []
+    sem_base_verificavel = False
+    revisao_obrigatoria = False
     try:
-        from app.services.citation_check import verificar_citacoes
-        verificacao_citacoes = await verificar_citacoes(db, documento_final)
+        from app.services.ai.core import response_validator
+        validacao = await response_validator.validar(
+            db, documento_final, exige_fonte=True, fontes=fontes,
+        )
+        # A peça entregue/persistida é a validada: quando não há âncora alguma,
+        # o aviso vai no CORPO do documento, onde o revisor não tem como perder.
+        documento_final = validacao["conteudo"]
+        verificacao_citacoes = validacao["citacoes"]
+        alertas_validacao = list(validacao["alertas"])
+        sem_base_verificavel = bool(validacao["sem_base_verificavel"])
+        revisao_obrigatoria = bool(validacao["revisao_obrigatoria"])
         yield await _emit("step", {
             "etapa": 8, "titulo": "Verificando citações na base oficial",
             "status": "concluido",
             "resultado": (
                 f"{verificacao_citacoes['confirmadas']}/{verificacao_citacoes['total']} "
                 "citações confirmadas"
-                if verificacao_citacoes.get("total") else "sem citações a verificar"
+                if (verificacao_citacoes or {}).get("total")
+                else "sem citações a verificar"
             ),
+            "alertas": alertas_validacao,
         })
     except Exception as _e:
         import logging as _lg
-        _lg.getLogger(__name__).warning("citation_check falhou: %s", _e)
+        _lg.getLogger(__name__).warning("validação da minuta falhou: %s", _e)
+        alertas_validacao = [
+            "Validação automática da minuta indisponível — confira manualmente "
+            "as citações e a ausência de promessa de resultado (vedação OAB)."
+        ]
+        revisao_obrigatoria = True
 
     # ── Registra no AILog (HITL) ───────────────────────────────────────────
     # LGPD — o campo prompt_sanitizado tem contrato "SEM PII". Com `entidades`
@@ -1356,10 +1397,19 @@ async def gerar_peca_pipeline(
         "pii_removida": houve_pii,
         "tokens_totais": (log.tokens_input or 0) + (log.tokens_output or 0),
         "verificacao_citacoes": verificacao_citacoes,
+        "prompt_versao": prompt_versao_peca,
+        "alertas": alertas_validacao,
+        "sem_base_verificavel": sem_base_verificavel,
+        "revisao_obrigatoria": revisao_obrigatoria,
         "aviso": aviso_rascunho_ia(),
     }
     # Flag-off = payload IDÊNTICO ao atual: a chave só existe com o laço ligado.
     if autocritica_info is not None:
         payload_concluido["autocritica"] = autocritica_info
+    # Carimbo HITL canônico (dívida 5.2): a minuta é rascunho como qualquer
+    # outra saída do núcleo — is_rascunho/requer_revisao/status_hitl/aviso_hitl
+    # com a MESMA semântica do orquestrador, e não só o texto de `aviso`.
+    from app.services.ai.core import hitl_policy
+    payload_concluido = hitl_policy.aplicar(payload_concluido)
     yield await _emit("concluido", payload_concluido)
 

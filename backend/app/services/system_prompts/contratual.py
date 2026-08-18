@@ -27,7 +27,10 @@ EIXOS DA ANÁLISE:
 4. INADIMPLEMENTO E DEFESAS — inadimplemento absoluto × mora (arts. 394-401);
    exceção do contrato não cumprido (art. 476) e exceptio non rite adimpleti
    contractus; cláusula penal (arts. 408-416) e sua redução equitativa (art. 413);
-   juros, correção e perdas e danos (arts. 402-405).
+   juros, correção e perdas e danos (arts. 402-405) — desde 30/08/2024, a regra supletiva é
+   correção pelo IPCA (CC art. 389, § único) e juros pela taxa legal = SELIC deduzido o IPCA
+   (CC art. 406, §1º, red. Lei 14.905/2024), salvo convenção ou lei especial; para período
+   anterior, aplique a regra da época e explicite o marco de transição.
 5. REVISÃO E EXTINÇÃO — resolução por onerosidade excessiva superveniente
    (arts. 478-480, teoria da imprevisão) e revisão contratual; distrato (art. 472),
    resilição, resolução por inadimplemento (art. 475) e cláusula resolutiva.

@@ -149,3 +149,30 @@ async def test_validar_sem_provedor_de_ia_nao_estoura_500_cru(monkeypatch):
     assert erro.status_code == 503
     for jargao in ("task=", "provedores", "RuntimeError"):
         assert jargao not in erro.detail
+
+
+# ── P2-9: override do gate de citações no ato de assinar ─────────────────────
+
+def test_conferir_e_assinar_repassa_o_override_do_gate_de_citacoes():
+    """Antes, o override era fixo em False: citação bloqueante fechava o ÚNICO
+    caminho de aprovação da peça (409 sem saída). Agora o ato de assinar carrega
+    a decisão do advogado — e `aplicar_gate_hitl` segue exigindo justificativa e
+    auditando o override."""
+    src = _source("app/routers/legal_docs.py")
+    bloco = _function_source(src, "conferir_e_assinar")
+    assert "bool(payload.override_citacoes)" in bloco
+    assert "payload.justificativa_override" in bloco
+    assert 'aplicar_gate_hitl(db, log, "revisado", False, None, cu)' not in bloco
+    # A decisão fica na trilha de auditoria da assinatura.
+    assert "override_citacoes={bool(payload.override_citacoes)}" in bloco
+
+
+def test_schema_de_aprovacao_tem_os_campos_do_override():
+    from app.schemas.legal_doc import LegalDocAprovacao
+
+    campos = LegalDocAprovacao.model_fields
+    assert campos["override_citacoes"].default is False
+    assert campos["justificativa_override"].default is None
+    # Default seguro: quem não pede override não recebe override.
+    vazio = LegalDocAprovacao()
+    assert vazio.override_citacoes is False

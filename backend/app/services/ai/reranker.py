@@ -1,22 +1,16 @@
 # ── app/services/ai/reranker.py ──────────────────────────────────────────────
-# RERANKING (cross-encoder) do RAG — Fase 1 da auditoria de IA (2026-07-17).
+# RERANKING jurídico multifatorial do RAG.
 #
 # O retrieval recupera candidatos por pgvector e os funde com a perna lexical
-# via RRF. Esta camada reordena os candidatos por relevância conjunta consulta ×
-# trecho e aplica governança jurídica como sinal secundário e auditável.
-#
-# Regras essenciais:
-#   • relevância semântica continua sendo o sinal principal;
-#   • autoridade oficial serve como desempate controlado;
-#   • norma marcada como revogada não fundamenta resposta atual;
-#   • fonte com vigência não verificada continua pesquisável, mas recebe aviso;
-#   • pesquisa histórica preserva versões não vigentes e explicita o contexto;
-#   • qualquer falha degrada para a ordem RRF, sem derrubar o RAG.
+# via RRF. Esta camada reordena os candidatos combinando relevância, autoridade,
+# confiança, situação jurídica, verificação recente e aderência de área/tribunal.
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -52,6 +46,21 @@ _LEGAL_LABELS = {
     "suspensa": "Suspensa",
     "historica": "Versão histórica",
     "revogada": "Revogada",
+}
+
+_TRIBUNAIS = (
+    "STF", "STJ", "TST", "TSE", "STM", "TJMG", "TRF1", "TRF2", "TRF3",
+    "TRF4", "TRF5", "TRF6", "TRT3", "TCU",
+)
+_AREA_ALIASES = {
+    "tributario": ("tribut", "fiscal", "ctn"),
+    "ambiental": ("ambient", "ibama", "licenciamento"),
+    "administrativo": ("administrativ", "ato administrativo", "servidor"),
+    "licitacoes": ("licit", "pregao", "14.133", "contratacao publica"),
+    "empresarial": ("empres", "societ", "recuperacao judicial", "falencia"),
+    "consumidor_bancario": ("consumidor", "bancari", "banco", "cdc", "pix"),
+    "trabalhista_empresarial": ("trabalh", "clt", "empregado", "empregador"),
+    "processual_civil": ("processual", "cpc", "tutela", "recurso"),
 }
 
 
@@ -139,15 +148,15 @@ def _normalizar_status_legal(extra: dict[str, Any], vigente_no_ejc: bool) -> str
         return "historica"
     if status in _LEGAL_LABELS:
         return status
-    return "vigencia_nao_verificada" if extra.get("authority_level") == "oficial_normativa" else "nao_aplicavel"
+    return (
+        "vigencia_nao_verificada"
+        if extra.get("authority_level") == "oficial_normativa"
+        else "nao_aplicavel"
+    )
 
 
 async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
-    """Carrega metadados dos documentos em uma única consulta.
-
-    O SQL de retrieval permanece enxuto; a governança é anexada após a seleção do
-    pool. Em caso de indisponibilidade do banco, devolve os candidatos originais.
-    """
+    """Carrega metadados jurídicos e elimina quarentena/revogação do ranking."""
     ids = {str(item.get("doc_id")) for item in candidatos if item.get("doc_id")}
     if not ids:
         return candidatos
@@ -155,31 +164,46 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
         async with AsyncSessionLocal() as db:
             rows = (
                 await db.execute(
-                    select(KnowledgeDoc.id, KnowledgeDoc.extra, KnowledgeDoc.vigente).where(
+                    select(
+                        KnowledgeDoc.id,
+                        KnowledgeDoc.extra,
+                        KnowledgeDoc.vigente,
+                        KnowledgeDoc.tribunal,
+                        KnowledgeDoc.atualizado_em,
+                    ).where(
                         KnowledgeDoc.id.in_(ids),
                         KnowledgeDoc.deleted_at.is_(None),
                     )
                 )
             ).all()
         metadata = {
-            str(doc_id): (dict(extra or {}), bool(vigente))
-            for doc_id, extra, vigente in rows
+            str(doc_id): (dict(extra or {}), bool(vigente), tribunal, atualizado_em)
+            for doc_id, extra, vigente, tribunal, atualizado_em in rows
         }
         hydrated: list[dict] = []
         for candidate in candidatos:
             item = dict(candidate)
-            extra, vigente = metadata.get(
+            extra, vigente, tribunal, atualizado_em = metadata.get(
                 str(item.get("doc_id")),
-                (dict(item.get("extra") or {}), True),
+                (dict(item.get("extra") or {}), True, item.get("tribunal"), None),
             )
+            if bool(extra.get("quarantine_active")):
+                logger.info(
+                    "RAG excluiu documento em quarentena ativa: doc_id=%s",
+                    item.get("doc_id"),
+                )
+                continue
             status = _normalizar_status_legal(extra, vigente)
             item["extra"] = extra
+            item["tribunal"] = (
+                tribunal or item.get("tribunal") or extra.get("tribunal")
+            )
+            item["atualizado_em"] = atualizado_em
             item["vigente_no_ejc"] = vigente
             item["situacao_juridica"] = {
                 "code": status,
                 "label": _LEGAL_LABELS[status],
-                "warning": status
-                in {
+                "warning": status in {
                     "vigencia_nao_verificada",
                     "parcialmente_revogada",
                     "suspensa",
@@ -187,9 +211,6 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
                     "revogada",
                 },
             }
-            # Uma norma REVOGADA cadastrada como versão atual não pode chegar ao
-            # modelo. Uma versão histórica permanece disponível quando o chamador
-            # pediu explicitamente incluir_historico (vigente_no_ejc=False).
             if status == "revogada" and vigente:
                 logger.info(
                     "RAG excluiu norma revogada da fundamentação atual: doc_id=%s",
@@ -208,20 +229,122 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
 
 def _confidence_bonus(candidate: dict) -> float:
     confidence = str(candidate.get("confianca") or "media").strip().lower()
-    return {"alta": 0.015, "media": 0.0, "baixa": -0.015}.get(confidence, 0.0)
+    return {
+        "alta": 0.015,
+        "media": 0.0,
+        "baixa": -0.015,
+        "bloqueado": -0.10,
+    }.get(confidence, 0.0)
 
 
-def _enrich(candidate: dict) -> tuple[dict, float]:
-    """Anexa autoridade, vigência e citação; devolve ajuste pequeno de ranking."""
+def _explicit_authority_bonus(extra: dict[str, Any]) -> float:
+    """Usa score_autoridade canônico sem deixar metadado dominar relevância."""
+    try:
+        score = max(0.0, min(100.0, float(extra.get("score_autoridade"))))
+    except (TypeError, ValueError):
+        return 0.0
+    return (score - 50.0) / 2000.0
+
+
+def _parse_date(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not value:
+        return None
+    raw = str(value).strip()
+    for candidate in (raw, raw.replace("Z", "+00:00")):
+        try:
+            dt = datetime.fromisoformat(candidate)
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    match = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", raw)
+    if match:
+        return datetime(
+            int(match.group(3)),
+            int(match.group(2)),
+            int(match.group(1)),
+            tzinfo=timezone.utc,
+        )
+    return None
+
+
+def _verification_freshness_bonus(candidate: dict, extra: dict[str, Any]) -> float:
+    """Premia verificação recente, não a idade do precedente em si."""
+    dt = (
+        _parse_date(extra.get("last_verified_at"))
+        or _parse_date(extra.get("legal_status_verificado_em"))
+        or _parse_date(extra.get("data_pesquisa"))
+        or _parse_date(candidate.get("atualizado_em"))
+    )
+    if not dt:
+        return -0.005
+    days = max(0, (datetime.now(timezone.utc) - dt).days)
+    if days <= 90:
+        return 0.012
+    if days <= 365:
+        return 0.006
+    if days <= 1095:
+        return 0.0
+    return -0.006
+
+
+def _compactar_sigla(value: Any) -> str:
+    """Normaliza `TRF-6`, `TRF 6` e `TRF6` para a mesma chave de ranking."""
+    return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+
+
+def _query_alignment_bonus(candidate: dict, extra: dict[str, Any], consulta: str) -> float:
+    q = re.sub(r"\s+", " ", (consulta or "").upper())
+    q_compact = _compactar_sigla(q)
+    bonus = 0.0
+    tribunal = _compactar_sigla(
+        candidate.get("tribunal") or extra.get("tribunal") or ""
+    )
+    tribunais_query = {
+        tribunal_id for tribunal_id in _TRIBUNAIS if tribunal_id in q_compact
+    }
+    if tribunais_query:
+        bonus += (
+            0.012
+            if any(tribunal.startswith(tribunal_id) for tribunal_id in tribunais_query)
+            else -0.004
+        )
+
+    q_lower = q.lower()
+    area = str(extra.get("area_juridica") or "").strip().lower()
+    if area and area in _AREA_ALIASES:
+        aliases = _AREA_ALIASES[area]
+        if any(alias in q_lower for alias in aliases):
+            bonus += 0.01
+    return bonus
+
+
+def _enrich(candidate: dict, consulta: str = "") -> tuple[dict, float]:
+    """Anexa governança e devolve ajuste multifatorial pequeno e auditável."""
     item = dict(candidate)
     extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
-    authority = inferir_autoridade(item.get("categoria"), item.get("fonte"), extra)
-    legal = item.get("situacao_juridica") if isinstance(item.get("situacao_juridica"), dict) else None
+    authority = inferir_autoridade(
+        item.get("categoria"), item.get("fonte"), extra
+    )
+    legal = (
+        item.get("situacao_juridica")
+        if isinstance(item.get("situacao_juridica"), dict)
+        else None
+    )
     status = str((legal or {}).get("code") or "nao_aplicavel")
 
-    bonus = max(0.0, (float(authority["weight"]) - 40.0) / 1000.0)
-    bonus += _confidence_bonus(item)
-    bonus += _LEGAL_PENALTIES.get(status, -0.01)
+    fatores = {
+        "autoridade_inferida": max(
+            0.0, (float(authority["weight"]) - 40.0) / 1000.0
+        ),
+        "score_autoridade": _explicit_authority_bonus(extra),
+        "confianca": _confidence_bonus(item),
+        "situacao_juridica": _LEGAL_PENALTIES.get(status, -0.01),
+        "verificacao_recente": _verification_freshness_bonus(item, extra),
+        "aderencia_jurisdicao_area": _query_alignment_bonus(item, extra, consulta),
+    }
+    bonus = sum(fatores.values())
 
     item["autoridade"] = authority
     item["situacao_juridica"] = legal or {
@@ -239,17 +362,22 @@ def _enrich(candidate: dict) -> tuple[dict, float]:
         "autoridade": authority,
         "situacao_juridica": item["situacao_juridica"],
     }
+    item["governance_factors"] = {
+        key: round(value, 5) for key, value in fatores.items()
+    }
     item["governance_bonus"] = round(bonus, 5)
     return item, bonus
 
 
-def _prioritize_existing_order(candidates: list[dict], limit: int) -> list[dict]:
+def _prioritize_existing_order(
+    candidates: list[dict], limit: int, consulta: str = ""
+) -> list[dict]:
     if not candidates:
         return candidates
     size = max(1, len(candidates))
     enriched = []
     for index, candidate in enumerate(candidates):
-        item, bonus = _enrich(candidate)
+        item, bonus = _enrich(candidate, consulta)
         base = 1.0 - (index / size)
         item["governance_score"] = round(base + bonus, 5)
         enriched.append((item, base + bonus, index))
@@ -263,7 +391,7 @@ async def rerank(
     limite: int,
     campo: str = "conteudo",
 ) -> list[dict]:
-    """Reordena por relevância, autoridade e vigência com degradação segura."""
+    """Reordena por relevância + governança, com degradação segura."""
     if not candidatos:
         return candidatos
 
@@ -272,9 +400,12 @@ async def rerank(
         return []
 
     if not disponivel() or len(candidatos) <= 1:
-        return _prioritize_existing_order(candidatos, limite)
+        return _prioritize_existing_order(candidatos, limite, consulta)
     try:
-        textos = [((candidate.get(campo) or "")[:_MAX_CHARS]) for candidate in candidatos]
+        textos = [
+            ((candidate.get(campo) or "")[:_MAX_CHARS])
+            for candidate in candidatos
+        ]
         scores = await asyncio.to_thread(_rerank_sync, consulta, textos)
         if not scores or len(scores) != len(candidatos):
             if scores:
@@ -283,11 +414,11 @@ async def rerank(
                     len(scores),
                     len(candidatos),
                 )
-            return _prioritize_existing_order(candidatos, limite)
+            return _prioritize_existing_order(candidatos, limite, consulta)
 
         ordered = []
         for index, (candidate, score) in enumerate(zip(candidatos, scores)):
-            item, bonus = _enrich(candidate)
+            item, bonus = _enrich(candidate, consulta)
             item["rerank_score"] = round(float(score), 5)
             item["governance_score"] = round(float(score) + bonus, 5)
             ordered.append((item, float(score) + bonus, index))
@@ -298,4 +429,4 @@ async def rerank(
             "[Reranker] falha (%s) — mantendo ordem híbrida RRF",
             str(exc)[:200],
         )
-        return _prioritize_existing_order(candidatos, limite)
+        return _prioritize_existing_order(candidatos, limite, consulta)

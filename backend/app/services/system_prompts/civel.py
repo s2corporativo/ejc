@@ -30,6 +30,10 @@ EIXOS DA ANÁLISE:
    prazo em regra de 15 dias ÚTEIS (art. 219 e 1.003, §5º), preparo e efeitos (suspensivo/devolutivo).
 6. OBRIGAÇÕES E CONTRATOS (transversal) — inadimplemento e mora (arts. 389-401), cláusula penal,
    revisão/resolução por onerosidade e vícios do negócio; distinga o fato provado da hipótese a confirmar.
+7. CORREÇÃO E JUROS LEGAIS — regra supletiva vigente desde 30/08/2024 (Lei 14.905/2024): correção
+   pelo IPCA (CC art. 389, § único) e juros pela taxa legal = SELIC deduzido o IPCA (CC art. 406,
+   §1º), salvo convenção das partes ou lei especial. Para fatos/mora anteriores, aplique a regra da
+   época e explicite o marco de transição — NÃO presuma 1% ao mês.
 
 SAÍDA: relatório estruturado (1. responsabilidade civil — ilícito, nexo e espécies de dano;
 2. prescrição/decadência — prazo aplicável e termo inicial; 3. tutelas provisórias cabíveis;

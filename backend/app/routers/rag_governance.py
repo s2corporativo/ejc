@@ -32,7 +32,10 @@ from app.services.knowledge_governance import (
     test_document_retrieval,
 )
 
-router = APIRouter(prefix="/rag/governanca", tags=["Base de Conhecimento — Governança"])
+router = APIRouter(
+    prefix="/rag/governanca",
+    tags=["Base de Conhecimento — Governança"],
+)
 GOVERNANCE_ROLES = ["superadmin", "admin", "socio"]
 
 
@@ -76,6 +79,97 @@ class GovernanceMetadataPatch(BaseModel):
     area_juridica: str | None = Field(default=None, max_length=120)
     quality_note: str | None = Field(default=None, max_length=1000)
     confirmar_fonte_agora: bool = False
+    retirar_quarentena: bool = False
+
+
+class RevisaoRequest(BaseModel):
+    aprovado: bool = Field(description="True para aprovar, False para rejeitar")
+
+
+def _agora_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _deve_retirar_quarentena(
+    extra_atual: dict | None,
+    *,
+    confirmar_fonte_agora: bool,
+    retirar_explicito: bool,
+) -> bool:
+    """A confirmação contemporânea da fonte libera a quarentena sem aprovar.
+
+    O frontend já possui a ação "Conferir fonte agora". Quando o documento está
+    em quarentena, essa ação é suficiente para solicitar a retirada, mantendo o
+    documento pendente de uma segunda decisão humana. A flag explícita continua
+    disponível para clientes administrativos/API.
+    """
+    extra = dict(extra_atual or {})
+    return bool(
+        retirar_explicito
+        or (confirmar_fonte_agora and extra.get("quarantine_active"))
+    )
+
+
+def _retirar_quarentena(
+    extra_atual: dict | None,
+    *,
+    user_id: str,
+    confirmar_fonte_agora: bool,
+    agora: str | None = None,
+) -> dict:
+    """Retira quarentena sem aprovar o documento.
+
+    A retirada exige uma confirmação contemporânea da fonte e sempre devolve o
+    registro ao estado pendente, exigindo uma segunda ação explícita de revisão.
+    """
+    extra = dict(extra_atual or {})
+    if not bool(extra.get("quarantine_active")):
+        raise HTTPException(
+            status_code=422,
+            detail="Documento não está em quarentena ativa.",
+        )
+    if not confirmar_fonte_agora:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Para retirar a quarentena, confirme a fonte no mesmo PATCH "
+                "com confirmar_fonte_agora=true."
+            ),
+        )
+    timestamp = agora or _agora_iso()
+    extra["quarantine_active"] = False
+    extra["quarantine_released_at"] = timestamp
+    extra["quarantine_released_by"] = str(user_id)
+    extra["requires_human_review"] = True
+    extra["human_reviewed"] = False
+    extra["rag_status"] = "pendente"
+    return extra
+
+
+def _registrar_decisao_revisao(
+    extra_atual: dict | None,
+    *,
+    aprovado: bool,
+    user_id: str,
+    agora: str | None = None,
+) -> dict:
+    """Grava a decisão no mesmo contrato JSONB consumido pelo RAG/listener."""
+    extra = dict(extra_atual or {})
+    if aprovado and bool(extra.get("quarantine_active")):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Documento em quarentena não pode ser aprovado diretamente. "
+                "Confirme a fonte e retire a quarentena antes da aprovação."
+            ),
+        )
+    timestamp = agora or _agora_iso()
+    extra["requires_human_review"] = True
+    extra["human_reviewed"] = True
+    extra["human_reviewed_at"] = timestamp
+    extra["human_reviewed_by"] = str(user_id)
+    extra["rag_status"] = "aprovado" if aprovado else "recusado"
+    return extra
 
 
 @router.get("/saude")
@@ -128,39 +222,62 @@ async def atualizar_governanca_documento(
 
     values = payload.model_dump(exclude_none=True)
     confirm_now = bool(values.pop("confirmar_fonte_agora", False))
+    release_explicit = bool(values.pop("retirar_quarentena", False))
     link_official = values.pop("link_official", None)
 
-    if "authority_level" in values and values["authority_level"] not in AUTHORITY_LABELS:
+    if (
+        "authority_level" in values
+        and values["authority_level"] not in AUTHORITY_LABELS
+    ):
         raise HTTPException(status_code=422, detail="Nível de autoridade inválido")
     if "legal_status" in values and values["legal_status"] not in LEGAL_STATUS_VALUES:
         raise HTTPException(status_code=422, detail="Situação jurídica inválida")
 
     extra = dict(doc.extra or {})
     extra.update(values)
+    timestamp = _agora_iso()
+
     if "legal_status" in values:
-        # PROVENIÊNCIA da vigência (review de segurança do PR #642): sem este
-        # carimbo, `upsert_documento` não consegue distinguir a decisão do
-        # curador da leitura automática do ingestor — e o re-feed periódico do
-        # Planalto reverteria silenciosamente um diploma marcado 'revogada'
-        # aqui. Ver ingestion_service.ORIGEM_VIGENCIA_CURADORIA.
         extra["legal_status_origem"] = f"{ORIGEM_VIGENCIA_CURADORIA}:{cu.id}"
-        extra["legal_status_verificado_em"] = datetime.now(timezone.utc).isoformat()
+        extra["legal_status_verificado_em"] = timestamp
         extra.pop("legal_status_inferido_em", None)
+
     if link_official is not None:
         extra["link_official"] = link_official
         if not doc.fonte and link_official:
             doc.fonte = link_official
+
     if confirm_now:
-        extra["last_verified_at"] = datetime.now(timezone.utc).isoformat()
+        extra["last_verified_at"] = timestamp
         extra["verified_by"] = str(cu.id)
-    extra["governance_updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    release_quarantine = _deve_retirar_quarentena(
+        extra,
+        confirmar_fonte_agora=confirm_now,
+        retirar_explicito=release_explicit,
+    )
+    if release_quarantine:
+        extra = _retirar_quarentena(
+            extra,
+            user_id=str(cu.id),
+            confirmar_fonte_agora=confirm_now,
+            agora=timestamp,
+        )
+
+    extra["governance_updated_at"] = timestamp
     extra["governance_updated_by"] = str(cu.id)
-    # O listener ORM preserva rag_status=aprovado e confiança válida no flush.
     doc.extra = extra
 
     from app.models.audit_log import criar_audit_log
 
     role = getattr(cu.role, "value", str(cu.role))
+    alteracoes = list(values.keys())
+    if link_official is not None:
+        alteracoes.append("link_official")
+    if confirm_now:
+        alteracoes.append("confirmar_fonte_agora")
+    if release_quarantine:
+        alteracoes.append("retirar_quarentena")
     await criar_audit_log(
         db,
         user_id=cu.id,
@@ -169,7 +286,8 @@ async def atualizar_governanca_documento(
         entidade="knowledge_governance",
         registro_id=doc.id,
         detalhes=(
-            f"Metadados jurídicos atualizados: {', '.join(sorted(values.keys())) or 'confirmação da fonte'}; "
+            f"Metadados jurídicos atualizados: "
+            f"{', '.join(sorted(alteracoes)) or 'sem campos'}; "
             f"autoridade efetiva={inferir_autoridade_documento(doc)['code']}"
         ),
     )
@@ -179,10 +297,6 @@ async def atualizar_governanca_documento(
     return {"detail": "Governança do documento atualizada", "documento": details}
 
 
-class RevisaoRequest(BaseModel):
-    aprovado: bool = Field(description="True para aprovar, False para rejeitar")
-
-
 @router.post("/docs/{doc_id}/revisar")
 async def revisar_documento_conhecimento(
     doc_id: str,
@@ -190,12 +304,7 @@ async def revisar_documento_conhecimento(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(GOVERNANCE_ROLES)),
 ):
-    """Revisão manual de documento de conhecimento (G6).
-
-    Marca documento como revisado (aprovado ou rejeitado). Documentos aprovados
-    entram na base ativa do RAG; rejeitados ficam marcados mas são excluídos do
-    retrieval por padrão.
-    """
+    """Registra aprovação ou rejeição humana no contrato operacional do RAG."""
     doc = (
         await db.execute(
             select(KnowledgeDoc).where(
@@ -207,9 +316,19 @@ async def revisar_documento_conhecimento(
     if not doc:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
+    timestamp = _agora_iso()
+    doc.extra = _registrar_decisao_revisao(
+        doc.extra,
+        aprovado=payload.aprovado,
+        user_id=str(cu.id),
+        agora=timestamp,
+    )
+
+    # Compatibilidade com o campo legado: True significa aprovado; a decisão
+    # completa (inclusive rejeição) fica registrada no JSONB operacional acima.
     doc.revisado = payload.aprovado
     doc.revisado_por = str(cu.id)
-    doc.revisado_em = datetime.now(timezone.utc)
+    doc.revisado_em = datetime.fromisoformat(timestamp)
 
     from app.models.audit_log import criar_audit_log
 
@@ -221,13 +340,18 @@ async def revisar_documento_conhecimento(
         acao="REVISAO_CONHECIMENTO",
         entidade="knowledge_docs",
         registro_id=doc.id,
-        detalhes=f"Documento {'aprovado' if payload.aprovado else 'rejeitado'} pelo revisor",
+        detalhes=(
+            f"Documento {'aprovado' if payload.aprovado else 'rejeitado'} pelo revisor; "
+            f"rag_status={doc.extra.get('rag_status')}"
+        ),
     )
     await db.commit()
 
     return {
         "detail": f"Documento {'aprovado' if payload.aprovado else 'rejeitado'}",
         "revisado": doc.revisado,
+        "rag_status": (doc.extra or {}).get("rag_status"),
+        "human_reviewed": bool((doc.extra or {}).get("human_reviewed")),
         "revisado_em": doc.revisado_em.isoformat() if doc.revisado_em else None,
     }
 

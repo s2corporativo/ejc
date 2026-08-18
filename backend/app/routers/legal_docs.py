@@ -600,6 +600,8 @@ async def revisar(
     cu: User = Depends(get_current_user),
 ):
     """Registro de revisão humana — desbloqueia aprovação de peça IA."""
+    # P1-5: revisão de peça é ato privativo de advogado (Prov. OAB 205/2021).
+    requer_advogado(cu, detail="Registrar revisão de peça é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
@@ -642,6 +644,9 @@ async def aprovar(
     a aprovação é recusada (422). Mantém os gates de qualidade existentes
     (validação jurídica + jurisprudência) coerentes com o fluxo do PATCH.
     """
+    # P1-5: aprovar peça é ato de advogado (Prov. OAB 205/2021) — antes bastava
+    # ter acesso ao caso.
+    requer_advogado(cu, detail="Aprovar peça é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
@@ -714,6 +719,8 @@ async def conferir_e_assinar(
     é gravado. O padrão oposto — gravar em dois lugares sem transação — é a classe
     de defeito que a auditoria encontrou repetida cinco vezes neste código.
     """
+    # P1-5: conferência + assinatura em um ato — privativo de advogado.
+    requer_advogado(cu, detail="Conferir e assinar peça é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
@@ -809,7 +816,13 @@ async def conferir_e_assinar(
                     detail="Sem permissão para revisar este log",
                 )
             from app.services.citation_gate import aplicar_gate_hitl
-            await aplicar_gate_hitl(db, log, "revisado", False, None, cu)
+            # O override chega do próprio ato de assinar (P2-9): sem ele, uma
+            # citação bloqueante fechava o único caminho de aprovação da peça.
+            # `aplicar_gate_hitl` continua exigindo justificativa e auditando.
+            await aplicar_gate_hitl(
+                db, log, "revisado", bool(payload.override_citacoes),
+                payload.justificativa_override, cu,
+            )
             log.status_hitl = AIStatusHITL.revisado
             log.revisado_por = cu.id
             log.revisado_em = datetime.now(timezone.utc)
@@ -838,7 +851,8 @@ async def conferir_e_assinar(
         db, cu.id, cu.role.value, "APROVAR_HITL", "legal_docs", doc_id,
         detalhes=(
             f"conferir-e-assinar; ai_generated={d.ai_generated}; "
-            f"validou_agora={validou_agora}; ai_log_id={ai_log_id}"
+            f"validou_agora={validou_agora}; ai_log_id={ai_log_id}; "
+            f"override_citacoes={bool(payload.override_citacoes)}"
         ),
     )
     await db.commit()

@@ -141,11 +141,28 @@ def test_gateway_tarefa_complexa_inclui_claude(monkeypatch):
     assert any(p == "groq" for p, _ in cadeia)             # fallback preservado
 
 
-def test_gateway_prioridade_ollama_primeiro(monkeypatch):
+def test_gateway_tarefa_de_merito_comeca_pelo_modelo_forte(monkeypatch):
+    """Decisão do titular (18/08): trabalho jurídico de mérito começa pelo
+    provedor de raciocínio profundo, mesmo com a IA local ligada.
+
+    Antes, o gateway ordenava só por AI_PROVIDER_PRIORITY — e com o default
+    antigo ("ollama,...") um modelo local de 8-14B redigia a peça e o Claude
+    virava fallback. A AIProviderPolicy já decidia o contrário para tarefa
+    complexa; quem valia era o gateway."""
     _prep(monkeypatch, tem_chave=True, ollama=True)
     cadeia = g._resolver_cadeia("elaboracao_peca", provider_force=None, model_override=None)
-    assert cadeia[0][0] == "ollama"                        # soberania local primeiro
-    assert any(p == "anthropic" for p, _ in cadeia)
+    assert cadeia[0] == ("anthropic", g.settings.ANTHROPIC_MODEL_COMPLEXO)
+    # A IA local permanece na cadeia como rede de segurança.
+    assert any(p == "ollama" for p, _ in cadeia)
+
+
+def test_gateway_fora_do_merito_respeita_a_ordem_configurada(monkeypatch):
+    """A promoção vale para MÉRITO. Fora dele, quem manda é AI_PROVIDER_PRIORITY
+    — é assim que o operador escolhe local-first (soberania de dados)."""
+    _prep(monkeypatch, tem_chave=True, ollama=True)
+    monkeypatch.setattr(g.settings, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    cadeia = g._resolver_cadeia("resumo", provider_force=None, model_override=None)
+    assert cadeia[0][0] == "ollama"
 
 
 def test_gateway_pula_claude_sem_chave(monkeypatch):
@@ -193,3 +210,119 @@ def test_precos_oficiais_corrigidos():
     assert _PRECOS_ANTHROPIC_USD_MM["claude-opus-4-8"] == {"input": 5.00, "output": 25.00}
     assert _PRECOS_ANTHROPIC_USD_MM["claude-sonnet-5"] == {"input": 3.00, "output": 15.00}
     assert _PRECOS_ANTHROPIC_USD_MM["claude-haiku-4-5"] == {"input": 1.00, "output": 5.00}
+
+
+# ── Revogação de credencial pelo Cofre (auditoria de segurança, 18/08) ───────
+# O Cofre grava "" em Settings.ANTHROPIC_API_KEY ao revogar uma credencial já
+# cadastrada (comportamento deliberado: revogar não deve deixar fallback ao
+# .env). O provider tinha um fallback a os.getenv que ANULAVA essa revogação:
+# como o docker-compose exporta o .env no ambiente do processo (env_file), a
+# chave revogada continuava sendo usada até o próximo restart do container.
+
+def test_chave_revogada_nao_cai_no_env_do_processo(monkeypatch):
+    """Settings com "" (revogada) NUNCA deve resolver para o valor do processo,
+    mesmo que ANTHROPIC_API_KEY esteja setada no ambiente (docker env_file)."""
+    from app.services.providers import anthropic_provider as ap
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-vazada-do-ambiente-do-processo")
+    assert ap._api_key() == ""
+
+
+def test_chave_valida_na_settings_e_usada_normalmente(monkeypatch):
+    """Uso legítimo (credencial válida na Settings, vinda do Cofre ou do .env
+    carregado pelo pydantic) continua funcionando — o fix não quebra o caminho são."""
+    from app.services.providers import anthropic_provider as ap
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-valor-valido")
+    assert ap._api_key() == "sk-ant-valor-valido"
+
+
+# ── Revogação com CLIENT JÁ CONSTRUÍDO (achado da revisão de segurança sobre
+# o fix acima, 18/08): _api_key() sozinha não bastava. O SDK grava a chave
+# DENTRO do objeto client no momento da construção, e o client é cacheado por
+# PROCESSO (`--workers 1`) — revogar pelo Cofre zerava Settings, mas o client
+# já construído seguia mandando a chave ANTIGA em toda chamada até o restart.
+# Comprovado por PoC na revisão: client reconstruído só no restart.
+
+def _fake_anthropic_sdk(monkeypatch):
+    """Fake do construtor `anthropic.Anthropic` que só grava a api_key
+    recebida — sem tocar rede, sem validar formato."""
+    import anthropic as _sdk
+    from app.services.providers import anthropic_provider as ap
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            self.api_key = kwargs.get("api_key")
+
+    monkeypatch.setattr(_sdk, "Anthropic", _FakeClient)
+    monkeypatch.setattr(ap, "_client", None)
+    monkeypatch.setattr(ap, "_client_api_key", None)
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_ENABLED", True)
+    return ap
+
+
+def test_client_ja_construido_e_revogado_nao_continua_servindo_a_chave_velha(monkeypatch):
+    ap = _fake_anthropic_sdk(monkeypatch)
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-VALIDA-inicial")
+    client1 = ap._get_client()
+    assert client1.api_key == "sk-ant-VALIDA-inicial"
+
+    # Revogação pelo Cofre: Settings passa a "".
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "")
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY não configurada"):
+        ap._get_client()
+    # Fail-closed: a chave revogada NUNCA mais deve ser servida por um client
+    # cacheado, nem mesmo o mesmo objeto de antes.
+    assert ap._client is None
+
+
+def test_rotacao_de_credencial_reconstroi_o_client_com_a_chave_nova(monkeypatch):
+    ap = _fake_anthropic_sdk(monkeypatch)
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-chave-A")
+    client1 = ap._get_client()
+    assert client1.api_key == "sk-ant-chave-A"
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-chave-B")
+    client2 = ap._get_client()
+    assert client2.api_key == "sk-ant-chave-B"
+    assert client2 is not client1  # não é o mesmo objeto reaproveitado
+
+
+def test_sem_mudanca_de_chave_o_client_e_reaproveitado(monkeypatch):
+    """A correção não pode custar reconstruir o client em TODA chamada."""
+    ap = _fake_anthropic_sdk(monkeypatch)
+
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-estavel")
+    client1 = ap._get_client()
+    client2 = ap._get_client()
+    assert client1 is client2
+
+
+# ── Deadline: SDK sem retry próprio, o fallback é entre PROVIDERS (18/08) ────
+# Sem asyncio.timeout global na cadeia do gateway, o retry INTERNO do SDK (até
+# 2x por padrão em erro transitório) multiplicava o pior caso de latência POR
+# PROVIDER antes mesmo do próximo da cadeia ser tentado. A resiliência real é
+# o fallback entre providers DIFERENTES que o gateway já faz.
+
+def test_client_anthropic_desliga_retry_proprio_do_sdk(monkeypatch):
+    import anthropic as _anthropic_sdk
+
+    from app.services.providers import anthropic_provider as ap
+
+    capturado = {}
+    classe_original = _anthropic_sdk.Anthropic
+
+    def _fake_anthropic(**kwargs):
+        capturado.update(kwargs)
+        return classe_original(**kwargs)
+
+    monkeypatch.setattr(_anthropic_sdk, "Anthropic", _fake_anthropic)
+    monkeypatch.setattr(ap, "_client", None)
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_ENABLED", True)
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_API_KEY", "sk-ant-teste")
+
+    ap._get_client()
+    assert capturado.get("max_retries") == 0

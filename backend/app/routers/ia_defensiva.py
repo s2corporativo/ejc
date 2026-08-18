@@ -10,6 +10,7 @@ from sqlalchemy import select, func as sqlfunc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
@@ -172,7 +173,7 @@ async def atualizar_status_ia_defensiva(
     return {"detail": f"Status HITL atualizado para {req.status}", "status_hitl": req.status}
 
 
-@router.post("/analisar")
+@router.post("/analisar", dependencies=[Depends(rate_limit("ia-defensiva-analisar", 15))])
 async def analisar_ia_defensiva(
     req: IaDefensivaRequest,
     db: AsyncSession = Depends(get_db),

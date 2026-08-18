@@ -530,6 +530,7 @@ async def motivacao_pecas_ia(
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": user_msg}],
             task_type="analise_juridica", temperature=0.2, max_tokens=900,
+            nivel_inteligencia="alto",  # FIRAC (auditoria 18/08, A-1)
         )
     except Exception as e:
         logger.warning(f"Motivação IA do Motor de Peça indisponível: {e}")

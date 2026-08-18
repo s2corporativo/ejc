@@ -18,6 +18,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.ai_log import AILog
 from app.models.user import User
+from app.services import vigencia_dados_juridicos
 
 router = APIRouter(prefix="/ia-saude", tags=["IA — Saúde (Admin)"])
 
@@ -187,6 +188,27 @@ async def dashboard(
     }
 
 
+def _estado_sigilo_reforcado() -> dict:
+    """Áreas que só a IA local pode atender e se há IA local para atendê-las."""
+    from app.services.ai.provider_registry import provider_elegivel
+    from app.services.ai.sanitization_policy import areas_que_exigem_ia_local
+
+    areas = areas_que_exigem_ia_local()
+    ia_local_disponivel = provider_elegivel("ollama")
+    return {
+        "areas": areas,
+        "ia_local_disponivel": ia_local_disponivel,
+        "ia_indisponivel_nessas_areas": (not ia_local_disponivel) and bool(areas),
+        "explicacao": (
+            "Estas áreas têm sigilo reforçado: o conteúdo não sai do servidor "
+            "(fail-closed). Sem IA local, a IA delas fica indisponível — subir "
+            "o profile 'ia-local' com OLLAMA_ENABLED=true, ou decidir por "
+            "AI_SANITIZATION_MODE_MAP que a área pode ir a externo "
+            "pseudonimizado. As duas são decisão do titular."
+        ),
+    }
+
+
 @router.get("/estado-operacional")
 async def estado_operacional(
     db: AsyncSession = Depends(get_db),
@@ -285,6 +307,17 @@ async def estado_operacional(
             "api_url_configurada": bool(str(cfg.EMBEDDINGS_API_URL or "").strip()),
             "fastembed_instalado_no_backend": fastembed_instalado,
         },
+        # Efeito colateral VISÍVEL de não ter IA local (auditoria de 18/08):
+        # as áreas de sigilo reforçado (criminal, família, saúde, menores,
+        # violência) são fail-closed — o conteúdo não sai do VPS. Sem provedor
+        # local elegível, a IA dessas áreas fica INDISPONÍVEL, e hoje isso só
+        # se descobria quando um advogado tentava usar e recebia erro.
+        "sigilo_reforcado": _estado_sigilo_reforcado(),
+        # P2-13 (auditoria de IA 18/08): idade dos dados jurídicos EMBUTIDOS no
+        # código (teto de súmulas, reconferência do seed). Sem isso, o dado
+        # envelhece em silêncio e o gate antialucinação passa a errar contra
+        # súmula nova e verdadeira.
+        "base_juridica": vigencia_dados_juridicos.estado(),
         "hitl": {
             "total_logs": total_logs,
             "por_status": status_map,

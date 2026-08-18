@@ -22,6 +22,7 @@ import logging
 from fastapi import HTTPException
 
 from app.services.system_prompts import SYSTEM_PROMPTS, TarefaIA, get_configuracao
+from app.services.system_prompts.inventario import impressao as prompt_versao
 from app.services.ai.provider_policy import AIProviderPolicy
 from app.services.ai.sanitization_policy import rotulo_de_sigilo_reforcado
 from app.services.ai.core.intent_classifier import classify_intent
@@ -348,6 +349,11 @@ class SingleAICoreOrchestrator:
             "task_type": task_type,
             "domain": domain,
             "tarefa": intent.tarefa.value,
+            # Rastreabilidade do prompt (dívida 5.3): impressão digital do texto
+            # que foi injetado como `system`. Sem isso, um erro jurídico na saída
+            # não é rastreável até a instrução que o produziu.
+            "prompt_key": agente.prompt_key,
+            "prompt_versao": prompt_versao(system_prompt),
             "modelo": modelo_canonico,
             "provider": resp.provedor,
             "fontes": [

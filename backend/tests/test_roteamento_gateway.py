@@ -83,9 +83,21 @@ async def test_chat_roteamento_off_usa_cadeia_por_task_type(monkeypatch):
     _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=False)
     cap = {}
     _mock_provedor(monkeypatch, cap)
-    resp = await g.chat([{"role": "user", "content": "oi"}], task_type="elaboracao_peca")
-    # off → prioridade normal: ollama primeiro
+    # `resumo` está fora do conjunto de mérito: a cadeia sai da prioridade
+    # configurada (ollama-first neste _prep), sem tier de roteamento.
+    resp = await g.chat([{"role": "user", "content": "oi"}], task_type="resumo")
     assert cap["provider"] == "ollama"
+    assert resp.roteamento_tier is None
+
+
+async def test_chat_roteamento_off_ainda_usa_modelo_forte_no_merito(monkeypatch):
+    """Mesmo com o roteamento inteligente DESLIGADO, tarefa de mérito começa
+    pelo provedor de raciocínio profundo (decisão do titular, 18/08)."""
+    _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=False)
+    cap = {}
+    _mock_provedor(monkeypatch, cap)
+    resp = await g.chat([{"role": "user", "content": "oi"}], task_type="elaboracao_peca")
+    assert cap["provider"] == "anthropic"
     assert resp.roteamento_tier is None
 
 

@@ -413,6 +413,10 @@ export default function PecaGeneratorModal({
   );
   // Modo Molde: identificadores do caso de ORIGEM encontrados na peça nova.
   const [residuos, setResiduos] = useState<ResiduoAchado[]>([]);
+  // Alertas da validação canônica do núcleo de IA (promessa de resultado,
+  // citação não confirmada, ausência de base verificável). Chegam no evento
+  // `concluido`; lista vazia = nada a sinalizar.
+  const [alertasIa, setAlertasIa] = useState<string[]>([]);
 
   const [tipoPeca, setTipoPeca] = useState("peticao_inicial");
   const [areaDireito, setAreaDireito] = useState("trabalhista");
@@ -484,6 +488,7 @@ export default function PecaGeneratorModal({
     setCopiado(false);
     setExpandidos(new Set());
     setVerificacao(null);
+    setAlertasIa([]);
     setResiduos([]);
     setModo("livre");
     setRespostasGuiadas({});
@@ -671,6 +676,14 @@ export default function PecaGeneratorModal({
             // conferidos contra a base oficial) — pode vir null (fail-safe do
             // backend), tratado como "verificação indisponível" no painel.
             setVerificacao(payload.verificacao_citacoes ?? null);
+            // Validação canônica do núcleo (response_validator): alertas ao
+            // revisor HITL — promessa de resultado (vedação OAB), citação não
+            // confirmada, peça sem âncora verificável.
+            setAlertasIa(
+              Array.isArray(payload.alertas)
+                ? payload.alertas.filter((a: unknown) => typeof a === "string")
+                : [],
+            );
             setFase("concluido");
             onConcluido?.(payload.ai_log_id, payload.documento);
           } else if (eventLine === "residuos") {
@@ -1183,6 +1196,24 @@ export default function PecaGeneratorModal({
                   status (suspeita/genérica em vermelho/amarelo, verificadas em
                   verde). Fica junto ao documento para a revisão HITL. */}
               <VerificacaoCitacoesPanel verificacao={verificacao} />
+
+              {/* Alertas da validação canônica (response_validator): promessa
+                  de resultado, citação não confirmada, ausência de base
+                  verificável. O texto da peça NÃO é reescrito — o revisor
+                  precisa ver o que o modelo escreveu para poder corrigir. */}
+              {alertasIa.length > 0 && (
+                <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
+                  <div className="mb-1 flex items-center gap-2 text-sm font-bold text-amber-800">
+                    <ShieldAlert size={16} />
+                    Alertas da validação jurídica ({alertasIa.length})
+                  </div>
+                  <ul className="list-disc space-y-1 pl-5 text-xs text-amber-800">
+                    {alertasIa.map((alerta, i) => (
+                      <li key={i}>{alerta}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Detector de resíduos (Modo Molde): identificador do caso de
                   ORIGEM que sobreviveu na peça. Protocolar assim é quebra de

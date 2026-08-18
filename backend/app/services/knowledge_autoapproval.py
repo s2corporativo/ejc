@@ -1,21 +1,20 @@
-"""Política de aprovação automática da Base de Conhecimento.
+"""Política central de disponibilidade da Base de Conhecimento.
 
-``KnowledgeDoc`` criado ou alterado pelo EJC fica disponível para o RAG com
-``rag_status=aprovado``. A regra é aplicada no nível ORM, portanto alcança
-importações manuais, PDF, URL, fontes oficiais, seeds e demais ingestores que
-usam o modelo nativo do EJC.
+O listener ORM alcança importações manuais, fontes oficiais, seeds e ingestores.
+Por isso ele não pode contradizer um estado de governança explicitamente gravado
+pelo produtor do documento.
 
-EXCEÇÃO OBRIGATÓRIA (auditoria 2026-07-26, achado AI-079): documento marcado
-``requires_human_review=True`` que ainda não foi revisado
-(``human_reviewed`` falsy) NUNCA é auto-aprovado — o rag_status explícito do
-ingestor (ex.: ``pendente`` no feed cognitivo do DataJud) é preservado, e a
-promoção a ``aprovado`` só acontece por ato explícito da governança
-(ia_governanca / revisão de conhecimento).
+Ordem de precedência:
+1. quarentena ativa;
+2. revisão humana pendente;
+3. decisão humana já registrada;
+4. ``rag_status`` explícito do ingestor/curador;
+5. confiança explicitamente bloqueada;
+6. compatibilidade legada: somente documento sem estado explícito pode nascer
+   automaticamente aprovado.
 
-A aprovação significa autorização para recuperação pela inteligência jurídica;
-não transforma uma fonte não oficial em fonte oficial e não remove as regras de
-isolamento por cliente/caso, vigência, exclusão de corpus fictício ou revisão
-humana de peças finais.
+Aprovação significa apenas autorização para retrieval; não transforma conteúdo
+não oficial em fonte oficial nem supera isolamento, vigência ou HITL de peças.
 """
 from __future__ import annotations
 
@@ -27,13 +26,13 @@ from sqlalchemy import event
 from app.models.rag import KnowledgeDoc
 from app.services.knowledge_governance import inferir_autoridade
 
-POLITICA = "knowledge_module_always_approved"
-# AI-079: docs aguardando revisão humana ficam FORA da auto-aprovação.
+POLITICA = "knowledge_module_default_approved_when_unspecified"
+POLITICA_STATUS_EXPLICITO = "explicit_rag_status_respected"
 POLITICA_REVISAO_PENDENTE = "human_review_required_not_auto_approved"
-# Documento JÁ revisado por humano: o status escolhido pelo revisor prevalece
-# sobre a auto-aprovação (inclusive uma recusa).
 POLITICA_DECISAO_HUMANA = "human_decision_respected"
-_CONFIANCAS_VALIDAS = {"alta", "media", "baixa"}
+POLITICA_QUARENTENA = "quarantine_active_not_auto_approved"
+POLITICA_CONFIANCA_BLOQUEADA = "blocked_confidence_not_auto_approved"
+_CONFIANCAS_VALIDAS = {"alta", "media", "baixa", "bloqueado"}
 
 
 def _texto(valor: Any) -> str:
@@ -41,16 +40,7 @@ def _texto(valor: Any) -> str:
 
 
 def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
-    """Aplica aprovação e metadados mínimos de governança ao documento.
-
-    ``confidence_level=bloqueado`` também impediria a recuperação mesmo com
-    ``rag_status=aprovado``; por isso é normalizado para ``media``. Confianças
-    válidas já definidas (alta/media/baixa) são preservadas.
-
-    A autoridade é inferida de categoria/fonte, sem elevar material não oficial.
-    Para legislação sem declaração expressa, a vigência jurídica permanece como
-    ``vigencia_nao_verificada`` — versão atual no EJC não equivale a lei vigente.
-    """
+    """Aplica o contrato de governança sem sobrepor decisões explícitas."""
     extra = dict(documento.extra or {})
     status_anterior = _texto(extra.get("rag_status")) or None
     confianca_anterior = _texto(
@@ -65,10 +55,10 @@ def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
     if not isinstance(auditoria, dict):
         auditoria = {}
     auditoria = dict(auditoria)
-    auditoria.setdefault("approved_at", datetime.now(timezone.utc).isoformat())
+    agora = datetime.now(timezone.utc).isoformat()
+    auditoria.setdefault("evaluated_at", agora)
     auditoria.setdefault("previous_rag_status", status_anterior)
     auditoria.setdefault("previous_confidence_level", confianca_anterior)
-    auditoria["policy"] = POLITICA
 
     authority = inferir_autoridade(documento.categoria, documento.fonte, extra)
     extra.setdefault("authority_level", authority["code"])
@@ -76,28 +66,43 @@ def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
     if "legisl" in _texto(documento.categoria):
         extra.setdefault("legal_status", "vigencia_nao_verificada")
 
-    # AI-079: pendência de revisão humana BLOQUEIA a auto-aprovação. 'aprovado'
-    # sem human_reviewed é rebaixado a 'pendente' (nenhum ingestor pode gravar
-    # aprovação junto com requires_human_review); status explícitos não-aprovados
-    # (ex.: 'disponivel_informativo') são preservados.
-    #
-    # DECISÃO HUMANA MANDA (review do Codex no PR #496): quando `human_reviewed`
-    # está marcado, o status escolhido pelo revisor é RESPEITADO — inclusive
-    # `recusado`. Sem esta cláusula, a auto-aprovação caía no `else` e
-    # transformava uma RECUSA em 'aprovado', liberando ao RAG justamente o
-    # documento que o curador rejeitou.
+    quarentena = bool(extra.get("quarantine_active"))
     requer_revisao = bool(extra.get("requires_human_review"))
     revisado = bool(extra.get("human_reviewed"))
-    if requer_revisao and not revisado:
-        if _texto(extra.get("rag_status")) in ("", "aprovado"):
+    status_atual = _texto(extra.get("rag_status"))
+
+    if quarentena:
+        # Recusa humana já é mais restritiva; qualquer outro estado fica pendente.
+        if status_atual != "recusado":
+            extra["rag_status"] = "pendente"
+        auditoria["policy"] = POLITICA_QUARENTENA
+    elif requer_revisao and not revisado:
+        # Nenhum produtor pode contornar a exigência declarando 'aprovado'.
+        if status_atual in ("", "aprovado"):
             extra["rag_status"] = "pendente"
         auditoria["policy"] = POLITICA_REVISAO_PENDENTE
     elif revisado:
-        # Só define default se o revisor não tiver gravado status algum.
+        # A decisão humana prevalece; ausência de status significa aprovação
+        # compatível com o comportamento histórico do fluxo de revisão.
         extra.setdefault("rag_status", "aprovado")
         auditoria["policy"] = POLITICA_DECISAO_HUMANA
+    elif status_anterior is not None:
+        # P0: estado explicitamente escolhido pelo ingestor/curador não pode ser
+        # promovido silenciosamente por um listener genérico.
+        extra["rag_status"] = status_anterior
+        auditoria["policy"] = POLITICA_STATUS_EXPLICITO
+    elif confianca == "bloqueado":
+        # Confiança bloqueada sem status explícito continua fora do RAG.
+        extra["rag_status"] = "bloqueado"
+        auditoria["policy"] = POLITICA_CONFIANCA_BLOQUEADA
     else:
+        # Compatibilidade legada limitada ao caso realmente não governado.
         extra["rag_status"] = "aprovado"
+        auditoria["policy"] = POLITICA
+
+    if _texto(extra.get("rag_status")) == "aprovado":
+        auditoria.setdefault("approved_at", agora)
+
     extra["confidence_level"] = confianca
     extra["auto_approval"] = auditoria
     documento.extra = extra

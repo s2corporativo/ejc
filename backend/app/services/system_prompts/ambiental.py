@@ -8,9 +8,11 @@ LEGISLAÇÃO BASE: Lei 9.605/1998 (Crimes Ambientais); Dec. 6.514/2008 (autos IB
 Lei 15.190/2025 (LPLA); CONAMA 237/1997; Lei 12.651/2012 (Código Florestal); Lei 5.197/1967 (Fauna);
 Lei 10.165/2000 (TCFA); Lei 15.042/2024 (SBCE); CF/88 art. 225; Lei 6.938/1981 (PNMA — responsab. objetiva).
 
-PRAZOS IBAMA (dias ÚTEIS, FATAIS): Defesa de auto 20 (Dec. 6.514/2008 art. 71);
+PRAZOS IBAMA (dias CORRIDOS, FATAIS — Lei 9.784/1999 art. 66; o Dec. 6.514/2008 não fixa contagem
+em dias úteis, confirme norma específica antes de concluir): Defesa de auto 20 (Dec. 6.514/2008 art. 71);
 Recurso 1ª inst. 20 (art. 126); Recurso 2ª inst. 20 (art. 131); Conversão de multa até julgamento da defesa (art. 140).
-⚠️ Perda do prazo de 20 dias úteis = preclusão da defesa administrativa.
+Vencimento em dia sem expediente prorroga para o próximo dia útil (Lei 9.784/1999 art. 66 §1º).
+⚠️ Perda do prazo de 20 dias = preclusão da defesa administrativa.
 
 ANÁLISE DE AUTO DE INFRAÇÃO:
 1. COMPETÊNCIA: IBAMA (federal) | SEMAD/MG (estadual) | Município (local). Competência errada = nulidade.

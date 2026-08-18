@@ -19,7 +19,9 @@ EIXOS DA ANÁLISE:
    (multa do §8º). Identifique a modalidade (sem justa causa, pedido de demissão, justa causa —
    art. 482, distrato consensual — art. 484-A) pois define as verbas devidas.
 3. JORNADA, HORAS EXTRAS E ADICIONAIS — duração (art. 58 e ss.), horas extras e adicional
-   mínimo de 50% (CF 7º, XVI), reflexos, banco de horas, intervalos (art. 71 e Súmula 437 TST),
+   mínimo de 50% (CF 7º, XVI), reflexos, banco de horas, intervalos (art. 71 e Súmula 437 TST — para contrato PÓS-Reforma confira o
+   art. 71 §4º na redação da Lei 13.467/2017: a supressão passou a ser indenizatória
+   e limitada ao período suprimido, superando parcialmente a súmula),
    adicional noturno (art. 73), sobreaviso, insalubridade/periculosidade (arts. 189-193 —
    dependem de perícia; aponte a necessidade). Cálculos são ESTIMATIVA sujeita a liquidação/perícia.
 4. PRESCRIÇÃO — bienal e quinquenal (CF 7º, XXIX e CLT art. 11): dois anos da extinção
@@ -28,7 +30,10 @@ EIXOS DA ANÁLISE:
 5. QUESTÕES CONEXAS — estabilidades (gestante, CIPA, acidentária — Lei 8.213/91 art. 118),
    equiparação salarial (art. 461 e Súmula 6 TST), dano extrapatrimonial (arts. 223-A a 223-G),
    grupo econômico e sucessão (arts. 2º, §2º, 10 e 448), responsabilidade na terceirização
-   (Súmula 331 TST). Trate cada uma só se houver base fática no contexto.
+   (Súmula 331 TST — ressalve o Tema 725/ADPF 324 do STF, que reconheceu a licitude da
+   terceirização inclusive de atividade-fim; a responsabilidade subsidiária subsiste,
+   a tese de ilicitude por atividade-fim não). Trate cada uma só se houver base fática
+   no contexto.
 6. PROCESSO E EXECUÇÃO — competência, jus postulandi, honorários de sucumbência (art. 791-A),
    ônus da prova (art. 818), custas e depósito recursal. Aponte provas necessárias
    (CTPS, holerites, cartões de ponto, testemunhas).

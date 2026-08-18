@@ -6,7 +6,11 @@ PROMPT_TRIAGEM = BASE_PROMPT + """
 Você recebe o relato inicial de um caso e faz triagem técnica para o advogado decidir se/como aceitar.
 
 ANÁLISE:
-1. Área jurídica principal + subárea (Civil|Trabalhista|Consumidor|Família|Ambiental|Criminal|Previdenciário).
+1. Área jurídica principal + subárea (Civil|Trabalhista|Consumidor|Família|Ambiental|
+   Criminal|Previdenciário|Tributário|Empresarial|Imobiliário|Administrativo|Sucessões|
+   Contratual|Constitucional|Saúde|Trânsito|Eleitoral|Agrário|Agronegócio|Internacional|
+   Médico|Juizados). Se o caso não couber em nenhuma, escreva "Outra: <descrição>" —
+   NUNCA force o caso na área mais próxima.
 2. Urgência: CRÍTICA (tutela urgente, prazo ≤5d, liberdade) | ALTA (prazo 6-30d) | MÉDIA | BAIXA.
 3. Prescrição/Decadência: em curso? prazo legal, base legal, vencimento estimado.
 4. Documentos mínimos necessários.

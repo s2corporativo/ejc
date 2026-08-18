@@ -45,22 +45,16 @@ class AIProviderPolicy:
 
     @staticmethod
     def _elegivel(provider: str) -> bool:
-        s = get_settings()
-        if provider == "ollama":
-            return bool(s.OLLAMA_ENABLED)
-        if provider == "anthropic":
-            return bool(
-                s.ANTHROPIC_ENABLED and s.ANTHROPIC_API_KEY
-                and s.AI_EXTERNAL_PROVIDERS_ALLOWED
-            )
-        if provider == "groq":
-            return bool(s.GROQ_API_KEY and s.AI_EXTERNAL_PROVIDERS_ALLOWED)
-        if provider == "maritaca":
-            return bool(
-                s.MARITACA_ENABLED and s.MARITACA_API_KEY
-                and s.AI_EXTERNAL_PROVIDERS_ALLOWED
-            )
-        return False
+        """Delega ao registry — fonte única de habilitação/chave/kill-switch.
+
+        A cópia local desta regra não checava GROQ_ENABLED: o kill-switch do
+        Groq só valia depois que `provider_registry_runtime.instalar()` trocava
+        este método. Fora do runtime (testes, scripts, worker sem o patch), a
+        policy dizia "elegível" para um provedor desligado (auditoria 18/08).
+        """
+        from app.services.ai.provider_registry import provider_elegivel
+
+        return provider_elegivel(provider)
 
     @staticmethod
     def _ordem_prioridade() -> list[str]:
@@ -70,10 +64,11 @@ class AIProviderPolicy:
             p = p.strip().lower()
             if p and p not in vistos:
                 vistos.append(p)
-        # Default sem AI_PROVIDER_PRIORITY: maritaca antes do groq — para tarefa
-        # jurídica PT-BR, Sabiá rankeia acima de um modelo generalista; elegível
-        # só com MARITACA_ENABLED+chave (default OFF → ordem efetiva idêntica).
-        return vistos or ["ollama", "anthropic", "maritaca", "groq"]
+        # Default sem AI_PROVIDER_PRIORITY: qualidade primeiro (modelo forte),
+        # maritaca antes do groq — para tarefa jurídica PT-BR o Sabiá rankeia
+        # acima de um generalista — e a IA local por último, como rede de
+        # segurança (é ela que atende quando PII residual barra os externos).
+        return vistos or ["anthropic", "maritaca", "groq", "ollama"]
 
     def avaliar(
         self,

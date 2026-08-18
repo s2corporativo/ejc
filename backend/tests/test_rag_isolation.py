@@ -112,3 +112,58 @@ async def test_escopo_nao_vazio_propaga_ao_param_sql():
     db = _CaptureDB()
     await buscar_contexto_rag(db, "consulta", limite=3, scope_client_id="cliente-A")
     assert db.params["scope_cli"] == "cliente-A"
+
+
+# ── Isolamento por CASO (auditoria de IA 2026-08-15, dívida 5.5) ─────────────
+# O ingestor do DJEN grava `case_id` na comunicação processual porque ela "só
+# pode ser recuperável dentro do caso e do cliente donos do processo" — mas a
+# recuperação ignorava esse campo, e a intimação do caso A entrava como
+# contexto do caso B do MESMO cliente. Estes testes fixam o contrato.
+
+def test_comunicacao_processual_e_escopada_por_caso():
+    from app.services.ai_service import _CASE_SCOPED_CATS
+
+    assert "comunicacao_processual" in _CASE_SCOPED_CATS
+
+
+def test_fragmento_de_filtro_por_caso():
+    from app.services.ai_service import _FILTRO_CASO_RAG
+
+    assert "kd.case_id = :scope_case" in _FILTRO_CASO_RAG
+    # Documento sem case_id (acervo antigo) continua visível no escopo do
+    # cliente — o recuo de recall seria pior que o ruído que se quer evitar.
+    assert "kd.case_id IS NULL" in _FILTRO_CASO_RAG
+
+
+async def test_consulta_com_caso_aplica_filtro_de_caso():
+    db = _CaptureDB()
+    await buscar_contexto_rag(
+        db, "consulta de teste sobre tese qualquer", limite=3,
+        scope_client_id="cli-1", scope_case_id="caso-1",
+    )
+    assert "kd.case_id = :scope_case" in db.sql
+    assert db.params["scope_case"] == "caso-1"
+    assert "comunicacao_processual" in db.params["case_cats"]
+
+
+async def test_consulta_sem_caso_nao_muda_de_comportamento():
+    """Sem caso no escopo, a consulta é exatamente a de antes (sem o filtro)."""
+    db = _CaptureDB()
+    await buscar_contexto_rag(
+        db, "consulta de teste sobre tese qualquer", limite=3,
+        scope_client_id="cli-1",
+    )
+    assert "scope_case" not in db.sql
+    assert "scope_case" not in db.params
+
+
+def test_call_sites_com_caso_repassam_o_escopo_de_caso():
+    """Quem sabe em que caso está precisa dizer — senão o filtro nunca atua."""
+    import inspect as _inspect
+
+    from app.services import analise_estrategica, anexos_service, checklist_ia, peca_service
+    from app.services.ai.core import context_builder
+
+    for modulo in (context_builder, analise_estrategica, peca_service,
+                   anexos_service, checklist_ia):
+        assert "scope_case_id=" in _inspect.getsource(modulo), modulo.__name__

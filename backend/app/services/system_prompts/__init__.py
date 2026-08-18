@@ -29,6 +29,10 @@ from .internacional import PROMPT_INTERNACIONAL
 from .contratual import PROMPT_CONTRATUAL
 from .modo_executivo import PROMPT_MODO_EXECUTIVO
 from .sala_juridica import PROMPT_SALA_JURIDICA
+from .bancario import PROMPT_BANCARIO
+from .lgpd_digital import PROMPT_LGPD_DIGITAL
+from .audiencia import PROMPT_AUDIENCIA
+from .pesquisa_juridica import PROMPT_PESQUISA_JURIDICA
 from .router import TarefaIA, ConfiguracaoIA, get_configuracao
 
 # Regras transversais dos prompts do Núcleo Único (evita repetição literal).
@@ -80,8 +84,11 @@ SYSTEM_PROMPTS: dict[str, str] = {
     "eleitoral":         PROMPT_ELEITORAL,
     "internacional":     PROMPT_INTERNACIONAL,
     "contratual":        PROMPT_CONTRATUAL,
-    "pesquisa_juridica": PROMPT_ANALISE_CASO,
-    "audiencia":         PROMPT_ANALISE_CASO,
+    # P2 (auditoria de IA 18/08): pesquisa e audiência tinham a FORMA errada —
+    # rodavam o prompt de análise estratégica de caso, que devolve relatório de
+    # nove seções onde se pedia resposta com fonte e roteiro de sala.
+    "pesquisa_juridica": PROMPT_PESQUISA_JURIDICA,
+    "audiencia":         PROMPT_AUDIENCIA,
     "rag_query":         BASE_PROMPT + "\n\nSintetize os trechos recuperados da base de conhecimento para responder à pergunta do advogado. Indique a fonte. Nunca invente jurisprudência ou legislação." + AVISO_RASCUNHO,
     "resumo":            BASE_PROMPT + "\n\nResuma o conteúdo de forma objetiva, técnica e estruturada." + AVISO_RASCUNHO,
     "default":           BASE_PROMPT + AVISO_RASCUNHO,
@@ -90,9 +97,9 @@ SYSTEM_PROMPTS: dict[str, str] = {
     # verificável → dizer explicitamente "sem base verificável".
     "processo":            BASE_PROMPT + _REGRA_FONTES + "\n\nAnalise o andamento processual: fase atual, últimos movimentos, prazos em curso e providências pendentes. Prazos são SEMPRE fatais — destaque datas-limite e a antecipação mínima de 5 dias úteis. Indique a base legal de cada prazo." + AVISO_RASCUNHO,
     "jurimetria_pred":     BASE_PROMPT + _REGRA_FONTES + "\n\nFaça análise jurimétrica/preditiva com base APENAS nos dados e precedentes fornecidos no contexto. Apresente cenários (otimista/base/pessimista) como HIPÓTESES estatísticas, nunca como promessa de resultado. Explicite as limitações da amostra." + AVISO_RASCUNHO,
-    "bancario":            BASE_PROMPT + _REGRA_FONTES + "\n\nAnalise a matéria bancária/financeira (contratos, extratos, encargos, revisional, busca e apreensão). Aponte tarifas e encargos potencialmente abusivos com a respectiva base normativa (CDC, Bacen, súmulas STJ). Cálculos são estimativas sujeitas a perícia." + AVISO_RASCUNHO,
+    "bancario":            PROMPT_BANCARIO,
     "comunicacao_cliente": BASE_PROMPT + "\n\nRedija comunicação clara e cordial destinada ao CLIENTE (não juridiquês): situação do caso, próximos passos e o que se espera dele. NUNCA prometa resultado nem antecipe decisão judicial. NUNCA inclua dados pessoais de terceiros. O texto é RASCUNHO que o advogado revisará antes do envio." + AVISO_RASCUNHO,
-    "seguranca_lgpd":      BASE_PROMPT + _REGRA_FONTES + "\n\nAnalise a questão sob LGPD (Lei 13.709/2018), sigilo profissional (Lei 8.906/94) e segurança da informação. Aponte riscos, bases legais de tratamento e providências. NUNCA inclua dados pessoais reais ou segredos (chaves, senhas, tokens) na resposta." + AVISO_RASCUNHO,
+    "seguranca_lgpd":      PROMPT_LGPD_DIGITAL,
     # Técnicos (restritos a superadmin/admin/socio): usam contexto técnico
     # (ex.: GRAPH_REPORT) e NUNCA incluem segredos.
     "saude_sistema":       BASE_PROMPT + _REGRA_TECNICA + "\n\nDiagnostique a saúde do módulo/sistema EJC usando o contexto técnico fornecido (relatório do grafo de código, logs resumidos). Aponte sintomas, causas prováveis e verificações objetivas. Não invente arquivos/funções que não constem do contexto." + AVISO_RASCUNHO,

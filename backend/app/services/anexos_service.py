@@ -489,7 +489,9 @@ async def gerar_razoes_juridicas(
     # Grounding jurídico via RAG (legislação/súmulas), no escopo do cliente.
     scope_cli = await _escopo_cliente_do_caso(db, case_id)
     consulta = (objetivo or ctx.titulo_acao or area)[:300]
-    fontes = await buscar_contexto_rag(db, consulta, limite=6, scope_client_id=scope_cli)
+    fontes = await buscar_contexto_rag(
+        db, consulta, limite=6, scope_client_id=scope_cli, scope_case_id=case_id,
+    )
     rag_txt = ""
     if fontes:
         rag_txt = "\n".join(f"- {f['titulo']}: {f['conteudo'][:220]}" for f in fontes)

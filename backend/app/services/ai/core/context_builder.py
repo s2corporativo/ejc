@@ -17,10 +17,10 @@ from dataclasses import dataclass, field
 logger = logging.getLogger("ejc.ai.core.context")
 
 # Orçamentos de caracteres por bloco (prompt enxuto e previsível).
-_MAX_DOSSIE = 8000
-_MAX_DOC = 6000
-_MAX_RAG_CHUNK = 900
-_LIMITE_RAG = 6
+_MAX_DOSSIE = 24000
+_MAX_DOC = 18000
+_MAX_RAG_CHUNK = 2000
+_LIMITE_RAG = 10
 
 
 @dataclass
@@ -186,6 +186,9 @@ async def montar_contexto(
                 mensagem,
                 limite=_LIMITE_RAG,
                 scope_client_id=scope_client_id,
+                # Isolamento por caso: a comunicação processual de OUTRO caso
+                # do mesmo cliente não é contexto deste (auditoria, dívida 5.5).
+                scope_case_id=case_id,
             )
         except Exception as exc:
             ctx.fontes = []

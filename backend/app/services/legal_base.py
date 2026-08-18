@@ -1,10 +1,10 @@
 """
-legal_base.py — Identidade jurídica centralizada do escritório (#8).
+legal_base.py — Identidade jurídica centralizada do escritório.
 
-Fonte ÚNICA da identidade do escritório + regras invioláveis, injetada no system
-prompt das tarefas de PROSA jurídica via ai_gateway. NÃO injeta em tarefas de
-saída estruturada (analise_juridica = JSON de extração) nem em 'resumo', para não
-interferir no formato esperado. Aditivo e idempotente (não duplica se já presente).
+As regras abaixo valem como barreira transversal contra alucinação jurídica.
+A premissa operacional é retrieval-first: conhecimento paramétrico do modelo
+não é fonte do Direito e não autoriza preencher lei, artigo, súmula, tema ou
+precedente que não esteja presente nos dados fornecidos à etapa corrente.
 """
 from __future__ import annotations
 
@@ -14,27 +14,27 @@ BASE_IDENTIDADE = (
     "Consumidor, Família, Ambiental, Criminal, Previdenciário, Empresarial e Tributário. "
     "Tribunais de referência: TJMG, TRT-3, TRF-6, STJ, STF. "
     "[REGRAS] Toda saída é RASCUNHO — revisão obrigatória do advogado responsável (OAB). "
-    "NUNCA invente lei, súmula, jurisprudência ou número de processo (se incerto, escreva "
-    "'verificar'). NUNCA prometa resultado."
+    "A IA NÃO É FONTE DO DIREITO: use autoridade jurídica específica somente quando ela "
+    "estiver explicitamente presente nas FONTES/dados fornecidos à tarefa corrente. "
+    "NUNCA invente lei, súmula, jurisprudência ou número de processo. "
+    "NUNCA complete por memória do modelo número de artigo, lei, súmula, tema, processo, "
+    "relator, data, prazo ou URL. Se a fonte não estiver presente ou houver incerteza, "
+    "escreva 'verificar' ou 'base jurídica insuficiente'. NUNCA prometa resultado."
 )
 
-# Variante CURTA para tarefas de SAÍDA ESTRUTURADA (JSON/listas parseadas):
-# carrega o núcleo anti-alucinação SEM interferir no formato de saída. Pensada
-# para prepend direto no system prompt de etapas intermediárias de pipeline
-# (ex.: peca_service etapas 1, 2, 5 e 6), cujos textos alimentam a peça final.
-# NÃO contém chaves, cercas de código nem instrução de formato própria — apenas
-# reforça que o formato pedido pelo prompt da etapa deve ser respeitado, para
-# não poluir/quebrar parsers (_parse_json/_parse_itens/_tipo_identificado).
+# Variante curta para etapas intermediárias/estruturadas. O objetivo é permitir
+# identificação de questões jurídicas antes do RAG sem permitir que a LLM
+# fabrique a autoridade que será pesquisada na etapa seguinte.
 BASE_ESTRUTURADA = (
-    "[REGRAS-ESTRUTURADAS] Regras invioláveis (OAB): NUNCA invente lei, súmula, "
-    "jurisprudência, número de processo, datas, prazos ou fatos — se a informação "
-    "não constar dos dados fornecidos ou houver incerteza, diga explicitamente "
-    "que não sabe (escreva 'verificar'). NUNCA prometa resultado. Estas regras "
-    "NÃO alteram o formato de saída: responda EXATAMENTE no formato solicitado "
-    "pela tarefa, sem texto fora do formato pedido."
+    "[REGRAS-ESTRUTURADAS] A IA NÃO É FONTE DO DIREITO. Antes do retrieval, "
+    "identifique apenas questões, requisitos, fatos e provas. NUNCA invente lei, "
+    "súmula, jurisprudência, número de processo, datas, prazos, fatos ou URLs. "
+    "Só reproduza autoridade específica se estiver EXPLICITAMENTE nos dados/fontes "
+    "desta etapa; não use memória do modelo. Se não estiver, diga que não sabe e "
+    "escreva 'verificar' ou 'base jurídica insuficiente'. NUNCA prometa resultado. "
+    "Preserve EXATAMENTE o formato solicitado pela tarefa."
 )
 
-# Apenas tarefas de PROSA recebem a base — exclui JSON (analise_juridica) e resumo.
 _TASKS_COM_BASE = {
     "estrategia",
     "auditoria_peca",
@@ -45,8 +45,7 @@ _TASKS_COM_BASE = {
 
 
 def _prepend_identidade(messages: list[dict]) -> list[dict]:
-    """Prepend BASE_IDENTIDADE ao 1º system message (cria um se não houver).
-    Idempotente: detecta [IDENTIDADE] e não duplica."""
+    """Prepend BASE_IDENTIDADE ao primeiro system message, de forma idempotente."""
     out = [dict(m) for m in messages]
     for m in out:
         if m.get("role") == "system":
@@ -57,26 +56,12 @@ def _prepend_identidade(messages: list[dict]) -> list[dict]:
 
 
 def aplicar_base(messages: list[dict], task_type: str) -> list[dict]:
-    """Prepend a identidade do escritório ao system message (tarefas de prosa).
-    Gated por task_type: exclui JSON de extração (analise_juridica) e resumo."""
+    """Injeta a base em tarefas de prosa sem interferir em parsers estruturados."""
     if task_type not in _TASKS_COM_BASE or not messages:
         return messages
     return _prepend_identidade(messages)
 
 
 def garantir_identidade(messages: list[dict]) -> list[dict]:
-    """Injeta BASE_IDENTIDADE INCONDICIONALMENTE (independe de task_type).
-
-    Para canais de prompt AUTORAIS DO USUÁRIO — skills configuráveis no banco
-    (EjcSkill) e biblioteca de prompts (PromptJuridico). Esses prompts não
-    passam pela curadoria de código e seu task_type pode não estar em
-    _TASKS_COM_BASE, então aplicar_base os deixaria SEM a barreira
-    anti-alucinação (regra OAB). Aqui a barreira é obrigatória e idempotente.
-
-    DECISÃO EXPLÍCITA (vs. a exclusão de analise_juridica/resumo em
-    _TASKS_COM_BASE): a exclusão foi desenhada para o path de EXTRAÇÃO-JSON do
-    gateway (executar_tarefa_ia), cujo consumidor faz parse. Estes canais
-    devolvem PROSA crua (resp.texto) ao usuário como RASCUNHO — nunca são
-    parseados como JSON —, então injetar a identidade é seguro e intencional:
-    a barreira anti-alucinação prevalece sobre a preservação de formato."""
+    """Injeta BASE_IDENTIDADE incondicionalmente em prompts autorais do usuário."""
     return _prepend_identidade(messages)
