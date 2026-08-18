@@ -35,14 +35,9 @@ RULESETS_API="repos/$REPO/rulesets"
 
 branch_json="$(gh api "$BRANCH_API" -H 'Accept: application/vnd.github+json')" \
   || fail "não foi possível ler a branch canônica"
-lock_sha="${EJC_BOOTSTRAP_LOCK_SHA:-}"
-if [ -z "$lock_sha" ]; then
-  lock_sha="$(printf '%s' "$branch_json" | jq -r '.commit.sha // empty')"
-fi
-if ! [[ "$lock_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
-  lock_sha="$(git rev-parse HEAD 2>/dev/null || true)"
-fi
-[[ "$lock_sha" =~ ^[0-9a-fA-F]{40}$ ]] || fail "não foi possível determinar SHA válido para o lock remoto"
+lock_sha="$(printf '%s' "$branch_json" | jq -r '.commit.sha // empty')"
+[[ "$lock_sha" =~ ^[0-9a-fA-F]{40}$ ]] \
+  || fail "resposta da API da main não contém SHA válido para o lock remoto"
 
 payload="$(jq -cn --arg name "$RULESET_NAME" --argjson integration_id "$GITHUB_ACTIONS_INTEGRATION_ID" '{
   name: $name,
