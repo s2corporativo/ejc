@@ -19,4 +19,7 @@ def test_release_gate_exige_gold_real_quando_nucleo_juridico_ia_muda() -> None:
     assert "consumidor,trabalhista,civel,penal,tributario" in texto
     assert "backend/app/(agent/|system_prompts/" in texto
     assert "services/ai" in texto
-    assert "services/(rag|rerank|citation|knowledge|legal_base)" in texto
+    assert "services/(rag|rerank|citation|knowledge)" in texto
+    assert "services/legal_" in texto
+    assert "peca_geracao" in texto
+    assert "raio_x" in texto
