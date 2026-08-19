@@ -59,20 +59,25 @@ async def test_dou_falha_na_fonte_nao_vira_lista_vazia(monkeypatch):
 
 
 def test_status_dou_distingue_ok_de_degradado():
-    dou._registrar_status_dou(ok=True, quantidade=0)
-    ok = dou.status_dou()
-    assert ok["status"] == "ok"
-    assert ok["ultima_execucao_ok"] is True
-    assert ok["ultima_quantidade"] == 0
-    assert ok["falhas_consecutivas"] == 0
+    anterior = dict(dou._DOU_STATUS)
+    try:
+        dou._registrar_status_dou(ok=True, quantidade=0)
+        ok = dou.status_dou()
+        assert ok["status"] == "ok"
+        assert ok["ultima_execucao_ok"] is True
+        assert ok["ultima_quantidade"] == 0
+        assert ok["falhas_consecutivas"] == 0
 
-    dou._registrar_status_dou(ok=False, erro=RuntimeError("simulado"))
-    ruim = dou.status_dou()
-    assert ruim["status"] == "degradado"
-    assert ruim["ultima_execucao_ok"] is False
-    assert ruim["falhas_consecutivas"] == 1
-    assert ruim["ultimo_erro_tipo"] == "RuntimeError"
-    assert "simulado" not in str(ruim)
+        dou._registrar_status_dou(ok=False, erro=RuntimeError("simulado"))
+        ruim = dou.status_dou()
+        assert ruim["status"] == "degradado"
+        assert ruim["ultima_execucao_ok"] is False
+        assert ruim["falhas_consecutivas"] == 1
+        assert ruim["ultimo_erro_tipo"] == "RuntimeError"
+        assert "simulado" not in str(ruim)
+    finally:
+        dou._DOU_STATUS.clear()
+        dou._DOU_STATUS.update(anterior)
 
 
 def test_senado_parser_aceita_shape_plano_do_endpoint_json():
