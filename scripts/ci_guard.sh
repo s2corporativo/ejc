@@ -10,7 +10,12 @@ set -euo pipefail
 fail=0
 
 echo "[EJC CI] Verificando marcadores de conflito de merge..."
-if git grep -n -E '^(<<<<<<<{7,}|>>>>>>>{7,})' -- \
+# Marcadores Git reais têm 7 ou mais caracteres repetidos. A regex anterior
+# (`<<<<<<<{7,}`/`>>>>>>>{7,}`) aplicava o quantificador apenas ao ÚLTIMO
+# caractere e podia deixar um conflito padrão de 7 sinais passar pelo gate.
+# Incluímos também a linha separadora `=======`, para falhar mesmo quando um
+# arquivo foi parcialmente editado e só o miolo do conflito permaneceu.
+if git grep -n -E '^(<{7,}|={7,}|>{7,})' -- \
   ':!**/node_modules/**' \
   ':!**/.venv/**' \
   ':!**/site-packages/**' \
