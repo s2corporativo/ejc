@@ -33,14 +33,20 @@ export default function Prazos() {
     tipo: "processual",
     prioridade: "media",
     dias_uteis: true,
+    regime_calculo: "civel",
+    excecao_recesso_penal: false,
   });
-  const [calc, setCalc] = useState<any>({ dias: 15, dias_uteis: true });
+  const [calc, setCalc] = useState<any>({
+    dias: 15,
+    tipo: "processual",
+    dias_uteis: true,
+    regime_calculo: "civel",
+    excecao_recesso_penal: false,
+  });
   const [calcResp, setCalcResp] = useState<any>(null);
   const [salvando, setSalvando] = useState(false);
   const [error, setError] = useState(false);
 
-  // Modo Caso: `?caso=` na URL vence; sem query, o caso ativo preenche.
-  // GET /deadlines/ já aceita case_id (link /prazos?caso= da jornada).
   const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
 
   const load = () => {
@@ -62,13 +68,63 @@ export default function Prazos() {
 
   const calcular = async () => {
     if (!calc.data_inicio) return;
-    const { data } = await api.post("/deadlines/calcular", calc);
-    setCalcResp(data);
+    try {
+      const { data } = await api.post("/deadlines/calcular", calc);
+      setCalcResp(data);
+    } catch (e: any) {
+      setCalcResp(null);
+      toast.error(e.response?.data?.detail || "Falha ao calcular o prazo.");
+    }
+  };
+
+  const alterarRegimeCalc = (valor: string) => {
+    if (valor === "administrativo") {
+      setCalc({
+        ...calc,
+        tipo: "administrativo",
+        regime_calculo: undefined,
+        dias_uteis: false,
+        dobro: false,
+        excecao_recesso_penal: false,
+      });
+      return;
+    }
+    setCalc({
+      ...calc,
+      tipo: "processual",
+      regime_calculo: valor,
+      dias_uteis: valor !== "penal",
+      dobro: valor === "penal" ? false : calc.dobro,
+      excecao_recesso_penal:
+        valor === "penal" ? !!calc.excecao_recesso_penal : false,
+    });
+  };
+
+  const alterarRegimeForm = (valor: string) => {
+    if (valor === "administrativo") {
+      setForm({
+        ...form,
+        tipo: "administrativo",
+        regime_calculo: undefined,
+        dias_uteis: false,
+        dobro: false,
+        excecao_recesso_penal: false,
+      });
+      return;
+    }
+    setForm({
+      ...form,
+      tipo: "processual",
+      regime_calculo: valor,
+      dias_uteis: valor !== "penal",
+      dobro: valor === "penal" ? false : form.dobro,
+      excecao_recesso_penal:
+        valor === "penal" ? !!form.excecao_recesso_penal : false,
+    });
   };
 
   const exportarCsv = async () => {
     try {
-      // Via api client (injeta o JWT); baixa como blob e dispara o download.
       const r = await api.get("/deadlines/export.csv", {
         params: { status: statusF || undefined, case_id: casoFiltro },
         responseType: "blob",
@@ -91,12 +147,15 @@ export default function Prazos() {
     }
     setSalvando(true);
     try {
-      // toast.prazo
-      // Modo Caso: novo prazo nasce vinculado ao caso filtrado (visível no
-      // aviso do modal); sem filtro ativo, comportamento inalterado.
       await api.post("/deadlines/", { ...form, case_id: casoFiltro });
       setModal(false);
-      setForm({ tipo: "processual", prioridade: "media", dias_uteis: true });
+      setForm({
+        tipo: "processual",
+        prioridade: "media",
+        dias_uteis: true,
+        regime_calculo: "civel",
+        excecao_recesso_penal: false,
+      });
       load();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro");
@@ -222,8 +281,7 @@ export default function Prazos() {
                   {d.base_legal || d.tipo}
                   {!d.confirmado && (
                     <span className="text-warn-600">
-                      {" "}
-                      · já ativo e alertando, precisa de conferência humana
+                      {" "}· precisa de conferência humana antes da confirmação
                     </span>
                   )}
                 </div>
@@ -276,7 +334,6 @@ export default function Prazos() {
         </div>
       )}
 
-      {/* Modal calculadora */}
       <Modal
         open={calcModal}
         onClose={() => setCalcModal(false)}
@@ -284,9 +341,7 @@ export default function Prazos() {
       >
         <div className="space-y-4">
           <div>
-            <label className="label">
-              Data da intimação/ciência (dd/mm/aaaa)
-            </label>
+            <label className="label">Data da intimação/ciência</label>
             <input
               type="date"
               className="input"
@@ -302,37 +357,56 @@ export default function Prazos() {
               <input
                 type="number"
                 className="input"
+                min={1}
                 value={calc.dias}
                 onChange={(e) => setCalc({ ...calc, dias: +e.target.value })}
               />
             </div>
             <div>
-              <label className="label">Contagem</label>
+              <label className="label">Regime de cálculo</label>
               <select
                 className="input"
-                value={calc.dias_uteis ? "u" : "c"}
-                onChange={(e) => {
-                  const u = e.target.value === "u";
-                  setCalc({
-                    ...calc,
-                    dias_uteis: u,
-                    dobro: u ? calc.dobro : false,
-                  });
-                }}
+                value={
+                  calc.tipo === "administrativo"
+                    ? "administrativo"
+                    : calc.regime_calculo || "civel"
+                }
+                onChange={(e) => alterarRegimeCalc(e.target.value)}
               >
-                <option value="u">Dias úteis (CPC)</option>
-                <option value="c">Dias corridos (admin)</option>
+                <option value="civel">Processual cível — CPC</option>
+                <option value="trabalhista">Trabalhista — CLT</option>
+                <option value="penal">Processual penal — CPP</option>
+                <option value="administrativo">Administrativo — corrido</option>
               </select>
             </div>
           </div>
-          {calc.dias_uteis && (
+          {calc.tipo === "processual" && calc.regime_calculo !== "penal" && (
             <label className="flex items-center gap-2 text-sm text-slate-600">
               <input
                 type="checkbox"
                 checked={!!calc.dobro}
                 onChange={(e) => setCalc({ ...calc, dobro: e.target.checked })}
               />
-              Prazo em dobro (Fazenda Pública, MP, Defensoria — CPC 183/229)
+              Prazo em dobro — confirmar hipótese legal aplicável
+            </label>
+          )}
+          {calc.regime_calculo === "penal" && (
+            <label className="flex items-start gap-2 text-sm text-slate-600">
+              <input
+                className="mt-0.5"
+                type="checkbox"
+                checked={!!calc.excecao_recesso_penal}
+                onChange={(e) =>
+                  setCalc({
+                    ...calc,
+                    excecao_recesso_penal: e.target.checked,
+                  })
+                }
+              />
+              <span>
+                Exceção legal ao recesso do CPP art. 798-A. Marque somente após
+                conferência do caso concreto.
+              </span>
             </label>
           )}
           <button
@@ -347,15 +421,21 @@ export default function Prazos() {
                 {fmtDate(calcResp.data_vencimento)}
               </div>
               <div className="text-xs text-slate-500 mt-1">{calcResp.modo}</div>
-              <div className="text-xs text-slate-500">
-                {calcResp.dias_uteis_restantes} dias úteis até lá
-              </div>
+              {calcResp.aviso && (
+                <div className="text-xs text-warn-700 mt-2 font-medium">
+                  {calcResp.aviso}
+                </div>
+              )}
+              {calcResp.regime_assumido_por_compatibilidade && (
+                <div className="text-xs text-warn-700 mt-2">
+                  Regime cível assumido por compatibilidade. Confirme o regime.
+                </div>
+              )}
             </div>
           )}
         </div>
       </Modal>
 
-      {/* Modal novo prazo */}
       <Modal
         open={modal}
         onClose={() => setModal(false)}
@@ -372,7 +452,7 @@ export default function Prazos() {
             />
           </div>
           <div>
-            <label className="label">Data da intimação (dd/mm/aaaa)</label>
+            <label className="label">Data da intimação</label>
             <input
               type="date"
               className="input"
@@ -383,9 +463,10 @@ export default function Prazos() {
             />
           </div>
           <div>
-            <label className="label">Dias de prazo (calcula automático)</label>
+            <label className="label">Dias de prazo</label>
             <input
               type="number"
+              min={1}
               className="input"
               value={form.dias_prazo || ""}
               onChange={(e) =>
@@ -394,20 +475,24 @@ export default function Prazos() {
             />
           </div>
           <div>
-            <label className="label">Contagem</label>
+            <label className="label">Regime de cálculo</label>
             <select
               className="input"
-              value={form.dias_uteis ? "u" : "c"}
-              onChange={(e) =>
-                setForm({ ...form, dias_uteis: e.target.value === "u" })
+              value={
+                form.tipo === "administrativo"
+                  ? "administrativo"
+                  : form.regime_calculo || "civel"
               }
+              onChange={(e) => alterarRegimeForm(e.target.value)}
             >
-              <option value="u">Dias úteis</option>
-              <option value="c">Dias corridos</option>
+              <option value="civel">Processual cível — CPC</option>
+              <option value="trabalhista">Trabalhista — CLT</option>
+              <option value="penal">Processual penal — CPP</option>
+              <option value="administrativo">Administrativo — corrido</option>
             </select>
           </div>
           <div>
-            <label className="label">OU data fatal direta (dd/mm/aaaa)</label>
+            <label className="label">OU data fatal direta</label>
             <input
               type="date"
               className="input"
@@ -415,6 +500,35 @@ export default function Prazos() {
               onChange={(e) => setForm({ ...form, data_prazo: e.target.value })}
             />
           </div>
+          {form.tipo === "processual" && form.regime_calculo !== "penal" && (
+            <label className="flex items-center gap-2 text-sm text-slate-600 sm:col-span-2">
+              <input
+                type="checkbox"
+                checked={!!form.dobro}
+                onChange={(e) => setForm({ ...form, dobro: e.target.checked })}
+              />
+              Prazo em dobro — confirmar hipótese legal aplicável
+            </label>
+          )}
+          {form.regime_calculo === "penal" && (
+            <label className="flex items-start gap-2 text-sm text-slate-600 sm:col-span-2">
+              <input
+                className="mt-0.5"
+                type="checkbox"
+                checked={!!form.excecao_recesso_penal}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    excecao_recesso_penal: e.target.checked,
+                  })
+                }
+              />
+              <span>
+                Exceção legal ao recesso do CPP art. 798-A — somente após
+                conferência do caso concreto.
+              </span>
+            </label>
+          )}
           <div>
             <label className="label">Prioridade</label>
             <select
