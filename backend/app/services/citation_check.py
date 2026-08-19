@@ -179,7 +179,11 @@ async def _fonte_artigo(
     *,
     vigente: bool,
 ) -> dict | None:
-    """Retorna evidência estrutural do artigo dentro do diploma exato."""
+    """Retorna evidência estrutural do artigo dentro do diploma exato.
+
+    Em consulta de direito atual, um registro marcado como revogado não pode
+    satisfazer a citação mesmo que o flag técnico `vigente` esteja incoerente.
+    """
     from app.services.ai_service import _filtros_gate_rag
 
     params: dict = {"artigo_re": _regex_artigo(num)}
@@ -187,6 +191,11 @@ async def _fonte_artigo(
     if cond is None:
         return None
     vigencia_sql = "TRUE" if vigente else "FALSE"
+    status_clause = (
+        "AND COALESCE(kd.extra->>'legal_status', '') <> 'revogada' "
+        if vigente
+        else ""
+    )
     row = (
         await db.execute(
             text(
@@ -194,7 +203,8 @@ async def _fonte_artigo(
                 "kd.vigente, kd.fonte FROM knowledge_chunks kc "
                 "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
                 f"WHERE kd.deleted_at IS NULL AND kd.vigente = {vigencia_sql} "
-                "AND kd.categoria LIKE 'legislacao%' "
+                + status_clause
+                + "AND kd.categoria LIKE 'legislacao%' "
                 + cond
                 + "AND kc.conteudo ~* :artigo_re "
                 + _filtros_gate_rag(False)
