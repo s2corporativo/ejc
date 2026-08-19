@@ -2,9 +2,9 @@
 tipo_camada: modelo_peca
 canonical_id: TESE-TRIB-000001
 origem_conteudo: modelo_simulado
-autoridade_juridica: jurisprudencial
-authority_level: jurisprudencia_oficial
-score_autoridade: 90
+autoridade_juridica: modelo_sem_autoridade
+authority_level: modelo_sem_autoridade
+score_autoridade: 0
 area_juridica: tributario
 nivel_confiaca: BAIXA
 data_pesquisa: 2026/08/14

@@ -2,9 +2,9 @@
 tipo_camada: modelo_peca
 canonical_id: JUR-EMPR-000015
 origem_conteudo: modelo_simulado
-autoridade_juridica: jurisprudencial
-authority_level: jurisprudencia_oficial
-score_autoridade: 95
+autoridade_juridica: modelo_sem_autoridade
+authority_level: modelo_sem_autoridade
+score_autoridade: 0
 area_juridica: empresarial
 nivel_confiaca: BAIXA
 data_pesquisa: 13/08/2026

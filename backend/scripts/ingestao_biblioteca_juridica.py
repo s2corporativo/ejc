@@ -28,7 +28,7 @@ TIPO_VOCAB = {
 CONF_VOCAB = {"ALTA", "MEDIA", "BAIXA"}
 ORIGEM_VOCAB = {
     "fonte_oficial", "jurisprudencia_oficial", "legislacao", "doutrina",
-    "analise_IA", "modelo_IA", "documento_usuario", "documento_processual_real",
+    "analise_IA", "modelo_IA", "modelo_simulado", "documento_usuario", "documento_processual_real",
 }
 AUTORIDADE_VOCAB = {
     "normativa", "vinculante", "jurisprudencial", "persuasiva", "doutrinaria",
@@ -300,15 +300,27 @@ def validar(docs):
                 f"[{path}] modelo de peça não pode possuir autoridade jurídica própria"
             )
 
-        if origem in {"analise_IA", "modelo_IA"} and autoridade not in {
+        if origem in {"analise_IA", "modelo_IA", "modelo_simulado"} and autoridade not in {
             "analitica", "modelo_sem_autoridade",
         }:
             erros.append(
                 f"[{path}] conteúdo de IA deve ter autoridade analítica "
                 "ou modelo_sem_autoridade"
             )
-        if origem == "modelo_IA" and score != 0:
-            erros.append(f"[{path}] modelo_IA deve ter score_autoridade=0")
+        if origem in {"modelo_IA", "modelo_simulado"} and score != 0:
+            erros.append(f"[{path}] modelo de IA/simulado deve ter score_autoridade=0")
+
+        if origem == "modelo_simulado":
+            if tipo != "modelo_peca":
+                erros.append(f"[{path}] modelo_simulado exige tipo_camada=modelo_peca")
+            if not bool(d.get("gerado_por_IA")):
+                erros.append(f"[{path}] modelo_simulado exige gerado_por_IA=true")
+            authority_level = str(d.get("authority_level") or "").strip().lower()
+            if authority_level and authority_level != "modelo_sem_autoridade":
+                erros.append(
+                    f"[{path}] modelo_simulado não pode declarar authority_level jurídico: "
+                    f"{d.get('authority_level')}"
+                )
 
         if (
             origem in {"fonte_oficial", "jurisprudencia_oficial", "legislacao"}
@@ -492,9 +504,11 @@ def main():
                         fonte=d.get("link_official") or None,
                         tribunal=d.get("tribunal") or None,
                         extra=extra,
-                        confianca=(
-                            "alta" if d.get("nivel_confiaca") == "ALTA" else "media"
-                        ),
+                        confianca={
+                            "ALTA": "alta",
+                            "MEDIA": "media",
+                            "BAIXA": "baixa",
+                        }[str(d.get("nivel_confiaca") or "").upper().strip()],
                         client_id=None,
                         embutir_vetores=True,
                         chunks=chunks_juridicos,
