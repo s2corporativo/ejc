@@ -1,0 +1,137 @@
+name: Normalize simulated legal models once
+
+on:
+  push:
+    branches:
+      - agent/normalizar-modelos-simulados-ingestao
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    if: contains(github.event.head_commit.message, '[run-normalize-models]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/normalizar-modelos-simulados-ingestao
+          fetch-depth: 0
+
+      - name: Normalize closed pilot set and ingestion contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          docs = [
+              'docs/biblioteca_juridica/administrativo/08_san-es-administrativas-proporcionalidade-e-grada-o.md',
+              'docs/biblioteca_juridica/administrativo/09_prescri-o-quinquenal-da-pretens-o-punitiva-administrativa.md',
+              'docs/biblioteca_juridica/ambiental/06_multa-ambiental-aplicada-a-pessoa-jur-dica.md',
+              'docs/biblioteca_juridica/ambiental/07_responsabilidade-civil-ambiental-objetiva-art-14-1-da-lei-6.md',
+              'docs/biblioteca_juridica/consumidor_bancario/15_fraude-pix-e-mecanismo-especial-de-devolu-o-med.md',
+              'docs/biblioteca_juridica/consumidor_bancario/16_negativa-o-indevida-dano-moral-in-re-ipsa.md',
+              'docs/biblioteca_juridica/consumidor_bancario/17_revisional-de-contrato-banc-rio-limita-o-de-encargos.md',
+              'docs/biblioteca_juridica/empresarial/12_desconsideracao-personalidade-juridica-art50-cc-tema-1210-stj.md',
+              'docs/biblioteca_juridica/empresarial/13_recupera-o-judicial-e-cr-ditos-tribut-rios.md',
+              'docs/biblioteca_juridica/licitacoes/10_habilita-o-jur-dica-e-qualifica-o-t-cnica-na-lei-14-133-21.md',
+              'docs/biblioteca_juridica/licitacoes/11_dispensa-de-licita-o-e-fraude-fracionamento.md',
+              'docs/biblioteca_juridica/licitacoes/12_preg-o-eletr-nico-lei-14-133-21.md',
+              'docs/biblioteca_juridica/processual_civil/20_tutela-de-urg-ncia-e-evid-ncia-art-300-e-311-cpc.md',
+              'docs/biblioteca_juridica/processual_civil/21_intima-es-eletr-nicas-e-djen-dje-prazos.md',
+              'docs/biblioteca_juridica/processual_civil/22_honor-rios-advocat-cios-sucumb-ncia-e-cumprimento-de-senten.md',
+              'docs/biblioteca_juridica/trabalhista_empresarial/18_responsabilidade-subsidi-ria-terceiriza-o-l-cita.md',
+              'docs/biblioteca_juridica/trabalhista_empresarial/19_prescri-o-trabalhista-tema-290-stf-e-lei-14-457-2022.md',
+              'docs/biblioteca_juridica/tributario/01_monofasia-pis-cofins-restitui-o.md',
+              'docs/biblioteca_juridica/tributario/02_prescri-o-quinquenal-tribut-ria-re-566-621-sc-e-tema-616-stf.md',
+              'docs/biblioteca_juridica/tributario/03_exclus-o-do-icms-da-base-de-c-lculo-do-pis-cofins-tema-69-st.md',
+              'docs/biblioteca_juridica/tributario/04_ipi-conceito-de-insumo-tema-779-stj.md',
+              'docs/biblioteca_juridica/tributario/05_execu-o-fiscal-penhora-online-via-sisbajud.md',
+              'docs/biblioteca_juridica/tributario/23_compensa-o-tribut-ria-art-170-a-ctn.md',
+          ]
+          assert len(docs) == 23 and len(set(docs)) == 23
+
+          replacements = {
+              'tipo_camada': 'modelo_peca',
+              'origem_conteudo': 'modelo_simulado',
+              'autoridade_juridica': 'modelo_sem_autoridade',
+              'authority_level': 'modelo_sem_autoridade',
+              'score_autoridade': '0',
+              'nivel_confiaca': 'BAIXA',
+              'gerado_por_IA': 'true',
+          }
+
+          for rel in docs:
+              p = Path(rel)
+              raw = p.read_text(encoding='utf-8')
+              m = re.match(r'^---\n(.*?)\n---\n(.*)$', raw, re.S)
+              if not m:
+                  raise SystemExit(f'front-matter inválido: {rel}')
+              front, body = m.groups()
+              lines = front.splitlines()
+              found = {key: 0 for key in replacements}
+              out = []
+              for line in lines:
+                  if ':' not in line:
+                      out.append(line)
+                      continue
+                  key = line.split(':', 1)[0].strip()
+                  if key in replacements:
+                      found[key] += 1
+                      out.append(f'{key}: {replacements[key]}')
+                  else:
+                      out.append(line)
+              for key, count in found.items():
+                  if count == 0:
+                      if key == 'authority_level':
+                          insert_at = next((i + 1 for i, line in enumerate(out) if line.startswith('autoridade_juridica:')), 4)
+                          out.insert(insert_at, f'{key}: {replacements[key]}')
+                      else:
+                          raise SystemExit(f'{rel}: campo obrigatório não encontrado: {key}')
+                  elif count != 1:
+                      raise SystemExit(f'{rel}: campo duplicado: {key}')
+              p.write_text('---\n' + '\n'.join(out) + '\n---\n' + body, encoding='utf-8')
+
+          script = Path('backend/scripts/ingestao_biblioteca_juridica.py')
+          src = script.read_text(encoding='utf-8')
+
+          edits = [
+              (
+                  '"analise_IA", "modelo_IA", "documento_usuario", "documento_processual_real",',
+                  '"analise_IA", "modelo_IA", "modelo_simulado", "documento_usuario", "documento_processual_real",',
+              ),
+              (
+                  'if origem in {"analise_IA", "modelo_IA"} and autoridade not in {',
+                  'if origem in {"analise_IA", "modelo_IA", "modelo_simulado"} and autoridade not in {',
+              ),
+              (
+                  '        if origem == "modelo_IA" and score != 0:\n            erros.append(f"[{path}] modelo_IA deve ter score_autoridade=0")',
+                  '        if origem in {"modelo_IA", "modelo_simulado"} and score != 0:\n            erros.append(f"[{path}] modelo de IA/simulado deve ter score_autoridade=0")\n\n        if origem == "modelo_simulado":\n            if tipo != "modelo_peca":\n                erros.append(f"[{path}] modelo_simulado exige tipo_camada=modelo_peca")\n            if not bool(d.get("gerado_por_IA")):\n                erros.append(f"[{path}] modelo_simulado exige gerado_por_IA=true")\n            authority_level = str(d.get("authority_level") or "").strip().lower()\n            if authority_level and authority_level != "modelo_sem_autoridade":\n                erros.append(\n                    f"[{path}] modelo_simulado não pode declarar authority_level jurídico: "\n                    f"{d.get(\'authority_level\')}"\n                )',
+              ),
+              (
+                  '                        confianca=(\n                            "alta" if d.get("nivel_confiaca") == "ALTA" else "media"\n                        ),',
+                  '                        confianca={\n                            "ALTA": "alta",\n                            "MEDIA": "media",\n                            "BAIXA": "baixa",\n                        }[str(d.get("nivel_confiaca") or "").upper().strip()],',
+              ),
+          ]
+          for old, new in edits:
+              count = src.count(old)
+              if count != 1:
+                  raise SystemExit(f'contrato de ingestão mudou; substituição esperava 1 ocorrência e encontrou {count}: {old[:80]}')
+              src = src.replace(old, new, 1)
+          script.write_text(src, encoding='utf-8')
+
+          print('23 modelos normalizados e contrato de ingestão atualizado.')
+          PY
+
+          git diff --check
+          test "$(git status --porcelain docs/biblioteca_juridica backend/scripts/ingestao_biblioteca_juridica.py | wc -l)" -eq 24
+
+      - name: Commit normalized files
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/biblioteca_juridica backend/scripts/ingestao_biblioteca_juridica.py
+          git commit -m "fix(jurídico): normalizar autoridade dos modelos simulados [normalized-models]"
+          git push origin HEAD:agent/normalizar-modelos-simulados-ingestao
