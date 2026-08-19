@@ -51,7 +51,9 @@ export default function DeadlineRiskStrip() {
           const subs = Array.isArray(diag.data?.subsistemas)
             ? (diag.data.subsistemas as DiagnosticoSub[])
             : [];
-          const item = subs.find((s) => s.nome === "Calendário jurídico de prazos");
+          const item = subs.find(
+            (s) => s.nome === "Calendário jurídico de prazos",
+          );
           if (ativo) setCalendario(item ?? null);
         } catch {
           // O radar de prazos não depende da Central de Diagnóstico. Falha/flag
@@ -80,7 +82,8 @@ export default function DeadlineRiskStrip() {
       }
       if (p.confirmado === false) preliminares += 1;
       if (p.data_intimacao && !p.ciencia_confirmada) cienciaPendente += 1;
-      if (p.confirmado && (!p.data_intimacao || p.ciencia_confirmada)) revisados += 1;
+      if (p.confirmado && (!p.data_intimacao || p.ciencia_confirmada))
+        revisados += 1;
     }
 
     return { vencidos, ate48h, preliminares, cienciaPendente, revisados };
@@ -93,7 +96,10 @@ export default function DeadlineRiskStrip() {
           <AlertTriangle className="h-4 w-4" />
           Radar de prazos temporariamente indisponível.
         </span>
-        <Link to="/prazos" className="font-semibold underline underline-offset-2">
+        <Link
+          to="/prazos"
+          className="font-semibold underline underline-offset-2"
+        >
           Abrir prazos
         </Link>
       </div>
@@ -120,11 +126,31 @@ export default function DeadlineRiskStrip() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold">
-          <RiskChip icon={AlertTriangle} label={`${risco.vencidos} vencido(s)`} danger={risco.vencidos > 0} />
-          <RiskChip icon={Clock3} label={`${risco.ate48h} até 48h`} warning={risco.ate48h > 0} />
-          <RiskChip icon={CalendarClock} label={`${risco.preliminares} preliminar(es)`} warning={risco.preliminares > 0} />
-          <RiskChip icon={AlertTriangle} label={`${risco.cienciaPendente} ciência pendente`} warning={risco.cienciaPendente > 0} />
-          <RiskChip icon={CheckCircle2} label={`${risco.revisados} revisado(s)`} ok />
+          <RiskChip
+            icon={AlertTriangle}
+            label={`${risco.vencidos} vencido(s)`}
+            danger={risco.vencidos > 0}
+          />
+          <RiskChip
+            icon={Clock3}
+            label={`${risco.ate48h} até 48h`}
+            warning={risco.ate48h > 0}
+          />
+          <RiskChip
+            icon={CalendarClock}
+            label={`${risco.preliminares} preliminar(es)`}
+            warning={risco.preliminares > 0}
+          />
+          <RiskChip
+            icon={AlertTriangle}
+            label={`${risco.cienciaPendente} ciência pendente`}
+            warning={risco.cienciaPendente > 0}
+          />
+          <RiskChip
+            icon={CheckCircle2}
+            label={`${risco.revisados} revisado(s)`}
+            ok
+          />
           {calendarioAlerta && (
             <RiskChip
               icon={ShieldAlert}
@@ -168,7 +194,9 @@ function RiskChip({
         : "border-slate-200 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300";
 
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 ${cls}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 ${cls}`}
+    >
       <Icon className="h-3 w-3" aria-hidden="true" />
       {label}
     </span>
