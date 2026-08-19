@@ -1,13 +1,10 @@
 name: Governanca
 
 # Travas automáticas de governança sobre cada Pull Request, derivadas de
-# docs/GOVERNANCA_IA.md e docs/FLUXO_DE_DESENVOLVIMENTO.md.
+# docs/GOVERNANCA_IA.md, docs/FLUXO_DE_DESENVOLVIMENTO.md e
+# docs/engineering/DEFINITION_OF_DONE.md.
 #
-# A governança v2 mantém bloqueios objetivos de segurança e integridade, mas
-# evita reprovar automaticamente uma correção sistêmica apenas porque ela
-# harmoniza documentação de governança e código funcional no mesmo PR.
-#
-# Complementa — não substitui — o "EJC Release Gate" (scripts/ci_guard.sh).
+# Complementa — não substitui — o EJC Release Gate e a CI técnica.
 on:
   pull_request:
 
@@ -43,7 +40,7 @@ jobs:
           if grep -Eq '^backend/alembic/versions/' "$RUNNER_TEMP/alterados.txt"; then
             echo "Migration detectada no PR."
             if ! grep -q 'backend/alembic/MIGRATION_RESERVATIONS.md' "$RUNNER_TEMP/alterados.txt"; then
-              echo "::error::PR cria ou altera migration sem atualizar backend/alembic/MIGRATION_RESERVATIONS.md. Ver docs/GOVERNANCA_IA.md."
+              echo "::error::PR cria ou altera migration sem atualizar backend/alembic/MIGRATION_RESERVATIONS.md."
               exit 1
             fi
             echo "Reserva atualizada no mesmo PR."
@@ -87,11 +84,9 @@ jobs:
         env:
           AUTOR: ${{ github.event.pull_request.user.login }}
         shell: bash
-        run: |
-          echo "Autor: $AUTOR"
+        run: echo "Autor: $AUTOR"
 
       - name: Descricao do PR preenchida
-        # Isenção fechada somente para dependabot. As demais travas continuam.
         if: >-
           ${{
             !(
@@ -110,8 +105,13 @@ jobs:
               || { echo "::error::secao ausente na descricao do PR: $SECAO"; FALTA=1; }
           done <<'SECOES'
           Issue vinculada
+          Diagnóstico
           Solução
           Testes executados
+          Impacto jurídico
+          Impacto LGPD
+          Definition of Done
+          WIP e conflitos
           Riscos residuais
           Rollback
           SECOES
@@ -120,7 +120,41 @@ jobs:
           [ "$FALTA" -eq 0 ] || exit 1
           echo "Descricao do PR completa."
 
-      - name: Revisao de seguranca registrada
+      - name: Definition of Done minima marcada
+        if: >-
+          ${{
+            !(
+              contains(fromJSON('["dependabot[bot]"]'), github.event.pull_request.user.login)
+              && contains(fromJSON('["dependabot[bot]"]'), github.actor)
+            )
+          }}
+        env:
+          CORPO: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          FALTA=0
+          while IFS= read -r ITEM; do
+            [ -z "$ITEM" ] && continue
+            printf '%s' "$CORPO" | grep -Fqi -- "- [x] $ITEM" \
+              || { echo "::error::Definition of Done não confirmada: $ITEM"; FALTA=1; }
+          done <<'ITENS'
+          DoD revisada para o escopo deste PR
+          Testes compatíveis com o escopo executados
+          Riscos jurídicos/LGPD avaliados
+          Rollback definido
+          Sem quebra conhecida de módulo existente
+          ITENS
+          [ "$FALTA" -eq 0 ] || exit 1
+          echo "Definition of Done mínima confirmada no PR."
+
+      - name: Revisao de seguranca documentada para superficie sensivel
+        if: >-
+          ${{
+            !(
+              contains(fromJSON('["dependabot[bot]"]'), github.event.pull_request.user.login)
+              && contains(fromJSON('["dependabot[bot]"]'), github.actor)
+            )
+          }}
         env:
           CORPO: ${{ github.event.pull_request.body }}
         shell: bash
@@ -128,25 +162,30 @@ jobs:
           PADRAO_SENSIVEL='^(\.github/workflows/|\.claude/|backend/app/core/(security|config|auth|permissions)[^/]*\.py|backend/app/routers/(auth|users|uploads?|documents?|api_keys)[^/]*\.py|frontend/src/(stores/auth|pages/(Login|Configurar2FA|AccountSecurity)))'
           SENSIVEL=$(grep -Ec "$PADRAO_SENSIVEL" "$RUNNER_TEMP/alterados.txt" || true)
           if [ "$SENSIVEL" -gt 0 ]; then
-            if ! printf '%s' "$CORPO" | grep -qi 'security-auditor: executado'; then
-              echo "::error::PR sensível altera autenticação, permissões, uploads, CI/CD ou configuração sem registrar 'security-auditor: executado' no corpo do PR."
-              exit 1
-            fi
-            echo "Revisão security-auditor registrada para alteração sensível."
+            FALTA=0
+            for ITEM in \
+              'Ownership/RBAC/ABAC revisados quando aplicável' \
+              'Logs e erros não revelam segredos ou PII' \
+              'Nenhum segredo, `.env`, credencial ou documento real foi versionado'; do
+              printf '%s' "$CORPO" | grep -Fqi -- "- [x] $ITEM" \
+                || { echo "::error::PR sensível sem confirmação de segurança: $ITEM"; FALTA=1; }
+            done
+            [ "$FALTA" -eq 0 ] || exit 1
+            echo "Revisão de segurança documentada para a superfície sensível."
           else
-            echo "PR não altera superfície que exija security-auditor obrigatório."
+            echo "PR não altera superfície sensível catalogada."
           fi
 
       - name: Alteracao de governanca isolada
         shell: bash
         run: |
-          PADRAO_GOV='^(CLAUDE\.md|AGENTS\.md|\.claude/|\.github/workflows/governanca\.yml|docs/GOVERNANCA_IA\.md|docs/GOVERNANCA_FASE2\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md)'
+          PADRAO_GOV='^(CLAUDE\.md|AGENTS\.md|\.claude/|\.github/workflows/governanca\.yml|docs/GOVERNANCA_IA\.md|docs/GOVERNANCA_FASE2\.md|docs/FLUXO_DE_DESENVOLVIMENTO\.md|docs/engineering/)'
           GOV=$(grep -Ec "$PADRAO_GOV" "$RUNNER_TEMP/alterados.txt" || true)
           COD=$(grep -Ec '^(backend/app/|frontend/src/)' "$RUNNER_TEMP/alterados.txt" || true)
           if [ "$GOV" -gt 0 ] && [ "$COD" -gt 0 ]; then
-            echo "::warning::PR mistura governança e código funcional. Na governança v2, isso é permitido quando a mesma correção sistêmica exige harmonização entre regra e implementação. Reforce escopo, testes, riscos e rollback na revisão."
+            echo "::warning::PR mistura governança e código funcional. Permitido somente quando a mesma correção sistêmica exige harmonização; revise escopo, testes e rollback."
           else
-            echo "Escopo sem mistura entre governança e código funcional."
+            echo "Escopo sem mistura não declarada entre governança e código funcional."
           fi
 
       - name: Branch nao e main
