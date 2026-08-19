@@ -38,6 +38,11 @@ class _ClientErro(_ClientOK):
         raise RuntimeError("falha simulada sem conteúdo sensível")
 
 
+class _ClientContratoInvalido(_ClientOK):
+    async def get(self, *args, **kwargs):
+        return _Resposta({"status": "ok", "resultado": []})
+
+
 @pytest.mark.anyio
 async def test_dou_zero_resultados_e_sucesso_valido(monkeypatch):
     import httpx
@@ -55,6 +60,16 @@ async def test_dou_falha_na_fonte_nao_vira_lista_vazia(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", _ClientErro)
 
     with pytest.raises(dou.DOUIndisponivelError):
+        await dou.buscar_dou("termo técnico", date(2026, 8, 18))
+
+
+@pytest.mark.anyio
+async def test_dou_quebra_de_contrato_nao_vira_zero_resultados(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", _ClientContratoInvalido)
+
+    with pytest.raises(dou.DOUIndisponivelError, match="content inválido"):
         await dou.buscar_dou("termo técnico", date(2026, 8, 18))
 
 
