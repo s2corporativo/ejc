@@ -81,7 +81,7 @@ jobs:
           fi
 
           git diff --name-only "$BASE" "$HEAD" > /tmp/ejc-changed-files.txt
-          pattern='^backend/app/(agent/|system_prompts/|services/agent/|services/system_prompts/|services/ai(/|_[^/]*\.py$)|services/(rag|rerank|citation|knowledge|legal_base)[^/]*\.py$|services/(peca_service|motor_peca_service|analise_estrategica)[^/]*\.py$|routers/(ai|ia|rag|documentos_ia|pecas_ia)[^/]*\.py$)'
+          pattern='^backend/app/(agent/|system_prompts/|services/agent/|services/system_prompts/|services/ai(/|_[^/]*\.py$)|services/(rag|rerank|citation|knowledge)[^/]*\.py$|services/legal_[^/]*\.py$|services/(peca[^/]*|motor_peca[^/]*|analise_estrategica)[^/]*\.py$|routers/(ai|ia|rag|documentos_ia|pecas_ia|peca_geracao|raio_x)[^/]*\.py$)'
           if grep -E "$pattern" /tmp/ejc-changed-files.txt >/dev/null; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Núcleo jurídico de IA alterado: certificação humana obrigatória."
