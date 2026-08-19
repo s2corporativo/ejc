@@ -22,6 +22,35 @@ jobs:
       - name: Executar gate P0
         run: bash scripts/ci_guard.sh
 
+      - name: Definition of Done mínima do PR
+        if: >-
+          ${{
+            github.event_name == 'pull_request' &&
+            !(
+              github.event.pull_request.user.login == 'dependabot[bot]' &&
+              github.actor == 'dependabot[bot]'
+            )
+          }}
+        env:
+          CORPO: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          FALTA=0
+          while IFS= read -r ITEM; do
+            [ -z "$ITEM" ] && continue
+            printf '%s' "$CORPO" | grep -Fqi -- "- [x] $ITEM" \
+              || { echo "::error::Definition of Done não confirmada: $ITEM"; FALTA=1; }
+          done <<'ITENS'
+          DoD revisada para o escopo deste PR
+          Testes compatíveis com o escopo executados
+          Riscos jurídicos/LGPD avaliados
+          Rollback definido
+          Sem quebra conhecida de módulo existente
+          ITENS
+          [ "$FALTA" -eq 0 ] || exit 1
+          echo "Definition of Done mínima confirmada no Release Gate."
+
   backend-smoke:
     name: P1 backend — deps, compile e governança jurídica
     runs-on: ubuntu-latest
