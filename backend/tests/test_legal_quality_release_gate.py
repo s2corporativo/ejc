@@ -23,3 +23,22 @@ def test_release_gate_exige_gold_real_quando_nucleo_juridico_ia_muda() -> None:
     assert "services/legal_" in texto
     assert "peca_geracao" in texto
     assert "raio_x" in texto
+
+
+def test_release_gate_exige_definition_of_done_minima_em_pr_humano() -> None:
+    texto = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "Definition of Done mínima do PR" in texto
+    assert "github.event_name == 'pull_request'" in texto
+    assert "github.event.pull_request.user.login == 'dependabot[bot]'" in texto
+    assert "github.actor == 'dependabot[bot]'" in texto
+    assert 'grep -Fqi -- "- [x] $ITEM"' in texto
+    for item in (
+        "DoD revisada para o escopo deste PR",
+        "Testes compatíveis com o escopo executados",
+        "Riscos jurídicos/LGPD avaliados",
+        "Rollback definido",
+        "Sem quebra conhecida de módulo existente",
+    ):
+        assert item in texto
+    assert "Definition of Done mínima confirmada no Release Gate" in texto
