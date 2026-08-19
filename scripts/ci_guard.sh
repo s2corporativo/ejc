@@ -10,12 +10,12 @@ set -euo pipefail
 fail=0
 
 echo "[EJC CI] Verificando marcadores de conflito de merge..."
-# Marcadores Git reais têm 7 ou mais caracteres repetidos. A regex anterior
-# (`<<<<<<<{7,}`/`>>>>>>>{7,}`) aplicava o quantificador apenas ao ÚLTIMO
-# caractere e podia deixar um conflito padrão de 7 sinais passar pelo gate.
-# Incluímos também a linha separadora `=======`, para falhar mesmo quando um
-# arquivo foi parcialmente editado e só o miolo do conflito permaneceu.
-if git grep -n -E '^(<{7,}|={7,}|>{7,})' -- \
+# Marcadores padrão do Git usam sete caracteres. O padrão anterior aplicava o
+# quantificador apenas ao último caractere; a primeira correção, por sua vez,
+# aceitou `={7,}` e confundiu separadores decorativos longos com conflitos.
+# Aqui aceitamos os marcadores reais: abertura/fechamento, base do diff3 e o
+# separador central EXATAMENTE `=======`.
+if git grep -n -E '^(<<<<<<<|>>>>>>>|\|\|\|\|\|\|\|)([[:space:]].*)?$|^=======$' -- \
   ':!**/node_modules/**' \
   ':!**/.venv/**' \
   ':!**/site-packages/**' \
