@@ -2,9 +2,9 @@
 tipo_camada: modelo_peca
 canonical_id: TESE-EMPR-000014
 origem_conteudo: modelo_simulado
-autoridade_juridica: vinculante
-authority_level: precedente_vinculante
-score_autoridade: 90
+autoridade_juridica: modelo_sem_autoridade
+authority_level: modelo_sem_autoridade
+score_autoridade: 0
 area_juridica: empresarial
 nivel_confiaca: BAIXA
 data_pesquisa: 13/08/2026

@@ -67,13 +67,16 @@ def test_escopo_do_lote_simulado_e_fechado_em_23_arquivos() -> None:
     assert not any("consumidor_bancario/14_" in rel for rel in ARQUIVOS_MODELO)
 
 
-def test_modelos_nao_se_declaram_fonte_oficial() -> None:
+def test_modelos_nao_se_declaram_fonte_ou_autoridade_juridica() -> None:
     for rel in ARQUIVOS_MODELO:
         campos, _ = _ler(rel)
         assert campos.get("origem_conteudo") == "modelo_simulado", rel
         assert campos.get("gerado_por_IA") == "true", rel
         assert campos.get("tipo_camada") == "modelo_peca", rel
         assert campos.get("nivel_confiaca") == "BAIXA", rel
+        assert campos.get("autoridade_juridica") == "modelo_sem_autoridade", rel
+        assert campos.get("authority_level") == "modelo_sem_autoridade", rel
+        assert campos.get("score_autoridade") == "0", rel
 
 
 def test_modelos_exibem_alerta_antes_do_conteudo_juridico() -> None:
