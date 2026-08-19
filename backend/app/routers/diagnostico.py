@@ -1,6 +1,7 @@
 # ── app/routers/diagnostico.py ───────────────────────────────────────────────
 # Central Eletrônica de Diagnóstico — expõe o estado de saúde agregado de todos
-# os subsistemas (banco, migrations, IA, integrações, RAG, scheduler, disco…).
+# os subsistemas (banco, migrations, IA, integrações, RAG, scheduler, disco e
+# sinais jurídicos críticos como calendário de prazos/heartbeat DOU).
 #
 #   GET /diagnostico/central     — SOCIO+ (require_roles), rate limit 10/min.
 #   GET /diagnostico/integridade — SOCIO+ (require_roles), rate limit 5/min.
@@ -20,7 +21,7 @@ from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import require_roles
 from app.models.user import User
-from app.services import diagnostico_service, integridade_service
+from app.services import diagnostico_juridico_service, integridade_service
 
 logger = logging.getLogger("ejc.diagnostico")
 
@@ -47,14 +48,14 @@ async def central_diagnostico(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_SOCIO_MAIS),
 ):
-    """Diagnóstico completo: estado de saúde acionável de todos os subsistemas.
+    """Diagnóstico completo e acionável de todos os subsistemas.
 
-    Retorna `status_geral`, `resumo` (contagens por status) e a lista de
-    `subsistemas`, cada um com {nome, status, detalhe, acao_sugerida,
-    latencia_ms}. Restrito a SOCIO+; limitado a 10 requisições/min.
+    Retorna `status_geral`, `resumo` e `subsistemas`, incluindo os sinais
+    jurídicos de calendário de prazos e heartbeat DOU. Restrito a SOCIO+;
+    somente leitura e limitado a 10 requisições/min.
     """
     _exigir_diagnostico_habilitado()
-    return await diagnostico_service.diagnostico_completo(db)
+    return await diagnostico_juridico_service.diagnostico_completo_com_juridico(db)
 
 
 @router.get(
