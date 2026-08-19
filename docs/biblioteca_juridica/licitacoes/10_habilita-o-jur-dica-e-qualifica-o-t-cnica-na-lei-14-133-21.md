@@ -1,14 +1,17 @@
 ---
-tipo_camada: tese_juridica
+tipo_camada: modelo_peca
 canonical_id: TESE-LICI-000011
-origem_conteudo: fonte_oficial
+origem_conteudo: modelo_simulado
 autoridade_juridica: jurisprudencial
 authority_level: jurisprudencia_oficial
 score_autoridade: 90
 area_juridica: licitacoes
-nivel_confiaca: ALTA
+nivel_confiaca: BAIXA
 data_pesquisa: 13/08/2026
-gerado_por_IA: false---
+gerado_por_IA: true
+---
+
+> **MODELO SIMULADO — NÃO CITAR COMO JURISPRUDÊNCIA.** Documento gerado por IA (Manus, lote piloto 08/2026) para servir de **modelo estrutural** de peça/tese. Julgados, números de processo, URLs e datas podem não ser reais e **não foram verificados em fonte oficial**. Uso em peça real exige verificação integral e aprovação humana.
 
 # BIBLIOTECA_JURIDICA_EJC — LICITACOES — HABILITAÇÃO JURÍDICA E QUALIFICAÇÃO TÉCNICA NA LEI 14.133/21
 
