@@ -1,0 +1,115 @@
+name: P0 RAG HITL patch once
+
+on:
+  push:
+    branches:
+      - agent/p0-rag-hitl-failclosed
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: contains(github.event.head_commit.message, '[run-p0-rag-hitl]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/p0-rag-hitl-failclosed
+          fetch-depth: 0
+
+      - name: Apply surgical fail-closed changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              src = p.read_text(encoding='utf-8')
+              count = src.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly 1 occurrence, got {count}: {old[:120]!r}')
+              p.write_text(src.replace(old, new, 1), encoding='utf-8')
+
+          # 1) Reranker: norma sem vigência verificável não fundamenta resposta atual.
+          path = 'backend/app/services/ai/reranker.py'
+          replace_once(
+              path,
+              'from app.services.knowledge_governance import inferir_autoridade\n\nlogger = logging.getLogger("ejc.ai.reranker")',
+              'from app.services.knowledge_governance import inferir_autoridade\n\n\ndef _norm(value: Any) -> str:\n    """Normalização local usada somente para classificar categoria no fail-closed."""\n    return str(value or "").strip().lower().replace("_", " ")\n\n\nlogger = logging.getLogger("ejc.ai.reranker")',
+          )
+          replace_once(
+              path,
+              '''            if status == "revogada" and vigente:\n                logger.info(\n                    "RAG excluiu norma revogada da fundamentação atual: doc_id=%s",\n                    item.get("doc_id"),\n                )\n                continue''',
+              '''            if status in {"vigencia_nao_verificada", "revogada", "suspensa"} and vigente:\n                logger.info(\n                    "RAG excluiu norma não verificada/revogada/suspensa da "\n                    "fundamentação atual: doc_id=%s status=%s",\n                    item.get("doc_id"),\n                    status,\n                )\n                continue''',
+          )
+          replace_once(
+              path,
+              '''    except Exception as exc:\n        logger.warning(\n            "Governança documental indisponível no reranking (%s) — mantendo candidatos",\n            str(exc)[:180],\n        )\n        return candidatos''',
+              '''    except Exception as exc:\n        # Fail-closed: sem governança, não sabemos se uma norma foi revogada ou\n        # suspensa. Mantemos somente candidatos não normativos, sem zerar o RAG.\n        logger.warning(\n            "Governança documental indisponível no reranking (%s) — "\n            "fail-closed: mantendo apenas candidatos não-normativos",\n            str(exc)[:180],\n        )\n        return [\n            c for c in candidatos\n            if "legisl" not in _norm(str(c.get("categoria") or ""))\n        ]''',
+          )
+
+          # 2) Citation check: norma marcada revogada não prova artigo VIGENTE;
+          # continua disponível no caminho histórico (vigente=False).
+          path = 'backend/app/services/citation_check.py'
+          replace_once(
+              path,
+              '''    vigencia_sql = "TRUE" if vigente else "FALSE"\n    row = (''',
+              '''    vigencia_sql = "TRUE" if vigente else "FALSE"\n    legal_status_sql = (\n        "AND LOWER(COALESCE((kd.extra->>'legal_status'), '')) <> 'revogada' "\n        if vigente\n        else ""\n    )\n    row = (''',
+          )
+          replace_once(
+              path,
+              '''                "AND kd.categoria LIKE 'legislacao%' "\n                + cond\n                + "AND kc.conteudo ~* :artigo_re "''',
+              '''                "AND kd.categoria LIKE 'legislacao%' "\n                + legal_status_sql\n                + cond\n                + "AND kc.conteudo ~* :artigo_re "''',
+          )
+
+          # 3) Knowledge governance: proposição legislativa nunca vira norma vigente.
+          path = 'backend/app/services/knowledge_governance.py'
+          replace_once(
+              path,
+              '''    "oficial_informativa": "Oficial informativa",\n    "institucional_interna": "Institucional interna",''',
+              '''    "oficial_informativa": "Oficial informativa",\n    "proposicao_legislativa": "Proposição legislativa (não é norma vigente)",\n    "institucional_interna": "Institucional interna",''',
+          )
+          replace_once(
+              path,
+              '''    "oficial_informativa": 80,\n    "institucional_interna": 65,''',
+              '''    "oficial_informativa": 80,\n    "proposicao_legislativa": 50,\n    "institucional_interna": 65,''',
+          )
+          replace_once(
+              path,
+              '''        official = bool(extra.get("source_official")) or fonte_oficial(fonte)\n        if "legisl" in cat or "norma" in cat or "regulamento" in cat:\n            code = "oficial_normativa" if official else "referencial"''',
+              '''        official = bool(extra.get("source_official")) or fonte_oficial(fonte)\n        if "proposi" in cat:\n            # Projeto/proposição, mesmo em domínio oficial, NÃO é norma vigente.\n            code = "proposicao_legislativa"\n        elif "legisl" in cat or "norma" in cat or "regulamento" in cat:\n            code = "oficial_normativa" if official else "referencial"''',
+          )
+          replace_once(
+              path,
+              '''def _freshness_threshold_days(category: str | None) -> int:\n    cat = _norm(category)\n    if "legisl" in cat or "sumula" in cat:\n        return 14\n    if "juris" in cat or "proposicao" in cat:\n        return 30''',
+              '''def _freshness_threshold_days(category: str | None) -> int:\n    cat = _norm(category)\n    if "proposi" in cat:\n        return 7\n    if "legisl" in cat or "sumula" in cat:\n        return 14\n    if "juris" in cat:\n        return 30''',
+          )
+
+          # 4) /revisar: advogado já é exigido; faltava aplicar o mesmo gate de
+          # citações/HITL do caminho conferir-e-assinar quando a revisão aprova.
+          path = 'backend/app/routers/legal_docs.py'
+          replace_once(
+              path,
+              '''    if d.case_id:\n        await verificar_acesso_caso(db, cu, d.case_id)\n\n    d.human_reviewed = payload.aprovado''',
+              '''    if d.case_id:\n        await verificar_acesso_caso(db, cu, d.case_id)\n\n    if payload.aprovado:\n        validacao = await _ultima_validacao_peca(db, d)\n        ai_log_id = validacao.get("ai_log_id")\n        if ai_log_id:\n            log = (await db.execute(\n                select(AILog).where(AILog.id == ai_log_id).with_for_update()\n            )).scalar_one_or_none()\n            if log is not None:\n                if (\n                    log.user_id != cu.id\n                    and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL.get("socio", 0)\n                ):\n                    raise HTTPException(\n                        status_code=403,\n                        detail="Sem permissão para revisar este log",\n                    )\n                from app.services.citation_gate import aplicar_gate_hitl\n\n                # /revisar não oferece override: citação bloqueante = 409 e\n                # verificador obrigatório indisponível = 503 (fail-closed).\n                await aplicar_gate_hitl(db, log, "revisado", False, None, cu)\n                log.status_hitl = AIStatusHITL.revisado\n                log.revisado_por = cu.id\n                log.revisado_em = datetime.now(timezone.utc)\n                await db.flush()\n\n    d.human_reviewed = payload.aprovado''',
+          )
+
+          print('P0 RAG/HITL aplicado cirurgicamente.')
+          PY
+
+          git diff --check
+          git diff --stat
+
+      - name: Commit surgical patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/services/ai/reranker.py \
+                  backend/app/services/citation_check.py \
+                  backend/app/services/knowledge_governance.py \
+                  backend/app/routers/legal_docs.py
+          git commit -m "fix: aplicar fail-closed P0 ao RAG e HITL [p0-rag-hitl-applied]"
+          git push origin HEAD:agent/p0-rag-hitl-failclosed
