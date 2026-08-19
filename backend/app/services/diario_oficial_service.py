@@ -1,34 +1,79 @@
 # ── app/services/diario_oficial_service.py ────────────────────────────────────
-# Monitor de Diário Oficial — captura publicações pela API do LexML/DOU.
-# Usa a API pública do DOU (imprensa.in.gov.br) sem autenticação.
-# Sem LGPD: não envia dados de clientes, apenas palavras-chave genéricas.
+# Monitor de Diário Oficial — captura publicações pela API do DOU.
+# Usa a consulta pública do in.gov.br sem autenticação.
+#
+# Regra operacional crítica: "nenhum resultado" NÃO pode ser confundido com
+# "fonte indisponível". Falha de transporte/HTTP/JSON é exceção tipada e fica
+# visível num heartbeat sanitizado; uma consulta válida com 0 publicações é
+# sucesso normal.
 from __future__ import annotations
+
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 DOU_SEARCH_URL = "https://www.in.gov.br/consulta/-/buscar/dou"
 
 
+class DOUIndisponivelError(RuntimeError):
+    """Falha técnica na consulta ao DOU; nunca representa "zero resultados"."""
+
+
+_DOU_STATUS: dict[str, Any] = {
+    "status": "nunca_executado",
+    "ultima_execucao": None,
+    "ultima_execucao_ok": None,
+    "ultima_quantidade": None,
+    "falhas_consecutivas": 0,
+    "ultimo_erro_tipo": None,
+}
+
+
+def _registrar_status_dou(*, ok: bool, quantidade: int | None = None,
+                           erro: Exception | None = None) -> None:
+    _DOU_STATUS["ultima_execucao"] = datetime.now(timezone.utc).isoformat()
+    _DOU_STATUS["ultima_execucao_ok"] = ok
+    if ok:
+        _DOU_STATUS["status"] = "ok"
+        _DOU_STATUS["ultima_quantidade"] = int(quantidade or 0)
+        _DOU_STATUS["falhas_consecutivas"] = 0
+        _DOU_STATUS["ultimo_erro_tipo"] = None
+    else:
+        _DOU_STATUS["status"] = "degradado"
+        _DOU_STATUS["falhas_consecutivas"] = int(
+            _DOU_STATUS.get("falhas_consecutivas") or 0
+        ) + 1
+        # Somente o TIPO da exceção é persistido em memória/diagnóstico. Corpo
+        # HTTP, keyword e conteúdo de publicação não entram no heartbeat.
+        _DOU_STATUS["ultimo_erro_tipo"] = type(erro).__name__ if erro else "Erro"
+
+
+def status_dou() -> dict[str, Any]:
+    """Heartbeat operacional sem keyword, conteúdo, PII ou segredo."""
+    return dict(_DOU_STATUS)
+
+
 async def buscar_dou(keyword: str, data_pub: date | None = None) -> list[dict]:
-    """
-    Consulta o Diário Oficial da União pela API do in.gov.br.
-    Retorna lista de publicações com: titulo, resumo, link, secao, data.
-    Retorna [] em caso de falha ou sem resultado.
+    """Consulta o DOU e retorna publicações normalizadas.
+
+    Retorna ``[]`` SOMENTE quando a consulta foi tecnicamente válida e não há
+    publicações. Falha de rede, HTTP ou parse levanta ``DOUIndisponivelError``.
     """
     import httpx
 
-    data_str = (data_pub or date.today() - timedelta(days=1)).strftime("%d-%m-%Y")
+    data_alvo = data_pub or date.today() - timedelta(days=1)
+    data_str = data_alvo.strftime("%d-%m-%Y")
     params = {
-        "q":            keyword,
-        "exactDate":    data_str,
-        "sortType":     "0",
-        "_search":      "null",
-        "view":         "simple",
+        "q": keyword,
+        "exactDate": data_str,
+        "sortType": "0",
+        "_search": "null",
+        "view": "simple",
         "numberOfPage": "1",
         "publishedFrom": data_str,
-        "publishedTo":   data_str,
+        "publishedTo": data_str,
     }
 
     try:
@@ -36,81 +81,115 @@ async def buscar_dou(keyword: str, data_pub: date | None = None) -> list[dict]:
             resp = await client.get(DOU_SEARCH_URL, params=params)
             resp.raise_for_status()
             data = resp.json()
-    except Exception as e:
-        logger.warning(f"[DOU] Falha ao consultar '{keyword}': {e}")
-        return []
+    except Exception as exc:
+        logger.warning(
+            "[DOU] fonte indisponível: %s",
+            type(exc).__name__,
+        )
+        raise DOUIndisponivelError(
+            f"Consulta ao DOU indisponível ({type(exc).__name__})"
+        ) from None
 
-    # Normaliza resposta — defensivo: `content` pode vir null/lista na resposta.
-    content = data.get("content") if isinstance(data, dict) else None
-    json_array = content.get("jsonArray", []) if isinstance(content, dict) else []
+    if not isinstance(data, dict):
+        raise DOUIndisponivelError("Consulta ao DOU retornou formato inesperado")
+
+    content = data.get("content")
+    if content is None:
+        # Alguns retornos válidos podem omitir content quando não há resultado.
+        json_array: list[dict] = []
+    elif isinstance(content, dict):
+        bruto = content.get("jsonArray", [])
+        if bruto is None:
+            json_array = []
+        elif isinstance(bruto, list):
+            json_array = [item for item in bruto if isinstance(item, dict)]
+        else:
+            raise DOUIndisponivelError(
+                "Consulta ao DOU retornou jsonArray em formato inesperado"
+            )
+    else:
+        raise DOUIndisponivelError("Consulta ao DOU retornou content inválido")
+
     resultados = []
     for item in json_array:
-        resultados.append({
-            "titulo":          item.get("title", ""),
-            "resumo":          item.get("excerpt", ""),
-            "link":            f"https://www.in.gov.br{item.get('urlTitle', '')}",
-            "secao":           str(item.get("artType", "")).replace("DOU - ", ""),
-            "data_publicacao": data_pub or date.today() - timedelta(days=1),
-            "edicao":          item.get("editionNumber", ""),
-        })
+        resultados.append(
+            {
+                "titulo": item.get("title", ""),
+                "resumo": item.get("excerpt", ""),
+                "link": f"https://www.in.gov.br{item.get('urlTitle', '')}",
+                "secao": str(item.get("artType", "")).replace("DOU - ", ""),
+                "data_publicacao": data_alvo,
+                "edicao": item.get("editionNumber", ""),
+            }
+        )
     return resultados
 
 
 async def processar_alertas_dou(db) -> int:
-    """
-    Verifica todas as keywords ativas, busca no DOU e persiste os alertas novos.
+    """Busca keywords ativas, persiste alertas e mantém heartbeat operacional.
 
-    Para cada alerta NOVO (dedup por link+keyword garante disparo único):
-      • Vinculação automática (R10/Seção 12): se a keyword não tem caso fixo,
-        extrai nº CNJ do título/resumo e casa com Case ativo (normalizando os
-        dois lados — só dígitos). Vínculo automático é marcado no resumo para
-        conferência humana.
-      • Notificação ativa: interna (sino) ao advogado responsável do caso
-        vinculado; sem caso/responsável, ao dono da keyword (created_by).
-        E-mail só se EMAIL_ENABLED (enviar_email é no-op seguro).
-
-    Retorna o total de alertas novos criados.
+    Uma keyword com falha não transforma o lote inteiro em "zero publicações":
+    a falha é registrada e as demais keywords continuam. Se qualquer consulta
+    falhar, o heartbeat final fica ``degradado`` mesmo que outras tenham êxito.
     """
     from uuid import uuid4
+
     from sqlalchemy import select
-    from app.models.diario_oficial import DiarioOficialKeyword, DiarioOficialAlerta
+
     from app.models.case import Case
+    from app.models.diario_oficial import DiarioOficialAlerta, DiarioOficialKeyword
     from app.models.user import User
     from app.services.djen_service import (
-        extrair_numero_cnj, buscar_caso_ativo_por_processo, normalizar_processo,
+        buscar_caso_ativo_por_processo,
+        extrair_numero_cnj,
+        normalizar_processo,
     )
     from app.services.notification_service import (
-        criar_notificacao_interna, enviar_email,
+        criar_notificacao_interna,
+        enviar_email,
     )
 
     ontem = date.today() - timedelta(days=1)
 
-    keywords = (await db.execute(
-        select(DiarioOficialKeyword).where(
-            DiarioOficialKeyword.ativo.is_(True),
-            DiarioOficialKeyword.fonte == "dou",
+    keywords = (
+        await db.execute(
+            select(DiarioOficialKeyword).where(
+                DiarioOficialKeyword.ativo.is_(True),
+                DiarioOficialKeyword.fonte == "dou",
+            )
         )
-    )).scalars().all()
+    ).scalars().all()
 
     if not keywords:
         return 0
 
     novos = 0
+    total_resultados = 0
+    falhas: list[Exception] = []
+
     for kw in keywords:
-        resultados = await buscar_dou(kw.keyword, ontem)
+        try:
+            resultados = await buscar_dou(kw.keyword, ontem)
+            total_resultados += len(resultados)
+        except DOUIndisponivelError as exc:
+            falhas.append(exc)
+            # Não logar a keyword: pode ser nome de pessoa/cliente/processo.
+            logger.error("[DOU] consulta de keyword falhou: %s", type(exc).__name__)
+            continue
+
         for r in resultados:
-            # Dedup: verifica se esse link já existe
-            existe = (await db.execute(
-                select(DiarioOficialAlerta).where(
-                    DiarioOficialAlerta.link == r["link"],
-                    DiarioOficialAlerta.keyword_id == kw.id,
+            existe = (
+                await db.execute(
+                    select(DiarioOficialAlerta).where(
+                        DiarioOficialAlerta.link == r["link"],
+                        DiarioOficialAlerta.keyword_id == kw.id,
+                    )
                 )
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
             if existe:
                 continue
 
-            # ── Vinculação automática publicação → caso ──────────────────────
-            case_id = kw.case_id          # vínculo fixo da keyword tem prioridade
+            case_id = kw.case_id
             case = None
             resumo = r["resumo"][:2000]
             if not case_id:
@@ -123,7 +202,7 @@ async def processar_alertas_dou(db) -> int:
                             f"\n[vinculação automática ao caso pelo nº do "
                             f"processo {normalizar_processo(num_cnj)} — conferir]"
                         )
-                        resumo = resumo[:2000 - len(marcador)] + marcador
+                        resumo = resumo[: 2000 - len(marcador)] + marcador
 
             alerta = DiarioOficialAlerta(
                 id=str(uuid4()),
@@ -141,41 +220,58 @@ async def processar_alertas_dou(db) -> int:
             db.add(alerta)
             novos += 1
 
-            # ── Notificação ativa (só na criação) ────────────────────────────
             try:
                 if case is None and case_id:
-                    case = (await db.execute(select(Case).where(
-                        Case.id == case_id
-                    ))).scalar_one_or_none()
+                    case = (
+                        await db.execute(select(Case).where(Case.id == case_id))
+                    ).scalar_one_or_none()
                 destinatario_id = (
                     case.advogado_responsavel_id
                     if case and case.advogado_responsavel_id
                     else kw.created_by
                 )
                 if destinatario_id:
-                    titulo_n = "📰 Nova publicação no Diário Oficial"
+                    titulo_n = "Nova publicação no Diário Oficial"
                     msg_n = (
-                        f"Keyword '{kw.keyword}': {r['titulo'][:150]}"
-                        + (" · vinculada automaticamente ao caso (conferir)"
-                           if case and not kw.case_id else "")
+                        f"Publicação encontrada para monitor cadastrado: "
+                        f"{r['titulo'][:150]}"
+                        + (
+                            " · vinculada automaticamente ao caso (conferir)"
+                            if case and not kw.case_id
+                            else ""
+                        )
                     )
                     await criar_notificacao_interna(
-                        db, destinatario_id, titulo_n, msg_n,
-                        tipo="diario_oficial", link="/diario-oficial",
+                        db,
+                        destinatario_id,
+                        titulo_n,
+                        msg_n,
+                        tipo="diario_oficial",
+                        link="/diario-oficial",
                     )
-                    email_dest = (await db.execute(select(User.email).where(
-                        User.id == destinatario_id
-                    ))).scalar_one_or_none()
+                    email_dest = (
+                        await db.execute(
+                            select(User.email).where(User.id == destinatario_id)
+                        )
+                    ).scalar_one_or_none()
                     if email_dest:
                         await enviar_email(
-                            email_dest, f"[EJC] {titulo_n}",
-                            f"<p>{msg_n}</p>"
-                            f"<p><a href='{r['link']}'>Ver publicação</a></p>",
+                            email_dest,
+                            f"[EJC] {titulo_n}",
+                            f"<p>{msg_n}</p><p><a href='{r['link']}'>Ver publicação</a></p>",
                         )
-            except Exception as e:
-                logger.warning(f"[DOU] Notificação falhou (não-fatal): {e}")
+            except Exception as exc:
+                logger.warning(
+                    "[DOU] notificação falhou (não-fatal): %s",
+                    type(exc).__name__,
+                )
 
     if novos > 0:
         await db.commit()
+
+    if falhas:
+        _registrar_status_dou(ok=False, erro=falhas[-1])
+    else:
+        _registrar_status_dou(ok=True, quantidade=total_resultados)
 
     return novos
