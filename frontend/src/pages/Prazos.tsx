@@ -376,20 +376,25 @@ export default function Prazos() {
                 <option value="civel">Processual cível — CPC</option>
                 <option value="trabalhista">Trabalhista — CLT</option>
                 <option value="penal">Processual penal — CPP</option>
-                <option value="administrativo">Administrativo — corrido</option>
+                <option value="administrativo">
+                  Administrativo — corrido
+                </option>
               </select>
             </div>
           </div>
-          {calc.tipo === "processual" && calc.regime_calculo !== "penal" && (
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={!!calc.dobro}
-                onChange={(e) => setCalc({ ...calc, dobro: e.target.checked })}
-              />
-              Prazo em dobro — confirmar hipótese legal aplicável
-            </label>
-          )}
+          {calc.tipo === "processual" &&
+            calc.regime_calculo !== "penal" && (
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={!!calc.dobro}
+                  onChange={(e) =>
+                    setCalc({ ...calc, dobro: e.target.checked })
+                  }
+                />
+                Prazo em dobro — confirmar hipótese legal aplicável
+              </label>
+            )}
           {calc.regime_calculo === "penal" && (
             <label className="flex items-start gap-2 text-sm text-slate-600">
               <input
@@ -421,6 +426,9 @@ export default function Prazos() {
                 {fmtDate(calcResp.data_vencimento)}
               </div>
               <div className="text-xs text-slate-500 mt-1">{calcResp.modo}</div>
+              <div className="text-xs text-slate-500">
+                {calcResp.dias_uteis_restantes} dias úteis até lá
+              </div>
               {calcResp.aviso && (
                 <div className="text-xs text-warn-700 mt-2 font-medium">
                   {calcResp.aviso}
@@ -500,16 +508,19 @@ export default function Prazos() {
               onChange={(e) => setForm({ ...form, data_prazo: e.target.value })}
             />
           </div>
-          {form.tipo === "processual" && form.regime_calculo !== "penal" && (
-            <label className="flex items-center gap-2 text-sm text-slate-600 sm:col-span-2">
-              <input
-                type="checkbox"
-                checked={!!form.dobro}
-                onChange={(e) => setForm({ ...form, dobro: e.target.checked })}
-              />
-              Prazo em dobro — confirmar hipótese legal aplicável
-            </label>
-          )}
+          {form.tipo === "processual" &&
+            form.regime_calculo !== "penal" && (
+              <label className="flex items-center gap-2 text-sm text-slate-600 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={!!form.dobro}
+                  onChange={(e) =>
+                    setForm({ ...form, dobro: e.target.checked })
+                  }
+                />
+                Prazo em dobro — confirmar hipótese legal aplicável
+              </label>
+            )}
           {form.regime_calculo === "penal" && (
             <label className="flex items-start gap-2 text-sm text-slate-600 sm:col-span-2">
               <input
