@@ -60,3 +60,15 @@ def test_duplicata_literal_falha_auditoria():
 
     assert auditoria["ok"] is False
     assert "GET /mesma" in auditoria["duplicatas_literais"]
+
+
+def test_superficie_real_do_ejc_nao_reintroduz_familias_consolidadas():
+    """O gate precisa olhar a aplicação real, não somente exemplos sintéticos."""
+    from app.main import app as ejc_app
+
+    auditoria = auditar_semantica(ejc_app)
+
+    assert auditoria["duplicatas_literais"] == []
+    assert auditoria["violacoes"] == []
+    assert auditoria["resolvidos_reintroduzidos"] == []
+    assert auditoria["ok"] is True
