@@ -1,100 +1,118 @@
 ## Issue vinculada
 
-<!-- Todo PR nasce de uma Issue (docs/FLUXO_DE_DESENVOLVIMENTO.md). -->
+<!-- Todo PR nasce de uma Issue. -->
 
 Closes #
 
 ## Problema reproduzido
 
-<!-- O que estava errado, como foi reproduzido (passos, request, log) e qual era o impacto
-     jurídico/operacional. Sem reprodução possível, explique por quê. -->
+<!-- O que estava errado, como foi reproduzido e qual era o impacto técnico, jurídico ou operacional. Sem reprodução possível, explique por quê. -->
+
+## Diagnóstico
+
+- Módulo/camada afetados:
+- Arquivos/contratos principais:
+- Dependências:
+- Risco técnico:
+- Risco jurídico/LGPD:
+- Risco operacional:
 
 ## Solução
 
-<!-- O que foi feito e por quê. Decisões de desenho e alternativas descartadas. -->
+<!-- O que foi feito, por quê e quais alternativas foram descartadas. -->
 
 ## Arquivos alterados
 
-<!-- Agrupados por área (backend/frontend/banco/infra/docs), uma linha por grupo. -->
+<!-- Agrupe por backend/frontend/banco/infra/docs. -->
 
 ## Migrations
 
 - [ ] Nenhuma migration neste PR
 - Número(s) e head resultante:
-- Reserva registrada em `backend/alembic/MIGRATION_RESERVATIONS.md`:
-- Comportamento em banco novo **e** em banco existente com dado legado:
+- Reserva em `backend/alembic/MIGRATION_RESERVATIONS.md`:
+- Comportamento em banco novo e banco com dado legado:
+- Upgrade/downgrade:
 
 ## Testes executados
 
-<!-- Comandos e resultado: pytest, ruff, vitest, tsc --noEmit, npm run build.
-     Cole os números (passed/failed) e explique falhas preexistentes. -->
+<!-- Comandos e resultados. Não marque como executado o que não foi rodado. -->
 
-```
+```text
 ```
 
 ## Evidências
 
-<!-- Saída de teste, captura de tela (mudança de UI), log da reprodução e da correção. -->
+<!-- CI, teste, captura de UI, log sanitizado, reprodução/correção. Nunca cole segredo ou PII. -->
 
 ## Impacto jurídico
 
 - [ ] Não se aplica
-- Fonte oficial (lei/artigo, súmula, precedente):
-- Vigência e versão da regra:
-- Aviso de revisão humana visível ao usuário:
-- Homologação necessária antes de o resultado virar documento formal:
+- Fonte oficial/vigência:
+- Revisão humana necessária:
+- Risco de erro e mitigação:
 
 ## Impacto LGPD
 
 - [ ] Não se aplica
-- Dados pessoais tocados e base legal:
-- Log, erro e telemetria sem PII:
-- Retenção, minimização e acesso do titular:
-
-## Escopo
-
-- [ ] Alteração coesa e dentro do escopo da Issue
-- [ ] Sem credenciais, dados pessoais ou documentos reais
-- [ ] Sem deploy direto ou mudança manual não registrada
-- [ ] Nenhum arquivo em conflito com outro PR aberto
+- Dados pessoais tocados e necessidade:
+- Minimização/retention:
+- Logs/telemetria sem PII:
+- Ownership/RBAC:
 
 ## Segurança e dados
 
-- [ ] Ownership/RBAC/ABAC revisados
-- [ ] LGPD e exposição de metadados avaliadas
+- [ ] Ownership/RBAC/ABAC revisados quando aplicável
 - [ ] Logs e erros não revelam segredos ou PII
-- [ ] Comportamento fail-closed em indisponibilidade (Redis, provedor, flag ausente)
-- [ ] `security-auditor` executado (auth, RBAC, upload, portal ou configuração)
-- [ ] HITL, gate de citações e sanitização de PII intactos
-- [ ] Migração possui estratégia de rollback/compatibilidade
+- [ ] Indisponibilidade crítica falha de forma segura
+- [ ] HITL, gate de citações e sanitização permanecem íntegros quando aplicável
+- [ ] Nenhum segredo, `.env`, credencial ou documento real foi versionado
 
 ## Evidências de CI
 
-- [ ] CI completo aprovado no head exato
+- [ ] CI completo aprovado no HEAD exato
 - [ ] P0 Guard aprovado
-- [ ] Continuity and UI Gates aprovado
-- [ ] Evidência manual anexada quando a mudança exigir interação humana
+- [ ] Release/continuity gates aplicáveis aprovados
+- [ ] Evidência humana anexada quando o critério não for automatizável
 
 ## Banco e continuidade
 
-- [ ] `alembic upgrade head` validado
+- [ ] `alembic upgrade head` validado quando aplicável
 - [ ] Backup/restore considerado antes de alteração destrutiva
 - [ ] Nenhum `DROP`, exclusão física ou cutover irreversível sem plano aprovado
 
-## Riscos residuais e limitações
+## Definition of Done
 
-<!-- O que este PR não resolve, o que pode quebrar, o que depende de ambiente. -->
+Referência: `docs/engineering/DEFINITION_OF_DONE.md`.
+
+- [ ] DoD revisada para o escopo deste PR
+- [ ] Testes compatíveis com o escopo executados
+- [ ] Riscos jurídicos/LGPD avaliados
+- [ ] Rollback definido
+- [ ] Loading/erro/vazio tratados quando houver UI
+- [ ] Autorização validada no backend quando houver restrição de acesso
+- [ ] Auditoria prevista quando houver impacto jurídico/financeiro/documental/processual/cadastral/segurança
+- [ ] Sem quebra conhecida de módulo existente
+
+## WIP e conflitos
+
+Referência: `docs/engineering/WIP_AND_RELEASE_POLICY.md`.
+
+- [ ] Alteração coesa e dentro da Issue
+- [ ] Branch baseada na `main` atual ou divergência explicitamente reconciliada
+- [ ] Nenhum PR concorrente conhecido altera o mesmo contrato sem plano de reconciliação
+
+## Riscos residuais
+
+<!-- O que este PR não resolve, o que depende de ambiente ou revisão humana. -->
 
 ## Rollback
 
 <!-- Como reverter código, configuração e banco com segurança. -->
 
-## Checklist de aceite
+## Promoção
 
-- [ ] Correção técnica (`docs/CRITERIOS_DE_ACEITE.md`, camada A)
-- [ ] Segurança (camada B)
-- [ ] Validade jurídica (camada C), quando aplicável
-- [ ] Fluxo funcional (camada D)
-- [ ] Regressão (camada E)
-- [ ] Relatório final do executor presente neste PR
-- [ ] **Sem merge pelo executor** — merge e deploy são atos humanos autorizados pelo titular
+- [ ] Merge somente após gates do HEAD exato e revisão exigida
+- [ ] Deploy somente pelo mecanismo aprovado do repositório
+- [ ] Health/readiness e smoke pós-deploy obrigatórios
+
+A promoção pode ser executada por agente autorizado ou automação aprovada quando esses gates estiverem satisfeitos. Não utilizar bypass da proteção da `main` nem atalho manual de produção.
