@@ -281,7 +281,8 @@ export default function Prazos() {
                   {d.base_legal || d.tipo}
                   {!d.confirmado && (
                     <span className="text-warn-600">
-                      {" "}· precisa de conferência humana antes da confirmação
+                      {" "}
+                      · precisa de conferência humana antes da confirmação
                     </span>
                   )}
                 </div>
@@ -376,25 +377,20 @@ export default function Prazos() {
                 <option value="civel">Processual cível — CPC</option>
                 <option value="trabalhista">Trabalhista — CLT</option>
                 <option value="penal">Processual penal — CPP</option>
-                <option value="administrativo">
-                  Administrativo — corrido
-                </option>
+                <option value="administrativo">Administrativo — corrido</option>
               </select>
             </div>
           </div>
-          {calc.tipo === "processual" &&
-            calc.regime_calculo !== "penal" && (
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={!!calc.dobro}
-                  onChange={(e) =>
-                    setCalc({ ...calc, dobro: e.target.checked })
-                  }
-                />
-                Prazo em dobro — confirmar hipótese legal aplicável
-              </label>
-            )}
+          {calc.tipo === "processual" && calc.regime_calculo !== "penal" && (
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={!!calc.dobro}
+                onChange={(e) => setCalc({ ...calc, dobro: e.target.checked })}
+              />
+              Prazo em dobro — confirmar hipótese legal aplicável
+            </label>
+          )}
           {calc.regime_calculo === "penal" && (
             <label className="flex items-start gap-2 text-sm text-slate-600">
               <input
@@ -508,19 +504,16 @@ export default function Prazos() {
               onChange={(e) => setForm({ ...form, data_prazo: e.target.value })}
             />
           </div>
-          {form.tipo === "processual" &&
-            form.regime_calculo !== "penal" && (
-              <label className="flex items-center gap-2 text-sm text-slate-600 sm:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={!!form.dobro}
-                  onChange={(e) =>
-                    setForm({ ...form, dobro: e.target.checked })
-                  }
-                />
-                Prazo em dobro — confirmar hipótese legal aplicável
-              </label>
-            )}
+          {form.tipo === "processual" && form.regime_calculo !== "penal" && (
+            <label className="flex items-center gap-2 text-sm text-slate-600 sm:col-span-2">
+              <input
+                type="checkbox"
+                checked={!!form.dobro}
+                onChange={(e) => setForm({ ...form, dobro: e.target.checked })}
+              />
+              Prazo em dobro — confirmar hipótese legal aplicável
+            </label>
+          )}
           {form.regime_calculo === "penal" && (
             <label className="flex items-start gap-2 text-sm text-slate-600 sm:col-span-2">
               <input
