@@ -22,6 +22,7 @@ from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.models.client import Client, ClientStatus
 from app.models.case import Case, CaseStatus
+from app.services.geracao_documental_cliente import listar_pecas_cliente
 from app.models.audit_log import criar_audit_log
 from app.schemas.client import (
     ClientCreate, ClientUpdate, ClientResponse, ConflitoCheckRequest,
@@ -577,6 +578,29 @@ async def gerar_documentos_cliente(
         poderes_especiais=p.poderes_especiais,
         forcar_novo=p.forcar_novo,
     )
+
+
+@router.get("/{client_id}/pecas-geradas")
+async def listar_pecas_geradas(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_clientes),
+):
+    """Documentos de Admissão do cliente (Dossiê Digital): peças SOLTAS
+    (contrato de honorários + procuração) geradas no cadastro. Read-only;
+    revisão/aprovação é feita pelos endpoints do legal-docs. Gate idêntico
+    ao gerar-documentos: advogado só vê a própria carteira (404 em carteira
+    alheia — não vaza existência, LGPD/EOAB)."""
+    from app.core.security import requer_advogado
+    requer_advogado(cu)
+    c = (await db.execute(
+        select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    if not await _pode_ver_cliente(cu, c, db):
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    return await listar_pecas_cliente(db, c)
 
 
 @router.get("/{client_id}", response_model=ClientResponse)

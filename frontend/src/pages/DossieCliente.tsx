@@ -943,6 +943,86 @@ export default function DossieCliente() {
     carregarDossie();
   }, [carregarDossie]);
 
+  // Documentos de Admissão (peças soltas geradas no cadastro do cliente):
+  // bloco read-only na aba Documentos; revisão/aprovação segue o fluxo
+  // oficial do legal-docs (validação jurídica + aprovação HITL).
+  const [pecasAdmissao, setPecasAdmissao] = useState<
+    Array<{
+      id: string;
+      titulo: string;
+      tipo: string;
+      status: string;
+      created_at: string | null;
+    }>
+  >([]);
+  const [carregandoPecas, setCarregandoPecas] = useState(false);
+  const [aprovandoId, setAprovandoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!clientId) return;
+    let ativo = true;
+    setCarregandoPecas(true);
+    api
+      .get(`/clients/${clientId}/pecas-geradas`)
+      .then((r) => ativo && setPecasAdmissao(Array.isArray(r.data) ? r.data : []))
+      .catch(() => {
+        if (ativo) setPecasAdmissao([]);
+      })
+      .finally(() => ativo && setCarregandoPecas(false));
+    return () => {
+      ativo = false;
+    };
+  }, [clientId]);
+
+  const atualizarPecas = () => {
+    if (!clientId) return;
+    api
+      .get(`/clients/${clientId}/pecas-geradas`)
+      .then((r) => setPecasAdmissao(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setPecasAdmissao([]));
+  };
+
+  const baixarPeca = async (id: string, nome: string) => {
+    try {
+      const r = await api.get(`/legal-docs/${id}/pdf-minuta`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${nome}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Não foi possível gerar o PDF da peça");
+    }
+  };
+
+  const aprovarPeca = async (id: string) => {
+    setAprovandoId(id);
+    try {
+      await api.patch(`/legal-docs/${id}/aprovar`, {
+        observacoes: "Revisão via Dossiê Digital: minuta de admissão do cliente conferida.",
+      });
+      toast.success("Peça aprovada — disponível para uso");
+      atualizarPecas();
+    } catch (e: any) {
+      const d = e.response?.data?.detail;
+      const str = typeof d === "string" ? d : "";
+      if (str.includes("validacao juridica")) {
+        toast.info(
+          "Antes de aprovar, execute a validação jurídica da peça (Documentos → peça → Validar) — requisito de qualidade do EJC.",
+        );
+      } else {
+        toast.error(
+          str || "Não foi possível aprovar a peça — verifique as regras de qualidade",
+        );
+      }
+    } finally {
+      setAprovandoId(null);
+    }
+  };
+
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     nome: "",
@@ -1466,7 +1546,68 @@ export default function DossieCliente() {
       )}
 
       {abaAtiva === "documentos" && (
-        <div className="card overflow-hidden animate-fade-in">
+        <>
+          {/* Documentos de Admissão — peças geradas no cadastro do cliente */}
+          {pecasAdmissao.length > 0 && (
+            <div className="card overflow-hidden mb-4 animate-fade-in">
+              <div className="px-4 py-3 border-b border-bronze-pale">
+                <p className="eyebrow flex items-center gap-2">
+                  <FileText className="w-3 h-3" /> Documentos de Admissão
+                </p>
+              </div>
+              <div className="divide-y divide-bronze-pale/50">
+                {pecasAdmissao.map((p) => {
+                  const ehAprovada = p.status === "aprovada" || p.status === "aprovado";
+                  return (
+                    <div
+                      key={p.id}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-navy-900 font-medium truncate">
+                          {p.titulo}
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {p.tipo === "contrato"
+                            ? "Contrato de honorários (padrão OAB/MG)"
+                            : "Procuração ad judicia"} ·{" "}
+                          Criado em {" "}
+                          {p.created_at
+                            ? new Date(p.created_at).toLocaleDateString("pt-BR")
+                            : "—"}
+                        </p>
+                      </div>
+                      <StatusBadge value={p.status} />
+                      {!ehAprovada && (
+                        <button
+                          onClick={() => aprovarPeca(p.id)}
+                          disabled={aprovandoId === p.id}
+                          title="Aprovar após revisão (exige validação jurídica)"
+                          className="text-xs font-medium text-navy border border-bronze-pale rounded px-2.5 py-1 hover:bg-bronze-50 disabled:opacity-50"
+                        >
+                          {aprovandoId === p.id ? "Aprovando..." : "Aprovar"}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => baixarPeca(p.id, p.titulo)}
+                        title="Baixar minuta em PDF"
+                        className="p-1"
+                      >
+                        <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="px-4 py-2.5 text-[11px] text-slate-400 border-t border-bronze-pale/40">
+                Minutas geradas por template (sem redação por IA) — status
+                rascunho exige revisão e aprovação do advogado antes de
+                qualquer uso (dever ético EOAB).
+              </p>
+            </div>
+          )}
+
+          <div className="card overflow-hidden animate-fade-in">
           <div className="px-4 py-3 border-b border-bronze-pale">
             <p className="eyebrow flex items-center gap-2">
               <FileText className="w-3 h-3" /> Acervo Documental
@@ -1497,6 +1638,7 @@ export default function DossieCliente() {
             ))}
           </div>
         </div>
+          </>
       )}
 
       {abaAtiva === "ia_cliente" && (

@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ownership import role_str as _role_str
 from app.models.audit_log import criar_audit_log
@@ -39,6 +40,47 @@ from app.services.documental import _procuracao
 from app.utils.format import formatar_brl
 
 logger = logging.getLogger(__name__)
+
+
+def _titulos_canonicos(nome_cliente: str) -> list[str]:
+    """Títulos canônicos das peças de admissão de um cliente (mesmo padrão
+    de idempotência da geração: reaproveitado pela listagem do Dossiê)."""
+    return [
+        padronizar_documento_juridico("Procuracao - " + nome_cliente)[:200],
+        padronizar_documento_juridico("Contrato de Honorarios - " + nome_cliente)[:200],
+    ]
+
+
+async def listar_pecas_cliente(
+    db: AsyncSession,
+    cli: Client,
+) -> list[dict]:
+    """Peças de admissão (contrato + procuração) geradas no cadastro do
+    cliente: peças SOLTAS (case_id=None) com título canônico. Usado pelo
+    bloco "Documentos de Admissão" do Dossiê Digital — read-only."""
+    nome_cliente = cli.razao_social or cli.nome or ""
+    if not nome_cliente:
+        return []
+    docs = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.case_id.is_(None),
+            LegalDoc.deleted_at.is_(None),
+            LegalDoc.titulo.in_(_titulos_canonicos(nome_cliente)),
+        ).order_by(LegalDoc.created_at.desc())
+    )).scalars().all()
+    out: list[dict] = []
+    for d in docs:
+        tipo = "procuracao" if d.titulo.startswith("Procuracao") else "contrato"
+        out.append({
+            "id": d.id,
+            "titulo": d.titulo,
+            "tipo": tipo,
+            "status": getattr(d.status, "value", str(d.status)),
+            "created_at": (
+                d.created_at.isoformat() if d.created_at else None
+            ),
+        })
+    return out
 
 AVISO_RASCUNHO = (
     "Documentos gerados automaticamente por preenchimento de template "

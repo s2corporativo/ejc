@@ -157,7 +157,28 @@ def main() -> int:
         (l.get("acao") == "GERAR_DOCS_CLIENTE" for l in (rows or []))
         if isinstance(rows, list) else False)
     check("C8 auditoria persistida", achou, f"resp={r.status_code}")
-
+    # ── C9: Dossiê — GET /clients/{id}/pecas-geradas (listagem) ───────────
+    time.sleep(0.5)
+    r = requests.get(f"{BASE}/clients/{cliente_id}/pecas-geradas",
+                     headers=h_admin, timeout=15)
+    check("C9 listar peças do Dossiê: 200", r.status_code == 200,
+          str(r.status_code))
+    if r.status_code == 200:
+        pecas = r.json()
+        tipos = {p["tipo"] for p in pecas}
+        check("C9 contém procuração e contrato", tipos >= {"procuracao", "contrato"},
+              f"tipos={sorted(tipos)}")
+        check("C9 todos rascunho", all(p["status"] == "rascunho" for p in pecas),
+              str(pecas[:1]))
+    # ── C10: visibilidade — advogado não vê peças de carteira alheia ───────
+    time.sleep(0.5)
+    r = requests.get(f"{BASE}/clients/{cliente_id}/pecas-geradas",
+                     headers=h_adv, timeout=15)
+    check("C10 404 em carteira alheia (não vaza existência)",
+          r.status_code == 404, str(r.status_code))
+    # ── C11: sem token → 401 ─────────────────────────────────────────────
+    r = requests.get(f"{BASE}/clients/{cliente_id}/pecas-geradas", timeout=15)
+    check("C11 sem token: 401", r.status_code == 401, str(r.status_code))
     print(f"\n=== RESUMO: {PASS} PASS, {FAIL} FAIL ===")
     return 1 if FAIL else 0
 
