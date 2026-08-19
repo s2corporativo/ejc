@@ -29,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -62,6 +64,48 @@ jobs:
           set -o pipefail
           python -m app.eval.gold_governance | tee ../gold-governance-report.txt
 
+      - name: Detectar alteração no núcleo jurídico de IA
+        id: ai_legal_scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+            if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then
+              BASE="${HEAD}^"
+            fi
+          fi
+
+          git diff --name-only "$BASE" "$HEAD" > /tmp/ejc-changed-files.txt
+          pattern='^backend/app/(agent/|system_prompts/|services/agent/|services/system_prompts/|services/ai(/|_[^/]*\.py$)|services/(rag|rerank|citation|knowledge|legal_base)[^/]*\.py$|services/(peca_service|motor_peca_service|analise_estrategica)[^/]*\.py$|routers/(ai|ia|rag|documentos_ia|pecas_ia)[^/]*\.py$)'
+          if grep -E "$pattern" /tmp/ejc-changed-files.txt >/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Núcleo jurídico de IA alterado: certificação humana obrigatória."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Sem alteração no núcleo jurídico de IA."
+          fi
+
+      - name: Gold set humano bloqueante para mudança de IA
+        if: steps.ai_legal_scope.outputs.changed == 'true'
+        working-directory: backend
+        run: |
+          python -m app.eval.gold_governance \
+            --require-real \
+            --min-total 75 \
+            --areas consumidor,trabalhista,civel,penal,tributario \
+            --min-casos-area 15 \
+            --cenarios normal,fronteira,excecao \
+            --min-casos-cenario 5
+          python -m app.eval.run_eval \
+            --smoke \
+            --areas-obrigatorias consumidor,trabalhista,civel,penal,tributario \
+            --min-casos-area 15
+
       - name: Resumo da maturidade jurídica da IA
         if: always()
         run: |
@@ -72,8 +116,8 @@ jobs:
             cat gold-governance-report.txt 2>/dev/null || true
             echo '```'
             echo
-            echo "Este check valida proveniência e deixa explícita cobertura zero quando não há corpus humano."
-            echo "Certificação jurídica ampla é um workflow separado e fail-closed."
+            echo "Núcleo jurídico de IA alterado neste diff: ${{ steps.ai_legal_scope.outputs.changed }}"
+            echo "Se true, o Release Gate exige corpus humano real e cobertura mínima por área."
           } >> "$GITHUB_STEP_SUMMARY"
 
   frontend-build:
