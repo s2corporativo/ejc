@@ -1,5 +1,6 @@
 import { BellRing, ChevronRight, Network } from "lucide-react";
 import { Link } from "react-router";
+import DeadlineRiskStrip from "../components/DeadlineRiskStrip";
 import { useAuth } from "../stores/auth";
 import DashboardUltra from "./DashboardUltra";
 
@@ -28,6 +29,8 @@ export default function Dashboard() {
 
   return (
     <div>
+      <DeadlineRiskStrip />
+
       {podeUsarPje && (
         <div className="mb-3 flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-950/55 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
