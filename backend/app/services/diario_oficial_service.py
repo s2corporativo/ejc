@@ -59,7 +59,8 @@ async def buscar_dou(keyword: str, data_pub: date | None = None) -> list[dict]:
     """Consulta o DOU e retorna publicações normalizadas.
 
     Retorna ``[]`` SOMENTE quando a consulta foi tecnicamente válida e não há
-    publicações. Falha de rede, HTTP ou parse levanta ``DOUIndisponivelError``.
+    publicações. Falha de rede, HTTP, parse ou contrato levanta
+    ``DOUIndisponivelError``.
     """
     import httpx
 
@@ -93,22 +94,22 @@ async def buscar_dou(keyword: str, data_pub: date | None = None) -> list[dict]:
     if not isinstance(data, dict):
         raise DOUIndisponivelError("Consulta ao DOU retornou formato inesperado")
 
+    # Fail-closed: ausência do envelope `content` é quebra de contrato, não
+    # evidência de zero publicações. Zero resultado válido é `jsonArray=[]`.
     content = data.get("content")
-    if content is None:
-        # Alguns retornos válidos podem omitir content quando não há resultado.
-        json_array: list[dict] = []
-    elif isinstance(content, dict):
-        bruto = content.get("jsonArray", [])
-        if bruto is None:
-            json_array = []
-        elif isinstance(bruto, list):
-            json_array = [item for item in bruto if isinstance(item, dict)]
-        else:
-            raise DOUIndisponivelError(
-                "Consulta ao DOU retornou jsonArray em formato inesperado"
-            )
-    else:
+    if not isinstance(content, dict):
         raise DOUIndisponivelError("Consulta ao DOU retornou content inválido")
+
+    bruto = content.get("jsonArray")
+    if bruto is None:
+        raise DOUIndisponivelError(
+            "Consulta ao DOU não retornou jsonArray no contrato esperado"
+        )
+    if not isinstance(bruto, list):
+        raise DOUIndisponivelError(
+            "Consulta ao DOU retornou jsonArray em formato inesperado"
+        )
+    json_array = [item for item in bruto if isinstance(item, dict)]
 
     resultados = []
     for item in json_array:
