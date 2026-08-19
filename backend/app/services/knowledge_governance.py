@@ -55,6 +55,7 @@ AUTHORITY_LABELS = {
     "precedente_vinculante": "Precedente vinculante/oficial",
     "jurisprudencia_oficial": "Jurisprudência oficial",
     "oficial_informativa": "Oficial informativa",
+    "proposicao_legislativa": "Proposição legislativa (não é norma vigente)",
     "institucional_interna": "Institucional interna",
     "doutrinaria": "Doutrinária",
     "referencial": "Referencial",
@@ -65,6 +66,7 @@ AUTHORITY_WEIGHTS = {
     "precedente_vinculante": 96,
     "jurisprudencia_oficial": 90,
     "oficial_informativa": 80,
+    "proposicao_legislativa": 50,
     "institucional_interna": 65,
     "doutrinaria": 55,
     "referencial": 40,
@@ -171,7 +173,10 @@ def inferir_autoridade(
     else:
         cat = _norm(categoria)
         official = bool(extra.get("source_official")) or fonte_oficial(fonte)
-        if "legisl" in cat or "norma" in cat or "regulamento" in cat:
+        if "proposi" in cat:
+            # Projeto/proposição, mesmo em domínio oficial, NÃO é norma vigente.
+            code = "proposicao_legislativa"
+        elif "legisl" in cat or "norma" in cat or "regulamento" in cat:
             code = "oficial_normativa" if official else "referencial"
         elif "sumula" in cat or "repercussao" in cat or "repetitivo" in cat:
             code = "precedente_vinculante" if official else "referencial"
@@ -237,9 +242,11 @@ def inferir_situacao_juridica(doc: KnowledgeDoc) -> dict[str, Any]:
 
 def _freshness_threshold_days(category: str | None) -> int:
     cat = _norm(category)
+    if "proposi" in cat:
+        return 7
     if "legisl" in cat or "sumula" in cat:
         return 14
-    if "juris" in cat or "proposicao" in cat:
+    if "juris" in cat:
         return 30
     if "oficial" in cat or "regulator" in cat:
         return 45

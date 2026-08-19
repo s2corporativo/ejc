@@ -187,6 +187,11 @@ async def _fonte_artigo(
     if cond is None:
         return None
     vigencia_sql = "TRUE" if vigente else "FALSE"
+    legal_status_sql = (
+        "AND LOWER(COALESCE((kd.extra->>'legal_status'), '')) <> 'revogada' "
+        if vigente
+        else ""
+    )
     row = (
         await db.execute(
             text(
@@ -195,6 +200,7 @@ async def _fonte_artigo(
                 "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
                 f"WHERE kd.deleted_at IS NULL AND kd.vigente = {vigencia_sql} "
                 "AND kd.categoria LIKE 'legislacao%' "
+                + legal_status_sql
                 + cond
                 + "AND kc.conteudo ~* :artigo_re "
                 + _filtros_gate_rag(False)

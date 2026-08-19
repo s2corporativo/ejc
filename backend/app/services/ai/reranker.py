@@ -20,6 +20,12 @@ from app.core.database import AsyncSessionLocal
 from app.models.rag import KnowledgeDoc
 from app.services.knowledge_governance import inferir_autoridade
 
+
+def _norm(value: Any) -> str:
+    """Normalização local usada somente para classificar categoria no fail-closed."""
+    return str(value or "").strip().lower().replace("_", " ")
+
+
 logger = logging.getLogger("ejc.ai.reranker")
 settings = get_settings()
 
@@ -211,20 +217,28 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
                     "revogada",
                 },
             }
-            if status == "revogada" and vigente:
+            if status in {"vigencia_nao_verificada", "revogada", "suspensa"} and vigente:
                 logger.info(
-                    "RAG excluiu norma revogada da fundamentação atual: doc_id=%s",
+                    "RAG excluiu norma não verificada/revogada/suspensa da "
+                    "fundamentação atual: doc_id=%s status=%s",
                     item.get("doc_id"),
+                    status,
                 )
                 continue
             hydrated.append(item)
         return hydrated
     except Exception as exc:
+        # Fail-closed: sem governança, não sabemos se uma norma foi revogada ou
+        # suspensa. Mantemos somente candidatos não normativos, sem zerar o RAG.
         logger.warning(
-            "Governança documental indisponível no reranking (%s) — mantendo candidatos",
+            "Governança documental indisponível no reranking (%s) — "
+            "fail-closed: mantendo apenas candidatos não-normativos",
             str(exc)[:180],
         )
-        return candidatos
+        return [
+            c for c in candidatos
+            if "legisl" not in _norm(str(c.get("categoria") or ""))
+        ]
 
 
 def _confidence_bonus(candidate: dict) -> float:

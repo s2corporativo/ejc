@@ -612,6 +612,32 @@ async def revisar(
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
 
+    if payload.aprovado:
+        validacao = await _ultima_validacao_peca(db, d)
+        ai_log_id = validacao.get("ai_log_id")
+        if ai_log_id:
+            log = (await db.execute(
+                select(AILog).where(AILog.id == ai_log_id).with_for_update()
+            )).scalar_one_or_none()
+            if log is not None:
+                if (
+                    log.user_id != cu.id
+                    and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL.get("socio", 0)
+                ):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Sem permissão para revisar este log",
+                    )
+                from app.services.citation_gate import aplicar_gate_hitl
+
+                # /revisar não oferece override: citação bloqueante = 409 e
+                # verificador obrigatório indisponível = 503 (fail-closed).
+                await aplicar_gate_hitl(db, log, "revisado", False, None, cu)
+                log.status_hitl = AIStatusHITL.revisado
+                log.revisado_por = cu.id
+                log.revisado_em = datetime.now(timezone.utc)
+                await db.flush()
+
     d.human_reviewed = payload.aprovado
     d.revisor_id = cu.id
     d.revisado_em = datetime.now(timezone.utc)
