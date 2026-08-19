@@ -49,10 +49,14 @@ def _steps() -> dict[str, str]:
 
 
 def _condicao_if(nome_step: str) -> str:
-    """Extrai a condição `if:` do step humano indicado."""
+    """Extrai a condição `if:` do step humano indicado.
+
+    `_steps()` remove a linha `- name:` e deixa `if:` no início de `resto`;
+    por isso o parser aceita tanto início do bloco quanto quebra de linha.
+    """
     bloco = _steps()[nome_step]
     m = re.search(
-        r"\n        if:\s*(?:>-\s*\n(.*?)|\$\{\{(.*?)\}\})\n        env:",
+        r"(?:^|\n)        if:\s*(?:>-\s*\n(.*?)|\$\{\{(.*?)\}\})\n        env:",
         bloco,
         re.S,
     )
@@ -90,17 +94,11 @@ def _allowlist_doc() -> list[str]:
     return json.loads(m.group(1))
 
 
-# ── Estrutura básica do workflow ──────────────────────────────────────────────
-
-
 def test_workflow_tem_todos_os_steps_esperados():
     passos = _steps()
     esperados = set(STEPS_SEM_EXCECAO) | set(STEPS_COM_EXCECAO_DEPENDABOT) | {"Autor do PR"}
     faltando = esperados - passos.keys()
     assert not faltando, f"steps ausentes em governanca.yml: {faltando}"
-
-
-# ── Isenção fechada do Dependabot ─────────────────────────────────────────────
 
 
 def test_steps_humanos_usam_a_mesma_excecao_fechada_do_dependabot():
@@ -145,9 +143,6 @@ def test_allowlists_do_workflow_e_do_documento_coincidem():
         assert _allowlist_workflow(nome) == esperada
 
 
-# ── Definition of Done ────────────────────────────────────────────────────────
-
-
 def test_definition_of_done_minima_e_bloqueante():
     bloco = _steps()["Definition of Done minima marcada"]
     itens = (
@@ -161,9 +156,6 @@ def test_definition_of_done_minima_e_bloqueante():
         assert item in bloco
     assert 'grep -Fqi -- "- [x] $ITEM"' in bloco
     assert "exit 1" in bloco
-
-
-# ── Classificação de governança e revisão de segurança ───────────────────────
 
 
 def test_classificacao_governanca_cobre_workflow_documentos_e_engineering():
@@ -208,9 +200,6 @@ def test_alteracao_sensivel_exige_revisao_documentada_sem_marcador_ficticio():
     assert 'grep -Fqi -- "- [x] $ITEM"' in bloco
     assert "exit 1" in bloco
     assert "security-auditor: executado" not in bloco
-
-
-# ── docs/GOVERNANCA_FASE2.md referencia o canônico, não duplica a regra ──────
 
 
 def test_fase2_referencia_o_canonico_em_vez_de_ser_fonte_propria():
