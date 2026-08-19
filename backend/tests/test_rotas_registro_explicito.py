@@ -52,6 +52,12 @@ def _extrair_rotas(app) -> list[dict]:
 # pode criar nem remover rota; qualquer outra novidade falha o teste.
 ADICOES_INTENCIONAIS = {
     ("/api/architecture/uso-rotas", "GET"),
+    # Saneamento 19/08/2026 (item 16): auditoria semântica da superfície real,
+    # restrita a superadmin/admin/sócio; não expõe dados de caso/cliente.
+    ("/api/architecture/semantic-audit", "GET"),
+    # Saneamento 19/08/2026 (item 14): heartbeat técnico do DOU, advogado+,
+    # sem keyword, conteúdo de publicação, PII ou segredo.
+    ("/api/diario-oficial/status", "GET"),
     ("/api/sala-juridica/{session_id}/conversao/preview", "GET"),
     ("/api/diagnostico/integridade", "GET"),
     # PR #547: decisão explícita de publicar/despublicar arquivo no Data Room.
