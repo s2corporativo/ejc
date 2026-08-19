@@ -308,7 +308,14 @@ async def listar(
     cu: User = Depends(get_current_user),
 ):
     q = select(LegalDoc).where(LegalDoc.deleted_at.is_(None))
+    # Visibilidade herdada do caso: peça de caso EXCLUÍDO não aparece em
+    # superfície operacional, para NENHUM perfil. Antes isso só acontecia por
+    # efeito colateral do filtro de ownership abaixo — logo, gestão continuava
+    # vendo peças órfãs e a mesma tela mostrava números diferentes conforme
+    # quem olhava. Peça sem `case_id` (minuta avulsa) segue visível.
     q = filtrar_pecas_visiveis(q)
+    # Ownership por caso (IDOR): não-gestão só vê peças dos seus casos
+    # (responsável/auxiliar/sem-dono) ou sem caso vinculado.
     if not is_gestao(cu):
         casos_visiveis = select(Case.id).where(
             Case.deleted_at.is_(None),
@@ -322,6 +329,8 @@ async def listar(
     if case_id:
         q = q.where(LegalDoc.case_id == case_id)
     if status_f:
+        # Mesmo defeito de `/cases/?status=`: `legal_docs.status` é ENUM nativo,
+        # valor fora do enum chega cru ao Postgres e vira 500. 422 explícito.
         try:
             q = q.where(LegalDoc.status == PecaStatus(status_f))
         except ValueError:
@@ -372,12 +381,18 @@ async def criar(
         detalhes=f"IA={payload.ai_generated}",
     )
     await db.commit()
+    # Transição automática de estado (Bloco 3): peça criada ⇒ em_producao.
+    # APÓS o commit da peça (fail-safe: warning e segue) e ANTES do refresh —
+    # o commit da transição expira os atributos, e o refresh abaixo os reidrata
+    # para a serialização da resposta. Usa o case_id do payload (o atributo do
+    # ORM está expirado neste ponto).
     if getattr(payload, "case_id", None):
         from app.services.status_transicao import avancar_status_pos_commit
         await avancar_status_pos_commit(
             db, payload.case_id, "peca_criada", user_id=cu.id
         )
     await db.refresh(d)
+    # ETAPA 2 — produção interna alimenta a RAG (sanitizada, classificada).
     background.add_task(indexar_peca_rag, d.id)
     return d
 
@@ -395,6 +410,7 @@ async def detalhe(
     )).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
+    # Ownership (IDOR): peça vinculada a caso só é visível a quem tem o caso.
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
     item = LegalDocDetail.model_validate(d).model_dump(mode="json")
@@ -443,6 +459,10 @@ async def validar_peca_juridica(
     try:
         resultado = await validar_rascunho_juridico(payload, db=db, user_id=cu.id, scope_client_id=escopo_cli)
     except RuntimeError as exc:
+        # Camada de borda (P0 §3.2, achado #672): sem isto o RuntimeError do
+        # ai_gateway (nenhum provedor de IA elegível) subia cru como 500
+        # genérico, e ai_log_id nunca era gravado — travando /aprovar em
+        # "sem_validacao" para sempre, sem explicar por quê.
         from app.core.ai_errors import http_erro_ia
         raise http_erro_ia(exc, 503, contexto="validar_peca_juridica")
     await criar_audit_log(db, cu.id, cu.role.value, "VALIDACAO_JURIDICA", "legal_docs", doc_id, detalhes=f"score={resultado.get('score_confianca')}")
@@ -479,6 +499,9 @@ async def atualizar(
         "conteudo" in mudancas and mudancas["conteudo"] != d.conteudo
     )
 
+    # Peça protocolada é registro imutável. O endpoint genérico não pode
+    # alterar redação, título, tipo, origem ou regredir o status. Retificações
+    # devem nascer como nova peça/versão, preservando a prova protocolada.
     campos_imutaveis_protocolados = {
         "titulo", "conteudo", "tipo_peca", "status", "ai_generated"
     }
@@ -494,6 +517,8 @@ async def atualizar(
             ),
         )
 
+    # Não é possível editar e simultaneamente promover a mesma requisição com
+    # uma validação calculada sobre o conteúdo anterior.
     if conteudo_alterado and novo_status in STATUS_EXIGE_VALIDACAO:
         raise HTTPException(
             status_code=422,
@@ -503,12 +528,14 @@ async def atualizar(
             ),
         )
 
+    # ── BLOQUEIO HITL (em código, não só UI) ───────────────────────────
     if (novo_status in STATUS_EXIGE_REVISAO
             and d.ai_generated and not d.human_reviewed):
         raise HTTPException(
             status_code=422,
             detail="Peca gerada por IA exige revisao humana registrada antes de aprovar (use POST /legal-docs/{id}/revisar). Provimento OAB 205/2021.",
         )
+    # ── FLX-070: status 'protocolada' exige advogado + protocolo registrado ──
     if novo_status == "protocolada" and status_atual != "protocolada":
         requer_advogado(
             cu, detail="Marcar peça como protocolada é restrito a advogados"
@@ -531,6 +558,8 @@ async def atualizar(
         d.revisor_id = None
         d.revisado_em = None
         d.notas_revisao = None
+        # Edição de versão já revisada/aprovada retorna explicitamente ao fluxo
+        # de revisão; a validação é invalidada também pelo trigger da migration 123.
         if status_atual in STATUS_EXIGE_REVISAO or status_atual == "corrigida":
             mudancas["status"] = PecaStatus.em_revisao
 
@@ -540,6 +569,8 @@ async def atualizar(
     await criar_audit_log(db, cu.id, cu.role.value, "UPDATE", "legal_docs", doc_id)
     await db.commit()
     await db.refresh(d)
+    # #CHK gatilho 2 — ao APROVAR/FINALIZAR a peça (pronta p/ protocolo), gera o
+    # checklist pré-protocolo (rascunho HITL) em background. Só na transição.
     ns = mudancas.get("status")
     ns = ns.value if hasattr(ns, "value") else ns
     if ns in _STATUS_PRE_PROTOCOLO and status_antigo not in _STATUS_PRE_PROTOCOLO and d.case_id:
@@ -568,7 +599,8 @@ async def revisar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Registra revisão humana e aplica o gate antialucinação da validação atual."""
+    """Registro de revisão humana — desbloqueia aprovação de peça IA."""
+    # P1-5: revisão de peça é ato privativo de advogado (Prov. OAB 205/2021).
     requer_advogado(cu, detail="Registrar revisão de peça é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
@@ -579,24 +611,6 @@ async def revisar(
         raise HTTPException(status_code=404, detail="Peça não encontrada")
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
-
-    if payload.aprovado:
-        validacao = await _ultima_validacao_peca(db, d)
-        ai_log_id = validacao.get("ai_log_id")
-        if ai_log_id:
-            log = (
-                await db.execute(
-                    select(AILog).where(AILog.id == ai_log_id).with_for_update()
-                )
-            ).scalar_one_or_none()
-            if log is not None and _status_value(log.status_hitl) not in ("revisado", "aplicado"):
-                from app.services.citation_gate import aplicar_gate_hitl
-
-                await aplicar_gate_hitl(db, log, "revisado", False, None, cu)
-                log.status_hitl = AIStatusHITL.revisado
-                log.revisado_por = cu.id
-                log.revisado_em = datetime.now(timezone.utc)
-                await db.flush()
 
     d.human_reviewed = payload.aprovado
     d.revisor_id = cu.id
@@ -610,6 +624,7 @@ async def revisar(
     )
     await db.commit()
     await db.refresh(d)
+    # ETAPA 2 — re-indexa a versão revisada (qualidade validada) na RAG.
     if payload.aprovado:
         background.add_task(indexar_peca_rag, doc_id)
     return d
@@ -622,6 +637,15 @@ async def aprovar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    """BUG-08: aprovação HITL da peça.
+
+    Registra a revisão humana (human_reviewed) e avança o status para 'aprovada'.
+    Peça gerada por IA (ai_generated) EXIGE observações de revisão — sem elas,
+    a aprovação é recusada (422). Mantém os gates de qualidade existentes
+    (validação jurídica + jurisprudência) coerentes com o fluxo do PATCH.
+    """
+    # P1-5: aprovar peça é ato de advogado (Prov. OAB 205/2021) — antes bastava
+    # ter acesso ao caso.
     requer_advogado(cu, detail="Aprovar peça é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
@@ -640,6 +664,7 @@ async def aprovar(
             detail="Peças geradas por IA exigem observações de revisão humana",
         )
 
+    # Gates de qualidade (mesmos do PATCH) antes de chegar a 'aprovada'.
     novo_status = PecaStatus.aprovada.value
     await _bloquear_sem_validacao(db, d, novo_status)
     await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
@@ -657,6 +682,7 @@ async def aprovar(
     )
     await db.commit()
     await db.refresh(d)
+    # Re-indexa a versão aprovada na RAG e dispara checklist pré-protocolo.
     background.add_task(indexar_peca_rag, doc_id)
     if status_antigo not in _STATUS_PRE_PROTOCOLO and d.case_id:
         background.add_task(_bg_checklist_protocolo, d.case_id, cu.id)
@@ -672,9 +698,28 @@ async def conferir_e_assinar(
 ):
     """UM ato de conferência e assinatura, no lugar de quatro chamadas.
 
-    Consolida validação, HITL, gates jurídicos e assinatura em uma transação,
-    sem dispensar a revisão profissional do advogado.
+    Antes era preciso encadear, à mão, `POST /validar` → `PATCH /ai/logs/{id}/hitl`
+    → `PATCH /aprovar` → `GET /pdf`. Quatro chamadas para um único ato profissional
+    — o advogado conferir a peça e assumi-la como sua. Cada elo era um ponto de
+    parada onde o fluxo morria, e o segundo (marcar o log de IA como revisado) não
+    tem significado nenhum para quem advoga.
+
+    O que este endpoint NÃO faz: dispensar a conferência. Ele consolida ETAPAS,
+    não responsabilidade. Continuam obrigatórios, e todos registrados:
+
+      · observações de revisão quando a peça é de IA (o que o advogado conferiu);
+      · validação jurídica com score mínimo e veredito não bloqueante;
+      · auditoria de jurisprudência citada;
+      · quem assinou, quando, e sobre qual versão do conteúdo.
+
+    Isso é o que evidencia a diligência do advogado sob a Lei 8.906/94, art. 32 —
+    consolidar cliques é o objetivo; apagar o rastro não é.
+
+    Tudo em UMA transação: ou a peça sai assinada e com trilha completa, ou nada
+    é gravado. O padrão oposto — gravar em dois lugares sem transação — é a classe
+    de defeito que a auditoria encontrou repetida cinco vezes neste código.
     """
+    # P1-5: conferência + assinatura em um ato — privativo de advogado.
     requer_advogado(cu, detail="Conferir e assinar peça é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
@@ -684,13 +729,17 @@ async def conferir_e_assinar(
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
 
+    # Peça 'final' ou 'protocolada' é registro fechado — reassinar rebaixaria o
+    # status para 'aprovada' e sobrescreveria revisor/data/notas, apagando quem
+    # de fato assinou. Mesma imutabilidade do PATCH genérico para protocolada.
     status_atual_peca = _status_value(d.status)
     if status_atual_peca in ("final", "protocolada"):
         raise HTTPException(
             status_code=409,
             detail=(
                 f"Peça em status '{status_atual_peca}' já passou da assinatura e é "
-                "imutável neste fluxo. Crie uma nova peça ou versão para qualquer alteração."
+                "imutável neste fluxo. Crie uma nova peça ou versão para "
+                "qualquer alteração."
             ),
         )
 
@@ -707,6 +756,11 @@ async def conferir_e_assinar(
             detail="Peças geradas por IA exigem observações de revisão humana",
         )
 
+    # 1) Validação jurídica da versão CORRENTE. Se já existe uma válida para este
+    #    conteúdo, é reaproveitada — reconferir texto idêntico só queima tempo e
+    #    tokens. Qualquer edição muda o hash e força validação nova (a trigger da
+    #    migration 123 invalida a anterior). `commit=False`: o AILog entra por
+    #    flush na MESMA transação — se um gate posterior rejeitar, nada persiste.
     validacao = await _ultima_validacao_peca(db, d)
     validou_agora = False
     if validacao.get("ai_log_id") is None:
@@ -730,8 +784,11 @@ async def conferir_e_assinar(
                 scope_client_id=escopo_cli, commit=False,
             )
         except ValueError as exc:
+            # Mesma tradução do router dedicado POST /validador-juridico/validar:
+            # rascunho curto/PII residual = entrada inválida.
             raise HTTPException(status_code=422, detail=str(exc))
         except RuntimeError as exc:
+            # Provedor de IA indisponível — indisponibilidade temporária.
             raise HTTPException(status_code=503, detail=str(exc))
         validou_agora = True
         await criar_audit_log(
@@ -740,6 +797,13 @@ async def conferir_e_assinar(
         )
         validacao = await _ultima_validacao_peca(db, d)
 
+    # 2) A conferência humana do log de IA deixa de ser uma chamada separada: quem
+    #    assina a peça está, no mesmo ato, declarando que reviu a análise. As
+    #    salvaguardas do PATCH /ai/logs/{id}/hitl vêm JUNTO — consolidar etapas
+    #    não pode contorná-las:
+    #      · autorização: só o autor do log ou papel sócio+ pode revisá-lo (403);
+    #      · gate antialucinação de citações (aplicar_gate_hitl): 409 para
+    #        citações bloqueantes, 503 se a verificação obrigatória está fora.
     ai_log_id = validacao.get("ai_log_id")
     if ai_log_id and validacao.get("hitl") not in ("revisado", "aplicado"):
         log = (await db.execute(
@@ -752,6 +816,9 @@ async def conferir_e_assinar(
                     detail="Sem permissão para revisar este log",
                 )
             from app.services.citation_gate import aplicar_gate_hitl
+            # O override chega do próprio ato de assinar (P2-9): sem ele, uma
+            # citação bloqueante fechava o único caminho de aprovação da peça.
+            # `aplicar_gate_hitl` continua exigindo justificativa e auditando.
             await aplicar_gate_hitl(
                 db, log, "revisado", bool(payload.override_citacoes),
                 payload.justificativa_override, cu,
@@ -766,10 +833,13 @@ async def conferir_e_assinar(
             await db.flush()
             validacao = await _ultima_validacao_peca(db, d)
 
+    # 3) Gates de qualidade — os MESMOS do /aprovar. Se a validação reprovar, a
+    #    transação inteira é abortada: nada de peça meio-assinada.
     novo_status = PecaStatus.aprovada.value
     await _bloquear_sem_validacao(db, d, novo_status)
     await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
 
+    # 4) Assinatura.
     status_antigo = _status_value(d.status)
     d.human_reviewed = True
     d.revisor_id = cu.id
@@ -806,7 +876,24 @@ async def registrar_protocolo(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    require_status = STATUS_EXIGE_REVISAO
+    """Registra o comprovante de protocolo (peticionamento manual) na peça.
+
+    O peticionamento é feito FORA do sistema (exporta PDF, protocola no PJe/eproc).
+    Sem gravar número/tribunal/data do protocolo, a PROVA DE TEMPESTIVIDADE fica
+    fora do EJC. Este endpoint fecha a lacuna gravando esses dados na própria peça,
+    com o MESMO gate de ownership das demais rotas e trilha de auditoria
+    (PROTOCOLO_REGISTRADO).
+
+    A transição de status para 'protocolada' continua pelo PATCH /legal-docs/{id}
+    (que aplica os gates de validação/HITL) — aqui só registramos o comprovante,
+    sem contornar aqueles controles.
+
+    Gates (máquina de estados): protocolo só pode ser registrado por papel
+    advogado+ e em peça já aprovada ('aprovada', 'final' ou 'protocolada') —
+    STATUS_EXIGE_REVISAO é a mesma fonte de verdade do fluxo de aprovação.
+    Assim, o orquestrador (peca_protocolada → 'acompanhamento') só deriva
+    estado de peça realmente revisada/aprovada.
+    """
     requer_advogado(cu, detail="Registro de protocolo é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
@@ -819,7 +906,7 @@ async def registrar_protocolo(
         await verificar_acesso_caso(db, cu, d.case_id)
 
     status_atual = _status_value(d.status)
-    if status_atual not in require_status:
+    if status_atual not in STATUS_EXIGE_REVISAO:
         raise HTTPException(
             status_code=422,
             detail=(
@@ -836,9 +923,13 @@ async def registrar_protocolo(
     d.numero_protocolo = numero[:120]
     tribunal = (payload.protocolo_tribunal or "").strip()
     d.protocolo_tribunal = tribunal[:120] or None
+    # Sem data informada, assume o instante do registro (tz-aware).
     d.protocolado_em = payload.protocolado_em or datetime.now(timezone.utc)
     comprovante = (payload.protocolo_comprovante_doc_id or "").strip()
     if comprovante:
+        # B4: peça SEM caso não pode receber comprovante — sem case_id a regra
+        # "documento do MESMO caso" degenera (doc solto ⇔ peça solta) e qualquer
+        # documento avulso viraria "prova" de protocolo.
         if not d.case_id:
             raise HTTPException(
                 status_code=422,
@@ -847,6 +938,9 @@ async def registrar_protocolo(
                     "caso para receber comprovante de protocolo"
                 ),
             )
+        # N3: o comprovante referenciado deve EXISTIR, não estar excluído e
+        # pertencer ao MESMO caso da peça — antes qualquer string era aceita
+        # (id órfão ou documento de caso alheio virava "prova" de protocolo).
         doc = (await db.execute(
             select(Document).where(
                 Document.id == comprovante, Document.deleted_at.is_(None)
@@ -865,6 +959,8 @@ async def registrar_protocolo(
     comprovante_antigo = d.protocolo_comprovante_doc_id
     d.protocolo_comprovante_doc_id = comprovante or None
 
+    # B2: a trilha registra também comprovante antigo→novo e protocolado_em —
+    # sem isso a troca da prova de tempestividade era invisível na auditoria.
     await criar_audit_log(
         db, cu.id, cu.role.value, "PROTOCOLO_REGISTRADO", "legal_docs", doc_id,
         detalhes=(
@@ -873,8 +969,11 @@ async def registrar_protocolo(
             f"comprovante={comprovante_antigo or '-'}→{d.protocolo_comprovante_doc_id or '-'}"
         ),
     )
-    case_id_peca = d.case_id
+    case_id_peca = d.case_id  # capturado antes do commit (expira atributos)
     await db.commit()
+    # Transição automática de estado (Bloco 3): protocolo registrado ⇒
+    # protocolado. APÓS o commit do registro (fail-safe: warning e segue);
+    # o refresh abaixo reidrata a peça para a resposta.
     if case_id_peca:
         from app.services.status_transicao import avancar_status_pos_commit
         await avancar_status_pos_commit(
@@ -917,6 +1016,7 @@ _DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessing
 
 
 def _slug_arquivo(titulo: str, fallback: str = "documento") -> str:
+    """Slug ASCII seguro p/ Content-Disposition filename."""
     import unicodedata
     base = unicodedata.normalize("NFKD", titulo or "").encode("ascii", "ignore").decode("ascii")
     slug = _re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")[:60]
@@ -924,6 +1024,10 @@ def _slug_arquivo(titulo: str, fallback: str = "documento") -> str:
 
 
 async def _gates_exportacao_protocolo(db: AsyncSession, d: LegalDoc) -> dict:
+    """Gates compartilhados das exportações FINAIS de PDF (/pdf e
+    /documento-unico-impressao): peça aprovada/final/protocolada com validação
+    jurídica apta + jurisprudência citada validada na base. Extraído verbatim
+    do /pdf — mesmas mensagens e status codes (contrato do frontend/testes)."""
     status_atual = _status_value(d.status)
     if d.ai_generated and not d.human_reviewed:
         raise HTTPException(
@@ -968,6 +1072,20 @@ async def exportar_pdf_minuta(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    """PDF de LEITURA da minuta — sem gate de protocolo.
+
+    Por que existe: o advogado precisa LER a peça inteira, em papel ou em tela
+    cheia, ANTES de assinar. Até aqui o único PDF era o de protocolo, atrás dos
+    gates de validação — ou seja, era preciso aprovar para poder ler, o que
+    inverte a ordem do ato profissional. O DOCX já permitia isso; o PDF não.
+
+    O que este PDF NÃO é: documento de protocolo. Sai com `pronto_protocolo=False`
+    (marca de rascunho controlado) e, quando a peça é de IA e ainda não foi
+    conferida, com a marca "MINUTA GERADA POR IA" embutida — a salvaguarda viaja
+    com o arquivo baixado, fora do sistema.
+
+    Gate mantido: acesso ao caso. Quem não pode ver o caso não lê a minuta.
+    """
     d = (await db.execute(
         select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
     )).scalar_one_or_none()
@@ -1035,12 +1153,19 @@ async def exportar_pdf(
                           doc_id, detalhes="Exportacao PDF protocolo")
     await db.commit()
 
+    # Filename ASCII (Content-Disposition é latin-1): dobra só o NOME DO
+    # ARQUIVO — o conteúdo do PDF preserva a acentuação.
     safe_name = _slug_arquivo(titulo, fallback="peca")
     return Response(
         content=pdf_bytes, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}.pdf"'},
     )
 
+
+# ═══ Documento Único de Impressão (Visual Law) ═══
+# Peça pronta para protocolo + relação/capas "DOC. NN" + anexos reais mesclados
+# num único PDF — o pacote que vai para impressão/protocolo físico, no padrão
+# da petição de referência do escritório.
 
 @router.get(
     "/{doc_id}/documento-unico-impressao",
@@ -1051,6 +1176,17 @@ async def documento_unico_impressao(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    """
+    Gera o Documento Único de Impressão: PDF da peça (pronto_protocolo=True)
+    seguido, quando o caso tem acervo probatório, do bloco de anexos Visual Law
+    (capa + índice + separadores "DOC. NN" + arquivos reais mesclados).
+
+    Este endpoint gera um pacote com forma protocolável e, por isso, aplica
+    exatamente os mesmos gates do PDF final: aprovação/finalização, validação
+    jurídica corrente, revisão HITL e jurisprudência oficialmente validada.
+    Sem caso ou sem provas, devolve só o PDF da peça (ainda é o documento de
+    impressão).
+    """
     import asyncio
 
     from app.models.document import Document
@@ -1058,6 +1194,9 @@ async def documento_unico_impressao(
     from app.routers.documents import _pode_acessar_confidencial
     from app.services import anexos_service
 
+    # Piso de papel do fluxo de anexos (anexos.py:_pode_gerar): este endpoint
+    # exporta BYTES de arquivos do caso — a regra anti-lockout do ownership
+    # sozinha liberaria qualquer interno em caso órfão (achado A3 da auditoria).
     if ROLE_LEVEL.get(getattr(cu.role, "value", str(cu.role)), 0) < ROLE_LEVEL["advogado"]:
         raise HTTPException(403, "Acesso restrito a advogado ou superior.")
 
@@ -1081,23 +1220,39 @@ async def documento_unico_impressao(
             titulo, conteudo, pronto_protocolo=True,
             codigo_peca=d.codigo_peca, versao=d.versao,
             status=d.status, revisado_em=d.revisado_em,
+            # Os gates acima garantem versão protocolável revisada. Mantemos o
+            # parâmetro defensivo para que qualquer drift futuro siga marcado.
             minuta_ia=bool(d.ai_generated and not d.human_reviewed),
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
+    # Bloco de anexos: acervo probatório do caso na MESMA ordenação do gerador
+    # de provas (ordem, created_at) — o "(doc. NN)" citado na peça (padrão-ouro)
+    # casa 1:1 com as capas "DOC. NN" do bloco mesclado.
     total_anexos = 0
     if case is not None:
+        # deleted_at do Document no ON (não no WHERE): arquivo eliminado do GED
+        # (inclusive por pedido LGPD) não entra no pacote, mas a Prova permanece
+        # — a capa "DOC. NN" sai sem o anexo, preservando a numeração da peça.
         rows = (await db.execute(
             select(Prova, Document)
             .outerjoin(Document, and_(
                 Document.id == Prova.document_id,
                 Document.deleted_at.is_(None),
+                # Trava anti-IDOR de leitura (achado A4): o invariante "prova
+                # aponta para doc do mesmo caso" é garantido na escrita, mas
+                # re-verificar aqui protege contra drift futuro (ex.: mover
+                # documento de caso).
                 Document.case_id == d.case_id,
             ))
             .where(Prova.case_id == d.case_id, Prova.deleted_at.is_(None))
             .order_by(Prova.ordem, Prova.created_at)
         )).all()
+        # Cofre de confidencialidade (achado A1): mesmo gate do download direto
+        # do GED — doc restrito/confidencial/segredo_justica exige socio+. 403
+        # explícito em vez de excluir silenciosamente: pacote incompleto seria
+        # protocolado sem o advogado perceber.
         bloqueados = [
             doc.titulo for _, doc in rows
             if doc is not None and not _pode_acessar_confidencial(cu, doc.confidencialidade.value)
@@ -1119,6 +1274,8 @@ async def documento_unico_impressao(
                     None, anexos_service.mesclar_pdfs, [pdf_final, pdf_anexos]
                 )
             except (RuntimeError, ImportError) as e:
+                # Falha aqui NÃO degrada silenciosamente para peça-sem-anexos:
+                # o advogado protocolaria um pacote incompleto sem perceber.
                 raise HTTPException(status_code=503, detail=f"Geração do bloco de anexos indisponível: {e}")
             total_anexos = len(itens)
 
@@ -1139,12 +1296,18 @@ async def documento_unico_impressao(
     )
 
 
+# ═══ Exportação em DOCX editável (Times 12pt, ABNT — R7 auditoria) ═══
 @router.get("/{doc_id}/exportar-docx")
 async def exportar_docx(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    """
+    Exporta a peça em DOCX editável (versão de trabalho — não substitui o
+    PDF de protocolo). Gate idêntico ao GET do detalhe: 404 se inexistente,
+    ownership do caso (IDOR) quando a peça está vinculada a um caso.
+    """
     d = (await db.execute(
         select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
     )).scalar_one_or_none()
@@ -1157,6 +1320,7 @@ async def exportar_docx(
         if case.numero_processo:
             meta["numero_processo"] = case.numero_processo
 
+    # Controle/versionamento (Fase D): meta é render-only, nunca toca o conteúdo.
     from app.services.peca_numeracao import linha_controle, status_label
     meta["codigo_peca"] = d.codigo_peca
     meta["versao"] = d.versao
@@ -1165,6 +1329,9 @@ async def exportar_docx(
         codigo_peca=d.codigo_peca, titulo=d.titulo, versao=d.versao,
         status=d.status, revisado_em=d.revisado_em,
     )
+    # Marca de origem-IA embutida na 1ª página SÓ para rascunho não-revisado
+    # (ai_generated e não human_reviewed). O advogado precisa baixar o DOCX para
+    # editar — nada de gate de bloqueio; a marca d'água na minuta é a salvaguarda.
     meta["minuta_ia"] = bool(d.ai_generated and not d.human_reviewed)
 
     titulo = padronizar_documento_juridico(d.titulo)
