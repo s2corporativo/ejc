@@ -528,6 +528,57 @@ async def criar(
     return c
 
 
+class GerarDocsClienteIn(BaseModel):
+    # Defaults CONSERVADORES, espelhando KitDocumentalIn (kit-documental):
+    # poderes especiais do art. 105 do CPC só entram quando explicitamente
+    # marcados pelo advogado.
+    tipo_poderes: str = "ad_judicia"
+    permite_substabelecimento: bool = True
+    poderes_especiais: Optional[str] = None
+    # Idempotência: submissão repetida devolve os rascunhos existentes;
+    # regeneração explícita só com forcar_novo=true.
+    forcar_novo: bool = False
+
+
+@router.post(
+    "/{client_id}/gerar-documentos",
+    status_code=201,
+    dependencies=[Depends(rate_limit("kit-documental", 5))],
+)
+async def gerar_documentos_cliente(
+    client_id: str,
+    payload: Optional[GerarDocsClienteIn] = None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_clientes),
+):
+    """Gera procuração ad judicia + contrato de honorários no cadastro do
+    cliente (sem caso vinculado). Defaults CONSERVADORES: poderes ad judicia
+    SEM os especiais do art. 105 do CPC (só entram com marcação explícita).
+    Documentos nascem SEMPRE rascunho (revisão humana obrigatória) e são
+    auditados (GERAR_DOCS_CLIENTE). Idempotente: reaproveita rascunhos
+    canônicos existentes; regeneração explícita só com forcar_novo=true."""
+    from app.core.security import requer_advogado
+    requer_advogado(cu)
+    c = (await db.execute(
+        select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    if not await _pode_ver_cliente(cu, c, db):
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    p = payload or GerarDocsClienteIn()
+    from app.services.geracao_documental_cliente import (
+        gerar_documentos_cliente as _gerar,
+    )
+    return await _gerar(
+        db, c, cu,
+        tipo_poderes=p.tipo_poderes,
+        permite_substabelecimento=p.permite_substabelecimento,
+        poderes_especiais=p.poderes_especiais,
+        forcar_novo=p.forcar_novo,
+    )
+
+
 @router.get("/{client_id}", response_model=ClientResponse)
 async def detalhe(
     client_id: str,
