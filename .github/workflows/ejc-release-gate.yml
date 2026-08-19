@@ -95,6 +95,17 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Formatação frontend com diff diagnóstico
+        working-directory: frontend
+        run: |
+          if ! npm run format:check; then
+            npx prettier --write src/pages/Prazos.tsx
+            echo "::group::Diff sugerido pelo Prettier"
+            git diff -- src/pages/Prazos.tsx
+            echo "::endgroup::"
+            exit 1
+          fi
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
