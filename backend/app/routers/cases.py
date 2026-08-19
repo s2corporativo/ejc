@@ -601,6 +601,13 @@ async def excluir(
     """
     motivo_final = ((payload.motivo if payload else None) or motivo or "").strip()
     if len(motivo_final) < 5:
+        from app.models.audit_log import registrar_trilha_recusa
+        await registrar_trilha_recusa(
+            cu.id, cu.role.value, "DELETE_RECUSADO", "cases", case_id,
+            detalhes="Exclusão recusada: motivo ausente ou insuficiente "
+                     "(mínimo 5 caracteres)" if motivo_final else
+                     "Exclusão recusada: motivo ausente (mínimo 5 caracteres)",
+        )
         raise HTTPException(
             status_code=422,
             detail='Informe o motivo da exclusão (mínimo 5 caracteres) — '
@@ -649,6 +656,14 @@ async def excluir(
                            "descricao": f"Peça protocolada: {d.titulo}"})
 
     if pendencias:
+        from app.models.audit_log import registrar_trilha_recusa
+        await registrar_trilha_recusa(
+            cu.id, cu.role.value, "DELETE_RECUSADO", "cases", case_id,
+            detalhes=f"Exclusão recusada: caso possui pendências — "
+                     f"{len(pendencias)} pendência(s) impede(m) a exclusão "
+                     f"({', '.join(dict.fromkeys(p['tipo'] for p in pendencias))}). "
+                     "Operador orientado ao arquivamento.",
+        )
         raise HTTPException(status_code=422, detail={
             "mensagem": "Caso possui pendências — use arquivamento "
                         "(POST /cases/{id}/arquivar)",

@@ -97,3 +97,53 @@ async def criar_audit_log(
     )
     db.add(log)
     # Commit pelo chamador (mesma transação da operação principal)
+
+
+async def registrar_trilha_recusa(
+    user_id: str | None,
+    user_role: str | None,
+    acao: str,
+    entidade: str,
+    registro_id: str | None,
+    detalhes: str | None,
+) -> None:
+    """Persiste evento de auditoria em transação PRÓPRIA, independente da
+    operação principal.
+
+    Usado exclusivamente para atos que a camada de aplicação REJEITA com
+    HTTPException antes de committar (ex.: exclusão recusada por motivo
+    insuficiente ou pendências). Sem essa função, o ``rollback`` automático
+    de ``get_db`` (erro em requisição) desfaria o log da recusa, apagando
+    a trilha de quem tentou o ato e por que foi impedido — dado essencial
+    para auditoria LGPD e de segurança.
+
+    Falhas de escrita aqui NUNCA alteram o desfecho da operação original:
+    qualquer erro é apenas registrado em log de aplicação.
+    """
+    import logging
+    try:
+        from app.core.database import AsyncSessionLocal
+        ip = None
+        try:
+            from app.core.request_context import get_client_ip
+            ip = get_client_ip()
+        except (LookupError, Exception):
+            ip = None
+        log = AuditLog(
+            id=str(uuid4()),
+            user_id=user_id,
+            user_role=user_role,
+            acao=acao.upper(),
+            entidade=entidade,
+            registro_id=registro_id,
+            detalhes=detalhes,
+            ip=ip,
+        )
+        async with AsyncSessionLocal() as trilha:
+            trilha.add(log)
+            await trilha.flush()
+            await trilha.commit()
+    except Exception:
+        logging.getLogger("ejc.audit").warning(
+            f"[AUDIT-TRILHA-RECUSA] falha ao persistir evento {acao} "
+            f"(entidade={entidade}, registro={registro_id})", exc_info=True)
