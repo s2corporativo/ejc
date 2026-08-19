@@ -17,21 +17,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Executar gate P0
         run: bash scripts/ci_guard.sh
 
   backend-smoke:
-    name: P1 backend — deps e compile
+    name: P1 backend — deps, compile e governança jurídica
     runs-on: ubuntu-latest
     needs: p0-guard
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: pip
@@ -56,24 +58,97 @@ jobs:
       - name: Compile smoke backend
         run: python -m compileall -q backend/app
 
+      - name: Governança do gold set jurídico
+        working-directory: backend
+        run: |
+          set -o pipefail
+          python -m app.eval.gold_governance | tee ../gold-governance-report.txt
+
+      - name: Detectar alteração no núcleo jurídico de IA
+        id: ai_legal_scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+            if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then
+              BASE="${HEAD}^"
+            fi
+          fi
+
+          git diff --name-only "$BASE" "$HEAD" > /tmp/ejc-changed-files.txt
+          pattern='^backend/app/(agent/|system_prompts/|services/agent/|services/system_prompts/|services/ai(/|_[^/]*\.py$)|services/(rag|rerank|citation|knowledge)[^/]*\.py$|services/legal_[^/]*\.py$|services/(peca[^/]*|motor_peca[^/]*|analise_estrategica)[^/]*\.py$|routers/(ai|ia|rag|documentos_ia|pecas_ia|peca_geracao|raio_x)[^/]*\.py$)'
+          if grep -E "$pattern" /tmp/ejc-changed-files.txt >/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Núcleo jurídico de IA alterado: certificação humana obrigatória."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Sem alteração no núcleo jurídico de IA."
+          fi
+
+      - name: Gold set humano bloqueante para mudança de IA
+        if: steps.ai_legal_scope.outputs.changed == 'true'
+        working-directory: backend
+        run: |
+          python -m app.eval.gold_governance \
+            --require-real \
+            --min-total 75 \
+            --areas consumidor,trabalhista,civel,penal,tributario \
+            --min-casos-area 15 \
+            --cenarios normal,fronteira,excecao \
+            --min-casos-cenario 5
+          python -m app.eval.run_eval \
+            --smoke \
+            --areas-obrigatorias consumidor,trabalhista,civel,penal,tributario \
+            --min-casos-area 15
+
+      - name: Resumo da maturidade jurídica da IA
+        if: always()
+        run: |
+          {
+            echo "## Gold set jurídico — governança"
+            echo
+            echo '```text'
+            cat gold-governance-report.txt 2>/dev/null || true
+            echo '```'
+            echo
+            echo "Núcleo jurídico de IA alterado neste diff: ${{ steps.ai_legal_scope.outputs.changed }}"
+            echo "Se true, o Release Gate exige corpus humano real e cobertura mínima por área."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   frontend-build:
     name: P1 frontend — build
     runs-on: ubuntu-latest
     needs: p0-guard
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22.22.2'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Instalar dependências frontend
         working-directory: frontend
         run: npm ci
+
+      - name: Formatação frontend com diff diagnóstico
+        working-directory: frontend
+        run: |
+          if ! npm run format:check; then
+            npx prettier --write src/pages/Prazos.tsx
+            echo "::group::Diff sugerido pelo Prettier"
+            git diff -- src/pages/Prazos.tsx
+            echo "::endgroup::"
+            exit 1
+          fi
 
       - name: Build frontend
         working-directory: frontend

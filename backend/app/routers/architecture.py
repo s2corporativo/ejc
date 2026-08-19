@@ -5,7 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from app.core.route_registry import build_route_manifest
+from app.core.route_registry import auditar_semantica, build_route_manifest
 from app.core.security import require_admin, require_roles
 
 router = APIRouter(prefix="/architecture", tags=["Arquitetura"])
@@ -16,6 +16,20 @@ _GESTORES = ["superadmin", "admin", "socio"]
 async def route_manifest(request: Request, _=Depends(require_roles(_GESTORES))):
     """Lista endpoints efetivamente montados e colisões exatas de método+caminho."""
     return build_route_manifest(request.app)
+
+
+@router.get("/semantic-audit")
+async def semantic_route_audit(
+    request: Request,
+    _=Depends(require_roles(_GESTORES)),
+):
+    """Auditoria de duplicidade arquitetural efetiva no runtime.
+
+    Não remove rotas automaticamente: informa colisões literais, equivalências
+    semânticas comprovadas e eventual reintrodução de famílias já consolidadas.
+    O mesmo núcleo é coberto por teste bloqueante no CI.
+    """
+    return auditar_semantica(request.app)
 
 
 @router.get("/uso-rotas")
@@ -33,9 +47,9 @@ async def uso_de_rotas(
     Insumo da decisão da Onda 5: rota com `total = 0` numa janela de 30-60 dias
     pode ser removida. `desde` é VALIDADO pelo contrato (Pydantic `datetime`):
     string malformada devolve 422 em vez de descartar o histórico e devolver
-    zeros — que seria lido como "sem uso" (P1-1). Se o histórico persistido não
-    puder ser lido, a resposta traz `historico_indisponivel: true` e OMITE
-    `sem_uso_no_periodo`. Sem identificadores diretos — ver services/route_usage.py.
+    zeros — que seria lido como "sem uso". Se o histórico persistido não puder
+    ser lido, a resposta traz `historico_indisponivel: true` e omite conclusão
+    de ausência de uso. Sem identificadores diretos — ver services/route_usage.py.
     """
     from app.services import route_usage
 
