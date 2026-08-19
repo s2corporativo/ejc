@@ -1,0 +1,305 @@
+name: Apply P0 RAG HITL once
+
+on:
+  push:
+    branches:
+      - agent/p0-rag-hitl-fail-closed
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: contains(github.event.head_commit.message, '[apply-p0-rag-hitl]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/p0-rag-hitl-fail-closed
+          fetch-depth: 0
+
+      - name: Aplicar transformações fail-closed
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: pré-condição falhou; ocorrências={count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # 1) Reranker: identificar candidatos normativos e falhar fechado.
+          replace_once(
+              "backend/app/services/ai/reranker.py",
+              '''logger = logging.getLogger("ejc.ai.reranker")\nsettings = get_settings()\n\n_MAX_CHARS = 2000\n''',
+              '''logger = logging.getLogger("ejc.ai.reranker")\nsettings = get_settings()\n\n\ndef _categoria_normativa(candidate: dict[str, Any]) -> bool:\n    """True quando o candidato pode representar norma/regulamento vigente.\n\n    Em indisponibilidade da governança, apenas candidatos comprovadamente\n    não normativos podem permanecer na fundamentação atual.\n    """\n    categoria = str(candidate.get("categoria") or "").strip().lower().replace("_", " ")\n    extra_raw = candidate.get("extra")\n    extra = extra_raw if isinstance(extra_raw, dict) else {}\n    autoridade = str(extra.get("authority_level") or "").strip().lower()\n    return (\n        any(token in categoria for token in ("legisl", "norma", "regulamento"))\n        or autoridade == "oficial_normativa"\n    )\n\n\n_MAX_CHARS = 2000\n''',
+          )
+
+          replace_once(
+              "backend/app/services/ai/reranker.py",
+              '''            if status == "revogada" and vigente:\n                logger.info(\n                    "RAG excluiu norma revogada da fundamentação atual: doc_id=%s",\n                    item.get("doc_id"),\n                )\n                continue\n''',
+              '''            if status in {"vigencia_nao_verificada", "revogada", "suspensa"} and vigente:\n                logger.info(\n                    "RAG excluiu norma não apta à fundamentação atual: doc_id=%s status=%s",\n                    item.get("doc_id"),\n                    status,\n                )\n                continue\n''',
+          )
+
+          replace_once(
+              "backend/app/services/ai/reranker.py",
+              '''    except Exception as exc:\n        logger.warning(\n            "Governança documental indisponível no reranking (%s) — mantendo candidatos",\n            str(exc)[:180],\n        )\n        return candidatos\n''',
+              '''    except Exception as exc:\n        seguros = [c for c in candidatos if not _categoria_normativa(c)]\n        logger.warning(\n            "Governança documental indisponível no reranking (%s) — "\n            "fail-closed: removidos candidatos normativos; total=%s mantidos=%s",\n            str(exc)[:180],\n            len(candidatos),\n            len(seguros),\n        )\n        return seguros\n''',
+          )
+
+          # 2) Knowledge governance: proposição legislativa não é norma vigente.
+          replace_once(
+              "backend/app/services/knowledge_governance.py",
+              '''AUTHORITY_LABELS = {\n    "oficial_normativa": "Oficial normativa",\n''',
+              '''AUTHORITY_LABELS = {\n    "oficial_normativa": "Oficial normativa",\n    "proposicao_legislativa": "Proposição legislativa (não é norma vigente)",\n''',
+          )
+          replace_once(
+              "backend/app/services/knowledge_governance.py",
+              '''AUTHORITY_WEIGHTS = {\n    "oficial_normativa": 100,\n''',
+              '''AUTHORITY_WEIGHTS = {\n    "oficial_normativa": 100,\n    "proposicao_legislativa": 50,\n''',
+          )
+          replace_once(
+              "backend/app/services/knowledge_governance.py",
+              '''        if "legisl" in cat or "norma" in cat or "regulamento" in cat:\n            code = "oficial_normativa" if official else "referencial"\n        elif "sumula" in cat or "repercussao" in cat or "repetitivo" in cat:\n''',
+              '''        if "propos" in cat:\n            code = "proposicao_legislativa" if official else "referencial"\n        elif "legisl" in cat or "norma" in cat or "regulamento" in cat:\n            code = "oficial_normativa" if official else "referencial"\n        elif "sumula" in cat or "repercussao" in cat or "repetitivo" in cat:\n''',
+          )
+          replace_once(
+              "backend/app/services/knowledge_governance.py",
+              '''def _freshness_threshold_days(category: str | None) -> int:\n    cat = _norm(category)\n    if "legisl" in cat or "sumula" in cat:\n''',
+              '''def _freshness_threshold_days(category: str | None) -> int:\n    cat = _norm(category)\n    if "propos" in cat:\n        return 7\n    if "legisl" in cat or "sumula" in cat:\n''',
+          )
+
+          # 3) Citation check: norma revogada não satisfaz lookup de artigo vigente.
+          replace_once(
+              "backend/app/services/citation_check.py",
+              '''    vigencia_sql = "TRUE" if vigente else "FALSE"\n    row = (\n''',
+              '''    vigencia_sql = "TRUE" if vigente else "FALSE"\n    status_clause = (\n        "AND COALESCE(kd.extra->>'legal_status', '') <> 'revogada' "\n        if vigente\n        else ""\n    )\n    row = (\n''',
+          )
+          replace_once(
+              "backend/app/services/citation_check.py",
+              '''                f"WHERE kd.deleted_at IS NULL AND kd.vigente = {vigencia_sql} "\n                "AND kd.categoria LIKE 'legislacao%' "\n''',
+              '''                f"WHERE kd.deleted_at IS NULL AND kd.vigente = {vigencia_sql} "\n                + status_clause\n                + "AND kd.categoria LIKE 'legislacao%' "\n''',
+          )
+
+          # 4) Revisão de peça: a aprovação humana também revisa o AILog corrente
+          # sob o gate antialucinação. O ownership já é o do caso/peça e o papel
+          # jurídico já é exigido pelo endpoint.
+          replace_once(
+              "backend/app/routers/legal_docs.py",
+              '''    if d.case_id:\n        await verificar_acesso_caso(db, cu, d.case_id)\n\n    d.human_reviewed = payload.aprovado\n''',
+              '''    if d.case_id:\n        await verificar_acesso_caso(db, cu, d.case_id)\n\n    if payload.aprovado:\n        validacao = await _ultima_validacao_peca(db, d)\n        ai_log_id = validacao.get("ai_log_id")\n        if ai_log_id:\n            log = (\n                await db.execute(\n                    select(AILog).where(AILog.id == ai_log_id).with_for_update()\n                )\n            ).scalar_one_or_none()\n            if log is not None:\n                from app.services.citation_gate import aplicar_gate_hitl\n\n                await aplicar_gate_hitl(db, log, "revisado", False, None, cu)\n                log.status_hitl = AIStatusHITL.revisado\n                log.revisado_por = cu.id\n                log.revisado_em = datetime.now(timezone.utc)\n                await db.flush()\n\n    d.human_reviewed = payload.aprovado\n''',
+          )
+
+          # 5) Testes focados desta frente.
+          Path("backend/tests/test_rag_hitl_fail_closed_1204.py").write_text(r'''"""Regressões P0 extraídas de forma limpa do PR histórico #1185.
+
+Escopo: fail-closed de governança no reranker, norma revogada no citation check,
+proposição legislativa sem força normativa e HITL no /legal-docs/{id}/revisar.
+"""
+from __future__ import annotations
+
+import inspect
+import types
+from unittest import mock
+
+import pytest
+
+from app.routers import legal_docs
+from app.services import citation_check
+from app.services.ai import reranker
+from app.services.knowledge_governance import (
+    AUTHORITY_WEIGHTS,
+    _freshness_threshold_days,
+    inferir_autoridade,
+)
+
+
+@pytest.mark.asyncio
+async def test_reranker_falha_governanca_remove_norma_e_mantem_nao_normativo():
+    candidatos = [
+        {"doc_id": "lei-1", "categoria": "legislacao_federal", "score": 0.9},
+        {"doc_id": "jur-1", "categoria": "jurisprudencia_stj", "score": 0.8},
+        {"doc_id": "doutrina-1", "categoria": "doutrina", "score": 0.7},
+    ]
+
+    def _falhar(*_args, **_kwargs):
+        raise RuntimeError("governança indisponível (simulado)")
+
+    with mock.patch.object(reranker, "AsyncSessionLocal", _falhar):
+        resultado = await reranker._hidratar_governanca(candidatos)
+
+    ids = {item["doc_id"] for item in resultado}
+    assert "lei-1" not in ids
+    assert ids == {"jur-1", "doutrina-1"}
+
+
+@pytest.mark.asyncio
+async def test_reranker_exclui_norma_nao_verificada_e_suspensa():
+    class _Rows:
+        def all(self):
+            return [
+                ("n1", {"authority_level": "oficial_normativa"}, True, None, None),
+                ("n2", {"legal_status": "suspensa"}, True, None, None),
+                ("j1", {"legal_status": "nao_aplicavel"}, True, "STJ", None),
+            ]
+
+    class _Session:
+        async def execute(self, *_args, **_kwargs):
+            return _Rows()
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, *_args):
+            return False
+
+    candidatos = [
+        {"doc_id": "n1", "categoria": "legislacao", "score": 0.9},
+        {"doc_id": "n2", "categoria": "legislacao", "score": 0.8},
+        {"doc_id": "j1", "categoria": "jurisprudencia", "score": 0.7},
+    ]
+    with mock.patch.object(reranker, "AsyncSessionLocal", return_value=_Ctx()):
+        resultado = await reranker._hidratar_governanca(candidatos)
+
+    assert [item["doc_id"] for item in resultado] == ["j1"]
+
+
+def test_proposicao_legislativa_nao_recebe_forca_de_norma_vigente():
+    autoridade = inferir_autoridade(
+        "proposicao_legislativa",
+        "https://www.senado.leg.br/atividade/materia/detalhes.asp?p_cod_mate=1",
+        {},
+    )
+    assert autoridade["code"] == "proposicao_legislativa"
+    assert autoridade["weight"] == AUTHORITY_WEIGHTS["proposicao_legislativa"]
+    assert autoridade["weight"] < AUTHORITY_WEIGHTS["oficial_normativa"]
+    assert autoridade["official"] is False
+    assert _freshness_threshold_days("proposicao_legislativa") == 7
+
+
+@pytest.mark.asyncio
+async def test_citation_check_lookup_vigente_filtra_revogada(monkeypatch):
+    import app.services.ai_service as ai_service
+
+    capturado = {}
+
+    class _Result:
+        def first(self):
+            return None
+
+    class _DB:
+        async def execute(self, stmt, params):
+            capturado["sql"] = str(stmt)
+            capturado["params"] = params
+            return _Result()
+
+    monkeypatch.setattr(citation_check, "_restringir_ao_diploma", lambda *_a, **_k: "")
+    monkeypatch.setattr(ai_service, "_filtros_gate_rag", lambda *_a, **_k: "")
+
+    await citation_check._fonte_artigo(_DB(), "300", "CPC", vigente=True)
+    sql = capturado["sql"]
+    assert "legal_status" in sql
+    assert "revogada" in sql
+
+
+@pytest.mark.asyncio
+async def test_revisar_aprovado_aplica_gate_e_marca_ai_log(monkeypatch):
+    d = types.SimpleNamespace(
+        id="doc-1",
+        case_id=None,
+        human_reviewed=False,
+        revisor_id=None,
+        revisado_em=None,
+        notas_revisao=None,
+        status=None,
+    )
+    log = types.SimpleNamespace(
+        id="log-1",
+        status_hitl=None,
+        revisado_por=None,
+        revisado_em=None,
+        resposta="Relatório de validação sem citações.",
+        fontes_rag=None,
+    )
+
+    class _Result:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    class _DB:
+        def __init__(self):
+            self.calls = 0
+
+        async def execute(self, *_args, **_kwargs):
+            self.calls += 1
+            return _Result(d if self.calls == 1 else log)
+
+        async def flush(self):
+            return None
+
+        async def commit(self):
+            return None
+
+        async def refresh(self, *_args):
+            return None
+
+    async def _validacao(*_args, **_kwargs):
+        return {"ai_log_id": "log-1"}
+
+    async def _audit(*_args, **_kwargs):
+        return None
+
+    gate_calls = []
+
+    async def _gate(db, alvo, novo_status, override, justificativa, revisor):
+        gate_calls.append((alvo.id, novo_status, override, justificativa, revisor.id))
+        return None
+
+    monkeypatch.setattr(legal_docs, "requer_advogado", lambda *_a, **_k: None)
+    monkeypatch.setattr(legal_docs, "_ultima_validacao_peca", _validacao)
+    monkeypatch.setattr(legal_docs, "criar_audit_log", _audit)
+    import app.services.citation_gate as citation_gate
+    monkeypatch.setattr(citation_gate, "aplicar_gate_hitl", _gate)
+
+    cu = types.SimpleNamespace(id="adv-1", role=types.SimpleNamespace(value="advogado"))
+    bg = types.SimpleNamespace(add_task=lambda *_a, **_k: None)
+    payload = legal_docs.LegalDocRevisao(aprovado=True, notas="revisado")
+
+    resultado = await legal_docs.revisar("doc-1", payload, bg, _DB(), cu)
+
+    assert gate_calls == [("log-1", "revisado", False, None, "adv-1")]
+    assert log.status_hitl == legal_docs.AIStatusHITL.revisado
+    assert log.revisado_por == "adv-1"
+    assert resultado.human_reviewed is True
+    assert resultado.revisor_id == "adv-1"
+
+
+def test_revisar_contem_gate_hitl_no_contrato_de_codigo():
+    fonte = inspect.getsource(legal_docs.revisar)
+    assert "requer_advogado(" in fonte
+    assert "aplicar_gate_hitl" in fonte
+    assert "AIStatusHITL.revisado" in fonte
+''', encoding="utf-8")
+          PY
+
+      - name: Commit da transformação
+        shell: bash
+        run: |
+          git config user.name "ejc-release-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add backend/app/services/ai/reranker.py \
+                  backend/app/services/citation_check.py \
+                  backend/app/services/knowledge_governance.py \
+                  backend/app/routers/legal_docs.py \
+                  backend/tests/test_rag_hitl_fail_closed_1204.py
+          git diff --cached --check
+          git commit -m "fix: aplicar gates P0 RAG/HITL fail-closed"
+          git push origin HEAD:agent/p0-rag-hitl-fail-closed
