@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clock3,
   ShieldAlert,
+  type LucideIcon,
 } from "lucide-react";
 import { Link } from "react-router";
 import api from "../lib/api";
@@ -119,31 +120,11 @@ export default function DeadlineRiskStrip() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold">
-          <RiskChip
-            icon={AlertTriangle}
-            label={`${risco.vencidos} vencido(s)`}
-            danger={risco.vencidos > 0}
-          />
-          <RiskChip
-            icon={Clock3}
-            label={`${risco.ate48h} até 48h`}
-            warning={risco.ate48h > 0}
-          />
-          <RiskChip
-            icon={CalendarClock}
-            label={`${risco.preliminares} preliminar(es)`}
-            warning={risco.preliminares > 0}
-          />
-          <RiskChip
-            icon={AlertTriangle}
-            label={`${risco.cienciaPendente} ciência pendente`}
-            warning={risco.cienciaPendente > 0}
-          />
-          <RiskChip
-            icon={CheckCircle2}
-            label={`${risco.revisados} revisado(s)`}
-            ok
-          />
+          <RiskChip icon={AlertTriangle} label={`${risco.vencidos} vencido(s)`} danger={risco.vencidos > 0} />
+          <RiskChip icon={Clock3} label={`${risco.ate48h} até 48h`} warning={risco.ate48h > 0} />
+          <RiskChip icon={CalendarClock} label={`${risco.preliminares} preliminar(es)`} warning={risco.preliminares > 0} />
+          <RiskChip icon={AlertTriangle} label={`${risco.cienciaPendente} ciência pendente`} warning={risco.cienciaPendente > 0} />
+          <RiskChip icon={CheckCircle2} label={`${risco.revisados} revisado(s)`} ok />
           {calendarioAlerta && (
             <RiskChip
               icon={ShieldAlert}
@@ -172,7 +153,7 @@ function RiskChip({
   warning = false,
   ok = false,
 }: {
-  icon: typeof AlertTriangle;
+  icon: LucideIcon;
   label: string;
   danger?: boolean;
   warning?: boolean;
