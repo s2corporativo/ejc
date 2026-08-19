@@ -42,6 +42,24 @@ def test_ci_guard_bloqueia_separador_remanescente(tmp_path: Path) -> None:
     assert "Marcadores de conflito encontrados" in resultado.stdout
 
 
+def test_ci_guard_bloqueia_marcador_diff3(tmp_path: Path) -> None:
+    repo = _repo_temporario(tmp_path, "||||||| base\nvalor = 1\n")
+
+    resultado = _run(["bash", str(SCRIPT)], repo)
+
+    assert resultado.returncode == 1
+    assert "Marcadores de conflito encontrados" in resultado.stdout
+
+
+def test_ci_guard_nao_confunde_separador_decorativo(tmp_path: Path) -> None:
+    repo = _repo_temporario(tmp_path, "================================\nvalor = 1\n")
+
+    resultado = _run(["bash", str(SCRIPT)], repo)
+
+    assert resultado.returncode == 0
+    assert "Gate P0 aprovado" in resultado.stdout
+
+
 def test_ci_guard_aprova_arquivo_sem_conflito(tmp_path: Path) -> None:
     repo = _repo_temporario(tmp_path, "valor = 1\n")
 
