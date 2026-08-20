@@ -27,6 +27,31 @@ if git grep -n -E '^(<<<<<<<|>>>>>>>|\|\|\|\|\|\|\|)([[:space:]].*)?$|^=======$'
   fail=1
 fi
 
+# Senhas hardcoded em prosa/scripts: literais de 8+ caracteres com maiúscula, minúscula e dígito
+# atribuídos a constantes com nome de senha (PWD|SENHA|PASSWORD|*_QA_*) ou após rótulos
+# "Senha:"/"password:". Permitidos apenas se todos os matches estiverem na allowlist de falsos
+# positivos documentados (ex.: constantes SAMPLE/PLACEHOLDER explícitas).
+SENHAS_ALLOW_FILES='(\.claude/skills/|backend/tests/test_vault_router\.py|backend/tests/test_vault_testers\.py|qa/e2e/README\.md|backend/scripts/purga_dados_homologacao\.py|ci_guard\.sh|scripts/ingestao_rag\.sh|scripts/restore\.sh|\.md:)' 
+SENHAS_ALVO="$(git grep -n -E '(^| )([A-Z_]*[A-Za-z]*(PWD|SENHA|PASSWORD)[A-Za-z]*|[A-Z_]+QA[A-Z_]*) *= *["\x27][^"\x27"]{8,}["\x27]' -- ':!**/node_modules/**' ':!**/.venv/**' ':!**/site-packages/**' ':!**/dist/**' ':!frontend/dist/**' 2>/dev/null || true)"
+SENHAS_ROTULO="$(git grep -n -E '[Ss]enha *: *[^[:space:]]{8,}|password *: *["\x27][^"\x27"]{8,}["\x27]' -- ':!**/node_modules/**' ':!**/.venv/**' ':!**/site-packages/**' ':!**/dist/**' ':!frontend/dist/**' ':!**/.claude/skills/**' ':!qa/e2e/README.md' 2>/dev/null || true)"
+if [[ -n "${SENHAS_ALVO}" ]]; then
+  # Só falha se houver match FORA da allowlist
+  fora_allow="$(echo "${SENHAS_ALVO}" | grep -vE "${SENHAS_ALLOW_FILES}" || true)"
+  if [[ -n "${fora_allow}" ]]; then
+    echo "::error::Possível senha hardcoded em código versionado. Use variável de ambiente (ex.: EJC_QA_PASSWORD)."
+    printf '%s\n' "${fora_allow}"
+    fail=1
+  fi
+fi
+if [[ -n "${SENHAS_ROTULO}" ]]; then
+  fora_allow="$(echo "${SENHAS_ROTULO}" | grep -vE "${SENHAS_ALLOW_FILES}" || true)"
+  if [[ -n "${fora_allow}" ]]; then
+    echo "::error::Possível senha em prosa em arquivo versionado. Rotacione e remova o literal."
+    printf '%s\n' "${fora_allow}"
+    fail=1
+  fi
+fi
+
 echo "[EJC CI] Verificando arquivos de ambiente/segredos versionados..."
 tracked_env_files="$(git ls-files | grep -E '(^|/)\.env($|\.)|\.env\.bak|vps-tools/\.env$' | grep -v -E '(^|/)\.env\.example$' || true)"
 if [[ -n "${tracked_env_files}" ]]; then

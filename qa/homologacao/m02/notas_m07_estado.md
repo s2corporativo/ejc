@@ -1,7 +1,7 @@
 # M07 — Estado atual (16/08/2026)
 
 ## Contexto de recuperação
-Sandbox resetou; ambiente reconstruído (Postgres+pgvector, Redis, repo recloneado em branch homologacao-m07-2026-08-16 baseada em origin/homologacao-m06). Backend porta 8000 rodando, migrations até 145 (consolidadas), 7 usuários QA seedados (senha EjcQa2026!SenhaForte), cliente QA 9e6cd7cd-148c-49c9-95cb-d61de37fe520, cliente_externo linkado (client_id). M06 re-executado: 23/24 (1 FAIL de portal corrigido manualmente — cliente ganhou client_id no banco).
+Sandbox resetou; ambiente reconstruído (Postgres+pgvector, Redis, repo recloneado em branch homologacao-m07-2026-08-16 baseada em origin/homologacao-m06). Backend porta 8000 rodando, migrations até 145 (consolidadas), 7 usuários QA seedados (senha <ver EJC_QA_PASSWORD>), cliente QA 9e6cd7cd-148c-49c9-95cb-d61de37fe520, cliente_externo linkado (client_id). M06 re-executado: 23/24 (1 FAIL de portal corrigido manualmente — cliente ganhou client_id no banco).
 
 ## M07 bateria (scripts/inventory/m07_casos_tests.py): 33/34 PASS
 Última falha: "duplicidade CNJ rejeitada (409)". Causa real: o caso criado no teste 1 nasce SEM numero_processo (coloquei None para evitar gerar 2 CNJs distintos). O teste 18 cria um caso NOVO com numero_processo=valido — não há conflito porque o caso original não tem CNJ.
@@ -272,7 +272,7 @@ PROMPT 18 a seguir — TEMPLATES JURÍDICOS (mas CRUD de templates já coberto n
 PROMPT 18 — Templates Jurídicos: cadastro, edição, exclusão, variáveis, preenchimento, reutilização, versionamento, permissões, integração com peças.
 Router: app/routers/templates.py (/api/templates): GET / (lista + variaveis_disponiveis VARIAVEIS), GET /{id} (detalhe), POST / (201; tipo_peca validado), POST /{tpl_id}/gerar (201; gera LegalDoc rascunho com _render {{variaveis}} → ctx do caso; sem case_id? — verificar se case_id obrigatório), DELETE /{id} (soft). NÃO há PATCH/PUT de edição de template! (verificar: grep editar|atualizar no router — provavelmente inexistente). Templates sem versionamento (sem campo versao na tabela doc_templates). VARIAVEIS: lista (cliente_nome etc.). _render usa regex \{\{\s*([a-z_]+)\s*\}\} — preenche variáveis do ctx, não resolvidas viram [var?].
 M17 já provou: criação template, detalhe, listagem, gerar peça (201, rascunho, ai_generated=False, variáveis resolvidas, caso sem acesso 404, tipo inválido 422). Falta M18: edição (verificar se existe; se não → lacuna), exclusão (soft), reutilização múltipla (2 peças do mesmo template), permissões (secretaria não é equipe_juridica? EQUIPE_JURIDICA não inclui secretario/financeiro/cliente), versão template (não existe — lacuna).
-Usuários: advogado=4701ecbf-cf9b-422f-b75a-b906814b8213, socio=U-4ad52bdb, secretario=U-5b5689e3, cliente=U-5f166550, estagiario=U-4e0ee2bb. CASO carteira advogado: 7d8b4bf5-8d3c-4e67-8c3d-a453c00f9b5c. Senha QA: EjcQa2026!SenhaForte. Base http://127.0.0.1:8000. db: PGPASSWORD=ejc psql -h localhost -U ejc -d ejc.
+Usuários: advogado=4701ecbf-cf9b-422f-b75a-b906814b8213, socio=U-4ad52bdb, secretario=U-5b5689e3, cliente=U-5f166550, estagiario=U-4e0ee2bb. CASO carteira advogado: 7d8b4bf5-8d3c-4e67-8c3d-a453c00f9b5c. Base http://127.0.0.1:8000. db: PGPASSWORD=ejc psql -h localhost -U ejc -d ejc.
 PROMPT 19: PERFIL E ESTILO DO ADVOGADO (após M18).
 
 
@@ -481,7 +481,7 @@ Correções identificadas (22/32, 10 FAIL → causas):
 7. casos listagem: verificar formato root (cases.root model?) — curl com E_SOCIO para ver shape (itens vs data vs lista direta).
 8. documentos-ia/analisar-url: SSRF metadata NÃO bloqueado — retorna 200 com dados! BUG REAL: importa url 169.254 sem bloqueio (pode ser bloqueio parcial por domínio público mas metadata passa). Verificar importar_url_juridica em services (talvez bloqueie só domínios pagos). Documentar como bug de segurança real (SSRF metadata) — verificar se há verificação contra IP privado/metadados.
 9. ai/logs vazio: logs não persistem? verificar tabela/rota (logs são salvos via AILog service; talvez habilitado só com AI_ENABLED? ou endpoint /logs filtra por task? — conferir). Pode ser behavior real: logs persistem via ai_log service; conferir se as chamadas 502 registraram log.
-Usuários QA: E_ADMIN=ejc_qa_auth_admin@golocal.ejc. Senha EjcQa2026!SenhaForte. Rate: sleep(18) login, retry 429 sleep(45).
+Usuários QA: E_ADMIN=ejc_qa_auth_admin@golocal.ejc. Senha <ver EJC_QA_PASSWORD>. Rate: sleep(18) login, retry 429 sleep(45).
 Caso QA do socio: pegar GET /api/casos e ver root shape.
 
 
@@ -736,7 +736,7 @@ Prefixo API real: /api/dossie (router prefix="/dossie", mounted prefix=API). End
 Model DossieEstrategico: case_id FK CASCADE, versao int, titulo, conteudo_texto/html, secoes_json, status enum (rascunho, aprovado, arquivado), modelo_ia, provedor_ia, tokens_usados, gerado_por, aprovado_por/em, created/updated.
 Serviço gerar_dossie: agrega caso+financeiro+atendimentos+checklists, rag jurisprudencia, próxima versão = max+1, sanitização PII com abort em residual.
 EQUIPE_JURIDICA do core.security — financeiro excluído.
-Casos QA: usar _cliente_id + advogado_responsavel_id=4701ecbf... para acesso do advogado (ABAC). Usuário socio: ejc_qa_auth_socio, advogado: ejc_qa_auth_advogado, financeiro: ejc_qa_auth_financeiro, estagiario: ejc_qa_auth_estagiario, cliente: ejc_qa_auth_cliente, secretaria: ejc_qa_auth_secretaria. Senha: EjcQa2026!SenhaForte.
+Casos QA: usar _cliente_id + advogado_responsavel_id=4701ecbf... para acesso do advogado (ABAC). Usuário socio: ejc_qa_auth_socio, advogado: ejc_qa_auth_advogado, financeiro: ejc_qa_auth_financeiro, estagiario: ejc_qa_auth_estagiario, cliente: ejc_qa_auth_cliente, secretaria: ejc_qa_auth_secretaria. Senha: <ver EJC_QA_PASSWORD>.
 Padrão bateria: scripts/inventory/m28_template... usar pattern de m28: _TOKENS memo, authed(role), S sessão sem content-type, rate limit sleep(16)/retry(45), PASS/FAIL/N/A lists separadas, _correr loop compartilhado.
 
 ### M29 estado (rodamas 1-4)
@@ -754,7 +754,7 @@ Após baterir OK: escrever relatório em qa/homologacao/m29/RELATORIO_MODULO_M29
 **Banco de Teses** — `app/routers/teses.py` prefix `/teses`: GET list, POST (201, advogado+ _pode_editar=ROLE_LEVEL>=advogado), GET ranking, GET busca-avancada (q, area, tribunal, taxa_minima 0-1, status, tipo; allowlist EQUIPE_JURIDICA exata), GET casos/{case_id} (links por caso), GET/DELETE /{tese_id}, PATCH /{tese_id}, POST vincular-caso, POST sugerir-ia (rate 15), POST motor (rate 15) e motor/async.
 **RAG de teses** — teses do banco podem ser ingestidas no RAG (categoria tese?). M25 ingestão Planalto ok. Verificar se há ingestão de teses para retrieval na matriz (pesquisar_por_questao usa RAG/authorities).
 **Versionamento** — updated_at no PATCH do banco; matriz gravada via gravar_snapshot_seguro (versionado case_intelligence, M28 já provou append-only).
-Bateria pattern: mesma de M29 (env_shell.sh, loop compartilhado, authed, rate sleeps). Usuários: socio/advogado/estagiario/financeiro/cliente/secretaria QA (EjcQa2026!SenhaForte). Advogado UUID: 4701ecbf-cf9b-422f-b75a-b906814b8213. Client EJC_QA via GET /api/clients.
+Bateria pattern: mesma de M29 (env_shell.sh, loop compartilhado, authed, rate sleeps). Usuários: socio/advogado/estagiario/financeiro/cliente/secretaria QA (<ver EJC_QA_PASSWORD>). Advogado UUID: 4701ecbf-cf9b-422f-b75a-b906814b8213. Client EJC_QA via GET /api/clients.
 
 ### M30 rodada 1 (servidor caiu no meio — connection refused; reiniciar uvicorn e rerun)
 Bateria: scripts/inventory/m30_matriz_teses_tests.py

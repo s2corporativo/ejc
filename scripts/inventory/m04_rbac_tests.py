@@ -18,7 +18,14 @@ settings = get_settings()
 
 BASE = "http://127.0.0.1:8000"
 S = requests.Session()
-SENHA = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+SENHA = _qa_pw('SENHA')
 # Rotaciona IP via X-Forwarded-For para não atingir o rate limit de login
 # IP estático via X-Forwarded-For: o app resolve em DNS qualquer valor
 # sintético (gaierror → 500 no login). Contadores in-memory do rate limit
@@ -94,7 +101,7 @@ def criar_usuario(role, email):
     t = tok("admin")
     nome = f"QA {role.title()}"
     r = S.post(f"{BASE}/api/users/",
-               json={"email": email, "password": "SenhaForte2026!",
+               json={"email": email, "password": SENHA,
                      "full_name": nome, "role": role},
                headers={"Authorization": f"Bearer {t}"}, timeout=15)
     if r.status_code not in (200, 201, 409):
@@ -120,7 +127,7 @@ for role, email in perfis:
 for role, email in USERS.items():
     if role != "cliente":
         r = S.post(f"{BASE}/api/auth/alterar-senha",
-                   json={"senha_atual": "SenhaForte2026!", "nova_senha": SENHA},
+                   json={"senha_atual": SENHA, "nova_senha": SENHA},
                    headers={"Authorization": f"Bearer {tok(role)}"}, timeout=15)
     TOKENS[role] = login(email)
     check(f"token_{role}", TOKENS[role] is not None, f"login {role}")
@@ -232,7 +239,7 @@ q("escalar_criar_user|advogado", "post", "/api/users/",
                     "role": "socio"})
 q("escalar_criar_user|secretaria", "post", "/api/users/",
   "secretaria", 403, {"email": "escalada2_teste@golocal.ejc",
-                      "password": "SenhaForte2026!", "full_name": "Escalada2",
+                      "password": SENHA, "full_name": "Escalada2",
                       "role": "admin"})
 # Sociedades — leitura = equipe interna (get_current_user, cliente fora);
 # escrita (criar/alterar/remover) = admin/socio. estagiário LÊ (200), mas

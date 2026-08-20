@@ -18,7 +18,7 @@ def cnj_valido():
 time.sleep(18)
 r = S.post(f"{BASE}/api/auth/login",
            json={"email": "ejc_qa_auth_admin@golocal.ejc",
-                 "password": "EjcQa2026!SenhaForte"})
+                 "password": "<ver EJC_QA_PASSWORD>"})
 H = {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 CLIENT_ID = "9e6cd7cd-148c-49c9-95cb-d61de37fe520"

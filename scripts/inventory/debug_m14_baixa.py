@@ -6,8 +6,14 @@ import subprocess
 import requests
 
 BASE = "http://127.0.0.1:8000"
-SENHA = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
 
+SENHA = _qa_pw('SENHA')
 env = dict(os.environ)
 env["PGPASSWORD"] = "ejc"
 

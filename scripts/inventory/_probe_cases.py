@@ -3,10 +3,10 @@ B = "http://127.0.0.1:8000"
 S = requests.Session()
 for email in ("ejc_qa_auth_socio@golocal.ejc", "ejc_qa_auth_advogado@golocal.ejc"):
     time.sleep(18)
-    r = S.post(f"{B}/api/auth/login", json={"email": email, "password": "EjcQa2026!SenhaForte"}, timeout=30)
+    r = S.post(f"{B}/api/auth/login", json={"email": email, "password": "<ver EJC_QA_PASSWORD>"}, timeout=30)
     if r.status_code == 429:
         time.sleep(45)
-        r = S.post(f"{B}/api/auth/login", json={"email": email, "password": "EjcQa2026!SenhaForte"}, timeout=30)
+        r = S.post(f"{B}/api/auth/login", json={"email": email, "password": "<ver EJC_QA_PASSWORD>"}, timeout=30)
     print(email, r.status_code)
     if r.status_code == 200:
         break

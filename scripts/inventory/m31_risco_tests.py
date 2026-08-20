@@ -16,7 +16,14 @@ import time
 import requests
 
 API = "http://127.0.0.1:8000"
-PASSWORD = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+PASSWORD = _qa_pw('PASSWORD')
 S = requests.Session()
 TOKENS = {}
 PASS, FAIL, NA = [], [], []

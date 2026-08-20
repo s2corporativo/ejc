@@ -53,7 +53,7 @@ def login(email: str) -> str:
     for _ in range(2):
         r = S.post(f"{BASE}/api/auth/login", json={
             "email": email,
-            "password": "EjcQa2026!SenhaForte",
+            "password": "<ver EJC_QA_PASSWORD>",
         }, headers={"X-Forwarded-For": "127.0.0.1"}, timeout=15)
         if r.status_code == 429:
             time.sleep(45)
