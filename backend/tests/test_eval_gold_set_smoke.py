@@ -15,10 +15,9 @@ def test_gold_sets_do_repo_passam_no_smoke():
 # ── AI-087 (auditoria máxima 2026-07-26): gate de qualidade POR ÁREA ─────────
 
 def test_smoke_falha_quando_area_critica_nao_tem_cobertura():
-    """Área crítica exigida sem gold set REAL é FALHA — a curadoria atual tem
-    7 áreas com 15+ casos cada; uma área inexistente com mínimo real deve
-    reprovar, provando que o gate de cobertura não é passivo."""
-    assert _smoke(areas_obrigatorias="seguranca", min_casos_area=15) == 1
+    """Área crítica exigida sem gold set REAL é FALHA — hoje o repo só tem
+    exemplos de formato, então cobertura zero não pode passar como aprovação."""
+    assert _smoke(areas_obrigatorias="penal", min_casos_area=10) == 1
 
 
 def test_agregado_segmenta_metricas_por_area():

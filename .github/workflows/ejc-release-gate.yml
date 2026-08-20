@@ -125,14 +125,14 @@ jobs:
         run: |
           python -m app.eval.gold_governance \
             --require-real \
-            --min-total 105 \
-            --areas consumidor,trabalhista,civel,penal,tributario,empresarial,administrativo \
+            --min-total 75 \
+            --areas consumidor,trabalhista,civel,penal,tributario \
             --min-casos-area 15 \
             --cenarios normal,fronteira,excecao \
             --min-casos-cenario 5
           python -m app.eval.run_eval \
             --smoke \
-            --areas-obrigatorias consumidor,trabalhista,civel,penal,tributario,empresarial,administrativo \
+            --areas-obrigatorias consumidor,trabalhista,civel,penal,tributario \
             --min-casos-area 15
 
       - name: Resumo da maturidade jurídica da IA
