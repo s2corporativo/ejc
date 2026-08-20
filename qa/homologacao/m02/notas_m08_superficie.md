@@ -20,7 +20,7 @@ id, case_id (not null), tipo varchar(30) not null, papel_processual, nome not nu
 
 ## Recursos QA para M08
 - Caso QA principal (M07 run 3): vários casos criados; usar GET /cases?area=tributario para pegar um id ativo. Cliente: 9e6cd7cd-148c-49c9-95cb-d61de37fe520.
-- Admin: ejc_qa_auth_admin@golocal.ejc, advogado UUID 4701ecbf-cf9b-422f-b75a-b906814b8213, financeiro ejc_qa_auth_financeiro@golocal.ejc, cliente ejc_qa_auth_cliente@golocal.ejc. Todos senha EjcQa2026!SenhaForte.
+- Admin: ejc_qa_auth_admin@golocal.ejc, advogado UUID 4701ecbf-cf9b-422f-b75a-b906814b8213, financeiro ejc_qa_auth_financeiro@golocal.ejc, cliente ejc_qa_auth_cliente@golocal.ejc. Todos senha <ver EJC_QA_PASSWORD>.
 
 ## Padrão bateria
 scripts/inventory/m07_casos_tests.py como referência (tokens memoizados, sleep(18), X-Forwarded-For 127.0.0.1, db() psql helper).

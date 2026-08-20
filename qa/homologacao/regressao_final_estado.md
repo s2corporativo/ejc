@@ -18,7 +18,7 @@ Comprometir o relatório de regressão + atualizar notas; entregar tabela final 
 - Nota: push remoto do relatório também deve ocorrer após commit.
 
 ## Dados úteis
-Senha QA: EjcQa2026!SenhaForte; servidor local Postgres ejc@localhost; uvicorn via `./scripts/inventory/env_shell.sh`.
+Servidor local Postgres ejc@localhost; uvicorn via `. /scripts/inventory/env_shell.sh`.
 
 ## Diagnóstico das falhas na regressão (primeira passada)
 

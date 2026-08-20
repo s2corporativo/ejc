@@ -6,8 +6,14 @@ import subprocess
 
 BASE = "http://127.0.0.1:8000"
 ADM_E = "ejc_qa_auth_admin@golocal.ejc"
-PWD = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
 
+PWD = _qa_pw('PWD')
 def db(sql):
     env = dict(os.environ, PGPASSWORD="ejc")
     out = subprocess.run(["psql", "-h", "localhost", "-U", "ejc", "-d", "ejc",

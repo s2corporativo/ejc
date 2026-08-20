@@ -5,8 +5,14 @@ sys.path.insert(0, "/home/ubuntu/ejc_repo/backend")
 API = "http://127.0.0.1:8000"
 CLIENTE_ID = "3d0aaf26-6942-4355-9553-b0dae90e18e4"
 ADVOGADO_ID = "4701ecbf-cf9b-422f-b75a-b906814b8213"
-PASS = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
 
+PASS = _qa_pw('PASS')
 def tok(role):
     S = requests.Session()
     time.sleep(16)
