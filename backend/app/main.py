@@ -79,14 +79,12 @@ from app.routers import dossie_estrategico
 from app.routers import environmental
 from app.routers import etiquetas
 from app.routers import evolution_webhook
-from app.routers import exito_rateio
 from app.routers import export
 from app.routers import extratos
 from app.routers import fees
 from app.routers import financeiro_consolidado
 from app.routers import gestao_societaria
 from app.routers import google_drive_knowledge
-from app.routers import honorarios_calc
 from app.routers import ia_adversarial
 from app.routers import ia_agente
 from app.routers import ia_citacoes
@@ -140,8 +138,8 @@ from app.routers import solicitacoes_documentos
 from app.routers import processes
 from app.routers import procuracoes
 from app.routers import produtividade
-from app.routers import prompts
 from app.routers import prompts_juridicos
+from app.routers import prompts, honorarios_calc, exito_rateio
 from app.routers import qualidade
 from app.routers import rag
 from app.routers import rag_governance
@@ -379,14 +377,12 @@ app.include_router(dossie_estrategico.router, prefix=API)
 app.include_router(environmental.router, prefix=API)
 app.include_router(etiquetas.router, prefix=API)
 app.include_router(evolution_webhook.router, prefix=API)
-app.include_router(exito_rateio.router, prefix=API)
 app.include_router(export.router, prefix=API)
 app.include_router(extratos.router, prefix=API)
 app.include_router(fees.router, prefix=API)
 app.include_router(financeiro_consolidado.router, prefix=API)
 app.include_router(gestao_societaria.router, prefix=API)
 app.include_router(google_drive_knowledge.router, prefix=API)  # /api/rag/google-drive/* (curadoria da base, piso admin/socio)
-app.include_router(honorarios_calc.router, prefix=API)
 app.include_router(ia_adversarial.router, prefix=API)
 app.include_router(ia_agente.router, prefix=API)
 app.include_router(ia_citacoes.router, prefix=API)
@@ -438,8 +434,10 @@ app.include_router(solicitacoes_documentos.router, prefix=API)  # advogado: soli
 app.include_router(processes.router, prefix=API)
 app.include_router(procuracoes.router, prefix=API)
 app.include_router(produtividade.router, prefix=API)
-app.include_router(prompts.router, prefix=API)
 app.include_router(prompts_juridicos.router, prefix=API)
+app.include_router(prompts.router, prefix=API)  # shim compat. /prompts-biblioteca (redirect 308)
+app.include_router(honorarios_calc.router, prefix=API)  # shim compat. /honorarios-calc (redirect 308 -> /honorarios-oab)
+app.include_router(exito_rateio.router, prefix=API)  # shim compat. /honorarios-exito (redirect 308 -> /honorarios-oab)
 app.include_router(qualidade.router, prefix=API)
 app.include_router(rag.router, prefix=API)
 app.include_router(rag_public.router, prefix=API)      # API pública (X-API-Key)

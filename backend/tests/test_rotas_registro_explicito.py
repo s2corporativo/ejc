@@ -154,6 +154,16 @@ ADICOES_INTENCIONAIS = {
     # NÚCLEO (código), com versão por conteúdo. Distinto de /prompts, que lista
     # os prompts jurídicos do usuário no banco. Somente admin/sócio.
     ("/api/ia-governanca/prompts-sistema", "GET"),
+    # PR #1215 (Bloco P1+P2, D4 — 20/08/2026): consolidação dos roteadores de
+    # honorários (honorarios_calc/exito_rateio → honorarios_oab.py). Os quatro
+    # endpoints já EXISTIAM nos prefixos /honorarios-calc e /honorarios-exito
+    # (mantidos como redirect 308 nos shims) — em /honorarios-oab são a mesma
+    # implementação consolidada sob o prefixo canônico, sem alteração de
+    # contrato. Registro nominal conforme padrão do §4.1.
+    ("/api/honorarios-oab/cases/{case_id}/provisionamento", "GET"),
+    ("/api/honorarios-oab/cases/{case_id}/teto-etico", "GET"),
+    ("/api/honorarios-oab/{fee_id}/rateio", "GET"),
+    ("/api/honorarios-oab/{fee_id}/rateio", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -328,6 +338,19 @@ def test_paridade_openapi_com_snapshot_anterior():
          ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         (("/api/ia-defensiva/analisar", "POST"),
          ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        # PR #1215 (Bloco P1+P2, D4 — 20/08/2026): consolidação dos routers de
+        # prompts e honorários. Os sete endpoints abaixo viraram REDIRECTS 308
+        # (shims de compatibilidade) apontando para os endereços canônicos
+        # /prompts-juridicos/* e /honorarios-oab/* — que mantêm a autenticação
+        # intacta. O redirect em si é público porque o destino reautentica
+        # (HTTPBearer); o contrato público permanece exigindo credencial.
+        (("/api/prompts-biblioteca/", "GET"), []),
+        (("/api/prompts-biblioteca/", "POST"), []),
+        (("/api/prompts-biblioteca/{prompt_id}/executar", "POST"), []),
+        (("/api/honorarios-calc/cases/{case_id}/provisionamento", "GET"), []),
+        (("/api/honorarios-calc/cases/{case_id}/teto-etico", "GET"), []),
+        (("/api/honorarios-exito/{fee_id}/rateio", "GET"), []),
+        (("/api/honorarios-exito/{fee_id}/rateio", "POST"), []),
     )
 
     divergentes = [

@@ -7,6 +7,7 @@ placeholder). GET /api/honorarios-oab/tabela → itens relevantes (transparênci
 REGRAS (CLAUDE.md): nunca inventa item da tabela; nunca promete resultado; tudo
 é referência — o advogado define o valor final.
 """
+from __future__ import annotations
 import json
 import re
 from datetime import date
@@ -29,6 +30,11 @@ from app.services import ai_gateway, fee_proposal_service
 from app.services.ai_service import buscar_contexto_rag
 from app.services.geracao_documental import _area_str, _item_dict
 from app.core.rate_limit import rate_limit
+from decimal import Decimal
+from app.models.case import Case
+from app.models.fee import Fee, FeeTipo, FeeStatus
+from decimal import ROUND_HALF_UP
+from sqlalchemy import text
 
 router = APIRouter(prefix="/honorarios-oab", tags=["Honorários OAB"])
 
@@ -454,3 +460,221 @@ async def rejeitar_proposta_honorarios(
         db, proposta_id, cu, motivo=(body.motivo if body else None),
     )
     return fee_proposal_service.proposta_out(p)
+
+# ── (incorporado de honorarios_calc.py — D4) ──
+
+SUC_MIN = Decimal("0.10")      # art. 85 §2º CPC — piso
+SUC_MAX = Decimal("0.20")      # art. 85 §2º CPC — teto
+SUC_PROV = Decimal("0.15")     # provável (meio da faixa)
+TETO_ETICO = Decimal("0.50")   # alerta se honorários > 50% do proveito
+_CENT = Decimal("0.01")
+
+
+def _f(x):
+    return float(x) if x is not None else None
+
+
+async def _get_case(db: AsyncSession, cu: User, case_id: str) -> Case:
+    # Gate de ownership (IDOR): 404 se não existe, 403 se sem acesso ao caso.
+    return await verificar_acesso_caso(db, cu, case_id)
+
+
+@router.get("/cases/{case_id}/provisionamento")
+async def provisionamento(
+    case_id: str,
+    condenacao: float | None = Query(None, description="Base alternativa (condenação estimada)"),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Provisão de sucumbência (art. 85 §2º CPC) sobre valor da causa ou condenação."""
+    c = await _get_case(db, cu, case_id)
+    base = Decimal(str(condenacao)) if condenacao is not None else (c.valor_causa or Decimal("0"))
+    if base <= 0:
+        return {"ok": False, "aviso": "Caso sem valor da causa/condenação — informe ?condenacao=."}
+    return {
+        "ok": True,
+        "base": _f(base),
+        "sucumbencia_min": _f((base * SUC_MIN).quantize(_CENT)),
+        "sucumbencia_provavel": _f((base * SUC_PROV).quantize(_CENT)),
+        "sucumbencia_max": _f((base * SUC_MAX).quantize(_CENT)),
+        "fundamento": "Art. 85, §2º, CPC — honorários de sucumbência fixados entre 10% e 20%.",
+        "observacao": ("Estimativa determinística. Fazenda Pública segue as faixas do §3º "
+                       "(verificar). Não inclui correção monetária/juros."),
+    }
+
+
+@router.get("/cases/{case_id}/teto-etico")
+async def teto_etico(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Soma honorários contratuais + sucumbência estimada e alerta se > 50% do proveito."""
+    c = await _get_case(db, cu, case_id)
+    proveito = c.valor_causa or Decimal("0")
+    fees = (await db.execute(
+        select(Fee).where(
+            Fee.case_id == case_id, Fee.deleted_at.is_(None),
+            Fee.status != FeeStatus.cancelado,
+        )
+    )).scalars().all()
+
+    contratual = Decimal("0")
+    for f in fees:
+        if f.tipo == FeeTipo.custas_despesas:
+            continue
+        if f.valor:
+            contratual += f.valor
+        elif f.tipo in (FeeTipo.exito, FeeTipo.misto) and f.percentual_exito and proveito:
+            contratual += (proveito * (f.percentual_exito / Decimal("100")))
+
+    sucumbencia = (proveito * SUC_PROV) if proveito else Decimal("0")
+    total = contratual + sucumbencia
+    alerta = bool(proveito) and total > (proveito * TETO_ETICO)
+    return {
+        "proveito_economico": _f(proveito),
+        "honorarios_contratuais": _f(contratual.quantize(_CENT)),
+        "sucumbencia_estimada": _f(sucumbencia.quantize(_CENT)),
+        "total_honorarios": _f(total.quantize(_CENT)),
+        "percentual_sobre_proveito": _f((total / proveito * 100).quantize(Decimal("0.1"))) if proveito else None,
+        "alerta_teto": alerta,
+        "mensagem": ("⚠️ Honorários totais estimados superam 50% do proveito econômico — "
+                     "revisar adequação ética (EOAB/quota litis)."
+                     if alerta else "Dentro do parâmetro de referência (≤ 50% do proveito)."),
+        "observacao": "Cálculo determinístico referencial. Proveito aproximado pelo valor da causa.",
+    }
+
+# ── (incorporado de exito_rateio.py — D4) ──
+
+_Q2 = Decimal("0.01")
+
+# Split do êxito líquido (após despesas) entre titular do caso e escritório.
+# Regra EJC atual: 50% titular / 50% escritório. Parametrizado (constante nomeada)
+# para remover o número mágico; o restante (1 - PERCENTUAL_TITULAR) fica com o
+# escritório. Não exposto na API por ora.
+PERCENTUAL_TITULAR = Decimal("0.50")
+
+
+def _money(v) -> Decimal:
+    """Coage numérico (Decimal de coluna Numeric, int, float, str, None) para
+    Decimal com 2 casas (ROUND_HALF_UP)."""
+    return Decimal(str(v or 0)).quantize(_Q2, ROUND_HALF_UP)
+
+
+def _is_gestor(u: User) -> bool:
+    return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["socio"]
+
+
+async def _calcular(fee_id: str, db: AsyncSession) -> dict:
+    fee = (await db.execute(text("""
+        SELECT f.id, f.valor, f.tipo, f.status, f.descricao, f.case_id,
+               c.titulo AS caso_titulo, c.numero_interno,
+               c.advogado_responsavel_id, u.full_name AS titular_nome
+        FROM fees f
+        LEFT JOIN cases c ON c.id = f.case_id
+        LEFT JOIN users u ON u.id = c.advogado_responsavel_id
+        WHERE f.id = :fid AND f.deleted_at IS NULL
+    """), {"fid": fee_id})).mappings().first()
+    if not fee:
+        raise HTTPException(404, "Honorário não encontrado")
+    if fee["tipo"] != "exito":
+        raise HTTPException(422, "Rateio aplicável apenas a honorários de êxito")
+
+    bruto = _money(fee["valor"])
+
+    # Custo do caso UNIFICADO: despesas pagas do centro de custos + custas/despesas lançadas em fees.
+    # (corrige: antes somava receitas+despesas; agora só tipo despesa, e inclui fees custas_despesas)
+    desp = (await db.execute(text("""
+        SELECT
+          (SELECT COALESCE(SUM(valor),0) FROM centro_custos
+             WHERE case_id = :cid AND deleted_at IS NULL AND tipo = 'despesa' AND pago = true)
+          +
+          (SELECT COALESCE(SUM(valor),0) FROM fees
+             WHERE case_id = :cid AND deleted_at IS NULL AND tipo = 'custas_despesas' AND status = 'pago')
+        AS total
+    """), {"cid": fee["case_id"]})).scalar()
+    despesas = _money(desp)
+
+    liquido = _money(max(bruto - despesas, Decimal("0")))
+    titular_share = _money(liquido * PERCENTUAL_TITULAR)
+    escritorio_share = _money(liquido - titular_share)
+    pct_titular = int((PERCENTUAL_TITULAR * 100).to_integral_value())
+
+    # Titular é sócio?
+    partner = None
+    if fee["advogado_responsavel_id"]:
+        partner = (await db.execute(text("""
+            SELECT id FROM socios WHERE user_id = :uid AND ativo = true
+        """), {"uid": fee["advogado_responsavel_id"]})).scalar()
+
+    return {
+        "fee": dict(fee) | {"valor": bruto},
+        "bruto": bruto,
+        "despesas_caso": despesas,
+        "liquido": liquido,
+        "titular": {
+            "nome": fee["titular_nome"],
+            "user_id": fee["advogado_responsavel_id"],
+            "partner_id": partner,
+            "valor": titular_share,
+            "percentual": pct_titular,
+        },
+        "escritorio": {"valor": escritorio_share, "percentual": 100 - pct_titular},
+        "pago": fee["status"] == "pago",
+    }
+
+
+@router.get("/{fee_id}/rateio")
+async def preview_rateio(
+    fee_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _is_gestor(cu):
+        raise HTTPException(403, "Apenas sócios/gestores")
+    return await _calcular(fee_id, db)
+
+
+@router.post("/{fee_id}/rateio", status_code=201)
+async def gerar_rateio(
+    fee_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _is_gestor(cu):
+        raise HTTPException(403, "Apenas sócios/gestores")
+    calc = await _calcular(fee_id, db)
+    if not calc["pago"]:
+        raise HTTPException(422, "Honorário de êxito ainda não foi pago")
+    socio_id = calc["titular"]["partner_id"]  # socios.id — prova de que o titular é sócio
+    if not socio_id:
+        raise HTTPException(422, "Advogado titular do caso não é sócio cadastrado — rateio manual necessário")
+    # A13 (auditoria 2026-06-30): partner_withdrawals.partner_id é, por convenção
+    # unificada, o users.id (igual ao create_withdrawal e ao filtro "minhas
+    # retiradas"). Antes gravava socios.id -> o rateio de êxito sumia da lista do
+    # próprio sócio. Passa a gravar o user_id do titular.
+    partner_id = calc["titular"]["user_id"]
+
+    # Evita duplicar: já existe saque com esta referência?
+    ref = f"exito:{fee_id}"
+    dup = (await db.execute(text("""
+        SELECT id FROM partner_withdrawals
+        WHERE period_reference = :ref AND deleted_at IS NULL
+    """), {"ref": ref})).scalar()
+    if dup:
+        raise HTTPException(409, "Rateio já gerado para este honorário")
+
+    wid = str(uuid4())
+    await db.execute(text("""
+        INSERT INTO partner_withdrawals
+            (id, partner_id, gross_value, case_expenses, net_value, partner_share,
+             description, period_reference, status, created_at, updated_at)
+        VALUES (:id, :pid, :gross, :exp, :net, :share, :desc, :ref, 'pendente', now(), now())
+    """), {
+        "id": wid, "pid": partner_id, "gross": calc["bruto"],
+        "exp": calc["despesas_caso"], "net": calc["liquido"], "share": calc["titular"]["valor"],
+        "desc": f"Êxito 50% — {calc['fee'].get('caso_titulo') or 'caso'} ({calc['fee'].get('numero_interno') or ''})",
+        "ref": ref,
+    })
+    await db.commit()
+    return {"ok": True, "withdrawal_id": wid, "rateio": calc}
