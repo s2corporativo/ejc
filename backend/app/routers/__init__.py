@@ -12,7 +12,6 @@ from app.routers import (  # noqa: E402
     defesas_revisoes_avancado,
     defesas_revisoes_pacote_seguro,
     entrada_universal,
-    entrada_universal_vinculo,
     novos_modulos,
 )
 
@@ -22,7 +21,6 @@ from app.routers import (  # noqa: E402
 # mutação de conjuntos compartilhados no import.
 
 novos_modulos.router.include_router(entrada_universal.router)
-novos_modulos.router.include_router(entrada_universal_vinculo.router)
 novos_modulos.router.include_router(defesas_revisoes.router)
 # POST /defesas-revisoes/avancado/pacote existe SÓ no pacote seguro (a
 # implementação legada foi removida do router avançado — sem sombreamento).
