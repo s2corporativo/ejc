@@ -11,7 +11,14 @@ import time
 import requests
 
 BASE = "http://127.0.0.1:8000"
-SENHA = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+SENHA = _qa_pw('SENHA')
 CASO = "7d8b4bf5-8d3c-4e67-8c3d-a453c00f9b5c"  # caso da carteira do advogado QA
 
 EMAILS = {

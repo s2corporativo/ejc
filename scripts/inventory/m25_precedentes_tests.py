@@ -43,11 +43,11 @@ def _token(email):
         return TOKENS[email]
     time.sleep(16)
     r = S.post(f"{API}/api/auth/login", json={
-        "email": email, "password": "EjcQa2026!SenhaForte"})
+        "email": email, "password": "<ver EJC_QA_PASSWORD>"})
     if r.status_code == 429:
         time.sleep(45)
         r = S.post(f"{API}/api/auth/login", json={
-            "email": email, "password": "EjcQa2026!SenhaForte"})
+            "email": email, "password": "<ver EJC_QA_PASSWORD>"})
     if r.status_code != 200:
         raise SystemExit(f"Login {email} falhou: {r.status_code} {r.text[:300]}")
     TOKENS[email] = r.json()["access_token"]

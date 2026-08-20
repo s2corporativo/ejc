@@ -13,7 +13,14 @@ DIR = "/home/ubuntu/ejc_repo/qa/homologacao/m07"
 os.makedirs(DIR, exist_ok=True)
 BASE = "http://127.0.0.1:8000"
 S = requests.Session()
-SENHA = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+SENHA = _qa_pw('SENHA')
 ADMIN = "ejc_qa_auth_admin@golocal.ejc"
 SOCIO = "ejc_qa_auth_socio@golocal.ejc"
 FIN = "ejc_qa_auth_financeiro@golocal.ejc"

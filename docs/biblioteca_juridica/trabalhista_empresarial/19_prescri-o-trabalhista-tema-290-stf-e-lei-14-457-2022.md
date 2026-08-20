@@ -1,14 +1,17 @@
 ---
-tipo_camada: tese_juridica
+tipo_camada: modelo_peca
 canonical_id: TESE-TRAB-000021
-origem_conteudo: fonte_oficial
-autoridade_juridica: jurisprudencial
-authority_level: jurisprudencia_oficial
-score_autoridade: 90
+origem_conteudo: modelo_simulado
+autoridade_juridica: modelo_sem_autoridade
+authority_level: modelo_sem_autoridade
+score_autoridade: 0
 area_juridica: trabalhista_empresarial
-nivel_confiaca: ALTA
+nivel_confiaca: BAIXA
 data_pesquisa: 2026/08/14
-gerado_por_IA: false---
+gerado_por_IA: true
+---
+
+> **MODELO SIMULADO — NÃO CITAR COMO JURISPRUDÊNCIA.** Documento gerado por IA (Manus, lote piloto 08/2026) para servir de **modelo estrutural** de peça/tese. Julgados, números de processo, URLs e datas podem não ser reais e **não foram verificados em fonte oficial**. Uso em peça real exige verificação integral e aprovação humana.
 
 # BIBLIOTECA_JURIDICA_EJC — TRABALHISTA_EMPRESARIAL — PRESCRIÇÃO TRABALHISTA
 

@@ -17,7 +17,14 @@ os.environ.setdefault("DATABASE_URL",
                       "postgresql+asyncpg://ejc:ejc@localhost:5432/ejc")
 
 API = "http://127.0.0.1:8000"
-CRED = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+CRED = _qa_pw('CRED')
 S = requests.Session()
 S.headers.update({"User-Agent": "EJC-QA-M32"})
 

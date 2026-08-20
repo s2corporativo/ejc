@@ -41,7 +41,7 @@ def tok(email):
     r = None
     for _ in range(3):
         r = S.post(f"{BASE}/api/auth/login", json={
-            "email": email, "password": "EjcQa2026!SenhaForte"}, timeout=30)
+            "email": email, "password": "<ver EJC_QA_PASSWORD>"}, timeout=30)
         if r.status_code != 429:
             break
         time.sleep(45)

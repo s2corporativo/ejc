@@ -1,42 +1,47 @@
 # ── app/routers/deadlines.py ─────────────────────────────────────────────────
-# Prazos: CRUD + cálculo automático (úteis/corridos) + confirmação de ciência
+# Prazos: CRUD + cálculo automático por regime + confirmação de ciência
 from __future__ import annotations
+
 import csv
 import io
 import logging
-from datetime import datetime, timezone, date
-from uuid import uuid4
+from datetime import date, datetime, timezone
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import select, func as sqlfunc, or_
+from sqlalchemy import func as sqlfunc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import get_current_user, requer_advogado
-from app.core.ownership import verificar_acesso_caso, is_gestao
-from app.models.user import User
+from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.deadline import Deadline
-from app.models.audit_log import criar_audit_log
-from app.services.deadline_calculator import (
-    prazo_dias_uteis, prazo_dias_corridos, dias_uteis_restantes,
-)
-from app.schemas.deadline import (
-    DeadlineCreate, DeadlineUpdate, DeadlineResponse, CalcularPrazoRequest,
-)
+from app.models.user import User
 from app.schemas.common import MsgResponse
+from app.schemas.deadline import (
+    CalcularPrazoRequest,
+    DeadlineCreate,
+    DeadlineResponse,
+    DeadlineUpdate,
+)
+from app.services.deadline_calculator import (
+    calcular_prazo_processual,
+    dias_uteis_restantes,
+    prazo_dias_corridos,
+    prazo_dias_uteis,
+)
 
 router = APIRouter(prefix="/deadlines", tags=["Prazos"])
 logger = logging.getLogger("ejc.deadlines")
 
-_MAX_EXPORT = 5000  # teto de linhas do CSV (painel de prazos é sempre pequeno)
+_MAX_EXPORT = 5000
 
 
 def _ids_casos_do_usuario(user: User):
-    """IDs dos casos onde o usuário é responsável ou auxiliar (espelha
-    fees._ids_casos_do_usuario / verificar_acesso_caso)."""
     return (
         select(Case.id)
         .where(
@@ -51,10 +56,6 @@ def _ids_casos_do_usuario(user: User):
 
 
 def _filtro_escopo_prazos(q, cu: User):
-    """[A3] Escopo de ownership por DEFAULT para não-gestão: só prazos de casos
-    próprios (responsável/auxiliar), prazos onde é o responsável direto, ou
-    prazos sem caso (avulsos/internos). Gestão (socio+) enxerga tudo.
-    Espelha fees._filtro_fees_lista."""
     if is_gestao(cu):
         return q
     return q.where(
@@ -66,36 +67,106 @@ def _filtro_escopo_prazos(q, cu: User):
     )
 
 
+def _resolver_regime_processual(regime: str | None, dias_uteis: bool) -> tuple[str, bool]:
+    """Resolve o regime sem permitir que contagem corrida ambígua vire CPC.
+
+    Compatibilidade: clientes antigos que enviavam `tipo=processual` e
+    `dias_uteis=true` continuam como cível. O frontend atual sempre manda o
+    regime explicitamente. `dias_uteis=false` sem regime é bloqueado, pois pode
+    ser penal e não deve receber um algoritmo administrativo por acidente.
+    """
+    if regime:
+        return regime, False
+    if dias_uteis:
+        return "civel", True
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "Prazo processual com contagem não útil exige regime_calculo explícito. "
+            "Use civel, trabalhista ou penal; o sistema não presume regime penal."
+        ),
+    )
+
+
+def _base_processual(regime: str, dias: int, dobro: bool, *, legado: bool,
+                     excecao_recesso_penal: bool) -> str:
+    if regime == "penal":
+        base = f"{dias} dias — CPP art. 798 c/c art. 798-A"
+        if excecao_recesso_penal:
+            base += " (exceção ao recesso declarada pelo operador)"
+    elif regime == "trabalhista":
+        base = f"{dias} dias úteis — CLT arts. 775 e 775-A"
+    else:
+        base = (
+            f"{dias} dias úteis em dobro (CPC arts. 180/183/186/229)"
+            if dobro
+            else f"{dias} dias úteis (CPC art. 219)"
+        )
+        base += " + recesso forense integral (CPC art. 220)"
+    if legado:
+        base += " · regime cível assumido por compatibilidade; conferir"
+    return base
+
+
 @router.post("/calcular")
 async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_user)):
-    """Calculadora rápida de prazo (sem persistir)."""
+    """Calculadora rápida, sem persistir, com regime processual explícito."""
+    del cu
+    if req.dias < 1:
+        raise HTTPException(status_code=422, detail="dias deve ser maior que zero")
+
+    if req.tipo == "processual":
+        regime, legado = _resolver_regime_processual(req.regime_calculo, req.dias_uteis)
+        if req.excecao_recesso_penal and regime != "penal":
+            raise HTTPException(
+                status_code=422,
+                detail="excecao_recesso_penal só é válida para regime penal",
+            )
+        try:
+            resultado = calcular_prazo_processual(
+                req.data_inicio,
+                req.dias,
+                regime,  # type: ignore[arg-type]
+                tribunal=req.tribunal,
+                em_dobro=req.dobro,
+                excecao_recesso_penal=req.excecao_recesso_penal,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        resultado["regime_assumido_por_compatibilidade"] = legado
+        resultado["dias_uteis_restantes"] = dias_uteis_restantes(
+            resultado["data_vencimento"]
+        )
+        return resultado
+
+    if req.excecao_recesso_penal or req.regime_calculo == "penal":
+        raise HTTPException(
+            status_code=422,
+            detail="Regime penal só pode ser usado em prazo tipo=processual",
+        )
+
     if req.dias_uteis:
-        # PRZ-02 (review Codex em PR #1079): mesma política de POST /deadlines
-        # — só prazo tipo=processual recebe a suspensão INTEGRAL do recesso do
-        # CPC art. 220. Sem isto, a prévia da calculadora divergia da data
-        # persistida na criação para o mesmo (data_inicio, dias, tribunal).
-        # PRZ-03 (issue #1080): o recesso forense PARCIAL 20/12–06/01
-        # (Lei 5.010/1966 art. 62, I; Res. CNJ 241/2016 art. 1º) é do Poder
-        # Judiciário — prazos administrativos fora dele (tipo != processual)
-        # não o sofrem. Forense alinha-se ao tipo, como a suspensão integral.
-        judicial = req.tipo == "processual"
-        aplicar_recesso = judicial
-        vencimento = prazo_dias_uteis(req.data_inicio, req.dias,
-                                      tribunal=req.tribunal, em_dobro=req.dobro,
-                                      aplicar_recesso=aplicar_recesso,
-                                      forense=judicial)
-        modo = ("dias úteis EM DOBRO (CPC art. 183/229)" if req.dobro
-                else "dias úteis (CPC art. 219)")
-        if aplicar_recesso:
-            modo += " + recesso forense integral (CPC art. 220)"
+        vencimento = prazo_dias_uteis(
+            req.data_inicio,
+            req.dias,
+            tribunal=req.tribunal,
+            em_dobro=req.dobro,
+            aplicar_recesso=False,
+            forense=False,
+        )
+        modo = "dias úteis sem recesso processual"
     else:
-        # Prazo em dobro é dos prazos processuais em dias úteis; não incide sobre
-        # prazo administrativo corrido (Lei 9.784) — ignorado aqui de propósito.
-        vencimento = prazo_dias_corridos(req.data_inicio, req.dias, tribunal=req.tribunal)
-        modo = "dias corridos c/ prorrogação (Lei 9.784 art. 66 §1º)"
+        vencimento = prazo_dias_corridos(
+            req.data_inicio, req.dias, tribunal=req.tribunal
+        )
+        modo = "dias corridos c/ prorrogação do termo final (Lei 9.784 art. 66 §1º)"
     return {
         "data_vencimento": vencimento,
         "modo": modo,
+        "regime_calculo": "administrativo" if req.tipo == "administrativo" else None,
+        "resultado_preliminar": False,
+        "revisao_obrigatoria": False,
+        "aviso": None,
         "dias_uteis_restantes": dias_uteis_restantes(vencimento),
     }
 
@@ -117,9 +188,6 @@ async def listar(
         q = q.where(Deadline.case_id == case_id)
     if tipo:
         q = q.where(Deadline.tipo == tipo)
-    # [A3] Escopo de ownership por DEFAULT (não-gestão só vê prazos dos próprios
-    # casos / avulsos); gestão vê tudo. `apenas_meus` continua estreitando p/
-    # os prazos onde o usuário é o responsável direto.
     q = _filtro_escopo_prazos(q, cu)
     if apenas_meus:
         q = q.where(Deadline.responsavel_id == cu.id)
@@ -155,10 +223,6 @@ async def exportar_csv(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Exporta os prazos (com os mesmos filtros do painel) em CSV — uso recorrente
-    do escritório (imprimir/compartilhar/importar em planilha). Mesmo modelo de
-    acesso do GET /deadlines (painel compartilhado). UTF-8 com BOM p/ o Excel
-    abrir acentos corretamente."""
     q = select(Deadline).where(Deadline.deleted_at.is_(None))
     if status_f:
         q = q.where(Deadline.status == status_f)
@@ -166,13 +230,10 @@ async def exportar_csv(
         q = q.where(Deadline.case_id == case_id)
     if tipo:
         q = q.where(Deadline.tipo == tipo)
-    # [A3] Mesmo escopo de ownership do GET /deadlines: não-gestão só exporta os
-    # prazos que já enxerga; gestão exporta tudo.
     q = _filtro_escopo_prazos(q, cu)
     q = q.order_by(Deadline.data_prazo.asc()).limit(_MAX_EXPORT + 1)
     rows = (await db.execute(q)).scalars().all()
-    truncado = len(rows) > _MAX_EXPORT
-    if truncado:
+    if len(rows) > _MAX_EXPORT:
         rows = rows[:_MAX_EXPORT]
         logger.warning("[export.csv] resultado truncado em %d linhas", _MAX_EXPORT)
 
@@ -184,7 +245,6 @@ async def exportar_csv(
 
 
 def _prazos_para_csv(rows, hoje: date) -> str:
-    """Serializa prazos em CSV (';' pt-BR, BOM UTF-8 p/ Excel). Pura e testável."""
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
     w.writerow(["Titulo", "Tipo", "Prioridade", "Status", "Data do prazo",
@@ -197,7 +257,7 @@ def _prazos_para_csv(rows, hoje: date) -> str:
             d.data_intimacao.isoformat() if getattr(d, "data_intimacao", None) else "",
             dias, getattr(d, "base_legal", "") or "",
         ])
-    return "﻿" + buf.getvalue()   # BOM UTF-8
+    return "﻿" + buf.getvalue()
 
 
 @router.post("/", status_code=201)
@@ -206,36 +266,61 @@ async def criar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    # Cálculo automático se dias_prazo informado
     data_prazo = payload.data_prazo
     base = payload.base_legal
+    confirmado = True
+    calculo_audit: dict | None = None
+
     if not data_prazo and payload.dias_prazo and payload.data_intimacao:
-        if payload.dias_uteis:
-            # PRZ-02 (CPC art. 220): suspensão INTEGRAL do recesso 20/12–20/01
-            # incide sobre prazo PROCESSUAL em dias úteis; nunca sobre
-            # decadencial/administrativo corrido (que usa prazo_dias_corridos,
-            # sem este parâmetro — comportamento já correto abaixo).
-            # PRZ-03 (issue #1080): recesso forense PARCIAL 20/12–06/01 também
-            # só incide sobre prazos judiciais — forense alinha-se ao tipo.
-            judicial = payload.tipo == "processual"
-            aplicar_recesso = judicial
-            data_prazo = prazo_dias_uteis(payload.data_intimacao, payload.dias_prazo,
-                                          tribunal=payload.tribunal, em_dobro=payload.dobro,
-                                          aplicar_recesso=aplicar_recesso,
-                                          forense=judicial)
-            base = base or (
-                f"{payload.dias_prazo} dias úteis em dobro (CPC art. 183/229)"
-                if payload.dobro else f"{payload.dias_prazo} dias úteis (CPC art. 219)"
+        if payload.tipo == "processual":
+            regime, legado = _resolver_regime_processual(
+                payload.regime_calculo, payload.dias_uteis
             )
-            # PRZ-02 (review Codex em PR #1079): sem isto, a base_legal
-            # persistida não registrava que a suspensão do art. 220 foi
-            # aplicada — impossível reconstruir depois por que a data saiu
-            # diferente do CPC art. 219 puro (14 dias corridos "a menos").
-            if aplicar_recesso:
-                base += " + recesso forense integral (CPC art. 220)"
+            if payload.excecao_recesso_penal and regime != "penal":
+                raise HTTPException(
+                    status_code=422,
+                    detail="excecao_recesso_penal só é válida para regime penal",
+                )
+            try:
+                calculo_audit = calcular_prazo_processual(
+                    payload.data_intimacao,
+                    payload.dias_prazo,
+                    regime,  # type: ignore[arg-type]
+                    tribunal=payload.tribunal,
+                    em_dobro=payload.dobro,
+                    excecao_recesso_penal=payload.excecao_recesso_penal,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            data_prazo = calculo_audit["data_vencimento"]
+            base = base or _base_processual(
+                regime,
+                payload.dias_prazo,
+                payload.dobro,
+                legado=legado,
+                excecao_recesso_penal=payload.excecao_recesso_penal,
+            )
+            if calculo_audit["resultado_preliminar"]:
+                confirmado = False
+                base += " · CALENDÁRIO DEGRADADO: conferência humana obrigatória"
+        elif payload.dias_uteis:
+            data_prazo = prazo_dias_uteis(
+                payload.data_intimacao,
+                payload.dias_prazo,
+                tribunal=payload.tribunal,
+                em_dobro=payload.dobro,
+                aplicar_recesso=False,
+                forense=False,
+            )
+            base = base or f"{payload.dias_prazo} dias úteis (sem recesso processual)"
         else:
-            data_prazo = prazo_dias_corridos(payload.data_intimacao, payload.dias_prazo, tribunal=payload.tribunal)
+            data_prazo = prazo_dias_corridos(
+                payload.data_intimacao,
+                payload.dias_prazo,
+                tribunal=payload.tribunal,
+            )
             base = base or f"{payload.dias_prazo} dias corridos (Lei 9.784)"
+
     if not data_prazo:
         raise HTTPException(
             status_code=422,
@@ -244,16 +329,38 @@ async def criar(
 
     if payload.case_id:
         await verificar_acesso_caso(db, cu, payload.case_id)
+
     d = Deadline(
         id=str(uuid4()),
-        titulo=payload.titulo, tipo=payload.tipo,
-        prioridade=payload.prioridade, descricao=payload.descricao,
-        data_prazo=data_prazo, data_intimacao=payload.data_intimacao,
-        base_legal=base, case_id=payload.case_id,
+        titulo=payload.titulo,
+        tipo=payload.tipo,
+        prioridade=payload.prioridade,
+        descricao=payload.descricao,
+        data_prazo=data_prazo,
+        data_intimacao=payload.data_intimacao,
+        base_legal=base,
+        case_id=payload.case_id,
         responsavel_id=payload.responsavel_id or cu.id,
+        confirmado=confirmado,
     )
     db.add(d)
-    await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "deadlines", d.id)
+    await criar_audit_log(
+        db,
+        cu.id,
+        cu.role.value,
+        "CREATE",
+        "deadlines",
+        d.id,
+        dados_depois=(
+            {
+                "calculo_automatico": True,
+                "regime_calculo": calculo_audit.get("regime_calculo"),
+                "calendario_status": calculo_audit.get("calendario_status"),
+                "resultado_preliminar": calculo_audit.get("resultado_preliminar"),
+            }
+            if calculo_audit else {"calculo_automatico": False}
+        ),
+    )
     await db.commit()
     await db.refresh(d)
     return DeadlineResponse.model_validate(d)
@@ -276,10 +383,7 @@ async def atualizar(
         await verificar_acesso_caso(db, cu, d.case_id)
 
     mudancas = payload.model_dump(exclude_unset=True)
-    # Status ANTES de aplicar mudanças (o loop abaixo sobrescreve d.status):
-    # usado para gravar a baixa só na TRANSIÇÃO para concluído (idempotente).
     status_antes = getattr(d.status, "value", d.status)
-    # Alteração de data_prazo é sensível: audit detalhado
     if "data_prazo" in mudancas and mudancas["data_prazo"] != d.data_prazo:
         await criar_audit_log(
             db, cu.id, cu.role.value, "PRAZO_ALTERADO", "deadlines", deadline_id,
@@ -288,10 +392,6 @@ async def atualizar(
         )
     for k, v in mudancas.items():
         setattr(d, k, v)
-    # Baixa (conclusão): além de carimbar data_conclusao, registra QUEM concluiu
-    # e deixa trilha PRAZO_CONCLUIDO. Guarda `status_antes != concluido` evita
-    # regravar audit/autor quando o prazo já estava concluído (idempotente,
-    # mesmo padrão de `confirmar`).
     if mudancas.get("status") == "concluido" and status_antes != "concluido":
         d.data_conclusao = datetime.now(timezone.utc)
         d.concluido_por = cu.id
@@ -315,12 +415,6 @@ async def confirmar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Confirma um prazo RASCUNHO extraído por IA (confirmado=false → true, #83
-    Gap C). O prazo já dispara alertas mesmo como rascunho — isto apenas remove
-    a marca "a confirmar" e deixa trilha de auditoria (PRAZO_CONFIRMADO).
-
-    Ownership idêntico aos demais endpoints de prazo (verificar_acesso_caso):
-    sem vínculo com o caso → 403/404. Idempotente: reconfirmar não regrava audit."""
     d = (await db.execute(
         select(Deadline).where(
             Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
@@ -347,7 +441,6 @@ async def confirmar_ciencia(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Confirmação de ciência do prazo (rastro LGPD/responsabilidade)."""
     d = (await db.execute(
         select(Deadline).where(
             Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
@@ -374,9 +467,6 @@ async def cancelar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    # [B1] Piso por NÍVEL (advogado+), não por tupla literal — a lista antiga
-    # ("admin","socio","advogado") excluía superadmin(9) e causava lockout do
-    # superadmin. requer_advogado garante advogado(6)+ e nunca barra superadmin.
     requer_advogado(cu, detail="Sem permissão para cancelar prazos")
     d = (await db.execute(
         select(Deadline).where(

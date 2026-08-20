@@ -1,19 +1,32 @@
 # ── app/schemas/deadline.py ──────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel, field_validator
-from typing import Optional
+
 from datetime import date, datetime
+from typing import Literal, Optional
+
+from pydantic import BaseModel, field_validator
+
+RegimeCalculo = Literal["civel", "trabalhista", "penal"]
+
 
 class DeadlineCreate(BaseModel):
     titulo: str
     tipo: str = "processual"
     prioridade: str = "media"
-    data_prazo: Optional[date] = None        # ou calcular via dias
+    data_prazo: Optional[date] = None
     data_intimacao: Optional[date] = None
-    dias_prazo: Optional[int] = None         # se informado: calcula
-    dias_uteis: bool = True                  # CPC=úteis; admin=corridos
-    dobro: bool = False                      # prazo em dobro (CPC 180/183/186/229)
-    tribunal: Optional[str] = None           # suspensões por tribunal (portarias)
+    dias_prazo: Optional[int] = None
+    dias_uteis: bool = True                  # compatibilidade com clientes legados
+    dobro: bool = False
+    tribunal: Optional[str] = None
+    # Novo contrato explícito para prazo PROCESSUAL. Clientes legados que não
+    # enviam o campo permanecem compatíveis quando dias_uteis=true (cível), mas
+    # o frontend novo sempre envia o regime escolhido. Processo penal só é
+    # calculado quando `regime_calculo="penal"`.
+    regime_calculo: Optional[RegimeCalculo] = None
+    # CPP art. 798-A: somente marcar quando o operador tiver identificado uma
+    # exceção legal à suspensão do recesso. Nunca inferida por IA/palavra-chave.
+    excecao_recesso_penal: bool = False
     base_legal: Optional[str] = None
     descricao: Optional[str] = None
     case_id: Optional[str] = None
@@ -22,9 +35,6 @@ class DeadlineCreate(BaseModel):
     @field_validator("tipo")
     @classmethod
     def _tipo_valido(cls, v: str) -> str:
-        # Deadline.tipo é SAEnum(DeadlineTipo): valor fora do enum estoura no
-        # INSERT (asyncpg InvalidTextRepresentationError → 500). Validar na
-        # ENTRADA devolve 422 claro. Import lazy p/ evitar ciclo model↔schema.
         from app.models.deadline import DeadlineTipo
         validos = {m.value for m in DeadlineTipo}
         if v not in validos:
@@ -34,12 +44,12 @@ class DeadlineCreate(BaseModel):
     @field_validator("prioridade")
     @classmethod
     def _prioridade_valida(cls, v: str) -> str:
-        # Deadline.prioridade é SAEnum(DeadlinePrioridade) — mesma classe de 500.
         from app.models.deadline import DeadlinePrioridade
         validos = {m.value for m in DeadlinePrioridade}
         if v not in validos:
             raise ValueError(f"prioridade inválida: use uma de {sorted(validos)}")
         return v
+
 
 class DeadlineUpdate(BaseModel):
     titulo: Optional[str] = None
@@ -52,8 +62,6 @@ class DeadlineUpdate(BaseModel):
     @field_validator("status")
     @classmethod
     def _status_valido(cls, v: Optional[str]) -> Optional[str]:
-        # Deadline.status é SAEnum(DeadlineStatus): valor fora do enum estourava
-        # no UPDATE (500). Vazio/None PASSA (update parcial).
         if v is None or str(v).strip() == "":
             return v
         from app.models.deadline import DeadlineStatus
@@ -65,7 +73,6 @@ class DeadlineUpdate(BaseModel):
     @field_validator("prioridade")
     @classmethod
     def _prioridade_valida(cls, v: Optional[str]) -> Optional[str]:
-        # Deadline.prioridade é SAEnum(DeadlinePrioridade) — mesma classe de 500.
         if v is None or str(v).strip() == "":
             return v
         from app.models.deadline import DeadlinePrioridade
@@ -73,6 +80,7 @@ class DeadlineUpdate(BaseModel):
         if v not in validos:
             raise ValueError(f"prioridade inválida: use uma de {sorted(validos)}")
         return v
+
 
 class DeadlineResponse(BaseModel):
     id: str
@@ -92,21 +100,20 @@ class DeadlineResponse(BaseModel):
     origem: Optional[str] = None
     origem_documento_id: Optional[str] = None
     created_at: datetime
+
     class Config:
         from_attributes = True
+
 
 class CalcularPrazoRequest(BaseModel):
     data_inicio: date
     dias: int
-    dias_uteis: bool = True
-    dobro: bool = False                      # prazo em dobro (CPC 180/183/186/229)
-    tribunal: Optional[str] = None           # suspensões por tribunal (portarias)
-    # PRZ-02 (review Codex em PR #1079): sem `tipo`, a calculadora não tinha
-    # como saber se devia aplicar a suspensão do recesso do art. 220 — ficava
-    # sempre em desacordo com POST /deadlines para o mesmo prazo processual
-    # que atravessasse 20/12-20/01. Default "processual" espelha o default de
-    # DeadlineCreate.tipo (mesma política dos dois endpoints por padrão).
+    dias_uteis: bool = True                  # compatibilidade com contrato legado
+    dobro: bool = False
+    tribunal: Optional[str] = None
     tipo: str = "processual"
+    regime_calculo: Optional[RegimeCalculo] = None
+    excecao_recesso_penal: bool = False
 
     @field_validator("tipo")
     @classmethod

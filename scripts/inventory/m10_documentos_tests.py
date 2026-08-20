@@ -17,7 +17,14 @@ BASE = "http://127.0.0.1:8000"
 ADMIN = "ejc_qa_auth_admin@golocal.ejc"
 FIN = "ejc_qa_auth_financeiro@golocal.ejc"
 CLI = "ejc_qa_auth_cliente@golocal.ejc"
-SENHA = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+SENHA = _qa_pw('SENHA')
 HEADERS = {"X-Forwarded-For": "127.0.0.1"}
 TOKENS = {}
 TOTAL, OK = 0, 0

@@ -9,6 +9,13 @@ import requests
 BASE = "http://localhost:8000/api"
 ADMIN_EMAIL = "admin@seu-dominio.com.br"
 ADMIN_PW = "TROCAR_POR_SENHA_FORTE_INICIAL"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
 PREFIX = "TESTE_EJC_AUDITORIA_2026"
 
 s = requests.Session()
@@ -411,12 +418,14 @@ r = post("/users/", {
     "email": f"{PREFIX.lower()}@adv.teste.br",
     "full_name": f"{PREFIX} Advogado Teste",
     "role": "advogado",
-    "password": "SenhaForte@2026",
+    "password": _qa_pw("senha_inicial_advogado"),
 })
 if r.status_code in (200, 201, 409):
     SENHA_ATUAL = None
-    # Ciclo determinístico entre as senhas conhecidas das execuções anteriores.
-    for senha in ("SenhaForte@2026", "SenhaNova@2026!", "SenhaFort@2027!"):
+    # Ciclo determinístico: a senha inicial do usuário é a credencial QA
+    # definida em EJC_QA_PASSWORD; as variações derivadas são base + sufixos.
+    _t18_base = _qa_pw("senha_inicial_advogado")
+    for senha in (_t18_base, _t18_base + "@1", _t18_base + "@2"):
         r = post("/auth/login", {"email": f"{PREFIX.lower()}@adv.teste.br", "password": senha})
         if r.status_code == 200:
             avd_tok = safe_json(r).get("access_token")
@@ -434,10 +443,10 @@ if avd_tok:
     sa = requests.Session()
     sa.headers["Authorization"] = f"Bearer {avd_tok}"
     # primeira sessão exige troca de senha obrigatória (política de segurança)
-    _ROTACAO = {"SenhaForte@2026": "SenhaNova@2026!", "SenhaNova@2026!": "SenhaFort@2027!", "SenhaFort@2027!": "SenhaForte@2026"}
-    NOVA_SENHA = _ROTACAO.get(SENHA_ATUAL, "SenhaForte@2026")
+    _t18_base = _qa_pw("rotacao"); _ROTACAO = {_t18_base: _t18_base + "@1", _t18_base + "@1": _t18_base + "@2", _t18_base + "@2": _t18_base}
+    NOVA_SENHA = _ROTACAO.get(SENHA_ATUAL, _t18_base)
     rr = sa.post(BASE + "/auth/alterar-senha", json={
-        "senha_atual": SENHA_ATUAL or "SenhaForte@2026",
+        "senha_atual": SENHA_ATUAL or _t18_base,
         "nova_senha": NOVA_SENHA,
     })
     if rr.status_code in (200, 201):

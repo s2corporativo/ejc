@@ -20,7 +20,7 @@
 - A qa/homologacao/m02/notas_m11.md, notas_recuperacao_sandbox.md, scripts/inventory/m11_versionamento_tests.py, m03_seed_test_users.py (recriado), m07_casos_tests.py (em teste)
 
 ## QA resources no DB (fresh)
-- 7 usuários QA seedados (senha EjcQa2026!SenhaForte): admin U-c23b7d23, socio U-4ad52bdb, advogado 4701ecbf-cf9b-422f-b75a-b906814b8213, estagiario U-4e0ee2bb, financeiro U-d2de47b1, secretaria U-5b5689e3, cliente_externo U-5f166550 (client_id=9e6cd7cd linkado).
+- 7 usuários QA seedados (senha <ver EJC_QA_PASSWORD>): admin U-c23b7d23, socio U-4ad52bdb, advogado 4701ecbf-cf9b-422f-b75a-b906814b8213, estagiario U-4e0ee2bb, financeiro U-d2de47b1, secretaria U-5b5689e3, cliente_externo U-5f166550 (client_id=9e6cd7cd linkado).
 - Cliente QA: 9e6cd7cd-148c-49c9-95cb-d61de37fe520 (EJC_QA M06 PF, criado pelo m06_clientes_tests.py, restaurado após exclusão).
 - Caso QA M06: 78676e06-50d4-4f3d-81bd-e040b1f78d76 ("M06 Caso de teste").
 

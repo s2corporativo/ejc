@@ -18,8 +18,14 @@ ADV_E = "ejc_qa_auth_advogado@golocal.ejc"
 EST_E = "ejc_qa_auth_estagiario@golocal.ejc"
 FIN_E = "ejc_qa_auth_financeiro@golocal.ejc"
 CLI_E = "ejc_qa_auth_cliente@golocal.ejc"
-PWD = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
 
+PWD = _qa_pw('PWD')
 S = S_.Session()
 S.headers.update({"X-Forwarded-For": "127.0.0.1"})
 _TOKENS = {}

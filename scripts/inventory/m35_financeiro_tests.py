@@ -12,7 +12,14 @@ import subprocess
 import requests
 
 API = "http://127.0.0.1:8000"
-SENHA = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+SENHA = _qa_pw('SENHA')
 CLIENTE_ID = "9e6cd7cd-148c-49c9-95cb-d61de37fe520"
 CASO_ID = "89b9b439-9ba2-462a-ab99-7dcf1c54cc86"
 COMP = "2026-08"

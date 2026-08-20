@@ -30,7 +30,14 @@ USERS = [
     ("secretaria", "ejc_qa_auth_secretaria@golocal.ejc"),
     ("cliente_externo", "ejc_qa_auth_cliente@golocal.ejc"),
 ]
-PWD = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+PWD = _qa_pw('PWD')
 NOME = {r: f"EJC QA {r.capitalize()}" for r, _ in USERS}
 EMAILS = {r: e for r, e in USERS}
 

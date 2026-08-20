@@ -79,7 +79,6 @@ async def _auditar_busca_pii(
 
 
 @router.get("")
-@router.get("/")
 @limiter.limit("30/minute")
 async def busca_global(
     request: Request,

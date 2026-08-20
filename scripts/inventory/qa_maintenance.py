@@ -18,7 +18,14 @@ from app.core.database import engine
 from app.core.security import get_password_hash
 from sqlalchemy import text
 
-SENHA_QA = "EjcQa2026!SenhaForte"
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+SENHA_QA = _qa_pw('SENHA_QA')
 EMAILS_QA = [
     "ejc_qa_auth_admin@golocal.ejc",
     "ejc_qa_auth_socio@golocal.ejc",

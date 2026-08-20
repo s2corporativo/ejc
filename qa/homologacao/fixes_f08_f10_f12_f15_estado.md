@@ -12,7 +12,7 @@
 
 ## Fase 2 — Testes pendentes
 - Reiniciar uvicorn se necessário (as mudanças são de código interpretado; restart recomendado).
-- F-08: criar rascunho via /api/entrada/analisar (IA off → texto 40+ chars) e depois /api/entrada/{id}/criar-caso com advogado QA (token ejc_qa_auth_advogado@golocal.ejc, role advogado, senha EjcQa2026!SenhaForte) e verificar case_partes criado (SQL: SELECT * FROM case_partes WHERE case_id=?).
+- F-08: criar rascunho via /api/entrada/analisar (IA off → texto 40+ chars) e depois /api/entrada/{id}/criar-caso com advogado QA (token ejc_qa_auth_advogado@golocal.ejc, role advogado, senha <ver EJC_QA_PASSWORD>) e verificar case_partes criado (SQL: SELECT * FROM case_partes WHERE case_id=?).
 - F-10: GET /api/movimentos/recentes com token e conferir campos created_at/data_evento no JSON.
 - F-12: PATCH /api/cases/{case_id} com {"status":"arquivado"} e conferir 422 com texto de negócio (usar token advogado, caso QA c02afca9-af79-4fd8-a4e3-da80d4a23971).
 - F-15: GET /api/clients/ com token socio/advogado e conferir "documento_exibicao" mascarado no JSON.
@@ -22,7 +22,7 @@
 - Relatório: registrar em PARECER/NOTAS; entregar ao usuário com provas.
 
 ## Dados de teste
-- Usuários QA: senha EjcQa2026!SenhaForte; advogado ejc_qa_auth_advogado@golocal.ejc (role advogado).
+- Usuários QA: senha <ver EJC_QA_PASSWORD>; advogado ejc_qa_auth_advogado@golocal.ejc (role advogado).
 - Caso QA M34/M36 usado antes: c02afca9-af79-4fd8-a4e3-da80d4a23971 (verificar acesso advogado).
 - Servidor: uvicorn porta 8000, roda com `./scripts/inventory/env_shell.sh`.
 

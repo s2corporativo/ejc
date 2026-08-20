@@ -1,14 +1,17 @@
 ---
-tipo_camada: jurisprudencia_estruturada
+tipo_camada: modelo_peca
 canonical_id: JUR-PROC-000024
-origem_conteudo: jurisprudencia_oficial
-autoridade_juridica: jurisprudencial
-authority_level: jurisprudencia_oficial
-score_autoridade: 100
+origem_conteudo: modelo_simulado
+autoridade_juridica: modelo_sem_autoridade
+authority_level: modelo_sem_autoridade
+score_autoridade: 0
 area_juridica: processual_civil
-nivel_confiaca: ALTA
+nivel_confiaca: BAIXA
 data_pesquisa: 13/08/2026
-gerado_por_IA: false---
+gerado_por_IA: true
+---
+
+> **MODELO SIMULADO — NÃO CITAR COMO JURISPRUDÊNCIA.** Documento gerado por IA (Manus, lote piloto 08/2026) para servir de **modelo estrutural** de peça/tese. Julgados, números de processo, URLs e datas podem não ser reais e **não foram verificados em fonte oficial**. Uso em peça real exige verificação integral e aprovação humana.
 
 # BIBLIOTECA_JURIDICA_EJC — PROCESSUAL CIVIL — HONORÁRIOS ADVOCATÍCIOS: ARBITRAMENTO, SUCUMBÊNCIA E CUMPRIMENTO DE SENTENÇA
 

@@ -41,9 +41,9 @@ def _fail(msg):
 
 # ──────────────────────────── Credenciais QA ─────────────────────────────────
 CRED = {
-    "admin": ("ejc_qa_auth_admin@golocal.ejc", "EjcQa2026!SenhaForte"),
-    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", "EjcQa2026!SenhaForte"),
-    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", "EjcQa2026!SenhaForte"),
+    "admin": ("ejc_qa_auth_admin@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
+    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
+    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
 }
 _TOKENS = {}
 

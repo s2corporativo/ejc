@@ -21,7 +21,7 @@ router = APIRouter(prefix="/diario-oficial", tags=["Diário Oficial"])
 
 class KeywordIn(BaseModel):
     keyword: str = Field(min_length=2, max_length=200)
-    fonte:   str = "dou"   # dou|doe_mg|dom
+    fonte: str = "dou"   # dou|doe_mg|dom
     case_id: Optional[str] = None
 
 
@@ -42,6 +42,20 @@ def _filtrar_por_ownership(q, coluna_case_id, user: User):
         Case.advogado_auxiliar_id == user.id,
     ))
     return q.where(or_(coluna_case_id.is_(None), coluna_case_id.in_(casos_visiveis)))
+
+
+@router.get("/status")
+async def status_monitor_dou(cu: User = Depends(get_current_user)):
+    """Heartbeat técnico do monitor DOU, sem keyword, conteúdo ou PII.
+
+    Diferencia uma consulta válida com zero publicações de uma falha da fonte
+    externa. É informação operacional do escritório e exige advogado+.
+    """
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    from app.services.diario_oficial_service import status_dou
+
+    return status_dou()
 
 
 # ── Keywords ──────────────────────────────────────────────────────────────────
@@ -96,13 +110,13 @@ async def remover_keyword(
 
 @router.get("/alertas")
 async def listar_alertas(
-    lido:    Optional[bool] = Query(None),
-    fonte:   Optional[str]  = Query(None),
-    case_id: Optional[str]  = Query(None),
-    page:    int = Query(1, ge=1),
+    lido: Optional[bool] = Query(None),
+    fonte: Optional[str] = Query(None),
+    case_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
-    db:      AsyncSession = Depends(get_db),
-    cu:      User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
