@@ -206,6 +206,8 @@ def _procuracao(
         "bastante procurador(a) o(a) advogado(a) acima, "
         + corpo_poderes + alvo + ".\n\n"
         f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, {_data_extenso(datetime.now(timezone(timedelta(hours=-3))).date())}.\n\n"
+        "VIGÊNCIA: A presente procuração vigorará pelo prazo de 12 (doze) meses, contado de sua assinatura, prorrogável automaticamente por iguais e sucessivos períodos, salvo manifestação escrita de revogação pelo(a) outorgante, permanecendo válida até o trânsito em julgado das demandas em curso, para os atos que delas dependam diretamente (arts. 683 e 684 do Código Civil).\n\n"
+        "ASSINATURA: Este instrumento pode ser firmado por assinatura eletrônica qualificada com certificado ICP-Brasil (MP nº 2.200-2/2001, art. 10, §2º) ou por assinatura eletrônica simples registrada em plataforma de gestão documental com registro de IP, data-hora e hashes de integridade, para atos sem exigência legal de forma específica (art. 10, §1º, da MP nº 2.200-2/2001; art. 2º da Lei nº 14.063/2020).\n\n"
         "______________________________________\n"
         f"{cli.razao_social or cli.nome}"
     )
@@ -217,6 +219,8 @@ def _procuracao(
 # há proposta de honorários APROVADA (fee_proposal_service) — sem proposta, o
 # contrato mantém EXATAMENTE o comportamento histórico (placeholders de revisão).
 _CLAUSULAS_FIXAS_CONTRATO = (
+    "REAJUSTE. Os valores fixos e mensais de honorários serão reajustados anualmente pelo IPCA/IBGE ou, na sua falta, pelo IGP-M/FGV, na data de aniversário deste contrato, mediante simples notificação escrita. Os honorários de êxito não sofrem correção durante o serviço, aplicando-se, porém, correção monetária e juros de mora a partir do vencimento de cada parcela em atraso.",
+    "ASSINATURA ELETRÔNICA. Este contrato poderá ser firmado por assinatura eletrônica avançada com certificado ICP-Brasil, por assinatura eletrônica simples registrada em plataforma de gestão documental com trilha de auditoria, ou fisicamente, sendo todas as formas igualmente válidas (art. 10, §§1º e 2º, da MP nº 2.200-2/2001). O instrumento particular firmado nos termos desta cláusula constitui título executivo extrajudicial, na forma do art. 784, IV, do CPC.",
     "RESCISÃO. O presente contrato poderá ser rescindido por qualquer das partes, "
     "mediante comunicação escrita, sendo devidos ao contratado os honorários "
     "proporcionais ao trabalho já realizado até a data da rescisão, na forma do "
