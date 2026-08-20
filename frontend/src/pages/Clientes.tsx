@@ -136,10 +136,7 @@ export default function Clientes() {
       // notifica o operador para gerar depois pelo Dossiê do cliente.
       if (gerarDocs && id) {
         try {
-          const dr = await api.post<any>(
-            `/clients/${id}/gerar-documentos`,
-            {},
-          );
+          const dr = await api.post<any>(`/clients/${id}/gerar-documentos`, {});
           const aviso = dr.data?.aviso || "";
           toast.success(
             aviso ||
@@ -532,9 +529,9 @@ export default function Clientes() {
               Gerar automaticamente contrato de honorários e procuração
             </label>
             <p className="mt-1 text-xs text-slate-400">
-              Modelo padrão OAB/MG — contrato de prestação de serviços
-              jurídicos e procuração ad judicia ficam em rascunho e devem ser
-              revisados antes do uso.
+              Modelo padrão OAB/MG — contrato de prestação de serviços jurídicos
+              e procuração ad judicia ficam em rascunho e devem ser revisados
+              antes do uso.
             </p>
           </div>
         </div>

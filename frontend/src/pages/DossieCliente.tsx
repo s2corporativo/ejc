@@ -964,7 +964,9 @@ export default function DossieCliente() {
     setCarregandoPecas(true);
     api
       .get(`/clients/${clientId}/pecas-geradas`)
-      .then((r) => ativo && setPecasAdmissao(Array.isArray(r.data) ? r.data : []))
+      .then(
+        (r) => ativo && setPecasAdmissao(Array.isArray(r.data) ? r.data : []),
+      )
       .catch(() => {
         if (ativo) setPecasAdmissao([]);
       })
@@ -1002,7 +1004,8 @@ export default function DossieCliente() {
     setAprovandoId(id);
     try {
       await api.patch(`/legal-docs/${id}/aprovar`, {
-        observacoes: "Revisão via Dossiê Digital: minuta de admissão do cliente conferida.",
+        observacoes:
+          "Revisão via Dossiê Digital: minuta de admissão do cliente conferida.",
       });
       toast.success("Peça aprovada — disponível para uso");
       atualizarPecas();
@@ -1015,7 +1018,8 @@ export default function DossieCliente() {
         );
       } else {
         toast.error(
-          str || "Não foi possível aprovar a peça — verifique as regras de qualidade",
+          str ||
+            "Não foi possível aprovar a peça — verifique as regras de qualidade",
         );
       }
     } finally {
@@ -1557,7 +1561,8 @@ export default function DossieCliente() {
               </div>
               <div className="divide-y divide-bronze-pale/50">
                 {pecasAdmissao.map((p) => {
-                  const ehAprovada = p.status === "aprovada" || p.status === "aprovado";
+                  const ehAprovada =
+                    p.status === "aprovada" || p.status === "aprovado";
                   return (
                     <div
                       key={p.id}
@@ -1570,8 +1575,8 @@ export default function DossieCliente() {
                         <p className="text-[10px] text-slate-400 mt-0.5">
                           {p.tipo === "contrato"
                             ? "Contrato de honorários (padrão OAB/MG)"
-                            : "Procuração ad judicia"} ·{" "}
-                          Criado em {" "}
+                            : "Procuração ad judicia"}{" "}
+                          · Criado em{" "}
                           {p.created_at
                             ? new Date(p.created_at).toLocaleDateString("pt-BR")
                             : "—"}
@@ -1601,44 +1606,44 @@ export default function DossieCliente() {
               </div>
               <p className="px-4 py-2.5 text-[11px] text-slate-400 border-t border-bronze-pale/40">
                 Minutas geradas por template (sem redação por IA) — status
-                rascunho exige revisão e aprovação do advogado antes de
-                qualquer uso (dever ético EOAB).
+                rascunho exige revisão e aprovação do advogado antes de qualquer
+                uso (dever ético EOAB).
               </p>
             </div>
           )}
 
           <div className="card overflow-hidden animate-fade-in">
-          <div className="px-4 py-3 border-b border-bronze-pale">
-            <p className="eyebrow flex items-center gap-2">
-              <FileText className="w-3 h-3" /> Acervo Documental
-            </p>
-          </div>
-          <div className="divide-y divide-bronze-pale/50">
-            {documentos_recentes.map((doc) => (
-              <div
-                key={doc.id}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group"
-              >
-                <Link to={`/casos/${doc.case_id}`} className="flex-1 min-w-0">
-                  <p className="text-sm text-navy-900 font-medium truncate">
-                    {doc.nome}
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    Caso #{doc.case_id} · {doc.tipo}
-                  </p>
-                </Link>
-                <button
-                  onClick={() => baixarDocumento(doc.id, doc.nome)}
-                  title="Baixar documento"
-                  className="p-1"
+            <div className="px-4 py-3 border-b border-bronze-pale">
+              <p className="eyebrow flex items-center gap-2">
+                <FileText className="w-3 h-3" /> Acervo Documental
+              </p>
+            </div>
+            <div className="divide-y divide-bronze-pale/50">
+              {documentos_recentes.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group"
                 >
-                  <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
-                </button>
-              </div>
-            ))}
+                  <Link to={`/casos/${doc.case_id}`} className="flex-1 min-w-0">
+                    <p className="text-sm text-navy-900 font-medium truncate">
+                      {doc.nome}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Caso #{doc.case_id} · {doc.tipo}
+                    </p>
+                  </Link>
+                  <button
+                    onClick={() => baixarDocumento(doc.id, doc.nome)}
+                    title="Baixar documento"
+                    className="p-1"
+                  >
+                    <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-          </>
+        </>
       )}
 
       {abaAtiva === "ia_cliente" && (
