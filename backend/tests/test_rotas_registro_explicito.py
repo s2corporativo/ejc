@@ -213,6 +213,12 @@ REMOCOES_INTENCIONAIS = {
     # Consolidação 12/08/2026: ver acima (intelligence_v3 → intelligence).
     ("/api/intelligence-v3/radar/legislativo", "GET"),
     ("/api/intelligence-v3/analise-impacto", "POST"),
+    # PR #1211 (auditoria de redundâncias 19/08/2026): decorator
+    # @router.get("/") redundante no handler de busca global de search.py — o
+    # mesmo handler já era registrado por @router.get("") (path canônico
+    # GET /search). Nenhum consumer (frontend ou backend) chama /search/ com
+    # trailing slash; a rota duplicada não tem contrato de consumo.
+    ("/api/search/", "GET"),
     # Issue #716 revertida — /timeline e /operational-health (case_timeline.py)
     # eram fachadas de leitura sem nenhum consumidor (mesma varredura acima);
     # a saúde do caso segue exposta em Analytics via case_health.py, que
