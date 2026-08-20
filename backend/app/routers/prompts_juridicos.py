@@ -19,6 +19,7 @@ from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.prompt_juridico import PromptJuridico, PromptCategoria
 from app.core.rate_limit import rate_limit
+from pydantic import field_validator
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/prompts-juridicos", tags=["Biblioteca de Prompts"])
@@ -306,3 +307,26 @@ async def executar_prompt(
         "aviso": "⚠️ RASCUNHO gerado por IA — revisão obrigatória antes de usar.",
         "aviso_hitl": "Rascunho sujeito à revisão humana (HITL obrigatório — OAB).",
     }
+
+# ── models (incorporados de prompts.py — D4) ──
+# Model ORM
+# Schemas
+class PromptCreate(BaseModel):
+    titulo: str
+    categoria: str
+    conteudo: str
+    @field_validator("categoria")
+    @classmethod
+    def _categoria_valida(cls, v: str) -> str:
+        # PromptJuridico.categoria é SAEnum(PromptCategoria): valor fora do enum
+        # estoura no INSERT (asyncpg → 500). Validar na ENTRADA devolve 422.
+        validos = {c.value for c in PromptCategoria}
+        if v not in validos:
+            raise ValueError(f"categoria inválida: use uma de {sorted(validos)}")
+        return v
+class PromptResponse(PromptCreate):
+    id: str
+
+# ── (incorporado de prompts.py — D4; handlers colidentes com o
+#    canônico removidos — compatibilidade preservada via redirect 308) ──
+
