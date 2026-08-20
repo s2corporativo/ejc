@@ -125,6 +125,11 @@ ADICOES_INTENCIONAIS = {
     # PR #1120 (assinaturas): leitura do DOCUMENTO assinado por ID de
     # assinatura — o fix de produção que criou o endpoint de documento.
     ("/api/signatures/{sig_id}/documento", "GET"),
+    # PR #1199: listagem de peças de admissão no Dossiê (contrato OAB/MG +
+    # procuração gerados no cadastro do cliente). Gate idêntico ao
+    # gerar-documentos: titularidade por carteira, 404 não vaza existência.
+    ("/api/clients/{client_id}/pecas-geradas", "GET"),
+    ("/api/clients/{client_id}/gerar-documentos", "POST"),
     # Consolidação 12/08/2026: intelligence_v3.py renomeado para
     # intelligence.py e prefixo normalizado para /intelligence (a única tela
     # consumidora, Radar Legislativo, foi atualizada junto — a mudança é de
