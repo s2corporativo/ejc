@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from app.routers import processes
 from app.schemas.process import ProcessCreate, ProcessUpdate
 from app.services.processo_service import _legacy_text
 
@@ -54,12 +55,24 @@ def test_router_does_not_embed_sql_rules():
     ).read_text(encoding="utf-8")
     assert "sqlalchemy import text" not in source
     assert "INSERT INTO processes" not in source
-    assert '@router.get("/cases/{case_id}/processes")' in source
-    assert '@router.patch("/processes/{pid}")' in source
-    assert '@router.post("/processes/{pid}/principal")' in source
-    assert '@router.post("/processes/{pid}/arquivar")' in source
-    assert '@router.post("/processes/{pid}/desarquivar")' in source
-    assert '@router.delete("/processes/{pid}")' in source
+
+    caminhos = {
+        (method, route.path)
+        for route in processes.router.routes
+        for method in getattr(route, "methods", set())
+    }
+    caminhos_casos = {
+        (method, route.path)
+        for route in processes.cases_router.routes
+        for method in getattr(route, "methods", set())
+    }
+    efetivas = caminhos | caminhos_casos
+    assert ("GET", "/cases/{case_id}/processes") in efetivas
+    assert ("PATCH", "/processes/{pid}") in efetivas
+    assert ("POST", "/processes/{pid}/principal") in efetivas
+    assert ("POST", "/processes/{pid}/arquivar") in efetivas
+    assert ("POST", "/processes/{pid}/desarquivar") in efetivas
+    assert ("DELETE", "/processes/{pid}") in efetivas
 
 
 def test_service_preserves_legacy_accessors_and_write_through():
