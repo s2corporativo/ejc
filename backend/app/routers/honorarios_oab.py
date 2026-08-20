@@ -36,7 +36,7 @@ from app.models.fee import Fee, FeeTipo, FeeStatus
 from decimal import ROUND_HALF_UP
 from sqlalchemy import text
 
-router = APIRouter(prefix="/honorarios", tags=["Honorários OAB"])
+router = APIRouter(prefix="/honorarios-oab", tags=["Honorários OAB"])
 
 REGRAS = (
     "REGRAS: (1) Cite SOMENTE itens que aparecem textualmente no contexto da tabela; "
@@ -479,7 +479,31 @@ async def _get_case(db: AsyncSession, cu: User, case_id: str) -> Case:
     return await verificar_acesso_caso(db, cu, case_id)
 
 
+@router.get("/cases/{case_id}/provisionamento")
+async def provisionamento(
+    case_id: str,
+    condenacao: float | None = Query(None, description="Base alternativa (condenação estimada)"),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Provisão de sucumbência (art. 85 §2º CPC) sobre valor da causa ou condenação."""
+    c = await _get_case(db, cu, case_id)
+    base = Decimal(str(condenacao)) if condenacao is not None else (c.valor_causa or Decimal("0"))
+    if base <= 0:
+        return {"ok": False, "aviso": "Caso sem valor da causa/condenação — informe ?condenacao=."}
+    return {
+        "ok": True,
+        "base": _f(base),
+        "sucumbencia_min": _f((base * SUC_MIN).quantize(_CENT)),
+        "sucumbencia_provavel": _f((base * SUC_PROV).quantize(_CENT)),
+        "sucumbencia_max": _f((base * SUC_MAX).quantize(_CENT)),
+        "fundamento": "Art. 85, §2º, CPC — honorários de sucumbência fixados entre 10% e 20%.",
+        "observacao": ("Estimativa determinística. Fazenda Pública segue as faixas do §3º "
+                       "(verificar). Não inclui correção monetária/juros."),
+    }
 
+
+@router.get("/cases/{case_id}/teto-etico")
 async def teto_etico(
     case_id: str,
     db: AsyncSession = Depends(get_db),
@@ -600,7 +624,18 @@ async def _calcular(fee_id: str, db: AsyncSession) -> dict:
     }
 
 
+@router.get("/{fee_id}/rateio")
+async def preview_rateio(
+    fee_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _is_gestor(cu):
+        raise HTTPException(403, "Apenas sócios/gestores")
+    return await _calcular(fee_id, db)
 
+
+@router.post("/{fee_id}/rateio", status_code=201)
 async def gerar_rateio(
     fee_id: str,
     db: AsyncSession = Depends(get_db),

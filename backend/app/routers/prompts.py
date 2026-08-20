@@ -24,3 +24,8 @@ def _redirect_root_get():
 @router.post("/{prompt_id}/executar")
 def _redirect_executar(prompt_id: str):
     return RedirectResponse(url=f"/api/prompts-juridicos/{prompt_id}/executar", status_code=308)
+
+# Re-exports de compatibilidade (consumidores internos:
+# backend/app/services/legal_case_orchestrator.py e testes de blindagem).
+from app.routers.prompts_juridicos import PromptCreate  # noqa: F401
+from app.routers.prompts_juridicos import PromptResponse  # noqa: F401
