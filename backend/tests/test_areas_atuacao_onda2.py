@@ -1065,11 +1065,26 @@ def test_invariante_toda_ferramenta_tem_metadados_ou_selo():
     """Toda rota /ferramentas/ de ramos.py deve responder com `versao_regra`
     (metadados de regra) OU estar na matriz de não homologadas. Impede que a
     lacuna das 25 ferramentas sem fonte/vigência volte a existir."""
+    import importlib as _imp
     import inspect
+    import pkgutil as _pkg
     import re as _re
     from app.services.homologacao_ferramentas import FERRAMENTAS_NAO_HOMOLOGADAS
-
-    src = inspect.getsource(ramos)
+    # O fatiamento (P5) dividiu ramos.py em sub-routers `ramos_*.py`; o agregador
+    # registra rotas via `add_api_route`, cujo source não expõe os decorators
+    # `@router.get`. A varredura percorre o agregador E os sub-routers para
+    # manter a cobertura global do invariante (82 ferramentas).
+    import app.routers as _routers_pkg
+    srcs: list[str] = []
+    for _module_finder, modname, _ispkg in _pkg.walk_packages(
+            _routers_pkg.__path__, prefix='app.routers.'):
+        if not (modname == 'app.routers.ramos' or modname.startswith('app.routers.ramos_')):
+            continue
+        try:
+            srcs.append(inspect.getsource(_imp.import_module(modname)))
+        except (TypeError, OSError):
+            pass
+    src = '\n'.join(srcs)
     blocos = _re.split(r'(@router\.get\("(/[^"]*ferramentas/[^"]*)"\))', src)
     faltando, total = [], 0
     pendentes: list[str] = []          # rotas empilhadas sobre o mesmo handler
