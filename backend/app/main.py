@@ -93,7 +93,6 @@ from app.routers import ia_citacoes
 from app.routers import ia_defensiva
 from app.routers import ia_especializada
 from app.routers import ia_governanca
-from app.routers import ia_provider_metrics
 from app.routers import ia_saude
 from app.routers import indice_risco
 from app.routers import indices
@@ -461,8 +460,6 @@ app.include_router(                       # antes: append em rag.router.routes (
 app.include_router(intelligence.router, prefix=API)  # Intelligence canônico (consolidação: intelligence_v3 → intelligence)
 app.include_router(                       # antes: andamentos.include_router(...)
     datajud_intelligence.router, prefix=API + "/casos")
-app.include_router(                       # antes: append em ia_governanca.router.routes
-    ia_provider_metrics.router, prefix=API)
 app.include_router(api_keys_router.router, prefix=API) # admin de chaves (JWT admin)
 app.include_router(regulatorio.router, prefix=API)
 app.include_router(radar_legislativo.router, prefix=API)  # Câmara+Senado+ALMG
