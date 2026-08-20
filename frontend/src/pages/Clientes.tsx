@@ -123,12 +123,35 @@ export default function Clientes() {
     }
   };
 
+  const [gerarDocs, setGerarDocs] = useState(false);
+
   const salvar = async () => {
     // O alerta de conflito é apenas um aviso ético — NÃO bloqueia o cadastro.
     setSalvando(true);
     try {
-      await api.post("/clients/", form);
+      const res = await api.post<any>("/clients/", form);
+      const id = res.data?.id;
+      // Geração documental automática (contrato OAB/MG + procuração) —
+      // best-effort: falha na geração NUNCA desfaz o cadastro, apenas
+      // notifica o operador para gerar depois pelo Dossiê do cliente.
+      if (gerarDocs && id) {
+        try {
+          const dr = await api.post<any>(`/clients/${id}/gerar-documentos`, {});
+          const aviso = dr.data?.aviso || "";
+          toast.success(
+            aviso ||
+              "Cliente cadastrado e documentos de admissão gerados (rascunho — revisar no Dossiê).",
+          );
+        } catch {
+          toast.info(
+            "Cliente cadastrado. A geração dos documentos falhou — use o Dossiê para gerar depois.",
+          );
+        }
+      } else {
+        toast.success("Cliente cadastrado.");
+      }
       setModal(false);
+      setGerarDocs(false);
       setForm({ tipo: "PF", cidade: "Betim", estado: "MG" });
       setConflito(null);
       load();
@@ -491,6 +514,25 @@ export default function Clientes() {
               }
               onBlur={checarConflito}
             />
+          </div>
+
+          {/* Geração documental automática no cadastro (EOAB/Código de Ética:
+              peças geradas ficam em RASCUNHO — exigem revisão do advogado) */}
+          <div className="sm:col-span-2">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-bronze"
+                checked={gerarDocs}
+                onChange={(e) => setGerarDocs(e.target.checked)}
+              />
+              Gerar automaticamente contrato de honorários e procuração
+            </label>
+            <p className="mt-1 text-xs text-slate-400">
+              Modelo padrão OAB/MG — contrato de prestação de serviços jurídicos
+              e procuração ad judicia ficam em rascunho e devem ser revisados
+              antes do uso.
+            </p>
           </div>
         </div>
 

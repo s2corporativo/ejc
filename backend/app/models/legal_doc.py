@@ -68,7 +68,11 @@ class LegalDoc(Base):
     protocolo_tribunal           = Column(String(120), nullable=True)
     protocolo_comprovante_doc_id = Column(String(36), nullable=True)
 
-    case_id    = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
+    case_id = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
+    # Peças avulsas de admissão (ex.: contrato/procuração antes de existir caso)
+    # precisam de vínculo estável com o cliente. O campo é opcional para preservar
+    # peças legadas/case-linked sem duplicar o domínio Case.client_id.
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
     created_by = Column(String(36), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -131,6 +131,11 @@ ADICOES_INTENCIONAIS = {
     # PR #1120 (assinaturas): leitura do DOCUMENTO assinado por ID de
     # assinatura — o fix de produção que criou o endpoint de documento.
     ("/api/signatures/{sig_id}/documento", "GET"),
+    # PR #1199: listagem de peças de admissão no Dossiê (contrato OAB/MG +
+    # procuração gerados no cadastro do cliente). Gate idêntico ao
+    # gerar-documentos: titularidade por carteira, 404 não vaza existência.
+    ("/api/clients/{client_id}/pecas-geradas", "GET"),
+    ("/api/clients/{client_id}/gerar-documentos", "POST"),
     # Consolidação 12/08/2026: intelligence_v3.py renomeado para
     # intelligence.py e prefixo normalizado para /intelligence (a única tela
     # consumidora, Radar Legislativo, foi atualizada junto — a mudança é de
@@ -154,16 +159,6 @@ ADICOES_INTENCIONAIS = {
     # NÚCLEO (código), com versão por conteúdo. Distinto de /prompts, que lista
     # os prompts jurídicos do usuário no banco. Somente admin/sócio.
     ("/api/ia-governanca/prompts-sistema", "GET"),
-    # PR #1215 (Bloco P1+P2, D4 — 20/08/2026): consolidação dos roteadores de
-    # honorários (honorarios_calc/exito_rateio → honorarios_oab.py). Os quatro
-    # endpoints já EXISTIAM nos prefixos /honorarios-calc e /honorarios-exito
-    # (mantidos como redirect 308 nos shims) — em /honorarios-oab são a mesma
-    # implementação consolidada sob o prefixo canônico, sem alteração de
-    # contrato. Registro nominal conforme padrão do §4.1.
-    ("/api/honorarios-oab/cases/{case_id}/provisionamento", "GET"),
-    ("/api/honorarios-oab/cases/{case_id}/teto-etico", "GET"),
-    ("/api/honorarios-oab/{fee_id}/rateio", "GET"),
-    ("/api/honorarios-oab/{fee_id}/rateio", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -338,19 +333,6 @@ def test_paridade_openapi_com_snapshot_anterior():
          ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         (("/api/ia-defensiva/analisar", "POST"),
          ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
-        # PR #1215 (Bloco P1+P2, D4 — 20/08/2026): consolidação dos routers de
-        # prompts e honorários. Os sete endpoints abaixo viraram REDIRECTS 308
-        # (shims de compatibilidade) apontando para os endereços canônicos
-        # /prompts-juridicos/* e /honorarios-oab/* — que mantêm a autenticação
-        # intacta. O redirect em si é público porque o destino reautentica
-        # (HTTPBearer); o contrato público permanece exigindo credencial.
-        (("/api/prompts-biblioteca/", "GET"), []),
-        (("/api/prompts-biblioteca/", "POST"), []),
-        (("/api/prompts-biblioteca/{prompt_id}/executar", "POST"), []),
-        (("/api/honorarios-calc/cases/{case_id}/provisionamento", "GET"), []),
-        (("/api/honorarios-calc/cases/{case_id}/teto-etico", "GET"), []),
-        (("/api/honorarios-exito/{fee_id}/rateio", "GET"), []),
-        (("/api/honorarios-exito/{fee_id}/rateio", "POST"), []),
     )
 
     divergentes = [
