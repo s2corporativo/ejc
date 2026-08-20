@@ -1,93 +1,31 @@
-"""
-Módulo de Biblioteca de Prompts Jurídicos (Seção 4.154).
-Permite criar, editar, versionar e executar prompts com um clique.
-"""
-from uuid import uuid4
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, field_validator
+# app/routers/prompts.py — SHIM pós-consolidação D4 (20/08/2026).
+# Biblioteca de prompts consolidada em prompts_juridicos.py (prefixo
+# /prompts-juridicos, canônico). Este módulo mantém /prompts-biblioteca apenas
+# como compatibilidade com redirect 308 até a migração dos consumidores.
 
-from app.core.database import get_db
-from app.models.prompt_juridico import PromptJuridico, PromptCategoria
-from app.core.security import get_current_user
-from app.models.user import User
-
-# Model ORM
-
-
-# Schemas
-class PromptCreate(BaseModel):
-    titulo: str
-    categoria: str
-    conteudo: str
-
-    @field_validator("categoria")
-    @classmethod
-    def _categoria_valida(cls, v: str) -> str:
-        # PromptJuridico.categoria é SAEnum(PromptCategoria): valor fora do enum
-        # estoura no INSERT (asyncpg → 500). Validar na ENTRADA devolve 422.
-        validos = {c.value for c in PromptCategoria}
-        if v not in validos:
-            raise ValueError(f"categoria inválida: use uma de {sorted(validos)}")
-        return v
-
-class PromptResponse(PromptCreate):
-    id: str
+from fastapi import APIRouter
+from fastapi.responses import RedirectResponse
 
 router = APIRouter(prefix="/prompts-biblioteca", tags=["Prompts Jurídicos"])
 
-@router.post("/", response_model=PromptResponse, status_code=201)
-async def criar_prompt(payload: PromptCreate, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
-    p = PromptJuridico(id=str(uuid4()), created_by=cu.id, **payload.model_dump())
-    db.add(p)
-    await db.commit()
-    await db.refresh(p)
-    return p
+_REDIRECT_MAP = {
+    "get:/": "/api/prompts-juridicos",
+    "post:/": "/api/prompts-juridicos",
+}
 
-@router.get("/", response_model=List[PromptResponse])
-async def listar_prompts(categoria: Optional[str] = None, db: AsyncSession = Depends(get_db),
-                         cu: User = Depends(get_current_user)):
-    q = select(PromptJuridico)
-    if categoria:
-        q = q.where(PromptJuridico.categoria == categoria)
-    res = await db.execute(q)
-    return res.scalars().all()
+@router.post("/")
+def _redirect_root_post():
+    return RedirectResponse(url="/api/prompts-juridicos", status_code=308)
+
+@router.get("/")
+def _redirect_root_get():
+    return RedirectResponse(url="/api/prompts-juridicos", status_code=308)
 
 @router.post("/{prompt_id}/executar")
-async def executar_prompt(
-    prompt_id: str, 
-    contexto: str = Body(..., embed=True), 
-    db: AsyncSession = Depends(get_db), 
-    cu: User = Depends(get_current_user)
-):
-    # Consolidado no NÚCLEO ÚNICO de IA: sanitização LGPD (abort em PII
-    # residual), policy de provider, validação da resposta, HITL e AILog.
-    from app.services.ai.core.orchestrator import orchestrator
+def _redirect_executar(prompt_id: str):
+    return RedirectResponse(url=f"/api/prompts-juridicos/{prompt_id}/executar", status_code=308)
 
-    p = await db.get(PromptJuridico, prompt_id)
-    if not p:
-        raise HTTPException(status_code=404, detail="Prompt não encontrado")
-
-    full_prompt = f"{p.conteudo}\n\nCONTEXTO:\n{contexto}"
-    res = await orchestrator.run(
-        db=db,
-        user=cu,
-        task_type="chat",
-        domain=None,
-        mensagem=full_prompt,
-        usar_rag=False,
-    )
-
-    # Shape legado preservado ({modelo_utilizado, tipo_demanda, resposta, status})
-    # + campos do núcleo acrescentados (log_id, aviso_hitl, is_rascunho).
-    return {
-        "modelo_utilizado": res.get("modelo"),
-        "tipo_demanda": str(getattr(p.categoria, "value", p.categoria) or "").lower(),
-        "resposta": res.get("conteudo"),
-        "status": "sucesso",
-        "log_id": res.get("log_id"),
-        "is_rascunho": res.get("is_rascunho", True),
-        "aviso_hitl": res.get("aviso_hitl"),
-    }
+# Re-exports de compatibilidade (consumidores internos:
+# backend/app/services/legal_case_orchestrator.py e testes de blindagem).
+from app.routers.prompts_juridicos import PromptCreate  # noqa: F401
+from app.routers.prompts_juridicos import PromptResponse  # noqa: F401
