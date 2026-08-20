@@ -402,3 +402,4 @@ async def gerar_documentos_iniciais(
             criados.append({"id": d.id, "titulo": d.titulo, "tipo": tipo.value})
         await db.commit()
         return criados
+
