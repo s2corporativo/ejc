@@ -79,8 +79,10 @@ def test_trilha_rag_registra_ids_ordem_score_e_versao_sem_conteudo():
 def test_calculadora_alimentos_nao_inventa_percentual_do_stj():
     from pathlib import Path
 
-    fonte = (Path(__file__).parents[1] / "app/routers/ramos.py").read_text(
-        encoding="utf-8"
+    routers = Path(__file__).parents[1] / "app/routers"
+    fonte = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(routers.glob("ramos*.py"))
     )
     assert "Padrão STJ: 1/3" not in fonte
     assert "Súmula 277/STJ trata apenas" in fonte
