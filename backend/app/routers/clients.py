@@ -580,7 +580,10 @@ async def gerar_documentos_cliente(
     )
 
 
-@router.get("/{client_id}/pecas-geradas")
+# Read-only, mas com rate limit idêntico ao gerar-documentos (PR #1199:
+# fechamento da revisão — throttle protege contra enumeração em massa).
+@router.get("/{client_id}/pecas-geradas",
+            dependencies=[Depends(rate_limit("kit-documental", 5))])
 async def listar_pecas_geradas(
     client_id: str,
     db: AsyncSession = Depends(get_db),
