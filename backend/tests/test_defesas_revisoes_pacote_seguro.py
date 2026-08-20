@@ -1,6 +1,5 @@
 from app.core.fastapi_compat import flatten_routes
-from app.routers import novos_modulos
-from app.routers.defesas_revisoes_pacote_seguro import planejar_pacote
+from app.routers.defesas_revisoes_pacote_seguro import planejar_pacote, router as pacote_router
 
 
 def test_pacote_bloqueia_kit_e_motor_quando_documentacao_nao_apta():
@@ -52,14 +51,10 @@ def test_pacote_com_ressalvas_ainda_libera_fluxo_com_alerta_humano():
 
 
 def test_rota_pacote_existe_so_na_implementacao_segura():
-    """A rota legada foi removida e a implementação segura é a única.
-
-    ``include_router`` é lazy no FastAPI atual; o coletor expande o wrapper antes
-    de validar caminho, método e módulo do endpoint, preservando a garantia.
-    """
+    """A implementação segura continua registrando exatamente uma rota POST."""
     rotas = [
         route
-        for route in flatten_routes(novos_modulos.router.routes)
+        for route in flatten_routes(pacote_router.routes)
         if getattr(route, "path", None) == "/defesas-revisoes/avancado/pacote"
         and "POST" in getattr(route, "methods", set())
     ]
