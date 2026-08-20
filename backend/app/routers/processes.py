@@ -16,7 +16,8 @@ from app.models.user import User
 from app.schemas.process import ArchiveProcessRequest, ProcessCreate, ProcessUpdate
 from app.services import processo_service
 
-router = APIRouter(tags=["Processos"])
+router = APIRouter(prefix="/processes", tags=["Processos"])
+casos_router = APIRouter(prefix="", tags=["Processos — Casos"])
 _ESCRITA = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar"]
 
 
@@ -34,7 +35,7 @@ async def _case_id_do_processo(db: AsyncSession, pid: str) -> str:
     return process.case_id
 
 
-@router.get("/cases/{case_id}/processes")
+@casos_router.get("/cases/{case_id}/processes")
 async def listar_processos(
     case_id: str,
     arquivo: str = Query("ativos", pattern="^(ativos|arquivados|todos)$"),
@@ -46,7 +47,7 @@ async def listar_processos(
     return {"data": data}
 
 
-@router.post("/cases/{case_id}/processes", status_code=201)
+@casos_router.post("/cases/{case_id}/processes", status_code=201)
 async def criar_processo(
     case_id: str,
     body: ProcessCreate,
@@ -75,7 +76,7 @@ async def criar_processo(
     return result
 
 
-@router.patch("/processes/{pid}")
+@router.patch("/{pid}")
 async def atualizar_processo(
     pid: str,
     body: ProcessUpdate,
@@ -105,7 +106,7 @@ async def atualizar_processo(
     return result
 
 
-@router.post("/processes/{pid}/principal")
+@router.post("/{pid}/principal")
 async def definir_principal(
     pid: str,
     db: AsyncSession = Depends(get_db),
@@ -131,7 +132,7 @@ async def definir_principal(
     return result
 
 
-@router.post("/processes/{pid}/arquivar")
+@router.post("/{pid}/arquivar")
 async def arquivar_processo(
     pid: str,
     body: ArchiveProcessRequest | None = Body(default=None),
@@ -165,7 +166,7 @@ async def arquivar_processo(
     return result
 
 
-@router.post("/processes/{pid}/desarquivar")
+@router.post("/{pid}/desarquivar")
 async def desarquivar_processo(
     pid: str,
     db: AsyncSession = Depends(get_db),
@@ -191,7 +192,7 @@ async def desarquivar_processo(
     return result
 
 
-@router.delete("/processes/{pid}")
+@router.delete("/{pid}")
 async def remover_processo(
     pid: str,
     db: AsyncSession = Depends(get_db),

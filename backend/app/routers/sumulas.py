@@ -14,7 +14,8 @@ from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 
-router = APIRouter(tags=["Súmulas e Conflito"])
+router = APIRouter(prefix="/sumulas", tags=["Súmulas"])
+casos_router = APIRouter(prefix="", tags=["Súmulas — Casos"])
 
 
 # ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -25,7 +26,7 @@ class ConflitoRequest(BaseModel):
 
 
 # ─── Súmulas: ingestão seed ──────────────────────────────────────────────────
-@router.post("/sumulas/ingerir-seed")
+@router.post("/ingerir-seed")
 async def ingerir_seed(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -53,7 +54,7 @@ async def ingerir_seed(
 
 
 # ─── Súmulas: busca ──────────────────────────────────────────────────────────
-@router.get("/sumulas/buscar")
+@router.get("/buscar")
 async def buscar_sumulas(
     q:        str           = Query("", description="Texto livre"),
     area:     Optional[str] = Query(None),
@@ -96,7 +97,7 @@ async def buscar_sumulas(
 
 
 # ─── Conflito de Interesses ───────────────────────────────────────────────────
-@router.post("/casos/verificar-conflito")
+@router.post("/verificar-conflito")
 async def verificar_conflito(
     req: ConflitoRequest,
     db:  AsyncSession = Depends(get_db),
@@ -114,3 +115,15 @@ async def verificar_conflito(
         user_id=cu.id,
         case_id=req.case_id,
     )
+
+
+# ── Compatibilidade P3 (20/08/2026): /casos/verificar-conflito ->
+#    /sumulas/verificar-conflito (redirect 308 permanente). ──────────────────
+from fastapi.responses import RedirectResponse
+_compat = APIRouter(prefix="/casos", tags=["Súmulas — Compatibilidade"])
+
+@_compat.post("/verificar-conflito")
+def _redirect_verificar_conflito():
+    return RedirectResponse(url="/api/sumulas/verificar-conflito", status_code=308)
+
+casos_router = casos_router  # noqa (compat) — ver casos_router acima

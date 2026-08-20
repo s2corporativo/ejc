@@ -15,7 +15,8 @@ from app.models.audit_log import criar_audit_log
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(tags=["Etiquetas"])
+router = APIRouter(prefix="/etiquetas", tags=["Etiquetas"])
+casos_router = APIRouter(prefix="", tags=["Etiquetas — Casos"])
 
 
 class EtiquetaIn(BaseModel):
@@ -28,13 +29,13 @@ class AtribuirIn(BaseModel):
     etiqueta_id: str
 
 
-@router.get("/etiquetas")
+@router.get("")
 async def listar(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     r = await db.execute(text("SELECT id, nome, cor, tipo FROM etiquetas ORDER BY nome"))
     return [dict(x) for x in r.mappings().all()]
 
 
-@router.post("/etiquetas", status_code=201)
+@router.post("", status_code=201)
 async def criar(body: EtiquetaIn, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     r = await db.execute(
         text("INSERT INTO etiquetas (nome, cor, tipo, created_by) "
@@ -47,7 +48,7 @@ async def criar(body: EtiquetaIn, db: AsyncSession = Depends(get_db), cu: User =
     return {"id": row["id"], "nome": body.nome, "cor": body.cor, "tipo": body.tipo}
 
 
-@router.delete("/etiquetas/{etiqueta_id}", status_code=204)
+@router.delete("/{etiqueta_id}", status_code=204)
 async def remover(etiqueta_id: str, db: AsyncSession = Depends(get_db),
                   cu: User = Depends(require_roles(["superadmin", "admin", "socio"]))):
     # Etiqueta é recurso GLOBAL (compartilhado por todos os casos): só gestão remove.
@@ -56,7 +57,7 @@ async def remover(etiqueta_id: str, db: AsyncSession = Depends(get_db),
     await db.commit()
 
 
-@router.get("/cases/{case_id}/etiquetas")
+@casos_router.get("/cases/{case_id}/etiquetas")
 async def do_caso(case_id: str, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     await verificar_acesso_caso(db, cu, case_id)
     r = await db.execute(
@@ -68,7 +69,7 @@ async def do_caso(case_id: str, db: AsyncSession = Depends(get_db), cu: User = D
     return [dict(x) for x in r.mappings().all()]
 
 
-@router.post("/cases/{case_id}/etiquetas", status_code=201)
+@casos_router.post("/cases/{case_id}/etiquetas", status_code=201)
 async def atribuir(case_id: str, body: AtribuirIn, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     await verificar_acesso_caso(db, cu, case_id)
     try:
@@ -87,7 +88,7 @@ async def atribuir(case_id: str, body: AtribuirIn, db: AsyncSession = Depends(ge
     return {"ok": True}
 
 
-@router.delete("/cases/{case_id}/etiquetas/{etiqueta_id}", status_code=204)
+@casos_router.delete("/cases/{case_id}/etiquetas/{etiqueta_id}", status_code=204)
 async def desatribuir(case_id: str, etiqueta_id: str, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     await verificar_acesso_caso(db, cu, case_id)
     await db.execute(

@@ -20,7 +20,8 @@ def _req_team(cu: User = Depends(get_current_user)) -> User:
     return cu
 
 
-router = APIRouter(prefix="", tags=["kanban"])
+router = APIRouter(prefix="/kanban", tags=["Kanban"])
+casos_router = APIRouter(prefix="", tags=["Kanban — Casos"])
 
 
 def _status_terminal_da_coluna(nome: str) -> Optional[str]:
@@ -40,7 +41,7 @@ def _status_terminal_da_coluna(nome: str) -> Optional[str]:
     return None
 
 
-@router.get("/kanban-columns")
+@router.get("/columns")
 async def list_kanban_columns(
     legal_area: Optional[str] = "default",
     db: AsyncSession = Depends(get_db),
@@ -54,7 +55,7 @@ async def list_kanban_columns(
     return [dict(r) for r in rows]
 
 
-@router.patch("/cases/{case_id}/kanban")
+@casos_router.patch("/cases/{case_id}/kanban")
 async def update_case_kanban(
     case_id: str,
     body: dict = Body(...),
@@ -112,3 +113,23 @@ async def update_case_kanban(
     )
     await db.commit()
     return {"ok": True, "status_sincronizado": None}
+
+
+# Compatibilidade (PR #1218): o endereço canônico antigo GET /api/kanban-columns
+# (router sem prefixo + decorator "/kanban-columns", montado sob /api) agora
+# vive em /api/kanban/columns. Redirect 308 — o destino reautentica
+# (HTTPBearer), mesmo desenho dos PRs #1215/#1217.
+_compat = APIRouter(prefix="", tags=["Kanban — Compatibilidade"])
+
+
+from fastapi.responses import RedirectResponse as _RR
+
+
+@_compat.get("/kanban-columns")
+async def _redirect_kanban_columns(
+    # Conservador: o endereço movido (Onda 2) manteve o mesmo gate de auth —
+    # o redirect exige credencial antes de redirecionar; o destino reautentica.
+    current_user: User = Depends(get_current_user),
+) -> _RR:
+    del current_user
+    return _RR(url="/api/kanban/columns", status_code=308)
