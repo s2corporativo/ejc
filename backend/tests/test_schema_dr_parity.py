@@ -18,7 +18,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 APP_DIR = BACKEND_DIR / "app"
-HEAD_REVISION = "146_case_sigilo_reforcado"
+HEAD_REVISION = "147_legal_doc_client_id"
 
 RAW_SQL_TABLES_ESPERADAS = {
     "agenda_eventos", "areas", "case_ambiental", "case_etiquetas",
@@ -32,8 +32,6 @@ RAW_SQL_TABLES_ESPERADAS = {
 VIEWS_ESPERADAS = {"vw_atividades"}
 FALSOS_POSITIVOS_SQL = {
     "alembic_version", "pg_extension", "pg_stat_activity",
-    # CTE recursiva do versionamento documental (``WITH RECURSIVE cadeia``),
-    # não é tabela real — introduzida no GED (#1134).
     "cadeia",
 }
 _RUIDO_SQL = {
@@ -69,8 +67,6 @@ _RE_CREATE_VIEW = re.compile(
     r'CREATE\s+(?:OR\s+REPLACE\s+)?(?:MATERIALIZED\s+)?VIEW\s+'
     r'(?:IF\s+NOT\s+EXISTS\s+)?"?([a-zA-Z_]\w*)"?', re.I
 )
-# Exige separador de cláusula depois da tabela. Assim `EXTRACT(YEAR FROM
-# created_at)` e `EXTRACT(... FROM d.data_prazo)` não viram tabelas fictícias.
 _RE_REF_FROM = re.compile(
     r'\b(?:FROM|JOIN)\s+(?:"?[a-z_][a-z0-9_]*"?\.)?'
     r'"?([a-z_][a-z0-9_]*)"?(?=\s|,|;|$)', re.I

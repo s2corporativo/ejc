@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "146_case_sigilo_reforcado"
+HEAD_REVISION = "147_legal_doc_client_id"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -112,8 +112,6 @@ def test_contador_de_execucoes_zeradas_encadeia_apos_hardening_data_room():
 
 
 def test_quatro_estados_encadeia_apos_contador_de_execucoes_zeradas():
-    # O PR #624 (125) foi mesclado antes deste, como planejado em
-    # MIGRATION_RESERVATIONS.md — a cadeia provisória na 124 foi desfeita.
     revision = _script_directory().get_revision("126_case_status_quatro_estados")
     assert revision.down_revision == "125_fonte_execucoes_zeradas"
 
@@ -129,9 +127,6 @@ def test_ejc_skills_uso_encadeia_apos_publicacao_explicita():
 
 
 def test_preliminares_encadeiam_apos_consolidacao_fontes():
-    # Consolidado em 2026-08-12: a bifurcação 138 → {139, 140} foi linearizada
-    # em 138 → 139 → 140 (o schema das frentes é independente: 139 altera
-    # document_intake_batches e 140 cria/dropa apenas tabelas preliminares).
     revisao_139 = _script_directory().get_revision("139_dpt360_ciclo_vida_lgpd")
     assert revisao_139.down_revision == "138_consolida_fontes_ingestao"
     revisao_140 = _script_directory().get_revision("140_preliminares_fundacao_schema")
@@ -143,12 +138,6 @@ def test_preliminares_encadeiam_apos_consolidacao_fontes():
     revisao_143 = _script_directory().get_revision(
         "143_signature_documento_visualizado"
     )
-    # Consolidado na homologação M02/M11 (16/08/2026): o widening
-    # varchar(32)->128 (migration ``144a``) foi fundido no upgrade da 143 —
-    # o guard de numeração ``test_migration_numbering_guard.py`` rejeita
-    # prefixo não numérico. O widening roda ANTES do corpo da 143
-    # (revision_id com 35 caracteres), preservando a proteção em
-    # instalações novas.
     assert revisao_143.down_revision == "142_document_hash_rescan"
     revisao_144 = _script_directory().get_revision(
         "144_alembic_version_varchar128"
@@ -158,4 +147,8 @@ def test_preliminares_encadeiam_apos_consolidacao_fontes():
         "145_drop_orphan_db_only_columns"
     )
     assert revisao_145.down_revision == "144_alembic_version_varchar128"
+    revisao_146 = _script_directory().get_revision("146_case_sigilo_reforcado")
+    assert revisao_146.down_revision == "145_drop_orphan_db_only_columns"
+    revisao_147 = _script_directory().get_revision("147_legal_doc_client_id")
+    assert revisao_147.down_revision == "146_case_sigilo_reforcado"
     assert _script_directory().get_heads() == [HEAD_REVISION]

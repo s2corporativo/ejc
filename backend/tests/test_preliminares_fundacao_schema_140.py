@@ -1,8 +1,7 @@
 """140_preliminares_fundacao_schema — Fase 1 da fusão Sala Jurídica + Raio-X.
 
 Cobertura estática sempre roda. Com RUN_DB_TESTS=1, sobe banco descartável em
-138, aplica somente 139, valida as quatro tabelas novas e prova downgrade para
-138 sem tocar as seis tabelas legadas.
+138, aplica 139/140 e prova downgrade sem tocar tabelas legadas.
 """
 from __future__ import annotations
 
@@ -65,13 +64,8 @@ def _script_directory() -> ScriptDirectory:
 
 
 def test_migration_139_encadeia_em_138_e_e_o_head():
-    # Consolidado em 2026-08-12: bifurcação 138 → {139, 140} linearizada em
-    # 138 → 139 → 140 (frete independente: 139 altera document_intake_batches,
-    # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
-    # Issue #1194 (18/08/2026): coluna Case.sigilo_reforcado;
-    # HEAD = 146_case_sigilo_reforcado.
-    assert script.get_heads() == ["146_case_sigilo_reforcado"]
+    assert script.get_heads() == ["147_legal_doc_client_id"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (
@@ -82,10 +76,6 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
         script.get_revision("142_document_hash_rescan").down_revision
         == "141_dpt360_diagnostico"
     )
-    # Consolidado na homologação M02/M11 (16/08/2026): o widening
-    # varchar(32)->128 (antiga migration ``144a``) foi fundido no upgrade da
-    # 143 — o guard ``test_migration_numbering_guard.py`` rejeita prefixo
-    # não numérico.
     assert (
         script.get_revision("143_signature_documento_visualizado").down_revision
         == "142_document_hash_rescan"
@@ -101,6 +91,10 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     assert (
         script.get_revision("146_case_sigilo_reforcado").down_revision
         == "145_drop_orphan_db_only_columns"
+    )
+    assert (
+        script.get_revision("147_legal_doc_client_id").down_revision
+        == "146_case_sigilo_reforcado"
     )
     assert (
         script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision
@@ -191,8 +185,6 @@ def test_upgrade_139_e_downgrade_138_preservam_tabelas_legadas():
         finally:
             engine.dispose()
 
-        # Cadeia linearizada: aplica primeiro 139 (ciclo de vida LGPD) e depois
-        # 140 (fundação preliminares), validando a ordem real da migração.
         rodar_alembic("upgrade", "139_dpt360_ciclo_vida_lgpd")
         rodar_alembic("upgrade", "140_preliminares_fundacao_schema")
         engine = create_engine(sync_url)
