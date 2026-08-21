@@ -401,6 +401,19 @@ def test_paridade_openapi_com_snapshot_anterior():
         (("/api/prompts-biblioteca/{prompt_id}/executar", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
     )
 
+    # Issue #1199 / PR #1231: o gate transversal Client -> LegalDoc acrescenta
+    # exatamente uma dependência de segurança às rotas legal-docs que já
+    # existiam no baseline. Derivar do baseline mantém a trava fail-closed:
+    # qualquer outra dependência adicionada/removida continua divergente.
+    AUTH_ALTERACOES_INTENCIONAIS += tuple(
+        (
+            k,
+            sorted([*chaves_base[k]["auth_deps"], "_enforce_client_legal_doc_scope"]),
+        )
+        for k in sorted(set(chaves_base) & set(chaves_atual))
+        if k[0].startswith("/api/legal-docs/")
+    )
+
     divergentes = [
         (k, chaves_base[k]["auth_deps"], chaves_atual[k]["auth_deps"])
         for k in sorted(set(chaves_base) & set(chaves_atual))
