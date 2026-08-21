@@ -25,6 +25,7 @@ descritas em `CLAUDE.md` **já não se reproduzem** na `main` atual (§7).
 | 1 | Suíte backend não coleta fora do CI (`pytest.skip` de módulo) | ALTO | CORRIGIDO · TESTADO |
 | 2 | 2 testes de DR falham por config ausente em vez de pular | MÉDIO | CORRIGIDO · TESTADO |
 | 3 | Fail-open latente em `_api_path_interno` (`//api/...`) | SEGURANÇA (latente) | CORRIGIDO · TESTADO |
+| 4 | Gates de governança desligados — não rodam em PR nenhum (§7-A) | ALTO (processo) | ENCONTRADO · **decisão do titular** |
 
 ---
 
@@ -162,6 +163,55 @@ O repositório já possui guarda equivalente (`tests/test_api_contract.py` +
 | Numeração de migrations envelhecida | Head atual confirmado por execução: `146_case_sigilo_reforcado`. |
 
 Os `RELATORIO_*.md` da raiz devem ser lidos como histórico, não como estado atual.
+
+---
+
+## 7-A. Achado 4 — os gates de governança não rodam nos PRs (ALTO, processo)
+
+Descoberto ao conferir por que o PR desta auditoria (#1234) fechou verde sem que a
+governança avaliasse o corpo. **Não corrigido aqui** — é CI/CD (governança §10 exige
+autorização explícita), a mudança é de configuração no GitHub e não de código, e
+reabilitar a trava agora reprovaria em massa os PRs abertos de terceiros. Registrado
+como Issue nova; a decisão é do titular.
+
+`CLAUDE.md` afirma que `ci.yml`, `ejc-release-gate.yml`, `governanca.yml`,
+`continuity-ui-gates.yml`, `architecture-inventory.yml`, `backup-gdrive-activation.yml`
+e `rag-production-activation.yml` "disparam em `pull_request`". No PR #1234
+(`head_sha` `58b50cb`) rodaram **dois**:
+
+| Workflow | `on: pull_request` no arquivo | Estado no GitHub | Rodou |
+|---|---|---|---|
+| `ci.yml` | sim | active | **sim** |
+| `ejc-release-gate.yml` | sim | active | **sim** |
+| `governanca.yml` | sim | **`disabled_manually`** (19/08) | não |
+| `continuity-ui-gates.yml` | sim | **`disabled_manually`** (12/08) | não |
+| `architecture-inventory.yml` | sim | **`disabled_manually`** (12/08) | não |
+| `backup-gdrive-activation.yml` | sim | active | não — filtro `paths` correto, o diff não toca os arquivos |
+| `rag-production-activation.yml` | sim | active | não — idem |
+| `auto-integracao.yml` | `on: workflow_run` | **`disabled_manually`** (12/08) | não |
+
+Os dois últimos `active` estão **corretos**: têm `paths` legítimos. O problema são os
+três desabilitados manualmente — e um quarto detalhe: existe um
+**`governanca-v2.yml` registrado como `active`** na API de workflows (criado em 16/08),
+mas **o arquivo não existe na `main`**. Um workflow cujo arquivo não está na branch
+default não dispara. Ou seja, o sucessor nunca chegou e o original foi desligado.
+
+**Consequência.** Nenhuma das travas que `CLAUDE.md` descreve como obrigatórias está
+sendo aplicada em PR nenhum: Issue vinculada (`#<numero>` no corpo), Definition of Done
+marcada, e a confirmação de revisão de segurança exigida quando o diff toca superfície
+sensível — que é exatamente o caso deste PR (`app/core/auth_middleware.py`). O merge
+automático da regra 8 (`auto-integracao.yml`) também está desligado.
+
+**Por que passou despercebido.** `CLAUDE.md` manda "conferir com
+`grep -A4 '^on:' .github/workflows/*.yml` antes de afirmar que algo não roda". Os oito
+arquivos têm o gatilho certo — **o grep confirma todos**. O estado
+`disabled_manually` vive na API/UI do GitHub, não no arquivo: o método de verificação
+recomendado pelo repositório é justamente o que não detecta este defeito. Só a
+listagem de workflows (`GET /actions/workflows`) ou a ausência do check no PR revela.
+
+É a mesma classe já catalogada em `CLAUDE.md` — *"monitoramento afere execução, não
+resultado"* —, agora aplicada ao próprio CI: o gate existe, está versionado, parece
+configurado, e não roda.
 
 ---
 
