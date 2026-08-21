@@ -7,12 +7,14 @@
 
 # Entrada Universal e Defesas/Revisões são anexados ao router `novos_modulos`,
 # que já é montado pelo main.py sob /api. Os prefixos próprios são preservados.
-from app.routers import (  # noqa: E402
-    defesas_revisoes,
-    defesas_revisoes_avancado,
-    defesas_revisoes_pacote_seguro,
-    entrada_universal,
-    novos_modulos,
+from app.routers import (  # noqa: E402 — re-exports deliberados:
+    # o import dispara o registro de sub-rotas complementares (side effect
+    # controlado documentado acima), mesmo padrão do main.py pré-P3.
+    defesas_revisoes as defesas_revisoes,
+    defesas_revisoes_avancado as defesas_revisoes_avancado,
+    defesas_revisoes_pacote_seguro as defesas_revisoes_pacote_seguro,
+    entrada_universal as entrada_universal,
+    novos_modulos as novos_modulos,
 )
 
 # A restrição do advogado_auxiliar (não gera pacote executivo nem encaminha
@@ -20,9 +22,5 @@ from app.routers import (  # noqa: E402
 # defesas_revisoes.py e ROLES_PACOTE em defesas_revisoes_avancado.py — sem
 # mutação de conjuntos compartilhados no import.
 
-novos_modulos.router.include_router(entrada_universal.router)
-novos_modulos.router.include_router(defesas_revisoes.router)
 # POST /defesas-revisoes/avancado/pacote existe SÓ no pacote seguro (a
 # implementação legada foi removida do router avançado — sem sombreamento).
-novos_modulos.router.include_router(defesas_revisoes_pacote_seguro.router)
-novos_modulos.router.include_router(defesas_revisoes_avancado.router)

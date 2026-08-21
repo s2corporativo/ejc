@@ -360,15 +360,17 @@ def test_selecionar_amostra_get_inclui_ancoras_de_controle():
 # ── Achado #1 do review do PR #708: prefixo real de include_router() ────────
 
 
-def test_router_mount_overrides_encontra_os_tres_casos_reais():
-    """`app/main.py` monta a maioria dos routers só com `prefix=API`, mas
-    `precedentes_jurisprudencia`, `advogado_estilo` e `datajud_intelligence`
-    recebem um prefixo EXTRA (Onda 3 §4.1) — exatamente o caso que o review
-    do PR #708 apontou como gerador de 404 espúrio."""
+def test_router_mount_overrides_reflete_mount_canonico_datajud():
+    """`router_mount_overrides` considera a primeira montagem do router
+    canônico de cada módulo. Após o P3, `datajud_intelligence.router` monta
+    diretamente em `API` e carrega seu próprio prefixo `/datajud/intelligence`;
+    apenas `casos_router` permanece sob `API + '/casos'`. O teste ancora essa
+    distinção para a matriz RBAC não reaplicar o prefixo legado a todas as
+    rotas do módulo."""
     overrides = rm.router_mount_overrides(MAIN_PY)
     assert overrides["advogado_estilo"] == "/pecas"
     assert overrides["precedentes_jurisprudencia"] == "/jurisprudencia-externa"
-    assert overrides["datajud_intelligence"] == "/casos"
+    assert overrides["datajud_intelligence"] == ""
     # Router comum (prefix=API, sem sufixo) não deve ganhar sufixo indevido.
     assert overrides.get("clients", "") == ""
 
@@ -385,12 +387,13 @@ def test_discover_gates_deriva_o_path_real_de_advogado_estilo():
 
 
 def test_discover_gates_deriva_path_de_router_side_effect_antigo():
-    """Os outros dois casos de Onda 3 §4.1: `precedentes_jurisprudencia` sob
-    `/jurisprudencia-externa` e `datajud_intelligence` sob `/casos`."""
+    """O caso remanescente de Onda 3 §4.1 em `precedentes_jurisprudencia`
+    continua sob prefixo extra. DataJud agora possui router canônico próprio,
+    enquanto as rotas de caso são preservadas separadamente em `casos_router`."""
     gates = rm.discover_gates(ROUTERS_DIR)
     caminhos = {(g.method, g.path) for g in gates}
     assert any(p.startswith("/api/jurisprudencia-externa/precedentes") for _, p in caminhos)
-    assert any(p.startswith("/api/casos/") and "andamentos" in p for _, p in caminhos)
+    assert any(p.startswith("/api/datajud/intelligence/") for _, p in caminhos)
 
 
 def test_router_mount_overrides_e_falha_aberta_sem_main_py():
