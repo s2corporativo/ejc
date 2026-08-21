@@ -183,18 +183,43 @@ e `rag-production-activation.yml` "disparam em `pull_request`". No PR #1234
 |---|---|---|---|
 | `ci.yml` | sim | active | **sim** |
 | `ejc-release-gate.yml` | sim | active | **sim** |
-| `governanca.yml` | sim | **`disabled_manually`** (19/08) | não |
-| `continuity-ui-gates.yml` | sim | **`disabled_manually`** (12/08) | não |
-| `architecture-inventory.yml` | sim | **`disabled_manually`** (12/08) | não |
+| `governanca.yml` | sim | **`disabled_manually`** | não |
+| `continuity-ui-gates.yml` | sim | **`disabled_manually`** | não |
+| `architecture-inventory.yml` | sim | **`disabled_manually`** | não |
 | `backup-gdrive-activation.yml` | sim | active | não — filtro `paths` correto, o diff não toca os arquivos |
 | `rag-production-activation.yml` | sim | active | não — idem |
-| `auto-integracao.yml` | `on: workflow_run` | **`disabled_manually`** (12/08) | não |
+| `auto-integracao.yml` | `on: workflow_run` | **`disabled_manually`** | não |
 
 Os dois últimos `active` estão **corretos**: têm `paths` legítimos. O problema são os
-três desabilitados manualmente — e um quarto detalhe: existe um
-**`governanca-v2.yml` registrado como `active`** na API de workflows (criado em 16/08),
-mas **o arquivo não existe na `main`**. Um workflow cujo arquivo não está na branch
-default não dispara. Ou seja, o sucessor nunca chegou e o original foi desligado.
+três desabilitados manualmente.
+
+**Correção de uma inferência errada desta auditoria.** A primeira versão deste relatório
+datava cada desabilitação pelo campo `updated_at` do workflow ("19/08", "12/08"). Isso
+está **errado** e as datas foram removidas da tabela: `updated_at` acompanha a última
+alteração do *arquivo*, não o momento em que o workflow foi desligado. A prova é o
+próprio `governanca.yml` — commit `bb04246a` em `2026-08-19T20:17:45-03:00`,
+`updated_at` do workflow em `2026-08-19T20:17:47-03:00`, dois segundos depois. O estado
+`disabled_manually` é fato verificado; a data em que foi aplicado, não.
+
+**O que a evidência sustenta.** Dezenas de workflows compartilham `updated_at` na janela
+`2026-08-12T22:20:41` – `22:21:25` — cerca de 45 segundos. São, quase todos, workflows
+temporários e de diagnóstico (`_temp-*`, `diagnose-pr194`, `diagnose-pr207-db`,
+`apply-*-once`, `format-*-temp`). A leitura mais provável é uma **faxina em massa** que
+desligou o entulho — e apanhou junto três gates legítimos: `architecture-inventory.yml`,
+`continuity-ui-gates.yml` e `auto-integracao.yml`. Dano colateral, não decisão.
+
+**O agravante.** Em 19/08 o `governanca.yml` foi **ampliado** (commit `bb04246a`, +59/-20):
+passou a exigir as seções `Diagnóstico`, `Impacto jurídico` e `Impacto LGPD` e a
+Definition of Done. Investiu-se em endurecer um gate que já estava desligado — sintoma
+de que ninguém percebeu o estado real.
+
+**O `governanca-v2.yml` é um beco sem saída.** Consta `active` na API (id `335876178`),
+mas o arquivo não existe na `main`: foi criado pelo commit `55494d4f` (17/08,
+"fix(ci): criar governança v2 habilitada com mesmo contexto bloqueante (#998)"), que vive
+**só** em `origin/fix/bootstrap-ruleset-recovery-998-v2` — branch nunca mesclada. Era um
+contorno para a recuperação de ruleset da #998. Além disso, o `governanca.yml` de 19/08
+**removeu do próprio cabeçalho** a menção à "governança v2", indicando que a lógica foi
+consolidada de volta no v1. O caminho "recuperar o v2" está, portanto, obsoleto.
 
 **Consequência.** Nenhuma das travas que `CLAUDE.md` descreve como obrigatórias está
 sendo aplicada em PR nenhum: Issue vinculada (`#<numero>` no corpo), Definition of Done
@@ -254,6 +279,13 @@ laço de feedback fora do CI.
 ---
 
 ## 10. Recomendações
+
+**Prioridade A** — reabilitar `governanca.yml` (Issue #1235). É a versão consolidada e
+mais recente do gate — não o `governanca-v2.yml`, órfão de branch não mesclada, que deve
+ser desregistrado. Reavaliar no mesmo passo `continuity-ui-gates.yml` e
+`architecture-inventory.yml`; `auto-integracao.yml` (merge automático) é decisão à parte.
+Esperar reprovação inicial nos PRs abertos cujos corpos não têm as seções — o dependabot
+já tem isenção embutida no workflow.
 
 **Prioridade A** — `test_alembic_single_head.py` fixa o head à mão, o que faz dois PRs
 com migration conflitarem ali por construção (já registrado em
