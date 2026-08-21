@@ -135,7 +135,7 @@ export default function Clientes() {
           toast.success("Cliente salvo e minutas geradas como rascunho");
         } catch (docsErr: any) {
           const detail = docsErr.response?.data?.detail;
-          toast.warning(
+          toast.info(
             `Cliente salvo, mas as minutas não foram geradas: ${typeof detail === "string" ? detail : "verifique sua permissão e tente pelo Dossiê"}`,
           );
         }
