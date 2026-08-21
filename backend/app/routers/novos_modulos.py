@@ -455,8 +455,8 @@ def _redirect_get_precificacao_tabela():
     return _RR(url="/api/modulos/precificacao/tabela", status_code=308)
 
 @_compat.get("/precificacao/calcular/{rule_id}")
-def _redirect_get_precificacao_calcular_rule_id():
-    return _RR(url="/api/modulos/precificacao/calcular/{rule_id}", status_code=308)
+def _redirect_get_precificacao_calcular_rule_id(rule_id: str):
+    return _RR(url=f"/api/modulos/precificacao/calcular/{rule_id}", status_code=308)
 
 @_compat.post("/precificacao/regras")
 def _redirect_post_precificacao_regras():
@@ -471,8 +471,8 @@ def _redirect_post_inadimplencia_varrer():
     return _RR(url="/api/modulos/inadimplencia/varrer", status_code=308)
 
 @_compat.patch("/inadimplencia/alertas/{alert_id}/resolver")
-def _redirect_patch_inadimplencia_alertas_alert_id_resolver():
-    return _RR(url="/api/modulos/inadimplencia/alertas/{alert_id}/resolver", status_code=308)
+def _redirect_patch_inadimplencia_alertas_alert_id_resolver(alert_id: str):
+    return _RR(url=f"/api/modulos/inadimplencia/alertas/{alert_id}/resolver", status_code=308)
 
 @_compat.get("/due-diligence/templates")
 def _redirect_get_due_diligence_templates():
@@ -483,16 +483,16 @@ def _redirect_post_due_diligence_templates():
     return _RR(url="/api/modulos/due-diligence/templates", status_code=308)
 
 @_compat.get("/cofre/documentos/{document_id}/logs")
-def _redirect_get_cofre_documentos_document_id_logs():
-    return _RR(url="/api/modulos/cofre/documentos/{document_id}/logs", status_code=308)
+def _redirect_get_cofre_documentos_document_id_logs(document_id: str):
+    return _RR(url=f"/api/modulos/cofre/documentos/{document_id}/logs", status_code=308)
 
 @_compat.post("/cofre/documentos/{document_id}/registrar-acesso")
-def _redirect_post_cofre_documentos_document_id_registrar_acesso():
-    return _RR(url="/api/modulos/cofre/documentos/{document_id}/registrar-acesso", status_code=308)
+def _redirect_post_cofre_documentos_document_id_registrar_acesso(document_id: str):
+    return _RR(url=f"/api/modulos/cofre/documentos/{document_id}/registrar-acesso", status_code=308)
 
 @_compat.patch("/cofre/documentos/{document_id}/sensibilidade")
-def _redirect_patch_cofre_documentos_document_id_sensibilidade():
-    return _RR(url="/api/modulos/cofre/documentos/{document_id}/sensibilidade", status_code=308)
+def _redirect_patch_cofre_documentos_document_id_sensibilidade(document_id: str):
+    return _RR(url=f"/api/modulos/cofre/documentos/{document_id}/sensibilidade", status_code=308)
 
 @_compat.get("/cofre/relatorio")
 def _redirect_get_cofre_relatorio():
