@@ -64,6 +64,7 @@ export default function Clientes() {
     estado: "MG",
   });
   const [salvando, setSalvando] = useState(false);
+  const [gerarDocsNoCadastro, setGerarDocsNoCadastro] = useState(false);
   const [erro, setErro] = useState(false);
   // Guarda de sequência: só a resposta do load mais recente aplica setData,
   // evitando que uma resposta antiga (busca com debounce) sobrescreva a nova.
@@ -127,9 +128,21 @@ export default function Clientes() {
     // O alerta de conflito é apenas um aviso ético — NÃO bloqueia o cadastro.
     setSalvando(true);
     try {
-      await api.post("/clients/", form);
+      const { data: clienteCriado } = await api.post("/clients/", form);
+      if (gerarDocsNoCadastro) {
+        try {
+          await api.post(`/clients/${clienteCriado.id}/gerar-documentos`, {});
+          toast.success("Cliente salvo e minutas geradas como rascunho");
+        } catch (docsErr: any) {
+          const detail = docsErr.response?.data?.detail;
+          toast.warning(
+            `Cliente salvo, mas as minutas não foram geradas: ${typeof detail === "string" ? detail : "verifique sua permissão e tente pelo Dossiê"}`,
+          );
+        }
+      }
       setModal(false);
       setForm({ tipo: "PF", cidade: "Betim", estado: "MG" });
+      setGerarDocsNoCadastro(false);
       setConflito(null);
       load();
     } catch (e: any) {
@@ -303,6 +316,7 @@ export default function Clientes() {
         open={modal}
         onClose={() => {
           setModal(false);
+          setGerarDocsNoCadastro(false);
           setConflito(null);
         }}
         title="Novo cliente"
@@ -493,6 +507,21 @@ export default function Clientes() {
             />
           </div>
         </div>
+
+        <label className="mt-4 flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={gerarDocsNoCadastro}
+            onChange={(e) => setGerarDocsNoCadastro(e.target.checked)}
+          />
+          <span>
+            <span className="font-medium text-navy">Gerar contrato e procuração após salvar</span>
+            <span className="block text-xs text-slate-500 mt-0.5">
+              As minutas são templates determinísticos, nascem como rascunho e exigem validação e revisão profissional antes do uso.
+            </span>
+          </span>
+        </label>
 
         {conflito && conflito.conflito && conflito.nivel !== "nenhum" && (
           <Alert

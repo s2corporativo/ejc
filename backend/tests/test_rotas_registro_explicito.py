@@ -131,6 +131,9 @@ ADICOES_INTENCIONAIS = {
     # PR #1120 (assinaturas): leitura do DOCUMENTO assinado por ID de
     # assinatura — o fix de produção que criou o endpoint de documento.
     ("/api/signatures/{sig_id}/documento", "GET"),
+    # #1199: documentos de admissão privados e vinculados ao cliente.
+    ("/api/clients/{client_id}/pecas-geradas", "GET"),
+    ("/api/clients/{client_id}/gerar-documentos", "POST"),
     # Consolidação 12/08/2026: intelligence_v3.py renomeado para
     # intelligence.py e prefixo normalizado para /intelligence (a única tela
     # consumidora, Radar Legislativo, foi atualizada junto — a mudança é de

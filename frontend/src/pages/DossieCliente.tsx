@@ -42,6 +42,15 @@ import {
   Modal,
 } from "../components/UI";
 
+interface PecaAdmissao {
+  id: string;
+  titulo: string;
+  tipo: string;
+  status: string;
+  admission_kind?: string | null;
+  created_at?: string | null;
+}
+
 interface DossieData {
   cliente: {
     id: number;
@@ -924,6 +933,10 @@ export default function DossieCliente() {
   const [abaAtiva, setAbaAtiva] = useState(
     requestedTab && validTabs.includes(requestedTab) ? requestedTab : "resumo",
   );
+  const [pecasAdmissao, setPecasAdmissao] = useState<PecaAdmissao[]>([]);
+  const [pecasAdmissaoErro, setPecasAdmissaoErro] = useState("");
+  const [pecasAdmissaoLoading, setPecasAdmissaoLoading] = useState(false);
+  const [gerandoAdmissao, setGerandoAdmissao] = useState(false);
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -942,6 +955,29 @@ export default function DossieCliente() {
   useEffect(() => {
     carregarDossie();
   }, [carregarDossie]);
+
+  const carregarPecasAdmissao = useCallback(async () => {
+    if (!clientId) return;
+    setPecasAdmissaoLoading(true);
+    setPecasAdmissaoErro("");
+    try {
+      const r = await api.get(`/clients/${clientId}/pecas-geradas`);
+      setPecasAdmissao(Array.isArray(r.data) ? r.data : []);
+    } catch (e: any) {
+      const detail = e.response?.data?.detail;
+      setPecasAdmissaoErro(
+        typeof detail === "string"
+          ? detail
+          : "Não foi possível carregar os documentos de admissão.",
+      );
+    } finally {
+      setPecasAdmissaoLoading(false);
+    }
+  }, [clientId]);
+
+  useEffect(() => {
+    if (abaAtiva === "documentos") carregarPecasAdmissao();
+  }, [abaAtiva, carregarPecasAdmissao]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -1007,6 +1043,43 @@ export default function DossieCliente() {
       toast.error(
         e.response?.data?.detail || "Não foi possível baixar o documento",
       );
+    }
+  };
+
+  const baixarPecaAdmissao = async (docId: string, titulo: string) => {
+    try {
+      const r = await api.get(`/legal-docs/${docId}/pdf-minuta`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${titulo || "minuta"}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Não foi possível baixar a minuta");
+    }
+  };
+
+  const gerarPecasAdmissao = async (forcarNovo = false) => {
+    if (!clientId) return;
+    setGerandoAdmissao(true);
+    try {
+      await api.post(`/clients/${clientId}/gerar-documentos`, {
+        forcar_novo: forcarNovo,
+      });
+      toast.success(
+        forcarNovo ? "Novas minutas geradas como rascunho" : "Minutas geradas como rascunho",
+      );
+      await carregarPecasAdmissao();
+    } catch (e: any) {
+      const detail = e.response?.data?.detail;
+      toast.error(
+        typeof detail === "string" ? detail : "Não foi possível gerar as minutas",
+      );
+    } finally {
+      setGerandoAdmissao(false);
     }
   };
 
@@ -1466,35 +1539,90 @@ export default function DossieCliente() {
       )}
 
       {abaAtiva === "documentos" && (
-        <div className="card overflow-hidden animate-fade-in">
-          <div className="px-4 py-3 border-b border-bronze-pale">
-            <p className="eyebrow flex items-center gap-2">
-              <FileText className="w-3 h-3" /> Acervo Documental
-            </p>
-          </div>
-          <div className="divide-y divide-bronze-pale/50">
-            {documentos_recentes.map((doc) => (
-              <div
-                key={doc.id}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group"
+        <div className="space-y-4 animate-fade-in">
+          <div className="card overflow-hidden">
+            <div className="px-4 py-3 border-b border-bronze-pale flex items-center justify-between gap-3">
+              <div>
+                <p className="eyebrow flex items-center gap-2">
+                  <FileText className="w-3 h-3" /> Documentos de Admissão
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Templates determinísticos; nenhuma minuta é aprovada automaticamente.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={gerandoAdmissao}
+                onClick={() => gerarPecasAdmissao(pecasAdmissao.length > 0)}
+                className="btn-secondary text-xs whitespace-nowrap"
               >
-                <Link to={`/casos/${doc.case_id}`} className="flex-1 min-w-0">
-                  <p className="text-sm text-navy-900 font-medium truncate">
-                    {doc.nome}
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    Caso #{doc.case_id} · {doc.tipo}
-                  </p>
-                </Link>
-                <button
-                  onClick={() => baixarDocumento(doc.id, doc.nome)}
-                  title="Baixar documento"
-                  className="p-1"
-                >
-                  <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
+                {gerandoAdmissao
+                  ? "Gerando..."
+                  : pecasAdmissao.length > 0
+                    ? "Gerar nova versão"
+                    : "Gerar minutas"}
+              </button>
+            </div>
+            {pecasAdmissaoErro && (
+              <div className="m-4 rounded-lg border border-warn-200 bg-warn-50 p-3 text-sm text-warn-700">
+                <p>{pecasAdmissaoErro}</p>
+                <button type="button" onClick={carregarPecasAdmissao} className="mt-1 underline font-medium">
+                  Tentar novamente
                 </button>
               </div>
-            ))}
+            )}
+            {pecasAdmissaoLoading ? (
+              <div className="p-5 flex justify-center"><Spinner /></div>
+            ) : pecasAdmissao.length === 0 && !pecasAdmissaoErro ? (
+              <p className="p-4 text-sm text-slate-500">
+                Nenhum contrato ou procuração de admissão foi gerado para este cliente.
+              </p>
+            ) : (
+              <div className="divide-y divide-bronze-pale/50">
+                {pecasAdmissao.map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 px-4 py-3 group">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-navy-900 font-medium truncate">{p.titulo}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {p.tipo === "contrato" ? "Contrato de honorários" : "Procuração"}
+                        {p.created_at ? ` · ${new Date(p.created_at).toLocaleDateString("pt-BR")}` : ""}
+                      </p>
+                    </div>
+                    <StatusBadge value={p.status} />
+                    <Link to="/pecas" title="Abrir fluxo canônico de revisão" className="text-xs font-medium text-bronze hover:underline whitespace-nowrap">
+                      Revisar em Peças
+                    </Link>
+                    <button type="button" onClick={() => baixarPecaAdmissao(p.id, p.titulo)} title="Baixar minuta para leitura" className="p-1">
+                      <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="px-4 py-2.5 text-[11px] text-slate-400 border-t border-bronze-pale/40">
+              Aprovação, finalização e protocolo continuam sujeitos aos gates de validação jurídica, revisão profissional e auditoria da área de Peças.
+            </p>
+          </div>
+
+          <div className="card overflow-hidden">
+            <div className="px-4 py-3 border-b border-bronze-pale">
+              <p className="eyebrow flex items-center gap-2">
+                <FileText className="w-3 h-3" /> Acervo Documental
+              </p>
+            </div>
+            <div className="divide-y divide-bronze-pale/50">
+              {documentos_recentes.map((doc) => (
+                <div key={doc.id} className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group">
+                  <Link to={`/casos/${doc.case_id}`} className="flex-1 min-w-0">
+                    <p className="text-sm text-navy-900 font-medium truncate">{doc.nome}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Caso #{doc.case_id} · {doc.tipo}</p>
+                  </Link>
+                  <button onClick={() => baixarDocumento(doc.id, doc.nome)} title="Baixar documento" className="p-1">
+                    <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
