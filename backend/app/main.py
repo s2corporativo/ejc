@@ -124,6 +124,10 @@ from app.routers import movimentos
 from app.routers import noticias
 from app.routers import notifications
 from app.routers import novos_modulos
+from app.routers import entrada_universal  # P3: registro explícito
+from app.routers import defesas_revisoes
+from app.routers import defesas_revisoes_pacote_seguro
+from app.routers import defesas_revisoes_avancado
 from app.routers import orquestrador
 from app.routers import observabilidade
 from app.routers import office_contracts
@@ -375,7 +379,8 @@ app.include_router(documents.router, prefix=API)
 app.include_router(dossie_cliente.router, prefix=API)
 app.include_router(dossie_estrategico.router, prefix=API)
 app.include_router(environmental.router, prefix=API)
-app.include_router(etiquetas.router, prefix=API)
+app.include_router(etiquetas.router, prefix=API)  # P3: prefixo canônico /etiquetas no router
+app.include_router(etiquetas.casos_router, prefix=API)
 app.include_router(evolution_webhook.router, prefix=API)
 app.include_router(export.router, prefix=API)
 app.include_router(extratos.router, prefix=API)
@@ -404,7 +409,9 @@ app.include_router(jurimetria.router, prefix=API)
 app.include_router(juris_import.router, prefix=API)
 app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
-app.include_router(kanban.router, prefix=API)
+app.include_router(kanban.router, prefix=API)  # P3: prefixo /kanban no router
+app.include_router(kanban.casos_router, prefix=API)
+app.include_router(kanban._compat, prefix=API)  # P3: redirect GET /api/kanban-columns (endereço antigo)
 app.include_router(kit_documental.router, prefix=API)  # POST /api/cases/{id}/kit-documental (P0.3)
 app.include_router(legal_docs.router, prefix=API)
 app.include_router(matriz_teses.router, prefix=API)  # FASE 3 Orquestrador — Matriz de Teses (migração 102)
@@ -421,7 +428,13 @@ app.include_router(motor_peca.router, prefix=API)  # P1: Motor de Peça — /api
 app.include_router(movimentos.router, prefix=API)
 app.include_router(noticias.router, prefix=API)
 app.include_router(notifications.router, prefix=API)
-app.include_router(novos_modulos.router, prefix=API)
+app.include_router(novos_modulos.router, prefix=API)  # P3: prefixo /modulos no router
+app.include_router(entrada_universal.router, prefix=API) # P3: registro explícito (antes: routers/__init__.py montava dentro de novos_modulos)
+app.include_router(defesas_revisoes.router, prefix=API)
+app.include_router(defesas_revisoes_pacote_seguro.router, prefix=API)
+app.include_router(defesas_revisoes_avancado.router, prefix=API)
+app.include_router(novos_modulos.casos_router, prefix=API)
+app.include_router(novos_modulos._compat, prefix=API)
 app.include_router(observabilidade.router, prefix=API)
 app.include_router(office_contracts.router, prefix=API)
 app.include_router(partner_withdrawals.router, prefix=API)
@@ -431,7 +444,8 @@ app.include_router(pix.router, prefix=API)
 app.include_router(portal.router, prefix=API)
 app.include_router(portal_documentos.router, prefix=API)  # Portal: solicitações de documentos + upload (migration 084)
 app.include_router(solicitacoes_documentos.router, prefix=API)  # advogado: solicitação de documentos ao cliente (migration 084)
-app.include_router(processes.router, prefix=API)
+app.include_router(processes.router, prefix=API)  # P3: prefixo /processes no router
+app.include_router(processes.casos_router, prefix=API)
 app.include_router(procuracoes.router, prefix=API)
 app.include_router(produtividade.router, prefix=API)
 app.include_router(prompts_juridicos.router, prefix=API)
@@ -456,8 +470,13 @@ app.include_router(                       # antes: peca_geracao.include_router(.
 app.include_router(                       # antes: append em rag.router.routes (prefixo absoluto)
     rag_governance.router, prefix=API)
 app.include_router(intelligence.router, prefix=API)  # Intelligence canônico (consolidação: intelligence_v3 → intelligence)
-app.include_router(                       # antes: andamentos.include_router(...)
-    datajud_intelligence.router, prefix=API + "/casos")
+app.include_router(                       # P3: prefixo canônico /datajud/intelligence (antes: andamentos.include_router + /casos)
+    datajud_intelligence.router, prefix=API)  # P3: prefixo /datajud/intelligence no router
+app.include_router(                       # P3: rotas de caso /{case_id}/andamentos/* mantidas sob /casos
+    datajud_intelligence.casos_router, prefix=API + "/casos")
+app.include_router(                       # P3: compatibilidade /casos/inteligencia/datajud/reconstruir-lote (308)
+    datajud_intelligence._compat, prefix=API + "/casos")
+app.include_router(datajud_intelligence._compat_casos, prefix=API)  # P3: redirect /casos/{case_id}/andamentos/alimentar-ia
 app.include_router(api_keys_router.router, prefix=API) # admin de chaves (JWT admin)
 app.include_router(regulatorio.router, prefix=API)
 app.include_router(radar_legislativo.router, prefix=API)  # Câmara+Senado+ALMG
@@ -472,7 +491,9 @@ app.include_router(sociedades_cliente.router, prefix=API)  # gestão societária
 app.include_router(provas.router, prefix=API)  # Gestão de Provas por caso + Documento Único de Anexos (Visual Law)
 app.include_router(processo_eletronico.router, prefix=API)  # Processo Eletrônico MNI 2.2.2 (Issue #762, Fase A leitura)
 app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA (art. 37) por cliente + RIPD (art. 38)
-app.include_router(sumulas.router, prefix=API)
+app.include_router(sumulas.router, prefix=API)  # P3: prefixo /sumulas no router
+app.include_router(sumulas.casos_router, prefix=API)
+app.include_router(sumulas._compat, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
 app.include_router(system_modules.router, prefix=API)  # Mapa de Módulos — governança modular
 app.include_router(diagnostico.router, prefix=API)  # Central Eletrônica de Diagnóstico

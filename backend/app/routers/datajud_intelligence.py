@@ -12,10 +12,11 @@ from app.models.audit_log import criar_audit_log
 from app.models.user import User
 from app.services.datajud_cognitive_feed import alimentar_caso, alimentar_lote, status_caso
 
-router = APIRouter(tags=["Andamentos — Inteligência do caso"])
+router = APIRouter(prefix="/datajud/intelligence", tags=["DataJud — Intelligence"])
+casos_router = APIRouter(prefix="", tags=["DataJud — Casos"])
 
 
-@router.get("/{case_id}/andamentos/inteligencia")
+@casos_router.get("/{case_id}/andamentos/inteligencia")
 async def consultar_status_feed(
     case_id: str,
     db: AsyncSession = Depends(get_db),
@@ -56,7 +57,7 @@ async def alimentar_inteligencia_do_caso(
 
 
 @router.post(
-    "/inteligencia/datajud/reconstruir-lote",
+    "/reconstruir-lote",
     dependencies=[Depends(rate_limit("datajud_feed_lote", 2))],
 )
 async def reconstruir_feed_lote(
@@ -76,3 +77,23 @@ async def reconstruir_feed_lote(
     )
     await db.commit()
     return resultado
+
+
+# ── Compatibilidade P3 (20/08/2026): /casos/inteligencia/datajud/reconstruir-lote
+#    -> /datajud/intelligence/reconstruir-lote (redirect 308 permanente). ─────
+from fastapi.responses import RedirectResponse as _RR
+_compat = APIRouter(prefix="/inteligencia/datajud", tags=["DataJud — Compatibilidade"])
+
+@_compat.post("/reconstruir-lote")
+def _redirect_reconstruir_lote():
+    return _RR(url="/api/datajud/intelligence/reconstruir-lote", status_code=308)
+
+
+# Mini-router dedicado: o prefix agrupador do _compat principal
+# ("/casos/inteligencia/datajud") não permite reconstruir o endereço antigo
+# /api/casos/{case_id}/andamentos/alimentar-ia — ele vive aqui sem prefixo.
+_compat_casos = APIRouter(prefix="", tags=["DataJud — Compatibilidade Casos"])
+
+@_compat_casos.post("/casos/{case_id}/andamentos/alimentar-ia")
+def _redirect_alimentar_ia(case_id: str):
+    return _RR(url=f"/api/datajud/intelligence/{case_id}/andamentos/alimentar-ia", status_code=308)

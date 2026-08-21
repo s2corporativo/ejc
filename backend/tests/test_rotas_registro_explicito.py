@@ -269,6 +269,26 @@ REMOCOES_INTENCIONAIS |= set(_MOVIDAS_ONDA2)
 ADICOES_INTENCIONAIS |= {
     ("/api" + path[len("/api/v1"):], metodo) for path, metodo in _MOVIDAS_ONDA2
 }
+# PR #1218 (P3 — 20/08/2026): prefixos canônicos nos 6 routers
+ADICOES_INTENCIONAIS |= {
+    ("/api/datajud/intelligence/reconstruir-lote", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/datajud/intelligence/{case_id}/andamentos/alimentar-ia", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/kanban/columns", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/cofre/documentos/{document_id}/logs", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/cofre/documentos/{document_id}/registrar-acesso", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/cofre/documentos/{document_id}/sensibilidade", "PATCH"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/cofre/relatorio", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/due-diligence/templates", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/due-diligence/templates", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/inadimplencia/alertas", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/inadimplencia/alertas/{alert_id}/resolver", "PATCH"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/inadimplencia/varrer", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/precificacao/calcular/{rule_id}", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/precificacao/regras", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/modulos/precificacao/tabela", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
+    ("/api/sumulas/verificar-conflito", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
+}
+
 
 
 def test_paridade_openapi_com_snapshot_anterior():
@@ -351,6 +371,31 @@ def test_paridade_openapi_com_snapshot_anterior():
         (("/api/honorarios-calc/cases/{case_id}/teto-etico", "GET"), []),
         (("/api/honorarios-exito/{fee_id}/rateio", "GET"), []),
         (("/api/honorarios-exito/{fee_id}/rateio", "POST"), []),
+        # PR #1218 (P3 — 20/08/2026): 308 permanentes dos endereços
+        # antigos dos 6 routers sem prefixo — o destino canônico
+        # preserva o auth; o alias legado vira redirect anônimo.
+        (("/api/casos/inteligencia/datajud/reconstruir-lote", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/casos/verificar-conflito", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/casos/{case_id}/andamentos/alimentar-ia", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/cofre/documentos/{document_id}/logs", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/cofre/documentos/{document_id}/registrar-acesso", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/cofre/documentos/{document_id}/sensibilidade", "PATCH"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/cofre/relatorio", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/due-diligence/templates", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/due-diligence/templates", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/honorarios-calc/cases/{case_id}/provisionamento", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/honorarios-calc/cases/{case_id}/teto-etico", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/honorarios-exito/{fee_id}/rateio", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/honorarios-exito/{fee_id}/rateio", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/inadimplencia/alertas", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/inadimplencia/alertas/{alert_id}/resolver", "PATCH"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/inadimplencia/varrer", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/precificacao/calcular/{rule_id}", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/precificacao/regras", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/precificacao/tabela", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/prompts-biblioteca/", "GET"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/prompts-biblioteca/", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
+        (("/api/prompts-biblioteca/{prompt_id}/executar", "POST"), []),  # PR #1218 (P3): redirect 308 anônimo
     )
 
     divergentes = [
