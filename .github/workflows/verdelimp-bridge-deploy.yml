@@ -28,25 +28,45 @@ jobs:
       VERDELIMP_APP_DIR: /opt/verdelimp-erp
       ONE_SHOT_MARKER: /opt/verdelimp-erp/.bridge-deploy-20260820.done
     steps:
+      - name: Verificar se o one-shot já foi consumido
+        id: one_shot
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo -n true
+          if sudo -n test -f "$ONE_SHOT_MARKER"; then
+            echo "consumed=true" >> "$GITHUB_OUTPUT"
+            echo "Bridge já consumido anteriormente; execução encerrada como no-op seguro."
+          else
+            echo "consumed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Registrar início no runner da VPS
+        if: steps.one_shot.outputs.consumed != 'true'
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: 1225,
-              body: [
-                '▶️ **Bridge Verdelimp iniciado no runner `ejc-vps`**',
-                '',
-                `- Execução: ${runUrl}`,
-                `- CI da main que liberou o bridge: \`${context.payload.workflow_run?.head_sha || 'indisponível'}\``,
-                '- O próximo passo é o pré-voo fail-closed dentro da VPS.'
-              ].join('\n'),
-            });
+            try {
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: 1225,
+                body: [
+                  '▶️ **Bridge Verdelimp iniciado no runner `ejc-vps`**',
+                  '',
+                  `- Execução: ${runUrl}`,
+                  `- CI da main que liberou o bridge: \`${context.payload.workflow_run?.head_sha || 'indisponível'}\``,
+                  '- O próximo passo é o pré-voo fail-closed dentro da VPS.'
+                ].join('\n'),
+              });
+            } catch (error) {
+              core.warning(`Falha não bloqueante ao registrar início na issue #1225: ${error?.message || error}`);
+            }
 
       - name: Pré-voo fail-closed
+        if: steps.one_shot.outputs.consumed != 'true'
         id: preflight
         shell: bash
         run: |
@@ -56,12 +76,6 @@ jobs:
           sudo test -d "$APP/.git"
           sudo test -f "$APP/.env.production"
           sudo test -f "$APP/.env.ops"
-
-          if sudo test -f "$ONE_SHOT_MARKER"; then
-            echo "::error::A autorização one-shot já foi consumida; recusando repetir o deploy."
-            sudo cat "$ONE_SHOT_MARKER" || true
-            exit 1
-          fi
 
           ORIGIN="$(sudo git -C "$APP" remote get-url origin)"
           case "$ORIGIN" in
@@ -84,6 +98,7 @@ jobs:
           echo "Pré-voo aprovado. SHA atual: $BEFORE_SHA"
 
       - name: Executar deploy seguro oficial do Verdelimp
+        if: steps.one_shot.outputs.consumed != 'true'
         id: deploy
         shell: bash
         run: |
@@ -95,6 +110,7 @@ jobs:
           '
 
       - name: Consumir autorização one-shot após deploy local comprovado
+        if: steps.one_shot.outputs.consumed != 'true'
         id: consume
         shell: bash
         run: |
@@ -113,6 +129,7 @@ jobs:
           echo "Autorização one-shot consumida para SHA $AFTER_SHA."
 
       - name: Coletar prova local e exigir endpoint público saudável
+        if: steps.one_shot.outputs.consumed != 'true'
         id: proof
         shell: bash
         run: |
@@ -163,30 +180,35 @@ jobs:
           echo "public_ok=$PUBLIC_OK" >> "$GITHUB_OUTPUT"
 
       - name: Registrar resultado na issue operacional
-        if: always()
+        if: always() && steps.one_shot.outputs.consumed != 'true'
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
-            const outcome = '${{ job.status }}';
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const icon = outcome === 'success' ? '✅' : '❌';
-            const before = '${{ steps.preflight.outputs.before_sha }}' || 'indisponível';
-            const after = '${{ steps.consume.outputs.after_sha }}' || 'indisponível';
-            const body = [
-              `${icon} **Bridge Verdelimp — ${outcome}**`,
-              '',
-              `- Execução: ${runUrl}`,
-              `- SHA antes: \`${before}\``,
-              `- SHA depois: \`${after}\``,
-              `- Runner: \`ejc-vps\``,
-              '',
-              outcome === 'success'
-                ? 'O deploy seguro do Verdelimp concluiu na VPS e ao menos um endpoint público respondeu HTTP 200.'
-                : 'A operação foi interrompida fail-closed. Se o deploy local já concluiu, a autorização one-shot permanece consumida para impedir repetição acidental.'
-            ].join('\n');
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: 1225,
-              body,
-            });
+            try {
+              const outcome = '${{ job.status }}';
+              const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+              const icon = outcome === 'success' ? '✅' : '❌';
+              const before = '${{ steps.preflight.outputs.before_sha }}' || 'indisponível';
+              const after = '${{ steps.consume.outputs.after_sha }}' || 'indisponível';
+              const body = [
+                `${icon} **Bridge Verdelimp — ${outcome}**`,
+                '',
+                `- Execução: ${runUrl}`,
+                `- SHA antes: \`${before}\``,
+                `- SHA depois: \`${after}\``,
+                `- Runner: \`ejc-vps\``,
+                '',
+                outcome === 'success'
+                  ? 'O deploy seguro do Verdelimp concluiu na VPS e ao menos um endpoint público respondeu HTTP 200.'
+                  : 'A operação foi interrompida fail-closed. Se o deploy local já concluiu, a autorização one-shot permanece consumida para impedir repetição acidental.'
+              ].join('\n');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: 1225,
+                body,
+              });
+            } catch (error) {
+              core.warning(`Falha não bloqueante ao registrar resultado na issue #1225: ${error?.message || error}`);
+            }
