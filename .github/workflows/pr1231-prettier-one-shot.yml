@@ -1,0 +1,40 @@
+name: PR1231 prettier one-shot
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.head_ref == 'fix/1199-client-document-isolation-v4'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/1199-client-document-isolation-v4
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.22.2
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Formatar somente arquivos alterados do frontend
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm ci
+          npx prettier --write src/pages/Clientes.tsx src/pages/DossieCliente.tsx
+      - name: Remover executor temporario e publicar formatacao
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/pr1231-prettier-one-shot.yml
+          git config user.name "s2corporativo"
+          git config user.email "258954056+s2corporativo@users.noreply.github.com"
+          git add -- frontend/src/pages/Clientes.tsx frontend/src/pages/DossieCliente.tsx .github/workflows/pr1231-prettier-one-shot.yml
+          git diff --cached --check
+          git commit -m "style(frontend): aplicar prettier no fluxo documental"
+          git push origin HEAD:fix/1199-client-document-isolation-v4
