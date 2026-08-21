@@ -1,0 +1,60 @@
+name: Temporary PR 1231 CI fix
+
+on:
+  push:
+    branches:
+      - fix/1199-client-document-isolation-v4
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/1199-client-document-isolation-v4
+          fetch-depth: 0
+
+      - name: Apply surgical test alignment
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          montar_old = '''    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(\n        id="u1", role=SimpleNamespace(value=role)\n    )\n    return TestClient(app)\n'''
+          montar_new = '''    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(\n        id="u1", role=SimpleNamespace(value=role)\n    )\n    # Estes testes exercitam protocolo/assinatura, não o novo gate transversal\n    # Client -> LegalDoc. O gate tem suíte própria em test_client_legal_doc_scope.py.\n    app.dependency_overrides[legal_docs_router._enforce_client_legal_doc_scope] = lambda: None\n    return TestClient(app)\n'''
+
+          for filename in (
+              "backend/tests/test_legal_doc_protocolo.py",
+              "backend/tests/test_peca_conferir_assinar.py",
+          ):
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8")
+              count = text.count(montar_old)
+              assert count == 1, f"{filename}: contexto _montar inesperado ({count})"
+              path.write_text(text.replace(montar_old, montar_new, 1), encoding="utf-8")
+
+          path = Path("backend/tests/test_rotas_registro_explicito.py")
+          text = path.read_text(encoding="utf-8")
+          marker = '''    )\n\n    divergentes = [\n'''
+          assert text.count(marker) == 1, "contexto AUTH_ALTERACOES_INTENCIONAIS inesperado"
+          replacement = '''    )\n\n    # Issue #1199 / PR #1231: o gate transversal Client -> LegalDoc acrescenta\n    # exatamente uma dependência de segurança às rotas legal-docs que já\n    # existiam no baseline. Derivar do baseline mantém a trava fail-closed:\n    # qualquer outra dependência adicionada/removida continua divergente.\n    AUTH_ALTERACOES_INTENCIONAIS += tuple(\n        (\n            k,\n            sorted([*chaves_base[k]["auth_deps"], "_enforce_client_legal_doc_scope"]),\n        )\n        for k in sorted(set(chaves_base) & set(chaves_atual))\n        if k[0].startswith("/api/legal-docs/")\n    )\n\n    divergentes = [\n'''
+          path.write_text(text.replace(marker, replacement, 1), encoding="utf-8")
+          PY
+
+          git diff --check
+          git diff -- backend/tests/test_legal_doc_protocolo.py backend/tests/test_peca_conferir_assinar.py backend/tests/test_rotas_registro_explicito.py
+
+      - name: Commit patch and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- backend/tests/test_legal_doc_protocolo.py backend/tests/test_peca_conferir_assinar.py backend/tests/test_rotas_registro_explicito.py
+          git rm -- .github/workflows/tmp-fix-1231-ci.yml
+          git diff --cached --check
+          git commit -m "test(clients): alinhar gate de escopo no PR #1231"
+          git push origin HEAD:fix/1199-client-document-isolation-v4
