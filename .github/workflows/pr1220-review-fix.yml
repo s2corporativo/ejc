@@ -1,0 +1,755 @@
+name: PR1220 one-shot review fix
+
+on:
+  push:
+    branches:
+      - fix/1199-client-document-isolation-v3
+    paths:
+      - .github/workflows/pr1220-review-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-review-fixes:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/1199-client-document-isolation-v3
+          fetch-depth: 0
+      - name: Aplicar patch fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path: str) -> str:
+              return Path(path).read_text(encoding="utf-8")
+
+          def write(path: str, text: str) -> None:
+              Path(path).write_text(text, encoding="utf-8")
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              text = read(path)
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: esperado 1 match, encontrados {count}: {old[:100]!r}")
+              write(path, text.replace(old, new, 1))
+
+          def regex_once(path: str, pattern: str, repl: str) -> None:
+              text = read(path)
+              new, count = re.subn(pattern, repl, text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f"{path}: regex esperava 1 match, encontrou {count}: {pattern[:100]!r}")
+              write(path, new)
+
+          # 1) Model: vínculo por cliente + marcador imutável do kit de admissão.
+          replace_once(
+              "backend/app/models/legal_doc.py",
+              '    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)\n    created_by = Column(String(36), nullable=True)\n',
+              '    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)\n    # Marcador imutável do documento de admissão. O título é apresentação e pode\n    # mudar com o nome do cliente; nunca deve funcionar como chave de domínio.\n    client_admission_kind = Column(String(40), nullable=True)\n    created_by = Column(String(36), nullable=True)\n',
+          )
+
+          # 2) Migration 147: ainda não integrada/aplicada em produção; completa o
+          #    desenho da mesma revisão com o marcador estável e índice composto.
+          replace_once(
+              "backend/alembic/versions/147_legal_doc_client_id.py",
+              '    op.add_column(\n        "legal_docs",\n        sa.Column("client_id", sa.String(length=36), nullable=True),\n    )\n',
+              '    op.add_column(\n        "legal_docs",\n        sa.Column("client_id", sa.String(length=36), nullable=True),\n    )\n    op.add_column(\n        "legal_docs",\n        sa.Column("client_admission_kind", sa.String(length=40), nullable=True),\n    )\n',
+          )
+          replace_once(
+              "backend/alembic/versions/147_legal_doc_client_id.py",
+              '    op.create_index(\n        "ix_legal_docs_client_id",\n        "legal_docs",\n        ["client_id"],\n        unique=False,\n    )\n',
+              '    op.create_index(\n        "ix_legal_docs_client_id",\n        "legal_docs",\n        ["client_id"],\n        unique=False,\n    )\n    op.create_index(\n        "ix_legal_docs_client_admission",\n        "legal_docs",\n        ["client_id", "client_admission_kind"],\n        unique=False,\n    )\n',
+          )
+          replace_once(
+              "backend/alembic/versions/147_legal_doc_client_id.py",
+              '        sa.text("SELECT count(*) FROM legal_docs WHERE client_id IS NOT NULL")\n',
+              '        sa.text(\n            "SELECT count(*) FROM legal_docs "\n            "WHERE client_id IS NOT NULL OR client_admission_kind IS NOT NULL"\n        )\n',
+          )
+          replace_once(
+              "backend/alembic/versions/147_legal_doc_client_id.py",
+              '    op.drop_index("ix_legal_docs_client_id", table_name="legal_docs")\n',
+              '    op.drop_index("ix_legal_docs_client_admission", table_name="legal_docs")\n    op.drop_index("ix_legal_docs_client_id", table_name="legal_docs")\n',
+          )
+          replace_once(
+              "backend/alembic/versions/147_legal_doc_client_id.py",
+              '    op.drop_column("legal_docs", "client_id")\n',
+              '    op.drop_column("legal_docs", "client_admission_kind")\n    op.drop_column("legal_docs", "client_id")\n',
+          )
+
+          # 3) Reserva formal da migration.
+          reservations = "backend/alembic/MIGRATION_RESERVATIONS.md"
+          text = read(reservations)
+          if "| 147_legal_doc_client_id |" not in text:
+              lines = text.splitlines()
+              idx = next(
+                  (i for i, line in enumerate(lines) if line.startswith("| 146_case_sigilo_reforcado |")),
+                  None,
+              )
+              if idx is None:
+                  raise SystemExit("MIGRATION_RESERVATIONS: linha 146 não encontrada")
+              lines.insert(
+                  idx + 1,
+                  "| 147_legal_doc_client_id | 146_case_sigilo_reforcado | fix/1199-client-document-isolation-v3 | [#1220](https://github.com/s2corporativo/ejc/pull/1220) | ChatGPT | Em PR | Issue #1199: vínculo estável `LegalDoc.client_id` e marcador imutável `client_admission_kind` para contrato/procuração de admissão; aditiva, sem backfill. |",
+              )
+              write(reservations, "\n".join(lines) + "\n")
+
+          # 4) Service: título deixa de ser identidade. O marcador imutável define
+          #    procuração/contrato do kit mesmo após renomear o cliente.
+          replace_once(
+              "backend/app/services/geracao_documental_cliente.py",
+              '_AREA_ALIASES = {"civil": ["civil", "civel"]}\n',
+              '_AREA_ALIASES = {"civil": ["civil", "civel"]}\nADMISSION_KIND_PROCURACAO = "procuracao_ad_judicia"\nADMISSION_KIND_CONTRATO = "contrato_honorarios"\nADMISSION_KINDS = (ADMISSION_KIND_PROCURACAO, ADMISSION_KIND_CONTRATO)\n',
+          )
+          regex_once(
+              "backend/app/services/geracao_documental_cliente.py",
+              r'async def listar_pecas_cliente\(db: AsyncSession, cli: Client\) -> list\[dict\]:.*?\n\ndef _aliases_area',
+              '''async def listar_pecas_cliente(db: AsyncSession, cli: Client) -> list[dict]:
+    """Lista o kit de admissão por vínculo/marker imutáveis, nunca por título."""
+    docs = (
+        await db.execute(
+            select(LegalDoc)
+            .where(
+                LegalDoc.client_id == cli.id,
+                LegalDoc.case_id.is_(None),
+                LegalDoc.deleted_at.is_(None),
+                LegalDoc.client_admission_kind.in_(ADMISSION_KINDS),
+            )
+            .order_by(LegalDoc.created_at.desc())
+        )
+    ).scalars().all()
+    return [_doc_dict(doc) for doc in docs]
+
+
+def _aliases_area''',
+          )
+          regex_once(
+              "backend/app/services/geracao_documental_cliente.py",
+              r'    if not forcar_novo:\n.*?\n\n    advogado =',
+              '''    if not forcar_novo:
+        existentes = (
+            await db.execute(
+                select(LegalDoc)
+                .where(
+                    LegalDoc.client_id == cli.id,
+                    LegalDoc.case_id.is_(None),
+                    LegalDoc.deleted_at.is_(None),
+                    LegalDoc.status == PecaStatus.rascunho,
+                    LegalDoc.client_admission_kind.in_(ADMISSION_KINDS),
+                )
+                .order_by(LegalDoc.created_at.desc())
+            )
+        ).scalars().all()
+        por_kind: dict[str, LegalDoc] = {}
+        for doc in existentes:
+            kind = (doc.client_admission_kind or "").strip()
+            if kind:
+                por_kind.setdefault(kind, doc)
+        if all(kind in por_kind for kind in ADMISSION_KINDS):
+            proc = por_kind[ADMISSION_KIND_PROCURACAO]
+            contrato = por_kind[ADMISSION_KIND_CONTRATO]
+            return {
+                "client_id": cli.id,
+                "status": PecaStatus.rascunho.value,
+                "ja_existia": True,
+                "aviso": AVISO_KIT_EXISTENTE,
+                "procuracao": {
+                    "legal_doc_id": proc.id,
+                    "titulo": proc.titulo,
+                    "conteudo": proc.conteudo,
+                },
+                "contrato": {
+                    "legal_doc_id": contrato.id,
+                    "titulo": contrato.titulo,
+                    "conteudo": contrato.conteudo,
+                },
+            }
+
+    advogado =''',
+          )
+          regex_once(
+              "backend/app/services/geracao_documental_cliente.py",
+              r'    conteudos = \[.*?\n    criados: list\[LegalDoc\] = \[\]',
+              '''    conteudos = [
+        (
+            titulos["procuracao"],
+            PecaTipo.procuracao,
+            ADMISSION_KIND_PROCURACAO,
+            _procuracao(
+                None,
+                cli,
+                advogado,
+                tipo_poderes=tipo,
+                permite_substabelecimento=permite_substabelecimento,
+                poderes_especiais=poderes_especiais,
+            ),
+        ),
+        (
+            titulos["contrato"],
+            PecaTipo.contrato,
+            ADMISSION_KIND_CONTRATO,
+            _contrato_cliente(cli, advogado, area, referencia),
+        ),
+    ]
+
+    criados: list[LegalDoc] = []''',
+          )
+          replace_once(
+              "backend/app/services/geracao_documental_cliente.py",
+              '    for titulo, tipo_peca, conteudo in conteudos:\n',
+              '    for titulo, tipo_peca, admission_kind, conteudo in conteudos:\n',
+          )
+          replace_once(
+              "backend/app/services/geracao_documental_cliente.py",
+              '            client_id=cli.id,\n            created_by=cu.id,\n',
+              '            client_id=cli.id,\n            client_admission_kind=admission_kind,\n            created_by=cu.id,\n',
+          )
+
+          # 5) GET de listagem não compartilha quota de escrita com geração.
+          replace_once(
+              "backend/app/routers/clients.py",
+              '# Read-only, mas com rate limit idêntico ao gerar-documentos (PR #1199:\n# fechamento da revisão — throttle protege contra enumeração em massa).\n@router.get("/{client_id}/pecas-geradas",\n            dependencies=[Depends(rate_limit("kit-documental", 5))])\n',
+              '# Read-only com quota própria: a leitura do Dossiê não pode consumir a\n# mesma janela restrita da geração. Ownership continua sendo o bloqueio principal.\n@router.get("/{client_id}/pecas-geradas",\n            dependencies=[Depends(rate_limit("kit-documental-list", 30))])\n',
+          )
+
+          # 6) LegalDocs: gate central de client_id em TODAS as rotas doc_id e
+          #    filtro da coleção. Mantém o gate de caso já existente.
+          replace_once(
+              "backend/app/routers/legal_docs.py",
+              'from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks\n',
+              'from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Request\n',
+          )
+          replace_once(
+              "backend/app/routers/legal_docs.py",
+              'from app.core.ownership import verificar_acesso_caso, is_gestao\n',
+              'from app.core.ownership import verificar_acesso_caso, is_gestao\nfrom app.core.client_ownership import (\n    cliente_id_visivel,\n    ids_clientes_visiveis,\n    visao_total_clientes,\n)\n',
+          )
+          replace_once(
+              "backend/app/routers/legal_docs.py",
+              'router = APIRouter(prefix="/legal-docs", tags=["Peças Jurídicas"])\n',
+              '''async def _enforce_client_legal_doc_scope(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+) -> None:
+    """Gate transversal para peça avulsa vinculada a cliente.
+
+    Rotas de peça já aplicam ownership por ``case_id``. Esta dependência cobre o
+    segundo domínio possível (``client_id``) sem enfraquecer o gate de caso e usa
+    404 uniforme para não confirmar UUID de documento de outra carteira.
+    """
+    doc_id = request.path_params.get("doc_id")
+    if not doc_id:
+        return
+    row = (
+        await db.execute(
+            select(LegalDoc.client_id).where(
+                LegalDoc.id == doc_id,
+                LegalDoc.deleted_at.is_(None),
+            )
+        )
+    ).first()
+    if row is None:
+        return  # o handler mantém o 404 canônico
+    client_id = row[0]
+    if client_id and not await cliente_id_visivel(db, cu, client_id):
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+
+
+router = APIRouter(
+    prefix="/legal-docs",
+    tags=["Peças Jurídicas"],
+    dependencies=[Depends(_enforce_client_legal_doc_scope)],
+)
+''',
+          )
+          replace_once(
+              "backend/app/routers/legal_docs.py",
+              '''    # Ownership por caso (IDOR): não-gestão só vê peças dos seus casos
+    # (responsável/auxiliar/sem-dono) ou sem caso vinculado.
+    if not is_gestao(cu):
+        casos_visiveis = select(Case.id).where(
+            Case.deleted_at.is_(None),
+            (
+                (Case.advogado_responsavel_id == cu.id)
+                | (Case.advogado_auxiliar_id == cu.id)
+                | (Case.advogado_responsavel_id.is_(None) & Case.advogado_auxiliar_id.is_(None))
+            ),
+        )
+        q = q.where(LegalDoc.case_id.is_(None) | LegalDoc.case_id.in_(casos_visiveis))
+''',
+              '''    # Ownership por caso + cliente. Peça avulsa legada sem client_id
+    # preserva a visibilidade histórica; peça avulsa NOVA com client_id segue a
+    # mesma segregação canônica do CRM.
+    if not is_gestao(cu):
+        casos_visiveis = select(Case.id).where(
+            Case.deleted_at.is_(None),
+            (
+                (Case.advogado_responsavel_id == cu.id)
+                | (Case.advogado_auxiliar_id == cu.id)
+                | (Case.advogado_responsavel_id.is_(None) & Case.advogado_auxiliar_id.is_(None))
+            ),
+        )
+        visiveis = [
+            LegalDoc.case_id.in_(casos_visiveis),
+            and_(LegalDoc.case_id.is_(None), LegalDoc.client_id.is_(None)),
+        ]
+        if visao_total_clientes(cu):
+            visiveis.append(
+                and_(LegalDoc.case_id.is_(None), LegalDoc.client_id.is_not(None))
+            )
+        else:
+            visiveis.append(
+                and_(
+                    LegalDoc.case_id.is_(None),
+                    LegalDoc.client_id.in_(ids_clientes_visiveis(cu)),
+                )
+            )
+        q = q.where(or_(*visiveis))
+''',
+          )
+          legal_path = "backend/app/routers/legal_docs.py"
+          legal = read(legal_path)
+          if legal.count("    escopo_cli = None\n") != 2:
+              raise SystemExit("legal_docs.py: esperado escopo_cli=None em 2 pontos")
+          legal = legal.replace("    escopo_cli = None\n", "    escopo_cli = d.client_id\n")
+
+          # Guardas de máquina de estados: aprovação/revisão não podem rebaixar
+          # peça já aprovada/final/protocolada nem sobrescrever metadados HITL.
+          start = legal.index('@router.patch("/{doc_id}/aprovar"')
+          end = legal.index('@router.post("/{doc_id}/conferir-e-assinar")', start)
+          section = legal[start:end]
+          needle = '    observacoes = (payload.observacoes or "").strip()\n'
+          if section.count(needle) != 1:
+              raise SystemExit("legal_docs.aprovar: ponto de observações não encontrado")
+          section = section.replace(
+              needle,
+              '''    status_atual = _status_value(d.status)
+    if status_atual in ("aprovada", "final", "protocolada"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Peça em status '{status_atual}' já passou pela aprovação; "
+                "a operação não pode regredir o registro nem sobrescrever a revisão."
+            ),
+        )
+
+    observacoes = (payload.observacoes or "").strip()
+''',
+              1,
+          )
+          section = section.replace(
+              '    status_antigo = _status_value(d.status)\n',
+              '    status_antigo = status_atual\n',
+              1,
+          )
+          legal = legal[:start] + section + legal[end:]
+
+          start = legal.index('@router.post("/{doc_id}/revisar"')
+          end = legal.index('@router.patch("/{doc_id}/aprovar"', start)
+          section = legal[start:end]
+          needle = '    d.human_reviewed = payload.aprovado\n'
+          if section.count(needle) != 1:
+              raise SystemExit("legal_docs.revisar: ponto de revisão não encontrado")
+          section = section.replace(
+              needle,
+              '''    status_atual = _status_value(d.status)
+    if status_atual in ("aprovada", "final", "protocolada"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Peça em status '{status_atual}' já passou pela revisão; "
+                "crie nova versão para novo ciclo de conferência."
+            ),
+        )
+
+    d.human_reviewed = payload.aprovado
+''',
+              1,
+          )
+          legal = legal[:start] + section + legal[end:]
+          if 'if status_atual_peca in ("final", "protocolada"):' not in legal:
+              raise SystemExit("legal_docs.conferir-e-assinar: guarda esperada não encontrada")
+          legal = legal.replace(
+              'if status_atual_peca in ("final", "protocolada"):',
+              'if status_atual_peca in ("aprovada", "final", "protocolada"):',
+              1,
+          )
+          write(legal_path, legal)
+
+          # 7) RAG: peça client-linked sem caso herda client_id e nomes do cliente;
+          #    nunca cai na base como conhecimento global.
+          regex_once(
+              "backend/app/services/case_intel.py",
+              r'            # Escopo de isolamento \(Fase 3B\) \+ nomes a proteger na sanitização\.\n            client_id = None\n            nomes_proteger: list\[str\] = \[\]\n            if d\.case_id:.*?\n\n            # LGPD',
+              '''            # Escopo de isolamento (Fase 3B) + nomes a proteger na sanitização.
+            # Peça avulsa pode estar ligada diretamente ao cliente; nesse caso o
+            # escopo NÃO pode degradar para global só porque não existe case_id.
+            client_id = getattr(d, "client_id", None)
+            nomes_proteger: list[str] = []
+            if client_id:
+                cli = await db.get(Client, client_id)
+                if cli:
+                    for n in (
+                        getattr(cli, "nome", None),
+                        getattr(cli, "razao_social", None),
+                        getattr(cli, "nome_fantasia", None),
+                    ):
+                        if n:
+                            nomes_proteger.append(n)
+            if d.case_id:
+                caso = await db.get(Case, d.case_id)
+                if caso:
+                    client_id = caso.client_id or client_id
+                    if getattr(caso, "parte_contraria", None):
+                        nomes_proteger.append(caso.parte_contraria)
+                    if caso.client_id and caso.client_id != getattr(d, "client_id", None):
+                        cli = await db.get(Client, caso.client_id)
+                        if cli:
+                            for n in (
+                                getattr(cli, "nome", None),
+                                getattr(cli, "razao_social", None),
+                                getattr(cli, "nome_fantasia", None),
+                            ):
+                                if n:
+                                    nomes_proteger.append(n)
+
+            # LGPD''',
+          )
+
+          # 8) Dossiê: leitura tem erro/retry explícito e a aprovação sai da tela.
+          #    A conferência/assinatura fica no fluxo canônico de Produção Jurídica,
+          #    que exige observação escrita pelo advogado e aplica todos os gates.
+          dossie_path = "frontend/src/pages/DossieCliente.tsx"
+          dossie = read(dossie_path)
+          start = dossie.index("  const [carregandoPecas, setCarregandoPecas]")
+          end = dossie.index("  const baixarPeca = async", start)
+          dossie = dossie[:start] + '''  const [carregandoPecas, setCarregandoPecas] = useState(false);
+  const [erroPecas, setErroPecas] = useState("");
+
+  const carregarPecasAdmissao = useCallback(async () => {
+    if (!clientId) return;
+    setCarregandoPecas(true);
+    setErroPecas("");
+    try {
+      const r = await api.get(`/clients/${clientId}/pecas-geradas`);
+      setPecasAdmissao(Array.isArray(r.data) ? r.data : []);
+    } catch {
+      // Não converte indisponibilidade/403/429 em "lista vazia": preservar o
+      // último dado conhecido e deixar o operador tentar novamente.
+      setErroPecas("Não foi possível carregar os documentos de admissão.");
+    } finally {
+      setCarregandoPecas(false);
+    }
+  }, [clientId]);
+
+  useEffect(() => {
+    void carregarPecasAdmissao();
+  }, [carregarPecasAdmissao]);
+
+''' + dossie[end:]
+
+          start = dossie.index("  const aprovarPeca = async")
+          end = dossie.index("  const [editOpen", start)
+          dossie = dossie[:start] + dossie[end:]
+
+          marker = '          {/* Documentos de Admissão — peças geradas no cadastro do cliente */}\n'
+          if dossie.count(marker) != 1:
+              raise SystemExit("DossieCliente: marcador de documentos de admissão não encontrado")
+          dossie = dossie.replace(
+              marker,
+              marker + '''          {erroPecas && (
+            <div className="card mb-4 px-4 py-3 flex items-center justify-between gap-3">
+              <p className="text-sm text-danger-700">{erroPecas}</p>
+              <button
+                type="button"
+                onClick={() => void carregarPecasAdmissao()}
+                className="text-xs font-medium text-navy border border-bronze-pale rounded px-2.5 py-1 hover:bg-bronze-50"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          )}
+          {carregandoPecas && pecasAdmissao.length === 0 && (
+            <div className="card mb-4 px-4 py-3 text-sm text-slate-500">
+              Carregando documentos de admissão…
+            </div>
+          )}
+''',
+              1,
+          )
+          old_status = '''                  const ehAprovada =
+                    p.status === "aprovada" || p.status === "aprovado";
+'''
+          new_status = '''                  const podeRevisar = ![
+                    "aprovada",
+                    "final",
+                    "protocolada",
+                  ].includes(p.status);
+'''
+          if dossie.count(old_status) != 1:
+              raise SystemExit("DossieCliente: cálculo ehAprovada não encontrado")
+          dossie = dossie.replace(old_status, new_status, 1)
+          old_button = '''                      {!ehAprovada && (
+                        <button
+                          onClick={() => aprovarPeca(p.id)}
+                          disabled={aprovandoId === p.id}
+                          title="Aprovar após revisão (exige validação jurídica)"
+                          className="text-xs font-medium text-navy border border-bronze-pale rounded px-2.5 py-1 hover:bg-bronze-50 disabled:opacity-50"
+                        >
+                          {aprovandoId === p.id ? "Aprovando..." : "Aprovar"}
+                        </button>
+                      )}
+'''
+          new_button = '''                      {podeRevisar && (
+                        <Link
+                          to="/pecas"
+                          title="Abrir o fluxo de conferência e assinatura"
+                          className="text-xs font-medium text-navy border border-bronze-pale rounded px-2.5 py-1 hover:bg-bronze-50"
+                        >
+                          Revisar e assinar
+                        </Link>
+                      )}
+'''
+          if dossie.count(old_button) != 1:
+              raise SystemExit("DossieCliente: botão de aprovação antigo não encontrado")
+          dossie = dossie.replace(old_button, new_button, 1)
+          old_footer = '''                Minutas geradas por template (sem redação por IA) — status
+                rascunho exige revisão e aprovação do advogado antes de qualquer
+                uso (dever ético EOAB).
+'''
+          new_footer = '''                Minutas geradas por template — a leitura pode ser feita aqui;
+                conferência, observações do advogado e assinatura são registradas
+                no fluxo canônico de Produção Jurídica antes de qualquer uso.
+'''
+          if dossie.count(old_footer) != 1:
+              raise SystemExit("DossieCliente: rodapé antigo não encontrado")
+          dossie = dossie.replace(old_footer, new_footer, 1)
+          if "aprovandoId" in dossie or "const aprovarPeca = async (id: string)" in dossie:
+              raise SystemExit("DossieCliente: fluxo de aprovação direta residual")
+          write(dossie_path, dossie)
+
+          # 9) Bateria operacional: nenhuma credencial em código. A senha precisa
+          #    vir do ambiente/secret store e nunca é impressa.
+          qa_path = "scripts/inventory/bateria_documentos_cliente.py"
+          qa = read(qa_path)
+          if "import os\n" not in qa:
+              qa = qa.replace("import json\n", "import json\nimport os\n", 1)
+          start = qa.index("USERS = {")
+          end = qa.index("\n}\n", start) + 3
+          qa = qa[:start] + '''USERS = {
+    "admin": {"email": "ejc_qa_auth_admin@golocal.ejc"},
+    "advogado": {"email": "ejc_qa_auth_advogado@golocal.ejc"},
+}
+QA_PASSWORD_ENV = "EJC_QA_PASSWORD"
+''' + qa[end:]
+          qa = re.sub(
+              r'def token_of\(role: str\) -> str:\n.*?    return r\.json\(\)\["access_token"\]\n',
+              '''def token_of(role: str) -> str:
+    u = USERS[role]
+    password = os.getenv(QA_PASSWORD_ENV)
+    if not password:
+        raise RuntimeError(
+            f"Defina {QA_PASSWORD_ENV} no ambiente de homologação; "
+            "credenciais não podem ficar versionadas."
+        )
+    r = requests.post(
+        f"{BASE}/auth/login",
+        json={"email": u["email"], "password": password},
+        timeout=10,
+    )
+    assert r.status_code == 200, (
+        f"login {role} falhou: {r.status_code} {r.text[:200]}"
+    )
+    return r.json()["access_token"]
+''',
+              qa,
+              count=1,
+              flags=re.S,
+          )
+          if '"senha"' in qa:
+              raise SystemExit("bateria_documentos_cliente: campo de senha ainda versionado")
+          write(qa_path, qa)
+
+          # 10) Regressões focadas — identidade imutável, gate transversal,
+          #     status sem regressão e ausência de senha em código.
+          test_path = Path("backend/tests/test_pr1220_hardening.py")
+          test_path.write_text(r'''from __future__ import annotations
+
+import inspect
+from pathlib import Path
+
+from app.models.legal_doc import LegalDoc
+from app.routers import legal_docs
+from app.services import case_intel, geracao_documental_cliente
+
+
+def test_legal_doc_tem_marker_de_admissao_imutavel():
+    assert hasattr(LegalDoc, "client_admission_kind")
+    fonte = inspect.getsource(geracao_documental_cliente.listar_pecas_cliente)
+    assert "client_admission_kind" in fonte
+    assert "titulo.in_" not in fonte
+
+
+def test_idempotencia_do_kit_nao_depende_de_titulo():
+    fonte = inspect.getsource(geracao_documental_cliente.gerar_documentos_cliente)
+    bloco = fonte.split("if not forcar_novo:", 1)[1].split("advogado =", 1)[0]
+    assert "client_admission_kind" in bloco
+    assert "titulo.in_" not in bloco
+
+
+def test_router_legal_docs_aplica_gate_transversal_de_cliente():
+    deps = [getattr(dep, "dependency", None) for dep in legal_docs.router.dependencies]
+    assert legal_docs._enforce_client_legal_doc_scope in deps
+    fonte = inspect.getsource(legal_docs.listar)
+    assert "ids_clientes_visiveis" in fonte
+    assert "LegalDoc.client_id" in fonte
+
+
+def test_aprovacao_nao_regrede_status_pos_aprovacao():
+    fonte = inspect.getsource(legal_docs.aprovar)
+    for status in ("aprovada", "final", "protocolada"):
+        assert status in fonte
+    assert "status_code=409" in fonte
+
+
+def test_rag_de_peca_avulsa_herda_client_id():
+    fonte = inspect.getsource(case_intel.indexar_peca_rag)
+    assert 'client_id = getattr(d, "client_id", None)' in fonte
+    assert "client_id=client_id" in fonte
+
+
+def test_bateria_operacional_nao_versiona_senha():
+    raiz = Path(__file__).resolve().parents[2]
+    fonte = (raiz / "scripts/inventory/bateria_documentos_cliente.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"senha"' not in fonte
+    assert "EJC_QA_PASSWORD" in fonte
+
+
+def test_migration_147_esta_reservada():
+    raiz = Path(__file__).resolve().parents[1]
+    fonte = (raiz / "alembic/MIGRATION_RESERVATIONS.md").read_text(encoding="utf-8")
+    assert "| 147_legal_doc_client_id | 146_case_sigilo_reforcado |" in fonte
+''', encoding="utf-8")
+
+          # 11) Regressão DB real: renomear cliente não perde nem duplica o kit.
+          db_test = Path("backend/tests/test_clientes_admission_marker_dblevel.py")
+          db_test.write_text(r'''from __future__ import annotations
+
+import os
+from uuid import uuid4
+
+import pytest
+
+pytest.importorskip("sqlalchemy")
+
+RUN_DB_TESTS = bool(os.getenv("RUN_DB_TESTS"))
+pytestmark = pytest.mark.skipif(not RUN_DB_TESTS, reason="requer banco (RUN_DB_TESTS=1)")
+
+if RUN_DB_TESTS:
+    from sqlalchemy import select
+    from app.core.database import AsyncSessionLocal
+    from app.models.client import Client, ClientTipo
+    from app.models.legal_doc import LegalDoc
+    from app.models.user import User, UserRole
+    from app.services.geracao_documental_cliente import (
+        ADMISSION_KIND_CONTRATO,
+        ADMISSION_KIND_PROCURACAO,
+        gerar_documentos_cliente,
+        listar_pecas_cliente,
+    )
+
+
+@pytest.mark.asyncio
+async def test_rename_cliente_preserva_listagem_e_idempotencia():
+    async with AsyncSessionLocal() as db:
+        uid = f"ut-adm-{uuid4().hex}"[:36]
+        user = User(
+            id=uid,
+            full_name="Advogado Teste Marker",
+            email=f"marker-{uuid4().hex[:12]}@ejc-homologacao.com",
+            hashed_password="$2b$12$placeholderhashplaceholderhashplaceholderhashpl",
+            role=UserRole.advogado,
+            is_active=True,
+        )
+        client = Client(
+            id=str(uuid4()),
+            tipo=ClientTipo.PF,
+            nome=f"Nome Original {uuid4().hex[:8]}",
+            cidade="Betim",
+            estado="MG",
+            responsavel_id=uid,
+        )
+        db.add_all([user, client])
+        await db.commit()
+
+        primeiro = await gerar_documentos_cliente(db, client, user)
+        ids_primeiro = {
+            primeiro["procuracao"]["legal_doc_id"],
+            primeiro["contrato"]["legal_doc_id"],
+        }
+
+        client.nome = f"Nome Alterado {uuid4().hex[:8]}"
+        await db.commit()
+        await db.refresh(client)
+
+        listados = await listar_pecas_cliente(db, client)
+        assert {item["id"] for item in listados} == ids_primeiro
+
+        segundo = await gerar_documentos_cliente(db, client, user)
+        assert segundo["ja_existia"] is True
+        assert {
+            segundo["procuracao"]["legal_doc_id"],
+            segundo["contrato"]["legal_doc_id"],
+        } == ids_primeiro
+
+        markers = set(
+            (
+                await db.execute(
+                    select(LegalDoc.client_admission_kind).where(
+                        LegalDoc.id.in_(ids_primeiro)
+                    )
+                )
+            ).scalars().all()
+        )
+        assert markers == {ADMISSION_KIND_PROCURACAO, ADMISSION_KIND_CONTRATO}
+''', encoding="utf-8")
+
+          # Workflow é one-shot e nunca deve chegar à main.
+          Path(".github/workflows/pr1220-review-fix.yml").unlink()
+          PY
+
+          python -m compileall -q \
+            backend/app/models/legal_doc.py \
+            backend/app/routers/legal_docs.py \
+            backend/app/routers/clients.py \
+            backend/app/services/geracao_documental_cliente.py \
+            backend/app/services/case_intel.py \
+            backend/tests/test_pr1220_hardening.py \
+            backend/tests/test_clientes_admission_marker_dblevel.py \
+            scripts/inventory/bateria_documentos_cliente.py
+          git diff --check
+
+          git config user.name "ejc-ci-review-fix"
+          git config user.email "actions@users.noreply.github.com"
+          git add -- \
+            backend/alembic/MIGRATION_RESERVATIONS.md \
+            backend/alembic/versions/147_legal_doc_client_id.py \
+            backend/app/models/legal_doc.py \
+            backend/app/routers/clients.py \
+            backend/app/routers/legal_docs.py \
+            backend/app/services/case_intel.py \
+            backend/app/services/geracao_documental_cliente.py \
+            backend/tests/test_pr1220_hardening.py \
+            backend/tests/test_clientes_admission_marker_dblevel.py \
+            frontend/src/pages/DossieCliente.tsx \
+            scripts/inventory/bateria_documentos_cliente.py \
+            .github/workflows/pr1220-review-fix.yml
+          git commit -m "fix: fechar revisão LGPD e HITL do PR 1220"
+          git push origin HEAD:fix/1199-client-document-isolation-v3
