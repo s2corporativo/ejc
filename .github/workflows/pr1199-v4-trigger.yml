@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/pr1199_v4_patch.py
+          python scripts/pr1199_v4_runner.py
       - name: Commit e push
         shell: bash
         run: |
