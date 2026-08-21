@@ -82,44 +82,44 @@ jobs:
           gunzip -c /opt/backups/verdelimp/verdelimp_2026-08-21_02-35-49.sql.gz \
             | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$DB_USER" "$TEST_DB" >/dev/null
 
-          # Retorna a chave primária; se não houver, usa a primeira chave UNIQUE
-          # simples/composta não parcial como identidade estável da linha.
           identity_columns() {
             local db="$1" table="$2"
-            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" -c '
-              SELECT string_agg(format('"'"'%I'"'"', a.attname), '"'"','"'"' ORDER BY u.ord)
-              FROM pg_index i
-              JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS u(attnum, ord) ON true
-              JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = u.attnum
-              WHERE i.indrelid = to_regclass(format('"'"'public.%I'"'"', :'"'"'tbl'"'"'))
-                AND i.indisunique
-                AND i.indpred IS NULL
-                AND i.indexprs IS NULL
-                AND i.indisvalid
-              GROUP BY i.indexrelid, i.indisprimary
-              ORDER BY i.indisprimary DESC, i.indexrelid
-              LIMIT 1;
-            ' | tr -d '\r'
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" <<'SQL' | tr -d '\r'
+          SELECT string_agg(format('%I', a.attname), ',' ORDER BY u.ord)
+          FROM pg_index i
+          JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS u(attnum, ord) ON true
+          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = u.attnum
+          WHERE i.indrelid = to_regclass(format('public.%I', :'tbl'))
+            AND i.indisunique
+            AND i.indpred IS NULL
+            AND i.indexprs IS NULL
+            AND i.indisvalid
+          GROUP BY i.indexrelid, i.indisprimary
+          ORDER BY i.indisprimary DESC, i.indexrelid
+          LIMIT 1;
+          SQL
           }
 
           table_exists() {
             local db="$1" table="$2"
-            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" -c \
-              "SELECT CASE WHEN to_regclass(format('public.%I', :'tbl')) IS NULL THEN 0 ELSE 1 END;" | tr -d '\r'
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" <<'SQL' | tr -d '\r'
+          SELECT CASE WHEN to_regclass(format('public.%I', :'tbl')) IS NULL THEN 0 ELSE 1 END;
+          SQL
           }
 
           row_count() {
             local db="$1" table="$2"
-            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" -c \
-              'SELECT count(*) FROM public.:"tbl";' | tr -d '\r'
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" <<'SQL' | tr -d '\r'
+          SELECT count(*) FROM public.:"tbl";
+          SQL
           }
 
           export_keys() {
             local db="$1" table="$2" cols="$3" out="$4"
-            docker compose exec -T db psql -At -U "$DB_USER" "$db" \
-              -v tbl="$table" -v cols="$cols" \
-              -c 'SELECT jsonb_build_array(:cols)::text FROM public.:"tbl" ORDER BY 1;' \
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" -v cols="$cols" <<'SQL' \
               | tr -d '\r' | sort -u > "$out"
+          SELECT jsonb_build_array(:cols)::text FROM public.:"tbl" ORDER BY 1;
+          SQL
           }
 
           : > "$DEFICITS"
@@ -195,7 +195,6 @@ jobs:
           install -o root -g root -m 600 "$DEFICITS" "/opt/backups/verdelimp/recovery_tables_${RUN_ID}.txt"
           install -o root -g root -m 600 "$UNSAFE" "/opt/backups/verdelimp/recovery_unsafe_${RUN_ID}.txt"
           printf '%s\n' "$TOTAL_MISSING" > "/tmp/verdelimp-recovery-total-${RUN_ID}.txt"
-          printf '%s\n' "$UNSAFE_TABLES" > "/tmp/verdelimp-recovery-unsafe-total-${RUN_ID}.txt"
 
           if [ "$UNSAFE_TABLES" -gt 0 ]; then
             echo "ERRO: $UNSAFE_TABLES tabela(s) não puderam ser comparadas com identidade estável; recuperação automática interrompida." >&2
@@ -234,28 +233,28 @@ jobs:
 
           identity_columns() {
             local db="$1" table="$2"
-            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" -c '
-              SELECT string_agg(format('"'"'%I'"'"', a.attname), '"'"','"'"' ORDER BY u.ord)
-              FROM pg_index i
-              JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS u(attnum, ord) ON true
-              JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = u.attnum
-              WHERE i.indrelid = to_regclass(format('"'"'public.%I'"'"', :'"'"'tbl'"'"'))
-                AND i.indisunique
-                AND i.indpred IS NULL
-                AND i.indexprs IS NULL
-                AND i.indisvalid
-              GROUP BY i.indexrelid, i.indisprimary
-              ORDER BY i.indisprimary DESC, i.indexrelid
-              LIMIT 1;
-            ' | tr -d '\r'
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" <<'SQL' | tr -d '\r'
+          SELECT string_agg(format('%I', a.attname), ',' ORDER BY u.ord)
+          FROM pg_index i
+          JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS u(attnum, ord) ON true
+          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = u.attnum
+          WHERE i.indrelid = to_regclass(format('public.%I', :'tbl'))
+            AND i.indisunique
+            AND i.indpred IS NULL
+            AND i.indexprs IS NULL
+            AND i.indisvalid
+          GROUP BY i.indexrelid, i.indisprimary
+          ORDER BY i.indisprimary DESC, i.indexrelid
+          LIMIT 1;
+          SQL
           }
 
           export_keys() {
             local db="$1" table="$2" cols="$3" out="$4"
-            docker compose exec -T db psql -At -U "$DB_USER" "$db" \
-              -v tbl="$table" -v cols="$cols" \
-              -c 'SELECT jsonb_build_array(:cols)::text FROM public.:"tbl" ORDER BY 1;' \
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" -v cols="$cols" <<'SQL' \
               | tr -d '\r' | sort -u > "$out"
+          SELECT jsonb_build_array(:cols)::text FROM public.:"tbl" ORDER BY 1;
+          SQL
           }
 
           docker compose exec -T db dropdb --if-exists -U "$DB_USER" "$TEST_DB" >/dev/null 2>&1 || true
@@ -276,8 +275,6 @@ jobs:
             | sed '/^SELECT pg_catalog.setval/d' \
             | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$DB_USER" "$DB_NAME"
 
-          # Verificação forte pós-merge: nenhuma identidade do snapshot pode
-          # continuar ausente nas tabelas recuperadas.
           while IFS= read -r T; do
             [ -n "$T" ] || continue
             ID_COLS="$(identity_columns "$TEST_DB" "$T")"
