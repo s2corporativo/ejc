@@ -20,22 +20,34 @@ jobs:
     name: Publicar Verdelimp pela VPS compartilhada
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 45
+    env:
+      VERDELIMP_APP_DIR: /opt/verdelimp-erp
+      ONE_SHOT_MARKER: /opt/verdelimp-erp/.bridge-deploy-20260820.done
     steps:
       - name: Pré-voo fail-closed
         id: preflight
         shell: bash
         run: |
           set -Eeuo pipefail
-          APP=/opt/verdelimp-erp
+          APP="$VERDELIMP_APP_DIR"
           sudo -n true
           sudo test -d "$APP/.git"
           sudo test -f "$APP/.env.production"
           sudo test -f "$APP/.env.ops"
 
+          if sudo test -f "$ONE_SHOT_MARKER"; then
+            echo "::error::A autorização one-shot já foi consumida; recusando repetir o deploy."
+            sudo cat "$ONE_SHOT_MARKER" || true
+            exit 1
+          fi
+
           ORIGIN="$(sudo git -C "$APP" remote get-url origin)"
           case "$ORIGIN" in
-            *s2corporativo/verdelimpclaude*) ;;
-            *) echo "::error::Origin inesperado em $APP; recusando operar outro repositório."; exit 1 ;;
+            "https://github.com/s2corporativo/verdelimpclaude"|\
+            "https://github.com/s2corporativo/verdelimpclaude.git"|\
+            "git@github.com:s2corporativo/verdelimpclaude.git"|\
+            "ssh://git@github.com/s2corporativo/verdelimpclaude.git") ;;
+            *) echo "::error::Origin não autorizado em $APP; recusando executar código como root."; exit 1 ;;
           esac
 
           LOCAL_STATUS="$(sudo git -C "$APP" status --porcelain)"
@@ -57,19 +69,34 @@ jobs:
           sudo -n bash -lc '
             set -Eeuo pipefail
             cd /opt/verdelimp-erp
-            chmod +x deploy/contabo/*.sh
-            APP_DIR=/opt/verdelimp-erp BRANCH=main deploy/contabo/deploy.sh
+            APP_DIR=/opt/verdelimp-erp BRANCH=main bash deploy/contabo/deploy.sh
           '
 
-      - name: Coletar prova local e endpoints públicos conhecidos
-        id: proof
-        if: success()
+      - name: Consumir autorização one-shot após deploy local comprovado
+        id: consume
         shell: bash
         run: |
           set -Eeuo pipefail
-          APP=/opt/verdelimp-erp
+          APP="$VERDELIMP_APP_DIR"
           AFTER_SHA="$(sudo git -C "$APP" rev-parse HEAD)"
+          TMP="$(mktemp)"
+          {
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "deployed_sha=$AFTER_SHA"
+            echo "consumed_at_utc=$(date -u '+%FT%TZ')"
+          } > "$TMP"
+          sudo install -o root -g root -m 600 "$TMP" "$ONE_SHOT_MARKER"
+          rm -f "$TMP"
           echo "after_sha=$AFTER_SHA" >> "$GITHUB_OUTPUT"
+          echo "Autorização one-shot consumida para SHA $AFTER_SHA."
+
+      - name: Coletar prova local e exigir endpoint público saudável
+        id: proof
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APP="$VERDELIMP_APP_DIR"
+          AFTER_SHA="${{ steps.consume.outputs.after_sha }}"
 
           echo "### Prova pós-deploy" >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA anterior: \`${{ steps.preflight.outputs.before_sha }}\`" >> "$GITHUB_STEP_SUMMARY"
@@ -88,6 +115,7 @@ jobs:
           '
 
           echo "Endpoints públicos conhecidos:" | tee -a "$GITHUB_STEP_SUMMARY"
+          PUBLIC_OK=0
           set +e
           for URL in \
             "https://verdelimp.s2corporativo.com.br/api/health" \
@@ -97,6 +125,7 @@ jobs:
             CODE="$(curl -sS -o /tmp/verdelimp-public-health -w '%{http_code}' --max-time 15 "$URL")"
             RC=$?
             if [ "$RC" -eq 0 ] && [ "$CODE" = "200" ]; then
+              PUBLIC_OK=$((PUBLIC_OK + 1))
               echo "- $URL -> HTTP 200" | tee -a "$GITHUB_STEP_SUMMARY"
               cat /tmp/verdelimp-public-health
               echo
@@ -105,6 +134,12 @@ jobs:
             fi
           done
           set -e
+
+          if [ "$PUBLIC_OK" -lt 1 ]; then
+            echo "::error::Deploy local concluiu, mas nenhum endpoint público aceito respondeu HTTP 200. A autorização one-shot já foi consumida para impedir novo deploy acidental."
+            exit 1
+          fi
+          echo "public_ok=$PUBLIC_OK" >> "$GITHUB_OUTPUT"
 
       - name: Registrar resultado na issue operacional
         if: always()
@@ -115,7 +150,7 @@ jobs:
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const icon = outcome === 'success' ? '✅' : '❌';
             const before = '${{ steps.preflight.outputs.before_sha }}' || 'indisponível';
-            const after = '${{ steps.proof.outputs.after_sha }}' || 'indisponível';
+            const after = '${{ steps.consume.outputs.after_sha }}' || 'indisponível';
             const body = [
               `${icon} **Bridge Verdelimp — ${outcome}**`,
               '',
@@ -125,8 +160,8 @@ jobs:
               `- Runner: \`ejc-vps\``,
               '',
               outcome === 'success'
-                ? 'O deploy seguro do Verdelimp concluiu na VPS. Consulte a execução para health local, containers e testes dos endpoints públicos.'
-                : 'A operação foi interrompida fail-closed. Nenhum segredo foi copiado para este repositório; consulte o step que falhou.'
+                ? 'O deploy seguro do Verdelimp concluiu na VPS e ao menos um endpoint público respondeu HTTP 200.'
+                : 'A operação foi interrompida fail-closed. Se o deploy local já concluiu, a autorização one-shot permanece consumida para impedir repetição acidental.'
             ].join('\n');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
