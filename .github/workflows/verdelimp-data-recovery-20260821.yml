@@ -54,7 +54,7 @@ jobs:
           APP_DIR="$APP_DIR" bash deploy/contabo/backup.sh "$APP_DIR"
           ROOT
 
-      - name: Comparar snapshot pré-deploy com o banco atual
+      - name: Comparar identidades do snapshot com o banco atual
         id: compare
         shell: bash
         run: |
@@ -67,11 +67,12 @@ jobs:
           TEST_DB="verdelimp_recovery_probe_${RUN_ID}"
           REPORT="/tmp/verdelimp-recovery-${RUN_ID}.txt"
           DEFICITS="/tmp/verdelimp-recovery-tables-${RUN_ID}.txt"
-          BACKUP_COUNTS="/tmp/verdelimp-backup-counts-${RUN_ID}.txt"
-          CURRENT_COUNTS="/tmp/verdelimp-current-counts-${RUN_ID}.txt"
+          UNSAFE="/tmp/verdelimp-recovery-unsafe-${RUN_ID}.txt"
+          WORK="$(mktemp -d)"
 
           cleanup() {
             set +e
+            rm -rf "$WORK"
             docker compose exec -T db dropdb --if-exists -U "$DB_USER" "$TEST_DB" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
@@ -81,51 +82,131 @@ jobs:
           gunzip -c /opt/backups/verdelimp/verdelimp_2026-08-21_02-35-49.sql.gz \
             | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$DB_USER" "$TEST_DB" >/dev/null
 
-          count_tables() {
-            local db="$1"
-            docker compose exec -T db psql -At -U "$DB_USER" "$db" -c \
-              "SELECT format('SELECT %L || ''|'' || count(*) FROM %I.%I;', tablename, schemaname, tablename) FROM pg_tables WHERE schemaname='public' ORDER BY tablename;" \
-              | docker compose exec -T db psql -At -U "$DB_USER" "$db" \
-              | tr -d '\r' \
-              | sort
+          # Retorna a chave primária; se não houver, usa a primeira chave UNIQUE
+          # simples/composta não parcial como identidade estável da linha.
+          identity_columns() {
+            local db="$1" table="$2"
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" -c '
+              SELECT string_agg(format('"'"'%I'"'"', a.attname), '"'"','"'"' ORDER BY u.ord)
+              FROM pg_index i
+              JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS u(attnum, ord) ON true
+              JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = u.attnum
+              WHERE i.indrelid = to_regclass(format('"'"'public.%I'"'"', :'"'"'tbl'"'"'))
+                AND i.indisunique
+                AND i.indpred IS NULL
+                AND i.indexprs IS NULL
+                AND i.indisvalid
+              GROUP BY i.indexrelid, i.indisprimary
+              ORDER BY i.indisprimary DESC, i.indexrelid
+              LIMIT 1;
+            ' | tr -d '\r'
           }
 
-          count_tables "$TEST_DB" > "$BACKUP_COUNTS"
-          count_tables "$DB_NAME" > "$CURRENT_COUNTS"
-          : > "$DEFICITS"
-          : > "$REPORT"
-          echo "TABELA|BACKUP|ATUAL|DEFICIT" >> "$REPORT"
+          table_exists() {
+            local db="$1" table="$2"
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" -c \
+              "SELECT CASE WHEN to_regclass(format('public.%I', :'tbl')) IS NULL THEN 0 ELSE 1 END;" | tr -d '\r'
+          }
 
-          TOTAL_DEFICIT=0
+          row_count() {
+            local db="$1" table="$2"
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" -c \
+              'SELECT count(*) FROM public.:"tbl";' | tr -d '\r'
+          }
+
+          export_keys() {
+            local db="$1" table="$2" cols="$3" out="$4"
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" \
+              -v tbl="$table" -v cols="$cols" \
+              -c 'SELECT jsonb_build_array(:cols)::text FROM public.:"tbl" ORDER BY 1;' \
+              | tr -d '\r' | sort -u > "$out"
+          }
+
+          : > "$DEFICITS"
+          : > "$UNSAFE"
+          : > "$REPORT"
+          echo "TABELA|BACKUP|ATUAL|CHAVES_AUSENTES" >> "$REPORT"
+
+          TOTAL_MISSING=0
           DEFICIT_TABLES=0
-          while IFS='|' read -r T B C; do
+          UNSAFE_TABLES=0
+          TABLES="$(docker compose exec -T db psql -At -U "$DB_USER" "$TEST_DB" -c \
+            "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;" | tr -d '\r')"
+
+          while IFS= read -r T; do
+            [ -n "$T" ] || continue
             case "$T" in
               _prisma_migrations|User|Role|UserRole|Account|Session|VerificationToken|AuditLog|LoginAttempt|PasswordResetToken)
                 continue
                 ;;
             esac
-            D=0
-            if [ "${B:-0}" -gt "${C:-0}" ]; then
-              D=$((B-C))
+
+            B="$(row_count "$TEST_DB" "$T")"
+            if [ "$(table_exists "$DB_NAME" "$T")" != "1" ]; then
+              if [ "${B:-0}" -gt 0 ]; then
+                echo "schema_ausente:$T" >> "$UNSAFE"
+                UNSAFE_TABLES=$((UNSAFE_TABLES + 1))
+                echo "$T|$B|AUSENTE|INDETERMINADO" >> "$REPORT"
+              fi
+              continue
+            fi
+
+            C="$(row_count "$DB_NAME" "$T")"
+            SNAP_ID="$(identity_columns "$TEST_DB" "$T")"
+            CUR_ID="$(identity_columns "$DB_NAME" "$T")"
+
+            if [ "${B:-0}" -eq 0 ]; then
+              echo "$T|0|$C|0" >> "$REPORT"
+              continue
+            fi
+
+            if [ -z "$SNAP_ID" ] || [ -z "$CUR_ID" ]; then
+              echo "sem_identidade_estavel:$T" >> "$UNSAFE"
+              UNSAFE_TABLES=$((UNSAFE_TABLES + 1))
+              echo "$T|$B|$C|INDETERMINADO" >> "$REPORT"
+              continue
+            fi
+
+            if [ "$SNAP_ID" != "$CUR_ID" ]; then
+              echo "identidade_alterada:$T" >> "$UNSAFE"
+              UNSAFE_TABLES=$((UNSAFE_TABLES + 1))
+              echo "$T|$B|$C|INDETERMINADO" >> "$REPORT"
+              continue
+            fi
+
+            export_keys "$TEST_DB" "$T" "$SNAP_ID" "$WORK/${T}.backup.keys"
+            export_keys "$DB_NAME" "$T" "$CUR_ID" "$WORK/${T}.current.keys"
+            MISSING="$(comm -23 "$WORK/${T}.backup.keys" "$WORK/${T}.current.keys" | wc -l | tr -d ' ')"
+
+            if [ "${MISSING:-0}" -gt 0 ]; then
               printf '%s\n' "$T" >> "$DEFICITS"
-              TOTAL_DEFICIT=$((TOTAL_DEFICIT + D))
+              TOTAL_MISSING=$((TOTAL_MISSING + MISSING))
               DEFICIT_TABLES=$((DEFICIT_TABLES + 1))
             fi
-            printf '%s|%s|%s|%s\n' "$T" "$B" "$C" "$D" >> "$REPORT"
-          done < <(join -t '|' -j 1 "$BACKUP_COUNTS" "$CURRENT_COUNTS")
+            echo "$T|$B|$C|$MISSING" >> "$REPORT"
+          done <<< "$TABLES"
 
-          echo "TOTAL_DEFICIT=$TOTAL_DEFICIT" >> "$REPORT"
-          echo "DEFICIT_TABLES=$DEFICIT_TABLES" >> "$REPORT"
+          echo "TOTAL_CHAVES_AUSENTES=$TOTAL_MISSING" >> "$REPORT"
+          echo "TABELAS_COM_CHAVES_AUSENTES=$DEFICIT_TABLES" >> "$REPORT"
+          echo "TABELAS_SEM_COMPARACAO_SEGURA=$UNSAFE_TABLES" >> "$REPORT"
           cat "$REPORT"
 
           install -o root -g root -m 600 "$REPORT" "/opt/backups/verdelimp/recovery_compare_${RUN_ID}.txt"
           install -o root -g root -m 600 "$DEFICITS" "/opt/backups/verdelimp/recovery_tables_${RUN_ID}.txt"
-          printf '%s\n' "$TOTAL_DEFICIT" > "/tmp/verdelimp-recovery-total-${RUN_ID}.txt"
+          install -o root -g root -m 600 "$UNSAFE" "/opt/backups/verdelimp/recovery_unsafe_${RUN_ID}.txt"
+          printf '%s\n' "$TOTAL_MISSING" > "/tmp/verdelimp-recovery-total-${RUN_ID}.txt"
+          printf '%s\n' "$UNSAFE_TABLES" > "/tmp/verdelimp-recovery-unsafe-total-${RUN_ID}.txt"
+
+          if [ "$UNSAFE_TABLES" -gt 0 ]; then
+            echo "ERRO: $UNSAFE_TABLES tabela(s) não puderam ser comparadas com identidade estável; recuperação automática interrompida." >&2
+            cat "$UNSAFE" >&2
+            exit 1
+          fi
           ROOT
 
           TOTAL="$(sudo cat "/tmp/verdelimp-recovery-total-${GITHUB_RUN_ID}.txt")"
           echo "total_deficit=$TOTAL" >> "$GITHUB_OUTPUT"
-          echo "Déficit total detectado: $TOTAL"
+          echo "Chaves do snapshot ausentes no banco atual: $TOTAL"
 
       - name: Reintegrar somente linhas ausentes do snapshot
         id: restore
@@ -140,14 +221,42 @@ jobs:
           DB_NAME="$(docker compose exec -T db printenv POSTGRES_DB | tr -d '\r')"
           TEST_DB="verdelimp_recovery_merge_${RUN_ID}"
           TABLE_FILE="/opt/backups/verdelimp/recovery_tables_${RUN_ID}.txt"
+          WORK="$(mktemp -d)"
           APP_STOPPED=false
 
           cleanup() {
             set +e
+            rm -rf "$WORK"
             docker compose exec -T db dropdb --if-exists -U "$DB_USER" "$TEST_DB" >/dev/null 2>&1 || true
             if [ "$APP_STOPPED" = "true" ]; then docker compose start app >/dev/null 2>&1 || true; fi
           }
           trap cleanup EXIT
+
+          identity_columns() {
+            local db="$1" table="$2"
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -v tbl="$table" -c '
+              SELECT string_agg(format('"'"'%I'"'"', a.attname), '"'"','"'"' ORDER BY u.ord)
+              FROM pg_index i
+              JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS u(attnum, ord) ON true
+              JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = u.attnum
+              WHERE i.indrelid = to_regclass(format('"'"'public.%I'"'"', :'"'"'tbl'"'"'))
+                AND i.indisunique
+                AND i.indpred IS NULL
+                AND i.indexprs IS NULL
+                AND i.indisvalid
+              GROUP BY i.indexrelid, i.indisprimary
+              ORDER BY i.indisprimary DESC, i.indexrelid
+              LIMIT 1;
+            ' | tr -d '\r'
+          }
+
+          export_keys() {
+            local db="$1" table="$2" cols="$3" out="$4"
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" \
+              -v tbl="$table" -v cols="$cols" \
+              -c 'SELECT jsonb_build_array(:cols)::text FROM public.:"tbl" ORDER BY 1;' \
+              | tr -d '\r' | sort -u > "$out"
+          }
 
           docker compose exec -T db dropdb --if-exists -U "$DB_USER" "$TEST_DB" >/dev/null 2>&1 || true
           docker compose exec -T db createdb -U "$DB_USER" "$TEST_DB"
@@ -157,7 +266,7 @@ jobs:
           docker compose stop app
           APP_STOPPED=true
 
-          PG_ARGS=(--data-only --inserts --on-conflict-do-nothing --disable-triggers --no-owner --no-privileges)
+          PG_ARGS=(--data-only --column-inserts --on-conflict-do-nothing --disable-triggers --no-owner --no-privileges)
           while IFS= read -r T; do
             [ -n "$T" ] || continue
             PG_ARGS+=(--table="public.\"$T\"")
@@ -167,16 +276,20 @@ jobs:
             | sed '/^SELECT pg_catalog.setval/d' \
             | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$DB_USER" "$DB_NAME"
 
-          # Confirma que todas as tabelas com déficit voltaram pelo menos ao total do snapshot.
+          # Verificação forte pós-merge: nenhuma identidade do snapshot pode
+          # continuar ausente nas tabelas recuperadas.
           while IFS= read -r T; do
             [ -n "$T" ] || continue
-            B="$(docker compose exec -T db psql -At -U "$DB_USER" "$TEST_DB" -c "SELECT count(*) FROM public.\"$T\";" | tr -d '\r')"
-            C="$(docker compose exec -T db psql -At -U "$DB_USER" "$DB_NAME" -c "SELECT count(*) FROM public.\"$T\";" | tr -d '\r')"
-            if [ "$C" -lt "$B" ]; then
-              echo "ERRO: tabela $T permaneceu abaixo do snapshot ($C < $B)." >&2
+            ID_COLS="$(identity_columns "$TEST_DB" "$T")"
+            [ -n "$ID_COLS" ] || { echo "ERRO: identidade desapareceu em $T durante a verificação." >&2; exit 1; }
+            export_keys "$TEST_DB" "$T" "$ID_COLS" "$WORK/${T}.backup.keys"
+            export_keys "$DB_NAME" "$T" "$ID_COLS" "$WORK/${T}.current.keys"
+            REMAINING="$(comm -23 "$WORK/${T}.backup.keys" "$WORK/${T}.current.keys" | wc -l | tr -d ' ')"
+            if [ "$REMAINING" -ne 0 ]; then
+              echo "ERRO: tabela $T ainda possui $REMAINING identidade(s) do snapshot ausentes." >&2
               exit 1
             fi
-            echo "OK $T: snapshot=$B atual=$C"
+            echo "OK $T: todas as identidades do snapshot estão presentes."
           done < "$TABLE_FILE"
 
           docker compose start app
@@ -208,7 +321,7 @@ jobs:
             echo "run_id=$GITHUB_RUN_ID"
             echo "result=$RESULT"
             echo "predeploy_snapshot=verdelimp_2026-08-21_02-35-49.sql.gz"
-            echo "total_deficit_before=$TOTAL"
+            echo "missing_snapshot_keys_before=$TOTAL"
             echo "completed_at_utc=$(date -u '+%FT%TZ')"
           } > "$TMP"
           sudo install -o root -g root -m 600 "$TMP" "$RECOVERY_MARKER"
@@ -229,13 +342,13 @@ jobs:
               '',
               `- Execução: ${runUrl}`,
               `- Snapshot pré-deploy: \`verdelimp_2026-08-21_02-35-49.sql.gz\``,
-              `- Déficit de linhas detectado antes da ação: **${deficit}**`,
+              `- Identidades do snapshot ausentes antes da ação: **${deficit}**`,
               `- Resultado: \`${result}\``,
               '',
               result === 'missing_rows_reintegrated'
                 ? 'Foi criado backup atual antes da operação e somente linhas ausentes do snapshot foram reintegradas; registros atuais não foram apagados nem sobrescritos.'
                 : result === 'no_database_loss'
-                  ? 'As contagens não mostraram perda em relação ao snapshot pré-deploy; nenhum dado foi alterado. O problema está na camada de exibição/filtros/RBAC.'
+                  ? 'Todas as identidades persistidas no snapshot pré-deploy já estavam presentes no banco atual; nenhum dado foi alterado. O problema está na camada de exibição/filtros/RBAC.'
                   : 'Consulte os logs. A rotina é fail-closed e cria backup antes de qualquer reintegração.'
             ].join('\n');
             await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: 1225, body });
