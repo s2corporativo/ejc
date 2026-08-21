@@ -516,9 +516,12 @@ export default function Clientes() {
             onChange={(e) => setGerarDocsNoCadastro(e.target.checked)}
           />
           <span>
-            <span className="font-medium text-navy">Gerar contrato e procuração após salvar</span>
+            <span className="font-medium text-navy">
+              Gerar contrato e procuração após salvar
+            </span>
             <span className="block text-xs text-slate-500 mt-0.5">
-              As minutas são templates determinísticos, nascem como rascunho e exigem validação e revisão profissional antes do uso.
+              As minutas são templates determinísticos, nascem como rascunho e
+              exigem validação e revisão profissional antes do uso.
             </span>
           </span>
         </label>
