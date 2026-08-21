@@ -1,0 +1,241 @@
+name: One-shot Verdelimp data recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verdelimp-data-recovery-20260821.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: one-shot-verdelimp-data-recovery-20260821
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Recuperar cadastros Verdelimp pelo backup pré-deploy
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 45
+    env:
+      APP_DIR: /opt/verdelimp-erp
+      SNAPSHOT_DB: /opt/backups/verdelimp/verdelimp_2026-08-21_02-35-49.sql.gz
+      SNAPSHOT_UPLOADS: /opt/backups/verdelimp/uploads_2026-08-21_02-35-49.tar.gz
+      SNAPSHOT_MANIFEST: /opt/backups/verdelimp/manifest_2026-08-21_02-35-49.sha256
+      RECOVERY_MARKER: /opt/verdelimp-erp/.data-recovery-20260821.done
+
+    steps:
+      - name: Pré-voo e backup integral do estado atual
+        id: preflight
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo -n true
+          sudo test -d "$APP_DIR/.git"
+          sudo test -f "$SNAPSHOT_DB"
+          sudo test -f "$SNAPSHOT_UPLOADS"
+          sudo test -f "$SNAPSHOT_MANIFEST"
+
+          if sudo test -f "$RECOVERY_MARKER"; then
+            echo "::error::A recuperação one-shot já foi executada."
+            sudo cat "$RECOVERY_MARKER" || true
+            exit 1
+          fi
+
+          sudo -n env APP_DIR="$APP_DIR" bash <<'ROOT'
+          set -Eeuo pipefail
+          cd "$APP_DIR"
+          sha256sum -c /opt/backups/verdelimp/manifest_2026-08-21_02-35-49.sha256
+          gzip -t /opt/backups/verdelimp/verdelimp_2026-08-21_02-35-49.sql.gz
+          tar -tzf /opt/backups/verdelimp/uploads_2026-08-21_02-35-49.tar.gz >/dev/null
+          echo "Criando backup integral do estado atual antes da recuperação..."
+          APP_DIR="$APP_DIR" bash deploy/contabo/backup.sh "$APP_DIR"
+          ROOT
+
+      - name: Comparar snapshot pré-deploy com o banco atual
+        id: compare
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo -n env RUN_ID="$GITHUB_RUN_ID" APP_DIR="$APP_DIR" bash <<'ROOT'
+          set -Eeuo pipefail
+          cd "$APP_DIR"
+          DB_USER="$(docker compose exec -T db printenv POSTGRES_USER | tr -d '\r')"
+          DB_NAME="$(docker compose exec -T db printenv POSTGRES_DB | tr -d '\r')"
+          TEST_DB="verdelimp_recovery_probe_${RUN_ID}"
+          REPORT="/tmp/verdelimp-recovery-${RUN_ID}.txt"
+          DEFICITS="/tmp/verdelimp-recovery-tables-${RUN_ID}.txt"
+          BACKUP_COUNTS="/tmp/verdelimp-backup-counts-${RUN_ID}.txt"
+          CURRENT_COUNTS="/tmp/verdelimp-current-counts-${RUN_ID}.txt"
+
+          cleanup() {
+            set +e
+            docker compose exec -T db dropdb --if-exists -U "$DB_USER" "$TEST_DB" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker compose exec -T db dropdb --if-exists -U "$DB_USER" "$TEST_DB" >/dev/null 2>&1 || true
+          docker compose exec -T db createdb -U "$DB_USER" "$TEST_DB"
+          gunzip -c /opt/backups/verdelimp/verdelimp_2026-08-21_02-35-49.sql.gz \
+            | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$DB_USER" "$TEST_DB" >/dev/null
+
+          count_tables() {
+            local db="$1"
+            docker compose exec -T db psql -At -U "$DB_USER" "$db" -c \
+              "SELECT format('SELECT %L || ''|'' || count(*) FROM %I.%I;', tablename, schemaname, tablename) FROM pg_tables WHERE schemaname='public' ORDER BY tablename;" \
+              | docker compose exec -T db psql -At -U "$DB_USER" "$db" \
+              | tr -d '\r' \
+              | sort
+          }
+
+          count_tables "$TEST_DB" > "$BACKUP_COUNTS"
+          count_tables "$DB_NAME" > "$CURRENT_COUNTS"
+          : > "$DEFICITS"
+          : > "$REPORT"
+          echo "TABELA|BACKUP|ATUAL|DEFICIT" >> "$REPORT"
+
+          TOTAL_DEFICIT=0
+          DEFICIT_TABLES=0
+          while IFS='|' read -r T B C; do
+            case "$T" in
+              _prisma_migrations|User|Role|UserRole|Account|Session|VerificationToken|AuditLog|LoginAttempt|PasswordResetToken)
+                continue
+                ;;
+            esac
+            D=0
+            if [ "${B:-0}" -gt "${C:-0}" ]; then
+              D=$((B-C))
+              printf '%s\n' "$T" >> "$DEFICITS"
+              TOTAL_DEFICIT=$((TOTAL_DEFICIT + D))
+              DEFICIT_TABLES=$((DEFICIT_TABLES + 1))
+            fi
+            printf '%s|%s|%s|%s\n' "$T" "$B" "$C" "$D" >> "$REPORT"
+          done < <(join -t '|' -j 1 "$BACKUP_COUNTS" "$CURRENT_COUNTS")
+
+          echo "TOTAL_DEFICIT=$TOTAL_DEFICIT" >> "$REPORT"
+          echo "DEFICIT_TABLES=$DEFICIT_TABLES" >> "$REPORT"
+          cat "$REPORT"
+
+          install -o root -g root -m 600 "$REPORT" "/opt/backups/verdelimp/recovery_compare_${RUN_ID}.txt"
+          install -o root -g root -m 600 "$DEFICITS" "/opt/backups/verdelimp/recovery_tables_${RUN_ID}.txt"
+          printf '%s\n' "$TOTAL_DEFICIT" > "/tmp/verdelimp-recovery-total-${RUN_ID}.txt"
+          ROOT
+
+          TOTAL="$(sudo cat "/tmp/verdelimp-recovery-total-${GITHUB_RUN_ID}.txt")"
+          echo "total_deficit=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo "Déficit total detectado: $TOTAL"
+
+      - name: Reintegrar somente linhas ausentes do snapshot
+        id: restore
+        if: ${{ steps.compare.outputs.total_deficit != '0' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo -n env RUN_ID="$GITHUB_RUN_ID" APP_DIR="$APP_DIR" bash <<'ROOT'
+          set -Eeuo pipefail
+          cd "$APP_DIR"
+          DB_USER="$(docker compose exec -T db printenv POSTGRES_USER | tr -d '\r')"
+          DB_NAME="$(docker compose exec -T db printenv POSTGRES_DB | tr -d '\r')"
+          TEST_DB="verdelimp_recovery_merge_${RUN_ID}"
+          TABLE_FILE="/opt/backups/verdelimp/recovery_tables_${RUN_ID}.txt"
+          APP_STOPPED=false
+
+          cleanup() {
+            set +e
+            docker compose exec -T db dropdb --if-exists -U "$DB_USER" "$TEST_DB" >/dev/null 2>&1 || true
+            if [ "$APP_STOPPED" = "true" ]; then docker compose start app >/dev/null 2>&1 || true; fi
+          }
+          trap cleanup EXIT
+
+          docker compose exec -T db dropdb --if-exists -U "$DB_USER" "$TEST_DB" >/dev/null 2>&1 || true
+          docker compose exec -T db createdb -U "$DB_USER" "$TEST_DB"
+          gunzip -c /opt/backups/verdelimp/verdelimp_2026-08-21_02-35-49.sql.gz \
+            | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$DB_USER" "$TEST_DB" >/dev/null
+
+          docker compose stop app
+          APP_STOPPED=true
+
+          PG_ARGS=(--data-only --inserts --on-conflict-do-nothing --disable-triggers --no-owner --no-privileges)
+          while IFS= read -r T; do
+            [ -n "$T" ] || continue
+            PG_ARGS+=(--table="public.\"$T\"")
+          done < "$TABLE_FILE"
+
+          docker compose exec -T db pg_dump -U "$DB_USER" "${PG_ARGS[@]}" "$TEST_DB" \
+            | sed '/^SELECT pg_catalog.setval/d' \
+            | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$DB_USER" "$DB_NAME"
+
+          # Confirma que todas as tabelas com déficit voltaram pelo menos ao total do snapshot.
+          while IFS= read -r T; do
+            [ -n "$T" ] || continue
+            B="$(docker compose exec -T db psql -At -U "$DB_USER" "$TEST_DB" -c "SELECT count(*) FROM public.\"$T\";" | tr -d '\r')"
+            C="$(docker compose exec -T db psql -At -U "$DB_USER" "$DB_NAME" -c "SELECT count(*) FROM public.\"$T\";" | tr -d '\r')"
+            if [ "$C" -lt "$B" ]; then
+              echo "ERRO: tabela $T permaneceu abaixo do snapshot ($C < $B)." >&2
+              exit 1
+            fi
+            echo "OK $T: snapshot=$B atual=$C"
+          done < "$TABLE_FILE"
+
+          docker compose start app
+          APP_STOPPED=false
+
+          BINDING="$(docker compose port app 3000 | head -n1)"
+          PORT="${BINDING##*:}"
+          for _ in $(seq 1 30); do
+            if curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/api/health" >/tmp/verdelimp-recovery-health.json 2>/dev/null; then
+              cat /tmp/verdelimp-recovery-health.json
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS --max-time 10 "http://127.0.0.1:${PORT}/api/health"
+          ROOT
+
+      - name: Registrar conclusão one-shot
+        id: finish
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          TOTAL="${{ steps.compare.outputs.total_deficit }}"
+          RESULT="no_database_loss"
+          if [ "$TOTAL" != "0" ]; then RESULT="missing_rows_reintegrated"; fi
+
+          TMP="$(mktemp)"
+          {
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "result=$RESULT"
+            echo "predeploy_snapshot=verdelimp_2026-08-21_02-35-49.sql.gz"
+            echo "total_deficit_before=$TOTAL"
+            echo "completed_at_utc=$(date -u '+%FT%TZ')"
+          } > "$TMP"
+          sudo install -o root -g root -m 600 "$TMP" "$RECOVERY_MARKER"
+          rm -f "$TMP"
+          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+
+      - name: Registrar resultado na issue operacional
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const outcome = '${{ job.status }}';
+            const result = '${{ steps.finish.outputs.result }}' || 'indisponivel';
+            const deficit = '${{ steps.compare.outputs.total_deficit }}' || 'indisponivel';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              outcome === 'success' ? '✅ **Recuperação de dados Verdelimp — concluída**' : '❌ **Recuperação de dados Verdelimp — falhou**',
+              '',
+              `- Execução: ${runUrl}`,
+              `- Snapshot pré-deploy: \`verdelimp_2026-08-21_02-35-49.sql.gz\``,
+              `- Déficit de linhas detectado antes da ação: **${deficit}**`,
+              `- Resultado: \`${result}\``,
+              '',
+              result === 'missing_rows_reintegrated'
+                ? 'Foi criado backup atual antes da operação e somente linhas ausentes do snapshot foram reintegradas; registros atuais não foram apagados nem sobrescritos.'
+                : result === 'no_database_loss'
+                  ? 'As contagens não mostraram perda em relação ao snapshot pré-deploy; nenhum dado foi alterado. O problema está na camada de exibição/filtros/RBAC.'
+                  : 'Consulte os logs. A rotina é fail-closed e cria backup antes de qualquer reintegração.'
+            ].join('\n');
+            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: 1225, body });
