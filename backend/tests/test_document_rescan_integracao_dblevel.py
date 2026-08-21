@@ -19,11 +19,17 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select, text
 
-if not os.getenv("RUN_DB_TESTS"):
-    pytest.skip("requer Postgres com migrations (defina RUN_DB_TESTS=1)")
-
 from app.models import DocumentHashRescanBatch, DocumentHashRescanItem
 from app.services import document_rescan_service as servico
+
+# Mesmo padrão dos demais *_dblevel.py: `pytestmark` marca o módulo inteiro como
+# skip. `pytest.skip()` em nível de módulo (sem allow_module_level) NÃO pula o
+# arquivo — levanta erro de COLETA e interrompe a suíte inteira quando não há
+# Postgres, deixando zero testes executados.
+pytestmark = pytest.mark.skipif(
+    not os.getenv("RUN_DB_TESTS"),
+    reason="requer Postgres com migrations (defina RUN_DB_TESTS=1)",
+)
 
 
 def _id(prefix: str) -> str:

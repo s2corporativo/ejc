@@ -43,6 +43,15 @@ def _api_path_interno(path: str) -> str:
     superfície pública por correspondência textual parcial.
     """
     normalized = posixpath.normpath(path)
+    # `posixpath.normpath` PRESERVA exatamente duas barras iniciais (regra POSIX:
+    # "//" é reservado para interpretação definida pela implementação). Sem
+    # colapsar, "//api/casos" continua "//api/casos", deixa de casar o
+    # `startswith("/api/")` de `_is_publica` e a requisição seria liberada SEM
+    # JWT — fail-open. Hoje o roteador do Starlette não casa esse path (404) e o
+    # nginx colapsa barras antes do proxy, mas a autenticação não pode depender
+    # de nenhuma das duas: qualquer normalização a jusante viraria bypass real.
+    if normalized.startswith("//"):
+        normalized = "/" + normalized.lstrip("/")
     if normalized == "/api/v1":
         return "/api"
     if normalized.startswith("/api/v1/"):
