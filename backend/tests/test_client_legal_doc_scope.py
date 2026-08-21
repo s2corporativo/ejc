@@ -15,6 +15,13 @@ def test_router_legal_docs_aplica_gate_transversal_de_client_id():
     assert "LegalDoc.client_id.is_(None)" in fonte
 
 
+def test_validacao_e_assinatura_herdam_escopo_do_cliente_avulso():
+    from app.routers import legal_docs
+
+    fonte = inspect.getsource(legal_docs)
+    assert fonte.count('escopo_cli = getattr(d, "client_id", None)') == 2
+
+
 def test_rag_herda_client_id_da_peca_avulsa():
     from app.services import case_intel
 
