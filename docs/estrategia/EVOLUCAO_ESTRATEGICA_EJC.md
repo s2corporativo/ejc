@@ -63,7 +63,7 @@ aplicou às 55 ferramentas — *"o maior ganho de valor por esforço"*.
 
 Legenda: **✅ existe** · **🟡 parcial** · **🔴 não existe**
 
-### 1. Radar jurisprudencial automático — 🟡 parcial
+### 1. Radar jurisprudencial automático — 🟡 parcial (a metade das teses entrou nesta sessão)
 
 O radar existe, mas é **legislativo, não jurisprudencial**.
 `services/radar_legislativo.py` (541 linhas) monitora proposições na Câmara,
@@ -82,12 +82,33 @@ dashboard, e ainda publica a `regra_impacto` que governa a exibição. Ou seja: 
 mecanismo de "publicação nova → quem ela atinge" está construído e é honesto
 sobre sua granularidade (área, não tese).
 
-**O que falta é o alvo jurídico.** Nada responde "esta decisão nova muda a tese
-X e afeta o modelo de peça Y" — não há cruzamento com `teses` nem com os
-templates de peça. Busca por `tese_afetada`, `revisar_tese`, `casos_impactados`:
-zero no backend. Aproveitar o mecanismo do DPT360 trocando a entidade cruzada é
-bem mais barato que construí-lo do zero, e é a leitura que a primeira versão
-deste documento não fez.
+**A metade das TESES foi construída nesta sessão** — exatamente pelo caminho
+que a correção acima indicou: trocar a entidade cruzada, não reconstruir o
+mecanismo. `GET /teses/impacto-regulatorio` responde "o que saiu no Diário nos
+últimos N dias pode ter mexido nestas teses", reusando o `classify_area` e o
+`AREA_CASE_ALIASES` do próprio radar (uma taxonomia só) e a composição de score
+do `tese_caso_matcher` (um peso só). O serviço novo
+(`services/impacto_regulatorio.py`) traz **uma regra e só uma**: o alinhamento
+de área entre publicação e tese é por *equivalência*, não por igualdade — a
+publicação é classificada como `administrativo` e a tese do escritório vive em
+`licitacoes`.
+
+Decisões deliberadas: **determinístico, sem IA**; **sugere reler, nunca marca
+como superada** (reavaliar tese à luz de norma nova é ato jurídico humano);
+**explicável** (cada publicação vem com os termos que casaram); e os alertas
+passam pelo `visible_alerts_query` canônico — a rota **não amplia** a superfície
+de Diário Oficial que o usuário já enxergava. Tem tela: o painel "Teses a reler
+pelo que saiu no Diário" no `/teses`, que ao clicar numa tese dispara a
+varredura reversa da frente 2. Isso fecha a cadeia **publicação → tese →
+processos** sem construir nada novo para o último elo.
+
+**O que continua faltando** é a metade dos MODELOS DE PEÇA: nada responde "esta
+decisão afeta o modelo Y". Nem o de fora: as fontes de jurisprudência seguem
+sem STJ e STF (`crawler_precedentes` marca os dois como `nao_implementado`), e
+o radar continua legislativo. O impacto hoje só alcança o que o DJEN e o Diário
+Oficial de fato capturam — e o `CLAUDE.md` registra que a captura DJEN reporta
+"ok" há meses sem nunca ter capturado nada. **Este endpoint herda esse limite:
+ele é tão bom quanto a coleta que o alimenta.**
 
 > **Correção:** a primeira versão afirmava que "nenhuma das fontes calcula
 > impacto". A afirmação veio de `grep impacto` em três arquivos de serviço, sem
@@ -503,9 +524,12 @@ risco baixo e produz valor visível a cada item.
 Depois da verificação por execução, esta onda encolheu — e o que sobrou mudou de
 natureza. Ordem sugerida:
 
-1. **Frente 1 — impacto sobre teses e peças.** O mecanismo de impacto já existe
-   (`modules/dpt360/radar_service.py`); falta apontá-lo para `teses` e templates
-   de peça em vez de empresas. É reaproveitamento, não construção.
+1. ~~**Frente 1 — impacto sobre teses.**~~ **FEITO nesta sessão**
+   (`GET /teses/impacto-regulatorio` + painel no `/teses`), por reaproveitamento
+   do mecanismo do DPT360. Resta a metade dos **modelos de peça** — e, antes
+   dela, a pergunta que vale mais: **a coleta que alimenta o radar está de fato
+   capturando alguma coisa?** Endpoint de impacto sobre coleta vazia devolve
+   lista vazia com cara de "nada mudou".
 2. **Frente 5 — as 4 checagens faltantes do revisor:** competência, valor da
    causa, prescrição/decadência e contradição fato↔pedido. O erro de decadência
    que esta lista mandava atacar primeiro **já está corrigido** (ver frente 5).

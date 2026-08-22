@@ -16,7 +16,7 @@
 // antes de decidir.
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Library, Search, Target } from "lucide-react";
+import { Library, Radio, Search, Target } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { toast } from "../components/Toast";
@@ -57,6 +57,35 @@ type VarreduraResp = {
   aviso?: string;
 };
 
+type PublicacaoImpacto = {
+  alerta_id: string;
+  fonte?: string | null;
+  titulo?: string | null;
+  link?: string | null;
+  data_publicacao?: string | null;
+  area_classificada?: string | null;
+  score: number;
+  termos_casados: string[];
+  area_alinhada: boolean;
+};
+
+type TeseAfetada = {
+  tese_id: string;
+  titulo: string;
+  area_juridica?: string | null;
+  score_maximo: number;
+  total_publicacoes: number;
+  publicacoes: PublicacaoImpacto[];
+};
+
+type ImpactoResp = {
+  periodo_dias: number;
+  publicacoes_varridas: number;
+  total: number;
+  teses_afetadas: TeseAfetada[];
+  aviso?: string;
+};
+
 function toneDoScore(score: number): "green" | "amber" | "slate" {
   if (score >= 55) return "green";
   if (score >= 40) return "amber";
@@ -70,6 +99,7 @@ export default function BancoTeses() {
   const [selecionada, setSelecionada] = useState<Tese | null>(null);
   const [varredura, setVarredura] = useState<VarreduraResp | null>(null);
   const [varrendo, setVarrendo] = useState(false);
+  const [impacto, setImpacto] = useState<ImpactoResp | null>(null);
 
   useEffect(() => {
     let ativo = true;
@@ -86,6 +116,26 @@ export default function BancoTeses() {
       })
       .finally(() => {
         if (ativo) setCarregandoTeses(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  // Radar regulatório → teses. Falha em silêncio de propósito: é um painel
+  // acessório, e derrubar o Banco de Teses porque o Diário não respondeu seria
+  // trocar uma ausência de informação por uma tela quebrada.
+  useEffect(() => {
+    let ativo = true;
+    api
+      .get<ImpactoResp>("/teses/impacto-regulatorio", {
+        params: { dias: 7, limite: 10 },
+      })
+      .then((r) => {
+        if (ativo) setImpacto(r.data);
+      })
+      .catch(() => {
+        if (ativo) setImpacto(null);
       });
     return () => {
       ativo = false;
@@ -126,6 +176,76 @@ export default function BancoTeses() {
         title="Banco de Teses"
         subtitle="Selecione uma tese para descobrir em quais processos ela pode caber."
       />
+
+      {impacto && impacto.teses_afetadas.length > 0 && (
+        <Card className="mb-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Radio className="h-4 w-4 text-bronze" />
+            <p className="eyebrow">Teses a reler pelo que saiu no Diário</p>
+            <Badge tone="amber">{impacto.total}</Badge>
+            <span className="text-[11px] text-slate-400">
+              últimos {impacto.periodo_dias} dias ·{" "}
+              {impacto.publicacoes_varridas} publicação(ões)
+            </span>
+          </div>
+
+          <ul className="divide-y divide-bronze-pale/50">
+            {impacto.teses_afetadas.map((t) => (
+              <li key={t.tese_id} className="py-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <button
+                    onClick={() => {
+                      const tese = teses.find((x) => x.id === t.tese_id);
+                      if (tese) varrer(tese);
+                    }}
+                    className="min-w-0 flex-1 text-left text-sm font-medium text-navy-900 hover:text-bronze"
+                  >
+                    {t.titulo}
+                  </button>
+                  <Badge tone={toneDoScore(t.score_maximo)}>
+                    {t.score_maximo}
+                  </Badge>
+                </div>
+                <ul className="mt-1 space-y-1">
+                  {t.publicacoes.map((p) => (
+                    <li
+                      key={p.alerta_id}
+                      className="text-[11px] text-slate-500"
+                    >
+                      {p.link ? (
+                        <a
+                          href={p.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:text-bronze hover:underline"
+                        >
+                          {p.titulo}
+                        </a>
+                      ) : (
+                        p.titulo
+                      )}
+                      {p.data_publicacao && ` · ${p.data_publicacao}`}
+                      {p.area_alinhada && " · mesma área"}
+                    </li>
+                  ))}
+                  {t.total_publicacoes > t.publicacoes.length && (
+                    <li className="text-[11px] text-slate-400">
+                      +{t.total_publicacoes - t.publicacoes.length} outra(s)
+                      publicação(ões)
+                    </li>
+                  )}
+                </ul>
+              </li>
+            ))}
+          </ul>
+
+          {impacto.aviso && (
+            <p className="mt-3 border-t border-bronze-pale/50 pt-2 text-[11px] text-slate-500">
+              {impacto.aviso}
+            </p>
+          )}
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* ── Coluna 1: catálogo ─────────────────────────────────────────── */}

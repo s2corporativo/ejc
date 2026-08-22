@@ -93,34 +93,33 @@ def extrair_termos(*campos: object) -> list[str]:
     return vistos
 
 
-def pontuar_caso(
+def pontuar_texto(
     termos_tese: list[str],
-    texto_caso: str,
+    texto: str,
     *,
-    area_tese: object = None,
-    area_caso: object = None,
-) -> tuple[int, list[str], bool]:
-    """Pontua UM caso contra os termos de uma tese.
+    area_alinhada: bool = False,
+) -> tuple[int, list[str]]:
+    """Pontua os termos de uma tese contra UM texto qualquer.
 
-    Devolve `(score, termos_casados, area_coincide)`. `score` é 0 quando
-    nenhum termo casa — e nesse caso o chamador descarta o candidato, ainda
-    que a área bata.
+    Devolve `(score, termos_casados)`. `score` é 0 quando nenhum termo casa —
+    e nesse caso o chamador descarta o candidato, ainda que a área bata.
+
+    O alinhamento de área chega pronto, como booleano, em vez de ser deduzido
+    aqui: a regra de alinhamento MUDA conforme o que está sendo comparado.
+    Contra um caso é igualdade de área (`ranquear_candidatos`); contra uma
+    publicação do Diário Oficial é o mapa de equivalências do radar
+    (`impacto_regulatorio.area_alinhada`). A composição do score é a mesma nos
+    dois — e é por isso que ela mora num lugar só.
     """
-    alvo = normalizar(texto_caso)
+    alvo = normalizar(texto)
     casados = [t for t in termos_tese if t in alvo]
-
-    area_coincide = False
-    a_tese, a_caso = normalizar(area_tese), normalizar(area_caso)
-    if a_tese and a_caso and a_tese == a_caso:
-        area_coincide = True
-
     if not casados:
-        return 0, [], area_coincide
+        return 0, []
 
     score = PESO_POR_TERMO * min(len(casados), MAX_TERMOS_PONTUADOS)
-    if area_coincide:
+    if area_alinhada:
         score += PESO_AREA
-    return min(100, score), casados, area_coincide
+    return min(100, score), casados
 
 
 def ranquear_candidatos(
@@ -142,11 +141,14 @@ def ranquear_candidatos(
     if not termos_tese:
         return []
 
+    a_tese = normalizar(area_tese)
     fora: list[dict] = []
     for caso in casos:
         texto = f"{caso.get('titulo') or ''} {caso.get('descricao_fatos') or ''}"
-        score, casados, area_coincide = pontuar_caso(
-            termos_tese, texto, area_tese=area_tese, area_caso=caso.get("area"),
+        a_caso = normalizar(caso.get("area"))
+        area_coincide = bool(a_tese and a_caso and a_tese == a_caso)
+        score, casados = pontuar_texto(
+            termos_tese, texto, area_alinhada=area_coincide,
         )
         if score < piso:
             continue

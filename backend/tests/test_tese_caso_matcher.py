@@ -24,7 +24,7 @@ from app.services.tese_caso_matcher import (
     PESO_POR_TERMO,
     extrair_termos,
     normalizar,
-    pontuar_caso,
+    pontuar_texto,
     ranquear_candidatos,
 )
 
@@ -53,19 +53,17 @@ def test_extrair_termos_nao_repete_e_mantem_ordem_estavel():
 
 def test_area_sozinha_nao_gera_candidato():
     """Toda tese cível casaria com todo caso cível — isso é ruído, não sinal."""
-    score, casados, area = pontuar_caso(
-        ["purgacao"], "Cobrança de aluguel", area_tese="civil", area_caso="civil",
+    score, casados = pontuar_texto(
+        ["purgacao"], "Cobrança de aluguel", area_alinhada=True,
     )
     assert score == 0
-    assert casados == []
-    assert area is True     # a área bate, mas sozinha não pontua
+    assert casados == []     # área alinhada, mas sozinha não pontua
 
 
 def test_termo_mais_area_pontua_mais_que_termo_sozinho():
-    so_termo, _, _ = pontuar_caso(["purgacao"], "Pedido de purgação da mora")
-    com_area, _, _ = pontuar_caso(
-        ["purgacao"], "Pedido de purgação da mora",
-        area_tese="civil", area_caso="civil",
+    so_termo, _ = pontuar_texto(["purgacao"], "Pedido de purgação da mora")
+    com_area, _ = pontuar_texto(
+        ["purgacao"], "Pedido de purgação da mora", area_alinhada=True,
     )
     assert so_termo == PESO_POR_TERMO
     assert com_area == PESO_POR_TERMO + PESO_AREA
@@ -74,9 +72,7 @@ def test_termo_mais_area_pontua_mais_que_termo_sozinho():
 def test_score_satura_em_cem_e_respeita_teto_de_termos():
     termos = ["alfa", "beta", "gama", "delta", "epsilon", "zeta"]
     texto = "alfa beta gama delta epsilon zeta"
-    score, casados, _ = pontuar_caso(
-        termos, texto, area_tese="civil", area_caso="civil",
-    )
+    score, casados = pontuar_texto(termos, texto, area_alinhada=True)
     assert len(casados) == 6                      # relata todos os casados…
     esperado = PESO_POR_TERMO * MAX_TERMOS_PONTUADOS + PESO_AREA
     assert score == min(100, esperado)            # …mas só 4 pontuam

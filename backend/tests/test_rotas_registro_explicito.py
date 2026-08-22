@@ -58,6 +58,12 @@ ADICOES_INTENCIONAIS = {
     # restrita à EQUIPE_JURIDICA e filtrada pela visibilidade de casos do
     # usuário — não cria vínculo nem expõe caso que ele já não pudesse abrir.
     ("/api/teses/{tese_id}/casos-candidatos", "GET"),
+    # Issue #1246 (frente 1 do plano de evolução): impacto do radar regulatório
+    # sobre o Banco de Teses — quais teses reler à luz do que saiu no Diário.
+    # Leitura, determinística (sem IA), restrita à EQUIPE_JURIDICA. Os alertas
+    # passam pelo `visible_alerts_query` canônico do Diário Oficial: a rota não
+    # amplia a superfície de alerta que o usuário já enxergava.
+    ("/api/teses/impacto-regulatorio", "GET"),
     # Saneamento 19/08/2026 (item 16): auditoria semântica da superfície real,
     # restrita a superadmin/admin/sócio; não expõe dados de caso/cliente.
     ("/api/architecture/semantic-audit", "GET"),
