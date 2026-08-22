@@ -148,7 +148,7 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 
 ### Migrations (Alembic)
 
-- Vivem em `backend/alembic/versions/`, numeradas sequencialmente (`049_totp_2fa.py`, ..., `126_case_status_quatro_estados.py`). O head muda a cada merge: **confirme com `cd backend && python -m alembic heads`** em vez de confiar neste número. Gerar: `python -m alembic revision --autogenerate -m "..."`; aplicar: `python -m alembic upgrade head` (roda automaticamente no boot do container quando `RUN_MIGRATIONS=1`).
+- Vivem em `backend/alembic/versions/`, numeradas sequencialmente (`049_totp_2fa.py`, ..., `148_indices_fk_espinha_dominio.py`). O head muda a cada merge: **confirme com `cd backend && python -m alembic heads`** em vez de confiar neste número. Gerar: `python -m alembic revision --autogenerate -m "..."`; aplicar: `python -m alembic upgrade head` (roda automaticamente no boot do container quando `RUN_MIGRATIONS=1`).
 - `alembic/env.py` lê `DATABASE_URL_SYNC` e tem guarda `include_name()`: ~30 tabelas existem só em SQL bruto (sem model ORM) — nunca confie apenas em `Base.metadata` para o schema completo, e nunca aceite `drop_table` espúrio do autogenerate.
 - Seeds: `backend/seeds/seed_all.py` (bootstrap idempotente do admin, roda no boot) e `backend/app/seeds/` (conteúdo: skills de IA, templates, checklists). Base de conhecimento em `backend/seeds/biblia_ejc/`.
 
@@ -242,34 +242,57 @@ diagnóstico fechado**: a auditoria não viu o código. Confirme antes de agir.
 
 Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real antes de assumir:
 
-- **Prefixo `/v1/` duplicado.** `/api/v1/v1/despesas` responde 200; `/api/v1/despesas` dá 404.
-  Mesmo padrão em `office-contracts`, `partner-withdrawals`, `kanban-columns`,
-  `regulatorio/digest-semanal`. O frontend compensa chamando `/v1/x`.
-  *(Resolvido em 2026-08-02: `src/lib/api.ts` linha 9 usa `baseURL: "/api/v1"` — o bundle está
-  certo e a descrição antiga neste arquivo (`/api`) é que estava errada. O interceptor de request
-  apara prefixo repetido; a duplicação `/api/v1/v1/` vem de chamada que já traz `/v1` e escapa
-  dessa poda. Ao investigar, comece pelo interceptor, não pelo `baseURL`.)*
+> **Revarredura de 2026-08-22 (Issue #1237).** Esta lista descreve a auditoria externa de
+> **julho, contra produção**, e o repositório andou desde então. Seis itens foram remedidos
+> com a stack local de pé (Postgres 16 + pgvector, migrations do zero, backend e frontend
+> rodando) e **já não reproduzem**: prefixo `/v1/` duplicado, `?status=all` → 500, exclusão de
+> caso sem cascata, smoke E2E contra produção, `system-modules/mapa` e o monitoramento do
+> DJEN. Cada um está marcado abaixo com o que a medição mostrou. **Não re-audite os marcados
+> como resolvidos sem antes reproduzir** — foi assim que esta rodada gastou tempo.
+
+- ~~**Prefixo `/v1/` duplicado.**~~ **RESOLVIDO.** Medido em 2026-08-22 nas cinco rotas citadas
+  pela auditoria (`despesas`, `office-contracts`, `partner-withdrawals`, `kanban-columns`,
+  `regulatorio/digest-semanal`): todas respondem 200 em `/api/X` **e** em `/api/v1/X`, e 404 em
+  `/api/v1/v1/X` — que é o comportamento correto. Histórico: a auditoria de julho viu
+  `/api/v1/v1/despesas` → 200 e `/api/v1/despesas` → 404, com o frontend compensando ao chamar
+  `/v1/x`. `src/lib/api.ts` linha 9 usa `baseURL: "/api/v1"` e o interceptor de request apara
+  prefixo repetido (`/api/v1/`, `/api/`, `/v1/`); dentro do cliente `api` os caminhos se escrevem
+  **sem** prefixo. Se a duplicação voltar a aparecer, comece pelo interceptor, não pelo `baseURL`.
 - **Superfície dupla.** Toda rota responde em `/api/` e em `/api/v1/`. Regras por path
   (rate limit, WAF, log, cache) precisam cobrir as duas.
 - **Painéis de diagnóstico divergem entre si.** Sobre provedores/modelos de IA, a fonte de verdade
   é a telemetria de `GET /ia-governanca/provedores` — não `/ai/status` nem `/diagnostico/central`.
   O `/diagnostico/central` chega a reportar `backup_offsite` como ligado e desligado na mesma resposta.
-- **`GET /system-modules/mapa` subdetecta rotas** e documenta ao menos 5 caminhos incorretos.
-  Pista, não verdade.
+- **`GET /system-modules/mapa` é DIAGNÓSTICO, não inventário** — e se declara assim
+  (`"modo": "diagnostico"`, `dry_run`, `requer_revisao_humana`). Ele percorre
+  `autofix_scanner.EXPECTED_MODULES`, lista curada de módulos de PRODUTO com rota de frontend,
+  não os routers de API. Comparar a cobertura dele com `app.routes` é comparar coisas
+  diferentes — foi o erro de enquadramento da revarredura de 22/08. Continua valendo: pista,
+  não verdade.
 - **Gravação não transacional entre registros relacionados é uma classe de defeito recorrente:**
-  validação que não vincula ao documento, exclusão de caso que não cascateia para as peças,
+  validação que não vincula ao documento, exclusão de caso que não cascateia para as peças
+  (**este medido em 22/08: `DELETE /cases/{id}` devolve 422 listando as pendências e manda
+  arquivar — protegido**),
   conversão Sala Jurídica → Caso que perde `descricao_fatos`, chance de êxito que fica no log e
   não no caso. Ao tocar em fluxo que grava em duas tabelas, verifique a transação.
-- **Monitoramento afere execução, não resultado.** Heartbeats checam `last_run_at`, não se o job
-  produziu algo — por isso a captura DJEN reporta "ok" há meses sem nunca ter capturado nada.
-  Job novo ou corrigido deve monitorar resultado.
-- **Vocabulário de status inconsistente.** Backend usa `triagem`/`arquivado`; a interface oferece
-  `ativo`/`all`. O primeiro retorna vazio, o segundo dá 500.
-- **`qa/e2e/run_fictitious_smoke.py` roda contra produção.** É a origem dos casos
-  `HOMOLOG-FICTICIO-*` e da conta `homolog.qa` (perfil superadmin, ativa em produção).
+- **Monitoramento afere execução, não resultado.** A regra continua valendo para job novo, mas
+  o caso citado **foi corrigido**: `heartbeat_service._normalizar_resultado_djen` "troca o
+  status nominal pela produtividade real da task" e marca `falha_job` quando há OABs elegíveis
+  sem métrica de execução. Atenção: o tratamento é específico do `JOB_DJEN` — os demais jobs
+  ainda registram o status nominal, então **job novo ou corrigido deve monitorar resultado**.
+- ~~**Vocabulário de status inconsistente.**~~ **RESOLVIDO**: `validar_status_caso` devolve
+  **422** com a lista de valores aceitos (o próprio comentário em `routers/cases.py` registra
+  "era o caso de `?status=all`"). "Todos" é a AUSÊNCIA do parâmetro.
+- **`qa/e2e/run_fictitious_smoke.py`: o script JÁ SE PROTEGE** (linha ~1025 recusa alvo fora
+  de staging/homolog/localhost sem `EJC_ALLOW_PRODUCTION_E2E=true`). O que permanece é o
+  **rastro em produção**: os casos `HOMOLOG-FICTICIO-*` e a conta `homolog.qa` (superadmin,
+  ativa) criados antes do guard — limpeza é operação de ambiente, não de código.
+  Ponto fraco anotado: o guard testa substring na URL inteira, então
+  `https://…adv.br/?x=staging` passaria; verificar o **hostname** seria mais firme.
 - **Numeração de migrations envelhece rápido.** A auditoria viu `122_route_usage_metrics`; em
-  2026-08-02 o head do repositório já era `126_case_status_quatro_estados`. Nenhum número escrito
-  em documento é confiável: rode `cd backend && python -m alembic heads`.
+  2026-08-02 o head já era `126_case_status_quatro_estados` e em 2026-08-22 já era
+  `148_indices_fk_espinha_dominio` — 26 revisões em vinte dias. Nenhum número escrito em
+  documento é confiável, **inclusive este**: rode `cd backend && python -m alembic heads`.
 
 ### Critério de lançamento
 
