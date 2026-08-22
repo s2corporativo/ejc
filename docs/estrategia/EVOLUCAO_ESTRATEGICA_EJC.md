@@ -21,7 +21,7 @@ marcada como tal, porque ausência é mais difícil de provar que presença.
 
 A proposta assume um sistema que precisa ser abastecido de conhecimento e ganhar
 inteligência. **O EJC já tem quase toda essa inteligência construída.** Das 15
-frentes, **2 não existem**, **3 existem parcialmente** e **10 já estão
+frentes, **2 não existem**, **1 existe parcialmente** e **12 já estão
 implementadas** — várias com rigor que a proposta não pede: score determinístico
 sem LLM, gate anti-alucinação com validação de dígito verificador de número CNJ,
 HITL obrigatório, sanitização de PII antes de provedor externo.
@@ -119,7 +119,7 @@ ele é tão bom quanto a coleta que o alimenta.**
 > meses sem nunca ter capturado nada"*, porque o heartbeat afere execução e não
 > resultado. Qualquer trabalho nesta frente precisa monitorar resultado.
 
-### 2. Sistema "Tese → Caso" — 🟡 parcial, e o inverso é o que falta
+### 2. Sistema "Tese → Caso" — ✅ completo (a varredura reversa entrou nesta sessão)
 
 Existe o caminho caso → teses, e bem feito: `routers/teses.py` (707 linhas) tem
 `teses_do_caso`, `sugerir_teses_ia`, `motor_teses` (síncrono e assíncrono);
@@ -127,11 +127,21 @@ Existe o caminho caso → teses, e bem feito: `routers/teses.py` (707 linhas) te
 jurídicas e monta matriz com `AuthorityRecord` que **só nasce de retorno real do
 RAG** e força determinística com pesos fixos documentados.
 
-**Não existe a varredura reversa.** Não há endpoint que, dada uma tese, procure
-nos processos existentes onde ela cabe — exatamente o *"foi identificado possível
-cabimento da tese X nos processos A, B e C"* da proposta. É o que converte o
-Banco de Teses de catálogo em ferramenta ativa, e é barato: a infraestrutura de
-matching (RAG híbrido, embeddings, `matriz_provas.py`) já está pronta.
+**A varredura reversa foi construída nesta sessão.**
+`GET /teses/{tese_id}/casos-candidatos` (`services/tese_caso_matcher.py`)
+responde exatamente ao *"foi identificado possível cabimento da tese X nos
+processos A, B e C"* da proposta: determinístico, sem IA, com os termos que
+casaram visíveis em cada candidato, respeitando o filtro de visibilidade de
+casos e **sem nunca vincular** — criar o vínculo continua sendo ato humano.
+
+E o catálogo **não tinha tela**: as únicas chamadas a `/teses` no frontend eram
+o gerador. A página `/teses` (`pages/BancoTeses.tsx`) é a primeira superfície
+das 707 linhas do router.
+
+**O que sobra é calibragem, não construção:** o matching é textual, não
+semântico, e os pesos foram escolhidos por raciocínio e fixados por teste —
+nunca calibrados contra a base real do escritório. Só uso real diz se o piso
+está no lugar.
 
 ### 3. Playbooks jurídicos completos — 🔴 não existe
 
@@ -369,7 +379,7 @@ código anterior).
 *jurídica* do que cada movimento significa (hoje o evento é classificado e
 posicionado, não interpretado).
 
-### 12. Sistema "o que está faltando?" — 🟡 parcial, e mais perto do que parece
+### 12. Sistema "o que está faltando?" — ✅ os dois campos entraram nesta sessão
 
 `routers/pending_items.py` (228 linhas) tem CRUD de pendências com vocabulário
 fechado (documento/informação/assinatura/pagamento). `services/matriz_provas.py`
@@ -378,10 +388,15 @@ provas mínimas para instruir a pretensão. `services/ficha_triagem_service.py`
 já usa isso para apontar provas faltantes. Há ainda
 `solicitacao_documento_service.py` e `kit_documental.py`.
 
-**Faltam duas coisas:** classificação de impacto (alto/médio/baixo) e providência
-recomendada (solicitar ao cliente / obter no processo / emitir certidão). São os
-dois campos que transformam uma lista de ausências em plano de ação — e são o
-delta mais barato do documento inteiro.
+**Os dois campos que faltavam entraram nesta sessão** (migration `147`):
+`impacto` (alto/médio/baixo) e `providencia` (solicitar ao cliente / obter no
+processo / emitir certidão / diligência externa). Ambos NULLABLE — pendência
+antiga fica `NULL`, lido como "não avaliado", nunca como "sem impacto".
+
+**O que sobra é preenchimento, não código:** os campos não se preenchem
+sozinhos. Classificar impacto e providência é juízo do advogado; o sistema
+agora tem onde guardar essa decisão, e antes não tinha. Enquanto ninguém
+classificar, a lista continua sendo uma lista de ausências.
 
 ### 13. Memória institucional — ✅ existe e é alimentada automaticamente
 
