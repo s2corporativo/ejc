@@ -289,9 +289,12 @@ correto segue 201 com `7500.50` gravado).
 
 **Achado 6.** `app/routers/documents.py` não menciona `sha256` nem `hashlib`;
 `documents` não tem coluna de hash; o SHA-256 vive em `document_intake_items`,
-que o upload direto não alimenta. A migration `142_document_hash_rescan` criou
-um *backfill* — a ausência é conhecida; a origem segue sem gerar. Corrigir exige
-coluna nova (migration, exceção §6-A) e é escopo próprio.
+que o upload direto não alimenta.
+
+> **Correção deste achado, feita em 22/08 (ver §8-H).** A redação original dizia
+> que corrigir "exige coluna nova (migration, exceção §6-A)". Está errado, e a
+> diferença é grande: a máquina inteira já existe e está testada — só não é
+> chamada por ninguém.
 
 ### Auditado e conforme
 
@@ -824,3 +827,40 @@ o rótulo de rascunho — coerente com o que `hitl_policy.py` documenta. Uma pe�
 se apresenta como definitiva, em nenhuma configuração.
 
 Nenhuma correção necessária.
+
+## 8-H. Correção de um achado meu: o SHA-256 de documentos (22/08/2026)
+
+Ao reconferir o Achado 6 antes de deixá-lo no relatório, descobri que eu havia
+descrito mal a **remediação**. Registro a correção porque achado de auditoria com
+diagnóstico errado é pior do que achado nenhum: manda o titular orçar o trabalho errado.
+
+**O que eu disse:** "corrigir exige coluna nova (migration, exceção §6-A)".
+
+**O que o repositório tem, de fato:**
+
+| peça | onde | estado |
+|---|---|---|
+| primitiva de hash em streaming | `services/document_hash_service.py` | pronta, não materializa o arquivo em memória |
+| variante remota (Drive/rclone) | `services/document_remote_hash_service.py` | pronta |
+| orquestrador de rescan/backfill | `services/document_rescan_service.py` | pronto, com classificação de divergências |
+| tabelas de persistência | migration `142_document_hash_rescan` | criadas |
+| despacho Celery/BackgroundTasks | `tasks/rescan_tasks.py::agendar_rescan` | **pronto** |
+| testes | `test_document_rescan_service.py`, `test_document_rescan_integracao_dblevel.py` | existem |
+| **quem chama `agendar_rescan`** | — | **ninguém**: nenhum router, nenhum job do scheduler |
+
+Ou seja: o Épico #1019 A3.2 foi construído inteiro, incluindo a camada de despacho, e
+parou antes do último fio. Não falta migration nem coluna para o caminho de rescan — as
+tabelas estão lá. Falta **acionamento**: um endpoint administrativo ou uma entrada no
+`scheduler.py`.
+
+Ficam então dois itens distintos, com tamanhos muito diferentes:
+
+1. **Ligar o rescan** — pequeno. Wiring de algo pronto e testado.
+2. **Hash no momento do upload** — aí sim exige coluna em `documents` (migration) e é
+   decisão à parte. É o que dá prova de integridade *desde a origem*, em vez de
+   reconstruída por lote depois.
+
+Nota de contexto: o primeiro defeito corrigido nesta auditoria (PR #1234) foi justamente
+um `pytest.skip()` mal formado em `test_document_rescan_integracao_dblevel.py` — o teste
+de integração **deste** serviço, que derrubava a coleta da suíte inteira. O rescan de
+hash já tinha, portanto, dois problemas independentes: o teste quebrado e a ponta solta.
