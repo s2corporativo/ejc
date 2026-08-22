@@ -22,7 +22,14 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
     # E-mail
     (re.compile(r'\b[\w.+-]+@[\w-]+\.[\w.]+\b'), '[EMAIL]'),
     # Telefone BR: (31) 99999-9999, +55 31 ..., 31999999999
-    (re.compile(r'(\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b'), '[TELEFONE]'),
+    # `(?<!\d)` impede que o padrão comece NO MEIO de uma sequência maior de
+    # dígitos. Sem essa guarda, um cartão "4111 1111 1111 1111" casava aqui em
+    # "11 1111 1111" (os padrões são aplicados em ordem e TELEFONE vem antes de
+    # CARTAO), sobrando "41" e "1111" em claro rumo ao provider externo — e
+    # ainda rotulados como telefone. Reordenar a lista não é opção: os índices
+    # 0-6 são referenciados por `validar_sem_pii` e `sanitizar_pii_interno` usa
+    # `[2:]`.
+    (re.compile(r'(?<!\d)(\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b'), '[TELEFONE]'),
     # CEP: 00000-000
     (re.compile(r'\b\d{5}-?\d{3}\b'), '[CEP]'),
     # Cartão de crédito (16 dígitos com/sem separadores)
@@ -139,6 +146,10 @@ def validar_sem_pii(texto: str) -> list[str]:
         'EMAIL': _PATTERNS[4][0],
         'TELEFONE': _PATTERNS[5][0],
         'CEP': _PATTERNS[6][0],
+        # CARTAO (7) e CHAVE_PIX (8) faltavam nesta segunda barreira: um número
+        # de cartão ou chave PIX residual passava com "nenhuma PII residual".
+        'CARTAO': _PATTERNS[7][0],
+        'CHAVE_PIX': _PATTERNS[8][0],
         'OAB': _PATTERNS[9][0],
         'ENDERECO': _PATTERNS[10][0],
     }

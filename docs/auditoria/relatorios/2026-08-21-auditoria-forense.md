@@ -640,3 +640,76 @@ está mesmo correto. O defeito só existia na junção: um contador que pergunta
 errada a uma API que respondia certo. Nenhuma chamada isolada de API o revelaria; foi
 preciso abrir a tela e ver dois números incompatíveis no mesmo lugar. É a demonstração
 concreta do §2 do prompt — endpoint responder não significa que funciona.
+
+## 8-E. Rodada 6 — proteções de IA não negociáveis (22/08/2026)
+
+Verificação das travas que o CLAUDE.md marca como intocáveis (regras 4 e 13): gate
+antialucinação de citações, HITL e sanitização de PII antes de provedor externo.
+
+### Gate de citações — conforme, e melhor do que o esperado
+
+Alimentado com citações fabricadas, o gate reprova com diagnóstico específico:
+
+```
+política vigente      bloquear   (CITACOES_POLITICA, default fail-secure)
+bloqueia_aprovacao    true
+  Súmula 9999 STJ     "fora da faixa plausível de STJ (1 a 676) — provavelmente não existe"
+  Processo 0000001-…  "dígito verificador do número CNJ inválido (módulo 97,
+                       Res. CNJ 65/2008) — o número como escrito não pode existir"
+```
+
+`response_validator` degrada fail-closed: se a verificação falhar, vira alerta e
+`revisao_obrigatoria = True`, em vez de liberar. `AI_REQUIRE_HITL` é `True` por padrão.
+
+Lacuna menor, sem falso positivo de aprovação: `artigo 42.789 do Código Civil`
+(inexistente) não foi extraído do texto — o gate reprovou pelas outras duas citações,
+mas essa não chegou a ser avaliada. Registrado, não corrigido.
+
+### Achado 8 — cartão de crédito escapava da barreira de PII (CORRIGIDO)
+
+`_sanitizar_messages_externo` é a última barreira antes de Anthropic/Groq e promete, na
+própria docstring, mascarar "CPF/CNPJ/processo/RG/e-mail/telefone/CEP/**cartão**/PIX".
+O cartão não estava coberto na prática:
+
+```
+entrada    "Cliente ..., cartao 4111 1111 1111 1111, ..."
+saída      "Cliente ..., cartao 41[TELEFONE] 1111, ..."   <- 6 dígitos em claro
+residual   []                                             <- a 2ª barreira dizia "limpo"
+```
+
+Duas causas somadas:
+
+1. Os padrões são aplicados **em ordem**, e TELEFONE (índice 5) vem antes de CARTAO
+   (índice 7). Sem guarda à esquerda, o padrão de telefone casava `11 1111 1111` no
+   MEIO do cartão, quebrava a sequência e impedia o padrão de cartão de casar. Sobravam
+   `41` e `1111` em claro — e rotulados como telefone.
+2. `validar_sem_pii`, a **segunda** barreira, checava os índices 0-6, 9 e 10 — sem
+   CARTAO (7) nem CHAVE_PIX (8). Cartão ou chave PIX residual passava como
+   "nenhuma PII residual". A verificação que existe para pegar o que escapou da
+   primeira barreira era cega justamente para o que escapava.
+
+**Correção sem reordenar a lista** — o arquivo marca os índices 0-6 como referenciados
+por `validar_sem_pii`, e `sanitizar_pii_interno` fatia `[2:]`: guarda `(?<!\d)` no padrão
+de telefone (mesma posição) e inclusão de CARTAO e CHAVE_PIX na segunda barreira.
+
+| entrada | antes | agora |
+|---|---|---|
+| `4111 1111 1111 1111` | `41[TELEFONE] 1111` | `[CARTAO]` |
+| `4111111111111111` | `[CARTAO]` | `[CARTAO]` |
+| `4111-1111-1111-1111` | `41[TELEFONE]-1111` | `[CARTAO]` |
+| `(31) 98888-7777` | `[TELEFONE]` | `[TELEFONE]` (inalterado) |
+| `+55 31 98888-7777` | `[TELEFONE]` | `[TELEFONE]` (inalterado) |
+
+Cartão em processo não é hipótese remota: ação de consumo sobre fraude, contestação de
+compra e revisão de contrato bancário trazem o número no documento.
+
+Regressão: `tests/test_sanitizer_cartao_barreira_externa.py`, 11 casos, incluindo o
+percurso real pelo `_sanitizar_messages_externo`. Conferido contra a versão vulnerável:
+**falha 6 de 11**.
+
+### Observação registrada, não corrigida
+
+`31988887777` (telefone de 11 dígitos sem separador) é mascarado como `[CPF]`, porque o
+padrão de CPF (índice 0) casa 11 dígitos seguidos e roda primeiro. **Não há vazamento** —
+o dado é mascarado —, apenas o rótulo é impreciso. Corrigir exigiria mexer na ordem dos
+índices 0-6, que o arquivo proíbe explicitamente; fica como dívida registrada.
