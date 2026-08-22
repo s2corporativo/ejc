@@ -1,0 +1,22 @@
+{
+  "dataset": "EJC_piloto_100_processos",
+  "periodo": "2019-01-01/2026-08-22",
+  "cidades": [
+    "Betim",
+    "Contagem"
+  ],
+  "frame_processos_unicos": 100,
+  "v4_seed_quarentena": 13,
+  "regra": "Somente V4 direto tem JSONL de seed; V2 e staging ficam fora do RAG até revisão.",
+  "rag_status": "quarentena",
+  "ficticio": false,
+  "fontes_permitidas": [
+    "TJMG Jurisprudência",
+    "TJMG Consulta Processual",
+    "PJe TJMG"
+  ],
+  "nao_inseridos_automaticamente": [
+    "51 staging",
+    "36 metadados"
+  ]
+}

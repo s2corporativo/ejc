@@ -1,0 +1,9 @@
+﻿city,stratum,quota,unique_processes,confirmed_v4,metadata_v2,pending,rejected,duplicates_or_aliases,deficit_to_quota,deficit_v4
+Betim,Execução fiscal,13,13,0,4,0,0,0,0,13
+Betim,Fraude bancária e PIX,13,13,0,13,0,0,0,0,13
+Betim,Empresarial,12,12,5,1,0,0,0,0,7
+Betim,Consumidor,12,12,4,2,0,0,1,0,8
+Contagem,Execução fiscal,13,13,0,2,0,0,0,0,13
+Contagem,Fraude bancária e PIX,13,13,0,8,0,0,1,0,13
+Contagem,Empresarial,12,12,0,3,0,0,0,0,12
+Contagem,Consumidor,12,12,4,3,0,0,0,0,8
