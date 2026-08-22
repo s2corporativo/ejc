@@ -1513,3 +1513,121 @@ fabricado" — verdadeiro, e enganosamente pequeno. O defeito real era estrutura
 
 Vale como método: item registrado numa auditoria não é item entendido. A anotação carrega o
 tamanho que o problema tinha aos olhos de quem passou correndo por ele.
+
+---
+
+## 8-Q. Achado 24 e uma varredura que fechou mais itens do que abriu (22/08/2026)
+
+Mudança de método pedida pelo titular: parar de serializar cada correção num ciclo
+*corrige → empurra → espera CI → espera revisão*. O portão local roda exatamente o que o CI
+roda; o GitHub passa a ser registro, não etapa. Esta rodada foi inteira local, com a stack de
+pé (Postgres 16 + pgvector, 147 migrations do zero, backend em :8011).
+
+### Primeiro resultado: metade da lista registrada já estava corrigida
+
+A lista de "armadilhas confirmadas em produção" do `CLAUDE.md` descreve a auditoria externa de
+**julho, contra produção**. O repositório andou desde então, e re-corrigir o que já foi
+corrigido é desperdício. Medido:
+
+| item registrado | estado real |
+|---|---|
+| smoke E2E roda contra produção | **já protegido** — `run_fictitious_smoke.py:1025` recusa alvo fora de staging/homolog/localhost sem `EJC_ALLOW_PRODUCTION_E2E=true` |
+| `?status=all` devolve 500 | **já corrigido** — `validar_status_caso` devolve 422; o comentário no código diz "era o caso de `?status=all`" |
+| exclusão de caso não cascateia | **protegido** — `DELETE /cases/{id}` devolve 422 com a lista de pendências e manda arquivar |
+
+Ponto fraco anotado e não corrigido: o guard do smoke testa substring na URL inteira, então
+`https://…adv.br/?x=staging` passaria. Verificar o **hostname** seria mais firme.
+
+### Achado 24 — documento juntado sem prova de integridade
+
+Prioridade 8 (documentos). O EJC é sistema de prova documental: o hash é o que sustenta que o
+arquivo juntado hoje é o mesmo de amanhã.
+
+A maquinaria de SHA-256 existia **inteira** desde a migration 142 — serviço local, variante
+remota via rclone, `document_rescan_service`, task de backfill. Faltava o começo:
+`POST /documents/upload` não calculava nada e `documents` não tinha coluna (25 colunas,
+nenhuma de integridade). O SHA-256 existente vivia só em `document_intake_items`, alimentada
+apenas pelo fluxo de intake — documento juntado **pela tela** ficava sem evidência nenhuma.
+
+**Correção:** migration `147_documents_sha256_integridade` (coluna nullable + índice), campo no
+model, e o cálculo no upload a partir dos bytes que já estão em memória — sem I/O extra, sem
+reler o disco.
+
+`nullable=True` é decisão, não descuido: documento anterior à coluna **não tem** hash, e `NULL`
+diz isso. Preencher com qualquer coisa fingiria integridade que ninguém verificou. O backfill
+é do rescan, que sabe ler arquivo local e remoto.
+
+**Correção de uma afirmação minha.** Numa rodada anterior escrevi que corrigir isto "exige
+coluna nova — migration, exceção §6-A" e parei aí. A parte da migration era verdadeira; a
+frase dava a entender que faltava construir a maquinaria, quando faltavam a coluna e o caller.
+
+**Verificação — migration:** aplicada do zero (147 de 147), coluna `varchar(64) NULL` e índice
+`ix_documents_sha256` conferidos no `information_schema`, downgrade removendo limpo
+(`count=0`) e re-upgrade voltando ao head.
+
+**Verificação — comportamento (§2: "HTTP 201 não significa que funciona"):** três uploads reais
+pela API, hash conferido **na coluna do banco**, não na resposta:
+
+```
+peticao.pdf   201  SIM  894ab840abcc452b290fb660e5ba177b51f5af28dda2a39797ac4cdd47f3a3ff
+contrato.pdf  201  SIM  66e1ca419a01264b33989494203672cfe94542e0ec87f4b435c1c5062876ff1e
+peticao.pdf   201  SIM  a12c7e0a164a9f0e96b869f913c48ccfa36f94386669b47e24ca41ef883d2fed
+conteúdos diferentes geraram hashes diferentes: True
+documentos sem hash: 0 de 3
+```
+
+Regressão: 4 casos, **2 falham** sem a correção.
+
+### Dois falsos positivos meus, pegos antes de virarem achado
+
+Registro porque o padrão é o mesmo das rodadas anteriores — e desta vez quem produziu o erro
+foi o meu instrumento.
+
+**1. "ÓRFÃO: 4 peças, 1 prazo, 1 honorário".** O roteiro contou dependentes vivos depois de um
+`DELETE` que devolvera **422**. O caso não fora excluído; os dependentes estarem vivos era o
+comportamento correto. Veredito que não confere o passo anterior é ruído.
+
+**2. "Arquivar removeu o prazo dos indicadores".** O dashboard marcou 0 **antes e depois** do
+arquivamento — e marcava 0 já com o prazo criado. Não era arquivamento: é o cache de 30 s
+(`_DASHBOARD_TTL_S`). Medindo fora da janela, o dashboard confere **exatamente** com o banco
+(`vencidos=1 criticos3d=2 proximos7d=3`, `degradado=[]`).
+
+### Registrado como decisão, não como defeito
+
+**Prazo de caso arquivado continua contando.** Medido: `GET /deadlines/?status=pendente`
+devolve o prazo de um caso arquivado, e o dashboard o conta. Não corrijo por conta própria, e
+a razão é jurídica: prazo processual não desaparece porque o caso foi arquivado
+administrativamente, e esconder um prazo real é o dano de prioridade 3 que este sistema
+existe para evitar. O comportamento atual é o lado seguro do erro. Se o titular decidir que
+arquivar deve encerrar os prazos, é mudança de regra, com fonte e teste.
+
+**Telefone de 11 dígitos rotulado `[CPF]`.** Medido: `31988887777` → `[CPF]`. Ambos são
+**mascarados** — não há vazamento, é rótulo errado. Distinguir exigiria validar o dígito
+verificador do CPF, mexendo de novo na camada de PII que já produziu três achados hoje. O
+custo supera o ganho enquanto o dado está protegido.
+
+### O gate de deploy reprovou a minha migration — e estava certo
+
+A primeira versão da `147` trazia guarda de idempotência por introspecção
+(`op.get_bind()` + `if "sha256" not in cols`). A suíte completa reprovou em
+`test_migrations_reais_passam_no_gate.py`:
+
+```
+147_documents_sha256_integridade.py: linha 39: estrutura dinâmica Assign exige revisão humana;
+linha 40: estrutura dinâmica If exige revisão humana; linha 39: op.get_bind exige revisão
+```
+
+O repositório exige migration **analisável estaticamente**: uma que ramifica em tempo de
+execução não pode ser conferida antes de ir para produção. A defesa que eu tinha posto por
+hábito era exatamente o que a trava existe para barrar — e o Alembic já garante execução única
+pela tabela de versão. Reescrita declarativa, revalidada em banco limpo: aplica, cria coluna e
+índice, downgrade remove (`count=0`).
+
+As outras quatro falhas eram os guards de head fixado em `146` — atualizar é a manutenção
+deliberada que eles existem para forçar quando alguém adiciona migration. Atualizados para
+`147` em `test_alembic_single_head.py`, `test_schema_dr_parity.py` e
+`test_preliminares_fundacao_schema_140.py`.
+
+Vale o registro de método: **eu não teria descoberto nenhuma das cinco pelo caminho antigo**
+sem esperar o CI. O portão local pegou tudo em dois minutos — que é o argumento do titular
+para trabalhar localmente e deixar o GitHub para o fim.
