@@ -134,7 +134,15 @@ def test_models_preliminar_estao_registrados_no_metadata():
         )
 
 
-@pytest.mark.skipif(not os.getenv("RUN_DB_TESTS"), reason="requer PostgreSQL")
+# O guard precisa cobrir as DUAS variáveis que o teste consome. Só
+# `RUN_DB_TESTS` deixava `os.environ["SCHEMA_CHECK_DATABASE_URL"]` estourar
+# KeyError: o teste FALHAVA por configuração ausente em vez de pular, e um
+# erro de ambiente ficava indistinguível de uma quebra real de schema no log.
+# No CI (ci.yml define ambas) o teste segue rodando exatamente como antes.
+@pytest.mark.skipif(
+    not (os.getenv("RUN_DB_TESTS") and os.getenv("SCHEMA_CHECK_DATABASE_URL")),
+    reason="requer PostgreSQL (RUN_DB_TESTS=1 e SCHEMA_CHECK_DATABASE_URL)",
+)
 def test_upgrade_139_e_downgrade_138_preservam_tabelas_legadas():
     import subprocess
 
