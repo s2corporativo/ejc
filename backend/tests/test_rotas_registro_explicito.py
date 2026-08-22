@@ -164,6 +164,21 @@ ADICOES_INTENCIONAIS = {
     ("/api/honorarios-oab/cases/{case_id}/teto-etico", "GET"),
     ("/api/honorarios-oab/{fee_id}/rateio", "GET"),
     ("/api/honorarios-oab/{fee_id}/rateio", "POST"),
+    # Banco Nacional de Teses V1: fontes, snapshots, precedentes, teses,
+    # validações, relações e checkpoints de lote — fundação aditiva com gates
+    # de curadoria e aprovação humana.
+    ("/api/banco-nacional-teses/fontes", "GET"),
+    ("/api/banco-nacional-teses/fontes", "POST"),
+    ("/api/banco-nacional-teses/fontes/{source_id}/snapshots", "POST"),
+    ("/api/banco-nacional-teses/precedentes", "POST"),
+    ("/api/banco-nacional-teses/precedentes/{precedent_id}/decisao", "POST"),
+    ("/api/banco-nacional-teses", "GET"),
+    ("/api/banco-nacional-teses", "POST"),
+    ("/api/banco-nacional-teses/{thesis_id}", "GET"),
+    ("/api/banco-nacional-teses/{thesis_id}/validacoes", "POST"),
+    ("/api/banco-nacional-teses/{thesis_id}/precedentes", "POST"),
+    ("/api/banco-nacional-teses/{thesis_id}/decisao", "POST"),
+    ("/api/banco-nacional-teses/lotes", "POST"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui

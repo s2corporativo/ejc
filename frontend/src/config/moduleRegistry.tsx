@@ -114,6 +114,7 @@ const FinanceiroWorkspace = lazy(() => import("../pages/FinanceiroWorkspace"));
 const InteligenciaWorkspace = lazy(
   () => import("../pages/InteligenciaWorkspace"),
 );
+const BancoNacionalTeses = lazy(() => import("../pages/BancoNacionalTeses"));
 const GovernancaIA = lazy(() => import("../pages/GovernancaIA"));
 // CONSOLIDAÇÃO CONHECIMENTO 2026-07: as superfícies KnowledgeHub, Biblioteca,
 // MemoriaInstitucional e Wiki foram unificadas na aba canônica
@@ -625,6 +626,22 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: true,
     usesAI: true,
     backendPrefixes: ["/api/ai", "/api/ai/core", "/api/ai/skills"],
+  },
+  {
+    key: "banco-nacional-teses",
+    path: "/banco-de-teses",
+    label: "Banco de Teses",
+    description:
+      "Teses de ataque e defesa com fontes rastreáveis, validação humana e estratégia processual.",
+    group: "Pesquisar & IA",
+    icon: BookOpen,
+    component: BancoNacionalTeses,
+    roles: ROLES.juridico,
+    showInNav: true,
+    order: 20,
+    helpKey: "inteligencia",
+    sensitive: true,
+    backendPrefixes: ["/api/banco-nacional-teses"],
   },
   {
     key: "prompts",

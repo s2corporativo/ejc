@@ -63,6 +63,7 @@ from app.models import atendimento         # noqa
 from app.models import bank_analysis       # noqa
 from app.models import case_intelligence   # noqa  (snapshot versionado da inteligência do caso — migração 101)
 from app.models import matriz_teses        # noqa  (Matriz de Teses estruturada — FASE 3, migração 102)
+from app.models import legal_thesis_bank   # noqa  (Banco Nacional de Teses — fundação V1, migração 147)
 from app.models import fee_proposal        # noqa  (Proposta de honorários versionada — FASE 4, migração 103)
 from app.models import case_parte          # noqa
 from app.models import caso_area           # noqa
