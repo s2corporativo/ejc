@@ -258,6 +258,88 @@ reconexão). Não é um filão de defeitos.
 
 ---
 
+## 8-A. Segunda rodada — auditoria funcional com a stack de pé (22/08)
+
+A primeira rodada auditou o repositório; esta auditou o **sistema em execução**.
+Backend local, Postgres 16 + pgvector, 138 migrations do zero, banco descartável
+`ejc_app`, dados fictícios. Cobre os itens §8–§29 e §64 do prompt mestre, que
+nenhuma análise estática alcança.
+
+**Método.** Cada passo confere os DOIS lados: a resposta HTTP e a persistência
+real no Postgres. HTTP 201 não foi aceito como prova — é exatamente a premissa
+do §2 do prompt ("um endpoint responder não significa que funciona").
+
+**39 verificações · 35 conformes · 3 achados · 1 falso positivo meu.**
+
+### Achados
+
+| # | Achado | Gravidade | Status |
+|---|--------|-----------|--------|
+| 5 | `POST /fees/` aceita honorário sem valor e sem percentual (HTTP 201, `valor=NULL`) | ALTO | **CORRIGIDO · TESTADO** |
+| 6 | Upload de documento não gera SHA-256 — sem prova de integridade | MÉDIO | ENCONTRADO (Issue #1237) |
+| 7 | Campo desconhecido no corpo é descartado em silêncio (default do Pydantic) | BAIXO | ENCONTRADO — decisão de contrato |
+
+**Achado 5, medido.** Corpo com apenas `descricao`, `client_id` e `tipo=exito`
+→ **201**, e no banco `valor=NULL, percentual_exito=NULL, status=pendente`. Pior:
+`valor_total` (nome inexistente; o certo é `valor`) também devolvia 201 gravando
+`NULL` — erro de digitação virava honorário fantasma. No banco de auditoria:
+`com valor: 0 | SEM valor: 2`. Corrigido com `model_validator` exigindo ao menos
+um dos dois; validado contra a API real (**422** onde antes era 201, payload
+correto segue 201 com `7500.50` gravado).
+
+**Achado 6.** `app/routers/documents.py` não menciona `sha256` nem `hashlib`;
+`documents` não tem coluna de hash; o SHA-256 vive em `document_intake_items`,
+que o upload direto não alimenta. A migration `142_document_hash_rescan` criou
+um *backfill* — a ausência é conhecida; a origem segue sem gerar. Corrigir exige
+coluna nova (migration, exceção §6-A) e é escopo próprio.
+
+### Auditado e conforme
+
+**Autenticação (§30) — 10/10.** Credencial errada, usuário inexistente, token
+forjado, ausência de token: 401 em todos. Primeiro acesso com
+`must_change_password` bloqueia rota protegida (403), a troca conclui, o login
+novo funciona e **a credencial antiga deixa de valer**.
+
+**Isolamento entre usuários (§31) — 5/5, empírico.** Segundo advogado criado pela
+API, sem vínculo com o caso: `GET /cases/{id}` alheio → 404; caso não aparece na
+listagem dele; `GET /documents/{id}/download` → 403; `PATCH /documents/{id}` →
+403; `GET /users/` → 403. **Nenhum IDOR** — agora verificado com dois usuários
+reais, não por leitura de código.
+
+**LGPD/PII (§33) — 3/3.** CPF gravado como `cpf_enc` Fernet (`gAAAAA…`),
+`cpf_hash` preenchido para busca cega, e o CPF em claro não aparece em nenhuma
+outra coluna textual da linha.
+
+**Deduplicação (§58).** CPF repetido → **409**, detectado pelo índice cego sem
+decifrar.
+
+**Prazos (§8.3), o módulo de maior risco jurídico.** 15 dias úteis a partir de
+hoje, TRT3: API gravou `data_prazo=2026-09-14`; o motor
+`deadline_calculator.prazo_dias_uteis` calcula `2026-09-14`. **Confere.**
+
+**Percurso do advogado (§77) — 22/22.** Cliente → caso → prazo → tarefa, com
+verificação no banco a cada passo. `descricao_fatos` **sobrevive** à gravação
+(a auditoria externa suspeitava de perda nesse campo — não se reproduz), o
+vínculo cliente↔caso persiste, `numero_interno` é gerado (`DPT-2026-0001`), o
+caso aparece na listagem. Documento nasce `confidencial` — sem publicação por
+omissão no portal.
+
+### Falso positivo descartado
+
+Registrei "caso criado não aparece na listagem". Era **erro meu**: o envelope é
+`{"data": [...]}` e o verificador procurava `items`. Corrigido; o passo é
+conforme. Fica como lembrete de que o verificador também erra — e de que um
+"achado" sem conferência vira ruído.
+
+### O que esta rodada NÃO cobriu
+
+RAG sob corpus real, jurimetria, Visual Law, geração de peças por IA, portal do
+cliente com login externo, responsividade, acessibilidade e performance. E o
+percurso foi exercitado **pela API**: prova o backend e a persistência, não a
+interface renderizada.
+
+---
+
 ## 9. Riscos residuais e fora do alcance
 
 **Não auditado nesta sessão** — não tratar como funcionando:
