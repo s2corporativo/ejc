@@ -40,9 +40,10 @@ ao advogado e não se conecta a si mesma.** Três evidências concretas:
    liquidação — sem nenhuma tela. A página `/ferramentas` que existe é um
    lançador sobre os módulos do registry; não chama nenhuma dessas 55. Valor
    construído e pago, invisível.
-3. Tudo roda numa direção só: do caso para o conhecimento. **Nada roda no
-   sentido inverso** — da tese para os casos, do precedente novo para as teses
-   afetadas, do caso encerrado de volta para a base.
+3. Falta o sentido inverso em duas das três direções: **da tese para os casos**
+   e **do precedente novo para as teses afetadas**. (A terceira — do caso
+   encerrado de volta para a base — a primeira versão deu como ausente e
+   estava errada: existe e funciona; ver frente 13.)
 
 Isso reordena a prioridade, e o item 1 a reordena mais do que parece. Se a
 funcionalidade que a proposta coloca como objetivo maior já está no ar e não
@@ -271,18 +272,43 @@ recomendada (solicitar ao cliente / obter no processo / emitir certidão). São 
 dois campos que transformam uma lista de ausências em plano de ação — e são o
 delta mais barato do documento inteiro.
 
-### 13. Memória institucional — ✅ existe a tabela; 🔴 falta o ciclo que a alimenta
+### 13. Memória institucional — ✅ existe e é alimentada automaticamente
 
 `routers/memoria_institucional.py` (185 linhas) tem CRUD auditado, restrito à
 equipe jurídica por allowlist exata, com tipos fechados incluindo
-`tese_vencedora` e `estrategia`, e resultados (`favoravel`, `desfavoravel`,
-`parcial`, `acordo`). Exposto no frontend em `CasoDetalhe/TabMemoria.tsx`.
+`tese_vencedora` e `estrategia`. Exposto no frontend em
+`CasoDetalhe/TabMemoria.tsx`.
 
-**Mas é inteiramente manual.** Nada dispara no encerramento do caso. Nenhum
-registro retroalimenta o RAG ou o ranking de teses. A proposta acerta no ponto
-mais valioso — *"em alguns anos o EJC terá conhecimento que nenhuma IA pública
-possui"* — e esse valor depende inteiramente de captura automática no momento
-do encerramento, porque registro manual pós-caso não acontece na prática.
+**E o ciclo automático existe.** `POST /cases/{id}/encerrar` exige pós-mortem
+(resultado, motivo, provas determinantes, lições) e dispara duas coisas:
+
+1. **RAG** — `upsert_documento` grava o precedente interno, idempotente por
+   `chave_origem = caso:{id}` (`routers/cases.py`);
+2. **`case_intel.aprendizado_encerramento`** — grava `memoria_institucional`
+   (tipo `tese_vencedora` no êxito, `estrategia` na derrota) **e semeia o
+   Banco de Teses**, com a tese nascendo `rascunho`/`sugerida_ia` para não
+   entrar ativa sem revisão humana. Idempotente pela marca
+   `metadados->>'fonte' = 'auto_encerramento'`, com PII sanitizada e
+   degradação sem IA.
+
+> **Correção da primeira versão deste documento.** Ela afirmava, sobre esta
+> frente: *"é inteiramente manual; nada dispara no encerramento; nenhum
+> registro retroalimenta o RAG ou o ranking de teses"*. **As três afirmações
+> são falsas.** O erro foi ler só o router de memória institucional e concluir
+> pela ausência do que estava do outro lado — no fluxo de encerramento do caso.
+
+**O que faltava era prova de funcionamento, não código.** A única cobertura era
+um guard ESTÁTICO (`test_migracao_gateway_fase1b.py` lê o fonte com
+`inspect.getsource` procurando `task_type="estrategia"`); ninguém nunca
+executara a função contra um banco. E ela **engole toda exceção** — mesma forma
+do defeito que o `CLAUDE.md` registra na captura DJEN, que "reporta ok há meses
+sem nunca ter capturado nada".
+
+Exercitada contra Postgres real em 2026-08-22
+(`tests/test_aprendizado_encerramento_dblevel.py`, 5 testes): a memória é
+gravada, a reexecução não duplica, a tese nasce em rascunho com os contadores
+certos, derrota vira `estrategia` sem contar como vitória, e caso inexistente
+sai em silêncio sem derrubar o background do encerramento. **Funciona.**
 
 ### 14. Matriz de estratégia processual — ✅ existe
 
@@ -341,7 +367,7 @@ backlog — e nenhuma das outras 14 frentes responde a ela.
 | 10 | Inteligência documental | ✅ | Camada interpretativa |
 | 11 | Linha do tempo | 🟡 | Engenharia (cruzar real × rito) |
 | 12 | O que está faltando | 🟡 | Engenharia (impacto + providência) |
-| 13 | Memória institucional | ✅ tabela | Engenharia (captura automática) |
+| 13 | Memória institucional | ✅ completo | Nada — verificado por execução |
 | 14 | Matriz de estratégia | ✅ | Apresentação |
 | 15 | Segundo advogado | ✅ completo | **Validar uso real** — não é backlog |
 
@@ -370,7 +396,7 @@ resolve.
 | **A0** | **Usar o Dossiê Estratégico num caso real e julgar o resultado** (frente 15) | **Pré-requisito de tudo.** A frente-síntese já está no ar e não mudou o comportamento de ninguém. Enquanto não se souber se ela funciona, qualquer construção nova é aposta. Não é tarefa de engenharia: é o titular abrindo a aba "Estratégia" de um caso e dizendo se o que sai vale o clique. |
 | A1 | Impacto + providência em pendências (frente 12) | Dois campos. Transforma lista de ausências em plano de ação. |
 | A2 | Varredura reversa Tese → Caso (frente 2) | Ativa o Banco de Teses. Infra de matching já existe. |
-| A3 | Captura automática no encerramento (frente 13) | Sem isto a memória institucional nunca acumula. Quanto antes, mais história capturada. |
+| ~~A3~~ | ~~Captura automática no encerramento (frente 13)~~ | **Cancelado — já existe.** `aprendizado_encerramento` grava memória e semeia o Banco de Teses desde antes desta avaliação. O que faltava era prova: exercitado contra Postgres em 22/08, 5 testes, funciona. |
 | A4 | Pisos de qualidade no gate de eval (frente 8) | O gate bloqueante já existe (`ci.yml:183`), mas afere formato e trajetória. `--min-recall` e `--full` já estão no harness e não estão ligados. Só vale com o gold set da frente 7 certificado. |
 
 **A0 pode invalidar o resto desta lista, e é para isso que serve.** Se o dossiê
@@ -436,6 +462,14 @@ titular depois de A0, não antes.
   erros) vêm de busca por nome e conceito no backend. É a mesma limitação que o
   `CLAUDE.md` registra sobre o graphify: *confirme no arquivo antes de afirmar que
   algo não existe*.
+- **Três erros do mesmo tipo, não dois.** Além dos dois abaixo, a frente 13 foi
+  dada como "inteiramente manual, nada dispara no encerramento, nada
+  retroalimenta o RAG nem o ranking de teses" — as três cláusulas falsas. O
+  padrão é sempre o mesmo: **ler um lado da integração e concluir pela ausência
+  do outro**. Aqui, ler `routers/memoria_institucional.py` e não abrir
+  `POST /cases/{id}/encerrar`, que é quem alimenta. Antes de tratar qualquer 🔴
+  ou "falta" deste documento como verdade, procure quem *escreveria* naquele
+  recurso, não só quem o *lê*.
 - **Busca textual erra por prefixo — e errou aqui.** A frente 15 foi inicialmente
   dada como sem frontend porque a busca usou `dossie-estrategico` e o router é
   `/dossie`. O componente tinha 770 linhas e estava renderizado numa aba visível.
