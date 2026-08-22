@@ -81,8 +81,7 @@ export default function DeadlineRiskStrip() {
   const [erro, setErro] = useState(false);
   const [truncado, setTruncado] = useState(false);
   const [vencidosServidor, setVencidosServidor] = useState<number | null>(null);
-  const [pendentesEstourados, setPendentesEstourados] = useState(0);
-  const [pendentesTruncados, setPendentesTruncados] = useState(false);
+  const [estourados, setEstourados] = useState(0);
 
   useEffect(() => {
     let ativo = true;
@@ -100,12 +99,18 @@ export default function DeadlineRiskStrip() {
           buscarPrazos("vencido"),
         ]);
         if (!ativo) return;
-        setPrazos([...pendentes.itens, ...vencidos.itens]);
-        setPendentesEstourados(
-          pendentes.itens.filter((p) => Number(p.dias_restantes) < 0).length,
+        const emAberto = [...pendentes.itens, ...vencidos.itens];
+        setPrazos(emAberto);
+        // Fallback local (só vale quando a agregação do servidor falha): conta
+        // por DATA sobre as DUAS faixas. Contar só `pendentes` era o Achado 7
+        // reaparecendo aqui dentro — depois do job das 07:10 o prazo estourado
+        // deixa a faixa `pendente`, e este caminho exibiria "0 vencido(s)" com
+        // os vencidos carregados na mão. `dias_restantes < 0` também exclui, de
+        // graça, o reagendado que ficou com status `vencido` e data futura.
+        setEstourados(
+          emAberto.filter((p) => Number(p.dias_restantes) < 0).length,
         );
         setTruncado(!pendentes.completo || !vencidos.completo);
-        setPendentesTruncados(!pendentes.completo);
         setErro(false);
       } catch {
         if (ativo) setErro(true);
@@ -125,8 +130,19 @@ export default function DeadlineRiskStrip() {
       //      Dois painéis discordando é o defeito que este PR veio consertar.
       try {
         const dash = await api.get("/dashboard/");
+        // `GET /dashboard/` NÃO falha quando um bloco seu falha: responde 200,
+        // mantém o default `pv = 0` e nomeia o bloco em `degradado`. Aceitar
+        // esse zero como contagem autoritativa faria uma falha transitória do
+        // banco virar "0 vencido(s)" na tela — número errado com cara de
+        // apurado, e justamente o número que este radar existe para não errar.
+        // Sem o bloco de prazos, não há agregação: cai no fallback local.
+        const degradado = dash.data?.degradado;
+        const prazosDegradou =
+          Array.isArray(degradado) && degradado.includes("prazos");
         const n = Number(dash.data?.prazos?.vencidos);
-        if (ativo && Number.isFinite(n)) setVencidosServidor(n);
+        if (ativo) {
+          setVencidosServidor(!prazosDegradou && Number.isFinite(n) ? n : null);
+        }
       } catch {
         // Sem a agregação, cai no cálculo local (com "+" quando truncado).
         if (ativo) setVencidosServidor(null);
@@ -225,9 +241,9 @@ export default function DeadlineRiskStrip() {
             label={
               risco.vencidos !== null
                 ? `${risco.vencidos} vencido(s)`
-                : `${pendentesEstourados}${pendentesTruncados ? "+" : ""} vencido(s)`
+                : `${piso(estourados)} vencido(s)`
             }
-            danger={(risco.vencidos ?? pendentesEstourados) > 0}
+            danger={(risco.vencidos ?? estourados) > 0}
           />
           <RiskChip
             icon={Clock3}

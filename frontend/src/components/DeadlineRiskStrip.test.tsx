@@ -325,3 +325,115 @@ describe("DeadlineRiskStrip — contagem autoritativa de vencidos", () => {
     );
   });
 });
+
+// ── Achado 30 (revisão do Codex sobre o head 4490d492) ──────────────────────
+// Dois caminhos ainda faziam o radar anunciar ZERO vencidos — que é o pior
+// número para este componente errar, porque zero não parece defeito: parece
+// tranquilidade.
+describe("DeadlineRiskStrip — zero só quando é zero de verdade", () => {
+  afterEach(() => {
+    cleanup();
+    get.mockReset();
+  });
+
+  it("fallback conta a faixa 'vencido', não só os pendentes estourados", async () => {
+    // Depois do job das 07:10 o prazo estourado SAI da faixa `pendente`. O
+    // fallback contava só os pendentes com data passada, então, sem a
+    // agregação, exibia "0 vencido(s)" com três vencidos carregados na mão —
+    // o Achado 7 reaparecendo dentro do caminho de degradação.
+    responder({ pendente: [PENDENTE], vencido: [VENCIDO, VENCIDO, VENCIDO] }, null);
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText("3 vencido(s)")).toBeTruthy());
+  });
+
+  it("dashboard com bloco de prazos degradado não vale como contagem", async () => {
+    // `GET /dashboard/` NÃO devolve erro quando uma query sua falha: responde
+    // 200, mantém o default `pv = 0` e nomeia o bloco em `degradado`. Aceitar
+    // esse zero transformava falha transitória de banco em "0 vencido(s)".
+    get.mockImplementation(
+      (url: string, cfg?: { params?: { status?: string } }) => {
+        if (url === "/dashboard/") {
+          return Promise.resolve({
+            data: { prazos: { vencidos: 0 }, degradado: ["prazos"] },
+          });
+        }
+        if (url !== "/deadlines/")
+          return Promise.reject(new Error("rota inesperada"));
+        const porStatus: Record<string, unknown[]> = {
+          pendente: [PENDENTE],
+          vencido: [VENCIDO, VENCIDO],
+        };
+        return Promise.resolve({
+          data: { data: porStatus[cfg?.params?.status ?? ""] ?? [] },
+        });
+      },
+    );
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    // Cai no fallback local, que enxerga os dois vencidos carregados.
+    await waitFor(() => expect(screen.getByText("2 vencido(s)")).toBeTruthy());
+    expect(screen.queryByText("0 vencido(s)")).toBeNull();
+  });
+
+  it("dashboard íntegro com zero real continua valendo zero", async () => {
+    // A guarda não pode virar desconfiança de todo zero: sem `degradado`, o
+    // zero do servidor é resposta, não falha.
+    get.mockImplementation(
+      (url: string, cfg?: { params?: { status?: string } }) => {
+        if (url === "/dashboard/")
+          return Promise.resolve({
+            data: { prazos: { vencidos: 0 }, degradado: [] },
+          });
+        if (url !== "/deadlines/")
+          return Promise.reject(new Error("rota inesperada"));
+        const porStatus: Record<string, unknown[]> = {
+          pendente: [PENDENTE],
+          vencido: [],
+        };
+        return Promise.resolve({
+          data: { data: porStatus[cfg?.params?.status ?? ""] ?? [] },
+        });
+      },
+    );
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText("0 vencido(s)")).toBeTruthy());
+  });
+
+  it("outro bloco degradado não invalida a contagem de prazos", async () => {
+    // `degradado: ["financeiro"]` não diz nada sobre prazos.
+    get.mockImplementation(
+      (url: string, cfg?: { params?: { status?: string } }) => {
+        if (url === "/dashboard/")
+          return Promise.resolve({
+            data: { prazos: { vencidos: 7 }, degradado: ["financeiro"] },
+          });
+        if (url !== "/deadlines/")
+          return Promise.reject(new Error("rota inesperada"));
+        const porStatus: Record<string, unknown[]> = {
+          pendente: [PENDENTE],
+          vencido: [VENCIDO],
+        };
+        return Promise.resolve({
+          data: { data: porStatus[cfg?.params?.status ?? ""] ?? [] },
+        });
+      },
+    );
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText("7 vencido(s)")).toBeTruthy());
+  });
+});

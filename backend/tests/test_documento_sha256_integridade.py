@@ -77,3 +77,79 @@ def test_migration_147_e_aditiva_e_reversivel():
     assert "def downgrade" in texto and "op.drop_column" in texto
     for destrutivo in ("drop_table", "DELETE FROM", "TRUNCATE"):
         assert destrutivo not in texto, f"migration aditiva não pode ter {destrutivo}"
+
+
+# ── Achado 30 (revisão do Codex sobre o head 4490d492) ───────────────────────
+# A correção acima cobria só `POST /documents/upload`. Os demais caminhos que
+# criam Document gravavam NULL — e como a coluna é nullable para o acervo
+# legado, o NULL de um upload NOVO fica indistinguível de documento anterior à
+# migration 147. A prova de integridade faltava justamente onde mais importa:
+# documento enviado PELO CLIENTE e documento baixado do TRIBUNAL.
+#
+# Em três dos quatro caminhos o digest JÁ EXISTIA e era descartado:
+#   entrada_universal          -> `sha256_bytes(raw)`, calculado logo abaixo
+#                                 para o DocumentIntakeItem, sobre os mesmos bytes
+#   document_persistence       -> `ingestao.sha256`, propriedade já exposta
+#   cópia isolada da Entrada   -> `documento.sha256` do original (copy2 dos
+#                                 mesmos bytes)
+# Só o mapper do MNI precisava calcular de fato.
+
+CAMINHOS_QUE_CRIAM_DOCUMENT = (
+    ("app/routers/documents.py", "upload direto pela tela"),
+    ("app/routers/portal_documentos.py", "upload do cliente pelo Portal"),
+    ("app/routers/entrada_universal.py", "Entrada Universal (lote e cópia isolada)"),
+    ("app/services/document_persistence_service.py", "persistência local/Drive"),
+    (
+        "app/services/processo_eletronico_document_mapper.py",
+        "documento baixado do tribunal (MNI)",
+    ),
+)
+
+
+def test_todo_caminho_que_cria_documento_grava_o_hash():
+    """Cada construtor de Document precisa preencher `sha256`.
+
+    Teste por arquivo, não por chamada: o que se quer travar é que nenhum
+    caminho NOVO de criação apareça sem o digest. Se um arquivo desta lista
+    passar a criar Document sem `sha256=`, ele reprova aqui.
+    """
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parents[1]
+    faltando = []
+    for caminho, descricao in CAMINHOS_QUE_CRIAM_DOCUMENT:
+        texto = (raiz / caminho).read_text(encoding="utf-8")
+        if "sha256=" not in texto:
+            faltando.append(f"{caminho} ({descricao})")
+    assert not faltando, (
+        "caminho cria Document sem prova de integridade:\n  "
+        + "\n  ".join(faltando)
+    )
+
+
+def test_upload_do_portal_deriva_o_hash_do_conteudo_recebido():
+    """O caminho do cliente externo, que era o mais grave dos que faltavam."""
+    import inspect
+
+    from app.routers import portal_documentos
+
+    fonte = inspect.getsource(portal_documentos)
+    assert "hashlib.sha256(conteudo).hexdigest()" in fonte, (
+        "o upload do Portal precisa derivar o hash dos bytes recebidos"
+    )
+
+
+def test_entrada_universal_reusa_o_digest_ja_calculado():
+    """Mesma fonte para o Document e para o DocumentIntakeItem.
+
+    Se os dois calculassem por caminhos diferentes, poderiam divergir — e duas
+    linhas do mesmo arquivo com hashes diferentes é pior que uma sem hash.
+    """
+    import inspect
+
+    from app.routers import entrada_universal
+
+    fonte = inspect.getsource(entrada_universal)
+    assert fonte.count("sha256=sha256_bytes(raw)") >= 2, (
+        "Document e DocumentIntakeItem devem sair do mesmo sha256_bytes(raw)"
+    )

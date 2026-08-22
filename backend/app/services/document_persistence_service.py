@@ -197,6 +197,10 @@ async def persistir_documento_local(
                 confidencialidade=dados.confidencialidade,
                 ocr_text=conteudo.ocr_text,
                 uploaded_by=uploaded_by,
+                # Achado 30: `IngestaoDocumentoLocal` ja expoe `.sha256`,
+                # calculado na gravacao em disco. O valor existia e era
+                # descartado aqui.
+                sha256=ingestao.sha256,
             )
 
             # Adicionar antes de preparar versão é intencional: C1 usa
