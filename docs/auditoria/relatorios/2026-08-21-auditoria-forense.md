@@ -1098,3 +1098,113 @@ Eu tinha escrito "em telas largas nada muda, porque há espaço de sobra" — pl
 coerente com como flexbox funciona, e **errado**. O que salvou não foi revisar o
 raciocínio com mais cuidado: foi trocá-lo por medição. É a mesma lição do Achado 7, onde
 o defeito só apareceu quando dois números incompatíveis ficaram lado a lado na tela.
+
+---
+
+## 8-M. Revisão independente do Codex — três P1, todos procedentes (22/08/2026)
+
+O titular pediu revisão do Codex no HEAD exato `7780e12a`, com instrução explícita de **não
+tratar CI verde como substituto de revisão**. Voltaram três achados P1. Conferi os três
+contra o código antes de aceitar qualquer um. **Os três procedem** — e um deles é regressão
+introduzida por mim nesta mesma auditoria.
+
+### Achado 10 — cartão de crédito de 13, 15 e 19 dígitos vazando inteiro (regressão minha)
+
+O mais grave, e o mais desconfortável: **a minha correção do Achado 8 piorou o que não
+consertou.**
+
+O padrão de cartão exigia exatamente 16 dígitos. Um PAN de outro comprimento — AmEx (15),
+Visa antigo (13), Maestro (19) — nunca casou nele. Só era mascarado por **acidente**: o
+padrão de TELEFONE, que roda antes, mordia o final da sequência. Ao pôr a guarda `(?<!\d)`
+no telefone para consertar o cartão de 16 dígitos, tirei o acidente:
+
+| entrada `cartao 378282246310005` (AmEx) | saída | em claro |
+|---|---|---|
+| antes do Achado 8 | `cartao 37828[TELEFONE]` | 5 dígitos |
+| **depois do Achado 8 (HEAD `7780e12a`)** | `cartao 378282246310005` | **15 dígitos** |
+| depois desta correção | `cartao [CARTAO]` | nenhum |
+
+E a segunda barreira respondia `[]` — "sem PII residual" — nos três casos. Uma barreira que
+passou a mentir com mais confiança do que antes é pior do que a barreira original.
+
+Medido nos cinco comprimentos, no HEAD `7780e12a`:
+
+```
+AmEx 15 sem separador   -> 'cartao 378282246310005'      residual=[]
+AmEx 15 agrupado 4-6-5  -> 'cartao 3782 822463 10005'    residual=[]
+Visa 16                 -> 'cartao [CARTAO]'             residual=[]   <- único coberto
+Maestro 19              -> 'cartao 6011111111111111117'  residual=[]
+Visa antigo 13          -> 'cartao 4222222222222'        residual=[]
+```
+
+**Correção:** padrão ampliado para 13–19 dígitos, mantida a posição no índice 7 (`validar_sem_pii`
+e `sanitizar_pii_interno[2:]` dependem dos índices).
+
+Um cuidado que o achado do Codex não mencionava e que o teste agora trava: nas alternativas
+**agrupadas** o separador é obrigatório. Com separador opcional, o padrão atravessaria duas
+datas vizinhas — `31-12-2026 01-01-2027` são 16 dígitos — e mascararia **data de audiência
+como cartão**. Sobra-mascarar não é o lado seguro quando o dado engolido é um prazo.
+
+Regressão em `test_sanitizer_cartao_barreira_externa.py`: 26 casos, **10 falham** no HEAD
+anterior.
+
+### Achado 11 — validação de honorário fechou um caminho que a tela não oferece
+
+`FeeCreate` passou a exigir `valor` **ou** `percentual_exito` (Achado 5). O modal de novo
+lançamento em `Honorarios.tsx` oferecia só "Valor (R$)". Resultado: o contrato de êxito
+puramente percentual — o arranjo mais comum em ação indenizatória, que o schema declara
+suportar — ficou **impossível pela interface**. O advogado ou batia num 422, ou preenchia um
+valor fixo que não era o contratado, e aí o registro passa a dizer outra coisa sobre o
+contrato.
+
+Uma validação de backend que fecha um caminho legítimo porque a tela não tem o campo
+correspondente não é correção completa — é meia correção com aparência de rigor.
+
+**Correção:** campo "Percentual de êxito (%)" no formulário, com o texto de apoio dizendo que
+um dos dois é obrigatório. Junto, o payload passou a descartar campo vazio: campo numérico
+que o usuário esvazia vira `""`, e o Pydantic responde "Input should be a valid decimal" —
+mensagem sobre digitação, quando a regra real é outra. Com **dois** campos numéricos onde
+preencher um e deixar o outro vazio é o fluxo normal, isso deixou de ser detalhe.
+
+Conferido em separado, sem defeito: `normalizarMensagemToast` (`components/Toast.tsx`) já
+trata array de erro do Pydantic e extrai `msg` — a mensagem do 422 chega legível ao usuário.
+
+Regressão em `HonorariosPercentualExito.test.tsx`: 3 casos, **2 falham** no HEAD anterior.
+
+### Achado 12 — o radar de prazos contava só a primeira página
+
+`GET /deadlines/` pagina: devolve no máximo `page_size` itens e a contagem real em `total`.
+O `DeadlineRiskStrip` pedia 100 e contava **o tamanho do array**. Com 300 prazos vencidos,
+exibia "100 vencido(s)".
+
+É o mesmo defeito do Achado 7 — um contador de prazos que mente para menos — aparecendo por
+**volume** em vez de por **status**. Consertei o eixo do status e não olhei o do volume, na
+mesma tela e no mesmo componente.
+
+**Correção:** pagina até o fim (página de 200, teto do backend; até 5 páginas). Passando
+disso, o número vira piso explícito — `1000+ vencido(s)` — em vez de número errado. Vale
+para os cinco contadores da tira, que saem todos da mesma lista.
+
+Regressão em `DeadlineRiskStrip.test.tsx`: servidor falso que pagina de verdade e respeita
+`page`/`page_size`; 6 casos, **2 falham** no HEAD anterior.
+
+### O que esta rodada diz sobre as onze anteriores
+
+Nenhum dos três é achado de estilo, e nenhum apareceu em onze rodadas minhas. O padrão
+comum entre eles: **os três estão na borda da correção que eu mesmo tinha acabado de
+fazer**. Consertei cartão de 16 dígitos e quebrei os outros comprimentos; exigi percentual
+no schema sem olhar se a tela tinha o campo; consertei a contagem por status sem olhar a
+contagem por volume — no mesmo componente.
+
+Auditar o próprio remendo é exatamente o ponto cego que revisão independente cobre, e o
+`governanca.yml` desligado (#1235) tira essa camada de todo PR do repositório. Registro
+como argumento concreto para reativá-lo: aqui ela pegou três P1, um deles uma regressão de
+LGPD que eu introduzi enquanto corrigia LGPD.
+
+### Correção de contagem em comentário anterior do PR
+
+Escrevi que `POST /fees/{id}/pagamentos` tinha "o único consumidor (`Honorarios.tsx:133`)"
+ao justificar o `extra="forbid"`. São **dois**: o frontend e
+`scripts/inventory/m34_honorarios_propostas_tests.py` (linhas 177 e 194). Fui ler o segundo
+— envia exatamente `{valor, data_pagamento, forma}` nos dois pontos, nenhum campo extra. A
+conclusão não muda; a contagem que escrevi estava errada.

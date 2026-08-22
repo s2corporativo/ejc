@@ -87,7 +87,15 @@ export default function Honorarios() {
     }
     setSalvando(true);
     try {
-      await api.post("/fees/", form);
+      // Campo numérico que o usuário esvazia vira "" (não `undefined`), e o
+      // Pydantic reprova a string vazia com "Input should be a valid decimal"
+      // — mensagem sobre digitação, quando a regra real é "informe valor ou
+      // percentual". Preencher um e deixar o outro vazio é o fluxo NORMAL
+      // deste formulário, então o vazio não pode virar erro de tipo.
+      const payload = Object.fromEntries(
+        Object.entries(form).filter(([, v]) => v !== "" && v !== null),
+      );
+      await api.post("/fees/", payload);
       setModal(false);
       setForm({ tipo: "fixo" });
       load();
@@ -388,10 +396,38 @@ export default function Honorarios() {
             <input
               type="number"
               step="0.01"
+              min="0"
               className="input"
               value={form.valor || ""}
               onChange={(e) => setForm({ ...form, valor: e.target.value })}
             />
+          </div>
+          {/* O schema aceita honorário definido em REAIS ou em PERCENTUAL, e
+              `FeeCreate` exige ao menos um dos dois. O formulário só oferecia
+              "Valor", então o contrato de êxito puramente percentual — o caso
+              mais comum em ação indenizatória — era impossível pela interface:
+              ou não passava na validação, ou o advogado inventava um valor
+              fixo e mudava a natureza financeira do contrato. Achado da
+              revisão do Codex em 2026-08-22, no PR #1238. */}
+          <div>
+            <label className="label">Percentual de êxito (%)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              className="input"
+              value={form.percentual_exito || ""}
+              onChange={(e) =>
+                setForm({ ...form, percentual_exito: e.target.value })
+              }
+            />
+          </div>
+          <div className="sm:col-span-2 -mt-1">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Informe o valor em reais, o percentual de êxito, ou os dois (êxito
+              com piso contratado). Ao menos um é obrigatório.
+            </p>
           </div>
           <div>
             <label className="label">Vencimento</label>

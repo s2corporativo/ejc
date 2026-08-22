@@ -93,3 +93,88 @@ describe("DeadlineRiskStrip — prazo vencido não pode sumir do radar", () => {
     await waitFor(() => expect(screen.getByText("0 vencido(s)")).toBeTruthy());
   });
 });
+
+// ── Volume: a contagem não pode parar na primeira página ────────────────────
+// Achado P1 da revisão do Codex em 2026-08-22 (PR #1238). Buscar uma página e
+// contar `data.length` faz o radar exibir "100 vencido(s)" onde há 300 — o
+// mesmo defeito que ele veio consertar (contador de prazo que mente para
+// menos), agora por volume em vez de por status.
+
+/** Servidor falso que pagina de verdade: respeita page/page_size e devolve `total`. */
+function responderPaginado(porStatus: Record<string, unknown[]>) {
+  get.mockImplementation(
+    (
+      url: string,
+      cfg?: { params?: { status?: string; page?: number; page_size?: number } },
+    ) => {
+      if (url !== "/deadlines/")
+        return Promise.reject(new Error("rota inesperada"));
+      const todos = porStatus[cfg?.params?.status ?? ""] ?? [];
+      const size = cfg?.params?.page_size ?? 50;
+      const page = cfg?.params?.page ?? 1;
+      return Promise.resolve({
+        data: {
+          data: todos.slice((page - 1) * size, page * size),
+          total: todos.length,
+          page,
+          page_size: size,
+        },
+      });
+    },
+  );
+}
+
+const vencidos = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    id: `v${i}`,
+    data_prazo: "2026-05-29",
+    dias_restantes: -1,
+    confirmado: true,
+    ciencia_confirmada: true,
+  }));
+
+describe("DeadlineRiskStrip — contagem sob volume", () => {
+  afterEach(() => {
+    cleanup();
+    get.mockReset();
+  });
+
+  it("conta os 340 vencidos, não só a primeira página", async () => {
+    responderPaginado({ pendente: [], vencido: vencidos(340) });
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    // Antes da correção: "100 vencido(s)". Com página de 200 e sem paginar:
+    // "200 vencido(s)". Só paginando até o fim dá 340.
+    await waitFor(() =>
+      expect(screen.getByText("340 vencido(s)")).toBeTruthy(),
+    );
+  });
+
+  it("passando do teto de páginas, o número vira piso explícito", async () => {
+    responderPaginado({ pendente: [], vencido: vencidos(3000) });
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    // 5 páginas × 200 = 1.000 carregados de 3.000. Exibir "1000" seria mentir;
+    // o "+" diz que é piso e manda o usuário abrir /prazos.
+    await waitFor(() =>
+      expect(screen.getByText("1000+ vencido(s)")).toBeTruthy(),
+    );
+  });
+
+  it("cabendo tudo numa página, não aparece o '+'", async () => {
+    responderPaginado({ pendente: [], vencido: vencidos(7) });
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText("7 vencido(s)")).toBeTruthy());
+    expect(screen.queryByText("7+ vencido(s)")).toBeNull();
+  });
+});

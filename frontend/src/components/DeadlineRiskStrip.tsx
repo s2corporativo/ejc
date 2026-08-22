@@ -25,11 +25,56 @@ type DiagnosticoSub = { nome: string; status: string; detalhe?: string };
 
 const GESTORES = new Set(["superadmin", "admin", "socio"]);
 
+// `GET /deadlines/` pagina: devolve no máximo `page_size` itens (teto 200) e a
+// contagem real em `total`. Este radar pedia 100 e contava o TAMANHO DO ARRAY —
+// com 300 prazos vencidos exibia "100 vencido(s)". É o mesmo defeito que esta
+// correção veio consertar (um contador de prazos que mente para menos), só que
+// aparecendo por volume em vez de por status. Paginamos até o fim; passando do
+// teto, o número vira piso explícito ("100+") em vez de número errado.
+const PAGE_SIZE = 200;
+const MAX_PAGINAS = 5;
+
+async function buscarPrazos(
+  status: string,
+): Promise<{ itens: PrazoRadar[]; completo: boolean }> {
+  const pedir = (page: number) =>
+    api.get("/deadlines/", { params: { status, page_size: PAGE_SIZE, page } });
+  const lista = (r: { data?: { data?: unknown } }) =>
+    Array.isArray(r.data?.data) ? (r.data.data as PrazoRadar[]) : [];
+
+  const primeira = await pedir(1);
+  const itens = lista(primeira);
+  const total = Number(primeira.data?.total);
+
+  // `total` ausente, nulo ou zerado não é prova de que veio tudo — `Number(null)`
+  // é 0, e um 0 acompanhado de página cheia significa contagem faltando, não
+  // lista vazia. Nesse caso só a página incompleta prova o fim.
+  if (!Number.isFinite(total) || total <= 0) {
+    return { itens, completo: itens.length < PAGE_SIZE };
+  }
+
+  const paginas = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGINAS);
+  if (paginas > 1) {
+    // `allSettled`: uma página que falha custa precisão, não a tira inteira.
+    // Com `all`, buscar mais páginas aumentaria a chance de o radar sumir do
+    // dashboard justamente para quem tem MAIS prazos. O que não veio entra no
+    // "+", que é exatamente o que ele significa.
+    const restantes = await Promise.allSettled(
+      Array.from({ length: paginas - 1 }, (_, i) => pedir(i + 2)),
+    );
+    for (const r of restantes) {
+      if (r.status === "fulfilled") itens.push(...lista(r.value));
+    }
+  }
+  return { itens, completo: itens.length >= total };
+}
+
 export default function DeadlineRiskStrip() {
   const role = useAuth((state) => state.user?.role);
   const [prazos, setPrazos] = useState<PrazoRadar[]>([]);
   const [calendario, setCalendario] = useState<DiagnosticoSub | null>(null);
   const [erro, setErro] = useState(false);
+  const [truncado, setTruncado] = useState(false);
 
   useEffect(() => {
     let ativo = true;
@@ -43,17 +88,12 @@ export default function DeadlineRiskStrip() {
         // juntas são o conjunto de prazos EM ABERTO; concluído e cancelado
         // continuam de fora.
         const [pendentes, vencidos] = await Promise.all([
-          api.get("/deadlines/", {
-            params: { status: "pendente", page_size: 100 },
-          }),
-          api.get("/deadlines/", {
-            params: { status: "vencido", page_size: 100 },
-          }),
+          buscarPrazos("pendente"),
+          buscarPrazos("vencido"),
         ]);
         if (!ativo) return;
-        const lista = (r: typeof pendentes) =>
-          Array.isArray(r.data?.data) ? (r.data.data as PrazoRadar[]) : [];
-        setPrazos([...lista(pendentes), ...lista(vencidos)]);
+        setPrazos([...pendentes.itens, ...vencidos.itens]);
+        setTruncado(!pendentes.completo || !vencidos.completo);
         setErro(false);
       } catch {
         if (ativo) setErro(true);
@@ -121,6 +161,9 @@ export default function DeadlineRiskStrip() {
   }
 
   const calendarioAlerta = calendario && calendario.status !== "ok";
+  // Os cinco contadores saem da MESMA lista; se ela veio truncada, todos são
+  // piso, não total. Melhor "200+ vencido(s)" do que "200" quando são 340.
+  const piso = (v: number) => `${v}${truncado ? "+" : ""}`;
 
   return (
     <section className="mb-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-950/55">
@@ -142,27 +185,27 @@ export default function DeadlineRiskStrip() {
         <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold">
           <RiskChip
             icon={AlertTriangle}
-            label={`${risco.vencidos} vencido(s)`}
+            label={`${piso(risco.vencidos)} vencido(s)`}
             danger={risco.vencidos > 0}
           />
           <RiskChip
             icon={Clock3}
-            label={`${risco.ate48h} até 48h`}
+            label={`${piso(risco.ate48h)} até 48h`}
             warning={risco.ate48h > 0}
           />
           <RiskChip
             icon={CalendarClock}
-            label={`${risco.preliminares} preliminar(es)`}
+            label={`${piso(risco.preliminares)} preliminar(es)`}
             warning={risco.preliminares > 0}
           />
           <RiskChip
             icon={AlertTriangle}
-            label={`${risco.cienciaPendente} ciência pendente`}
+            label={`${piso(risco.cienciaPendente)} ciência pendente`}
             warning={risco.cienciaPendente > 0}
           />
           <RiskChip
             icon={CheckCircle2}
-            label={`${risco.revisados} revisado(s)`}
+            label={`${piso(risco.revisados)} revisado(s)`}
             ok
           />
           {calendarioAlerta && (

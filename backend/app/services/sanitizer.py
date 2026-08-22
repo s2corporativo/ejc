@@ -32,8 +32,23 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r'(?<!\d)(\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b'), '[TELEFONE]'),
     # CEP: 00000-000
     (re.compile(r'\b\d{5}-?\d{3}\b'), '[CEP]'),
-    # Cartão de crédito (16 dígitos com/sem separadores)
-    (re.compile(r'\b\d{4}[\s.-]?\d{4}[\s.-]?\d{4}[\s.-]?\d{4}\b'), '[CARTAO]'),
+    # Cartão de crédito. Cobre 13 a 19 dígitos: Visa antigo (13), AmEx (15),
+    # Visa/Master (16) e Maestro (19) — não só 16. Enquanto o padrão exigia
+    # exatamente 16, um PAN de outro comprimento só era mascarado por ACIDENTE,
+    # pelo padrão de TELEFONE mordendo o final dele; a guarda `(?<!\d)` que esse
+    # padrão ganhou (ver acima) tirou o acidente e deixaria o PAN inteiro em
+    # claro rumo ao provider externo, com `validar_sem_pii` respondendo "sem PII
+    # residual". Achado da revisão do Codex em 2026-08-22, no PR #1238.
+    # Nas alternativas agrupadas o separador é OBRIGATÓRIO: com ele opcional o
+    # padrão atravessaria duas datas vizinhas ("31-12-2026 01-01-2027" são 16
+    # dígitos) e mascararia data de audiência como cartão.
+    (re.compile(
+        r'(?<!\d)(?:'
+        r'\d{13,19}'                                              # sem separadores
+        r'|\d{4}[\s.-]\d{4}[\s.-]\d{4}[\s.-]\d{4}(?:[\s.-]\d{3})?'  # 4-4-4-4(-3)
+        r'|\d{4}[\s.-]\d{6}[\s.-]\d{4,5}'                         # AmEx 4-6-5, Diners 4-6-4
+        r')(?!\d)'
+    ), '[CARTAO]'),
     # PIX chave aleatória (UUID)
     (re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.I), '[CHAVE_PIX]'),
     # ── P0-474: padrões adicionais (APPEND-ONLY — índices 0-6 são referenciados

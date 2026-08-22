@@ -101,3 +101,78 @@ def test_barreira_final_do_gateway_nao_deixa_residuo():
     for vazamento in ("4111", "1111", "529.982.247-25", "98888",
                       "cliente@exemplo.com.br"):
         assert vazamento not in enviado, f"{vazamento!r} vazou: {enviado!r}"
+
+
+# ── Comprimentos de cartão além de 16 dígitos ───────────────────────────────
+# Achado P1 da revisão do Codex em 2026-08-22 (PR #1238), e é REGRESSÃO da
+# correção acima. O padrão de cartão exigia exatamente 16 dígitos; um PAN de
+# outro comprimento (AmEx 15, Visa antigo 13, Maestro 19) só era mascarado por
+# ACIDENTE — pelo padrão de TELEFONE mordendo o final dele. Ao pôr a guarda
+# `(?<!\d)` no telefone, o acidente sumiu e o PAN passou a atravessar INTEIRO:
+#
+#     antes da 1ª correção   "cartao 37828[TELEFONE]"      <- 5 dígitos em claro
+#     depois dela            "cartao 378282246310005"      <- 15 em claro
+#     residual               []                            <- 2ª barreira cega
+#
+# Corrigir 16 dígitos e piorar os outros comprimentos é pior do que não ter
+# mexido: a barreira passou a mentir com mais confiança.
+
+@pytest.mark.parametrize(
+    "bandeira,numero",
+    [
+        ("AmEx 15 sem separador", "378282246310005"),
+        ("AmEx 15 agrupado 4-6-5", "3782 822463 10005"),
+        ("AmEx 15 com hifens", "3782-822463-10005"),
+        ("Visa antigo 13", "4222222222222"),
+        ("Visa 16", "4111111111111111"),
+        ("Maestro 19", "6011111111111111117"),
+        ("Visa 19 agrupado", "4111 1111 1111 1111 123"),
+    ],
+)
+def test_cartao_de_qualquer_comprimento_e_mascarado(bandeira: str, numero: str):
+    """13 a 19 dígitos: nenhum trecho pode sobreviver rumo ao provider externo."""
+    limpo, _ = sanitizar_pii(f"cartao {numero}")
+    assert "[CARTAO]" in limpo, f"{bandeira} não foi mascarado: {limpo!r}"
+    for bloco in numero.replace("-", " ").replace(".", " ").split():
+        assert bloco not in limpo, f"{bandeira}: {bloco!r} vazou em {limpo!r}"
+
+
+@pytest.mark.parametrize(
+    "numero", ["378282246310005", "4222222222222", "6011111111111111117"],
+)
+def test_segunda_barreira_enxerga_cartao_de_outros_comprimentos(numero: str):
+    """A 2ª barreira reusa `_PATTERNS[7]`; ampliar o padrão tem de alcançá-la."""
+    assert "CARTAO" in validar_sem_pii(f"numero {numero}")
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "audiencia designada para 31-12-2026 01-01-2027",
+        "protocolado em 2026-08-22 05:27:28",
+        "valor atualizado de R$ 1.234.567,89",
+        "prazo de 15 dias uteis, arts. 219 e 220 do CPC",
+    ],
+)
+def test_nao_mascara_data_nem_valor_como_cartao(texto: str):
+    """Sobra-mascarar também custa: data de audiência é o dado mais sensível
+    de uma peça, e duas datas vizinhas somam 16 dígitos. Por isso o separador é
+    OBRIGATÓRIO nas alternativas agrupadas do padrão."""
+    limpo, _ = sanitizar_pii(texto)
+    assert "[CARTAO]" not in limpo, f"mascarou indevidamente: {limpo!r}"
+
+
+def test_barreira_final_do_gateway_com_amex():
+    """Mesmo percurso real do teste acima, agora com AmEx de 15 dígitos."""
+    from app.services.ai_gateway import _sanitizar_messages_externo
+
+    msgs = [{"role": "user", "content":
+             "Consumidor contesta compra no cartao 378282246310005 "
+             "feita em 31-12-2026, telefone (31) 98888-7777."}]
+    limpos, residual = _sanitizar_messages_externo(msgs)
+    enviado = limpos[0]["content"]
+    assert residual == [], f"PII residual rumo ao provider externo: {residual}"
+    assert "378282246310005" not in enviado, f"PAN AmEx vazou: {enviado!r}"
+    assert "3782" not in enviado and "10005" not in enviado
+    # a data da compra não pode ter sido engolida junto
+    assert "31-12-2026" in enviado, f"data virou cartão: {enviado!r}"
