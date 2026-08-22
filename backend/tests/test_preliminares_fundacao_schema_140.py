@@ -69,9 +69,9 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     # 138 → 139 → 140 (frete independente: 139 altera document_intake_batches,
     # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
-    # Issue #1194 (18/08/2026): coluna Case.sigilo_reforcado;
-    # HEAD = 146_case_sigilo_reforcado.
-    assert script.get_heads() == ["146_case_sigilo_reforcado"]
+    # Issue #1244 (22/08/2026): colunas impacto/providencia em
+    # client_pending_items; HEAD = 147_pendencia_impacto_providencia.
+    assert script.get_heads() == ["147_pendencia_impacto_providencia"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (
@@ -101,6 +101,10 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     assert (
         script.get_revision("146_case_sigilo_reforcado").down_revision
         == "145_drop_orphan_db_only_columns"
+    )
+    assert (
+        script.get_revision("147_pendencia_impacto_providencia").down_revision
+        == "146_case_sigilo_reforcado"
     )
     assert (
         script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision
