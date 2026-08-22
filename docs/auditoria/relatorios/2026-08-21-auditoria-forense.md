@@ -1631,3 +1631,60 @@ deliberada que eles existem para forçar quando alguém adiciona migration. Atua
 Vale o registro de método: **eu não teria descoberto nenhuma das cinco pelo caminho antigo**
 sem esperar o CI. O portão local pegou tudo em dois minutos — que é o argumento do titular
 para trabalhar localmente e deixar o GitHub para o fim.
+
+---
+
+## 8-R. Achado 25 — índices de FK: a anotação errava por doze vezes (22/08/2026)
+
+Prioridade 15 (§71). A anotação anterior dizia "6 tabelas periféricas sem índice de FK,
+impacto não medido — todas vazias". Medido no schema real, com as 147 migrations aplicadas
+do zero: **74** FKs de coluna única sem índice.
+
+É o terceiro item desta auditoria em que a anotação registrada era muito menor que o problema
+— junto com o gate de citações ("não pega um artigo fabricado", quando era cego para a forma
+dominante) e o SHA-256 ("exige coluna nova", quando faltavam coluna e caller). O padrão já
+merece nome: **item registrado carrega o tamanho que o problema tinha aos olhos de quem
+passou correndo por ele.**
+
+### Por que a correção NÃO foi indexar as 74
+
+A distribuição decide:
+
+```
+50 -> users          (created_by, aprovado_por, alterado_por…)
+ 4 -> documents
+ 4 -> cases
+ 1 -> clients
+15 -> tabelas de template/apoio
+```
+
+As 50 que apontam para `users` são **trilha**: escritas uma vez, praticamente nunca usadas
+como filtro. Indexá-las custaria escrita em 50 tabelas por um padrão de consulta que não
+existe. Corrigir por varredura seria trocar um problema medido por um custo não medido.
+
+A migration 148 cobre as **9** que apontam para a espinha do domínio — `cases`, `clients`,
+`documents` —, percorridas em toda listagem escopada a caso, cliente ou documento, e varridas
+quando o pai é removido. Depois dela, a espinha fica com **0** FKs descobertas.
+
+### O gate de deploy reprovou de novo — e de novo estava certo
+
+A primeira versão usava um `for` sobre uma lista de tuplas:
+
+```
+148_indices_fk_espinha_dominio.py: linha 60: estrutura dinâmica For exige revisão humana
+```
+
+Mesmo princípio que reprovou a `147`: migration que se **monta** em tempo de execução não é
+conferível estaticamente antes de produção. Desenrolada em nove chamadas literais. O gate me
+pegou duas vezes seguidas na mesma classe de hábito — escrever migration como se fosse código
+de aplicação.
+
+### Verificação
+
+`test_indices_fk_espinha_dominio.py`, guardado por `RUN_DB_TESTS` +
+`SCHEMA_CHECK_DATABASE_URL`: passa contra o banco com a 148 e **falha** contra o banco sem
+ela. Mede o schema, não a intenção.
+
+O segundo teste do arquivo trava a **escolha**, não o código: se alguém indexar as FKs de
+trilha para `users`, ele falha e obriga a revisar a decisão explicitamente, em vez de o custo
+de escrita entrar sem ninguém notar.

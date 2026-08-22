@@ -70,8 +70,8 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
     # Issue #1194 (18/08/2026): coluna Case.sigilo_reforcado;
-    # HEAD = 147_documents_sha256_integridade.
-    assert script.get_heads() == ["147_documents_sha256_integridade"]
+    # HEAD = 148_indices_fk_espinha_dominio.
+    assert script.get_heads() == ["148_indices_fk_espinha_dominio"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (
