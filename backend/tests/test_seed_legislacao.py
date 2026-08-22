@@ -128,6 +128,18 @@ def test_dividir_artigos_referencia_interna_nao_abre_artigo():
     assert "aplica-se subsidiariamente" in dict(dividir_artigos(txt))["Art. 5"]
 
 
+def test_extrair_texto_recompoe_ordinal_superscrito_isolado():
+    html = """<html><body>
+      <span>Art. 1<u><sup>o</sup></u>&nbsp;Prescreve em cinco anos.</span>
+      <span>Art. 1<u><sup>o</sup></u>-A.&nbsp;Crédito constituído.</span>
+    </body></html>"""
+    texto = extrair_texto_planalto(html)
+    assert "Art. 1 o\nPrescreve em cinco anos." in texto
+    assert "Art. 1 o -A. Crédito constituído." in texto
+    rotulos = [r for r, _ in dividir_artigos(texto) if r]
+    assert rotulos == ["Art. 1", "Art. 1-A"]
+
+
 def test_dividir_artigos_sufixo_reset_e_milhar():
     txt = ("Art. 19. Caput.\n"
            "Art. 19-A. Incluído depois.\n"
@@ -193,10 +205,10 @@ def test_catalogo_unificado_planalto_sem_duplicatas():
     assert len(slugs) == len(set(slugs))
     # 14 originais (9 chaves de produção do ingestor + 5 leis do seed) + 16
     # diplomas core do 1º follow-up de ampliação + 6 do follow-up de federação
-    # de fontes + 2 complementos P0 (LEF e alienação fiduciária) = 38.
-    assert len(slugs) == 38
+    # de fontes + 2 complementos P0 + 3 diplomas do Lote 001 = 41.
+    assert len(slugs) == 41
     assert {"cf88", "cc", "cpc", "clt", "cdc", "cp", "cpp", "eca", "ctn",
-            "l9099", "lgpd", "cflo", "lca", "pnma",
+            "l9099", "lgpd", "cflo", "lca", "pnma", "d6514", "l9873", "lcp140",
             "l14133", "l8429", "l12846", "l12016", "l6830", "l9514",
             "lindb", "l8245", "l13146", "l5478", "maria_penha", "l11343",
             "lep", "l11101", "lcp123", "l8213", "l8906", "ctb",
@@ -223,6 +235,9 @@ def test_urls_legadas_de_producao_preservadas():
     assert urls["ctn"].endswith("/leis/l5172compilado.htm")
     assert urls["l6830"] == "https://www.planalto.gov.br/ccivil_03/leis/l6830.htm"
     assert urls["l9514"] == "https://www.planalto.gov.br/ccivil_03/leis/l9514.htm"
+    assert urls["d6514"] == "https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2008/decreto/d6514.htm"
+    assert urls["l9873"] == "https://www.planalto.gov.br/ccivil_03/leis/l9873.htm"
+    assert urls["lcp140"] == "https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp140.htm"
 
 
 # ══════════════════════════════════════════════════════════════════════════
