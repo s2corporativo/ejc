@@ -713,3 +713,68 @@ percurso real pelo `_sanitizar_messages_externo`. Conferido contra a versão vul
 padrão de CPF (índice 0) casa 11 dígitos seguidos e roda primeiro. **Não há vazamento** —
 o dado é mascarado —, apenas o rótulo é impreciso. Corrigir exigiria mexer na ordem dos
 índices 0-6, que o arquivo proíbe explicitamente; fica como dívida registrada.
+
+## 8-F. Rodada 7 — regra jurídica: o motor de prazos (22/08/2026)
+
+Prioridade 11 do prompt e regra 5 do CLAUDE.md ("toda regra jurídica precisa de fonte
+oficial, vigência e teste"). É o módulo de maior risco do sistema: prazo errado é dano
+irreversível. Cada resultado abaixo foi conferido **à mão** contra o texto legal, não
+contra o próprio código. **Nenhuma divergência.**
+
+### Calendário
+
+| item | sistema | esperado |
+|---|---|---|
+| Páscoa 2026 (computus de Gauss) | `2026-04-05` | 05/04/2026 ✓ |
+| Carnaval (segunda e terça) | `2026-02-16`, `2026-02-17` | Páscoa −48 e −47 ✓ |
+| Sexta-feira Santa | `2026-04-03` | Páscoa −2 ✓ |
+| Corpus Christi | `2026-06-04` | Páscoa +60 ✓ |
+
+Os oito feriados nacionais fixos (01/01, 21/04, 01/05, 07/09, 12/10, 02/11, 15/11,
+25/12) são corretamente não úteis.
+
+### Contagem — CPC arts. 219 e 224
+
+Intimação em segunda 24/08/2026, 15 dias úteis. Conferência manual: 25–28/08 (4),
+31/08 (5), 01–04/09 (9), **07/09 feriado pulado**, 08–11/09 (13), 14–15/09 (15).
+Sistema: `2026-09-15`. **Confere.**
+
+O termo final nunca cai em dia não útil — testado em quatro datas de início
+consecutivas, todas prorrogando corretamente (01/09+3 → 04/09; 02/09+3 → **08/09**,
+saltando o feriado de 07/09 e o fim de semana).
+
+### Suspensão do recesso — CPC art. 220
+
+Intimação 10/12/2026, 15 dias úteis:
+
+- com `aplicar_recesso=True` → `2027-02-02`. Manual: 11/12 (1) … 18/12 (6), suspensão
+  integral 20/12–20/01, 21/01 (7) … 02/02 (15). **Confere.**
+- com `aplicar_recesso=False` → `2027-01-19`, que respeita o recesso forense parcial
+  legado 20/12–06/01. Manual: 11/12 (1) … 18/12 (6), 07/01 (7) … 19/01 (15).
+  **Confere.** As duas faixas são deliberadamente distintas e estão documentadas no
+  próprio arquivo.
+
+### Regimes não se contaminam
+
+Mesmo início, mesmo número de dias:
+
+| dias | penal (CPP art. 798, contínuo) | cível (CPC, dias úteis) | trabalhista (CLT art. 775) |
+|---|---|---|---|
+| 5 | 31/08 | 31/08 | 31/08 |
+| 10 | **03/09** | 08/09 | 08/09 |
+| 15 | **08/09** | 15/09 | 15/09 |
+| 30 | **23/09** | 06/10 | 06/10 |
+
+A coincidência em 5 dias é prorrogação de fim de semana, não contaminação de regime —
+os demais divergem como deve ser. Prazo em dobro no regime penal é **recusado**
+(`ValueError: prazo em dobro do CPC não se aplica ao regime penal`), correto porque o
+CPP não tem a figura dos arts. 180/183/186/229 do CPC.
+
+Prazo em dobro no cível: 15 → `2026-09-15`; em dobro (30) → `2026-10-06`. Confere à mão.
+
+### Conclusão
+
+O motor de prazos é a peça mais bem construída que encontrei nesta auditoria: fonte
+legal citada em cada regra, regimes isolados, calendário correto inclusive nos feriados
+móveis, e falha explícita quando se pede algo juridicamente inexistente. Nenhuma
+correção necessária.
