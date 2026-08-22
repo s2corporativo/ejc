@@ -146,10 +146,31 @@ vigência de artigos, existência real da jurisprudência, tese sem prova, docum
 mencionado e não anexado, precedente superado. **Não cobertos:** competência,
 valor da causa, prescrição/decadência e contradição fato↔pedido.
 
-> **Alerta herdado, e é sério:** o plano de lançamento registra um *erro jurídico
-> sobre decadência (CPC art. 487, II) nas skills*, que **deve ser corrigido antes
-> que a IA gere peça destinada a protocolo**. Qualquer trabalho em
-> prescrição/decadência neste módulo começa por aí.
+> **Alerta herdado — e JÁ RESOLVIDO; os planos da auditoria é que não sabem.**
+> `plano-lancamento-v3.md` trata o *erro jurídico sobre decadência (CPC art.
+> 487, II) nas skills* como a única ressalva bloqueante para a IA gerar peça
+> destinada a protocolo, e `plano-correcao-v2.md` §5.4 ainda o marca `[ALTO]`
+> em aberto. **A correção entrou em 2026-08-14 (PR #1015)**, com defesa em
+> profundidade:
+>
+> - `services/ai/juridico_guardrails.py` detecta e corrige a qualificação de
+>   prescrição/decadência como "extinção sem resolução de mérito", com janela
+>   de proximidade para não disparar em menção incidental do art. 485, e
+>   checagem separada da cumulação indevida vício/fato do CDC;
+> - ligado em **dois** pontos: `ai_skill_service.py` corrige no momento da
+>   geração, e `routers/ai.py` aplica guardrail de **leitura** — resposta
+>   antiga e errada é corrigida ao ser lida;
+> - a origem também foi tratada: o seed força atualização do prompt das duas
+>   skills afetadas (`prescricao-decadencia`, `simulador-defesa-adversarial`),
+>   com backup dos prompts sobrescritos.
+>
+> Verificado por execução em 2026-08-22: `test_juridico_guardrails_decadencia`,
+> `test_ai_logs_guardrail_leitura` e `test_skills_expansion_seed` — 35 testes e
+> 54 subtestes, todos passando.
+>
+> **Atualizar os dois documentos da auditoria é decisão do titular** — este
+> documento não altera o plano ativo. Mas quem ler §5.4 hoje vai refazer
+> trabalho pronto, ou manter represada uma decisão que já está liberada.
 
 ### 6. Banco de erros jurídicos — 🔴 não existe
 
@@ -411,8 +432,10 @@ risco baixo e produz valor visível a cada item.
 **Onda B — engenharia nova**
 
 Frente 11 (linha do tempo interpretada), frente 1 (impacto do radar), frente 5
-(as 4 checagens faltantes do revisor — **começando pela correção do erro de
-decadência**), frente 10 (camada interpretativa de documentos).
+(as 4 checagens faltantes do revisor: competência, valor da causa,
+prescrição/decadência e contradição fato↔pedido — o erro de decadência que
+esta lista mandava atacar primeiro **já está corrigido**, ver frente 5),
+frente 10 (camada interpretativa de documentos).
 
 **Onda C — curadoria (paralela, ritmo do titular, não da engenharia)**
 
