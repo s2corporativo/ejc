@@ -172,7 +172,7 @@ python -m alembic upgrade head
 uvicorn app.main:app --reload --port 8000   # dev local
 ```
 
-Frontend (Node 20):
+Frontend (Node 22 — `package.json` exige `>=22.22.0`; o CI usa 22.22.2):
 ```bash
 cd frontend
 npm ci
