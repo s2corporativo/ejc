@@ -292,8 +292,22 @@ Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real a
     legível, e `GET /cases/{id}/movimentos` não filtra por tipo, então o `chance≈X%` chega ao
     advogado. Gravar estimativa de IA não revisada como atributo de primeira classe do caso seria
     **violar HITL**, não corrigir nada — o snapshot nasce de propósito com `criado_por=None`
-    ("automático — nunca nasce aprovado"). Só *validação que não vincula ao documento* segue sem
-    medição.
+    ("automático — nunca nasce aprovado").
+  - *validação que não vincula ao documento* — **resolvido**, pela saída (b) que o próprio
+    `plano-correcao-v2.md` §2.1 propunha: o campo denormalizado `validacao_juridica.ai_log_id`
+    deixou de existir e `_ultima_validacao_peca` resolve por **FK** (`ai_logs.legal_doc_id`) mais
+    `legal_doc_validation_current` e SHA-256 do conteúdo. Medido em 22/08 contra a stack local,
+    cinco casos: peça nova bloqueia (422); AILog com FK + flag + hash correto libera
+    (`validada`, `/aprovar` → **200**); e o fail-closed segura os três desvios — hash defasado
+    (peça editada depois de validar), flag de atualidade desligada e validação de **outra** peça.
+    Nenhum marcador textual correlaciona os dois registros. O critério de aceite da auditoria
+    ("criar peça → validar → aprovar") passa sem intervenção no banco; a etapa `validar` em si
+    exige provedor de IA e, sem ele, devolve **503 explicado** (não 500 mudo) — correção anterior,
+    achado #672.
+
+  Com isso os **cinco** exemplos da classe estão medidos, e a lição vale mais que eles: a classe
+  é real e a regra geral continua valendo, mas **nenhum dos cinco casos citados era, hoje, o que
+  a nota dizia**.
 - **Monitoramento afere execução, não resultado.** A regra continua valendo para job novo, mas
   o caso citado **foi corrigido**: `heartbeat_service._normalizar_resultado_djen` "troca o
   status nominal pela produtividade real da task" e marca `falha_job` quando há OABs elegíveis
