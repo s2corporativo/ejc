@@ -457,3 +457,76 @@ prazo sem `case_id` (nullable por desenho); `DELETE /cases/{id}` em 422 (falta d
 `motivo` obrigatório). `POST /deadlines/calcular` usa `data_inicio`/`dias`, enquanto
 `POST /deadlines/` usa `data_intimacao`/`dias_prazo` — divergência de nomenclatura
 entre dois endpoints do mesmo módulo, sem efeito funcional.
+
+## 8-C. Rodada 4 — Portal do Cliente, confidencialidade e isolamento no RAG (22/08/2026)
+
+Duas superfícies em que um vazamento é silencioso e grave: o cliente externo (que
+enxerga o sistema de fora) e o RAG (que injeta texto recuperado em prompts). Prioridade 6
+do prompt (isolamento de clientes) e 9 (RAG). **Nenhum defeito encontrado.**
+
+### Portal do Cliente — 20/20 conformes
+
+Montados dois clientes completos (A e B), cada um com caso, honorário e documento
+próprios; login externo real criado para A pelo caminho canônico
+`POST /clients/{id}/criar-acesso`; todas as verificações feitas com o token de A.
+
+| Verificação | Resultado |
+|---|---|
+| `/portal/meus-casos` | só o caso de A; o de B não aparece |
+| `GET /portal/casos/{caso_de_B}` | **404** — não vaza nem a existência |
+| `/portal/documentos` | documento de B ausente |
+| `/portal/financeiro` | honorário de B ausente |
+| Anotação interna (`movimento tipo=nota`) | **não** aparece na resposta do portal |
+| Campos estratégicos (`tese`, `pontos_fortes`, `pontos_fracos`, `chance_exito`) | ausentes |
+| `/cases/`, `/clients/`, `/fees/`, `/deadlines/`, `/users/`, `/documents/upload`, `/ia-governanca/provedores` | **403** em todas |
+| `PATCH /portal/casos/{id}` | **405** — portal é read-only |
+| Criação da credencial externa | evento próprio `PORTAL_ACESSO_CRIADO` em `audit_logs` |
+
+### Confidencialidade de documento — barreira dupla
+
+A rodada anterior deu este ponto por conforme **sem prová-lo**: o upload usara
+`confidencialidade="sigiloso"`, valor inexistente no enum, então o documento nunca foi
+criado e a asserção passou por vacuidade. Refeito com os cinco níveis reais:
+
+| nível | upload | gravado | publicar no portal | visível ao cliente |
+|---|---|---|---|---|
+| `normal` | 201 | `normal` | 200 | sim (esperado) |
+| `interno` | 201 | `interno` | **422** | não |
+| `restrito` | 201 | `restrito` | **422** | não |
+| `confidencial` | 201 | `confidencial` | **422** | não |
+| `segredo_justica` | 201 | `segredo_justica` | **422** | não |
+
+Duas barreiras independentes: a publicação é recusada na origem **e** a listagem do
+portal filtra por `confidencialidade = normal AND publicado_portal = true`. A coluna é
+`NOT NULL DEFAULT 'confidencial'` — documento nasce fechado.
+
+### Isolamento no RAG — sem vazamento cruzado
+
+Semeados em `knowledge_docs`/`knowledge_chunks`, com **embeddings reais** (1024d,
+`intfloat/multilingual-e5-large`) e um marcador único: peça interna do cliente A,
+intimação do caso A1 de A, súmula pública, e uma peça de A **sem aprovação de curadoria**
+como controle do gate.
+
+| escopo da consulta | resultados | conteúdo restrito de A | doc não aprovado |
+|---|---|---|---|
+| sem escopo de cliente | 3 | ausente — fail-closed | ausente |
+| cliente **B** | 3 | **ausente — sem vazamento cruzado** | ausente |
+| cliente A | 5 | presente (o dono recupera) | ausente |
+| cliente A, **outro caso** | 4 | só `peca_interna`; a intimação do caso A1 fica de fora | ausente |
+
+A linha do cliente A é o que torna o teste não-vacuoso: o marcador *é* recuperável
+quando deve ser, logo a ausência nas outras linhas é isolamento, não busca vazia.
+O isolamento por caso (`_FILTRO_CASO_RAG`) funciona: `comunicacao_processual` do caso A1
+não entra no contexto do caso A2 do mesmo cliente.
+
+O gate de governança (`RAG_EXIGIR_APROVADO=true`) manteve o documento sem
+`rag_status='aprovado'` fora de **todos** os escopos, inclusive o do próprio dono.
+
+### Duas tentativas inválidas antes desta, registradas
+
+A primeira execução deu 0 resultados em todos os escopos — inclusive o do dono. Se eu
+tivesse lido só as três primeiras linhas, teria declarado "isolamento perfeito" sobre uma
+busca que não retornava nada. Causas, ambas comportamento correto do sistema:
+`EMBEDDINGS_ENABLED` é opt-in e estava desligado; e, com embeddings ligados, o gate
+`RAG_EXIGIR_APROVADO` barrava o seed sem curadoria. **Busca vazia não é isolamento** — só
+vale como prova o teste que recupera quando deve recuperar.
