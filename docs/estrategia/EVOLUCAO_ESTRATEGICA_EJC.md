@@ -196,9 +196,21 @@ Some-se `routers/ia_provider_metrics.py`, `routers/ia_saude.py`,
 proposta são exatamente o gold set da frente 7 — mesma dependência, mesmo
 bloqueio.
 
-**Incremento real e barato:** amarrar a execução do eval a um gate de CI, para
-que mudança em RAG, modelo ou base de conhecimento não passe sem reexecutar a
-régua. Hoje a régua existe mas não trava nada.
+**E já existe gate de CI bloqueante** — `ci.yml:183`, *"Eval — smoke dos gold
+sets (offline, bloqueante)"*, roda `run_eval --smoke` e
+`agent_trajectory --max-violacoes-hitl 0` em todo PR.
+
+**Mas ele afere formato e trajetória, não qualidade de resposta.** O próprio
+`run_eval.py` avisa que sem `--areas-obrigatorias` o smoke *"valida FORMATO, não
+qualidade"*. O harness tem o que falta — `--full` (roda a IA e mede citações),
+`--judge` (groundedness por LLM-juiz), `--min-recall` e `--min-recall-area`
+(pisos que reprovam), `--out` (baseline para diff entre execuções) — e **nada
+disso está ligado ao CI**.
+
+**Incremento real:** ligar os pisos de recall ao gate já existente. É pequeno em
+código e responde exatamente ao *"saber objetivamente se o EJC está melhorando ou
+piorando"* da proposta. Mas depende do gold set da frente 7: piso de recall sobre
+gold set não certificado mede ruído com autoridade de número.
 
 ### 9. Knowledge Graph — ✅ existe o motor; falta massa
 
@@ -324,7 +336,7 @@ backlog — e nenhuma das outras 14 frentes responde a ela.
 | 5 | Revisor Jurídico | ✅ | 4 checagens novas |
 | 6 | Banco de erros | 🔴 | **Curadoria jurídica** + estrutura |
 | 7 | EJC Gold | ✅ código | **Certificação humana** (bloqueio conhecido) |
-| 8 | Avaliação da IA | ✅ | Gate de CI + gold set (dep. de 7) |
+| 8 | Avaliação da IA | ✅ (gate de formato já bloqueia) | Ligar pisos de qualidade — dep. de 7 |
 | 9 | Knowledge Graph | ✅ motor | **Curadoria** (massa de arestas) |
 | 10 | Inteligência documental | ✅ | Camada interpretativa |
 | 11 | Linha do tempo | 🟡 | Engenharia (cruzar real × rito) |
@@ -359,7 +371,7 @@ resolve.
 | A1 | Impacto + providência em pendências (frente 12) | Dois campos. Transforma lista de ausências em plano de ação. |
 | A2 | Varredura reversa Tese → Caso (frente 2) | Ativa o Banco de Teses. Infra de matching já existe. |
 | A3 | Captura automática no encerramento (frente 13) | Sem isto a memória institucional nunca acumula. Quanto antes, mais história capturada. |
-| A4 | Gate de CI no eval da IA (frente 8) | A régua já existe e não trava nada. Barato, e protege tudo o que vier depois. |
+| A4 | Pisos de qualidade no gate de eval (frente 8) | O gate bloqueante já existe (`ci.yml:183`), mas afere formato e trajetória. `--min-recall` e `--full` já estão no harness e não estão ligados. Só vale com o gold set da frente 7 certificado. |
 
 **A0 pode invalidar o resto desta lista, e é para isso que serve.** Se o dossiê
 sair ruim, o trabalho vira consertá-lo — não construir A1–A4 em volta de um
@@ -430,6 +442,10 @@ titular depois de A0, não antes.
   A lição vale para os dois 🔴 e para qualquer ✅ deste documento: **o nome da
   rota não é o nome do arquivo**. Antes de agir sobre qualquer linha desta tabela,
   confirme por conceito, não por string.
+- **Afirmação sobre CI também errou, pelo mesmo vício.** A primeira versão dizia
+  que a régua de eval "não trava nada"; existe gate bloqueante desde
+  `ci.yml:183`. O `CLAUDE.md` avisa literalmente para conferir os workflows
+  *"antes de afirmar que algo não roda"* — o aviso estava certo e foi ignorado.
 - **Frontend inspecionado por amostragem.** Os 46 caminhos vêm de
   `moduleRegistry.tsx`; muita funcionalidade vive em abas e componentes fora do
   registry — como a própria frente 15 demonstrou. Contagem de rotas não mede
