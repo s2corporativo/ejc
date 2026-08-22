@@ -1,6 +1,6 @@
 # ── app/schemas/fee.py ───────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel, condecimal, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, condecimal, field_validator, model_validator
 from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
@@ -87,8 +87,41 @@ class FeeUpdate(BaseModel):
             )
         return v
 
+# Um PAGAMENTO, ao contrário do honorário, não pode ser zero nem negativo:
+# `ge=0` deixaria passar lançamento de R$ 0,00, que não é pagamento. Estorno
+# tem natureza contábil própria e não pode entrar disfarçado de pagamento
+# negativo — quando existir, entra por caminho próprio, com trilha própria.
+ValorPagamento = condecimal(gt=0)
+
+
 class FeePaymentCreate(BaseModel):
-    valor: Decimal
+    """Pagamento de honorário — o único ponto que altera o quanto foi recebido.
+
+    `valor: Decimal` sem restrição alguma (auditoria de 22/08/2026) permitia
+    duas coisas que fazem o financeiro mentir:
+
+    1. **Pagamento negativo.** Sequência reproduzida contra o backend com
+       Postgres real: honorário de R$ 1.000,00 → pagamento de +1.000,00
+       (`status` vira `pago`, correto) → pagamento de −1.000,00, aceito com
+       HTTP 201. A soma real de `fee_payments` volta a R$ 0,00, mas o `status`
+       do honorário **continua `pago`** — o router só promove a `pago` quando a
+       soma alcança o valor, e nunca reavalia para baixo. Resultado: honorário
+       integralmente em aberto exibido como quitado, invisível na cobrança.
+    2. **Erro de digitação silencioso.** O campo é `forma`; um cliente que
+       enviasse `forma_pagamento` tinha o campo descartado pelo Pydantic e
+       gravava o pagamento com `forma = NULL`, sem qualquer aviso — mesma
+       classe de defeito do honorário sem valor. `extra="forbid"` faz o erro
+       falhar alto. O frontend (`pages/Honorarios.tsx`) já envia exatamente
+       `{valor, data_pagamento, forma}`, então nada em uso é recusado.
+
+    A regra "valores monetários nunca negativos" já existia neste arquivo para
+    `fees.valor` (`ValorNaoNegativo`, auditoria 2026-06-30/M5); o pagamento
+    apenas não fora alcançado por ela.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    valor: ValorPagamento
     data_pagamento: date
     forma: Optional[str] = None
 

@@ -387,3 +387,73 @@ Note que `npm run lint` é `tsc --noEmit`; o eslint não é bloqueante no CI.
 
 **Prioridade C** — consolidar os ~45 `RELATORIO_*.md` da raiz. Descrevem estados já
 superados e competem com `CLAUDE.md` como fonte da verdade.
+
+## 8-B. Rodada 3 — prazos e financeiro sob dados (22/08/2026)
+
+Backend local com Postgres real, banco descartável, dados fictícios. 27 verificações
+executadas conferindo os dois lados: resposta HTTP e estado no banco.
+
+### Achado 6 — pagamento de honorário sem qualquer restrição de valor (CORRIGIDO)
+
+`FeePaymentCreate.valor` era `Decimal` puro. O arquivo já definia
+`ValorNaoNegativo = condecimal(ge=0)` para `fees.valor` desde a auditoria de
+2026-06-30 (M5) — o pagamento apenas não fora alcançado por essa regra.
+
+Sequência reproduzida, todas as respostas HTTP 201:
+
+| passo | soma real de `fee_payments` | `fees.status` |
+|---|---|---|
+| honorário de R$ 1.000,00 | 0,00 | `pendente` |
+| pagamento **+1.000,00** | 1.000,00 | `pago` (correto) |
+| pagamento **−1.000,00** | **0,00** | **`pago`** (mentira) |
+
+`registrar_pagamento` só promove o honorário a `pago` quando a soma alcança o valor
+contratado, e nunca reavalia para baixo. Um lançamento negativo devolve a dívida a zero
+e deixa o honorário exibido como quitado: receita integralmente em aberto, invisível na
+cobrança e somando 100% de recebimento no relatório do cliente.
+
+Mesmo endpoint, segundo caminho silencioso: o campo é `forma`; um corpo com
+`forma_pagamento` tinha o campo descartado pelo Pydantic e gravava o pagamento com
+`forma = NULL`, com HTTP 201 — a mesma classe do Achado 5.
+
+**Correção:** `valor: condecimal(gt=0)` (zero não é pagamento) e
+`model_config = ConfigDict(extra="forbid")`. O frontend (`pages/Honorarios.tsx`) já
+envia exatamente `{valor, data_pagamento, forma}`, então nada em uso é recusado.
+Verificado contra a API: pagamento negativo 201 → **422**; `forma_pagamento` 201 → **422**;
+pagamento legítimo segue 201. Regressão em `tests/test_fee_pagamento_valor_valido.py`.
+
+### Em aberto — pagamento acima do saldo devedor (decisão do titular)
+
+`POST /fees/{id}/pagamentos` aceita pagar R$ 36.000,00 num honorário de R$ 12.000,00,
+sem aviso. **Não corrigido de propósito:** juros, multa e correção monetária tornam o
+pagamento acima do principal legítimo, e bloqueá-lo fecharia caso real de cobrança.
+O que falta é distinguir excedente de erro de digitação — decisão de regra de negócio,
+não de implementação.
+
+### Verificado conforme (nenhum defeito)
+
+- **Motor de prazo.** `POST /deadlines/calcular` devolve `2026-09-14`, idêntico ao
+  `prazo_dias_uteis` do próprio sistema — uma fonte de verdade só.
+- **Ciclo de vida do prazo.** Confirmação de rascunho (`confirmado`), ciência com data
+  **e autor**, cumprimento via `PATCH status=concluido`, saída da lista de pendentes e
+  3 registros em `audit_logs`. Tudo persistido.
+- **Prazo vencido.** O job `_marcar_prazos_vencidos` (07:10) escreve `status='vencido'`
+  e alerta o responsável, com guarda de idempotência no próprio `WHERE`. Executado
+  contra o banco: o prazo migra de `pendente` e passa a aparecer sob `?status=vencido`.
+- **Prazo avulso.** `deadlines.case_id` é nullable por desenho (prazo administrativo);
+  o avulso aparece normalmente na agenda geral, não some.
+- **Exclusão de caso.** Não há a cascata destrutiva que a auditoria externa temia: o
+  `DELETE` exige motivo (mín. 5 caracteres), **recusa** caso com pendências indicando o
+  arquivamento e listando cada pendência, e quando aceita faz soft delete restaurável
+  com o motivo gravado na trilha.
+- **Precisão monetária.** R$ 4.500,00 e R$ 12.000,00 persistidos sem desvio.
+
+### Falsos positivos desta rodada (registrados para não voltarem)
+
+Quatro apontamentos iniciais eram artefatos do ambiente ou do meu payload, não defeitos:
+`?status=vencido` vazio (o job estava desligado por `ENABLE_SCHEDULER=false`);
+`/confirmar` não mudar o status (ele confirma o rascunho da IA, não o cumprimento);
+prazo sem `case_id` (nullable por desenho); `DELETE /cases/{id}` em 422 (falta do
+`motivo` obrigatório). `POST /deadlines/calcular` usa `data_inicio`/`dias`, enquanto
+`POST /deadlines/` usa `data_intimacao`/`dias_prazo` — divergência de nomenclatura
+entre dois endpoints do mesmo módulo, sem efeito funcional.
