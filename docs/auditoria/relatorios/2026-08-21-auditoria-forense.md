@@ -416,8 +416,9 @@ Mesmo endpoint, segundo caminho silencioso: o campo é `forma`; um corpo com
 `forma_pagamento` tinha o campo descartado pelo Pydantic e gravava o pagamento com
 `forma = NULL`, com HTTP 201 — a mesma classe do Achado 5.
 
-**Correção:** `valor: condecimal(gt=0)` (zero não é pagamento) e
-`model_config = ConfigDict(extra="forbid")`. O frontend (`pages/Honorarios.tsx`) já
+**Correção:** validadores próprios exigindo valor > 0 e recusando campo
+desconhecido, mais `model_config = ConfigDict(extra="forbid")` como contrato
+declarado no OpenAPI. O frontend (`pages/Honorarios.tsx`) já
 envia exatamente `{valor, data_pagamento, forma}`, então nada em uso é recusado.
 Verificado contra a API: pagamento negativo 201 → **422**; `forma_pagamento` 201 → **422**;
 pagamento legítimo segue 201. Regressão em `tests/test_fee_pagamento_valor_valido.py`.
@@ -530,3 +531,37 @@ busca que não retornava nada. Causas, ambas comportamento correto do sistema:
 `EMBEDDINGS_ENABLED` é opt-in e estava desligado; e, com embeddings ligados, o gate
 `RAG_EXIGIR_APROVADO` barrava o seed sem curadoria. **Busca vazia não é isolamento** — só
 vale como prova o teste que recupera quando deve recuperar.
+
+### 8-B.1 — a mensagem que o advogado lê (revisão da própria correção)
+
+A correção do Achado 6 tornou o 422 **alcançável** num caminho onde antes tudo
+respondia 201. Isso obriga a olhar o outro lado do §2 do prompt: o que aparece na
+interface. `pages/Honorarios.tsx:133` faz `toast.error(e.response?.data?.detail || …)`, e
+o `detail` de um erro do Pydantic é um **array de objetos**, não uma string.
+
+Verificado: `components/Toast.tsx` já normaliza isso — achata o array, extrai `msg` de
+cada item e junta com `·`. Não há `[object Object]`. Mas o texto exibido saía do próprio
+Pydantic:
+
+```
+"Input should be greater than 0"
+"Extra inputs are not permitted"
+```
+
+Inglês, num sistema cujo padrão declarado é o português; e a segunda não diz **qual**
+campo está errado — justamente o dado de que o usuário precisa. A convenção do
+repositório é outra: `schemas/case.py` escreve `raise ValueError("valor_contratual não
+pode ser negativo")`.
+
+Trocado `condecimal(gt=0)` por validadores próprios. O que a interface exibe agora:
+
+| ação do advogado | toast |
+|---|---|
+| pagamento de −100 ou 0 | *valor do pagamento deve ser maior que zero (R$ 0,00 não é pagamento; estorno tem lançamento próprio)* |
+| campo `forma_pagamento` | *campo(s) não reconhecido(s) em pagamento: forma_pagamento. Use apenas: data_pagamento, forma, valor.* |
+| pagamento legítimo | 201, sem toast de erro |
+
+`extra="forbid"` permanece como contrato declarado (aparece no OpenAPI) e como defesa em
+profundidade; a mensagem legível vem do validador. Coberto por
+`test_mensagens_de_erro_saem_em_portugues_e_nomeiam_o_problema`, que falha se a recusa
+voltar a sair em inglês ou deixar de nomear o campo.

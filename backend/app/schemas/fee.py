@@ -87,11 +87,6 @@ class FeeUpdate(BaseModel):
             )
         return v
 
-# Um PAGAMENTO, ao contrário do honorário, não pode ser zero nem negativo:
-# `ge=0` deixaria passar lançamento de R$ 0,00, que não é pagamento. Estorno
-# tem natureza contábil própria e não pode entrar disfarçado de pagamento
-# negativo — quando existir, entra por caminho próprio, com trilha própria.
-ValorPagamento = condecimal(gt=0)
 
 
 class FeePaymentCreate(BaseModel):
@@ -119,11 +114,48 @@ class FeePaymentCreate(BaseModel):
     apenas não fora alcançado por ela.
     """
 
+    # `extra="forbid"` é o contrato declarado (aparece no OpenAPI); a mensagem
+    # que o advogado lê vem do validador abaixo.
     model_config = ConfigDict(extra="forbid")
 
-    valor: ValorPagamento
+    valor: Decimal
     data_pagamento: date
     forma: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _recusar_campo_desconhecido(cls, dados):
+        """Nomeia o campo errado em português, em vez de "Extra inputs are not
+        permitted" — que não diz QUAL campo nem o que fazer.
+
+        Roda antes da validação de campos, então é esta mensagem que chega ao
+        toast do frontend (`components/Toast.tsx` extrai `msg` de cada item do
+        array de erro do Pydantic).
+        """
+        if isinstance(dados, dict):
+            desconhecidos = sorted(set(dados) - set(cls.model_fields))
+            if desconhecidos:
+                raise ValueError(
+                    f"campo(s) não reconhecido(s) em pagamento: "
+                    f"{', '.join(desconhecidos)}. Use apenas: "
+                    f"{', '.join(sorted(cls.model_fields))}."
+                )
+        return dados
+
+    @field_validator("valor")
+    @classmethod
+    def _valor_positivo(cls, v: Decimal) -> Decimal:
+        """Mensagem em português, como no resto do repositório (`case.py`).
+
+        `condecimal(gt=0)` faria a mesma recusa, mas com "Input should be
+        greater than 0" — inglês, num sistema cujo padrão é o português.
+        """
+        if v <= 0:
+            raise ValueError(
+                "valor do pagamento deve ser maior que zero "
+                "(R$ 0,00 não é pagamento; estorno tem lançamento próprio)"
+            )
+        return v
 
 class FeeResponse(BaseModel):
     id: str

@@ -32,12 +32,13 @@ HOJE = date.today()
 
 def test_pagamento_negativo_e_recusado():
     """O caso que zerava o recebido mantendo o honorário como `pago`."""
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as ei:
         FeePaymentCreate(valor="-1000.00", data_pagamento=HOJE, forma="pix")
+    assert "maior que zero" in str(ei.value)
 
 
 def test_pagamento_zerado_e_recusado():
-    """R$ 0,00 não é pagamento — `ge=0` deixaria passar; a regra é `gt=0`."""
+    """R$ 0,00 não é pagamento — `ge=0` deixaria passar; a regra é > 0."""
     with pytest.raises(ValidationError):
         FeePaymentCreate(valor="0", data_pagamento=HOJE, forma="pix")
 
@@ -48,10 +49,33 @@ def test_campo_com_nome_errado_e_recusado_em_vez_de_descartado():
     Antes, o Pydantic descartava o campo desconhecido em silêncio e o
     pagamento entrava sem forma de pagamento, com HTTP 201.
     """
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as ei:
         FeePaymentCreate(
             valor="100.00", data_pagamento=HOJE, forma_pagamento="boleto"
         )
+    assert "forma_pagamento" in str(ei.value)
+
+
+def test_mensagens_de_erro_saem_em_portugues_e_nomeiam_o_problema():
+    """O que o advogado lê no toast é a `msg` de cada erro do Pydantic.
+
+    Sem os validadores próprios, as recusas chegariam como "Input should be
+    greater than 0" e "Extra inputs are not permitted" — inglês, e a segunda
+    sem dizer QUAL campo está errado. O repositório escreve suas validações em
+    português (ver `schemas/case.py`), e é isso que o frontend exibe:
+    `components/Toast.tsx` achata o array de erro extraindo `msg` de cada item.
+    """
+    with pytest.raises(ValidationError) as ei:
+        FeePaymentCreate(valor="0", data_pagamento=HOJE)
+    msgs = " ".join(e["msg"] for e in ei.value.errors())
+    assert "maior que zero" in msgs
+    assert "Input should be" not in msgs
+
+    with pytest.raises(ValidationError) as ei:
+        FeePaymentCreate(valor="10", data_pagamento=HOJE, valor_pago="10")
+    msgs = " ".join(e["msg"] for e in ei.value.errors())
+    assert "valor_pago" in msgs, "a mensagem precisa nomear o campo errado"
+    assert "Extra inputs are not permitted" not in msgs
 
 
 def test_pagamento_valido_e_aceito():
