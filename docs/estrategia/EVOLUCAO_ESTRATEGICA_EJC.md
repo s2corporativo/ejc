@@ -21,7 +21,7 @@ marcada como tal, porque ausência é mais difícil de provar que presença.
 
 A proposta assume um sistema que precisa ser abastecido de conhecimento e ganhar
 inteligência. **O EJC já tem quase toda essa inteligência construída.** Das 15
-frentes, **2 não existem**, **4 existem parcialmente** e **9 já estão
+frentes, **2 não existem**, **3 existem parcialmente** e **10 já estão
 implementadas** — várias com rigor que a proposta não pede: score determinístico
 sem LLM, gate anti-alucinação com validação de dígito verificador de número CNJ,
 HITL obrigatório, sanitização de PII antes de provedor externo.
@@ -73,10 +73,26 @@ LexML, TJMG e DataJud, com **STJ e STF marcados explicitamente como
 `nao_implementado`**. Há ainda `djen_service.py`, `diario_oficial_service.py` e
 ingestores em `services/ingestors/`.
 
-**O que falta é a segunda metade da ideia, e é a metade que vale:** nenhuma das
-fontes calcula *impacto*. Nada responde "esta decisão nova muda a tese X,
-afeta o modelo de peça Y e atinge os processos A, B e C". O radar deposita
-alertas em `diario_oficial_alertas` e para por aí.
+**A segunda metade — o cálculo de impacto — existe, mas sobre a entidade
+errada.** `modules/dpt360/radar_service.py` classifica cada publicação de
+`diario_oficial_alertas` numa área e a cruza com a carteira: para cada empresa
+com caso canônico naquela área, emite um item de `impactos` com aderência,
+fundamento e `status: "possivel_impacto"`, respeitando o mesmo escopo de RBAC do
+dashboard, e ainda publica a `regra_impacto` que governa a exibição. Ou seja: o
+mecanismo de "publicação nova → quem ela atinge" está construído e é honesto
+sobre sua granularidade (área, não tese).
+
+**O que falta é o alvo jurídico.** Nada responde "esta decisão nova muda a tese
+X e afeta o modelo de peça Y" — não há cruzamento com `teses` nem com os
+templates de peça. Busca por `tese_afetada`, `revisar_tese`, `casos_impactados`:
+zero no backend. Aproveitar o mecanismo do DPT360 trocando a entidade cruzada é
+bem mais barato que construí-lo do zero, e é a leitura que a primeira versão
+deste documento não fez.
+
+> **Correção:** a primeira versão afirmava que "nenhuma das fontes calcula
+> impacto". A afirmação veio de `grep impacto` em três arquivos de serviço, sem
+> procurar o conceito em `app/modules/`. Mesmo vício das outras quatro correções
+> deste documento.
 
 > Nota do repositório: `CLAUDE.md` registra que a captura DJEN *"reporta ok há
 > meses sem nunca ter capturado nada"*, porque o heartbeat afere execução e não
@@ -257,16 +273,28 @@ automática**. Somam-se `document_ingestion_orchestrator.py`,
 `document_intake_service.py`, `document_case_link_service.py`, `ocr_service.py` e
 `routers/documento_ia.py` (437 linhas).
 
-Da lista da proposta, o que fica descoberto é a camada interpretativa —
-obrigações, pedidos e decisões extraídos do documento — e o "relacionar ao
-restante da base", que depende da frente 9.
+> **Correção:** a primeira versão dizia que "a camada interpretativa —
+> obrigações, pedidos e decisões extraídos do documento" ficava descoberta.
+> `raio_x_enrichment` faz exatamente isso: `construir_decisoes` devolve tipo,
+> data, **fundamento**, **comando/dispositivo**, **obrigação** e prazo por
+> decisão; `construir_matriz_fatos_provas` correlaciona fato a prova e marca o
+> que ficou `sem_prova_correlacionada`; `detectar_contradicoes_documentais`
+> aponta divergências entre documentos. Tudo com `origem` por documento e
+> `confirmado: False` — sugestão, nunca gravação.
+
+**A ressalva real é outra, e mais fina:** essa camada é **consolidadora**, não
+extratora. `_coletar` lê chaves já presentes no `intake` e no
+`resultado_analise` de cada documento; quando a análise a montante não produziu
+`decisoes`/`pedidos`, não há varredura do texto bruto para suprir. O que falta,
+portanto, não é a interpretação — é a garantia de que ela é alimentada. Some-se
+o "relacionar ao restante da base", que depende da frente 9.
 
 > **Armadilha registrada:** `CLAUDE.md` alerta que *gravação não transacional
 > entre registros relacionados é classe de defeito recorrente* no EJC — inclusive
 > "validação que não vincula ao documento". Trabalho aqui exige conferir a
 > transação.
 
-### 11. Linha do tempo processual — 🟡 parcial
+### 11. Linha do tempo processual — ✅ existe (e tinha um defeito, corrigido aqui)
 
 A matéria-prima é forte: `services/evento_processual.py` é catálogo
 determinístico de eventos → termo inicial, com semântica de *dies a quo* correta
@@ -274,10 +302,51 @@ determinístico de eventos → termo inicial, com semântica de *dies a quo* cor
 absoluta. Há `routers/andamentos.py`, `movimentos.py`, `services/movimento_ia.py`
 e a tela `/casos/:id/jornada`.
 
-Falta a segunda metade — a que a proposta destaca como "mais importante": **o
-sistema explicar o que aconteceu juridicamente e o que provavelmente vem
-depois**. O `rito_engine` sabe a jornada provável; ninguém a cruza com a linha do
-tempo real do processo para dizer "você está aqui, o próximo passo é este".
+> **Correção — a primeira versão deste documento dizia que "ninguém cruza o
+> `rito_engine` com a linha do tempo real". É falso, e em três lugares
+> independentes.** `raio_x_enrichment.enriquecer_relatorio` monta um
+> `rito_context` com a cronologia documental real, as decisões e os prazos do
+> caso, chama `identificar_rito` e devolve `etapa_atual` + `acoes_recomendadas`
+> costuradas nos `proximos_passos` do relatório. `dossie_modulos.consolidar_modulos`
+> monta `linha_do_tempo` com fase atual, fases concluída/atual/futura, eventos
+> reais, estagnação e próximos passos que **misturam prazos reais do caso com
+> passos típicos, cada um rotulado com sua origem** (`prazo` vs `estimativa`).
+> `legal_case_orchestrator.proximo_passo` é a mesma pergunta por outro caminho:
+> máquina de estados determinística sobre artefatos, devolvendo passo
+> recomendado, ações disponíveis e pendências bloqueantes. Tudo isso tem
+> frontend: `components/visual/LinhaDoTempoProcessual.tsx` consome
+> `GET /visual-law/casos/{id}/timeline`.
+
+**O que a verificação por execução encontrou não foi ausência — foi um defeito
+ativo.** Executando `identificar_rito` sobre a mesma causa com cronologias
+crescentes, `etapa_atual` acertava os cinco estágios, mas `proximas_etapas`
+apontava **para trás**: um caso já sentenciado recebia *"petição inicial →
+análise inicial"* como próximas etapas.
+
+A causa é a classe de defeito que o `CLAUDE.md` registra como recorrente no EJC:
+**vocabulário divergente entre duas camadas**. O estágio detectado é um código
+(`pos_sentenca`, `defesa`); a jornada de cada rito é texto jurídico (`sentença`,
+`contestação`). A busca procurava o rótulo pelo próprio código e localizava a
+posição em **15 das 80** combinações rito × estágio; nas outras 65 caía num
+`etapas[:3]` — o começo da jornada. Sem exceção, sem log, com saída plausível.
+
+O texto errado era visível: `RaioXProcesso.tsx` imprime o `rito_jornada`
+inteiro na tela, o mesmo dicionário vai para o PDF/DOCX exportado
+(`raio_x_export_service`, seção "Jornada sugerida") e é entregue ao agente de IA
+pela tool `identificar_rito_e_fase`.
+
+**Corrigido nesta sessão** (`services/rito_engine.py`): a posição passa a ser
+procurada pelos **mesmos marcadores** que identificaram o estágio — sem criar
+uma terceira lista para manter em sincronia —, com prioridade pelo termo e não
+pela ordem da jornada. Cobertura de posicionamento: **15/80 → 41/80**. Fim da
+jornada devolve lista vazia, e estágio sem correspondente no rito devolve
+silêncio, em vez de apontar para o começo — mesma recusa do `evento_processual`.
+Regressão em `tests/test_rito_engine_proximas_etapas.py` (6 testes; 4 falham no
+código anterior).
+
+**O que de fato falta** é menor do que a proposta sugere: a explicação
+*jurídica* do que cada movimento significa (hoje o evento é classificado e
+posicionado, não interpretado).
 
 ### 12. Sistema "o que está faltando?" — 🟡 parcial, e mais perto do que parece
 
@@ -431,11 +500,28 @@ risco baixo e produz valor visível a cada item.
 
 **Onda B — engenharia nova**
 
-Frente 11 (linha do tempo interpretada), frente 1 (impacto do radar), frente 5
-(as 4 checagens faltantes do revisor: competência, valor da causa,
-prescrição/decadência e contradição fato↔pedido — o erro de decadência que
-esta lista mandava atacar primeiro **já está corrigido**, ver frente 5),
-frente 10 (camada interpretativa de documentos).
+Depois da verificação por execução, esta onda encolheu — e o que sobrou mudou de
+natureza. Ordem sugerida:
+
+1. **Frente 1 — impacto sobre teses e peças.** O mecanismo de impacto já existe
+   (`modules/dpt360/radar_service.py`); falta apontá-lo para `teses` e templates
+   de peça em vez de empresas. É reaproveitamento, não construção.
+2. **Frente 5 — as 4 checagens faltantes do revisor:** competência, valor da
+   causa, prescrição/decadência e contradição fato↔pedido. O erro de decadência
+   que esta lista mandava atacar primeiro **já está corrigido** (ver frente 5).
+3. **Frente 10 — alimentar a camada interpretativa**, não construí-la: garantir
+   que `decisoes`/`pedidos` cheguem ao `raio_x_enrichment` quando a análise a
+   montante não os produziu.
+4. **Frente 11 — interpretação jurídica do movimento.** O "você está aqui, o
+   próximo passo é este" já existe e o defeito que o corrompia foi corrigido
+   nesta sessão; o resto da frente é o menor resto da lista.
+
+**Nenhum destes quatro itens é o que a proposta original descrevia.** Os quatro
+foram redefinidos pela verificação, e três deles encolheram de "construir" para
+"ligar" ou "alimentar". Vale repetir o método antes de qualquer linha de código:
+das cinco frentes verificadas por execução até agora, **cinco tiveram afirmação
+de ausência derrubada** — e a única que produziu trabalho de engenharia produziu
+uma *correção de defeito*, não uma funcionalidade nova.
 
 **Onda C — curadoria (paralela, ritmo do titular, não da engenharia)**
 
@@ -476,16 +562,29 @@ titular depois de A0, não antes.
 
 ## Riscos e limitações desta análise
 
-- **Verificação estática.** O mapeamento leu código, não executou nada. "Existe"
-  aqui significa "está implementado", não "funciona em produção". O próprio
-  `CLAUDE.md` documenta o caso da captura DJEN, que reportava sucesso há meses sem
-  nunca ter capturado nada. Antes de tratar qualquer ✅ como pronto, exercite o
-  fluxo.
+- **Verificação estática — e o que aconteceu quando ela deixou de ser estática.**
+  O mapeamento original leu código, não executou nada. "Existe" ali significava
+  "está implementado", não "funciona". O `CLAUDE.md` documenta o caso da captura
+  DJEN, que reportava sucesso há meses sem nunca ter capturado nada. Três frentes
+  já foram exercitadas de verdade — 13 (contra Postgres real), 5 (guardrails de
+  decadência) e 11 (motor de ritos) — e o resultado justifica o método: **a
+  execução derrubou a afirmação de ausência nas três e, na frente 11, revelou um
+  defeito ativo que a leitura não veria**, porque a saída errada era plausível e
+  não levantava exceção. Antes de tratar qualquer ✅ como pronto, exercite o
+  fluxo; o inverso também vale — antes de tratar qualquer "falta" como
+  verdadeira, execute o que existe.
+- **Cinco correções, um só vício.** As frentes 15, 8, 13, 5, 11, 1 e 10 tiveram
+  afirmações corrigidas neste documento. O padrão nunca mudou: **procurar por
+  string em vez de por conceito, e num escopo estreito demais**. `dossie` em vez
+  de `dossie-estrategico`; `routers/memoria_institucional.py` sem abrir quem
+  escreve nele; `grep impacto` em três serviços sem olhar `app/modules/`;
+  `proximas_etapas` julgada ausente sem rodar a função. A regra que restou:
+  **procure quem escreveria naquele recurso, não só quem o lê — e depois execute.**
 - **Ausências são mais frágeis que presenças.** Os dois 🔴 (playbooks, banco de
   erros) vêm de busca por nome e conceito no backend. É a mesma limitação que o
   `CLAUDE.md` registra sobre o graphify: *confirme no arquivo antes de afirmar que
   algo não existe*.
-- **Três erros do mesmo tipo, não dois.** Além dos dois abaixo, a frente 13 foi
+- **A frente 13, um dos casos.** A frente 13 foi
   dada como "inteiramente manual, nada dispara no encerramento, nada
   retroalimenta o RAG nem o ranking de teses" — as três cláusulas falsas. O
   padrão é sempre o mesmo: **ler um lado da integração e concluir pela ausência
