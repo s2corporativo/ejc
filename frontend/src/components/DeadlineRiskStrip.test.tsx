@@ -13,7 +13,9 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 const get = vi.fn();
-vi.mock("../lib/api", () => ({ default: { get: (...a: unknown[]) => get(...a) } }));
+vi.mock("../lib/api", () => ({
+  default: { get: (...a: unknown[]) => get(...a) },
+}));
 vi.mock("../stores/auth", () => ({
   useAuth: (sel: (s: unknown) => unknown) =>
     sel({ user: { role: "advogado" } }),
@@ -38,12 +40,15 @@ const PENDENTE = {
 };
 
 function responder(porStatus: Record<string, unknown[]>) {
-  get.mockImplementation((url: string, cfg?: { params?: { status?: string } }) => {
-    if (url !== "/deadlines/") return Promise.reject(new Error("rota inesperada"));
-    return Promise.resolve({
-      data: { data: porStatus[cfg?.params?.status ?? ""] ?? [] },
-    });
-  });
+  get.mockImplementation(
+    (url: string, cfg?: { params?: { status?: string } }) => {
+      if (url !== "/deadlines/")
+        return Promise.reject(new Error("rota inesperada"));
+      return Promise.resolve({
+        data: { data: porStatus[cfg?.params?.status ?? ""] ?? [] },
+      });
+    },
+  );
 }
 
 describe("DeadlineRiskStrip — prazo vencido não pode sumir do radar", () => {
