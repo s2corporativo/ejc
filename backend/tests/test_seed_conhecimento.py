@@ -24,6 +24,7 @@ def test_corpus_chaves_unicas_e_prefixo():
     assert all(c.startswith("ejc_seed:") for c in chaves)
     # corpus mínimo esperado: readme + checklist + padrão-ouro + áreas + modelos
     assert len(docs) >= 20
+    assert "ejc_seed:banco_nacional_teses_v1" in chaves
 
 
 def test_corpus_conteudo_minimo_e_titulos():

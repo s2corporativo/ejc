@@ -92,8 +92,8 @@ CHECKLIST INTERNO — CURADORIA DE CONHECIMENTO (antes de ingerir)
    tribunal, doutrina publicada, material interno revisado)? Sem origem clara,
    não ingerir.
 2. JURISPRUDÊNCIA: só entra pelo importador oficial (LexML/STJ) ou com ementa
-   conferida no site do tribunal — número do processo, órgão julgador e data
-   de julgamento presentes. Jurisprudência sem tribunal+data é citação
+   conferida no site do tribunal — número do processo, órgão julgador e data de
+   julgamento presentes. Jurisprudência sem tribunal+data é citação
    bloqueante no gate anti-alucinação.
 3. VIGÊNCIA: legislação revogada ou súmula cancelada deve ser marcada com
    confiança "baixa" ou "bloqueado" na Curadoria, nunca "alta".
@@ -106,6 +106,58 @@ CHECKLIST INTERNO — CURADORIA DE CONHECIMENTO (antes de ingerir)
 6. TÍTULO: descritivo e pesquisável (ex.: "STJ REsp 1.737.412 — dano moral
    por negativação indevida", não "documento1").
 """
+
+_BANCO_NACIONAL_TESES_V1 = """
+BANCO NACIONAL DE TESES JURÍDICAS — PROTOCOLO INSTITUCIONAL V1
+
+NATUREZA. Este documento descreve uma arquitetura e um protocolo interno do
+EJC. Não é tese jurídica, precedente, súmula, lei, parecer ou prognóstico de
+resultado e não pode ser citado como autoridade jurídica.
+
+OBJETO. O Banco Nacional organiza linhas argumentativas de ataque e defesa em
+registros separados de fontes, snapshots, precedentes, teses, versões,
+relações de contraposição, validações e lotes de ingestão. Tese, precedente,
+norma, estratégia e resultado processual não devem ser tratados como sinônimos.
+
+CAMPOS MÍNIMOS. Cada tese deve identificar área, subárea, instituto, tema,
+subtema, situação fática, tipo, lado processual, parte favorecida,
+procedimento, instância, tese principal, fundamento resumido, argumento
+jurídico, raciocínio, pressupostos, fatos necessários, elementos a demonstrar,
+fatos impeditivos, exceções, fundamentação legal, estratégia, provas,
+documentos, argumento adversário, resposta, riscos, força e vigência.
+
+GOVERNANÇA. O fluxo é coletar, normalizar, deduplicar, verificar a fonte,
+identificar a posição contrária, redigir a estrutura, revisar humanamente,
+publicar e monitorar. Registros sem fonte oficial ou sem origem verificável
+permanecem bloqueados. A recomendação automática só pode usar teses vigentes
+com fonte e validação compatíveis. Força de tese não é probabilidade de êxito.
+
+PROVENIÊNCIA. Precedente recomendável exige identificador, tribunal, órgão
+julgador quando disponível, data, URL oficial, publicidade compatível, texto ou
+ementa conferidos e situação processual conhecida. DataJud é fonte de dados
+processuais dentro de seu escopo; não deve ser convertido automaticamente em
+inteiro teor, fundamento decisório, resultado de mérito ou prova de vitória.
+
+PRIVACIDADE. Dados pessoais e sigilosos devem ser minimizados e segregados por
+cliente/caso. Processos sob segredo, documentos internos e informações de
+clientes não entram no corpus público. Toda integração deve respeitar
+finalidade, necessidade, segurança, revisão e trilha de auditoria.
+
+ESCOPO INICIAL. A implantação deve começar por Consumidor, Bancário e Juizados
+Especiais, com prioridade para fraude PIX, contratação não reconhecida e
+negativação indevida. A cobertura quantitativa só pode ser declarada depois de
+lotes efetivamente ingeridos e validados; a existência do schema não representa
+cobertura jurídica alimentada.
+
+INTEGRAÇÃO. O módulo é consultável em /banco-de-teses no EJC. O endpoint de
+listagem retorna somente registros aptos ao catálogo público interno, e o
+endpoint de detalhe deve exibir fonte, versão, vigência, validação e riscos.
+A produção deve ser alimentada pelo fluxo autorizado de ingestão do EJC, nunca
+por escrita direta em banco sem auditoria.
+"""
+
+
+
 
 
 def _doc(slug: str, titulo: str, categoria: str, conteudo: str,
@@ -135,6 +187,9 @@ def montar_documentos_seed() -> list[dict[str, Any]]:
         _doc("checklist_curadoria",
              "Checklist interno — curadoria de conhecimento",
              CATEGORIA_REFERENCIA, _CHECKLIST_CURADORIA),
+        _doc("banco_nacional_teses_v1",
+             "Banco Nacional de Teses Jurídicas — protocolo institucional V1",
+             CATEGORIA_REFERENCIA, _BANCO_NACIONAL_TESES_V1),
         _doc("padrao_ouro_peca",
              "Padrão-ouro de redação de peças — estrutura obrigatória",
              CATEGORIA_REFERENCIA, PADRAO_OURO_PECA),
