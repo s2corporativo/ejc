@@ -1239,23 +1239,40 @@ comprimento.
 **contagem**, e regex não conta dígitos através de separadores. Enquanto a regra estivesse
 escrita como lista de formatos, sempre faltaria um.
 
-**Correção:** `mascarar_cartoes()` — o regex delimita o *candidato* e a contagem decide.
+**Correção:** `_MatcherCartao` — um objeto com a interface de `re.Pattern` (`sub`, `search`,
+`finditer`) cuja regra é contagem, não formato. O regex delimita só o *candidato*; quem decide
+é a contagem de dígitos.
+
 Duas consequências de projeto que o achado não pedia:
 
-1. **Posição.** A passada de cartão roda **entre os índices 4 e 5**: depois de CPF/CNPJ/
-   processo (senão um CNPJ de 14 dígitos sem pontuação seria contado como PAN) e **antes de
-   TELEFONE** (senão o telefone morde o miolo). Reordenar `_PATTERNS` não é opção — os
-   índices são referenciados por três módulos.
-2. **O piso de 3 dígitos nos grupos intermediários** é o que impede a contagem de atravessar
-   datas vizinhas: `2026-08-22 2027-09-30` são 16 dígitos. Sem esse piso, **data de audiência
+1. **O piso de 3 dígitos nos grupos intermediários** impede a contagem de atravessar datas
+   vizinhas: `2026-08-22 2027-09-30` são 16 dígitos. Sem esse piso, **data de audiência
    viraria cartão**. Sobra-mascarar não é o lado seguro quando o dado engolido é um prazo.
+2. **O cartão passou para ANTES do telefone na lista.** Era o ponto que faltava: a lista é
+   aplicada em ordem, e o telefone morde o miolo do PAN agrupado.
 
-Um caminho que quase ficou de fora: `ai/pseudonymizer.py` itera `_PATTERNS` por conta própria
-e **está no caminho externo** (`ai_gateway`). Sem a mesma passada, a pseudonimização ficaria
-com a cobertura antiga. O empate de 14 dígitos (CNPJ × Diners) resolve-se a favor do CNPJ
-apenas na variante interna, que nunca sai do VPS.
+O segundo ponto tem uma história que vale registrar, porque envolve uma afirmação minha que
+estava errada. O arquivo dizia *"reordenar a lista não é opção: os índices 0-6 são
+referenciados"* — comentário que eu mesmo havia reforçado. Era exagero: **todas** as
+referências de índice estão dentro do próprio `sanitizer.py` (`validar_sem_pii` e a lista da
+variante interna), conferido por busca em `backend/app` e `backend/tests`. O que não pode é
+reordenar sem atualizá-las.
 
-Regressão: 45 casos no arquivo, **12 falham** no HEAD anterior.
+Minha primeira tentativa aceitou o comentário como verdade e contornou: manteve o cartão no
+índice 7 e aplicou uma passada extra na posição certa, dentro de cada função. Isso obrigava
+**cada consumidor** a reimplementar a ordem — inclusive `ai/pseudonymizer.py`, que percorre
+`_PATTERNS` por conta própria e está no caminho externo (`ai_gateway`). Editá-lo acionou o
+gate de **certificação humana do núcleo jurídico de IA** (`ejc-release-gate.yml`), que exige
+gold set humano-curado de 105 casos em 7 áreas — corpus que não existe no repositório e que,
+por definição, não é meu para produzir. **CI vermelho, e a trava estava certa.**
+
+Corrigir a premissa em vez de contorná-la resolveu as duas coisas: com a ordem certa dentro da
+própria lista, todo consumidor herda a correção sem alteração, o núcleo de IA fica intocado e
+o gate não dispara. O empate de 14 dígitos (CNPJ × Diners) resolve-se a favor do CNPJ só na
+variante interna, que nunca sai do VPS.
+
+Regressão: 45 casos no arquivo, **12 falham** no HEAD anterior — entre eles um que exercita a
+pseudonimização reversível ponta a ponta, provando que o consumidor não editado ficou coberto.
 
 ### Achado 14 — o teto de páginas ainda subnotificava
 

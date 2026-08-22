@@ -141,7 +141,7 @@ def test_cartao_de_qualquer_comprimento_e_mascarado(bandeira: str, numero: str):
     "numero", ["378282246310005", "4222222222222", "6011111111111111117"],
 )
 def test_segunda_barreira_enxerga_cartao_de_outros_comprimentos(numero: str):
-    """A 2ª barreira reusa `_PATTERNS[7]`; ampliar o padrão tem de alcançá-la."""
+    """A 2ª barreira reusa a MESMA entrada de `_PATTERNS`; ampliar tem de alcançá-la."""
     assert "CARTAO" in validar_sem_pii(f"numero {numero}")
 
 
@@ -189,9 +189,10 @@ def test_barreira_final_do_gateway_com_amex():
 # O segundo é o sintoma que o Achado 8 veio matar, reaparecendo: o padrão de
 # TELEFONE (índice 5) roda antes do de cartão e morde o miolo do PAN.
 #
-# A correção troca "enumerar formato" por CONTAR DÍGITO (`mascarar_cartoes`) e
-# roda a passada de cartão ENTRE os índices 4 e 5 — depois de CPF/CNPJ, antes
-# de telefone. Enumerar formato foi o que falhou duas vezes seguidas.
+# A correção troca "enumerar formato" por CONTAR DÍGITO (`_MatcherCartao`) e
+# move o cartão para ANTES do telefone na lista — depois de CPF/CNPJ. Como a
+# ordem passou a estar na própria `_PATTERNS`, todo consumidor herda a correção,
+# inclusive o `ai/pseudonymizer.py`, que percorre a lista por conta própria.
 
 @pytest.mark.parametrize(
     "descricao,numero",
