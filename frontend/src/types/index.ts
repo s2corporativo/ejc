@@ -151,6 +151,10 @@ export interface Fee {
   status: string;
   descricao: string;
   valor?: number;
+  /** Honorário de êxito/misto pode ser contratado só em PERCENTUAL, sem valor
+   *  fixo — `FeeCreate` exige um dos dois. Sem este campo na tipagem, a tela
+   *  mostrava "—" para um lançamento que acabara de ser salvo. */
+  percentual_exito?: number | null;
   data_vencimento?: string;
   data_pagamento?: string;
   client_id: string;

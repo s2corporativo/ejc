@@ -27,6 +27,20 @@ import {
 
 const STATUS_VALIDOS = ["pendente", "atrasado", "pago"];
 
+/** Tipos em que o percentual de êxito é efetivamente aplicado no cálculo
+ *  (`routers/honorarios_oab.py`: `f.tipo in (exito, misto) and
+ *  f.percentual_exito`). Fora deles o percentual seria gravado e ignorado. */
+const TIPOS_COM_PERCENTUAL = ["exito", "misto"];
+
+/** O que o escritório vai cobrar, em uma célula. Um honorário de êxito puro
+ *  não tem `valor` — mostrar só `fmtMoney(valor)` fazia a tela exibir "—"
+ *  para um lançamento recém-salvo, e os exports omitiam quanto foi contratado. */
+function quantoCobrar(f: Fee): string {
+  if (f.valor != null) return fmtMoney(f.valor);
+  if (f.percentual_exito != null) return `${f.percentual_exito}% de êxito`;
+  return fmtMoney(f.valor);
+}
+
 export default function Honorarios() {
   const [data, setData] = useState<Paged<Fee> | null>(null);
   const [resumo, setResumo] = useState<any>(null);
@@ -187,6 +201,8 @@ export default function Honorarios() {
               descricao: f.descricao,
               tipo: f.tipo,
               valor: f.valor,
+              percentual_exito: f.percentual_exito ?? "",
+              cobranca: quantoCobrar(f),
               vencimento: f.data_vencimento,
               status: f.status,
               cliente: (f as any).client_nome ?? "",
@@ -202,14 +218,21 @@ export default function Honorarios() {
             const rows = (data?.data ?? []).map((f) => [
               f.descricao,
               f.tipo,
-              String(f.valor ?? ""),
+              quantoCobrar(f),
               f.data_vencimento ?? "",
               f.status,
               (f as any).client_nome ?? "",
             ]);
             exportPdf(
               "Honorários",
-              ["Descrição", "Tipo", "Valor", "Vencimento", "Status", "Cliente"],
+              [
+                "Descrição",
+                "Tipo",
+                "Valor ou %",
+                "Vencimento",
+                "Status",
+                "Cliente",
+              ],
               rows,
             );
           }}
@@ -294,9 +317,7 @@ export default function Honorarios() {
                   <td className="px-4 py-3 text-xs capitalize">
                     {f.tipo.replace(/_/g, " ")}
                   </td>
-                  <td className="px-4 py-3 font-semibold">
-                    {fmtMoney(f.valor)}
-                  </td>
+                  <td className="px-4 py-3 font-semibold">{quantoCobrar(f)}</td>
                   <td className="px-4 py-3 text-slate-500">
                     {fmtDate(f.data_vencimento)}
                   </td>
@@ -381,7 +402,19 @@ export default function Honorarios() {
             <select
               className="input"
               value={form.tipo}
-              onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+              onChange={(e) => {
+                const tipo = e.target.value;
+                // Trocar para um tipo sem percentual esconde o campo; deixar o
+                // número digitado no estado mandaria um percentual que o
+                // backend agora recusa (e que o cálculo ignoraria).
+                setForm({
+                  ...form,
+                  tipo,
+                  ...(TIPOS_COM_PERCENTUAL.includes(tipo)
+                    ? {}
+                    : { percentual_exito: "" }),
+                });
+              }}
             >
               <option value="fixo">Fixo</option>
               <option value="exito">Êxito</option>
@@ -409,24 +442,27 @@ export default function Honorarios() {
               ou não passava na validação, ou o advogado inventava um valor
               fixo e mudava a natureza financeira do contrato. Achado da
               revisão do Codex em 2026-08-22, no PR #1238. */}
-          <div>
-            <label className="label">Percentual de êxito (%)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              max="100"
-              className="input"
-              value={form.percentual_exito || ""}
-              onChange={(e) =>
-                setForm({ ...form, percentual_exito: e.target.value })
-              }
-            />
-          </div>
+          {TIPOS_COM_PERCENTUAL.includes(form.tipo) && (
+            <div>
+              <label className="label">Percentual de êxito (%)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                className="input"
+                value={form.percentual_exito || ""}
+                onChange={(e) =>
+                  setForm({ ...form, percentual_exito: e.target.value })
+                }
+              />
+            </div>
+          )}
           <div className="sm:col-span-2 -mt-1">
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Informe o valor em reais, o percentual de êxito, ou os dois (êxito
-              com piso contratado). Ao menos um é obrigatório.
+              {TIPOS_COM_PERCENTUAL.includes(form.tipo)
+                ? "Informe o valor em reais, o percentual de êxito, ou os dois (êxito com piso contratado). Ao menos um é obrigatório."
+                : "Informe o valor em reais. O percentual de êxito só se aplica aos tipos Êxito e Misto, que são os que o cálculo usa."}
             </p>
           </div>
           <div>

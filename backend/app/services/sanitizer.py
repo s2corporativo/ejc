@@ -32,16 +32,11 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r'(?<!\d)(\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b'), '[TELEFONE]'),
     # CEP: 00000-000
     (re.compile(r'\b\d{5}-?\d{3}\b'), '[CEP]'),
-    # Cartão de crédito. Cobre 13 a 19 dígitos: Visa antigo (13), AmEx (15),
-    # Visa/Master (16) e Maestro (19) — não só 16. Enquanto o padrão exigia
-    # exatamente 16, um PAN de outro comprimento só era mascarado por ACIDENTE,
-    # pelo padrão de TELEFONE mordendo o final dele; a guarda `(?<!\d)` que esse
-    # padrão ganhou (ver acima) tirou o acidente e deixaria o PAN inteiro em
-    # claro rumo ao provider externo, com `validar_sem_pii` respondendo "sem PII
-    # residual". Achado da revisão do Codex em 2026-08-22, no PR #1238.
-    # Nas alternativas agrupadas o separador é OBRIGATÓRIO: com ele opcional o
-    # padrão atravessaria duas datas vizinhas ("31-12-2026 01-01-2027" são 16
-    # dígitos) e mascararia data de audiência como cartão.
+    # Cartão de crédito — entrada CONSERVADORA, mantida aqui só para os
+    # consumidores genéricos de `_PATTERNS` (pseudonymizer, inventário de
+    # placeholders): casa os formatos clássicos e nunca mascara a mais. A regra
+    # completa NÃO cabe em regex e vive em `mascarar_cartoes`, logo abaixo —
+    # todo caminho real chama aquela função, que é subconjunto-superior desta.
     (re.compile(
         r'(?<!\d)(?:'
         r'\d{13,19}'                                              # sem separadores
@@ -64,6 +59,62 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
         r'(?:,\s*(?:n[ºo°]?\.?\s*)?\d+[-\w]*)?',
     ), '[ENDERECO]'),
 ]
+
+# ── Cartão: a única regra de PII que regex não expressa sozinha ──────────────
+# Um PAN é QUALQUER sequência de 13 a 19 dígitos, agrupada como a bandeira
+# quiser. Regex não CONTA dígitos através de separadores, e cada tentativa de
+# enumerar formatos deixou um comprimento de fora: primeiro tudo que não fosse
+# 16 dígitos, depois todo PAN AGRUPADO de 13 a 18 ("4222 2222 2222 2" saía
+# intacto, e "3782 822463 1000 5" saía como "3782 [TELEFONE] 5" — mascaramento
+# parcial rotulado errado). Dois achados P1 do Codex no PR #1238, em SHAs
+# consecutivos, pela mesma causa: enumerar formato em vez de contar dígito.
+#
+# Aqui o regex só delimita o CANDIDATO (grupo inicial de 4+ dígitos, grupos
+# seguintes de 3+, e um grupo final curto opcional) e quem decide é a contagem.
+# O piso de 3 dígitos nos grupos intermediários é o que impede o candidato de
+# atravessar datas vizinhas: "2026-08-22 2027-09-30" são 16 dígitos, mas os
+# grupos de 2 quebram o casamento — data de audiência não pode virar cartão.
+_CARTAO_TRECHO = re.compile(r'(?<!\d)\d{4,}(?:[\s.-]\d{3,})*(?:[\s.-]\d{1,2})?(?!\d)')
+_NAO_DIGITO = re.compile(r'\D')
+
+
+# O índice 7 sai dos laços de aplicação: quem manda é `mascarar_cartoes`, que
+# roda entre o 4 e o 5. Manter os dois faria a entrada conservadora — que não
+# distingue CNPJ de Diners, ambos com 14 dígitos — mascarar como [CARTAO] o
+# CNPJ que a variante interna quer deixar legível.
+_APOS_CARTAO = _PATTERNS[5:7] + _PATTERNS[8:]
+
+
+def _e_cartao(trecho: str, permitir_14: bool) -> bool:
+    """13 a 19 dígitos. `permitir_14=False` devolve o empate a favor do CNPJ.
+
+    14 dígitos sem pontuação é AMBÍGUO: CNPJ e Diners têm o mesmo comprimento e
+    nada no texto os distingue. Na variante externa isso não aparece — o CNPJ
+    já foi mascarado no índice 1, antes desta passada. Na variante interna
+    CPF/CNPJ ficam visíveis de propósito (decisão de 2026-07-04) e o texto
+    nunca sai do VPS, então o empate resolve a favor de manter o CNPJ legível.
+    """
+    n = len(_NAO_DIGITO.sub('', trecho))
+    if not 13 <= n <= 19:
+        return False
+    return not (n == 14 and not permitir_14)
+
+
+def mascarar_cartoes(texto: str, marcador='[CARTAO]', *, permitir_14: bool = True) -> str:
+    """Mascara todo PAN de 13 a 19 dígitos. `marcador` aceita str ou callable
+    recebendo o match (o pseudonymizer precisa gerar marcador reversível)."""
+    def _troca(m: re.Match) -> str:
+        if not _e_cartao(m.group(0), permitir_14):
+            return m.group(0)
+        return marcador(m) if callable(marcador) else marcador
+    return _CARTAO_TRECHO.sub(_troca, texto)
+
+
+def tem_cartao(texto: str, *, permitir_14: bool = True) -> bool:
+    """Versão de leitura, para a segunda barreira."""
+    return any(_e_cartao(m.group(0), permitir_14)
+               for m in _CARTAO_TRECHO.finditer(texto))
+
 
 # Datas de nascimento explícitas (contexto "nascido em", "nascimento")
 _NASCIMENTO = re.compile(
@@ -89,7 +140,16 @@ def sanitizar_pii(texto: str, nomes_proteger: list[str] | None = None) -> tuple[
     resultado = texto
 
     # 1. Padrões estruturados (CPF, CNPJ, etc.)
-    for pattern, placeholder in _PATTERNS:
+    #    O cartão entra ENTRE os índices 4 e 5, e a posição é o defeito que ela
+    #    corrige: depois de CPF/CNPJ/processo (senão um CNPJ de 14 dígitos sem
+    #    pontuação seria contado como PAN) e ANTES de TELEFONE, que num PAN
+    #    agrupado morde o miolo ("3782 822463 1000 5" virava
+    #    "3782 [TELEFONE] 5") e quebra a sequência antes que o cartão a veja.
+    #    Reordenar `_PATTERNS` não é opção: os índices são referenciados.
+    for pattern, placeholder in _PATTERNS[:5]:
+        resultado = pattern.sub(placeholder, resultado)
+    resultado = mascarar_cartoes(resultado)
+    for pattern, placeholder in _APOS_CARTAO:
         resultado = pattern.sub(placeholder, resultado)
 
     # 2. Datas de nascimento contextuais
@@ -124,7 +184,12 @@ def sanitizar_pii_interno(texto: str, nomes_proteger: list[str] | None = None) -
     """
     original = texto
     resultado = texto
-    for pattern, placeholder in _PATTERNS[2:]:  # pula CPF (0) e CNPJ (1)
+    # Mesma ordem da variante externa, pulando CPF (0) e CNPJ (1). Como o CNPJ
+    # NÃO foi mascarado aqui, o cartão roda com `permitir_14=False`.
+    for pattern, placeholder in _PATTERNS[2:5]:
+        resultado = pattern.sub(placeholder, resultado)
+    resultado = mascarar_cartoes(resultado, permitir_14=False)
+    for pattern, placeholder in _APOS_CARTAO:
         resultado = pattern.sub(placeholder, resultado)
     resultado = _NASCIMENTO.sub(r'\1 [DATA_NASC]', resultado)
     if nomes_proteger:
@@ -142,10 +207,13 @@ def sanitizar_pii_interno(texto: str, nomes_proteger: list[str] | None = None) -
 
 def validar_sem_pii_interno(texto: str) -> list[str]:
     """Mesma checagem de `validar_sem_pii`, exceto CPF/CNPJ (uso interno)."""
-    return [tipo for tipo in validar_sem_pii(texto) if tipo not in ("CPF", "CNPJ")]
+    # `permitir_14=False`: aqui o CNPJ fica visível de propósito e não pode ser
+    # reportado como cartão residual.
+    return [tipo for tipo in validar_sem_pii(texto, permitir_14=False)
+            if tipo not in ("CPF", "CNPJ")]
 
 
-def validar_sem_pii(texto: str) -> list[str]:
+def validar_sem_pii(texto: str, *, permitir_14: bool = True) -> list[str]:
     """
     Validação final: verifica se ainda há PII residual.
     Retorna lista de tipos encontrados (vazia = limpo).
@@ -163,7 +231,8 @@ def validar_sem_pii(texto: str) -> list[str]:
         'CEP': _PATTERNS[6][0],
         # CARTAO (7) e CHAVE_PIX (8) faltavam nesta segunda barreira: um número
         # de cartão ou chave PIX residual passava com "nenhuma PII residual".
-        'CARTAO': _PATTERNS[7][0],
+        # CARTAO não entra neste dict porque a regra é contagem de dígitos, não
+        # formato — ver `tem_cartao`, chamado abaixo.
         'CHAVE_PIX': _PATTERNS[8][0],
         'OAB': _PATTERNS[9][0],
         'ENDERECO': _PATTERNS[10][0],
@@ -171,4 +240,6 @@ def validar_sem_pii(texto: str) -> list[str]:
     for nome, pattern in checks.items():
         if pattern.search(texto):
             encontrados.append(nome)
+    if tem_cartao(texto, permitir_14=permitir_14):
+        encontrados.append('CARTAO')
     return encontrados

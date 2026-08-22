@@ -1208,3 +1208,104 @@ ao justificar o `extra="forbid"`. São **dois**: o frontend e
 `scripts/inventory/m34_honorarios_propostas_tests.py` (linhas 177 e 194). Fui ler o segundo
 — envia exatamente `{valor, data_pagamento, forma}` nos dois pontos, nenhum campo extra. A
 conclusão não muda; a contagem que escrevi estava errada.
+
+---
+
+## 8-N. Segunda revisão do Codex — quatro P1, e a lição sobre enumerar formato (22/08/2026)
+
+O titular pediu revisão do HEAD `55eba9ef` com instrução explícita de confirmar que os três
+P1 anteriores foram corrigidos **sem regressão**. Voltaram quatro P1 novos. Conferi os quatro
+contra o código: **os quatro procedem.** Dois deles são correções minhas incompletas — a
+mesma classe de erro que o §8-M já tinha registrado, agora com um agravante: **repeti a
+técnica que falhou.**
+
+### Achado 13 — PAN agrupado de 13 a 18 dígitos (segundo erro pela mesma causa)
+
+Na rodada anterior ampliei o padrão de cartão **enumerando formatos**: contíguo, 4-4-4-4,
+4-6-5. Um SHA depois, o Codex mostra que a enumeração continuou incompleta — todo agrupamento
+fora da lista escapa:
+
+```
+'cartao 4222 2222 2222 2'     -> intacto,  residual=[]
+'cartao 3782 822463 1000 5'   -> 'cartao 3782 [TELEFONE] 5'
+```
+
+O segundo é **o sintoma exato do Achado 8 reaparecendo**: o padrão de TELEFONE (índice 5)
+roda antes do de cartão (índice 7), morde o miolo do PAN e deixa dígitos em claro rotulados
+como telefone. Corrigi esse sintoma para 16 dígitos duas rodadas atrás e ele voltou por outro
+comprimento.
+
+**A causa não era o padrão — era a técnica.** "13 a 19 dígitos" não é um formato; é uma
+**contagem**, e regex não conta dígitos através de separadores. Enquanto a regra estivesse
+escrita como lista de formatos, sempre faltaria um.
+
+**Correção:** `mascarar_cartoes()` — o regex delimita o *candidato* e a contagem decide.
+Duas consequências de projeto que o achado não pedia:
+
+1. **Posição.** A passada de cartão roda **entre os índices 4 e 5**: depois de CPF/CNPJ/
+   processo (senão um CNPJ de 14 dígitos sem pontuação seria contado como PAN) e **antes de
+   TELEFONE** (senão o telefone morde o miolo). Reordenar `_PATTERNS` não é opção — os
+   índices são referenciados por três módulos.
+2. **O piso de 3 dígitos nos grupos intermediários** é o que impede a contagem de atravessar
+   datas vizinhas: `2026-08-22 2027-09-30` são 16 dígitos. Sem esse piso, **data de audiência
+   viraria cartão**. Sobra-mascarar não é o lado seguro quando o dado engolido é um prazo.
+
+Um caminho que quase ficou de fora: `ai/pseudonymizer.py` itera `_PATTERNS` por conta própria
+e **está no caminho externo** (`ai_gateway`). Sem a mesma passada, a pseudonimização ficaria
+com a cobertura antiga. O empate de 14 dígitos (CNPJ × Diners) resolve-se a favor do CNPJ
+apenas na variante interna, que nunca sai do VPS.
+
+Regressão: 45 casos no arquivo, **12 falham** no HEAD anterior.
+
+### Achado 14 — o teto de páginas ainda subnotificava
+
+Paginar até 5 páginas resolvia até 1.000 prazos e exibia `1000+` acima disso. O Codex apontou
+o óbvio que eu não vi: **o `total` exato vem na primeira resposta e eu o estava descartando.**
+"1000+" é piso, não contagem — subnotificação mais educada, não corrigida.
+
+**Correção:** o contador de vencidos passa a ser `total` da faixa `vencido` (servidor, exato,
+sem teto) **mais** os pendentes já estourados que o job das 07:10 ainda não virou — janela em
+que os dois convivem. Os estourados são contados sobre a faixa `pendente` apenas, para não
+depender de cada item trazer `status` e não somar ninguém duas vezes. A paginação continua,
+mas só para os outros quatro contadores, que dependem de campo de cada item e não têm
+agregação pronta.
+
+### Achado 15 — o percentual salvo não aparecia em lugar nenhum
+
+Consequência direta do Achado 11: liberei o cadastro percentual e não olhei a leitura. `Fee`
+não declarava `percentual_exito`, a tabela renderizava só `fmtMoney(f.valor)` e os exports
+CSV/PDF idem. Depois de salvar 20% de êxito, **a própria tela mostrava "—"**.
+
+Corrigir a escrita e deixar a leitura para trás é meia correção pela metade oposta à do §8-M.
+
+**Correção:** campo na tipagem, `quantoCobrar()` como definição única (tabela, CSV e PDF) e a
+coluna do PDF renomeada para "Valor ou %".
+
+### Achado 16 — percentual em tipo que o cálculo ignora
+
+Com o campo novo e o tipo nascendo `fixo`, bastava preencher o percentual e salvar:
+`FeeCreate` exigia "valor **ou** percentual", então passava — e `routers/honorarios_oab.py`
+só lê o percentual quando `tipo in (exito, misto)`. Registro sem valor fixo e com percentual
+que nenhum cálculo enxerga: **cobrança que existe no cadastro e não existe na conta**. Mesma
+classe do honorário vazio que abriu este PR.
+
+E o **meu próprio teste reproduzia a combinação**, por não trocar o tipo antes de postar.
+
+**Correção:** `FeeCreate` recusa percentual fora de `exito`/`misto`, com mensagem que diz o
+que fazer; o formulário só mostra o campo nesses tipos e limpa o valor ao trocar de tipo.
+Nenhum caminho legítimo fechou — valor em reais segue válido em todos os tipos, e êxito com
+piso contratado (os dois juntos) continua passando; ambos com teste.
+
+### O que estas duas rodadas dizem
+
+Dezesseis achados, e os oito últimos vieram de revisão independente — nenhum de onze rodadas
+minhas. O padrão não é aleatório: **todos estão na borda de uma correção minha recém-feita.**
+Duas vezes o mecanismo foi o mesmo — consertar um lado e não olhar o outro (escrita sem
+leitura, status sem volume, um comprimento sem os demais).
+
+O Achado 13 acrescenta um agravante que vale registrar: eu não só errei de novo no mesmo
+ponto, **errei com a mesma técnica**. Enumerar formato falhou, e minha resposta foi enumerar
+mais formatos. Só saiu do lugar quando a regra deixou de ser "casa este padrão" e virou
+"conta os dígitos".
+
+O `governanca.yml` desligado (#1235) tira essa camada de revisão de todo PR do repositório.

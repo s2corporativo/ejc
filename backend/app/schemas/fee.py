@@ -20,6 +20,12 @@ _TIPOS_FEE_VALIDOS = frozenset(t.value for t in FeeTipo)
 # Idem para `status` na ATUALIZAÇÃO: coluna SAEnum(FeeStatus), setattr direto no
 # UPDATE → string fora do domínio estourava no asyncpg (500) em vez de 422.
 _STATUS_FEE_VALIDOS = frozenset(s.value for s in FeeStatus)
+# Tipos em que `percentual_exito` é REALMENTE aplicado no cálculo — ver
+# `routers/honorarios_oab.py`: `elif f.tipo in (FeeTipo.exito, FeeTipo.misto)
+# and f.percentual_exito and proveito`. Nos demais o campo seria gravado e
+# ignorado, que é a mesma classe de defeito do honorário sem valor: o registro
+# diz uma coisa e o sistema faz outra.
+_TIPOS_COM_PERCENTUAL = frozenset({FeeTipo.exito.value, FeeTipo.misto.value})
 
 class FeeCreate(BaseModel):
     tipo: str = "fixo"
@@ -63,6 +69,19 @@ class FeeCreate(BaseModel):
                 "honorário exige 'valor' (R$) ou 'percentual_exito' (%). "
                 "Sem um dos dois o registro nasce sem quanto cobrar e não "
                 "entra em nenhum somatório financeiro."
+            )
+        # Percentual só vale onde o cálculo o aplica. Aceitar
+        # `{tipo: 'fixo', percentual_exito: 20}` gravava um honorário sem valor
+        # fixo cujo percentual `honorarios_oab.py` nunca lê — cobrança que
+        # existe no cadastro e não existe no cálculo. Achado da 2ª revisão do
+        # Codex no PR #1238.
+        if (self.percentual_exito is not None
+                and self.tipo not in _TIPOS_COM_PERCENTUAL):
+            raise ValueError(
+                f"'percentual_exito' não se aplica a honorário do tipo "
+                f"{self.tipo!r}: o cálculo só usa percentual em "
+                f"{sorted(_TIPOS_COM_PERCENTUAL)}. Use 'valor' (R$) para este "
+                f"tipo, ou mude o tipo para 'exito'/'misto'."
             )
         return self
 

@@ -176,3 +176,95 @@ def test_barreira_final_do_gateway_com_amex():
     assert "3782" not in enviado and "10005" not in enviado
     # a data da compra não pode ter sido engolida junto
     assert "31-12-2026" in enviado, f"data virou cartão: {enviado!r}"
+
+
+# ── PAN AGRUPADO de 13 a 18 dígitos ─────────────────────────────────────────
+# Segundo achado P1 do Codex sobre o MESMO ponto, um SHA depois. A ampliação
+# anterior enumerou FORMATOS (contíguo, 4-4-4-4, 4-6-5) e por isso continuou
+# deixando de fora todo agrupamento que não estivesse na lista:
+#
+#     'cartao 4222 2222 2222 2'    -> intacto,  residual=[]
+#     'cartao 3782 822463 1000 5'  -> 'cartao 3782 [TELEFONE] 5'
+#
+# O segundo é o sintoma que o Achado 8 veio matar, reaparecendo: o padrão de
+# TELEFONE (índice 5) roda antes do de cartão e morde o miolo do PAN.
+#
+# A correção troca "enumerar formato" por CONTAR DÍGITO (`mascarar_cartoes`) e
+# roda a passada de cartão ENTRE os índices 4 e 5 — depois de CPF/CNPJ, antes
+# de telefone. Enumerar formato foi o que falhou duas vezes seguidas.
+
+@pytest.mark.parametrize(
+    "descricao,numero",
+    [
+        ("13 agrupado 4-4-4-1", "4222 2222 2222 2"),
+        ("13 com hifens", "4222-2222-2222-2"),
+        ("15 agrupado 4-6-4-1", "3782 822463 1000 5"),
+        ("16 agrupado", "4111 1111 1111 1111"),
+        ("17 agrupado", "4111 1111 1111 1111 1"),
+        ("18 agrupado", "4111 1111 1111 1111 12"),
+        ("19 agrupado 4-4-4-4-3", "6011 1111 1111 1111 117"),
+        ("19 com pontos", "6011.1111.1111.1111.117"),
+    ],
+)
+def test_pan_agrupado_de_qualquer_comprimento(descricao: str, numero: str):
+    limpo, _ = sanitizar_pii(f"cartao {numero}")
+    assert "[CARTAO]" in limpo, f"{descricao} não mascarado: {limpo!r}"
+    assert "[TELEFONE]" not in limpo, f"{descricao} virou telefone: {limpo!r}"
+    for bloco in numero.replace("-", " ").replace(".", " ").split():
+        assert bloco not in limpo, f"{descricao}: {bloco!r} vazou em {limpo!r}"
+
+
+@pytest.mark.parametrize(
+    "numero", ["4222 2222 2222 2", "3782 822463 1000 5", "4111 1111 1111 1111 12"],
+)
+def test_segunda_barreira_enxerga_pan_agrupado(numero: str):
+    assert "CARTAO" in validar_sem_pii(f"numero {numero}")
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "audiencias em 2026-08-22 2027-09-30",          # 16 dígitos em duas datas ISO
+        "prazos 31-12-2026 01-01-2027 02-02-2028",
+        "protocolado em 2026-08-22 05:27:28",
+        "valor de R$ 1.234.567,89 corrigido",
+        "CEP 30130-010 e CEP 31270-901",
+    ],
+)
+def test_contagem_de_digitos_nao_engole_datas_nem_valores(texto: str):
+    """A contagem só vale com o piso de 3 dígitos nos grupos intermediários:
+    sem ele, duas datas vizinhas somam 13-19 dígitos e viram '[CARTAO]'."""
+    limpo, _ = sanitizar_pii(texto)
+    assert "[CARTAO]" not in limpo, f"mascarou indevidamente: {limpo!r}"
+
+
+def test_cnpj_sem_pontuacao_continua_sendo_cnpj():
+    """14 dígitos é o empate CNPJ × Diners. Na variante EXTERNA o CNPJ é
+    mascarado no índice 1, antes da passada de cartão — o rótulo não pode
+    trocar para [CARTAO], senão a pseudonimização reidrata errado."""
+    limpo, _ = sanitizar_pii("CNPJ 12345678000190")
+    assert "[CNPJ]" in limpo and "[CARTAO]" not in limpo
+
+
+def test_variante_interna_mantem_cnpj_legivel():
+    """`sanitizar_pii_interno` deixa CPF/CNPJ visíveis de propósito e nunca sai
+    do VPS. A passada de cartão não pode capturar o CNPJ de 14 dígitos."""
+    from app.services.sanitizer import sanitizar_pii_interno, validar_sem_pii_interno
+
+    limpo, _ = sanitizar_pii_interno("CNPJ 12345678000190 e cartao 378282246310005")
+    assert "12345678000190" in limpo, f"CNPJ deixou de ser legível: {limpo!r}"
+    assert "[CARTAO]" in limpo and "378282246310005" not in limpo
+    assert validar_sem_pii_interno(limpo) == []
+
+
+def test_pseudonimizacao_tambem_cobre_pan_agrupado():
+    """O pseudonymizer itera `_PATTERNS` por conta própria e está no caminho
+    externo (`ai_gateway`). Sem a mesma passada, ficaria com a cobertura antiga."""
+    from app.services.ai.pseudonymizer import pseudonimizar, reidratar
+
+    original = "cartao 4222 2222 2222 2 do cliente"
+    saida, mapa = pseudonimizar(original)
+    assert "4222" not in saida, f"PAN vazou na pseudonimização: {saida!r}"
+    # Reversível: o marcador tem de reidratar no PAN original, senão a resposta
+    # do provider volta com o número trocado.
+    assert reidratar(saida, mapa) == original

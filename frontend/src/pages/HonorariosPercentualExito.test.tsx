@@ -37,6 +37,13 @@ import Honorarios from "./Honorarios";
 
 const CLIENTE = { id: "c1", nome: "Cliente Teste" };
 
+/** Campo do modal pelo texto do seu rótulo. */
+function campo(rotulo: string): HTMLInputElement {
+  return screen
+    .getByText(rotulo)
+    .parentElement!.querySelector("input, select") as HTMLInputElement;
+}
+
 function montar() {
   return render(
     <MemoryRouter>
@@ -61,23 +68,48 @@ describe("Honorários — contrato de êxito puramente percentual", () => {
     post.mockReset();
   });
 
-  it("o formulário oferece o campo de percentual de êxito", async () => {
+  it("o campo de percentual aparece ao escolher Êxito", async () => {
     montar();
     fireEvent.click(await screen.findByText("Novo lançamento"));
     // Antes da correção este campo não existia e o único jeito de salvar um
     // contrato de êxito era preencher um valor fixo que não era o contratado.
+    fireEvent.change(campo("Tipo"), { target: { value: "exito" } });
     expect(screen.getByText("Percentual de êxito (%)")).toBeTruthy();
+  });
+
+  it("no tipo Fixo o campo de percentual nem aparece", async () => {
+    montar();
+    fireEvent.click(await screen.findByText("Novo lançamento"));
+    // `honorarios_oab.py` só aplica percentual em `exito`/`misto`. Oferecer o
+    // campo no tipo `fixo` deixava gravar um percentual que o cálculo ignora —
+    // cobrança que existe no cadastro e não existe na conta. O tipo nasce
+    // "fixo", que é como o defeito era alcançado sem nenhum clique extra.
+    expect(screen.queryByText("Percentual de êxito (%)")).toBeNull();
+  });
+
+  it("trocar de Êxito para Fixo não deixa percentual órfão no payload", async () => {
+    montar();
+    fireEvent.click(await screen.findByText("Novo lançamento"));
+    fireEvent.change(campo("Tipo"), { target: { value: "exito" } });
+    fireEvent.change(campo("Percentual de êxito (%)"), {
+      target: { value: "20" },
+    });
+    fireEvent.change(campo("Tipo"), { target: { value: "fixo" } });
+    fireEvent.change(campo("Descrição *"), { target: { value: "Contrato" } });
+    fireEvent.change(campo("Cliente *"), { target: { value: "c1" } });
+    fireEvent.change(campo("Valor (R$)"), { target: { value: "5000" } });
+    fireEvent.click(screen.getByText("Lançar"));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    const [, corpo] = post.mock.calls[0] as [string, Record<string, unknown>];
+    expect(corpo.percentual_exito).toBeUndefined();
   });
 
   it("salva com percentual e sem valor, sem mandar string vazia", async () => {
     montar();
     fireEvent.click(await screen.findByText("Novo lançamento"));
 
-    const campo = (rotulo: string) =>
-      screen
-        .getByText(rotulo)
-        .parentElement!.querySelector("input, select") as HTMLInputElement;
-
+    fireEvent.change(campo("Tipo"), { target: { value: "exito" } });
     fireEvent.change(campo("Descrição *"), {
       target: { value: "Êxito 20% sobre a condenação" },
     });

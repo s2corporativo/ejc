@@ -23,7 +23,9 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
-from app.services.sanitizer import _PATTERNS, _NASCIMENTO, validar_sem_pii
+from app.services.sanitizer import (
+    _APOS_CARTAO, _PATTERNS, _NASCIMENTO, mascarar_cartoes, validar_sem_pii,
+)
 
 # Placeholder do sanitizer → nome de TIPO usado no marcador pseudonimizado.
 # (Ordem de aplicação = ordem de `_PATTERNS`, a MESMA do sanitizer, para não
@@ -96,11 +98,24 @@ class _Pseudonimizador:
     def _substituir_estruturais(self, texto: str) -> str:
         # Padrões estruturados (CPF, CNPJ, processo, e-mail, telefone, CEP…),
         # na MESMA ordem do sanitizer para evitar sobreposição.
-        for pattern, placeholder in _PATTERNS:
-            # .get com fallback "PII": placeholder novo no sanitizer não quebra
-            # o gateway (degrada seguro; teste de sincronismo cobre a paridade).
-            tipo = _TIPO_POR_PLACEHOLDER.get(placeholder, "PII")
-            texto = pattern.sub(lambda m, _t=tipo: self._marcador(_t, m.group(0)), texto)
+        def _aplicar(entradas):
+            nonlocal texto
+            for pattern, placeholder in entradas:
+                # .get com fallback "PII": placeholder novo no sanitizer não quebra
+                # o gateway (degrada seguro; teste de sincronismo cobre a paridade).
+                tipo = _TIPO_POR_PLACEHOLDER.get(placeholder, "PII")
+                texto = pattern.sub(lambda m, _t=tipo: self._marcador(_t, m.group(0)), texto)
+
+        # O cartão entra ENTRE os índices 4 e 5, pela mesma razão do sanitizer:
+        # depois de CPF/CNPJ/processo e ANTES de TELEFONE, que num PAN agrupado
+        # morde o miolo e deixa dígitos em claro. `mascarar_cartoes` conta os
+        # dígitos (13–19) — regra que a entrada regex de `_PATTERNS` não cobre
+        # sozinha; sem esta linha o gateway pseudonimizado ficaria com a
+        # cobertura antiga, estreita.
+        _aplicar(_PATTERNS[:5])
+        texto = mascarar_cartoes(
+            texto, lambda m: self._marcador("CARTAO", m.group(0)))
+        _aplicar(_APOS_CARTAO)
         # Datas de nascimento contextuais → marcador único (mantém round-trip).
         texto = _NASCIMENTO.sub(lambda m: self._marcador("DATA_NASC", m.group(0)), texto)
         return texto

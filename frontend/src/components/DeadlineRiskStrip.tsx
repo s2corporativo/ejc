@@ -31,12 +31,17 @@ const GESTORES = new Set(["superadmin", "admin", "socio"]);
 // correção veio consertar (um contador de prazos que mente para menos), só que
 // aparecendo por volume em vez de por status. Paginamos até o fim; passando do
 // teto, o número vira piso explícito ("100+") em vez de número errado.
+//
+// O contador de VENCIDOS não depende desse teto: o `total` da faixa `vencido`
+// é a contagem do servidor e vem já na primeira resposta. Paginar existe para
+// os outros quatro contadores, que dependem de campo de CADA item
+// (dias_restantes, confirmado, ciencia_confirmada) e não têm agregação pronta.
 const PAGE_SIZE = 200;
 const MAX_PAGINAS = 5;
 
 async function buscarPrazos(
   status: string,
-): Promise<{ itens: PrazoRadar[]; completo: boolean }> {
+): Promise<{ itens: PrazoRadar[]; total: number; completo: boolean }> {
   const pedir = (page: number) =>
     api.get("/deadlines/", { params: { status, page_size: PAGE_SIZE, page } });
   const lista = (r: { data?: { data?: unknown } }) =>
@@ -50,7 +55,7 @@ async function buscarPrazos(
   // é 0, e um 0 acompanhado de página cheia significa contagem faltando, não
   // lista vazia. Nesse caso só a página incompleta prova o fim.
   if (!Number.isFinite(total) || total <= 0) {
-    return { itens, completo: itens.length < PAGE_SIZE };
+    return { itens, total: itens.length, completo: itens.length < PAGE_SIZE };
   }
 
   const paginas = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGINAS);
@@ -66,7 +71,7 @@ async function buscarPrazos(
       if (r.status === "fulfilled") itens.push(...lista(r.value));
     }
   }
-  return { itens, completo: itens.length >= total };
+  return { itens, total, completo: itens.length >= total };
 }
 
 export default function DeadlineRiskStrip() {
@@ -75,6 +80,9 @@ export default function DeadlineRiskStrip() {
   const [calendario, setCalendario] = useState<DiagnosticoSub | null>(null);
   const [erro, setErro] = useState(false);
   const [truncado, setTruncado] = useState(false);
+  const [totalVencido, setTotalVencido] = useState(0);
+  const [pendentesTruncados, setPendentesTruncados] = useState(false);
+  const [pendentesEstourados, setPendentesEstourados] = useState(0);
 
   useEffect(() => {
     let ativo = true;
@@ -93,7 +101,18 @@ export default function DeadlineRiskStrip() {
         ]);
         if (!ativo) return;
         setPrazos([...pendentes.itens, ...vencidos.itens]);
+        // `total` da faixa `vencido` é exato acima de qualquer volume. Guardá-lo
+        // é o que tira o contador jurídico do teto de paginação — descartá-lo
+        // era repetir o defeito do Achado 7 com outro número.
+        setTotalVencido(vencidos.total);
+        // Contado aqui, sobre a faixa `pendente` apenas: assim o número não
+        // depende de cada item trazer `status`, e um item da faixa `vencido`
+        // não pode ser somado duas vezes.
+        setPendentesEstourados(
+          pendentes.itens.filter((p) => Number(p.dias_restantes) < 0).length,
+        );
         setTruncado(!pendentes.completo || !vencidos.completo);
+        setPendentesTruncados(!pendentes.completo);
         setErro(false);
       } catch {
         if (ativo) setErro(true);
@@ -122,7 +141,6 @@ export default function DeadlineRiskStrip() {
   }, [role]);
 
   const risco = useMemo(() => {
-    let vencidos = 0;
     let ate48h = 0;
     let preliminares = 0;
     let cienciaPendente = 0;
@@ -130,18 +148,23 @@ export default function DeadlineRiskStrip() {
 
     for (const p of prazos) {
       const dias = Number(p.dias_restantes);
-      if (Number.isFinite(dias)) {
-        if (dias < 0) vencidos += 1;
-        else if (dias <= 2) ate48h += 1;
-      }
+      if (Number.isFinite(dias) && dias >= 0 && dias <= 2) ate48h += 1;
       if (p.confirmado === false) preliminares += 1;
       if (p.data_intimacao && !p.ciencia_confirmada) cienciaPendente += 1;
       if (p.confirmado && (!p.data_intimacao || p.ciencia_confirmada))
         revisados += 1;
     }
 
-    return { vencidos, ate48h, preliminares, cienciaPendente, revisados };
-  }, [prazos]);
+    return {
+      // Servidor (exato, sem teto) + os já estourados que o job das 07:10
+      // ainda não virou para `vencido`, janela em que os dois convivem.
+      vencidos: totalVencido + pendentesEstourados,
+      ate48h,
+      preliminares,
+      cienciaPendente,
+      revisados,
+    };
+  }, [prazos, totalVencido, pendentesEstourados]);
 
   if (erro) {
     return (
@@ -185,7 +208,7 @@ export default function DeadlineRiskStrip() {
         <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold">
           <RiskChip
             icon={AlertTriangle}
-            label={`${piso(risco.vencidos)} vencido(s)`}
+            label={`${risco.vencidos}${pendentesTruncados ? "+" : ""} vencido(s)`}
             danger={risco.vencidos > 0}
           />
           <RiskChip

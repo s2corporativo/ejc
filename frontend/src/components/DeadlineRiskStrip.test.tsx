@@ -153,18 +153,54 @@ describe("DeadlineRiskStrip — contagem sob volume", () => {
     );
   });
 
-  it("passando do teto de páginas, o número vira piso explícito", async () => {
+  it("acima do teto de páginas, ainda conta os 3.000 vencidos", async () => {
     responderPaginado({ pendente: [], vencido: vencidos(3000) });
     render(
       <MemoryRouter>
         <DeadlineRiskStrip />
       </MemoryRouter>,
     );
-    // 5 páginas × 200 = 1.000 carregados de 3.000. Exibir "1000" seria mentir;
-    // o "+" diz que é piso e manda o usuário abrir /prazos.
+    // 2ª revisão do Codex: paginar até um TETO ainda subnotifica acima dele —
+    // "1000+" era piso, não contagem. O `total` da faixa `vencido` vem exato na
+    // primeira resposta; usá-lo tira este contador do teto de vez.
     await waitFor(() =>
-      expect(screen.getByText("1000+ vencido(s)")).toBeTruthy(),
+      expect(screen.getByText("3000 vencido(s)")).toBeTruthy(),
     );
+    expect(screen.queryByText("1000+ vencido(s)")).toBeNull();
+  });
+
+  it("soma o pendente já estourado que o job das 07:10 ainda não virou", async () => {
+    const estourado = {
+      id: "p9",
+      data_prazo: "2026-08-21",
+      dias_restantes: -1,
+      confirmado: true,
+      ciencia_confirmada: true,
+    };
+    responderPaginado({
+      pendente: [estourado, PENDENTE],
+      vencido: vencidos(4),
+    });
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    // 4 na faixa `vencido` + 1 pendente com dias_restantes < 0. Contar só o
+    // `total` do servidor perderia a janela entre a virada do dia e o job.
+    await waitFor(() => expect(screen.getByText("5 vencido(s)")).toBeTruthy());
+  });
+
+  it("não conta duas vezes o item que está na faixa vencido", async () => {
+    responderPaginado({ pendente: [], vencido: vencidos(3) });
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    // Os itens da faixa `vencido` têm dias_restantes < 0 e já estão no `total`.
+    // Se o contador de estourados varresse a lista MERGED, daria 6.
+    await waitFor(() => expect(screen.getByText("3 vencido(s)")).toBeTruthy());
   });
 
   it("cabendo tudo numa página, não aparece o '+'", async () => {
