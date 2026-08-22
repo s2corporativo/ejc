@@ -917,3 +917,51 @@ defeito: **falha 1 de 3**.
 
 Zero imagem sem `alt` e zero botão sem nome acessível em todas as rotas e larguras.
 `<html lang="pt-BR">` declarado — o leitor de tela usa a pronúncia correta.
+
+## 8-J. Rodada 10 — jurimetria e Visual Law (22/08/2026)
+
+Últimas duas frentes da lista. **Nenhum defeito.**
+
+### Jurimetria — honestidade estatística verificada
+
+Num sistema jurídico, taxa de êxito é número que muda decisão de estratégia e de proposta
+de acordo. Uma taxa calculada sobre 2 casos e apresentada como "100% de êxito" é pior que
+nenhuma taxa. Testado o cálculo direto:
+
+| amostra | n | taxa_exito | com acordo | `amostra_suficiente` |
+|---|---|---|---|---|
+| 2 casos, ambos êxito | 2 | 100,0 | 100,0 | **false** |
+| 4 casos, três êxitos | 4 | 75,0 | 75,0 | **false** |
+| 5 casos, três êxitos | 5 | 60,0 | 80,0 | true |
+| vazia | 0 | `None` | `None` | false |
+
+`MIN_AMOSTRA = 5`. A distribuição bruta acompanha **toda** taxa, permitindo recálculo. A
+amostra vazia devolve `None`, não zero nem divisão por zero. E há duas taxas separadas —
+com e sem acordo — porque contar acordo como êxito infla o número.
+
+Na interface, o denominador viaja junto: "Desfechos Reais — N casos encerrados",
+`{total} ({pct}%)`, "Amostra: N decididos". Há ainda o aviso explícito *"Indicador
+descritivo dos casos decididos do escritório. Não é modelo [preditivo]"*, e o endpoint
+`/predicao-exito` está marcado `deprecated` em favor de `/analise-prospectiva` — a
+renomeação acompanha a postura, em vez de vender previsão onde há descrição.
+
+### Visual Law — determinístico por desenho
+
+`visual_law_core.py` (linha do tempo, matriz de risco probabilidade × impacto com
+tratamento contábil do CPC 25, badges de alerta, breakeven de acordo) é **100%
+determinístico**, declarado no cabeçalho: *"sem IA — não inventa nada"*. É a escolha
+certa: uma linha do tempo processual alucinada seria pior que a ausência do módulo. O
+serviço homônimo que gera diagramas Mermaid por IA é outro arquivo e passa pelo
+`ai_gateway`.
+
+### Regra 4 do CLAUDE.md, verificada sistemicamente
+
+*"Chamadas de IA sempre via `ai_gateway.py`; jamais chamar provider direto de um router."*
+
+- Nenhum router importa `app.services.providers`, `anthropic`, `groq` ou `ollama`.
+- O único módulo fora do gateway que toca `app.services.providers` é o `__init__.py` do
+  próprio pacote.
+
+Ou seja, não há rota de fuga: toda chamada de IA atravessa o ponto onde vivem o
+kill-switch, a política de provedores e a sanitização de PII. O Achado 8 (cartão) importa
+justamente por isso — aquela era a barreira única, e valia para tudo.
