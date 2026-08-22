@@ -1453,7 +1453,11 @@ export function VisualLawDocument({
             <FileText className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <h1>{title}</h1>
+            {/* h2, não h1: este cabeçalho é de um DOCUMENTO exibido
+                dentro de uma página que já tem `PageHeader` como h1.
+                Medido em /documentos: dois h1 idênticos ("Documentos"),
+                e o leitor de tela perde a âncora da página. */}
+            <h2 className="visual-law-document-title">{title}</h2>
             {subtitle && (
               <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
             )}

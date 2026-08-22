@@ -1688,3 +1688,63 @@ ela. Mede o schema, não a intenção.
 O segundo teste do arquivo trava a **escolha**, não o código: se alguém indexar as FKs de
 trilha para `users`, ele falha e obriga a revisar a decisão explicitamente, em vez de o custo
 de escrita entrar sem ninguém notar.
+
+---
+
+## 8-S. Achado 26 — acessibilidade: os cinco itens registrados, agora com endereço (22/08/2026)
+
+Prioridade 16 (§71). A rodada anterior contou ocorrências — "1 campo sem rótulo", "N alvos
+< 24px" — sem dizer QUAIS. Contagem sem endereço não vira correção, e foi por isso que estes
+cinco ficaram parados. Medidos de novo no Chromium, agora com o seletor de cada elemento.
+
+### Antes × depois, medido em 7 rotas
+
+| rota | h1 | saltos de nível | campo sem rótulo | alvos < 24px |
+|---|---|---|---|---|
+| `/` | **0 → 1** | 0 | 0 | 11 → 10 |
+| `/clientes` | 1 | 0 | 0 | **26 → 5** |
+| `/casos` | 1 | **1 → 0** | **1 → 0** | 7 → 6 |
+| `/prazos` | 1 | 0 | 0 | 7 → 6 |
+| `/honorarios` | 1 | 0 | 0 | **5 → 0** |
+| `/documentos` | **2 → 1** | **1 → 0** | 0 | **21 → 5** |
+| `/pecas` | 1 | 0 | 0 | **1 → 0** |
+
+### O que cada um era
+
+**Dashboard sem `<h1>`.** A tela inicial não tinha título de página nenhum. Quem usa leitor de
+tela ficava sem a âncora de "onde estou". Resolvido com `h1` `sr-only`: a tela é densa de
+propósito e já se identifica visualmente; o rótulo dá a semântica sem custar pixel.
+
+**Dois `<h1>` idênticos em `/documentos`.** Este não era problema de acessibilidade — era
+**duplicação de componente**, achada porque os dois h1 tinham a mesma assinatura de classe.
+`GestaoDocumental` monta um `PageHeader` "Documentos" e embute `<Documentos />`, que montava
+outro igual. Dois cabeçalhos idênticos na mesma tela, também visualmente. `Documentos` nunca é
+rota — o registry aponta `/documentos` para `GestaoDocumental` —, então o `PageHeader` dele era
+redundante puro. Removido, preservando a ação "Enviar", que é da aba.
+
+**Salto `h1 → h3`** em `/casos` e `/documentos`: o componente `Panel` usava `h3` para o título
+de painel. Painel é seção de primeiro nível sob o título da página; virou `h2`.
+
+**Select de filtro sem rótulo** em `/casos`: era anunciado apenas pela opção selecionada
+("Todas as áreas") — o leitor de tela dizia o VALOR sem dizer de que ele é valor. Ganhou
+`aria-label`. O filtro vizinho tinha só `title`, que é nome acessível fraco (vira tooltip e
+nem todo leitor anuncia); ganhou `aria-label` também.
+
+**Alvos de toque.** Aqui a medição corrigiu a minha própria contagem: dos 73 elementos abaixo
+de 24px, **25 são links de texto dentro de tabela** — cobertos pela exceção explícita da WCAG
+2.5.8 para link inline em fluxo de texto. Violação real eram os **48 botões autônomos**, em 7
+componentes distintos. Depois da correção: **48 → 2 → 0**.
+
+A correção foi por área mínima (`min-h`/`min-w` de 24px), que só CRESCE o que está abaixo — e
+não por alterar padding, que mudaria o tamanho de quem já cumpre. Precaução aprendida do
+Achado 9, onde mexer num utilitário compartilhado sem medir custou uma rodada.
+
+### Um teste meu que quase nasceu vazio
+
+A primeira versão do teste de estrutura usava `import("./Documentos?raw").catch(() => null)`
+com retorno antecipado: num ambiente sem `?raw`, ele **passaria sem verificar nada**. Trocado
+por leitura do arquivo em disco. É o mesmo padrão que peguei duas vezes nesta auditoria — teste
+que pode passar por construção não é cobertura, é a aparência dela.
+
+Verificação: 3 casos, **2 falham** sem as correções. Suíte do frontend: 593 testes, 110
+arquivos, verde; `format:check`, `tsc --noEmit` e `vite build` limpos.
