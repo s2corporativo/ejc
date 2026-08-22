@@ -965,3 +965,83 @@ serviço homônimo que gera diagramas Mermaid por IA é outro arquivo e passa pe
 Ou seja, não há rota de fuga: toda chamada de IA atravessa o ponto onde vivem o
 kill-switch, a política de provedores e a sanitização de PII. O Achado 8 (cartão) importa
 justamente por isso — aquela era a barreira única, e valia para tudo.
+
+## 8-K. Rodada 11 — desempenho e banco sob volume (22/08/2026)
+
+Prioridades 13 e 15. N+1 é o defeito que não aparece em teste: com 14 casos o sistema
+responde em milissegundos e ninguém nota que fez 15 consultas em vez de 2; com 3.000, a
+mesma tela trava. Por isso a medição foi feita **contando consultas de verdade**
+(`pg_stat_statements` antes e depois de cada requisição), e repetida depois de carregar
+volume realista de escritório: **2.014 clientes, 3.014 casos, 6.011 prazos, 4.021
+honorários** — cerca de 215× o volume inicial. Dados fictícios, banco local descartável,
+removidos ao fim.
+
+### Nenhum N+1 — e isso é escalável por construção
+
+| rota | 5 por página | 100 por página | veredito |
+|---|---|---|---|
+| `/cases/` | 8 consultas (5 itens) | 8 consultas (100 itens) | +95 itens custaram **+0 consultas** |
+| `/clients/` | 8 (5 itens) | 8 (100 itens) | +95 itens, +0 consultas |
+| `/deadlines/` | 8 (5 itens) | 8 (100 itens) | +95 itens, +0 consultas |
+| `/fees/` | 8 (5 itens) | 8 (100 itens) | +95 itens, +0 consultas |
+
+Contagem **constante**, independente do tamanho da página. Das 8 consultas, ~5 são
+protocolo (BEGIN/COMMIT/ROLLBACK, typeinfo do asyncpg) e uma é a busca do usuário pelo
+middleware de auth; o trabalho real são 2. É o resultado mais importante desta rodada
+porque é **independente de escala**: contagem constante hoje continua constante com
+30.000 casos.
+
+### Latência sob volume real
+
+| medição | resultado |
+|---|---|
+| `/dashboard/` (com 6.011 prazos) | mediana **4,0 ms** |
+| `/cases/` 100 por página | mediana **12,2 ms** |
+| `/deadlines/` 100 por página | mediana **13,4 ms** |
+| paginação profunda, `page=30` (offset 2.900) | **17,7 ms** — mais rápido que a página 1 |
+| busca global `q=Carga` (casa 3.000 registros) | **28,9 ms** |
+| `/cases/stats` | **13,4 ms** |
+
+Offset profundo é o assassino clássico de paginação e aqui **não degrada**. A consulta
+mais lenta do banco inteiro no período foi de 1,24 ms.
+
+### Concorrência — sem erro em nenhum nível
+
+| simultâneas | mediana | p95 | resultado |
+|---|---|---|---|
+| 1 | 19,7 ms | — | 200 |
+| 5 | 103,4 ms | 125,3 ms | 5× 200 |
+| 20 | 51,1 ms | 259,1 ms | 20× 200 |
+| 50 | 128,2 ms | 515,0 ms | 50× 200 |
+
+Nenhum 5xx, nenhuma recusa por rate limit. Para um escritório com equipe de uma dezena
+de pessoas, 20 requisições simultâneas já é folgado, e o p95 aí é 259 ms. O teto de
+vazão em 50 simultâneas reflete a **premissa de worker único** que o próprio CLAUDE.md
+declara — e para a qual o repositório já documenta o caminho de escala
+(`RATE_LIMIT_REDIS_ENABLED=true` e `ENABLE_SCHEDULER=false` nos workers extras).
+
+### Índices — o núcleo está certo
+
+Todas as tabelas quentes têm índice na coluna pela qual o advogado filtra:
+`deadlines.case_id`, `fees.case_id`, `fees.client_id`, `documents.case_id`,
+`documents.client_id`, `legal_docs.case_id`, `case_movimentos.case_id`, `tasks.case_id`.
+
+74 chaves estrangeiras não têm índice, mas o número isolado engana: a esmagadora maioria
+é coluna de autoria (`created_by`, `aprovado_por`, `revisado_por`), que ninguém usa como
+filtro. Filtrando pelas colunas que **de fato** são critério de busca neste domínio
+(`case_id`, `client_id`, `user_id`), sobram **6 tabelas periféricas**:
+`contratos_societarios`, `diario_oficial_alertas`, `diario_oficial_keywords`,
+`inadimplencia_alerts`, `legal_chat_messages`, `preliminar_mensagens`.
+
+**Não corrigido, e o motivo é honesto:** todas essas tabelas estão vazias no ambiente
+local, então **não consegui medir impacto nenhum**. É observação estrutural, não problema
+de desempenho demonstrado — e criar índice exige migration. Registrado para decisão.
+
+### Limites desta medição — o que ela NÃO prova
+
+- 3.000 casos é porte realista para o escritório, **não** é teste de estresse a 100 mil.
+- Máquina local, sem rede, sem nginx no caminho, backend em modo desenvolvimento.
+- Cada requisição do teste de concorrência abriu conexão TCP nova, o que **infla** os
+  números de concorrência — o teto real de vazão é melhor que o medido.
+- Os dados de carga são uniformes (todos `civil`/`aberto`), então a seletividade dos
+  índices é mais otimista do que seria com dados reais variados.
