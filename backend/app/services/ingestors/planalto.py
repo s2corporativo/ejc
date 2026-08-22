@@ -102,6 +102,12 @@ CATALOGO: list[dict] = [
      "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2013/lei/l12846.htm"},
     {"slug": "l12016", "titulo": "Lei do Mandado de Segurança (Lei 12.016/2009)", "area": "processual_civil",
      "url": "https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2009/lei/l12016.htm"},
+    # Complementos P0 verificados diretamente na fonte oficial em 2026-08-22.
+    {"slug": "l6830", "titulo": "Lei de Execução Fiscal (Lei 6.830/1980)", "area": "tributario",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l6830.htm"},
+    {"slug": "l9514", "titulo": "Lei do Sistema de Financiamento Imobiliário e Alienação Fiduciária (Lei 9.514/1997)",
+     "area": "imobiliario",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l9514.htm"},
     # Bloco cível/família
     {"slug": "lindb", "titulo": "Lei de Introdução às Normas do Direito Brasileiro (DL 4.657/1942)", "area": "civil",
      "url": "https://www.planalto.gov.br/ccivil_03/decreto-lei/del4657compilado.htm"},

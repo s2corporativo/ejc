@@ -193,12 +193,13 @@ def test_catalogo_unificado_planalto_sem_duplicatas():
     assert len(slugs) == len(set(slugs))
     # 14 originais (9 chaves de produção do ingestor + 5 leis do seed) + 16
     # diplomas core do 1º follow-up de ampliação + 6 do follow-up de federação
-    # de fontes (l8112, idoso, lacp, l9784, lai, l9868) = 36.
+    # de fontes + 2 complementos P0 (LEF e alienação fiduciária) = 38.
+    assert len(slugs) == 38
     assert {"cf88", "cc", "cpc", "clt", "cdc", "cp", "cpp", "eca", "ctn",
             "l9099", "lgpd", "cflo", "lca", "pnma",
-            "l14133", "l8429", "l12846", "l12016", "lindb", "l8245", "l13146",
-            "l5478", "maria_penha", "l11343", "lep", "l11101", "lcp123",
-            "l8213", "l8906", "ctb",
+            "l14133", "l8429", "l12846", "l12016", "l6830", "l9514",
+            "lindb", "l8245", "l13146", "l5478", "maria_penha", "l11343",
+            "lep", "l11101", "lcp123", "l8213", "l8906", "ctb",
             "l8112", "idoso", "lacp", "l9784", "lai", "l9868"} == set(slugs)
     for lei in CATALOGO:
         assert lei["url"].startswith("https://www.planalto.gov.br/ccivil_03/"), lei["slug"]
@@ -220,6 +221,8 @@ def test_urls_legadas_de_producao_preservadas():
     assert urls["cpp"].endswith("/decreto-lei/del3689compilado.htm")
     assert urls["eca"].endswith("/leis/l8069compilado.htm")
     assert urls["ctn"].endswith("/leis/l5172compilado.htm")
+    assert urls["l6830"] == "https://www.planalto.gov.br/ccivil_03/leis/l6830.htm"
+    assert urls["l9514"] == "https://www.planalto.gov.br/ccivil_03/leis/l9514.htm"
 
 
 # ══════════════════════════════════════════════════════════════════════════
