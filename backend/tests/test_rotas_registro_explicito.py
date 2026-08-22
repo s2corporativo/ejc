@@ -52,6 +52,12 @@ def _extrair_rotas(app) -> list[dict]:
 # pode criar nem remover rota; qualquer outra novidade falha o teste.
 ADICOES_INTENCIONAIS = {
     ("/api/architecture/uso-rotas", "GET"),
+    # Issue #1246 (frente 2 do plano de evolução): varredura REVERSA tese →
+    # caso. O Banco de Teses só respondia caso → teses; esta é a rota que diz
+    # em quais processos uma tese pode caber. Leitura, determinística (sem IA),
+    # restrita à EQUIPE_JURIDICA e filtrada pela visibilidade de casos do
+    # usuário — não cria vínculo nem expõe caso que ele já não pudesse abrir.
+    ("/api/teses/{tese_id}/casos-candidatos", "GET"),
     # Saneamento 19/08/2026 (item 16): auditoria semântica da superfície real,
     # restrita a superadmin/admin/sócio; não expõe dados de caso/cliente.
     ("/api/architecture/semantic-audit", "GET"),
