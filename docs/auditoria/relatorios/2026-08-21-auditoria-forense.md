@@ -891,11 +891,14 @@ No celular, o transbordo cortava o botão primário **"Novo caso por documento"*
 advogado não conseguia tocá-lo. Não é estética: é a ação principal da tela inacessível
 no aparelho que ele carrega no fórum.
 
-**Correção:** remoção do `shrink-0` no `PageHeader` (uma linha, alcança as 56 páginas que
-usam o componente) e `flex-wrap` nas quatro páginas com linha de ações não-quebrável
-(`Casos`, `CentralRelacionamento`, `Intimacoes`, `Pecas`). Conferido por captura de tela:
-no celular os quatro controles aparecem inteiros, com o botão primário na segunda linha;
-no desktop o layout é idêntico ao anterior, tudo numa linha só.
+**Correção (revisada — ver §8-L):** `lg:shrink-0` no `PageHeader` e `flex-wrap` nas
+quatro páginas com linha de ações não-quebrável (`Casos`, `CentralRelacionamento`,
+`Intimacoes`, `Pecas`).
+
+> A primeira versão removia `shrink-0` por completo, e eu afirmei aqui que "no desktop o
+> layout é idêntico ao anterior". **Era falso** — eu havia validado só `/casos` por
+> captura de tela e generalizado para as 56 páginas. A medição de §8-L mostrou quatro
+> páginas quebrando linha a 1440px. O breakpoint corrige isso.
 
 Regressão: `src/components/PageHeaderAcoesQuebramLinha.test.tsx`. jsdom não tem motor de
 layout, então o teste protege o **contrato de classes** que causou o defeito — exige
@@ -1045,3 +1048,53 @@ de desempenho demonstrado — e criar índice exige migration. Registrado para d
   números de concorrência — o teto real de vazão é melhor que o medido.
 - Os dados de carga são uniformes (todos `civil`/`aberto`), então a seletividade dos
   índices é mais otimista do que seria com dados reais variados.
+
+## 8-L. Fechando o risco residual do Achado 9 — e uma afirmação minha que era falsa
+
+No §8-I registrei que a correção do `PageHeader` alcançava as 56 páginas que usam o
+componente, mas que eu só havia validado **quatro** por captura de tela; o resto era
+raciocínio ("em telas largas nada muda, porque há espaço"). Em vez de deixar isso para
+quem fosse integrar, medi.
+
+**O raciocínio estava errado.** Percorri 20 rotas em 5 larguras (390, 820, 1024, 1280,
+1440), medindo a caixa do container de ações e o transbordo da página, com e sem a
+correção. A 1440px, quatro páginas mudavam de `647×34` para `540×75` — as ações
+**quebravam em duas linhas numa tela larga**, onde antes cabiam numa só.
+
+A causa: sem `shrink-0`, o subtítulo (`max-w-3xl`, até 768px) passa a disputar a linha
+com as ações. Antes, `shrink-0` fazia o título ceder; depois, ambos encolhiam e as ações
+quebravam. O transbordo sumia, mas ao custo de mexer no layout onde não havia problema.
+
+**Correção da correção:** `lg:shrink-0` — abaixo de 1024px o container pode encolher e
+quebrar (some o transbordo); de 1024px para cima o comportamento original volta.
+
+### Medição final: 20 rotas × 5 larguras, contra o estado original
+
+| largura | rotas com `PageHeader` | geometria idêntica ao original | transbordo antes | depois |
+|---|---|---|---|---|
+| 390 (celular) | 15 | 13 | 2 | **1** |
+| 820 (tablet) | 15 | 10 | 4 | **0** |
+| 1024 (médio) | 15 | **15** | 0 | 0 |
+| 1280 (grande) | 15 | **15** | 0 | 0 |
+| 1440 (desktop) | 15 | **15** | 0 | 0 |
+
+De 1024px para cima, **nenhuma das 15 rotas muda um pixel**. Toda alteração de geometria
+que sobrou corresponde a um transbordo eliminado:
+
+- tablet: `/agenda`, `/intimacoes`, `/prazos`, `/tarefas` (116px cada) e `/casos`;
+- celular: `/casos` (28px) e `/pecas`.
+
+A medição também revelou que o defeito era **mais amplo do que eu havia diagnosticado**:
+`/agenda`, `/intimacoes` e `/tarefas` também transbordavam 116px no tablet — eu só tinha
+detectado `/prazos` e `/casos`. O transbordo remanescente no celular é o `/honorarios`
+(8px, tira de abas rolável de propósito), já registrado no §8-I como cosmético.
+
+O teste de regressão foi ajustado ao contrato novo: exige `flex-wrap`, proíbe `shrink-0`
+**sem prefixo** e exige `lg:shrink-0`. Os dois regimes ficam travados.
+
+### A lição, que vale além deste achado
+
+Eu tinha escrito "em telas largas nada muda, porque há espaço de sobra" — plausível,
+coerente com como flexbox funciona, e **errado**. O que salvou não foi revisar o
+raciocínio com mais cuidado: foi trocá-lo por medição. É a mesma lição do Achado 7, onde
+o defeito só apareceu quando dois números incompatíveis ficaram lado a lado na tela.

@@ -27,7 +27,7 @@ function containerDeAcoes(html: HTMLElement): HTMLElement {
 describe("PageHeader — a linha de ações precisa poder quebrar", () => {
   afterEach(cleanup);
 
-  it("o container de ações quebra linha e não fica preso a max-content", () => {
+  it("quebra linha em telas estreitas e não encolhe em telas largas", () => {
     const { container } = render(
       <PageHeader
         title="Casos e Processos"
@@ -41,11 +41,25 @@ describe("PageHeader — a linha de ações precisa poder quebrar", () => {
     );
     const classes = containerDeAcoes(container).className;
     expect(classes).toContain("flex-wrap");
+
+    // `shrink-0` SEM prefixo de breakpoint anula o `flex-wrap` em toda largura:
+    // o container prende-se a max-content e transborda em vez de quebrar —
+    // 116px em /prazos, /agenda, /tarefas e /intimacoes no tablet.
+    const tokens = classes.split(/\s+/);
     expect(
-      classes,
-      "`shrink-0` anula o `flex-wrap`: o container para de quebrar linha e " +
-        "transborda, escondendo o botão primário em telas estreitas",
+      tokens,
+      "`shrink-0` incondicional volta a esconder o botão primário em telas estreitas",
     ).not.toContain("shrink-0");
+
+    // Mas remover a trava em TODA largura também custa: sem ela o subtítulo
+    // disputa a linha e as ações quebram em duas mesmo a 1440px, onde antes
+    // cabiam numa só. Medido: /agenda, /prazos, /tarefas e /intimacoes iam de
+    // 647×34 para 540×75 no desktop. `lg:shrink-0` preserva o layout original
+    // de 1024px para cima — conferido por medição em cinco larguras.
+    expect(
+      tokens,
+      "sem `lg:shrink-0` as ações quebram linha em telas largas, onde há espaço",
+    ).toContain("lg:shrink-0");
   });
 
   it("sem ações, nenhum container extra é renderizado", () => {

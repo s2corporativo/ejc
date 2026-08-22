@@ -487,13 +487,25 @@ export function PageHeader({
           <p className="mt-1.5 max-w-3xl text-sm text-slate-500">{subtitle}</p>
         )}
       </div>
-      {/* Sem `shrink-0`: junto de `flex-wrap` os dois se anulam — o container
-          fica preso à largura de max-content e TRANSBORDA em vez de quebrar a
-          linha. Medido em 22/08/2026: /prazos transbordava 116px no tablet e
-          /casos cortava o botão primário "Novo caso por documento" no celular.
-          Em telas largas nada muda, porque há espaço de sobra. */}
+      {/* `shrink-0` incondicional anulava o `flex-wrap`: o container ficava preso
+          à largura de max-content e TRANSBORDAVA em vez de quebrar a linha —
+          116px em /prazos, /agenda, /tarefas e /intimacoes no tablet, e o botão
+          primário cortado em /casos no celular.
+
+          Mas removê-lo por completo custou caro do outro lado: com o container
+          livre para encolher, o subtítulo (`max-w-3xl`) disputava a linha e as
+          ações quebravam em DUAS linhas mesmo a 1440px, onde antes cabiam numa
+          só. Medido: /agenda, /intimacoes, /prazos e /tarefas passavam de 647×34
+          para 540×75 no desktop.
+
+          `lg:shrink-0` fica com os dois lados: abaixo de 1024px o container pode
+          encolher e quebrar a linha (some o transbordo); de 1024px para cima ele
+          volta a não encolher, e quem cede espaço é o título — o comportamento
+          original. Ambos os regimes conferidos por medição em cinco larguras. */}
       {actions && (
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
+          {actions}
+        </div>
       )}
     </div>
   );
