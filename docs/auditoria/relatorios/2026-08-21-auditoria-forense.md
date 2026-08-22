@@ -1434,3 +1434,82 @@ do padrão: **a correção anterior criou o defeito seguinte**. Consertar a cont
 eixo (de status para total-por-status) resolveu o volume e abriu a divergência de data. Só
 saiu do lugar ao parar de contar no cliente e consumir a agregação que o servidor já fazia
 certo — a mesma que o Achado 7 tinha consertado, e que eu não usei quando deveria.
+
+---
+
+## 8-P. Achado 23 — o gate antialucinação estava cego para a forma dominante (22/08/2026)
+
+Rodada iniciada por conta própria, a partir de um item que eu havia **registrado e não
+corrigido** nas rodadas anteriores: "o extrator de citações não pega um `artigo 42.789`
+fabricado". Fui medir e o achado era muito maior do que eu tinha anotado.
+
+### O que estava registrado × o que a medição mostrou
+
+Eu tinha registrado um caso pontual, de artigo inventado. Medindo 12 formas de citar no HEAD
+`8b65cc11`, **5 passavam sem serem sequer extraídas** — e não são formas exóticas:
+
+| forma | extraído |
+|---|---|
+| `art. 927 do CC` (sigla) | ✅ |
+| `artigo 927 do Código Civil` | ❌ |
+| `artigo 300 do Código de Processo Civil` | ❌ |
+| `artigo 5º da Constituição Federal` | ❌ |
+| `artigo 477 da Consolidação das Leis do Trabalho` | ❌ |
+| `artigo 14 do Código de Defesa do Consumidor` | ❌ |
+| `art. 1.234 do CPC` (separador de milhar) | ❌ |
+| `artigo 42.789 do Código Civil` (fabricado) | ❌ |
+
+O artigo 927 do Código Civil é a cláusula geral de responsabilidade civil. Se a citação mais
+frequente do direito brasileiro não é extraída quando escrita por extenso, o gate não estava
+protegendo peça nenhuma contra citação inventada nessa forma.
+
+**Citação não extraída é citação não verificada.** O gate só bloqueia o que enxerga, e
+`CLAUDE.md` (regra 4) trata contornar o citation gate como inegociável — um gate cego para a
+forma dominante não precisa ser removido, ele já não age.
+
+### Causa
+
+`_RE_ARTIGO` exigia duas coisas que a redação natural não entrega:
+
+1. **Sigla de uma lista fechada** (`cf|cpc|cc|clt|cdc|cpp|cp|ctn|lei nº`). Diploma escrito por
+   extenso — a forma que uma peça usa — não casava.
+2. **Número de até 4 dígitos sem separador.** `\d{1,4}` não abrange `1.234`, e a janela
+   `[^.;\n]{0,45}` entre número e diploma **proíbe ponto**, então o separador de milhar
+   quebrava o casamento duas vezes.
+
+### Correção, e o cuidado que quase virou outro defeito
+
+Diploma por extenso passa a casar, e o número aceita separador de milhar dentro do próprio
+grupo. Mas a parte que importa é a **normalização**: `citation_check._restringir_ao_diploma`
+procura a chave em `_SLUG_POR_DIPLOMA`, que só conhece siglas. Extrair `Código Civil` sem
+normalizar para `CC` faria o lookup falhar — e pela política P0.1, artigo não confirmado
+**bloqueia a aprovação**. Ou seja: corrigir a cegueira sem normalizar teria trocado "citação
+inventada passa" por "citação legítima bloqueia". `_canonizar_diploma` fecha isso, e há teste
+exigindo a sigla, não só a extração.
+
+Um segundo cuidado, medido: a janela entre número e diploma **continua proibindo ponto**.
+Cheguei a testar uma versão permissiva, que fazia o padrão atravessar fim de frase —
+`"Vendeu o art. 42 ontem. O Código Civil regula..."` pareava o artigo de uma frase com o
+diploma da seguinte, criando citação inexistente que, sendo inconfirmável, bloquearia a peça.
+Preferi a limitação conhecida: a forma com abreviação no meio (`art. 5º, inc. II, da CF`)
+segue não extraída, e está registrada como tal.
+
+Detalhe de implementação que evitou acionar trava: a correção fica em
+`verificador_jurisprudencia.py`, que **não** casa o padrão do gate de certificação humana do
+núcleo de IA. `citation_check.py` casa (`services/citation[^/]*\.py`) e não foi tocado — a
+normalização foi feita do lado do extrator justamente para não precisar mexer lá.
+
+### Verificação
+
+`test_citacao_artigo_diploma_por_extenso.py`: 24 casos, **13 falham** no HEAD anterior. Cobrem
+as 10 formas por extenso, o separador de milhar, o artigo fabricado, o que já funcionava (para
+não regredir), 4 textos que **não** podem virar citação, e 3 travessias de fim de frase.
+
+### O que este achado diz sobre os anteriores
+
+Ele não veio de revisão externa: veio de eu reler a minha própria lista de "registrado e não
+corrigido" e **medir em vez de reler a anotação**. A anotação dizia "não pega um artigo
+fabricado" — verdadeiro, e enganosamente pequeno. O defeito real era estrutural.
+
+Vale como método: item registrado numa auditoria não é item entendido. A anotação carrega o
+tamanho que o problema tinha aos olhos de quem passou correndo por ele.
