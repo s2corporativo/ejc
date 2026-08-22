@@ -864,3 +864,56 @@ Nota de contexto: o primeiro defeito corrigido nesta auditoria (PR #1234) foi ju
 um `pytest.skip()` mal formado em `test_document_rescan_integracao_dblevel.py` — o teste
 de integração **deste** serviço, que derrubava a coleta da suíte inteira. O rescan de
 hash já tinha, portanto, dois problemas independentes: o teste quebrado e a ponta solta.
+
+## 8-I. Rodada 9 — responsividade e acessibilidade (22/08/2026)
+
+Prioridades 16 e 17 do prompt. Medição no Chromium em três larguras (celular 390,
+tablet 820, desktop 1440) sobre cinco rotas. Só o que é objetivamente verificável por
+máquina — não substitui auditoria humana de acessibilidade.
+
+### Achado 9 — a barra de ações transbordava e escondia o botão primário (CORRIGIDO)
+
+`PageHeader` (`components/UI.tsx`) declarava o container de ações como
+`flex shrink-0 flex-wrap`. **As duas últimas classes se anulam:** `shrink-0` prende o
+container à largura de `max-content`, então ele **transborda** em vez de quebrar a linha.
+O `flex-wrap` estava lá, sem efeito.
+
+Quatro páginas agravavam o quadro passando uma única linha `flex` como filho — com um
+filho só, não há o que o pai quebre.
+
+| rota | viewport | transbordo antes | depois |
+|---|---|---|---|
+| `/prazos` | tablet 820 | **116px** | **0** |
+| `/casos` | celular 390 | **28px** | **0** |
+| `/casos` | tablet, desktop | 0 | 0 |
+
+No celular, o transbordo cortava o botão primário **"Novo caso por documento"** — o
+advogado não conseguia tocá-lo. Não é estética: é a ação principal da tela inacessível
+no aparelho que ele carrega no fórum.
+
+**Correção:** remoção do `shrink-0` no `PageHeader` (uma linha, alcança as 56 páginas que
+usam o componente) e `flex-wrap` nas quatro páginas com linha de ações não-quebrável
+(`Casos`, `CentralRelacionamento`, `Intimacoes`, `Pecas`). Conferido por captura de tela:
+no celular os quatro controles aparecem inteiros, com o botão primário na segunda linha;
+no desktop o layout é idêntico ao anterior, tudo numa linha só.
+
+Regressão: `src/components/PageHeaderAcoesQuebramLinha.test.tsx`. jsdom não tem motor de
+layout, então o teste protege o **contrato de classes** que causou o defeito — exige
+`flex-wrap` e proíbe `shrink-0` no container de ações. Conferido contra a versão com
+defeito: **falha 1 de 3**.
+
+### Registrado, não corrigido — exige decisão de design
+
+| achado | onde | por que não corrigi |
+|---|---|---|
+| Dashboard `/` sem `<h1>` | todas as larguras | leitor de tela não anuncia o título da página inicial; escolher o texto e a posição é decisão de design |
+| Salto de nível de heading em `/casos` | todas as larguras | idem — reestruturar hierarquia semântica |
+| 1 campo de formulário sem rótulo acessível em `/casos` | todas as larguras | precisa saber qual rótulo é o correto |
+| Alvos de toque abaixo de 24×24 (WCAG 2.2 AA, 2.5.8) | `button 17×17`, `53×17`, `30×23` | 14 controles em `/casos`, 37 em `/honorarios`, já **excluindo** links de texto inline (isentos pela norma). Aumentar área de toque mexe no design system |
+| 1 de 6 elementos sem anel de foco visível no login | `/login` | navegação por teclado; precisa definir o estilo de foco da marca |
+| `/honorarios` celular: 8px de transbordo | tira de abas com 1228px | a tira é rolável na horizontal **de propósito** (padrão móvel legítimo); mexer arrisca quebrar a rolagem. 8px é cosmético |
+
+### Conforme
+
+Zero imagem sem `alt` e zero botão sem nome acessível em todas as rotas e larguras.
+`<html lang="pt-BR">` declarado — o leitor de tela usa a pronúncia correta.

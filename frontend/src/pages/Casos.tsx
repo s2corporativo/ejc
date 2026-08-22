@@ -872,7 +872,7 @@ export default function Casos() {
         title="Casos e Processos"
         subtitle={`${data?.total ?? 0} casos`}
         actions={
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center">
             <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
               <button
                 onClick={() => setView("lista")}

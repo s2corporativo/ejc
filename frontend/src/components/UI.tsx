@@ -487,10 +487,13 @@ export function PageHeader({
           <p className="mt-1.5 max-w-3xl text-sm text-slate-500">{subtitle}</p>
         )}
       </div>
+      {/* Sem `shrink-0`: junto de `flex-wrap` os dois se anulam — o container
+          fica preso à largura de max-content e TRANSBORDA em vez de quebrar a
+          linha. Medido em 22/08/2026: /prazos transbordava 116px no tablet e
+          /casos cortava o botão primário "Novo caso por documento" no celular.
+          Em telas largas nada muda, porque há espaço de sobra. */}
       {actions && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {actions}
-        </div>
+        <div className="flex flex-wrap items-center gap-2">{actions}</div>
       )}
     </div>
   );
