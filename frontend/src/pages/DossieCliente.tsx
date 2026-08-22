@@ -215,6 +215,11 @@ type PendingItem = {
   description?: string;
   status: string;
   due_date?: string;
+  // Frente 12 do plano de evolução (migration 147): nullable no banco —
+  // pendência antiga não tem classificação, e ausência significa "não
+  // avaliado", nunca "sem impacto".
+  impacto?: string | null;
+  providencia?: string | null;
   created_at: string;
 };
 
@@ -231,6 +236,26 @@ const PENDING_STATUS_LABEL: Record<string, string> = {
   recebido: "Recebido",
   em_analise: "Em análise",
   concluido: "Concluído",
+};
+// Vocabulários espelhados de app/routers/pending_items.py (_IMPACTOS_VALIDOS
+// e _PROVIDENCIAS_VALIDAS). Divergir aqui produz 422 na gravação — foi
+// exatamente o que acontecia com os tipos procuracao/certidao/outro.
+const PENDING_IMPACTO_LABEL: Record<string, string> = {
+  alto: "Impacto alto",
+  medio: "Impacto médio",
+  baixo: "Impacto baixo",
+};
+const PENDING_IMPACTO_COLOR: Record<string, string> = {
+  alto: "bg-red-100 text-red-700",
+  medio: "bg-orange-100 text-orange-700",
+  baixo: "bg-slate-100 text-slate-600",
+};
+const PENDING_PROVIDENCIA_LABEL: Record<string, string> = {
+  solicitar_cliente: "Solicitar ao cliente",
+  obter_processo: "Obter no processo",
+  emitir_certidao: "Emitir certidão",
+  diligencia_externa: "Diligência externa",
+  outro: "Outra providência",
 };
 
 function PendingItemsPanel({
@@ -253,6 +278,8 @@ function PendingItemsPanel({
     type: permitirDocumentoGenerico ? "documento" : "informacao",
     description: "",
     due_date: "",
+    impacto: "",
+    providencia: "",
   });
 
   const load = useCallback(async () => {
@@ -293,12 +320,18 @@ function PendingItemsPanel({
       await api.post(`/clients/${clientId}/pending-items`, {
         ...form,
         due_date: form.due_date || undefined,
+        // "" é o valor do <select> "não classificado"; enviar string vazia
+        // reprovaria no vocabulário fechado do backend (422).
+        impacto: form.impacto || undefined,
+        providencia: form.providencia || undefined,
       });
       setForm({
         title: "",
         type: permitirDocumentoGenerico ? "documento" : "informacao",
         description: "",
         due_date: "",
+        impacto: "",
+        providencia: "",
       });
       setShowAdd(false);
       load();
@@ -407,6 +440,36 @@ function PendingItemsPanel({
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
+          {/* Impacto e providência: o que separa inventário de plano de
+              ação. Ambos opcionais — "" grava NULL (não avaliado). */}
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              className="input py-1.5 text-xs"
+              value={form.impacto}
+              onChange={(e) => setForm({ ...form, impacto: e.target.value })}
+              aria-label="Impacto da pendência"
+            >
+              <option value="">Impacto (não avaliado)</option>
+              <option value="alto">Alto</option>
+              <option value="medio">Médio</option>
+              <option value="baixo">Baixo</option>
+            </select>
+            <select
+              className="input py-1.5 text-xs"
+              value={form.providencia}
+              onChange={(e) =>
+                setForm({ ...form, providencia: e.target.value })
+              }
+              aria-label="Providência recomendada"
+            >
+              <option value="">Providência (a definir)</option>
+              <option value="solicitar_cliente">Solicitar ao cliente</option>
+              <option value="obter_processo">Obter no processo</option>
+              <option value="emitir_certidao">Emitir certidão</option>
+              <option value="diligencia_externa">Diligência externa</option>
+              <option value="outro">Outra</option>
+            </select>
+          </div>
           {!permitirDocumentoGenerico && (
             <p className="text-[11px] text-slate-500">
               Solicitações de documentos são feitas dentro do Caso para chegar
@@ -452,10 +515,24 @@ function PendingItemsPanel({
                 <span className="text-[10px] text-slate-400 uppercase">
                   {item.type}
                 </span>
+                {item.impacto && (
+                  <span
+                    className={`badge text-[10px] ${PENDING_IMPACTO_COLOR[item.impacto] ?? "bg-slate-100 text-slate-500"}`}
+                  >
+                    {PENDING_IMPACTO_LABEL[item.impacto] ?? item.impacto}
+                  </span>
+                )}
               </div>
               {item.description && (
                 <p className="text-xs text-slate-500 mt-0.5 truncate">
                   {item.description}
+                </p>
+              )}
+              {item.providencia && (
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Providência:{" "}
+                  {PENDING_PROVIDENCIA_LABEL[item.providencia] ??
+                    item.providencia}
                 </p>
               )}
               {item.due_date && (
