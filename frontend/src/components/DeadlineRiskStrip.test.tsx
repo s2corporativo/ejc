@@ -39,9 +39,31 @@ const PENDENTE = {
   ciencia_confirmada: true,
 };
 
-function responder(porStatus: Record<string, unknown[]>) {
+/** Imita a agregação real de `GET /dashboard/`: conta por DATA
+ *  (`data_prazo < hoje AND status NOT IN ('concluido','cancelado')`), o que
+ *  atravessa as duas faixas. Um falso servidor que contasse só a faixa
+ *  `vencido` estaria testando uma regra que o backend não tem. */
+function contarPorData(porStatus: Record<string, unknown[]>): number {
+  return Object.values(porStatus)
+    .flat()
+    .filter(
+      (p) => Number((p as { dias_restantes?: number }).dias_restantes) < 0,
+    ).length;
+}
+
+function responder(
+  porStatus: Record<string, unknown[]>,
+  vencidosServidor?: number | null,
+) {
   get.mockImplementation(
     (url: string, cfg?: { params?: { status?: string } }) => {
+      if (url === "/dashboard/") {
+        // `null` simula a agregação indisponível, para exercitar a degradação.
+        if (vencidosServidor === null)
+          return Promise.reject(new Error("dashboard fora do ar"));
+        const n = vencidosServidor ?? contarPorData(porStatus);
+        return Promise.resolve({ data: { prazos: { vencidos: n } } });
+      }
       if (url !== "/deadlines/")
         return Promise.reject(new Error("rota inesperada"));
       return Promise.resolve({
@@ -76,8 +98,13 @@ describe("DeadlineRiskStrip — prazo vencido não pode sumir do radar", () => {
         <DeadlineRiskStrip />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(get.mock.calls.filter((c) => c[0] === "/deadlines/")).toHaveLength(
+        2,
+      ),
+    );
     const status = get.mock.calls
+      .filter((c) => c[0] === "/deadlines/")
       .map((c) => (c[1] as { params?: { status?: string } })?.params?.status)
       .sort();
     expect(status).toEqual(["pendente", "vencido"]);
@@ -101,12 +128,21 @@ describe("DeadlineRiskStrip — prazo vencido não pode sumir do radar", () => {
 // menos), agora por volume em vez de por status.
 
 /** Servidor falso que pagina de verdade: respeita page/page_size e devolve `total`. */
-function responderPaginado(porStatus: Record<string, unknown[]>) {
+function responderPaginado(
+  porStatus: Record<string, unknown[]>,
+  vencidosServidor?: number | null,
+) {
   get.mockImplementation(
     (
       url: string,
       cfg?: { params?: { status?: string; page?: number; page_size?: number } },
     ) => {
+      if (url === "/dashboard/") {
+        if (vencidosServidor === null)
+          return Promise.reject(new Error("dashboard fora do ar"));
+        const n = vencidosServidor ?? contarPorData(porStatus);
+        return Promise.resolve({ data: { prazos: { vencidos: n } } });
+      }
       if (url !== "/deadlines/")
         return Promise.reject(new Error("rota inesperada"));
       const todos = porStatus[cfg?.params?.status ?? ""] ?? [];
@@ -212,5 +248,80 @@ describe("DeadlineRiskStrip — contagem sob volume", () => {
     );
     await waitFor(() => expect(screen.getByText("7 vencido(s)")).toBeTruthy());
     expect(screen.queryByText("7+ vencido(s)")).toBeNull();
+  });
+});
+
+// ── Contagem vem do servidor, não da soma de páginas ────────────────────────
+// 3ª revisão do Codex (PR #1238). Usar o `total` da faixa `vencido` resolveu o
+// teto para ELA, mas deixou dois furos: pendentes já estourados continuavam
+// limitados às páginas carregadas, e contar por STATUS exibe como vencido um
+// prazo reagendado para o futuro que manteve `status='vencido'` — `PATCH
+// /deadlines/{id}` usa `exclude_unset`, e a Central envia só `data_prazo`.
+//
+// `GET /dashboard/` conta por DATA e atravessa as duas faixas: resolve os dois.
+
+describe("DeadlineRiskStrip — contagem autoritativa de vencidos", () => {
+  afterEach(() => {
+    cleanup();
+    get.mockReset();
+  });
+
+  it("usa a agregação do servidor acima de qualquer volume", async () => {
+    responderPaginado({ pendente: [], vencido: vencidos(3000) }, 3000);
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.getByText("3000 vencido(s)")).toBeTruthy(),
+    );
+  });
+
+  it("conta pendentes estourados acima do teto de páginas", async () => {
+    // 1.200 pendentes com dias_restantes < 0 (job das 07:10 atrasado). O teto
+    // de 5 páginas carrega 1.000; contar itens diria "1000+".
+    responderPaginado({ pendente: vencidos(1200), vencido: [] });
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.getByText("1200 vencido(s)")).toBeTruthy(),
+    );
+    expect(screen.queryByText("1000+ vencido(s)")).toBeNull();
+  });
+
+  it("prazo reagendado para o futuro não conta como vencido", async () => {
+    // Ficou com status `vencido` mas dias_restantes > 0. O servidor conta por
+    // data e não o inclui; contar por status exibiria 1.
+    const reagendado = {
+      id: "r1",
+      data_prazo: "2026-12-01",
+      dias_restantes: 101,
+      confirmado: true,
+      ciencia_confirmada: true,
+    };
+    responderPaginado({ pendente: [], vencido: [reagendado] });
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText("0 vencido(s)")).toBeTruthy());
+  });
+
+  it("sem a agregação, degrada para o cálculo local com piso explícito", async () => {
+    responderPaginado({ pendente: vencidos(1200), vencido: [] }, null);
+    render(
+      <MemoryRouter>
+        <DeadlineRiskStrip />
+      </MemoryRouter>,
+    );
+    // `/dashboard/` fora do ar: o radar não some nem mente — mostra piso.
+    await waitFor(() =>
+      expect(screen.getByText("1000+ vencido(s)")).toBeTruthy(),
+    );
   });
 });

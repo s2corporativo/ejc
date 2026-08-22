@@ -1326,3 +1326,111 @@ mais formatos. Só saiu do lugar quando a regra deixou de ser "casa este padrão
 "conta os dígitos".
 
 O `governanca.yml` desligado (#1235) tira essa camada de revisão de todo PR do repositório.
+
+---
+
+## 8-O. Terceira revisão do Codex — seis P1, quatro corrigidos e dois que não são meus (22/08/2026)
+
+Seis achados P1 no HEAD `ac2bf010`. **Os seis procedem**, com uma ressalva de enquadramento
+registrada abaixo. Quatro corrigidos aqui; dois exigem decisão do titular e estão descritos
+com proposta, não implementados.
+
+### Achado 17 — PAN com separador repetido (terceiro furo no mesmo ponto)
+
+`4111  1111  1111  1111` — espaço duplo, como sai de cópia de PDF/OCR. O delimitador aceitava
+`[\s.-]` (um só), o candidato nem era reconhecido, e os 16 dígitos seguiam intactos com
+`validar_sem_pii` devolvendo `[]`.
+
+É a **terceira** vez que o cartão volta, e as três pelo delimitador, nunca pela contagem:
+primeiro só 16 dígitos contíguos, depois agrupamentos fora da lista, agora separador repetido.
+A contagem estava certa desde o §8-N; o que continuava estreito era o que ela recebia para
+contar.
+
+**Correção:** `[\s.-]+`. `\s` inclui quebra de linha de propósito — PAN partido em duas linhas
+por OCR é caso real num sistema que recebe documento digitalizado. O custo aceito é
+over-masking de uma coluna de números de 4 dígitos cuja soma caia em 13–19. Trade deliberado:
+over-masking degrada um prompt, under-masking vaza cartão para fora do VPS, e a prioridade
+§71 põe LGPD (2) acima de UX (16). O piso de 3 dígitos nos grupos intermediários continua
+segurando as datas — há teste para "2026-08-22  2027-09-30" com espaço duplo.
+
+**Achado de limpeza, meu:** ao aplicar isso descobri que o `ac2bf010` tinha **duas** definições
+de `_CARTAO_TRECHO` (linhas 29 e 133), resto da versão anterior desta mesma correção. Idênticas,
+então sem efeito de comportamento — mas era duplicação que eu não tinha visto. Removida.
+
+### Achado 18 — o teto de páginas ainda subnotificava, agora do outro lado
+
+O §8-N usou o `total` exato da faixa `vencido`, o que resolveu **aquela** faixa. Os pendentes
+já estourados continuavam vindo da lista paginada: com 1.200 deles (job das 07:10 atrasado), o
+radar exibia `1000+`.
+
+### Achado 19 — contar por status exibe prazo reagendado como vencido
+
+Este é o mais interessante, porque foi **criado pela correção anterior**. `PATCH
+/deadlines/{id}` usa `exclude_unset`, e `CentralAtividades.tsx:1259` envia só `data_prazo` ao
+reagendar. Um prazo que estava `vencido` e foi remarcado para o futuro **mantém o status**. Ao
+passar a contar pelo `total` da faixa `vencido`, o radar passou a exibi-lo como vencido.
+
+Medido no `ac2bf010`, prazo com `data_prazo: 2026-12-01` e `dias_restantes: 101`:
+`ROTULO RENDERIZADO: 1 vencido(s)`.
+
+**Ressalva ao enquadramento do Codex.** Ele afirma que a consulta de `dashboard.py:99-109`
+*"incluí-lo simultaneamente entre os próximos 3/7 dias"*. Não é simultâneo: `data_prazo < hoje`
+e `BETWEEN hoje AND d3` são mutuamente exclusivos, e a consulta classifica **pela data**. O
+dashboard está correto — conta esse prazo em "próximos", que é onde ele deve estar. Quem
+passaria a divergir é o radar. Ou seja: eu teria recriado o defeito do Achado 7, dois painéis
+mostrando números diferentes para o mesmo fato.
+
+**Correção de 18 e 19, a mesma:** o contador passa a consumir `GET /dashboard/` →
+`prazos.vencidos`, que é agregação de servidor, **por data**, sem teto e atravessando as duas
+faixas. Sem ela (endpoint fora do ar), degrada para o cálculo local com o `+` de piso — o radar
+não some nem mente. Há teste para a degradação.
+
+Detalhe do teste que vale registrar: o primeiro falso servidor que escrevi contava só a faixa
+`vencido`, e um teste falhou. O erro era do **mock**, não do código — um falso servidor que não
+imita a regra real testa a coisa errada. Passou a contar por data, como o backend.
+
+### Achado 20 — valor e percentual juntos, só o valor aparecia
+
+`quantoCobrar` tinha retorno antecipado no valor fixo. Com os dois contratados — combinação que
+o próprio formulário passou a permitir no §8-M — a tabela e o PDF mostravam só os reais. O
+registro dizia menos do que o contrato. Corrigido: os dois, unidos por `+`.
+
+### Achados 21 e 22 — NÃO corrigidos: exigem decisão de regra financeira
+
+Os dois são reais, verificados no código, e **não implemento sozinho** porque a resposta é uma
+regra de negócio/jurídica, não uma escolha de implementação (§10 e regra 5 do `CLAUDE.md`:
+"toda regra jurídica precisa de fonte oficial, vigência e teste").
+
+**21. Honorário só-percentual não tem como ser quitado.** `routers/fees.py:266`:
+
+```python
+if fee.valor and Decimal(total_pago) >= fee.valor:
+```
+
+Com `valor=None`, `quitado` é sempre `False`, o status nunca sai de pendente, e o rateio de
+êxito — condicionado a `status === "pago"` na tela — nunca abre. **A decisão que falta:** o
+valor devido é `percentual × proveito`, e `proveito` não vive no honorário. Ou o lançamento
+passa a registrar o proveito realizado, ou a quitação de honorário percentual ganha regra
+própria. Proposta: registrar o proveito no momento do pagamento e derivar o devido dali.
+
+**22. Com valor e percentual, o teto ético ignora o percentual.**
+`routers/honorarios_oab.py:526-529` usa `if f.valor: ... elif ... percentual_exito`. Existindo
+valor, o percentual nunca entra no teto — o que **subestima** os honorários e pode deixar de
+emitir o alerta de 50%. Num cálculo que existe para sinalizar limite ético da OAB, errar para
+menos é o lado ruim de errar. **A decisão que falta:** com os dois contratados, o teto usa a
+soma, o maior, ou o percentual como piso? São regras contratuais diferentes, com resultados
+financeiros diferentes.
+
+**O que fiz enquanto não há decisão:** parei de *convidar* a combinação. O texto de apoio do
+formulário dizia "ou os dois (êxito com piso contratado)" — eu estava anunciando um arranjo que
+o cálculo ignora. Agora ele diz explicitamente que, preenchendo os dois, o teto é calculado só
+sobre o valor fixo. Continuar aceitando é correto (dados existentes podem ter os dois, e
+recusar quebraria fluxo), mas anunciar sem ressalva não era.
+
+### O que esta rodada acrescenta
+
+Vinte e dois achados, treze deles de revisão independente. O Achado 19 é o exemplar mais claro
+do padrão: **a correção anterior criou o defeito seguinte**. Consertar a contagem trocando de
+eixo (de status para total-por-status) resolveu o volume e abriu a divergência de data. Só
+saiu do lugar ao parar de contar no cliente e consumir a agregação que o servidor já fazia
+certo — a mesma que o Achado 7 tinha consertado, e que eu não usei quando deveria.

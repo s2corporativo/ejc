@@ -140,3 +140,28 @@ describe("Honorários — contrato de êxito puramente percentual", () => {
     await waitFor(() => expect(post).not.toHaveBeenCalled());
   });
 });
+
+// ── Exibição do contrato: valor, percentual, ou os dois ─────────────────────
+// 3ª revisão do Codex (PR #1238). `quantoCobrar` tinha retorno antecipado no
+// valor fixo: com valor E percentual contratados — combinação que o próprio
+// formulário passou a permitir — a tabela e o PDF mostravam só os reais, e o
+// percentual sumia do lançamento e do relatório.
+import { quantoCobrar } from "./Honorarios";
+
+describe("quantoCobrar — o que a tabela e os exports mostram", () => {
+  it("valor fixo puro", () => {
+    expect(quantoCobrar({ valor: 5000 } as never)).toContain("5");
+  });
+
+  it("percentual puro", () => {
+    expect(quantoCobrar({ percentual_exito: 20 } as never)).toBe(
+      "20% de êxito",
+    );
+  });
+
+  it("os dois juntos aparecem juntos", () => {
+    const texto = quantoCobrar({ valor: 2000, percentual_exito: 15 } as never);
+    expect(texto).toContain("15% de êxito");
+    expect(texto).toMatch(/2\.?000/);
+  });
+});

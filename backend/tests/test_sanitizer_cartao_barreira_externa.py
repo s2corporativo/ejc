@@ -269,3 +269,45 @@ def test_pseudonimizacao_tambem_cobre_pan_agrupado():
     # Reversível: o marcador tem de reidratar no PAN original, senão a resposta
     # do provider volta com o número trocado.
     assert reidratar(saida, mapa) == original
+
+
+# ── Separador REPETIDO ──────────────────────────────────────────────────────
+# 3ª revisão do Codex, e o terceiro furo neste mesmo ponto — sempre no
+# DELIMITADOR, nunca na contagem. PAN copiado de PDF/OCR chega com espaço
+# duplo, e `[\s.-]` (um só) não reconhecia o candidato:
+#
+#     'cartao 4111  1111  1111  1111'  -> intacto,  residual=[]
+#
+# `\s` inclui quebra de linha de propósito: PAN partido em duas linhas por OCR
+# é caso real num sistema que recebe documento digitalizado.
+
+@pytest.mark.parametrize(
+    "descricao,numero",
+    [
+        ("espaço duplo", "4111  1111  1111  1111"),
+        ("espaço triplo", "4111   1111   1111   1111"),
+        ("separadores misturados", "4111 . 1111 - 1111  1111"),
+        ("quebra de linha (OCR)", "4111\n1111 1111 1111"),
+        ("hífen + espaço", "4111 - 1111 - 1111 - 1111"),
+    ],
+)
+def test_pan_com_separador_repetido(descricao: str, numero: str):
+    limpo, _ = sanitizar_pii(f"cartao {numero}")
+    assert "[CARTAO]" in limpo, f"{descricao} não mascarado: {limpo!r}"
+    assert "1111" not in limpo, f"{descricao}: dígitos vazaram em {limpo!r}"
+    assert "CARTAO" in validar_sem_pii(f"numero {numero}")
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "audiencias em 2026-08-22  2027-09-30",   # espaço duplo entre datas
+        "prazos 31-12-2026 - 01-01-2027",
+        "R$ 1.234.567,89  e  R$ 9.876.543,21",
+    ],
+)
+def test_separador_repetido_nao_engole_datas(texto: str):
+    """Tolerar separador repetido não pode custar a guarda contra datas: o piso
+    de 3 dígitos nos grupos intermediários é o que continua segurando."""
+    limpo, _ = sanitizar_pii(texto)
+    assert "[CARTAO]" not in limpo, f"mascarou indevidamente: {limpo!r}"

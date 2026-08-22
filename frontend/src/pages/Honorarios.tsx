@@ -35,9 +35,15 @@ const TIPOS_COM_PERCENTUAL = ["exito", "misto"];
 /** O que o escritório vai cobrar, em uma célula. Um honorário de êxito puro
  *  não tem `valor` — mostrar só `fmtMoney(valor)` fazia a tela exibir "—"
  *  para um lançamento recém-salvo, e os exports omitiam quanto foi contratado. */
-function quantoCobrar(f: Fee): string {
-  if (f.valor != null) return fmtMoney(f.valor);
-  if (f.percentual_exito != null) return `${f.percentual_exito}% de êxito`;
+export function quantoCobrar(f: Fee): string {
+  const partes: string[] = [];
+  if (f.valor != null) partes.push(fmtMoney(f.valor));
+  if (f.percentual_exito != null)
+    partes.push(`${f.percentual_exito}% de êxito`);
+  // Os DOIS quando os dois foram contratados. Devolver só o valor fixo escondia
+  // o percentual do lançamento e do relatório, deixando o registro dizer menos
+  // do que o contrato diz — meio caminho do defeito que este helper corrigiu.
+  if (partes.length) return partes.join(" + ");
   return fmtMoney(f.valor);
 }
 
@@ -461,7 +467,7 @@ export default function Honorarios() {
           <div className="sm:col-span-2 -mt-1">
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {TIPOS_COM_PERCENTUAL.includes(form.tipo)
-                ? "Informe o valor em reais, o percentual de êxito, ou os dois (êxito com piso contratado). Ao menos um é obrigatório."
+                ? "Informe o valor em reais OU o percentual de êxito — ao menos um é obrigatório. Preenchendo os dois, o teto ético da OAB é calculado apenas sobre o valor fixo (honorarios_oab.py), então o percentual fica só como registro do contrato."
                 : "Informe o valor em reais. O percentual de êxito só se aplica aos tipos Êxito e Misto, que são os que o cálculo usa."}
             </p>
           </div>

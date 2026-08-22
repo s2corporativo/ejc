@@ -26,7 +26,18 @@ import re
 # grupos intermediários é o que impede o candidato de atravessar datas vizinhas
 # — "2026-08-22 2027-09-30" são 16 dígitos, e data de audiência não pode virar
 # cartão. Quem decide é a contagem.
-_CARTAO_TRECHO = re.compile(r'(?<!\d)\d{4,}(?:[\s.-]\d{3,})*(?:[\s.-]\d{1,2})?(?!\d)')
+# `[\s.-]+` (repetido, não único): PAN copiado de PDF/OCR chega com espaço
+# duplo — "4111  1111  1111  1111" — e com separador único o candidato nem era
+# reconhecido: 16 dígitos seguiam intactos rumo ao provider externo, com a 2ª
+# barreira dizendo "sem PII residual". Terceiro achado P1 sobre este ponto, e a
+# terceira vez que o furo estava no DELIMITADOR, não na contagem.
+#
+# `\s` inclui quebra de linha, de propósito: PAN partido em duas linhas por OCR
+# é caso real. O custo aceito é over-masking de uma coluna de números de 4
+# dígitos cuja soma caia em 13-19. Trade deliberado: over-masking degrada um
+# prompt, under-masking vaza cartão para fora do VPS, e a prioridade §71 põe
+# LGPD acima de UX.
+_CARTAO_TRECHO = re.compile(r'(?<!\d)\d{4,}(?:[\s.-]+\d{3,})*(?:[\s.-]+\d{1,2})?(?!\d)')
 _NAO_DIGITO = re.compile(r'\D')
 
 
@@ -115,24 +126,6 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
         r'(?:,\s*(?:n[ºo°]?\.?\s*)?\d+[-\w]*)?',
     ), '[ENDERECO]'),
 ]
-
-# ── Cartão: a única regra de PII que regex não expressa sozinha ──────────────
-# Um PAN é QUALQUER sequência de 13 a 19 dígitos, agrupada como a bandeira
-# quiser. Regex não CONTA dígitos através de separadores, e cada tentativa de
-# enumerar formatos deixou um comprimento de fora: primeiro tudo que não fosse
-# 16 dígitos, depois todo PAN AGRUPADO de 13 a 18 ("4222 2222 2222 2" saía
-# intacto, e "3782 822463 1000 5" saía como "3782 [TELEFONE] 5" — mascaramento
-# parcial rotulado errado). Dois achados P1 do Codex no PR #1238, em SHAs
-# consecutivos, pela mesma causa: enumerar formato em vez de contar dígito.
-#
-# Aqui o regex só delimita o CANDIDATO (grupo inicial de 4+ dígitos, grupos
-# seguintes de 3+, e um grupo final curto opcional) e quem decide é a contagem.
-# O piso de 3 dígitos nos grupos intermediários é o que impede o candidato de
-# atravessar datas vizinhas: "2026-08-22 2027-09-30" são 16 dígitos, mas os
-# grupos de 2 quebram o casamento — data de audiência não pode virar cartão.
-_CARTAO_TRECHO = re.compile(r'(?<!\d)\d{4,}(?:[\s.-]\d{3,})*(?:[\s.-]\d{1,2})?(?!\d)')
-_NAO_DIGITO = re.compile(r'\D')
-
 
 # Variante interna: pula CPF (0) e CNPJ (1), que ficam visíveis de propósito, e
 # troca o cartão pela versão que NÃO captura 14 dígitos — senão um CNPJ sem

@@ -80,9 +80,9 @@ export default function DeadlineRiskStrip() {
   const [calendario, setCalendario] = useState<DiagnosticoSub | null>(null);
   const [erro, setErro] = useState(false);
   const [truncado, setTruncado] = useState(false);
-  const [totalVencido, setTotalVencido] = useState(0);
-  const [pendentesTruncados, setPendentesTruncados] = useState(false);
+  const [vencidosServidor, setVencidosServidor] = useState<number | null>(null);
   const [pendentesEstourados, setPendentesEstourados] = useState(0);
+  const [pendentesTruncados, setPendentesTruncados] = useState(false);
 
   useEffect(() => {
     let ativo = true;
@@ -101,13 +101,6 @@ export default function DeadlineRiskStrip() {
         ]);
         if (!ativo) return;
         setPrazos([...pendentes.itens, ...vencidos.itens]);
-        // `total` da faixa `vencido` é exato acima de qualquer volume. Guardá-lo
-        // é o que tira o contador jurídico do teto de paginação — descartá-lo
-        // era repetir o defeito do Achado 7 com outro número.
-        setTotalVencido(vencidos.total);
-        // Contado aqui, sobre a faixa `pendente` apenas: assim o número não
-        // depende de cada item trazer `status`, e um item da faixa `vencido`
-        // não pode ser somado duas vezes.
         setPendentesEstourados(
           pendentes.itens.filter((p) => Number(p.dias_restantes) < 0).length,
         );
@@ -116,6 +109,27 @@ export default function DeadlineRiskStrip() {
         setErro(false);
       } catch {
         if (ativo) setErro(true);
+      }
+
+      // Contagem de vencidos: agregação do servidor, não soma de página.
+      // `GET /dashboard/` conta `data_prazo < hoje AND status NOT IN
+      // ('concluido','cancelado')` — pela DATA, não pelo status. Isso resolve
+      // dois defeitos de uma vez:
+      //   1. teto de paginação: acima de 1.000 prazos em qualquer faixa, contar
+      //      itens carregados subnotifica (era "1000+", piso e não contagem);
+      //   2. prazo REAGENDADO para o futuro que continua com status `vencido` —
+      //      `PATCH /deadlines/{id}` usa `exclude_unset`, então enviar só
+      //      `data_prazo` (é o que `CentralAtividades` faz ao reagendar) preserva
+      //      o status antigo. Contar por status exibiria como vencido um prazo
+      //      futuro, e o dashboard — que conta por data — mostraria outro número.
+      //      Dois painéis discordando é o defeito que este PR veio consertar.
+      try {
+        const dash = await api.get("/dashboard/");
+        const n = Number(dash.data?.prazos?.vencidos);
+        if (ativo && Number.isFinite(n)) setVencidosServidor(n);
+      } catch {
+        // Sem a agregação, cai no cálculo local (com "+" quando truncado).
+        if (ativo) setVencidosServidor(null);
       }
 
       if (role && GESTORES.has(role)) {
@@ -156,15 +170,15 @@ export default function DeadlineRiskStrip() {
     }
 
     return {
-      // Servidor (exato, sem teto) + os já estourados que o job das 07:10
-      // ainda não virou para `vencido`, janela em que os dois convivem.
-      vencidos: totalVencido + pendentesEstourados,
+      // Preferimos SEMPRE a agregação do servidor; o cálculo local só existe
+      // como degradação quando ela falha, e aí carrega o "+" de piso.
+      vencidos: vencidosServidor,
       ate48h,
       preliminares,
       cienciaPendente,
       revisados,
     };
-  }, [prazos, totalVencido, pendentesEstourados]);
+  }, [prazos, vencidosServidor]);
 
   if (erro) {
     return (
@@ -208,8 +222,12 @@ export default function DeadlineRiskStrip() {
         <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold">
           <RiskChip
             icon={AlertTriangle}
-            label={`${risco.vencidos}${pendentesTruncados ? "+" : ""} vencido(s)`}
-            danger={risco.vencidos > 0}
+            label={
+              risco.vencidos !== null
+                ? `${risco.vencidos} vencido(s)`
+                : `${pendentesEstourados}${pendentesTruncados ? "+" : ""} vencido(s)`
+            }
+            danger={(risco.vencidos ?? pendentesEstourados) > 0}
           />
           <RiskChip
             icon={Clock3}
