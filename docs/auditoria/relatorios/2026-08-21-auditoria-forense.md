@@ -565,3 +565,78 @@ Trocado `condecimal(gt=0)` por validadores próprios. O que a interface exibe ag
 profundidade; a mensagem legível vem do validador. Coberto por
 `test_mensagens_de_erro_saem_em_portugues_e_nomeiam_o_problema`, que falha se a recusa
 voltar a sair em inglês ou deixar de nomear o campo.
+
+## 8-D. Rodada 5 — a interface renderizada (§77) — 22/08/2026
+
+Primeira passagem no NAVEGADOR (Chromium sobre o Vite em :5173 → backend :8000).
+Tudo até aqui provava backend e persistência; esta rodada olha o que o advogado vê.
+
+### Estado das telas
+
+Login pela tela, oito rotas percorridas, **zero erro de console**, nenhum marcador de
+tela quebrada, nenhum `[object Object]`, nenhuma tela vazia:
+
+| rota | caracteres renderizados | erros de console |
+|---|---|---|
+| `/` `/clientes` `/casos` `/prazos` `/tarefas` `/documentos` `/honorarios` `/agenda` | 1.123 – 3.793 | 0 em todas |
+
+O ciclo completo do §2 fecha: ação de escrita pela interface → 422 do backend →
+mensagem legível na tela. `components/Toast.tsx` achata o array de erro do Pydantic e
+exibe *"valor do pagamento deve ser maior que zero…"*.
+
+Verificado também que o dashboard **degrada graciosamente**: `DashboardUltra.tsx` usa
+`Promise.allSettled` com um mapa `failed` por fonte, então o feed externo de notícias
+(ConJur/JOTA) cair não derruba a tela. A falha de rede que registrei no primeiro
+percurso era artefato meu — navegação abortando uma requisição lenta em voo.
+
+### Achado 7 — o painel dizia "0 vencido(s)" com três prazos estourados (CORRIGIDO)
+
+Só a tela expõe este: as duas leituras estavam na mesma página, uma ao lado da outra.
+
+**Mecanismo — dois comportamentos corretos que se anulavam.** O job
+`scheduler._marcar_prazos_vencidos` roda às 07:10 e move o prazo estourado de
+`status='pendente'` para `status='vencido'`, alertando o responsável; existe exatamente
+para dar visibilidade ao que venceu. Só que **três** consumidores contavam vencidos
+filtrando por `status='pendente'`. Depois que o job rodava, a linha saía do filtro e o
+número ia a zero. Entre a meia-noite e as 07:10 o painel estava certo; depois, zerava em
+silêncio — o job que existe para expor o prazo vencido era o que o escondia do painel.
+`ENABLE_SCHEDULER` é `True` por padrão, então isto vale para a instalação em produção.
+
+O repositório já contava certo em **quatro** outros lugares — `routers/relatorio.py`
+("Prazos vencidos sem conclusão"), `services/case_health.py`, `routers/indice_risco.py`
+e `modules/dpt360/dashboard_service.py`. Os três divergentes eram a minoria, e eram
+justamente os que o advogado lê ao abrir o sistema.
+
+| local | critério antes | agora |
+|---|---|---|
+| `routers/dashboard.py` | `WHERE status='pendente'` | `status NOT IN ('concluido','cancelado')` |
+| `services/dashboard_service.py` | `status='pendente' AND data_prazo < CURRENT_DATE` | idem acima |
+| `components/DeadlineRiskStrip.tsx` | `GET /deadlines/?status=pendente` | busca `pendente` **e** `vencido` |
+
+O `status` do backend é igualdade exata, então o radar do frontend nunca recebia a linha
+vencida: contava zero por construção. As duas faixas juntas são o conjunto de prazos em
+aberto; concluído e cancelado seguem de fora.
+
+**Antes e depois, contra o mesmo banco (3 prazos com `data_prazo = 2026-05-29`):**
+
+```
+verdade no banco                     3
+GET /api/dashboard/  antes    vencidos: 0
+GET /api/dashboard/  depois   vencidos: 3
+tela, antes     "0 vencido(s)"   e   "3 prazos vencidos"   (lado a lado)
+tela, depois    "1 vencido(s)" no cenário de teste do componente
+```
+
+Regressões: `tests/test_dashboard_prazos_vencidos_dblevel.py` (5 casos contra Postgres
+real, um deles provando que o critério antigo devolve 0 no mesmo cenário) e
+`src/components/DeadlineRiskStrip.test.tsx` (3 casos). O teste do componente foi
+conferido contra a versão com defeito: **falha 2 de 3**, e passa 3 de 3 com a correção.
+
+### Por que este não apareceu nas quatro rodadas anteriores
+
+As rodadas 1–4 exercitaram a API. `GET /deadlines/?status=vencido` respondia
+corretamente, e eu tinha registrado o job como "verificado conforme" na rodada 3 — ele
+está mesmo correto. O defeito só existia na junção: um contador que perguntava a coisa
+errada a uma API que respondia certo. Nenhuma chamada isolada de API o revelaria; foi
+preciso abrir a tela e ver dois números incompatíveis no mesmo lugar. É a demonstração
+concreta do §2 do prompt — endpoint responder não significa que funciona.

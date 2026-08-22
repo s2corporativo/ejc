@@ -35,11 +35,25 @@ export default function DeadlineRiskStrip() {
     let ativo = true;
     const carregar = async () => {
       try {
-        const res = await api.get("/deadlines/", {
-          params: { status: "pendente", page_size: 100 },
-        });
+        // `status` no backend é igualdade exata, e o job das 07:10
+        // (`scheduler._marcar_prazos_vencidos`) move o prazo estourado de
+        // "pendente" para "vencido". Buscar só "pendente" fazia este radar
+        // contar ZERO vencidos por construção, todo dia depois das 07:10 —
+        // justamente o número que ele existe para mostrar. As duas faixas
+        // juntas são o conjunto de prazos EM ABERTO; concluído e cancelado
+        // continuam de fora.
+        const [pendentes, vencidos] = await Promise.all([
+          api.get("/deadlines/", {
+            params: { status: "pendente", page_size: 100 },
+          }),
+          api.get("/deadlines/", {
+            params: { status: "vencido", page_size: 100 },
+          }),
+        ]);
         if (!ativo) return;
-        setPrazos(Array.isArray(res.data?.data) ? res.data.data : []);
+        const lista = (r: typeof pendentes) =>
+          Array.isArray(r.data?.data) ? (r.data.data as PrazoRadar[]) : [];
+        setPrazos([...lista(pendentes), ...lista(vencidos)]);
         setErro(false);
       } catch {
         if (ativo) setErro(true);
