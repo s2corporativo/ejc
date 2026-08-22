@@ -249,6 +249,12 @@ Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real a
 > caso sem cascata, smoke E2E contra produção, `system-modules/mapa` e o monitoramento do
 > DJEN. Cada um está marcado abaixo com o que a medição mostrou. **Não re-audite os marcados
 > como resolvidos sem antes reproduzir** — foi assim que esta rodada gastou tempo.
+>
+> A lição que se repetiu: **item de auditoria carrega o tamanho que o problema tinha aos olhos de
+> quem passou correndo por ele.** A nota errou nas duas direções — subestimou (o gate de citações
+> era mais cego do que ela dizia: não enxergava diploma por extenso) e superestimou (`chance de
+> êxito` e `system-modules/mapa` não eram defeito, eram desenho). Confirme no código **antes** de
+> agir sobre qualquer item desta lista.
 
 - ~~**Prefixo `/v1/` duplicado.**~~ **RESOLVIDO.** Medido em 2026-08-22 nas cinco rotas citadas
   pela auditoria (`despesas`, `office-contracts`, `partner-withdrawals`, `kanban-columns`,
@@ -269,12 +275,25 @@ Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real a
   não os routers de API. Comparar a cobertura dele com `app.routes` é comparar coisas
   diferentes — foi o erro de enquadramento da revarredura de 22/08. Continua valendo: pista,
   não verdade.
-- **Gravação não transacional entre registros relacionados é uma classe de defeito recorrente:**
-  validação que não vincula ao documento, exclusão de caso que não cascateia para as peças
-  (**este medido em 22/08: `DELETE /cases/{id}` devolve 422 listando as pendências e manda
-  arquivar — protegido**),
-  conversão Sala Jurídica → Caso que perde `descricao_fatos`, chance de êxito que fica no log e
-  não no caso. Ao tocar em fluxo que grava em duas tabelas, verifique a transação.
+- **Gravação não transacional entre registros relacionados é uma classe de defeito recorrente.**
+  A regra geral continua valendo — ao tocar em fluxo que grava em duas tabelas, verifique a
+  transação. Dos quatro exemplos que a auditoria deu, três foram medidos em 22/08 e **nenhum é
+  o que a nota dizia**:
+  - *exclusão de caso que não cascateia para as peças* — **protegido**: `DELETE /cases/{id}`
+    devolve 422 listando as pendências e manda arquivar.
+  - *conversão Sala Jurídica → Caso que perde `descricao_fatos`* — **era real, corrigido**, mas
+    não no backend: `legal_chat_service` sempre gravou o campo. O buraco estava no
+    pré-preenchimento do wizard, cujos dois degraus (`estado.resumo || workspace_texto`) podiam
+    faltar juntos, porque `resumo` vem de extração de IA fail-soft e IA nasce desligada. Terceiro
+    degrau agora lê as mensagens do advogado.
+  - *chance de êxito que fica no log e não no caso* — **mal enquadrado, não é defeito.** Não
+    existe (nem deve existir) coluna `cases.chance_exito`: o valor é persistido no snapshot
+    versionado (`case_intelligence_snapshots.payload.riscos.chance_exito`) e num `CaseMovimento`
+    legível, e `GET /cases/{id}/movimentos` não filtra por tipo, então o `chance≈X%` chega ao
+    advogado. Gravar estimativa de IA não revisada como atributo de primeira classe do caso seria
+    **violar HITL**, não corrigir nada — o snapshot nasce de propósito com `criado_por=None`
+    ("automático — nunca nasce aprovado"). Só *validação que não vincula ao documento* segue sem
+    medição.
 - **Monitoramento afere execução, não resultado.** A regra continua valendo para job novo, mas
   o caso citado **foi corrigido**: `heartbeat_service._normalizar_resultado_djen` "troca o
   status nominal pela produtividade real da task" e marca `falha_job` quando há OABs elegíveis
