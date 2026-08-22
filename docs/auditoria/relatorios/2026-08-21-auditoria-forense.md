@@ -778,3 +778,49 @@ O motor de prazos é a peça mais bem construída que encontrei nesta auditoria:
 legal citada em cada regra, regimes isolados, calendário correto inclusive nos feriados
 móveis, e falha explícita quando se pede algo juridicamente inexistente. Nenhuma
 correção necessária.
+
+## 8-G. Rodada 8 — HITL de peça: etiqueta ou trava? (22/08/2026)
+
+Prioridade 10 do prompt e regra 4 do CLAUDE.md ("jamais remover HITL"). Marcar a saída
+de IA como "rascunho" não é HITL se qualquer um puder aprovar sem revisar. A pergunta
+auditada foi: **o rótulo é enforçado?** Exercitado contra a API, com peça real
+`ai_generated=true`. **É enforçado, em sete camadas.**
+
+| # | tentativa | resultado |
+|---|---|---|
+| 1 | peça de IA recém-criada | nasce `rascunho`, `human_reviewed=false` |
+| 2 | aprovar sem observações de revisão | **422** — "Peças geradas por IA exigem observações de revisão humana" |
+| 3 | observações só com espaços | **422** — `strip()` antes de validar |
+| 4 | status após as tentativas | segue `rascunho` (nada foi gravado a meio caminho) |
+| 5 | aprovar como perfil `estagiario` | **403** — `requer_advogado` (Prov. OAB 205/2021) |
+| 6 | aprovar sem validação jurídica com score mínimo | **422** — `_bloquear_sem_validacao` |
+| 7 | gravar `revisor_id` inexistente direto no banco | recusado pela FK `legal_docs_revisor_id_fkey` |
+
+O item 6 foi surpresa: eu esperava que a aprovação legítima passasse, e ela é barrada por
+um gate a mais — controle de qualidade exigindo validação jurídica revisada/aplicada com
+score mínimo antes de `aprovada`/`final`/`protocolada`. Não é defeito; é rigor que eu não
+tinha previsto no roteiro.
+
+### Aprovação não pode ser "lavada" por edição posterior
+
+A propriedade mais importante da cadeia, e a mais fácil de faltar num sistema desses:
+
+```
+antes    status=aprovada    human_reviewed=true   versao=2   revisor=222ec407…
+         PATCH /legal-docs/{id}  {"conteudo": "texto alterado depois da aprovação"}
+depois   status=em_revisao  human_reviewed=false  versao=3   revisor=<nulo>
+```
+
+Alterar o conteúdo de uma peça aprovada **rebaixa o status, apaga o revisor e incrementa
+a versão**. Não existe o caminho "aprovo a minuta limpa e depois troco o texto": a peça
+volta para revisão. É o que impede que a assinatura do advogado cubra um conteúdo que ele
+não leu.
+
+### `AI_REQUIRE_HITL` não é interruptor de segurança
+
+Conferido nos dois estados: com a flag em `false`, `requer_revisao` vira `False`, mas
+`is_rascunho` **permanece `True`**. O toggle controla a exigência de revisão formal, nunca
+o rótulo de rascunho — coerente com o que `hitl_policy.py` documenta. Uma peça de IA nunca
+se apresenta como definitiva, em nenhuma configuração.
+
+Nenhuma correção necessária.
