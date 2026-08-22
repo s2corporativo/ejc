@@ -1,15 +1,13 @@
 {
-  "name": "sshconn",
+  "name": "ejc-vps-tools",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "description": "Ferramentas de SSH/SFTP para operar a VPS do EJC.",
+  "private": true,
+  "license": "UNLICENSED",
   "type": "commonjs",
+  "scripts": {
+    "test": "node --test"
+  },
   "dependencies": {
     "ssh2": "^1.17.0"
   }

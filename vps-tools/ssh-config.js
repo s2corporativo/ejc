@@ -9,6 +9,7 @@
  * Este módulo apenas LÊ configuração; não adiciona funcionalidade nova.
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // Carregador mínimo de .env local (sem dependência externa).
@@ -33,9 +34,31 @@ const username = process.env.VPS_USER || 'root';
 const password = process.env.VPS_PASSWORD;
 const port = Number(process.env.VPS_PORT || 22);
 
+// Chave SSH (opcional, preferida quando presente). Aceita o caminho de um
+// arquivo de chave — VPS_SSH_KEY_PATH — ou a chave literal em VPS_SSH_KEY.
+// Depender só de senha deixa o acesso com ponto único de falha: se ela for
+// trocada ou perdida, não sobra caminho de entrada.
+function carregarChave() {
+  const caminho = process.env.VPS_SSH_KEY_PATH;
+  if (caminho) {
+    const resolvido = caminho.startsWith('~')
+      ? path.join(os.homedir(), caminho.slice(1))
+      : caminho;
+    if (!fs.existsSync(resolvido)) {
+      console.error(`[vps-tools] VPS_SSH_KEY_PATH aponta para arquivo inexistente: ${resolvido}`);
+      process.exit(1);
+    }
+    return fs.readFileSync(resolvido, 'utf8');
+  }
+  return process.env.VPS_SSH_KEY || undefined;
+}
+
+const privateKey = carregarChave();
+const passphrase = process.env.VPS_SSH_PASSPHRASE || undefined;
+
 const missing = [];
 if (!host) missing.push('VPS_HOST');
-if (!password) missing.push('VPS_PASSWORD');
+if (!password && !privateKey) missing.push('VPS_PASSWORD (ou VPS_SSH_KEY_PATH/VPS_SSH_KEY)');
 if (missing.length) {
   console.error(
     `[vps-tools] Credenciais ausentes: ${missing.join(', ')}.\n` +
@@ -44,4 +67,11 @@ if (missing.length) {
   process.exit(1);
 }
 
-module.exports = { host, port, username, password, readyTimeout: 30000 };
+// `password` segue presente quando definida: o ssh2 tenta a chave primeiro e
+// cai para senha se o servidor recusar, preservando o comportamento anterior.
+const config = { host, port, username, readyTimeout: 30000 };
+if (privateKey) config.privateKey = privateKey;
+if (passphrase) config.passphrase = passphrase;
+if (password) config.password = password;
+
+module.exports = config;
