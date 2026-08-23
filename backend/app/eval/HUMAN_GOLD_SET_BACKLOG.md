@@ -30,6 +30,25 @@ O workflow `EJC Legal Quality Certification` exige:
 8. rodar `python -m app.eval.gold_governance --require-real ...`;
 9. somente após gate verde usar o corpus como certificação.
 
+### O passo 5 tem ferramenta
+
+`python -m app.eval.coleta_fontes` baixa a fonte oficial, fixa o `sha256` dos
+bytes recebidos, extrai o texto literal dos artigos e registra a data da
+consulta — em `fontes_oficiais.json`, pronto para copiar para o campo
+`fontes_oficiais` do caso. É a parte mecânica; o passo 4 (gabarito) e a
+conferência de vigência continuam sendo do curador, e a ferramenta deixa
+`vigencia_conferida_em` e `conferida_por` em `null` de propósito.
+
+**Cuidado que a ferramenta sinaliza mas não resolve.** O Planalto (texto
+compilado) está inacessível de parte dos ambientes; o acervo alcançável da
+Câmara é publicação original, que não prova vigência. Na publicação original do
+Código Penal, o art. 14 é crime impossível, o art. 33 é doença mental
+superveniente e o art. 59 é revogação do sursis — hoje esses números são
+consumação/tentativa, regimes de pena e dosimetria, porque a Lei 7.209/1984
+renumerou a Parte Geral. Fonte oficial, autêntica, e ainda assim gabarito errado
+no próprio número do artigo. Ver `README.md`, seção "Publicação original não
+prova vigência".
+
 ## Consumidor — 15
 
 | ID | Cenário | Curadoria | Revisão | Status |
