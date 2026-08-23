@@ -72,55 +72,41 @@ jobs:
               -o ConnectTimeout=15 \
               "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          # Descoberta restrita a /opt: o svc.sh escolhido roda com sudo, então o
-          # diretório precisa ser confiável. Aceitar /home/*/ permitiria a qualquer
-          # conta local plantar um svc.sh e escalar privilégio pelo workflow.
-          # Dono aceitável: root ou a conta de serviço do runner. O instalador
-          # (scripts/setup-selfhosted-runner.sh:18,132) cria RUNNER_USER — padrão
-          # ghrunner — e faz chown -R do RUNNER_HOME inteiro para ele, svc.sh
-          # incluído. Exigir root aqui rejeitaria o runner legítimo.
-          runner_user="${RUNNER_USER:-ghrunner}"
+          # Confiança vem do diretório-pai, não de nada dentro do candidato.
+          # Se /opt é de root e sem escrita para grupo/outros, nenhuma conta comum
+          # consegue criar /opt/actions-runner*; logo o dono de um candidato ali foi
+          # definido pelo root (o instalador faz chown -R para RUNNER_USER). Assim
+          # não é preciso adivinhar a conta nem lê-la de arquivo que o próprio dono
+          # controla — ler .service para decidir em quem confiar era circular.
+          pai_dono="$(stat -c '%U' /opt 2>/dev/null || echo '?')"
+          pai_perm="$(stat -c '%a' /opt 2>/dev/null || echo '')"
+          if [ "$pai_dono" != "root" ]; then
+            echo "ERRO: /opt pertence a '$pai_dono', não a root — a descoberta de runner não é confiável." >&2
+            exit 5
+          fi
+          case "${pai_perm: -2:1}${pai_perm: -1:1}" in
+            *[2367]*)
+              echo "ERRO: /opt com permissão $pai_perm (escrita a grupo/outros) — a descoberta de runner não é confiável." >&2
+              exit 5
+              ;;
+          esac
           runner_dir=""
           for candidato in /opt/actions-runner*/; do
             [ -d "$candidato" ] || continue
+            [ -L "${candidato%/}" ] && { echo "AVISO: ${candidato} é symlink — ignorado." >&2; continue; }
             [ -x "${candidato}svc.sh" ] || continue
             [ -f "${candidato}.runner" ] || continue
             # .service não-vazio = serviço registrado; mesmo critério de
             # scripts/setup-selfhosted-runner.sh. Sem ele, svc.sh start falha.
+            # Usado só como sinal funcional — nunca para decidir confiança.
             [ -s "${candidato}.service" ] || {
               echo "AVISO: ${candidato} sem serviço registrado (.service vazio/ausente) — ignorado." >&2
               continue
             }
-            # Fonte autoritativa do dono esperado: a unit systemd registrada em
-            # .service, que guarda a conta com que o serviço roda. RUNNER_USER
-            # existe só no processo do instalador e não chega aqui pelo SSH, então
-            # sozinho ele não serve — fica como fallback junto do padrão do repo.
-            svc_nome="$(tr -d '\r\n' < "${candidato}.service" 2>/dev/null || true)"
-            svc_user=""
-            if [ -n "$svc_nome" ]; then
-              svc_user="$(systemctl show -p User --value "$svc_nome" 2>/dev/null || true)"
-            fi
-            donos_ok=" root ${runner_user} ${svc_user} "
-            dono="$(stat -c '%U' "$candidato" 2>/dev/null || echo '?')"
-            case "$donos_ok" in
-              *" $dono "*) ;;
-              *)
-                echo "AVISO: ${candidato} pertence a '$dono' (aceitos: root, ${runner_user}${svc_user:+, ${svc_user}}) — ignorado." >&2
-                continue
-                ;;
-            esac
             perm="$(stat -c '%a' "$candidato" 2>/dev/null || echo '')"
             case "${perm: -2:1}${perm: -1:1}" in
               *[2367]*)
                 echo "AVISO: ${candidato} com permissão $perm (escrita a grupo/outros) — ignorado." >&2
-                continue
-                ;;
-            esac
-            dono_svc="$(stat -c '%U' "${candidato}svc.sh" 2>/dev/null || echo '?')"
-            case "$donos_ok" in
-              *" $dono_svc "*) ;;
-              *)
-                echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc' (aceitos: root, ${runner_user}${svc_user:+, ${svc_user}}) — ignorado." >&2
                 continue
                 ;;
             esac
@@ -131,11 +117,19 @@ jobs:
                 continue
                 ;;
             esac
+            # svc.sh precisa ser do dono do diretório ou de root: impede executar
+            # arquivo de terceiro a partir de um diretório legítimo.
+            dono="$(stat -c '%U' "$candidato" 2>/dev/null || echo '?')"
+            dono_svc="$(stat -c '%U' "${candidato}svc.sh" 2>/dev/null || echo '?')"
+            if [ "$dono_svc" != "$dono" ] && [ "$dono_svc" != root ]; then
+              echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc', diferente do dono do diretório ('$dono') e de root — ignorado." >&2
+              continue
+            fi
             runner_dir="${candidato%/}"
             break
           done
           if [ -z "$runner_dir" ]; then
-            echo "ERRO: nenhum runner elegível em /opt/actions-runner*. Exigido: .runner presente, .service não-vazio, svc.sh executável, e diretório e svc.sh de root ou ${runner_user}, sem escrita para grupo/outros." >&2
+            echo "ERRO: nenhum runner elegível em /opt/actions-runner*. Exigido: diretório real (não symlink), svc.sh executável, .runner presente, .service não-vazio, diretório e svc.sh sem escrita para grupo/outros, e svc.sh do mesmo dono do diretório ou de root." >&2
             ls -ld /opt/actions-runner* 2>/dev/null || true
             exit 4
           fi
@@ -156,55 +150,41 @@ jobs:
               -o ConnectTimeout=15 \
               "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          # Descoberta restrita a /opt: o svc.sh escolhido roda com sudo, então o
-          # diretório precisa ser confiável. Aceitar /home/*/ permitiria a qualquer
-          # conta local plantar um svc.sh e escalar privilégio pelo workflow.
-          # Dono aceitável: root ou a conta de serviço do runner. O instalador
-          # (scripts/setup-selfhosted-runner.sh:18,132) cria RUNNER_USER — padrão
-          # ghrunner — e faz chown -R do RUNNER_HOME inteiro para ele, svc.sh
-          # incluído. Exigir root aqui rejeitaria o runner legítimo.
-          runner_user="${RUNNER_USER:-ghrunner}"
+          # Confiança vem do diretório-pai, não de nada dentro do candidato.
+          # Se /opt é de root e sem escrita para grupo/outros, nenhuma conta comum
+          # consegue criar /opt/actions-runner*; logo o dono de um candidato ali foi
+          # definido pelo root (o instalador faz chown -R para RUNNER_USER). Assim
+          # não é preciso adivinhar a conta nem lê-la de arquivo que o próprio dono
+          # controla — ler .service para decidir em quem confiar era circular.
+          pai_dono="$(stat -c '%U' /opt 2>/dev/null || echo '?')"
+          pai_perm="$(stat -c '%a' /opt 2>/dev/null || echo '')"
+          if [ "$pai_dono" != "root" ]; then
+            echo "ERRO: /opt pertence a '$pai_dono', não a root — a descoberta de runner não é confiável." >&2
+            exit 5
+          fi
+          case "${pai_perm: -2:1}${pai_perm: -1:1}" in
+            *[2367]*)
+              echo "ERRO: /opt com permissão $pai_perm (escrita a grupo/outros) — a descoberta de runner não é confiável." >&2
+              exit 5
+              ;;
+          esac
           runner_dir=""
           for candidato in /opt/actions-runner*/; do
             [ -d "$candidato" ] || continue
+            [ -L "${candidato%/}" ] && { echo "AVISO: ${candidato} é symlink — ignorado." >&2; continue; }
             [ -x "${candidato}svc.sh" ] || continue
             [ -f "${candidato}.runner" ] || continue
             # .service não-vazio = serviço registrado; mesmo critério de
             # scripts/setup-selfhosted-runner.sh. Sem ele, svc.sh start falha.
+            # Usado só como sinal funcional — nunca para decidir confiança.
             [ -s "${candidato}.service" ] || {
               echo "AVISO: ${candidato} sem serviço registrado (.service vazio/ausente) — ignorado." >&2
               continue
             }
-            # Fonte autoritativa do dono esperado: a unit systemd registrada em
-            # .service, que guarda a conta com que o serviço roda. RUNNER_USER
-            # existe só no processo do instalador e não chega aqui pelo SSH, então
-            # sozinho ele não serve — fica como fallback junto do padrão do repo.
-            svc_nome="$(tr -d '\r\n' < "${candidato}.service" 2>/dev/null || true)"
-            svc_user=""
-            if [ -n "$svc_nome" ]; then
-              svc_user="$(systemctl show -p User --value "$svc_nome" 2>/dev/null || true)"
-            fi
-            donos_ok=" root ${runner_user} ${svc_user} "
-            dono="$(stat -c '%U' "$candidato" 2>/dev/null || echo '?')"
-            case "$donos_ok" in
-              *" $dono "*) ;;
-              *)
-                echo "AVISO: ${candidato} pertence a '$dono' (aceitos: root, ${runner_user}${svc_user:+, ${svc_user}}) — ignorado." >&2
-                continue
-                ;;
-            esac
             perm="$(stat -c '%a' "$candidato" 2>/dev/null || echo '')"
             case "${perm: -2:1}${perm: -1:1}" in
               *[2367]*)
                 echo "AVISO: ${candidato} com permissão $perm (escrita a grupo/outros) — ignorado." >&2
-                continue
-                ;;
-            esac
-            dono_svc="$(stat -c '%U' "${candidato}svc.sh" 2>/dev/null || echo '?')"
-            case "$donos_ok" in
-              *" $dono_svc "*) ;;
-              *)
-                echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc' (aceitos: root, ${runner_user}${svc_user:+, ${svc_user}}) — ignorado." >&2
                 continue
                 ;;
             esac
@@ -215,11 +195,19 @@ jobs:
                 continue
                 ;;
             esac
+            # svc.sh precisa ser do dono do diretório ou de root: impede executar
+            # arquivo de terceiro a partir de um diretório legítimo.
+            dono="$(stat -c '%U' "$candidato" 2>/dev/null || echo '?')"
+            dono_svc="$(stat -c '%U' "${candidato}svc.sh" 2>/dev/null || echo '?')"
+            if [ "$dono_svc" != "$dono" ] && [ "$dono_svc" != root ]; then
+              echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc', diferente do dono do diretório ('$dono') e de root — ignorado." >&2
+              continue
+            fi
             runner_dir="${candidato%/}"
             break
           done
           if [ -z "$runner_dir" ]; then
-            echo "ERRO: nenhum runner elegível em /opt/actions-runner*. Exigido: .runner presente, .service não-vazio, svc.sh executável, e diretório e svc.sh de root ou ${runner_user}, sem escrita para grupo/outros." >&2
+            echo "ERRO: nenhum runner elegível em /opt/actions-runner*. Exigido: diretório real (não symlink), svc.sh executável, .runner presente, .service não-vazio, diretório e svc.sh sem escrita para grupo/outros, e svc.sh do mesmo dono do diretório ou de root." >&2
             ls -ld /opt/actions-runner* 2>/dev/null || true
             exit 4
           fi
