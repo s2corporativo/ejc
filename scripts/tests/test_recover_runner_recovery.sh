@@ -30,18 +30,31 @@ falha() { printf '  \033[1;31mFALHA\033[0m %s\n' "$1"; falhas=$((falhas + 1)); }
 [ -f "$WORKFLOW" ] || { echo "workflow não encontrado: $WORKFLOW" >&2; exit 1; }
 
 # ── extrai os blocos remotos ────────────────────────────────────────────────
+# Só biblioteca padrão: este teste roda em gate bloqueante (p0-guard e
+# ci-local.sh p0) e não pode depender de PyYAML, que nenhum dos dois instala.
+# O heredoc é delimitado por texto, então varrer as linhas basta — e o recuo é
+# o mesmo da linha terminadora, porque o YAML remove o recuo comum do bloco.
 python3 - "$WORKFLOW" "$TMP" <<'PY'
-import sys, pathlib, yaml
-workflow, saida = sys.argv[1], pathlib.Path(sys.argv[2])
-doc = yaml.safe_load(open(workflow, encoding="utf-8"))
-blocos = []
-for job in doc["jobs"].values():
-    for step in job.get("steps", []):
-        run = step.get("run") or ""
-        if "<<'REMOTE'" not in run:
-            continue
-        for parte in run.split("<<'REMOTE'")[1:]:
-            blocos.append(parte.split("\nREMOTE")[0].lstrip("\n"))
+import sys, pathlib
+workflow, saida = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+linhas = workflow.read_text(encoding="utf-8").splitlines()
+
+blocos, atual, recuo = [], None, ""
+for linha in linhas:
+    if atual is None:
+        if linha.rstrip().endswith("<<'REMOTE'"):
+            atual, recuo = [], None
+        continue
+    if linha.strip() == "REMOTE":
+        recuo_fim = linha[: len(linha) - len(linha.lstrip())]
+        corpo = [l[len(recuo_fim):] if l.startswith(recuo_fim) else l for l in atual]
+        blocos.append("\n".join(corpo) + "\n")
+        atual = None
+        continue
+    atual.append(linha)
+
+if atual is not None:
+    sys.exit("heredoc REMOTE sem terminador")
 for i, b in enumerate(blocos, 1):
     (saida / f"bloco{i}.sh").write_text(b, encoding="utf-8")
 (saida / "contagem").write_text(str(len(blocos)), encoding="utf-8")
@@ -95,7 +108,11 @@ cat > "$BIN/systemctl" <<'EOS'
 #!/usr/bin/env bash
 acao="$1"; shift || true
 case "$acao" in
-  list-unit-files|list-units) printf '%s\n' ${FAKE_UNITS:-} ;;
+  # systemctl list-unit-files sai 1 quando nenhum arquivo de unit casa — é o
+  # comportamento real, e é o que o fallback para list-units existe para tratar.
+  list-unit-files) printf '%s\n' ${FAKE_UNIT_FILES:-}
+                   [ -n "${FAKE_UNIT_FILES:-}" ] || exit 1 ;;
+  list-units)      printf '%s\n' ${FAKE_UNITS:-} ;;
   stop)  echo "stop $1" >> "${FAKE_LOG:?}" ;;
   start) echo "start $1" >> "${FAKE_LOG:?}"
          [ "${FAKE_START_FAIL:-}" != "$1" ] || exit 1 ;;
@@ -105,8 +122,13 @@ esac
 EOS
 chmod +x "$BIN/sudo" "$BIN/systemctl"
 
-rodar() { FAKE_UNITS="$1" FAKE_ATIVO="${2:-1}" FAKE_START_FAIL="${3:-}" \
-            FAKE_LOG="$TMP/log" PATH="$BIN:$PATH" \
+rodar() { FAKE_UNIT_FILES="$1" FAKE_UNITS="$1" FAKE_ATIVO="${2:-1}" \
+            FAKE_START_FAIL="${3:-}" FAKE_LOG="$TMP/log" PATH="$BIN:$PATH" \
+            bash "$TMP/bloco1.sh" >"$TMP/out" 2>&1; }
+
+# Só a unit carregada existe; nenhum arquivo de unit casa. list-unit-files sai 1.
+rodar_so_fallback() { FAKE_UNIT_FILES="" FAKE_UNITS="$1" FAKE_ATIVO=1 \
+            FAKE_START_FAIL="" FAKE_LOG="$TMP/log" PATH="$BIN:$PATH" \
             bash "$TMP/bloco1.sh" >"$TMP/out" 2>&1; }
 
 : > "$TMP/log"
@@ -145,6 +167,22 @@ if rodar 'actions.runner.a.b.service actions.runner.c.d.service' 1; then
                  || falha "múltiplas units: $n reiniciadas, esperado 2"
 else
   falha 'múltiplas units saudáveis deveriam sair com 0'; cat "$TMP/out" >&2
+fi
+
+# Regressão específica: `list-unit-files` sai 1 quando nada casa. Sem `|| true`,
+# `set -euo pipefail` aborta na atribuição e o fallback para `list-units` — que
+# existe justamente para esse caso — nunca roda.
+: > "$TMP/log"
+if rodar_so_fallback 'actions.runner.carregada.service'; then
+  if grep -q '^start actions.runner.carregada.service' "$TMP/log"; then
+    ok 'sem arquivo de unit, o fallback para list-units encontra e reinicia'
+  else
+    falha 'fallback não reiniciou a unit carregada'; cat "$TMP/log" >&2
+  fi
+else
+  rc=$?
+  falha "fallback de list-units não foi alcançado (saiu com $rc)"
+  head -5 "$TMP/out" >&2
 fi
 
 # Regressão específica: com `set -e`, um `systemctl start` sem guarda aborta o

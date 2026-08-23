@@ -78,9 +78,12 @@ jobs:
           # conteúdo agora. A unit systemd vive em /etc/systemd/system, controlada
           # por root, e é a única fonte usada aqui. Isso também resolve o problema
           # original (#1250): o caminho do runner deixa de importar.
-          units="$(systemctl list-unit-files --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}')"
+          # `|| true`: list-unit-files sai 1 quando nada casa, e com pipefail+set -e
+          # a atribuição abortaria o script antes de tentar o fallback e antes do
+          # diagnóstico do exit 4 — justamente no caso que o fallback trata.
+          units="$(systemctl list-unit-files --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}' || true)"
           if [ -z "$units" ]; then
-            units="$(systemctl list-units --all --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}')"
+            units="$(systemctl list-units --all --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}' || true)"
           fi
           if [ -z "$units" ]; then
             echo "ERRO: nenhuma unit 'actions.runner.*.service' registrada no systemd." >&2
@@ -129,9 +132,12 @@ jobs:
           # conteúdo agora. A unit systemd vive em /etc/systemd/system, controlada
           # por root, e é a única fonte usada aqui. Isso também resolve o problema
           # original (#1250): o caminho do runner deixa de importar.
-          units="$(systemctl list-unit-files --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}')"
+          # `|| true`: list-unit-files sai 1 quando nada casa, e com pipefail+set -e
+          # a atribuição abortaria o script antes de tentar o fallback e antes do
+          # diagnóstico do exit 4 — justamente no caso que o fallback trata.
+          units="$(systemctl list-unit-files --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}' || true)"
           if [ -z "$units" ]; then
-            units="$(systemctl list-units --all --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}')"
+            units="$(systemctl list-units --all --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}' || true)"
           fi
           if [ -z "$units" ]; then
             echo "ERRO: nenhuma unit 'actions.runner.*.service' registrada no systemd." >&2
