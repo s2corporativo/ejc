@@ -17,7 +17,7 @@ Cada caso real deve declarar:
   - RAG: `query` e `expected_titulos` não vazio; ou
   - peças: `fatos`, `tipo_peca_esperado`, `teses_esperadas` e `criterios` não vazios;
 - `curadoria.curador`;
-- `curadoria.revisor`, diferente do curador;
+- `curadoria.revisor`, opcional — registre quando houver segundo revisor;
 - `curadoria.revisado_em` (`YYYY-MM-DD`);
 - `curadoria.vigencia_conferida_em` (`YYYY-MM-DD`) não posterior à revisão;
 - ao menos uma entrada em `curadoria.fontes_oficiais` com título, URL HTTPS oficial e data de consulta não posterior à revisão;
