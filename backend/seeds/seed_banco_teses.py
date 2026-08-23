@@ -7,9 +7,9 @@ Popula taxonomias, teses iniciais e precedentes de exemplo.
 Executar: python backend/seeds/seed_banco_teses.py
 """
 import asyncio
-import json
+import logging
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -17,11 +17,15 @@ from sqlalchemy.orm import sessionmaker
 import sys
 sys.path.insert(0, '/home/user/ejc/backend')
 
-from app.core.database import Base, DATABASE_URL
+from app.core.config import get_settings
 from app.models.tese_juridica import (
     Taxonomia, TeseJuridica, FundamentacaoLegal, Precedente,
     TipoTese, StatusTese
 )
+from app.services.teses_coleta import TeseColeta, inserir_tese_no_banco
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # Dados iniciais de taxonomias
@@ -52,175 +56,134 @@ TAXONOMIAS_INICIAIS = [
     {"area": "Trabalhista", "subarea": "Vínculo", "tema": "Pejotização", "subtema": None},
 ]
 
-# Teses de exemplo (ataque/defesa)
-TESES_EXEMPLO = [
-    {
-        "titulo": "Responsabilidade objetiva da instituição financeira por fraude decorrente de fortuito interno",
-        "sumario": "Bancos são responsáveis por fraudes e delitos praticados por terceiros em operações bancárias.",
-        "tipo": TipoTese.ataque,
-        "parte_favorecida": "Consumidor",
-        "procedimento": "Ação ordinária",
-        "instancia": "1ª Instância",
-        "tese_texto": "Instituições financeiras respondem objetivamente pelos danos gerados por fortuito interno relativo a fraudes e delitos praticados por terceiros em operações bancárias.",
-        "argumento": "O fortuito interno é evento inerente ao risco da atividade financeira. CDC arts. 2º e 3º estabelecem responsabilidade objetiva do fornecedor de serviço. Súmula 479/STJ consolidou o entendimento.",
-        "pressupostos": "Vítima é consumidor da instituição. Fraude foi cometida em operação bancária. Banco não provou culpa exclusiva do cliente.",
-        "excecoes": "Se houver prova de fortuito externo (evento sem relação com atividade bancária) ou culpa exclusiva do cliente (art. 14, §3º CDC).",
-        "estrategia": "Enfatizar falhas de segurança do banco, ausência de notificações, diferenças fundamentais entre fortuito interno e externo.",
-        "taxonomia_index": 4,
-        "score": 85,
-        "precedente_chave": {
-            "tribunal": "STJ",
-            "numero": "1197929",
-            "classe": "REsp",
-            "ementa_resumida": "Tema Repetitivo 466 — Responsabilidade objetiva por fortuito interno",
-            "tipo_relacao": "favoravel",
-            "vinculante": True,
-        }
-    },
-    {
-        "titulo": "Dano moral por inclusão indevida em cadastro restritivo com anotação anterior legítima",
-        "sumario": "Exceção à Súmula 385/STJ quando inscrições anteriores também são contestadas.",
-        "tipo": TipoTese.ataque,
-        "parte_favorecida": "Consumidor",
-        "procedimento": "Ação ordinária",
-        "instancia": "1ª Instância",
-        "tese_texto": "É cabível indenização por dano moral decorrente da inscrição indevida em cadastro restritivo, ainda que exista anotação prévia legítima, quando as inscrições anteriores forem contestadas judicialmente.",
-        "argumento": "Flexibilização jurisprudencial da Súmula 385/STJ em casos de círculo vicioso: consumidor fica impossibilitado de se livrar da restrição.",
-        "pressupostos": "Consumidor anotado indevidamente. Existem inscrições preexistentes. O consumidor contesta judicialmente as dívidas anteriores.",
-        "excecoes": "Se há inscrição anterior legitimamente reconhecida em decisão transitada em julgado.",
-        "estrategia": "Caracterizar círculo vicioso; demonstrar que consumidor agiu com boa-fé ao questionar dívidas.",
-        "taxonomia_index": 1,
-        "score": 55,
-        "precedente_chave": {
-            "tribunal": "STJ",
-            "numero": "1704002",
-            "classe": "REsp",
-            "ementa_resumida": "Afastamento da Súmula 385 em situações excepcionais",
-            "tipo_relacao": "favoravel",
-            "vinculante": False,
-        }
-    },
-    {
-        "titulo": "Revisão de contrato bancário por juros abusivos e capitalização de juros",
-        "sumario": "Juros remuneratórios acima de 2% a.m. e capitalização são passíveis de revisão.",
-        "tipo": TipoTese.ataque,
-        "parte_favorecida": "Devedor/Consumidor",
-        "procedimento": "Ação revisional",
-        "instancia": "1ª Instância",
-        "tese_texto": "Contrato bancário com juros remuneratórios acima de 2% a.m. é presumivelmente abusivo e passível de revisão judicial.",
-        "argumento": "Súmula 532/STJ: taxa de juros remuneratórios superior a 2% a.m. é abusiva. Capitalização de juros é vedada (Lei 11.977/2009 art. 5º).",
-        "pressupostos": "Contrato bancário de crédito. Taxa acima de 2% a.m. comprovada. Capitalização mensal ou diária.",
-        "excecoes": "Contrato anterior a lei. Operações de crédito pessoal (juros mais altos são permitidos).",
-        "estrategia": "Compilar extratos bancários mostrando capitalização. Demonstrar taxa média supera 2%.",
-        "taxonomia_index": 8,
-        "score": 75,
-        "precedente_chave": {
-            "tribunal": "STJ",
-            "numero": "532",
-            "classe": "Súmula",
-            "ementa_resumida": "Súmula 532/STJ — Taxa de juros remuneratórios acima de 2% a.m. é abusiva",
-            "tipo_relacao": "favoravel",
-            "vinculante": True,
-        }
-    },
-]
+# Teses de exemplo — Dados de exemplo com ADVERTÊNCIA
+# ⚠️  ESTAS TESES SÃO RASCUNHO E PRECISAM DE VALIDAÇÃO HUMANA
+# Nenhuma delas é promovida automaticamente a status=validada.
+# Antes de qualquer uso em jurisprudência ou aconselhamento, confirme contra fontes oficiais.
+
+TESES_EXEMPLO = []  # Seed não popula mais teses de exemplo — use apenas TeseColeta.buscar_* methods
+
+
+async def criar_taxonomia(session: AsyncSession, area: str, subarea: str, tema: str) -> str:
+    """Cria ou recupera taxonomia existente."""
+    stmt = select(Taxonomia).where(
+        Taxonomia.area == area,
+        Taxonomia.subarea == subarea,
+        Taxonomia.tema == tema,
+    )
+    existente = await session.scalar(stmt)
+    if existente:
+        return existente.id
+
+    taxa = Taxonomia(
+        id=str(uuid4()),
+        area=area,
+        subarea=subarea,
+        tema=tema,
+        subtema=None,
+        criada_em=datetime.now(timezone.utc),
+    )
+    session.add(taxa)
+    await session.flush()
+    return taxa.id
+
+
+async def popular_dominio(
+    session: AsyncSession,
+    area: str,
+    subarea: str,
+    tema: str,
+    coleta_func,
+) -> int:
+    """Popula um domínio específico de teses."""
+    taxa_id = await criar_taxonomia(session, area, subarea, tema)
+    teses = await coleta_func(session)
+
+    count = 0
+    for tese_dict in teses:
+        try:
+            await inserir_tese_no_banco(
+                db=session,
+                titulo=tese_dict.get("titulo"),
+                sumario=tese_dict.get("sumario", ""),
+                tipo=tese_dict.get("tipo", TipoTese.ataque),
+                score=tese_dict.get("score", 50),
+                taxonomia_id=taxa_id,
+                fundamentacoes=tese_dict.get("fundamentacoes", []),
+                precedentes=tese_dict.get("precedentes", []),
+            )
+            count += 1
+            logger.info(f"  ✓ {tese_dict.get('titulo')}")
+        except Exception as e:
+            logger.error(f"  ❌ Erro ao inserir {tese_dict.get('titulo')}: {e}")
+
+    await session.commit()
+    return count
 
 
 async def seed_banco_teses():
-    """Popula taxonomias e teses iniciais."""
-    engine = create_async_engine(DATABASE_URL, echo=False)
-
+    """Popula taxonomias e teses de todos os domínios."""
+    settings = get_settings()
+    engine = create_async_engine(settings.DATABASE_URL, echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as session:
-        # Limpar dados existentes (APENAS EM DEV)
-        # await session.execute("TRUNCATE TABLE teses_juridicas CASCADE")
-        # await session.commit()
+        logger.info("\n" + "="*70)
+        logger.info("🎯 INICIANDO SEED DO BANCO NACIONAL DE TESES JURÍDICAS")
+        logger.info("="*70 + "\n")
 
-        print("📚 Seeding Banco de Teses Jurídicas...")
-
-        # 1. Criar taxonomias
-        print(f"  → Criando {len(TAXONOMIAS_INICIAIS)} taxonomias...")
-        taxonomias_map = {}
+        # 1. Criar taxonomias base
+        logger.info("📚 Criando taxonomias...")
         for tax_data in TAXONOMIAS_INICIAIS:
-            stmt = select(Taxonomia).where(
-                Taxonomia.area == tax_data["area"],
-                Taxonomia.subarea == tax_data["subarea"],
-                Taxonomia.tema == tax_data["tema"],
-            )
-            existente = await session.scalar(stmt)
-            if existente:
-                taxonomias_map[f"{tax_data['area']}/{tax_data['subarea']}/{tax_data['tema']}"] = existente.id
-            else:
-                tax = Taxonomia(**tax_data)
-                session.add(tax)
-                await session.flush()
-                taxonomias_map[f"{tax_data['area']}/{tax_data['subarea']}/{tax_data['tema']}"] = tax.id
-
+            await criar_taxonomia(session, tax_data["area"], tax_data["subarea"], tax_data["tema"])
         await session.commit()
-        print(f"    ✓ {len(taxonomias_map)} taxonomias criadas/atualizadas")
+        logger.info(f"  ✓ {len(TAXONOMIAS_INICIAIS)} taxonomias criadas\n")
 
-        # 2. Criar teses de exemplo
-        print(f"  → Criando {len(TESES_EXEMPLO)} teses de exemplo...")
-        for i, tese_data in enumerate(TESES_EXEMPLO):
-            taxonomia_id = list(taxonomias_map.values())[tese_data["taxonomia_index"]]
-            precedente_data = tese_data.pop("precedente_chave")
+        # 2. Popular domínios via TeseColeta
+        logger.info("📖 Populando teses de Consumidor...")
+        count = await popular_dominio(
+            session,
+            "Consumidor",
+            "Negativação/Bancário",
+            "Jurisprudência STJ",
+            TeseColeta.buscar_teses_consumidor,
+        )
+        logger.info(f"  ✅ {count} teses de Consumidor carregadas\n")
 
-            tese = TeseJuridica(
-                **{k: v for k, v in tese_data.items() if k != "taxonomia_index"},
-                taxonomia_id=taxonomia_id,
-                status=StatusTese.validada,
-            )
-            session.add(tese)
-            await session.flush()
+        logger.info("📖 Populando teses de Trabalhista...")
+        count = await popular_dominio(
+            session,
+            "Trabalhista",
+            "Vínculo/Terceirização",
+            "Jurisprudência TST",
+            TeseColeta.buscar_teses_trabalhista,
+        )
+        logger.info(f"  ✅ {count} teses de Trabalhista carregadas\n")
 
-            # Adicionar fundamentações
-            fund1 = FundamentacaoLegal(
-                tese_id=tese.id,
-                norma="CDC",
-                artigo="2",
-                tipo="federal",
-                texto_relevante="Consumidor é toda pessoa física ou jurídica que adquire ou utiliza produto ou serviço.",
-                interpretacao="Consumidor é protegido pelas normas do CDC.",
-            )
-            fund2 = FundamentacaoLegal(
-                tese_id=tese.id,
-                norma="CDC",
-                artigo="14",
-                tipo="federal",
-                texto_relevante="O fornecedor de serviços responde, independentemente de culpa, pela reparação dos danos causados...",
-                interpretacao="Responsabilidade objetiva do fornecedor.",
-            )
-            session.add(fund1)
-            session.add(fund2)
+        logger.info("📖 Populando teses de Juizados Especiais...")
+        count = await popular_dominio(
+            session,
+            "Juizados Especiais",
+            "JEC Cível",
+            "Jurisprudência Estadual",
+            TeseColeta.buscar_teses_jec,
+        )
+        logger.info(f"  ✅ {count} teses de JEC carregadas\n")
 
-            # Adicionar precedente chave
-            precedente = Precedente(
-                tese_id=tese.id,
-                tribunal=precedente_data["tribunal"],
-                numero=precedente_data["numero"],
-                classe=precedente_data["classe"],
-                ementa_resumida=precedente_data["ementa_resumida"],
-                tipo_relacao=precedente_data["tipo_relacao"],
-                vinculante=precedente_data["vinculante"],
-                fonte="stj",
-                fonte_url="https://www.stj.jus.br",  # URL será preenchida com scraping real
-            )
-            session.add(precedente)
-            await session.flush()
-
-        await session.commit()
-        print(f"    ✓ {len(TESES_EXEMPLO)} teses criadas")
-
-        # 3. Estatísticas
+        # 3. Estatísticas finais
         stmt = select(func.count(Taxonomia.id))
         tax_count = await session.scalar(stmt)
         stmt = select(func.count(TeseJuridica.id))
         tese_count = await session.scalar(stmt)
+        stmt = select(func.count(Precedente.id))
+        prec_count = await session.scalar(stmt)
 
-        print(f"\n✅ Seed concluído!")
-        print(f"   Taxonomias: {tax_count}")
-        print(f"   Teses: {tese_count}")
+        logger.info("="*70)
+        logger.info("✅ SEED CONCLUÍDO COM SUCESSO")
+        logger.info("="*70)
+        logger.info(f"  Taxonomias: {tax_count}")
+        logger.info(f"  Teses: {tese_count}")
+        logger.info(f"  Precedentes: {prec_count}\n")
 
     await engine.dispose()
 
