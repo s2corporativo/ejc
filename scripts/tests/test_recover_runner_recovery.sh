@@ -98,6 +98,29 @@ proibido 'systemctl show -p User' 'não deriva confiança de .service (laço cir
 exigido  'list-unit-files' 'descobre o runner pela unit systemd'
 exigido  'sudo systemctl start' 'opera o serviço via systemctl'
 
+# Invariante que protege ESTE arquivo, não a VPS. Os dublês abaixo interceptam
+# `sudo` e `systemctl` pelo PATH, e isso só funciona enquanto o bloco remoto os
+# invoca pelo nome. Um endurecimento plausível — trocar `sudo systemctl` por
+# `/usr/bin/sudo systemctl` — contornaria os dublês, e aí este teste, que é gate
+# bloqueante e roda na máquina do desenvolvedor via `ci-local.sh p0`, executaria
+# systemctl de verdade sobre a unit de produção nomeada na linha do cenário
+# saudável. Numa máquina com systemd e sudo NOPASSWD, pararia o runner.
+proibido '/usr/bin/sudo'   'não invoca sudo por caminho absoluto (contornaria o dublê do teste)'
+proibido '/bin/systemctl'  'não invoca systemctl por caminho absoluto (idem)'
+
+# O teste extrai só o heredoc; as opções de SSH ficam fora dele e nada as cobria.
+# Um `StrictHostKeyChecking=no` numa das ramificações passaria despercebido.
+if [ "$(grep -c 'StrictHostKeyChecking=yes' "$WORKFLOW")" -eq 2 ]; then
+  ok 'as duas ramificações SSH exigem StrictHostKeyChecking=yes'
+else
+  falha 'StrictHostKeyChecking=yes ausente ou não presente nas duas ramificações'
+fi
+if grep -q 'StrictHostKeyChecking=no\|UserKnownHostsFile=/dev/null' "$WORKFLOW"; then
+  falha 'verificação de host key desativada no workflow'
+else
+  ok 'verificação de host key não é desativada em lugar nenhum'
+fi
+
 # ── comportamento, com systemctl e sudo simulados ───────────────────────────
 BIN="$TMP/bin"; mkdir -p "$BIN"
 cat > "$BIN/sudo" <<'EOS'

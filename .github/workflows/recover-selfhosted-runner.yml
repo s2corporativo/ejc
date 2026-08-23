@@ -72,6 +72,10 @@ jobs:
               -o ConnectTimeout=15 \
               "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
+          # `set -f`: o `for` abaixo roda sem aspas de propósito (ver comentário
+          # lá), e sem isto um nome de unit contendo *, ? ou [ sofreria expansão
+          # de caminho. Só root cria unit de sistema, então é robustez, não vetor.
+          set -f
           # Não executamos script vindo do diretório do runner. Esse diretório é
           # gravável pelo dono, e um dono não-root poderia trocar o svc.sh e obter
           # root via sudo — provar quem criou o diretório não prova quem controla o
@@ -107,11 +111,11 @@ jobs:
           done
           sleep 3
           for unit in $units; do
-            if sudo systemctl is-active --quiet "$unit"; then
+            if systemctl is-active --quiet "$unit"; then
               echo "OK: $unit ativo"
             else
               echo "ERRO: $unit não ficou ativo." >&2
-              sudo systemctl status "$unit" --no-pager --lines=20 2>&1 | tail -20 >&2 || true
+              systemctl status "$unit" --no-pager --lines=20 2>&1 | tail -20 >&2 || true
               falhou=1
             fi
           done
@@ -126,6 +130,10 @@ jobs:
               -o ConnectTimeout=15 \
               "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
+          # `set -f`: o `for` abaixo roda sem aspas de propósito (ver comentário
+          # lá), e sem isto um nome de unit contendo *, ? ou [ sofreria expansão
+          # de caminho. Só root cria unit de sistema, então é robustez, não vetor.
+          set -f
           # Não executamos script vindo do diretório do runner. Esse diretório é
           # gravável pelo dono, e um dono não-root poderia trocar o svc.sh e obter
           # root via sudo — provar quem criou o diretório não prova quem controla o
@@ -161,11 +169,11 @@ jobs:
           done
           sleep 3
           for unit in $units; do
-            if sudo systemctl is-active --quiet "$unit"; then
+            if systemctl is-active --quiet "$unit"; then
               echo "OK: $unit ativo"
             else
               echo "ERRO: $unit não ficou ativo." >&2
-              sudo systemctl status "$unit" --no-pager --lines=20 2>&1 | tail -20 >&2 || true
+              systemctl status "$unit" --no-pager --lines=20 2>&1 | tail -20 >&2 || true
               falhou=1
             fi
           done
