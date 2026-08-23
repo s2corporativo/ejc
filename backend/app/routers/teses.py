@@ -4,7 +4,7 @@
 from __future__ import annotations
 import logging
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -16,8 +16,17 @@ from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL, EQUIPE_JURIDICA
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
+from app.models.case import Case
 from app.models.tese import Tese, TeseCasoLink, TeseTipo, TeseStatus
 from app.core.rate_limit import rate_limit
+from app.models.diario_oficial import DiarioOficialAlerta
+from app.modules.dpt360.access_scope import visible_alerts_query
+from app.services.impacto_regulatorio import (
+    MAX_PUBLICACOES_VARRIDAS, MAX_TESES_VARRIDAS, ranquear_teses_afetadas,
+)
+from app.services.tese_caso_matcher import (
+    MAX_CASOS_VARRIDOS, PISO_RELEVANCIA_PADRAO, extrair_termos, ranquear_candidatos,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/teses", tags=["Banco de Teses"])
@@ -274,6 +283,87 @@ async def teses_do_caso(
     return out
 
 
+@router.get("/impacto-regulatorio")
+async def impacto_regulatorio(
+    dias: int = Query(7, ge=1, le=90),
+    limite: int = Query(20, ge=1, le=100),
+    piso: int = Query(PISO_RELEVANCIA_PADRAO, ge=0, le=100,
+                      description="score mínimo (0-100) para a tese entrar na lista"),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Quais teses do escritório podem ter sido afetadas pelo que saiu no Diário.
+
+    O radar do EJC já respondia "publicação nova → quais EMPRESAS ela atinge"
+    (`modules/dpt360/radar_service.py`). Faltava o alvo jurídico, que é o que a
+    frente 1 do plano de evolução pede: "esta publicação mexe com a tese X".
+
+    Determinístico, sem IA (`services/impacto_regulatorio.py`), reusando o
+    classificador de área e o mapa de equivalências do próprio radar — uma
+    taxonomia só, não duas divergindo com o tempo.
+
+    A saída é SUGESTÃO: diz qual tese reler e por quê (os termos que casaram).
+    Nada é marcado como superado automaticamente — reavaliar uma tese à luz de
+    norma nova é ato jurídico humano.
+
+    Visibilidade: os alertas passam por `visible_alerts_query`, o contrato
+    canônico do Diário Oficial (gestão vê tudo; advogado vê os office-wide e os
+    dos próprios casos). Esta rota NÃO amplia essa superfície.
+    """
+    if not _is_staff(cu):
+        raise HTTPException(403)
+
+    desde = datetime.now(timezone.utc) - timedelta(days=dias)
+    alertas = (await db.execute(
+        visible_alerts_query(cu)
+        .where(DiarioOficialAlerta.created_at >= desde)
+        .order_by(DiarioOficialAlerta.created_at.desc())
+        .limit(MAX_PUBLICACOES_VARRIDAS)
+    )).scalars().all()
+
+    publicacoes = [{
+        "id": a.id,
+        "fonte": a.fonte,
+        "titulo": a.titulo,
+        "resumo": a.resumo,
+        "link": a.link,
+        "keyword_match": a.keyword_match,
+        "data_publicacao": a.data_publicacao.isoformat() if a.data_publicacao else None,
+    } for a in alertas]
+
+    teses_rows = (await db.execute(
+        select(Tese)
+        .where(Tese.deleted_at.is_(None), Tese.status == TeseStatus.ativa)
+        .order_by(Tese.created_at.desc())
+        .limit(MAX_TESES_VARRIDAS)
+    )).scalars().all()
+
+    teses = [{
+        "id": t.id,
+        "titulo": t.titulo,
+        "area_juridica": t.area_juridica,
+        # Mesmos campos da varredura tese → caso: título, tags e descrição.
+        # Fundamentação e jurisprudência ficam de fora de propósito — inflam a
+        # lista de termos e o casamento vira ruído.
+        "termos": extrair_termos(t.titulo, t.tags, t.descricao),
+    } for t in teses_rows]
+
+    afetadas = ranquear_teses_afetadas(teses, publicacoes, piso=piso, limite=limite)
+
+    return {
+        "periodo_dias": dias,
+        "desde": desde.date().isoformat(),
+        "publicacoes_varridas": len(publicacoes),
+        "teto_de_varredura_atingido": len(publicacoes) >= MAX_PUBLICACOES_VARRIDAS,
+        "teses_varridas": len(teses),
+        "total": len(afetadas),
+        "teses_afetadas": afetadas,
+        "aviso": ("Sugestão determinística por casamento de termos — indica o que "
+                  "RELER, não o que está superado. Confira a publicação antes de "
+                  "alterar qualquer tese."),
+    }
+
+
 @router.get("/{tese_id}")
 async def obter_tese(
     tese_id: str,
@@ -325,6 +415,92 @@ async def arquivar_tese(
         raise HTTPException(404)
     t.deleted_at = datetime.now(timezone.utc)
     await db.commit()
+
+
+@router.get("/{tese_id}/casos-candidatos")
+async def casos_candidatos(
+    tese_id: str,
+    limite: int = Query(20, ge=1, le=100),
+    piso: int = Query(PISO_RELEVANCIA_PADRAO, ge=0, le=100,
+                      description="score mínimo (0-100) para entrar na lista"),
+    incluir_arquivados: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Varredura REVERSA: dada uma tese, onde ela pode caber.
+
+    O caminho caso → teses já existia (`teses_do_caso`, `sugerir_teses_ia`).
+    Este é o inverso, e é o que transforma o Banco de Teses de catálogo em
+    ferramenta ativa: "a tese X é possivelmente cabível nos processos A, B e C".
+
+    Determinístico, sem IA (ver `services/tese_caso_matcher.py`). A lista é de
+    CANDIDATOS — vincular continua sendo ato humano via
+    `POST /teses/{tese_id}/vincular-caso`.
+
+    Visibilidade: reusa o mesmo critério de `cases._filtro_visibilidade`
+    (advogado/auxiliar vê os próprios casos, socio+ vê todos). Sem isso a
+    varredura seria um vazamento: devolveria título e área de casos que o
+    usuário não pode abrir.
+    """
+    if not _is_staff(cu):
+        raise HTTPException(403)
+
+    tese = (await db.execute(
+        select(Tese).where(Tese.id == tese_id, Tese.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not tese:
+        raise HTTPException(404, "Tese não encontrada")
+
+    termos = extrair_termos(tese.titulo, tese.tags, tese.descricao)
+    if not termos:
+        return {
+            "tese_id": tese_id, "titulo": tese.titulo,
+            "area_juridica": tese.area_juridica, "termos": [],
+            "total": 0, "candidatos": [],
+            "aviso": ("A tese não tem termos aproveitáveis no título, nas tags "
+                      "ou na descrição — sem isso não há como procurar casos."),
+        }
+
+    # Casos já vinculados saem da lista: o pedido é "onde ela AINDA pode caber".
+    ja_vinculados = set((await db.execute(
+        select(TeseCasoLink.case_id).where(TeseCasoLink.tese_id == tese_id)
+    )).scalars().all())
+
+    q = select(Case).where(Case.deleted_at.is_(None))
+    if not incluir_arquivados:
+        q = q.where(Case.status != "arquivado")
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        q = q.where(or_(
+            Case.advogado_responsavel_id == cu.id,
+            Case.advogado_auxiliar_id == cu.id,
+        ))
+    casos = (await db.execute(q.limit(MAX_CASOS_VARRIDOS))).scalars().all()
+
+    varridos = [
+        {
+            "id": c.id, "titulo": c.titulo,
+            "descricao_fatos": c.descricao_fatos,
+            "numero_interno": c.numero_interno,
+            "area": c.area.value if hasattr(c.area, "value") else c.area,
+            "status": c.status.value if hasattr(c.status, "value") else c.status,
+        }
+        for c in casos if c.id not in ja_vinculados
+    ]
+
+    candidatos = ranquear_candidatos(
+        termos, varridos, area_tese=tese.area_juridica, piso=piso, limite=limite,
+    )
+    return {
+        "tese_id": tese_id, "titulo": tese.titulo,
+        "area_juridica": tese.area_juridica,
+        "termos": termos,
+        "casos_varridos": len(varridos),
+        "teto_de_varredura_atingido": len(casos) >= MAX_CASOS_VARRIDOS,
+        "total": len(candidatos),
+        "candidatos": candidatos,
+        "aviso": ("Sugestão determinística por casamento de termos — não é "
+                  "análise de cabimento. Conferir o caso antes de vincular."),
+    }
 
 
 @router.post("/{tese_id}/vincular-caso")

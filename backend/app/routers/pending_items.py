@@ -18,8 +18,37 @@ router = APIRouter(prefix="/clients", tags=["pending-items"])
 # Vocabulário fechado — espelha as opções do formulário (DossieCliente.tsx:
 # PENDING_STATUS_LABEL e o <select> de tipo). Payload fora disso vira 422 em
 # vez de gravar valor arbitrário que o front não sabe rotular/colorir.
-_TIPOS_VALIDOS = {"documento", "informacao", "assinatura", "pagamento"}
+#
+# `procuracao`, `certidao` e `outro` foram ACRESCENTADOS: o <select> do
+# formulário já oferecia os três, mas o backend os rejeitava com 422 — quem
+# escolhesse "Procuração", "Certidão" ou "Outro" não conseguia salvar a
+# pendência. O vocabulário do backend é que estava atrasado em relação à
+# interface, e são tipos jurídicos legítimos (a certidão, em particular, é o
+# caso típico de `providencia="emitir_certidao"`).
+_TIPOS_VALIDOS = {"documento", "informacao", "assinatura", "pagamento",
+                  "procuracao", "certidao", "outro"}
 _STATUS_VALIDOS = {"pendente", "solicitado", "recebido", "em_analise", "concluido"}
+
+# Frente 12 do plano de evolução: o que transforma a lista de ausências em
+# plano de ação. Ambos são OPCIONAIS (coluna nullable, migration 147) — a
+# pendência continua válida sem classificação, e `None` significa "ainda não
+# avaliado", não "sem impacto".
+_IMPACTOS_VALIDOS = {"alto", "medio", "baixo"}
+_PROVIDENCIAS_VALIDAS = {"solicitar_cliente", "obter_processo",
+                         "emitir_certidao", "diligencia_externa", "outro"}
+
+
+def _valida_vocabulario(valor, validos, campo):
+    """Valida contra vocabulário fechado aceitando None (campo não informado).
+
+    Usado só por `impacto`/`providencia`, que são nullable no banco — ao
+    contrário de type/status, aqui `null` explícito é um valor legítimo
+    (limpar a classificação num PATCH)."""
+    if valor is None:
+        return None
+    if valor not in validos:
+        raise ValueError(f"{campo} inválido; use um de: {sorted(validos)}")
+    return valor
 
 
 class PendingItemCreate(BaseModel):
@@ -29,6 +58,8 @@ class PendingItemCreate(BaseModel):
     description: Optional[str] = None
     status: str = "pendente"
     due_date: Optional[date] = None
+    impacto: Optional[str] = None
+    providencia: Optional[str] = None
 
     @field_validator("type")
     @classmethod
@@ -36,6 +67,16 @@ class PendingItemCreate(BaseModel):
         if v not in _TIPOS_VALIDOS:
             raise ValueError(f"type inválido; use um de: {sorted(_TIPOS_VALIDOS)}")
         return v
+
+    @field_validator("impacto")
+    @classmethod
+    def _valida_impacto(cls, v: Optional[str]) -> Optional[str]:
+        return _valida_vocabulario(v, _IMPACTOS_VALIDOS, "impacto")
+
+    @field_validator("providencia")
+    @classmethod
+    def _valida_providencia(cls, v: Optional[str]) -> Optional[str]:
+        return _valida_vocabulario(v, _PROVIDENCIAS_VALIDAS, "providencia")
 
     @field_validator("status")
     @classmethod
@@ -55,6 +96,8 @@ class PendingItemUpdate(BaseModel):
     type: Optional[str] = None
     status: Optional[str] = None
     due_date: Optional[date] = None
+    impacto: Optional[str] = None
+    providencia: Optional[str] = None
 
     # title/type/status são NOT NULL na tabela (client_pending_items). Como
     # são Optional aqui só para permitir OMITIR o campo num PATCH parcial,
@@ -85,6 +128,18 @@ class PendingItemUpdate(BaseModel):
         if v not in _STATUS_VALIDOS:
             raise ValueError(f"status inválido; use um de: {sorted(_STATUS_VALIDOS)}")
         return v
+
+    # impacto/providencia são nullable no banco: `null` explícito é permitido
+    # e significa "limpar a classificação".
+    @field_validator("impacto")
+    @classmethod
+    def _valida_impacto(cls, v: Optional[str]) -> Optional[str]:
+        return _valida_vocabulario(v, _IMPACTOS_VALIDOS, "impacto")
+
+    @field_validator("providencia")
+    @classmethod
+    def _valida_providencia(cls, v: Optional[str]) -> Optional[str]:
+        return _valida_vocabulario(v, _PROVIDENCIAS_VALIDAS, "providencia")
 
 
 async def _exigir_cliente_visivel(db: AsyncSession, cu: User, client_id: str) -> None:
@@ -142,8 +197,10 @@ async def create_pending_item(
         await _validar_case_do_cliente(db, client_id, body.case_id)
     result = await db.execute(
         text("""INSERT INTO client_pending_items
-            (client_id, case_id, type, title, description, status, due_date, created_by)
-            VALUES (:cid,:case_id,:type,:title,:desc,:status,:due,:created_by)
+            (client_id, case_id, type, title, description, status, due_date,
+             impacto, providencia, created_by)
+            VALUES (:cid,:case_id,:type,:title,:desc,:status,:due,
+                    :impacto,:providencia,:created_by)
             RETURNING *"""),
         {
             "cid": client_id,
@@ -153,6 +210,8 @@ async def create_pending_item(
             "desc": body.description,
             "status": body.status,
             "due": body.due_date,
+            "impacto": body.impacto,
+            "providencia": body.providencia,
             "created_by": str(current_user.id),
         }
     )

@@ -167,6 +167,36 @@ _STAGE_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+_MARCADORES_POR_ESTAGIO: dict[str, tuple[str, ...]] = dict(_STAGE_MARKERS)
+
+
+def _posicao_na_jornada(etapa: str, etapas: list[str]) -> int | None:
+    """Índice, na jornada do rito, da etapa correspondente ao estágio detectado.
+
+    O estágio vem de `_STAGE_MARKERS` e é um CÓDIGO ("pos_sentenca", "defesa");
+    a jornada de cada rito é texto jurídico ("sentença", "contestação"). Os dois
+    vocabulários quase nunca casam por substring — procurar só pelo código
+    localizava a posição em 15 das 80 combinações rito × estágio. Procurar pelos
+    MESMOS marcadores que identificaram o estágio elimina o desencontro sem
+    criar uma terceira lista para manter em sincronia.
+
+    Devolve `None` quando o estágio não tem correspondente nesta jornada.
+    """
+    termos = [t for t in (_normalizar(etapa),
+                          *(_normalizar(m) for m in
+                            _MARCADORES_POR_ESTAGIO.get(etapa, ()))) if t]
+    # Ordem dos TERMOS manda, não a ordem das etapas: o marcador mais direto do
+    # estágio vence um marcador acessório que aparece antes na jornada (senão
+    # "audiência de instrução" casaria com "saneamento" e o motor devolveria a
+    # instrução como etapa futura de um processo já em instrução).
+    rotulos = [_normalizar(item) for item in etapas]
+    for termo in termos:
+        for indice, rotulo in enumerate(rotulos):
+            if termo in rotulo:
+                return indice
+    return None
+
+
 def _score(rule: RitoRule, text: str, area: str | None) -> tuple[int, list[str]]:
     sinais = [signal for signal in rule.sinais if _normalizar(signal) in text]
     score = len(sinais) * 3
@@ -197,17 +227,29 @@ def identificar_rito(contexto: dict[str, Any]) -> dict[str, Any]:
         confidence = 0.35
 
     etapa = "triagem"
+    estagio_detectado = False
     for stage, markers in _STAGE_MARKERS:
         if any(_normalizar(marker) in text for marker in markers):
             etapa = stage
+            estagio_detectado = True
             break
 
+    # Próximas etapas: as que vêm DEPOIS da posição atual na jornada. Cair no
+    # início da jornada é pior que não responder — um caso já sentenciado
+    # recebia "petição inicial" como próximo passo, e esse texto é renderizado
+    # no Raio-X (tela e PDF) e entregue ao agente de IA.
     etapas = list(rule.etapas)
-    proxima: list[str] = []
-    etapa_norm = _normalizar(etapa)
-    indices = [i for i, item in enumerate(etapas) if etapa_norm and etapa_norm in _normalizar(item)]
-    start = indices[0] + 1 if indices else 0
-    proxima = etapas[start:start + 3] or etapas[:3]
+    posicao = _posicao_na_jornada(etapa, etapas)
+    if posicao is not None:
+        # Lista vazia no fim da jornada: não há etapa seguinte a sugerir.
+        proxima = etapas[posicao + 1:posicao + 4]
+    elif estagio_detectado:
+        # O processo andou, mas o estágio não tem correspondente nesta jornada.
+        # Silêncio é a única resposta honesta — mesma recusa do evento_processual.
+        proxima = []
+    else:
+        # Nenhum sinal de andamento: a jornada ainda não começou.
+        proxima = etapas[:3]
 
     exclusoes = [item for item in rule.exclusoes if _normalizar(item) in text]
     alertas = [

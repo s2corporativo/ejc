@@ -50,14 +50,24 @@ def _na(msg):
     print(f"[N/A-PROVADO] {msg}")
 
 
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+
+SENHA = _qa_pw('M27')
+
 CRED = {
-    "admin": ("ejc_qa_auth_admin@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "socio": ("ejc_qa_auth_socio@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "estagiario": ("ejc_qa_auth_estagiario@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "financeiro": ("ejc_qa_auth_financeiro@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "secretaria": ("ejc_qa_auth_secretaria@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
+    "admin": ("ejc_qa_auth_admin@golocal.ejc", SENHA),
+    "socio": ("ejc_qa_auth_socio@golocal.ejc", SENHA),
+    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", SENHA),
+    "estagiario": ("ejc_qa_auth_estagiario@golocal.ejc", SENHA),
+    "financeiro": ("ejc_qa_auth_financeiro@golocal.ejc", SENHA),
+    "secretaria": ("ejc_qa_auth_secretaria@golocal.ejc", SENHA),
+    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", SENHA),
 }
 _TOKENS = {}
 

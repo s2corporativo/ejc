@@ -8,6 +8,17 @@ detalhe claro, NUNCA 500 com stacktrace), endpoints que funcionam sem IA
 Sempre executado com PYTHONPATH=backend e env_shell.sh.
 """
 
+
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+
+SENHA = _qa_pw('M23')
+
 import os
 import sys
 import json
@@ -41,7 +52,7 @@ def tok(email):
     r = None
     for _ in range(3):
         r = S.post(f"{BASE}/api/auth/login", json={
-            "email": email, "password": "<ver EJC_QA_PASSWORD>"}, timeout=30)
+            "email": email, "password": SENHA}, timeout=30)
         if r.status_code != 429:
             break
         time.sleep(45)
