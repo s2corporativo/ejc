@@ -27,8 +27,19 @@ _DOU_STATUS: dict[str, Any] = {
     "ultima_execucao_ok": None,
     "ultima_quantidade": None,
     "falhas_consecutivas": 0,
+    # Execuções OK SEGUIDAS que não trouxeram nenhuma publicação. O heartbeat já
+    # media resultado por execução; o que faltava era a TENDÊNCIA — "0
+    # resultado(s)" todo dia lê-se como "ok", e é assim que um monitor
+    # tecnicamente saudável convive com uma captura que nunca capturou nada
+    # (a armadilha que o CLAUDE.md registra para o DJEN).
+    "execucoes_sem_resultado": 0,
     "ultimo_erro_tipo": None,
 }
+
+# O job roda uma vez por dia (`scheduler.py`, CronTrigger hour=6). Uma semana
+# inteira sem nenhuma publicação casando com NENHUMA keyword ativa é sinal de
+# configuração errada, não de silêncio do Diário.
+DOU_EXECUCOES_SEM_RESULTADO_ALERTA = 7
 
 
 def _registrar_status_dou(*, ok: bool, quantidade: int | None = None,
@@ -36,9 +47,16 @@ def _registrar_status_dou(*, ok: bool, quantidade: int | None = None,
     _DOU_STATUS["ultima_execucao"] = datetime.now(timezone.utc).isoformat()
     _DOU_STATUS["ultima_execucao_ok"] = ok
     if ok:
+        capturadas = int(quantidade or 0)
         _DOU_STATUS["status"] = "ok"
-        _DOU_STATUS["ultima_quantidade"] = int(quantidade or 0)
+        _DOU_STATUS["ultima_quantidade"] = capturadas
         _DOU_STATUS["falhas_consecutivas"] = 0
+        # Falha NÃO conta como execução sem resultado: são defeitos diferentes,
+        # e somar os dois esconderia o que cada um diz.
+        _DOU_STATUS["execucoes_sem_resultado"] = (
+            0 if capturadas
+            else int(_DOU_STATUS.get("execucoes_sem_resultado") or 0) + 1
+        )
         _DOU_STATUS["ultimo_erro_tipo"] = None
     else:
         _DOU_STATUS["status"] = "degradado"

@@ -283,7 +283,7 @@ Deliberadamente adiado. Não gaste tempo nisso antes de operar:
 
 **Remoção física das 211 rotas órfãs.** Sumir da navegação (Bloco 4) já resolve a confusão. A faxina do código fica para uma janela tranquila.
 
-**Purga definitiva / LGPD, Sentry, correção do prefixo `/v1/` duplicado, unificação da taxonomia de áreas, e o erro jurídico sobre decadência nas skills.** Todos importantes, todos no `plano-correcao-v2.md`, nenhum bloqueia o lançamento — **com uma ressalva: o erro de decadência (art. 487, II do CPC) deve ser corrigido antes que a IA seja usada para peça que vá a protocolo.**
+**Purga definitiva / LGPD, Sentry, correção do prefixo `/v1/` duplicado, unificação da taxonomia de áreas, e o erro jurídico sobre decadência nas skills.** Todos importantes, todos no `plano-correcao-v2.md`, nenhum bloqueia o lançamento — **e a única ressalva que existia já caiu: o erro de decadência (CPC art. 487, II) foi corrigido em 2026-08-14 (PR #1015) e verificado por execução em 2026-08-22** (guardrail determinístico na geração *e* na leitura, mais atualização do prompt das duas skills; ver `plano-correcao-v2.md` §5.4). **A IA deixou de estar bloqueada para peça destinada a protocolo por este motivo** — o que não dispensa o HITL nem o gate de citações, que continuam obrigatórios.
 
 ---
 

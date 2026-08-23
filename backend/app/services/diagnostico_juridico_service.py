@@ -13,7 +13,10 @@ from typing import Any
 
 from app.services import diagnostico_service
 from app.services.deadline_calculator import calendario_runtime_status
-from app.services.diario_oficial_service import status_dou
+from app.services.diario_oficial_service import (
+    DOU_EXECUCOES_SEM_RESULTADO_ALERTA,
+    status_dou,
+)
 
 
 def _probe_calendario_prazos() -> dict[str, Any]:
@@ -75,6 +78,25 @@ def _probe_dou_runtime() -> dict[str, Any]:
 
     if status == "ok":
         quantidade = int(estado.get("ultima_quantidade") or 0)
+        vazias = int(estado.get("execucoes_sem_resultado") or 0)
+        # Consulta tecnicamente válida que não traz nada é sucesso normal UMA
+        # vez. Repetida por uma semana, é sintoma — e um heartbeat que segue
+        # verde nesse cenário é o defeito que o CLAUDE.md descreve: monitorar
+        # execução e chamar de resultado.
+        if vazias >= DOU_EXECUCOES_SEM_RESULTADO_ALERTA:
+            return diagnostico_service._sub(
+                "DOU — heartbeat de captura",
+                "alerta",
+                f"A fonte responde, mas são {vazias} execução(ões) seguidas sem "
+                "nenhuma publicação capturada. Consulta saudável e captura "
+                "vazia por tanto tempo indica keyword ou filtro errado, não "
+                "silêncio do Diário.",
+                "Confira as keywords ativas e o intervalo consultado antes de "
+                "confiar na ausência de alertas.",
+                ultima_execucao=ultima,
+                falhas_consecutivas=0,
+                execucoes_sem_resultado=vazias,
+            )
         return diagnostico_service._sub(
             "DOU — heartbeat de captura",
             "ok",
@@ -82,6 +104,7 @@ def _probe_dou_runtime() -> dict[str, Any]:
             "Nenhuma ação necessária.",
             ultima_execucao=ultima,
             falhas_consecutivas=0,
+            execucoes_sem_resultado=vazias,
         )
 
     if status == "degradado":
