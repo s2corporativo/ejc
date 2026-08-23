@@ -72,74 +72,42 @@ jobs:
               -o ConnectTimeout=15 \
               "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          # Confiança vem do diretório-pai, não de nada dentro do candidato.
-          # Se /opt é de root e sem escrita para grupo/outros, nenhuma conta comum
-          # consegue criar /opt/actions-runner*; logo o dono de um candidato ali foi
-          # definido pelo root (o instalador faz chown -R para RUNNER_USER). Assim
-          # não é preciso adivinhar a conta nem lê-la de arquivo que o próprio dono
-          # controla — ler .service para decidir em quem confiar era circular.
-          pai_dono="$(stat -c '%U' /opt 2>/dev/null || echo '?')"
-          pai_perm="$(stat -c '%a' /opt 2>/dev/null || echo '')"
-          if [ "$pai_dono" != "root" ]; then
-            echo "ERRO: /opt pertence a '$pai_dono', não a root — a descoberta de runner não é confiável." >&2
-            exit 5
+          # Não executamos script vindo do diretório do runner. Esse diretório é
+          # gravável pelo dono, e um dono não-root poderia trocar o svc.sh e obter
+          # root via sudo — provar quem criou o diretório não prova quem controla o
+          # conteúdo agora. A unit systemd vive em /etc/systemd/system, controlada
+          # por root, e é a única fonte usada aqui. Isso também resolve o problema
+          # original (#1250): o caminho do runner deixa de importar.
+          units="$(systemctl list-unit-files --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}')"
+          if [ -z "$units" ]; then
+            units="$(systemctl list-units --all --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}')"
           fi
-          case "${pai_perm: -2:1}${pai_perm: -1:1}" in
-            *[2367]*)
-              echo "ERRO: /opt com permissão $pai_perm (escrita a grupo/outros) — a descoberta de runner não é confiável." >&2
-              exit 5
-              ;;
-          esac
-          runner_dir=""
-          for candidato in /opt/actions-runner*/; do
-            [ -d "$candidato" ] || continue
-            [ -L "${candidato%/}" ] && { echo "AVISO: ${candidato} é symlink — ignorado." >&2; continue; }
-            [ -x "${candidato}svc.sh" ] || continue
-            [ -f "${candidato}.runner" ] || continue
-            # .service não-vazio = serviço registrado; mesmo critério de
-            # scripts/setup-selfhosted-runner.sh. Sem ele, svc.sh start falha.
-            # Usado só como sinal funcional — nunca para decidir confiança.
-            [ -s "${candidato}.service" ] || {
-              echo "AVISO: ${candidato} sem serviço registrado (.service vazio/ausente) — ignorado." >&2
-              continue
-            }
-            perm="$(stat -c '%a' "$candidato" 2>/dev/null || echo '')"
-            case "${perm: -2:1}${perm: -1:1}" in
-              *[2367]*)
-                echo "AVISO: ${candidato} com permissão $perm (escrita a grupo/outros) — ignorado." >&2
-                continue
-                ;;
-            esac
-            perm_svc="$(stat -c '%a' "${candidato}svc.sh" 2>/dev/null || echo '')"
-            case "${perm_svc: -2:1}${perm_svc: -1:1}" in
-              *[2367]*)
-                echo "AVISO: ${candidato}svc.sh com permissão $perm_svc (escrita a grupo/outros) — ignorado." >&2
-                continue
-                ;;
-            esac
-            # svc.sh precisa ser do dono do diretório ou de root: impede executar
-            # arquivo de terceiro a partir de um diretório legítimo.
-            dono="$(stat -c '%U' "$candidato" 2>/dev/null || echo '?')"
-            dono_svc="$(stat -c '%U' "${candidato}svc.sh" 2>/dev/null || echo '?')"
-            if [ "$dono_svc" != "$dono" ] && [ "$dono_svc" != root ]; then
-              echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc', diferente do dono do diretório ('$dono') e de root — ignorado." >&2
-              continue
-            fi
-            runner_dir="${candidato%/}"
-            break
-          done
-          if [ -z "$runner_dir" ]; then
-            echo "ERRO: nenhum runner elegível em /opt/actions-runner*. Exigido: diretório real (não symlink), svc.sh executável, .runner presente, .service não-vazio, diretório e svc.sh sem escrita para grupo/outros, e svc.sh do mesmo dono do diretório ou de root." >&2
-            ls -ld /opt/actions-runner* 2>/dev/null || true
+          if [ -z "$units" ]; then
+            echo "ERRO: nenhuma unit 'actions.runner.*.service' registrada no systemd." >&2
+            systemctl list-unit-files --no-legend --plain 'actions.runner*' 2>/dev/null || true
             exit 4
           fi
-          echo "Runner encontrado em: $runner_dir"
-          cd "$runner_dir"
-          sudo ./svc.sh status || true
-          sudo ./svc.sh stop || true
-          sudo ./svc.sh start
+          total="$(printf '%s\n' "$units" | wc -l)"
+          [ "$total" -eq 1 ] || echo "AVISO: $total units de runner encontradas; todas serão reiniciadas." >&2
+          # `for` sobre $units sem aspas: nome de unit não contém espaço, e evita o
+          # subshell de `printf | while`, onde um exit não abortaria o passo.
+          for unit in $units; do
+            echo "Runner: $unit"
+            sudo systemctl stop "$unit" || true
+            sudo systemctl start "$unit"
+          done
           sleep 3
-          sudo ./svc.sh status
+          falhou=0
+          for unit in $units; do
+            if sudo systemctl is-active --quiet "$unit"; then
+              echo "OK: $unit ativo"
+            else
+              echo "ERRO: $unit não ficou ativo." >&2
+              sudo systemctl status "$unit" --no-pager --lines=20 2>&1 | tail -20 >&2 || true
+              falhou=1
+            fi
+          done
+          [ "$falhou" -eq 0 ] || exit 6
           REMOTE
           else
             SSHPASS="$VPS_PASSWORD" sshpass -e ssh \
@@ -150,74 +118,42 @@ jobs:
               -o ConnectTimeout=15 \
               "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          # Confiança vem do diretório-pai, não de nada dentro do candidato.
-          # Se /opt é de root e sem escrita para grupo/outros, nenhuma conta comum
-          # consegue criar /opt/actions-runner*; logo o dono de um candidato ali foi
-          # definido pelo root (o instalador faz chown -R para RUNNER_USER). Assim
-          # não é preciso adivinhar a conta nem lê-la de arquivo que o próprio dono
-          # controla — ler .service para decidir em quem confiar era circular.
-          pai_dono="$(stat -c '%U' /opt 2>/dev/null || echo '?')"
-          pai_perm="$(stat -c '%a' /opt 2>/dev/null || echo '')"
-          if [ "$pai_dono" != "root" ]; then
-            echo "ERRO: /opt pertence a '$pai_dono', não a root — a descoberta de runner não é confiável." >&2
-            exit 5
+          # Não executamos script vindo do diretório do runner. Esse diretório é
+          # gravável pelo dono, e um dono não-root poderia trocar o svc.sh e obter
+          # root via sudo — provar quem criou o diretório não prova quem controla o
+          # conteúdo agora. A unit systemd vive em /etc/systemd/system, controlada
+          # por root, e é a única fonte usada aqui. Isso também resolve o problema
+          # original (#1250): o caminho do runner deixa de importar.
+          units="$(systemctl list-unit-files --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}')"
+          if [ -z "$units" ]; then
+            units="$(systemctl list-units --all --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}')"
           fi
-          case "${pai_perm: -2:1}${pai_perm: -1:1}" in
-            *[2367]*)
-              echo "ERRO: /opt com permissão $pai_perm (escrita a grupo/outros) — a descoberta de runner não é confiável." >&2
-              exit 5
-              ;;
-          esac
-          runner_dir=""
-          for candidato in /opt/actions-runner*/; do
-            [ -d "$candidato" ] || continue
-            [ -L "${candidato%/}" ] && { echo "AVISO: ${candidato} é symlink — ignorado." >&2; continue; }
-            [ -x "${candidato}svc.sh" ] || continue
-            [ -f "${candidato}.runner" ] || continue
-            # .service não-vazio = serviço registrado; mesmo critério de
-            # scripts/setup-selfhosted-runner.sh. Sem ele, svc.sh start falha.
-            # Usado só como sinal funcional — nunca para decidir confiança.
-            [ -s "${candidato}.service" ] || {
-              echo "AVISO: ${candidato} sem serviço registrado (.service vazio/ausente) — ignorado." >&2
-              continue
-            }
-            perm="$(stat -c '%a' "$candidato" 2>/dev/null || echo '')"
-            case "${perm: -2:1}${perm: -1:1}" in
-              *[2367]*)
-                echo "AVISO: ${candidato} com permissão $perm (escrita a grupo/outros) — ignorado." >&2
-                continue
-                ;;
-            esac
-            perm_svc="$(stat -c '%a' "${candidato}svc.sh" 2>/dev/null || echo '')"
-            case "${perm_svc: -2:1}${perm_svc: -1:1}" in
-              *[2367]*)
-                echo "AVISO: ${candidato}svc.sh com permissão $perm_svc (escrita a grupo/outros) — ignorado." >&2
-                continue
-                ;;
-            esac
-            # svc.sh precisa ser do dono do diretório ou de root: impede executar
-            # arquivo de terceiro a partir de um diretório legítimo.
-            dono="$(stat -c '%U' "$candidato" 2>/dev/null || echo '?')"
-            dono_svc="$(stat -c '%U' "${candidato}svc.sh" 2>/dev/null || echo '?')"
-            if [ "$dono_svc" != "$dono" ] && [ "$dono_svc" != root ]; then
-              echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc', diferente do dono do diretório ('$dono') e de root — ignorado." >&2
-              continue
-            fi
-            runner_dir="${candidato%/}"
-            break
-          done
-          if [ -z "$runner_dir" ]; then
-            echo "ERRO: nenhum runner elegível em /opt/actions-runner*. Exigido: diretório real (não symlink), svc.sh executável, .runner presente, .service não-vazio, diretório e svc.sh sem escrita para grupo/outros, e svc.sh do mesmo dono do diretório ou de root." >&2
-            ls -ld /opt/actions-runner* 2>/dev/null || true
+          if [ -z "$units" ]; then
+            echo "ERRO: nenhuma unit 'actions.runner.*.service' registrada no systemd." >&2
+            systemctl list-unit-files --no-legend --plain 'actions.runner*' 2>/dev/null || true
             exit 4
           fi
-          echo "Runner encontrado em: $runner_dir"
-          cd "$runner_dir"
-          sudo ./svc.sh status || true
-          sudo ./svc.sh stop || true
-          sudo ./svc.sh start
+          total="$(printf '%s\n' "$units" | wc -l)"
+          [ "$total" -eq 1 ] || echo "AVISO: $total units de runner encontradas; todas serão reiniciadas." >&2
+          # `for` sobre $units sem aspas: nome de unit não contém espaço, e evita o
+          # subshell de `printf | while`, onde um exit não abortaria o passo.
+          for unit in $units; do
+            echo "Runner: $unit"
+            sudo systemctl stop "$unit" || true
+            sudo systemctl start "$unit"
+          done
           sleep 3
-          sudo ./svc.sh status
+          falhou=0
+          for unit in $units; do
+            if sudo systemctl is-active --quiet "$unit"; then
+              echo "OK: $unit ativo"
+            else
+              echo "ERRO: $unit não ficou ativo." >&2
+              sudo systemctl status "$unit" --no-pager --lines=20 2>&1 | tail -20 >&2 || true
+              falhou=1
+            fi
+          done
+          [ "$falhou" -eq 0 ] || exit 6
           REMOTE
           fi
 
