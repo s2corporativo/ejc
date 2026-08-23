@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 
 import pytest
 
+import app.eval.coleta_fontes as coleta_fontes
 from app.eval.coleta_fontes import (
     ErroDeColeta,
     Fonte,
+    baixar,
+    carregar_registro,
     coletar_fonte,
     extrair_artigos,
     html_para_texto,
@@ -131,3 +135,137 @@ def test_registra_o_que_foi_verificado_quando_o_documento_confere():
 
     assert registro["verificado_contem"] == ["LEI N", "10.406"]
     assert "Art. 186" in registro["artigos"]["186"]
+
+
+# ── Achados do review do Codex sobre ea439071 ──────────────────────────────
+
+
+def test_recusa_redirecionamento_para_fora_de_dominio_oficial(monkeypatch):
+    """`urlopen` segue redirect sozinho; sem conferir `geturl()` a proveniência vira ficção.
+
+    Os marcadores de `verificar_texto` não cobrem este caso: a página externa
+    pode reproduzir o texto da lei e casar todos eles.
+    """
+
+    class RespostaRedirecionada:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def geturl(self):
+            return "https://cdn.exemplo.com/copia-da-lei"
+
+        def read(self):
+            return b"LEI N 8.078, DE 11 DE SETEMBRO DE 1990. Art. 14. Texto identico."
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen", lambda *a, **k: RespostaRedirecionada()
+    )
+    with pytest.raises(ErroDeColeta, match="redirecionamento para fora"):
+        baixar("https://www2.camara.leg.br/legin/qualquer")
+
+
+def test_artigo_com_sufixo_e_com_milhar_pontuado():
+    """`170-A` e `1.022` são corriqueiros; capturar só os dígitos iniciais errava nos dois sentidos."""
+    texto = (
+        "Art. 170. Dispositivo base, com corpo suficiente para não ser descartado. "
+        "Art. 170-A. Dispositivo sufixado, também com corpo suficiente. "
+        "Art. 1.022. Milhar pontuado, com corpo suficiente para o corte."
+    )
+
+    # Pedir o base não pode devolver o sufixado.
+    assert "Art. 170. Dispositivo base" in extrair_artigos(texto, ["170"])["170"]
+    assert "sufixado" not in extrair_artigos(texto, ["170"])["170"]
+
+    # O sufixado precisa ser encontrável.
+    assert "sufixado" in extrair_artigos(texto, ["170-A"])["170-A"]
+
+    # Milhar pontuado ou não são o mesmo artigo.
+    assert "Milhar" in extrair_artigos(texto, ["1.022"])["1.022"]
+    assert "Milhar" in extrair_artigos(texto, ["1022"])["1022"]
+
+
+def test_registro_sem_marcador_de_identidade_e_recusado(tmp_path):
+    """Sem `verificar_texto`, a coleta aceitaria qualquer página do domínio.
+
+    Como muitos diplomas compartilham os mesmos números de artigo, uma URL
+    oficial errada povoaria o registro com artigos de outra norma.
+    """
+    reg = tmp_path / "registro.json"
+    reg.write_text(
+        json.dumps(
+            {
+                "fontes": [
+                    {
+                        "apelido": "com",
+                        "titulo": "t",
+                        "url": "https://www2.camara.leg.br/a",
+                        "verificar_texto": ["LEI N"],
+                    },
+                    {"apelido": "sem", "titulo": "t", "url": "https://www2.camara.leg.br/b"},
+                    {
+                        "apelido": "vazio",
+                        "titulo": "t",
+                        "url": "https://www2.camara.leg.br/c",
+                        "verificar_texto": ["  "],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ErroDeColeta) as exc:
+        carregar_registro(reg)
+
+    assert "sem" in str(exc.value)
+    assert "vazio" in str(exc.value)
+    assert "com" not in str(exc.value).split(":")[1].split(".")[0]
+
+
+def test_falha_parcial_nao_publica_registro_truncado(tmp_path, monkeypatch, capsys):
+    """Uma fonte falhando não pode substituir um registro completo por um truncado.
+
+    Antes, `main` retornava 0 quando ao menos uma fonte tinha sido coletada, e a
+    escrita já havia trocado o arquivo pelo subconjunto — automação ou curador
+    leriam o parcial como completo. Falha de rede durante coleta é esperada.
+    """
+    saida = tmp_path / "fontes.json"
+    saida.write_text('{"fontes": ["COMPLETO"]}', encoding="utf-8")
+    registro = tmp_path / "registro.json"
+    registro.write_text(
+        json.dumps(
+            {
+                "fontes": [
+                    {
+                        "apelido": "boa",
+                        "titulo": "t",
+                        "url": "https://www2.camara.leg.br/a",
+                        "verificar_texto": ["LEI"],
+                    },
+                    {
+                        "apelido": "ruim",
+                        "titulo": "t",
+                        "url": "https://www2.camara.leg.br/b",
+                        "verificar_texto": ["LEI"],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def coleta_meio_quebrada(fonte, **_):
+        if fonte.apelido == "ruim":
+            raise OSError("rede caiu no meio da coleta")
+        return {"apelido": fonte.apelido, "prova_vigencia": False, "artigos": {},
+                "artigos_nao_encontrados": [], "hash_sha256": "x" * 64}
+
+    monkeypatch.setattr(coleta_fontes, "coletar_fonte", coleta_meio_quebrada)
+
+    codigo = coleta_fontes.main(["--registro", str(registro), "--saida", str(saida)])
+
+    assert codigo == 1
+    assert saida.read_text(encoding="utf-8") == '{"fontes": ["COMPLETO"]}'

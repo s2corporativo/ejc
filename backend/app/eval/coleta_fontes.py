@@ -84,8 +84,21 @@ def _host_oficial(url: str) -> bool:
 
 
 def baixar(url: str, *, timeout: int = TIMEOUT_PADRAO) -> bytes:
+    """Baixa e exige que o host FINAL, após redirecionamentos, siga oficial.
+
+    `urlopen` segue redirecionamento sozinho. Sem conferir `geturl()`, uma URL
+    oficial que redirecione para host externo faria o registro atribuir o
+    conteúdo e o hash desse host à URL oficial — a proveniência viraria ficção,
+    e os marcadores de `verificar_texto` não salvam: a página externa pode
+    reproduzir o texto da lei e casar todos eles.
+    """
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - URL validada acima
+        final = resp.geturl()
+        if final != url and not _host_oficial(final):
+            raise ErroDeColeta(
+                f"redirecionamento para fora de domínio oficial: {url} -> {final}"
+            )
         return resp.read()
 
 
@@ -103,11 +116,24 @@ def html_para_texto(bruto: bytes) -> str:
     return txt.strip()
 
 
+def _normalizar_id_artigo(bruto: str) -> str:
+    """`1.022` e `1022` são o mesmo artigo; `170-A` não é `170`."""
+    ident = bruto.strip().upper().replace(".", "").replace(" ", "")
+    return re.sub(r"[-–—]+", "-", ident)
+
+
 def _marcadores_de_artigo(texto: str) -> list[tuple[int, str]]:
-    """Posições de todo 'Art. N' do texto, na ordem em que aparecem."""
+    """Posições de todo 'Art. N' do texto, com o identificador COMPLETO.
+
+    Capturar só os dígitos iniciais quebrava nos dois sentidos: pedir `170-A`
+    nunca encontrava nada, e pedir `170` podia devolver o `170-A`. Artigo com
+    sufixo (`11-A`) e com milhar pontuado (`1.022`) são corriqueiros na
+    legislação brasileira, então o identificador é capturado inteiro e
+    normalizado antes da comparação.
+    """
     achados = []
-    for m in re.finditer(r"\bArt\.?\s*(\d+)(?:[-\s]*[ºo°])?", texto):
-        achados.append((m.start(), m.group(1)))
+    for m in re.finditer(r"\bArt\.?\s*(\d[\d.]*(?:\s*[-–—]\s*[A-Za-z])?)", texto):
+        achados.append((m.start(), _normalizar_id_artigo(m.group(1))))
     return achados
 
 
@@ -120,8 +146,11 @@ def extrair_artigos(texto: str, numeros: Iterable[str]) -> dict[str, str]:
     """
     marcadores = _marcadores_de_artigo(texto)
     saida: dict[str, str] = {}
+    # A chave de saída é o identificador como o registro o pediu, para o JSON
+    # continuar legível; a comparação é feita sobre a forma normalizada.
+    rotulo = {_normalizar_id_artigo(str(x)): str(x).strip() for x in numeros}
     for numero in numeros:
-        alvo = str(numero).strip()
+        alvo = _normalizar_id_artigo(str(numero))
         for i, (pos, num) in enumerate(marcadores):
             if num != alvo:
                 continue
@@ -130,9 +159,9 @@ def extrair_artigos(texto: str, numeros: Iterable[str]) -> dict[str, str]:
             # Um "Art. 14" citado de passagem no meio de outro dispositivo
             # produziria um trecho curto e sem corpo; o primeiro casamento que
             # tem corpo é o dispositivo em si.
-            if len(trecho) < 40 and saida.get(alvo):
+            if len(trecho) < 40 and saida.get(rotulo.get(alvo, alvo)):
                 continue
-            saida[alvo] = trecho
+            saida[rotulo.get(alvo, alvo)] = trecho
             if len(trecho) >= 40:
                 break
     return saida
@@ -214,7 +243,27 @@ def coletar_fonte(
 
 
 def carregar_registro(caminho: Path = REGISTRO) -> list[Fonte]:
+    """Carrega o registro, recusando entrada sem marcador de identidade.
+
+    `verificar_texto` ausente ou vazio fazia `coletar_fonte` não verificar nada
+    e aceitar qualquer página não vazia de domínio permitido — e como muitos
+    diplomas compartilham os mesmos números de artigo, uma URL oficial errada
+    povoaria o registro com artigos de outra norma, exatamente o que a
+    documentação promete que falha fechado. Garantia que depende de quem edita
+    o JSON lembrar de um campo opcional não é garantia.
+    """
     dados = json.loads(caminho.read_text(encoding="utf-8"))
+    sem_marcador = [
+        d.get("apelido", "?")
+        for d in dados["fontes"]
+        if not [str(t) for t in d.get("verificar_texto", []) if str(t).strip()]
+    ]
+    if sem_marcador:
+        raise ErroDeColeta(
+            f"fontes sem `verificar_texto` não vazio: {', '.join(sem_marcador)}. "
+            "Declare trechos que identifiquem a norma (número e data) — sem eles "
+            "a coleta aceitaria qualquer página do domínio."
+        )
     return [
         Fonte(
             apelido=d["apelido"],
@@ -266,6 +315,19 @@ def main(argv: list[str] | None = None) -> int:
         if registro["artigos_nao_encontrados"]:
             print(f"      artigos não localizados: {', '.join(registro['artigos_nao_encontrados'])}")
 
+    # Publicar o que deu certo enquanto outra fonte falhou substituiria um
+    # registro completo por um truncado, e o comando ainda sairia 0 — automação
+    # ou curador leriam o arquivo como se estivesse inteiro. Falha de rede
+    # durante coleta é esperada, então o caso precisa ser tratado, não torcido.
+    if falhas:
+        print(
+            f"\n{len(falhas)} fonte(s) falharam: {', '.join(ap for ap, _ in falhas)}.\n"
+            f"{args.saida} NÃO foi alterado — registro parcial seria lido como completo.\n"
+            "Corrija a causa e rode de novo, ou use --apelido para coletar só o que falta.",
+            file=sys.stderr,
+        )
+        return 1
+
     if coletadas:
         args.saida.write_text(
             json.dumps(
@@ -289,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         "\nEste arquivo NÃO é gold set. Nenhum caso foi curado: gabarito, vigência e "
         "assinatura de curador são atos humanos (ver HUMAN_GOLD_SET_BACKLOG.md)."
     )
-    return 1 if falhas and not coletadas else 0
+    return 0
 
 
 if __name__ == "__main__":

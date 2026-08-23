@@ -25,7 +25,7 @@
   ],
   "curadoria": {
     "curador": "[IDENTIDADE_DO_CURADOR]",
-    "revisor": "[IDENTIDADE_DO_REVISOR_INDEPENDENTE]",
+    "revisor": "[OPCIONAL_IDENTIDADE_DO_REVISOR_OU_OMITA_ESTA_LINHA]",
     "revisado_em": "YYYY-MM-DD",
     "vigencia_conferida_em": "YYYY-MM-DD",
     "fontes_oficiais": [
