@@ -24,6 +24,7 @@ import {
   ListChecks,
   Newspaper,
   Plus,
+  Library,
   Scale,
   ScanSearch,
   ScrollText,
@@ -131,6 +132,7 @@ const Checklists = lazy(() => import("../pages/Checklists"));
 const Workflow = lazy(() => import("../pages/Workflow"));
 const Assinaturas = lazy(() => import("../pages/Assinaturas"));
 const Prompts = lazy(() => import("../pages/Prompts"));
+const BancoTeses = lazy(() => import("../pages/BancoTeses"));
 const Produtividade = lazy(() => import("../pages/Produtividade"));
 const Auditoria = lazy(() => import("../pages/Auditoria"));
 const MapaModulos = lazy(() => import("../pages/MapaModulos"));
@@ -625,6 +627,27 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: true,
     usesAI: true,
     backendPrefixes: ["/api/ai", "/api/ai/core", "/api/ai/skills"],
+  },
+  {
+    key: "banco-teses",
+    path: "/teses",
+    label: "Banco de Teses",
+    description:
+      "Teses do escritório e em quais processos cada uma pode caber.",
+    group: "Pesquisar & IA",
+    icon: Library,
+    component: BancoTeses,
+    // Espelha _is_staff do backend (routers/teses.py): allowlist EQUIPE_JURIDICA
+    // — financeiro e secretaria recebem 403 na API, e não veem a rota aqui.
+    roles: ROLES.juridico,
+    status: "beta",
+    showInNav: true,
+    backendPrefixes: ["/api/teses"],
+    // Varredura determinística por casamento de termos — nenhuma chamada de IA.
+    usesAI: false,
+    // Lista título e área de casos: só os visíveis ao usuário, mas ainda assim
+    // é dado de processo.
+    sensitive: true,
   },
   {
     key: "prompts",

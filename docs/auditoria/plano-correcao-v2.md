@@ -343,8 +343,18 @@ Nas áreas críticas, *súmulas*, *jurisprudência* e *doutrina* estão zeradas.
 - Resolver os 1.375 **antes** de reindexar (2.2) — evita vetorizar norma revogada.
 - `[INVESTIGAR]` um grupo de "duplicados" reúne três acórdãos do STJ com números distintos (REsp 2201422, 2200477, 2205262) sob o mesmo hash. Verificar se o hash é calculado sobre trecho insuficientemente específico.
 
-## 5.4 — Erro jurídico recorrente nas skills `[ALTO]`
-Em ao menos 2 skills: decadência descrita como **"extinção sem julgamento de mérito"**. Incorreto — decadência e prescrição extinguem **com resolução de mérito** (CPC, art. 487, II). Localizar a origem (prompt de sistema, base ou template compartilhado). `[INVESTIGAR — confiança moderada]` possível citação conjunta indevida de CC art. 206, § 3º, II com CDC art. 26 para o mesmo vício. **Exige revisão do advogado responsável, não só do desenvolvedor.**
+## 5.4 — Erro jurídico recorrente nas skills — ✅ **RESOLVIDO em 2026-08-14 (PR #1015)**
+Em ao menos 2 skills: decadência descrita como **"extinção sem julgamento de mérito"**. Incorreto — decadência e prescrição extinguem **com resolução de mérito** (CPC, art. 487, II).
+
+**Corrigido, com defesa em profundidade** — verificado por execução em 2026-08-22 (35 testes e 54 subtestes passando; `tests/test_juridico_guardrails_decadencia.py`, `test_ai_logs_guardrail_leitura.py`, `test_skills_expansion_seed.py`):
+
+- guardrail determinístico ligado na **geração** (`ai_skill_service.py`);
+- e também na **leitura** (`routers/ai.py`) — resposta antiga e errada já gravada em log é corrigida ao ser lida, o que fecha o passivo e não só o fluxo novo;
+- atualização forçada do prompt das duas skills afetadas (`seeds`).
+
+A ressalva `[INVESTIGAR]` sobre citação conjunta de CC art. 206, § 3º, II com CDC art. 26 **não foi verificada** e segue aberta: é questão de conteúdo jurídico, não de guardrail.
+
+> Este item ficou marcado `[ALTO]` em aberto por oito dias depois de resolvido. Quem o lesse nesse intervalo refazia trabalho pronto — ou mantinha represada a liberação do plano de lançamento que dependia dele.
 
 ## 5.5 — Camada de IA da extração de documentos indisponível `[ALTO]`
 `POST /entrada-universal/processar` funciona na camada determinística (OCR, classificação, dedup), mas em 2 testes retornou `analise_ia.alertas: ["A interpretação por IA ficou indisponível..."]` com `partes`, `dados_pessoais`, `resumo_executivo`, `estrategia`, `datas_eventos` vazios.
