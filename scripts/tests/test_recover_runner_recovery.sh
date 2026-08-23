@@ -96,15 +96,18 @@ cat > "$BIN/systemctl" <<'EOS'
 acao="$1"; shift || true
 case "$acao" in
   list-unit-files|list-units) printf '%s\n' ${FAKE_UNITS:-} ;;
-  stop|start) echo "$acao $*" >> "${FAKE_LOG:?}" ;;
-  is-active)  [ "${FAKE_ATIVO:-1}" = "1" ] ;;
-  status)     echo "status simulado" ;;
+  stop)  echo "stop $1" >> "${FAKE_LOG:?}" ;;
+  start) echo "start $1" >> "${FAKE_LOG:?}"
+         [ "${FAKE_START_FAIL:-}" != "$1" ] || exit 1 ;;
+  is-active) [ "${FAKE_ATIVO:-1}" = "1" ] && [ "${FAKE_START_FAIL:-}" != "$2" ] ;;
+  status)    echo "status simulado" ;;
 esac
 EOS
 chmod +x "$BIN/sudo" "$BIN/systemctl"
 
-rodar() { FAKE_UNITS="$1" FAKE_ATIVO="${2:-1}" FAKE_LOG="$TMP/log" \
-            PATH="$BIN:$PATH" bash "$TMP/bloco1.sh" >"$TMP/out" 2>&1; }
+rodar() { FAKE_UNITS="$1" FAKE_ATIVO="${2:-1}" FAKE_START_FAIL="${3:-}" \
+            FAKE_LOG="$TMP/log" PATH="$BIN:$PATH" \
+            bash "$TMP/bloco1.sh" >"$TMP/out" 2>&1; }
 
 : > "$TMP/log"
 if rodar 'actions.runner.s2corporativo-ejc.ejc-vps.service' 1; then
@@ -142,6 +145,24 @@ if rodar 'actions.runner.a.b.service actions.runner.c.d.service' 1; then
                  || falha "múltiplas units: $n reiniciadas, esperado 2"
 else
   falha 'múltiplas units saudáveis deveriam sair com 0'; cat "$TMP/out" >&2
+fi
+
+# Regressão específica: com `set -e`, um `systemctl start` sem guarda aborta o
+# script na primeira unit quebrada — as saudáveis nunca são reiniciadas e o
+# acumulador de falha nunca é alcançado.
+: > "$TMP/log"
+if rodar 'actions.runner.velha.service actions.runner.boa.service' 1 'actions.runner.velha.service'; then
+  falha 'unit quebrada deveria fazer o passo falhar'
+else
+  rc=$?
+  if [ "$rc" -ne 6 ]; then
+    falha "unit quebrada saiu com $rc, esperado 6"
+  elif grep -q '^start actions.runner.boa.service' "$TMP/log"; then
+    ok 'start que falha não aborta o laço: unit saudável ainda é reiniciada'
+  else
+    falha 'laço abortou na primeira unit quebrada — unit saudável não foi reiniciada'
+    cat "$TMP/log" >&2
+  fi
 fi
 
 echo

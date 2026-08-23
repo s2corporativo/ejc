@@ -91,13 +91,18 @@ jobs:
           [ "$total" -eq 1 ] || echo "AVISO: $total units de runner encontradas; todas serão reiniciadas." >&2
           # `for` sobre $units sem aspas: nome de unit não contém espaço, e evita o
           # subshell de `printf | while`, onde um exit não abortaria o passo.
+          falhou=0
           for unit in $units; do
             echo "Runner: $unit"
             sudo systemctl stop "$unit" || true
-            sudo systemctl start "$unit"
+            # start sem guarda + set -e abortaria aqui na primeira unit quebrada,
+            # deixando units saudáveis sem reinício e pulando o acumulador.
+            if ! sudo systemctl start "$unit"; then
+              echo "ERRO: falha ao iniciar $unit." >&2
+              falhou=1
+            fi
           done
           sleep 3
-          falhou=0
           for unit in $units; do
             if sudo systemctl is-active --quiet "$unit"; then
               echo "OK: $unit ativo"
@@ -137,13 +142,18 @@ jobs:
           [ "$total" -eq 1 ] || echo "AVISO: $total units de runner encontradas; todas serão reiniciadas." >&2
           # `for` sobre $units sem aspas: nome de unit não contém espaço, e evita o
           # subshell de `printf | while`, onde um exit não abortaria o passo.
+          falhou=0
           for unit in $units; do
             echo "Runner: $unit"
             sudo systemctl stop "$unit" || true
-            sudo systemctl start "$unit"
+            # start sem guarda + set -e abortaria aqui na primeira unit quebrada,
+            # deixando units saudáveis sem reinício e pulando o acumulador.
+            if ! sudo systemctl start "$unit"; then
+              echo "ERRO: falha ao iniciar $unit." >&2
+              falhou=1
+            fi
           done
           sleep 3
-          falhou=0
           for unit in $units; do
             if sudo systemctl is-active --quiet "$unit"; then
               echo "OK: $unit ativo"
