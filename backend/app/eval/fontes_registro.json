@@ -1,0 +1,43 @@
+{
+  "_leia_me": [
+    "Registro das fontes oficiais que a curadoria do gold set (#1201) usa como prova.",
+    "Só entra aqui URL HTTPS em domínio oficial (.gov.br .jus.br .leg.br .mp.br .def.br)",
+    "que tenha sido efetivamente baixada e cujo conteúdo tenha sido conferido — não",
+    "basta a URL responder 200. Rode `python -m app.eval.coleta_fontes` para atualizar",
+    "hash e texto dos artigos em fontes_oficiais.json.",
+    "",
+    "Planalto (texto compilado) está inacessível de parte dos ambientes de execução; por",
+    "isso o acervo abaixo vem da Câmara, que é oficial mas publica o texto ORIGINAL.",
+    "Publicação original prova o que foi publicado, não o que está em vigor hoje."
+  ],
+  "fontes": [
+    {
+      "apelido": "cdc",
+      "titulo": "Lei nº 8.078, de 11 de setembro de 1990 — Código de Defesa do Consumidor",
+      "url": "https://www2.camara.leg.br/legin/fed/lei/1990/lei-8078-11-setembro-1990-365086-publicacaooriginal-1-pl.html",
+      "artigos": ["6", "14", "18", "27", "42", "49"],
+      "observacao": "Área consumidor. Publicação original — conferir vigência de cada dispositivo em texto compilado."
+    },
+    {
+      "apelido": "clt",
+      "titulo": "Decreto-Lei nº 5.452, de 1º de maio de 1943 — Consolidação das Leis do Trabalho",
+      "url": "https://www2.camara.leg.br/legin/fed/declei/1940-1949/decreto-lei-5452-1-maio-1943-415500-publicacaooriginal-1-pe.html",
+      "artigos": ["62", "71", "477", "482", "483"],
+      "observacao": "Área trabalhista. Texto de 1943: a Reforma Trabalhista (Lei 13.467/2017) alterou vários destes artigos. Conferência de vigência é indispensável."
+    },
+    {
+      "apelido": "cc",
+      "titulo": "Lei nº 10.406, de 10 de janeiro de 2002 — Código Civil",
+      "url": "https://www2.camara.leg.br/legin/fed/lei/2002/lei-10406-10-janeiro-2002-432893-publicacaooriginal-1-pl.html",
+      "artigos": ["186", "187", "389", "402", "422", "927"],
+      "observacao": "Área cível. Publicação original."
+    },
+    {
+      "apelido": "cp",
+      "titulo": "Decreto-Lei nº 2.848, de 7 de dezembro de 1940 — Código Penal",
+      "url": "https://www2.camara.leg.br/legin/fed/declei/1940-1949/decreto-lei-2848-7-dezembro-1940-412868-publicacaooriginal-1-pe.html",
+      "artigos": ["14", "33", "59", "121", "155", "157"],
+      "observacao": "Área penal. ATENÇÃO: a publicação original traz a Parte Geral de 1940 e penas de multa em réis, revogadas pela Lei 7.209/1984. Este documento NÃO serve de gabarito sem conferência em texto compilado."
+    }
+  ]
+}
