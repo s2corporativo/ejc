@@ -31,6 +31,17 @@ def _correr(coro):
 
 import requests
 
+
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+
+SENHA = _qa_pw('M28')
+
 API = "http://127.0.0.1:8000"
 S = requests.Session()
 
@@ -55,12 +66,12 @@ def _na(msg):
 
 
 CRED = {
-    "admin": ("ejc_qa_auth_admin@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "socio": ("ejc_qa_auth_socio@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "estagiario": ("ejc_qa_auth_estagiario@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "financeiro": ("ejc_qa_auth_financeiro@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
-    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", "<ver EJC_QA_PASSWORD>"),
+    "admin": ("ejc_qa_auth_admin@golocal.ejc", SENHA),
+    "socio": ("ejc_qa_auth_socio@golocal.ejc", SENHA),
+    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", SENHA),
+    "estagiario": ("ejc_qa_auth_estagiario@golocal.ejc", SENHA),
+    "financeiro": ("ejc_qa_auth_financeiro@golocal.ejc", SENHA),
+    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", SENHA),
 }
 _TOKENS = {}
 
@@ -375,10 +386,11 @@ def secao_isolamento():
     if caso_b:
         # snapshot do caso B criado via service (fluxo interno autorizado)
         import asyncio
+        from app.core.database import AsyncSessionLocal
         from app.services.case_intelligence_service import criar_snapshot
         snap_b = None
         async def gravar_b():
-            global snap_b
+            nonlocal snap_b
             async with AsyncSessionLocal() as db:
                 snap_b = await criar_snapshot(
                     db, caso_b, "manual",
