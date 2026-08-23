@@ -65,12 +65,16 @@ def test_hash_muda_quando_o_conteudo_muda():
     assert a != b and len(a) == 64
 
 
-def test_migration_147_e_aditiva_e_reversivel():
-    """Coluna nova em tabela com dado real: aditiva, com downgrade funcional."""
+def test_migration_149_e_aditiva_e_reversivel():
+    """Coluna nova em tabela com dado real: aditiva, com downgrade funcional.
+
+    Renumerada de 147 para 149 ao mesclar a main (colisão com
+    147_pendencia_impacto_providencia, mesclada primeiro).
+    """
     from pathlib import Path
 
     fonte = Path(__file__).resolve().parents[1] / (
-        "alembic/versions/147_documents_sha256_integridade.py"
+        "alembic/versions/149_documents_sha256_integridade.py"
     )
     texto = fonte.read_text(encoding="utf-8")
     assert "op.add_column" in texto and "nullable=True" in texto
