@@ -75,6 +75,11 @@ jobs:
           # Descoberta restrita a /opt: o svc.sh escolhido roda com sudo, então o
           # diretório precisa ser confiável. Aceitar /home/*/ permitiria a qualquer
           # conta local plantar um svc.sh e escalar privilégio pelo workflow.
+          # Dono aceitável: root ou a conta de serviço do runner. O instalador
+          # (scripts/setup-selfhosted-runner.sh:18,132) cria RUNNER_USER — padrão
+          # ghrunner — e faz chown -R do RUNNER_HOME inteiro para ele, svc.sh
+          # incluído. Exigir root aqui rejeitaria o runner legítimo.
+          runner_user="${RUNNER_USER:-ghrunner}"
           runner_dir=""
           for candidato in /opt/actions-runner*/; do
             [ -d "$candidato" ] || continue
@@ -87,10 +92,13 @@ jobs:
               continue
             }
             dono="$(stat -c '%U' "$candidato" 2>/dev/null || echo '?')"
-            [ "$dono" = "root" ] || {
-              echo "AVISO: ${candidato} pertence a '$dono', não a root — ignorado." >&2
-              continue
-            }
+            case "$dono" in
+              root|"$runner_user") ;;
+              *)
+                echo "AVISO: ${candidato} pertence a '$dono' (esperado root ou ${runner_user}) — ignorado." >&2
+                continue
+                ;;
+            esac
             perm="$(stat -c '%a' "$candidato" 2>/dev/null || echo '')"
             case "${perm: -2:1}${perm: -1:1}" in
               *[2367]*)
@@ -99,15 +107,25 @@ jobs:
                 ;;
             esac
             dono_svc="$(stat -c '%U' "${candidato}svc.sh" 2>/dev/null || echo '?')"
-            [ "$dono_svc" = "root" ] || {
-              echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc', não a root — ignorado." >&2
-              continue
-            }
+            case "$dono_svc" in
+              root|"$runner_user") ;;
+              *)
+                echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc' (esperado root ou ${runner_user}) — ignorado." >&2
+                continue
+                ;;
+            esac
+            perm_svc="$(stat -c '%a' "${candidato}svc.sh" 2>/dev/null || echo '')"
+            case "${perm_svc: -2:1}${perm_svc: -1:1}" in
+              *[2367]*)
+                echo "AVISO: ${candidato}svc.sh com permissão $perm_svc (escrita a grupo/outros) — ignorado." >&2
+                continue
+                ;;
+            esac
             runner_dir="${candidato%/}"
             break
           done
           if [ -z "$runner_dir" ]; then
-            echo "ERRO: nenhum runner elegível em /opt/actions-runner* (exigido: svc.sh executável de root, .runner, .service não-vazio, diretório de root sem escrita a grupo/outros)." >&2
+            echo "ERRO: nenhum runner elegível em /opt/actions-runner*. Exigido: .runner presente, .service não-vazio, svc.sh executável, e diretório e svc.sh de root ou ${runner_user}, sem escrita para grupo/outros." >&2
             ls -ld /opt/actions-runner* 2>/dev/null || true
             exit 4
           fi
@@ -131,6 +149,11 @@ jobs:
           # Descoberta restrita a /opt: o svc.sh escolhido roda com sudo, então o
           # diretório precisa ser confiável. Aceitar /home/*/ permitiria a qualquer
           # conta local plantar um svc.sh e escalar privilégio pelo workflow.
+          # Dono aceitável: root ou a conta de serviço do runner. O instalador
+          # (scripts/setup-selfhosted-runner.sh:18,132) cria RUNNER_USER — padrão
+          # ghrunner — e faz chown -R do RUNNER_HOME inteiro para ele, svc.sh
+          # incluído. Exigir root aqui rejeitaria o runner legítimo.
+          runner_user="${RUNNER_USER:-ghrunner}"
           runner_dir=""
           for candidato in /opt/actions-runner*/; do
             [ -d "$candidato" ] || continue
@@ -143,10 +166,13 @@ jobs:
               continue
             }
             dono="$(stat -c '%U' "$candidato" 2>/dev/null || echo '?')"
-            [ "$dono" = "root" ] || {
-              echo "AVISO: ${candidato} pertence a '$dono', não a root — ignorado." >&2
-              continue
-            }
+            case "$dono" in
+              root|"$runner_user") ;;
+              *)
+                echo "AVISO: ${candidato} pertence a '$dono' (esperado root ou ${runner_user}) — ignorado." >&2
+                continue
+                ;;
+            esac
             perm="$(stat -c '%a' "$candidato" 2>/dev/null || echo '')"
             case "${perm: -2:1}${perm: -1:1}" in
               *[2367]*)
@@ -155,15 +181,25 @@ jobs:
                 ;;
             esac
             dono_svc="$(stat -c '%U' "${candidato}svc.sh" 2>/dev/null || echo '?')"
-            [ "$dono_svc" = "root" ] || {
-              echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc', não a root — ignorado." >&2
-              continue
-            }
+            case "$dono_svc" in
+              root|"$runner_user") ;;
+              *)
+                echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc' (esperado root ou ${runner_user}) — ignorado." >&2
+                continue
+                ;;
+            esac
+            perm_svc="$(stat -c '%a' "${candidato}svc.sh" 2>/dev/null || echo '')"
+            case "${perm_svc: -2:1}${perm_svc: -1:1}" in
+              *[2367]*)
+                echo "AVISO: ${candidato}svc.sh com permissão $perm_svc (escrita a grupo/outros) — ignorado." >&2
+                continue
+                ;;
+            esac
             runner_dir="${candidato%/}"
             break
           done
           if [ -z "$runner_dir" ]; then
-            echo "ERRO: nenhum runner elegível em /opt/actions-runner* (exigido: svc.sh executável de root, .runner, .service não-vazio, diretório de root sem escrita a grupo/outros)." >&2
+            echo "ERRO: nenhum runner elegível em /opt/actions-runner*. Exigido: .runner presente, .service não-vazio, svc.sh executável, e diretório e svc.sh de root ou ${runner_user}, sem escrita para grupo/outros." >&2
             ls -ld /opt/actions-runner* 2>/dev/null || true
             exit 4
           fi
