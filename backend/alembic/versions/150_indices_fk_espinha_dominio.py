@@ -1,7 +1,7 @@
 """Índices nas FKs que apontam para a espinha do domínio
 
-Revision ID: 148_indices_fk_espinha_dominio
-Revises: 147_documents_sha256_integridade
+Revision ID: 150_indices_fk_espinha_dominio
+Revises: 149_documents_sha256_integridade
 Create Date: 2026-08-22
 
 Achado da auditoria funcional de 22/08/2026 (Issue #1237), prioridade 15 (§71).
@@ -35,11 +35,15 @@ de deploy (`tests/test_migrations_reais_passam_no_gate.py`) reprova `For`, `If`,
 é conferível estaticamente antes de produção. A primeira versão desta migration
 usava um `for` sobre uma lista de tuplas e foi reprovada — a repetição explícita
 é o formato que o repositório sabe revisar.
+
+Renumerada de 148 para 150 ao mesclar a `main` em 2026-08-23, na mesma
+colisão de numeração que renumerou a migration anterior desta cadeia (147
+ocupada por `147_pendencia_impacto_providencia`).
 """
 from alembic import op
 
-revision = "148_indices_fk_espinha_dominio"
-down_revision = "147_documents_sha256_integridade"
+revision = "150_indices_fk_espinha_dominio"
+down_revision = "149_documents_sha256_integridade"
 branch_labels = None
 depends_on = None
 

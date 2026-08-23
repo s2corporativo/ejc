@@ -1,7 +1,7 @@
 """documents.sha256 — integridade do arquivo juntado
 
-Revision ID: 147_documents_sha256_integridade
-Revises: 146_case_sigilo_reforcado
+Revision ID: 149_documents_sha256_integridade
+Revises: 147_pendencia_impacto_providencia
 Create Date: 2026-08-22
 
 Achado da auditoria funcional de 22/08/2026 (Issue #1237), prioridade 8 do
@@ -33,12 +33,16 @@ repositório (`tests/test_migrations_reais_passam_no_gate.py`) a reprovou —
 ramifica em tempo de execução não pode ser conferida estaticamente antes de ir
 para produção. O gate está certo, e o Alembic já garante execução única pela
 tabela de versão. Declarativa é o formato que o repositório revisa.
+
+Renumerada de 147 para 149 ao mesclar a `main` em 2026-08-23: o número 147
+foi ocupado por `147_pendencia_impacto_providencia` (Issue #1244, mesclada
+antes deste PR). Sem mudança de conteúdo, só de posição na cadeia.
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "147_documents_sha256_integridade"
-down_revision = "146_case_sigilo_reforcado"
+revision = "149_documents_sha256_integridade"
+down_revision = "147_pendencia_impacto_providencia"
 branch_labels = None
 depends_on = None
 
