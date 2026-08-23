@@ -72,15 +72,43 @@ jobs:
               -o ConnectTimeout=15 \
               "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
+          # Descoberta restrita a /opt: o svc.sh escolhido roda com sudo, então o
+          # diretório precisa ser confiável. Aceitar /home/*/ permitiria a qualquer
+          # conta local plantar um svc.sh e escalar privilégio pelo workflow.
           runner_dir=""
-          for candidato in /opt/actions-runner*/ /home/*/actions-runner*/; do
-            [ -x "${candidato}svc.sh" ] && [ -f "${candidato}.runner" ] || continue
+          for candidato in /opt/actions-runner*/; do
+            [ -d "$candidato" ] || continue
+            [ -x "${candidato}svc.sh" ] || continue
+            [ -f "${candidato}.runner" ] || continue
+            # .service não-vazio = serviço registrado; mesmo critério de
+            # scripts/setup-selfhosted-runner.sh. Sem ele, svc.sh start falha.
+            [ -s "${candidato}.service" ] || {
+              echo "AVISO: ${candidato} sem serviço registrado (.service vazio/ausente) — ignorado." >&2
+              continue
+            }
+            dono="$(stat -c '%U' "$candidato" 2>/dev/null || echo '?')"
+            [ "$dono" = "root" ] || {
+              echo "AVISO: ${candidato} pertence a '$dono', não a root — ignorado." >&2
+              continue
+            }
+            perm="$(stat -c '%a' "$candidato" 2>/dev/null || echo '')"
+            case "${perm: -2:1}${perm: -1:1}" in
+              *[2367]*)
+                echo "AVISO: ${candidato} com permissão $perm (escrita a grupo/outros) — ignorado." >&2
+                continue
+                ;;
+            esac
+            dono_svc="$(stat -c '%U' "${candidato}svc.sh" 2>/dev/null || echo '?')"
+            [ "$dono_svc" = "root" ] || {
+              echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc', não a root — ignorado." >&2
+              continue
+            }
             runner_dir="${candidato%/}"
             break
           done
           if [ -z "$runner_dir" ]; then
-            echo "ERRO: nenhum runner configurado encontrado em /opt/actions-runner* nem /home/*/actions-runner*." >&2
-            ls -1d /opt/actions-runner* 2>/dev/null || true
+            echo "ERRO: nenhum runner elegível em /opt/actions-runner* (exigido: svc.sh executável de root, .runner, .service não-vazio, diretório de root sem escrita a grupo/outros)." >&2
+            ls -ld /opt/actions-runner* 2>/dev/null || true
             exit 4
           fi
           echo "Runner encontrado em: $runner_dir"
@@ -100,15 +128,43 @@ jobs:
               -o ConnectTimeout=15 \
               "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
+          # Descoberta restrita a /opt: o svc.sh escolhido roda com sudo, então o
+          # diretório precisa ser confiável. Aceitar /home/*/ permitiria a qualquer
+          # conta local plantar um svc.sh e escalar privilégio pelo workflow.
           runner_dir=""
-          for candidato in /opt/actions-runner*/ /home/*/actions-runner*/; do
-            [ -x "${candidato}svc.sh" ] && [ -f "${candidato}.runner" ] || continue
+          for candidato in /opt/actions-runner*/; do
+            [ -d "$candidato" ] || continue
+            [ -x "${candidato}svc.sh" ] || continue
+            [ -f "${candidato}.runner" ] || continue
+            # .service não-vazio = serviço registrado; mesmo critério de
+            # scripts/setup-selfhosted-runner.sh. Sem ele, svc.sh start falha.
+            [ -s "${candidato}.service" ] || {
+              echo "AVISO: ${candidato} sem serviço registrado (.service vazio/ausente) — ignorado." >&2
+              continue
+            }
+            dono="$(stat -c '%U' "$candidato" 2>/dev/null || echo '?')"
+            [ "$dono" = "root" ] || {
+              echo "AVISO: ${candidato} pertence a '$dono', não a root — ignorado." >&2
+              continue
+            }
+            perm="$(stat -c '%a' "$candidato" 2>/dev/null || echo '')"
+            case "${perm: -2:1}${perm: -1:1}" in
+              *[2367]*)
+                echo "AVISO: ${candidato} com permissão $perm (escrita a grupo/outros) — ignorado." >&2
+                continue
+                ;;
+            esac
+            dono_svc="$(stat -c '%U' "${candidato}svc.sh" 2>/dev/null || echo '?')"
+            [ "$dono_svc" = "root" ] || {
+              echo "AVISO: ${candidato}svc.sh pertence a '$dono_svc', não a root — ignorado." >&2
+              continue
+            }
             runner_dir="${candidato%/}"
             break
           done
           if [ -z "$runner_dir" ]; then
-            echo "ERRO: nenhum runner configurado encontrado em /opt/actions-runner* nem /home/*/actions-runner*." >&2
-            ls -1d /opt/actions-runner* 2>/dev/null || true
+            echo "ERRO: nenhum runner elegível em /opt/actions-runner* (exigido: svc.sh executável de root, .runner, .service não-vazio, diretório de root sem escrita a grupo/outros)." >&2
+            ls -ld /opt/actions-runner* 2>/dev/null || true
             exit 4
           fi
           echo "Runner encontrado em: $runner_dir"
