@@ -66,6 +66,11 @@ class Fonte:
     url: str
     artigos: list[str] = field(default_factory=list)
     observacao: str = ""
+    # Trechos que precisam aparecer no documento para que ele seja aceito como
+    # a norma que o registro diz ser. Sem isto, uma URL que responde 200 mas
+    # serve outra lei entra no acervo em silêncio — e o registro passa a
+    # depender da disciplina de quem editou o JSON, não do código.
+    verificar_texto: list[str] = field(default_factory=list)
 
 
 def _host_oficial(url: str) -> bool:
@@ -175,6 +180,15 @@ def coletar_fonte(
         raise ErroDeColeta(f"{fonte.apelido}: resposta vazia.")
 
     texto = html_para_texto(bruto)
+
+    ausentes = [t for t in fonte.verificar_texto if t.lower() not in texto.lower()]
+    if ausentes:
+        raise ErroDeColeta(
+            f"{fonte.apelido}: o documento em {fonte.url} não contém "
+            f"{ausentes!r} — não é a norma que o registro declara, ou a página mudou. "
+            "Confira a URL antes de registrar."
+        )
+
     artigos = extrair_artigos(texto, fonte.artigos)
     faltando = [a for a in fonte.artigos if a not in artigos]
     natureza = natureza_do_documento(fonte.url, texto)
@@ -191,6 +205,7 @@ def coletar_fonte(
         "artigos": artigos,
         "artigos_nao_encontrados": faltando,
         "observacao": fonte.observacao,
+        "verificado_contem": list(fonte.verificar_texto),
         # Preenchimento humano. A ferramenta não atesta vigência nem assina
         # curadoria — ver docstring do módulo.
         "vigencia_conferida_em": None,
@@ -207,6 +222,7 @@ def carregar_registro(caminho: Path = REGISTRO) -> list[Fonte]:
             url=d["url"],
             artigos=[str(a) for a in d.get("artigos", [])],
             observacao=d.get("observacao", ""),
+            verificar_texto=[str(t) for t in d.get("verificar_texto", [])],
         )
         for d in dados["fontes"]
     ]
