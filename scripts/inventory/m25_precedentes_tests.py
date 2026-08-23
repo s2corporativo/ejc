@@ -23,6 +23,17 @@ import sys
 import time
 import requests
 
+
+def _qa_pw(name: str) -> str:
+    import os
+    v = os.environ.get('EJC_QA_PASSWORD')
+    if not v:
+        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
+    return v
+
+
+SENHA = _qa_pw('M25')
+
 API = "http://127.0.0.1:8000"
 S = requests.Session()  # SEM Content-Type no header da sessão
 PASS = []
@@ -43,11 +54,11 @@ def _token(email):
         return TOKENS[email]
     time.sleep(16)
     r = S.post(f"{API}/api/auth/login", json={
-        "email": email, "password": "<ver EJC_QA_PASSWORD>"})
+        "email": email, "password": SENHA})
     if r.status_code == 429:
         time.sleep(45)
         r = S.post(f"{API}/api/auth/login", json={
-            "email": email, "password": "<ver EJC_QA_PASSWORD>"})
+            "email": email, "password": SENHA})
     if r.status_code != 200:
         raise SystemExit(f"Login {email} falhou: {r.status_code} {r.text[:300]}")
     TOKENS[email] = r.json()["access_token"]
