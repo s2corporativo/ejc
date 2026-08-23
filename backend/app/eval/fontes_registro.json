@@ -8,36 +8,85 @@
     "",
     "Planalto (texto compilado) está inacessível de parte dos ambientes de execução; por",
     "isso o acervo abaixo vem da Câmara, que é oficial mas publica o texto ORIGINAL.",
-    "Publicação original prova o que foi publicado, não o que está em vigor hoje."
+    "Publicação original prova o que foi publicado, não o que está em vigor hoje.",
+    "",
+    "`verificar_texto`: trechos que PRECISAM aparecer no documento. A coleta recusa a fonte se faltar qualquer um — assim uma URL que responde 200 servindo outra lei falha alto em vez de entrar calada no acervo."
   ],
   "fontes": [
     {
       "apelido": "cdc",
       "titulo": "Lei nº 8.078, de 11 de setembro de 1990 — Código de Defesa do Consumidor",
       "url": "https://www2.camara.leg.br/legin/fed/lei/1990/lei-8078-11-setembro-1990-365086-publicacaooriginal-1-pl.html",
-      "artigos": ["6", "14", "18", "27", "42", "49"],
-      "observacao": "Área consumidor. Publicação original — conferir vigência de cada dispositivo em texto compilado."
+      "artigos": [
+        "6",
+        "14",
+        "18",
+        "27",
+        "42",
+        "49"
+      ],
+      "observacao": "Área consumidor. Publicação original — conferir vigência de cada dispositivo em texto compilado.",
+      "verificar_texto": [
+        "LEI N",
+        "8.078",
+        "11 DE SETEMBRO DE 1990"
+      ]
     },
     {
       "apelido": "clt",
       "titulo": "Decreto-Lei nº 5.452, de 1º de maio de 1943 — Consolidação das Leis do Trabalho",
       "url": "https://www2.camara.leg.br/legin/fed/declei/1940-1949/decreto-lei-5452-1-maio-1943-415500-publicacaooriginal-1-pe.html",
-      "artigos": ["62", "71", "477", "482", "483"],
-      "observacao": "Área trabalhista. Texto de 1943: a Reforma Trabalhista (Lei 13.467/2017) alterou vários destes artigos. Conferência de vigência é indispensável."
+      "artigos": [
+        "62",
+        "71",
+        "477",
+        "482",
+        "483"
+      ],
+      "observacao": "Área trabalhista. Texto de 1943: a Reforma Trabalhista (Lei 13.467/2017) alterou vários destes artigos. Conferência de vigência é indispensável.",
+      "verificar_texto": [
+        "DECRETO-LEI N",
+        "5.452",
+        "1º DE MAIO DE 1943"
+      ]
     },
     {
       "apelido": "cc",
       "titulo": "Lei nº 10.406, de 10 de janeiro de 2002 — Código Civil",
       "url": "https://www2.camara.leg.br/legin/fed/lei/2002/lei-10406-10-janeiro-2002-432893-publicacaooriginal-1-pl.html",
-      "artigos": ["186", "187", "389", "402", "422", "927"],
-      "observacao": "Área cível. Publicação original."
+      "artigos": [
+        "186",
+        "187",
+        "389",
+        "402",
+        "422",
+        "927"
+      ],
+      "observacao": "Área cível. Publicação original.",
+      "verificar_texto": [
+        "LEI N",
+        "10.406",
+        "10 DE JANEIRO DE 2002"
+      ]
     },
     {
       "apelido": "cp",
       "titulo": "Decreto-Lei nº 2.848, de 7 de dezembro de 1940 — Código Penal",
       "url": "https://www2.camara.leg.br/legin/fed/declei/1940-1949/decreto-lei-2848-7-dezembro-1940-412868-publicacaooriginal-1-pe.html",
-      "artigos": ["14", "33", "59", "121", "155", "157"],
-      "observacao": "Área penal. ATENÇÃO: a publicação original traz a Parte Geral de 1940 e penas de multa em réis, revogadas pela Lei 7.209/1984. Este documento NÃO serve de gabarito sem conferência em texto compilado."
+      "artigos": [
+        "14",
+        "33",
+        "59",
+        "121",
+        "155",
+        "157"
+      ],
+      "observacao": "Área penal. ATENÇÃO: a publicação original traz a Parte Geral de 1940 e penas de multa em réis, revogadas pela Lei 7.209/1984. Este documento NÃO serve de gabarito sem conferência em texto compilado.",
+      "verificar_texto": [
+        "DECRETO-LEI N",
+        "2.848",
+        "7 DE DEZEMBRO DE 1940"
+      ]
     }
   ]
 }

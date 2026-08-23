@@ -20,6 +20,11 @@
       },
       "artigos_nao_encontrados": [],
       "observacao": "Área consumidor. Publicação original — conferir vigência de cada dispositivo em texto compilado.",
+      "verificado_contem": [
+        "LEI N",
+        "8.078",
+        "11 DE SETEMBRO DE 1990"
+      ],
       "vigencia_conferida_em": null,
       "conferida_por": null
     },
@@ -41,6 +46,11 @@
       },
       "artigos_nao_encontrados": [],
       "observacao": "Área trabalhista. Texto de 1943: a Reforma Trabalhista (Lei 13.467/2017) alterou vários destes artigos. Conferência de vigência é indispensável.",
+      "verificado_contem": [
+        "DECRETO-LEI N",
+        "5.452",
+        "1º DE MAIO DE 1943"
+      ],
       "vigencia_conferida_em": null,
       "conferida_por": null
     },
@@ -63,6 +73,11 @@
       },
       "artigos_nao_encontrados": [],
       "observacao": "Área cível. Publicação original.",
+      "verificado_contem": [
+        "LEI N",
+        "10.406",
+        "10 DE JANEIRO DE 2002"
+      ],
       "vigencia_conferida_em": null,
       "conferida_por": null
     },
@@ -85,6 +100,11 @@
       },
       "artigos_nao_encontrados": [],
       "observacao": "Área penal. ATENÇÃO: a publicação original traz a Parte Geral de 1940 e penas de multa em réis, revogadas pela Lei 7.209/1984. Este documento NÃO serve de gabarito sem conferência em texto compilado.",
+      "verificado_contem": [
+        "DECRETO-LEI N",
+        "2.848",
+        "7 DE DEZEMBRO DE 1940"
+      ],
       "vigencia_conferida_em": null,
       "conferida_por": null
     }

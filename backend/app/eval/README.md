@@ -64,7 +64,11 @@ python -m app.eval.coleta_fontes --apelido cdc     # só uma fonte
 ```
 
 Registro em `fontes_registro.json`; resultado em `fontes_oficiais.json`. Só entra
-no registro URL cujo **conteúdo** foi conferido — responder 200 não basta.
+no registro URL cujo **conteúdo** foi conferido — responder 200 não basta, e essa
+regra é do código: cada fonte declara em `verificar_texto` os trechos que o
+documento precisa conter (número e data da norma), e a coleta recusa a fonte se
+faltar qualquer um. Uma URL que responde 200 servindo outra lei falha alto em vez
+de entrar calada no acervo.
 
 **A ferramenta não cura.** Não escolhe tese, não escreve gabarito, não preenche
 `vigencia_conferida_em` e não assina `curador`. Esses campos saem `null` de

@@ -96,3 +96,38 @@ def test_resposta_vazia_falha_em_vez_de_registrar_fonte_vazia():
     fonte = Fonte(apelido="cc", titulo="Código Civil", url=URL_ORIGINAL, artigos=["186"])
     with pytest.raises(ErroDeColeta, match="vazia"):
         coletar_fonte(fonte, baixador=lambda _: b"")
+
+
+def test_recusa_documento_que_nao_e_a_norma_declarada():
+    """URL que responde 200 servindo outra lei não pode entrar calada no acervo.
+
+    A disciplina "só registra URL com conteúdo conferido" estava escrita no
+    registro e dependia de quem editasse o JSON. Aqui ela é do código.
+    """
+    fonte = Fonte(
+        apelido="ctn",
+        titulo="Lei 5.172/1966 — Código Tributário Nacional",
+        url=URL_ORIGINAL,
+        artigos=["173"],
+        verificar_texto=["LEI N", "5.172"],
+    )
+    corpo = b"<p>LEI N 10.406, DE 10 DE JANEIRO DE 2002. Art. 173. Outro texto qualquer.</p>"
+
+    with pytest.raises(ErroDeColeta, match="não é a norma que o registro declara"):
+        coletar_fonte(fonte, baixador=lambda _: corpo)
+
+
+def test_registra_o_que_foi_verificado_quando_o_documento_confere():
+    fonte = Fonte(
+        apelido="cc",
+        titulo="Código Civil",
+        url=URL_ORIGINAL,
+        artigos=["186"],
+        verificar_texto=["LEI N", "10.406"],
+    )
+    corpo = b"<p>LEI N 10.406, DE 10 DE JANEIRO DE 2002. Art. 186. Aquele que violar direito.</p>"
+
+    registro = coletar_fonte(fonte, baixador=lambda _: corpo)
+
+    assert registro["verificado_contem"] == ["LEI N", "10.406"]
+    assert "Art. 186" in registro["artigos"]["186"]
