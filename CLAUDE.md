@@ -208,6 +208,7 @@ Stack completa: `docker compose up -d --build` (serviços: db pgvector/pg16, red
   - `deploy-vps.yml` — dispara manual ou após CI verde em `main`; rsync para `/opt/ejc` e executa `scripts/deploy_vps_safe.sh` (backup → build → health-poll → migrations/seeds opcionais → rollback automático em erro).
   - `ejc-release-gate.yml` — roda `scripts/ci_guard.sh` (bloqueia marcadores de merge, `.env`/segredos versionados, CORS wildcard).
 - Runbooks operacionais: deploy → `RUNBOOK_DEPLOY_FASES_1-3.md`; backup → `RUNBOOK_ROTINA_BACKUP_DIARIA_GDRIVE.md` (cron 02:00, pg_dump+uploads → Google Drive via rclone); monitoramento → `RUNBOOK_MONITORAMENTO.md`.
+- **Actions parado (cota esgotada) → `RUNBOOK_DEPLOY_MANUAL.md` + `scripts/deploy_manual.sh`.** O deploy não depende tecnicamente do Actions: o runner vive DENTRO da VPS e a lógica está em `deploy_workflow_transaction.sh` → `deploy_vps_safe.sh`. **Migrar jobs para o runner self-hosted NÃO contorna a cota** — verificado em 2026-08-23: `deploy-vps.yml`, que já roda em `[self-hosted, ejc-vps]` e está `active`, também terminou em `startup_failure` com `jobs: []`; o bloqueio é no nível da conta, antes de alocar runner. E **nunca chame `deploy_vps_safe.sh` direto**: `RUN_MIGRATIONS` tem default 0 e o passo que o liga só existia no YAML, então o deploy "dá certo" com o schema desatualizado.
 
 ## Regras críticas (não negociar)
 
