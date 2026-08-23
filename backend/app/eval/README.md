@@ -39,7 +39,7 @@ Exemplo resumido de um caso real (os valores de curadoria são ilustrativos):
 
 Regras bloqueantes do corpus real:
 
-- curador e revisor são identidades distintas;
+- curador identificado; revisor opcional e pode coincidir com o curador;
 - consulta da fonte e conferência de vigência não podem ser posteriores à revisão;
 - toda fonte oficial precisa identificar a versão revisada por `identificador_versao` ou `hash_sha256`;
 - o sanitizer de PII examina todo o payload e falha fechado se ficar indisponível;
@@ -204,7 +204,7 @@ Scaffold pronto para o escritório preencher:
 1. Use `gold_set_pecas.template.json` como fonte do schema do caso real; os exemplos não são base para copiar metadados de proveniência.
 2. Pseudonimize nomes, documentos, endereços e valores identificáveis.
 3. Classifique `cenario` como `normal`, `fronteira` ou `excecao`.
-4. Preencha `curadoria` com curador, revisor independente, datas e fonte oficial; a fonte deve ter `identificador_versao` ou `hash_sha256`.
+4. Preencha `curadoria` com curador (revisor opcional), datas e fonte oficial; a fonte deve ter `identificador_versao` ou `hash_sha256`.
 5. Liste apenas jurisprudência real conferida na fonte oficial.
 6. Confirme que `fatos`, `tipo_peca_esperado`, `teses_esperadas` e `criterios` estão preenchidos.
 7. Cresça para 50–150 casos pseudonimizados e marque `ficticio: false` somente nos casos reais revisados.

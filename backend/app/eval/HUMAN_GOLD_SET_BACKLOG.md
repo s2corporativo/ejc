@@ -10,7 +10,7 @@ O workflow `EJC Legal Quality Certification` exige:
 - 15 por área: `consumidor`, `trabalhista`, `civel`, `penal`, `tributario`;
 - em cada área, no mínimo 5 cenários `normal`, 5 `fronteira` e 5 `excecao`;
 - `ficticio=false`;
-- curador e revisor distintos;
+- curador identificado (revisor opcional);
 - datas de revisão e de conferência de vigência;
 - ao menos uma fonte oficial HTTPS com versão reconstruível;
 - ausência de PII e placeholders;
@@ -141,6 +141,6 @@ O workflow `EJC Legal Quality Certification` exige:
 - [ ] 5 normal + 5 fronteira + 5 exceção por área;
 - [ ] zero PII detectada pelo sanitizer;
 - [ ] zero fonte fictícia/placeholder;
-- [ ] curador != revisor em todos os casos;
+- [ ] curador identificado em todos os casos;
 - [ ] fontes oficiais e vigência conferidas;
 - [ ] `EJC Legal Quality Certification` verde.
