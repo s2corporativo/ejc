@@ -192,7 +192,18 @@ Stack completa: `docker compose up -d --build` (serviços: db pgvector/pg16, red
 
 ## CI/CD e deploy
 
-- Workflows em `.github/workflows/`. **O CI roda automaticamente em todo Pull Request** — `ci.yml`, `ejc-release-gate.yml`, `governanca.yml`, `continuity-ui-gates.yml`, `architecture-inventory.yml`, `backup-gdrive-activation.yml` e `rag-production-activation.yml` disparam em `pull_request`. Só operação de ambiente (`deploy-vps.yml`, `producao-prova-continuidade.yml`, `frontend-ci.yml`) é `workflow_dispatch`, no runner self-hosted `ejc-vps`. Confira com `grep -A4 '^on:' .github/workflows/*.yml` antes de afirmar que algo não roda:
+- Workflows em `.github/workflows/`. Os que declaram `on: pull_request` são `ci.yml`, `ejc-release-gate.yml`, `governanca.yml`, `continuity-ui-gates.yml`, `architecture-inventory.yml`, `backup-gdrive-activation.yml` e `rag-production-activation.yml`. Só operação de ambiente (`deploy-vps.yml`, `producao-prova-continuidade.yml`, `frontend-ci.yml`) é `workflow_dispatch`, no runner self-hosted `ejc-vps`.
+
+  > **Declarar o gatilho não é o mesmo que rodar — não confie no `grep`.** A orientação anterior aqui mandava conferir com `grep -A4 '^on:' .github/workflows/*.yml`, e esse método **não detecta o defeito mais comum**: um workflow desligado pela UI fica `disabled_manually` na API do GitHub, com o arquivo versionado intacto e o `on:` correto. Foi assim que `governanca.yml`, `continuity-ui-gates.yml`, `architecture-inventory.yml` e `auto-integracao.yml` passaram semanas sem rodar em PR nenhum sem ninguém notar (Issue #1235) — inclusive recebendo melhorias enquanto estavam desligados. A verificação que vale é o **estado na API**, não o arquivo:
+  >
+  > ```bash
+  > gh api repos/s2corporativo/ejc/actions/workflows \
+  >   --jq '.workflows[] | select(.state != "active") | "\(.state)\t\(.path)"'
+  > ```
+  >
+  > Um segundo modo de falha não aparece em nenhum dos dois: com a cota de Actions esgotada, workflow `active` e com gatilho certo simplesmente **não aloca runner** — os runs ficam `queued` indefinidamente ou terminam em `startup_failure` com `jobs: []`. Vale o critério canônico já usado no repositório: `startup_failure`, `jobs=[]`, `steps=null` ou ausência de logs é **infraestrutura, não sucesso**. Antes de afirmar que um PR está verde, confirme que os checks existem — PR sem check algum não é PR aprovado.
+
+  Referência dos gatilhos declarados:
   - `ci.yml` — job `db-validation` (Postgres pgvector de serviço, `alembic upgrade head`, `pytest tests -v`, ruff/pip-audit informativos) + job `frontend-build` (npm ci, test, build).
   - `deploy-vps.yml` — dispara manual ou após CI verde em `main`; rsync para `/opt/ejc` e executa `scripts/deploy_vps_safe.sh` (backup → build → health-poll → migrations/seeds opcionais → rollback automático em erro).
   - `ejc-release-gate.yml` — roda `scripts/ci_guard.sh` (bloqueia marcadores de merge, `.env`/segredos versionados, CORS wildcard).
