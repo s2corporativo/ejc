@@ -72,7 +72,19 @@ jobs:
               -o ConnectTimeout=15 \
               "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          cd /opt/actions-runner
+          runner_dir=""
+          for candidato in /opt/actions-runner*/ /home/*/actions-runner*/; do
+            [ -x "${candidato}svc.sh" ] && [ -f "${candidato}.runner" ] || continue
+            runner_dir="${candidato%/}"
+            break
+          done
+          if [ -z "$runner_dir" ]; then
+            echo "ERRO: nenhum runner configurado encontrado em /opt/actions-runner* nem /home/*/actions-runner*." >&2
+            ls -1d /opt/actions-runner* 2>/dev/null || true
+            exit 4
+          fi
+          echo "Runner encontrado em: $runner_dir"
+          cd "$runner_dir"
           sudo ./svc.sh status || true
           sudo ./svc.sh stop || true
           sudo ./svc.sh start
@@ -88,7 +100,19 @@ jobs:
               -o ConnectTimeout=15 \
               "$VPS_USER@$VPS_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
-          cd /opt/actions-runner
+          runner_dir=""
+          for candidato in /opt/actions-runner*/ /home/*/actions-runner*/; do
+            [ -x "${candidato}svc.sh" ] && [ -f "${candidato}.runner" ] || continue
+            runner_dir="${candidato%/}"
+            break
+          done
+          if [ -z "$runner_dir" ]; then
+            echo "ERRO: nenhum runner configurado encontrado em /opt/actions-runner* nem /home/*/actions-runner*." >&2
+            ls -1d /opt/actions-runner* 2>/dev/null || true
+            exit 4
+          fi
+          echo "Runner encontrado em: $runner_dir"
+          cd "$runner_dir"
           sudo ./svc.sh status || true
           sudo ./svc.sh stop || true
           sudo ./svc.sh start
