@@ -52,8 +52,6 @@ async def inserir_tese_no_banco(
         status=StatusTese.rascunho,
         taxonomia_id=taxonomia_id,
         score=score,
-        vinculante=False,
-        criada_em=datetime.now(timezone.utc),
     )
     db.add(tese)
     await db.flush()

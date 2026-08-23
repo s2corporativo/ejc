@@ -81,7 +81,6 @@ async def criar_taxonomia(session: AsyncSession, area: str, subarea: str, tema: 
         subarea=subarea,
         tema=tema,
         subtema=None,
-        criada_em=datetime.now(timezone.utc),
     )
     session.add(taxa)
     await session.flush()
