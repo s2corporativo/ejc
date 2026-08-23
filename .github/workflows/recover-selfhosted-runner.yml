@@ -85,27 +85,37 @@ jobs:
           # `|| true`: list-unit-files sai 1 quando nada casa, e com pipefail+set -e
           # a atribuição abortaria o script antes de tentar o fallback e antes do
           # diagnóstico do exit 4 — justamente no caso que o fallback trata.
-          units="$(systemctl list-unit-files --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}' || true)"
+          # Padrão restrito ao runner DESTE repositório. `actions.runner.*.service`
+          # casaria também o runner de outro repositório instalado na mesma VPS, e
+          # os laços abaixo parariam um job alheio em pleno voo. O systemd nomeia a
+          # unit de runner de repositório como actions.runner.<owner>-<repo>.<nome>.
+          PADRAO='actions.runner.s2corporativo-ejc.*.service'
+          units="$(systemctl list-unit-files --no-legend --plain "$PADRAO" 2>/dev/null | awk '{print $1}' || true)"
           if [ -z "$units" ]; then
-            units="$(systemctl list-units --all --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}' || true)"
+            units="$(systemctl list-units --all --no-legend --plain "$PADRAO" 2>/dev/null | awk '{print $1}' || true)"
           fi
           if [ -z "$units" ]; then
-            echo "ERRO: nenhuma unit 'actions.runner.*.service' registrada no systemd." >&2
+            # Falha fechada: não alarga o padrão sozinho. O diagnóstico lista todas
+            # as units de runner da máquina, então um registro em nível de
+            # organização (actions.runner.<org>.<nome>) aparece aqui para o operador.
+            echo "ERRO: nenhuma unit '$PADRAO' registrada no systemd." >&2
             systemctl list-unit-files --no-legend --plain 'actions.runner*' 2>/dev/null || true
             exit 4
           fi
           total="$(printf '%s\n' "$units" | wc -l)"
-          [ "$total" -eq 1 ] || echo "AVISO: $total units de runner encontradas; todas serão reiniciadas." >&2
+          [ "$total" -eq 1 ] || echo "AVISO: $total units do runner deste repositório encontradas; todas serão reiniciadas." >&2
           # `for` sobre $units sem aspas: nome de unit não contém espaço, e evita o
           # subshell de `printf | while`, onde um exit não abortaria o passo.
           falhou=0
           for unit in $units; do
             echo "Runner: $unit"
-            sudo systemctl stop "$unit" || true
-            # start sem guarda + set -e abortaria aqui na primeira unit quebrada,
-            # deixando units saudáveis sem reinício e pulando o acumulador.
-            if ! sudo systemctl start "$unit"; then
-              echo "ERRO: falha ao iniciar $unit." >&2
+            # `restart`, não `stop || true` seguido de `start`: com o stop engolido,
+            # um runner travado mas ainda `active` sobrevivia — o `start` seguinte
+            # virava no-op bem-sucedido e o `is-active` final declarava recuperação
+            # sem que o processo tivesse sido ciclado. `restart` falha se não
+            # conseguir derrubar, e a falha é registrada.
+            if ! sudo systemctl restart "$unit"; then
+              echo "ERRO: falha ao reiniciar $unit." >&2
               falhou=1
             fi
           done
@@ -143,27 +153,37 @@ jobs:
           # `|| true`: list-unit-files sai 1 quando nada casa, e com pipefail+set -e
           # a atribuição abortaria o script antes de tentar o fallback e antes do
           # diagnóstico do exit 4 — justamente no caso que o fallback trata.
-          units="$(systemctl list-unit-files --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}' || true)"
+          # Padrão restrito ao runner DESTE repositório. `actions.runner.*.service`
+          # casaria também o runner de outro repositório instalado na mesma VPS, e
+          # os laços abaixo parariam um job alheio em pleno voo. O systemd nomeia a
+          # unit de runner de repositório como actions.runner.<owner>-<repo>.<nome>.
+          PADRAO='actions.runner.s2corporativo-ejc.*.service'
+          units="$(systemctl list-unit-files --no-legend --plain "$PADRAO" 2>/dev/null | awk '{print $1}' || true)"
           if [ -z "$units" ]; then
-            units="$(systemctl list-units --all --no-legend --plain 'actions.runner.*.service' 2>/dev/null | awk '{print $1}' || true)"
+            units="$(systemctl list-units --all --no-legend --plain "$PADRAO" 2>/dev/null | awk '{print $1}' || true)"
           fi
           if [ -z "$units" ]; then
-            echo "ERRO: nenhuma unit 'actions.runner.*.service' registrada no systemd." >&2
+            # Falha fechada: não alarga o padrão sozinho. O diagnóstico lista todas
+            # as units de runner da máquina, então um registro em nível de
+            # organização (actions.runner.<org>.<nome>) aparece aqui para o operador.
+            echo "ERRO: nenhuma unit '$PADRAO' registrada no systemd." >&2
             systemctl list-unit-files --no-legend --plain 'actions.runner*' 2>/dev/null || true
             exit 4
           fi
           total="$(printf '%s\n' "$units" | wc -l)"
-          [ "$total" -eq 1 ] || echo "AVISO: $total units de runner encontradas; todas serão reiniciadas." >&2
+          [ "$total" -eq 1 ] || echo "AVISO: $total units do runner deste repositório encontradas; todas serão reiniciadas." >&2
           # `for` sobre $units sem aspas: nome de unit não contém espaço, e evita o
           # subshell de `printf | while`, onde um exit não abortaria o passo.
           falhou=0
           for unit in $units; do
             echo "Runner: $unit"
-            sudo systemctl stop "$unit" || true
-            # start sem guarda + set -e abortaria aqui na primeira unit quebrada,
-            # deixando units saudáveis sem reinício e pulando o acumulador.
-            if ! sudo systemctl start "$unit"; then
-              echo "ERRO: falha ao iniciar $unit." >&2
+            # `restart`, não `stop || true` seguido de `start`: com o stop engolido,
+            # um runner travado mas ainda `active` sobrevivia — o `start` seguinte
+            # virava no-op bem-sucedido e o `is-active` final declarava recuperação
+            # sem que o processo tivesse sido ciclado. `restart` falha se não
+            # conseguir derrubar, e a falha é registrada.
+            if ! sudo systemctl restart "$unit"; then
+              echo "ERRO: falha ao reiniciar $unit." >&2
               falhou=1
             fi
           done

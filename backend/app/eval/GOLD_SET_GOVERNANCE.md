@@ -2,7 +2,7 @@
 
 ## Regra de verdade
 
-O EJC não considera exemplos sintéticos, fixtures técnicas ou casos gerados por IA como evidência de qualidade jurídica. Só conta como **gold jurídico real** o caso pseudonimizado, efetivamente avaliável, curado por advogado e revisado por identidade independente, com fonte oficial, versão da fonte e vigência conferidas.
+O EJC não considera exemplos sintéticos, fixtures técnicas ou casos gerados por IA como evidência de qualidade jurídica. Só conta como **gold jurídico real** o caso pseudonimizado, efetivamente avaliável, curado por advogado identificado, com fonte oficial, versão da fonte e vigência conferidas. A revisão por segunda identidade é **desejável e opcional** — a exigência de duas identidades distintas foi removida por decisão do titular em 23/08/2026, porque o escritório opera com um único jurista e a regra tornava o gate impossível de satisfazer em vez de elevar a qualidade. Registre `curadoria.revisor` sempre que houver segundo par de olhos.
 
 O estado atual do repositório permanece explicitamente **não certificado** enquanto não existir `gold_set.jsonl`/equivalente humano-curado que passe em `python -m app.eval.gold_governance`.
 

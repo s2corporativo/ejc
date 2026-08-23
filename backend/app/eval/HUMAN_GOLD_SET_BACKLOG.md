@@ -25,7 +25,8 @@ O workflow `EJC Legal Quality Certification` exige:
 3. definir cenário e área;
 4. curador jurídico monta o gabarito;
 5. conferir legislação/jurisprudência em fonte oficial vigente;
-6. revisor independente confere fatos, tese, citações, pedido e limites;
+6. conferência de fatos, tese, citações, pedido e limites — por revisor independente quando
+   houver; pelo próprio curador, em passagem separada da montagem, quando não houver;
 7. registrar somente identidades funcionais/institucionais de curador e revisor — nunca credenciais;
 8. rodar `python -m app.eval.gold_governance --require-real ...`;
 9. somente após gate verde usar o corpus como certificação.

@@ -96,7 +96,9 @@ proibido './svc.sh'        'não executa svc.sh do diretório do runner'
 proibido 'cd "$runner_dir"' 'não faz cd para diretório de runner'
 proibido 'systemctl show -p User' 'não deriva confiança de .service (laço circular)'
 exigido  'list-unit-files' 'descobre o runner pela unit systemd'
-exigido  'sudo systemctl start' 'opera o serviço via systemctl'
+exigido  'sudo systemctl restart' 'cicla o serviço com restart (stop engolido mascarava runner travado)'
+proibido 'systemctl stop' 'não usa stop+start: stop falho + start no-op reportava recuperação falsa'
+exigido  'actions.runner.s2corporativo-ejc' 'restringe a descoberta ao runner deste repositório'
 
 # Invariante que protege ESTE arquivo, não a VPS. Os dublês abaixo interceptam
 # `sudo` e `systemctl` pelo PATH, e isso só funciona enquanto o bloco remoto os
@@ -133,13 +135,27 @@ acao="$1"; shift || true
 case "$acao" in
   # systemctl list-unit-files sai 1 quando nenhum arquivo de unit casa — é o
   # comportamento real, e é o que o fallback para list-units existe para tratar.
-  list-unit-files) printf '%s\n' ${FAKE_UNIT_FILES:-}
-                   [ -n "${FAKE_UNIT_FILES:-}" ] || exit 1 ;;
-  list-units)      printf '%s\n' ${FAKE_UNITS:-} ;;
-  stop)  echo "stop $1" >> "${FAKE_LOG:?}" ;;
-  start) echo "start $1" >> "${FAKE_LOG:?}"
-         [ "${FAKE_START_FAIL:-}" != "$1" ] || exit 1 ;;
-  is-active) [ "${FAKE_ATIVO:-1}" = "1" ] && [ "${FAKE_START_FAIL:-}" != "$2" ] ;;
+  # Filtra pelo padrão recebido, como o systemctl real. Sem isto o dublê
+  # devolveria tudo e o cenário do runner alheio não provaria nada.
+  list-unit-files|list-units)
+    padrao=""
+    for arg in "$@"; do case "$arg" in --*) ;; *) padrao="$arg" ;; esac; done
+    if [ "$acao" = "list-unit-files" ]; then origem="${FAKE_UNIT_FILES:-}"; else origem="${FAKE_UNITS:-}"; fi
+    casou=""
+    for u in $origem; do
+      case "$u" in ${padrao:-*}) casou="$casou $u" ;; esac
+    done
+    [ -z "$casou" ] || printf '%s\n' $casou
+    if [ "$acao" = "list-unit-files" ] && [ -z "$casou" ]; then exit 1; fi ;;
+  restart) echo "restart $1" >> "${FAKE_LOG:?}"
+           [ "${FAKE_START_FAIL:-}" != "$1" ] || exit 1 ;;
+  # stop e start seguem simulados para que, se alguém os reintroduzir, o cenário
+  # de regressão abaixo consiga demonstrar por que eles mascaravam a falha.
+  stop)  echo "stop $1" >> "${FAKE_LOG:?}"
+         [ "${FAKE_STOP_FAIL:-}" != "$1" ] || exit 1 ;;
+  start) echo "start $1" >> "${FAKE_LOG:?}" ;;
+  is-active) if [ "${FAKE_SEMPRE_ATIVO:-}" = "1" ]; then exit 0; fi
+             [ "${FAKE_ATIVO:-1}" = "1" ] && [ "${FAKE_START_FAIL:-}" != "$2" ] ;;
   status)    echo "status simulado" ;;
 esac
 EOS
@@ -156,7 +172,7 @@ rodar_so_fallback() { FAKE_UNIT_FILES="" FAKE_UNITS="$1" FAKE_ATIVO=1 \
 
 : > "$TMP/log"
 if rodar 'actions.runner.s2corporativo-ejc.ejc-vps.service' 1; then
-  if grep -q 'start actions.runner.s2corporativo-ejc.ejc-vps.service' "$TMP/log"; then
+  if grep -q 'restart actions.runner.s2corporativo-ejc.ejc-vps.service' "$TMP/log"; then
     ok 'unit encontrada é reiniciada via systemctl'
   else
     falha 'unit encontrada não foi reiniciada'; cat "$TMP/log" >&2
@@ -175,7 +191,7 @@ else
 fi
 
 : > "$TMP/log"
-if rodar 'actions.runner.a.b.service' 0; then
+if rodar 'actions.runner.s2corporativo-ejc.a.service' 0; then
   falha 'unit que não sobe deveria falhar'
 else
   rc=$?
@@ -184,8 +200,8 @@ else
 fi
 
 : > "$TMP/log"
-if rodar 'actions.runner.a.b.service actions.runner.c.d.service' 1; then
-  n="$(grep -c '^start ' "$TMP/log")"
+if rodar 'actions.runner.s2corporativo-ejc.a.service actions.runner.s2corporativo-ejc.c.service' 1; then
+  n="$(grep -c '^restart ' "$TMP/log")"
   [ "$n" -eq 2 ] && ok 'múltiplas units: todas reiniciadas' \
                  || falha "múltiplas units: $n reiniciadas, esperado 2"
 else
@@ -196,8 +212,8 @@ fi
 # `set -euo pipefail` aborta na atribuição e o fallback para `list-units` — que
 # existe justamente para esse caso — nunca roda.
 : > "$TMP/log"
-if rodar_so_fallback 'actions.runner.carregada.service'; then
-  if grep -q '^start actions.runner.carregada.service' "$TMP/log"; then
+if rodar_so_fallback 'actions.runner.s2corporativo-ejc.carregada.service'; then
+  if grep -q '^restart actions.runner.s2corporativo-ejc.carregada.service' "$TMP/log"; then
     ok 'sem arquivo de unit, o fallback para list-units encontra e reinicia'
   else
     falha 'fallback não reiniciou a unit carregada'; cat "$TMP/log" >&2
@@ -212,18 +228,52 @@ fi
 # script na primeira unit quebrada — as saudáveis nunca são reiniciadas e o
 # acumulador de falha nunca é alcançado.
 : > "$TMP/log"
-if rodar 'actions.runner.velha.service actions.runner.boa.service' 1 'actions.runner.velha.service'; then
+if rodar 'actions.runner.s2corporativo-ejc.velha.service actions.runner.s2corporativo-ejc.boa.service' 1 'actions.runner.s2corporativo-ejc.velha.service'; then
   falha 'unit quebrada deveria fazer o passo falhar'
 else
   rc=$?
   if [ "$rc" -ne 6 ]; then
     falha "unit quebrada saiu com $rc, esperado 6"
-  elif grep -q '^start actions.runner.boa.service' "$TMP/log"; then
-    ok 'start que falha não aborta o laço: unit saudável ainda é reiniciada'
+  elif grep -q '^restart actions.runner.s2corporativo-ejc.boa.service' "$TMP/log"; then
+    ok 'restart que falha não aborta o laço: unit saudável ainda é reiniciada'
   else
     falha 'laço abortou na primeira unit quebrada — unit saudável não foi reiniciada'
     cat "$TMP/log" >&2
   fi
+fi
+
+# Regressão do P1 apontado pelo Codex em ea439071: runner de OUTRO repositório
+# instalado na mesma VPS não pode ser tocado. Com `actions.runner.*.service` os
+# laços parariam um job alheio em pleno voo.
+: > "$TMP/log"
+if FAKE_UNIT_FILES='actions.runner.outraorg-outrorepo.vps.service' \
+   FAKE_UNITS='actions.runner.outraorg-outrorepo.vps.service' \
+   FAKE_ATIVO=1 FAKE_START_FAIL="" FAKE_LOG="$TMP/log" PATH="$BIN:$PATH" \
+   bash "$TMP/bloco1.sh" >"$TMP/out" 2>&1; then
+  falha 'runner de outro repositório foi aceito — deveria abortar com exit 4'
+else
+  rc=$?
+  if [ "$rc" -ne 4 ]; then
+    falha "runner alheio saiu com $rc, esperado 4"
+  elif [ -s "$TMP/log" ]; then
+    falha 'runner de outro repositório foi TOCADO'; cat "$TMP/log" >&2
+  else
+    ok 'runner de outro repositório não é descoberto nem tocado'
+  fi
+fi
+
+# Regressão do segundo P1: runner travado mas ainda `active`. Com o antigo
+# `stop || true` seguido de `start`, o stop falho era engolido, o start virava
+# no-op bem-sucedido e o is-active final declarava recuperação sem ciclar nada.
+: > "$TMP/log"
+if FAKE_UNIT_FILES='actions.runner.s2corporativo-ejc.travada.service' \
+   FAKE_UNITS='actions.runner.s2corporativo-ejc.travada.service' \
+   FAKE_SEMPRE_ATIVO=1 FAKE_START_FAIL='actions.runner.s2corporativo-ejc.travada.service' \
+   FAKE_LOG="$TMP/log" PATH="$BIN:$PATH" bash "$TMP/bloco1.sh" >"$TMP/out" 2>&1; then
+  falha 'runner travado reportou recuperação bem-sucedida sem ter sido ciclado'
+  cat "$TMP/log" >&2
+else
+  ok 'runner que não cicla falha, mesmo continuando ativo'
 fi
 
 echo
