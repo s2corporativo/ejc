@@ -48,6 +48,31 @@ titular tem acesso administrativo para os dois.
 **Destrava:** F6 (merge automático de volta); sem isso, o executor segue no
 deploy manual indefinidamente.
 
+### T3 — Executar a purga da conta `homolog.qa` e dos dados fictícios em produção
+
+Achado da auditoria (V2-4.1, `[CRÍTICO]`): conta `homolog.qa` com privilégio
+**superadmin** ativa em produção, criada pela própria rotina de homologação
+(`qa/e2e/run_fictitious_smoke.py`), junto com casos `HOMOLOG-FICTICIO-*`
+residuais.
+
+**O código já está pronto e testado** (2026-08-24, verificado nesta sessão):
+`run_fictitious_smoke.py` já recusa rodar contra produção por padrão (só
+aceita `staging`/`homolog`/`localhost` no `EJC_BASE_URL`, ou
+`EJC_ALLOW_PRODUCTION_E2E=true` explícito); `scripts/purga_dados_homologacao.py`
+já tem a rotina completa — seleção pelos marcadores, soft-delete nunca
+DELETE físico, e `montar_sql_desativar_conta_qa` especificamente para a
+conta `homolog.qa` — com exigência de confirmação explícita ("PURGAR") e
+12 testes cobrindo a montagem das queries.
+
+**O que falta é só executar** — e isso a governança §9 me veda
+("não acessar o banco de produção"). O próprio script exige backup prévio
+(`scripts/backup.sh`) antes de rodar.
+
+**Ação:** no VPS, com backup feito, rodar `scripts/purga_dados_homologacao.py`
+conforme o runbook do próprio script.
+
+**Custo:** 15–30 min, incluindo o backup prévio.
+
 ---
 
 ## Decisões de produto (T3)
@@ -185,6 +210,7 @@ decisões de produto, e continuam em pé mesmo com "decida sozinho":
 |---|---|---|
 | T1 | F0 não fecha o gate de deploy | F0 |
 | T2 | Deploy manual continua sendo o único caminho | F6 |
+| T3 | Conta `homolog.qa` (superadmin) segue ativa em produção | V2-4.1 (F3) |
 | D1 | Executor segue com a hipótese default (link=verdade) | 1º PR da Classe A (F2) |
 | D2 | Executor remove a declaração morta com nota | Nenhum — decisão de baixo custo |
 | D3 | F5 não começa até fechar | F5 (mas ela já está no fim do plano) |

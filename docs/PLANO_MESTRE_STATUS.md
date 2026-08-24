@@ -47,7 +47,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-1.5 | Rotas retornando 404 | F1 | — | pendente | — | — |
 | V2-2.1 | Vínculo de validação (`ai_log_id`) que trava as peças antes do protocolo `[CRÍTICO]` | F1 | — | mesclado | #1015 | 2026-08-14 |
 | V2-2.2 | Embeddings desligados: 0 de 47.359 chunks indexados `[CRÍTICO]` | F3 | — | pendente | — | — |
-| V2-2.3 | Modelo local para dados pessoais `[CRÍTICO]` | F3 | — | pendente | — | — |
+| V2-2.3 | Modelo local para dados pessoais — já resolvido (`sanitization_policy.py`, modo LOCAL_COMPLETO bloqueia provedor externo); 305 testes passam | F3 | — | mesclado | #1195 | 2026-08-18 |
 | V2-2.4 | Consolidar aprovação da peça em um único ato | F1 | — | mesclado | #1153 | 2026-08-18 |
 | V2-3.1 | Monitorar resultado, não apenas execução — já generalizado (`ingestao_saude.py`, não só DOU/DJEN) | F3 | — | mesclado | #1015 | 2026-08-14 |
 | V2-3.2 | Fontes de ingestão dormentes ou silenciosas | F3 | — | pendente | — | — |
@@ -55,8 +55,8 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-3.4 | Vínculos ausentes entre registros relacionados | F5 | — | pendente | — | — |
 | V2-3.5 | Padrão de gravação não transacional (agregado do Caso) | F5 | — | pendente | — | — |
 | V2-3.6 | Conversão Sala Jurídica → Caso perde `descricao_fatos` | F5 | — | pendente | — | — |
-| V2-4.1 | Conta `homolog.qa` com privilégio superadmin em produção `[CRÍTICO]` | F3 | — | pendente | — | — |
-| V2-4.2 | Métrica de "chance de êxito" — risco OAB art. 34, XXIX `[CRÍTICO]` | F3 | — | pendente | — | — |
+| V2-4.1 | Código já pronto e testado (guard de produção em `run_fictitious_smoke.py`, script `purga_dados_homologacao.py` com desativação de conta); execução em produção é ação do titular (governança §9 me veda acesso) | F3 | — | mesclado | #1015 | 2026-08-14 |
+| V2-4.2 | Métrica de "chance de êxito" — decisão D4 (Opção 1): removida da UI da Entrevista Inteligente; API mantém o campo, tipado com nota de não-reintrodução; confirmado que nenhuma rota `/portal/*` a serializa `[CRÍTICO]` | F3 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | V2-4.3 | Citação normativa incorreta na interface | F3 | — | pendente | — | — |
 | V2-4.4 | Ausência de exclusão definitiva (LGPD) | F3 | — | pendente | — | — |
 | V2-5.1 | Quinze calculadoras jurídicas sem interface `[ALTO — maior ganho rápido]` | F3 | — | pendente | — | — |

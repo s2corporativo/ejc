@@ -7,7 +7,6 @@ import {
   Gavel,
   ListChecks,
   MapPin,
-  Percent,
   Scale,
   ShieldAlert,
   Siren,
@@ -59,6 +58,13 @@ interface EntrevistaAnalise {
   valor_causa: ItemConfianca;
   pedidos_possiveis: string[];
   riscos: string[];
+  // V2-4.2 / decisão D4 do plano-mestre (2026-08-24): a API ainda devolve
+  // este campo (percentual GERADO POR IA, não estatística), mas deixou de
+  // ser renderizado -- risco OAB art. 34, XXIX (vedação a captação/
+  // mercantilização inadequada da expectativa do cliente) + fragilidade
+  // estatística (poucos casos para calibrar). Tipado aqui só para não
+  // quebrar o parse da resposta; NÃO reintroduzir a exibição sem decisão
+  // nova do titular.
   chance_exito: {
     percentual: number | null;
     justificativa: string | null;
@@ -437,33 +443,6 @@ export default function EntrevistaInteligente() {
                   </ul>
                 ) : (
                   <span className="text-slate-400">Nenhum identificado</span>
-                )}
-              </PainelItem>
-
-              <PainelItem
-                icon={Percent}
-                label="Chance de êxito (estimativa interna)"
-                confianca={a.chance_exito.confianca}
-              >
-                {a.chance_exito.percentual != null ? (
-                  <Badge
-                    tone={
-                      a.chance_exito.percentual >= 70
-                        ? "green"
-                        : a.chance_exito.percentual >= 40
-                          ? "amber"
-                          : "red"
-                    }
-                  >
-                    {a.chance_exito.percentual}% de êxito estimado
-                  </Badge>
-                ) : (
-                  <span className="text-slate-400">Não estimada</span>
-                )}
-                {a.chance_exito.justificativa && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    {a.chance_exito.justificativa}
-                  </p>
                 )}
               </PainelItem>
             </div>
