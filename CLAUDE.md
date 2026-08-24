@@ -160,6 +160,38 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 - **Estado**: stores Zustand em `src/stores/` (`auth.ts`/`useAuth` com `bootstrap()`, `caseContext.ts`, `moduleLifecycle.ts`, `preferences.ts`, `theme.ts`).
 - **Layout de src/**: `pages/` (~70 páginas; `pages/portal/` e `pages/ramos/`), `components/`, `lib/` (api, SSE em `stream.ts`), `config/`, `stores/`, `contexts/`, `types/`, `utils/`. Testes co-localizados (`*.test.ts(x)`).
 
+## Verificação oficial é local — OBRIGATÓRIO (decisão do titular, 2026-08-24)
+
+O GitHub Actions da organização parou de alocar runner em ~22/08 (todo run
+termina em `startup_failure` em 1 segundo, sem job e sem log, inclusive na
+`main`). A causa é da conta (billing/limite do Actions), fora do alcance do
+código. Enquanto isso não for resolvido — e como resiliência permanente depois —
+**a verificação oficial deste repositório é local**, e é obrigatória antes de
+qualquer push:
+
+1. **Backend**: `cd backend && ruff check app && python -m alembic heads &&
+   pytest` — a suíte completa, com PostgreSQL 16 + pgvector local e
+   `alembic upgrade head` do zero sempre que a mudança tocar banco, models,
+   services ou routers. Ambiente que não compila dependência nativa não é
+   desculpa para pular a suíte: use venv isolado (comprovado em 24/08, quando a
+   suíte completa — 6.387 testes — pegou duas regressões que a validação
+   estática não pegava).
+2. **Frontend**: `cd frontend && npm run lint && npm test && npm run build`.
+3. **Evidência no corpo do PR**: resultados portão a portão, commit e branch.
+   Sem CI não há badge; a evidência local é o que substitui o verde.
+4. **CI ausente, vermelho por `startup_failure` ou sem check algum nunca
+   bloqueia nem aprova**: não é sinal de qualidade em nenhuma direção. Não
+   gaste sessão sondando o Actions nem re-disparando `workflow_dispatch`;
+   registre o estado uma única vez e siga com o portão local.
+5. **Merge**: com `auto-integracao.yml` e `governanca.yml` desligados
+   (`disabled_manually`), o merge automático da governança §6-A está suspenso —
+   o merge é manual, do titular, mediante a evidência local do item 3. Quando a
+   esteira voltar, este item volta a ser o fluxo automático; os itens 1–4
+   continuam valendo de qualquer forma.
+
+Este bloco prevalece sobre qualquer menção a "CI verde" como pré-requisito nos
+demais trechos deste arquivo enquanto o Actions não voltar a executar.
+
 ## Comandos essenciais
 
 Backend (requer Python 3.11; deps nativas p/ OCR/PDF em CI: libmagic, poppler, tesseract, pango/cairo):
