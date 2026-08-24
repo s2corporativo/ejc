@@ -63,7 +63,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-5.2 | Curadoria da base de conhecimento `[ALTO — trabalho contínuo]` | T5 | — | pendente | — | — |
 | V2-5.3 | Higiene é curadoria contínua (T5, titular). `[INVESTIGAR]` do hash de duplicidade fechado (2026-08-24): `hash_conteudo` é SHA-1 do conteúdo NORMALIZADO INTEIRO (`ingestion_service.py::normalizar`+`_sha1`), sem truncar — descarta "trecho insuficientemente específico"; colisão entre acórdãos com processo distinto só se explica por `conteudo` quase idêntico gravado pelo scraper STJ (stub/boilerplate), que só se confirma inspecionando os 3 documentos reais em produção (fora do meu acesso, governança §9) | F3/T5 | — | pendente | — | — |
 | V2-5.4 | Erro jurídico recorrente nas skills (decadência, CPC art. 487, II) | — | — | **verificado** | #1015 | 2026-08-22 |
-| V2-5.5 | Camada de IA da extração de documentos indisponível | F3 | — | pendente | — | — |
+| V2-5.5 | Causa raiz achada: rejeição da `AIProviderPolicy` (cadeia vazia, ex. PII sem provider local elegível) acontece ANTES do gateway — invisível a `AILog` e `AIProviderMetric`, por isso telemetria mostrava "0 falhas". `orchestrator.run` agora registra o bloqueio (`registrar_bloqueio_politica`); alerta ao usuário deixou de ser genérico | F3 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | V2-6.1 | Prefixo `/v1/` duplicado | F5 | — | pendente | — | — |
 | V2-6.2 | Observabilidade | F5 | — | pendente | — | — |
 | V2-6.3 | Painéis de diagnóstico divergentes | F5 | — | pendente | — | — |

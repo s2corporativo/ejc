@@ -232,6 +232,16 @@ async def _analisar_ia(db: AsyncSession, cu: User, *, modalidade: str | None,
             db=db, user=cu, task_type="document_extraction", domain=f"entrada_universal:{modalidade or 'geral'}",
             mensagem=prompt, case_id=case_id, usar_rag=True, nivel_inteligencia="alto",
         )
+    except HTTPException as exc:
+        # V2-5.5 (auditoria): rejeição da policy central (ex.: PII sem provider
+        # local elegível) chegava aqui com o MESMO alerta genérico de qualquer
+        # outra falha — indistinguível de um provider fora do ar. `exc.detail`
+        # já é o texto SEGURO que a policy prepara para o usuário final (nunca
+        # ecoa PII nem segredo); é o mesmo texto que vazaria de qualquer forma
+        # se esta rota não capturasse a exceção.
+        logger.warning("Análise do lote pelo núcleo bloqueada: %s", exc.detail)
+        return {"alertas": [f"Interpretação por IA bloqueada: {exc.detail}"],
+                "requer_revisao_humana": True, "estrutura_valida": False, "ia_disponivel": False}
     except Exception as exc:
         logger.warning("Análise do lote pelo núcleo falhou: %s", exc)
         return {"alertas": ["A interpretação por IA ficou indisponível; a extração determinística foi preservada."],
