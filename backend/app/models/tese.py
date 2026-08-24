@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, Text, Float, Integer, DateTime, ForeignKey, Enum as SAEnum, JSON,
 )
+from pgvector.sqlalchemy import Vector
+from app.core.config import get_settings
 from app.core.database import Base
 
 
@@ -121,6 +123,13 @@ class Tese(Base):
     versao       = Column(Integer, default=1, nullable=False)
     ultima_validacao_em = Column(DateTime(timezone=True), nullable=True)
     validada_por = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # ── Radar Jurisprudencial, Camada 2 semântica (migração 149) ──
+    # Embedding do texto da tese (titulo+descricao+fundamentacao+jurisprudencia),
+    # recalculado só quando esse texto muda — não a cada rodada do radar.
+    # Dado técnico interno: nunca exposto em resposta de API (mesma decisão já
+    # tomada para KnowledgeChunk.embedding).
+    embedding    = Column(Vector(get_settings().EMBEDDINGS_DIM), nullable=True)
 
     def __repr__(self):
         return f"<Tese {self.titulo[:40]}>"

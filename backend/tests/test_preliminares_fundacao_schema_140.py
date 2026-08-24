@@ -69,9 +69,9 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     # 138 → 139 → 140 (frete independente: 139 altera document_intake_batches,
     # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
-    # Issue #1266 (24/08/2026, PR 2 do Banco de Teses): extensão aditiva do
-    # schema canônico de teses; HEAD = 148_banco_teses_juridicas.
-    assert script.get_heads() == ["148_banco_teses_juridicas"]
+    # Fase 4 do Banco de Teses (Radar Jurisprudencial, 24/08/2026): coluna
+    # de embedding em `teses`; HEAD = 149_tese_embedding_radar.
+    assert script.get_heads() == ["149_tese_embedding_radar"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (
@@ -109,6 +109,10 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     assert (
         script.get_revision("148_banco_teses_juridicas").down_revision
         == "147_pendencia_impacto_providencia"
+    )
+    assert (
+        script.get_revision("149_tese_embedding_radar").down_revision
+        == "148_banco_teses_juridicas"
     )
     assert (
         script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision
