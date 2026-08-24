@@ -4,11 +4,11 @@
 from __future__ import annotations
 import logging
 from uuid import uuid4
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +17,17 @@ from app.core.security import get_current_user, ROLE_LEVEL, EQUIPE_JURIDICA
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.case import Case
-from app.models.tese import Tese, TeseCasoLink, TeseTipo, TeseStatus
+from app.models.tese import (
+    Tese, TeseCasoLink, TeseTipo, TeseStatus,
+    ORIENTACOES, STATUS_VALIDACAO, TRANSICOES_VALIDACAO, TRANSICOES_QUE_EXIGEM_VALIDACAO,
+)
+from app.models.tese_extensoes import (
+    TeseFundamentacao, TeseRelacao, TIPOS_RELACAO,
+    TeseJurisprudenciaLink, TIPOS_RELACAO_JURISPRUDENCIA,
+    LegalEvidence, STATUS_LEGAL_EVIDENCE,
+)
+from app.models.jurisprudencia_interna import JurisprudenciaInterna
+from app.models.audit_log import criar_audit_log
 from app.core.rate_limit import rate_limit
 from app.models.diario_oficial import DiarioOficialAlerta
 from app.modules.dpt360.access_scope import visible_alerts_query
@@ -27,12 +37,19 @@ from app.services.impacto_regulatorio import (
 from app.services.tese_caso_matcher import (
     MAX_CASOS_VARRIDOS, PISO_RELEVANCIA_PADRAO, extrair_termos, ranquear_candidatos,
 )
+from app.services.verificador_jurisprudencia import verificar_jurisprudencia
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/teses", tags=["Banco de Teses"])
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
+
+def _validar_orientacao(v: Optional[str]) -> Optional[str]:
+    if v is not None and v not in ORIENTACOES:
+        raise ValueError(f"orientacao inválida; use uma de {ORIENTACOES}")
+    return v
+
 
 class TeseIn(BaseModel):
     titulo:           str = Field(min_length=5, max_length=300)
@@ -47,6 +64,20 @@ class TeseIn(BaseModel):
     observacoes:      Optional[str] = None
     tipo:             TeseTipo     = TeseTipo.escritorio
     status:           TeseStatus   = TeseStatus.ativa
+    # ── extensão do Banco Nacional de Teses Jurídicas (migração 148) ──
+    orientacao:        Optional[str] = None   # ataque|defesa|ambos — ver ORIENTACOES
+    pressupostos:      Optional[str] = None
+    excecoes:          Optional[str] = None
+    estrategia:        Optional[str] = None
+    instancia:         Optional[str] = None
+    procedimento:      Optional[str] = None
+    parte_favorecida:  Optional[str] = None
+    requisitos:         Optional[list[str]] = None
+    provas_necessarias: Optional[list[str]] = None
+    riscos:             Optional[list[str]] = None
+    fontes:              Optional[list[dict]] = None  # [{referencia, situacao, url_oficial}]
+
+    _valida_orientacao = field_validator("orientacao")(_validar_orientacao)
 
 
 class TesePatch(BaseModel):
@@ -62,6 +93,19 @@ class TesePatch(BaseModel):
     observacoes:      Optional[str] = None
     tipo:             Optional[TeseTipo]   = None
     status:           Optional[TeseStatus] = None
+    orientacao:        Optional[str] = None
+    pressupostos:      Optional[str] = None
+    excecoes:          Optional[str] = None
+    estrategia:        Optional[str] = None
+    instancia:         Optional[str] = None
+    procedimento:      Optional[str] = None
+    parte_favorecida:  Optional[str] = None
+    requisitos:         Optional[list[str]] = None
+    provas_necessarias: Optional[list[str]] = None
+    riscos:             Optional[list[str]] = None
+    fontes:              Optional[list[dict]] = None
+
+    _valida_orientacao = field_validator("orientacao")(_validar_orientacao)
 
 
 class LinkIn(BaseModel):
@@ -74,6 +118,48 @@ class SugestaoIARequest(BaseModel):
     descricao_fatos: str = Field(min_length=30)
     area: str
     case_id: Optional[str] = None
+
+
+class FundamentacaoIn(BaseModel):
+    norma:         str = Field(min_length=1, max_length=120)
+    artigo:        Optional[str] = None
+    paragrafo:     Optional[str] = None
+    inciso:        Optional[str] = None
+    alinea:        Optional[str] = None
+    texto:         Optional[str] = None
+    interpretacao: Optional[str] = None
+    tipo:          Optional[str] = None  # constituicao|lei_federal|lei_estadual|sumula|decreto|regulamento|principio
+
+
+class RelacaoIn(BaseModel):
+    tese_destino_id: str
+    tipo_relacao:    str          # ver TIPOS_RELACAO
+    observacao:      Optional[str] = None
+
+
+class JurisprudenciaLinkIn(BaseModel):
+    jurisprudencia_id: str
+    tipo_relacao:       str       # favoravel|contrario|distinguishing
+    observacao:         Optional[str] = None
+
+
+class ValidacaoIn(BaseModel):
+    novo_status: str              # ver STATUS_VALIDACAO/TRANSICOES_VALIDACAO
+    observacao:  Optional[str] = None
+
+
+class EvidenciaIn(BaseModel):
+    tipo_fonte:   str = Field(min_length=1, max_length=30)
+    tribunal:     Optional[str] = None
+    numero:       Optional[str] = None
+    url_oficial:  Optional[str] = None
+    inteiro_teor_disponivel: Optional[bool] = None
+    orgao_julgador: Optional[str] = None
+    relator:      Optional[str] = None
+    data_julgamento: Optional[date] = None
+    data_publicacao: Optional[date] = None
+    trecho_relevante: Optional[str] = None
+    hash_fingerprint: Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -98,6 +184,18 @@ def _tese_out(t: Tese) -> dict:
         "vezes_perdeu": t.vezes_perdeu, "taxa_sucesso": t.taxa_sucesso,
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+        # ── extensão do Banco Nacional de Teses Jurídicas (migração 148) ──
+        "codigo": t.codigo, "orientacao": t.orientacao,
+        "status_validacao": t.status_validacao,
+        "score": t.score, "score_calculos": t.score_calculos,
+        "pressupostos": t.pressupostos, "excecoes": t.excecoes, "estrategia": t.estrategia,
+        "instancia": t.instancia, "procedimento": t.procedimento,
+        "parte_favorecida": t.parte_favorecida,
+        "requisitos": t.requisitos, "provas_necessarias": t.provas_necessarias,
+        "riscos": t.riscos, "fontes": t.fontes,
+        "versao": t.versao,
+        "ultima_validacao_em": t.ultima_validacao_em.isoformat() if t.ultima_validacao_em else None,
+        "validada_por": t.validada_por,
     }
 
 
@@ -107,6 +205,57 @@ async def _recalcular_taxa(tese: Tese):
         tese.taxa_sucesso = round(tese.vezes_venceu / tese.vezes_usada, 4)
     else:
         tese.taxa_sucesso = None
+
+
+async def _tese_ou_404(db: AsyncSession, tese_id: str) -> Tese:
+    t = (await db.execute(
+        select(Tese).where(Tese.id == tese_id, Tese.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not t:
+        raise HTTPException(404, "Tese não encontrada")
+    return t
+
+
+def _fundamentacao_out(f: TeseFundamentacao) -> dict:
+    return {
+        "id": f.id, "tese_id": f.tese_id, "norma": f.norma, "artigo": f.artigo,
+        "paragrafo": f.paragrafo, "inciso": f.inciso, "alinea": f.alinea,
+        "texto": f.texto, "interpretacao": f.interpretacao, "tipo": f.tipo,
+        "created_at": f.created_at.isoformat() if f.created_at else None,
+    }
+
+
+def _relacao_out(r: TeseRelacao) -> dict:
+    return {
+        "id": r.id, "tese_origem_id": r.tese_origem_id, "tese_destino_id": r.tese_destino_id,
+        "tipo_relacao": r.tipo_relacao, "observacao": r.observacao,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    }
+
+
+def _jurisprudencia_link_out(link: TeseJurisprudenciaLink) -> dict:
+    return {
+        "id": link.id, "tese_id": link.tese_id, "jurisprudencia_id": link.jurisprudencia_id,
+        "tipo_relacao": link.tipo_relacao, "observacao": link.observacao,
+        "created_at": link.created_at.isoformat() if link.created_at else None,
+    }
+
+
+def _evidencia_out(e: LegalEvidence) -> dict:
+    return {
+        "id": e.id, "tese_id": e.tese_id, "tipo_fonte": e.tipo_fonte, "tribunal": e.tribunal,
+        "numero": e.numero, "url_oficial": e.url_oficial,
+        "data_consulta": e.data_consulta.isoformat() if e.data_consulta else None,
+        "inteiro_teor_disponivel": e.inteiro_teor_disponivel,
+        "orgao_julgador": e.orgao_julgador, "relator": e.relator,
+        "data_julgamento": e.data_julgamento.isoformat() if e.data_julgamento else None,
+        "data_publicacao": e.data_publicacao.isoformat() if e.data_publicacao else None,
+        "status": e.status, "trecho_relevante": e.trecho_relevante,
+        "hash_fingerprint": e.hash_fingerprint, "coletado_por": e.coletado_por,
+        "revisado_por": e.revisado_por,
+        "ultima_validacao_em": e.ultima_validacao_em.isoformat() if e.ultima_validacao_em else None,
+        "created_at": e.created_at.isoformat() if e.created_at else None,
+    }
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -415,6 +564,329 @@ async def arquivar_tese(
         raise HTTPException(404)
     t.deleted_at = datetime.now(timezone.utc)
     await db.commit()
+
+
+# ── Fundamentações ────────────────────────────────────────────────────────────
+
+@router.get("/{tese_id}/fundamentacoes")
+async def listar_fundamentacoes(
+    tese_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _is_staff(cu):
+        raise HTTPException(403)
+    await _tese_ou_404(db, tese_id)
+    rows = (await db.execute(
+        select(TeseFundamentacao).where(TeseFundamentacao.tese_id == tese_id)
+        .order_by(TeseFundamentacao.created_at)
+    )).scalars().all()
+    return [_fundamentacao_out(f) for f in rows]
+
+
+@router.post("/{tese_id}/fundamentacoes", status_code=201)
+async def criar_fundamentacao(
+    tese_id: str, req: FundamentacaoIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    await _tese_ou_404(db, tese_id)
+    f = TeseFundamentacao(
+        id=str(uuid4()), tese_id=tese_id, created_by=cu.id,
+        **req.model_dump(),
+    )
+    db.add(f)
+    await db.commit()
+    return _fundamentacao_out(f)
+
+
+@router.delete("/{tese_id}/fundamentacoes/{fund_id}", status_code=204)
+async def excluir_fundamentacao(
+    tese_id: str, fund_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    f = (await db.execute(
+        select(TeseFundamentacao).where(
+            TeseFundamentacao.id == fund_id, TeseFundamentacao.tese_id == tese_id,
+        )
+    )).scalar_one_or_none()
+    if not f:
+        raise HTTPException(404)
+    await db.delete(f)
+    await db.commit()
+
+
+# ── Relações entre teses (grafo — inclui contratese/distinguishing) ─────────
+
+@router.get("/{tese_id}/relacoes")
+async def listar_relacoes(
+    tese_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _is_staff(cu):
+        raise HTTPException(403)
+    await _tese_ou_404(db, tese_id)
+    saida = (await db.execute(
+        select(TeseRelacao).where(TeseRelacao.tese_origem_id == tese_id)
+    )).scalars().all()
+    entrada = (await db.execute(
+        select(TeseRelacao).where(TeseRelacao.tese_destino_id == tese_id)
+    )).scalars().all()
+    return {
+        "saida": [_relacao_out(r) for r in saida],
+        "entrada": [_relacao_out(r) for r in entrada],
+    }
+
+
+@router.post("/{tese_id}/relacoes", status_code=201)
+async def criar_relacao(
+    tese_id: str, req: RelacaoIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    if req.tipo_relacao not in TIPOS_RELACAO:
+        raise HTTPException(422, f"tipo_relacao inválido; use um de {TIPOS_RELACAO}")
+    if req.tese_destino_id == tese_id:
+        raise HTTPException(422, "uma tese não pode se relacionar com ela mesma")
+    await _tese_ou_404(db, tese_id)
+    await _tese_ou_404(db, req.tese_destino_id)
+    existente = (await db.execute(
+        select(TeseRelacao).where(
+            TeseRelacao.tese_origem_id == tese_id,
+            TeseRelacao.tese_destino_id == req.tese_destino_id,
+            TeseRelacao.tipo_relacao == req.tipo_relacao,
+        )
+    )).scalar_one_or_none()
+    if existente:
+        raise HTTPException(409, "relação já registrada")
+    r = TeseRelacao(
+        id=str(uuid4()), tese_origem_id=tese_id, tese_destino_id=req.tese_destino_id,
+        tipo_relacao=req.tipo_relacao, observacao=req.observacao, created_by=cu.id,
+    )
+    db.add(r)
+    await db.commit()
+    return _relacao_out(r)
+
+
+@router.delete("/{tese_id}/relacoes/{rel_id}", status_code=204)
+async def excluir_relacao(
+    tese_id: str, rel_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    r = (await db.execute(
+        select(TeseRelacao).where(
+            TeseRelacao.id == rel_id, TeseRelacao.tese_origem_id == tese_id,
+        )
+    )).scalar_one_or_none()
+    if not r:
+        raise HTTPException(404)
+    await db.delete(r)
+    await db.commit()
+
+
+# ── Vínculo com jurisprudência interna ───────────────────────────────────────
+
+@router.get("/{tese_id}/jurisprudencias")
+async def listar_jurisprudencias_vinculadas(
+    tese_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _is_staff(cu):
+        raise HTTPException(403)
+    await _tese_ou_404(db, tese_id)
+    rows = (await db.execute(
+        select(TeseJurisprudenciaLink).where(TeseJurisprudenciaLink.tese_id == tese_id)
+    )).scalars().all()
+    return [_jurisprudencia_link_out(link) for link in rows]
+
+
+@router.post("/{tese_id}/jurisprudencias", status_code=201)
+async def vincular_jurisprudencia(
+    tese_id: str, req: JurisprudenciaLinkIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    if req.tipo_relacao not in TIPOS_RELACAO_JURISPRUDENCIA:
+        raise HTTPException(422, f"tipo_relacao inválido; use um de {TIPOS_RELACAO_JURISPRUDENCIA}")
+    await _tese_ou_404(db, tese_id)
+    juris = (await db.execute(
+        select(JurisprudenciaInterna).where(JurisprudenciaInterna.id == req.jurisprudencia_id)
+    )).scalar_one_or_none()
+    if not juris:
+        raise HTTPException(404, "Jurisprudência não encontrada")
+    existente = (await db.execute(
+        select(TeseJurisprudenciaLink).where(
+            TeseJurisprudenciaLink.tese_id == tese_id,
+            TeseJurisprudenciaLink.jurisprudencia_id == req.jurisprudencia_id,
+        )
+    )).scalar_one_or_none()
+    if existente:
+        raise HTTPException(409, "jurisprudência já vinculada a esta tese")
+    link = TeseJurisprudenciaLink(
+        id=str(uuid4()), tese_id=tese_id, jurisprudencia_id=req.jurisprudencia_id,
+        tipo_relacao=req.tipo_relacao, observacao=req.observacao, created_by=cu.id,
+    )
+    db.add(link)
+    juris.vezes_citada = (juris.vezes_citada or 0) + 1
+    await db.commit()
+    return _jurisprudencia_link_out(link)
+
+
+@router.delete("/{tese_id}/jurisprudencias/{link_id}", status_code=204)
+async def desvincular_jurisprudencia(
+    tese_id: str, link_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    link = (await db.execute(
+        select(TeseJurisprudenciaLink).where(
+            TeseJurisprudenciaLink.id == link_id, TeseJurisprudenciaLink.tese_id == tese_id,
+        )
+    )).scalar_one_or_none()
+    if not link:
+        raise HTTPException(404)
+    await db.delete(link)
+    await db.commit()
+
+
+# ── Evidência jurídica (proveniência auditável) ──────────────────────────────
+
+@router.get("/{tese_id}/evidencias")
+async def listar_evidencias(
+    tese_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _is_staff(cu):
+        raise HTTPException(403)
+    await _tese_ou_404(db, tese_id)
+    rows = (await db.execute(
+        select(LegalEvidence).where(LegalEvidence.tese_id == tese_id)
+        .order_by(LegalEvidence.created_at)
+    )).scalars().all()
+    return [_evidencia_out(e) for e in rows]
+
+
+@router.post("/{tese_id}/evidencias", status_code=201)
+async def registrar_evidencia(
+    tese_id: str, req: EvidenciaIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    await _tese_ou_404(db, tese_id)
+    e = LegalEvidence(
+        id=str(uuid4()), tese_id=tese_id, coletado_por=cu.id,
+        data_consulta=datetime.now(timezone.utc),
+        **req.model_dump(),
+    )
+    db.add(e)
+    await db.commit()
+    return _evidencia_out(e)
+
+
+@router.post("/{tese_id}/evidencias/{evidencia_id}/revisar")
+async def revisar_evidencia(
+    tese_id: str, evidencia_id: str, novo_status: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    if novo_status not in STATUS_LEGAL_EVIDENCE:
+        raise HTTPException(422, f"status inválido; use um de {STATUS_LEGAL_EVIDENCE}")
+    e = (await db.execute(
+        select(LegalEvidence).where(
+            LegalEvidence.id == evidencia_id, LegalEvidence.tese_id == tese_id,
+        )
+    )).scalar_one_or_none()
+    if not e:
+        raise HTTPException(404)
+    e.status = novo_status
+    e.revisado_por = cu.id
+    e.ultima_validacao_em = datetime.now(timezone.utc)
+    await db.commit()
+    return _evidencia_out(e)
+
+
+# ── Ciclo de validação da tese ───────────────────────────────────────────────
+
+@router.post("/{tese_id}/validacao")
+async def transicionar_validacao(
+    tese_id: str, req: ValidacaoIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Move `status_validacao` conforme TRANSICOES_VALIDACAO. Promover a um
+    status de confiança (validada/revisada/superada/parcialmente_superada)
+    exige socio+ e passa pelo gate anti-alucinação de
+    `verificador_jurisprudencia` — citação classificada como suspeita
+    bloqueia a promoção."""
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    if req.novo_status not in STATUS_VALIDACAO:
+        raise HTTPException(422, f"status inválido; use um de {STATUS_VALIDACAO}")
+    exige_socio = req.novo_status in TRANSICOES_QUE_EXIGEM_VALIDACAO
+    if exige_socio and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        raise HTTPException(403, "Apenas sócios podem promover a este status")
+
+    t = await _tese_ou_404(db, tese_id)
+    atual = t.status_validacao
+    permitidas = TRANSICOES_VALIDACAO.get(atual, set())
+    if req.novo_status not in permitidas:
+        raise HTTPException(
+            422,
+            f"transição inválida: '{atual or 'nulo'}' → '{req.novo_status}' "
+            f"(permitidas: {sorted(permitidas) or 'nenhuma'})",
+        )
+
+    if exige_socio:
+        texto = " ".join(filter(None, [t.fundamentacao, t.jurisprudencia]))
+        if t.fontes:
+            texto += " " + " ".join(
+                str(f.get("referencia", "")) for f in t.fontes if isinstance(f, dict)
+            )
+        relatorio = (
+            await verificar_jurisprudencia(db, texto) if texto.strip()
+            else {"contagem_status": {}}
+        )
+        suspeitas = relatorio.get("contagem_status", {}).get("suspeita", 0)
+        if suspeitas:
+            raise HTTPException(422, detail={
+                "erro": "citação suspeita de alucinação — corrija antes de promover",
+                "relatorio": relatorio,
+            })
+
+    de = atual
+    t.status_validacao = req.novo_status
+    t.ultima_validacao_em = datetime.now(timezone.utc)
+    t.validada_por = cu.id
+    t.versao = (t.versao or 1) + 1
+    await criar_audit_log(
+        db, user_id=cu.id, user_role=cu.role.value,
+        acao="TESE_VALIDACAO", entidade="tese", registro_id=tese_id,
+        detalhes=f"{de or 'nulo'} → {req.novo_status}"
+                 + (f" — {req.observacao}" if req.observacao else ""),
+    )
+    await db.commit()
+    return _tese_out(t)
 
 
 @router.get("/{tese_id}/casos-candidatos")

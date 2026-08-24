@@ -300,6 +300,26 @@ ADICOES_INTENCIONAIS |= {
     ("/api/modulos/precificacao/tabela", "GET"),  # PR #1218 (P3): rota canônica pós-prefixo
     ("/api/sumulas/verificar-conflito", "POST"),  # PR #1218 (P3): rota canônica pós-prefixo
 }
+# PR 2 da série de consolidação do Banco de Teses (24/08/2026, ver
+# docs/decisoes/ADR_BANCO_TESES_CANONICO_2026-08-24.md): fundamentações,
+# grafo de relações, vínculo com jurisprudência interna, evidência jurídica
+# auditável e ciclo de validação — extensão aditiva do router canônico
+# `app/routers/teses.py`.
+ADICOES_INTENCIONAIS |= {
+    ("/api/teses/{tese_id}/fundamentacoes", "GET"),
+    ("/api/teses/{tese_id}/fundamentacoes", "POST"),
+    ("/api/teses/{tese_id}/fundamentacoes/{fund_id}", "DELETE"),
+    ("/api/teses/{tese_id}/relacoes", "GET"),
+    ("/api/teses/{tese_id}/relacoes", "POST"),
+    ("/api/teses/{tese_id}/relacoes/{rel_id}", "DELETE"),
+    ("/api/teses/{tese_id}/jurisprudencias", "GET"),
+    ("/api/teses/{tese_id}/jurisprudencias", "POST"),
+    ("/api/teses/{tese_id}/jurisprudencias/{link_id}", "DELETE"),
+    ("/api/teses/{tese_id}/evidencias", "GET"),
+    ("/api/teses/{tese_id}/evidencias", "POST"),
+    ("/api/teses/{tese_id}/evidencias/{evidencia_id}/revisar", "POST"),
+    ("/api/teses/{tese_id}/validacao", "POST"),
+}
 
 
 
