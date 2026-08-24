@@ -88,4 +88,4 @@ def test_full_executa_backend_antes_de_continuidade_com_ciclo_independente():
     assert "run_backend" in full_line
     assert "run_continuity" in full_line
     assert full_line.index("run_backend") < full_line.index("run_continuity")
-    assert "run_backend; run_eval; run_frontend; run_p0; run_architecture; run_continuity" in full_line
+    assert "run_backend; run_eval; run_frontend; run_p0; run_status; run_architecture; run_continuity" in full_line

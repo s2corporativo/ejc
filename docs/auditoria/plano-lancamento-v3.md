@@ -1,6 +1,11 @@
 # EJC — Plano de Lançamento (v3)
 ## Do estado atual até "um advogado leva um caso do início ao fim sem preguiça"
 
+> **Status canônico em `docs/PLANO_MESTRE_STATUS.md`.** Os 7 blocos abaixo (V3-B1
+> a V3-B7) têm status vivo só na tabela do checklist-mestre — este documento não
+> é mais editado com "concluído/pendente". Ele segue valendo como descrição de
+> cada bloco. Sequenciamento e trilha do titular em `docs/estrategia/PLANO_MESTRE_EJC.md`.
+
 > **O que este documento é:** o plano de execução para colocar o EJC em operação.
 > **O que ele não é:** o backlog completo. Esse continua sendo o `plano-correcao-v2.md`, que segue válido como referência de todos os 40+ achados da auditoria.
 >

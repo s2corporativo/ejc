@@ -39,3 +39,23 @@ export function fmtDateTime(d?: string | null, vazio = "—"): string {
     timeStyle: "short",
   });
 }
+
+/**
+ * Taxa de êxito de tese em percentual inteiro ("75%").
+ *
+ * O backend grava `teses.taxa_sucesso` como FRAÇÃO 0–1
+ * (`routers/teses.py::_recalcular_taxa` → `vezes_venceu / vezes_usada`), mas o
+ * campo é nullable sem default e existe base semeada em 0–100. Este helper
+ * aceita as duas convenções (`<= 1` é fração) para que a mesma tese nunca
+ * apareça como "0,75%" numa tela e "75%" na outra — divergência real observada
+ * entre `DossieEstrategicoCaso` (renderizava o valor cru) e `TabTeses`.
+ *
+ * `null`/`undefined` significa SEM HISTÓRICO (nenhum vínculo com resultado
+ * registrado) — devolve travessão, nunca "0%", que o advogado leria como
+ * "tese que nunca venceu".
+ */
+export function fmtTaxaSucesso(v?: number | null): string {
+  if (v == null || Number.isNaN(Number(v))) return "—";
+  const n = Number(v);
+  return `${Math.round(n <= 1 ? n * 100 : n)}%`;
+}

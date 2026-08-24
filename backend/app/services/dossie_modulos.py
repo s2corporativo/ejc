@@ -97,7 +97,6 @@ def classificar_riscos(saude: dict) -> dict:
         "classificacao": saude.get("classificacao"),
         "dias_parado":   max(0, saude.get("dias_parado") or 0),
         "fatores":       fatores,
-        "saudavel":      not fatores,
     }
 
 

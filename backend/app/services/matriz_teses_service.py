@@ -430,6 +430,7 @@ async def montar_matriz(
             issues)
         cand = ThesisCandidate(
             id=str(uuid4()), case_id=case_id, issue_id=issue_id,
+            tese_banco_id=t.id,
             tese=(t.descricao or t.titulo),
             fundamento=(t.fundamentacao or None),
             fatos_relacionados=[p.fato_probando for p in provas_t if p.fato_probando],
@@ -602,6 +603,20 @@ async def aprovar_tese(
     # então decisão dupla SIMULTÂNEA sobre a mesma tese não é detectável sem
     # SELECT ... FOR UPDATE; a janela é mínima, o 409 acima cobre o caso
     # sequencial e o AuditLog registra toda decisão (rastreável).
+
+    # Ponte Classe A (plano-mestre, Issue #1272, migration 149): aprovar uma
+    # candidata originada do Banco de Teses materializa o vínculo em
+    # tese_caso_links -- sem isto o orquestrador (que lê ThesisCandidate)
+    # e a conversão de caso (que lê TeseCasoLink) respondiam "tese aprovada"
+    # de forma disjunta para o MESMO caso. Sem tese_banco_id (candidata
+    # sugerida pela IA, sem tese catalogada) não há o que vincular -- fica
+    # aprovada na matriz, sem virar vínculo institucional automaticamente.
+    if decisao == "aprovada" and cand.tese_banco_id:
+        from app.services.tese_vinculo_service import vincular_tese_ao_caso
+        await vincular_tese_ao_caso(
+            db, tese_id=cand.tese_banco_id, case_id=cand.case_id,
+            resultado="pendente", created_by=user.id,
+        )
 
     role = getattr(user.role, "value", None) or str(getattr(user, "role", "") or "")
     await criar_audit_log(

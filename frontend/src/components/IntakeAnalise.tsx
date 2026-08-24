@@ -15,6 +15,7 @@ import api from "../lib/api";
 import { toast } from "./Toast";
 import Markdown from "./Markdown";
 import ErrorBoundary from "./ErrorBoundary";
+import { fmtTaxaSucesso } from "../utils/formato";
 import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 import {
@@ -128,11 +129,6 @@ const ESTRATEGIA_LABEL: Record<string, string> = {
 };
 
 // taxa_sucesso vem do banco como fração 0–1 (vezes_venceu/vezes_usada)
-function fmtPct(v?: number | null): string {
-  if (v == null) return "—";
-  return `${Math.round(v <= 1 ? v * 100 : v)}%`;
-}
-
 function CardTitulo({
   icon,
   children,
@@ -332,7 +328,7 @@ function IntakeAnaliseInner({ caseId }: { caseId: string }) {
                   {(dados.teses ?? []).map((t) => (
                     <TR key={t.id}>
                       <TD className="font-medium text-slate-800">{t.titulo}</TD>
-                      <TD className="font-mono">{fmtPct(t.taxa_sucesso)}</TD>
+                      <TD className="font-mono">{fmtTaxaSucesso(t.taxa_sucesso)}</TD>
                       <TD>{t.tribunal || "—"}</TD>
                       <TD className="font-mono">{t.vezes_usada ?? "—"}</TD>
                     </TR>
