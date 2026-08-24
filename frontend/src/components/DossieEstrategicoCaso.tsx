@@ -21,6 +21,7 @@ import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { useIaStatus } from "../lib/iaStatus";
 import { toast } from "./Toast";
 import { Badge, Button, Empty, Spinner, fmtDate } from "./UI";
+import { fmtTaxaSucesso } from "../utils/formato";
 
 // ── Tipos (contrato de GET /dossie/{caseId}/modulos) ─────────────────────────
 
@@ -882,7 +883,7 @@ function TeseCard({
         )}
         {tese.taxa_sucesso != null && (
           <span className="ml-auto text-xs text-slate-500">
-            êxito: {tese.taxa_sucesso}%
+            êxito: {fmtTaxaSucesso(tese.taxa_sucesso)}
           </span>
         )}
       </div>
