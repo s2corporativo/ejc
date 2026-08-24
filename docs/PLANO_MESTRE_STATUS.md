@@ -57,7 +57,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-3.6 | Conversão Sala Jurídica → Caso perde `descricao_fatos` | F5 | — | pendente | — | — |
 | V2-4.1 | Código já pronto e testado (guard de produção em `run_fictitious_smoke.py`, script `purga_dados_homologacao.py` com desativação de conta); execução em produção é ação do titular (governança §9 me veda acesso) | F3 | — | mesclado | #1015 | 2026-08-14 |
 | V2-4.2 | Métrica de "chance de êxito" — decisão D4 (Opção 1): removida da UI da Entrevista Inteligente; API mantém o campo, tipado com nota de não-reintrodução; confirmado que nenhuma rota `/portal/*` a serializa `[CRÍTICO]` | F3 | #1272 | em-andamento | #1259 | 2026-08-24 |
-| V2-4.3 | Citação normativa incorreta na interface | F3 | — | pendente | — | — |
+| V2-4.3 | Investigado (2026-08-24, decisão D5): "OAB Prov. 205/2021" citado como base do HITL em ~25 arquivos (prompts de IA + testes), confirmado incorreto (é sobre publicidade); substituição sugerida pela auditoria (CNJ 615/2025) também não se sustenta (regula o Judiciário, não a advocacia) — precisa de advogado real antes de aplicar | F3 | — | pendente | — | — |
 | V2-4.4 | Ausência de exclusão definitiva (LGPD) | F3 | — | pendente | — | — |
 | V2-5.1 | Quinze calculadoras jurídicas sem interface `[ALTO — maior ganho rápido]` | F3 | — | pendente | — | — |
 | V2-5.2 | Curadoria da base de conhecimento `[ALTO — trabalho contínuo]` | T5 | — | pendente | — | — |

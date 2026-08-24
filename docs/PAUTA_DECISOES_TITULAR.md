@@ -208,6 +208,67 @@ métrica **não é serializada em nenhuma rota `/portal/*`** — ela pode ser
 aceitável como ferramenta interna do advogado e inaceitável se o cliente a
 vê diretamente. Isso entra na F3 de qualquer forma.
 
+### D5 — Citação normativa incorreta usada como fundamento do HITL (V2-4.3)
+
+**O problema, confirmado nesta sessão (2026-08-24) e maior do que a auditoria
+registrou:** o sistema cita **"OAB Provimento 205/2021"** como fundamento
+jurídico da revisão humana obrigatória de conteúdo gerado por IA (HITL) —
+não em 1 lugar, em **~25 arquivos**: system prompts enviados à IA em
+produção (`system_prompts/*.py`, `skills_seed.py`, `skills_ferramentas_seed.py`),
+comentários/mensagens de erro em routers e services (`legal_docs.py`,
+`case_intelligence.py`, `triagem_entrevista.py`, `intake.py`,
+`ficha_triagem_service.py`, `motor_peca_service.py`, `ai_service.py`,
+`entrada_service.py`, `dossie_service.py`, `legal_case_orchestrator.py`,
+`case_intel.py`, `response_validator.py`), telas (`EntrevistaInteligente.tsx`,
+`Pecas.tsx`, `IntakeAnalise.tsx`) e **testes que travam a string literal**
+(`test_modo_executivo.py:105` — `assert "205/2021" in p`;
+`test_system_prompts_vigencia_legal.py:75` — `assert "Provimento CFOAB
+205/2021" in PROMPT_HONORARIOS`).
+
+**Verificação independente (WebSearch, 2026-08-24):** confirmo o achado da
+auditoria — a ementa oficial do Provimento 205/2021 é *"Dispõe sobre a
+publicidade e a informação da advocacia"* (revoga o Provimento 94/2000, trata
+de marketing jurídico/publicidade digital). Não trata de IA nem institui
+dever de revisão humana de peças.
+
+**A substituição que a própria auditoria sugeriu também não se sustenta sem
+revisão:** verifiquei a Resolução CNJ 615/2025, art. 19, § 3º — regula o uso
+de IA **no Poder Judiciário** (magistrados, atos judiciais), não a advocacia
+privada; citá-la como fundamento do HITL de um escritório é uma aplicação por
+analogia, não uma correspondência direta. `Lei 8.906/94, art. 32` (a outra
+sugestão) é a norma geral de responsabilidade civil do advogado — plausível
+como fundamento amplo, mas não específica de IA.
+
+**Por que não corrigi direto, com a autorização "decida sozinho" em vigor:**
+troca de citação legal é diferente de bug técnico — é conteúdo jurídico que
+vira **instrução enviada à própria IA em produção** e cláusula de defesa
+regulatória do escritório (risco disciplinar OAB se errada). Regra 5 do
+`CLAUDE.md` ("toda regra jurídica precisa de fonte oficial, vigência e
+teste") e a própria auditoria ("validar os dispositivos com o advogado
+responsável antes de aplicar") apontam para o mesmo limite: preciso de
+confirmação de um advogado real, não de outra citação que eu mesmo não posso
+verificar com certeza. Family de fix de ~25 arquivos + prompts de produção +
+testes travados por string literal também é grande demais para arriscar sem
+esse aval — é exatamente o cenário de "mudança que poderia contrariar decisão
+permanente do titular" da seção "Quando parar e perguntar".
+
+**Opções:**
+1. **Advogado confirma a citação correta** (ou confirma que nenhuma citação
+   específica se aplica) → executor aplica a troca nos ~25 arquivos, ajusta
+   os 2 testes que travam a string literal, mantendo o comportamento (HITL
+   continua obrigatório) e só corrigindo o texto/fundamento.
+2. **Fallback já sugerido pela própria auditoria, sem precisar de advogado:**
+   reescrever os textos sem citar nenhum provimento/artigo específico
+   ("revisão humana do advogado responsável é obrigatória", sem parênteses
+   normativos) — não faz afirmação jurídica nenhuma, logo não tem o risco de
+   citação errada. Reduz precisão retórica, zero risco de conteúdo.
+
+**Se não houver resposta:** aplico a Opção 2 (remover a citação específica,
+manter a exigência) na próxima janela de F3 — é a mesma lógica default já
+usada em D1/D2, e evita deixar uma citação sabidamente errada em produção.
+Ainda não apliquei porque o volume (~25 arquivos incluindo prompts de IA e
+testes) pede uma janela própria, não uma edição no meio de outro item.
+
 ---
 
 ## Autorização registrada (2026-08-24)
@@ -228,6 +289,12 @@ comportamento do sistema e precisam de rastro, mesmo decididas pelo executor.
 - **D4 (métrica "chance de êxito"):** removida da superfície visível ao advogado/cliente
   (Opção 1) — o risco OAB art. 34 XXIX e a fragilidade estatística (poucos casos)
   apontam para o mesmo lado. Tratado na F3.
+
+**D5 é a única exceção desta seção** — não decidida com a opção recomendada,
+porque a autorização de "decidir sozinho" cobre decisão de produto, não
+conteúdo jurídico que precisa de advogado real (mesmo limite da regra 5 do
+`CLAUDE.md`). Segue pendente de resposta ou do prazo-padrão do fallback (Opção
+2, remover citação) descrito na própria seção D5.
 
 **O que a autorização NÃO muda** — são fronteiras técnicas/de governança, não
 decisões de produto, e continuam em pé mesmo com "decida sozinho":
@@ -252,3 +319,4 @@ decisões de produto, e continuam em pé mesmo com "decida sozinho":
 | D2 | Executor remove a declaração morta com nota | Nenhum — decisão de baixo custo |
 | D3 | F5 não começa até fechar | F5 (mas ela já está no fim do plano) |
 | D4 | F3 não fecha o item 4.2 | F3 |
+| D5 | Após prazo-padrão, executor aplica o fallback (remove citação, mantém exigência) | V2-4.3 (F3) |
