@@ -24,8 +24,8 @@ caso já arquivado sem essa informação.
 from alembic import op
 import sqlalchemy as sa
 
-revision = "148_case_status_anterior"
-down_revision = "147_pendencia_impacto_providencia"
+revision = "151_case_status_anterior"
+down_revision = "150_indices_fk_espinha_dominio"
 branch_labels = None
 depends_on = None
 

@@ -138,7 +138,7 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 
 - **Entrypoint**: `backend/app/main.py`. Todos os 163 routers de `app/routers/` são registrados manualmente com prefixo `API = "/api"`. Docs (`/api/docs`) desabilitadas em produção. Ordem de middlewares importa: `AuthMiddleware` (mais interno) → `ClientIPMiddleware` → GZip → CORS.
 - **Camadas**: routers finos → lógica de negócio em `app/services/` (~150 módulos) → models SQLAlchemy em `app/models/` → schemas Pydantic em `app/schemas/` (muitos routers definem schemas inline). Pacotes de feature autocontidos em `app/modules/` (auditoria, case_partes, indice_risco, score_juridico). Tarefas Celery em `app/tasks/`.
-- **Domínios principais**: auth/2FA (`auth.py`, `users.py`), clientes (`clients.py`, `dossie_cliente.py`, `intake.py`), casos (`cases.py`, `processes.py`, `jornada_caso.py`), prazos/agenda (`deadlines.py`, `tasks.py`, `intimacoes.py`), documentos (`documents.py`, `data_room*.py`, `signatures.py`), IA/RAG (`rag.py`, `ai_core.py`, `peca_geracao*.py`, `ia_governanca.py`), financeiro (`fees.py`, `honorarios_*.py`, `nfse.py`), integrações externas (`datajud.py`, `infosimples_*.py`, `whatsapp.py`, `diario_oficial.py`).
+- **Domínios principais**: auth/2FA (`auth.py`, `users.py`), clientes (`clients.py`, `dossie_cliente.py`, `intake.py`), casos (`cases.py`, `processes.py`, `case_intelligence.py`, `conversao_caso.py`), prazos/agenda (`deadlines.py`, `tasks.py`, `intimacoes.py`), documentos (`documents.py`, `data_room*.py`, `signatures.py`), IA/RAG (`rag.py`, `ai_core.py`, `peca_geracao*.py`, `ia_governanca.py`), financeiro (`fees.py`, `honorarios_*.py`, `nfse.py`), integrações externas (`datajud.py`, `infosimples_*.py`, `whatsapp.py`, `diario_oficial.py`).
 - **Banco**: SQLAlchemy **async** (`asyncpg`) via `app/core/database.py`; dependency `get_db()` fornece `AsyncSession`. Duas URLs: `DATABASE_URL` (async, app) e `DATABASE_URL_SYNC` (psycopg2, Alembic).
 - **Config**: `app/core/config.py` (pydantic-settings, `.env`, `get_settings()` com cache). Em produção o boot FALHA se `SECRET_KEY`/chaves PII estiverem ausentes/placeholder ou CORS for wildcard. Exemplo anotado completo em `.env.example`.
 - **Auth/segurança**: JWT HS256 (PyJWT) — access token curto + refresh token com JTI revogável em cookie httpOnly; 2FA TOTP (`pyotp`); senhas com `bcrypt` puro (passlib/python-jose foram removidos deliberadamente — não reintroduzir). RBAC hierárquico (superadmin 9 → cliente_externo 1) via `require_roles()`/`require_admin`. Rate limit próprio em `app/core/rate_limit.py` (janela fixa 60s, memória ou Redis) + slowapi. CPF/CNPJ criptografados em repouso (Fernet + índice HMAC cego, `services/pii_crypto.py`).
@@ -148,7 +148,7 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 
 ### Migrations (Alembic)
 
-- Vivem em `backend/alembic/versions/`, numeradas sequencialmente (`049_totp_2fa.py`, ..., `126_case_status_quatro_estados.py`). O head muda a cada merge: **confirme com `cd backend && python -m alembic heads`** em vez de confiar neste número. Gerar: `python -m alembic revision --autogenerate -m "..."`; aplicar: `python -m alembic upgrade head` (roda automaticamente no boot do container quando `RUN_MIGRATIONS=1`).
+- Vivem em `backend/alembic/versions/`, numeradas sequencialmente (`049_totp_2fa.py`, ..., `150_indices_fk_espinha_dominio.py`). O head muda a cada merge: **confirme com `cd backend && python -m alembic heads`** em vez de confiar neste número. Gerar: `python -m alembic revision --autogenerate -m "..."`; aplicar: `python -m alembic upgrade head` (roda automaticamente no boot do container quando `RUN_MIGRATIONS=1`).
 - `alembic/env.py` lê `DATABASE_URL_SYNC` e tem guarda `include_name()`: ~30 tabelas existem só em SQL bruto (sem model ORM) — nunca confie apenas em `Base.metadata` para o schema completo, e nunca aceite `drop_table` espúrio do autogenerate.
 - Seeds: `backend/seeds/seed_all.py` (bootstrap idempotente do admin, roda no boot) e `backend/app/seeds/` (conteúdo: skills de IA, templates, checklists). Base de conhecimento em `backend/seeds/biblia_ejc/`.
 
@@ -159,6 +159,38 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 - **API client**: `src/lib/api.ts` — axios com `baseURL: "/api/v1"` (constante `API_BASE_URL`, linha 9). O interceptor de request **remove** prefixo repetido (`/api/v1/`, `/api/`, `/v1/`) do `config.url`, então dentro do cliente `api` os caminhos se escrevem sem prefixo (`/casos`, não `/api/casos`). Quem usa `axios` cru — como `refreshAccessToken` — precisa do path REAL do backend (`/api/auth/refresh`, sem `v1`). Access token em `localStorage` (`ejc_access`) injetado por interceptor; refresh token em cookie httpOnly gerenciado pelo backend; 401 dispara refresh single-flight com retry; 403 `must_change_password` redireciona para `/trocar-senha`.
 - **Estado**: stores Zustand em `src/stores/` (`auth.ts`/`useAuth` com `bootstrap()`, `caseContext.ts`, `moduleLifecycle.ts`, `preferences.ts`, `theme.ts`).
 - **Layout de src/**: `pages/` (~70 páginas; `pages/portal/` e `pages/ramos/`), `components/`, `lib/` (api, SSE em `stream.ts`), `config/`, `stores/`, `contexts/`, `types/`, `utils/`. Testes co-localizados (`*.test.ts(x)`).
+
+## Verificação oficial é local — OBRIGATÓRIO (decisão do titular, 2026-08-24)
+
+O GitHub Actions da organização parou de alocar runner em ~22/08 (todo run
+termina em `startup_failure` em 1 segundo, sem job e sem log, inclusive na
+`main`). A causa é da conta (billing/limite do Actions), fora do alcance do
+código. Enquanto isso não for resolvido — e como resiliência permanente depois —
+**a verificação oficial deste repositório é local**, e é obrigatória antes de
+qualquer push:
+
+1. **Backend**: `cd backend && ruff check app && python -m alembic heads &&
+   pytest` — a suíte completa, com PostgreSQL 16 + pgvector local e
+   `alembic upgrade head` do zero sempre que a mudança tocar banco, models,
+   services ou routers. Ambiente que não compila dependência nativa não é
+   desculpa para pular a suíte: use venv isolado (comprovado em 24/08, quando a
+   suíte completa — 6.387 testes — pegou duas regressões que a validação
+   estática não pegava).
+2. **Frontend**: `cd frontend && npm run lint && npm test && npm run build`.
+3. **Evidência no corpo do PR**: resultados portão a portão, commit e branch.
+   Sem CI não há badge; a evidência local é o que substitui o verde.
+4. **CI ausente, vermelho por `startup_failure` ou sem check algum nunca
+   bloqueia nem aprova**: não é sinal de qualidade em nenhuma direção. Não
+   gaste sessão sondando o Actions nem re-disparando `workflow_dispatch`;
+   registre o estado uma única vez e siga com o portão local.
+5. **Merge**: com `auto-integracao.yml` e `governanca.yml` desligados
+   (`disabled_manually`), o merge automático da governança §6-A está suspenso —
+   o merge é manual, do titular, mediante a evidência local do item 3. Quando a
+   esteira voltar, este item volta a ser o fluxo automático; os itens 1–4
+   continuam valendo de qualquer forma.
+
+Este bloco prevalece sobre qualquer menção a "CI verde" como pré-requisito nos
+demais trechos deste arquivo enquanto o Actions não voltar a executar.
 
 ## Comandos essenciais
 
@@ -254,34 +286,93 @@ diagnóstico fechado**: a auditoria não viu o código. Confirme antes de agir.
 
 Reproduzíveis pela API. Ao mexer nessas áreas, confirme o comportamento real antes de assumir:
 
-- **Prefixo `/v1/` duplicado.** `/api/v1/v1/despesas` responde 200; `/api/v1/despesas` dá 404.
-  Mesmo padrão em `office-contracts`, `partner-withdrawals`, `kanban-columns`,
-  `regulatorio/digest-semanal`. O frontend compensa chamando `/v1/x`.
-  *(Resolvido em 2026-08-02: `src/lib/api.ts` linha 9 usa `baseURL: "/api/v1"` — o bundle está
-  certo e a descrição antiga neste arquivo (`/api`) é que estava errada. O interceptor de request
-  apara prefixo repetido; a duplicação `/api/v1/v1/` vem de chamada que já traz `/v1` e escapa
-  dessa poda. Ao investigar, comece pelo interceptor, não pelo `baseURL`.)*
+> **Revarredura de 2026-08-22 (Issue #1237).** Esta lista descreve a auditoria externa de
+> **julho, contra produção**, e o repositório andou desde então. Seis itens foram remedidos
+> com a stack local de pé (Postgres 16 + pgvector, migrations do zero, backend e frontend
+> rodando) e **já não reproduzem**: prefixo `/v1/` duplicado, `?status=all` → 500, exclusão de
+> caso sem cascata, smoke E2E contra produção, `system-modules/mapa` e o monitoramento do
+> DJEN. Cada um está marcado abaixo com o que a medição mostrou. **Não re-audite os marcados
+> como resolvidos sem antes reproduzir** — foi assim que esta rodada gastou tempo.
+>
+> A lição que se repetiu: **item de auditoria carrega o tamanho que o problema tinha aos olhos de
+> quem passou correndo por ele.** A nota errou nas duas direções — subestimou (o gate de citações
+> era mais cego do que ela dizia: não enxergava diploma por extenso) e superestimou (`chance de
+> êxito` e `system-modules/mapa` não eram defeito, eram desenho). Confirme no código **antes** de
+> agir sobre qualquer item desta lista.
+
+- ~~**Prefixo `/v1/` duplicado.**~~ **RESOLVIDO.** Medido em 2026-08-22 nas cinco rotas citadas
+  pela auditoria (`despesas`, `office-contracts`, `partner-withdrawals`, `kanban-columns`,
+  `regulatorio/digest-semanal`): todas respondem 200 em `/api/X` **e** em `/api/v1/X`, e 404 em
+  `/api/v1/v1/X` — que é o comportamento correto. Histórico: a auditoria de julho viu
+  `/api/v1/v1/despesas` → 200 e `/api/v1/despesas` → 404, com o frontend compensando ao chamar
+  `/v1/x`. `src/lib/api.ts` linha 9 usa `baseURL: "/api/v1"` e o interceptor de request apara
+  prefixo repetido (`/api/v1/`, `/api/`, `/v1/`); dentro do cliente `api` os caminhos se escrevem
+  **sem** prefixo. Se a duplicação voltar a aparecer, comece pelo interceptor, não pelo `baseURL`.
 - **Superfície dupla.** Toda rota responde em `/api/` e em `/api/v1/`. Regras por path
   (rate limit, WAF, log, cache) precisam cobrir as duas.
 - **Painéis de diagnóstico divergem entre si.** Sobre provedores/modelos de IA, a fonte de verdade
   é a telemetria de `GET /ia-governanca/provedores` — não `/ai/status` nem `/diagnostico/central`.
   O `/diagnostico/central` chega a reportar `backup_offsite` como ligado e desligado na mesma resposta.
-- **`GET /system-modules/mapa` subdetecta rotas** e documenta ao menos 5 caminhos incorretos.
-  Pista, não verdade.
-- **Gravação não transacional entre registros relacionados é uma classe de defeito recorrente:**
-  validação que não vincula ao documento, exclusão de caso que não cascateia para as peças,
-  conversão Sala Jurídica → Caso que perde `descricao_fatos`, chance de êxito que fica no log e
-  não no caso. Ao tocar em fluxo que grava em duas tabelas, verifique a transação.
-- **Monitoramento afere execução, não resultado.** Heartbeats checam `last_run_at`, não se o job
-  produziu algo — por isso a captura DJEN reporta "ok" há meses sem nunca ter capturado nada.
-  Job novo ou corrigido deve monitorar resultado.
-- **Vocabulário de status inconsistente.** Backend usa `triagem`/`arquivado`; a interface oferece
-  `ativo`/`all`. O primeiro retorna vazio, o segundo dá 500.
-- **`qa/e2e/run_fictitious_smoke.py` roda contra produção.** É a origem dos casos
-  `HOMOLOG-FICTICIO-*` e da conta `homolog.qa` (perfil superadmin, ativa em produção).
-- **Numeração de migrations envelhece rápido.** A auditoria viu `122_route_usage_metrics`; em
-  2026-08-02 o head do repositório já era `126_case_status_quatro_estados`. Nenhum número escrito
-  em documento é confiável: rode `cd backend && python -m alembic heads`.
+- **`GET /system-modules/mapa` é DIAGNÓSTICO, não inventário** — e se declara assim
+  (`"modo": "diagnostico"`, `dry_run`, `requer_revisao_humana`). Ele percorre
+  `autofix_scanner.EXPECTED_MODULES`, lista curada de módulos de PRODUTO com rota de frontend,
+  não os routers de API. Comparar a cobertura dele com `app.routes` é comparar coisas
+  diferentes — foi o erro de enquadramento da revarredura de 22/08. Continua valendo: pista,
+  não verdade.
+- **Gravação não transacional entre registros relacionados é uma classe de defeito recorrente.**
+  A regra geral continua valendo — ao tocar em fluxo que grava em duas tabelas, verifique a
+  transação. Dos quatro exemplos que a auditoria deu, três foram medidos em 22/08 e **nenhum é
+  o que a nota dizia**:
+  - *exclusão de caso que não cascateia para as peças* — **protegido**: `DELETE /cases/{id}`
+    devolve 422 listando as pendências e manda arquivar.
+  - *conversão Sala Jurídica → Caso que perde `descricao_fatos`* — **era real, corrigido**, mas
+    não no backend: `legal_chat_service` sempre gravou o campo. O buraco estava no
+    pré-preenchimento do wizard, cujos dois degraus (`estado.resumo || workspace_texto`) podiam
+    faltar juntos, porque `resumo` vem de extração de IA fail-soft e IA nasce desligada. Terceiro
+    degrau agora lê as mensagens do advogado.
+  - *chance de êxito que fica no log e não no caso* — **mal enquadrado, não é defeito.** Não
+    existe (nem deve existir) coluna `cases.chance_exito`: o valor é persistido no snapshot
+    versionado (`case_intelligence_snapshots.payload.riscos.chance_exito`) e num `CaseMovimento`
+    legível, e `GET /cases/{id}/movimentos` não filtra por tipo, então o `chance≈X%` chega ao
+    advogado. Gravar estimativa de IA não revisada como atributo de primeira classe do caso seria
+    **violar HITL**, não corrigir nada — o snapshot nasce de propósito com `criado_por=None`
+    ("automático — nunca nasce aprovado").
+  - *validação que não vincula ao documento* — **resolvido**, pela saída (b) que o próprio
+    `plano-correcao-v2.md` §2.1 propunha: o campo denormalizado `validacao_juridica.ai_log_id`
+    deixou de existir e `_ultima_validacao_peca` resolve por **FK** (`ai_logs.legal_doc_id`) mais
+    `legal_doc_validation_current` e SHA-256 do conteúdo. Medido em 22/08 contra a stack local,
+    cinco casos: peça nova bloqueia (422); AILog com FK + flag + hash correto libera
+    (`validada`, `/aprovar` → **200**); e o fail-closed segura os três desvios — hash defasado
+    (peça editada depois de validar), flag de atualidade desligada e validação de **outra** peça.
+    Nenhum marcador textual correlaciona os dois registros. O critério de aceite da auditoria
+    ("criar peça → validar → aprovar") passa sem intervenção no banco; a etapa `validar` em si
+    exige provedor de IA e, sem ele, devolve **503 explicado** (não 500 mudo) — correção anterior,
+    achado #672.
+
+  Com isso os **cinco** exemplos da classe estão medidos, e a lição vale mais que eles: a classe
+  é real e a regra geral continua valendo, mas **nenhum dos cinco casos citados era, hoje, o que
+  a nota dizia**.
+- **Monitoramento afere execução, não resultado.** A regra continua valendo para job novo, mas
+  o caso citado **foi corrigido**: `heartbeat_service._normalizar_resultado_djen` "troca o
+  status nominal pela produtividade real da task" e marca `falha_job` quando há OABs elegíveis
+  sem métrica de execução. Atenção: o tratamento é específico do `JOB_DJEN` — os demais jobs
+  ainda registram o status nominal, então **job novo ou corrigido deve monitorar resultado**.
+- ~~**Vocabulário de status inconsistente.**~~ **RESOLVIDO**: `validar_status_caso` devolve
+  **422** com a lista de valores aceitos (o próprio comentário em `routers/cases.py` registra
+  "era o caso de `?status=all`"). "Todos" é a AUSÊNCIA do parâmetro.
+- **`qa/e2e/run_fictitious_smoke.py`: o script JÁ SE PROTEGE** (linha ~1025 recusa alvo fora
+  de staging/homolog/localhost sem `EJC_ALLOW_PRODUCTION_E2E=true`). O que permanece é o
+  **rastro em produção**: os casos `HOMOLOG-FICTICIO-*` e a conta `homolog.qa` (superadmin,
+  ativa) criados antes do guard — limpeza é operação de ambiente, não de código.
+  Ponto fraco anotado: o guard testa substring na URL inteira, então
+  `https://…adv.br/?x=staging` passaria; verificar o **hostname** seria mais firme.
+- **Numeração de migrations envelhece rápido — inclusive dentro de um PR aberto.** A
+  auditoria viu `122_route_usage_metrics`; em 2026-08-02 o head já era
+  `126_case_status_quatro_estados`; em 2026-08-22 este PR reservava `147`/`148`; e ao mesclar
+  a `main` em 2026-08-23 o `147` já estava ocupado por outro PR mesclado primeiro
+  (`147_pendencia_impacto_providencia`), forçando renumeração para `149`/`150` antes do
+  merge. Nenhum número escrito em documento é confiável, **inclusive este**: rode
+  `cd backend && python -m alembic heads`.
 
 ### Critério de lançamento
 

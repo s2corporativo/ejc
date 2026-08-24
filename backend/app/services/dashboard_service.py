@@ -32,7 +32,11 @@ async def coletar_dados_mes(db: AsyncSession, mes: int, ano: int) -> dict:
           COUNT(*) FILTER (WHERE status='concluido'
                              AND EXTRACT(MONTH FROM data_conclusao)=:m
                              AND EXTRACT(YEAR  FROM data_conclusao)=:a) AS cumpridos,
-          COUNT(*) FILTER (WHERE status='pendente' AND data_prazo < CURRENT_DATE) AS vencidos
+          -- Mesmo defeito de `routers/dashboard.py`: o job das 07:10 troca
+          -- 'pendente' por 'vencido' e o contador ia a zero. Vencido é o que
+          -- passou da data sem ser cumprido nem cancelado.
+          COUNT(*) FILTER (WHERE status NOT IN ('concluido','cancelado')
+                             AND data_prazo < CURRENT_DATE) AS vencidos
         FROM deadlines WHERE deleted_at IS NULL
     """), {"m": mes, "a": ano})
     cumpridos, vencidos = r.one()

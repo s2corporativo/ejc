@@ -31,8 +31,8 @@ gravar dado jurídico não confiável. Vale só para aprovações a partir de ag
 from alembic import op
 import sqlalchemy as sa
 
-revision = "149_thesis_candidate_tese_banco"
-down_revision = "148_case_status_anterior"
+revision = "152_thesis_candidate_tese_banco"
+down_revision = "151_case_status_anterior"
 branch_labels = None
 depends_on = None
 

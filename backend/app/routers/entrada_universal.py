@@ -198,6 +198,10 @@ async def _salvar_original(db: AsyncSession, *, batch: DocumentIntakeBatch, virt
         descricao=f"Entrada Universal — lote {batch.id}", filename=virtual["nome"][:255],
         filepath=filepath, mimetype=mime_real, size_bytes=len(raw), ocr_text=None,
         confidencialidade=conf, case_id=batch.case_id, client_id=batch.client_id, uploaded_by=cu.id,
+        # Achado 30: o digest ja era calculado logo abaixo, para o
+        # DocumentIntakeItem, sobre estes mesmos bytes — e nao chegava ao
+        # Document. Mesma fonte, um `sha256_bytes(raw)` so.
+        sha256=sha256_bytes(raw),
     )
     item = DocumentIntakeItem(
         id=str(uuid4()), batch_id=batch.id, document_id=doc_id, filename=virtual["nome"][:255],
@@ -596,6 +600,10 @@ def _clonar_documento_local(documento: Document, caso_id: str, client_id: str | 
         case_id=caso_id,
         client_id=client_id,
         uploaded_by=cu.id,
+        # Copia isolada por `shutil.copy2` dos MESMOS bytes: o digest do
+        # original vale para a copia. Recalcular leria o arquivo de novo sem
+        # ganho; propagar mantem as duas linhas conferiveis entre si.
+        sha256=documento.sha256,
     )
 
 

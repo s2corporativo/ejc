@@ -243,10 +243,13 @@ export function Panel({
     <div className={`card p-5 ${className}`}>
       {(title || action) && (
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+          {/* h2: painel é seção de primeiro nível sob o título da
+              página. Como h3, criava salto h1 -> h3 em /casos e
+              /documentos — quem navega por cabeçalho perde o nível. */}
+          <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
             {Icon && <Icon size={14} className="text-primary-500" />}
             {title}
-          </h3>
+          </h2>
           {action}
         </div>
       )}

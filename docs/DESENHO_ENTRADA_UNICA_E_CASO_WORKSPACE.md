@@ -182,6 +182,10 @@ demanda — não pelo conteúdo novo.
 
 ### O que existe
 
+> **Desatualizado (conferido em 24/08/2026):** `backend/app/routers/jornada_caso.py`
+> não existe mais no repositório. O trecho abaixo descreve o desenho original e
+> permanece como registro; confirme no código antes de usá-lo como referência.
+
 `backend/app/routers/jornada_caso.py` calcula **nove etapas** de forma
 determinística: Cliente → Triagem → Documentos → Inteligência → Estratégia →
 Produção → Revisão → Protocolo → Gestão. É código bom — funções puras, sem IA,

@@ -269,7 +269,7 @@
 | GET | `/previdenciario/ferramentas/tempo-contribuicao` | `backend/app/routers/ramos.py:2275` |
 | GET | `/produtividade` | `backend/app/routers/produtividade.py:24` |
 | GET | `/prompts` | `backend/app/routers/ia_governanca.py:455` |
-| GET | `/provedores` | `backend/app/routers/ia_provider_metrics.py:51` |
+| GET | `/provedores` | `backend/app/routers/ia_governanca.py:773` |
 | GET | `/ptax` | `backend/app/routers/indices.py:83` |
 | GET | `/push/subscriptions` | `backend/app/routers/notifications.py:178` |
 | GET | `/push/vapid-key` | `backend/app/routers/notifications.py:170` |
@@ -674,7 +674,7 @@
 | POST | `/{analysis_id}/documento` | `backend/app/routers/bank_analysis.py:187` |
 | POST | `/{analysis_id}/gerar-peca` | `backend/app/routers/bank_analysis.py:266` |
 | POST | `/{batch_id}/preparar-pacote` | `backend/app/routers/entrada_universal.py:317` |
-| POST | `/{batch_id}/vincular-caso` | `backend/app/routers/entrada_universal_vinculo.py:95` |
+| POST | `/{batch_id}/vincular-caso` | `backend/app/routers/entrada_universal.py:592` |
 | POST | `/{case_id}/analisar` | `backend/app/routers/cases.py:1357` |
 | POST | `/{case_id}/aplicar-extracao` | `backend/app/routers/cases.py:1026` |
 | POST | `/{case_id}/arquivar` | `backend/app/routers/cases.py:498` |

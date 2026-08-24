@@ -1,15 +1,12 @@
 # ── app/routers/__init__.py ─────────────────────────────────────────────────
-# Imports com efeitos controlados de registro de rotas complementares.
+# Re-exports de conveniência. NÃO há efeito colateral de registro aqui.
 #
-# main.py importa `app.routers` antes de incluir explicitamente os routers.
-# Estes imports registram sub-rotas complementares sem exigir nova entrada no
-# grande inventário de imports do main.py.
-
-# Entrada Universal e Defesas/Revisões são anexados ao router `novos_modulos`,
-# que já é montado pelo main.py sob /api. Os prefixos próprios são preservados.
-from app.routers import (  # noqa: E402 — re-exports deliberados:
-    # o import dispara o registro de sub-rotas complementares (side effect
-    # controlado documentado acima), mesmo padrão do main.py pré-P3.
+# Até a consolidação P3, Entrada Universal e Defesas/Revisões eram anexados ao
+# router `novos_modulos` no momento do import deste arquivo. Isso acabou: o
+# main.py registra os quatro explicitamente com `include_router` (ver os
+# comentários "P3: registro explícito" lá). O texto anterior descrevia o
+# mecanismo antigo e induzia a crer que importar este módulo monta rotas.
+from app.routers import (  # noqa: E402 — re-exports deliberados
     defesas_revisoes as defesas_revisoes,
     defesas_revisoes_avancado as defesas_revisoes_avancado,
     defesas_revisoes_pacote_seguro as defesas_revisoes_pacote_seguro,
