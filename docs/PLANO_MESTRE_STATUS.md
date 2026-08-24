@@ -78,10 +78,10 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V3-B5 | Bloco 5 — Não perder prazo — código pronto e testado; resta cadastro de OAB (V3-B6, T4) | F1 | — | mesclado | #1015 | 2026-08-14 |
 | V3-B6 | Bloco 6 — Preparar os dados da operação (10 cadastros pré-operação) | F4 | — | pendente | — | — |
 | V3-B7 | Bloco 7 — O teste do primeiro caso real (critério de lançamento) | F4 | — | pendente | — | — |
-| CL-A1 | Classe A passo 1 — write-path único (`aprovar_tese`/`tese_aprovada_do_caso`) | F2 | — | pendente | — | — |
-| CL-A2 | Classe A passo 2 — migration de backfill (candidates aprovados sem link) | F2 | — | pendente | — | — |
-| CL-A3 | Classe A passo 3 — unificar leitores (`conversao_caso.py`, `legal_case_orchestrator.py`) | F2 | — | pendente | — | — |
-| CL-A4 | Classe A passo 4 — congelar `cases.tese_principal` como campo exibicional | F2 | — | pendente | — | — |
+| CL-A1 | Classe A passo 1 — write-path único (`vincular_tese_ao_caso`, usado por `/vincular-caso` e `aprovar_tese`) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
+| CL-A2 | Classe A passo 2 — coluna `tese_banco_id` (migration 149); SEM backfill retroativo (mapeamento só existia em memória, não é reconstruível com confiança) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
+| CL-A3 | Classe A passo 3 — ponte na aprovação materializa `tese_caso_links`; os dois leitores concordam no caminho comum (tese do Banco) — testado | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
+| CL-A4 | Classe A passo 4 — já é campo exibicional de fato (só a triagem escreve; nenhum novo writer adicionado) — nenhuma ação necessária | F2 | #1272 | verificado | #1259 | 2026-08-24 |
 | CL-A5 | Classe A passo 5 — remover `teses_juridicas_v4` / `teses_vitoriosas` | F5 | — | pendente | — | — |
 | CL-B1 | Classe B — correção do plano: `STATUS_REGISTRY` é multiuso (peças, honorários, clientes, prazos) — chaves não são "fantasma", servem outros domínios; nenhuma ação | F2 | #1272 | verificado | #1259 | 2026-08-24 |
 | CL-B2 | Classe B — guard-rail de paridade já existe (`test_status_caso_paridade_frontend.py`) | F2 | #1272 | verificado | #1259 | 2026-08-24 |

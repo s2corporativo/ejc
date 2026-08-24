@@ -101,14 +101,6 @@ def _tese_out(t: Tese) -> dict:
     }
 
 
-async def _recalcular_taxa(tese: Tese):
-    """Recalcula taxa_sucesso baseado nos vínculos registrados."""
-    if tese.vezes_usada and tese.vezes_usada > 0:
-        tese.taxa_sucesso = round(tese.vezes_venceu / tese.vezes_usada, 4)
-    else:
-        tese.taxa_sucesso = None
-
-
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("")
@@ -519,20 +511,14 @@ async def vincular_caso(
     if not t:
         raise HTTPException(404)
 
-    link = TeseCasoLink(
-        id=str(uuid4()), tese_id=tese_id,
-        case_id=req.case_id, resultado=req.resultado,
-        observacao=req.observacao, created_by=cu.id,
+    # Write-path único (Classe A, plano-mestre, Issue #1272) — a mesma função
+    # que aprovar_tese() usa para materializar o vínculo na aprovação da
+    # matriz de teses (services/tese_vinculo_service.py).
+    from app.services.tese_vinculo_service import vincular_tese_ao_caso
+    link = await vincular_tese_ao_caso(
+        db, tese_id=tese_id, case_id=req.case_id,
+        resultado=req.resultado, observacao=req.observacao, created_by=cu.id,
     )
-    db.add(link)
-
-    # Atualiza contadores
-    t.vezes_usada = (t.vezes_usada or 0) + 1
-    if req.resultado == "procedente":
-        t.vezes_venceu = (t.vezes_venceu or 0) + 1
-    elif req.resultado == "improcedente":
-        t.vezes_perdeu = (t.vezes_perdeu or 0) + 1
-    await _recalcular_taxa(t)
     t.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
