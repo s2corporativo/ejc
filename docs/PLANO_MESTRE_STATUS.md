@@ -61,7 +61,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-4.4 | Ausência de exclusão definitiva (LGPD) | F3 | — | pendente | — | — |
 | V2-5.1 | Quinze calculadoras jurídicas sem interface `[ALTO — maior ganho rápido]` | F3 | — | pendente | — | — |
 | V2-5.2 | Curadoria da base de conhecimento `[ALTO — trabalho contínuo]` | T5 | — | pendente | — | — |
-| V2-5.3 | Higiene da base RAG | F3 | — | pendente | — | — |
+| V2-5.3 | Higiene é curadoria contínua (T5, titular). `[INVESTIGAR]` do hash de duplicidade fechado (2026-08-24): `hash_conteudo` é SHA-1 do conteúdo NORMALIZADO INTEIRO (`ingestion_service.py::normalizar`+`_sha1`), sem truncar — descarta "trecho insuficientemente específico"; colisão entre acórdãos com processo distinto só se explica por `conteudo` quase idêntico gravado pelo scraper STJ (stub/boilerplate), que só se confirma inspecionando os 3 documentos reais em produção (fora do meu acesso, governança §9) | F3/T5 | — | pendente | — | — |
 | V2-5.4 | Erro jurídico recorrente nas skills (decadência, CPC art. 487, II) | — | — | **verificado** | #1015 | 2026-08-22 |
 | V2-5.5 | Camada de IA da extração de documentos indisponível | F3 | — | pendente | — | — |
 | V2-6.1 | Prefixo `/v1/` duplicado | F5 | — | pendente | — | — |
