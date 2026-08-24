@@ -10,6 +10,13 @@ agora?"*.
 real até o protocolo. **Nada deste documento entra antes do Bloco 7 daquele plano.**
 A seção final explica por quê e como as duas coisas se encaixam.
 
+> **Status canônico em `docs/PLANO_MESTRE_STATUS.md`.** O placar de 15 frentes
+> abaixo descreve a avaliação técnica; a partir de 2026-08-24 o status vivo de
+> cada item de trabalho (Onda A/B/C) vive só no checklist-mestre, verificado
+> por `scripts/status_check.sh`. Este documento não é mais editado com
+> cabeçalho de status — a nota de correção na seção "Placar" registra a última
+> divergência encontrada entre cabeçalho e placar antes da migração.
+
 **Método:** cada uma das 15 frentes foi conferida contra o código em
 `3493d35`. Onde há implementação, o caminho do arquivo está citado. Onde se afirma
 que algo não existe, a afirmação vem de busca por nome e por conceito — e está
@@ -482,7 +489,7 @@ backlog — e nenhuma das outras 14 frentes responde a ela.
 | # | Frente | Situação | Natureza do trabalho que falta |
 |---|---|---|---|
 | 1 | Radar jurisprudencial | 🟡 | Engenharia (análise de impacto) |
-| 2 | Tese → Caso | 🟡 | Engenharia (varredura reversa) |
+| 2 | Tese → Caso | ✅ | Calibragem do matching contra base real, não construção |
 | 3 | Playbooks | 🔴 | **Curadoria jurídica** + estrutura |
 | 4 | Argumentos/contra-argumentos | ✅ | Acumular em catálogo |
 | 5 | Revisor Jurídico | ✅ | 4 checagens novas |
@@ -491,17 +498,25 @@ backlog — e nenhuma das outras 14 frentes responde a ela.
 | 8 | Avaliação da IA | ✅ (gate de formato já bloqueia) | Ligar pisos de qualidade — dep. de 7 |
 | 9 | Knowledge Graph | ✅ motor | **Curadoria** (massa de arestas) |
 | 10 | Inteligência documental | ✅ | Camada interpretativa |
-| 11 | Linha do tempo | 🟡 | Engenharia (cruzar real × rito) |
-| 12 | O que está faltando | 🟡 | Engenharia (impacto + providência) |
+| 11 | Linha do tempo | ✅ | Interpretação jurídica do movimento, não código |
+| 12 | O que está faltando | ✅ | Preenchimento pelo advogado, não código |
 | 13 | Memória institucional | ✅ completo | Nada — verificado por execução |
 | 14 | Matriz de estratégia | ✅ | Apresentação |
 | 15 | Segundo advogado | ✅ completo | **Validar uso real** — não é backlog |
 
-Cinco das quinze (3, 6, 7, 9, 15) dependem de **trabalho humano — curadoria,
-certificação ou julgamento de uso**, não de código; e uma sexta (8) fica
-bloqueada pela 7. É a informação mais acionável do documento: um terço largo
-desta proposta não é trabalho de engenharia, e nenhuma quantidade de sessão de
-Claude Code a resolve.
+> **Nota de correção (2026-08-24):** esta linha do placar para as frentes 2, 11
+> e 12 estava desatualizada em relação aos cabeçalhos das seções acima — os
+> três já documentavam ✅ com evidência (varredura reversa de teses, correção
+> do `rito_engine`, campos `impacto`/`providencia` da migration 147), mas o
+> placar e a Onda A abaixo ainda as listavam como 🟡/pendentes. É o mesmo vício
+> de disciplina de status que motivou o checklist-mestre único
+> (`docs/PLANO_MESTRE_STATUS.md`) — ver banner no topo deste documento.
+
+Duas das quinze (3, 6) dependem de **curadoria jurídica humana**, e três (7, 9,
+15) de **certificação ou julgamento de uso**, não de código; e uma sexta (8)
+fica bloqueada pela 7. É a informação mais acionável do documento: um terço
+largo desta proposta não é trabalho de engenharia, e nenhuma quantidade de
+sessão de Claude Code a resolve.
 
 ---
 
@@ -520,10 +535,14 @@ resolve.
 | Ordem | Item | Por quê |
 |---|---|---|
 | **A0** | **Usar o Dossiê Estratégico num caso real e julgar o resultado** (frente 15) | **Pré-requisito de tudo.** A frente-síntese já está no ar e não mudou o comportamento de ninguém. Enquanto não se souber se ela funciona, qualquer construção nova é aposta. Não é tarefa de engenharia: é o titular abrindo a aba "Estratégia" de um caso e dizendo se o que sai vale o clique. |
-| A1 | Impacto + providência em pendências (frente 12) | Dois campos. Transforma lista de ausências em plano de ação. |
-| A2 | Varredura reversa Tese → Caso (frente 2) | Ativa o Banco de Teses. Infra de matching já existe. |
+| ~~A1~~ | ~~Impacto + providência em pendências (frente 12)~~ | **Cancelado — já existe.** Campos `impacto`/`providencia` entraram pela migration `147`; falta preenchimento pelo advogado, não código. |
+| ~~A2~~ | ~~Varredura reversa Tese → Caso (frente 2)~~ | **Cancelado — já existe.** `GET /teses/{tese_id}/casos-candidatos` (`services/tese_caso_matcher.py`) ativa o Banco de Teses; falta calibrar pesos contra a base real, não construir. |
 | ~~A3~~ | ~~Captura automática no encerramento (frente 13)~~ | **Cancelado — já existe.** `aprendizado_encerramento` grava memória e semeia o Banco de Teses desde antes desta avaliação. O que faltava era prova: exercitado contra Postgres em 22/08, 5 testes, funciona. |
 | A4 | Pisos de qualidade no gate de eval (frente 8) | O gate bloqueante já existe (`ci.yml:183`), mas afere formato e trajetória. `--min-recall` e `--full` já estão no harness e não estão ligados. Só vale com o gold set da frente 7 certificado. |
+
+Com A1–A3 cancelados por já existirem, a Onda A inteira se resume a **A0**
+(gate humano) **e A4** (bloqueado pela frente 7). Não sobra trabalho de
+engenharia nesta onda — só validação de uso real e certificação humana.
 
 **A0 pode invalidar o resto desta lista, e é para isso que serve.** Se o dossiê
 sair ruim, o trabalho vira consertá-lo — não construir A1–A4 em volta de um

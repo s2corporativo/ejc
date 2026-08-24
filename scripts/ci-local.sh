@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-MODE="${1:-full}" # full|required|backend|eval|frontend|p0|architecture|continuity|ui-extra|fast
+MODE="${1:-full}" # full|required|backend|eval|frontend|p0|status|architecture|continuity|ui-extra|fast
 PG_PORT_OVERRIDE="${PG_PORT:-}"
 PG_PORT="$PG_PORT_OVERRIDE"
 PG_CONTAINER="${PG_CONTAINER:-ejc_ci_pg_${$}}"
@@ -358,6 +358,12 @@ run_p0() {
   ok "P0 guard equivalente OK"
 }
 
+run_status() {
+  log "Plano-Mestre: paridade do checklist-mestre…"; bash scripts/tests/test_status_check.sh | tee "$REPORT_DIR/status-check-tests.log"
+  log "Plano-Mestre: validação de docs/PLANO_MESTRE_STATUS.md…"; bash scripts/status_check.sh --resumo | tee "$REPORT_DIR/status-check.log"
+  ok "Plano-Mestre status OK"
+}
+
 run_architecture() {
   ensure_venv
   local PY="$VENV_DIR/bin/python" out
@@ -408,12 +414,13 @@ case "$MODE" in
   eval) run_eval ;;
   frontend) run_frontend ;;
   p0) run_p0 ;;
+  status) run_status ;;
   architecture) run_architecture ;;
   continuity) run_continuity ;;
   ui-extra) run_ui_extra ;;
   fast) run_fast ;;
-  required) run_backend; run_eval; run_frontend; run_p0 ;;
-  full) run_backend; run_eval; run_frontend; run_p0; run_architecture; run_continuity; run_ui_extra ;;
+  required) run_backend; run_eval; run_frontend; run_p0; run_status ;;
+  full) run_backend; run_eval; run_frontend; run_p0; run_status; run_architecture; run_continuity; run_ui_extra ;;
   *) die "modo inválido: $MODE" ;;
 esac
 ok "CI local concluído com sucesso."

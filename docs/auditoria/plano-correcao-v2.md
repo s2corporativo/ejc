@@ -1,5 +1,12 @@
 # PROMPT PARA CLAUDE CODE — Correções do EJC (v2)
 
+> **Status canônico em `docs/PLANO_MESTRE_STATUS.md`.** Este documento não é mais
+> atualizado com status de resolvido/pendente — ele continua valendo como
+> *descrição* dos achados (reprodução, severidade, contexto), mas "o que já foi
+> feito" só se confere na tabela verificável por máquina do checklist-mestre
+> (`scripts/status_check.sh`). Desenho completo do plano de correção em
+> `docs/estrategia/PLANO_MESTRE_EJC.md`.
+
 > **Esta versão substitui integralmente a anterior.** Incorpora as Partes 11 e 12 da auditoria, reordena prioridades e **corrige um número usado na v1** (ver Nota de Retificação ao final).
 >
 > **Como usar:** cole o bloco inteiro para um plano completo, ou apenas a fase que quiser executar agora. Fases independentes entre si, salvo dependência explícita.
