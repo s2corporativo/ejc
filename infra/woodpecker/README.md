@@ -86,3 +86,20 @@ UI e podem ser habilitados quando ganharem um `.woodpecker.yml`.
 ```bash
 docker compose pull && docker compose up -d
 ```
+
+## Solução de problemas
+
+### Agente em `Restarting` e o log do servidor diz `WOODPECKER_GRPC_SECRET is not set`
+
+Na v3 o servidor lê `WOODPECKER_GRPC_SECRET` (na v2 era `WOODPECKER_AGENT_SECRET`).
+Sem ele o servidor gera um segredo aleatório a cada boot e o agente nunca
+autentica. O `docker-compose.yml` já mapeia `WOODPECKER_GRPC_SECRET` a partir
+do mesmo `WOODPECKER_AGENT_SECRET` do `.env` — o agente continua usando
+`WOODPECKER_AGENT_SECRET`, então o `.env` segue com as mesmas 4 variáveis.
+
+Depois de atualizar o compose:
+
+```bash
+cd /opt/woodpecker-ci && git pull
+cd infra/woodpecker && docker compose up -d && docker compose ps
+```
