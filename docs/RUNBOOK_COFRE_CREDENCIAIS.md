@@ -129,8 +129,12 @@ ainda decifra com a ANTIGA. Guarde a NOVA offline (seção 1).
 
 ```bash
 cd backend
-python scripts/vault_rotate_master_key.py --dry-run   # conta, não grava
-python scripts/vault_rotate_master_key.py --yes        # efetiva
+# forma de módulo: os imports `app.*` exigem `backend/` no sys.path
+python -m scripts.vault_rotate_master_key --dry-run   # conta, não grava
+python -m scripts.vault_rotate_master_key --yes        # efetiva
+
+# na VPS, dentro do container:
+# docker exec -it ejc_backend python -m scripts.vault_rotate_master_key --dry-run
 ```
 
 O script (via `credential_vault_service.rotacionar_todas`) recifra cada linha

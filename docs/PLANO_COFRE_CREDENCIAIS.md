@@ -133,7 +133,7 @@ retrocompatível `credential_state`.
 | PR-3 | Router `/cofre-credenciais` + step-up + auditoria `COFRE_*` + `POST /importar-env`. | **feito** |
 | PR-4 | Testadores por integração + `credential_state` no integration_status. | **feito** |
 | PR-5 | Frontend: aba Credenciais em Configurações (espelha `IntegrationHealthPanel`). | **feito** |
-| PR-6 | Rotação da chave-mestra assistida (`scripts/vault_rotate_master_key.py` + `rotacionar_todas`) e runbook operacional (`docs/RUNBOOK_COFRE_CREDENCIAIS.md`). Import do `.env` já entregue no PR-3. | **feito** |
+| PR-6 | Rotação da chave-mestra assistida (`backend/scripts/vault_rotate_master_key.py` + `rotacionar_todas`) e runbook operacional (`docs/RUNBOOK_COFRE_CREDENCIAIS.md`). Import do `.env` já entregue no PR-3. | **feito** |
 
 ## 5. Riscos e mitigações
 
