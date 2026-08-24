@@ -320,6 +320,13 @@ ADICOES_INTENCIONAIS |= {
     ("/api/teses/{tese_id}/evidencias/{evidencia_id}/revisar", "POST"),
     ("/api/teses/{tese_id}/validacao", "POST"),
 }
+# PR 3 da série de consolidação do Banco de Teses (24/08/2026): coleta de
+# evidência jurídica reusando o pipeline juris_import (novo router
+# app/routers/teses_evidencia_import.py).
+ADICOES_INTENCIONAIS |= {
+    ("/api/teses/{tese_id}/evidencias/coletar", "POST"),
+    ("/api/teses/{tese_id}/evidencias/coletar/status/{job_id}", "GET"),
+}
 
 
 
