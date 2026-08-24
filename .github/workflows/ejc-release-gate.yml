@@ -22,6 +22,13 @@ jobs:
       - name: Executar gate P0
         run: bash scripts/ci_guard.sh
 
+      # Bloqueia reintrodução das falhas da #1255 no bloco remoto de
+      # recover-selfhosted-runner.yml: descoberta sob /home, execução de
+      # svc.sh do diretório do runner e divergência entre as duas
+      # ramificações SSH. Sem gate, o teste existe e nada o executa.
+      - name: Regressão da recuperação de runner
+        run: bash scripts/tests/test_recover_runner_recovery.sh
+
       - name: Definition of Done mínima do PR
         if: >-
           ${{

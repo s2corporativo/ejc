@@ -355,6 +355,7 @@ run_p0() {
   log "Backup wrapper cifrado…"; bash scripts/tests/test_backup_wrapper.sh | tee "$REPORT_DIR/backup-wrapper.log"
   log "Rollback de deploy…"; bash scripts/tests/test_deploy_rollback.sh | tee "$REPORT_DIR/deploy-rollback.log"
   log "Recuperação idempotente de runner…"; bash scripts/tests/test_selfhosted_runner_setup.sh | tee "$REPORT_DIR/runner-recovery.log"
+  log "Bloco remoto de recuperação de runner…"; bash scripts/tests/test_recover_runner_recovery.sh | tee "$REPORT_DIR/runner-remote-block.log"
   ok "P0 guard equivalente OK"
 }
 
