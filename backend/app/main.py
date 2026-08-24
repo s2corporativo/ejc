@@ -171,6 +171,7 @@ from app.routers import trabalhista_liquidacao
 from app.routers import ambiental_estrategia
 from app.routers import tasks
 from app.routers import templates
+from app.routers import teses_alertas_radar
 from app.routers import teses
 from app.routers import teses_evidencia_import
 from app.routers import timesheet
@@ -504,6 +505,7 @@ app.include_router(trabalhista_liquidacao.router, prefix=API)  # vertical Trabal
 app.include_router(ambiental_estrategia.router, prefix=API)  # vertical Ambiental — simulador de estratégia do auto de infração
 app.include_router(tasks.router, prefix=API)
 app.include_router(templates.router, prefix=API)
+app.include_router(teses_alertas_radar.router, prefix=API)  # ANTES de teses.router: /teses/alertas (literal) precisa vencer /teses/{tese_id} (dinâmica)
 app.include_router(teses.router, prefix=API)
 app.include_router(teses_evidencia_import.router, prefix=API)
 app.include_router(timesheet.router, prefix=API)

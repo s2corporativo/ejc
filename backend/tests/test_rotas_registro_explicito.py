@@ -327,6 +327,15 @@ ADICOES_INTENCIONAIS |= {
     ("/api/teses/{tese_id}/evidencias/coletar", "POST"),
     ("/api/teses/{tese_id}/evidencias/coletar/status/{job_id}", "GET"),
 }
+# PR 4 da série de consolidação do Banco de Teses (24/08/2026): Radar
+# Jurisprudencial — consulta e tratamento de alertas (novo router
+# app/routers/teses_alertas_radar.py, registrado ANTES de teses.router para
+# `/teses/alertas` literal vencer `/teses/{tese_id}` dinâmica).
+ADICOES_INTENCIONAIS |= {
+    ("/api/teses/alertas", "GET"),
+    ("/api/teses/{tese_id}/alertas", "GET"),
+    ("/api/teses/alertas/{alerta_id}/tratar", "POST"),
+}
 
 
 
