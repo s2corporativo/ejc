@@ -50,7 +50,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-2.3 | Modelo local para dados pessoais — já resolvido (`sanitization_policy.py`, modo LOCAL_COMPLETO bloqueia provedor externo); 305 testes passam | F3 | — | mesclado | #1195 | 2026-08-18 |
 | V2-2.4 | Consolidar aprovação da peça em um único ato | F1 | — | mesclado | #1153 | 2026-08-18 |
 | V2-3.1 | Monitorar resultado, não apenas execução — já generalizado (`ingestao_saude.py`, não só DOU/DJEN) | F3 | — | mesclado | #1015 | 2026-08-14 |
-| V2-3.2 | Fontes de ingestão dormentes ou silenciosas | F3 | — | pendente | — | — |
+| V2-3.2 | Falso-ausente (2026-08-24) — já resolvido: `ingestao_saude.py` classifica `nunca_produziu`/`parou_de_produzir` por RESULTADO (não confia no `status="sucesso"` do job), `executar_ingestao`/`conhecimento_ingest` garantem `ultimo_erro` nunca vazio (caso `anpd` citado no próprio código), slugs duplicados `juris_import_*` consolidados (migration 138); 27 testes passam | F3 | — | mesclado | #1015 | 2026-08-14 |
 | V2-3.3 | Exclusão de caso não cascateia | F5 | — | pendente | — | — |
 | V2-3.4 | Vínculos ausentes entre registros relacionados | F5 | — | pendente | — | — |
 | V2-3.5 | Padrão de gravação não transacional (agregado do Caso) | F5 | — | pendente | — | — |
