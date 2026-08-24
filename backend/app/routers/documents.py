@@ -3,6 +3,7 @@
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
 import asyncio
 import logging
+import hashlib
 import os
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Optional
@@ -391,6 +392,14 @@ async def upload(
         filepath=filepath,
         mimetype=mime_real,
         size_bytes=len(conteudo),
+        # Integridade (migration 147). O EJC é sistema de PROVA DOCUMENTAL: o
+        # hash é o que sustenta que o arquivo juntado hoje é o mesmo de amanhã.
+        # A maquinaria de SHA-256 existia inteira desde a 142 (serviço local,
+        # remoto via rclone, rescan, task de backfill) e o upload direto não
+        # chamava nada — o hash só existia em `document_intake_items`, que este
+        # caminho não alimenta. Calculado dos bytes que já estão em memória:
+        # sem I/O extra, sem reler o arquivo do disco.
+        sha256=hashlib.sha256(conteudo).hexdigest(),
         confidencialidade=conf_enum,
         ocr_text=ocr_text,
         case_id=case_id,

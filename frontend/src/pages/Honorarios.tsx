@@ -27,6 +27,26 @@ import {
 
 const STATUS_VALIDOS = ["pendente", "atrasado", "pago"];
 
+/** Tipos em que o percentual de êxito é efetivamente aplicado no cálculo
+ *  (`routers/honorarios_oab.py`: `f.tipo in (exito, misto) and
+ *  f.percentual_exito`). Fora deles o percentual seria gravado e ignorado. */
+const TIPOS_COM_PERCENTUAL = ["exito", "misto"];
+
+/** O que o escritório vai cobrar, em uma célula. Um honorário de êxito puro
+ *  não tem `valor` — mostrar só `fmtMoney(valor)` fazia a tela exibir "—"
+ *  para um lançamento recém-salvo, e os exports omitiam quanto foi contratado. */
+export function quantoCobrar(f: Fee): string {
+  const partes: string[] = [];
+  if (f.valor != null) partes.push(fmtMoney(f.valor));
+  if (f.percentual_exito != null)
+    partes.push(`${f.percentual_exito}% de êxito`);
+  // Os DOIS quando os dois foram contratados. Devolver só o valor fixo escondia
+  // o percentual do lançamento e do relatório, deixando o registro dizer menos
+  // do que o contrato diz — meio caminho do defeito que este helper corrigiu.
+  if (partes.length) return partes.join(" + ");
+  return fmtMoney(f.valor);
+}
+
 export default function Honorarios() {
   const [data, setData] = useState<Paged<Fee> | null>(null);
   const [resumo, setResumo] = useState<any>(null);
@@ -87,7 +107,15 @@ export default function Honorarios() {
     }
     setSalvando(true);
     try {
-      await api.post("/fees/", form);
+      // Campo numérico que o usuário esvazia vira "" (não `undefined`), e o
+      // Pydantic reprova a string vazia com "Input should be a valid decimal"
+      // — mensagem sobre digitação, quando a regra real é "informe valor ou
+      // percentual". Preencher um e deixar o outro vazio é o fluxo NORMAL
+      // deste formulário, então o vazio não pode virar erro de tipo.
+      const payload = Object.fromEntries(
+        Object.entries(form).filter(([, v]) => v !== "" && v !== null),
+      );
+      await api.post("/fees/", payload);
       setModal(false);
       setForm({ tipo: "fixo" });
       load();
@@ -179,6 +207,8 @@ export default function Honorarios() {
               descricao: f.descricao,
               tipo: f.tipo,
               valor: f.valor,
+              percentual_exito: f.percentual_exito ?? "",
+              cobranca: quantoCobrar(f),
               vencimento: f.data_vencimento,
               status: f.status,
               cliente: (f as any).client_nome ?? "",
@@ -194,14 +224,21 @@ export default function Honorarios() {
             const rows = (data?.data ?? []).map((f) => [
               f.descricao,
               f.tipo,
-              String(f.valor ?? ""),
+              quantoCobrar(f),
               f.data_vencimento ?? "",
               f.status,
               (f as any).client_nome ?? "",
             ]);
             exportPdf(
               "Honorários",
-              ["Descrição", "Tipo", "Valor", "Vencimento", "Status", "Cliente"],
+              [
+                "Descrição",
+                "Tipo",
+                "Valor ou %",
+                "Vencimento",
+                "Status",
+                "Cliente",
+              ],
               rows,
             );
           }}
@@ -286,9 +323,7 @@ export default function Honorarios() {
                   <td className="px-4 py-3 text-xs capitalize">
                     {f.tipo.replace(/_/g, " ")}
                   </td>
-                  <td className="px-4 py-3 font-semibold">
-                    {fmtMoney(f.valor)}
-                  </td>
+                  <td className="px-4 py-3 font-semibold">{quantoCobrar(f)}</td>
                   <td className="px-4 py-3 text-slate-500">
                     {fmtDate(f.data_vencimento)}
                   </td>
@@ -373,7 +408,19 @@ export default function Honorarios() {
             <select
               className="input"
               value={form.tipo}
-              onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+              onChange={(e) => {
+                const tipo = e.target.value;
+                // Trocar para um tipo sem percentual esconde o campo; deixar o
+                // número digitado no estado mandaria um percentual que o
+                // backend agora recusa (e que o cálculo ignoraria).
+                setForm({
+                  ...form,
+                  tipo,
+                  ...(TIPOS_COM_PERCENTUAL.includes(tipo)
+                    ? {}
+                    : { percentual_exito: "" }),
+                });
+              }}
             >
               <option value="fixo">Fixo</option>
               <option value="exito">Êxito</option>
@@ -388,10 +435,41 @@ export default function Honorarios() {
             <input
               type="number"
               step="0.01"
+              min="0"
               className="input"
               value={form.valor || ""}
               onChange={(e) => setForm({ ...form, valor: e.target.value })}
             />
+          </div>
+          {/* O schema aceita honorário definido em REAIS ou em PERCENTUAL, e
+              `FeeCreate` exige ao menos um dos dois. O formulário só oferecia
+              "Valor", então o contrato de êxito puramente percentual — o caso
+              mais comum em ação indenizatória — era impossível pela interface:
+              ou não passava na validação, ou o advogado inventava um valor
+              fixo e mudava a natureza financeira do contrato. Achado da
+              revisão do Codex em 2026-08-22, no PR #1238. */}
+          {TIPOS_COM_PERCENTUAL.includes(form.tipo) && (
+            <div>
+              <label className="label">Percentual de êxito (%)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                className="input"
+                value={form.percentual_exito || ""}
+                onChange={(e) =>
+                  setForm({ ...form, percentual_exito: e.target.value })
+                }
+              />
+            </div>
+          )}
+          <div className="sm:col-span-2 -mt-1">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {TIPOS_COM_PERCENTUAL.includes(form.tipo)
+                ? "Informe o valor em reais OU o percentual de êxito — ao menos um é obrigatório. Preenchendo os dois, o teto ético da OAB é calculado apenas sobre o valor fixo (honorarios_oab.py), então o percentual fica só como registro do contrato."
+                : "Informe o valor em reais. O percentual de êxito só se aplica aos tipos Êxito e Misto, que são os que o cálculo usa."}
+            </p>
           </div>
           <div>
             <label className="label">Vencimento</label>
