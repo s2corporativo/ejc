@@ -81,7 +81,6 @@ from app.models import prompt_juridico     # noqa
 from app.models import socio               # noqa
 from app.models import sociedade_cliente   # noqa
 from app.models import tese                # noqa
-from app.models import tese_juridica       # noqa  (Banco Nacional de Teses Jurídicas com scoring — migração 148)
 from app.models import prova               # noqa
 from app.models import ficha_triagem       # noqa
 from app.models import solicitacao_documento  # noqa
