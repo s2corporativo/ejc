@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Text, Float, Integer, DateTime, ForeignKey, Enum as SAEnum,
+    Column, String, Text, Float, Integer, DateTime, ForeignKey, Enum as SAEnum, JSON,
 )
 from app.core.database import Base
 
@@ -22,6 +22,53 @@ class TeseStatus(str, enum.Enum):
     rascunho  = "rascunho"
     ativa     = "ativa"
     arquivada = "arquivada"
+
+
+# ── Banco Nacional de Teses Jurídicas (extensão aditiva — migração 148) ──────
+# Vocabulário fechado em String (não enum PG), validado no schema/router —
+# mesmo padrão já registrado para a migração 147 em MIGRATION_RESERVATIONS.md.
+# NÃO confundir com TeseTipo/TeseStatus acima, que são os enums PG originais
+# usados por services/sumulas_ingestion.py via SQL cru — nunca alterar aqueles.
+
+ORIENTACOES = ("ataque", "defesa", "ambos")
+
+# Ciclo de vida de validação de uma tese quanto à conferência contra fonte
+# oficial. NULL = tese legada, criada antes desta extensão, não classificada.
+STATUS_VALIDACAO = (
+    "descoberta",
+    "coletada",
+    "normalizada",
+    "parcialmente_validada",
+    "validada",
+    "revisada",
+    "controvertida",
+    "desatualizada",
+    "parcialmente_superada",
+    "superada",
+    "arquivada",
+)
+
+# Transições permitidas por status_validacao atual. `None` representa uma
+# tese legada (coluna ainda não classificada) — só pode entrar no ciclo por
+# `coletada` ou `descoberta`.
+TRANSICOES_VALIDACAO: dict[str | None, set[str]] = {
+    None: {"descoberta", "coletada", "arquivada"},
+    "descoberta": {"coletada", "controvertida", "arquivada"},
+    "coletada": {"normalizada", "controvertida", "arquivada"},
+    "normalizada": {"parcialmente_validada", "controvertida", "arquivada"},
+    "parcialmente_validada": {"validada", "controvertida", "arquivada"},
+    "validada": {"revisada", "desatualizada", "parcialmente_superada", "superada", "arquivada"},
+    "revisada": {"desatualizada", "parcialmente_superada", "superada", "arquivada"},
+    "controvertida": {"parcialmente_validada", "superada", "arquivada"},
+    "desatualizada": {"normalizada", "arquivada"},
+    "parcialmente_superada": {"superada", "arquivada"},
+    "superada": {"arquivada"},
+    "arquivada": set(),
+}
+
+# Transições que promovem a tese a um status de confiabilidade — exigem
+# gate de verificação (verificador_jurisprudencia) e RBAC socio+ no router.
+TRANSICOES_QUE_EXIGEM_VALIDACAO = {"validada", "revisada", "superada", "parcialmente_superada"}
 
 
 class Tese(Base):
@@ -54,6 +101,26 @@ class Tese(Base):
     updated_at   = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
                           onupdate=lambda: datetime.now(timezone.utc))
     deleted_at   = Column(DateTime(timezone=True), nullable=True)  # soft-delete
+
+    # ── Extensão do Banco Nacional de Teses Jurídicas (migração 148) ──
+    codigo       = Column(String(20), unique=True, nullable=True)   # ex.: BAN-000001
+    orientacao   = Column(String(10), nullable=True)                # ataque|defesa|ambos — ver ORIENTACOES
+    status_validacao = Column(String(25), nullable=True)            # ver STATUS_VALIDACAO/TRANSICOES_VALIDACAO
+    score        = Column(Integer, nullable=True)
+    score_calculos = Column(JSON, nullable=True)
+    pressupostos = Column(Text)
+    excecoes     = Column(Text)
+    estrategia   = Column(Text)
+    instancia    = Column(String(100))
+    procedimento = Column(String(100))
+    parte_favorecida = Column(String(100))
+    requisitos   = Column(JSON, nullable=True)          # list[str]
+    provas_necessarias = Column(JSON, nullable=True)    # list[str]
+    riscos       = Column(JSON, nullable=True)          # list[str]
+    fontes       = Column(JSON, nullable=True)          # [{referencia, situacao, url_oficial}]
+    versao       = Column(Integer, default=1, nullable=False)
+    ultima_validacao_em = Column(DateTime(timezone=True), nullable=True)
+    validada_por = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     def __repr__(self):
         return f"<Tese {self.titulo[:40]}>"

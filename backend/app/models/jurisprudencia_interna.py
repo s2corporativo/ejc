@@ -27,11 +27,14 @@ class JurisprudenciaInterna(Base):
 
     # Identificação do julgado
     tribunal          = Column(String(120))
+    orgao_julgador    = Column(String(150))
+    classe            = Column(String(50))    # Súmula|REsp|Tema|Acórdão|...
     relator           = Column(String(200))
     numero_acordao    = Column(String(100))
     data_julgamento   = Column(Date)
     fonte             = Column(String(50))    # stj|stf|tjmg|tjsp|trf|datajud|manual
     link_original     = Column(Text)
+    vinculante        = Column(Boolean, nullable=True)
 
     # Classificação
     area_juridica     = Column(String(60))
