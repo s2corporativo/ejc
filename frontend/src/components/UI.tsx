@@ -487,8 +487,23 @@ export function PageHeader({
           <p className="mt-1.5 max-w-3xl text-sm text-slate-500">{subtitle}</p>
         )}
       </div>
+      {/* `shrink-0` incondicional anulava o `flex-wrap`: o container ficava preso
+          à largura de max-content e TRANSBORDAVA em vez de quebrar a linha —
+          116px em /prazos, /agenda, /tarefas e /intimacoes no tablet, e o botão
+          primário cortado em /casos no celular.
+
+          Mas removê-lo por completo custou caro do outro lado: com o container
+          livre para encolher, o subtítulo (`max-w-3xl`) disputava a linha e as
+          ações quebravam em DUAS linhas mesmo a 1440px, onde antes cabiam numa
+          só. Medido: /agenda, /intimacoes, /prazos e /tarefas passavam de 647×34
+          para 540×75 no desktop.
+
+          `lg:shrink-0` fica com os dois lados: abaixo de 1024px o container pode
+          encolher e quebrar a linha (some o transbordo); de 1024px para cima ele
+          volta a não encolher, e quem cede espaço é o título — o comportamento
+          original. Ambos os regimes conferidos por medição em cinco larguras. */}
       {actions && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 lg:shrink-0">
           {actions}
         </div>
       )}
@@ -1438,7 +1453,11 @@ export function VisualLawDocument({
             <FileText className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <h1>{title}</h1>
+            {/* h2, não h1: este cabeçalho é de um DOCUMENTO exibido
+                dentro de uma página que já tem `PageHeader` como h1.
+                Medido em /documentos: dois h1 idênticos ("Documentos"),
+                e o leitor de tela perde a âncora da página. */}
+            <h2 className="visual-law-document-title">{title}</h2>
             {subtitle && (
               <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
             )}

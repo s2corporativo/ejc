@@ -215,8 +215,11 @@
   .btn-gold:active {
     background-color: #6f5711;
   }
+  /* `min-h/min-w` de 24px: WCAG 2.5.8 (alvo mínimo). Medido em 22/08/2026,
+     botões `btn-ghost` de ação em tabela saíam 30x23 — um pixel abaixo. O
+     mínimo só CRESCE quem está menor; quem já cumpre não muda de tamanho. */
   .btn-ghost {
-    @apply btn bg-transparent hover:bg-slate-900/[0.05] active:bg-slate-900/[0.09] text-slate-700;
+    @apply btn min-h-[24px] min-w-[24px] bg-transparent hover:bg-slate-900/[0.05] active:bg-slate-900/[0.09] text-slate-700;
   }
   /* Neutro — branco com borda 1px (idioma Verdelimp) */
   .btn-secondary,

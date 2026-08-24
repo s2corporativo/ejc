@@ -84,7 +84,8 @@ jobs:
         env:
           AUTOR: ${{ github.event.pull_request.user.login }}
         shell: bash
-        run: echo "Autor: $AUTOR"
+        run: |
+          echo "Autor: $AUTOR"
 
       - name: Descricao do PR preenchida
         if: >-

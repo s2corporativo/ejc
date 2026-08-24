@@ -238,7 +238,7 @@ export default function Intimacoes() {
       <PageHeader
         title="Intimações DJEN"
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               className="btn-ghost"
               onClick={() => setPendentes(!pendentes)}

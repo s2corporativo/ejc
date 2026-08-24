@@ -163,7 +163,7 @@ export default function CentralRelacionamento() {
         title="Central de Relacionamento"
         subtitle="Funil CRM, captação e engajamento de clientes"
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => nav("/crm-leads")}
               className="btn-primary text-sm"

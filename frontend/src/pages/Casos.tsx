@@ -872,7 +872,7 @@ export default function Casos() {
         title="Casos e Processos"
         subtitle={`${data?.total ?? 0} casos`}
         actions={
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center">
             <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
               <button
                 onClick={() => setView("lista")}
@@ -926,8 +926,12 @@ export default function Casos() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
+            {/* Sem rótulo acessível, este filtro era anunciado apenas pela
+                opção selecionada ("Todas as áreas") — o leitor de tela dizia o
+                VALOR sem dizer do que ele é valor. Medido em 22/08/2026. */}
             <select
               className="input w-44"
+              aria-label="Filtrar por área do Direito"
               value={areaF}
               onChange={(e) => setAreaF(e.target.value)}
             >
@@ -953,10 +957,14 @@ export default function Casos() {
                 Meus casos
               </button>
             )}
+            {/* `title` sozinho é nome acessível fraco — vira tooltip e nem
+                todo leitor de tela o anuncia. `aria-label` é o mecanismo
+                próprio; o `title` fica para o usuário de mouse. */}
             <select
               className="input w-52"
               value={advogadoF}
               onChange={(e) => setAdvogadoF(e.target.value)}
+              aria-label="Filtrar por advogado responsável ou auxiliar"
               title="Filtrar por advogado responsável ou auxiliar"
             >
               <option value="">Todos os advogados</option>
@@ -1121,7 +1129,7 @@ export default function Casos() {
                                   setDelCaso(c);
                                 }}
                                 title="Excluir caso (reversível pela Lixeira)"
-                                className="flex items-center gap-1 text-xs font-medium text-danger-600 hover:underline"
+                                className="flex min-h-[24px] items-center gap-1 text-xs font-medium text-danger-600 hover:underline"
                               >
                                 <Trash2 size={13} /> Excluir
                               </button>
