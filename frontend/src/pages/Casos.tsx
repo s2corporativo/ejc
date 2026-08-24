@@ -20,6 +20,7 @@ import api, { aplicarExtracao, vincularLoteAoCaso } from "../lib/api";
 import { asList } from "../lib/list";
 import { areaLabel, useAreas } from "../lib/areas";
 import { caseJourneyPath } from "../lib/caseContext";
+import { CASE_STATUS, CASE_STATUS_LABEL } from "../types/caseStatus";
 import type {
   AplicarExtracaoResult,
   ExtracaoPayload,
@@ -314,6 +315,11 @@ export default function Casos() {
   const [tipoF, setTipoF] = useState("");
   // Filtro por advogado responsável/auxiliar (query param advogado_id)
   const [advogadoF, setAdvogadoF] = useState("");
+  // V2-1.3 — filtro por status EXATO (independente de `arquivoF`, que só
+  // distingue ativos/arquivados/todos). "" = sem filtro ("Todos os status"),
+  // nunca um valor sentinela: só os seis valores de CASE_STATUS chegam à API,
+  // que já valida e devolve 422 para qualquer outro (nunca 500).
+  const [statusF, setStatusF] = useState("");
   // R2 — filtro ativos/arquivados/todos + ação de desarquivar por linha
   const [arquivoF, setArquivoF] = useState<"ativos" | "arquivados" | "todos">(
     "ativos",
@@ -435,6 +441,7 @@ export default function Casos() {
         params: {
           search: search || undefined,
           area: areaF || undefined,
+          status: statusF || undefined,
           advogado_id: advogadoF || undefined,
           arquivo: arquivoF,
           page_size: 50,
@@ -514,7 +521,7 @@ export default function Casos() {
   useEffect(() => {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
-  }, [search, areaF, advogadoF, arquivoF]);
+  }, [search, areaF, statusF, advogadoF, arquivoF]);
 
   // Passo 3 do fluxograma documental: abre a REVISÃO antes de qualquer escrita.
   // Só depois de "Confirmar criação" é que salvar() cria o caso e anexa o doc.
@@ -963,6 +970,19 @@ export default function Casos() {
               {advogados.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.full_name || u.email}
+                </option>
+              ))}
+            </select>
+            <select
+              className="input w-44"
+              value={statusF}
+              onChange={(e) => setStatusF(e.target.value)}
+              title="Filtrar por status do caso"
+            >
+              <option value="">Todos os status</option>
+              {CASE_STATUS.map((s) => (
+                <option key={s} value={s}>
+                  {CASE_STATUS_LABEL[s]}
                 </option>
               ))}
             </select>

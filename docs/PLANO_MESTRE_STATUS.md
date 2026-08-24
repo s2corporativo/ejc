@@ -39,17 +39,17 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | INFRA-T1 | Titular: revisar/mesclar PR #1259 e autorizar 1º deploy manual (migrations 127–147) | F0 (gate) | #1258 | pendente | #1259 | — |
 | INFRA-T2 | Titular: regularizar cota GitHub Actions + reativar `auto-integracao.yml`, `continuity-ui-gates.yml`, `architecture-inventory.yml` | F6 (gate) | — | pendente | — | — |
 | V2-0.1 | Prazo vencendo hoje, sem ciência confirmada | F1 | — | pendente | — | — |
-| V2-0.2 | Captura de intimações (DJEN) nunca capturou nada `[CRÍTICO]` | F1 | — | pendente | — | — |
-| V2-1.1 | Dashboard "0 peças aguardando revisão" com 100% em rascunho `[CRÍTICO]` | F1 | — | pendente | — | — |
-| V2-1.2 | Contador de casos ativos conta o arquivado (bug em `dossie_cliente.py:140`) | F1 | — | pendente | — | — |
-| V2-1.3 | Filtro de status quebra o servidor ou retorna vazio | F1 | — | pendente | — | — |
-| V2-1.4 | Mensagem falsa "A equipe foi notificada" | F1 | — | pendente | — | — |
+| V2-0.2 | Captura DJEN — código verificado OK (por advogado, monitorado por resultado, autoatendimento de OAB); resta só cadastro real das OABs (ver V3-B6) | F1 | — | mesclado | #1015 | 2026-08-14 |
+| V2-1.1 | Dashboard "0 peças aguardando revisão" com 100% em rascunho `[CRÍTICO]` | F1 | — | mesclado | #1015 | 2026-08-14 |
+| V2-1.2 | Contador de casos ativos conta o arquivado (bug em `dossie_cliente.py:140`) | F1 | #1272 | em-andamento | #1259 | 2026-08-24 |
+| V2-1.3 | Filtro de status quebra o servidor ou retorna vazio | F1 | #1272 | em-andamento | #1259 | 2026-08-24 |
+| V2-1.4 | Mensagem falsa "A equipe foi notificada" | F1 | — | mesclado | #1015 | 2026-08-14 |
 | V2-1.5 | Rotas retornando 404 | F1 | — | pendente | — | — |
-| V2-2.1 | Vínculo de validação (`ai_log_id`) que trava as peças antes do protocolo `[CRÍTICO]` | F1 | — | pendente | — | — |
+| V2-2.1 | Vínculo de validação (`ai_log_id`) que trava as peças antes do protocolo `[CRÍTICO]` | F1 | — | mesclado | #1015 | 2026-08-14 |
 | V2-2.2 | Embeddings desligados: 0 de 47.359 chunks indexados `[CRÍTICO]` | F3 | — | pendente | — | — |
 | V2-2.3 | Modelo local para dados pessoais `[CRÍTICO]` | F3 | — | pendente | — | — |
-| V2-2.4 | Consolidar aprovação da peça em um único ato | F1 | — | pendente | — | — |
-| V2-3.1 | Monitorar resultado, não apenas execução (generalizar) `[CRÍTICO]` | F3 | — | pendente | — | — |
+| V2-2.4 | Consolidar aprovação da peça em um único ato | F1 | — | mesclado | #1153 | 2026-08-18 |
+| V2-3.1 | Monitorar resultado, não apenas execução — já generalizado (`ingestao_saude.py`, não só DOU/DJEN) | F3 | — | mesclado | #1015 | 2026-08-14 |
 | V2-3.2 | Fontes de ingestão dormentes ou silenciosas | F3 | — | pendente | — | — |
 | V2-3.3 | Exclusão de caso não cascateia | F5 | — | pendente | — | — |
 | V2-3.4 | Vínculos ausentes entre registros relacionados | F5 | — | pendente | — | — |
@@ -75,7 +75,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V3-B2 | Bloco 2 — Desobstruir o caminho (pipeline da peça) | F1 | — | pendente | — | — |
 | V3-B3 | Bloco 3 — Encurtar o caminho (redesenho: caso como espaço de trabalho) | F5 | — | pendente | — | — |
 | V3-B4 | Bloco 4 — Enxugar (34 → 10–12 módulos) | F5 | — | pendente | — | — |
-| V3-B5 | Bloco 5 — Não perder prazo (monitorar resultado, destravar DJEN) | F1 | — | pendente | — | — |
+| V3-B5 | Bloco 5 — Não perder prazo — código pronto e testado; resta cadastro de OAB (V3-B6, T4) | F1 | — | mesclado | #1015 | 2026-08-14 |
 | V3-B6 | Bloco 6 — Preparar os dados da operação (10 cadastros pré-operação) | F4 | — | pendente | — | — |
 | V3-B7 | Bloco 7 — O teste do primeiro caso real (critério de lançamento) | F4 | — | pendente | — | — |
 | CL-A1 | Classe A passo 1 — write-path único (`aprovar_tese`/`tese_aprovada_do_caso`) | F2 | — | pendente | — | — |
