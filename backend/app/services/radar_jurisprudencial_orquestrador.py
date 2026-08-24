@@ -31,9 +31,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rag import FonteIngestao, KnowledgeChunk, KnowledgeDoc
 from app.models.tese import Tese
+from app.models.tese_extensoes import TeseAlertaJurisprudencial
 from app.services.ingestion_service import marcar_execucao, registrar_fonte
 from app.services.radar_jurisprudencial import avaliar_decisao
 from app.services.radar_jurisprudencial_embedding import buscar_teses_similares
+from app.services.radar_jurisprudencial_notificacao import notificar_alerta
 from app.services.radar_jurisprudencial_registro import registrar_alerta
 from app.services.tese_caso_matcher import extrair_termos
 
@@ -157,6 +159,12 @@ async def executar_radar(
             )
             if resultado["status"] == "criado":
                 alertas_criados += 1
+                alerta = (await db.execute(
+                    select(TeseAlertaJurisprudencial)
+                    .where(TeseAlertaJurisprudencial.id == resultado["alerta_id"])
+                )).scalar_one_or_none()
+                if alerta is not None:
+                    await notificar_alerta(db, alerta, afetadas)
             elif resultado["status"] == "duplicado":
                 alertas_duplicados += 1
             decisoes_varridas += 1
