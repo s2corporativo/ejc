@@ -69,9 +69,9 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     # 138 → 139 → 140 (frete independente: 139 altera document_intake_batches,
     # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
-    # Issue #1244 (22/08/2026): colunas impacto/providencia em
-    # client_pending_items; HEAD = 147_pendencia_impacto_providencia.
-    assert script.get_heads() == ["147_pendencia_impacto_providencia"]
+    # Issue #1266 (24/08/2026, PR 2 do Banco de Teses): extensão aditiva do
+    # schema canônico de teses; HEAD = 148_banco_teses_juridicas.
+    assert script.get_heads() == ["148_banco_teses_juridicas"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (
@@ -105,6 +105,10 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     assert (
         script.get_revision("147_pendencia_impacto_providencia").down_revision
         == "146_case_sigilo_reforcado"
+    )
+    assert (
+        script.get_revision("148_banco_teses_juridicas").down_revision
+        == "147_pendencia_impacto_providencia"
     )
     assert (
         script.get_revision("139_dpt360_ciclo_vida_lgpd").down_revision
