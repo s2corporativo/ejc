@@ -161,6 +161,15 @@ class SingleAICoreOrchestrator:
             exige_fonte=intent.exige_fonte,
         )
         if not decisao.permitido:
+            # V2-5.5 (auditoria): esta rejeição acontece ANTES do gateway —
+            # sem registro aqui, o painel /ia-governanca/provedores reporta
+            # "0 falhas" mesmo quando 100% das chamadas de uma rota são
+            # bloqueadas (caso típico: PII residual sem provider local
+            # elegível). Ver provider_metrics_runtime.registrar_bloqueio_politica.
+            from app.services.ai.provider_metrics_runtime import registrar_bloqueio_politica
+            await registrar_bloqueio_politica(
+                task_type=intent.tarefa.value, motivo=decisao.bloqueio_motivo or "",
+            )
             raise HTTPException(422, decisao.bloqueio_motivo or "Chamada de IA bloqueada pela política de segurança.")
 
         # 6) Chamada via ai_gateway (barreira final de PII lá dentro) ─────────

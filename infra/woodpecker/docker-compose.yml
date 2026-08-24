@@ -1,0 +1,43 @@
+# Woodpecker CI — servidor + agente, self-hosted na VPS.
+# Substituto do GitHub Actions (conta sem alocação de runner desde ~22/08/2026).
+# Runbook completo: README.md ao lado. Variáveis: copie .env.example para .env.
+services:
+  woodpecker-server:
+    image: woodpeckerci/woodpecker-server:v3
+    restart: unless-stopped
+    ports:
+      # Só loopback: o Nginx do host faz o TLS e o proxy público.
+      - "127.0.0.1:8100:8000"
+    volumes:
+      - woodpecker-server-data:/var/lib/woodpecker/
+    environment:
+      - WOODPECKER_HOST=${WOODPECKER_HOST}
+      - WOODPECKER_OPEN=false
+      - WOODPECKER_ADMIN=${WOODPECKER_ADMIN:-s2corporativo}
+      - WOODPECKER_REPO_OWNERS=s2corporativo
+      - WOODPECKER_GITHUB=true
+      - WOODPECKER_GITHUB_CLIENT=${WOODPECKER_GITHUB_CLIENT}
+      - WOODPECKER_GITHUB_SECRET=${WOODPECKER_GITHUB_SECRET}
+      # v3 renomeou o segredo do lado do servidor: AGENT_SECRET (v2) -> GRPC_SECRET.
+      # Sem esta linha o servidor gera um segredo aleatorio a cada boot e o agente
+      # nao autentica (loop de restart). O agente continua lendo AGENT_SECRET.
+      - WOODPECKER_GRPC_SECRET=${WOODPECKER_AGENT_SECRET}
+
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:v3
+    restart: unless-stopped
+    depends_on:
+      - woodpecker-server
+    volumes:
+      - woodpecker-agent-config:/etc/woodpecker
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WOODPECKER_SERVER=woodpecker-server:9000
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+      - WOODPECKER_BACKEND=docker
+      # 1 workflow por vez: a VPS também serve produção — não disputar CPU/RAM.
+      - WOODPECKER_MAX_WORKFLOWS=1
+
+volumes:
+  woodpecker-server-data:
+  woodpecker-agent-config:

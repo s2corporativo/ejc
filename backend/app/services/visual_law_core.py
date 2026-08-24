@@ -203,6 +203,14 @@ NIVEL_LABELS = {"baixo": "Baixo", "moderado": "Moderado",
                 "elevado": "Elevado", "critico": "Crítico"}
 
 
+# Faixas PRÓPRIAS (3, não as 4 de case_health._classificar) — respondem a
+# pergunta "qual a probabilidade de resultado desfavorável", não "qual a saúde
+# do caso". Mesmo score de entrada (calcular_score_caso), pergunta diferente:
+# não unificar com os limiares de case_health.py (ver nota lá).
+_LIMIAR_REMOTO = 80
+_LIMIAR_POSSIVEL = 50
+
+
 def derivar_probabilidade(risco: Optional[str],
                           score: Optional[int] = None) -> tuple[str, str]:
     """(probabilidade, fonte). Prioriza o risco cadastrado no caso; sem risco,
@@ -212,9 +220,9 @@ def derivar_probabilidade(risco: Optional[str],
     if r in _RISCO_PARA_PROB:
         return _RISCO_PARA_PROB[r], "risco_cadastrado"
     s = score if score is not None else 0
-    if s >= 80:
+    if s >= _LIMIAR_REMOTO:
         return "remoto", "score_saude"
-    if s >= 50:
+    if s >= _LIMIAR_POSSIVEL:
         return "possivel", "score_saude"
     return "provavel", "score_saude"
 

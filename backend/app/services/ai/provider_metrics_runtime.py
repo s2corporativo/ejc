@@ -66,6 +66,36 @@ async def _persistir(**dados) -> None:
         )
 
 
+async def registrar_bloqueio_politica(*, task_type: str, motivo: str) -> None:
+    """Registra uma rejeição da AIProviderPolicy (`orchestrator.run`, cadeia de
+    provedores vazia) — ocorre ANTES de qualquer tentativa alcançar o gateway,
+    logo fora do alcance de `_chamar_com_barreira`, que só instrumenta chamadas
+    que chegaram ao provider.
+
+    Sem isso, uma rota cuja política bloqueia 100% das chamadas (ex.: PII
+    residual sem provider local elegível — auditoria V2-5.5) reporta "0
+    falhas" em `/ia-governanca/provedores`: não é que a falha não aconteça, é
+    que ela nunca chega a ser medida. Mesma tabela dos bloqueios internos do
+    gateway (`_ProviderPulado` → status "bloqueado_lgpd"); `motivo` já é o
+    texto SEGURO que a policy prepara para o usuário (nunca ecoa PII)."""
+    await _persistir(
+        request_id=str(uuid4()),
+        attempt_number=1,
+        provider="policy",
+        model=None,
+        task_type=(task_type or "nao_informado")[:80],
+        status="bloqueado_politica",
+        duration_ms=0,
+        input_tokens=None,
+        output_tokens=None,
+        estimated_cost_brl=0.0,
+        fallback_triggered=False,
+        fallback_reason=(motivo or "")[:2000] or None,
+        error_type="PolicyBlock",
+        http_status=422,
+    )
+
+
 def _novo_contexto(task_type: str) -> _TraceContext:
     return _TraceContext(
         request_id=str(uuid4()),

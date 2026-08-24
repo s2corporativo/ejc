@@ -138,7 +138,7 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 
 - **Entrypoint**: `backend/app/main.py`. Todos os 163 routers de `app/routers/` são registrados manualmente com prefixo `API = "/api"`. Docs (`/api/docs`) desabilitadas em produção. Ordem de middlewares importa: `AuthMiddleware` (mais interno) → `ClientIPMiddleware` → GZip → CORS.
 - **Camadas**: routers finos → lógica de negócio em `app/services/` (~150 módulos) → models SQLAlchemy em `app/models/` → schemas Pydantic em `app/schemas/` (muitos routers definem schemas inline). Pacotes de feature autocontidos em `app/modules/` (auditoria, case_partes, indice_risco, score_juridico). Tarefas Celery em `app/tasks/`.
-- **Domínios principais**: auth/2FA (`auth.py`, `users.py`), clientes (`clients.py`, `dossie_cliente.py`, `intake.py`), casos (`cases.py`, `processes.py`, `jornada_caso.py`), prazos/agenda (`deadlines.py`, `tasks.py`, `intimacoes.py`), documentos (`documents.py`, `data_room*.py`, `signatures.py`), IA/RAG (`rag.py`, `ai_core.py`, `peca_geracao*.py`, `ia_governanca.py`), financeiro (`fees.py`, `honorarios_*.py`, `nfse.py`), integrações externas (`datajud.py`, `infosimples_*.py`, `whatsapp.py`, `diario_oficial.py`).
+- **Domínios principais**: auth/2FA (`auth.py`, `users.py`), clientes (`clients.py`, `dossie_cliente.py`, `intake.py`), casos (`cases.py`, `processes.py`, `case_intelligence.py`, `conversao_caso.py`), prazos/agenda (`deadlines.py`, `tasks.py`, `intimacoes.py`), documentos (`documents.py`, `data_room*.py`, `signatures.py`), IA/RAG (`rag.py`, `ai_core.py`, `peca_geracao*.py`, `ia_governanca.py`), financeiro (`fees.py`, `honorarios_*.py`, `nfse.py`), integrações externas (`datajud.py`, `infosimples_*.py`, `whatsapp.py`, `diario_oficial.py`).
 - **Banco**: SQLAlchemy **async** (`asyncpg`) via `app/core/database.py`; dependency `get_db()` fornece `AsyncSession`. Duas URLs: `DATABASE_URL` (async, app) e `DATABASE_URL_SYNC` (psycopg2, Alembic).
 - **Config**: `app/core/config.py` (pydantic-settings, `.env`, `get_settings()` com cache). Em produção o boot FALHA se `SECRET_KEY`/chaves PII estiverem ausentes/placeholder ou CORS for wildcard. Exemplo anotado completo em `.env.example`.
 - **Auth/segurança**: JWT HS256 (PyJWT) — access token curto + refresh token com JTI revogável em cookie httpOnly; 2FA TOTP (`pyotp`); senhas com `bcrypt` puro (passlib/python-jose foram removidos deliberadamente — não reintroduzir). RBAC hierárquico (superadmin 9 → cliente_externo 1) via `require_roles()`/`require_admin`. Rate limit próprio em `app/core/rate_limit.py` (janela fixa 60s, memória ou Redis) + slowapi. CPF/CNPJ criptografados em repouso (Fernet + índice HMAC cego, `services/pii_crypto.py`).
@@ -159,6 +159,38 @@ RELATORIO_*.md      Relatórios históricos de auditoria/execução — leitura,
 - **API client**: `src/lib/api.ts` — axios com `baseURL: "/api/v1"` (constante `API_BASE_URL`, linha 9). O interceptor de request **remove** prefixo repetido (`/api/v1/`, `/api/`, `/v1/`) do `config.url`, então dentro do cliente `api` os caminhos se escrevem sem prefixo (`/casos`, não `/api/casos`). Quem usa `axios` cru — como `refreshAccessToken` — precisa do path REAL do backend (`/api/auth/refresh`, sem `v1`). Access token em `localStorage` (`ejc_access`) injetado por interceptor; refresh token em cookie httpOnly gerenciado pelo backend; 401 dispara refresh single-flight com retry; 403 `must_change_password` redireciona para `/trocar-senha`.
 - **Estado**: stores Zustand em `src/stores/` (`auth.ts`/`useAuth` com `bootstrap()`, `caseContext.ts`, `moduleLifecycle.ts`, `preferences.ts`, `theme.ts`).
 - **Layout de src/**: `pages/` (~70 páginas; `pages/portal/` e `pages/ramos/`), `components/`, `lib/` (api, SSE em `stream.ts`), `config/`, `stores/`, `contexts/`, `types/`, `utils/`. Testes co-localizados (`*.test.ts(x)`).
+
+## Verificação oficial é local — OBRIGATÓRIO (decisão do titular, 2026-08-24)
+
+O GitHub Actions da organização parou de alocar runner em ~22/08 (todo run
+termina em `startup_failure` em 1 segundo, sem job e sem log, inclusive na
+`main`). A causa é da conta (billing/limite do Actions), fora do alcance do
+código. Enquanto isso não for resolvido — e como resiliência permanente depois —
+**a verificação oficial deste repositório é local**, e é obrigatória antes de
+qualquer push:
+
+1. **Backend**: `cd backend && ruff check app && python -m alembic heads &&
+   pytest` — a suíte completa, com PostgreSQL 16 + pgvector local e
+   `alembic upgrade head` do zero sempre que a mudança tocar banco, models,
+   services ou routers. Ambiente que não compila dependência nativa não é
+   desculpa para pular a suíte: use venv isolado (comprovado em 24/08, quando a
+   suíte completa — 6.387 testes — pegou duas regressões que a validação
+   estática não pegava).
+2. **Frontend**: `cd frontend && npm run lint && npm test && npm run build`.
+3. **Evidência no corpo do PR**: resultados portão a portão, commit e branch.
+   Sem CI não há badge; a evidência local é o que substitui o verde.
+4. **CI ausente, vermelho por `startup_failure` ou sem check algum nunca
+   bloqueia nem aprova**: não é sinal de qualidade em nenhuma direção. Não
+   gaste sessão sondando o Actions nem re-disparando `workflow_dispatch`;
+   registre o estado uma única vez e siga com o portão local.
+5. **Merge**: com `auto-integracao.yml` e `governanca.yml` desligados
+   (`disabled_manually`), o merge automático da governança §6-A está suspenso —
+   o merge é manual, do titular, mediante a evidência local do item 3. Quando a
+   esteira voltar, este item volta a ser o fluxo automático; os itens 1–4
+   continuam valendo de qualquer forma.
+
+Este bloco prevalece sobre qualquer menção a "CI verde" como pré-requisito nos
+demais trechos deste arquivo enquanto o Actions não voltar a executar.
 
 ## Comandos essenciais
 
@@ -208,6 +240,7 @@ Stack completa: `docker compose up -d --build` (serviços: db pgvector/pg16, red
   - `deploy-vps.yml` — dispara manual ou após CI verde em `main`; rsync para `/opt/ejc` e executa `scripts/deploy_vps_safe.sh` (backup → build → health-poll → migrations/seeds opcionais → rollback automático em erro).
   - `ejc-release-gate.yml` — roda `scripts/ci_guard.sh` (bloqueia marcadores de merge, `.env`/segredos versionados, CORS wildcard).
 - Runbooks operacionais: deploy → `RUNBOOK_DEPLOY_FASES_1-3.md`; backup → `RUNBOOK_ROTINA_BACKUP_DIARIA_GDRIVE.md` (cron 02:00, pg_dump+uploads → Google Drive via rclone); monitoramento → `RUNBOOK_MONITORAMENTO.md`.
+- **Actions parado (cota esgotada) → `RUNBOOK_DEPLOY_MANUAL.md` + `scripts/deploy_manual.sh`.** O deploy não depende tecnicamente do Actions: o runner vive DENTRO da VPS e a lógica está em `deploy_workflow_transaction.sh` → `deploy_vps_safe.sh`. **Migrar jobs para o runner self-hosted NÃO contorna a cota** — verificado em 2026-08-23: `deploy-vps.yml`, que já roda em `[self-hosted, ejc-vps]` e está `active`, também terminou em `startup_failure` com `jobs: []`; o bloqueio é no nível da conta, antes de alocar runner. E **nunca chame `deploy_vps_safe.sh` direto**: `RUN_MIGRATIONS` tem default 0 e o passo que o liga só existia no YAML, então o deploy "dá certo" com o schema desatualizado.
 
 ## Regras críticas (não negociar)
 

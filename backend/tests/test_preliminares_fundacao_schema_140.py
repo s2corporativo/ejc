@@ -69,10 +69,10 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     # 138 → 139 → 140 (frete independente: 139 altera document_intake_batches,
     # 140 cria/dropa apenas tabelas preliminares).
     script = _script_directory()
-    # Issue #1237 (22/08/2026): documents.sha256 + índices de FK, renumeradas
-    # de 147/148 para 149/150 ao mesclar a Issue #1244 (147_pendencia_impacto_
-    # providencia); HEAD = 150_indices_fk_espinha_dominio.
-    assert script.get_heads() == ["150_indices_fk_espinha_dominio"]
+    # Issue #1272 (24/08/2026): 148/149 do plano-mestre renumeradas para
+    # 151/152 ao mesclar a main (149/150 ocupadas pelo #1238);
+    # HEAD = 152_thesis_candidate_tese_banco.
+    assert script.get_heads() == ["152_thesis_candidate_tese_banco"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (

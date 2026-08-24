@@ -17,7 +17,11 @@ from app.core.client_ownership import cliente_id_visivel
 from app.core.database import get_db
 from app.core.degradacao import ColetorDeSecoes, executar_secao
 from app.core.security import get_current_user
+from app.core.status_caso import STATUS_ABERTOS, STATUS_FECHADOS
 from app.models.user import User
+
+_STATUS_ABERTOS_STR = {s.value for s in STATUS_ABERTOS}
+_STATUS_FECHADOS_STR = {s.value for s in STATUS_FECHADOS}
 
 router = APIRouter(prefix="/clients/{client_id}/dossie", tags=["Dossiê do Cliente"])
 
@@ -137,8 +141,12 @@ async def dossie_cliente(
             status_breakdown[c["status"]] = status_breakdown.get(c["status"], 0) + 1
             area_breakdown[c["area"]] = area_breakdown.get(c["area"], 0) + 1
         return {
-            "casos_ativos": sum(1 for c in casos if c["status"] in ("ativo", "triagem")),
-            "casos_encerrados": sum(1 for c in casos if c["status"] in ("encerrado", "arquivado")),
+            # Desde a migration 126 o enum persistido não tem "ativo"/"triagem"
+            # -- esses literais nunca batiam com `cases.status` e o contador
+            # ficava sempre em 0. Usa o mesmo agregado STATUS_ABERTOS/
+            # STATUS_FECHADOS de app/core/status_caso.py (fonte única).
+            "casos_ativos": sum(1 for c in casos if c["status"] in _STATUS_ABERTOS_STR),
+            "casos_encerrados": sum(1 for c in casos if c["status"] in _STATUS_FECHADOS_STR),
             "status_breakdown": status_breakdown,
             "area_breakdown": area_breakdown,
         }

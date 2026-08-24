@@ -52,6 +52,16 @@ def _extrair_rotas(app) -> list[dict]:
 # pode criar nem remover rota; qualquer outra novidade falha o teste.
 ADICOES_INTENCIONAIS = {
     ("/api/architecture/uso-rotas", "GET"),
+    # Issue #1272 (Classe B do plano-mestre): reabertura de caso ENCERRADO
+    # restaurando o estágio de trabalho real, simétrica a /desarquivar (que já
+    # existe para o outro estado terminal). O frontend usava PATCH cru com
+    # status="aberto" fixo -- passa a chamar este endpoint dedicado.
+    ("/api/cases/{case_id}/reabrir", "POST"),
+    # Issue #1272 (V2-4.4 do plano-mestre): purga definitiva (hard delete) de
+    # registro já soft-deleted, restrita a superadmin — antes não havia
+    # caminho pela aplicação para atender pedido de eliminação LGPD (art. 16 e
+    # art. 18, VI); DELETE e POST .../purgar respondiam 404.
+    ("/api/trash/{entidade}/{registro_id}/purgar", "POST"),
     # Issue #1246 (frente 2 do plano de evolução): varredura REVERSA tese →
     # caso. O Banco de Teses só respondia caso → teses; esta é a rota que diz
     # em quais processos uma tese pode caber. Leitura, determinística (sem IA),

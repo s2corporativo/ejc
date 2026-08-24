@@ -151,6 +151,30 @@ async def test_falha_do_nucleo_degrada_sem_derrubar_o_lote(monkeypatch):
     assert resultado["requer_revisao_humana"] is True
 
 
+@pytest.mark.asyncio
+async def test_bloqueio_de_policy_surge_no_alerta_em_vez_de_generico(monkeypatch):
+    """V2-5.5 (auditoria): a rejeição da AIProviderPolicy (PII sem provider
+    local elegível) chegava ao usuário com o MESMO alerta genérico de
+    qualquer outra falha — indistinguível de "provedor fora do ar". O motivo
+    da HTTPException é texto já preparado para ser seguro (nunca ecoa PII) e
+    é o mesmo texto que a API devolveria de qualquer forma se a exceção não
+    fosse capturada aqui."""
+    from fastapi import HTTPException
+
+    class _Bloqueado:
+        async def run(self, **kwargs):
+            raise HTTPException(422, "Este conteúdo tem dados pessoais que não podem ir a uma IA externa.")
+
+    monkeypatch.setattr(router, "orchestrator", _Bloqueado())
+    resultado = await router._analisar_ia(
+        None, None, modalidade=None, case_id=None,
+        dossie="D" * 200, deterministico={},
+    )
+    assert resultado["ia_disponivel"] is False
+    assert any("dados pessoais" in alerta for alerta in resultado["alertas"])
+    assert not any("ficou indisponível" in alerta for alerta in resultado["alertas"])
+
+
 # ── Rastreabilidade ──────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
