@@ -87,6 +87,63 @@
         "2.848",
         "7 DE DEZEMBRO DE 1940"
       ]
+    },
+    {
+      "apelido": "ctn",
+      "titulo": "Lei nº 5.172, de 25 de outubro de 1966 — Código Tributário Nacional",
+      "url": "https://www2.camara.leg.br/legin/fed/lei/1960-1969/lei-5172-25-outubro-1966-358971-publicacaooriginal-1-pl.html",
+      "artigos": [
+        "113",
+        "142",
+        "150",
+        "156",
+        "173",
+        "174"
+      ],
+      "verificar_texto": [
+        "LEI N",
+        "5.172",
+        "25 DE OUTUBRO DE 1966"
+      ],
+      "observacao": "Área tributária. Publicação original — URL localizada via resolução de URN no LexML (índice, não fonte), conferida antes de registrar. Padrão de pasta do legin é intervalo de anos (1960-1969), não o ano isolado."
+    },
+    {
+      "apelido": "lsa",
+      "titulo": "Lei nº 6.404, de 15 de dezembro de 1976 — Lei das Sociedades por Ações",
+      "url": "https://www2.camara.leg.br/legin/fed/lei/1970-1979/lei-6404-15-dezembro-1976-368447-publicacaooriginal-1-pl.html",
+      "artigos": [
+        "116",
+        "153",
+        "154",
+        "155",
+        "158",
+        "159"
+      ],
+      "verificar_texto": [
+        "LEI N",
+        "6.404",
+        "15 DE DEZEMBRO DE 1976"
+      ],
+      "observacao": "Área empresarial. Publicação original — mesma ressalva de vigência das demais fontes deste registro."
+    },
+    {
+      "apelido": "licitacoes",
+      "titulo": "Lei nº 14.133, de 1º de abril de 2021 — Nova Lei de Licitações e Contratos",
+      "url": "https://www2.camara.leg.br/legin/fed/lei/2021/lei-14133-1-abril-2021-791222-publicacaooriginal-162591-pl.html",
+      "artigos": [
+        "6",
+        "28",
+        "75",
+        "90",
+        "156"
+      ],
+      "verificar_texto": [
+        "LEI N",
+        "14.133",
+        "1",
+        "ABRIL DE 2021"
+      ],
+      "observacao": "Área administrativo. Lei de 2021 — publicação original está mais próxima do texto vigente do que os diplomas de 1940/1943/1966/1976 deste registro, mas ainda não é texto compilado; alterações posteriores precisam ser conferidas."
     }
   ]
 }
