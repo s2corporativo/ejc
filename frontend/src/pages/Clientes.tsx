@@ -221,7 +221,7 @@ export default function Clientes() {
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button
                       title="Dossiê Digital"
-                      className="text-bronze hover:text-bronze-dark px-1.5 font-medium text-xs"
+                      className="text-bronze hover:text-bronze-dark inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5 font-medium text-xs"
                       onClick={(e) => {
                         e.stopPropagation();
                         window.location.href = `/clientes/${c.id}`;
@@ -231,7 +231,7 @@ export default function Clientes() {
                     </button>
                     <button
                       title="Acesso ao Portal"
-                      className="text-navy hover:text-gold px-1.5"
+                      className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
                       onClick={(e) => {
                         e.stopPropagation();
                         setAcessoModal(c);
@@ -245,7 +245,7 @@ export default function Clientes() {
                     </button>
                     <button
                       title="Relatório LGPD"
-                      className="text-navy hover:text-gold px-1.5"
+                      className="text-navy hover:text-gold inline-flex min-h-[24px] min-w-[24px] items-center justify-center px-1.5"
                       onClick={async (e) => {
                         e.stopPropagation();
                         const r = await api.get(
@@ -272,7 +272,7 @@ export default function Clientes() {
                             c.nome || "",
                           )
                         }
-                        className="p-1 rounded-full bg-green-100 text-green-600 hover:bg-green-200 transition-colors"
+                        className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded-full bg-green-100 p-1 text-green-600 transition-colors hover:bg-green-200"
                         title="Abrir WhatsApp"
                       >
                         <svg

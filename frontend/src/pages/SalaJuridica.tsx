@@ -543,11 +543,31 @@ export default function SalaJuridica() {
     }
   };
 
+  // Último degrau do pré-preenchimento dos fatos: o que o próprio advogado
+  // escreveu na sessão. `estado.resumo` vem de uma extração de IA declarada
+  // fail-soft no backend (`_extrair_estado` devolve None se o provider estiver
+  // fora, e integração de IA no EJC nasce desligada); `workspace_texto` só
+  // existe se alguém digitou nele. Quando os dois faltam, a caixa abria VAZIA
+  // e o caso nascia com `descricao_fatos = NULL` — enquanto o relato dos fatos
+  // estava ali, nas mensagens. Perder os fatos é perder o insumo de
+  // `case_context`, do dossiê e da geração de peça.
+  const fatosDasMensagens = (sessao: Sessao): string =>
+    (sessao.mensagens ?? [])
+      .filter((m) => m.autor === "user")
+      .map((m) => m.conteudo.trim())
+      .filter(Boolean)
+      .join("\n\n");
+
   const abrirWizard = () => {
     if (!ativa) return;
     setConvTitulo(ativa.titulo);
     setConvFatos(
-      (ativa.estado?.resumo || ativa.workspace_texto || "").slice(0, 10_000),
+      (
+        ativa.estado?.resumo ||
+        ativa.workspace_texto ||
+        fatosDasMensagens(ativa) ||
+        ""
+      ).slice(0, 10_000),
     );
     setConvArea(ativa.area_sugerida || "civil");
     setConvNovoCliente(ativa.cliente_potencial ?? "");
