@@ -7,7 +7,7 @@ curado possa contar como gold:
 
 - pseudonimização/LGPD;
 - payload efetivamente avaliável;
-- curador e revisor independentes;
+- curador identificado (revisor opcional, pode ser o mesmo);
 - datas explícitas de revisão e conferência de vigência;
 - ao menos uma fonte oficial HTTPS com referência da versão revisada;
 - ausência de placeholders/fonte fictícia;
@@ -189,17 +189,17 @@ def validar_caso_real(caso: dict) -> list[str]:
     curadoria = caso.get("curadoria")
     if not isinstance(curadoria, dict):
         return erros + [
-            "curadoria deve ser objeto com curador, revisor, datas e fontes_oficiais"
+            "curadoria deve ser objeto com curador, datas e fontes_oficiais"
         ]
 
     curador = str(curadoria.get("curador") or "").strip()
-    revisor = str(curadoria.get("revisor") or "").strip()
     if not curador:
         erros.append("curadoria.curador é obrigatório")
-    if not revisor:
-        erros.append("curadoria.revisor é obrigatório")
-    if curador and revisor and curador.casefold() == revisor.casefold():
-        erros.append("curador e revisor devem ser pessoas/identidades distintas")
+    # `revisor` é opcional e pode coincidir com o curador. A exigência de duas
+    # identidades distintas foi removida por decisão do titular em 23/08/2026:
+    # o escritório opera hoje com um único jurista, e a regra tornava o gate
+    # impossível de satisfazer em vez de elevar a qualidade. Quando houver
+    # segundo par de olhos, registre-o aqui — o campo continua sendo lido.
 
     revisado = _data_iso(
         curadoria.get("revisado_em"), "curadoria.revisado_em", erros

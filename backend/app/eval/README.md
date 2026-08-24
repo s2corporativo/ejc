@@ -39,7 +39,7 @@ Exemplo resumido de um caso real (os valores de curadoria são ilustrativos):
 
 Regras bloqueantes do corpus real:
 
-- curador e revisor são identidades distintas;
+- curador identificado; revisor opcional e pode coincidir com o curador;
 - consulta da fonte e conferência de vigência não podem ser posteriores à revisão;
 - toda fonte oficial precisa identificar a versão revisada por `identificador_versao` ou `hash_sha256`;
 - o sanitizer de PII examina todo o payload e falha fechado se ficar indisponível;
@@ -48,6 +48,56 @@ Regras bloqueantes do corpus real:
 - placeholders/fonte fictícia são proibidos em `expected_citacoes` e `jurisprudencia_esperada` de casos reais.
 
 O gold set é o ativo mais valioso do processo — só o escritório o produz.
+
+### Coleta verificável das fontes (`coleta_fontes.py`)
+
+Preencher `fontes_oficiais` à mão é onde a curadoria erra: artigo transcrito de
+memória, URL que mudou, versão que não se reconstrói. `coleta_fontes.py` faz só
+a parte mecânica — baixa da fonte oficial, fixa o `sha256` dos bytes recebidos,
+extrai o texto literal dos artigos pedidos e registra a data da consulta.
+
+```bash
+cd backend
+python -m app.eval.coleta_fontes --listar          # o que está registrado
+python -m app.eval.coleta_fontes                   # coleta tudo
+python -m app.eval.coleta_fontes --apelido cdc     # só uma fonte
+```
+
+Registro em `fontes_registro.json`; resultado em `fontes_oficiais.json`. Só entra
+no registro URL cujo **conteúdo** foi conferido — responder 200 não basta, e essa
+regra é do código: cada fonte declara em `verificar_texto` os trechos que o
+documento precisa conter (número e data da norma), e a coleta recusa a fonte se
+faltar qualquer um. Uma URL que responde 200 servindo outra lei falha alto em vez
+de entrar calada no acervo.
+
+**A ferramenta não cura.** Não escolhe tese, não escreve gabarito, não preenche
+`vigencia_conferida_em` e não assina `curador`. Esses campos saem `null` de
+propósito: uma ferramenta que os preenchesse deixaria o gate verde sem que
+ninguém tivesse conferido nada.
+
+### Publicação original não prova vigência
+
+O Planalto (texto compilado) está inacessível de parte dos ambientes de
+execução. `camara.leg.br` e `senado.leg.br` são oficiais e alcançáveis, mas
+grande parte do acervo da Câmara é **publicação original** — prova o texto como
+publicado, não o texto em vigor. Cada fonte carrega `natureza` e
+`prova_vigencia`, e a classificação falha fechada: sem sinal inequívoco na URL,
+`prova_vigencia` é falso.
+
+O acervo penal mostra por que isso não é formalidade. Na publicação original do
+Código Penal de 1940:
+
+| Artigo | Publicação original de 1940 | Código Penal hoje |
+|---|---|---|
+| art. 14 | crime impossível | consumação e tentativa |
+| art. 33 | doença mental superveniente | regimes de cumprimento de pena |
+| art. 59 | revogação do sursis | circunstâncias judiciais (dosimetria) |
+| art. 155 | multa "de quinhentos mil réis a dez contos de réis" | multa em dias-multa |
+
+A Lei 7.209/1984 renumerou a Parte Geral inteira. Um gold set penal montado
+sobre essa fonte erraria **o número do artigo**, não só a redação — com fonte
+oficial, autêntica e íntegra. Confira em texto compilado antes de preencher
+`vigencia_conferida_em`.
 
 ## 2. Rode
 
@@ -204,7 +254,7 @@ Scaffold pronto para o escritório preencher:
 1. Use `gold_set_pecas.template.json` como fonte do schema do caso real; os exemplos não são base para copiar metadados de proveniência.
 2. Pseudonimize nomes, documentos, endereços e valores identificáveis.
 3. Classifique `cenario` como `normal`, `fronteira` ou `excecao`.
-4. Preencha `curadoria` com curador, revisor independente, datas e fonte oficial; a fonte deve ter `identificador_versao` ou `hash_sha256`.
+4. Preencha `curadoria` com curador (revisor opcional), datas e fonte oficial; a fonte deve ter `identificador_versao` ou `hash_sha256`.
 5. Liste apenas jurisprudência real conferida na fonte oficial.
 6. Confirme que `fatos`, `tipo_peca_esperado`, `teses_esperadas` e `criterios` estão preenchidos.
 7. Cresça para 50–150 casos pseudonimizados e marque `ficticio: false` somente nos casos reais revisados.
