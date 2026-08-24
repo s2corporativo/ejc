@@ -71,7 +71,7 @@ def test_migration_139_encadeia_em_138_e_e_o_head():
     script = _script_directory()
     # Issue #1244 (22/08/2026): colunas impacto/providencia em
     # client_pending_items; HEAD = 147_pendencia_impacto_providencia.
-    assert script.get_heads() == ["147_pendencia_impacto_providencia"]
+    assert script.get_heads() == ["148_case_status_anterior"]
     revisao = script.get_revision("140_preliminares_fundacao_schema")
     assert revisao.down_revision == "139_dpt360_ciclo_vida_lgpd"
     assert (

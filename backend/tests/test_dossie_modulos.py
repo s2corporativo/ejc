@@ -93,7 +93,6 @@ def test_classificar_riscos_ordena_por_gravidade_e_da_severidade():
     assert riscos["score"] == 45
     assert riscos["classificacao"] == "risco"
     assert riscos["dias_parado"] == 40
-    assert riscos["saudavel"] is False
     # mais grave primeiro
     assert [f["fator"] for f in riscos["fatores"]] == [
         "prazo_vencido", "sem_movimentacao", "sem_procuracao", "sem_posmortem"]
@@ -106,9 +105,20 @@ def test_classificar_riscos_saudavel_sem_fatores():
     riscos = dm.classificar_riscos(
         {"score": 100, "classificacao": "saudavel", "dias_parado": None,
          "fatores": []})
-    assert riscos["saudavel"] is True
+    assert riscos["classificacao"] == "saudavel"
     assert riscos["fatores"] == []
     assert riscos["dias_parado"] == 0  # None normalizado
+
+
+def test_classificar_riscos_nao_expoe_mais_campo_saudavel_booleano():
+    """Regressão (Classe C, plano-mestre): `saudavel` (= not fatores) tinha
+    limiar PRÓPRIO e discordava de `classificacao` sempre que havia 1 fator de
+    -10 ou -5 (score >=80 mas saudavel=False). Removido do contrato -- era
+    lido em 0 lugares do frontend. `classificacao` é o único veredito."""
+    riscos = dm.classificar_riscos(
+        {"score": 90, "classificacao": "saudavel", "dias_parado": 0,
+         "fatores": [{"fator": "sem_procuracao", "impacto": -10, "detalhe": "d"}]})
+    assert "saudavel" not in riscos
 
 
 # ── estruturar_teses ──────────────────────────────────────────────────────────

@@ -544,7 +544,13 @@ def montar_jornada(art: dict) -> list[dict]:
     checklist = art.get("checklist_motor") or {}
     etapas: list[tuple[str, str, bool, bool]] = [
         # (chave, rótulo humano, concluída?, bloqueio humano/checklist?)
-        ("documentos_lidos", "Documentos lidos", art["tem_base_fatica"], False),
+        # Rótulo corrigido (Classe D, plano-mestre): a etapa dizia "Documentos
+        # lidos" mas `tem_base_fatica` aceita descrição de fatos digitada SEM
+        # nenhum documento anexado (comportamento deliberado -- caso pode
+        # nascer só de entrevista). A0 flagrou a etapa "concluída" com 0
+        # documentos no acervo, contradizendo o card "Primeiros passos".
+        # Corrige o rótulo para o que é de fato verificado, não a checagem.
+        ("documentos_lidos", "Base fática registrada", art["tem_base_fatica"], False),
         ("area_sugerida", "Área sugerida", bool(art["area_sugerida"]) or art["tem_snapshot"], False),
         ("area_confirmada", "Área confirmada pelo advogado",
          art["tem_snapshot_congelado"], True),

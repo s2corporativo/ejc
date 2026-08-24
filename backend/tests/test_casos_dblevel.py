@@ -122,11 +122,13 @@ async def test_arquivar_e_desarquivar_caso():
             assert c.archived_at is not None
             assert c.archive_reason == "cliente encerrou o contrato"
 
-            # Desarquiva → volta a aberto, limpa archived_at/archive_reason.
+            # Desarquiva → volta ao estágio de trabalho real anterior ao
+            # arquivamento (Classe B do plano-mestre: `status_anterior`,
+            # migration 148) -- este caso nasceu em_instrucao, não "aberto".
             c2 = await desarquivar_caso(
                 case_id=case_id, background=BackgroundTasks(), db=db, cu=cu
             )
-            assert c2.status == CaseStatus.aberto
+            assert c2.status == CaseStatus.em_instrucao
             assert c2.archived_at is None
             assert c2.archive_reason is None
         finally:

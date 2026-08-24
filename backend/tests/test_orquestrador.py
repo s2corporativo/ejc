@@ -477,7 +477,7 @@ async def test_jornada_rotulos_e_status():
     jornada = lco.montar_jornada(art)
 
     por_etapa = {j["etapa"]: j for j in jornada}
-    assert por_etapa["documentos_lidos"]["rotulo"] == "Documentos lidos"
+    assert por_etapa["documentos_lidos"]["rotulo"] == "Base fática registrada"
     assert por_etapa["documentos_lidos"]["status"] == "concluida"
     assert por_etapa["area_sugerida"]["rotulo"] == "Área sugerida"
     assert por_etapa["area_sugerida"]["status"] == "concluida"
@@ -559,3 +559,64 @@ async def test_visao_orquestrador_com_linha_do_tempo():
     assert out["linha_do_tempo"][2]["estado"] == "estrategia"  # do payload
     assert out["proximo_passo"]["pendencias_bloqueantes"]
     assert isinstance(out["jornada"], list) and len(out["jornada"]) >= 10
+
+
+# ── Golden test das 16 etapas (Classe D, plano-mestre) ────────────────────────
+# `test_visao_orquestrador_com_linha_do_tempo` acima só verificava `len(...) >=
+# 10` -- não travava as 16 chaves nem a ordem. Sem isso, renomear ou remover
+# uma etapa por engano não quebra teste nenhum.
+
+_ETAPAS_ESPERADAS = [
+    ("documentos_lidos", "Base fática registrada"),
+    ("area_sugerida", "Área sugerida"),
+    ("area_confirmada", "Área confirmada pelo advogado"),
+    ("prazo_calculado", "Prazo calculado"),
+    ("checklist_criado", "Checklist criado"),
+    ("teses_pesquisadas", "Teses pesquisadas"),
+    ("estrategia_aprovada", "Estratégia aprovada pelo advogado"),
+    ("honorarios_sugeridos", "Honorários sugeridos"),
+    ("honorarios_aprovados", "Honorários aprovados pelo advogado"),
+    ("procuracao_gerada", "Procuração gerada"),
+    ("contrato_gerado", "Contrato gerado"),
+    ("prazo_confirmado", "Prazo confirmado pelo advogado"),
+    ("peca_redigida", "Peça redigida"),
+    ("citacoes_verificadas", "Citações verificadas"),
+    ("aprovacao_peca", "Aguardando aprovação do advogado"),
+    ("peca_protocolada", "Peça protocolada"),
+]
+
+
+async def test_jornada_tem_exatamente_as_16_etapas_na_ordem_certa():
+    db = _db_artefatos()
+    art = await lco.coletar_artefatos(db, "case1", case=_case())
+    jornada = lco.montar_jornada(art)
+    assert [(j["etapa"], j["rotulo"]) for j in jornada] == _ETAPAS_ESPERADAS
+
+
+async def test_caso_recem_criado_conclui_apenas_o_que_e_efeito_real_da_criacao():
+    """Cenário 'caso recém-criado' (Classe D): kit documental
+    (procuração+contrato+checklist) + triagem automática (área) + honorários
+    do cadastro (proposta já aprovada, ato do advogado ao submeter) — tudo
+    gerado em BACKGROUND na abertura, SEM nenhuma ação humana adicional.
+
+    Documenta o comportamento atual (não uma correção): 7 das 16 etapas
+    nascem concluídas -- 'Documentos lidos' quando há descrição de fatos
+    digitada (mesmo sem nenhum documento OCR'd), 'Checklist criado' quando o
+    kit inclui o documento 'Checklist Documental Inicial' (mesmo sem nenhum
+    item marcado em `case_checklists`). Este teste é a FOTO do estado atual —
+    reduzir esse número é melhoria de produto (bridge case_checklists →
+    checklist_criado exigindo progresso real), não bug corrigido aqui."""
+    db = _db_artefatos(
+        snaps=[_snap(origem="triagem", payload={"area": "familia"})],
+        propostas=[_proposta("aprovada")],
+        docs=_kit_docs(),
+    )
+    caso = _case(descricao_fatos="Cliente relata separação litigiosa com dois filhos menores.")
+    art = await lco.coletar_artefatos(db, "case1", case=caso)
+    jornada = lco.montar_jornada(art)
+    concluidas = {j["etapa"] for j in jornada if j["status"] == "concluida"}
+    assert concluidas == {
+        "documentos_lidos", "area_sugerida", "checklist_criado",
+        "honorarios_sugeridos", "honorarios_aprovados",
+        "procuracao_gerada", "contrato_gerado",
+    }

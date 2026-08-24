@@ -83,7 +83,7 @@ const visao: OrquestradorVisao = {
   jornada: [
     {
       etapa: "documentos_lidos",
-      rotulo: "Documentos lidos",
+      rotulo: "Base fática registrada",
       status: "concluida",
     },
     {
@@ -137,7 +137,7 @@ describe("OrquestradorPanel", () => {
     expect(
       screen.getByText(/Revisar e aprovar o snapshot de inteligência/),
     ).toBeTruthy();
-    expect(screen.getByText("Documentos lidos")).toBeTruthy();
+    expect(screen.getByText("Base fática registrada")).toBeTruthy();
     expect(screen.getByText("Área confirmada pelo advogado")).toBeTruthy();
     expect(
       screen.getByText("Snapshot de inteligência ainda não aprovado."),

@@ -510,6 +510,7 @@ async def arquivar_caso(
     if c.status == CaseStatus.arquivado:
         raise HTTPException(status_code=409, detail="Caso já arquivado")
 
+    c.status_anterior = c.status.value if c.status != CaseStatus.encerrado else c.status_anterior
     c.status = CaseStatus.arquivado
     c.archived_at = datetime.now(timezone.utc)
     c.archive_reason = ((payload.motivo if payload else None) or "").strip() or None
@@ -548,7 +549,12 @@ async def desarquivar_caso(
         raise HTTPException(status_code=409, detail="Caso não está arquivado")
 
     motivo_anterior = c.archive_reason
-    c.status = CaseStatus.aberto
+    # Restaura o estágio real de trabalho anterior ao arquivamento
+    # (em_instrucao/em_producao/protocolado) -- sem isto o caso sempre
+    # reabria em "aberto", perdendo onde estava. `status_anterior` nulo (caso
+    # arquivado antes desta migration) preserva o comportamento legado.
+    destino = CaseStatus(c.status_anterior) if c.status_anterior else CaseStatus.aberto
+    c.status = destino
     c.archived_at = None
     c.archive_reason = None
     db.add(CaseMovimento(
@@ -558,13 +564,52 @@ async def desarquivar_caso(
     ))
     await criar_audit_log(
         db, cu.id, cu.role.value, "UNARCHIVE", "cases", case_id,
-        dados_depois={"status": "aberto", "motivo_anterior": motivo_anterior or ""},
+        dados_depois={"status": destino.value, "motivo_anterior": motivo_anterior or ""},
     )
     await db.commit()
     await db.refresh(c)
     background.add_task(
         event_bus.emitir, "caso.atualizado", "case", case_id,
-        {"mudancas": ["status"], "status": CaseStatus.aberto.value}, cu.id,
+        {"mudancas": ["status"], "status": destino.value}, cu.id,
+    )
+    return c
+
+
+@router.post("/{case_id}/reabrir", response_model=CaseDetail)
+async def reabrir_caso(
+    case_id: str,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(_ARQUIVAMENTO_ROLES)),
+):
+    """Reabre caso ENCERRADO restaurando o estágio de trabalho anterior
+    (em_instrucao/em_producao/protocolado) -- mesma lógica de `/desarquivar`,
+    para o outro estado terminal. `status_anterior` nulo (caso encerrado antes
+    desta migration, ou sem estágio registrado) cai em "aberto"."""
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    c = (await db.execute(q)).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso não encontrado")
+    if c.status != CaseStatus.encerrado:
+        raise HTTPException(status_code=409, detail="Caso não está encerrado")
+
+    destino = CaseStatus(c.status_anterior) if c.status_anterior else CaseStatus.aberto
+    c.status = destino
+    db.add(CaseMovimento(
+        id=str(uuid4()), case_id=c.id, tipo="reabertura",
+        descricao="Caso reaberto",
+        created_by=cu.id,
+    ))
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "REOPEN", "cases", case_id,
+        dados_depois={"status": destino.value},
+    )
+    await db.commit()
+    await db.refresh(c)
+    background.add_task(
+        event_bus.emitir, "caso.atualizado", "case", case_id,
+        {"mudancas": ["status"], "status": destino.value}, cu.id,
     )
     return c
 
@@ -920,6 +965,7 @@ async def encerrar_caso(
     if case.status in (CaseStatus.encerrado, CaseStatus.arquivado):
         raise HTTPException(status_code=409, detail="Caso já encerrado")
 
+    case.status_anterior = case.status.value
     case.status = CaseStatus.encerrado
     case.data_encerramento = datetime.now(timezone.utc)
     case.resultado = payload.resultado

@@ -149,6 +149,36 @@ vê diretamente. Isso entra na F3 de qualquer forma.
 
 ---
 
+## Autorização registrada (2026-08-24)
+
+O titular autorizou explicitamente: decidir sozinho quando for melhor para o sistema,
+seguir todas as fases do plano-mestre sem pausar para perguntar, e priorizar
+velocidade sem etapas desnecessárias. Registrado aqui porque D1–D4 mudam
+comportamento do sistema e precisam de rastro, mesmo decididas pelo executor.
+
+**Decisões tomadas com a opção recomendada, efetivas a partir daqui:**
+
+- **D1 (canônico da tese):** `tese_caso_links` é a verdade do vínculo; `thesis_candidates`
+  vira estágio de trabalho HITL que, ao aprovar, materializa o link automaticamente.
+- **D2 (`CaseLifecycleStatus`):** removida a declaração morta de 11 valores em
+  `domain_contracts.py`, sem substituto — nenhum uso real dependia dela.
+- **D3 (cortes de módulo):** os 6 cortes da tabela confirmados, executados no início
+  da F5, atrás do gate do primeiro caso real (F4) como o plano já previa.
+- **D4 (métrica "chance de êxito"):** removida da superfície visível ao advogado/cliente
+  (Opção 1) — o risco OAB art. 34 XXIX e a fragilidade estatística (poucos casos)
+  apontam para o mesmo lado. Tratado na F3.
+
+**O que a autorização NÃO muda** — são fronteiras técnicas/de governança, não
+decisões de produto, e continuam em pé mesmo com "decida sozinho":
+
+- Merge do PR continua não sendo forçado pelo agente (`CLAUDE.md` regra 8: "o agente
+  não força integração de PR retido"; `auto-integracao.yml` decide, não eu).
+- Regularizar a cota do Actions e reativar workflows exige acesso administrativo ao
+  GitHub que este agente não tem.
+- F4 (Bloco 6 + Bloco 7 + A0 real) exige um advogado de verdade usando o sistema com
+  um caso real — não é uma decisão que se tome por mim, é um evento que só acontece
+  fora desta sessão. F5 continua atrás desse gate.
+
 ## Resumo de para onde vai cada resposta
 
 | Decisão | Se não responder agora | Bloqueia |

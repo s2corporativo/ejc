@@ -98,7 +98,6 @@ interface Modulos {
     classificacao: "saudavel" | "atencao" | "risco" | "critico";
     dias_parado: number;
     fatores: FatorRisco[];
-    saudavel: boolean;
   };
   teses: {
     principal: TeseModulo | null;

@@ -147,6 +147,11 @@ class Case(Base):
     data_encerramento = Column(DateTime(timezone=True), nullable=True)
     archived_at       = Column(DateTime(timezone=True), nullable=True)
     archive_reason    = Column(Text, nullable=True)
+    # Estado de trabalho real (em_instrucao/em_producao/protocolado) que o caso
+    # tinha ANTES de virar terminal (encerrado/arquivado) -- migration 148,
+    # Classe B do plano-mestre. Sem isto, desarquivar/reabrir sempre jogava o
+    # caso de volta para "aberto", perdendo o estágio real em que estava.
+    status_anterior   = Column(String(20), nullable=True)
     resultado         = Column(String(50), nullable=True)  # exito_total|exito_parcial|acordo|improcedente
     # Pós-Mortem Jurídico (ECJ): cada caso encerrado vira aprendizado institucional
     motivo_resultado     = Column(Text, nullable=True)
@@ -202,6 +207,7 @@ def _limpar_campos_terminais_ao_reabrir(target: Case, value, oldvalue, initiator
         target.licoes_aprendidas = None
         target.archived_at = None
         target.archive_reason = None
+        target.status_anterior = None
     return value
 
 

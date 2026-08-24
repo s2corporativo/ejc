@@ -83,13 +83,13 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | CL-A3 | Classe A passo 3 — unificar leitores (`conversao_caso.py`, `legal_case_orchestrator.py`) | F2 | — | pendente | — | — |
 | CL-A4 | Classe A passo 4 — congelar `cases.tese_principal` como campo exibicional | F2 | — | pendente | — | — |
 | CL-A5 | Classe A passo 5 — remover `teses_juridicas_v4` / `teses_vitoriosas` | F5 | — | pendente | — | — |
-| CL-B1 | Classe B — expurgar chaves fantasma de `UI.tsx` (`STATUS_REGISTRY`/`LEGACY_STATUS_TONE`) | F2 | — | pendente | — | — |
-| CL-B2 | Classe B — grep-test de paridade de status (impede literal fora da fonte canônica) | F2 | — | pendente | — | — |
-| CL-B3 | Classe B — preservar estado ao desarquivar (`status_anterior`) | F2 | — | pendente | — | — |
+| CL-B1 | Classe B — correção do plano: `STATUS_REGISTRY` é multiuso (peças, honorários, clientes, prazos) — chaves não são "fantasma", servem outros domínios; nenhuma ação | F2 | #1272 | verificado | #1259 | 2026-08-24 |
+| CL-B2 | Classe B — guard-rail de paridade já existe (`test_status_caso_paridade_frontend.py`) | F2 | #1272 | verificado | #1259 | 2026-08-24 |
+| CL-B3 | Classe B — preservar estado real ao desarquivar/reabrir (`status_anterior`, migration 148, endpoint `/reabrir`) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | CL-C1 | Classe C — deprecar/remover campo `saudavel` do contrato de `case_health.py` | F2 | — | pendente | — | — |
 | CL-C2 | Classe C — unificar limiares (`health_thresholds.py`, par com `visual_law_core.py`) | F2 | — | pendente | — | — |
-| CL-D1 | Classe D — "Documentos lidos" exige documento processado, não só `descricao_fatos` | F2 | — | pendente | — | — |
-| CL-D2 | Classe D — ponte `case_checklists` → etapa `checklist_criado` + golden test das 16 etapas | F2 | — | pendente | — | — |
+| CL-D1 | Classe D — rótulo corrigido para "Base fática registrada" (a checagem aceitar descrição digitada é deliberada, não bug) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
+| CL-D2 | Classe D — golden test das 16 etapas + cenário caso-recém-criado documentado; ponte `case_checklists`→`checklist_criado` fica para depois (refinamento, não bug) | F2 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | CORTE-1 | Cortar jurimetria / predição de êxito | F5 | — | pendente | — | — |
 | CORTE-2 | Remover código de `diplomacia-v3` (risco disciplinar) | F5 | — | pendente | — | — |
 | CORTE-3 | Cortar Victory Vault | F5 | — | pendente | — | — |
