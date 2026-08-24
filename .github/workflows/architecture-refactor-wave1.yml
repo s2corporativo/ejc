@@ -1,0 +1,62 @@
+name: Architecture Refactor — Wave 1
+
+on:
+  push:
+    branches:
+      - agent/ejc-refatoracao-integral
+    paths:
+      - "scripts/apply_architecture_refactor_wave1.py"
+      - ".github/workflows/architecture-refactor-wave1.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: architecture-refactor-wave1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    name: Apply canonical contracts and compatible routes
+    # Codemod de branch não precisa nem pode compartilhar o host de produção.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Apply deterministic codemod
+        run: python3 scripts/apply_architecture_refactor_wave1.py
+
+      - name: Validate generated Python syntax
+        run: |
+          python3 -m py_compile \
+            backend/app/core/api_version_middleware.py \
+            backend/app/core/domain_contracts.py \
+            backend/app/core/route_registry.py \
+            backend/app/routers/architecture.py \
+            backend/tests/test_api_version_middleware.py
+
+      - name: Validate patch
+        id: patch
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Codemod idempotente: nenhuma alteração pendente."
+          else
+            git diff --cached --check
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit applied refactor
+        if: steps.patch.outputs.changed == 'true'
+        run: |
+          git config user.name "EJC Architecture Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "feat(arquitetura): aplicar contratos e rotas canônicas da onda 1"
+          git push origin HEAD:${GITHUB_REF_NAME}
