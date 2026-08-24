@@ -38,6 +38,12 @@ from app.services.tese_caso_matcher import (
     MAX_CASOS_VARRIDOS, PISO_RELEVANCIA_PADRAO, extrair_termos, ranquear_candidatos,
 )
 from app.services.verificador_jurisprudencia import verificar_jurisprudencia
+from app.services.radar_jurisprudencial_embedding import atualizar_embedding_tese_job
+
+# Campos de Tese que compõem o texto vetorizado da Camada 2 do Radar
+# Jurisprudencial (radar_jurisprudencial_embedding._texto_tese) — um PATCH que
+# só toca outro campo (ex.: tribunal, magistrado) não precisa recalcular.
+_CAMPOS_TEXTO_EMBEDDING = frozenset({"titulo", "descricao", "fundamentacao", "jurisprudencia"})
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/teses", tags=["Banco de Teses"])
@@ -313,6 +319,7 @@ async def listar_teses(
 @router.post("", status_code=201)
 async def criar_tese(
     req: TeseIn,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -324,6 +331,9 @@ async def criar_tese(
     )
     db.add(tese)
     await db.commit()
+    # Camada 2 do Radar Jurisprudencial (embedding semântico): fora da
+    # transação de escrita, para não somar a latência de embedding ao POST.
+    background.add_task(atualizar_embedding_tese_job, tese.id)
     return _tese_out(tese)
 
 
@@ -532,6 +542,7 @@ async def obter_tese(
 @router.patch("/{tese_id}")
 async def atualizar_tese(
     tese_id: str, req: TesePatch,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -542,10 +553,16 @@ async def atualizar_tese(
     )).scalar_one_or_none()
     if not t:
         raise HTTPException(404)
-    for campo, valor in req.model_dump(exclude_none=True).items():
+    campos = req.model_dump(exclude_none=True)
+    for campo, valor in campos.items():
         setattr(t, campo, valor)
     t.updated_at = datetime.now(timezone.utc)
     await db.commit()
+    # Camada 2 do Radar Jurisprudencial: só recalcula o embedding quando um
+    # campo que compõe o texto vetorizado realmente mudou — evita rodar
+    # embedding em toda edição (ex.: só trocar `tribunal`/`magistrado`).
+    if _CAMPOS_TEXTO_EMBEDDING & campos.keys():
+        background.add_task(atualizar_embedding_tese_job, t.id)
     return _tese_out(t)
 
 
