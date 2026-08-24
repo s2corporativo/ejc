@@ -32,9 +32,9 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 
 | ID | Descrição | Fase | Issue | Status | PR | Data |
 |---|---|---|---|---|---|---|
-| INFRA-1 | Checklist-mestre (este arquivo) + `status_check.sh` no gate local | F0 | — | em-andamento | — | 2026-08-24 |
-| INFRA-2 | Banner de descontinuação de status nos docs legados + correção final ✅/🟡 (frentes 2, 11, 12) | F0 | — | em-andamento | — | — |
-| INFRA-3 | Pauta de decisões do titular (`docs/PAUTA_DECISOES_TITULAR.md`) | F0 | — | em-andamento | — | — |
+| INFRA-1 | Checklist-mestre (este arquivo) + `status_check.sh` no gate local | F0 | #1272 | em-andamento | #1259 | 2026-08-24 |
+| INFRA-2 | Banner de descontinuação de status nos docs legados + correção final ✅/🟡 (frentes 2, 11, 12) | F0 | #1272 | em-andamento | #1259 | 2026-08-24 |
+| INFRA-3 | Pauta de decisões do titular (`docs/PAUTA_DECISOES_TITULAR.md`) | F0 | #1272 | em-andamento | #1259 | 2026-08-24 |
 | INFRA-4 | Ensaio `--dry-run` do deploy manual + backup/downgrade verificados em staging | F0 | — | pendente | — | — |
 | INFRA-T1 | Titular: revisar/mesclar PR #1259 e autorizar 1º deploy manual (migrations 127–147) | F0 (gate) | #1258 | pendente | #1259 | — |
 | INFRA-T2 | Titular: regularizar cota GitHub Actions + reativar `auto-integracao.yml`, `continuity-ui-gates.yml`, `architecture-inventory.yml` | F6 (gate) | — | pendente | — | — |
