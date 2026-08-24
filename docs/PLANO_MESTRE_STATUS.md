@@ -46,7 +46,7 @@ Desenho completo (fases, trilha do titular, ordem de execução, riscos):
 | V2-1.4 | Mensagem falsa "A equipe foi notificada" | F1 | — | mesclado | #1015 | 2026-08-14 |
 | V2-1.5 | Rotas retornando 404 | F1 | — | pendente | — | — |
 | V2-2.1 | Vínculo de validação (`ai_log_id`) que trava as peças antes do protocolo `[CRÍTICO]` | F1 | — | mesclado | #1015 | 2026-08-14 |
-| V2-2.2 | Embeddings desligados: 0 de 47.359 chunks indexados `[CRÍTICO]` | F3 | — | pendente | — | — |
+| V2-2.2 | Embeddings 0/47.359 — investigado (2026-08-24): NÃO é pipeline quebrado; código (self-heal `reembed_rag_orfaos` + script idempotente) já mesclado desde #1015, default `EMBEDDINGS_ENABLED=true`; produção sobrescreve a flag para `false` no `.env` do VPS. Execução é ação do titular (T4 na pauta) `[CRÍTICO]` | F3 | — | mesclado | #1015 | 2026-08-14 |
 | V2-2.3 | Modelo local para dados pessoais — já resolvido (`sanitization_policy.py`, modo LOCAL_COMPLETO bloqueia provedor externo); 305 testes passam | F3 | — | mesclado | #1195 | 2026-08-18 |
 | V2-2.4 | Consolidar aprovação da peça em um único ato | F1 | — | mesclado | #1153 | 2026-08-18 |
 | V2-3.1 | Monitorar resultado, não apenas execução — já generalizado (`ingestao_saude.py`, não só DOU/DJEN) | F3 | — | mesclado | #1015 | 2026-08-14 |

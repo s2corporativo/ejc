@@ -73,6 +73,42 @@ conforme o runbook do próprio script.
 
 **Custo:** 15–30 min, incluindo o backup prévio.
 
+### T4 — Ligar `EMBEDDINGS_ENABLED=true` em produção (V2-2.2, `[CRÍTICO]`)
+
+Achado da auditoria: 0 de 47.359 chunks da base de conhecimento têm embedding
+gerado — a busca semântica do RAG está 100% no fallback textual. Investigação
+desta sessão (2026-08-24) fecha a dúvida que o próprio plano-mestre registrava
+("pipeline pode estar quebrado, não só desligado"): **não está quebrado**.
+
+- No código, o default é ligado (`EMBEDDINGS_ENABLED: bool = True` em
+  `backend/app/core/config.py:562`) — é a produção que sobrescreve para
+  `false` no `.env` do VPS (confirmado pela própria auditoria, Parte 7).
+- `embedding_service.disponivel()` (linha 72) devolve `False` só por causa
+  dessa flag — é o único motivo, não há erro de provider nem de modelo.
+- O self-heal já existe e está correto: `scheduler.py::_reembedar_rag_orfaos`
+  roda de hora em hora, gated por `RAG_AUTO_REEMBED_ENABLED` (default true) e
+  por `disponivel()` — hoje é *no-op silencioso* (log de info, nunca erro)
+  porque a flag está off; a própria auditoria (Parte 11) já observou o job
+  agendado "sem efeito útil" e concluiu que a reindexação "provavelmente
+  ocorrerá sozinha" quando a flag for ligada.
+- `scripts/reembedar_chunks_orfaos.py` (o mesmo script chamado pelo job) é
+  idempotente, pagina por todos os documentos órfãos até esgotar (não é
+  "20 chunks por hora" — é até 20 *documentos* por lote, em loop até acabar),
+  e já tem os testes/garantias documentados no cabeçalho do arquivo.
+
+**O que falta é só ligar a flag** — ação de ambiente (`.env` do VPS), vedada
+a mim pela governança §9. O runbook `RUNBOOK_MIGRACAO_EMBEDDING_1024.md` já
+descreve o passo a passo (inclui o `validar_modelo_local()` de pré-checagem e
+a opção de rodar o script manualmente em vez de esperar o job horário).
+
+**Ação:** no VPS, definir `EMBEDDINGS_ENABLED=true` e reiniciar o backend;
+opcionalmente rodar `docker exec -it ejc_backend python -m scripts.reembedar_chunks_orfaos`
+para não esperar o job horário. Confirmar com
+`SELECT count(*) FROM knowledge_chunks WHERE embedding IS NULL;` → 0.
+
+**Custo:** 5 min de config + reinício; o reindex roda em segundo plano (tempo
+depende do volume — a 1ª carga do modelo ONNX local baixa ~1GB).
+
 ---
 
 ## Decisões de produto (T3)
@@ -211,6 +247,7 @@ decisões de produto, e continuam em pé mesmo com "decida sozinho":
 | T1 | F0 não fecha o gate de deploy | F0 |
 | T2 | Deploy manual continua sendo o único caminho | F6 |
 | T3 | Conta `homolog.qa` (superadmin) segue ativa em produção | V2-4.1 (F3) |
+| T4 | Busca semântica do RAG segue 100% no fallback textual (0/47.359 chunks) | V2-2.2 (F3) |
 | D1 | Executor segue com a hipótese default (link=verdade) | 1º PR da Classe A (F2) |
 | D2 | Executor remove a declaração morta com nota | Nenhum — decisão de baixo custo |
 | D3 | F5 não começa até fechar | F5 (mas ela já está no fim do plano) |
