@@ -512,6 +512,42 @@ async def job_expurgo_entrada_unica() -> None:
     await _bater_ponto(JOB_ENTRADA_EXPURGO, hb_status, detail)
 
 
+async def job_radar_jurisprudencial() -> None:
+    """Sábado 06h00 — Radar Jurisprudencial (PR 4 da série do Banco de
+    Teses): varre decisões novas em `knowledge_docs` (categoria=
+    jurisprudencia) desde a última execução e cruza contra as teses
+    (Camadas 1 determinística + 2 semântica), gravando alertas em
+    `teses_alertas_jurisprudenciais`. Roda DEPOIS dos ingestors de sábado
+    (`ing_stj` 03h, `ing_tjmg` 04h30, `ing_lexml` 05h) para já enxergar as
+    decisões importadas na própria rodada. Gate interno
+    RADAR_JURISPRUDENCIAL_ENABLED (default False — opt-in).
+
+    Heartbeat carrega o resumo (decisões varridas/alertas criados) em
+    `detail`, não um "ok" mudo (mesmo achado de auditoria de
+    job_expurgo_entrada_unica acima)."""
+    if not settings.RADAR_JURISPRUDENCIAL_ENABLED:
+        logger.debug("[radar_jurisprudencial] RADAR_JURISPRUDENCIAL_ENABLED=false — job pulado")
+        return
+
+    import json
+    from app.services.heartbeat_service import JOB_RADAR_JURISPRUDENCIAL
+    from app.services.radar_jurisprudencial_orquestrador import executar_radar
+
+    hb_status, resultado = "ok", None
+    try:
+        async with AsyncSessionLocal() as db:
+            resultado = await executar_radar(db)
+            if resultado.get("erros"):
+                hb_status = "erro"
+    except Exception as e:
+        hb_status = "erro"
+        resultado = {"erro": type(e).__name__}
+        logger.error(f"[radar_jurisprudencial] falha no job: {e}")
+
+    detail = json.dumps(resultado, ensure_ascii=False) if resultado else None
+    await _bater_ponto(JOB_RADAR_JURISPRUDENCIAL, hb_status, detail)
+
+
 async def _alertar_prescricao():
     """Casos com prescrição ≤90 dias → alerta semanal ao responsável."""
     from app.core.database import AsyncSessionLocal
@@ -1365,6 +1401,15 @@ def start_scheduler():
         job_expurgo_entrada_unica,
         CronTrigger(hour=3, minute=50),
         id="expurgo_entrada_unica", replace_existing=True,
+    )
+    # Radar Jurisprudencial (PR 4, Banco de Teses) — sábado 06h00, depois dos
+    # ingestors de sábado (ing_stj 03h/ing_tjmg 04h30/ing_lexml 05h) para já
+    # ver as decisões importadas na própria rodada. Gate interno
+    # RADAR_JURISPRUDENCIAL_ENABLED (default False).
+    s.add_job(
+        job_radar_jurisprudencial,
+        CronTrigger(day_of_week="sat", hour=6, minute=0),
+        id="radar_jurisprudencial", replace_existing=True,
     )
 
     s.start()

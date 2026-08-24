@@ -18,6 +18,15 @@ JOB_PRAZOS_ALERTAS = "prazos_alertas"
 JOB_AUDIENCIAS = "audiencias_agenda"
 JOB_PRESCRICAO = "prescricao"
 JOB_ENTRADA_EXPURGO = "entrada_expurgo"
+# Radar Jurisprudencial (opt-in, RADAR_JURISPRUDENCIAL_ENABLED default False)
+# — deliberadamente FORA de JOBS_MONITORADOS abaixo, mesmo precedente de
+# JOB_ENTRADA_EXPURGO: com a flag desligada o job nunca roda, e entrar no
+# dict monitorado incondicionalmente o mostraria permanentemente atrasado/
+# vermelho na Central de Diagnóstico — falso alarme. Registrar aqui e chamar
+# _bater_ponto sempre (scheduler.py::job_radar_jurisprudencial) garante que,
+# quando a flag for ligada por padrão em produção, o heartbeat já esteja
+# alimentado — só falta somar ao dict abaixo nesse momento.
+JOB_RADAR_JURISPRUDENCIAL = "radar_jurisprudencial"
 
 _MAX_DIARIO = 26
 _MAX_DATAJUD = 14

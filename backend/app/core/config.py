@@ -852,6 +852,15 @@ class Settings(BaseSettings):
     # dado deixa de ser necessário à finalidade após esse prazo sem uso).
     ENTRADA_EXPURGO_DIAS: int = 30
 
+    # Radar Jurisprudencial (PR 4 da série do Banco de Teses): varre decisões
+    # novas em knowledge_docs (categoria=jurisprudencia) e cruza contra teses,
+    # gravando alertas em teses_alertas_jurisprudenciais — services/
+    # radar_jurisprudencial_orquestrador.py. Opt-in (default False): feature
+    # nova que grava dado jurídico sensível (alerta de possível impacto em
+    # tese), histórico de P0 deste domínio pede validação antes de ligar em
+    # produção — decisão do titular ligar.
+    RADAR_JURISPRUDENCIAL_ENABLED: bool = False
+
     # ── Índices oficiais BCB (SGS + Olinda) — services/indices_service.py ─
     # API pública do Banco Central, gratuita e sem chave: correção monetária,
     # Taxa Legal (Lei 14.905/2024), Selic EC 113, taxas de juros por
