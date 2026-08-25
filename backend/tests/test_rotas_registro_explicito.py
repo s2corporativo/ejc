@@ -186,6 +186,10 @@ ADICOES_INTENCIONAIS = {
     ("/api/honorarios-oab/cases/{case_id}/teto-etico", "GET"),
     ("/api/honorarios-oab/{fee_id}/rateio", "GET"),
     ("/api/honorarios-oab/{fee_id}/rateio", "POST"),
+    # PR cliente-documento 153: endpoints explícitos para gerar e listar peças
+    # avulsas de admissão, sempre em rascunho e filtradas por client_id.
+    ("/api/clients/{client_id}/gerar-documentos", "POST"),
+    ("/api/clients/{client_id}/pecas-geradas", "GET"),
 }
 
 # Remoções INTENCIONAIS posteriores ao snapshot. Rota que some sem estar aqui
@@ -350,6 +354,22 @@ def test_paridade_openapi_com_snapshot_anterior():
         # Decisão deliberada, não achado — a listagem expunha títulos de
         # documentos internos de qualquer caso.
         (("/api/rag/docs", "GET"), ["HTTPBearer", "get_current_user", "get_db"]),
+        # PR cliente-documento 153: dependência transversal de escopo por
+        # client_id; a consulta usa 404 anti-enumeração e não amplia o acesso.
+        (("/api/legal-docs/", "GET"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/", "POST"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}", "DELETE"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}", "GET"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}", "PATCH"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}/aprovar", "PATCH"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}/documento-unico-impressao", "GET"), ["HTTPBearer", "_dep", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}/exportar-docx", "GET"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}/jurisprudencia-check", "GET"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}/pdf", "GET"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}/protocolo", "PATCH"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}/revisar", "POST"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}/validacao", "GET"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
+        (("/api/legal-docs/{doc_id}/validar", "POST"), ["HTTPBearer", "_enforce_client_legal_doc_scope", "get_current_user", "get_db"]),
         # Auditoria de segurança de IA (18/08): 12 endpoints que chamam
         # provedor de IA (custo real por chamada) não tinham @rate_limit —
         # o único determinístico sem LLM da vizinhança (/citacoes/verificar)
