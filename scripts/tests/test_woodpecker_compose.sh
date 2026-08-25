@@ -5,6 +5,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/infra/woodpecker/docker-compose.yml"
+BACKUP_SCRIPT="$REPO_ROOT/infra/woodpecker/backup.sh"
 
 fail() {
   printf 'ERRO: %s\n' "$*" >&2
@@ -12,6 +13,9 @@ fail() {
 }
 
 [ -f "$COMPOSE_FILE" ] || fail "compose do Woodpecker ausente"
+[ -f "$BACKUP_SCRIPT" ] || fail "script de backup do Woodpecker ausente"
+bash -n "$BACKUP_SCRIPT"
+grep -Fq -- "busybox:1.37.0" "$BACKUP_SCRIPT" || fail "imagem auxiliar de backup não está fixada"
 
 server_block="$(
   awk '
