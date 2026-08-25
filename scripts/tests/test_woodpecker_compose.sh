@@ -16,6 +16,14 @@ fail() {
 [ -f "$BACKUP_SCRIPT" ] || fail "script de backup do Woodpecker ausente"
 bash -n "$BACKUP_SCRIPT"
 grep -Fq -- "busybox:1.37.0" "$BACKUP_SCRIPT" || fail "imagem auxiliar de backup não está fixada"
+grep -Fq -- '[ "$agent_secret" != "$grpc_secret" ]' "$BACKUP_SCRIPT" \
+  || fail "backup não bloqueia segredos de agente e gRPC iguais"
+grep -Fq -- 'sha256sum -c --' "$BACKUP_SCRIPT" \
+  || fail "backup não confere os checksums gerados"
+grep -Fq -- 'verify_restore "$server_archive"' "$BACKUP_SCRIPT" \
+  || fail "backup não testa restauração do volume do servidor"
+grep -Fq -- 'server_image_id=' "$BACKUP_SCRIPT" \
+  || fail "backup não registra identidade da imagem no manifesto"
 
 server_block="$(
   awk '
@@ -33,17 +41,26 @@ agent_block="$(
   ' "$COMPOSE_FILE"
 )"
 
-grep -Fq -- 'image: woodpeckerci/woodpecker-server:v3.18.0' <<<"$server_block"   || fail "imagem do servidor não está fixada em v3.18.0"
-grep -Fq -- 'image: woodpeckerci/woodpecker-agent:v3.18.0' <<<"$agent_block"   || fail "imagem do agente não está fixada na mesma versão do servidor"
+grep -Fq -- 'image: woodpeckerci/woodpecker-server:v3.18.0' <<<"$server_block" \
+  || fail "imagem do servidor não está fixada em v3.18.0"
+grep -Fq -- 'image: woodpeckerci/woodpecker-agent:v3.18.0' <<<"$agent_block" \
+  || fail "imagem do agente não está fixada na mesma versão do servidor"
 
-grep -Fq -- '- WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?' <<<"$server_block"   || fail "servidor sem WOODPECKER_AGENT_SECRET obrigatório"
-grep -Fq -- '- WOODPECKER_GRPC_SECRET=${WOODPECKER_GRPC_SECRET:?' <<<"$server_block"   || fail "servidor sem WOODPECKER_GRPC_SECRET independente e obrigatório"
-grep -Fq -- '- WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?' <<<"$agent_block"   || fail "agente sem WOODPECKER_AGENT_SECRET obrigatório"
-grep -Fq -- '- woodpecker-agent-config:/etc/woodpecker' <<<"$agent_block"   || fail "configuração/identidade do agente não está persistida"
+grep -Fq -- '- WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?' <<<"$server_block" \
+  || fail "servidor sem WOODPECKER_AGENT_SECRET obrigatório"
+grep -Fq -- '- WOODPECKER_GRPC_SECRET=${WOODPECKER_GRPC_SECRET:?' <<<"$server_block" \
+  || fail "servidor sem WOODPECKER_GRPC_SECRET independente e obrigatório"
+grep -Fq -- '- WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?' <<<"$agent_block" \
+  || fail "agente sem WOODPECKER_AGENT_SECRET obrigatório"
+grep -Fq -- '- woodpecker-agent-config:/etc/woodpecker' <<<"$agent_block" \
+  || fail "configuração/identidade do agente não está persistida"
 
-grep -Fq -- '- WOODPECKER_BACKEND_DOCKER_LIMIT_MEM=${WOODPECKER_JOB_MEMORY_BYTES:-3221225472}' <<<"$agent_block"   || fail "jobs sem limite padrão de memória"
-grep -Fq -- '- WOODPECKER_BACKEND_DOCKER_LIMIT_MEM_SWAP=${WOODPECKER_JOB_MEMORY_SWAP_BYTES:-3221225472}' <<<"$agent_block"   || fail "jobs sem limite padrão de memória+swap"
-grep -Fq -- '- WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_QUOTA=${WOODPECKER_JOB_CPU_QUOTA:-100000}' <<<"$agent_block"   || fail "jobs sem limite padrão de CPU"
+grep -Fq -- '- WOODPECKER_BACKEND_DOCKER_LIMIT_MEM=${WOODPECKER_JOB_MEMORY_BYTES:-3221225472}' <<<"$agent_block" \
+  || fail "jobs sem limite padrão de memória"
+grep -Fq -- '- WOODPECKER_BACKEND_DOCKER_LIMIT_MEM_SWAP=${WOODPECKER_JOB_MEMORY_SWAP_BYTES:-3221225472}' <<<"$agent_block" \
+  || fail "jobs sem limite padrão de memória+swap"
+grep -Fq -- '- WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_QUOTA=${WOODPECKER_JOB_CPU_QUOTA:-100000}' <<<"$agent_block" \
+  || fail "jobs sem limite padrão de CPU"
 
 command -v docker >/dev/null 2>&1 || fail "docker ausente; não é possível validar o compose renderizado"
 docker compose version >/dev/null 2>&1 || fail "plugin docker compose ausente"
@@ -54,11 +71,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
-WOODPECKER_HOST=https://ci.example.invalid WOODPECKER_GITHUB_CLIENT=test-client WOODPECKER_GITHUB_SECRET=test-oauth-secret WOODPECKER_AGENT_SECRET=test-agent-secret WOODPECKER_GRPC_SECRET=test-grpc-secret   docker compose -f "$COMPOSE_FILE" config >"$rendered"
+WOODPECKER_HOST=https://ci.example.invalid \
+WOODPECKER_GITHUB_CLIENT=test-client \
+WOODPECKER_GITHUB_SECRET=test-oauth-secret \
+WOODPECKER_AGENT_SECRET=test-agent-secret \
+WOODPECKER_GRPC_SECRET=test-grpc-secret \
+  docker compose -f "$COMPOSE_FILE" config >"$rendered"
 
-grep -Fq -- 'WOODPECKER_AGENT_SECRET: test-agent-secret' "$rendered"   || fail "segredo do agente não chegou à configuração renderizada"
-grep -Fq -- 'WOODPECKER_GRPC_SECRET: test-grpc-secret' "$rendered"   || fail "segredo gRPC independente não chegou à configuração renderizada"
-grep -Fq -- 'WOODPECKER_BACKEND_DOCKER_LIMIT_MEM: "3221225472"' "$rendered"   || fail "limite de memória não chegou à configuração renderizada"
-grep -Fq -- 'WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_QUOTA: "100000"' "$rendered"   || fail "limite de CPU não chegou à configuração renderizada"
+grep -Eq -- 'WOODPECKER_AGENT_SECRET: "?test-agent-secret"?$' "$rendered" \
+  || fail "segredo do agente não chegou à configuração renderizada"
+grep -Eq -- 'WOODPECKER_GRPC_SECRET: "?test-grpc-secret"?$' "$rendered" \
+  || fail "segredo gRPC independente não chegou à configuração renderizada"
+grep -Eq -- 'WOODPECKER_BACKEND_DOCKER_LIMIT_MEM: "?3221225472"?$' "$rendered" \
+  || fail "limite de memória não chegou à configuração renderizada"
+grep -Eq -- 'WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_QUOTA: "?100000"?$' "$rendered" \
+  || fail "limite de CPU não chegou à configuração renderizada"
 
 printf 'Woodpecker compose: autenticação, versão, limites e persistência válidos.\n'
