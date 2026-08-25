@@ -112,12 +112,17 @@ cd /opt/woodpecker-ci/infra/woodpecker
 bash backup.sh
 ```
 
-O script interrompe apenas servidor/agente, copia os dois volumes em modo
-somente leitura para `/var/backups/woodpecker`, grava SHA-256, aplica
-permissões restritas e religa os serviços. Ele não copia o `.env`.
+Antes de parar os serviços, o script renderiza o Compose sem exibir o conteúdo
+e bloqueia segredos vazios ou iguais. Depois, interrompe apenas servidor/agente,
+copia os dois volumes em modo somente leitura para
+`/var/backups/woodpecker`, grava e confere SHA-256, inspeciona os tarballs,
+testa a extração em volumes temporários e religa os serviços. Um manifesto
+registra o HEAD Git, volumes e IDs locais das imagens. O `.env` não é copiado.
 
-Confirme que os dois arquivos e hashes foram criados e mantenha pelo menos o
-último conjunto anterior a cada atualização.
+Confirme que os dois arquivos, checksums e manifesto foram criados; não deve
+restar volume temporário do teste. Mantenha pelo menos o último conjunto
+anterior a cada atualização e preserve separadamente o `.env` em custódia
+segura, fora do repositório e dos backups de volume.
 
 ## Atualização controlada
 
