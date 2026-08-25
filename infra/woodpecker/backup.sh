@@ -32,7 +32,7 @@ agent_container="$(docker compose ps -aq woodpecker-agent)"
 [ -n "$agent_container" ] || fail "contêiner woodpecker-agent não existe"
 
 server_volume="$(
-  docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/woodpecker/"}}{{.Name}}{{end}}{{end}}' "$server_container"
+  docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/woodpecker"}}{{.Name}}{{end}}{{end}}' "$server_container"
 )"
 agent_volume="$(
   docker inspect --format '{{range .Mounts}}{{if eq .Destination "/etc/woodpecker"}}{{.Name}}{{end}}{{end}}' "$agent_container"
