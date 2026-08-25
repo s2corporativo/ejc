@@ -41,7 +41,6 @@ UI e podem ser habilitados quando ganharem um `.woodpecker.yml`.
            proxy_set_header Host $host;
            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
            proxy_set_header X-Forwarded-Proto $scheme;
-           # UI usa streaming de logs:
            proxy_http_version 1.1;
            proxy_set_header Upgrade $http_upgrade;
            proxy_set_header Connection "upgrade";
@@ -53,42 +52,92 @@ UI e podem ser habilitados quando ganharem um `.woodpecker.yml`.
    `nginx -t && systemctl reload nginx`, depois
    `certbot --nginx -d ci.depaulateixeira.adv.br`.
 
-4. **Subir o Woodpecker** (nesta pasta, na VPS):
+4. **Preparar segredos e permissões** nesta pasta da VPS:
 
    ```bash
-   cp .env.example .env   # preencher CLIENT/SECRET e AGENT_SECRET
-   docker compose up -d
-   docker compose logs -f woodpecker-server   # conferir boot
+   umask 077
+   cp .env.example .env
+   chmod 600 .env
+   openssl rand -hex 32  # valor exclusivo de WOODPECKER_AGENT_SECRET
+   openssl rand -hex 32  # valor diferente para WOODPECKER_GRPC_SECRET
    ```
 
-5. **Habilitar os repositórios** — abra `https://ci.depaulateixeira.adv.br`,
+   Preencha o `.env` sem colar valores em Issue, PR, chat ou logs. Os dois
+   segredos devem ser independentes. O Compose falha antes de subir se host,
+   OAuth ou qualquer segredo obrigatório estiver vazio.
+
+5. **Validar e subir**:
+
+   ```bash
+   docker compose config --quiet
+   docker compose up -d
+   docker compose ps
+   ```
+
+6. **Habilitar os repositórios** — abra `https://ci.depaulateixeira.adv.br`,
    entre com a conta GitHub (`s2corporativo`), Repositories → *Enable* em
    `ejc`, `verdelimpclaude`, `s2licit` e `cuidar-vet-plataforma`. O Woodpecker
-   cria o webhook em cada repo automaticamente. A partir daí, todo push em
-   `main` e todo PR executam o pipeline e reportam o status no GitHub.
+   cria o webhook em cada repo automaticamente. A partir daí, push em `main`
+   e PR aprovado executam o pipeline e reportam o status no GitHub.
+
+7. Em cada repositório, confirme no painel: modo de aprovação para PRs ativo,
+   repositório não confiável (`trusted` desligado) e nenhum volume privilegiado
+   liberado. O Compose também desativa registro de agentes por usuários.
 
 ## Operação
 
-- Concorrência é 1 workflow por vez (`WOODPECKER_MAX_WORKFLOWS=1`) para não
-  disputar recursos com a produção. Aumente no compose se a VPS aguentar.
-- Os jobs rodam em containers descartáveis via Docker do host; nenhum segredo
-  de produção entra nos pipelines (e os pipelines versionados não usam
-  segredos).
-- O pipeline é o MESMO portão local obrigatório do `CLAUDE.md` de cada repo —
-  verde no Woodpecker e verde local devem coincidir. Divergência é bug do
-  pipeline, corrija no `.woodpecker.yml` do repo.
-- Webhooks de push para branches diferentes de `main` podem ser descartados
-  por `when` antes da criação do pipeline. Isso é esperado; erro real é um
-  push em `main` ou PR também ser descartado.
-- Se um dia o GitHub Actions voltar, os dois convivem sem conflito (o
-  Woodpecker usa webhooks próprios). A decisão registrada nos `CLAUDE.md`
-  continua valendo: o portão local/self-hosted é a fonte de verdade.
+- Concorrência é 1 workflow por vez (`WOODPECKER_MAX_WORKFLOWS=1`).
+- Cada contêiner de pipeline recebe, por padrão, até 3 GiB, sem swap adicional,
+  quota de 1 CPU e `CPU_SHARES=512`. Os valores podem ser reduzidos ou
+  aumentados pelas variáveis documentadas no `.env.example`, após medir a VPS.
+- Os jobs rodam em contêineres descartáveis; nenhum segredo de produção entra
+  nos pipelines.
+- O pipeline é o mesmo portão local obrigatório do `CLAUDE.md` de cada repo.
+- Pushes para branches diferentes de `main` podem ser descartados por `when`
+  antes da criação do pipeline. Isso é esperado; erro real é push em `main`
+  ou PR aprovado também ser descartado.
+- Verifique semanalmente `docker system df` e o uso do disco. Não automatize
+  remoção de imagens/volumes na VPS de produção: uma imagem antiga pode ser o
+  artefato de rollback.
+- O agente idealmente deve migrar para host/VM próprio. Enquanto compartilhar a
+  VPS com produção, concorrência, limites e aprovação de PR são obrigatórios.
 
-## Atualização
+## Backup antes de atualizar ou recriar
+
+O banco do Woodpecker fica no volume `woodpecker-server-data`; copiar arquivos
+com o servidor gravando não produz backup consistente. Execute:
 
 ```bash
-docker compose pull && docker compose up -d
+cd /opt/woodpecker-ci/infra/woodpecker
+bash backup.sh
 ```
+
+O script interrompe apenas servidor/agente, copia os dois volumes em modo
+somente leitura para `/var/backups/woodpecker`, grava SHA-256, aplica
+permissões restritas e religa os serviços. Ele não copia o `.env`.
+
+Confirme que os dois arquivos e hashes foram criados e mantenha pelo menos o
+último conjunto anterior a cada atualização.
+
+## Atualização controlada
+
+As imagens são fixadas em `v3.18.0`. Não troque para `v3`/`latest`.
+
+```bash
+cd /opt/woodpecker-ci
+git pull --ff-only
+cd infra/woodpecker
+chmod 600 .env
+bash backup.sh
+docker compose config --quiet
+docker compose pull
+docker compose up -d --force-recreate woodpecker-server woodpecker-agent
+docker compose ps
+docker compose logs --since=2m woodpecker-server woodpecker-agent
+```
+
+Mudança de versão exige leitura das release notes, novo backup consistente e
+janela de rollback. Servidor e agente permanecem sempre na mesma versão.
 
 ## Solução de problemas
 
@@ -99,31 +148,36 @@ No Woodpecker v3, os dois segredos do servidor têm finalidades diferentes:
 - `WOODPECKER_AGENT_SECRET`: autentica o agente e permite seu registro;
 - `WOODPECKER_GRPC_SECRET`: assina os JWTs usados nas conexões gRPC.
 
-O agente também lê `WOODPECKER_AGENT_SECRET`. O `docker-compose.yml` fornece
-o mesmo segredo aleatório e persistente às duas funções nesta instalação de
-réplica única, preservando o `.env` existente. Configurar apenas
-`WOODPECKER_GRPC_SECRET` não autentica o agente.
+O agente também lê `WOODPECKER_AGENT_SECRET`. O mesmo valor de
+`WOODPECKER_AGENT_SECRET` precisa chegar ao servidor e ao agente; o segredo
+gRPC deve ser outro valor. Configurar apenas `WOODPECKER_GRPC_SECRET` não
+autentica o agente.
 
-Depois de atualizar o compose:
-
-```bash
-cd /opt/woodpecker-ci
-git pull --ff-only
-cd infra/woodpecker
-docker compose config --quiet
-docker compose up -d --force-recreate woodpecker-server woodpecker-agent
-docker compose ps
-docker compose logs --since=2m woodpecker-server woodpecker-agent
-```
+Para corrigir uma instalação antiga que ainda não possui
+`WOODPECKER_GRPC_SECRET`, gere um valor novo e independente no `.env`, faça
+o backup e siga a atualização controlada. Não substitua o
+`WOODPECKER_AGENT_SECRET` existente, pois isso desregistra os agentes atuais.
 
 O aceite exige servidor saudável, agente estável em `Up` e ausência de novas
-mensagens `individual agent not found by token`. Não remova volumes e não use
-`docker compose down -v`: o volume do servidor contém o banco do Woodpecker.
+mensagens `individual agent not found by token`.
 
 ### `when filters filtered out all steps`
 
 Os pipelines versionados rodam em push para `main` e em pull requests.
 Portanto, pushes diretos para branches de trabalho são intencionalmente
 ignorados. Investigue somente se o evento descartado for push em `main` ou
-pull request; nesse caso, habilite log `debug` temporário e confronte
+pull request aprovado; nesse caso, habilite log `debug` temporário e confronte
 `event`, `branch` e `ref` recebidos com o `when` do repositório.
+
+## Rollback
+
+1. Não remova volumes e nunca use `docker compose down -v`.
+2. Pare servidor e agente.
+3. Volte o Compose para a versão exata anteriormente registrada.
+4. Se a versão nova migrou o banco, restaure **os dois volumes** a partir do
+   conjunto de backups correspondente, com os serviços parados.
+5. Suba primeiro o servidor, confira os logs, depois o agente.
+6. Valide um pipeline sintético antes de liberar os quatro repositórios.
+
+A restauração sobrescreve estado e exige decisão humana específica. O backup
+não autoriza restauração automática.
