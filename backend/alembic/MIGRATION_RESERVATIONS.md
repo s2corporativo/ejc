@@ -2,8 +2,9 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico desta PR:** `153_legal_doc_client_id`  
-**Próximo prefixo livre após o merge:** `154`
+**Head canônico atual da `main`:** `153_legal_doc_client_id`
+**Próximo prefixo livre:** `154`
+Após o merge desta PR, o próximo prefixo livre continuará sendo `154`.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
