@@ -2,8 +2,8 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `152_thesis_candidate_tese_banco`  
-**Próximo prefixo livre:** `153`
+**Head canônico desta PR:** `153_legal_doc_client_id`  
+**Próximo prefixo livre após o merge:** `154`
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
@@ -43,14 +43,16 @@ gh pr list --state open
 | `149_documents_sha256_integridade` | `147_pendencia_impacto_providencia` | Mesclada | Integridade documental. A lacuna 148 é histórica e intencional. |
 | `150_indices_fk_espinha_dominio` | `149_documents_sha256_integridade` | Mesclada | Índices da espinha do domínio. |
 | `151_case_status_anterior` | `150_indices_fk_espinha_dominio` | Mesclada | Histórico de status de caso. |
-| `152_thesis_candidate_tese_banco` | `151_case_status_anterior` | **Mesclada — HEAD** | Ponte Matriz de Teses → Banco de Teses canônico. |
-| `153` | `152_thesis_candidate_tese_banco` | **Reservada** | Reimplementação limpa da extensão aditiva do Banco de Teses, se aprovada a partir da `main` atual. Não portar a migration 148 antiga literalmente. |
+| `152_thesis_candidate_tese_banco` | `151_case_status_anterior` | Mesclada | Ponte Matriz de Teses → Banco de Teses canônico. |
+| `153_legal_doc_client_id` | `152_thesis_candidate_tese_banco` | **Em PR — HEAD desta branch** | Isolamento estável cliente → peça avulsa, reconstruído a partir do #1231 sem reutilizar a antiga migration 147. |
 
 ## Banco de Teses — decisão canônica
 
 A fonte de verdade é **`teses` + `tese_caso_links`**. Não criar `legal_theses`, `teses_juridicas`, `teses_v2`, `teses_v4` ou outro banco paralelo. Qualquer evolução deve estender a estrutura canônica de forma aditiva e preservar Jurimetria, Súmulas, matcher tese↔caso, Matriz de Teses e frontend existentes.
 
 Os PRs antigos #1264, #1267, #1269 e #1275 são fontes históricas de requisitos/código, não unidades de merge. Qualquer conteúdo ainda útil deve ser reaplicado sobre a `main` vigente, com nova numeração e sem substituir arquivos que já evoluíram.
+
+A reserva condicional que antes apontava `153` para uma extensão futura do Banco de Teses foi liberada porque não havia migration nem PR 153 em andamento. Como o isolamento cliente→documento corrige um risco concreto de ownership/homônimos, ele assume o próximo número canônico. Qualquer futura extensão de teses deverá usar o próximo número livre após a integração desta migration.
 
 ## Guarda automática
 

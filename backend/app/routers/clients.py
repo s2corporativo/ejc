@@ -18,11 +18,12 @@ from app.core.client_ownership import (
 )
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, require_roles
+from app.core.security import get_current_user, require_roles, requer_advogado
 from app.models.user import User
 from app.models.client import Client, ClientStatus
 from app.models.case import Case, CaseStatus
 from app.models.audit_log import criar_audit_log
+from app.services.geracao_documental_cliente import listar_pecas_cliente
 from app.schemas.client import (
     ClientCreate, ClientUpdate, ClientResponse, ConflitoCheckRequest,
 )
@@ -526,6 +527,67 @@ async def criar(
         )
     await db.refresh(c)
     return c
+
+
+class GerarDocsClienteIn(BaseModel):
+    tipo_poderes: str = "ad_judicia"
+    permite_substabelecimento: bool = True
+    poderes_especiais: Optional[str] = None
+    forcar_novo: bool = False
+
+
+@router.post(
+    "/{client_id}/gerar-documentos",
+    status_code=201,
+    dependencies=[Depends(rate_limit("kit-documental", 5))],
+)
+async def gerar_documentos_cliente(
+    client_id: str,
+    payload: Optional[GerarDocsClienteIn] = None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_clientes),
+):
+    """Gera contrato + procuração como rascunhos vinculados ao cliente."""
+    requer_advogado(cu)
+    c = (
+        await db.execute(
+            select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
+        )
+    ).scalar_one_or_none()
+    if not c or not await _pode_ver_cliente(cu, c, db):
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    p = payload or GerarDocsClienteIn()
+    from app.services.geracao_documental_cliente import gerar_documentos_cliente as _gerar
+    return await _gerar(
+        db,
+        c,
+        cu,
+        tipo_poderes=p.tipo_poderes,
+        permite_substabelecimento=p.permite_substabelecimento,
+        poderes_especiais=p.poderes_especiais,
+        forcar_novo=p.forcar_novo,
+    )
+
+
+@router.get(
+    "/{client_id}/pecas-geradas",
+    dependencies=[Depends(rate_limit("kit-documental-list", 30))],
+)
+async def listar_pecas_geradas(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_clientes),
+):
+    """Lista documentos de admissão da carteira autorizada."""
+    requer_advogado(cu)
+    c = (
+        await db.execute(
+            select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
+        )
+    ).scalar_one_or_none()
+    if not c or not await _pode_ver_cliente(cu, c, db):
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    return await listar_pecas_cliente(db, c)
 
 
 @router.get("/{client_id}", response_model=ClientResponse)
