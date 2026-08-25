@@ -44,6 +44,11 @@ nos:
   - FP-CONS-000030
   - FP-TRAB-000031
   - FP-PROC-000032
+  - JUR-TRIB-000033
+  - JUR-AMBI-000034
+  - JUR-ADMI-000035
+  - JUR-LICI-000036
+  - JUR-EMPR-000037
 
 arestas:
   - origem: JUR-TRIB-000003
@@ -106,3 +111,33 @@ arestas:
     destino: TESE-TRAB-000021
     status: pendente_validacao_dos_nos
     observacao: Responsabilidade do tomador e prescrição são eixos autônomos de análise trabalhista.
+  - origem: JUR-TRIB-000033
+    tipo: interpreta
+    destino: FP-TRIB-000025
+    status: pendente_validacao_dos_nos
+    observacao: Súmula 555/STJ fixa o termo inicial da decadência do Art. 173, I, do CTN quando não há declaração do débito.
+  - origem: JUR-AMBI-000034
+    tipo: interpreta
+    destino: FP-AMBI-000026
+    status: pendente_validacao_dos_nos
+    observacao: Súmula 467/STJ fixa o termo inicial da prescrição da execução da multa administrativa ambiental do Art. 72 da Lei 9.605/1998.
+  - origem: JUR-ADMI-000035
+    tipo: interpreta
+    destino: FP-ADMI-000027
+    status: pendente_validacao_dos_nos
+    observacao: Súmula 633/STJ trata da aplicação subsidiária do prazo decadencial do Art. 54 da Lei 9.784/1999 a Estados e Municípios sem lei própria; confiança MEDIA, não renderizada diretamente na fonte oficial nesta sessão.
+  - origem: JUR-LICI-000036
+    tipo: interpreta
+    destino: FP-LICI-000028
+    status: pendente_validacao_dos_nos
+    observacao: Acórdão 2666/2025-TCU-Plenário aplica os critérios dos Arts. 28-29 da Lei 14.133/2021 para distinguir objeto comum de objeto predominantemente intelectual.
+  - origem: JUR-EMPR-000037
+    tipo: interpreta
+    destino: FP-EMPR-000029
+    status: pendente_validacao_dos_nos
+    observacao: CC 199.496/CE-STJ trata dos efeitos do exaurimento do stay period do Art. 6º, §4º, da Lei 11.101/2005; confiança MEDIA, não renderizada diretamente na fonte oficial nesta sessão.
+  - origem: JUR-CONS-000016
+    tipo: interpreta
+    destino: FP-CONS-000030
+    status: pendente_validacao_dos_nos
+    observacao: Tema 466/STJ e Súmula 479/STJ aplicam a responsabilidade objetiva do Art. 14 do CDC a fraudes bancárias por fortuito interno.
