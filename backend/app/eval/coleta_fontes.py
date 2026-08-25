@@ -46,10 +46,13 @@ BASE = Path(__file__).resolve().parent
 REGISTRO = BASE / "fontes_registro.json"
 SAIDA = BASE / "fontes_oficiais.json"
 
-# Mesma lista de sufixos que `gold_governance._host_oficial` aceita. Coletar de
-# domínio que o validador vai recusar depois é trabalho perdido, então a recusa
-# acontece aqui, na coleta.
+# Mesma política que `gold_governance._host_oficial` aceita — sufixo OU host
+# exato. Coletar de domínio que o validador vai recusar depois é trabalho
+# perdido, então a recusa acontece aqui, na coleta. Achado do Codex: a versão
+# anterior só checava sufixo, então recusava `oab.org.br` — `.org.br`, não
+# `.gov.br` — que o validador aceita como exceção explícita de host exato.
 SUFIXOS_OFICIAIS = (".gov.br", ".jus.br", ".leg.br", ".mp.br", ".def.br")
+HOSTS_OFICIAIS = {"planalto.gov.br", "www.planalto.gov.br", "oab.org.br", "www.oab.org.br"}
 
 TIMEOUT_PADRAO = 30
 UA = "EJC-curadoria-gold-set/1.0 (+https://github.com/s2corporativo/ejc)"
@@ -80,6 +83,8 @@ def _host_oficial(url: str) -> bool:
     if partes.scheme != "https":
         return False
     host = (partes.hostname or "").lower()
+    if host in HOSTS_OFICIAIS:
+        return True
     return any(host == s.lstrip(".") or host.endswith(s) for s in SUFIXOS_OFICIAIS)
 
 
@@ -117,8 +122,14 @@ def html_para_texto(bruto: bytes) -> str:
 
 
 def _normalizar_id_artigo(bruto: str) -> str:
-    """`1.022` e `1022` são o mesmo artigo; `170-A` não é `170`."""
+    """`1.022` e `1022` são o mesmo artigo; `170-A` não é `170`.
+
+    Também descarta o sinal ordinal (º/ª/o/°) do lado do PEDIDO, para
+    `--artigo "6º-A"` normalizar igual ao que `_marcadores_de_artigo` produz
+    do documento — o sinal nunca é parte do identificador, só decoração.
+    """
     ident = bruto.strip().upper().replace(".", "").replace(" ", "")
+    ident = re.sub(r"[ºª°]|(?<=\d)O(?=-)", "", ident)
     return re.sub(r"[-–—]+", "-", ident)
 
 
@@ -132,8 +143,23 @@ def _marcadores_de_artigo(texto: str) -> list[tuple[int, str]]:
     normalizado antes da comparação.
     """
     achados = []
-    for m in re.finditer(r"\bArt\.?\s*(\d[\d.]*(?:\s*[-–—]\s*[A-Za-z])?)", texto):
-        achados.append((m.start(), _normalizar_id_artigo(m.group(1))))
+    # O sinal ordinal (º/ª/o/°) fica ENTRE o número e o sufixo em cabeçalhos
+    # como "Art. 6º-A" — casado fora do grupo de captura porque não faz parte
+    # do identificador. Sem isto, "6º-A" só capturava "6": pedir "6-A" nunca
+    # encontrava nada, e pedir "6" podia devolver o corpo do "6º-A" (achado do
+    # Codex).
+    #
+    # `(?m)^\s*` exige que o marcador comece uma LINHA — `html_para_texto`
+    # transforma cada `<p>`/`<br>` em quebra de linha, e no legin cada artigo
+    # é seu próprio parágrafo. Sem essa âncora, uma citação cruzada no meio da
+    # frase ("nos termos do Art. 20 desta lei") era tratada como o próximo
+    # cabeçalho de artigo e cortava o corpo do artigo pedido antes da hora —
+    # silenciosamente, reportando "encontrado" com texto incompleto (achado do
+    # Codex).
+    padrao = r"(?m)^\s*Art\.?\s*(\d[\d.]*)\s*(?:[ºªo°]\s*)?(-\s*[A-Za-z])?"
+    for m in re.finditer(padrao, texto):
+        ident = m.group(1) + (m.group(2) or "")
+        achados.append((m.start(), _normalizar_id_artigo(ident)))
     return achados
 
 
@@ -210,12 +236,24 @@ def coletar_fonte(
 
     texto = html_para_texto(bruto)
 
-    ausentes = [t for t in fonte.verificar_texto if t.lower() not in texto.lower()]
+    # Só o CABEÇALHO precisa conter os marcadores, não a página inteira. Um ato
+    # que meramente EMENDA a norma declarada ("Lei X altera a Lei 8.078/1990")
+    # cita o número e a data dela em algum parágrafo do corpo — e casaria os
+    # marcadores mesmo sem ser a norma em si, aceitando e fixando o hash do
+    # documento errado (achado do Codex). Nas páginas do legin o título oficial
+    # vem nos primeiros parágrafos (confirmado nas 7 fontes já coletadas: "LEI
+    # Nº X, DE ... — Publicação Original" aparece nos primeiros ~150
+    # caracteres); ancorar num prefixo generoso rejeita a citação enterrada no
+    # corpo sem depender de parsing de HTML.
+    JANELA_CABECALHO = 4000
+    cabecalho = texto[:JANELA_CABECALHO].lower()
+    ausentes = [t for t in fonte.verificar_texto if t.lower() not in cabecalho]
     if ausentes:
         raise ErroDeColeta(
-            f"{fonte.apelido}: o documento em {fonte.url} não contém "
-            f"{ausentes!r} — não é a norma que o registro declara, ou a página mudou. "
-            "Confira a URL antes de registrar."
+            f"{fonte.apelido}: o cabeçalho do documento em {fonte.url} "
+            f"(primeiros {JANELA_CABECALHO} caracteres) não contém {ausentes!r} — "
+            "não é a norma que o registro declara (pode ser um ato que só a cita), "
+            "ou a página mudou. Confira a URL antes de registrar."
         )
 
     artigos = extrair_artigos(texto, fonte.artigos)
@@ -329,16 +367,31 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if coletadas:
+        # `--apelido cdc` coleta só o CDC, mas o arquivo de saída acumula o
+        # registro inteiro — não o resultado desta execução isolada. Sem isto,
+        # rodar `--apelido` (que o próprio aviso de falha parcial recomenda
+        # para "coletar só o que falta") apagava em silêncio toda fonte já
+        # coletada antes e ausente deste run (achado do Codex). Mescla por
+        # apelido: o que este run trouxe substitui a entrada antiga do mesmo
+        # apelido; o resto do arquivo anterior é preservado.
+        existentes = []
+        if args.saida.exists():
+            try:
+                existentes = json.loads(args.saida.read_text(encoding="utf-8")).get("fontes", [])
+            except (json.JSONDecodeError, OSError):
+                existentes = []
+        por_apelido = {f["apelido"]: f for f in existentes}
+        por_apelido.update({f["apelido"]: f for f in coletadas})
         args.saida.write_text(
             json.dumps(
-                {"gerado_em": date.today().isoformat(), "fontes": coletadas},
+                {"gerado_em": date.today().isoformat(), "fontes": list(por_apelido.values())},
                 ensure_ascii=False,
                 indent=2,
             )
             + "\n",
             encoding="utf-8",
         )
-        print(f"\n{len(coletadas)} fonte(s) em {args.saida}")
+        print(f"\n{len(coletadas)} fonte(s) coletadas; {len(por_apelido)} no total em {args.saida}")
 
     sem_vigencia = [c["apelido"] for c in coletadas if not c["prova_vigencia"]]
     if sem_vigencia:
