@@ -18,9 +18,8 @@ services:
       - WOODPECKER_GITHUB=true
       - WOODPECKER_GITHUB_CLIENT=${WOODPECKER_GITHUB_CLIENT:?defina WOODPECKER_GITHUB_CLIENT no .env}
       - WOODPECKER_GITHUB_SECRET=${WOODPECKER_GITHUB_SECRET:?defina WOODPECKER_GITHUB_SECRET no .env}
-      # Funções distintas no v3: AGENT_SECRET autentica/registra agentes;
-      # GRPC_SECRET assina JWTs das conexões gRPC. Use segredos independentes.
-      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET:?defina WOODPECKER_AGENT_SECRET no .env}
+      # O servidor usa GRPC_SECRET para assinar JWTs gRPC. O token individual
+      # de registro fica apenas no serviço do agente.
       - WOODPECKER_GRPC_SECRET=${WOODPECKER_GRPC_SECRET:?defina WOODPECKER_GRPC_SECRET no .env}
       # PRs exigem aprovação e usuários não podem registrar agentes próprios.
       - WOODPECKER_DEFAULT_APPROVAL_MODE=pull_requests
