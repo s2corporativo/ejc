@@ -24,7 +24,7 @@ steps:
     commands:
       # Deps nativas de OCR/PDF exigidas pela suíte (mesma lista do ci.yml).
       - apt-get update -qq
-      - apt-get install -y -qq --no-install-recommends libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
+      - apt-get install -y -qq --no-install-recommends jq libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangocairo-1.0-0 libcairo2 postgresql-client
       - cd backend
       - pip install --quiet -r requirements.txt
       - ruff check app
