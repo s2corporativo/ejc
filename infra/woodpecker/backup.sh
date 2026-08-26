@@ -106,7 +106,7 @@ backup_volume() {
   docker run --rm \
     -v "$volume_name:/source:ro" \
     -v "$BACKUP_ROOT:/backup" \
-    busybox:1.37.0 \
+    alpine:3.20 \
     sh -eu -c 'cd /source; tar -czf "/backup/$1" .' sh "$archive_name"
   [ -s "$BACKUP_ROOT/$archive_name" ] || fail "backup vazio: $archive_name"
   sha256sum "$BACKUP_ROOT/$archive_name" >"$BACKUP_ROOT/$archive_name.sha256"
@@ -121,7 +121,7 @@ verify_restore() {
   docker run --rm \
     -v "$verify_volume:/restore" \
     -v "$BACKUP_ROOT:/backup:ro" \
-    busybox:1.37.0 \
+    alpine:3.20 \
     sh -eu -c 'cd /restore; tar -xzf "/backup/$1"' sh "$archive_name"
   docker volume rm "$verify_volume" >/dev/null
   verify_volume=""
