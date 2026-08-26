@@ -16,7 +16,7 @@ from pydantic import BaseModel, field_validator  # noqa: F401 (reexport p/ compa
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 (reexport p/ compat)
 
 from app.core.database import get_db  # noqa: F401 (reexport p/ compat)
-from app.core.security import get_current_user, require_roles  # noqa: F401 (reexport p/ compat)
+from app.core.security import get_current_user, require_roles, require_roles_exact  # noqa: F401 (reexport p/ compat)
 from app.models.user import User  # noqa: F401 (reexport p/ compat)
 from app.models.case import Case  # noqa: F401 (reexport p/ compat)
 from app.models.audit_log import criar_audit_log  # noqa: F401 (reexport p/ compat)
@@ -60,7 +60,7 @@ async def civ_prescricao_consumidor(
     data_fato: date,
     tipo_vicio: Literal["fato_produto", "fato_servico",
                         "servico_ou_produto", "cobranca_indevida"] = "fato_produto",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Prescrição (5 anos, fato do produto/serviço) e decadência (30/90 dias, vício)."""
     if tipo_vicio in ("fato_produto", "fato_servico"):
@@ -123,7 +123,7 @@ _TIPOS_DANO_MORAL = {
 async def civ_dano_moral(
     tipo_caso: str = "negativacao_indevida",
     salarios_minimos_pedido: float = Query(0.0, ge=0, description="Opcional — pedido pretendido, em SM, apenas para contextualização"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Estruturação metodológica do dano moral — SEM valor sugerido automático:
@@ -237,7 +237,7 @@ async def civ_partilha_divorcio(
     regime_bens: str = "comunhao_parcial",
     data_casamento: Optional[date] = None,
     data_separacao_fatos: Optional[date] = None,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """O que se partilha no divórcio, por regime de bens (CC arts. 1.658-1.688)."""
     regra = _REGIMES_BENS.get(regime_bens)
@@ -273,7 +273,7 @@ async def civ_rescisao_locacao(
     quem_rescinde: Literal["locatario", "locador"] = "locatario",
     prazo_contrato_meses: int = Query(30, gt=0, description="Prazo contratual em meses (praxe residencial: 30)"),
     multa_contratual_alugueis: float = Query(3.0, ge=0, description="Multa pactuada em nº de aluguéis (praxe: 3)"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Multa PROPORCIONAL na devolução antecipada (Lei 8.245/91 art. 4º)."""
     if data_rescisao_pretendida < data_inicio:
@@ -330,7 +330,7 @@ async def trab_verbas_rescisorias(
     tipo_rescisao: str = "sem_justa_causa",
     saldo_fgts: float = Query(0.0, ge=0),
     aviso_previo: Literal["indenizado", "trabalhado", "dispensado"] = "indenizado",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Verbas rescisórias completas. Delegado à MESMA calculadora auditável de
     /calculadoras/trabalhista/rescisao (app/services/calc/trabalhista.py),
@@ -400,7 +400,7 @@ async def adm_reajuste_contrato(
     meses_contrato: int = Query(..., ge=0),
     indice_nome: str = Query(..., description="Índice PREVISTO no contrato (ex.: IPCA/IBGE, INCC/FGV)"),
     data_base: date = Query(..., description="Data-base: orçamento estimado ou apresentação da proposta"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Reajuste em sentido estrito pelo índice PREVISTO no contrato, respeitada a
     ANUALIDADE (Lei 14.133/2021 arts. 25 §7º e 92 §3º c/c Lei 10.192/2001 art. 2º
@@ -439,7 +439,7 @@ async def adm_reajuste_contrato(
 # ── Bancário: painel de taxas BACEN ao vivo ───────────────────────────────────
 @router.get("/bancario/ferramentas/taxas-bacen")
 @_com_regra("bancario_taxas_bacen")
-async def bancario_taxas_bacen(cu: User = Depends(require_roles(_EQUIPE))):
+async def bancario_taxas_bacen(cu: User = Depends(require_roles_exact(_EQUIPE))):
     """Últimos valores oficiais SGS/BCB (SELIC meta, CDI, TR, IPCA-15).
     Fachada de bcb_service.painel_taxas — shape do TaxasBacenView (RamoBase.tsx)."""
     from app.services import bcb_service
@@ -472,7 +472,7 @@ async def trib_auto_infracao_prazos(
     data_ciencia: date,
     valor_multa: float = Query(0.0, ge=0),
     esfera: Literal["federal", "estadual", "municipal"] = "federal",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Prazo de impugnação de auto de infração tributário (federal: 30 dias —
     Decreto 70.235/72 art. 15) e reduções de multa de ofício (Lei 8.218/91 art. 6º)."""
@@ -515,7 +515,7 @@ async def trib_auto_infracao_prazos(
 async def trib_prescricao_decadencia(
     data_fato_gerador: date,
     tipo: Literal["lancamento", "homologacao", "credito_nao_constituido"] = "homologacao",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Decadência do direito de lançar (CTN 150 §4º/173 I) e prescrição da
     cobrança do crédito constituído (CTN 174) — sempre 5 anos, marcos distintos."""
@@ -599,7 +599,7 @@ async def trib_parcelamento(
     valor_total_debito: float = Query(..., gt=0),
     parcelas: int = Query(60, gt=0),
     modalidade: str = "parcelamento_comum",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Simulação SIMPLIFICADA de parcelamento tributário por modalidade."""
     m = _MODALIDADES_PARCELAMENTO.get(modalidade)
@@ -661,7 +661,7 @@ _SIMPLES_ROTULOS = {
 async def trib_simples_nacional(
     receita_bruta_12m: float = Query(..., gt=0),
     anexo: Literal["I", "II", "III", "IV", "V"] = "III",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Faixa, alíquota nominal e alíquota EFETIVA do Simples Nacional por RBT12.
     Fórmula legal: (RBT12 × alíquota nominal − parcela a deduzir) ÷ RBT12
@@ -717,7 +717,7 @@ async def trib_regime_tributario(
     receita_bruta_anual: float = Query(..., gt=0),
     lucro_estimado_pct: float = Query(20.0, ge=0, le=100),
     atividade: Literal["comercio", "industria", "servicos"] = "servicos",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Comparativo ESTIMADO Simples × Lucro Presumido × Lucro Real (federais).
     Estimativa simplificada e documentada — NÃO substitui estudo tributário."""
@@ -824,7 +824,7 @@ async def trib_reforma_tributaria(
     regime_atual: Literal["simples", "lucro_presumido", "lucro_real"] = "simples",
     atividade: Literal["comercio", "industria", "servicos", "financeiro", "imobiliario"] = "servicos",
     ano_analise: Literal["2026", "2027", "2028", "2029", "2030", "2031", "2032", "2033"] = "2026",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Informativo estruturado da transição CBS/IBS (EC 132/2023 · LC 214/2025)."""
     if regime_atual == "simples":
@@ -877,7 +877,7 @@ async def amb_auto_infracao(
     data_ciencia: date,
     valor_multa: float = Query(0.0, ge=0),
     tipo_infracao: str = "degradacao",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Prazos, descontos e teses de defesa contra auto de infração ambiental
     federal (Lei 9.605/98 · Decreto 6.514/2008)."""
@@ -957,7 +957,7 @@ _CRIMES_AMBIENTAIS = {
 async def amb_crimes_ambientais(
     tipo_crime: str = "poluicao",
     pessoa: Literal["fisica", "juridica"] = "fisica",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Penas e institutos despenalizadores por tipo de crime ambiental (Lei 9.605/98)."""
     crime = _CRIMES_AMBIENTAIS.get(tipo_crime)
@@ -1008,7 +1008,7 @@ async def amb_tac(
     tipo_dano: str = "desmatamento",
     area_afetada_ha: float = Query(0.0, ge=0),
     valor_estimado_dano: float = Query(0.0, ge=0),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Requisitos, cláusulas essenciais e efeitos do Termo de Ajustamento de Conduta."""
     legitimados = {
@@ -1081,7 +1081,7 @@ async def amb_licenciamento(
     orgao: Optional[str] = Query(None, description="Órgão licenciador (IBAMA/SEMAD/municipal), se conhecido"),
     data_protocolo: Optional[date] = None,
     com_eia_rima: bool = False,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Fases, documentos mínimos e prazos do licenciamento ambiental — classes,
     modalidades e prazos CONCRETOS dependem da UF e da norma do órgão licenciador."""
@@ -1144,7 +1144,7 @@ async def amb_reserva_legal(
     bioma: str = "cerrado",
     inscrito_car: bool = False,
     municipio: Optional[str] = None,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Percentual e área de Reserva Legal por bioma/localização — percentuais do
     art. 12 da Lei 12.651/2012 como REGRA FEDERAL GERAL; o enquadramento concreto

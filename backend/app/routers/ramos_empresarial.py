@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 (reexport p/ compa
 
 from app.core.config import get_settings  # noqa: F401 (reexport p/ compat)
 from app.core.database import get_db  # noqa: F401 (reexport p/ compat)
-from app.core.security import get_current_user, require_roles  # noqa: F401 (reexport p/ compat)
+from app.core.security import get_current_user, require_roles, require_roles_exact  # noqa: F401 (reexport p/ compat)
 from app.models.user import User  # noqa: F401 (reexport p/ compat)
 from app.models.case import Case  # noqa: F401 (reexport p/ compat)
 from app.models.audit_log import criar_audit_log  # noqa: F401 (reexport p/ compat)
@@ -121,7 +121,7 @@ async def emp_listar(
 
 @router.post("/empresarial", status_code=201)
 async def emp_criar(body: EmpresarialIn, db: AsyncSession = Depends(get_db),
-                    cu: User = Depends(require_roles(_EQUIPE))):
+                    cu: User = Depends(require_roles_exact(_EQUIPE))):
     await _get_case(db, body.case_id, cu)
     e = EmpresarialCase(id=str(uuid4()), **body.model_dump())
     db.add(e)
@@ -132,7 +132,7 @@ async def emp_criar(body: EmpresarialIn, db: AsyncSession = Depends(get_db),
 
 @router.patch("/empresarial/{eid}")
 async def emp_atualizar(eid: str, body: EmpresarialUpdate, db: AsyncSession = Depends(get_db),
-                        cu: User = Depends(require_roles(_EQUIPE))):
+                        cu: User = Depends(require_roles_exact(_EQUIPE))):
     return await _crud_atualizar(EmpresarialCase, "empresarial_cases", eid,
                                  body.model_dump(exclude_unset=True), db, cu)
 
@@ -147,7 +147,7 @@ async def emp_prazos_rj(
     data_publicacao_deferimento: Optional[date] = None,
     data_deferimento: Optional[date] = None,
     data_concessao: Optional[date] = None,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Marcos temporais da recuperação judicial — Lei 11.101/2005 (red. Lei 14.112/2020).
@@ -223,7 +223,7 @@ async def emp_prazos_rj(
 @router.get("/empresarial/ferramentas/verificar-cade")
 async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
                    valor_faturamento_outro_grupo: Optional[float] = None,
-                   cu: User = Depends(require_roles(_EQUIPE))):
+                   cu: User = Depends(require_roles_exact(_EQUIPE))):
     """
     Verifica obrigatoriedade de notificação ao CADE (controle de concentrações).
     Lei 12.529/2011 art. 88, I e II (patamares atualizados pela Portaria Interminis-

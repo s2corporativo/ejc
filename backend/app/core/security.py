@@ -4,7 +4,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Annotated, TYPE_CHECKING
+from typing import Optional, List, Annotated, Collection, TYPE_CHECKING
 from uuid import uuid4
 
 import jwt
@@ -260,6 +260,32 @@ def require_roles(allowed: List[str]):
                     detail=f"Acesso negado. Perfis permitidos: {', '.join(allowed)}",
                 )
         return current_user
+    return checker
+
+
+def require_roles_exact(allowed: Collection[str]):
+    """Dependency factory que exige pertencimento literal à allowlist.
+
+    Diferente de :func:`require_roles`, não promove automaticamente um papel
+    de nível superior que não esteja na lista. Use em superfícies com conjunto
+    fechado de papéis, como a equipe jurídica; assim ``financeiro`` não passa
+    apenas por ter nível numérico maior que ``estagiario``.
+    """
+    allowed_roles = frozenset(
+        str(getattr(role, "value", role)) for role in allowed
+    )
+    if not allowed_roles:
+        raise ValueError("require_roles_exact exige ao menos um papel permitido")
+
+    async def checker(current_user=Depends(get_current_user)):
+        role = str(getattr(current_user.role, "value", current_user.role))
+        if role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Acesso negado. Perfis permitidos: {', '.join(sorted(allowed_roles))}",
+            )
+        return current_user
+
     return checker
 
 

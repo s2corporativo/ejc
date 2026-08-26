@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response  # noqa: 
 from pydantic import BaseModel  # noqa: F401 (reexport p/ compat)
 
 from app.core.config import get_settings  # noqa: F401 (reexport p/ compat)
-from app.core.security import require_roles  # noqa: F401 (reexport p/ compat)
+from app.core.security import require_roles_exact  # noqa: F401 (reexport p/ compat)
 from app.models.user import User  # noqa: F401 (reexport p/ compat)
 from app.services.deadline_calculator import (  # noqa: F401 (reexport p/ compat)
     prazo_dias_uteis, prazo_dias_corridos, proximo_dia_util,
@@ -43,7 +43,7 @@ async def consumidor_devolucao_dobro(
     houve_pagamento: str = Query(..., description="sim | nao — a repetição pressupõe PAGAMENTO"),
     cobranca_contraria_boa_fe_objetiva: str = Query(..., description="sim | nao"),
     engano_justificavel: str = Query(..., description="sim | nao"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Repetição em dobro do indébito — CDC art. 42 §ún. c/c STJ EAREsp 676.608/RS:
@@ -135,7 +135,7 @@ async def consumidor_prazos_cdc(
                        "repeticao_indebito_contratual"],
     data_marco: date = Query(..., description="Data do TERMO INICIAL correto da pretensão"),
     bem_duravel: Optional[str] = None,   # sim|nao — obrigatório para vicio_oculto (30 ou 90 dias)
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Decadência/prescrição do consumidor — a PRETENSÃO define instituto, prazo e
@@ -198,7 +198,7 @@ async def familia_debito_alimentos(
         ..., description="Datas ISO de vencimento das parcelas em aberto, separadas por vírgula"),
     data_ajuizamento_execucao: date = Query(...),
     valor_parcela: Optional[float] = None,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Rito da execução de alimentos (CPC art. 528 §7º; Súm. 309 STJ): autorizam a
@@ -274,7 +274,7 @@ async def imobiliario_reajuste_aluguel(
     indice_percentual: float = Query(..., description="Variação ACUMULADA do índice contratual no período"),
     indice_nome: str = Query(..., description="Índice pactuado no contrato (ex.: IGP-M/FGV, IPCA/IBGE)"),
     data_base: date = Query(..., description="Data-base do último reajuste/início do contrato"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Reajuste de aluguel pelo índice PACTUADO no contrato (Lei 8.245/91 art. 18),
@@ -324,7 +324,7 @@ async def imobiliario_prazos_despejo(
     data_citacao: date,
     forma_comunicacao: Literal["citacao_pessoal", "citacao_ficta"],
     fundamento: str = "falta_pagamento",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Prazos da ação de despejo e purga da mora (Lei 8.245/91 art. 62 II:
     15 dias contados da CITAÇÃO para purga)."""
@@ -378,7 +378,7 @@ async def previdenciario_prazos(
     data_primeiro_pagamento: Optional[date] = None,   # revisão: 1º pagamento do benefício
     data_ciencia_decisao: Optional[date] = None,      # recurso: ciência da decisão do INSS
     data_ajuizamento: Optional[date] = None,          # parcelas: default hoje
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Motor de marcos previdenciários — cada natureza tem marco PRÓPRIO:
@@ -467,7 +467,7 @@ async def previdenciario_prazos(
 @router.get("/digital_lgpd/ferramentas/multa-lgpd")
 async def lgpd_multa(
     faturamento_anual: float = Query(..., ge=0, description="Faturamento no Brasil no último exercício (grupo/conglomerado)"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     TETO da multa simples da LGPD (art. 52 II): até 2% do faturamento no Brasil no
@@ -513,7 +513,7 @@ async def lgpd_prazos(
     tipo: Literal["resposta_titular", "incidente", "incidente_anpd"] = "resposta_titular",
     data_evento: Optional[date] = None,          # resposta_titular: data do requerimento do titular
     data_conhecimento: Optional[date] = None,    # incidente: data do CONHECIMENTO do incidente
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Prazos da LGPD: resposta ao titular (15 dias — art. 19 II) e comunicação de
     incidente à ANPD em 3 dias ÚTEIS do CONHECIMENTO (Res. CD/ANPD nº 15/2024)."""
@@ -555,7 +555,7 @@ async def previdenciario_tempo_contribuicao(
     tempo_contribuicao_anos: float,
     sexo: Literal["F", "M"] = "M",
     ano: int = 2026,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Regra de transição por pontos (EC 103/2019 art. 15). Pontos = idade + tempo."""
     # Fim do startswith("M") — "Mulher" era tratado como masculino. Domínio fechado F|M.
@@ -587,7 +587,7 @@ async def previdenciario_carencia(
     meses_contribuicao: int = Query(..., ge=0),
     decorre_acidente_ou_doenca_isenta: str = Query(
         ..., description="sim | nao — acidente de qualquer natureza ou doença da lista (art. 26 II)"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Carência por benefício e categoria (Lei 8.213/91 arts. 24-27):
@@ -654,7 +654,7 @@ async def familia_itcmd(
     aliquota_percent: float = Query(..., ge=0, le=8,
                                     description="Alíquota da LEI ESTADUAL da UF na data do fato gerador"),
     data_fato_gerador: date = Query(..., description="Óbito (causa mortis) ou doação"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     ITCMD sobre o monte partilhável — SEM alíquota default: a alíquota é a da LEI
@@ -707,7 +707,7 @@ async def penal_prescricao(
     marcos_interruptivos: Optional[str] = None,   # datas ISO separadas por vírgula (CP art. 117)
     menor_21_na_data_fato: str = "nao",
     maior_70_na_sentenca: str = "nao",
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Prescrição penal (CP arts. 109, 110, 115 e 117) — rota canônica. A rota
     /penal/ferramentas/prescricao-punitiva usa a MESMA implementação e será
@@ -730,7 +730,7 @@ async def penal_dosimetria(
     n_atenuantes: int = 0,
     causas_aumento: Optional[str] = None,      # frações, ex.: "1/3,1/6"
     causas_diminuicao: Optional[str] = None,   # frações, ex.: "1/2,1/6"
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Simulador ASSISTIDO do cálculo trifásico da pena (CP art. 68), em MESES.
@@ -836,7 +836,7 @@ async def trabalhista_horas_extras(
     percentual_he: float = 50.0,
     incluir_dsr: str = Query(..., description="sim | nao — DSR de 1/6 sobre as HE"),
     incluir_reflexo_fgts: str = Query(..., description="sim | nao — FGTS de 8% sobre HE+DSR"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Valor mensal de horas extras com DIVISOR explícito (220/200/180 ou o previsto
@@ -901,7 +901,7 @@ async def trabalhista_horas_extras_alias(
     percentual_he: float = 50.0,
     incluir_dsr: str = Query(..., description="sim | nao — DSR de 1/6 sobre as HE"),
     incluir_reflexo_fgts: str = Query(..., description="sim | nao — FGTS de 8% sobre HE+DSR"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Alias DEPRECIADO de /trabalhista-esp/ferramentas/horas-extras.
 
@@ -940,7 +940,7 @@ async def empresarial_juros_mora(
     aplicar_regra_anterior: Optional[str] = None,         # sim|nao — mora iniciada antes de 30/08/2024
     taxa_mensal_percent: Optional[float] = None,          # taxa convencionada, % a.m.
     multa_pct: float = 0.0,                               # multa moratória pactuada, %
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Juros de mora sobre débito contratual — CC art. 406, red. Lei 14.905/2024.
@@ -1098,7 +1098,7 @@ async def tributario_multa_mora(
     ente: Literal["federal", "estadual", "municipal"],
     valor_tributo: float = Query(..., gt=0),
     dias_atraso: int = Query(..., ge=0),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Multa de mora de tributos: FEDERAL = 0,33%/dia limitada a 20% (Lei 9.430/96
     art. 61). Estadual/municipal: a multa é a da LEI DO ENTE — sem cálculo com a
@@ -1184,7 +1184,7 @@ def _classificar_taxa_vs_media(contratada: float, media: float) -> dict:
 async def bancario_juros_abusivos(
     taxa_contratada_mensal_pct: float,
     taxa_media_bacen_mensal_pct: float,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Compara a taxa contratada com a média de mercado (BACEN) p/ tese revisional —
     classificação INDICATIVA, sem veredito de abusividade (aferição é casuística)."""
@@ -1219,7 +1219,7 @@ async def imobiliario_distrato(
     comissao_corretagem: float = 0.0,              # dedutível (art. 67-A §2º)
     meses_fruicao: int = 0,
     valor_fruicao_mensal: float = 0.0,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Distrato de imóvel na planta (Lei 13.786/2018): pena convencional de ATÉ 25%
@@ -1285,7 +1285,7 @@ async def imobiliario_distrato(
 async def transito_valor_multa(
     gravidade: str = "media",
     multiplicador: int = 1,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Valor da multa por gravidade (CTB art. 258) com fator multiplicador."""
     tabela = {
@@ -1321,7 +1321,7 @@ async def consumidor_negativacao(
     existe_inscricao_anterior: str = Query(..., description="sim | nao"),
     inscricao_anterior_legitima_e_ativa: Optional[str] = None,   # sim|nao — obrigatório se anterior=sim
     origem_verificada: Optional[str] = None,                     # sim|nao — obrigatório se anterior=sim
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Checklist de análise da negativação indevida — a Súmula 385 STJ só afasta o
@@ -1389,7 +1389,7 @@ async def consumidor_negativacao(
 @_com_regra("adm_ms")
 async def adm_ms(
     data_ato_coator: date,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Prazo DECADENCIAL do Mandado de Segurança: 120 dias CORRIDOS contados da

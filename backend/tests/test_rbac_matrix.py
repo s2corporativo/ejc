@@ -200,17 +200,19 @@ def test_discover_gates_encontra_gates_conhecidos_no_backend_real():
 
 
 def test_discover_gates_resolve_constantes_de_modulo():
-    """`require_roles(_EQUIPE)` (constante do módulo, não lista literal) é o
-    padrão dominante em `ramos.py`/`calculadoras.py` — sem resolver isso a
-    amostra ao vivo perderia a maior parte da cobertura real."""
+    """`require_roles_exact(_EQUIPE)` (constante do módulo, não lista literal)
+    é o padrão da superfície jurídica; sem resolver a constante, a amostra ao
+    vivo perderia a maior parte da cobertura real."""
     gates = rm.discover_gates(ROUTERS_DIR)
     alvo = next(
         (g for g in gates if g.method == "GET" and g.path == "/api/calculadoras/inss"),
         None,
     )
     assert alvo is not None
-    assert alvo.gate_kind == "require_roles"
+    assert alvo.gate_kind == "local_membership"
     assert alvo.allowed_roles, "constante do módulo não foi resolvida"
+    assert alvo.permite("estagiario") is True
+    assert alvo.permite("financeiro") is False
 
 
 def test_selecionar_amostra_get_nunca_descarta_em_silencio():
