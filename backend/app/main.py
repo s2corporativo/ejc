@@ -561,9 +561,13 @@ async def readiness():
     except Exception:
         db_ok = False
 
-    # Migrations: True/False se determinável, None = indeterminado (informativo).
+    # Migrations são críticas: sem confirmação do head, o serviço não está
+    # pronto. Timeout impede que o monitor fique preso quando o banco degrada.
     from app.core.observability import check_migrations_head
-    migrations_ok = await check_migrations_head()
+    try:
+        migrations_ok = await asyncio.wait_for(check_migrations_head(), timeout=3.0)
+    except Exception:
+        migrations_ok = False
 
     # Redis só é checado quando alguma feature depende dele; senão, "não usado".
     redis_ok = None
@@ -574,12 +578,12 @@ async def readiness():
     from app.services.embedding_service import disponivel as _emb_disponivel
     checks = {
         "database": db_ok,          # crítico (bloqueia readiness)
-        "migrations": migrations_ok,  # crítico se determinável (None = ignora)
+        "migrations": migrations_ok,
         "redis": redis_ok,          # informativo (None = não utilizado)
         "embeddings": _emb_disponivel(),  # informativo
     }
-    # Bloqueantes: DB e (migrations quando puder ser confirmada como desatualizada).
-    pronto = db_ok and (migrations_ok is not False)
+    # Bloqueantes: banco e migrations confirmadamente no head.
+    pronto = db_ok and migrations_ok is True
     return JSONResponse(
         status_code=200 if pronto else 503,
         content={"status": "ready" if pronto else "not_ready", "checks": checks},

@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 (reexport p/ compa
 
 from app.core.config import get_settings  # noqa: F401 (reexport p/ compat)
 from app.core.database import get_db  # noqa: F401 (reexport p/ compat)
-from app.core.security import get_current_user, require_roles  # noqa: F401 (reexport p/ compat)
+from app.core.security import get_current_user, require_roles, require_roles_exact  # noqa: F401 (reexport p/ compat)
 from app.models.user import User  # noqa: F401 (reexport p/ compat)
 from app.models.case import Case  # noqa: F401 (reexport p/ compat)
 from app.models.audit_log import criar_audit_log  # noqa: F401 (reexport p/ compat)
@@ -102,7 +102,7 @@ async def adm_listar(db: AsyncSession = Depends(get_db),
 
 @router.post("/admin-esp", status_code=201)
 async def adm_criar(body: AdminIn, db: AsyncSession = Depends(get_db),
-                    cu: User = Depends(require_roles(_EQUIPE))):
+                    cu: User = Depends(require_roles_exact(_EQUIPE))):
     await _get_case(db, body.case_id, cu)
     data = body.model_dump()
     if data.get("data_notificacao"):
@@ -126,7 +126,7 @@ async def adm_criar(body: AdminIn, db: AsyncSession = Depends(get_db),
 
 @router.patch("/admin-esp/{aid}")
 async def adm_atualizar(aid: str, body: AdminUpdate, db: AsyncSession = Depends(get_db),
-                        cu: User = Depends(require_roles(_EQUIPE))):
+                        cu: User = Depends(require_roles_exact(_EQUIPE))):
     return await _crud_atualizar(AdminCase, "admin_cases", aid,
                                  body.model_dump(exclude_unset=True), db, cu)
 
@@ -238,7 +238,7 @@ async def adm_multa_transito(
     data_notificacao_penalidade: Optional[date] = None,
     data_ciencia_decisao_jari: Optional[date] = None,
     valor_multa: Optional[float] = None,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Alias mantido por compatibilidade — delega à implementação ÚNICA de
     /transito/ferramentas/prazos-recurso (rota canônica; retirada na Onda 3)."""
@@ -258,7 +258,7 @@ async def transito_prazos_recurso(
     data_notificacao_penalidade: Optional[date] = None,
     data_ciencia_decisao_jari: Optional[date] = None,
     valor_multa: Optional[float] = None,
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Prazos de defesa/recurso de multa de trânsito (CTB red. Lei 14.071/2020).
@@ -280,7 +280,7 @@ async def transito_pontuacao_cnh(
     pontos_total: int,
     qtd_gravissimas: int = Query(..., ge=0, description="Infrações gravíssimas no período de 12 meses"),
     exerce_atividade_remunerada: str = Query(..., description="sim | nao (EAR na CNH)"),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """
     Sistema 20/30/40 de pontos da CNH — CTB art. 261 (red. Lei 14.071/2020):

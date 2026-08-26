@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import require_roles
+from app.core.security import require_roles_exact
 from app.models.user import User
 from app.models.case import Case
 from app.models.client import Client
@@ -28,7 +28,7 @@ _EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "est
 async def jurimetria_endpoint(
     dimensao: str | None = Query(None, description="area | comarca | advogado (vazio = global)"),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Métricas de desfecho (taxa de êxito) com tamanho de amostra explícito.
 
@@ -43,7 +43,7 @@ async def jurimetria_endpoint(
 @router.get("/taskscore")
 async def taskscore_endpoint(
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Produtividade e carga por advogado (tarefas). Escopo conforme o perfil."""
     return await taskscore_svc.taskscore(db, cu)
@@ -52,7 +52,7 @@ async def taskscore_endpoint(
 @router.get("/funil")
 async def funil_endpoint(
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Funil de leads: estágios, conversão e quebra por canal de origem."""
     return await funil_svc.funil(db, cu)
@@ -62,7 +62,7 @@ async def funil_endpoint(
 async def rentabilidade_endpoint(
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Rentabilidade por caso: receita recebida × custo de horas lançadas."""
     return await rent_svc.ranking_rentabilidade(db, cu, limit=limit)
@@ -72,7 +72,7 @@ async def rentabilidade_endpoint(
 async def onboarding_pendencias(
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Clientes com onboarding incompleto (checklist de entrada). Escopo por perfil."""
     return await onb_svc.pendencias(db, cu, limit=limit)
@@ -82,7 +82,7 @@ async def onboarding_pendencias(
 async def onboarding_cliente(
     client_id: str,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Checklist de onboarding detalhado de um cliente."""
     client = (await db.execute(
@@ -100,7 +100,7 @@ async def case_health_ranking(
     apenas_abertos: bool = Query(True, description="Considerar só casos em andamento"),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Ranking de saúde dos casos (piores primeiro). Escopo conforme o perfil."""
     return await case_health.ranking_saude(db, cu, limit=limit, apenas_abertos=apenas_abertos)
@@ -110,7 +110,7 @@ async def case_health_ranking(
 async def case_health_detalhe(
     case_id: str,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(_EQUIPE)),
+    cu: User = Depends(require_roles_exact(_EQUIPE)),
 ):
     """Score de saúde detalhado de um caso, com a memória de cada dedução."""
     case = (await db.execute(

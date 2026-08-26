@@ -159,7 +159,7 @@ class RouteGate:
     module_key: str
     method: str
     path: str
-    gate_kind: str  # "nenhum" | "require_roles" | "require_admin" | "requer_advogado" | "indeterminado"
+    gate_kind: str  # "nenhum" | "require_roles" | "local_membership" | "require_admin" | "requer_advogado" | "indeterminado"
     allowed_roles: tuple[str, ...]  # papéis citados no código (informativo p/ relatório)
     min_level: int  # nível mínimo REAL exigido — é isto que decide, não allowed_roles
     source_file: str
@@ -492,7 +492,7 @@ def _import_aliases(tree: ast.Module) -> dict[str, str]:
         if not isinstance(node, ast.ImportFrom):
             continue
         for alias in node.names:
-            if alias.name in ("require_roles", "require_admin") and alias.asname:
+            if alias.name in ("require_roles", "require_roles_exact", "require_admin") and alias.asname:
                 aliases[alias.asname] = alias.name
     return aliases
 
@@ -552,14 +552,15 @@ def _match_role_call(
     aliases = aliases or {}
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
         nome_func = aliases.get(node.func.id, node.func.id)
-        if nome_func == "require_roles":
+        if nome_func in ("require_roles", "require_roles_exact"):
             if not node.args:
                 return ("indeterminado", None, -1)
             roles = _extract_roles_from_expr(node.args[0], constants)
             if roles is None:
                 return ("indeterminado", None, -1)
             level = min((ROLE_LEVEL.get(r, 0) for r in roles), default=0)
-            return ("require_roles", roles, level)
+            kind = "local_membership" if nome_func == "require_roles_exact" else "require_roles"
+            return (kind, roles, level)
     if isinstance(node, ast.Name) and aliases.get(node.id, node.id) == "require_admin":
         return ("require_admin", ["admin"], ROLE_LEVEL["admin"])
     return None
