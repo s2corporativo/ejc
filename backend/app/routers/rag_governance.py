@@ -41,6 +41,7 @@ GOVERNANCE_ROLES = ["superadmin", "admin", "socio"]
 
 AuthorityLevel = Literal[
     "oficial_normativa",
+    "proposicao_legislativa",
     "precedente_vinculante",
     "jurisprudencia_oficial",
     "oficial_informativa",
