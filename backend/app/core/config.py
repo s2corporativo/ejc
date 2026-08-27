@@ -490,9 +490,10 @@ class Settings(BaseSettings):
     # CNJ, sem autenticação); desligue com DJEN_INGEST_ENABLED=false.
     DJEN_INGEST_ENABLED: bool = True
     # CSV "numero/UF" — ex.: "12345/MG,67890/MG". Vazio = ingestor no-op.
-    # Default = OAB do sócio João Pedro Rodrigues Teixeira (OAB/MG 251.174);
-    # acrescente as OABs dos demais advogados separadas por vírgula.
-    DJEN_OABS_MONITORADAS: str = "251174/MG"
+    # Default = OABs dos sócios Guilherme Alves de Paula (OAB/MG 252.599) e
+    # João Pedro Teixeira Rodrigues (OAB/MG 251.174). Acrescente outras OABs
+    # separadas por vírgula, sem pontuação no número.
+    DJEN_OABS_MONITORADAS: str = "252599/MG,251174/MG"
     # Janela incremental (dias para trás) de cada coleta diária. 2 dias dá
     # margem para atraso de disponibilização sem reprocessar demais (o upsert
     # é idempotente por chave_origem, então sobreposição é inofensiva).
