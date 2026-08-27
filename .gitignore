@@ -83,6 +83,11 @@ backend/app/seeds/backups/
 # dentro (permissão 600, mas a um `git add -A` de distância do repositório
 # remoto). Ignorar não é cosmético — é a barreira que impede um comando
 # distraído de publicar credencial. NUNCA versione o conteúdo destes.
-secrets/
-backups/
-data/
+#
+# ANCORADOS NA RAIZ (`/`) DE PROPÓSITO: sem a barra inicial, o Git casa o
+# padrão em QUALQUER profundidade e engoliria `backend/app/data/mock_db/`
+# (fixtures rastreadas) — um arquivo novo ali sumiria do `git add` em
+# silêncio. Só os diretórios da raiz do checkout são runtime.
+/secrets/
+/backups/
+/data/
