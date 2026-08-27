@@ -200,6 +200,9 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
             for doc_id, extra, vigente, tribunal, atualizado_em in rows
         }
         hydrated: list[dict] = []
+        exigir_vigencia = bool(
+            getattr(settings, "RAG_EXIGIR_VIGENCIA_VERIFICADA", True)
+        )
         for candidate in candidatos:
             item = dict(candidate)
             extra, vigente, tribunal, atualizado_em = metadata.get(
@@ -230,7 +233,10 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
                     "revogada",
                 },
             }
-            if status in {"vigencia_nao_verificada", "revogada", "suspensa"} and vigente:
+            bloqueados = {"revogada", "suspensa"}
+            if exigir_vigencia:
+                bloqueados.add("vigencia_nao_verificada")
+            if status in bloqueados and vigente:
                 logger.info(
                     "RAG excluiu norma não apta à fundamentação atual: doc_id=%s status=%s",
                     item.get("doc_id"),
