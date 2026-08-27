@@ -23,6 +23,25 @@ from app.services.knowledge_governance import inferir_autoridade
 logger = logging.getLogger("ejc.ai.reranker")
 settings = get_settings()
 
+
+def _categoria_normativa(candidate: dict[str, Any]) -> bool:
+    """Indica se o candidato pode representar norma/regulamento vigente.
+
+    Quando a governança documental está indisponível, candidatos normativos não
+    podem permanecer na fundamentação atual: sem o metadado governado não há
+    como provar vigência, suspensão ou revogação. Jurisprudência, doutrina e
+    peças continuam disponíveis para não zerar o ranking por completo.
+    """
+    categoria = str(candidate.get("categoria") or "").strip().lower().replace("_", " ")
+    extra_raw = candidate.get("extra")
+    extra = extra_raw if isinstance(extra_raw, dict) else {}
+    autoridade = str(extra.get("authority_level") or "").strip().lower()
+    return (
+        any(token in categoria for token in ("legisl", "norma", "regulamento"))
+        or autoridade == "oficial_normativa"
+    )
+
+
 _MAX_CHARS = 2000
 _model = None
 _model_lock = threading.Lock()
@@ -156,7 +175,7 @@ def _normalizar_status_legal(extra: dict[str, Any], vigente_no_ejc: bool) -> str
 
 
 async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
-    """Carrega metadados jurídicos e elimina quarentena/revogação do ranking."""
+    """Carrega governança e falha fechado para material normativo atual."""
     ids = {str(item.get("doc_id")) for item in candidatos if item.get("doc_id")}
     if not ids:
         return candidatos
@@ -211,20 +230,25 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
                     "revogada",
                 },
             }
-            if status == "revogada" and vigente:
+            if status in {"vigencia_nao_verificada", "revogada", "suspensa"} and vigente:
                 logger.info(
-                    "RAG excluiu norma revogada da fundamentação atual: doc_id=%s",
+                    "RAG excluiu norma não apta à fundamentação atual: doc_id=%s status=%s",
                     item.get("doc_id"),
+                    status,
                 )
                 continue
             hydrated.append(item)
         return hydrated
     except Exception as exc:
+        seguros = [c for c in candidatos if not _categoria_normativa(c)]
         logger.warning(
-            "Governança documental indisponível no reranking (%s) — mantendo candidatos",
+            "Governança documental indisponível no reranking (%s) — "
+            "fail-closed: removidos candidatos normativos; total=%s mantidos=%s",
             str(exc)[:180],
+            len(candidatos),
+            len(seguros),
         )
-        return candidatos
+        return seguros
 
 
 def _confidence_bonus(candidate: dict) -> float:
