@@ -25,6 +25,13 @@ build/
 .env
 .env.local
 .env.*
+# `.env.*` acima sombreia os `.env.example` — que são o CONTRATO de
+# provisionamento, não segredo, e precisam ser versionáveis. Os 4 que existem
+# hoje seguem rastreados (o índice vence o ignore), mas um `.env.example` novo
+# (ou reintroduzido depois de um `git rm`) sumiria do `git add` em silêncio.
+# Mesma classe do bug de ancoragem corrigido em `/secrets/` mais abaixo.
+!.env.example
+!**/.env.example
 
 # Editors
 .vscode/
