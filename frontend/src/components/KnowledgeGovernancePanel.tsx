@@ -147,6 +147,7 @@ const TABS: Array<{
 
 const AUTHORITY_OPTIONS = [
   ["oficial_normativa", "Oficial normativa"],
+  ["proposicao_legislativa", "Proposição legislativa"],
   ["precedente_vinculante", "Precedente vinculante/oficial"],
   ["jurisprudencia_oficial", "Jurisprudência oficial"],
   ["oficial_informativa", "Oficial informativa"],
