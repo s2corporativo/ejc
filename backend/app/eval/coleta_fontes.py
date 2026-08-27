@@ -367,15 +367,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if coletadas:
-        # `--apelido cdc` coleta só o CDC, mas o arquivo de saída acumula o
-        # registro inteiro — não o resultado desta execução isolada. Sem isto,
-        # rodar `--apelido` (que o próprio aviso de falha parcial recomenda
-        # para "coletar só o que falta") apagava em silêncio toda fonte já
-        # coletada antes e ausente deste run (achado do Codex). Mescla por
-        # apelido: o que este run trouxe substitui a entrada antiga do mesmo
-        # apelido; o resto do arquivo anterior é preservado.
+        # Em coleta SELETIVA (`--apelido`) a saída é incremental: fontes já
+        # coletadas permanecem e apenas os apelidos pedidos são substituídos.
+        # Em coleta COMPLETA, a fonte da verdade é o registro atual: a saída é
+        # reconstruída só com o que acabou de ser coletado. Isso impede que uma
+        # fonte removida/renomeada em `fontes_registro.json` sobreviva para
+        # sempre em `fontes_oficiais.json` e seja reutilizada na curadoria.
         existentes = []
-        if args.saida.exists():
+        if args.apelido and args.saida.exists():
             try:
                 existentes = json.loads(args.saida.read_text(encoding="utf-8")).get("fontes", [])
             except (json.JSONDecodeError, OSError):
